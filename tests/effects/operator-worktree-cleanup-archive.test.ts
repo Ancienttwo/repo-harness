@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createCleanupPlan } from '../../src/effects/operator/worktree-cleanup-plan';
-import { CleanupArchiveError, stageCleanupArchive } from '../../src/effects/operator/worktree-cleanup-archive';
+import { stageCleanupArchive } from '../../src/effects/operator/worktree-cleanup-archive';
 import { observeCleanupLoss } from '../../src/effects/operator/worktree-cleanup-observation';
 import { worktreeId } from '../../src/effects/git/worktree-record';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
@@ -36,24 +36,7 @@ function fixture() {
   return { parent, repo, tree, home, staging, env, target, options, plan, git, cleanup: () => rmSync(parent, { recursive: true, force: true }) };
 }
 
-// #1172: archive staging refuses Apple arm64 before any write. Some scenarios expect another error code at their first
-// stage call, so on that platform each staging test proves the refusal and its absent output instead of its scenario.
-const archiveRefused = process.platform === 'darwin' && process.arch === 'arm64';
-function archiveTest(name: string, body: () => void) {
-  test(name, archiveRefused ? () => {
-    const f = fixture();
-    try {
-      writeFileSync(join(f.tree, 'docs/guide.md'), 'working\n'); writeFileSync(join(f.tree, '.env'), 'SYNTHETIC=fixture\n');
-      const item = f.plan(['docs/guide.md'], ['.env']);
-      let error: unknown;
-      try { stageCleanupArchive(sid, f.target, item, f.options()); } catch (caught) { error = caught; }
-      expect(error).toBeInstanceOf(CleanupArchiveError); expect((error as CleanupArchiveError).code).toBe('unsupported');
-      expect(readdirSync(f.staging)).toEqual([]); expect(existsSync(join(f.home, 'archive'))).toBe(false);
-    } finally { f.cleanup(); }
-  } : body);
-}
-
-archiveTest('stages raw worktree and index versions, and copies synthetic private content as 0600 without deleting the source', () => {
+test('stages raw worktree and index versions, and copies synthetic private content as 0600 without deleting the source', () => {
   const f = fixture();
   try {
     writeFileSync(join(f.tree, 'docs/guide.md'), 'index version\n'); f.git(f.tree, 'add', 'docs/guide.md');
@@ -82,7 +65,7 @@ archiveTest('stages raw worktree and index versions, and copies synthetic privat
   } finally { f.cleanup(); }
 });
 
-archiveTest('interruption after a published artifact resumes without overwriting it', () => {
+test('interruption after a published artifact resumes without overwriting it', () => {
   const f = fixture();
   try {
     writeFileSync(join(f.tree, 'docs/guide.md'), 'working\n'); const item = f.plan(['docs/guide.md'], []);
@@ -99,7 +82,7 @@ archiveTest('interruption after a published artifact resumes without overwriting
   } finally { f.cleanup(); }
 });
 
-archiveTest('source changes during staging refuse success and keep the original worktree', () => {
+test('source changes during staging refuse success and keep the original worktree', () => {
   const f = fixture();
   try {
     writeFileSync(join(f.tree, 'docs/guide.md'), 'working\n'); const item = f.plan(['docs/guide.md'], []);
@@ -108,7 +91,7 @@ archiveTest('source changes during staging refuse success and keep the original 
   } finally { f.cleanup(); }
 });
 
-archiveTest('credentials and binary content cannot enter a Git archive', () => {
+test('credentials and binary content cannot enter a Git archive', () => {
   const f = fixture();
   try {
     writeFileSync(join(f.tree, '.env'), 'SYNTHETIC=fixture\n');
@@ -133,7 +116,7 @@ test('a private archive symlink is refused without writing to its target', () =>
   } finally { f.cleanup(); }
 });
 
-archiveTest('unpublished commit format-patch can be applied in a separate fixture checkout', () => {
+test('unpublished commit format-patch can be applied in a separate fixture checkout', () => {
   const f = fixture();
   try {
     const base = f.git(f.tree, 'rev-parse', 'HEAD');
@@ -153,7 +136,7 @@ archiveTest('unpublished commit format-patch can be applied in a separate fixtur
   } finally { f.cleanup(); }
 });
 
-archiveTest('archive manifest preserves executable modes and index-only symlink identity', () => {
+test('archive manifest preserves executable modes and index-only symlink identity', () => {
   const f = fixture();
   try {
     writeFileSync(join(f.tree, 'run.sh'), '#!/bin/sh\necho fixture\n'); chmodSync(join(f.tree, 'run.sh'), 0o755);
@@ -168,7 +151,7 @@ archiveTest('archive manifest preserves executable modes and index-only symlink 
   } finally { f.cleanup(); }
 });
 
-archiveTest('Git replacement objects cannot change the archived index-only version', () => {
+test('Git replacement objects cannot change the archived index-only version', () => {
   const f = fixture();
   try {
     writeFileSync(join(f.tree, 'docs/guide.md'), 'original staged bytes\n'); f.git(f.tree, 'add', 'docs/guide.md');
@@ -182,7 +165,7 @@ archiveTest('Git replacement objects cannot change the archived index-only versi
   } finally { f.cleanup(); }
 });
 
-archiveTest('each ancestor of a private artifact is durably linked before staging succeeds', () => {
+test('each ancestor of a private artifact is durably linked before staging succeeds', () => {
   const f = fixture(), synced = new Set<number>();
   const originalSync = fs.fsyncSync;
   const sync = spyOn(fs, 'fsyncSync').mockImplementation(fd => { const stat = fs.fstatSync(fd); if (stat.isDirectory()) synced.add(stat.ino); originalSync(fd); });
@@ -210,7 +193,7 @@ test('a merge with unique conflict resolution refuses instead of archiving an an
   } finally { f.cleanup(); }
 });
 
-archiveTest('a root commit patch keeps its exact identity and restores into an empty repository', () => {
+test('a root commit patch keeps its exact identity and restores into an empty repository', () => {
   const f = fixture();
   try {
     f.git(f.repo, 'update-ref', '-d', 'refs/remotes/origin/main');
@@ -227,7 +210,7 @@ archiveTest('a root commit patch keeps its exact identity and restores into an e
   } finally { f.cleanup(); }
 });
 
-archiveTest('archive capture keeps BOM-prefixed and plain filenames as different artifacts', () => {
+test('archive capture keeps BOM-prefixed and plain filenames as different artifacts', () => {
   const f = fixture();
   try {
     writeFileSync(join(f.tree, 'hidden.txt'), 'plain bytes\n'); writeFileSync(join(f.tree, '\ufeffhidden.txt'), 'BOM-name bytes\n');
@@ -238,7 +221,7 @@ archiveTest('archive capture keeps BOM-prefixed and plain filenames as different
   } finally { f.cleanup(); }
 });
 
-archiveTest('private archive refuses a plan destination that differs from the owning repository key', () => {
+test('private archive refuses a plan destination that differs from the owning repository key', () => {
   const f = fixture();
   try {
     writeFileSync(join(f.tree, '.env'), 'SYNTHETIC=fixture\n');

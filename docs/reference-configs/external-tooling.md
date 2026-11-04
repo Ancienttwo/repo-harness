@@ -4,7 +4,6 @@ Generated repos route external tooling by host/runtime shape. Task-level
 skill routing lives in `docs/reference-configs/agentic-development-flow.md`.
 
 - `Waza` supplies `/think`, `/hunt`, and `/check` for daily small/medium work
-- `reverse-skill-router` is an explicit-only recommended router for independently authorized reverse-engineering and security work
 - `hai-stack` supplies `geju` for live, pre-contract exploration; only its frozen output enters a contract
 - Codex automation requires `health`, `check`, and `mermaid` from `~/.codex/skills`
 - `CodeGraph` is required agent readiness for code navigation and impact tracing
@@ -162,28 +161,6 @@ Plugin install/discovery/readiness is not a repo-harness runtime dependency;
 user-managed plugins remain untouched. Plan consultation uses persistent
 collaborator sessions in Herdr. Review Markdown remains projection only.
 
-Reverse Skill is registered from `zhaoxuya520/reverse-skill` as the recommended
-but explicit-only `reverse-skill-router`. It is not part of either install
-profile because the upstream pack requires agents to read
-`field-journal/precedent-auth.md`, which treats merely mentioning a target as
-authorization. That assumption cannot replace a real scope or RoE boundary.
-The catalog pins upstream commit
-`539899ddc7608d63dc66e08e794d572e080f1a55` and the selected tree digest
-`sha256:7aafee6c0dec684d410af6864ab77da4d88b9d442142c0efb91b235ce9793dda`;
-repo-harness verifies the full staged tree before projecting it into either
-host root.
-After independent review, install it explicitly:
-
-```bash
-repo-harness install --with-reverse-skill
-repo-harness update --with-reverse-skill
-```
-
-Add `--no-external-skills` to the install command when Reverse Skill should be
-the only marketplace Skill added. The Skills CLI copies the router pack into
-the selected host Skill roots; repo-harness does not execute its workflows or
-bootstrap its optional analysis/security toolchains during install.
-
 The review scope is the current reviewable diff, not just committed branch
 history: branch diff against the default base, staged changes, unstaged tracked
 changes, and untracked files are all in scope. A timeout or missing peer CLI is
@@ -308,7 +285,7 @@ boundary explicit:
 
 | Capability | Owner | Required for |
 |---|---|---|
-| `herdr_core` (`hc`) | user install (Herdr.app or a herdr-core release) | required, at least the version pinned in the package file `src/core/operator/herdr-core-pin.json`; persistent agent terminals, task sessions, review hosting and the notify relay |
+| `herdr_core` (`hc`) | user tool; `repo-harness install` and `update` install a missing hc from the pin | required, at least the version pinned in the package file `src/core/operator/herdr-core-pin.json`; persistent agent terminals, task sessions, review hosting and the notify relay |
 | `bun` | repo-harness | repo-harness-owned global installs, local dependency install, tests, and runtime execution |
 | `bash` | repo-harness | helper scripts, migration, setup checks, and contract verification wrappers; Git-for-Windows Bash is the Windows platform contract |
 | `npm` | npm registry | registry readbacks, publish gates, and opt-in update checks; not repo-harness-owned global install repair |
@@ -320,13 +297,50 @@ The package file `src/core/operator/herdr-core-pin.json` is the single herdr pin
 The release owns it, because the floor protects the package's hc client code: a
 global install, a local install and a source checkout each read the pin of their
 own code. The file owns the `min_version` floor and the checksum-verified
-`release_assets` entry that CI installs. Install hc through Herdr.app or a
-herdr-core release and verify `hc --version` reports at least that `min_version`.
+`release_assets` entry of each platform. CI and `repo-harness install` and
+`update` install from these entries. When the selected plugins need hc (the
+owner of the `herdr` package in `assets/skill-commands/manifest.json` is
+enabled; today that is core), `install` and `update` do one of these:
+
+| hc on PATH | Action |
+|---|---|
+| Missing | Download the platform asset, check its sha256 and the downloaded `hc --version`, then install it in the layout of the official `install.sh` and `install.ps1` |
+| Below the floor | Run `hc update --version <min_version>` |
+| At or above the floor | No change |
+
+The install layout follows the official installers at
+`https://releases.herdr.dev/core/`. macOS and Linux: `herdr-core` and the `hc`
+symlink in `~/.local/bin`. Windows x64: `herdr-core.exe`, the `conpty`
+directory beside it and the `hc.exe` hard link in
+`%LOCALAPPDATA%\Programs\herdr-core`; `%SystemRoot%\System32\tar.exe` opens
+the zip, because the Git Bash tar cannot. On Windows the step also adds the
+directory to the user PATH as `install.ps1` does: it reads the raw
+`HKCU\Environment` `Path`, keeps its value kind, appends the directory only
+when no entry matches (no case, trailing backslash ignored), then sets and
+clears a user variable so running programs reread the environment. It does not
+use `setx`, which cuts the value at 1024 characters. On macOS and Linux the
+step edits no shell profile: it prints a hint when `~/.local/bin` is not on
+PATH, and `setup check` reports hc missing until the user adds it. On every
+platform, when the directory is not on the PATH of the run, the run puts it
+first on the PATH of its later steps, so the Herdr skill step reads the new hc.
+`repo-harness uninstall` keeps hc and its PATH entry.
+
+The step never overwrites an existing install file. A sha256 mismatch, a failed
+download, an archive without a complete hc (on Windows, `conpty\conpty.dll`), a
+downloaded hc of another version, or a failed `hc update` (for example, an hc
+that Herdr.app or a package manager manages) stops the command and installs
+nothing. A platform with no pin target (for example Windows arm64) stops with
+the platform name and the manual install: Herdr.app or a herdr-core release.
+The install ledger has no hc entry: after install, hc is a user tool, and
+`repo-harness uninstall` keeps it. The download is outside the install
+transaction, so a later failed step does not remove a new hc.
 `check-agent-tooling.sh --strict-readiness` reads the same file and fails if hc is
 missing, unusable, or older than the pin. A repository policy has no hc pin:
 `init` and adoption delete the retired policy key and report it. `setup check`
-projects `runtime.herdr_core`. Repo-harness does not install hc or edit user
-Herdr config. Herdr.app is not a readiness
+projects `runtime.herdr_core` with the repair command: `repo-harness update`
+for a missing hc, `hc update --version <min_version>` below the floor. The
+console shows that state and command, with no install action. Repo-harness does
+not edit user Herdr config. Herdr.app is not a readiness
 requirement: it has no Intel macOS build.
 The root `repo-harness` skill requires the `herdr` skill on Codex and Claude.
 `repo-harness install` and `repo-harness update` put the caller-context policy in

@@ -323,7 +323,7 @@ function LayerSummary({ map, view, layer, pullRequest, onPullRequest, t }: {
     const count = (kind: 'nodes' | 'relations' | 'flows', change: 'added' | 'removed' | 'changed') => changes.model.filter(item => item.kind === kind && item.change === change).length;
     return <div className="architecture-layer-summary" data-layer-summary="changes">
       <p>{t('architecture.layer.changes.summary', {
-        commits: counted(t, changes.commits, 'commit'),
+        commits: counted(t, changes.commits.length, 'commit'),
         files: counted(t, changes.paths.length, 'file', changes.truncated.paths),
         unowned: `${changes.truncated.paths ? '≥' : ''}${changes.unowned_paths.length}`,
       })}{' '}
@@ -360,7 +360,7 @@ function LayerSummary({ map, view, layer, pullRequest, onPullRequest, t }: {
       {flows.state === 'ok'
         ? <p>{t('architecture.layer.violations.flows', { proven: flows.proven, selectors: flows.selectors, unprovable: flows.unprovable.length })}</p>
         : gap('flows', flows)}
-      {anchors.state === 'ok' ? <p>{t('architecture.layer.violations.anchors', { findings: anchors.nodes.reduce((sum, item) => sum + item.findings, 0), citations: anchors.citations })}</p> : gap('anchors', anchors)}
+      {anchors.state === 'ok' ? <p>{t('architecture.layer.violations.anchors', { findings: anchors.nodes.reduce((sum, item) => sum + item.findings.length, 0), citations: anchors.citations })}</p> : gap('anchors', anchors)}
       {dependencies.state === 'ok' ? <p>{t('architecture.layer.violations.dependencies', { count: dependencies.edges.length })}</p> : gap('dependencies', dependencies)}
       {direction}
     </div>;

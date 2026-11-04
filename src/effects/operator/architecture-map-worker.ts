@@ -9,8 +9,9 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { ArchitectureFlowSelectorCheckV1, DependencyConstraintEvaluationV1, NativeContextExportV1, RefImpactV1 } from 'archctx-contracts';
+import type { ArchitectureFlowSelectorCheckV1, DependencyConstraintEvaluationV1, DocsAnchorsReportV1, NativeContextExportV1, RefImpactV1 } from 'archctx-contracts';
 import {
+  ARCHCTX_REQUIRED_VERSION,
   ArchctxClientError,
   decodeArchitectureDebtReport,
   decodeConstraintEvaluation,
@@ -29,6 +30,7 @@ import {
   flowSteps,
   projectArchitectureMap,
   type ArchctxRefusalV1,
+  type ArchitectureChangeCommitV1,
   type ArchitectureChangesLayerV1,
   type ArchitectureDebtItemV1,
   type ArchitectureDecisionsLayerV1,
@@ -47,6 +49,7 @@ import {
   type ArchitectureMapV1,
   type ArchitectureMapWorkerReason,
   type ArchitectureModelChangeV1,
+  type ArchitectureNamespaceType,
   type ArchitecturePullRequestImpactV1,
   type ArchitecturePullRequestSourceV1,
   type ArchitecturePullRequestsLayerV1,
@@ -54,7 +57,7 @@ import {
   type ArchitectureViolationReason,
   type ArchitectureViolationsLayerV1,
 } from '../../core/operator/architecture-map';
-import { isPublicRepoPath, publicDevActivityText } from '../../core/operator/public-text';
+import { isPublicDevActivityText, isPublicRepoPath, publicDevActivityText } from '../../core/operator/public-text';
 import { readCommittedNativeContext } from '../architecture/model-reader';
 import { ARCHITECTURE_VIEW_TIMEOUT_MS, readArchitectureView, resolveArchitecturePaths, type ArchitectureViewArgs } from '../architecture/architecture-read';
 import { gitSpawnSync } from '../git/runner';
@@ -113,10 +116,12 @@ export function readCommitLineCounts(root: string, commit: string): ReadonlyMap<
  * --paths-from`, `deps`, `debt`, `docs anchors`, `flows check` and `constraints check` read the
  * worktree model, and the CodeGraph index covers the working tree, so their
  * answers describe the commit only while HEAD names it and the model, or the
- * whole tree, is clean. null: git could not answer.
+ * whole tree, is clean. `ref` is the branch that HEAD names, with a null name
+ * for a detached HEAD. null: git could not answer.
  */
 export interface CheckoutState {
   readonly head: string | null;
+  readonly ref: { readonly name: string | null } | null;
   readonly modelClean: boolean | null;
   readonly treeClean: boolean | null;
 }
@@ -128,8 +133,11 @@ function clean(root: string, pathspec: readonly string[]): boolean | null {
 
 function readCheckoutState(root: string): CheckoutState {
   const head = git(root, ['rev-parse', '--verify', 'HEAD^{commit}']);
+  // Exit 1 is a detached HEAD.
+  const ref = git(root, ['symbolic-ref', '-q', '--short', 'HEAD']);
   return {
     head: head.status === 0 ? head.stdout.toString('utf8').trim() : null,
+    ref: ref.status === 0 ? { name: ref.stdout.toString('utf8').trim() } : ref.status === 1 ? { name: null } : null,
     modelClean: clean(root, [MODEL_ROOT]),
     treeClean: clean(root, []),
   };
@@ -264,9 +272,25 @@ function readImpact(root: string, args: Extract<ArchitectureViewArgs, readonly [
 }
 
 /**
+ * Each first-parent commit of `base..commit`, newest first, with its subject and
+ * the paths it changed against its first parent. null: git could not answer.
+ */
+function readWindowCommits(root: string, base: string, commit: string): { readonly sha: string; readonly subject: string; readonly paths: readonly string[] }[] | null {
+  const log = git(root, ['log', '--first-parent', '--no-renames', '--name-only', '-z', '--format=%x1e%H%x00%s', `${base}..${commit}`]);
+  if (log.status !== 0) return null;
+  // A record is `<sha>\0<subject>\0`, then `\n` and NUL-terminated paths when the commit changed any.
+  return log.stdout.toString('utf8').split('\x1e').slice(1).map(record => {
+    const [sha = '', subject = '', ...paths] = record.split('\0');
+    if (paths[0]?.startsWith('\n')) paths[0] = paths[0].slice(1);
+    return { sha, subject, paths: paths.filter(path => path !== '') };
+  });
+}
+
+/**
  * Commits on the first-parent chain of `commit` since `since`, and `archctx
  * impact` from the next older commit to `commit`: changed paths with their
- * owners, dependents and model changes from commits. Flow steps use the worktree
+ * owners, dependents and model changes from commits. Each commit names the
+ * owners that the answer gives to its paths. Flow steps use the worktree
  * CodeGraph index; archctx binds those facts to the commit or reports unknown.
  */
 function readChanges(root: string, commit: string, since: string): ArchitectureChangesLayerV1 {
@@ -278,13 +302,20 @@ function readChanges(root: string, commit: string, since: string): ArchitectureC
   if (chain.status !== 0 || lineList(chain.stdout).slice(0, commits).join('\n') !== lineList(today.stdout).join('\n')) return { state: 'unavailable', reason: 'git_read_failed' };
   const base = lineList(chain.stdout)[commits];
   if (base === undefined) return { state: 'unavailable', reason: 'history_starts_today' };
+  const window = readWindowCommits(root, base, commit);
+  if (window === null || window.map(entry => entry.sha).join('\n') !== lineList(today.stdout).join('\n')) return { state: 'unavailable', reason: 'git_read_failed' };
   const impact = readImpact(root, ['impact', '--base', base, '--head', commit, '--json'], { kind: 'refs', base, head: commit });
   if (!impact.ok) return impact.gap;
   const { modelDelta } = impact.report;
   // Two refs always give a known model delta; `unknown` belongs to a path list.
   if (modelDelta.status !== 'known') return ARCHCTX_FAILED;
+  const answer = architectureImpact(impact.report);
+  const owners = new Map(answer.paths.map(entry => [entry.path, entry.owners]));
+  const changed: ArchitectureChangeCommitV1[] = window.map(entry => ({
+    sha: entry.sha, subject: publicDevActivityText(entry.subject), nodes: [...new Set(entry.paths.flatMap(path => owners.get(path) ?? []))],
+  }));
   // The published schema limits `kind` and `change` to the map's values.
-  return { state: 'ok', since, base, commits, model: modelDelta.changes as ArchitectureModelChangeV1[], ...architectureImpact(impact.report) };
+  return { state: 'ok', since, base, commits: changed, model: modelDelta.changes as ArchitectureModelChangeV1[], ...answer };
 }
 
 /** `archctx impact --paths-from` for one open PR's changed files, against the map commit's worktree model. */
@@ -344,16 +375,33 @@ function readDebt(root: string, known: ReadonlySet<string>): ArchitectureViolati
   return { state: 'ok', items };
 }
 
-/** `archctx docs anchors`: a citation it could not check makes the answer incomplete. */
+/** `archctx docs anchors`. */
 function readAnchors(root: string, known: ReadonlySet<string>): ArchitectureViolationsLayerV1['anchors'] {
   const data = archctxData(root, ARCHITECTURE_VIOLATION_READS.anchors);
   if (typeof data === 'string') return { state: 'unavailable', reason: data };
   const report = decoded(decodeDocsAnchorsReport, data);
-  if (report === null) return { state: 'unavailable', reason: 'archctx_failed' };
+  return report === null ? { state: 'unavailable', reason: 'archctx_failed' } : anchorsSection(report, known);
+}
+
+/**
+ * The map's form of a `docs anchors` report: the stale citations of each node.
+ * A citation that archctx could not check makes the answer incomplete. A
+ * document path that the public-path guard refuses is null; citation text is
+ * masked like model prose.
+ */
+export function anchorsSection(report: DocsAnchorsReportV1, known: ReadonlySet<string>): ArchitectureViolationsLayerV1['anchors'] {
   if (report.codeGraph.availability !== 'ready') return { state: 'unavailable', reason: 'code_facts_unavailable' };
   if (report.summary.unchecked > 0) return { state: 'unavailable', reason: 'code_facts_incomplete' };
   if (!report.nodes.every(node => known.has(node.nodeId))) return { state: 'unavailable', reason: 'archctx_failed' };
-  const nodes = report.nodes.filter(node => node.findings.length > 0).map(node => ({ id: node.nodeId, findings: node.findings.length }));
+  const nodes = report.nodes.filter(node => node.findings.length > 0).map(node => ({
+    id: node.nodeId,
+    findings: node.findings.map(({ kind, origin, citation }) => ({
+      kind, origin: origin.kind,
+      path: origin.kind === 'document' && isPublicRepoPath(origin.path) ? origin.path : null,
+      line: origin.kind === 'document' ? origin.line : null,
+      citation: publicDevActivityText(citation.text),
+    })),
+  }));
   return { state: 'ok', citations: report.summary.citations, nodes };
 }
 
@@ -560,7 +608,7 @@ function flowEvidence(nodes: readonly Record_[], selectors: ReadonlySet<string>,
 const publicPath = (path: string | null): string | null => (path !== null && isPublicRepoPath(path) ? path : null);
 
 /** The public node, relation, flow and decision fields of the committed model, redacted before projection. */
-function modelEntities(context: Pick<NativeContextExportV1, 'model' | 'decisions'>, root: string): {
+function modelEntities(context: Pick<NativeContextExportV1, 'model' | 'capabilityProfiles' | 'decisions'>, root: string): {
   readonly nodes: ArchitectureMapNodeV1[];
   readonly relations: ArchitectureMapRelationV1[];
   readonly flows: ArchitectureMapFlowV1[];
@@ -569,13 +617,23 @@ function modelEntities(context: Pick<NativeContextExportV1, 'model' | 'decisions
 } {
   // `publicValue` knows this repository's root; the shared guard masks any other absolute path in model prose.
   const prose = (value: unknown) => publicDevActivityText(string(value) ?? '');
-  const nodes = context.model.nodes.filter(isRecord).map(node => ({
-    id: string(node.id) ?? '', kind: string(node.kind) ?? '', name: prose(node.name), status: string(node.status) ?? '',
-    layer: string(node.layer), parent: string(node.parent), summary: prose(node.summary),
-  }));
+  // A mount path is absolute in its own namespace; one that the prose guard would change is withheld.
+  const unchanged = (value: unknown) => { const path = string(value); return path !== null && isPublicDevActivityText(path) ? path : null; };
+  const domains = new Map(context.capabilityProfiles.map(profile => [profile.nodeId, profile.domain]));
+  const nodes = context.model.nodes.filter(isRecord).map(node => {
+    const id = string(node.id) ?? '';
+    const { namespace, mount } = node;
+    return {
+      id, kind: string(node.kind) ?? '', name: prose(node.name), status: string(node.status) ?? '',
+      layer: string(node.layer), parent: string(node.parent), summary: prose(node.summary), domain: domains.get(id) ?? null,
+      // archctx validated the node schema; a field it lacks fails the map decoder.
+      namespace: isRecord(namespace) ? { type: namespace.type as ArchitectureNamespaceType } : null,
+      mount: isRecord(mount) ? { source: unchanged(mount.source), target: unchanged(mount.target), mode: mount.mode as 'ro' | 'rw', order: mount.order as number } : null,
+    };
+  });
   const relations = context.model.relations.filter(isRecord).map(relation => ({
     id: string(relation.id) ?? '', kind: string(relation.kind) ?? '', source: string(relation.source) ?? '',
-    target: string(relation.target) ?? '', intent: prose(relation.intent),
+    target: string(relation.target) ?? '', intent: prose(relation.intent), protocol: string(relation.protocol) === null ? null : prose(relation.protocol),
   }));
   const decisions = {
     state: 'ok',
@@ -617,6 +675,8 @@ export function collectArchitectureMap(
       : { id: repositoryId, ok: false, reason: refusal.reason, code: refusal.code, reason_code: refusal.reason_code };
   }
   const { commit, context } = committed;
+  // The map has no gap for the branch name, so a failed read fails the cycle.
+  if (before.ref === null) throw new Error('git symbolic-ref');
   const { nodes, relations, flows, flow_evidence: evidence, decisions } = modelEntities(context, realpathSync(path));
   const known = new Set(nodes.map(node => node.id));
   const capabilities = new Set(nodes.filter(node => node.kind === 'capability').map(node => node.id));
@@ -634,7 +694,7 @@ export function collectArchitectureMap(
   } as const;
   const after = readCheckoutState(path);
   const snapshot = projectArchitectureMap({
-    repository_id: repositoryId, commit, collected_at: collectedAt, nodes, relations, flows, flow_evidence: evidence,
+    repository_id: repositoryId, commit, head_ref: before.ref.name, archctx_version: ARCHCTX_REQUIRED_VERSION, collected_at: collectedAt, nodes, relations, flows, flow_evidence: evidence,
     layer_order: context.model.layers === undefined ? { state: 'unavailable', reason: 'model_layers_undeclared' } : { state: 'ok', layers: [...context.model.layers] },
     ...recheckCheckout(commit, before, after, read),
     layers: { changes, ...recheckLayers(commit, before, after, layers), tests: { state: 'unavailable', reason: 'tests_pending' }, decisions },

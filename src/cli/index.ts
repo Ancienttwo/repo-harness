@@ -55,6 +55,7 @@ import { buildOperatorCommand } from './commands/operator';
 import { buildWorktreesCommand } from './commands/worktrees';
 import { buildSeatsCommand } from './commands/seats';
 import { buildCatchUpCommand } from './commands/catch-up';
+import { buildQuotaCommand } from './commands/quota';
 import { buildArchitectureDebtCommand } from './commands/architecture-debt';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { buildRetentionCommand, type RetentionPorts } from './commands/retention';
@@ -66,6 +67,7 @@ import { TASK_INBOX_V2_RELATIVE_PATH } from '../core/fleet/task-inbox-layout';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
   GLOBAL_RULES_REFRESH_STEP,
+  HERDR_CORE_STEP,
   MIN_BUN_VERSION,
   agentFleetVerified,
   bunVersionIsSupported,
@@ -215,7 +217,6 @@ interface GlobalRuntimeCommandOptions {
   syncSkill?: boolean;
   hooks?: string | false;
   externalSkills?: boolean;
-  withReverseSkill?: boolean;
   withObsidianSkills?: boolean;
   codegraph?: boolean;
   brainRoot?: string;
@@ -449,7 +450,6 @@ export function runCandidateRuntimeReconciliation(
     syncSkill: request.sync_skill,
     hostAdapters: request.host_adapters,
     externalSkills: request.external_skills,
-    reverseSkill: request.reverse_skill,
     obsidianSkills: request.obsidian_skills,
     codegraph: request.codegraph,
     brainRoot: request.brain_root,
@@ -468,6 +468,9 @@ export function runCandidateRuntimeReconciliation(
     // did not sync must stay visible with their next action.
     const globalRules = runtime.steps.find(step => step.step === GLOBAL_RULES_REFRESH_STEP);
     if (globalRules) console.error(`[runtime] ${globalRules.status}: ${globalRules.step} - ${globalRules.detail}`);
+    // The hc step result carries its PATH hint when the install dir is not on PATH.
+    const herdrCore = runtime.steps.find(step => step.step === HERDR_CORE_STEP);
+    if (herdrCore) console.error(`[runtime] ${herdrCore.status}: ${herdrCore.step} - ${herdrCore.detail}`);
 
     const adapterDigests = request.host_adapters
       ? assertInstalledAdapterProjection(request.target, env)
@@ -680,7 +683,6 @@ async function runGlobalRuntimeBootstrap(
     syncSkill: rawOpts.syncSkill !== false,
     hostAdapters: rawOpts.hooks !== false,
     externalSkills,
-    reverseSkill: rawOpts.withReverseSkill === true,
     obsidianSkills: rawOpts.withObsidianSkills === true,
     codegraph,
     brainRoot: rawOpts.brainRoot,
@@ -729,7 +731,6 @@ export function buildProgram(): Command {
     .option('--no-sync-skill', 'Skip refreshing repo-harness skill aliases under host skill roots')
     .option('--no-hooks', 'Skip global hook adapter installation during full runtime install')
     .option('--no-external-skills', 'Skip mutable third-party Waza and Mermaid skill bootstrap')
-    .option('--with-reverse-skill', 'Explicitly install the high-risk reverse-skill-router after independent authorization review')
     .option('--with-obsidian-skills', 'Explicitly install the pinned obsidian-markdown and obsidian-cli companion Skills')
     .option('--no-codegraph', 'Skip CodeGraph CLI/MCP configuration')
     .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
@@ -882,7 +883,6 @@ export function buildProgram(): Command {
     .option('--no-sync-skill', 'Skip refreshing repo-harness skill aliases under host skill roots')
     .option('--no-hooks', 'Skip global hook adapter installation')
     .option('--with-external-skills', 'Also refresh mutable third-party Waza and Mermaid providers')
-    .option('--with-reverse-skill', 'Explicitly install the high-risk reverse-skill-router after independent authorization review')
     .option('--with-obsidian-skills', 'Explicitly install or verify the pinned obsidian-markdown and obsidian-cli companion Skills')
     .option('--no-external-skills', 'Do not refresh third-party Waza and Mermaid providers (default)')
     .option('--configure-codegraph', 'Refresh CodeGraph CLI/MCP (default during update)')
@@ -901,7 +901,6 @@ export function buildProgram(): Command {
       syncSkill?: boolean;
       hooks?: string | false;
       withExternalSkills?: boolean;
-      withReverseSkill?: boolean;
       withObsidianSkills?: boolean;
       externalSkills?: boolean;
       codegraph?: boolean;
@@ -940,7 +939,6 @@ export function buildProgram(): Command {
         syncSkill: rawOpts.syncSkill !== false,
         hostAdapters: rawOpts.hooks !== false,
         externalSkills: rawOpts.externalSkills === false ? false : rawOpts.withExternalSkills === true ? true : undefined,
-        reverseSkill: rawOpts.withReverseSkill === true,
         obsidianSkills: rawOpts.withObsidianSkills === true,
         codegraph: rawOpts.codegraph === false ? false : rawOpts.configureCodegraph === true ? true : undefined,
         brainRoot: rawOpts.brainRoot,
@@ -1054,6 +1052,7 @@ export function buildProgram(): Command {
   program.addCommand(buildOperatorCommand());
   program.addCommand(buildWorktreesCommand());
   program.addCommand(buildCatchUpCommand());
+  program.addCommand(buildQuotaCommand());
   program.addCommand(architectureCommand(buildRefactorCommand()));
   program.addCommand(architectureCommand(buildArchitectureProjectionCommand()));
   program.addCommand(architectureCommand(buildArchitectureDebtCommand()));

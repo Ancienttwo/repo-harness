@@ -48,6 +48,8 @@ import { hashManagedTree } from '../src/effects/managed-tree';
 import { buildManagedHooks } from '../src/cli/installer/managed-entries';
 import { runUserUninstall } from '../src/cli/installer/uninstall';
 import { copyUpgradeFixture } from './helpers/upgrade-fixtures';
+import { writeFakeHc } from './helpers/fake-hc';
+import { HC_MIN_VERSION } from '../src/core/operator/herdr-pin';
 
 const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -805,11 +807,9 @@ describe('install selection', () => {
       for (const facade of ['repo-harness-check', 'repo-harness-product', 'repo-harness-ship']) {
         expect(paths).toContain(join(env.HOME!, host, 'skills', facade));
       }
-      expect(paths).toContain(join(env.HOME!, host, 'skills', 'reverse-skill-router'));
       expect(paths).toContain(join(env.HOME!, host, 'skills', 'obsidian-markdown'));
       expect(paths).toContain(join(env.HOME!, host, 'skills', 'obsidian-cli'));
     }
-    expect(paths).toContain(join(env.HOME!, '.agents', 'skills', 'reverse-skill-router'));
     expect(paths).toContain(join(env.HOME!, '.agents', 'skills', 'obsidian-markdown'));
     expect(paths).toContain(join(env.HOME!, '.agents', 'skills', 'obsidian-cli'));
   }));
@@ -953,7 +953,7 @@ describe('install selection', () => {
       writeFileSync(join(bin, 'bun'), '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.4.0; fi\nexit 0\n', { mode: 0o755 });
       writeFileSync(join(bin, 'bunx'), '#!/bin/sh\nfor s in think hunt check health mermaid; do mkdir -p "$HOME/.agents/skills/$s"; echo "# $s" > "$HOME/.agents/skills/$s/SKILL.md"; done\n', { mode: 0o755 });
       writeFileSync(join(bin, 'curl'), '#!/bin/sh\n[ -n "$FAKE_CURL_FAIL" ] && { echo "fixture HTTP 503" >&2; exit 22; }\nwhile [ $# -gt 0 ]; do case "$1" in --output) out="$2"; shift;; https://*) url="$1";; esac; shift; done\necho "# upstream ${url##*/}" > "$out"\n', { mode: 0o755 });
-      writeFileSync(join(bin, 'hc'), '#!/bin/sh\nprintf "%s\\n" "# hc manual (herdr-core)" "" "\\`\\$HC_TERMINAL_ID\\` is your address."\n', { mode: 0o755 });
+      writeFakeHc(bin);
     }
     const run = spawnSync(process.execPath, [CLI, 'install', '--target', 'codex', '--no-cli', '--no-sync-skill', '--no-codegraph', '--json'], {
       cwd: ROOT, env: { ...env, ...extraEnv, PATH: `${bin}:/bin:/usr/bin`, REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') }, encoding: 'utf-8',
@@ -1023,7 +1023,8 @@ describe('install selection', () => {
       writeFileSync(join(bin, 'bun'), '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.4.0; fi\nexit 0\n', { mode: 0o755 });
       writeFileSync(join(bin, 'bunx'), '#!/bin/sh\nfor s in think hunt check health mermaid; do mkdir -p "$HOME/.agents/skills/$s"; echo "# $s" > "$HOME/.agents/skills/$s/SKILL.md"; done\n', { mode: 0o755 });
       writeFileSync(join(bin, 'curl'), '#!/bin/sh\nwhile [ $# -gt 0 ]; do case "$1" in --output) out="$2"; shift;; https://*) url="$1";; esac; shift; done\necho "# upstream ${url##*/}" > "$out"\n', { mode: 0o755 });
-      const hc = (manual: string) => writeFileSync(join(bin, 'hc'), `#!/bin/sh\nprintf "%s\\n" "# hc manual (herdr-core)" "${manual}" "\\\`\\$HC_TERMINAL_ID\\\` is your address."\n`, { mode: 0o755 });
+      // hc answers --version as the real binary does; the install step reads it before --skill.
+      const hc = (manual: string) => writeFileSync(join(bin, 'hc'), `#!/bin/sh\n[ "$1" = --version ] && { echo "hc ${HC_MIN_VERSION}"; exit 0; }\nprintf "%s\\n" "# hc manual (herdr-core)" "${manual}" "\\\`\\$HC_TERMINAL_ID\\\` is your address."\n`, { mode: 0o755 });
       const runEnv = { ...env, PATH: `${bin}:${env.PATH}`, REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') };
       // The 0.25.x Herdr step created the Pi root and its herdr copy; the install then refreshes a newer manual.
       hc('old manual');

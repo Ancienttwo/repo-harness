@@ -1,6 +1,10 @@
 {
   "min_version": "0.1.17",
   "release_assets": {
+    "linux-aarch64": {
+      "url": "https://releases.herdr.dev/core/0.1.17/herdr-core-linux-aarch64.tar.gz",
+      "sha256": "3a37a454ec63494cf4306db26481fe9db96673d888723701d24f8a992ae8ab8c"
+    },
     "linux-x86_64": {
       "url": "https://releases.herdr.dev/core/0.1.17/herdr-core-linux-x86_64.tar.gz",
       "sha256": "82ec44043f6894bfdb716b979b87cda43fd7fa46b0104e7b7bd93e64d1a9b877"
@@ -12,6 +16,10 @@
     "macos-x86_64": {
       "url": "https://releases.herdr.dev/core/0.1.17/herdr-core-macos-x86_64.tar.gz",
       "sha256": "e2dc3211edb1f1c77d0e73dd76c1426636d71050f34a5303916a56d363d7062b"
+    },
+    "windows-x86_64": {
+      "url": "https://releases.herdr.dev/core/0.1.17/herdr-core-windows-x86_64.zip",
+      "sha256": "a212b69db0efb808882683f15e5da45ab9606da7bcc54b97b29ed4fa540f5491"
     }
   }
 }

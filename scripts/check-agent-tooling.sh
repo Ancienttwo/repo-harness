@@ -823,11 +823,14 @@ function herdrCoreCapability() {
   const capability = commandCapability("hc", "persistent agent terminals, task sessions, review hosting and notify relay through herdr-core", "platform-runtime", true);
   capability.min_version = HERDR_CORE_MIN_VERSION;
   capability.min_version_source = HERDR_CORE_PIN_SOURCE;
-  if (capability.path) {
+  // The repair command only: `install` and `update` install a missing hc from the pin.
+  if (!capability.path) capability.command = "repo-harness update";
+  else {
     try {
       capability.version = execFileSync(capability.path, ["--version"], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "pipe"] }).trim();
       const reported = /^hc (\d+\.\d+\.\d+)$/.exec(capability.version)?.[1] ?? null;
       if (!reported || !versionAtLeast(reported, HERDR_CORE_MIN_VERSION)) capability.status = "unavailable";
+      if (reported && !versionAtLeast(reported, HERDR_CORE_MIN_VERSION)) capability.command = `hc update --version ${HERDR_CORE_MIN_VERSION}`;
     } catch (_) { capability.status = "unavailable"; }
   }
   return capability;
