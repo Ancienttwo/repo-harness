@@ -22,6 +22,8 @@ import { degradedSetup, loadingSetup, readySetup } from './setup';
 import { busyWorktrees, cleanupPlanFixture, degradedWorktrees, emptyWorktrees, worktreeCleanupFixture } from './worktrees';
 import { readyRepairIssue, readyTests } from './tests';
 import { settingsStores } from './settings';
+import { busyQuota, degradedQuota } from './quota';
+import type { QuotaReader } from '../quota';
 import { decodeArchitectureMap } from '../../core/operator/architecture-map';
 import type { ArchitectureMapRead } from '../ArchitectureMap';
 // A recorded `operator serve` map of this repository: the model, git line counts and archctx import counts.
@@ -101,6 +103,9 @@ export function fixtureProps(name: string): OperatorAppProps {
   // degraded: the model is served with no line or import counts and no layer data, and archctx finds no committed model
   // in the other repositories; empty: the first collection has not finished.
   const noCodeFacts = { state: 'unavailable', reason: 'code_facts_unavailable' } as const;
+  // busy: one tight account; empty: the quota read failed; degraded: an unknown and an exhausted account.
+  const quota: QuotaReader = () => Promise.resolve(fixture === 'empty' ? { state: 'unavailable', reason: 'unreachable' }
+    : { state: 'ok', settings: fixture === 'busy' ? busyQuota(now) : degradedQuota(now) });
   const map = (repositoryId: string): ArchitectureMapRead => fixture === 'empty' ? { state: 'unavailable', reason: 'architecture_map_pending' }
     : repositoryId !== HARNESS_ID ? (fixture === 'degraded'
       ? { state: 'unavailable', reason: 'archctx_error', code: 'AC_MODEL_ADOPTION_REQUIRED', reason_code: 'native-context-model-missing' }
@@ -169,6 +174,7 @@ export function fixtureProps(name: string): OperatorAppProps {
     writeAgentsSettings: agentsSettings.write,
     readSeatsSettings: seatsSettings.read,
     writeSeatsSettings: seatsSettings.write,
+    readQuota: quota,
     readTests: repositoryId => Promise.resolve(tests(repositoryId)),
     // busy: a tree with a dirty file, a diagram and a refused symlink; empty: no collection yet; degraded: the reader is down.
     readDocsTree: repositoryId => docsAnswer(answer(fixture === 'busy' ? docsTreeAnswer(repositoryId, now) : fixture === 'empty' ? docsPendingAnswer

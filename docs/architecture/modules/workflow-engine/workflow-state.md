@@ -157,7 +157,7 @@ Effective State 的决定、冻结不变量与 P2 解析轨迹已并入本章。
 
 ### 3.1 必须保持的不变量
 
-1. **GitHub issue/PR 拥有当前任务身份。** Effective State 投影 Git、worktree 和 capability 事实。`tasks/current.md` 是可替换的读模型，不能把权威反馈回解析。它的字节可以改变自身 source hash/freshness、`state_revision`/`state_version` 和 `stale_sources`，但不能改变 `authority_revision` 或 task selection。Handoff/resume 指针和 review/verification evidence 是 recovery 或 acceptance 输入，不授予任务所有权。Effective State 没有持久化的 JSON 读模型，旧 `.ai/harness/state/effective.json` 没有 reader。
+1. **GitHub issue/PR 拥有当前任务身份。** Effective State 投影 Git、worktree 和 capability 事实。Handoff/resume 指针和 review/verification evidence 是 recovery 或 acceptance 输入，不授予任务所有权。Effective State 没有持久化的 JSON 读模型，旧 `.ai/harness/state/effective.json` 没有 reader。
 2. **纯核心不做 IO。** `src/core/state`、`src/core/workflow` 与 `src/core/capabilities` 是一个纯核心（`scripts/check-state-boundaries.ts:36-40`）。它们不能导入 `fs`、`child_process` 等运行时模块（`:106-130`），也不能导入 `src/cli` 或 `src/effects`（`:277`）。门禁命令是 `bun run check:state-boundaries`。
 3. **版本 owner 是唯一的持久化输出。** `commitStateVersionAfter` 在 Git common dir 的锁内先重读权威源哈希，再写版本记录。revision 未变时它不写文件（`src/effects/state/git-state-version-store.ts:125-143`）。写入失败不会暴露已消耗的版本号。
 4. **写路径在仓库状态锁内串行。** 生产代码里只有 `repo-harness state resolve` 调用 `resolveEffectiveState`。它先取 `.ai/harness/state/effective.lock`（`src/effects/state/state-lock.ts:3-7`）。锁目录从 canonical repository root 起逐级创建并验证；任何 symlink、非目录或 identity 变化都 fail closed。artifact 路径必须同时按 POSIX 与 Win32 语法保持在仓库内。源在稳定性循环之后又变化时，整轮只重试一次，第二次仍不一致就抛 `StateResolutionUnstableError`（`src/effects/state/resolve-effective-state.ts:923-951`）。
@@ -228,7 +228,7 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 - **primary 的跨 capability 依赖。** `resolve-effective-state.ts:6-7` 导入 `scripts/acceptance-receipt.ts` 与 `src/effects/evidence/verification-execution.ts`。集成按边数决定方向。acceptance-review → workflow-state 有 38 条边（主要是 `readonly-observation.ts`），反向只有 7 条。模型声明 acceptance-review → workflow-state。primary → acceptance-review 是回边，不声明。`verification-execution.ts` 归 evidence-ledger，所以没有 workflow-state → evals-checks 的边。模型声明 primary → evidence-ledger。
 - **workflow-state 不导入 publication（#907）。** `observeProviderBranchMergeCommit` 只被 worktree prune 调用，它在 `src/effects/state/coordination-provider-merge.ts`。模型中没有 `relation.workflow-state.imports.publication`。
 - **coordination-plane footprint 用文件名 glob。** 它包含 `src/effects/state/coordination-*.ts` 与 `src/core/worktree-*`。新增同名模式的文件自动进入组件。
-- **到 evidence-ledger 的方向（集成决定）。** 本 capability → evidence-ledger 有 28 条边（主要是 `atomic-append.ts`）。evidence-ledger → 本 capability 有 21 条边（`readonly-observation.ts` 与 `artifact-parsers.ts`）。模型声明 coordination-plane、continuation-ledger 与 primary → evidence-ledger。反向记在 evidence-ledger 的 Backlog。#907 把 `atomic-append.ts` 与 `readonly-observation.ts` 移到 execution-primitives。现在 `src/effects/state` 不导入 `src/effects/evidence`；evidence → state 只剩 `src/effects/evidence/recovery-materializer.ts:29` 导入 `resolveHarnessPaths`。这些 relation 需要按新边复审。
+- **到 evidence-ledger 的方向（集成决定）。** 本 capability → evidence-ledger 有 28 条边（主要是 `atomic-append.ts`）。evidence-ledger → 本 capability 有 21 条边（`readonly-observation.ts` 与 `artifact-parsers.ts`）。模型声明 coordination-plane、continuation-ledger 与 primary → evidence-ledger。反向记在 evidence-ledger 的 Backlog。#907 把 `atomic-append.ts` 与 `readonly-observation.ts` 移到 execution-primitives。现在 `src/effects/state` 不导入 `src/effects/evidence`。这些 relation 需要按新边复审。
 
 ## 2026-10-18: Slice C snapshot boundary
 

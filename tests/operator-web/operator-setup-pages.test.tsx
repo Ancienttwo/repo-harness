@@ -17,6 +17,8 @@ import { busyWorktrees } from '../../src/operator-web/fixtures/worktrees';
 import { decodeWorktrees } from '../../src/core/operator/worktrees';
 import { degradedSetup, loadingSetup, readySetup } from '../../src/operator-web/fixtures/setup';
 import { registryOf } from '../../src/operator-web/fixtures';
+import { busyQuota, degradedQuota } from '../../src/operator-web/fixtures/quota';
+import type { QuotaReader } from '../../src/operator-web/quota';
 
 const REGISTRY = registryOf(['repo-harness', 'repo-console']);
 import { parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
@@ -51,6 +53,7 @@ function props(setup: SetupSnapshotV2 | null, overrides: Partial<OperatorAppProp
     readBotAccess: () => new Promise(() => {}),
     readAgentsSettings: () => new Promise(() => {}),
     readSeatsSettings: () => new Promise(() => {}),
+    readQuota: () => new Promise(() => {}),
     readTests: async () => ({ state: 'unavailable', reason: 'tests_pending' }),
     ...(setup ? { initialSetup: setup, readSetup: async () => setup } : {}),
     initialWorktrees: worktrees, readWorktrees: async () => worktrees,
@@ -261,6 +264,66 @@ describe('Agents page', () => {
     expect(row.querySelector('pre')).toBeNull();
     await act(async () => row.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click());
     expect(row.querySelector('pre')?.textContent).toContain('codex repo-harness-ship: missing');
+  });
+});
+
+describe('Agents page quota section', () => {
+  const account = (id: string) => document.querySelector<HTMLElement>(`[data-quota-account="${id}"]`)!;
+  const inAccount = (id: string, selector: string) => account(id).querySelector(selector)?.textContent ?? '';
+
+  test('busy: each account shows its state, windows, plan and credits as the report gives them; only tight takes the attention style', async () => {
+    await mount('#agents', props(readySetup(NOW), { readQuota: async () => ({ state: 'ok', settings: busyQuota(NOW) }) }));
+    expect(all('[data-quota-account]').map(row => [row.getAttribute('data-quota-account'), row.getAttribute('data-quota-attention')]))
+      .toEqual([['claude', 'true'], ['chatgpt', 'false']]);
+    expect(account('claude').querySelector('[data-quota-state]')!.getAttribute('data-quota-state')).toBe('tight');
+    expect(account('claude').querySelector('[data-quota-state]')!.className).toContain('text-kumo-warning');
+    expect(inAccount('claude', '[data-quota-window="seven_day"] [data-quota-used]')).toBe('88% used');
+    expect(inAccount('claude', '[data-quota-window="seven_day"] [data-quota-pace]')).toBe('pace +5.9');
+    expect(inAccount('claude', '[data-quota-window="seven_day"]')).toContain('7 d');
+    expect(account('claude').querySelector('[data-quota-window="seven_day"] [data-quota-resets]')!.getAttribute('data-quota-resets'))
+      .toBe(busyQuota(NOW).accounts[0]!.windows[1]!.resets_at);
+    expect(inAccount('claude', '[data-quota-window="five_hour"] [data-quota-pace]')).toBe('pace -19');
+    expect(account('chatgpt').querySelector('[data-quota-state]')!.getAttribute('data-quota-state')).toBe('normal');
+    expect(inAccount('chatgpt', '[data-quota-window="primary"] [data-quota-state]')).toBe('Surplus');
+    expect(inAccount('chatgpt', '[data-quota-codex]')).toBe('Plan plus · Credits 12.50');
+    expect(account('chatgpt').querySelector('[data-quota-reason]')).toBeNull();
+  });
+
+  test('degraded: unknown and exhausted take the attention style; an unknown account and an absent window show their reasons', async () => {
+    await mount('#agents', props(readySetup(NOW), { readQuota: async () => ({ state: 'ok', settings: degradedQuota(NOW) }) }));
+    expect(all('[data-quota-account]').map(row => [row.getAttribute('data-quota-account'), row.getAttribute('data-quota-attention')]))
+      .toEqual([['claude', 'true'], ['chatgpt', 'true']]);
+    expect(account('claude').querySelector('[data-quota-state]')!.getAttribute('data-quota-state')).toBe('unknown');
+    expect(inAccount('claude', '[data-quota-reason]')).toBe('no capture');
+    expect(account('claude').querySelector('[data-quota-window]')).toBeNull();
+    expect(account('chatgpt').querySelector('[data-quota-state]')!.className).toContain('text-kumo-danger');
+    expect(inAccount('chatgpt', '[data-quota-window="primary"] [data-quota-reason]')).toBe('primary absent');
+    expect(account('chatgpt').querySelector('[data-quota-window="primary"] [data-quota-used]')).toBeNull();
+    expect(inAccount('chatgpt', '[data-quota-window="secondary"] [data-quota-used]')).toBe('97% used');
+    expect(inAccount('chatgpt', '[data-quota-credits]')).toBe('No credits');
+  });
+
+  test('the page reads once when Agents opens and once per Refresh; a failed read is unavailable with its reason and no rows', async () => {
+    const answers: Awaited<ReturnType<QuotaReader>>[] = [
+      { state: 'unavailable', reason: 'unreachable' },
+      { state: 'ok', settings: busyQuota(NOW) },
+      { state: 'unavailable', reason: 'settings_invalid' },
+    ];
+    let reads = 0;
+    await mount('', props(readySetup(NOW), { readQuota: async () => answers[reads++]! }));
+    expect(reads).toBe(0);
+    await act(async () => navLink('agents').click());
+    expect(reads).toBe(1);
+    expect(document.querySelector('[data-quota-unavailable]')!.getAttribute('data-quota-unavailable')).toBe('unreachable');
+    expect(text('[data-quota-unavailable]')).toContain('Reason: the operator service returned no quota report. Refresh to read again.');
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-quota-refresh]')!.click());
+    expect(reads).toBe(2);
+    expect(all('[data-quota-account]')).toHaveLength(2);
+    await act(async () => navLink('skills').click());
+    await act(async () => navLink('agents').click());
+    expect(reads).toBe(3);
+    expect(all('[data-quota-account]')).toHaveLength(0);
+    expect(text('[data-quota-unavailable]')).toContain('the quota report failed validation');
   });
 });
 

@@ -23,6 +23,8 @@ import {
   type AgentsSettingsRead,
   type AgentsSettingsWrite,
 } from '../../src/operator-web/settings';
+import { fetchQuota } from '../../src/operator-web/quota';
+import { busyQuota } from '../../src/operator-web/fixtures/quota';
 
 let root: Root | null = null;
 let window: Window;
@@ -99,7 +101,7 @@ function props(route: ReturnType<typeof server>, locale: OperatorLocale = 'en'):
     readNotifyStatus: () => new Promise(() => {}),
     readAgentsSettings: route.read, writeAgentsSettings: route.write,
     // The setup check stays pending, so every runtime shows in the agent settings list below Hosts.
-    readSetup: () => new Promise(() => {}), readSeatsSettings: () => new Promise(() => {}),
+    readSetup: () => new Promise(() => {}), readSeatsSettings: () => new Promise(() => {}), readQuota: () => new Promise(() => {}),
   };
 }
 
@@ -415,14 +417,14 @@ describe('settings page', () => {
     expect(document.body.textContent).toContain(locale === 'en' ? 'It is read-only except the Agents page' : '除了 Agents 页和 Worktree 页，它是只读的。');
   });
 
-  test.each([...FIXTURE_NAMES])('the %s fixture renders Hosts, Subagents and Seats in that order on the Agents page', async name => {
+  test.each([...FIXTURE_NAMES])('the %s fixture renders Hosts, Subagents, Seats and Quota in that order on the Agents page', async name => {
     await mount(fixtureProps(name));
     await settle();
     expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('agents');
     expect(document.querySelector('.workspace-nav a[data-workspace="agents"]')?.getAttribute('aria-current')).toBe('page');
     // empty: the setup check has not finished, so the Subagents list waits for it.
-    expect(all('main h2[id]').map(heading => heading.id).filter(id => ['setup-hosts-heading', 'setup-fleet-heading', 'agents-seats-heading'].includes(id)))
-      .toEqual(name === 'empty' ? ['setup-hosts-heading', 'agents-seats-heading'] : ['setup-hosts-heading', 'setup-fleet-heading', 'agents-seats-heading']);
+    expect(all('main h2[id]').map(heading => heading.id).filter(id => ['setup-hosts-heading', 'setup-fleet-heading', 'agents-seats-heading', 'agents-quota-heading'].includes(id)))
+      .toEqual(name === 'empty' ? ['setup-hosts-heading', 'agents-seats-heading', 'agents-quota-heading'] : ['setup-hosts-heading', 'setup-fleet-heading', 'agents-seats-heading', 'agents-quota-heading']);
     expect(document.querySelector('[data-agents-section="seats"] [data-seats-page]')).not.toBeNull();
   });
 });
@@ -463,5 +465,23 @@ describe('settings transport', () => {
     expect(await fetchAgentsSettings(signal)).toEqual({ state: 'unavailable', reason: 'settings_invalid' });
     stub(() => { throw new TypeError('network'); });
     expect(await fetchAgentsSettings(signal)).toEqual({ state: 'unavailable', reason: 'unreachable' });
+  });
+
+  test('GET quota returns the served report; a busy or invalid refusal and no answer are unreachable; a body that fails the decoder is settings_invalid', async () => {
+    const signal = new AbortController().signal;
+    const report = busyQuota(NOW);
+    const refusal = (code: string, status: number) => () => new Response(JSON.stringify({ error: { code, message: 'x', next_action: 'y' } }), { status });
+    const cases: [() => Response, Awaited<ReturnType<typeof fetchQuota>>][] = [
+      [() => new Response(JSON.stringify(report), { status: 200 }), { state: 'ok', settings: report }],
+      [refusal('quota_busy', 503), { state: 'unavailable', reason: 'unreachable' }],
+      [refusal('quota_invalid', 502), { state: 'unavailable', reason: 'unreachable' }],
+      [() => { throw new TypeError('network'); }, { state: 'unavailable', reason: 'unreachable' }],
+      [() => new Response(JSON.stringify({ ...report, protocol: 'repo-harness.quota.v0' }), { status: 200 }), { state: 'unavailable', reason: 'settings_invalid' }],
+    ];
+    for (const [respond, expected] of cases) {
+      const { calls } = stub(respond);
+      expect(await fetchQuota(signal)).toEqual(expected);
+      expect(calls[0]!.url).toBe('/api/v1/quota');
+    }
   });
 });

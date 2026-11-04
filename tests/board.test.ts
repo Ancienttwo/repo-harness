@@ -16,6 +16,7 @@ import { githubRemoteRepository } from '../src/core/operator/docs';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
 import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
 import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herdr-core';
+import { ADVISOR_TRANSCRIPT_LINE_WITHHELD, AdvisorSeatError, advisorSeatSendFailure, advisorTranscriptLines, decodeAdvisorSeatTranscript, readAdvisorSeat, sendToAdvisorSeat } from '../src/core/board/advisor-seat';
 import { decodeBoardParents, type BoardParentsV1 } from '../src/core/board/parents';
 import { BoardSourceError } from '../src/core/board/source';
 import { HC_MIN_VERSION } from '../src/core/operator/herdr-pin';
@@ -127,8 +128,9 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
   expect(board.daily_run).toMatchObject({ status: 'observed', conclusion: 'failure', open_repair_issues: [] });
   expect(board.tooling).toEqual({ hc: { status: 'observed', version: '0.1.17', min_version: HC_MIN_VERSION }, herdr_app: { status: 'not_pinned' } });
   expect(board.execution.status === 'observed' && board.execution.terminals.map(terminal => terminal.seat_status === 'observed'
-    ? [terminal.address, terminal.seat, terminal.issue, terminal.status] : [terminal.address, terminal.reason])).toEqual([
-    ['t1', 'worker', 1476, 'blocked'], ['t2', 'worker', 1475, 'done'], ['t3', 'orchestrator', null, 'idle'], ['t4', 'seat_label_missing'],
+    ? [terminal.address, terminal.seat, terminal.issue, terminal.status, terminal.agent] : [terminal.address, terminal.reason, terminal.agent])).toEqual([
+    ['t1', 'worker', 1476, 'blocked', 'codex'], ['t2', 'worker', 1475, 'done', 'claude-code'],
+    ['t3', 'orchestrator', null, 'idle', null], ['t4', 'seat_label_missing', 'sleep'],
   ]);
   // One hc core holds seats of two repositories with parent #1474; each board reads only its own repository id.
   const foreign = replay({ parent: (data) => { data.repository.databaseId = 987654321; } });
@@ -431,9 +433,13 @@ const terminals = JSON.parse(process.env.FAKE_TERMINALS);
 const address = args.at(-1);
 const out = value => console.log(JSON.stringify(value));
 if (args[0] === 'get') out({ address, state: 'live', turn: 1, labels: { 'repo-harness.seat': 'x' }, ...terminals[address] });
+else if (args[0] === 'send' && process.env.FAKE_SEND_FAIL) { process.stderr.write(JSON.stringify({ error: { kind: 'blocked', message: 'blocked' } })); process.exit(9); }
 else if (args[0] === 'send') out({ started: true, turn: 2 });
+else if (args[0] === 'read') out(JSON.parse(process.env.FAKE_READ));
 else if (args[0] === 'wait') out({ terminal: address, turn: 2, ...JSON.parse(process.env.FAKE_WAITS)[address] });
-else if (args[0] === 'ls') out({ terminals: JSON.parse(process.env.FAKE_LS) });
+// As the live core: ls --label keeps the rows whose labels carry every pair.
+else if (args[0] === 'ls') out({ terminals: JSON.parse(process.env.FAKE_LS).filter(row => args.every((arg, at) => args[at - 1] !== '--label'
+  || (terminals[row.address]?.labels ?? {})[arg.slice(0, arg.indexOf('='))] === arg.slice(arg.indexOf('=') + 1))) });
 else if (args[0] === 'run') out({ address: 't20', state: 'live' });
 else process.exit(2);
 `;
@@ -452,7 +458,7 @@ function watchHc(env: Json = {}) {
 test('watch window: idle sends at once, blocked waits, working sends at window end, and the advisor cap reads the log', async () => {
   const board = replay();
   const seat = (address: string, seatName: string, status: string | null) =>
-    ({ address, name: null, state: 'live', status, status_kind: null, status_ms: null, turn: 1, seat_status: 'observed', seat: seatName, issue: null, pr: null }) as BoardTerminalV1;
+    ({ address, name: null, agent: null, state: 'live', status, status_kind: null, status_ms: null, turn: 1, seat_status: 'observed', seat: seatName, issue: null, pr: null }) as BoardTerminalV1;
   const terminals = [seat('t1', 'worker', 'working'), seat('t3', 'orchestrator', 'idle'), seat('t6', 'orchestrator', 'blocked'),
     seat('t7', 'orchestrator', 'blocked'), seat('t8', 'orchestrator', 'working'), seat('t9', 'advisor', 'done'), seat('t10', 'orchestrator', 'blocked'),
     seat('t11', 'orchestrator', 'blocked')];
@@ -737,4 +743,75 @@ test('migrate-dependencies stops before any write on an unparsable line, a decla
   // --plan <digest> without --write is refused too.
   expect(stopOf(() => flags.command({ write: false, plan: checked.digest }))).toMatchObject({ code: 'plan_without_write' });
   expect([flags.calls(), flags.writes]).toEqual([0, []]);
+});
+
+test('advisor seat: plain text reaches only the one live advisor terminal of the repository and parent; the read-back withholds key blocks and long lines and redacts the rest', () => {
+  const W = ADVISOR_TRANSCRIPT_LINE_WITHHELD;
+  const seat = (name: string | null, parent = '1503') => ({ labels: {
+    'repo-harness.repository': '1186405141', 'repo-harness.parent': parent, ...(name === null ? {} : { 'repo-harness.seat': name }) } });
+  // Refused: the orchestrator, a worker, the advisor of another parent and a terminal without the seat label.
+  const refused = { t3: seat('orchestrator'), t4: seat('worker'), t5: seat('advisor', '1504'), t6: seat(null) };
+  const advisorHc = (terminals: Json, env: Json = {}) => {
+    const hc = watchHc({ FAKE_LS: Object.keys(terminals).map(address => ({ address, state: 'live' })), FAKE_TERMINALS: terminals, ...env });
+    return { ...hc, scope: { github_repository_id: 1186405141, parent: 1503, host: boardHostPorts(hc.options) } };
+  };
+  const code = (action: () => unknown) => { try { action(); return 'ok'; } catch (error) { return (error as AdvisorSeatError).code; } };
+  const sends = (hc: ReturnType<typeof advisorHc>) => hc.calls().filter(args => args[0] === 'send');
+
+  const absent = advisorHc(refused);
+  expect(code(() => sendToAdvisorSeat(absent.scope, 'status?'))).toBe('advisor_seat_absent');
+  expect(absent.calls()[0]).toEqual(['ls', '--json', '--label', 'repo-harness.repository=1186405141', '--label', 'repo-harness.parent=1503']);
+  expect(sends(absent)).toEqual([]);
+  expect(code(() => sendToAdvisorSeat(advisorHc({ ...refused, t9: seat('advisor'), t10: seat('advisor') }).scope, 'status?'))).toBe('advisor_seat_ambiguous');
+
+  const one = advisorHc({ ...refused, t9: { ...seat('advisor'), status: { state: 'working', kind: 'tool' }, turn: 3 } }, {
+    FAKE_READ: { text: ['dropped', ...Array.from({ length: 196 }, (_, at) => `l${at}`), 'export GITHUB_TOKEN=ghp_' + 'a'.repeat(36), 'API_KEY=hunter2',
+      'Authorization: Bearer abc', 'x'.repeat(5000)].join('\n'), complete: false, why: 'working' },
+  });
+  // Characters, not UTF-16 units: 4000 emoji are 8000 units.
+  for (const text of ['status?', 'line 1\nline 2', 'a'.repeat(4000), '😀'.repeat(4000)]) {
+    expect(sendToAdvisorSeat(one.scope, text)).toEqual({ protocol: 1, kind: 'repo-harness.advisor-seat-send', github_repository_id: 1186405141, parent: 1503, terminal: 't9', started: true, turn: 2 });
+    expect(sends(one).at(-1)).toEqual(['send', '--json', '--', 't9', text]);
+  }
+  const before = one.calls().length;
+  for (const text of ['', 'a'.repeat(4001), 'a\tb', 'a\rb', 'a\u0007b', 'a\u001bb', 'a\u007fb', 'a\u009bb']) expect(code(() => sendToAdvisorSeat(one.scope, text))).toBe('text_invalid');
+  expect(one.calls()).toHaveLength(before);
+
+  const transcript = readAdvisorSeat(one.scope);
+  expect(one.calls().at(-1)).toEqual(['read', '--json', '--lines', '200', '--', 't9']);
+  expect(transcript).toMatchObject({ terminal: 't9', status: 'working', status_kind: 'tool', turn: 3, complete: false, why: 'working' });
+  expect(transcript.lines).toHaveLength(200);
+  expect(transcript.lines.slice(0, 2)).toEqual(['l0', 'l1']);
+  expect(transcript.lines.slice(-4)).toEqual(['export GITHUB_TOKEN=ghp_[REDACTED]', W, 'Authorization: Bearer [REDACTED]', W]);
+  expect(decodeAdvisorSeatTranscript(JSON.parse(JSON.stringify(transcript)))).toEqual(transcript);
+
+  // The read-back order: the last 200 lines, private key blocks withheld, a line over the limit withheld before or after redaction.
+  const [begin, body, end] = ['-----BEGIN PRIVATE KEY-----', 'MC4CAQAwBQYDK2VwBCIEIGv0a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u', '-----END PRIVATE KEY-----'];
+  const cases: readonly [string, readonly string[], readonly string[]][] = [
+    ['whole key', ['before', begin, body, body, end, 'after'], ['before', W, W, W, W, 'after']],
+    ['another key type', ['-----BEGIN EC PRIVATE KEY-----', body, '-----END EC PRIVATE KEY-----', 'after'], [W, W, W, 'after']],
+    ['key on one line', [`key ${begin}${body}${end}`, 'after'], [W, 'after']],
+    ['hc read starts inside the key', [body, end, 'after'], [W, W, 'after']],
+    ['window start cuts the key', [begin, ...Array.from({ length: 199 }, () => body), end, 'after'], [...Array.from({ length: 199 }, () => W), 'after']],
+    ['window end cuts the key', ['before', begin, body], ['before', W, W]],
+    ['an open key followed by another key', ['x', begin, 'K1', 'K2', begin, 'K3', end, 'y'], ['x', W, W, W, W, W, W, 'y']],
+    ['a line that ends one key and opens another', [`${begin} K ${end} ${begin}`, 'Kz', 'y'], [W, W, W]],
+    ['line over the limit', ['a'.repeat(1001), 'a'.repeat(1000)], [W, 'a'.repeat(1000)]],
+    ['redaction grows a line over the limit', [`${'a'.repeat(976)} Authorization: Bearer x`, `${'a'.repeat(900)} Authorization: Bearer x`], [W, `${'a'.repeat(900)} Authorization: Bearer [REDACTED]`]],
+  ];
+  // The projection and the response decoder return the same lines, with no key line.
+  for (const [name, input, lines] of cases) {
+    const projected = advisorTranscriptLines(input.join('\n'));
+    expect([name, projected, decodeAdvisorSeatTranscript({ ...transcript, lines: projected }).lines]).toEqual([name, lines, lines]);
+  }
+  // Each line alone passes; the joined text holds a whole key.
+  for (const lines of [['API_KEY=hunter2'], [begin, body, end]]) expect(() => decodeAdvisorSeatTranscript({ ...transcript, lines })).toThrow('advisor seat transcript is invalid');
+
+  // A failed send names the resolved terminal; `hc send` may have run, so it is unconfirmed.
+  const failed = advisorHc({ t9: seat('advisor') }, { FAKE_SEND_FAIL: '1' });
+  const failure = (action: () => unknown) => { try { action(); return null; } catch (error) { return advisorSeatSendFailure(failed.scope, error as AdvisorSeatError); } };
+  expect(failure(() => sendToAdvisorSeat(failed.scope, 'status?'))).toEqual({ protocol: 1, kind: 'repo-harness.advisor-seat-send-failure', github_repository_id: 1186405141, parent: 1503, terminal: 't9', code: 'advisor_send_unconfirmed' });
+  expect(failure(() => sendToAdvisorSeat(absent.scope, 'status?'))).toMatchObject({ terminal: null, code: 'advisor_seat_absent' });
+  const missing = { github_repository_id: 1186405141, parent: 1503, host: boardHostPorts({ env: { PATH: '/nonexistent' } }) };
+  expect([code(() => sendToAdvisorSeat(missing, 'status?')), code(() => readAdvisorSeat(missing))]).toEqual(['hc_unavailable', 'hc_unavailable']);
 });

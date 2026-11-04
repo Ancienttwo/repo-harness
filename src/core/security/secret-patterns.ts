@@ -31,3 +31,18 @@ export function containsSecret(text: string): boolean {
   }
   return false;
 }
+
+/** Replace each token rule match with the rule's replacement. */
+export function replaceSecrets(text: string): string {
+  let out = text;
+  for (const { pattern, replacement } of SECRET_TOKEN_PATTERNS) out = out.replace(new RegExp(pattern.source, pattern.flags), replacement);
+  return out;
+}
+
+// Some replacements still match their own rule (`Authorization: Bearer [REDACTED]`),
+// so the check runs on the text with the replacement strings taken out.
+export function hasUnredactedSecret(text: string): boolean {
+  let rest = text;
+  for (const { replacement } of SECRET_TOKEN_PATTERNS) rest = rest.split(replacement).join('');
+  return containsSecret(rest);
+}
