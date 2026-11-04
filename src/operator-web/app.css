@@ -325,12 +325,28 @@
   .architecture-sequence__flow-name { @apply min-w-0 flex-1 truncate; }
   .architecture-sequence__lit { @apply size-1.5 shrink-0 rounded-full; background: var(--rh-accent); }
   .architecture-sequence__code { @apply font-mono; }
-  .architecture-topology__namespace { @apply bg-transparent; }
+  .architecture-topology__namespace { @apply rounded-xl border-transparent bg-kumo-recessed; }
   .architecture-topology__box[data-kind="process"] { @apply bg-kumo-recessed; }
   .architecture-topology__box[data-kind="external-system"] { @apply border-dashed bg-kumo-base; }
-  .architecture-topology__box[data-kind="mount"] { @apply bg-kumo-base; }
+  .architecture-topology__box[data-kind="namespace"], .architecture-topology__box[data-kind="mount"] { @apply bg-kumo-base; }
   .architecture-topology__member { @apply min-h-0 py-0; }
-  .architecture-topology__member strong { @apply text-xs; }
+  .architecture-topology__member strong { @apply truncate font-mono text-xs font-normal; }
+  .architecture-topology__empty { @apply m-0 px-3 pt-1 text-xs text-kumo-subtle; }
+  .architecture-topology__mount { @apply justify-start gap-1 rounded-[10px] py-2; }
+  .architecture-topology__summary { @apply line-clamp-2 text-xs text-kumo-default; }
+  .architecture-topology__mount[data-mount-tone="writer"], .architecture-topology__swatch[data-mount-tone="writer"] { @apply border-kumo-success bg-kumo-success-tint; }
+  .architecture-topology__mount[data-mount-tone="reader"], .architecture-topology__swatch[data-mount-tone="reader"] { @apply border-dashed border-kumo-interact bg-kumo-base; }
+  .architecture-topology__mount[data-mount-tone="point"], .architecture-topology__swatch[data-mount-tone="point"] { @apply border-kumo-info bg-kumo-info-tint; }
+  .architecture-topology__swatch { @apply inline-block size-3 rounded-[3px] border align-middle; }
+  [data-deprecated].architecture-map__box, [data-deprecated].architecture-map__group { @apply opacity-60; }
+  .architecture-topology__bases { @apply flex gap-0.5 rounded-[10px] border border-kumo-line bg-kumo-base p-[2px]; }
+  .architecture-topology__bases button { @apply h-6 cursor-pointer rounded-[7px] border-0 bg-transparent px-3 text-xs text-kumo-default hover:text-kumo-strong; }
+  .architecture-topology__bases button[aria-pressed="true"] { @apply bg-kumo-tint text-kumo-strong; }
+  .architecture-topology__legacy { @apply inline-flex items-center gap-2; }
+  .architecture-topology__switch { @apply relative inline-block h-4 w-7 rounded-full bg-kumo-interact; }
+  .architecture-topology__switch::after { @apply absolute top-0.5 left-0.5 size-3 rounded-full bg-kumo-contrast content-['']; }
+  [aria-pressed="true"] > .architecture-topology__switch { background: var(--rh-accent); }
+  [aria-pressed="true"] > .architecture-topology__switch::after { @apply left-3.5; }
   @media (max-width: 47.5rem) { .architecture-map__legend, .architecture-history__legend { display: none; } }
 }
 
