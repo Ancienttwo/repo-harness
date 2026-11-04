@@ -808,6 +808,7 @@ function detectWaza() {
   };
 }
 
+// compareHcVersions in src/core/operator/herdr-pin.ts owns numeric x.y.z order.
 function versionAtLeast(actual, minimum) {
   const parse = (value) => /^(\d+)\.(\d+)\.(\d+)$/.exec(value)?.slice(1, 4).map(Number) ?? null;
   const left = parse(actual);
@@ -2043,7 +2044,7 @@ const report = {
 const strictFailures = [];
 if (strictReadiness && report.runtime_capabilities.herdr_core.status !== "present") {
   const hc = report.runtime_capabilities.herdr_core;
-  strictFailures.push(`herdr-core runtime is ${hc.status}; install hc >=${hc.min_version} and verify hc --version`);
+  strictFailures.push(`hc client is ${hc.status}; ${hc.command ?? `install hc >=${hc.min_version}`} and verify hc --version`);
 }
 if (strictReadiness && report.tools.herdr_skill.status !== "present") {
   // The skill source is `hc --skill`, so the update command cannot repair it until hc is present.

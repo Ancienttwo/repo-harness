@@ -1,6 +1,7 @@
 import { planIssues } from './plan-block';
 import type { BoardItemV1, BoardPullRequestV1, BoardTerminalV1, BoardV1 } from './board';
 import { pathHazardHits } from './hazards';
+import { compareHcVersions } from '../operator/herdr-pin';
 
 /**
  * Attention rules over one board. Each rule is a pure function of the board
@@ -249,17 +250,10 @@ function a7(context: Context): void {
   }
 }
 
-/** Both versions are `x.y.z`; the collector refuses any other shape. */
-function versionBelow(have: string, need: string): boolean {
-  const [left, right] = [have.split('.').map(Number), need.split('.').map(Number)];
-  const index = left.findIndex((part, at) => part !== right[at]);
-  return index !== -1 && left[index]! < right[index]!;
-}
-
 function a8(context: Context): void {
   const hc = context.board.tooling.hc;
   if (hc.status === 'unavailable') return skip(context, 'A8', hc.reason);
-  if (versionBelow(hc.version, hc.min_version)) find(context, 'A8', {}, `hc ${hc.version} is below the repo-harness pin ${hc.min_version}`);
+  if (compareHcVersions(hc.version, hc.min_version) < 0) find(context, 'A8', {}, `hc client ${hc.version} is below the repo-harness floor ${hc.min_version}; run hc update --version ${hc.min_version}`);
 }
 
 function r1(context: Context): void {

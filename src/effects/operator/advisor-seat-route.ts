@@ -17,15 +17,15 @@ export const OPERATOR_ADVISOR_MESSAGES_ROUTE = /^\/api\/v1\/seats\/advisor\/mess
 export const OPERATOR_ADVISOR_TRANSCRIPT_PATH = '/api/v1/seats/advisor/transcript' as const;
 
 const RETRY = 'Retry in a few seconds.';
-const CHECK_SEAT = 'Start the advisor seat of this parent with its seat labels, or close the extra advisor terminal, then retry.';
+const CHECK_SEAT = 'Start the advisor seat of this repository with its seat labels, or close the extra advisor terminal, then retry.';
 
 export const ADVISOR_SEAT_REFUSALS: Readonly<Record<AdvisorSeatFailure, { readonly status: number; readonly message: string; readonly next_action: string }>> = Object.freeze({
   invalid_request: { status: 400, message: 'The advisor seat route needs exactly repository_id and parent.', next_action: 'Request it with ?repository_id=<id>&parent=<issue number>.' },
   text_invalid: { status: 400, message: 'The advisor message is empty, too long or holds a control character.', next_action: 'Send at most 4000 characters with no control character except newline.' },
   repository_read_only: { status: 403, message: 'The repository is registered read-only, so the console does not write to its seats.', next_action: 'Register the repository with read-write access to send to its advisor seat.' },
   repository_not_found: { status: 404, message: 'No registered repository has this id.', next_action: 'Choose a repository from the repository list.' },
-  advisor_seat_absent: { status: 409, message: 'No live advisor seat terminal exists for this repository and parent.', next_action: CHECK_SEAT },
-  advisor_seat_ambiguous: { status: 409, message: 'More than one live advisor seat terminal exists for this repository and parent.', next_action: CHECK_SEAT },
+  advisor_seat_absent: { status: 409, message: 'No live advisor seat terminal exists for this repository.', next_action: CHECK_SEAT },
+  advisor_seat_ambiguous: { status: 409, message: 'More than one live advisor seat terminal exists for this repository.', next_action: CHECK_SEAT },
   advisor_send_unconfirmed: { status: 409, message: 'hc did not confirm the send, so the message may have reached the advisor seat.', next_action: OPERATOR_RECONCILE_ACTION },
   advisor_read_failed: { status: 502, message: 'hc did not read the advisor seat terminal.', next_action: RETRY },
   registry_unavailable: { status: 503, message: 'The repository registry could not be read.', next_action: 'Check ~/.repo-harness/registered-repos.json, then retry.' },
@@ -86,8 +86,8 @@ export function advisorSeatWriteRoute(input: {
       const request = decodeAdvisorSeatMessageRequest(fields);
       return {
         operation: 'advisor_seat_message',
-        // The target names the repository and the parent, and the lock serializes the sends to one board's seat.
-        target: `advisor_seat:${request.repository_id}:${request.parent}`,
+        // One advisor serves the whole repository (#1780), so the lock on the repository serializes the sends of every parent room to it.
+        target: `advisor_seat:${request.repository_id}`,
         input: request as unknown as JsonValue,
         execute: async () => {
           const run = input.admit(signal => send({ ...request, env: input.env, signal }));

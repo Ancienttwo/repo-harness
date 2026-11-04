@@ -143,7 +143,7 @@ export function fixtureProps(name: string): OperatorAppProps {
   // busy: the recorded parents of repo-harness, none elsewhere; empty: no open parent issue; degraded: hc could not list the seats.
   const recordedParents = decodeBoardParents(boardParents);
   const parents = (repositoryId: string): BoardParentsRead => fixture === 'degraded' ? { state: 'unavailable', reason: 'parents_hc_failed' }
-    : { state: 'ok', list: fixture === 'busy' && repositoryId === HARNESS_ID ? recordedParents : { ...recordedParents, parents: [] } };
+    : { state: 'ok', list: fixture === 'busy' && repositoryId === HARNESS_ID ? recordedParents : { ...recordedParents, parents: [], seats: [] } };
   return {
     readBoard: subject => Promise.resolve(board(subject.repository_id, subject.parent)),
     readBoardParents: repositoryId => Promise.resolve(parents(repositoryId)),

@@ -90,6 +90,7 @@ export interface BoardPullRequestV1 {
 export type BoardTerminalV1 = {
   readonly address: string;
   readonly name: string | null;
+  readonly agent: string | null;
   readonly state: 'live' | 'finished';
   /** The program's own 7501 word; null when it never reported. */
   readonly status: string | null;
@@ -106,12 +107,26 @@ export type BoardTerminalV1 = {
 export interface BoardSeatTerminalReadV1 {
   readonly address: string;
   readonly name: string | null;
+  readonly agent: string | null;
   readonly state: 'live' | 'finished';
   readonly status: string | null;
   readonly status_kind: string | null;
   readonly status_ms: number | null;
   readonly turn: number;
-  readonly labels: { readonly seat?: string; readonly issue?: string; readonly pr?: string };
+  readonly labels: { readonly seat?: string; readonly issue?: string; readonly pr?: string; readonly parent?: string };
+}
+
+const POSITIVE = /^[1-9][0-9]*$/u;
+
+/** The board's one check of the raw seat, issue and pr labels of a terminal (the board and the parent list). */
+export function seatTerminal(terminal: BoardSeatTerminalReadV1): BoardTerminalV1 {
+  const { labels, ...base } = terminal;
+  const { seat, issue, pr } = labels;
+  if (seat === undefined) return { ...base, seat_status: 'unavailable', reason: 'seat_label_missing' };
+  if (seat === '' || [issue, pr].some(value => value !== undefined && !POSITIVE.test(value))) {
+    return { ...base, seat_status: 'unavailable', reason: 'seat_label_invalid' };
+  }
+  return { ...base, seat_status: 'observed', seat, issue: issue === undefined ? null : Number(issue), pr: pr === undefined ? null : Number(pr) };
 }
 
 /**
@@ -121,20 +136,14 @@ export interface BoardSeatTerminalReadV1 {
  */
 export interface BoardHostPortsV1 {
   /**
-   * Terminals that carry both the repository label (the GitHub numeric
-   * repository id, decimal) and the parent label. One hc core can host seats
-   * of several repositories that share a parent number.
+   * The terminals that carry the repository label (the GitHub numeric
+   * repository id, decimal), with their raw parent label; watcher terminals
+   * are left out. One hc core can host seats of several repositories that
+   * share a parent number. The board selects the seats of one parent; the
+   * parent list keeps every seat of the repository.
    */
-  readonly seatTerminals: (repositoryId: string, parent: number) =>
+  readonly seatTerminals: (repositoryId: string) =>
     | { readonly status: 'observed'; readonly terminals: readonly BoardSeatTerminalReadV1[] }
-    | { readonly status: 'unavailable'; readonly reason: string };
-  /**
-   * The live terminals that carry the repository label, with their parent
-   * and seat label values; watcher terminals are left out. The parent list
-   * counts the seats of each parent from this one list.
-   */
-  readonly repositorySeats: (repositoryId: string) =>
-    | { readonly status: 'observed'; readonly terminals: readonly { readonly parent?: string; readonly seat?: string }[] }
     | { readonly status: 'unavailable'; readonly reason: string };
   /** The installed hc client version, `x.y.z`. */
   readonly hcVersion: () => { readonly status: 'observed'; readonly version: string } | { readonly status: 'unavailable'; readonly reason: string };

@@ -803,7 +803,7 @@ describe('candidate-bound global runtime reconciliation', () => {
     { label: 'missing hc, ~/.local/bin off PATH', hcBefore: null, requests: 1,
       lines: (dir: string) => [`[runtime] ok: ensure herdr-core (hc) - installed hc ${HC_MIN_VERSION} (sha256 verified) into ${dir}`, `add ${dir} to PATH to use hc; this run uses it for its later steps`] },
     { label: 'hc below the floor', hcBefore: '0.1.15', requests: 0,
-      lines: (_dir: string, hc: string) => [`[runtime] ok: ensure herdr-core (hc) - updated hc 0.1.15 to ${HC_MIN_VERSION} at ${hc}`] },
+      lines: (_dir: string, hc: string) => [`[runtime] ok: ensure herdr-core (hc) - hc client 0.1.15 was below the repo-harness floor ${HC_MIN_VERSION}; hc update --version ${HC_MIN_VERSION} updated it to ${HC_MIN_VERSION} at ${hc}`] },
     { label: 'hc at the floor', hcBefore: HC_MIN_VERSION, requests: 0,
       lines: (_dir: string, hc: string) => [`[runtime] ok: ensure herdr-core (hc) - hc ${HC_MIN_VERSION} at ${hc} is at or above ${HC_MIN_VERSION}; no change`] },
   ])('the default update shows the hc step result of candidate C: $label', async ({ hcBefore, requests, lines }) => {

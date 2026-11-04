@@ -79,6 +79,7 @@ const settle = () => act(async () => { for (let turn = 0; turn < 5; turn++) awai
 const page = () => document.querySelector<HTMLElement>('[data-bots-page]')!;
 const section = (name: string) => document.querySelector<HTMLElement>(`[data-bots-section="${name}"]`)!;
 const all = (selector: string, scope: ParentNode = document) => Array.from(scope.querySelectorAll<HTMLElement>(selector));
+const HC_REPAIR = ['hc update --version 0.1.17', 'hc server restart'];
 const commands = (scope: ParentNode = document) => all('[data-command] code', scope).map(code => code.textContent);
 const freshness = () => document.querySelector<HTMLElement>('[data-freshness-source="bots"]');
 const navLink = (workspace: string) => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!;
@@ -175,14 +176,16 @@ describe('Bots page', () => {
     expect(commands(hc)).toEqual([]);
   });
 
-  test('1-BOTS-F1 an hc core below the pin shows the expected and the actual version and no terminal state, never "not connected"', async () => {
-    for (const [locale, words, unavailable] of [
-      ['zh', 'hc 0.1.15 · 版本过低：需要 0.1.17 或更高，终端状态暂不可读', '暂不可读'],
-      ['en', 'hc 0.1.15 · too old: needs 0.1.17 or later. Terminal state is not read.', 'not read'],
+  test('1-BOTS-F1 an hc core below the pin shows the expected and the actual version, the repair commands in order and no terminal state, never "not connected"', async () => {
+    for (const [locale, words, repair, unavailable] of [
+      ['zh', 'hc core 0.1.15 · 版本过低：需要 0.1.17 或更高，终端状态暂不可读', '如果 hc --version 低于 0.1.17，运行第一条命令，它会重启 core；否则运行第二条命令。', '暂不可读'],
+      ['en', 'hc core 0.1.15 · too old: needs 0.1.17 or later. Terminal state is not read.', 'If hc --version is below 0.1.17, run the first command. It restarts the core. If not, run the second command.', 'not read'],
     ] as const) {
       await remount('#bots', props(serve(ok(degradedBotAccess(NOW))), locale));
       const hc = section('hc');
       expect(hc.querySelector('[data-hc-version="mismatch"]')?.textContent).toBe(words);
+      expect(hc.querySelector('[data-hc-repair]')?.textContent).toBe(repair);
+      expect(commands(hc)).toEqual(HC_REPAIR);
       expect(hc.textContent).toContain(unavailable);
       expect(all('[data-hc-terminal]', hc)).toEqual([]);
       expect(hc.textContent).not.toMatch(/没连上|未连接|not connected|找不到/iu);
@@ -210,7 +213,8 @@ describe('Bots page', () => {
         expect(shown).not.toMatch(/passphrase|口令|token\s*[=:]|bearer\s+\S{8}/iu);
         expect(all('button', page()).every(button => button.classList.contains('copy-value__button'))).toBe(true);
         expect(page().querySelector('input, select, textarea, form, [contenteditable]')).toBeNull();
-        expect(commands(page()).every(command => command?.startsWith('repo-harness ') && !/--(?:webhook-url|webhook-key|slack-webhook-url|discord-webhook-url|telegram-bot-token)\b/u.test(command))).toBe(true);
+        // The hc repair commands of a core below the pin are the only commands outside repo-harness.
+        expect(commands(page()).every(command => (command?.startsWith('repo-harness ') || HC_REPAIR.includes(command ?? '')) && !/--(?:webhook-url|webhook-key|slack-webhook-url|discord-webhook-url|telegram-bot-token)\b/u.test(command ?? ''))).toBe(true);
       }
     }
   });

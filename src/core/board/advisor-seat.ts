@@ -279,11 +279,12 @@ export function advisorTranscriptLines(text: string): readonly string[] {
 
 /**
  * Exactly one live terminal with the advisor seat label. The host read holds
- * only the seat terminals of this repository and parent, without the watcher.
+ * the seat terminals of this repository with any parent label or none,
+ * without the watcher: one advisor serves the whole repository (#1780).
  */
 export function resolveAdvisorSeat(terminals: readonly BoardSeatTerminalReadV1[]): BoardSeatTerminalReadV1 {
   const advisors = terminals.filter(terminal => terminal.state === 'live' && terminal.labels.seat === ADVISOR_SEAT);
-  if (advisors.length === 0) throw new AdvisorSeatError('advisor_seat_absent', 'No live terminal carries the advisor seat label of this repository and parent.');
+  if (advisors.length === 0) throw new AdvisorSeatError('advisor_seat_absent', 'No live terminal carries the advisor seat label of this repository.');
   if (advisors.length > 1) {
     throw new AdvisorSeatError('advisor_seat_ambiguous', `More than one live terminal carries the advisor seat label: ${advisors.map(terminal => terminal.address).join(', ')}.`);
   }
@@ -297,7 +298,7 @@ interface AdvisorSeatScope {
 }
 
 function advisorSeat(scope: AdvisorSeatScope): BoardSeatTerminalReadV1 {
-  const read = scope.host.seatTerminals(String(scope.github_repository_id), scope.parent);
+  const read = scope.host.seatTerminals(String(scope.github_repository_id));
   if (read.status === 'unavailable') throw new AdvisorSeatError('hc_unavailable', `hc did not list the seat terminals: ${read.reason}`);
   return resolveAdvisorSeat(read.terminals);
 }

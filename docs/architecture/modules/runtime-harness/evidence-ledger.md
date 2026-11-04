@@ -122,7 +122,7 @@ sequenceDiagram
 6. **Payload 与 blob 二选一。** 每个事件恰好有其中一个（`types.ts:41-45`）。Blob 按 sha256 命名，只写一次，不解引用 symlink（`src/effects/evidence/blob-store.ts:2-5`、`:32`）。
 7. **秘密从不以原文落盘。** 脱敏按构造拒绝（`src/core/evidence/redaction.ts:2-6`）。
 8. **Checkpoint 只经 marker 解析。** 发布在一个 staged 事务中验证后原子 rename。`last-published` marker 是唯一权威。读者从不按 mtime 或文件名扫描（`src/effects/evidence/checkpoint-store.ts:1-22`）。
-9. **恢复视图单跳。** 视图中的每条证据都来自已验证的 checkpoint 投影。工作流上下文每次从仓库重新读取（`src/effects/evidence/recovery-materializer.ts:10-16`）。Handoff 已有两个 producer，禁止第三个（[PRD](https://github.com/Ancienttwo/repo-harness/blob/1072bbfb91fac8a9f26bdd4feb09fd933a4e1437/docs/prds/20260822-0405-fleet-acquire-publication-readiness.prd.md#L53)）。
+9. **恢复视图单跳。** 视图中的每条证据都来自已验证的 checkpoint 投影。工作流上下文每次从仓库重新读取。Handoff 已有两个 producer，禁止第三个（[PRD](https://github.com/Ancienttwo/repo-harness/blob/1072bbfb91fac8a9f26bdd4feb09fd933a4e1437/docs/prds/20260822-0405-fleet-acquire-publication-readiness.prd.md#L53)）。
 
 ### 3.2 关键权衡
 
@@ -158,11 +158,11 @@ sequenceDiagram
 
 - P1：[archived post-bash-importer.ts](https://github.com/Ancienttwo/repo-harness/blob/2ed904ae9555482b4c5750457c3faa8b7804484c/src/effects/evidence/post-bash-importer.ts) 已删除（#695）。它写的 `observed` 事件不满足任何门禁。`verification-execution.ts` 也过滤掉这类事件。Claude 与 Codex 的 Bash payload 没有退出码，所以这些事件都记成退出码 0。
 - P2：本能力的 append 入口改为 `entrypoint.evidence-ledger.attested-import`（`importAttestedEvidence`）。`flow.evidence-ledger.append-and-recover` 的第一步改为 attested import。旧 ledger 里已有的 `post_bash.command_observed` 事件留在原处，fold 照常处理。
-- P3：Stop 先发布 checkpoint，再渲染 handoff 与 resume。视图不再有 "## Commands Run" 段。`scripts/recovery-view-cli.ts` 只是命令行适配器，每个视图都来自 `recovery-materializer.ts`。手写的第二个渲染器已删除。
+- P3：Stop 先发布 checkpoint，再渲染 handoff 与 resume。视图不再有 "## Commands Run" 段。手写的第二个渲染器已删除。
 
 ## Optimization Backlog
 
 - **After arch-context#296：拆出 verification-plan。** 把 `src/core/evidence/verification-plan.ts` 与 `src/effects/evidence/verification-execution.ts` 移给 evals-checks（ownership proposal §4.6）。pipeline-ledger 已由 #769 退役。
-- **与 workflow-state 的依赖方向（重构证据）。** #907 之前，`event-log.ts` 通过 state 目录中的只读观察原语读文件，State 代码通过 evidence 目录中的原子追加原语持久写。集成按边数决定方向：workflow-state → evidence-ledger 28 条边，evidence-ledger → workflow-state 21 条边。模型只声明 workflow-state → evidence-ledger。#907 把这两个原语移到 execution-primitives（`src/effects/readonly-observation.ts`、`src/effects/atomic-append.ts`）。现在只剩 evidence → state 一条边：`recovery-materializer.ts:29` 导入 `resolveHarnessPaths`。声明的方向需要复审。
+- **与 workflow-state 的依赖方向（重构证据）。** #907 之前，`event-log.ts` 通过 state 目录中的只读观察原语读文件，State 代码通过 evidence 目录中的原子追加原语持久写。集成按边数决定方向：workflow-state → evidence-ledger 28 条边，evidence-ledger → workflow-state 21 条边。模型只声明 workflow-state → evidence-ledger。#907 把这两个原语移到 execution-primitives（`src/effects/readonly-observation.ts`、`src/effects/atomic-append.ts`）。声明的方向需要复审。
 - **共享的 path-safety 原语。** `src/effects/path-safety.ts` 属于 adoption，本能力有 6 个导入。候选：移到 execution-primitives。
 - **到 hook-adapters 的回边。** `scripts/evidence-gc.ts:22`、`:190` 动态导入 `src/effects/run-summary-retention.ts`。这是一个版本的一次性清理，下一个版本删除。hook-adapters 的 session-lifecycle 调用本 capability。模型不声明本方向。

@@ -4,6 +4,9 @@ import type { NativeRuntimeState } from '../core/operator/runtime-capture';
 import { useObservationRefresh } from './useObservationRefresh';
 import { formatRelativeAge, type OperatorTranslate, type OperatorMessageKey } from './i18n';
 
+/** The repair steps of `HcVersionMismatchError`, in its order: update a client below the floor, else restart the core. */
+export const hcRepairCommands = (min: string) => [`hc update --version ${min}`, 'hc server restart'] as const;
+
 export type RuntimeOverlayReader = (signal: AbortSignal) => Promise<RuntimeOverlay>;
 export async function fetchRuntimeOverlay(signal: AbortSignal): Promise<RuntimeOverlay> {
   const response = await fetch('/api/v1/runtime/status', { signal, cache: 'no-store' });
@@ -35,7 +38,8 @@ export function RuntimeSummary({ view, now, t }: { view: RuntimeView; now: numbe
   return <><div className="runtime-summary" data-runtime-status={failed ? 'refresh-failed' : overlay.status} role="status">
     <span>{t(failed ? 'runtimeObservation.refreshFailed' : overlay.status === 'unavailable' ? 'runtimeObservation.unavailable' : 'runtimeObservation.readOnly')}</span>
     {overlay.reason?.code === 'hc_version_mismatch' && <span data-runtime-reason={overlay.reason.code}>
-      {t('runtimeObservation.reason.hc_version_mismatch', { version: overlay.reason.actual.version, min: overlay.reason.expected.min_version })}</span>}
+      {t('runtimeObservation.reason.hc_version_mismatch', { version: overlay.reason.actual.version, min: overlay.reason.expected.min_version })}
+      {hcRepairCommands(overlay.reason.expected.min_version).map(command => <code key={command} className="mono-value ms-2 rounded bg-kumo-recessed px-1.5 whitespace-nowrap text-kumo-default">{command}</code>)}</span>}
     {overlay.native_sources.length === 0 && <span>{t('runtimeObservation.unclaimed', { count: overlay.unclaimed })}</span>}
     {overlay.observed_at && <time dateTime={overlay.observed_at} title={overlay.observed_at}>{formatRelativeAge(overlay.observed_at, now, t)}</time>}
   </div>

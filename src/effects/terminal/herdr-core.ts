@@ -41,6 +41,7 @@ export interface HerdrCoreOptions {
 export type HcLabels = Readonly<Record<string, string>>;
 export interface HcStatus { readonly state: string; readonly app?: string; readonly kind?: string | null; readonly msg?: string }
 export interface HcTerminalSummary { readonly address: string; readonly name: string | null; readonly state: 'live' | 'finished' }
+export interface HcListTerminal extends HcTerminalSummary { readonly agent: string | null }
 export interface HcForeground { readonly pid: number; readonly name: string; readonly argv: readonly string[]; readonly cwd: string }
 export interface HcTerminal extends HcTerminalSummary {
   readonly labels: HcLabels;
@@ -325,18 +326,20 @@ function listArgs(labels: HcLabels, options: HcListOptions): string[] {
 }
 
 /** `hc ls --label`: terminals that carry every label, live only unless `all`. The filter must hold a repo-harness label. */
-export function hcList(labels: HcLabels, options: HcListOptions = {}): HcTerminalSummary[] {
+export function hcList(labels: HcLabels, options: HcListOptions = {}): HcListTerminal[] {
   return listResult(hc('ls', listArgs(labels, options), options));
 }
 
 /** `hcList` without blocking the event loop, for long-running readers such as `operator serve`. */
-export async function hcListAsync(labels: HcLabels, options: HcListOptions = {}): Promise<HcTerminalSummary[]> {
+export async function hcListAsync(labels: HcLabels, options: HcListOptions = {}): Promise<HcListTerminal[]> {
   return listResult(await invokeAsync('hc', ['ls', '--json', ...listArgs(labels, options)], options));
 }
 
-function listResult(result: Record<string, unknown>): HcTerminalSummary[] {
+function listResult(result: Record<string, unknown>): HcListTerminal[] {
   if (!Array.isArray(result.terminals)) throw invalidResponse('ls has no terminals array');
-  return result.terminals.map(terminalSummary);
+  return result.terminals.map(value => ({
+    ...terminalSummary(value), agent: optional(value, 'agent', orNull(isString), `terminal ${value.address}`) ?? null,
+  }));
 }
 
 const VERSION = /^[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}$/u;
@@ -476,38 +479,27 @@ export function herdrAppDo(command: HerdrAppPlacement, args: Readonly<Record<str
   return invoke(program, rest, options);
 }
 
-/** The board host port (#1505): seat terminals of one parent issue by its parent label, the seat labels of one repository (#1659), the hc version, and the advisor seat send and read (#1756). */
+/** The board host port (#1505): the seat terminals of one repository with their parent labels (#1780), the hc version, and the advisor seat send and read (#1756). */
 export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1 {
   const unavailable = (error: unknown) => {
     if (error instanceof HerdrCoreError) return { status: 'unavailable', reason: `hc_${error.reason}` } as const;
     throw error;
   };
   return {
-    seatTerminals: (repositoryId, parent) => {
+    seatTerminals: (repositoryId) => {
       try {
         // A watcher terminal (#1509) carries the repository and parent labels too, but it is a program, not a seat.
-        const terminals = hcList({ [RH_LABEL.repository]: repositoryId, [RH_LABEL.parent]: String(parent) }, options)
-          .map(({ address }) => hcGet(address, options))
+        const terminals = hcList({ [RH_LABEL.repository]: repositoryId }, options)
+          .map(({ address, agent }) => ({ ...hcGet(address, options), agent }))
           .filter(terminal => terminal.labels[RH_LABEL.service] === undefined)
           .map((terminal) => {
             const label = (key: string) => terminal.labels[key];
             return {
-              address: terminal.address, name: terminal.name, state: terminal.state, status: terminal.status?.state ?? null,
+              address: terminal.address, name: terminal.name, agent: terminal.agent, state: terminal.state, status: terminal.status?.state ?? null,
               status_kind: terminal.status?.kind ?? null, status_ms: terminal.status_ms ?? null, turn: terminal.turn,
-              labels: { seat: label(RH_LABEL.seat), issue: label(RH_LABEL.issue), pr: label(RH_LABEL.pr) },
+              labels: { seat: label(RH_LABEL.seat), issue: label(RH_LABEL.issue), pr: label(RH_LABEL.pr), parent: label(RH_LABEL.parent) },
             };
           });
-        return { status: 'observed', terminals };
-      } catch (error) {
-        return unavailable(error);
-      }
-    },
-    repositorySeats: (repositoryId) => {
-      try {
-        const terminals = hcList({ [RH_LABEL.repository]: repositoryId }, options)
-          .map(({ address }) => hcGet(address, options).labels)
-          .filter(labels => labels[RH_LABEL.service] === undefined)
-          .map(labels => ({ parent: labels[RH_LABEL.parent], seat: labels[RH_LABEL.seat] }));
         return { status: 'observed', terminals };
       } catch (error) {
         return unavailable(error);

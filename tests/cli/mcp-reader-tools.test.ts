@@ -1965,6 +1965,43 @@ describe('MCP reader tools', () => {
       expect(redacted.text).not.toContain('sk-testsecret');
       expect(redacted.redactions.length).toBeGreaterThanOrEqual(1);
 
+      // Redaction runs on the whole file before the cut and keeps line breaks,
+      // so a range inside a multi-line match gets no secret and source line numbers.
+      writeFileSync(join(repoRoot, 'docs', 'key-note.md'), [
+        'header',
+        '-----BEGIN RSA PRIVATE KEY-----',
+        'MIIEkeybodyline1',
+        'keybodyline2',
+        '-----END RSA PRIVATE KEY-----',
+        'after',
+        'API_TOKEN=',
+        'spannedvalue123',
+        'tail',
+      ].join('\n'));
+      // A multi-line match at EOF without a final newline keeps its last source line.
+      writeFileSync(join(repoRoot, 'docs', 'key-at-eof.md'), ['header', '-----BEGIN RSA PRIVATE KEY-----', 'MIIEkeybodyline1', 'keybodyline2', '-----END RSA PRIVATE KEY-----'].join('\n'));
+      writeFileSync(join(repoRoot, 'docs', 'assignment-at-eof.md'), ['header', 'API_TOKEN=', 'spannedvalue123'].join('\n'));
+      const ranges: Array<{ path: string; start: number; end: number; expected: string[]; hasMore: boolean }> = [
+        { path: 'docs/key-note.md', start: 3, end: 6, expected: ['3: ', '4: ', '5: ', '6: after'], hasMore: true },
+        { path: 'docs/key-note.md', start: 1, end: 3, expected: ['1: header', '2: [PRIVATE KEY REDACTED]', '3: '], hasMore: true },
+        { path: 'docs/key-note.md', start: 4, end: 4, expected: ['4: '], hasMore: true },
+        { path: 'docs/key-note.md', start: 8, end: 9, expected: ['8: ', '9: tail'], hasMore: false },
+        { path: 'docs/key-at-eof.md', start: 5, end: 5, expected: ['5: '], hasMore: false },
+        { path: 'docs/assignment-at-eof.md', start: 2, end: 3, expected: ['2: API_TOKEN=[REDACTED]', '3: '], hasMore: false },
+      ];
+      for (const { path, start, end, expected, hasMore } of ranges) {
+        const cut = await jsonTool(ctx, 'read_text', { workspace_id: opened.workspace_id, path, start_line: start, end_line: end });
+        expect(cut.text).toBe(expected.join('\n'));
+        expect(cut.end_line).toBe(end);
+        expect(cut.has_more).toBe(hasMore);
+        expect(cut.text).not.toMatch(/keybody|spannedvalue/);
+      }
+
+      writeFileSync(join(repoRoot, 'docs', 'over-limit.md'), 'x'.repeat(ctx.policy.maxFileBytes + 1));
+      const overLimit = await jsonTool(ctx, 'read_text', { workspace_id: opened.workspace_id, path: 'docs/over-limit.md', start_line: 1, end_line: 1 });
+      expect(overLimit.error.code).toBe('FILE_TOO_LARGE');
+      expect(overLimit.error.details).toEqual({ size: ctx.policy.maxFileBytes + 1, scan_limit_bytes: ctx.policy.maxFileBytes });
+
       const source = await jsonTool(ctx, 'read_text', { workspace_id: opened.workspace_id, path: 'src/index.ts' });
       expect(source.text).toBe('1: export const readerFixture = 1;');
       const manifest = await jsonTool(ctx, 'read_text', { workspace_id: opened.workspace_id, path: 'package.json', start_line: 2, end_line: 2 });

@@ -570,7 +570,8 @@ describe('operator serve command and HTTP boundary', () => {
         const response = await get(path);
         expect([response.status, await code(response)]).toEqual([status, failure]);
       }
-      result = async () => ({ ...list, protocol: 2 });
+      // Protocol 1 is the retired parent list without the seats list (#1785).
+      result = async () => ({ ...list, protocol: 1 });
       const invalid = await get(path);
       expect([invalid.status, await code(invalid)]).toEqual([503, 'parents_invalid']);
       const head = await get(path, { method: 'HEAD' });
@@ -655,7 +656,7 @@ describe('operator serve command and HTTP boundary', () => {
       expect(sends[0]).toMatchObject({ repository_id: 'repo-a', parent: 1503, text: 'status?', env: { GH_PROMPT_DISABLED: '1' } });
       // The audit names the repository in the target and the parent and the resolved terminal in the result; the text stays out of it.
       expect(audit().map(record => record.phase === 'intent' ? [record.operation, record.target] : [record.status, record.body])).toEqual([
-        ['advisor_seat_message', 'advisor_seat:repo-a:1503'], [200, sent]]);
+        ['advisor_seat_message', 'advisor_seat:repo-a'], [200, sent]]);
       expect(readFileSync(join(home, 'operator/audit.jsonl'), 'utf8')).not.toContain('status?');
       // Text limits, a terminal address in the request and a non-number parent are refused before a child runs.
       for (const body of [{ ...message, text: '' }, { ...message, text: 'a'.repeat(4001) }, { ...message, text: 'a\tb' }, { ...message, terminal: 't9' },
@@ -688,7 +689,7 @@ describe('operator serve command and HTTP boundary', () => {
       send = async () => ({ ...sent, parent: 1504 });
       expect(await answer(await post(message))).toEqual([409, 'reconcile_required']);
       expect(audit().at(-1).body.advisor_seat).toEqual({ repository_id: 'repo-a', parent: 1503, terminal: 't9', code: 'advisor_invalid', delivery: 'unknown' });
-      expect(audit().slice(before).filter(record => record.phase === 'intent').every(record => record.target === 'advisor_seat:repo-a:1503')).toBe(true);
+      expect(audit().slice(before).filter(record => record.phase === 'intent').every(record => record.target === 'advisor_seat:repo-a')).toBe(true);
       expect(readFileSync(join(home, 'operator/audit.jsonl'), 'utf8')).not.toContain('status?');
 
       for (const query of ['', '?repository_id=repo-a', '?repository_id=repo-a&parent=0', '?repository_id=repo-a&parent=1503&terminal=t9', '?repository_id=repo-a&parent=1503&parent=1504']) {
@@ -726,7 +727,8 @@ describe('operator serve command and HTTP boundary', () => {
     expect(spawnSync('git', ['init', '-q'], { cwd: repository }).status).toBe(0);
     const gh = join(scratch, 'gh');
     writeFileSync(gh, '#!/bin/sh\n[ "$*" = "api --hostname github.com repos/{owner}/{repo}" ] && echo \'{"id":1186405141}\' && exit 0\nexit 1\n');
-    const labels = '{"repo-harness.seat":"advisor","repo-harness.repository":"1186405141","repo-harness.parent":"1503"}';
+    // The advisor seat carries no parent label: one advisor serves the repository (#1780).
+    const labels = '{"repo-harness.seat":"advisor","repo-harness.repository":"1186405141"}';
     const secret = `ghp_${'a'.repeat(36)}`;
     writeFileSync(join(scratch, 'hc'), [
       '#!/bin/sh', `printf '%s\\n' "$*" >> ${JSON.stringify(join(scratch, 'hc.log'))}`, 'case "$1" in',
@@ -754,9 +756,9 @@ describe('operator serve command and HTTP boundary', () => {
         code: 'advisor_send_unconfirmed', failure: { protocol: 1, kind: 'repo-harness.advisor-seat-send-failure', github_repository_id: 1186405141, parent: 1503, terminal: 't9', code: 'advisor_send_unconfirmed' } });
       const log = readFileSync(join(scratch, 'hc.log'), 'utf8').split('\n');
       expect(log.filter(line => line !== '' && !line.startsWith('get '))).toEqual([
-        'ls --json --label repo-harness.repository=1186405141 --label repo-harness.parent=1503', `send --json -- t9 line 1`, 'line 2',
-        'ls --json --label repo-harness.repository=1186405141 --label repo-harness.parent=1503', 'read --json --lines 200 -- t9',
-        'ls --json --label repo-harness.repository=1186405141 --label repo-harness.parent=1503', 'send --json -- t9 again']);
+        'ls --json --label repo-harness.repository=1186405141', `send --json -- t9 line 1`, 'line 2',
+        'ls --json --label repo-harness.repository=1186405141', 'read --json --lines 200 -- t9',
+        'ls --json --label repo-harness.repository=1186405141', 'send --json -- t9 again']);
     } finally {
       for (const path of [repository, scratch, writable.home, readOnly.home]) rmSync(path, { recursive: true, force: true });
     }
