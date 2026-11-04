@@ -569,7 +569,8 @@ describe('operator serve command and HTTP boundary', () => {
         const response = await get(path);
         expect([response.status, await code(response)]).toEqual([status, failure]);
       }
-      result = async () => ({ ...list, protocol: 2 });
+      // Protocol 1 is the retired parent list without the seats list (#1785).
+      result = async () => ({ ...list, protocol: 1 });
       const invalid = await get(path);
       expect([invalid.status, await code(invalid)]).toEqual([503, 'parents_invalid']);
       const head = await get(path, { method: 'HEAD' });
