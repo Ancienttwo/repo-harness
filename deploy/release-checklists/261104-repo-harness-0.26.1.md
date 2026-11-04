@@ -6,7 +6,7 @@
   `ee9b6d632df4a1f71fa8c8fdd954f63c0701f538` (#1683, the #1680 hook fix).
   The release-prep branch `release/0.26.1` starts on this base and merges no
   later main.
-- Source commit: the head of the release-prep PR PR-NUMBER. The publish
+- Source commit: the head of the release-prep PR #1693. The publish
   candidate is the merge commit of that PR on `origin/main`. The owner
   records it below before publish.
 - Previous release: 0.26.0, from the release-prep merge
