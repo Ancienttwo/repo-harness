@@ -50,7 +50,7 @@ export function violationCounts(map: ArchitectureMapV1): Map<string, number> {
   const add = (id: string, count: number) => counts.set(id, (counts.get(id) ?? 0) + count);
   if (debt.state === 'ok') for (const item of debt.items) for (const id of item.nodes) add(id, 1);
   if (flows.state === 'ok') for (const entry of flows.unprovable) add(entry.id, 1);
-  if (anchors.state === 'ok') for (const entry of anchors.nodes) add(entry.id, entry.findings);
+  if (anchors.state === 'ok') for (const entry of anchors.nodes) add(entry.id, entry.findings.length);
   if (dependencies.state === 'ok') for (const edge of dependencies.edges) add(edge.source, 1);
   if (layerDirection.state === 'ok') for (const edge of layerDirection.edges) add(edge.source, 1);
   return counts;
