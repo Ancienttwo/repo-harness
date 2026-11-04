@@ -8,14 +8,13 @@ import { fileURLToPath } from 'node:url';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import type { JsonValue } from '../../core/evidence/types';
 import { decodeQuotaReport } from '../../core/operator/quota';
-import type { ProcessProof, ReviewHostSpec, TaskRequest } from '../../core/review/runner-port';
+import type { ProcessProof, ReviewerRunner, ReviewHostSpec, TaskRequest } from '../../core/review/runner-port';
 import {
   CLEANUP_INVESTIGATION_MANIFEST, cleanupInvestigationInstructions, cleanupInvestigationManifest, decodeCleanupInvestigationResult,
   WORKTREE_CLEANUP_INVESTIGATION_MAX_ITEMS, type CleanupAdvice, type CleanupInvestigationFailure, type CleanupInvestigationJob, type CleanupInvestigationStatus, type CleanupPlan,
 } from '../../core/operator/worktree-cleanup-plan';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { configuredGitBinary, gitExecFileSync, withoutRepositorySelectingGitEnv } from '../git/runner';
-import { reviewSessionOptions, taskReviewRunner } from '../review-runner/task-review-runner';
 import { prepareCodexHome, prepareReviewLauncher, removeCopiedAuth, reviewIsolationPolicy, type CleanupReviewIsolationPaths } from '../review/review-isolation';
 import { runSetupProcess, type SetupProcessRunner } from '../setup/collector';
 import { readSessionArtifact, writeSessionArtifact, writeSessionBytes } from '../terminal/task-session-io';
@@ -96,7 +95,8 @@ export interface CleanupInvestigationRouteOptions {
   readonly run_process?: SetupProcessRunner;
 }
 
-const CHILD_ENTRY = fileURLToPath(import.meta.url);
+/** The job child is a hidden CLI subcommand, because the CLI root injects the review runner (ADR-0002 rule 5). */
+const JOB_ARGV = Object.freeze([fileURLToPath(new URL('../../cli/index.ts', import.meta.url)), 'operator', 'cleanup-investigation-job'] as const);
 
 /** Write the running record, then start the job child. The record, not this promise, carries the outcome. */
 export async function startCleanupInvestigation(sessionId: string, options: CleanupInvestigationRouteOptions = {}): Promise<CleanupInvestigationJob> {
@@ -116,7 +116,7 @@ export async function startCleanupInvestigation(sessionId: string, options: Clea
   saveCleanupInvestigation(env, job);
   const childEnv = withoutRepositorySelectingGitEnv({ ...env, GIT_TERMINAL_PROMPT: '0' });
   // Not aborted on server close: the job finishes or meets its process-group deadline.
-  void (options.run_process ?? runSetupProcess)([CHILD_ENTRY, JSON.stringify({ session_id: sessionId, job_id: job.job_id }), String(JOB_TIMEOUT_MS - JOB_DEADLINE_MARGIN_MS)],
+  void (options.run_process ?? runSetupProcess)([...JOB_ARGV, sessionId, job.job_id, String(JOB_TIMEOUT_MS - JOB_DEADLINE_MARGIN_MS)],
     { cwd: process.cwd(), env: childEnv, timeout_ms: JOB_TIMEOUT_MS, signal: new AbortController().signal, service: 'worktree-cleanup-investigation' })
     .then(result => {
       // The child writes the final record. A child that stopped before it did leaves this job running.
@@ -216,22 +216,25 @@ async function waitFor(path: string, deadline: number, alive: () => boolean): Pr
   }
 }
 
+/** The parts of the reviewer runner port that one cleanup turn uses. The CLI root injects the task-agent-host implementation. */
+export type CleanupReviewHost = Pick<ReviewerRunner<unknown, unknown, unknown>, 'installation' | 'hostCommand' | 'sessionOptions'>;
+
 /** Production investigator: codex in the review host, with the host's own file request protocol. */
-export const reviewHostInvestigator: CleanupInvestigator = async (run, request, context, deadline) => {
+export const reviewHostInvestigator = (runner: CleanupReviewHost): CleanupInvestigator => async (run, request, context, deadline) => {
   const env = process.env;
   const home = prepareCodexHome(run.output, env.HOME ?? userInfo().homedir, deadline - Date.now()).home;
   try {
-    const installed = await taskReviewRunner.installation('codex');
+    const installed = await runner.installation('codex');
     if (installed.kind !== 'available' || installed.via !== 'executable') throw new CleanupInvestigationError('host_failed');
     const launcher = prepareReviewLauncher(run.control, run.policyFile, installed.command);
-    const isolated = await taskReviewRunner.installation('codex', launcher);
+    const isolated = await runner.installation('codex', launcher);
     if (isolated.kind !== 'available' || isolated.via !== 'executable' || isolated.command !== launcher) throw new CleanupInvestigationError('host_failed');
     const spec: ReviewHostSpec = { mode: 'review', isolation: { paths: run.paths, policyFile: run.policyFile }, kind: 'codex', installation: isolated, launcher,
-      vendorExecutable: realpathSync(installed.command), options: reviewSessionOptions('codex', run.output, home),
+      vendorExecutable: realpathSync(installed.command), options: runner.sessionOptions('codex', run.output, home),
       requestDirectory: run.control, output: run.output, controlDirectory: run.control, timeoutMs: TURN_TIMEOUT_MS };
     const specFile = join(run.control, 'host.json');
     writeSessionArtifact(specFile, spec);
-    const [node, ...args] = taskReviewRunner.hostCommand(specFile, false);
+    const [node, ...args] = runner.hostCommand(specFile, false);
     const log = openSync(join(run.control, 'host.log'), 'wx', 0o600);
     const host = spawn(node!, args, { cwd: run.control, env, stdio: ['ignore', log, log] });
     closeSync(log);
@@ -309,22 +312,23 @@ export async function runCleanupInvestigation(sessionId: string, jobId: string, 
   return plan;
 }
 
-if (import.meta.main) {
-  const { session_id: sessionId, job_id: jobId } = JSON.parse(process.argv[2] ?? '') as { session_id: string; job_id: string };
-  const deadlineMs = Number(process.argv[3]);
-  if (!Number.isSafeInteger(deadlineMs) || deadlineMs <= 0) throw new Error('worktree cleanup investigation deadline is invalid');
+/**
+ * The job child: run one job, then write its final record. A typed failure is
+ * recorded as it is. Any other error is a defect: its text goes next to the
+ * run directories for the owner, and the record says `host_failed`.
+ */
+export async function runCleanupInvestigationJob(sessionId: string, jobId: string, deadlineMs: number, runner: CleanupReviewHost): Promise<void> {
+  if (!SESSION.test(sessionId) || !SESSION.test(jobId) || !Number.isSafeInteger(deadlineMs) || deadlineMs <= 0) throw new Error('worktree cleanup investigation job arguments are invalid');
   const env = process.env, job = loadCleanupInvestigation(env, sessionId);
   if (job?.job_id !== jobId || job.state !== 'running') throw new Error('worktree cleanup investigation job changed');
   let failure: CleanupInvestigationFailure | null = null;
-  try { await runCleanupInvestigation(sessionId, jobId, { env, deadline: Date.now() + deadlineMs, investigate: reviewHostInvestigator }); } catch (error) {
+  try { await runCleanupInvestigation(sessionId, jobId, { env, deadline: Date.now() + deadlineMs, investigate: reviewHostInvestigator(runner) }); } catch (error) {
     if (error instanceof CleanupInvestigationError) failure = error.failure;
     else {
-      // Keep the defect text for the owner next to the run; the record carries only the typed failure.
       const runs = privateDirectory(join(prepareOperatorStateDir(env), 'worktree-cleanup-investigation'));
       writeFileSync(join(runs, `${jobId}-error.txt`), String((error as Error)?.stack ?? error), { mode: 0o600 });
       failure = 'host_failed';
     }
   }
   saveCleanupInvestigation(env, { ...job, state: failure === null ? 'succeeded' : 'failed', failure });
-  process.stdout.write('{"ok":true}\n', () => process.exit(0));
 }

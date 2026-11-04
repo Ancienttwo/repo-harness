@@ -266,6 +266,12 @@ routeTest('the investigation routes start one job, refuse a second while it runs
     const record = loadCleanupInvestigation(f.env, first.session_id)!;
     saveCleanupInvestigation(f.env, { ...record, state: 'running', failure: null, deadline_at: '2026-11-04T00:00:00.000Z' });
     expect(readCleanupInvestigationStatus(f.env, first.session_id)).toMatchObject({ state: 'failed', failure: 'interrupted' });
+    // The real job child is the hidden CLI subcommand. Without codex credentials (macOS) or Seatbelt (other hosts) it records its own typed failure.
+    const real = await startCleanupInvestigation(first.session_id, { env: childEnv, read_quota: quota('normal') });
+    for (let turn = 0; turn < 600 && loadCleanupInvestigation(f.env, first.session_id)?.state === 'running'; turn++) await Bun.sleep(100);
+    expect(loadCleanupInvestigation(f.env, first.session_id)).toMatchObject({ job_id: real.job_id, state: 'failed', failure: process.platform === 'darwin' ? 'host_failed' : 'isolation_unproven' });
+    if (process.platform === 'darwin') expect(readFileSync(join(f.home, 'operator/worktree-cleanup-investigation', `${real.job_id}-error.txt`), 'utf8')).toContain('review_auth');
+    expect(loadCleanupSession(f.env, first.session_id).plan).toEqual(first);
     const audit = readFileSync(join(f.home, 'operator/audit.jsonl'), 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
     expect(audit.filter(entry => entry.phase === 'intent').map(entry => [entry.operation, entry.target])).toEqual([
       ['worktrees_cleanup_investigation', `worktree_cleanup_session:${first.session_id}`], ['worktrees_cleanup_investigation', `worktree_cleanup_session:${first.session_id}`],

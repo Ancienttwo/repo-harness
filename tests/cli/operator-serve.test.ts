@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { taskReviewRunner } from '../../src/effects/review-runner/task-review-runner';
 import { MODULE_ID, MODULE_DOC, MODULE_NODE, moduleRepository, fixtureYaml, fixtureWrite, fixtureCommit, fixtureGit, isNativeExportGitRead } from '../helpers/module-repository';
 import { createHash } from 'node:crypto';
 import { chmodSync, watch, lstatSync, renameSync } from 'node:fs';
@@ -104,7 +105,7 @@ describe('operator serve command and HTTP boundary', () => {
     expect(() => parseOperatorServeOptions({ host: '0.0.0.0' })).toThrow('127.0.0.1 or ::1');
     expect(() => parseOperatorServeOptions({ port: '65536' })).toThrow('port');
     expect(() => parseOperatorServeOptions({ timeoutMs: '999' })).toThrow('timeout-ms');
-    expect(buildOperatorCommand().name()).toBe('operator');
+    expect(buildOperatorCommand(taskReviewRunner).name()).toBe('operator');
   });
 
   test('UX-local-human-control-board-v1-P1 serves health, the registered repositories without their roots, and static fallback', async () => {
