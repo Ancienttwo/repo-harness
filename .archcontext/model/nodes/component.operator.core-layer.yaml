@@ -40,6 +40,7 @@ source:
     - src/core/operator/pane-prefix.ts
     - src/core/operator/public-text.ts
     - src/core/operator/pull-request-files.ts
+    - src/core/operator/quota.ts
     - src/core/operator/repositories.ts
     - src/core/operator/runtime-capture-decoders.ts
     - src/core/operator/runtime-capture.ts

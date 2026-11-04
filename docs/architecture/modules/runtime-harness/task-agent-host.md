@@ -1,9 +1,9 @@
 # runtime-harness/task-agent-host 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:efc48318346387eaae4c35f5881e7f3a462550bf0545506eda5903d125bca549" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b6adbbe150733b0ca26a083c3d6744ea5372bff6c7ff9b95ffc719ea988481c5" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.task-agent-host`(kind `capability`)
-> **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/herdr-core.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/native-task-session.ts`、`src/effects/review-runner/**`
+> **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/native-task-session.ts`、`src/effects/review-runner/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -21,7 +21,6 @@ flowchart LR
   p1_component_task_agent_host_primary_d8453f09["Herdr Task Session Host"]:::component
   p1_component_task_agent_host_primary_assets_5212098e["Herdr Task Session Host (assets)"]:::component
   p1_component_task_agent_host_primary_cli_1076e150["Herdr Task Session Host (cli)"]:::component
-  p1_component_task_agent_host_primary_core_a2a0dfb5["Herdr Task Session Host (core)"]:::component
   p1_component_task_agent_host_primary_scripts_e0855c5f["Herdr Task Session Host (scripts)"]:::component
   p1_component_task_agent_host_review_runner_c2379e1e["Reviewer Runner"]:::component
   p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Start send and collect persistent Herdr task agents"| p1_component_task_agent_host_primary_d8453f09
@@ -33,8 +32,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:5d77e345e5d1fc8a598f0d400a2f86f9e775c9e6783ed9ef431de29868c35c9c`).
-- Semantic nodes: `9`; declared relations: `3`.
+- Proof: `proven` (`sha256:35be40ab07f6a44a845fbe3b9ad0e6471e30ae6d4cd1900275e07f31bf086ded`).
+- Semantic nodes: `8`; declared relations: `3`.
 
 ### 1.2 模組職責表
 
@@ -57,7 +56,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `2000–5000` 行
-- 匹配前綴:`src/effects/terminal/herdr.ts`、`src/effects/terminal/herdr-core.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/native-task-session.ts`、`src/effects/review-runner/**`
+- 匹配前綴:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/native-task-session.ts`、`src/effects/review-runner/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -69,8 +68,7 @@ flowchart LR
 - `deployed-on` → `process.oar-review-host` — The reviewer runner builds and runs the OAR review host bundle.
 - `calls` → `capability.runtime-harness.evidence-ledger` — Hash request context and result bytes with the evidence canonical JSON
 - `depends-on` → `external.herdr-app` — Own the one herdr-app do argv for tab.new, pane.split, pane.close and terminal.keep. The console prints the terminal.keep command for the person to run.
-- `calls` → `external.herdr-core` — Run labeled task-agent, review-host and notify relay terminals with hc run, and get, list, send to, kill and remove them. Follow hc events in the notify relay. List seat terminals and read the hc version for the board.
-- `depends-on` → `capability.organization.board` — Implement the board host port: seat terminals by parent label and the hc version
+- `calls` → `external.herdr-core` — Run labeled task-agent, review-host and notify relay terminals with hc run, and get, list, send to, kill and remove them. Follow hc events in the notify relay.
 - `depends-on` → `capability.runtime-harness.hook-adapters` — Use host installation commands for Herdr skill setup.
 - `depends-on` → `capability.workflow-engine.workflow-state` — Read admitted sessions and task session lists through the shared core selector and session types
 - `calls` → `component.task-agent-host.primary` — Start send and collect persistent Herdr task agents
@@ -82,7 +80,6 @@ flowchart LR
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Run the task worktree register, merge notice and cleanup actions as the task-agent-host process entry src/effects/terminal/task-worktree-runtime.ts
 - `depends-on` ← `capability.verification.evals-checks` — Test Task Agent Host behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the herdr and events commands and pass the Herdr skill setup step to the global runtime
-- `depends-on` ← `capability.runtime-harness.operator` — Read exact source-root-bound task sessions and role profiles for bounded discovery and selected current observations
 
 組件出向關係:
 
@@ -91,13 +88,10 @@ flowchart LR
 - `component.task-agent-host.events-cli`:
   - 無。
 - `component.task-agent-host.primary`:
-  - `calls` → `capability.workflow-engine.execution-primitives` — Run Git through the process runner, hold task session locks, and read and write immutable session artifacts
-  - `reads` → `component.execution-primitives.repository-registry` — Root the Herdr notify install record in the account-level repo-harness home.
+  - `calls` → `capability.workflow-engine.execution-primitives` — Run Git through the process runner, hold task session locks, read and write immutable session artifacts, run hc through the hc client, read the notify secret key names, read the notify config, the delivery record and the notify file paths through the notify read contract, and build the next delivery record with its channel names, record types and empty record
 - `component.task-agent-host.primary-assets`:
   - 無。
 - `component.task-agent-host.primary-cli`:
-  - 無。
-- `component.task-agent-host.primary-core`:
   - 無。
 - `component.task-agent-host.primary-scripts`:
   - 無。
@@ -113,16 +107,15 @@ flowchart LR
 | --- | --- | --- | --- |
 | `component.task-agent-host.cli-layer` | Task Agent Host (cli) | `2–5` 個文件 / `10–20` 行 | 未宣告 |
 | `component.task-agent-host.events-cli` | Bot Events Command (cli) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
-| `component.task-agent-host.primary` | Herdr Task Session Host | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.task-agent-host.primary` | Herdr Task Session Host | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.task-agent-host.primary-assets` | Herdr Task Session Host (assets) | `10–20` 個文件 / `200–500` 行 | 未宣告 |
 | `component.task-agent-host.primary-cli` | Herdr Task Session Host (cli) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
-| `component.task-agent-host.primary-core` | Herdr Task Session Host (core) | `1–2` 個文件 / `5–10` 行 | 未宣告 |
 | `component.task-agent-host.primary-scripts` | Herdr Task Session Host (scripts) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.task-agent-host.review-runner` | Reviewer Runner | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:5d77e345e5d1fc8a598f0d400a2f86f9e775c9e6783ed9ef431de29868c35c9c`); selectors `3/3`.
+> **Proof**: `proven` (`sha256:35be40ab07f6a44a845fbe3b9ad0e6471e30ae6d4cd1900275e07f31bf086ded`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

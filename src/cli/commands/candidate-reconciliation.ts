@@ -36,7 +36,7 @@ import {
 } from '../../effects/locking/runtime-transaction-lock';
 
 /** Protocol 2 drops the request profile: the candidate reads the recorded plugin selection from the install state. */
-export const CANDIDATE_RECONCILIATION_PROTOCOL = 2;
+export const CANDIDATE_RECONCILIATION_PROTOCOL = 3;
 export const CANDIDATE_RECONCILIATION_CAPABILITY_PROTOCOL = 1;
 const CANDIDATE_CAPABILITY_NAME = '.candidate-runtime-reconciliation-capability.v1.json';
 
@@ -95,7 +95,6 @@ export interface CandidateReconciliationRequest {
   readonly sync_skill: boolean;
   readonly host_adapters: boolean;
   readonly external_skills: boolean;
-  readonly reverse_skill: boolean;
   readonly obsidian_skills: boolean;
   readonly codegraph: boolean;
   readonly brain_root?: string;
@@ -491,11 +490,15 @@ export function parseCandidateRequest(encoded: string, candidateVersion: string)
     throw new Error('candidate reconciliation request is not an object');
   }
   const request = parsed as Record<string, unknown>;
-  if (request.protocol === 1) throw new CandidateRequestProtocolRetiredError(1, candidateVersion);
+  if (request.protocol === 1 || request.protocol === 2) {
+    throw new CandidateRequestProtocolRetiredError(request.protocol, candidateVersion);
+  }
   const requiredStrings = ['transaction_id', 'transaction_backup_root', 'parent_token', 'cwd'];
   const booleans = [
-    'sync_skill', 'host_adapters', 'external_skills', 'reverse_skill', 'obsidian_skills', 'codegraph',
+    'sync_skill', 'host_adapters', 'external_skills', 'obsidian_skills', 'codegraph',
   ];
+  // Fields that earlier request shapes carried; the runtime no longer reads them.
+  const retiredFields = ['profile', 'reverse_skill'];
   if (
     request.protocol !== CANDIDATE_RECONCILIATION_PROTOCOL
     || requiredStrings.some((key) => typeof request[key] !== 'string' || !(request[key] as string).length)
@@ -503,7 +506,7 @@ export function parseCandidateRequest(encoded: string, candidateVersion: string)
     || request.candidate === null
     || Array.isArray(request.candidate)
     || !['codex', 'claude', 'both'].includes(String(request.target))
-    || 'profile' in request
+    || retiredFields.some((key) => key in request)
     || booleans.some((key) => typeof request[key] !== 'boolean')
     || (request.brain_root !== undefined && typeof request.brain_root !== 'string')
     || (request.report_language !== undefined
