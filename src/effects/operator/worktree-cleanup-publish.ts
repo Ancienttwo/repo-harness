@@ -22,7 +22,10 @@ export interface CleanupArchivePublisherOptions {
   readonly target: (id: string) => CleanupObservationTarget;
   readonly github: GithubDraftPrPublisher;
 }
-type ArchivePorts = Pick<CleanupExecutionPorts, 'archiveCommit' | 'archivePush' | 'archivePr'>;
+type ArchivePorts = Pick<CleanupExecutionPorts, 'archiveCommit' | 'archivePush' | 'archivePr'> & {
+  /** Read only: the local branch, the remote branch and the Draft PR hold this key's archive commit. Returns the PR URL. */
+  readonly archivePublication: (key: string, item: CleanupPlanItem) => Promise<string>;
+};
 
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
 const PUSH_REMOTE = 'repo-harness-cleanup-archive';
@@ -136,6 +139,13 @@ export function createCleanupArchivePorts(sessionId: string, options: CleanupArc
       if (created.state !== 'created') throw new Error(`archive Draft PR ${created.state}`);
       const read = await options.github.find_draft_pr(d.publication, d.layout.branch, commit);
       if (read === null || read.number !== created.pr.number || read.url !== created.pr.url) throw new Error('archive Draft PR readback failed');
+      return read.url;
+    },
+    archivePublication: async (key, item) => {
+      const d = await destination(key, item), commit = ownCommit(d);
+      if (remoteHead(d, remoteUrl(d)) !== commit) throw new Error('archive remote branch changed');
+      const read = await options.github.find_draft_pr(d.publication, d.layout.branch, commit);
+      if (read === null) throw new Error('archive Draft PR readback failed');
       return read.url;
     },
   };
