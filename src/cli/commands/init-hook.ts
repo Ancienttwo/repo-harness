@@ -7,7 +7,6 @@
  * commands and risk notes.
  */
 
-import { formatInstallStateMigrationPlan, planInstallStateMigration } from '../installer/install-state-migration';
 import { spawnSync } from 'child_process';
 import { existsSync, lstatSync, readFileSync } from 'fs';
 import * as os from 'os';
@@ -188,33 +187,13 @@ function statusChecks(
   target: InitHookTarget,
   checkUpdates: boolean,
   actions: ActionLedger,
-  env: NodeJS.ProcessEnv,
 ): InitHookCheck[] {
   const checks: InitHookCheck[] = [];
   const invalidState = report.installState.recorded === 'invalid'
     ? report.installState
     : null;
   let stateActionId: string | null = null;
-  if (invalidState?.code === 'install_state_migration_required') {
-    stateActionId = 'install-state.migrate';
-    let mapping: string;
-    try {
-      const plan = planInstallStateMigration(env);
-      mapping = plan === null ? '' : ` Mapping: ${formatInstallStateMigrationPlan(plan).map(line => line.trim()).join('; ')}`;
-    } catch (error) {
-      mapping = ` The protocol 2 state cannot be migrated: ${(error as Error).message}`;
-    }
-    addAction(actions, {
-      id: stateActionId,
-      status: 'needs_agent',
-      reason: `Install state is protocol 2; repo-harness update migrates it to protocol 3.${mapping}`,
-      requires_agent: true,
-      risk: 'Rewrites the user-level install state and reprojects core and the mapped plugins under the install transaction; unmanaged host entries are preserved and a failure restores the protocol 2 state.',
-      command: 'repo-harness update',
-      targets: [invalidState.path],
-      verification: verificationCommand(target, checkUpdates),
-    }, []);
-  } else if (invalidState) {
+  if (invalidState) {
     stateActionId = 'install-state.repair';
     addAction(actions, {
       id: stateActionId,
@@ -855,7 +834,7 @@ export function buildSetupCheck(ports: DoctorPorts, opts: InitHookOptions = {}):
     : collectToolingReport(sourceRoot, cwd, target, checkUpdates, opts.env);
 
   const checks: InitHookCheck[] = [
-    ...statusChecks(statusReport, target, checkUpdates, actions, { ...process.env, ...opts.env }),
+    ...statusChecks(statusReport, target, checkUpdates, actions),
     adoptionRefreshCheck(statusReport, target, checkUpdates, actions),
     ...doctorChecks(doctorReport, target, checkUpdates, actions),
     ...globalRulesChecks(target, opts.env, sourceRoot, checkUpdates, actions),

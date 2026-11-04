@@ -123,7 +123,6 @@ export type InstallStateSnapshot = Omit<InstallState, 'previous'>;
 
 export type InstallStateErrorCode =
   | 'install_state_missing'
-  | 'install_state_migration_required'
   | 'install_state_protocol_retired'
   | 'install_state_invalid'
   | 'install_state_invalid_ownership'
@@ -736,19 +735,11 @@ export function recordUnresolvedPiOwnership(
   writeState({ ...state, ownership_manifest: canonicalOwnership([...retained, ...pending.values()]) }, env);
 }
 
-/**
- * Candidate processes publish ownership into the same ledger as the parent.
- * `readSnapshot` reads the pre-transaction state file; the protocol 2 -> 3
- * update passes the one-shot reader, because its snapshot predates the migration.
- */
-export function newPiPackagesSinceTransaction(
-  transaction: InstallHostTransaction,
-  env: NodeJS.ProcessEnv,
-  readSnapshotSurfaces: (raw: unknown, path: string) => readonly Pick<ManagedInstallSurface, 'path' | 'type'>[] = (raw, path) => parseState(raw, path, env).ownership_manifest,
-): readonly ManagedInstallSurface[] {
+/** Candidate processes publish ownership into the same ledger as the parent. */
+export function newPiPackagesSinceTransaction(transaction: InstallHostTransaction, env: NodeJS.ProcessEnv): readonly ManagedInstallSurface[] {
   const snapshot = transaction.snapshots.find(entry => entry.path === installProfileStatePath(env));
   const before = snapshot?.existed && snapshot.backup_path
-    ? readSnapshotSurfaces(JSON.parse(readFileSync(snapshot.backup_path, 'utf8')), snapshot.backup_path)
+    ? parseState(JSON.parse(readFileSync(snapshot.backup_path, 'utf8')), snapshot.backup_path, env).ownership_manifest
     : [];
   const sources = new Set(before.filter(surface => surface.type === 'pi-package').map(surface => surface.path));
   const current = readInstallState(env);
@@ -1093,12 +1084,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/**
- * The surface fields shared by every protocol that records ownership: path
- * allowlist, type and hash shape. The protocol 2 -> 3 one-shot reuses it for
- * its source ledger, so both protocols accept the same set of paths.
- */
-export function validSurfaceShape(raw: Record<string, unknown>, env: NodeJS.ProcessEnv, extraPath?: string): boolean {
+/** The path allowlist, type and hash shape of a recorded ownership surface. */
+function validSurfaceShape(raw: Record<string, unknown>, env: NodeJS.ProcessEnv): boolean {
   if (raw.type === 'pi-package') {
     return raw.authority === 'repo-harness-install-transaction' && raw.removal === 'managed-surfaces-only'
       && raw.path === bunGlobalPackageRoot(env) && raw.managed_marker === 'pi-package-source'
@@ -1109,7 +1096,7 @@ export function validSurfaceShape(raw: Record<string, unknown>, env: NodeJS.Proc
     raw.authority === 'repo-harness-install-transaction'
     && raw.removal === 'managed-surfaces-only'
     && typeof raw.path === 'string'
-    && (allowedPaths.has(raw.path) || raw.path === extraPath || isDiscoveredFacadePath(raw.path, env.HOME ?? homedir(), env))
+    && (allowedPaths.has(raw.path) || isDiscoveredFacadePath(raw.path, env.HOME ?? homedir(), env))
     && ['directory-copy', 'symlink', 'managed-file'].includes(String(raw.type))
     && (raw.content_hash === null || typeof raw.content_hash === 'string')
     && (raw.managed_marker === null || typeof raw.managed_marker === 'string')
@@ -1159,17 +1146,25 @@ function parseSelection(raw: unknown, ids: readonly PluginId[], path: string, la
   return ids;
 }
 
+/** 0.25.4 is the last release that reads protocol 2: its `update` migrates the state to protocol 3 (#1607). */
+const PROTOCOL_2_BRIDGE = 'bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version 0.25.4';
+
+function currentPackageUpdate(): string {
+  return `bun add -g repo-harness@${installedPackageVersion()} --no-cache && repo-harness update`;
+}
+
 function parseStateBase(raw: unknown, path: string, env: NodeJS.ProcessEnv, label: string): InstallStateSnapshot {
   if (!isRecord(raw)) throw invalid(path, `${label} is not an object`);
   if (raw.protocol === 1) {
     throw new InstallStateError('install_state_protocol_retired', path,
-      `install state ${path} is protocol 1, which this package no longer reads. Migrate it with the 0.25.x bridge first: `
+      `install state ${path} is protocol 1, which this package no longer reads. Migrate it with the 0.25.3 bridge first: `
       + 'bun add -g repo-harness@0.25.3 --no-cache, then run its protocol 1 migration (repo-harness install --help in 0.25.3 names it); '
-      + `then: bun add -g repo-harness@${installedPackageVersion()} --no-cache && repo-harness update`);
+      + `then the protocol 2 bridge: ${PROTOCOL_2_BRIDGE}; then: ${currentPackageUpdate()}`);
   }
   if (raw.protocol === 2) {
-    throw new InstallStateError('install_state_migration_required', path,
-      `install state ${path} is protocol 2; run: repo-harness update (it migrates the state to protocol 3 under the install transaction)`);
+    throw new InstallStateError('install_state_protocol_retired', path,
+      `install state ${path} is protocol 2, which this package no longer reads. Migrate it with the 0.25.4 bridge first: `
+      + `${PROTOCOL_2_BRIDGE} (its update migrates protocol 2 to 3); then: ${currentPackageUpdate()}`);
   }
   if (raw.protocol !== INSTALL_STATE_PROTOCOL) throw invalid(path, `${label} has unsupported protocol ${String(raw.protocol)}`);
   if (!isRecord(raw.core) || Object.keys(raw.core).join(',') !== 'version' || typeof raw.core.version !== 'string' || !raw.core.version.trim()) {
