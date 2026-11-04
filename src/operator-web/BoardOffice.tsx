@@ -2,42 +2,22 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import { cn } from '@cloudflare/kumo';
 import { XIcon } from '@phosphor-icons/react';
 import { ADVISOR_BOSS_COMMAND_TABLE, ADVISOR_BOSS_COMMANDS, advisorBossCommandText, advisorTurnState, type AdvisorBossCommand } from '../core/board/advisor-seat';
-import { DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, officeCards, serialParentsReader, type DeskState, type OfficeDesk, type OfficeFeedEvent, type OfficeLead, type OfficeRoom } from './board-office';
-import { useBoardParents, type BoardParentsReader } from './board-view';
+import {
+  DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, officeCard, officeCardRank, officeLit, officeRepositoryView, officeTotals, useOfficeOverview,
+  type BoardSummariesReader, type DeskState, type OfficeCard, type OfficeDesk, type OfficeFeedEvent, type OfficeLead, type OfficeRepositoryView, type OfficeRoom, type OfficeTotals,
+} from './board-office';
+import type { BoardParentsReader } from './board-view';
 import type { BoardRepositoryOption } from './BoardPage';
 import { useModalFocus } from './Drawer';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { useBossCommands, type BossCommands, type BossCommandWriter, type BossNotice } from './office-boss';
 import { WriteReloadBanner } from './operator-write';
-import { agentPortrait, bossPortrait, composeRoom, deskOutfit, deskVignette, queueOutfit, sceneEffect, stageOutfit, type ScenePath } from './office-scene';
+import { agentPortrait, bossPortrait, composeMiniRoom, composeRoom, deskOutfit, deskVignette, queueOutfit, sceneEffect, stageOutfit, type ScenePath } from './office-scene';
 import { BOSS_ICONS, sceneAgent, type BossPose } from './office-sprites';
 import type { ThemeMode } from './theme';
 import { Age, BoardState, CopyButton, PageLink } from './ui';
-import { boardHomeLocation, boardLocation, type BoardLayout, type BoardPlace, type WorkspaceLocation } from './workspace-location';
+import { boardHomeLocation, boardLocation, boardRoomLocation, type BoardLayout, type BoardPlace, type WorkspaceLocation } from './workspace-location';
 import './board-office.css';
-
-/** Pixel rows of the mockup's person sprites: k ink, s skin, m mouth, b shirt, c/C the agent colours. */
-const SEATED = ['...kkkkkk...', '..kccccccck.', '.kccccccccck', '.kccccccccck', '.kcCCCCCCCck', '.kssssssssk.', '..kbbbbbbk..', '.kbbbbbbbbk.', 'kbbbbbbbbbbk', 'kbbbbbbbbbbk'];
-/** The overview cards name no seats, so their sprites wear the unknown-agent colours. */
-const PALETTE: Readonly<Record<string, string>> = {
-  k: 'var(--office-ink)', s: 'var(--office-skin)', m: 'var(--office-mouth)', b: 'var(--office-shirt)',
-  c: 'var(--office-agent-unknown)', C: 'var(--office-agent-unknown-dk)',
-};
-
-/** One cell at (-px, -px) paints every pixel as a shadow, so pixel (0, 0) is not hidden under the cell. */
-function shadows(rows: readonly string[], px: number): string {
-  return rows.flatMap((row, y) => [...row].flatMap((cell, x) => PALETTE[cell] ? [`${(x + 1) * px}px ${(y + 1) * px}px 0 0 ${PALETTE[cell]}`] : [])).join(', ');
-}
-
-function Person({ rows, px, t }: { readonly rows: readonly string[]; readonly px: number; readonly t: OperatorTranslate }) {
-  const width = rows[0]!.length * px;
-  return (
-    <span className="board-office__sprite" style={{ width, height: rows.length * px }} aria-hidden="true">
-      <span style={{ left: -px, top: -px, width: px, height: px, boxShadow: shadows(rows, px) }} />
-      <span className="board-office__badge" style={{ left: width - 6, top: -4 }} title={t('board.office.agent.unknown')}>?</span>
-    </span>
-  );
-}
 
 const stateName = (state: DeskState, t: OperatorTranslate) => t(`board.office.state.${state}` as OperatorMessageKey);
 
@@ -114,72 +94,126 @@ function OfficeHeader({ heading, tools, place, onOpen, t }: {
   );
 }
 
-function RepositoryCards({ repository, readParents, generation, onOpen, t }: {
-  readonly repository: BoardRepositoryOption; readonly readParents: BoardParentsReader; readonly generation: number;
+type StatTone = 'info' | 'warn' | 'danger' | 'accent' | 'subtle';
+
+function OfficeStats({ totals, t }: { readonly totals: OfficeTotals; readonly t: OperatorTranslate }) {
+  const stats: readonly (readonly [string, StatTone, string])[] = [
+    ['rooms', 'subtle', t('board.office.total.rooms', { count: totals.rooms })],
+    ['workers', 'info', t('board.office.total.workers', { count: totals.workers })],
+    ['queue', 'warn', t('board.office.total.queue', { count: totals.queue })],
+    ['ci', 'danger', t('board.office.total.ci', { count: totals.ci_failures })],
+    ['needs-you', 'accent', t('board.office.total.needsYou', { count: totals.needs_you })],
+    ...(totals.unread > 0 ? [['unread', 'subtle', t('board.office.total.unread', { count: totals.unread })] as const] : []),
+  ];
+  return <>{stats.map(([key, tone, text]) => <span key={key} className="board-office__stat" data-office-total={key} data-tone={tone}><span aria-hidden="true" />{text}</span>)}</>;
+}
+
+/** The chips of one room; a value the server did not send has no chip. */
+function cardChips({ room, lit, summary }: OfficeCard, t: OperatorTranslate): readonly (readonly [string, StatTone | 'ok', string])[] {
+  if (!lit) return [['idle', 'subtle', t('board.office.idle')]];
+  const workers = room.desks.length;
+  const seats = ['workers', 'subtle', t('board.office.card.workers', { count: workers })] as const;
+  if (summary.status === 'not_read') return [seats, ['not-read', 'subtle', t('board.office.card.notRead')]];
+  if (summary.status === 'unavailable') return [seats, ['unavailable', 'warn', t('board.office.card.summaryUnavailable')]];
+  if (summary.status !== 'observed') return [seats];
+  const { needs_you: needsYou, queue, ci_failures: failures, batch } = summary.summary;
+  return [
+    ...(needsYou > 0 ? [['needs-you', 'accent', t('board.office.card.needsYou', { count: needsYou })] as const] : []),
+    batch.size === null ? ['workers', 'subtle', t('board.office.meter.noPlan', { count: workers })] as const : seats,
+    ...(queue > 0 ? [['queue', 'warn', t('board.office.card.queue', { count: queue })] as const] : []),
+    ...(failures > 0 ? [['ci', 'danger', t('board.office.card.ci', { count: failures })] as const] : []),
+    ...(batch.accepted ? [['batch', 'ok', t('board.office.card.batch', { accepted: batch.accepted, size: batch.size })] as const] : []),
+  ];
+}
+
+function MiniRoom({ card, frame, mode }: { readonly card: OfficeCard; readonly frame: number; readonly mode: ThemeMode }) {
+  const idle = !card.lit;
+  const night = mode === 'dark' || idle;
+  const shown = idle ? 0 : frame;
+  const paths = useMemo(() => {
+    const { room, summary } = card;
+    const observed = summary.status === 'observed' ? summary.summary : null;
+    return composeMiniRoom({
+      orchestrator: room.orchestrator === null ? null : sceneAgent(room.orchestrator.agent),
+      advisor: room.advisor === null ? null : sceneAgent(room.advisor.agent),
+      plan: observed !== null && observed.batch.size !== null,
+      needsYou: observed !== null && observed.needs_you > 0,
+      desks: room.desks.map(desk => ({ agent: sceneAgent(desk.agent), state: desk.state })),
+      queue: observed?.queue ?? 0,
+      idle,
+    }, { frame: shown, night });
+  }, [card, idle, night, shown]);
+  return <svg className="board-office__mini" data-night={night ? '' : undefined} viewBox="0 0 112 72" shapeRendering="crispEdges" aria-hidden="true"><Paths paths={paths} /></svg>;
+}
+
+function RepositoryCard({ repository, view, card, frame, mode, onOpen, t }: {
+  readonly repository: BoardRepositoryOption; readonly view: OfficeRepositoryView; readonly card: OfficeCard | null; readonly frame: number; readonly mode: ThemeMode;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate;
 }) {
-  const view = useBoardParents(readParents, repository.id, generation)!;
   const name = <strong>{repository.label}</strong>;
   if (view.kind === 'loading') {
-    return <div className="board-office__card" data-office-card="loading" data-repository={repository.id}><div className="board-office__card-name">{name}<span>{t('board.office.card.loading')}</span></div></div>;
+    return <div className="board-office__card" data-office-card="loading" data-repository={repository.id}><div className="board-office__mini" aria-hidden="true" /><div className="board-office__card-name">{name}<span>{t('board.office.card.loading')}</span></div></div>;
   }
   if (view.kind === 'failed') {
     return (
       <div className="board-office__card" role="group" aria-label={t('board.office.card.failed', { repository: repository.label })} data-office-card="failed" data-repository={repository.id} data-board-parents-reason={view.reason}>
+        <div className="board-office__mini" aria-hidden="true" />
         <div className="board-office__card-name">{name}</div>
         <p className="board-office__card-reason">{t(`board.reason.${view.reason}` as OperatorMessageKey)}</p>
       </div>
     );
   }
+  const room = card!;
+  const chips = cardChips(room, t);
+  const { summary, parent, lit } = room;
+  const waiting = summary.status === 'observed' && summary.summary.needs_you > 0;
+  const label = lit ? t('board.office.card.open', { repository: repository.label, chips: chips.map(([, , text]) => text).join(t('board.office.boss.separator')) })
+    : t('board.office.card.idleLabel', { repository: repository.label });
   return (
-    <>
-      {officeCards(view.list.parents).map((card) => {
-        if (card.kind === 'idle') {
-          return (
-            <div key="idle" className="board-office__card" role="group" aria-label={t('board.office.card.idleLabel', { repository: repository.label })} data-office-card="idle" data-repository={repository.id}>
-              <span className="board-office__thumb" data-idle aria-hidden="true">{t('board.office.card.idle')}</span>
-              <div className="board-office__card-name">{name}<span>{t('board.office.card.idle')}</span></div>
-            </div>
-          );
-        }
-        const { parent } = card;
-        const { completed, total } = parent.sub_issues;
-        return (
-          <button key={parent.number} type="button" className="board-office__card" data-office-card="parent" data-repository={repository.id} data-parent={parent.number}
-            aria-label={t('board.office.card.open', { repository: repository.label, number: parent.number, title: parent.title, seats: parent.seats, completed, total })}
-            onClick={() => onOpen(boardLocation({ repository_id: repository.id, parent: parent.number, issue: null, layout: 'office' }))}>
-            <span className="board-office__thumb" aria-hidden="true">
-              {Array.from({ length: parent.seats }, (_, index) => <Person key={index} rows={SEATED} px={2} t={t} />)}
-            </span>
-            <span className="board-office__card-name">{name}<span>#{parent.number} {parent.title}</span></span>
-            <span className="board-office__card-chips">
-              <span className="board-office__chip">{t('board.office.card.seats', { count: parent.seats })}</span>
-              <span className="board-office__chip">{t('board.office.card.progress', { completed, total })}</span>
-            </span>
-          </button>
-        );
-      })}
-    </>
+    <button type="button" className="board-office__card" aria-label={label} data-office-card={lit ? 'room' : 'idle'} data-repository={repository.id} data-parent={parent ?? undefined} data-waiting={waiting ? '' : undefined}
+      onClick={() => onOpen(boardRoomLocation(repository.id))}>
+      <MiniRoom card={room} frame={frame} mode={mode} />
+      <span className="board-office__card-name">{name}<span>{!lit ? t('board.office.noParent') : parent === null ? t('board.office.parent.none') : t('board.office.parent', { number: parent })}</span></span>
+      <span className="board-office__card-chips">{chips.map(([key, tone, text]) => <span key={key} className="board-office__card-chip" data-office-chip={key} data-tone={tone}>{text}</span>)}</span>
+    </button>
   );
 }
 
+/** The grid frame of the overview: slower than the room, as in the mockup. */
+const OVERVIEW_FRAME_MS = 400;
+
 /**
- * No board selected: one card per parent with seats in each registered
- * repository, from one parents read per repository. The cards share one
- * serial reader, so the reads run one at a time in repository order and a
- * waiting card shows loading.
+ * No board selected: one mini room per registered repository, from its seats
+ * and the stored summary of its active parent. The overview reads no board.
  */
-export function BoardOfficeOverview({ repositories, readParents, generation, onOpen, t }: {
-  readonly repositories: readonly BoardRepositoryOption[]; readonly readParents: BoardParentsReader; readonly generation: number;
-  readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate;
+export function BoardOfficeOverview({ repositories, readParents, readSummaries, generation, mode, onOpen, t }: {
+  readonly repositories: readonly BoardRepositoryOption[]; readonly readParents: BoardParentsReader; readonly readSummaries: BoardSummariesReader; readonly generation: number;
+  readonly mode: ThemeMode; readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate;
 }) {
-  const serialRead = useMemo(() => serialParentsReader(readParents), [readParents]);
+  const ids = useMemo(() => repositories.map(repository => repository.id), [repositories]);
+  const views = useOfficeOverview(ids, readParents, readSummaries, generation);
+  const { frame } = useClock(OVERVIEW_FRAME_MS);
+  const rooms = useMemo(() => repositories.map((repository) => {
+    const view = officeRepositoryView(views, repository.id);
+    return { repository, view, card: view.kind === 'ready' ? officeCard(view) : null };
+  }), [repositories, views]);
+  const ordered = useMemo(() => [...rooms].sort((left, right) => officeCardRank(left.card) - officeCardRank(right.card)), [rooms]);
+  const totals = useMemo(() => officeTotals(rooms.map(room => room.card)), [rooms]);
+  const mascot = t('board.office.mascot');
+  const heading = (
+    <>
+      <span className="board-office__mascot" role="img" aria-label={mascot} title={mascot}>
+        <svg viewBox="0 0 16 22" width="32" height="44" shapeRendering="crispEdges" aria-hidden="true" data-moved={frame % 4 < 2 ? '' : undefined}><Paths paths={bossPortrait('calm', frame % 12 === 0 ? 1 : 0)} /></svg>
+      </span>
+      <h1 id="board-office-title">{t('nav.board')}</h1>
+    </>
+  );
   return (
     <section className="board-office" data-board-office="overview" aria-labelledby="board-office-title">
-      <OfficeHeader heading={<h1 id="board-office-title">{t('board.office.title')}</h1>} place={null} onOpen={onOpen} t={t} />
+      <OfficeHeader heading={heading} place={null} onOpen={onOpen} t={t} tools={repositories.length === 0 ? undefined : <OfficeStats totals={totals} t={t} />} />
       {repositories.length === 0
         ? <BoardState title={t('board.parents.noRepository.title')} description={t('board.parents.noRepository.body')} />
-        : <div className="board-office__cards">{repositories.map(repository => <RepositoryCards key={repository.id} repository={repository} readParents={serialRead} generation={generation} onOpen={onOpen} t={t} />)}</div>}
+        : <div className="board-office__cards">{ordered.map(({ repository, view, card }) => <RepositoryCard key={repository.id} repository={repository} view={view} card={card} frame={frame} mode={mode} onOpen={onOpen} t={t} />)}</div>}
     </section>
   );
 }
@@ -187,13 +221,13 @@ export function BoardOfficeOverview({ repositories, readParents, generation, onO
 /** The grid frame of the idle loops: 4 per second, still under reduced motion. */
 const FRAME_MS = 250;
 
-function useClock(): { readonly frame: number; readonly now: number; readonly still: boolean } {
+function useClock(frameMs: number): { readonly frame: number; readonly now: number; readonly still: boolean } {
   const [clock, setClock] = useState(() => ({ frame: 0, now: Date.now() }));
   const [still] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   useEffect(() => {
-    const timer = setInterval(() => setClock(current => ({ frame: still ? 0 : current.frame + 1, now: Date.now() })), FRAME_MS);
+    const timer = setInterval(() => setClock(current => ({ frame: still ? 0 : current.frame + 1, now: Date.now() })), frameMs);
     return () => clearInterval(timer);
-  }, [still]);
+  }, [still, frameMs]);
   return { ...clock, still };
 }
 
@@ -460,11 +494,11 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
   readonly room: OfficeRoom; readonly place: BoardPlace | null; readonly banners: ReactNode; readonly writeBoss: BossCommandWriter; readonly mode: ThemeMode;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
 }) {
-  const clock = useClock();
+  const clock = useClock(FRAME_MS);
   const boss = useBossCommands(writeBoss, repositoryId, parent);
   const [picked, setPicked] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<AdvisorBossCommand | null>(null);
-  const lit = room.orchestrator !== null || room.advisor !== null || room.desks.length > 0;
+  const lit = officeLit(room);
   const night = mode === 'dark' || !lit;
   const idle = !lit && parent === null;
   const { plan } = room;

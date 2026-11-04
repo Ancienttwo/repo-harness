@@ -29,7 +29,7 @@ import { failedSources, openPullRequests, repositoryById, type DevActivityView }
 import type { OperatorLocale, OperatorTranslate } from './i18n';
 import type { ThemePreference } from './theme';
 import { PageLink, StatusDot, type DotTone } from './ui';
-import { WORKSPACES, type NavGroup, type NavWorkspace, type Workspace, type WorkspaceLocation } from './workspace-location';
+import { DEFAULT_LOCATION, WORKSPACES, type NavGroup, type NavWorkspace, type Workspace, type WorkspaceLocation } from './workspace-location';
 
 const NAV_ICON: Readonly<Record<NavWorkspace, ReactNode>> = {
   home: <HouseIcon size={16} />,
@@ -103,7 +103,6 @@ function isActive(current: Workspace, workspace: NavWorkspace): boolean {
   return current === workspace;
 }
 
-const HOME: WorkspaceLocation = { workspace: 'home', module: null, item: null };
 const REPOSITORIES: WorkspaceLocation = { workspace: 'repositories', module: null, item: null };
 
 export interface SwitchOption {
@@ -329,7 +328,7 @@ export function NavRail({
           'rail:sticky rail:top-0 rail:z-20 rail:h-dvh rail:shrink-0',
           collapsed && 'rail:w-16 rail:px-2')}>
         <div className={cn('flex items-center gap-2 px-1', collapsed && 'rail:flex-col rail:px-0')}>
-          <PageLink to={HOME} onOpen={open} className="flex min-w-0 items-center gap-2">
+          <PageLink to={DEFAULT_LOCATION} onOpen={open} className="flex min-w-0 items-center gap-2">
             <LogoMark height={36} />
             <span className={cn('type-title truncate text-kumo-strong', collapsed && 'rail:sr-only')}>repo-harness</span>
           </PageLink>

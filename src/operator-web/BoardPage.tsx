@@ -9,7 +9,7 @@ import {
   BOARD_STAGES, findingItem, itemStage, itemTerminals, shippedToday,
   useBoard, useBoardParents, type BoardParentsReader, type BoardParentsView, type BoardReader, type BoardReason, type BoardStage, type BoardView,
 } from './board-view';
-import { activeParent, officeRoom } from './board-office';
+import { activeParent, officeRoom, type BoardSummariesReader } from './board-office';
 import { BoardLayoutSwitch, BoardOfficeOverview, BoardOfficeRoom } from './BoardOffice';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import type { BossCommandWriter } from './office-boss';
@@ -416,7 +416,7 @@ function OfficeRepository({ repositoryId, place, placeView, readBoard, readBoard
   return <OfficeRoomView repositoryId={repositoryId} list={parents.list} view={view} place={place} parent={parent} writeBossCommand={writeBossCommand} mode={mode} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} onOpen={onOpen} now={now} t={t} />;
 }
 
-export function BoardPage({ layout, place, room, view, parents, repositories, chosenRepository, onRepository, readBoard, readBoardParents, writeBossCommand, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
+export function BoardPage({ layout, place, room, view, parents, repositories, chosenRepository, onRepository, readBoard, readBoardParents, readBoardSummaries, writeBossCommand, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
   /** The layout of the location; with a board it equals `place.layout`. */
   readonly layout: BoardLayout;
   readonly place: BoardPlace | null;
@@ -426,6 +426,8 @@ export function BoardPage({ layout, place, room, view, parents, repositories, ch
   readonly readBoard: BoardReader;
   /** The parents route: the office overview reads it once for each registered repository, and a room reads its seats. */
   readonly readBoardParents: BoardParentsReader;
+  /** The summaries route: the office overview reads it after the parents of each repository with an active parent. */
+  readonly readBoardSummaries: BoardSummariesReader;
   /** The boss command route of the office room (#1757). */
   readonly writeBossCommand: BossCommandWriter;
   /** Night in the scene follows the resolved theme. */
@@ -449,7 +451,7 @@ export function BoardPage({ layout, place, room, view, parents, repositories, ch
   const office = { readBoard, readBoardParents, writeBossCommand, mode, readExecution, readTaskMessages, generation, onOpen, now, t };
   if (place === null || view === null) {
     if (room !== null) return <OfficeRepository repositoryId={room} place={null} placeView={null} {...office} />;
-    if (layout === 'office') return <BoardOfficeOverview repositories={repositories} readParents={readBoardParents} generation={generation} onOpen={onOpen} t={t} />;
+    if (layout === 'office') return <BoardOfficeOverview repositories={repositories} readParents={readBoardParents} readSummaries={readBoardSummaries} generation={generation} mode={mode} onOpen={onOpen} t={t} />;
     return <ParentList repositories={repositories} repository={boardListRepository(repositories, chosenRepository)} onRepository={onRepository} parents={parents} onOpen={onOpen} now={now} t={t} />;
   }
   if (view.kind === 'loading') return <BoardState loading title={t('board.loading.title')} description={t('board.loading.parentBody', { number: place.parent })} />;

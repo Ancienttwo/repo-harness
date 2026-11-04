@@ -20,6 +20,7 @@ import { fetchBoard, fetchBoardParents, type BoardParentsRead, type BoardSubject
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import boardParents from '../../src/operator-web/fixtures/board-parents.json';
 import { decodeBoardParents, type BoardParentsV1 } from '../../src/core/board/parents';
+import { decodeBoardSummaries } from '../../src/core/board/summary';
 import { designTokenStylesheet } from '../../src/operator-web/design-tokens';
 import { OPERATOR_RAIL_STORAGE_KEY } from '../../src/operator-web/NavRail';
 import { fetchExecution, fetchTaskMessages, itemOwner, type CiRepairsReader, type ExecutionReader, type TaskMessagesReader } from '../../src/operator-web/repository-reads';
@@ -43,11 +44,11 @@ import { cleanupPlanPorts } from '../../src/operator-web/worktrees';
 import { OPERATOR_THEME_STORAGE_KEY, resolveThemeMode } from '../../src/operator-web/theme';
 import { decodeOperatorRepositories, type OperatorRepositoriesV1 } from '../../src/core/operator/repositories';
 import { fetchRepositories } from '../../src/operator-web/repositories';
-import { boardLayout, boardPlace, boardRoom, parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
-import { activeParent, DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, officeRoom } from '../../src/operator-web/board-office';
+import { boardLayout, boardPlace, boardRoom, DEFAULT_LOCATION, parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
+import { activeParent, DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, officeCard, officeRoom, type BoardSummariesRead } from '../../src/operator-web/board-office';
 import { OFFICE_PARENT, officeBoard, officeParents } from '../../src/operator-web/fixtures/office';
 import { postBossCommand, type BossCommandPost, type BossCommandWrite } from '../../src/operator-web/office-boss';
-import { composeRoom, sceneEffect, type SceneRoom } from '../../src/operator-web/office-scene';
+import { composeMiniRoom, composeRoom, sceneEffect, type SceneMiniRoom, type SceneRoom } from '../../src/operator-web/office-scene';
 import { sceneAgent } from '../../src/operator-web/office-sprites';
 
 let root: Root | null = null;
@@ -95,6 +96,7 @@ function props(activity: DevActivitySnapshotV2, overrides: Partial<OperatorAppPr
     readTaskMessages: async request => busyTaskMessages(request, NOW),
     readBoard: async () => ({ state: 'ok', board: BOARD }),
     readBoardParents: async () => ({ state: 'ok', list: PARENTS }),
+    readBoardSummaries: async id => ({ state: 'ok', summaries: { protocol: 1, kind: 'repo-harness.board-summaries', repository_id: id, parents: [] } }),
     ...overrides,
   };
 }
@@ -238,7 +240,7 @@ describe('board page', () => {
     expect(subjects).toEqual([{ repository_id: HARNESS_ID, parent: 1474 }]);
     expect(document.querySelector('[data-board-parent]')?.getAttribute('data-board-parent')).toBe('1474');
     expect(localStorage.getItem(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY)).toBe(HARNESS_ID);
-    for (const hash of ['#board/repo/0', '#board/repo/1474/x', '#board//1474', '#board/repo/1474/1476/9']) expect(parseWorkspaceLocation(hash).workspace).toBe('home');
+    for (const hash of ['#board/repo/0', '#board/repo/1474/x', '#board//1474', '#board/repo/1474/1476/9']) expect(parseWorkspaceLocation(hash)).toEqual(DEFAULT_LOCATION);
     expect(workspaceHash(parseWorkspaceLocation(`#board/${HARNESS_ID}/1474/1476`))).toBe(`#board/${HARNESS_ID}/1474/1476`);
   });
 
@@ -660,7 +662,7 @@ describe('board page', () => {
   });
 });
 
-const HOME_URL = 'http://127.0.0.1:4318/';
+const HOME_URL = 'http://127.0.0.1:4318/#home';
 const HEAD = '0123456789abcdef0123456789abcdef01234567';
 const midnight = (() => { const day = new Date(NOW); day.setHours(0, 0, 0, 0); return day.getTime(); })();
 
@@ -852,7 +854,7 @@ describe('board office (#1755)', () => {
     expect(sceneEffect(null, 1000, true)).toBeNull();
   });
 
-  test('the switch is part of the location: list and office open the same subject, and the office overview reads the parents once per repository', async () => {
+  test('the switch is part of the location: list and office open the same subject, and the office overview reads each repository once', async () => {
     for (const [hash, item, place] of [
       ['#board/office', 'office', null],
       [`#board/office/${HARNESS_ID}/1474`, `office/${HARNESS_ID}/1474`, { repository_id: HARNESS_ID, parent: 1474, issue: null, layout: 'office' }],
@@ -862,7 +864,7 @@ describe('board office (#1755)', () => {
       const location = parseWorkspaceLocation(hash);
       expect([location.item, boardPlace(location.item), workspaceHash(location)]).toEqual([item, place, hash]);
     }
-    for (const hash of ['#board/office/repo', '#board/office/1474', '#board/office/office', `#board/office/${HARNESS_ID}/1474/1476/9`]) expect(parseWorkspaceLocation(hash).workspace).toBe('home');
+    for (const hash of ['#board/office/repo', '#board/office/1474', '#board/office/office', `#board/office/${HARNESS_ID}/1474/1476/9`]) expect(parseWorkspaceLocation(hash)).toEqual(DEFAULT_LOCATION);
     // The room of a repository with no selected parent.
     const repositoryRoom = parseWorkspaceLocation(`#board/office/${HARNESS_ID}`);
     expect([boardRoom(repositoryRoom.item), boardPlace(repositoryRoom.item), boardLayout(repositoryRoom.item), workspaceHash(repositoryRoom)]).toEqual([HARNESS_ID, null, 'office', `#board/office/${HARNESS_ID}`]);
@@ -876,16 +878,15 @@ describe('board office (#1755)', () => {
     await settle();
     expect(window.location.hash).toBe('#board/office');
     expect(document.querySelector('[data-board-office]')?.getAttribute('data-board-office')).toBe('overview');
-    // One read for each registered repository; the list read of the chosen repository stays.
-    expect(new Set(lists)).toEqual(new Set(REGISTRY.repositories.map(row => row.repository_id)));
-    expect(lists.filter(id => id !== HARNESS_ID)).toHaveLength(REGISTRY.repositories.length - 1);
-    await act(async () => rows(`[data-office-card="parent"][data-repository="${HARNESS_ID}"]`)[0]!.click());
+    // One read for each registered repository: the list read stops, or it would take the parents slot of the overview.
+    expect(lists).toEqual(REGISTRY.repositories.map(row => row.repository_id));
+    await act(async () => rows(`[data-office-card="room"][data-repository="${HARNESS_ID}"]`)[0]!.click());
     await settle();
-    expect(window.location.hash).toBe(`#board/office/${HARNESS_ID}/1474`);
+    expect(window.location.hash).toBe(`#board/office/${HARNESS_ID}`);
     expect(document.querySelector('[data-board-office="room"]')?.getAttribute('data-board-parent')).toBe('1474');
     // A desk selects the side panel, and the panel title opens the Task drawer of its issue; the switch keeps the board and the drawer issue.
     await act(async () => rows('[data-desk="t2"]')[0]!.click());
-    expect(window.location.hash).toBe(`#board/office/${HARNESS_ID}/1474`);
+    expect(window.location.hash).toBe(`#board/office/${HARNESS_ID}`);
     expect(document.querySelector('[data-office-panel] [data-command] code')?.textContent).toBe('gh pr checks 1491');
     await act(async () => rows('[data-desk="t1"]')[0]!.click());
     await act(async () => rows('[data-panel-issue="1476"]')[0]!.click());
@@ -904,48 +905,179 @@ describe('board office (#1755)', () => {
     expect(document.querySelector('[data-board-parent]')?.getAttribute('data-board-parent')).toBe('1474');
   });
 
-  test('the overview reads the parents one repository at a time, in order; it has one card per parent with seats, one idle card for a repository with none, and a failed read on its own card', async () => {
+  const fiveRegistered = (ids: readonly string[]) => decodeOperatorRepositories({ protocol: 1, kind: 'operator_repositories', stale_registrations: 0, repositories: ids.map((id, index) => ({ repository_id: id, display_name: `service-${index + 1}`, access_mode: 'read_write' })) });
+  const summaryRead = (id: string, row: Parameters<typeof decodeBoardSummaries>[0]): BoardSummariesRead => ({ state: 'ok', summaries: decodeBoardSummaries({ protocol: 1, kind: 'repo-harness.board-summaries', repository_id: id, parents: [row] }) });
+  const observed = (summary: { readonly queue: number; readonly ci_failures: number; readonly batch: { readonly accepted: number | null; readonly size: number | null }; readonly needs_you: number }) => ({ parent: 1474, status: 'observed', observed_at: '2026-11-04T20:00:00.000Z', summary });
+
+  test('the overview sends one read at a time: the parents, then the summaries of a repository with an active parent, repository after repository', async () => {
     officeAt();
-    // Five registrations. The first answers at once: it is also the list repository, whose read App.tsx keeps.
-    const others = ['repo_2b3c4d5e6f708192', 'repo_3c4d5e6f70819203', 'repo_4d5e6f7081920314', 'repo_5e6f708192031425'];
-    const five = decodeOperatorRepositories({ protocol: 1, kind: 'operator_repositories', stale_registrations: 0, repositories: [
-      { repository_id: HARNESS_ID, display_name: 'repo-harness', access_mode: 'read_write' },
-      ...others.map((id, index) => ({ repository_id: id, display_name: `service-${index + 1}`, access_mode: 'read_write' })),
-    ] });
-    const failed = others[0]!;
-    const answer = (id: string): BoardParentsRead => id === HARNESS_ID ? { state: 'ok', list: PARENTS }
-      : id === failed ? { state: 'unavailable', reason: 'parents_hc_failed' } : { state: 'ok', list: { ...PARENTS, parents: [] } };
-    const waiting: { readonly id: string; readonly finish: () => void }[] = [];
-    const started: string[] = [];
+    const ids = [HARNESS_ID, 'repo_2b3c4d5e6f708192', 'repo_3c4d5e6f70819203', 'repo_4d5e6f7081920314'];
+    const [seated, idle, failed, last] = ids as [string, string, string, string];
+    const five = fiveRegistered(ids);
+    const parents = (id: string): BoardParentsRead => id === failed ? { state: 'unavailable', reason: 'parents_hc_failed' }
+      : { state: 'ok', list: id === idle ? { ...PARENTS, parents: [], seats: [] } : PARENTS };
+    const waiting: { readonly read: string; readonly finish: () => void }[] = [];
+    const delayed = <T,>(read: string, answer: T) => new Promise<T>(resolve => waiting.push({ read, finish: () => resolve(answer) }));
     await mount(<OperatorApp {...props(busy(), {
       initialRepositories: five, readRepositories: async () => five,
-      readBoardParents: (id) => {
-        if (id === HARNESS_ID) return Promise.resolve(answer(id));
-        started.push(id);
-        return new Promise(resolve => waiting.push({ id, finish: () => resolve(answer(id)) }));
-      },
+      readBoardParents: id => delayed(`parents:${id}`, parents(id)),
+      readBoardSummaries: id => delayed(`summaries:${id}`, summaryRead(id, { parent: 1474, status: 'not_read' })),
     })} />);
-    for (const id of others) {
+    for (const read of [`parents:${seated}`, `summaries:${seated}`, `parents:${idle}`, `parents:${failed}`, `parents:${last}`, `summaries:${last}`]) {
       await settle();
-      // One delayed read at a time; the cards behind it still load.
-      expect(waiting.map(entry => entry.id)).toEqual([id]);
-      expect(rows('[data-office-card="loading"]').length).toBeGreaterThan(0);
+      expect(waiting.map(entry => entry.read)).toEqual([read]);
       await act(async () => waiting.shift()!.finish());
     }
     await settle();
-    expect(started).toEqual(others);
+    expect(waiting).toEqual([]);
     expect(rows('[data-office-card="loading"]')).toHaveLength(0);
-    // #1651 has no seat, so only #1474 is a card.
-    const card = rows(`[data-office-card="parent"][data-repository="${HARNESS_ID}"]`);
-    expect(card.map(element => element.getAttribute('data-parent'))).toEqual(['1474']);
-    expect(card[0]!.tagName).toBe('BUTTON');
-    expect(card[0]!.getAttribute('aria-label')).toBe('repo-harness #1474 herdr-core 迁移：退役 classic herdr CLI（G37）: 3 seats, 2 of 9 sub-issues done. Open the office.');
-    expect(card[0]!.querySelectorAll('.board-office__sprite')).toHaveLength(3);
-    expect(rows(`[data-office-card="failed"][data-repository="${failed}"][data-board-parents-reason="parents_hc_failed"]`)).toHaveLength(1);
-    expect(rows('[data-office-card="idle"]').map(element => element.getAttribute('data-repository'))).toEqual(others.slice(1));
-    for (const element of rows('[data-office-card="idle"]')) expect(element.getAttribute('aria-label')).toContain('idle, no parent issue has a seat');
-    // The overview reads no board, so no card shows a queue, CI, batch or needs-you chip.
-    expect(document.querySelector('[data-board-office="overview"]')?.textContent).not.toMatch(/queue|CI|batch|needs you/iu);
+    const refused = rows(`[data-office-card="failed"][data-repository="${failed}"][data-board-parents-reason="parents_hc_failed"]`);
+    expect(refused).toHaveLength(1);
+    expect(refused[0]!.tagName).toBe('DIV');
+    const quiet = rows(`[data-office-card="idle"][data-repository="${idle}"]`)[0]!;
+    expect(quiet.getAttribute('aria-label')).toContain('idle, no parent issue has a seat');
+    expect(quiet.querySelector('.board-office__mini')?.hasAttribute('data-night')).toBe(true);
+    await act(async () => quiet.click());
+    expect(window.location.hash).toBe(`#board/office/${idle}`);
+  });
+
+  test('the card and the office chips show only what the server sent: the row of the active parent, with no chip for a missing value', async () => {
+    officeAt();
+    const parentless = { ...PARENTS, parents: [] };
+    const idle = { ...PARENTS, parents: [], seats: [] };
+    const zero = { queue: 0, ci_failures: 0, batch: { accepted: 0, size: 0 }, needs_you: 0 };
+    const cases: readonly { readonly id: string; readonly list: BoardParentsRead; readonly read: (id: string) => BoardSummariesRead; readonly chips: readonly string[]; readonly name?: string }[] = [
+      { id: 'repo_1000000000000001', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed(zero)), chips: ['worker 2'], name: 'parent #1474' },
+      { id: 'repo_1000000000000002', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed({ queue: 2, ci_failures: 1, batch: { accepted: null, size: null }, needs_you: 0 })), chips: ['worker 2 · no plan', 'queue 2', 'CI ✗ 1'] },
+      { id: 'repo_1000000000000003', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed({ queue: 1, ci_failures: 1, batch: { accepted: 3, size: 8 }, needs_you: 2 })), chips: ['needs you 2', 'worker 2', 'queue 1', 'CI ✗ 1', 'all batches 3/8'] },
+      { id: 'repo_1000000000000004', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, { parent: 1474, status: 'not_read' }), chips: ['worker 2', 'board not read'] },
+      { id: 'repo_1000000000000005', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, { parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' }), chips: ['worker 2', 'no summary'] },
+      { id: 'repo_1000000000000006', list: { state: 'ok', list: PARENTS }, read: () => ({ state: 'unavailable', reason: 'parents_busy' }), chips: ['worker 2', 'no summary'] },
+      // Another parent's row is never this card's row.
+      { id: 'repo_1000000000000007', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, { ...observed({ ...zero, queue: 9 }), parent: 1651 }), chips: ['worker 2', 'board not read'] },
+      { id: 'repo_1000000000000008', list: { state: 'ok', list: parentless }, read: () => { throw new Error('a repository with no active parent reads no summaries'); }, chips: ['worker 2'], name: 'no parent' },
+      { id: 'repo_1000000000000009', list: { state: 'ok', list: idle }, read: () => { throw new Error('an idle repository reads no summaries'); }, chips: ['Idle'], name: 'No parent in progress' },
+    ];
+    const registry = fiveRegistered(cases.map(entry => entry.id));
+    await mount(<OperatorApp {...props(busy(), {
+      initialRepositories: registry, readRepositories: async () => registry,
+      readBoardParents: async id => cases.find(entry => entry.id === id)!.list,
+      readBoardSummaries: async id => cases.find(entry => entry.id === id)!.read(id),
+    })} />);
+    await settle();
+    for (const { id, chips, name } of cases) {
+      const card = rows(`[data-repository="${id}"]`)[0]!;
+      expect(Array.from(card.querySelectorAll('[data-office-chip]')).map(chip => chip.textContent)).toEqual([...chips]);
+      if (name !== undefined) expect(card.querySelector('.board-office__card-name')?.textContent).toContain(name);
+      expect(card.tagName).toBe('BUTTON');
+    }
+    // Waiting for you first, then CI failed, then the lit rooms, then the idle rooms, each in registry order.
+    expect(rows('[data-office-card]').map(card => card.getAttribute('data-repository')!.at(-1))).toEqual(['3', '2', '1', '4', '5', '6', '7', '8', '9']);
+    expect(rows('[data-repository$="3"]')[0]!.hasAttribute('data-waiting')).toBe(true);
+    expect(rows('[data-office-total]').map(chip => chip.textContent)).toEqual(['rooms: 9', 'on seat: 16', 'queued for acceptance: 3', 'CI failed: 2', 'waiting for you: 2', 'rooms not read: 4']);
+    expect(rows('[data-repository$="3"]')[0]!.getAttribute('aria-label')).toBe('service-3: needs you 2, worker 2, queue 1, CI ✗ 1, all batches 3/8. Open the office.');
+    expect(document.querySelector('.board-office__mascot')?.getAttribute('aria-label')).toBe('Boss (you): calm');
+  });
+
+  test('a hidden tab drops every kept observation: with a parents read, a summaries read or no read in flight, the resumed cycle shows nothing old', async () => {
+    const counts = (queue: number) => ({ queue, ci_failures: 0, batch: { accepted: null, size: null }, needs_you: 0 });
+    const stale = 3;
+    const fresh = 5;
+    const totals = () => rows('[data-office-total]').map(chip => chip.textContent);
+    for (const inFlight of ['parents', 'summaries', 'none'] as const) {
+      officeAt();
+      let visibility = 'visible';
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
+      const visible = async (value: string) => { visibility = value; await act(async () => document.dispatchEvent(new window.Event('visibilitychange') as unknown as Event)); };
+      const one = fiveRegistered([HARNESS_ID]);
+      let hold: 'parents' | 'summaries' | null = null;
+      let queue = stale;
+      const held: (() => void)[] = [];
+      const gate = <T,>(read: 'parents' | 'summaries', answer: T) => (hold === read ? new Promise<T>(resolve => held.push(() => resolve(answer))) : Promise.resolve(answer));
+      await mount(<OperatorApp {...props(busy(), {
+        initialRepositories: one, readRepositories: async () => one,
+        readBoardParents: () => gate('parents', { state: 'ok', list: PARENTS }),
+        readBoardSummaries: id => gate('summaries', summaryRead(id, observed(counts(queue)))),
+      })} />);
+      await settle();
+      expect(rows('[data-office-chip="queue"]').map(chip => chip.textContent)).toEqual([`queue ${stale}`]);
+      if (inFlight !== 'none') {
+        hold = inFlight;
+        await act(async () => rows('button').find(element => element.textContent?.includes('Refresh'))!.click());
+        await settle();
+        expect(held).toHaveLength(1);
+      }
+      await visible('hidden');
+      const unconfirmed = ['rooms: 1', 'on seat: 0', 'queued for acceptance: 0', 'CI failed: 0', 'waiting for you: 0', 'rooms not read: 1'];
+      expect(rows('[data-office-card="loading"]')).toHaveLength(1);
+      expect(totals()).toEqual(unconfirmed);
+      // The aborted read answers late; its answer does not count.
+      await act(async () => { held.splice(0).forEach(finish => finish()); });
+      await settle();
+      expect(totals()).toEqual(unconfirmed);
+      queue = fresh;
+      hold = 'parents';
+      await visible('visible');
+      await settle();
+      expect(held).toHaveLength(1);
+      expect(rows('[data-office-card="loading"]')).toHaveLength(1);
+      expect(totals()).toEqual(unconfirmed);
+      hold = null;
+      await act(async () => held.shift()!());
+      await settle();
+      expect(rows('[data-office-chip="queue"]').map(chip => chip.textContent)).toEqual([`queue ${fresh}`]);
+      expect(totals()).toEqual(['rooms: 1', 'on seat: 2', `queued for acceptance: ${fresh}`, 'CI failed: 0', 'waiting for you: 0']);
+      await act(async () => root?.unmount());
+      root = null;
+      window.happyDOM.abort();
+    }
+  });
+
+  test('the sample leads equal the mockup: an empty seat stays empty, and an occupied seat with an unknown agent stays occupied', () => {
+    const repository = fixtureProps(OFFICE_FIXTURE).initialRepositories!.repositories.find(row => row.display_name === 'arch-context')!.repository_id;
+    const { room } = officeCard({ kind: 'ready', list: officeParents(repository, NOW), summaries: null });
+    expect([room.orchestrator?.agent, room.advisor]).toEqual([null, null]);
+    expect(room.orchestrator).not.toBeNull();
+    const lead = (orchestrator: SceneMiniRoom['orchestrator']) => composeMiniRoom({ orchestrator, advisor: null, plan: false, needsYou: false, desks: [], queue: 0, idle: false }, { frame: 0, night: false });
+    expect(lead(sceneAgent(null))).not.toEqual(lead(null));
+  });
+
+  test('a mini room draws the seats and the summary it gets: lit screens, the door, the whiteboard and the grey idle room', () => {
+    // The other-agent palette uses none of the three colours under test.
+    const agent = sceneAgent('hermes');
+    const base: SceneMiniRoom = { orchestrator: agent, advisor: agent, plan: true, needsYou: false, desks: [{ agent, state: 'coding' }], queue: 0, idle: false };
+    const colors = (room: SceneMiniRoom) => composeMiniRoom(room, { frame: 0, night: false }).map(path => path.color);
+    expect(colors(base)).toContain('screen');
+    expect(colors({ ...base, desks: [{ agent, state: 'idle' }] })).not.toContain('screen');
+    expect(colors(base)).not.toContain('accent');
+    expect(colors({ ...base, needsYou: true })).toContain('accent');
+    const paper = (room: SceneMiniRoom) => composeMiniRoom(room, { frame: 0, night: false }).find(path => path.color === 'paper')!.d;
+    expect(paper({ ...base, plan: false })).not.toBe(paper(base));
+    expect(colors({ ...base, orchestrator: null, advisor: null, desks: [], idle: true })).not.toContain('wall');
+    // More figures than the zone holds still draw inside the 112x72 grid.
+    expect(composeMiniRoom({ ...base, queue: 40 }, { frame: 0, night: false })).toEqual(composeMiniRoom({ ...base, queue: 4 }, { frame: 0, night: false }));
+  });
+
+  test('the Office is the landing page: an empty fragment and the logo open it; #home stays Home', async () => {
+    expect(parseWorkspaceLocation('')).toEqual(DEFAULT_LOCATION);
+    expect(parseWorkspaceLocation('#nope')).toEqual(DEFAULT_LOCATION);
+    expect(workspaceHash(DEFAULT_LOCATION)).toBe('#board/office');
+    expect(parseWorkspaceLocation('#home').workspace).toBe('home');
+    installDom('http://127.0.0.1:4318/#home');
+    await mount(<OperatorApp {...props(busy(), { readCiRepairs: async () => ({ state: 'ok', issues: [] }) })} />);
+    expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('home');
+    await act(async () => document.querySelector<HTMLAnchorElement>('[data-nav-rail] a[href="#board/office"]')!.click());
+    await settle();
+    expect(document.querySelector('[data-board-office]')?.getAttribute('data-board-office')).toBe('overview');
+    await act(async () => root?.unmount());
+    root = null;
+    window.happyDOM.abort();
+    installDom('http://127.0.0.1:4318/');
+    await mount(<OperatorApp {...props(busy())} />);
+    await settle();
+    expect(document.querySelector('[data-board-office]')?.getAttribute('data-board-office')).toBe('overview');
+    expect(document.querySelector('.workspace-nav a[data-workspace="home"]')).not.toBeNull();
+    expect(document.querySelector('.workspace-nav a[data-workspace="board"]')?.getAttribute('href')).toBe('#board');
   });
 
   test('the room draws the seats of the parent list and the plan gap from the board; the legend lists each desk state with its source rule', async () => {
@@ -1396,7 +1528,7 @@ describe('worktree page', () => {
   test('#worktrees is a Work page after Repositories and refuses a parameter', async () => {
     expect(parseWorkspaceLocation('#worktrees')).toEqual({ workspace: 'worktrees', module: null, item: null });
     expect(workspaceHash({ workspace: 'worktrees', module: null, item: null })).toBe('#worktrees');
-    expect(parseWorkspaceLocation('#worktrees/wt_0').workspace).toBe('home');
+    expect(parseWorkspaceLocation('#worktrees/wt_0')).toEqual(DEFAULT_LOCATION);
     installDom(HOME_URL);
     await mount(<OperatorApp {...props(busy(), { readCiRepairs: noRepairs })} />);
     const work = Array.from(document.querySelectorAll('ul[aria-labelledby="nav-group-work"] a[data-workspace]')).map(link => link.getAttribute('data-workspace'));

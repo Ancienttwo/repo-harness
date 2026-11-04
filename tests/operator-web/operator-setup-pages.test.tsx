@@ -21,7 +21,7 @@ import { busyQuota, degradedQuota } from '../../src/operator-web/fixtures/quota'
 import type { QuotaReader } from '../../src/operator-web/quota';
 
 const REGISTRY = registryOf(['repo-harness', 'repo-console']);
-import { parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
+import { DEFAULT_LOCATION, parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
 
 let root: Root | null = null;
 let window: Window;
@@ -96,7 +96,7 @@ describe('navigation', () => {
     for (const workspace of ['agents', 'skills', 'hooks', 'cli'] as const) {
       expect(parseWorkspaceLocation(`#${workspace}`)).toEqual({ workspace, module: null, item: null });
       expect(workspaceHash({ workspace, module: null, item: null })).toBe(`#${workspace}`);
-      expect(parseWorkspaceLocation(`#${workspace}/extra`).workspace).toBe('home');
+      expect(parseWorkspaceLocation(`#${workspace}/extra`)).toEqual(DEFAULT_LOCATION);
     }
   });
 
@@ -159,9 +159,9 @@ describe('navigation', () => {
     }
     expect(all('.workspace-nav a[data-workspace]').map(link => link.getAttribute('data-workspace')))
       .toEqual(['home', 'board', 'repositories', 'worktrees', 'docs', 'agents', 'skills', 'hooks', 'cli', 'bots', 'architecture', 'tests', 'system', 'tools']);
-    // The Settings page is gone, with no alias: its old fragments open Home.
+    // The Settings page is gone, with no alias: its old fragments open the default page.
     for (const later of ['sessions', 'recent', 'settings', 'settings/seats']) {
-      expect(parseWorkspaceLocation(`#${later}`).workspace).toBe('home');
+      expect(parseWorkspaceLocation(`#${later}`)).toEqual(DEFAULT_LOCATION);
     }
   });
 
@@ -529,13 +529,13 @@ describe('Tools page', () => {
   const row = (id: string) => document.querySelector<HTMLButtonElement>(`[data-tool="${id}"] button`)!;
   const drawer = () => document.querySelector<HTMLElement>('[data-tool-drawer]');
 
-  test('#tools lists the catalog; #tools/<id> opens a catalog entry; anything else is Home', () => {
+  test('#tools lists the catalog; #tools/<id> opens a catalog entry; anything else is the default page', () => {
     expect(parseWorkspaceLocation('#tools')).toEqual({ workspace: 'tools', module: null, item: null });
     expect(parseWorkspaceLocation('#tools/codegraph')).toEqual({ workspace: 'tools', module: null, item: 'codegraph' });
     expect(workspaceHash({ workspace: 'tools', module: null, item: null })).toBe('#tools');
     expect(workspaceHash({ workspace: 'tools', module: null, item: 'codegraph' })).toBe('#tools/codegraph');
     for (const hash of ['#tools/CodeGraph', '#tools/code_graph', '#tools/%2e%2e', '#tools/not-in-catalog', '#tools/codegraph/extra', '#tools/']) {
-      expect(parseWorkspaceLocation(hash)).toEqual({ workspace: 'home', module: null, item: null });
+      expect(parseWorkspaceLocation(hash)).toEqual(DEFAULT_LOCATION);
     }
   });
 
