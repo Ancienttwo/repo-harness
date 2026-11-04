@@ -1,6 +1,6 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:01c983a7d3736c56b4352405eebc54e1cff8eec5a9fb15e9058eca7ad2830017" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:d83a1bbf22fe6f117cadfcb9aaa276f4006c5007adca8b8bc345f3044a161a1d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`docs/kanban-runtime-status.md`、`src/effects/operator/**`、`src/operator-web/**`、`src/effects/setup/**`、`src/effects/dev-activity/**`、`vite.operator.config.ts`
@@ -196,7 +196,7 @@ flowchart LR
 | `component.operator.docs-host-isolation` | Docs Host Isolation | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.operator.primary` | Operator HTTP Reader | `20–50` 個文件 / `5000–10000` 行 | `entrypoint.operator.http-server` |
 | `component.operator.primary-cli` | Operator HTTP Reader (cli) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
-| `component.operator.view-projections` | Operator View Projections | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.operator.view-projections` | Operator View Projections | `20–50` 個文件 / `5000–10000` 行 | 未宣告 |
 | `component.operator.web-console` | Operator Web Console | `100–200` 個文件 / `20k–50k` 行 | `entrypoint.operator.web-dev-activity` |
 
 ## 2. P2:端到端數據流
@@ -339,6 +339,14 @@ GET routes read the snapshot and do not install packages or change host files.
 The host installer, shared skill roots and catalog retain those responsibilities.
 
 ## 4. 歷史決策記錄(append-only)
+
+### Map contract v7 (2026-11-04, issue #1692)
+
+- The map route serves `repo-harness.architecture-map.v7`. It replaces v6 in one change, with no alias and no second decoder. The collector cache is in memory, so a restart drops every v6 map. A browser that still runs v6 code refuses a v7 body as `architecture_map_invalid` until a reload.
+- The header adds `head_ref` (the branch that HEAD names, from `git symbolic-ref` in the checkout read; null for a detached HEAD) and `archctx_version` (`ARCHCTX_REQUIRED_VERSION`, the only version that `ArchctxClient` runs).
+- Nodes add `domain` from the capability profile of the same `export native` read, and the model's `namespace` and `mount`. Each is non-null exactly on its own node kind. A mount source or target that the prose guard would change is null, so an absolute target in the mount namespace is withheld. Relations add `protocol`, masked like model prose.
+- `changes.commits` lists each first-parent commit of the window, newest first, from one `git log` read. A commit names the owners that archctx `impact` gives to the paths it changed, so the join has one owner authority. A path that changed back inside the window names no node. When `truncated.paths` is true, the list is a lower bound.
+- `anchors.nodes[].findings` lists each stale citation: archctx's kind as an opaque token, the origin, the document path and line, and the masked citation text. A path that the public-path guard refuses is null.
 
 ### Retire the repository snapshot route (2026-11-02, issue #1345)
 

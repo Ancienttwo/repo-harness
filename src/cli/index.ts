@@ -55,6 +55,7 @@ import { buildOperatorCommand } from './commands/operator';
 import { buildWorktreesCommand } from './commands/worktrees';
 import { buildSeatsCommand } from './commands/seats';
 import { buildCatchUpCommand } from './commands/catch-up';
+import { buildQuotaCommand } from './commands/quota';
 import { buildArchitectureDebtCommand } from './commands/architecture-debt';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { buildRetentionCommand, type RetentionPorts } from './commands/retention';
@@ -66,6 +67,7 @@ import { TASK_INBOX_V2_RELATIVE_PATH } from '../core/fleet/task-inbox-layout';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
   GLOBAL_RULES_REFRESH_STEP,
+  HERDR_CORE_STEP,
   MIN_BUN_VERSION,
   agentFleetVerified,
   bunVersionIsSupported,
@@ -466,6 +468,9 @@ export function runCandidateRuntimeReconciliation(
     // did not sync must stay visible with their next action.
     const globalRules = runtime.steps.find(step => step.step === GLOBAL_RULES_REFRESH_STEP);
     if (globalRules) console.error(`[runtime] ${globalRules.status}: ${globalRules.step} - ${globalRules.detail}`);
+    // The hc step result carries its PATH hint when the install dir is not on PATH.
+    const herdrCore = runtime.steps.find(step => step.step === HERDR_CORE_STEP);
+    if (herdrCore) console.error(`[runtime] ${herdrCore.status}: ${herdrCore.step} - ${herdrCore.detail}`);
 
     const adapterDigests = request.host_adapters
       ? assertInstalledAdapterProjection(request.target, env)
@@ -1047,6 +1052,7 @@ export function buildProgram(): Command {
   program.addCommand(buildOperatorCommand());
   program.addCommand(buildWorktreesCommand());
   program.addCommand(buildCatchUpCommand());
+  program.addCommand(buildQuotaCommand());
   program.addCommand(architectureCommand(buildRefactorCommand()));
   program.addCommand(architectureCommand(buildArchitectureProjectionCommand()));
   program.addCommand(architectureCommand(buildArchitectureDebtCommand()));

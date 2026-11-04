@@ -248,6 +248,7 @@ Branch: <type>/<issue>-<slug>   # required
 Scope: <what this claim covers> # required
 Not in scope: <what it leaves>  # required
 Coordinator: <parent claim URL> # the coordinator's own claim
+Dispatch reading: <per account> # on a dispatch: orchestrator.md §7.1
 Prior claim: <comment URL>      # required on a handoff
 ```
 

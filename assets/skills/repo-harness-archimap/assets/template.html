@@ -90,6 +90,15 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 .phase.dashed { border-style: dashed; }
 .phase-label { font-size: 13px; font-weight: 600; color: var(--ink-2); }
 
+/* Behavior (statechart) */
+.region { background: var(--panel); border: 1.5px dashed #9AA0A8; border-radius: 12px; }
+.state { display: flex; align-items: center; justify-content: center; background: var(--panel); border: 1.5px solid #4B5563;
+  border-radius: 20px; font: 13px/16px var(--mono); color: var(--ink); white-space: nowrap; }
+.state-compound { background: var(--canvas); border: 1.5px solid #9AA0A8; border-radius: 14px; }
+.initial { width: 16px; height: 16px; border-radius: 50%; background: #16181D; }
+.e-transition { stroke: #4A4F57; stroke-width: 2; }
+.cx-marker { width: 24px; height: 24px; border-radius: 50%; background: #B42318; color: #FFFFFF; font: 600 12px/24px var(--mono); text-align: center; }
+
 /* Dark strip and file tree */
 .dark { background: #16181D; color: #E6E7EA; border-radius: 12px; padding: 24px; }
 .dark h3 { margin: 0 0 16px; font-size: 15px; }
@@ -221,6 +230,40 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 </div>
 </section>
 
+<!-- Board 7: behavior statechart (sample). One board per modules[].behaviorSpecs entry;
+     every state is a spec state value and every label a spec action name. -->
+<section>
+<h2 class="caption">7 · Behavior (statechart) · example-claim</h2>
+<div class="board" style="height:600px">
+  <div class="kicker">PROJECT · BEHAVIOR · specs/tla/Example.tla · abc1234</div>
+  <div class="title">Example claim</div>
+  <div class="legend">Rounded box: spec state value · Grey frame: compound state<br>Dot: initial state · Line: transition, label = spec action<br><span class="swatch" style="background:#B42318"></span>Red number: last state of a fix-off counterexample</div>
+  <div class="state-compound" style="left:64px;top:184px;width:1552px;height:304px"></div>
+  <div class="phase-label" style="left:80px;top:192px">At the same time</div>
+  <div class="region" style="left:88px;top:224px;width:752px;height:240px"></div>
+  <div class="region" style="left:864px;top:224px;width:728px;height:240px"></div>
+  <div class="phase-label" style="left:104px;top:232px">worker</div>
+  <div class="phase-label" style="left:880px;top:232px">shared state</div>
+  <div class="initial" style="left:240px;top:264px"></div>
+  <div class="state" style="left:160px;top:296px;width:176px;height:40px">acquire</div>
+  <div class="state" style="left:160px;top:376px;width:176px;height:40px">release</div>
+  <div class="cx-marker" style="left:148px;top:368px">1</div>
+  <div class="state-compound" style="left:896px;top:264px;width:320px;height:168px"></div>
+  <div class="foot mono" style="left:1064px;top:272px">lock = "held"</div>
+  <div class="initial" style="left:1000px;top:272px"></div>
+  <div class="state" style="left:928px;top:312px;width:160px;height:40px">Record(p)</div>
+  <svg class="edges" width="1680" height="600">
+    <defs><marker id="b-arrow" viewBox="0 0 4 4" refX="2" refY="2" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="#4A4F57"/></marker></defs>
+    <path class="e-transition" d="M248 280 V292" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M248 336 V372" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M1008 288 V308" marker-end="url(#b-arrow)"/>
+  </svg>
+  <div class="elabel" style="left:256px;top:348px">Acquire</div>
+  <div class="cx-marker" style="left:64px;top:520px">1</div>
+  <div class="elabel" style="left:104px;top:524px"><b>SingleOwner</b> broken without the exclusive create (#issue, #fix PR) · <span class="mono">Example.no-exclusive-create.cfg</span> · 7 states</div>
+</div>
+</section>
+
 </main>
 <script type="application/json" id="archimap-meta">
 {
@@ -229,7 +272,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
   "base": "abc1234",
   "generated": "YYYY-MM-DD",
   "sources": [".archcontext/model", "measure.ts archimap-measure/v1"],
-  "boards": ["overview", "dependencies", "sequence", "remarks"],
+  "boards": ["overview", "dependencies", "sequence", "remarks", "behavior"],
   "modules": [
     { "id": "server", "label": "server", "include": ["src/server/**"], "exclude": [], "nodes": ["capability.example.server"] },
     { "id": "protocol", "label": "protocol", "include": ["src/protocol/**"], "exclude": [], "nodes": ["capability.example.protocol"] },

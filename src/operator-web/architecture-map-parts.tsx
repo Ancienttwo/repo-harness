@@ -5,7 +5,10 @@
 import { useMemo } from 'react';
 import { useReactFlow, useViewport } from '@xyflow/react';
 import {
+  ARCHITECTURE_VIOLATION_READS,
   architectureViolationCommand,
+  flowSelectorKey,
+  flowSteps,
   type ArchitectureImpactV1,
   type ArchitectureMapV1,
   type ArchitectureViolationsLayerV1,
@@ -26,7 +29,7 @@ export function firstViewport(left: number, top: number): { readonly x: number; 
   return { x: -(left - 24) * MAP_READABLE_ZOOM, y: -(top - 24) * MAP_READABLE_ZOOM, zoom: MAP_READABLE_ZOOM };
 }
 
-export type CountUnit = 'file' | 'commit' | 'node' | 'relation' | 'decision';
+export type CountUnit = 'file' | 'commit' | 'node' | 'relation' | 'decision' | 'module';
 
 /** "1 node", "2 nodes". `atLeast` marks a count that archctx cut at its limit. Only English inflects; Chinese keeps the bare number and its own classifier. */
 export function counted(t: OperatorTranslate, count: number, unit: CountUnit, atLeast = false): string {
@@ -73,31 +76,57 @@ export function nodeSize(map: ArchitectureMapV1, nodeId: string): { readonly fil
   return map.sizes.state === 'ok' ? map.sizes.nodes.find(entry => entry.id === nodeId) ?? null : null;
 }
 
-interface Fact { readonly key: string; readonly text: string; readonly paths?: readonly string[]; readonly part?: ViolationPart }
+export interface Fact { readonly key: string; readonly text: string; readonly paths?: readonly string[]; readonly part?: ViolationPart }
 
-/** The violation items that name one node, each with the part whose read lists it. */
-export function violationFacts(map: ArchitectureMapV1, nodeId: string, names: ReadonlyMap<string, string>, t: OperatorTranslate): Fact[] {
+/** The archctx read that lists a violation part, without its flags: "deps", "docs anchors". */
+export function violationSource(part: ViolationPart): string {
+  return ARCHITECTURE_VIOLATION_READS[part].filter(arg => !arg.startsWith('--')).join(' ');
+}
+
+/**
+ * The violation items that name a node of `nodeIds`, each with the part whose read lists it.
+ * An item that names two of the nodes is listed once.
+ */
+export function violationFacts(map: ArchitectureMapV1, nodeIds: ReadonlySet<string>, names: ReadonlyMap<string, string>, t: OperatorTranslate): Fact[] {
   const { debt, flows, anchors, dependencies, layer_direction: layerDirection } = map.layers.violations;
   const facts: Fact[] = [];
   if (debt.state === 'ok') {
-    debt.items.filter(item => item.nodes.includes(nodeId)).forEach((item, index) => facts.push({ key: `debt-${index}`, text: t(`architecture.layer.debt.${item.kind}`), paths: item.paths, part: 'debt' }));
+    debt.items.forEach((item, index) => {
+      if (item.nodes.some(id => nodeIds.has(id))) facts.push({ key: `debt-${index}`, text: t(`architecture.layer.debt.${item.kind}`), paths: item.paths, part: 'debt' });
+    });
   }
   if (flows.state === 'ok') {
-    const entry = flows.unprovable.find(item => item.id === nodeId);
-    if (entry) facts.push({ key: 'flows', text: t('architecture.layer.node.flows', { count: entry.diagnostics }), part: 'flows' });
+    for (const entry of flows.unprovable.filter(item => nodeIds.has(item.id))) {
+      facts.push({ key: `flows-${entry.id}`, text: t('architecture.layer.node.flows', { count: entry.diagnostics }), part: 'flows' });
+    }
+    // Each step of a flow of these nodes whose selector archctx reports and does not prove; step N is its place in the flow, outcome steps after the main steps.
+    const proofs = new Map(flows.evidence.map(entry => [flowSelectorKey(entry), entry.status]));
+    for (const flow of map.flows.filter(item => nodeIds.has(item.capability))) {
+      flowSteps(flow).forEach(({ outcome, step }, index) => {
+        const status = proofs.get(flowSelectorKey(step.evidence));
+        if (status === undefined || status === 'proven') return;
+        facts.push({ key: `flow-step-${flow.id}-${outcome ?? ''}-${step.id}`, part: 'flows',
+          text: t('architecture.layer.node.flow_step', { flow: flow.name, step: index + 1, label: step.label, status }) });
+      });
+    }
   }
   if (anchors.state === 'ok') {
-    const entry = anchors.nodes.find(item => item.id === nodeId);
-    if (entry) facts.push({ key: 'anchors', text: t('architecture.layer.node.anchors', { count: entry.findings }), part: 'anchors' });
+    for (const entry of anchors.nodes.filter(item => nodeIds.has(item.id))) {
+      entry.findings.forEach((finding, index) => facts.push({
+        key: `anchors-${entry.id}-${index}`, part: 'anchors',
+        text: t('architecture.layer.node.anchor', { origin: t(`architecture.layer.anchor.${finding.origin}`), citation: finding.citation, kind: finding.kind }),
+        paths: finding.path === null ? undefined : [finding.line === null ? finding.path : `${finding.path}:${finding.line}`],
+      }));
+    }
   }
   if (dependencies.state === 'ok') {
-    for (const edge of dependencies.edges.filter(item => item.source === nodeId)) {
-      facts.push({ key: `undeclared-${edge.target}`, text: t('architecture.layer.node.undeclared', { name: names.get(edge.target) ?? edge.target, count: edge.imports }), part: 'dependencies' });
+    for (const edge of dependencies.edges.filter(item => nodeIds.has(item.source))) {
+      facts.push({ key: `undeclared-${edge.source}-${edge.target}`, text: t('architecture.layer.node.undeclared', { name: names.get(edge.target) ?? edge.target, count: edge.imports }), part: 'dependencies' });
     }
   }
   if (layerDirection.state === 'ok') {
-    for (const edge of layerDirection.edges.filter(item => item.source === nodeId)) {
-      facts.push({ key: `layer-${edge.target}`, part: 'layer_direction', text: t('architecture.layer.node.layer_direction', {
+    for (const edge of layerDirection.edges.filter(item => nodeIds.has(item.source))) {
+      facts.push({ key: `layer-${edge.source}-${edge.target}`, part: 'layer_direction', text: t('architecture.layer.node.layer_direction', {
         name: names.get(edge.target) ?? edge.target, count: edge.imports, from: edge.source_layer, to: edge.target_layer,
       }) });
     }
@@ -105,10 +134,12 @@ export function violationFacts(map: ArchitectureMapV1, nodeId: string, names: Re
   return facts;
 }
 
-function FactList({ facts, layer }: { readonly facts: readonly Fact[]; readonly layer?: string }) {
+/** `source`: each item also names the archctx read that lists it. */
+export function FactList({ facts, layer, source = false }: { readonly facts: readonly Fact[]; readonly layer?: string; readonly source?: boolean }) {
   return <ul data-layer-facts={layer}>{facts.map(fact => <li key={fact.key}>
     {fact.text}
     {fact.paths?.length ? <ul>{fact.paths.map(path => <li key={path}><code>{path}</code></li>)}</ul> : null}
+    {source && fact.part !== undefined && <span className="architecture-map__source mono-value" data-fact-source={fact.part}>{violationSource(fact.part)}</span>}
   </li>)}</ul>;
 }
 
@@ -171,10 +202,10 @@ function RelatedPullRequests({ map, nodeId, t }: { readonly map: ArchitectureMap
 }
 
 /** The violation items of one node and the command that lists each kind. */
-export function Violations({ facts, t }: { readonly facts: readonly Fact[]; readonly t: OperatorTranslate }) {
+export function Violations({ facts, source = false, t }: { readonly facts: readonly Fact[]; readonly source?: boolean; readonly t: OperatorTranslate }) {
   const parts = [...new Set(facts.flatMap(fact => (fact.part ? [fact.part] : [])))];
   return <>
-    {facts.length ? <FactList facts={facts} layer="violations" /> : <p className="detail-quiet">{t('architecture.inspector.none')}</p>}
+    {facts.length ? <FactList facts={facts} layer="violations" source={source} /> : <p className="detail-quiet">{t('architecture.inspector.none')}</p>}
     {parts.map(part => <FixCommand key={part} part={part} t={t} />)}
   </>;
 }
@@ -197,18 +228,6 @@ export function NodeDetails({ map, layer, pullRequest, nodeId, onModule, t, chil
   const node = map.nodes.find(entry => entry.id === nodeId);
   if (node === undefined) return null;
   const size = nodeSize(map, nodeId);
-  const imports = map.dependencies.state === 'ok' ? map.dependencies.edges : [];
-  const lines = (direction: 'out' | 'in') => map.relations
-    .filter(relation => (direction === 'out' ? relation.source : relation.target) === node.id)
-    .map(relation => {
-      const other = direction === 'out' ? relation.target : relation.source;
-      const count = imports.find(edge => edge.source === relation.source && edge.target === relation.target)?.imports;
-      return <li key={relation.id} data-relation-id={relation.id}>
-        <code>{relation.kind}</code> {names.get(other)}{count !== undefined && <span className="mono-value"> · {t('architecture.map.imports', { count })}</span>}
-      </li>;
-    });
-  const outgoing = lines('out');
-  const incoming = lines('in');
   return <>
     <h3>{node.name}</h3>
     <code className="architecture-map__id">{node.id}</code>
@@ -227,7 +246,31 @@ export function NodeDetails({ map, layer, pullRequest, nodeId, onModule, t, chil
     <h4>{t('architecture.inspector.pullRequests')}</h4>
     <RelatedPullRequests map={map} nodeId={node.id} t={t} />
     <h4>{t('architecture.layer.violations')}</h4>
-    <Violations facts={violationFacts(map, node.id, names, t)} t={t} />
+    <Violations facts={violationFacts(map, new Set([node.id]), names, t)} t={t} />
+    <NodeRelations map={map} nodeId={node.id} names={names} t={t} />
+  </>;
+}
+
+/** The model relations out of and into one node, with archctx `deps` import counts. */
+export function NodeRelations({ map, nodeId, names, t }: {
+  readonly map: ArchitectureMapV1;
+  readonly nodeId: string;
+  readonly names: ReadonlyMap<string, string>;
+  readonly t: OperatorTranslate;
+}) {
+  const imports = map.dependencies.state === 'ok' ? map.dependencies.edges : [];
+  const lines = (direction: 'out' | 'in') => map.relations
+    .filter(relation => (direction === 'out' ? relation.source : relation.target) === nodeId)
+    .map(relation => {
+      const other = direction === 'out' ? relation.target : relation.source;
+      const count = imports.find(edge => edge.source === relation.source && edge.target === relation.target)?.imports;
+      return <li key={relation.id} data-relation-id={relation.id}>
+        <code>{relation.kind}</code> {names.get(other)}{count !== undefined && <span className="mono-value"> · {t('architecture.map.imports', { count })}</span>}
+      </li>;
+    });
+  const outgoing = lines('out');
+  const incoming = lines('in');
+  return <>
     <h4>{t('architecture.map.outgoing', { count: outgoing.length })}</h4>
     {outgoing.length ? <ul>{outgoing}</ul> : <p className="detail-quiet">{t('architecture.none')}</p>}
     <h4>{t('architecture.map.incoming', { count: incoming.length })}</h4>

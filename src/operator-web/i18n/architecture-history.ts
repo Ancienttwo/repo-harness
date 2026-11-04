@@ -1,0 +1,38 @@
+// The History view's own keys (#1698). The older `architecture.history.*` keys stay in `architecture.ts`.
+export const en = {
+  'architectureHistory.header': 'archctx history · head {head} · read {read} / {total} milestones',
+  'architectureHistory.more': 'Read {count} more (--ref {head})',
+  'architectureHistory.caption.skipped': '{base} → {rev} · skips {count} unreadable milestones',
+  'architectureHistory.caption.unread': '{base} → {rev} · the base is not read yet',
+  'architectureHistory.caption.error': '{rev} · unreadable',
+  'architectureHistory.node': 'Node details',
+  'architectureHistory.milestone': 'This milestone',
+  'architectureHistory.relations': 'Relation changes',
+  'architectureHistory.none': 'None',
+  'architectureHistory.what.added': 'This milestone added it.',
+  'architectureHistory.what.removed': 'This milestone removed it. The name comes from the base milestone {rev}.',
+  'architectureHistory.what.renamed': 'Renamed: {from} → {to}',
+  'architectureHistory.what.inside': 'A module or component under it changed.',
+  'architectureHistory.what.first': 'First milestone: no change is marked.',
+  'architectureHistory.what.same': 'No change.',
+  'architectureHistory.base.skipped': 'This comparison skips {count} unreadable milestones.',
+} as const;
+
+export const zh: Readonly<Record<keyof typeof en, string>> = {
+  'architectureHistory.header': 'archctx history · head {head} · 已读 {read} / {total} 个里程碑',
+  'architectureHistory.more': '再读 {count} 个（--ref {head}）',
+  'architectureHistory.caption.skipped': '{base} → {rev} · 跨过 {count} 个读不出的里程碑',
+  'architectureHistory.caption.unread': '{base} → {rev} · 对照里程碑还没读到',
+  'architectureHistory.caption.error': '{rev} · 读不出',
+  'architectureHistory.node': '节点详情',
+  'architectureHistory.milestone': '这个里程碑',
+  'architectureHistory.relations': '关系变化',
+  'architectureHistory.none': '没有',
+  'architectureHistory.what.added': '这个里程碑新增了它。',
+  'architectureHistory.what.removed': '这个里程碑删掉了它。名字取自对照里程碑 {rev}。',
+  'architectureHistory.what.renamed': '改名：{from} → {to}',
+  'architectureHistory.what.inside': '它下面的 module 或 component 有变化。',
+  'architectureHistory.what.first': '首个里程碑，不标差异。',
+  'architectureHistory.what.same': '没有变化。',
+  'architectureHistory.base.skipped': '这次对照跨过 {count} 个读不出的里程碑。',
+};

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync,
 import { dirname, join } from 'node:path';
 import { createCleanupPlan, cleanupPlanSelectionDigest, executeCleanupPlan } from '../../src/effects/operator/worktree-cleanup-plan';
 import { removeCleanupWorktree, reconcileCleanupWorktree, type CleanupRemovalInput, type CleanupRemovalOptions } from '../../src/effects/operator/worktree-cleanup-removal';
-import { CleanupArchiveError, stageCleanupArchive, type StagedCleanupArchive } from '../../src/effects/operator/worktree-cleanup-archive';
+import { stageCleanupArchive, type StagedCleanupArchive } from '../../src/effects/operator/worktree-cleanup-archive';
 import { observeCleanupLoss } from '../../src/effects/operator/worktree-cleanup-observation';
 import { worktreeId } from '../../src/effects/git/worktree-record';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
@@ -15,14 +15,6 @@ import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixtu
 import type { WorktreeView } from '../../src/core/operator/worktrees';
 
 const sid = 'a'.repeat(32), repoId = `repo_${'b'.repeat(16)}`;
-// #1172: archive staging refuses Apple arm64 before any write, so there an archive test proves that its archive step refuses.
-const archiveRefused = process.platform === 'darwin' && process.arch === 'arm64';
-function archiveTest(name: string, body: () => Promise<void>) {
-  test(name, archiveRefused ? async () => {
-    const error = await body().then(() => null, (caught: unknown) => caught);
-    expect(error).toBeInstanceOf(CleanupArchiveError); expect((error as CleanupArchiveError).code).toBe('unsupported');
-  } : body);
-}
 function fixture(orphan = false, sharedParent = false) {
   const parent = tmpWorkspace('cleanup-removal'), repo = join(parent, 'repo'), treeParent = sharedParent ? realpathSync('/tmp') : parent;
   const tree = join(treeParent, sharedParent ? `repo-wt-cleanup-fixture-${randomUUID()}` : 'repo-wt-feature'), remote = join(parent, 'remote.git');
@@ -74,7 +66,7 @@ function fixture(orphan = false, sharedParent = false) {
   } };
 }
 
-archiveTest('authorized dirty worktree archives private bytes, removes only its local branch and retains a terminal receipt', async () => {
+test('authorized dirty worktree archives private bytes, removes only its local branch and retains a terminal receipt', async () => {
   const f = fixture();
   try {
     writeFileSync(join(f.tree, 'tracked.txt'), 'approved change\n'); writeFileSync(join(f.tree, '.env'), 'SYNTHETIC=fixture\n');
@@ -186,7 +178,7 @@ test('authorized receipt supports a direct child of the real shared sticky tempo
   } finally { f.cleanup(); }
 });
 
-for (const failure of ['deleted archive', 'corrupt archive', 'provider refusal'] as const) archiveTest(`recovery preserves the pending payload after ${failure}`, async () => {
+for (const failure of ['deleted archive', 'corrupt archive', 'provider refusal'] as const) test(`recovery preserves the pending payload after ${failure}`, async () => {
   const f = fixture();
   try {
     writeFileSync(join(f.tree, '.env'), 'SYNTHETIC=fixture\n');
@@ -251,7 +243,7 @@ for (const field of ['HEAD', 'gitdir', 'commondir'] as const) test(`recovery rej
   } finally { f.cleanup(); }
 });
 
-archiveTest('the final deletion barrier rechecks preservation after the same attempt has renamed the source', async () => {
+test('the final deletion barrier rechecks preservation after the same attempt has renamed the source', async () => {
   const f = fixture();
   try {
     writeFileSync(join(f.tree, '.env'), 'SYNTHETIC=fixture\n'); const input = f.input(true);

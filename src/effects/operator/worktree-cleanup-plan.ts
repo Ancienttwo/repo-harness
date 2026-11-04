@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../../core/evidence/canonical-json';
-import { containsSecret } from '../../core/security/secret-patterns';
 import { cleanupContentsDigestInput, type CleanupLossEvidence } from '../../core/operator/worktree-cleanup-observation';
 import {
-  cleanupPlanDigestInput, cleanupSelection, decodeAuthorizedCleanupRequest, decodeCleanupAdvice, decodeCleanupPlan,
-  type AuthorizedCleanupRequest, type CleanupAdvice, type CleanupPlan, type CleanupPlanItem,
+  cleanupPlanDigestInput, cleanupSelection, decodeAuthorizedCleanupRequest, decodeCleanupAdvice, decodeCleanupPlan, isArchivePr,
+  type AuthorizedCleanupRequest, type CleanupAdvice, type CleanupExecutionItem, type CleanupExecutionResult, type CleanupPlan, type CleanupPlanItem,
+  type CleanupReason, type CleanupStage,
 } from '../../core/operator/worktree-cleanup-plan';
 import { selectionDigestInput, worktreeDigestRow } from '../../core/operator/worktree-cleanup';
 import type { WorktreeView } from '../../core/operator/worktrees';
@@ -25,22 +25,39 @@ export function cleanupLossSha256(observed: CleanupObservation): string | null {
   }));
 }
 
+/**
+ * Loss paths that archive staging can take. A worktree entry decides when one
+ * exists, because staging reads it first: only a regular file qualifies, never a
+ * directory or a symlink. A path without a worktree entry qualifies through any
+ * index version; staging saves each blob with its mode, including 120000. A
+ * staged deletion has neither, and an unchanged tracked file is not a loss.
+ */
+function archivablePaths(loss: CleanupLossEvidence): string[] {
+  const entries = new Map(loss.files.map(file => [file.path, file]));
+  const staged = new Set(loss.index.map(entry => entry.path));
+  return [...new Set([...loss.changed_paths, ...loss.ignored])].filter(path => {
+    if (path === '.git') return false;
+    const entry = entries.get(path);
+    return entry ? entry.kind === 'file' : staged.has(path);
+  }).sort();
+}
+
 /** Called only on server observations. Agent text is advice, never an authorization. */
 export function createCleanupPlan(sessionId: string, inputs: readonly { observation: CleanupObservation; advice: CleanupAdvice }[]): CleanupPlan {
   const items = inputs.map(({ observation, advice }) => {
     advice = decodeCleanupAdvice(advice);
     const loss = observation.loss;
     if (loss !== null) {
-      const available = new Set([...loss.files.filter(file => file.kind !== 'directory' && file.path !== '.git'), ...loss.index].map(file => file.path));
       const selected = [...(advice.archive.git?.paths ?? []), ...(advice.archive.private?.paths ?? [])];
-      if (new Set(selected).size !== selected.length || selected.some(path => !available.has(path))) throw new Error('worktree_cleanup_archive_paths_invalid');
+      const archivable = new Set(archivablePaths(loss));
+      if (new Set(selected).size !== selected.length || selected.some(path => !archivable.has(path))) throw new Error('worktree_cleanup_archive_paths_invalid');
       if (loss.commits.length && advice.recommendation !== 'keep' && !advice.archive.git?.include_commits) throw new Error('worktree_cleanup_commits_need_archive');
     }
     const item: Omit<CleanupPlanItem, 'plan_sha256'> = {
       worktree: observation.worktree, advice,
       loss: loss === null ? null : {
         files: [...loss.changed_paths],
-        ignored: [...loss.ignored].sort(), commits: [...loss.commits],
+        ignored: [...loss.ignored].sort(), commits: [...loss.commits], archivable: archivablePaths(loss),
       },
       loss_sha256: cleanupLossSha256(observation),
     };
@@ -56,22 +73,6 @@ export function cleanupPlanSelectionDigest(plan: CleanupPlan, ids: readonly stri
   return sha256(selectionDigestInput(selected.map(item => worktreeDigestRow(item.worktree))));
 }
 
-export type CleanupStage = 'reconcile' | 'observe' | 'archive_commit' | 'archive_push' | 'archive_pr' | 'remove';
-export type CleanupReason = 'in_use' | 'not_approved' | 'loss_changed' | 'plan_changed' | 'unavailable' | 'archive_failed' | 'removal_unproven';
-export interface CleanupExecutionItem {
-  readonly id: string;
-  readonly outcome: 'removed' | 'skipped' | 'reconcile_required';
-  readonly reason: CleanupReason | null;
-  readonly stage: CleanupStage;
-  readonly archive_pr: string | null;
-}
-export interface CleanupExecutionResult {
-  readonly protocol: 1;
-  readonly kind: 'operator_authorized_worktree_cleanup';
-  readonly session_id: string;
-  readonly items: readonly CleanupExecutionItem[];
-}
-
 /** A readback result, not a receipt supplied by the caller. The adapter verifies the durable receipt. */
 export type CleanupReconciliation = { readonly state: 'absent' } | {
   readonly state: 'pending' | 'completed';
@@ -81,9 +82,6 @@ export type CleanupReconciliation = { readonly state: 'absent' } | {
   readonly plan_sha256: string;
   readonly archive_pr: string | null;
 };
-
-const isArchivePr = (value: unknown): value is string => typeof value === 'string' && !containsSecret(value)
-  && /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9][0-9]*$/u.test(value);
 
 function reconciliation(value: unknown, key: string, item: CleanupPlanItem): CleanupReconciliation {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('cleanup reconciliation invalid');

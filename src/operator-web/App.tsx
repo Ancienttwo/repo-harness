@@ -58,10 +58,11 @@ import { useTheme } from './theme';
 import { useNow } from './ui';
 import { boardPlace, parseWorkspaceLocation, SETUP_WORKSPACES, WORKSPACES, workspaceHash, type Workspace, type WorkspaceLocation } from './workspace-location';
 import {
-  fetchWorktrees, postWorktreeCleanup, useWorktreeCleanup, useWorktrees, worktreesOf,
+  cleanupPlanPorts, fetchWorktrees, postWorktreeCleanup, useWorktreeCleanup, useWorktrees, worktreesOf,
   type WorktreeCleanupWriter, type WorktreesReader, type WorktreesView,
 } from './worktrees';
 import { WorktreesPage } from './WorktreesPage';
+import type { CleanupPlanPorts } from './CleanupPlanReview';
 import { fetchRepositories, registeredLabel, repositoriesOf, useRepositories, type RepositoriesReader } from './repositories';
 import type { OperatorRepositoriesV1 } from '../core/operator/repositories';
 
@@ -91,6 +92,8 @@ export interface OperatorAppProps {
   readonly initialWorktrees?: WorktreesSnapshot;
   /** Sends the Worktree page's one-click cleanup of the selected green rows. */
   readonly writeWorktreeCleanup?: WorktreeCleanupWriter;
+  /** The cleanup plan routes behind the Worktree page's plan review; #1719 connects them. Without them the page offers no review. */
+  readonly worktreeCleanupPlan?: CleanupPlanPorts;
   readonly readCliInventory?: CliInventoryReader;
   readonly initialCliInventory?: CliInventorySnapshotV1;
   /** The docs tree's commit: the short SHA under the current repository in the side rail. */
@@ -222,13 +225,26 @@ function SetupFreshness({ view, now, t }: { readonly view: SetupView; readonly n
   );
 }
 
-/** The architecture page's line: the model commit on screen and, for a map, when the server collected it. */
+/**
+ * The architecture page's line: the model commit on screen and, for a map, when the server collected it,
+ * the branch it follows and the archctx version that read it; for History, the head that pins the pages
+ * and the milestones read of archctx's total.
+ */
 function ArchitectureFreshness({ source, now, t }: { readonly source: ArchitectureSource | null; readonly now: number; readonly t: OperatorTranslate }) {
   if (source === null) return null;
+  if ('head' in source) {
+    return <span data-freshness="ok" data-freshness-source="architecture-history" title={source.head}>
+      {t('architectureHistory.header', { head: source.head.slice(0, 7), read: source.read, total: source.total })}
+    </span>;
+  }
   return (
     <span data-freshness="ok" data-freshness-source="architecture">
-      {source.collectedAt === null ? t('freshness.architecture.model') : t('freshness.architecture.collected', { age: ageWords(source.collectedAt, now, t) })}
+      {source.map === null ? t('freshness.architecture.model') : t('freshness.architecture.collected', { age: ageWords(source.map.collectedAt, now, t) })}
       {' · '}<code className="mono-value" title={source.commit}>{source.commit.slice(0, 7)}</code>
+      {source.map !== null && <>
+        {' · '}<span data-head-ref>{source.map.headRef ?? t('architecture.header.detached')}</span>
+        {' · '}<span data-archctx-version>{t('architecture.header.archctx', { version: source.map.archctxVersion })}</span>
+      </>}
     </span>
   );
 }
@@ -262,6 +278,7 @@ export function OperatorApp({
   readWorktrees = fetchWorktrees,
   initialWorktrees,
   writeWorktreeCleanup = postWorktreeCleanup,
+  worktreeCleanupPlan = cleanupPlanPorts,
   readCliInventory = fetchCliInventory,
   initialCliInventory,
   readRepositoryHead = fetchRepositoryHead,
@@ -428,7 +445,7 @@ export function OperatorApp({
           {workspace === 'board' && <BoardPage place={boardSubject} view={board} parents={boardParents} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
             repositories={boardOptions} chosenRepository={boardRepository} onRepository={chooseBoardRepository} />}
           {workspace === 'repositories' && <RepositoriesPage view={repositories} activity={devActivity} now={now} onOpen={openRepositoryBoard} t={t} />}
-          {workspace === 'worktrees' && <WorktreesPage view={worktrees} cleanup={worktreeCleanup} now={now} t={t} />}
+          {workspace === 'worktrees' && <WorktreesPage view={worktrees} cleanup={worktreeCleanup} plan={worktreeCleanupPlan} now={now} t={t} />}
           {workspace === 'agents' && <AgentsPage view={setup} agents={agentsSettings} seats={seatsSettings} now={now} t={t} />}
           {workspace === 'skills' && <SkillsPage view={setup} now={now} t={t} onOpenTool={id => openPlace({ workspace: 'tools', module: null, item: id })} />}
           {workspace === 'hooks' && <HooksPage view={setup} now={now} t={t} />}

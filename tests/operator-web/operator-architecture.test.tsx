@@ -5,16 +5,18 @@ import { Window } from 'happy-dom';
 import { isGroupNode, moduleDetail, moduleGraph, type ModelNode, type ModelRelation, type ModuleDetailV1, type ModuleIndexV1 } from '../../src/core/architecture/module-view';
 import { buildModuleReviewPrompt, type ModuleReviewPromptV1 } from '../../src/core/review/module-review-prompt';
 import { OperatorApp } from '../../src/operator-web/App';
-import { ArchitectureWorkspace, reviewPromptCommand } from '../../src/operator-web/ArchitectureWorkspace';
+import { ArchitectureWorkspace, reviewPromptCommand, type ArchitectureSource } from '../../src/operator-web/ArchitectureWorkspace';
 import { fetchArchitectureMap, type ArchitectureMapRead, type ArchitectureMapReader } from '../../src/operator-web/ArchitectureMap';
 import { layoutArchitectureMap, MAP_NODE_MIN_WIDTH, type MapLayoutNode } from '../../src/operator-web/architecture-map-layout';
+import { layoutModules, type ModulesBox } from '../../src/operator-web/architecture-modules-layout';
 import {
   architectureViolationCommand, decodeArchitectureMap, projectArchitectureMap,
   type ArchitectureFlowSelectorV1, type ArchitectureLayerOrderV1, type ArchitectureMapFlowV1, type ArchitectureMapLayersInput, type ArchitectureMapNodeV1,
   type ArchitectureMapRelationV1, type ArchitectureMapV1,
 } from '../../src/core/operator/architecture-map';
 import { runtimePlacement } from '../../src/operator-web/architecture-runtime';
-import { layoutSequence } from '../../src/operator-web/architecture-sequence-layout';
+import { layoutSequence, SEQUENCE_COLUMN } from '../../src/operator-web/architecture-sequence-layout';
+import { SEQUENCE_SVG_FONT, SEQUENCE_SVG_HEADER_WIDTH, SEQUENCE_SVG_TERMINAL_WIDTH, sequenceSvg, textWidth } from '../../src/operator-web/architecture-sequence-svg';
 import { layoutTopology } from '../../src/operator-web/architecture-topology-layout';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import type { ArchitectureHistory as HistoryPage } from 'archctx-contracts';
@@ -338,8 +340,10 @@ describe('one-hop module graph', () => {
 describe('architecture map', () => {
   const PART = 'component.pipeline.ledger';
   const EXTERNAL = 'external.git';
-  const mapNode = (id: string, kind: string, parent: string | null = null) => ({ id, kind, name: `Name ${id}`, status: 'active', layer: 'core', parent, summary: `${id} summary` });
-  const mapRelation = (id: string, kind: string, source: string, target: string) => ({ id, kind, source, target, intent: `${id} intent` });
+  const mapNode = (id: string, kind: string, parent: string | null = null) => ({ id, kind, name: `Name ${id}`, status: 'active', layer: 'core', parent, summary: `${id} summary`,
+    domain: kind === 'capability' ? id.split('.')[1]! : null, namespace: kind === 'namespace' ? { type: 'host' } as const : null,
+    mount: kind === 'mount' ? { source: null, target: null, mode: 'ro', order: 0 } as const : null });
+  const mapRelation = (id: string, kind: string, source: string, target: string) => ({ id, kind, source, target, intent: `${id} intent`, protocol: null });
   const noCodeFacts = { state: 'unavailable', reason: 'code_facts_unavailable' } as const;
   const whole = { paths: false, nodes: false, relations: false, flow_steps: false, dependents: false, model: false } as const;
   const noCodeFactSteps = { status: 'unknown', reason_codes: ['ref-code-facts-unavailable'], items: null } as const;
@@ -355,7 +359,7 @@ describe('architecture map', () => {
   };
   const mapLayers: ArchitectureMapLayersInput = {
     // archctx impact as the map carries it: it gives the dependents (one `calls` hop) and cut the path list at its limit.
-    changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 1, model: [],
+    changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: [{ sha: 'c'.repeat(40), subject: 'Ledger rows', nodes: [PART] }], model: [],
       paths: [{ path: 'assets/ledger.png', added: null, deleted: null, owners: [PART], reason_codes: ['binary-diff'] },
         { path: 'src/ledger.ts', added: 5, deleted: 2, owners: [PART], reason_codes: [] }],
       unowned_paths: [], nodes: [{ id: PART, files: 2 }], dependents: [{ id: CENTER, touched: PART, relations: ['relation.a-own'] }],
@@ -377,7 +381,7 @@ describe('architecture map', () => {
   };
   function mapFor(available = true, layers: ArchitectureMapLayersInput = mapLayers, layerOrder: ArchitectureLayerOrderV1 = coreOnly): ArchitectureMapV1 {
     return projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z', layer_order: layerOrder,
+      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z', layer_order: layerOrder,
       nodes: [mapNode(CENTER, 'capability'), mapNode(PART, 'component', CENTER), mapNode(CALLER, 'capability'), mapNode(EXTERNAL, 'external-system')],
       relations: [mapRelation('relation.a-own', 'calls', CENTER, PART), mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL)], flows: [], flow_evidence: [],
       sizes: available ? { state: 'ok', lines: new Map([['src/ledger.ts', 900], ['src/router.ts', 100]]), owners: new Map([['src/ledger.ts', PART], ['src/router.ts', CALLER]]) }
@@ -400,7 +404,7 @@ describe('architecture map', () => {
     const overlaps = (a: MapLayoutNode, b: MapLayoutNode) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
     // Three namespace levels, with a relation that ends on the deepest one.
     const nested = projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z',
+      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z',
       nodes: [mapNode('namespace.a', 'namespace'), mapNode('namespace.a-b', 'namespace', 'namespace.a'), mapNode('namespace.a-b-c', 'namespace', 'namespace.a-b'),
         mapNode('namespace.a-d', 'namespace', 'namespace.a'), mapNode('process.p', 'process')],
       // A group to a member two levels down, and a member back to its own group: both lines would cross the group box.
@@ -441,7 +445,7 @@ describe('architecture map', () => {
     const overlaps = (a: MapLayoutNode, b: MapLayoutNode) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
     // Nine capabilities like an unlayered model whose relations stay inside each capability.
     const loose = (layerOrder: ArchitectureLayerOrderV1) => projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z', layer_order: layerOrder,
+      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z', layer_order: layerOrder,
       nodes: Array.from({ length: 9 }, (_, index) => mapNode(`capability.loose.c${index}`, 'capability')), relations: [], flows: [], flow_evidence: [],
       sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers,
     });
@@ -475,7 +479,7 @@ describe('architecture map', () => {
     const below = (upper: { y: number; height: number }, lower: { y: number }) => upper.y + upper.height < lower.y;
     // CALLER (cli) calls CENTER (core); the git read points from core to external; the extra relation points up, against the order.
     const ordered = projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z',
+      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z',
       nodes: [{ ...mapNode(CENTER, 'capability'), layer: 'core' }, { ...mapNode(PART, 'component', CENTER), layer: 'core' }, { ...mapNode(CALLER, 'capability'), layer: 'cli' },
         { ...mapNode(EXTERNAL, 'external-system'), layer: 'external' }, { ...mapNode('process.loose', 'process'), layer: null }],
       relations: [mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL), mapRelation('relation.d-up', 'calls', EXTERNAL, CALLER)], flows: [], flow_evidence: [],
@@ -502,7 +506,7 @@ describe('architecture map', () => {
     for (const [index, band] of real.bands.slice(1).entries()) expect(below(real.bands[index]!, band)).toBe(true);
   });
 
-  test('the map is the default view and selecting a node lists its relations with import counts', async () => {
+  test('the map is the default view: capabilities in domain groups, external systems, one summed edge per domain pair; selecting a node lists its relations with import counts', async () => {
     const opened: (string | null)[] = [];
     const sources: unknown[] = [];
     await mount(workspace({ readMap: reader({ state: 'ok', map: mapFor() }), onModule: id => opened.push(id), onSource: source => sources.push(source) }));
@@ -510,14 +514,24 @@ describe('architecture map', () => {
     expect(calls).toEqual([]);
     const canvas = document.querySelector('.architecture-map')!;
     expect([canvas.getAttribute('data-node-count'), canvas.getAttribute('data-relation-count')]).toEqual(['4', '3']);
-    expect([...document.querySelectorAll('.react-flow__node')].map(item => item.getAttribute('data-id')).sort()).toEqual([CALLER, CENTER, PART, EXTERNAL].sort());
-    expect(document.querySelector(`.react-flow__node[data-id="${PART}"]`)?.textContent).toContain('900 lines');
-    // Every node is in the model's one declared layer, so the canvas draws one labelled band.
-    expect([...document.querySelectorAll('.architecture-map__band')].map(item => item.textContent)).toEqual(['core']);
-    // A banded map opens at a readable zoom on its top band, not fitted to the whole map.
-    expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).toContain('scale(0.85)');
-    // The header row gets the map's commit and collection time.
-    expect(sources.at(-1)).toEqual({ commit: COMMIT, collectedAt: '2026-10-27T09:00:00.000Z' });
+    // The capabilities sit in their domain groups and the external system above them; a component is not on this map.
+    expect([...document.querySelectorAll('.react-flow__node')].map(item => item.getAttribute('data-id')).sort())
+      .toEqual([CALLER, CENTER, EXTERNAL, 'domain:public-surface', 'domain:workflow-engine'].sort());
+    expect([...document.querySelectorAll('.architecture-modules__domain > b')].map(item => item.textContent)).toEqual(['public-surface', 'workflow-engine']);
+    expect(document.querySelector(`.react-flow__node[data-id="${CENTER}"] .architecture-modules__lines`)?.textContent).toBe('900');
+    // One edge per domain pair with the imports of both directions summed; every capability once, inside its domain; no two boxes overlap.
+    expect(layoutModules(mapFor()).edges.map(edge => [edge.source, edge.target, edge.imports])).toEqual([['public-surface', 'workflow-engine', 7]]);
+    const recorded = decodeArchitectureMap(recordedMap);
+    const real = layoutModules(recorded);
+    const pair = (a: string, b: string) => real.edges.find(edge => [edge.source, edge.target].sort().join() === [a, b].sort().join())?.imports;
+    expect([real.edges.length, pair('runtime-harness', 'workflow-engine'), pair('runtime-harness', 'verification')]).toEqual([12, 342, 676]);
+    expect(real.capabilities.map(item => item.node.id).sort()).toEqual(recorded.nodes.filter(node => node.kind === 'capability').map(node => node.id).sort());
+    const inside = (a: ModulesBox, b: ModulesBox) => a.x >= b.x && a.y >= b.y && a.x + a.width <= b.x + b.width && a.y + a.height <= b.y + b.height;
+    const apart = (a: ModulesBox, b: ModulesBox) => a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
+    for (const item of real.capabilities) expect(inside(item, real.domains.find(domain => domain.domain === item.node.domain)!)).toBe(true);
+    for (const group of [[...real.externals, ...real.domains], real.capabilities]) for (const [index, a] of group.entries()) for (const b of group.slice(index + 1)) expect(apart(a, b)).toBe(true);
+    // The header row gets the map's commit, collection time, branch and archctx version.
+    expect(sources.at(-1)).toEqual({ commit: COMMIT, map: { collectedAt: '2026-10-27T09:00:00.000Z', headRef: 'main', archctxVersion: '0.11.2' } });
     // The base map has every source, so the side panel states no gap. The flow steps that archctx
     // reports as unknown concern only the sequence map, so the module map does not state them.
     expect(document.querySelectorAll('[data-map-side] > .architecture-map__gap')).toHaveLength(0);
@@ -542,13 +556,11 @@ describe('architecture map', () => {
     // Only the base-map gaps, in the side panel; the open layer's flow-step gap belongs to the sequence map.
     expect([...document.querySelectorAll('[data-map-side] > .architecture-map__gap')].map(item => item.getAttribute('data-reason'))).toEqual(['model_worktree_dirty', 'code_facts_other_commit']);
     expect(document.querySelector('.architecture-map__legend')?.textContent).not.toContain('imports');
-    // A model without ordered layers keeps the unbanded layout and states why.
+    // No base map draws the layer order, so a model without ordered layers states no map gap.
     await act(async () => root?.render(workspace({ readMap: reader({ state: 'ok', map: mapFor(true, mapLayers, undeclaredLayers) }) })));
     await settle();
     const sideGaps = () => [...document.querySelectorAll('[data-map-side] > .architecture-map__gap')].map(item => [item.getAttribute('data-gap'), item.getAttribute('data-reason')]);
-    expect(sideGaps()).toEqual([['layer_order', 'model_layers_undeclared']]);
-    expect(document.querySelectorAll('.architecture-map__band')).toHaveLength(0);
-    // Only the module map draws layer bands, so the other base maps do not state the layer-order gap.
+    expect(sideGaps()).toEqual([]);
     for (const view of ['sequence', 'topology']) {
       await act(async () => document.querySelector<HTMLButtonElement>(`#architecture-tab-${view}`)!.click());
       await settle();
@@ -601,10 +613,13 @@ describe('architecture map', () => {
     expect(document.querySelector('.architecture-layers [aria-pressed="true"]')?.getAttribute('data-layer')).toBe('changes');
     expect([...document.querySelectorAll('.architecture-layers button')].map(item => `${item.getAttribute('data-layer')}:${item.getAttribute('data-state')}`))
       .toEqual(['changes:ok', 'violations:ok', 'pull_requests:unavailable', 'tests:ok', 'decisions:ok']);
-    // One file has no line count, so the label says the sum is partial.
-    expect([box(PART).getAttribute('data-tone'), box(PART).querySelector('.architecture-map__mark')?.textContent]).toEqual(['change', '+5 −2 ?']);
-    // archctx says the group depends on the changed component; nodes with nothing on the layer fade.
-    expect([box(CENTER).getAttribute('data-tone'), box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual(['muted', true, true]);
+    // Each chip with data counts what its layer covers.
+    expect([...document.querySelectorAll('.architecture-layers button')].map(item => item.querySelector('.architecture-layers__count')?.textContent ?? null))
+      .toEqual(['1 module · 1 commit', '4', null, '2 / 2', '2 decisions']);
+    // The changed component marks its capability with the commits that touch it; archctx cut the paths, so that count is a lower bound.
+    // Capabilities with nothing on the layer fade, external systems do not.
+    expect([box(CENTER).getAttribute('data-tone'), box(CENTER).querySelector('.architecture-map__mark')?.textContent]).toEqual(['change', '≥1 commit']);
+    expect([box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual([true, false]);
     expect(document.querySelector('[data-layer-summary="changes"]')?.textContent).toContain('≥2 files changed in 1 commit, ≥0 without an owner');
     expect([gaps(), notes()]).toEqual([[], ['changes.truncated:paths']]);
     // The sequence map states the flow steps that archctx cannot tie to the change, in its side panel.
@@ -614,12 +629,13 @@ describe('architecture map', () => {
     await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-map')!.click());
     await settle();
     expect(document.querySelector('[data-note="changes.truncated"]')?.textContent).toBe('archctx stopped at its limits for changed paths. File and line counts are lower bounds.');
-    await act(async () => box(PART).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await act(async () => box(CENTER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
-    expect(document.querySelector('[data-layer-facts="changes"]')?.textContent).toBe('2 files changed, +5 −2 lines (1 without a line count)assets/ledger.pngsrc/ledger.ts');
+    expect(document.querySelector('[data-module-commits]')?.textContent).toBe('ccccccc Ledger rows');
 
     await choose('violations');
-    expect([box(PART).getAttribute('data-tone'), box(CENTER).getAttribute('data-tone'), box(CALLER).hasAttribute('data-quiet')]).toEqual(['danger', 'danger', true]);
+    // The stale anchor on the component, the unprovable flow and the undeclared import: three items on the capability.
+    expect([box(CENTER).getAttribute('data-tone'), box(CENTER).querySelector('.architecture-map__mark')?.textContent, box(CALLER).hasAttribute('data-quiet')]).toEqual(['danger', '3', true]);
     expect(document.querySelector('[data-layer-summary="violations"]')?.textContent).toContain('src/orphan.ts');
     expect(document.querySelector('[data-layer-summary="violations"]')?.textContent).toContain('Flow proofs: 1 of 2 selectors proven; 1 capabilities cannot prove their flow.');
     expect(gaps()).toEqual(['violations.anchors:code_facts_unavailable']);
@@ -628,9 +644,7 @@ describe('architecture map', () => {
 
     await choose('tests');
     expect([box(CENTER).getAttribute('data-tone'), box(CALLER).getAttribute('data-tone')]).toEqual(['danger', 'muted']);
-    await act(async () => box(CENTER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
-    await settle();
-    expect(document.querySelector('[data-layer-facts="tests"]')?.textContent).toBe('2 test files: 1 passed, 1 failed, 0 skipped, 0 no result');
+    expect(document.querySelector('[data-module-tests]')?.textContent).toBe('2 test files: 1 passed, 1 failed, 0 skipped, 0 no result');
 
     await choose('pull_requests');
     expect([gaps(), notes()]).toEqual([['pull_requests:dev_activity_unavailable'], []]);
@@ -638,10 +652,27 @@ describe('architecture map', () => {
     await choose('decisions');
     expect([gaps(), notes()]).toEqual([[], []]);
     expect(document.querySelector('[data-layer-summary="decisions"]')?.textContent).toBe('2 decisions; 1 apply to model nodes.Decisions that apply to no node (1)Name things plainly · docs/adr/ADR-0002-naming.md');
-    expect([box(CALLER).getAttribute('data-tone'), box(CALLER).querySelector('.architecture-map__mark')?.textContent, box(EXTERNAL).hasAttribute('data-quiet')]).toEqual(['muted', '1', true]);
+    expect([box(CALLER).getAttribute('data-tone'), box(CALLER).querySelector('.architecture-map__mark')?.textContent, box(CENTER).hasAttribute('data-quiet')]).toEqual(['muted', '1', true]);
     await act(async () => box(CALLER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
-    expect(document.querySelector('[data-layer-facts="decisions"]')?.textContent).toBe('Route through one router (accepted)docs/adr/ADR-0001-router.md');
+    expect(document.querySelector('[data-module-decisions]')?.textContent).toBe('Route through one router (accepted) · docs/adr/ADR-0001-router.md');
+
+    // The violations chip counts each item once; a capability's mark counts each item that names one of its nodes once.
+    const onlyDebt = (nodes: string[]): ArchitectureMapLayersInput => ({ ...mapLayers, violations: {
+      debt: { state: 'ok', items: [{ kind: nodes.length === 0 ? 'unowned-path' : 'ambiguous-owner', nodes, paths: ['src/shared.ts'] }] },
+      flows: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts, layer_direction: undeclaredLayers } });
+    const debtRows: [string[], [string, string | null][]][] = [
+      [[], [[CENTER, null], [CALLER, null]]],
+      [[PART, CALLER], [[CENTER, '1'], [CALLER, '1']]],
+      [[CENTER, PART], [[CENTER, '1'], [CALLER, null]]],
+    ];
+    for (const [nodes, marks] of debtRows) {
+      await act(async () => root?.render(workspace({ repositoryId: `repo-debt-${nodes.join('-')}`, readMap: reader({ state: 'ok', map: mapFor(true, onlyDebt(nodes)) }) })));
+      await settle();
+      await choose('violations');
+      expect([nodes, document.querySelector('.architecture-layers [data-layer="violations"] .architecture-layers__count')?.textContent,
+        marks.map(([id]) => [id, box(id).querySelector('.architecture-map__mark')?.textContent ?? null])]).toEqual([nodes, '1', marks]);
+    }
   });
 
   test('PR impact marks the nodes the chosen PR changes and the nodes that depend on them, and a PR without a complete list says why', async () => {
@@ -675,10 +706,10 @@ describe('architecture map', () => {
     const summary = document.querySelector('[data-pull-request="21"]')!.textContent;
     expect(summary).toContain(head.slice(0, 12));
     expect(summary).toContain('2 files changed in 1 node, 1 without an owner');
-    // archctx marks only the changed component and the group that calls it; the caller is two hops away.
-    const mark = (id: string) => [box(id).getAttribute('data-tone'), box(id).querySelector('.architecture-map__mark')?.textContent ?? null];
-    expect([PART, CENTER].map(mark)).toEqual([['change', '1'], ['muted', '↳']]);
-    expect([box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual([true, true]);
+    // The changed component marks its capability with the PR's files there; the caller is two hops away.
+    expect([box(CENTER).getAttribute('data-tone'), box(CENTER).querySelector('.architecture-map__mark')?.textContent]).toEqual(['change', '1 file']);
+    expect(document.querySelector('.architecture-layers [data-layer="pull_requests"] .architecture-layers__count')?.textContent).toBe('#21 · 1 module');
+    expect([box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual([true, false]);
     expect([gaps(), notes()]).toEqual([[], []]);
     await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-sequence')!.click());
     await settle();
@@ -687,7 +718,8 @@ describe('architecture map', () => {
     await settle();
     await act(async () => box(CENTER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
-    expect(document.querySelector('[data-layer-facts="pull_requests"]')?.textContent).toBe(`Depends on changed Name ${PART}`);
+    expect(document.querySelector('[data-module-impact="21"]')?.textContent).toBe('Changes 1 file here.');
+
 
     await act(async () => {
       select().value = '22';
@@ -705,13 +737,36 @@ describe('architecture map', () => {
     const refused = document.querySelector('.architecture-map__gap[data-gap="pull_request"]')!;
     expect([refused.getAttribute('data-reason'), refused.getAttribute('data-code'), refused.textContent]).toEqual(['archctx_error', 'AC_SCHEMA_INVALID native-context-arguments-invalid',
       'No impact for this pull request: archctx impact refused with AC_SCHEMA_INVALID native-context-arguments-invalid.']);
+
+    // A capability counts each changed path that one of its nodes owns once, also a path with two owners in it; cut paths make the count a lower bound.
+    const owned = (path: string, owners: string[]) => ({ path, added: null, deleted: null, owners, reason_codes: ['paths-only'] });
+    const fileRows: [ReturnType<typeof owned>[], boolean, string][] = [
+      [[owned('src/ledger.ts', [PART])], false, '1 file'],
+      [[owned('src/ledger.ts', [PART, CENTER])], false, '1 file'],
+      [[owned('src/ledger.ts', [PART]), owned('src/pipeline.ts', [CENTER])], true, '≥2 files'],
+    ];
+    for (const [paths, cut, files] of fileRows) {
+      const rowMap = mapFor(true, { ...mapLayers, pull_requests: { state: 'ok', observed_at: '2026-10-27T08:59:00.000Z', pull_requests: [
+        { number: 21, title: 'Ledger rows', url: 'https://github.com/acme/widgets/pull/21', head_sha: head, impact: {
+          state: 'ok', paths, unowned_paths: [], nodes: [...new Set(paths.flatMap(path => path.owners))].map(id => ({ id, files: paths.filter(path => path.owners.includes(id)).length })),
+          dependents: [], dependency_coverage: 'complete', flow_steps: { status: 'known', reason_codes: [], items: [] }, truncated: { ...whole, paths: cut },
+        } }] } });
+      await act(async () => root?.render(workspace({ repositoryId: `repo-files-${paths.length}-${cut}`, readMap: reader({ state: 'ok', map: rowMap }) })));
+      await settle();
+      await act(async () => document.querySelector<HTMLButtonElement>('.architecture-layers [data-layer="pull_requests"]')!.click());
+      await settle();
+      await act(async () => box(CENTER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+      await settle();
+      expect([box(CENTER).querySelector('.architecture-map__mark')?.textContent, document.querySelector('[data-module-impact="21"]')?.textContent])
+        .toEqual([files, `Changes ${files} here.`]);
+    }
   });
 
   test('a layer with data that marks no node dims no node', async () => {
     // A day without a change, a PR that touches no node, no violation, no test result per capability, no decision that applies to a node.
     const emptyImpact = { paths: [], unowned_paths: [], nodes: [], dependents: [], dependency_coverage: 'complete', flow_steps: noCodeFactSteps, truncated: whole } as const;
     const unlit: ArchitectureMapLayersInput = {
-      changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 0, model: [], ...emptyImpact },
+      changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: [], model: [], ...emptyImpact },
       pull_requests: { state: 'ok', observed_at: '2026-10-27T08:59:00.000Z', pull_requests: [
         { number: 21, title: 'Docs', url: 'https://github.com/acme/widgets/pull/21', head_sha: 'e'.repeat(40), impact: { state: 'ok', ...emptyImpact } }] },
       violations: { debt: { state: 'ok', items: [] }, flows: { state: 'ok', selectors: 0, proven: 0, unproven: 0, used_unproven: 0, unprovable: [], evidence: [] },
@@ -729,10 +784,10 @@ describe('architecture map', () => {
     expect(seen).toEqual(['changes', 'violations', 'pull_requests', 'tests', 'decisions'].map(layer => [layer, 'ok', 0]));
 
     // Today's changes may mark a node that they removed from the model: that mark lights no map node.
-    // A mark on a current member lights it and its group, and the rest stays dimmed.
+    // A mark on a current component lights its capability, and the other capabilities stay dimmed.
     const GONE = 'capability.gone';
     const changed = (ids: string[]): ArchitectureMapLayersInput => ({ ...unlit, changes: {
-      state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 1,
+      state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: [{ sha: 'c'.repeat(40), subject: 'Ledger rows', nodes: ids }],
       model: ids.includes(GONE) ? [{ kind: 'nodes', id: GONE, change: 'removed', fields: [] }] : [],
       ...emptyImpact, paths: ids.map(id => ({ path: `src/${id}.ts`, added: 1, deleted: 0, owners: [id], reason_codes: [] })), nodes: ids.map(id => ({ id, files: 1 })),
     } });
@@ -746,7 +801,7 @@ describe('architecture map', () => {
         document.querySelector('[data-layer-summary="changes"]')!.textContent!.includes('Model: 0 nodes added, 1 removed')]);
     }
     // The last column: the layer summary still counts the removed node.
-    expect(quiet).toEqual([[[GONE], [], true], [[GONE, PART], [CALLER, EXTERNAL].sort(), true], [[PART], [CALLER, EXTERNAL].sort(), false]]);
+    expect(quiet).toEqual([[[GONE], [], true], [[GONE, PART], [CALLER], true], [[PART], [CALLER], false]]);
   });
 
   test('a layer without data is still listed and says why', async () => {
@@ -773,8 +828,10 @@ describe('sequence and topology base maps', () => {
   const CLI = 'process.cli';
   const HOST = 'namespace.host.developer';
   const FLOW = 'flow.pipeline.ledger';
-  const mapNode = (id: string, kind: string, parent: string | null = null) => ({ id, kind, name: `Name ${id}`, status: 'active', layer: 'core', parent, summary: `${id} summary` });
-  const mapRelation = (id: string, kind: string, source: string, target: string) => ({ id, kind, source, target, intent: `${id} intent` });
+  const mapNode = (id: string, kind: string, parent: string | null = null) => ({ id, kind, name: `Name ${id}`, status: 'active', layer: 'core', parent, summary: `${id} summary`,
+    domain: kind === 'capability' ? id.split('.')[1]! : null, namespace: kind === 'namespace' ? { type: 'host' } as const : null,
+    mount: kind === 'mount' ? { source: null, target: null, mode: 'ro', order: 0 } as const : null });
+  const mapRelation = (id: string, kind: string, source: string, target: string) => ({ id, kind, source, target, intent: `${id} intent`, protocol: null });
   const selector = (name: string): ArchitectureFlowSelectorV1 => ({ entrypoint: `entrypoint.pipeline.${name}`, source_symbol: name, sink: `sink.pipeline.${name}` });
   const step = (id: string, from: string, to: string, name: string) => ({ id, from, to, label: `Step ${id}`, evidence: selector(name) });
   const flow: ArchitectureMapFlowV1 = {
@@ -789,7 +846,7 @@ describe('sequence and topology base maps', () => {
   const noCodeFacts = { state: 'unavailable', reason: 'code_facts_unavailable' } as const;
   const whole = { paths: false, nodes: false, relations: false, flow_steps: false, dependents: false, model: false } as const;
   const layers: ArchitectureMapLayersInput = {
-    changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 1, model: [],
+    changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: [{ sha: 'c'.repeat(40), subject: 'Ledger rows', nodes: [PART] }], model: [],
       paths: [{ path: 'src/ledger.ts', added: 5, deleted: 2, owners: [PART], reason_codes: [] }], unowned_paths: [], nodes: [{ id: PART, files: 1 }],
       dependents: [{ id: CENTER, touched: PART, relations: ['relation.a-own'] }], dependency_coverage: 'complete',
       flow_steps: { status: 'known', reason_codes: [], items: [{ flow: FLOW, step: 'append', outcome: null, reason_codes: [] }] }, truncated: whole },
@@ -815,7 +872,7 @@ describe('sequence and topology base maps', () => {
   };
   function runtimeMap(change: { layers?: ArchitectureMapLayersInput; flows?: ArchitectureMapFlowV1[]; nodes?: readonly ArchitectureMapNodeV1[]; relations?: readonly ArchitectureMapRelationV1[] } = {}): ArchitectureMapV1 {
     return projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z', layer_order: { state: 'ok', layers: ['core'] },
+      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z', layer_order: { state: 'ok', layers: ['core'] },
       nodes: change.nodes ?? [mapNode(CENTER, 'capability'), mapNode(PART, 'component', CENTER), mapNode(CALLER, 'capability'), mapNode(EXTERNAL, 'external-system'),
         mapNode(SERVER, 'process'), mapNode(CLI, 'process'), mapNode(HOST, 'namespace')],
       relations: change.relations ?? [mapRelation('relation.a-own', 'calls', CENTER, PART), mapRelation('relation.b-router', 'calls', CALLER, CENTER),
@@ -870,6 +927,9 @@ describe('sequence and topology base maps', () => {
     const commit = layout.messages[2]!;
     expect([layout.fragments.map(fragment => fragment.outcome.kind), commit.y > kept.y && commit.y < kept.y + kept.height, layout.terminals.map(entry => entry.participant)])
       .toEqual([['success', 'error'], true, ['pipe', 'router']]);
+    // A fragment spans the columns that its outcome names: the kept rows reach git, the refused rows end at the router.
+    const column = (id: string) => layout.columns.find(entry => entry.participant.id === id)!.x;
+    expect(layout.fragments.map(fragment => [fragment.index, fragment.x < column('pipe'), fragment.x + fragment.width > column('git')])).toEqual([[0, true, true], [1, true, false]]);
   });
 
   test('topology boxes nest by namespace, a deployed node sits in its process, and a relation is drawn between boxes or counted as unplaced', () => {
@@ -909,17 +969,37 @@ describe('sequence and topology base maps', () => {
     expect(document.querySelector('.architecture-layers [aria-pressed="true"]')?.getAttribute('data-layer')).toBe('violations');
   });
 
-  test('2-ARCH-P2 on the module map, which holds the layered view: a node shows its size, dependency edges, violations and the command that lists them', async () => {
+  test('2-ARCH-P2 on the module map: a capability shows its domain, size, violations with their source, PR impact with the flow step, and the command that lists them', async () => {
     await mount(workspace({ readMap: reader(runtimeMap()) }));
     await click(`.react-flow__node[data-id="${CENTER}"]`);
     expect(inspector().getAttribute('data-node-id')).toBe(CENTER);
-    expect(inspector().querySelector('[data-node-size]')?.textContent).toBe('900 lines in 1 files');
+    expect([inspector().querySelector('[data-module-domain]')?.textContent, inspector().querySelector('[data-node-size]')?.textContent]).toEqual(['workflow-engine', '900 lines in 1 files']);
     expect([...inspector().querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toContain(`calls Name ${CALLER} · 7 imports`);
-    expect(inspector().querySelector('[data-layer-facts="violations"]')?.textContent).toContain(`Imports Name ${CALLER} with no declared relation (3 imports)`);
+    expect([...inspector().querySelectorAll('[data-layer-facts="violations"] > li')].map(item => item.textContent)).toEqual([
+      'Flow proof cannot be proven (2 diagnostics)flows check',
+      // The flow's steps joined to archctx's proof by selector: route is proven and the outcome steps have no proof, so only append is listed.
+      'Flow "Append a ledger row", step 2 (Step append): archctx reports no-direct-call.flows check',
+      `Imports Name ${CALLER} with no declared relation (3 imports)deps`]);
     expect([...inspector().querySelectorAll('[data-fix-command]')].map(item => item.textContent)).toEqual([architectureViolationCommand('flows'), architectureViolationCommand('dependencies')]);
     expect(architectureViolationCommand('flows')).toBe('archctx flows check --no-sync --json');
-    await click(`.react-flow__node[data-id="${PART}"]`);
-    expect(inspector().querySelector('[data-related-prs]')?.textContent).toBe('#21 Ledger rows · changes 1 file');
+    // The PR changes the capability's component, and its flow step ends there: the third step, the first of an outcome.
+    expect([...inspector().querySelectorAll('[data-module-impact="21"] > li')].map(item => item.textContent))
+      .toEqual(['Changes 1 file here.', 'Reaches step 3 of the flow "Append a ledger row".']);
+  });
+
+  test('a node lists each stale doc citation with its origin and location; the violations count and summary count the findings', async () => {
+    const anchors = { state: 'ok', citations: 3, nodes: [{ id: CALLER, findings: [
+      { kind: 'line-moved', origin: 'document', path: 'docs/architecture/modules/public-surface/root-router.md', line: 12, citation: 'src/router.ts:40' },
+      { kind: 'missing-symbol', origin: 'node-summary', path: null, line: null, citation: 'route' },
+    ] }] } as const;
+    await mount(workspace({ readMap: reader(runtimeMap({ layers: { ...layers, violations: { ...layers.violations, anchors } } })) }));
+    await chooseLayer('violations');
+    expect(document.querySelector('[data-layer-summary="violations"]')?.textContent).toContain('Doc citations: 2 of 3 out of date.');
+    await click(`.react-flow__node[data-id="${CALLER}"]`);
+    expect([...inspector().querySelectorAll('[data-layer-facts="violations"] > li')].map(item => item.textContent)).toEqual([
+      'Out-of-date citation in the doc: src/router.ts:40 (line-moved)docs/architecture/modules/public-surface/root-router.md:12docs anchors',
+      'Out-of-date citation in the node summary: route (missing-symbol)docs anchors',
+    ]);
   });
 
   test('2-ARCH-P2 on the sequence map: a message shows its declared code, archctx proof, related PR, dependency edges and the proof command; unknown parts say why', async () => {
@@ -930,7 +1010,10 @@ describe('sequence and topology base maps', () => {
     expect([...document.querySelectorAll('.architecture-sequence__box')].map(item => [item.getAttribute('data-placement'), item.textContent])).toEqual([
       ['unknown', 'Process unknown'], ['process', `Name ${SERVER}`], ['external', 'External systems']]);
     expect(document.querySelector('.architecture-sequence__box[data-placement="unknown"]')?.getAttribute('data-reason')).toBe(t('architecture.runtime.deployment_undeclared'));
-    expect([...document.querySelectorAll('.architecture-sequence__fragment')].map(item => item.getAttribute('data-kind'))).toEqual(['success', 'error']);
+    // The first outcome opens the alt and the next one is an else, in model order; the colour follows the outcome kind.
+    expect([...document.querySelectorAll('.architecture-sequence__fragment')].map(item => [item.getAttribute('data-kind'), item.querySelector('.mono-value')?.textContent]))
+      .toEqual([['success', 'alt'], ['error', 'else']]);
+    expect([...document.querySelectorAll('.architecture-sequence__terminal')].map(item => [item.getAttribute('data-kind'), item.textContent])).toEqual([['success', 'Done'], ['error', 'Stop']]);
     // Today's changes reach the append step.
     const message = (id: string) => document.querySelector(`.react-flow__node[data-id="message:${id}"] .architecture-sequence__message`)!;
     expect([message(':append').getAttribute('data-tone'), message(':route').hasAttribute('data-tone')]).toEqual(['change', false]);
@@ -938,6 +1021,7 @@ describe('sequence and topology base maps', () => {
     await click('.react-flow__node[data-id="message::route"]');
     expect(message(':route').hasAttribute('data-selected')).toBe(true);
     expect(inspector().getAttribute('data-step-id')).toBe(':route');
+    expect(inspector().querySelector('[data-step-title]')?.textContent).toBe(`Name ${CALLER} → Name ${CENTER}`);
     expect(inspector().querySelector('[data-step-evidence]')?.textContent).toBe('src/router.ts route→ src/pipeline.ts route');
     expect(inspector().querySelector('[data-step-proof]')?.getAttribute('data-step-proof')).toBe('proven');
     expect([...inspector().querySelectorAll('[data-call-sites] li')].map(item => item.textContent)).toEqual(['src/router.ts:12', 'src/router-entry.ts']);
@@ -961,14 +1045,102 @@ describe('sequence and topology base maps', () => {
     expect([inspector().getAttribute('data-node-id'), inspector().querySelector('[data-runtime]')?.textContent]).toEqual([CALLER, `Runs in: ${t('architecture.runtime.deployment_undeclared')}`]);
     await click('.react-flow__node[data-id="participant:ledger"]');
     expect(inspector().querySelector('[data-runtime]')?.textContent).toBe(`Runs in: Name ${SERVER}`);
-    // A not-applicable flow states its rationale instead of a diagram.
-    await act(async () => {
-      const select = document.querySelector<HTMLSelectElement>('.architecture-lens select')!;
-      select.value = 'flow.router.none';
-      select.dispatchEvent(new window.Event('change', { bubbles: true }) as unknown as Event);
-    });
+    // The side panel lists the flows in model order; today's changes reach a step of the first one.
+    const flows = () => [...document.querySelectorAll('.architecture-sequence__flow-list button')].map(item => [item.textContent, item.getAttribute('aria-pressed'), item.hasAttribute('data-lit')]);
+    expect(flows()).toEqual([['1Append a ledger row', 'true', true], ['2No router flow', 'false', false]]);
+    // A not-applicable flow states its rationale instead of a diagram, and has nothing to export.
+    await click('[data-flow-id="flow.router.none"]');
+    expect([notes(), flows()[1]![1], document.querySelector<HTMLButtonElement>('[data-sequence-export]')?.disabled])
+      .toEqual([expect.arrayContaining(['sequence.not_applicable:flow_not_applicable']), 'true', true]);
+
+    // The flow list stays one mounted control across each kind of flow change, so focus and its scroll position stay;
+    // a selection belongs to its flow and does not come back on a return.
+    const second = { ...flow, id: 'flow.pipeline.second', name: 'Second ledger flow' };
+    await act(async () => root?.render(workspace({ repositoryId: 'repo-three-flows', readMap: reader(runtimeMap({ flows: [flow, second, runtimeMap().flows[1]!],
+      // Custom flows declare no code, so the map carries no proof either.
+      layers: { ...layers, violations: { ...layers.violations, flows: noCodeFacts } } })) })));
     await settle();
-    expect(notes()).toContain('sequence.not_applicable:flow_not_applicable');
+    await tab('sequence');
+    await click(`[data-flow-id="${FLOW}"]`);
+    await click('.react-flow__node[data-id="message::route"]');
+    const list = document.querySelector<HTMLElement>('.architecture-sequence__flow-list')!;
+    for (const [target, view] of [[second.id, 'diagram'], ['flow.router.none', 'note'], [FLOW, 'diagram']] as const) {
+      const button = list.querySelector<HTMLButtonElement>(`[data-flow-id="${target}"]`)!;
+      list.scrollTop = 40;
+      button.focus();
+      await click(`[data-flow-id="${target}"]`);
+      expect([document.querySelector('[data-view="sequence"]')?.getAttribute('data-flow'), document.querySelector('.architecture-map__canvas') === null ? 'note' : 'diagram',
+        list.isConnected, list.scrollTop, button.isConnected, document.activeElement === button, button.getAttribute('aria-pressed'), inspector().hasAttribute('data-step-id')])
+        .toEqual([target, view, true, 40, true, true, 'true', false]);
+    }
+  });
+
+  test('the lens row counts the steps that have code evidence and exports the flow on screen as one SVG file', async () => {
+    const files: { name: string; blob: Blob }[] = [];
+    const { createObjectURL, revokeObjectURL } = URL;
+    const blobs = new Map<string, Blob>();
+    URL.createObjectURL = (blob: Blob) => { const url = `blob:test/${blobs.size}`; blobs.set(url, blob); return url; };
+    URL.revokeObjectURL = () => {};
+    const anchor = window.HTMLAnchorElement.prototype;
+    const { click: anchorClick } = anchor;
+    anchor.click = function (this: HTMLAnchorElement) { files.push({ name: this.download, blob: blobs.get(this.href)! }); };
+    try {
+      await mount(workspace({ readMap: reader(runtimeMap()) }));
+      await tab('sequence');
+      // Declared code names the route and append selectors; the outcome steps have none.
+      expect(document.querySelector('[data-sequence-summary]')?.textContent).toBe('2 flows from the model; 2 of 4 steps have code evidence');
+      await click('[data-sequence-export]');
+      const svg = await files[0]!.blob.text();
+      expect([files.map(file => file.name), files[0]!.blob.type, (svg.match(/class="message"/gu) ?? []).length]).toEqual([[`${FLOW}.svg`], 'image/svg+xml', 4]);
+      expect([`<title>Name ${CALLER}</title>`, '>alt</tspan> Row kept', '>else</tspan> Row refused', '>Done</text>', '>Stop</text>'].filter(text => !svg.includes(text))).toEqual([]);
+
+      // Every label kind keeps its estimated text box inside its own shape and the file, with one long label per kind and CJK
+      // text. The kept terminal sits on git, the rightmost participant; the append step is a self message.
+      // The estimate never undercounts: widest glyphs per class, in em at weights 400 and 600, as Chrome draws system-ui (SF Pro) on macOS.
+      const measured = [['中', 0.944, 0.944], ['W', 0.924, 0.952], ['%', 0.808, 0.863], ['m', 0.803, 0.843], ['&', 0.669, 0.691], ['6', 0.617, 0.641]] as const;
+      expect(measured.filter(([glyph, regular, bold]) => textWidth(glyph, 100, false) < regular * 100 || textWidth(glyph, 100, true) < bold * 100)).toEqual([]);
+      const latin = (text: string) => `${text} `.repeat(4).trim();
+      const cjk = (text: string) => text.repeat(4);
+      const [route, append] = flow.steps;
+      const [kept, refused] = flow.outcomes;
+      const wide = { ...flow,
+        steps: [{ ...route!, label: latin('Route the request through the root router before the pipeline appends') }, { ...append!, to: 'pipe', label: cjk('流水线先校验请求和账本状态') }],
+        outcomes: [
+          { ...kept!, label: cjk('账本行已保存并提交到 git，再把提交结果返回给调用方'), steps: [{ ...kept!.steps[0]!, label: latin('Commit the WRITTEN LEDGER ROW to git') }],
+            terminal: { participant: 'git', label: 'WROTE THE COMMITTED LEDGER ROW AND RETURNED ITS SHA' } },
+          { ...refused!, label: latin('Row refused because the ledger rejected the append for a known reason'), steps: [{ ...refused!.steps[0]!, label: cjk('账本拒绝追加并给出原因') }],
+            terminal: { participant: 'router', label: '停止：返回拒绝原因和账本代码给路由器' } },
+        ] };
+      const names = ['路由器：根路由在流水线之前选择处理程序', 'Pipeline Workflow Engine Capability With Many Words', 'Ledger component that appends attested rows', '外部系统 git 与 archctx 子进程'];
+      const wideLayout = layoutSequence(wide, runtimePlacement(runtimeMap()));
+      const exported = sequenceSvg(wideLayout, {
+        box: box => latin(`${box.key} runs every hook event in its own Bun process`),
+        participant: nodeId => ({ name: names[flow.participants.findIndex(entry => entry.node === nodeId)]!, kind: 'capability' }),
+      });
+      const shapes: Record<keyof typeof SEQUENCE_SVG_FONT, readonly (readonly [number, number])[]> = {
+        title: wideLayout.boxes.map(box => [box.x, box.x + box.width]),
+        'fragment-label': wideLayout.fragments.map(fragment => [fragment.x, fragment.x + fragment.width]),
+        name: wideLayout.columns.map(column => [column.x - SEQUENCE_SVG_HEADER_WIDTH / 2, column.x + SEQUENCE_SVG_HEADER_WIDTH / 2]),
+        'message-label': wideLayout.messages.map(message => message.from === message.to ? [message.from, message.from + SEQUENCE_COLUMN / 2]
+          : [Math.min(message.from, message.to), Math.max(message.from, message.to)]),
+        terminal: wideLayout.terminals.map(terminal => [terminal.x - SEQUENCE_SVG_TERMINAL_WIDTH / 2, terminal.x + SEQUENCE_SVG_TERMINAL_WIDTH / 2]),
+      };
+      const shown = (markup: string) => markup.replace(/<[^>]+>/gu, '').replace(/&lt;/gu, '<').replace(/&gt;/gu, '>').replace(/&quot;/gu, '"').replace(/&amp;/gu, '&');
+      const labels = (Object.keys(shapes) as (keyof typeof SEQUENCE_SVG_FONT)[]).flatMap(kind => [...exported.matchAll(
+        new RegExp(`<text class="${kind}[^"]*" x="([\\d.]+)" y="[\\d.]+"( text-anchor="middle")?><title>[^<]*</title>(.*?)</text>`, 'gu'))].map((match, index) => {
+        const text = shown(match[3]!);
+        const width = textWidth(text, SEQUENCE_SVG_FONT[kind].size, SEQUENCE_SVG_FONT[kind].bold);
+        const left = Number(match[1]) - (match[2] === undefined ? 0 : width / 2);
+        const [low, high] = shapes[kind][index]!;
+        return { kind, text, inside: left >= Math.max(low, 0) && left + width <= Math.min(high, wideLayout.width), shortened: text.endsWith('…') };
+      }));
+      expect(Object.fromEntries(Object.entries(shapes).map(([kind, list]) => [kind, [list.length, labels.filter(entry => entry.kind === kind).length]])))
+        .toEqual({ title: [3, 3], 'fragment-label': [2, 2], name: [4, 4], 'message-label': [4, 4], terminal: [2, 2] });
+      expect(labels.filter(entry => !entry.inside || !entry.shortened)).toEqual([]);
+    } finally {
+      Object.assign(URL, { createObjectURL, revokeObjectURL });
+      anchor.click = anchorClick;
+    }
   });
 
   test('each layer on the sequence map marks steps or participants from the collector, or says what it cannot mark', async () => {
@@ -1079,21 +1251,35 @@ describe('architecture history', () => {
     expect(shape.edges.size).toBe(0);
   });
 
-  test('an error milestone shows only its code, the base across it is named, and the next page pins the first head', async () => {
+  test('the newest page shows first, an error milestone shows only its code, the base across it is named, and an older page pins the first head', async () => {
+    // archctx pages run oldest first: a one-milestone read gives the head and the total (50), then the newest page.
     const gap = page('gap');
+    const removal = page('removal');
     const paths: string[] = [];
+    const sources: (ArchitectureSource | null)[] = [];
     respond = path => {
       paths.push(path);
-      return json(new URL(path, 'http://127.0.0.1').searchParams.get('offset') === '0' ? gap : page('removal'), 200, '"history-1"');
+      return json(new URL(path, 'http://127.0.0.1').searchParams.get('offset') === '0' && paths.length > 2 ? removal : gap, 200, '"history-1"');
     };
-    await mount(workspace());
+    await mount(workspace({ onSource: source => sources.push(source) }));
     await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-history')!.click());
     await settle();
-    expect(paths).toEqual([`/api/v1/repositories/${REPO}/architecture/history?offset=0&limit=25`]);
+    expect(paths).toEqual([
+      `/api/v1/repositories/${REPO}/architecture/history?offset=0&limit=1`,
+      `/api/v1/repositories/${REPO}/architecture/history?offset=25&limit=25&ref=${gap.head}`,
+    ]);
+    expect([...document.querySelectorAll('li[data-milestone-rev]')].map(item => [item.getAttribute('data-milestone-rev'), item.getAttribute('aria-selected')]))
+      .toEqual([...gap.milestones].reverse().map((item, index) => [item.rev, String(index === 0)]));
+    expect(sources.at(-1)).toEqual({ head: gap.head, read: 3, total: 50 });
+    expect(document.querySelector('#architecture-tab-history .architecture-tabs__count')?.textContent).toBe('50');
     const pick = async (prefix: string) => {
       await act(async () => document.querySelector<HTMLElement>(`li[data-milestone-rev^="${prefix}"]`)!.click());
       await settle();
     };
+    // The oldest milestone read compares with a base that is not read yet: no gap count is made up.
+    await pick('06a42cf1');
+    expect(document.querySelector('.architecture-history__caption')?.textContent).toBe('c4a2cd0 → 06a42cf · the base is not read yet');
+    expect(document.querySelector('li[data-milestone-rev^="06a42cf1"] [data-tone="gap"]')).toBeNull();
     await pick('827a2e47');
     expect(document.querySelector('[data-gap="milestone"]')?.getAttribute('data-code')).toBe('history-model-invalid');
     expect(document.querySelector('.architecture-history__canvas-error code')?.textContent).toBe('history-model-invalid');
@@ -1103,10 +1289,45 @@ describe('architecture history', () => {
     expect(document.querySelector('[data-base-rev]')?.getAttribute('data-base-rev')).toBe(milestone(gap, '06a42cf1').rev);
     expect(document.querySelector('[data-gap="skipped"]')?.getAttribute('data-count')).toBe('1');
 
-    await act(async () => document.querySelector<HTMLButtonElement>('.architecture-history__timeline footer button')!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('.architecture-history__load')!.click());
     await settle();
-    expect(paths.at(-1)).toBe(`/api/v1/repositories/${REPO}/architecture/history?offset=3&limit=25&ref=${gap.head}`);
-    expect(document.querySelectorAll('li[data-milestone-rev]')).toHaveLength(5);
+    expect(paths.at(-1)).toBe(`/api/v1/repositories/${REPO}/architecture/history?offset=0&limit=25&ref=${gap.head}`);
+    expect([...document.querySelectorAll('li[data-milestone-rev]')].map(item => item.getAttribute('data-milestone-rev')))
+      .toEqual([...removal.milestones, ...gap.milestones].reverse().map(item => item.rev));
+    expect(sources.at(-1)).toEqual({ head: gap.head, read: 5, total: 50 });
+    expect(document.querySelector('.architecture-history__load')).toBeNull();
+
+    // The inspector opens on the first capability the delta removes; its name and its removed relations come from the base milestone.
+    await pick('d02a082f');
+    const inspector = document.querySelector('.architecture-history__inspector')!;
+    expect(inspector.getAttribute('data-node-id')).toBe('capability.runtime-harness.delegated-runs');
+    expect(inspector.querySelector('[data-diff="removed"]')?.textContent).toBe('This milestone removed it. The name comes from the base milestone 1761db9.');
+    expect(inspector.querySelectorAll('li[data-diff="removed"]')).toHaveLength(5);
+    // Four removed components: two belong to the removed capabilities, so only engineer-scheduling and task-fleet count as changed inside.
+    expect(document.querySelector('li[data-milestone-rev^="d02a082f"] [data-tone="inside"]')?.textContent).toBe('•2');
+  });
+
+  // cx1735-r1-inspector-drops-removed-relations: the relation list comes from the delta, not from the drawn shape.
+  // Each row reads one milestone whose base is not read, so a capability removed against that base is not drawn.
+  test.each<{ name: string; page: keyof typeof historyPages; rev: string; node: string; rows: [string, string[]][] }>([
+    { name: 'removed relations to undrawn capabilities only', page: 'removal', rev: 'd02a082f', node: 'capability.runtime-harness.evidence-ledger',
+      rows: [['removed', ['capability.runtime-harness.delegated-runs']], ['removed', ['capability.runtime-harness.pm-dispatch']]] },
+    { name: 'removed relations between drawn capabilities and to undrawn ones', page: 'removal', rev: 'd02a082f', node: 'capability.organization.task-fleet',
+      rows: [['removed', []], ['removed', ['capability.runtime-harness.delegated-runs']], ['removed', []], ['removed', ['capability.runtime-harness.pm-dispatch']]] },
+    { name: 'an added relation', page: 'inside', rev: '49f7ba6f', node: 'capability.runtime-harness.task-agent-host', rows: [['added', []]] },
+  ])('with an unread base the inspector lists every relation change of the node: $name', async ({ page: name, rev, node, rows }) => {
+    const only = { ...page(name), milestones: [milestone(page(name), rev)] };
+    respond = () => json(only, 200, '"history-1"');
+    await mount(workspace());
+    await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-history')!.click());
+    await settle();
+    await act(async () => document.querySelector(`.react-flow__node[data-id="${node}"]`)!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await settle();
+    const inspector = document.querySelector('.architecture-history__inspector')!;
+    expect(inspector.getAttribute('data-node-id')).toBe(node);
+    // An undrawn endpoint shows as its archctx id.
+    expect([...inspector.querySelectorAll('li[data-diff]')].map(item => [item.getAttribute('data-diff'), [...item.querySelectorAll('code')].map(code => code.textContent)]))
+      .toEqual(rows);
   });
 
   test('a shallow clone shows only the archctx code and the repair command, with no timeline', async () => {
@@ -1196,13 +1417,17 @@ describe('workspace navigation', () => {
       window.history.pushState(null, '', '#architecture');
       let next: ArchitectureMapRead | null = { state: 'ok', map: recorded };
       await mount(app(async () => next ?? new Promise<ArchitectureMapRead>(() => {})));
-      expect([view, source()]).toEqual([view, expect.stringMatching(new RegExp(`^Map collected .+ · ${recorded.commit.slice(0, 7)}$`))]);
+      expect([view, source()]).toEqual([view, expect.stringMatching(new RegExp(`^Map collected .+ · ${recorded.commit.slice(0, 7)} · ${recorded.head_ref} · archctx ${recorded.archctx_version}$`))]);
       next = later;
       await away[view]!();
       expect([view, source()]).toEqual([view, view === 'history' ? null : `Committed model · ${COMMIT.slice(0, 7)}`]);
       await back[view]!();
       expect([view, document.querySelector('.react-flow'), source()]).toEqual([view, null, null]);
     }
+    // A map of a detached HEAD names no branch.
+    await act(async () => root?.unmount());
+    await mount(app(async () => ({ state: 'ok', map: { ...recorded, head_ref: null } })));
+    expect(source()).toMatch(new RegExp(` · ${recorded.commit.slice(0, 7)} · detached HEAD · archctx ${recorded.archctx_version}$`));
   });
 });
 

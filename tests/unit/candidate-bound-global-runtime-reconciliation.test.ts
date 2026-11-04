@@ -6,7 +6,8 @@ import { spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 
 import { copyPackageRuntimeFixture } from '../helpers/repo-fixture';
-import { writeFakeHc } from '../helpers/fake-hc';
+import { startFakeHcRelease, writeFakeHc } from '../helpers/fake-hc';
+import { HC_MIN_VERSION } from '../../src/core/operator/herdr-pin';
 import { recordPluginSelection } from '../helpers/install-ownership';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 import { beginInstallHostTransaction, readInstallState, versions, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
@@ -794,6 +795,74 @@ describe('candidate-bound global runtime reconciliation', () => {
     }
   // This test copies two runtimes and runs two complete updates.
   // The full-suite run reached 32.5 seconds; one update is not the full budget.
+  }, 60_000);
+
+  // The candidate's hc step result reaches the parent for each branch: the
+  // PATH hint of a fresh install (the review finding), the update and the no-change line.
+  test.each([
+    { label: 'missing hc, ~/.local/bin off PATH', hcBefore: null, requests: 1,
+      lines: (dir: string) => [`[runtime] ok: ensure herdr-core (hc) - installed hc ${HC_MIN_VERSION} (sha256 verified) into ${dir}`, `add ${dir} to PATH to use hc; this run uses it for its later steps`] },
+    { label: 'hc below the floor', hcBefore: '0.1.15', requests: 0,
+      lines: (_dir: string, hc: string) => [`[runtime] ok: ensure herdr-core (hc) - updated hc 0.1.15 to ${HC_MIN_VERSION} at ${hc}`] },
+    { label: 'hc at the floor', hcBefore: HC_MIN_VERSION, requests: 0,
+      lines: (_dir: string, hc: string) => [`[runtime] ok: ensure herdr-core (hc) - hc ${HC_MIN_VERSION} at ${hc} is at or above ${HC_MIN_VERSION}; no change`] },
+  ])('the default update shows the hc step result of candidate C: $label', async ({ hcBefore, requests, lines }) => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-candidate-hc-'));
+    const home = join(root, 'home');
+    const repo = join(root, 'repo');
+    const bin = join(root, 'bin');
+    const hcBin = join(root, 'hc-bin');
+    const pkg = join(root, 'pkg');
+    const release = join(root, 'release');
+    const parentRoot = join(root, 'parent-b');
+    const candidateRoot = join(root, 'candidate-c');
+    const bunLog = join(root, 'bun.log');
+    const server = startFakeHcRelease(root, release);
+    // An hc that answers --version and --skill; `update --version X` sets its version to X.
+    const fakeHc = (versionFile: string) => `#!/bin/sh\nif [ "\${1:-}" = --skill ]; then printf '%s\\n' '# hc manual (herdr-core)' '' '\`$HC_TERMINAL_ID\` is your address.'; `
+      + `elif [ "\${1:-}" = update ]; then printf '%s' "$3" > "${versionFile}"; else printf 'hc %s\\n' "$(cat "${versionFile}")"; fi\n`;
+    try {
+      for (const dir of [repo, bin, hcBin, pkg, release]) mkdirSync(dir, { recursive: true });
+      copyRuntimeFixture(parentRoot, '0.17.0', 30);
+      copyRuntimeFixture(candidateRoot, '0.18.0', 30);
+      writeFileSync(join(root, 'release-version'), HC_MIN_VERSION);
+      writeExecutable(join(pkg, 'herdr-core'), fakeHc(join(root, 'release-version')));
+      if (hcBefore !== null) {
+        writeFileSync(join(root, 'hc-version'), hcBefore);
+        writeExecutable(join(hcBin, 'hc'), fakeHc(join(root, 'hc-version')));
+      }
+      expect(spawnSync('tar', ['-czf', join(release, 'herdr-core.tar.gz'), '-C', pkg, 'herdr-core']).status).toBe(0);
+      const sha256 = createHash('sha256').update(readFileSync(join(release, 'herdr-core.tar.gz'))).digest('hex');
+      const url = `http://127.0.0.1:${await server.port}/herdr-core.tar.gz`;
+      // Candidate C reads its own package pin; it points at the fake release.
+      const assets = Object.fromEntries(['linux-aarch64', 'linux-x86_64', 'macos-aarch64', 'macos-x86_64', 'windows-x86_64'].map(name => [name, { url, sha256 }]));
+      writeFileSync(join(candidateRoot, 'src', 'core', 'operator', 'herdr-core-pin.json'), `${JSON.stringify({ min_version: HC_MIN_VERSION, release_assets: assets }, null, 2)}\n`);
+      const globalPackagePath = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
+      mkdirSync(join(home, '.bun', 'install', 'global', 'node_modules'), { recursive: true });
+      symlinkSync(parentRoot, globalPackagePath, 'dir');
+      writeCoreOnlyInstallState(home);
+      writeCandidateSwitchingBun(join(bin, 'bun'), bunLog, globalPackagePath, candidateRoot);
+
+      const result = spawnSync(process.execPath, [
+        join(parentRoot, 'src', 'cli', 'index.ts'),
+        'update', '--target', 'codex', '--no-sync-skill', '--no-external-skills', '--no-codegraph', '--json',
+      ], {
+        cwd: repo,
+        encoding: 'utf-8',
+        // An explicit PATH: the fake hc dir or no hc, and never ~/.local/bin.
+        env: { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${bin}:${hcBin}:/usr/bin:/bin`, REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') },
+      });
+
+      expect(result.status, `${result.stderr}\n${result.stdout}`).toBe(0);
+      const runtime = JSON.parse(result.stdout) as { steps: Array<{ step: string; status: string; detail?: string }> };
+      const reconcile = runtime.steps.find((step) => step.step === 'reconcile installed candidate runtime');
+      expect(reconcile?.status).toBe('ok');
+      for (const line of lines(join(home, '.local', 'bin'), join(hcBin, 'hc'))) expect(reconcile?.detail).toContain(line);
+      expect(server.requests()).toHaveLength(requests);
+    } finally {
+      server.stop();
+      rmSync(root, { recursive: true, force: true });
+    }
   }, 60_000);
 
   test('a candidate failure after projection restores the predecessor adapter through the parent transaction', () => {

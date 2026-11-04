@@ -23,8 +23,8 @@ import {
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { architecturePullRequestsSource } from '../../src/core/dev-activity/architecture';
 import type { TestsSnapshotV1 } from '../../src/core/operator/tests';
-import { collectArchitectureMap, flowProofSection, layerDirectionSection, localMidnight, readCommitLineCounts, recheckCheckout, recheckLayers } from '../../src/effects/operator/architecture-map-worker';
-import { decodeConstraintEvaluation, decodeFlowSelectorCheck } from '../../src/core/architecture/projection';
+import { anchorsSection, collectArchitectureMap, flowProofSection, layerDirectionSection, localMidnight, readCommitLineCounts, recheckCheckout, recheckLayers } from '../../src/effects/operator/architecture-map-worker';
+import { ARCHCTX_REQUIRED_VERSION, decodeConstraintEvaluation, decodeDocsAnchorsReport, decodeFlowSelectorCheck } from '../../src/core/architecture/projection';
 import { join } from 'node:path';
 
 const reader = new ArchitectureModelReader(import.meta.dir + '/../..');
@@ -195,7 +195,7 @@ describe('architecture map', () => {
     { ...DENY, node: OTHER, source_path: 'src/gate.ts', sink_path: 'src/reply.ts', sink_symbol: 'reply' },
   ];
   const mapNode = (nodeId: string, kind: string, parent: string | null = null): ArchitectureMapNodeV1 =>
-    ({ id: nodeId, kind, name: nodeId, status: 'active', layer: 'core', parent, summary: `${nodeId} summary` });
+    ({ id: nodeId, kind, name: nodeId, status: 'active', layer: 'core', parent, summary: `${nodeId} summary`, domain: kind === 'capability' ? nodeId.split('.')[1]! : null, namespace: null, mount: null });
   const whole = { paths: false, nodes: false, relations: false, flow_steps: false, dependents: false, model: false } as const;
   // Map-layer values in the shape `architectureImpact` gives them; the worker tests below read real archctx answers.
   const todayImpact: ArchitectureImpactV1 = {
@@ -228,7 +228,9 @@ describe('architecture map', () => {
   };
   const layers: ArchitectureMapLayersInput = {
     changes: {
-      state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 2,
+      state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40),
+      // Newest first; a removed node owns the deleted path it had at the base.
+      commits: [{ sha: 'd'.repeat(40), subject: 'Store rows (#7)', nodes: [PART] }, { sha: '9'.repeat(40), subject: 'Drop the old store', nodes: [GONE, CAP] }],
       model: [
         { kind: 'flows', id: 'flow.pipeline.ledger', change: 'changed', fields: ['steps'] },
         { kind: 'nodes', id: GONE, change: 'removed', fields: ['id', 'kind', 'name'] },
@@ -251,7 +253,10 @@ describe('architecture map', () => {
       debt: { state: 'ok', items: [{ kind: 'unowned-path', nodes: [], paths: ['src/orphan.ts'] }, { kind: 'ambiguous-owner', nodes: [CAP, OTHER], paths: ['docs/shared.md'] }] },
       flows: { state: 'ok', selectors: 3, proven: 1, unproven: 2, used_unproven: 1, unprovable: [{ id: OTHER, diagnostics: 1 }, { id: CAP, diagnostics: 2 }],
         evidence: [{ ...WRITE, status: 'proven', call_sites: [{ path: 'src/ledger.ts', line: 17 }, { path: 'src/ledger.ts', line: null }] }, { ...DENY, status: 'no-direct-call', call_sites: [] }] },
-      anchors: { state: 'ok', citations: 5, nodes: [{ id: CAP, findings: 2 }] },
+      anchors: { state: 'ok', citations: 5, nodes: [{ id: CAP, findings: [
+        { kind: 'line-moved', origin: 'document', path: 'docs/ledger.md', line: 12, citation: 'src/ledger.ts:17' },
+        { kind: 'missing-symbol', origin: 'node-summary', path: null, line: null, citation: '`put`' },
+      ] }] },
       dependencies: { state: 'ok', edges: [{ source: OTHER, target: CAP, imports: 2 }] },
       // Every fixture node is in `core`, so no pair can import against the order.
       layer_direction: { state: 'ok', imports: 12, edges: [] },
@@ -263,10 +268,10 @@ describe('architecture map', () => {
     ] },
   };
   const input = {
-    repository_id: 'repo_0123456789abcdef', commit: 'c'.repeat(40), collected_at: '2026-10-27T09:00:00.000Z', layers,
+    repository_id: 'repo_0123456789abcdef', commit: 'c'.repeat(40), head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z', layers,
     layer_order: { state: 'ok', layers: ['cli', 'core'] } as const,
     nodes: [mapNode(OTHER, 'capability'), mapNode(PART, 'component', CAP), mapNode(CAP, 'capability')],
-    relations: [{ id: 'relation.b', kind: 'calls', source: CAP, target: OTHER, intent: 'Gate.' }, { id: 'relation.a', kind: 'calls', source: CAP, target: PART, intent: 'Store.' }],
+    relations: [{ id: 'relation.b', kind: 'calls', source: CAP, target: OTHER, intent: 'Gate.', protocol: 'http' }, { id: 'relation.a', kind: 'calls', source: CAP, target: PART, intent: 'Store.', protocol: null }],
     flows, flow_evidence: flowEvidence,
   };
   const pending: ArchitecturePullRequestsSource = { state: 'unavailable', reason: 'dev_activity_pending' };
@@ -295,6 +300,7 @@ describe('architecture map', () => {
 
   test('the decoder refuses extra fields, broken references and imports that do not join two capabilities', () => {
     const map = JSON.parse(JSON.stringify(projected()));
+    const copyNode = (node: ArchitectureMapNodeV1, nodeId: string, kind: string) => ({ ...node, id: nodeId, kind, name: nodeId, parent: null });
     const refused = (change: (copy: typeof map) => void) => {
       const copy = JSON.parse(JSON.stringify(map));
       change(copy);
@@ -315,6 +321,26 @@ describe('architecture map', () => {
     refused(copy => { copy.dependencies.edges[0].target = CAP; });
     refused(copy => { copy.dependencies = { state: 'unavailable', reason: 'stale' }; });
     refused(copy => { copy.commit = 'HEAD'; });
+    // v7 header, node and relation fields: grammar, and each kind field exactly on its own kind.
+    for (const headRef of ['feat/a..b', 'a'.repeat(256), '-x', 'feat/', 'feat//x', 'a b', 'HEAD@{1}', 'x.lock', undefined]) refused(copy => { copy.head_ref = headRef; });
+    for (const version of ['latest', '0.11', 'v0.11.2', '']) refused(copy => { copy.archctx_version = version; });
+    refused(copy => { copy.nodes[0].domain = null; });
+    refused(copy => { copy.nodes[0].domain = 'Pipeline'; });
+    refused(copy => { copy.nodes[2].domain = 'pipeline'; });
+    refused(copy => { copy.nodes[2].namespace = { type: 'container' }; });
+    refused(copy => { copy.nodes[2].mount = { source: null, target: null, mode: 'ro', order: 0 }; });
+    refused(copy => { delete copy.nodes[2].mount; });
+    refused(copy => { copy.relations[0].protocol = 'http\ngrpc'; });
+    refused(copy => { copy.relations[0].protocol = 'unix:/run/private.sock'; });
+    refused(copy => { delete copy.relations[1].protocol; });
+    const namespaceNode = { ...copyNode(map.nodes[2], 'component.pipeline.host', 'namespace'), namespace: { type: 'host' } };
+    const mountNode = { ...copyNode(map.nodes[2], 'component.pipeline.data', 'mount'), mount: { source: 'data', target: null, mode: 'rw', order: 0 } };
+    const detached = decodeArchitectureMap({ ...map, head_ref: null, nodes: [...map.nodes, namespaceNode, mountNode] });
+    expect([detached.head_ref, detached.nodes.at(-2)?.namespace, detached.nodes.at(-1)?.mount]).toEqual([null, { type: 'host' }, { source: 'data', target: null, mode: 'rw', order: 0 }]);
+    for (const [kind, field, value] of [['namespace', 'namespace', { type: 'cgroup' }], ['namespace', 'namespace', null], ['mount', 'mount', { source: 'data', target: '/var/lib/x', mode: 'rw', order: 0 }],
+      ['mount', 'mount', { source: 'data', target: null, mode: 'rx', order: 0 }], ['mount', 'mount', { source: 'data', target: null, mode: 'rw', order: -1 }], ['mount', 'mount', null]] as const) {
+      expect(() => decodeArchitectureMap({ ...map, nodes: [...map.nodes, { ...(kind === 'mount' ? mountNode : namespaceNode), [field]: value }] })).toThrow('architecture_map_invalid');
+    }
     // The layer order is archctx's `model.layers`: non-empty, unique, and it names every node layer.
     refused(copy => { copy.layer_order.layers = []; });
     refused(copy => { copy.layer_order.layers = ['core', 'core']; });
@@ -348,7 +374,7 @@ describe('architecture map', () => {
 
   test('a checkout or edit between the two checks of a cycle drops the counts it can reach', () => {
     const commit = 'c'.repeat(40);
-    const clean = { head: commit, modelClean: true, treeClean: true };
+    const clean = { head: commit, ref: { name: 'main' }, modelClean: true, treeClean: true };
     const read = { sizes: { state: 'ok', lines: new Map(), owners: new Map() }, dependencies: { state: 'ok', matrix: [] } } as const;
     const changed = { state: 'unavailable', reason: 'checkout_changed' } as const;
     expect(recheckCheckout(commit, clean, clean, read)).toEqual(read);
@@ -373,7 +399,9 @@ describe('architecture map', () => {
       if (!result.ok) throw new Error('worker failed');
       const map = result.snapshot;
       expect(map.commit).toBe(commit);
-      expect(map.nodes.map(entry => [entry.id, entry.parent])).toEqual([[MODULE_ID, null], ['component.module.core', MODULE_ID]]);
+      expect([map.head_ref, map.archctx_version]).toEqual([fixtureGit(root, ['symbolic-ref', '--short', 'HEAD']), ARCHCTX_REQUIRED_VERSION]);
+      // The domain comes from archctx's capability profile.
+      expect(map.nodes.map(entry => [entry.id, entry.parent, entry.domain])).toEqual([[MODULE_ID, null, 'test'], ['component.module.core', MODULE_ID, null]]);
       expect(map.relations.map(entry => entry.id)).toEqual(['relation.module.core']);
       // The flow and the code its step selector names come from the same export.
       const read = { id: 'read', from: 'module', to: 'core', label: 'Read facts', evidence: { entrypoint: 'entrypoint.module.read', source_symbol: 'read', sink: 'sink.module.core' } };
@@ -411,7 +439,7 @@ describe('architecture map', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
-  test('a declared step path that the public-path guard refuses is withheld, and the rest of the flow stays', () => {
+  test('a declared step path that the public-path guard refuses is withheld, and the rest of the flow stays; so are mount paths and relation protocols', () => {
     const root = realpathSync(moduleRepository());
     try {
       const node = JSON.parse(readFileSync(join(root, MODULE_NODE), 'utf8'));
@@ -419,9 +447,22 @@ describe('architecture map', () => {
       node.source.entrypoints[0].path = 'app/(group)/read.ts';
       fixtureWrite(root, MODULE_NODE, fixtureYaml(node));
       fixtureWrite(root, 'app/(group)/read.ts', 'export const read = () => 1;\n');
+      // A mount target is absolute in its namespace, so the prose guard withholds it; a relative source stays.
+      const entity = (id: string, kind: string, fields: object) => fixtureWrite(root, `.archcontext/model/nodes/${id}.yaml`,
+        fixtureYaml({ schemaVersion: 'archcontext.node/v2', id, kind, name: id, status: 'active', summary: `${kind} node.`, ...fields }));
+      entity('namespace.module.host', 'namespace', { namespace: { type: 'container' } });
+      entity('mount.module.data', 'mount', { parent: 'namespace.module.host', mount: { source: 'data', target: '/var/lib/module', mode: 'ro', order: 1 } });
+      const relation = '.archcontext/model/relations/relation.module.core.yaml';
+      fixtureWrite(root, relation, fixtureYaml({ ...JSON.parse(readFileSync(join(root, relation), 'utf8')), protocol: 'grpc /opt/private.sock' }));
       fixtureCommit(root);
       const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
       if (!result.ok) throw new Error('worker failed');
+      expect(result.snapshot.nodes.filter(entry => entry.kind !== 'capability' && entry.kind !== 'component').map(entry => [entry.id, entry.namespace, entry.mount])).toEqual([
+        ['mount.module.data', null, { source: 'data', target: null, mode: 'ro', order: 1 }], ['namespace.module.host', { type: 'container' }, null]]);
+      expect(result.snapshot.relations.map(entry => entry.protocol)).toEqual(['grpc [private path]']);
+      fixtureGit(root, ['checkout', '-q', '--detach']);
+      const detached = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
+      expect(detached.ok && detached.snapshot.head_ref).toBeNull();
       expect(result.snapshot.flow_evidence).toEqual([{ entrypoint: 'entrypoint.module.read', source_symbol: 'read', sink: 'sink.module.core', node: MODULE_ID,
         source_path: null, sink_path: 'src/module/core.ts', sink_symbol: 'project' }]);
       expect(result.snapshot.flows.map(entry => entry.id)).toEqual(['flow.module.primary']);
@@ -617,6 +658,23 @@ describe('architecture map', () => {
     refused(copy => { delete copy.layers.violations.layer_direction; });
     refused(copy => { delete copy.layers.changes.flow_steps; });
     refused(copy => { copy.layers.violations.anchors.nodes[0].id = 'capability.gone.node'; });
+    // Commits: a full sha once each, a single public subject line, and the owners that `paths` admits.
+    refused(copy => { copy.layers.changes.commits[1].sha = copy.layers.changes.commits[0].sha; });
+    refused(copy => { copy.layers.changes.commits[0].sha = 'd'.repeat(7); });
+    refused(copy => { copy.layers.changes.commits[0].nodes = ['capability.gone.node']; });
+    refused(copy => { copy.layers.changes.commits[0].nodes = [PART, PART]; });
+    refused(copy => { copy.layers.changes.commits[0].subject = 'Read /Users/someone/notes'; });
+    refused(copy => { copy.layers.changes.commits[0].subject = 'Two\nlines'; });
+    refused(copy => { copy.layers.changes.commits = 2; });
+    // Anchor findings: a non-empty list, archctx's token shape, a public path, a positive line and public citation text.
+    refused(copy => { copy.layers.violations.anchors.nodes[0].findings = []; });
+    refused(copy => { copy.layers.violations.anchors.nodes[0].findings = 2; });
+    refused(copy => { copy.layers.violations.anchors.nodes[0].findings[0].kind = 'Line Moved'; });
+    refused(copy => { copy.layers.violations.anchors.nodes[0].findings[0].origin = 'document-region'; });
+    refused(copy => { copy.layers.violations.anchors.nodes[0].findings[0].path = '/Users/someone/repo/docs/ledger.md'; });
+    refused(copy => { copy.layers.violations.anchors.nodes[0].findings[0].line = 0; });
+    refused(copy => { copy.layers.violations.anchors.nodes[0].findings[0].citation = ''; });
+    refused(copy => { copy.layers.violations.anchors.nodes[0].findings[0].citation = 'See /Users/someone/notes'; });
     refused(copy => { copy.layers.violations.dependencies.edges[0].target = OTHER; });
     refused(copy => { copy.layers.tests.capabilities[0].files = 3; });
     refused(copy => { copy.layers.tests.capabilities[0].id = PART; });
@@ -640,6 +698,7 @@ describe('architecture map', () => {
     refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v3'; });
     refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v4'; });
     refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v5'; });
+    refused(copy => { copy.schema_version = 'repo-harness.architecture-map.v6'; });
     refused(copy => { copy.layers.violations.layer_direction = { state: 'unavailable', reason: 'layer_direction_not_read' }; });
   });
 
@@ -749,6 +808,27 @@ describe('architecture map', () => {
     expect(withheld.state === 'ok' && withheld.evidence[0]?.call_sites).toEqual([{ path: 'src/ledger.ts', line: 19 }]);
   });
 
+  test('a docs anchors report keeps each stale citation with its origin; an unsafe path is withheld and citation text is masked', () => {
+    const symbol = (text: string, fields: object = {}) => ({ text, path: 'src/ledger.ts', symbol: 'put', ...fields });
+    const report = decodeDocsAnchorsReport({
+      schemaVersion: 'archcontext.docs-anchors/v1', profile: 'repo-harness/v1', codeGraph: { availability: 'ready' },
+      summary: { nodes: 2, documents: 1, citations: 5, findings: 3, unchecked: 0, byKind: { 'line-moved': 1, 'line-out-of-range': 0, 'missing-path': 0, 'missing-symbol': 2, 'unknown-selector': 0 } },
+      nodes: [
+        { nodeId: CAP, documentPath: 'docs/ledger.md', citationCount: 4, unchecked: [], findings: [
+          { kind: 'line-moved', origin: { kind: 'document', path: 'docs/ledger.md', line: 12 }, citation: symbol('src/ledger.ts:17 put', { line: 17 }), currentLines: [19] },
+          { kind: 'missing-symbol', origin: { kind: 'document', path: 'app/[slug]/notes.md', line: 3 }, citation: symbol('put in /Users/someone/ledger.ts') },
+          { kind: 'missing-symbol', origin: { kind: 'node-responsibility', index: 0 }, citation: symbol('`put`') },
+        ] },
+        { nodeId: OTHER, citationCount: 1, unchecked: [], findings: [] },
+      ],
+    });
+    expect(anchorsSection(report, new Set([CAP, OTHER]))).toEqual({ state: 'ok', citations: 5, nodes: [{ id: CAP, findings: [
+      { kind: 'line-moved', origin: 'document', path: 'docs/ledger.md', line: 12, citation: 'src/ledger.ts:17 put' },
+      { kind: 'missing-symbol', origin: 'document', path: null, line: 3, citation: 'put in [private path]' },
+      { kind: 'missing-symbol', origin: 'node-responsibility', path: null, line: null, citation: '`put`' },
+    ] }] });
+  });
+
   test('the layer-direction layer names map nodes in their own layers, and only imports up the layer order', () => {
     const map = JSON.parse(JSON.stringify(projected()));
     // `cli` is above `core`: an import from a `core` node into a `cli` node goes against the order.
@@ -806,7 +886,7 @@ describe('architecture map', () => {
 
   test('a checkout or edit during a cycle drops PR impact when the model moved and each violation check when the tree moved', () => {
     const commit = 'c'.repeat(40);
-    const clean = { head: commit, modelClean: true, treeClean: true };
+    const clean = { head: commit, ref: { name: 'main' }, modelClean: true, treeClean: true };
     // Today's changes read only commits, so the recheck does not take them.
     const read = { pull_requests: layers.pull_requests, violations: layers.violations };
     const changed = { state: 'unavailable', reason: 'checkout_changed' } as const;
@@ -834,10 +914,11 @@ describe('architecture map', () => {
     const root = realpathSync(moduleRepository());
     try {
       const base = baseBeforeToday(root);
+      let today = '';
       dated('2026-10-27T12:00:00Z', () => {
         fixtureWrite(root, MODULE_NODE, readFileSync(join(root, MODULE_NODE), 'utf8').replace('Read a committed module.', 'Read a module.'));
         fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\nexport const more = 1;\n');
-        fixtureCommit(root);
+        today = fixtureCommit(root);
       });
       const head = 'a'.repeat(40);
       const source: ArchitecturePullRequestsSource = { state: 'ok', observed_at: '2026-10-27T12:59:00.000Z', pull_requests: [
@@ -855,7 +936,7 @@ describe('architecture map', () => {
         } }] });
       // The model file is not in any node's footprint; the fixture has no CodeGraph index, so flow steps stay unknown.
       expect(result.snapshot.layers.changes).toEqual({
-        state: 'ok', since: '2026-10-27T00:00:00.000Z', base, commits: 1,
+        state: 'ok', since: '2026-10-27T00:00:00.000Z', base, commits: [{ sha: today, subject: 'Fixture', nodes: [MODULE_ID] }],
         model: [{ kind: 'nodes', id: MODULE_ID, change: 'changed', fields: ['summary'] }],
         paths: [{ path: MODULE_NODE, added: 1, deleted: 1, owners: [], reason_codes: [] },
           { path: 'src/module/read.ts', added: 2, deleted: 1, owners: [MODULE_ID], reason_codes: [] }],
@@ -866,6 +947,15 @@ describe('architecture map', () => {
       expect(result.snapshot.layers.violations.anchors).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
       expect(result.snapshot.layers.violations.flows).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
       expect(result.snapshot.layers.violations.dependencies).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
+      // A newer commit leads the list; its subject is masked like model prose, and a path that `paths` does not own names no node.
+      dated('2026-10-27T12:30:00Z', () => {
+        fixtureWrite(root, 'docs/notes.md', 'Notes.\n');
+        fixtureGit(root, ['add', '.']);
+        fixtureGit(root, ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'Note /Users/someone/plan']);
+      });
+      const later = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
+      expect(later.ok && later.snapshot.layers.changes.state === 'ok' && later.snapshot.layers.changes.commits).toEqual([
+        { sha: fixtureGit(root, ['rev-parse', 'HEAD']), subject: 'Note [private path]', nodes: [] }, { sha: today, subject: 'Fixture', nodes: [MODULE_ID] }]);
       // A window that holds the whole history has no base commit.
       const all = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T13:00:00.000Z', '2026-10-19T00:00:00.000Z', pending);
       expect(all.ok && all.snapshot.layers.changes).toEqual({ state: 'unavailable', reason: 'history_starts_today' });

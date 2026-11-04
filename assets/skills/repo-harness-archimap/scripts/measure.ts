@@ -13,6 +13,9 @@
 // Module definitions come from the JSON block `<script type="application/json" id="archimap-meta">`
 // in the map HTML, or from a JSON file. Shape:
 //   { "modules": [ { "id", "label"?, "include": [glob], "exclude"?: [glob], "nodes"?: [nodeId] } ] }
+// Model nodes may point to behavior specs through `extensions.behaviorSpecs` ([{ id, path }]). Each module
+// lists the specs of the nodes it covers (`modules[].behaviorSpecs`). Exit 2 with
+// `behavior_spec_invalid:<node id>`, `behavior_spec_missing:<path>` or `behavior_spec_uncovered:<node id>`.
 // Output: JSON on stdout (`unparsed` lists files the transpiler rejected; their edges are missing). Exit 0 ok (coverage gaps are data), 2 usage/shape error, 1 unexpected failure.
 // Workspace specifiers (`@scope/pkg`, `@scope/pkg/sub`) resolve to a concrete tracked file, and the edge goes to the module owning that file. The bare name uses the package entry (exports/module/main/src/index); a subpath uses an exact or single-star `exports` key (deterministic conditions: import/default/bun/types), and a present `exports` field gates subpaths — undeclared, null, or indeterminable subpaths stay unresolved. A specifier that resolves to no tracked file is counted under `unresolved`; no ownership guess produces an edge.
 // Limits: tsconfig path aliases are not resolved; nested condition objects resolve only through their fixed condition order; only tracked files (git ls-files) are scanned.
@@ -99,7 +102,46 @@ function loadModules(mapPath: string | undefined, modulesPath: string | undefine
   throw new UsageError(`${file}: no <script type="application/json" id="archimap-meta"> block`);
 }
 
-function loadModel(dir: string): { id: string; kind: string }[] {
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+interface BehaviorSpec {
+  id: string;
+  path: string;
+  node: string;
+}
+
+interface ModelNode {
+  id: string;
+  kind: string;
+  parent: string | undefined;
+  behaviorSpecs: BehaviorSpec[];
+}
+
+const KEBAB_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function isRepositoryRelative(value: string): boolean {
+  return value !== "" && !path.posix.isAbsolute(value) && !value.includes("\\")
+    && path.posix.normalize(value) === value && value !== "." && !value.split("/").includes("..");
+}
+
+// `extensions.behaviorSpecs` is a list of `{ id, path }`: a kebab-case id and a repository-relative
+// spec file. A malformed entry or a missing file fails the whole measurement; it is not skipped.
+function behaviorSpecsOf(nodeId: string, value: unknown, root: string): BehaviorSpec[] {
+  if (value === undefined) return [];
+  const entries = Array.isArray(value) ? value.map(record) : null;
+  if (entries === null || entries.some((e) => e === null || Object.keys(e).length !== 2
+    || typeof e.id !== "string" || !KEBAB_ID.test(e.id) || typeof e.path !== "string" || !isRepositoryRelative(e.path))) {
+    throw new UsageError(`behavior_spec_invalid:${nodeId}`);
+  }
+  return (entries as { id: string; path: string }[]).map(({ id, path: specPath }) => {
+    if (!isFile(path.join(root, specPath))) throw new UsageError(`behavior_spec_missing:${specPath}`);
+    return { id, path: specPath, node: nodeId };
+  });
+}
+
+function loadModel(dir: string, root: string): ModelNode[] {
   if (typeof Bun.YAML?.parse !== "function") throw new UsageError("--model needs Bun.YAML; upgrade Bun");
   let names: string[];
   try {
@@ -108,10 +150,35 @@ function loadModel(dir: string): { id: string; kind: string }[] {
     throw new UsageError(`cannot read model dir ${dir}: ${(error as Error).message}`);
   }
   return names.map((name) => {
-    const doc = Bun.YAML.parse(readFileSync(path.join(dir, name), "utf8")) as { id?: unknown; kind?: unknown } | null;
+    const doc = record(Bun.YAML.parse(readFileSync(path.join(dir, name), "utf8")));
     if (typeof doc?.id !== "string") throw new UsageError(`${path.join(dir, name)}: missing string "id"`);
-    return { id: doc.id, kind: typeof doc.kind === "string" ? doc.kind : "" };
+    return {
+      id: doc.id,
+      kind: typeof doc.kind === "string" ? doc.kind : "",
+      parent: typeof doc.parent === "string" ? doc.parent : undefined,
+      behaviorSpecs: behaviorSpecsOf(doc.id, record(doc.extensions)?.behaviorSpecs, root),
+    };
   });
+}
+
+// A map module covers a node when it lists the node or the nearest ancestor on the model `parent`
+// chain. A node with behavior specs and no covering module fails closed.
+function behaviorSpecsByModule(modules: ModuleDef[], modelNodes: ModelNode[]): BehaviorSpec[][] {
+  const byId = new Map(modelNodes.map((n) => [n.id, n]));
+  const out = modules.map((): BehaviorSpec[] => []);
+  for (const node of modelNodes) {
+    if (node.behaviorSpecs.length === 0) continue;
+    const seen = new Set<string>();
+    let covering: number[] = [];
+    for (let id: string | undefined = node.id; id !== undefined && !seen.has(id); id = byId.get(id)?.parent) {
+      seen.add(id);
+      covering = modules.flatMap((m, i) => (m.nodes.includes(id as string) ? [i] : []));
+      if (covering.length > 0) break;
+    }
+    if (covering.length === 0) throw new UsageError(`behavior_spec_uncovered:${node.id}`);
+    for (const i of covering) out[i]!.push(...node.behaviorSpecs);
+  }
+  return out;
 }
 
 interface CapabilityDocs {
@@ -119,10 +186,6 @@ interface CapabilityDocs {
   byNode: Map<string, string>;
   /** Capability ids that an entity-summary target documents. */
   capabilities: Set<string>;
-}
-
-function record(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
 // The capability-to-document map comes from the committed projection manifest. A target row that
@@ -322,7 +385,7 @@ function main(): void {
     throw new UsageError("--model is required: pass the architecture model directory (.archcontext/model/nodes)");
   }
   const modules = loadModules(values.map, values.modules);
-  const modelNodes = loadModel(path.resolve(root, values.model));
+  const modelNodes = loadModel(path.resolve(root, values.model), root);
   const capabilityDocs = loadManifest(root);
   const docsOf = (m: ModuleDef): string[] =>
     [...new Set(m.nodes.map((id) => capabilityDocs.byNode.get(id)).filter((p): p is string => p !== undefined))].sort();
@@ -352,7 +415,8 @@ function main(): void {
     if (hits.length > 1) overlaps.push({ path: file, modules: hits.map((i) => modules[i]!.id) });
   }
 
-  const rows = modules.map((m) => ({ id: m.id, files: 0, loc: 0, self: 0, docs: docsOf(m) }));
+  const specs = behaviorSpecsByModule(modules, modelNodes);
+  const rows = modules.map((m, i) => ({ id: m.id, files: 0, loc: 0, self: 0, docs: docsOf(m), behaviorSpecs: specs[i]! }));
   const edges = new Map<string, number>();
   const unresolved: string[] = [];
   const unparsed: string[] = [];

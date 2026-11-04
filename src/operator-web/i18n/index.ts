@@ -5,6 +5,7 @@ import * as shell from './shell';
 import * as board from './board';
 import * as repositories from './repositories';
 import * as architecture from './architecture';
+import * as architectureHistory from './architecture-history';
 import * as docs from './docs';
 import * as tools from './tools';
 import * as setup from './setup';
@@ -39,6 +40,7 @@ const en = {
   ...board.en,
   ...repositories.en,
   ...architecture.en,
+  ...architectureHistory.en,
   ...docs.en,
   ...tools.en,
   ...setup.en,
@@ -70,6 +72,7 @@ const zh: Readonly<Record<OperatorMessageKey, string>> = {
   ...board.zh,
   ...repositories.zh,
   ...architecture.zh,
+  ...architectureHistory.zh,
   ...docs.zh,
   ...tools.zh,
   ...setup.zh,
