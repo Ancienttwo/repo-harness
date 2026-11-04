@@ -460,7 +460,7 @@ function watchHc(env: Json = {}) {
   return { root, options, host: attentionHostPorts(options), calls: () => readFileSync(log, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line) as string[]) };
 }
 
-test('watch window: idle sends at once, blocked waits, working sends at window end, and the advisor cap reads the log', async () => {
+test('watch window: idle sends at once, blocked waits, working sends at window end, and the advisor cap reads all repository logs', async () => {
   const board = replay();
   const seat = (address: string, seatName: string, status: string | null) =>
     ({ address, name: null, agent: null, state: 'live', status, status_kind: null, status_ms: null, turn: 1, seat_status: 'observed', seat: seatName, issue: null, pr: null }) as BoardTerminalV1;
@@ -478,12 +478,17 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
   });
   const logPath = attentionLogPath(1186405141, 1474, { REPO_HARNESS_HOME: hc.root });
   expect(logPath).toBe(join(hc.root, 'board/attention-1186405141-1474.jsonl'));
-  // Seven advisor wakes in the last 24 hours, one 25 hours ago.
+  // Seven advisor wakes across two parents in the last 24 hours, one 25 hours ago.
   const start = REPLAY_NOW.getTime();
   mkdirSync(join(hc.root, 'board'));
-  writeFileSync(logPath, [...Array.from({ length: 7 }, (_, at) => start - (at + 1) * 3_600_000), start - 25 * 3_600_000].map(time => JSON.stringify({
-    at: new Date(time).toISOString(), window: String(time), parent: 1474, kind: 'send', route: 'advisor', terminal: 't9', rules: ['R2'], outcome: 'sent', detail: null,
-  })).join('\n') + '\n');
+  const otherLogPath = attentionLogPath(1186405141, 1475, { REPO_HARNESS_HOME: hc.root });
+  const history = [...Array.from({ length: 7 }, (_, at) => start - (at % 4 + 1) * 3_600_000), start - 25 * 3_600_000].map((time, at) => ({
+    at: new Date(time).toISOString(), window: String(time), parent: at < 4 ? 1474 : 1475,
+    kind: 'send', route: 'advisor', terminal: 't9', rules: ['R2'], outcome: 'sent', detail: null,
+  }));
+  writeFileSync(logPath, history.slice(0, 4).map(record => JSON.stringify(record)).join('\n') + '\n');
+  writeFileSync(otherLogPath, history.slice(4).map(record => JSON.stringify(record)).join('\n') + '\n');
+  writeFileSync(attentionLogPath(11864051410, 1474, { REPO_HARNESS_HOME: hc.root }), history.map(record => JSON.stringify(record)).join('\n') + '\n');
   let clock = start;
   const slept: number[] = [];
   const window = () => runAttentionWindow({ parent: 1474, deliver: true, log_path: logPath, collect: () => watched, host: hc.host,
@@ -504,13 +509,20 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
     ['send', '--json', '--', 't10', orchestrator],
     ['send', '--json', '--', 't8', orchestrator],
   ]);
-  const records = () => readFileSync(logPath, 'utf8').split('\n').filter(Boolean).slice(8).map(line => JSON.parse(line));
+  const records = () => readFileSync(logPath, 'utf8').split('\n').filter(Boolean).slice(4).map(line => JSON.parse(line));
   expect(records().filter(record => record.kind === 'send').map(record => [record.terminal, record.outcome, record.at])).toEqual([
     ['t3', 'sent', REPLAY_NOW.toISOString()], ['t9', 'sent', REPLAY_NOW.toISOString()], ['t7', 'sent', REPLAY_NOW.toISOString()],
     ['t6', 'skipped_blocked', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()], ['t10', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
     ['t11', 'terminal_ended', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()], ['t8', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
   ]);
   expect(records().filter(record => record.kind === 'finding').map(record => record.rule)).toEqual(['A1', 'A7', 'R2']);
+
+  await runAttentionWindow({ parent: 1475, deliver: true, log_path: otherLogPath, collect: () => ({ ...watched, parent: { ...watched.parent, number: 1475 } }), host: hc.host,
+    now: () => new Date(clock), sleep: async () => {} });
+  const otherRecords = readFileSync(otherLogPath, 'utf8').split('\n').filter(Boolean).slice(4).map(line => JSON.parse(line));
+  expect(otherRecords.filter(record => record.kind === 'skip').map(record => [record.route, record.reason])).toEqual([['advisor', 'advisor_daily_cap']]);
+  expect(otherRecords.filter(record => record.kind === 'send' && record.route === 'orchestrator' && record.outcome === 'sent')).toHaveLength(4);
+  expect(hc.calls().filter(args => args[0] === 'send' && args.at(-2) === 't9')).toHaveLength(1);
 
   // The next window: the advisor has eight wakes in 24 hours, and no worker runs, so the window is 60 minutes.
   terminals[0] = { ...terminals[0]!, state: 'finished' };
