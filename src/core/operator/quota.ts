@@ -5,6 +5,7 @@
  * a second source for the same field.
  */
 export const QUOTA_PROTOCOL = 'repo-harness.quota.v1' as const;
+export const OPERATOR_QUOTA_PATH = '/api/v1/quota' as const;
 /** The Claude capture file, relative to HOME. Q1 reads it; the Q2 status line route writes it with mode 0600. */
 export const CLAUDE_QUOTA_CAPTURE_PATH = ['.repo-harness', 'quota', 'claude.json'] as const;
 export const QUOTA_STALE_MS = 30 * 60_000;
@@ -84,6 +85,46 @@ export interface QuotaReport { protocol: typeof QUOTA_PROTOCOL; read_at: string;
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+/** Validates the wire report without changing the provider read model. */
+export function decodeQuotaReport(value: unknown): QuotaReport {
+  const object = (value: unknown, keys: string[], optional: string[] = []): Record<string, unknown> => {
+    const row = record(value);
+    if (!row || keys.some(key => !Object.hasOwn(row, key)) || Object.keys(row).some(key => !keys.includes(key) && !optional.includes(key))) {
+      throw new Error('Invalid quota report fields');
+    }
+    return row;
+  };
+  const string = (value: unknown) => typeof value === 'string';
+  const nullableString = (value: unknown) => value === null || string(value);
+  const nullableNumber = (value: unknown) => value === null || (typeof value === 'number' && Number.isFinite(value));
+  const state = (value: unknown) => QUOTA_STATE_ORDER.includes(value as QuotaState);
+  const require = (valid: boolean): void => { if (!valid) throw new Error('Invalid quota report value'); };
+  const report = object(value, ['protocol', 'read_at', 'accounts']);
+  require(report.protocol === QUOTA_PROTOCOL && string(report.read_at) && Array.isArray(report.accounts));
+  for (const value of report.accounts as unknown[]) {
+    const account = object(value, ['account', 'source', 'observed_at', 'state', 'reason', 'windows'], ['codex']);
+    require((account.account === 'claude' || account.account === 'chatgpt')
+      && (account.source === 'claude_capture_file' || account.source === 'codex_app_server')
+      && nullableString(account.observed_at) && state(account.state) && nullableString(account.reason) && Array.isArray(account.windows));
+    for (const value of account.windows as unknown[]) {
+      const window = object(value, ['window', 'window_minutes', 'used_percent', 'resets_at', 'elapsed_percent', 'pace', 'state', 'reason']);
+      require(string(window.window) && nullableNumber(window.window_minutes) && nullableNumber(window.used_percent)
+        && nullableString(window.resets_at) && nullableNumber(window.elapsed_percent) && nullableNumber(window.pace)
+        && (state(window.state) || window.state === 'absent') && nullableString(window.reason));
+    }
+    if (Object.hasOwn(account, 'codex')) {
+      const codex = object(account.codex, ['plan_type', 'credits', 'rate_limit_reached_type', 'field_errors']);
+      require(nullableString(codex.plan_type) && nullableString(codex.rate_limit_reached_type)
+        && Array.isArray(codex.field_errors) && codex.field_errors.every(string));
+      if (codex.credits !== null) {
+        const credits = object(codex.credits, ['has_credits', 'unlimited', 'balance']);
+        require(typeof credits.has_credits === 'boolean' && typeof credits.unlimited === 'boolean' && nullableString(credits.balance));
+      }
+    }
+  }
+  return value as QuotaReport;
 }
 
 const ISO_UTC = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{1,3})?Z$/;
