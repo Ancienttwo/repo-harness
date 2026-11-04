@@ -1,15 +1,40 @@
-/** Shared token rules. Each caller uses a fresh RegExp to avoid lastIndex state. */
+const KEY_LABEL = String.raw`\s+(?:RSA\s+|OPENSSH\s+)?PRIVATE\s+KEY`;
+const KEY_BEGIN = `-----BEGIN${KEY_LABEL}`;
+const KEY_END = `-----END${KEY_LABEL}`;
+
+/**
+ * Shared token rules. Each caller uses a fresh RegExp to avoid lastIndex state.
+ *
+ * Each rule runs in linear time. Where one failed start proves that later
+ * starts in the same run fail too, a lookbehind rejects those later starts. It
+ * runs only after the complete start literal, and it stops at the previous
+ * candidate, so the walks do not overlap:
+ * - jwt_token, url_token: a start that fails leaves no match in its run.
+ * - credential_url: every letter in a scheme run reaches the same `://`, so
+ *   only the first letter of the run starts a match.
+ * - private_key: a BEGIN that finds no END proves that no later BEGIN finds one,
+ *   so only a BEGIN whose nearest earlier marker is an END, or no marker, starts
+ *   a match. A lookahead for the complete BEGIN header comes first, so dashes
+ *   alone start no walk. The lookbehind stops at that marker and captures it
+ *   when it is a BEGIN. The next `\1` then needs `-----` before the text `BEGIN`,
+ *   which fails.
+ *   An END can share dashes with a BEGIN on either side, so the marker excludes
+ *   a BEGIN's closing dashes and a BEGIN that an END overlaps.
+ *
+ * The walks use one character class. A repeated group here is not an option:
+ * at about 1 MiB of walk Bun's regex engine stops and reports no match.
+ */
 export const SECRET_TOKEN_PATTERNS = [
   { type: 'bearer_token', pattern: /Authorization:\s*Bearer\s+\S+/gi, replacement: 'Authorization: Bearer [REDACTED]' },
   { type: 'openai_key', pattern: /sk-[A-Za-z0-9_-]{20,}/g, replacement: 'sk-[REDACTED]' },
   { type: 'github_pat', pattern: /ghp_[A-Za-z0-9]{20,}/g, replacement: 'ghp_[REDACTED]' },
   { type: 'github_pat_v2', pattern: /github_pat_[A-Za-z0-9_]{30,}/g, replacement: 'github_pat_[REDACTED]' },
   { type: 'aws_key', pattern: /AKIA[0-9A-Z]{16}/g, replacement: 'AKIA[REDACTED]' },
-  { type: 'jwt_token', pattern: /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, replacement: '[JWT REDACTED]' },
-  { type: 'private_key', pattern: /-----BEGIN\s+(?:RSA\s+|OPENSSH\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(?:RSA\s+|OPENSSH\s+)?PRIVATE\s+KEY-----/g, replacement: '[PRIVATE KEY REDACTED]' },
+  { type: 'jwt_token', pattern: /eyJ(?<!eyJ[A-Za-z0-9_-]*?eyJ)[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, replacement: '[JWT REDACTED]' },
+  { type: 'private_key', pattern: new RegExp(String.raw`-----(?=BEGIN${KEY_LABEL}-----)(?<=(?:((?<!${KEY_END}-{0,4})${KEY_BEGIN}(?=-----))|${KEY_END}-----|^)[\s\S]*?-----)\1BEGIN${KEY_LABEL}-----[\s\S]*?${KEY_END}-----`, 'g'), replacement: '[PRIVATE KEY REDACTED]' },
   { type: 'webhook_url', pattern: /https:\/\/(?:hooks\.slack\.com\/services|(?:canary\.|ptb\.)?discord(?:app)?\.com\/api(?:\/v\d+)?\/webhooks)\/[^\s<>"']+/gi, replacement: '[WEBHOOK REDACTED]' },
-  { type: 'credential_url', pattern: /[a-z][a-z0-9+.-]*:\/\/[^\s/@:]+:[^\s/@]+@[^\s<>"']+/gi, replacement: '[CREDENTIAL URL REDACTED]' },
-  { type: 'url_token', pattern: /https?:\/\/[^\s<>"']*[?&](?:token|key|secret|auth|signature|sig|code)=[^\s<>"']+/gi, replacement: '[ENDPOINT REDACTED]' },
+  { type: 'credential_url', pattern: /[a-z](?<![a-z][0-9+.-]*[a-z])[a-z0-9+.-]*:\/\/[^\s/@:]+:[^\s/@]+@[^\s<>"']+/gi, replacement: '[CREDENTIAL URL REDACTED]' },
+  { type: 'url_token', pattern: /https?:\/\/(?<!https?:\/\/[^\s<>"']*?https?:\/\/)[^\s<>"']*[?&](?:token|key|secret|auth|signature|sig|code)=[^\s<>"']+/gi, replacement: '[ENDPOINT REDACTED]' },
   { type: 'telegram_token', pattern: /\b\d{5,16}:[A-Za-z0-9_-]{30,}\b/g, replacement: '[TELEGRAM TOKEN REDACTED]' },
   { type: 'slack_token', pattern: /xox[abposr]-[A-Za-z0-9-]{10,}/g, replacement: 'xox[REDACTED]' },
 ] as const;
@@ -24,9 +49,9 @@ export function containsSecret(text: string): boolean {
       return true;
     }
   }
-  const assignments = /(?:^|[^\w])([A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIALS|DATABASE_URL|POSTGRES_URL|MONGODB_URI|REDIS_URL)[A-Z0-9_]*)\s*[:=][ \t]*([^\r\n]*)/g;
+  const assignments = /(?:^|[^\w])((?=[A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIALS|DATABASE_URL|POSTGRES_URL|MONGODB_URI|REDIS_URL))[A-Z0-9_]*)\s*[:=][ \t]*([^\r\n]*)/g;
   for (const match of text.matchAll(assignments)) {
-    const value = match[2].trim().split(/\s+#/)[0].trim();
+    const value = match[2].trim().split(/(?<!\s)\s+#/)[0].trim();
     if (value && !/^(?:null|none|""|'')$/i.test(value)) return true;
   }
   return false;

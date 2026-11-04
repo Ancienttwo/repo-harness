@@ -14,9 +14,8 @@ export const ADVISOR_TEXT_MAX_CHARS = 4000;
 export const ADVISOR_TRANSCRIPT_LINES = 200;
 /**
  * A read-back line longer than this, before or after redaction, is withheld,
- * never cut: a cut could leave a secret fragment that no rule matches, and
- * `containsSecret` is quadratic on a long lowercase run, so no rule runs on a
- * longer line.
+ * never cut: a cut could leave a secret fragment that no rule matches. No rule
+ * runs on a longer line.
  */
 export const ADVISOR_TRANSCRIPT_LINE_MAX_CHARS = 1000;
 /** The one text of a withheld read-back line. */
