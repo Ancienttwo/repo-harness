@@ -12,6 +12,7 @@ import {
   OPERATOR_ARCHITECTURE_HISTORY_ROUTE,
   OPERATOR_TESTS_ROUTE,
   OPERATOR_BOARD_PARENTS_ROUTE,
+  OPERATOR_BOARD_SUMMARIES_ROUTE,
   OPERATOR_BOARD_ROUTE,
   OPERATOR_EXECUTION_STATE_ROUTE,
   OPERATOR_TASK_MESSAGES_ROUTE,
@@ -92,6 +93,7 @@ describe('operator structural write boundary', () => {
       'tests',
       'board',
       'board_parents',
+      'board_summaries',
       'advisor_seat_messages',
       'advisor_boss_commands',
       'advisor_seat_transcript',
@@ -136,6 +138,7 @@ describe('operator structural write boundary', () => {
     expect(OPERATOR_ROUTES.find(route => route.id === 'tests')).toEqual({ id: 'tests', method: 'GET', pattern: OPERATOR_TESTS_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'board')).toEqual({ id: 'board', method: 'GET', pattern: OPERATOR_BOARD_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'board_parents')).toEqual({ id: 'board_parents', method: 'GET', pattern: OPERATOR_BOARD_PARENTS_ROUTE.source, write: false });
+    expect(OPERATOR_ROUTES.find(route => route.id === 'board_summaries')).toEqual({ id: 'board_summaries', method: 'GET', pattern: OPERATOR_BOARD_SUMMARIES_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'advisor_seat_messages')).toEqual({ id: 'advisor_seat_messages', method: 'POST', pattern: OPERATOR_ADVISOR_MESSAGES_ROUTE.source, write: true });
     expect(OPERATOR_ROUTES.find(route => route.id === 'advisor_boss_commands')).toEqual({ id: 'advisor_boss_commands', method: 'POST', pattern: OPERATOR_ADVISOR_BOSS_COMMANDS_ROUTE.source, write: true });
     expect(OPERATOR_ROUTES.find(route => route.id === 'advisor_seat_transcript')).toEqual({ id: 'advisor_seat_transcript', method: 'GET', pattern: OPERATOR_ADVISOR_TRANSCRIPT_PATH, write: false });

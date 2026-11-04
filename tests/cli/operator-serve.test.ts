@@ -1,6 +1,6 @@
 import { pluginSelectionEnv } from '../helpers/install-ownership';
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync, readdirSync, readFileSync, statSync, openSync, closeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
@@ -36,6 +36,7 @@ import { BoardReadError, readRepositoryAdvisorTranscript, readRepositoryBoard, r
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import boardParents from '../../src/operator-web/fixtures/board-parents.json';
 import { decodeBoardParents } from '../../src/core/board/parents';
+import { decodeBoardSummaries } from '../../src/core/board/summary';
 
 import {
   architectureStatus,
@@ -549,6 +550,53 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
+  test('board reads replace private summaries and the summary route reads only the listed parents', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'board-summaries-'));
+    let board = decodeBoard(board1474), reads = 0;
+    const list = decodeBoardParents(boardParents);
+    const server = await startOperatorServer({ port: 0, env: { REPO_HARNESS_HOME: home },
+      read_board: async () => { reads++; return board; }, read_board_parents: async () => list });
+    const path = `${server.url}/api/v1/repositories/repo-a/board/summaries`;
+    const target = join(home, 'board/summaries/repo-a-1474.json');
+    const get = async () => {
+      const response = await fetch(path);
+      expect(response.status).toBe(200);
+      return decodeBoardSummaries(await response.json());
+    };
+    try {
+      expect((await get()).parents).toEqual(list.parents.map(parent => ({ parent: parent.number, status: 'not_read' })));
+      expect(reads).toBe(0);
+      expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
+      const first = readFileSync(target, 'utf8'), inode = statSync(target).ino, fd = openSync(target, 'r');
+      try {
+        if (process.platform !== 'win32') expect(statSync(target).mode & 0o777).toBe(0o600);
+        expect(decodeBoardSummaries(JSON.parse(first)).parents).toEqual([{ parent: 1474, status: 'observed', observed_at: board.observed_at,
+          summary: { queue: 2, ci_failures: 0, batch: { accepted: null, size: null }, needs_you: 3 } }]);
+        expect((await get()).parents).toEqual([JSON.parse(first).parents[0], { parent: 1651, status: 'not_read' }]);
+        board = { ...board, observed_at: new Date(Date.parse(board.observed_at) + 60_000).toISOString() };
+        expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
+        expect(readFileSync(fd, 'utf8')).toBe(first);
+        expect(statSync(target).ino).not.toBe(inode);
+        expect((await get()).parents[0]).toMatchObject({ status: 'observed', observed_at: board.observed_at });
+        board = decodeBoard(board1474);
+        expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
+        expect((await get()).parents[0]).toMatchObject({ observed_at: new Date(Date.parse(board.observed_at) + 60_000).toISOString() });
+      } finally { closeSync(fd); }
+      expect(readdirSync(join(home, 'board/summaries'))).toEqual(['repo-a-1474.json']);
+      writeFileSync(target, '{');
+      expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' });
+      writeFileSync(target, JSON.stringify({ ...JSON.parse(first), repository_id: 'repo-b' }));
+      expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_subject_invalid' });
+      rmSync(target); mkdirSync(target);
+      expect((await get()).parents[0]).toMatchObject({ parent: 1474, status: 'unavailable', reason: expect.stringContaining('snapshot_read_failed:') });
+      expect((await fetch(`${path}?all=1`)).status).toBe(400);
+      expect((await fetch(path, { method: 'HEAD' })).status).toBe(405);
+      expect((await fetch(path, { headers: { Origin: 'http://foreign.invalid' } })).status).toBe(403);
+      expect((await fetch(path, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
+      expect(reads).toBe(3);
+    } finally { await server.close(); rmSync(home, { recursive: true, force: true }); }
+  });
+
   test('board parents route takes no query, decodes the board parents CLI JSON once, maps each refusal and shares the board read cap', async () => {
     const list = decodeBoardParents(boardParents);
     let result: () => Promise<unknown> = async () => list;
@@ -580,6 +628,8 @@ describe('operator serve command and HTTP boundary', () => {
       // A board read in flight holds the one slot of the shared cap.
       const board = get('/api/v1/repositories/repo-a/board?parent=1474');
       await boardStarted;
+      const summariesBusy = await get('/api/v1/repositories/repo-a/board/summaries');
+      expect([summariesBusy.status, await code(summariesBusy)]).toEqual([503, 'parents_busy']);
       const busy = await get(path);
       expect([busy.status, await code(busy)]).toEqual([503, 'parents_busy']);
       hold();
