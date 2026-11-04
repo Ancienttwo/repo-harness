@@ -21,6 +21,7 @@ import {
 } from './bots';
 import type { OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
+import { hcRepairCommands } from './RuntimeBadges';
 import { CommandLine, ExternalLink, SectionTitle, StatusDot, type DotTone } from './ui';
 
 type Snapshot = BotAccessSnapshotV1;
@@ -200,13 +201,17 @@ function NotifySection({ snapshot, now, t }: { readonly snapshot: Snapshot; read
 
 const STATUS_TONE: Readonly<Record<HcTerminalStatus, DotTone>> = { idle: 'neutral', working: 'active', blocked: 'warn', done: 'ok', error: 'danger', unknown: 'unknown' };
 
-/** A core below the pin answered: both versions show, so it never reads as a missing core. */
+/** A core below the pin answered: both versions and the repair commands show, so it never reads as a missing core. */
 function HcVersion({ version, t }: { readonly version: HcReady['version']; readonly t: OperatorTranslate }) {
   const { state, expected, actual } = version.value;
   const words = { version: actual.version, min: expected.min_version };
   return state === 'aligned'
     ? <Line tone="ok" data-hc-version="aligned">{t('bots.hc.aligned', words)}</Line>
-    : <Line tone="warn" data-hc-version="mismatch" className="font-medium text-kumo-strong">{t('bots.hc.mismatch', words)}</Line>;
+    : <>
+      <Line tone="warn" data-hc-version="mismatch" className="font-medium text-kumo-strong">{t('bots.hc.mismatch', words)}</Line>
+      <p className="text-sm text-kumo-default" data-hc-repair="">{t('bots.hc.reason.hc_version_mismatch', words)}</p>
+      {hcRepairCommands(expected.min_version).map(command => <CommandLine key={command} command={command} t={t} className="max-w-full md:max-w-3xl" />)}
+    </>;
 }
 
 function HcTerminals({ terminals, t }: { readonly terminals: HcReady['terminals']; readonly t: OperatorTranslate }) {
