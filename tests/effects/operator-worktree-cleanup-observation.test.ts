@@ -4,6 +4,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, sta
 import { join } from 'node:path';
 import { cleanupContentsDigestInput } from '../../src/core/operator/worktree-cleanup-observation';
 import { observeCleanupLoss, type CleanupObservationTarget } from '../../src/effects/operator/worktree-cleanup-observation';
+import { createCleanupPlan } from '../../src/effects/operator/worktree-cleanup-plan';
+import type { WorktreeView } from '../../src/core/operator/worktrees';
 import { worktreeId } from '../../src/effects/git/worktree-record';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
@@ -42,6 +44,23 @@ test('raw bytes, modes, ignored files and empty directories are bound without ch
     writeFileSync(join(f.tree, '.env'), 'SYNTHETIC=two\n'); expect(cleanupContentsDigestInput(f.observe())).not.toBe(cleanupContentsDigestInput(first));
     chmodSync(join(f.tree, '.env'), 0o644); const second = f.observe(); chmodSync(join(f.tree, '.env'), 0o600); expect(cleanupContentsDigestInput(f.observe())).not.toBe(cleanupContentsDigestInput(second));
     expect(readFileSync(index).equals(indexBefore)).toBe(true);
+  } finally { f.cleanup(); }
+});
+
+// Sibling inputs of the ignored listing: a wholly ignored directory, an empty directory inside it, and an ignored file beside tracked files.
+test('a wholly ignored directory is one loss entry, its contents are not changed paths, and only an ignored file is archivable', () => {
+  const f = fixture();
+  try {
+    mkdirSync(join(f.tree, 'cache/empty'), { recursive: true });
+    for (let index = 0; index <= 1000; index++) writeFileSync(join(f.tree, `cache/${index}.bin`), `${index}`);
+    writeFileSync(join(f.tree, '.env'), 'SYNTHETIC=one\n');
+    const loss = f.observe();
+    expect(loss.ignored).toEqual(['.env', 'cache/']);
+    expect(loss.changed_paths).toEqual([]);
+    const worktree: WorktreeView = { id: f.target.id, repository_id: `repo_${'b'.repeat(16)}`, directory: 'tree', branch: 'feature', source: 'manual', judgment: 'yellow',
+      reasons: ['ignored_data'], size_bytes: null, size_observed_at: null, process_count: 0, dirty_files: 0, ignored_entries: 2, unpushed_commits: 0, merge: 'unknown', record: null };
+    const plan = createCleanupPlan('a'.repeat(32), [{ observation: { worktree, loss }, advice: { recommendation: 'keep', reason: 'Fixture.', evidence: ['Fixture.'], archive: { git: null, private: null } } }]);
+    expect(plan.items[0]!.loss).toMatchObject({ ignored: ['.env', 'cache/'], archivable: ['.env'] });
   } finally { f.cleanup(); }
 });
 

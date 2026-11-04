@@ -145,18 +145,21 @@ function once(target: CleanupObservationTarget, options: CleanupObservationOptio
       if (!oidPattern.test(oid) || !name.startsWith('refs/remotes/')) return fail('unavailable');
       return { name, oid };
     });
-    ignored = nul(runner.text(target.worktree, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'])).sort();
-    if (!ignored.every(isRepositoryRelativePath)) fail('unsupported');
+    // A wholly ignored directory is one `dir/` entry, so an installed dependency tree stays one loss path.
+    ignored = nul(runner.text(target.worktree, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'])).sort();
+    if (!ignored.every(path => isRepositoryRelativePath(path.endsWith('/') ? path.slice(0, -1) : path))) fail('unsupported');
   }
   const files = scanFiles(target.worktree, format, options);
+  const ignoredFiles = new Set(ignored), ignoredDirectories = ignored.filter(path => path.endsWith('/'));
+  const isIgnored = (path: string) => ignoredFiles.has(path) || ignoredDirectories.some(directory => `${path}/`.startsWith(directory));
   const changed = new Set<string>();
   for (const file of files) {
-    if (file.path === '.git' || file.kind === 'directory' || ignored.includes(file.path)) continue;
+    if (file.path === '.git' || file.kind === 'directory' || isIgnored(file.path)) continue;
     const tracked = headFiles.get(file.path);
     const mode = file.kind === 'symlink' ? '120000' : (file.mode & 0o100) ? '100755' : '100644';
     if (!tracked || tracked.oid !== file.git_oid || tracked.mode !== mode) changed.add(file.path);
   }
-  for (const file of files) if (file.kind === 'directory' && !files.some(other => other.path.startsWith(file.path + '/'))) changed.add(file.path);
+  for (const file of files) if (file.kind === 'directory' && !isIgnored(file.path) && !files.some(other => other.path.startsWith(file.path + '/'))) changed.add(file.path);
   const present = new Set(files.map(file => file.path));
   for (const path of headFiles.keys()) if (!present.has(path)) changed.add(path);
   const staged = new Map(index.map(entry => [entry.path, entry]));
