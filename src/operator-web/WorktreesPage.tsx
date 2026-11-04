@@ -98,7 +98,7 @@ function WorktreeRow({ tree, cleanup, now, t }: { readonly tree: WorktreeView; r
   const occupancy = tree.process_count === null ? t('worktrees.processesUnknown') : tree.process_count > 0 ? t('worktrees.processes', { count: tree.process_count }) : null;
   return (
     <li className="flex gap-3 border-b border-kumo-hairline px-4 py-3 last:border-b-0" data-worktree={tree.id} data-judgment={tree.judgment}>
-      {/* Only a green row can be selected; the server refuses any other id. */}
+      {/* A green row is selected for the one-click clean, a registered non-green row for the plan review. */}
       <input type="checkbox" className="mt-0.5 size-4 shrink-0 cursor-pointer accent-[var(--color-kumo-brand)] disabled:cursor-not-allowed disabled:opacity-40"
         aria-label={t('worktrees.select', { directory: tree.directory })} data-select={tree.id}
         checked={cleanup.selectable && cleanup.checked} disabled={!cleanup.selectable || cleanup.locked}
@@ -203,8 +203,15 @@ export function WorktreesPage({ view, cleanup, plan, now, t }: {
   readonly view: WorktreesView; readonly cleanup: WorktreeCleanup; readonly plan: CleanupPlanPorts | undefined; readonly now: number; readonly t: OperatorTranslate;
 }) {
   const digests = useRowDigests(cleanup.selectable);
-  const [reviewing, setReviewing] = useState(false);
-  if (reviewing && plan) return <CleanupPlanReview ports={plan} now={now} t={t} onBack={() => { setReviewing(false); cleanup.reselect(); }} />;
+  // The ids are fixed when the review opens, so a list refresh does not ask for a new plan.
+  const [reviewing, setReviewing] = useState<readonly string[] | null>(null);
+  const [planExcluded, setPlanExcluded] = useState<ReadonlySet<string>>(() => new Set());
+  const planToggle = (id: string, on: boolean) => setPlanExcluded(current => {
+    const next = new Set(current);
+    if (on) next.delete(id); else next.add(id);
+    return next;
+  });
+  if (reviewing && plan) return <CleanupPlanReview ports={plan} ids={reviewing} now={now} t={t} onBack={() => { setReviewing(null); setPlanExcluded(new Set()); cleanup.reselect(); }} />;
   const header = <header className="border-b border-kumo-hairline pb-4"><h1 className="text-xl font-semibold text-kumo-strong">{t('worktrees.title')}</h1></header>;
   if (view.kind === 'loading') return <div data-worktrees-page="pending">{header}<BoardState loading title={t('freshness.worktrees.loading')} description={t('worktrees.pending.body')} /></div>;
   if (view.kind === 'unreachable') return <div data-worktrees-page="unreachable">{header}<BoardState title={t('board.unreachable.title')} description={t('board.unreachable.body')} command="repo-harness operator serve" /></div>;
@@ -212,16 +219,21 @@ export function WorktreesPage({ view, cleanup, plan, now, t }: {
   if (snapshot === null) return <div data-worktrees-page="pending">{header}<BoardState title={t('worktrees.pending.title')} description={t('worktrees.pending.body')} /></div>;
   if (snapshot.repositories.length === 0 && snapshot.unassigned.length === 0) return <div data-worktrees-page="empty">{header}<BoardState title={t('board.noRepositories.title')} description={t('board.noRepositories.body')} command="repo-harness init --dry-run" /></div>;
   const reclaimable = reclaimableSpace(snapshot);
-  const nonGreen = snapshot.repositories.some(repository => repository.worktrees.some(tree => tree.judgment !== 'green'));
+  // The plan route observes registered non-green worktrees; a primary checkout or an orphan is never planned.
+  const planIds = plan ? snapshot.repositories.flatMap(repository => repository.worktrees)
+    .filter(tree => tree.judgment !== 'green' && !tree.reasons.includes('primary') && !tree.reasons.includes('unregistered')).map(tree => tree.id) : [];
+  // Each review takes one batch of checked rows, so every row is reachable when there are more than one plan holds.
+  const planCandidates = new Set(planIds);
+  const planSelected = planIds.filter(id => !planExcluded.has(id));
+  const planOverLimit = planSelected.length > WORKTREE_CLEANUP_MAX_IDS;
   const running = cleanup.state.kind === 'running';
   const count = cleanup.state.kind === 'running' ? cleanup.state.count : cleanup.selected.length;
   const overLimit = cleanup.selected.length > WORKTREE_CLEANUP_MAX_IDS;
   const selectable = new Set(cleanup.selectable.map(tree => tree.id));
   const checked = new Set(cleanup.selected.map(tree => tree.id));
-  const rowCleanup = (tree: WorktreeView): RowCleanup => ({
-    selectable: selectable.has(tree.id), checked: checked.has(tree.id), removed: cleanup.removed.has(tree.id),
-    locked: running, digest: digests[tree.id], toggle: cleanup.toggle,
-  });
+  const rowCleanup = (tree: WorktreeView): RowCleanup => planCandidates.has(tree.id)
+    ? { selectable: true, checked: !planExcluded.has(tree.id), removed: false, locked: running, digest: undefined, toggle: planToggle }
+    : { selectable: selectable.has(tree.id), checked: checked.has(tree.id), removed: cleanup.removed.has(tree.id), locked: running, digest: digests[tree.id], toggle: cleanup.toggle };
   return (
     <div className="flex flex-col gap-5" data-worktrees-page={view.refreshFailed ? 'refresh-failed' : snapshot.status}>
       {header}
@@ -229,8 +241,9 @@ export function WorktreesPage({ view, cleanup, plan, now, t }: {
         <p className="text-sm text-kumo-default" data-reclaimable={reclaimable.bytes} data-reclaimable-unknown={reclaimable.unknown}>
           <span className="font-medium text-kumo-strong">{t('worktrees.reclaimable')}</span> · <span className="font-mono">{spaceWords(reclaimable, t)}</span>
         </p>
-        {plan && nonGreen && (
-          <Button variant="secondary" className="ml-auto" onClick={() => setReviewing(true)} disabled={running} data-plan-review-open>{t('worktrees.plan.open')}</Button>
+        {planIds.length > 0 && (
+          <Button variant="secondary" className="ml-auto" onClick={() => setReviewing(planSelected)} disabled={running || planSelected.length === 0 || planOverLimit}
+            data-plan-review-open={planSelected.length}>{t('worktrees.plan.open')}</Button>
         )}
         {cleanup.selectable.length > 0 && (
           <Button variant="primary" onClick={cleanup.submit} disabled={running || count === 0 || overLimit} data-clean={count}>
@@ -239,6 +252,7 @@ export function WorktreesPage({ view, cleanup, plan, now, t }: {
         )}
       </div>
       {overLimit && <p className="text-sm text-kumo-warning" data-clean-limit>{t('worktrees.cleanLimit', { max: WORKTREE_CLEANUP_MAX_IDS })}</p>}
+      {planOverLimit && <p className="text-sm text-kumo-warning" data-plan-limit>{t('worktrees.plan.limit', { max: WORKTREE_CLEANUP_MAX_IDS })}</p>}
       <CleanupResult cleanup={cleanup} t={t} />
       {snapshot.status === 'partial' && <Banner variant="secondary" icon={<WarningIcon />} title={t('worktrees.partial.title')} description={t('worktrees.partial.body')} />}
       {snapshot.repositories.map(repository => <WorktreeGroup key={repository.repository_id} group={repository.repository_id} title={repository.display_name}

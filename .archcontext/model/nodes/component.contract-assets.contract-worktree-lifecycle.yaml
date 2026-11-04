@@ -18,5 +18,10 @@ source:
     - scripts/ship-worktrees.sh
     - scripts/merge-gate.ts
     - scripts/cutover-closure.ts
+    - specs/tla/ShipCloseoutClaim.*
   exclude:
     - scripts/contract-worktree-runtime.ts
+extensions:
+  behaviorSpecs:
+    - id: ship-closeout-claim
+      path: specs/tla/ShipCloseoutClaim.tla

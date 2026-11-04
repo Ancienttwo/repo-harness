@@ -8,6 +8,8 @@ import {
   type WorktreeCleanupResult,
 } from '../core/operator/worktree-cleanup';
 import { decodeWorktrees, type WorktreeView, type WorktreesSnapshot } from '../core/operator/worktrees';
+import { decodeCleanupExecutionResult, decodeCleanupPlan } from '../core/operator/worktree-cleanup-plan';
+import type { CleanupPlanFailure, CleanupPlanPorts } from './CleanupPlanReview';
 import { asApiError } from './operator-api-error';
 import type { OperatorTranslate } from './i18n';
 import type { OperatorApiErrorV1 } from './operator-api-error';
@@ -164,6 +166,45 @@ export async function postWorktreeCleanup(body: WorktreeCleanupPost): Promise<Wo
   const error = asApiError(payload, UNTYPED);
   return error === UNTYPED ? { state: 'unreachable' } : { state: 'refused', status: response.status, error };
 }
+
+const CLEANUP_PLAN_PATH = '/api/v1/worktrees/cleanup/plan';
+const CLEANUP_EXECUTE_PATH = '/api/v1/worktrees/cleanup/execute';
+
+/** A typed refusal, a decoded 200, or the failure the review shows. Each body carries a new request_id. */
+async function postCleanupWrite<T>(path: string, body: object, decode: (value: unknown) => T): Promise<{ readonly state: 'ok'; readonly value: T } | CleanupPlanFailure> {
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: 'POST', cache: 'no-store', credentials: 'same-origin',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    return { state: 'unreachable' };
+  }
+  const payload: unknown = await response.json().catch(() => null);
+  if (response.ok) {
+    try { return { state: 'ok', value: decode(payload) }; } catch { return { state: 'unreadable' }; }
+  }
+  const error = asApiError(payload, UNTYPED);
+  return error === UNTYPED ? { state: 'unreachable' } : { state: 'refused', status: response.status, error };
+}
+
+/** The plan and execute routes of the operator service. */
+export const cleanupPlanPorts: CleanupPlanPorts = {
+  open: async ids => {
+    const answer = await postCleanupWrite(CLEANUP_PLAN_PATH, { request_id: crypto.randomUUID(), ids: [...ids] }, decodeCleanupPlan);
+    return answer.state === 'ok' ? { state: 'ready', plan: answer.value } : answer;
+  },
+  choose: async (sessionId, choices) => {
+    const answer = await postCleanupWrite(CLEANUP_PLAN_PATH, { request_id: crypto.randomUUID(), session_id: sessionId, choices }, decodeCleanupPlan);
+    return answer.state === 'ok' ? { state: 'ready', plan: answer.value } : answer;
+  },
+  execute: async request => {
+    const answer = await postCleanupWrite(CLEANUP_EXECUTE_PATH, request, decodeCleanupExecutionResult);
+    return answer.state === 'ok' ? { state: 'done', result: answer.value } : answer;
+  },
+};
 
 export type WorktreeCleanupState =
   | { readonly kind: 'idle' }

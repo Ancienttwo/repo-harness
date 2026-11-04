@@ -1,8 +1,10 @@
 // Layout of one flow on the sequence base map. Participants are columns,
 // grouped so that each OS process box is contiguous; boxes keep the order in
-// which the flow first names a participant of theirs. Rows are the main steps
-// in model order, then one fragment per outcome with its steps and its
-// terminal. This module computes positions only and adds no fact to the map.
+// which the flow first names a participant of theirs, and carry their title
+// below the last row. Rows are the main steps in model order, then one
+// fragment per outcome with its steps and its terminal; a fragment spans the
+// columns of the participants that it names. This module computes positions
+// only and adds no fact to the map.
 
 import type { ArchitectureMapFlowOutcomeV1, ArchitectureMapFlowStepV1, ArchitectureMapFlowV1 } from '../core/operator/architecture-map';
 import type { RuntimePlacement } from './architecture-runtime';
@@ -15,6 +17,7 @@ const BOX_GAP = 16;
 const FRAGMENT_TITLE = 28;
 const FRAGMENT_GAP = 12;
 const MARGIN = 16;
+const BOX_PAD = 12;
 
 type Required = Extract<ArchitectureMapFlowV1, { applicability: 'required' }>;
 export type SequenceParticipant = Required['participants'][number];
@@ -48,7 +51,11 @@ export interface SequenceMessage {
 
 export interface SequenceFragment {
   readonly outcome: ArchitectureMapFlowOutcomeV1;
+  /** Model order of the outcome: the first one opens the `alt`, the others are `else`. */
+  readonly index: number;
+  readonly x: number;
   readonly y: number;
+  readonly width: number;
   readonly height: number;
 }
 
@@ -69,6 +76,8 @@ export interface SequenceLayout {
   /** Top of each participant header; lifelines run from below it to `bottom`. */
   readonly headerY: number;
   readonly bottom: number;
+  /** Height of the process title row below `bottom`, inside each box. */
+  readonly boxTitle: number;
   readonly width: number;
   readonly height: number;
 }
@@ -99,7 +108,7 @@ export function layoutSequence(flow: Required, placement: (nodeId: string) => Ru
     left += BOX_GAP;
   }
   const x = new Map(columns.map(column => [column.participant.id, column.x]));
-  const headerY = MARGIN + BOX_TITLE;
+  const headerY = MARGIN + BOX_PAD;
   let y = headerY + SEQUENCE_HEADER + SEQUENCE_ROW / 2;
   const messages: SequenceMessage[] = [];
   const row = (outcome: string | null, step: ArchitectureMapFlowStepV1) => {
@@ -109,18 +118,20 @@ export function layoutSequence(flow: Required, placement: (nodeId: string) => Ru
   for (const step of flow.steps) row(null, step);
   const fragments: SequenceFragment[] = [];
   const terminals: SequenceTerminal[] = [];
-  for (const outcome of flow.outcomes) {
+  for (const [index, outcome] of flow.outcomes.entries()) {
     const top = y - SEQUENCE_ROW / 2 + FRAGMENT_GAP;
     y = top + FRAGMENT_TITLE + SEQUENCE_ROW / 2;
     for (const step of outcome.steps) row(outcome.id, step);
     terminals.push({ outcome: outcome.id, participant: outcome.terminal.participant, label: outcome.terminal.label, x: x.get(outcome.terminal.participant)!, y });
     y += SEQUENCE_ROW;
-    fragments.push({ outcome, y: top, height: y - SEQUENCE_ROW / 2 - top });
+    const named = [outcome.terminal.participant, ...outcome.steps.flatMap(step => [step.from, step.to])].map(id => x.get(id)!);
+    const fragmentLeft = Math.min(...named) - SEQUENCE_COLUMN / 2 + 4;
+    fragments.push({ outcome, index, x: fragmentLeft, y: top, width: Math.max(...named) + SEQUENCE_COLUMN / 2 - 4 - fragmentLeft, height: y - SEQUENCE_ROW / 2 - top });
   }
   const bottom = y;
   const boxes = spans.map(span => ({
     key: span.key, placement: members.get(span.key)!.placement, participants: members.get(span.key)!.participants.map(participant => participant.id),
-    x: span.left, y: MARGIN, width: span.right - span.left, height: bottom - MARGIN,
+    x: span.left, y: MARGIN, width: span.right - span.left, height: bottom + BOX_TITLE - MARGIN,
   }));
-  return { boxes, columns, messages, fragments, terminals, headerY, bottom, width: left - BOX_GAP + MARGIN, height: bottom + MARGIN };
+  return { boxes, columns, messages, fragments, terminals, headerY, bottom, boxTitle: BOX_TITLE, width: left - BOX_GAP + MARGIN, height: bottom + BOX_TITLE + MARGIN };
 }

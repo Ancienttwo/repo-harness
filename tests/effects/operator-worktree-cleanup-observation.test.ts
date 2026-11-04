@@ -1,9 +1,12 @@
 import { expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupContentsDigestInput } from '../../src/core/operator/worktree-cleanup-observation';
 import { observeCleanupLoss, type CleanupObservationTarget } from '../../src/effects/operator/worktree-cleanup-observation';
+import { createCleanupPlan } from '../../src/effects/operator/worktree-cleanup-plan';
+import type { WorktreeView } from '../../src/core/operator/worktrees';
 import { worktreeId } from '../../src/effects/git/worktree-record';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
@@ -43,6 +46,51 @@ test('raw bytes, modes, ignored files and empty directories are bound without ch
     chmodSync(join(f.tree, '.env'), 0o644); const second = f.observe(); chmodSync(join(f.tree, '.env'), 0o600); expect(cleanupContentsDigestInput(f.observe())).not.toBe(cleanupContentsDigestInput(second));
     expect(readFileSync(index).equals(indexBefore)).toBe(true);
   } finally { f.cleanup(); }
+});
+
+// Sibling inputs of the ignored listing: a wholly ignored directory, an empty directory inside it, and an ignored file beside tracked files.
+test('a wholly ignored directory is one loss entry, its contents are not changed paths, and only an ignored file is archivable', () => {
+  const f = fixture();
+  try {
+    mkdirSync(join(f.tree, 'cache/empty'), { recursive: true });
+    for (let index = 0; index <= 1000; index++) writeFileSync(join(f.tree, `cache/${index}.bin`), `${index}`);
+    writeFileSync(join(f.tree, '.env'), 'SYNTHETIC=one\n');
+    const loss = f.observe();
+    expect(loss.ignored).toEqual(['.env', 'cache/']);
+    expect(loss.changed_paths).toEqual([]);
+    const worktree: WorktreeView = { id: f.target.id, repository_id: `repo_${'b'.repeat(16)}`, directory: 'tree', branch: 'feature', source: 'manual', judgment: 'yellow',
+      reasons: ['ignored_data'], size_bytes: null, size_observed_at: null, process_count: 0, dirty_files: 0, ignored_entries: 2, unpushed_commits: 0, merge: 'unknown', record: null };
+    const plan = createCleanupPlan('a'.repeat(32), [{ observation: { worktree, loss }, advice: { recommendation: 'keep', reason: 'Fixture.', evidence: ['Fixture.'], archive: { git: null, private: null } } }]);
+    expect(plan.items[0]!.loss).toMatchObject({ ignored: ['.env', 'cache/'], archivable: ['.env'] });
+  } finally { f.cleanup(); }
+});
+
+// Sibling loss lists under CLEANUP_PLAN_MAX_PATHS: changed paths, ignored entries, unpublished commits, and the changed-or-ignored union that bounds `archivable`.
+test('a worktree above the plan path cap fails too_large for each loss list', () => {
+  const files = (tree: string, directory: string, count: number, suffix: string) => {
+    mkdirSync(join(tree, directory), { recursive: true });
+    for (let index = 0; index < count; index++) writeFileSync(join(tree, directory, `${index}${suffix}`), `${index}`);
+  };
+  const ignoredLogs = (tree: string, count: number) => { files(tree, 'logs', count, '.log'); writeFileSync(join(tree, 'logs/.gitignore'), '*.log\n'); };
+  const cases: Array<[string, (f: ReturnType<typeof fixture>) => void]> = [
+    ['changed paths', f => files(f.tree, 'new', 1001, '.txt')],
+    ['ignored entries', f => ignoredLogs(f.tree, 1001)],
+    ['unpublished commits', f => {
+      const head = f.git(f.tree, 'rev-parse', 'HEAD'), stamp = 'Fixture <fixture@example.invalid> 1700000000 +0000';
+      const stream = Array.from({ length: 1001 }, (_, index) => `commit refs/heads/many\ncommitter ${stamp}\ndata 1\n${index % 10}\n${index === 0 ? `from ${head}\n` : ''}\n`).join('');
+      expect(spawnSync('git', ['fast-import', '--quiet'], { cwd: f.repo, input: stream }).status).toBe(0); f.git(f.tree, 'checkout', '-q', 'many');
+    }],
+    ['changed and ignored union', f => { files(f.tree, 'new', 600, '.txt'); ignoredLogs(f.tree, 600); }],
+  ];
+  for (const [name, setup] of cases) {
+    const f = fixture();
+    try {
+      setup(f);
+      let code = 'observed';
+      try { f.observe(); } catch (error) { code = (error as Error).message; }
+      expect([name, code]).toEqual([name, 'cleanup_observation_too_large']);
+    } finally { f.cleanup(); }
+  }
 });
 
 test('index-only versions and skip-worktree content remain observable', () => {
