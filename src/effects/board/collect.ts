@@ -1,18 +1,20 @@
 import { spawnSync } from 'child_process';
 import { architecturePort, isArchitectureUnavailable, type ArchctxProviderOptions } from '../../core/architecture/contracts';
 import {
-  linkedPullRequests, projectBoard, seatTerminal, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1, type BoardPathOwnerV1,
-  type BoardPathOwnersV1, type BoardToolingV1, type BoardV1,
+  linkedPullRequests, projectBoard, seatTerminal, type BoardAcceptanceMergeV1, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1,
+  type BoardPathOwnerV1, type BoardPathOwnersV1, type BoardSeatTerminalInputV1, type BoardSeatTerminalReadV1, type BoardToolingV1, type BoardV1,
 } from '../../core/board/board';
 import { ADVISOR_SEAT } from '../../core/board/advisor-seat';
 import { BOARD_PAGE, decodeParentRead, decodePullRequestsRead, type BoardPullRequestReadV1 } from '../../core/board/source';
 import { normalizeCapabilityPath } from '../../core/capabilities/registry';
 import { HC_MIN_VERSION } from '../../core/operator/herdr-pin';
+import { parsePublicationPolicy, policyFileFromContents, PUBLICATION_POLICY_PATH, type PolicyFileAtRef } from '../../core/publication/acceptance-merge-policy';
 import type { PullRequestReadinessV2, PullRequestSelectionV2 } from '../../core/publication/merge-readiness';
-import { gitSpawnSync } from '../git/runner';
+import { gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { collectPullRequestMergeReadiness } from '../publication/merge-readiness';
 
 const GH_TIMEOUT_MS = 30_000;
+const SEAT_GIT_TIMEOUT_MS = 10_000;
 
 const COMMENTS = `comments(last: ${BOARD_PAGE.comments}) { pageInfo { hasPreviousPage } nodes { url createdAt authorAssociation body } }`;
 const ISSUE_FIELDS = `number title url state labels(first: ${BOARD_PAGE.labels}) { pageInfo { hasNextPage } nodes { name } } milestone { title } ${COMMENTS}`;
@@ -71,10 +73,14 @@ export interface BoardCollectInput {
 
 type GhInput = Pick<BoardCollectInput, 'repo_root' | 'gh_bin' | 'gh_runner'>;
 
-function gh(input: GhInput, args: readonly string[]): unknown {
-  const result = input.gh_runner?.(args) ?? spawnSync(input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
+function runGh(input: GhInput, args: readonly string[]): { readonly status: number | null; readonly stdout: string; readonly stderr?: string } {
+  return input.gh_runner?.(args) ?? spawnSync(input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
     cwd: input.repo_root, env: { ...process.env, GH_HOST: 'github.com' }, encoding: 'utf-8', timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL',
   });
+}
+
+function gh(input: GhInput, args: readonly string[]): unknown {
+  const result = runGh(input, args);
   if (result.status !== 0) throw new BoardCollectError(`gh ${args.slice(0, 2).join(' ')} failed: ${(result.stderr ?? '').trim() || `exit ${result.status}`}`);
   try {
     return JSON.parse(result.stdout);
@@ -114,6 +120,26 @@ function dailyRun(input: BoardCollectInput, repository: string, branch: string):
   return { status: 'observed', run_url: run.html_url, conclusion: run.conclusion as string | null, created_at: run.created_at };
 }
 
+/**
+ * `publication.acceptance_merge` on the default branch, decoded only by the
+ * publication policy parser. GitHub answers an absent file with exit 1 and a
+ * JSON body of status 404; every other failure leaves the value unknown.
+ */
+function acceptanceMerge(input: BoardCollectInput, repository: string, branch: string): BoardAcceptanceMergeV1 {
+  const result = runGh(input, ['api', '--hostname', 'github.com', `repos/${repository}/contents/${PUBLICATION_POLICY_PATH}?ref=${encodeURIComponent(branch)}`]);
+  let body: unknown;
+  try {
+    body = JSON.parse(result.stdout);
+  } catch {
+    return 'unknown';
+  }
+  const absent = result.status === 1 && (body as { status?: unknown } | null)?.status === '404';
+  const file: PolicyFileAtRef | null = absent ? { status: 'missing' } : result.status === 0 ? policyFileFromContents(body) : null;
+  if (file === null) return 'unknown';
+  const policy = parsePublicationPolicy(file);
+  return policy.ok ? policy.acceptance_merge : 'unknown';
+}
+
 function tooling(input: BoardCollectInput): BoardToolingV1 {
   const herdrApp = { status: 'not_pinned' } as const;
   const version = input.host.hcVersion();
@@ -122,6 +148,18 @@ function tooling(input: BoardCollectInput): BoardToolingV1 {
 
 /** One orchestrator and one advisor serve the whole repository (#1780): the board of every parent shows them. */
 const REPOSITORY_SEATS: ReadonlySet<string> = new Set(['orchestrator', ADVISOR_SEAT]);
+
+function seatBranch(cwd: string | null): string | null {
+  if (cwd === null) return null;
+  // The directory selects the repository, so a git variable of this process must not.
+  const read = gitSpawnSync(['symbolic-ref', '--quiet', '--short', 'HEAD'], { cwd, env: withoutRepositorySelectingGitEnv(), encoding: 'utf8', timeout: SEAT_GIT_TIMEOUT_MS });
+  return read.error === undefined && read.status === 0 ? read.stdout.trim() : null;
+}
+
+/** Each terminal with the current branch of its directory, read with git in that directory. The directory stays here. */
+export function seatTerminalsWithBranches(terminals: readonly BoardSeatTerminalReadV1[]): readonly BoardSeatTerminalInputV1[] {
+  return terminals.map(({ cwd, ...terminal }) => ({ ...terminal, branch: seatBranch(cwd) }));
+}
 
 /**
  * The seat terminals of this repository and parent: the orchestrator and the
@@ -135,7 +173,7 @@ function execution(input: BoardCollectInput, repositoryId: number): BoardExecuti
   const parent = String(input.parent);
   const terminals = read.terminals.filter(({ labels }) => (labels.seat !== undefined && REPOSITORY_SEATS.has(labels.seat)) || labels.parent === parent);
   if (terminals.length === 0) return { status: 'unavailable', reason: 'no_seat_terminals' };
-  return { status: 'observed', terminals: Object.freeze(terminals.map(seatTerminal)) };
+  return { status: 'observed', terminals: Object.freeze(seatTerminalsWithBranches(terminals).map(seatTerminal)) };
 }
 
 /**
@@ -199,6 +237,7 @@ export function collectBoard(input: BoardCollectInput): BoardV1 {
   return projectBoard({
     observed_at: observedAt,
     parent,
+    acceptance_merge: acceptanceMerge(input, repository, parent.repository.default_branch),
     pull_requests: reads,
     readiness,
     path_owners: pathOwners(input, linked),

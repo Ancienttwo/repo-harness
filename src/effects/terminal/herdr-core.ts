@@ -49,6 +49,8 @@ export interface HcTerminal extends HcTerminalSummary {
   /** When the status word last changed, ms since the epoch; absent when hc omits it (schema default null). */
   readonly status_ms?: number | null;
   readonly turn: number;
+  /** The terminal's working directory; absent when hc omits it. */
+  readonly cwd?: string | null;
   /** The program's pid (it leads its own process group), not the holder's. */
   readonly pid: number | null;
   /** What runs in the terminal now; null once it has finished. */
@@ -271,9 +273,10 @@ function terminal(value: unknown): HcTerminal {
   if (!Number.isSafeInteger(record.turn)) throw invalidResponse(`${where} has an invalid turn`);
   const current = optional(record, 'foreground', orNull(isForeground), where) ?? null;
   const statusMs = optional(record, 'status_ms', orNull(isMs), where);
+  const cwd = optional(record, 'cwd', orNull(isString), where);
   return {
     ...summary, labels: labels as HcLabels, status: status(record.status ?? null, where),
-    ...(statusMs === undefined ? {} : { status_ms: statusMs }), turn: record.turn as number,
+    ...(statusMs === undefined ? {} : { status_ms: statusMs }), ...(cwd === undefined ? {} : { cwd }), turn: record.turn as number,
     pid: optional(record, 'pid', orNull(isPid), where) ?? null,
     foreground: current === null ? null : { pid: current.pid, name: current.name, argv: [...current.argv], cwd: current.cwd },
     reason: optional(record, 'reason', orNull(isString), where) ?? null,
@@ -496,7 +499,7 @@ export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1
             const label = (key: string) => terminal.labels[key];
             return {
               address: terminal.address, name: terminal.name, agent: terminal.agent, state: terminal.state, status: terminal.status?.state ?? null,
-              status_kind: terminal.status?.kind ?? null, status_ms: terminal.status_ms ?? null, turn: terminal.turn,
+              status_kind: terminal.status?.kind ?? null, status_ms: terminal.status_ms ?? null, turn: terminal.turn, cwd: terminal.cwd ?? null,
               labels: { seat: label(RH_LABEL.seat), issue: label(RH_LABEL.issue), pr: label(RH_LABEL.pr), parent: label(RH_LABEL.parent) },
             };
           });

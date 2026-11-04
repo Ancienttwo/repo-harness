@@ -529,7 +529,7 @@ describe('board page', () => {
     const refusal = (code: string, status: number) => () => Response.json({ error: { code, message: 'refused', next_action: 'retry' } }, { status });
     const answers: (() => Response)[] = [
       () => Response.json(BOARD),
-      () => Response.json({ ...BOARD, protocol: 2 }),
+      () => Response.json({ ...BOARD, protocol: 3 }),
       refusal('board_parent_invalid', 400),
       refusal('repository_not_found', 404),
       refusal('board_collect_failed', 503),
@@ -696,7 +696,7 @@ describe('board office (#1755)', () => {
   const rows = (selector: string) => Array.from(document.querySelectorAll<HTMLElement>(selector));
   type Terminal = BoardV1['execution'] extends infer E ? E extends { readonly terminals: readonly (infer T)[] } ? T : never : never;
   const seat = (address: string, seatName: string, issue: number | null, pr: number | null, status: string | null, state: 'live' | 'finished' = 'live'): Terminal =>
-    ({ address, name: address, agent: null, state, status, status_kind: null, status_ms: null, turn: 0, seat_status: 'observed', seat: seatName, issue, pr });
+    ({ address, name: address, agent: null, state, status, status_kind: null, status_ms: null, turn: 0, branch: null, seat_status: 'observed', seat: seatName, issue, pr });
   const observedClaim = { status_kind: 'observed', url: 'https://github.com/Ancienttwo/repo-harness/issues/1478#issuecomment-1', created_at: '2026-11-02T21:00:00Z', status: 'draft PR open; claim remains active', pr: null, head_sha: null } as const;
   /** The recorded board of #1474 with edited pull requests, items and terminals. */
   const boardWith = ({ prs = {}, items = {}, terminals, plan }: {
@@ -712,7 +712,7 @@ describe('board office (#1755)', () => {
     plan: plan ?? BOARD.plan,
   });
   const PLAN: BoardV1['plan'] = {
-    status: 'observed', comment_url: 'https://github.com/Ancienttwo/repo-harness/issues/1474#issuecomment-1', created_at: '2026-11-02T20:00:00Z',
+    status: 'observed', comment_url: 'https://github.com/Ancienttwo/repo-harness/issues/1474#issuecomment-1', created_at: '2026-11-02T20:00:00Z', revision: 1,
     block: { protocol: 1, kind: 'repo-harness.plan', merge_order: [1475, 1476, 1479], holds: [{ issue: 1477, reason: 'waits for #1476' }], batches: [[1475, 1476]], seat_limits: { worker: 3 } },
   };
   /** The parent list that carries the terminals of a board: the seats of the room. */
@@ -738,7 +738,7 @@ describe('board office (#1755)', () => {
         seat('t7', 'worker', null, null, 'working'),
         // Left out: a finished worker, a seat-label gap and the two lead seats.
         seat('t8', 'worker', 1480, null, 'working', 'finished'),
-        { address: 't9', name: null, agent: null, state: 'live', status: null, status_kind: null, status_ms: null, turn: 0, seat_status: 'unavailable', reason: 'seat_label_missing' },
+        { address: 't9', name: null, agent: null, state: 'live', status: null, status_kind: null, status_ms: null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_missing' },
         seat('t10', 'orchestrator', null, null, 'idle'),
         seat('t11', 'advisor', null, null, 'idle'),
       ],
@@ -1142,7 +1142,7 @@ describe('board office (#1755)', () => {
         { ...seat('t2', 'advisor', null, null, 'idle'), agent: 'codex', parent: null },
         { ...seat('t3', 'worker', 9001, null, 'working'), agent: 'codex', parent: null },
         { ...seat('t4', 'worker', 1476, 1499, 'idle'), agent: 'pi', parent: '1474' },
-        { address: 't5', name: null, agent: null, state: 'live', status: null, status_kind: null, status_ms: null, turn: 0, seat_status: 'unavailable', reason: 'seat_label_invalid', parent: null },
+        { address: 't5', name: null, agent: null, state: 'live', status: null, status_kind: null, status_ms: null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_invalid', parent: null },
       ],
     };
     const boards: number[] = [];

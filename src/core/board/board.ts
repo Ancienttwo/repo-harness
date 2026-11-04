@@ -1,4 +1,5 @@
 import { parseClosingReferences } from '../publication/closing-references';
+import type { AcceptanceMergeSwitch } from '../publication/acceptance-merge-policy';
 import type { PullRequestReadinessV2 } from '../publication/merge-readiness';
 import { decodePlanBlock, PlanBlockError, type PlanBlockV1 } from './plan-block';
 import {
@@ -22,7 +23,7 @@ import { isCiRepairIssueBody } from '../operator/tests';
  * It is a read model. GitHub and hc stay the authorities; the board keeps
  * their observation time and never writes back.
  */
-export const BOARD_PROTOCOL = 1 as const;
+export const BOARD_PROTOCOL = 2 as const;
 export const BOARD_KIND = 'repo-harness.board' as const;
 
 export type BoardTier = 'low' | 'medium' | 'high';
@@ -33,7 +34,8 @@ const ACCEPTANCE_RECORD_HEADER = 'repo-harness acceptance record';
 const REQUIRED_CHECK = 'Required / CI';
 
 export type BoardPlanV1 =
-  | { readonly status: 'observed'; readonly comment_url: string; readonly created_at: string; readonly block: PlanBlockV1 }
+  /** `revision`: the ordinal of this comment among the parent's plan comments (r1 is the first); null when the comment read is truncated. */
+  | { readonly status: 'observed'; readonly comment_url: string; readonly created_at: string; readonly revision: number | null; readonly block: PlanBlockV1 }
   | { readonly status: 'absent'; readonly truncated: boolean }
   | { readonly status: 'unavailable'; readonly comment_url: string; readonly reason: string };
 
@@ -97,6 +99,8 @@ export type BoardTerminalV1 = {
   readonly status_kind: string | null;
   readonly status_ms: number | null;
   readonly turn: number;
+  /** The current branch of the terminal's working directory; null for a detached HEAD, a missing directory or a failed read. */
+  readonly branch: string | null;
 } & (
   | { readonly seat_status: 'observed'; readonly seat: string; readonly issue: number | null; readonly pr: number | null }
   /** The terminal carries the parent label but no seat label. The board does not guess its seat. */
@@ -113,13 +117,18 @@ export interface BoardSeatTerminalReadV1 {
   readonly status_kind: string | null;
   readonly status_ms: number | null;
   readonly turn: number;
+  /** The working directory that hc reports, when it reports one. */
+  readonly cwd: string | null;
   readonly labels: { readonly seat?: string; readonly issue?: string; readonly pr?: string; readonly parent?: string };
 }
+
+/** A read terminal with its branch in place of its directory: the board carries no machine-local path (ADR-0002). */
+export type BoardSeatTerminalInputV1 = Omit<BoardSeatTerminalReadV1, 'cwd'> & { readonly branch: string | null };
 
 const POSITIVE = /^[1-9][0-9]*$/u;
 
 /** The board's one check of the raw seat, issue and pr labels of a terminal (the board and the parent list). */
-export function seatTerminal(terminal: BoardSeatTerminalReadV1): BoardTerminalV1 {
+export function seatTerminal(terminal: BoardSeatTerminalInputV1): BoardTerminalV1 {
   const { labels, ...base } = terminal;
   const { seat, issue, pr } = labels;
   if (seat === undefined) return { ...base, seat_status: 'unavailable', reason: 'seat_label_missing' };
@@ -175,6 +184,9 @@ export type BoardPathOwnersV1 =
   | { readonly status: 'observed'; readonly owners: readonly BoardPathOwnerV1[] }
   | { readonly status: 'unavailable'; readonly reason: string };
 
+/** `publication.acceptance_merge` on the default branch; `unknown` when the policy file could not be read or decoded. */
+export type BoardAcceptanceMergeV1 = AcceptanceMergeSwitch | 'unknown';
+
 export interface BoardToolingV1 {
   readonly hc: { readonly status: 'observed'; readonly version: string; readonly min_version: string } | { readonly status: 'unavailable'; readonly reason: string };
   /** No policy pin exists for Herdr.app yet. */
@@ -187,6 +199,7 @@ export interface BoardV1 {
   readonly observed_at: string;
   readonly repository: string;
   readonly default_branch: string;
+  readonly acceptance_merge: BoardAcceptanceMergeV1;
   readonly parent: { readonly number: number; readonly title: string; readonly url: string; readonly state: 'open' | 'closed'; readonly labels: readonly string[]; readonly milestone: string | null };
   readonly plan: BoardPlanV1;
   readonly items: readonly BoardItemV1[];
@@ -204,6 +217,7 @@ export type BoardDailyRunInputV1 =
 export interface BoardInputV1 {
   readonly observed_at: string;
   readonly parent: BoardParentReadV1;
+  readonly acceptance_merge: BoardAcceptanceMergeV1;
   readonly pull_requests: readonly BoardPullRequestReadV1[];
   readonly readiness: readonly PullRequestReadinessV2[];
   readonly path_owners: BoardPathOwnersV1;
@@ -212,11 +226,27 @@ export interface BoardInputV1 {
   readonly tooling: BoardToolingV1;
 }
 
-/** Refuse a board of another protocol or kind at a process boundary (Surface contract, docs/adr/ADR-0002). */
+const ACCEPTANCE_MERGE_VALUES: ReadonlySet<unknown> = new Set<BoardAcceptanceMergeV1>(['off', 'on', 'unknown']);
+
+/** The `branch` check of the board and the parent list decoders: an absent branch is a refusal, and null is the explicit unknown. */
+export function checkSeatBranches(terminals: unknown): void {
+  if (!Array.isArray(terminals)) throw new Error('board seat terminals are not a list');
+  for (const { address, branch } of terminals as readonly BoardTerminalV1[]) {
+    if (branch !== null && (typeof branch !== 'string' || branch === '')) throw new Error(`invalid board seat branch on ${address}: ${String(branch)}`);
+  }
+}
+
+/** Refuse a board of another protocol or kind, or a board without a valid new value, at a process boundary (Surface contract, docs/adr/ADR-0002). */
 export function decodeBoard(value: unknown): BoardV1 {
   const board = value as Partial<BoardV1> | null;
   if (board?.protocol !== BOARD_PROTOCOL) throw new Error(`unsupported board protocol: ${String(board?.protocol)}`);
   if (board.kind !== BOARD_KIND) throw new Error(`unsupported board kind: ${String(board.kind)}`);
+  if (!ACCEPTANCE_MERGE_VALUES.has(board.acceptance_merge)) throw new Error(`invalid board acceptance_merge: ${String(board.acceptance_merge)}`);
+  if (board.plan?.status === 'observed') {
+    const { revision } = board.plan;
+    if (revision !== null && (!Number.isSafeInteger(revision) || revision < 1)) throw new Error(`invalid board plan revision: ${String(revision)}`);
+  }
+  if (board.execution?.status === 'observed') checkSeatBranches(board.execution.terminals);
   return board as BoardV1;
 }
 
@@ -224,7 +254,8 @@ function projectPlan(parent: BoardParentReadV1['parent']): BoardPlanV1 {
   const comment = newestProtocolComment(parent.comments, PLAN_HEADER);
   if (comment === null) return { status: 'absent', truncated: parent.comments.truncated };
   try {
-    return { status: 'observed', comment_url: comment.url, created_at: comment.created_at, block: decodePlanBlock(comment.body) };
+    const revision = parent.comments.truncated ? null : protocolComments(parent.comments, PLAN_HEADER).length;
+    return { status: 'observed', comment_url: comment.url, created_at: comment.created_at, revision, block: decodePlanBlock(comment.body) };
   } catch (error) {
     if (!(error instanceof PlanBlockError)) throw error;
     return { status: 'unavailable', comment_url: comment.url, reason: error.message };
@@ -345,6 +376,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
     observed_at: input.observed_at,
     repository,
     default_branch: input.parent.repository.default_branch,
+    acceptance_merge: input.acceptance_merge,
     parent: Object.freeze({ number: parent.number, title: parent.title, url: parent.url, state: parent.state, labels: parent.labels, milestone: parent.milestone }),
     plan: projectPlan(parent),
     items: Object.freeze(items),

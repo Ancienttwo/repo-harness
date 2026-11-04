@@ -60,6 +60,8 @@ interface Replay {
   readonly archctx?: RunArchctxProcess;
   /** Replaces the hc host that replays the recorded terminals. */
   readonly host?: BoardHostPortsV1;
+  /** The answer to the policy file read of the default branch; the default is a 404. */
+  readonly policy?: GhAnswer;
   /** The version that the fake hc reports; the recorded core reported 0.1.17. */
   readonly hcVersion?: string;
   readonly now?: Date;
@@ -72,6 +74,9 @@ function issueNode(data: Json, number: number): Json {
 function comment(body: string, createdAt: string): Json {
   return { url: `https://github.com/Ancienttwo/repo-harness/issues/1#issuecomment-${Date.parse(createdAt)}`, createdAt, authorAssociation: 'OWNER', body };
 }
+
+// `gh api` of an absent path, as the live CLI answers it: exit 1, the JSON body on stdout, the message on stderr.
+const POLICY_ABSENT = { status: 1, stdout: '{"message":"Not Found","status":"404"}', stderr: 'gh: Not Found (HTTP 404)' };
 
 function replay(options: Replay = {}): BoardV1 {
   const root = tmpWorkspace('board'); roots.push(root);
@@ -90,6 +95,7 @@ function replay(options: Replay = {}): BoardV1 {
       if (args[0] === 'repo') return answer({ nameWithOwner: 'Ancienttwo/repo-harness' });
       if (args[1] === 'graphql') return answer(args.some(arg => arg.includes('subIssues')) ? parent : pulls);
       if (args.some(arg => arg.includes('actions/workflows/ci.yml/runs'))) return answer(fixture('daily-run.json'));
+      if (args.includes('repos/Ancienttwo/repo-harness/contents/.ai/harness/policy.json?ref=main')) return options.policy ?? POLICY_ABSENT;
       throw new Error(`unexpected gh call: ${args.join(' ')}`);
     },
     // #1491 is the only PR that the recorded data shows as accepted; the readiness projection has its own suite.
@@ -168,7 +174,7 @@ test('board summary counts the recorded PRs, planned issue members and orchestra
   const board = replay();
   expect(boardSummary(board)).toEqual({ queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, needs_you: 3 });
   const block = { protocol: 1, kind: 'repo-harness.plan', merge_order: [], holds: [], batches: [[1475, 1476], [1477, 1479]], seat_limits: { worker: 4 } } as const;
-  const planned: BoardV1 = { ...board, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at,
+  const planned: BoardV1 = { ...board, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at, revision: 1,
     block },
     pull_requests: board.pull_requests.map(pr => pr.number === 1494 ? { ...pr, required_check: { status: 'failure', completed_at: board.observed_at } }
       : pr.number === 1499 ? { ...pr, state: 'closed' } : pr) };
@@ -183,7 +189,7 @@ test('board summary counts the recorded PRs, planned issue members and orchestra
   expect(boardSummary({ ...reopened, pull_requests: reopened.pull_requests.map(pr => pr.number === 1500
     ? { ...pr, required_check: { status: 'pending' } } : pr) }).queue).toBe(0);
   expect(boardSummary({ ...planned, plan: { status: 'absent', truncated: false } }).batch).toEqual({ accepted: null, size: null });
-  expect(boardSummary({ ...planned, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at,
+  expect(boardSummary({ ...planned, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at, revision: 1,
     block: { ...block, batches: [] } } }).batch).toEqual({ accepted: 0, size: 0 });
 });
 
@@ -204,14 +210,90 @@ test('one strict summary decoder checks snapshots and route rows', () => {
 });
 
 test('decoders refuse an unknown protocol or kind', () => {
-  expect(() => decodeBoard({ protocol: 2, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 2');
-  expect(() => decodeBoard({ protocol: 1, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
+  expect(() => decodeBoard({ protocol: 3, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 3');
+  expect(() => decodeBoard({ protocol: 1, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 1');
+  expect(() => decodeBoard({ protocol: 2, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
   const block = (value: Json) => `repo-harness plan\n\n\`\`\`json\n${JSON.stringify(value)}\n\`\`\`\n`;
   const valid = { protocol: 1, kind: 'repo-harness.plan', merge_order: [1475], holds: [], batches: [], seat_limits: { worker: 3 } } as const;
   expect(decodePlanBlock(block(valid))).toEqual(valid);
   expect(() => decodePlanBlock(block({ ...valid, protocol: 2 }))).toThrow(new PlanBlockError('unsupported protocol 2'));
   expect(() => decodePlanBlock(block({ ...valid, kind: 'plan' }))).toThrow(new PlanBlockError('unsupported kind "plan"'));
   expect(() => decodePlanBlock(block({ ...valid, waves: [] }))).toThrow(PlanBlockError);
+});
+
+test('decoders refuse a missing or invalid plan revision, merge policy or seat branch; null is the explicit unknown', () => {
+  const recorded = JSON.parse(JSON.stringify(replay()));
+  const plan = (revision: unknown) => ({ ...recorded, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: recorded.observed_at, revision, block: {} } });
+  const seat = (branch: unknown) => [{ ...recorded.execution.terminals[0], branch }];
+  const board = (branch: unknown) => ({ ...recorded, execution: { status: 'observed', terminals: seat(branch) } });
+  const parents = (branch: unknown) => ({ ...boardParentsFixture, seats: seat(branch) });
+  const { acceptance_merge: _dropped, ...noPolicy } = recorded;
+  for (const invalid of [plan(undefined), plan(0), plan(1.5), plan('1'), noPolicy, { ...recorded, acceptance_merge: 'maybe' }, board(undefined), board('')]) {
+    expect(() => decodeBoard(invalid)).toThrow('invalid board');
+  }
+  for (const valid of [plan(null), plan(7), { ...recorded, acceptance_merge: 'unknown' }, board(null), board('main')]) expect(decodeBoard(valid)).toEqual(valid);
+  for (const invalid of [parents(undefined), parents(''), { ...parents(null), seats: undefined }]) expect(() => decodeBoardParents(invalid)).toThrow('board seat');
+  expect(decodeBoardParents(parents('main')).seats[0]!.branch).toBe('main');
+});
+
+test('plan revision: the ordinal of the newest plan comment among the write-access plan comments, and null on a truncated read', () => {
+  const block = { protocol: 1, kind: 'repo-harness.plan', merge_order: [], holds: [], batches: [], seat_limits: { worker: 3 } };
+  const plan = (at: string, body = `repo-harness plan\n\n\`\`\`json\n${JSON.stringify(block)}\n\`\`\`\n`) => comment(body, at);
+  const revision = (nodes: Json[], truncated = false) => {
+    const board = replay({ parent: (data) => { data.repository.issue.comments = { pageInfo: { hasPreviousPage: truncated }, nodes }; } });
+    return board.plan.status === 'observed' ? board.plan.revision : board.plan.status;
+  };
+  const [first, second, third] = [plan('2026-11-01T00:00:00Z'), plan('2026-11-02T00:00:00Z'), plan('2026-11-03T00:00:00Z')];
+  const invalid = plan('2026-11-01T12:00:00Z', 'repo-harness plan\n\nno block');
+  const request = { ...plan('2026-11-04T00:00:00Z'), authorAssociation: 'NONE' };
+  expect([
+    revision([first]), revision([first, second, third]), revision([first, invalid, third]), revision([first, second, request]),
+    revision([first, second], true), revision([first, invalid]), revision([]),
+  ]).toEqual([1, 3, 3, 2, null, 'unavailable', 'absent']);
+});
+
+test('merge policy: the policy file of the default branch through the one parser; only an absent file or key reads as off', () => {
+  const file = (text: string) => ({ status: 0, stdout: JSON.stringify({ type: 'file', path: '.ai/harness/policy.json', encoding: 'base64', content: Buffer.from(text).toString('base64') }) });
+  const cases: readonly (readonly [GhAnswer | undefined, string])[] = [
+    [file('{"publication":{"acceptance_merge":"on"}}'), 'on'],
+    [file('{"publication":{"acceptance_merge":"off"}}'), 'off'],
+    [file('{"publication":{}}'), 'off'],
+    [file('{}'), 'off'],
+    [undefined, 'off'],
+    // The parser refuses: not JSON, a bad switch value, an unknown publication field.
+    [file('{'), 'unknown'],
+    [file('{"publication":{"acceptance_merge":"maybe"}}'), 'unknown'],
+    [file('{"publication":{"other":true}}'), 'unknown'],
+    // The read fails: a directory at the path, a 404 body with a success status, a server error, no JSON body, a killed gh.
+    [{ status: 0, stdout: '[]' }, 'unknown'],
+    [{ status: 0, stdout: '{"status":"404"}' }, 'unknown'],
+    [{ status: 1, stdout: '{"message":"Server Error","status":"500"}' }, 'unknown'],
+    [{ status: 1, stdout: '' }, 'unknown'],
+    [{ status: 137, stdout: '{"status":"404"}' }, 'unknown'],
+  ];
+  expect(cases.map(([policy]) => replay({ policy }).acceptance_merge)).toEqual(cases.map(([, expected]) => expected) as BoardV1['acceptance_merge'][]);
+});
+
+test('seat branch: git in the terminal directory on both reads; each unreadable directory gives null and no path reaches the payload', () => {
+  const branched = tmpWorkspace('board-seat-branch'); roots.push(branched);
+  initGitRepo(branched);
+  run('git', ['checkout', '-q', '-b', 'feat/1806-seat'], branched);
+  const detached = tmpWorkspace('board-seat-detached'); roots.push(detached);
+  initGitRepo(detached);
+  run('git', ['commit', '-q', '--allow-empty', '-m', 'one'], detached);
+  run('git', ['checkout', '-q', '--detach'], detached);
+  const plain = tmpWorkspace('board-seat-plain'); roots.push(plain);
+  const directories: Readonly<Record<string, string | undefined>> = { t1: branched, t2: detached, t3: plain, t4: join(plain, 'gone'), t5: undefined };
+  const terminal = (cwd: string | undefined) => ({ cwd, labels: { 'repo-harness.repository': '1186405141', 'repo-harness.seat': 'worker', 'repo-harness.parent': '1474' } });
+  const hc = watchHc({ FAKE_LS: Object.keys(directories).map(address => ({ address, state: 'live' })),
+    FAKE_TERMINALS: Object.fromEntries(Object.entries(directories).map(([address, cwd]) => [address, terminal(cwd)])) });
+  const expected = [['t1', 'feat/1806-seat'], ['t2', null], ['t3', null], ['t4', null], ['t5', null]];
+  const execution = replay({ host: boardHostPorts(hc.options) }).execution;
+  expect(execution.status === 'observed' && execution.terminals.map(seat => [seat.address, seat.branch])).toEqual(expected);
+  const list = collectBoardParents({ repo_root: hc.root, now: () => REPLAY_NOW, host: boardHostPorts(hc.options), gh_runner: () => ({ status: 0, stdout: fixture('open-issues.graphql.json') }) });
+  expect(list.seats.map(seat => [seat.address, seat.branch])).toEqual(expected);
+  expect(JSON.stringify([execution, list])).not.toContain(plain);
+  expect(JSON.stringify([execution, list])).not.toContain(branched);
 });
 
 type GhAnswer = { readonly status: number; readonly stdout: string; readonly stderr?: string };
@@ -503,7 +585,7 @@ function watchHc(env: Json = {}) {
 test('watch window: idle sends at once, blocked waits, working sends at window end, and the advisor cap reads all repository logs', async () => {
   const board = replay();
   const seat = (address: string, seatName: string, status: string | null) =>
-    ({ address, name: null, agent: null, state: 'live', status, status_kind: null, status_ms: null, turn: 1, seat_status: 'observed', seat: seatName, issue: null, pr: null }) as BoardTerminalV1;
+    ({ address, name: null, agent: null, state: 'live', status, status_kind: null, status_ms: null, turn: 1, branch: null, seat_status: 'observed', seat: seatName, issue: null, pr: null }) as BoardTerminalV1;
   const terminals = [seat('t1', 'worker', 'working'), seat('t3', 'orchestrator', 'idle'), seat('t6', 'orchestrator', 'blocked'),
     seat('t7', 'orchestrator', 'blocked'), seat('t8', 'orchestrator', 'working'), seat('t9', 'advisor', 'done'), seat('t10', 'orchestrator', 'blocked'),
     seat('t11', 'orchestrator', 'blocked')];
