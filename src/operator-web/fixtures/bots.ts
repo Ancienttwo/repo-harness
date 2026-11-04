@@ -35,7 +35,7 @@ export function busyBotAccess(now: number): BotAccessSnapshotV1 {
       { bot_id: 'hermes', name: 'Hermes', host: 'Hermes', slack_bot_id: 'B07HERMES1', herdr_agent: 'hermes' },
     ] },
     mcp: { state: 'ok', doctor: {
-      status: 'ready_user', package_version: '0.26.0', config_version_ok: true,
+      status: 'ready_user', package_version: '0.26.1', config_version_ok: true,
       capabilities: { workspace_reader: true, workflow_planner: true, workflow_executor: true },
       registered_repo_count: 3, allowed_root_count: 1, unsafe_allowed_root_count: 0, legacy_full_disk_read: false,
     } },
