@@ -13,6 +13,7 @@ the top right that explains only the marks that the board uses.
 | 4 | Key sequence | How does the main request travel to its final state? | The model has flows, or the product has one main request path |
 | 5 | Interfaces and mounts | What does each module expose, and what does the outside world see? | A public API, CLI, routes, events, storage layout or identity keys exist |
 | 6 | Remarks | What did the author observe that a reader must know? | Always (it can say "no remarks") |
+| 7 | Behavior (statechart) | Which states can one protocol reach, and which interleavings did its spec prove wrong? | A model node of a map module has `extensions.behaviorSpecs`: one board for each spec entry |
 
 ## 1. Layered overview
 
@@ -103,3 +104,29 @@ Pick the parts that the project has:
   link the issue number.
 - Keep remark IDs stable across refreshes. Remove a remark when its cause
   is gone, and do not reuse its ID.
+
+## 7. Behavior (statechart)
+
+- Read the spec entries from `modules[].behaviorSpecs` in the `measure.ts`
+  output. Each entry is `{ id, path, node }`. Draw one board for each
+  entry. The kicker names the spec path and the short base SHA
+  (`<PROJECT> · BEHAVIOR · <spec path> · <short base sha>`).
+- Do not parse the spec. The board is hand-composed and cites the spec, as
+  the key-sequence board cites the model flows. Each state name and each
+  transition label is a spec state value or a spec action name. Draw no
+  state or transition that the spec does not have. A guard branch or an
+  action that every state allows (for example a crash) can go in a note
+  that names the actions, instead of one edge for each state.
+- Layout: an outer "at the same time" container. In it, one region for
+  each concurrent actor kind and one region for the shared state, side by
+  side. Each region has an initial dot. A compound state is a container
+  around its substates.
+- A transition that exists only when a fix is off is dashed. The legend
+  names the spec constant of each dashed transition.
+- Put one red numbered marker on the state where each fix-off
+  counterexample ends. Under the board is a numbered legend, one row for
+  each marker: the violated invariant, the fix that was off, the fix-off
+  config, the counterexample length, the issue and the fix PR (for
+  example, "1 SingleOwner broken without the exclusive-create election
+  (#1634, #1637)"). Take the rows from the spec PR's recorded checker
+  output.
