@@ -36,7 +36,7 @@ import { BoardReadError, readRepositoryAdvisorTranscript, readRepositoryBoard, r
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import boardParents from '../../src/operator-web/fixtures/board-parents.json';
 import { decodeBoardParents } from '../../src/core/board/parents';
-import { decodeBoardSummaries } from '../../src/core/board/summary';
+import { boardSummary, decodeBoardSummaries } from '../../src/core/board/summary';
 
 import {
   architectureStatus,
@@ -571,7 +571,7 @@ describe('operator serve command and HTTP boundary', () => {
       try {
         if (process.platform !== 'win32') expect(statSync(target).mode & 0o777).toBe(0o600);
         expect(decodeBoardSummaries(JSON.parse(first)).parents).toEqual([{ parent: 1474, status: 'observed', observed_at: board.observed_at,
-          summary: { queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, needs_you: 3 } }]);
+          summary: boardSummary(board) }]);
         expect((await get()).parents).toEqual([JSON.parse(first).parents[0], { parent: 1651, status: 'not_read' }]);
         board = { ...board, observed_at: new Date(Date.parse(board.observed_at) + 60_000).toISOString() };
         expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
@@ -585,6 +585,11 @@ describe('operator serve command and HTTP boundary', () => {
       expect(readdirSync(join(home, 'board/summaries'))).toEqual(['repo-a-1474.json']);
       writeFileSync(target, '{');
       expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' });
+      // A snapshot of the old protocol is refused, not translated, and the next board read replaces it.
+      writeFileSync(target, JSON.stringify({ ...JSON.parse(first), protocol: 1 }));
+      expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' });
+      expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
+      expect((await get()).parents[0]).toMatchObject({ status: 'observed', summary: boardSummary(board) });
       writeFileSync(target, JSON.stringify({ ...JSON.parse(first), repository_id: 'repo-b' }));
       expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_subject_invalid' });
       rmSync(target); mkdirSync(target);
@@ -593,7 +598,7 @@ describe('operator serve command and HTTP boundary', () => {
       expect((await fetch(path, { method: 'HEAD' })).status).toBe(405);
       expect((await fetch(path, { headers: { Origin: 'http://foreign.invalid' } })).status).toBe(403);
       expect((await fetch(path, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
-      expect(reads).toBe(3);
+      expect(reads).toBe(4);
     } finally { await server.close(); rmSync(home, { recursive: true, force: true }); }
   });
 
