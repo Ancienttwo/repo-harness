@@ -36,7 +36,9 @@ export interface WorkspaceLocation {
   /**
    * The page subject. `#board/<repository>/<parent>` names the board of one
    * parent issue and `#board/<repository>/<parent>/<issue>` opens one of its
-   * issues in the drawer (see `boardPlace`). `#tools/<id>` opens one catalog entry.
+   * issues in the drawer (see `boardPlace`). A leading `office` segment
+   * (`#board/office`, `#board/office/<repository>/<parent>[/<issue>]`) selects
+   * the office layout; without it the board is the list. `#tools/<id>` opens one catalog entry.
    * `#docs/<path>` names one repository-relative file; the docs route decides
    * whether it may be read.
    */
@@ -47,24 +49,42 @@ const HOME: WorkspaceLocation = { workspace: 'home', module: null, item: null };
 const REPOSITORY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const ISSUE_NUMBER = /^[1-9][0-9]{0,9}$/u;
 
-/** The board subject of a `#board/...` item: a registered repository id, its parent issue and the drawer issue. */
+/** The two layouts of the Board page. The list is the default. */
+export type BoardLayout = 'list' | 'office';
+/** A registered repository id is `repo_<16 hex>`, so this segment never names a repository. */
+const OFFICE_SEGMENT = 'office';
+
+/** The board subject of a `#board/...` item: a registered repository id, its parent issue, the drawer issue and the layout. */
 export interface BoardPlace {
   readonly repository_id: string;
   readonly parent: number;
   readonly issue: number | null;
+  readonly layout: BoardLayout;
 }
 
-/** Null for a board without a subject and for any item that is not `<repository>/<parent>[/<issue>]`. */
+/** The layout of a `#board/...` item, also when the item names no board. */
+export function boardLayout(item: string | null): BoardLayout {
+  return item !== null && item.split('/')[0] === OFFICE_SEGMENT ? 'office' : 'list';
+}
+
+/** Null for a board without a subject and for any item that is not `[office/]<repository>/<parent>[/<issue>]`. */
 export function boardPlace(item: string | null): BoardPlace | null {
   if (item === null) return null;
-  const [repository, parent, issue, ...rest] = item.split('/');
+  const layout = boardLayout(item);
+  const [repository, parent, issue, ...rest] = item.split('/').slice(layout === 'office' ? 1 : 0);
   if (rest.length > 0 || repository === undefined || !REPOSITORY_ID.test(repository) || parent === undefined || !ISSUE_NUMBER.test(parent)) return null;
   if (issue !== undefined && !ISSUE_NUMBER.test(issue)) return null;
-  return { repository_id: repository, parent: Number(parent), issue: issue === undefined ? null : Number(issue) };
+  return { repository_id: repository, parent: Number(parent), issue: issue === undefined ? null : Number(issue), layout };
 }
 
 export function boardLocation(place: BoardPlace): WorkspaceLocation {
-  return { workspace: 'board', module: null, item: [place.repository_id, place.parent, ...(place.issue === null ? [] : [place.issue])].join('/') };
+  const subject = [place.repository_id, place.parent, ...(place.issue === null ? [] : [place.issue])];
+  return { workspace: 'board', module: null, item: (place.layout === 'office' ? [OFFICE_SEGMENT, ...subject] : subject).join('/') };
+}
+
+/** The Board page with no board selected: the parent list, or the office overview. */
+export function boardHomeLocation(layout: BoardLayout): WorkspaceLocation {
+  return { workspace: 'board', module: null, item: layout === 'office' ? OFFICE_SEGMENT : null };
 }
 const ITEM_ID_LIMIT = 512;
 
@@ -84,7 +104,8 @@ export function parseWorkspaceLocation(hash: string): WorkspaceLocation {
     return segments.some(segment => segment === null) ? HOME : { workspace: 'docs', module: null, item: segments.join('/') };
   }
   if (name === 'board') {
-    if (parameter === undefined) return { workspace: 'board', module: null, item: null };
+    if (parameter === undefined) return boardHomeLocation('list');
+    if (parameter === OFFICE_SEGMENT && rest.length === 0) return boardHomeLocation('office');
     const place = boardPlace([parameter, ...rest].join('/'));
     return place === null ? HOME : boardLocation(place);
   }

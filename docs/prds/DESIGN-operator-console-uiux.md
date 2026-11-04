@@ -14,7 +14,7 @@
 
 | 输入 | 版本 | 用法 |
 | --- | --- | --- |
-| PRD | [`docs/prds/20261026-2310-operator-console-uiux.prd.md`](../../docs/prds/20261026-2310-operator-console-uiux.prd.md)，rev 213（#996） | 产品意图的唯一权威。#980 里的英文副本 `20261026-2100` 已删除 |
+| PRD | [`docs/prds/20261026-2310-operator-console-uiux.prd.md`](../../docs/prds/20261026-2310-operator-console-uiux.prd.md)，rev 269（#996；rev 269 加 G38） | 产品意图的唯一权威。#980 里的英文副本 `20261026-2100` 已删除 |
 | 用户决定 | [#997 评论](https://github.com/Ancienttwo/repo-harness/issues/997#issuecomment-6420993596)，2026-10-27 | 10 项待决问题全部按建议批准，见「已批准的决定」 |
 | 设计画布 | https://claude.ai/artifact/JVJiUztNTXwx1wvmFwdcyw ，读到的版本 `1793028533-d1e8`，21 张画板 | 页面布局、文案、示例数据。PRD 写的是 Version 38；画布接口只给版本 id，两者对不上号，以本稿记录的版本 id 为准 |
 | Design system | https://claude.ai/artifact/JyoYEw29VBRwmBRnnKf3TT ，版本 `1793028749-cefd` | token、组件、像素角色。repo 副本在 [`operator-console/design-system/`](../design/operator-console/design-system/README.md) |
@@ -28,7 +28,7 @@
 
 ## 已批准的决定
 
-D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。DW 和 DT 是 PRD 里已经勾选的两项。下文用这些编号引用。
+D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。D11 是用户 2026-11-04 批准的一项（PRD rev 269，G38）。DW 和 DT 是 PRD 里已经勾选的两项。下文用这些编号引用。
 
 | # | 缺口 | 决定 | 影响的页面与场景 |
 | --- | --- | --- | --- |
@@ -42,6 +42,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。DW �
 | D8 | G20、G21 | 测试只做清单、结果和命令 | 测试、任务抽屉；`1-TESTS-N1` |
 | D9 | G30 | Bot 不回 MCP 派活，只走 CLI → herdr | Bots、任务抽屉；`1-BOTS-N1` |
 | D10 | G31 | repo-harness 不读 Slack | Bots、系统；`3-BOTS-N1` |
+| D11 | G38 | 控制台只和顾问席对话：发纯文字，读回脱敏后的顾问席终端输出，不能停止它。编排席和执行席不开对话。这是「不向编码会话发消息」和 N4 的唯一例外 | 看板（办公室视图）；PRD 切片 3.7 |
 | DW | G24、G25 | 绿色项一键清理；非绿色项由用户发起清理会话，agent 给删留建议和归档计划，用户逐项授权后先归档进 `docs/archive/` 再删 | Worktree、清理会话 |
 | DT | G13 | Paper（亮）与 Ink（暗）两套主题并存，亮色 Paper 为默认 | 全部；默认值按 U1：跟随系统，系统是亮色时就是 Paper |
 
@@ -159,7 +160,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。DW �
 | --- | --- | --- | --- | --- |
 | C1 | `Task` | 「阶段来源」有一行「ledger · rev 7 verifying」 | 只写「Git + GitHub」；仓库详情另有 Fleet 阶段 | ledger 在 #785 删除；`src/core/dev-activity/` 不读 ledger |
 | C2 | `System` | 数据来源里有「Pipeline ledger · 3 张卡补充阶段」；边界说明写「Agent 身份只来自 ledger 或已验证的 runtime 绑定」 | 删掉 ledger 一行；身份一句写「只来自已验证的会话绑定」 | 同 C1；G2 |
-| C3 | `System` | 边界说明写「写入只有有限几种：发给任务 owner 的消息、文档会话…、开 Draft PR」 | 只列当前一期已开放的写入（第一、二期写「这个控制台不写入」）；发消息写成「交给 Bot」 | D1；PRD「写入与权限边界」第一条 |
+| C3 | `System` | 边界说明写「写入只有有限几种：发给任务 owner 的消息、文档会话…、开 Draft PR」 | 只列当前一期已开放的写入（第一、二期写「这个控制台不写入」）；发消息写成「交给 Bot」；顾问席对话是唯一例外（D11） | D1、D11；PRD「写入与权限边界」第一条 |
 | C4 | `System` | 「采集间隔 30s」 | 分开写两个值：后台采集 60 s，浏览器刷新 30 s，都从运行时取 | `collector.ts:35`、`useObservationRefresh.ts:3` |
 | C5 | `WorktreeCleanup` | 会话事件行显示完整命令，如 `git status --porcelain=v2 --branch` | 显示操作类别和摘要，如「读取 worktree 状态 · 11 项」 | D2（清理会话与文档会话共用事件与可见范围） |
 | C6 | `Home`、`Agents`、`Hooks`、`Tests`、`Tools` | 一屏同时出现两个像素角色：首页 `buddy-happy` 与 `buddy-party`；Agents `donkey-bags` 与 `buddy-wrench`；Hooks `hook-cap` 与 `buddy-alert`；测试 `bug` 与 `buddy-sleep`；工具 `hook-carrot` 与 `donkey-bags` | 一屏至多一个。状态角色（alert、wrench、bug、cloud-off）优先于页头装饰。侧栏的像素胡萝卜是标识，不算角色 | design system README「Pixel characters」 |
@@ -350,7 +351,7 @@ PRD、画布和 design system 里与代码事实或彼此不一致的地方。�
 | I8 | PRD 页头：「Version 38」 | 画布接口只给版本 id，无法核对 Version 38 | 画布版本 `1793028533-d1e8` | 页头同时记版本 id |
 | I9 | PRD「写入 API」：「`operator-write-boundary.test.ts`」「`operator-serve.test.ts`」 | 没写目录 | 实际是 `tests/effects/operator-write-boundary.test.ts`、`tests/cli/operator-serve.test.ts` | 写全路径 |
 | I10 | 画布 `Task`、`System`：「ledger · rev 7」「Pipeline ledger」 | ledger 已在 #785 删除 | `src/core/dev-activity/` 不读 ledger | 改画布（C1、C2） |
-| I11 | 画布 `System`：「写入只有有限几种：发给任务 owner 的消息」 | 控制台不发消息，交给 Bot | PRD「写入与权限边界」第一条；D1 | 改画布（C3） |
+| I11 | 画布 `System`：「写入只有有限几种：发给任务 owner 的消息」 | 控制台不发消息，交给 Bot；顾问席对话是唯一例外（D11） | PRD「写入与权限边界」第一条；D1、D11 | 改画布（C3） |
 | I12 | design system README「像素角色」表 | Agents 写 `donkey`、设置写 `donkey-happy`，画布用的是 `donkey-bags`；画布有 5 页一屏两个角色，违反「一屏最多一个」 | 画布各画板引用的 `px/*.svg` | 角色表按画布改；画布按 C6 改 |
 | I13 | 画布内嵌的 design system 副本 | 版本 `1793015921-3114`，比 design system 现版旧，缺 `rh-diagram-bg`、`rh-diagram-dot`、`rh-diagram-line` | 画布 `project/ds/rhconsole/tokens.json` 与 design system `project/tokens.json` 的差异 | 画布重新引入现版 design system |
 | I14 | design system 组件说明 Conversation、DiagramCanvas | 前者写 G3「没定」，后者写用 ELK 布局；与 D2、D7 和 PRD「elkjs 排除」冲突 | #980 初版的英文副本 | repo 副本已改；design system 原件也要改 |
