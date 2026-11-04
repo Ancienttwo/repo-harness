@@ -857,6 +857,7 @@
     "terminals": [
       {
         "address": "t1",
+        "agent": "codex",
         "name": "w1476",
         "state": "live",
         "status": "blocked",
@@ -870,6 +871,7 @@
       },
       {
         "address": "t2",
+        "agent": "claude-code",
         "name": "w1475",
         "state": "live",
         "status": "done",
@@ -883,6 +885,7 @@
       },
       {
         "address": "t3",
+        "agent": null,
         "name": "orch",
         "state": "live",
         "status": "idle",
@@ -896,6 +899,7 @@
       },
       {
         "address": "t4",
+        "agent": "sleep",
         "name": "nolabel",
         "state": "live",
         "status": null,
