@@ -197,3 +197,6 @@ button.board-office__card:focus-visible { outline: 3px solid var(--color-kumo-br
 @media (max-width: 1100px) {
   .board-office__scene { --s: 2; }
 }
+@media (max-width: 480px) {
+  .board-office__advisor .board-office__portrait { display: none; }
+}
