@@ -1,7 +1,7 @@
 import type { BoardAttentionV1 } from '../core/board/attention';
 import type { BoardItemV1, BoardPullRequestV1, BoardTerminalV1, BoardV1 } from '../core/board/board';
 import type { BoardParentV1 } from '../core/board/parents';
-import { primaryPullRequest } from './board-view';
+import { primaryPullRequest, type BoardParentsReader } from './board-view';
 
 /**
  * The data map of the Board office view (#1755): board → room, parent list →
@@ -156,4 +156,22 @@ export type OfficeCard =
 export function officeCards(parents: readonly BoardParentV1[]): readonly OfficeCard[] {
   const seated = parents.filter(parent => parent.seats > 0);
   return seated.length === 0 ? [{ kind: 'idle' }] : seated.map(parent => ({ kind: 'parent', parent }));
+}
+
+/**
+ * The overview's parent reads run one at a time, in call order. The server
+ * refuses a board or parents read over its concurrency limit with
+ * `parents_busy`, and that limit lives in effects, so the web keeps no copy of
+ * the number. A call whose signal aborts while it waits never starts.
+ */
+export function serialParentsReader(read: BoardParentsReader): BoardParentsReader {
+  let tail: Promise<unknown> = Promise.resolve();
+  return (repositoryId, signal) => {
+    const run = tail.then(() => {
+      signal.throwIfAborted();
+      return read(repositoryId, signal);
+    });
+    tail = run.catch(() => undefined);
+    return run;
+  };
 }

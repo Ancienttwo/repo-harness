@@ -824,15 +824,37 @@ describe('board office (#1755)', () => {
     expect(document.querySelector('[data-board-parent]')?.getAttribute('data-board-parent')).toBe('1474');
   });
 
-  test('the overview has one card per parent with seats, one idle card for a repository with none, and a failed read on its own card', async () => {
+  test('the overview reads the parents one repository at a time, in order; it has one card per parent with seats, one idle card for a repository with none, and a failed read on its own card', async () => {
     officeAt();
-    const ids = [HARNESS_ID, ...REGISTRY.repositories.map(row => row.repository_id).filter(id => id !== HARNESS_ID)];
-    const failed = ids[1]!;
+    // Five registrations. The first answers at once: it is also the list repository, whose read App.tsx keeps.
+    const others = ['repo_2b3c4d5e6f708192', 'repo_3c4d5e6f70819203', 'repo_4d5e6f7081920314', 'repo_5e6f708192031425'];
+    const five = decodeOperatorRepositories({ protocol: 1, kind: 'operator_repositories', stale_registrations: 0, repositories: [
+      { repository_id: HARNESS_ID, display_name: 'repo-harness', access_mode: 'read_write' },
+      ...others.map((id, index) => ({ repository_id: id, display_name: `service-${index + 1}`, access_mode: 'read_write' })),
+    ] });
+    const failed = others[0]!;
+    const answer = (id: string): BoardParentsRead => id === HARNESS_ID ? { state: 'ok', list: PARENTS }
+      : id === failed ? { state: 'unavailable', reason: 'parents_hc_failed' } : { state: 'ok', list: { ...PARENTS, parents: [] } };
+    const waiting: { readonly id: string; readonly finish: () => void }[] = [];
+    const started: string[] = [];
     await mount(<OperatorApp {...props(busy(), {
-      readBoardParents: async id => id === HARNESS_ID ? { state: 'ok', list: PARENTS }
-        : id === failed ? { state: 'unavailable', reason: 'parents_hc_failed' } : { state: 'ok', list: { ...PARENTS, parents: [] } },
+      initialRepositories: five, readRepositories: async () => five,
+      readBoardParents: (id) => {
+        if (id === HARNESS_ID) return Promise.resolve(answer(id));
+        started.push(id);
+        return new Promise(resolve => waiting.push({ id, finish: () => resolve(answer(id)) }));
+      },
     })} />);
+    for (const id of others) {
+      await settle();
+      // One delayed read at a time; the cards behind it still load.
+      expect(waiting.map(entry => entry.id)).toEqual([id]);
+      expect(rows('[data-office-card="loading"]').length).toBeGreaterThan(0);
+      await act(async () => waiting.shift()!.finish());
+    }
     await settle();
+    expect(started).toEqual(others);
+    expect(rows('[data-office-card="loading"]')).toHaveLength(0);
     // #1651 has no seat, so only #1474 is a card.
     const card = rows(`[data-office-card="parent"][data-repository="${HARNESS_ID}"]`);
     expect(card.map(element => element.getAttribute('data-parent'))).toEqual(['1474']);
@@ -840,8 +862,7 @@ describe('board office (#1755)', () => {
     expect(card[0]!.getAttribute('aria-label')).toBe('repo-harness #1474 herdr-core 迁移：退役 classic herdr CLI（G37）: 3 seats, 2 of 9 sub-issues done. Open the office.');
     expect(card[0]!.querySelectorAll('.board-office__sprite')).toHaveLength(3);
     expect(rows(`[data-office-card="failed"][data-repository="${failed}"][data-board-parents-reason="parents_hc_failed"]`)).toHaveLength(1);
-    expect(new Set(rows('[data-office-card="idle"]').map(element => element.getAttribute('data-repository')))).toEqual(new Set(ids.slice(2)));
-    expect(rows('[data-office-card="idle"]')).toHaveLength(ids.length - 2);
+    expect(rows('[data-office-card="idle"]').map(element => element.getAttribute('data-repository'))).toEqual(others.slice(1));
     for (const element of rows('[data-office-card="idle"]')) expect(element.getAttribute('aria-label')).toContain('idle, no parent issue has a seat');
     // The overview reads no board, so no card shows a queue, CI, batch or needs-you chip.
     expect(document.querySelector('[data-board-office="overview"]')?.textContent).not.toMatch(/queue|CI|batch|needs you/iu);

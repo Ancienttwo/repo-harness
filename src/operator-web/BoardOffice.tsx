@@ -1,8 +1,8 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { cn } from '@cloudflare/kumo';
 import { XIcon } from '@phosphor-icons/react';
 import type { BoardV1 } from '../core/board/board';
-import { DESK_STATES, officeCards, type DeskState, type OfficeDesk, type OfficeRoom } from './board-office';
+import { DESK_STATES, officeCards, serialParentsReader, type DeskState, type OfficeDesk, type OfficeRoom } from './board-office';
 import { useBoardParents, type BoardParentsReader } from './board-view';
 import type { BoardRepositoryOption } from './BoardPage';
 import { useModalFocus } from './Drawer';
@@ -174,17 +174,23 @@ function RepositoryCards({ repository, readParents, generation, onOpen, t }: {
   );
 }
 
-/** No board selected: one card per parent with seats in each registered repository, from one parents read per repository. */
+/**
+ * No board selected: one card per parent with seats in each registered
+ * repository, from one parents read per repository. The cards share one
+ * serial reader, so the reads run one at a time in repository order and a
+ * waiting card shows loading.
+ */
 export function BoardOfficeOverview({ repositories, readParents, generation, onOpen, t }: {
   readonly repositories: readonly BoardRepositoryOption[]; readonly readParents: BoardParentsReader; readonly generation: number;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate;
 }) {
+  const serialRead = useMemo(() => serialParentsReader(readParents), [readParents]);
   return (
     <section className="board-office" data-board-office="overview" aria-labelledby="board-office-title">
       <OfficeHeader heading={<h1 id="board-office-title">{t('board.office.title')}</h1>} place={null} onOpen={onOpen} t={t} />
       {repositories.length === 0
         ? <BoardState title={t('board.parents.noRepository.title')} description={t('board.parents.noRepository.body')} />
-        : <div className="board-office__cards">{repositories.map(repository => <RepositoryCards key={repository.id} repository={repository} readParents={readParents} generation={generation} onOpen={onOpen} t={t} />)}</div>}
+        : <div className="board-office__cards">{repositories.map(repository => <RepositoryCards key={repository.id} repository={repository} readParents={serialRead} generation={generation} onOpen={onOpen} t={t} />)}</div>}
     </section>
   );
 }
