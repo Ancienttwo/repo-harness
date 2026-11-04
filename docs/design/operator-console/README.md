@@ -12,7 +12,7 @@ the PRD is the snapshot
 | Design system (live) | Claude design-system artifact: https://claude.ai/artifact/JyoYEw29VBRwmBRnnKf3TT (private until shared). Read at version `1793028749-cefd` |
 | Design system (repo copy) | [`design-system/`](design-system/README.md): README, `tokens.json`, component guidelines, logos and mascots |
 | Architecture History view (#1300) | [`mockups/1300-architecture-history.html`](mockups/1300-architecture-history.html): self-contained HTML. Timeline, milestone map, delta styles for added, removed and renamed nodes and changed relations, and six states. Data is the repo-harness model at 28 real milestones, aggregated per capability in the `archctx history` v1 shape |
-| Board pixel office | [`mockups/board-pixel-office.html`](mockups/board-pixel-office.html): self-contained HTML export of the Claude design artifact https://claude.ai/artifact/TgArwqpdtxG34p7gB2jFB7 at version `1793781748-df6c` (private until shared). Four views: all-offices overview with room popups, one room per repo and parent issue, state legend, and boss sprite sheet. Each room has an orchestrator and an advisor on the stage, worker desks up to the seat limit, a CI tower, the acceptance queue and a batch cart of 6. Four boss commands go only to the advisor: 大棒, 萝卜, 排雷 and 收放. Each opens a confirmation, has a cooldown, and locks the other three until the advisor finishes. repo-harness shows the #1309 board of 2026-11-01; aiphabee and AstroZi are sample states |
+| Board pixel office | [`mockups/board-pixel-office.html`](mockups/board-pixel-office.html): self-contained HTML export of the Claude design artifact https://claude.ai/artifact/VqtiVnoZtx8iSwZMMAHV5x at version `1793824409-e933` (private until shared; S0 art direction, #1790). Three views: all-offices overview with room popups, one room per repo, and states with agent heads, Claude Code outfits and actions, desk states, the boss sprite sheet and the palette. Every scene is one 16 px pixel grid drawn at 3x (2x below 1100 px and in popups) from one 32-colour palette with a day and a night set (`--px-*` tokens). The room is a 3/4 top-down office: back wall with window, clock, plan whiteboard and MAIN door; a stage for the orchestrator and the advisor; worker desks up to the seat limit, and roped, covered desks above it; a CI tower beside each desk in CI; the acceptance queue on yellow floor tape; the batch cart of 6. Claude agents are the official Claude Code pixel mascot; Codex agents are a blue pixel owl; other and unknown agents are people in grey and white caps. A Claude agent wears one of 8 outfits (cap, beanie, crown, scarf, headset, glasses, bow tie or none); the outfit identifies the seat, not a state. Its action follows the seat state and the boss command: typing, sipping coffee while CI runs, hands up when CI fails, slumped when stalled, waving in the queue, thinking as a busy advisor, cheering for 萝卜. The export has no network requests: the three console fonts are embedded as data URIs. Idle loops (typing, blinking, monitor flicker, coffee steam) stop under `prefers-reduced-motion`; a boss command then shows one fixed pose and its status at the acting spot, with the same cooldown and completion timing. Four boss commands go only to the advisor: 大棒, 萝卜, 排雷 and 收放. Each opens a confirmation, has a cooldown, and locks the other three until the advisor finishes. repo-harness shows the #1309 board of 2026-11-01; aiphabee and AstroZi are sample states; the 场景 option 空闲 shows the empty state. Reference screenshots (1920 and 390 px, light and dark) are in [`mockups/board-pixel-office/`](mockups/board-pixel-office/) |
 
 ## Page inventory
 
@@ -94,8 +94,11 @@ switcher. Full spec: [`design-system/components/NavRail.md`](design-system/compo
 
 17 SVGs in [`design-system/assets/mascots/`](design-system/assets/mascots/),
 scaled by whole multiples with `image-rendering: pixelated`, `alt=""`, at most
-one per screen. Exception: the Board office view (#1755) draws one CSS pixel
-sprite per seat and per queued pull request, so it shows many on one screen.
+one per screen. Exception: the Board office view (#1790) draws each scene as one
+SVG pixel framebuffer, with one path per palette colour and
+`image-rendering: pixelated`. The scene carries its own sprites (agents and the
+carrot boss), so it shows many characters on one screen. These sprites are not
+files in this folder, and the scene has a text label instead of `alt=""`.
 
 | Mascot | File | Used on |
 | --- | --- | --- |
