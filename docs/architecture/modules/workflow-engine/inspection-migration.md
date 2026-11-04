@@ -153,7 +153,7 @@ bun scripts/inspect-project-state.ts --repo . --format text
 
 ### 2026-08-11 Codex Native Agent Projection Cutover
 
-- `scripts/lib/project-init-lib.sh`, `scripts/ensure-task-workflow.sh`, and the
+- `scripts/lib/project-init-lib.sh` and the
   packaged helper mirror now emit one native-subagent runner authority.
 - Generated policy keeps `mode: "explicit"` as the declared state but has no
   automatic SessionStart authorization, natural-language permission parser, or
@@ -189,7 +189,7 @@ bun scripts/inspect-project-state.ts --repo . --format text
 
 ### 2026-07-12 Agent Fleet Policy Seed Closeout
 
-- `scripts/lib/project-init-lib.sh` and `scripts/ensure-task-workflow.sh` emit
+- `scripts/lib/project-init-lib.sh` emits
   the same `external_tooling.agent_fleet` seed with
   `source: package:agents/fleet`; their deterministic helper projection carries
   the same bytes into generated repos.
@@ -202,8 +202,8 @@ bun scripts/inspect-project-state.ts --repo . --format text
 
 ### 2026-07-12 Six-role Fleet Seed Closeout
 
-- `scripts/lib/project-init-lib.sh` and `scripts/ensure-task-workflow.sh` now
-  seed the same six-role `external_tooling.agent_fleet.managed_agents` list as
+- `scripts/lib/project-init-lib.sh` now
+  seeds the same six-role `external_tooling.agent_fleet.managed_agents` list as
   the self-host policy and packaged tooling default.
 - The two additions are `root-cause-prover` and `harness-evaluator`;
   migration auditing is represented inside the evaluator persona and does not
@@ -213,15 +213,11 @@ bun scripts/inspect-project-state.ts --repo . --format text
   their existing behavior. Missing or malformed packaged persona sources still
   fail before any user-level agent target is mutated.
 
-上述 closeout 记录的是历史实现。当前 `scripts/ensure-task-workflow.sh` 仅确保 runtime recovery 目录。安装配置由 `scripts/lib/project-init-lib.sh` 提供。
+上述 closeout 记录的是历史实现。安装配置由 `scripts/lib/project-init-lib.sh` 提供。
 
 ## Optimization Backlog
 
 - Reduce duplicated required-path lists that still exist across shell scripts.
-
-- `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/inspection-migration/20260712-inspection-migration.md`
-
-- `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`
 
 - `generatedClaudeHookPaths` 与 `ignoredReferenceOrSecretPaths`（`scripts/inspect-project-state.ts:121-132`）应改为从契约的 `legacy-claude-hook-shims` 与 `reference-and-secret-surfaces-preserve` 动作读取（`assets/workflow-contract.v1.json:1241`、`:1597`）。
 - `pi_workflow_contract_query_lines` 在没有 JSON runtime 时返回 1，但 `create-project-dirs.sh:45` 与 `init-project.sh:71` 在进程替换里调用它，返回码被丢弃。目录清单会静默为空。
