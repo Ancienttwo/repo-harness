@@ -35,7 +35,7 @@ export async function postOperatorWrite<T>(path: string, body: unknown, decode: 
   }
   const error = asApiError(payload, UNTYPED);
   if (error === UNTYPED) return { state: 'unreachable' };
-  return error.code === 'write_token_invalid' ? { state: 'reload_required' } : { state: 'refused', status: response.status, error };
+  return response.status === 403 && error.code === 'write_token_invalid' ? { state: 'reload_required' } : { state: 'refused', status: response.status, error };
 }
 
 /** No action button: a retry from this page sends the same token, and the reload stays the owner's choice. */

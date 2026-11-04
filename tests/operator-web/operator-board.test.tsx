@@ -1805,7 +1805,19 @@ describe('worktree cleanup plan review (#1720)', () => {
     };
     const saveLocked = (section: string) => expect(document.querySelector<HTMLButtonElement>(`[data-save="${section}"]`)!.disabled).toBe(true);
     const fixture = (...ports: (keyof CleanupPlanPorts)[]): CleanupPlanPorts => ({ ...cleanupPlanFixture(NOW), ...Object.fromEntries(ports.map(port => [port, cleanupPlanPorts[port]])) });
-    const WRITES: readonly { readonly path: string; readonly name: string; readonly locale?: 'zh'; readonly send: () => Promise<void>; readonly after?: () => void }[] = [
+    const TOKEN_ERROR = { code: 'write_token_invalid', message: 'The write token is missing or not valid.', next_action: 'Reload the operator page, then retry.' };
+    const ORIGIN_ERROR = { code: 'origin_not_allowed', message: 'The request origin is not allowed.', next_action: 'Open the page from the operator service.' };
+    /** Only a typed 403 with this code means a stale token. Every write shares one client, so one path proves each other answer. */
+    const OTHER_ANSWERS = [
+      ['a 401 with the code', 401, { error: TOKEN_ERROR }, { state: 'refused', status: 401, error: TOKEN_ERROR }],
+      ['a 500 with the code', 500, { error: TOKEN_ERROR }, { state: 'refused', status: 500, error: TOKEN_ERROR }],
+      ['a 403 with another code', 403, { error: ORIGIN_ERROR }, { state: 'refused', status: 403, error: ORIGIN_ERROR }],
+      ['a 403 with no typed error', 403, {}, { state: 'unreachable' }],
+    ] as const;
+    const WRITES: readonly {
+      readonly path: string; readonly name: string; readonly locale?: 'zh'; readonly send: (answers: unknown[]) => Promise<void>; readonly after?: () => void;
+      readonly status?: number; readonly body?: unknown; readonly keeps?: unknown;
+    }[] = [
       { name: 'agents settings', path: '/api/v1/settings/agents', after: () => saveLocked('agents'), send: async () => {
         await agentsPage();
         await act(async () => document.querySelector<HTMLButtonElement>('[data-runtime="codex"] [data-use="review"]')!.click());
@@ -1843,21 +1855,32 @@ describe('worktree cleanup plan review (#1720)', () => {
         await openReview(fixture('investigate', 'investigation'));
         await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-investigate]')!.click());
       } },
+      ...OTHER_ANSWERS.map(([name, status, body, keeps]) => ({ name, status, body, keeps, path: '/api/v1/worktrees/cleanup/plan', send: async (answers: unknown[]) => {
+        await openReview({ ...cleanupPlanFixture(NOW), open: async ids => { const answer = await cleanupPlanPorts.open(ids); answers.push(answer); return answer; } });
+      } })),
     ];
     const RELOAD_TEXT = {
       en: 'Reload this pageThe write token of this page is not valid, for example after the service restarted. Nothing was changed. Reload the page, then try again.',
       zh: '请刷新这个页面这个页面的写 token 无效，例如服务重启过。什么都没有改动。刷新整个页面，再操作一次。',
     };
 
-    for (const write of WRITES) test(`${write.name} shows the one reload state, sends one request and offers no retry`, async () => {
+    for (const write of WRITES) test(`${write.name}: ${write.keeps ? 'keeps its own result, not the reload state' : 'shows the one reload state, sends one request and offers no retry'}`, async () => {
       const original = globalThis.fetch;
       const requests: string[] = [];
+      const answers: unknown[] = [];
       globalThis.fetch = (async (url: unknown, options?: RequestInit) => {
         requests.push(`${options?.method ?? 'GET'} ${String(url)}`);
-        return Response.json({ error: { code: 'write_token_invalid', message: 'The write token is missing or not valid.', next_action: 'Reload the operator page, then retry.' } }, { status: 403 });
+        return Response.json(write.body ?? { error: TOKEN_ERROR }, { status: write.status ?? 403 });
       }) as typeof fetch;
       try {
-        await write.send();
+        await write.send(answers);
+        if (write.keeps) {
+          await until(() => document.querySelector('[data-plan-failure]') !== null);
+          expect(answers).toEqual([write.keeps]);
+          expect(document.querySelector('[data-write-reload]')).toBeNull();
+          expect(requests).toEqual([`POST ${write.path}`]);
+          return;
+        }
         await until(() => document.querySelector('[data-write-reload]') !== null);
         await settle();
         const banners = document.querySelectorAll('[data-write-reload]');
