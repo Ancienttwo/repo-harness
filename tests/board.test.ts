@@ -16,7 +16,7 @@ import { githubRemoteRepository } from '../src/core/operator/docs';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
 import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
 import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herdr-core';
-import { AdvisorSeatError, decodeAdvisorSeatTranscript, readAdvisorSeat, sendToAdvisorSeat } from '../src/core/board/advisor-seat';
+import { ADVISOR_TRANSCRIPT_LINE_WITHHELD, AdvisorSeatError, advisorSeatSendFailure, advisorTranscriptLines, decodeAdvisorSeatTranscript, readAdvisorSeat, sendToAdvisorSeat } from '../src/core/board/advisor-seat';
 import { decodeBoardParents, type BoardParentsV1 } from '../src/core/board/parents';
 import { BoardSourceError } from '../src/core/board/source';
 import { HC_MIN_VERSION } from '../src/core/operator/herdr-pin';
@@ -743,7 +743,8 @@ test('migrate-dependencies stops before any write on an unparsable line, a decla
   expect([flags.calls(), flags.writes]).toEqual([0, []]);
 });
 
-test('advisor seat: plain text reaches only the one live advisor terminal of the repository and parent; the read-back is cut and redacted', () => {
+test('advisor seat: plain text reaches only the one live advisor terminal of the repository and parent; the read-back withholds key blocks and long lines and redacts the rest', () => {
+  const W = ADVISOR_TRANSCRIPT_LINE_WITHHELD;
   const seat = (name: string | null, parent = '1503') => ({ labels: {
     'repo-harness.repository': '1186405141', 'repo-harness.parent': parent, ...(name === null ? {} : { 'repo-harness.seat': name }) } });
   // Refused: the orchestrator, a worker, the advisor of another parent and a terminal without the seat label.
@@ -779,11 +780,30 @@ test('advisor seat: plain text reaches only the one live advisor terminal of the
   expect(transcript).toMatchObject({ terminal: 't9', status: 'working', status_kind: 'tool', turn: 3, complete: false, why: 'working' });
   expect(transcript.lines).toHaveLength(200);
   expect(transcript.lines.slice(0, 2)).toEqual(['l0', 'l1']);
-  expect(transcript.lines.slice(-4)).toEqual(['export GITHUB_TOKEN=ghp_[REDACTED]', '[line withheld: secret]', 'Authorization: Bearer [REDACTED]', 'x'.repeat(1000)]);
+  expect(transcript.lines.slice(-4)).toEqual(['export GITHUB_TOKEN=ghp_[REDACTED]', W, 'Authorization: Bearer [REDACTED]', W]);
   expect(decodeAdvisorSeatTranscript(JSON.parse(JSON.stringify(transcript)))).toEqual(transcript);
-  expect(() => decodeAdvisorSeatTranscript({ ...transcript, lines: ['API_KEY=hunter2'] })).toThrow('advisor seat transcript is invalid');
 
-  expect(code(() => sendToAdvisorSeat(advisorHc({ t9: seat('advisor') }, { FAKE_SEND_FAIL: '1' }).scope, 'status?'))).toBe('advisor_send_failed');
+  // The read-back order: the last 200 lines, private key blocks withheld, a line over the limit withheld before or after redaction.
+  const [begin, body, end] = ['-----BEGIN PRIVATE KEY-----', 'MC4CAQAwBQYDK2VwBCIEIGv0a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u', '-----END PRIVATE KEY-----'];
+  const cases: readonly [string, readonly string[], readonly string[]][] = [
+    ['whole key', ['before', begin, body, body, end, 'after'], ['before', W, W, W, W, 'after']],
+    ['another key type', ['-----BEGIN EC PRIVATE KEY-----', body, '-----END EC PRIVATE KEY-----', 'after'], [W, W, W, 'after']],
+    ['key on one line', [`key ${begin}${body}${end}`, 'after'], [W, 'after']],
+    ['hc read starts inside the key', [body, end, 'after'], [W, W, 'after']],
+    ['window start cuts the key', [begin, ...Array.from({ length: 199 }, () => body), end, 'after'], [...Array.from({ length: 199 }, () => W), 'after']],
+    ['window end cuts the key', ['before', begin, body], ['before', W, W]],
+    ['line over the limit', ['a'.repeat(1001), 'a'.repeat(1000)], [W, 'a'.repeat(1000)]],
+    ['redaction grows a line over the limit', [`${'a'.repeat(976)} Authorization: Bearer x`, `${'a'.repeat(900)} Authorization: Bearer x`], [W, `${'a'.repeat(900)} Authorization: Bearer [REDACTED]`]],
+  ];
+  for (const [name, input, lines] of cases) expect([name, advisorTranscriptLines(input.join('\n'))]).toEqual([name, lines]);
+  // Each line alone passes; the joined text holds a whole key.
+  for (const lines of [['API_KEY=hunter2'], [begin, body, end]]) expect(() => decodeAdvisorSeatTranscript({ ...transcript, lines })).toThrow('advisor seat transcript is invalid');
+
+  // A failed send names the resolved terminal; `hc send` may have run, so it is unconfirmed.
+  const failed = advisorHc({ t9: seat('advisor') }, { FAKE_SEND_FAIL: '1' });
+  const failure = (action: () => unknown) => { try { action(); return null; } catch (error) { return advisorSeatSendFailure(failed.scope, error as AdvisorSeatError); } };
+  expect(failure(() => sendToAdvisorSeat(failed.scope, 'status?'))).toEqual({ protocol: 1, kind: 'repo-harness.advisor-seat-send-failure', github_repository_id: 1186405141, parent: 1503, terminal: 't9', code: 'advisor_send_unconfirmed' });
+  expect(failure(() => sendToAdvisorSeat(absent.scope, 'status?'))).toMatchObject({ terminal: null, code: 'advisor_seat_absent' });
   const missing = { github_repository_id: 1186405141, parent: 1503, host: boardHostPorts({ env: { PATH: '/nonexistent' } }) };
   expect([code(() => sendToAdvisorSeat(missing, 'status?')), code(() => readAdvisorSeat(missing))]).toEqual(['hc_unavailable', 'hc_unavailable']);
 });

@@ -55,6 +55,7 @@ import { decodeWorktreeCleanupRequest } from '../../src/core/operator/worktree-c
 import { OPERATOR_WORKTREES_CLEANUP_ROUTE, runWorktreeCleanupChild, selectionDigest, worktreeCleanupOperation } from '../../src/effects/operator/worktree-cleanup';
 import { runSetupProcess } from '../../src/effects/setup/collector';
 import type { OperatorWriteRoute } from '../../src/effects/operator/write-channel';
+import { OPERATOR_RECONCILE_ACTION } from '../../src/effects/operator/write-run';
 import { controlledWorktreeProcessPreload } from '../helpers/controlled-worktree-processes';
 import { fakeHc } from '../helpers/fake-hc';
 import { collectRepositoryWorktrees } from '../../src/effects/operator/worktree-collector-worker';
@@ -653,7 +654,7 @@ describe('operator serve command and HTTP boundary', () => {
       expect(sends[0]).toMatchObject({ repository_id: 'repo-a', parent: 1503, text: 'status?', env: { GH_PROMPT_DISABLED: '1' } });
       // The audit names the repository in the target and the parent and the resolved terminal in the result; the text stays out of it.
       expect(audit().map(record => record.phase === 'intent' ? [record.operation, record.target] : [record.status, record.body])).toEqual([
-        ['advisor_seat_message', 'advisor_seat:repo-a'], [200, sent]]);
+        ['advisor_seat_message', 'advisor_seat:repo-a:1503'], [200, sent]]);
       expect(readFileSync(join(home, 'operator/audit.jsonl'), 'utf8')).not.toContain('status?');
       // Text limits, a terminal address in the request and a non-number parent are refused before a child runs.
       for (const body of [{ ...message, text: '' }, { ...message, text: 'a'.repeat(4001) }, { ...message, text: 'a\tb' }, { ...message, terminal: 't9' },
@@ -661,14 +662,33 @@ describe('operator serve command and HTTP boundary', () => {
         expect(await answer(await post(body))).toEqual([400, 'invalid_body']);
       }
       expect(sends).toHaveLength(1);
-      // A child failure that proves nothing was sent is the recorded result; a timeout may follow a send.
-      for (const [failure, status] of [['advisor_seat_absent', 409], ['advisor_seat_ambiguous', 409], ['repository_read_only', 403], ['advisor_send_failed', 502],
-        ['advisor_timeout', 409]] as const) {
-        send = async () => { throw new BoardReadError(failure); };
-        expect(await answer(await post(message))).toEqual([status, failure === 'advisor_timeout' ? 'reconcile_required' : failure]);
+      // Every failed send is a recorded result that names its seat. Only a failure before `hc send` keeps its code; an unconfirmed
+      // send, a timeout, a crash or an invalid report may follow a send, so it answers reconcile_required with no new request_id.
+      const report = (code: string, terminal: string | null, parent = 1503) => ({ protocol: 1, kind: 'repo-harness.advisor-seat-send-failure', github_repository_id: 1186405141, parent, terminal, code });
+      const before = audit().length;
+      for (const [failure, child, status, answered, terminal, delivery] of [
+        ['advisor_seat_absent', report('advisor_seat_absent', null), 409, 'advisor_seat_absent', null, 'not_sent'],
+        ['advisor_seat_ambiguous', report('advisor_seat_ambiguous', null), 409, 'advisor_seat_ambiguous', null, 'not_sent'],
+        ['repository_read_only', undefined, 403, 'repository_read_only', null, 'not_sent'],
+        ['advisor_send_unconfirmed', report('advisor_send_unconfirmed', 't9'), 409, 'reconcile_required', 't9', 'unknown'],
+        ['advisor_send_unconfirmed', report('advisor_send_unconfirmed', 't9', 1504), 409, 'reconcile_required', null, 'unknown'],
+        ['advisor_timeout', undefined, 409, 'reconcile_required', null, 'unknown'],
+        ['advisor_unavailable', undefined, 409, 'reconcile_required', null, 'unknown'],
+      ] as const) {
+        send = async () => { throw new BoardReadError(failure, child); };
+        const response = await post(message);
+        const body = await response.json() as { error: { code: string; next_action: string } };
+        expect([response.status, body.error.code]).toEqual([status, answered]);
+        if (delivery === 'unknown') expect(body.error.next_action).toBe(OPERATOR_RECONCILE_ACTION);
+        // A report for another parent is invalid output.
+        const code = child?.parent === 1504 ? 'advisor_invalid' : failure;
+        expect(audit().at(-1)).toMatchObject({ phase: 'result', status, body: { advisor_seat: { repository_id: 'repo-a', parent: 1503, terminal, code, delivery } } });
       }
-      expect(audit().filter(record => record.phase === 'result').map(record => record.body.error?.code ?? 'ok'))
-        .toEqual(['ok', 'advisor_seat_absent', 'advisor_seat_ambiguous', 'repository_read_only', 'advisor_send_failed']);
+      send = async () => ({ ...sent, parent: 1504 });
+      expect(await answer(await post(message))).toEqual([409, 'reconcile_required']);
+      expect(audit().at(-1).body.advisor_seat).toEqual({ repository_id: 'repo-a', parent: 1503, terminal: 't9', code: 'advisor_invalid', delivery: 'unknown' });
+      expect(audit().slice(before).filter(record => record.phase === 'intent').every(record => record.target === 'advisor_seat:repo-a:1503')).toBe(true);
+      expect(readFileSync(join(home, 'operator/audit.jsonl'), 'utf8')).not.toContain('status?');
 
       for (const query of ['', '?repository_id=repo-a', '?repository_id=repo-a&parent=0', '?repository_id=repo-a&parent=1503&terminal=t9', '?repository_id=repo-a&parent=1503&parent=1504']) {
         expect(await answer(await get(query))).toEqual([400, 'invalid_request']);
@@ -711,7 +731,7 @@ describe('operator serve command and HTTP boundary', () => {
       '#!/bin/sh', `printf '%s\\n' "$*" >> ${JSON.stringify(join(scratch, 'hc.log'))}`, 'case "$1" in',
       `  ls) echo '{"terminals":[{"address":"t9","state":"live"}]}' ;;`,
       `  get) echo '{"address":"t9","state":"live","turn":4,"status":{"state":"idle"},"labels":${labels}}' ;;`,
-      `  send) echo '{"started":true,"turn":5}' ;;`,
+      `  send) [ -f ${JSON.stringify(join(scratch, 'send-fails'))} ] && { printf '%s' '{"error":{"kind":"blocked","message":"blocked"}}' >&2; exit 9; }; echo '{"started":true,"turn":5}' ;;`,
       `  read) echo '{"text":"done\\\\ntoken ${secret}","complete":true}' ;;`,
       '  *) exit 2 ;;', 'esac', ''].join('\n'));
     chmodSync(gh, 0o755);
@@ -727,10 +747,15 @@ describe('operator serve command and HTTP boundary', () => {
       expect(await readRepositoryAdvisorTranscript({ repository_id: readOnly.ids[0]!, parent: 1503, env: env(readOnly), signal })).toMatchObject({
         terminal: 't9', status: 'idle', turn: 4, complete: true, why: null, lines: ['done', 'token ghp_[REDACTED]'] });
       await expect(sendRepositoryAdvisor({ repository_id: readOnly.ids[0]!, parent: 1503, text, env: env(readOnly), signal })).rejects.toMatchObject({ code: 'repository_read_only' });
+      // A failed send keeps the CLI's report of the resolved terminal for the audit.
+      writeFileSync(join(scratch, 'send-fails'), '');
+      await expect(sendRepositoryAdvisor({ repository_id: writable.ids[0]!, parent: 1503, text: 'again', env: env(writable), signal })).rejects.toMatchObject({
+        code: 'advisor_send_unconfirmed', failure: { protocol: 1, kind: 'repo-harness.advisor-seat-send-failure', github_repository_id: 1186405141, parent: 1503, terminal: 't9', code: 'advisor_send_unconfirmed' } });
       const log = readFileSync(join(scratch, 'hc.log'), 'utf8').split('\n');
       expect(log.filter(line => line !== '' && !line.startsWith('get '))).toEqual([
         'ls --json --label repo-harness.repository=1186405141 --label repo-harness.parent=1503', `send --json -- t9 line 1`, 'line 2',
-        'ls --json --label repo-harness.repository=1186405141 --label repo-harness.parent=1503', 'read --json --lines 200 -- t9']);
+        'ls --json --label repo-harness.repository=1186405141 --label repo-harness.parent=1503', 'read --json --lines 200 -- t9',
+        'ls --json --label repo-harness.repository=1186405141 --label repo-harness.parent=1503', 'send --json -- t9 again']);
     } finally {
       for (const path of [repository, scratch, writable.home, readOnly.home]) rmSync(path, { recursive: true, force: true });
     }

@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
-import { AdvisorSeatError, readAdvisorSeat, sendToAdvisorSeat } from '../../core/board/advisor-seat';
+import { AdvisorSeatError, advisorSeatSendFailure, readAdvisorSeat, sendToAdvisorSeat } from '../../core/board/advisor-seat';
 import { AttentionWatchError, attentionLogPath, runAttentionWindow, serviceTerminalRepository, startAttentionWatch } from '../../effects/board/attention-watch';
 import { evaluateBoardAttention, type BoardAttentionV1 } from '../../core/board/attention';
 import type { AttentionHostPortsV1 } from '../../core/board/attention-delivery';
@@ -112,22 +112,26 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
   // The operator advisor seat routes (#1756) run these two commands in the registered root.
   const advisor = board.command('advisor')
     .description('The advisor seat of one parent issue: the one live terminal with the advisor seat label (takes --parent and --json)');
-  const advisorAction = (action: (scope: Parameters<typeof readAdvisorSeat>[0]) => unknown) => (_options: BoardOptions, command: Command) => {
+  // A failed send also reports the scope and the resolved terminal, so the operator audit names the seat.
+  const advisorAction = (action: (scope: Parameters<typeof readAdvisorSeat>[0]) => unknown, reportsSend = false) => (_options: BoardOptions, command: Command) => {
+    let scope: Parameters<typeof readAdvisorSeat>[0] | undefined;
     try {
       const options = command.optsWithGlobals<BoardOptions>();
       if (options.json !== true) throw new BoardCollectError('board advisor prints JSON only; pass --json');
       const parent = parentNumber(options);
-      process.stdout.write(`${JSON.stringify(action({ github_repository_id: readRepositoryId({ repo_root: process.cwd() }), parent, host }))}\n`);
+      scope = { github_repository_id: readRepositoryId({ repo_root: process.cwd() }), parent, host };
+      process.stdout.write(`${JSON.stringify(action(scope))}\n`);
     } catch (error) {
       if (!(error instanceof AdvisorSeatError || error instanceof BoardCollectError)) throw error;
       const code = error instanceof AdvisorSeatError ? { code: error.code } : {};
-      process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, ...code, message: error.message })}\n`);
+      const failure = reportsSend && scope !== undefined && error instanceof AdvisorSeatError ? { failure: advisorSeatSendFailure(scope, error) } : {};
+      process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, ...code, ...failure, message: error.message })}\n`);
       process.exitCode = 1;
     }
   };
   advisor.command('send')
     .description('Send stdin as plain text to the advisor seat terminal with hc send')
-    .action(advisorAction(scope => sendToAdvisorSeat(scope, readFileSync(0, 'utf8'))));
+    .action(advisorAction(scope => sendToAdvisorSeat(scope, readFileSync(0, 'utf8')), true));
   advisor.command('transcript')
     .description('Read the last lines of the advisor seat terminal with hc read; every line is redacted')
     .action(advisorAction(readAdvisorSeat));

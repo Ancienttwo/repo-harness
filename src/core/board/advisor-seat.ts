@@ -13,17 +13,25 @@ export const ADVISOR_TEXT_MAX_CHARS = 4000;
 /** The read-back is the last lines of `hc read --lines <this>`. */
 export const ADVISOR_TRANSCRIPT_LINES = 200;
 /**
- * Each read-back line is cut to this length before redaction. `containsSecret`
- * is quadratic on a long lowercase run, so one long line must not stall the read.
+ * A read-back line longer than this, before or after redaction, is withheld,
+ * never cut: a cut could leave a secret fragment that no rule matches, and
+ * `containsSecret` is quadratic on a long lowercase run, so no rule runs on a
+ * longer line.
  */
 export const ADVISOR_TRANSCRIPT_LINE_MAX_CHARS = 1000;
-export const ADVISOR_TRANSCRIPT_LINE_WITHHELD = '[line withheld: secret]';
+/** The one text of a withheld read-back line. */
+export const ADVISOR_TRANSCRIPT_LINE_WITHHELD = '[line withheld]';
 
 export const ADVISOR_SEAT_SEND_KIND = 'repo-harness.advisor-seat-send' as const;
+export const ADVISOR_SEAT_SEND_FAILURE_KIND = 'repo-harness.advisor-seat-send-failure' as const;
 export const ADVISOR_SEAT_TRANSCRIPT_KIND = 'repo-harness.advisor-seat-transcript' as const;
 
-/** The board CLI failures; the operator routes add their registry, capacity, timeout and decode codes. */
-export const ADVISOR_SEAT_CLI_FAILURES = ['text_invalid', 'hc_unavailable', 'advisor_seat_absent', 'advisor_seat_ambiguous', 'advisor_send_failed', 'advisor_read_failed'] as const;
+/**
+ * The board CLI failures; the operator routes add their registry, capacity,
+ * timeout and decode codes. `advisor_send_unconfirmed`: `hc send` ran or may
+ * have run and did not confirm, so the text may have reached the seat.
+ */
+export const ADVISOR_SEAT_CLI_FAILURES = ['text_invalid', 'hc_unavailable', 'advisor_seat_absent', 'advisor_seat_ambiguous', 'advisor_send_unconfirmed', 'advisor_read_failed'] as const;
 export type AdvisorSeatCliFailure = typeof ADVISOR_SEAT_CLI_FAILURES[number];
 
 /** Every refusal code of the two operator routes. */
@@ -34,8 +42,22 @@ export const ADVISOR_SEAT_FAILURES = [
 ] as const;
 export type AdvisorSeatFailure = typeof ADVISOR_SEAT_FAILURES[number];
 
+/**
+ * The send failures that prove the text was not sent: each one stops before
+ * `hc send` runs. Any other failure of a send leaves delivery unknown.
+ */
+export const ADVISOR_SEAT_NOT_SENT: ReadonlySet<AdvisorSeatFailure> = new Set<AdvisorSeatFailure>([
+  'text_invalid', 'hc_unavailable', 'advisor_seat_absent', 'advisor_seat_ambiguous',
+  'repository_read_only', 'repository_not_found', 'registry_unavailable', 'github_unavailable', 'advisor_busy',
+]);
+
 export class AdvisorSeatError extends Error {
-  constructor(readonly code: AdvisorSeatCliFailure, message: string) {
+  constructor(
+    readonly code: AdvisorSeatCliFailure,
+    message: string,
+    /** The resolved advisor terminal; null when the failure came before the seat was resolved. */
+    readonly terminal: string | null = null,
+  ) {
     super(message);
     this.name = 'AdvisorSeatError';
   }
@@ -62,6 +84,30 @@ export interface AdvisorSeatSendV1 extends AdvisorSeatTargetV1 {
   readonly kind: typeof ADVISOR_SEAT_SEND_KIND;
   readonly started: boolean | null;
   readonly turn: number;
+}
+
+/** A failed send as the CLI reports it; `terminal` is null when the seat was not resolved. */
+export interface AdvisorSeatSendFailureV1 {
+  readonly protocol: 1;
+  readonly kind: typeof ADVISOR_SEAT_SEND_FAILURE_KIND;
+  readonly github_repository_id: number;
+  readonly parent: number;
+  readonly terminal: string | null;
+  readonly code: AdvisorSeatCliFailure;
+}
+
+/**
+ * The `advisor_seat` field of the recorded result of a failed send, so the
+ * audit names the board seat of every outcome. `terminal` is null when the
+ * seat was not resolved; `delivery` is `unknown` when `hc send` may have run.
+ * It never holds the message text.
+ */
+export interface AdvisorSeatSendOutcomeV1 {
+  readonly repository_id: string;
+  readonly parent: number;
+  readonly terminal: string | null;
+  readonly code: AdvisorSeatFailure;
+  readonly delivery: 'not_sent' | 'unknown';
 }
 
 export interface AdvisorSeatTranscriptV1 extends AdvisorSeatTargetV1 {
@@ -138,7 +184,22 @@ export function decodeAdvisorSeatSend(value: unknown): AdvisorSeatSendV1 {
   return { ...target(fields), kind: ADVISOR_SEAT_SEND_KIND, started: fields.started, turn: fields.turn };
 }
 
-/** A line that leaves the server is cut to the line limit, holds no newline and no unredacted secret. */
+export function decodeAdvisorSeatSendFailure(value: unknown): AdvisorSeatSendFailureV1 {
+  const fields = record(value, ['code', 'github_repository_id', 'kind', 'parent', 'protocol', 'terminal']);
+  if (fields.protocol !== 1 || fields.kind !== ADVISOR_SEAT_SEND_FAILURE_KIND
+    || !Number.isSafeInteger(fields.github_repository_id) || (fields.github_repository_id as number) < 1
+    || !Number.isSafeInteger(fields.parent) || (fields.parent as number) < 1
+    || !(fields.terminal === null || (typeof fields.terminal === 'string' && ADDRESS.test(fields.terminal)))
+    || !(ADVISOR_SEAT_CLI_FAILURES as readonly unknown[]).includes(fields.code)) {
+    throw new TypeError('advisor seat send failure is invalid');
+  }
+  return {
+    protocol: 1, kind: ADVISOR_SEAT_SEND_FAILURE_KIND, github_repository_id: fields.github_repository_id as number,
+    parent: fields.parent as number, terminal: fields.terminal, code: fields.code as AdvisorSeatCliFailure,
+  };
+}
+
+/** A line that leaves the server is within the line limit, holds no newline and no unredacted secret. */
 function isPublicLine(line: unknown): line is string {
   return typeof line === 'string' && line.length <= ADVISOR_TRANSCRIPT_LINE_MAX_CHARS && !line.includes('\n') && !hasUnredactedSecret(line);
 }
@@ -148,7 +209,9 @@ export function decodeAdvisorSeatTranscript(value: unknown): AdvisorSeatTranscri
   const { lines } = fields;
   if (fields.kind !== ADVISOR_SEAT_TRANSCRIPT_KIND || !isTextOrNull(fields.status) || !isTextOrNull(fields.status_kind) || !isTurn(fields.turn)
     || typeof fields.complete !== 'boolean' || !isTextOrNull(fields.why)
-    || !Array.isArray(lines) || lines.length > ADVISOR_TRANSCRIPT_LINES || !lines.every(isPublicLine)) {
+    || !Array.isArray(lines) || lines.length > ADVISOR_TRANSCRIPT_LINES || !lines.every(isPublicLine)
+    // A rule that spans lines, such as a private key block, matches only the joined text.
+    || hasUnredactedSecret(lines.join('\n'))) {
     throw new TypeError('advisor seat transcript is invalid');
   }
   return {
@@ -157,10 +220,49 @@ export function decodeAdvisorSeatTranscript(value: unknown): AdvisorSeatTranscri
   };
 }
 
-/** One read-back line: cut first, then the shared token rules; a secret left over withholds the line. */
-export function redactAdvisorLine(line: string): string {
-  const redacted = replaceSecrets(line.slice(0, ADVISOR_TRANSCRIPT_LINE_MAX_CHARS));
-  return hasUnredactedSecret(redacted) ? ADVISOR_TRANSCRIPT_LINE_WITHHELD : redacted;
+// Bounded quantifiers keep the marker search linear on a line of any length.
+const KEY_BEGIN = /-----BEGIN [A-Z0-9 ]{0,64}PRIVATE KEY-----/u;
+const KEY_END = /-----END [A-Z0-9 ]{0,64}PRIVATE KEY-----/u;
+
+/**
+ * One linear pass that marks every line of a private key block: BEGIN through
+ * END, BEGIN to the last line when no END follows, and the first line to END
+ * when no BEGIN precedes it, because the window or the hc read cut the block.
+ */
+function privateKeyLines(lines: readonly string[]): readonly boolean[] {
+  const marked = lines.map(() => false);
+  const mark = (from: number, to: number) => { for (let at = from; at <= to; at += 1) marked[at] = true; };
+  let open: number | null = null;
+  lines.forEach((line, at) => {
+    const begin = line.search(KEY_BEGIN), end = line.search(KEY_END);
+    if (end >= 0 && (open !== null || begin < 0 || end < begin)) {
+      mark(open ?? 0, at);
+      open = begin > end ? at : null;
+    } else if (begin >= 0) {
+      open = at;
+      if (end > begin) { mark(at, at); open = null; }
+    }
+  });
+  if (open !== null) mark(open, lines.length - 1);
+  return marked;
+}
+
+/** One line outside a key block: the shared token rules, then a secret left over or a line over the limit withholds it. */
+function redactAdvisorLine(line: string): string {
+  if (line.length > ADVISOR_TRANSCRIPT_LINE_MAX_CHARS) return ADVISOR_TRANSCRIPT_LINE_WITHHELD;
+  const redacted = replaceSecrets(line);
+  return redacted.length > ADVISOR_TRANSCRIPT_LINE_MAX_CHARS || hasUnredactedSecret(redacted) ? ADVISOR_TRANSCRIPT_LINE_WITHHELD : redacted;
+}
+
+/**
+ * The read-back lines of one hc read: the last ADVISOR_TRANSCRIPT_LINES lines,
+ * every private key block withheld, then each other line redacted. The whole
+ * text never goes through the general secret rules.
+ */
+export function advisorTranscriptLines(text: string): readonly string[] {
+  const lines = text.split('\n').slice(-ADVISOR_TRANSCRIPT_LINES);
+  const keys = privateKeyLines(lines);
+  return Object.freeze(lines.map((line, at) => keys[at] ? ADVISOR_TRANSCRIPT_LINE_WITHHELD : redactAdvisorLine(line)));
 }
 
 /**
@@ -188,13 +290,22 @@ function advisorSeat(scope: AdvisorSeatScope): BoardSeatTerminalReadV1 {
   return resolveAdvisorSeat(read.terminals);
 }
 
+/** The CLI report of a failed send: the scope, the resolved terminal or null, and the code. */
+export function advisorSeatSendFailure(scope: Pick<AdvisorSeatScope, 'github_repository_id' | 'parent'>, error: AdvisorSeatError): AdvisorSeatSendFailureV1 {
+  return {
+    protocol: 1, kind: ADVISOR_SEAT_SEND_FAILURE_KIND, github_repository_id: scope.github_repository_id, parent: scope.parent,
+    terminal: error.terminal, code: error.code,
+  };
+}
+
 /** Check the text, resolve the one advisor terminal, and send the text to it as plain text. */
 export function sendToAdvisorSeat(scope: AdvisorSeatScope, text: string): AdvisorSeatSendV1 {
   const problem = advisorTextProblem(text);
   if (problem !== null) throw new AdvisorSeatError('text_invalid', `The advisor message is refused: ${problem}.`);
   const seat = advisorSeat(scope);
   const sent = scope.host.advisorSend(seat.address, text);
-  if (sent.status === 'unavailable') throw new AdvisorSeatError('advisor_send_failed', `hc did not send to ${seat.address}: ${sent.reason}`);
+  // `hc send` may have pasted the text before it failed, timed out or answered badly.
+  if (sent.status === 'unavailable') throw new AdvisorSeatError('advisor_send_unconfirmed', `hc did not confirm the send to ${seat.address}: ${sent.reason}`, seat.address);
   return {
     protocol: 1, kind: ADVISOR_SEAT_SEND_KIND, github_repository_id: scope.github_repository_id, parent: scope.parent,
     terminal: seat.address, started: sent.started, turn: sent.turn,
@@ -209,6 +320,6 @@ export function readAdvisorSeat(scope: AdvisorSeatScope): AdvisorSeatTranscriptV
   return {
     protocol: 1, kind: ADVISOR_SEAT_TRANSCRIPT_KIND, github_repository_id: scope.github_repository_id, parent: scope.parent,
     terminal: seat.address, status: seat.status, status_kind: seat.status_kind, turn: seat.turn, complete: read.complete, why: read.why,
-    lines: Object.freeze(read.text.split('\n').slice(-ADVISOR_TRANSCRIPT_LINES).map(redactAdvisorLine)),
+    lines: advisorTranscriptLines(read.text),
   };
 }

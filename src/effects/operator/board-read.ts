@@ -26,7 +26,11 @@ export type AdvisorSeatRunFailure = Exclude<AdvisorSeatFailure, 'advisor_busy' |
 type RunFailure = BoardRunFailure | BoardParentsRunFailure | AdvisorSeatRunFailure;
 
 export class BoardReadError extends Error {
-  constructor(readonly code: RunFailure) {
+  constructor(
+    readonly code: RunFailure,
+    /** The `failure` report of a failed `board advisor send`, undecoded; the route decodes it. */
+    readonly failure?: unknown,
+  ) {
     super(code);
     this.name = 'BoardReadError';
   }
@@ -42,14 +46,14 @@ export interface BoardReadInput extends BoardParentsReadInput {
   readonly parent: number;
 }
 
-type CliError = { readonly error: unknown; readonly code: unknown };
+type CliError = { readonly error: unknown; readonly code: unknown; readonly failure?: unknown };
 
 /** The board CLI writes `{ok:false,error,message}` (the parent list adds `code`) to stderr for its typed failures. */
 function cliError(stderr: string): CliError | null {
   for (const line of stderr.split('\n')) {
     try {
-      const value = JSON.parse(line) as { readonly ok?: unknown; readonly error?: unknown; readonly code?: unknown };
-      if (value.ok === false) return { error: value.error, code: value.code };
+      const value = JSON.parse(line) as { readonly ok?: unknown; readonly error?: unknown; readonly code?: unknown; readonly failure?: unknown };
+      if (value.ok === false) return { error: value.error, code: value.code, failure: value.failure };
     } catch { /* not the error line */ }
   }
   return null;
@@ -157,13 +161,13 @@ function runBoardCli<F extends RunFailure>(input: BoardParentsReadInput, mode: B
     let size = 0;
     let failure: F | null = null;
     let settled = false;
-    const finish = (outcome: { readonly ok: true; readonly value: unknown } | { readonly ok: false; readonly code: F }) => {
+    const finish = (outcome: { readonly ok: true; readonly value: unknown } | { readonly ok: false; readonly code: F; readonly report?: unknown }) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       input.signal.removeEventListener('abort', onAbort);
       if (outcome.ok) resolveRead(outcome.value);
-      else rejectRead(new BoardReadError(outcome.code));
+      else rejectRead(new BoardReadError(outcome.code, outcome.report));
     };
     const terminate = (code: F) => {
       if (settled || failure !== null) return;
@@ -188,7 +192,11 @@ function runBoardCli<F extends RunFailure>(input: BoardParentsReadInput, mode: B
     child.once('error', () => finish({ ok: false, code: failure ?? mode.unavailable }));
     child.once('close', (status) => {
       if (failure !== null) return;
-      if (status !== 0) { finish({ ok: false, code: mode.failure(cliError(Buffer.concat(stderr).toString('utf8'))) }); return; }
+      if (status !== 0) {
+        const error = cliError(Buffer.concat(stderr).toString('utf8'));
+        finish({ ok: false, code: mode.failure(error), report: error?.failure });
+        return;
+      }
       try {
         finish({ ok: true, value: JSON.parse(Buffer.concat(stdout).toString('utf8')) });
       } catch {
