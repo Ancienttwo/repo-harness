@@ -2,7 +2,7 @@
 
 # repo-harness
 
-### 为 Claude 与 Codex 提供共享上下文、hooks 和 review 证据
+### 把 GitHub issue 交给 AI agent，拿回一个真正能 review 的 PR
 
 [![npm version](https://img.shields.io/npm/v/repo-harness.svg)](https://www.npmjs.com/package/repo-harness)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -13,9 +13,9 @@
 
 </div>
 
-`repo-harness` 提供 CLI、skills 和 hooks，用于上下文、review 证据和 handoff。
-GitHub issue 和 PR 管理任务身份、范围和状态。
-仓库文件帮助 Claude 与 Codex 跨会话继续工作。
+`repo-harness` 是一套 CLI、hooks 和 skills，包在现有仓库外面，让 Claude、Codex 和 Pi
+能跨会话、跨机器、跨 worktree 做长时间的工程任务，并留下人能在几分钟内 review 的证据。
+GitHub issue 和 PR 管理任务身份、范围和状态；人只负责决定是否接受变更。
 
 ## 安装
 
@@ -50,8 +50,9 @@ repo-harness init
 
 ## 完整文档
 
-本页只是入口页。英文 [README.md](README.md) 是唯一完整且最新的文档，包括
-workflow、hooks、MCP connector、review 和 maintainer 参考。
+本页只是入口页。英文 [README.md](README.md) 是完整且最新的入口，讲清工作原理、
+设计原则和命令速查；安装细节、升级清理、review、hooks、MCP 和 maintainer 参考见
+[使用指南](docs/usage.md)。
 
 ## 许可证
 
