@@ -62,6 +62,8 @@ export interface ReviewIsolationPaths {
   readonly gitCommonDir: string;
   readonly output: string;
   readonly piAgentDirectory?: string;
+  /** Loopback ports of the Pi model providers, from models.json. The policy allows only these. */
+  readonly piLoopbackPorts?: readonly number[];
 }
 /** The isolation policy as data. The host applies it and refuses a session it cannot isolate. */
 export interface ReviewIsolationAdmission {

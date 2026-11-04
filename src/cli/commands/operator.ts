@@ -13,12 +13,12 @@ import { buildDocSessionsCommand } from './doc-sessions';
 import {
   OPERATOR_DEFAULT_HOST,
   OPERATOR_DEFAULT_MAX_CONCURRENCY,
-  OPERATOR_DEFAULT_PORT,
   OPERATOR_DEFAULT_TIMEOUT_MS,
   OperatorServerError,
   startOperatorServer,
   type OperatorServerOptions,
 } from '../../effects/operator/server';
+import { OPERATOR_DEFAULT_PORT } from '../../core/review/operator-console-port';
 
 export interface OperatorServeRawOptions {
   readonly host?: string;

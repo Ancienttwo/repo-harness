@@ -2,7 +2,7 @@ import { readReviewAdmissionSource } from '../src/effects/admission/admission-so
 import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { afterEach, expect, test } from 'bun:test';
 import { darwinTest } from './helpers/darwin-test';
-import { existsSync, lstatSync, readFileSync, realpathSync, rmSync, writeFileSync, readdirSync } from 'fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync, readdirSync } from 'fs';
 import { execFileSync, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { join } from 'path';
@@ -384,7 +384,7 @@ test('Pi isolation fixture links native configuration without storing credential
     packages: ['fixture-package'], extensions: ['fixture-extension'], httpProxy: 'http://fixture.invalid', defaultProjectTrust: 'always' }));
   writeFileSync(join(agent, 'models.json'), '{"providers":{"fixture":{"apiKey":"sk-PROBE-LITERAL"}}}');
   writeFileSync(join(agent, 'auth.json'), '{"fixture":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
-  const directory = preparePiAgentDirectory(output, source);
+  const { directory } = preparePiAgentDirectory(output, source);
   expect(lstatSync(directory).mode & 0o777).toBe(0o700);
   expect(readdirSync(directory).sort()).toEqual(['auth.json', 'models.json', 'settings.json']);
   expect(lstatSync(join(directory, 'models.json')).isSymbolicLink()).toBe(true);
@@ -394,11 +394,11 @@ test('Pi isolation fixture links native configuration without storing credential
   expect(lstatSync(join(directory, 'settings.json')).mode & 0o777).toBe(0o600);
   expect(JSON.parse(readFileSync(join(directory, 'settings.json'), 'utf8'))).toEqual({ defaultProvider: 'fixture-provider', defaultModel: 'fixture-model', defaultThinkingLevel: 'high' });
   expectNoStoredPiProbe(output);
-  expect(preparePiAgentDirectory(output, source)).toBe(directory);
+  expect(preparePiAgentDirectory(output, source).directory).toBe(directory);
   const projectedSettings = readFileSync(join(directory, 'settings.json'), 'utf8');
   const nativeSettings = JSON.parse(readFileSync(join(agent, 'settings.json'), 'utf8'));
   writeFileSync(join(agent, 'settings.json'), JSON.stringify({ ...nativeSettings, packages: ['other-package'], httpProxy: 'http://other.invalid' }));
-  expect(preparePiAgentDirectory(output, source)).toBe(directory);
+  expect(preparePiAgentDirectory(output, source).directory).toBe(directory);
   expect(readFileSync(join(directory, 'settings.json'), 'utf8')).toBe(projectedSettings);
   writeFileSync(join(directory, 'settings.json'), projectedSettings + ' ');
   expect(() => preparePiAgentDirectory(output, source)).toThrow('settings_changed');
@@ -431,7 +431,7 @@ test('Pi review source fixture uses custom agent directories and rejects relativ
     writeFileSync(join(source.directory, 'models.json'), '{"providers":{"fixture":{"apiKey":"sk-PROBE-LITERAL"}}}');
     writeFileSync(join(source.directory, 'auth.json'), '{"fixture":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
     const output = join(root, `output-${index}`); mkdirSync(output);
-    const directory = preparePiAgentDirectory(output, home, { PI_CODING_AGENT_DIR: source.configured });
+    const { directory } = preparePiAgentDirectory(output, home, { PI_CODING_AGENT_DIR: source.configured });
     for (const name of ['models.json', 'auth.json']) expect(readlinkSync(join(directory, name))).toBe(join(source.directory, name));
     expect(JSON.parse(readFileSync(join(directory, 'settings.json'), 'utf8'))).toEqual({});
     expectNoStoredPiProbe(output);
@@ -450,14 +450,14 @@ test('Pi credential cleanup fixture removes links and empty auth without followi
   for (const hasCredentials of [false, true]) {
     const output = join(root, hasCredentials ? 'linked' : 'empty'); mkdirSync(output);
     if (hasCredentials) for (const name of ['models.json', 'settings.json', 'auth.json']) writeFileSync(join(source, name), '{"probe":"sk-PROBE-LITERAL"}');
-    const directory = preparePiAgentDirectory(output, home);
+    const { directory } = preparePiAgentDirectory(output, home);
     expectNoStoredPiProbe(output);
     expect(removePiCredentialReferences(output).status).toBe('removed');
     expect(readdirSync(directory)).toEqual([]);
     expect(removePiCredentialReferences(output).status).toBe('absent');
   }
   const output = join(root, 'refused'); mkdirSync(output);
-  const directory = preparePiAgentDirectory(output, home);
+  const { directory } = preparePiAgentDirectory(output, home);
   unlinkSync(join(directory, 'models.json')); mkdirSync(join(directory, 'models.json'));
   expect(removePiCredentialReferences(output).status).toBe('cleanup_pending');
   expect(readdirSync(directory)).toEqual(['models.json']);
@@ -479,7 +479,7 @@ darwinTest('Pi isolation fixture: OAR flags, native extension, actual model and 
   writeFileSync(join(agent, 'models.json'), '{"providers":{}}');
   writeFileSync(join(agent, 'settings.json'), '{"defaultProvider":"openai","defaultModel":"gpt-4o"}');
   mkdirSync(join(agent, 'extensions')); writeFileSync(join(agent, 'extensions', 'unexpected.ts'), 'throw new Error("ambient fixture extension loaded");');
-  const directory = preparePiAgentDirectory(output, home);
+  const { directory } = preparePiAgentDirectory(output, home);
   expect(lstatSync(join(directory, 'models.json')).isSymbolicLink()).toBe(true);
   const targets = [join(source, 'protected.txt'), credential, join(agent, 'protected.txt'), join(directory, 'auth.json'), join(directory, 'models.json'), join(agent, 'models.json'), join(directory, 'settings.json'), join(agent, 'settings.json')];
   for (const target of [targets[0]!, targets[2]!]) writeFileSync(target, 'KEEP');
@@ -877,6 +877,72 @@ darwinTest('Pi credential cleanup fixture removes partial references after a fai
   expect(readdirSync(join(host.output, '.pi-agent'))).toEqual([]);
   expectNoStoredPiProbe(host.output);
 });
+test('preparePiAgentDirectory reads each loopback port from the provider baseUrl values and refuses a value it cannot allow', async () => {
+  const { preparePiAgentDirectory } = await import('../src/effects/review/review-isolation');
+  const { OPERATOR_DEFAULT_PORT: consolePort } = await import('../src/core/review/operator-console-port');
+  const prepared = (models: string) => {
+    const root = tmpWorkspace('pi-loopback-ports'); roots.push(root);
+    const output = join(root, 'output'), agent = join(root, 'home/.pi/agent');
+    mkdirSync(output); mkdirSync(agent, { recursive: true }); writeFileSync(join(agent, 'models.json'), models);
+    return preparePiAgentDirectory(output, join(root, 'home'));
+  };
+  const baseUrl = (value: unknown) => JSON.stringify({ providers: { fixture: { baseUrl: value } } });
+  const urls = ['http://127.0.0.1:3425/v1', 'http://LOCALHOST:8080', 'http://[::1]:9000/v1', 'http://127.0.0.1:3425/v2', 'http://localhost/v1', 'https://127.0.0.1/v1',
+    'https://api.example.com:4318/v1', `http://192.0.2.1:${consolePort}`];
+  expect(prepared(JSON.stringify({ providers: { ...Object.fromEntries(urls.map((url, index) => [`p${index}`, { baseUrl: url }])), keyOnly: { apiKey: 'sk-PROBE-LITERAL' } } })).loopbackPorts).toEqual([3425, 8080, 9000, 80, 443]);
+  for (const [models, code] of [
+    ['{ not json', 'review_pi_models_invalid'],
+    ['// comment\n{"providers":{}}', 'review_pi_models_invalid'],
+    [baseUrl('not a url'), 'review_pi_model_base_url_invalid'],
+    [baseUrl('127.0.0.1:3425/v1'), 'review_pi_model_base_url_invalid'],
+    [baseUrl('ftp://127.0.0.1:3425'), 'review_pi_model_base_url_invalid'],
+    [baseUrl(3425), 'review_pi_model_base_url_invalid'],
+    ...['127.0.0.1', 'localhost', '[::1]'].map(host => [baseUrl(`http://${host}:${consolePort}/v1`), 'review_pi_model_port_is_operator_console']),
+  ] as const) expect(() => prepared(models), models).toThrow(code);
+});
+
+test('a Pi provider on the console port refuses the session before any launch and consumes no round', async () => {
+  const f = packetRoundFixture();
+  const source = join(f.options.endpoint.home, '.pi/agent'); mkdirSync(source, { recursive: true });
+  const { OPERATOR_DEFAULT_PORT: consolePort } = await import('../src/core/review/operator-console-port');
+  writeFileSync(join(source, 'models.json'), JSON.stringify({ providers: { fixture: { baseUrl: `http://127.0.0.1:${consolePort}/v1` } } }));
+  await expect(runReviewRound({ ...f.options, harness: 'pi' }, { ...f.effects, piExecutable: () => '/usr/bin/true', installation: async () => ({ kind: 'available', via: 'bundled' }) }))
+    .rejects.toThrow('review_pi_model_port_is_operator_console');
+  expect(f.calls).toEqual(['admit']);
+  expect(existsSync(join(f.dir, 'host.json'))).toBe(false);
+  expect(existsSync(join(f.dir, 'request-1.json'))).toBe(false);
+}, 60_000);
+
+// The profile comes from runReviewRound, so each case proves the path that its reviewer uses.
+for (const harness of ['codex', 'claude', 'pi'] as const) darwinTest(`zero-model probe through the ${harness} launcher: loopback is denied against live listeners and only a Pi provider port connects`, async () => {
+  const f = packetRoundFixture();
+  const listen = (hostname: string) => Bun.listen({ hostname, port: 0, socket: { data() {} } });
+  const v4 = listen('127.0.0.1'), v6 = listen('::1'), provider = listen('127.0.0.1'), providerV6 = listen('::1');
+  try {
+    const expected = { [`::1 ${v6.port}`]: 'denied', [`127.0.0.1 ${v4.port}`]: 'denied', [`::ffff:127.0.0.1 ${v4.port}`]: 'denied',
+      [`127.0.0.1 ${provider.port}`]: harness === 'pi' ? 'allowed' : 'denied', [`::1 ${providerV6.port}`]: harness === 'pi' ? 'allowed' : 'denied' };
+    for (const target of Object.keys(expected)) expect(spawnSync('/usr/bin/nc', ['-z', '-G', '2', ...target.split(' ')]).status, target).toBe(0);
+    const vendor = join(f.home, `fake-${harness}`);
+    writeFileSync(vendor, `#!/bin/sh\n${Object.keys(expected).map(target => `if /usr/bin/nc -z -G 2 ${target} >/dev/null 2>&1; then echo '${target} allowed'; else echo '${target} denied'; fi`).join('\n')}\n`);
+    chmodSync(vendor, 0o700);
+    const home = f.options.endpoint.home;
+    if (harness === 'codex') {
+      mkdirSync(join(home, '.codex'));
+      const exp = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 86400 })).toString('base64url');
+      writeFileSync(join(home, '.codex/auth.json'), JSON.stringify({ tokens: { access_token: `fixture.${exp}.fixture` } }), { mode: 0o600 });
+    }
+    if (harness === 'pi') {
+      mkdirSync(join(home, '.pi/agent'), { recursive: true });
+      writeFileSync(join(home, '.pi/agent/models.json'), JSON.stringify({ providers: { v4: { baseUrl: `http://127.0.0.1:${provider.port}/v1` }, v6: { baseUrl: `http://[::1]:${providerV6.port}/v1` } } }));
+    }
+    await expect(runReviewRound({ ...f.options, harness }, { ...f.effects, piExecutable: () => vendor,
+      installation: async (_kind, executable) => harness === 'pi' ? { kind: 'available', via: 'bundled' } : { kind: 'available', via: 'executable', command: executable ?? vendor },
+      start: async () => { throw new Error('fixture_start_failure'); } })).rejects.toThrow('fixture_start_failure');
+    const { launcher } = readSessionArtifact<{ launcher: string }>(join(f.dir, 'host.json'));
+    expect(execFileSync(launcher, [], { encoding: 'utf8', timeout: 20_000 }).trim().split('\n')).toEqual(Object.entries(expected).map(([target, access]) => `${target} ${access}`));
+  } finally { for (const listener of [v4, v6, provider, providerV6]) listener.stop(true); }
+}, 90_000);
+
 // Mandatory B first proof. Dummy Node processes only; no OAR/vendor Session.
 darwinTest('OAR isolation: Seatbelt denies paired host and descendant writes with output-only allowance', async () => {
   const { mkdirSync, writeFileSync, symlinkSync, realpathSync } = await import('node:fs');
@@ -990,11 +1056,12 @@ test('OAR isolation: reject authority overlap and symlink output roots before ex
   const link = join(root, 'link'); symlinkSync(output, link);
   expect(() => reviewIsolationPolicy({ ...spec, output: link })).toThrow('OUTPUT_UNSAFE');
   expect(() => reviewIsolationPolicy(spec, 'win32')).toThrow('UNSUPPORTED_PLATFORM');
-  // The cleanup rules (#1721) apply only to the cleanup caller; a read root must not overlap output or be a link.
+  // The read rule (#1721) applies only to the cleanup caller; a read root must not overlap output or be a link.
   // The policy text is the same on every host; only its enforcement needs macOS.
-  expect(reviewIsolationPolicy(spec, 'darwin')).not.toMatch(/file-read|remote tcp/u);
+  expect(reviewIsolationPolicy(spec, 'darwin')).not.toMatch(/file-read/u);
+  expect(reviewIsolationPolicy(spec, 'darwin').endsWith('(deny network-outbound (remote tcp4 "localhost:*"))\n(deny network-outbound (remote tcp6 "*:*"))\n')).toBe(true);
   const target = realpathSync(subject);
-  expect(reviewIsolationPolicy({ ...spec, cleanup: { readDenied: [target] } }, 'darwin')).toBe(`${reviewIsolationPolicy(spec, 'darwin')}(deny file-read* (subpath ${JSON.stringify(target)}))\n(deny network-outbound (remote tcp4 "localhost:*"))\n(deny network-outbound (remote tcp6 "*:*"))\n`);
+  expect(reviewIsolationPolicy({ ...spec, cleanup: { readDenied: [target] } }, 'darwin')).toBe(`${reviewIsolationPolicy(spec, 'darwin')}(deny file-read* (subpath ${JSON.stringify(target)}))\n`);
   expect(() => reviewIsolationPolicy({ ...spec, cleanup: { readDenied: [root] } })).toThrow('OVERLAPS_AUTHORITY');
   const subjectLink = join(root, 'subject-link'); symlinkSync(subject, subjectLink);
   expect(() => reviewIsolationPolicy({ ...spec, cleanup: { readDenied: [subjectLink] } })).toThrow('PROTECTED_PATH_UNSAFE');
