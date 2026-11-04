@@ -8,6 +8,7 @@ import {
   classifyQuotaReading,
   decodeClaudeQuotaCapture,
   decodeCodexRateLimitsResult,
+  formatQuotaReport,
   type QuotaReport,
 } from '../../src/core/operator/quota';
 
@@ -31,13 +32,13 @@ const week = (used: number, resetsInHours: number) => ({ used_percentage: used, 
 describe('quota classification', () => {
   test.each([
     // [case, seven_day used, hours to reset, window state, account state] — elapsed at 84 h is 50%.
-    // five_hour is absent, so the account is unknown unless seven_day is exhausted or tight.
+    // five_hour is absent, so the account state is the seven_day state.
     ['used at 95 is exhausted', 95, 84, 'exhausted', 'exhausted'],
     ['headroom under 15 is tight', 86, 160, 'tight', 'tight'],
     ['pace over +15 is tight', 66, 84, 'tight', 'tight'],
-    ['pace +15 exactly is normal', 65, 84, 'normal', 'unknown'],
-    ['pace under -25 with the reset under 24 h is surplus', 60, 12, 'surplus', 'unknown'],
-    ['pace under -25 with the reset 24 h or more away is normal', 10, 84, 'normal', 'unknown'],
+    ['pace +15 exactly is normal', 65, 84, 'normal', 'normal'],
+    ['pace under -25 with the reset under 24 h is surplus', 60, 12, 'surplus', 'surplus'],
+    ['pace under -25 with the reset 24 h or more away is normal', 10, 84, 'normal', 'normal'],
   ] as const)('%s', (_name, used, hours, windowState, accountState) => {
     const account = claude({ seven_day: week(used, hours) });
     expect(account.windows.find(window => window.window === 'seven_day')?.state).toBe(windowState);
@@ -50,7 +51,8 @@ describe('quota classification', () => {
     expect(claude({ five_hour: { used_percentage: 10, resets_at: (NOW + 4 * HOUR) / 1000 }, seven_day: week(60, 12) }).state).toBe('normal');
     const cases: Array<[Record<string, unknown>, string]> = [
       [{}, 'seven_day absent'],
-      [{ seven_day: null }, 'seven_day is not an object'],
+      [{ seven_day: null }, 'seven_day absent'],
+      [{ seven_day: 'x' }, 'seven_day is not an object'],
       [{ seven_day: { resets_at: week(1, 1).resets_at } }, 'seven_day.used_percentage missing or not 0-100'],
       [{ seven_day: { used_percentage: 101, resets_at: week(1, 1).resets_at } }, 'seven_day.used_percentage missing or not 0-100'],
       [{ seven_day: { used_percentage: 5, resets_at: '1762300000' } }, 'seven_day.resets_at missing or not Unix seconds'],
@@ -92,11 +94,49 @@ describe('quota classification', () => {
     const broken = decodeCodexRateLimitsResult({ rateLimits: { primary: window(10, null, 4), secondary: null, credits: { hasCredits: 'yes' }, planType: 7 } }, new Date(NOW).toISOString());
     expect(classifyQuotaReading(broken, NOW)).toMatchObject({
       state: 'unknown',
-      windows: [{ window: 'primary', reason: 'primary.windowDurationMins missing or not a positive integer' }, { window: 'secondary', reason: 'secondary absent' }],
+      reason: 'no window of 10080 min',
+      windows: [{ window: 'primary', state: 'unknown', reason: 'primary.windowDurationMins missing or not a positive integer' }, { window: 'secondary', state: 'absent', reason: 'secondary absent' }],
       codex: { plan_type: null, credits: null, field_errors: ['planType is not a string or null', 'credits is not { hasCredits, unlimited, balance }'] },
     });
     expect(classifyQuotaReading(decodeCodexRateLimitsResult({ rateLimits: { rateLimitReachedType: 3 } }, new Date(NOW).toISOString()), NOW)).toMatchObject({ state: 'unknown', reason: 'rateLimitReachedType is not a string or null' });
     expect(buildQuotaReport([decodeCodexRateLimitsResult({}, new Date(NOW).toISOString())], NOW).accounts[0]).toMatchObject({ state: 'unknown', reason: 'result.rateLimits is not an object' });
+  });
+
+  test('the weekly window decides the account and an absent non-weekly window is absent', () => {
+    const stale = new Date(NOW - 31 * 60_000).toISOString();
+    const codexWindow = (used: number, minutes: number, hours: number) => ({ usedPercent: used, windowDurationMins: minutes, resetsAt: (NOW + hours * HOUR) / 1000 });
+    const codex = (rateLimits: Record<string, unknown>, observedAt = new Date(NOW).toISOString()) => classifyQuotaReading(decodeCodexRateLimitsResult({ rateLimits }, observedAt), NOW);
+    const fiveHour = (used: number) => ({ used_percentage: used, resets_at: (NOW + 4 * HOUR) / 1000 });
+    const weekly = codexWindow(5, 10_080, 160), short = codexWindow(10, 300, 4);
+    const rows: Array<[string, ReturnType<typeof classifyQuotaReading>, string, string | null, Array<[string, string, string | null]>]> = [
+      // [case, account report, account state, account reason, [window, state, reason]]
+      ['claude weekly absent', claude({ five_hour: fiveHour(10) }), 'unknown', null, [['five_hour', 'normal', null], ['seven_day', 'unknown', 'seven_day absent']]],
+      ['claude weekly absent, five_hour exhausted', claude({ five_hour: fiveHour(96) }), 'exhausted', null, [['five_hour', 'exhausted', null], ['seven_day', 'unknown', 'seven_day absent']]],
+      ['claude weekly absent, five_hour tight', claude({ five_hour: fiveHour(90) }), 'tight', null, [['five_hour', 'tight', null], ['seven_day', 'unknown', 'seven_day absent']]],
+      ['claude weekly malformed, five_hour exhausted', claude({ five_hour: fiveHour(96), seven_day: { used_percentage: 5 } }), 'exhausted', null, [['five_hour', 'exhausted', null], ['seven_day', 'unknown', 'seven_day.resets_at missing or not Unix seconds']]],
+      ['claude weekly stale', claude({ seven_day: week(10, 84) }, stale), 'unknown', 'reading older than 30 min', [['five_hour', 'unknown', 'reading older than 30 min'], ['seven_day', 'unknown', 'reading older than 30 min']]],
+      ['claude weekly malformed', claude({ five_hour: fiveHour(10), seven_day: { used_percentage: 5 } }), 'unknown', null, [['five_hour', 'normal', null], ['seven_day', 'unknown', 'seven_day.resets_at missing or not Unix seconds']]],
+      ['claude non-weekly undefined', claude({ seven_day: week(10, 84) }), 'normal', null, [['five_hour', 'absent', 'five_hour absent'], ['seven_day', 'normal', null]]],
+      ['claude non-weekly null', claude({ five_hour: null, seven_day: week(10, 84) }), 'normal', null, [['five_hour', 'absent', 'five_hour absent'], ['seven_day', 'normal', null]]],
+      ['claude non-weekly malformed', claude({ five_hour: 'x', seven_day: week(10, 84) }), 'unknown', null, [['five_hour', 'unknown', 'five_hour is not an object'], ['seven_day', 'normal', null]]],
+      ['claude non-weekly valid', claude({ five_hour: fiveHour(96), seven_day: week(10, 84) }), 'exhausted', null, [['five_hour', 'exhausted', null], ['seven_day', 'normal', null]]],
+      ['codex weekly absent', codex({ primary: short, secondary: null }), 'unknown', 'no window of 10080 min', [['primary', 'normal', null], ['secondary', 'absent', 'secondary absent']]],
+      ['codex weekly absent, primary exhausted', codex({ primary: codexWindow(96, 300, 4), secondary: null }), 'exhausted', 'no window of 10080 min', [['primary', 'exhausted', null], ['secondary', 'absent', 'secondary absent']]],
+      ['codex weekly absent, primary tight', codex({ primary: codexWindow(90, 300, 4), secondary: null }), 'tight', 'no window of 10080 min', [['primary', 'tight', null], ['secondary', 'absent', 'secondary absent']]],
+      ['codex weekly malformed, primary exhausted', codex({ primary: codexWindow(96, 300, 4), secondary: { ...weekly, usedPercent: -1 } }), 'exhausted', null, [['primary', 'exhausted', null], ['secondary', 'unknown', 'secondary.usedPercent missing or not a non-negative integer']]],
+      ['codex weekly stale', codex({ primary: weekly, secondary: null }, stale), 'unknown', 'reading older than 30 min', [['primary', 'unknown', 'reading older than 30 min'], ['secondary', 'unknown', 'reading older than 30 min']]],
+      ['codex weekly malformed', codex({ primary: { ...weekly, usedPercent: -1 }, secondary: null }), 'unknown', null, [['primary', 'unknown', 'primary.usedPercent missing or not a non-negative integer'], ['secondary', 'absent', 'secondary absent']]],
+      ['codex non-weekly undefined', codex({ primary: weekly }), 'normal', null, [['primary', 'normal', null], ['secondary', 'absent', 'secondary absent']]],
+      ['codex non-weekly null', codex({ primary: weekly, secondary: null }), 'normal', null, [['primary', 'normal', null], ['secondary', 'absent', 'secondary absent']]],
+      ['codex non-weekly malformed', codex({ primary: weekly, secondary: { ...short, resetsAt: 0 } }), 'unknown', null, [['primary', 'normal', null], ['secondary', 'unknown', 'secondary.resetsAt missing or not Unix seconds']]],
+      ['codex non-weekly valid', codex({ primary: codexWindow(90, 300, 4), secondary: weekly }), 'tight', null, [['primary', 'tight', null], ['secondary', 'normal', null]]],
+    ];
+    for (const [name, account, state, reason, windows] of rows) {
+      expect([name, account.state, account.reason, account.windows.map(window => [window.window, window.state, window.reason])]).toEqual([name, state, reason, windows]);
+    }
+    const line = formatQuotaReport(buildQuotaReport([decodeCodexRateLimitsResult({ rateLimits: { primary: weekly, secondary: null } }, new Date(NOW).toISOString())], NOW));
+    expect(line).toStartWith('chatgpt: normal | primary normal 5% used, pace +0.2, ');
+    expect(line).toContain('; secondary absent | read ');
   });
 });
 
@@ -210,6 +250,6 @@ describe('repo-harness-hook statusline', () => {
     expect(statusline(JSON.stringify({ rate_limits: 'x' })).stderr).toBe('repo-harness-hook statusline: capture not written: rate_limits is not an object\n');
     // The Q1 reader accepts the capture that the writer wrote.
     const report = JSON.parse(quota(['--json'], f.env).stdout) as QuotaReport;
-    expect(report.accounts[0]).toMatchObject({ account: 'claude', observed_at: JSON.parse(previous).observed_at, windows: [{ window: 'five_hour', reason: 'five_hour absent' }, { window: 'seven_day', used_percent: 30, reason: null }] });
+    expect(report.accounts[0]).toMatchObject({ account: 'claude', state: 'normal', observed_at: JSON.parse(previous).observed_at, windows: [{ window: 'five_hour', state: 'absent', reason: 'five_hour absent' }, { window: 'seven_day', state: 'normal', used_percent: 30, reason: null }] });
   });
 });

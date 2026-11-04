@@ -188,12 +188,12 @@
   .architecture-tabs [role="tab"][aria-selected="true"] { @apply bg-kumo-tint text-kumo-strong; }
   .architecture-tabs__count { @apply font-mono text-xs text-kumo-subtle; }
   .architecture-map-view { @apply flex min-w-0 flex-col gap-3.5; }
-  /* The lens row: layer chips, then the hint or the sequence flow picker at the end. */
+  /* The lens row: layer chips, then the hint or the sequence map's summary and export at the end. */
   .architecture-lens { @apply flex min-h-[30px] min-w-0 flex-wrap items-center gap-2; }
   .architecture-lens__label { @apply mr-1 text-xs text-kumo-subtle max-sm:sr-only; }
   .architecture-lens__hint { @apply ml-auto text-xs text-kumo-subtle; }
-  .architecture-lens__pick { @apply ml-auto flex min-w-0 max-w-full items-center gap-2 text-xs text-kumo-subtle; }
-  .architecture-lens__pick select { @apply h-[30px] min-w-0 max-w-[32rem] flex-1 rounded-md border border-kumo-line bg-kumo-base px-2 text-sm text-kumo-default; }
+  .architecture-lens__tools { @apply ml-auto flex min-w-0 flex-wrap items-center justify-end gap-3 text-xs text-kumo-subtle; }
+  .architecture-lens__export { @apply h-[30px] cursor-pointer whitespace-nowrap rounded-[7px] border border-kumo-line bg-transparent px-3 text-xs text-kumo-default hover:bg-kumo-tint disabled:cursor-default disabled:opacity-50; }
   .architecture-map__side { @apply flex flex-col gap-2 border-b border-kumo-hairline pb-3; }
   .architecture-map__gap { @apply rounded-lg bg-kumo-warning-tint p-3 text-sm text-kumo-default; }
   .architecture-map__note { @apply rounded-lg border border-dashed border-kumo-line p-3 text-sm text-kumo-subtle; }
@@ -218,7 +218,7 @@
   .architecture-map__swatch--dashed { border-top-style: dashed; }
   .architecture-map__swatch--external { @apply h-3 rounded-sm border-2 border-dashed; }
   .architecture-map__zoom button { @apply h-7 min-w-7 cursor-pointer rounded-md px-1.5 text-kumo-default hover:bg-kumo-recessed; }
-  .architecture-map__inspector { @apply flex min-w-0 flex-col gap-2 rounded-xl border border-kumo-line bg-kumo-base p-4 text-sm; overflow-wrap: anywhere; }
+  .architecture-map__inspector { @apply relative flex min-w-0 flex-col gap-2 rounded-xl border border-kumo-line bg-kumo-base p-4 text-sm; overflow-wrap: anywhere; }
   .architecture-map__inspector h3 { @apply text-sm font-semibold text-kumo-strong; }
   .architecture-map__inspector h4 { @apply text-xs font-semibold text-kumo-subtle; }
   .architecture-map__inspector ul { @apply m-0 flex list-none flex-col gap-1 p-0 text-xs; }
@@ -247,16 +247,19 @@
   .architecture-map__command { @apply mt-1; }
   .architecture-map__command > code { @apply whitespace-normal break-all font-mono; }
   .architecture-sequence, .architecture-topology { @apply flex min-w-0 flex-col gap-2; }
-  .architecture-sequence__box { @apply h-full w-full rounded-xl border bg-kumo-recessed px-3 pt-1.5 text-xs font-medium text-kumo-subtle; border-color: var(--rh-diagram-line); }
+  .architecture-sequence__box { @apply flex h-full w-full flex-col justify-end rounded-xl border bg-kumo-recessed px-3 pb-1.5 text-[11px] text-kumo-subtle; border-color: var(--rh-diagram-line); }
   .architecture-sequence__box[data-placement="external"] { @apply border-dashed bg-transparent; }
   .architecture-sequence__box[data-placement="unknown"] { @apply border-dashed; }
   .architecture-sequence__box > span { @apply block truncate; }
-  .architecture-sequence__fragment { @apply h-full w-full rounded-lg px-2 pt-1 text-xs text-kumo-default; }
-  .architecture-sequence__fragment[data-kind="success"] { @apply bg-kumo-success-tint; }
-  .architecture-sequence__fragment[data-kind="error"] { @apply bg-kumo-danger-tint; }
-  .architecture-sequence__fragment .mono-value { @apply font-semibold text-kumo-strong; }
+  .architecture-sequence__fragment { @apply h-full w-full rounded-lg border border-dashed px-2 pt-1 text-[11px] font-semibold; }
+  .architecture-sequence__fragment[data-kind="success"] { @apply border-kumo-success bg-kumo-success-tint text-kumo-success; }
+  .architecture-sequence__fragment[data-kind="error"] { @apply border-kumo-danger bg-kumo-danger-tint text-kumo-danger; }
+  .architecture-sequence__fragment .mono-value { @apply mr-1; }
   .architecture-sequence__lifeline { @apply h-full w-full border-l border-dashed; border-color: var(--text-color-kumo-subtle); opacity: .5; }
-  .architecture-sequence__header { @apply bg-kumo-base; }
+  .architecture-sequence__header { @apply items-center rounded-[10px] bg-kumo-base text-center; }
+  .architecture-sequence__header[data-kind="capability"] { @apply bg-kumo-info-tint; }
+  .architecture-sequence__header[data-kind="external-system"] { @apply bg-transparent; }
+  .architecture-sequence__header strong { @apply text-xs; }
   .architecture-sequence__message { @apply relative flex h-full w-full cursor-pointer flex-col justify-end text-xs text-kumo-default; }
   .architecture-sequence__label { @apply line-clamp-2 min-w-0 px-2 pb-0.5 text-center text-[11px] leading-[14px]; }
   .architecture-sequence__label .architecture-map__mark { @apply ml-1; }
@@ -272,7 +275,17 @@
   .architecture-sequence__message[data-selected] .architecture-sequence__arrow { border-top-width: 2px; border-color: var(--rh-accent); }
   .architecture-sequence__message[data-selected][data-direction="right"] .architecture-sequence__arrow::after { border-left-color: var(--rh-accent); }
   .architecture-sequence__message[data-selected][data-direction="left"] .architecture-sequence__arrow::after { border-right-color: var(--rh-accent); }
-  .architecture-sequence__terminal { @apply h-full w-full overflow-hidden rounded-md border bg-kumo-base px-2 py-1 text-center text-[11px] leading-[12px] text-kumo-subtle; border-color: var(--rh-diagram-line); }
+  .architecture-sequence__terminal { @apply h-full w-full overflow-hidden rounded-md border bg-kumo-base px-2 py-1 text-center text-[11px] font-semibold leading-[12px]; }
+  .architecture-sequence__terminal[data-kind="success"] { @apply border-kumo-success text-kumo-success; }
+  .architecture-sequence__terminal[data-kind="error"] { @apply border-kumo-danger text-kumo-danger; }
+  .architecture-sequence__flows { @apply flex shrink-0 flex-col gap-0.5 border-b border-kumo-hairline pb-3; }
+  .architecture-sequence__flow-list { @apply flex max-h-72 flex-col gap-0.5 overflow-y-auto; }
+  .architecture-sequence__flow-list button { @apply flex min-h-9 w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-[7px] border-0 bg-transparent px-2.5 text-left text-[13px] text-kumo-default hover:bg-kumo-tint; }
+  .architecture-sequence__flow-list button[aria-pressed="true"] { @apply bg-kumo-tint font-medium text-kumo-strong; }
+  .architecture-sequence__flow-list .mono-value { @apply w-6 shrink-0 text-xs text-kumo-subtle; }
+  .architecture-sequence__flow-name { @apply min-w-0 flex-1 truncate; }
+  .architecture-sequence__lit { @apply size-1.5 shrink-0 rounded-full; background: var(--rh-accent); }
+  .architecture-sequence__code { @apply font-mono; }
   .architecture-topology__namespace { @apply bg-transparent; }
   .architecture-topology__box[data-kind="process"] { @apply bg-kumo-recessed; }
   .architecture-topology__box[data-kind="external-system"] { @apply border-dashed bg-kumo-base; }

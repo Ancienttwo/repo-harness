@@ -18,7 +18,7 @@ function moduleDefs() {
 }
 
 interface MeasureOutput {
-  modules: { id: string; files: number; loc: number; self: number; docs: string[] }[];
+  modules: { id: string; files: number; loc: number; self: number; docs: string[]; behaviorSpecs: { id: string; path: string; node: string }[] }[];
   model: { uncoveredNodes: string[]; unknownNodes: string[]; duplicateNodes: string[]; undocumentedNodes: string[] };
   edges: { from: string; to: string; value: number }[];
   unresolved: { count: number; examples: string[] };
@@ -29,12 +29,13 @@ interface MeasureOutput {
 const MODEL_DIR = 'model/nodes';
 const MANIFEST = 'docs/architecture/.projection-manifest.json';
 interface ManifestEntry { capabilityId: string; path?: string; stamps?: string[] }
-interface FixtureModel { nodes?: [string, string][]; manifest?: ManifestEntry[] }
-const DEFAULT_NODES: [string, string][] = [['capability.example', 'capability']];
+type FixtureNode = [id: string, kind: string, fields?: Record<string, unknown>];
+interface FixtureModel { nodes?: FixtureNode[]; manifest?: ManifestEntry[] }
+const DEFAULT_NODES: FixtureNode[] = [['capability.example', 'capability']];
 const DEFAULT_MANIFEST: ManifestEntry[] = [{ capabilityId: 'capability.example', path: 'docs/architecture/modules/example/example.md' }];
 
-function nodeYaml(id: string, kind: string): string {
-  return `${JSON.stringify({ schemaVersion: 'archcontext.node/v2', id, kind })}\n`;
+function nodeYaml(id: string, kind: string, fields: Record<string, unknown> = {}): string {
+  return `${JSON.stringify({ schemaVersion: 'archcontext.node/v2', id, kind, ...fields })}\n`;
 }
 function manifest(entries: ManifestEntry[]): string {
   const targets: Record<string, unknown> = {};
@@ -62,7 +63,7 @@ function fixture(files: Record<string, string>, modules: unknown = moduleDefs(),
   fixtureGit(root, ['config', 'gc.auto', '0']);
   for (const [path, content] of Object.entries(files)) fixtureWrite(root, path, content);
   fixtureWrite(root, 'modules.json', `${JSON.stringify({ modules })}\n`);
-  for (const [id, kind] of model.nodes ?? DEFAULT_NODES) fixtureWrite(root, `${MODEL_DIR}/${id}.yaml`, nodeYaml(id, kind));
+  for (const [id, kind, fields] of model.nodes ?? DEFAULT_NODES) fixtureWrite(root, `${MODEL_DIR}/${id}.yaml`, nodeYaml(id, kind, fields));
   fixtureWrite(root, MANIFEST, manifest(model.manifest ?? DEFAULT_MANIFEST));
   fixtureGit(root, ['add', '.']);
   fixtureGit(root, ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'Fixture']);
@@ -246,5 +247,58 @@ describe('archimap measure requires the adopted model', () => {
     expect(result.model.uncoveredNodes).toEqual(['capability.alpha']);
     expect(result.model.unknownNodes).toEqual([]);
     expect(result.model.duplicateNodes).toEqual([]);
+  });
+});
+
+describe('archimap measure reads behavior specs', () => {
+  const SPEC = 'specs/tla/Protocol.tla';
+  const specNode = (behaviorSpecs: unknown, parent = 'capability.alpha'): FixtureModel => ({
+    nodes: [
+      ['capability.alpha', 'capability'],
+      ['capability.beta', 'capability'],
+      ['component.alpha.protocol', 'component', { parent, extensions: { behaviorSpecs } }],
+    ],
+    manifest: [{ capabilityId: 'capability.alpha', path: 'docs/architecture/modules/dom/alpha.md' }],
+  });
+  const specFixture = (model: FixtureModel) => fixture({ 'src/alpha/core.ts': 'export const core = 1;\n', [SPEC]: '---- MODULE Protocol ----\n' }, [
+    { id: 'alpha', include: ['src/alpha/**'], nodes: ['capability.alpha'] },
+    { id: 'beta', include: ['src/beta/**'], nodes: ['capability.beta'] },
+  ], model);
+  const specArgs = (root: string) => ['--modules', join(root, 'modules.json'), '--model', MODEL_DIR];
+
+  test('a spec lands on the module that lists the nearest ancestor of its node', () => {
+    const result = measure(specFixture(specNode([{ id: 'protocol-claim', path: SPEC }])));
+    expect(result.modules.map((module) => module.behaviorSpecs)).toEqual([
+      [{ id: 'protocol-claim', path: SPEC, node: 'component.alpha.protocol' }],
+      [],
+    ]);
+  });
+
+  test('a spec path that does not exist exits 2 with behavior_spec_missing', () => {
+    const root = specFixture(specNode([{ id: 'protocol-claim', path: 'specs/tla/Missing.tla' }]));
+    const failure = measureFailure(root, specArgs(root));
+    expect(failure.status).toBe(2);
+    expect(failure.stderr).toContain('behavior_spec_missing:specs/tla/Missing.tla');
+  });
+
+  test.each([
+    ['an entry without path', [{ id: 'protocol-claim' }]],
+    ['a non-kebab-case id', [{ id: 'Protocol_Claim', path: SPEC }]],
+    ['an absolute path', [{ id: 'protocol-claim', path: `/${SPEC}` }]],
+    ['a path outside the repository', [{ id: 'protocol-claim', path: `../${SPEC}` }]],
+    ['an extra entry key', [{ id: 'protocol-claim', path: SPEC, kind: 'tla' }]],
+    ['a value that is not a list', { id: 'protocol-claim', path: SPEC }],
+  ])('%s exits 2 with behavior_spec_invalid instead of a skip', (_name, behaviorSpecs) => {
+    const root = specFixture(specNode(behaviorSpecs));
+    const failure = measureFailure(root, specArgs(root));
+    expect(failure.status).toBe(2);
+    expect(failure.stderr).toContain('behavior_spec_invalid:component.alpha.protocol');
+  });
+
+  test('a spec node that no module covers on its parent chain exits 2 with behavior_spec_uncovered', () => {
+    const root = specFixture(specNode([{ id: 'protocol-claim', path: SPEC }], 'capability.unlisted'));
+    const failure = measureFailure(root, specArgs(root));
+    expect(failure.status).toBe(2);
+    expect(failure.stderr).toContain('behavior_spec_uncovered:component.alpha.protocol');
   });
 });

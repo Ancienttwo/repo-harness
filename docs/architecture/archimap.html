@@ -100,6 +100,15 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 .phase.dashed { border-style: dashed; }
 .phase-label { font-size: 13px; font-weight: 600; color: var(--ink-2); }
 
+/* Behavior (statechart) */
+.region { background: var(--panel); border: 1.5px dashed #9AA0A8; border-radius: 12px; }
+.state { display: flex; align-items: center; justify-content: center; background: var(--panel); border: 1.5px solid #4B5563;
+  border-radius: 20px; font: 13px/16px var(--mono); color: var(--ink); white-space: nowrap; }
+.state-compound { background: var(--canvas); border: 1.5px solid #9AA0A8; border-radius: 14px; }
+.initial { width: 16px; height: 16px; border-radius: 50%; background: #16181D; }
+.e-transition { stroke: #4A4F57; stroke-width: 2; }
+.cx-marker { width: 24px; height: 24px; border-radius: 50%; background: #B42318; color: #FFFFFF; font: 600 12px/24px var(--mono); text-align: center; }
+
 /* Dark strip and file tree */
 .dark { background: #16181D; color: #E6E7EA; border-radius: 12px; padding: 24px; }
 .dark h3 { margin: 0 0 16px; font-size: 15px; }
@@ -450,12 +459,199 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 </div>
 </section>
 
+
+<section>
+<h2 class="caption">7 · Behavior (statechart) · ship-closeout-claim</h2>
+<div class="board" style="height:1640px">
+  <div class="kicker">repo-harness · BEHAVIOR · specs/tla/ShipCloseoutClaim.tla · 5113e3b8</div>
+  <div class="title">Ship closeout claim</div>
+  <div class="legend">Rounded box: spec state value · Grey frame: compound state<br>Dot: initial state · Line: transition, label = spec action<br>Dashed line: only with a fix off · Dashed frame: one region<br><span class="swatch" style="background:#B42318"></span>Red number: last state of a fix-off counterexample, rows below</div>
+  <div class="state-compound" style="left:64px;top:184px;width:1552px;height:1280px"></div>
+  <div class="phase-label" style="left:80px;top:192px">At the same time: every actor of each region steps in any order</div>
+  <div class="region" style="left:88px;top:224px;width:400px;height:1216px"></div>
+  <div class="region" style="left:512px;top:224px;width:512px;height:1216px"></div>
+  <div class="region" style="left:1048px;top:224px;width:544px;height:1216px"></div>
+  <div class="phase-label" style="left:104px;top:232px">ship · <span class="mono">Ships = {s1, s2}</span></div>
+  <div class="phase-label" style="left:528px;top:232px">recover · <span class="mono">Recoveries = {r1, r2}</span></div>
+  <div class="phase-label" style="left:1064px;top:232px">shared claim state</div>
+  <div class="initial" style="left:240px;top:264px"></div>
+  <div class="state" style="left:160px;top:296px;width:176px;height:40px">mkdirRead</div>
+  <div class="state" style="left:160px;top:376px;width:176px;height:40px">mkdir</div>
+  <div class="state" style="left:160px;top:456px;width:176px;height:40px">elect</div>
+  <div class="state" style="left:160px;top:536px;width:176px;height:40px">write</div>
+  <div class="state" style="left:160px;top:616px;width:176px;height:40px">bind</div>
+  <div class="state" style="left:160px;top:696px;width:176px;height:40px">complete</div>
+  <div class="state" style="left:160px;top:776px;width:176px;height:40px">release</div>
+  <div class="state" style="left:160px;top:856px;width:176px;height:40px">remove</div>
+  <div class="state" style="left:160px;top:936px;width:176px;height:40px">removeFinish</div>
+  <div class="state" style="left:160px;top:1016px;width:176px;height:40px">done</div>
+  <div class="cx-marker" style="left:148px;top:608px">1</div>
+  <div class="cx-marker" style="left:148px;top:528px">2</div>
+  <div class="note" style="left:104px;top:1088px;width:368px">MakeDir, Elect, WriteOwner, CheckRelease and BeginRemove also go to <span class="mono">done</span> when their guard is false.</div>
+  <div class="note" style="left:104px;top:1160px;width:368px">Crash: in any state, a live ship or recovery sets <span class="mono">live = FALSE</span> and stops (SIGKILL, no EXIT trap).</div>
+  <div class="initial" style="left:608px;top:264px"></div>
+  <div class="state" style="left:544px;top:296px;width:144px;height:40px">readClaim</div>
+  <div class="state" style="left:544px;top:376px;width:144px;height:40px">claimPid</div>
+  <div class="state" style="left:544px;top:456px;width:144px;height:40px">readLane</div>
+  <div class="state" style="left:544px;top:536px;width:144px;height:40px">mkdirRead</div>
+  <div class="state" style="left:544px;top:616px;width:144px;height:40px">mkdir</div>
+  <div class="state" style="left:544px;top:696px;width:144px;height:40px">elect</div>
+  <div class="state" style="left:544px;top:776px;width:144px;height:40px">write</div>
+  <div class="state" style="left:544px;top:856px;width:144px;height:40px">checkClaim</div>
+  <div class="state" style="left:544px;top:936px;width:144px;height:40px">recover</div>
+  <div class="state" style="left:544px;top:1016px;width:144px;height:40px">release</div>
+  <div class="state-compound" style="left:528px;top:1080px;width:240px;height:176px"></div>
+  <div class="state" style="left:544px;top:1096px;width:144px;height:40px">remove</div>
+  <div class="state" style="left:544px;top:1168px;width:144px;height:40px">removeFinish</div>
+  <div class="foot mono" style="left:632px;top:1216px">target = "claim"</div>
+  <div class="foot mono" style="left:632px;top:1232px">afterRemove = "done"</div>
+  <div class="state" style="left:544px;top:1296px;width:144px;height:40px">done</div>
+  <div class="cx-marker" style="left:532px;top:928px">3</div>
+  <div class="state" style="left:832px;top:456px;width:144px;height:40px">lanePid</div>
+  <div class="state" style="left:832px;top:536px;width:144px;height:40px">marker</div>
+  <div class="state" style="left:832px;top:616px;width:144px;height:40px">checkLane</div>
+  <div class="state-compound" style="left:816px;top:680px;width:192px;height:176px"></div>
+  <div class="state" style="left:832px;top:696px;width:144px;height:40px">remove</div>
+  <div class="state" style="left:832px;top:768px;width:144px;height:40px">removeFinish</div>
+  <div class="foot mono" style="left:832px;top:816px">target = "lane"</div>
+  <div class="foot mono" style="left:832px;top:832px">afterRemove = "mkdirRead"</div>
+  <div class="state" style="left:832px;top:936px;width:144px;height:40px">cancel</div>
+  <div class="state-compound" style="left:816px;top:1000px;width:192px;height:176px"></div>
+  <div class="state" style="left:832px;top:1016px;width:144px;height:40px">remove</div>
+  <div class="state" style="left:832px;top:1088px;width:144px;height:40px">removeFinish</div>
+  <div class="foot mono" style="left:832px;top:1136px">target = "lane"</div>
+  <div class="foot mono" style="left:832px;top:1152px">afterRemove = "done"</div>
+  <div class="note" style="left:528px;top:1360px;width:480px">ReadClaim, CheckClaimPid, ReadLane, CheckLanePid, MarkLane, CheckLaneGeneration, MakeDir, Elect, WriteOwner, CheckRelease, CheckCancel and BeginRemove also go to <span class="mono">done</span> when their guard is false. MakeDir goes to <span class="mono">write</span> as in ship when <span class="mono">ElectByExclusiveCreate = FALSE</span>.</div>
+  <div class="initial" style="left:1184px;top:264px"></div>
+  <div class="state" style="left:1128px;top:296px;width:128px;height:40px">absent</div>
+  <div class="foot mono" style="left:1064px;top:268px">claimDir</div>
+  <div class="state-compound" style="left:1080px;top:384px;width:368px;height:336px"></div>
+  <div class="foot mono" style="left:1312px;top:392px">claimDir = "present"</div>
+  <div class="foot mono" style="left:1112px;top:400px">owner</div>
+  <div class="initial" style="left:1184px;top:416px"></div>
+  <div class="state" style="left:1112px;top:456px;width:160px;height:40px">Absent</div>
+  <div class="state" style="left:1112px;top:536px;width:160px;height:40px">Empty</div>
+  <div class="state" style="left:1112px;top:616px;width:160px;height:40px">Record(p)</div>
+  <div class="state" style="left:1128px;top:784px;width:128px;height:40px">retired</div>
+  <div class="foot mono" style="left:1064px;top:888px">journal</div>
+  <div class="initial" style="left:1184px;top:912px"></div>
+  <div class="state" style="left:1128px;top:944px;width:128px;height:40px">none</div>
+  <div class="state" style="left:1128px;top:1024px;width:128px;height:40px">open</div>
+  <div class="state" style="left:1128px;top:1104px;width:128px;height:40px">complete</div>
+  <div class="note" style="left:1064px;top:1176px;width:512px">BeginRemove resets <span class="mono">owner</span> to Absent from any value. <span class="mono">laneDir</span> and <span class="mono">laneOwner</span> sit under <span class="mono">claimDir = "present"</span> and take the same MakeDir, Elect, WriteOwner, BeginRemove and FinishRemove steps; the recover region draws them.</div>
+  <svg class="edges" width="1680" height="1640">
+    <defs><marker id="b-arrow" viewBox="0 0 4 4" refX="2" refY="2" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="#4A4F57"/></marker></defs>
+    <path class="e-transition" d="M248 280 V292" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M248 336 V372" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M248 416 V452" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M248 496 V532" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M248 576 V612" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M248 656 V692" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M248 736 V772" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M248 816 V852" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M248 896 V932" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M248 976 V1012" marker-end="url(#b-arrow)"/>
+    <path class="e-transition e-dash" d="M336 396 H376 V556 H340" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M616 280 V292" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M616 336 V372" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M616 416 V452" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M616 496 V532" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M616 576 V612" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M616 656 V692" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M616 736 V772" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M616 816 V852" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M616 896 V932" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M616 976 V1012" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M616 1056 V1092" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M616 1136 V1164" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M616 1208 V1292" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M688 476 H828" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M904 496 V532" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M904 576 V612" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M904 656 V692" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M904 736 V764" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M832 788 H760 V556 H692" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M688 884 H904 V932" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M904 976 V1012" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M904 1056 V1084" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M976 1108 H992 V1316 H692" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M1192 280 V292" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M1192 336 V380" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M1192 432 V452" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M1192 496 V532" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M1192 576 V612" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M1272 476 H1320 V636 H1276" marker-end="url(#b-arrow)"/>
+    <path class="e-transition e-dash" d="M1160 656 V680 H1096 V476 H1108" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M1192 720 V780" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M1256 804 H1384 V724" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M1192 824 V848 H1064 V316 H1124" marker-end="url(#b-arrow)"/>
+    <path class="e-transition e-dash" d="M1400 384 V316 H1260" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M1192 928 V940" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M1192 984 V1020" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M1192 1064 V1100" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M1256 1124 H1320 V964 H1260" marker-end="url(#b-arrow)"/>
+    <path class="e-transition" d="M1256 1044 H1320"/>
+  </svg>
+  <div class="elabel" style="left:256px;top:348px">ObserveMkdir</div>
+  <div class="elabel" style="left:256px;top:428px">MakeDir</div>
+  <div class="elabel" style="left:256px;top:508px">Elect</div>
+  <div class="elabel" style="left:256px;top:588px">WriteOwner</div>
+  <div class="elabel" style="left:256px;top:668px">BindJournal</div>
+  <div class="elabel" style="left:256px;top:748px">CompleteJournal</div>
+  <div class="elabel" style="left:256px;top:828px">CheckRelease</div>
+  <div class="elabel" style="left:256px;top:908px">BeginRemove</div>
+  <div class="elabel" style="left:256px;top:988px">FinishRemove</div>
+  <div class="elabel" style="left:384px;top:468px">MakeDir</div>
+  <div class="elabel" style="left:624px;top:348px">ReadClaim</div>
+  <div class="elabel" style="left:624px;top:428px">CheckClaimPid</div>
+  <div class="elabel" style="left:624px;top:508px">ReadLane</div>
+  <div class="elabel" style="left:624px;top:588px">ObserveMkdir</div>
+  <div class="elabel" style="left:624px;top:668px">MakeDir</div>
+  <div class="elabel" style="left:624px;top:748px">Elect</div>
+  <div class="elabel" style="left:624px;top:828px">WriteOwner</div>
+  <div class="elabel" style="left:624px;top:908px">CheckClaimGeneration</div>
+  <div class="elabel" style="left:624px;top:988px">RecoverJournal</div>
+  <div class="elabel" style="left:624px;top:1060px">CheckRelease</div>
+  <div class="elabel" style="left:624px;top:1142px">BeginRemove</div>
+  <div class="elabel" style="left:624px;top:1264px">FinishRemove</div>
+  <div class="elabel" style="left:704px;top:456px">ReadLane</div>
+  <div class="elabel" style="left:912px;top:508px">CheckLanePid</div>
+  <div class="elabel" style="left:912px;top:588px">MarkLane</div>
+  <div class="elabel" style="left:768px;top:660px">CheckLaneGeneration</div>
+  <div class="elabel" style="left:912px;top:742px">BeginRemove</div>
+  <div class="elabel" style="left:768px;top:588px">FinishRemove</div>
+  <div class="elabel" style="left:696px;top:864px">CheckClaimGeneration</div>
+  <div class="elabel" style="left:912px;top:984px">CheckCancel</div>
+  <div class="elabel" style="left:912px;top:1062px">BeginRemove</div>
+  <div class="elabel" style="left:800px;top:1296px">FinishRemove</div>
+  <div class="elabel" style="left:1200px;top:348px">MakeDir</div>
+  <div class="elabel" style="left:1200px;top:508px">Elect</div>
+  <div class="elabel" style="left:1200px;top:588px">WriteOwner</div>
+  <div class="elabel" style="left:1328px;top:548px">WriteOwner</div>
+  <div class="elabel" style="left:1104px;top:684px">BeginRemove</div>
+  <div class="elabel" style="left:1200px;top:740px">BeginRemove</div>
+  <div class="elabel" style="left:1392px;top:752px">MakeDir</div>
+  <div class="elabel" style="left:1072px;top:828px">FinishRemove</div>
+  <div class="elabel" style="left:1272px;top:292px">FinishRemove</div>
+  <div class="elabel" style="left:1200px;top:996px">BindJournal</div>
+  <div class="elabel" style="left:1200px;top:1076px">CompleteJournal</div>
+  <div class="elabel" style="left:1328px;top:996px">RecoverJournal</div>
+  <div class="cx-marker" style="left:64px;top:1488px">1</div>
+  <div class="elabel" style="left:104px;top:1492px"><b>SingleOwner</b> broken without the exclusive-create election (#1634, #1637) · <span class="mono">ShipCloseoutClaim.no-exclusive-create.cfg</span> · 7 states · ends when the second ship's WriteOwner reaches <span class="mono">bind</span></div>
+  <div class="cx-marker" style="left:64px;top:1520px">2</div>
+  <div class="elabel" style="left:104px;top:1524px"><b>NoElectionInRetiredDir</b> broken without remove-by-rename (#1634, #1637) · <span class="mono">ShipCloseoutClaim.no-remove-by-rename.cfg</span> · 12 states · ends when a ship's Elect reaches <span class="mono">write</span> while the owner walks the claim</div>
+  <div class="cx-marker" style="left:64px;top:1552px">3</div>
+  <div class="elabel" style="left:104px;top:1556px"><b>RecoveryActsOnCheckedGeneration</b> broken without the recovery generation check (#1641, #1645) · <span class="mono">ShipCloseoutClaim.no-generation-check.cfg</span> · 19 states · ends when CheckClaimGeneration reaches <span class="mono">recover</span> on a changed claim</div>
+  <div class="foot" style="left:64px;top:1592px;width:1552px">Spec: <span class="mono">specs/tla/ShipCloseoutClaim.tla</span> at 5113e3b8, a model of <span class="mono">scripts/ship-worktrees.sh</span> (base 29b23f542); its action table maps each action to the bash lines. Dashed: <span class="mono">ElectByExclusiveCreate = FALSE</span> (ship MakeDir to write), <span class="mono">RemoveByRename = FALSE</span> (BeginRemove and FinishRemove inside <span class="mono">claimDir = "present"</span>). Rows: <span class="mono">bash scripts/contract-closeout-tla.sh</span> output in #1736.</div>
+</div>
+</section>
+
 </main>
 <script type="application/json" id="archimap-meta">
 {
   "schema": "archimap/v1",
   "project": "repo-harness",
-  "base": "96b62180",
+  "base": "5113e3b8",
   "generated": "2026-11-04",
   "sources": [
     ".archcontext/model",
@@ -467,7 +663,8 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
     "topology",
     "sequence",
     "interfaces",
-    "remarks"
+    "remarks",
+    "behavior"
   ],
   "modules": [
     {
