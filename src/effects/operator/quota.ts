@@ -4,16 +4,24 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { version as PACKAGE_VERSION } from '../../../package.json';
 import {
+  buildQuotaReport,
   CLAUDE_QUOTA_CAPTURE_PATH,
   decodeClaudeQuotaCapture,
   decodeCodexRateLimitsResult,
   unknownQuotaReading,
   type ClaudeQuotaCapture,
   type QuotaReading,
+  type QuotaReport,
 } from '../../core/operator/quota';
 
 const CODEX_READ_TIMEOUT_MS = 20_000;
+
+export async function readQuotaReport(env: NodeJS.ProcessEnv): Promise<QuotaReport> {
+  const readings = [readClaudeQuota(env), await readCodexQuota(env, PACKAGE_VERSION)];
+  return buildQuotaReport(readings, Date.now());
+}
 
 function claudeCapturePath(env: NodeJS.ProcessEnv): string {
   return join(env.HOME ?? homedir(), ...CLAUDE_QUOTA_CAPTURE_PATH);

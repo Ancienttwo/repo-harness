@@ -8,6 +8,7 @@ import {
   classifyQuotaReading,
   decodeClaudeQuotaCapture,
   decodeCodexRateLimitsResult,
+  decodeQuotaReport,
   formatQuotaReport,
   type QuotaReport,
 } from '../../src/core/operator/quota';
@@ -30,6 +31,51 @@ function claude(windows: Record<string, unknown>, observedAt = new Date(NOW).toI
 const week = (used: number, resetsInHours: number) => ({ used_percentage: used, resets_at: (NOW + resetsInHours * HOUR) / 1000 });
 
 describe('quota classification', () => {
+  test('the report decoder preserves a built report and rejects malformed wire shapes', () => {
+    const report = buildQuotaReport([
+      decodeClaudeQuotaCapture({ observed_at: new Date(NOW).toISOString(), rate_limits: { seven_day: week(50, 84) } }),
+      decodeCodexRateLimitsResult({ rateLimits: {
+        primary: { usedPercent: 10, windowDurationMins: 10080, resetsAt: (NOW + 84 * HOUR) / 1000 },
+        planType: 'pro', credits: { hasCredits: true, unlimited: false, balance: '12.50' },
+      } }, new Date(NOW).toISOString()),
+      decodeCodexRateLimitsResult({}, new Date(NOW).toISOString()),
+    ], NOW);
+    expect(decodeQuotaReport(report)).toBe(report);
+    const nullable = structuredClone(report);
+    nullable.accounts[1]!.codex!.credits = null;
+    nullable.accounts[1]!.codex!.plan_type = null;
+    expect(decodeQuotaReport(nullable)).toBe(nullable);
+    const rows: Array<[string, unknown]> = [
+      ['protocol', 'other'], ['read_at', null], ['accounts', {}], ['accounts.0', []],
+      ['accounts.0.account', 'other'], ['accounts.0.source', 'other'], ['accounts.0.observed_at', 1],
+      ['accounts.0.state', 'absent'], ['accounts.0.reason', false], ['accounts.0.windows', {}],
+      ['accounts.0.windows.0', null], ['accounts.0.windows.0.window', 1],
+      ['accounts.0.windows.0.window_minutes', '300'], ['accounts.0.windows.0.used_percent', NaN],
+      ['accounts.0.windows.0.resets_at', 1], ['accounts.0.windows.0.elapsed_percent', false],
+      ['accounts.0.windows.0.pace', Infinity], ['accounts.0.windows.0.state', 'other'], ['accounts.0.windows.0.reason', {}],
+      ['accounts.1.codex', undefined], ['accounts.1.codex.plan_type', 1], ['accounts.1.codex.credits', []],
+      ['accounts.1.codex.credits.has_credits', 'yes'], ['accounts.1.codex.credits.unlimited', 0],
+      ['accounts.1.codex.credits.balance', 12], ['accounts.1.codex.rate_limit_reached_type', false],
+      ['accounts.1.codex.field_errors', null], ['accounts.1.codex.field_errors', [1]],
+    ];
+    const at = (value: unknown, path: string[]): Record<string, unknown> => path.reduce((row, key) => (row as Record<string, unknown>)[key], value) as Record<string, unknown>;
+    for (const [path, invalid] of rows) {
+      const value = structuredClone(report), keys = path.split('.'), key = keys.pop()!;
+      at(value, keys)[key] = invalid;
+      expect(() => decodeQuotaReport(value), path).toThrow();
+    }
+    for (const path of ['', 'accounts.0', 'accounts.0.windows.0', 'accounts.1.codex', 'accounts.1.codex.credits']) {
+      const keys = path ? path.split('.') : [];
+      const fields = Object.keys(at(report, keys));
+      for (const key of [...fields, 'extra']) {
+        const value = structuredClone(report), row = at(value, keys);
+        if (key === 'extra') row.extra = true; else delete row[key];
+        expect(() => decodeQuotaReport(value), `${path}.${key}`).toThrow();
+      }
+    }
+    for (const value of [null, [], 'report']) expect(() => decodeQuotaReport(value)).toThrow();
+  });
+
   test.each([
     // [case, seven_day used, hours to reset, window state, account state] — elapsed at 84 h is 50%.
     // five_hour is absent, so the account state is the seven_day state.
@@ -185,6 +231,7 @@ describe('repo-harness quota', () => {
     const result = quota(['--json'], f.env);
     expect(result.status).toBe(0);
     const report = JSON.parse(result.stdout) as QuotaReport;
+    expect(decodeQuotaReport(report)).toBe(report);
     expect(report.accounts.map(account => [account.account, account.state])).toEqual([['claude', 'exhausted'], ['chatgpt', 'normal']]);
     expect(report.accounts[1]).toMatchObject({ source: 'codex_app_server', codex: { plan_type: 'pro', credits: { balance: '34410.83' } } });
     const calls = readFileSync(f.log, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { argv: string[]; message: Record<string, unknown> });

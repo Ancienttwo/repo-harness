@@ -16,6 +16,8 @@ export interface CleanupIndexEntry {
   readonly mode: string;
   readonly oid: string;
   readonly stage: number;
+  /** Blob size in bytes; the plan applies the Git archive size rule to it. */
+  readonly size: number;
 }
 export interface CleanupLossEvidence {
   readonly kind: 'registered' | 'orphan';

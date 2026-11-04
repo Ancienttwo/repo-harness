@@ -12,6 +12,7 @@ import {
   type AgentRuntimesCacheV1,
 } from '../../src/core/operator/agents-settings';
 import { decodeSeatsSettings } from '../../src/core/operator/seats-settings';
+import { buildQuotaReport, OPERATOR_QUOTA_PATH, unknownQuotaReading } from '../../src/core/operator/quota';
 import { probeAgentRuntimes, registryRuntimes } from '../../src/effects/setup/agent-runtime-probe';
 import { startOperatorServer, type OperatorServerHandle } from '../../src/effects/operator/server';
 import { acquireRuntimeTransactionLock, globalRuntimeScope } from '../../src/effects/locking/runtime-transaction-lock';
@@ -45,7 +46,7 @@ afterEach(async () => {
 });
 
 /** HOME and REPO_HARNESS_HOME are separate temporary roots, so each authority is checked at its own place. */
-async function startHarness(config?: unknown): Promise<Harness> {
+async function startHarness(config?: unknown, readQuota = async (): Promise<unknown> => buildQuotaReport([unknownQuotaReading('claude', 'no capture')], Date.now())): Promise<Harness> {
   const home = mkdtempSync(join(tmpdir(), 'repo-harness-agents-home-'));
   const harnessHome = mkdtempSync(join(tmpdir(), 'repo-harness-agents-state-'));
   const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-agents-ui-'));
@@ -60,6 +61,7 @@ async function startHarness(config?: unknown): Promise<Harness> {
     port: 0, static_root: staticRoot,
     env: { HOME: home, REPO_HARNESS_HOME: harnessHome },
     read_agent_runtimes: () => state.cache,
+    read_quota: readQuota,
   });
   const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
   cleanups.push(async () => {
@@ -88,6 +90,44 @@ async function settings(harness: Harness): Promise<ReturnType<typeof decodeAgent
 const sha256 = (path: string) => `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
 
 describe('agent settings routes', () => {
+  test('quota GET returns the report unchanged and refuses query selectors, PUT and invalid reports', async () => {
+    const report = buildQuotaReport([unknownQuotaReading('claude', 'no capture'), unknownQuotaReading('chatgpt', 'not logged in')], Date.now());
+    let value: unknown = report, reads = 0;
+    const harness = await startHarness(undefined, async () => { reads++; return value; });
+    const url = `${harness.server.url}${OPERATOR_QUOTA_PATH}`;
+    const response = await fetch(url);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(report);
+    for (const [target, method, status, code] of [[`${url}?account=claude`, 'GET', 400, 'invalid_request'], [url, 'PUT', 405, 'method_not_allowed']] as const) {
+      const refused = await fetch(target, { method });
+      expect([refused.status, (await refused.json()).error.code]).toEqual([status, code]);
+    }
+    expect(reads).toBe(1);
+    value = { ...report, extra: true };
+    const invalid = await fetch(url);
+    expect([invalid.status, (await invalid.json()).error.code]).toEqual([502, 'quota_invalid']);
+    value = report;
+    expect((await fetch(url)).status).toBe(200);
+    expect(reads).toBe(3);
+  });
+
+  test('quota admits one read at a time and releases the slot after completion', async () => {
+    const started = Promise.withResolvers<void>(), pending = Promise.withResolvers<unknown>();
+    let reads = 0;
+    const report = buildQuotaReport([], Date.now());
+    const harness = await startHarness(undefined, () => { reads++; started.resolve(); return pending.promise; });
+    const url = `${harness.server.url}${OPERATOR_QUOTA_PATH}`;
+    const first = fetch(url);
+    await started.promise;
+    const second = await fetch(url);
+    expect([second.status, (await second.json()).error.code]).toEqual([503, 'quota_busy']);
+    expect(reads).toBe(1);
+    pending.resolve(report);
+    expect(await (await first).json()).toEqual(report);
+    expect((await fetch(url)).status).toBe(200);
+    expect(reads).toBe(2);
+  });
+
   test('Pi review fixture is admitted through the settings route and named in unsupported-runtime guidance', async () => {
     const harness = await startHarness();
     harness.cache = { status: 'ready', probe: { ...PROBE, entries: [...PROBE.entries,
