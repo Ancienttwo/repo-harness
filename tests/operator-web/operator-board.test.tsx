@@ -1568,6 +1568,34 @@ describe('worktree cleanup plan review (#1720)', () => {
     expect(planItem('repo-harness-wt-notes').querySelector('[data-plan-authorize]')).not.toBeNull();
   });
 
+  // Sibling inputs of "the start answer does not say whether a job exists": no answer, an unreadable answer and a running refusal.
+  for (const [name, answer] of [['no answer', { state: 'unreachable' }], ['an unreadable answer', { state: 'unreadable' }],
+    ['a running refusal', { state: 'refused', status: 409, error: { code: 'investigation_running', message: 'running', next_action: 'wait' } }]] as const) {
+    test(`after ${name} to the start, the page reads the job status and loads the plan it finished`, async () => {
+      const record = recordPlan();
+      let reads = 0;
+      const ports: CleanupPlanPorts = { ...record.ports, investigate: async () => answer,
+        investigation: async () => { reads++; return { state: 'investigation', status: { protocol: 1, kind: 'operator_worktree_cleanup_investigation',
+          session_id: record.plan().session_id, job_id: 'e'.repeat(32), state: 'succeeded', started_at: new Date(NOW).toISOString(),
+          deadline_at: new Date(NOW + 1_200_000).toISOString(), failure: null, plan: record.plan() } }; } };
+      await openReview(ports);
+      await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-investigate]')!.click());
+      await until(() => document.querySelector('[data-plan-investigation]')?.getAttribute('data-plan-investigation') === 'succeeded');
+      expect(reads).toBe(1);
+      expect(document.querySelector('[data-plan-investigation] [data-plan-failure]')).toBeNull();
+    });
+  }
+
+  test('when the status read after a lost start finds no job, the page shows the start failure', async () => {
+    const record = recordPlan();
+    // The busy fixture's status read answers 404 investigation_not_found.
+    await openReview({ ...record.ports, investigate: async () => ({ state: 'unreachable' }) });
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-investigate]')!.click());
+    await until(() => document.querySelector('[data-plan-investigation] [data-plan-failure]') !== null);
+    expect(document.querySelector('[data-plan-investigation] [data-plan-failure]')?.getAttribute('data-plan-failure')).toBe('unreachable');
+    expect(document.querySelector('[data-plan-investigation]')?.getAttribute('data-plan-investigation')).toBe('none');
+  });
+
   test('a refused investigation start shows the typed refusal of the busy fixture', async () => {
     await openReview(recordPlan().ports);
     await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-investigate]')!.click());

@@ -353,7 +353,14 @@ export function CleanupPlanReview({ ports, ids, now, onBack, t }: {
   const investigate = () => {
     if (plan === null || locked) return;
     setPending('investigate');
-    void ports.investigate(plan.session_id).catch(lost).then(answer => { setPending(null); follow(answer); });
+    const sessionOf = plan.session_id;
+    void ports.investigate(sessionOf).catch(lost).then(answer => {
+      setPending(null);
+      // No answer, an unreadable answer and a running refusal can each hide a job that exists: read its status first.
+      // Only when that read finds no job does the start failure show.
+      if (answer.state === 'investigation' || (answer.state === 'refused' && answer.error.code !== 'investigation_running')) { follow(answer); return; }
+      void ports.investigation(sessionOf).catch(lost).then(status => follow(status.state === 'investigation' ? status : answer));
+    });
   };
 
   const choose = () => {
