@@ -368,6 +368,37 @@ describe('board page', () => {
       expect([reads, findings(), failure()]).toEqual([2, [], 'unreachable']);
       expect(document.querySelector('[data-quota-unavailable]')!.textContent).toContain('Reason: the operator service returned no quota report. Refresh to read again.');
     });
+
+    test('a running read stays the only read: a header Refresh or a page change starts no second read, and its result shows', async () => {
+      const answer = await readFixture('busy');
+      const refresh = () => act(async () => button('Refresh').click());
+      const open = (workspace: string) => act(async () => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!.click());
+      const agents = '[data-quota-account="claude"]';
+      const board = '[data-quota-finding="claude"]';
+      const cases: readonly (readonly [string, string, () => Promise<void>, string])[] = [
+        ['Agents, header Refresh', '#agents', refresh, agents],
+        ['list board, header Refresh', `#board/${HARNESS_ID}/1474`, refresh, board],
+        ['office room, header Refresh', `#board/office/${HARNESS_ID}/1474`, refresh, board],
+        ['list board to Agents', `#board/${HARNESS_ID}/1474`, () => open('agents'), agents],
+        ['Agents to Skills and back', '#agents', async () => { await open('skills'); await open('agents'); }, agents],
+      ];
+      for (const [name, hash, during, shown] of cases) {
+        const settled: (() => void)[] = [];
+        installDom(`http://127.0.0.1:4318/${hash}`);
+        await mount(<OperatorApp {...props(busy(), { readQuota: () => new Promise(resolve => settled.push(() => resolve(answer))) })} />);
+        await settle();
+        await during();
+        await settle();
+        expect([name, settled.length, failure()]).toEqual([name, 1, null]);
+        await act(async () => settled[0]!());
+        await settle();
+        expect([name, rows(shown).length, failure()]).toEqual([name, 1, null]);
+        await refresh();
+        await settle();
+        expect([name, settled.length]).toEqual([name, 2]);
+        await act(async () => root?.unmount());
+      }
+    });
   });
 
   test('on a cold load the list reads the repository of the registry list that arrives after mount, without Dev Activity', async () => {
