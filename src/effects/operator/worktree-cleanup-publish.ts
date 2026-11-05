@@ -4,6 +4,7 @@ import { closeSync, constants, fstatSync, openSync, readFileSync, unlinkSync } f
 import { join } from 'node:path';
 import type { CleanupPlanItem } from '../../core/operator/worktree-cleanup-plan';
 import { configuredGitBinary, gitExecFileSync, withoutRepositorySelectingGitEnv } from '../git/runner';
+import { observeRemoteRef, pushCommitToNewRemoteRef } from '../publication/new-remote-ref-push';
 import type { GithubDraftPrPublisher } from './doc-session-finalize-github';
 import { stageCleanupArchive, type StagedCleanupArchive } from './worktree-cleanup-archive';
 import type { CleanupObservationTarget } from './worktree-cleanup-observation';
@@ -27,8 +28,6 @@ type ArchivePorts = Pick<CleanupExecutionPorts, 'archiveCommit' | 'archivePush' 
   readonly archivePublication: (key: string, item: CleanupPlanItem) => Promise<string>;
 };
 
-const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
-const PUSH_REMOTE = 'repo-harness-cleanup-archive';
 const sha256 = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
 
 export function createCleanupArchivePorts(sessionId: string, options: CleanupArchivePublisherOptions): ArchivePorts {
@@ -70,13 +69,7 @@ export function createCleanupArchivePorts(sessionId: string, options: CleanupArc
     if (urls.length !== 1 || !urls[0] || urls[0].startsWith('-')) throw new Error('archive remote ambiguous');
     return urls[0];
   };
-  const remoteHead = (d: Destination, url: string): string | null => {
-    const text = git(d.repository, ['ls-remote', '--refs', '--', url, d.ref]);
-    if (!text) return null;
-    const rows = text.split('\n'), [oid, ref] = rows[0]!.split('\t');
-    if (rows.length !== 1 || !OID.test(oid!) || ref !== d.ref) throw new Error('archive remote branch observation invalid');
-    return oid!;
-  };
+  const remoteHead = (d: Destination, url: string) => observeRemoteRef(options.env, { checkout: d.repository, remote_url: url, ref: d.ref });
 
   /** Build the archive tree on the parent in a private index. Every staged byte is rehashed before Git stores it. */
   const archiveTree = (d: Destination, staged: StagedCleanupArchive, parent: string): string => {
@@ -122,14 +115,10 @@ export function createCleanupArchivePorts(sessionId: string, options: CleanupArc
       if (localHead(d) !== commit) throw new Error('archive branch readback failed');
     },
     archivePush: async (key, item) => {
-      const d = await destination(key, item), commit = ownCommit(d), url = remoteUrl(d);
-      const remote = remoteHead(d, url);
-      if (remote !== null && remote !== commit) throw new Error('archive remote branch has another commit');
-      // Git 2.56 updates the tracking refs of a configured remote whose URL equals a raw push URL, and the bound
-      // loss covers refs/remotes. A named remote with no fetch refspec writes no tracking ref. The empty lease
-      // requires an absent remote branch.
-      if (remote === null) git(d.repository, ['-c', `remote.${PUSH_REMOTE}.url=${url}`, 'push', '--porcelain', `--force-with-lease=${d.ref}:`, PUSH_REMOTE, `${commit}:${d.ref}`]);
-      if (remoteHead(d, url) !== commit) throw new Error('archive push readback failed');
+      const d = await destination(key, item), commit = ownCommit(d);
+      // The operation writes no tracking ref, and the bound loss covers refs/remotes.
+      const pushed = pushCommitToNewRemoteRef(options.env, { checkout: d.repository, remote_url: remoteUrl(d), ref: d.ref, commit });
+      if (pushed.state !== 'pushed') throw new Error(`archive push ${pushed.state}`);
     },
     archivePr: async (key, item) => {
       const d = await destination(key, item), commit = ownCommit(d);

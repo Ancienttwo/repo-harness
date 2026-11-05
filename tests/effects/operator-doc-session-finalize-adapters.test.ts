@@ -7,6 +7,7 @@ import type { DocSessionChange } from '../../src/core/operator/doc-session-chang
 import type { GithubCommandRunner } from '../../src/effects/github/issues';
 import { createDocSessionGithubAdapters } from '../../src/effects/operator/doc-session-finalize-github';
 import { createDocSessionScopeValidator } from '../../src/effects/operator/doc-session-finalize-scope';
+import { findOrCreateDraftPullRequest } from '../../src/effects/publication/draft-pull-request';
 import { initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
 
 const roots: string[] = [];
@@ -109,6 +110,15 @@ test('all failures after the single POST remain unknown and are never retried in
     expect((await createDocSessionGithubAdapters(process.env, t.runner).create_draft_pr(target, branch, commit, 'Title')).state).toBe('unknown');
     expect(t.calls.filter(args => args.includes('POST'))).toHaveLength(1);
   }
+});
+
+test('the Draft PR operation creates one exact head and keeps a lost response unknown', () => {
+  const draft = { repository: 'Fixture/Docs', base_branch: 'main', head_branch: branch, commit, title: 'Title', body: 'Body' };
+  const made = transport([repo(), [], pr()]);
+  expect(findOrCreateDraftPullRequest(draft, made.runner)).toEqual({ state: 'created', pr: { number: 7, url: pr().html_url } });
+  const lost = transport([repo(), [], new Error('connection reset')]);
+  expect(findOrCreateDraftPullRequest(draft, lost.runner)).toEqual({ state: 'unknown' });
+  expect(lost.calls.filter(args => args.includes('POST'))).toHaveLength(1);
 });
 
 test('a spent deadline prevents further requests', async () => {

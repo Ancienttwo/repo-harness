@@ -12,6 +12,7 @@ import { createGithubDraftPrPublisher } from '../../src/effects/operator/doc-ses
 import { observeCleanupLoss } from '../../src/effects/operator/worktree-cleanup-observation';
 import { cleanupPlanSelectionDigest, createCleanupPlan, executeCleanupPlan, type CleanupExecutionPorts } from '../../src/effects/operator/worktree-cleanup-plan';
 import { CLEANUP_ARCHIVE_BRANCH, createCleanupArchivePorts } from '../../src/effects/operator/worktree-cleanup-publish';
+import { pushCommitToNewRemoteRef } from '../../src/effects/publication/new-remote-ref-push';
 import { inspectWorktree } from '../../src/effects/state/coordination-worktree-topology';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
 
@@ -125,6 +126,31 @@ for (const push of ['url', 'pushurl'] as const) publishTest(`the archive commit,
   expect(readFileSync(join(f.tree, '.env'), 'utf8')).toBe('SYNTHETIC=fixture\n');
   expect(tracking()).toBe(before);
 }, push);
+
+// Sibling outcomes: a landed push, a replay, a taken ref, no push, a lost reply and a ref created after the preflight.
+publishTest('the new remote ref push proves each result and never reports an uncertain push as not sent', async f => {
+  const main = f.git(f.repo, 'rev-parse', 'main'), commit = f.git(f.repo, 'commit-tree', 'main^{tree}', '-p', main, '-m', 'archive');
+  const remoteGit = (...args: string[]) => f.git(f.parent, '--git-dir', f.remote, ...args), shim = join(f.parent, 'git-shim');
+  writeFileSync(shim, `#!/bin/sh\ncase " $* " in *" push "*)\n  [ "$SHIM" = race ] && "$REAL" --git-dir "${f.remote}" update-ref "${f.ref}" ${main}\n  "$REAL" "$@"; code=$?\n  [ "$SHIM" = lost ] && exit 1; exit $code;;\nesac\nexec "$REAL" "$@"\n`);
+  chmodSync(shim, 0o755);
+  const tracking = () => f.git(f.repo, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/remotes/'), before = tracking();
+  const cases: Array<[Record<string, string>, string, string | null, string, string | null]> = [
+    [{}, f.remote, null, 'pushed', commit],
+    [{}, f.remote, commit, 'pushed', commit],
+    [{}, f.remote, main, 'refused', main],
+    [{}, join(f.parent, 'missing.git'), null, 'not_pushed', null],
+    [{ SHIM: 'lost' }, f.remote, null, 'unknown', commit],
+    [{ SHIM: 'race' }, f.remote, null, 'unknown', main],
+  ];
+  for (const [shimEnv, remote_url, existing, state, after] of cases) {
+    if (f.pushed() !== null) remoteGit('update-ref', '-d', f.ref);
+    if (existing !== null) remoteGit('update-ref', f.ref, existing);
+    const env = { ...process.env, REPO_HARNESS_GIT_BIN: shim, REAL: Bun.which('git')!, ...shimEnv };
+    expect(pushCommitToNewRemoteRef(env, { checkout: f.repo, remote_url, ref: f.ref, commit })).toEqual({ state } as never);
+    expect(f.pushed()).toBe(after);
+  }
+  expect(tracking()).toBe(before);
+});
 
 publishTest('a retry after a lost Draft PR create reconciles the key and creates no second branch, commit or PR', async f => {
   f.loseCreateResponse();
