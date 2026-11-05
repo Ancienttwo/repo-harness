@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { BoardAttentionV1 } from '../core/board/attention';
-import type { BoardItemV1, BoardV1 } from '../core/board/board';
+import type { BoardAcceptanceMergeV1, BoardItemV1, BoardV1 } from '../core/board/board';
 import {
   currentBatch, deskState, hasDesk, isQueued, liveSeats, seatItem, seatPullRequest, workerLimit,
   type BoardCurrentBatch, type BoardSeatTerminal, type DeskState,
@@ -17,9 +17,8 @@ import { useObservationRefresh } from './useObservationRefresh';
  * The data map of the Board office view (#1755, #1787): the live seats of one
  * repository and the board of its active parent → room; the seats and the
  * stored summary of that parent → overview card. Each value comes from one
- * board, parent list or summary field. A value that none carries (the plan
- * revision, the merge policy, the branch of a seat with no pull request:
- * #1806) has no field here, so the view cannot draw it.
+ * board, parent list or summary field. A value that none carries has no field
+ * here, so the view cannot draw it.
  */
 
 /** The feed shows the newest events only. */
@@ -37,7 +36,7 @@ export interface OfficeDesk {
   readonly pr: number | null;
   /** The item title, else the pull request head branch. */
   readonly title: string | null;
-  /** The head branch of the desk's pull request; null without one. */
+  /** The current branch of the seat's terminal; null when the terminal read gave none. */
   readonly branch: string | null;
   /** The pull request that holds this seat in the queue; null outside the queue. */
   readonly queued: number | null;
@@ -65,7 +64,7 @@ export interface OfficeHold {
 }
 
 export type OfficePlan =
-  | { readonly status: 'observed'; readonly created_at: string; readonly merge_order: readonly number[]; readonly worker_limit: number; readonly batch: number }
+  | { readonly status: 'observed'; readonly created_at: string; readonly revision: number | null; readonly merge_order: readonly number[]; readonly worker_limit: number; readonly batch: number }
   | { readonly status: 'none' };
 
 export interface OfficeLead {
@@ -96,6 +95,8 @@ export interface OfficeRoom {
   readonly holds: readonly OfficeHold[];
   /** A1 findings: accepted, ready pull requests that wait for a merge. */
   readonly merge_waits: number;
+  /** What those waits mean: who merges under the policy of the board. Null when no board was read. */
+  readonly merge_policy: BoardAcceptanceMergeV1 | null;
   /** The R2 or R3 rule that names each desk, by terminal address. */
   readonly mines: ReadonlyMap<string, string>;
   /** Newest first. */
@@ -115,7 +116,7 @@ function desk(board: BoardV1 | null, terminal: BoardSeatTerminal): OfficeDesk {
     address: terminal.address, seat: terminal.seat, agent: terminal.agent, status: terminal.status,
     state, issue: terminal.issue, pr: pr?.number ?? terminal.pr,
     title: item?.title ?? pr?.head_ref ?? null,
-    branch: pr?.head_ref ?? null,
+    branch: terminal.branch,
     queued: state === 'acceptance_queue' ? pr!.number : null,
     drawerIssue: item?.number ?? null,
   };
@@ -160,7 +161,7 @@ export function officeRoom(list: BoardParentsV1, active: { readonly board: Board
   const seated = (item: BoardItemV1) => seats.some(seat => seat.issue === item.number || (seat.pr !== null && item.pull_requests.includes(seat.pr)));
   return {
     plan: plan === null ? { status: 'none' } : {
-      status: 'observed', created_at: plan.created_at, merge_order: plan.block.merge_order,
+      status: 'observed', created_at: plan.created_at, revision: plan.revision, merge_order: plan.block.merge_order,
       worker_limit: plan.block.seat_limits.worker, batch: cart?.size ?? 0,
     },
     orchestrator: lead(seats, 'orchestrator'),
@@ -177,6 +178,7 @@ export function officeRoom(list: BoardParentsV1, active: { readonly board: Board
     backlog: open.filter(item => !planned.has(item.number) && !held.has(item.number) && item.pull_requests.length === 0 && !seated(item)).map(item => ({ issue: item.number, title: item.title })),
     holds: [...held].map(([issue, reason]) => ({ issue, title: board!.items.find(item => item.number === issue)?.title ?? null, reason })),
     merge_waits: active?.attention.findings.filter(finding => finding.rule === 'A1').length ?? 0,
+    merge_policy: board?.acceptance_merge ?? null,
     mines: active === null ? new Map() : mines(active.attention, desks),
     feed: board === null ? [] : feed(board, cart),
   };
@@ -292,11 +294,32 @@ function cardSummary(read: BoardSummariesRead | null, parent: number | null): Of
   return row.status === 'unavailable' ? { status: 'unavailable', reason: row.reason } : { status: 'observed', summary: row.summary };
 }
 
+/**
+ * The desks of the card: the parent-list seats with the desk states of the
+ * summary. The rows are the seats of the active parent, so only a seat with that
+ * parent label takes one. A row has no address, so it joins on its labels and
+ * serves one desk. Any other seat, or a seat with no row, keeps its seat-only
+ * state. A summary with no seats gives no desk.
+ */
+function cardDesks(desks: readonly OfficeDesk[], list: BoardParentsV1, parent: number | null, summary: OfficeCardSummary): readonly OfficeDesk[] {
+  if (summary.status !== 'observed') return desks;
+  const { seats } = summary.summary;
+  if (seats.status === 'unavailable') return [];
+  const owned = new Set(list.seats.filter(seat => seat.parent === String(parent)).map(seat => seat.address));
+  const rows = [...seats.desks];
+  return desks.map((desk) => {
+    if (!owned.has(desk.address)) return desk;
+    const index = rows.findIndex(row => row.seat === desk.seat && row.agent === desk.agent && row.issue === desk.issue && row.pr === desk.pr);
+    return index < 0 ? desk : { ...desk, state: rows.splice(index, 1)[0]!.state };
+  });
+}
+
 /** One card per repository. The summary is the row of the active parent; no sum over parents, because the rows of old parents are stale. */
 export function officeCard(view: Extract<OfficeRepositoryView, { readonly kind: 'ready' }>): OfficeCard {
   const room = officeRoom(view.list, null);
   const parent = activeParent(view.list);
-  return { room, lit: officeLit(room), parent, summary: cardSummary(view.summaries, parent) };
+  const summary = cardSummary(view.summaries, parent);
+  return { room: { ...room, desks: cardDesks(room.desks, view.list, parent, summary) }, lit: officeLit(room), parent, summary };
 }
 
 /** Waiting for you, then CI failed, then the other lit rooms, then the idle rooms. A card with no read yet ranks with the lit rooms. */
@@ -313,7 +336,7 @@ export interface OfficeTotals {
   readonly queue: number;
   readonly ci_failures: number;
   readonly needs_you: number;
-  /** Rooms that the three summary counts leave out: no parents read, or no observed summary of the active parent. */
+  /** Rooms that a total leaves out: no parents read, no observed summary of the active parent, or a summary with no seats. */
   readonly unread: number;
 }
 
@@ -327,6 +350,7 @@ export function officeTotals(cards: readonly (OfficeCard | null)[]): OfficeTotal
       totals.queue += card.summary.summary.queue;
       totals.ci_failures += card.summary.summary.ci_failures;
       totals.needs_you += card.summary.summary.needs_you;
+      if (card.summary.summary.seats.status === 'unavailable') totals.unread += 1;
     } else if (card.summary.status !== 'no_parent') totals.unread += 1;
   }
   return totals;

@@ -119,13 +119,18 @@ function cardChips({ room, lit, summary }: OfficeCard, t: OperatorTranslate): re
   if (summary.status === 'not_read') return [seats, ['not-read', 'subtle', t('board.office.card.notRead')]];
   if (summary.status === 'unavailable') return [seats, ['unavailable', 'warn', t('board.office.card.summaryUnavailable')]];
   if (summary.status !== 'observed') return [seats];
-  const { needs_you: needsYou, queue, ci_failures: failures, batch } = summary.summary;
+  const { needs_you: needsYou, queue, ci_failures: failures, batch, current_batch: current, worker_limit: limit, seats: read } = summary.summary;
+  const full = workers >= limit;
+  const stalled = read.status === 'observed' ? read.stalled : 0;
   return [
     ...(needsYou > 0 ? [['needs-you', 'accent', t('board.office.card.needsYou', { count: needsYou })] as const] : []),
-    batch.size === null ? ['workers', 'subtle', t('board.office.meter.noPlan', { count: workers })] as const : seats,
+    read.status === 'unavailable' ? ['seats-unavailable', 'warn', t('board.office.card.seatsUnavailable', { reason: read.reason })] as const
+      : batch.size === null ? ['workers', 'subtle', t('board.office.meter.noPlan', { count: workers })] as const
+        : ['workers', full ? 'warn' : 'subtle', t(full ? 'board.office.card.full' : 'board.office.card.limit', { count: workers, limit })] as const,
     ...(queue > 0 ? [['queue', 'warn', t('board.office.card.queue', { count: queue })] as const] : []),
     ...(failures > 0 ? [['ci', 'danger', t('board.office.card.ci', { count: failures })] as const] : []),
-    ...(batch.accepted ? [['batch', 'ok', t('board.office.card.batch', { accepted: batch.accepted, size: batch.size })] as const] : []),
+    ...(stalled > 0 ? [['stalled', 'warn', t('board.office.card.stalled', { count: stalled })] as const] : []),
+    ...(current !== null && current.accepted > 0 ? [['batch', 'ok', t('board.office.card.batch', { accepted: current.accepted, sockets: room.cart_sockets })] as const] : []),
   ];
 }
 
@@ -142,7 +147,9 @@ function MiniRoom({ card, frame, mode }: { readonly card: OfficeCard; readonly f
       plan: observed !== null && observed.batch.size !== null,
       needsYou: observed !== null && observed.needs_you > 0,
       desks: room.desks.map(desk => ({ agent: sceneAgent(desk.agent), state: desk.state })),
+      limit: observed?.worker_limit ?? null,
       queue: observed?.queue ?? 0,
+      cart: observed?.current_batch?.accepted ?? 0,
       idle,
     }, { frame: shown, night });
   }, [card, idle, night, shown]);
@@ -364,6 +371,11 @@ interface PanelView {
   readonly issue: number | null;
 }
 
+/** What the door means now. The A1 findings set whether a pull request waits, and the policy sets who it waits for. */
+function doorState(room: OfficeRoom, t: OperatorTranslate): string | null {
+  return room.merge_policy === null ? null : t(`board.office.door.${room.merge_policy}.${room.merge_waits > 0 ? 'waiting' : 'quiet'}`);
+}
+
 function leadPanel(seat: 'orchestrator' | 'advisor', lead: OfficeLead, room: OfficeRoom, planText: string, command: string, frame: number, t: OperatorTranslate): PanelView {
   const seatRows = [[t('board.office.panel.seat'), lead.address], [t('board.office.panel.turn'), lead.status ?? t('board.office.panel.none')]] as const;
   return {
@@ -418,7 +430,12 @@ function panelView(key: string, room: OfficeRoom, parent: number | null, default
   if (key === 'door') {
     return {
       eyebrow: 'MAIN', title: t('board.office.panel.door'), sub: t('board.office.panel.door.sub'),
-      rows: [[t('board.office.panel.door.waits'), String(room.merge_waits)], [t('board.office.panel.door.next'), accepted.length === 0 ? none : accepted.map(issue => `#${issue}`).join(' ')]],
+      rows: [
+        [t('board.office.panel.state'), doorState(room, t) ?? none],
+        [t('board.office.panel.door.mode'), room.merge_policy === null ? none : `acceptance_merge ${room.merge_policy}`],
+        [t('board.office.panel.door.waits'), String(room.merge_waits)],
+        [t('board.office.panel.door.next'), accepted.length === 0 ? none : accepted.map(issue => `#${issue}`).join(' ')],
+      ],
       command: defaultBranch === null ? null : `gh pr list --base ${defaultBranch} --state merged --limit 5`, portrait: null, issue: null,
     };
   }
@@ -511,7 +528,8 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
   const idle = !lit && parent === null;
   const { plan } = room;
   const name = repository.split('/').at(-1)!;
-  const planText = plan.status === 'observed' ? t('board.office.plan.observed') : t('board.office.plan.none');
+  const planText = plan.status !== 'observed' ? t('board.office.plan.none')
+    : plan.revision === null ? t('board.office.plan.observed') : t('board.office.plan.revision', { revision: plan.revision });
   const effect = sceneEffect(boss.effect, clock.now, clock.still);
   const queueEntries = new Set(room.queue.map(entry => `queue:${entry.pr}`));
   const keys = new Set([...room.desks.map(deskKey), ...queueEntries, 'queue', 'door', 'tray', 'cart', ...(room.orchestrator === null ? [] : ['orchestrator']), ...(room.advisor === null ? [] : ['advisor'])]);
@@ -522,13 +540,13 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
     name, parent, lit,
     orchestrator: room.orchestrator === null ? null : sceneAgent(room.orchestrator.agent),
     advisor: room.advisor === null ? null : sceneAgent(room.advisor.agent),
-    plan: plan.status === 'observed' ? { order: plan.merge_order, limit: plan.worker_limit, batch: plan.batch } : null,
+    plan: plan.status === 'observed' ? { revision: plan.revision, order: plan.merge_order, limit: plan.worker_limit, batch: plan.batch } : null,
     limit: room.limit,
     desks: room.desks.map(desk => ({ key: deskKey(desk), agent: sceneAgent(desk.agent), state: desk.state, number: deskNumber(desk, t), label: deskStateName(desk, t) })),
     queue: room.queue.map(entry => ({ key: `queue:${entry.pr}`, agent: sceneAgent(entry.agent), pr: entry.pr })),
     cart: room.cart?.accepted.length ?? 0,
     tray: room.backlog.length + room.holds.length,
-    needsYou: room.merge_waits > 0,
+    mergeWait: room.merge_waits > 0 ? room.merge_policy : null,
     mines: new Map(room.desks.flatMap((desk) => {
       const rule = room.mines.get(desk.address);
       return rule === undefined ? [] : [[deskKey(desk), rule] as const];
@@ -555,7 +573,11 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
   const hitLabel = (key: string): string => {
     if (key === 'board') return t('board.office.hit.board');
     if (key === 'queue') return t('board.office.queue', { count: room.queue.length });
-    if (key === 'door') return room.merge_waits > 0 ? t('board.office.door.marks', { count: room.merge_waits }) : t('board.office.door.none');
+    if (key === 'door') {
+      const door = room.merge_waits > 0 ? t('board.office.door.marks', { count: room.merge_waits }) : t('board.office.door.none');
+      const state = doorState(room, t);
+      return state === null ? door : t('board.office.door.label', { door, state });
+    }
     if (key === 'tray') return t('board.office.backlog', { count: room.backlog.length + room.holds.length });
     if (key === 'cart') return t('board.office.cart', { accepted: room.cart?.accepted.length ?? 0, sockets: room.cart_sockets });
     if (key === 'orchestrator' || key === 'advisor') return `${t(`board.office.lead.${key}`)} · ${agentName(room[key]!.agent, t)}`;
@@ -580,7 +602,7 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
       <h1>{name}</h1>
       <span className="board-office__parent">{parent === null ? t('board.office.parent.none') : t('board.office.parent', { number: parent })}</span>
       {plan.status === 'observed'
-        ? <span className="board-office__chip" data-plan="observed">{t('board.office.plan')} · <Age at={plan.created_at} now={now} t={t} bare /></span>
+        ? <span className="board-office__chip" data-plan="observed">{plan.revision === null ? <>{t('board.office.plan')} · <Age at={plan.created_at} now={now} t={t} bare /></> : t('board.office.plan.revision', { revision: plan.revision })}</span>
         : <span className="board-office__chip" data-tone={parent === null ? undefined : 'gap'} data-plan="none">{idle ? t('board.office.idle') : t('board.office.plan.none')}</span>}
     </>
   );

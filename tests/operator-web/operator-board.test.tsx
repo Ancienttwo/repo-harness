@@ -21,7 +21,7 @@ import { fetchBoard, fetchBoardParents, type BoardParentsRead, type BoardParents
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import boardParents from '../../src/operator-web/fixtures/board-parents.json';
 import { decodeBoardParents, type BoardParentsV1 } from '../../src/core/board/parents';
-import { decodeBoardSummaries } from '../../src/core/board/summary';
+import { decodeBoardSummaries, type BoardSummarySeatsV1, type BoardSummaryV1 } from '../../src/core/board/summary';
 import { designTokenStylesheet } from '../../src/operator-web/design-tokens';
 import { OPERATOR_RAIL_STORAGE_KEY } from '../../src/operator-web/NavRail';
 import { fetchExecution, fetchTaskMessages, itemOwner, type CiRepairsReader, type ExecutionReader, type TaskMessagesReader } from '../../src/operator-web/repository-reads';
@@ -46,9 +46,9 @@ import { OPERATOR_THEME_STORAGE_KEY, resolveThemeMode } from '../../src/operator
 import { decodeOperatorRepositories, type OperatorRepositoriesV1 } from '../../src/core/operator/repositories';
 import { fetchRepositories } from '../../src/operator-web/repositories';
 import { boardLayout, boardPlace, boardRoom, DEFAULT_LOCATION, parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
-import { DESK_STATES, ISSUE_FLOW_WORKER_LIMIT } from '../../src/core/board/desk';
+import { DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, type DeskState } from '../../src/core/board/desk';
 import { activeParent, officeCard, officeRoom, type BoardSummariesRead } from '../../src/operator-web/board-office';
-import { OFFICE_PARENT, officeBoard, officeParents } from '../../src/operator-web/fixtures/office';
+import { OFFICE_DOOR_POLICIES, OFFICE_PARENT, officeBoard, officeParents } from '../../src/operator-web/fixtures/office';
 import { busyBotAccess, degradedBotAccess } from '../../src/operator-web/fixtures/bots';
 import { officeSetupRows, type OfficeSetupReads, type OfficeSetupRowId, type OfficeSetupScope } from '../../src/operator-web/OfficeSetupChecklist';
 import { translate, type OperatorTranslate } from '../../src/operator-web/i18n';
@@ -154,7 +154,7 @@ afterEach(async () => {
 
 describe('board data rules', () => {
   test('every development fixture passes the browser decoder', () => {
-    for (const name of [...FIXTURE_NAMES, OFFICE_FIXTURE]) expect(() => fixtureProps(name)).not.toThrow();
+    for (const name of [...FIXTURE_NAMES, OFFICE_FIXTURE, ...OFFICE_DOOR_POLICIES.map(policy => `office-door-${policy}`)]) expect(() => fixtureProps(name)).not.toThrow();
     expect(() => fixtureProps('nope')).toThrow('unknown operator fixture');
     expect(degradedDevActivity(NOW).unreadable_registrations).toBe(2489);
     expect(emptyDevActivity(NOW).items).toHaveLength(0);
@@ -773,6 +773,9 @@ describe('board office (#1755)', () => {
     expect(byPullRequest.map(desk => [desk.state, desk.drawerIssue, desk.title])).toEqual([
       ['idle', 1475, BOARD.items.find(item => item.number === 1475)!.title], ['idle', null, null],
     ]);
+    // The seat branch is the terminal's, with or without a pull request; the pull request head is not a second source.
+    const branches = room(boardWith({ terminals: [{ ...seat('t1', 'worker', 1299, null, 'working'), branch: 'feat/1299-dsh-companion' }, seat('t2', 'worker', null, 1491, null)] })).desks;
+    expect(branches.map(desk => desk.branch)).toEqual(['feat/1299-dsh-companion', null]);
   });
 
   test('without an observed plan: the issue-flow limit and no cart; with a plan the limit, the current batch and the holds come from the block; the tray holds what nobody works on', () => {
@@ -792,7 +795,7 @@ describe('board office (#1755)', () => {
     expect(officeRoom(seatsOf(BOARD), { board: BOARD, attention: { ...attention, findings: [a1, a1] } }).merge_waits).toBe(2);
 
     const planned = room(boardWith({ plan: PLAN }));
-    expect(planned.plan).toEqual({ status: 'observed', created_at: '2026-11-02T20:00:00Z', merge_order: [1475, 1476, 1479], worker_limit: 3, batch: 2 });
+    expect(planned.plan).toEqual({ status: 'observed', created_at: '2026-11-02T20:00:00Z', revision: 1, merge_order: [1475, 1476, 1479], worker_limit: 3, batch: 2 });
     expect(planned.limit).toBe(3);
     // #1475's PR is accepted, #1476's is not: the cart has two places and one member.
     expect(planned.cart).toEqual({ size: 2, accepted: [1475] });
@@ -820,7 +823,7 @@ describe('board office (#1755)', () => {
   });
 
   const SCENE_ROOM: SceneRoom = {
-    name: 'repo-harness', parent: 1, lit: true, orchestrator: null, advisor: null, plan: null, limit: 8, desks: [], queue: [], cart: 0, tray: 0, needsYou: false, mines: new Map(),
+    name: 'repo-harness', parent: 1, lit: true, orchestrator: null, advisor: null, plan: null, limit: 8, desks: [], queue: [], cart: 0, tray: 0, mergeWait: null, mines: new Map(),
     text: { noParent: 'no parent', orchestrator: '', advisor: '', tray: '', cart: '', queue: '', seat: index => `Seat ${index + 1}`, free: 'free', roped: 'roped', mine: rule => rule, say: () => '' },
   };
 
@@ -843,10 +846,17 @@ describe('board office (#1755)', () => {
 
   test('the scene reads the parent, the plan and the queue from their own fields, and reduced motion stands the boss still', () => {
     const view = { frame: 0, night: false, advisorBusy: false, effect: null };
-    const plan = { order: [1], limit: 1, batch: 1 };
+    const plan = { revision: null, order: [1], limit: 1, batch: 1 };
     for (const [parent, roomPlan, lit, label] of [
       [null, null, false, true], [null, null, true, true], [1, null, false, false], [1, plan, false, false], [1, null, true, false],
     ] as const) expect(composeRoom({ ...SCENE_ROOM, parent, plan: roomPlan, lit }, view).labels.some(entry => entry.text === 'no parent')).toBe(label);
+    // The whiteboard title carries the revision; no revision keeps PLAN.
+    const whiteboard = (revision: number | null) => composeRoom({ ...SCENE_ROOM, plan: { ...plan, revision } }, view).paths;
+    expect(whiteboard(7)).not.toEqual(whiteboard(null));
+    expect(whiteboard(7)).not.toEqual(whiteboard(8));
+    // Each policy has its own door, and no finding has no mark.
+    const doors = ([null, 'on', 'off', 'unknown'] as const).map(mergeWait => JSON.stringify(composeRoom({ ...SCENE_ROOM, mergeWait }, view).paths));
+    expect(new Set(doors).size).toBe(4);
 
     const queue = (count: number) => {
       const { hits, labels } = composeRoom({ ...SCENE_ROOM, queue: Array.from({ length: count }, (_, index) => ({ key: `queue:${index}`, agent: sceneAgent('codex'), pr: index })) }, view);
@@ -918,8 +928,8 @@ describe('board office (#1755)', () => {
 
   const fiveRegistered = (ids: readonly string[]) => decodeOperatorRepositories({ protocol: 1, kind: 'operator_repositories', stale_registrations: 0, repositories: ids.map((id, index) => ({ repository_id: id, display_name: `service-${index + 1}`, access_mode: 'read_write' })) });
   const summaryRead = (id: string, row: Parameters<typeof decodeBoardSummaries>[0]): BoardSummariesRead => ({ state: 'ok', summaries: decodeBoardSummaries({ protocol: 2, kind: 'repo-harness.board-summaries', repository_id: id, parents: [row] }) });
-  const observed = (summary: { readonly queue: number; readonly ci_failures: number; readonly batch: { readonly accepted: number | null; readonly size: number | null }; readonly needs_you: number }) => ({ parent: 1474, status: 'observed', observed_at: '2026-11-04T20:00:00.000Z',
-    summary: { ...summary, current_batch: null, worker_limit: ISSUE_FLOW_WORKER_LIMIT, seats: { status: 'observed', desks: [], stalled: 0 } } });
+  const observed = (summary: { readonly queue: number; readonly ci_failures: number; readonly batch: { readonly accepted: number | null; readonly size: number | null }; readonly needs_you: number } & Partial<Pick<BoardSummaryV1, 'current_batch' | 'worker_limit' | 'seats'>>) => ({ parent: 1474, status: 'observed', observed_at: '2026-11-04T20:00:00.000Z',
+    summary: { current_batch: null, worker_limit: ISSUE_FLOW_WORKER_LIMIT, seats: { status: 'observed', desks: [], stalled: 0 }, ...summary } });
 
   test('the overview sends one read at a time: the parents, then the summaries of a repository with an active parent, repository after repository', async () => {
     officeAt();
@@ -959,9 +969,9 @@ describe('board office (#1755)', () => {
     const idle = { ...PARENTS, parents: [], seats: [] };
     const zero = { queue: 0, ci_failures: 0, batch: { accepted: 0, size: 0 }, needs_you: 0 };
     const cases: readonly { readonly id: string; readonly list: BoardParentsRead; readonly read: (id: string) => BoardSummariesRead; readonly chips: readonly string[]; readonly name?: string }[] = [
-      { id: 'repo_1000000000000001', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed(zero)), chips: ['worker 2'], name: 'parent #1474' },
+      { id: 'repo_1000000000000001', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed(zero)), chips: ['2/8'], name: 'parent #1474' },
       { id: 'repo_1000000000000002', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed({ queue: 2, ci_failures: 1, batch: { accepted: null, size: null }, needs_you: 0 })), chips: ['worker 2 · no plan', 'queue 2', 'CI ✗ 1'] },
-      { id: 'repo_1000000000000003', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed({ queue: 1, ci_failures: 1, batch: { accepted: 3, size: 8 }, needs_you: 2 })), chips: ['needs you 2', 'worker 2', 'queue 1', 'CI ✗ 1', 'all batches 3/8'] },
+      { id: 'repo_1000000000000003', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed({ queue: 1, ci_failures: 1, batch: { accepted: 3, size: 8 }, current_batch: { accepted: 2, size: 5 }, needs_you: 2 })), chips: ['needs you 2', '2/8', 'queue 1', 'CI ✗ 1', 'batch 2/6'] },
       { id: 'repo_1000000000000004', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, { parent: 1474, status: 'not_read' }), chips: ['worker 2', 'board not read'] },
       { id: 'repo_1000000000000005', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, { parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' }), chips: ['worker 2', 'no summary'] },
       { id: 'repo_1000000000000006', list: { state: 'ok', list: PARENTS }, read: () => ({ state: 'unavailable', reason: 'parents_busy' }), chips: ['worker 2', 'no summary'] },
@@ -987,8 +997,62 @@ describe('board office (#1755)', () => {
     expect(rows('[data-office-card]').map(card => card.getAttribute('data-repository')!.at(-1))).toEqual(['3', '2', '1', '4', '5', '6', '7', '8', '9']);
     expect(rows('[data-repository$="3"]')[0]!.hasAttribute('data-waiting')).toBe(true);
     expect(rows('[data-office-total]').map(chip => chip.textContent)).toEqual(['rooms: 9', 'on seat: 16', 'queued for acceptance: 3', 'CI failed: 2', 'waiting for you: 2', 'rooms not read: 4']);
-    expect(rows('[data-repository$="3"]')[0]!.getAttribute('aria-label')).toBe('service-3: needs you 2, worker 2, queue 1, CI ✗ 1, all batches 3/8. Open the office.');
+    expect(rows('[data-repository$="3"]')[0]!.getAttribute('aria-label')).toBe('service-3: needs you 2, 2/8, queue 1, CI ✗ 1, batch 2/6. Open the office.');
     expect(document.querySelector('.board-office__mascot')?.getAttribute('aria-label')).toBe('Boss (you): calm');
+  });
+
+  test('the sample cards equal the S0 mockup: the limit, the stalled count and the current batch from each summary row', async () => {
+    officeAt();
+    await mount(<OperatorApp {...fixtureProps(OFFICE_FIXTURE)} />);
+    await settle();
+    const chips = (name: string) => Array.from(rows('[data-office-card]').find(card => card.querySelector('strong')?.textContent === name)!.querySelectorAll<HTMLElement>('[data-office-chip]')).map(chip => [chip.textContent, chip.getAttribute('data-tone')]);
+    expect(chips('repo-harness')).toEqual([['6/6 full', 'warn'], ['queue 2', 'warn'], ['CI ✗ 1', 'danger'], ['no status 1', 'warn'], ['batch 3/6', 'ok']]);
+    expect(chips('aiphabee')).toEqual([['needs you 1', 'accent'], ['3/4', 'subtle'], ['CI ✗ 1', 'danger'], ['batch 2/6', 'ok']]);
+    expect(chips('AstroZi')).toEqual([['3/3 full', 'warn'], ['queue 1', 'warn'], ['no status 1', 'warn']]);
+    expect(chips('arch-context')).toEqual([['worker 1 · no plan', 'subtle']]);
+  });
+
+  test('a card joins each desk row to one seat on its labels; a seat with no row keeps its seat-only state; a summary with no seats gives no desk and no count', async () => {
+    type ListedSeat = BoardParentsV1['seats'][number];
+    const row = (issue: number | null, pr: number | null, state: DeskState) => ({ seat: 'worker', agent: null, issue, pr, state });
+    const desks = (seats: BoardSummarySeatsV1, ...listed: readonly ListedSeat[]) => officeCard({
+      kind: 'ready', list: { ...PARENTS, seats: listed }, summaries: summaryRead('repo_1000000000000001', observed({ queue: 0, ci_failures: 0, batch: { accepted: 0, size: 1 }, needs_you: 0, seats })),
+    }).room.desks.map(desk => desk.state);
+    const same = { ...seat('t1', 'worker', 7, null, 'working'), parent: '1474' };
+    const twin = { ...same, address: 't2' };
+    const unowned = { ...same, address: 't3', parent: null };
+    const other = { ...same, address: 't4', parent: '1651' };
+    for (const [seats, terminals, states] of [
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [same], ['ci_failed']],
+      // Only a seat of the active parent takes its row: a seat with no parent or of another parent comes first in the list and keeps its state.
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [unowned, same], ['coding', 'ci_failed']],
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [other, same], ['coding', 'ci_failed']],
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [unowned, other, same], ['coding', 'coding', 'ci_failed']],
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [unowned, other], ['coding', 'coding']],
+      // A row of another seat is not its row.
+      [{ status: 'observed', desks: [row(8, null, 'ci_failed')], stalled: 0 }, [same], ['coding']],
+      [{ status: 'observed', desks: [{ ...row(7, null, 'ci_failed'), agent: 'codex' }], stalled: 0 }, [same], ['coding']],
+      [{ status: 'observed', desks: [row(7, 9, 'ci_failed')], stalled: 0 }, [same], ['coding']],
+      // Two seats with the same labels take one row each.
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed'), row(7, null, 'ci_pending')], stalled: 0 }, [same, twin], ['ci_failed', 'ci_pending']],
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [same, twin], ['ci_failed', 'coding']],
+      [{ status: 'unavailable', reason: 'no_seat_terminals' }, [same, twin], []],
+    ] as const) expect(desks(seats, ...terminals)).toEqual([...states]);
+
+    officeAt();
+    const ids = ['repo_1000000000000001', 'repo_1000000000000002'];
+    const two = fiveRegistered(ids);
+    const counts = { queue: 1, ci_failures: 0, batch: { accepted: 0, size: 2 }, needs_you: 0 };
+    await mount(<OperatorApp {...props(busy(), {
+      initialRepositories: two, readRepositories: async () => two,
+      readBoardParents: async () => ({ state: 'ok', list: PARENTS }),
+      readBoardSummaries: async id => summaryRead(id, observed({ ...counts, worker_limit: 2, seats: id === ids[0] ? { status: 'unavailable', reason: 'no_seat_terminals' } : { status: 'observed', desks: [{ seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'no_claim_status' }], stalled: 1 } })),
+    })} />);
+    await settle();
+    const chips = (id: string) => Array.from(rows(`[data-repository="${id}"]`)[0]!.querySelectorAll('[data-office-chip]')).map(chip => chip.textContent);
+    expect(chips(ids[0]!)).toEqual(['seats: no_seat_terminals', 'queue 1']);
+    expect(chips(ids[1]!)).toEqual(['2/2 full', 'queue 1', 'no status 1']);
+    expect(rows('[data-office-total]').map(chip => chip.textContent)).toEqual(['rooms: 2', 'on seat: 2', 'queued for acceptance: 2', 'CI failed: 0', 'waiting for you: 0', 'rooms not read: 1']);
   });
 
   test('a hidden tab drops every kept observation: with a parents read, a summaries read or no read in flight, the resumed cycle shows nothing old', async () => {
@@ -1050,19 +1114,30 @@ describe('board office (#1755)', () => {
     const { room } = officeCard({ kind: 'ready', list: officeParents(repository, NOW), summaries: null });
     expect([room.orchestrator?.agent, room.advisor]).toEqual([null, null]);
     expect(room.orchestrator).not.toBeNull();
-    const lead = (orchestrator: SceneMiniRoom['orchestrator']) => composeMiniRoom({ orchestrator, advisor: null, plan: false, needsYou: false, desks: [], queue: 0, idle: false }, { frame: 0, night: false });
+    const lead = (orchestrator: SceneMiniRoom['orchestrator']) => composeMiniRoom({ orchestrator, advisor: null, plan: false, needsYou: false, desks: [], limit: null, queue: 0, cart: 0, idle: false }, { frame: 0, night: false });
     expect(lead(sceneAgent(null))).not.toEqual(lead(null));
   });
 
   test('a mini room draws the seats and the summary it gets: lit screens, the door, the whiteboard and the grey idle room', () => {
     // The other-agent palette uses none of the three colours under test.
     const agent = sceneAgent('hermes');
-    const base: SceneMiniRoom = { orchestrator: agent, advisor: agent, plan: true, needsYou: false, desks: [{ agent, state: 'coding' }], queue: 0, idle: false };
+    const base: SceneMiniRoom = { orchestrator: agent, advisor: agent, plan: true, needsYou: false, desks: [{ agent, state: 'coding' }], limit: null, queue: 0, cart: 0, idle: false };
     const colors = (room: SceneMiniRoom) => composeMiniRoom(room, { frame: 0, night: false }).map(path => path.color);
     expect(colors(base)).toContain('screen');
     expect(colors({ ...base, desks: [{ agent, state: 'idle' }] })).not.toContain('screen');
     expect(colors(base)).not.toContain('accent');
     expect(colors({ ...base, needsYou: true })).toContain('accent');
+    // Each desk state of the mockup has its own desk, the worker limit ropes the empty desks, and the cart fills from the current batch.
+    const looks = DESK_STATES.filter(state => state !== 'idle' && state !== 'unknown').map(state => JSON.stringify(composeMiniRoom({ ...base, desks: [{ agent, state }] }, { frame: 1, night: false })));
+    expect(new Set([...looks, JSON.stringify(composeMiniRoom({ ...base, desks: [{ agent, state: 'idle' }] }, { frame: 1, night: false }))]).size).toBe(looks.length + 1);
+    expect(colors({ ...base, desks: [{ agent, state: 'ci_failed' }] })).toContain('danger');
+    expect(colors({ ...base, desks: [{ agent, state: 'no_claim_status' }] })).toContain('warnDk');
+    expect(colors(base)).not.toContain('dangerDk');
+    expect(colors({ ...base, limit: 8 })).not.toContain('dangerDk');
+    expect(colors({ ...base, limit: 2 })).toContain('dangerDk');
+    expect(colors(base)).not.toContain('ok');
+    expect(colors({ ...base, cart: 3 })).toContain('ok');
+    expect(composeMiniRoom({ ...base, cart: 6 }, { frame: 0, night: false })).not.toEqual(composeMiniRoom({ ...base, cart: 5 }, { frame: 0, night: false }));
     const paper = (room: SceneMiniRoom) => composeMiniRoom(room, { frame: 0, night: false }).find(path => path.color === 'paper')!.d;
     expect(paper({ ...base, plan: false })).not.toBe(paper(base));
     expect(colors({ ...base, orchestrator: null, advisor: null, desks: [], idle: true })).not.toContain('wall');
@@ -1129,6 +1204,7 @@ describe('board office (#1755)', () => {
     await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board: boardWith({ plan: PLAN }) }) })} />);
     await settle();
     expect(document.querySelector('[data-plan]')?.getAttribute('data-plan')).toBe('observed');
+    expect(document.querySelector('[data-plan]')?.textContent).toBe('plan r1');
     expect(document.querySelector('[data-seat-meter]')?.getAttribute('data-seat-meter')).toBe('2/3');
     const panel = (hit: string) => {
       rows(`[data-office-hit="${hit}"]`)[0]!.click();
@@ -1138,12 +1214,53 @@ describe('board office (#1755)', () => {
       ['tray', 'BACKLOG', '#1477Held: waits for #1476', 'repo-harness board --parent 1474'],
       ['door', 'MAIN', 'Next batch#1475', 'gh pr list --base main --state merged --limit 5'],
       ['board', 'ORCHESTRATOR', 'coordinator · integrator', 'repo-harness board --parent 1474'],
+      ['board', 'ORCHESTRATOR', 'Planplan r1', 'repo-harness board --parent 1474'],
     ] as const) {
       await act(async () => panel(hit));
       const shown = document.querySelector('[data-office-panel]')!;
       expect(shown.getAttribute('data-office-panel')).toBe(eyebrow);
       expect(shown.textContent).toContain(text);
       expect(shown.querySelector('[data-command] code')?.textContent).toBe(command);
+    }
+    await act(async () => root?.unmount());
+
+    // A truncated plan comment read has no revision: the chip keeps the age and the panel keeps its word.
+    officeAt(`/${HARNESS_ID}/1474`);
+    await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board: boardWith({ plan: { ...PLAN, revision: null } as BoardV1['plan'] }) }) })} />);
+    await settle();
+    expect(document.querySelector('[data-plan]')?.textContent).toStartWith('Plan · ');
+    await act(async () => panel('board'));
+    expect(document.querySelector('[data-office-panel]')?.textContent).toContain('PlanObserved');
+  });
+
+  test('the merge policy gives each door its meaning: the A1 finding draws the mark, and unknown never reads as off', async () => {
+    const seen = new Map<string, string>();
+    for (const [fixture, waits, state, mode] of [
+      ['office', 0, 'The integrator merges', 'on'],
+      ['office-door-on', 1, 'Waiting for the integrator', 'on'],
+      ['office-door-off', 1, 'Waiting for your merge approval', 'off'],
+      ['office-door-unknown', 1, 'Waiting for a merge; the policy was not read', 'unknown'],
+    ] as const) {
+      officeAt(`/${HARNESS_ID}`);
+      await mount(<OperatorApp {...fixtureProps(fixture)} />);
+      await settle();
+      const door = rows('[data-office-hit="door"]')[0]!;
+      expect(door.getAttribute('aria-label')).toBe(`${waits > 0 ? 'Main door: 1 accepted pull requests wait for a merge' : 'Main door: no pull request waits for a merge'}. ${state}`);
+      await act(async () => door.click());
+      const shown = document.querySelector('[data-office-panel]')!;
+      expect(Array.from(shown.querySelectorAll('dl > div')).map(entry => entry.textContent)).toEqual([`State${state}`, `Merge modeacceptance_merge ${mode}`, `Waiting for a merge${waits}`, 'Next batch#1315 #1320 #1311']);
+      seen.set(fixture, document.querySelector('[data-board-office="room"] [role="img"]')!.innerHTML);
+      await act(async () => root?.unmount());
+    }
+    expect(new Set(seen.values()).size).toBe(4);
+
+    // The seat branch reaches the panel, and a seat with no branch keeps the dash.
+    officeAt(`/${HARNESS_ID}`);
+    await mount(<OperatorApp {...fixtureProps(OFFICE_FIXTURE)} />);
+    await settle();
+    for (const [address, branch] of [['t10', 'feat/1299-dsh-companion'], ['t13', '—']] as const) {
+      await act(async () => rows(`[data-desk="${address}"]`)[0]!.click());
+      expect(document.querySelector('[data-office-panel]')?.textContent).toContain(`Branch${branch}`);
     }
   });
 
@@ -1192,6 +1309,7 @@ describe('board office (#1755)', () => {
     expect(rows('[data-boss]')).toHaveLength(0);
     // No board read the default branch: the door has no command to copy.
     await act(async () => rows('[data-office-hit="door"]')[0]!.click());
+    expect(Array.from(document.querySelectorAll('[data-office-panel] dl > div')).slice(0, 2).map(entry => entry.textContent)).toEqual(['State—', 'Merge mode—']);
     expect(document.querySelector('[data-office-panel] [data-command]')).toBeNull();
     expect(document.querySelector('[data-office-panel] [data-command-gap]')?.textContent).toBe('Command unavailable: no board has read the default branch');
   });
