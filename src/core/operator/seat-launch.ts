@@ -196,7 +196,8 @@ function codexLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'pr
       ...(config.model === null ? [] : ['-m', config.model]),
       ...(config.effort === null ? [] : ['-c', `model_reasoning_effort=${JSON.stringify(config.effort)}`]),
       '-s', writable ? 'workspace-write' : 'read-only',
-      ...(writable ? ['-c', `sandbox_workspace_write.network_access=${network}`] : []),
+      // `checkCodexSeatNetwork` refuses `edit` with `net` at the launch. The form reads the limits of any draft here, so this does not throw.
+      ...(writable ? ['-c', 'sandbox_workspace_write.network_access=false'] : []),
       ...(network ? [] : ['-c', 'web_search="disabled"']),
       // A JSON string is a TOML basic string, so `-c` reads it back as the same text.
       '-c', `developer_instructions=${JSON.stringify(text)}`,

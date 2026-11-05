@@ -2,6 +2,23 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Breaking
+
+- A writable Codex seat now always launches with
+  `sandbox_workspace_write.network_access=false`, and the default worker seat
+  drops the `net` tool group. With sandbox network on, the seat reached the
+  operator console write routes over loopback TCP and the herdr-core socket.
+  A Codex seat with both `edit` and `net` is invalid: a save and
+  `repo-harness seats argv` of that seat refuse with `seat_codex_edit_net`.
+  A stored seats section with such a seat stays readable in the console, and
+  each save is refused until the seat is fixed. Fix: remove `net` from that
+  seat, in the console or in `~/.repo-harness/config.json`. A read-only Codex
+  seat keeps `net` (web search on). Claude and Pi seats do not change. A Codex
+  worker seat runs no `gh` or `hc`; the orchestrator reads its last message.
+  (#1770)
+
 ## [0.26.3] - 2026-11-04
 
 This release adds authorized worktree cleanup, agent investigation of a

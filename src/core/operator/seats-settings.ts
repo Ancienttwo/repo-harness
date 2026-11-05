@@ -41,10 +41,25 @@ export const DEFAULT_SEATS_CONFIG: SeatsConfigV1 = Object.freeze({
   orchestrator: Object.freeze({ runtime: 'claude', model: 'opus', effort: 'high', tools: Object.freeze(['gh', 'mcp', 'net', 'read', 'shell', 'tasks'] as const), fleet: Object.freeze([]) }),
   advisor: Object.freeze({ runtime: 'claude', model: 'opus', effort: 'max', tools: Object.freeze(['mcp', 'net', 'read', 'shell'] as const), fleet: Object.freeze(['deep-reasoner', 'explorer']) }),
   worker: Object.freeze({
-    runtime: 'codex', model: 'gpt-6.1-sol', effort: 'high', tools: Object.freeze(['edit', 'gh', 'mcp', 'net', 'read', 'shell', 'tasks'] as const),
+    runtime: 'codex', model: 'gpt-6.1-sol', effort: 'high', tools: Object.freeze(['edit', 'gh', 'mcp', 'read', 'shell', 'tasks'] as const),
     fleet: Object.freeze(['deep-reasoner', 'deep-worker', 'explorer', 'fast-worker', 'gatekeeper', 'harness-evaluator', 'root-cause-prover']),
   }),
 });
+
+export class CodexSeatNetworkError extends Error {
+  readonly code = 'seat_codex_edit_net';
+}
+
+/**
+ * Owner decision M87 (#1770): a writable Codex sandbox with network reaches loopback TCP, so the operator console
+ * write routes, and the herdr-core socket, where `hc exec` runs a command outside the sandbox. The stored section stays
+ * readable, so the form can turn `net` off; a save and a launch each call this check.
+ */
+export function checkCodexSeatNetwork(seat: SeatId, config: SeatConfigV1): void {
+  if (config.runtime === 'codex' && config.tools.includes('edit') && config.tools.includes('net')) {
+    throw new CodexSeatNetworkError(`The ${seat} seat on Codex cannot have both the edit and net tool groups: a writable Codex seat runs with sandbox network off (#1770). Remove net from that seat.`);
+  }
+}
 
 /** One pane runtime as the seat form may offer it. `models` is empty when the host picks the model. */
 export interface SeatRuntimeRangeV1 {

@@ -31,6 +31,7 @@ export const SEATS_CONFIGURATION_FAILURES: Readonly<Record<SeatsConfigurationErr
   seat_effort_invalid: { status: 422, next_action: CHOOSE_FROM_RANGES },
   seat_tool_not_allowed: { status: 422, next_action: CHOOSE_FROM_RANGES },
   seat_fleet_not_allowed: { status: 422, next_action: CHOOSE_FROM_RANGES },
+  seat_codex_edit_net: { status: 422, next_action: 'Turn Network off on that seat, then save again.' },
 });
 
 /** GET: the stored section, or the defaults, with its revision, the defaults and the ranges the form may offer. */
