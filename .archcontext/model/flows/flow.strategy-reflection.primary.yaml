@@ -15,7 +15,7 @@ steps:
     label: strategy context reads the document and evidence under the request budget
     evidence:
       entrypointId: entrypoint.strategy-reflection.primary
-      sourceSymbol: buildStrategyCommand
+      sourceSymbol: context
       sinkId: sink.strategy-reflection.primary
 outcomes:
   - id: success
@@ -28,7 +28,7 @@ outcomes:
         label: Export the packet with unknowns and truncation explicit and executionAuthorized false
         evidence:
           entrypointId: entrypoint.strategy-reflection.primary
-          sourceSymbol: buildStrategyCommand
+          sourceSymbol: context
           sinkId: sink.strategy-reflection.primary
     terminal:
       participant: capability
@@ -43,7 +43,7 @@ outcomes:
         label: Validate the proposal against a fresh packet and reject forged provenance or a changed digest
         evidence:
           entrypointId: entrypoint.strategy-reflection.primary
-          sourceSymbol: buildStrategyCommand
+          sourceSymbol: validate
           sinkId: sink.strategy-reflection.validate
     terminal:
       participant: capability

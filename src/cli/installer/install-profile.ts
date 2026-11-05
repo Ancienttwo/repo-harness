@@ -53,7 +53,7 @@ import { piExecutable } from '../../effects/pi-executable';
 import { capabilitySourceModeFromPolicy } from '../../core/capabilities/resolver';
 import skillSurfaceManifest from '../../../assets/skill-commands/manifest.json';
 import { version as PACKAGE_VERSION } from '../../../package.json';
-import { architectureRepair } from './architecture-selection';
+import { pluginRepair } from './architecture-selection';
 import {
   enabledPlugins,
   INSTALL_STATE_PROTOCOL,
@@ -1347,7 +1347,7 @@ export function assertArchitecturePolicySelection(cwd: string, plugins: readonly
   ];
   if (needs.length === 0) return;
   throw new InstallStateError('install_plugin_unavailable', installProfileStatePath(env),
-    `${policyPath} sets ${needs.join(' and ')}, which needs the architecture plugin; run: ${architectureRepair(plugins)}`);
+    `${policyPath} sets ${needs.join(' and ')}, which needs the architecture plugin; run: ${pluginRepair('architecture', plugins)}`);
 }
 
 /** `run` drives the Pi package and skill projections; `record` is the plugin set that the plan installs, keeps and removes. */

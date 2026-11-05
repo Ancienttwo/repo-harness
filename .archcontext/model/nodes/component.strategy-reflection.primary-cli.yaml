@@ -11,3 +11,4 @@ responsibilities:
 source:
   include:
     - src/cli/commands/strategy.ts
+    - src/cli/commands/strategy-actions.ts

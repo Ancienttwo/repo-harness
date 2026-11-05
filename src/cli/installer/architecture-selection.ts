@@ -27,8 +27,8 @@ export function readRecordedSelection(env: NodeJS.ProcessEnv = process.env): Rec
   }
 }
 
-export function architectureSelected(selection: RecordedSelection): boolean {
-  return selection.status === 'recorded' && selection.plugins.includes('architecture');
+export function pluginSelected(selection: RecordedSelection, id: PluginId): boolean {
+  return selection.status === 'recorded' && selection.plugins.includes(id);
 }
 
 /** The recorded plugins; an unreadable selection fails closed with its own error. */
@@ -37,13 +37,13 @@ export function recordedPlugins(selection: RecordedSelection): readonly PluginId
   return selection.status === 'recorded' ? selection.plugins : [];
 }
 
-/** The install command that keeps these plugins and adds `architecture`; with no recorded state, the default install. */
-export function architectureRepair(plugins: readonly PluginId[] | null): string {
-  return plugins === null ? installSelectionCommand('all') : installSelectionCommand(PLUGIN_IDS.filter(id => plugins.includes(id) || id === 'architecture'));
+/** The install command that keeps these plugins and adds `added`; with no recorded state, the default install. */
+export function pluginRepair(added: PluginId, plugins: readonly PluginId[] | null): string {
+  return plugins === null ? installSelectionCommand('all') : installSelectionCommand(PLUGIN_IDS.filter(id => plugins.includes(id) || id === added));
 }
 
-function notSelectedMessage(selection: RecordedSelection): string {
-  return `the architecture plugin is not selected; run: ${architectureRepair(selection.status === 'recorded' ? selection.plugins : null)}`;
+function notSelectedMessage(selection: RecordedSelection, id: PluginId): string {
+  return `the ${id} plugin is not selected; run: ${pluginRepair(id, selection.status === 'recorded' ? selection.plugins : null)}`;
 }
 
 export type ArchitectureSelectionReport =
@@ -52,9 +52,9 @@ export type ArchitectureSelectionReport =
 
 /** The gate outcome with its reason; the shell gate (scripts/lib/architecture-plugin.sh) prints this. */
 export function architectureSelectionReport(selection: RecordedSelection): ArchitectureSelectionReport {
-  if (architectureSelected(selection)) return { status: 'selected', message: '' };
+  if (pluginSelected(selection, 'architecture')) return { status: 'selected', message: '' };
   if (selection.status === 'unreadable') return { status: 'unreadable', message: `the install selection cannot be read: ${selection.error.message}` };
-  return { status: 'not-selected', message: notSelectedMessage(selection) };
+  return { status: 'not-selected', message: notSelectedMessage(selection, 'architecture') };
 }
 
 /** A root that registers no architecture provider records why, so each port reports it. */
@@ -70,13 +70,13 @@ export function declareArchitectureSelection(selection: RecordedSelection): void
  * plugin edge stays in the entry.
  */
 export async function registerSelectedArchitecturePorts(selection: RecordedSelection, load: () => Promise<Partial<ArchitecturePorts>>): Promise<void> {
-  if (architectureSelected(selection)) registerArchitecturePorts(await load());
+  if (pluginSelected(selection, 'architecture')) registerArchitecturePorts(await load());
   else declareArchitectureSelection(selection);
 }
 
-/** The guard of each architecture command: it runs before any probe or write. */
-export function assertArchitectureCommandSelected(selection: RecordedSelection, command: string, env: NodeJS.ProcessEnv = process.env): void {
-  if (architectureSelected(selection)) return;
+/** The guard of each plugin command: it runs before any probe or write. */
+export function assertPluginCommandSelected(selection: RecordedSelection, id: PluginId, command: string, env: NodeJS.ProcessEnv = process.env): void {
+  if (pluginSelected(selection, id)) return;
   if (selection.status === 'unreadable') throw selection.error;
-  throw new InstallStateError('install_plugin_unavailable', installProfileStatePath(env), `repo-harness ${command} needs the architecture plugin: ${notSelectedMessage(selection)}`);
+  throw new InstallStateError('install_plugin_unavailable', installProfileStatePath(env), `repo-harness ${command} needs the ${id} plugin: ${notSelectedMessage(selection, id)}`);
 }
