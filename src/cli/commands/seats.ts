@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { CLAUDE_BUILTIN_AGENT_TYPES, SeatPaneNameError, buildSeatLaunch, seatPaneName, seatTabName, type SeatLaunchV1 } from '../../core/operator/seat-launch';
-import { SEAT_IDS, decodeSeatsConfig, type SeatId } from '../../core/operator/seats-settings';
+import { CodexSeatNetworkError, SEAT_IDS, checkCodexSeatNetwork, decodeSeatsConfig, type SeatId } from '../../core/operator/seats-settings';
 import { readGlobalConfiguration } from '../../effects/configuration/global-configuration';
 import { resolveGitCommonDirectory } from '../../effects/git/common-directory';
 import { ClaudeAgentTypesError, claudeHostAgentTypes } from '../../effects/operator/claude-agent-types';
@@ -99,6 +99,7 @@ export function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJ
   try { config = readGlobalConfiguration(env).config; } catch (error) { throw new SeatsCommandError('config_invalid', (error as Error).message); }
   let seats;
   try { seats = decodeSeatsConfig(config.seats); } catch { throw new SeatsCommandError('config_invalid', 'The seats section of the repo-harness configuration is not valid.'); }
+  checkCodexSeatNetwork(id, seats[id]);
   const labelSet = seatLabels(id, labels);
   // The pane name needs the registry prefix, so it comes only with the seat labels.
   const name = labels.repositoryId === undefined ? null : seatPaneName({
@@ -137,7 +138,7 @@ export function buildSeatsCommand(): Command {
         });
       } catch (error) {
         const code = error instanceof SeatsCommandError || error instanceof ClaudeAgentTypesError || error instanceof SeatPaneNameError
-          || error instanceof RepoHarnessRegistryStrictError ? error.code : 'seat_launch_failed';
+          || error instanceof RepoHarnessRegistryStrictError || error instanceof CodexSeatNetworkError ? error.code : 'seat_launch_failed';
         process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: (error as Error).message })}\n`);
         process.exitCode = 1;
         return;
