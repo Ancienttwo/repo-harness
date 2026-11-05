@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from 'bun:test';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -145,11 +145,17 @@ const settle = () => act(async () => { for (let turn = 0; turn < 5; turn++) awai
 const key = (value: string) => act(async () => { document.dispatchEvent(new window.KeyboardEvent('keydown', { key: value, bubbles: true }) as unknown as Event); });
 const PRIVATE_LABEL = /repo_[0-9a-f]{16}|sha256:/u;
 
-beforeEach(() => { prefersDark = false; installDom(); });
+beforeEach(() => {
+  // A run can cross midnight after NOW is set. The fixtures and the rendered day must read one day.
+  setSystemTime(NOW);
+  prefersDark = false;
+  installDom();
+});
 afterEach(async () => {
   await act(async () => root?.unmount());
   root = null;
   window.happyDOM.abort();
+  setSystemTime();
 });
 
 describe('board data rules', () => {
@@ -2611,6 +2617,8 @@ describe('worktree cleanup plan review (#1720)', () => {
   });
 
   test('while the plan is made, the page shows the running request and its seconds; the line goes when the answer arrives', async () => {
+    // The line counts real seconds, so this case needs a clock that runs.
+    setSystemTime();
     const base = cleanupPlanFixture(NOW);
     const held: (() => void)[] = [];
     const hold = <T,>(answer: Promise<T>) => new Promise<T>(resolve => { held.push(() => void answer.then(resolve)); });
