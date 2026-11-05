@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import { cn } from '@cloudflare/kumo';
 import { XIcon } from '@phosphor-icons/react';
 import { ADVISOR_BOSS_COMMAND_TABLE, ADVISOR_BOSS_COMMANDS, advisorBossCommandText, advisorTurnState, type AdvisorBossCommand } from '../core/board/advisor-seat';
+import { DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, type DeskState } from '../core/board/desk';
 import {
-  DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, officeCard, officeCardRank, officeLit, officeRepositoryView, officeTotals, useOfficeOverview,
-  type BoardSummariesReader, type DeskState, type OfficeCard, type OfficeDesk, type OfficeFeedEvent, type OfficeLead, type OfficeRepositoryView, type OfficeRoom, type OfficeTotals,
+  officeCard, officeCardRank, officeLit, officeRepositoryView, officeTotals, useOfficeOverview,
+  type BoardSummariesReader, type OfficeCard, type OfficeDesk, type OfficeFeedEvent, type OfficeLead, type OfficeRepositoryView, type OfficeRoom, type OfficeTotals,
 } from './board-office';
 import type { BoardParentsReader } from './board-view';
 import type { BoardRepositoryOption } from './BoardPage';
