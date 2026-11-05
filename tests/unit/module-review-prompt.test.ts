@@ -286,11 +286,7 @@ test('each formerly quadratic secret rule stays linear on a 1 MiB run and still 
     { run: run('-----BEGIN A B C D E F G H I '), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
     ...['PGP PRIVATE KEY BLOCK', 'EC PRIVATE KEY', 'DSA PRIVATE KEY', 'ENCRYPTED PRIVATE KEY'].flatMap(label => {
       const begin = `-----BEGIN ${label}-----`, end = `-----END ${label}-----`, block = begin + '\nbody\n' + end;
-      return [
-        { run: run(begin + '\n'), sample: end, replacement: '[PRIVATE KEY REDACTED]' },
-        { run: run('a'), sample: block, replacement: '[PRIVATE KEY REDACTED]' },
-        { run: run('-'), sample: block, replacement: '[PRIVATE KEY REDACTED]' },
-      ];
+      return [[begin + '\n', end], ['a', block], ['-', block]].map(([unit, sample]) => ({ run: run(unit), sample, replacement: '[PRIVATE KEY REDACTED]' }));
     }),
     // Each run below has one start every 100 characters, so each walk crosses a long gap.
     { run: run('1'.repeat(99) + 'a'), sample: '://user:pass@example.invalid', replacement: '[CREDENTIAL URL REDACTED]' },
