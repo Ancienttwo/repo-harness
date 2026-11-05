@@ -9,10 +9,11 @@ import {
   BOARD_STAGES, findingItem, itemStage, itemTerminals, shippedToday,
   useBoard, useBoardParents, type BoardParentsReader, type BoardParentsView, type BoardReader, type BoardReason, type BoardStage, type BoardView,
 } from './board-view';
-import { activeParent, officeRoom, type BoardSummariesReader } from './board-office';
+import { activeParent, officeLit, officeRoom, type BoardSummariesReader } from './board-office';
 import { BoardLayoutSwitch, BoardOfficeOverview, BoardOfficeRoom } from './BoardOffice';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import type { BossCommandWriter } from './office-boss';
+import { OfficeSetupChecklist, officeSetupRows, type OfficeSetupReads } from './OfficeSetupChecklist';
 import type { AdvisorMessageWriter, AdvisorTranscriptReader } from './OfficeAdvisorDialog';
 import type { ThemeMode } from './theme';
 import { isTaskMessagesTaskId } from '../core/operator/task-messages';
@@ -360,9 +361,9 @@ function BoardDrawer({ view, place, readExecution, readTaskMessages, generation,
 }
 
 /** The room of one repository: its seats, and the board and Task drawer of the active parent. */
-function OfficeRoomView({ repositoryId, list, view, place, parent, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
+function OfficeRoomView({ repositoryId, list, view, place, parent, setup, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
   readonly repositoryId: string; readonly list: BoardParentsV1; readonly view: (BoardView & { readonly kind: 'ready' }) | null;
-  readonly place: BoardPlace | null; readonly parent: number | null; readonly writeBossCommand: BossCommandWriter;
+  readonly place: BoardPlace | null; readonly parent: number | null; readonly setup: OfficeSetupReads; readonly writeBossCommand: BossCommandWriter;
   readonly readAdvisorTranscript: AdvisorTranscriptReader; readonly writeAdvisorMessage: AdvisorMessageWriter; readonly mode: ThemeMode;
   readonly readExecution: ExecutionReader; readonly readTaskMessages: TaskMessagesReader; readonly generation: number;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
@@ -376,7 +377,8 @@ function OfficeRoomView({ repositoryId, list, view, place, parent, writeBossComm
   return (
     <>
       <BoardOfficeRoom key={`${repositoryId}:${parent}`} repository={list.repository} repositoryId={repositoryId} parent={parent} defaultBranch={board?.default_branch ?? null} room={room} place={place} writeBoss={writeBossCommand} readAdvisor={readAdvisorTranscript} writeAdvisor={writeAdvisorMessage} mode={mode} onOpen={onOpen} now={now} t={t}
-        banners={view === null ? null : <SourceBanners board={view.board} refreshFailed={view.refreshFailed} unevaluated={view.attention.unevaluated.length} t={t} />} />
+        banners={view === null ? null : <SourceBanners board={view.board} refreshFailed={view.refreshFailed} unevaluated={view.attention.unevaluated.length} t={t} />}
+        setup={officeLit(room) ? null : <OfficeSetupChecklist rows={officeSetupRows(setup, { kind: 'room', repositoryId, parent, parents: { kind: 'ready', list }, plan: board?.plan ?? 'no_parent' }, t)} t={t} />} />
       {view !== null && place !== null && (
         <BoardDrawer view={view} place={place} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} order={order} onOpen={onOpen} now={now} t={t} />
       )}
@@ -389,8 +391,8 @@ function OfficeRoomView({ repositoryId, list, view, place, parent, writeBossComm
  * location with a parent shows the board that the App read; a location
  * without one reads the board of the active parent, if the repository has one.
  */
-function OfficeRepository({ repositoryId, place, placeView, readBoard, readBoardParents, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
-  readonly repositoryId: string; readonly place: BoardPlace | null; readonly placeView: BoardView | null;
+function OfficeRepository({ repositoryId, place, placeView, setup, readBoard, readBoardParents, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
+  readonly repositoryId: string; readonly place: BoardPlace | null; readonly placeView: BoardView | null; readonly setup: OfficeSetupReads;
   readonly readBoard: BoardReader; readonly readBoardParents: BoardParentsReader; readonly writeBossCommand: BossCommandWriter;
   readonly readAdvisorTranscript: AdvisorTranscriptReader; readonly writeAdvisorMessage: AdvisorMessageWriter; readonly mode: ThemeMode;
   readonly readExecution: ExecutionReader; readonly readTaskMessages: TaskMessagesReader; readonly generation: number;
@@ -403,8 +405,8 @@ function OfficeRepository({ repositoryId, place, placeView, readBoard, readBoard
   const parent = place?.parent ?? active;
   if (parents.kind === 'failed') {
     return (
-      <div data-board-parents-reason={parents.reason}>
-        <BoardState title={t('board.office.card.failed', { repository: repositoryId })} description={t(`board.reason.${parents.reason}` as OperatorMessageKey)} />
+      <div className="board-office" data-board-parents-reason={parents.reason}>
+        <OfficeSetupChecklist rows={officeSetupRows(setup, { kind: 'room', repositoryId, parent, parents, plan: 'unread' }, t)} t={t} />
       </div>
     );
   }
@@ -416,10 +418,10 @@ function OfficeRepository({ repositoryId, place, placeView, readBoard, readBoard
       </div>
     );
   }
-  return <OfficeRoomView repositoryId={repositoryId} list={parents.list} view={view} place={place} parent={parent} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={mode} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} onOpen={onOpen} now={now} t={t} />;
+  return <OfficeRoomView repositoryId={repositoryId} list={parents.list} view={view} place={place} parent={parent} setup={setup} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={mode} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} onOpen={onOpen} now={now} t={t} />;
 }
 
-export function BoardPage({ layout, place, room, view, parents, repositories, chosenRepository, onRepository, readBoard, readBoardParents, readBoardSummaries, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
+export function BoardPage({ layout, place, room, view, parents, repositories, chosenRepository, onRepository, setup, readBoard, readBoardParents, readBoardSummaries, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
   /** The layout of the location; with a board it equals `place.layout`. */
   readonly layout: BoardLayout;
   readonly place: BoardPlace | null;
@@ -449,14 +451,16 @@ export function BoardPage({ layout, place, room, view, parents, repositories, ch
   readonly repositories: readonly BoardRepositoryOption[];
   readonly chosenRepository: string | null;
   readonly onRepository: (id: string) => void;
+  /** The reads of the Office setup checklist that no Board read carries. */
+  readonly setup: OfficeSetupReads;
   readonly onOpen: (next: WorkspaceLocation) => void;
   readonly now: number;
   readonly t: OperatorTranslate;
 }) {
-  const office = { readBoard, readBoardParents, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t };
+  const office = { setup, readBoard, readBoardParents, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t };
   if (place === null || view === null) {
     if (room !== null) return <OfficeRepository repositoryId={room} place={null} placeView={null} {...office} />;
-    if (layout === 'office') return <BoardOfficeOverview repositories={repositories} readParents={readBoardParents} readSummaries={readBoardSummaries} generation={generation} mode={mode} onOpen={onOpen} t={t} />;
+    if (layout === 'office') return <BoardOfficeOverview repositories={repositories} readParents={readBoardParents} readSummaries={readBoardSummaries} setup={setup} generation={generation} mode={mode} onOpen={onOpen} t={t} />;
     return <ParentList repositories={repositories} repository={boardListRepository(repositories, chosenRepository)} onRepository={onRepository} parents={parents} onOpen={onOpen} now={now} t={t} />;
   }
   if (view.kind === 'loading') return <BoardState loading title={t('board.loading.title')} description={t('board.loading.parentBody', { number: place.parent })} />;

@@ -3,6 +3,7 @@ import { decodeBoard, type BoardItemV1, type BoardPullRequestV1, type BoardTermi
 import { decodeBoardParents, type BoardParentsSeatV1, type BoardParentsV1 } from '../../core/board/parents';
 import { ISSUE_FLOW_WORKER_LIMIT, type DeskState } from '../../core/board/desk';
 import { BOARD_SUMMARIES_PROTOCOL, boardSummary, type BoardSummarySeatsV1, type BoardSummaryV1 } from '../../core/board/summary';
+import { decodeDevActivitySnapshot } from '../../core/dev-activity/decode';
 import { decodeOperatorRepositories } from '../../core/operator/repositories';
 import type { OperatorAppProps } from '../App';
 import type { BoardSummariesRead } from '../board-office';
@@ -37,8 +38,8 @@ function pullRequest(number: number, head_ref: string, required_check: BoardPull
   };
 }
 
-function worker(now: number, address: string, agent: string, status: string, issue: number | null, pr: number | null): BoardTerminalV1 {
-  return { address, name: null, agent, state: 'live', status, status_kind: null, status_ms: now, turn: 1, branch: null, seat_status: 'observed', seat: 'worker', issue, pr };
+function worker(now: number, address: string, agent: string, status: string, issue: number | null, pr: number | null, branch: string | null): BoardTerminalV1 {
+  return { address, name: null, agent, state: 'live', status, status_kind: null, status_ms: now, turn: 1, branch, seat_status: 'observed', seat: 'worker', issue, pr };
 }
 
 function lead(address: string, agent: string, seat: string): BoardParentsSeatV1 {
@@ -52,7 +53,7 @@ export function officeBoard(now: number): BoardV1 {
   const done = { status: 'success', completed_at: ago(9) } as const;
   const terminals = officeWorkers(now);
   return decodeBoard({
-    protocol: 2, kind: 'repo-harness.board', observed_at: ago(0), repository: REPOSITORY, default_branch: 'main', acceptance_merge: 'off',
+    protocol: 2, kind: 'repo-harness.board', observed_at: ago(0), repository: REPOSITORY, default_branch: 'main', acceptance_merge: 'on',
     parent: { number: OFFICE_PARENT, title: 'Operator console', url: url('issues', OFFICE_PARENT), state: 'open', labels: [], milestone: null },
     plan: {
       status: 'observed', comment_url: `${url('issues', OFFICE_PARENT)}#issuecomment-3`, created_at: ago(8), revision: 7,
@@ -88,12 +89,12 @@ export function officeBoard(now: number): BoardV1 {
 
 function officeWorkers(now: number): readonly BoardTerminalV1[] {
   return [
-    worker(now, 't10', 'claude-code', 'working', 1299, null),
-    worker(now, 't11', 'codex', 'working', null, 1323),
-    worker(now, 't12', 'codex', 'working', null, 1295),
-    worker(now, 't13', 'claude-code', 'idle', 1305, null),
-    worker(now, 't14', 'claude-code', 'idle', 1300, 1324),
-    worker(now, 't15', 'codex', 'idle', 1321, 1321),
+    worker(now, 't10', 'claude-code', 'working', 1299, null, 'feat/1299-dsh-companion'),
+    worker(now, 't11', 'codex', 'working', null, 1323, 'feat/1323-board-refresh'),
+    worker(now, 't12', 'codex', 'working', null, 1295, 'fix/1295-hook-race'),
+    worker(now, 't13', 'claude-code', 'idle', 1305, null, null),
+    worker(now, 't14', 'claude-code', 'idle', 1300, 1324, 'feat/1300-history-mockup'),
+    worker(now, 't15', 'codex', 'idle', 1321, 1321, 'feat/1321-worktree-labels'),
   ];
 }
 
@@ -243,5 +244,69 @@ export function officeProps(busy: OperatorAppProps): OperatorAppProps {
     writeBossCommand: officeBossWriter(),
     readAdvisorTranscript: advisor.read,
     writeAdvisorMessage: advisor.write,
+  };
+}
+
+export const OFFICE_DOOR_POLICIES = ['on', 'off', 'unknown'] as const;
+export type OfficeDoorPolicy = typeof OFFICE_DOOR_POLICIES[number];
+
+/** The sample board with one A1 finding under a merge policy (#1819): #1311 is accepted, ready and unmerged. */
+export function officeDoorBoard(board: BoardV1, policy: OfficeDoorPolicy): BoardV1 {
+  const readiness = (pr: BoardPullRequestV1) => ({
+    provider_repository_id: '1', repository: REPOSITORY, pr_number: pr.number, expected_head_sha: pr.head_sha, expected_base_sha: pr.base_sha,
+    protocol: 2, kind: 'repo-harness-pull-request-readiness', ready: true, blockers: [],
+  });
+  return decodeBoard({ ...board, acceptance_merge: policy, pull_requests: board.pull_requests.map(pr => (pr.number === 1311 ? { ...pr, merge_readiness: readiness(pr) } : pr)) });
+}
+
+export function officeDoorProps(office: OperatorAppProps, policy: OfficeDoorPolicy): OperatorAppProps {
+  return {
+    ...office,
+    readBoard: async (subject, signal) => {
+      const read = await office.readBoard!(subject, signal);
+      return read.state === 'ok' ? { ...read, board: officeDoorBoard(read.board, policy) } : read;
+    },
+  };
+}
+
+export const OFFICE_SETUP_GAPS = ['hc', 'gh', 'repository', 'seats', 'plan'] as const;
+export type OfficeSetupGap = typeof OFFICE_SETUP_GAPS[number];
+
+/**
+ * The office sample with one setup prerequisite missing (#1788). `seats` and
+ * `plan` empty every room, because a lit room shows no checklist; `plan` also
+ * takes the plan off the sample board.
+ */
+export function officeSetupProps(office: OperatorAppProps, gap: OfficeSetupGap): OperatorAppProps {
+  const now = Date.now();
+  const repositories = gap === 'repository' ? decodeOperatorRepositories({ ...officeRepositories, repositories: [] }) : officeRepositories;
+  const source = gap === 'gh' ? { status: 'unavailable', reason: 'gh_failed' } : { status: 'ok', reason: null };
+  const activity = decodeDevActivitySnapshot({
+    ...office.initialDevActivity!,
+    items: [], attention: [],
+    repositories: repositories.repositories.map(({ repository_id, display_name }) => ({
+      repository_id, display_name, github: gap === 'gh' ? null : `Ancienttwo/${display_name}`, default_branch: 'main',
+      sources: [{ kind: 'github', ...source, observed_at: new Date(now).toISOString() }],
+    })),
+  });
+  const emptyRooms = gap === 'seats' || gap === 'plan';
+  return {
+    ...office,
+    readRepositories: () => Promise.resolve(repositories),
+    initialRepositories: repositories,
+    fetchDevActivity: () => Promise.resolve(activity),
+    initialDevActivity: activity,
+    readBotAccess: gap !== 'hc' ? office.readBotAccess : async (signal) => {
+      const read = await office.readBotAccess!(signal);
+      return read.state === 'ok' ? { ...read, snapshot: { ...read.snapshot, hc: { state: 'unavailable', reason: 'hc_missing' } } } : read;
+    },
+    readBoardParents: !emptyRooms ? office.readBoardParents : (repositoryId): Promise<BoardParentsRead> => {
+      const list = officeParents(repositoryId, now);
+      return Promise.resolve({ state: 'ok', list: { ...list, seats: [], parents: list.parents.map(parent => ({ ...parent, seats: 0 })) } });
+    },
+    readBoard: gap !== 'plan' ? office.readBoard : async (subject, signal) => {
+      const read = await office.readBoard!(subject, signal);
+      return read.state === 'ok' ? { ...read, board: { ...read.board, plan: { status: 'absent', truncated: false } } } : read;
+    },
   };
 }

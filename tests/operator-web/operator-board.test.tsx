@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from 'bun:test';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -17,11 +17,11 @@ import { documentTitle, OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, OperatorApp, type
 import { evaluateBoardAttention } from '../../src/core/board/attention';
 import { ADVISOR_TRANSCRIPT_LINE_WITHHELD, decodeAdvisorSeatSend, decodeAdvisorSeatTranscript } from '../../src/core/board/advisor-seat';
 import { decodeBoard, type BoardV1 } from '../../src/core/board/board';
-import { fetchBoard, fetchBoardParents, type BoardParentsRead, type BoardSubject } from '../../src/operator-web/board-view';
+import { fetchBoard, fetchBoardParents, type BoardParentsRead, type BoardParentsReason, type BoardSubject } from '../../src/operator-web/board-view';
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import boardParents from '../../src/operator-web/fixtures/board-parents.json';
 import { decodeBoardParents, type BoardParentsV1 } from '../../src/core/board/parents';
-import { decodeBoardSummaries } from '../../src/core/board/summary';
+import { decodeBoardSummaries, type BoardSummarySeatsV1, type BoardSummaryV1 } from '../../src/core/board/summary';
 import { designTokenStylesheet } from '../../src/operator-web/design-tokens';
 import { OPERATOR_RAIL_STORAGE_KEY } from '../../src/operator-web/NavRail';
 import { fetchExecution, fetchTaskMessages, itemOwner, type CiRepairsReader, type ExecutionReader, type TaskMessagesReader } from '../../src/operator-web/repository-reads';
@@ -46,9 +46,16 @@ import { OPERATOR_THEME_STORAGE_KEY, resolveThemeMode } from '../../src/operator
 import { decodeOperatorRepositories, type OperatorRepositoriesV1 } from '../../src/core/operator/repositories';
 import { fetchRepositories } from '../../src/operator-web/repositories';
 import { boardLayout, boardPlace, boardRoom, DEFAULT_LOCATION, parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
-import { DESK_STATES, ISSUE_FLOW_WORKER_LIMIT } from '../../src/core/board/desk';
+import { DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, type DeskState } from '../../src/core/board/desk';
 import { activeParent, officeCard, officeRoom, type BoardSummariesRead } from '../../src/operator-web/board-office';
-import { OFFICE_PARENT, officeBoard, officeParents } from '../../src/operator-web/fixtures/office';
+import { OFFICE_DOOR_POLICIES, OFFICE_PARENT, officeBoard, officeParents } from '../../src/operator-web/fixtures/office';
+import { busyBotAccess, degradedBotAccess } from '../../src/operator-web/fixtures/bots';
+import { officeSetupRows, type OfficeSetupReads, type OfficeSetupRowId, type OfficeSetupScope } from '../../src/operator-web/OfficeSetupChecklist';
+import { translate, type OperatorTranslate } from '../../src/operator-web/i18n';
+import { hcRepairCommands } from '../../src/operator-web/RuntimeBadges';
+import { decodeBotAccessSnapshot, type BotAccessSnapshotV1 } from '../../src/core/operator/bot-access';
+import { HC_MIN_VERSION } from '../../src/core/operator/herdr-pin';
+import { RH_LABEL } from '../../src/effects/terminal/herdr-core';
 import { postBossCommand, type BossCommandPost, type BossCommandWrite } from '../../src/operator-web/office-boss';
 import { fetchAdvisorTranscript, postAdvisorMessage, type AdvisorMessagePost, type AdvisorMessageWrite, type AdvisorTranscriptRead } from '../../src/operator-web/OfficeAdvisorDialog';
 import { composeMiniRoom, composeRoom, sceneEffect, type SceneMiniRoom, type SceneRoom } from '../../src/operator-web/office-scene';
@@ -100,6 +107,7 @@ function props(activity: DevActivitySnapshotV2, overrides: Partial<OperatorAppPr
     readBoard: async () => ({ state: 'ok', board: BOARD }),
     readBoardParents: async () => ({ state: 'ok', list: PARENTS }),
     readBoardSummaries: async id => ({ state: 'ok', summaries: { protocol: 2, kind: 'repo-harness.board-summaries', repository_id: id, parents: [] } }),
+    readBotAccess: async () => ({ state: 'unavailable', reason: 'bot_access_pending' }),
     ...overrides,
   };
 }
@@ -137,16 +145,22 @@ const settle = () => act(async () => { for (let turn = 0; turn < 5; turn++) awai
 const key = (value: string) => act(async () => { document.dispatchEvent(new window.KeyboardEvent('keydown', { key: value, bubbles: true }) as unknown as Event); });
 const PRIVATE_LABEL = /repo_[0-9a-f]{16}|sha256:/u;
 
-beforeEach(() => { prefersDark = false; installDom(); });
+beforeEach(() => {
+  // A run can cross midnight after NOW is set. The fixtures and the rendered day must read one day.
+  setSystemTime(NOW);
+  prefersDark = false;
+  installDom();
+});
 afterEach(async () => {
   await act(async () => root?.unmount());
   root = null;
   window.happyDOM.abort();
+  setSystemTime();
 });
 
 describe('board data rules', () => {
   test('every development fixture passes the browser decoder', () => {
-    for (const name of [...FIXTURE_NAMES, OFFICE_FIXTURE]) expect(() => fixtureProps(name)).not.toThrow();
+    for (const name of [...FIXTURE_NAMES, OFFICE_FIXTURE, ...OFFICE_DOOR_POLICIES.map(policy => `office-door-${policy}`)]) expect(() => fixtureProps(name)).not.toThrow();
     expect(() => fixtureProps('nope')).toThrow('unknown operator fixture');
     expect(degradedDevActivity(NOW).unreadable_registrations).toBe(2489);
     expect(emptyDevActivity(NOW).items).toHaveLength(0);
@@ -765,6 +779,9 @@ describe('board office (#1755)', () => {
     expect(byPullRequest.map(desk => [desk.state, desk.drawerIssue, desk.title])).toEqual([
       ['idle', 1475, BOARD.items.find(item => item.number === 1475)!.title], ['idle', null, null],
     ]);
+    // The seat branch is the terminal's, with or without a pull request; the pull request head is not a second source.
+    const branches = room(boardWith({ terminals: [{ ...seat('t1', 'worker', 1299, null, 'working'), branch: 'feat/1299-dsh-companion' }, seat('t2', 'worker', null, 1491, null)] })).desks;
+    expect(branches.map(desk => desk.branch)).toEqual(['feat/1299-dsh-companion', null]);
   });
 
   test('without an observed plan: the issue-flow limit and no cart; with a plan the limit, the current batch and the holds come from the block; the tray holds what nobody works on', () => {
@@ -784,7 +801,7 @@ describe('board office (#1755)', () => {
     expect(officeRoom(seatsOf(BOARD), { board: BOARD, attention: { ...attention, findings: [a1, a1] } }).merge_waits).toBe(2);
 
     const planned = room(boardWith({ plan: PLAN }));
-    expect(planned.plan).toEqual({ status: 'observed', created_at: '2026-11-02T20:00:00Z', merge_order: [1475, 1476, 1479], worker_limit: 3, batch: 2 });
+    expect(planned.plan).toEqual({ status: 'observed', created_at: '2026-11-02T20:00:00Z', revision: 1, merge_order: [1475, 1476, 1479], worker_limit: 3, batch: 2 });
     expect(planned.limit).toBe(3);
     // #1475's PR is accepted, #1476's is not: the cart has two places and one member.
     expect(planned.cart).toEqual({ size: 2, accepted: [1475] });
@@ -812,7 +829,7 @@ describe('board office (#1755)', () => {
   });
 
   const SCENE_ROOM: SceneRoom = {
-    name: 'repo-harness', parent: 1, lit: true, orchestrator: null, advisor: null, plan: null, limit: 8, desks: [], queue: [], cart: 0, tray: 0, needsYou: false, mines: new Map(),
+    name: 'repo-harness', parent: 1, lit: true, orchestrator: null, advisor: null, plan: null, limit: 8, desks: [], queue: [], cart: 0, tray: 0, mergeWait: null, mines: new Map(),
     text: { noParent: 'no parent', orchestrator: '', advisor: '', tray: '', cart: '', queue: '', seat: index => `Seat ${index + 1}`, free: 'free', roped: 'roped', mine: rule => rule, say: () => '' },
   };
 
@@ -835,10 +852,17 @@ describe('board office (#1755)', () => {
 
   test('the scene reads the parent, the plan and the queue from their own fields, and reduced motion stands the boss still', () => {
     const view = { frame: 0, night: false, advisorBusy: false, effect: null };
-    const plan = { order: [1], limit: 1, batch: 1 };
+    const plan = { revision: null, order: [1], limit: 1, batch: 1 };
     for (const [parent, roomPlan, lit, label] of [
       [null, null, false, true], [null, null, true, true], [1, null, false, false], [1, plan, false, false], [1, null, true, false],
     ] as const) expect(composeRoom({ ...SCENE_ROOM, parent, plan: roomPlan, lit }, view).labels.some(entry => entry.text === 'no parent')).toBe(label);
+    // The whiteboard title carries the revision; no revision keeps PLAN.
+    const whiteboard = (revision: number | null) => composeRoom({ ...SCENE_ROOM, plan: { ...plan, revision } }, view).paths;
+    expect(whiteboard(7)).not.toEqual(whiteboard(null));
+    expect(whiteboard(7)).not.toEqual(whiteboard(8));
+    // Each policy has its own door, and no finding has no mark.
+    const doors = ([null, 'on', 'off', 'unknown'] as const).map(mergeWait => JSON.stringify(composeRoom({ ...SCENE_ROOM, mergeWait }, view).paths));
+    expect(new Set(doors).size).toBe(4);
 
     const queue = (count: number) => {
       const { hits, labels } = composeRoom({ ...SCENE_ROOM, queue: Array.from({ length: count }, (_, index) => ({ key: `queue:${index}`, agent: sceneAgent('codex'), pr: index })) }, view);
@@ -910,8 +934,8 @@ describe('board office (#1755)', () => {
 
   const fiveRegistered = (ids: readonly string[]) => decodeOperatorRepositories({ protocol: 1, kind: 'operator_repositories', stale_registrations: 0, repositories: ids.map((id, index) => ({ repository_id: id, display_name: `service-${index + 1}`, access_mode: 'read_write' })) });
   const summaryRead = (id: string, row: Parameters<typeof decodeBoardSummaries>[0]): BoardSummariesRead => ({ state: 'ok', summaries: decodeBoardSummaries({ protocol: 2, kind: 'repo-harness.board-summaries', repository_id: id, parents: [row] }) });
-  const observed = (summary: { readonly queue: number; readonly ci_failures: number; readonly batch: { readonly accepted: number | null; readonly size: number | null }; readonly needs_you: number }) => ({ parent: 1474, status: 'observed', observed_at: '2026-11-04T20:00:00.000Z',
-    summary: { ...summary, current_batch: null, worker_limit: ISSUE_FLOW_WORKER_LIMIT, seats: { status: 'observed', desks: [], stalled: 0 } } });
+  const observed = (summary: { readonly queue: number; readonly ci_failures: number; readonly batch: { readonly accepted: number | null; readonly size: number | null }; readonly needs_you: number } & Partial<Pick<BoardSummaryV1, 'current_batch' | 'worker_limit' | 'seats'>>) => ({ parent: 1474, status: 'observed', observed_at: '2026-11-04T20:00:00.000Z',
+    summary: { current_batch: null, worker_limit: ISSUE_FLOW_WORKER_LIMIT, seats: { status: 'observed', desks: [], stalled: 0 }, ...summary } });
 
   test('the overview sends one read at a time: the parents, then the summaries of a repository with an active parent, repository after repository', async () => {
     officeAt();
@@ -951,9 +975,9 @@ describe('board office (#1755)', () => {
     const idle = { ...PARENTS, parents: [], seats: [] };
     const zero = { queue: 0, ci_failures: 0, batch: { accepted: 0, size: 0 }, needs_you: 0 };
     const cases: readonly { readonly id: string; readonly list: BoardParentsRead; readonly read: (id: string) => BoardSummariesRead; readonly chips: readonly string[]; readonly name?: string }[] = [
-      { id: 'repo_1000000000000001', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed(zero)), chips: ['worker 2'], name: 'parent #1474' },
+      { id: 'repo_1000000000000001', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed(zero)), chips: ['2/8'], name: 'parent #1474' },
       { id: 'repo_1000000000000002', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed({ queue: 2, ci_failures: 1, batch: { accepted: null, size: null }, needs_you: 0 })), chips: ['worker 2 · no plan', 'queue 2', 'CI ✗ 1'] },
-      { id: 'repo_1000000000000003', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed({ queue: 1, ci_failures: 1, batch: { accepted: 3, size: 8 }, needs_you: 2 })), chips: ['needs you 2', 'worker 2', 'queue 1', 'CI ✗ 1', 'all batches 3/8'] },
+      { id: 'repo_1000000000000003', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed({ queue: 1, ci_failures: 1, batch: { accepted: 3, size: 8 }, current_batch: { accepted: 2, size: 5 }, needs_you: 2 })), chips: ['needs you 2', '2/8', 'queue 1', 'CI ✗ 1', 'batch 2/6'] },
       { id: 'repo_1000000000000004', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, { parent: 1474, status: 'not_read' }), chips: ['worker 2', 'board not read'] },
       { id: 'repo_1000000000000005', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, { parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' }), chips: ['worker 2', 'no summary'] },
       { id: 'repo_1000000000000006', list: { state: 'ok', list: PARENTS }, read: () => ({ state: 'unavailable', reason: 'parents_busy' }), chips: ['worker 2', 'no summary'] },
@@ -979,8 +1003,62 @@ describe('board office (#1755)', () => {
     expect(rows('[data-office-card]').map(card => card.getAttribute('data-repository')!.at(-1))).toEqual(['3', '2', '1', '4', '5', '6', '7', '8', '9']);
     expect(rows('[data-repository$="3"]')[0]!.hasAttribute('data-waiting')).toBe(true);
     expect(rows('[data-office-total]').map(chip => chip.textContent)).toEqual(['rooms: 9', 'on seat: 16', 'queued for acceptance: 3', 'CI failed: 2', 'waiting for you: 2', 'rooms not read: 4']);
-    expect(rows('[data-repository$="3"]')[0]!.getAttribute('aria-label')).toBe('service-3: needs you 2, worker 2, queue 1, CI ✗ 1, all batches 3/8. Open the office.');
+    expect(rows('[data-repository$="3"]')[0]!.getAttribute('aria-label')).toBe('service-3: needs you 2, 2/8, queue 1, CI ✗ 1, batch 2/6. Open the office.');
     expect(document.querySelector('.board-office__mascot')?.getAttribute('aria-label')).toBe('Boss (you): calm');
+  });
+
+  test('the sample cards equal the S0 mockup: the limit, the stalled count and the current batch from each summary row', async () => {
+    officeAt();
+    await mount(<OperatorApp {...fixtureProps(OFFICE_FIXTURE)} />);
+    await settle();
+    const chips = (name: string) => Array.from(rows('[data-office-card]').find(card => card.querySelector('strong')?.textContent === name)!.querySelectorAll<HTMLElement>('[data-office-chip]')).map(chip => [chip.textContent, chip.getAttribute('data-tone')]);
+    expect(chips('repo-harness')).toEqual([['6/6 full', 'warn'], ['queue 2', 'warn'], ['CI ✗ 1', 'danger'], ['no status 1', 'warn'], ['batch 3/6', 'ok']]);
+    expect(chips('aiphabee')).toEqual([['needs you 1', 'accent'], ['3/4', 'subtle'], ['CI ✗ 1', 'danger'], ['batch 2/6', 'ok']]);
+    expect(chips('AstroZi')).toEqual([['3/3 full', 'warn'], ['queue 1', 'warn'], ['no status 1', 'warn']]);
+    expect(chips('arch-context')).toEqual([['worker 1 · no plan', 'subtle']]);
+  });
+
+  test('a card joins each desk row to one seat on its labels; a seat with no row keeps its seat-only state; a summary with no seats gives no desk and no count', async () => {
+    type ListedSeat = BoardParentsV1['seats'][number];
+    const row = (issue: number | null, pr: number | null, state: DeskState) => ({ seat: 'worker', agent: null, issue, pr, state });
+    const desks = (seats: BoardSummarySeatsV1, ...listed: readonly ListedSeat[]) => officeCard({
+      kind: 'ready', list: { ...PARENTS, seats: listed }, summaries: summaryRead('repo_1000000000000001', observed({ queue: 0, ci_failures: 0, batch: { accepted: 0, size: 1 }, needs_you: 0, seats })),
+    }).room.desks.map(desk => desk.state);
+    const same = { ...seat('t1', 'worker', 7, null, 'working'), parent: '1474' };
+    const twin = { ...same, address: 't2' };
+    const unowned = { ...same, address: 't3', parent: null };
+    const other = { ...same, address: 't4', parent: '1651' };
+    for (const [seats, terminals, states] of [
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [same], ['ci_failed']],
+      // Only a seat of the active parent takes its row: a seat with no parent or of another parent comes first in the list and keeps its state.
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [unowned, same], ['coding', 'ci_failed']],
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [other, same], ['coding', 'ci_failed']],
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [unowned, other, same], ['coding', 'coding', 'ci_failed']],
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [unowned, other], ['coding', 'coding']],
+      // A row of another seat is not its row.
+      [{ status: 'observed', desks: [row(8, null, 'ci_failed')], stalled: 0 }, [same], ['coding']],
+      [{ status: 'observed', desks: [{ ...row(7, null, 'ci_failed'), agent: 'codex' }], stalled: 0 }, [same], ['coding']],
+      [{ status: 'observed', desks: [row(7, 9, 'ci_failed')], stalled: 0 }, [same], ['coding']],
+      // Two seats with the same labels take one row each.
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed'), row(7, null, 'ci_pending')], stalled: 0 }, [same, twin], ['ci_failed', 'ci_pending']],
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [same, twin], ['ci_failed', 'coding']],
+      [{ status: 'unavailable', reason: 'no_seat_terminals' }, [same, twin], []],
+    ] as const) expect(desks(seats, ...terminals)).toEqual([...states]);
+
+    officeAt();
+    const ids = ['repo_1000000000000001', 'repo_1000000000000002'];
+    const two = fiveRegistered(ids);
+    const counts = { queue: 1, ci_failures: 0, batch: { accepted: 0, size: 2 }, needs_you: 0 };
+    await mount(<OperatorApp {...props(busy(), {
+      initialRepositories: two, readRepositories: async () => two,
+      readBoardParents: async () => ({ state: 'ok', list: PARENTS }),
+      readBoardSummaries: async id => summaryRead(id, observed({ ...counts, worker_limit: 2, seats: id === ids[0] ? { status: 'unavailable', reason: 'no_seat_terminals' } : { status: 'observed', desks: [{ seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'no_claim_status' }], stalled: 1 } })),
+    })} />);
+    await settle();
+    const chips = (id: string) => Array.from(rows(`[data-repository="${id}"]`)[0]!.querySelectorAll('[data-office-chip]')).map(chip => chip.textContent);
+    expect(chips(ids[0]!)).toEqual(['seats: no_seat_terminals', 'queue 1']);
+    expect(chips(ids[1]!)).toEqual(['2/2 full', 'queue 1', 'no status 1']);
+    expect(rows('[data-office-total]').map(chip => chip.textContent)).toEqual(['rooms: 2', 'on seat: 2', 'queued for acceptance: 2', 'CI failed: 0', 'waiting for you: 0', 'rooms not read: 1']);
   });
 
   test('a hidden tab drops every kept observation: with a parents read, a summaries read or no read in flight, the resumed cycle shows nothing old', async () => {
@@ -1042,19 +1120,30 @@ describe('board office (#1755)', () => {
     const { room } = officeCard({ kind: 'ready', list: officeParents(repository, NOW), summaries: null });
     expect([room.orchestrator?.agent, room.advisor]).toEqual([null, null]);
     expect(room.orchestrator).not.toBeNull();
-    const lead = (orchestrator: SceneMiniRoom['orchestrator']) => composeMiniRoom({ orchestrator, advisor: null, plan: false, needsYou: false, desks: [], queue: 0, idle: false }, { frame: 0, night: false });
+    const lead = (orchestrator: SceneMiniRoom['orchestrator']) => composeMiniRoom({ orchestrator, advisor: null, plan: false, needsYou: false, desks: [], limit: null, queue: 0, cart: 0, idle: false }, { frame: 0, night: false });
     expect(lead(sceneAgent(null))).not.toEqual(lead(null));
   });
 
   test('a mini room draws the seats and the summary it gets: lit screens, the door, the whiteboard and the grey idle room', () => {
     // The other-agent palette uses none of the three colours under test.
     const agent = sceneAgent('hermes');
-    const base: SceneMiniRoom = { orchestrator: agent, advisor: agent, plan: true, needsYou: false, desks: [{ agent, state: 'coding' }], queue: 0, idle: false };
+    const base: SceneMiniRoom = { orchestrator: agent, advisor: agent, plan: true, needsYou: false, desks: [{ agent, state: 'coding' }], limit: null, queue: 0, cart: 0, idle: false };
     const colors = (room: SceneMiniRoom) => composeMiniRoom(room, { frame: 0, night: false }).map(path => path.color);
     expect(colors(base)).toContain('screen');
     expect(colors({ ...base, desks: [{ agent, state: 'idle' }] })).not.toContain('screen');
     expect(colors(base)).not.toContain('accent');
     expect(colors({ ...base, needsYou: true })).toContain('accent');
+    // Each desk state of the mockup has its own desk, the worker limit ropes the empty desks, and the cart fills from the current batch.
+    const looks = DESK_STATES.filter(state => state !== 'idle' && state !== 'unknown').map(state => JSON.stringify(composeMiniRoom({ ...base, desks: [{ agent, state }] }, { frame: 1, night: false })));
+    expect(new Set([...looks, JSON.stringify(composeMiniRoom({ ...base, desks: [{ agent, state: 'idle' }] }, { frame: 1, night: false }))]).size).toBe(looks.length + 1);
+    expect(colors({ ...base, desks: [{ agent, state: 'ci_failed' }] })).toContain('danger');
+    expect(colors({ ...base, desks: [{ agent, state: 'no_claim_status' }] })).toContain('warnDk');
+    expect(colors(base)).not.toContain('dangerDk');
+    expect(colors({ ...base, limit: 8 })).not.toContain('dangerDk');
+    expect(colors({ ...base, limit: 2 })).toContain('dangerDk');
+    expect(colors(base)).not.toContain('ok');
+    expect(colors({ ...base, cart: 3 })).toContain('ok');
+    expect(composeMiniRoom({ ...base, cart: 6 }, { frame: 0, night: false })).not.toEqual(composeMiniRoom({ ...base, cart: 5 }, { frame: 0, night: false }));
     const paper = (room: SceneMiniRoom) => composeMiniRoom(room, { frame: 0, night: false }).find(path => path.color === 'paper')!.d;
     expect(paper({ ...base, plan: false })).not.toBe(paper(base));
     expect(colors({ ...base, orchestrator: null, advisor: null, desks: [], idle: true })).not.toContain('wall');
@@ -1121,6 +1210,7 @@ describe('board office (#1755)', () => {
     await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board: boardWith({ plan: PLAN }) }) })} />);
     await settle();
     expect(document.querySelector('[data-plan]')?.getAttribute('data-plan')).toBe('observed');
+    expect(document.querySelector('[data-plan]')?.textContent).toBe('plan r1');
     expect(document.querySelector('[data-seat-meter]')?.getAttribute('data-seat-meter')).toBe('2/3');
     const panel = (hit: string) => {
       rows(`[data-office-hit="${hit}"]`)[0]!.click();
@@ -1130,12 +1220,53 @@ describe('board office (#1755)', () => {
       ['tray', 'BACKLOG', '#1477Held: waits for #1476', 'repo-harness board --parent 1474'],
       ['door', 'MAIN', 'Next batch#1475', 'gh pr list --base main --state merged --limit 5'],
       ['board', 'ORCHESTRATOR', 'coordinator · integrator', 'repo-harness board --parent 1474'],
+      ['board', 'ORCHESTRATOR', 'Planplan r1', 'repo-harness board --parent 1474'],
     ] as const) {
       await act(async () => panel(hit));
       const shown = document.querySelector('[data-office-panel]')!;
       expect(shown.getAttribute('data-office-panel')).toBe(eyebrow);
       expect(shown.textContent).toContain(text);
       expect(shown.querySelector('[data-command] code')?.textContent).toBe(command);
+    }
+    await act(async () => root?.unmount());
+
+    // A truncated plan comment read has no revision: the chip keeps the age and the panel keeps its word.
+    officeAt(`/${HARNESS_ID}/1474`);
+    await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board: boardWith({ plan: { ...PLAN, revision: null } as BoardV1['plan'] }) }) })} />);
+    await settle();
+    expect(document.querySelector('[data-plan]')?.textContent).toStartWith('Plan · ');
+    await act(async () => panel('board'));
+    expect(document.querySelector('[data-office-panel]')?.textContent).toContain('PlanObserved');
+  });
+
+  test('the merge policy gives each door its meaning: the A1 finding draws the mark, and unknown never reads as off', async () => {
+    const seen = new Map<string, string>();
+    for (const [fixture, waits, state, mode] of [
+      ['office', 0, 'The integrator merges', 'on'],
+      ['office-door-on', 1, 'Waiting for the integrator', 'on'],
+      ['office-door-off', 1, 'Waiting for your merge approval', 'off'],
+      ['office-door-unknown', 1, 'Waiting for a merge; the policy was not read', 'unknown'],
+    ] as const) {
+      officeAt(`/${HARNESS_ID}`);
+      await mount(<OperatorApp {...fixtureProps(fixture)} />);
+      await settle();
+      const door = rows('[data-office-hit="door"]')[0]!;
+      expect(door.getAttribute('aria-label')).toBe(`${waits > 0 ? 'Main door: 1 accepted pull requests wait for a merge' : 'Main door: no pull request waits for a merge'}. ${state}`);
+      await act(async () => door.click());
+      const shown = document.querySelector('[data-office-panel]')!;
+      expect(Array.from(shown.querySelectorAll('dl > div')).map(entry => entry.textContent)).toEqual([`State${state}`, `Merge modeacceptance_merge ${mode}`, `Waiting for a merge${waits}`, 'Next batch#1315 #1320 #1311']);
+      seen.set(fixture, document.querySelector('[data-board-office="room"] [role="img"]')!.innerHTML);
+      await act(async () => root?.unmount());
+    }
+    expect(new Set(seen.values()).size).toBe(4);
+
+    // The seat branch reaches the panel, and a seat with no branch keeps the dash.
+    officeAt(`/${HARNESS_ID}`);
+    await mount(<OperatorApp {...fixtureProps(OFFICE_FIXTURE)} />);
+    await settle();
+    for (const [address, branch] of [['t10', 'feat/1299-dsh-companion'], ['t13', '—']] as const) {
+      await act(async () => rows(`[data-desk="${address}"]`)[0]!.click());
+      expect(document.querySelector('[data-office-panel]')?.textContent).toContain(`Branch${branch}`);
     }
   });
 
@@ -1184,6 +1315,7 @@ describe('board office (#1755)', () => {
     expect(rows('[data-boss]')).toHaveLength(0);
     // No board read the default branch: the door has no command to copy.
     await act(async () => rows('[data-office-hit="door"]')[0]!.click());
+    expect(Array.from(document.querySelectorAll('[data-office-panel] dl > div')).slice(0, 2).map(entry => entry.textContent)).toEqual(['State—', 'Merge mode—']);
     expect(document.querySelector('[data-office-panel] [data-command]')).toBeNull();
     expect(document.querySelector('[data-office-panel] [data-command-gap]')?.textContent).toBe('Command unavailable: no board has read the default branch');
   });
@@ -1659,6 +1791,234 @@ describe('board office (#1755)', () => {
     const finding = (rule: 'R2' | 'R3' | 'R1', pull_requests: readonly number[]) => ({ rule, route: 'advisor', issues: [], pull_requests, terminals: [], message: '' }) as const;
     const marks = officeRoom(seatsOf(board), { board, attention: { ...attention, findings: [finding('R1', [1491]), finding('R2', [1499]), finding('R3', [1491])] } }).mines;
     expect([...marks]).toEqual([['t1', 'R2'], ['t2', 'R3']]);
+  });
+});
+
+describe('office setup checklist (#1788)', () => {
+  const rows = (selector: string) => Array.from(document.querySelectorAll<HTMLElement>(selector));
+  const t: OperatorTranslate = (key, params) => translate('en', key, params);
+  const THIS = 'repo_1a1a1a1a1a1a1a1a';
+  const OTHER = 'repo_2b2b2b2b2b2b2b2b';
+  const OVERVIEW: OfficeSetupScope = { kind: 'overview', rooms: [] };
+  const EMPTY: BoardParentsV1 = { ...PARENTS, parents: [], seats: [] };
+  const inRoom = (scope: Partial<Extract<OfficeSetupScope, { kind: 'room' }>> = {}): OfficeSetupScope => ({ kind: 'room', repositoryId: THIS, parent: null, parents: { kind: 'ready', list: EMPTY }, plan: 'no_parent', ...scope });
+  const bots = (snapshot: BotAccessSnapshotV1): OfficeSetupReads['botAccess'] => ({ kind: 'ready', snapshot, refreshFailed: false });
+  const READY = decodeBotAccessSnapshot(busyBotAccess(NOW));
+  const github = (status: string, reason: string | null, name: string | null = null, id = THIS) =>
+    ({ repository_id: id, display_name: id, github: name, default_branch: null, sources: [{ kind: 'github', status, reason, observed_at: null }] });
+  const activity = (...repositories: readonly ReturnType<typeof github>[]): OfficeSetupReads['devActivity'] =>
+    ({ kind: 'ready', refreshFailed: false, snapshot: decodeDevActivitySnapshot({ ...busy(), repositories, items: [], attention: [] }) });
+  const registered = (...ids: readonly string[]): OfficeSetupReads['repositories'] =>
+    ({ kind: 'ready', refreshFailed: false, list: decodeOperatorRepositories({ protocol: 1, kind: 'operator_repositories', stale_registrations: 0, repositories: ids.map(id => ({ repository_id: id, display_name: id, access_mode: 'read_write' })) }) });
+  const reads = (overrides: Partial<OfficeSetupReads> = {}): OfficeSetupReads => ({ repositories: registered(THIS), devActivity: activity(github('ok', null, 'Ancienttwo/this')), botAccess: bots(READY), ...overrides });
+  const row = (id: OfficeSetupRowId, input: OfficeSetupReads, scope: OfficeSetupScope = inRoom()) => officeSetupRows(input, scope, t).find(entry => entry.id === id)!;
+  const stateAndCommands = (id: OfficeSetupRowId, input: OfficeSetupReads, scope?: OfficeSetupScope): readonly [string, readonly string[]] => { const { state, commands } = row(id, input, scope); return [state, commands]; };
+
+  test('row 1 reads the bot-access hc section, and each state has the repair command of its source', () => {
+    const hc = (section: BotAccessSnapshotV1['hc']) => reads({ botAccess: bots({ ...READY, hc: section }) });
+    const cases: readonly (readonly [OfficeSetupReads, string, readonly string[]])[] = [
+      [reads({ botAccess: { kind: 'loading' } }), 'unknown', ['hc server status']],
+      [reads({ botAccess: { kind: 'unavailable', reason: 'bot_access_pending' } }), 'unknown', ['hc server status']],
+      [reads({ botAccess: { kind: 'unavailable', reason: 'unreachable' } }), 'unknown', ['hc server status']],
+      [hc({ state: 'unavailable', reason: 'hc_missing' }), 'missing', ['repo-harness update']],
+      [hc({ state: 'unavailable', reason: 'hc_unreachable' }), 'failed', [hcRepairCommands(HC_MIN_VERSION)[1]]],
+      [reads({ botAccess: bots(decodeBotAccessSnapshot(degradedBotAccess(NOW))) }), 'failed', [...hcRepairCommands(HC_MIN_VERSION)]],
+      [hc({ ...READY.hc, terminals: { state: 'unavailable', reason: 'hc_terminals_failed' } } as BotAccessSnapshotV1['hc']), 'failed', ['hc server status']],
+      [reads(), 'ok', ['hc server status']],
+    ];
+    for (const [input, state, commands] of cases) expect(stateAndCommands('hc', input)).toEqual([state, commands]);
+  });
+
+  test('row 2 reads the GitHub source: a failed gh read makes no claim about the login', () => {
+    const cases: readonly (readonly [OfficeSetupReads['devActivity'], OfficeSetupScope, string])[] = [
+      [{ kind: 'loading' }, OVERVIEW, 'unknown'],
+      [activity(github('ok', null, 'o/r')), OVERVIEW, 'ok'],
+      [activity(github('unavailable', 'github_truncated_merged', 'o/r')), OVERVIEW, 'ok'],
+      [activity(github('unavailable', 'gh_failed'), github('ok', null, 'o/r', OTHER)), OVERVIEW, 'ok'],
+      [activity(github('unavailable', 'gh_failed'), github('ok', null, 'o/r', OTHER)), inRoom(), 'failed'],
+      [activity(github('unavailable', 'gh_not_installed')), OVERVIEW, 'missing'],
+      [activity(github('unavailable', 'gh_timeout')), OVERVIEW, 'failed'],
+      [{ kind: 'unreachable' }, OVERVIEW, 'unknown'],
+      [activity(github('not_configured', 'no_github_remote')), OVERVIEW, 'unknown'],
+      [activity(github('unavailable', 'git_remote_failed')), OVERVIEW, 'unknown'],
+      [activity(github('not_configured', 'no_github_remote'), github('unavailable', 'git_remote_failed', null, OTHER)), OVERVIEW, 'unknown'],
+    ];
+    for (const [devActivity, scope, state] of cases) expect(stateAndCommands('gh', reads({ devActivity }), scope)).toEqual([state, ['gh auth status']]);
+    const noRemote = 'No repository here has a GitHub remote';
+    expect(row('gh', reads({ devActivity: activity(github('not_configured', 'no_github_remote')) }), OVERVIEW).detail).toContain(noRemote);
+    const mixed = row('gh', reads({ devActivity: activity(github('not_configured', 'no_github_remote'), github('unavailable', 'git_remote_failed', null, OTHER)) }), OVERVIEW).detail;
+    expect(mixed).not.toContain(noRemote);
+    expect(mixed).toContain('git_remote_failed');
+    expect(row('gh', reads({ devActivity: activity(github('unavailable', 'git_remote_failed')) }), OVERVIEW).detail).toContain('git_remote_failed');
+    expect(row('gh', reads({ devActivity: { kind: 'unreachable' } }), OVERVIEW).detail).toBe(t('board.reason.unreachable'));
+    const failed = row('gh', reads({ devActivity: activity(github('unavailable', 'gh_failed')) })).detail;
+    expect(failed).toContain('gh_failed');
+    expect(failed.toLowerCase()).not.toContain('log');
+  });
+
+  test('row 3 joins the registry with the GitHub source: only `not_configured` means no remote', () => {
+    const ID = 'gh api repos/{owner}/{repo} --jq .id';
+    const REMOTE = 'git remote add origin <url>';
+    const INIT = 'repo-harness init';
+    const SERVE = 'repo-harness operator serve';
+    const noRemote = github('not_configured', 'no_github_remote');
+    const cases: readonly (readonly [Partial<OfficeSetupReads>, OfficeSetupScope, string, string])[] = [
+      [{ repositories: { kind: 'loading' } }, OVERVIEW, 'unknown', SERVE],
+      [{ repositories: { kind: 'failed' } }, OVERVIEW, 'unknown', SERVE],
+      [{ repositories: { kind: 'failed' } }, inRoom(), 'unknown', SERVE],
+      [{ repositories: registered() }, OVERVIEW, 'missing', INIT],
+      [{}, OVERVIEW, 'ok', ID],
+      [{}, inRoom(), 'ok', ID],
+      [{ repositories: registered(OTHER) }, inRoom(), 'missing', INIT],
+      [{ devActivity: activity(noRemote) }, inRoom(), 'missing', REMOTE],
+      [{ devActivity: activity(noRemote) }, OVERVIEW, 'missing', REMOTE],
+      [{ devActivity: activity(github('unavailable', 'gh_failed')) }, inRoom(), 'unknown', ID],
+      [{ devActivity: activity(github('unavailable', 'gh_failed')) }, OVERVIEW, 'unknown', ID],
+      [{ devActivity: { kind: 'unreachable' } }, inRoom(), 'unknown', ID],
+      [{ repositories: registered(THIS, OTHER), devActivity: activity(github('ok', null, 'o/r'), { ...noRemote, repository_id: OTHER }) }, OVERVIEW, 'partial', ID],
+    ];
+    for (const [input, scope, state, command] of cases) expect(stateAndCommands('repository', reads(input), scope)).toEqual([state, [command]]);
+    const two = registered(THIS, OTHER);
+    const details: readonly (readonly [Partial<OfficeSetupReads>, OfficeSetupScope, string])[] = [
+      [{ repositories: two, devActivity: activity(github('unavailable', 'gh_failed'), { ...github('unavailable', 'gh_failed'), repository_id: OTHER }) }, OVERVIEW, 'Confirmed: 0 with a GitHub remote, 0 with none. Not known: 2 (gh_failed).'],
+      [{ repositories: two, devActivity: activity(github('ok', null, 'o/r'), { ...github('unavailable', 'git_remote_failed'), repository_id: OTHER }) }, OVERVIEW, 'Confirmed: 1 with a GitHub remote, 0 with none. Not known: 1 (git_remote_failed).'],
+      [{ repositories: two, devActivity: { kind: 'loading' } }, OVERVIEW, 'Confirmed: 0 with a GitHub remote, 0 with none. Not known: 2 (no read yet).'],
+      [{ repositories: two, devActivity: { kind: 'unreachable' } }, OVERVIEW, 'Confirmed: 0 with a GitHub remote, 0 with none. Not known: 2 (unreachable).'],
+      [{ devActivity: activity(github('unavailable', 'gh_failed')) }, inRoom(), 'Registered. The GitHub remote is not known (gh_failed).'],
+    ];
+    for (const [input, scope, detail] of details) expect(row('repository', reads(input), scope).detail).toBe(detail);
+  });
+
+  test('rows 4 and 5 use the reads of the page, with the seat commands of the issue and the label keys of RH_LABEL', () => {
+    const SEATS = ['repo-harness seats argv <seat> --repository-id <id>', `hc label <t> ${RH_LABEL.repository}=<id> ${RH_LABEL.seat}=<seat>`];
+    const failedRoom = (reason: BoardParentsReason) => ({ view: { kind: 'failed', reason }, card: null }) as const;
+    const loadingRoom = { view: { kind: 'loading' }, card: null } as const;
+    const readyRoom = (list: BoardParentsV1, summaries: BoardSummariesRead | null = null) => {
+      const view = { kind: 'ready', list, summaries } as const;
+      return { view, card: officeCard(view) };
+    };
+    const overview = (...rooms: Extract<OfficeSetupScope, { kind: 'overview' }>['rooms']): OfficeSetupScope => ({ kind: 'overview', rooms });
+    const invalidLabel: BoardParentsV1 = { ...EMPTY, seats: [{ address: 't9', name: null, agent: null, state: 'live', status: null, status_kind: null, status_ms: null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_invalid', parent: null }] };
+    const seatCases: readonly (readonly [OfficeSetupScope, string, string])[] = [
+      [inRoom(), 'missing', 'No live terminal has a seat label.'],
+      [inRoom({ parents: { kind: 'ready', list: invalidLabel } }), 'failed', 'Terminal t9 has an invalid seat label.'],
+      [inRoom({ parents: { kind: 'failed', reason: 'parents_hc_failed' } }), 'failed', t('board.reason.parents_hc_failed')],
+      [inRoom({ parents: { kind: 'failed', reason: 'parents_github_failed' } }), 'unknown', t('board.reason.parents_github_failed')],
+      [overview(), 'unknown', 'No repository was read, so no seat read ran.'],
+      [overview(readyRoom(EMPTY)), 'missing', 'No live terminal has a seat label.'],
+      [overview(readyRoom(invalidLabel)), 'failed', 'Terminal t9 has an invalid seat label.'],
+      [overview(failedRoom('parents_hc_failed')), 'failed', t('board.reason.parents_hc_failed')],
+      [overview(failedRoom('parents_invalid'), readyRoom(EMPTY)), 'unknown', t('board.reason.parents_invalid')],
+      [overview(loadingRoom), 'unknown', 'The first read has not finished.'],
+      [overview(readyRoom(PARENTS), readyRoom(EMPTY)), 'ok', '1 of 2 rooms have a live seat.'],
+      [overview(readyRoom(PARENTS), failedRoom('parents_invalid')), 'ok', 'Rooms with a live seat: 1. Not known: 1 (parents_invalid).'],
+      [overview(readyRoom(PARENTS), loadingRoom), 'ok', 'Rooms with a live seat: 1. Not known: 1 (no read yet).'],
+    ];
+    for (const [scope, state, detail] of seatCases) {
+      expect(stateAndCommands('seats', reads(), scope)).toEqual([state, SEATS]);
+      expect(row('seats', reads(), scope).detail).toBe(detail);
+    }
+    const write = 'gh issue comment 7 --body-file <plan-file>';
+    const read = 'repo-harness board --parent 7';
+    const samplePlan = officeBoard(NOW).plan;
+    const unavailable = { status: 'unavailable', comment_url: 'https://github.com/o/r/issues/7#issuecomment-1', reason: 'plan_invalid' } as const;
+    const planCases: readonly (readonly [Parameters<typeof inRoom>[0], string, string])[] = [
+      [{ parent: 7, plan: samplePlan }, 'ok', read],
+      [{ parent: 7, plan: { status: 'absent', truncated: false } }, 'optional', write],
+      [{ parent: 7, plan: { status: 'absent', truncated: true } }, 'unknown', read],
+      [{ parent: 7, plan: unavailable }, 'unknown', read],
+      [{ parent: 7, plan: 'unread', parents: { kind: 'failed', reason: 'parents_invalid' } }, 'unknown', read],
+      [{ plan: 'no_parent' }, 'optional', 'gh issue comment <n> --body-file <plan-file>'],
+    ];
+    for (const [scope, state, command] of planCases) expect(stateAndCommands('plan', reads(), inRoom(scope))).toEqual([state, [command]]);
+    expect(row('plan', reads(), inRoom({ parent: 7, plan: 'unread', parents: { kind: 'failed', reason: 'parents_invalid' } })).detail).toContain('parents_invalid');
+    const anyRead = 'repo-harness board --parent <n>';
+    const anyWrite = 'gh issue comment <n> --body-file <plan-file>';
+    const summaryRead = (row: Parameters<typeof decodeBoardSummaries>[0]): BoardSummariesRead => ({ state: 'ok', summaries: decodeBoardSummaries({ protocol: 2, kind: 'repo-harness.board-summaries', repository_id: HARNESS_ID, parents: [row] }) });
+    const summary = (batch: { readonly accepted: number | null; readonly size: number | null }) => summaryRead({
+      parent: 1474, status: 'observed', observed_at: '2026-11-04T20:00:00.000Z',
+      summary: { queue: 0, ci_failures: 0, batch, current_batch: null, needs_you: 0, worker_limit: ISSUE_FLOW_WORKER_LIMIT, seats: { status: 'observed', desks: [], stalled: 0 } },
+    });
+    const planned = readyRoom(PARENTS, summary({ accepted: 0, size: 3 }));
+    const planWords = (unknown: number, reason: string, count = 0) => `Plans confirmed: ${count}. Not known: ${unknown} (${reason}).`;
+    const overviewPlans: readonly (readonly [OfficeSetupScope, string, string, string])[] = [
+      [overview(), 'unknown', 'No repository was read, so no plan read ran.', anyRead],
+      [overview(readyRoom(EMPTY)), 'optional', 'No parent has a live seat, so no plan was read.', anyWrite],
+      [overview(planned, readyRoom(EMPTY)), 'ok', 'Active parents with a plan: 1.', anyRead],
+      [overview(failedRoom('parents_invalid')), 'unknown', planWords(1, 'parents_invalid'), anyRead],
+      [overview(loadingRoom), 'unknown', planWords(1, 'no read yet'), anyRead],
+      [overview(readyRoom(PARENTS)), 'unknown', planWords(1, 'no read yet'), anyRead],
+      [overview(readyRoom(PARENTS, { state: 'unavailable', reason: 'parents_busy' })), 'unknown', planWords(1, 'parents_busy'), anyRead],
+      [overview(readyRoom(PARENTS, summaryRead({ parent: 1474, status: 'not_read' }))), 'unknown', planWords(1, 'not_read'), anyRead],
+      [overview(readyRoom(PARENTS, summaryRead({ parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' }))), 'unknown', planWords(1, 'snapshot_invalid'), anyRead],
+      [overview(readyRoom(PARENTS, summary({ accepted: null, size: null }))), 'unknown', planWords(1, 'plan_not_observed'), anyRead],
+      [overview(planned, failedRoom('parents_invalid')), 'unknown', planWords(1, 'parents_invalid', 1), anyRead],
+    ];
+    for (const [scope, state, detail, command] of overviewPlans) {
+      expect(stateAndCommands('plan', reads(), scope)).toEqual([state, [command]]);
+      expect(row('plan', reads(), scope).detail).toBe(detail);
+    }
+  });
+
+  test('a failed refresh keeps the last state and says so', () => {
+    const oldActivity = { ...activity(github('ok', null, 'o/r')), refreshFailed: true } as OfficeSetupReads['devActivity'];
+    const cases: readonly (readonly [OfficeSetupRowId, Partial<OfficeSetupReads>])[] = [
+      ['hc', { botAccess: { ...bots(READY), refreshFailed: true } as OfficeSetupReads['botAccess'] }],
+      ['gh', { devActivity: oldActivity }],
+      ['repository', { devActivity: oldActivity }],
+      ['repository', { repositories: { ...registered(THIS), refreshFailed: true } as OfficeSetupReads['repositories'] }],
+    ];
+    for (const [id, input] of cases) expect(row(id, reads(input)).detail).toContain('last refresh failed');
+  });
+
+  const openFixture = async (name: string, hash: string, overrides: Partial<OperatorAppProps> = {}) => {
+    installDom(`http://127.0.0.1:4318/${hash}`);
+    await mount(<OperatorApp {...fixtureProps(name)} initialLocale="en" {...overrides} />);
+    await settle();
+    await settle();
+  };
+  const setupRows = () => rows('[data-setup-row]').map(entry => [entry.getAttribute('data-setup-row'), entry.getAttribute('data-setup-state')]);
+
+  test('the overview shows the checklist when no repository is registered, no room is lit, or row 1 or 2 fails', async () => {
+    const cases: readonly (readonly [string, string, string, number])[] = [
+      ['office-setup-hc', 'hc', 'missing', 8],
+      ['office-setup-gh', 'gh', 'failed', 8],
+      ['office-setup-repository', 'repository', 'missing', 0],
+      ['office-setup-seats', 'seats', 'missing', 8],
+    ];
+    for (const [fixture, id, state, cards] of cases) {
+      await openFixture(fixture, '#board/office');
+      expect(rows('[data-office-setup]')).toHaveLength(1);
+      expect(setupRows().map(([key]) => key)).toEqual(['hc', 'gh', 'repository', 'seats', 'plan']);
+      expect(rows(`[data-setup-row="${id}"]`)[0]!.getAttribute('data-setup-state')).toBe(state);
+      expect(rows('[data-office-card]')).toHaveLength(cards);
+      await act(async () => root?.unmount());
+    }
+    await openFixture('office', '#board/office');
+    expect(rows('[data-office-card]')).toHaveLength(8);
+    expect(rows('[data-office-setup]')).toHaveLength(0);
+  });
+
+  test('a room shows the checklist when it is not lit or its parents read failed; a lit room and the list do not; the checklist only copies', async () => {
+    await openFixture('office-setup-plan', `#board/office/${HARNESS_ID}/${OFFICE_PARENT}`);
+    expect(document.querySelector('[data-board-office="room"]')).not.toBeNull();
+    expect(setupRows()).toEqual([['hc', 'ok'], ['gh', 'ok'], ['repository', 'ok'], ['seats', 'missing'], ['plan', 'optional']]);
+    expect(rows('[data-setup-row="plan"] code')[0]!.textContent).toBe(`gh issue comment ${OFFICE_PARENT} --body-file <plan-file>`);
+    expect(rows('[data-office-setup] button').every(button => button.classList.contains('copy-value__button'))).toBe(true);
+    await act(async () => root?.unmount());
+    await openFixture('office', `#board/office/${HARNESS_ID}`, { readBoardParents: async () => ({ state: 'unavailable', reason: 'parents_hc_failed' }) });
+    expect(rows('[data-board-parents-reason="parents_hc_failed"] [data-office-setup]')).toHaveLength(1);
+    expect(rows('[data-setup-row="seats"]')[0]!.getAttribute('data-setup-state')).toBe('failed');
+    expect(rows('[data-setup-row="seats"]')[0]!.textContent).toContain('hc could not list the seat terminals');
+    expect(rows('[data-setup-row="plan"]')[0]!.getAttribute('data-setup-state')).toBe('unknown');
+    await act(async () => root?.unmount());
+    await openFixture('office', `#board/office/${HARNESS_ID}`);
+    expect(document.querySelector('[data-board-office="room"]')).not.toBeNull();
+    expect(rows('[data-office-setup]')).toHaveLength(0);
+    await act(async () => root?.unmount());
+    await openFixture('office-setup-seats', '#board');
+    expect(document.querySelector('[data-board-subject]')).not.toBeNull();
+    expect(rows('[data-office-setup]')).toHaveLength(0);
   });
 });
 
@@ -2257,6 +2617,8 @@ describe('worktree cleanup plan review (#1720)', () => {
   });
 
   test('while the plan is made, the page shows the running request and its seconds; the line goes when the answer arrives', async () => {
+    // The line counts real seconds, so this case needs a clock that runs.
+    setSystemTime();
     const base = cleanupPlanFixture(NOW);
     const held: (() => void)[] = [];
     const hold = <T,>(answer: Promise<T>) => new Promise<T>(resolve => { held.push(() => void answer.then(resolve)); });

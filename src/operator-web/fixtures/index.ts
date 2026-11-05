@@ -22,7 +22,7 @@ import { degradedSetup, loadingSetup, readySetup } from './setup';
 import { busyWorktrees, cleanupPlanFixture, degradedWorktrees, emptyWorktrees, worktreeCleanupFixture } from './worktrees';
 import { readyRepairIssue, readyTests } from './tests';
 import { settingsStores } from './settings';
-import { officeProps } from './office';
+import { OFFICE_DOOR_POLICIES, officeDoorProps, officeProps, officeSetupProps, OFFICE_SETUP_GAPS, type OfficeDoorPolicy, type OfficeSetupGap } from './office';
 import { busyQuota, degradedQuota } from './quota';
 import type { QuotaReader } from '../quota';
 import { decodeArchitectureMap } from '../../core/operator/architecture-map';
@@ -85,6 +85,8 @@ const unavailable = (what: string) => () => Promise.reject(new Error(`fixture ${
 
 export function fixtureProps(name: string): OperatorAppProps {
   if (name === OFFICE_FIXTURE) return officeProps(fixtureProps('busy'));
+  if (name.startsWith('office-setup-') && (OFFICE_SETUP_GAPS as readonly string[]).includes(name.slice('office-setup-'.length))) return officeSetupProps(fixtureProps(OFFICE_FIXTURE), name.slice('office-setup-'.length) as OfficeSetupGap);
+  if (name.startsWith('office-door-') && (OFFICE_DOOR_POLICIES as readonly string[]).includes(name.slice('office-door-'.length))) return officeDoorProps(fixtureProps(OFFICE_FIXTURE), name.slice('office-door-'.length) as OfficeDoorPolicy);
   if (!(FIXTURE_NAMES as readonly string[]).includes(name)) throw new Error(`unknown operator fixture "${name}"; use one of ${[...FIXTURE_NAMES, OFFICE_FIXTURE].join(', ')}`);
   const now = Date.now();
   const fixture = name as FixtureName;
