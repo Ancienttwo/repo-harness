@@ -3,6 +3,8 @@
  * complete Agent-config feature. Callers supply text and parsed policy values.
  * This module has no filesystem, process, registry, collector, or UI integration.
  */
+import { KEY_BEGIN } from '../security/secret-patterns';
+
 export const AGENT_CONFIG_CORE_MAX_BYTES = 256 * 1024;
 const MAX_ITEMS = 256;
 const MAX_DEPTH = 12;
@@ -12,7 +14,7 @@ const UNAVAILABLE = '[unavailable]';
 const CREDENTIAL_LABEL = String.raw`(?:token|secret|password|passwd|passphrase|(?:api|private|access|signing)[ \t_-]*key|credential|webhook|endpoint|authorization|authentication|cookie|auth|signature|dsn|connection)`;
 const SENSITIVE_NAME = new RegExp(`${CREDENTIAL_LABEL}|url|uri`, 'iu');
 const CREDENTIAL_CARRIERS = [
-  /-----BEGIN[^\r\n]*PRIVATE[ \t]+KEY-----/iu,
+  new RegExp(KEY_BEGIN),
   /\b(?:proxy[-_ ]?)?(?:authorization|authentication)["']?\s*[:=]/iu,
   /\b(?:bearer|basic|digest|negotiate)\s+\S+/iu,
   new RegExp(String.raw`(?:--?|\b)[\w-]*${CREDENTIAL_LABEL}[\w-]*["']?(?:\s*[:=]|[ \t]+(?=["'\w]))`, 'iu'),

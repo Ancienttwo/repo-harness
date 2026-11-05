@@ -1,10 +1,17 @@
+// PEM and PGP armor fences use five dashes. The ssh.com form that PuTTYgen exports
+// puts a space between four dashes and the label.
+const KEY_OPEN = '----[- ]';
+const KEY_CLOSE = '[- ]----';
 /**
- * The label of a private key block, with its leading whitespace. Key tools name
- * many block types (TSS2, ED25519, SM2), so any uppercase words may lead the label.
+ * Key tools name many block types (TSS2, ED25519, RSA-PSS), so any uppercase
+ * words may lead the label. A word holds only single inner hyphens, so no fence
+ * fits inside a word.
  */
-export const KEY_LABEL = String.raw`\s+(?:[A-Z0-9]+\s+){0,8}PRIVATE\s+KEY(?:\s+BLOCK)?`;
-const KEY_BEGIN = `-----BEGIN${KEY_LABEL}`;
-const KEY_END = `-----END${KEY_LABEL}`;
+const KEY_LABEL = String.raw`\s+(?:[A-Z0-9]+(?:-[A-Z0-9]+){0,7}\s+){0,8}(?:PRIVATE\s+KEY(?:\s+BLOCK)?|SECRET\s+KEY\s+BLOCK)`;
+/** The complete first line of a private key block. */
+export const KEY_BEGIN = `${KEY_OPEN}BEGIN${KEY_LABEL}${KEY_CLOSE}`;
+/** The complete last line of a private key block. */
+export const KEY_END = `${KEY_OPEN}END${KEY_LABEL}${KEY_CLOSE}`;
 
 /**
  * Shared token rules. Each caller uses a fresh RegExp to avoid lastIndex state.
@@ -18,12 +25,12 @@ const KEY_END = `-----END${KEY_LABEL}`;
  *   only the first letter of the run starts a match.
  * - private_key: an END of any label closes a BEGIN of any label. So a BEGIN that
  *   finds no END proves that no later BEGIN finds one, and only a BEGIN whose
- *   nearest earlier marker is an END, or no marker, starts a match. A lookahead for the complete BEGIN header comes first, so dashes
- *   alone start no walk. The lookbehind stops at that marker and captures it
- *   when it is a BEGIN. The next `\1` then needs `-----` before the text `BEGIN`,
- *   which fails.
- *   An END can share dashes with a BEGIN on either side, so the marker excludes
- *   a BEGIN's closing dashes and a BEGIN that an END overlaps.
+ *   nearest earlier marker is an END, or no marker, starts a match. A lookahead
+ *   for the complete BEGIN header comes first, so dashes alone start no walk.
+ *   The lookbehind stops at that marker and captures it when it is a BEGIN. The
+ *   next `\1` then needs a fence before the text `BEGIN`, which fails.
+ *   An END can share fence characters with a BEGIN on either side, so the marker
+ *   excludes a BEGIN's closing fence and a BEGIN that an END overlaps.
  *
  * The walks use one character class. A repeated group here is not an option:
  * at about 1 MiB of walk Bun's regex engine stops and reports no match.
@@ -35,7 +42,7 @@ export const SECRET_TOKEN_PATTERNS = [
   { type: 'github_pat_v2', pattern: /github_pat_[A-Za-z0-9_]{30,}/g, replacement: 'github_pat_[REDACTED]' },
   { type: 'aws_key', pattern: /AKIA[0-9A-Z]{16}/g, replacement: 'AKIA[REDACTED]' },
   { type: 'jwt_token', pattern: /eyJ(?<!eyJ[A-Za-z0-9_-]*?eyJ)[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, replacement: '[JWT REDACTED]' },
-  { type: 'private_key', pattern: new RegExp(String.raw`-----(?=BEGIN${KEY_LABEL}-----)(?<=(?:((?<!${KEY_END}-{0,4})${KEY_BEGIN}(?=-----))|${KEY_END}-----|^)[\s\S]*?-----)\1BEGIN${KEY_LABEL}-----[\s\S]*?${KEY_END}-----`, 'g'), replacement: '[PRIVATE KEY REDACTED]' },
+  { type: 'private_key', pattern: new RegExp(String.raw`${KEY_OPEN}(?=BEGIN${KEY_LABEL}${KEY_CLOSE})(?<=(?:((?<!${KEY_OPEN}END${KEY_LABEL}(?:[- ]-{0,3})?)${KEY_OPEN}BEGIN${KEY_LABEL}(?=${KEY_CLOSE}))|${KEY_END}|^)[\s\S]*?${KEY_OPEN})\1BEGIN${KEY_LABEL}${KEY_CLOSE}[\s\S]*?${KEY_END}`, 'g'), replacement: '[PRIVATE KEY REDACTED]' },
   { type: 'webhook_url', pattern: /https:\/\/(?:hooks\.slack\.com\/services|(?:canary\.|ptb\.)?discord(?:app)?\.com\/api(?:\/v\d+)?\/webhooks)\/[^\s<>"']+/gi, replacement: '[WEBHOOK REDACTED]' },
   { type: 'credential_url', pattern: /[a-z](?<![a-z][0-9+.-]*[a-z])[a-z0-9+.-]*:\/\/[^\s/@:]+:[^\s/@]+@[^\s<>"']+/gi, replacement: '[CREDENTIAL URL REDACTED]' },
   { type: 'url_token', pattern: /https?:\/\/(?<!https?:\/\/[^\s<>"']*?https?:\/\/)[^\s<>"']*[?&](?:token|key|secret|auth|signature|sig|code)=[^\s<>"']+/gi, replacement: '[ENDPOINT REDACTED]' },

@@ -1,5 +1,5 @@
 import type { BoardHostPortsV1, BoardSeatTerminalReadV1 } from './board';
-import { hasUnredactedSecret, KEY_LABEL, replaceSecrets } from '../security/secret-patterns';
+import { hasUnredactedSecret, KEY_BEGIN, KEY_END, replaceSecrets } from '../security/secret-patterns';
 
 /**
  * The advisor seat of one board (#1756, D11): the only console channel that
@@ -294,8 +294,8 @@ export function decodeAdvisorSeatTranscript(value: unknown): AdvisorSeatTranscri
 }
 
 // A marker walks only its own header, so the search stays linear on a line of any length.
-const KEY_BEGIN = new RegExp(`-----BEGIN${KEY_LABEL}-----`, 'gu');
-const KEY_END = new RegExp(`-----END${KEY_LABEL}-----`, 'gu');
+const BEGIN_MARKER = new RegExp(KEY_BEGIN, 'gu');
+const END_MARKER = new RegExp(KEY_END, 'gu');
 
 /** The positions of the first and the last marker on one line; -1 when the line has none. */
 function markers(line: string, marker: RegExp): { readonly first: number; readonly last: number } {
@@ -319,7 +319,7 @@ function privateKeyLines(lines: readonly string[]): readonly boolean[] {
   const mark = (from: number, to: number) => { for (let at = from; at <= to; at += 1) marked[at] = true; };
   let open: number | null = null;
   lines.forEach((line, at) => {
-    const begin = markers(line, KEY_BEGIN), end = markers(line, KEY_END);
+    const begin = markers(line, BEGIN_MARKER), end = markers(line, END_MARKER);
     if (end.last >= 0) {
       // An END closes the open block; with none open, an END before every BEGIN of its line closes a block that began above the window.
       mark(open ?? (begin.first < 0 || end.first < begin.first ? 0 : at), at);

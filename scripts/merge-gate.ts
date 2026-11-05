@@ -5,6 +5,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync
 import { dirname, isAbsolute, join } from 'path';
 import { fileURLToPath } from 'url';
 import { acceptanceReceiptPath, resolveProtectedGitRuntime } from './acceptance-receipt';
+import { KEY_BEGIN } from '../src/core/security/secret-patterns';
 import { collectPullRequestMergeReadiness } from '../src/effects/publication/merge-readiness';
 import { resolveTrustedGhExecutable } from '../src/effects/runtime/protected-helper-platform';
 import { osAccountHome } from '../src/effects/runtime/os-account-home';
@@ -15,7 +16,7 @@ type Seal = { protocol: 2; kind: 'repo-harness-merge-seal'; repository_root: str
 function lockedGitEnv(): NodeJS.ProcessEnv { return { ...resolveProtectedGitRuntime().env }; }
 
 const CREDENTIAL_PATTERNS: readonly { readonly id: string; readonly pattern: RegExp }[] = [
-  { id: "pem-private-key", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
+  { id: "pem-private-key", pattern: new RegExp(KEY_BEGIN) },
   { id: "aws-access-key-id", pattern: /AKIA[0-9A-Z]{16}/ },
   { id: "github-personal-token", pattern: /ghp_[A-Za-z0-9]{36}/ },
   { id: "github-oauth-token", pattern: /gho_[A-Za-z0-9]{36}/ },
