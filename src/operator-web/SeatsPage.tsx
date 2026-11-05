@@ -18,7 +18,7 @@ const LEVEL_TONE: Readonly<Record<SeatLimitLevel, string>> = {
 
 // The plain command prints the argv alone, so `--argv "$(...)"` takes it as is. `seats argv` also names the pane and
 // the tab (#1544), so no command types a name.
-const ARGV: Readonly<Record<SeatId, string>> = {
+export const ARGV: Readonly<Record<SeatId, string>> = {
   orchestrator: 'repo-harness seats argv orchestrator --repository-id <repository-id>',
   advisor: 'repo-harness seats argv advisor --repository-id <repository-id>',
   worker: 'repo-harness seats argv worker --repository-id <repository-id> --parent <n> --issue <n>',

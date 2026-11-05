@@ -195,9 +195,20 @@ button.board-office__card:focus-visible { outline: 3px solid var(--color-kumo-br
 .board-office__legend li strong { font-size: 13px; color: var(--text-color-kumo-strong); }
 .board-office__legend li p { margin: 0; font-size: 12px; color: var(--text-color-kumo-subtle); }
 
+/* Setup checklist (#1788). */
+.board-office__setup p { margin: 2px 0 0; font-size: 13px; color: var(--text-color-kumo-subtle); overflow-wrap: anywhere; }
+.board-office__setup ol { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; counter-reset: setup-step; }
+.board-office__setup li { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 8px 20px; align-items: start; padding: 12px 0; border-top: 1px solid var(--color-kumo-hairline); counter-increment: setup-step; }
+.board-office__setup-text { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
+.board-office__setup-text strong { font-size: 14px; font-weight: 600; color: var(--text-color-kumo-strong); }
+.board-office__setup-text strong::before { content: counter(setup-step) ". "; color: var(--text-color-kumo-subtle); font-weight: 500; }
+.board-office__setup-text p { flex-basis: 100%; }
+.board-office__setup-state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-color-kumo-default); }
+.board-office__setup-commands { display: flex; min-width: 0; flex-direction: column; gap: 6px; }
 @media (max-width: 1100px) {
   .board-office__scene { --s: 2; }
 }
 @media (max-width: 480px) {
+  .board-office__setup li { grid-template-columns: minmax(0, 1fr); }
   .board-office__advisor .board-office__portrait { display: none; }
 }
