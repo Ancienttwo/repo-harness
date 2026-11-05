@@ -296,16 +296,19 @@ function cardSummary(read: BoardSummariesRead | null, parent: number | null): Of
 
 /**
  * The desks of the card: the parent-list seats with the desk states of the
- * summary. A row has no address, so it joins on its labels and serves one desk.
- * A seat with no row, such as a seat with no parent, keeps its seat-only state.
- * A summary with no seats gives no desk.
+ * summary. The rows are the seats of the active parent, so only a seat with that
+ * parent label takes one. A row has no address, so it joins on its labels and
+ * serves one desk. Any other seat, or a seat with no row, keeps its seat-only
+ * state. A summary with no seats gives no desk.
  */
-function cardDesks(desks: readonly OfficeDesk[], summary: OfficeCardSummary): readonly OfficeDesk[] {
+function cardDesks(desks: readonly OfficeDesk[], list: BoardParentsV1, parent: number | null, summary: OfficeCardSummary): readonly OfficeDesk[] {
   if (summary.status !== 'observed') return desks;
   const { seats } = summary.summary;
   if (seats.status === 'unavailable') return [];
+  const owned = new Set(list.seats.filter(seat => seat.parent === String(parent)).map(seat => seat.address));
   const rows = [...seats.desks];
   return desks.map((desk) => {
+    if (!owned.has(desk.address)) return desk;
     const index = rows.findIndex(row => row.seat === desk.seat && row.agent === desk.agent && row.issue === desk.issue && row.pr === desk.pr);
     return index < 0 ? desk : { ...desk, state: rows.splice(index, 1)[0]!.state };
   });
@@ -316,7 +319,7 @@ export function officeCard(view: Extract<OfficeRepositoryView, { readonly kind: 
   const room = officeRoom(view.list, null);
   const parent = activeParent(view.list);
   const summary = cardSummary(view.summaries, parent);
-  return { room: { ...room, desks: cardDesks(room.desks, summary) }, lit: officeLit(room), parent, summary };
+  return { room: { ...room, desks: cardDesks(room.desks, view.list, parent, summary) }, lit: officeLit(room), parent, summary };
 }
 
 /** Waiting for you, then CI failed, then the other lit rooms, then the idle rooms. A card with no read yet ranks with the lit rooms. */

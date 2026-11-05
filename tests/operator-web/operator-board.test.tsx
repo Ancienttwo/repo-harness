@@ -1013,16 +1013,23 @@ describe('board office (#1755)', () => {
   });
 
   test('a card joins each desk row to one seat on its labels; a seat with no row keeps its seat-only state; a summary with no seats gives no desk and no count', async () => {
-    const list = (...seats: readonly Terminal[]): BoardParentsV1 => ({ ...PARENTS, seats: seats.map(entry => ({ ...entry, parent: '1474' })) });
+    type ListedSeat = BoardParentsV1['seats'][number];
     const row = (issue: number | null, pr: number | null, state: DeskState) => ({ seat: 'worker', agent: null, issue, pr, state });
-    const desks = (seats: BoardSummarySeatsV1, ...terminals: readonly Terminal[]) => officeCard({
-      kind: 'ready', list: list(...terminals), summaries: summaryRead('repo_1000000000000001', observed({ queue: 0, ci_failures: 0, batch: { accepted: 0, size: 1 }, needs_you: 0, seats })),
+    const desks = (seats: BoardSummarySeatsV1, ...listed: readonly ListedSeat[]) => officeCard({
+      kind: 'ready', list: { ...PARENTS, seats: listed }, summaries: summaryRead('repo_1000000000000001', observed({ queue: 0, ci_failures: 0, batch: { accepted: 0, size: 1 }, needs_you: 0, seats })),
     }).room.desks.map(desk => desk.state);
-    const same = seat('t1', 'worker', 7, null, 'working');
+    const same = { ...seat('t1', 'worker', 7, null, 'working'), parent: '1474' };
     const twin = { ...same, address: 't2' };
+    const unowned = { ...same, address: 't3', parent: null };
+    const other = { ...same, address: 't4', parent: '1651' };
     for (const [seats, terminals, states] of [
       [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [same], ['ci_failed']],
-      // A seat with no parent has no row, and a row of another seat is not its row.
+      // Only a seat of the active parent takes its row: a seat with no parent or of another parent comes first in the list and keeps its state.
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [unowned, same], ['coding', 'ci_failed']],
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [other, same], ['coding', 'ci_failed']],
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [unowned, other, same], ['coding', 'coding', 'ci_failed']],
+      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [unowned, other], ['coding', 'coding']],
+      // A row of another seat is not its row.
       [{ status: 'observed', desks: [row(8, null, 'ci_failed')], stalled: 0 }, [same], ['coding']],
       [{ status: 'observed', desks: [{ ...row(7, null, 'ci_failed'), agent: 'codex' }], stalled: 0 }, [same], ['coding']],
       [{ status: 'observed', desks: [row(7, 9, 'ci_failed')], stalled: 0 }, [same], ['coding']],
