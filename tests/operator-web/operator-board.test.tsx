@@ -108,6 +108,7 @@ function props(activity: DevActivitySnapshotV2, overrides: Partial<OperatorAppPr
     readBoardParents: async () => ({ state: 'ok', list: PARENTS }),
     readBoardSummaries: async id => ({ state: 'ok', summaries: { protocol: 2, kind: 'repo-harness.board-summaries', repository_id: id, parents: [] } }),
     readBotAccess: async () => ({ state: 'unavailable', reason: 'bot_access_pending' }),
+    readQuota: () => new Promise(() => {}),
     ...overrides,
   };
 }
@@ -303,6 +304,101 @@ describe('board page', () => {
     expect(document.querySelectorAll('[draggable="true"], form, [data-write-action], textarea')).toHaveLength(0);
     const words = rows('button').map(element => element.textContent ?? '').join(' | ');
     for (const affordance of ['Approve', 'Merge now', 'Close PR', 'Start agent', 'Delete']) expect(words).not.toContain(affordance);
+  });
+
+  describe('quota attention', () => {
+    const readFixture = (name: string) => fixtureProps(name).readQuota!(new AbortController().signal);
+    const findings = () => rows('[data-quota-finding]').map(row => [row.getAttribute('data-quota-finding'), row.querySelector('[data-quota-chip]')!.getAttribute('data-quota-chip')]);
+    const failure = () => document.querySelector('[data-quota-unavailable]')?.getAttribute('data-quota-unavailable') ?? null;
+
+    test('every board shows one row per tight, exhausted or unknown account, and a failed read shows its reason with no row', async () => {
+      const busyRead = await readFixture('busy');
+      if (busyRead.state !== 'ok') throw new Error('the busy fixture reads a report');
+      const chatgpt = busyRead.settings.accounts.find(account => account.account === 'chatgpt')!;
+      const easy = { ...busyRead, settings: { ...busyRead.settings, accounts: [chatgpt, { ...chatgpt, account: 'claude' as const, state: 'surplus' as const }] } };
+      const answers = [
+        [busyRead, [['claude', 'tight']], null],
+        [await readFixture('degraded'), [['claude', 'unknown'], ['chatgpt', 'exhausted']], null],
+        [await readFixture('empty'), [], 'unreachable'],
+        [easy, [], null],
+      ] as const;
+      for (const [answer, shown, failed] of answers) for (const layout of ['', 'office/']) {
+        installDom(`http://127.0.0.1:4318/#board/${layout}${HARNESS_ID}/1474`);
+        await mount(<OperatorApp {...props(busy(), { readQuota: async () => answer })} />);
+        await settle();
+        expect([layout, findings(), failure()]).toEqual([layout, shown as never, failed]);
+        await act(async () => root?.unmount());
+      }
+    });
+
+    test('a row shows the state, the reason or the window that set it, and only the tabs without a stage list it', async () => {
+      boardAt();
+      await mount(<OperatorApp {...props(busy(), { readQuota: () => readFixture('degraded') })} />);
+      await settle();
+      const row = (account: string) => rows(`[data-quota-finding="${account}"]`)[0]!;
+      for (const part of ['Claude quota', 'no capture', 'Unknown']) expect(row('claude').textContent).toContain(part);
+      for (const part of ['ChatGPT quota', 'secondary', '97% used', 'Exhausted']) expect(row('chatgpt').textContent).toContain(part);
+      expect(row('chatgpt').querySelector('[data-quota-window="primary"]')).toBeNull();
+      expect(rows('[data-board-tab="attention"]')[0]!.textContent).toBe('Waiting for you6');
+      expect(document.querySelector('#board-attention')!.textContent).toBe('Waiting for you6');
+      // The core findings do not change: quota rows carry no rule and stay outside `data-finding`.
+      expect(rows('[data-finding]').map(finding => finding.getAttribute('data-finding'))).toEqual(['A1', 'A3', 'A7', 'R2']);
+      await act(async () => rows('[data-board-tab="ready"]')[0]!.click());
+      expect(findings()).toEqual([]);
+      await act(async () => rows('[data-board-tab="attention"]')[0]!.click());
+      expect(findings()).toHaveLength(2);
+      const search = rows('input[type="search"]')[0]! as HTMLInputElement;
+      await act(async () => {
+        search.focus();
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(search, 'chatgpt');
+        search.dispatchEvent(new window.KeyboardEvent('keyup', { key: 'a', bubbles: true }) as unknown as Event);
+      });
+      expect(findings()).toEqual([['chatgpt', 'exhausted']]);
+    });
+
+    test('the board reads quota once when it opens and once per header Refresh; a failed Refresh drops the rows', async () => {
+      const answers = [await readFixture('busy'), await readFixture('empty')];
+      let reads = 0;
+      boardAt();
+      await mount(<OperatorApp {...props(busy(), { readQuota: async () => answers[reads++]! })} />);
+      await settle();
+      expect([reads, findings(), failure()]).toEqual([1, [['claude', 'tight']], null]);
+      await act(async () => button('Refresh').click());
+      await settle();
+      expect([reads, findings(), failure()]).toEqual([2, [], 'unreachable']);
+      expect(document.querySelector('[data-quota-unavailable]')!.textContent).toContain('Reason: the operator service returned no quota report. Refresh to read again.');
+    });
+
+    test('a running read stays the only read: a header Refresh or a page change starts no second read, and its result shows', async () => {
+      const answer = await readFixture('busy');
+      const refresh = () => act(async () => button('Refresh').click());
+      const open = (workspace: string) => act(async () => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!.click());
+      const agents = '[data-quota-account="claude"]';
+      const board = '[data-quota-finding="claude"]';
+      const cases: readonly (readonly [string, string, () => Promise<void>, string])[] = [
+        ['Agents, header Refresh', '#agents', refresh, agents],
+        ['list board, header Refresh', `#board/${HARNESS_ID}/1474`, refresh, board],
+        ['office room, header Refresh', `#board/office/${HARNESS_ID}/1474`, refresh, board],
+        ['list board to Agents', `#board/${HARNESS_ID}/1474`, () => open('agents'), agents],
+        ['Agents to Skills and back', '#agents', async () => { await open('skills'); await open('agents'); }, agents],
+      ];
+      for (const [name, hash, during, shown] of cases) {
+        const settled: (() => void)[] = [];
+        installDom(`http://127.0.0.1:4318/${hash}`);
+        await mount(<OperatorApp {...props(busy(), { readQuota: () => new Promise(resolve => settled.push(() => resolve(answer))) })} />);
+        await settle();
+        await during();
+        await settle();
+        expect([name, settled.length, failure()]).toEqual([name, 1, null]);
+        await act(async () => settled[0]!());
+        await settle();
+        expect([name, rows(shown).length, failure()]).toEqual([name, 1, null]);
+        await refresh();
+        await settle();
+        expect([name, settled.length]).toEqual([name, 2]);
+        await act(async () => root?.unmount());
+      }
+    });
   });
 
   test('on a cold load the list reads the repository of the registry list that arrives after mount, without Dev Activity', async () => {

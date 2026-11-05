@@ -22,16 +22,18 @@ export interface QuotaSection {
 }
 
 /**
- * One read each time the Agents page opens and one per Refresh; no polling.
+ * One read for each new `opened` value and one per Refresh; no polling. Null reads nothing.
  * A quota read starts provider processes on the server, so it never repeats on a timer.
- * A failed read replaces the report: the section shows no number it did not just read.
+ * The server keeps its read after a browser abort and refuses a second read, so a running
+ * read stays until it settles: a new `opened` value or a Refresh starts nothing and takes its result.
+ * A failed read replaces the report: a page shows no number it did not just read.
  */
-export function useQuota(read: QuotaReader, enabled: boolean): QuotaSection {
+export function useQuota(read: QuotaReader, opened: string | null): QuotaSection {
   const [view, setView] = useState<QuotaView>({ kind: 'loading' });
   const [reading, setReading] = useState(false);
   const active = useRef<AbortController | null>(null);
   const refresh = useCallback(() => {
-    active.current?.abort();
+    if (active.current !== null) return;
     const controller = new AbortController();
     active.current = controller;
     setReading(true);
@@ -45,9 +47,8 @@ export function useQuota(read: QuotaReader, enabled: boolean): QuotaSection {
     });
   }, [read]);
   useEffect(() => {
-    if (!enabled) return;
-    refresh();
-    return () => { active.current?.abort(); active.current = null; };
-  }, [enabled, refresh]);
+    if (opened !== null) refresh();
+  }, [opened, refresh]);
+  useEffect(() => () => { active.current?.abort(); active.current = null; }, []);
   return { view, reading, refresh };
 }
