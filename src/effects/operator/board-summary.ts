@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from '
 import { dirname, join } from 'node:path';
 import type { BoardV1 } from '../../core/board/board';
 import type { BoardParentsV1 } from '../../core/board/parents';
-import { boardSummary, decodeBoardSummaries, type BoardSummariesV1, type BoardSummaryEntryV1 } from '../../core/board/summary';
+import { BOARD_SUMMARIES_PROTOCOL, boardSummary, decodeBoardSummaries, type BoardSummariesV1, type BoardSummaryEntryV1 } from '../../core/board/summary';
 import { repoHarnessHome } from '../repo-harness-home';
 
 function snapshotPath(env: NodeJS.ProcessEnv, repositoryId: string, parent: number): string {
@@ -32,7 +32,7 @@ function readSnapshot(env: NodeJS.ProcessEnv, repositoryId: string, parent: numb
 
 /** The board route is the only caller. Synchronous replace keeps completed reads in observation order. */
 export function writeBoardSummary(env: NodeJS.ProcessEnv, repositoryId: string, board: BoardV1): void {
-  const snapshot = decodeBoardSummaries({ protocol: 1, kind: 'repo-harness.board-summaries', repository_id: repositoryId,
+  const snapshot = decodeBoardSummaries({ protocol: BOARD_SUMMARIES_PROTOCOL, kind: 'repo-harness.board-summaries', repository_id: repositoryId,
     parents: [{ parent: board.parent.number, status: 'observed', observed_at: board.observed_at, summary: boardSummary(board) }] });
   const previous = readSnapshot(env, repositoryId, board.parent.number);
   if (previous.status === 'observed' && Date.parse(previous.observed_at) > Date.parse(board.observed_at)) return;
@@ -46,6 +46,6 @@ export function writeBoardSummary(env: NodeJS.ProcessEnv, repositoryId: string, 
 
 /** Only the parents read supplies membership. This reads no board and starts no refresh. */
 export function readBoardSummaries(env: NodeJS.ProcessEnv, repositoryId: string, parents: BoardParentsV1): BoardSummariesV1 {
-  return { protocol: 1, kind: 'repo-harness.board-summaries', repository_id: repositoryId,
+  return { protocol: BOARD_SUMMARIES_PROTOCOL, kind: 'repo-harness.board-summaries', repository_id: repositoryId,
     parents: parents.parents.map(parent => readSnapshot(env, repositoryId, parent.number)) };
 }

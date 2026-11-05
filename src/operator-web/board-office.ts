@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { BoardAttentionV1 } from '../core/board/attention';
-import type { BoardItemV1, BoardPullRequestV1, BoardV1 } from '../core/board/board';
-import type { BoardParentsSeatV1, BoardParentsV1 } from '../core/board/parents';
+import type { BoardItemV1, BoardV1 } from '../core/board/board';
+import {
+  currentBatch, deskState, hasDesk, isQueued, liveSeats, seatItem, seatPullRequest, workerLimit,
+  type BoardCurrentBatch, type BoardSeatTerminal, type DeskState,
+} from '../core/board/desk';
+import type { BoardParentsV1 } from '../core/board/parents';
 import { PLAN_BATCH_MAX_MEMBERS } from '../core/board/plan-block';
-import { primaryPullRequest } from '../core/board/pull-requests';
 import { decodeBoardSummaries, type BoardSummariesV1, type BoardSummaryV1 } from '../core/board/summary';
 import { BOARD_PARENTS_READ_FAILURES, type BoardParentsReadFailure } from '../core/operator/board-read';
 import type { BoardParentsReader, BoardParentsReason } from './board-view';
@@ -16,21 +19,11 @@ import { useObservationRefresh } from './useObservationRefresh';
  * stored summary of that parent → overview card. Each value comes from one
  * board, parent list or summary field. A value that none carries (the plan
  * revision, the merge policy, the branch of a seat with no pull request:
- * #1806; the current batch, the worker limit and the desk state of a card) has
- * no field here, so the view cannot draw it.
+ * #1806) has no field here, so the view cannot draw it.
  */
 
-type SeatTerminal = Extract<BoardParentsSeatV1, { readonly seat_status: 'observed' }>;
-
-/** The seat limit without a plan: at most 8 active writer seats (`orchestrator.md`, seat limits). */
-export const ISSUE_FLOW_WORKER_LIMIT = 8;
 /** The feed shows the newest events only. */
 const FEED_MAX = 5;
-const STAGE_SEATS: readonly string[] = ['orchestrator', 'advisor'];
-
-/** The desk states in the order the rules test them; `unknown` is a seat with no issue and no pull request. */
-export const DESK_STATES = ['ci_failed', 'ci_pending', 'acceptance_queue', 'no_claim_status', 'coding', 'idle', 'unknown'] as const;
-export type DeskState = typeof DESK_STATES[number];
 
 export interface OfficeDesk {
   readonly address: string;
@@ -58,12 +51,6 @@ export interface OfficeQueueEntry {
   readonly issue: number | null;
   /** The agent of the seat that names the pull request; null when no live seat does. */
   readonly agent: string | null;
-}
-
-/** The first plan batch with an unmerged member. */
-export interface OfficeCart {
-  readonly size: number;
-  readonly accepted: readonly number[];
 }
 
 export interface OfficeBacklogEntry {
@@ -103,7 +90,7 @@ export interface OfficeRoom {
   /** The plan worker limit, else the issue-flow limit. */
   readonly limit: number;
   readonly queue: readonly OfficeQueueEntry[];
-  readonly cart: OfficeCart | null;
+  readonly cart: BoardCurrentBatch | null;
   readonly cart_sockets: number;
   readonly backlog: readonly OfficeBacklogEntry[];
   readonly holds: readonly OfficeHold[];
@@ -115,45 +102,14 @@ export interface OfficeRoom {
   readonly feed: readonly OfficeFeedEvent[];
 }
 
-function liveSeats(list: BoardParentsV1): readonly SeatTerminal[] {
-  return list.seats.flatMap(seat => (seat.seat_status === 'observed' && seat.state === 'live' ? [seat] : []));
-}
-
-function lead(seats: readonly SeatTerminal[], seat: string): OfficeLead | null {
+function lead(seats: readonly BoardSeatTerminal[], seat: string): OfficeLead | null {
   const terminal = seats.find(entry => entry.seat === seat);
   return terminal === undefined ? null : { address: terminal.address, agent: terminal.agent, status: terminal.status };
 }
 
-function terminalItem(board: BoardV1, terminal: SeatTerminal): BoardItemV1 | null {
-  return board.items.find(item => item.number === terminal.issue)
-    ?? (terminal.pr === null ? undefined : board.items.find(item => item.pull_requests.includes(terminal.pr!)))
-    ?? null;
-}
-
-function terminalPullRequest(board: BoardV1, terminal: SeatTerminal, item: BoardItemV1 | null): BoardPullRequestV1 | null {
-  if (terminal.pr !== null) return board.pull_requests.find(pr => pr.number === terminal.pr) ?? null;
-  return item === null ? null : primaryPullRequest(board, item);
-}
-
-/** The acceptance queue: an open pull request whose required check passed and that is not accepted. */
-function isQueued(pr: BoardPullRequestV1): boolean {
-  return pr.state === 'open' && pr.acceptance.status === 'not_accepted' && pr.required_check.status === 'success';
-}
-
-/** The desk state rules of the data map, first match wins. */
-export function deskState(terminal: SeatTerminal, item: BoardItemV1 | null, pr: BoardPullRequestV1 | null): DeskState {
-  if (terminal.issue === null && terminal.pr === null) return 'unknown';
-  if (pr?.required_check.status === 'failure') return 'ci_failed';
-  if (pr?.required_check.status === 'pending') return 'ci_pending';
-  if (pr !== null && isQueued(pr)) return 'acceptance_queue';
-  if (item?.claim_status.status_kind === 'none') return 'no_claim_status';
-  if (terminal.status === 'working') return 'coding';
-  return 'idle';
-}
-
-function desk(board: BoardV1 | null, terminal: SeatTerminal): OfficeDesk {
-  const item = board === null ? null : terminalItem(board, terminal);
-  const pr = board === null ? null : terminalPullRequest(board, terminal, item);
+function desk(board: BoardV1 | null, terminal: BoardSeatTerminal): OfficeDesk {
+  const item = board === null ? null : seatItem(board, terminal);
+  const pr = board === null ? null : seatPullRequest(board, terminal, item);
   const state = deskState(terminal, item, pr);
   return {
     address: terminal.address, seat: terminal.seat, agent: terminal.agent, status: terminal.status,
@@ -165,17 +121,7 @@ function desk(board: BoardV1 | null, terminal: SeatTerminal): OfficeDesk {
   };
 }
 
-function currentCart(board: BoardV1, batches: readonly (readonly number[])[]): OfficeCart | null {
-  const primary = (issue: number) => {
-    const item = board.items.find(entry => entry.number === issue);
-    return item === undefined ? null : primaryPullRequest(board, item);
-  };
-  const batch = batches.find(members => members.some(issue => primary(issue)?.state !== 'merged'));
-  if (batch === undefined) return null;
-  return { size: batch.length, accepted: batch.filter(issue => primary(issue)?.acceptance.status === 'accepted' && primary(issue)?.state === 'open') };
-}
-
-function feed(board: BoardV1, cart: OfficeCart | null): readonly OfficeFeedEvent[] {
+function feed(board: BoardV1, cart: BoardCurrentBatch | null): readonly OfficeFeedEvent[] {
   const events: OfficeFeedEvent[] = board.plan.status === 'observed' ? [{ kind: 'plan', at: board.plan.created_at }] : [];
   for (const pr of board.pull_requests) {
     if (pr.required_check.status === 'failure' && pr.state === 'open') events.push({ kind: 'ci_failed', at: pr.required_check.completed_at, pr: pr.number });
@@ -203,14 +149,14 @@ function mines(attention: BoardAttentionV1, desks: readonly OfficeDesk[]): Reado
 
 /** The room of one repository: every live seat from the parent list, and the board and its attention when a parent is active. */
 export function officeRoom(list: BoardParentsV1, active: { readonly board: BoardV1; readonly attention: BoardAttentionV1 } | null): OfficeRoom {
-  const seats = liveSeats(list);
+  const seats = liveSeats(list.seats);
   const board = active?.board ?? null;
-  const desks = seats.filter(seat => !STAGE_SEATS.includes(seat.seat)).map(seat => desk(board, seat));
+  const desks = seats.filter(hasDesk).map(seat => desk(board, seat));
   const plan = board?.plan.status === 'observed' ? board.plan : null;
   const open = board?.items.filter(item => item.state === 'open') ?? [];
   const planned = new Set([...(plan?.block.merge_order ?? []), ...(plan?.block.batches.flat() ?? [])]);
   const held = new Map((plan?.block.holds ?? []).map(hold => [hold.issue, hold.reason]));
-  const cart = board === null || plan === null ? null : currentCart(board, plan.block.batches);
+  const cart = board === null ? null : currentBatch(board);
   const seated = (item: BoardItemV1) => seats.some(seat => seat.issue === item.number || (seat.pr !== null && item.pull_requests.includes(seat.pr)));
   return {
     plan: plan === null ? { status: 'none' } : {
@@ -220,7 +166,7 @@ export function officeRoom(list: BoardParentsV1, active: { readonly board: Board
     orchestrator: lead(seats, 'orchestrator'),
     advisor: lead(seats, 'advisor'),
     desks,
-    limit: plan?.block.seat_limits.worker ?? ISSUE_FLOW_WORKER_LIMIT,
+    limit: workerLimit(board),
     queue: (board?.pull_requests ?? []).filter(isQueued).map((pr) => {
       const item = board!.items.find(entry => entry.pull_requests.includes(pr.number)) ?? null;
       const owner = seats.find(seat => seat.pr === pr.number || (item !== null && seat.issue === item.number));

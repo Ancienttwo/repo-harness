@@ -46,7 +46,8 @@ import { OPERATOR_THEME_STORAGE_KEY, resolveThemeMode } from '../../src/operator
 import { decodeOperatorRepositories, type OperatorRepositoriesV1 } from '../../src/core/operator/repositories';
 import { fetchRepositories } from '../../src/operator-web/repositories';
 import { boardLayout, boardPlace, boardRoom, DEFAULT_LOCATION, parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
-import { activeParent, DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, officeCard, officeRoom, type BoardSummariesRead } from '../../src/operator-web/board-office';
+import { DESK_STATES, ISSUE_FLOW_WORKER_LIMIT } from '../../src/core/board/desk';
+import { activeParent, officeCard, officeRoom, type BoardSummariesRead } from '../../src/operator-web/board-office';
 import { OFFICE_PARENT, officeBoard, officeParents } from '../../src/operator-web/fixtures/office';
 import { postBossCommand, type BossCommandPost, type BossCommandWrite } from '../../src/operator-web/office-boss';
 import { fetchAdvisorTranscript, postAdvisorMessage, type AdvisorMessagePost, type AdvisorMessageWrite, type AdvisorTranscriptRead } from '../../src/operator-web/OfficeAdvisorDialog';
@@ -98,7 +99,7 @@ function props(activity: DevActivitySnapshotV2, overrides: Partial<OperatorAppPr
     readTaskMessages: async request => busyTaskMessages(request, NOW),
     readBoard: async () => ({ state: 'ok', board: BOARD }),
     readBoardParents: async () => ({ state: 'ok', list: PARENTS }),
-    readBoardSummaries: async id => ({ state: 'ok', summaries: { protocol: 1, kind: 'repo-harness.board-summaries', repository_id: id, parents: [] } }),
+    readBoardSummaries: async id => ({ state: 'ok', summaries: { protocol: 2, kind: 'repo-harness.board-summaries', repository_id: id, parents: [] } }),
     ...overrides,
   };
 }
@@ -908,8 +909,9 @@ describe('board office (#1755)', () => {
   });
 
   const fiveRegistered = (ids: readonly string[]) => decodeOperatorRepositories({ protocol: 1, kind: 'operator_repositories', stale_registrations: 0, repositories: ids.map((id, index) => ({ repository_id: id, display_name: `service-${index + 1}`, access_mode: 'read_write' })) });
-  const summaryRead = (id: string, row: Parameters<typeof decodeBoardSummaries>[0]): BoardSummariesRead => ({ state: 'ok', summaries: decodeBoardSummaries({ protocol: 1, kind: 'repo-harness.board-summaries', repository_id: id, parents: [row] }) });
-  const observed = (summary: { readonly queue: number; readonly ci_failures: number; readonly batch: { readonly accepted: number | null; readonly size: number | null }; readonly needs_you: number }) => ({ parent: 1474, status: 'observed', observed_at: '2026-11-04T20:00:00.000Z', summary });
+  const summaryRead = (id: string, row: Parameters<typeof decodeBoardSummaries>[0]): BoardSummariesRead => ({ state: 'ok', summaries: decodeBoardSummaries({ protocol: 2, kind: 'repo-harness.board-summaries', repository_id: id, parents: [row] }) });
+  const observed = (summary: { readonly queue: number; readonly ci_failures: number; readonly batch: { readonly accepted: number | null; readonly size: number | null }; readonly needs_you: number }) => ({ parent: 1474, status: 'observed', observed_at: '2026-11-04T20:00:00.000Z',
+    summary: { ...summary, current_batch: null, worker_limit: ISSUE_FLOW_WORKER_LIMIT, seats: { status: 'observed', desks: [], stalled: 0 } } });
 
   test('the overview sends one read at a time: the parents, then the summaries of a repository with an active parent, repository after repository', async () => {
     officeAt();

@@ -1,7 +1,8 @@
 import { ADVISOR_SEAT_SEND_KIND, ADVISOR_SEAT_TRANSCRIPT_KIND, ADVISOR_TRANSCRIPT_LINE_WITHHELD, decodeAdvisorSeatSend, decodeAdvisorSeatTranscript } from '../../core/board/advisor-seat';
 import { decodeBoard, type BoardItemV1, type BoardPullRequestV1, type BoardTerminalV1, type BoardV1 } from '../../core/board/board';
 import { decodeBoardParents, type BoardParentsSeatV1, type BoardParentsV1 } from '../../core/board/parents';
-import { boardSummary, type BoardSummaryV1 } from '../../core/board/summary';
+import { ISSUE_FLOW_WORKER_LIMIT, type DeskState } from '../../core/board/desk';
+import { BOARD_SUMMARIES_PROTOCOL, boardSummary, type BoardSummarySeatsV1, type BoardSummaryV1 } from '../../core/board/summary';
 import { decodeOperatorRepositories } from '../../core/operator/repositories';
 import type { OperatorAppProps } from '../App';
 import type { BoardSummariesRead } from '../board-office';
@@ -111,21 +112,30 @@ interface SampleRoom {
 }
 
 const NO_PLAN = { accepted: null, size: null };
+
+/** The workers of a sample room with the desk states of the mockup. */
+function sampleSeats(desks: readonly (readonly [string | null, DeskState])[]): BoardSummarySeatsV1 {
+  return { status: 'observed', stalled: desks.filter(([, state]) => state === 'no_claim_status').length,
+    desks: desks.map(([agent, state], index) => ({ seat: 'worker', agent, issue: 100 + index, pr: null, state })) };
+}
+
 const SAMPLE_ROOMS: Readonly<Record<string, SampleRoom>> = {
   repo_a1a1a1a1a1a1a1a1: {
     name: 'aiphabee', parent: 212, orchestrator: { agent: 'claude-code' }, advisor: { agent: 'codex' },
     workers: [['claude-code', 'working'], ['codex', 'working'], ['codex', 'working']],
-    summary: { queue: 0, ci_failures: 1, batch: { accepted: 2, size: 4 }, needs_you: 1 },
+    summary: { queue: 0, ci_failures: 1, batch: { accepted: 2, size: 4 }, current_batch: { accepted: 2, size: 4 }, needs_you: 1, worker_limit: 4,
+      seats: sampleSeats([['claude-code', 'coding'], ['codex', 'coding'], ['codex', 'ci_failed']]) },
   },
   repo_a2a2a2a2a2a2a2a2: {
     name: 'AstroZi', parent: 87, orchestrator: { agent: 'codex' }, advisor: { agent: 'claude-code' },
     workers: [['claude-code', 'idle'], ['codex', 'idle'], ['claude-code', 'idle']],
-    summary: { queue: 1, ci_failures: 0, batch: { accepted: 0, size: 3 }, needs_you: 0 },
+    summary: { queue: 1, ci_failures: 0, batch: { accepted: 0, size: 3 }, current_batch: { accepted: 0, size: 3 }, needs_you: 0, worker_limit: 3,
+      seats: sampleSeats([['claude-code', 'ci_pending'], ['codex', 'no_claim_status'], ['claude-code', 'acceptance_queue']]) },
   },
   repo_a3a3a3a3a3a3a3a3: {
     name: 'arch-context', parent: 438, orchestrator: { agent: null }, advisor: null,
     workers: [[null, 'working']],
-    summary: { queue: 0, ci_failures: 0, batch: NO_PLAN, needs_you: 0 },
+    summary: { queue: 0, ci_failures: 0, batch: NO_PLAN, current_batch: null, needs_you: 0, worker_limit: ISSUE_FLOW_WORKER_LIMIT, seats: sampleSeats([[null, 'coding']]) },
   },
 };
 const IDLE_ROOMS: Readonly<Record<string, string>> = {
@@ -165,7 +175,7 @@ function officeSummaries(repositoryId: string, now: number): BoardSummariesRead 
   const sample = SAMPLE_ROOMS[repositoryId];
   // The mockup's repo-harness card waits for nobody; the sample board has an A2 finding.
   const row = sample !== undefined ? { parent: sample.parent, summary: sample.summary } : { parent: OFFICE_PARENT, summary: { ...boardSummary(officeBoard(now)), needs_you: 0 } };
-  return { state: 'ok', summaries: { protocol: 1, kind: 'repo-harness.board-summaries', repository_id: repositoryId, parents: [{ ...row, status: 'observed', observed_at: new Date(now).toISOString() }] } };
+  return { state: 'ok', summaries: { protocol: BOARD_SUMMARIES_PROTOCOL, kind: 'repo-harness.board-summaries', repository_id: repositoryId, parents: [{ ...row, status: 'observed', observed_at: new Date(now).toISOString() }] } };
 }
 
 const officeRepositories = decodeOperatorRepositories({
