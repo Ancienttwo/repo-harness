@@ -16,3 +16,4 @@ source:
     - src/effects/path-identity.ts
     - src/effects/pi-host-probe.ts
     - src/effects/pi-capability-child.ts
+    - src/pi/compat.ts
