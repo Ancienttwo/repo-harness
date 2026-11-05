@@ -38,8 +38,8 @@ function pullRequest(number: number, head_ref: string, required_check: BoardPull
   };
 }
 
-function worker(now: number, address: string, agent: string, status: string, issue: number | null, pr: number | null): BoardTerminalV1 {
-  return { address, name: null, agent, state: 'live', status, status_kind: null, status_ms: now, turn: 1, branch: null, seat_status: 'observed', seat: 'worker', issue, pr };
+function worker(now: number, address: string, agent: string, status: string, issue: number | null, pr: number | null, branch: string | null): BoardTerminalV1 {
+  return { address, name: null, agent, state: 'live', status, status_kind: null, status_ms: now, turn: 1, branch, seat_status: 'observed', seat: 'worker', issue, pr };
 }
 
 function lead(address: string, agent: string, seat: string): BoardParentsSeatV1 {
@@ -53,7 +53,7 @@ export function officeBoard(now: number): BoardV1 {
   const done = { status: 'success', completed_at: ago(9) } as const;
   const terminals = officeWorkers(now);
   return decodeBoard({
-    protocol: 2, kind: 'repo-harness.board', observed_at: ago(0), repository: REPOSITORY, default_branch: 'main', acceptance_merge: 'off',
+    protocol: 2, kind: 'repo-harness.board', observed_at: ago(0), repository: REPOSITORY, default_branch: 'main', acceptance_merge: 'on',
     parent: { number: OFFICE_PARENT, title: 'Operator console', url: url('issues', OFFICE_PARENT), state: 'open', labels: [], milestone: null },
     plan: {
       status: 'observed', comment_url: `${url('issues', OFFICE_PARENT)}#issuecomment-3`, created_at: ago(8), revision: 7,
@@ -89,12 +89,12 @@ export function officeBoard(now: number): BoardV1 {
 
 function officeWorkers(now: number): readonly BoardTerminalV1[] {
   return [
-    worker(now, 't10', 'claude-code', 'working', 1299, null),
-    worker(now, 't11', 'codex', 'working', null, 1323),
-    worker(now, 't12', 'codex', 'working', null, 1295),
-    worker(now, 't13', 'claude-code', 'idle', 1305, null),
-    worker(now, 't14', 'claude-code', 'idle', 1300, 1324),
-    worker(now, 't15', 'codex', 'idle', 1321, 1321),
+    worker(now, 't10', 'claude-code', 'working', 1299, null, 'feat/1299-dsh-companion'),
+    worker(now, 't11', 'codex', 'working', null, 1323, 'feat/1323-board-refresh'),
+    worker(now, 't12', 'codex', 'working', null, 1295, 'fix/1295-hook-race'),
+    worker(now, 't13', 'claude-code', 'idle', 1305, null, null),
+    worker(now, 't14', 'claude-code', 'idle', 1300, 1324, 'feat/1300-history-mockup'),
+    worker(now, 't15', 'codex', 'idle', 1321, 1321, 'feat/1321-worktree-labels'),
   ];
 }
 
@@ -244,6 +244,28 @@ export function officeProps(busy: OperatorAppProps): OperatorAppProps {
     writeBossCommand: officeBossWriter(),
     readAdvisorTranscript: advisor.read,
     writeAdvisorMessage: advisor.write,
+  };
+}
+
+export const OFFICE_DOOR_POLICIES = ['on', 'off', 'unknown'] as const;
+export type OfficeDoorPolicy = typeof OFFICE_DOOR_POLICIES[number];
+
+/** The sample board with one A1 finding under a merge policy (#1819): #1311 is accepted, ready and unmerged. */
+export function officeDoorBoard(board: BoardV1, policy: OfficeDoorPolicy): BoardV1 {
+  const readiness = (pr: BoardPullRequestV1) => ({
+    provider_repository_id: '1', repository: REPOSITORY, pr_number: pr.number, expected_head_sha: pr.head_sha, expected_base_sha: pr.base_sha,
+    protocol: 2, kind: 'repo-harness-pull-request-readiness', ready: true, blockers: [],
+  });
+  return decodeBoard({ ...board, acceptance_merge: policy, pull_requests: board.pull_requests.map(pr => (pr.number === 1311 ? { ...pr, merge_readiness: readiness(pr) } : pr)) });
+}
+
+export function officeDoorProps(office: OperatorAppProps, policy: OfficeDoorPolicy): OperatorAppProps {
+  return {
+    ...office,
+    readBoard: async (subject, signal) => {
+      const read = await office.readBoard!(subject, signal);
+      return read.state === 'ok' ? { ...read, board: officeDoorBoard(read.board, policy) } : read;
+    },
   };
 }
 
