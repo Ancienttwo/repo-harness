@@ -330,10 +330,10 @@ describe('state architecture boundary checker', () => {
       const path = 'src/effects/pi-capability-child.ts';
       const source = readFileSync(join(ROOT, path), 'utf8');
       write(root, path, `${source}\nlet target = '../../cli/hook/state-snapshot'; await import(target);\n`);
-      write(root, 'src/effects/setup/copied-probe.ts', source);
+      write(root, 'src/effects/copied-probe.ts', source);
     });
     expect(result.violations.map(item => [item.code, item.file])).toEqual([
-      ['EFFECTS_DYNAMIC_IMPORT_UNRESOLVED', 'src/effects/setup/copied-probe.ts'],
+      ['EFFECTS_DYNAMIC_IMPORT_UNRESOLVED', 'src/effects/copied-probe.ts'],
       ['EFFECTS_DYNAMIC_IMPORT_UNRESOLVED', 'src/effects/pi-capability-child.ts'],
     ]);
   });
