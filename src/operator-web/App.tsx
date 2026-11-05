@@ -345,7 +345,8 @@ export function OperatorApp({
   useEffect(() => {
     if (typeof document !== 'undefined') document.title = documentTitle(attention);
   }, [attention]);
-  const botAccess = useBotAccess(readBotAccess, refreshGeneration, workspace === 'bots');
+  // The Office setup checklist shows the hc state of this read.
+  const botAccess = useBotAccess(readBotAccess, refreshGeneration, workspace === 'bots' || workspace === 'board');
   const botReviews = useBotReviews(readBotReviews, refreshGeneration, workspace === 'bots');
   // Both sections are one file with one revision: a save of either one makes the other read again.
   const [agentsSaves, setAgentsSaves] = useState(0);
@@ -466,7 +467,7 @@ export function OperatorApp({
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-1 pb-10 rail:px-6" data-workspace={workspace}>
           {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
           {workspace === 'board' && <BoardPage layout={boardLayout(place.item)} place={boardSubject} room={repositoryRoom} view={board} readBoard={readBoard} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={theme.mode} readBoardParents={readBoardParents} readBoardSummaries={readBoardSummaries} parents={boardParents} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
-            repositories={boardOptions} chosenRepository={boardRepository} onRepository={chooseBoardRepository} />}
+            repositories={boardOptions} chosenRepository={boardRepository} onRepository={chooseBoardRepository} setup={{ repositories, devActivity, botAccess }} />}
           {workspace === 'repositories' && <RepositoriesPage view={repositories} activity={devActivity} now={now} onOpen={openRepositoryBoard} t={t} />}
           {/* Kept mounted after the first visit so the open plan review and the plan selection survive a page change. */}
           {worktreesMounted && <div hidden={workspace !== 'worktrees'}>

@@ -12,12 +12,13 @@ import type { BoardRepositoryOption } from './BoardPage';
 import { useModalFocus } from './Drawer';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { OfficeAdvisorDialog, type AdvisorMessageWriter, type AdvisorTranscriptReader } from './OfficeAdvisorDialog';
+import { OfficeSetupChecklist, officeSetupRows, officeToolingFails, type OfficeSetupReads } from './OfficeSetupChecklist';
 import { useBossCommands, type BossCommands, type BossCommandWriter, type BossNotice } from './office-boss';
 import { WriteReloadBanner } from './operator-write';
 import { agentPortrait, bossPortrait, composeMiniRoom, composeRoom, deskOutfit, deskVignette, queueOutfit, sceneEffect, stageOutfit, type ScenePath } from './office-scene';
 import { BOSS_ICONS, sceneAgent, type BossPose } from './office-sprites';
 import type { ThemeMode } from './theme';
-import { Age, BoardState, CopyButton, PageLink } from './ui';
+import { Age, CopyButton, PageLink } from './ui';
 import { boardHomeLocation, boardLocation, boardRoomLocation, type BoardLayout, type BoardPlace, type WorkspaceLocation } from './workspace-location';
 import './board-office.css';
 
@@ -188,8 +189,8 @@ const OVERVIEW_FRAME_MS = 400;
  * No board selected: one mini room per registered repository, from its seats
  * and the stored summary of its active parent. The overview reads no board.
  */
-export function BoardOfficeOverview({ repositories, readParents, readSummaries, generation, mode, onOpen, t }: {
-  readonly repositories: readonly BoardRepositoryOption[]; readonly readParents: BoardParentsReader; readonly readSummaries: BoardSummariesReader; readonly generation: number;
+export function BoardOfficeOverview({ repositories, readParents, readSummaries, setup, generation, mode, onOpen, t }: {
+  readonly repositories: readonly BoardRepositoryOption[]; readonly readParents: BoardParentsReader; readonly readSummaries: BoardSummariesReader; readonly setup: OfficeSetupReads; readonly generation: number;
   readonly mode: ThemeMode; readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate;
 }) {
   const ids = useMemo(() => repositories.map(repository => repository.id), [repositories]);
@@ -201,6 +202,8 @@ export function BoardOfficeOverview({ repositories, readParents, readSummaries, 
   }), [repositories, views]);
   const ordered = useMemo(() => [...rooms].sort((left, right) => officeCardRank(left.card) - officeCardRank(right.card)), [rooms]);
   const totals = useMemo(() => officeTotals(rooms.map(room => room.card)), [rooms]);
+  const checklist = officeSetupRows(setup, { kind: 'overview', rooms }, t);
+  const noRoomLit = rooms.every(room => room.view.kind !== 'loading') && !rooms.some(room => room.card?.lit === true);
   const mascot = t('board.office.mascot');
   const heading = (
     <>
@@ -213,9 +216,8 @@ export function BoardOfficeOverview({ repositories, readParents, readSummaries, 
   return (
     <section className="board-office" data-board-office="overview" aria-labelledby="board-office-title">
       <OfficeHeader heading={heading} place={null} onOpen={onOpen} t={t} tools={repositories.length === 0 ? undefined : <OfficeStats totals={totals} t={t} />} />
-      {repositories.length === 0
-        ? <BoardState title={t('board.parents.noRepository.title')} description={t('board.parents.noRepository.body')} />
-        : <div className="board-office__cards">{ordered.map(({ repository, view, card }) => <RepositoryCard key={repository.id} repository={repository} view={view} card={card} frame={frame} mode={mode} onOpen={onOpen} t={t} />)}</div>}
+      {repositories.length > 0 && <div className="board-office__cards">{ordered.map(({ repository, view, card }) => <RepositoryCard key={repository.id} repository={repository} view={view} card={card} frame={frame} mode={mode} onOpen={onOpen} t={t} />)}</div>}
+      {setup.repositories.kind === 'loading' ? null : (noRoomLit || officeToolingFails(checklist)) && <OfficeSetupChecklist rows={checklist} t={t} />}
     </section>
   );
 }
@@ -492,9 +494,9 @@ function OfficeFeed({ room, lit, parent, t }: { readonly room: OfficeRoom; reado
  * scene. The scene follows the approved S0 mockup; an empty room stays
  * furnished and takes the night palette.
  */
-export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranch, room, place, banners, writeBoss, readAdvisor, writeAdvisor, mode, onOpen, now, t }: {
+export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranch, room, place, banners, setup, writeBoss, readAdvisor, writeAdvisor, mode, onOpen, now, t }: {
   readonly repository: string; readonly repositoryId: string; readonly parent: number | null; readonly defaultBranch: string | null;
-  readonly room: OfficeRoom; readonly place: BoardPlace | null; readonly banners: ReactNode; readonly writeBoss: BossCommandWriter;
+  readonly room: OfficeRoom; readonly place: BoardPlace | null; readonly banners: ReactNode; readonly setup: ReactNode; readonly writeBoss: BossCommandWriter;
   readonly readAdvisor: AdvisorTranscriptReader; readonly writeAdvisor: AdvisorMessageWriter; readonly mode: ThemeMode;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
 }) {
@@ -625,6 +627,7 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
           <OfficeFeed room={room} lit={lit} parent={parent} t={t} />
         </aside>
       </div>
+      {setup}
       {confirm !== null && parent !== null && <BossConfirm command={confirm} parent={parent} frame={clock.frame} onCancel={() => setConfirm(null)} onConfirm={() => { setConfirm(null); boss.send(confirm); }} t={t} />}
       {chat && canChat && (
         <OfficeAdvisorDialog repositoryId={repositoryId} parent={parent} agent={agentName(room.advisor!.agent, t)} read={readAdvisor} write={writeAdvisor} onClose={() => setChat(false)} t={t}

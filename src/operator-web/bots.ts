@@ -45,7 +45,7 @@ export type BotAccessView = BotsReadView<BotAccessSnapshotV1, BotAccessReason>;
 
 type BotsRead<S, R extends string> = { readonly state: 'ok'; readonly snapshot: S } | { readonly state: 'unavailable'; readonly reason: R };
 
-/** Reads only while the Bots page shows; a return to the page reads at once. */
+/** Reads only while `enabled`; a return to the page reads at once. */
 function useBotsRead<S, R extends string>(read: (signal: AbortSignal) => Promise<BotsRead<S, R>>, identity: string, enabled: boolean): BotsReadView<S, R> {
   const [view, setView] = useState<BotsReadView<S, R>>({ kind: 'loading' });
   const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {

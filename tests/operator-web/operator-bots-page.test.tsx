@@ -120,9 +120,9 @@ describe('navigation', () => {
     expect(page()).not.toBeNull();
   });
 
-  test('the Bot access snapshot is read only while the Bots page shows, once on each return', async () => {
+  test('the Bot access snapshot is read only while the Bots or Board page shows, once on each return', async () => {
     let reads = 0;
-    await mount('', props(async () => { reads++; return ok(busyBotAccess(NOW)); }));
+    await mount('#home', props(async () => { reads++; return ok(busyBotAccess(NOW)); }));
     expect(reads).toBe(0);
     await act(async () => navLink('bots').click());
     await settle();
@@ -133,6 +133,10 @@ describe('navigation', () => {
     await act(async () => navLink('bots').click());
     await settle();
     expect(reads).toBe(2);
+    await act(async () => navLink('system').click());
+    await act(async () => navLink('board').click());
+    await settle();
+    expect(reads).toBe(3);
   });
 });
 
