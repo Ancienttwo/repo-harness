@@ -378,7 +378,7 @@ function OfficeRoomView({ repositoryId, list, view, place, parent, setup, writeB
     <>
       <BoardOfficeRoom key={`${repositoryId}:${parent}`} repository={list.repository} repositoryId={repositoryId} parent={parent} defaultBranch={board?.default_branch ?? null} room={room} place={place} writeBoss={writeBossCommand} readAdvisor={readAdvisorTranscript} writeAdvisor={writeAdvisorMessage} mode={mode} onOpen={onOpen} now={now} t={t}
         banners={view === null ? null : <SourceBanners board={view.board} refreshFailed={view.refreshFailed} unevaluated={view.attention.unevaluated.length} t={t} />}
-        setup={officeLit(room) ? null : <OfficeSetupChecklist rows={officeSetupRows(setup, { kind: 'room', repositoryId, parent, seats: 'empty', plan: board?.plan ?? 'no_parent' }, t)} t={t} />} />
+        setup={officeLit(room) ? null : <OfficeSetupChecklist rows={officeSetupRows(setup, { kind: 'room', repositoryId, parent, parents: { kind: 'ready', list }, plan: board?.plan ?? 'no_parent' }, t)} t={t} />} />
       {view !== null && place !== null && (
         <BoardDrawer view={view} place={place} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} order={order} onOpen={onOpen} now={now} t={t} />
       )}
@@ -406,7 +406,7 @@ function OfficeRepository({ repositoryId, place, placeView, setup, readBoard, re
   if (parents.kind === 'failed') {
     return (
       <div className="board-office" data-board-parents-reason={parents.reason}>
-        <OfficeSetupChecklist rows={officeSetupRows(setup, { kind: 'room', repositoryId, parent, seats: parents.reason, plan: 'unread' }, t)} t={t} />
+        <OfficeSetupChecklist rows={officeSetupRows(setup, { kind: 'room', repositoryId, parent, parents, plan: 'unread' }, t)} t={t} />
       </div>
     );
   }

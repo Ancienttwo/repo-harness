@@ -17,7 +17,7 @@ import { documentTitle, OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, OperatorApp, type
 import { evaluateBoardAttention } from '../../src/core/board/attention';
 import { ADVISOR_TRANSCRIPT_LINE_WITHHELD, decodeAdvisorSeatSend, decodeAdvisorSeatTranscript } from '../../src/core/board/advisor-seat';
 import { decodeBoard, type BoardV1 } from '../../src/core/board/board';
-import { fetchBoard, fetchBoardParents, type BoardParentsRead, type BoardSubject } from '../../src/operator-web/board-view';
+import { fetchBoard, fetchBoardParents, type BoardParentsRead, type BoardParentsReason, type BoardSubject } from '../../src/operator-web/board-view';
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import boardParents from '../../src/operator-web/fixtures/board-parents.json';
 import { decodeBoardParents, type BoardParentsV1 } from '../../src/core/board/parents';
@@ -1676,7 +1676,8 @@ describe('office setup checklist (#1788)', () => {
   const THIS = 'repo_1a1a1a1a1a1a1a1a';
   const OTHER = 'repo_2b2b2b2b2b2b2b2b';
   const OVERVIEW: OfficeSetupScope = { kind: 'overview', rooms: [] };
-  const inRoom = (scope: Partial<Extract<OfficeSetupScope, { kind: 'room' }>> = {}): OfficeSetupScope => ({ kind: 'room', repositoryId: THIS, parent: null, seats: 'empty', plan: 'no_parent', ...scope });
+  const EMPTY: BoardParentsV1 = { ...PARENTS, parents: [], seats: [] };
+  const inRoom = (scope: Partial<Extract<OfficeSetupScope, { kind: 'room' }>> = {}): OfficeSetupScope => ({ kind: 'room', repositoryId: THIS, parent: null, parents: { kind: 'ready', list: EMPTY }, plan: 'no_parent', ...scope });
   const bots = (snapshot: BotAccessSnapshotV1): OfficeSetupReads['botAccess'] => ({ kind: 'ready', snapshot, refreshFailed: false });
   const READY = decodeBotAccessSnapshot(busyBotAccess(NOW));
   const github = (status: string, reason: string | null, name: string | null = null, id = THIS) =>
@@ -1713,10 +1714,19 @@ describe('office setup checklist (#1788)', () => {
       [activity(github('unavailable', 'gh_failed'), github('ok', null, 'o/r', OTHER)), inRoom(), 'failed'],
       [activity(github('unavailable', 'gh_not_installed')), OVERVIEW, 'missing'],
       [activity(github('unavailable', 'gh_timeout')), OVERVIEW, 'failed'],
+      [{ kind: 'unreachable' }, OVERVIEW, 'unknown'],
       [activity(github('not_configured', 'no_github_remote')), OVERVIEW, 'unknown'],
       [activity(github('unavailable', 'git_remote_failed')), OVERVIEW, 'unknown'],
+      [activity(github('not_configured', 'no_github_remote'), github('unavailable', 'git_remote_failed', null, OTHER)), OVERVIEW, 'unknown'],
     ];
     for (const [devActivity, scope, state] of cases) expect(stateAndCommands('gh', reads({ devActivity }), scope)).toEqual([state, ['gh auth status']]);
+    const noRemote = 'No repository here has a GitHub remote';
+    expect(row('gh', reads({ devActivity: activity(github('not_configured', 'no_github_remote')) }), OVERVIEW).detail).toContain(noRemote);
+    const mixed = row('gh', reads({ devActivity: activity(github('not_configured', 'no_github_remote'), github('unavailable', 'git_remote_failed', null, OTHER)) }), OVERVIEW).detail;
+    expect(mixed).not.toContain(noRemote);
+    expect(mixed).toContain('git_remote_failed');
+    expect(row('gh', reads({ devActivity: activity(github('unavailable', 'git_remote_failed')) }), OVERVIEW).detail).toContain('git_remote_failed');
+    expect(row('gh', reads({ devActivity: { kind: 'unreachable' } }), OVERVIEW).detail).toBe(t('board.reason.unreachable'));
     const failed = row('gh', reads({ devActivity: activity(github('unavailable', 'gh_failed')) })).detail;
     expect(failed).toContain('gh_failed');
     expect(failed.toLowerCase()).not.toContain('log');
@@ -1726,10 +1736,12 @@ describe('office setup checklist (#1788)', () => {
     const ID = 'gh api repos/{owner}/{repo} --jq .id';
     const REMOTE = 'git remote add origin <url>';
     const INIT = 'repo-harness init';
+    const SERVE = 'repo-harness operator serve';
     const noRemote = github('not_configured', 'no_github_remote');
     const cases: readonly (readonly [Partial<OfficeSetupReads>, OfficeSetupScope, string, string])[] = [
-      [{ repositories: { kind: 'loading' } }, OVERVIEW, 'unknown', INIT],
-      [{ repositories: { kind: 'failed' } }, OVERVIEW, 'failed', INIT],
+      [{ repositories: { kind: 'loading' } }, OVERVIEW, 'unknown', SERVE],
+      [{ repositories: { kind: 'failed' } }, OVERVIEW, 'unknown', SERVE],
+      [{ repositories: { kind: 'failed' } }, inRoom(), 'unknown', SERVE],
       [{ repositories: registered() }, OVERVIEW, 'missing', INIT],
       [{}, OVERVIEW, 'ok', ID],
       [{}, inRoom(), 'ok', ID],
@@ -1742,30 +1754,86 @@ describe('office setup checklist (#1788)', () => {
       [{ repositories: registered(THIS, OTHER), devActivity: activity(github('ok', null, 'o/r'), { ...noRemote, repository_id: OTHER }) }, OVERVIEW, 'partial', ID],
     ];
     for (const [input, scope, state, command] of cases) expect(stateAndCommands('repository', reads(input), scope)).toEqual([state, [command]]);
+    const two = registered(THIS, OTHER);
+    const details: readonly (readonly [Partial<OfficeSetupReads>, OfficeSetupScope, string])[] = [
+      [{ repositories: two, devActivity: activity(github('unavailable', 'gh_failed'), { ...github('unavailable', 'gh_failed'), repository_id: OTHER }) }, OVERVIEW, 'Confirmed: 0 with a GitHub remote, 0 with none. Not known: 2 (gh_failed).'],
+      [{ repositories: two, devActivity: activity(github('ok', null, 'o/r'), { ...github('unavailable', 'git_remote_failed'), repository_id: OTHER }) }, OVERVIEW, 'Confirmed: 1 with a GitHub remote, 0 with none. Not known: 1 (git_remote_failed).'],
+      [{ repositories: two, devActivity: { kind: 'loading' } }, OVERVIEW, 'Confirmed: 0 with a GitHub remote, 0 with none. Not known: 2 (no read yet).'],
+      [{ repositories: two, devActivity: { kind: 'unreachable' } }, OVERVIEW, 'Confirmed: 0 with a GitHub remote, 0 with none. Not known: 2 (unreachable).'],
+      [{ devActivity: activity(github('unavailable', 'gh_failed')) }, inRoom(), 'Registered. The GitHub remote is not known (gh_failed).'],
+    ];
+    for (const [input, scope, detail] of details) expect(row('repository', reads(input), scope).detail).toBe(detail);
   });
 
   test('rows 4 and 5 use the reads of the page, with the seat commands of the issue and the label keys of RH_LABEL', () => {
     const SEATS = ['repo-harness seats argv <seat> --repository-id <id>', `hc label <t> ${RH_LABEL.repository}=<id> ${RH_LABEL.seat}=<seat>`];
-    const failed = { view: { kind: 'failed', reason: 'parents_hc_failed' }, card: null } as const;
-    const seatCases: readonly (readonly [OfficeSetupScope, string])[] = [
-      [inRoom(), 'missing'], [inRoom({ seats: 'parents_hc_failed' }), 'failed'], [inRoom({ seats: 'parents_github_failed' }), 'unknown'],
-      [{ kind: 'overview', rooms: [failed] }, 'failed'], [{ kind: 'overview', rooms: [{ view: { kind: 'loading' }, card: null }] }, 'unknown'],
-      [{ kind: 'overview', rooms: [] }, 'missing'],
+    const failedRoom = (reason: BoardParentsReason) => ({ view: { kind: 'failed', reason }, card: null }) as const;
+    const loadingRoom = { view: { kind: 'loading' }, card: null } as const;
+    const readyRoom = (list: BoardParentsV1, summaries: BoardSummariesRead | null = null) => {
+      const view = { kind: 'ready', list, summaries } as const;
+      return { view, card: officeCard(view) };
+    };
+    const overview = (...rooms: Extract<OfficeSetupScope, { kind: 'overview' }>['rooms']): OfficeSetupScope => ({ kind: 'overview', rooms });
+    const invalidLabel: BoardParentsV1 = { ...EMPTY, seats: [{ address: 't9', name: null, agent: null, state: 'live', status: null, status_kind: null, status_ms: null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_invalid', parent: null }] };
+    const seatCases: readonly (readonly [OfficeSetupScope, string, string])[] = [
+      [inRoom(), 'missing', 'No live terminal has a seat label.'],
+      [inRoom({ parents: { kind: 'ready', list: invalidLabel } }), 'failed', 'Terminal t9 has an invalid seat label.'],
+      [inRoom({ parents: { kind: 'failed', reason: 'parents_hc_failed' } }), 'failed', t('board.reason.parents_hc_failed')],
+      [inRoom({ parents: { kind: 'failed', reason: 'parents_github_failed' } }), 'unknown', t('board.reason.parents_github_failed')],
+      [overview(), 'unknown', 'No repository was read, so no seat read ran.'],
+      [overview(readyRoom(EMPTY)), 'missing', 'No live terminal has a seat label.'],
+      [overview(readyRoom(invalidLabel)), 'failed', 'Terminal t9 has an invalid seat label.'],
+      [overview(failedRoom('parents_hc_failed')), 'failed', t('board.reason.parents_hc_failed')],
+      [overview(failedRoom('parents_invalid'), readyRoom(EMPTY)), 'unknown', t('board.reason.parents_invalid')],
+      [overview(loadingRoom), 'unknown', 'The first read has not finished.'],
+      [overview(readyRoom(PARENTS), readyRoom(EMPTY)), 'ok', '1 of 2 rooms have a live seat.'],
+      [overview(readyRoom(PARENTS), failedRoom('parents_invalid')), 'ok', 'Rooms with a live seat: 1. Not known: 1 (parents_invalid).'],
+      [overview(readyRoom(PARENTS), loadingRoom), 'ok', 'Rooms with a live seat: 1. Not known: 1 (no read yet).'],
     ];
-    for (const [scope, state] of seatCases) expect(stateAndCommands('seats', reads(), scope)).toEqual([state, SEATS]);
+    for (const [scope, state, detail] of seatCases) {
+      expect(stateAndCommands('seats', reads(), scope)).toEqual([state, SEATS]);
+      expect(row('seats', reads(), scope).detail).toBe(detail);
+    }
     const write = 'gh issue comment 7 --body-file <plan-file>';
     const read = 'repo-harness board --parent 7';
-    const observed = officeBoard(NOW).plan;
+    const samplePlan = officeBoard(NOW).plan;
     const unavailable = { status: 'unavailable', comment_url: 'https://github.com/o/r/issues/7#issuecomment-1', reason: 'plan_invalid' } as const;
     const planCases: readonly (readonly [Parameters<typeof inRoom>[0], string, string])[] = [
-      [{ parent: 7, plan: observed }, 'ok', read],
+      [{ parent: 7, plan: samplePlan }, 'ok', read],
       [{ parent: 7, plan: { status: 'absent', truncated: false } }, 'optional', write],
       [{ parent: 7, plan: { status: 'absent', truncated: true } }, 'unknown', read],
       [{ parent: 7, plan: unavailable }, 'unknown', read],
-      [{ parent: 7, plan: 'unread' }, 'unknown', read],
+      [{ parent: 7, plan: 'unread', parents: { kind: 'failed', reason: 'parents_invalid' } }, 'unknown', read],
       [{ plan: 'no_parent' }, 'optional', 'gh issue comment <n> --body-file <plan-file>'],
     ];
     for (const [scope, state, command] of planCases) expect(stateAndCommands('plan', reads(), inRoom(scope))).toEqual([state, [command]]);
+    expect(row('plan', reads(), inRoom({ parent: 7, plan: 'unread', parents: { kind: 'failed', reason: 'parents_invalid' } })).detail).toContain('parents_invalid');
+    const anyRead = 'repo-harness board --parent <n>';
+    const anyWrite = 'gh issue comment <n> --body-file <plan-file>';
+    const summaryRead = (row: Parameters<typeof decodeBoardSummaries>[0]): BoardSummariesRead => ({ state: 'ok', summaries: decodeBoardSummaries({ protocol: 2, kind: 'repo-harness.board-summaries', repository_id: HARNESS_ID, parents: [row] }) });
+    const summary = (batch: { readonly accepted: number | null; readonly size: number | null }) => summaryRead({
+      parent: 1474, status: 'observed', observed_at: '2026-11-04T20:00:00.000Z',
+      summary: { queue: 0, ci_failures: 0, batch, current_batch: null, needs_you: 0, worker_limit: ISSUE_FLOW_WORKER_LIMIT, seats: { status: 'observed', desks: [], stalled: 0 } },
+    });
+    const planned = readyRoom(PARENTS, summary({ accepted: 0, size: 3 }));
+    const planWords = (unknown: number, reason: string, count = 0) => `Plans confirmed: ${count}. Not known: ${unknown} (${reason}).`;
+    const overviewPlans: readonly (readonly [OfficeSetupScope, string, string, string])[] = [
+      [overview(), 'unknown', 'No repository was read, so no plan read ran.', anyRead],
+      [overview(readyRoom(EMPTY)), 'optional', 'No parent has a live seat, so no plan was read.', anyWrite],
+      [overview(planned, readyRoom(EMPTY)), 'ok', 'Active parents with a plan: 1.', anyRead],
+      [overview(failedRoom('parents_invalid')), 'unknown', planWords(1, 'parents_invalid'), anyRead],
+      [overview(loadingRoom), 'unknown', planWords(1, 'no read yet'), anyRead],
+      [overview(readyRoom(PARENTS)), 'unknown', planWords(1, 'no read yet'), anyRead],
+      [overview(readyRoom(PARENTS, { state: 'unavailable', reason: 'parents_busy' })), 'unknown', planWords(1, 'parents_busy'), anyRead],
+      [overview(readyRoom(PARENTS, summaryRead({ parent: 1474, status: 'not_read' }))), 'unknown', planWords(1, 'not_read'), anyRead],
+      [overview(readyRoom(PARENTS, summaryRead({ parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' }))), 'unknown', planWords(1, 'snapshot_invalid'), anyRead],
+      [overview(readyRoom(PARENTS, summary({ accepted: null, size: null }))), 'unknown', planWords(1, 'plan_not_observed'), anyRead],
+      [overview(planned, failedRoom('parents_invalid')), 'unknown', planWords(1, 'parents_invalid', 1), anyRead],
+    ];
+    for (const [scope, state, detail, command] of overviewPlans) {
+      expect(stateAndCommands('plan', reads(), scope)).toEqual([state, [command]]);
+      expect(row('plan', reads(), scope).detail).toBe(detail);
+    }
   });
 
   test('a failed refresh keeps the last state and says so', () => {
