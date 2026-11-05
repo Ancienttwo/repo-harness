@@ -14,4 +14,4 @@ source:
   include:
     - src/effects/repo-registry.ts
     - src/effects/repo-harness-home.ts
-    - src/core/operator/pane-prefix.ts
+    - src/core/terminal/pane-prefix.ts

@@ -1,0 +1,15 @@
+schemaVersion: archcontext.node/v2
+id: component.architecture.module-view
+kind: component
+name: Module View Contract
+status: active
+parent: capability.runtime-harness.architecture
+layer: core
+summary: The read contract of the committed architecture modules. It holds the module view shapes and the module review prompt builder that the module CLI and the operator architecture view read.
+responsibilities:
+  - Build the module index, module detail and graph shapes from the committed architecture model.
+  - Build bounded module review prompts for the module CLI and the operator architecture view.
+source:
+  include:
+    - src/core/architecture/module-view.ts
+    - src/core/review/module-review-prompt.ts

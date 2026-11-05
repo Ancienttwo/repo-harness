@@ -191,7 +191,7 @@ export function selectPlatformCoverage(paths: readonly string[], inputs: Platfor
     || path.startsWith('scripts/lib/') || /^scripts\/select-[^/]+\.ts$/.test(path));
   return {
     // The native job installs the hc version pinned in this package file (install-pinned-herdr-core action).
-    native_oar: shared || paths.some(path => path === 'src/core/operator/herdr-core-pin.json' || inputs.native.has(path)),
+    native_oar: shared || paths.some(path => path === 'src/core/terminal/herdr-core-pin.json' || inputs.native.has(path)),
     home_isolation: shared || paths.some(path => inputs.home.has(path)),
   };
 }

@@ -141,8 +141,8 @@ const PACKAGE_ROOT = path.dirname(path.dirname(AGENT_FLEET_SOURCE_DIR));
 const { renderHerdrSkill } = require(path.join(PACKAGE_ROOT, "src/cli/commands/herdr-skill-render.mjs"));
 const { rawBaseUrl: WAZA_RAW_BASE_URL, files: WAZA_SHARED_RULES } = require(path.join(PACKAGE_ROOT, "src", "core", "skill-surface", "waza-shared-rules.json"));
 // The release owns the hc floor: it protects this package's hc client code.
-const HERDR_CORE_PIN_SOURCE = "package:src/core/operator/herdr-core-pin.json";
-const { min_version: HERDR_CORE_MIN_VERSION } = require(path.join(PACKAGE_ROOT, "src", "core", "operator", "herdr-core-pin.json"));
+const HERDR_CORE_PIN_SOURCE = "package:src/core/terminal/herdr-core-pin.json";
+const { min_version: HERDR_CORE_MIN_VERSION } = require(path.join(PACKAGE_ROOT, "src", "core", "terminal", "herdr-core-pin.json"));
 const SKILL_SURFACE_MANIFEST_PATH = path.join(PACKAGE_ROOT, "assets", "skill-commands", "manifest.json");
 const AGENT_FLEET_SOURCE_LABEL = "package:agents/fleet";
 const AGENT_FLEET_DEFAULT_MANAGED = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
@@ -808,7 +808,7 @@ function detectWaza() {
   };
 }
 
-// compareHcVersions in src/core/operator/herdr-pin.ts owns numeric x.y.z order.
+// compareHcVersions in src/core/terminal/herdr-pin.ts owns numeric x.y.z order.
 function versionAtLeast(actual, minimum) {
   const parse = (value) => /^(\d+)\.(\d+)\.(\d+)$/.exec(value)?.slice(1, 4).map(Number) ?? null;
   const left = parse(actual);

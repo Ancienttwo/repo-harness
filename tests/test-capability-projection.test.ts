@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { buildProjection, readModelVerification, serializeProjection } from '../scripts/project-test-capabilities';
-import { parseTestProjection } from '../src/core/operator/tests';
+import { parseTestProjection } from '../src/core/ci/test-report';
 
 const sources = new Map([
   ['bunfig.toml', ''],

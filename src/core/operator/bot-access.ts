@@ -3,7 +3,7 @@
 // absolute path, stderr or environment value can pass through. A field that
 // does not match its grammar becomes null or drops the row; it is never echoed.
 
-import { HC_VERSION_TEXT, type HcVersionCheck } from './herdr-pin';
+import { HC_VERSION_TEXT, type HcVersionCheck } from '../terminal/herdr-pin';
 import { NOTIFY_CHANNELS } from '../decision/notify-relay-record';
 import { NOTIFY_STATUS_KEYS, NOTIFY_UNAVAILABLE_REASONS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifyStatusV1, type NotifyUnavailableReason } from './notify-status';
 

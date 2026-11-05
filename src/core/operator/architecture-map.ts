@@ -15,7 +15,7 @@
 
 import type { RefImpactV1 } from 'archctx-contracts';
 import { PULL_REQUEST_FILES_REASONS, type PullRequestFiles } from './pull-request-files';
-import { isPublicDevActivityText, isPublicRepoPath } from './public-text';
+import { isPublicDevActivityText, isPublicRepoPath } from '../public-projections/public-text';
 import { TESTS_UNAVAILABLE_REASONS, type TestsSnapshotV1, type TestsUnavailableReason } from './tests';
 
 export const OPERATOR_ARCHITECTURE_MAP_SCHEMA = 'repo-harness.architecture-map.v7' as const;

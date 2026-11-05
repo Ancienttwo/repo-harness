@@ -7,7 +7,7 @@ import {
   type CleanupReason, type CleanupStage,
 } from '../../core/operator/worktree-cleanup-plan';
 import { selectionDigestInput, worktreeDigestRow } from '../../core/operator/worktree-cleanup';
-import type { WorktreeView } from '../../core/operator/worktrees';
+import type { WorktreeView } from '../../core/public-projections/worktrees';
 
 /** Server-only observation. Use observeCleanupLoss and the existing worktree classifier. */
 export interface CleanupObservation {

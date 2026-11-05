@@ -11,5 +11,4 @@ responsibilities:
   - Own the worktree source, reason, lifecycle and view types and the strict worktrees snapshot decoder.
 source:
   include:
-    - src/core/operator/public-text.ts
-    - src/core/operator/worktrees.ts
+    - src/core/public-projections/**

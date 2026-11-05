@@ -1,7 +1,7 @@
 // Strict, browser-safe decoder for GET /api/v1/dev-activity. Exact keys, closed
 // vocabularies, and no absolute-path-looking text outside `url`.
 
-import { isPublicDevActivityText, isPublicRepoPath } from '../operator/public-text';
+import { isPublicDevActivityText, isPublicRepoPath } from '../public-projections/public-text';
 import { PULL_REQUEST_FILES_REASONS } from '../operator/pull-request-files';
 import {
   DEV_ACTIVITY_ATTENTION_KINDS,

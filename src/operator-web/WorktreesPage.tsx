@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Banner, Button } from '@cloudflare/kumo';
 import { WarningIcon } from '@phosphor-icons/react';
 import { WORKTREE_CLEANUP_MAX_IDS, type WorktreeCleanupItem, type WorktreeCleanupResult } from '../core/operator/worktree-cleanup';
-import type { WorktreeView } from '../core/operator/worktrees';
+import type { WorktreeView } from '../core/public-projections/worktrees';
 import { CleanupPlanReview, JUDGMENT_TONE as TONE, refusalText, type CleanupPlanPorts } from './CleanupPlanReview';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { ageWords } from './labels';

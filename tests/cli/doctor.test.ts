@@ -25,7 +25,7 @@ import { buildManagedHooks, MANAGED_TAG } from '../../src/cli/installer/managed-
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
 import { writeNotifyInstallRecord } from '../../src/effects/terminal/herdr-notify-install';
 import { notifyRelayDoctorCheck } from '../../src/cli/commands/herdr';
-import { HC_MIN_VERSION } from '../../src/core/operator/herdr-pin';
+import { HC_MIN_VERSION } from '../../src/core/terminal/herdr-pin';
 
 const DOCTOR_CHECK_TIMEOUT_MS = 15000;
 // The default selection on a host without `pi` on PATH.

@@ -12,7 +12,7 @@ import { worktreeId } from '../../src/effects/git/worktree-record';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { inspectWorktree } from '../../src/effects/state/coordination-worktree-topology';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
-import type { WorktreeView } from '../../src/core/operator/worktrees';
+import type { WorktreeView } from '../../src/core/public-projections/worktrees';
 import { choiceOf } from '../../src/operator-web/CleanupPlanReview';
 
 const sid = 'a'.repeat(32), repoId = `repo_${'b'.repeat(16)}`, archivePath = 'docs/archive/2026-10-29-feature';

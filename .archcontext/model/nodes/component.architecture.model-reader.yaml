@@ -1,11 +1,11 @@
 schemaVersion: archcontext.node/v2
-id: component.operator.architecture-reader
+id: component.architecture.model-reader
 kind: component
 name: Architecture Model Reader
 status: active
-parent: capability.runtime-harness.operator
+parent: capability.runtime-harness.architecture
 layer: effects
-summary: Reads the committed architecture model through the shared archctx provider for module views and review prompts.
+summary: The read contract of the committed architecture model. It reads through the shared archctx provider for module views and review prompts.
 responsibilities:
   - Read the committed architecture model for module views and review prompts.
 source:

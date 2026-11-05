@@ -46,7 +46,7 @@ import { buildPublicationCommand } from './commands/publication';
 import { buildBoardCommand } from './commands/board';
 import { attentionWatchDoctorCheck } from '../effects/board/attention-watch';
 import { readLocalRepositoryId } from '../effects/board/collect';
-import { githubRemoteRepository } from '../core/operator/docs';
+import { githubRemoteRepository } from '../core/board/source';
 import { attentionHostPorts, boardHostPorts } from '../effects/terminal/herdr-core';
 import { buildFleetCommand } from './commands/fleet';
 import { buildBotsCommand } from './commands/bots';

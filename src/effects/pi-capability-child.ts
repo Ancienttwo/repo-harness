@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { probePiCapability } from '../../pi/compat';
+import { probePiCapability } from '../pi/compat';
 
 // Load the PATH installation's public SDK. Its metadata honors PI_PACKAGE_DIR.
 const { VERSION, getPackageDir } = await import(pathToFileURL(join(process.argv[2]!, 'dist/index.js')).href);

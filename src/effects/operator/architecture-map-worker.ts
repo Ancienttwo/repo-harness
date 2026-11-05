@@ -57,7 +57,7 @@ import {
   type ArchitectureViolationReason,
   type ArchitectureViolationsLayerV1,
 } from '../../core/operator/architecture-map';
-import { isPublicDevActivityText, isPublicRepoPath, publicDevActivityText } from '../../core/operator/public-text';
+import { isPublicDevActivityText, isPublicRepoPath, publicDevActivityText } from '../../core/public-projections/public-text';
 import { readCommittedNativeContext } from '../architecture/model-reader';
 import { ARCHITECTURE_VIEW_TIMEOUT_MS, readArchitectureView, resolveArchitecturePaths, type ArchitectureViewArgs } from '../architecture/architecture-read';
 import { gitSpawnSync } from '../git/runner';

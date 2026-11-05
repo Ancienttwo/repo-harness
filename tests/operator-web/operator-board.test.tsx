@@ -10,7 +10,7 @@ import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
 import { cleanCommand } from '../../src/cli/commands/worktrees';
 import { decodeWorktreeCleanupRequest, worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
-import { decodeWorktrees, unavailableWorktrees, WORKTREE_REASONS, type WorktreesSnapshot } from '../../src/core/operator/worktrees';
+import { decodeWorktrees, unavailableWorktrees, WORKTREE_REASONS, type WorktreesSnapshot } from '../../src/core/public-projections/worktrees';
 import { selectionDigest } from '../../src/effects/operator/worktree-cleanup';
 import { createCleanupPlan, type CleanupObservation } from '../../src/effects/operator/worktree-cleanup-plan';
 import { documentTitle, OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
@@ -54,7 +54,7 @@ import { officeSetupRows, type OfficeSetupReads, type OfficeSetupRowId, type Off
 import { translate, type OperatorTranslate } from '../../src/operator-web/i18n';
 import { hcRepairCommands } from '../../src/operator-web/RuntimeBadges';
 import { decodeBotAccessSnapshot, type BotAccessSnapshotV1 } from '../../src/core/operator/bot-access';
-import { HC_MIN_VERSION } from '../../src/core/operator/herdr-pin';
+import { HC_MIN_VERSION } from '../../src/core/terminal/herdr-pin';
 import { RH_LABEL } from '../../src/effects/terminal/herdr-core';
 import { postBossCommand, type BossCommandPost, type BossCommandWrite } from '../../src/operator-web/office-boss';
 import { fetchAdvisorTranscript, postAdvisorMessage, type AdvisorMessagePost, type AdvisorMessageWrite, type AdvisorTranscriptRead } from '../../src/operator-web/OfficeAdvisorDialog';

@@ -1,4 +1,4 @@
-import { HC_VERSION_TEXT } from './herdr-pin';
+import { HC_VERSION_TEXT } from '../terminal/herdr-pin';
 import { decodeNativeRuntimeObservation, runtimeCaptureId, RUNTIME_CAPTURE_MAX_OBSERVATIONS, type NativeRuntimeObservation, type NativeRuntimeProvider, type RuntimeCaptureSnapshot } from './runtime-capture';
 
 /** An observation projection. It has no task transition authority. */

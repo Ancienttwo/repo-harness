@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CleanupPlanItem } from '../../src/core/operator/worktree-cleanup-plan';
-import type { WorktreeView } from '../../src/core/operator/worktrees';
+import type { WorktreeView } from '../../src/core/public-projections/worktrees';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { worktreeId } from '../../src/effects/git/worktree-record';
 import type { GithubCommandRunner } from '../../src/effects/github/issues';

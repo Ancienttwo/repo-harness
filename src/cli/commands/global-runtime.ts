@@ -34,7 +34,7 @@ import {
   enabledPlugins,
 } from "../installer/install-state";
 import { installSelectionCommand, ownerEnabled, type PluginId } from "../../core/skill-surface/plugin-manifest";
-import { compareHcVersions, HC_MIN_VERSION, HC_RELEASE_ASSETS, type HcReleaseAsset } from "../../core/operator/herdr-pin";
+import { compareHcVersions, HC_MIN_VERSION, HC_RELEASE_ASSETS, type HcReleaseAsset } from "../../core/terminal/herdr-pin";
 import {
   parseSkillSurfaceCatalog,
   requiredExplicitExternalDependencyInstallGroups,

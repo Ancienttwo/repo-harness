@@ -1,5 +1,5 @@
 import { isManagedWorktreePath, managedWorktreeRoot } from '../git/managed-worktree';
-import type { WorktreeReason, WorktreeView } from '../../core/operator/worktrees';
+import type { WorktreeReason, WorktreeView } from '../../core/public-projections/worktrees';
 import { worktreeProcesses, type WorktreeProcess } from '../git/worktree-processes';
 import { readWorktreeRecord, readWorktreeRecordById, endWorktreeRecord } from '../git/worktree-record';
 import { createHash, randomUUID } from 'crypto';

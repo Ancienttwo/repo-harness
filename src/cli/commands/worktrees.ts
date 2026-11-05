@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Command } from 'commander';
 
 import { decodeWorktreeCleanupRequest, decodeWorktreeCleanupResult, worktreeDigestRow, WORKTREE_CLEANUP_MAX_IDS, type WorktreeCleanupRequest } from '../../core/operator/worktree-cleanup';
-import type { WorktreeView, WorktreesSnapshot } from '../../core/operator/worktrees';
+import type { WorktreeView, WorktreesSnapshot } from '../../core/public-projections/worktrees';
 import { executionChildEnvironment } from '../../effects/operator/execution-collector';
 import { runWorktreeCleanup, selectionDigest, worktreeCleanupOperation, WORKTREE_CLEANUP_CLI_DEADLINE_MS } from '../../effects/operator/worktree-cleanup';
 import { collectWorktreesOnce, emptyWorktreeSizeCache } from '../../effects/operator/worktree-collector';

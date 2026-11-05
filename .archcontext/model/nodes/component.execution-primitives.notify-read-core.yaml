@@ -8,6 +8,7 @@ layer: core
 summary: The core-layer file of Notify Read Contract. Responsibilities stay with component.execution-primitives.notify-read.
 responsibilities:
   - Hold the core-layer relay delivery record file of Notify Read Contract so layer direction is checked per directory.
+  - Own the notify install and notify start commands that the relay, the doctor and the operator show.
 source:
   include:
     - src/core/decision/notify-relay-record.ts

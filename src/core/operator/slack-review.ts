@@ -5,7 +5,7 @@
 // is withheld, never echoed.
 
 import { containsSecret } from '../security/secret-patterns';
-import { isPublicDevActivityText, publicDevActivityText } from './public-text';
+import { isPublicDevActivityText, publicDevActivityText } from '../public-projections/public-text';
 
 export const SLACK_REVIEW_REASONS = [
   'slack_pending',

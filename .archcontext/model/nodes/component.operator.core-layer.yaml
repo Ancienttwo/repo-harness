@@ -34,11 +34,7 @@ source:
     - src/core/operator/docs-host-runtimes.ts
     - src/core/operator/docs.ts
     - src/core/operator/execution-state.ts
-    - src/core/operator/herdr-core-pin.json
-    - src/core/operator/herdr-pin.ts
     - src/core/operator/notify-status.ts
-    - src/core/operator/pane-prefix.ts
-    - src/core/operator/public-text.ts
     - src/core/operator/pull-request-files.ts
     - src/core/operator/quota.ts
     - src/core/operator/repositories.ts
@@ -53,7 +49,6 @@ source:
     - src/core/operator/tests.ts
     - src/core/operator/worktree-cleanup-plan.ts
     - src/core/operator/worktree-cleanup.ts
-    - src/core/operator/worktrees.ts
     - src/core/setup/cli-inventory.ts
     - src/core/setup/cli-seed.v1.json
     - src/core/setup/decode.ts

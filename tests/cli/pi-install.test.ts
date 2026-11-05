@@ -16,7 +16,7 @@ import { bunGlobalPackageRoot } from '../../src/cli/installer/skill-projection';
 import { piAgentDir } from '../../src/effects/pi-agent-dir';
 import { piExecutable } from '../../src/effects/pi-executable';
 import { configureRequiredHerdrSkill } from '../../src/cli/commands/herdr-skill';
-import { piReviewLaunchBlocker } from '../../src/effects/setup/pi-host-probe';
+import { piReviewLaunchBlocker } from '../../src/effects/pi-host-probe';
 import { writeFakeHc } from '../helpers/fake-hc';
 
 const ROOT = join(import.meta.dir, '../..');

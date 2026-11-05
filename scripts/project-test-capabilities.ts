@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { analyzeAffectedTests } from './select-ci-coverage';
 import { architecturePort, isArchitectureUnavailable, registerArchitecturePorts } from '../src/core/architecture/contracts';
 import { ARCHITECTURE_PROVIDERS } from '../src/effects/architecture/providers';
-import { TEST_PROJECTION_SCHEMA } from '../src/core/operator/tests';
+import { TEST_PROJECTION_SCHEMA } from '../src/core/ci/test-report';
 
 const MODEL_NODES = '.archcontext/model/nodes';
 const TEST_FILE = /^tests\/.*\.test\.tsx?$/;

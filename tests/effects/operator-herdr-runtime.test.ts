@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { HC_MIN_VERSION, HcVersionMismatchError, hcVersionCheck } from '../../src/core/operator/herdr-pin';
+import { HC_MIN_VERSION, HcVersionMismatchError, hcVersionCheck } from '../../src/core/terminal/herdr-pin';
 import { createHerdrCoreRuntimeTransport } from '../../src/effects/operator/herdr-runtime-transport';
 import { configureRuntimeSource } from '../../src/effects/operator/runtime-source';
 import { createRuntimeStatusObserver } from '../../src/effects/operator/runtime-status';

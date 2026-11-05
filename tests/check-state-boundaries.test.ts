@@ -246,7 +246,7 @@ describe('state architecture boundary checker', () => {
   });
 
   test('accepts the real host SDK probe loads without source hashes', async () => {
-    const paths = ['src/effects/setup/agent-runtime-probe.ts', 'src/effects/setup/pi-capability-child.ts'];
+    const paths = ['src/effects/setup/agent-runtime-probe.ts', 'src/effects/pi-capability-child.ts'];
     const { root, result } = await checkWith((root) => {
       for (const path of paths) write(root, path, readFileSync(join(ROOT, path), 'utf8'));
     });
@@ -315,7 +315,7 @@ describe('state architecture boundary checker', () => {
   });
 
   test('rejects a changed Pi expression at the exception path', async () => {
-    const path = 'src/effects/setup/pi-capability-child.ts';
+    const path = 'src/effects/pi-capability-child.ts';
     const { result } = await checkWith((root) => {
       write(root, path, readFileSync(join(ROOT, path), 'utf8')
         .replace("'dist/index.js'", "'../../cli/hook/state-snapshot.ts'"));
@@ -327,14 +327,14 @@ describe('state architecture boundary checker', () => {
 
   test('does not extend the Pi exception to other files or extra computed imports', async () => {
     const { result } = await checkWith((root) => {
-      const path = 'src/effects/setup/pi-capability-child.ts';
+      const path = 'src/effects/pi-capability-child.ts';
       const source = readFileSync(join(ROOT, path), 'utf8');
       write(root, path, `${source}\nlet target = '../../cli/hook/state-snapshot'; await import(target);\n`);
       write(root, 'src/effects/setup/copied-probe.ts', source);
     });
     expect(result.violations.map(item => [item.code, item.file])).toEqual([
       ['EFFECTS_DYNAMIC_IMPORT_UNRESOLVED', 'src/effects/setup/copied-probe.ts'],
-      ['EFFECTS_DYNAMIC_IMPORT_UNRESOLVED', 'src/effects/setup/pi-capability-child.ts'],
+      ['EFFECTS_DYNAMIC_IMPORT_UNRESOLVED', 'src/effects/pi-capability-child.ts'],
     ]);
   });
 

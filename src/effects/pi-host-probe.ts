@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { piVersionSupported, type PiCapability, type PiHostUnavailableCode } from '../../pi/compat';
+import { piVersionSupported, type PiCapability, type PiHostUnavailableCode } from '../pi/compat';
 
 export interface InstalledPi { version: string; state: PiCapability['state']; code?: PiHostUnavailableCode }
 
