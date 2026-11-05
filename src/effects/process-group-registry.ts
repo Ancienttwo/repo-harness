@@ -118,9 +118,9 @@ function elapsedSeconds(etime: string): number | null {
  * has exited keeps the original identity.
  */
 function groupIdentity(pgid: number, registeredAtMs: number): 'registered' | 'reused' | 'unknown' {
-  // Read before `ps` runs. `etime` truncates by less than one second, which the
-  // tolerance covers; a later read adds the `ps` run time and a loaded host
-  // then calls a live registered group reused, so the reap skips it.
+  // Read before `ps` runs. `etime` can be above or below the true age by less
+  // than one second, which the tolerance covers. A read after `ps` adds the
+  // `ps` run time, and a loaded host then calls a live group reused.
   const observedAtMs = Date.now();
   const result = spawnSync('ps', ['-o', 'etime=', '-p', String(pgid)], {
     encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, stdio: ['ignore', 'pipe', 'ignore'],

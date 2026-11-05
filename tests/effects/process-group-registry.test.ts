@@ -14,8 +14,8 @@ import {
 import { processGroupExists } from '../../src/effects/process-group-termination';
 
 const SRC = join(import.meta.dir, '../../src');
-// `etime` is below the true age by less than one second, so a `ps` that takes
-// two seconds exceeds the whole start-time tolerance at any leader age.
+// `etime` can be above or below the true age by less than one second, which the
+// tolerance covers. A clock read after a two-second `ps` adds more than that.
 const SLOW_PS_SECONDS = 2;
 
 // Each service starts one detached child through the production code path,
