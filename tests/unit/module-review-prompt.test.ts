@@ -281,6 +281,13 @@ test('each formerly quadratic secret rule stays linear on a 1 MiB run and still 
     { run: run('| --- | ----- | ----- |\n'), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
     { run: run('-----BEGIN PRIVATE KEY\n'), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
     { run: run(keyEnd + '\n'), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
+    // Each run below walks a label: one word over the whole run, or a header over the word limit.
+    { run: '-----BEGIN ' + run('A'), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
+    { run: run('-----BEGIN A B C D E F G H I '), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
+    ...['PGP PRIVATE KEY BLOCK', 'EC PRIVATE KEY', 'DSA PRIVATE KEY', 'ENCRYPTED PRIVATE KEY'].flatMap(label => {
+      const begin = `-----BEGIN ${label}-----`, end = `-----END ${label}-----`, block = begin + '\nbody\n' + end;
+      return [[begin + '\n', end], ['a', block], ['-', block]].map(([unit, sample]) => ({ run: run(unit), sample, replacement: '[PRIVATE KEY REDACTED]' }));
+    }),
     // Each run below has one start every 100 characters, so each walk crosses a long gap.
     { run: run('1'.repeat(99) + 'a'), sample: '://user:pass@example.invalid', replacement: '[CREDENTIAL URL REDACTED]' },
     { run: run('http://' + 'a'.repeat(93)), sample: '?token=fake', replacement: '[ENDPOINT REDACTED]' },
@@ -299,6 +306,15 @@ test('each formerly quadratic secret rule stays linear on a 1 MiB run and still 
     expect(performance.now() - start).toBeLessThan(2000);
     if (row.replacement) expect(replaced.includes(row.replacement)).toBe(true);
   }
+});
+
+test('the private key rule withholds each block label, and an END of any label closes a BEGIN', () => {
+  const block = (begin: string, end: string) => `x -----BEGIN ${begin}-----\nbody\n-----END ${end}----- y`;
+  for (const label of ['PRIVATE KEY', 'RSA PRIVATE KEY', 'OPENSSH PRIVATE KEY', 'PGP PRIVATE KEY BLOCK', 'EC PRIVATE KEY', 'DSA PRIVATE KEY', 'ENCRYPTED PRIVATE KEY', 'TSS2 PRIVATE KEY', 'NEBULA ED25519 PRIVATE KEY', 'PGP PRIVATE KEY']) {
+    expect(replaceSecrets(block(label, label))).toBe('x [PRIVATE KEY REDACTED] y');
+  }
+  expect(replaceSecrets(block('PGP PRIVATE KEY BLOCK', 'RSA PRIVATE KEY'))).toBe('x [PRIVATE KEY REDACTED] y');
+  for (const label of ['PUBLIC KEY', 'CERTIFICATE', 'PGP PUBLIC KEY BLOCK']) expect(replaceSecrets(block(label, label))).toBe(block(label, label));
 });
 
 function moduleNode(root: string): Record<string, unknown> & { source: Record<string, unknown> } {

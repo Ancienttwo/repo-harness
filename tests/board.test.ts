@@ -1014,9 +1014,14 @@ test('advisor seat: plain text reaches only the one live advisor terminal of the
 
   // The read-back order: the last 200 lines, private key blocks withheld, a line over the limit withheld before or after redaction.
   const [begin, body, end] = ['-----BEGIN PRIVATE KEY-----', 'MC4CAQAwBQYDK2VwBCIEIGv0a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u', '-----END PRIVATE KEY-----'];
+  const [pgpBegin, pgpEnd] = ['-----BEGIN PGP PRIVATE KEY BLOCK-----', '-----END PGP PRIVATE KEY BLOCK-----'];
   const cases: readonly [string, readonly string[], readonly string[]][] = [
     ['whole key', ['before', begin, body, body, end, 'after'], ['before', W, W, W, W, 'after']],
     ['another key type', ['-----BEGIN EC PRIVATE KEY-----', body, '-----END EC PRIVATE KEY-----', 'after'], [W, W, W, 'after']],
+    ['a PGP key', [pgpBegin, body, pgpEnd, 'after'], [W, W, W, 'after']],
+    ['window end cuts a PGP key', ['before', pgpBegin, body], ['before', W, W]],
+    ['hc read starts inside a PGP key', [body, pgpEnd, 'after'], [W, W, 'after']],
+    ['a key label outside the named forms', ['-----BEGIN TSS2 PRIVATE KEY-----', body, '-----END TSS2 PRIVATE KEY-----', 'after'], [W, W, W, 'after']],
     ['key on one line', [`key ${begin}${body}${end}`, 'after'], [W, 'after']],
     ['hc read starts inside the key', [body, end, 'after'], [W, W, 'after']],
     ['window start cuts the key', [begin, ...Array.from({ length: 199 }, () => body), end, 'after'], [...Array.from({ length: 199 }, () => W), 'after']],
@@ -1032,7 +1037,7 @@ test('advisor seat: plain text reaches only the one live advisor terminal of the
     expect([name, projected, decodeAdvisorSeatTranscript({ ...transcript, lines: projected }).lines]).toEqual([name, lines, lines]);
   }
   // Each line alone passes; the joined text holds a whole key.
-  for (const lines of [['API_KEY=hunter2'], [begin, body, end]]) expect(() => decodeAdvisorSeatTranscript({ ...transcript, lines })).toThrow('advisor seat transcript is invalid');
+  for (const lines of [['API_KEY=hunter2'], [begin, body, end], [pgpBegin, body, pgpEnd]]) expect(() => decodeAdvisorSeatTranscript({ ...transcript, lines })).toThrow('advisor seat transcript is invalid');
 
   // A failed send names the resolved terminal; `hc send` may have run, so it is unconfirmed.
   const failed = advisorHc({ t9: seat('advisor') }, { FAKE_SEND_FAIL: '1' });

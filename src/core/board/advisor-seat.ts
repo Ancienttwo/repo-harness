@@ -1,5 +1,5 @@
 import type { BoardHostPortsV1, BoardSeatTerminalReadV1 } from './board';
-import { hasUnredactedSecret, replaceSecrets } from '../security/secret-patterns';
+import { hasUnredactedSecret, KEY_LABEL, replaceSecrets } from '../security/secret-patterns';
 
 /**
  * The advisor seat of one board (#1756, D11): the only console channel that
@@ -293,9 +293,9 @@ export function decodeAdvisorSeatTranscript(value: unknown): AdvisorSeatTranscri
   };
 }
 
-// Bounded quantifiers keep the marker search linear on a line of any length.
-const KEY_BEGIN = /-----BEGIN [A-Z0-9 ]{0,64}PRIVATE KEY-----/gu;
-const KEY_END = /-----END [A-Z0-9 ]{0,64}PRIVATE KEY-----/gu;
+// A marker walks only its own header, so the search stays linear on a line of any length.
+const KEY_BEGIN = new RegExp(`-----BEGIN${KEY_LABEL}-----`, 'gu');
+const KEY_END = new RegExp(`-----END${KEY_LABEL}-----`, 'gu');
 
 /** The positions of the first and the last marker on one line; -1 when the line has none. */
 function markers(line: string, marker: RegExp): { readonly first: number; readonly last: number } {
