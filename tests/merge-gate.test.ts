@@ -147,6 +147,13 @@ describe('main automatic check boundary', () => {
     expect(r.status).not.toBe(0); expect(r.stderr).toContain('github-personal-token');
     expect(r.stderr).not.toContain(secret); expect(r.stdout).not.toContain(secret);
   });
+  test('credential scan rejects each private key export form', () => {
+    const root = fixture(), word = 'BEGIN';
+    const lines = [`-----${word} PRIVATE KEY-----`, `-----${word} RSA-PSS PRIVATE KEY-----`, `-----${word} OPENSSH PRIVATE KEY-----`, `-----${word} PGP PRIVATE KEY BLOCK-----`, `-----${word} PGP SECRET KEY BLOCK-----`, `---- ${word} SSH2 ENCRYPTED PRIVATE KEY ----`];
+    lines.forEach((line, at) => writeFileSync(join(root, `key-${at}.txt`), line)); git(root, 'add', '-A'); git(root, 'commit', '-m', 'unsafe candidate');
+    const r = invoke(root, 'fingerprint');
+    expect(lines.map((_, at) => r.stderr.includes(`pem-private-key in an added line of key-${at}.txt`))).toEqual(lines.map(() => true));
+  });
   test('dirty candidate is refused before provider readback without erasing work', () => {
     const root = fixture(); writeFileSync(join(root, 'work.txt'), 'keep');
     const r = invoke(root, 'run');

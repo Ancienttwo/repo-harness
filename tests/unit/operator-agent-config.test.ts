@@ -6,6 +6,7 @@ import {
 
 const rule = (id: string, text: string) => `<!-- repo-harness:shared-rule ${id} -->\n${text}\n<!-- /repo-harness:shared-rule -->`;
 const project = (agents: string | null, claude: string | null = agents, policy: unknown = {}) => projectAgentConfigCore({ agents, claude, policy });
+const keyBlock = (label: string, value: string, open = '-----', close = '-----') => `${open}BEGIN ${label}${close}\n${value}\n${open}END ${label}${close}`;
 const credentialFixtures = [
   { label: 'Basic authorization', text: 'Authorization: Basic U1lOVEhFVElDOlNFQ1JFVA==', value: 'U1lOVEhFVElDOlNFQ1JFVA==' },
   { label: 'Digest authorization', text: 'Proxy-Authorization: Digest username=synthetic, response=FAKE_DIGEST_VALUE', value: 'FAKE_DIGEST_VALUE' },
@@ -14,6 +15,10 @@ const credentialFixtures = [
   { label: 'encrypted PEM', text: '-----BEGIN ENCRYPTED PRIVATE KEY-----\nFAKE_PEM_BODY\n-----END ENCRYPTED PRIVATE KEY-----', value: 'FAKE_PEM_BODY' },
   { label: 'OpenSSH PEM', text: '-----BEGIN OPENSSH PRIVATE KEY-----\nFAKE_SSH_BODY\n-----END OPENSSH PRIVATE KEY-----', value: 'FAKE_SSH_BODY' },
   { label: 'unterminated PEM', text: '-----BEGIN PRIVATE KEY-----\nFAKE_UNCLOSED_BODY', value: 'FAKE_UNCLOSED_BODY' },
+  { label: 'RSA-PSS PEM', text: keyBlock('RSA-PSS PRIVATE KEY', 'FAKE_PSS_BODY'), value: 'FAKE_PSS_BODY' },
+  { label: 'PGP private armor', text: keyBlock('PGP PRIVATE KEY BLOCK', 'FAKE_PGP_BODY'), value: 'FAKE_PGP_BODY' },
+  { label: 'PGP secret armor', text: keyBlock('PGP SECRET KEY BLOCK', 'FAKE_OLD_PGP_BODY'), value: 'FAKE_OLD_PGP_BODY' },
+  { label: 'ssh.com export', text: keyBlock('SSH2 ENCRYPTED PRIVATE KEY', 'FAKE_SSH2_BODY', '---- ', ' ----'), value: 'FAKE_SSH2_BODY' },
   { label: 'CLI api key', text: 'curl --api-key FAKE_CLI_VALUE', value: 'FAKE_CLI_VALUE' },
   { label: 'CLI quoted password', text: 'tool --password "FAKE_QUOTED_VALUE with spaces"', value: 'FAKE_QUOTED_VALUE' },
   { label: 'CLI key option', text: 'tool --key=FAKE_KEY_VALUE', value: 'FAKE_KEY_VALUE' },
