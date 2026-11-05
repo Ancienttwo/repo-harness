@@ -11,7 +11,7 @@ import {
   type AgentRuntimeProbeV1,
   type AgentRuntimesCacheV1,
 } from '../../src/core/operator/agents-settings';
-import { decodeSeatsSettings } from '../../src/core/operator/seats-settings';
+import { DEFAULT_SEATS_CONFIG, decodeSeatsSettings } from '../../src/core/operator/seats-settings';
 import { buildQuotaReport, OPERATOR_QUOTA_PATH, unknownQuotaReading } from '../../src/core/operator/quota';
 import { probeAgentRuntimes, registryRuntimes } from '../../src/effects/setup/agent-runtime-probe';
 import { startOperatorServer, type OperatorServerHandle } from '../../src/effects/operator/server';
@@ -391,6 +391,27 @@ describe('seat settings routes', () => {
       expect([seat, response.status, (await response.json()).error.code]).toEqual([seat, 422, code]);
     }
     expect(readFileSync(harness.configPath, 'utf8')).toBe(original);
+  });
+
+  test('a stored Codex seat with edit and net reads back, and each save is refused until net is off', async () => {
+    const editNet = ['edit', 'gh', 'mcp', 'net', 'read', 'shell', 'tasks'];
+    const harness = await startHarness({ agents: PANE_AGENTS, seats: { ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, tools: editNet } } });
+    const { revision, ...section } = (await seats(harness)).config;
+    expect(section.worker.tools).toEqual(editNet as typeof section.worker.tools);
+    const original = readFileSync(harness.configPath, 'utf8');
+    const refused = await post(harness, { expected_revision: revision, seats: { ...section, advisor: { ...section.advisor, effort: 'high' } } }, 'seats');
+    const { error } = await refused.json();
+    expect([refused.status, error.code]).toEqual([422, 'seat_codex_edit_net']);
+    expect(error.message).toContain('#1770');
+    expect(readFileSync(harness.configPath, 'utf8')).toBe(original);
+    const fixed = await post(harness, { expected_revision: revision, seats: { ...section, worker: DEFAULT_SEATS_CONFIG.worker } }, 'seats');
+    expect(fixed.status).toBe(200);
+    const { config_revision, changed_keys } = await fixed.json();
+    expect(changed_keys).toEqual(['seats.worker.tools']);
+    // Only a writable Codex seat refuses net: a read-only Codex seat and a Claude seat with edit save it.
+    const advisor = { runtime: 'codex', model: null, effort: null, tools: ['net', 'read'], fleet: [] };
+    const others = await post(harness, { expected_revision: config_revision, seats: { ...section, advisor, worker: { ...section.worker, runtime: 'claude', model: 'opus' } } }, 'seats');
+    expect(others.status).toBe(200);
   });
 
   test('the orchestrator fleet takes the three read-only roles and refuses every writer', async () => {

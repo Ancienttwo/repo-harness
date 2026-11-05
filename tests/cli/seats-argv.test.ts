@@ -164,14 +164,14 @@ describe("repo-harness seats argv", () => {
   });
 
   test("the Codex argv holds only flags that Codex applies; the fleet goes into the launch instructions only", () => {
-    const seats = { ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, tools: ["edit", "net", "read", "shell"] } };
+    const seats = { ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, tools: ["edit", "read", "shell"] } };
     const handoff = "As a Codex worker seat in a linked contract worktree, edit files and run checks only. Do not run `git fetch`, `git commit` or `git push`. In your last message, give the commit subject and body, the PR title and body, and the check results. The orchestrator commits your worktree diff with that message and explicit paths only, pushes the branch and opens the PR. It is the head owner of record and pushes each fix round; no other agent pushes to that PR. You remain the content author and answer review threads through the orchestrator.";
     withHome(seats, (home) => {
       const result = argv(home, "worker");
       expect(result.status).toBe(0);
       const args: string[] = JSON.parse(result.stdout);
       const instructions = args.at(-1)!;
-      expect(args.slice(0, -1)).toEqual(["codex", "-m", "gpt-6.1-sol", "-c", 'model_reasoning_effort="high"', "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "-c"]);
+      expect(args.slice(0, -1)).toEqual(["codex", "-m", "gpt-6.1-sol", "-c", 'model_reasoning_effort="high"', "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=false", "-c", 'web_search="disabled"', "-c"]);
       expect(instructions).toStartWith('developer_instructions="You are a worker seat.');
       expect(JSON.parse(instructions.slice("developer_instructions=".length))).toContain(handoff);
       expect(JSON.parse(instructions.slice("developer_instructions=".length))).toContain("These limits are instructions only; the host does not enforce them. Keep them yourself. Do not use the task list tools. Do not use MCP tools. Do not write to GitHub.");
@@ -200,6 +200,36 @@ describe("repo-harness seats argv", () => {
       expect(advisor.limits).toContainEqual({ subject: "net", level: "common_commands" });
       expect(advisor.limits).toContainEqual({ subject: "edit", level: "common_commands" });
       expect(advisor.limits).toContainEqual({ subject: "fleet", level: "instructions_only" });
+    });
+  });
+
+  test("a writable Codex seat has no sandbox network: edit with net is refused, and other seats keep net", () => {
+    withHome(undefined, (home) => {
+      expect(launch(home, "worker").argv).toEqual(expect.arrayContaining(["workspace-write", "sandbox_workspace_write.network_access=false", 'web_search="disabled"']));
+    });
+    const editNet = ["edit", "net", "read", "shell"];
+    withHome({ ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, tools: editNet } }, (home) => {
+      const result = argv(home, "worker", "--json");
+      expect([result.status, result.stdout]).toEqual([1, ""]);
+      const refusal = JSON.parse(result.stderr);
+      expect(refusal.error).toBe("seat_codex_edit_net");
+      expect(refusal.message).toContain("#1770");
+      expect(argv(home, "advisor", "--json").status).toBe(0);
+    });
+    const seats = {
+      ...DEFAULT_SEATS_CONFIG,
+      advisor: { runtime: "codex", model: null, effort: null, tools: ["net", "read"], fleet: [] },
+      worker: { runtime: "claude", model: null, effort: null, tools: editNet, fleet: [] },
+    };
+    withHome(seats, (home) => {
+      const advisor = launch(home, "advisor").argv;
+      expect(advisor.slice(0, 3)).toEqual(["codex", "-s", "read-only"]);
+      expect(advisor.join(" ")).not.toContain("network_access");
+      expect(advisor).not.toContain('web_search="disabled"');
+      expect(tools(launch(home, "worker").argv)).toEqual(expect.arrayContaining(["Edit", "WebFetch"]));
+    });
+    withHome({ ...seats, worker: { ...seats.worker, runtime: "pi" } }, (home) => {
+      expect(launch(home, "worker").argv[0]).toBe("pi");
     });
   });
 
