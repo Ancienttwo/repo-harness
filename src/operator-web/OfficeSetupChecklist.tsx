@@ -12,7 +12,7 @@ import { ARGV } from './SeatsPage';
 import { SKILL_UPDATE_COMMAND } from './setup';
 import { CopyButton, StatusDot, type DotTone } from './ui';
 
-/** The two reads of the App that no Board read carries. Each row names its read; no row runs a check of its own. */
+/** The three reads of the App that no Board read carries. No row runs a check of its own. */
 export interface OfficeSetupReads {
   readonly repositories: RepositoriesView;
   readonly devActivity: DevActivityView;
@@ -153,14 +153,15 @@ function aged(row: OfficeSetupRow, refreshFailed: boolean, t: OperatorTranslate)
 
 /** The five rows, in dependency order. A read that has no answer gives an unknown row, never a guessed state. */
 export function officeSetupRows(reads: OfficeSetupReads, scope: OfficeSetupScope, t: OperatorTranslate): readonly OfficeSetupRow[] {
-  const { botAccess, devActivity } = reads;
+  const { botAccess, devActivity, repositories: registry } = reads;
+  const activityOld = devActivity.kind === 'ready' && devActivity.refreshFailed;
   const ids = scope.kind === 'room' ? [scope.repositoryId] : null;
   const repositories = devActivity.kind === 'ready' ? devActivity.snapshot.repositories.filter(entry => ids === null || ids.includes(entry.repository_id)) : [];
   const sources = repositories.flatMap(entry => githubSource(entry) ?? []);
   return [
     aged(hcRow(botAccess, t), botAccess.kind === 'ready' && botAccess.refreshFailed, t),
-    aged(ghRow(sources.length === 0 ? null : sources, t), devActivity.kind === 'ready' && devActivity.refreshFailed, t),
-    repositoryRow(reads, scope, t),
+    aged(ghRow(sources.length === 0 ? null : sources, t), activityOld, t),
+    aged(repositoryRow(reads, scope, t), activityOld || (registry.kind === 'ready' && registry.refreshFailed), t),
     seatsRow(scope, t),
     planRow(scope, t),
   ];

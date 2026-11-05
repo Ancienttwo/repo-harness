@@ -3,6 +3,7 @@ import { decodeBoard, type BoardItemV1, type BoardPullRequestV1, type BoardTermi
 import { decodeBoardParents, type BoardParentsSeatV1, type BoardParentsV1 } from '../../core/board/parents';
 import { ISSUE_FLOW_WORKER_LIMIT, type DeskState } from '../../core/board/desk';
 import { BOARD_SUMMARIES_PROTOCOL, boardSummary, type BoardSummarySeatsV1, type BoardSummaryV1 } from '../../core/board/summary';
+import { decodeDevActivitySnapshot } from '../../core/dev-activity/decode';
 import { decodeOperatorRepositories } from '../../core/operator/repositories';
 import type { OperatorAppProps } from '../App';
 import type { BoardSummariesRead } from '../board-office';
@@ -243,5 +244,47 @@ export function officeProps(busy: OperatorAppProps): OperatorAppProps {
     writeBossCommand: officeBossWriter(),
     readAdvisorTranscript: advisor.read,
     writeAdvisorMessage: advisor.write,
+  };
+}
+
+export const OFFICE_SETUP_GAPS = ['hc', 'gh', 'repository', 'seats', 'plan'] as const;
+export type OfficeSetupGap = typeof OFFICE_SETUP_GAPS[number];
+
+/**
+ * The office sample with one setup prerequisite missing (#1788). `seats` and
+ * `plan` empty every room, because a lit room shows no checklist; `plan` also
+ * takes the plan off the sample board.
+ */
+export function officeSetupProps(office: OperatorAppProps, gap: OfficeSetupGap): OperatorAppProps {
+  const now = Date.now();
+  const repositories = gap === 'repository' ? decodeOperatorRepositories({ ...officeRepositories, repositories: [] }) : officeRepositories;
+  const source = gap === 'gh' ? { status: 'unavailable', reason: 'gh_failed' } : { status: 'ok', reason: null };
+  const activity = decodeDevActivitySnapshot({
+    ...office.initialDevActivity!,
+    items: [], attention: [],
+    repositories: repositories.repositories.map(({ repository_id, display_name }) => ({
+      repository_id, display_name, github: gap === 'gh' ? null : `Ancienttwo/${display_name}`, default_branch: 'main',
+      sources: [{ kind: 'github', ...source, observed_at: new Date(now).toISOString() }],
+    })),
+  });
+  const emptyRooms = gap === 'seats' || gap === 'plan';
+  return {
+    ...office,
+    readRepositories: () => Promise.resolve(repositories),
+    initialRepositories: repositories,
+    fetchDevActivity: () => Promise.resolve(activity),
+    initialDevActivity: activity,
+    readBotAccess: gap !== 'hc' ? office.readBotAccess : async (signal) => {
+      const read = await office.readBotAccess!(signal);
+      return read.state === 'ok' ? { ...read, snapshot: { ...read.snapshot, hc: { state: 'unavailable', reason: 'hc_missing' } } } : read;
+    },
+    readBoardParents: !emptyRooms ? office.readBoardParents : (repositoryId): Promise<BoardParentsRead> => {
+      const list = officeParents(repositoryId, now);
+      return Promise.resolve({ state: 'ok', list: { ...list, seats: [], parents: list.parents.map(parent => ({ ...parent, seats: 0 })) } });
+    },
+    readBoard: gap !== 'plan' ? office.readBoard : async (subject, signal) => {
+      const read = await office.readBoard!(subject, signal);
+      return read.state === 'ok' ? { ...read, board: { ...read.board, plan: { status: 'absent', truncated: false } } } : read;
+    },
   };
 }

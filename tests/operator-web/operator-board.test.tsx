@@ -49,6 +49,13 @@ import { boardLayout, boardPlace, boardRoom, DEFAULT_LOCATION, parseWorkspaceLoc
 import { DESK_STATES, ISSUE_FLOW_WORKER_LIMIT } from '../../src/core/board/desk';
 import { activeParent, officeCard, officeRoom, type BoardSummariesRead } from '../../src/operator-web/board-office';
 import { OFFICE_PARENT, officeBoard, officeParents } from '../../src/operator-web/fixtures/office';
+import { busyBotAccess, degradedBotAccess } from '../../src/operator-web/fixtures/bots';
+import { officeSetupRows, type OfficeSetupReads, type OfficeSetupRowId, type OfficeSetupScope } from '../../src/operator-web/OfficeSetupChecklist';
+import { translate, type OperatorTranslate } from '../../src/operator-web/i18n';
+import { hcRepairCommands } from '../../src/operator-web/RuntimeBadges';
+import { decodeBotAccessSnapshot, type BotAccessSnapshotV1 } from '../../src/core/operator/bot-access';
+import { HC_MIN_VERSION } from '../../src/core/operator/herdr-pin';
+import { RH_LABEL } from '../../src/effects/terminal/herdr-core';
 import { postBossCommand, type BossCommandPost, type BossCommandWrite } from '../../src/operator-web/office-boss';
 import { fetchAdvisorTranscript, postAdvisorMessage, type AdvisorMessagePost, type AdvisorMessageWrite, type AdvisorTranscriptRead } from '../../src/operator-web/OfficeAdvisorDialog';
 import { composeMiniRoom, composeRoom, sceneEffect, type SceneMiniRoom, type SceneRoom } from '../../src/operator-web/office-scene';
@@ -100,6 +107,7 @@ function props(activity: DevActivitySnapshotV2, overrides: Partial<OperatorAppPr
     readBoard: async () => ({ state: 'ok', board: BOARD }),
     readBoardParents: async () => ({ state: 'ok', list: PARENTS }),
     readBoardSummaries: async id => ({ state: 'ok', summaries: { protocol: 2, kind: 'repo-harness.board-summaries', repository_id: id, parents: [] } }),
+    readBotAccess: async () => ({ state: 'unavailable', reason: 'bot_access_pending' }),
     ...overrides,
   };
 }
@@ -1659,6 +1667,166 @@ describe('board office (#1755)', () => {
     const finding = (rule: 'R2' | 'R3' | 'R1', pull_requests: readonly number[]) => ({ rule, route: 'advisor', issues: [], pull_requests, terminals: [], message: '' }) as const;
     const marks = officeRoom(seatsOf(board), { board, attention: { ...attention, findings: [finding('R1', [1491]), finding('R2', [1499]), finding('R3', [1491])] } }).mines;
     expect([...marks]).toEqual([['t1', 'R2'], ['t2', 'R3']]);
+  });
+});
+
+describe('office setup checklist (#1788)', () => {
+  const rows = (selector: string) => Array.from(document.querySelectorAll<HTMLElement>(selector));
+  const t: OperatorTranslate = (key, params) => translate('en', key, params);
+  const THIS = 'repo_1a1a1a1a1a1a1a1a';
+  const OTHER = 'repo_2b2b2b2b2b2b2b2b';
+  const OVERVIEW: OfficeSetupScope = { kind: 'overview', rooms: [] };
+  const inRoom = (scope: Partial<Extract<OfficeSetupScope, { kind: 'room' }>> = {}): OfficeSetupScope => ({ kind: 'room', repositoryId: THIS, parent: null, seats: 'empty', plan: 'no_parent', ...scope });
+  const bots = (snapshot: BotAccessSnapshotV1): OfficeSetupReads['botAccess'] => ({ kind: 'ready', snapshot, refreshFailed: false });
+  const READY = decodeBotAccessSnapshot(busyBotAccess(NOW));
+  const github = (status: string, reason: string | null, name: string | null = null, id = THIS) =>
+    ({ repository_id: id, display_name: id, github: name, default_branch: null, sources: [{ kind: 'github', status, reason, observed_at: null }] });
+  const activity = (...repositories: readonly ReturnType<typeof github>[]): OfficeSetupReads['devActivity'] =>
+    ({ kind: 'ready', refreshFailed: false, snapshot: decodeDevActivitySnapshot({ ...busy(), repositories, items: [], attention: [] }) });
+  const registered = (...ids: readonly string[]): OfficeSetupReads['repositories'] =>
+    ({ kind: 'ready', refreshFailed: false, list: decodeOperatorRepositories({ protocol: 1, kind: 'operator_repositories', stale_registrations: 0, repositories: ids.map(id => ({ repository_id: id, display_name: id, access_mode: 'read_write' })) }) });
+  const reads = (overrides: Partial<OfficeSetupReads> = {}): OfficeSetupReads => ({ repositories: registered(THIS), devActivity: activity(github('ok', null, 'Ancienttwo/this')), botAccess: bots(READY), ...overrides });
+  const row = (id: OfficeSetupRowId, input: OfficeSetupReads, scope: OfficeSetupScope = inRoom()) => officeSetupRows(input, scope, t).find(entry => entry.id === id)!;
+  const stateAndCommands = (id: OfficeSetupRowId, input: OfficeSetupReads, scope?: OfficeSetupScope): readonly [string, readonly string[]] => { const { state, commands } = row(id, input, scope); return [state, commands]; };
+
+  test('row 1 reads the bot-access hc section, and each state has the repair command of its source', () => {
+    const hc = (section: BotAccessSnapshotV1['hc']) => reads({ botAccess: bots({ ...READY, hc: section }) });
+    const cases: readonly (readonly [OfficeSetupReads, string, readonly string[]])[] = [
+      [reads({ botAccess: { kind: 'loading' } }), 'unknown', ['hc server status']],
+      [reads({ botAccess: { kind: 'unavailable', reason: 'bot_access_pending' } }), 'unknown', ['hc server status']],
+      [reads({ botAccess: { kind: 'unavailable', reason: 'unreachable' } }), 'unknown', ['hc server status']],
+      [hc({ state: 'unavailable', reason: 'hc_missing' }), 'missing', ['repo-harness update']],
+      [hc({ state: 'unavailable', reason: 'hc_unreachable' }), 'failed', [hcRepairCommands(HC_MIN_VERSION)[1]]],
+      [reads({ botAccess: bots(decodeBotAccessSnapshot(degradedBotAccess(NOW))) }), 'failed', [...hcRepairCommands(HC_MIN_VERSION)]],
+      [hc({ ...READY.hc, terminals: { state: 'unavailable', reason: 'hc_terminals_failed' } } as BotAccessSnapshotV1['hc']), 'failed', ['hc server status']],
+      [reads(), 'ok', ['hc server status']],
+    ];
+    for (const [input, state, commands] of cases) expect(stateAndCommands('hc', input)).toEqual([state, commands]);
+  });
+
+  test('row 2 reads the GitHub source: a failed gh read makes no claim about the login', () => {
+    const cases: readonly (readonly [OfficeSetupReads['devActivity'], OfficeSetupScope, string])[] = [
+      [{ kind: 'loading' }, OVERVIEW, 'unknown'],
+      [activity(github('ok', null, 'o/r')), OVERVIEW, 'ok'],
+      [activity(github('unavailable', 'github_truncated_merged', 'o/r')), OVERVIEW, 'ok'],
+      [activity(github('unavailable', 'gh_failed'), github('ok', null, 'o/r', OTHER)), OVERVIEW, 'ok'],
+      [activity(github('unavailable', 'gh_failed'), github('ok', null, 'o/r', OTHER)), inRoom(), 'failed'],
+      [activity(github('unavailable', 'gh_not_installed')), OVERVIEW, 'missing'],
+      [activity(github('unavailable', 'gh_timeout')), OVERVIEW, 'failed'],
+      [activity(github('not_configured', 'no_github_remote')), OVERVIEW, 'unknown'],
+      [activity(github('unavailable', 'git_remote_failed')), OVERVIEW, 'unknown'],
+    ];
+    for (const [devActivity, scope, state] of cases) expect(stateAndCommands('gh', reads({ devActivity }), scope)).toEqual([state, ['gh auth status']]);
+    const failed = row('gh', reads({ devActivity: activity(github('unavailable', 'gh_failed')) })).detail;
+    expect(failed).toContain('gh_failed');
+    expect(failed.toLowerCase()).not.toContain('log');
+  });
+
+  test('row 3 joins the registry with the GitHub source: only `not_configured` means no remote', () => {
+    const ID = 'gh api repos/{owner}/{repo} --jq .id';
+    const REMOTE = 'git remote add origin <url>';
+    const INIT = 'repo-harness init';
+    const noRemote = github('not_configured', 'no_github_remote');
+    const cases: readonly (readonly [Partial<OfficeSetupReads>, OfficeSetupScope, string, string])[] = [
+      [{ repositories: { kind: 'loading' } }, OVERVIEW, 'unknown', INIT],
+      [{ repositories: { kind: 'failed' } }, OVERVIEW, 'failed', INIT],
+      [{ repositories: registered() }, OVERVIEW, 'missing', INIT],
+      [{}, OVERVIEW, 'ok', ID],
+      [{}, inRoom(), 'ok', ID],
+      [{ repositories: registered(OTHER) }, inRoom(), 'missing', INIT],
+      [{ devActivity: activity(noRemote) }, inRoom(), 'missing', REMOTE],
+      [{ devActivity: activity(noRemote) }, OVERVIEW, 'missing', REMOTE],
+      [{ devActivity: activity(github('unavailable', 'gh_failed')) }, inRoom(), 'unknown', ID],
+      [{ devActivity: activity(github('unavailable', 'gh_failed')) }, OVERVIEW, 'unknown', ID],
+      [{ devActivity: { kind: 'unreachable' } }, inRoom(), 'unknown', ID],
+      [{ repositories: registered(THIS, OTHER), devActivity: activity(github('ok', null, 'o/r'), { ...noRemote, repository_id: OTHER }) }, OVERVIEW, 'partial', ID],
+    ];
+    for (const [input, scope, state, command] of cases) expect(stateAndCommands('repository', reads(input), scope)).toEqual([state, [command]]);
+  });
+
+  test('rows 4 and 5 use the reads of the page, with the seat commands of the issue and the label keys of RH_LABEL', () => {
+    const SEATS = ['repo-harness seats argv <seat> --repository-id <id>', `hc label <t> ${RH_LABEL.repository}=<id> ${RH_LABEL.seat}=<seat>`];
+    const failed = { view: { kind: 'failed', reason: 'parents_hc_failed' }, card: null } as const;
+    const seatCases: readonly (readonly [OfficeSetupScope, string])[] = [
+      [inRoom(), 'missing'], [inRoom({ seats: 'parents_hc_failed' }), 'failed'], [inRoom({ seats: 'parents_github_failed' }), 'unknown'],
+      [{ kind: 'overview', rooms: [failed] }, 'failed'], [{ kind: 'overview', rooms: [{ view: { kind: 'loading' }, card: null }] }, 'unknown'],
+      [{ kind: 'overview', rooms: [] }, 'missing'],
+    ];
+    for (const [scope, state] of seatCases) expect(stateAndCommands('seats', reads(), scope)).toEqual([state, SEATS]);
+    const write = 'gh issue comment 7 --body-file <plan-file>';
+    const read = 'repo-harness board --parent 7';
+    const observed = officeBoard(NOW).plan;
+    const unavailable = { status: 'unavailable', comment_url: 'https://github.com/o/r/issues/7#issuecomment-1', reason: 'plan_invalid' } as const;
+    const planCases: readonly (readonly [Parameters<typeof inRoom>[0], string, string])[] = [
+      [{ parent: 7, plan: observed }, 'ok', read],
+      [{ parent: 7, plan: { status: 'absent', truncated: false } }, 'optional', write],
+      [{ parent: 7, plan: { status: 'absent', truncated: true } }, 'unknown', read],
+      [{ parent: 7, plan: unavailable }, 'unknown', read],
+      [{ parent: 7, plan: 'unread' }, 'unknown', read],
+      [{ plan: 'no_parent' }, 'optional', 'gh issue comment <n> --body-file <plan-file>'],
+    ];
+    for (const [scope, state, command] of planCases) expect(stateAndCommands('plan', reads(), inRoom(scope))).toEqual([state, [command]]);
+  });
+
+  test('a failed refresh keeps the last state and says so', () => {
+    const oldActivity = { ...activity(github('ok', null, 'o/r')), refreshFailed: true } as OfficeSetupReads['devActivity'];
+    const cases: readonly (readonly [OfficeSetupRowId, Partial<OfficeSetupReads>])[] = [
+      ['hc', { botAccess: { ...bots(READY), refreshFailed: true } as OfficeSetupReads['botAccess'] }],
+      ['gh', { devActivity: oldActivity }],
+      ['repository', { devActivity: oldActivity }],
+      ['repository', { repositories: { ...registered(THIS), refreshFailed: true } as OfficeSetupReads['repositories'] }],
+    ];
+    for (const [id, input] of cases) expect(row(id, reads(input)).detail).toContain('last refresh failed');
+  });
+
+  const openFixture = async (name: string, hash: string, overrides: Partial<OperatorAppProps> = {}) => {
+    installDom(`http://127.0.0.1:4318/${hash}`);
+    await mount(<OperatorApp {...fixtureProps(name)} initialLocale="en" {...overrides} />);
+    await settle();
+    await settle();
+  };
+  const setupRows = () => rows('[data-setup-row]').map(entry => [entry.getAttribute('data-setup-row'), entry.getAttribute('data-setup-state')]);
+
+  test('the overview shows the checklist when no repository is registered, no room is lit, or row 1 or 2 fails', async () => {
+    const cases: readonly (readonly [string, string, string, number])[] = [
+      ['office-setup-hc', 'hc', 'missing', 8],
+      ['office-setup-gh', 'gh', 'failed', 8],
+      ['office-setup-repository', 'repository', 'missing', 0],
+      ['office-setup-seats', 'seats', 'missing', 8],
+    ];
+    for (const [fixture, id, state, cards] of cases) {
+      await openFixture(fixture, '#board/office');
+      expect(rows('[data-office-setup]')).toHaveLength(1);
+      expect(setupRows().map(([key]) => key)).toEqual(['hc', 'gh', 'repository', 'seats', 'plan']);
+      expect(rows(`[data-setup-row="${id}"]`)[0]!.getAttribute('data-setup-state')).toBe(state);
+      expect(rows('[data-office-card]')).toHaveLength(cards);
+      await act(async () => root?.unmount());
+    }
+    await openFixture('office', '#board/office');
+    expect(rows('[data-office-card]')).toHaveLength(8);
+    expect(rows('[data-office-setup]')).toHaveLength(0);
+  });
+
+  test('a room shows the checklist when it is not lit or its parents read failed; a lit room and the list do not; the checklist only copies', async () => {
+    await openFixture('office-setup-plan', `#board/office/${HARNESS_ID}/${OFFICE_PARENT}`);
+    expect(document.querySelector('[data-board-office="room"]')).not.toBeNull();
+    expect(setupRows()).toEqual([['hc', 'ok'], ['gh', 'ok'], ['repository', 'ok'], ['seats', 'missing'], ['plan', 'optional']]);
+    expect(rows('[data-setup-row="plan"] code')[0]!.textContent).toBe(`gh issue comment ${OFFICE_PARENT} --body-file <plan-file>`);
+    expect(rows('[data-office-setup] button').every(button => button.classList.contains('copy-value__button'))).toBe(true);
+    await act(async () => root?.unmount());
+    await openFixture('office', `#board/office/${HARNESS_ID}`, { readBoardParents: async () => ({ state: 'unavailable', reason: 'parents_hc_failed' }) });
+    expect(rows('[data-board-parents-reason="parents_hc_failed"] [data-office-setup]')).toHaveLength(1);
+    expect(rows('[data-setup-row="seats"]')[0]!.getAttribute('data-setup-state')).toBe('failed');
+    expect(rows('[data-setup-row="seats"]')[0]!.textContent).toContain('hc could not list the seat terminals');
+    expect(rows('[data-setup-row="plan"]')[0]!.getAttribute('data-setup-state')).toBe('unknown');
+    await act(async () => root?.unmount());
+    await openFixture('office', `#board/office/${HARNESS_ID}`);
+    expect(document.querySelector('[data-board-office="room"]')).not.toBeNull();
+    expect(rows('[data-office-setup]')).toHaveLength(0);
+    await act(async () => root?.unmount());
+    await openFixture('office-setup-seats', '#board');
+    expect(document.querySelector('[data-board-subject]')).not.toBeNull();
+    expect(rows('[data-office-setup]')).toHaveLength(0);
   });
 });
 
