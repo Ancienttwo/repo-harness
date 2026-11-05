@@ -21,6 +21,7 @@ import { decodeBoardParents, type BoardParentsV1 } from '../src/core/board/paren
 import { BoardSourceError } from '../src/core/board/source';
 import { HC_MIN_VERSION } from '../src/core/operator/herdr-pin';
 import { BoardParentsError, collectBoardParents } from '../src/effects/board/parents';
+import { ISSUE_FLOW_WORKER_LIMIT } from '../src/core/board/desk';
 import { boardSummary, decodeBoardSummaries } from '../src/core/board/summary';
 import boardParentsFixture from '../src/operator-web/fixtures/board-parents.json';
 
@@ -172,13 +173,16 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
 
 test('board summary counts the recorded PRs, planned issue members and orchestrator findings', () => {
   const board = replay();
-  expect(boardSummary(board)).toEqual({ queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, needs_you: 3 });
+  expect(boardSummary(board)).toEqual({ queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, current_batch: null, needs_you: 3, worker_limit: ISSUE_FLOW_WORKER_LIMIT,
+    seats: { status: 'observed', stalled: 0, desks: [
+      { seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'idle' }, { seat: 'worker', agent: 'claude-code', issue: 1475, pr: 1491, state: 'idle' },
+    ] } });
   const block = { protocol: 1, kind: 'repo-harness.plan', merge_order: [], holds: [], batches: [[1475, 1476], [1477, 1479]], seat_limits: { worker: 4 } } as const;
   const planned: BoardV1 = { ...board, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at, revision: 1,
     block },
     pull_requests: board.pull_requests.map(pr => pr.number === 1494 ? { ...pr, required_check: { status: 'failure', completed_at: board.observed_at } }
       : pr.number === 1499 ? { ...pr, state: 'closed' } : pr) };
-  expect(boardSummary(planned)).toMatchObject({ queue: 0, ci_failures: 1, batch: { accepted: 1, size: 4 } });
+  expect(boardSummary(planned)).toMatchObject({ queue: 0, ci_failures: 1, batch: { accepted: 1, size: 4 }, current_batch: { accepted: 1, size: 2 }, worker_limit: 4 });
   const accepted = planned.pull_requests.find(pr => pr.number === 1491)!;
   const reopened: BoardV1 = { ...planned,
     items: planned.items.map(item => item.number === 1475 ? { ...item, pull_requests: [1491, 1500] } : item),
@@ -188,23 +192,75 @@ test('board summary counts the recorded PRs, planned issue members and orchestra
   expect(boardSummary(reopened)).toMatchObject({ queue: 1, batch: { accepted: 0, size: 4 } });
   expect(boardSummary({ ...reopened, pull_requests: reopened.pull_requests.map(pr => pr.number === 1500
     ? { ...pr, required_check: { status: 'pending' } } : pr) }).queue).toBe(0);
-  expect(boardSummary({ ...planned, plan: { status: 'absent', truncated: false } }).batch).toEqual({ accepted: null, size: null });
-  expect(boardSummary({ ...planned, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at, revision: 1,
-    block: { ...block, batches: [] } } }).batch).toEqual({ accepted: 0, size: 0 });
+  const observedPlan = (batches: readonly (readonly number[])[]): BoardV1['plan'] => ({ status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at, revision: 1, block: { ...block, batches } });
+  // One exact row per plan state.
+  for (const [plan, batch, current_batch, worker_limit] of [
+    [observedPlan(block.batches), { accepted: 1, size: 4 }, { accepted: 1, size: 2 }, 4],
+    [observedPlan([]), { accepted: 0, size: 0 }, null, 4],
+    [{ status: 'absent', truncated: false }, { accepted: null, size: null }, null, ISSUE_FLOW_WORKER_LIMIT],
+    [{ status: 'unavailable', comment_url: 'https://github.com/plan', reason: 'plan block invalid' }, { accepted: null, size: null }, null, ISSUE_FLOW_WORKER_LIMIT],
+  ] as const) {
+    const summary = boardSummary({ ...planned, plan });
+    expect(summary.batch).toEqual(batch);
+    expect(summary.current_batch).toEqual(current_batch);
+    expect(summary.worker_limit).toBe(worker_limit);
+  }
+  // The current batch is the first with an unmerged member, and a merged member no longer counts as accepted.
+  const merged = (issues: readonly number[]): BoardV1 => { const numbers = planned.items.filter(item => issues.includes(item.number)).flatMap(item => item.pull_requests);
+    return { ...planned, pull_requests: planned.pull_requests.map(pr => numbers.includes(pr.number) ? { ...pr, state: 'merged' as const } : pr) }; };
+  expect(boardSummary(merged([1475])).current_batch).toEqual({ accepted: 0, size: 2 });
+  expect(boardSummary(merged([1475, 1476])).current_batch).toEqual({ accepted: 0, size: 2 });
+  expect(boardSummary({ ...merged([1475, 1476]), plan: observedPlan([[1475, 1476]]) }).current_batch).toBeNull();
+});
+
+test('board summary gives each live seat outside the stage the desk state of the room rules', () => {
+  const board = replay();
+  if (board.execution.status !== 'observed') throw new Error('the replay observes the seats');
+  const seat = board.execution.terminals[0]!, pr = board.pull_requests.find(entry => entry.number === 1499)!, item = board.items.find(entry => entry.number === 1476)!;
+  const check = (required_check: BoardV1['pull_requests'][number]['required_check']) => ({ ...pr, state: 'open' as const, acceptance: { status: 'not_accepted' as const }, required_check });
+  const completed = { completed_at: board.observed_at };
+  const known = { status_kind: 'unknown' } as const, none = { status_kind: 'none' } as const;
+  for (const [state, labels, status, source, claim_status] of [
+    ['unknown', { issue: null, pr: null }, 'working', check({ status: 'failure', ...completed }), none],
+    ['ci_failed', {}, 'working', check({ status: 'failure', ...completed }), none],
+    ['ci_pending', {}, 'working', check({ status: 'pending' }), none],
+    ['acceptance_queue', {}, 'working', check({ status: 'success', ...completed }), none],
+    ['no_claim_status', {}, 'working', check({ status: 'missing' }), none],
+    ['coding', {}, 'working', check({ status: 'missing' }), known],
+    ['idle', {}, 'done', check({ status: 'missing' }), known],
+  ] as const) {
+    const terminal = { ...seat, ...labels, status } as BoardTerminalV1;
+    const one: BoardV1 = { ...board, pull_requests: [source], items: [{ ...item, claim_status }], execution: { status: 'observed', terminals: [terminal] } };
+    expect(boardSummary(one).seats).toEqual({ status: 'observed', stalled: state === 'no_claim_status' ? 1 : 0,
+      desks: [{ seat: 'worker', agent: 'codex', issue: 'issue' in labels ? null : 1476, pr: 'pr' in labels ? null : 1499, state }] });
+  }
+  const finished = { ...seat, state: 'finished' } as BoardTerminalV1, advisor = { ...seat, seat: 'advisor' } as BoardTerminalV1;
+  expect(boardSummary({ ...board, execution: { status: 'observed', terminals: [finished, advisor] } }).seats).toEqual({ status: 'observed', desks: [], stalled: 0 });
+  expect(boardSummary({ ...board, execution: { status: 'unavailable', reason: 'no_seat_terminals' } }).seats).toEqual({ status: 'unavailable', reason: 'no_seat_terminals' });
 });
 
 test('one strict summary decoder checks snapshots and route rows', () => {
   const row = { parent: 1474, status: 'observed', observed_at: REPLAY_NOW.toISOString(),
-    summary: { queue: 2, ci_failures: 0, batch: { accepted: 1, size: 2 }, needs_you: 3 } } as const;
-  const response = { protocol: 1, kind: 'repo-harness.board-summaries', repository_id: 'repo-a', parents: [row] } as const;
+    summary: { queue: 2, ci_failures: 0, batch: { accepted: 1, size: 2 }, current_batch: { accepted: 1, size: 2 }, needs_you: 3, worker_limit: 6,
+      seats: { status: 'observed', stalled: 1, desks: [{ seat: 'worker', agent: null, issue: 1475, pr: null, state: 'no_claim_status' }, { seat: 'worker', agent: 'codex', issue: null, pr: 1499, state: 'coding' }] } } } as const;
+  const response = { protocol: 2, kind: 'repo-harness.board-summaries', repository_id: 'repo-a', parents: [row] } as const;
   expect(decodeBoardSummaries(response)).toEqual(response);
   expect(decodeBoardSummaries({ ...response, parents: [{ parent: 1474, status: 'not_read' }, { parent: 1651, status: 'unavailable', reason: 'snapshot_invalid' }] }).parents).toHaveLength(2);
-  for (const invalid of [{ ...response, protocol: 2 }, { ...response, kind: 'other' }, { ...response, repository_id: '../a' },
+  const summary = (fields: Record<string, unknown>) => ({ ...row, summary: { ...row.summary, ...fields } });
+  const desk = row.summary.seats.desks[0];
+  const desks = (...rows: readonly unknown[]) => summary({ seats: { status: 'observed', stalled: 0, desks: rows } });
+  expect(decodeBoardSummaries({ ...response, parents: [summary({ current_batch: null, seats: { status: 'unavailable', reason: 'no_seat_terminals' } })] }).parents).toHaveLength(1);
+  for (const invalid of [{ ...response, protocol: 1 }, { ...response, kind: 'other' }, { ...response, repository_id: '../a' },
     { ...response, extra: 1 }, { ...response, parents: [row, row] }, ...[
       { ...row, observed_at: 'yesterday' }, { ...row, observed_at: '2026-02-31T00:00:00Z' }, { ...row, parent: 0 }, { ...row, extra: 1 },
       { ...row, summary: { ...row.summary, queue: -1 } }, { ...row, summary: { ...row.summary, needs_you: 0.5 } },
       { ...row, summary: { ...row.summary, batch: { accepted: 3, size: 2 } } },
       { ...row, summary: { ...row.summary, batch: { accepted: null, size: 2 } } },
+      summary({ current_batch: { accepted: 3, size: 2 } }), summary({ current_batch: { accepted: null, size: null } }), summary({ current_batch: undefined }),
+      summary({ worker_limit: 0 }), summary({ worker_limit: null }), summary({ seats: null }), summary({ seats: { status: 'other' } }),
+      summary({ seats: { status: 'unavailable', reason: '' } }), summary({ seats: { status: 'observed', desks: [desk], stalled: 0 } }),
+      summary({ seats: { status: 'observed', desks: {}, stalled: 0 } }), desks({ ...desk, address: 't1' }), desks({ ...desk, seat: '' }), desks({ ...desk, state: 'away' }),
+      desks({ ...desk, issue: 0 }), desks({ ...desk, pr: '1499' }), desks({ ...desk, agent: 1 }),
       { parent: 1474, status: 'unavailable', reason: '' }, { parent: 1474, status: 'not_read', summary: row.summary },
     ].map(parent => ({ ...response, parents: [parent] }))]) expect(() => decodeBoardSummaries(invalid)).toThrow('board summaries invalid');
 });
