@@ -14,6 +14,9 @@ import {
 import { processGroupExists } from '../../src/effects/process-group-termination';
 
 const SRC = join(import.meta.dir, '../../src');
+// `etime` is below the true age by less than one second, so a `ps` that takes
+// two seconds exceeds the whole start-time tolerance at any leader age.
+const SLOW_PS_SECONDS = 2;
 
 // Each service starts one detached child through the production code path,
 // prints READY, then runs until it is killed. `restart-*` services only start.
@@ -76,9 +79,9 @@ function exited(child: ChildProcess): Promise<void> {
   });
 }
 
-async function startService(site: string, root: string, home: string): Promise<ChildProcess> {
+async function startService(site: string, root: string, home: string, path = process.env.PATH): Promise<ChildProcess> {
   const child = spawn(process.execPath, [join(root, 'service.ts'), site, root], {
-    env: { ...process.env, REPO_HARNESS_HOME: home }, stdio: ['ignore', 'pipe', 'inherit'],
+    env: { ...process.env, PATH: path, REPO_HARNESS_HOME: home }, stdio: ['ignore', 'pipe', 'inherit'],
   });
   await line(child, 'READY');
   return child;
@@ -102,6 +105,12 @@ function registerFixture(root: string, site: string): { home: string; writer: Ch
   writeFileSync(join(root, 'service.ts'), SERVICE_SOURCE);
   writeFileSync(join(root, 'bin/git'), '#!/bin/sh\nexec sleep 303\n');
   chmodSync(join(root, 'bin/git'), 0o755);
+  // The real `ps` output arrives on time; only the return is late.
+  const realPs = Bun.which('ps');
+  if (!realPs) throw new Error('ps is required for the process-group fixture');
+  mkdirSync(join(root, 'slow-ps'));
+  writeFileSync(join(root, 'slow-ps/ps'), ['#!/bin/sh', `'${realPs}' "$@"`, 'status=$?', `sleep ${SLOW_PS_SECONDS}`, 'exit $status', ''].join('\n'));
+  chmodSync(join(root, 'slow-ps/ps'), 0o755);
   if (site !== 'operator') return { home, writer: null, opened: null };
   // The board child runs `gh repo view` first. Block that call on a FIFO;
   // the writer signals its actual open.
@@ -127,12 +136,13 @@ function registerFixture(root: string, site: string): { home: string; writer: Ch
 }
 
 describe('detached process group registry', () => {
-  for (const [site, restart] of [
-    ['setup', 'restart-operator'],
-    ['dev-activity', 'restart-operator'],
-    ['operator', 'restart-operator'],
+  for (const [site, restart, slowPs] of [
+    ['setup', 'restart-operator', false],
+    ['dev-activity', 'restart-operator', false],
+    ['operator', 'restart-operator', false],
+    ['dev-activity', 'restart-operator', true],
   ] as const) {
-    test(`${site}: a SIGKILLed service leaves its detached group, and the next start reaps it`, async () => {
+    test(`${site}${slowPs ? ' with a slow ps' : ''}: a SIGKILLed service leaves its detached group, and the next start reaps it`, async () => {
       if (process.platform === 'win32') return;
       const root = realpathSync(mkdtempSync(join(tmpdir(), `repo-harness-916-${site}-`)));
       const fixture = registerFixture(root, site);
@@ -158,7 +168,7 @@ describe('detached process group registry', () => {
         expect(processGroupExists(pgid!)).toBe(true);
         expect(existsSync(record)).toBe(true);
 
-        restarted = await startService(restart, root, fixture.home);
+        restarted = await startService(restart, root, fixture.home, slowPs ? `${join(root, 'slow-ps')}:${process.env.PATH}` : process.env.PATH);
         console.log(`[${site}] after restart\n${formatRows(processTable().filter((row) => row.pgid === pgid))}`);
         expect(processGroupExists(pgid!)).toBe(false);
         expect(existsSync(record)).toBe(false);
