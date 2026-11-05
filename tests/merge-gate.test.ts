@@ -25,7 +25,7 @@ function fixture(disabled = false) {
 function invoke(root: string, command: string, rest: string[] = []) {
   return spawnSync(process.execPath, [SCRIPT, command, '--base', 'main', ...rest], { cwd: root, encoding: 'utf8', timeout: 10000 });
 }
-function providerFixture(root: string, mode = 'ready') {
+function providerFixture(root: string, mode = 'ready', script = SCRIPT) {
   const tools = mkdtempSync(join(tmpdir(), 'merge-gate-provider-')); roots.push(tools);
   const home = join(tools, 'authority-home'); mkdirSync(home, { mode: 0o700 });
   const cli = join(tools, 'trusted-gh');
@@ -61,11 +61,11 @@ console.log(JSON.stringify(value)); process.exit(status);
   const code = `import {mock} from 'bun:test';
 const actual = await import(${JSON.stringify(module)});
 mock.module(${JSON.stringify(module)}, () => ({...actual, resolveTrustedGhExecutable: () => ${mode === 'missing' ? 'undefined' : JSON.stringify(cli)}}));
-const {runMergeGateCli} = await import(${JSON.stringify(SCRIPT)});
-await runMergeGateCli(['run','--base','main'], ${JSON.stringify(home)});`;
-  const result = spawnSync(process.execPath, ['-e', code], { cwd: root, encoding: 'utf8', timeout: 10000,
+const {runMergeGateCli} = await import(${JSON.stringify(script)});
+await runMergeGateCli([process.argv[1],'--base','main'], ${JSON.stringify(home)});`;
+  const invoke = (command: string) => spawnSync(process.execPath, ['-e', code, command], { cwd: root, encoding: 'utf8', timeout: 10000,
     env: { ...process.env, PATH: tools, GH_REPO: 'attacker/redirect', REPO_HARNESS_GH_BIN: decoy } });
-  return { result, home, log, marker, head, base };
+  return { result: invoke('run'), verify: () => invoke('verify'), home, log, marker, head, base };
 }
 function seals(home: string): string[] {
   const gates = join(home, '.repo-harness/gates');
@@ -118,6 +118,19 @@ describe('main automatic check boundary', () => {
     expect(calls.some(call => call.args[0] === 'api' && call.args[1] === 'graphql')).toBe(true);
     expect(seals(f.home)).toHaveLength(1);
     expect(JSON.parse(readFileSync(seals(f.home)[0]!, 'utf8'))).toMatchObject({ head_sha: f.head, base_sha: f.base, pr_number: 7 });
+  });
+  test('installed key policy change makes the old seal stale for the same candidate', () => {
+    const runtime = mkdtempSync(join(tmpdir(), 'merge-gate-runtime-')); roots.push(runtime);
+    mkdirSync(join(runtime, 'scripts')); mkdirSync(join(runtime, 'src/core/security'), { recursive: true });
+    symlinkSync(join(ROOT, 'scripts/acceptance-receipt.ts'), join(runtime, 'scripts/acceptance-receipt.ts'));
+    symlinkSync(join(ROOT, 'src/effects'), join(runtime, 'src/effects'), 'dir');
+    const script = join(runtime, 'scripts/merge-gate.ts'), policy = join(runtime, 'src/core/security/secret-patterns.ts');
+    copyFileSync(SCRIPT, script); copyFileSync(join(ROOT, 'src/core/security/secret-patterns.ts'), policy);
+    const f = providerFixture(fixture(), 'ready', script);
+    expect(f.result.status, f.result.stderr).toBe(0); const valid = f.verify(); expect(valid.status, valid.stderr).toBe(0);
+    writeFileSync(policy, readFileSync(policy, 'utf8').replace('export const KEY_BEGIN = ', 'export const KEY_BEGIN = "feature|" + '));
+    const stale = f.verify(); expect(stale.status).not.toBe(0);
+    expect(stale.stderr).toContain('merge seal is stale');
   });
   test('missing trusted gh refuses both enabled and disabled old policy without caller fallback', () => {
     for (const disabled of [false, true]) {

@@ -167,10 +167,16 @@ function requireHostOwnedDirectory(path: string, label: string): void {
 
 export function helperFingerprint(root: string): string {
   const helper = realpathSync(fileURLToPath(import.meta.url));
-  if (pathIsInside(root, helper)) {
-    throw new Error("merge gate must run from the installed repo-harness helper runtime, not the candidate repository");
+  // Resolve scan policy from the helper's real runtime, never the candidate.
+  const policy = realpathSync(join(dirname(helper), '../src/core/security/secret-patterns.ts'));
+  const fingerprint = createHash('sha256');
+  for (const source of [helper, policy]) {
+    if (pathIsInside(root, source)) {
+      throw new Error("merge gate must run from the installed repo-harness helper runtime, not the candidate repository");
+    }
+    fingerprint.update(readFileSync(source));
   }
-  return sha256(readFileSync(helper));
+  return `sha256:${fingerprint.digest('hex')}`;
 }
 
 function sealPath(root: string, authorityHome: string, createParent = false): string {
