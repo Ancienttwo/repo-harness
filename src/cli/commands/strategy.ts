@@ -1,15 +1,9 @@
 import { Command } from 'commander';
-import { collectStrategyContext, validateStrategyRequest, strategyStatus, StrategySourceDriftError, REPOSITORY_PILOT_DOCUMENT, REPOSITORY_PILOT_READ_LIMITS } from '../../effects/strategy/context';
-import { projectStrategySkill } from '../../effects/strategy/skill';
 
-interface Options { repo: string; document?: string; load?: string[]; topic?: string[]; target?: string; dryRun?: boolean }
-function run(action: () => unknown): void {
-  try { process.stdout.write(`${JSON.stringify(action())}\n`); }
-  catch (error) {
-    process.stderr.write(`${JSON.stringify({ status: error instanceof StrategySourceDriftError ? 'stale' : 'invalid', executionAuthorized: false, error: error instanceof Error ? error.message : String(error) })}\n`);
-    process.exitCode = 1;
-  }
-}
+export interface StrategyCommandOptions { repo: string; document?: string; load?: string[]; topic?: string[]; target?: string; dryRun?: boolean }
+
+const actions = () => import('./strategy-actions');
+
 function contextOptions(command: Command): Command {
   return command.option('--repo <path>', 'Exact project worktree root', '.')
     .option('--load <id...>', 'Explicit lesson IDs to load (at most eight)')
@@ -18,27 +12,16 @@ function contextOptions(command: Command): Command {
 export function buildStrategyCommand(): Command {
   const strategy = new Command('strategy').description('Explicit read-only strategic reflection; proposals never authorize execution');
   strategy.command('status').option('--repo <path>', 'Exact project worktree root', '.')
-    .action((o: Options) => run(() => strategyStatus(o.repo)));
+    .action(async (o: StrategyCommandOptions) => (await actions()).status(o));
   contextOptions(strategy.command('pilot').argument('[proposal]', 'Optional project-local proposal to validate against the canonical pilot'))
-    .action((path: string | undefined, o: Options) => run(() => {
-      const options = { documentPath: REPOSITORY_PILOT_DOCUMENT,
-        load: o.load, topics: o.topic, limits: REPOSITORY_PILOT_READ_LIMITS };
-      if (!path) return collectStrategyContext(o.repo, options);
-      const result = validateStrategyRequest(o.repo, path, options);
-      if (result.status !== 'reviewable') process.exitCode = 1;
-      return result;
-    }));
-  contextOptions(strategy.command('context')).action((o: Options) => run(() => collectStrategyContext(o.repo, { load: o.load, topics: o.topic })));
+    .action(async (path: string | undefined, o: StrategyCommandOptions) => (await actions()).pilot(path, o));
+  contextOptions(strategy.command('context')).action(async (o: StrategyCommandOptions) => (await actions()).context(o));
   contextOptions(strategy.command('validate').argument('<proposal>', 'Repository-relative proposal JSON').option('--document <path>', 'Explicit project-local context document'))
-    .action((path: string, o: Options) => run(() => {
-      const result = validateStrategyRequest(o.repo, path, { documentPath: o.document, load: o.load, topics: o.topic });
-      if (result.status !== 'reviewable') process.exitCode = 1;
-      return result;
-    }));
+    .action(async (path: string, o: StrategyCommandOptions) => (await actions()).validate(path, o));
   for (const action of ['install', 'uninstall'] as const) {
     strategy.command(`${action}-skill`).option('--target <host>', 'codex|claude|both', 'both')
       .option('--dry-run', 'Preview owned host projection changes')
-      .action((o: Options) => run(() => projectStrategySkill({ action, target: o.target, dryRun: o.dryRun })));
+      .action(async (o: StrategyCommandOptions) => (await actions()).projectSkill(action, o));
   }
   return strategy;
 }

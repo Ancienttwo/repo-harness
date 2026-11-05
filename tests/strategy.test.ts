@@ -13,7 +13,10 @@ import { collectStrategyContext, validateStrategyRequest, StrategySourceDriftErr
 import { projectStrategySkill } from '../src/effects/strategy/skill';
 import { buildStrategyCommand } from '../src/cli/commands/strategy';
 import { facadesForSelection, hostSkillPlacements, parseSkillSurfaceCatalog } from '../src/core/skill-surface/catalog';
-import { PLUGIN_IDS } from '../src/core/skill-surface/plugin-manifest';
+import { PLUGIN_IDS, type PluginId } from '../src/core/skill-surface/plugin-manifest';
+import { assertPluginCommandSelected } from '../src/cli/installer/architecture-selection';
+import { InstallStateError } from '../src/cli/installer/install-state';
+import { pluginSelectionEnv } from './helpers/install-ownership';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -56,6 +59,9 @@ function collect(root: string, opts: Parameters<typeof collectStrategyContext>[1
   return collectStrategyContext(root, opts, { observeReadOnlyState: syntheticState });
 }
 function proposal(packet: StrategyPacket) { return { version: 1, contextDigest: packet.digest, action: 'investigate', rationale: 'Synthetic review', evidence: ['docs/goal.md'], constraints: [{ key: 'network', value: 'offline' }] }; }
+function selectedEnv(plugins: readonly PluginId[] = ['strategy-memory']): NodeJS.ProcessEnv {
+  const env = pluginSelectionEnv(plugins); roots.push(env.HOME!); return env;
+}
 function snapshot(root: string, prefix = ''): Record<string, string> {
   const out: Record<string, string> = {};
   for (const entry of readdirSync(join(root, prefix), { withFileTypes: true })) {
@@ -163,18 +169,47 @@ describe('optional strategy and progressive memory', () => {
     expect(() => collect(root, { nowMs, load: Array(9).fill('lesson') })).toThrow();
   });
   test('real CLI exports and validates ignored proposals without persistent read effects', () => {
-    const { root } = fixture(); const home = temp();
+    const { root } = fixture(); const env = selectedEnv(); const home = env.HOME!; const homeBefore = snapshot(home);
     const cli = join(import.meta.dir, '../src/cli/index.ts');
-    const call = (...args: string[]) => spawnSync(process.execPath, [cli, 'strategy', ...args, '--repo', root], { encoding: 'utf8', env: { ...process.env, HOME: home, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0', GIT_OPTIONAL_LOCKS: '0' } });
+    const call = (...args: string[]) => spawnSync(process.execPath, [cli, 'strategy', ...args, '--repo', root], { encoding: 'utf8', env: { ...env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0', GIT_OPTIONAL_LOCKS: '0' } });
     const context = call('context'); expect(context.status).toBe(0);
     const packet = JSON.parse(context.stdout) as StrategyPacket;
     write(root, '.ai/harness/strategy/proposal.json', JSON.stringify(proposal(packet)));
     const before = snapshot(root); const validated = call('validate', '.ai/harness/strategy/proposal.json');
     expect(validated.status).toBe(0); expect(JSON.parse(validated.stdout).status).toBe('reviewable');
     expect(packet.unknowns).toEqual([]);
-    expect(snapshot(root)).toEqual(before); expect(snapshot(home)).toEqual({});
+    expect(snapshot(root)).toEqual(before); expect(snapshot(home)).toEqual(homeBefore);
     const error = call('context', '--load', 'missing'); expect(error.status).toBe(1);
-    expect(snapshot(root)).toEqual(before); expect(snapshot(home)).toEqual({});
+    expect(snapshot(root)).toEqual(before); expect(snapshot(home)).toEqual(homeBefore);
+  });
+  test('the strategy-memory selection gates every subcommand and the strategy code load', () => {
+    const { root } = fixture(); const cli = join(import.meta.dir, '../src/cli/index.ts');
+    const probe = join(temp(), 'load-probe.ts');
+    writeFileSync(probe, `process.on('exit', () => process.stderr.write(\`strategy-modules:\${Object.keys(require.cache).filter(path => /commands.strategy-actions|(core|effects).strategy./.test(path)).length}\n\`));\n`);
+    const call = (env: NodeJS.ProcessEnv, ...args: string[]) => {
+      const home = env.HOME!; const before = snapshot(home);
+      const result = spawnSync(process.execPath, ['--preload', probe, cli, 'strategy', ...args], { encoding: 'utf8', env: { ...env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0', GIT_OPTIONAL_LOCKS: '0' } });
+      expect(snapshot(home), args.join(' ')).toEqual(before);
+      return { status: result.status, stderr: result.stderr, loaded: Number(/strategy-modules:(\d+)/.exec(result.stderr)?.[1]) };
+    };
+    const noState = { ...process.env, HOME: temp() };
+    const unreadable = { ...process.env, HOME: temp() }; write(unreadable.HOME, '.repo-harness/install-state.json', '{');
+    const repo = ['--repo', root];
+    const blocked: [string, NodeJS.ProcessEnv, string[], string][] = [
+      ...[['status'], ['pilot'], ['context'], ['validate', 'proposal.json'], ['install-skill', '--dry-run'], ['uninstall-skill', '--dry-run']].map((args): [string, NodeJS.ProcessEnv, string[], string] =>
+        [`product, ${args[0]}`, selectedEnv(['product']), args[0]!.endsWith('-skill') ? args : [...args, ...repo], 'repo-harness strategy needs the strategy-memory plugin: the strategy-memory plugin is not selected; run: repo-harness install --plugins product,strategy-memory\n']),
+      ['core only', selectedEnv([]), ['status', ...repo], 'not selected; run: repo-harness install --plugins strategy-memory\n'],
+      ['no install state', noState, ['status', ...repo], 'not selected; run: repo-harness install\n'],
+      ['unreadable install state', unreadable, ['status', ...repo], 'is not valid JSON'],
+    ];
+    for (const [name, env, args, message] of blocked) {
+      const result = call(env, ...args);
+      expect(result.status, name).toBe(1); expect(result.stderr, name).toContain(message); expect(result.loaded, name).toBe(0);
+    }
+    const help = call(noState, 'status', '--help'); expect(help.status).toBe(0); expect(help.loaded).toBe(0);
+    const selected = call(selectedEnv(), 'status', ...repo); expect(selected.status).toBe(0); expect(selected.loaded).toBeGreaterThan(0);
+    const refused = (() => { try { assertPluginCommandSelected({ status: 'recorded', plugins: ['product'] }, 'strategy-memory', 'strategy'); } catch (error) { return error; } })();
+    expect(refused).toBeInstanceOf(InstallStateError); expect((refused as InstallStateError).code).toBe('install_plugin_unavailable');
   });
   test('enum fields reject arrays, objects and null without skipping fact checks', () => {
     const { root, doc, save } = fixture(); const packet = collect(root, { nowMs });
@@ -552,7 +587,7 @@ describe('optional strategy and progressive memory', () => {
     expect(packet.executionAuthorized).toBe(false); expect(snapshot(root)).toEqual(before);
     const cli = join(import.meta.dir, '../src/cli/index.ts');
     const runPilot = (...args: string[]) => spawnSync(process.execPath, [cli, 'strategy', 'pilot', '--repo', root, ...args],
-      { encoding: 'utf8', env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' } });
+      { encoding: 'utf8', env: { ...selectedEnv(), BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' } });
     const exported = runPilot(); expect(exported.status).toBe(0);
     const cliPacket = JSON.parse(exported.stdout); expect(cliPacket.stateRevision).not.toBe('unavailable');
     write(root, '.ai/harness/pilot-proposal.json', JSON.stringify(proposal(cliPacket)));

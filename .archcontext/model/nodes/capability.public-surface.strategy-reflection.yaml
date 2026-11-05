@@ -15,16 +15,19 @@ source:
     - src/core/strategy/**
     - src/effects/strategy/**
     - src/cli/commands/strategy.ts
+    - src/cli/commands/strategy-actions.ts
     - docs/strategy/**
   entrypoints:
     - id: entrypoint.strategy-reflection.primary
-      path: src/cli/commands/strategy.ts
+      path: src/cli/commands/strategy-actions.ts
       symbols:
-        - name: buildStrategyCommand
+        - name: context
           sinks:
             - id: sink.strategy-reflection.primary
               path: src/effects/strategy/context.ts
               symbol: collectStrategyContext
+        - name: validate
+          sinks:
             - id: sink.strategy-reflection.validate
               path: src/effects/strategy/context.ts
               symbol: validateStrategyRequest

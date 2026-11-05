@@ -33,7 +33,7 @@ import { taskReviewRunner } from '../effects/review-runner/task-review-runner';
 import { buildUpgradeCommand } from './commands/upgrade';
 import { buildToolsCommand } from './commands/tools';
 import { architecturePort, isArchitectureUnavailable, registerArchitecturePorts } from '../core/architecture/contracts';
-import { architectureSelected, assertArchitectureCommandSelected, declareArchitectureSelection, readRecordedSelection, recordedPlugins } from './installer/architecture-selection';
+import { assertPluginCommandSelected, declareArchitectureSelection, pluginSelected, readRecordedSelection, recordedPlugins } from './installer/architecture-selection';
 import { buildHerdrCommand, notifyRelayDoctorCheck } from './commands/herdr';
 import { buildEventsCommand } from './commands/events';
 import { buildBrainCommand } from './commands/brain';
@@ -134,7 +134,7 @@ import {
 import type { Location } from './installer/types';
 
 // The recorded selection, read once per process. Core reaches the architecture code only through the ports.
-const architectureSelection = readRecordedSelection();
+const recordedSelection = readRecordedSelection();
 let architectureRegistered = false;
 
 /**
@@ -152,12 +152,12 @@ export function registerArchitecturePlugin(): void {
   architectureRegistered = true;
 }
 
-if (architectureSelected(architectureSelection)) registerArchitecturePlugin();
-else declareArchitectureSelection(architectureSelection);
+if (pluginSelected(recordedSelection, 'architecture')) registerArchitecturePlugin();
+else declareArchitectureSelection(recordedSelection);
 
-/** An architecture command stays in help; its handler checks the selection before any probe or write, then loads the plugin code. */
-function architectureCommand(command: Command, name: string = command.name()): Command {
-  return command.hook('preAction', () => assertArchitectureCommandSelected(architectureSelection, name));
+/** A plugin command stays in help; its handler checks the selection before any probe or write, then loads the plugin code. */
+function pluginCommand(command: Command, id: PluginId, name: string = command.name()): Command {
+  return command.hook('preAction', () => assertPluginCommandSelected(recordedSelection, id, name));
 }
 
 /**
@@ -861,7 +861,7 @@ export function buildProgram(): Command {
         mode,
         env,
       };
-      const result = runInit({ ...common, plugins: recordedPlugins(architectureSelection) });
+      const result = runInit({ ...common, plugins: recordedPlugins(recordedSelection) });
       if (rawOpts.json === true) {
         console.log(JSON.stringify(result, null, 2));
       } else {
@@ -996,7 +996,7 @@ export function buildProgram(): Command {
 
   program.addCommand(buildInitHookCommand(CLI_PORTS.doctor));
   program.addCommand(buildReviewCommand(taskReviewRunner));
-  program.addCommand(architectureCommand(buildModuleCommand()));
+  program.addCommand(pluginCommand(buildModuleCommand(), 'architecture'));
   program.addCommand(buildSetupCommand(CLI_PORTS.doctor));
   program.addCommand(buildUpgradeCommand());
 
@@ -1030,7 +1030,7 @@ export function buildProgram(): Command {
   for (const group of ['ensure', 'configure']) {
     const codegraph = tools.commands.find(command => command.name() === group)?.commands.find(command => command.name() === 'codegraph');
     if (!codegraph) throw new Error(`tools ${group} codegraph is not defined`);
-    architectureCommand(codegraph, `tools ${group} codegraph`);
+    pluginCommand(codegraph, 'architecture', `tools ${group} codegraph`);
   }
   program.addCommand(tools);
   program.addCommand(buildHerdrCommand());
@@ -1053,10 +1053,10 @@ export function buildProgram(): Command {
   program.addCommand(buildWorktreesCommand());
   program.addCommand(buildCatchUpCommand());
   program.addCommand(buildQuotaCommand());
-  program.addCommand(architectureCommand(buildRefactorCommand()));
-  program.addCommand(architectureCommand(buildArchitectureProjectionCommand()));
-  program.addCommand(architectureCommand(buildArchitectureDebtCommand()));
-  program.addCommand(buildStrategyCommand());
+  program.addCommand(pluginCommand(buildRefactorCommand(), 'architecture'));
+  program.addCommand(pluginCommand(buildArchitectureProjectionCommand(), 'architecture'));
+  program.addCommand(pluginCommand(buildArchitectureDebtCommand(), 'architecture'));
+  program.addCommand(pluginCommand(buildStrategyCommand(), 'strategy-memory'));
   program.addCommand(buildRetentionCommand(CLI_PORTS.retention));
   program.addCommand(buildSeatsCommand());
   program
