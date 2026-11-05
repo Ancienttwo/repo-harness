@@ -592,7 +592,7 @@ describe('operator serve command and HTTP boundary', () => {
       writeFileSync(target, JSON.stringify({ ...JSON.parse(first), protocol: 1 }));
       expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' });
       expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
-      expect((await get()).parents[0]).toMatchObject({ status: 'observed', summary: boardSummary(board) });
+      expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'observed', observed_at: board.observed_at, summary: boardSummary(board) });
       writeFileSync(target, JSON.stringify({ ...JSON.parse(first), repository_id: 'repo-b' }));
       expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_subject_invalid' });
       rmSync(target); mkdirSync(target);

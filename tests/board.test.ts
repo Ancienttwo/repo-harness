@@ -192,16 +192,25 @@ test('board summary counts the recorded PRs, planned issue members and orchestra
   expect(boardSummary(reopened)).toMatchObject({ queue: 1, batch: { accepted: 0, size: 4 } });
   expect(boardSummary({ ...reopened, pull_requests: reopened.pull_requests.map(pr => pr.number === 1500
     ? { ...pr, required_check: { status: 'pending' } } : pr) }).queue).toBe(0);
-  expect(boardSummary({ ...planned, plan: { status: 'absent', truncated: false } })).toMatchObject({ batch: { accepted: null, size: null }, current_batch: null, worker_limit: ISSUE_FLOW_WORKER_LIMIT });
-  expect(boardSummary({ ...planned, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at, revision: 1,
-    block: { ...block, batches: [] } } })).toMatchObject({ batch: { accepted: 0, size: 0 }, current_batch: null });
+  const observedPlan = (batches: readonly (readonly number[])[]): BoardV1['plan'] => ({ status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at, revision: 1, block: { ...block, batches } });
+  // One exact row per plan state.
+  for (const [plan, batch, current_batch, worker_limit] of [
+    [observedPlan(block.batches), { accepted: 1, size: 4 }, { accepted: 1, size: 2 }, 4],
+    [observedPlan([]), { accepted: 0, size: 0 }, null, 4],
+    [{ status: 'absent', truncated: false }, { accepted: null, size: null }, null, ISSUE_FLOW_WORKER_LIMIT],
+    [{ status: 'unavailable', comment_url: 'https://github.com/plan', reason: 'plan block invalid' }, { accepted: null, size: null }, null, ISSUE_FLOW_WORKER_LIMIT],
+  ] as const) {
+    const summary = boardSummary({ ...planned, plan });
+    expect(summary.batch).toEqual(batch);
+    expect(summary.current_batch).toEqual(current_batch);
+    expect(summary.worker_limit).toBe(worker_limit);
+  }
   // The current batch is the first with an unmerged member, and a merged member no longer counts as accepted.
   const merged = (issues: readonly number[]): BoardV1 => { const numbers = planned.items.filter(item => issues.includes(item.number)).flatMap(item => item.pull_requests);
     return { ...planned, pull_requests: planned.pull_requests.map(pr => numbers.includes(pr.number) ? { ...pr, state: 'merged' as const } : pr) }; };
   expect(boardSummary(merged([1475])).current_batch).toEqual({ accepted: 0, size: 2 });
   expect(boardSummary(merged([1475, 1476])).current_batch).toEqual({ accepted: 0, size: 2 });
-  expect(boardSummary({ ...merged([1475, 1476]), plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at, revision: 1,
-    block: { ...block, batches: [[1475, 1476]] } } }).current_batch).toBeNull();
+  expect(boardSummary({ ...merged([1475, 1476]), plan: observedPlan([[1475, 1476]]) }).current_batch).toBeNull();
 });
 
 test('board summary gives each live seat outside the stage the desk state of the room rules', () => {
