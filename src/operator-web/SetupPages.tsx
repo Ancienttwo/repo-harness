@@ -37,8 +37,8 @@ import { AgentSettings, HostRuntimeControls } from './SettingsPage';
 import { SeatsSection } from './SeatsPage';
 import type { AgentsSettingsForm } from './settings';
 import type { SeatsSettingsForm } from './seats';
-import type { QuotaAccountReport, QuotaWindowReport, QuotaWindowState } from '../core/operator/quota';
-import type { QuotaSection as QuotaRead } from './quota';
+import type { QuotaAccountReport, QuotaReport, QuotaWindowReport, QuotaWindowState } from '../core/operator/quota';
+import type { QuotaSection as QuotaRead, QuotaView } from './quota';
 
 export type SetupPage = 'agents' | 'skills' | 'hooks';
 
@@ -319,9 +319,17 @@ function FleetTable({ snapshot, t }: { readonly snapshot: SetupSnapshotV2; reado
   );
 }
 
-const QUOTA_TONE: Readonly<Record<QuotaWindowState, DotTone>> = { exhausted: 'danger', tight: 'warn', unknown: 'unknown', normal: 'ok', surplus: 'ok', absent: 'neutral' };
+export const QUOTA_TONE: Readonly<Record<QuotaWindowState, DotTone>> = { exhausted: 'danger', tight: 'warn', unknown: 'unknown', normal: 'ok', surplus: 'ok', absent: 'neutral' };
 /** The page's attention style: the report's own state picks it; the page judges nothing. */
 const QUOTA_ATTENTION: Readonly<Partial<Record<QuotaWindowState, string>>> = { exhausted: 'text-kumo-danger', tight: 'text-kumo-warning', unknown: 'text-kumo-warning' };
+
+/** The accounts whose own state asks for attention, in report order. */
+export const quotaAttention = (report: QuotaReport): readonly QuotaAccountReport[] => report.accounts.filter(account => account.state in QUOTA_ATTENTION);
+
+/** A failed read: its reason and no account data. */
+export function QuotaUnavailable({ reason, t }: { readonly reason: Extract<QuotaView, { kind: 'unavailable' }>['reason']; readonly t: OperatorTranslate }) {
+  return <Banner variant="error" data-quota-unavailable={reason} title={t('setup.quota.unavailable')} description={t('setup.quota.unavailableBody', { reason: t(`setup.quota.reason.${reason}`) })} />;
+}
 
 function windowLength(minutes: number, t: OperatorTranslate): string {
   if (minutes % 1440 === 0) return t('setup.quota.days', { count: minutes / 1440 });
@@ -338,7 +346,7 @@ function QuotaState({ state, t }: { readonly state: QuotaWindowState; readonly t
 }
 
 /** Each value only when the report has it; an `unknown` or `absent` window gives its reason instead of numbers it lacks. */
-function QuotaWindow({ window, t }: { readonly window: QuotaWindowReport; readonly t: OperatorTranslate }) {
+export function QuotaWindow({ window, bare = false, t }: { readonly window: QuotaWindowReport; /** No state: the row around it already shows one. */ readonly bare?: boolean; readonly t: OperatorTranslate }) {
   const parts: ReactNode[] = [];
   if (window.used_percent !== null) parts.push(<span key="used" data-quota-used>{t('setup.quota.used', { percent: window.used_percent })}</span>);
   if (window.resets_at !== null) parts.push(<span key="resets" data-quota-resets={window.resets_at} title={window.resets_at}>{t('setup.quota.resets', { time: new Date(window.resets_at).toLocaleString() })}</span>);
@@ -347,7 +355,7 @@ function QuotaWindow({ window, t }: { readonly window: QuotaWindowReport; readon
     <li className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-kumo-default" data-quota-window={window.window}>
       <span className="font-mono text-kumo-strong">{window.window}</span>
       {window.window_minutes !== null && <span className="text-kumo-subtle">{windowLength(window.window_minutes, t)}</span>}
-      <QuotaState state={window.state} t={t} />
+      {!bare && <QuotaState state={window.state} t={t} />}
       {parts.map((part, index) => <span key={index} className="tabular-nums">{index > 0 && <span className="text-kumo-subtle">· </span>}{part}</span>)}
       {(window.state === 'unknown' || window.state === 'absent') && window.reason !== null
         && <span className="text-kumo-subtle [overflow-wrap:anywhere]" data-quota-reason>{window.reason}</span>}
@@ -400,10 +408,7 @@ function QuotaSection({ quota, now, t }: { readonly quota: QuotaRead; readonly n
         </Button>
       </div>
       {view.kind === 'loading' && <p role="status" className="flex items-center gap-2 text-sm text-kumo-subtle"><Loader size={16} />{t('setup.quota.reading')}</p>}
-      {view.kind === 'unavailable' && (
-        <Banner variant="error" data-quota-unavailable={view.reason} title={t('setup.quota.unavailable')}
-          description={t('setup.quota.unavailableBody', { reason: t(`setup.quota.reason.${view.reason}`) })} />
-      )}
+      {view.kind === 'unavailable' && <QuotaUnavailable reason={view.reason} t={t} />}
       {view.kind === 'ready' && (view.report.accounts.length === 0
         ? <p className="text-sm text-kumo-subtle">{t('setup.quota.empty')}</p>
         : <ul className="flex flex-col divide-y divide-kumo-hairline rounded-lg border border-kumo-hairline">
