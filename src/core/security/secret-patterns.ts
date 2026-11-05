@@ -1,4 +1,8 @@
-const KEY_LABEL = String.raw`\s+(?:RSA\s+|OPENSSH\s+)?PRIVATE\s+KEY`;
+/**
+ * The label of a private key block, with its leading whitespace. Key tools name
+ * many block types (TSS2, ED25519, SM2), so any uppercase words may lead the label.
+ */
+export const KEY_LABEL = String.raw`\s+(?:[A-Z0-9]+\s+){0,8}PRIVATE\s+KEY(?:\s+BLOCK)?`;
 const KEY_BEGIN = `-----BEGIN${KEY_LABEL}`;
 const KEY_END = `-----END${KEY_LABEL}`;
 
@@ -12,9 +16,9 @@ const KEY_END = `-----END${KEY_LABEL}`;
  * - jwt_token, url_token: a start that fails leaves no match in its run.
  * - credential_url: every letter in a scheme run reaches the same `://`, so
  *   only the first letter of the run starts a match.
- * - private_key: a BEGIN that finds no END proves that no later BEGIN finds one,
- *   so only a BEGIN whose nearest earlier marker is an END, or no marker, starts
- *   a match. A lookahead for the complete BEGIN header comes first, so dashes
+ * - private_key: an END of any label closes a BEGIN of any label. So a BEGIN that
+ *   finds no END proves that no later BEGIN finds one, and only a BEGIN whose
+ *   nearest earlier marker is an END, or no marker, starts a match. A lookahead for the complete BEGIN header comes first, so dashes
  *   alone start no walk. The lookbehind stops at that marker and captures it
  *   when it is a BEGIN. The next `\1` then needs `-----` before the text `BEGIN`,
  *   which fails.
