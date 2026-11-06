@@ -5,6 +5,8 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { AppHookConfig } from '../../core/publication/publication-writes.ts';
+import { publishAppHookConfig } from '../../effects/publication/app-hook-config.ts';
 import { askMasked } from './herdr.ts';
 
 const WORKER_ASSETS = fileURLToPath(new URL('../../../assets/herdr/github-events/', import.meta.url));
@@ -82,13 +84,12 @@ export async function installEvents(options: EventsInstallOptions, deps: EventsI
   const inputs = await readInputs(options, deps);
   let key: KeyObject;
   try { key = createPrivateKey(readFileSync(inputs.privateKey)); } catch { throw new Error('Cannot read the GitHub App private key.'); }
-  const github = async (method: string, path: string, body?: object) => {
-    const endpoint = `GitHub API ${method} ${path.split('?')[0]}`;
+  const github = async (path: string) => {
+    const endpoint = `GitHub API GET ${path.split('?')[0]}`;
     let response: Response;
     try {
-      // A new JWT for each call: the approval prompt and wrangler can outlast one JWT.
       response = await deps.fetch(`${GITHUB_API}${path}`, {
-        method, redirect: 'error', body: body && JSON.stringify(body),
+        method: 'GET', redirect: 'error',
         headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${appJwt(inputs.appId, key, deps.now())}`, 'user-agent': 'repo-harness', 'x-github-api-version': '2022-11-28' },
       });
     } catch { throw new Error(`${endpoint} is unreachable.`); }
@@ -96,11 +97,11 @@ export async function installEvents(options: EventsInstallOptions, deps: EventsI
     return response.json();
   };
 
-  const app = await github('GET', '/app');
+  const app = await github('/app');
   if (typeof app?.slug !== 'string' || !/^[a-z0-9-]{1,64}$/.test(app.slug) || !Array.isArray(app.events)) throw new Error('GitHub returned invalid App data. No change was made.');
   const missing = APP_EVENTS.filter((event) => !app.events.includes(event));
   if (missing.length) throw new Error(`GitHub App ${app.slug} does not subscribe to: ${missing.join(', ')}. Add them in the App settings. No change was made.`);
-  const installations = await github('GET', '/app/installations?per_page=100');
+  const installations = await github('/app/installations?per_page=100');
   const accounts: string[] = Array.isArray(installations) ? installations.map((entry) => String(entry?.account?.login)) : [];
   const config = JSON.parse(readFileSync(join(WORKER_ASSETS, 'wrangler.json'), 'utf8'));
   const queue: string = config.queues.producers[0].queue;
@@ -136,7 +137,12 @@ export async function installEvents(options: EventsInstallOptions, deps: EventsI
     let url = '';
     try {
       url = wranglerWorkerUrl(outputFile);
-      await github('PATCH', '/app/hook/config', { url, content_type: 'json', secret, insecure_ssl: '0' });
+      const hookConfig: AppHookConfig = { url, content_type: 'json', secret, insecure_ssl: '0' };
+      await publishAppHookConfig(hookConfig, {
+        fetch: deps.fetch,
+        // A new JWT for this write: the approval prompt and wrangler can outlast one JWT.
+        appToken: () => appJwt(inputs.appId, key, deps.now()),
+      });
     } catch (error) {
       throw new Error(`The Worker has a new webhook secret, but the GitHub App was not updated: ${(error as Error).message} `
         + 'Deliveries to an existing Worker URL get HTTP 401 until events install succeeds. Run it again.');
