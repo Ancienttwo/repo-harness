@@ -5,7 +5,7 @@
     "": {
       "name": "repo-harness",
       "dependencies": {
-        "@botiverse/oar": "0.88.0",
+        "@botiverse/oar": "0.91.0",
         "@modelcontextprotocol/sdk": "^1.31.0",
         "archctx": "0.11.3",
         "archctx-contracts": "0.11.3",
@@ -92,7 +92,7 @@
 
     "@base-ui/utils": ["@base-ui/utils@0.5.0", "", { "dependencies": { "@babel/runtime": "^7.29.7 || ^8.0.0", "@floating-ui/utils": "^0.2.12", "reselect": "^5.3.0", "use-sync-external-store": "^1.7.0" }, "peerDependencies": { "@types/react": "^17 || ^18 || ^19", "react": "^17 || ^18 || ^19", "react-dom": "^17 || ^18 || ^19" }, "optionalPeers": ["@types/react"] }, "sha512-dYGGcEttjkYiMoa5nHm8vLaJ2UcuTWxo3BFAwOYXeRg/q7UVVvA6cacEIXEs3FgBfK1CGtW1ptElqs7wsx+t9A=="],
 
-    "@botiverse/oar": ["@botiverse/oar@0.88.0", "", { "dependencies": { "@agentclientprotocol/sdk": "^1.4.0", "@earendil-works/pi-ai": "^1.5.0", "@earendil-works/pi-coding-agent": "^1.5.0", "cross-spawn": "^7.0.6", "dotenv": "^17.4.2", "strip-json-comments": "^5.0.3", "undici": "8.12.3", "which": "^2.0.2" }, "peerDependencies": { "@cursor/sdk": "1.2.0", "@earendil-works/chord": "~1.4.0", "@earendil-works/pi-durable": "~1.4.0" }, "optionalPeers": ["@cursor/sdk", "@earendil-works/chord", "@earendil-works/pi-durable"] }, "sha512-9X8DlBaU/l+s5EUtEelLR7m61OskHCQG84ocMoGE3yy9qgBrh++r3vJaZmyNuhKQ0W9Jsh5EMHNAplT119blYw=="],
+    "@botiverse/oar": ["@botiverse/oar@0.91.0", "", { "dependencies": { "@agentclientprotocol/sdk": "^1.4.0", "@earendil-works/pi-ai": "^1.5.0", "@earendil-works/pi-coding-agent": "^1.5.0", "cross-spawn": "^7.0.6", "dotenv": "^17.4.2", "strip-json-comments": "^5.0.3", "undici": "8.12.3", "which": "^2.0.2" }, "peerDependencies": { "@cursor/sdk": "1.2.0", "@earendil-works/chord": "~1.4.0", "@earendil-works/pi-durable": "~1.4.0" }, "optionalPeers": ["@cursor/sdk", "@earendil-works/chord", "@earendil-works/pi-durable"] }, "sha512-0RZtsSlHuKmh0bKuRarlXbWN6W1QuPktddoLLAr0jvv3BwVDd7VASG26VysAtXTWMavIBVz4yrJgxa/RBhBVsg=="],
 
     "@braintree/sanitize-url": ["@braintree/sanitize-url@7.1.2", "", {}, "sha512-jigsZK+sMF/cuiB7sERuo9V7N9jx+dhmHHnQyDSVdpZwVutaBu7WvNYqMDLSgFgfB30n452TP3vjDAvFC973mA=="],
 
