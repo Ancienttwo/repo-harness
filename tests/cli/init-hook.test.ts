@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { seedGlobalPackageFixture } from '../helpers/install-ownership';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -26,6 +27,7 @@ const CLI = join(ROOT, 'src/cli/index.ts');
 const fakeHcBin = mkdtempSync(join(tmpdir(), 'repo-harness-init-hook-hc-'));
 const pathBeforeFakeHc = process.env.PATH;
 beforeAll(() => {
+  seedGlobalPackageFixture();
   writeFileSync(join(fakeHcBin, 'hc'), `#!/bin/sh\nprintf 'hc ${HC_MIN_VERSION}\\n'\n`, { mode: 0o755 });
   process.env.PATH = `${fakeHcBin}:${pathBeforeFakeHc ?? ''}`;
 });
@@ -446,6 +448,14 @@ describe('init-hook command', () => {
       const action = report.agent_actions.find((entry) => entry.id === 'adapter.codex.install');
       expect(adapter?.status).toBe('needs_agent');
       expect(adapter?.detail).toContain('Stop.default timeout expected=30 actual=150');
+      const error = 'Global bundle unavailable; run bun add -g repo-harness';
+      const unavailable = runInitHook(CLI_PORTS.doctor, {
+        cwd: repo, target: 'codex', env: { ...process.env, HOME: home },
+        statusReport: baseStatusReport({ projection: { status: 'drift', expectedEntryCount: 6, managedEntryCount: 6, mismatches: [], error } }),
+        doctorReport: baseDoctorReport(), toolingReport: baseToolingReport(),
+      }).checks.find(entry => entry.id === 'status.adapter.codex');
+      expect(unavailable?.status).toBe('needs_agent');
+      expect(unavailable?.detail).toContain(error);
       expect(action?.command).toBe('repo-harness install --target codex --location global');
     });
   });

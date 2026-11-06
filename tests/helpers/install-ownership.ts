@@ -1,10 +1,28 @@
 import { createHash } from 'crypto';
-import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'fs';
+import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join, relative } from 'path';
 import { versions } from '../../src/cli/installer/install-profile';
 import { installProfileStatePath } from '../../src/cli/installer/install-state';
+import { bunGlobalPackageRoot } from '../../src/cli/installer/skill-projection';
 import type { PluginId, PluginSelection } from '../../src/core/skill-surface/plugin-manifest';
+
+/** Opt in to an installed runtime; callers own the temporary HOME and package mutations. */
+export function seedGlobalPackageFixture(env: NodeJS.ProcessEnv = process.env, options: { sourceRoot?: string; mutable?: true } = {}): string {
+  env.BUN_INSTALL ??= join(env.HOME!, '.bun');
+  const root = bunGlobalPackageRoot(env)!;
+  const source = options.sourceRoot ?? join(import.meta.dir, '../..');
+  if (options.mutable) {
+    mkdirSync(join(root, 'dist'), { recursive: true });
+    copyFileSync(join(source, 'dist/hook-entry.js'), join(root, 'dist/hook-entry.js'));
+  } else if (!existsSync(root)) {
+    mkdirSync(dirname(root), { recursive: true });
+    symlinkSync(source, root, 'dir');
+  } else if (realpathSync(root) !== realpathSync(source)) {
+    throw new Error(`Global package fixture already belongs to another source: ${root}`);
+  }
+  return root;
+}
 
 /** Seed the persisted protocol, independently of unrelated owner probes. */
 export function recordInstallOwnership(paths: string[], env: NodeJS.ProcessEnv): void {

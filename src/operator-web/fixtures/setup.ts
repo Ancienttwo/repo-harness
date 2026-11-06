@@ -99,9 +99,9 @@ export function readySetup(now: number): SetupSnapshotV2 {
     ],
     hosts: [
       { host: 'claude', reported: true, adapter_check: 'ok', detected: true, cli_version: null,
-        adapter: { configured: true, managed_entries: 5, expected_entries: 5, projection: 'consistent', mismatches: [] } },
+        adapter: { configured: true, managed_entries: 5, expected_entries: 5, projection: 'consistent', projection_error: null, mismatches: [] } },
       { host: 'codex', reported: true, adapter_check: 'ok', detected: true, cli_version: '0.162.0',
-        adapter: { configured: true, managed_entries: 5, expected_entries: 5, projection: 'consistent', mismatches: [] } },
+        adapter: { configured: true, managed_entries: 5, expected_entries: 5, projection: 'consistent', projection_error: null, mismatches: [] } },
       { host: 'pi', reported: true, adapter_check: null, detected: false, cli_version: null, adapter: null, package_check: 'na' },
     ],
     skills: readySkills(),
@@ -152,9 +152,9 @@ export function degradedSetup(now: number): SetupSnapshotV2 {
     ],
     hosts: [
       { host: 'claude', reported: true, adapter_check: 'ok', detected: true, cli_version: null,
-        adapter: { configured: true, managed_entries: 5, expected_entries: 5, projection: null, mismatches: [] } },
+        adapter: { configured: true, managed_entries: 5, expected_entries: 5, projection: null, projection_error: null, mismatches: [] } },
       { host: 'codex', reported: true, adapter_check: 'warn', detected: true, cli_version: '0.162.0',
-        adapter: { configured: true, managed_entries: 4, expected_entries: 5, projection: 'drift', mismatches: [
+        adapter: { configured: true, managed_entries: 4, expected_entries: 5, projection: 'drift', projection_error: null, mismatches: [
           { kind: 'missing', event: 'SubagentStart', route_id: 'context', field: null },
           { kind: 'field-mismatch', event: 'Stop', route_id: 'default', field: 'timeout' },
           { kind: 'unexpected', event: 'PreToolUse', route_id: null, field: null },

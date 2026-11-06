@@ -158,8 +158,15 @@ marks a capture older than 30 minutes `unknown`.
 `~/.claude/settings.json` has no `statusLine`:
 
 ```json
-"statusLine": { "type": "command", "command": ": repo-harness-managed-hook-v1; exec repo-harness-hook statusline" }
+"statusLine": { "type": "command", "command": ": repo-harness-managed-hook-v1; exec '/absolute/path/to/bun' '/absolute/bun/install/global/node_modules/repo-harness/dist/hook-entry.js' statusline" }
 ```
+
+Install resolves the Bun runtime from `process.execPath` and the bundle from
+`<bunGlobalPackageRoot(env)>/dist/hook-entry.js`. It quotes both absolute paths.
+The bundle comes from the global install, including when install runs through
+`bunx` or a task worktree. A missing global bundle stops installation before
+host configuration writes. Repair it with `bun add -g repo-harness`, then rerun
+`repo-harness install --location global`.
 
 The managed tag is the ownership proof, as for the managed hook commands.
 Install refreshes the entry only while its command has the tag, and uninstall

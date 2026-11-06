@@ -71,6 +71,7 @@ export interface SetupAdapterFacts {
   expected_entries: number;
   /** Exact projection comparison; null when status did not inspect it. */
   projection: 'consistent' | 'drift' | null;
+  projection_error: string | null;
   mismatches: SetupHookMismatch[];
 }
 
