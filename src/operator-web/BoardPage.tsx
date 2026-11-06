@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Banner, cn } from '@cloudflare/kumo';
 import { MagnifyingGlassIcon, WarningIcon } from '@phosphor-icons/react';
 import type { BoardFindingV1 } from '../core/board/attention';
 import type { BoardItemV1, BoardPullRequestV1, BoardV1 } from '../core/board/board';
 import type { BoardParentsV1, BoardParentV1 } from '../core/board/parents';
 import { primaryPullRequest } from '../core/board/pull-requests';
+import type { QuotaAccountReport } from '../core/operator/quota';
 import {
   BOARD_STAGES, findingItem, itemStage, itemTerminals, shippedToday,
   useBoard, useBoardParents, type BoardParentsReader, type BoardParentsView, type BoardReader, type BoardReason, type BoardStage, type BoardView,
@@ -17,7 +18,9 @@ import { OfficeSetupChecklist, officeSetupRows, type OfficeSetupReads } from './
 import type { AdvisorMessageWriter, AdvisorTranscriptReader } from './OfficeAdvisorDialog';
 import type { ThemeMode } from './theme';
 import { isTaskMessagesTaskId } from '../core/operator/task-messages';
+import type { QuotaView } from './quota';
 import { itemOwner, useExecutions, useTaskMessages, type ExecutionReader, type ItemOwner, type TaskMessagesReader } from './repository-reads';
+import { QUOTA_TONE, quotaAttention, QuotaUnavailable, QuotaWindow } from './SetupPages';
 import { TaskDrawer } from './TaskDrawer';
 import { Age, BoardState, ExternalLink, PageLink, SectionTitle, StatusDot, type DotTone } from './ui';
 import { boardLocation, type BoardLayout, type BoardPlace, type WorkspaceLocation } from './workspace-location';
@@ -190,6 +193,39 @@ function AttentionRow({ board, finding, place, onOpen, now, t }: {
   );
 }
 
+const quotaAccounts = (quota: QuotaView): readonly QuotaAccountReport[] => quota.kind === 'ready' ? quotaAttention(quota.report) : [];
+const quotaTitle = (account: QuotaAccountReport, t: OperatorTranslate): string => t('board.quota.title', { account: t(`setup.quota.account.${account.account}`) });
+
+/** One quota account in the attention row layout. The account has no item, seat or pull request, so those columns stay empty. */
+function QuotaAttentionRow({ account, now, t }: { readonly account: QuotaAccountReport; readonly now: number; readonly t: OperatorTranslate }) {
+  return (
+    <li className="flex flex-col gap-2 border-b border-kumo-hairline px-4 py-3 last:border-b-0 md:flex-row md:items-center md:gap-4" data-quota-finding={account.account}>
+      <StatusDot tone={QUOTA_TONE[account.state]} className="hidden md:inline-flex" />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-sm font-medium text-kumo-strong">{quotaTitle(account, t)}</span>
+        {account.reason !== null && <span className="text-xs [overflow-wrap:anywhere] text-kumo-default" data-quota-reason>{account.reason}</span>}
+        {account.windows.some(window => window.state === account.state) && <ul className="flex flex-col gap-0.5">{account.windows.filter(window => window.state === account.state).map(window => <QuotaWindow key={window.window} window={window} bare t={t} />)}</ul>}
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs md:justify-end">
+        <span className="w-28"><span className={cn('inline-flex rounded-full px-2 py-0.5 font-mono text-[11px]', account.state === 'exhausted' ? 'bg-kumo-danger-tint text-kumo-danger' : 'bg-kumo-warning-tint text-kumo-warning')} data-quota-chip={account.state}>{t(`setup.quota.state.${account.state}`)}</span></span>
+        <span className="w-32" />
+        <span className="w-20" />
+        <span className="w-16 text-right text-kumo-subtle">{account.observed_at !== null ? <Age at={account.observed_at} now={now} t={t} bare /> : null}</span>
+        <span className="w-12" />
+      </div>
+    </li>
+  );
+}
+
+function AttentionSection({ count, children, t }: { readonly count: number; readonly children: ReactNode; readonly t: OperatorTranslate }) {
+  return (
+    <section aria-labelledby="board-attention" className="flex flex-col gap-2.5">
+      <SectionTitle id="board-attention" count={count}>{t('board.attention.title')}</SectionTitle>
+      <ul className="overflow-hidden rounded-xl border border-kumo-line bg-kumo-base">{children}</ul>
+    </section>
+  );
+}
+
 function InflightRow({ board, item, place, onOpen, now, t }: {
   readonly board: BoardV1; readonly item: BoardItemV1; readonly place: BoardPlace;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
@@ -216,8 +252,8 @@ function InflightRow({ board, item, place, onOpen, now, t }: {
 }
 
 /** One banner per source the board could not read; the other data still show (ADR-0002). */
-function SourceBanners({ board, refreshFailed, unevaluated, t }: {
-  readonly board: BoardV1; readonly refreshFailed: BoardReason | null; readonly unevaluated: number; readonly t: OperatorTranslate;
+function SourceBanners({ board, refreshFailed, unevaluated, quota, t }: {
+  readonly board: BoardV1; readonly refreshFailed: BoardReason | null; readonly unevaluated: number; readonly quota: QuotaView; readonly t: OperatorTranslate;
 }) {
   const rows: { readonly key: string; readonly text: string }[] = [];
   if (refreshFailed !== null) rows.push({ key: 'refresh', text: t('board.banner.refreshFailed', { reason: t(`board.reason.${refreshFailed}` as OperatorMessageKey) }) });
@@ -226,8 +262,12 @@ function SourceBanners({ board, refreshFailed, unevaluated, t }: {
   if (board.plan.status === 'unavailable') rows.push({ key: 'plan', text: t('board.banner.plan', { reason: board.plan.reason }) });
   if (board.tooling.hc.status === 'unavailable') rows.push({ key: 'hc', text: t('board.banner.hc', { reason: board.tooling.hc.reason }) });
   if (unevaluated > 0) rows.push({ key: 'unevaluated', text: t('board.banner.unevaluated', { count: unevaluated }) });
-  if (rows.length === 0) return null;
-  return <>{rows.map(row => <Banner key={row.key} variant="alert" icon={<WarningIcon />} description={row.text} data-board-banner={row.key} />)}</>;
+  return (
+    <>
+      {rows.map(row => <Banner key={row.key} variant="alert" icon={<WarningIcon />} description={row.text} data-board-banner={row.key} />)}
+      {quota.kind === 'unavailable' && <QuotaUnavailable reason={quota.reason} t={t} />}
+    </>
+  );
 }
 
 function matches(board: BoardV1, item: BoardItemV1, query: string): boolean {
@@ -236,8 +276,8 @@ function matches(board: BoardV1, item: BoardItemV1, query: string): boolean {
   return [item.title, `#${item.number}`, pr?.head_ref ?? '', pr ? `#${pr.number}` : ''].some(text => text.toLowerCase().includes(query));
 }
 
-function ReadyBoard({ view, place, readExecution, readTaskMessages, generation, onOpen, now, t }: {
-  readonly view: BoardView & { readonly kind: 'ready' }; readonly place: BoardPlace;
+function ReadyBoard({ view, place, quota, readExecution, readTaskMessages, generation, onOpen, now, t }: {
+  readonly view: BoardView & { readonly kind: 'ready' }; readonly place: BoardPlace; readonly quota: QuotaView;
   readonly readExecution: ExecutionReader; readonly readTaskMessages: TaskMessagesReader; readonly generation: number;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
 }) {
@@ -255,12 +295,15 @@ function ReadyBoard({ view, place, readExecution, readTaskMessages, generation, 
     if (tab !== 'all' && tab !== 'attention' && (item === null || itemStage(board, item) !== tab)) return false;
     return item === null ? needle === '' || finding.message.toLowerCase().includes(needle) : matches(board, item, needle);
   });
+  // A quota account has no stage, as a finding with no item; only the two tabs without a stage list it.
+  const accounts = quotaAccounts(quota);
+  const quotaShown = tab === 'all' || tab === 'attention' ? accounts.filter(account => needle === '' || quotaTitle(account, t).toLowerCase().includes(needle)) : [];
   const inflight = tab === 'attention' ? [] : open.filter(item => !flagged.has(item.number) && (tab === 'all' || itemStage(board, item) === tab) && matches(board, item, needle));
   const shown = expanded ? inflight : inflight.slice(0, INFLIGHT_PREVIEW);
   const shipped = shippedToday(board, now);
   const tabs: readonly { readonly id: BoardTab; readonly count: number }[] = [
     { id: 'all', count: open.length },
-    { id: 'attention', count: attention.findings.length },
+    { id: 'attention', count: attention.findings.length + accounts.length },
     ...BOARD_STAGES.map(stage => ({ id: stage, count: open.filter(item => itemStage(board, item) === stage).length })),
   ];
   return (
@@ -289,14 +332,12 @@ function ReadyBoard({ view, place, readExecution, readTaskMessages, generation, 
             className="h-8 w-full rounded-md border border-kumo-line bg-kumo-base pr-2 pl-8 text-sm text-kumo-default placeholder:text-kumo-placeholder focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:outline-none" />
         </label>
       </div>
-      <SourceBanners board={board} refreshFailed={view.refreshFailed} unevaluated={attention.unevaluated.length} t={t} />
-      {findings.length > 0 && (
-        <section aria-labelledby="board-attention" className="flex flex-col gap-2.5">
-          <SectionTitle id="board-attention" count={findings.length}>{t('board.attention.title')}</SectionTitle>
-          <ul className="overflow-hidden rounded-xl border border-kumo-line bg-kumo-base">
-            {findings.map((finding, index) => <AttentionRow key={`${finding.rule}:${index}`} board={board} finding={finding} place={place} onOpen={onOpen} now={now} t={t} />)}
-          </ul>
-        </section>
+      <SourceBanners board={board} refreshFailed={view.refreshFailed} unevaluated={attention.unevaluated.length} quota={quota} t={t} />
+      {findings.length + quotaShown.length > 0 && (
+        <AttentionSection count={findings.length + quotaShown.length} t={t}>
+          {quotaShown.map(account => <QuotaAttentionRow key={account.account} account={account} now={now} t={t} />)}
+          {findings.map((finding, index) => <AttentionRow key={`${finding.rule}:${index}`} board={board} finding={finding} place={place} onOpen={onOpen} now={now} t={t} />)}
+        </AttentionSection>
       )}
       {inflight.length > 0 && (
         <section aria-labelledby="board-inflight" className="flex flex-col gap-2.5">
@@ -311,7 +352,7 @@ function ReadyBoard({ view, place, readExecution, readTaskMessages, generation, 
           </div>
         </section>
       )}
-      {findings.length === 0 && inflight.length === 0 && <BoardState title={t('board.empty.title')} description={t('board.empty.parentBody')} />}
+      {findings.length === 0 && quotaShown.length === 0 && inflight.length === 0 && <BoardState title={t('board.empty.title')} description={t('board.empty.parentBody')} />}
       {shipped.length > 0 && (
         <section className="flex flex-col gap-2">
           <button type="button" aria-expanded={shippedOpen} className="self-start cursor-pointer text-sm text-kumo-subtle hover:text-kumo-default" onClick={() => setShippedOpen(value => !value)}>
@@ -361,9 +402,9 @@ function BoardDrawer({ view, place, readExecution, readTaskMessages, generation,
 }
 
 /** The room of one repository: its seats, and the board and Task drawer of the active parent. */
-function OfficeRoomView({ repositoryId, list, view, place, parent, setup, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
+function OfficeRoomView({ repositoryId, list, view, place, parent, quota, setup, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
   readonly repositoryId: string; readonly list: BoardParentsV1; readonly view: (BoardView & { readonly kind: 'ready' }) | null;
-  readonly place: BoardPlace | null; readonly parent: number | null; readonly setup: OfficeSetupReads; readonly writeBossCommand: BossCommandWriter;
+  readonly place: BoardPlace | null; readonly parent: number | null; readonly quota: QuotaView; readonly setup: OfficeSetupReads; readonly writeBossCommand: BossCommandWriter;
   readonly readAdvisorTranscript: AdvisorTranscriptReader; readonly writeAdvisorMessage: AdvisorMessageWriter; readonly mode: ThemeMode;
   readonly readExecution: ExecutionReader; readonly readTaskMessages: TaskMessagesReader; readonly generation: number;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
@@ -372,12 +413,18 @@ function OfficeRoomView({ repositoryId, list, view, place, parent, setup, writeB
   const attention = view?.attention ?? null;
   const room = useMemo(() => officeRoom(list, board === null || attention === null ? null : { board, attention }), [list, board, attention]);
   // j/k in the drawer move through the desks, then the acceptance queue.
+  const accounts = quotaAccounts(quota);
   const order = board === null ? [] : [...new Set([...room.desks.map(desk => desk.drawerIssue), ...room.queue.map(entry => entry.issue)])]
     .flatMap(issue => board.items.find(item => item.number === issue) ?? []);
   return (
     <>
       <BoardOfficeRoom key={`${repositoryId}:${parent}`} repository={list.repository} repositoryId={repositoryId} parent={parent} defaultBranch={board?.default_branch ?? null} room={room} place={place} writeBoss={writeBossCommand} readAdvisor={readAdvisorTranscript} writeAdvisor={writeAdvisorMessage} mode={mode} onOpen={onOpen} now={now} t={t}
-        banners={view === null ? null : <SourceBanners board={view.board} refreshFailed={view.refreshFailed} unevaluated={view.attention.unevaluated.length} t={t} />}
+        banners={view === null ? null : (
+          <>
+            <SourceBanners board={view.board} refreshFailed={view.refreshFailed} unevaluated={view.attention.unevaluated.length} quota={quota} t={t} />
+            {accounts.length > 0 && <AttentionSection count={accounts.length} t={t}>{accounts.map(account => <QuotaAttentionRow key={account.account} account={account} now={now} t={t} />)}</AttentionSection>}
+          </>
+        )}
         setup={officeLit(room) ? null : <OfficeSetupChecklist rows={officeSetupRows(setup, { kind: 'room', repositoryId, parent, parents: { kind: 'ready', list }, plan: board?.plan ?? 'no_parent' }, t)} t={t} />} />
       {view !== null && place !== null && (
         <BoardDrawer view={view} place={place} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} order={order} onOpen={onOpen} now={now} t={t} />
@@ -391,8 +438,8 @@ function OfficeRoomView({ repositoryId, list, view, place, parent, setup, writeB
  * location with a parent shows the board that the App read; a location
  * without one reads the board of the active parent, if the repository has one.
  */
-function OfficeRepository({ repositoryId, place, placeView, setup, readBoard, readBoardParents, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
-  readonly repositoryId: string; readonly place: BoardPlace | null; readonly placeView: BoardView | null; readonly setup: OfficeSetupReads;
+function OfficeRepository({ repositoryId, place, placeView, quota, setup, readBoard, readBoardParents, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
+  readonly repositoryId: string; readonly place: BoardPlace | null; readonly placeView: BoardView | null; readonly quota: QuotaView; readonly setup: OfficeSetupReads;
   readonly readBoard: BoardReader; readonly readBoardParents: BoardParentsReader; readonly writeBossCommand: BossCommandWriter;
   readonly readAdvisorTranscript: AdvisorTranscriptReader; readonly writeAdvisorMessage: AdvisorMessageWriter; readonly mode: ThemeMode;
   readonly readExecution: ExecutionReader; readonly readTaskMessages: TaskMessagesReader; readonly generation: number;
@@ -418,10 +465,10 @@ function OfficeRepository({ repositoryId, place, placeView, setup, readBoard, re
       </div>
     );
   }
-  return <OfficeRoomView repositoryId={repositoryId} list={parents.list} view={view} place={place} parent={parent} setup={setup} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={mode} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} onOpen={onOpen} now={now} t={t} />;
+  return <OfficeRoomView repositoryId={repositoryId} list={parents.list} view={view} place={place} parent={parent} quota={quota} setup={setup} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={mode} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} onOpen={onOpen} now={now} t={t} />;
 }
 
-export function BoardPage({ layout, place, room, view, parents, repositories, chosenRepository, onRepository, setup, readBoard, readBoardParents, readBoardSummaries, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
+export function BoardPage({ layout, place, room, view, parents, repositories, chosenRepository, onRepository, setup, quota, readBoard, readBoardParents, readBoardSummaries, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
   /** The layout of the location; with a board it equals `place.layout`. */
   readonly layout: BoardLayout;
   readonly place: BoardPlace | null;
@@ -453,11 +500,13 @@ export function BoardPage({ layout, place, room, view, parents, repositories, ch
   readonly onRepository: (id: string) => void;
   /** The reads of the Office setup checklist that no Board read carries. */
   readonly setup: OfficeSetupReads;
+  /** The account-wide quota read: every board shows the same state. */
+  readonly quota: QuotaView;
   readonly onOpen: (next: WorkspaceLocation) => void;
   readonly now: number;
   readonly t: OperatorTranslate;
 }) {
-  const office = { setup, readBoard, readBoardParents, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t };
+  const office = { quota, setup, readBoard, readBoardParents, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t };
   if (place === null || view === null) {
     if (room !== null) return <OfficeRepository repositoryId={room} place={null} placeView={null} {...office} />;
     if (layout === 'office') return <BoardOfficeOverview repositories={repositories} readParents={readBoardParents} readSummaries={readBoardSummaries} setup={setup} generation={generation} mode={mode} onOpen={onOpen} t={t} />;
@@ -473,5 +522,5 @@ export function BoardPage({ layout, place, room, view, parents, repositories, ch
     );
   }
   if (place.layout === 'office') return <OfficeRepository repositoryId={place.repository_id} place={place} placeView={view} {...office} />;
-  return <ReadyBoard view={view} place={place} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} onOpen={onOpen} now={now} t={t} />;
+  return <ReadyBoard view={view} place={place} quota={quota} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} onOpen={onOpen} now={now} t={t} />;
 }
