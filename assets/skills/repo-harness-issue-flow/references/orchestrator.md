@@ -222,8 +222,11 @@ the account of its provider route: Claude Code and pi with an Anthropic
 login share the Claude account; Codex and pi with a ChatGPT login share
 the ChatGPT account.
 
-Before each dispatch wave, run `repo-harness quota --json`. It prints one
-state for each account (`claude`, `chatgpt`) and the windows that it read.
+Before each dispatch wave, run `repo-harness quota`. It prints the account
+states and one route line per task class. Launch each task on the seat its
+route line names with `repo-harness seats argv <seat>`; state the boundary
+in the task. A `none` route waits. The frontend class waits for Claude when
+its account is tight or exhausted; it has no non-Claude fallback.
 Apply the table below to each account. Put the reading in the
 `Dispatch reading:` line of each claim of the wave: for each account the
 state, used %, pace, reset time and reading time.

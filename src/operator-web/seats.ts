@@ -31,7 +31,8 @@ export const fetchSeatsSettings: SeatsSettingsReader = signal => fetchSettings(S
 export const postSeatsSettings: SeatsSettingsWriter = body => postSettings(SEATS_SETTINGS_PATH, decodeSeatsSettingsResult, body);
 
 export function seatsDraftOf(config: SeatsSettingsV1['config']): SeatsConfigV1 {
-  return { orchestrator: config.orchestrator, advisor: config.advisor, worker: config.worker };
+  const { revision: _revision, ...seats } = config;
+  return seats;
 }
 
 const sameSeat = (left: SeatConfigV1, right: SeatConfigV1): boolean =>

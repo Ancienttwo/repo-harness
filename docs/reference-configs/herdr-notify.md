@@ -52,6 +52,26 @@ A Codex worker seat in a linked contract worktree edits files and runs checks on
 
 `repo-harness seats argv <seat>` prints the argv of the seat from the `seats` section of `~/.repo-harness/config.json`, or from the seat defaults when the section is absent. The argv holds the model, the effort, the tool limits and the seat brief. Its stderr names the source and each limit. A limit marked `instructions_only` is written into the launch instructions only; the host does not enforce it. Without `--argv`, the pane opens a shell.
 
+Before each dispatch wave, run `repo-harness quota`. Launch each task with `repo-harness seats argv <seat>` on the seat that its route line names. State the task boundary in the packet. `--json` keeps the account report unchanged.
+
+| Seat | Default runtime, model and effort |
+|---|---|
+| `worker` | Codex, `gpt-6.1-terra`, high |
+| `worker-deep` | Codex, `gpt-6.1-sol`, high |
+| `worker-important` | Claude, `opus`, medium |
+| `worker-important-fast` | Claude, `sonnet`, medium |
+| `worker-light` | Pi, host model and effort |
+| `gatekeeper` | Codex, `gpt-6.1-terra`, high; read and shell only |
+| `reviewer` | Claude, `opus`, high; read and shell only |
+
+All worker seats use worker briefs, labels and pane names. `gatekeeper` and `reviewer` need `--pr <n>`; their pane names are `<prefix>-gk-<pr>` and `<prefix>-rv-<pr>`. They report a read-only verdict first and do not edit, commit, push or write to GitHub.
+
+`seats.routing` holds ordered lists for `important_deep`, `important_fast`, `simple_deep`, `simple_fast` and `frontend`. Lists are non-empty and distinct. The first four accept worker seats only. `frontend` accepts only `worker-important` and `worker-important-fast`, and both must run Claude when selected in that list. Defaults are `[worker-important, worker-deep]`, `[worker-important-fast, worker]`, `[worker-deep, worker-important]`, `[worker, worker-light]` and `[worker-important, worker-important-fast]`, in that order.
+
+Routing first selects normal or surplus accounts, or Pi without an account reading. A second pass selects unknown accounts or tight ChatGPT. Exhausted accounts are excluded. Tight or exhausted Claude stays reserved for the advisor and orchestrator; frontend waits for Claude. In those Claude states, the explorer line uses `routing.low_quota_explorer` (default `haiku` high); otherwise it says `default`.
+
+`routing.mode` defaults to `standard`. In `hyper`, `routing.hyper.claude` replaces the model and effort of Claude seats (default `opus` high), `hyper.advisor` selects the advisor on Claude (default `opus` max), and `hyper.codex` replaces Codex models and efforts (default `gpt-6-astra` high). Pi, tools, fleet and class lists stay as configured. Only an exhausted Claude advisor falls back to Codex with `hyper.codex`; the quota output names this fallback. An absent section uses defaults. Stored sections may omit new seat keys and the whole routing block; a POST writes the full section.
+
 With `--repository-id`, the argv labels its own terminal before the agent starts: it runs `repo-harness seats label`, which sets the seat labels on `HC_TERMINAL_ID`, and then starts the agent. The board finds seats only by these labels; a terminal without them leaves the execution axis `unavailable` (`no_seat_terminals`). When the label fails, the agent does not start and the terminal shows the error. Each start prints the new `terminal`. `<repository-id>` is the GitHub numeric repository id (`gh api repos/<owner>/<repo> --jq .id`). Leave out `--issue` and `--pr` for the orchestrator and the advisor.
 
 ### Pane and tab names
@@ -65,7 +85,7 @@ The pane name is `<prefix>-<role>[-<item>][-<qualifier>]`: at most 32 characters
 | Part | Values | Source |
 |---|---|---|
 | `prefix` | 2-6 characters, `[a-z][a-z0-9]{1,5}`, one per registered repository, unique on the machine | `panePrefix` of the repository entry in `~/.repo-harness/registered-repos.json` |
-| `role` | `orch`, `adv`, `w`; `rv` for a reviewer pane started by hand | the seat |
+| `role` | `orch`, `adv`, `w`, `gk`, `rv` | the seat |
 | `item` | worker: the issue number (`--issue`) or `rel<digits>` for release prep (`--release`); reviewer: the PR number. None for `orch` and `adv` | the dispatch |
 | `qualifier` | worker: a slice word when one issue has two live worker panes (`--qualifier`); reviewer: the review runtime id (`claude`, `codex`) | the dispatch |
 

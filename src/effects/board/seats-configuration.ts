@@ -3,6 +3,11 @@ import {
   SEAT_IDS,
   SEAT_RUNTIMES,
   SEAT_TOOLS,
+  DEFAULT_SEATS_CONFIG,
+  FRONTEND_SEAT_IDS,
+  ROUTING_CLASSES,
+  ROUTING_MODES,
+  WORKER_SEAT_IDS,
   CodexSeatNetworkError,
   checkCodexSeatNetwork,
   decodeSeatsConfig,
@@ -43,7 +48,7 @@ export class SeatsConfigurationError extends Error {
   }
 }
 
-// Every seat range is a projection of the fleet role profiles.
+// Fleet role profiles supply the allowed sub-agents.
 const READ_ONLY_SUB_AGENTS = MANAGED_AGENTS.filter(role => !WRITABLE_AGENTS.has(role));
 const without = (...excluded: SeatTool[]): readonly SeatTool[] => SEAT_TOOLS.filter(tool => !excluded.includes(tool));
 
@@ -56,12 +61,19 @@ const SEAT_RANGES: SeatsRangesV1['seats'] = {
   orchestrator: { fleet: READ_ONLY_SUB_AGENTS, tools: without('edit') },
   advisor: { fleet: READ_ONLY_SUB_AGENTS, tools: without('edit', 'gh') },
   worker: { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
+  'worker-deep': { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
+  'worker-important': { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
+  'worker-important-fast': { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
+  'worker-light': { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
+  gatekeeper: { fleet: [], tools: ['read', 'shell'] },
+  reviewer: { fleet: [], tools: ['read', 'shell'] },
 };
 
 /** Claude takes a fleet model family, Codex a fleet target model. Pi uses its own model and effort, and has no fleet roles. */
 const RUNTIME_RANGES: Readonly<Record<SeatRuntime, Omit<SeatRuntimeRangeV1, 'id' | 'enabled'>>> = {
   claude: { models: Object.keys(MODEL_FAMILY_LABELS), effort: true, fleet: true },
-  codex: { models: [...new Set(Object.values(AGENT_TARGET_OVERRIDES).map(target => target.model))], effort: true, fleet: true },
+  codex: { models: [...new Set([...Object.values(AGENT_TARGET_OVERRIDES).map(target => target.model),
+    ...SEAT_IDS.filter(id => DEFAULT_SEATS_CONFIG[id].runtime === 'codex').flatMap(id => DEFAULT_SEATS_CONFIG[id].model === null ? [] : [DEFAULT_SEATS_CONFIG[id].model!])])], effort: true, fleet: true },
   pi: { models: [], effort: false, fleet: false },
 };
 
@@ -71,6 +83,7 @@ export function seatsRanges(enabledRuntimes: readonly string[]): SeatsRangesV1 {
     efforts: EFFORT_LEVELS,
     roles: MANAGED_AGENTS.map(name => ({ name, writable: WRITABLE_AGENTS.has(name) })),
     seats: SEAT_RANGES,
+    routing: { classes: ROUTING_CLASSES, worker_seats: WORKER_SEAT_IDS, frontend_seats: FRONTEND_SEAT_IDS, modes: ROUTING_MODES },
   };
 }
 
@@ -125,9 +138,12 @@ function checkSeat(id: SeatId, seat: SeatConfigV1, enabledRuntimes: readonly str
 const FIELDS = ['runtime', 'model', 'effort', 'tools', 'fleet'] as const;
 
 function changedKeys(current: SeatsConfigV1, next: SeatsConfigV1): string[] {
-  return SEAT_IDS.flatMap(id => FIELDS
+  return [...SEAT_IDS.flatMap(id => FIELDS
     .filter(field => JSON.stringify(current[id][field]) !== JSON.stringify(next[id][field]))
-    .map(field => `seats.${id}.${field}`));
+    .map(field => `seats.${id}.${field}`)),
+  ...([...ROUTING_CLASSES, 'mode', 'low_quota_explorer', 'hyper'] as const)
+    .filter(field => JSON.stringify(current.routing[field]) !== JSON.stringify(next.routing[field]))
+    .map(field => `seats.routing.${field}`)];
 }
 
 /** Replaces the `seats` section. It writes only the configuration file; panes that run keep their launch arguments. */
@@ -140,7 +156,7 @@ export function applySeatsSettings(
       const enabled = enabledRuntimesOf(config);
       for (const id of SEAT_IDS) checkSeat(id, request.seats[id], enabled);
       const changed = changedKeys(sectionOf(config), request.seats);
-      return { ...(changed.length ? { config: { ...config, seats: request.seats } } : {}), value: changed };
+      return { config: { ...config, seats: request.seats }, value: changed };
     }, { expectedRevision: request.expected_revision });
     return { config_revision: result.revision, changed_keys: result.value };
   } catch (error) {

@@ -6,6 +6,13 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- `seats` now stores nine launch seats and five quota-aware task routes.
+  Human `repo-harness quota` output names each route, reserves tight Claude
+  capacity for the advisor and orchestrator, and keeps frontend work on Claude.
+  Hyper mode shares model overrides between route lines and launch argv;
+  only an exhausted Claude advisor falls back to Codex. Settings reads fill
+  absent new keys, and saves write the full section. Quota JSON is unchanged.
+  (#1925)
 - Install the matching Operator console when `operator` is selected. Checkout
   installs link the console and require `bun run build:operator-web`. (#1892)
 - The npm release gates check both the core and operator web packages at the

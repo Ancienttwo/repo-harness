@@ -1,47 +1,67 @@
-schemaVersion: "archcontext.node/v2"
-id: "capability.organization.board"
-kind: "capability"
-name: "Board"
-status: "active"
-layer: "core"
-summary: "Projects the board of one parent issue from GitHub plan data, linked pull requests and hc seat terminals, runs the attention rules on it, and owns the seat launch and quota reads that the board and the claims use."
-responsibilities:
-  - "Read one parent issue with its sub-issues, blocked-by edges, labels, milestone and protocol comments, and the pull requests whose body closes or refs a sub-issue."
-  - "Decode the plan block of the newest coordinator plan comment; refuse an unknown protocol or kind."
-  - "Read the seat labels of the hc terminals that carry the parent label; a terminal without a seat label stays unavailable."
-  - "Reuse the single-PR merge readiness projection for open pull requests; never decide merge readiness again."
-  - "Run the attention rules with constant thresholds; list a rule whose input is unavailable as unevaluated."
-  - "Own the change hazard list in assets/review-hazards.v1.json and its decoder; rule R3 reads only the path-visible entries."
-  - "Own the quota read model (#1716) with one strict decoder per source, for the Claude capture file contract and the codex app-server account/rateLimits/read result; a missing or malformed field makes its window unknown with a named reason, and each window is classified by the decision table, worst window first."
-  - "Own the quota readers of repo-harness quota. They read the Claude capture file under HOME and run one codex app-server initialize and account/rateLimits/read exchange that starts no model turn; a failed read is an unknown account with its reason."
-  - "Own the status line route that writes the Claude capture file; the route is core and has no plugin gate."
-  - "Own the seat launch of repo-harness seats argv and the public contracts of the seats and agents sections of the global configuration."
-  - "Own the only writer of the seats section; the operator console save calls it."
-source:
-  include:
-    - "src/core/board/**"
-    - "src/effects/board/**"
-    - "src/cli/commands/board.ts"
-    - "src/cli/commands/quota.ts"
-    - "src/cli/commands/seats.ts"
-  entrypoints:
-    - id: "entrypoint.board.command"
-      path: "src/cli/commands/board.ts"
-      symbols:
-        - name: "buildBoardCommand"
-          sinks:
-            - id: "sink.board.collect"
-              path: "src/effects/board/collect.ts"
-              symbol: "collectBoard"
-            - id: "sink.board.attention"
-              path: "src/core/board/attention.ts"
-              symbol: "evaluateBoardAttention"
-extensions:
-  harnessTier: "core"
-  contractFiles:
-    agents: "AGENTS.md"
-    claude: "CLAUDE.md"
-  lspProfile: "typescript-lsp"
-  verification:
-    - "bun run test:files tests/board.test.ts tests/cli/seats-argv.test.ts tests/cli/quota.test.ts --timeout 60000 --max-concurrency 1"
-    - "bun run check:type"
+{
+  "schemaVersion": "archcontext.node/v2",
+  "id": "capability.organization.board",
+  "kind": "capability",
+  "name": "Board",
+  "status": "active",
+  "layer": "core",
+  "summary": "Projects the board of one parent issue from GitHub plan data, linked pull requests and hc seat terminals, runs the attention rules on it, and owns the seat launch and quota reads that the board and the claims use.",
+  "responsibilities": [
+    "Read one parent issue with its sub-issues, blocked-by edges, labels, milestone and protocol comments, and the pull requests whose body closes or refs a sub-issue.",
+    "Decode the plan block of the newest coordinator plan comment; refuse an unknown protocol or kind.",
+    "Read the seat labels of the hc terminals that carry the parent label; a terminal without a seat label stays unavailable.",
+    "Reuse the single-PR merge readiness projection for open pull requests; never decide merge readiness again.",
+    "Run the attention rules with constant thresholds; list a rule whose input is unavailable as unevaluated.",
+    "Own the change hazard list in assets/review-hazards.v1.json and its decoder; rule R3 reads only the path-visible entries.",
+    "Own the quota read model (#1716) with one strict decoder per source, for the Claude capture file contract and the codex app-server account/rateLimits/read result; a missing or malformed field makes its window unknown with a named reason, and each window is classified by the decision table, worst window first.",
+    "Own the quota readers of repo-harness quota. They read the Claude capture file under HOME and run one codex app-server initialize and account/rateLimits/read exchange that starts no model turn; a failed read is an unknown account with its reason.",
+    "Own the status line route that writes the Claude capture file; the route is core and has no plugin gate.",
+    "Own the seat launch of repo-harness seats argv and the public contracts of the seats and agents sections of the global configuration.",
+    "Own the only writer of the seats section; the operator console save calls it.",
+    "Own quota-aware seat routing for five task classes, the Claude reserve and frontend wait rule, low-quota explorer settings, and the shared hyper model projection for human quota lines and seat launch argv. The exhausted Claude advisor is the only runtime fallback."
+  ],
+  "source": {
+    "include": [
+      "src/core/board/**",
+      "src/effects/board/**",
+      "src/cli/commands/board.ts",
+      "src/cli/commands/quota.ts",
+      "src/cli/commands/seats.ts"
+    ],
+    "entrypoints": [
+      {
+        "id": "entrypoint.board.command",
+        "path": "src/cli/commands/board.ts",
+        "symbols": [
+          {
+            "name": "buildBoardCommand",
+            "sinks": [
+              {
+                "id": "sink.board.collect",
+                "path": "src/effects/board/collect.ts",
+                "symbol": "collectBoard"
+              },
+              {
+                "id": "sink.board.attention",
+                "path": "src/core/board/attention.ts",
+                "symbol": "evaluateBoardAttention"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "extensions": {
+    "harnessTier": "core",
+    "contractFiles": {
+      "agents": "AGENTS.md",
+      "claude": "CLAUDE.md"
+    },
+    "lspProfile": "typescript-lsp",
+    "verification": [
+      "bun run test:files tests/board.test.ts tests/cli/seats-argv.test.ts tests/cli/quota.test.ts --timeout 60000 --max-concurrency 1",
+      "bun run check:type"
+    ]
+  }
+}

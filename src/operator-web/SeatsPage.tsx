@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Banner, Button, Empty, Loader, Switch, cn } from '@cloudflare/kumo';
 import { buildSeatLaunch, type SeatLimitLevel } from '../core/board/seat-launch';
-import { SEAT_IDS, SEAT_TOOLS, type SeatId, type SeatRuntime, type SeatsSettingsV1 } from '../core/board/seats-settings';
+import { SEAT_IDS, SEAT_TOOLS, type SeatRuntime, type SeatsSettingsV1 } from '../core/board/seats-settings';
 import type { SetupSnapshotV2 } from '../core/setup/types';
 import type { OperatorTranslate } from './i18n';
 import { seatChanges, setSeatEffort, setSeatModel, setSeatRole, setSeatRuntime, setSeatTool, type SeatsSettingsForm } from './seats';
@@ -18,19 +18,20 @@ const LEVEL_TONE: Readonly<Record<SeatLimitLevel, string>> = {
 
 // The plain command prints the argv alone, so `--argv "$(...)"` takes it as is. `seats argv` also names the pane and
 // the tab (#1544), so no command types a name.
-export const ARGV: Readonly<Record<SeatId, string>> = {
+type FormSeatId = 'orchestrator' | 'advisor' | 'worker';
+export const ARGV: Readonly<Record<FormSeatId, string>> = {
   orchestrator: 'repo-harness seats argv orchestrator --repository-id <repository-id>',
   advisor: 'repo-harness seats argv advisor --repository-id <repository-id>',
   worker: 'repo-harness seats argv worker --repository-id <repository-id> --parent <n> --issue <n>',
 };
-const LAUNCH: Readonly<Record<SeatId, string>> = {
+const LAUNCH: Readonly<Record<FormSeatId, string>> = {
   orchestrator: `herdr-app do tab.new --name "$(${ARGV.orchestrator} --json | jq -r .tab)" --space <id> --folder <repo> --argv "$(${ARGV.orchestrator})"`,
   advisor: `herdr-app do pane.split --direction right --pane <orchestrator-pane> --argv "$(${ARGV.advisor})"`,
   worker: `herdr-app do tab.new --name "$(${ARGV.worker} --json | jq -r .tab)" --space <id> --folder <worktree> --argv "$(${ARGV.worker})" --task <packet>`,
 };
 
 /** The pane layout rule: Tab 1 holds the orchestrator, the advisor and one worker; later tabs hold workers only. */
-const LAYOUT: readonly (readonly SeatId[])[] = [['orchestrator', 'advisor', 'worker'], ['worker', 'worker', 'worker']];
+const LAYOUT: readonly (readonly FormSeatId[])[] = [['orchestrator', 'advisor', 'worker'], ['worker', 'worker', 'worker']];
 
 function Badge({ className, children }: { readonly className: string; readonly children: ReactNode }) {
   return <span className={cn('inline-flex h-5 shrink-0 items-center rounded-full px-2 text-xs font-medium whitespace-nowrap', className)}>{children}</span>;
@@ -103,7 +104,7 @@ function InPlaceEnable({ runtime, agents, t }: { readonly runtime: SeatRuntime; 
 }
 
 function SeatCard({ seat, form, agents, settings, setup, locked, t }: {
-  readonly seat: SeatId; readonly form: SeatsSettingsForm; readonly agents: AgentsSettingsForm; readonly settings: SeatsSettingsV1; readonly setup: SetupSnapshotV2 | null;
+  readonly seat: FormSeatId; readonly form: SeatsSettingsForm; readonly agents: AgentsSettingsForm; readonly settings: SeatsSettingsV1; readonly setup: SetupSnapshotV2 | null;
   readonly locked: boolean; readonly t: OperatorTranslate;
 }) {
   const draft = form.draft![seat];
@@ -239,7 +240,7 @@ export function SeatsSection({ form, agents, setup, t }: {
 function SeatsBody({ form, agents, setup, t }: {
   readonly form: SeatsSettingsForm; readonly agents: AgentsSettingsForm; readonly setup: SetupSnapshotV2 | null; readonly t: OperatorTranslate;
 }) {
-  const [seat, setSeat] = useState<SeatId>('advisor');
+  const [seat, setSeat] = useState<FormSeatId>('advisor');
   const { view, draft, base } = form;
   if (view.kind === 'loading') return <Empty size="sm" icon={<Loader />} title={t('settings.pending.title')} />;
   if (view.kind === 'unavailable') {

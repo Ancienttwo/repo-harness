@@ -12,6 +12,8 @@ import {
   formatQuotaReport,
   type QuotaReport,
 } from '../../src/core/board/quota';
+import { formatSeatRoutes, type SeatAccountStates } from '../../src/core/board/seat-routing';
+import { DEFAULT_SEATS_CONFIG } from '../../src/core/board/seats-settings';
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -29,6 +31,51 @@ function claude(windows: Record<string, unknown>, observedAt = new Date(NOW).toI
   return classifyQuotaReading(decodeClaudeQuotaCapture({ observed_at: observedAt, rate_limits: windows }), NOW);
 }
 const week = (used: number, resetsInHours: number) => ({ used_percentage: used, resets_at: (NOW + resetsInHours * HOUR) / 1000 });
+
+describe('seat quota routing', () => {
+  test.each([
+    ['normal', 'normal', ['worker-important', 'worker-deep'], 'worker-important'],
+    ['unknown', 'surplus', ['worker-important', 'worker-deep'], 'worker-deep'],
+    ['tight', 'normal', ['worker-important', 'worker-deep'], 'worker-deep'],
+    ['exhausted', 'normal', ['worker-important', 'worker-deep'], 'worker-deep'],
+    ['tight', 'tight', ['worker-important', 'worker-deep'], 'worker-deep'],
+    ['unknown', 'exhausted', ['worker-important', 'worker-deep'], 'worker-important'],
+    ['exhausted', 'exhausted', ['worker-important', 'worker-deep'], 'none'],
+    ['tight', 'tight', ['worker', 'worker-light'], 'worker-light'],
+  ] as const)('routes claude %s and chatgpt %s through %j to %s', (claude, chatgpt, candidates, selected) => {
+    const seats = { ...DEFAULT_SEATS_CONFIG, routing: { ...DEFAULT_SEATS_CONFIG.routing, important_deep: candidates } };
+    const line = formatSeatRoutes(seats, { claude, chatgpt }).split('\n')[0]!;
+    expect(line).toStartWith(`route important_deep: ${selected} (`);
+    if (selected === 'none') expect(line).toContain('claude exhausted, reserved for advisor and orchestrator; chatgpt exhausted');
+    if (selected === 'worker-deep' && (claude === 'tight' || claude === 'exhausted')) expect(line).toContain(`skipped worker-important: claude ${claude}, reserved for advisor and orchestrator`);
+    if (selected === 'worker-deep' && chatgpt === 'tight') expect(line).toContain('chatgpt tight');
+    if (selected === 'worker-important' && claude === 'unknown') expect(line).toContain('claude unknown');
+  });
+
+  test.each(['tight', 'exhausted', 'normal', 'unknown'] as const)('explorer selection with claude %s', claude => {
+    const lines = formatSeatRoutes(DEFAULT_SEATS_CONFIG, { claude, chatgpt: 'normal' }).split('\n');
+    expect(lines).toContain(claude === 'tight' || claude === 'exhausted' ? `explorer: haiku high (claude ${claude})` : 'explorer: default');
+  });
+
+  test('frontend waits for tight Claude without a Codex or Pi fallback', () => {
+    expect(formatSeatRoutes(DEFAULT_SEATS_CONFIG, { claude: 'tight', chatgpt: 'surplus' }).split('\n'))
+      .toContain('route frontend: none (claude tight, reserved for advisor and orchestrator; frontend waits for claude)');
+  });
+
+  test('hyper overrides route models and exposes only the exhausted advisor fallback', () => {
+    const seats = { ...DEFAULT_SEATS_CONFIG, routing: { ...DEFAULT_SEATS_CONFIG.routing, mode: 'hyper' as const } };
+    const states: SeatAccountStates = { claude: 'normal', chatgpt: 'normal' };
+    const normal = formatSeatRoutes(seats, states);
+    expect(normal).toContain('route important_deep: worker-important (claude opus high)');
+    expect(normal).toContain('route simple_fast: worker (codex gpt-6-astra high)');
+    expect(normal).toContain('gatekeeper: gatekeeper (codex gpt-6-astra high; chatgpt normal)');
+    expect(normal).toContain('reviewer: reviewer (claude opus high; claude normal)');
+    expect(normal).not.toContain('advisor: fallback');
+    const exhausted = formatSeatRoutes(seats, { ...states, claude: 'exhausted' });
+    expect(exhausted).toContain('advisor: fallback codex gpt-6-astra high (claude exhausted)');
+    expect(exhausted).toContain('route frontend: none (claude exhausted, reserved for advisor and orchestrator; frontend waits for claude)');
+  });
+});
 
 describe('quota classification', () => {
   test('the report decoder preserves a built report and rejects malformed wire shapes', () => {
@@ -243,7 +290,9 @@ describe('repo-harness quota', () => {
     ]);
     const text = quota([], f.env);
     expect(text.status).toBe(0);
-    expect(text.stdout.trim().split('\n').map(line => line.split(' | ')[0])).toEqual(['claude: exhausted', 'chatgpt: normal']);
+    const lines = text.stdout.trim().split('\n');
+    expect(lines.slice(0, 2).map(line => line.split(' | ')[0])).toEqual(['claude: exhausted', 'chatgpt: normal']);
+    expect(lines.slice(2).map(line => line.split(':')[0])).toEqual(['route important_deep', 'route important_fast', 'route simple_deep', 'route simple_fast', 'route frontend', 'explorer', 'gatekeeper', 'reviewer']);
   });
 
   test.each([

@@ -1,6 +1,6 @@
 import { AGENT_RUNTIME_CAPABILITIES, decodeAgentsSettings, type AgentsSettingsV1 } from '../../core/board/agents-settings';
 import { isReviewRuntimeId } from '../../core/review/review-runtimes';
-import { DEFAULT_SEATS_CONFIG, SEAT_IDS, decodeSeatsSettings, type SeatsConfigV1, type SeatsSettingsRequestV1, type SeatsSettingsV1 } from '../../core/board/seats-settings';
+import { DEFAULT_SEATS_CONFIG, FRONTEND_SEAT_IDS, ROUTING_CLASSES, ROUTING_MODES, SEAT_IDS, WORKER_SEAT_IDS, decodeSeatsSettings, type SeatsConfigV1, type SeatsSettingsRequestV1, type SeatsSettingsV1 } from '../../core/board/seats-settings';
 import type { AgentsSettingsRead, AgentsSettingsWrite, AgentsSettingsPost, SettingsRead, SettingsWrite } from '../settings';
 
 const REVISION = `sha256:${'4'.repeat(64)}`;
@@ -52,7 +52,7 @@ function seatsRanges(enabled: readonly string[]) {
   return {
     runtimes: [
       { id: 'claude', enabled: enabled.includes('claude'), models: ['opus', 'sonnet', 'haiku', 'fable'], effort: true, fleet: true },
-      { id: 'codex', enabled: enabled.includes('codex'), models: ['gpt-6-luna', 'gpt-6-astra', 'gpt-6.1-sol'], effort: true, fleet: true },
+      { id: 'codex', enabled: enabled.includes('codex'), models: ['gpt-6-luna', 'gpt-6-astra', 'gpt-6.1-sol', 'gpt-6.1-terra'], effort: true, fleet: true },
       { id: 'pi', enabled: enabled.includes('pi'), models: [], effort: false, fleet: false },
     ],
     efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
@@ -61,7 +61,14 @@ function seatsRanges(enabled: readonly string[]) {
       orchestrator: { fleet: SUB_AGENTS.filter(role => !role.writable).map(role => role.name), tools: all.filter(tool => tool !== 'edit') },
       advisor: { fleet: SUB_AGENTS.filter(role => !role.writable).map(role => role.name), tools: all.filter(tool => tool !== 'edit' && tool !== 'gh') },
       worker: { fleet: SUB_AGENTS.map(role => role.name), tools: all },
+      'worker-deep': { fleet: SUB_AGENTS.map(role => role.name), tools: all },
+      'worker-important': { fleet: SUB_AGENTS.map(role => role.name), tools: all },
+      'worker-important-fast': { fleet: SUB_AGENTS.map(role => role.name), tools: all },
+      'worker-light': { fleet: SUB_AGENTS.map(role => role.name), tools: all },
+      gatekeeper: { fleet: [], tools: ['read', 'shell'] },
+      reviewer: { fleet: [], tools: ['read', 'shell'] },
     },
+    routing: { classes: ROUTING_CLASSES, worker_seats: WORKER_SEAT_IDS, frontend_seats: FRONTEND_SEAT_IDS, modes: ROUTING_MODES },
   };
 }
 
@@ -84,7 +91,8 @@ export function settingsStores(now: number, fixture: 'busy' | 'empty' | 'degrade
     })
     : agentsSettingsFixture(now, fixture);
   let seats: SeatsConfigV1 = fixture === 'busy'
-    ? { ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, runtime: 'claude', model: 'sonnet' } }
+    ? { ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, runtime: 'claude', model: 'sonnet' },
+      'worker-light': { ...DEFAULT_SEATS_CONFIG['worker-light'], runtime: 'claude' } }
     : DEFAULT_SEATS_CONFIG;
   let serial = 0;
   const nextRevision = () => { serial += 1; return `sha256:${serial.toString(16).padStart(64, '0')}`; };

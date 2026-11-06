@@ -2,7 +2,7 @@
 // the seat brief. Each limit names what the host does with it, so the output
 // never claims a limit that the host cannot apply.
 import { PANE_PREFIX } from '../terminal/pane-prefix';
-import type { SeatConfigV1, SeatId, SeatTool } from './seats-settings';
+import { isWorkerSeat, type SeatConfigV1, type SeatId, type SeatTool } from './seats-settings';
 
 /** `seats`: the stored section. `defaults`: no section, so `DEFAULT_SEATS_CONFIG`. */
 export type SeatLaunchSource = 'seats' | 'defaults';
@@ -103,6 +103,7 @@ function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly stri
     return [
       `You are the orchestrator seat. You hold the coordinator and integrator seats of repo-harness-issue-flow. You dispatch, accept and merge. You do not edit product code, tests or configuration. ${review} You push only the branch of a Codex worker seat handoff: commit its worktree diff with its message and explicit paths only, push the branch, open the PR, and push each fix round. You do not tag, release, delete, or change credentials or permissions.`,
       `${dispatch} When \`publication.acceptance_merge\` is \`on\`, merge only with \`repo-harness publication merge\`. When it is \`off\`, hand each ready PR to the owner.`,
+      'Before each dispatch wave, run `repo-harness quota`. Launch each task on the seat its route line names with `repo-harness seats argv <seat>`; state the boundary in the task.',
       ...queue,
     ];
   }
@@ -119,6 +120,10 @@ function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly stri
       'You may read the processes of worker seats (hc ls, hc get and hc read on seat-labeled terminals) for evidence. You do not send messages or keys to a worker. You report only to the orchestrator.',
       evidence,
     ];
+  }
+  if (seat === 'gatekeeper' || seat === 'reviewer') {
+    return [`You are the ${seat} seat. Perform a read-only review of the assigned PR. Do not edit files, commit, push, or write to GitHub. Report the verdict first, then the findings and evidence.`,
+      fleet.length === 0 ? 'You have no sub-agents.' : `You may call these sub-agents: ${roleList(fleet)}. Call no other agent type.`];
   }
   return [
     'You are a worker seat. You deliver one issue or PR and report to the orchestrator.',
@@ -225,7 +230,7 @@ export function buildSeatLaunch(seat: SeatId, config: SeatConfigV1, source: Seat
   return { protocol: 1, kind: 'seat_launch', seat, runtime: config.runtime, source, ...launch };
 }
 
-const PANE_ROLE = { orchestrator: 'orch', advisor: 'adv', worker: 'w', reviewer: 'rv' } as const;
+const PANE_ROLE = { orchestrator: 'orch', advisor: 'adv', worker: 'w', 'worker-deep': 'w', 'worker-important': 'w', 'worker-important-fast': 'w', 'worker-light': 'w', gatekeeper: 'gk', reviewer: 'rv' } as const;
 const PANE_NAME_MAX = 32;
 const POSITIVE = /^[1-9][0-9]*$/u;
 const WORD = /^[a-z][a-z0-9]*$/u;
@@ -234,11 +239,10 @@ export class SeatPaneNameError extends Error {
   readonly code = 'pane_name_invalid';
 }
 
-/** `reviewer` is a pane started by hand; it has no seat config. */
 export interface SeatPaneNameInput {
   /** The `panePrefix` of the repository's registry entry (#1544). */
   readonly prefix: string;
-  readonly seat: SeatId | 'reviewer';
+  readonly seat: SeatId;
   readonly issue?: string;
   readonly pr?: string;
   /** The digits of a release item, for example `0252`. */
@@ -257,15 +261,15 @@ export function seatPaneName(input: SeatPaneNameInput): string {
   const role: string | undefined = PANE_ROLE[seat];
   if (role === undefined) fail(`unknown seat ${JSON.stringify(seat)}`);
   let item: string | undefined;
-  if (seat === 'worker') {
+  if (isWorkerSeat(seat)) {
     if ((issue === undefined) === (release === undefined)) fail('a worker needs exactly one of an issue and a release item');
     if (pr !== undefined) fail('a worker takes no PR');
     if (issue !== undefined && !POSITIVE.test(issue)) fail('the issue must be a positive decimal integer');
     if (release !== undefined && !/^[0-9]+$/u.test(release)) fail('the release item must be digits');
     item = issue ?? `rel${release}`;
-  } else if (seat === 'reviewer') {
-    if (pr === undefined || !POSITIVE.test(pr)) fail('a reviewer needs a PR, a positive decimal integer');
-    if (issue !== undefined || release !== undefined) fail('a reviewer takes only a PR');
+  } else if (seat === 'reviewer' || seat === 'gatekeeper') {
+    if (pr === undefined || !POSITIVE.test(pr)) fail(`a ${seat} needs a PR, a positive decimal integer`);
+    if (issue !== undefined || release !== undefined) fail(`a ${seat} takes only a PR`);
     item = pr;
   } else if (issue !== undefined || pr !== undefined || release !== undefined || qualifier !== undefined) {
     fail(`the ${seat} pane takes no item and no qualifier`);
@@ -280,9 +284,9 @@ export function seatPaneName(input: SeatPaneNameInput): string {
  * The Herdr.app tab of a new seat pane, before the fullness suffix: the orchestrator tab, the worker tab of its parent
  * issue (`other` without one), or the review tab. A full tab gets the next number, for example `#1000 2`.
  */
-export function seatTabName(seat: SeatId | 'reviewer', parent?: string): string {
+export function seatTabName(seat: SeatId, parent?: string): string {
   if (parent !== undefined && !POSITIVE.test(parent)) throw new SeatPaneNameError('Tab name: the parent must be a positive decimal integer.');
-  if (seat === 'reviewer') return 'review';
-  if (seat === 'worker') return parent === undefined ? 'other' : `#${parent}`;
+  if (seat === 'reviewer' || seat === 'gatekeeper') return 'review';
+  if (isWorkerSeat(seat)) return parent === undefined ? 'other' : `#${parent}`;
   return 'orch';
 }
