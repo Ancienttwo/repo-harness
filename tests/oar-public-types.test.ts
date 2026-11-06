@@ -16,7 +16,7 @@ async function consume(options: SessionOptions): Promise<void> {
   });
   try {
     const run = await promptAndWait(session, 'compile-only', { timeoutMs: 1000 });
-    if (run.kind !== 'rejected') void run.outcome.kind;
+    if (run.kind !== 'rejected' && run.kind !== 'handled') void run.outcome.kind;
   } finally {
     stop();
     await session.dispose();
@@ -143,6 +143,12 @@ try{
  assert.equal(rejected.kind,'rejected');assert.equal(read().control,'rejected');assert.equal(read().rejection,rejected.code);
  assert.equal(read().outcome,null);assert.equal(read().failure,null);assertFold(failed);
 }finally{await failed.dispose()}
+const timed=await scriptedRuntime({turn:async({signal})=>{await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}))}}).session({kind:'available',via:'bundled'},{cwd:dir});
+try{
+ const run=await promptWithOarObservation(timed,'codex',request,host,'timeout',{timeoutMs:200},save);
+ assert.equal(run.kind,'interrupted');assert.equal(run.by,'timeout');assert.equal(run.outcome.kind,'aborted');
+ assert.equal(read().outcome,'aborted');
+}finally{await timed.dispose()}
 // A continuous responding phase must advance time and sequence. A quiet phase
 // must stay quiet after the trailing flush. Use actual SDK records as barriers.
 let send,finish,streamStarted;
