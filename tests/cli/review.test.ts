@@ -1,4 +1,5 @@
 import { afterEach, expect, spyOn, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,11 +12,71 @@ import * as accountHome from '../../src/effects/runtime/os-account-home';
 import { hashVerificationPlan } from '../../src/core/evidence/verification-plan';
 import { controlApprovalFixture } from '../helpers/control-approval-fixture';
 import { initGitRepo, tmpWorkspace } from '../helpers/repo-fixture';
+import { recordPluginSelection } from '../helpers/install-ownership';
+import { PLUGIN_IDS, type PluginId, type PluginSelection } from '../../src/core/skill-surface/plugin-manifest';
 import { HEAD as PUBLISH_HEAD, PR as PUBLISH_PR, installFakeGh, passingScenario } from '../helpers/publication-merge-fake-gh';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 const hash = (s: string) => `sha256:${createHash('sha256').update(s).digest('hex')}`;
+
+function peerGateFixture() {
+  const root = tmpWorkspace('peer-gate'), home = join(root, 'home'); roots.push(root);
+  const env = { ...process.env, HOME: home, REPO_HARNESS_HOME: join(home, '.repo-harness'), BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' };
+  const probe = join(root, 'probe.ts');
+  writeFileSync(probe, String.raw`process.on('exit', () => process.stderr.write('peer-modules:' + JSON.stringify(Object.keys(require.cache).filter(path => /[\\/]src[\\/](?:effects[\\/](?:review-runner[\\/]|terminal[\\/](?:task-session|task-runtime-observation|native-task-session|herdr-notify-install|notify-relay)\.ts)|cli[\\/]commands[\\/](?:herdr|events)-actions\.ts)|[\\/]@botiverse[\\/]oar[\\/]|[\\/]assets[\\/]herdr[\\/]/.test(path))) + '\n'));`);
+  const select = (plugins: readonly PluginId[], selection: PluginSelection = plugins) => recordPluginSelection(env, plugins, selection);
+  const run = (args: string[]) => {
+    const result = spawnSync(process.execPath, ['--preload', probe, join(import.meta.dir, '../../src/cli/index.ts'), ...args],
+      { cwd: root, env, encoding: 'utf8', timeout: 20_000 });
+    const loaded = JSON.parse(/peer-modules:(\[[^\n]*\])/.exec(result.stderr)?.[1] ?? 'null');
+    return { ...result, loaded };
+  };
+  const selectors = ['--repository-id', 'R', '--issue-id', 'I', '--campaign-id', 'C', '--grant-sha256', hash('grant'), '--policy-sha256', hash('policy'), '--actor', 'U'];
+  return { root, env, select, run, selectors };
+}
+
+test('peer-runtime guards refuse before loading actions and preserve the recorded selection repair', () => {
+  const f = peerGateFixture();
+  const round = ['--reviewer-repo', f.root, '--claim-ref', 'claim', '--claim-revision', hash('claim'), '--verification', 'missing.json'];
+  const commands = [
+    ...['round', 'status', 'close', 'cancel'].map(op => ['review', op, ...f.selectors, ...(op === 'round' ? round : [])]),
+    ['herdr', 'notify', 'install'], ['herdr', 'notify', 'start'], ['herdr', 'notify', 'uninstall'],
+    ['herdr', 'notify', 'relay', '--home', f.root], ['events', 'install'],
+    ['operator', 'cleanup-investigation-job', 'session', 'job', '1'],
+  ];
+  for (const selection of [['operator'], 'all'] as const) {
+    f.select(['operator'], selection);
+    for (const args of commands) {
+      const result = f.run(args);
+      expect(result.status, `${args.join(' ')}: ${result.stderr}`).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toContain('install_plugin_unavailable: ');
+      expect(result.stderr).toContain(selection === 'all' ? 'run: repo-harness update\n' : 'run: repo-harness install --plugins operator,peer-runtime\n');
+      expect(result.loaded).toEqual([]);
+    }
+  }
+});
+
+test('core commands and help load no peer-runtime modules; a selected action loads its body', () => {
+  const f = peerGateFixture(); f.select([]);
+  for (const args of [
+    ['status', '--json'], ['doctor', '--json'], ['seats', 'argv', 'worker', '--json'],
+    ['review', 'admit', '--request', 'missing.json'], ['review', 'revoke', '--request', 'missing.json'],
+    ['review', 'publish', '--pr', '1', '--receipt', 'missing.json'],
+    ['review', 'round', '--help'], ['herdr', 'notify', 'install', '--help'], ['events', 'install', '--help'],
+  ]) {
+    const result = f.run(args);
+    expect(result.error).toBeUndefined();
+    expect(result.stderr).not.toContain('install_plugin_unavailable: ');
+    expect(result.loaded, args.join(' ')).toEqual([]);
+  }
+  f.select(PLUGIN_IDS, 'all');
+  const selected = f.run(['herdr', 'notify', 'start']);
+  expect(selected.status).toBe(1); // A private HOME has no notify config and starts no terminal.
+  expect(selected.stderr).not.toContain('install_plugin_unavailable: ');
+  expect(selected.loaded).toContainEqual(expect.stringContaining('/commands/herdr-actions.ts'));
+});
 
 function fixture() {
   const root = tmpWorkspace('review-cli-repo'), home = tmpWorkspace('review-cli-home'); roots.push(root, home); initGitRepo(root);
@@ -45,7 +106,7 @@ async function runReview(home: string, args: readonly string[]) {
   const err = spyOn(console, 'error').mockImplementation((value: unknown) => { stderr += `${String(value)}\n`; });
   try {
     process.exitCode = 0;
-    await buildReviewCommand(taskReviewRunner).parseAsync([...args], { from: 'user' });
+    await buildReviewCommand(() => taskReviewRunner).parseAsync([...args], { from: 'user' });
     return { status: Number(process.exitCode ?? 0), stdout, stderr };
   } finally {
     homeSpy.mockRestore(); out.mockRestore(); err.mockRestore(); process.exitCode = exitCode;
@@ -299,7 +360,7 @@ test('head movement between the review and the record stops before the record', 
 
 
 test('review round registers one admission repository id and parses the optional PR selection', () => {
-  const command = buildReviewCommand(taskReviewRunner);
+  const command = buildReviewCommand(() => taskReviewRunner);
   const round = command.commands.find((child) => child.name() === 'round');
   if (!round) throw new Error('review round is missing');
   const longs = round.options.map((option) => option.long).filter((value): value is string => value !== undefined);

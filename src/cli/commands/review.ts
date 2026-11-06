@@ -32,8 +32,8 @@ export function pullRequestSelectionFromOptions(opts: Record<string, string | un
   return { repository: opts.repository!, provider_repository_id: opts.repositoryId!, pr_number: Number(opts.pr), expected_base_sha: opts.base! };
 }
 
-/** The composition root passes the one reviewer runner implementation. */
-export function buildReviewCommand<Session, Endpoint>(runner: ReviewEffects<Session, Endpoint>): Command {
+/** The composition root loads the reviewer runner only after its selection guard. */
+export function buildReviewCommand<Session, Endpoint>(loadRunner: () => Promise<ReviewEffects<Session, Endpoint>> | ReviewEffects<Session, Endpoint>): Command {
   const command = new Command('review').description('Generic domain acceptance review by a persistent task session that runs the deep-reasoner role');
   command.command('admit').description('Apply an already-authorized upstream Bot request (trusted integration only)')
     .requiredOption('--request <file>', 'JSON {admission, approval, expectedRevision}; approval requires upstream authorization_ref and bound scope')
@@ -104,6 +104,7 @@ export function buildReviewCommand<Session, Endpoint>(runner: ReviewEffects<Sess
       .option('--base <sha>', 'Explicit expected PR base for the coverage read');
     child.action(async opts => {
       try {
+        const runner = await loadRunner();
         if (operation === 'round') {
           if (!['herdr-app', 'app-terminal'].includes(opts.launch)) throw new Error('review_launch_unsupported');
           if ((opts.launch === 'herdr-app') !== (opts.herdrEndpoint !== undefined)) throw new Error('review_launch_addressing_invalid; --herdr-endpoint is required for herdr-app and refused for app-terminal');

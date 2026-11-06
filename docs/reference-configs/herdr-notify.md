@@ -1,5 +1,16 @@
 # Herdr dispatch and notify
 
+`repo-harness herdr`, `events`, and `review round|status|close|cancel` need
+`peer-runtime` in the recorded plugin set. Their help stays open. An absent
+plugin exits 1 with empty stdout and `install_plugin_unavailable` before any
+prompt, credential read or process start. Run the printed repair: for `all`,
+`repo-harness update`; for an explicit list, add `peer-runtime` with
+`repo-harness install --plugins <your plugins>,peer-runtime`. No migration runs.
+The plugin is available on every target; its portal skill installs on Claude
+only. `hc`, the Herdr skill, fleet files, worktree closeout and doctor stay in
+core. The hidden Operator cleanup-investigation job also needs `peer-runtime`;
+the server records `host_failed` when the guard refuses that child.
+
 ## Herdr Dispatch
 
 - Claude, Codex and Pi peers run in herdr-core terminals that Herdr.app shows as panes. Start them with `herdr-app do` and talk to them with `hc` ([Runtime commands](#runtime-commands)). Receipt-bearing acceptance uses `repo-harness review round`; its OAR host runs the reviewer. Select Pi with `--harness pi`. Never call a vendor CLI directly for acceptance.

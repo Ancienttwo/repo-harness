@@ -6,8 +6,8 @@ import type { OperatorCaptureRawOptions, OperatorServeRawOptions } from './opera
 
 const actions = () => import('./operator-actions');
 
-/** `reviewHost` is the task-agent-host review runner that the CLI root injects; the cleanup investigation job runs codex through it. */
-export function buildOperatorCommand(reviewHost: CleanupReviewHost): Command {
+/** Only the guarded cleanup investigation child loads the injected task-agent-host runner. */
+export function buildOperatorCommand(loadReviewHost: () => Promise<CleanupReviewHost> | CleanupReviewHost): Command {
   const operator = new Command('operator').description('Serve the local read-only Human Control Board');
   operator
     .command('serve')
@@ -32,7 +32,7 @@ export function buildOperatorCommand(reviewHost: CleanupReviewHost): Command {
     .argument('<session-id>')
     .argument('<job-id>')
     .argument('<deadline-ms>')
-    .action(async (sessionId: string, jobId: string, deadlineMs: string) => (await actions()).cleanupInvestigationJob(sessionId, jobId, deadlineMs, reviewHost));
+    .action(async (sessionId: string, jobId: string, deadlineMs: string) => (await actions()).cleanupInvestigationJob(sessionId, jobId, deadlineMs, await loadReviewHost()));
   operator.addCommand(buildDocSessionsCommand());
   return operator;
 }

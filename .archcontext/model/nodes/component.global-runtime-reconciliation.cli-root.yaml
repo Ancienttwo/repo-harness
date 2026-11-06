@@ -10,6 +10,7 @@ responsibilities:
   - Register every top-level command module in one commander program.
   - Parse the mcp commands, load the mcp serve and doctor actions by dynamic import and set repository access grants for mcp access set.
   - Parse the operator, worktrees and catch-up commands and load their actions by dynamic import after the plugin guard.
+  - Guard review round, status, close and cancel, herdr, events and the Operator cleanup investigation child with peer-runtime before loading their runtime bodies.
   - Run the plugin selection projection and runtime refresh inside one host transaction with configuration restores.
 extensions:
   harnessTier: "composition"
@@ -18,6 +19,8 @@ source:
     - "src/cli/index.ts"
     - "src/cli/commands/mcp.ts"
     - "src/cli/commands/operator.ts"
+    - "src/cli/commands/herdr.ts"
+    - "src/cli/commands/events.ts"
     - "src/cli/commands/doc-sessions.ts"
     - "src/cli/commands/worktrees.ts"
     - "src/cli/commands/catch-up.ts"

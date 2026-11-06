@@ -57,11 +57,13 @@ const CLI = join(ROOT, 'src/cli/index.ts');
 /** What `all` resolves to on a host without `pi` on PATH. */
 const ALL_PLUGINS = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const satisfies readonly PluginId[];
 const ALL_WITH_PI = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory'] as const satisfies readonly PluginId[];
-/** The plugins that own a host file: a command plugin has no probe row and no owned surface. */
-const SURFACE_PLUGINS = ALL_PLUGINS.filter(id => !isCommandPlugin(id));
+/** The plugins with owner probe rows; command plugins have none. */
+const PROBE_PLUGINS = ALL_PLUGINS.filter(id => !isCommandPlugin(id));
+/** The plugins that own host files, including peer-runtime's Claude portal skill. */
+const HOST_FILE_PLUGINS = ALL_PLUGINS.filter(id => id !== 'mcp' && id !== 'operator');
 const CORE_FACADES = ['repo-harness-check', 'repo-harness-issue-flow', 'repo-harness-ship', 'repo-harness-test'];
 const WAZA_SKILLS = ['think', 'hunt', 'check', 'health', 'mermaid'];
-/** The host root and skill that each plugin probe requires (the herdr portal ships for Claude only). */
+/** The host roots and skills each plugin owns (the herdr portal ships for Claude only). */
 const PLUGIN_SKILLS: Readonly<Partial<Record<PluginId, readonly (readonly ['codex' | 'claude', string])[]>>> = {
   architecture: [['codex', 'repo-harness-architecture'], ['codex', 'repo-harness-archimap']],
   'cross-review': [['codex', 'repo-harness-cross-review']],
@@ -756,7 +758,7 @@ describe('install selection', () => {
     const core = applyInstallSelection([], [], env).state;
     const forged: InstallState = { ...core, ...versions(ALL_PLUGINS), selection: 'all' };
     const status = installStateStatus(forged, env);
-    for (const id of SURFACE_PLUGINS) expect(status.probes[id]?.status, id).toBe('missing');
+    for (const id of PROBE_PLUGINS) expect(status.probes[id]?.status, id).toBe('missing');
     expect(status.probes.core?.status).toBe('present');
     expect(status.drift.status).toBe('drift');
   }));
@@ -790,7 +792,8 @@ describe('install selection', () => {
   test('a target without a host for a plugin skips it under all, fails an explicit list and probes per host root', () => withHome((base) => {
     const env = withPi(base);
     const rows: readonly { readonly id: PluginId; readonly target: 'claude' | 'codex'; readonly reason: string | null }[] = [
-      { id: 'peer-runtime', target: 'codex', reason: '--target codex has no host for its skills' },
+      { id: 'peer-runtime', target: 'codex', reason: null },
+      { id: 'peer-runtime', target: 'claude', reason: null },
       { id: 'pi', target: 'claude', reason: '--target claude does not include the Pi host' },
       { id: 'pi', target: 'codex', reason: '--target codex does not include the Pi host' },
       { id: 'product', target: 'claude', reason: null },
@@ -810,7 +813,9 @@ describe('install selection', () => {
       expect(recorded.kept.map(entry => entry.id), label).toEqual(reason === null ? [] : [id]);
       expect(installStateCode(() => resolveRecordedSelection({ selection: [id], plugins: versions([id]).plugins }, target, env)), label)
         .toBe(reason === null ? undefined : 'install_plugin_unavailable');
-      if (reason === null) {
+      if (reason === null && isCommandPlugin(id)) {
+        expect(installStateStatus({ ...core, ...versions([id]), selection: [id] }, env).probes[id], label).toBeUndefined();
+      } else if (reason === null) {
         // The probe of a skill plugin needs only the root of the target's host.
         writePath(join(env.HOME!, `.${target}`, 'skills', PLUGIN_SKILLS[id]![0]![1], 'SKILL.md'), '# managed\n');
         expect(installStateStatus({ ...core, ...versions([id]), selection: [id] }, env).probes[id]?.status, label).toBe('present');
@@ -1119,7 +1124,7 @@ describe('install selection', () => {
       const all = applyInstallSelection('all', ALL_PLUGINS, env, new Date('2026-01-01T00:00:00Z'), first);
       commitInstallHostTransaction(first);
       const owners = new Set(all.state.ownership_manifest.map(({ owner }) => owner));
-      for (const owner of ['core', ...SURFACE_PLUGINS]) expect(owners.has(owner as PluginId), owner).toBe(true);
+      for (const owner of ['core', ...HOST_FILE_PLUGINS]) expect(owners.has(owner as PluginId), owner).toBe(true);
       const sections = all.state.ownership_manifest.filter(({ managed_marker }) => managed_marker === 'codegraph-config-projection').map(({ path }) => path);
       expect(sections.sort(), name).toEqual(userSections ? [] : [claudeJson, claudeSettings, codexConfig].sort());
 
@@ -1234,12 +1239,12 @@ describe('install selection', () => {
       },
       { name: 'explicit list, pi appears: the list does not grow', selection: ALL_PLUGINS, recorded: ALL_PLUGINS, pi: [false, true], ran: ALL_PLUGINS, committed: null },
       {
-        name: 'explicit list without both command plugins: one repair keeps the list and adds both', selection: ['architecture', 'product'], recorded: ['architecture', 'product'], pi: [false, false], ran: ['architecture', 'product'],
-        lines: ['[plugins] not selected mcp, operator: an explicit list does not grow; to add them, run: repo-harness install --plugins architecture,mcp,operator,product'], committed: null,
+        name: 'explicit list without command plugins: one repair keeps the list and adds them', selection: ['architecture', 'product'], recorded: ['architecture', 'product'], pi: [false, false], ran: ['architecture', 'product'],
+        lines: ['[plugins] not selected mcp, operator, peer-runtime: an explicit list does not grow; to add them, run: repo-harness install --plugins architecture,mcp,operator,peer-runtime,product'], committed: null,
       },
       {
-        name: 'explicit list without operator: the repair adds operator', selection: ['mcp'], recorded: ['mcp'], pi: [false, false], ran: ['mcp'],
-        lines: ['[plugins] not selected operator: an explicit list does not grow; to add them, run: repo-harness install --plugins mcp,operator'], committed: null,
+        name: 'explicit list without operator and peer-runtime: the repair adds both', selection: ['mcp'], recorded: ['mcp'], pi: [false, false], ran: ['mcp'],
+        lines: ['[plugins] not selected operator, peer-runtime: an explicit list does not grow; to add them, run: repo-harness install --plugins mcp,operator,peer-runtime'], committed: null,
       },
       {
         name: 'all, recorded pi disappears: kept with its line', selection: 'all', recorded: ALL_WITH_PI, pi: [true, false], ran: ALL_PLUGINS,

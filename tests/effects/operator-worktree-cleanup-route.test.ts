@@ -66,7 +66,7 @@ function fixture() {
   const repoId = repoHarnessRepoIdFor(repo);
   writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [
     { id: repoId, path: repo, accessMode: 'read_only', source: 'adopt', registeredAt: '2026-11-04T00:00:00.000Z', lastSeenAt: '2026-11-04T00:00:00.000Z' }] }));
-  const env = { ...pluginSelectionEnv(['operator']), REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: parent };
+  const env = { ...pluginSelectionEnv(['operator', 'peer-runtime']), REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: parent };
   const id = worktreeId(resolveGitCommonDirectory(repo), realpathSync(tree));
 
   const stateFile = join(parent, 'gh-state.json'), gh = join(bin, 'gh');

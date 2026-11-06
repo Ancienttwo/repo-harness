@@ -4,6 +4,27 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Breaking
+
+- `review round|status|close|cancel`, `herdr`, `events` and the hidden Operator
+  cleanup-investigation job now need `peer-runtime`. A refusal exits 1 with
+  empty stdout, `install_plugin_unavailable` and a repair command before loading
+  plugin code. Help stays open. Core review admission and publication, worktree
+  closeout, doctor, hooks, `hc`, the Herdr skill and fleet stay in core. (#1889)
+
+### Upgrade
+
+- For selection `all`, run `repo-harness update`. For an explicit list, run
+  `repo-harness install --plugins <your plugins>,peer-runtime`. No migration
+  changes an explicit list. `peer-runtime` is available on every target and
+  has no owner probe row; its portal skill installs only on Claude. (#1889)
+
+### Rollback
+
+- To restore the previous selection, use `repo-harness install --rollback`.
+  This keeps the new guards. To restore commands without the gate, reinstall
+  the previous package version and run `repo-harness update`. (#1889)
+
 ### Changed
 
 - Operator `/healthz` now returns protocol 2 and the core package version.

@@ -249,6 +249,14 @@ repo-harness review status --repository-id <repository-id> --issue-id <issue-id>
 repo-harness review close --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id>
 ```
 
+`review round`, `status`, `close` and `cancel` need the `peer-runtime` plugin,
+including `--launch app-terminal`. Without it, they exit 1 before loading the
+runner and print `install_plugin_unavailable` with the repair command.
+For selection `all`, run `repo-harness update`. For an explicit list, add
+`peer-runtime` with `repo-harness install --plugins <your plugins>,peer-runtime`.
+No migration changes your selection. `review admit`, `revoke` and `publish`
+stay in core.
+
 In the Claude desktop app without Herdr, add `--launch app-terminal` and omit `--herdr-endpoint`. The first call prints the fixed host command. Claude runs it once in an app Terminal tab, then repeats the round. OAR, Seatbelt and the Receipt stay the same.
 
 A dedicated linked checkout hosts one fleet `deep-reasoner` task-agent in the addressed Herdr session for at most three repair rounds. Default selection uses the owner’s opposite harness; `--harness` explicitly selects Claude or Codex. Only a missing executable before start allows a reported fallback. File Results pass domain binding/finding checks and the generic-review Receipt writer/verifier before close. Terminal history is observation. Claude uses an exact result-file allowlist plus mutation fingerprints; production OS write isolation and complete large-packet ingestion remain unverified.

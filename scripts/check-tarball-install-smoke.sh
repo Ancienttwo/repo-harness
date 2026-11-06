@@ -681,4 +681,66 @@ if (exit !== 0 || !(selected > 0)) fail(`operator serve with all returned ${exit
 console.log(`[tarball-smoke] OK: operator serve loads ${selected} Operator modules with all and serves; with selection [] it refuses, and status, seats, quota and hook routes load 0; the hook bundle of ${bundleModules.length} modules holds 0.`);
 JS_EOF
 
+# peer-runtime owns the action bodies, review-runner and the terminal paths
+# in task-agent-host's model. Core command shells and runtime closeout stay out.
+PEER_OWNED='[\\/]src[\\/](?:effects[\\/](?:review-runner[\\/]|terminal[\\/](?:task-session|task-runtime-observation|native-task-session|herdr-notify-install|notify-relay)\.ts)|cli[\\/]commands[\\/](?:herdr|events)-actions\.ts)|[\\/]@botiverse[\\/]oar[\\/]|[\\/]assets[\\/]herdr[\\/]'
+PEER_LOAD_PROBE="$TMP_DIR/peer-load-probe.ts"
+cat >"$PEER_LOAD_PROBE" <<JS_EOF
+process.on("exit", () => process.stderr.write(\`peer-modules:\${Object.keys(require.cache).filter((path) => /$PEER_OWNED/.test(path)).length}\n\`));
+JS_EOF
+bun - "$INSTALLED_ROOT" "$SMOKE_HOME" "$TARGET_REPO" "$PEER_LOAD_PROBE" "$PEER_OWNED" <<'JS_EOF'
+const [, , installedRoot, home, repo, probe, owned] = process.argv;
+const { readFileSync, writeFileSync } = await import('node:fs');
+const { join } = await import('node:path');
+const fail = (message) => { console.error(`[tarball-smoke] ERROR: ${message}`); process.exit(1); };
+const env = { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0', HOOK_HOST: 'claude' };
+const run = (entry, args, stdin = 'ignore', host = 'claude') => {
+  const result = Bun.spawnSync([process.execPath, '--preload', probe, `${installedRoot}/${entry}`, ...args], { cwd: repo, stdin, env: { ...env, HOOK_HOST: host } });
+  const stderr = result.stderr.toString();
+  return { status: result.exitCode, stdout: result.stdout.toString(), stderr, loaded: Number(/peer-modules:(\d+)/.exec(stderr)?.[1]) };
+};
+const cli = (...args) => run('src/cli/index.ts', args);
+// The preceding Operator proof left an all selection. No notify config exists.
+const selected = cli('herdr', 'notify', 'start');
+if (!(selected.loaded > 0) || selected.stderr.includes('install_plugin_unavailable: ')) fail(`selected notify did not load its body: ${selected.stderr}`);
+const statePath = join(home, '.repo-harness', 'install-state.json');
+const state = JSON.parse(readFileSync(statePath, 'utf8'));
+writeFileSync(statePath, JSON.stringify({ ...state, plugins: [], selection: [] }));
+const selectors = ['--repository-id', 'R', '--issue-id', 'I', '--campaign-id', 'C', '--grant-sha256', `sha256:${'1'.repeat(64)}`, '--policy-sha256', `sha256:${'2'.repeat(64)}`, '--actor', 'U'];
+for (const args of [['review', 'status', ...selectors], ['herdr', 'notify', 'start'], ['events', 'install']]) {
+  const result = cli(...args);
+  if (result.status !== 1 || result.stdout !== '' || result.loaded !== 0
+    || !result.stderr.includes('install_plugin_unavailable: ') || !result.stderr.includes('run: repo-harness install --plugins peer-runtime\n')) {
+    fail(`${args.join(' ')} did not refuse before loading: ${JSON.stringify(result)}`);
+  }
+}
+const core = [
+  ['status', cli('status', '--json')], ['doctor', cli('doctor', '--json')],
+  ['seats', cli('seats', 'argv', 'worker', '--json')],
+  ['worktree runtime cleanup', run('scripts/contract-worktree-runtime.ts', ['cleanup', '--repo', repo, '--worktree', repo])],
+];
+const { ROUTES } = await import(`${installedRoot}/src/cli/hook/route-registry.ts`);
+for (const route of ROUTES) {
+  const payload = { session_id: 'tarball-peer-gate', hook_event_name: route.event, cwd: repo, stop_hook_active: false,
+    tool_name: route.routeId === 'bash' ? 'Bash' : route.routeId === 'subagent' ? 'Agent' : 'Write',
+    tool_input: route.routeId === 'bash' ? { command: 'pwd' }
+      : route.routeId === 'edit' ? { file_path: `${repo}/notes.txt`, content: 'x' }
+      : route.routeId === 'subagent' ? { prompt: 'Inspect the repository without changes.' } : {} };
+  core.push([`hook ${route.event} ${route.routeId}`, run('src/cli/hook-entry.ts', [route.event, '--route', route.routeId], new TextEncoder().encode(JSON.stringify(payload)), route.hosts?.[0] ?? 'claude')]);
+}
+for (const [name, result] of core) {
+  // Doctor may report missing host tools; its module-load boundary still holds.
+  if (result.loaded !== 0 || (name !== 'doctor' && result.status !== 0) || (name === 'doctor' && ![0, 1].includes(result.status))) fail(`${name} loaded peer-runtime or failed: ${JSON.stringify(result)}`);
+}
+const bundleModules = readFileSync(`${installedRoot}/dist/hook-entry.js`, 'utf8').split('\n').filter(line => line.startsWith('// '));
+if (!bundleModules.some(line => line.startsWith('// src/'))) fail('hook bundle has no source module comments');
+const bundled = bundleModules.filter(line => new RegExp(owned).test(`/${line.slice(3)}`));
+if (bundled.length) fail(`hook bundle contains peer-runtime: ${bundled.join(', ')}`);
+writeFileSync(statePath, JSON.stringify({ ...state, plugins: [], selection: 'all' }));
+const repair = cli('herdr', 'notify', 'start');
+if (repair.status !== 1 || repair.stdout !== '' || repair.loaded !== 0 || !repair.stderr.includes('run: repo-harness update\n')) fail(`all repair changed the selection: ${repair.stderr}`);
+writeFileSync(statePath, JSON.stringify(state));
+console.log(`[tarball-smoke] OK: peer-runtime loads ${selected.loaded} modules when selected; refusals, core commands, hook routes and hook bundle load 0.`);
+JS_EOF
+
 echo "[tarball-smoke] OK: ${PACKAGE_NAME}-${PACKAGE_VERSION}.tgz installs, serves the packaged Operator, and packaged CLI bins start."
