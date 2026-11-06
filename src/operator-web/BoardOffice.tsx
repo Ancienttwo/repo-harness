@@ -377,7 +377,10 @@ function doorState(room: OfficeRoom, t: OperatorTranslate): string | null {
 }
 
 function leadPanel(seat: 'orchestrator' | 'advisor', lead: OfficeLead, room: OfficeRoom, planText: string, command: string, frame: number, t: OperatorTranslate): PanelView {
-  const seatRows = [[t('board.office.panel.seat'), lead.address], [t('board.office.panel.turn'), lead.status ?? t('board.office.panel.none')]] as const;
+  const seatRows = [
+    [t('board.office.panel.seat'), lead.address], [t('board.office.panel.turn'), lead.status ?? t('board.office.panel.none')],
+    ...(lead.status_msg === null ? [] : [[t('board.office.panel.message'), lead.status_msg] as const]),
+  ] as const;
   return {
     eyebrow: seat === 'orchestrator' ? 'ORCHESTRATOR' : 'ADVISOR', title: t(`board.office.lead.${seat}`), sub: agentName(lead.agent, t),
     rows: seat === 'orchestrator'
@@ -395,7 +398,8 @@ function panelView(key: string, room: OfficeRoom, parent: number | null, default
     const entry = room.queue[queueIndex]!;
     return {
       eyebrow: 'WORKER · QUEUE', title: `PR #${entry.pr} ${entry.title}`, sub: agentName(entry.agent, t),
-      rows: [[t('board.office.panel.state'), t('board.office.panel.queue.state')], ['Issue', entry.issue === null ? none : `#${entry.issue}`], [t('board.office.panel.acceptance'), 'not_accepted'], [t('board.office.panel.seat'), t('board.office.panel.queue.seat')]],
+      rows: [[t('board.office.panel.state'), t('board.office.panel.queue.state')], ['Issue', entry.issue === null ? none : `#${entry.issue}`], [t('board.office.panel.acceptance'), 'not_accepted'], [t('board.office.panel.seat'), t('board.office.panel.queue.seat')],
+        ...entry.messages.map(({ address, text }) => [`${t('board.office.panel.message')} ${address}`, text] as const)],
       command: `gh pr view ${entry.pr}`, portrait: agentPortrait(sceneAgent(entry.agent), queueOutfit(queueIndex), frame), issue: entry.issue,
     };
   }

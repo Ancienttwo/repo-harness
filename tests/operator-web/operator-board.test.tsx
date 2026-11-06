@@ -1406,6 +1406,41 @@ describe('board office (#1755)', () => {
     }
   });
 
+  test('every panel of a seat shows its status message: a queued desk, a queue row and the two stage seats', async () => {
+    const queued = (worker: string | null, reviewer: string | null, orchestrator: string | null, advisor: string | null) => boardWith({
+      prs: { 1491: { acceptance: { status: 'not_accepted' } } },
+      terminals: [
+        { ...seat('t1', 'worker', 1475, 1491, 'idle'), status_msg: worker }, { ...seat('t2', 'reviewer', null, 1491, 'working'), status_msg: reviewer },
+        { ...seat('t3', 'orchestrator', null, null, 'blocked'), status_msg: orchestrator }, { ...seat('t4', 'advisor', null, null, 'idle'), status_msg: advisor },
+      ],
+    });
+    const full = queued('migration limit to confirm', 'round 1 runs', 'waits for the owner', 'plan sent');
+    const silent = queued(null, null, null, null);
+    const onlyReviewer = queued(null, 'round 1 runs', null, null);
+    // The room draws three queue entries; only a longer queue has the zone that lists every pull request.
+    const crowded = { ...full, pull_requests: [...full.pull_requests, ...[9001, 9002, 9003].map(number => ({ ...full.pull_requests.find(pr => pr.number === 1491)!, number }))] };
+    const desk = ['[data-queue-pr="1491"]'], queueRow = ['[data-office-hit="queue"]', '[data-panel-pick="queue:1491"]'];
+    for (const [board, clicks, panel, shown, hidden] of [
+      [full, desk, 'WORKER · QUEUE', ['Message t1migration limit to confirm', 'Message t2round 1 runs'], []],
+      [crowded, queueRow, 'WORKER · QUEUE', ['Message t1migration limit to confirm', 'Message t2round 1 runs'], []],
+      [onlyReviewer, desk, 'WORKER · QUEUE', ['Message t2round 1 runs'], ['Message t1']],
+      [silent, desk, 'WORKER · QUEUE', [], ['Message']],
+      [full, ['[data-office-hit="orchestrator"]'], 'ORCHESTRATOR', ['Messagewaits for the owner'], []],
+      [full, ['[data-office-hit="advisor"]'], 'ADVISOR', ['Messageplan sent'], []],
+      [silent, ['[data-office-hit="orchestrator"]'], 'ORCHESTRATOR', [], ['Message']],
+    ] as const) {
+      officeAt(`/${HARNESS_ID}/1474`);
+      await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board }), readBoardParents: async () => ({ state: 'ok', list: seatsOf(board) }) })} />);
+      await settle();
+      for (const click of clicks) await act(async () => rows(click)[0]!.click());
+      const view = document.querySelector('[data-office-panel]')!;
+      expect(view.getAttribute('data-office-panel')).toBe(panel);
+      for (const text of shown) expect(view.textContent).toContain(text);
+      for (const text of hidden) expect(view.textContent).not.toContain(text);
+      await act(async () => root?.unmount());
+    }
+  });
+
   test('a repository room with no selected parent seats every live seat: the active parent gives the plan, an idle repository keeps its furnished desks', async () => {
     const seated: BoardParentsV1 = {
       ...PARENTS, seats: [
