@@ -6,6 +6,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { installEvents } from '../src/cli/commands/events';
+import * as appHookPublication from '../src/effects/publication/app-hook-config';
 
 const ROOT = join(import.meta.dir, '..');
 const { default: worker } = await import(join(ROOT, 'assets/herdr/github-events/worker.mjs'));
@@ -242,6 +243,7 @@ describe('repo-harness events install', () => {
 
   test('an approved run deploys the shipped Worker with new secrets, points the App at it, and a repeat run replaces the config', async () => {
     const fixture = installFixture();
+    const publication = spyOn(appHookPublication, 'publishAppHookConfig');
     const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
     const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
@@ -263,6 +265,8 @@ describe('repo-harness events install', () => {
       }
       expect(deploys[0].secrets.GITHUB_WEBHOOK_SECRET).not.toBe(deploys[1].secrets.GITHUB_WEBHOOK_SECRET);
       const hooks = fixture.api.filter(({ method }) => method === 'PATCH');
+      expect(publication.mock.calls.map(([config]) => config)).toEqual(hooks.map(({ body }) => body));
+      expect(publication).toHaveBeenCalledTimes(2);
       expect(hooks.map(({ path, body }) => [path, body])).toEqual(deploys.map(({ secrets }) => ['/app/hook/config',
         { url: 'https://repo-harness-github-events.fixture.workers.dev', content_type: 'json', secret: secrets.GITHUB_WEBHOOK_SECRET, insecure_ssl: '0' }]));
       const [header, claims, signature] = hooks[0].authorization.replace('Bearer ', '').split('.');
@@ -271,7 +275,7 @@ describe('repo-harness events install', () => {
       expect(issuedAt(hooks[0].authorization).iss).toBe(123);
       expect(issuedAt(hooks[0].authorization).iat).toBeGreaterThan(issuedAt(fixture.api[0].authorization).exp);
       expect(stdout.mock.calls.map(([text]) => String(text)).join('')).toContain('Installations: Ancienttwo.');
-    } finally { stdout.mockRestore(); stderr.mockRestore(); fixture.cleanup(); }
+    } finally { publication.mockRestore(); stdout.mockRestore(); stderr.mockRestore(); fixture.cleanup(); }
   });
 
   test('a GitHub App update that fails after the deploy says that the Worker secret changed and install must run again', async () => {
@@ -283,5 +287,30 @@ describe('repo-harness events install', () => {
       expect(fixture.wranglerCalls().map(({ args }) => args[0])).toContain('deploy');
       expect(existsSync(fixture.wranglerCalls()[0].cwd)).toBe(false);
     } finally { stderr.mockRestore(); fixture.cleanup(); }
+  });
+});
+
+describe('App hook config publication', () => {
+  const config: appHookPublication.AppHookConfig = { url: 'https://events.example/', content_type: 'json', secret: SECRET, insecure_ssl: '0' };
+
+  test.each([
+    { url: 'invalid' }, { url: 'http://events.example/' }, { url: 'https://user:pass@events.example/' },
+    { content_type: 'form' }, { secret: '' }, { secret: 'secret\n' }, { insecure_ssl: '1' },
+  ])('rejects an invalid config before token creation or a write: %j', async (invalid) => {
+    const calls: string[] = [];
+    await expect(appHookPublication.publishAppHookConfig({ ...config, ...invalid } as appHookPublication.AppHookConfig, {
+      appToken: () => { calls.push('token'); return 'token'; },
+      fetch: (async (_url: string) => { calls.push('fetch'); return Response.json({}); }) as typeof fetch,
+    })).rejects.toThrow('The GitHub App hook');
+    expect(calls).toEqual([]);
+  });
+
+  test('a transport failure reports the endpoint without leaking credentials or retrying', async () => {
+    let calls = 0;
+    await expect(appHookPublication.publishAppHookConfig(config, {
+      appToken: () => 'private-token',
+      fetch: (async (_url: string): Promise<Response> => { calls++; throw new Error('private-token'); }) as typeof fetch,
+    })).rejects.toThrow('GitHub API PATCH /app/hook/config is unreachable.');
+    expect(calls).toBe(1);
   });
 });
