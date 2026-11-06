@@ -48,14 +48,32 @@ console.log(entry.filename);
 JS_EOF
 )"
 TARBALL_PATH="$TMP_DIR/$TARBALL"
+CONSOLE_PACK_JSON="$TMP_DIR/console-pack.json"
+(cd "$ROOT/packages/operator-web" && npm pack --json --pack-destination "$TMP_DIR") >"$CONSOLE_PACK_JSON"
+CONSOLE_TARBALL="$(bun - "$CONSOLE_PACK_JSON" <<'JS_EOF'
+const [, , path] = process.argv;
+const [entry] = await Bun.file(path).json();
+console.log(entry.filename);
+JS_EOF
+)"
 APP_DIR="$TMP_DIR/app"
 TARGET_REPO="$TMP_DIR/target-repo"
 
-bun - "$PACK_JSON" <<'JS_EOF'
-const [, , path] = process.argv;
+bun - "$PACK_JSON" "$CONSOLE_PACK_JSON" <<'JS_EOF'
+const [, , path, consolePath] = process.argv;
 const pack = await Bun.file(path).json();
 const entry = Array.isArray(pack) ? pack[0] : pack;
 const files = new Set((entry.files ?? []).map((file) => file.path));
+const [consoleEntry] = await Bun.file(consolePath).json();
+const consoleFiles = consoleEntry.files.map(file => file.path);
+if (consoleEntry.version !== entry.version
+  || !['package.json', 'README.md', 'LICENSE', 'dist/index.html'].every(path => consoleFiles.includes(path))
+  || consoleFiles.some(path => !['package.json', 'README.md', 'LICENSE'].includes(path) && !path.startsWith('dist/'))
+  || [...files].some(path => path.startsWith('dist/operator-ui/') || path.startsWith('src/operator-web/'))) {
+  console.error('[tarball-smoke] ERROR: core and console package boundaries or versions differ');
+  process.exit(1);
+}
+console.log(`[tarball-smoke] core unpacked size: ${entry.unpackedSize} bytes; console: ${consoleEntry.unpackedSize} bytes`);
 const required = [
   "src/pi/extension.ts",
   "src/pi/hook-bridge.ts",
@@ -76,7 +94,7 @@ const required = [
   "src/core/evidence/verification-plan.ts",
   "src/effects/evidence/verification-execution.ts",
   "assets/operator/windows-job-controller.ps1",
-  "dist/operator-ui/index.html",
+  "src/effects/review-runner/task-oar-host.ts",
 ];
 const retired = [
   "scripts/axr6-stop-host-cycle.ts",
@@ -100,10 +118,10 @@ const retired = [
 const missing = required.filter((file) => !files.has(file));
 const leaked = retired.filter((file) => files.has(file));
 const aiHooks = [...files].filter((file) => file.startsWith(".ai/hooks/"));
-const operatorAssets = [...files].filter((file) => file.startsWith("dist/operator-ui/assets/"));
+const operatorAssets = consoleFiles.filter((file) => file.startsWith("dist/assets/"));
 // The Kumo/Tailwind UI ships one hashed entry script and one hashed stylesheet; fonts are system stacks.
 const missingOperatorAssetKinds = [".js", ".css"].filter(
-  (extension) => !operatorAssets.some((file) => /^dist\/operator-ui\/assets\/index-[A-Za-z0-9_-]+\.(?:js|css)$/u.test(file) && file.endsWith(extension)),
+  (extension) => !operatorAssets.some((file) => /^dist\/assets\/index-[A-Za-z0-9_-]+\.(?:js|css)$/u.test(file) && file.endsWith(extension)),
 );
 if (missing.length > 0 || leaked.length > 0 || aiHooks.length > 0 || missingOperatorAssetKinds.length > 0) {
   if (missing.length > 0) {
@@ -127,7 +145,7 @@ git -C "$TARGET_REPO" init -q -b main
 
 cd "$APP_DIR"
 bun init -y >/dev/null
-bun add "$TARBALL_PATH" >/dev/null
+bun add "$TARBALL_PATH" "$TMP_DIR/$CONSOLE_TARBALL" >/dev/null
 
 CLI="$APP_DIR/node_modules/.bin/repo-harness"
 HOOK="$APP_DIR/node_modules/.bin/repo-harness-hook"

@@ -43,6 +43,8 @@ export const HOST_PROGRAM_PLUGINS = ["pi"] as const satisfies readonly PluginId[
  */
 export const COMMAND_PLUGINS = ["mcp", "operator", "peer-runtime"] as const satisfies readonly PluginId[];
 
+export const OPERATOR_WEB_PACKAGE_NAME = "repo-harness-operator-web";
+
 export function isCommandPlugin(id: PluginId): id is (typeof COMMAND_PLUGINS)[number] {
   return (COMMAND_PLUGINS as readonly PluginId[]).includes(id);
 }

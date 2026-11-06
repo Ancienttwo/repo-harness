@@ -1,4 +1,8 @@
-import { isAbsolute } from 'node:path';
+import { isAbsolute, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { version as PACKAGE_VERSION } from '../../../package.json';
+import { OPERATOR_WEB_PACKAGE_NAME } from '../../core/skill-surface/plugin-manifest';
+import { findInstalledPackageRoot, readPackageManifest } from './global-runtime';
 import { RUNTIME_CAPTURE_PYTHON_UNAVAILABLE } from '../../effects/operator/runtime-capture-pty';
 import { runRuntimeCapture } from '../../effects/operator/runtime-capture';
 import { RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED } from '../../effects/operator/runtime-capture-writer';
@@ -89,6 +93,24 @@ function registeredHookTelemetry(): readonly CliUsageSource[] {
   return readRepoHarnessRegistryStrictSnapshot().repos.map(repo => ({ repo_root: repo.path, telemetry_path: HOOK_EVENT_TELEMETRY_PATH }));
 }
 
+export function resolveOperatorAssets(
+  cliPackageRoot = fileURLToPath(new URL('../../../', import.meta.url)),
+): Pick<OperatorServerOptions, 'static_root' | 'static_error'> {
+  const root = findInstalledPackageRoot(cliPackageRoot, OPERATOR_WEB_PACKAGE_NAME);
+  if (root === null) return {};
+  let version: unknown;
+  try {
+    version = readPackageManifest(root)?.version;
+  } catch {
+    return {};
+  }
+  if (typeof version !== 'string') return {};
+  if (version !== PACKAGE_VERSION) {
+    return { static_error: 'operator_assets_version_mismatch' };
+  }
+  return { static_root: join(root, 'dist') };
+}
+
 /**
  * Start the local server and keep the CLI alive until an interrupt signal.
  * `serve` owns the background Dev Activity, setup, notify, Bot access, CLI
@@ -97,6 +119,7 @@ function registeredHookTelemetry(): readonly CliUsageSource[] {
 export async function runOperatorServe(options: OperatorServeOptions): Promise<void> {
   const server = await startOperatorServer({
     ...options,
+    ...resolveOperatorAssets(),
     dev_activity_collector: true,
     setup_collector: true,
     notify_collector: true,

@@ -7,7 +7,7 @@ import { defineConfig, type Plugin } from 'vite';
 import { DESIGN_TOKENS_MODULE, designTokenStylesheet } from './src/operator-web/design-tokens';
 
 const operatorRoot = fileURLToPath(new URL('./src/operator-web', import.meta.url));
-const operatorOutput = fileURLToPath(new URL('./dist/operator-ui', import.meta.url));
+const operatorOutput = fileURLToPath(new URL('./packages/operator-web/dist', import.meta.url));
 // The design system's logos and mascots ship under their own names (`/logos/…`, `/mascots/…`).
 const brandAssets = fileURLToPath(new URL('./docs/design/operator-console/design-system/assets', import.meta.url));
 

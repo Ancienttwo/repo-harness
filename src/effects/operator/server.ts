@@ -60,7 +60,7 @@ import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { reapOrphanedProcessGroups, spawnRegisteredProcessGroup } from '../process-group-registry';
 import { terminateProcessGroup, type ProcessGroupTermination } from '../process-group-termination';
-import { dirname, extname, isAbsolute, resolve, sep } from 'node:path';
+import { extname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createOperatorWriteToken, handleOperatorWrite, operatorWriteTokenCookie, type OperatorWriteRoute } from './write-channel';
 import { AGENTS_CONFIGURATION_FAILURES, OPERATOR_SETTINGS_AGENTS_PATH, OPERATOR_SETTINGS_AGENTS_ROUTE, agentsSettingsWriteRoute, readAgentsSettings } from './agents-settings-route';
@@ -79,7 +79,7 @@ const OPERATOR_JOB_CONTROLLER_ACK_TIMEOUT_MS = 5_000;
 
 const OPERATOR_DIAGNOSTIC_ACTION = 'Retry. If the error stays, restart `repo-harness operator serve`.';
 const OPERATOR_REGISTRY_ACTION = 'Run `repo-harness fleet prune` to show the registry error.';
-const OPERATOR_ASSET_ACTION = 'Build the operator UI with `bun run build:operator-web` and retry.';
+const OPERATOR_ASSET_ACTION = 'Run `repo-harness update`, restart the server and reload the page.';
 const OPERATOR_ADOPT_ACTION = 'Adopt the repository with `repo-harness init`, then refresh the board.';
 
 /**
@@ -117,10 +117,6 @@ export const OPERATOR_SETUP_PATH = '/api/v1/setup' as const;
 export const OPERATOR_BOT_ACCESS_PATH = '/api/v1/bot-access' as const;
 export const OPERATOR_BOT_REVIEWS_PATH = '/api/v1/bot-reviews' as const;
 export const OPERATOR_CLI_INVENTORY_PATH = '/api/v1/cli-inventory' as const;
-const DEFAULT_STATIC_ROOT = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../../dist/operator-ui',
-);
 
 export interface OperatorRouteV1 {
   readonly id: string;
@@ -268,6 +264,7 @@ export interface OperatorServerOptions {
   readonly port?: number;
   readonly env?: NodeJS.ProcessEnv;
   readonly static_root?: string;
+  readonly static_error?: 'operator_assets_version_mismatch';
   readonly max_concurrency?: number;
   readonly timeout_ms?: number;
   /**
@@ -941,10 +938,6 @@ function isHtmlNavigation(request: IncomingMessage, pathname: string): boolean {
   return accept.includes('text/html');
 }
 
-function safePathRoot(root: string): string {
-  return resolve(root);
-}
-
 function expectedRequestAuthority(host: OperatorServerHost, request: IncomingMessage): string | null {
   const localPort = request.socket.localPort;
   if (!Number.isSafeInteger(localPort)) return null;
@@ -965,7 +958,7 @@ export async function startOperatorServer(
   const port = assertPort(options.port);
   const maxConcurrency = assertCollectionOption(options.max_concurrency, 'max_concurrency', 1, 16);
   const timeoutMs = assertCollectionOption(options.timeout_ms, 'timeout_ms', 1_000, 30_000);
-  const staticRoot = safePathRoot(options.static_root ?? DEFAULT_STATIC_ROOT);
+  const staticRoot = options.static_root === undefined ? null : resolve(options.static_root);
   const activeTaskReadCancellers = new Set<() => void>();
   const activeTaskReadCompletions = new Set<Promise<void>>();
   const activeBoardReads = new Set<AbortController>();
@@ -1778,6 +1771,13 @@ export async function startOperatorServer(
     const apiPathname = pathname.toLowerCase();
     if (apiPathname === OPERATOR_API_PATH_PREFIX || apiPathname.startsWith(`${OPERATOR_API_PATH_PREFIX}/`)) {
       sendRefusal(request, response, 404, errorBody('not_found', 'The requested operator API route does not exist.'), headOnly);
+      return;
+    }
+
+    if (options.static_error || staticRoot === null) {
+      const code = options.static_error ?? 'operator_assets_unavailable';
+      const message = options.static_error ? 'Operator UI version does not match the CLI.' : 'Operator UI assets are unavailable.';
+      sendRefusal(request, response, 503, errorBody(code, message, OPERATOR_ASSET_ACTION), headOnly);
       return;
     }
 

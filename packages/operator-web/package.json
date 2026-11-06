@@ -1,0 +1,16 @@
+{
+  "name": "repo-harness-operator-web",
+  "version": "0.26.6",
+  "description": "Built web console for the matching repo-harness CLI version",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ancienttwo/repo-harness.git",
+    "directory": "packages/operator-web"
+  },
+  "files": ["dist/"],
+  "scripts": {
+    "prepack": "bun run --cwd ../.. build:operator-web 1>&2 && bun -e \"require('node:fs').copyFileSync('../../LICENSE', 'LICENSE')\"",
+    "prepublishOnly": "bash ../../scripts/check-npm-release.sh --prepublish"
+  }
+}

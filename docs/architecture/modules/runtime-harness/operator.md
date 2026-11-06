@@ -276,7 +276,7 @@ with an instruction to use the shared setting. Existing paths remain readable.
 6. **UI 只触发第 1 条的三种写入。** 其他动作只显示链接或可复制的命令。宿主投影（install、update、profile 切换）、registry 清理和卸载 CLI 只给命令。派活保持 Bot → CLI → herdr，不经 MCP（D9）。控制台不向用户 harness 里的编码会话发消息、停止或注入内容。来源：PR #609、plan-20261005-0405 不变量 I9（2026-10-27 修订）。
 7. **不泄露 secret 和本机路径。** 本机文本经过 `publicAgentConfigText`（`src/core/operator/agent-config.ts:36`）或 `publicDevActivityText` 过滤。architecture 读取在返回前检查 `containsSecret`（`src/effects/operator/architecture.ts:43`）。文档会话只显示仓库内的相对路径。Bots 页只读 `/api/v1/bot-access`，用 `decodeBotAccessSnapshot` 校验快照（`src/operator-web/bots.ts:35`）。快照多出字段或值不合语法时，整份快照被拒绝，页面不显示其中任何值（`src/core/operator/bot-access.ts:228`、`src/core/operator/bot-access.ts:286`）。1-BOTS-N1 测试（`tests/operator-web/operator-bots-page.test.tsx`）用 fixture 检查页面没有 token、passphrase、webhook URL 和本机路径。
 8. **开发活动不推断 Agent 任务身份。** 它只投影 Git、GitHub 事实和 runtime 源健康。没有 task binding 时，不输出任务级 Agent 状态。
-9. **fixture 不进生产包。** `?fixture=` 只在 `import.meta.env.DEV` 下加载（`src/operator-web/main.tsx:15`）。PR #609 用 grep 检查了 `dist/operator-ui`，fixture 字符串命中数为 0。
+9. **fixture 不进生产包。** `?fixture=` 只在 `import.meta.env.DEV` 下加载（`src/operator-web/main.tsx:15`）。构建产物位于 `packages/operator-web/dist`。PR #609 对当时构建产物的 grep 检查中，fixture 字符串命中数为 0。
 
 ### 3.2 关键权衡
 
@@ -287,7 +287,7 @@ with an instruction to use the shared setting. Existing paths remain readable.
 | setup check builder 在子进程里运行 | builder 是同步代码。子进程让服务端事件循环保持空闲（PR #611）。代价是每个周期启动一个进程。子进程是新进程组的组长。90 秒期限或服务关闭时，整个进程组被 kill（`setup/collector.ts:8`）。 |
 | 慢读取放进受监督的 worker 进程 | 慢 git 不阻塞事件循环（PR #590 有对应测试）。代价是进程管理代码集中在 `server.ts`。该文件现在有 1766 行。 |
 | 严格 decoder 放在 core，前后端共用 | 一个契约，没有漂移。代价是 schema 版本升级时前后端必须同时修改，旧 schema 被拒绝（PR #606 的 overlay v4）。 |
-| 预构建 UI（`vite.operator.config.ts` → `dist/operator-ui`） | 运行时没有构建步骤。代价是 `prepack` 必须运行 `build:operator-web`（`package.json:77`）。 |
+| 预构建 UI（`vite.operator.config.ts` → `packages/operator-web/dist`） | 运行时没有构建步骤。代价是 console package 的 `prepack` 必须运行根目录的 `build:operator-web`（`packages/operator-web/package.json`）。 |
 | 开发活动 collector 只看当前 gh 用户的 PR | 范围与"一个人看自己的 agent 工作"一致（`src/effects/dev-activity/collector.ts:61-67`）。代价是看不到别人的 PR。 |
 
 ### 3.3 组件拆分（2026-10-11）

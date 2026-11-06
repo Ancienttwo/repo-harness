@@ -16,6 +16,7 @@ source:
     - docs/kanban-runtime-status.md
     - src/effects/operator/**
     - src/operator-web/**
+    - packages/operator-web/**
     - src/effects/setup/**
     - src/effects/dev-activity/**
     - vite.operator.config.ts
