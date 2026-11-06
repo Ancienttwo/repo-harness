@@ -62,14 +62,9 @@ function jsonObject(raw: string): Record<string, any> {
   return value;
 }
 
-/**
- * `mcp_servers.repo_harness` stays a valid selector so that an older home
- * receipt or pending entry that names it still parses. No writer records it.
- * The repository receipts that the removed `mcp setup codex` wrote have no
- * reader; `mcp doctor` names them as retired state (#1354).
- */
+/** Accept only the Codex input-mode and CodeGraph configuration selectors. */
 function validSelector(path: string, selector: string): boolean {
-  if (path.endsWith('.toml')) return selector === 'default_mode_request_user_input' || selector === 'mcp_servers.codegraph' || selector === 'mcp_servers.repo_harness';
+  if (path.endsWith('.toml')) return selector === 'default_mode_request_user_input' || selector === 'mcp_servers.codegraph';
   return selector === 'mcpServers.codegraph' || selector === 'allowedTools.codegraph';
 }
 

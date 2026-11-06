@@ -33,6 +33,14 @@ test('records earliest original and private receipt across repeat installs', () 
   expect(readConfigurationReceipt(home).changes[0]!.before).toBe('default_mode_request_user_input = false\n');
   expect(statSync(configurationReceiptPath(home)).mode & 0o777).toBe(0o600);
 }));
+test('refuses a configuration receipt with the retired Codex MCP selector', () => fixture((home) => {
+  mkdirSync(join(home, '.repo-harness'));
+  writeFileSync(configurationReceiptPath(home), JSON.stringify({
+    protocol: 1,
+    changes: [{ path: join(home, '.codex/config.toml'), selector: 'mcp_servers.repo_harness', before: null, installed: null, active: true }],
+  }));
+  expect(() => readConfigurationReceipt(home)).toThrow(`invalid configuration receipt entry: ${configurationReceiptPath(home)}`);
+}));
 test('refuses receipt path symlinks before writing configuration', () => fixture((home, env) => {
   mkdirSync(join(home, '.repo-harness'));
   const victim = join(home, 'victim'); writeFileSync(victim, 'untouched');
