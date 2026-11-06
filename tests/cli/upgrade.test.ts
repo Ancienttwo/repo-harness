@@ -8,7 +8,7 @@ import { runAdoptionApply } from '../../src/cli/commands/adoption-plan';
 import { LEGACY_WORKTREE_PROVIDER_DEFERRED, runLegacyWorktreeCleanup } from '../../src/effects/upgrade/legacy-worktree-cleanup';
 import { localMergeMode, planManagedWorktreeSweep, sweepManagedWorktrees, type WorktreeSweepPlan } from '../../src/effects/state/coordination-worktree-topology';
 import { taskWorkspaceKey } from '../../src/effects/git/repository-identity';
-import { planLegacyLeftovers } from '../../src/effects/upgrade/legacy-inventory';
+import { legacyPathSnapshot, planLegacyLeftovers } from '../../src/effects/upgrade/legacy-inventory';
 import { rollbackAdoptionTransaction } from '../../src/effects/fs-transaction';
 import { readInstallState } from '../../src/cli/installer/install-profile';
 import { PLUGIN_IDS } from '../../src/core/skill-surface/plugin-manifest';
@@ -16,6 +16,7 @@ import { hashManagedTree } from '../../src/effects/managed-tree';
 import { applyGlobalContextRefresh, preflightGlobalContextRefresh } from '../../src/cli/installer/global-context';
 import { removeOwnedDanglingSkillLinks } from '../../src/effects/skill-tree-integrity';
 import expectedReleaseInventory from './upgrade.expected.json';
+import workflowContract from '../../assets/workflow-contract.v1.json';
 import { copyUpgradeFixture, readUpgradeFixture, upgradeFixtureProvenance as provenance, UPGRADE_BLOBS, type UpgradeFixture } from '../helpers/upgrade-fixtures';
 import { formatRegisteredUpgradeResult, runRegisteredUpgrade, type RegisteredRepoResult } from '../../src/cli/commands/upgrade-registered';
 import { adoptedRepo, commitAll, git, registeredReposFixture, worktreeSnapshot, writeRegistry, type RegisteredReposFixture } from '../helpers/registered-repos';
@@ -393,6 +394,9 @@ describe('upgrade with real release bytes', () => {
     put(join(opts.cwd, 'docs/architecture/snapshots/user-note.md'), '# User snapshot\n');
     const before = tree(opts.cwd);
     const rootTemplate = readFileSync(join(ROOT, 'assets/templates/root-context.md'), 'utf8');
+    const rootHash = legacyPathSnapshot(join(ROOT, 'assets/templates/root-context.md'))?.contentHash;
+    const rootFingerprints = workflowContract.migrations.upgrade.actions.find((action) => action.id === 'retired-flow-root-context')?.fingerprints;
+    expect([rootFingerprints?.['CLAUDE.md'], rootFingerprints?.['AGENTS.md']]).toEqual([rootHash, rootHash]);
 
     const check = runUpgrade({ ...opts, scope: 'project' });
     for (const name of RETIRED_RC_DOCS.filter((name) => name !== 'sprint-contracts.md')) {
@@ -438,6 +442,22 @@ describe('upgrade with real release bytes', () => {
     for (const path of retiredRcPaths().concat(['docs/architecture/snapshots/user-note.md'])) {
       expect(afterRollback[path], path).toBe(before[path]);
     }
+
+    const previousTemplate = rootTemplate.replace(
+      "- Write output text in a plain technical style: short sentences, one idea per sentence, active voice. For `en`, follow ASD-STE100 Simplified Technical English. For `zh-CN`, write plain Chinese (简明中文) with the same rules and keep technical terms in English. For `follow-user`, use the user's language with the same rules.",
+      '- Write output text in ASD-STE100 Simplified Technical English: short sentences, one idea per sentence, active voice.',
+    );
+    const cleanRoot = join(opts.cwd, 'CLAUDE.md');
+    const editedRoot = join(opts.cwd, 'AGENTS.md');
+    put(cleanRoot, previousTemplate);
+    expect(legacyPathSnapshot(cleanRoot)?.contentHash).toBe('sha256:58b9816cad7ffe1ba2380b15b3c5c41ab0ab862696763c618037bc904f93c026');
+    put(editedRoot, `${previousTemplate}user edit\n`);
+    const refreshed = runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(refreshed.exitCode, refreshed.error).toBe(0);
+    expect(refreshed.refreshedPaths).toContain(cleanRoot);
+    expect(readFileSync(cleanRoot, 'utf8')).toBe(rootTemplate);
+    expect(refreshed.refreshedPaths).not.toContain(editedRoot);
+    expect(readFileSync(editedRoot, 'utf8')).toBe(`${previousTemplate}user edit\n`);
   }));
 
   test('every byte-identical retired reference config is removed once and the migration is idempotent', () => sandbox((opts) => {
