@@ -2249,13 +2249,13 @@ exit 0
     const codegraphLog = join(tmp, 'codegraph.log');
     try {
       mkdirSync(home, { recursive: true });
-      seedGlobalPackageFixture({ HOME: home, BUN_INSTALL: join(home, '.bun') });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       writeFakeHc(fakeBin);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeFakeCodegraph(fakeBin, codegraphLog);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "-" || "\${1:-}" == "-e" || "\${1:-}" == *.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/repo-harness"; chmod +x "$HOME/.bun/bin/repo-harness"; fi\nexit 0\n`);
+      const seedGlobalPackage = `import { seedGlobalPackageFixture } from ${JSON.stringify(new URL('../helpers/install-ownership.ts', import.meta.url).href)}; seedGlobalPackageFixture();`;
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "-" || "\${1:-}" == "-e" || "\${1:-}" == *.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/repo-harness"; chmod +x "$HOME/.bun/bin/repo-harness"; "${process.execPath}" -e '${seedGlobalPackage.replaceAll("'", "'\\''")}' || exit $?; fi\nexit 0\n`);
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
 printf '%s\\n' "$*" >> "${bunxLog}"

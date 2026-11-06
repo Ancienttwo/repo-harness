@@ -244,14 +244,18 @@ _ci_run_bun_test_pool() {
   return "$pool_error"
 }
 
+_ci_build_hook_bundle_if_selected() {
+  grep -qsE 'hook-entry\.js|seedGlobalPackageFixture' -- "$@" || return 0
+  (cd "$(dirname "${BASH_SOURCE[0]}")/../.." && bun run build:hook-bundle) || return $?
+}
+
 run_bun_tests() {
   _ci_prepare_junit_dir || return $?
-  # Install fixtures bind the global bundle even when a selected file does not name it.
-  (cd "$(dirname "${BASH_SOURCE[0]}")/../.." && bun run build:hook-bundle) || return $?
   if [[ "${BUN_TEST_ISOLATE_FILES:-0}" != "1" ]]; then
     local argument
     for argument in "$@"; do
       if [[ "$argument" == --coverage || "$argument" == --coverage=* ]]; then
+        _ci_build_hook_bundle_if_selected "$@" || return $?
         _ci_run_bun_tests_in_temporary_home "$@"
         return
       fi
@@ -299,6 +303,7 @@ run_bun_tests() {
       seen+="$argument"$'\n'
       unique[${#unique[@]}]="$argument"
     done
+    _ci_build_hook_bundle_if_selected "${unique[@]}" || return $?
     _ci_run_bun_tests_in_temporary_home --harness-file-list "${unique[@]}" --harness-options ${options[@]+"${options[@]}"}
     return
   fi
@@ -346,6 +351,7 @@ run_bun_tests() {
 
   # Isolate mode keeps running every selected file after a failure so one early
   # red file cannot hide the rest of the suite from the gate's log.
+  _ci_build_hook_bundle_if_selected ${files[@]+"${files[@]}"} ${serial_files[@]+"${serial_files[@]}"} || return $?
   echo "[ci] parallel files=${#files[@]} jobs=$jobs; serial tail=${#serial_files[@]}"
   if [[ "$jobs" -eq 1 ]]; then
     for file in ${files[@]+"${files[@]}"}; do
