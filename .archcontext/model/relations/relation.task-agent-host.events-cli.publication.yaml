@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-agent-host.events-cli.publication
+kind: calls
+source: component.task-agent-host.events-cli
+target: capability.organization.publication
+intent: "Publish the GitHub App hook config through core publication after explicit deployment approval."

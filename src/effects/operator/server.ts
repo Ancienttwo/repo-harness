@@ -1,3 +1,4 @@
+import { version as PACKAGE_VERSION } from '../../../package.json';
 import { decodeOperatorDocSessionList, decodeOperatorDocSessionDetail, DOC_SESSION_VIEW_FAILURES, isDocSessionListRequest, isDocSessionDetailRequest, isDocSessionEventsRequest, OPERATOR_SESSION_LIST_PATH, OPERATOR_SESSION_DETAIL_ROUTE } from '../../core/operator/doc-session-views';
 import { decodeOperatorDocSessionEvents } from '../../core/operator/doc-session-events';
 import { decodeDocSessionFinalizationView, DOC_SESSION_FINALIZATION_FAILURES, OPERATOR_SESSION_FINALIZATION_ROUTE, type DocSessionFinalizationView } from '../../core/operator/doc-session-finalization-view';
@@ -71,7 +72,7 @@ import { OPERATOR_SESSION_EVENTS_ROUTE } from './doc-session-events';
 import { OPERATOR_SESSIONS_ROUTE, docSessionCreateRoute } from './doc-session';
 import { OPERATOR_DEFAULT_HOST, OPERATOR_DEFAULT_MAX_CONCURRENCY, OPERATOR_DEFAULT_PORT, OPERATOR_DEFAULT_TIMEOUT_MS } from '../../core/review/operator-console-port';
 
-export const OPERATOR_SERVER_PROTOCOL = 1 as const;
+export const OPERATOR_SERVER_PROTOCOL = 2 as const;
 export const OPERATOR_SERVICE_NAME = 'repo-harness-operator' as const;
 const OPERATOR_WORKER_CLEANUP_GRACE_MS = 500;
 const OPERATOR_JOB_CONTROLLER_ACK_TIMEOUT_MS = 5_000;
@@ -288,10 +289,11 @@ export interface OperatorServerHandle {
   readonly close: () => Promise<void>;
 }
 
-export interface OperatorHealthResponseV1 {
+export interface OperatorHealthResponseV2 {
   readonly ok: true;
   readonly service: typeof OPERATOR_SERVICE_NAME;
   readonly protocol: typeof OPERATOR_SERVER_PROTOCOL;
+  readonly version: string;
 }
 
 export interface OperatorErrorResponseV1 {
@@ -1342,10 +1344,11 @@ export async function startOperatorServer(
     }
 
     if (pathname === OPERATOR_HEALTH_PATH) {
-      const health: OperatorHealthResponseV1 = {
+      const health: OperatorHealthResponseV2 = {
         ok: true,
         service: OPERATOR_SERVICE_NAME,
         protocol: OPERATOR_SERVER_PROTOCOL,
+        version: PACKAGE_VERSION,
       };
       sendJson(response, 200, health, headOnly);
       return;

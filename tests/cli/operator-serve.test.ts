@@ -1,3 +1,4 @@
+import { version as PACKAGE_VERSION } from '../../package.json';
 import { pluginSelectionEnv, recordPluginSelection } from '../helpers/install-ownership';
 import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync, readdirSync, readFileSync, statSync, openSync, closeSync } from 'node:fs';
@@ -195,7 +196,7 @@ describe('operator serve command and HTTP boundary', () => {
     try {
       const health = await fetch(`${server.url}/healthz`);
       expect(health.status).toBe(200);
-      expect(await health.json()).toEqual({ ok: true, service: 'repo-harness-operator', protocol: 1 });
+      expect(await health.json()).toEqual({ ok: true, service: 'repo-harness-operator', protocol: 2, version: PACKAGE_VERSION });
 
       const rejectedHost = await fetch(`${server.url}/api/v1/repositories`, {
         headers: { Host: 'attacker.example' },
@@ -259,7 +260,7 @@ describe('operator serve command and HTTP boundary', () => {
         headers: { Origin: server.url },
       });
       expect(health.status).toBe(200);
-      expect(await health.json()).toEqual({ ok: true, service: 'repo-harness-operator', protocol: 1 });
+      expect(await health.json()).toEqual({ ok: true, service: 'repo-harness-operator', protocol: 2, version: PACKAGE_VERSION });
 
       const api = await fetch(`${server.url}/api/v1/dev-activity`, {
         headers: { Host: `[::1]:${server.port}`, Origin: server.url },
