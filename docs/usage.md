@@ -341,6 +341,11 @@ repo-harness mcp serve --repo . --profile planner
 repo-harness mcp doctor --repo .
 ```
 
+Both commands need the `mcp` plugin. An `all` selection includes it. Add it to
+an explicit list with `repo-harness install --plugins <your plugins>,mcp`.
+Without the plugin, each command exits 1 and prints this repair.
+`repo-harness mcp access set` needs no plugin.
+
 General repo reader/writer tools, snapshot and index consistency, and server profiles:
 [`general-repo-mcp.md`](reference-configs/general-repo-mcp.md).
 Index-stale, CodeGraph-down, and rollback operations:

@@ -17,6 +17,7 @@ import { decodeBotAccessSnapshot, projectMcpAuditEntry, projectMcpDoctor, type B
 import { botRegistryPath, registerBot } from '../../src/effects/bot-registry';
 import { HC_MIN_VERSION } from '../../src/core/terminal/herdr-pin';
 import { fakeHc } from '../helpers/fake-hc';
+import { recordPluginSelection } from '../helpers/install-ownership';
 
 const NOW = new Date('2026-10-27T00:00:00.000Z');
 const SLACK_URL = 'https://hooks.slack.example/services/T0/B0/webhook-secret-0006';
@@ -51,6 +52,7 @@ function fixture() {
   ].map(row => JSON.stringify(row)).join('\n') + '\n{"torn":');
   registerBot({ bot_id: 'hermes', name: 'Hermes', host: 'Hermes', slack_bot_id: 'B012ABC', herdr_agent: 'hermes', now: NOW }, { REPO_HARNESS_HOME: home });
   const env: NodeJS.ProcessEnv = { ...process.env, ...hc.env };
+  recordPluginSelection(env, ['mcp']);
   return { root, home, repo, env, hc, cleanup: hc.cleanup };
 }
 

@@ -3,6 +3,8 @@ import { spawnSync } from 'child_process';
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
+import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
+import { pluginSelectionEnv } from '../helpers/install-ownership';
 import { RETIRED_CHATGPT_STATE_FINDING, runMcpDoctor } from '../../src/cli/mcp/doctor';
 import { createMcpToolContext } from '../../src/cli/mcp/server';
 import { createCodeGraphCliAdapter } from '../../src/cli/tools/codegraph-reader';
@@ -98,13 +100,71 @@ describe('mcp doctor and local config', () => {
       // No silent read-through and no cleanup: the legacy file stays untouched.
       expect(existsSync(legacyConfig)).toBe(true);
 
+      const selectedEnv = pluginSelectionEnv(['mcp']);
       const cli = spawnSync(
         process.execPath,
         [CLI, 'mcp', 'doctor', '--repo', repoRoot],
-        { encoding: 'utf-8', env: { ...process.env, REPO_HARNESS_HOME: userHome } },
+        { encoding: 'utf-8', env: { ...selectedEnv, REPO_HARNESS_HOME: userHome } },
       );
+      rmSync(selectedEnv.HOME!, { recursive: true, force: true });
       expect(cli.status).toBe(2);
       expect(cli.stderr).toContain('legacy repo-scope MCP config detected');
+    });
+  });
+
+  test('the mcp selection gates serve and doctor and the MCP code load', () => {
+    withTmpRepo((repoRoot, userHome) => {
+      const probe = join(userHome, 'load-probe.ts');
+      writeFileSync(probe, `process.on('exit', () => process.stderr.write(\`mcp-modules:\${Object.keys(require.cache).filter(path => /[\\\\/]src[\\\\/]cli[\\\\/]mcp[\\\\/]|@modelcontextprotocol[\\\\/]/.test(path)).length}\n\`));\n`);
+      const homes: string[] = [];
+      const selected = (plugins: readonly PluginId[]) => { const env = pluginSelectionEnv(plugins); homes.push(env.HOME!); return env; };
+      const call = (env: NodeJS.ProcessEnv, ...args: string[]) => {
+        const result = spawnSync(process.execPath, ['--preload', probe, CLI, ...args], { encoding: 'utf-8', input: '', env: { ...env, REPO_HARNESS_HOME: userHome, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' } });
+        const lines = result.stderr.split('\n').filter(line => line !== '' && !line.startsWith('mcp-modules:'));
+        return { status: result.status, stdout: result.stdout, lines, loaded: Number(/mcp-modules:(\d+)/.exec(result.stderr)?.[1]) };
+      };
+      const noState = { ...process.env, HOME: join(userHome, 'no-state') };
+      mkdirSync(noState.HOME, { recursive: true });
+      const unreadable = { ...process.env, HOME: join(userHome, 'unreadable') };
+      mkdirSync(join(unreadable.HOME, '.repo-harness'), { recursive: true });
+      writeFileSync(join(unreadable.HOME, '.repo-harness/install-state.json'), '{');
+
+      const needs = (name: string, repair: string) => `install_plugin_unavailable: repo-harness mcp ${name} needs the mcp plugin: the mcp plugin is not selected; run: ${repair}`;
+      const blocked: [string, NodeJS.ProcessEnv, string | RegExp][] = [
+        ['core only', selected([]), 'repo-harness install --plugins mcp'],
+        ['other plugin', selected(['product']), 'repo-harness install --plugins mcp,product'],
+        ['no install state', noState, 'repo-harness install'],
+        ['unreadable install state', unreadable, /is not valid JSON/],
+      ];
+      for (const [name, env, expected] of blocked) {
+        for (const command of ['serve', 'doctor']) {
+          const result = call(env, 'mcp', command, '--repo', repoRoot);
+          expect(result.status, name).toBe(1);
+          expect(result.stdout, name).toBe('');
+          expect(result.lines.length, name).toBe(1);
+          if (typeof expected === 'string') expect(result.lines[0], name).toBe(needs(command, expected));
+          else expect(result.lines[0], name).toMatch(expected);
+          expect(result.loaded, name).toBe(0);
+        }
+      }
+
+      const coreOnly = selected([]);
+      for (const args of [['mcp', '--help'], ['mcp', 'serve', '--help'], ['mcp', 'doctor', '--help'], ['bots', '--help'], ['status', '--json']]) {
+        const result = call(coreOnly, ...args);
+        expect(result.status, args.join(' ')).toBe(0);
+        expect(result.loaded, args.join(' ')).toBe(0);
+      }
+      const access = call(coreOnly, 'mcp', 'access', 'set', '--repo', repoRoot, '--mode', 'read_write');
+      expect(access.lines.join('\n')).not.toContain('install_plugin_unavailable');
+      expect(access.loaded).toBe(0);
+
+      const withPlugin = selected(['mcp']);
+      for (const command of ['serve', 'doctor']) {
+        const result = call(withPlugin, 'mcp', command, '--repo', repoRoot);
+        expect(result.status, command).toBe(0);
+        expect(result.loaded, command).toBeGreaterThan(0);
+      }
+      for (const home of homes) rmSync(home, { recursive: true, force: true });
     });
   });
 

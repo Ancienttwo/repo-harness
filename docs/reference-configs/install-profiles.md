@@ -17,6 +17,7 @@ plugin id. The installer maps the other surfaces through
 | `core` | The CLI, the Claude and Codex hook adapters with every hook route, the agent fleet files, the root router `repo-harness`, `repo-harness-check`, `repo-harness-test`, `repo-harness-issue-flow`, `repo-harness-ship`, the Herdr skill, Waza (`think`, `hunt`, `check`, `health` and the Waza rules files), and Mermaid. `repo-harness-setup`, `merge-gate` and `herdr` are explicit-only. |
 | `architecture` | `repo-harness-architecture`, `repo-harness-archimap`, and the CodeGraph CLI and MCP projection. |
 | `cross-review` | `repo-harness-cross-review`. |
+| `mcp` | The guarded commands `mcp serve` and `mcp doctor`. No host file. |
 | `peer-runtime` | `repo-harness-herdr-portal` (Claude host only). |
 | `pi` | The Pi package registration and the Pi skill root (`~/.pi/agent/skills/`), for `--target both` only. |
 | `platform` | `windows-python-first`. |

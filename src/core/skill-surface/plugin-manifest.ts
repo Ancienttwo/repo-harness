@@ -5,10 +5,11 @@
 // installer maps the other surfaces (Pi registration, CodeGraph projection,
 // fleet files, adapters) through `ownerForInstallPath`.
 
-/** Sorted. Each id owns a real install surface or a real host probe today (#1287 step 2). */
+/** Sorted. Each id owns a real install surface (a skill, a host file or a guarded command) or a real host probe today (#1287 step 2). */
 export const PLUGIN_IDS = [
   "architecture",
   "cross-review",
+  "mcp",
   "peer-runtime",
   "pi",
   "platform",
@@ -34,6 +35,17 @@ export type SurfaceOwner = (typeof SURFACE_OWNERS)[number];
  * selection fails closed instead.
  */
 export const HOST_PROGRAM_PLUGINS = ["pi"] as const satisfies readonly PluginId[];
+
+/**
+ * Plugins whose only install surface is a guarded command. The installer
+ * writes no file for one (no repo-harness MCP host entry), so it has no owned
+ * surface and no probe row.
+ */
+export const COMMAND_PLUGINS = ["mcp"] as const satisfies readonly PluginId[];
+
+export function isCommandPlugin(id: PluginId): id is (typeof COMMAND_PLUGINS)[number] {
+  return (COMMAND_PLUGINS as readonly PluginId[]).includes(id);
+}
 
 export function isHostProgramPlugin(id: PluginId): id is (typeof HOST_PROGRAM_PLUGINS)[number] {
   return (HOST_PROGRAM_PLUGINS as readonly PluginId[]).includes(id);
