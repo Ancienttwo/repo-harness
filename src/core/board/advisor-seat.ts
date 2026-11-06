@@ -1,5 +1,6 @@
 import type { BoardHostPortsV1, BoardSeatTerminalReadV1 } from './board';
 import { hasUnredactedSecret, KEY_BEGIN, KEY_END, replaceSecrets } from '../security/secret-patterns';
+import { HC_LOCAL_ADDRESS } from '../terminal/hc-address';
 
 /**
  * The advisor seat of one board (#1756, D11): the only console channel that
@@ -184,7 +185,6 @@ export interface AdvisorSeatTranscriptV1 extends AdvisorSeatTargetV1 {
 
 const REPOSITORY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const PARENT = /^[1-9][0-9]{0,9}$/u;
-const ADDRESS = /^t[1-9][0-9bcdfghjkmnpqrstvwxyz]{0,6}$/u;
 // Every C0 and C1 control character except the newline.
 const CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/u;
 
@@ -240,7 +240,7 @@ export function decodeAdvisorBossCommandRequest(value: unknown): AdvisorBossComm
 
 function target(fields: Record<string, unknown>): AdvisorSeatTargetV1 {
   if (fields.protocol !== 1 || !Number.isSafeInteger(fields.github_repository_id) || (fields.github_repository_id as number) < 1
-    || !Number.isSafeInteger(fields.parent) || (fields.parent as number) < 1 || typeof fields.terminal !== 'string' || !ADDRESS.test(fields.terminal)) {
+    || !Number.isSafeInteger(fields.parent) || (fields.parent as number) < 1 || typeof fields.terminal !== 'string' || !HC_LOCAL_ADDRESS.test(fields.terminal)) {
     throw new TypeError('advisor seat target is invalid');
   }
   return { protocol: 1, github_repository_id: fields.github_repository_id as number, parent: fields.parent as number, terminal: fields.terminal };
@@ -262,7 +262,7 @@ export function decodeAdvisorSeatSendFailure(value: unknown): AdvisorSeatSendFai
   if (fields.protocol !== 1 || fields.kind !== ADVISOR_SEAT_SEND_FAILURE_KIND
     || !Number.isSafeInteger(fields.github_repository_id) || (fields.github_repository_id as number) < 1
     || !Number.isSafeInteger(fields.parent) || (fields.parent as number) < 1
-    || !(fields.terminal === null || (typeof fields.terminal === 'string' && ADDRESS.test(fields.terminal)))
+    || !(fields.terminal === null || (typeof fields.terminal === 'string' && HC_LOCAL_ADDRESS.test(fields.terminal)))
     || !(ADVISOR_SEAT_CLI_FAILURES as readonly unknown[]).includes(fields.code)) {
     throw new TypeError('advisor seat send failure is invalid');
   }

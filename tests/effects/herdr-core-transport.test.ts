@@ -61,7 +61,9 @@ test('success: labels go in on run and list, and come back out of get', async ()
     '--name', 'rh-notify-relay', '--cwd', '/w', '--no-parent', '--', 'claude', '--resume']);
 
   // hc omits the name of an unnamed terminal in ls rows.
-  const list = fake('ok', { hidden_finished: 0, terminals: [{ address: 't4', agent: 'claude', state: 'live', turn: 0 }] });
+  const list = fake('ok', { hidden_finished: 0, terminals: [{ address: 't4', agent: 'claude', state: 'live', turn: 0 },
+    { address: 'mini-cf/t11', agent: 'claude', name: 'rh-advisor', state: 'live', turn: 0 },
+    { address: 'lab/odd?terminal', state: null, agent: 9 }] });
   expect(hcList(RH_NOTIFY_LABELS, { env: list.env })).toEqual([{ address: 't4', name: null, agent: 'claude', state: 'live' }]);
   expect(list.argv()).toEqual(['ls', '--json', '--label', 'repo-harness.notify=on']);
   expect(await hcListAsync(RH_NOTIFY_LABELS, { env: list.env })).toEqual([{ address: 't4', name: null, agent: 'claude', state: 'live' }]);
@@ -123,6 +125,11 @@ test('hc error: the exit code and hc error kind are kept; malformed replies fail
   const listError = await asyncFailure(() => hcListAsync(RH_NOTIFY_LABELS, { env: fake('hc-error').env }));
   expect([listError.reason, listError.exitCode, listError.kind]).toEqual(['failed', 3, 'not_found']);
   expect(failure(() => hcGet('t4', { env: fake('text').env })).reason).toBe('invalid_response');
+  for (const address of ['rh-worker', 't0', 't1a']) {
+    const bad = fake('ok', { terminals: [{ ...TERMINAL, address }] });
+    expect(failure(() => hcList(RH_NOTIFY_LABELS, { env: bad.env })).reason).toBe('invalid_response');
+    expect((await asyncFailure(() => hcListAsync(RH_NOTIFY_LABELS, { env: bad.env }))).reason).toBe('invalid_response');
+  }
   for (const invalid of [{ labels: { n: 1 } }, { pid: 0 }, { foreground: { pid: 9, name: 'claude', argv: ['claude'] } }, { reason: 1 },
     { status: { state: 'idle', app: 23 } }, { status: { state: 'idle', kind: [] } }, { status: { state: 'idle', msg: {} } }]) {
     expect(failure(() => hcGet('t4', { env: fake('ok', { ...TERMINAL, ...invalid }).env })).reason).toBe('invalid_response');
@@ -176,8 +183,10 @@ test('scope: nested runtimes, labels outside the repo-harness set and addresses 
   const refused: HcLabels[] = [{}, { 'herdr.space': 's1' }, { 'Bad Key': 'x', ...RH_NOTIFY_LABELS }, { 'repo-harness.owner': 'x' },
     { [RH_LABEL.role]: 'worker' }, { [RH_LABEL.notify]: 'off' }];
   for (const labels of refused) expect(failure(() => hcList(labels, { env: run.env })).reason).toBe('invalid_labels');
-  for (const target of ['rh-worker', 'vps/t3', 't0', 't1a', 't10000000', '-t4']) {
-    for (const call of [() => hcGet(target, { env: run.env }), () => hcKill(target, { env: run.env }), () => hcRm(target, { env: run.env })]) {
+  for (const target of ['rh-worker', 'vps/t3', 'mini-cf/t11', 'lab/odd?terminal', 't0', 't1a', 't10000000', '-t4']) {
+    for (const call of [() => hcGet(target, { env: run.env }), () => hcKill(target, { env: run.env }), () => hcRm(target, { env: run.env }),
+      () => hcSend(target, 'hello', { env: run.env }), () => hcRead(target, 5, { env: run.env }),
+      () => hcWait(target, 1, { env: run.env }), () => hcLabel(target, RH_NOTIFY_LABELS, { env: run.env })]) {
       expect(failure(call).reason).toBe('invalid_address');
     }
   }
@@ -218,9 +227,12 @@ test('server status: the core id and version are read; a bad version, a missing 
 });
 
 test('events: snapshot, heartbeat, missed and event; close resolves, and a bad line or a throwing onItem stops the stream', async () => {
-  const lines = [JSON.stringify({ channel: null, seq: 3, terminals: [TERMINAL] }),
+  const terminals = [TERMINAL, { ...TERMINAL, address: 'mini-cf/t11' }, { address: 'lab/odd?terminal', labels: null }];
+  const lines = [JSON.stringify({ channel: null, seq: 3, terminals }),
     JSON.stringify({ jsonrpc: '2.0', method: 'heartbeat', params: { seq: 3 } }),
-    JSON.stringify({ jsonrpc: '2.0', method: 'missed', params: { seq: 9, terminals: [TERMINAL] } }),
+    JSON.stringify({ jsonrpc: '2.0', method: 'missed', params: { seq: 9, terminals } }),
+    JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { seq: 9, terminal: 'mini-cf/t11', type: 'turn', data: { state: 'blocked', turn: 3 } } }),
+    JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { terminal: 'lab/odd?terminal', type: null, data: 9 } }),
     JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { seq: 10, terminal: 't4', type: 'turn', data: { state: 'idle', turn: 3 } } }),
     // hc sends foreground data null when no process is in the foreground.
     JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { seq: 11, terminal: 't4', type: 'foreground', data: null } })].join('\n');
@@ -232,12 +244,16 @@ test('events: snapshot, heartbeat, missed and event; close resolves, and a bad l
   await received;
   events.close();
   await events.done;
+  expect(items.filter(item => item.type !== 'event').map(item => item.terminals.map(row => row.address))).toEqual([['t4'], ['t4']]);
   expect(items.map(item => item.type === 'event' ? [item.type, item.seq, item.event, item.data] : [item.type, item.seq, item.terminals[0]!.labels]))
     .toEqual([['snapshot', 3, { 'repo-harness.role': 'notify-relay' }], ['missed', 9, { 'repo-harness.role': 'notify-relay' }],
       ['event', 10, 'turn', { state: 'idle', turn: 3 }], ['event', 11, 'foreground', null]]);
   expect(stream.argv()).toEqual(['events', '--json', '--label', 'repo-harness.notify=on']);
 
   for (const line of ['not json', JSON.stringify({ jsonrpc: '2.0', method: 'other', params: { seq: 4 } }),
+    JSON.stringify({ seq: 4, terminals: [{ ...TERMINAL, address: 't1a' }] }),
+    JSON.stringify({ method: 'missed', params: { seq: 4, terminals: [{ ...TERMINAL, address: 't1a' }] } }),
+    JSON.stringify({ method: 'event', params: { seq: 4, terminal: 't1a', type: 'turn', data: {} } }),
     JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { seq: 4, terminal: 't4', type: 'turn', data: null } })]) {
     const bad = hcEvents(RH_NOTIFY_LABELS, () => {}, { env: fake('stream', line).env });
     expect(await bad.done.then(() => null, (error: HerdrCoreError) => error.reason)).toBe('invalid_response');
