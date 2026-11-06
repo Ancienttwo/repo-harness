@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { defaultRuntimes } from '@botiverse/oar';
@@ -165,6 +166,34 @@ describe('language settings routes', () => {
   test('a missing reporting adapter refuses execution without rejecting a valid body', async () => {
     const operation = reportingLanguageWriteRoute().decode({ preset: 'follow' }, []);
     await expect(operation.execute()).rejects.toMatchObject({ status: 503, code: 'language_settings_unavailable' });
+  });
+
+  test('a held runtime transaction refuses reporting changes until install or update finishes', async () => {
+    const h = await startHarness();
+    expect((await send(h, reportPath, { preset: 'en' })).status).toBe(200);
+    const paths = [join(h.home, '.claude', 'CLAUDE.md'), join(h.home, '.codex', 'AGENTS.md')];
+    const before = paths.map(path => readFileSync(path, 'utf8'));
+    const lock = acquireRuntimeTransactionLock(globalRuntimeScope({ HOME: h.home }));
+    try {
+      const response = await send(h, reportPath, { preset: 'zh-CN' });
+      const { error } = await response.json();
+      expect([response.status, error.code, error.next_action]).toEqual([
+        409, 'runtime_busy', 'Wait for repo-harness update or install to finish, then save again.',
+      ]);
+      expect(paths.map(path => readFileSync(path, 'utf8'))).toEqual(before);
+      lock.assertOwned();
+    } finally { lock.release(); }
+    expect((await send(h, reportPath, { preset: 'zh-CN' })).status).toBe(200);
+  });
+
+  test.skipIf(process.platform === 'win32')('GET and POST refuse a FIFO policy without opening it', async () => {
+    const h = await startHarness();
+    const repo = repository(h);
+    execFileSync('mkfifo', [repo.policy]);
+    for (const response of [await fetch(`${h.server.url}${repo.path}`), await send(h, repo.path, { language: 'en' })]) {
+      expect([response.status, (await response.json()).error.code]).toEqual([409, 'policy_unreadable']);
+    }
+    expect(lstatSync(repo.policy).isFIFO()).toBe(true);
   });
 
   test('refuses unknown repositories, missing policies and invalid JSON without a write', async () => {

@@ -6,6 +6,9 @@ import { findInstalledPackageRoot, readPackageManifest } from './global-runtime'
 import { hostConfigurationRoot, assertConfigurationPath } from '../installer/configuration-ownership';
 import { inspectGlobalContext, parseReportLanguageFlag, preflightGlobalContextRefresh, setReportingLanguage } from '../installer/global-context';
 import type { OperatorLanguageSettingsAdapter } from '../../effects/operator/language-settings-route';
+import { OperatorWriteRefusal } from '../../effects/operator/write-run';
+import { acquireRuntimeTransactionLock, globalRuntimeScope } from '../../effects/locking/runtime-transaction-lock';
+import { ExclusiveLockContentionError } from '../../effects/locking/exclusive-directory-lock';
 import { RUNTIME_CAPTURE_PYTHON_UNAVAILABLE } from '../../effects/operator/runtime-capture-pty';
 import { runRuntimeCapture } from '../../effects/operator/runtime-capture';
 import { RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED } from '../../effects/operator/runtime-capture-writer';
@@ -131,7 +134,15 @@ export function createOperatorLanguageSettings(
     },
     parseReportingPreset: parseReportLanguageFlag,
     setReportingLanguage(preset) {
-      return setReportingLanguage(home, sourceRoot, hosts, preset);
+      let lock;
+      try { lock = acquireRuntimeTransactionLock(globalRuntimeScope(env), { waitTimeoutMs: 1 }); }
+      catch (error) {
+        if (!(error instanceof ExclusiveLockContentionError)) throw error;
+        throw new OperatorWriteRefusal(409, 'runtime_busy', 'An install or update holds the runtime transaction lock.',
+          'Wait for repo-harness update or install to finish, then save again.');
+      }
+      try { return setReportingLanguage(home, sourceRoot, hosts, preset); }
+      finally { lock.release(); }
     },
     assertPolicyPath: assertConfigurationPath,
   };

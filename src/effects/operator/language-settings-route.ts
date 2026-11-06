@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { JsonValue } from '../../core/evidence/types';
 import { renderJsonObjectUpdate, requireDocumentationLanguage } from '../adoption/standard-plan';
@@ -65,7 +65,10 @@ function readDocumentationPolicy(repositoryId: string, env: NodeJS.ProcessEnv | 
     throw new OperatorWriteRefusal(409, 'policy_path_refused', (error as Error).message, 'Replace the linked or non-file policy path with a regular file.');
   }
   let raw: string;
-  try { raw = readFileSync(path, 'utf8'); }
+  try {
+    if (!lstatSync(path).isFile()) throw new Error('Policy must be a regular file.');
+    raw = readFileSync(path, 'utf8');
+  }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new OperatorWriteRefusal(409, 'policy_missing', 'The repository policy file is missing.', 'repo-harness init');
