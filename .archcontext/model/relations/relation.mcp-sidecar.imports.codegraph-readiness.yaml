@@ -3,4 +3,4 @@ id: relation.mcp-sidecar.imports.codegraph-readiness
 kind: depends-on
 source: capability.runtime-harness.mcp-sidecar
 target: capability.verification.codegraph-readiness
-intent: "Type the reader tool context with the CodeGraph adapter interface"
+intent: "Build the CodeGraph reader for the served tools and type the reader tool context"

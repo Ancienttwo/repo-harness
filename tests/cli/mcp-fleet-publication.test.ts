@@ -11,7 +11,7 @@ import {
   callFleetTool,
 } from '../../src/cli/mcp/fleet-tools';
 import { buildMcpToolDefinitions, callMcpTool } from '../../src/cli/mcp/tools';
-import { createCodeGraphCliAdapter } from '../../src/cli/mcp/codegraph-adapter';
+import { createCodeGraphCliAdapter } from '../../src/cli/tools/codegraph-reader';
 
 function parseResult(result: { content: Array<{ text: string }> }): Record<string, any> {
   return JSON.parse(result.content[0]?.text ?? '{}') as Record<string, any>;

@@ -4,9 +4,9 @@ kind: capability
 name: General Repository Access
 status: active
 layer: cli
-summary: Exposes bounded read-only repository tools through MCP.
+summary: Exposes bounded repository read tools and, for a read_write grant, write tools through MCP.
 responsibilities:
-  - Own general repository reader tools, CodeGraph routing, and access-policy enforcement.
+  - Own the general repository read and write tools, CodeGraph routing, and access-policy enforcement.
 source:
   include:
     - src/cli/mcp/general-repo-access.ts

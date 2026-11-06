@@ -19,7 +19,7 @@ steps:
     label: mcp serve starts the stdio transport
     evidence:
       entrypointId: entrypoint.mcp-sidecar.cli
-      sourceSymbol: buildMcpCommand
+      sourceSymbol: runMcpServeCommand
       sinkId: sink.mcp-sidecar.stdio-start
   - id: create-server
     from: transport

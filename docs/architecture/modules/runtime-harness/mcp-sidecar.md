@@ -172,8 +172,8 @@ sequenceDiagram
 | --- | --- | --- | --- |
 | `component.mcp-sidecar.primary`（Server and Tool Dispatch） | `server.ts`、`tools.ts`、`state-tools.ts`、`fleet-tools.ts`、`instructions.ts`、`version.ts` | 6 / 1396 | 读配置，按 profile 建工具清单，把调用分派到 workflow、state、publication readiness 与 reader 工具块 |
 | `component.mcp-sidecar.transport-auth`（Stdio Transport） | `transports/**` | 1 / 8 | stdio transport |
-| `component.mcp-sidecar.repo-policy-registry` | `auth.ts`、`types.ts`、`policy.ts`、`paths.ts`、`repo.ts`、`redaction.ts`、`guarded-write.ts`、`workspaces.ts`、`audit.ts` | 9 / 1109 | 用户级配置、路径策略、脱敏、审计 |
-| `component.mcp-sidecar.host-setup`（CLI and Doctor） | `src/cli/commands/mcp.ts`、`doctor.ts` | 2 / 205 | mcp CLI 与静态 doctor |
+| `component.mcp-sidecar.repo-policy-registry` | `auth.ts`、`types.ts`、`policy.ts`、`paths.ts`、`repo.ts`、`redaction.ts`、`guarded-write.ts`、`workspaces.ts`、`audit.ts`、`log-paths.ts` | 10 / 1110 | 用户级配置、路径策略、脱敏、审计 |
+| `component.mcp-sidecar.host-setup`（CLI Actions and Doctor） | `cli-actions.ts`、`doctor.ts` | 2 / 210 | mcp serve 与 doctor 动作，静态 doctor |
 
 依赖方向：host-setup 调用 transport-auth，读 primary 与 repo-policy-registry。transport-auth 调用 primary。primary 调用 repo-policy-registry。组件之间没有反向边。
 
@@ -181,9 +181,9 @@ sequenceDiagram
 
 - `auth.ts` 放进 repo-policy-registry。它是配置存储。`server.ts` 与 `doctor.ts` 都读它。
 - `types.ts` 和 `audit.ts` 放进 repo-policy-registry。`types.ts` 只定义 `McpPolicy`、`McpPathDecision`、`McpAuditEntry` 等策略类型。`audit.ts` 只被工具处理器调用。
-- `src/cli/commands/mcp.ts` 放进 host-setup。这个命令启动 transport。放进 primary 会形成 primary → transport-auth → primary 的环。
+- `cli-actions.ts` 放进 host-setup。这个动作启动 transport。放进 primary 会形成 primary → transport-auth → primary 的环。
 
-以下文件留在 capability include 上，不进任何组件：`reader-tools.ts`（general-repo-access 的声明入口）、`general-repo-access.ts` 与 `general-repo-access/**`（与 general-repo-access 重复归属）、`codegraph-adapter.ts`（与 codegraph-readiness 重复归属）和一份 research 文档。
+以下文件留在 capability include 上，不进任何组件：`reader-tools.ts`（general-repo-access 的声明入口）、`general-repo-access.ts` 与 `general-repo-access/**`（与 general-repo-access 重复归属）和一份 research 文档。
 
 组件到其他 capability 的关系不出现在 §1.4（渲染器缺口），这里列出：
 
@@ -208,7 +208,7 @@ sequenceDiagram
 
 ### 3.6 开放问题
 
-- 已解决（#1354）：coding runtime 删除后，`DEFAULT_CODEGRAPH_ADAPTER` 的问题不再适用于本 capability。`codegraph-adapter.ts` 的 `allowRepoLocalBin` 默认值只影响 general-repo-access。
+- 已解决（#1354）：coding runtime 删除后，`DEFAULT_CODEGRAPH_ADAPTER` 的问题不再适用于本 capability。`src/cli/tools/codegraph-reader.ts` 的 `allowRepoLocalBin` 默认值只影响 general-repo-access。
 - 已解决（#1343）：`src/core/security/secret-patterns.ts` 归 `component.execution-primitives.secret-patterns`（core 层），不再归本 capability。
 
 ## 4. 历史决策记录（append-only）
@@ -244,8 +244,15 @@ sequenceDiagram
 - 新增三条关系，声明仍然存在的 import：host-setup → global-runtime-reconciliation、repo-policy-registry → hook-adapters、capability → codegraph-readiness（第二个 ChangeSet）。
 - 旧配置的退役键 fail closed（`MCP_CONFIG_RETIRED_FIELD`）。doctor 用 `retired_chatgpt_state` 列出旧文件，不删除。Bot 记录删除 `mcp_client_id` 字段。
 
+### 2026-11-06 共享部分移出 MCP 目录（#1847）
+
+- CodeGraph reader 移到 `src/cli/tools/codegraph-reader.ts`，目录与 codegraph-readiness 的归属一致。节点 id 不变。
+- `src/cli/commands/mcp.ts` 归 composition 层的 CLI root，只保留命令定义和 `access set`。serve 与 doctor 动作在 `src/cli/mcp/cli-actions.ts`，动态 import 加载。
+- MCP 审计日志路径只有一份：`src/core/public-projections/mcp-audit-log.ts`。sidecar 写入，Operator 读取。
+- Bot registry 与 `bots` 命令归 `capability.workflow-engine.execution-primitives`（M1），文件不移动。
+- 删除 `process.mcp-coding-shell` 与两条关系，以及 `relation.mcp-sidecar.imports.contract-assets`、`relation.mcp-sidecar.primary.task-fleet`。代码里已没有对应调用。
+
 ## Optimization Backlog
 
-- 在 arch-context#296 和 include 收窄之后：把 `src/cli/mcp/reader-tools.ts` 和 `src/cli/mcp/general-repo-access*` 移给 general-repo-access，把 `src/cli/mcp/codegraph-adapter.ts` 移给 codegraph-readiness（归属提议 §2）。
-- `relation.mcp-sidecar.primary.task-fleet`（"Acquire fleet tasks and handle task steers"）在 #1354 之前已没有对应 import。`relation.mcp-sidecar.primary.execution-primitives` 的 import 是 `src/effects/repo-registry.ts`，但 intent 仍写 "Read the worktree topology for the PM server scope"。#1354 没有改这两条，因为目标节点由 #1352 在改。
+- 在 arch-context#296 和 include 收窄之后：把 `src/cli/mcp/reader-tools.ts` 和 `src/cli/mcp/general-repo-access*` 移给 general-repo-access（归属提议 §2）。
 - **repo registry 造成 capability 级的环。** 已由 #1343 完成：registry 归 `component.execution-primitives.repository-registry`，task-fleet 的关系改为 `relation.task-fleet.repository-registry`。

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.primary.acceptance-review
+kind: reads
+source: component.mcp-sidecar.primary
+target: capability.verification.acceptance-review
+intent: "Read the check records and the change assessment record"

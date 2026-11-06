@@ -12,11 +12,9 @@
   ],
   "source": {
     "include": [
-      "src/cli/mcp/**",
-      "src/cli/commands/mcp.ts"
+      "src/cli/mcp/**"
     ],
     "exclude": [
-      "src/cli/mcp/codegraph-adapter.ts",
       "src/cli/mcp/general-repo-access.ts",
       "src/cli/mcp/general-repo-access/**"
     ],

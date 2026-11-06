@@ -8,12 +8,14 @@ layer: cli
 summary: Builds the repo-harness command tree from the core and plugin command modules and runs the update transactions.
 responsibilities:
   - Register every top-level command module in one commander program.
+  - Parse the mcp commands, load the mcp serve and doctor actions by dynamic import and set repository access grants for mcp access set.
   - Run the plugin selection projection and runtime refresh inside one host transaction with configuration restores.
 extensions:
   harnessTier: "composition"
 source:
   include:
     - "src/cli/index.ts"
+    - "src/cli/commands/mcp.ts"
   entrypoints:
     - id: entrypoint.global-runtime-reconciliation.cli-root
       path: "src/cli/index.ts"

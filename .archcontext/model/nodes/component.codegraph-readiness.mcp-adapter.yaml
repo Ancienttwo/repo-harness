@@ -10,4 +10,4 @@ responsibilities:
   - Run the CodeGraph CLI reads that the general-repo-access MCP tools call.
 source:
   include:
-    - src/cli/mcp/codegraph-adapter.ts
+    - src/cli/tools/codegraph-reader.ts

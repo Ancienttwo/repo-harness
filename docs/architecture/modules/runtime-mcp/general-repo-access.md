@@ -111,7 +111,7 @@ sequenceDiagram
 ### 3.2 关键权衡
 
 - **`.ignore` 是唯一内容级排除源。** `.gitignore`、`.rgignore`、dotfile、隐藏目录、扩展名、工作流产物身份都不是隐式策略。唯一的硬编码例外是 `.ignore` 文件自身恒被排除（`authority.ts:285`）——这是 ADR 文本里没写出来的一条额外规则。
-- **CodeGraph 是元数据来源，不是读取后端。** ADR 写的是「CodeGraph owns indexed code discovery and symbol/text retrieval where it can provide them」，但当前实现里 `GeneralRepoCodeGraphAdapter.searchText`（`codegraph-adapter.ts:59`）**零生产消费者**——`search_text` 全程自己扫文件，只用 `entry.indexed` 决定 `backend` 标签。`searchText` 是已实现但未接线的保留接口。
+- **CodeGraph 是元数据来源，不是读取后端。** ADR 写的是「CodeGraph owns indexed code discovery and symbol/text retrieval where it can provide them」，但当前实现里 `GeneralRepoCodeGraphAdapter.searchText`（`src/cli/tools/codegraph-reader.ts:59`）**零生产消费者**——`search_text` 全程自己扫文件，只用 `entry.indexed` 决定 `backend` 标签。`searchText` 是已实现但未接线的保留接口。
 - **快照优先于性能。** `SNAPSHOT_TTL_MS = 5min`、`MAX_SNAPSHOT_CACHE_ENTRIES = 16`、`MAX_ENTRY_METADATA_CACHE_ENTRIES = 200,000`。walk 完还要 `validateSnapshotRevision` 复算一遍 digest；漂移时最多重建一次，仍漂移就把 `stale` / `partial` 如实返回而不是重试到成功。
 - **变更层是 portable v1。** 保留 mode bits，不保留 ownership、xattr、平台特有元数据；mtime 随提交改变。无覆盖改名靠 `bun:ffi` 直调三个平台的原生 syscall（`:1684`–`:1714`），代价是这一段绑死 Bun runtime。
 - **锁是跨进程的但基于文件系统。** `linkSync` + owner.json + PID 存活检测。在 NFS 或容器跨节点共享的仓库上，PID 存活检测会误判。
@@ -134,7 +134,7 @@ sequenceDiagram
 
 已声明的出向 relation：
 
-- primary → codegraph-readiness：`general-repo-access.ts` 通过 `codegraph-adapter.ts` 读取索引元数据。路径先授权，再合并元数据（I1、I2）。
+- primary → codegraph-readiness：`general-repo-access.ts` 通过 `src/cli/tools/codegraph-reader.ts` 读取索引元数据。路径先授权，再合并元数据（I1、I2）。
 - primary → `component.mcp-sidecar.repo-policy-registry`：`general-repo-access.ts` 和 `authority.ts` 调用 `paths.ts`、`redaction.ts` 和 `audit.ts`。
 - primary → `component.execution-primitives.repository-registry`：`general-repo-access.ts` 和 `authority.ts` 调用 `src/effects/repo-registry.ts`（#1343）。
 

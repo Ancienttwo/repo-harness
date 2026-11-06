@@ -10,7 +10,8 @@ import {
 } from '../../effects/locking/exclusive-directory-lock';
 import { appendSegmentedLog } from '../../effects/segmented-log';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
-import type { CodeGraphRefreshResult, CodeGraphRepoSnapshot, GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
+import type { CodeGraphRefreshResult, CodeGraphRepoSnapshot, GeneralRepoCodeGraphAdapter } from '../tools/codegraph-reader';
+import { MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH } from './log-paths';
 import { isPathInside } from './paths';
 import {
   GeneralRepoAccessError,
@@ -196,10 +197,7 @@ const MAX_SNAPSHOT_BUILD_ATTEMPTS = 2;
 const SNAPSHOT_CACHE = new Map<string, VisibleEntrySnapshot>();
 const ENTRY_METADATA_CACHE = new Map<string, EntryMetadataCacheValue>();
 const WRITE_TOOLS = new Set<string>(['write_file', 'apply_patch', 'move_path', 'delete_path', 'refresh_repo_index']);
-export const MCP_INDEX_EVENTS_RELATIVE_PATH = '.ai/harness/mcp/index-events.jsonl';
 const MCP_MUTATION_LOCKS_RELATIVE_PATH = 'mcp/mutation-locks';
-export const MCP_METRICS_RELATIVE_PATH = '.ai/harness/mcp/metrics.jsonl';
-export const MCP_TRACE_RELATIVE_PATH = '.ai/harness/mcp/trace.jsonl';
 const MUTATION_FAULT_ENV = 'REPO_HARNESS_MCP_MUTATION_FAULT_POINT';
 const PATH_ESCAPE_ERROR_CODES = new Set(['INVALID_RELATIVE_PATH', 'PATH_OUTSIDE_REPO', 'SYMLINK_ESCAPE']);
 

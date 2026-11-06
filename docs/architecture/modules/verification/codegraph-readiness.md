@@ -113,7 +113,7 @@ sequenceDiagram
 3. **本地依赖优先于全局。** 解析顺序是 `AGENTIC_DEV_CODEGRAPH_LOCAL_BIN`、平台包 `node_modules/@colbymchenry/codegraph-<platform>-<arch>/bin/codegraph`、`node_modules/.bin/codegraph`，最后是 PATH 上的 `codegraph`（`check-agent-tooling.sh:1605-1625`）。`AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL=0` 和 `AGENTIC_DEV_CODEGRAPH_ALLOW_GLOBAL=0` 可以关掉其中一侧。
 4. **host 配置只在显式命令下写入。** 只有 `tools configure codegraph` 和 `init --configure-codegraph-mcp` 改写 host MCP 配置。`install` 和默认 ensure/check 路径不写。
 5. **全局配置写入受 host 锁和归属回执保护。** `--location global` 时，`tools configure` 在 runtime host 事务锁内运行（`src/cli/commands/tools.ts:155-158`）。`configureCodegraph` 再通过 `withConfigurationMutation` 记录配置归属（`src/cli/tools/codegraph.ts:716-721`）。卸载因此能精确还原（`46405ed9`，complete user configuration uninstall）。
-6. **仓库内可执行文件的拒绝只在调用方要求时生效。** 以 `allowRepoLocalBin: false` 构造的适配器剔除 PATH 中位于仓库内的目录，并拒绝仓库内的显式 bin 覆盖（`src/cli/mcp/codegraph-adapter.ts:94-109`）。唯一这样构造适配器的 MCP 路径是 coding runtime，#1354 删除了它。保留的 reader 工具用 `src/cli/mcp/general-repo-access.ts:196` 的默认适配器，`allowRepoLocalBin` 默认为 true（`codegraph-adapter.ts:224`）。#1354 之前 planner 与 executor 也走这个默认值。
+6. **仓库内可执行文件的拒绝只在调用方要求时生效。** 以 `allowRepoLocalBin: false` 构造的适配器剔除 PATH 中位于仓库内的目录，并拒绝仓库内的显式 bin 覆盖（`src/cli/tools/codegraph-reader.ts:94-109`）。唯一这样构造适配器的 MCP 路径是 coding runtime，#1354 删除了它。保留的 reader 工具用 `src/cli/mcp/general-repo-access.ts:196` 的默认适配器，`allowRepoLocalBin` 默认为 true（`src/cli/tools/codegraph-reader.ts:224`）。#1354 之前 planner 与 executor 也走这个默认值。
 7. **下游生成仓库默认使用全局 MCP。** 本仓库把 CodeGraph 作为 devDependency 是自托管特例。下游仓库只有在本地 policy 显式选择时才使用 vendored 依赖。
 
 ### 3.2 关键权衡
@@ -127,16 +127,16 @@ sequenceDiagram
 
 ### 3.3 10x 规模下先垮的点
 
-- **`discoverRepo` 的全量文件列表。** 适配器把 `codegraph files --format flat --json` 的输出整体解析到内存。上限只有 `MAX_STDOUT_BYTES = 10 MiB` 和 5 秒默认超时（`codegraph-adapter.ts:62-63`）。文件数上一个数量级后，先撞到这两个常量，结果是 `INDEX_UNAVAILABLE`。每次 manifest 或 snapshot 构建都重新调用，没有跨调用缓存。
-- **`revisionFor` 的排序和全量 JSON 序列化**（`codegraph-adapter.ts:130`）在同一路径上重复执行。
+- **`discoverRepo` 的全量文件列表。** 适配器把 `codegraph files --format flat --json` 的输出整体解析到内存。上限只有 `MAX_STDOUT_BYTES = 10 MiB` 和 5 秒默认超时（`src/cli/tools/codegraph-reader.ts:62-63`）。文件数上一个数量级后，先撞到这两个常量，结果是 `INDEX_UNAVAILABLE`。每次 manifest 或 snapshot 构建都重新调用，没有跨调用缓存。
+- **`revisionFor` 的排序和全量 JSON 序列化**（`src/cli/tools/codegraph-reader.ts:130`）在同一路径上重复执行。
 - readiness 链本身不随仓库规模增长。先垮的是 `codegraph status .` 的 1.5 秒超时。
 
 ### 3.4 归属与开放问题（2026-10-11）
 
 - `src/cli/commands/tools.ts` 原本没有归属，现在加入本 capability。它的子命令只有 `tools ensure codegraph` 和 `tools configure codegraph`（`tools.ts:108-165`）。
-- `src/cli/mcp/codegraph-adapter.ts` 同时被本 capability 和 mcp-sidecar 的 `src/cli/mcp/**` 声明。按最长前缀，registry 判给本 capability。重复归属等待 include 收窄（arch-context#296）。
+- `src/cli/tools/codegraph-reader.ts` 只归本 capability。#1847 把它移出 `src/cli/mcp/`，重复归属随之结束。
 - 本 capability 的 include 包含它自己的投影文档 `docs/architecture/modules/verification/codegraph-readiness.md`。其他 capability 不拥有自己的投影页。归属提议 §1f 建议删除这一条。按用户决定，收窄推迟。
-- 开放问题：`src/cli/mcp/general-repo-access.ts:196` 用默认参数构造适配器，`allowRepoLocalBin` 默认为 true（`codegraph-adapter.ts:224`）。planner 与 executor 的 reader 工具走这条路径，所以被索引的仓库可以提供 codegraph 可执行文件。
+- 开放问题：`src/cli/mcp/general-repo-access.ts:196` 用默认参数构造适配器，`allowRepoLocalBin` 默认为 true（`src/cli/tools/codegraph-reader.ts:224`）。planner 与 executor 的 reader 工具走这条路径，所以被索引的仓库可以提供 codegraph 可执行文件。
 
 ## 4. 历史决策记录（append-only）
 
@@ -163,7 +163,7 @@ changing host adapter installation semantics.
 - `scripts/ensure-codegraph.sh` is the mutating entrypoint for local dependency
   installation and index init/sync.
 - `src/cli/tools/codegraph.ts` owns CLI resolution and
-  `src/cli/mcp/codegraph-adapter.ts` owns MCP index integration.
+  `src/cli/tools/codegraph-reader.ts` owns MCP index integration.
 - `repo-harness install --target codex|claude|both` remains host adapter
   installation only.
 - MCP config writes stay explicit and out of the default ensure/check path.
@@ -207,7 +207,7 @@ scripts/ensure-codegraph.sh --init|--sync
 以下三处历史 prose 与 main@13686d8d 源码不一致，按事实优先级以源码为准：
 
 1. "`scripts/ensure-codegraph.sh` is the mutating entrypoint" — 该脚本当前只有 16 行，是 `repo-harness tools ensure codegraph` 的 bun shim；变更逻辑在 `src/cli/tools/codegraph.ts#ensureCodegraph`。
-2. "`src/cli/mcp/codegraph-adapter.ts` owns MCP index integration" — 该文件是 repo-harness **自身 MCP server** 读取 CodeGraph 索引的适配器（`discoverRepo`/`refreshRepo`），与 host MCP 配置注册无关；host MCP 配置由 `configureCodegraph` 负责。
+2. "`src/cli/tools/codegraph-reader.ts` owns MCP index integration" — 该文件是 repo-harness **自身 MCP server** 读取 CodeGraph 索引的适配器（`discoverRepo`/`refreshRepo`），与 host MCP 配置注册无关；host MCP 配置由 `configureCodegraph` 负责。
 3. "Repo-local `node_modules/.bin/codegraph` wins over global" — 方向正确但不完整：平台包 `node_modules/@colbymchenry/codegraph-<platform>-<arch>/bin/codegraph` 排在 `node_modules/.bin/codegraph` 之前（`check-agent-tooling.sh:1406`-`:1407`），本仓实测解析到的正是平台包路径。
 
 ### 2026-10-11 归属扩展
@@ -223,5 +223,5 @@ scripts/ensure-codegraph.sh --init|--sync
 
 ## Optimization Backlog
 
-- 在 arch-context#296 之后：从 mcp-sidecar 删除 `codegraph-adapter.ts` 的重叠声明；删除本 capability 对自己投影页的 include；删除 `tests/cli/codegraph-resolver.test.ts` 条目（测试归 evals-checks）。
+- 在 arch-context#296 之后：删除本 capability 对自己投影页的 include；删除 `tests/cli/codegraph-resolver.test.ts` 条目（测试归 evals-checks）。
 - 决定 `general-repo-access.ts:196` 的默认适配器是否改为 `allowRepoLocalBin: false`。

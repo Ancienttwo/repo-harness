@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.bots-cli
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: component.execution-primitives.cli-layer
+intent: "Register the bots command"

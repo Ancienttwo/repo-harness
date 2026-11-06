@@ -32,7 +32,7 @@ import { buildReviewCommand } from './commands/review';
 import { taskReviewRunner } from '../effects/review-runner/task-review-runner';
 import { buildUpgradeCommand } from './commands/upgrade';
 import { buildToolsCommand } from './commands/tools';
-import { architecturePort, isArchitectureUnavailable, registerArchitecturePorts } from '../core/architecture/contracts';
+import { registerArchitecturePorts } from '../core/architecture/contracts';
 import { assertPluginCommandSelected, declareArchitectureSelection, pluginSelected, readRecordedSelection, recordedPlugins } from './installer/architecture-selection';
 import { buildHerdrCommand, notifyRelayDoctorCheck } from './commands/herdr';
 import { buildEventsCommand } from './commands/events';
@@ -60,9 +60,8 @@ import { buildArchitectureDebtCommand } from './commands/architecture-debt';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { buildRetentionCommand, type RetentionPorts } from './commands/retention';
 import { configureRequiredHerdrSkill } from './commands/herdr-skill';
-import { MCP_AUDIT_LOG_RELATIVE_PATH } from './mcp/audit';
-import { MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH } from './mcp/general-repo-access';
-import { createCodeGraphCliAdapter, createCodeGraphNotSelectedAdapter } from './mcp/codegraph-adapter';
+import { MCP_AUDIT_LOG_RELATIVE_PATH } from '../core/public-projections/mcp-audit-log';
+import { MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH } from './mcp/log-paths';
 import { TASK_INBOX_V2_RELATIVE_PATH } from '../core/fleet/task-inbox-layout';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
@@ -1038,11 +1037,7 @@ export function buildProgram(): Command {
   program.addCommand(buildBrainCommand());
   program.addCommand(buildCapabilityContextCommand());
   program.addCommand(buildDocsCommand());
-  program.addCommand(buildMcpCommand(() => {
-    // The reader tools run CodeGraph only for a selected plugin; otherwise each read reports the absence.
-    const port = architecturePort('codegraph');
-    return isArchitectureUnavailable(port) ? createCodeGraphNotSelectedAdapter(port.message) : createCodeGraphCliAdapter();
-  }));
+  program.addCommand(buildMcpCommand());
   program.addCommand(buildRunCommand());
   program.addCommand(buildStateCommand());
   program.addCommand(buildPublicationCommand());

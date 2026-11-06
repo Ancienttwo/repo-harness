@@ -13,7 +13,7 @@
 import { execFile } from 'node:child_process';
 import { constants } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
-import { join, parse } from 'node:path';
+import { dirname, join, parse } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -29,6 +29,7 @@ import {
   type McpAuditProjection,
   type RegistryRepoProjection,
 } from '../../core/operator/bot-access';
+import { MCP_AUDIT_LOG_RELATIVE_PATH } from '../../core/public-projections/mcp-audit-log';
 import { readBotRegistry } from '../bot-registry';
 import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError } from '../repo-registry';
 import { HerdrCoreError } from '../terminal/herdr-core';
@@ -50,8 +51,6 @@ const HC_TIMEOUT_MS = 5_000;
  */
 export const BOT_ACCESS_CWD = parse(homedir()).root;
 
-/** The log `writeMcpAuditEntry` appends; tests pin it against its writer. */
-export const MCP_AUDIT_LOG_SEGMENTS = ['.ai', 'harness', 'mcp', 'audit.log'] as const;
 const AUDIT_SEGMENT_NAME = /^\d{13}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$/;
 
 /** The doctor argv is a code constant. */
@@ -131,10 +130,10 @@ async function newestAuditRow(path: string, directory: BotDirectory): Promise<Mc
 async function lastAudit(repoPath: string, bots: BotDirectory): Promise<RegistryRepoProjection['last_audit']> {
   try {
     const root = await realpath(repoPath);
-    const directory = join(root, ...MCP_AUDIT_LOG_SEGMENTS.slice(0, -1));
+    const active = join(root, MCP_AUDIT_LOG_RELATIVE_PATH);
+    const directory = dirname(active);
     try { if (await realpath(directory) !== directory) return { state: 'unavailable', reason: 'audit_unreadable' }; }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { state: 'missing' }; throw error; }
-    const active = join(directory, MCP_AUDIT_LOG_SEGMENTS.at(-1)!);
     const current = await newestAuditRow(active, bots);
     if (current) return { state: 'ok', entry: current };
     const archive = `${active}.archive`;

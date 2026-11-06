@@ -4,7 +4,6 @@ import { join, parse } from 'node:path';
 import {
   BOT_ACCESS_CWD,
   collectBotAccess,
-  MCP_AUDIT_LOG_SEGMENTS,
   MCP_DOCTOR_ARGV,
   runBotAccessCommand,
   startBotAccessCollector,
@@ -12,7 +11,7 @@ import {
 } from '../../src/effects/operator/bot-access';
 import type { NotifyCacheV1 } from '../../src/effects/operator/notify-collector';
 import type { NotifyChannelDeliveryStatus } from '../../src/effects/operator/notify-status';
-import { MCP_AUDIT_LOG_RELATIVE_PATH } from '../../src/cli/mcp/audit';
+import { MCP_AUDIT_LOG_RELATIVE_PATH } from '../../src/core/public-projections/mcp-audit-log';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { decodeBotAccessSnapshot, projectMcpAuditEntry, projectMcpDoctor, type BotAccessSnapshotV1 } from '../../src/core/operator/bot-access';
 import { botRegistryPath, registerBot } from '../../src/effects/bot-registry';
@@ -346,9 +345,5 @@ describe('Bot access collector', () => {
     expect(projectMcpAuditEntry({ ...row, botId: null }, directory)?.bot).toEqual({ state: 'unregistered' });
     expect(projectMcpAuditEntry(row, directory)?.bot).toEqual({ state: 'unregistered' });
     expect(projectMcpAuditEntry({ ...row, botId: 'hermes' }, directory)?.bot).toEqual({ state: 'registered', bot_id: 'hermes' });
-  });
-
-  test('local constants match the writers they read after', async () => {
-    expect(MCP_AUDIT_LOG_SEGMENTS.join('/')).toBe(MCP_AUDIT_LOG_RELATIVE_PATH);
   });
 });
