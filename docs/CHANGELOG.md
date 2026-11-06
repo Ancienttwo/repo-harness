@@ -2,7 +2,11 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.26.6] - 2026-11-06
+
+This release adds the `peer-runtime` command gate, binds managed hooks to
+absolute runtime paths, and adds Board status desks and desktop health
+protocol 2. OAR is pinned to 0.91.0. The hook route registry is unchanged.
 
 ### Breaking
 
@@ -10,46 +14,84 @@ All notable changes to this skill are documented here.
   cleanup-investigation job now need `peer-runtime`. A refusal exits 1 with
   empty stdout, `install_plugin_unavailable` and a repair command before loading
   plugin code. Help stays open. Core review admission and publication, worktree
-  closeout, doctor, hooks, `hc`, the Herdr skill and fleet stay in core. (#1889)
+  closeout, doctor, hooks, `hc`, the Herdr skill and fleet stay in core. (#1889, #1904)
 
 ### Upgrade
 
 - For selection `all`, run `repo-harness update`. For an explicit list, run
   `repo-harness install --plugins <your plugins>,peer-runtime`. No migration
   changes an explicit list. `peer-runtime` is available on every target and
-  has no owner probe row; its portal skill installs only on Claude. (#1889)
+  has no owner probe row; its portal skill installs only on Claude. (#1889, #1904)
+- Upgrade with `bun add -g repo-harness@0.26.6 --no-cache` followed by
+  `repo-harness update --version 0.26.6`. Update rewrites managed Codex and
+  Claude hooks and the repo-harness-owned Claude status line to the resolved
+  absolute Bun and global `dist/hook-entry.js` paths. Run update again if
+  Bun moves. A missing runtime or bundle fails closed. User-owned hooks and
+  status lines stay intact. The hook route digest is unchanged. (#1895)
+- Restart the Operator server and reload its page together for the new
+  Board protocols. Stored summaries become available after the next board
+  read. (#1876)
 
 ### Rollback
 
 - To restore the previous selection, use `repo-harness install --rollback`.
   This keeps the new guards. To restore commands without the gate, reinstall
-  the previous package version and run `repo-harness update`. (#1889)
+  the previous package version and run `repo-harness update`. (#1889, #1904)
 
 ### Changed
 
 - Operator `/healthz` now returns protocol 2 and the core package version.
   The protocol is the desktop integration contract. UI-only changes do not
-  bump it. (#1890)
+  bump it. (#1890, #1897)
 - Update `@botiverse/oar` to 0.91.0. A handled input has no turn outcome and
   cannot complete a review. A Codex `unauthorized` error now stops a review
-  as an auth failure. (#1899)
+  as an auth failure. (#1899, #1901)
 - The board now reports `blocked`, `error` and `done` desks and the hc status
   message of each seat. `BOARD_PROTOCOL` moves to 3, `BOARD_PARENTS_PROTOCOL`
   to 4 and `BOARD_SUMMARIES_PROTOCOL` to 3, with no read of the old protocols.
   The web client and the server ship together, so an open page must reload. A
   stored summary shows as unavailable until the next board read writes it.
-  (#1867)
+  (#1867, #1876)
 - A plugin command guard on a recorded `all` selection now prints
   `repo-harness update`. An explicit `--plugins` list ended `all`, so later
-  plugins did not join at `update`. (#1869)
+  plugins did not join at `update`. (#1869, #1875)
 - `repo-harness init` writes `base_branch` and `merge_back.target` from the
   same Git read as `review_base`, only when it creates the policy. An existing
   policy keeps its keys: a policy without `base_branch` or `merge_back.target`
-  stays without the key, and `init` no longer adds `main` there. (#1865)
+  stays without the key, and `init` no longer adds `main` there. (#1865, #1878)
 - `scripts/create-project-dirs.sh` and `scripts/init-project.sh` no longer
   write `.ai/harness/policy.json`. `repo-harness init` is the one policy
   writer and stays a separate step, so a scaffolded project has no policy
-  until `init` runs. (#1865)
+  until `init` runs. (#1865, #1878)
+- Operator runtime observations now use the shared hc status classifier.
+  Unknown or unreported status stays unknown. (#1879)
+- `events install` writes the GitHub App hook configuration through core
+  publication. The three-step approval and partial-failure repair text stay
+  the same. (#1888, #1898)
+- Runtime closeout, the Herdr skill installer and the agent fleet belong to
+  core. Commands and installed behavior stay the same. (#1887, #1903)
+
+### Fixed
+
+- Keep hc terminal reads local. List, snapshot, missed-event and event reads
+  exclude remote addresses before validating their payloads. Malformed local
+  rows still fail. (#1874)
+- Use the marketplace entry name for a Claude plugin without a manifest.
+  A plugin with a manifest still uses its declared name. (#1885)
+- Explain how to repair a scoped npm plugin that has neither a manifest nor
+  an entry name: add `.claude-plugin/plugin.json` with a name, or reinstall
+  from a marketplace. (#1902)
+- Managed hooks invoke the absolute Bun runtime and global hook bundle,
+  so hook execution does not depend on finding `repo-harness-hook` on PATH.
+  (#1895)
+
+### Documentation
+
+- Refresh generated architecture outputs for the 0.26.5 merge. (#1871)
+- Record the 0.26.5 publication and installed upgrade results. (#1873)
+- Record research for the peer-runtime gate, separate packages and desktop
+  handshake. This research does not ship separate packages; #1891 is outside
+  this release. (#1886)
 
 ## [0.26.5] - 2026-11-06
 
