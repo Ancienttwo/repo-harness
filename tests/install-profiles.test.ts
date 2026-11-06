@@ -965,7 +965,7 @@ describe('install selection', () => {
     expect(existsSync(join(env.HOME!, '.agents', '.skill-lock.json'))).toBe(false);
   }), 30_000);
 
-  // An all-plugins CLI install whose only live step is the Waza rule refresh. FAKE_CURL_FAIL makes the fetch fail.
+  // This selection exercises the Waza rule refresh. FAKE_CURL_FAIL makes the fetch fail.
   function installWithFreshRules(env: NodeJS.ProcessEnv, extraEnv: NodeJS.ProcessEnv = {}) {
     const bin = join(env.HOME!, 'fake-bin');
     if (!existsSync(bin)) {
@@ -977,7 +977,7 @@ describe('install selection', () => {
       writeFileSync(join(bin, 'curl'), '#!/bin/sh\n[ -n "$FAKE_CURL_FAIL" ] && { echo "fixture HTTP 503" >&2; exit 22; }\nwhile [ $# -gt 0 ]; do case "$1" in --output) out="$2"; shift;; https://*) url="$1";; esac; shift; done\necho "# upstream ${url##*/}" > "$out"\n', { mode: 0o755 });
       writeFakeHc(bin);
     }
-    const run = spawnSync(process.execPath, [CLI, 'install', '--target', 'codex', '--no-cli', '--no-sync-skill', '--no-codegraph', '--json'], {
+    const run = spawnSync(process.execPath, [CLI, 'install', '--plugins', ALL_PLUGINS.filter(id => id !== 'operator').join(','), '--target', 'codex', '--no-cli', '--no-sync-skill', '--no-codegraph', '--json'], {
       cwd: ROOT, env: { ...env, ...extraEnv, PATH: `${bin}:/bin:/usr/bin`, REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') }, encoding: 'utf-8',
     });
     return { status: run.status, rules: JSON.parse(run.stdout).steps.find(({ step }: { step: string }) => step === 'sync Waza shared rules') };
@@ -1053,7 +1053,8 @@ describe('install selection', () => {
       expect(configureRequiredHerdrSkill('both', runEnv).status).toBe('ok');
       hc('new manual');
       const piRoot = hostSkillRoot(env.HOME!, 'pi', env);
-      const run = spawnSync(process.execPath, [CLI, 'install', '--target', 'both', '--no-cli', '--no-sync-skill', '--no-codegraph', '--json'], {
+      const plugins = (row.pi ? ALL_WITH_PI : ALL_PLUGINS).filter(id => id !== 'operator');
+      const run = spawnSync(process.execPath, [CLI, 'install', '--plugins', plugins.join(','), '--target', 'both', '--no-cli', '--no-sync-skill', '--no-codegraph', '--json'], {
         cwd: ROOT, env: runEnv, encoding: 'utf-8',
       });
       expect(run.status, `${row.name}\n${run.stdout}\n${run.stderr}`).toBe(0);

@@ -34,7 +34,7 @@ import {
 import {
   enabledPlugins,
 } from "../installer/install-state";
-import { installSelectionCommand, ownerEnabled, type PluginId } from "../../core/skill-surface/plugin-manifest";
+import { installSelectionCommand, OPERATOR_WEB_PACKAGE_NAME, ownerEnabled, type PluginId } from "../../core/skill-surface/plugin-manifest";
 import { compareHcVersions, HC_MIN_VERSION, HC_RELEASE_ASSETS, type HcReleaseAsset } from "../../core/terminal/herdr-pin";
 import {
   parseSkillSurfaceCatalog,
@@ -545,6 +545,10 @@ function updateAvailableHint(version: string | null, env?: NodeJS.ProcessEnv): s
   return `; latest=${latest.version} available — run: repo-harness update`;
 }
 
+function isCheckoutSource(sourceRoot: string): boolean {
+  return existsSync(join(sourceRoot, 'packages', 'operator-web', 'package.json'));
+}
+
 function installCli(
   sourceRoot: string,
   cwd: string,
@@ -566,6 +570,16 @@ function installCli(
   }
   if (installSpec === "repo-harness@latest" || installSpec === "repo-harness@next") {
     return installCliFromRegistry(cwd, bunExecutable, env, installSpec);
+  }
+  if (installSpec === undefined && !isCheckoutSource(sourceRoot)) {
+    if (!version) return { step: 'install repo-harness CLI', status: 'failed', detail: `package version is unavailable from ${sourceRoot}` };
+    const spec = `repo-harness@${version}`;
+    const install = runProcess(bunExecutable, ['add', '-g', spec, '--no-cache'], cwd, env);
+    if (install.status !== 'ok') return withStepName(install, 'install repo-harness CLI', `spec=${spec}`);
+    const root = bunGlobalPackageRoot(env);
+    const actual = root === null ? null : packageVersion(root);
+    if (actual !== version) return withStepName({ ...install, status: 'failed' }, 'install repo-harness CLI', `installed CLI version mismatch: expected=${version}; actual=${actual ?? 'unavailable'}`);
+    return withStepName(install, 'install repo-harness CLI', `spec=${spec}`);
   }
   const spec = installSpec ?? (existsSync(join(sourceRoot, "package.json")) ? sourceRoot : "repo-harness");
   const step = runProcess(bunExecutable, ["add", "-g", spec, ...(installSpec?.startsWith("repo-harness@") ? ["--no-cache"] : [])], cwd, env);
@@ -1415,6 +1429,54 @@ export function configureProtectedHelperPlatform(
   }
 }
 
+function ensureOperatorConsole(sourceRoot: string, cwd: string, bunExecutable: string, env: NodeJS.ProcessEnv, registry: boolean): GlobalRuntimeStep {
+  const step = 'ensure operator console';
+  const localPackage = join(sourceRoot, 'packages', 'operator-web');
+  if (!registry && !existsSync(join(localPackage, 'dist', 'index.html'))) {
+    return { step, status: 'failed', detail: `console build missing; run bun run build:operator-web in ${sourceRoot}` };
+  }
+  const globalRoot = bunGlobalPackageRoot(env);
+  let cliRoot: string;
+  let cliVersion: unknown;
+  try {
+    if (globalRoot === null) return { step, status: 'failed', detail: 'unable to resolve Bun global package root' };
+    cliRoot = dirname(realpathSync(join(globalRoot, 'package.json')));
+    cliVersion = readPackageManifest(cliRoot).version;
+  } catch (error) {
+    return { step, status: 'failed', detail: `CLI readback failed: ${error instanceof Error ? error.message : String(error)}` };
+  }
+  if (typeof cliVersion !== 'string' || !cliVersion) return { step, status: 'failed', detail: 'installed CLI version is unavailable' };
+  let install: GlobalRuntimeStep = { step, status: 'ok' };
+  try {
+    if (registry) {
+      const spec = `${OPERATOR_WEB_PACKAGE_NAME}@${cliVersion}`;
+      install = runProcess(bunExecutable, ['add', '-g', spec, '--no-cache'], cwd, env);
+      if (install.status !== 'ok') return withStepName(install, step, spec);
+    } else {
+      try {
+        const modules = join(cliRoot, 'node_modules');
+        const target = join(modules, OPERATOR_WEB_PACKAGE_NAME);
+        mkdirSync(modules, { recursive: true });
+        try {
+          if (!lstatSync(target).isSymbolicLink()) return { step, status: 'failed', detail: `console path is not a symlink: ${target}` };
+          rmSync(target);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
+        symlinkSync(resolve(localPackage), target, 'dir');
+      } catch (error) {
+        return { step, status: 'failed', detail: `console link failed: ${error instanceof Error ? error.message : String(error)}` };
+      }
+    }
+    const consoleRoot = findInstalledPackageRoot(cliRoot, OPERATOR_WEB_PACKAGE_NAME);
+    const version = consoleRoot === null ? null : readPackageManifest(consoleRoot).version;
+    if (version !== cliVersion) return { ...install, step, status: 'failed', detail: `console readback mismatch: expected ${cliVersion}, got ${String(version)}` };
+    return withStepName(install, step, `version=${version}`);
+  } catch (error) {
+    return { ...install, step, status: 'failed', detail: `console readback failed: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
 function ensureCodegraphCli(cwd: string, bunExecutable: string, codegraphVersion: string, env?: NodeJS.ProcessEnv, refresh = false): GlobalRuntimeStep {
   const codegraphPackage = `@colbymchenry/codegraph@${codegraphVersion}`;
   const check = runProcess("codegraph", ["--version"], cwd, env);
@@ -1693,6 +1755,12 @@ export function runGlobalRuntimeSetup(
     if (updateMode && opts.installSpec) steps.push(reconcileManagedRuntime(cwd, bunExecutable, env, opts.installSpec, plugins));
     if (updateMode && steps.some((step) => step.status === "failed")) return finalizeRuntimeResult(steps);
   }
+
+  const consoleStep = plugins.includes('operator')
+    ? ensureOperatorConsole(sourceRoot, cwd, bunExecutable, env, (opts.installSpec?.startsWith('repo-harness@') ?? false) || !isCheckoutSource(sourceRoot))
+    : { step: 'ensure operator console', status: 'skipped' as const, detail: 'operator plugin not selected' };
+  steps.push(consoleStep);
+  if (consoleStep.status === 'failed') return finalizeRuntimeResult(steps);
 
   if (updateMode && opts.installSpec) {
     const daemon = inspectManagedDaemonRuntime(cwd, env, plugins);
