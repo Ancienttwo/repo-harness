@@ -1,6 +1,6 @@
 # verification/acceptance-review 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0f29c21312bf3224b647fc8c45b1abf3dfacd104df4c4ba090e435a1b34502fb" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:aa551f788b82c814456934e21643854955d50041b850caa1c2714a33dc436952" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.acceptance-review`(kind `capability`)
 > **Matched Prefixes**:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`、`src/effects/admission/admission-store.ts`、`src/effects/admission/admission-source.ts`、`src/effects/admission/issue-goal.ts`、`src/effects/admission/control-admission.ts`、`src/effects/github/issues.ts`、`src/effects/github/policy.ts`
@@ -29,12 +29,11 @@ flowchart LR
   p1_capability_verification_acceptance_review_f80a24d6 -->|"Admit at most one persistent semantic review session per work package through the circuit breaker"| p1_capability_runtime_harness_hook_adapters_75a11743
   p1_capability_verification_acceptance_review_f80a24d6 -->|"Run one generic acceptance review round for an admitted review campaign"| p1_component_acceptance_review_primary_b86fb286
   p1_component_acceptance_review_primary_b86fb286 -->|"Hold an exclusive directory lock around one generic review run#44; and read and write immutable session artifacts and the reviewer process identity"| p1_capability_workflow_engine_execution_primitives_b3033934
-  p1_component_acceptance_review_primary_b86fb286 -->|"Drive the persistent reviewer session through the runner port that task-agent-host implements#59; the CLI root injects the implementation#44; so review imports no task-agent-host module"| p1_capability_runtime_harness_task_agent_host_d81dadb6
+  p1_component_acceptance_review_primary_b86fb286 -->|"Drive the persistent reviewer session through the runner port that task-agent-host implements#59; the CLI root injects a loader and guards the four runtime operations with peer-runtime#44; so core review admission and publication load no task-agent-host module"| p1_capability_runtime_harness_task_agent_host_d81dadb6
   p1_capability_runtime_harness_hook_adapters_75a11743 -->|"Read the diff fingerprint for mutation guards."| p1_capability_verification_acceptance_review_f80a24d6
   p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Plugin → core: bind task sessions to the active review admission and its source#44; resolve the policy review base of the diff fingerprint#44; implement the reviewer runner port#44; and apply the review isolation policy in the OAR review host"| p1_capability_verification_acceptance_review_f80a24d6
-  p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Use host installation commands for Herdr skill setup."| p1_capability_runtime_harness_hook_adapters_75a11743
   p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Start send and collect persistent Herdr task agents"| p1_component_task_agent_host_primary_d8453f09
-  p1_component_task_agent_host_primary_d8453f09 -->|"Run Git through the process runner#44; hold task session locks#44; read and write immutable session artifacts#44; run hc through the hc client#44; read the notify secret key names#44; read the notify config#44; the delivery record and the notify file paths through the notify read contract#44; and build the next delivery record with its channel names#44; record types and empty record"| p1_capability_workflow_engine_execution_primitives_b3033934
+  p1_component_task_agent_host_primary_d8453f09 -->|"Resolve the task repository and record task worktrees through the Git primitives. Hold task session locks#44; read and write immutable session artifacts#44; run hc through the hc client#44; read the notify secret key names#44; read the notify config#44; the delivery record and the notify file paths through the notify read contract#44; and build the next delivery record with its channel names#44; record types and empty record"| p1_capability_workflow_engine_execution_primitives_b3033934
   p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Run the reviewer session#44; its OAR review host and its pre-prompt inbox companion for acceptance review"| p1_component_task_agent_host_review_runner_c2379e1e
   p1_component_task_agent_host_review_runner_c2379e1e -->|"Read and write immutable session artifacts#44; including the accepted-input proof#44; and read the host process identity"| p1_capability_workflow_engine_execution_primitives_b3033934
   p1_component_task_agent_host_review_runner_c2379e1e -->|"Start#44; send to#44; collect from and close the reviewer task session#44; and read its binding and OAR observations"| p1_component_task_agent_host_primary_d8453f09
@@ -45,8 +44,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:60bf3f0e27595f214aa9ba21ae77b3c0a4892958701bc20952dc1e0f99a1cf1d`).
-- Semantic nodes: `11`; declared relations: `13`.
+- Proof: `proven` (`sha256:5297380e711a3009ba2ec58579dc70d1d74a6561af8bacae4b065381c2a2f732`).
+- Semantic nodes: `11`; declared relations: `12`.
 
 ### 1.2 模組職責表
 
@@ -84,6 +83,7 @@ flowchart LR
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Locate the acceptance receipt and the protected Git runtime
 - `calls` ← `component.contract-assets.planning-helpers` — Read the acceptance policy for planning helpers
 - `depends-on` ← `capability.verification.evals-checks` — Test Acceptance Review behavior through its source modules.
+- `calls` ← `component.execution-primitives.runtime-closeout` — Validate the task claim reference of a session binding, and type requests, results and cleanup results with the runner port types
 - `reads` ← `component.execution-primitives.task-session-record` — Type the task session record fields with the review runner port types: process proof, task agent spec and task session admission
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the review command
 - `depends-on` ← `capability.runtime-harness.hook-adapters` — Read the diff fingerprint for mutation guards.
@@ -100,7 +100,7 @@ flowchart LR
 - `component.acceptance-review.primary`:
   - `calls` → `capability.runtime-harness.evidence-ledger` — Canonicalize review records and load verification execution results
   - `calls` → `capability.workflow-engine.execution-primitives` — Hold an exclusive directory lock around one generic review run, and read and write immutable session artifacts and the reviewer process identity
-  - `calls` → `capability.runtime-harness.task-agent-host` — Drive the persistent reviewer session through the runner port that task-agent-host implements; the CLI root injects the implementation, so review imports no task-agent-host module
+  - `calls` → `capability.runtime-harness.task-agent-host` — Drive the persistent reviewer session through the runner port that task-agent-host implements; the CLI root injects a loader and guards the four runtime operations with peer-runtime, so core review admission and publication load no task-agent-host module
   - `reads` → `capability.workflow-engine.workflow-state` — Observe Git and files read-only and resolve the workflow profile for the review subject
 - `component.acceptance-review.primary-cli`:
   - 無。
@@ -120,7 +120,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:60bf3f0e27595f214aa9ba21ae77b3c0a4892958701bc20952dc1e0f99a1cf1d`); selectors `16/16`.
+> **Proof**: `proven` (`sha256:5297380e711a3009ba2ec58579dc70d1d74a6561af8bacae4b065381c2a2f732`); selectors `16/16`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

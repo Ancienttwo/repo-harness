@@ -1,5 +1,5 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a661a7a23f77a65558a3335a34da11f13adbc57073b63fd5630084d33a5927bf" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a0b097462a7c3ff2239424ff745a2b5c5d7a24d639ff73542e7a42c8814ba215" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
 > **Matched Prefixes**:`src/cli/hook/**`、`src/cli/installer/**`、`src/pi/**`、`src/effects/managed-tree.ts`、`src/cli/hook-entry.ts`、`src/effects/loop/**`、`src/effects/segmented-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`
@@ -95,7 +95,6 @@ flowchart LR
 - `calls` ← `component.mcp-sidecar.repo-policy-registry` — Append the MCP audit log through the shared segmented log writer
 - `reads` ← `component.operator.activity-feeds` — Read the hook route registry for the Hooks and Agents pages
 - `calls` ← `external.pi` — Pi loads the native extension, which sends mapped session, prompt and tool events to the same-package Bun hook process.
-- `depends-on` ← `capability.runtime-harness.task-agent-host` — Use host installation commands for Herdr skill setup.
 
 組件出向關係:
 
