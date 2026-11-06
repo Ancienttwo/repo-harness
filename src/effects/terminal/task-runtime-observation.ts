@@ -12,7 +12,7 @@ const failureClasses: Record<FailureClass, true> = {
   runtime_exited: true, limit_reached: true, output_schema: true, unknown: true,
 };
 const rejectionCodes: Record<RejectionCode, true> = {
-  busy: true, no_active_turn: true, not_queued: true, unsupported: true,
+  aborted: true, busy: true, no_active_turn: true, not_queued: true, unsupported: true,
   runtime_exited: true, session_released: true, disposed: true, runtime_refused: true, error: true,
 };
 interface HostIdentity { pid: number; identity: string }

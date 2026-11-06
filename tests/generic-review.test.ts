@@ -658,13 +658,19 @@ test('Pi review requires explicit selection and cannot be a missing-provider fal
   expect(existsSync(join(f.dir, 'session.json'))).toBe(false);
 });
 
-test('an unready Pi blocks only a new Pi Herdr review before admission', async () => {
+test.each(['herdr-app', 'app-terminal'] as const)('an unready Pi blocks a new Pi %s review before admission', async launch => {
   const f = packetRoundFixture();
+  const { endpoint: _endpoint, parentPane: _parentPane, ...terminal } = f.options;
+  const options = launch === 'app-terminal' ? { ...terminal, launch } : f.options;
   const blocker = () => 'PI_HOST_UNSUPPORTED_VERSION' as const;
-  await expect(runReviewRound({ ...f.options, harness: 'pi' }, { ...f.effects, piExecutable: () => '/usr/bin/true', piReviewLaunchBlocker: blocker }))
+  await expect(runReviewRound({ ...options, harness: 'pi' }, { ...f.effects, piExecutable: () => '/usr/bin/true', piReviewLaunchBlocker: blocker }))
     .rejects.toThrow('review_pi_launch_not_ready: PI_HOST_UNSUPPORTED_VERSION');
   expect(f.calls).toEqual(['installation']);
   expect(existsSync(join(f.dir, 'session.json'))).toBe(false);
+});
+
+test('a Claude review does not read Pi readiness', async () => {
+  const f = packetRoundFixture();
   // Claude passes the gate position and reaches admission; it fails later on every platform.
   await expect(runReviewRound(f.options, { ...f.effects, piReviewLaunchBlocker: () => { throw new Error('claude must not read Pi readiness'); } }))
     .rejects.not.toThrow('claude must not read Pi readiness');
