@@ -5,8 +5,10 @@
 - Release-prep base: `origin/main`
   `912034abba49f488e876f2391a6d6c841e948bba` (#1864). Branch
   `chore/release-0.26.5` starts on this fixed base and merges no later main.
-- Source commit: pending coordinator commit and prep PR for #1868.
-  Publish candidate: pending release-prep merge commit.
+- Source commit: release-prep head
+  `e8482cce10f9ac6019bc6d2b9f3814fe737b0187`, PR #1870 (#1868).
+  Publish candidate: release-prep merge
+  `baf09af121bd0310510e05c3216d572f5791c4d0`.
 - Previous release: 0.26.4, release-prep merge #1845,
   `d2da8b460abb77b460e531d909e3f9ec4d6f9035`, tag `v0.26.4`.
   Its publication and upgrade values are in `261105-repo-harness-0.26.4.md`.
@@ -20,9 +22,8 @@
 - Other edits: `docs/CHANGELOG.md` and this record. This prep changes no
   product behavior, dependency, lockfile, hook or install logic.
 - Release date and record prefix: UTC `2026-11-06`, from `date -u +%F`.
-- Publish status: pending owner.
-- Hold reason: prep-head acceptance, advisor smoke on the merge commit
-  and the owner's explicit publish go remain required.
+- Publish status: published 2026-11-06 (see Publication).
+- Hold reason: none.
 
 ### Owner decision
 
@@ -32,9 +33,10 @@ the #1843 fix, the rolling projection #1838 and the 0.26.4 release record.
 M95 sets the Pi 1.5.0 floor. M96 (04:19Z) adds #1859, merged in #1866.
 P7 (#1861) moves to 0.26.6. M58 assigns the Codex writer. Under M65 the
 coordinator commits the six paths, pushes and opens the PR. The owner
-publishes after an explicit go. Advisor t11 runs the pre-publish smoke on
-the release-prep merge commit and the post-upgrade probe. This record
-grants no publication action to the worker.
+published npm by hand at 05:43Z and approved the tag, GitHub Release,
+published-release check and machine upgrade at about 06:00Z. Advisor t11
+completed the pre-publish smoke and post-upgrade probe. This record grants
+no publication action to the worker.
 
 ## Cause of the release
 
@@ -195,7 +197,6 @@ and reload its page together. This prep changes no installed runtime.
 
 ### Post-upgrade probe
 
-Advisor t11 runs and records this probe after the owner-approved upgrade.
 Check the installed version, protocol 3, plugin selection and drift with
 `repo-harness install --state`. An `all` selection must record `mcp` and
 `operator`. With a disposable HOME and scratch repository, probe the
@@ -206,12 +207,25 @@ protocols. Use isolated installs to check plugin refusals and the explicit
 list repair line. Check Pi host version and the DSH registry entry without
 a model run. In a scratch repository on a branch other than `main`, check
 that a new policy uses Git's branch authority as its review base. Record
-command, result, revision and environment below.
+command, result, revision and environment below. Advisor t11's
+post-upgrade probe passed at 2026-11-06 06:05:22Z; the supplied results
+are in Publication.
 
 ## Hosted CI
 
-- `Required / CI` on the prep head: pending coordinator read-back.
-- The worker made no hosted CI query from the offline sandbox.
+- `Required / CI` succeeded on prep head
+  `e8482cce10f9ac6019bc6d2b9f3814fe737b0187`.
+- Daily run 42164438985 on publish candidate `baf09af12`:
+  "Daily full tests and package" succeeded (Ubuntu full suite and tarball
+  smoke). "Daily architecture freshness" failed on projection lag after
+  #1864 (#1844, no package file effect). Every other daily job succeeded.
+- Rolling projection #1871 then merged as `01c7b4fa0`. Daily run
+  42171775698 (`workflow_dispatch` on that main commit) completed with
+  success: "Daily architecture freshness", "Daily full tests and package",
+  "Daily governance" and the MCP path matrix all succeeded. #1844 is closed
+  on that run.
+- No hosted CI query was made from this offline worker seat. These values
+  come from #1872 and the coordinator's dispatch addition.
 
 ## Acceptance environment
 
@@ -242,18 +256,38 @@ command, result, revision and environment below.
   working diff: 0 added test lines, 1 added product line (`src scripts`),
   0 new test files. The coordinator records commit-bound counts after
   commit.
-- Not run: full CI, live model calls, advisor merge-commit smoke,
-  installed runtime upgrade or publication.
+- Not run by the release-prep worker: full CI, live model calls, advisor
+  merge-commit smoke, installed runtime upgrade or publication.
+- Coordinator host gates on prep head `e8482cce1`, 2026-11-06
+  04:39:29Z to 04:43:18Z, Darwin 25.5.0 arm64, Bun 1.4.3, Node 24.18.0:
+  `bun run check:release` exit 0, including tarball smoke and the `mcp`
+  and `operator` load gates;
+  `repo-harness-0.26.5.tgz installs, serves the packaged Operator, and packaged CLI bins start`;
+  `[ci] OK`; `[release] OK: npm package gate passed`.
+  `bash scripts/check-npm-release.sh --prepublish` exit 0.
+  Both gates apply to merge `baf09af12`, which has the same tree as the
+  prep head. Advisor smoke, publication, upgrade and probe results follow.
+
+### Yellow flags
+
+- #1844: "Daily architecture freshness" failed on `baf09af12` because of projection lag after #1864; no package file effect. Rolling projection #1871 merged as `01c7b4fa0`; Daily run 42171775698 passed, including freshness, full tests and package, governance and the MCP path matrix. #1844 is closed on that run.
+- #1869: the plugin guard repair prints an explicit list for an `all` state. The 0.26.5 Upgrade notes warn about it. The owner upgrade ran `update`, so the owner machine is not affected.
+- The registered-repo summary timed out at its 30 s budget under load. A rerun of `upgrade --registered --json` took 40 s at load average 29 and reported 11 repositories with statuses `ready` and `skipped`.
 
 ## Release readiness items
 
 - Local typecheck, affected tests, scope and historical CHANGELOG checks:
   PASS on `912034abb` plus the prep diff.
-- Both local release gates: blocked at offline npm lookup (`ENOTCACHED`).
-- Host release gates and prep-head `Required / CI`: pending coordinator.
-- Advisor t11 pre-publish smoke on the merge commit: pending.
-- Owner publish go, npm publication, tag and GitHub Release: pending owner.
-- Owner machine upgrade and advisor t11 post-upgrade probe: pending.
+- The release-prep worker's gates stopped at offline npm lookup
+  (`ENOTCACHED`); both coordinator host gates and prep-head `Required / CI`
+  passed on `e8482cce1`. The host gates apply to the identical merge tree.
+- Advisor t11 pre-publish smoke: PASS on `baf09af12`.
+- npm publication, approved tag, GitHub Release and published-release check:
+  complete. The owner published npm by hand, not with publication steps
+  3 and 4.
+- Owner machine upgrade and advisor t11 post-upgrade probe: PASS on 0.26.5
+  (see Publication). Yellow flags records the registered-repo timeout.
+- The #1870 body was corrected on 2026-11-06 to point to this record for the advisor smoke, publication, upgrade and probe.
 
 ## Rollback
 
@@ -267,13 +301,60 @@ a correction.
 
 ## Publication
 
-- Publish candidate merge SHA: pending coordinator.
-- Advisor t11 pre-publish smoke (command, result, environment): pending.
-- Publish status: pending owner.
-- npm version and publish time: pending owner.
-- Tarball shasum and integrity: pending owner.
-- `latest` dist-tag read-back: pending owner.
-- Git tag and GitHub Release: pending owner approval and action.
-- Published-release check: pending owner.
-- Owner machine upgrade: pending owner.
-- Advisor t11 post-upgrade probe (command, result, environment): pending.
+- Publish candidate: release-prep merge
+  `baf09af121bd0310510e05c3216d572f5791c4d0`, PR #1870 (#1868), prep head
+  `e8482cce10f9ac6019bc6d2b9f3814fe737b0187`. The merge has one parent,
+  `912034abba49f488e876f2391a6d6c841e948bba`, and the same tree as the
+  six-file prep head. Values come from advisor t11's reports in #1872,
+  2026-11-06 04:48Z to 06:07Z, and the coordinator's dispatch addition.
+- Advisor pre-publish smoke: PASS on `baf09af12`, finished
+  2026-11-06 04:46:50Z (`rel0265`, this Mac): version 0.26.5 and CHANGELOG
+  `[0.26.5]`; 0 install-profile sections in the hook bundle; pack list
+  926 files with the hook bundle, OAR review host and Operator UI.
+  Hook exits: PreToolUse 2, Stop 0, SessionStart 0; no catalog error.
+  With the real 0.26.4 owner state minus `mcp` and `operator`, `mcp serve`
+  and `operator serve` each exit 1 with empty stdout and
+  `install_plugin_unavailable` for their plugin. The repair commands use
+  explicit lists (#1869, as documented). Quota: claude normal, chatgpt
+  normal. `seats argv` orchestrator, advisor and worker each exit 0;
+  the Codex worker has `network_access=false`. The issue supplies no full
+  smoke command.
+- npm version: `repo-harness@0.26.5`, published
+  2026-11-06T05:43:28.973Z by the owner by hand, not with publication steps
+  3 and 4. Advisor t11 read it back at 05:54Z: dist-tag `latest` = 0.26.5;
+  926 files; no `gitHead` in registry metadata.
+- Tarball shasum: `8e081a45894bcfbac51ae88a0ec38b85c7e7cfee`, integrity
+  `sha512-Ja9JjX30AfA2GbkNaYrBx8tRW4x/H4KnV2F+DpoY8BQRc70y6piqfOPi6OgZGNzz6F91JkVIWZp/qSuFWGBWsQ==`.
+  Registry tarball: 800 files byte-identical to `baf09af12`, 126 under
+  `dist/`, 0 differ.
+- Git tag: `v0.26.5`, annotated, tag object
+  `61baab46da5913a37fa04e17884e61e47513a0bf`, target
+  `baf09af121bd0310510e05c3216d572f5791c4d0`, tagger Ancienttwo,
+  2026-11-06T06:01:07Z, message `repo-harness 0.26.5`.
+  GitHub Release 436151991:
+  https://github.com/Ancienttwo/repo-harness/releases/tag/v0.26.5,
+  published 2026-11-06T06:01:12Z, title `repo-harness 0.26.5`, body =
+  CHANGELOG `[0.26.5]`, latest release. The owner approved the tag and
+  release at about 06:00Z.
+- `bash scripts/check-release-published.sh 0.26.5`: advisor t11, temporary
+  worktree at `baf09af12`, 2026-11-06 06:03:15Z to 06:04:23Z:
+  `runtime-evidence-receipt: valid published_tarball, clean_install, installed_hook_readback`;
+  `[release-published] OK: registry, dist-tag, tarball, tag, and local version files agree.`
+- Owner machine upgrade and post-upgrade probe (advisor t11, owner approved):
+  - 06:04:23Z: `bun add -g repo-harness@0.26.5 --no-cache` installed global
+    0.26.5 (0.26.4 before). `repo-harness update --version 0.26.5` exit 0.
+    Hook route registry digest (reconcile `receipt=`):
+    `sha256:e0745637a223ac7644838d82719f767efc251c2864ec8a3caca307817325c7df`,
+    unchanged; 22 leftovers, 0 removable. See Yellow flags for the
+    registered-repo summary timeout and rerun.
+  - Install state: protocol 3, selection `all`, applied at
+    2026-11-06T06:04:43.600Z; 9 plugins at 0.26.5, including `mcp` and
+    `operator`.
+  - Operator console: pid 92427 stopped; new pid 83742
+    (`bun ~/.bun/bin/repo-harness operator serve`); `GET /` returned 200
+    at 06:05:16Z.
+  - Post-upgrade probe: PASS at 06:05:22Z. Installed version 0.26.5;
+    state records `mcp` and `operator`; 0 install-profile sections;
+    OAR host and Operator UI present; hook exits 2/0/0; installed worker
+    seat has `network_access=false`; `GET /api/v1/quota` returned 200,
+    protocol `repo-harness.quota.v1`.
