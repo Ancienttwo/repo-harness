@@ -1,8 +1,8 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:9243579514d63b32de4b49eaf56db8a9828b4c5aefaaf470b10f4904909f1ab2" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:c9aeba28f1f97f74462a6b0aa13e873d8434493f34db4c3d31baa4b99d8cf07a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
-> **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/context/**`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-worktree.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.archcontext/**`、`docs/adr/**`、`src/core/capabilities/**`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/sync-reference-configs.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
+> **Matched Prefixes**:`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`assets/workflow-contract.v1.json`、`.ai/context/**`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-worktree.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.archcontext/**`、`docs/adr/**`、`src/core/capabilities/**`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/sync-reference-configs.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
 > **Local Contracts**:`assets/AGENTS.md`、`assets/CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -16,6 +16,8 @@ Owns the package workflow contract, repo opt-in marker, templates, capability no
 flowchart LR
   p1_capability_workflow_engine_contract_assets_c7ab122d["Contract Assets"]:::component
   p1_capability_workflow_engine_execution_primitives_b3033934["Execution Primitives"]:::component
+  p1_component_contract_assets_agent_fleet_assets_b2a3cd22["Agent Fleet Assets"]:::component
+  p1_component_contract_assets_agent_fleet_installer_5c94d58e["Agent Fleet Installer"]:::component
   p1_component_contract_assets_architecture_contracts_06002ce4["Architecture Contracts (core)"]:::component
   p1_component_contract_assets_capability_registry_87c3dd18["Capability Registry"]:::component
   p1_component_contract_assets_capability_registry_cli_2b3df796["Capability Registry (cli)"]:::component
@@ -37,6 +39,7 @@ flowchart LR
   p1_component_contract_assets_template_projection_scripts_e75fee1f["Template Projection (scripts)"]:::component
   p1_component_contract_assets_tool_catalog_e1042e03["Tool Catalog"]:::component
   p1_component_contract_assets_worktree_runtime_root_c8392daf["Contract Worktree Runtime Process Root"]:::component
+  p1_component_contract_assets_agent_fleet_installer_5c94d58e -->|"Read fleet persona definitions and install their coding host projections."| p1_component_contract_assets_agent_fleet_assets_b2a3cd22
   p1_component_contract_assets_contract_worktree_lifecycle_5cb413df -->|"Resolve the configured Git binary for worktree lifecycle commands"| p1_capability_workflow_engine_execution_primitives_b3033934
   p1_capability_workflow_engine_contract_assets_c7ab122d -->|"Run a contract-listed helper through repo-harness run"| p1_component_contract_assets_planning_helpers_7600c3e5
   p1_component_contract_assets_planning_helpers_7600c3e5 -->|"Run each helper as a bounded child process"| p1_capability_workflow_engine_execution_primitives_b3033934
@@ -50,8 +53,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:bccc06abd94c4667859035cf1b5dc16cbb8966cd9b10dac69e1702af8f7f140c`).
-- Semantic nodes: `23`; declared relations: `7`.
+- Proof: `proven` (`sha256:4b8bcacc13d1c54f8fb8419221d98c43682f800ee2af4c2761333aae34ad1dd6`).
+- Semantic nodes: `25`; declared relations: `8`.
 
 ### 1.2 模組職責表
 
@@ -67,7 +70,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`500–1000` 個文件 / `20k–50k` 行
-- 匹配前綴:`assets/workflow-contract.v1.json`、`.ai/context/**`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-worktree.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.archcontext/**`、`docs/adr/**`、`src/core/capabilities/**`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/sync-reference-configs.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
+- 匹配前綴:`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`assets/workflow-contract.v1.json`、`.ai/context/**`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-worktree.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.archcontext/**`、`docs/adr/**`、`src/core/capabilities/**`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/sync-reference-configs.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
 - 排除前綴:`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/architecture/**`、`docs/researches/**`、`.ai/harness/**`、`docs/design/**`、`references/plugins-core.md`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -99,6 +102,10 @@ flowchart LR
 
 組件出向關係:
 
+- `component.contract-assets.agent-fleet-assets`:
+  - 無。
+- `component.contract-assets.agent-fleet-installer`:
+  - `reads` → `component.contract-assets.agent-fleet-assets` — Read fleet persona definitions and install their coding host projections.
 - `component.contract-assets.architecture-contracts`:
   - 無。
 - `component.contract-assets.capability-registry`:
@@ -115,7 +122,6 @@ flowchart LR
   - `calls` → `capability.verification.acceptance-review` — Locate the acceptance receipt and the protected Git runtime
   - `calls` → `component.global-runtime-reconciliation.archctx-closure` — Stop the architecture daemons of a checkout before closeout removes it
   - `calls` → `capability.workflow-engine.execution-primitives` — Resolve the configured Git binary for worktree lifecycle commands
-  - `calls` → `capability.runtime-harness.task-agent-host` — Run the task worktree register, merge notice and cleanup actions as the task-agent-host process entry src/effects/terminal/task-worktree-runtime.ts
   - `calls` → `capability.workflow-engine.workflow-state` — Create and remove task worktrees and sweep merged managed worktrees at start under the worktree topology lock
 - `component.contract-assets.effects-layer`:
   - 無。
@@ -148,12 +154,14 @@ flowchart LR
 - `component.contract-assets.tool-catalog`:
   - 無。
 - `component.contract-assets.worktree-runtime-root`:
-  - 無。
+  - `calls` → `component.execution-primitives.runtime-closeout` — Load core runtime closeout directly for worktree registration, merge notices and cleanup.
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
+| `component.contract-assets.agent-fleet-assets` | Agent Fleet Assets | `10–20` 個文件 / `200–500` 行 | 未宣告 |
+| `component.contract-assets.agent-fleet-installer` | Agent Fleet Installer | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.contract-assets.architecture-contracts` | Architecture Contracts (core) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.contract-assets.capability-registry` | Capability Registry | `500–1000` 個文件 / `5000–10000` 行 | 未宣告 |
 | `component.contract-assets.capability-registry-cli` | Capability Registry (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
@@ -178,7 +186,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:bccc06abd94c4667859035cf1b5dc16cbb8966cd9b10dac69e1702af8f7f140c`); selectors `2/2`.
+> **Proof**: `proven` (`sha256:4b8bcacc13d1c54f8fb8419221d98c43682f800ee2af4c2761333aae34ad1dd6`); selectors `2/2`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
