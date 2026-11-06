@@ -22,6 +22,13 @@ gate; a release depends on green CI for the release SHA. `prepublishOnly`
 stays a fast pre-publish check that never runs tests.
 A bare `bash scripts/check-ci.sh` defaults to `affected`; it is not a release gate.
 
+The core and operator web packages use the same version. `check:release`
+requires both versions to be unpublished. Publish `repo-harness-operator-web`
+first, then publish `repo-harness`: each prepublish gate checks its own package,
+and the core gate requires the matching operator web version on npm. After both
+publishes, `check:release-published` verifies both registry tarballs and latest
+tags, the Git version tag, and the core runtime receipt.
+
 ## Webapp Release Shape
 
 - For a SaaS webapp with public SEO/SSR plus authenticated workspace, prefer one
