@@ -108,7 +108,14 @@ which names each missing owner.
   plugin is added when its host program is now present. An unavailable plugin
   that the state does not record gets a skip line.
 - An explicit list never grows. An unavailable plugin in the list fails closed
-  with `install_plugin_unavailable`.
+  with `install_plugin_unavailable`. Update prints one line for the command
+  plugins that the list omits, with one command that keeps the list and adds
+  them:
+
+  ```text
+  [plugins] not selected mcp, operator: an explicit list does not grow; to add them, run: repo-harness install --plugins mcp,operator,product
+  ```
+
 - Under `"all"`, a recorded plugin that becomes unavailable (its host program
   disappears, or the target has no host for it) stays in the record. Update
   does not run its setup and prints:
