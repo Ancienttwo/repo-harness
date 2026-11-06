@@ -500,6 +500,26 @@ export function preflightGlobalContextRefresh(
   return { files: hosts.map((host) => planGlobalContextFile(globalContextPath(home, host), home, sourceRoot, flag)) };
 }
 
+/** Explicit owner change: recorded presets do not override this request. */
+export function setReportingLanguage(
+  home: string,
+  sourceRoot: string,
+  hosts: readonly GlobalContextHost[],
+  preset: ReportLanguageFlag,
+): GlobalContextRefresh & { readonly changed_hosts: readonly GlobalContextHost[] } {
+  const plan = preflightGlobalContextRefresh(sourceRoot, home, hosts, preset);
+  const refused = plan.files.find(file => file.outcome === 'skipped');
+  if (refused) return { status: 'skipped', detail: refused.detail, changed_hosts: [] };
+  const block = renderGlobalRulesBlock(sourceRoot, reportLanguageFromFlag(preset));
+  const files = plan.files.map(file => {
+    const merged = mergeManagedBlock(file.current ?? '', block);
+    return { ...file, next: merged.content, outcome: merged.content === file.current ? 'unchanged' as const : 'write' as const,
+      detail: formatGlobalContextWrite(file.path, file.current, merged) };
+  });
+  const result = applyGlobalContextRefresh({ files }, home);
+  return { ...result, changed_hosts: result.status === 'ok' ? hosts.filter((_, index) => files[index]!.outcome === 'write') : [] };
+}
+
 export interface GlobalContextRefresh {
   readonly status: 'ok' | 'skipped' | 'failed';
   readonly detail: string;

@@ -13,6 +13,7 @@ import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 import { beginInstallHostTransaction, readInstallState, versions, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
 import {
   assertCandidateReconciliationReceipt,
+  assertInstalledAdapterProjection,
   candidatePackageIdentity,
   encodeCandidateRequest,
   installedAdapterProjectionDigest,
@@ -225,6 +226,37 @@ function runCandidateChild(
 }
 
 describe('candidate-bound global runtime reconciliation', () => {
+  test.each(['BUN_INSTALL', 'HOME'] as const)('accepts adapter projections from an explicit %s environment', (source) => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-candidate-env-'));
+    const env = { ...process.env, HOME: join(root, 'home'), BUN_INSTALL: source === 'BUN_INSTALL' ? join(root, 'bun') : undefined };
+    try {
+      seedGlobalPackageFixture(env, { mutable: true });
+      if (source === 'HOME') delete env.BUN_INSTALL;
+      const identity = fixtureCandidate(root);
+      const digests = {} as Record<'claude' | 'codex', string>;
+      for (const host of ['claude', 'codex'] as const) {
+        const hooks = buildManagedHooks(host, env);
+        const directory = join(env.HOME, `.${host}`);
+        mkdirSync(directory, { recursive: true });
+        writeFileSync(join(directory, host === 'codex' ? 'hooks.json' : 'settings.json'), JSON.stringify({ hooks }));
+        digests[host] = managedProjectionDigest(hooks);
+      }
+      expect(assertInstalledAdapterProjection('both', env)).toEqual(digests);
+      expect(() => assertCandidateReconciliationReceipt({
+        ...candidateReceipt(identity, digests.codex),
+        selected_target: 'both',
+        adapter_projection_digests: digests,
+      }, {
+        transaction_id: 'transaction-fixture',
+        candidate: identity,
+        target: 'both',
+        require_complete: true,
+      }, env)).not.toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('rejects a predecessor Stop timeout projection even when the route count is unchanged', () => {
     const identity = fixtureCandidate();
     const candidate = buildManagedHooks('codex');

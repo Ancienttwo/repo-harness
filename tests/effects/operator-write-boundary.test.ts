@@ -51,12 +51,12 @@ function writeRouteIds(routes: readonly OperatorRouteV1[]): readonly string[] {
 
 describe('operator structural write boundary', () => {
   test('declares only the admitted write routes and rejects every mutation verb even when mislabeled read-only', () => {
-    expect(writeRouteIds(OPERATOR_ROUTES)).toEqual(['worktrees_cleanup', 'worktrees_cleanup_plan', 'worktrees_cleanup_execute', 'worktrees_cleanup_investigation', 'advisor_seat_messages', 'advisor_boss_commands', 'settings_agents_write', 'settings_seats_write', 'sessions_create']);
+    expect(writeRouteIds(OPERATOR_ROUTES)).toEqual(['worktrees_cleanup', 'worktrees_cleanup_plan', 'worktrees_cleanup_execute', 'worktrees_cleanup_investigation', 'advisor_seat_messages', 'advisor_boss_commands', 'settings_report_language_write', 'repository_documentation_language_write', 'settings_agents_write', 'settings_seats_write', 'sessions_create']);
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'] as const) {
       const mutation: OperatorRouteV1 = { id: 'fake_write', method, pattern: '/api/v1/fleet/tasks/anything', write: false };
-      expect(writeRouteIds([...OPERATOR_ROUTES, mutation])).toEqual(['worktrees_cleanup', 'worktrees_cleanup_plan', 'worktrees_cleanup_execute', 'worktrees_cleanup_investigation', 'advisor_seat_messages', 'advisor_boss_commands', 'settings_agents_write', 'settings_seats_write', 'sessions_create', 'fake_write']);
+      expect(writeRouteIds([...OPERATOR_ROUTES, mutation])).toEqual(['worktrees_cleanup', 'worktrees_cleanup_plan', 'worktrees_cleanup_execute', 'worktrees_cleanup_investigation', 'advisor_seat_messages', 'advisor_boss_commands', 'settings_report_language_write', 'repository_documentation_language_write', 'settings_agents_write', 'settings_seats_write', 'sessions_create', 'fake_write']);
     }
-    expect(writeRouteIds([...OPERATOR_ROUTES, { id: 'get_write', method: 'GET', pattern: '/api/write', write: true }])).toEqual(['worktrees_cleanup', 'worktrees_cleanup_plan', 'worktrees_cleanup_execute', 'worktrees_cleanup_investigation', 'advisor_seat_messages', 'advisor_boss_commands', 'settings_agents_write', 'settings_seats_write', 'sessions_create', 'get_write']);
+    expect(writeRouteIds([...OPERATOR_ROUTES, { id: 'get_write', method: 'GET', pattern: '/api/write', write: true }])).toEqual(['worktrees_cleanup', 'worktrees_cleanup_plan', 'worktrees_cleanup_execute', 'worktrees_cleanup_investigation', 'advisor_seat_messages', 'advisor_boss_commands', 'settings_report_language_write', 'repository_documentation_language_write', 'settings_agents_write', 'settings_seats_write', 'sessions_create', 'get_write']);
   });
 
   test('the dispatcher admits only GET, HEAD and, for a write route, POST', async () => {
@@ -108,6 +108,10 @@ describe('operator structural write boundary', () => {
       'session_diff',
       'session_loss',
       'settings_agents',
+      'settings_report_language',
+      'settings_report_language_write',
+      'repository_documentation_language',
+      'repository_documentation_language_write',
       'settings_agents_write',
       'settings_seats',
       'quota',

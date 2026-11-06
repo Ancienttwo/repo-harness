@@ -64,6 +64,8 @@ import { extname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createOperatorWriteToken, handleOperatorWrite, operatorWriteTokenCookie, type OperatorWriteRoute } from './write-channel';
 import { AGENTS_CONFIGURATION_FAILURES, OPERATOR_SETTINGS_AGENTS_PATH, OPERATOR_SETTINGS_AGENTS_ROUTE, agentsSettingsWriteRoute, readAgentsSettings } from './agents-settings-route';
+import { OPERATOR_REPORT_LANGUAGE_PATH, OPERATOR_REPORT_LANGUAGE_ROUTE, OPERATOR_DOCUMENTATION_LANGUAGE_ROUTE, requireLanguageSettings, readDocumentationLanguage, reportingLanguageWriteRoute, documentationLanguageWriteRoute, type OperatorLanguageSettingsAdapter } from './language-settings-route';
+import { OperatorWriteRefusal } from './write-run';
 import { OPERATOR_SETTINGS_SEATS_PATH, OPERATOR_SETTINGS_SEATS_ROUTE, SEATS_CONFIGURATION_FAILURES, readSeatsSettings, seatsSettingsWriteRoute } from './seats-settings-route';
 import { SeatsConfigurationError } from '../board/seats-configuration';
 import { AgentsConfigurationError } from '../configuration/agents-configuration';
@@ -170,6 +172,10 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'session_diff', method: 'GET', pattern: OPERATOR_SESSION_DIFF_ROUTE.source, write: false }),
   Object.freeze({ id: 'session_loss', method: 'GET', pattern: OPERATOR_SESSION_LOSS_ROUTE.source, write: false }),
   Object.freeze({ id: 'settings_agents', method: 'GET', pattern: OPERATOR_SETTINGS_AGENTS_PATH, write: false }),
+  Object.freeze({ id: 'settings_report_language', method: 'GET', pattern: OPERATOR_REPORT_LANGUAGE_PATH, write: false }),
+  Object.freeze({ id: 'settings_report_language_write', method: 'POST', pattern: OPERATOR_REPORT_LANGUAGE_ROUTE.source, write: true }),
+  Object.freeze({ id: 'repository_documentation_language', method: 'GET', pattern: OPERATOR_DOCUMENTATION_LANGUAGE_ROUTE.source, write: false }),
+  Object.freeze({ id: 'repository_documentation_language_write', method: 'POST', pattern: OPERATOR_DOCUMENTATION_LANGUAGE_ROUTE.source, write: true }),
   // The first write route: it changes only the host config's `agents` section.
   Object.freeze({ id: 'settings_agents_write', method: 'POST', pattern: OPERATOR_SETTINGS_AGENTS_ROUTE.source, write: true }),
   Object.freeze({ id: 'settings_seats', method: 'GET', pattern: OPERATOR_SETTINGS_SEATS_PATH, write: false }),
@@ -195,6 +201,7 @@ const DOC_SESSION_READ_STATUS: Readonly<Record<DocSessionReadFailure, number>> =
 export type OperatorServerHost = '127.0.0.1' | '::1';
 
 export interface OperatorServerOptions {
+  readonly language_settings?: OperatorLanguageSettingsAdapter;
   /** Cache read only. Observation lifecycle runs outside the HTTP request. */
   readonly read_runtime_status?: () => RuntimeOverlay;
   readonly runtime_status_config?: string;
@@ -1134,6 +1141,8 @@ export async function startOperatorServer(
   const injectedWriteRoutes = options.write_routes ?? [];
   const writeRoutes = [
     agentsSettingsWriteRoute(readAgentRuntimes, options.env),
+    reportingLanguageWriteRoute(options.language_settings),
+    documentationLanguageWriteRoute(options.env, options.language_settings),
     seatsSettingsWriteRoute(options.env),
     docSessionCreateRoute({
       env: options.env ?? process.env,
@@ -1247,7 +1256,8 @@ export async function startOperatorServer(
       return;
     }
     // A write path may also be a read resource; only a write-only path refuses GET.
-    if (writeMatch !== null && !routeInventory.some(entry => entry.method === 'GET' && entry.pattern === pathname)) {
+    if (writeMatch !== null && !routeInventory.some(entry => entry.method === 'GET'
+      && (entry.pattern === pathname || entry.pattern === writeMatch.route.path.source))) {
       sendRefusal(request, response, 405, errorBody('method_not_allowed', 'Only POST is supported.'), headOnly, {
         Allow: OPERATOR_WRITE_ALLOWED_METHODS,
       });
@@ -1415,6 +1425,22 @@ export async function startOperatorServer(
         setupSnapshot = unavailableSetupSnapshot('setup_check_invalid');
       }
       sendJson(response, 200, setupSnapshot, headOnly);
+      return;
+    }
+
+    const documentationLanguage = OPERATOR_DOCUMENTATION_LANGUAGE_ROUTE.exec(pathname);
+    if (pathname === OPERATOR_REPORT_LANGUAGE_PATH || documentationLanguage !== null) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Language settings accept no query selectors.'), headOnly);
+        return;
+      }
+      try {
+        sendJson(response, 200, documentationLanguage === null ? requireLanguageSettings(options.language_settings).readReportingLanguage()
+          : readDocumentationLanguage(documentationLanguage[1]!, options.env, options.language_settings), headOnly);
+      } catch (error) {
+        if (!(error instanceof OperatorWriteRefusal)) throw error;
+        sendRefusal(request, response, error.status, errorBody(error.code, error.message, error.next_action), headOnly);
+      }
       return;
     }
 
