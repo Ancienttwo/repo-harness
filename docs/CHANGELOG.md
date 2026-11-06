@@ -8,11 +8,18 @@ All notable changes to this skill are documented here.
 
 - Install and update the matching Operator console package when the `operator`
   plugin is selected. Source installs require `bun run build:operator-web`. (#1892)
+- The npm release gates check both the core and operator web packages at the
+  same version. The console publishes first, and the published check verifies
+  both packages. (#1893)
 - The built Operator console ships in `repo-harness-operator-web` at the same
   version as the CLI. Core packages and installed skill copies exclude the
   console build and source. Page requests return 503 when the console is
   absent or has another version; API routes and `/healthz` stay available.
   Run `repo-harness update`, restart the server and reload the page. (#1891)
+- The Herdr notify setup states that the relay child runs the `peer-runtime`
+  command `herdr notify relay`. Its gate reads the selection under the `HOME`
+  of the hc core. Select `peer-runtime` for that `HOME` too, or the relay
+  exits 1 with `install_plugin_unavailable`. (#1906)
 
 ## [0.26.6] - 2026-11-06
 

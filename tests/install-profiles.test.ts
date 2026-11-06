@@ -763,7 +763,7 @@ describe('install selection', () => {
     expect(status.drift.status).toBe('drift');
   }));
 
-  test('a command plugin commits with no probe row and no owned surface', () => withHome((env) => {
+  test('mcp commits with no probe row and no owned surface', () => withHome((env) => {
     writeManagedHostSurfaces(env);
     const { state } = applyInstallSelection(['mcp'], ['mcp'], env);
     const status = installStateStatus(state, env);
