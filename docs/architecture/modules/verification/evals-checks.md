@@ -1,5 +1,5 @@
 # verification/evals-checks 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:054ffd2cf4fe61abc3d693068aad3fd301bf33f679642b45036cacbe38ca9b93" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:04b0f8190e63e3efc0490330d1cd5a799babb9eb9713e9ccda2b65bf3d5f0d5e" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.evals-checks`(kind `capability`)
 > **Matched Prefixes**:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/verify-sprint.sh`、`scripts/check-agent-tooling.sh`、`bunfig.toml`、`.github/**`、`scripts/test-file-durations.json`、`scripts/verification-plan.ts`、`scripts/check-ci.sh`、`scripts/check-protected-paths.ts`、`scripts/select-ci-coverage.ts`、`scripts/replay-ci-coverage.ts`、`scripts/report-ci.ts`、`scripts/select-test-suite.ts`、`scripts/ci-documentation-consumers.ts`、`scripts/harness-trace-grade.sh`
@@ -64,7 +64,7 @@ flowchart LR
 - `depends-on` → `capability.verification.codegraph-readiness` — Test CodeGraph Readiness behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Test Global Runtime Reconciliation behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.mcp-sidecar` — Test MCP Sidecar behavior through its source modules.
-- `depends-on` → `capability.runtime-harness.operator` — Test Operator Board behavior through its source modules; the CI report builds and finds repair issues, and the test projection script names its schema, with the operator tests contract.
+- `depends-on` → `capability.runtime-harness.operator` — Test Operator Board behavior through its source modules.
 - `depends-on` → `capability.organization.publication` — Test PR Publication behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.refactor-program` — Test Refactor Recommendations behavior through its source modules.
 - `depends-on` → `capability.public-surface.root-router` — Test Root Router behavior through its source modules.
@@ -106,7 +106,7 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.evals-checks.ci-report-core` | CI Report Core | `1–2` 個文件 / `200–500` 行 | 未宣告 |
+| `component.evals-checks.ci-report-core` | CI Report Core | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 | `component.evals-checks.ci-selection` | CI Selection And Report | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.evals-checks.evals-and-benchmarks` | Evals And Benchmarks | `2–5` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.evals-checks.evals-and-benchmarks-tests` | Evals And Benchmarks (tests) | `50–100` 個文件 / `10k–20k` 行 | 未宣告 |

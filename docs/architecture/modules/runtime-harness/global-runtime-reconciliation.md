@@ -1,6 +1,6 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0db945fa50003b5b34adf4ea67827475fd5067e9b3b11787f08951bda4957869" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7556fd149d286c740a606478a0014a606f77fcdc26cdce8b3c60d4fe2205f75f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/effects/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/host-skill-roots.ts`、`src/effects/configuration/**`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`、`src/effects/runtime/node-runtime.ts`
@@ -86,15 +86,13 @@ flowchart LR
 入向關係:
 
 - `depends-on` ← `capability.public-surface.adoption` — Use the legacy inventory during adoption planning.
+- `depends-on` ← `capability.organization.board` — Read and change the seats section through the shared global configuration transaction, and read the package version for the codex app-server client.
 - `depends-on` ← `capability.verification.codegraph-readiness` — Type the CodeGraph doctor checks and global runtime MCP step with the core doctor and global runtime port types
 - `depends-on` ← `capability.verification.evals-checks` — Test Global Runtime Reconciliation behavior through its source modules.
 - `calls` ← `component.hook-adapters.host-installer` — Read the shared host skill roots for install projections and report architecture projection readiness in status
 - `calls` ← `component.hook-adapters.primary` — Write host output through the shared blocking writer
 - `reads` ← `component.mcp-sidecar.host-setup` — Resolve host skill roots to name leftover ChatGPT skill links for mcp doctor
 - `calls` ← `component.operator.agents-configuration` — Plugin → core: change the agents section through the shared global configuration transaction
-- `calls` ← `component.operator.architecture-reader` — Plugin → core: read the native architecture context and the generated-summary freshness type through the architecture read module
-- `depends-on` ← `component.operator.architecture-view-core` — Plugin → core: use the generated-summary freshness type that the projection decoder returns
-- `reads` ← `component.operator.architecture-view` — Plugin → core: decode the docs anchors report and the saved projection check freshness
 - `calls` ← `component.operator.primary` — Plugin → core: read the architecture history, the hand edits and the history timeout through the architecture read module
 - `calls` ← `component.refactor-program.archctx-provider` — Run the pinned package-local archctx CLI through the shared architecture provider
 - `depends-on` ← `capability.workflow-engine.workflow-state` — Resolve the helper platform for coordination worktrees.
@@ -117,18 +115,20 @@ flowchart LR
   - `calls` → `capability.public-surface.adoption` — Register the adoption-plan command and run the adoption plan for the setup check
   - `calls` → `component.global-runtime-reconciliation.archctx-closure` — Register the architecture-projection command and the archctx providers
   - `calls` → `component.contract-assets.architecture-contracts` — Register the architecture providers after the contract version check
-  - `calls` → `capability.organization.board` — Register the board command
+  - `calls` → `capability.organization.board` — Register the board, seats and quota commands
+  - `calls` → `component.execution-primitives.cli-layer` — Register the bots command
   - `calls` → `component.global-runtime-reconciliation.cli-diagnostics` — Register the doctor and init-hook commands and validate the shared CLI options
   - `calls` → `capability.verification.codegraph-readiness` — Register the tools command and pass the CodeGraph doctor checks and setup steps to core commands
   - `calls` → `capability.workflow-engine.contract-assets` — Register the init and capability-context commands
-  - `calls` → `capability.runtime-mcp.general-repo-access` — Pass the MCP index, metrics and trace log roots to retention
   - `calls` → `component.execution-primitives.hc-client` — Give the hc board and attention host ports to the board command and to the attention watch doctor check
   - `calls` → `capability.runtime-harness.hook-adapters` — Register the install and status and security and hook commands and run host transactions for the plugin selection
-  - `calls` → `capability.runtime-harness.mcp-sidecar` — Register the mcp and bots commands and pass the MCP audit log root to retention
+  - `calls` → `capability.runtime-harness.mcp-sidecar` — Guard mcp serve and doctor on the mcp selection, load their actions after the guard, and list the MCP log roots for retention only when the plugin is selected
   - `calls` → `capability.runtime-harness.operator` — Register the operator command
   - `calls` → `component.global-runtime-reconciliation.primary` — Register the update and upgrade commands and run the setup inside the candidate runtime
+  - `reads` → `component.execution-primitives.public-projections` — Pass the MCP audit log path to retention
   - `calls` → `capability.organization.publication` — Register the publication command
   - `calls` → `capability.runtime-harness.refactor-program` — Register the refactor command
+  - `calls` → `component.execution-primitives.repository-registry` — Set a repository access grant for mcp access set
   - `calls` → `capability.public-surface.root-router` — Register the docs command
   - `calls` → `component.action-commands.skill-surface-catalog` — Parse the skill surface catalog for CLI commands
   - `calls` → `capability.public-surface.strategy-reflection` — Register the strategy command
@@ -168,7 +168,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | `component.global-runtime-reconciliation.cli-diagnostics` | CLI Diagnostics and Shared Options | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.cli-layer` | Global Runtime Reconciliation (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
-| `component.global-runtime-reconciliation.cli-root` | CLI Composition Root | `1–2` 個文件 / `1000–2000` 行 | `entrypoint.global-runtime-reconciliation.cli-root` |
+| `component.global-runtime-reconciliation.cli-root` | CLI Composition Root | `2–5` 個文件 / `1000–2000` 行 | `entrypoint.global-runtime-reconciliation.cli-root` |
 | `component.global-runtime-reconciliation.global-configuration` | Global Configuration Store | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.managed-runtime-root` | Managed Runtime Check Process Root | `1–2` 個文件 / `20–50` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.primary` | Global Runtime Reconciler | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |

@@ -1,12 +1,12 @@
 # runtime-mcp/general-repo-access 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:37628cfc02d1e1b291f278d12add54dee3fc4875c2290793ff8240c1c017876f" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:82249479932a74c8892e186f390c6bf49c8ab26503c4df87e36b079e213edb0c" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-mcp.general-repo-access`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`assets/mcp/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Exposes bounded read-only repository tools through MCP.
+Exposes bounded repository read tools and, for a read_write grant, write tools through MCP.
 
 ## 1. P1:能力架構地圖
 
@@ -51,7 +51,6 @@ flowchart LR
 
 入向關係:
 
-- `calls` ← `component.global-runtime-reconciliation.cli-root` — Pass the MCP index, metrics and trace log roots to retention
 - `calls` ← `component.mcp-sidecar.primary` — Dispatch the general repository reader and writer tools
 
 組件出向關係:
