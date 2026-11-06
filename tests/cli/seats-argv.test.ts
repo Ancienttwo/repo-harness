@@ -129,6 +129,18 @@ describe("repo-harness seats argv", () => {
     }));
   });
 
+  test("Pi review seats exclude edit and write tools and report the shell path as common_commands", () => {
+    for (const seat of ["gatekeeper", "reviewer"] as const) {
+      withHome({ ...DEFAULT_SEATS_CONFIG, [seat]: { ...DEFAULT_SEATS_CONFIG[seat], runtime: "pi", model: null, effort: null } }, home => {
+        const result = argv(home, seat, "--pr", "1928", "--json");
+        expect(result.status, result.stderr).toBe(0);
+        const value = JSON.parse(result.stdout);
+        expect(value.argv.slice(0, 3)).toEqual(["pi", "--exclude-tools", "edit,write"]);
+        expect(value.limits).toContainEqual({ subject: "edit", level: "common_commands" });
+      });
+    }
+  });
+
   test("hyper changes model and effort, preserves Pi, and falls back only for an exhausted advisor", () => {
     const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-light': { runtime: 'pi', model: null, effort: null, tools: DEFAULT_SEATS_CONFIG.worker.tools, fleet: [] },
       routing: { ...DEFAULT_SEATS_CONFIG.routing, mode: "hyper" } };

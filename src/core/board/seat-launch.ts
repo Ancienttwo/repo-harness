@@ -213,9 +213,14 @@ function codexLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'pr
 }
 
 function piLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
-  const limits: SeatLimitV1[] = OFF_GROUPS(config).map(group => ({ subject: group, level: 'instructions_only' }));
+  const review = seat === 'gatekeeper' || seat === 'reviewer';
+  // Pi's denylist blocks the edit/write tools; shell paths stay open.
+  const limits: SeatLimitV1[] = OFF_GROUPS(config).map(group => ({
+    subject: group,
+    level: review && group === 'edit' ? pathLevel(group, 'enforced', true) : 'instructions_only',
+  }));
   const text = brief(seat, config, [], limits);
-  return { argv: ['pi', '--append-system-prompt', text], brief: text, limits };
+  return { argv: ['pi', ...(review ? ['--exclude-tools', 'edit,write'] : []), '--append-system-prompt', text], brief: text, limits };
 }
 
 /**

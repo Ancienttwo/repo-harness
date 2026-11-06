@@ -11,6 +11,8 @@ All notable changes to this skill are documented here.
   routes cannot name it until it is configured. The default routes do not
   require Pi. Gatekeeper and reviewer settings accept only read/shell tools
   and no fleet roles at the decoder boundary.
+  Pi review seats disable the edit/write tools and report the remaining
+  shell path as `common_commands`.
   Human `repo-harness quota` output names each route, reserves tight Claude
   capacity for the advisor and orchestrator, and keeps frontend work on Claude.
   Hyper mode shares model overrides between route lines and launch argv;
