@@ -1,3 +1,4 @@
+import { configureRequiredHerdrSkill } from "./herdr-skill";
 import type { RuntimeTransactionContext } from '../../effects/locking/runtime-transaction-lock';
 import { bunGlobalPackageRoot, isBunGlobalPackageSource, skillLinkMatches } from "../installer/skill-projection";
 import { installPiPackage } from '../installer/pi-package';
@@ -1642,14 +1643,7 @@ function withPlugin(plugins: readonly PluginId[], id: PluginId): readonly Plugin
   return [...new Set([...plugins, id])].sort() as PluginId[];
 }
 
-/** Plugin setup steps that the composition root (src/cli/index.ts) passes in. */
-export interface GlobalRuntimePorts {
-  /** `piSelected` false: Herdr stays core on Claude and Codex, and its Pi copy is not written. */
-  readonly configureHerdrSkill: (target: InstallTargetSpec, env: NodeJS.ProcessEnv, piSelected: boolean) => GlobalRuntimeStep;
-}
-
 export function runGlobalRuntimeSetup(
-  ports: GlobalRuntimePorts,
   opts: GlobalRuntimeOptions = {},
   dependencies?: InitRuntimeDependencies,
 ): GlobalRuntimeResult {
@@ -1829,7 +1823,7 @@ export function runGlobalRuntimeSetup(
       if (hc.pathEntry !== null) env = { ...env, PATH: [hc.pathEntry, env.PATH].filter(Boolean).join(delimiter) };
     }
   }
-  if (steps.every((step) => step.status !== "failed")) steps.push(ports.configureHerdrSkill(target, env, piSelected));
+  if (steps.every((step) => step.status !== "failed")) steps.push(configureRequiredHerdrSkill(target, env, undefined, piSelected));
   if (steps.every((step) => step.status !== 'failed')) {
     const pi = installPiPackage(bunGlobalPackageRoot(env)!, plugins.includes('pi') && target === 'both' && opts.hostAdapters !== false, env);
     steps.push({ ...pi, ...(pi.created ? { owned_surface: piPackageSurface(pi.source) } : {}) });

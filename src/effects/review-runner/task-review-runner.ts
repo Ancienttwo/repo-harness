@@ -17,8 +17,9 @@ import { reviewHostCommand } from '../review/review-isolation';
 import { processProofAlive, readTaskAgent, taskSessionDirectory, TASK_SESSIONS_PATH, type HerdrCoreEndpoint, type TaskPaneBinding } from '../terminal/task-session-record';
 import { bindNativeTaskSession } from '../terminal/native-task-session';
 import { parseFrontmatter, validateFrontmatter, AGENT_TARGET_OVERRIDES } from '../terminal/task-role-profiles';
-import { assertTaskBinding, assertTerminalHostCommand, bindTerminalApplicationHost, cancelTaskAgent, closeTaskAgent, collectTaskResult,
-  sendTaskRequest, startTaskApplicationHost, taskAgentStatus, validateHerdrCoreEndpoint } from '../terminal/task-session';
+import { assertTerminalHostCommand, bindTerminalApplicationHost, collectTaskResult,
+  sendTaskRequest, startTaskApplicationHost, taskAgentStatus } from '../terminal/task-session';
+import { assertTaskBinding, cancelTaskAgent, closeTaskAgent, validateHerdrCoreEndpoint } from '../terminal/runtime-closeout';
 import { taskBindingSha256 } from '../terminal/task-session-admission';
 import { readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
 import { commitPrePromptInbox, preparePrePromptInbox } from './task-pre-prompt-inbox';

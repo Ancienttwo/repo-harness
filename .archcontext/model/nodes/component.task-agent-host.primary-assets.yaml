@@ -11,4 +11,3 @@ responsibilities:
 source:
   include:
     - assets/herdr/**
-    - agents/fleet/**

@@ -1,0 +1,1 @@
+{schemaVersion: archcontext.relation/v1,id: relation.execution-primitives.runtime-closeout.coordination-plane,kind: reads,source: component.execution-primitives.runtime-closeout,target: component.workflow-state.coordination-plane,intent: Hash the task binding for request identity checks}

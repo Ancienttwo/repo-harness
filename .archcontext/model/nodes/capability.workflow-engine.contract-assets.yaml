@@ -6,11 +6,15 @@ status: active
 layer: assets
 summary: "Owns the package workflow contract, repo opt-in marker, templates, capability nodes, and the standalone resolver helper file."
 responsibilities:
+  - Own the fleet persona assets and their installer.
   - Own the package workflow contract body and the repo opt-in marker.
   - "Own policy seeders, capability authority, and the projected standalone resolver helper file."
   - "Own isolated worktree start and cleanup, branch-only PR shipping, the spec, triage and factor-lab helpers listed by the package contract."
 source:
   include:
+    - agents/fleet/**
+    - .codex/agents/**
+    - scripts/install-agent-fleet.sh
     - assets/workflow-contract.v1.json
     - .ai/context/**
     - .archcontext/model/nodes/**
@@ -82,6 +86,7 @@ extensions:
     claude: assets/CLAUDE.md
   lspProfile: typescript-lsp
   verification:
+    - bun run test:files tests/install-agent-fleet.test.ts --timeout 60000 --max-concurrency 1
     - bun test tests/workflow-contract.test.ts tests/scaffold-parity.test.ts
     - bun scripts/capability-resolver.ts validate --format text
     - bun run check:helpers

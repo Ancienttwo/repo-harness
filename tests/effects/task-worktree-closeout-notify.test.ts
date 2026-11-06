@@ -4,7 +4,8 @@ import { join } from 'path';
 import { spawn, type ChildProcess } from 'child_process';
 import { mockOfflineHerdr } from '../helpers/engineer-runtime-fixture';
 import { commitAll, initGitRepo, run, tmpWorkspaceIn } from '../helpers/repo-fixture';
-import { cleanupTaskWorktree, notifyTaskWorktreeMerged, startTaskAgent } from '../../src/effects/terminal/task-session';
+import { startTaskAgent } from '../../src/effects/terminal/task-session';
+import { cleanupTaskWorktree, notifyTaskWorktreeMerged } from '../../src/effects/terminal/runtime-closeout';
 import { removeExactWorktree } from '../../src/effects/state/coordination-worktree-topology';
 import { HerdrCoreError } from '../../src/effects/terminal/herdr-core';
 

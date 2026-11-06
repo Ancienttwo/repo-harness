@@ -1,0 +1,1 @@
+{schemaVersion: archcontext.relation/v1,id: relation.task-agent-host.review-runner.runtime-closeout,kind: calls,source: component.task-agent-host.review-runner,target: component.execution-primitives.runtime-closeout,intent: Check runtime identity and close or cancel the recorded review task session.}

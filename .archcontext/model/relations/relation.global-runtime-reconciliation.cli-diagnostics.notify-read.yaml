@@ -1,0 +1,1 @@
+{schemaVersion: archcontext.relation/v1,id: relation.global-runtime-reconciliation.cli-diagnostics.notify-read,kind: reads,source: component.global-runtime-reconciliation.cli-diagnostics,target: component.execution-primitives.notify-read,intent: Read the notify relay install record and check the recorded relay identity for Doctor.}

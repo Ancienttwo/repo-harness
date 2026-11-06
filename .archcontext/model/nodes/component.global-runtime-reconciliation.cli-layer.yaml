@@ -10,6 +10,9 @@ responsibilities:
   - Hold the cli-layer source files of Global Runtime Reconciliation so layer direction is checked per directory.
 source:
   include:
+    - src/cli/commands/herdr-skill.ts
+    - src/cli/commands/herdr-skill-render.mjs
+    - src/cli/commands/herdr-skill-render.d.mts
     - src/cli/index.ts
     - src/cli/commands/global-runtime.ts
     - src/cli/commands/candidate-reconciliation.ts

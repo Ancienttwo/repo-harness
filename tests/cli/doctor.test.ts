@@ -14,6 +14,7 @@ import {
   clearRegisteredChecks,
   compareVersions,
   formatDoctor,
+  notifyRelayDoctorCheck,
   readLatestPackageVersion,
   registerCheck,
   runDoctor,
@@ -24,7 +25,6 @@ import { expectedSkillProjections, type SkillProjection } from '../../src/cli/in
 import { buildManagedHooks, MANAGED_TAG } from '../../src/cli/installer/managed-entries';
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
 import { writeNotifyInstallRecord } from '../../src/effects/terminal/herdr-notify-install';
-import { notifyRelayDoctorCheck } from '../../src/cli/commands/herdr';
 import { HC_MIN_VERSION } from '../../src/core/terminal/herdr-pin';
 
 const DOCTOR_CHECK_TIMEOUT_MS = 15000;

@@ -33,6 +33,9 @@ import { architecturePort, isArchitectureUnavailable, type ArchitectureDoctorChe
 import { globalArchitectureSectionPresent } from '../../effects/configuration/global-configuration';
 import { capabilitySourceMode, loadRegistryAuthority, readWorkflowPolicy } from '../../effects/state/resolve-effective-state';
 import { readText } from '../../effects/state/collect-state-inputs';
+import { hcList } from '../../effects/terminal/herdr-core';
+import { readNotifyInstallRecord, relayIsLive } from '../../effects/terminal/notify-read';
+import { NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND } from '../../core/decision/notify-relay-record';
 
 const TRUST_STATE_LINE = /^\[hooks\.state\."[^"]+\/\.codex\/hooks\.json:/;
 const PACKAGE_NAME = 'repo-harness';
@@ -73,8 +76,6 @@ export interface DoctorCheck {
 
 /** Plugin checks that the composition root (src/cli/index.ts) passes in. */
 export interface DoctorPorts {
-  /** The Herdr notify relay check (read-only, one `hc ls`). */
-  readonly notifyRelayCheck: () => DoctorCheckResult;
   /** The board attention watcher check of the repository at `cwd` (read-only: `hc ls` and `hc get` of the watcher terminals, then `gh api` for the repository id only when a watcher terminal exists). */
   readonly attentionWatchCheck: (cwd: string) => DoctorCheckResult;
 }
@@ -601,6 +602,22 @@ export function checkArchitectureProjectionSelection(env: NodeJS.ProcessEnv): Do
   }
 }
 
+/** Read-only: one `hc ls` call. Like every hc call, it starts a stopped hc core. */
+export function notifyRelayDoctorCheck(): DoctorCheckResult {
+  const id = 'herdr-notify-relay';
+  const describe = 'Herdr notify relay';
+  const record = readNotifyInstallRecord();
+  if (record.state === 'missing') return { id, describe, status: 'na', detail: 'Herdr notify is not installed.' };
+  if (record.state === 'invalid') return { id, describe, status: 'warn', detail: `The notify install record is invalid (notify_session_invalid). Run: ${NOTIFY_INSTALL_COMMAND}` };
+  let relays;
+  try { relays = hcList(record.relay.labels); }
+  catch { return { id, describe, status: 'warn', detail: 'hc did not answer, so the relay state is unknown (hc_unavailable).' }; }
+  if (!relayIsLive(relays, record.relay)) {
+    return { id, describe, status: 'warn', detail: `Relay terminal ${record.relay.name} is not live (relay_stopped). Notifications are paused. Run: ${NOTIFY_START_COMMAND}` };
+  }
+  return { id, describe, status: 'ok', detail: `Relay terminal ${record.relay.name} is live.` };
+}
+
 export function runDoctor(ports: DoctorPorts, cwd: string = process.cwd(), target: DoctorTarget = 'both'): DoctorReport {
   const checks: DoctorCheckResult[] = [];
   const codegraphChecks = codegraphDoctorChecks(cwd);
@@ -623,7 +640,7 @@ export function runDoctor(ports: DoctorPorts, cwd: string = process.cwd(), targe
   checks.push(checkTypedHookRoutes(cwd));
   checks.push(checkCapabilityRegistry(cwd));
   checks.push(checkLegacyWorkflowState(cwd));
-  checks.push(ports.notifyRelayCheck());
+  checks.push(notifyRelayDoctorCheck());
   checks.push(ports.attentionWatchCheck(cwd));
   for (const plugin of REGISTERED_CHECKS) {
     const r = plugin.run();

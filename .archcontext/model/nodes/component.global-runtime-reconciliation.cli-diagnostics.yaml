@@ -7,6 +7,7 @@ parent: capability.runtime-harness.global-runtime-reconciliation
 layer: cli
 summary: Serves the read-only doctor and init-hook diagnostics, the shared CLI option validators and the bootstrap confirm prompt.
 responsibilities:
+  - Check notify relay install records and live terminal identity through core read contracts.
   - Validate shared CLI options for target, location and adoption mode.
   - Report PATH, version, host install, trust, route and CodeGraph readiness without mutation.
   - Turn readiness gaps into a read-only Agent bootstrap checklist.

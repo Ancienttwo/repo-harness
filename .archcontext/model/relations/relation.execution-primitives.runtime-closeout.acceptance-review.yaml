@@ -1,0 +1,1 @@
+{schemaVersion: archcontext.relation/v1,id: relation.execution-primitives.runtime-closeout.acceptance-review,kind: calls,source: component.execution-primitives.runtime-closeout,target: capability.verification.acceptance-review,intent: "Validate the task claim reference of a session binding, and type requests, results and cleanup results with the runner port types"}

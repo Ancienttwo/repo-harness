@@ -1,7 +1,6 @@
 import { RH_NOTIFY_RELAY, hcKill, hcList, hcRm, hcRun } from '../../effects/terminal/herdr-core.ts';
 import { writeNotifyInstallRecord, writePrivateFile } from '../../effects/terminal/herdr-notify-install.ts';
-import { NOTIFY_DONE_KEYS, decodeNotifyConfig, notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath, readNotifyInstallRecord, relayIsLive, type NotifyConfig } from '../../effects/terminal/notify-read.ts';
-import type { DoctorCheckResult } from './doctor.ts';
+import { NOTIFY_DONE_KEYS, decodeNotifyConfig, notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath, type NotifyConfig } from '../../effects/terminal/notify-read.ts';
 import { repoHarnessHome } from '../../effects/repo-harness-home.ts';
 import { NOTIFY_CHANNEL_SECRET_KEYS } from '../../core/decision/notify-secret-keys.ts';
 import { renderNotifyConfig, runNotifyRelay } from '../../effects/terminal/notify-relay.ts';
@@ -120,22 +119,6 @@ export function uninstallNotify(): void {
   }
   for (const path of [notifyInstallRecordPath(), notifyConfigPath(), notifyDeliveriesPath()]) rmSync(path, { force: true });
   process.stdout.write('Herdr notify is removed.\n');
-}
-
-/** Read-only: one `hc ls` call. Like every hc call, it starts a stopped hc core. */
-export function notifyRelayDoctorCheck(): DoctorCheckResult {
-  const id = 'herdr-notify-relay';
-  const describe = 'Herdr notify relay';
-  const record = readNotifyInstallRecord();
-  if (record.state === 'missing') return { id, describe, status: 'na', detail: 'Herdr notify is not installed.' };
-  if (record.state === 'invalid') return { id, describe, status: 'warn', detail: `The notify install record is invalid (notify_session_invalid). Run: ${NOTIFY_INSTALL_COMMAND}` };
-  let relays;
-  try { relays = hcList(record.relay.labels); }
-  catch { return { id, describe, status: 'warn', detail: 'hc did not answer, so the relay state is unknown (hc_unavailable).' }; }
-  if (!relayIsLive(relays, record.relay)) {
-    return { id, describe, status: 'warn', detail: `Relay terminal ${record.relay.name} is not live (relay_stopped). Notifications are paused. Run: ${NOTIFY_START_COMMAND}` };
-  }
-  return { id, describe, status: 'ok', detail: `Relay terminal ${record.relay.name} is live.` };
 }
 
 export function buildHerdrCommand(): Command {

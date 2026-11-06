@@ -85,7 +85,7 @@ test('hc task sessions serialize concurrent starts, reconcile crashes, deliver b
   run('git', ['init', '-q', '-b', 'main'], fixture, env);
   const modulePath = new URL('../src/effects/terminal/task-session.ts', import.meta.url).pathname;
   const ioModulePath = new URL('../src/effects/terminal/task-session-io.ts', import.meta.url).pathname;
-  const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
+  const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/runtime-closeout'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
   const parent = await parentTerminal(fixture);
   // These calls must return an existing binding or fail before any launch.
   const refuseLaunch = { argv: ['/usr/bin/false'] as [string], ready: async () => { throw new Error('fixture_must_not_launch'); } };
@@ -360,7 +360,7 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
 }), 60_000);
 
 test('workspace registration records the hc endpoint through the Bash consumer and refuses classic records', () => withCore('tr', async ({ fixture, env, endpoint }) => {
-  const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
+  const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/runtime-closeout'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
   run('git', ['init', '-q', '-b', 'main'], fixture, env);
   run('git', ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'base'], fixture, env);
   const checkout = join(fixture, 'recover'); run('git', ['worktree', 'add', '-qb', 'codex/recover', checkout], fixture, env);
@@ -413,7 +413,7 @@ test('workspace registration records the hc endpoint through the Bash consumer a
 }), 60_000);
 
 darwinTest('OAR fixed host runs visibly in a private hc terminal and disposes before owned terminal cleanup', () => withCore('oh', async ({ fixture, env, endpoint, hc, parent: parentTerminal }) => {
-  const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
+  const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/runtime-closeout'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
   const { reviewIsolationPolicy, reviewHostCommand } = await import('../src/effects/review/review-isolation');
   const repo = join(fixture, 'p'), output = join(fixture, 'out');
   for (const path of [repo, output]) mkdirSync(path);
@@ -451,7 +451,7 @@ darwinTest('OAR fixed host runs visibly in a private hc terminal and disposes be
 }, { REPO_HARNESS_OAR_SCRIPTED_FIXTURE: '1' }), 60000);
 
 for (const admitted of [false, true]) darwinTest(`operator-terminal OAR host binds by exact command and process identity without Herdr (${admitted ? 'approved task' : 'generic runtime'})`, async () => {
-  const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
+  const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/runtime-closeout'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
   const { reviewIsolationPolicy, reviewHostCommand } = await import('../src/effects/review/review-isolation');
   const fixture = realpathSync(mkdtempSync('/tmp/ot-'));
   const repo = join(fixture, 'p'), output = join(fixture, 'out');

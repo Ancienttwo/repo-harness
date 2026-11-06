@@ -1,0 +1,1 @@
+{schemaVersion: archcontext.relation/v1,id: relation.contract-assets.agent-fleet-installer.agent-fleet-assets,kind: reads,source: component.contract-assets.agent-fleet-installer,target: component.contract-assets.agent-fleet-assets,intent: Read fleet persona definitions and install their coding host projections.}
