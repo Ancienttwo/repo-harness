@@ -275,6 +275,12 @@ Use the affected MCP reader tests for current behavior checks.
 
 ## Server Profiles
 
+`repo-harness mcp serve` and `repo-harness mcp doctor` need the `mcp` plugin.
+Add it to an explicit list with
+`repo-harness install --plugins <your plugins>,mcp`. Without the plugin, each
+command exits 1 and prints this repair, and `mcp serve` writes nothing to
+stdout.
+
 `repo-harness mcp serve --profile <profile>` selects the tool surface. The
 default `planner` profile is read-and-plan only: the client reads workflow and
 repo state, writes PRD artifacts, and holds no default source-code write

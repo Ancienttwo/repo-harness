@@ -35,7 +35,7 @@ import {
   installProfileStatePath,
   InstallStateError,
 } from '../src/cli/installer/install-state';
-import { ownerEnabled, PLUGIN_IDS, type PluginId, type PluginSelection, type SurfaceOwner } from '../src/core/skill-surface/plugin-manifest';
+import { isCommandPlugin, ownerEnabled, PLUGIN_IDS, type PluginId, type PluginSelection, type SurfaceOwner } from '../src/core/skill-surface/plugin-manifest';
 import { runTransactionalRuntimeRefresh } from '../src/cli/index';
 import { CANDIDATE_RECONCILE_STEP, type GlobalRuntimeOptions, type GlobalRuntimeResult } from '../src/cli/commands/global-runtime';
 import { CandidateRequestProtocolRetiredError, parseCandidateRequest } from '../src/cli/commands/candidate-reconciliation';
@@ -55,8 +55,10 @@ const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
 
 /** What `all` resolves to on a host without `pi` on PATH. */
-const ALL_PLUGINS = ['architecture', 'cross-review', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const satisfies readonly PluginId[];
-const ALL_WITH_PI = ['architecture', 'cross-review', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory'] as const satisfies readonly PluginId[];
+const ALL_PLUGINS = ['architecture', 'cross-review', 'mcp', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const satisfies readonly PluginId[];
+const ALL_WITH_PI = ['architecture', 'cross-review', 'mcp', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory'] as const satisfies readonly PluginId[];
+/** The plugins that own a host file: a command plugin has no probe row and no owned surface. */
+const SURFACE_PLUGINS = ALL_PLUGINS.filter(id => !isCommandPlugin(id));
 const CORE_FACADES = ['repo-harness-check', 'repo-harness-issue-flow', 'repo-harness-ship', 'repo-harness-test'];
 const WAZA_SKILLS = ['think', 'hunt', 'check', 'health', 'mermaid'];
 /** The host root and skill that each plugin probe requires (the herdr portal ships for Claude only). */
@@ -310,7 +312,7 @@ describe('install selection', () => {
   }));
 
   test('install state protocol 3 names the plugins, and every hook route is core', () => withHome((env) => {
-    expect(PLUGIN_IDS).toEqual(['architecture', 'cross-review', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory']);
+    expect(PLUGIN_IDS).toEqual(['architecture', 'cross-review', 'mcp', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory']);
     expect(Object.values(buildManagedHooks('codex')).flat()).toHaveLength(5);
     expect(Object.values(buildManagedHooks('claude')).flat()).toHaveLength(6);
     expect(planInstallSelection('all', { run: ALL_PLUGINS, record: ALL_PLUGINS }, null, env).protocol).toBe(3);
@@ -749,9 +751,19 @@ describe('install selection', () => {
     const core = applyInstallSelection([], [], env).state;
     const forged: InstallState = { ...core, ...versions(ALL_PLUGINS), selection: 'all' };
     const status = installStateStatus(forged, env);
-    for (const id of ALL_PLUGINS) expect(status.probes[id]?.status, id).toBe('missing');
+    for (const id of SURFACE_PLUGINS) expect(status.probes[id]?.status, id).toBe('missing');
     expect(status.probes.core?.status).toBe('present');
     expect(status.drift.status).toBe('drift');
+  }));
+
+  test('a command plugin commits with no probe row and no owned surface', () => withHome((env) => {
+    writeManagedHostSurfaces(env);
+    const { state } = applyInstallSelection(['mcp'], ['mcp'], env);
+    const status = installStateStatus(state, env);
+    expect(enabledPlugins(state)).toEqual(['mcp']);
+    expect(state.ownership_manifest.every(({ owner }) => owner === 'core')).toBe(true);
+    expect(status.probes.mcp).toBeUndefined();
+    expect(status.drift.status).toBe('consistent');
   }));
 
   test('a plugin probe reads only the host roots of the selection, never staging', () => {
@@ -1102,7 +1114,7 @@ describe('install selection', () => {
       const all = applyInstallSelection('all', ALL_PLUGINS, env, new Date('2026-01-01T00:00:00Z'), first);
       commitInstallHostTransaction(first);
       const owners = new Set(all.state.ownership_manifest.map(({ owner }) => owner));
-      for (const owner of ['core', ...ALL_PLUGINS]) expect(owners.has(owner as PluginId), owner).toBe(true);
+      for (const owner of ['core', ...SURFACE_PLUGINS]) expect(owners.has(owner as PluginId), owner).toBe(true);
       const sections = all.state.ownership_manifest.filter(({ managed_marker }) => managed_marker === 'codegraph-config-projection').map(({ path }) => path);
       expect(sections.sort(), name).toEqual(userSections ? [] : [claudeJson, claudeSettings, codexConfig].sort());
 

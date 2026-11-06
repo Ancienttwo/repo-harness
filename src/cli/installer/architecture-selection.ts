@@ -78,5 +78,5 @@ export async function registerSelectedArchitecturePorts(selection: RecordedSelec
 export function assertPluginCommandSelected(selection: RecordedSelection, id: PluginId, command: string, env: NodeJS.ProcessEnv = process.env): void {
   if (pluginSelected(selection, id)) return;
   if (selection.status === 'unreadable') throw selection.error;
-  throw new InstallStateError('install_plugin_unavailable', installProfileStatePath(env), `repo-harness ${command} needs the ${id} plugin: ${notSelectedMessage(selection, id)}`);
+  throw new InstallStateError('install_plugin_unavailable', installProfileStatePath(env), `install_plugin_unavailable: repo-harness ${command} needs the ${id} plugin: ${notSelectedMessage(selection, id)}`);
 }

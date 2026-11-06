@@ -23,7 +23,7 @@ const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
 
 // Pi package ownership belongs to the pi plugin, so a seeded state selects it beside the full set.
-const PI_FULL_PLUGINS = ['architecture', 'cross-review', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory'] as const;
+const PI_FULL_PLUGINS = ['architecture', 'cross-review', 'mcp', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory'] as const;
 function recordPiSelection(env: NodeJS.ProcessEnv): void {
   recordInstallOwnership([], env);
   const path = installProfileStatePath(env);

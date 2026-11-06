@@ -61,7 +61,6 @@ import { buildArchitectureProjectionCommand } from './commands/architecture-proj
 import { buildRetentionCommand, type RetentionPorts } from './commands/retention';
 import { configureRequiredHerdrSkill } from './commands/herdr-skill';
 import { MCP_AUDIT_LOG_RELATIVE_PATH } from '../core/public-projections/mcp-audit-log';
-import { MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH } from './mcp/log-paths';
 import { TASK_INBOX_V2_RELATIVE_PATH } from '../core/fleet/task-inbox-layout';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
@@ -159,6 +158,13 @@ function pluginCommand(command: Command, id: PluginId, name: string = command.na
   return command.hook('preAction', () => assertPluginCommandSelected(recordedSelection, id, name));
 }
 
+/** The MCP sidecar logs, for a selected plugin only: the lazy load keeps every other process free of MCP code. */
+function selectedMcpLogs(): readonly string[] {
+  if (!pluginSelected(recordedSelection, 'mcp')) return [];
+  const { MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH } = require('./mcp/log-paths') as typeof import('./mcp/log-paths');
+  return [MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH, MCP_AUDIT_LOG_RELATIVE_PATH];
+}
+
 /**
  * The plugin checks, setup steps and storage roots that core commands take as
  * parameters. This root is the only importer of their implementations. Tests
@@ -174,7 +180,7 @@ export const CLI_PORTS: {
     configureHerdrSkill: (target, env, piSelected) => configureRequiredHerdrSkill(target, env, undefined, piSelected),
   },
   retention: {
-    rotatingLogs: [MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH, MCP_AUDIT_LOG_RELATIVE_PATH],
+    rotatingLogs: selectedMcpLogs(),
     commonProtocolRoots: [TASK_INBOX_V2_RELATIVE_PATH],
   },
 };
@@ -1037,7 +1043,13 @@ export function buildProgram(): Command {
   program.addCommand(buildBrainCommand());
   program.addCommand(buildCapabilityContextCommand());
   program.addCommand(buildDocsCommand());
-  program.addCommand(buildMcpCommand());
+  const mcp = buildMcpCommand();
+  for (const name of ['serve', 'doctor']) {
+    const command = mcp.commands.find(candidate => candidate.name() === name);
+    if (!command) throw new Error(`mcp ${name} is not defined`);
+    pluginCommand(command, 'mcp', `mcp ${name}`);
+  }
+  program.addCommand(mcp);
   program.addCommand(buildRunCommand());
   program.addCommand(buildStateCommand());
   program.addCommand(buildPublicationCommand());
