@@ -19,7 +19,7 @@ import {
   runDoctor,
 } from '../../src/cli/commands/doctor';
 import { writeShellExecutableFixture } from '../helpers/repo-fixture';
-import { recordPluginSelection } from '../helpers/install-ownership';
+import { recordPluginSelection, seedGlobalPackageFixture } from '../helpers/install-ownership';
 import { expectedSkillProjections, type SkillProjection } from '../../src/cli/installer/skill-projection';
 import { buildManagedHooks, MANAGED_TAG } from '../../src/cli/installer/managed-entries';
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
@@ -40,9 +40,7 @@ function withTempHome(fn: (home: string) => void): void {
   const prevBunInstall = process.env.BUN_INSTALL;
   process.env.HOME = tmp;
   process.env.BUN_INSTALL = path.join(tmp, '.bun');
-  const modules = path.join(process.env.BUN_INSTALL, 'install/global/node_modules');
-  fs.mkdirSync(modules, { recursive: true });
-  fs.symlinkSync(path.join(import.meta.dir, '../..'), path.join(modules, 'repo-harness'), 'dir');
+  seedGlobalPackageFixture();
   try {
     fn(tmp);
   } finally {
@@ -576,6 +574,9 @@ describe('doctor command (Phase 1C)', () => {
           },
         }, null, 2),
       );
+      const unreviewed = runDoctor(CLI_PORTS.doctor).checks.find(check => check.id === 'security-config')!;
+      expect(unreviewed.status).toBe('warn');
+      expect(unreviewed.detail).not.toContain('echo hello');
       fs.writeFileSync(
         configPath,
         JSON.stringify({

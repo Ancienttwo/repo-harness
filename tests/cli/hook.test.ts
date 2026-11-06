@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { seedGlobalPackageFixture } from '../helpers/install-ownership';
 import { execFileSync, spawnSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -13,10 +14,8 @@ const HOOK_ENTRY = join(import.meta.dir, '..', '..', 'src', 'cli', 'hook-entry.t
 const bunInstall = realpathSync(mkdtempSync(join(tmpdir(), 'hrd09-global-bun-')));
 const previousBunInstall = process.env.BUN_INSTALL;
 beforeAll(() => {
-  const modules = join(bunInstall, 'install/global/node_modules');
-  mkdirSync(modules, { recursive: true });
-  symlinkSync(join(import.meta.dir, '../..'), join(modules, 'repo-harness'), 'dir');
   process.env.BUN_INSTALL = bunInstall;
+  seedGlobalPackageFixture();
 });
 afterAll(() => {
   if (previousBunInstall === undefined) delete process.env.BUN_INSTALL;

@@ -377,7 +377,7 @@ function checkSecurityConfig(report: SecurityScanReport): DoctorCheckResult {
     id,
     describe,
     status: report.status === 'fail' ? 'fail' : 'warn',
-    detail: `${report.findings.length} finding(s): ${high} high, ${warn} warn, ${fail} fail${reviewed > 0 ? `; ${reviewed} reviewed exception(s)` : ''}; first=${first.ruleId} at ${first.filePath}; ${first.recommendation}`,
+    detail: `${report.findings.length} finding(s): ${high} high, ${warn} warn, ${fail} fail${reviewed > 0 ? `; ${reviewed} reviewed exception(s)` : ''}; first=${first.ruleId} at ${first.filePath}${first.ruleId === 'managed-hook-runtime-unavailable' ? `; ${first.recommendation}` : ''}`,
   };
 }
 

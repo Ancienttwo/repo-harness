@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { seedGlobalPackageFixture } from '../helpers/install-ownership';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -19,9 +20,7 @@ function withTempHomeAndRepo(fn: (ctx: { home: string; repo: string; root: strin
   fs.mkdirSync(repo, { recursive: true });
   const prevBunInstall = process.env.BUN_INSTALL;
   process.env.BUN_INSTALL = path.join(home, '.bun');
-  const modules = path.join(process.env.BUN_INSTALL, 'install/global/node_modules');
-  fs.mkdirSync(modules, { recursive: true });
-  fs.symlinkSync(ROOT, path.join(modules, 'repo-harness'), 'dir');
+  seedGlobalPackageFixture();
   try {
     fn({ home, repo, root });
   } finally {

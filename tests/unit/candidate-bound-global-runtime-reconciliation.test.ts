@@ -8,7 +8,7 @@ import { createHash, randomUUID } from 'crypto';
 import { copyPackageRuntimeFixture } from '../helpers/repo-fixture';
 import { startFakeHcRelease, writeFakeHc } from '../helpers/fake-hc';
 import { HC_MIN_VERSION } from '../../src/core/terminal/herdr-pin';
-import { recordPluginSelection } from '../helpers/install-ownership';
+import { recordPluginSelection, seedGlobalPackageFixture } from '../helpers/install-ownership';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 import { beginInstallHostTransaction, readInstallState, versions, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
 import {
@@ -37,9 +37,7 @@ beforeAll(() => {
   writeFakeHc(fakeHcBin);
   process.env.PATH = `${fakeHcBin}:${pathBeforeFakeHc ?? ''}`;
   process.env.BUN_INSTALL = join(fakeHcBin, '.bun');
-  const modules = join(process.env.BUN_INSTALL, 'install/global/node_modules');
-  mkdirSync(modules, { recursive: true });
-  symlinkSync(ROOT, join(modules, 'repo-harness'), 'dir');
+  seedGlobalPackageFixture();
 });
 afterAll(() => {
   process.env.PATH = pathBeforeFakeHc;
@@ -209,9 +207,7 @@ function runCandidateChild(
   holdParentLock: (home: string) => ParentLock = home => acquireExclusiveDirectoryLock(home, GLOBAL_RUNTIME_LOCK),
 ): ReturnType<typeof spawnSync> {
   const home = realpathSync(env.HOME!);
-  const globalModules = join(env.BUN_INSTALL!, 'install', 'global', 'node_modules');
-  mkdirSync(globalModules, { recursive: true });
-  symlinkSync(request.candidate.root, join(globalModules, 'repo-harness'), 'dir');
+  seedGlobalPackageFixture(env, { sourceRoot: request.candidate.root });
   const lock = holdParentLock(home);
   try {
     publishCandidateReconciliationCapability({
@@ -883,8 +879,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       mkdirSync(repo, { recursive: true });
       mkdirSync(bin, { recursive: true });
       const globalModules = join(home, '.bun', 'install', 'global', 'node_modules');
-      mkdirSync(globalModules, { recursive: true });
-      symlinkSync(ROOT, join(globalModules, 'repo-harness'), 'dir');
+      seedGlobalPackageFixture({ HOME: home, BUN_INSTALL: join(home, '.bun') });
       mkdirSync(join(home, '.repo-harness'), { recursive: true });
       writeFileSync(join(home, '.repo-harness', 'install-state.json'), `${JSON.stringify({
         protocol: 3,

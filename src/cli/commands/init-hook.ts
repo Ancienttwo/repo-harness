@@ -234,12 +234,14 @@ function statusChecks(
     const countConfigured = entry.managedEntryCount === entry.expectedEntryCount;
     const projectionConfigured = entry.projection === undefined
       ? countConfigured
-      : entry.projection.status === 'consistent';
+      : entry.projection.status === 'consistent' && entry.projection.error === undefined;
     const configured = invalidState === null
       && entry.alreadyConfigured
       && countConfigured
       && projectionConfigured;
-    const projectionDetail = entry.alreadyConfigured
+    const projectionDetail = entry.projection?.error
+      ? `; projection check failed: ${entry.projection.error}`
+      : entry.alreadyConfigured
       && entry.projection?.status === 'drift'
       && entry.projection.mismatches.length > 0
       ? `; projection drift: ${entry.projection.mismatches.map(formatManagedHookProjectionMismatch).join('; ')}`

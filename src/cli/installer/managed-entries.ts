@@ -92,13 +92,13 @@ export function buildHookExecCommand(env: NodeJS.ProcessEnv = process.env): stri
   return `exec ${bun} ${entry}`;
 }
 
-export function buildHookCommand(route: Route, host: HookHost): string {
-  return `: ${MANAGED_TAG}; repo=$(git rev-parse --show-toplevel 2>/dev/null) && [ -f "$repo/.ai/harness/workflow-contract.json" ] || exit 0; export HOOK_REPO_ROOT="$repo"; HOOK_HOST=${host} ${buildHookExecCommand()} ${route.event} --route ${route.routeId}`;
+export function buildHookCommand(route: Route, host: HookHost, env: NodeJS.ProcessEnv = process.env): string {
+  return `: ${MANAGED_TAG}; repo=$(git rev-parse --show-toplevel 2>/dev/null) && [ -f "$repo/.ai/harness/workflow-contract.json" ] || exit 0; export HOOK_REPO_ROOT="$repo"; HOOK_HOST=${host} ${buildHookExecCommand(env)} ${route.event} --route ${route.routeId}`;
 }
 
-export function buildHookEntry(route: Route, host: HookHost): HookEntry {
+export function buildHookEntry(route: Route, host: HookHost, env: NodeJS.ProcessEnv = process.env): HookEntry {
   const entry: HookEntry = {
-    hooks: [{ type: 'command', command: buildHookCommand(route, host), timeout: 30 }],
+    hooks: [{ type: 'command', command: buildHookCommand(route, host, env), timeout: 30 }],
   };
   if (route.matcher !== undefined) entry.matcher = route.matcher;
   return entry;
@@ -110,11 +110,11 @@ export function isManagedEntry(entry: HookEntry): boolean {
 }
 
 /** Every hook route is core: each install projects every route that the host supports. */
-export function buildManagedHooks(host: HookHost): HooksByEvent {
+export function buildManagedHooks(host: HookHost, env: NodeJS.ProcessEnv = process.env): HooksByEvent {
   const out: HooksByEvent = {};
   for (const route of routesForHost(host)) {
     if (!out[route.event]) out[route.event] = [];
-    out[route.event].push(buildHookEntry(route, host));
+    out[route.event].push(buildHookEntry(route, host, env));
   }
   return out;
 }
@@ -352,10 +352,11 @@ export function compareManagedHooks(
 export function compareManagedHookProjection(
   actual: unknown,
   host: HookHost,
+  env: NodeJS.ProcessEnv = process.env,
 ): ManagedHookProjectionReport {
   let expected: HooksByEvent;
   try {
-    expected = buildManagedHooks(host);
+    expected = buildManagedHooks(host, env);
   } catch (error) {
     return {
       status: 'drift',
