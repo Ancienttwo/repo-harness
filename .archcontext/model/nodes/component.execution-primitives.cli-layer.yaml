@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.execution-primitives.cli-layer
+kind: component
+name: Execution Primitives (cli)
+status: active
+parent: capability.workflow-engine.execution-primitives
+layer: cli
+summary: The cli-layer file of Execution Primitives. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the bots command so layer direction is checked per directory.
+source:
+  include:
+    - src/cli/commands/bots.ts

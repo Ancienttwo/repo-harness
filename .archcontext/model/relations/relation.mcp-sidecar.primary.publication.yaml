@@ -3,4 +3,4 @@ id: relation.mcp-sidecar.primary.publication
 kind: calls
 source: component.mcp-sidecar.primary
 target: capability.organization.publication
-intent: "Reopen and take over publications and read merge readiness"
+intent: "Read pull request merge readiness"

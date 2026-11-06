@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.execution-primitives.bot-registry
+kind: component
+name: Bot Registry
+status: active
+parent: capability.workflow-engine.execution-primitives
+layer: effects
+summary: Reads and writes the Bot records under the account-level repo-harness home. Plugins only read them.
+responsibilities:
+  - Own the Bot records, their id and field rules and the exclusive write of one record.
+source:
+  include:
+    - src/effects/bot-registry.ts

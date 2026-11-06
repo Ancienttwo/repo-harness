@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.console-collectors.bot-registry
+kind: reads
+source: component.operator.console-collectors
+target: component.execution-primitives.bot-registry
+intent: "Read the Bot registry for Bot access and the Dot review bot"

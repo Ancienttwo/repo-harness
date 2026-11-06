@@ -1,24 +1,24 @@
 schemaVersion: archcontext.node/v2
 id: component.mcp-sidecar.host-setup
 kind: component
-name: "CLI and Doctor"
+name: "CLI Actions and Doctor"
 status: active
 parent: capability.runtime-harness.mcp-sidecar
 layer: "cli"
-summary: "Owns the mcp CLI command and the static doctor."
+summary: "Owns the mcp serve and doctor actions and the static doctor."
 responsibilities:
-  - Parse the mcp serve, doctor and access set commands.
+  - Run the mcp serve and doctor actions and build the CodeGraph reader of the served tools.
   - Report the user-level config, allowed roots and capabilities without a live probe.
   - Name each leftover file of the removed ChatGPT, OAuth and Codex MCP surface with its removal command, and delete none.
 source:
   include:
-    - src/cli/commands/mcp.ts
+    - src/cli/mcp/cli-actions.ts
     - src/cli/mcp/doctor.ts
   entrypoints:
     - id: entrypoint.mcp-sidecar.cli
-      path: src/cli/commands/mcp.ts
+      path: src/cli/mcp/cli-actions.ts
       symbols:
-        - name: buildMcpCommand
+        - name: runMcpServeCommand
           sinks:
             - id: sink.mcp-sidecar.stdio-start
               path: src/cli/mcp/transports/stdio.ts
