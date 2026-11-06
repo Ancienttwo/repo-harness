@@ -64,6 +64,7 @@ describe("README DX contract", () => {
   test("dry-run keeps the canonical adoption-plan onboarding signal", () => {
     const repo = mkdtempSync(join(tmpdir(), "repo-harness-readme-dx-"));
     try {
+      expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "readme-dx-fixture", private: true }));
       const res = spawnSync("bun", ["src/cli/index.ts", "init", "--repo", repo, "--dry-run"], {
         cwd: ROOT,
