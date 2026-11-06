@@ -2,6 +2,14 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- A plugin command guard on a recorded `all` selection now prints
+  `repo-harness update`. An explicit `--plugins` list ended `all`, so later
+  plugins did not join at `update`. (#1869)
+
 ## [0.26.5] - 2026-11-06
 
 This release adds the MCP and Operator plugin gates, updates OAR and Pi,

@@ -1,5 +1,5 @@
 import { syncCrossReviewSkills } from '../src/cli/commands/init';
-import { readRecordedSelection } from '../src/cli/installer/architecture-selection';
+import { architectureSelectionReport, assertPluginCommandSelected, readRecordedSelection } from '../src/cli/installer/architecture-selection';
 import { configureRequiredHerdrSkill } from '../src/cli/commands/herdr-skill';
 import { describe, expect, test } from 'bun:test';
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'fs';
@@ -43,7 +43,7 @@ import { installPiPackage } from '../src/cli/installer/pi-package';
 import { bunGlobalPackageRoot } from '../src/cli/installer/skill-projection';
 import { hostSkillRoot, providerSkillLock } from '../src/effects/host-skill-roots';
 import { MANAGED_AGENTS } from '../src/effects/terminal/task-role-profiles';
-import { recordInstallOwnership } from './helpers/install-ownership';
+import { recordInstallOwnership, recordPluginSelection } from './helpers/install-ownership';
 import { hashManagedTree } from '../src/effects/managed-tree';
 import { buildManagedHooks } from '../src/cli/installer/managed-entries';
 import { runUserUninstall } from '../src/cli/installer/uninstall';
@@ -1169,7 +1169,19 @@ describe('install selection', () => {
     expect(() => prepareInstallSelectionSwitch([], env)).toThrow('invalid ownership surface');
     expect(readFileSync(external, 'utf-8')).toBe(content);
     // The hook selection read uses the read model only; the installer commands own the surface check (#1680).
-    expect(readRecordedSelection(env)).toEqual({ status: 'recorded', plugins: ALL_PLUGINS });
+    expect(readRecordedSelection(env)).toEqual({ status: 'recorded', selection: 'all', plugins: ALL_PLUGINS });
+  }));
+
+  test('the plugin guards of a recorded all print update, because an explicit list would end all', () => withHome((env) => {
+    recordPluginSelection(env, ['product'], 'all');
+    const selection = readRecordedSelection(env);
+    expect(selection).toEqual({ status: 'recorded', selection: 'all', plugins: ['product'] });
+    // scripts/lib/architecture-plugin.sh prints this report.
+    expect(architectureSelectionReport(selection)).toEqual({ status: 'not-selected', message: 'the architecture plugin is not selected; run: repo-harness update' });
+    for (const [id, command] of [['mcp', 'mcp serve'], ['strategy-memory', 'strategy']] as const) {
+      expect(() => assertPluginCommandSelected(selection, id, command, env))
+        .toThrow(`install_plugin_unavailable: repo-harness ${command} needs the ${id} plugin: the ${id} plugin is not selected; run: repo-harness update`);
+    }
   }));
 
   test('reinstall refreshes ownership for an already-owned CodeGraph projection', () => withHome((env) => {

@@ -4,7 +4,7 @@ import { tmpdir } from 'os';
 import { dirname, join, relative } from 'path';
 import { versions } from '../../src/cli/installer/install-profile';
 import { installProfileStatePath } from '../../src/cli/installer/install-state';
-import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
+import type { PluginId, PluginSelection } from '../../src/core/skill-surface/plugin-manifest';
 
 /** Seed the persisted protocol, independently of unrelated owner probes. */
 export function recordInstallOwnership(paths: string[], env: NodeJS.ProcessEnv): void {
@@ -40,11 +40,14 @@ export function recordInstallOwnership(paths: string[], env: NodeJS.ProcessEnv):
     transaction_id: 'owned-upgrade-fixture', applied_at: new Date().toISOString(), ownership_manifest, previous: null }));
 }
 
-/** Record an install selection without managed surfaces, as `repo-harness install --plugins <plugins>` leaves it. */
-export function recordPluginSelection(env: NodeJS.ProcessEnv, plugins: readonly PluginId[] = ['architecture']): void {
+/**
+ * Record an install selection without managed surfaces, as `repo-harness install --plugins <plugins>` leaves it.
+ * `selection: 'all'` with a subset is an `all` state recorded before the other plugin ids existed.
+ */
+export function recordPluginSelection(env: NodeJS.ProcessEnv, plugins: readonly PluginId[] = ['architecture'], selection: PluginSelection = [...plugins]): void {
   const statePath = installProfileStatePath(env);
   mkdirSync(dirname(statePath), { recursive: true });
-  writeFileSync(statePath, JSON.stringify({ protocol: 3, ...versions(plugins), selection: [...plugins],
+  writeFileSync(statePath, JSON.stringify({ protocol: 3, ...versions(plugins), selection,
     transaction_id: 'plugin-selection-fixture', applied_at: new Date().toISOString(), ownership_manifest: [], previous: null }));
 }
 
