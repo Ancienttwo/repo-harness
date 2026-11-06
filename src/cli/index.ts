@@ -59,7 +59,6 @@ import { buildQuotaCommand } from './commands/quota';
 import { buildArchitectureDebtCommand } from './commands/architecture-debt';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { buildRetentionCommand, type RetentionPorts } from './commands/retention';
-import { configureRequiredHerdrSkill } from './commands/herdr-skill';
 import { MCP_AUDIT_LOG_RELATIVE_PATH } from '../core/public-projections/mcp-audit-log';
 import { TASK_INBOX_V2_RELATIVE_PATH } from '../core/fleet/task-inbox-layout';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
@@ -72,7 +71,6 @@ import {
   ownFreshWazaSharedRules,
   reconciledByCandidate,
   runGlobalRuntimeSetup,
-  type GlobalRuntimePorts,
   updateLeftoverSummary,
   updateRegisteredUpgradeSummary,
   type GlobalRuntimeOptions,
@@ -173,13 +171,9 @@ function selectedMcpLogs(): readonly string[] {
  */
 export const CLI_PORTS: {
   readonly doctor: DoctorPorts;
-  readonly globalRuntime: GlobalRuntimePorts;
   readonly retention: RetentionPorts;
 } = {
   doctor: { notifyRelayCheck: notifyRelayDoctorCheck, attentionWatchCheck: (cwd) => attentionWatchDoctorCheck(attentionHostPorts(), () => readLocalRepositoryId({ repo_root: cwd }, url => githubRemoteRepository(url) !== null)) },
-  globalRuntime: {
-    configureHerdrSkill: (target, env, piSelected) => configureRequiredHerdrSkill(target, env, undefined, piSelected),
-  },
   retention: {
     rotatingLogs: selectedMcpLogs(),
     commonProtocolRoots: [TASK_INBOX_V2_RELATIVE_PATH],
@@ -309,7 +303,7 @@ function runTransactionalSelectionProjection(
       priorReceipts = readInstallState(transactionEnv)?.ownership_manifest ?? [];
       prepareInstallSelectionSwitch(selected.record, options.env);
       if (plugins.includes('architecture')) registerArchitecturePlugin();
-      result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, { ...options, plugins, runtimeLock: lock });
+      result = runGlobalRuntimeSetup({ ...options, plugins, runtimeLock: lock });
     } catch (error) {
       rollbackRuntimeTransaction(transaction, transactionEnv, recorded, error);
       throw error;
@@ -444,7 +438,7 @@ export function runCandidateRuntimeReconciliation(
   // Stdout is the receipt; the parent shows this stderr in its reconcile step.
   for (const line of [...selectionLines(resolved), ...commandPluginRepairLines(state.selection)]) console.error(line);
   const piSkillRoot = piSkillRootSnapshots(env);
-  const runtime = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+  const runtime = runGlobalRuntimeSetup({
     runtimeLock,
     sourceRoot,
     cwd: request.cwd,
@@ -547,7 +541,7 @@ function candidateHandoffContext(
 
 export function runTransactionalRuntimeRefresh(
   options: GlobalRuntimeOptions,
-  setup: (options: GlobalRuntimeOptions) => GlobalRuntimeResult = (setupOptions) => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, setupOptions),
+  setup: (options: GlobalRuntimeOptions) => GlobalRuntimeResult = (setupOptions) => runGlobalRuntimeSetup(setupOptions),
 ): GlobalRuntimeResult {
   const transactionEnv = runtimeHostTransactionEnv(options.env);
   // An invalid XDG_STATE_HOME must fail before the lock creates transaction state.

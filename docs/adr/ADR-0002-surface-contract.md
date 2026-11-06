@@ -50,10 +50,11 @@ datum has one authority, one reader and one projection.
 | Check and assessment records | no surface reader yet | to define in a later decision (#1353 S3) |
 | Acceptance receipts | the Review contract (#1287 step 1c) | through that contract |
 
-These are plugin state, not core state, and this contract does not cover
-them: task-agent sessions and Herdr panes, the architecture map and history,
-Dev Activity and CI test artifacts that the operator collects. A surface
-reads plugin state only through the contract of the plugin that owns it.
+Task-session records and Herdr terminal observations are core runtime evidence.
+The task-agent-host plugin owns task launch, request delivery and result collection.
+The architecture map and history, Dev Activity and collected CI test artifacts
+remain plugin state. A surface reads plugin state only through the contract of
+the plugin that owns it.
 
 ### Versions
 
@@ -75,8 +76,9 @@ reads plugin state only through the contract of the plugin that owns it.
 The Event contract (`repo-harness.bot-event/v1`,
 `assets/herdr/github-events/bot-event.mjs`) is the sibling contract. An
 event is a pushed notice that the reader checks again at the source. A
-projection is pulled state. Both use a versioned envelope and one decoder in
-core that refuses the first invalid field.
+projection is pulled state. Each uses a versioned envelope and one decoder
+that refuses the first invalid field. Core owns the projection decoders. The
+Event decoder, `assertBotEvent`, lives in the Event contract file above.
 
 ### What a surface never does
 

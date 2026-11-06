@@ -298,7 +298,7 @@ describe('registry-bound CLI update (#701)', () => {
         delete env.BUN_INSTALL;
         delete env.USERPROFILE;
       }
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         sourceRoot: source, cwd: root, plugins: [], target: 'codex',
         installSpec: `repo-harness@${options.version ?? options.channel ?? 'latest'}`, updateMode: true,
         syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
@@ -433,7 +433,7 @@ describe('install command global runtime bootstrap', () => {
         ].join('\n'),
       );
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         sourceRoot: source,
         cwd: repo,
         plugins: ['architecture'],
@@ -488,7 +488,7 @@ describe('install command global runtime bootstrap', () => {
         ].join('\n'),
       );
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         plugins: FULL_PLUGINS,
         cwd: repo,
         installCli: false,
@@ -586,7 +586,7 @@ describe('install command global runtime bootstrap', () => {
       writeFakeHc(fakeBin);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         sourceRoot: ROOT,
         cwd: repo,
         target: 'codex',
@@ -650,7 +650,7 @@ describe('install command global runtime bootstrap', () => {
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nif [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then if [[ " $* " == *" tw93/Waza "* ]]; then names='think hunt check health'; else names='mermaid'; fi; if [[ " $* " == *" -a claude-code -s "* ]]; then root="$HOME/.claude/skills"; else root="$HOME/.agents/skills"; fi; for skill in $names; do mkdir -p "$root/$skill"; printf '# %s\\n' "$skill" > "$root/$skill/SKILL.md"; done; fi\nexit 0\n`);
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
@@ -733,7 +733,7 @@ exit 0
         REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
       };
 
-      const installed = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const installed = runGlobalRuntimeSetup({
         sourceRoot: source,
         cwd: repo,
         target: 'both',
@@ -781,7 +781,7 @@ exit 0
       }, null, 2)}\n`);
 
       rmSync(join(home, '.codex', 'skills', 'obsidian-cli'));
-      const verifiedUpdate = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const verifiedUpdate = runGlobalRuntimeSetup({
         sourceRoot: source,
         cwd: repo,
         target: 'both',
@@ -852,7 +852,7 @@ done
 if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else printf '# refreshed rule\\n'; fi
 `);
 
-      const update = (options: { plugins: readonly PluginId[]; codegraph?: boolean }) => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const update = (options: { plugins: readonly PluginId[]; codegraph?: boolean }) => runGlobalRuntimeSetup({
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
@@ -923,7 +923,7 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
         '',
       ].join('\n'));
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         sourceRoot: source,
         cwd: repo,
         plugins: ['architecture'],
@@ -985,7 +985,7 @@ printf '# premature host projection\n' > "$HOME/.codex/skills/obsidian-markdown/
 exit 0
 `);
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         sourceRoot: ROOT,
         cwd: repo,
         target: 'codex',
@@ -1039,7 +1039,7 @@ exit 0
       writeFileSync(join(outside, 'SKILL.md'), '# obsidian-markdown\n');
       symlinkSync(outside, join(home, '.agents', 'skills', 'obsidian-markdown'), 'dir');
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         sourceRoot: ROOT,
         cwd: repo,
         target: 'codex',
@@ -1078,7 +1078,7 @@ exit 0
       writeFileSync(join(outside, 'obsidian-markdown', 'SKILL.md'), '# obsidian-markdown\n');
       symlinkSync(outside, join(home, '.agents', 'skills'), 'dir');
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         sourceRoot: ROOT,
         cwd: repo,
         target: 'codex',
@@ -1124,7 +1124,7 @@ exit 0
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" > "${bunxLog}"\nexit 0\n`);
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
@@ -1167,7 +1167,7 @@ exit 0
       setObsidianSkillIntegrities(source);
       symlinkSync(outside, join(home, '.codex', 'skills'), 'dir');
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
@@ -1214,7 +1214,7 @@ printf '# obsidian-markdown\\n' > "$HOME/.agents/skills/obsidian-markdown/SKILL.
 exit 0
 `);
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
@@ -1255,7 +1255,7 @@ exit 0
       );
       writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
-      expect(() => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      expect(() => runGlobalRuntimeSetup({
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
@@ -1288,7 +1288,7 @@ exit 0
       setupFakeSource(source);
       setObsidianSkillIntegrity(source, 'obsidian-markdown', null);
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
@@ -1377,7 +1377,7 @@ exit 0
         ].join('\n'),
       );
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         plugins: FULL_PLUGINS,
         sourceRoot: source,
         cwd: repo,
@@ -1417,7 +1417,7 @@ exit 0
       mkdirSync(fakeBin, { recursive: true });
       writeFakeHc(fakeBin);
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         sourceRoot: ROOT,
         cwd: repo,
         target: 'claude',
@@ -1474,7 +1474,7 @@ fi
 exit 0
 `);
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         sourceRoot: ROOT,
         cwd: repo,
         target: 'claude',
@@ -1521,7 +1521,7 @@ exit 0
       writeFileSync(join(home, '.codex', 'skills', 'think', 'SKILL.md'), '# think\n');
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 0\n');
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         sourceRoot: ROOT,
         cwd: repo,
         target: 'both',
@@ -1559,7 +1559,7 @@ exit 0
       setupManagedRuntimeReadback(home, fakeBin, '9.9.8');
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         sourceRoot: ROOT,
         cwd: repo,
         plugins: [],
@@ -1646,7 +1646,7 @@ exit 0
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
       writeExecutable(join(fakeBin, 'npx'), '#!/bin/bash\nexit 0\n');
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         plugins: FULL_PLUGINS,
         sourceRoot: source,
         installCli: false,
@@ -1688,7 +1688,7 @@ exit 0
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
       writeExecutable(join(fakeBin, 'npm'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${npmLog}"\nexit 42\n`);
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         plugins: FULL_PLUGINS,
         sourceRoot: source,
         cwd: repo,
@@ -1735,7 +1735,7 @@ exit 0
       symlinkSync(source, globalPackage, 'dir');
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         plugins: FULL_PLUGINS,
         sourceRoot: source,
         cwd: repo,
@@ -1778,7 +1778,7 @@ exit 0
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const result = runGlobalRuntimeSetup({
         plugins: FULL_PLUGINS,
         sourceRoot: source,
         cwd: repo,
@@ -1845,7 +1845,7 @@ exit 0
       };
       const expectedDetail = 'already installed from Bun global package source; version=9.9.9';
 
-      const unsetStep = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, { ...runOpts, env: baseEnv }).steps.find(
+      const unsetStep = runGlobalRuntimeSetup({ ...runOpts, env: baseEnv }).steps.find(
         (step) => step.step === 'install repo-harness CLI',
       );
       expect(unsetStep?.status).toBe('skipped');
@@ -1853,7 +1853,7 @@ exit 0
 
       // Explicit update checks can still use a caller-provided registry result
       // without spawning the registry client.
-      const equalStep = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const equalStep = runGlobalRuntimeSetup({
         ...runOpts,
         env: {
           ...baseEnv,
@@ -2448,7 +2448,7 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
       setupManagedRuntimeReadback(home, fakeBin, '9.9.9');
       const body = join(fakeBin, 'node.fixture-body');
       writeFileSync(body, readFileSync(body, 'utf8').replace('"data":{"running":false}', `"data":{"running":true,"versionUnsupported":{"reason":"product-version-mismatch","expected":"${ARCHCTX_PIN}","received":"0.2.3","action":"upgrade-archctx-runtime","command":"archctx daemon upgrade"}}`));
-      return runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, transactionOptions);
+      return runGlobalRuntimeSetup(transactionOptions);
     });
     expect(result.exitCode).toBe(0);
     expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')?.status).toBe('ok');
@@ -2553,7 +2553,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
 `);
       const env = { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), WAZA_FIXTURE_UPSTREAM: upstream,
         PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun') };
-      body({ home, upstream, fakeBin, env, paths, run: (refresh = true, target = 'both') => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      body({ home, upstream, fakeBin, env, paths, run: (refresh = true, target = 'both') => runGlobalRuntimeSetup({
         sourceRoot: ROOT, cwd: tmp, env, target, plugins: [],
         installCli: false, syncSkill: false, hostAdapters: false, codegraph: false,
         externalSkills: true, updateMode: refresh,
@@ -2928,7 +2928,7 @@ describe('Codex Waza projection', () => {
         writeExecutable(join(bin, 'bun'), `#!/bin/bash\nif [[ "$1" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "$1" == "-" ]]; then exec "${process.execPath}" "$@"; fi\nexit 9\n`);
         writeExecutable(join(bin, 'bunx'), '#!/bin/bash\nexit 9\n');
         const env = { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${bin}:${process.env.PATH ?? ''}` };
-        const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, { sourceRoot: ROOT, cwd: tmp, target: 'codex', plugins: [],
+        const result = runGlobalRuntimeSetup({ sourceRoot: ROOT, cwd: tmp, target: 'codex', plugins: [],
           installCli: false, syncSkill: false, hostAdapters: false, externalSkills: true, codegraph: false, env });
         const waza = result.steps.find(step => step.step === 'configure Waza skills');
         expect(waza?.status).toBe(mode === 'unknown-directory' ? 'failed' : 'ok');
@@ -2998,7 +2998,7 @@ describe('Global Working Rules refresh during install and update', () => {
       body({
         home,
         path: join(home, '.codex', 'AGENTS.md'),
-        run: (reportLanguage, updateMode = true, target = 'codex') => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+        run: (reportLanguage, updateMode = true, target = 'codex') => runGlobalRuntimeSetup({
           sourceRoot: source,
           cwd: repo,
           target,
