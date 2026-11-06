@@ -1,5 +1,5 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7ccf9ffc89e06f07aefc8165a3873773e1a2ba94fe211a8b9ed0f4f0cecef5da" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:9243579514d63b32de4b49eaf56db8a9828b4c5aefaaf470b10f4904909f1ab2" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
 > **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/context/**`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-worktree.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.archcontext/**`、`docs/adr/**`、`src/core/capabilities/**`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/sync-reference-configs.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
@@ -84,6 +84,7 @@ flowchart LR
 入向關係:
 
 - `depends-on` ← `capability.public-surface.action-commands` — Read the workflow contract during skill version checks.
+- `reads` ← `component.architecture.model-reader` — Plugin → core: decode the capability registry from the native context and resolve changed paths to capability owners
 - `depends-on` ← `capability.verification.codegraph-readiness` — Type the CodeGraph init step with the core init port type and the CodeGraph doctor provider with the core architecture contract
 - `calls` ← `component.evals-checks.primary` — Consume trusted PR checks for a base ref through the merge gate without rerunning commands
 - `calls` ← `component.global-runtime-reconciliation.cli-diagnostics` — Read the ArchContext capability authority for the doctor report
@@ -91,8 +92,6 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.primary` — Sync the cross-review skills through the init command
 - `reads` ← `component.hook-adapters.host-installer` — Resolve the managed fleet role list during host installation
 - `reads` ← `component.inspection-migration.primary` — Read directory and legacy path inventory from the package workflow contract
-- `depends-on` ← `capability.runtime-harness.mcp-sidecar` — Run declared helpers from MCP tools.
-- `reads` ← `component.operator.architecture-reader` — Plugin → core: decode the capability registry from the native context and resolve changed paths to capability owners
 - `calls` ← `capability.organization.publication` — Read integration proof through the packaged worktree merge helper
 - `depends-on` ← `capability.runtime-harness.refactor-program` — Type the archctx provider options with the core architecture contract
 - `reads` ← `component.task-agent-host.review-runner` — Plugin → core: read the fleet role profile frontmatter rules and target overrides for the review host
@@ -139,7 +138,6 @@ flowchart LR
   - `calls` → `capability.public-surface.adoption` — Plan and apply the transactional adoption for repository init
   - `calls` → `capability.workflow-engine.execution-primitives` — Run init steps as bounded child processes
   - `calls` → `capability.runtime-harness.hook-adapters` — Read the install state and project skills during init
-  - `depends-on` → `capability.runtime-harness.operator` — Read the tool catalog to project the reference tooling table
   - `calls` → `component.action-commands.skill-surface-catalog` — Read host skill placements for the bundled cross-review skills
 - `component.contract-assets.template-projection-cli`:
   - 無。
@@ -175,7 +173,7 @@ flowchart LR
 | `component.contract-assets.template-projection-cli` | Template Projection (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.contract-assets.template-projection-effects` | Template Projection (effects) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.contract-assets.template-projection-scripts` | Template Projection (scripts) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
-| `component.contract-assets.tool-catalog` | Tool Catalog | `1–2` 個文件 / `100–200` 行 | 未宣告 |
+| `component.contract-assets.tool-catalog` | Tool Catalog | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 | `component.contract-assets.worktree-runtime-root` | Contract Worktree Runtime Process Root | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
