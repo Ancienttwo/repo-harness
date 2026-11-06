@@ -908,10 +908,11 @@ describe('installed copy file projection', () => {
       symlinkSync('space and\nnewline.md', join(source, 'references/link.md'));
       put(join(facade, 'SKILL.md'), 'facade\n');
       put(join(facade, 'references/guide.md'), 'guide\n');
-      for (const path of ['dist/hook-entry.js', 'dist/oar-review-host.js', 'dist/operator-ui/index.html']) {
+      for (const path of ['dist/hook-entry.js', 'dist/oar-review-host.js']) {
         put(join(source, path), `shipped runtime ${path}\n`);
       }
       const residues = ['.ai/harness/state/effective.json', '.ai/harness/security/scan.json',
+        'dist/operator-ui/index.html', 'src/operator-web/main.tsx',
         '.ai/harness/evidence/events/log.jsonl', '.ai/harness/delegation/active.json',
         'dist/unshipped-build.js', 'plans/untracked.md', 'assets/node_modules/private.txt',
         'assets/.ai/harness/state/effective.json', 'assets/.ai/harness/security/scan.json',
@@ -951,7 +952,7 @@ describe('installed copy file projection', () => {
       for (const path of residues) expect(existsSync(join(tmp, 'codex/repo-harness', path))).toBe(false);
       expect(readFileSync(join(tmp, 'codex/repo-harness/LICENSE'))).toEqual(readFileSync(join(ROOT, 'LICENSE')));
       expect(existsSync(join(tmp, 'codex/repo-harness/references/link.md'))).toBe(true);
-      for (const path of ['dist/hook-entry.js', 'dist/oar-review-host.js', 'dist/operator-ui/index.html']) {
+      for (const path of ['dist/hook-entry.js', 'dist/oar-review-host.js']) {
         expect(existsSync(join(tmp, 'codex/repo-harness', path))).toBe(true);
       }
       expect(() => installedCopyTreeOptions('canonical-skill', { installedCopyExcludes: [] })).toThrow('includes');
@@ -1004,10 +1005,15 @@ test('canonical projection keeps every tracked include file and every existing d
   const trackedIncludes = tracked.stdout.split('\0').filter(file => file && includes.some(root =>
     root.endsWith('/') ? file.startsWith(root) : file === root));
   expect(trackedIncludes.length).toBeGreaterThan(0);
-  expect(trackedIncludes.filter(file => !projected.has(file))).toEqual([]);
+  const consoleSources = trackedIncludes.filter(file => file.startsWith('src/operator-web/'));
+  expect(consoleSources.length).toBeGreaterThan(0);
+  expect(consoleSources.filter(file => projected.has(file))).toEqual([]);
+  expect(trackedIncludes.filter(file => !file.startsWith('src/operator-web/') && !projected.has(file))).toEqual([]);
 
   const existingPackageFiles: string[] = [];
+  const packageExcludes = packageFiles.filter(file => file.startsWith('!')).map(file => file.slice(1));
   const visit = (file: string): void => {
+    if (packageExcludes.some(root => root.endsWith('/') ? `${file.replace(/\/$/, '')}/`.startsWith(root) : file === root)) return;
     const absolute = join(ROOT, file);
     const entry = lstatSync(absolute);
     if (entry.isDirectory()) {

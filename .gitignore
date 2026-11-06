@@ -1,6 +1,9 @@
 # Prepack-built single-file hook bundle (projection of src/cli/hook-entry.ts)
 dist/
 
+# Console package license copied from the root during prepack
+packages/operator-web/LICENSE
+
 # Bun
 bun.lockb
 

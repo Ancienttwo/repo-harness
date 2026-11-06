@@ -303,8 +303,8 @@ describe('operator web interactions', () => {
     };
     const names = config.plugins.flat(Infinity).map(plugin => (plugin as { name?: string } | null)?.name ?? '');
     expect(config.root.endsWith('/src/operator-web')).toBe(true);
-    // `operator serve` and the tarball smoke read the build from dist/operator-ui.
-    expect(config.build.outDir.endsWith('/dist/operator-ui')).toBe(true);
+    // The console package owns the static build.
+    expect(config.build.outDir.endsWith('/packages/operator-web/dist')).toBe(true);
     expect(names).toContain('@tailwindcss/vite:generate:build');
     expect(names).toContain('vite:react-babel');
     // Paper and Ink come from tokens.json; the logo and characters ship from the design system's assets under their own names.

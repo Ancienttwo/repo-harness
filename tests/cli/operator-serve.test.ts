@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { taskReviewRunner } from '../../src/effects/review-runner/task-review-runner';
-import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
+import { OPERATOR_WEB_PACKAGE_NAME, type PluginId } from '../../src/core/skill-surface/plugin-manifest';
 import { MODULE_ID, MODULE_DOC, MODULE_NODE, moduleRepository, fixtureYaml, fixtureWrite, fixtureCommit, fixtureGit, isNativeExportGitRead } from '../helpers/module-repository';
 import { createHash } from 'node:crypto';
 import { chmodSync, watch, lstatSync, renameSync } from 'node:fs';
@@ -45,7 +45,7 @@ import {
   startOperatorServer,
 } from '../../src/effects/operator/server';
 import { buildOperatorCommand } from '../../src/cli/commands/operator';
-import { parseOperatorServeOptions } from '../../src/cli/commands/operator-actions';
+import { parseOperatorServeOptions, resolveOperatorAssets } from '../../src/cli/commands/operator-actions';
 import { decodeArchitectureMapRefusal, projectArchitectureMap, type ArchitectureMapV1, type ArchitecturePullRequestsSource } from '../../src/core/operator/architecture-map';
 import { startArchitectureMapCollector, type ArchitectureMapRepositoryCache } from '../../src/effects/operator/architecture-map-collector';
 import { worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
@@ -181,6 +181,50 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
+  test('resolves the console beside the CLI and binds only an equal version', () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-console-resolve-'));
+    const cliRoot = join(root, 'node_modules/repo-harness');
+    const consoleRoot = join(root, 'node_modules', OPERATOR_WEB_PACKAGE_NAME);
+    try {
+      mkdirSync(cliRoot, { recursive: true });
+      expect(resolveOperatorAssets(cliRoot)).toEqual({});
+      mkdirSync(consoleRoot);
+      writeFileSync(join(consoleRoot, 'package.json'), JSON.stringify({ version: '0.0.0' }));
+      expect(resolveOperatorAssets(cliRoot)).toEqual({ static_error: 'operator_assets_version_mismatch' });
+      writeFileSync(join(consoleRoot, 'package.json'), JSON.stringify({ version: PACKAGE_VERSION }));
+      expect(resolveOperatorAssets(cliRoot)).toEqual({ static_root: join(consoleRoot, 'dist') });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('absent and mismatched consoles refuse pages while health and repositories still answer', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-console-refusal-'));
+    const cliRoot = join(root, 'node_modules/repo-harness');
+    const consoleRoot = join(root, 'node_modules', OPERATOR_WEB_PACKAGE_NAME);
+    const registry = registryHome([]);
+    try {
+      mkdirSync(cliRoot, { recursive: true });
+      for (const code of ['operator_assets_unavailable', 'operator_assets_version_mismatch']) {
+        if (code === 'operator_assets_version_mismatch') {
+          mkdirSync(join(consoleRoot, 'dist'), { recursive: true });
+          writeFileSync(join(consoleRoot, 'package.json'), JSON.stringify({ version: '0.0.0' }));
+          writeFileSync(join(consoleRoot, 'dist/index.html'), '<!doctype html><main>wrong version</main>');
+        }
+        const server = await startOperatorServer({ port: 0, ...resolveOperatorAssets(cliRoot), env: registry.env });
+        try {
+          const page = await fetch(`${server.url}/`);
+          expect(page.status).toBe(503);
+          const body = await page.json();
+          expect(body.error.code).toBe(code);
+          expect(body.error.next_action).toContain('repo-harness update');
+          const health = await fetch(`${server.url}/healthz`);
+          expect(health.status).toBe(200);
+          expect(await health.json()).toEqual({ ok: true, service: 'repo-harness-operator', protocol: 2, version: PACKAGE_VERSION });
+          expect((await fetch(`${server.url}/api/v1/repositories`)).status).toBe(200);
+        } finally { await server.close(); }
+      }
+    } finally { for (const path of [root, registry.home]) rmSync(path, { recursive: true, force: true }); }
+  });
+
   test('UX-local-human-control-board-v1-P1 serves health, the registered repositories without their roots, and static fallback', async () => {
     const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-ui-'));
     const parent = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-registry-roots-')));
@@ -192,7 +236,12 @@ describe('operator serve command and HTTP boundary', () => {
     ]);
     writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
     writeFileSync(join(staticRoot, 'app.js'), 'console.log("operator");');
-    const server = await startOperatorServer({ port: 0, static_root: staticRoot, env: registry.env });
+    const consoleRoot = join(staticRoot, 'node_modules', OPERATOR_WEB_PACKAGE_NAME);
+    mkdirSync(consoleRoot, { recursive: true });
+    writeFileSync(join(consoleRoot, 'package.json'), JSON.stringify({ version: PACKAGE_VERSION }));
+    mkdirSync(join(consoleRoot, 'dist'));
+    for (const file of ['index.html', 'app.js']) renameSync(join(staticRoot, file), join(consoleRoot, 'dist', file));
+    const server = await startOperatorServer({ port: 0, ...resolveOperatorAssets(staticRoot), env: registry.env });
     try {
       const health = await fetch(`${server.url}/healthz`);
       expect(health.status).toBe(200);

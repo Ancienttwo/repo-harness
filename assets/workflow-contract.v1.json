@@ -2836,6 +2836,7 @@
     }
   },
   "installedCopyExcludes": [
+    "src/operator-web/",
     ".git/",
     ".git",
     "_ops/",
@@ -2904,7 +2905,6 @@
     "src/",
     "docs/",
     "dist/hook-entry.js",
-    "dist/oar-review-host.js",
-    "dist/operator-ui/"
+    "dist/oar-review-host.js"
   ]
 }

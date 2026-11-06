@@ -14,6 +14,7 @@ responsibilities:
 source:
   include:
     - src/operator-web/**
+    - packages/operator-web/**
     - vite.operator.config.ts
     - docs/design/operator-console/design-system/**
   entrypoints:
