@@ -2,6 +2,18 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- repo-harness reads only the hc terminals of this machine. hc 0.1.18 also
+  lists the terminals of a connected machine, as `<machine>/t<n>`, in `hc ls`
+  and `hc events`. The board seat read sent each listed address to `hc get`,
+  which refused a remote address, so `board parents --json` exited 1 with
+  `parents_hc_failed` and the Office showed no seats. The hc client now drops
+  remote rows and events before their shape check. A slash-free address that
+  is not `t<n>` fails with `invalid_response`. (#1867)
+
 ## [0.26.5] - 2026-11-06
 
 This release adds the MCP and Operator plugin gates, updates OAR and Pi,
