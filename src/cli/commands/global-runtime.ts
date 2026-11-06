@@ -1453,16 +1453,20 @@ function ensureOperatorConsole(sourceRoot: string, cwd: string, bunExecutable: s
       install = runProcess(bunExecutable, ['add', '-g', spec, '--no-cache'], cwd, env);
       if (install.status !== 'ok') return withStepName(install, step, spec);
     } else {
-      const modules = join(cliRoot, 'node_modules');
-      const target = join(modules, OPERATOR_WEB_PACKAGE_NAME);
-      mkdirSync(modules, { recursive: true });
       try {
-        if (!lstatSync(target).isSymbolicLink()) return { step, status: 'failed', detail: `console path is not a symlink: ${target}` };
-        rmSync(target);
+        const modules = join(cliRoot, 'node_modules');
+        const target = join(modules, OPERATOR_WEB_PACKAGE_NAME);
+        mkdirSync(modules, { recursive: true });
+        try {
+          if (!lstatSync(target).isSymbolicLink()) return { step, status: 'failed', detail: `console path is not a symlink: ${target}` };
+          rmSync(target);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
+        symlinkSync(resolve(localPackage), target, 'dir');
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        return { step, status: 'failed', detail: `console link failed: ${error instanceof Error ? error.message : String(error)}` };
       }
-      symlinkSync(resolve(localPackage), target, 'dir');
     }
     const consoleRoot = findInstalledPackageRoot(cliRoot, OPERATOR_WEB_PACKAGE_NAME);
     const version = consoleRoot === null ? null : readPackageManifest(consoleRoot).version;

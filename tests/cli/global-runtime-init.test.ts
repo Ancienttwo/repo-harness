@@ -58,9 +58,8 @@ function writeExecutable(filePath: string, content: string): void {
   if (filePath.endsWith('/bun') && content.startsWith('#!/bin/bash\n')) {
     const lines = content.split('\n');
     const log = lines.findIndex((line) => line.includes('"$*"') && line.includes('>>'));
-    lines.splice(log < 0 ? 1 : log + 1, 0, `if [[ "\${1:-}" == add && "\${2:-}" == -g && ( "\${3:-}" == repo-harness-operator-web@* || "\${3:-}" == */packages/operator-web ) ]]; then
+    lines.splice(log < 0 ? 1 : log + 1, 0, `if [[ "\${1:-}" == add && "\${2:-}" == -g && "\${3:-}" == repo-harness-operator-web@* ]]; then
   spec="$3"; version="\${spec#repo-harness-operator-web@}"
-  if [[ "$spec" == */packages/operator-web ]]; then version=$("${process.execPath}" -p 'require(process.argv[1]).version' "$spec/package.json"); fi
   dest="\${BUN_INSTALL:-$HOME/.bun}/install/global/node_modules/repo-harness-operator-web"
   mkdir -p "$dest"; printf '{"name":"repo-harness-operator-web","version":"%s"}' "$version" > "$dest/package.json"; exit 0
 fi`);
@@ -608,7 +607,7 @@ describe('install command global runtime bootstrap', () => {
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       mkdirSync(join(validatedBun, '..'), { recursive: true });
-      writeExecutable(validatedBun, `#!/bin/bash\nif [[ "\${1:-}" == add && "\${2:-}" == -g && "\${3:-}" == */packages/operator-web ]]; then\n  dest="$BUN_INSTALL/install/global/node_modules/repo-harness-operator-web"; mkdir -p "$dest"; cp "$3/package.json" "$dest/package.json"; exit 0\nfi\nexec "${process.execPath}" "$@"\n`);
+      symlinkSync(process.execPath, validatedBun);
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.0.0; exit 0; fi\nexit 99\n');
       writeFakeHc(fakeBin);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
