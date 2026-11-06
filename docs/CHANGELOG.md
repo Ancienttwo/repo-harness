@@ -6,6 +6,8 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- Install the matching Operator console when `operator` is selected. Checkout
+  installs link the console and require `bun run build:operator-web`. (#1892)
 - The npm release gates check both the core and operator web packages at the
   same version. The console publishes first, and the published check verifies
   both packages. (#1893)

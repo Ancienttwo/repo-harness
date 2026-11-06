@@ -18,7 +18,7 @@ plugin id. The installer maps the other surfaces through
 | `architecture` | `repo-harness-architecture`, `repo-harness-archimap`, and the CodeGraph CLI and MCP projection. |
 | `cross-review` | `repo-harness-cross-review`. |
 | `mcp` | The guarded commands `mcp serve` and `mcp doctor`. No host file. |
-| `operator` | The guarded commands `operator`, `worktrees` and `catch-up`. No host file. |
+| `operator` | The guarded commands `operator`, `worktrees` and `catch-up`, and the `repo-harness-operator-web` console package. Checkout installs link the built console. No host file. |
 | `peer-runtime` | The guarded commands `review round\|status\|close\|cancel`, `herdr`, `events`, and `operator cleanup-investigation-job`. Available on every target. `repo-harness-herdr-portal` installs on Claude only. No owner probe row. |
 | `pi` | The Pi package registration and the Pi skill root (`~/.pi/agent/skills/`), for `--target both` only. |
 | `platform` | `windows-python-first`. |
