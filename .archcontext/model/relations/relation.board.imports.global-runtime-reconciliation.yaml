@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.board.imports.global-runtime-reconciliation
+kind: depends-on
+source: capability.organization.board
+target: capability.runtime-harness.global-runtime-reconciliation
+intent: "Read and change the seats section through the shared global configuration transaction, and read the package version for the codex app-server client."

@@ -43,5 +43,5 @@ extensions:
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun run test:files tests/board.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run test:files tests/board.test.ts tests/cli/seats-argv.test.ts tests/cli/quota.test.ts --timeout 60000 --max-concurrency 1"
     - "bun run check:type"

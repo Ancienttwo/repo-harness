@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.board.imports.execution-primitives
+kind: depends-on
+source: capability.organization.board
+target: capability.workflow-engine.execution-primitives
+intent: "Build the seat launch from the pane prefix, the hc terminal labels, the repository registry and the Git common directory. Read the Git runner, the hc pin, the repo-harness home and the secret token rules for the board."
