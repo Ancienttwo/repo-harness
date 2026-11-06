@@ -53,7 +53,16 @@ describe('structured runtime overlay', () => {
     expect(project([observation()]).reason).toBeNull();
   });
   test('hc maps only its status words and strips raw fields; no report is unknown', () => {
-    for (const [input, state] of [['idle','idle'],['working','working'],['blocked','blocked'],['done','done-unseen'],['error','unknown'],[null,'unknown'],['toString','unknown']] as const) {
+    for (const [input, state] of [
+      ['idle', 'idle'],
+      ['working', 'working'],
+      ['blocked', 'blocked'],
+      ['done', 'done-unseen'],
+      ['error', 'unknown'],
+      [null, 'unknown'],
+      ['toString', 'unknown'],
+      [undefined, 'unknown'],
+    ] as const) {
       const result = observeHcTerminal({ ...terminal, status: input, title: 'private-secret', cwd: '/private/path', text: 'auth-secret' }, identity)!;
       expect(result.state).toBe(state);
       expect(result.reason).toBe('unknown');
