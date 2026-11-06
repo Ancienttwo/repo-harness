@@ -8,7 +8,7 @@ The architecture model declares this topology. No code facts verify it: archctx 
 
 | Namespace | Type | Parent | Namespaces | Processes |
 | --- | --- | --- | --- | --- |
-| `namespace.host.developer` Developer host | host | none | none | `process.agent-host`, `process.cli`, `process.herdr-app`, `process.herdr-core-server`, `process.hook`, `process.mcp-coding-shell`, `process.mcp-server`, `process.notify-relay`, `process.oar-review-host`, `process.operator-collector`, `process.operator-server`, `process.process-group-launcher`, `process.process-supervisor`, `process.vendor-cli` |
+| `namespace.host.developer` Developer host | host | none | none | `process.agent-host`, `process.cli`, `process.herdr-app`, `process.herdr-core-server`, `process.hook`, `process.mcp-server`, `process.notify-relay`, `process.oar-review-host`, `process.operator-collector`, `process.operator-server`, `process.process-group-launcher`, `process.process-supervisor`, `process.vendor-cli` |
 
 ## Processes
 
@@ -19,8 +19,7 @@ The architecture model declares this topology. No code facts verify it: archctx 
 | `process.herdr-app` Herdr.app | `namespace.host.developer` | none | none |
 | `process.herdr-core-server` herdr-core server | `namespace.host.developer` | `process.agent-host`, `process.notify-relay`, `process.oar-review-host` | none |
 | `process.hook` Hook process | `namespace.host.developer` | `process.process-supervisor` | `capability.runtime-harness.hook-adapters` |
-| `process.mcp-coding-shell` MCP coding shell | `namespace.host.developer` | none | none |
-| `process.mcp-server` MCP server | `namespace.host.developer` | `process.mcp-coding-shell`, `process.process-supervisor` | `capability.runtime-harness.mcp-sidecar` |
+| `process.mcp-server` MCP server | `namespace.host.developer` | `process.process-supervisor` | `capability.runtime-harness.mcp-sidecar` |
 | `process.notify-relay` Notify relay | `namespace.host.developer` | none | `capability.runtime-harness.task-agent-host` |
 | `process.oar-review-host` OAR review host | `namespace.host.developer` | `process.vendor-cli` | `capability.runtime-harness.task-agent-host`, `capability.verification.acceptance-review` |
 | `process.operator-collector` Operator collector | `namespace.host.developer` | none | none |
@@ -43,7 +42,6 @@ The architecture model declares this topology. No code facts verify it: archctx 
 | `process.herdr-app` Herdr.app | model-authored, no source anchor |
 | `process.herdr-core-server` herdr-core server | model-authored, no source anchor |
 | `process.hook` Hook process | model-authored, no source anchor |
-| `process.mcp-coding-shell` MCP coding shell | model-authored, no source anchor |
 | `process.mcp-server` MCP server | model-authored, no source anchor |
 | `process.notify-relay` Notify relay | model-authored, no source anchor |
 | `process.oar-review-host` OAR review host | model-authored, no source anchor |

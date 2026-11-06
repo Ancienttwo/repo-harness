@@ -1,6 +1,6 @@
 # verification/acceptance-review 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5d74db7f95917b273f287c5c045e168e719863e5af92b1943e26c1b351714b71" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0f29c21312bf3224b647fc8c45b1abf3dfacd104df4c4ba090e435a1b34502fb" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.acceptance-review`(kind `capability`)
 > **Matched Prefixes**:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`、`src/effects/admission/admission-store.ts`、`src/effects/admission/admission-source.ts`、`src/effects/admission/issue-goal.ts`、`src/effects/admission/control-admission.ts`、`src/effects/github/issues.ts`、`src/effects/github/policy.ts`
@@ -76,21 +76,21 @@ flowchart LR
 - `deployed-on` → `process.oar-review-host` — Acceptance review runs review sessions in the OAR review host.
 - `reads` → `external.github` — Read the GitHub repository identity and the admitted issue goal through gh under the manual external_sources policy
 - `calls` → `capability.runtime-harness.hook-adapters` — Admit at most one persistent semantic review session per work package through the circuit breaker
-- `depends-on` → `capability.runtime-harness.operator` — Use the architecture module view in review prompts.
 - `calls` → `component.acceptance-review.primary` — Run one generic acceptance review round for an admitted review campaign
 
 入向關係:
 
+- `depends-on` ← `component.architecture.module-view` — Plugin → core: apply the shared review finding rules in module review prompts
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Locate the acceptance receipt and the protected Git runtime
 - `calls` ← `component.contract-assets.planning-helpers` — Read the acceptance policy for planning helpers
 - `depends-on` ← `capability.verification.evals-checks` — Test Acceptance Review behavior through its source modules.
 - `reads` ← `component.execution-primitives.task-session-record` — Type the task session record fields with the review runner port types: process proof, task agent spec and task session admission
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the review command
 - `depends-on` ← `capability.runtime-harness.hook-adapters` — Read the diff fingerprint for mutation guards.
+- `reads` ← `component.mcp-sidecar.primary` — Read the check records and the change assessment record
 - `depends-on` ← `capability.runtime-harness.operator` — Read and reobserve protected current review admission for exact session discovery and current goal context
 - `reads` ← `component.operator.agents-configuration` — Plugin → core: validate review runtime ids against the declared review runtimes
-- `depends-on` ← `component.operator.architecture-view-core` — Plugin → core: apply the shared review finding rules in module review prompts
-- `depends-on` ← `capability.organization.publication` — Read the acceptance receipt for publication evidence.
+- `depends-on` ← `capability.organization.publication` — Run the bounded gh command transport that the Draft PR operation uses.
 - `calls` ← `capability.runtime-harness.task-agent-host` — Plugin → core: bind task sessions to the active review admission and its source, resolve the policy review base of the diff fingerprint, implement the reviewer runner port, and apply the review isolation policy in the OAR review host
 - `calls` ← `component.task-fleet.provider-feedback` — Plugin → core: observe the active review admission before admitted feedback intake
 - `depends-on` ← `capability.workflow-engine.workflow-state` — Read the diff fingerprint for Effective State.

@@ -6,7 +6,6 @@ flowchart TB
     process_herdr_app["Herdr.app"]
     process_herdr_core_server["herdr-core server"]
     process_hook["Hook process"]
-    process_mcp_coding_shell["MCP coding shell"]
     process_mcp_server["MCP server"]
     process_notify_relay["Notify relay"]
     process_oar_review_host["OAR review host"]
@@ -34,7 +33,6 @@ flowchart TB
   process_herdr_core_server -->|"spawns"| process_oar_review_host
   capability_runtime_harness_hook_adapters -->|"deployed-on"| process_hook
   process_hook -->|"spawns"| process_process_supervisor
-  process_mcp_server -->|"spawns"| process_mcp_coding_shell
   process_mcp_server -->|"spawns"| process_process_supervisor
   capability_runtime_harness_mcp_sidecar -->|"deployed-on"| process_mcp_server
   process_oar_review_host -->|"spawns"| process_vendor_cli

@@ -1,8 +1,8 @@
 # verification/codegraph-readiness 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:06465453d1913b376172f66f42be3e57db87b37bc922b5b067f89a68243b446e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:963be33d044e7d0a1529798856c228946573b6b20574e9153cdd5638d497d8e7" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.codegraph-readiness`(kind `capability`)
-> **Matched Prefixes**:`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`src/cli/commands/tools.ts`
+> **Matched Prefixes**:`src/cli/tools/codegraph.ts`、`src/cli/tools/codegraph-reader.ts`、`src/cli/commands/tools.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -42,7 +42,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`2–5` 個文件 / `1000–2000` 行
-- 匹配前綴:`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`src/cli/commands/tools.ts`
+- 匹配前綴:`src/cli/tools/codegraph.ts`、`src/cli/tools/codegraph-reader.ts`、`src/cli/commands/tools.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -62,7 +62,7 @@ flowchart LR
 - `depends-on` ← `capability.verification.evals-checks` — Test CodeGraph Readiness behavior through its source modules.
 - `calls` ← `component.general-repo-access.primary` — Read CodeGraph index metadata through the adapter after path authorization
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the tools command and pass the CodeGraph doctor checks and setup steps to core commands
-- `depends-on` ← `capability.runtime-harness.mcp-sidecar` — Type the reader tool context with the CodeGraph adapter interface
+- `depends-on` ← `capability.runtime-harness.mcp-sidecar` — Build the CodeGraph reader for the served tools and type the reader tool context
 
 組件出向關係:
 

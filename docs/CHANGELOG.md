@@ -30,9 +30,18 @@ All notable changes to this skill are documented here.
   `src/core/terminal/herdr-core-pin.json`. `runtime.herdr_core.min_version_source`
   is now `package:src/core/terminal/herdr-core-pin.json`. An external reader of
   the pin file must change the path. (#1836)
+- Pi hosts need Pi 1.5.0 or newer. `doctor` and the Pi review launch refuse an
+  older Pi with `PI_HOST_UNSUPPORTED_VERSION`, and the optional Pi peer range
+  is `^1.5.0`. OAR 0.88.0 requires Pi 1.5. (#1854)
+- Antigravity needs agy CLI 1.5.0 or newer, because OAR 0.88.0 runs `agy acp`.
+  The runtime probe reports an older agy as `unsupported`. Antigravity sessions
+  from older OAR do not resume. (#1854)
 
 ### Changed
 
+- repo-harness runs on `@botiverse/oar` 0.88.0, and the bundled Pi packages
+  move to 1.5.0. The agent runtime probe lists the DSH (DeepSeek Harness)
+  runtime. DSH is not a review, seat or docs-host runtime. (#1854)
 - `repo-harness update` on an explicit plugin list prints one
   `[plugins] not selected` line for the command plugins that the list omits
   (`mcp`, `operator`), with one command that keeps the list and adds them.
