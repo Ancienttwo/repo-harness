@@ -2,22 +2,26 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.26.5] - 2026-11-06
+
+This release adds the MCP and Operator plugin gates, updates OAR and Pi,
+and reads a new policy's review base from Git. The hook route registry is
+unchanged. Install state and candidate reconciliation stay at protocol 3.
 
 ### Breaking
 
 - Installation refuses configuration receipts with the retired
   `mcp_servers.repo_harness` selector. Remove the retired entry from
-  `~/.repo-harness/configuration-restore.json` before retrying. (#1839)
+  `~/.repo-harness/configuration-restore.json` before retrying. (#1839, #1846)
 - `mcp serve` and `mcp doctor` need the new `mcp` plugin. Selection `all`
   gains it at the next `repo-harness update`. An explicit plugin list does not
   gain it: add it with `repo-harness install --plugins <your plugins>,mcp`.
   Without the plugin, each command exits 1 and prints the repair; `mcp serve`
   prints nothing to stdout, so a client gets no JSON-RPC answer. `mcp --help`,
-  `mcp access set` and `bots` stay open. No migration runs. (#1849)
+  `mcp access set` and `bots` stay open. No migration runs. (#1849, #1856)
 - The text of a plugin command guard now starts with
   `install_plugin_unavailable: `. This applies to every guarded command,
-  including `strategy` and the architecture commands. (#1849)
+  including `strategy` and the architecture commands. (#1849, #1856)
 - `operator`, `worktrees` and `catch-up` need the new `operator` plugin.
   Selection `all` gains it at the next `repo-harness update`. An explicit
   plugin list does not gain it: add it with
@@ -25,51 +29,83 @@ All notable changes to this skill are documented here.
   plugin, each command exits 1, prints the repair, loads no Operator module
   and binds no port. Each `--help` stays open, and `seats`, `quota`, `bots`,
   `mcp access set` and the status line hook route need no plugin. No migration
-  runs. (#1850)
+  runs. (#1850, #1864)
 - The hc pin moved from `src/core/operator/herdr-core-pin.json` to
   `src/core/terminal/herdr-core-pin.json`. `runtime.herdr_core.min_version_source`
   is now `package:src/core/terminal/herdr-core-pin.json`. An external reader of
   the pin file must change the path. (#1836)
 - Pi hosts need Pi 1.5.0 or newer. `doctor` and the Pi review launch refuse an
   older Pi with `PI_HOST_UNSUPPORTED_VERSION`, and the optional Pi peer range
-  is `^1.5.0`. OAR 0.88.0 requires Pi 1.5. (#1854)
+  is `^1.5.0`. OAR 0.88.0 requires Pi 1.5. (#1854, #1862)
 - Antigravity needs agy CLI 1.5.0 or newer, because OAR 0.88.0 runs `agy acp`.
   The runtime probe reports an older agy as `unsupported`. Antigravity sessions
-  from older OAR do not resume. (#1854)
+  from older OAR do not resume. (#1854, #1862)
 - `init` no longer writes `review_base: "main"` by default. When it creates
   `.ai/harness/policy.json`, it reads `refs/remotes/origin/HEAD`, else the
   current branch, and writes that name as `worktree_strategy.review_base`. An
   unborn HEAD uses its branch name. An existing policy keeps its keys. In
-  standard mode, a detached HEAD or a non-git target now refuses with
-  `review_base_unresolved`, and the error names the policy key and the repair.
-  Use `--mode minimal` for a non-git scaffold. (#1859)
+  standard mode, a detached HEAD without a remote HEAD or a non-git target
+  now refuses with `review_base_unresolved`, and the error names the policy
+  key and the repair.
+  Use `--mode minimal` for a non-git scaffold. (#1859, #1866)
 
 ### Changed
 
 - repo-harness runs on `@botiverse/oar` 0.88.0, and the bundled Pi packages
   move to 1.5.0. The agent runtime probe lists the DSH (DeepSeek Harness)
-  runtime. DSH is not a review, seat or docs-host runtime. (#1854)
+  runtime. DSH is not a review, seat or docs-host runtime. (#1854, #1862)
 - `repo-harness update` on an explicit plugin list prints one
   `[plugins] not selected` line for the command plugins that the list omits
   (`mcp`, `operator`), with one command that keeps the list and adds them.
-  (#1850)
+  (#1850, #1864)
+- Operator document sessions and cleanup archives use shared publication
+  operations for remote branch pushes and draft PR creation. The commands,
+  routes and stored records keep their contracts. (#1837)
+- Shared CodeGraph readers and MCP audit paths move out of the MCP
+  directories. MCP command bodies load on use. Commands, tool schemas and
+  audit paths do not change. (#1851)
+- Seat settings, launch policy and quota move from Operator to core Board.
+  The CLI and status line keep their behavior and need no Operator plugin.
+  (#1852)
 
 ### Upgrade
+
+- Install the CLI, then update to this exact version:
+
+  ```bash
+  bun add -g repo-harness@0.26.5 --no-cache
+  repo-harness update --version 0.26.5
+  ```
 
 - After `bun add -g repo-harness`, run `repo-harness update` to record `mcp`.
   Until then an `all` state does not record it, and the guard prints an
   explicit `--plugins` list. Do not run that list on an `all` state: an
-  explicit list stops `all` from growing. (#1849)
+  explicit list stops `all` from growing. (#1849, #1856)
 - The same step records `operator`, and the same rule applies to the repair
-  that `operator`, `worktrees` and `catch-up` print on an `all` state. (#1850)
+  that `operator`, `worktrees` and `catch-up` print on an `all` state.
+  (#1850, #1864)
+
+### Tests
+
+- Package and published-release smoke repositories use an explicit `main`
+  branch. The packed Stop hook check no longer depends on the host's
+  default branch. This fixes the #1843 smoke fixture defect. (#1863)
+
+### Documentation
+
+- The archimap reflects the #1287 step 3 module moves. (#1855)
+- Generated architecture outputs are refreshed for
+  `main@5a92c31ccf98`. (#1838)
+- The 0.26.4 release record includes publication and owner machine upgrade
+  values. (#1860)
 
 ### Rollback
 
 - An older CLI refuses an install state that names `mcp`, with
   `install_state_invalid`, until a reinstall. Run `repo-harness uninstall`
-  with this CLI, then install the older CLI. (#1849)
+  with this CLI, then install the older CLI. (#1849, #1856)
 - An older CLI refuses an install state that names `operator` in the same way,
-  until a reinstall. The same steps apply. (#1850)
+  until a reinstall. The same steps apply. (#1850, #1864)
 
 ## [0.26.4] - 2026-11-05
 
