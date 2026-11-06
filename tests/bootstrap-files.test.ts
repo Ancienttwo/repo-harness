@@ -192,6 +192,12 @@ describe("Bootstrap Script Contracts", () => {
     expect(releaseGate.indexOf("bash scripts/check-ci.sh")).toBeGreaterThan(
       releaseGate.indexOf('npm view "${name}@${PACKAGE_VERSION}"')
     );
+    for (const name of ["PACKAGE_NAME", "CONSOLE_NAME"]) {
+      expect(releaseGate.indexOf(`check_unpublished "$${name}"`)).toBeGreaterThan(-1);
+      expect(releaseGate.indexOf("bash scripts/check-ci.sh release")).toBeGreaterThan(
+        releaseGate.indexOf(`check_unpublished "$${name}"`)
+      );
+    }
     expect(ciGate).toContain("bash scripts/check-tarball-install-smoke.sh");
     expect(pkg.scripts["check:release-published"]).toBe("bash scripts/check-release-published.sh");
     expect(pkg.scripts["smoke:tarball-install"]).toBe("bash scripts/check-tarball-install-smoke.sh");
@@ -215,9 +221,13 @@ describe("Bootstrap Script Contracts", () => {
         cwd: dir, encoding: "utf8", env: { ...process.env, PATH: `${join(dir, "bin")}:${process.env.PATH}`, CALLS: calls, ...env },
       });
       const core = { npm_package_name: "repo-harness" };
+      writeFileSync(calls, "");
+      expect(runGate("check-npm-release.sh", ["--prepublish"], { npm_package_name: "unknown" }).status).not.toBe(0);
+      expect(readFileSync(calls, "utf8")).toBe("");
       const missing = runGate("check-npm-release.sh", ["--prepublish"], core);
       expect(missing.status).not.toBe(0);
       expect(missing.stderr).toContain("repo-harness-operator-web@0.26.6");
+      expect(missing.stderr).toContain("E404 not in this registry");
       const consoleGate = runGate("check-npm-release.sh", ["--prepublish"], { npm_package_name: "repo-harness-operator-web", PUBLISHED: "repo-harness@0.26.6" });
       expect(consoleGate.status).toBe(0);
       expect(runGate("check-npm-release.sh", ["--prepublish"], { ...core, PUBLISHED: "repo-harness-operator-web@0.26.6" }).status).toBe(0);
@@ -227,7 +237,9 @@ describe("Bootstrap Script Contracts", () => {
       expect(verified.status).toBe(0);
       expect(verified.stdout).toContain("checking repo-harness-operator-web@0.26.6");
       expect(verified.stdout).toContain("checking repo-harness@0.26.6");
-      expect(runGate("check-release-published.sh", ["0.26.6"], { PUBLISHED: "both", INTEGRITY: "wrong" }).status).not.toBe(0);
+      const badIntegrity = runGate("check-release-published.sh", ["0.26.6"], { PUBLISHED: "both", INTEGRITY: "wrong" });
+      expect(badIntegrity.status).not.toBe(0);
+      expect(badIntegrity.stderr).toContain("repo-harness-operator-web@0.26.6");
       const manifest = join(dir, "packages/operator-web/package.json");
       const pkg = JSON.parse(readFileSync(manifest, "utf8"));
       pkg.version = "0.0.0";
@@ -238,6 +250,7 @@ describe("Bootstrap Script Contracts", () => {
       const published = runGate("check-release-published.sh", ["0.26.5"], {});
       expect(published.status).not.toBe(0);
       expect(published.stdout).toContain("repo-harness-operator-web@0.26.5");
+      expect(published.stderr).toContain("repo-harness-operator-web@0.26.5");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

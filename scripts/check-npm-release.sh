@@ -53,8 +53,9 @@ fi
 if [[ "$MODE" == "prepublish" ]]; then
   check_unpublished "$npm_package_name"
   if [[ "$npm_package_name" == "$PACKAGE_NAME" ]]; then
-    if ! npm view "${CONSOLE_NAME}@${PACKAGE_VERSION}" version --json --registry "$NPM_RELEASE_REGISTRY" >/dev/null; then
-      echo "[release] ERROR: ${CONSOLE_NAME}@${PACKAGE_VERSION} must be published before ${PACKAGE_NAME}." >&2
+    if ! npm view "${CONSOLE_NAME}@${PACKAGE_VERSION}" version --json --registry "$NPM_RELEASE_REGISTRY" >/dev/null 2>"$LOOKUP_STDERR"; then
+      echo "[release] ERROR: unable to verify ${CONSOLE_NAME}@${PACKAGE_VERSION}, required before ${PACKAGE_NAME} publication." >&2
+      cat "$LOOKUP_STDERR" >&2
       exit 1
     fi
   fi
