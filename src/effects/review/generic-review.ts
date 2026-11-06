@@ -160,10 +160,10 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
         actual = owner; reason = `${requested} executable missing before start`;
         console.error(`Review fallback: ${reason}; actual harness=${actual}.`);
       }
-      // The hc start requires the PATH Pi to meet MIN_PI_VERSION (#1100 Option C). No Pi status
-      // integration is checked: the reviewer Pi uses an isolated PI_CODING_AGENT_DIR, and the
-      // terminal status comes from the OAR host's own OSC 7501 report.
-      if (actual === 'pi' && !terminal) {
+      // Both launch modes run the PATH Pi, and OAR's explicit-command floor is lower than
+      // MIN_PI_VERSION. No Pi status integration is checked: the reviewer Pi uses an isolated
+      // PI_CODING_AGENT_DIR, and the terminal status comes from the OAR host's own OSC 7501 report.
+      if (actual === 'pi') {
         const blocker = client.piReviewLaunchBlocker(client.piExecutable()!);
         if (blocker) throw new Error(`review_pi_launch_not_ready: ${blocker}`);
       }

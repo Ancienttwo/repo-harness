@@ -480,6 +480,6 @@ export function getPackageDir() { return ${JSON.stringify(f.host)}; }`);
 test('the Pi review launch gate blocks an old Pi or a failed probe', () => fixture(f => {
   const executable = piExecutable(f.env)!;
   expect(piReviewLaunchBlocker(executable, f.env)).toBeNull();
-  expect(piReviewLaunchBlocker(executable, { ...f.env, PI_FIXTURE_VERSION: '1.3.9' })).toBe('PI_HOST_UNSUPPORTED_VERSION');
+  for (const version of ['1.3.9', '1.4.0']) expect(piReviewLaunchBlocker(executable, { ...f.env, PI_FIXTURE_VERSION: version })).toBe('PI_HOST_UNSUPPORTED_VERSION');
   expect(piReviewLaunchBlocker('/usr/bin/true', f.env)).toBe('PI_HOST_PROBE_FAILED');
 }));
