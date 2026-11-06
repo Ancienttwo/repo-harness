@@ -136,6 +136,8 @@ describe("global working rules distribution", () => {
     const rootContext = readFileSync(ROOT_CONTEXT_TEMPLATE, "utf-8");
     expect(rootContext).toContain("Keep one source of truth for each datum");
     expect(rootContext).toContain("one-shot migrations fail closed and remove the retired path");
+    expect(rootContext).toContain("Write human-facing documents in the language set by `.ai/harness/policy.json#documentation.language`");
+    expect(rootContext).toContain("Write output text in a plain technical style: short sentences, one idea per sentence, active voice. For `en`, follow ASD-STE100 Simplified Technical English. For `zh-CN`, write plain Chinese (简明中文) with the same rules and keep technical terms in English. For `follow-user`, use the user's language with the same rules.");
     expect(readFileSync(STANDARD_PLAN, "utf-8")).toContain("root-context.md");
   });
 
