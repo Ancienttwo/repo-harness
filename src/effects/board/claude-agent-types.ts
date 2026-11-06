@@ -116,7 +116,9 @@ export function claudeHostAgentTypes(env: NodeJS.ProcessEnv = process.env): stri
       let plugin: unknown;
       if (manifest === undefined) {
         const separator = key.indexOf('@');
-        if (separator <= 0) throw new ClaudeAgentTypesError(`${registryPath} entry ${key} has no non-empty name before @. Reinstall or disable ${key}.`);
+        if (separator <= 0) {
+          throw new ClaudeAgentTypesError(`${registryPath} entry ${key} has no manifest and its key gives no plugin name. Add a .claude-plugin/plugin.json with a name, or reinstall the plugin from a marketplace.`);
+        }
         plugin = key.slice(0, separator);
       } else {
         plugin = record(manifest, manifestPath).name;
