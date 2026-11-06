@@ -303,7 +303,7 @@ function finalizeRuntimeResult(steps: GlobalRuntimeStep[]): GlobalRuntimeResult 
   };
 }
 
-function withProcessEnv<T>(env: NodeJS.ProcessEnv | undefined, fn: () => T): T {
+export function withProcessEnv<T>(env: NodeJS.ProcessEnv | undefined, fn: () => T): T {
   if (!env) return fn();
   const previous = new Map<string, string | undefined>();
   for (const [key, value] of Object.entries(env)) {

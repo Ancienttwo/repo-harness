@@ -17,6 +17,7 @@ import { probeAgentRuntimes, registryRuntimes } from '../../src/effects/setup/ag
 import { startOperatorServer, type OperatorServerHandle } from '../../src/effects/operator/server';
 import { repoHarnessRepoIdFor, canonicalRepoPath } from '../../src/effects/repo-registry';
 import { renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
+import { createOperatorLanguageSettings } from '../../src/cli/commands/operator-actions';
 import { acquireRuntimeTransactionLock, globalRuntimeScope } from '../../src/effects/locking/runtime-transaction-lock';
 import { operatorAuditPath } from '../../src/effects/operator/write-audit';
 
@@ -48,7 +49,7 @@ afterEach(async () => {
 });
 
 /** HOME and REPO_HARNESS_HOME are separate temporary roots, so each authority is checked at its own place. */
-async function startHarness(config?: unknown, readQuota = async (): Promise<unknown> => buildQuotaReport([unknownQuotaReading('claude', 'no capture')], Date.now())): Promise<Harness> {
+async function startHarness(config?: unknown, readQuota = async (): Promise<unknown> => buildQuotaReport([unknownQuotaReading('claude', 'no capture')], Date.now()), sourceRoot?: string): Promise<Harness> {
   const home = mkdtempSync(join(tmpdir(), 'repo-harness-agents-home-'));
   const harnessHome = mkdtempSync(join(tmpdir(), 'repo-harness-agents-state-'));
   const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-agents-ui-'));
@@ -62,6 +63,7 @@ async function startHarness(config?: unknown, readQuota = async (): Promise<unkn
   const server = await startOperatorServer({
     port: 0, static_root: staticRoot,
     env: { HOME: home, REPO_HARNESS_HOME: harnessHome },
+    language_settings: createOperatorLanguageSettings({ HOME: home, REPO_HARNESS_HOME: harnessHome }, sourceRoot),
     read_agent_runtimes: () => state.cache,
     read_quota: readQuota,
   });
@@ -146,6 +148,28 @@ describe('language settings routes', () => {
     expect(JSON.parse(readFileSync(repo.policy, 'utf8'))).toEqual({ other: 1, documentation: { language: 'follow-user' } });
   });
 
+  test('GET returns null presets for unsafe paths and an unreadable rules template', async () => {
+    const h = await startHarness(undefined, undefined, join(tmpdir(), randomUUID()));
+    mkdirSync(join(h.home, '.codex'), { recursive: true });
+    mkdirSync(join(h.home, '.claude'), { recursive: true });
+    const codex = join(h.home, '.codex', 'AGENTS.md');
+    writeFileSync(codex, renderGlobalRulesBlock(resolve(import.meta.dir, '../..'), { preset: 'en', instruction: 'Use English to report to user.' }));
+    symlinkSync(codex, join(h.home, '.claude', 'CLAUDE.md'));
+    const response = await fetch(`${h.server.url}${reportPath}`);
+    expect([response.status, await response.json()]).toEqual([200, { hosts: [
+      { host: 'claude', state: 'unsafe', preset: null }, { host: 'codex', state: 'unreadable', preset: null },
+    ] }]);
+  });
+
+  test('POST changes only hosts that installer detection marks installed', async () => {
+    const h = await startHarness();
+    mkdirSync(join(h.home, '.codex'));
+    const response = await send(h, reportPath, { preset: 'zh-CN' });
+    expect([response.status, await response.json()]).toEqual([200, { changed_hosts: ['codex'] }]);
+    expect(readFileSync(join(h.home, '.codex', 'AGENTS.md'), 'utf8')).toContain('"preset":"zh-CN"');
+    expect(existsSync(join(h.home, '.claude'))).toBe(false);
+  });
+
   test('refuses unknown repositories, missing policies and invalid JSON without a write', async () => {
     const h = await startHarness();
     const unknown = await send(h, '/api/v1/repositories/unknown/documentation-language', { language: 'en' });
@@ -158,6 +182,14 @@ describe('language settings routes', () => {
     const invalid = await send(h, repo.path, { language: 'en' });
     expect([invalid.status, (await invalid.json()).error.code]).toEqual([409, 'policy_invalid']);
     expect(readFileSync(repo.policy, 'utf8')).toBe('{broken');
+    rmSync(repo.policy);
+    mkdirSync(repo.policy);
+    for (const response of [await fetch(`${h.server.url}${repo.path}`), await send(h, repo.path, { language: 'en' })]) {
+      const { error } = await response.json();
+      expect([response.status, error.code]).toEqual([409, 'policy_unreadable']);
+      expect(error.next_action).toContain('readable regular file');
+    }
+    expect(readdirSync(repo.policy)).toEqual([]);
   });
 
   test('both routes reject invalid bodies and require the shared same-origin write token', async () => {

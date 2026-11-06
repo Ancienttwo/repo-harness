@@ -64,7 +64,7 @@ import { extname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createOperatorWriteToken, handleOperatorWrite, operatorWriteTokenCookie, type OperatorWriteRoute } from './write-channel';
 import { AGENTS_CONFIGURATION_FAILURES, OPERATOR_SETTINGS_AGENTS_PATH, OPERATOR_SETTINGS_AGENTS_ROUTE, agentsSettingsWriteRoute, readAgentsSettings } from './agents-settings-route';
-import { OPERATOR_REPORT_LANGUAGE_PATH, OPERATOR_REPORT_LANGUAGE_ROUTE, OPERATOR_DOCUMENTATION_LANGUAGE_ROUTE, readReportingLanguage, readDocumentationLanguage, reportingLanguageWriteRoute, documentationLanguageWriteRoute } from './language-settings-route';
+import { OPERATOR_REPORT_LANGUAGE_PATH, OPERATOR_REPORT_LANGUAGE_ROUTE, OPERATOR_DOCUMENTATION_LANGUAGE_ROUTE, requireLanguageSettings, readDocumentationLanguage, reportingLanguageWriteRoute, documentationLanguageWriteRoute, type OperatorLanguageSettingsAdapter } from './language-settings-route';
 import { OperatorWriteRefusal } from './write-run';
 import { OPERATOR_SETTINGS_SEATS_PATH, OPERATOR_SETTINGS_SEATS_ROUTE, SEATS_CONFIGURATION_FAILURES, readSeatsSettings, seatsSettingsWriteRoute } from './seats-settings-route';
 import { SeatsConfigurationError } from '../board/seats-configuration';
@@ -201,6 +201,7 @@ const DOC_SESSION_READ_STATUS: Readonly<Record<DocSessionReadFailure, number>> =
 export type OperatorServerHost = '127.0.0.1' | '::1';
 
 export interface OperatorServerOptions {
+  readonly language_settings?: OperatorLanguageSettingsAdapter;
   /** Cache read only. Observation lifecycle runs outside the HTTP request. */
   readonly read_runtime_status?: () => RuntimeOverlay;
   readonly runtime_status_config?: string;
@@ -1140,8 +1141,8 @@ export async function startOperatorServer(
   const injectedWriteRoutes = options.write_routes ?? [];
   const writeRoutes = [
     agentsSettingsWriteRoute(readAgentRuntimes, options.env),
-    reportingLanguageWriteRoute(options.env),
-    documentationLanguageWriteRoute(options.env),
+    reportingLanguageWriteRoute(options.language_settings),
+    documentationLanguageWriteRoute(options.env, options.language_settings),
     seatsSettingsWriteRoute(options.env),
     docSessionCreateRoute({
       env: options.env ?? process.env,
@@ -1434,8 +1435,8 @@ export async function startOperatorServer(
         return;
       }
       try {
-        sendJson(response, 200, documentationLanguage === null ? readReportingLanguage(options.env)
-          : readDocumentationLanguage(documentationLanguage[1]!, options.env), headOnly);
+        sendJson(response, 200, documentationLanguage === null ? requireLanguageSettings(options.language_settings).readReportingLanguage()
+          : readDocumentationLanguage(documentationLanguage[1]!, options.env, options.language_settings), headOnly);
       } catch (error) {
         if (!(error instanceof OperatorWriteRefusal)) throw error;
         sendRefusal(request, response, error.status, errorBody(error.code, error.message, error.next_action), headOnly);

@@ -1,10 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { hostConfigurationRoot, assertConfigurationPath } from '../../cli/installer/configuration-ownership';
-import {
-  inspectGlobalContext, parseReportLanguageFlag, preflightGlobalContextRefresh, setReportingLanguage,
-  type GlobalContextHost,
-} from '../../cli/installer/global-context';
+import { join } from 'node:path';
+import type { JsonValue } from '../../core/evidence/types';
 import { renderJsonObjectUpdate, requireDocumentationLanguage } from '../adoption/standard-plan';
 import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError } from '../repo-registry';
 import type { OperatorWriteRoute } from './write-channel';
@@ -13,27 +9,33 @@ import { OperatorWriteRefusal } from './write-run';
 export const OPERATOR_REPORT_LANGUAGE_PATH = '/api/v1/settings/report-language';
 export const OPERATOR_REPORT_LANGUAGE_ROUTE = /^\/api\/v1\/settings\/report-language$/u;
 export const OPERATOR_DOCUMENTATION_LANGUAGE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/documentation-language$/u;
-const HOSTS: readonly GlobalContextHost[] = ['claude', 'codex'];
-const SOURCE_ROOT = resolve(import.meta.dir, '../../..');
+export type OperatorReportingPreset = 'follow' | 'zh-CN' | 'en';
 
-export function readReportingLanguage(env?: NodeJS.ProcessEnv) {
-  const plan = preflightGlobalContextRefresh(SOURCE_ROOT, hostConfigurationRoot(env), HOSTS, undefined);
-  return { hosts: plan.files.map((file, index) => ({
-    host: HOSTS[index]!, state: file.state,
-    preset: file.current === null ? null : inspectGlobalContext(file.current, SOURCE_ROOT).language?.preset ?? null,
-  })) };
+/** CLI composition owns installer dependencies; the HTTP effect owns transport. */
+export interface OperatorLanguageSettingsAdapter {
+  readReportingLanguage(): JsonValue;
+  parseReportingPreset(value: string): OperatorReportingPreset;
+  setReportingLanguage(preset: OperatorReportingPreset): {
+    readonly status: 'ok' | 'skipped' | 'failed'; readonly detail: string; readonly changed_hosts: readonly string[];
+  };
+  assertPolicyPath(path: string, root: string): void;
 }
 
-export function reportingLanguageWriteRoute(env?: NodeJS.ProcessEnv): OperatorWriteRoute {
+export function requireLanguageSettings(adapter?: OperatorLanguageSettingsAdapter): OperatorLanguageSettingsAdapter {
+  if (!adapter) throw new OperatorWriteRefusal(503, 'language_settings_unavailable', 'Language settings are not configured.', 'Start the console with repo-harness operator serve.');
+  return adapter;
+}
+
+export function reportingLanguageWriteRoute(adapter?: OperatorLanguageSettingsAdapter): OperatorWriteRoute {
   return {
     id: 'settings_report_language_write', path: OPERATOR_REPORT_LANGUAGE_ROUTE,
     decode(fields) {
       if (Object.keys(fields).length !== 1 || typeof fields.preset !== 'string') throw new Error('Expected only preset.');
-      const preset = parseReportLanguageFlag(fields.preset);
+      const preset = requireLanguageSettings(adapter).parseReportingPreset(fields.preset);
       return {
         operation: 'settings_report_language', target: 'report_language', input: { preset },
         execute: async () => {
-          const result = setReportingLanguage(hostConfigurationRoot(env), SOURCE_ROOT, HOSTS, preset);
+          const result = requireLanguageSettings(adapter).setReportingLanguage(preset);
           if (result.status === 'skipped') throw new OperatorWriteRefusal(409, 'report_language_refused', result.detail,
             'Repair the reported rules file or path, then save the reporting language again.');
           // Apply can fail after one host changed. The write run must mark this
@@ -46,7 +48,7 @@ export function reportingLanguageWriteRoute(env?: NodeJS.ProcessEnv): OperatorWr
   };
 }
 
-function readDocumentationPolicy(repositoryId: string, env?: NodeJS.ProcessEnv) {
+function readDocumentationPolicy(repositoryId: string, env: NodeJS.ProcessEnv | undefined, adapter: OperatorLanguageSettingsAdapter | undefined) {
   let repos;
   try { repos = readRepoHarnessRegistryStrictSnapshot({ env }).repos; }
   catch (error) {
@@ -56,15 +58,18 @@ function readDocumentationPolicy(repositoryId: string, env?: NodeJS.ProcessEnv) 
   const repo = repos.find(entry => entry.id === repositoryId);
   if (!repo) throw new OperatorWriteRefusal(404, 'repository_not_found', 'The repository is not registered.', 'Register the repository, then reload.');
   const path = join(repo.path, '.ai', 'harness', 'policy.json');
-  try { assertConfigurationPath(path, repo.path); }
+  const settings = requireLanguageSettings(adapter);
+  try { settings.assertPolicyPath(path, repo.path); }
   catch (error) {
     throw new OperatorWriteRefusal(409, 'policy_path_refused', (error as Error).message, 'Replace the linked or non-file policy path with a regular file.');
   }
   let raw: string;
   try { raw = readFileSync(path, 'utf8'); }
   catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    throw new OperatorWriteRefusal(409, 'policy_missing', 'The repository policy file is missing.', 'repo-harness init');
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new OperatorWriteRefusal(409, 'policy_missing', 'The repository policy file is missing.', 'repo-harness init');
+    }
+    throw new OperatorWriteRefusal(409, 'policy_unreadable', 'The repository policy file cannot be read.', 'Make .ai/harness/policy.json a readable regular file, then retry.');
   }
   let policy: Record<string, unknown>;
   try {
@@ -80,8 +85,8 @@ function readDocumentationPolicy(repositoryId: string, env?: NodeJS.ProcessEnv) 
   return { path, raw, policy, documentation: (policy.documentation ?? {}) as Record<string, unknown> };
 }
 
-export function readDocumentationLanguage(repositoryId: string, env?: NodeJS.ProcessEnv) {
-  const { documentation } = readDocumentationPolicy(repositoryId, env);
+export function readDocumentationLanguage(repositoryId: string, env?: NodeJS.ProcessEnv, adapter?: OperatorLanguageSettingsAdapter) {
+  const { documentation } = readDocumentationPolicy(repositoryId, env, adapter);
   if (!Object.hasOwn(documentation, 'language')) return { language: null };
   try { return { language: requireDocumentationLanguage(documentation.language) }; }
   catch (error) {
@@ -89,7 +94,7 @@ export function readDocumentationLanguage(repositoryId: string, env?: NodeJS.Pro
   }
 }
 
-export function documentationLanguageWriteRoute(env?: NodeJS.ProcessEnv): OperatorWriteRoute {
+export function documentationLanguageWriteRoute(env?: NodeJS.ProcessEnv, adapter?: OperatorLanguageSettingsAdapter): OperatorWriteRoute {
   return {
     id: 'repository_documentation_language_write', path: OPERATOR_DOCUMENTATION_LANGUAGE_ROUTE,
     decode(fields, params) {
@@ -99,7 +104,7 @@ export function documentationLanguageWriteRoute(env?: NodeJS.ProcessEnv): Operat
       return {
         operation: 'repository_documentation_language', target: `documentation_language:${repositoryId}`, input: { language },
         execute: async () => {
-          const { path, raw, policy, documentation } = readDocumentationPolicy(repositoryId, env);
+          const { path, raw, policy, documentation } = readDocumentationPolicy(repositoryId, env, adapter);
           const next = renderJsonObjectUpdate(raw, { ...policy, documentation: { ...documentation, language } });
           if (next !== raw) writeFileSync(path, next, 'utf8');
           return { status: 200, body: { language } };
