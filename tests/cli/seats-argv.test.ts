@@ -87,13 +87,22 @@ const denied = (args: string[]) => values(args, "--disallowedTools");
 const agent = (launch: { argv: string[] }) => launch.argv.slice(5);
 
 describe("repo-harness seats argv", () => {
-  test("every worker seat keeps its brief, labels and issue pane naming", () => {
-    withHome(undefined, home => withRepository(home, "rh", repo => {
+  test("an unconfigured worker-light fails with seat_not_configured", () => {
+    withHome(undefined, home => {
+      const result = argv(home, "worker-light", "--json");
+      expect([result.status, result.stdout]).toEqual([1, ""]);
+      expect(JSON.parse(result.stderr).error).toBe("seat_not_configured");
+    });
+  });
+
+  test("every configured worker seat keeps its brief, labels and issue pane naming", () => {
+    const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-light': { runtime: 'pi', model: null, effort: null, tools: DEFAULT_SEATS_CONFIG.worker.tools, fleet: [] } };
+    withHome(seats, home => withRepository(home, "rh", repo => {
       for (const seat of WORKER_SEAT_IDS) {
         const result = run(registryEnv(home), [seat, "--repository-id", "1", "--issue", "1925", "--parent", "1924", "--json"], repo);
         expect(result.status, result.stderr).toBe(0);
         const value = JSON.parse(result.stdout);
-        expect(value.runtime).toBe(DEFAULT_SEATS_CONFIG[seat].runtime);
+        expect(value.runtime).toBe(seats[seat].runtime);
         expect(value.brief).toContain("You are a worker seat.");
         expect(value.labels).toContain(`repo-harness.seat=${seat}`);
         expect([value.name, value.tab]).toEqual(["rh-w-1925", "#1924"]);
@@ -121,7 +130,8 @@ describe("repo-harness seats argv", () => {
   });
 
   test("hyper changes model and effort, preserves Pi, and falls back only for an exhausted advisor", () => {
-    const seats = { ...DEFAULT_SEATS_CONFIG, routing: { ...DEFAULT_SEATS_CONFIG.routing, mode: "hyper" } };
+    const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-light': { runtime: 'pi', model: null, effort: null, tools: DEFAULT_SEATS_CONFIG.worker.tools, fleet: [] },
+      routing: { ...DEFAULT_SEATS_CONFIG.routing, mode: "hyper" } };
     withHome(seats, home => {
       expect(launch(home, "worker").argv.slice(0, 5)).toEqual(["codex", "-m", "gpt-6-astra", "-c", 'model_reasoning_effort="high"']);
       expect(launch(home, "worker-important-fast").argv.slice(0, 5)).toEqual(["claude", "--model", "opus", "--effort", "high"]);

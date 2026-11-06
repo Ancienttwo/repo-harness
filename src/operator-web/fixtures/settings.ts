@@ -91,8 +91,7 @@ export function settingsStores(now: number, fixture: 'busy' | 'empty' | 'degrade
     })
     : agentsSettingsFixture(now, fixture);
   let seats: SeatsConfigV1 = fixture === 'busy'
-    ? { ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, runtime: 'claude', model: 'sonnet' },
-      'worker-light': { ...DEFAULT_SEATS_CONFIG['worker-light'], runtime: 'claude' } }
+    ? { ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, runtime: 'claude', model: 'sonnet' } }
     : DEFAULT_SEATS_CONFIG;
   let serial = 0;
   const nextRevision = () => { serial += 1; return `sha256:${serial.toString(16).padStart(64, '0')}`; };
@@ -148,16 +147,23 @@ export function settingsStores(now: number, fixture: 'busy' | 'empty' | 'degrade
   const writeSeats = (body: SeatsWrite): Promise<SettingsWrite> => {
     if (fixture === 'degraded' || body.expected_revision !== agents.config.revision) return Promise.resolve(conflict);
     // The route checks every seat against agents.enabled before it writes.
-    const off = SEAT_IDS.find(id => !agents.config.enabled.includes(body.seats[id].runtime));
+    const off = SEAT_IDS.find(id => {
+      const seat = body.seats[id];
+      return seat !== null && !agents.config.enabled.includes(seat.runtime);
+    });
     if (off !== undefined) {
       return Promise.resolve({ state: 'refused', status: 422, error: {
-        code: 'seat_runtime_not_enabled', message: `The ${off} seat runtime ${body.seats[off].runtime} is not enabled in Agent settings.`,
+        code: 'seat_runtime_not_enabled', message: `The ${off} seat runtime ${body.seats[off]!.runtime} is not enabled in Agent settings.`,
         next_action: 'Enable the runtime in Agent settings, or choose an enabled runtime.',
       } });
     }
     const revision = nextRevision();
-    const changed = SEAT_IDS.flatMap(id => (['runtime', 'model', 'effort', 'tools', 'fleet'] as const)
-      .filter(field => String(seats[id][field]) !== String(body.seats[id][field])).map(field => `seats.${id}.${field}`));
+    const changed = SEAT_IDS.flatMap(id => {
+      const before = seats[id], after = body.seats[id];
+      if (before === null || after === null) return before === after ? [] : [`seats.${id}`];
+      return (['runtime', 'model', 'effort', 'tools', 'fleet'] as const)
+        .filter(field => String(before[field]) !== String(after[field])).map(field => `seats.${id}.${field}`);
+    });
     seats = body.seats;
     agents = decodeAgentsSettings({ ...agents, config: { ...agents.config, revision } });
     return Promise.resolve({ state: 'saved', result: { config_revision: revision, changed_keys: changed } });

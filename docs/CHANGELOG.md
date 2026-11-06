@@ -6,7 +6,11 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
-- `seats` now stores nine launch seats and five quota-aware task routes.
+- `seats` now stores eight required seats, an optional `worker-light` seat,
+  and five quota-aware task routes. `worker-light` defaults to `null`, and
+  routes cannot name it until it is configured. The default routes do not
+  require Pi. Gatekeeper and reviewer settings accept only read/shell tools
+  and no fleet roles at the decoder boundary.
   Human `repo-harness quota` output names each route, reserves tight Claude
   capacity for the advisor and orchestrator, and keeps frontend work on Claude.
   Hyper mode shares model overrides between route lines and launch argv;

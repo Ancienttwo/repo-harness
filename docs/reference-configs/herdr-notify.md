@@ -60,13 +60,13 @@ Before each dispatch wave, run `repo-harness quota`. Launch each task with `repo
 | `worker-deep` | Codex, `gpt-6.1-sol`, high |
 | `worker-important` | Claude, `opus`, medium |
 | `worker-important-fast` | Claude, `sonnet`, medium |
-| `worker-light` | Pi, host model and effort |
+| `worker-light` | Not configured (`null`); configure it before launch or routing |
 | `gatekeeper` | Codex, `gpt-6.1-terra`, high; read and shell only |
 | `reviewer` | Claude, `opus`, high; read and shell only |
 
 All worker seats use worker briefs, labels and pane names. `gatekeeper` and `reviewer` need `--pr <n>`; their pane names are `<prefix>-gk-<pr>` and `<prefix>-rv-<pr>`. They report a read-only verdict first and do not edit, commit, push or write to GitHub.
 
-`seats.routing` holds ordered lists for `important_deep`, `important_fast`, `simple_deep`, `simple_fast` and `frontend`. Lists are non-empty and distinct. The first four accept worker seats only. `frontend` accepts only `worker-important` and `worker-important-fast`, and both must run Claude when selected in that list. Defaults are `[worker-important, worker-deep]`, `[worker-important-fast, worker]`, `[worker-deep, worker-important]`, `[worker, worker-light]` and `[worker-important, worker-important-fast]`, in that order.
+`seats.routing` holds ordered lists for `important_deep`, `important_fast`, `simple_deep`, `simple_fast` and `frontend`. Lists are non-empty and distinct. The first four accept configured worker seats only; a list cannot name a null seat. `frontend` accepts only `worker-important` and `worker-important-fast`, and both must run Claude when selected in that list. Defaults are `[worker-important, worker-deep]`, `[worker-important-fast, worker]`, `[worker-deep, worker-important]`, `[worker]` and `[worker-important, worker-important-fast]`, in that order. `worker-light` defaults to `null`. Its argv returns `seat_not_configured` until it is configured. Each configured seat must use an enabled runtime when saved; the defaults do not require Pi.
 
 Routing first selects normal or surplus accounts, or Pi without an account reading. A second pass selects unknown accounts or tight ChatGPT. Exhausted accounts are excluded. Tight or exhausted Claude stays reserved for the advisor and orchestrator; frontend waits for Claude. In those Claude states, the explorer line uses `routing.low_quota_explorer` (default `haiku` high); otherwise it says `default`.
 

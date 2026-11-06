@@ -16,7 +16,7 @@ import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 const CLI_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
 
 class SeatsCommandError extends Error {
-  constructor(readonly code: 'seat_unknown' | 'config_invalid' | 'label_value_invalid' | 'repository_id_required' | 'terminal_unknown', message: string) {
+  constructor(readonly code: 'seat_unknown' | 'seat_not_configured' | 'config_invalid' | 'label_value_invalid' | 'repository_id_required' | 'terminal_unknown', message: string) {
     super(message);
   }
 }
@@ -109,6 +109,7 @@ export function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJ
   const claudeState = id === 'advisor' && seats.routing.mode === 'hyper'
     ? classifyQuotaReading(readClaudeQuota(env), Date.now()).state : null;
   const effective = effectiveSeatConfig(id, seats, claudeState);
+  if (effective === null) throw new SeatsCommandError('seat_not_configured', `The ${id} seat is not configured. Configure it in the seats section before launch.`);
   checkCodexSeatNetwork(id, effective);
   const labelSet = seatLabels(id, labels);
   // The pane name needs the registry prefix, so it comes only with the seat labels.

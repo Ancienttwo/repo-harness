@@ -8,9 +8,10 @@ export function seatAccount(seat: SeatConfigV1): QuotaAccount | null {
 }
 
 /** One model projection serves the launch argv and the human dispatch lines. */
-export function effectiveSeatConfig(id: SeatId, seats: SeatsConfigV1, claudeState: QuotaState | null): SeatConfigV1 {
+export function effectiveSeatConfig<Id extends SeatId>(id: Id, seats: SeatsConfigV1, claudeState: QuotaState | null): SeatsConfigV1[Id];
+export function effectiveSeatConfig(id: SeatId, seats: SeatsConfigV1, claudeState: QuotaState | null): SeatConfigV1 | null {
   const seat = seats[id];
-  if (seats.routing.mode === 'standard') return seat;
+  if (seat === null || seats.routing.mode === 'standard') return seat;
   if (id === 'advisor') {
     return claudeState === 'exhausted'
       ? { ...seat, runtime: 'codex', ...seats.routing.hyper.codex }
@@ -31,7 +32,8 @@ function accountText(seat: SeatConfigV1, states: SeatAccountStates): string | nu
 /** Ordered two-pass routing keeps Claude's tight capacity for the advisor and orchestrator. */
 export function formatSeatRoutes(seats: SeatsConfigV1, states: SeatAccountStates): string {
   const lines = ROUTING_CLASSES.map(task => {
-    const candidates = seats.routing[task].map(id => ({ id, seat: effectiveSeatConfig(id, seats, states.claude) }));
+    // The section decoder refuses routes that name an unconfigured seat.
+    const candidates = seats.routing[task].map(id => ({ id, seat: effectiveSeatConfig(id, seats, states.claude)! }));
     const state = (seat: SeatConfigV1) => {
       const account = seatAccount(seat);
       return account === null ? null : states[account];

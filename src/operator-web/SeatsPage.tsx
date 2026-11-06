@@ -250,7 +250,10 @@ function SeatsBody({ form, agents, setup, t }: {
   const locked = formLocked(form);
   const changedElsewhere = base !== null && form.request !== null && form.save.kind !== 'saving' && settings.config.revision !== base.revision;
   const changes = base !== null && draft !== null ? seatChanges(base, draft) : 0;
-  const notEnabled = draft !== null && SEAT_IDS.some(id => !settings.ranges.runtimes.find(entry => entry.id === draft[id].runtime)!.enabled);
+  const notEnabled = draft !== null && SEAT_IDS.some(id => {
+    const seat = draft[id];
+    return seat !== null && !settings.ranges.runtimes.find(entry => entry.id === seat.runtime)!.enabled;
+  });
   return (
     <div className="flex flex-col gap-5" data-seats-page>
       <p className="text-sm text-kumo-subtle">{t('seats.lead')}</p>

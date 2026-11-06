@@ -495,6 +495,17 @@ async function seats(harness: Harness): Promise<ReturnType<typeof decodeSeatsSet
 const filesUnder = (root: string): string[] => readdirSync(root, { recursive: true, encoding: 'utf8' }).sort();
 
 describe('seat settings contract without transport', () => {
+  test('review seats reject write tools and every fleet role at the decoder boundary', () => {
+    const route = seatsSettingsWriteRoute();
+    for (const id of ['gatekeeper', 'reviewer'] as const) {
+      for (const patch of [...['edit', 'gh', 'mcp', 'net', 'tasks'].map(tool => ({ tools: ['read', tool].sort() })), { fleet: ['explorer'] }]) {
+        const seats = { ...DEFAULT_SEATS_CONFIG, [id]: { ...DEFAULT_SEATS_CONFIG[id], ...patch } };
+        expect(() => decodeSeatsConfig(seats), `${id} ${JSON.stringify(patch)}`).toThrow('seats_config_invalid');
+        expect(() => route.decode({ expected_revision: 'absent', seats }, [])).toThrow('seats_settings_request_invalid');
+      }
+    }
+  });
+
   test('stored sections fill only absent new keys and GET exposes all seats and routing ranges', () => {
     const original = { orchestrator: DEFAULT_SEATS_CONFIG.orchestrator, advisor: DEFAULT_SEATS_CONFIG.advisor,
       worker: { ...DEFAULT_SEATS_CONFIG.worker, model: 'gpt-6.1-sol' } };
@@ -513,23 +524,25 @@ describe('seat settings contract without transport', () => {
     for (const id of ['gatekeeper', 'reviewer'] as const) expect(settings.ranges.seats[id]).toEqual({ tools: ['read', 'shell'], fleet: [] });
   });
 
-  test('the write route stores the full section and round-trips routing in a temp HOME', async () => {
+  test('the write route stores the full section and round-trips routing with Pi disabled', async () => {
     const home = mkdtempSync(join(tmpdir(), 'seats-contract-'));
     cleanups.push(() => rmSync(home, { recursive: true, force: true }));
     mkdirSync(join(home, '.repo-harness'));
     const path = join(home, '.repo-harness', 'config.json');
-    writeFileSync(path, JSON.stringify({ agents: PANE_AGENTS, security: { mode: 'strict' }, seats: {
+    const agents = { ...PANE_AGENTS, enabled: ['claude', 'codex'] };
+    writeFileSync(path, JSON.stringify({ agents, security: { mode: 'strict' }, seats: {
       orchestrator: DEFAULT_SEATS_CONFIG.orchestrator, advisor: DEFAULT_SEATS_CONFIG.advisor, worker: DEFAULT_SEATS_CONFIG.worker,
     } }));
     const env = { HOME: home }, before = readSeatsSettings(env);
-    const routing: SeatRoutingV1 = { ...before.config.routing, mode: 'hyper', simple_fast: ['worker-light', 'worker'], frontend: ['worker-important-fast'] };
+    expect(before.config['worker-light']).toBeNull();
+    const routing: SeatRoutingV1 = { ...before.config.routing, mode: 'hyper', simple_fast: ['worker-deep', 'worker'], frontend: ['worker-important-fast'] };
     const section = { ...before.defaults, routing };
     const response = await seatsSettingsWriteRoute(env).decode({ expected_revision: before.config.revision, seats: section }, []).execute();
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ config_revision: sha256(path), changed_keys: ['seats.routing.simple_fast', 'seats.routing.frontend', 'seats.routing.mode'] });
     const after = readSeatsSettings(env);
     expect(after.config).toEqual({ revision: sha256(path), ...section });
-    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ agents: PANE_AGENTS, security: { mode: 'strict' }, seats: section });
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ agents, security: { mode: 'strict' }, seats: section });
   });
 
   test('routing refuses unknown, duplicate, empty, non-worker and non-Claude frontend seats', () => {
@@ -541,7 +554,7 @@ describe('seat settings contract without transport', () => {
     writeFileSync(path, original);
     const env = { HOME: home }, settings = readSeatsSettings(env), route = seatsSettingsWriteRoute(env);
     for (const [task, candidates] of [
-      ['simple_fast', ['unknown']], ['simple_fast', ['worker', 'worker']], ['simple_fast', []], ['simple_fast', ['advisor']],
+      ['simple_fast', ['unknown']], ['simple_fast', ['worker', 'worker']], ['simple_fast', []], ['simple_fast', ['advisor']], ['simple_fast', ['worker-light']],
       ['frontend', ['worker']], ['frontend', ['worker-light']],
     ]) {
       expect(() => route.decode({ expected_revision: settings.config.revision, seats: {

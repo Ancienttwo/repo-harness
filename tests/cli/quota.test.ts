@@ -43,7 +43,8 @@ describe('seat quota routing', () => {
     ['exhausted', 'exhausted', ['worker-important', 'worker-deep'], 'none'],
     ['tight', 'tight', ['worker', 'worker-light'], 'worker-light'],
   ] as const)('routes claude %s and chatgpt %s through %j to %s', (claude, chatgpt, candidates, selected) => {
-    const seats = { ...DEFAULT_SEATS_CONFIG, routing: { ...DEFAULT_SEATS_CONFIG.routing, important_deep: candidates } };
+    const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-light': { runtime: 'pi' as const, model: null, effort: null, tools: DEFAULT_SEATS_CONFIG.worker.tools, fleet: [] },
+      routing: { ...DEFAULT_SEATS_CONFIG.routing, important_deep: candidates } };
     const line = formatSeatRoutes(seats, { claude, chatgpt }).split('\n')[0]!;
     expect(line).toStartWith(`route important_deep: ${selected} (`);
     if (selected === 'none') expect(line).toContain('claude exhausted, reserved for advisor and orchestrator; chatgpt exhausted');
