@@ -1,6 +1,6 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:415a43affb1753329e627501eedfb6959c701e01d682f81bb5949f08b1640b71" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:eb3aaf70581b1c6b33d43690fab74787348d9c7f2ac3b840d452e3fe48035877" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/effects/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/host-skill-roots.ts`、`src/effects/configuration/**`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`、`src/effects/runtime/node-runtime.ts`
@@ -102,7 +102,9 @@ flowchart LR
 - `component.global-runtime-reconciliation.cli-diagnostics`:
   - `calls` → `capability.public-surface.adoption` — Inspect the workflow marker, strip managed hooks and plan the adoption for the doctor and init-hook reports
   - `calls` → `capability.workflow-engine.contract-assets` — Read the ArchContext capability authority for the doctor report
+  - `calls` → `component.execution-primitives.hc-client` — List relay terminals by the recorded labels for the Doctor notify relay check.
   - `calls` → `capability.runtime-harness.hook-adapters` — Read the install state, skill projections, host targets, the Pi host probe, hook routes and status for the doctor and init-hook reports
+  - `reads` → `component.execution-primitives.notify-read` — Read the notify relay install record and check the recorded relay identity for Doctor.
   - `calls` → `component.global-runtime-reconciliation.primary` — Read the staged host skill roots and the upgrade operator decisions
   - `calls` → `component.global-runtime-reconciliation.primary-cli` — Plan the upgrade for the init-hook checklist
   - `calls` → `component.action-commands.skill-surface-catalog` — Parse the skill surface catalog to check the projected host skills
@@ -132,7 +134,7 @@ flowchart LR
   - `calls` → `capability.public-surface.root-router` — Register the docs command
   - `calls` → `component.action-commands.skill-surface-catalog` — Parse the skill surface catalog for CLI commands
   - `calls` → `capability.public-surface.strategy-reflection` — Register the strategy command
-  - `calls` → `capability.runtime-harness.task-agent-host` — Register the herdr and events commands and pass the Herdr skill setup step to the global runtime
+  - `calls` → `capability.runtime-harness.task-agent-host` — Load the herdr and events action bodies and the review runner after the peer-runtime selection guards, including the Operator cleanup investigation child
   - `calls` → `capability.organization.task-fleet` — Register the fleet command and pass the task inbox root to retention
   - `calls` → `capability.workflow-engine.workflow-state` — Register the state command
 - `component.global-runtime-reconciliation.global-configuration`:
@@ -167,7 +169,7 @@ flowchart LR
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.global-runtime-reconciliation.cli-diagnostics` | CLI Diagnostics and Shared Options | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
-| `component.global-runtime-reconciliation.cli-layer` | Global Runtime Reconciliation (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.cli-layer` | Global Runtime Reconciliation (cli) | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.cli-root` | CLI Composition Root | `5–10` 個文件 / `1000–2000` 行 | `entrypoint.global-runtime-reconciliation.cli-root` |
 | `component.global-runtime-reconciliation.global-configuration` | Global Configuration Store | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.managed-runtime-root` | Managed Runtime Check Process Root | `1–2` 個文件 / `20–50` 行 | 未宣告 |

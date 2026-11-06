@@ -1,6 +1,6 @@
 # workflow-engine/execution-primitives 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5b75f615d466a0f072e7362f7bf789398b0a5b88d09146219aa74913b992c857" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e3165ee7dc7ff7bc0f23a9ddf8cbd03ed0fb33ca417aab9018d540e42e4a8bf9" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.execution-primitives`(kind `capability`)
 > **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/process-group-termination.ts`、`src/effects/process-group-registry.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/readonly-observation.ts`、`src/effects/atomic-append.ts`、`src/effects/locking/**`、`src/effects/git/**`
@@ -24,6 +24,7 @@ flowchart LR
   p1_component_execution_primitives_primary_800678c8["Bounded Process And Lock Primitives"]:::component
   p1_component_execution_primitives_public_projections_1287b1f9["Public Text and Worktree Views"]:::component
   p1_component_execution_primitives_repository_registry_49e2fbe9["Repository Registry and Account Home"]:::component
+  p1_component_execution_primitives_runtime_closeout_62192509["Runtime Closeout"]:::component
   p1_component_execution_primitives_secret_patterns_075f309a["Secret Patterns"]:::component
   p1_component_execution_primitives_session_artifact_io_f1f01a74["Immutable Session Artifact I/O"]:::component
   p1_component_execution_primitives_task_message_claim_dbe6af55["Task Message Claim Primitives"]:::component
@@ -40,8 +41,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:e33583d440a128900510a3c58812dc4bb94505136e19f12295b1587119d312fc`).
-- Semantic nodes: `14`; declared relations: `5`.
+- Proof: `proven` (`sha256:ddd9c076d52de2a54d69581a6b0f6be34e472155113555035a4654c128c7b748`).
+- Semantic nodes: `15`; declared relations: `5`.
 
 ### 1.2 模組職責表
 
@@ -94,7 +95,7 @@ flowchart LR
 - `depends-on` ← `capability.runtime-harness.operator` — Read Git topology for task diffs and development activity. Read the task session records, the native session record and the process proof for task execution state. Use the hc client for hc server status, hc ls, hc events, the terminal labels, the herdr-app command and its error type. Read the notify install record, the notify config and the relay delivery record through the notify read contract, and use its relay channel names and record types in the notify status and the Bots page.
 - `depends-on` ← `capability.organization.publication` — Resolve the Git common directory for the feedback store, validate the shared task message claim in feedback records, and run Git through the shared runner in the new remote ref push operation
 - `calls` ← `component.publication.primary` — Read the worktree topology and the Git common directory
-- `calls` ← `component.task-agent-host.primary` — Run Git through the process runner, hold task session locks, read and write immutable session artifacts, run hc through the hc client, read the notify secret key names, read the notify config, the delivery record and the notify file paths through the notify read contract, and build the next delivery record with its channel names, record types and empty record
+- `calls` ← `component.task-agent-host.primary` — Resolve the task repository and record task worktrees through the Git primitives. Hold task session locks, read and write immutable session artifacts, run hc through the hc client, read the notify secret key names, read the notify config, the delivery record and the notify file paths through the notify read contract, and build the next delivery record with its channel names, record types and empty record
 - `calls` ← `component.task-agent-host.review-runner` — Read and write immutable session artifacts, including the accepted-input proof, and read the host process identity
 - `calls` ← `component.task-fleet.provider-feedback` — Hold the shared task lock while feedback events and delivery receipts are recorded
 - `calls` ← `component.task-fleet.task-inbox` — Hold exclusive directory locks under the Git common directory for the task inbox, and validate the shared task message claim and message fields
@@ -122,6 +123,9 @@ flowchart LR
   - 無。
 - `component.execution-primitives.repository-registry`:
   - 無。
+- `component.execution-primitives.runtime-closeout`:
+  - `calls` → `capability.verification.acceptance-review` — Validate the task claim reference of a session binding, and type requests, results and cleanup results with the runner port types
+  - `reads` → `component.workflow-state.coordination-plane` — Hash the task binding for request identity checks
 - `component.execution-primitives.secret-patterns`:
   - 無。
 - `component.execution-primitives.session-artifact-io`:
@@ -145,6 +149,7 @@ flowchart LR
 | `component.execution-primitives.primary` | Bounded Process And Lock Primitives | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.execution-primitives.public-projections` | Public Text and Worktree Views | `2–5` 個文件 / `100–200` 行 | 未宣告 |
 | `component.execution-primitives.repository-registry` | Repository Registry and Account Home | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.execution-primitives.runtime-closeout` | Runtime Closeout | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.execution-primitives.secret-patterns` | Secret Patterns | `2–5` 個文件 / `50–100` 行 | 未宣告 |
 | `component.execution-primitives.session-artifact-io` | Immutable Session Artifact I/O | `1–2` 個文件 / `50–100` 行 | 未宣告 |
 | `component.execution-primitives.task-message-claim` | Task Message Claim Primitives | `2–5` 個文件 / `100–200` 行 | 未宣告 |
@@ -153,7 +158,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:e33583d440a128900510a3c58812dc4bb94505136e19f12295b1587119d312fc`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:ddd9c076d52de2a54d69581a6b0f6be34e472155113555035a4654c128c7b748`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

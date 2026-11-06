@@ -1,6 +1,6 @@
 # organization/publication 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:08ec91ffb8885025d10412bba5c6dc3ae077bd0aa1dfea452a17f8a5b296c0c6" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:f2bf881c9aa0c739e4e9526853025431c8258d04c4cdd9da70d2e9dd3f5c74a1" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.publication`(kind `capability`)
 > **Matched Prefixes**:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`
@@ -52,7 +52,7 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.workflow-engine.contract-assets` — Read integration proof through the packaged worktree merge helper
-- `calls` → `external.github` — Read pull request readiness, post provider feedback and find or create Draft PRs through gh.
+- `calls` → `external.github` — Read pull request readiness, post provider feedback and find or create Draft PRs through gh. Set the GitHub App hook config over the REST API with an App JWT.
 - `depends-on` → `capability.verification.acceptance-review` — Run the bounded gh command transport that the Draft PR operation uses.
 - `depends-on` → `capability.workflow-engine.execution-primitives` — Resolve the Git common directory for the feedback store, validate the shared task message claim in feedback records, and run Git through the shared runner in the new remote ref push operation
 - `calls` → `component.publication.primary` — Derive fenced PR readiness, collect provider integration evidence and share the digest helpers without task ownership mutation
@@ -65,6 +65,7 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the publication command
 - `calls` ← `component.mcp-sidecar.primary` — Read pull request merge readiness
 - `depends-on` ← `capability.runtime-harness.operator` — Use publication readiness types in the Operator fixture, and call the publication operations for every GitHub write of the Operator.
+- `calls` ← `component.task-agent-host.events-cli` — Publish the GitHub App hook config through core publication after explicit deployment approval.
 - `calls` ← `capability.organization.task-fleet` — Plugin → core: read explicit PR readiness and the publication digest helpers, and store provider feedback facts and delivery receipts through the Publication feedback store, for fleet commands, board cards and provider feedback
 
 組件出向關係:
