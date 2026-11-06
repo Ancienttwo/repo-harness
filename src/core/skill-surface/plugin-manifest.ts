@@ -38,10 +38,10 @@ export type SurfaceOwner = (typeof SURFACE_OWNERS)[number];
 export const HOST_PROGRAM_PLUGINS = ["pi"] as const satisfies readonly PluginId[];
 
 /**
- * Plugins whose only install surface is a guarded command. The installer
- * writes no file for one, so it has no owned surface and no probe row.
+ * Command plugins have no owner probe row. Their commands can run on every
+ * target; any provider skill still installs only on its declared hosts.
  */
-export const COMMAND_PLUGINS = ["mcp", "operator"] as const satisfies readonly PluginId[];
+export const COMMAND_PLUGINS = ["mcp", "operator", "peer-runtime"] as const satisfies readonly PluginId[];
 
 export function isCommandPlugin(id: PluginId): id is (typeof COMMAND_PLUGINS)[number] {
   return (COMMAND_PLUGINS as readonly PluginId[]).includes(id);

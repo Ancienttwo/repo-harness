@@ -108,7 +108,7 @@ describe('operator serve command and HTTP boundary', () => {
     expect(() => parseOperatorServeOptions({ host: '0.0.0.0' })).toThrow('127.0.0.1 or ::1');
     expect(() => parseOperatorServeOptions({ port: '65536' })).toThrow('port');
     expect(() => parseOperatorServeOptions({ timeoutMs: '999' })).toThrow('timeout-ms');
-    expect(buildOperatorCommand(taskReviewRunner).name()).toBe('operator');
+    expect(buildOperatorCommand(() => taskReviewRunner).name()).toBe('operator');
   });
 
   test('the operator selection gates operator, worktrees and catch-up and the Operator code load', () => {

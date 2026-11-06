@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { recordPluginSelection } from '../helpers/install-ownership';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { assertBotEvent } from '../../assets/herdr/github-events/bot-event.mjs';
-import { askMasked } from '../../src/cli/commands/herdr';
+import { askMasked } from '../../src/cli/commands/herdr-actions';
 import type { HcEventStream, HcStreamItem, HcTerminal } from '../../src/effects/terminal/herdr-core';
 import { NOTIFY_CHANNEL_SECRET_KEYS } from '../../src/core/decision/notify-secret-keys';
 import { notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath } from '../../src/effects/terminal/notify-read';
@@ -225,8 +226,9 @@ else if (argv[0] === 'rm') console.log(JSON.stringify({ removed: target }));
 else process.exit(2);
 `);
   chmodSync(join(bin, 'hc'), 0o755);
-  const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${bin}:${process.env.PATH}`, REPO_HARNESS_HOME: join(root, 'home'), FIXTURE_CALLS: join(root, 'calls.jsonl') };
+  const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${bin}:${process.env.PATH}`, HOME: join(root, 'account'), REPO_HARNESS_HOME: join(root, 'home'), FIXTURE_CALLS: join(root, 'calls.jsonl') };
   for (const key of Object.keys(env)) if (/^(WEBHOOK_|SLACK_|DISCORD_|TELEGRAM_|HC_|HERDR_)/.test(key)) delete env[key];
+  recordPluginSelection(env, ['peer-runtime']);
   const cli = (args: string[], extra: NodeJS.ProcessEnv = {}) =>
     spawnSync(process.execPath, [join(ROOT, 'src/cli/index.ts'), 'herdr', 'notify', ...args], { env: { ...env, ...extra }, encoding: 'utf8', timeout: 20_000 });
   const calls = (): { argv: string[]; secret: string | null; notify: string[] }[] => existsSync(env.FIXTURE_CALLS!)

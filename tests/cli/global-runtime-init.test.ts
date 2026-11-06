@@ -2303,10 +2303,11 @@ exit 0
       );
 
       expect(res.status).toBe(0);
-      // --target codex has no host for peer-runtime's Claude-only skill, so "all" skips it with the reason.
-      const codexPlugins = FULL_PLUGINS.filter(id => id !== 'peer-runtime');
+      // peer-runtime commands are available on Codex; its portal skill stays Claude-only.
+      const codexPlugins = FULL_PLUGINS;
       expect(res.stdout).toContain(`[plugins] ${codexPlugins.join(',')}`);
-      expect(res.stdout).toContain('[plugins] skipped peer-runtime: --target codex has no host for its skills');
+      expect(res.stdout).not.toContain('[plugins] skipped peer-runtime:');
+      expect(existsSync(join(home, '.codex', 'skills', 'repo-harness-herdr-portal'))).toBe(false);
       expect(res.stdout).toContain('install repo-harness CLI');
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza');
       expect(readFileSync(codegraphLog, 'utf-8')).toContain('codegraph install');

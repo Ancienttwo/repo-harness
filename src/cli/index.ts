@@ -29,7 +29,6 @@ import { formatDoctor, runDoctor, type DoctorPorts } from './commands/doctor';
 import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } from './commands/init-hook';
 import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { buildReviewCommand } from './commands/review';
-import { taskReviewRunner } from '../effects/review-runner/task-review-runner';
 import { buildUpgradeCommand } from './commands/upgrade';
 import { buildToolsCommand } from './commands/tools';
 import { registerArchitecturePorts } from '../core/architecture/contracts';
@@ -995,7 +994,14 @@ export function buildProgram(): Command {
     });
 
   program.addCommand(buildInitHookCommand(CLI_PORTS.doctor));
-  program.addCommand(buildReviewCommand(taskReviewRunner));
+  const loadReviewRunner = async () => (await import('../effects/review-runner/task-review-runner')).taskReviewRunner;
+  const review = buildReviewCommand(loadReviewRunner);
+  for (const name of ['round', 'status', 'close', 'cancel']) {
+    const command = review.commands.find(candidate => candidate.name() === name);
+    if (!command) throw new Error(`review ${name} is not defined`);
+    pluginCommand(command, 'peer-runtime', `review ${name}`);
+  }
+  program.addCommand(review);
   program.addCommand(pluginCommand(buildModuleCommand(), 'architecture'));
   program.addCommand(buildSetupCommand(CLI_PORTS.doctor));
   program.addCommand(buildUpgradeCommand());
@@ -1033,8 +1039,8 @@ export function buildProgram(): Command {
     pluginCommand(codegraph, 'architecture', `tools ${group} codegraph`);
   }
   program.addCommand(tools);
-  program.addCommand(buildHerdrCommand());
-  program.addCommand(buildEventsCommand());
+  program.addCommand(pluginCommand(buildHerdrCommand(), 'peer-runtime'));
+  program.addCommand(pluginCommand(buildEventsCommand(), 'peer-runtime'));
   program.addCommand(buildBrainCommand());
   program.addCommand(buildCapabilityContextCommand());
   program.addCommand(buildDocsCommand());
@@ -1051,7 +1057,11 @@ export function buildProgram(): Command {
   program.addCommand(buildBoardCommand(boardHostPorts(), attentionHostPorts()));
   program.addCommand(buildFleetCommand());
   program.addCommand(buildBotsCommand());
-  program.addCommand(pluginCommand(buildOperatorCommand(taskReviewRunner), 'operator'));
+  const operator = buildOperatorCommand(loadReviewRunner);
+  const investigation = operator.commands.find(command => command.name() === 'cleanup-investigation-job');
+  if (!investigation) throw new Error('operator cleanup-investigation-job is not defined');
+  pluginCommand(investigation, 'peer-runtime', 'operator cleanup-investigation-job');
+  program.addCommand(pluginCommand(operator, 'operator'));
   program.addCommand(pluginCommand(buildWorktreesCommand(), 'operator'));
   program.addCommand(pluginCommand(buildCatchUpCommand(), 'operator'));
   program.addCommand(buildQuotaCommand());

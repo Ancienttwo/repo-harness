@@ -1250,6 +1250,7 @@ const TARGET_BOTH_COMMAND = 'repo-harness install --target both';
  * a definite absence throws.
  */
 function pluginUnavailable(id: PluginId, target: InstallTarget, env: NodeJS.ProcessEnv): { readonly reason: string; readonly command: string } | null {
+  if (isCommandPlugin(id)) return null;
   if (id === 'pi' && target !== 'both') return { reason: `--target ${target} does not include the Pi host`, command: TARGET_BOTH_COMMAND };
   const skills = ownedProbeSkills(loadSkillSurfaceCatalog(), id);
   if (skills.length > 0 && !skills.some(pkg => pkg.hosts.some(host => (TARGET_HOSTS[target] as readonly string[]).includes(host)))) {

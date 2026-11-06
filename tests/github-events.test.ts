@@ -5,7 +5,7 @@ import { createHash, createHmac, generateKeyPairSync, verify } from 'node:crypto
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { installEvents } from '../src/cli/commands/events';
+import { installEvents } from '../src/cli/commands/events-actions';
 import type { AppHookConfig } from '../src/core/publication/publication-writes';
 import * as appHookPublication from '../src/effects/publication/app-hook-config';
 

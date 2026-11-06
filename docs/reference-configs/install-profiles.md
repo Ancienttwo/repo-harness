@@ -19,7 +19,7 @@ plugin id. The installer maps the other surfaces through
 | `cross-review` | `repo-harness-cross-review`. |
 | `mcp` | The guarded commands `mcp serve` and `mcp doctor`. No host file. |
 | `operator` | The guarded commands `operator`, `worktrees` and `catch-up`. No host file. |
-| `peer-runtime` | `repo-harness-herdr-portal` (Claude host only). |
+| `peer-runtime` | The guarded commands `review round\|status\|close\|cancel`, `herdr`, `events`, and `operator cleanup-investigation-job`. Available on every target. `repo-harness-herdr-portal` installs on Claude only. No owner probe row. |
 | `pi` | The Pi package registration and the Pi skill root (`~/.pi/agent/skills/`), for `--target both` only. |
 | `platform` | `windows-python-first`. |
 | `product` | `repo-harness-product`. |
@@ -36,9 +36,8 @@ A plugin is unavailable on this host in three cases:
 - Its host program is absent. `pi` is a host plugin, and repo-harness does
   not install its host program. The program is absent when `pi` is not on
   `PATH`. Any other read error fails closed.
-- The target has no host for its skills: none of the plugin's owned skills
-  lists a host in `--target`. For example, `peer-runtime` with
-  `--target codex` gives `--target codex has no host for its skills`.
+- A skill plugin has no host for its skills: none of its owned skills lists
+  a host in `--target`. Command plugins do not need a skill host.
 - `pi` with `--target claude` or `--target codex` gives
   `--target <target> does not include the Pi host`.
 
@@ -66,7 +65,7 @@ it. A missing host program gives:
 A target without the host gives:
 
 ```text
-[plugins] skipped peer-runtime: --target codex has no host for its skills; to add it later, run: repo-harness install --target both
+[plugins] skipped pi: --target codex does not include the Pi host; to add it later, run: repo-harness install --target both
 ```
 
 `--plugins <ids>` takes a comma-separated list of known ids. An unknown id
@@ -113,7 +112,7 @@ which names each missing owner.
   them:
 
   ```text
-  [plugins] not selected mcp, operator: an explicit list does not grow; to add them, run: repo-harness install --plugins mcp,operator,product
+  [plugins] not selected mcp, operator, peer-runtime: an explicit list does not grow; to add them, run: repo-harness install --plugins mcp,operator,peer-runtime,product
   ```
 
 - Under `"all"`, a recorded plugin that becomes unavailable (its host program
