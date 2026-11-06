@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { defaultRuntimes } from '@botiverse/oar';
 
 import {
@@ -15,6 +16,10 @@ import { DEFAULT_SEATS_CONFIG, decodeSeatsSettings } from '../../src/core/board/
 import { buildQuotaReport, OPERATOR_QUOTA_PATH, unknownQuotaReading } from '../../src/core/board/quota';
 import { probeAgentRuntimes, registryRuntimes } from '../../src/effects/setup/agent-runtime-probe';
 import { startOperatorServer, type OperatorServerHandle } from '../../src/effects/operator/server';
+import { repoHarnessRepoIdFor, canonicalRepoPath } from '../../src/effects/repo-registry';
+import { renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
+import { createOperatorLanguageSettings } from '../../src/cli/commands/operator-actions';
+import { reportingLanguageWriteRoute } from '../../src/effects/operator/language-settings-route';
 import { acquireRuntimeTransactionLock, globalRuntimeScope } from '../../src/effects/locking/runtime-transaction-lock';
 import { operatorAuditPath } from '../../src/effects/operator/write-audit';
 
@@ -46,7 +51,7 @@ afterEach(async () => {
 });
 
 /** HOME and REPO_HARNESS_HOME are separate temporary roots, so each authority is checked at its own place. */
-async function startHarness(config?: unknown, readQuota = async (): Promise<unknown> => buildQuotaReport([unknownQuotaReading('claude', 'no capture')], Date.now())): Promise<Harness> {
+async function startHarness(config?: unknown, readQuota = async (): Promise<unknown> => buildQuotaReport([unknownQuotaReading('claude', 'no capture')], Date.now()), sourceRoot?: string): Promise<Harness> {
   const home = mkdtempSync(join(tmpdir(), 'repo-harness-agents-home-'));
   const harnessHome = mkdtempSync(join(tmpdir(), 'repo-harness-agents-state-'));
   const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-agents-ui-'));
@@ -60,6 +65,7 @@ async function startHarness(config?: unknown, readQuota = async (): Promise<unkn
   const server = await startOperatorServer({
     port: 0, static_root: staticRoot,
     env: { HOME: home, REPO_HARNESS_HOME: harnessHome },
+    language_settings: createOperatorLanguageSettings({ HOME: home, REPO_HARNESS_HOME: harnessHome }, sourceRoot),
     read_agent_runtimes: () => state.cache,
     read_quota: readQuota,
   });
@@ -88,6 +94,151 @@ async function settings(harness: Harness): Promise<ReturnType<typeof decodeAgent
 }
 
 const sha256 = (path: string) => `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
+
+describe('language settings routes', () => {
+  const reportPath = '/api/v1/settings/report-language';
+  const send = (h: Harness, path: string, body: unknown, requestId = randomUUID()) => fetch(`${h.server.url}${path}`, {
+    method: 'POST',
+    headers: { Origin: h.server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: h.cookie },
+    body: JSON.stringify({ request_id: requestId, ...body as object }),
+  });
+  function repository(h: Harness) {
+    const root = join(canonicalRepoPath(h.home), 'repo');
+    mkdirSync(join(root, '.ai', 'harness'), { recursive: true });
+    const id = repoHarnessRepoIdFor(root);
+    writeFileSync(join(h.harnessHome, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1,
+      repos: [{ id, path: root, accessMode: 'read_only', source: 'manual', registeredAt: '2026-11-07', lastSeenAt: '2026-11-07' }] }));
+    return { path: `/api/v1/repositories/${id}/documentation-language`, policy: join(root, '.ai', 'harness', 'policy.json') };
+  }
+
+  test('GET decodes recorded custom and unknown headers; POST changes both hosts and replays the result', async () => {
+    const h = await startHarness();
+    mkdirSync(join(h.home, '.claude'), { recursive: true });
+    mkdirSync(join(h.home, '.codex'), { recursive: true });
+    writeFileSync(join(h.home, '.claude', 'CLAUDE.md'), renderGlobalRulesBlock(resolve(import.meta.dir, '../..'), { preset: 'custom', instruction: 'Report in French.' }));
+    writeFileSync(join(h.home, '.codex', 'AGENTS.md'), '<!-- BEGIN: repo-harness global-working-rules -->\nunknown\n<!-- END: repo-harness global-working-rules -->\n');
+    expect(await (await fetch(`${h.server.url}${reportPath}`)).json()).toEqual({ hosts: [
+      { host: 'claude', state: 'managed-current', preset: 'custom' }, { host: 'codex', state: 'managed-unrecorded', preset: null },
+    ] });
+    const id = randomUUID();
+    for (let i = 0; i < 2; i++) {
+      const response = await send(h, reportPath, { preset: 'en' }, id);
+      expect([response.status, await response.json()]).toEqual([200, { changed_hosts: ['claude', 'codex'] }]);
+    }
+    expect(await (await fetch(`${h.server.url}${reportPath}`)).json()).toEqual({ hosts: [
+      { host: 'claude', state: 'managed-current', preset: 'en' }, { host: 'codex', state: 'managed-current', preset: 'en' },
+    ] });
+    expect(readdirSync(join(h.home, '.repo-harness', 'global-context-backups'))).toHaveLength(2);
+    writeFileSync(join(h.home, '.codex', 'AGENTS.md'), '<!-- BEGIN: repo-harness global-working-rules -->');
+    const refused = await send(h, reportPath, { preset: 'zh-CN' });
+    expect([refused.status, (await refused.json()).error.code]).toEqual([409, 'report_language_refused']);
+  });
+
+  test('a read_only repository saves only documentation.language and keeps JSON bytes around it', async () => {
+    const h = await startHarness();
+    const repo = repository(h);
+    const raw = '{\r\n\t"other": [1,  2] \t,\r\n\t"documentation" : { "language":"en" , "profile": "full" }\r\n}\r\n';
+    writeFileSync(repo.policy, raw);
+    expect(await (await fetch(`${h.server.url}${repo.path}`)).json()).toEqual({ language: 'en' });
+    const response = await send(h, repo.path, { language: 'zh-CN' });
+    expect([response.status, await response.json()]).toEqual([200, { language: 'zh-CN' }]);
+    expect(readFileSync(repo.policy, 'utf8')).toBe(raw.replace('"en"', '"zh-CN"'));
+    expect(await (await fetch(`${h.server.url}${repo.path}`)).json()).toEqual({ language: 'zh-CN' });
+    writeFileSync(repo.policy, '{"other":1}\n');
+    expect(await (await fetch(`${h.server.url}${repo.path}`)).json()).toEqual({ language: null });
+    expect((await send(h, repo.path, { language: 'follow-user' })).status).toBe(200);
+    expect(JSON.parse(readFileSync(repo.policy, 'utf8'))).toEqual({ other: 1, documentation: { language: 'follow-user' } });
+  });
+
+  test('GET returns null presets for unsafe paths and an unreadable rules template', async () => {
+    const h = await startHarness(undefined, undefined, join(tmpdir(), randomUUID()));
+    mkdirSync(join(h.home, '.codex'), { recursive: true });
+    mkdirSync(join(h.home, '.claude'), { recursive: true });
+    const codex = join(h.home, '.codex', 'AGENTS.md');
+    writeFileSync(codex, renderGlobalRulesBlock(resolve(import.meta.dir, '../..'), { preset: 'en', instruction: 'Use English to report to user.' }));
+    symlinkSync(codex, join(h.home, '.claude', 'CLAUDE.md'));
+    const response = await fetch(`${h.server.url}${reportPath}`);
+    expect([response.status, await response.json()]).toEqual([200, { hosts: [
+      { host: 'claude', state: 'unsafe', preset: null }, { host: 'codex', state: 'unreadable', preset: null },
+    ] }]);
+  });
+
+  test('a missing reporting adapter refuses execution without rejecting a valid body', async () => {
+    const operation = reportingLanguageWriteRoute().decode({ preset: 'follow' }, []);
+    await expect(operation.execute()).rejects.toMatchObject({ status: 503, code: 'language_settings_unavailable' });
+  });
+
+  test('a held runtime transaction refuses reporting changes until install or update finishes', async () => {
+    const h = await startHarness();
+    expect((await send(h, reportPath, { preset: 'en' })).status).toBe(200);
+    const paths = [join(h.home, '.claude', 'CLAUDE.md'), join(h.home, '.codex', 'AGENTS.md')];
+    const before = paths.map(path => readFileSync(path, 'utf8'));
+    const lock = acquireRuntimeTransactionLock(globalRuntimeScope({ HOME: h.home }));
+    try {
+      const response = await send(h, reportPath, { preset: 'zh-CN' });
+      const { error } = await response.json();
+      expect([response.status, error.code, error.next_action]).toEqual([
+        409, 'runtime_busy', 'Wait for repo-harness update or install to finish, then save again.',
+      ]);
+      expect(paths.map(path => readFileSync(path, 'utf8'))).toEqual(before);
+      lock.assertOwned();
+    } finally { lock.release(); }
+    expect((await send(h, reportPath, { preset: 'zh-CN' })).status).toBe(200);
+  });
+
+  test.skipIf(process.platform === 'win32')('GET and POST refuse a FIFO policy without opening it', async () => {
+    const h = await startHarness();
+    const repo = repository(h);
+    execFileSync('mkfifo', [repo.policy]);
+    for (const response of [await fetch(`${h.server.url}${repo.path}`), await send(h, repo.path, { language: 'en' })]) {
+      expect([response.status, (await response.json()).error.code]).toEqual([409, 'policy_unreadable']);
+    }
+    expect(lstatSync(repo.policy).isFIFO()).toBe(true);
+  });
+
+  test('refuses unknown repositories, missing policies and invalid JSON without a write', async () => {
+    const h = await startHarness();
+    const unknown = await send(h, '/api/v1/repositories/unknown/documentation-language', { language: 'en' });
+    expect([unknown.status, (await unknown.json()).error.code]).toEqual([404, 'repository_not_found']);
+    const repo = repository(h);
+    const missing = await send(h, repo.path, { language: 'en' });
+    expect([missing.status, (await missing.json()).error.next_action]).toEqual([409, 'repo-harness init']);
+    expect(existsSync(repo.policy)).toBe(false);
+    writeFileSync(repo.policy, '{broken');
+    const invalid = await send(h, repo.path, { language: 'en' });
+    expect([invalid.status, (await invalid.json()).error.code]).toEqual([409, 'policy_invalid']);
+    expect(readFileSync(repo.policy, 'utf8')).toBe('{broken');
+    rmSync(repo.policy);
+    mkdirSync(repo.policy);
+    for (const response of [await fetch(`${h.server.url}${repo.path}`), await send(h, repo.path, { language: 'en' })]) {
+      const { error } = await response.json();
+      expect([response.status, error.code]).toEqual([409, 'policy_unreadable']);
+      expect(error.next_action).toContain('readable regular file');
+    }
+    expect(readdirSync(repo.policy)).toEqual([]);
+  });
+
+  test('both routes reject invalid bodies and require the shared same-origin write token', async () => {
+    const h = await startHarness();
+    mkdirSync(join(h.home, '.claude'));
+    const repo = repository(h);
+    for (const [path, valid, invalid] of [[reportPath, { preset: 'follow' }, { preset: 'custom' }], [repo.path, { language: 'en' }, { language: 'follow' }]] as const) {
+      expect((await send(h, path, invalid)).status).toBe(400);
+      expect((await send(h, path, { ...valid, extra: true })).status).toBe(400);
+      const guardHeaders: Record<string, string>[] = [
+        { Origin: h.server.url, 'Sec-Fetch-Site': 'same-origin' },
+        { Origin: 'http://other.invalid', 'Sec-Fetch-Site': 'same-origin', Cookie: h.cookie },
+      ];
+      for (const headers of guardHeaders) {
+        const denied = await fetch(`${h.server.url}${path}`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ request_id: randomUUID(), ...valid }) });
+        expect(denied.status).toBe(403);
+      }
+    }
+    expect(existsSync(repo.policy)).toBe(false);
+    expect(existsSync(join(h.home, '.claude', 'CLAUDE.md'))).toBe(false);
+  });
+});
 
 describe('agent settings routes', () => {
   test('quota GET returns the report unchanged and refuses query selectors, PUT and invalid reports', async () => {

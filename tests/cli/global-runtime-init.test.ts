@@ -17,7 +17,7 @@ import { applyInstallSelection, beginInstallHostTransaction, installProfileHostM
 import { installProfileStatePath } from '../../src/cli/installer/install-state';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 import { MANAGED_AGENTS } from '../../src/effects/terminal/task-role-profiles';
-import { applyGlobalContextRefresh, inspectGlobalContext, preflightGlobalContextRefresh, renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
+import { applyGlobalContextRefresh, inspectGlobalContext, preflightGlobalContextRefresh, renderGlobalRulesBlock, setReportingLanguage } from '../../src/cli/installer/global-context';
 import { CandidateRequestProtocolRetiredError, encodeCandidateRequest, parseCandidateRequest, type CandidateReconciliationRequest } from '../../src/cli/commands/candidate-reconciliation';
 import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
 
@@ -3082,6 +3082,53 @@ describe('Global Working Rules refresh during install and update', () => {
   const rulesStep = (result: ReturnType<typeof runGlobalRuntimeSetup>) =>
     result.steps.find((step) => step.step === 'refresh global working rules');
   const backupDir = (home: string) => join(home, '.repo-harness', 'global-context-backups');
+
+  test('setting the language replaces both recorded presets, keeps user text and backs up each host', () => withRulesRuntime(({ home, path }) => {
+    const claudePath = join(home, '.claude', 'CLAUDE.md');
+    mkdirSync(dirname(claudePath), { recursive: true });
+    const codex = `${userBefore}${renderGlobalRulesBlock(ROOT, { preset: 'en', instruction: 'Use English to report to user.' })}`;
+    const claude = `${userBefore}${renderGlobalRulesBlock(ROOT, { preset: 'custom', instruction: 'Report in French.' })}`;
+    writeFileSync(path, codex);
+    writeFileSync(claudePath, claude);
+    const result = setReportingLanguage(home, ROOT, ['codex', 'claude'], 'zh-CN');
+    expect([result.status, result.changed_hosts]).toEqual(['ok', ['codex', 'claude']]);
+    for (const file of [path, claudePath]) {
+      const saved = readFileSync(file, 'utf8');
+      expect(saved).toStartWith(userBefore);
+      expect(inspectGlobalContext(saved, ROOT).language?.preset).toBe('zh-CN');
+    }
+    expect(readdirSync(backupDir(home)).map(file => readFileSync(join(backupDir(home), file), 'utf8')).sort()).toEqual([codex, claude].sort());
+    expect(setReportingLanguage(home, ROOT, ['codex', 'claude'], 'zh-CN').changed_hosts).toEqual([]);
+    expect(readdirSync(backupDir(home))).toHaveLength(2);
+  }));
+
+  test('an unbalanced or linked second host refuses the whole language change before writing', () => withRulesRuntime(({ home, path }) => {
+    const claudePath = join(home, '.claude', 'CLAUDE.md');
+    mkdirSync(dirname(claudePath), { recursive: true });
+    writeFileSync(path, userBefore);
+    const broken = '<!-- BEGIN: repo-harness global-working-rules -->\n';
+    writeFileSync(claudePath, broken);
+    expect(setReportingLanguage(home, ROOT, ['codex', 'claude'], 'en').status).toBe('skipped');
+    expect(readFileSync(claudePath, 'utf8')).toBe(broken);
+    rmSync(claudePath);
+    symlinkSync(path, claudePath);
+    expect(setReportingLanguage(home, ROOT, ['codex', 'claude'], 'en').status).toBe('skipped');
+    expect(readFileSync(path, 'utf8')).toBe(userBefore);
+    expect(existsSync(backupDir(home))).toBe(false);
+  }));
+
+  test('setting the language installs missing, unmanaged and unrecorded rules through the existing merge', () => {
+    for (const current of [null, userBefore, mixedLegacy, '<!-- BEGIN: repo-harness global-working-rules -->\nold\n<!-- END: repo-harness global-working-rules -->\n']) {
+      withRulesRuntime(({ home, path }) => {
+        if (current === null) rmSync(path, { force: true });
+        else writeFileSync(path, current);
+        expect(setReportingLanguage(home, ROOT, ['codex'], 'follow').status).toBe('ok');
+        const saved = readFileSync(path, 'utf8');
+        expect(inspectGlobalContext(saved, ROOT)).toMatchObject({ state: 'managed-current', language: { preset: 'follow' } });
+        if (current?.includes(userBefore)) expect(saved).toStartWith(userBefore);
+      });
+    }
+  });
 
   /** The write detail with the backup suffix, after a check that the named copy holds the replaced bytes. */
   const backedUp = (home: string, path: string, write: string, replaced: string, detail: string | undefined): string => {

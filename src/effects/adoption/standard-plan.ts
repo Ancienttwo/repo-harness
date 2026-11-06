@@ -228,7 +228,7 @@ export type DocumentationLanguage = (typeof DOCUMENTATION_LANGUAGES)[number];
  * falling back to the default, because a silent default would make a typo look
  * like a deliberate English choice.
  */
-function requireDocumentationLanguage(value: unknown): DocumentationLanguage {
+export function requireDocumentationLanguage(value: unknown): DocumentationLanguage {
   if (typeof value === "string" && (DOCUMENTATION_LANGUAGES as readonly string[]).includes(value)) {
     return value as DocumentationLanguage;
   }
@@ -525,12 +525,17 @@ function addPackageOperation(repoRoot: string, operations: AdoptionOperation[]):
     delete scripts["check:architecture-sync"];
   }
   const raw = fileContent(repoRoot, "package.json")!;
-  const open = raw.indexOf("{");
-  const content = `${raw.slice(0, open)}${editJsonObject(raw, open, { ...current, private: current.private ?? true, scripts }, "", topLevelIndentUnit(raw))}${raw.slice(jsonValueEnd(raw, open))}`;
+  const content = renderJsonObjectUpdate(raw, { ...current, private: current.private ?? true, scripts });
   operations.push(writeOperation(repoRoot, "package.json", content, "Install canonical repo-harness workflow package scripts", { risk: "medium" }));
 }
 
-// package.json is user-authored. These helpers rewrite only the members whose
+/** The caller has parsed raw as a JSON object. Keep unchanged members' bytes. */
+export function renderJsonObjectUpdate(raw: string, next: JsonObject): string {
+  const open = raw.indexOf("{");
+  return `${raw.slice(0, open)}${editJsonObject(raw, open, next, "", topLevelIndentUnit(raw))}${raw.slice(jsonValueEnd(raw, open))}`;
+}
+
+// User-authored JSON files rewrite only the members whose
 // value changes, so the user's indentation, key order and line endings stay.
 // The input already passed JSON.parse, so the scanner assumes valid JSON.
 interface JsonMember { readonly key: string; readonly start: number; readonly keyEnd: number; readonly valueStart: number; readonly valueEnd: number }
@@ -603,7 +608,9 @@ function editJsonObject(text: string, open: number, next: JsonObject, indent: st
     const rendered = JSON.stringify(JSON.parse(source)) === JSON.stringify(value) ? source
       : text[member.valueStart] === "{" && isObject(value) ? editJsonObject(text, member.valueStart, value, lineIndent(memberSpace), unit)
       : render(value, lineIndent(memberSpace));
-    parts.push(`${memberSpace}${text.slice(skipJsonSpace(text, member.start), member.valueStart)}${rendered}`);
+    const afterValue = skipJsonSpace(text, member.valueEnd);
+    const beforeComma = text[afterValue] === "," ? text.slice(member.valueEnd, afterValue) : "";
+    parts.push(`${memberSpace}${text.slice(skipJsonSpace(text, member.start), member.valueStart)}${rendered}${beforeComma}`);
   }
   const present = new Set(members.map((member) => member.key));
   for (const [key, value] of Object.entries(next)) {
