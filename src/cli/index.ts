@@ -502,7 +502,7 @@ export function runCandidateRuntimeReconciliation(
       target: request.target,
       require_complete: complete,
       require_adapter_projection: request.host_adapters,
-    });
+    }, env);
     return receipt;
   } catch (error) {
     const compensation = compensatePiPackages(newPiSurfaces(runtime), env);
