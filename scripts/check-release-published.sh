@@ -60,7 +60,7 @@ JS_EOF
 RUNTIME_APP="$TMP_DIR/runtime-app"
 RUNTIME_REPO="$TMP_DIR/runtime-repo"
 mkdir -p "$RUNTIME_APP" "$RUNTIME_REPO"
-git -C "$RUNTIME_REPO" init -q
+git -C "$RUNTIME_REPO" init -q -b main
 (cd "$RUNTIME_APP" && npm init -y >/dev/null && npm install "$TMP_DIR/$PACKED_TARBALL" >/dev/null)
 bun scripts/runtime-evidence-receipt.ts verify \
   --registry "$VIEW_JSON" \
