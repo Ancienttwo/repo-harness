@@ -1,5 +1,5 @@
 import { assertSessionDirectory, classicRecordRetired, taskSessionDirectory, sameSessionData, readStartIntent, readTaskAgent, readTaskBinding,
-  type CreatedTerminal, type HerdrCoreEndpoint, type HerdrTaskAgentSpec, type HerdrTaskBinding, type ObjectOwnership, type StartIntent,
+  type CreatedTerminal, type HerdrTaskAgentSpec, type HerdrTaskBinding, type ObjectOwnership, type StartIntent,
   type TaskPaneBinding, type TerminalStartIntent, type TerminalTaskBinding } from './task-session-record';
 import { observeTaskSessionAdmission, taskBindingSha256 } from './task-session-admission';
 import { ensureSessionDirectory, nextSessionRound, processIdentity, readSessionArtifact, writeSessionArtifact, writeSessionBytes } from './task-session-io';
@@ -8,8 +8,6 @@ import { createHash, randomUUID } from 'crypto';
 import { isAbsolute, join, relative } from 'path';
 import type { TaskSessionAuthority } from '../admission/admission-source';
 import type { ProcessProof, TaskPrePromptInbox, TaskRequest, TaskResult, TaskSessionAdmission, TerminalHostSpec } from '../../core/review/runner-port';
-import { gitExecFileSync } from '../git/runner';
-import { taskSessionKey } from '../git/repository-identity';
 import { recordWorktree } from '../git/worktree-record';
 import { taskRepository } from '../git/task-repository';
 import { ExclusiveLockContentionError, withCallerLock } from '../locking/exclusive-directory-lock';

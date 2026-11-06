@@ -340,8 +340,8 @@ the old Pi package sync script remain absent.
 
 ### 插件端口由组合根传入（2026-11-02，#1398）
 
-- `doctor`、`setup check`、`init`、global runtime 和 `retention` 不再引用插件文件。每个 core 入口把插件端口作为必填的第一个参数：`DoctorPorts`、`InitPorts`、`GlobalRuntimePorts`、`RetentionPorts`。端口类型在使用它的 core 文件里。
-- 只有 `src/cli/index.ts` 的 `CLI_PORTS` 引用插件实现：CodeGraph 检查与步骤（`src/cli/commands/tools.ts`）、Herdr skill 步骤、MCP 日志路径和 task inbox 路径。测试和 setup check 子进程使用同一个 `CLI_PORTS`。
+- `doctor`、`setup check`、`init` 和 `retention` 通过必填的 `DoctorPorts`、`InitPorts`、`RetentionPorts` 接收插件端口。端口类型在使用它的 core 文件里。Global runtime 直接调用 core 的 Herdr skill installer。Doctor 直接调用 notify relay check；`attentionWatchCheck` 仍由组合根传入。
+- 只有 `src/cli/index.ts` 的 `CLI_PORTS` 引用插件实现：CodeGraph 检查与步骤（`src/cli/commands/tools.ts`）、MCP 日志路径和 task inbox 路径。测试和 setup check 子进程使用同一个 `CLI_PORTS`。
 - 端口是有名字的槽，不是列表。检查和步骤的顺序因此不变。没有默认值，缺少端口是编译错误。
 - `retention --apply` 的集合只来自 `RETENTION_CLASSES`。插件路径只进入 `--json` 的 `roots` 列表。
 - `SkillProjectionState` 移到 `src/core/skill-surface/projection-state.ts`。该文件没有 import，operator 的浏览器解码器可以打包它。
