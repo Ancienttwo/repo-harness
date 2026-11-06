@@ -1,6 +1,6 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ebc47513fa9d2a6889e8154f5a73453cf6a92b209c44754bbaa9766d1546da9d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:1ebebedfe45650e6aef1015236532922a6402ca74130a6bdb4b1dcdbe678f4a1" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`docs/kanban-runtime-status.md`、`src/effects/operator/**`、`src/operator-web/**`、`src/effects/setup/**`、`src/effects/dev-activity/**`、`vite.operator.config.ts`
@@ -93,7 +93,7 @@ flowchart LR
 入向關係:
 
 - `depends-on` ← `capability.verification.evals-checks` — Test Operator Board behavior through its source modules.
-- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the operator command
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Guard the operator, worktrees and catch-up commands on the operator selection and load their actions after the guard
 
 組件出向關係:
 
@@ -172,7 +172,7 @@ flowchart LR
 | `component.operator.cli-layer` | Operator Board (cli) | `1–2` 個文件 / `20–50` 行 | 未宣告 |
 | `component.operator.console-collectors` | Console Collectors | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.operator.core-layer` | Operator Board (core) | `2–5` 個文件 / `100–200` 行 | 未宣告 |
-| `component.operator.doc-sessions-cli` | Doc Sessions Command (cli) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
+| `component.operator.doc-sessions-cli` | Doc Sessions Command (cli) | `1–2` 個文件 / `50–100` 行 | 未宣告 |
 | `component.operator.docs-host-isolation` | Docs Host Isolation | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.operator.primary` | Operator HTTP Reader | `20–50` 個文件 / `5000–10000` 行 | `entrypoint.operator.http-server` |
 | `component.operator.primary-cli` | Operator HTTP Reader (cli) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
