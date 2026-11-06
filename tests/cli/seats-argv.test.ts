@@ -303,7 +303,8 @@ describe("repo-harness seats argv", () => {
     });
   });
 
-  test.each(["demo", "@market"])("a plugin without a manifest refuses invalid entry key %s", (key) => {
+  test("a scoped npm plugin without a manifest fails closed with the missing name cause and repair", () => {
+    const key = "@scope/pkg@npm";
     withHome(undefined, (home) => {
       rmSync(join(home, "plugin", ".claude-plugin"), { recursive: true });
       writeFileSync(join(home, ".claude", "settings.json"), JSON.stringify({ enabledPlugins: { [key]: true } }));
@@ -313,7 +314,7 @@ describe("repo-harness seats argv", () => {
       expect(result.stdout).toBe("");
       const error = JSON.parse(result.stderr);
       expect(error.error).toBe("claude_agent_types_unreadable");
-      expect(error.message).toContain(`entry ${key} has no non-empty name before @. Reinstall or disable ${key}.`);
+      expect(error.message).toContain(`entry ${key} has no manifest and its key gives no plugin name. Add a .claude-plugin/plugin.json with a name, or reinstall the plugin from a marketplace.`);
     });
   });
 
