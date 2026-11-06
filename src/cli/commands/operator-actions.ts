@@ -3,6 +3,12 @@ import { fileURLToPath } from 'node:url';
 import { version as PACKAGE_VERSION } from '../../../package.json';
 import { OPERATOR_WEB_PACKAGE_NAME } from '../../core/skill-surface/plugin-manifest';
 import { findInstalledPackageRoot, readPackageManifest } from './global-runtime';
+import { hostConfigurationRoot, assertConfigurationPath } from '../installer/configuration-ownership';
+import { inspectGlobalContext, parseReportLanguageFlag, preflightGlobalContextRefresh, setReportingLanguage } from '../installer/global-context';
+import type { OperatorLanguageSettingsAdapter } from '../../effects/operator/language-settings-route';
+import { OperatorWriteRefusal } from '../../effects/operator/write-run';
+import { acquireRuntimeTransactionLock, globalRuntimeScope } from '../../effects/locking/runtime-transaction-lock';
+import { ExclusiveLockContentionError } from '../../effects/locking/exclusive-directory-lock';
 import { RUNTIME_CAPTURE_PYTHON_UNAVAILABLE } from '../../effects/operator/runtime-capture-pty';
 import { runRuntimeCapture } from '../../effects/operator/runtime-capture';
 import { RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED } from '../../effects/operator/runtime-capture-writer';
@@ -111,6 +117,37 @@ export function resolveOperatorAssets(
   return { static_root: join(root, 'dist') };
 }
 
+export function createOperatorLanguageSettings(
+  env: NodeJS.ProcessEnv = process.env,
+  sourceRoot = fileURLToPath(new URL('../../../', import.meta.url)),
+): OperatorLanguageSettingsAdapter {
+  const home = hostConfigurationRoot(env);
+  const hosts = ['claude', 'codex'] as const;
+  return {
+    readReportingLanguage() {
+      const plan = preflightGlobalContextRefresh(sourceRoot, home, hosts, undefined);
+      return { hosts: plan.files.map((file, index) => ({
+        host: hosts[index]!, state: file.state,
+        preset: file.state === 'unsafe' || file.state === 'unreadable' || file.current === null
+          ? null : inspectGlobalContext(file.current, sourceRoot).language?.preset ?? null,
+      })) };
+    },
+    parseReportingPreset: parseReportLanguageFlag,
+    setReportingLanguage(preset) {
+      let lock;
+      try { lock = acquireRuntimeTransactionLock(globalRuntimeScope(env), { waitTimeoutMs: 1 }); }
+      catch (error) {
+        if (!(error instanceof ExclusiveLockContentionError)) throw error;
+        throw new OperatorWriteRefusal(409, 'runtime_busy', 'An install or update holds the runtime transaction lock.',
+          'Wait for repo-harness update or install to finish, then save again.');
+      }
+      try { return setReportingLanguage(home, sourceRoot, hosts, preset); }
+      finally { lock.release(); }
+    },
+    assertPolicyPath: assertConfigurationPath,
+  };
+}
+
 /**
  * Start the local server and keep the CLI alive until an interrupt signal.
  * `serve` owns the background Dev Activity, setup, notify, Bot access, CLI
@@ -120,6 +157,7 @@ export async function runOperatorServe(options: OperatorServeOptions): Promise<v
   const server = await startOperatorServer({
     ...options,
     ...resolveOperatorAssets(),
+    language_settings: createOperatorLanguageSettings(options.env),
     dev_activity_collector: true,
     setup_collector: true,
     notify_collector: true,
