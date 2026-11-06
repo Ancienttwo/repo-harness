@@ -33,7 +33,7 @@ This is the root routing contract for Claude Code and Codex. Load this before ta
 
 ## Writing
 - Write human-facing documents in the language set by `.ai/harness/policy.json#documentation.language`; keep section headers, field keys and technical terms in English.
-- Write output text in ASD-STE100 Simplified Technical English: short sentences, one idea per sentence, active voice.
+- Write output text in a plain technical style: short sentences, one idea per sentence, active voice. For `en`, follow ASD-STE100 Simplified Technical English. For `zh-CN`, write plain Chinese (简明中文) with the same rules and keep technical terms in English. For `follow-user`, use the user's language with the same rules.
 - Prefer high information density: evidence first, mechanism and business effect second. Delete process commentary, repeated summaries and transitions that exist only for completeness.
 - A conclusion must add a cause, mechanism, constraint, testable prediction or business effect.
 
