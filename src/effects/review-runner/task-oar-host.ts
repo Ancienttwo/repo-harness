@@ -94,10 +94,10 @@ export async function runHostFileRequest(host: OarReviewHost, spec: ReviewHostSp
       recordPrePromptInboxAccepted({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId,
         host: spec.kind, consumed_at, observation: snapshot });
     }, spec.timeoutMs);
-  if (run.kind === 'ended' && run.outcome.kind === 'failed' && run.outcome.failure === 'auth') throw new Error('OAR_REVIEW_AUTH_STOP');
-  // A handled input has no turn and cannot satisfy the ended-and-completed review check.
+  if (run.kind !== 'rejected' && run.kind !== 'handled' && run.outcome.kind === 'failed' && run.outcome.failure === 'auth') throw new Error('OAR_REVIEW_AUTH_STOP');
+  // Rejected and handled inputs have no turn outcome.
   const observation = { request_id: request.request_id, kind: run.kind,
-    outcome: run.kind === 'ended' ? run.outcome.kind : null, actual_model: host.model(spec.kind) };
+    outcome: run.kind !== 'rejected' && run.kind !== 'handled' ? run.outcome.kind : null, actual_model: host.model(spec.kind) };
   writeSessionArtifact(join(spec.controlDirectory, `observed-${request.round}.json`), observation);
   return observation;
 }

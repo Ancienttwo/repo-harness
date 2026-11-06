@@ -151,8 +151,8 @@ export async function promptWithOarObservation(session: Session, kind: string, r
     // from the reused Session must never become this request's outcome.
     snapshot.control = run.result.kind;
     snapshot.rejection = run.kind === 'rejected' ? run.code : null;
-    snapshot.outcome = run.kind === 'ended' ? run.outcome.kind : null;
-    snapshot.failure = run.kind === 'ended' && run.outcome.kind === 'failed' ? run.outcome.failure : null;
+    snapshot.outcome = run.kind !== 'rejected' && run.kind !== 'handled' ? run.outcome.kind : null;
+    snapshot.failure = run.kind !== 'rejected' && run.kind !== 'handled' && run.outcome.kind === 'failed' ? run.outcome.failure : null;
     snapshot.actual_model = oarActualModel(kind, session);
     return run;
   } finally {
