@@ -38,6 +38,7 @@ import {
   COMMAND_PLUGINS,
   HOST_PROGRAM_PLUGINS,
   installSelectionCommand,
+  UPDATE_COMMAND,
   isCommandPlugin,
   isHostProgramPlugin,
   isSurfaceOwner,
@@ -156,8 +157,6 @@ export interface SelectionResolution {
   /** Plugins that a complete refresh would add; a partial refresh never grows the recorded set. */
   readonly notAdded: readonly PluginId[];
 }
-
-const UPDATE_COMMAND = 'repo-harness update';
 
 interface HostSurfaceSnapshot {
   readonly path: string;

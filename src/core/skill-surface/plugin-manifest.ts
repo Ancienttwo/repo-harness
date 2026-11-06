@@ -88,6 +88,9 @@ export function ownerEnabled(owner: SurfaceOwner, plugins: readonly PluginId[]):
   return owner === "core" || plugins.includes(owner);
 }
 
+/** Refreshes the recorded selection; a recorded `all` gains every plugin that this host can run. */
+export const UPDATE_COMMAND = "repo-harness update";
+
 /**
  * The install command that records this selection: `all` stays `all` (a bare
  * install, so the set keeps growing), and a list stays that exact list.

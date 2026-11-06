@@ -1,5 +1,5 @@
 import { declareArchitectureAbsent, registerArchitecturePorts, type ArchitecturePorts } from '../../core/architecture/contracts';
-import { installSelectionCommand, PLUGIN_IDS, type PluginId } from '../../core/skill-surface/plugin-manifest';
+import { installSelectionCommand, PLUGIN_IDS, UPDATE_COMMAND, type PluginId, type PluginSelection } from '../../core/skill-surface/plugin-manifest';
 import { enabledPlugins, installProfileStatePath, InstallStateError, readRecordedInstallState } from './install-state';
 
 /**
@@ -8,7 +8,7 @@ import { enabledPlugins, installProfileStatePath, InstallStateError, readRecorde
  * core only until `repo-harness install` records a selection.
  */
 export type RecordedSelection =
-  | { readonly status: 'recorded'; readonly plugins: readonly PluginId[] }
+  | { readonly status: 'recorded'; readonly selection: PluginSelection; readonly plugins: readonly PluginId[] }
   | { readonly status: 'none' }
   | { readonly status: 'unreadable'; readonly error: InstallStateError };
 
@@ -20,7 +20,7 @@ export type RecordedSelection =
 export function readRecordedSelection(env: NodeJS.ProcessEnv = process.env): RecordedSelection {
   try {
     const state = readRecordedInstallState(env);
-    return state === null ? { status: 'none' } : { status: 'recorded', plugins: enabledPlugins(state) };
+    return state === null ? { status: 'none' } : { status: 'recorded', selection: state.selection, plugins: enabledPlugins(state) };
   } catch (error) {
     if (error instanceof InstallStateError) return { status: 'unreadable', error };
     throw error;
@@ -37,13 +37,19 @@ export function recordedPlugins(selection: RecordedSelection): readonly PluginId
   return selection.status === 'recorded' ? selection.plugins : [];
 }
 
-/** The install command that keeps these plugins and adds `added`; with no recorded state, the default install. */
-export function pluginRepair(added: PluginId, plugins: readonly PluginId[] | null): string {
-  return plugins === null ? installSelectionCommand('all') : installSelectionCommand(PLUGIN_IDS.filter(id => plugins.includes(id) || id === added));
+/**
+ * The command that adds `added` and keeps this selection: `update` grows `all`,
+ * because an explicit list would end it. A list stays that list plus `added`;
+ * with no recorded state, the default install.
+ */
+export function pluginRepair(added: PluginId, selection: PluginSelection | null): string {
+  if (selection === null) return installSelectionCommand('all');
+  if (selection === 'all') return UPDATE_COMMAND;
+  return installSelectionCommand(PLUGIN_IDS.filter(id => selection.includes(id) || id === added));
 }
 
 function notSelectedMessage(selection: RecordedSelection, id: PluginId): string {
-  return `the ${id} plugin is not selected; run: ${pluginRepair(id, selection.status === 'recorded' ? selection.plugins : null)}`;
+  return `the ${id} plugin is not selected; run: ${pluginRepair(id, selection.status === 'recorded' ? selection.selection : null)}`;
 }
 
 export type ArchitectureSelectionReport =

@@ -12,6 +12,9 @@ All notable changes to this skill are documented here.
   The web client and the server ship together, so an open page must reload. A
   stored summary shows as unavailable until the next board read writes it.
   (#1867)
+- A plugin command guard on a recorded `all` selection now prints
+  `repo-harness update`. An explicit `--plugins` list ended `all`, so later
+  plugins did not join at `update`. (#1869)
 
 ## [0.26.5] - 2026-11-06
 
