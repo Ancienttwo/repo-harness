@@ -114,13 +114,20 @@ Files that pass between writers in sequence: `src/cli/index.ts` (P7-1, then P7-3
 
 ## Work units
 
-The units are GitHub issues with their tier, parent and blocked-by links. Each body is self-contained for a worker that has only the repository and GitHub.
+The units are GitHub issues with their tier, parent and blocked-by links. Each body is self-contained for a worker that has only the repository and GitHub. The merge order, holds and seats are in the [#1287 plan comment](https://github.com/Ancienttwo/repo-harness/issues/1287#issuecomment-6681514481).
 
-- P7-1, P7-2, P7-3: children of #1861.
-- Step 4 units 1 to 4: children of #1287. A fifth unit (the Worker package) exists only if Q-W is "split".
-- The `/healthz` unit: child of #1298.
+| Unit | Issue | Parent | Tier | Blocked by |
+|---|---|---|---|---|
+| P7-1: core owns the worktree runtime closeout, the Herdr skill and the agent fleet | #1887 | #1861 | High | owner P7-Q1 to P7-Q4 |
+| P7-2: the GitHub App hook config goes through core publication | #1888 | #1861 | High | owner P7-Q2 |
+| P7-3: the peer-runtime selection gates review rounds, herdr, events and the investigation job | #1889 | #1861 | High | #1887, #1888 |
+| `/healthz` reports desktop protocol 2 and the server package version | #1890 | #1298 | Medium | owner Q2 |
+| Step 4.1: ship the console as `repo-harness-operator-web` | #1891 | #1287 | High | #1861, #1890, the 0.26.6 publication, owner Q3a |
+| Step 4.2: `install` and `update` install the console | #1892 | #1287 | High | #1891 |
+| Step 4.3: the release gate and the published check cover both packages | #1893 | #1287 | High | #1891 |
+| Step 4.4: prepare 0.27.0 | #1894 | #1287 | High | #1891, #1892, #1893, owner Q3b and Q3c |
 
-Issue links: added before this PR merges.
+A fifth step 4 unit (the Worker package) exists only if the owner answers Q-W with "split".
 
 ## Not covered
 
