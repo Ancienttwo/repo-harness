@@ -1,6 +1,6 @@
 {
   "name": "repo-harness-operator-web",
-  "version": "0.26.5",
+  "version": "0.26.6",
   "description": "Built web console for the matching repo-harness CLI version",
   "license": "MIT",
   "repository": {

@@ -2,6 +2,16 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- The built Operator console ships in `repo-harness-operator-web` at the same
+  version as the CLI. Core packages and installed skill copies exclude the
+  console build and source. Page requests return 503 when the console is
+  absent or has another version; API routes and `/healthz` stay available.
+  Run `repo-harness update`, restart the server and reload the page. (#1891)
+
 ## [0.26.6] - 2026-11-06
 
 This release adds the `peer-runtime` command gate, binds managed hooks to
@@ -40,11 +50,6 @@ protocol 2. OAR is pinned to 0.91.0. The hook route registry is unchanged.
 
 ### Changed
 
-- The built Operator console ships in `repo-harness-operator-web` at the same
-  version as the CLI. Core packages and installed skill copies exclude the
-  console build and source. Page requests return 503 when the console is
-  absent or has another version; API routes and `/healthz` stay available.
-  Run `repo-harness update`, restart the server and reload the page. (#1891)
 - Operator `/healthz` now returns protocol 2 and the core package version.
   The protocol is the desktop integration contract. UI-only changes do not
   bump it. (#1890, #1897)
