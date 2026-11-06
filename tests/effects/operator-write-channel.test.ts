@@ -375,7 +375,7 @@ describe('operator write channel', () => {
   });
 
   test('the CLI serve path passes no write routes and no route inventory', async () => {
-    const { parseOperatorServeOptions } = await import('../../src/cli/commands/operator');
+    const { parseOperatorServeOptions } = await import('../../src/cli/commands/operator-actions');
     const parsed = parseOperatorServeOptions({ port: '0', write_routes: [echoRoute(() => { throw new Error('unused'); })], route_inventory: [] } as never);
     expect(Object.keys(parsed)).not.toContain('write_routes');
     expect(Object.keys(parsed)).not.toContain('route_inventory');

@@ -35,6 +35,7 @@ import {
   type SkillSurfaceCatalog,
 } from '../../core/skill-surface/catalog';
 import {
+  COMMAND_PLUGINS,
   HOST_PROGRAM_PLUGINS,
   installSelectionCommand,
   isCommandPlugin,
@@ -1325,6 +1326,15 @@ export function keptPluginLine(entry: KeptPlugin): string {
 
 export function notAddedPluginLine(id: PluginId): string {
   return `not added ${id} in a partial refresh; run: ${UPDATE_COMMAND}`;
+}
+
+/** The O3 repair of an explicit list: one command for every unselected command plugin, because a second command would drop the first id. */
+export function commandPluginRepairLines(selection: PluginSelection): string[] {
+  if (selection === 'all') return [];
+  const missing = COMMAND_PLUGINS.filter(id => !selection.includes(id));
+  if (missing.length === 0) return [];
+  const repair = installSelectionCommand(PLUGIN_IDS.filter(id => selection.includes(id) || isCommandPlugin(id)));
+  return [`[plugins] not selected ${missing.join(', ')}: an explicit list does not grow; to add them, run: ${repair}`];
 }
 
 /**

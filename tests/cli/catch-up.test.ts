@@ -7,6 +7,7 @@ import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { collectDevActivity } from '../../src/effects/dev-activity/collector';
 import { readRepoHarnessRegistryStrictSnapshot, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { recordPluginSelection } from '../helpers/install-ownership';
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -62,6 +63,7 @@ if (command === 'git') {
     chmodSync(join(bin, command), 0o755);
   }
   const env = { ...process.env, HOME: home, USERPROFILE: home, REPO_HARNESS_HOME: harnessHome, PATH: `${bin}:${process.env.PATH}`, CATCH_UP_ARGV_LOG: log };
+  recordPluginSelection(env, ['operator']);
   return { root, repos, registry, env, log };
 }
 

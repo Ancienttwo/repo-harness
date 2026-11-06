@@ -10,7 +10,7 @@ import { versions } from '../../src/cli/installer/install-profile';
 import { installProfileStatePath } from '../../src/cli/installer/install-state';
 import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
 
-const FULL_PLUGINS: readonly PluginId[] = ['architecture', 'cross-review', 'mcp', 'peer-runtime', 'platform', 'product', 'strategy-memory'];
+const FULL_PLUGINS: readonly PluginId[] = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory'];
 
 const ROOT = path.join(import.meta.dir, '..', '..');
 

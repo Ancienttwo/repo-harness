@@ -69,13 +69,10 @@ import { AgentsConfigurationError } from '../configuration/agents-configuration'
 import type { AgentRuntimesCacheV1 } from '../../core/board/agents-settings';
 import { OPERATOR_SESSION_EVENTS_ROUTE } from './doc-session-events';
 import { OPERATOR_SESSIONS_ROUTE, docSessionCreateRoute } from './doc-session';
-import { OPERATOR_DEFAULT_PORT } from '../../core/review/operator-console-port';
+import { OPERATOR_DEFAULT_HOST, OPERATOR_DEFAULT_MAX_CONCURRENCY, OPERATOR_DEFAULT_PORT, OPERATOR_DEFAULT_TIMEOUT_MS } from '../../core/review/operator-console-port';
 
 export const OPERATOR_SERVER_PROTOCOL = 1 as const;
 export const OPERATOR_SERVICE_NAME = 'repo-harness-operator' as const;
-export const OPERATOR_DEFAULT_HOST = '127.0.0.1' as const;
-export const OPERATOR_DEFAULT_MAX_CONCURRENCY = 4 as const;
-export const OPERATOR_DEFAULT_TIMEOUT_MS = 30_000 as const;
 const OPERATOR_WORKER_CLEANUP_GRACE_MS = 500;
 const OPERATOR_JOB_CONTROLLER_ACK_TIMEOUT_MS = 5_000;
 

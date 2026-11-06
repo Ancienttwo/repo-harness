@@ -55,8 +55,8 @@ const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
 
 /** What `all` resolves to on a host without `pi` on PATH. */
-const ALL_PLUGINS = ['architecture', 'cross-review', 'mcp', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const satisfies readonly PluginId[];
-const ALL_WITH_PI = ['architecture', 'cross-review', 'mcp', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory'] as const satisfies readonly PluginId[];
+const ALL_PLUGINS = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const satisfies readonly PluginId[];
+const ALL_WITH_PI = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory'] as const satisfies readonly PluginId[];
 /** The plugins that own a host file: a command plugin has no probe row and no owned surface. */
 const SURFACE_PLUGINS = ALL_PLUGINS.filter(id => !isCommandPlugin(id));
 const CORE_FACADES = ['repo-harness-check', 'repo-harness-issue-flow', 'repo-harness-ship', 'repo-harness-test'];
@@ -312,7 +312,7 @@ describe('install selection', () => {
   }));
 
   test('install state protocol 3 names the plugins, and every hook route is core', () => withHome((env) => {
-    expect(PLUGIN_IDS).toEqual(['architecture', 'cross-review', 'mcp', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory']);
+    expect(PLUGIN_IDS).toEqual(['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory']);
     expect(Object.values(buildManagedHooks('codex')).flat()).toHaveLength(5);
     expect(Object.values(buildManagedHooks('claude')).flat()).toHaveLength(6);
     expect(planInstallSelection('all', { run: ALL_PLUGINS, record: ALL_PLUGINS }, null, env).protocol).toBe(3);
@@ -1217,6 +1217,14 @@ describe('install selection', () => {
       },
       { name: 'explicit list, pi appears: the list does not grow', selection: ALL_PLUGINS, recorded: ALL_PLUGINS, pi: [false, true], ran: ALL_PLUGINS, committed: null },
       {
+        name: 'explicit list without both command plugins: one repair keeps the list and adds both', selection: ['architecture', 'product'], recorded: ['architecture', 'product'], pi: [false, false], ran: ['architecture', 'product'],
+        lines: ['[plugins] not selected mcp, operator: an explicit list does not grow; to add them, run: repo-harness install --plugins architecture,mcp,operator,product'], committed: null,
+      },
+      {
+        name: 'explicit list without operator: the repair adds operator', selection: ['mcp'], recorded: ['mcp'], pi: [false, false], ran: ['mcp'],
+        lines: ['[plugins] not selected operator: an explicit list does not grow; to add them, run: repo-harness install --plugins mcp,operator'], committed: null,
+      },
+      {
         name: 'all, recorded pi disappears: kept with its line', selection: 'all', recorded: ALL_WITH_PI, pi: [true, false], ran: ALL_PLUGINS,
         lines: [`[plugins] kept pi: pi is not on PATH; update keeps the recorded plugin; to remove it, run: ${keptCommand}`], committed: null,
       },
@@ -1244,6 +1252,8 @@ describe('install selection', () => {
       });
       expect({ name: row.name, exitCode: result.exitCode, ran }).toEqual({ name: row.name, exitCode: 0, ran: [[...row.ran]] });
       for (const line of row.lines ?? []) expect(result.lines.some(entry => entry.startsWith(line)), `${row.name}: ${line}`).toBe(true);
+      const notSelected = (lines: readonly string[]) => lines.filter(line => line.startsWith('[plugins] not selected'));
+      expect(notSelected(result.lines), row.name).toEqual(notSelected(row.lines ?? []));
       if (row.committed === null) {
         expect(readFileSync(statePath), row.name).toEqual(before);
         return;

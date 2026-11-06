@@ -9,6 +9,7 @@ import { CodexRuntimeDecoder, OscRuntimeDecoder, OSC7501_QUERY } from '../../src
 import { RuntimeCaptureWriter, RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED } from '../../src/effects/operator/runtime-capture-writer';
 import { RUNTIME_CAPTURE_PYTHON_UNAVAILABLE } from '../../src/effects/operator/runtime-capture-pty';
 import { runRuntimeCapture } from '../../src/effects/operator/runtime-capture';
+import { pluginSelectionEnv } from '../helpers/install-ownership';
 
 const HAS_CAPTURE_OWNERSHIP = typeof process.getuid === 'function';
 const HAS_CAPTURE_PTY = HAS_CAPTURE_OWNERSHIP && ['darwin', 'linux'].includes(process.platform);
@@ -153,11 +154,11 @@ describe.skipIf(!HAS_CAPTURE_OWNERSHIP)('owned child transport (fixtures do not 
     expect(Buffer.concat(diagnostic.chunks).toString()).not.toMatch(/255|stdio|capture.json/);
   });
   test('CLI -- preserves argv and stderr independently; existing target does not spawn', async () => {
-    const dir = root(), path = join(dir, 'cli.json');
-    const p = Bun.spawn([process.execPath, 'src/cli/index.ts', 'operator', 'capture', '--provider', 'codex', '--source-id', 'cli', '--snapshot', path, '--', process.execPath, '-e', 'process.stdout.write(JSON.stringify(process.argv.slice(1)));process.stderr.write("independent stderr");process.exit(9)', '--', '--secret-arg'], { cwd: process.cwd(), stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
+    const dir = root(), path = join(dir, 'cli.json'), env = pluginSelectionEnv(['operator']);
+    const p = Bun.spawn([process.execPath, 'src/cli/index.ts', 'operator', 'capture', '--provider', 'codex', '--source-id', 'cli', '--snapshot', path, '--', process.execPath, '-e', 'process.stdout.write(JSON.stringify(process.argv.slice(1)));process.stderr.write("independent stderr");process.exit(9)', '--', '--secret-arg'], { cwd: process.cwd(), env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
     const [stdout, stderr, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
     expect(code).toBe(9); expect(stdout).toBe('["--secret-arg"]'); expect(stderr).toContain('independent stderr');
-    const p2 = Bun.spawn([process.execPath, 'src/cli/index.ts', 'operator', 'capture', '--provider', 'codex', '--source-id', 'cli', '--snapshot', path, '--', process.execPath, '-e', 'console.log("should not spawn")'], { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
+    const p2 = Bun.spawn([process.execPath, 'src/cli/index.ts', 'operator', 'capture', '--provider', 'codex', '--source-id', 'cli', '--snapshot', path, '--', process.execPath, '-e', 'console.log("should not spawn")'], { env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
     expect(await new Response(p2.stdout).text()).toBe(''); expect(await p2.exited).toBe(1);
   });
   test('Codex snapshot failure keeps the child output and exposes no payload', async () => {
@@ -384,7 +385,7 @@ describe.skipIf(!HAS_CAPTURE_OWNERSHIP)('review regression: bounded capture reti
 test.skipIf(HAS_CAPTURE_OWNERSHIP)('missing uid rejects real capture before snapshot creation and child spawn', async () => {
   const dir = root(), path = join(dir, 'capture.json'), marker = join(dir, 'child-started');
   const childScript = `await Bun.write(${JSON.stringify(marker)}, 'started');`;
-  const p = Bun.spawn([process.execPath, 'src/cli/index.ts', 'operator', 'capture', '--provider', 'codex', '--source-id', 'unsupported', '--snapshot', path, '--', process.execPath, '-e', childScript], { cwd: process.cwd(), stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
+  const p = Bun.spawn([process.execPath, 'src/cli/index.ts', 'operator', 'capture', '--provider', 'codex', '--source-id', 'unsupported', '--snapshot', path, '--', process.execPath, '-e', childScript], { cwd: process.cwd(), env: pluginSelectionEnv(['operator']), stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' });
   const [code, stdout, stderr] = await Promise.all([p.exited, new Response(p.stdout).text(), new Response(p.stderr).text()]);
   expect(code).toBe(1); expect(stdout).toBe('');
   expect(JSON.parse(stderr)).toEqual({ ok: false, error: RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED });

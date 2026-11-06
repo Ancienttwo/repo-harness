@@ -36,7 +36,7 @@ export function recordInstallOwnership(paths: string[], env: NodeJS.ProcessEnv):
   });
   const statePath = installProfileStatePath(env);
   mkdirSync(dirname(statePath), { recursive: true });
-  writeFileSync(statePath, JSON.stringify({ protocol: 3, ...versions(['architecture', 'cross-review', 'mcp', 'peer-runtime', 'platform', 'product', 'strategy-memory']), selection: 'all',
+  writeFileSync(statePath, JSON.stringify({ protocol: 3, ...versions(['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory']), selection: 'all',
     transaction_id: 'owned-upgrade-fixture', applied_at: new Date().toISOString(), ownership_manifest, previous: null }));
 }
 

@@ -194,8 +194,8 @@ sequenceDiagram
 | Run a workflow helper | `repo-harness run <helper>` |
 | Board for a parent issue | `repo-harness board --parent <n> --json` |
 | List open parent issues | `repo-harness board parents --json` |
-| Open the local console | `repo-harness operator serve` |
-| Clean up finished worktrees | `repo-harness worktrees list` → `repo-harness worktrees clean --ids … --expected-digest …` |
+| Open the local console (needs the `operator` plugin: `repo-harness install --plugins <your plugins>,operator`) | `repo-harness operator serve` |
+| Clean up finished worktrees (needs the `operator` plugin) | `repo-harness worktrees list` → `repo-harness worktrees clean --ids … --expected-digest …` |
 | Architecture facts / review prompt | `repo-harness module list --json` · `repo-harness module review-prompt <capability> --json` |
 | Refactor suggestions | `repo-harness refactor recommendations` · `repo-harness refactor decide <id> accept\|defer\|reject --reason "…"` |
 | Acceptance review | `repo-harness review round\|status\|close …` ([details](docs/usage.md#persistent-acceptance-review)) |
@@ -237,7 +237,8 @@ flowchart LR
 
 `repo-harness operator serve` starts a local web board on loopback only. It
 shows what needs you, what to continue, stage counts and today's merges across
-every registered repository.
+every registered repository. It needs the `operator` plugin, which an `all`
+selection includes.
 
 <img src="docs/images/operator-console/console-home.png" alt="repo-harness operator console home page with Needs you, Continue, Stages and Today panels" width="900">
 

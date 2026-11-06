@@ -28,7 +28,7 @@ const ARCHCTX_CONTRACTS_PIN = dependencies['archctx-contracts'];
 const CODEGRAPH_PIN = devDependencies['@colbymchenry/codegraph'];
 const CLI = join(ROOT, 'src/cli/index.ts');
 const OBSIDIAN_PROVIDER = 'kepano/obsidian-skills#a1dc48e68138490d522c04cbf5822214c6eb1202';
-const FULL_PLUGINS = ['architecture', 'cross-review', 'mcp', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const;
+const FULL_PLUGINS = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const;
 
 // An explicit list never grows, so a host `pi` on the developer PATH cannot change the recorded selection.
 function recordExplicitFullSelection(home: string): void {

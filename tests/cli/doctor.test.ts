@@ -29,7 +29,7 @@ import { HC_MIN_VERSION } from '../../src/core/terminal/herdr-pin';
 
 const DOCTOR_CHECK_TIMEOUT_MS = 15000;
 // The default selection on a host without `pi` on PATH.
-const FULL_PLUGINS: readonly PluginId[] = ['architecture', 'cross-review', 'mcp', 'peer-runtime', 'platform', 'product', 'strategy-memory'];
+const FULL_PLUGINS: readonly PluginId[] = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory'];
 // No ledger: the doctor judges the install default `all`, so the repair is a bare install.
 const DEFAULT_FIX = installSelectionCommand('all');
 const DEFAULT_FIX_LINE = /run: repo-harness install(?:;|$)/m;
