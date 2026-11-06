@@ -288,68 +288,6 @@ if (snapshot.protocol !== 1 || snapshot.kind !== "repo-harness-state-snapshot") 
 }
 JS_EOF
 
-(cd "$APP_DIR" && bun - "$CLI" "$TARGET_REPO" >"$TMP_DIR/mcp-state.json" <<'JS_EOF'
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-
-const [, , cli, repo] = process.argv;
-const client = new Client({ name: "repo-harness-tarball-smoke", version: "0" }, { capabilities: {} });
-try {
-  const transport = new StdioClientTransport({
-    command: cli,
-    args: ["mcp", "serve", "--repo", repo, "--profile", "planner"],
-    cwd: repo,
-    stderr: "pipe",
-  });
-  await client.connect(transport);
-  const result = await client.callTool({ name: "summarize_repo_harness_state", arguments: {} });
-  const first = result.content?.[0];
-  if (!first || first.type !== "text") throw new Error("expected MCP text result");
-  console.log(first.text);
-} finally {
-  await client.close().catch(() => undefined);
-}
-JS_EOF
-)
-
-bun - "$TMP_DIR/effective-state.json" "$TMP_DIR/mcp-state.json" <<'JS_EOF'
-const [, , statePath, mcpPath] = process.argv;
-const state = await Bun.file(statePath).json();
-const mcp = await Bun.file(mcpPath).json();
-const fields = [
-  "protocol",
-  "kind",
-  "task_id",
-  "phase",
-  "state_version",
-  "state_revision",
-  "workflow_profile",
-  "requested_workflow_profile",
-  "risk_floor",
-  "profile_reasons",
-  "blockers",
-  "stale_sources",
-  "conflicting_sources",
-  "next_action",
-];
-for (const field of fields) {
-  if (JSON.stringify(state[field]) !== JSON.stringify(mcp[field])) {
-    console.error(`[tarball-smoke] ERROR: MCP state field ${field} diverged from packed CLI`);
-    process.exit(1);
-  }
-}
-if (
-  Object.hasOwn(mcp, "authoritative_plan") ||
-  Object.hasOwn(mcp, "current") ||
-  Object.hasOwn(mcp, "current_preview") ||
-  Object.hasOwn(mcp, "current_authority") ||
-  mcp.status?.profile_authority !== "mcp-policy"
-) {
-  console.error("[tarball-smoke] ERROR: MCP compact state exposed a retired plan or current projection");
-  process.exit(1);
-}
-JS_EOF
-
 "$CLI" init --repo "$TARGET_REPO" --dry-run --json >"$TMP_DIR/init-plan.json"
 bun - "$TMP_DIR/init-plan.json" <<'JS_EOF'
 const [, , path] = process.argv;
@@ -563,5 +501,109 @@ run_recorded_selection_hook PreToolUse edit \
   "{\"session_id\":\"tarball-smoke\",\"hook_event_name\":\"PreToolUse\",\"cwd\":\"$TARGET_REPO\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$TARGET_REPO/notes.txt\",\"content\":\"x\"}}"
 run_recorded_selection_hook Stop default \
   "{\"session_id\":\"tarball-smoke\",\"hook_event_name\":\"Stop\",\"cwd\":\"$TARGET_REPO\",\"stop_hook_active\":false}"
+
+# `mcp serve` needs the mcp plugin, so the MCP steps run on the recorded `all`
+# selection. Resolve here: the hook runs above can change the state fields.
+(cd "$TARGET_REPO" && "$CLI" state resolve --json) >"$TMP_DIR/effective-state.json"
+
+(cd "$APP_DIR" && bun - "$CLI" "$TARGET_REPO" >"$TMP_DIR/mcp-state.json" <<'JS_EOF'
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+
+const [, , cli, repo] = process.argv;
+const client = new Client({ name: "repo-harness-tarball-smoke", version: "0" }, { capabilities: {} });
+try {
+  const transport = new StdioClientTransport({
+    command: cli,
+    args: ["mcp", "serve", "--repo", repo, "--profile", "planner"],
+    cwd: repo,
+    stderr: "pipe",
+  });
+  await client.connect(transport);
+  const result = await client.callTool({ name: "summarize_repo_harness_state", arguments: {} });
+  const first = result.content?.[0];
+  if (!first || first.type !== "text") throw new Error("expected MCP text result");
+  console.log(first.text);
+} finally {
+  await client.close().catch(() => undefined);
+}
+JS_EOF
+)
+
+bun - "$TMP_DIR/effective-state.json" "$TMP_DIR/mcp-state.json" <<'JS_EOF'
+const [, , statePath, mcpPath] = process.argv;
+const state = await Bun.file(statePath).json();
+const mcp = await Bun.file(mcpPath).json();
+const fields = [
+  "protocol",
+  "kind",
+  "task_id",
+  "phase",
+  "state_version",
+  "state_revision",
+  "workflow_profile",
+  "requested_workflow_profile",
+  "risk_floor",
+  "profile_reasons",
+  "blockers",
+  "stale_sources",
+  "conflicting_sources",
+  "next_action",
+];
+for (const field of fields) {
+  if (JSON.stringify(state[field]) !== JSON.stringify(mcp[field])) {
+    console.error(`[tarball-smoke] ERROR: MCP state field ${field} diverged from packed CLI`);
+    process.exit(1);
+  }
+}
+if (
+  Object.hasOwn(mcp, "authoritative_plan") ||
+  Object.hasOwn(mcp, "current") ||
+  Object.hasOwn(mcp, "current_preview") ||
+  Object.hasOwn(mcp, "current_authority") ||
+  mcp.status?.profile_authority !== "mcp-policy"
+) {
+  console.error("[tarball-smoke] ERROR: MCP compact state exposed a retired plan or current projection");
+  process.exit(1);
+}
+JS_EOF
+
+# The selection gates the MCP code in the installed package: the #1833
+# require.cache probe, on the `all` state and then on selection [].
+MCP_LOAD_PROBE="$TMP_DIR/mcp-load-probe.ts"
+cat >"$MCP_LOAD_PROBE" <<'JS_EOF'
+process.on("exit", () => process.stderr.write(`mcp-modules:${Object.keys(require.cache).filter((path) => /[\\/]src[\\/]cli[\\/]mcp[\\/]|@modelcontextprotocol[\\/]/.test(path)).length}\n`));
+JS_EOF
+bun - "$INSTALLED_ROOT" "$SMOKE_HOME" "$TARGET_REPO" "$MCP_LOAD_PROBE" <<'JS_EOF'
+const [, , installedRoot, home, repo, probe] = process.argv;
+const { readFileSync, writeFileSync } = await import('node:fs');
+const { join } = await import('node:path');
+const fail = (message) => {
+  console.error(`[tarball-smoke] ERROR: ${message}`);
+  process.exit(1);
+};
+const run = (...args) => {
+  const result = Bun.spawnSync([process.execPath, '--preload', probe, `${installedRoot}/src/cli/index.ts`, ...args], {
+    cwd: repo, stdin: 'ignore', env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' },
+  });
+  const stderr = result.stderr.toString();
+  return { status: result.exitCode, stdout: result.stdout.toString(), stderr, loaded: Number(/mcp-modules:(\d+)/.exec(stderr)?.[1]) };
+};
+const serve = ['mcp', 'serve', '--repo', repo, '--profile', 'planner'];
+const selected = run(...serve);
+if (selected.status !== 0 || !(selected.loaded > 0)) fail(`mcp serve with all returned ${selected.status} and loaded ${selected.loaded} MCP modules`);
+const statePath = join(home, '.repo-harness', 'install-state.json');
+writeFileSync(statePath, JSON.stringify({ ...JSON.parse(readFileSync(statePath, 'utf8')), plugins: [], selection: [] }));
+const refused = run(...serve);
+if (refused.status !== 1 || refused.stdout !== '' || refused.loaded !== 0) {
+  fail(`mcp serve with selection [] returned ${refused.status}, ${refused.stdout.length} stdout bytes and ${refused.loaded} MCP modules`);
+}
+if (!refused.stderr.includes('install_plugin_unavailable: ') || !refused.stderr.includes('run: repo-harness install --plugins mcp\n')) {
+  fail(`mcp serve with selection [] did not print the code and the repair: ${refused.stderr}`);
+}
+const status = run('status', '--json');
+if (status.status !== 0 || status.loaded !== 0) fail(`status --json with selection [] returned ${status.status} and loaded ${status.loaded} MCP modules`);
+console.log(`[tarball-smoke] OK: mcp serve loads ${selected.loaded} MCP modules with all, 0 with selection []; status --json loads 0.`);
+JS_EOF
 
 echo "[tarball-smoke] OK: ${PACKAGE_NAME}-${PACKAGE_VERSION}.tgz installs, serves the packaged Operator, and packaged CLI bins start."

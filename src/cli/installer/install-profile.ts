@@ -37,6 +37,7 @@ import {
 import {
   HOST_PROGRAM_PLUGINS,
   installSelectionCommand,
+  isCommandPlugin,
   isHostProgramPlugin,
   isSurfaceOwner,
   ownerEnabled,
@@ -1199,6 +1200,7 @@ function probeOwners(plugins: readonly PluginId[], env: NodeJS.ProcessEnv): Part
   const hosts = selectedSkillHosts(plugins);
   const probes: Partial<Record<SurfaceOwner, OwnerProbe>> = { core: probeCore(env, catalog, hosts) };
   for (const id of plugins) {
+    if (isCommandPlugin(id)) continue;
     if (id === 'pi') probes.pi = probePi(env);
     else probes[id] = probe({ skills: completeHostSkillSetEvidence(home, hosts, ownedProbeSkills(catalog, id), env) });
   }

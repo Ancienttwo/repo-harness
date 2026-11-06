@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { DEFAULT_ARCHIVE_ROOT, readRetentionConfig, runArtifactRetention } from '../../src/effects/artifact-retention';
 import { formatRetentionReport } from '../../src/cli/commands/retention';
+import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
 import { runCliInProcess } from '../helpers/cli-in-process';
+import { pluginSelectionEnv } from '../helpers/install-ownership';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 9, 13);
@@ -332,11 +334,15 @@ describe('retention command', () => {
     expect(statSync(join(root, DEFAULT_ARCHIVE_ROOT, '.ai/harness/checks/old.log')).isFile()).toBe(true);
   });
 
-  test('--json lists every harness storage root with its retention rule', async () => {
+  test('--json lists every harness storage root with its retention rule, and the MCP logs only for a selected plugin', () => {
     const root = fixture();
-    const result = await runCliInProcess(['retention', '--repo', root, '--json'], root, process.env);
-    expect(result.status).toBe(0);
-    const report = JSON.parse(result.stdout) as { roots: { path: string; rule: string; detail: string }[] };
+    const listRoots = (plugins: readonly PluginId[]) => {
+      const env = pluginSelectionEnv(plugins); roots.push(env.HOME!);
+      const result = spawnSync(process.execPath, [join(import.meta.dir, '../../src/cli/index.ts'), 'retention', '--repo', root, '--json'], { cwd: root, encoding: 'utf8', env });
+      expect(result.status).toBe(0);
+      return JSON.parse(result.stdout) as { roots: { path: string; rule: string; detail: string }[] };
+    };
+    const report = listRoots(['mcp']);
     expect(report.roots.map((entry) => [entry.path, entry.rule])).toEqual([
       ['.ai/harness/checks', 'archive'],
       ['.ai/harness/runs', 'archive'],
@@ -359,5 +365,6 @@ describe('retention command', () => {
     ]);
     expect(report.roots.find((entry) => entry.rule === 'delete')?.detail).toBe('archived entries are deleted 90 days after their newest write');
     expect(report.roots[0]?.detail).toBe(`check-logs move to ${DEFAULT_ARCHIVE_ROOT} after 30 days`);
+    expect(listRoots([]).roots.map(entry => entry.path)).toEqual(report.roots.map(entry => entry.path).filter(path => !path.startsWith('.ai/harness/mcp/')));
   });
 });

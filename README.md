@@ -200,7 +200,7 @@ sequenceDiagram
 | Refactor suggestions | `repo-harness refactor recommendations` · `repo-harness refactor decide <id> accept\|defer\|reject --reason "…"` |
 | Acceptance review | `repo-harness review round\|status\|close …` ([details](docs/usage.md#persistent-acceptance-review)) |
 | Merge an accepted PR | `repo-harness publication merge` ([policy](docs/control-bot-boundary.md#bot-modes-and-merge)) |
-| MCP sidecar | `repo-harness mcp serve --repo . --profile planner` · `repo-harness mcp doctor --repo .` |
+| MCP sidecar (needs the `mcp` plugin: `repo-harness install --plugins <your plugins>,mcp`) | `repo-harness mcp serve --repo . --profile planner` · `repo-harness mcp doctor --repo .` |
 | Reference docs | `repo-harness docs list` · `repo-harness docs show harness-overview` |
 | Remove leftovers / uninstall | `repo-harness upgrade [--apply]` · `repo-harness uninstall --dry-run` |
 

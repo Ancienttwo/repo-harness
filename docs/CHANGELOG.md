@@ -9,6 +9,28 @@ All notable changes to this skill are documented here.
 - Installation refuses configuration receipts with the retired
   `mcp_servers.repo_harness` selector. Remove the retired entry from
   `~/.repo-harness/configuration-restore.json` before retrying. (#1839)
+- `mcp serve` and `mcp doctor` need the new `mcp` plugin. Selection `all`
+  gains it at the next `repo-harness update`. An explicit plugin list does not
+  gain it: add it with `repo-harness install --plugins <your plugins>,mcp`.
+  Without the plugin, each command exits 1 and prints the repair; `mcp serve`
+  prints nothing to stdout, so a client gets no JSON-RPC answer. `mcp --help`,
+  `mcp access set` and `bots` stay open. No migration runs. (#1849)
+- The text of a plugin command guard now starts with
+  `install_plugin_unavailable: `. This applies to every guarded command,
+  including `strategy` and the architecture commands. (#1849)
+
+### Upgrade
+
+- After `bun add -g repo-harness`, run `repo-harness update` to record `mcp`.
+  Until then an `all` state does not record it, and the guard prints an
+  explicit `--plugins` list. Do not run that list on an `all` state: an
+  explicit list stops `all` from growing. (#1849)
+
+### Rollback
+
+- An older CLI refuses an install state that names `mcp`, with
+  `install_state_invalid`, until a reinstall. Run `repo-harness uninstall`
+  with this CLI, then install the older CLI. (#1849)
 
 ## [0.26.4] - 2026-11-05
 
