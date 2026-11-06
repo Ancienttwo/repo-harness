@@ -133,7 +133,7 @@ function sign(fb: FrameBuffer, text: string, x: number, y: number, foreground: P
   fb.text(text, x + 2, y + 2, foreground);
 }
 
-type BubbleGlyph = 'dots' | 'x' | string;
+type BubbleGlyph = 'dots' | 'x' | 'check' | string;
 
 function bubble(fb: FrameBuffer, x: number, y: number, mark: BubbleGlyph, color: PxColor, f: number): void {
   fb.box(x, y, 17, 11, 'paper');
@@ -142,10 +142,13 @@ function bubble(fb: FrameBuffer, x: number, y: number, mark: BubbleGlyph, color:
     for (let i = 0; i < 1 + (f % 3); i += 1) fb.rect(x + 4 + i * 4, y + 5, 2, 2, color);
   } else if (mark === 'x') {
     for (let k = 0; k < 5; k += 1) { fb.px(x + 6 + k, y + 3 + k, color); fb.px(x + 10 - k, y + 3 + k, color); fb.px(x + 7 + k, y + 3 + k, color); fb.px(x + 11 - k, y + 3 + k, color); }
+  } else if (mark === 'check') {
+    for (let k = 0; k < 3; k += 1) { fb.px(x + 4 + k, y + 5 + k, color); fb.px(x + 5 + k, y + 5 + k, color); }
+    for (let k = 0; k < 5; k += 1) { fb.px(x + 7 + k, y + 7 - k, color); fb.px(x + 8 + k, y + 7 - k, color); }
   } else fb.text(mark, x + Math.floor((17 - textWidth(mark)) / 2), y + 3, color);
 }
 
-type Screen = 'coding' | 'ci_pending' | 'ci_failed' | 'stalled' | 'off';
+type Screen = 'coding' | 'ci_pending' | 'ci_failed' | 'error' | 'stalled' | 'off';
 
 function monitor(fb: FrameBuffer, x: number, y: number, screen: Screen, f: number, seed: number): void {
   fb.box(x, y, 20, 14, 'ink2');
@@ -168,6 +171,11 @@ function monitor(fb: FrameBuffer, x: number, y: number, screen: Screen, f: numbe
   } else if (screen === 'ci_failed') {
     fb.rect(sx, sy, 16, 10, f % 4 === 3 ? 'dangerDk' : 'danger');
     for (let k = 0; k < 6; k += 1) { fb.px(sx + 5 + k, sy + 2 + k, 'paper'); fb.px(sx + 10 - k, sy + 2 + k, 'paper'); }
+    fb.px(sx, sy, 'paper');
+  } else if (screen === 'error') {
+    fb.rect(sx, sy, 16, 10, 'danger');
+    fb.rect(sx + 7, sy + 2, 2, 4, 'paper');
+    fb.rect(sx + 7, sy + 7, 2, 1, 'paper');
     fb.px(sx, sy, 'paper');
   } else {
     fb.rect(sx, sy, 16, 10, 'ink');
@@ -332,10 +340,13 @@ function queuer(fb: FrameBuffer, x: number, y: number, agent: SceneAgent, ticket
   sign(fb, ticket, x + 8 - Math.floor((textWidth(ticket) + 4) / 2), y + body.top - 10 - body.hat + bob, 'ink', 'paper');
 }
 
-/** The desk states of a seat: the screen, the CI lamp, the bubble and the seated action. */
+/** The desk states of a seat: the screen, the lamp, the bubble and the seated action. */
 function deskLook(state: DeskState): Pick<DeskCell, 'screen' | 'lamp' | 'blink' | 'bubble' | 'bubbleColor'> {
   switch (state) {
+    case 'blocked': return { screen: 'stalled', lamp: 'warn', blink: true, bubble: '!', bubbleColor: 'warnDk' };
+    case 'error': return { screen: 'error', bubble: '!', bubbleColor: 'danger' };
     case 'coding': return { screen: 'coding', bubble: 'dots', bubbleColor: 'codex' };
+    case 'done': return { screen: 'off', bubble: 'check', bubbleColor: 'ok' };
     case 'ci_pending': return { screen: 'ci_pending', lamp: 'screen', bubble: 'CI', bubbleColor: 'codexDk' };
     case 'ci_failed': return { screen: 'ci_failed', lamp: 'danger', blink: true, bubble: 'x', bubbleColor: 'danger' };
     case 'no_claim_status': return { screen: 'stalled', bubble: 'ZZ', bubbleColor: 'warnDk' };
@@ -519,7 +530,8 @@ export interface ComposedScene {
 }
 
 const STATE_TONE: Readonly<Record<DeskState, SceneTone>> = {
-  coding: 'info', ci_pending: 'info', ci_failed: 'danger', no_claim_status: 'warn', acceptance_queue: 'subtle', idle: 'subtle', unknown: 'subtle',
+  blocked: 'warn', error: 'danger', coding: 'info', ci_pending: 'info', ci_failed: 'danger', no_claim_status: 'warn', acceptance_queue: 'subtle', done: 'ok', idle: 'subtle',
+  unknown: 'subtle',
 };
 
 interface BossActor {
@@ -736,7 +748,7 @@ export function composeRoom(room: SceneRoom, view: SceneView): ComposedScene {
   const tags: SceneTag[] = [];
   const actor = view.effect === null ? null : bossActor(view.effect.command, view.effect.elapsedMs, f);
 
-  const glowing = room.desks.flatMap((desk, index) => (desk.state === 'coding' || desk.state === 'ci_failed' ? [index] : []));
+  const glowing = room.desks.flatMap((desk, index) => (desk.state === 'coding' || desk.state === 'ci_failed' || desk.state === 'error' ? [index] : []));
   wall(fb, room, night, f, height, glowing, labels, hits, effect === 'valve');
 
   door(fb, 281, 3, room.mergeWait, room.mergeWait === 'off' && effect === null, f);
@@ -840,8 +852,10 @@ const MINI_DESK_Y = [42, 57] as const;
 const MINI_DESKS = MINI_DESK_X.length * MINI_DESK_Y.length;
 const MINI_QUEUE = 4;
 const MINI_SOCKETS = 6;
-const MINI_SCREEN: Partial<Readonly<Record<DeskState, PxColor>>> = { coding: 'screen', ci_failed: 'danger' };
-const MINI_LAMP: Partial<Readonly<Record<DeskState, PxColor>>> = { ci_pending: 'screen', ci_failed: 'danger' };
+const MINI_SCREEN: Partial<Readonly<Record<DeskState, PxColor>>> = { coding: 'screen', ci_failed: 'danger', error: 'danger', done: 'ok' };
+/** The mark above a mini desk: the sleep of a stalled seat, the alert of a seat that waits for a person. */
+const MINI_MARK: Partial<Readonly<Record<DeskState, readonly [string, PxColor]>>> = { no_claim_status: ['Z', 'warnDk'], blocked: ['!', 'warnDk'], error: ['!', 'danger'] };
+const MINI_LAMP: Partial<Readonly<Record<DeskState, PxColor>>> = { blocked: 'warn', ci_pending: 'screen', ci_failed: 'danger' };
 const MINI_DIM: PxMap = { floorA: 'floorSh', floorB: 'floorSh', wall: 'wallSh', wood: 'woodDk', deskTop: 'deskFr', deskFr: 'wood', mist: 'slate', cloud: 'mist', paper: 'cloud', slate: 'ink2' };
 
 function miniLead(fb: FrameBuffer, agent: SceneAgent | null, x: number, f: number): void {
@@ -858,9 +872,10 @@ function miniDesk(fb: FrameBuffer, desk: SceneMiniRoom['desks'][number] | undefi
   const away = state === 'acceptance_queue';
   const roped = desk === undefined && limit !== null && index >= limit;
   const lamp = state === undefined ? undefined : MINI_LAMP[state];
+  const blink = failed || state === 'blocked';
   if (lamp !== undefined) {
     fb.box(x + 1, y + 1, 4, 8, 'ink2');
-    fb.px(x + 2, y + 3, !failed || f % 2 !== 0 ? lamp : 'ink');
+    fb.px(x + 2, y + 3, !blink || f % 2 !== 0 ? lamp : 'ink');
   }
   shadow(fb, x + 5, y + 6, 20, 6);
   fb.box(x + 10, y, 9, 7, 'ink2');
@@ -871,7 +886,8 @@ function miniDesk(fb: FrameBuffer, desk: SceneMiniRoom['desks'][number] | undefi
   if (desk !== undefined && !away) {
     const dx = failed ? ((f + index) % 2 !== 0 ? 1 : -1) : 0;
     fb.sprite(miniAgent(desk.agent.kind, 'back'), x + 11 + dx, y + 8 + (coding && (f + index) % 2 !== 0 ? -1 : 0), agentPalette(desk.agent.kind, 'plain'));
-    if (state === 'no_claim_status') fb.text('Z', x + 20, y - 1 + ((f >> 1) % 2), 'warnDk');
+    const mark = state === undefined ? undefined : MINI_MARK[state];
+    if (mark !== undefined) fb.text(mark[0], x + 20, y - 1 + ((f >> 1) % 2), mark[1]);
   } else if (!roped) fb.box(x + 11, y + 11, 7, 3, 'slate');
   if (away) fb.box(x + 19, y + 4, 4, 3, 'paper');
   if (roped) {

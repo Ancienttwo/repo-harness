@@ -2,6 +2,7 @@ import { planIssues } from './plan-block';
 import type { BoardItemV1, BoardPullRequestV1, BoardTerminalV1, BoardV1 } from './board';
 import { pathHazardHits } from './hazards';
 import { compareHcVersions } from '../terminal/herdr-pin';
+import { hcStatusClass } from '../terminal/hc-status';
 
 /**
  * Attention rules over one board. Each rule is a pure function of the board
@@ -165,19 +166,21 @@ function workerTerminals(context: Context, rule: BoardRuleId): SeatTerminal[] {
 
 function a3(context: Context): void {
   for (const terminal of workerTerminals(context, 'A3')) {
-    if (terminal.status !== 'blocked' && terminal.status !== 'error') continue;
+    const status = hcStatusClass(terminal.status);
+    if (status !== 'blocked' && status !== 'error') continue;
     if (terminal.status_ms === null) {
       skip(context, 'A3', 'status_time_missing', terminal.address);
     } else if (context.now - terminal.status_ms > A3_STUCK_MS) {
       find(context, 'A3', { issues: terminal.issue === null ? [] : [terminal.issue], terminals: [terminal.address] },
-        `worker ${terminal.address} is ${terminal.status} for ${minutes(context.now - terminal.status_ms)} min`);
+        `worker ${terminal.address} is ${status} for ${minutes(context.now - terminal.status_ms)} min`);
     }
   }
 }
 
 function a4(context: Context): void {
   for (const terminal of workerTerminals(context, 'A4')) {
-    if (terminal.status !== 'done' && terminal.status !== 'idle') continue;
+    const status = hcStatusClass(terminal.status);
+    if (status !== 'done' && status !== 'idle') continue;
     if (terminal.issue === null) {
       skip(context, 'A4', 'issue_label_missing', terminal.address);
       continue;
@@ -194,7 +197,7 @@ function a4(context: Context): void {
       skip(context, 'A4', 'comments_truncated', `#${item.number}`);
     } else if (item.claim_status.status_kind === 'none' || item.claim_status.created_at < lastCommit) {
       find(context, 'A4', { issues: [item.number], pull_requests: prs.map(pr => pr.number), terminals: [terminal.address] },
-        `worker ${terminal.address} is ${terminal.status} and #${item.number} has no claim status after its last commit (${lastCommit})`);
+        `worker ${terminal.address} is ${status} and #${item.number} has no claim status after its last commit (${lastCommit})`);
     }
   }
 }

@@ -1,6 +1,7 @@
 import type { BoardHostPortsV1, BoardSeatTerminalReadV1 } from './board';
 import { hasUnredactedSecret, KEY_BEGIN, KEY_END, replaceSecrets } from '../security/secret-patterns';
 import { isHcAddress } from '../terminal/hc-address';
+import { hcStatusClass } from '../terminal/hc-status';
 
 /**
  * The advisor seat of one board (#1756, D11): the only console channel that
@@ -86,16 +87,16 @@ export const ADVISOR_BOSS_COMMAND_TABLE: Readonly<Record<AdvisorBossCommand, { r
 
 /**
  * The advisor turn as the read-back `status` (the hc status word) proves it.
- * A boss command goes only to a seat whose turn is over: an allow list, so a
- * missing or new status word never sends. With `blocked` the text and Enter
- * could answer a pending prompt.
+ * A boss command goes only to a seat whose turn is over: an allow list, so an
+ * error, a missing or an undocumented status word never sends. With `blocked`
+ * the text and Enter could answer a pending prompt.
  */
-const ADVISOR_TURN_OVER: readonly string[] = ['idle', 'done'];
-const ADVISOR_TURN_RUNNING: readonly string[] = ['working', 'blocked'];
-
 export function advisorTurnState(status: string | null): 'over' | 'running' | 'unknown' {
-  if (status !== null && ADVISOR_TURN_OVER.includes(status)) return 'over';
-  return status !== null && ADVISOR_TURN_RUNNING.includes(status) ? 'running' : 'unknown';
+  switch (hcStatusClass(status)) {
+    case 'idle': case 'done': return 'over';
+    case 'working': case 'blocked': return 'running';
+    default: return 'unknown';
+  }
 }
 
 export function advisorBossCommandText(command: AdvisorBossCommand, parent: number): string {

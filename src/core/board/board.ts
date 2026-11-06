@@ -16,6 +16,7 @@ import {
   type ClaimStatusV1,
 } from './source';
 import { isCiRepairIssueBody } from '../ci/test-report';
+import { hasUnredactedSecret, replaceSecrets } from '../security/secret-patterns';
 
 /**
  * The board: one parent issue, its sub-issues and their pull requests, the
@@ -23,7 +24,7 @@ import { isCiRepairIssueBody } from '../ci/test-report';
  * It is a read model. GitHub and hc stay the authorities; the board keeps
  * their observation time and never writes back.
  */
-export const BOARD_PROTOCOL = 2 as const;
+export const BOARD_PROTOCOL = 3 as const;
 export const BOARD_KIND = 'repo-harness.board' as const;
 
 export type BoardTier = 'low' | 'medium' | 'high';
@@ -94,10 +95,12 @@ export type BoardTerminalV1 = {
   readonly name: string | null;
   readonly agent: string | null;
   readonly state: 'live' | 'finished';
-  /** The program's own 7501 word; null when it never reported. */
+  /** The program's own hc status word, classified by `hcStatusClass`; null when it never reported. */
   readonly status: string | null;
   readonly status_kind: string | null;
   readonly status_ms: number | null;
+  /** The program's own note on its turn (hc `status.msg`), redacted: see `seatStatusMessage`. Null when it sent none. */
+  readonly status_msg: string | null;
   readonly turn: number;
   /** The current branch of the terminal's working directory; null for a detached HEAD, a missing directory or a failed read. */
   readonly branch: string | null;
@@ -116,6 +119,8 @@ export interface BoardSeatTerminalReadV1 {
   readonly status: string | null;
   readonly status_kind: string | null;
   readonly status_ms: number | null;
+  /** hc `status.msg` as hc reports it; `seatTerminal` redacts it. */
+  readonly status_msg: string | null;
   readonly turn: number;
   /** The working directory that hc reports, when it reports one. */
   readonly cwd: string | null;
@@ -126,10 +131,32 @@ export interface BoardSeatTerminalReadV1 {
 export type BoardSeatTerminalInputV1 = Omit<BoardSeatTerminalReadV1, 'cwd'> & { readonly branch: string | null };
 
 const POSITIVE = /^[1-9][0-9]*$/u;
+/** hc `status.msg` on the board: one line of at most this many characters (D2, #1867). */
+const SEAT_STATUS_MSG_MAX_CHARS = 200;
+const SEAT_STATUS_MSG_WITHHELD = '[message withheld]';
+const LINE_BREAK = /[\r\n]/u;
 
-/** The board's one check of the raw seat, issue and pr labels of a terminal (the board and the parent list). */
+/** A status message that may leave the board process: one non-blank line within the limit, with no secret left. */
+function isPublicStatusMessage(message: string): boolean {
+  return message.trim() !== '' && message.length <= SEAT_STATUS_MSG_MAX_CHARS && !LINE_BREAK.test(message) && !hasUnredactedSecret(message);
+}
+
+/**
+ * The advisor read-back rule (`advisor-seat.ts`) for one message. A message with a line break, or longer than
+ * the limit before or after redaction, is withheld, never cut: a cut could leave a secret fragment that no rule
+ * matches. A secret that the token rules leave is withheld too.
+ */
+function seatStatusMessage(msg: string | null): string | null {
+  if (msg === null || msg.trim() === '') return null;
+  if (msg.length > SEAT_STATUS_MSG_MAX_CHARS || LINE_BREAK.test(msg)) return SEAT_STATUS_MSG_WITHHELD;
+  const redacted = replaceSecrets(msg);
+  return isPublicStatusMessage(redacted) ? redacted : SEAT_STATUS_MSG_WITHHELD;
+}
+
+/** The board's one check of the raw seat, issue and pr labels and the status message of a terminal (the board and the parent list). */
 export function seatTerminal(terminal: BoardSeatTerminalInputV1): BoardTerminalV1 {
-  const { labels, ...base } = terminal;
+  const { labels, status_msg, ...rest } = terminal;
+  const base = { ...rest, status_msg: seatStatusMessage(status_msg) };
   const { seat, issue, pr } = labels;
   if (seat === undefined) return { ...base, seat_status: 'unavailable', reason: 'seat_label_missing' };
   if (seat === '' || [issue, pr].some(value => value !== undefined && !POSITIVE.test(value))) {
@@ -228,11 +255,15 @@ export interface BoardInputV1 {
 
 const ACCEPTANCE_MERGE_VALUES: ReadonlySet<unknown> = new Set<BoardAcceptanceMergeV1>(['off', 'on', 'unknown']);
 
-/** The `branch` check of the board and the parent list decoders: an absent branch is a refusal, and null is the explicit unknown. */
-export function checkSeatBranches(terminals: unknown): void {
+/**
+ * The `branch` and `status_msg` checks of the board and the parent list decoders: an absent value is a refusal,
+ * and null is the explicit unknown.
+ */
+export function checkSeatTerminals(terminals: unknown): void {
   if (!Array.isArray(terminals)) throw new Error('board seat terminals are not a list');
-  for (const { address, branch } of terminals as readonly BoardTerminalV1[]) {
+  for (const { address, branch, status_msg: message } of terminals as readonly BoardTerminalV1[]) {
     if (branch !== null && (typeof branch !== 'string' || branch === '')) throw new Error(`invalid board seat branch on ${address}: ${String(branch)}`);
+    if (message !== null && (typeof message !== 'string' || !isPublicStatusMessage(message))) throw new Error(`invalid board seat status_msg on ${address}`);
   }
 }
 
@@ -246,7 +277,7 @@ export function decodeBoard(value: unknown): BoardV1 {
     const { revision } = board.plan;
     if (revision !== null && (!Number.isSafeInteger(revision) || revision < 1)) throw new Error(`invalid board plan revision: ${String(revision)}`);
   }
-  if (board.execution?.status === 'observed') checkSeatBranches(board.execution.terminals);
+  if (board.execution?.status === 'observed') checkSeatTerminals(board.execution.terminals);
   return board as BoardV1;
 }
 

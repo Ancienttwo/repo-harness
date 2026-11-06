@@ -21,7 +21,7 @@ import { fetchBoard, fetchBoardParents, type BoardParentsRead, type BoardParents
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import boardParents from '../../src/operator-web/fixtures/board-parents.json';
 import { decodeBoardParents, type BoardParentsV1 } from '../../src/core/board/parents';
-import { decodeBoardSummaries, type BoardSummarySeatsV1, type BoardSummaryV1 } from '../../src/core/board/summary';
+import { BOARD_SUMMARIES_PROTOCOL, decodeBoardSummaries, type BoardSummarySeatsV1, type BoardSummaryV1 } from '../../src/core/board/summary';
 import { designTokenStylesheet } from '../../src/operator-web/design-tokens';
 import { OPERATOR_RAIL_STORAGE_KEY } from '../../src/operator-web/NavRail';
 import { fetchExecution, fetchTaskMessages, itemOwner, type CiRepairsReader, type ExecutionReader, type TaskMessagesReader } from '../../src/operator-web/repository-reads';
@@ -106,7 +106,7 @@ function props(activity: DevActivitySnapshotV2, overrides: Partial<OperatorAppPr
     readTaskMessages: async request => busyTaskMessages(request, NOW),
     readBoard: async () => ({ state: 'ok', board: BOARD }),
     readBoardParents: async () => ({ state: 'ok', list: PARENTS }),
-    readBoardSummaries: async id => ({ state: 'ok', summaries: { protocol: 2, kind: 'repo-harness.board-summaries', repository_id: id, parents: [] } }),
+    readBoardSummaries: async id => ({ state: 'ok', summaries: { protocol: BOARD_SUMMARIES_PROTOCOL, kind: 'repo-harness.board-summaries', repository_id: id, parents: [] } }),
     readBotAccess: async () => ({ state: 'unavailable', reason: 'bot_access_pending' }),
     readQuota: () => new Promise(() => {}),
     ...overrides,
@@ -642,7 +642,7 @@ describe('board page', () => {
     const refusal = (code: string, status: number) => () => Response.json({ error: { code, message: 'refused', next_action: 'retry' } }, { status });
     const answers: (() => Response)[] = [
       () => Response.json(BOARD),
-      () => Response.json({ ...BOARD, protocol: 3 }),
+      () => Response.json({ ...BOARD, protocol: 4 }),
       refusal('board_parent_invalid', 400),
       refusal('repository_not_found', 404),
       refusal('board_collect_failed', 503),
@@ -809,7 +809,7 @@ describe('board office (#1755)', () => {
   const rows = (selector: string) => Array.from(document.querySelectorAll<HTMLElement>(selector));
   type Terminal = BoardV1['execution'] extends infer E ? E extends { readonly terminals: readonly (infer T)[] } ? T : never : never;
   const seat = (address: string, seatName: string, issue: number | null, pr: number | null, status: string | null, state: 'live' | 'finished' = 'live'): Terminal =>
-    ({ address, name: address, agent: null, state, status, status_kind: null, status_ms: null, turn: 0, branch: null, seat_status: 'observed', seat: seatName, issue, pr });
+    ({ address, name: address, agent: null, state, status, status_kind: null, status_ms: null, status_msg: null, turn: 0, branch: null, seat_status: 'observed', seat: seatName, issue, pr });
   const observedClaim = { status_kind: 'observed', url: 'https://github.com/Ancienttwo/repo-harness/issues/1478#issuecomment-1', created_at: '2026-11-02T21:00:00Z', status: 'draft PR open; claim remains active', pr: null, head_sha: null } as const;
   /** The recorded board of #1474 with edited pull requests, items and terminals. */
   const boardWith = ({ prs = {}, items = {}, terminals, plan }: {
@@ -851,7 +851,7 @@ describe('board office (#1755)', () => {
         seat('t7', 'worker', null, null, 'working'),
         // Left out: a finished worker, a seat-label gap and the two lead seats.
         seat('t8', 'worker', 1480, null, 'working', 'finished'),
-        { address: 't9', name: null, agent: null, state: 'live', status: null, status_kind: null, status_ms: null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_missing' },
+        { address: 't9', name: null, agent: null, state: 'live', status: null, status_kind: null, status_ms: null, status_msg: null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_missing' },
         seat('t10', 'orchestrator', null, null, 'idle'),
         seat('t11', 'advisor', null, null, 'idle'),
       ],
@@ -863,7 +863,7 @@ describe('board office (#1755)', () => {
       ['t3', 'acceptance_queue', 1475, BOARD.items.find(item => item.number === 1475)!.title],
       ['t4', 'no_claim_status', 1477, BOARD.items.find(item => item.number === 1477)!.title],
       ['t5', 'coding', 1478, BOARD.items.find(item => item.number === 1478)!.title],
-      ['t6', 'idle', 1478, BOARD.items.find(item => item.number === 1478)!.title],
+      ['t6', 'blocked', 1478, BOARD.items.find(item => item.number === 1478)!.title],
       ['t7', 'unknown', null, null],
     ]);
     expect([office.orchestrator?.address, office.advisor?.address]).toEqual(['t10', 't11']);
@@ -886,7 +886,8 @@ describe('board office (#1755)', () => {
     expect([recorded.plan, recorded.limit, recorded.cart]).toEqual([{ status: 'none' }, ISSUE_FLOW_WORKER_LIMIT, null]);
     const worked = new Set(BOARD.items.filter(item => item.pull_requests.length > 0).map(item => item.number));
     expect(recorded.backlog.map(entry => entry.issue)).toEqual(BOARD.items.filter(item => item.state === 'open' && !worked.has(item.number) && ![1476, 1475].includes(item.number)).map(item => item.number));
-    expect(recorded.desks.map(desk => [desk.address, desk.state])).toEqual([['t1', 'idle'], ['t2', 'idle']]);
+    // The recorded t1 is blocked on a question and t2 reports done (#1867).
+    expect(recorded.desks.map(desk => [desk.address, desk.state])).toEqual([['t1', 'blocked'], ['t2', 'done']]);
     expect(recorded.orchestrator?.address).toBe('t3');
     expect(recorded.advisor).toBeNull();
     // The door counts the A1 findings only: an accepted, ready pull request that waits for a merge.
@@ -1029,7 +1030,7 @@ describe('board office (#1755)', () => {
   });
 
   const fiveRegistered = (ids: readonly string[]) => decodeOperatorRepositories({ protocol: 1, kind: 'operator_repositories', stale_registrations: 0, repositories: ids.map((id, index) => ({ repository_id: id, display_name: `service-${index + 1}`, access_mode: 'read_write' })) });
-  const summaryRead = (id: string, row: Parameters<typeof decodeBoardSummaries>[0]): BoardSummariesRead => ({ state: 'ok', summaries: decodeBoardSummaries({ protocol: 2, kind: 'repo-harness.board-summaries', repository_id: id, parents: [row] }) });
+  const summaryRead = (id: string, row: Parameters<typeof decodeBoardSummaries>[0]): BoardSummariesRead => ({ state: 'ok', summaries: decodeBoardSummaries({ protocol: BOARD_SUMMARIES_PROTOCOL, kind: 'repo-harness.board-summaries', repository_id: id, parents: [row] }) });
   const observed = (summary: { readonly queue: number; readonly ci_failures: number; readonly batch: { readonly accepted: number | null; readonly size: number | null }; readonly needs_you: number } & Partial<Pick<BoardSummaryV1, 'current_batch' | 'worker_limit' | 'seats'>>) => ({ parent: 1474, status: 'observed', observed_at: '2026-11-04T20:00:00.000Z',
     summary: { current_batch: null, worker_limit: ISSUE_FLOW_WORKER_LIMIT, seats: { status: 'observed', desks: [], stalled: 0 }, ...summary } });
 
@@ -1095,6 +1096,9 @@ describe('board office (#1755)', () => {
       if (name !== undefined) expect(card.querySelector('.board-office__card-name')?.textContent).toContain(name);
       expect(card.tagName).toBe('BUTTON');
     }
+    // An observed summary shows when its board was read; only a room read writes one, so the desks can be older than the seats.
+    expect(cases.map(({ id }) => rows(`[data-repository="${id}"]`)[0]!.querySelector('.board-office__card-name time')?.getAttribute('datetime') ?? null))
+      .toEqual([...Array(3).fill('2026-11-04T20:00:00.000Z'), ...Array(6).fill(null)]);
     // Waiting for you first, then CI failed, then the lit rooms, then the idle rooms, each in registry order.
     expect(rows('[data-office-card]').map(card => card.getAttribute('data-repository')!.at(-1))).toEqual(['3', '2', '1', '4', '5', '6', '7', '8', '9']);
     expect(rows('[data-repository$="3"]')[0]!.hasAttribute('data-waiting')).toBe(true);
@@ -1277,7 +1281,7 @@ describe('board office (#1755)', () => {
     expect(scene.getAttribute('aria-label')).toBe('Office of Ancienttwo/repo-harness #1474: 2 worker desks, 0 pull requests in the acceptance queue, no plan.');
     expect(document.querySelector('[data-plan]')?.getAttribute('data-plan')).toBe('none');
     expect(document.querySelector('[data-seat-meter]')?.getAttribute('data-seat-meter')).toBe('none');
-    expect(rows('[data-desk]').map(desk => [desk.getAttribute('data-desk'), desk.getAttribute('aria-label')])).toEqual([['t1', '#1476 · Codex: Idle'], ['t2', '#1475 · Claude Code: Idle']]);
+    expect(rows('[data-desk]').map(desk => [desk.getAttribute('data-desk'), desk.getAttribute('aria-label')])).toEqual([['t1', '#1476 · Codex: Blocked'], ['t2', '#1475 · Claude Code: Turn done']]);
     expect(rows('[data-queue-pr]')).toHaveLength(0);
     expect(rows('[data-office-hit]').map(hit => hit.getAttribute('data-office-hit')).sort()).toEqual(['board', 'cart', 'door', 'orchestrator', 'tray']);
     expect(rows('[data-board-banner]').map(banner => banner.getAttribute('data-board-banner'))).toEqual(['plan', 'unevaluated']);
@@ -1288,11 +1292,14 @@ describe('board office (#1755)', () => {
     const legend = document.querySelector<HTMLElement>('[role="dialog"]')!;
     expect(legend.getAttribute('aria-labelledby')).toBe('board-office-legend');
     expect(Array.from(legend.querySelectorAll('[data-legend-state]')).map(entry => [entry.getAttribute('data-legend-state'), entry.querySelector('strong')?.textContent, entry.querySelector('p')?.textContent])).toEqual([
+      ['blocked', 'Blocked', 'The hc terminal of the seat reports blocked: the agent waits for a permission, an answer or a sign-in.'],
+      ['error', 'Error', 'The hc terminal of the seat reports error.'],
       ['ci_failed', 'CI failed', 'The required check of the desk\'s pull request failed.'],
       ['ci_pending', 'Waiting for CI', 'The required check of the desk\'s pull request is running.'],
       ['acceptance_queue', 'In the acceptance queue', 'The pull request is open, its required check passed and it is not accepted.'],
       ['no_claim_status', 'No claim status', 'The issue has no claim status comment.'],
       ['coding', 'Coding', 'The hc terminal of the seat reports working.'],
+      ['done', 'Turn done', 'The hc terminal of the seat reports done: the agent ended its turn.'],
       ['idle', 'Idle', 'No rule above matches.'],
       ['unknown', 'Unknown desk', 'The seat names no issue and no pull request.'],
     ]);
@@ -1356,13 +1363,15 @@ describe('board office (#1755)', () => {
     }
     expect(new Set(seen.values()).size).toBe(4);
 
-    // The seat branch reaches the panel, and a seat with no branch keeps the dash.
+    // The seat branch and the seat's own note reach the panel; a seat with no branch keeps the dash, and one with no note has no note row.
     officeAt(`/${HARNESS_ID}`);
     await mount(<OperatorApp {...fixtureProps(OFFICE_FIXTURE)} />);
     await settle();
-    for (const [address, branch] of [['t10', 'feat/1299-dsh-companion'], ['t13', '—']] as const) {
+    for (const [address, branch, note] of [['t10', 'feat/1299-dsh-companion', '拒绝记录 tab 接上 DSH 读接口'], ['t13', '—', null]] as const) {
       await act(async () => rows(`[data-desk="${address}"]`)[0]!.click());
-      expect(document.querySelector('[data-office-panel]')?.textContent).toContain(`Branch${branch}`);
+      const terms = Array.from(document.querySelectorAll('[data-office-panel] dl > div')).map(entry => entry.textContent);
+      expect(terms).toContain(`Branch${branch}`);
+      expect(terms.filter(entry => entry?.startsWith('Note'))).toEqual(note === null ? [] : [`Note${note}`]);
     }
   });
 
@@ -1373,7 +1382,7 @@ describe('board office (#1755)', () => {
         { ...seat('t2', 'advisor', null, null, 'idle'), agent: 'codex', parent: null },
         { ...seat('t3', 'worker', 9001, null, 'working'), agent: 'codex', parent: null },
         { ...seat('t4', 'worker', 1476, 1499, 'idle'), agent: 'pi', parent: '1474' },
-        { address: 't5', name: null, agent: null, state: 'live', status: null, status_kind: null, status_ms: null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_invalid', parent: null },
+        { address: 't5', name: null, agent: null, state: 'live', status: null, status_kind: null, status_ms: null, status_msg: null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_invalid', parent: null },
       ],
     };
     const boards: number[] = [];
@@ -1994,7 +2003,7 @@ describe('office setup checklist (#1788)', () => {
       return { view, card: officeCard(view) };
     };
     const overview = (...rooms: Extract<OfficeSetupScope, { kind: 'overview' }>['rooms']): OfficeSetupScope => ({ kind: 'overview', rooms });
-    const invalidLabel: BoardParentsV1 = { ...EMPTY, seats: [{ address: 't9', name: null, agent: null, state: 'live', status: null, status_kind: null, status_ms: null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_invalid', parent: null }] };
+    const invalidLabel: BoardParentsV1 = { ...EMPTY, seats: [{ address: 't9', name: null, agent: null, state: 'live', status: null, status_kind: null, status_ms: null, status_msg: null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_invalid', parent: null }] };
     const seatCases: readonly (readonly [OfficeSetupScope, string, string])[] = [
       [inRoom(), 'missing', 'No live terminal has a seat label.'],
       [inRoom({ parents: { kind: 'ready', list: invalidLabel } }), 'failed', 'Terminal t9 has an invalid seat label.'],
@@ -2030,7 +2039,7 @@ describe('office setup checklist (#1788)', () => {
     expect(row('plan', reads(), inRoom({ parent: 7, plan: 'unread', parents: { kind: 'failed', reason: 'parents_invalid' } })).detail).toContain('parents_invalid');
     const anyRead = 'repo-harness board --parent <n>';
     const anyWrite = 'gh issue comment <n> --body-file <plan-file>';
-    const summaryRead = (row: Parameters<typeof decodeBoardSummaries>[0]): BoardSummariesRead => ({ state: 'ok', summaries: decodeBoardSummaries({ protocol: 2, kind: 'repo-harness.board-summaries', repository_id: HARNESS_ID, parents: [row] }) });
+    const summaryRead = (row: Parameters<typeof decodeBoardSummaries>[0]): BoardSummariesRead => ({ state: 'ok', summaries: decodeBoardSummaries({ protocol: BOARD_SUMMARIES_PROTOCOL, kind: 'repo-harness.board-summaries', repository_id: HARNESS_ID, parents: [row] }) });
     const summary = (batch: { readonly accepted: number | null; readonly size: number | null }) => summaryRead({
       parent: 1474, status: 'observed', observed_at: '2026-11-04T20:00:00.000Z',
       summary: { queue: 0, ci_failures: 0, batch, current_batch: null, needs_you: 0, worker_limit: ISSUE_FLOW_WORKER_LIMIT, seats: { status: 'observed', desks: [], stalled: 0 } },

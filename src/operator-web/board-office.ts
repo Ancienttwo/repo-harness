@@ -30,6 +30,8 @@ export interface OfficeDesk {
   readonly agent: string | null;
   /** The hc status word of the seat. */
   readonly status: string | null;
+  /** The seat's own note on its turn, as the board redacted it. */
+  readonly status_msg: string | null;
   readonly state: DeskState;
   readonly issue: number | null;
   /** The pull request that the seat names, else the primary pull request of its item. */
@@ -71,6 +73,7 @@ export interface OfficeLead {
   readonly address: string;
   readonly agent: string | null;
   readonly status: string | null;
+  readonly status_msg: string | null;
 }
 
 /** One board change with a server time. */
@@ -105,7 +108,7 @@ export interface OfficeRoom {
 
 function lead(seats: readonly BoardSeatTerminal[], seat: string): OfficeLead | null {
   const terminal = seats.find(entry => entry.seat === seat);
-  return terminal === undefined ? null : { address: terminal.address, agent: terminal.agent, status: terminal.status };
+  return terminal === undefined ? null : { address: terminal.address, agent: terminal.agent, status: terminal.status, status_msg: terminal.status_msg };
 }
 
 function desk(board: BoardV1 | null, terminal: BoardSeatTerminal): OfficeDesk {
@@ -113,7 +116,7 @@ function desk(board: BoardV1 | null, terminal: BoardSeatTerminal): OfficeDesk {
   const pr = board === null ? null : seatPullRequest(board, terminal, item);
   const state = deskState(terminal, item, pr);
   return {
-    address: terminal.address, seat: terminal.seat, agent: terminal.agent, status: terminal.status,
+    address: terminal.address, seat: terminal.seat, agent: terminal.agent, status: terminal.status, status_msg: terminal.status_msg,
     state, issue: terminal.issue, pr: pr?.number ?? terminal.pr,
     title: item?.title ?? pr?.head_ref ?? null,
     branch: terminal.branch,
@@ -274,7 +277,8 @@ export type OfficeCardSummary =
   | { readonly status: 'loading' }
   | { readonly status: 'not_read' }
   | { readonly status: 'unavailable'; readonly reason: string }
-  | { readonly status: 'observed'; readonly summary: BoardSummaryV1 };
+  /** `observed_at`: the observation time of the board that gave the summary. Only a room read writes a summary. */
+  | { readonly status: 'observed'; readonly observed_at: string; readonly summary: BoardSummaryV1 };
 
 export interface OfficeCard {
   readonly room: OfficeRoom;
@@ -291,7 +295,7 @@ function cardSummary(read: BoardSummariesRead | null, parent: number | null): Of
   const row = read.summaries.parents.find(entry => entry.parent === parent);
   // The two reads are separate, so a parent can be missing from the second one.
   if (row === undefined || row.status === 'not_read') return { status: 'not_read' };
-  return row.status === 'unavailable' ? { status: 'unavailable', reason: row.reason } : { status: 'observed', summary: row.summary };
+  return row.status === 'unavailable' ? { status: 'unavailable', reason: row.reason } : { status: 'observed', observed_at: row.observed_at, summary: row.summary };
 }
 
 /**

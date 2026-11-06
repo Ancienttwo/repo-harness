@@ -4,6 +4,29 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Breaking
+
+- `board --json` moves from protocol 2 to 3, and `board parents --json` from
+  protocol 3 to 4. Each seat terminal adds `status_msg`: the hc `status.msg`
+  of the seat after redaction, or null. The board summaries move from
+  protocol 2 to 3, and a summary desk can now have the state `blocked`,
+  `error` or `done`. There is no reader of the old protocols. (#1867)
+
+### Changed
+
+- One hc status classifier sets the desk state of a seat, in the Office and
+  in the board summary. A seat that reports `blocked` or `error` gets that
+  state before any CI state, and it needs no issue label. A seat that reports
+  `done` gets the state `done`. Before, such a seat showed a CI, claim,
+  unknown or idle state. (#1867)
+- The Office desk and lead panels show the `status_msg` of the seat in a Note
+  row. A message with a line break or more than 200 characters shows as
+  `[message withheld]`. The advisor read-back rules redact secrets, and a
+  message with a secret that they leave is withheld too. (#1867)
+- Each Office overview card shows when the board of its summary was read.
+  Only the board read of a parent writes its summary, so the desks on a card
+  can be older than the live seats. (#1867)
+
 ### Fixed
 
 - repo-harness reads only the hc terminals of this machine. hc 0.1.18 also
@@ -13,6 +36,19 @@ All notable changes to this skill are documented here.
   `parents_hc_failed` and the Office showed no seats. The hc client now drops
   remote rows and events before their shape check. A slash-free address that
   is not `t<n>` fails with `invalid_response`. (#1867)
+
+### Upgrade
+
+- Restart the Operator server and reload its page. An older web bundle
+  refuses board protocol 3 and parent-list protocol 4. Custom board readers
+  must accept the new protocols and `status_msg`. Summary protocol 3 refuses
+  a stored protocol 2 snapshot as `snapshot_invalid`; the next board read of
+  that parent replaces it. No shape translator is shipped. (#1867)
+
+### Rollback
+
+- An older CLI refuses a stored protocol 3 summary snapshot as
+  `snapshot_invalid` until its next board read of that parent. (#1867)
 
 ## [0.26.5] - 2026-11-06
 

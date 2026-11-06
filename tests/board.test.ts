@@ -5,7 +5,7 @@ import { initGitRepo, run, tmpWorkspace } from './helpers/repo-fixture';
 import { evaluateBoardAttention, type BoardRuleId } from '../src/core/board/attention';
 import { WINDOW_WITH_WORKERS_MS, WINDOW_WITHOUT_WORKERS_MS, planAttentionDeliveries } from '../src/core/board/attention-delivery';
 import { attentionLogPath, attentionWatchDoctorCheck, runAttentionWindow, serviceTerminalRepository, startAttentionWatch } from '../src/effects/board/attention-watch';
-import { decodeBoard, type BoardHostPortsV1, type BoardTerminalV1, type BoardV1 } from '../src/core/board/board';
+import { decodeBoard, seatTerminal, type BoardHostPortsV1, type BoardTerminalV1, type BoardV1 } from '../src/core/board/board';
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
@@ -174,8 +174,9 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
 test('board summary counts the recorded PRs, planned issue members and orchestrator findings', () => {
   const board = replay();
   expect(boardSummary(board)).toEqual({ queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, current_batch: null, needs_you: 3, worker_limit: ISSUE_FLOW_WORKER_LIMIT,
+    // The recorded t1 is blocked on a question and t2 reports done (#1867).
     seats: { status: 'observed', stalled: 0, desks: [
-      { seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'idle' }, { seat: 'worker', agent: 'claude-code', issue: 1475, pr: 1491, state: 'idle' },
+      { seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'blocked' }, { seat: 'worker', agent: 'claude-code', issue: 1475, pr: 1491, state: 'done' },
     ] } });
   const block = { protocol: 1, kind: 'repo-harness.plan', merge_order: [], holds: [], batches: [[1475, 1476], [1477, 1479]], seat_limits: { worker: 4 } } as const;
   const planned: BoardV1 = { ...board, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at, revision: 1,
@@ -221,13 +222,20 @@ test('board summary gives each live seat outside the stage the desk state of the
   const completed = { completed_at: board.observed_at };
   const known = { status_kind: 'unknown' } as const, none = { status_kind: 'none' } as const;
   for (const [state, labels, status, source, claim_status] of [
+    // A seat that waits for a person comes first: it cannot fix CI, and it needs no issue label (D1, #1867).
+    ['blocked', {}, 'blocked', check({ status: 'failure', ...completed }), none],
+    ['error', { issue: null, pr: null }, 'error', check({ status: 'failure', ...completed }), none],
     ['unknown', { issue: null, pr: null }, 'working', check({ status: 'failure', ...completed }), none],
     ['ci_failed', {}, 'working', check({ status: 'failure', ...completed }), none],
     ['ci_pending', {}, 'working', check({ status: 'pending' }), none],
     ['acceptance_queue', {}, 'working', check({ status: 'success', ...completed }), none],
     ['no_claim_status', {}, 'working', check({ status: 'missing' }), none],
     ['coding', {}, 'working', check({ status: 'missing' }), known],
-    ['idle', {}, 'done', check({ status: 'missing' }), known],
+    ['done', {}, 'done', check({ status: 'missing' }), known],
+    ['idle', {}, 'idle', check({ status: 'missing' }), known],
+    // No report and a word outside the hc docs keep the idle desk.
+    ['idle', {}, null, check({ status: 'missing' }), known],
+    ['idle', {}, 'paused', check({ status: 'missing' }), known],
   ] as const) {
     const terminal = { ...seat, ...labels, status } as BoardTerminalV1;
     const one: BoardV1 = { ...board, pull_requests: [source], items: [{ ...item, claim_status }], execution: { status: 'observed', terminals: [terminal] } };
@@ -243,14 +251,14 @@ test('one strict summary decoder checks snapshots and route rows', () => {
   const row = { parent: 1474, status: 'observed', observed_at: REPLAY_NOW.toISOString(),
     summary: { queue: 2, ci_failures: 0, batch: { accepted: 1, size: 2 }, current_batch: { accepted: 1, size: 2 }, needs_you: 3, worker_limit: 6,
       seats: { status: 'observed', stalled: 1, desks: [{ seat: 'worker', agent: null, issue: 1475, pr: null, state: 'no_claim_status' }, { seat: 'worker', agent: 'codex', issue: null, pr: 1499, state: 'coding' }] } } } as const;
-  const response = { protocol: 2, kind: 'repo-harness.board-summaries', repository_id: 'repo-a', parents: [row] } as const;
+  const response = { protocol: 3, kind: 'repo-harness.board-summaries', repository_id: 'repo-a', parents: [row] } as const;
   expect(decodeBoardSummaries(response)).toEqual(response);
   expect(decodeBoardSummaries({ ...response, parents: [{ parent: 1474, status: 'not_read' }, { parent: 1651, status: 'unavailable', reason: 'snapshot_invalid' }] }).parents).toHaveLength(2);
   const summary = (fields: Record<string, unknown>) => ({ ...row, summary: { ...row.summary, ...fields } });
   const desk = row.summary.seats.desks[0];
   const desks = (...rows: readonly unknown[]) => summary({ seats: { status: 'observed', stalled: 0, desks: rows } });
   expect(decodeBoardSummaries({ ...response, parents: [summary({ current_batch: null, seats: { status: 'unavailable', reason: 'no_seat_terminals' } })] }).parents).toHaveLength(1);
-  for (const invalid of [{ ...response, protocol: 1 }, { ...response, kind: 'other' }, { ...response, repository_id: '../a' },
+  for (const invalid of [{ ...response, protocol: 1 }, { ...response, protocol: 2 }, { ...response, kind: 'other' }, { ...response, repository_id: '../a' },
     { ...response, extra: 1 }, { ...response, parents: [row, row] }, ...[
       { ...row, observed_at: 'yesterday' }, { ...row, observed_at: '2026-02-31T00:00:00Z' }, { ...row, parent: 0 }, { ...row, extra: 1 },
       { ...row, summary: { ...row.summary, queue: -1 } }, { ...row, summary: { ...row.summary, needs_you: 0.5 } },
@@ -266,9 +274,11 @@ test('one strict summary decoder checks snapshots and route rows', () => {
 });
 
 test('decoders refuse an unknown protocol or kind', () => {
-  expect(() => decodeBoard({ protocol: 3, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 3');
+  expect(() => decodeBoard({ protocol: 4, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 4');
+  expect(() => decodeBoard({ protocol: 2, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 2');
   expect(() => decodeBoard({ protocol: 1, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 1');
-  expect(() => decodeBoard({ protocol: 2, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
+  expect(() => decodeBoard({ protocol: 3, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
+  expect(() => decodeBoardParents({ ...boardParentsFixture, protocol: 3 })).toThrow('unsupported board parents protocol: 3');
   const block = (value: Json) => `repo-harness plan\n\n\`\`\`json\n${JSON.stringify(value)}\n\`\`\`\n`;
   const valid = { protocol: 1, kind: 'repo-harness.plan', merge_order: [1475], holds: [], batches: [], seat_limits: { worker: 3 } } as const;
   expect(decodePlanBlock(block(valid))).toEqual(valid);
@@ -277,7 +287,7 @@ test('decoders refuse an unknown protocol or kind', () => {
   expect(() => decodePlanBlock(block({ ...valid, waves: [] }))).toThrow(PlanBlockError);
 });
 
-test('decoders refuse a missing or invalid plan revision, merge policy or seat branch; null is the explicit unknown', () => {
+test('decoders refuse a missing or invalid plan revision, merge policy, seat branch or seat status message; null is the explicit unknown', () => {
   const recorded = JSON.parse(JSON.stringify(replay()));
   const plan = (revision: unknown) => ({ ...recorded, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: recorded.observed_at, revision, block: {} } });
   const seat = (branch: unknown) => [{ ...recorded.execution.terminals[0], branch }];
@@ -290,6 +300,23 @@ test('decoders refuse a missing or invalid plan revision, merge policy or seat b
   for (const valid of [plan(null), plan(7), { ...recorded, acceptance_merge: 'unknown' }, board(null), board('main')]) expect(decodeBoard(valid)).toEqual(valid);
   for (const invalid of [parents(undefined), parents(''), { ...parents(null), seats: undefined }]) expect(() => decodeBoardParents(invalid)).toThrow('board seat');
   expect(decodeBoardParents(parents('main')).seats[0]!.branch).toBe('main');
+  // A message that leaves the board process is one that the seat projection can give.
+  const noted = (status_msg: unknown) => [{ ...recorded.execution.terminals[0], status_msg }];
+  for (const message of [undefined, '', ' ', 'first\nsecond', 'x'.repeat(201), `token ghp_${'a'.repeat(36)}`]) {
+    expect(() => decodeBoard({ ...recorded, execution: { status: 'observed', terminals: noted(message) } })).toThrow('invalid board seat status_msg');
+    expect(() => decodeBoardParents({ ...boardParentsFixture, seats: noted(message) })).toThrow('invalid board seat status_msg');
+  }
+  expect(decodeBoardParents({ ...boardParentsFixture, seats: noted('token ghp_[REDACTED]') }).seats[0]!.status_msg).toBe('token ghp_[REDACTED]');
+});
+
+test('seat status message: one line of at most 200 characters, redacted; a longer, multi-line or unredacted message is withheld, never cut', () => {
+  const message = (status_msg: string | null) => seatTerminal({ address: 't1', name: null, agent: 'codex', state: 'live', status: 'blocked', status_kind: 'question',
+    status_ms: 1, status_msg, turn: 0, branch: null, labels: { seat: 'worker' } }).status_msg;
+  expect(message(null)).toBeNull();
+  expect(message(' ')).toBeNull();
+  expect(message('CI found 2 failures; tracing before fixing')).toBe('CI found 2 failures; tracing before fixing');
+  expect(message(`gh auth token is ghp_${'a'.repeat(36)}`)).toBe('gh auth token is ghp_[REDACTED]');
+  for (const withheld of ['first\nsecond', 'x'.repeat(201), 'API_KEY=abc123']) expect(message(withheld)).toBe('[message withheld]');
 });
 
 test('plan revision: the ordinal of the newest plan comment among the write-access plan comments, and null on a truncated read', () => {
@@ -734,10 +761,14 @@ test('watch service: --watch refuses a terminal without the service labels; star
   // The board of the same parent in hc: the watcher is not a seat terminal.
   const seats = watchHc({ FAKE_LS: [{ address: 't5', state: 'live' }, { address: 't3', state: 'live' }, { address: 'mini-cf/t11', state: 'live' }],
     FAKE_TERMINALS: { t5: { labels }, 'mini-cf/t11': { labels },
-      t3: { labels: { 'repo-harness.seat': 'orchestrator', 'repo-harness.repository': '1186405141', 'repo-harness.parent': '1503' } } } });
+      t3: { labels: { 'repo-harness.seat': 'orchestrator', 'repo-harness.repository': '1186405141', 'repo-harness.parent': '1503' },
+        status: { state: 'blocked', kind: 'question', msg: 'waits for the merge order' } } } });
   const read = boardHostPorts(seats.options).seatTerminals('1186405141');
   expect(read.status).toBe('observed');
   expect(read.status === 'observed' && read.terminals.map(terminal => terminal.address)).toEqual(['t3']);
+  // The host read keeps hc's own message; the board projection redacts it.
+  expect(read.status === 'observed' && read.terminals.map(terminal => [terminal.status, terminal.status_kind, terminal.status_msg]))
+    .toEqual([['blocked', 'question', 'waits for the merge order']]);
   expect(seats.calls().filter(args => args[0] === 'get').map(args => args.at(-1))).toEqual(['t5', 't3']);
   expect(seats.calls().filter(args => args[0] === 'ls')).toEqual([['ls', '--json', '--label', 'repo-harness.repository=1186405141']]);
 

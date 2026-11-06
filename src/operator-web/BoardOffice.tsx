@@ -156,8 +156,8 @@ function MiniRoom({ card, frame, mode }: { readonly card: OfficeCard; readonly f
   return <svg className="board-office__mini" data-night={night ? '' : undefined} viewBox="0 0 112 72" shapeRendering="crispEdges" aria-hidden="true"><Paths paths={paths} /></svg>;
 }
 
-function RepositoryCard({ repository, view, card, frame, mode, onOpen, t }: {
-  readonly repository: BoardRepositoryOption; readonly view: OfficeRepositoryView; readonly card: OfficeCard | null; readonly frame: number; readonly mode: ThemeMode;
+function RepositoryCard({ repository, view, card, frame, now, mode, onOpen, t }: {
+  readonly repository: BoardRepositoryOption; readonly view: OfficeRepositoryView; readonly card: OfficeCard | null; readonly frame: number; readonly now: number; readonly mode: ThemeMode;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate;
 }) {
   const name = <strong>{repository.label}</strong>;
@@ -183,7 +183,10 @@ function RepositoryCard({ repository, view, card, frame, mode, onOpen, t }: {
     <button type="button" className="board-office__card" aria-label={label} data-office-card={lit ? 'room' : 'idle'} data-repository={repository.id} data-parent={parent ?? undefined} data-waiting={waiting ? '' : undefined}
       onClick={() => onOpen(boardRoomLocation(repository.id))}>
       <MiniRoom card={room} frame={frame} mode={mode} />
-      <span className="board-office__card-name">{name}<span>{!lit ? t('board.office.noParent') : parent === null ? t('board.office.parent.none') : t('board.office.parent', { number: parent })}</span></span>
+      <span className="board-office__card-name">{name}<span>
+        {!lit ? t('board.office.noParent') : parent === null ? t('board.office.parent.none') : t('board.office.parent', { number: parent })}
+        {summary.status === 'observed' && <> · <Age at={summary.observed_at} now={now} t={t} /></>}
+      </span></span>
       <span className="board-office__card-chips">{chips.map(([key, tone, text]) => <span key={key} className="board-office__card-chip" data-office-chip={key} data-tone={tone}>{text}</span>)}</span>
     </button>
   );
@@ -202,7 +205,7 @@ export function BoardOfficeOverview({ repositories, readParents, readSummaries, 
 }) {
   const ids = useMemo(() => repositories.map(repository => repository.id), [repositories]);
   const views = useOfficeOverview(ids, readParents, readSummaries, generation);
-  const { frame } = useClock(OVERVIEW_FRAME_MS);
+  const { frame, now } = useClock(OVERVIEW_FRAME_MS);
   const rooms = useMemo(() => repositories.map((repository) => {
     const view = officeRepositoryView(views, repository.id);
     return { repository, view, card: view.kind === 'ready' ? officeCard(view) : null };
@@ -223,7 +226,7 @@ export function BoardOfficeOverview({ repositories, readParents, readSummaries, 
   return (
     <section className="board-office" data-board-office="overview" aria-labelledby="board-office-title">
       <OfficeHeader heading={heading} place={null} onOpen={onOpen} t={t} tools={repositories.length === 0 ? undefined : <OfficeStats totals={totals} t={t} />} />
-      {repositories.length > 0 && <div className="board-office__cards">{ordered.map(({ repository, view, card }) => <RepositoryCard key={repository.id} repository={repository} view={view} card={card} frame={frame} mode={mode} onOpen={onOpen} t={t} />)}</div>}
+      {repositories.length > 0 && <div className="board-office__cards">{ordered.map(({ repository, view, card }) => <RepositoryCard key={repository.id} repository={repository} view={view} card={card} frame={frame} now={now} mode={mode} onOpen={onOpen} t={t} />)}</div>}
       {setup.repositories.kind === 'loading' ? null : (noRoomLit || officeToolingFails(checklist)) && <OfficeSetupChecklist rows={checklist} t={t} />}
     </section>
   );
@@ -377,7 +380,8 @@ function doorState(room: OfficeRoom, t: OperatorTranslate): string | null {
 }
 
 function leadPanel(seat: 'orchestrator' | 'advisor', lead: OfficeLead, room: OfficeRoom, planText: string, command: string, frame: number, t: OperatorTranslate): PanelView {
-  const seatRows = [[t('board.office.panel.seat'), lead.address], [t('board.office.panel.turn'), lead.status ?? t('board.office.panel.none')]] as const;
+  const seatRows = [[t('board.office.panel.seat'), lead.address], [t('board.office.panel.turn'), lead.status ?? t('board.office.panel.none')],
+    ...(lead.status_msg === null ? [] : [[t('board.office.panel.note'), lead.status_msg] as const])] as const;
   return {
     eyebrow: seat === 'orchestrator' ? 'ORCHESTRATOR' : 'ADVISOR', title: t(`board.office.lead.${seat}`), sub: agentName(lead.agent, t),
     rows: seat === 'orchestrator'
@@ -406,7 +410,9 @@ function panelView(key: string, room: OfficeRoom, parent: number | null, default
     return {
       eyebrow: `${desk.seat.toUpperCase()} · SEAT ${deskIndex + 1}`, title: desk.title === null ? number : `${number} ${desk.title}`, sub: agentName(desk.agent, t),
       rows: [
-        [t('board.office.panel.state'), deskStateName(desk, t)], [t('board.office.panel.branch'), desk.branch ?? none],
+        [t('board.office.panel.state'), deskStateName(desk, t)],
+        ...(desk.status_msg === null ? [] : [[t('board.office.panel.note'), desk.status_msg] as const]),
+        [t('board.office.panel.branch'), desk.branch ?? none],
         ['PR', desk.pr === null ? t('board.office.panel.noPr') : `#${desk.pr}`], [t('board.office.panel.source'), t(`board.office.source.${desk.state}` as OperatorMessageKey, { status: desk.status ?? none })],
       ],
       command: desk.pr !== null ? `gh pr checks ${desk.pr}` : desk.issue !== null ? `gh issue view ${desk.issue} --comments` : `hc read ${desk.address}`,

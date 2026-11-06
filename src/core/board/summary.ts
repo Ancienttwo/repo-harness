@@ -3,7 +3,7 @@ import type { BoardV1 } from './board';
 import { currentBatch, DESK_STATES, deskState, hasDesk, isQueued, liveSeats, seatItem, seatPullRequest, workerLimit, type DeskState } from './desk';
 import { primaryPullRequest } from './pull-requests';
 
-export const BOARD_SUMMARIES_PROTOCOL = 2 as const;
+export const BOARD_SUMMARIES_PROTOCOL = 3 as const;
 
 /** The seat, issue and pr labels are the labels of the parent list seat. No terminal address or path (ADR-0002). */
 export interface BoardSummaryDeskV1 {
