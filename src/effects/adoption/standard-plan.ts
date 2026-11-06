@@ -12,6 +12,7 @@ import { renderWorkflowContractMarker } from "../../core/adoption/workflow-contr
 import { minimumHarnessVersionOf } from "../../core/adoption/minimum-harness-version";
 import { planLegacyLeftovers, stripLegacyHookEntries } from "../upgrade/legacy-inventory";
 import { runGit } from "../git/run-git";
+import { withoutRepositorySelectingGitEnv } from "../git/runner";
 
 const ASSET_ROOT = join(import.meta.dir, "..", "..", "..", "assets");
 const TEMPLATE_ROOT = join(ASSET_ROOT, "templates");
@@ -251,7 +252,8 @@ export class ReviewBaseUnresolvedError extends Error {
 }
 
 function symbolicRef(repoRoot: string, env: NodeJS.ProcessEnv | undefined, args: readonly string[]): string | null {
-  const read = runGit(["-C", repoRoot, "symbolic-ref", "--quiet", ...args], { env });
+  // `-C` does not win over GIT_DIR, and the runner re-merges process.env unless inheritance is off.
+  const read = runGit(["-C", repoRoot, "symbolic-ref", "--quiet", ...args], { env: withoutRepositorySelectingGitEnv({ ...process.env, ...env }), inheritEnv: false });
   if (read.ok) return read.stdout.trim();
   // Exit 1 is the one answer that means "not a symbolic ref". Any other failure must not select a lower authority.
   if (read.status === 1 && !read.timedOut) return null;

@@ -636,9 +636,7 @@ describe('init-hook command', () => {
 
   test('turns an unresolved review base into an Agent action without a refresh command', () => {
     withTempHome((home, repo) => {
-      mkdirSync(join(home, '.codex'), { recursive: true });
       mkdirSync(join(repo, '.ai', 'harness'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
       writeFileSync(join(repo, '.ai', 'harness', 'workflow-contract.json'), '{}\n');
       for (const args of [['init', '-q'], ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'base'], ['checkout', '-q', '--detach']]) {
         expect(spawnSync('git', args, { cwd: repo }).status).toBe(0);

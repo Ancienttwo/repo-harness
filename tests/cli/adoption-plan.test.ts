@@ -1185,14 +1185,8 @@ describe("review_base authority", () => {
     expect(spawnSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", ...args], { cwd: repo }).status).toBe(0);
   }
   const onMaster = (repo: string) => git(repo, "symbolic-ref", "HEAD", "refs/heads/master");
-  const committedOnMaster = (repo: string) => {
-    onMaster(repo);
-    git(repo, "commit", "-q", "--allow-empty", "-m", "base");
-  };
-  const detached = (repo: string) => {
-    committedOnMaster(repo);
-    git(repo, "checkout", "-q", "--detach");
-  };
+  const committedOnMaster = (repo: string) => { onMaster(repo); git(repo, "commit", "-q", "--allow-empty", "-m", "base"); };
+  const detached = (repo: string) => { committedOnMaster(repo); git(repo, "checkout", "-q", "--detach"); };
   const writePolicy = (repo: string, worktreeStrategy: object) => {
     mkdirSync(join(repo, ".ai/harness"), { recursive: true });
     writeFileSync(join(repo, ".ai/harness/policy.json"), JSON.stringify({ worktree_strategy: worktreeStrategy }));
@@ -1236,6 +1230,26 @@ describe("review_base authority", () => {
       expect(existsSync(join(repo, ".ai"))).toBe(false);
     } finally {
       cleanup(repo);
+    }
+  });
+
+  test.each(["process.env", "opts.env"] as const)("GIT_DIR in %s cannot select another repository", (entry) => {
+    const [foreign, repo, nonGit] = [tempRepo(), tempRepo(), tempDir()];
+    const parentGitDir = process.env.GIT_DIR;
+    const env = entry === "opts.env" ? { GIT_DIR: join(foreign, ".git") } : undefined;
+    const plan = (target: string) => planRepoAdoption({ repo: target, mode: "standard", explicitRepo: true, env });
+    try {
+      git(foreign, "symbolic-ref", "HEAD", "refs/heads/foreign");
+      onMaster(repo);
+      if (entry === "process.env") process.env.GIT_DIR = join(foreign, ".git");
+      const operation = plan(repo).plan?.operations.find((candidate) => candidate.path === ".ai/harness/policy.json");
+      if (!operation || operation.kind !== "writeFile") throw new Error("policy operation missing");
+      expect(JSON.parse(operation.content).worktree_strategy.review_base).toBe("master");
+      expect(plan(nonGit).error?.code).toBe("review_base_unresolved");
+    } finally {
+      if (parentGitDir === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = parentGitDir;
+      for (const path of [foreign, repo, nonGit]) cleanup(path);
     }
   });
 
