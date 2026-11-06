@@ -28,7 +28,7 @@ try {
   const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'));
   assert.deepEqual(manifest.pi.extensions, ['./src/pi/extension.ts']);
   assert.equal(manifest.pi.skills, undefined, 'Pi skills must use the owned projection.');
-  assert.equal(manifest.peerDependencies['@earendil-works/pi-coding-agent'], '*');
+  assert.equal(manifest.peerDependencies['@earendil-works/pi-coding-agent'], '^1.5.0');
   assert.equal(manifest.peerDependenciesMeta['@earendil-works/pi-coding-agent'].optional, true);
   for (const file of required) assert.ok(readFileSync(join(packageRoot, file)).equals(readFileSync(join(root, file))), `Tarball drift: ${file}`);
   const hookSha = createHash('sha256').update(readFileSync(join(packageRoot, 'dist/hook-entry.js'))).digest('hex');

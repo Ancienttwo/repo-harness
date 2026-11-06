@@ -950,7 +950,7 @@ test('each skill-projection repair command keeps the recorded selection and pass
   for (const row of rows) withTempHome(home => {
     const tools = path.join(home, 'tool-bin');
     fs.mkdirSync(tools, { recursive: true });
-    if (row.pi) writeExecutable(path.join(tools, 'pi'), '#!/bin/sh\ncase "$1" in --version) echo 1.4.0 ;; list) echo "No packages installed." ;; esac\n');
+    if (row.pi) writeExecutable(path.join(tools, 'pi'), '#!/bin/sh\ncase "$1" in --version) echo 1.5.0 ;; list) echo "No packages installed." ;; esac\n');
     const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, BUN_INSTALL: path.join(home, '.bun'), XDG_STATE_HOME: path.join(home, '.local/state'),
       REPO_HARNESS_HOME: path.join(home, '.repo-harness'), PATH: `${tools}:/usr/bin:/bin` };
     for (const key of ['CODEX_SKILLS_ROOT', 'CLAUDE_SKILLS_ROOT', 'PI_CODING_AGENT_DIR', 'REPO_HARNESS_INSTALL_PLUGINS']) delete env[key];

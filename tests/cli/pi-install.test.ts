@@ -43,10 +43,10 @@ function createFixture(root: string) {
   const source = join(home, '.bun/install/global/node_modules/repo-harness');
   const write = (path: string, content: string) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); };
   const env = { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'), PI_CODING_AGENT_DIR: join(root, 'pi-config'),
-    PATH: `${bin}:${process.env.PATH}`, PI_PACKAGE_DIR: undefined, PI_FIXTURE_ROOT: root, PI_FIXTURE_VERSION: '1.4.0', REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') };
+    PATH: `${bin}:${process.env.PATH}`, PI_PACKAGE_DIR: undefined, PI_FIXTURE_ROOT: root, PI_FIXTURE_VERSION: '1.5.0', REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') };
   write(join(source, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '0.0.0', dependencies, pi: { extensions: ['./extension.ts'] } }));
   symlinkSync(join(ROOT, 'node_modules'), join(source, 'node_modules'), 'dir');
-  write(join(host, 'package.json'), JSON.stringify({ name: '@earendil-works/pi-coding-agent', version: '1.4.0', type: 'module', main: './dist/index.js' }));
+  write(join(host, 'package.json'), JSON.stringify({ name: '@earendil-works/pi-coding-agent', version: '1.5.0', type: 'module', main: './dist/index.js' }));
   write(join(host, 'dist/index.js'), `import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 export function getPackageDir() { return process.env.PI_PACKAGE_DIR || fileURLToPath(new URL('../',import.meta.url)); }
@@ -445,7 +445,7 @@ describe('Pi package and skill installation', () => {
   }));
 
   test('setup probes the PATH Pi SDK instead of the bundled SDK', () => fixture(f => {
-    // Selected metadata differs from the bundled 1.4.0 SDK.
+    // Selected metadata differs from the bundled 1.5.0 SDK.
     f.write(join(f.host, 'dist/index.js'), `export const VERSION = '1.3.9';
 export function getPackageDir() { return ${JSON.stringify(f.host)}; }`);
     const checks = checkPiHost(f.env);
@@ -469,7 +469,7 @@ export function getPackageDir() { return ${JSON.stringify(f.host)}; }`);
     const empty = join(f.root, 'empty-package');
     mkdirSync(empty);
     expect(checkPiHost({ ...f.env, PI_PACKAGE_DIR: empty }).find(c => c.id === 'pi-capability')).toMatchObject({ status: 'fail', capability: { state: 'unavailable', code: 'PI_HOST_UNSUPPORTED_VERSION' } });
-    f.write(join(empty, 'package.json'), JSON.stringify({ version: '1.4.0' }));
+    f.write(join(empty, 'package.json'), JSON.stringify({ version: '1.5.0' }));
     expect(checkPiHost({ ...f.env, PI_PACKAGE_DIR: empty }).find(c => c.id === 'pi-capability')).toMatchObject({ status: 'fail', capability: { state: 'unavailable', code: 'PI_HOST_PATH_RESOLVER_UNAVAILABLE' } });
     f.write(join(empty, 'dist/core/tools/path-utils.js'), 'export function resolveToCwd(path) { return path; }');
     expect(checkPiHost({ ...f.env, PI_PACKAGE_DIR: empty }).find(c => c.id === 'pi-capability')).toMatchObject({ status: 'ok', capability: { state: 'ready' } });

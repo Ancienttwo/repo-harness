@@ -3,12 +3,12 @@
  * this one constant. There is no upper bound: a newer Pi is accepted when the
  * runtime capability probe passes.
  *
- * 1.4.0 is the floor because OAR 0.80.1 requires
- * `@earendil-works/pi-coding-agent ^1.4.0`, and Pi 1.4.0 has every event the
+ * 1.5.0 is the floor because OAR 0.88.0 requires
+ * `@earendil-works/pi-coding-agent ^1.5.0`, and Pi 1.5.0 has every event the
  * extension maps (`tool_call` with `parentToolCallId`, `before_agent_start`
  * messages, `agent_settled.aborted`).
  */
-export const MIN_PI_VERSION = '1.4.0' as const;
+export const MIN_PI_VERSION = '1.5.0' as const;
 
 /** Fixed codes for a Pi session that cannot run the repo-harness host. */
 export type PiHostUnavailableCode =
