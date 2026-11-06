@@ -309,11 +309,14 @@ it('verifies that the process import is the denied fixture transport', () => {
 
 const PRIVATE_EXPERIMENT_PATH = 'experiments/private/pstack-watch-pr';
 function packageEntryExposesPrivateFiles(entry: string): boolean {
-  // This small guard accepts plain relative file/directory entries only.
+  // Plain relative exclusions cannot expose private files.
   // New globs or invalid paths require review, never an inferred safe match.
+  const excluded = entry.startsWith('!');
+  if (excluded) entry = entry.slice(1);
   if (/[?*\[\]{}!()\\]/.test(entry)) return true;
   const listed = entry.replace(/^\.\//, '').replace(/\/+$/, '');
   if (!listed || listed.split('/').some(part => !part || part === '.' || part === '..')) return true;
+  if (excluded) return /^[A-Za-z]:/.test(listed);
   return listed === PRIVATE_EXPERIMENT_PATH
     || listed.startsWith(`${PRIVATE_EXPERIMENT_PATH}/`)
     || PRIVATE_EXPERIMENT_PATH.startsWith(`${listed}/`);
@@ -328,8 +331,10 @@ it('rejects private package exports at every overlap and fails closed on globs',
     `${ancestors[0]}/**`, `${PRIVATE_EXPERIMENT_PATH}/**`,
     `@(${ancestors[0]})/${parts.slice(1).join('/')}`, `+(${ancestors[0]})/${parts.slice(1).join('/')}`,
     'assets/*.md', '', '.', '..',
+    '!', '!!src/operator-web/', '!src/**', '!/src/', '!../src/', '!C:/src/',
   ]) expect(packageEntryExposesPrivateFiles(path)).toBe(true);
-  for (const path of [`${ancestors[1]}/unrelated`, `${PRIVATE_EXPERIMENT_PATH}-other`, `${ancestors[0]}-other/`]) {
+  for (const path of [`${ancestors[1]}/unrelated`, `${PRIVATE_EXPERIMENT_PATH}-other`, `${ancestors[0]}-other/`,
+    '!src/operator-web/', `!${PRIVATE_EXPERIMENT_PATH}`, `!./${PRIVATE_EXPERIMENT_PATH}/`]) {
     expect(packageEntryExposesPrivateFiles(path)).toBe(false);
   }
 });

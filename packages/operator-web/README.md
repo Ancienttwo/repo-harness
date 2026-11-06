@@ -13,3 +13,5 @@ The source stays in `src/operator-web/` in the repo-harness repository. From the
 repository root, run `bun run build:operator-web` to build this package's `dist/`.
 `npm pack` in this directory builds the console and copies the root MIT license.
 The package has no runtime dependencies or install scripts.
+
+In a source checkout, use `bun run dev:operator` against a running `repo-harness operator serve`; the checkout has no installed console package.
