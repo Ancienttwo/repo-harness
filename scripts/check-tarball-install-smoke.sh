@@ -179,8 +179,8 @@ JS_EOF
 }
 
 assert_operator_runtime() {
-  bun - "$OPERATOR_URL" "$OPERATOR_HOME" "$OPERATOR_REGISTRY" <<'JS_EOF'
-const [, , baseUrl, isolatedHome, registryHome] = process.argv;
+  bun - "$OPERATOR_URL" "$OPERATOR_HOME" "$OPERATOR_REGISTRY" "$PACKAGE_VERSION" <<'JS_EOF'
+const [, , baseUrl, isolatedHome, registryHome, packageVersion] = process.argv;
 const fail = (message) => {
   console.error(`[tarball-smoke] ERROR: ${message}`);
   process.exit(1);
@@ -189,7 +189,7 @@ const origin = new URL(baseUrl).origin;
 const health = await fetch(`${baseUrl}/healthz`);
 if (!health.ok) fail(`/healthz returned ${health.status}`);
 const healthBody = await health.json();
-if (healthBody?.ok !== true || healthBody?.service !== 'repo-harness-operator' || healthBody?.protocol !== 1) {
+if (healthBody?.ok !== true || healthBody?.service !== 'repo-harness-operator' || healthBody?.protocol !== 2 || healthBody?.version !== packageVersion) {
   fail('/healthz did not return the operator health contract');
 }
 const page = await fetch(`${baseUrl}/`);
