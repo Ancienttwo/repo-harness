@@ -3,6 +3,8 @@ import {
   SEAT_IDS,
   SEAT_RUNTIMES,
   SEAT_TOOLS,
+  CodexSeatNetworkError,
+  checkCodexSeatNetwork,
   decodeSeatsConfig,
   type SeatConfigV1,
   type SeatId,
@@ -31,7 +33,8 @@ export type SeatsConfigurationErrorCode =
   | 'seat_model_invalid'
   | 'seat_effort_invalid'
   | 'seat_tool_not_allowed'
-  | 'seat_fleet_not_allowed';
+  | 'seat_fleet_not_allowed'
+  | CodexSeatNetworkError['code'];
 
 export class SeatsConfigurationError extends Error {
   constructor(readonly code: SeatsConfigurationErrorCode, message: string) {
@@ -114,6 +117,7 @@ function checkSeat(id: SeatId, seat: SeatConfigV1, enabledRuntimes: readonly str
   }
   const tool = seat.tools.find(item => !range.tools.includes(item));
   if (tool !== undefined) throw new SeatsConfigurationError('seat_tool_not_allowed', `The ${id} seat cannot have the ${tool} tool group.`);
+  checkCodexSeatNetwork(id, seat);
   const role = seat.fleet.find(name => !runtime.fleet || !range.fleet.includes(name));
   if (role !== undefined) throw new SeatsConfigurationError('seat_fleet_not_allowed', `The ${id} seat on ${seat.runtime} cannot call the ${role} sub-agent.`);
 }
@@ -140,7 +144,7 @@ export function applySeatsSettings(
     }, { expectedRevision: request.expected_revision });
     return { config_revision: result.revision, changed_keys: result.value };
   } catch (error) {
-    if (error instanceof GlobalConfigurationError) throw new SeatsConfigurationError(error.code, error.message);
+    if (error instanceof GlobalConfigurationError || error instanceof CodexSeatNetworkError) throw new SeatsConfigurationError(error.code, error.message);
     throw error;
   }
 }

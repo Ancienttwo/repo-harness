@@ -2,6 +2,138 @@
 
 All notable changes to this skill are documented here.
 
+## [0.26.4] - 2026-11-05
+
+This release adds the Office landing page, repository rooms, advisor commands
+and dialog, stored board summaries and quota attention. It tightens review
+and Codex seat network limits and shares the private-key scan policy.
+
+### Upgrade
+
+- Install the CLI, then update to this exact version:
+
+  ```bash
+  bun add -g repo-harness@0.26.4 --no-cache
+  repo-harness update --version 0.26.4
+  ```
+
+  From 0.25.4 or earlier, follow the `[0.26.0]` Upgrade steps with 0.26.4
+  in place of 0.26.0.
+- Restart the Operator server and reload its page. Custom board readers
+  must accept board protocol 2 and parent-list protocol 3. Summary protocol
+  2 refuses an older stored snapshot as `snapshot_invalid`; the next board
+  read replaces it. No shape translator is shipped. (#1815, #1817)
+- `strategy` needs the `strategy-memory` plugin. An explicit plugin list
+  that omits it gets `install_plugin_unavailable` and a repair command that
+  adds it while keeping the selected plugins. Selection `all` is unaffected.
+  (#1833)
+- Remove `net` from each stored Codex seat that has `edit`. The console can
+  still read the stored seat, but save and `seats argv` refuse it with
+  `seat_codex_edit_net`. Writable Codex seats always run with sandbox network
+  off. (#1840)
+- A merge seal made by 0.26.3 does not verify under 0.26.4. Create a new seal
+  with the installed helper after upgrade. The fingerprint now hashes the
+  helper and its installed `src/core/security/secret-patterns.ts`, in that
+  order. The seal format stays `sha256:<hex>`. (#1829, #1831)
+- No hook runtime or install-state protocol change. Install state and
+  candidate reconciliation stay protocol 3. The install selection guard
+  now also covers `strategy`; the upgrade command stays the same. (#1833)
+
+### Breaking
+
+- Board JSON moves from protocol 1 to 2; the parent list moves from 2 to 3.
+  The board adds plan revision, default-branch merge policy and seat branch.
+  The decoders refuse absent fields. Unknown observations use explicit
+  `null` or `unknown` values. (#1815)
+- Board summaries use protocol 2 and add per-seat desk states, stalled
+  count, worker limit and current batch. Old protocol 1 snapshots fail
+  closed until a board read writes the new shape. (#1817)
+- The `strategy` command checks the recorded `strategy-memory` selection
+  before it loads the command body. Core-only installs and explicit lists
+  without that plugin can no longer run it. (#1833)
+- A writable Codex seat now always launches with
+  `sandbox_workspace_write.network_access=false`, and the default worker seat
+  drops the `net` tool group. With sandbox network on, the seat reached the
+  operator console write routes over loopback TCP and the herdr-core socket.
+  A Codex seat with both `edit` and `net` is invalid: a save and
+  `repo-harness seats argv` of that seat refuse with `seat_codex_edit_net`.
+  A stored seats section with such a seat stays readable in the console, and
+  each save is refused until the seat is fixed. Fix: remove `net` from that
+  seat, in the console or in `~/.repo-harness/config.json`. A read-only Codex
+  seat keeps `net` (web search on). Claude and Pi seats do not change. A Codex
+  worker seat runs no `gh` or `hc`; the orchestrator reads its last message.
+  (#1840)
+
+### Added
+
+- Four boss commands send server-owned text to the advisor. Cooldowns and
+  the repository turn lock guard sends; unknown delivery still needs
+  reconciliation. The route is `POST /api/v1/seats/advisor/boss-commands`.
+  (#1799)
+- Board reads store summaries by atomic replace with mode 0600. The
+  repository summaries route reports observed, not-read or unavailable
+  parents and keeps the newest observation. (#1803)
+- Each Office room represents one repository and shows live seats, the
+  acceptance queue, batch cart and boss commands. The scene uses pixel
+  sprites and supports reduced motion. (#1808)
+- The Office overview is the landing page, with one mini room per
+  repository. Its counts use observed summaries; reads stop while the tab
+  is hidden. Home stays available in the rail. (#1814)
+- The advisor dialog sends text and reads the redacted transcript and turn
+  status. It reads on open and after each send, with no background polling
+  or automatic resend. (#1816)
+- The Office shows a setup checklist when data is missing. Each row uses
+  the observed prerequisite state and gives a command to copy. Failed or
+  pending reads stay unknown. The checklist runs no command. (#1822)
+- Office rooms and cards show the board's plan revision, merge policy,
+  seat branch, desk states, worker limit, stalled count and current batch.
+  (#1824)
+- Board list and room views show quota attention for tight, exhausted and
+  unknown accounts. A failed quota read replaces the last report with its
+  reason. The Agents header Refresh now also reads quota. No timer polls
+  quota, and a running read finishes before another can start. (#1841)
+
+### Fixed
+
+- Worktree plan rows start unchecked. A review accepts 1 to 16 selected
+  rows; the selection and open review survive a console page change.
+  (#1798)
+- Cleanup plan review shows each item's advice, reason and evidence. A
+  running plan build shows the requested count and elapsed seconds. (#1800)
+- Task review, generic review and cleanup investigation deny local IPv4
+  TCP and all outbound IPv6 TCP for Codex, Claude and Pi. Pi can use declared
+  loopback model ports, but cannot select the default Operator port. (#1807)
+- A typed HTTP 403 `write_token_invalid` shows one reload banner on console
+  writes. Other errors keep their status; the client does not retry. (#1810)
+- Shared secret rules run in linear time, including failed matches on long
+  JWT, URL, credential and private-key input. (#1811)
+- The shared secret scanner and advisor transcript use one private-key
+  label grammar, including uppercase key types and PGP private blocks.
+  (#1823)
+- Orphan process-group identity reads the clock before `ps`, so `ps` run
+  time no longer makes a live group appear to have a reused ID. (#1828)
+- Merge-gate, agent-config and advisor readers use the shared private-key
+  block definition. It covers hyphenated key names, PGP secret blocks and
+  ssh.com private-key fences. (#1829)
+- Merge seals bind the installed key policy as well as the helper. A change
+  to that policy makes the seal stale. Both files must be outside the
+  candidate repository. (#1831)
+
+### Tests
+
+- Board page cases use one fixed clock across midnight. The elapsed-time
+  case keeps a running clock; no assertion was changed. (#1826)
+
+### Documentation
+
+- The 0.26.3 release record includes its publication values. (#1802)
+- The 0.26.3 release record includes the owner machine upgrade, hook probe
+  and Operator read-back. (#1805)
+- The approved Board office mockup adds pixel art, reference screenshots
+  and fixed poses under reduced motion. (#1793)
+- Generated architecture outputs are refreshed for
+  `main@1cf207939424`. (#1778)
+
 ## [0.26.3] - 2026-11-04
 
 This release adds authorized worktree cleanup, agent investigation of a

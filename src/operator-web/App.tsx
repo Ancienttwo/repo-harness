@@ -127,7 +127,7 @@ export interface OperatorAppProps {
   /** The seats section and its ranges behind the Agents page Seats section, and its one write. */
   readonly readSeatsSettings?: SeatsSettingsReader;
   readonly writeSeatsSettings?: SeatsSettingsWriter;
-  /** The quota read model behind the Agents page Quota section: read when the page opens and on its Refresh. */
+  /** The quota read model behind the Agents page Quota section and the Board attention rows: read when either page opens and on Refresh. */
   readonly readQuota?: QuotaReader;
   /** The read-only tests page's snapshot read, injectable on the same terms. */
   readonly readTests?: TestsReader;
@@ -353,7 +353,6 @@ export function OperatorApp({
   const seatsSettings = useSeatsSettingsForm(readSeatsSettings, writeSeatsSettings, refreshGeneration, agentsSaves, workspace === 'agents');
   const agentsSettings = useAgentsSettingsForm(readAgentsSettings, writeAgentsSettings, refreshGeneration, seatsSettings.saves, workspace === 'agents');
   if (agentsSettings.saves !== agentsSaves) setAgentsSaves(agentsSettings.saves);
-  const quota = useQuota(readQuota, workspace === 'agents');
   // Agents, Skills and Hooks share one cached setup check result; it is read only while one of them shows.
   const setup = useSetup(readSetup, initialSetup, refreshGeneration, (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace));
   const cliInventory = useCliInventory(readCliInventory, initialCliInventory, refreshGeneration, workspace === 'cli');
@@ -362,6 +361,9 @@ export function OperatorApp({
   const worktreeCleanup = useWorktreeCleanup(worktreesOf(worktrees), writeWorktreeCleanup, reloadWorktrees);
   const boardSubject = workspace === 'board' ? boardPlace(place.item) : null;
   const repositoryRoom = workspace === 'board' ? boardRoom(place.item) : null;
+  // The Agents section and the rows on a board share one read: a page open or the header Refresh starts it.
+  // The Board lists show no quota, so they start no provider process.
+  const quota = useQuota(readQuota, workspace === 'agents' || boardSubject !== null || repositoryRoom !== null ? `${workspace}:${refreshGeneration}` : null);
   const board = useBoard(readBoard, boardSubject, refreshGeneration);
   // The one owner of the board repository choice: the open board, the rail and the parent list set it.
   const [boardRepository, setBoardRepository] = useState<string | null>(() => readStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY));
@@ -467,7 +469,7 @@ export function OperatorApp({
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-1 pb-10 rail:px-6" data-workspace={workspace}>
           {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
           {workspace === 'board' && <BoardPage layout={boardLayout(place.item)} place={boardSubject} room={repositoryRoom} view={board} readBoard={readBoard} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={theme.mode} readBoardParents={readBoardParents} readBoardSummaries={readBoardSummaries} parents={boardParents} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
-            repositories={boardOptions} chosenRepository={boardRepository} onRepository={chooseBoardRepository} setup={{ repositories, devActivity, botAccess }} />}
+            repositories={boardOptions} chosenRepository={boardRepository} onRepository={chooseBoardRepository} setup={{ repositories, devActivity, botAccess }} quota={quota.view} />}
           {workspace === 'repositories' && <RepositoriesPage view={repositories} activity={devActivity} now={now} onOpen={openRepositoryBoard} t={t} />}
           {/* Kept mounted after the first visit so the open plan review and the plan selection survive a page change. */}
           {worktreesMounted && <div hidden={workspace !== 'worktrees'}>
