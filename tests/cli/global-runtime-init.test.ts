@@ -1574,7 +1574,7 @@ exit 0
         externalSkills: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
-        env: { ...sanitizedChildEnv(), HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+        env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
       });
 
       expect(result.exitCode).toBe(1);
@@ -2302,7 +2302,15 @@ exit 0
       writeFakeHc(fakeBin);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeFakeCodegraph(fakeBin, codegraphLog);
-      const seedGlobalPackage = `import { seedGlobalPackageFixture } from ${JSON.stringify(new URL('../helpers/install-ownership.ts', import.meta.url).href)}; seedGlobalPackageFixture();`;
+      const source = join(tmp, 'source');
+      copyPackageRuntimeFixture(ROOT, source);
+      const sourceModules = join(source, 'node_modules');
+      mkdirSync(sourceModules);
+      for (const name of readdirSync(join(ROOT, 'node_modules'))) {
+        symlinkSync(join(ROOT, 'node_modules', name), join(sourceModules, name));
+      }
+      setupConsoleFixture(home, source);
+      const seedGlobalPackage = `import { seedGlobalPackageFixture } from ${JSON.stringify(new URL('../helpers/install-ownership.ts', import.meta.url).href)}; seedGlobalPackageFixture(process.env, { mutable: true });`;
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "-" || "\${1:-}" == "-e" || "\${1:-}" == *.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/repo-harness"; chmod +x "$HOME/.bun/bin/repo-harness"; "${process.execPath}" -e '${seedGlobalPackage.replaceAll("'", "'\\''")}' || exit $?; fi\nexit 0\n`);
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
@@ -2332,7 +2340,7 @@ exit 0
       // resolve to the fake shim and never actually run the CLI script.
       const res = spawnSync(
         process.execPath,
-        [CLI, 'install', '--target', 'codex'],
+        [join(source, 'src/cli/index.ts'), 'install', '--target', 'codex'],
         {
           cwd: repo,
           encoding: 'utf-8',

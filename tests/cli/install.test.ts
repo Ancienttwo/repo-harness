@@ -744,6 +744,8 @@ describe('install command (Phase 1B)', () => {
         [
           CLI,
           'install',
+          '--plugins',
+          'architecture,cross-review,mcp,peer-runtime,platform,product,strategy-memory',
           '--target',
           'codex',
           '--no-cli',
