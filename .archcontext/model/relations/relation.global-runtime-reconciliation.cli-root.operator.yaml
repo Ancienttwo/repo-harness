@@ -3,4 +3,4 @@ id: relation.global-runtime-reconciliation.cli-root.operator
 kind: calls
 source: component.global-runtime-reconciliation.cli-root
 target: capability.runtime-harness.operator
-intent: "Guard the operator, worktrees and catch-up commands on the operator selection and load their actions after the guard"
+intent: "Register the operator command"
