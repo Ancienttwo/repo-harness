@@ -975,7 +975,8 @@ test('advisor seat: plain text reaches only the one live advisor terminal of the
   const seat = (name: string | null, parent: string | null = '1503', repository = '1186405141') => ({ labels: {
     'repo-harness.repository': repository, ...(parent === null ? {} : { 'repo-harness.parent': parent }), ...(name === null ? {} : { 'repo-harness.seat': name }) } });
   // Refused: the orchestrator, a worker, the advisor of another repository and a terminal without the seat label.
-  const refused = { t3: seat('orchestrator'), t4: seat('worker'), t5: seat('advisor', '1503', '987654321'), t6: seat(null) };
+  const refused = { t3: seat('orchestrator'), t4: seat('worker'), t5: seat('advisor', '1503', '987654321'), t6: seat(null),
+    'mini-cf/t11': seat('advisor'), 'lab/odd?terminal': seat('advisor') };
   const advisorHc = (terminals: Json, env: Json = {}) => {
     const hc = watchHc({ FAKE_LS: Object.keys(terminals).map(address => ({ address, state: 'live' })), FAKE_TERMINALS: terminals, ...env });
     return { ...hc, scope: { github_repository_id: 1186405141, parent: 1503, host: boardHostPorts(hc.options) } };
@@ -1011,6 +1012,10 @@ test('advisor seat: plain text reaches only the one live advisor terminal of the
   expect(transcript.lines.slice(0, 2)).toEqual(['l0', 'l1']);
   expect(transcript.lines.slice(-4)).toEqual(['export GITHUB_TOKEN=ghp_[REDACTED]', W, 'Authorization: Bearer [REDACTED]', W]);
   expect(decodeAdvisorSeatTranscript(JSON.parse(JSON.stringify(transcript)))).toEqual(transcript);
+  for (const terminal of ['mini-cf/t11', 'lab/odd?terminal', 't1a']) {
+    expect(() => decodeAdvisorSeatTranscript({ ...transcript, terminal })).toThrow('advisor seat target is invalid');
+  }
+  expect(one.calls().filter(args => args[0] === 'get').every(args => !args.at(-1)!.includes('/'))).toBe(true);
 
   // The read-back order: the last 200 lines, private key blocks withheld, a line over the limit withheld before or after redaction.
   const [begin, body, end] = ['-----BEGIN PRIVATE KEY-----', 'MC4CAQAwBQYDK2VwBCIEIGv0a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u', '-----END PRIVATE KEY-----'];
