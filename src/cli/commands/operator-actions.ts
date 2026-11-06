@@ -98,7 +98,14 @@ export function resolveOperatorAssets(
 ): Pick<OperatorServerOptions, 'static_root' | 'static_error'> {
   const root = findInstalledPackageRoot(cliPackageRoot, OPERATOR_WEB_PACKAGE_NAME);
   if (root === null) return {};
-  if (readPackageManifest(root).version !== PACKAGE_VERSION) {
+  let version: unknown;
+  try {
+    version = readPackageManifest(root)?.version;
+  } catch {
+    return {};
+  }
+  if (typeof version !== 'string') return {};
+  if (version !== PACKAGE_VERSION) {
     return { static_error: 'operator_assets_version_mismatch' };
   }
   return { static_root: join(root, 'dist') };

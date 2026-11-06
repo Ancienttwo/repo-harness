@@ -189,6 +189,14 @@ describe('operator serve command and HTTP boundary', () => {
       mkdirSync(cliRoot, { recursive: true });
       expect(resolveOperatorAssets(cliRoot)).toEqual({});
       mkdirSync(consoleRoot);
+      const manifestPath = join(consoleRoot, 'package.json');
+      mkdirSync(manifestPath);
+      expect(resolveOperatorAssets(cliRoot)).toEqual({});
+      rmSync(manifestPath, { recursive: true });
+      for (const manifest of ['{', 'null', '{}', '{"version":1}']) {
+        writeFileSync(manifestPath, manifest);
+        expect(resolveOperatorAssets(cliRoot)).toEqual({});
+      }
       writeFileSync(join(consoleRoot, 'package.json'), JSON.stringify({ version: '0.0.0' }));
       expect(resolveOperatorAssets(cliRoot)).toEqual({ static_error: 'operator_assets_version_mismatch' });
       writeFileSync(join(consoleRoot, 'package.json'), JSON.stringify({ version: PACKAGE_VERSION }));
@@ -196,17 +204,22 @@ describe('operator serve command and HTTP boundary', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
-  test('absent and mismatched consoles refuse pages while health and repositories still answer', async () => {
+  test('absent, invalid and mismatched consoles refuse pages while health and repositories still answer', async () => {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-console-refusal-'));
     const cliRoot = join(root, 'node_modules/repo-harness');
     const consoleRoot = join(root, 'node_modules', OPERATOR_WEB_PACKAGE_NAME);
     const registry = registryHome([]);
     try {
       mkdirSync(cliRoot, { recursive: true });
-      for (const code of ['operator_assets_unavailable', 'operator_assets_version_mismatch']) {
-        if (code === 'operator_assets_version_mismatch') {
+      for (const [manifest, code] of [
+        [undefined, 'operator_assets_unavailable'],
+        ['{', 'operator_assets_unavailable'],
+        ['null', 'operator_assets_unavailable'],
+        [JSON.stringify({ version: '0.0.0' }), 'operator_assets_version_mismatch'],
+      ] as const) {
+        if (manifest !== undefined) {
           mkdirSync(join(consoleRoot, 'dist'), { recursive: true });
-          writeFileSync(join(consoleRoot, 'package.json'), JSON.stringify({ version: '0.0.0' }));
+          writeFileSync(join(consoleRoot, 'package.json'), manifest);
           writeFileSync(join(consoleRoot, 'dist/index.html'), '<!doctype html><main>wrong version</main>');
         }
         const server = await startOperatorServer({ port: 0, ...resolveOperatorAssets(cliRoot), env: registry.env });
