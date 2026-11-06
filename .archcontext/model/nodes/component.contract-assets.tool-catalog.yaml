@@ -11,3 +11,4 @@ responsibilities:
 source:
   include:
     - src/core/tools/catalog.ts
+    - assets/tool-catalog.v1.json

@@ -21,10 +21,4 @@ source:
   exclude:
     - "src/core/operator/doc-session-agent-record.ts"
     - "src/core/operator/doc-session-record.ts"
-    - "src/core/operator/herdr-core-pin.json"
-    - "src/core/operator/herdr-pin.ts"
-    - "src/core/operator/pane-prefix.ts"
-    - "src/core/operator/public-text.ts"
-    - "src/core/operator/tests.ts"
     - "src/core/operator/worktree-cleanup-observation.ts"
-    - "src/core/operator/worktrees.ts"

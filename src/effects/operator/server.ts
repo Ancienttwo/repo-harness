@@ -9,7 +9,7 @@ import { OPERATOR_WORKTREES_CLEANUP_EXECUTE_ROUTE, OPERATOR_WORKTREES_CLEANUP_PL
 import {
   OPERATOR_WORKTREES_CLEANUP_INVESTIGATION_ROUTE, OPERATOR_WORKTREES_CLEANUP_INVESTIGATION_STATUS_ROUTE, readCleanupInvestigationStatus, worktreeCleanupInvestigationWriteRoute,
 } from './worktree-cleanup-investigation';
-import { decodeWorktrees, unavailableWorktrees, type WorktreesSnapshot } from '../../core/operator/worktrees';
+import { decodeWorktrees, unavailableWorktrees, type WorktreesSnapshot } from '../../core/public-projections/worktrees';
 import { decodeDevActivitySnapshot, unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
 import { architecturePullRequestsSource } from '../../core/dev-activity/architecture';
 import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
@@ -36,7 +36,8 @@ import { decodeRuntimeOverlay, unavailableRuntimeOverlay, type RuntimeOverlay } 
 import { ARCHITECTURE_FAILURES, parseArchitectureRequest, decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt, OPERATOR_ARCHITECTURE_HISTORY_ROUTE, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
 import { ARCHITECTURE_HISTORY_TIMEOUT_MS, decodeArchitectureHistoryPage } from '../architecture/architecture-read';
 export { OPERATOR_ARCHITECTURE_HISTORY_ROUTE, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
-import { decodeNotifyStatus, NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND, type NotifyUnavailableReason } from '../../core/operator/notify-status';
+import { decodeNotifyStatus, type NotifyUnavailableReason } from '../../core/operator/notify-status';
+import { NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND } from '../../core/decision/notify-relay-record';
 import { decodeBoard } from '../../core/board/board';
 import { decodeQuotaReport, OPERATOR_QUOTA_PATH } from '../../core/operator/quota';
 import { readQuotaReport } from './quota';

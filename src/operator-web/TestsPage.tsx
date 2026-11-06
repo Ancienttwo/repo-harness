@@ -1,10 +1,12 @@
 import { Loader } from '@cloudflare/kumo';
 import {
+  type TestsSnapshotV1,
+} from '../core/operator/tests';
+import {
   testRunCommand,
   type TestFileResultV1,
   type TestCaseV1,
-  type TestsSnapshotV1,
-} from '../core/operator/tests';
+} from '../core/ci/test-report';
 import type { OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
 import { useTestsSnapshot, type TestsRead, type TestsReader } from './repository-reads';

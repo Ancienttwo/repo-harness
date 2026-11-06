@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { isCiRepairIssueBody } from '../src/core/operator/tests';
+import { isCiRepairIssueBody } from '../src/core/ci/test-report';
 import { ARCHITECTURE_EVIDENCE, ARCHITECTURE_JOB, CIReportError, architectureActionRow, junitFiles, parseArchitectureSummary, reportCI, renderReport, watchDailyCI, type GitHubAPI } from '../scripts/report-ci';
 
 function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; before: string; after: string; prCommits: number; root: string; issues: any[]; comments: { issue: number; body: string }[]; calls: { path: string; method: string }[]; setConclusion: (value: string) => void; setRun: (id: number, attempt: number) => void; denyIssues: () => void }) => Promise<void>, candidateCommits = 1) {

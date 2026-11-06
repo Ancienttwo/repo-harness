@@ -8,7 +8,7 @@ import type { NotifyStatusV1 } from '../../core/operator/notify-status';
 import { unavailableRuntimeOverlay, type RuntimeOverlay } from '../../core/operator/runtime-status';
 import type { OperatorAppProps } from '../App';
 import { decodeSetupSnapshot } from '../../core/setup/decode';
-import { decodeWorktrees } from '../../core/operator/worktrees';
+import { decodeWorktrees } from '../../core/public-projections/worktrees';
 import { decodeBotAccessSnapshot } from '../../core/operator/bot-access';
 import { decodeSlackReviews, slackReviewsUnavailable } from '../../core/operator/slack-review';
 import type { BotAccessRead, BotReviewsRead } from '../bots';

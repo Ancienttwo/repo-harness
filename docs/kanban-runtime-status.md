@@ -67,7 +67,7 @@ The herdr-core source is optional. Observations are unbound because the pipeline
 
 The config names no core and no socket. The service reads the core that its environment selects (`HC_SESSION` or `HC_SOCKET`), through the typed `hc` helpers in `src/effects/terminal/herdr-core.ts`. It reads only terminals with the label `repo-harness.role=task-session`.
 
-Before it reads terminals, the service runs `hc server status --json`. The core identity is `core.id`. The version must be at or above `min_version` of the package file `src/core/operator/herdr-core-pin.json`. A core below the pin is unavailable with `hc_version_mismatch` and shows the expected and the actual version. A status read starts a stopped core; this is hc behavior.
+Before it reads terminals, the service runs `hc server status --json`. The core identity is `core.id`. The version must be at or above `min_version` of the package file `src/core/terminal/herdr-core-pin.json`. A core below the pin is unavailable with `hc_version_mismatch` and shows the expected and the actual version. A status read starts a stopped core; this is hc behavior.
 
 The service opens one `hc events` stream before HTTP serving. Its first snapshot completes the subscription. Each later event invalidates the cache; a `missed` notice starts a new source epoch. Each refresh is a new one-shot `hc events` snapshot. The snapshot `seq` is the revision of every terminal in it. When the stream ends, the service reconnects after one second, and checks the version again first. GET only reads the cache. Shutdown closes only its own `hc` children and timer. Five minutes without a successful snapshot marks data stale; silent working agents do not become errors.
 

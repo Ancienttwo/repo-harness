@@ -5,7 +5,7 @@ import {
   type AuthorizedCleanupRequest, type CleanupAdvice, type CleanupChoice, type CleanupExecutionItem, type CleanupExecutionResult,
   type CleanupInvestigationStatus, type CleanupPlan, type CleanupPlanItem,
 } from '../core/operator/worktree-cleanup-plan';
-import type { WorktreeView } from '../core/operator/worktrees';
+import type { WorktreeView } from '../core/public-projections/worktrees';
 import type { OperatorApiErrorV1 } from './operator-api-error';
 import { WriteReloadBanner, type OperatorWriteFailure } from './operator-write';
 import { isOperatorMessageKey, type OperatorTranslate } from './i18n';

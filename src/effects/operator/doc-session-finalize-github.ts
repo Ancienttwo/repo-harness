@@ -1,7 +1,7 @@
 /** Provider adapters for the #1023 finalization core. No credential reader or
  * alternate HTTP client: use the existing bounded GitHub command transport. */
 import type { DocSessionPublicationTarget, DocSessionDraftPr, DocSessionPrCreateResult } from '../../core/operator/doc-session-finalize';
-import { githubRemoteRepository } from '../../core/operator/docs';
+import { githubRemoteRepository } from '../../core/board/source';
 import type { DocSessionRecordV1 } from '../../core/operator/doc-session-record';
 import { runGithubCommand, type GithubCommandRunner } from '../github/issues';
 import { docSessionGitRunner } from './doc-session-changes';

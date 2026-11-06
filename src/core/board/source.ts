@@ -384,3 +384,9 @@ const REFS = /(?<![A-Za-z0-9_])refs?\s*:?\s*#([1-9][0-9]*)/giu;
 export function parseRefs(body: string): number[] {
   return [...new Set([...body.matchAll(REFS)].map(match => Number(match[1])))].sort((left, right) => left - right);
 }
+
+/** `owner/name` of a GitHub remote URL (https, scp-like ssh or ssh://), lowercased; null for any other URL. */
+export function githubRemoteRepository(url: string): string | null {
+  const match = /^(?:https:\/\/(?:[^@/]+@)?github\.com\/|git@github\.com:|ssh:\/\/git@github\.com(?::22)?\/)([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100}?)(?:\.git)?\/?$/iu.exec(url.trim());
+  return match ? `${match[1]}/${match[2]}`.toLowerCase() : null;
+}

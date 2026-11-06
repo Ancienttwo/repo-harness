@@ -12,7 +12,7 @@ import { worktreeTrashPrefix } from '../../src/effects/git/repository-identity';
 import { inspectWorktree } from '../../src/effects/state/coordination-worktree-topology';
 import { worktreeTrashNames } from '../../src/effects/state/worktree-trash';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
-import type { WorktreeView } from '../../src/core/operator/worktrees';
+import type { WorktreeView } from '../../src/core/public-projections/worktrees';
 
 const sid = 'a'.repeat(32), repoId = `repo_${'b'.repeat(16)}`;
 function fixture(orphan = false, sharedParent = false) {

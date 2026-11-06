@@ -5,7 +5,7 @@ import { isRepositoryRelativePath } from './doc-session-events';
 import { containsSecret } from '../security/secret-patterns';
 import type { CleanupLossEvidence } from './worktree-cleanup-observation';
 import { decodeWorktreeCleanupRequest, WORKTREE_CLEANUP_MAX_IDS, type WorktreeCleanupRequest } from './worktree-cleanup';
-import { decodeWorktrees, isPublicWorktreeDirectory, isPublicWorktreeText, type WorktreeView } from './worktrees';
+import { decodeWorktrees, isPublicWorktreeDirectory, isPublicWorktreeText, type WorktreeView } from '../public-projections/worktrees';
 
 /** G25 contract. The server owns plans; the client sends only ids and fingerprints. */
 export interface CleanupArchivePlan {

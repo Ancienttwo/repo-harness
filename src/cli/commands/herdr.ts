@@ -5,7 +5,7 @@ import type { DoctorCheckResult } from './doctor.ts';
 import { repoHarnessHome } from '../../effects/repo-harness-home.ts';
 import { NOTIFY_CHANNEL_SECRET_KEYS } from '../../core/decision/notify-secret-keys.ts';
 import { renderNotifyConfig, runNotifyRelay } from '../../effects/terminal/notify-relay.ts';
-import { NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND } from '../../core/operator/notify-status.ts';
+import { NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND } from '../../core/decision/notify-relay-record.ts';
 import { Command } from 'commander';
 import { existsSync, rmSync } from 'node:fs';
 import { isAbsolute } from 'node:path';

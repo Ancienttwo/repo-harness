@@ -16,17 +16,19 @@ import { join } from 'node:path';
 import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
 import {
   decodeTestsSnapshot,
-  isCiRepairIssueBody,
   OPERATOR_TESTS_KIND,
-  parseJUnitReport,
-  parseTestProjection,
-  publicTestText,
   TESTS_CHANNEL,
   TESTS_ISO_TIME,
-  type TestFileResultV1,
   type TestsSnapshotV1,
   type TestsUnavailableReason,
 } from '../../core/operator/tests';
+import {
+  isCiRepairIssueBody,
+  parseJUnitReport,
+  parseTestProjection,
+  publicTestText,
+  type TestFileResultV1,
+} from '../../core/ci/test-report';
 import { runDevActivityProcess, type DevActivityProcessRunner } from '../dev-activity/collector';
 import { readRepoHarnessRegistryStrictSnapshot, type RepoHarnessRegisteredRepo } from '../repo-registry';
 import { repoHarnessHome } from '../repo-harness-home';

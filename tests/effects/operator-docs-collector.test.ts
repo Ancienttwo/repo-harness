@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
-import { decodeDocsTree, githubRemoteRepository } from '../../src/core/operator/docs';
+import { decodeDocsTree } from '../../src/core/operator/docs';
+import { githubRemoteRepository } from '../../src/core/board/source';
 import { startDocsCollector, type DocsCollectorHandle } from '../../src/effects/operator/docs-collector';
 import { DocsReadError } from '../../src/effects/operator/docs-reader';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';

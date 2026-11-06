@@ -4,7 +4,7 @@
 // file. Each call logs its argv, and its HC_SOCKET and the names of the terminal identity keys it got. The registry names one repository.
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { HC_MIN_VERSION } from '../../src/core/operator/herdr-pin';
+import { HC_MIN_VERSION } from '../../src/core/terminal/herdr-pin';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { tmpWorkspace, writeShellExecutableFixture } from './repo-fixture';
 

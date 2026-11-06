@@ -10,7 +10,6 @@ responsibilities:
   - Hold the assets-layer source files of Operator Board so layer direction is checked per directory.
 source:
   include:
-    - assets/tool-catalog.v1.json
     - assets/operator/**
   exclude:
     - assets/operator/windows-job-controller.ps1

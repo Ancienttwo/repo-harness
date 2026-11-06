@@ -1,5 +1,5 @@
 import { hasUnredactedSecret, replaceSecrets } from '../security/secret-patterns';
-import { isPublicDevActivityText, publicDevActivityText } from './public-text';
+import { isPublicDevActivityText, publicDevActivityText } from '../public-projections/public-text';
 
 /**
  * Doc session events (PRD G3, G4; issue #1022). A record holds only what the

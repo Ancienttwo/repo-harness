@@ -13,7 +13,7 @@ import {
   type WorktreeCleanupResult,
   type WorktreeDigestRow,
 } from '../../core/operator/worktree-cleanup';
-import type { WorktreeView } from '../../core/operator/worktrees';
+import type { WorktreeView } from '../../core/public-projections/worktrees';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { managedWorktreeRoot } from '../git/managed-worktree';
 import { withoutRepositorySelectingGitEnv } from '../git/runner';

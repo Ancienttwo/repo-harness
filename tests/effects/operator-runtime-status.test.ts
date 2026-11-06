@@ -10,7 +10,7 @@ import { decodeRuntimeConfig, startRuntimeService, type NativeRuntimeConfig, typ
 import { readNativeRuntimeSnapshot, type NativeRuntimeSourceConfig } from '../../src/effects/operator/native-runtime-source';
 import { RUNTIME_CAPTURE_MAX_BYTES, type RuntimeCaptureSnapshot } from '../../src/core/operator/runtime-capture';
 import { configureRuntimeSource, RUNTIME_SOURCE_EVENTS, RUNTIME_SOURCE_PROTOCOL, type ConfiguredRuntimeSource } from '../../src/effects/operator/runtime-source';
-import { HC_MIN_VERSION, HcVersionMismatchError, hcVersionCheck } from '../../src/core/operator/herdr-pin';
+import { HC_MIN_VERSION, HcVersionMismatchError, hcVersionCheck } from '../../src/core/terminal/herdr-pin';
 import { fakeHc } from '../helpers/fake-hc';
 import { startOperatorServer } from '../../src/effects/operator/server';
 

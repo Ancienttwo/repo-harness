@@ -19,10 +19,6 @@ source:
     - src/effects/setup/**
     - src/effects/dev-activity/**
     - vite.operator.config.ts
-  exclude:
-    - src/effects/setup/pi-host-probe.ts
-    - src/effects/setup/pi-herdr-integration.ts
-    - src/effects/setup/pi-capability-child.ts
   entrypoints:
     - id: "entrypoint.operator.primary"
       path: "src/effects/operator/architecture.ts"

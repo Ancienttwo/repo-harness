@@ -1,7 +1,7 @@
 // The launch of one seat in a Herdr pane (#1473): the argv for its runtime and
 // the seat brief. Each limit names what the host does with it, so the output
 // never claims a limit that the host cannot apply.
-import { PANE_PREFIX } from './pane-prefix';
+import { PANE_PREFIX } from '../terminal/pane-prefix';
 import type { SeatConfigV1, SeatId, SeatTool } from './seats-settings';
 
 /** `seats`: the stored section. `defaults`: no section, so `DEFAULT_SEATS_CONFIG`. */

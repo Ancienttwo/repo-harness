@@ -7,7 +7,7 @@ import {
 import { ADVISOR_SEAT } from '../../core/board/advisor-seat';
 import { BOARD_PAGE, decodeParentRead, decodePullRequestsRead, type BoardPullRequestReadV1 } from '../../core/board/source';
 import { normalizeCapabilityPath } from '../../core/capabilities/registry';
-import { HC_MIN_VERSION } from '../../core/operator/herdr-pin';
+import { HC_MIN_VERSION } from '../../core/terminal/herdr-pin';
 import { parsePublicationPolicy, policyFileFromContents, PUBLICATION_POLICY_PATH, type PolicyFileAtRef } from '../../core/publication/acceptance-merge-policy';
 import type { PullRequestReadinessV2, PullRequestSelectionV2 } from '../../core/publication/merge-readiness';
 import { gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';

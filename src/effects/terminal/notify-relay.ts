@@ -5,7 +5,7 @@
 import { hostname } from 'node:os';
 import { NOTIFY_CHANNEL_SECRET_KEYS } from '../../core/decision/notify-secret-keys';
 import { NAME_PATTERN, botEvent } from '../../../assets/herdr/github-events/bot-event.mjs';
-import { NOTIFY_INSTALL_COMMAND } from '../../core/operator/notify-status';
+import { NOTIFY_INSTALL_COMMAND } from '../../core/decision/notify-relay-record';
 import {
   EMPTY_RELAY_DELIVERIES,
   NOTIFY_CHANNELS,

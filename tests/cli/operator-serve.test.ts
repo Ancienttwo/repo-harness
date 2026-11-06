@@ -17,7 +17,7 @@ import type { ArchctxProcessResult } from '../../src/core/architecture/contracts
 import { resolveCompatibleNodeRuntime } from '../../src/effects/architecture/archctx-provider';
 import { ARCHITECTURE_FAILURES } from '../../src/core/operator/architecture';
 import { unavailableDevActivitySnapshot } from '../../src/core/dev-activity/decode';
-import { unavailableWorktrees, type WorktreesSnapshot } from '../../src/core/operator/worktrees';
+import { unavailableWorktrees, type WorktreesSnapshot } from '../../src/core/public-projections/worktrees';
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { unavailableSetupSnapshot } from '../../src/core/setup/decode';
 import { projectSetupSnapshot } from '../../src/core/setup/projection';

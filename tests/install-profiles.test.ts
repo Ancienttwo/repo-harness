@@ -49,7 +49,7 @@ import { buildManagedHooks } from '../src/cli/installer/managed-entries';
 import { runUserUninstall } from '../src/cli/installer/uninstall';
 import { copyUpgradeFixture } from './helpers/upgrade-fixtures';
 import { writeFakeHc } from './helpers/fake-hc';
-import { HC_MIN_VERSION } from '../src/core/operator/herdr-pin';
+import { HC_MIN_VERSION } from '../src/core/terminal/herdr-pin';
 
 const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');

@@ -14,7 +14,7 @@ import type { OperatorLocale } from '../../src/operator-web/i18n';
 import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
 import { busyWorktrees } from '../../src/operator-web/fixtures/worktrees';
-import { decodeWorktrees } from '../../src/core/operator/worktrees';
+import { decodeWorktrees } from '../../src/core/public-projections/worktrees';
 import { degradedSetup, loadingSetup, readySetup } from '../../src/operator-web/fixtures/setup';
 import { registryOf } from '../../src/operator-web/fixtures';
 import { busyQuota, degradedQuota } from '../../src/operator-web/fixtures/quota';

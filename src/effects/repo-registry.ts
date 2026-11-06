@@ -10,7 +10,7 @@ import {
   type ExclusiveDirectoryLockOwner,
 } from "./locking/exclusive-directory-lock";
 import { gitSpawnSync, withoutRepositorySelectingGitEnv } from "./git/runner";
-import { PANE_PREFIX } from "../core/operator/pane-prefix";
+import { PANE_PREFIX } from "../core/terminal/pane-prefix";
 import { repoHarnessHome } from "./repo-harness-home";
 
 export type RepoHarnessRegistrySource = "adopt" | "init" | "mcp-setup" | "manual" | "discovery"; // "adopt": legacy-read-only, no current writers

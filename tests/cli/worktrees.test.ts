@@ -6,7 +6,7 @@ import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixtu
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { controlledWorktreeProcessPreload } from '../helpers/controlled-worktree-processes';
 import { decodeWorktreeCleanupRequest, worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
-import type { WorktreeView, WorktreesSnapshot } from '../../src/core/operator/worktrees';
+import type { WorktreeView, WorktreesSnapshot } from '../../src/core/public-projections/worktrees';
 import { cleanCommand, greenCleanupBatches, worktreeListOutput } from '../../src/cli/commands/worktrees';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { worktreeId } from '../../src/effects/git/worktree-record';

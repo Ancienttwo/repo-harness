@@ -1,7 +1,7 @@
 import type { BoardPlanV1 } from '../core/board/board';
 import type { BoardParentsV1 } from '../core/board/parents';
 import { isTruncatedDevActivityReason, type DevActivitySourceHealth } from '../core/dev-activity/types';
-import { HC_MIN_VERSION } from '../core/operator/herdr-pin';
+import { HC_MIN_VERSION } from '../core/terminal/herdr-pin';
 import type { OfficeCard, OfficeRepositoryView } from './board-office';
 import type { BoardParentsReason, BoardParentsView } from './board-view';
 import type { BotAccessView } from './bots';

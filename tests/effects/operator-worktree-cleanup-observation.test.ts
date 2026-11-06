@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { cleanupContentsDigestInput } from '../../src/core/operator/worktree-cleanup-observation';
 import { observeCleanupLoss, type CleanupObservationTarget } from '../../src/effects/operator/worktree-cleanup-observation';
 import { createCleanupPlan } from '../../src/effects/operator/worktree-cleanup-plan';
-import type { WorktreeView } from '../../src/core/operator/worktrees';
+import type { WorktreeView } from '../../src/core/public-projections/worktrees';
 import { worktreeId } from '../../src/effects/git/worktree-record';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
