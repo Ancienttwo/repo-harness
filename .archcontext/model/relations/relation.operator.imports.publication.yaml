@@ -4,5 +4,5 @@
   "kind": "depends-on",
   "source": "capability.runtime-harness.operator",
   "target": "capability.organization.publication",
-  "intent": "Use publication readiness types in the Operator fixture."
+  "intent": "Use publication readiness types in the Operator fixture, and call the publication operations for every GitHub write of the Operator."
 }

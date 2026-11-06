@@ -4,5 +4,5 @@
   "kind": "depends-on",
   "source": "capability.organization.publication",
   "target": "capability.verification.acceptance-review",
-  "intent": "Read the acceptance receipt for publication evidence."
+  "intent": "Run the bounded gh command transport that the Draft PR operation uses."
 }

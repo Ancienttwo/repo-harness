@@ -11,6 +11,7 @@ responsibilities:
   - "Bind registry-scoped readiness to the local GitHub origin before provider reads; preserve the standalone explicit PR CLI capability."
   - "Store immutable provider feedback facts and separate delivery receipts; Task Fleet owns admitted feedback intake."
   - "Provide live provider merge commit/tree evidence for exact integration candidates and guarded worktree cleanup without changing GitHub issue or PR authority."
+  - "Own the GitHub writes that plugins use: push one commit to a new remote ref, and find or create a Draft PR for one exact head. A lost or invalid response after a write stays unknown."
 source:
   include:
     - "src/core/publication/**"

@@ -74,6 +74,7 @@ test('real Git snapshot, edited message, non-force bare push and readback; repla
   expect(answer.status).toBe(200); expect(body(answer).stage).toBe('complete');
   const head = git(s.worktree, ['rev-parse', 'HEAD']);
   expect(git(s.remote, ['rev-parse', `refs/heads/${s.branch}`])).toBe(head);
+  expect(git(s.repo, ['for-each-ref', `refs/remotes/origin/${s.branch}`])).toBe('');
   expect(git(s.worktree, ['show', `${head}:docs/guide.md`])).toBe('after');
   expect(git(s.worktree, ['log', '-1', '--format=%B'])).toBe(s.input.message);
   expect(git(s.worktree, ['rev-list', '--count', `${s.base}..HEAD`])).toBe('1');
