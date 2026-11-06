@@ -111,7 +111,12 @@ export function claudeHostAgentTypes(env: NodeJS.ProcessEnv = process.env): stri
       if (files.length === 0) return [];
       const manifestPath = join(installPath, '.claude-plugin', 'plugin.json');
       const manifest = readJson(manifestPath);
-      const plugin = manifest === undefined ? undefined : record(manifest, manifestPath).name;
+      // Agents without a manifest have no known type name, so they cannot be denied: refuse, never skip.
+      if (manifest === undefined) {
+        const orphaned = readText(join(installPath, '.orphaned_at')) !== undefined ? ' Claude Code marked it orphaned.' : '';
+        throw new ClaudeAgentTypesError(`${manifestPath} is missing, but enabled plugin ${key} has agents at ${agentsDirectory}.${orphaned} Reinstall or disable ${key}.`);
+      }
+      const plugin = record(manifest, manifestPath).name;
       if (typeof plugin !== 'string' || plugin === '') throw new ClaudeAgentTypesError(`${manifestPath} has no plugin name.`);
       return files.map((path) => {
         const folders = relative(agentsDirectory, path).split(sep).slice(0, -1);

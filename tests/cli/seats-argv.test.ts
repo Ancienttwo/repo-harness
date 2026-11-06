@@ -293,6 +293,18 @@ describe("repo-harness seats argv", () => {
     });
   });
 
+  test("an enabled plugin whose manifest is missing fails closed and names the cause and the fix", () => {
+    withHome(undefined, (home) => {
+      rmSync(join(home, "plugin", ".claude-plugin"), { recursive: true });
+      writeFileSync(join(home, "plugin", ".orphaned_at"), "1793467681012");
+      const result = argv(home, "advisor", "--json");
+      expect(result.status).toBe(1);
+      const error = JSON.parse(result.stderr);
+      expect(error.error).toBe("claude_agent_types_unreadable");
+      expect(error.message).toMatch(/plugin\.json is missing, .* Claude Code marked it orphaned\. Reinstall or disable demo@market\.$/);
+    });
+  });
+
   test("the seat labels hold the GitHub repository id and the dispatch numbers, and need --repository-id", () => {
     withHome(undefined, (home) => {
       // With --repository-id the command also names the pane, so it runs in a registered checkout with a prefix.
