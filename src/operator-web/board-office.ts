@@ -50,9 +50,9 @@ export interface OfficeQueueEntry {
   readonly pr: number;
   readonly title: string;
   readonly issue: number | null;
-  /** The agent of the first seat that names the pull request; null when no live seat does. */
+  /** The agent of the first seat that resolves to the pull request; null when no live seat does. */
   readonly agent: string | null;
-  /** The status message of each live seat that names the pull request. A worker and a reviewer can share one desk key, so each message keeps its seat. */
+  /** The status message of each live seat that resolves to the pull request. Several seats can share one desk key, so each message keeps its seat. */
   readonly messages: readonly { readonly address: string; readonly text: string }[];
 }
 
@@ -175,7 +175,8 @@ export function officeRoom(list: BoardParentsV1, active: { readonly board: Board
     limit: workerLimit(board),
     queue: (board?.pull_requests ?? []).filter(isQueued).map((pr) => {
       const item = board!.items.find(entry => entry.pull_requests.includes(pr.number)) ?? null;
-      const owners = seats.filter(seat => seat.pr === pr.number || (item !== null && seat.issue === item.number));
+      // The resolution of the desk, so each seat on a queued desk is an owner, on any issue that lists the pull request.
+      const owners = seats.filter(seat => seatPullRequest(board!, seat, seatItem(board!, seat))?.number === pr.number);
       return {
         pr: pr.number, title: item?.title ?? pr.head_ref, issue: item?.number ?? null, agent: owners[0]?.agent ?? null,
         messages: owners.flatMap(seat => (seat.status_msg === null ? [] : [{ address: seat.address, text: seat.status_msg }])),

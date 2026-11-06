@@ -1419,8 +1419,20 @@ describe('board office (#1755)', () => {
     const onlyReviewer = queued(null, 'round 1 runs', null, null);
     // The room draws three queue entries; only a longer queue has the zone that lists every pull request.
     const crowded = { ...full, pull_requests: [...full.pull_requests, ...[9001, 9002, 9003].map(number => ({ ...full.pull_requests.find(pr => pr.number === 1491)!, number }))] };
+    // Two seats with only an issue label, on different issues that list one queued pull request.
+    const sharedPullRequest = boardWith({
+      prs: { 1491: { acceptance: { status: 'not_accepted' } } }, items: { 1475: { pull_requests: [1491] }, 1476: { pull_requests: [1491] } },
+      terminals: [{ ...seat('t1', 'worker', 1475, null, 'idle'), status_msg: 'first issue' }, { ...seat('t2', 'worker', 1476, null, 'idle'), status_msg: 'second issue' }],
+    });
+    // A seat on a linked issue that names another pull request keeps its own desk, so its message stays out of this queue entry.
+    const otherPullRequest = boardWith({
+      prs: { 1491: { acceptance: { status: 'not_accepted' } } },
+      terminals: [{ ...seat('t1', 'worker', 1475, 1491, 'idle'), status_msg: 'queued' }, { ...seat('t2', 'worker', 1475, 1494, 'idle'), status_msg: 'elsewhere' }],
+    });
     const desk = ['[data-queue-pr="1491"]'], queueRow = ['[data-office-hit="queue"]', '[data-panel-pick="queue:1491"]'];
     for (const [board, clicks, panel, shown, hidden] of [
+      [sharedPullRequest, desk, 'WORKER · QUEUE', ['Message t1first issue', 'Message t2second issue'], []],
+      [otherPullRequest, desk, 'WORKER · QUEUE', ['Message t1queued'], ['elsewhere']],
       [full, desk, 'WORKER · QUEUE', ['Message t1migration limit to confirm', 'Message t2round 1 runs'], []],
       [crowded, queueRow, 'WORKER · QUEUE', ['Message t1migration limit to confirm', 'Message t2round 1 runs'], []],
       [onlyReviewer, desk, 'WORKER · QUEUE', ['Message t2round 1 runs'], ['Message t1']],
