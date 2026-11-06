@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Banner, Button, Empty, Loader, Switch, cn } from '@cloudflare/kumo';
-import { buildSeatLaunch, type SeatLimitLevel } from '../core/operator/seat-launch';
-import { SEAT_IDS, SEAT_TOOLS, type SeatId, type SeatRuntime, type SeatsSettingsV1 } from '../core/operator/seats-settings';
+import { buildSeatLaunch, type SeatLimitLevel } from '../core/board/seat-launch';
+import { SEAT_IDS, SEAT_TOOLS, type SeatId, type SeatRuntime, type SeatsSettingsV1 } from '../core/board/seats-settings';
 import type { SetupSnapshotV2 } from '../core/setup/types';
 import type { OperatorTranslate } from './i18n';
 import { seatChanges, setSeatEffort, setSeatModel, setSeatRole, setSeatRuntime, setSeatTool, type SeatsSettingsForm } from './seats';

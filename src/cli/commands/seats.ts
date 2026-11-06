@@ -1,11 +1,11 @@
 import { Command } from 'commander';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { CLAUDE_BUILTIN_AGENT_TYPES, SeatPaneNameError, buildSeatLaunch, seatPaneName, seatTabName, type SeatLaunchV1 } from '../../core/operator/seat-launch';
-import { CodexSeatNetworkError, SEAT_IDS, checkCodexSeatNetwork, decodeSeatsConfig, type SeatId } from '../../core/operator/seats-settings';
+import { CLAUDE_BUILTIN_AGENT_TYPES, SeatPaneNameError, buildSeatLaunch, seatPaneName, seatTabName, type SeatLaunchV1 } from '../../core/board/seat-launch';
+import { CodexSeatNetworkError, SEAT_IDS, checkCodexSeatNetwork, decodeSeatsConfig, type SeatId } from '../../core/board/seats-settings';
 import { readGlobalConfiguration } from '../../effects/configuration/global-configuration';
 import { resolveGitCommonDirectory } from '../../effects/git/common-directory';
-import { ClaudeAgentTypesError, claudeHostAgentTypes } from '../../effects/operator/claude-agent-types';
+import { ClaudeAgentTypesError, claudeHostAgentTypes } from '../../effects/board/claude-agent-types';
 import { RepoHarnessRegistryStrictError, canonicalRepoPath, readRepoHarnessRegistryStrictSnapshot, repoCheckoutProbeEnv } from '../../effects/repo-registry';
 import { HerdrCoreError, RH_LABEL, hcLabel, hcLabelPairs, type HcLabels } from '../../effects/terminal/herdr-core';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';

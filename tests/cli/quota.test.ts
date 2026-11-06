@@ -11,7 +11,7 @@ import {
   decodeQuotaReport,
   formatQuotaReport,
   type QuotaReport,
-} from '../../src/core/operator/quota';
+} from '../../src/core/board/quota';
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');

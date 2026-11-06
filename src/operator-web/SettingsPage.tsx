@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Banner, Button, Empty, Loader, Switch, cn } from '@cloudflare/kumo';
-import type { AgentRuntimeSettingsEntryV1, AgentUse, AgentsSettingsV1 } from '../core/operator/agents-settings';
+import type { AgentRuntimeSettingsEntryV1, AgentUse, AgentsSettingsV1 } from '../core/board/agents-settings';
 import type { OperatorApiErrorV1 } from './operator-api-error';
 import { isOperatorMessageKey, type OperatorMessageKey, type OperatorTranslate } from './i18n';
 import { ageWords } from './labels';

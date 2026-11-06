@@ -33,7 +33,7 @@ import {
 } from '../../src/effects/operator/server';
 import { OPERATOR_SETTINGS_AGENTS_PATH, OPERATOR_SETTINGS_AGENTS_ROUTE } from '../../src/effects/operator/agents-settings-route';
 import { OPERATOR_SETTINGS_SEATS_PATH, OPERATOR_SETTINGS_SEATS_ROUTE } from '../../src/effects/operator/seats-settings-route';
-import { OPERATOR_QUOTA_PATH } from '../../src/core/operator/quota';
+import { OPERATOR_QUOTA_PATH } from '../../src/core/board/quota';
 import { OPERATOR_WORKTREES_CLEANUP_ROUTE } from '../../src/effects/operator/worktree-cleanup';
 import { OPERATOR_WORKTREES_CLEANUP_INVESTIGATION_ROUTE, OPERATOR_WORKTREES_CLEANUP_INVESTIGATION_STATUS_ROUTE } from '../../src/effects/operator/worktree-cleanup-investigation';
 import { OPERATOR_SESSIONS_ROUTE } from '../../src/effects/operator/doc-session';

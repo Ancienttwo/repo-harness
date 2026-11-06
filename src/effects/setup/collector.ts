@@ -20,7 +20,7 @@ import { terminateProcessGroup } from '../process-group-termination';
 
 import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../core/setup/decode';
 import type { SetupReason, SetupSnapshotV2 } from '../../core/setup/types';
-import { decodeAgentRuntimeProbe, type AgentRuntimeProbeV1, type AgentRuntimesCacheV1, type AgentRuntimesReason } from '../../core/operator/agents-settings';
+import { decodeAgentRuntimeProbe, type AgentRuntimeProbeV1, type AgentRuntimesCacheV1, type AgentRuntimesReason } from '../../core/board/agents-settings';
 
 export const SETUP_INTERVAL_MS = 10 * 60_000;
 export const SETUP_TIMEOUT_MS = 90_000;

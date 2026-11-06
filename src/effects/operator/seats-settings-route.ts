@@ -5,14 +5,14 @@ import {
   decodeSeatsSettingsRequest,
   decodeSeatsSettingsResult,
   type SeatsSettingsV1,
-} from '../../core/operator/seats-settings';
+} from '../../core/board/seats-settings';
 import {
   SeatsConfigurationError,
   applySeatsSettings,
   readSeatsConfiguration,
   seatsRanges,
   type SeatsConfigurationErrorCode,
-} from './seats-configuration';
+} from '../board/seats-configuration';
 import type { OperatorWriteRoute } from './write-channel';
 import { OperatorWriteRefusal } from './write-run';
 

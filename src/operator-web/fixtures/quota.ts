@@ -5,7 +5,7 @@ import {
   decodeQuotaReport,
   unknownQuotaReading,
   type QuotaReport,
-} from '../../core/operator/quota';
+} from '../../core/board/quota';
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const seconds = (ms: number) => Math.round(ms / 1000);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { decodeQuotaReport, OPERATOR_QUOTA_PATH, type QuotaReport } from '../core/operator/quota';
+import { decodeQuotaReport, OPERATOR_QUOTA_PATH, type QuotaReport } from '../core/board/quota';
 import { fetchSettings, type SettingsReader, type SettingsReason } from './settings';
 
 /**

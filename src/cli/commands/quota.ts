@@ -1,6 +1,6 @@
 import { Command } from 'commander';
-import { formatQuotaReport } from '../../core/operator/quota';
-import { readQuotaReport } from '../../effects/operator/quota';
+import { formatQuotaReport } from '../../core/board/quota';
+import { readQuotaReport } from '../../effects/board/quota';
 
 /** Exit 0 when the read completes: a failed source is an `unknown` account with its reason, so the coordinator sees each account. */
 export function buildQuotaCommand(): Command {

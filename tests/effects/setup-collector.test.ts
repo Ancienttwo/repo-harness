@@ -8,7 +8,7 @@ import { ROUTES } from '../../src/cli/hook/route-registry';
 import { projectSetupSnapshot } from '../../src/core/setup/projection';
 import { decodeSetupSnapshot } from '../../src/core/setup/decode';
 import type { SetupSnapshotV2 } from '../../src/core/setup/types';
-import type { AgentRuntimeProbeV1 } from '../../src/core/operator/agents-settings';
+import type { AgentRuntimeProbeV1 } from '../../src/core/board/agents-settings';
 import {
   AGENT_RUNTIME_PROBE_ARGV,
   SETUP_CHILD_ARGV,

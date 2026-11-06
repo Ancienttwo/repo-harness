@@ -6,7 +6,7 @@ import {
   decodeAgentsSettingsResult,
   type AgentRuntimesCacheV1,
   type AgentsSettingsV1,
-} from '../../core/operator/agents-settings';
+} from '../../core/board/agents-settings';
 import { isDocsHostRuntimeId } from '../../core/operator/docs-host-runtimes';
 import { isReviewRuntimeId, REVIEW_RUNTIME_IDS } from '../../core/review/review-runtimes';
 import {

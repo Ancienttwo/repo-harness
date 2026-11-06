@@ -14,7 +14,7 @@ import {
   type ClaudeQuotaCapture,
   type QuotaReading,
   type QuotaReport,
-} from '../../core/operator/quota';
+} from '../../core/board/quota';
 
 const CODEX_READ_TIMEOUT_MS = 20_000;
 

@@ -10,9 +10,9 @@ import {
   decodeAgentsSettings,
   type AgentRuntimeProbeV1,
   type AgentRuntimesCacheV1,
-} from '../../src/core/operator/agents-settings';
-import { DEFAULT_SEATS_CONFIG, decodeSeatsSettings } from '../../src/core/operator/seats-settings';
-import { buildQuotaReport, OPERATOR_QUOTA_PATH, unknownQuotaReading } from '../../src/core/operator/quota';
+} from '../../src/core/board/agents-settings';
+import { DEFAULT_SEATS_CONFIG, decodeSeatsSettings } from '../../src/core/board/seats-settings';
+import { buildQuotaReport, OPERATOR_QUOTA_PATH, unknownQuotaReading } from '../../src/core/board/quota';
 import { probeAgentRuntimes, registryRuntimes } from '../../src/effects/setup/agent-runtime-probe';
 import { startOperatorServer, type OperatorServerHandle } from '../../src/effects/operator/server';
 import { acquireRuntimeTransactionLock, globalRuntimeScope } from '../../src/effects/locking/runtime-transaction-lock';

@@ -1,4 +1,4 @@
-import { decodeAgentsConfig } from '../../core/operator/agents-settings';
+import { decodeAgentsConfig } from '../../core/board/agents-settings';
 import {
   SEAT_IDS,
   SEAT_RUNTIMES,
@@ -14,7 +14,7 @@ import {
   type SeatsRangesV1,
   type SeatsSettingsResultV1,
   type SeatTool,
-} from '../../core/operator/seats-settings';
+} from '../../core/board/seats-settings';
 import {
   AGENT_TARGET_OVERRIDES,
   EFFORT_LEVELS,

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.board.imports.fleet-role-profiles
+kind: depends-on
+source: capability.organization.board
+target: component.contract-assets.fleet-role-profiles
+intent: "Read the fleet role profiles for the seat ranges, the seat sub-agents and the seats section check."

@@ -3,4 +3,4 @@ id: relation.board.cli.effects
 kind: calls
 source: component.board.cli
 target: component.board.effects
-intent: "Collect the board of one parent issue"
+intent: "Collect the board of one parent issue, read the quota and read the Claude agent types"

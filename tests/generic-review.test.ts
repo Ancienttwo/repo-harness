@@ -531,7 +531,7 @@ console.log(JSON.stringify({session_id:id,model:'openai/gpt-4o',extension_ready:
 test('Pi review options use native configuration; an unobserved model is null for every runtime', async () => {
   const { isReviewRuntimeId } = await import('../src/core/review/review-runtimes');
   const { validateDomainReview } = await import('../src/core/review/acceptance-receipt');
-  const { decodeAgentsConfig } = await import('../src/core/operator/agents-settings');
+  const { decodeAgentsConfig } = await import('../src/core/board/agents-settings');
   expect(isReviewRuntimeId('pi')).toBe(true);
   expect(decodeAgentsConfig({ enabled: ['pi'], uses: { docs: [], review: ['pi'] }, default_docs: null }).uses.review).toEqual(['pi']);
   expect(() => reviewSessionOptions('pi', '/fixture')).toThrow('agent_directory_required');

@@ -5,7 +5,7 @@ import type { BoardFindingV1 } from '../core/board/attention';
 import type { BoardItemV1, BoardPullRequestV1, BoardV1 } from '../core/board/board';
 import type { BoardParentsV1, BoardParentV1 } from '../core/board/parents';
 import { primaryPullRequest } from '../core/board/pull-requests';
-import type { QuotaAccountReport } from '../core/operator/quota';
+import type { QuotaAccountReport } from '../core/board/quota';
 import {
   BOARD_STAGES, findingItem, itemStage, itemTerminals, shippedToday,
   useBoard, useBoardParents, type BoardParentsReader, type BoardParentsView, type BoardReader, type BoardReason, type BoardStage, type BoardView,
