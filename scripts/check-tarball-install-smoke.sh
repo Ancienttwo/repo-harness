@@ -683,7 +683,7 @@ JS_EOF
 
 # peer-runtime owns the action bodies, review-runner and the terminal paths
 # in task-agent-host's model. Core command shells and runtime closeout stay out.
-PEER_OWNED='[\\/]src[\\/](?:effects[\\/](?:review-runner[\\/]|terminal[\\/](?:task-session|task-runtime-observation|native-task-session|herdr-notify-install|notify-relay)\.ts)|cli[\\/]commands[\\/](?:herdr|events)-actions\.ts)|[\\/]@botiverse[\\/]oar[\\/]'
+PEER_OWNED='[\\/]src[\\/](?:effects[\\/](?:review-runner[\\/]|terminal[\\/](?:task-session|task-runtime-observation|native-task-session|herdr-notify-install|notify-relay)\.ts)|cli[\\/]commands[\\/](?:herdr|events)-actions\.ts)|[\\/]@botiverse[\\/]oar[\\/]|[\\/]assets[\\/]herdr[\\/]'
 PEER_LOAD_PROBE="$TMP_DIR/peer-load-probe.ts"
 cat >"$PEER_LOAD_PROBE" <<JS_EOF
 process.on("exit", () => process.stderr.write(\`peer-modules:\${Object.keys(require.cache).filter((path) => /$PEER_OWNED/.test(path)).length}\n\`));

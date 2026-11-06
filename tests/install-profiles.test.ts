@@ -58,10 +58,12 @@ const CLI = join(ROOT, 'src/cli/index.ts');
 const ALL_PLUGINS = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const satisfies readonly PluginId[];
 const ALL_WITH_PI = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory'] as const satisfies readonly PluginId[];
 /** The plugins with owner probe rows; command plugins have none. */
-const SURFACE_PLUGINS = ALL_PLUGINS.filter(id => !isCommandPlugin(id));
+const PROBE_PLUGINS = ALL_PLUGINS.filter(id => !isCommandPlugin(id));
+/** The plugins that own host files, including peer-runtime's Claude portal skill. */
+const HOST_FILE_PLUGINS = ALL_PLUGINS.filter(id => id !== 'mcp' && id !== 'operator');
 const CORE_FACADES = ['repo-harness-check', 'repo-harness-issue-flow', 'repo-harness-ship', 'repo-harness-test'];
 const WAZA_SKILLS = ['think', 'hunt', 'check', 'health', 'mermaid'];
-/** The host root and skill that each plugin probe requires (the herdr portal ships for Claude only). */
+/** The host roots and skills each plugin owns (the herdr portal ships for Claude only). */
 const PLUGIN_SKILLS: Readonly<Partial<Record<PluginId, readonly (readonly ['codex' | 'claude', string])[]>>> = {
   architecture: [['codex', 'repo-harness-architecture'], ['codex', 'repo-harness-archimap']],
   'cross-review': [['codex', 'repo-harness-cross-review']],
@@ -756,7 +758,7 @@ describe('install selection', () => {
     const core = applyInstallSelection([], [], env).state;
     const forged: InstallState = { ...core, ...versions(ALL_PLUGINS), selection: 'all' };
     const status = installStateStatus(forged, env);
-    for (const id of SURFACE_PLUGINS) expect(status.probes[id]?.status, id).toBe('missing');
+    for (const id of PROBE_PLUGINS) expect(status.probes[id]?.status, id).toBe('missing');
     expect(status.probes.core?.status).toBe('present');
     expect(status.drift.status).toBe('drift');
   }));
@@ -1122,7 +1124,7 @@ describe('install selection', () => {
       const all = applyInstallSelection('all', ALL_PLUGINS, env, new Date('2026-01-01T00:00:00Z'), first);
       commitInstallHostTransaction(first);
       const owners = new Set(all.state.ownership_manifest.map(({ owner }) => owner));
-      for (const owner of ['core', ...SURFACE_PLUGINS]) expect(owners.has(owner as PluginId), owner).toBe(true);
+      for (const owner of ['core', ...HOST_FILE_PLUGINS]) expect(owners.has(owner as PluginId), owner).toBe(true);
       const sections = all.state.ownership_manifest.filter(({ managed_marker }) => managed_marker === 'codegraph-config-projection').map(({ path }) => path);
       expect(sections.sort(), name).toEqual(userSections ? [] : [claudeJson, claudeSettings, codexConfig].sort());
 

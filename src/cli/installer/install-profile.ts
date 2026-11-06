@@ -1245,9 +1245,9 @@ const TARGET_BOTH_COMMAND = 'repo-harness install --target both';
 
 /**
  * Why this target cannot run a plugin now, and the command that adds it, or
- * null. The target must hold a host of one of the plugin's skills (for `pi`,
- * the Pi host), and a host plugin needs its program. A read error other than
- * a definite absence throws.
+ * null. A command plugin is always available. A skill plugin needs a target
+ * host for one of its skills. The Pi plugin needs the Pi host, and a host
+ * plugin needs its program. A read error other than a definite absence throws.
  */
 function pluginUnavailable(id: PluginId, target: InstallTarget, env: NodeJS.ProcessEnv): { readonly reason: string; readonly command: string } | null {
   if (isCommandPlugin(id)) return null;

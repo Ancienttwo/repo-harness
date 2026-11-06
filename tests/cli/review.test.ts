@@ -24,7 +24,7 @@ function peerGateFixture() {
   const root = tmpWorkspace('peer-gate'), home = join(root, 'home'); roots.push(root);
   const env = { ...process.env, HOME: home, REPO_HARNESS_HOME: join(home, '.repo-harness'), BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' };
   const probe = join(root, 'probe.ts');
-  writeFileSync(probe, String.raw`process.on('exit', () => process.stderr.write('peer-modules:' + JSON.stringify(Object.keys(require.cache).filter(path => /[\\/]src[\\/](?:effects[\\/](?:review-runner[\\/]|terminal[\\/](?:task-session|task-runtime-observation|native-task-session|herdr-notify-install|notify-relay)\.ts)|cli[\\/]commands[\\/](?:herdr|events)-actions\.ts)|[\\/]@botiverse[\\/]oar[\\/]/.test(path))) + '\n'));`);
+  writeFileSync(probe, String.raw`process.on('exit', () => process.stderr.write('peer-modules:' + JSON.stringify(Object.keys(require.cache).filter(path => /[\\/]src[\\/](?:effects[\\/](?:review-runner[\\/]|terminal[\\/](?:task-session|task-runtime-observation|native-task-session|herdr-notify-install|notify-relay)\.ts)|cli[\\/]commands[\\/](?:herdr|events)-actions\.ts)|[\\/]@botiverse[\\/]oar[\\/]|[\\/]assets[\\/]herdr[\\/]/.test(path))) + '\n'));`);
   const select = (plugins: readonly PluginId[], selection: PluginSelection = plugins) => recordPluginSelection(env, plugins, selection);
   const run = (args: string[]) => {
     const result = spawnSync(process.execPath, ['--preload', probe, join(import.meta.dir, '../../src/cli/index.ts'), ...args],
