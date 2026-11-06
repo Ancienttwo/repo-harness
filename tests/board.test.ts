@@ -16,12 +16,12 @@ import { githubRemoteRepository } from '../src/core/board/source';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
 import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
 import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herdr-core';
-import { ADVISOR_TRANSCRIPT_LINE_WITHHELD, AdvisorSeatError, advisorSeatSendFailure, advisorTranscriptLines, decodeAdvisorSeatTranscript, readAdvisorSeat, sendToAdvisorSeat } from '../src/core/board/advisor-seat';
+import { ADVISOR_TRANSCRIPT_LINE_WITHHELD, AdvisorSeatError, advisorSeatSendFailure, advisorTranscriptLines, advisorTurnState, decodeAdvisorSeatTranscript, readAdvisorSeat, seatStatusMessage, SEAT_STATUS_MESSAGE_MAX_CHARS, sendToAdvisorSeat } from '../src/core/board/advisor-seat';
 import { decodeBoardParents, type BoardParentsV1 } from '../src/core/board/parents';
 import { BoardSourceError } from '../src/core/board/source';
 import { HC_MIN_VERSION } from '../src/core/terminal/herdr-pin';
 import { BoardParentsError, collectBoardParents } from '../src/effects/board/parents';
-import { ISSUE_FLOW_WORKER_LIMIT } from '../src/core/board/desk';
+import { hcStatusClass, ISSUE_FLOW_WORKER_LIMIT } from '../src/core/board/desk';
 import { boardSummary, decodeBoardSummaries } from '../src/core/board/summary';
 import boardParentsFixture from '../src/operator-web/fixtures/board-parents.json';
 
@@ -175,7 +175,7 @@ test('board summary counts the recorded PRs, planned issue members and orchestra
   const board = replay();
   expect(boardSummary(board)).toEqual({ queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, current_batch: null, needs_you: 3, worker_limit: ISSUE_FLOW_WORKER_LIMIT,
     seats: { status: 'observed', stalled: 0, desks: [
-      { seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'idle' }, { seat: 'worker', agent: 'claude-code', issue: 1475, pr: 1491, state: 'idle' },
+      { seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'blocked' }, { seat: 'worker', agent: 'claude-code', issue: 1475, pr: 1491, state: 'done' },
     ] } });
   const block = { protocol: 1, kind: 'repo-harness.plan', merge_order: [], holds: [], batches: [[1475, 1476], [1477, 1479]], seat_limits: { worker: 4 } } as const;
   const planned: BoardV1 = { ...board, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at, revision: 1,
@@ -221,13 +221,20 @@ test('board summary gives each live seat outside the stage the desk state of the
   const completed = { completed_at: board.observed_at };
   const known = { status_kind: 'unknown' } as const, none = { status_kind: 'none' } as const;
   for (const [state, labels, status, source, claim_status] of [
+    ['blocked', { issue: null, pr: null }, 'blocked', check({ status: 'failure', ...completed }), none],
+    ['error', {}, 'error', check({ status: 'failure', ...completed }), none],
     ['unknown', { issue: null, pr: null }, 'working', check({ status: 'failure', ...completed }), none],
+    ['unknown', { issue: null, pr: null }, 'done', check({ status: 'missing' }), known],
     ['ci_failed', {}, 'working', check({ status: 'failure', ...completed }), none],
     ['ci_pending', {}, 'working', check({ status: 'pending' }), none],
     ['acceptance_queue', {}, 'working', check({ status: 'success', ...completed }), none],
     ['no_claim_status', {}, 'working', check({ status: 'missing' }), none],
     ['coding', {}, 'working', check({ status: 'missing' }), known],
-    ['idle', {}, 'done', check({ status: 'missing' }), known],
+    ['done', {}, 'done', check({ status: 'missing' }), known],
+    ['no_claim_status', {}, 'done', check({ status: 'missing' }), none],
+    ['idle', {}, 'idle', check({ status: 'missing' }), known],
+    ['idle', {}, null, check({ status: 'missing' }), known],
+    ['idle', {}, 'thinking', check({ status: 'missing' }), known],
   ] as const) {
     const terminal = { ...seat, ...labels, status } as BoardTerminalV1;
     const one: BoardV1 = { ...board, pull_requests: [source], items: [{ ...item, claim_status }], execution: { status: 'observed', terminals: [terminal] } };
@@ -239,11 +246,34 @@ test('board summary gives each live seat outside the stage the desk state of the
   expect(boardSummary({ ...board, execution: { status: 'unavailable', reason: 'no_seat_terminals' } }).seats).toEqual({ status: 'unavailable', reason: 'no_seat_terminals' });
 });
 
+test('one classifier reads the hc status word for the desk rules and the advisor turn', () => {
+  for (const [word, reading, turn] of [
+    ['working', 'working', 'running'], ['blocked', 'blocked', 'running'], ['error', 'error', 'unknown'], ['done', 'done', 'over'], ['idle', 'idle', 'over'],
+    [null, 'unreported', 'unknown'], ['thinking', 'other', 'unknown'],
+  ] as const) expect([word, hcStatusClass(word), advisorTurnState(word)]).toEqual([word, reading, turn]);
+});
+
+test('the seat status message is one redacted line of at most 200 characters', () => {
+  const token = `ghp_${'a'.repeat(30)}`;
+  for (const [message, line] of [
+    [null, null], [' \n ', null], ['waits for\n  review\t#12', 'waits for review #12'],
+    [`push failed: ${token}`, 'push failed: ghp_[REDACTED]'],
+    ['b'.repeat(SEAT_STATUS_MESSAGE_MAX_CHARS + 1), 'b'.repeat(SEAT_STATUS_MESSAGE_MAX_CHARS)],
+    // The redaction runs before the cut, so a token over the cut is replaced and not cut in half.
+    [`${'b'.repeat(190)} ${token}`, `${'b'.repeat(190)} ghp_[REDA`],
+    ['b'.repeat(1001), ADVISOR_TRANSCRIPT_LINE_WITHHELD],
+    // The join makes an assignment, and the cut turns the safe value `none` into `no`.
+    ['TOKEN\n=abc', ADVISOR_TRANSCRIPT_LINE_WITHHELD],
+    [`${'b'.repeat(191)} TOKEN=none`, ADVISOR_TRANSCRIPT_LINE_WITHHELD],
+    ['-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----', Array(3).fill(ADVISOR_TRANSCRIPT_LINE_WITHHELD).join(' ')],
+  ] as const) expect(seatStatusMessage(message)).toBe(line);
+});
+
 test('one strict summary decoder checks snapshots and route rows', () => {
   const row = { parent: 1474, status: 'observed', observed_at: REPLAY_NOW.toISOString(),
     summary: { queue: 2, ci_failures: 0, batch: { accepted: 1, size: 2 }, current_batch: { accepted: 1, size: 2 }, needs_you: 3, worker_limit: 6,
       seats: { status: 'observed', stalled: 1, desks: [{ seat: 'worker', agent: null, issue: 1475, pr: null, state: 'no_claim_status' }, { seat: 'worker', agent: 'codex', issue: null, pr: 1499, state: 'coding' }] } } } as const;
-  const response = { protocol: 2, kind: 'repo-harness.board-summaries', repository_id: 'repo-a', parents: [row] } as const;
+  const response = { protocol: 3, kind: 'repo-harness.board-summaries', repository_id: 'repo-a', parents: [row] } as const;
   expect(decodeBoardSummaries(response)).toEqual(response);
   expect(decodeBoardSummaries({ ...response, parents: [{ parent: 1474, status: 'not_read' }, { parent: 1651, status: 'unavailable', reason: 'snapshot_invalid' }] }).parents).toHaveLength(2);
   const summary = (fields: Record<string, unknown>) => ({ ...row, summary: { ...row.summary, ...fields } });
@@ -266,9 +296,9 @@ test('one strict summary decoder checks snapshots and route rows', () => {
 });
 
 test('decoders refuse an unknown protocol or kind', () => {
-  expect(() => decodeBoard({ protocol: 3, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 3');
+  expect(() => decodeBoard({ protocol: 2, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 2');
   expect(() => decodeBoard({ protocol: 1, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 1');
-  expect(() => decodeBoard({ protocol: 2, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
+  expect(() => decodeBoard({ protocol: 3, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
   const block = (value: Json) => `repo-harness plan\n\n\`\`\`json\n${JSON.stringify(value)}\n\`\`\`\n`;
   const valid = { protocol: 1, kind: 'repo-harness.plan', merge_order: [1475], holds: [], batches: [], seat_limits: { worker: 3 } } as const;
   expect(decodePlanBlock(block(valid))).toEqual(valid);
@@ -290,6 +320,11 @@ test('decoders refuse a missing or invalid plan revision, merge policy or seat b
   for (const valid of [plan(null), plan(7), { ...recorded, acceptance_merge: 'unknown' }, board(null), board('main')]) expect(decodeBoard(valid)).toEqual(valid);
   for (const invalid of [parents(undefined), parents(''), { ...parents(null), seats: undefined }]) expect(() => decodeBoardParents(invalid)).toThrow('board seat');
   expect(decodeBoardParents(parents('main')).seats[0]!.branch).toBe('main');
+  // A status message that leaves the server is one redacted line within the limit, and null is no message.
+  const message = (status_msg: unknown) => ({ ...boardParentsFixture, seats: [{ ...recorded.execution.terminals[0], status_msg }] });
+  for (const invalid of [undefined, 7, 'a\nb', 'c'.repeat(SEAT_STATUS_MESSAGE_MAX_CHARS + 1), `ghp_${'a'.repeat(30)}`]) expect(() => decodeBoardParents(message(invalid))).toThrow('invalid board seat status message on t1');
+  for (const valid of [null, 'c'.repeat(SEAT_STATUS_MESSAGE_MAX_CHARS)]) expect(decodeBoardParents(message(valid)).seats[0]!.status_msg).toBe(valid);
+  expect(() => decodeBoard({ ...recorded, execution: { status: 'observed', terminals: message('a\nb').seats } })).toThrow('invalid board seat status message on t1');
 });
 
 test('plan revision: the ordinal of the newest plan comment among the write-access plan comments, and null on a truncated read', () => {
@@ -641,7 +676,7 @@ function watchHc(env: Json = {}) {
 test('watch window: idle sends at once, blocked waits, working sends at window end, and the advisor cap reads all repository logs', async () => {
   const board = replay();
   const seat = (address: string, seatName: string, status: string | null) =>
-    ({ address, name: null, agent: null, state: 'live', status, status_kind: null, status_ms: null, turn: 1, branch: null, seat_status: 'observed', seat: seatName, issue: null, pr: null }) as BoardTerminalV1;
+    ({ address, name: null, agent: null, state: 'live', status, status_kind: null, status_msg: null, status_ms: null, turn: 1, branch: null, seat_status: 'observed', seat: seatName, issue: null, pr: null }) as BoardTerminalV1;
   const terminals = [seat('t1', 'worker', 'working'), seat('t3', 'orchestrator', 'idle'), seat('t6', 'orchestrator', 'blocked'),
     seat('t7', 'orchestrator', 'blocked'), seat('t8', 'orchestrator', 'working'), seat('t9', 'advisor', 'done'), seat('t10', 'orchestrator', 'blocked'),
     seat('t11', 'orchestrator', 'blocked')];
@@ -747,7 +782,7 @@ test('watch service: --watch refuses a terminal without the service labels; star
     FAKE_TERMINALS: {
       // t5 is the attention watcher of this repository; t21 is a seat with an invalid pr label.
       t5: { labels: { ...labels, 'repo-harness.repository': '1186405141' } }, t21: room('1186405141', { 'repo-harness.seat': 'worker', 'repo-harness.pr': 'x' }),
-      t7: room('1186405141', { 'repo-harness.seat': 'orchestrator' }), t11: room('1186405141', { 'repo-harness.seat': 'advisor' }),
+      t7: { ...room('1186405141', { 'repo-harness.seat': 'orchestrator' }), status: { state: 'blocked', msg: `push failed:\nghp_${'a'.repeat(30)}` } }, t11: room('1186405141', { 'repo-harness.seat': 'advisor' }),
       t12: room('1186405141', { 'repo-harness.seat': 'orchestrator', 'repo-harness.parent': '1503' }),
       t16: room('1186405141', { 'repo-harness.seat': 'worker', 'repo-harness.parent': '1474', 'repo-harness.issue': '1721' }),
       t17: room('1186405141', { 'repo-harness.seat': 'worker', 'repo-harness.parent': '1503', 'repo-harness.issue': '1773' }),
@@ -758,6 +793,8 @@ test('watch service: --watch refuses a terminal without the service labels; star
   const office = replay({ host: boardHostPorts(repositoryTerminals.options) }).execution;
   expect(office.status === 'observed' && office.terminals.map(terminal => [terminal.address, terminal.seat_status === 'observed' && terminal.seat]))
     .toEqual([['t7', 'orchestrator'], ['t11', 'advisor'], ['t12', 'orchestrator'], ['t16', 'worker']]);
+  // hc `status.msg` reaches the board as one redacted line, and a status without one gives null.
+  expect(office.status === 'observed' && office.terminals.slice(0, 2).map(terminal => terminal.status_msg)).toEqual(['push failed: ghp_[REDACTED]', null]);
   // The parent list of the repository keeps every seat, with or without a parent label (#1785); the watcher and the
   // other repository never show, and an invalid label shows as such.
   const officeSeats = collectBoardParents({ repo_root: repositoryTerminals.root, now: () => REPLAY_NOW, host: boardHostPorts(repositoryTerminals.options),

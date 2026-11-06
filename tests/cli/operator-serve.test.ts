@@ -600,7 +600,7 @@ describe('operator serve command and HTTP boundary', () => {
         const response = await get(`${path}?parent=1474`);
         expect([response.status, await code(response)]).toEqual([status, failure]);
       }
-      result = async () => ({ ...board, protocol: 3 });
+      result = async () => ({ ...board, protocol: 4 });
       const invalid = await get(`${path}?parent=1474`);
       expect([invalid.status, await code(invalid)]).toEqual([503, 'board_invalid']);
       const head = await get(`${path}?parent=1474`, { method: 'HEAD' });
@@ -638,7 +638,7 @@ describe('operator serve command and HTTP boundary', () => {
         expect(decodeBoardSummaries(JSON.parse(first)).parents).toEqual([{ parent: 1474, status: 'observed', observed_at: board.observed_at,
           summary: { queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, current_batch: null, needs_you: 3, worker_limit: 8,
             seats: { status: 'observed', stalled: 0, desks: [
-              { seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'idle' }, { seat: 'worker', agent: 'claude-code', issue: 1475, pr: 1491, state: 'idle' },
+              { seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'blocked' }, { seat: 'worker', agent: 'claude-code', issue: 1475, pr: 1491, state: 'done' },
             ] } } }]);
         expect((await get()).parents).toEqual([JSON.parse(first).parents[0], { parent: 1651, status: 'not_read' }]);
         board = { ...board, observed_at: new Date(Date.parse(board.observed_at) + 60_000).toISOString() };

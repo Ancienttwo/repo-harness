@@ -14,9 +14,18 @@ export type BoardSeatTerminal = Extract<BoardTerminalV1, { readonly seat_status:
 export const ISSUE_FLOW_WORKER_LIMIT = 8;
 const STAGE_SEATS: readonly string[] = ['orchestrator', 'advisor'];
 
-/** The desk states in the order the rules test them; `unknown` is a seat with no issue and no pull request. */
-export const DESK_STATES = ['ci_failed', 'ci_pending', 'acceptance_queue', 'no_claim_status', 'coding', 'idle', 'unknown'] as const;
+/** The desk states in legend order; `unknown` is a seat with no issue and no pull request. `deskState` holds the rule order. */
+export const DESK_STATES = ['blocked', 'error', 'ci_failed', 'ci_pending', 'acceptance_queue', 'no_claim_status', 'coding', 'done', 'idle', 'unknown'] as const;
 export type DeskState = typeof DESK_STATES[number];
+
+const HC_STATUS_WORDS = ['working', 'blocked', 'error', 'done', 'idle'] as const;
+export type HcStatusClass = typeof HC_STATUS_WORDS[number] | 'unreported' | 'other';
+
+/** The one reading of the hc status word: `unreported` is no word, `other` is a word outside the hc docs. */
+export function hcStatusClass(status: string | null): HcStatusClass {
+  if (status === null) return 'unreported';
+  return (HC_STATUS_WORDS as readonly string[]).includes(status) ? status as HcStatusClass : 'other';
+}
 
 /** The first plan batch with an unmerged member. */
 export interface BoardCurrentBatch {
@@ -47,15 +56,17 @@ export function isQueued(pr: BoardPullRequestV1): boolean {
   return pr.state === 'open' && pr.acceptance.status === 'not_accepted' && pr.required_check.status === 'success';
 }
 
-/** The desk state rules of the data map, first match wins. */
+/** The desk state rules of the data map, first match wins. A seat reports blocked or error before any label or CI rule; an unreported or other word keeps the idle desk. */
 export function deskState(terminal: BoardSeatTerminal, item: BoardItemV1 | null, pr: BoardPullRequestV1 | null): DeskState {
+  const word = hcStatusClass(terminal.status);
+  if (word === 'blocked' || word === 'error') return word;
   if (terminal.issue === null && terminal.pr === null) return 'unknown';
   if (pr?.required_check.status === 'failure') return 'ci_failed';
   if (pr?.required_check.status === 'pending') return 'ci_pending';
   if (pr !== null && isQueued(pr)) return 'acceptance_queue';
   if (item?.claim_status.status_kind === 'none') return 'no_claim_status';
-  if (terminal.status === 'working') return 'coding';
-  return 'idle';
+  if (word === 'working') return 'coding';
+  return word === 'done' ? 'done' : 'idle';
 }
 
 /** The plan worker limit, else the issue-flow limit. */

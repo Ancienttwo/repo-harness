@@ -2,6 +2,17 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- The board now reports `blocked`, `error` and `done` desks and the hc status
+  message of each seat. `BOARD_PROTOCOL` moves to 3, `BOARD_PARENTS_PROTOCOL`
+  to 4 and `BOARD_SUMMARIES_PROTOCOL` to 3, with no read of the old protocols.
+  The web client and the server ship together, so an open page must reload. A
+  stored summary shows as unavailable until the next board read writes it.
+  (#1867)
+
 ## [0.26.5] - 2026-11-06
 
 This release adds the MCP and Operator plugin gates, updates OAR and Pi,
