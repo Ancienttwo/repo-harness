@@ -5,8 +5,10 @@
 - Release-prep base: `origin/main`
   `a5ecf7d3f1a2051a37c6558970726143803ccbba` (#1904). Branch
   `chore/release-0.26.6` starts on this fixed base and merges no later main.
-- Source commit: release-prep head and PR pending coordinator (#1905).
-  Publish candidate: release-prep merge SHA pending coordinator.
+- Source commits: prep head `9d0161d29`, then
+  `6ed1b62af9c57a19c348b43179f8311284309f6f`, PR #1907 (#1905).
+  Publish candidate: release-prep merge
+  `aa71b3b4eb6c35473c7841bd314d220eb78de484`, merged 2026-11-06 14:34:47Z.
 - Previous release: 0.26.5, release-prep merge #1870,
   `baf09af121bd0310510e05c3216d572f5791c4d0`, tag `v0.26.5`.
   Its publication and upgrade values are in `261106-repo-harness-0.26.5.md`.
@@ -21,9 +23,9 @@
 - Other edits: `docs/CHANGELOG.md` and this record. This prep changes no
   product behavior, dependency, lockfile, hook or install logic.
 - Release date and record prefix: UTC `2026-11-06`, from `date -u +%F`.
-- Publish status: pending owner.
-- Hold reason: host release gate, prep-head CI, merge-commit smoke and
-  explicit owner publish go remain pending.
+- Publish status: published 2026-11-06 by the owner by hand (see Publication).
+- Open gaps: no separate pre-publish smoke ran on the merge commit. The
+  isolated explicit-list refusal and its one repair line were not probed.
 
 ### Owner decision
 
@@ -32,7 +34,10 @@ the owner's release-prep go in coordinator t5's session on 2026-11-06.
 The Codex worker edits and runs local checks. Coordinator t5 commits the
 six paths, pushes, opens the PR and runs the host release gate. This record
 grants no tag, npm publish, dist-tag, GitHub Release or machine-upgrade
-action to the worker. The owner publishes by hand after an explicit go.
+action to the worker. The owner published by hand on 2026-11-06. The owner
+approved the tag, GitHub Release, published-release check and this record
+in coordinator t2's session. Issue #1914 supplies t2's evidence from
+2026-11-06 14:28Z through 2026-11-07.
 
 ## Cause of the release
 
@@ -232,8 +237,10 @@ environment below. No installed probe has run in this prep.
 
 ## Hosted CI
 
-- `Required / CI` on the prep head: pending coordinator read-back.
-- The worker made no hosted CI query from the offline sandbox.
+- `Required / CI` succeeded on `9d0161d29` at 2026-11-06 14:18:25Z and
+  on `6ed1b62af` at 2026-11-06 14:28:34Z.
+- The worker made no hosted CI query from the offline sandbox. These
+  values come from #1914.
 
 ## Acceptance environment
 
@@ -265,10 +272,18 @@ environment below. No installed probe has run in this prep.
 
 - Local typecheck, affected tests, scope and historical CHANGELOG checks:
   PASS on `a5ecf7d3f` plus the prep diff.
-- Host release gate and prep-head `Required / CI`: pending coordinator.
-- Pre-publish smoke on the merge commit: pending.
-- Owner publish go, npm publication, tag and GitHub Release: pending owner.
-- Owner machine upgrade and post-upgrade probe: pending.
+- Host release gate: PASS on `9d0161d29`. Prep-head `Required / CI`:
+  PASS on `9d0161d29` and `6ed1b62af`.
+- Pre-publish smoke on the merge commit: not run; open gap. The merge
+  tree equals `6ed1b62af`. The host gate on `9d0161d29` and t2 tarball
+  checks cover part of the gap (see Publication).
+- Prepublish gates: PASS in both clean checkouts of `aa71b3b4e`.
+- npm publication, approved tag, GitHub Release and published-release
+  check: complete. The owner published npm by hand after two web-auth
+  attempts expired without publication.
+- Owner machine upgrade: complete. Installed hook and Operator probes
+  passed. The isolated explicit-list refusal and its one repair line
+  were not probed; this remains an open gap (see Publication).
 
 ## Rollback
 
@@ -283,13 +298,92 @@ correction.
 
 ## Publication
 
-- Publish candidate merge SHA: pending coordinator.
-- Pre-publish smoke (command, result, environment): pending.
-- Publish status: pending owner.
-- npm version and publish time: pending owner.
-- Tarball shasum and integrity: pending owner.
-- `latest` dist-tag read-back: pending owner.
-- Git tag and GitHub Release: pending owner approval and action.
-- Published-release check: pending owner.
-- Owner machine upgrade: pending owner.
-- Post-upgrade probe (command, result, environment): pending.
+- Publish candidate: release-prep merge
+  `aa71b3b4eb6c35473c7841bd314d220eb78de484`, PR #1907 (#1905), merged
+  2026-11-06 14:34:47Z. It has one parent, `a5ecf7d3f`, and tree
+  `44b327b6f`, equal to prep head `6ed1b62af`. That head follows
+  `9d0161d29` and pins the rollback to 0.26.5: 2 files, 3 insertions and
+  3 deletions in this record and CHANGELOG.
+- Coordinator t5 host gate on `9d0161d29`, 2026-11-06 about 14:12Z,
+  Darwin 25.5.0 arm64, Bun 1.4.3, Node 24.22.1:
+  `bun run check:release` exit 0. Tarball smoke passed:
+  - `mcp serve` loads 32 MCP modules with selection `all` and 0 with `[]`.
+  - `operator serve` loads 85 Operator modules with `all` and serves.
+    It refuses with `[]`. Status, seats, quota and hook routes load 0
+    Operator modules. The hook bundle has 91 modules and 0 Operator modules.
+  - `peer-runtime` loads 4 modules when selected. Refusals, core commands,
+    hook routes and the hook bundle load 0 peer-runtime modules.
+  - `repo-harness-0.26.6.tgz installs, serves the packaged Operator, and packaged CLI bins start`;
+    `[ci] OK`; `[release] OK: npm package gate passed.`
+- Pre-publish smoke on the merge commit: not run; open gap. No separate
+  smoke command or result exists for `aa71b3b4e`. Tree equality with
+  `6ed1b62af`, the host gate on `9d0161d29` and t2's tarball checks below
+  cover part of this gap.
+- Prepublish gate: `bash scripts/check-npm-release.sh --prepublish`
+  exited 0 in both clean checkouts of `aa71b3b4e`: t2 at
+  `/tmp/repo-harness-wt-publish-0266` and t5 at
+  `/tmp/repo-harness-wt-0266-publish`. In t2's checkout,
+  `bun install --frozen-lockfile` ran and `npm whoami` returned `ancienttwo`.
+- t2's `npm pack` produced `repo-harness-0.26.6.tgz`: 929 files,
+  7.7 MB packed, 18.8 MB unpacked, `package.json` version 0.26.6.
+  It contains 126 entries under `dist/hook-entry.js`,
+  `dist/oar-review-host.js` and `dist/operator-ui/`.
+  Shasum: `a68f1132102b52546a674e0204e21ac630e55966`.
+  Integrity:
+  `sha512-pbpIGU+NSLcDh35f+2Wxo9kur3dfP4Sj39IqI4Vv3t5wbsO8Lq3412kr2IfTRKQUIHWjIX35KKvqePGi7hS81A==`.
+- Two t2 publication attempts at 2026-11-06 14:51Z and 14:57Z ran
+  `npm publish ./repo-harness-0.26.6.tgz --ignore-scripts --auth-type=web`.
+  Both printed web authentication links. Neither link was approved within
+  about 5 minutes. Both runs ended with E404 on `GET /-/v1/done` and
+  published nothing.
+- The owner then ran `npm publish` by hand in t2's checkout. The npm log
+  at 2026-11-06 15:11:27Z records completed web authentication, `PUT 202`
+  and "Your package is being processed". npm packed the same checkout
+  again and printed the same shasum and integrity as t2's tarball.
+- npm registry document read-back at 2026-11-06 15:17:31Z: version 0.26.6,
+  publish time `2026-11-06T15:17:06.435Z`, `latest` = 0.26.6. Shasum and
+  integrity equal t2's tarball values above.
+- Git tag: annotated `v0.26.6`, object `d1fdef6c1`, target `aa71b3b4e`.
+  Coordinator t2 created it at 2026-11-06 17:25:57Z after owner approval
+  and pushed it. GitHub Release "repo-harness 0.26.6" was published at
+  2026-11-06 17:26:03Z, with notes from CHANGELOG `[0.26.6]` at `aa71b3b4e`:
+  https://github.com/Ancienttwo/repo-harness/releases/tag/v0.26.6.
+- Published-release check:
+  `bash scripts/check-release-published.sh 0.26.6` ran in a clean checkout
+  of `aa71b3b4e`. It did not run on main: after #1912, the script also
+  requires the console package, which 0.26.6 did not publish. Result:
+  `runtime-evidence-receipt: valid published_tarball, clean_install, installed_hook_readback`;
+  `[release-published] OK: registry, dist-tag, tarball, tag, and local version files agree.`
+- Owner machine upgrade: `repo-harness install --state` reports protocol 3,
+  core 0.26.6, selection `all`, transaction
+  `99179ad0-d024-4dc7-8796-e1b96493edeb`, applied 2026-11-06 15:33:50Z.
+  Plugins at 0.26.6: architecture, cross-review, mcp, operator,
+  peer-runtime, pi, platform, product and strategy-memory.
+  `repo-harness status` reports repo-harness 0.26.6, codex 5/5 and
+  claude 6/6 managed entries, and 7 routes.
+- Post-upgrade probe by t2, 2026-11-07, macOS 26.5 / Darwin 25.5.0 arm64,
+  Bun 1.4.3, Node 24.22.1:
+  - All 5 Codex and 6 Claude managed hooks run
+    `exec '<bun>' '<global package>/dist/hook-entry.js' <event> --route <route>`.
+    They keep the opt-in marker check. The placeholders represent the
+    installed absolute Bun and global package paths.
+  - Installed hooks ran with non-login PATH `/usr/bin:/bin:/usr/sbin:/sbin`,
+    which has no `bun` or `repo-harness-hook`, a disposable HOME and a
+    scratch opted-in repository. Codex `Stop --route default`, Claude
+    `Stop --route default` and Claude `SessionStart --route default` each
+    exited 0. Claude `PreToolUse --route edit` with a Write to `_ops/x.md`
+    exited 2 with `[OpsPrivateGuard]`. This is the #1883 reproduction
+    shape; before #1895 it exited 127.
+  - Installed route digest:
+    `sha256:e0745637a223ac7644838d82719f767efc251c2864ec8a3caca307817325c7df`,
+    equal to 0.26.5.
+  - `repo-harness operator serve --port 4399` with a disposable HOME
+    refused with `install_plugin_unavailable` because that HOME had no
+    install state. With the real HOME, `/healthz` returned
+    `{"ok":true,"service":"repo-harness-operator","protocol":2,"version":"0.26.6"}`.
+    `/assets/index-Fcy-xiIk.js` returned 200 and matches the file in the
+    installed `dist/operator-ui/assets/`. The server was stopped after
+    the probe. Installed source declares Board, parent-list and summary
+    protocols 3, 4 and 3.
+  - Not run: the isolated explicit-list refusal and its one repair line.
+    This remains an open gap.
