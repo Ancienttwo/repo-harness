@@ -6,6 +6,9 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- The npm release gates check both the core and operator web packages at the
+  same version. The console publishes first, and the published check verifies
+  both packages. (#1893)
 - The built Operator console ships in `repo-harness-operator-web` at the same
   version as the CLI. Core packages and installed skill copies exclude the
   console build and source. Page requests return 503 when the console is

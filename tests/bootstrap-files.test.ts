@@ -1,6 +1,8 @@
 import { describe, test, expect } from "bun:test";
-import { readFileSync, existsSync, lstatSync } from "fs";
+import { readFileSync, existsSync, lstatSync, mkdtempSync, mkdirSync, copyFileSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
+import { tmpdir } from "os";
+import { spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -185,14 +187,60 @@ describe("Bootstrap Script Contracts", () => {
     const releaseGate = read("scripts/check-npm-release.sh");
     const ciGate = read("scripts/check-ci.sh");
     const pkg = JSON.parse(read("package.json"));
-    expect(releaseGate).toContain('npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}"');
+    expect(releaseGate).toContain('npm view "${name}@${PACKAGE_VERSION}"');
     expect(releaseGate).toContain("bash scripts/check-ci.sh");
     expect(releaseGate.indexOf("bash scripts/check-ci.sh")).toBeGreaterThan(
-      releaseGate.indexOf('npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}"')
+      releaseGate.indexOf('npm view "${name}@${PACKAGE_VERSION}"')
     );
     expect(ciGate).toContain("bash scripts/check-tarball-install-smoke.sh");
     expect(pkg.scripts["check:release-published"]).toBe("bash scripts/check-release-published.sh");
     expect(pkg.scripts["smoke:tarball-install"]).toBe("bash scripts/check-tarball-install-smoke.sh");
+  });
+
+  test("two-package release gates enforce publication order and registry evidence", () => {
+    const dir = mkdtempSync(join(tmpdir(), "release-gate-"));
+    try {
+      for (const file of ["scripts/check-npm-release.sh", "scripts/check-release-published.sh", "package.json", "packages/operator-web/package.json", "src/core/skill-surface/plugin-manifest.ts"]) {
+        mkdirSync(join(dir, file, ".."), { recursive: true });
+        copyFileSync(join(ROOT, file), join(dir, file));
+      }
+      mkdirSync(join(dir, "bin"));
+      const bun = Bun.which("bun")!;
+      writeFileSync(join(dir, "bin/bun"), `#!/bin/bash\nif [[ "\${1:-}" == run && "\${2:-}" == check:helpers ]] || [[ "\${1:-}" == scripts/runtime-evidence-receipt.ts || "\${1:-}" == scripts/check-skill-version.ts ]]; then exit 0; fi\nexec "${bun}" "$@"\n`, { mode: 0o755 });
+      writeFileSync(join(dir, "bin/npm"), `#!/bin/bash\necho "$*" >> "$CALLS"\nif [[ "$1" == view && "$2" == *@* ]]; then\n  if [[ "$PUBLISHED" == "$2" || "$PUBLISHED" == both ]]; then echo '{"version":"0.26.6","dist.integrity":"sha512-x","dist.shasum":"abc","dist.tarball":"url"}'; exit 0; fi\n  echo 'E404 not in this registry' >&2; exit 1\nfi\nif [[ "$1" == view ]]; then echo '{"latest":"0.26.6"}'; exit 0; fi\nif [[ "$1" == pack ]]; then name="\${2%@*}"; echo "[{\\\"filename\\\":\\\"$name-0.26.6.tgz\\\",\\\"integrity\\\":\\\"\${INTEGRITY:-sha512-x}\\\",\\\"shasum\\\":\\\"abc\\\"}]"; exit 0; fi\nexit 0\n`, { mode: 0o755 });
+      writeFileSync(join(dir, "bin/git"), "#!/bin/bash\nexit 0\n", { mode: 0o755 });
+      writeFileSync(join(dir, "scripts/check-ci.sh"), "#!/bin/bash\nexit 0\n");
+      const calls = join(dir, "calls");
+      const runGate = (script: string, args: string[], env: Record<string, string>) => spawnSync("bash", [join(dir, "scripts", script), ...args], {
+        cwd: dir, encoding: "utf8", env: { ...process.env, PATH: `${join(dir, "bin")}:${process.env.PATH}`, CALLS: calls, ...env },
+      });
+      const core = { npm_package_name: "repo-harness" };
+      const missing = runGate("check-npm-release.sh", ["--prepublish"], core);
+      expect(missing.status).not.toBe(0);
+      expect(missing.stderr).toContain("repo-harness-operator-web@0.26.6");
+      const consoleGate = runGate("check-npm-release.sh", ["--prepublish"], { npm_package_name: "repo-harness-operator-web", PUBLISHED: "repo-harness@0.26.6" });
+      expect(consoleGate.status).toBe(0);
+      expect(runGate("check-npm-release.sh", ["--prepublish"], { ...core, PUBLISHED: "repo-harness-operator-web@0.26.6" }).status).toBe(0);
+      expect(runGate("check-npm-release.sh", [], {}).status).toBe(0);
+      expect(runGate("check-npm-release.sh", [], { PUBLISHED: "repo-harness-operator-web@0.26.6" }).status).not.toBe(0);
+      const verified = runGate("check-release-published.sh", ["0.26.6"], { PUBLISHED: "both" });
+      expect(verified.status).toBe(0);
+      expect(verified.stdout).toContain("checking repo-harness-operator-web@0.26.6");
+      expect(verified.stdout).toContain("checking repo-harness@0.26.6");
+      expect(runGate("check-release-published.sh", ["0.26.6"], { PUBLISHED: "both", INTEGRITY: "wrong" }).status).not.toBe(0);
+      const manifest = join(dir, "packages/operator-web/package.json");
+      const pkg = JSON.parse(readFileSync(manifest, "utf8"));
+      pkg.version = "0.0.0";
+      writeFileSync(manifest, JSON.stringify(pkg));
+      writeFileSync(calls, "");
+      expect(runGate("check-npm-release.sh", ["--prepublish"], core).status).not.toBe(0);
+      expect(readFileSync(calls, "utf8")).toBe("");
+      const published = runGate("check-release-published.sh", ["0.26.5"], {});
+      expect(published.status).not.toBe(0);
+      expect(published.stdout).toContain("repo-harness-operator-web@0.26.5");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test("create-project-dirs should create tasks primary files", () => {

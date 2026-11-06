@@ -6,6 +6,7 @@ cd "$ROOT"
 
 PACKAGE_NAME="$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.name)')"
 PACKAGE_VERSION="${1:-$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.version)')}"
+CONSOLE_NAME="$(bun -e 'import { OPERATOR_WEB_PACKAGE_NAME } from "./src/core/skill-surface/plugin-manifest.ts"; console.log(OPERATOR_WEB_PACKAGE_NAME)')"
 NPM_RELEASE_REGISTRY="${NPM_RELEASE_REGISTRY:-https://registry.npmjs.org/}"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -17,11 +18,14 @@ VIEW_JSON="$TMP_DIR/npm-view.json"
 TAGS_JSON="$TMP_DIR/npm-tags.json"
 PACK_JSON="$TMP_DIR/npm-pack.json"
 
-npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version dist.integrity dist.shasum dist.tarball --json --registry "$NPM_RELEASE_REGISTRY" >"$VIEW_JSON"
-npm view "$PACKAGE_NAME" dist-tags --json --registry "$NPM_RELEASE_REGISTRY" >"$TAGS_JSON"
-npm pack "${PACKAGE_NAME}@${PACKAGE_VERSION}" --json --pack-destination "$TMP_DIR" --registry "$NPM_RELEASE_REGISTRY" >"$PACK_JSON"
+check_package() {
+local name="$1"
+echo "[release-published] checking ${name}@${PACKAGE_VERSION}"
+npm view "${name}@${PACKAGE_VERSION}" version dist.integrity dist.shasum dist.tarball --json --registry "$NPM_RELEASE_REGISTRY" >"$VIEW_JSON"
+npm view "$name" dist-tags --json --registry "$NPM_RELEASE_REGISTRY" >"$TAGS_JSON"
+npm pack "${name}@${PACKAGE_VERSION}" --json --pack-destination "$TMP_DIR" --registry "$NPM_RELEASE_REGISTRY" >"$PACK_JSON"
 
-bun - "$PACKAGE_NAME" "$PACKAGE_VERSION" "$VIEW_JSON" "$TAGS_JSON" "$PACK_JSON" <<'JS_EOF'
+bun - "$name" "$PACKAGE_VERSION" "$VIEW_JSON" "$TAGS_JSON" "$PACK_JSON" <<'JS_EOF'
 const [, , packageName, version, viewPath, tagsPath, packPath] = process.argv;
 const view = await Bun.file(viewPath).json();
 const tags = await Bun.file(tagsPath).json();
@@ -44,6 +48,10 @@ if (!packed?.filename?.startsWith(`${packageName}-${version}`)) {
 if (packed.integrity !== view["dist.integrity"]) fail("packed tarball integrity does not match registry metadata");
 if (packed.shasum !== view["dist.shasum"]) fail("packed tarball shasum does not match registry metadata");
 JS_EOF
+}
+
+check_package "$CONSOLE_NAME"
+check_package "$PACKAGE_NAME"
 
 # Published-package runtime evidence is intentionally separate from a task
 # AcceptanceReceipt. This clean install is the release-side oracle: registry
