@@ -35,8 +35,8 @@ protocol 2. OAR is pinned to 0.91.0. The hook route registry is unchanged.
 ### Rollback
 
 - To restore the previous selection, use `repo-harness install --rollback`.
-  This keeps the new guards. To restore commands without the gate, reinstall
-  the previous package version and run `repo-harness update`. (#1889, #1904)
+  This keeps the new guards. To restore commands without the gate, run
+  `bun add -g repo-harness@0.26.5 --no-cache && repo-harness update --version 0.26.5`. (#1889, #1904)
 
 ### Changed
 

@@ -275,7 +275,7 @@ environment below. No installed probe has run in this prep.
 Before publication, close the prep PR or revert its merge commit. To
 restore the previous plugin selection, run `repo-harness install --rollback`;
 this keeps the new guards. To restore commands without the gate, reinstall
-0.26.5 and run `repo-harness update` (#1904). For a downgrade to a CLI
+0.26.5 and run `repo-harness update --version 0.26.5` (#1904). For a downgrade to a CLI
 that cannot read the selected plugins, first run `repo-harness uninstall`
 with 0.26.6, then install the older CLI and reinstall with it. After
 publication, keep the published tag and use a new patch release for a
