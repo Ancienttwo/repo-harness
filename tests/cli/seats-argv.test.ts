@@ -3,8 +3,8 @@ import { spawnSync } from "child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { seatPaneName } from "../../src/core/operator/seat-launch";
-import { DEFAULT_SEATS_CONFIG } from "../../src/core/operator/seats-settings";
+import { seatPaneName } from "../../src/core/board/seat-launch";
+import { DEFAULT_SEATS_CONFIG } from "../../src/core/board/seats-settings";
 import { repoHarnessRepoIdFor } from "../../src/effects/repo-registry";
 
 const CLI = join(import.meta.dir, "..", "..", "src/cli/index.ts");

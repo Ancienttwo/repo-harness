@@ -21,7 +21,7 @@ import { qoderRuntime } from '@botiverse/oar/runtimes/qoder';
 import { qwenRuntime } from '@botiverse/oar/runtimes/qwen';
 
 import { publicAgentConfigText } from '../../core/operator/agent-config';
-import type { AgentRuntimeGroup, AgentRuntimeInstallationV1, AgentRuntimeProbeEntryV1, AgentRuntimeProbeV1 } from '../../core/operator/agents-settings';
+import type { AgentRuntimeGroup, AgentRuntimeInstallationV1, AgentRuntimeProbeEntryV1, AgentRuntimeProbeV1 } from '../../core/board/agents-settings';
 
 const PROBE_TIMEOUT_MS = 15_000;
 const CURSOR_SDK_PACKAGE = '@cursor/sdk';

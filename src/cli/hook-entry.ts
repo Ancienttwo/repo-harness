@@ -70,14 +70,13 @@ if (import.meta.main) {
 
   // The Claude Code status line command. It is not a hook event, so it has no
   // route and runs in any cwd: quota belongs to the account, and the capture
-  // file is in HOME. The handler is operator plugin code; this composition
-  // root is the only core-side file that may load it.
+  // file is in HOME. The handler is core Board code, so no plugin gate applies.
   if (argv[0] === 'statusline') {
     if (argv.length !== 1) {
       writeAllSync(2, `${HOOK_COMMAND_NAME}: usage: ${HOOK_COMMAND_NAME} statusline\n`);
       process.exit(2);
     }
-    const { runClaudeStatusLine } = await import('../effects/operator/quota');
+    const { runClaudeStatusLine } = await import('../effects/board/quota');
     const result = runClaudeStatusLine(parseHookPayload(readFileSync(0)).rate_limits);
     if (result.stdout) writeAllSync(1, result.stdout);
     if (result.stderr) writeAllSync(2, result.stderr);

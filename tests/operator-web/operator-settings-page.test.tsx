@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 
-import { AGENT_RUNTIME_CAPABILITIES, decodeAgentsSettings, type AgentsSettingsV1 } from '../../src/core/operator/agents-settings';
+import { AGENT_RUNTIME_CAPABILITIES, decodeAgentsSettings, type AgentsSettingsV1 } from '../../src/core/board/agents-settings';
 import { isReviewRuntimeId } from '../../src/core/review/review-runtimes';
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
@@ -12,7 +12,7 @@ import type { OperatorLocale } from '../../src/operator-web/i18n';
 import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
 import { agentsSettingsFixture, settingsStores } from '../../src/operator-web/fixtures/settings';
-import type { SeatsSettingsRequestV1 } from '../../src/core/operator/seats-settings';
+import type { SeatsSettingsRequestV1 } from '../../src/core/board/seats-settings';
 import { registryOf } from '../../src/operator-web/fixtures';
 
 const REGISTRY = registryOf(['repo-harness', 'repo-console']);

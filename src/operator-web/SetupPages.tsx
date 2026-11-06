@@ -37,7 +37,7 @@ import { AgentSettings, HostRuntimeControls } from './SettingsPage';
 import { SeatsSection } from './SeatsPage';
 import type { AgentsSettingsForm } from './settings';
 import type { SeatsSettingsForm } from './seats';
-import type { QuotaAccountReport, QuotaReport, QuotaWindowReport, QuotaWindowState } from '../core/operator/quota';
+import type { QuotaAccountReport, QuotaReport, QuotaWindowReport, QuotaWindowState } from '../core/board/quota';
 import type { QuotaSection as QuotaRead, QuotaView } from './quota';
 
 export type SetupPage = 'agents' | 'skills' | 'hooks';

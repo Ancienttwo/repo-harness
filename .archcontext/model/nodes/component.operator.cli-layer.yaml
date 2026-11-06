@@ -14,8 +14,6 @@ source:
     - src/cli/commands/catch-up.ts
     - src/cli/commands/setup-snapshot.ts
     - src/cli/commands/setup-check-child.ts
-    - src/cli/commands/seats.ts
-    - src/cli/commands/quota.ts
   exclude:
     - src/cli/commands/operator.ts
     - src/cli/commands/setup-check-child.ts

@@ -11,7 +11,7 @@ import { randomBytes } from 'node:crypto';
 import { lstatSync, mkdirSync, readdirSync, realpathSync, rmdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
-import { isAgentRuntimeId } from '../../core/operator/agents-settings';
+import { isAgentRuntimeId } from '../../core/board/agents-settings';
 import { checkDocCitation, decodeDocCitation, docCitationBudget, type DocCitationV1 } from '../../core/operator/doc-citation';
 import { isDocsHostRuntimeId } from '../../core/operator/docs-host-runtimes';
 import type { JsonValue } from '../../core/evidence/types';

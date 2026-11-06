@@ -11,3 +11,5 @@ responsibilities:
 source:
   include:
     - "src/cli/commands/board.ts"
+    - "src/cli/commands/quota.ts"
+    - "src/cli/commands/seats.ts"

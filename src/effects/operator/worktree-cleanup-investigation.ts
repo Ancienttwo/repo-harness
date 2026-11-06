@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import { canonicalize } from '../../core/evidence/canonical-json';
 import type { JsonValue } from '../../core/evidence/types';
-import { decodeQuotaReport } from '../../core/operator/quota';
+import { decodeQuotaReport } from '../../core/board/quota';
 import type { ProcessProof, ReviewerRunner, ReviewHostSpec, TaskRequest } from '../../core/review/runner-port';
 import {
   CLEANUP_INVESTIGATION_MANIFEST, cleanupInvestigationInstructions, cleanupInvestigationManifest, decodeCleanupInvestigationResult,
@@ -18,7 +18,7 @@ import { configuredGitBinary, gitExecFileSync, withoutRepositorySelectingGitEnv 
 import { prepareCodexHome, prepareReviewLauncher, removeCopiedAuth, reviewIsolationPolicy, type CleanupReviewIsolationPaths } from '../review/review-isolation';
 import { runSetupProcess, type SetupProcessRunner } from '../setup/collector';
 import { readSessionArtifact, writeSessionArtifact, writeSessionBytes } from '../terminal/task-session-io';
-import { readQuotaReport } from './quota';
+import { readQuotaReport } from '../board/quota';
 import type { CleanupObservationTarget } from './worktree-cleanup-observation';
 import { createCleanupPlan } from './worktree-cleanup-plan';
 import {

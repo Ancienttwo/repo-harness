@@ -9,7 +9,7 @@ import {
   type SeatsSettingsRequestV1,
   type SeatsSettingsV1,
   type SeatTool,
-} from '../core/operator/seats-settings';
+} from '../core/board/seats-settings';
 import {
   fetchSettings,
   postSettings,

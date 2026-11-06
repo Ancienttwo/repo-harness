@@ -3,4 +3,4 @@ id: relation.global-runtime-reconciliation.cli-root.board
 kind: calls
 source: component.global-runtime-reconciliation.cli-root
 target: capability.organization.board
-intent: "Register the board command"
+intent: "Register the board, seats and quota commands"

@@ -8,7 +8,7 @@ import {
   type AgentsSettingsChangeV1,
   type AgentsSettingsRequestV1,
   type AgentsSettingsV1,
-} from '../core/operator/agents-settings';
+} from '../core/board/agents-settings';
 import { asApiError } from './operator-api-error';
 import type { OperatorApiErrorV1 } from './operator-api-error';
 import { postOperatorWrite, type OperatorWriteFailure } from './operator-write';
