@@ -1,5 +1,6 @@
-import { lstatSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { closeSync, constants, fchmodSync, fstatSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { JsonValue } from '../../core/evidence/types';
 import { renderJsonObjectUpdate, requireDocumentationLanguage } from '../adoption/standard-plan';
 import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError } from '../repo-registry';
@@ -65,9 +66,15 @@ function readDocumentationPolicy(repositoryId: string, env: NodeJS.ProcessEnv | 
     throw new OperatorWriteRefusal(409, 'policy_path_refused', (error as Error).message, 'Replace the linked or non-file policy path with a regular file.');
   }
   let raw: string;
+  let mode: number;
   try {
-    if (!lstatSync(path).isFile()) throw new Error('Policy must be a regular file.');
-    raw = readFileSync(path, 'utf8');
+    const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0));
+    try {
+      const stat = fstatSync(fd);
+      if (!stat.isFile()) throw new Error('Policy must be a regular file.');
+      mode = stat.mode & 0o7777;
+      raw = readFileSync(fd, 'utf8');
+    } finally { closeSync(fd); }
   }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -86,7 +93,7 @@ function readDocumentationPolicy(repositoryId: string, env: NodeJS.ProcessEnv | 
   } catch (error) {
     throw new OperatorWriteRefusal(409, 'policy_invalid', (error as Error).message, 'Fix .ai/harness/policy.json, then reload.');
   }
-  return { path, raw, policy, documentation: (policy.documentation ?? {}) as Record<string, unknown> };
+  return { path, raw, mode, policy, documentation: (policy.documentation ?? {}) as Record<string, unknown> };
 }
 
 export function readDocumentationLanguage(repositoryId: string, env?: NodeJS.ProcessEnv, adapter?: OperatorLanguageSettingsAdapter) {
@@ -108,9 +115,22 @@ export function documentationLanguageWriteRoute(env?: NodeJS.ProcessEnv, adapter
       return {
         operation: 'repository_documentation_language', target: `documentation_language:${repositoryId}`, input: { language },
         execute: async () => {
-          const { path, raw, policy, documentation } = readDocumentationPolicy(repositoryId, env, adapter);
+          const { path, raw, mode, policy, documentation } = readDocumentationPolicy(repositoryId, env, adapter);
           const next = renderJsonObjectUpdate(raw, { ...policy, documentation: { ...documentation, language } });
-          if (next !== raw) writeFileSync(path, next, 'utf8');
+          if (next !== raw) {
+            const temporary = join(dirname(path), `.policy-${randomUUID()}.tmp`);
+            const fd = openSync(temporary, 'wx', mode);
+            try {
+              try {
+                writeFileSync(fd, next, 'utf8');
+                fchmodSync(fd, mode);
+              } finally { closeSync(fd); }
+              renameSync(temporary, path);
+            } catch (error) {
+              rmSync(temporary, { force: true });
+              throw error;
+            }
+          }
           return { status: 200, body: { language } };
         },
       };
