@@ -16,7 +16,7 @@ async function consume(options: SessionOptions): Promise<void> {
   });
   try {
     const run = await promptAndWait(session, 'compile-only', { timeoutMs: 1000 });
-    if (run.kind !== 'rejected') void run.outcome.kind;
+    if (run.kind === 'ended') void run.outcome.kind;
   } finally {
     stop();
     await session.dispose();
