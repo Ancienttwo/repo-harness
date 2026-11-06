@@ -250,7 +250,6 @@ EOF
     ensure_task_sync_package_script
     # Canonical harness state surface:
     # - .ai/context/context-map.json
-    # - .ai/harness/policy.json
     # - .ai/harness/brain-manifest.json
     # - .ai/harness/events.jsonl
     # - .ai/harness/failures/latest.jsonl
@@ -399,7 +398,7 @@ main() {
     echo "Next steps:"
     echo "  1. cd $PROJECT_NAME"
     echo "  2. Copy .env.example to .env and configure"
-    echo "  3. Run: repo-harness init --repo . (writes CLAUDE.md, AGENTS.md and the workflow marker)"
+    echo "  3. Run: repo-harness init --repo . (writes the policy, CLAUDE.md, AGENTS.md and the workflow marker)"
     echo "  4. Run: $PKG_MANAGER run dev"
     echo "  5. Open a GitHub issue for the first feature, then run: repo-harness run contract-worktree start --issue <number>"
     echo ""

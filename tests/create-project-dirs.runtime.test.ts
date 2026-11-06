@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 import { defaultPolicy } from "../src/effects/adoption/standard-plan";
+import { planAdoption } from "../src/effects/adoption/plan";
 import { adoptionTemplateFile } from "../src/effects/adoption/manifest-templates";
 import { parseExternalSourcesPolicy } from "../src/effects/github/policy";
 import { ARCHCTX_REQUIRED_VERSION, readArchitectureProjectionPolicy } from "../src/core/architecture/projection";
@@ -110,7 +111,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, ".ai/context/capabilities.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/checks/latest.json"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/harness/workflow-contract.json"))).toBe(false);
-      expect(existsSync(join(cwd, ".ai/harness/policy.json"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/harness/policy.json"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/harness/brain-manifest.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/events.jsonl"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/architecture"))).toBe(false);
@@ -300,42 +301,14 @@ describe("create-project-dirs runtime smoke", () => {
       expect(contextMap.lsp_profiles.default).toBe("typescript-lsp");
       expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).not.toContain("apps/*/AGENTS.md");
       expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).not.toContain("tasks/workstreams/**/*.md");
-      const policy = JSON.parse(readFileSync(join(cwd, ".ai/harness/policy.json"), "utf-8"));
-      expect(policy.harness.helper_source).toBe("package");
-      expect(policy.harness.helper_runtime_dir).toBe("package:scripts");
-      expect(policy.harness.helper_compat_dir).toBeUndefined();
-      expect(policy.external_tooling.routing).toEqual({
+      const tsDefaultPolicy = defaultPolicy("minimal-agentic", "en") as Record<string, any>;
+      expect(tsDefaultPolicy.harness.helper_source).toBe("package");
+      expect(tsDefaultPolicy.harness.helper_runtime_dir).toBe("package:scripts");
+      expect(tsDefaultPolicy.harness.helper_compat_dir).toBeUndefined();
+      expect(tsDefaultPolicy.external_tooling.routing).toEqual({
         simple: "waza",
       });
-      expect(policy.external_tooling.hosts).toEqual(["claude-code", "codex"]);
-      expect(policy.external_tooling.mode).toBe("agent-readiness-required");
-      expect(policy.external_tooling.readiness_gate).toBe("repo-harness run check-agent-tooling --host codex --strict-readiness");
-      expect(policy.external_tooling.waza.primary_host).toBe("codex");
-      expect(policy.external_tooling.waza.managed_skills).toEqual(["think", "hunt", "check", "health"]);
-      expect(policy.external_tooling.waza.codex_primary_path).toBe("~/.codex/skills");
-      expect(policy.external_tooling.hai_stack.source_repo).toBe("hylarucoder/hai-stack");
-      expect(policy.external_tooling.hai_stack.source_url).toBe("https://github.com/hylarucoder/hai-stack.git");
-      expect(policy.external_tooling.hai_stack.managed_skills).toEqual(["geju"]);
-      expect(policy.external_tooling.hai_stack.primary_host).toBe("codex");
-      expect(policy.external_tooling.hai_stack.codex_primary_path).toBe("~/.codex/skills");
-      expect(policy.external_tooling.hai_stack.staging_cache_path).toBe("~/.agents/skills");
-      expect(policy.external_tooling.hai_stack.sync_mode).toBe("stage-upstream-then-copy-to-codex");
-      expect(policy.external_tooling.hai_stack.host_drift_policy).toBe("report-per-host-version-staging-and-upstream-drift");
-      expect(policy.external_tooling.codex_automation_profile.required_skills).toEqual(["health", "check", "mermaid"]);
-      expect(policy.external_tooling.codex_automation_profile.mode).toBe("codex-runtime-reference");
-      expect(policy.external_tooling.codex_automation_profile.source).toBe("~/.codex/skills");
-      expect(policy.external_tooling.codex_automation_profile.routes).toEqual({
-        workflow_health: "waza:health",
-        review_gate: "waza:check",
-        architecture_diagram: "mermaid",
-      });
-      expect(policy.external_tooling.codex_automation_profile.vendoring_policy).toBe("do-not-vendor-skill-body");
-      expect(policy.external_tooling).not.toHaveProperty("gbrain");
-      expect(policy.external_tooling.codegraph.primary_host).toBe("both");
-      expect(policy.external_tooling.codegraph.index_dir).toBe(".codegraph");
-      expect(policy.external_tooling.codegraph.readiness).toBe("required-for-agent-code-navigation");
-      expect(policy.external_tooling.codegraph.hook_policy).toBe("do-not-block-hooks");
-      expect(policy.external_tooling.codegraph.vendoring_policy).toBe("do-not-add-package-dependency");
+      expect(tsDefaultPolicy.external_tooling).not.toHaveProperty("gbrain");
       // archctx is an external optional CLI, never a runtime dependency: the entry
       // must stay advisory and identical across every seeder that emits it.
       const archctxEntry = {
@@ -350,50 +323,21 @@ describe("create-project-dirs runtime smoke", () => {
         nodes_dir: ".archcontext/model/nodes",
         capability_source_key: ".ai/harness/policy.json#context.capability_source",
       };
-      expect(policy.external_tooling.archctx).toEqual(archctxEntry);
       expect(
         JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf-8")).external_tooling.archctx
       ).toEqual(archctxEntry);
-      expect(policy.external_tooling.agent_fleet.source).toBe("package:agents/fleet");
-      expect(policy.external_tooling.agent_fleet.managed_agents).toEqual(MANAGED_AGENTS);
-      expect(policy.external_tooling.agent_fleet.claude_target).toBe("~/.claude/agents");
-      expect(policy.external_tooling.agent_fleet.codex_target).toBe("~/.codex/agents");
-      expect(policy.external_tooling.agent_fleet.codex_generation).toBe("derive-toml-from-md");
-      expect(policy.external_tooling.agent_fleet.install_mode).toBe("advisory");
-      expect(policy.external_tooling.agent_fleet.conflict_policy).toBe("never-clobber-without-force");
-      expect(policy.external_tooling.agent_fleet.install_command).toBe("repo-harness run install-agent-fleet");
-      expect(policy.external_tooling.agent_fleet.source_policy).toBe("repo-owned-single-authority");
-      expect(policy.external_tooling.fable_agents).toBeUndefined();
-      expect(policy.minimal_change).toEqual({ mode: "advice" });
-      expect(policy.information_lifecycle.evidence.cache_globs).toEqual([".ai/harness/checks/*.latest.json", ".ai/harness/checks/*.latest.md"]);
-      expect(policy.tasks.contracts_dir).toBeUndefined();
-      expect(policy.active_plan).toBeUndefined();
-      expect(policy.sprints).toBeUndefined();
-      expect(policy.tasks.current_status_file).toBeUndefined();
-      expect(policy.tasks.workstreams_dir).toBeUndefined();
-      expect(policy.workstreams).toBeUndefined();
-      expect(policy.prds.dir).toBe("docs/prds");
-      expect(policy.prds.template_file).toBe("docs/prds/prd.template.md");
-      expect(policy.reference_material.dir).toBe("_ref");
-      expect(policy.reference_material.commit_policy).toContain("never commit");
-      expect(policy.reference_material.rule).toContain("occasional ignored external reference checkout cache");
-      expect(policy.reference_material.rule).toContain("commit/tag and path");
-      expect(policy.operations.dir).toBe("deploy");
-      expect(policy.operations.private_dir).toBe("_ops");
-      expect(policy.operations.tracked).toContain("deploy/scripts/");
-      expect(policy.operations.tracked).toContain("deploy/sql/");
-      expect(policy.operations.ignored).toContain("_ops/");
-      expect(policy.operations.deploy_sql).toBeUndefined();
-      expect(policy.operations.rule).toContain("operations.deploy_sql");
-      expect(policy.information_lifecycle.notes).toBeUndefined();
-      expect(policy.tasks.todo_file).toBeUndefined();
-      expect(policy.information_lifecycle.evidence.snapshots_dir).toBe(".ai/harness/runs");
-      expect(policy.information_lifecycle.external_knowledge.mode).toBe("manual-opt-in");
-      expect(policy.information_lifecycle.external_knowledge.manifest_file).toBe(".ai/harness/brain-manifest.json");
-      expect(policy.information_lifecycle.external_knowledge.drift_check).toBeUndefined();
-      expect(policy.information_lifecycle.external_knowledge.hook_trigger).toBeUndefined();
-      expect(policy.information_lifecycle.external_knowledge.sync_script).toBe("repo-harness brain sync");
-      expect(policy.agentic_development.routing).toEqual({
+      expect(tsDefaultPolicy.external_tooling.fable_agents).toBeUndefined();
+      expect(tsDefaultPolicy.tasks.contracts_dir).toBeUndefined();
+      expect(tsDefaultPolicy.active_plan).toBeUndefined();
+      expect(tsDefaultPolicy.sprints).toBeUndefined();
+      expect(tsDefaultPolicy.tasks.current_status_file).toBeUndefined();
+      expect(tsDefaultPolicy.tasks.workstreams_dir).toBeUndefined();
+      expect(tsDefaultPolicy.workstreams).toBeUndefined();
+      expect(tsDefaultPolicy.operations.dir).toBe("deploy");
+      expect(tsDefaultPolicy.operations.private_dir).toBe("_ops");
+      expect(tsDefaultPolicy.operations.deploy_sql).toBeUndefined();
+      expect(tsDefaultPolicy.tasks.todo_file).toBeUndefined();
+      expect(tsDefaultPolicy.agentic_development.routing).toEqual({
         product_discovery: "parent-agent:geju",
         complex_engineering_plan: "parent-agent:geju",
         design_plan: "parent-agent:geju",
@@ -402,36 +346,23 @@ describe("create-project-dirs runtime smoke", () => {
         bug_or_regression: "waza:hunt",
         post_implementation_review: "waza:check",
       });
-      // Parity guard: scripts/lib/project-init-lib.sh (pi_write_harness_policy, bash-generated
-      // above) and src/effects/adoption/standard-plan.ts (defaultPolicy, TS-generated) are two
-      // independently hardcoded sources for the same agentic_development.routing map. Assert
-      // they stay identical so the maps cannot silently diverge again.
-      const tsDefaultPolicy = defaultPolicy("minimal-agentic", "en") as Record<string, any>;
-      expect(policy.agentic_development.routing).toEqual(tsDefaultPolicy.agentic_development.routing);
-      expect(policy.agentic_development.due_diligence.levels).toEqual([
+      expect(tsDefaultPolicy.agentic_development.due_diligence.levels).toEqual([
         "P1_GLOBAL_ARCHITECTURE",
         "P2_DATA_FLOW_TRACE",
         "P3_DESIGN_DECISION",
       ]);
-      expect(policy.agentic_development.due_diligence.explicit_report_required_for).toContain(
+      expect(tsDefaultPolicy.agentic_development.due_diligence.explicit_report_required_for).toContain(
         "complex_engineering_plan",
       );
-      expect(policy.context.functional_block_selector.script).toBe("repo-harness run select-agent-context-blocks");
-      expect(policy.context.capability_registry_file).toBe(".ai/context/capabilities.json");
-      expect(policy.context.capability_resolver).toBe("repo-harness run capability-resolver");
-      expect(policy.context.capability_config).toBe("repo-harness run capability-config");
-      // Both policy initializers use the JSON capability registry by default.
+      expect(tsDefaultPolicy.context.capability_registry_file).toBe(".ai/context/capabilities.json");
+      // A new policy uses the JSON capability registry by default.
       // ensure-task-workflow only prepares runtime directories; it does not seed policy.
       const repoPolicy = JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf-8"));
-      for (const seeded of [policy, tsDefaultPolicy]) {
-        expect(seeded.context.capability_source).toBe("registry");
-      }
-      // External source intake is disabled by absence in every initializer
+      expect(tsDefaultPolicy.context.capability_source).toBe("registry");
+      // External source intake is disabled by absence in every policy
       // surface. A generated repository must never infer provider access from
       // a URL, CLI installation, or registry grant.
-      for (const seeded of [policy, tsDefaultPolicy]) {
-        expect(parseExternalSourcesPolicy(seeded.external_sources).mode).toBe("off");
-      }
+      expect(parseExternalSourcesPolicy(tsDefaultPolicy.external_sources).mode).toBe("off");
       expect(parseExternalSourcesPolicy(repoPolicy.external_sources).mode).toBe("off");
       // This repo cut its own authority over to archcontext nodes (Stage 2); the
       // seeded default above is what a newly generated repo gets, not what this repo
@@ -439,55 +370,23 @@ describe("create-project-dirs runtime smoke", () => {
       expect(repoPolicy.context.capability_source).toBe("archcontext");
       expect(existsSync(join(ROOT, ".archcontext/model/nodes"))).toBe(true);
       expect(existsSync(join(ROOT, ".ai/context/capabilities.json"))).toBe(false);
-      for (const seeded of [policy, tsDefaultPolicy, repoPolicy]) {
+      for (const seeded of [tsDefaultPolicy, repoPolicy]) {
         expect(seeded.context.capability_source_rule).toBe(tsDefaultPolicy.context.capability_source_rule);
         expect(seeded.context.capability_source_rule).toContain("no dual-read and no fallback");
       }
-      // capability_config is emitted by the shell initializer and this repo policy; standard-plan.ts
-      // does not carry it, so it is asserted separately from the switch itself.
-      for (const seeded of [policy, repoPolicy]) {
-        expect(seeded.context.capability_config).toBe("repo-harness run capability-config");
-      }
-      expect(policy.documentation.profile).toBe("minimal-agentic");
-      expect(policy.documentation.reference_source).toBe("user-level-runtime-docs");
-      expect(policy.documentation.reference_stub_marker).toBe(REFERENCE_STUB_MARKER);
-      expect(policy.documentation.reference_resolver).toBe("repo-harness docs path <doc-id>");
-      expect(policy.documentation.required).toContain("docs/architecture/index.md");
-      expect(policy.architecture).toBeUndefined();
-      expect(policy.external_tooling.diagram_design.sync_mode).toBe("external-installed-skill");
-      expect(policy.harness.architecture_events_file).toBeUndefined();
-      expect(policy.harness.workstream_events_file).toBeUndefined();
-      expect(policy.documentation.on_demand).toContain("docs/architecture.md");
-      expect(policy.lsp_profiles.selection).toBe("functional-block-first");
-      expect(policy.worktree_strategy.worktree_dir_template).toBe('{{system_tmp}}/{{repo}}-wt-{{slug}}');
-      expect(policy.worktree_strategy.worktree_dir_template).toBe(tsDefaultPolicy.worktree_strategy.worktree_dir_template);
-      expect(policy.worktree_strategy.auto_on_conflict).toBe(true);
-      expect(policy.worktree_strategy.auto_for_contract_tasks).toBe(true);
-      expect(policy.worktree_strategy.start_script).toBe("repo-harness run contract-worktree start --issue <number>");
-      expect(policy.worktree_strategy.cleanup_script).toBe("repo-harness run contract-worktree cleanup --slug <slug>");
-      expect(policy.worktree_strategy.validation_route).toBe("waza:check");
-      expect(policy.context_budget).toBeUndefined();
-      expect(policy.handoff_resume).toBeUndefined();
-      expect(policy.planning.pending_orchestration_file).toBe(".ai/harness/planning/pending.json");
-      expect(policy.planning.source_of_truth).toContain("transient host planning bridge");
-      expect(policy.sidecar_research.output_dir).toBe("docs/researches");
-      expect(policy.sidecar_research.preferred_runners).toEqual([
-        "task-agent",
-        "main-thread trace",
-      ]);
-      expect(policy.sidecar_research.spawn_decision).toContain("context impact");
-      expect(policy.sidecar_research.spawn_decision).toContain("do not ask the user");
-      expect(policy.sidecar_research.fallback_runner).toBe("main-thread trace");
-      expect(policy.sidecar_research.main_thread_policy).toContain("if spawning is not worthwhile");
-      expect(policy.delegation.preferred_runners).toBeUndefined();
-      expect(policy.delegation.fallback_runner).toBeUndefined();
-      expect(policy.delegation.brief_source).toBe("approved task/session admission");
-      expect(policy.delegation.rule).toBeUndefined();
-      expect(policy.delegation.runner_rule).toBeUndefined();
-      expect(policy.documentation.reference_configs).toContain("global-working-rules.md");
-      expect(policy.documentation.reference_configs).toContain("minimal-change-hooks.md");
-      expect(policy.upgrade.strategy_version).toBe(1);
-      expect(policy.upgrade.cleanup.remove_only_ownership).toBe("known_generated");
+      // standard-plan.ts does not carry capability_config.
+      expect(repoPolicy.context.capability_config).toBe("repo-harness run capability-config");
+      expect(tsDefaultPolicy.documentation.profile).toBe("minimal-agentic");
+      expect(tsDefaultPolicy.documentation.reference_source).toBe("user-level-runtime-docs");
+      expect(tsDefaultPolicy.documentation.reference_stub_marker).toBe(REFERENCE_STUB_MARKER);
+      expect(tsDefaultPolicy.documentation.reference_resolver).toBe("repo-harness docs path <doc-id>");
+      expect(tsDefaultPolicy.architecture).toBeUndefined();
+      expect(tsDefaultPolicy.harness.architecture_events_file).toBeUndefined();
+      expect(tsDefaultPolicy.harness.workstream_events_file).toBeUndefined();
+      expect(tsDefaultPolicy.worktree_strategy.worktree_dir_template).toBe('{{system_tmp}}/{{repo}}-wt-{{slug}}');
+      expect(tsDefaultPolicy.context_budget).toBeUndefined();
+      expect(tsDefaultPolicy.handoff_resume).toBeUndefined();
+      expect(tsDefaultPolicy.upgrade.strategy_version).toBe(1);
 
       const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf-8"));
       expect(pkg.scripts["check:context-files"]).toBe("repo-harness run check-context-files");
@@ -757,204 +656,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
       expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/context/context-map.json"))).toBe(true);
-      expect(existsSync(join(cwd, ".ai/harness/policy.json"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/harness/policy.json"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/harness/context-budget/latest.json"))).toBe(false);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, RUNTIME_SMOKE_TIMEOUT_MS);
-
-  test("project init directly replaces managed planning routes in an existing policy", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "stale-planning-policy-"));
-    const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
-
-    try {
-      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
-      writeFileSync(
-        join(cwd, ".ai/harness/policy.json"),
-        JSON.stringify(
-          {
-            external_tooling: {
-              gbrain: { mcp: "candidate-disabled" },
-              routing: { complex: "gstack", simple: "waza", knowledge: "gbrain" },
-            },
-            agentic_development: {
-              routing: {
-                product_discovery: "gstack:office-hours",
-                complex_engineering_plan: "gstack:plan-eng-review",
-                design_plan: "gstack:plan-design-review",
-              },
-              due_diligence: {
-                explicit_report_required_for: ["plan-eng-review", "shared_contract"],
-              },
-            },
-          },
-          null,
-          2,
-        ),
-      );
-
-      const res = spawnSync(
-        "bash",
-        ["-lc", [`source '${libPath}'`, 'pi_write_harness_policy "$PWD" apply'].join("\n")],
-        { cwd, encoding: "utf-8" },
-      );
-
-      expect(res.status).toBe(0);
-      const policy = JSON.parse(readFileSync(join(cwd, ".ai/harness/policy.json"), "utf-8"));
-      expect(policy.external_tooling.routing).toEqual({ simple: "waza" });
-      expect(policy.external_tooling).not.toHaveProperty("gbrain");
-      expect(policy.agentic_development.routing).toMatchObject({
-        product_discovery: "parent-agent:geju",
-        complex_engineering_plan: "parent-agent:geju",
-        design_plan: "parent-agent:geju",
-      });
-      expect(policy.agentic_development.due_diligence.explicit_report_required_for).toEqual([
-        "complex_engineering_plan",
-        "shared_contract",
-      ]);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, RUNTIME_SMOKE_TIMEOUT_MS);
-
-  test("project init preserves mixed custom routes while cutting the declared legacy provider", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "custom-planning-policy-"));
-    const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
-
-    try {
-      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
-      writeFileSync(
-        join(cwd, ".ai/harness/policy.json"),
-        JSON.stringify(
-          {
-            external_tooling: {
-              routing: { complex: "retired-provider", simple: "waza", knowledge: "gbrain" },
-            },
-            agentic_development: {
-              routing: {
-                product_discovery: "custom:product-discovery",
-                complex_engineering_plan: "retired-provider:architecture-review",
-                design_plan: "custom:design-review",
-              },
-              due_diligence: {
-                explicit_report_required_for: ["architecture-review", "shared_contract", "database_migration"],
-              },
-            },
-          },
-          null,
-          2,
-        ),
-      );
-
-      const res = spawnSync(
-        "bash",
-        ["-lc", [`source '${libPath}'`, 'pi_write_harness_policy "$PWD" apply'].join("\n")],
-        { cwd, encoding: "utf-8" },
-      );
-
-      expect(res.status).toBe(0);
-      const policy = JSON.parse(readFileSync(join(cwd, ".ai/harness/policy.json"), "utf-8"));
-      expect(policy.external_tooling.routing).toEqual({ simple: "waza" });
-      expect(policy.agentic_development.routing).toMatchObject({
-        product_discovery: "custom:product-discovery",
-        complex_engineering_plan: "parent-agent:geju",
-        design_plan: "custom:design-review",
-      });
-      expect(policy.agentic_development.due_diligence.explicit_report_required_for).toEqual([
-        "complex_engineering_plan",
-        "shared_contract",
-        "database_migration",
-      ]);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, RUNTIME_SMOKE_TIMEOUT_MS);
-
-  test("Python-only policy merge matches the primary runtime migration", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "python-policy-merge-"));
-    const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
-    const fakeBin = join(cwd, "bin");
-    const defaultsPath = join(cwd, "defaults.json");
-    const currentPath = join(cwd, "current.json");
-    const primaryOutput = join(cwd, "primary.json");
-    const pythonOutput = join(cwd, "python.json");
-
-    try {
-      const python = spawnSync("python3", ["-c", "import sys; print(sys.executable)"], { encoding: "utf-8" });
-      expect(python.status).toBe(0);
-      expect(python.stdout.trim()).not.toBe("");
-      mkdirSync(fakeBin, { recursive: true });
-      symlinkSync(python.stdout.trim(), join(fakeBin, "python3"));
-
-      writeFileSync(
-        defaultsPath,
-        JSON.stringify({
-          external_tooling: { routing: { simple: "waza", knowledge: "gbrain" } },
-          agentic_development: {
-            routing: {
-              product_discovery: "parent-agent:geju",
-              complex_engineering_plan: "parent-agent:geju",
-              design_plan: "parent-agent:geju",
-            },
-            due_diligence: { explicit_report_required_for: ["complex_engineering_plan"] },
-          },
-        }),
-      );
-      writeFileSync(
-        currentPath,
-        JSON.stringify({
-          external_tooling: {
-            routing: { complex: "retired-provider", simple: "waza", knowledge: "gbrain" },
-            herdr_core: { min_version: "0.1.16" },
-          },
-          agentic_development: {
-            routing: {
-              product_discovery: "retired-provider:discovery-review",
-              complex_engineering_plan: "retired-provider:architecture-review",
-              design_plan: "custom:design-review",
-            },
-            due_diligence: {
-              explicit_report_required_for: ["discovery-review", "architecture-review", "database_migration"],
-            },
-          },
-        }),
-      );
-
-      const primary = spawnSync(
-        "/bin/bash",
-        ["--noprofile", "--norc", "-c", `source '${libPath}'\npi_merge_json_defaults '${defaultsPath}' '${currentPath}' '${primaryOutput}'`],
-        { cwd, encoding: "utf-8" },
-      );
-      expect(primary.status).toBe(0);
-
-      const pythonOnly = spawnSync(
-        "/bin/bash",
-        ["--noprofile", "--norc", "-c", `source '${libPath}'\npi_merge_json_defaults '${defaultsPath}' '${currentPath}' '${pythonOutput}'`],
-        {
-          cwd,
-          encoding: "utf-8",
-          env: { HOME: cwd, PATH: fakeBin },
-        },
-      );
-      expect(pythonOnly.status).toBe(0);
-      expect(readFileSync(pythonOutput, "utf-8")).toBe(readFileSync(primaryOutput, "utf-8"));
-      // Both merges delete the retired hc pin key and report it.
-      for (const run of [primary, pythonOnly]) expect(run.stdout).toContain("[repo-harness] removed retired policy keys: external_tooling.herdr_core\n");
-
-      const policy = JSON.parse(readFileSync(pythonOutput, "utf-8"));
-      expect(policy.external_tooling).not.toHaveProperty("herdr_core");
-      expect(policy.external_tooling.routing).toEqual({ simple: "waza" });
-      expect(policy.agentic_development.routing).toMatchObject({
-        product_discovery: "parent-agent:geju",
-        complex_engineering_plan: "parent-agent:geju",
-        design_plan: "custom:design-review",
-      });
-      expect(policy.agentic_development.due_diligence.explicit_report_required_for).toEqual([
-        "product_discovery",
-        "complex_engineering_plan",
-        "database_migration",
-      ]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -980,10 +683,6 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "docs/reference-configs/AGENTS.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/reference-configs/CLAUDE.md"))).toBe(false);
       expectReferenceConfigStub(cwd, "spa-day-protocol");
-      const policy = JSON.parse(readFileSync(join(cwd, ".ai/harness/policy.json"), "utf-8"));
-      expect(policy.documentation.profile).toBe("full");
-      expect(policy.documentation.reference_source).toBe("user-level-runtime-docs");
-      expect(policy.documentation.reference_configs).toContain("spa-day-protocol.md");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -995,30 +694,31 @@ describe("create-project-dirs runtime smoke", () => {
    * runtime reader consumes them.
    */
   test("policy seeders author no repository archctx execution or refactor settings", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "seeder-archctx-pin-parity-"));
-    const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
+    const seeders: Array<[string, Record<string, any>]> = [
+      ["src/effects/adoption/standard-plan.ts", defaultPolicy("minimal-agentic", "en")],
+      [".ai/harness/policy.json", JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf-8"))],
+    ];
 
-    try {
-      const res = spawnSync(
-        "bash",
-        ["-lc", [`source '${libPath}'`, 'pi_write_harness_policy "$PWD" apply'].join("\n")],
-        { cwd, encoding: "utf-8" },
-      );
-      expect(res.status).toBe(0);
-
-      const seeders: Array<[string, Record<string, any>]> = [
-        ["scripts/lib/project-init-lib.sh", JSON.parse(readFileSync(join(cwd, ".ai/harness/policy.json"), "utf-8"))],
-        [".ai/harness/policy.json", JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf-8"))],
-      ];
-
-      for (const [source, seeded] of seeders) {
-        expect([source, seeded.refactor]).toEqual([source, undefined]);
-        for (const key of ['projection_provider', 'projection_apply', 'projection_version', 'projection_failure_gate', 'projection_timeout_ms']) {
-          expect([source, seeded.architecture?.[key]]).toEqual([source, undefined]);
-        }
-        expect(readArchitectureProjectionPolicy({}).requiredVersion).toBe(ARCHCTX_REQUIRED_VERSION);
+    for (const [source, seeded] of seeders) {
+      expect([source, seeded.refactor]).toEqual([source, undefined]);
+      for (const key of ['projection_provider', 'projection_apply', 'projection_version', 'projection_failure_gate', 'projection_timeout_ms']) {
+        expect([source, seeded.architecture?.[key]]).toEqual([source, undefined]);
       }
+      expect(readArchitectureProjectionPolicy({}).requiredVersion).toBe(ARCHCTX_REQUIRED_VERSION);
+    }
+  });
 
+  test("a scaffold has no policy until repo-harness init writes every branch key from git", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "scaffold-then-init-"));
+    try {
+      expect(spawnSync("git", ["init", "-q", "-b", "master"], { cwd }).status).toBe(0);
+      const res = spawnSync("bash", [join(ROOT, "scripts/create-project-dirs.sh")], { cwd, encoding: "utf-8" });
+      expect(res.status).toBe(0);
+      expect(existsSync(join(cwd, ".ai/harness/policy.json"))).toBe(false);
+
+      const operation = planAdoption({ repoRoot: cwd, mode: "standard" }).operations.find((entry) => entry.path === ".ai/harness/policy.json");
+      if (!operation || operation.kind !== "writeFile") throw new Error("policy operation missing");
+      expect(JSON.parse(operation.content).worktree_strategy).toMatchObject({ base_branch: "master", review_base: "master", merge_back: { target: "master" } });
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

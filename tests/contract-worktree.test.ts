@@ -18,6 +18,7 @@ import { DEFAULT_WORKTREE_TEMPLATE, defaultWorktreeTemplate } from "../src/core/
 
 import { runUpgrade } from '../src/cli/commands/upgrade';
 import { sweepManagedWorktrees } from '../src/effects/state/coordination-worktree-topology';
+import { defaultPolicy } from "../src/effects/adoption/standard-plan";
 import { copyHelpers, ROOT } from "./helpers/helper-script-fixture";
 import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixture";
 import { recordPluginSelection } from "./helpers/install-ownership";
@@ -476,8 +477,8 @@ describe('task worktree location', () => {
     mkdirSync(cwd); mkdirSync(managed);
     try {
       copyHelpers(cwd); initGitRepo(cwd);
-      const policy = run('bash', ['-c', 'source "$1"; pi_write_harness_policy "$PWD" apply', 'policy', join(ROOT, 'scripts/lib/project-init-lib.sh')], cwd);
-      expect(policy.status, policy.stderr).toBe(0);
+      mkdirSync(join(cwd, '.ai/harness'), { recursive: true });
+      writeFileSync(join(cwd, '.ai/harness/policy.json'), JSON.stringify(defaultPolicy('minimal-agentic', 'en')));
       expect(JSON.parse(readFileSync(join(cwd, '.ai/harness/policy.json'), 'utf8')).worktree_strategy.worktree_dir_template).toBe(DEFAULT_WORKTREE_TEMPLATE);
       const helperTemplate = run(process.execPath, ['scripts/contract-worktree-runtime.ts', 'default-template'], cwd);
       expect(helperTemplate.status, helperTemplate.stderr).toBe(0); expect(helperTemplate.stdout.trim()).toBe(expectedTemplate);

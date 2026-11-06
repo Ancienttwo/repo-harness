@@ -43,7 +43,6 @@ describe("create-project-dirs scaffold parity", () => {
         "./.ai/harness/events.jsonl",
         "./.ai/harness/failures/latest.jsonl",
         "./.ai/harness/planning/.gitkeep",
-        "./.ai/harness/policy.json",
         "./.ai/harness/runs/.gitkeep",
         "./.ai/harness/security/.gitkeep",
         "./.ai/harness/triage/.gitkeep",
