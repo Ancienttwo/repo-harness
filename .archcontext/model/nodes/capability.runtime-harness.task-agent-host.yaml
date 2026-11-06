@@ -102,5 +102,5 @@ extensions:
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun run test:files tests/effects/herdr-core-transport.test.ts tests/herdr-task-lifecycle.test.ts tests/herdr-runtime-pin.test.ts tests/install-agent-fleet.test.ts tests/effects/native-task-session.test.ts tests/effects/oar-host-node-import.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run test:files tests/effects/herdr-core-transport.test.ts tests/herdr-task-lifecycle.test.ts tests/effects/native-task-session.test.ts tests/effects/oar-host-node-import.test.ts --timeout 60000 --max-concurrency 1"
     - "bun run check:type"

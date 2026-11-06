@@ -86,6 +86,7 @@ extensions:
     claude: assets/CLAUDE.md
   lspProfile: typescript-lsp
   verification:
+    - bun run test:files tests/install-agent-fleet.test.ts --timeout 60000 --max-concurrency 1
     - bun test tests/workflow-contract.test.ts tests/scaffold-parity.test.ts
     - bun scripts/capability-resolver.ts validate --format text
     - bun run check:helpers

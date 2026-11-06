@@ -6,6 +6,7 @@ status: active
 layer: effects
 summary: Reconciles the installed repo-harness runtime and the external tooling that core and the selected plugins own.
 responsibilities:
+  - Install the release-matched Herdr skill for the selected hosts.
   - "Install and read back the exact repo-harness version, and the archctx closure through the architecture setup port when the plugin is selected."
   - "Select a trusted Node runtime for a version range: the package engines range for helpers, the archctx range for the plugin."
   - "Refresh mutable Waza and Mermaid skills only when explicitly requested, plus the exact global CodeGraph CLI and MCP registration for a selected architecture plugin."
@@ -77,5 +78,5 @@ extensions:
   lspProfile: typescript-lsp
   verification:
     - bun test tests/cli/global-runtime-init.test.ts tests/cli/global-runtime.test.ts
-    - bun run test:files tests/unit/candidate-bound-global-runtime-reconciliation.test.ts tests/unit/global-architecture-projection.test.ts tests/cli/doctor.test.ts tests/cli/init-hook.test.ts tests/cli/upgrade.test.ts tests/runtime-evidence-receipt.test.ts --timeout 60000 --max-concurrency 1
+    - bun run test:files tests/unit/candidate-bound-global-runtime-reconciliation.test.ts tests/unit/global-architecture-projection.test.ts tests/herdr-runtime-pin.test.ts tests/cli/doctor.test.ts tests/cli/init-hook.test.ts tests/cli/upgrade.test.ts tests/runtime-evidence-receipt.test.ts --timeout 60000 --max-concurrency 1
     - bun run check:release
