@@ -342,10 +342,13 @@ export function hostsForTarget(target: InstallTargetSpec): readonly HookHost[] {
   return target === 'both' ? ['claude', 'codex'] : [target];
 }
 
-export function expectedAdapterProjectionDigests(target: InstallTargetSpec): Readonly<Record<HookHost, string>> {
+export function expectedAdapterProjectionDigests(
+  target: InstallTargetSpec,
+  env: NodeJS.ProcessEnv = process.env,
+): Readonly<Record<HookHost, string>> {
   return Object.fromEntries(hostsForTarget(target).map((host) => [
     host,
-    managedProjectionDigest(buildManagedHooks(host)),
+    managedProjectionDigest(buildManagedHooks(host, env)),
   ])) as Record<HookHost, string>;
 }
 
@@ -368,7 +371,7 @@ export function assertInstalledAdapterProjection(
   target: InstallTargetSpec,
   env: NodeJS.ProcessEnv = process.env,
 ): Readonly<Record<HookHost, string>> {
-  const expected = expectedAdapterProjectionDigests(target);
+  const expected = expectedAdapterProjectionDigests(target, env);
   for (const host of hostsForTarget(target)) {
     const actual = installedAdapterProjectionDigest(adapterPath(host, env));
     if (actual !== expected[host]) {
@@ -385,6 +388,7 @@ export function assertInstalledAdapterProjection(
 export function assertCandidateReconciliationReceipt(
   receipt: CandidateReconciliationReceipt,
   expected: CandidateReceiptExpectation,
+  env: NodeJS.ProcessEnv = process.env,
 ): void {
   if (receipt.protocol !== CANDIDATE_RECONCILIATION_PROTOCOL) {
     throw new Error(`candidate reconciliation protocol mismatch: expected=${CANDIDATE_RECONCILIATION_PROTOCOL}; actual=${String(receipt.protocol)}`);
@@ -409,7 +413,7 @@ export function assertCandidateReconciliationReceipt(
     throw new Error('candidate reconciliation is partial');
   }
   if (expected.require_adapter_projection !== false) {
-    const expectedDigests = expectedAdapterProjectionDigests(expected.target);
+    const expectedDigests = expectedAdapterProjectionDigests(expected.target, env);
     for (const host of hostsForTarget(expected.target)) {
       if (receipt.adapter_projection_digests[host] !== expectedDigests[host]) {
         throw new Error(`adapter projection mismatch for ${host}`);
