@@ -1,6 +1,6 @@
 # organization/task-fleet 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:405719d22eeb72caf9e5589e005f29bfbee1cc8dbfd6ba2b5443bdffaaf246a7" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:3541270294bd976fc8247f4cb2c05c04b1d8d8a0d3cf8bd30a699d7e187933fa" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.task-fleet`(kind `capability`)
 > **Matched Prefixes**:`src/core/fleet/**`、`src/effects/fleet/**`、`src/cli/commands/fleet.ts`
@@ -51,7 +51,7 @@ flowchart LR
 
 出向關係:
 
-- `reads` → `component.mcp-sidecar.repo-policy-registry-effects` — Read the Bot registry to name the sender of a fleet task message
+- `reads` → `component.execution-primitives.bot-registry` — Read the Bot registry to name the sender of a fleet task message
 - `calls` → `capability.runtime-harness.evidence-ledger` — Reuse canonical JSON and durable atomic append for task message records
 - `calls` → `component.task-fleet.primary` — Run the fleet command group for task messages, inbox, provider feedback and repository registration
 - `calls` → `capability.organization.publication` — Plugin → core: read explicit PR readiness and the publication digest helpers, and store provider feedback facts and delivery receipts through the Publication feedback store, for fleet commands, board cards and provider feedback
@@ -62,7 +62,6 @@ flowchart LR
 - `depends-on` ← `capability.verification.evals-checks` — Test Task Fleet behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the fleet command and pass the task inbox root to retention
 - `calls` ← `component.hook-adapters.session-lifecycle` — Render task inbox messages as untrusted session context
-- `calls` ← `component.mcp-sidecar.primary` — Acquire fleet tasks and handle task steers from the MCP tools
 - `calls` ← `component.task-agent-host.review-runner` — Reserve admitted inbox context through read-only listing and commit exact delivery receipts only after positive accepted OAR input proof; unknown acceptance leaves delivery pending
 
 組件出向關係:
