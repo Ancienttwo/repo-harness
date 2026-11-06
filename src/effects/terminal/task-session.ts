@@ -16,7 +16,8 @@ import { taskSessionKey } from '../git/repository-identity';
 import { recordWorktree, readWorktreeRecord, endWorktreeRecord } from '../git/worktree-record';
 import { taskRepository, type TaskRepository } from '../git/task-repository';
 import { ExclusiveLockContentionError, withCallerLock } from '../locking/exclusive-directory-lock';
-import { HerdrCoreError, RH_LABEL, RH_NOTIFY_LABELS, RH_ROLE, hcGet, hcKill, hcList, hcRm, hcRun, hcSend, isHcAddress,
+import { isHcAddress } from '../../core/terminal/hc-address';
+import { HerdrCoreError, RH_LABEL, RH_NOTIFY_LABELS, RH_ROLE, hcGet, hcKill, hcList, hcRm, hcRun, hcSend,
   type HcLabels, type HcTerminal, type HerdrCoreOptions } from './herdr-core';
 import { oarObservationFile, readOarObservation } from './task-runtime-observation';
 

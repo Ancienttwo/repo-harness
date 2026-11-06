@@ -184,6 +184,16 @@ test('scope: nested runtimes, labels outside the repo-harness set and addresses 
   expect(run.argv()).toEqual([]);
 });
 
+test('scope: list reads keep local terminals and reject malformed local addresses', async () => {
+  const local = { address: 't4', agent: 'claude', state: 'live' } as const;
+  const list = fake('ok', { terminals: [local, { ...local, address: 'mini-cf/t11' }, { address: 'a.b-c/x/t1' }] });
+  expect(hcList(RH_NOTIFY_LABELS, { env: list.env })).toEqual([{ ...local, name: null }]);
+  expect(await hcListAsync(RH_NOTIFY_LABELS, { env: list.env })).toEqual([{ ...local, name: null }]);
+  const bad = fake('ok', { terminals: [{ ...local, address: 'not-a-terminal' }] });
+  expect(failure(() => hcList(RH_NOTIFY_LABELS, { env: bad.env })).reason).toBe('invalid_response');
+  expect((await asyncFailure(() => hcListAsync(RH_NOTIFY_LABELS, { env: bad.env }))).reason).toBe('invalid_response');
+});
+
 test('scope: a terminal without a repo-harness label is refused, and kill and rm never reach it', () => {
   const personal = fake('ok', { ...TERMINAL, labels: { 'herdr.space': 's1' } });
   for (const call of [() => hcGet('t4', { env: personal.env }), () => hcKill('t4', { env: personal.env }), () => hcRm('t4', { env: personal.env }),
@@ -218,9 +228,12 @@ test('server status: the core id and version are read; a bad version, a missing 
 });
 
 test('events: snapshot, heartbeat, missed and event; close resolves, and a bad line or a throwing onItem stops the stream', async () => {
-  const lines = [JSON.stringify({ channel: null, seq: 3, terminals: [TERMINAL] }),
+  const remote = { ...TERMINAL, address: 'mini-cf/t11' };
+  const lines = [JSON.stringify({ channel: null, seq: 3, terminals: [remote, TERMINAL, { address: 'a.b-c/x/t1' }] }),
     JSON.stringify({ jsonrpc: '2.0', method: 'heartbeat', params: { seq: 3 } }),
-    JSON.stringify({ jsonrpc: '2.0', method: 'missed', params: { seq: 9, terminals: [TERMINAL] } }),
+    JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { seq: 4, terminal: remote.address, type: 'status', data: { records: {}, reported: true, status: { app: 'claude-code', state: 'working' } } } }),
+    JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { terminal: 'a.b-c/x/t1' } }),
+    JSON.stringify({ jsonrpc: '2.0', method: 'missed', params: { seq: 9, terminals: [remote, TERMINAL, { address: 'a.b-c/x/t1' }] } }),
     JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { seq: 10, terminal: 't4', type: 'turn', data: { state: 'idle', turn: 3 } } }),
     // hc sends foreground data null when no process is in the foreground.
     JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { seq: 11, terminal: 't4', type: 'foreground', data: null } })].join('\n');
@@ -232,12 +245,16 @@ test('events: snapshot, heartbeat, missed and event; close resolves, and a bad l
   await received;
   events.close();
   await events.done;
+  expect(items.filter(item => item.type !== 'event').map(item => item.terminals.map(row => row.address))).toEqual([['t4'], ['t4']]);
   expect(items.map(item => item.type === 'event' ? [item.type, item.seq, item.event, item.data] : [item.type, item.seq, item.terminals[0]!.labels]))
     .toEqual([['snapshot', 3, { 'repo-harness.role': 'notify-relay' }], ['missed', 9, { 'repo-harness.role': 'notify-relay' }],
       ['event', 10, 'turn', { state: 'idle', turn: 3 }], ['event', 11, 'foreground', null]]);
   expect(stream.argv()).toEqual(['events', '--json', '--label', 'repo-harness.notify=on']);
 
   for (const line of ['not json', JSON.stringify({ jsonrpc: '2.0', method: 'other', params: { seq: 4 } }),
+    JSON.stringify({ channel: null, seq: 4, terminals: [{ ...TERMINAL, address: 'bad' }] }),
+    JSON.stringify({ jsonrpc: '2.0', method: 'missed', params: { seq: 4, terminals: [{ ...TERMINAL, address: 'bad' }] } }),
+    JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { seq: 4, terminal: 'bad', type: 'status', data: {} } }),
     JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { seq: 4, terminal: 't4', type: 'turn', data: null } })]) {
     const bad = hcEvents(RH_NOTIFY_LABELS, () => {}, { env: fake('stream', line).env });
     expect(await bad.done.then(() => null, (error: HerdrCoreError) => error.reason)).toBe('invalid_response');

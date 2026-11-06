@@ -732,10 +732,13 @@ test('watch service: --watch refuses a terminal without the service labels; star
   expect(start([{ address: 't5', state: 'live' }])[0]).toEqual({ address: 't5', started: false });
 
   // The board of the same parent in hc: the watcher is not a seat terminal.
-  const seats = watchHc({ FAKE_LS: [{ address: 't5', state: 'live' }, { address: 't3', state: 'live' }],
-    FAKE_TERMINALS: { t5: { labels }, t3: { labels: { 'repo-harness.seat': 'orchestrator', 'repo-harness.repository': '1186405141', 'repo-harness.parent': '1503' } } } });
+  const seats = watchHc({ FAKE_LS: [{ address: 't5', state: 'live' }, { address: 't3', state: 'live' }, { address: 'mini-cf/t11', state: 'live' }],
+    FAKE_TERMINALS: { t5: { labels }, 'mini-cf/t11': { labels },
+      t3: { labels: { 'repo-harness.seat': 'orchestrator', 'repo-harness.repository': '1186405141', 'repo-harness.parent': '1503' } } } });
   const read = boardHostPorts(seats.options).seatTerminals('1186405141');
+  expect(read.status).toBe('observed');
   expect(read.status === 'observed' && read.terminals.map(terminal => terminal.address)).toEqual(['t3']);
+  expect(seats.calls().filter(args => args[0] === 'get').map(args => args.at(-1))).toEqual(['t5', 't3']);
   expect(seats.calls().filter(args => args[0] === 'ls')).toEqual([['ls', '--json', '--label', 'repo-harness.repository=1186405141']]);
 
   // One orchestrator and one advisor serve the repository (#1780): the room of every parent shows them, with or
