@@ -7,7 +7,7 @@ import { redactMcpText } from './redaction';
 import { repoHarnessPackageVersion } from './version';
 import { WorkspaceError, WorkspaceManager, type McpWorkspace, type WorkspaceResolvedPath } from './workspaces';
 import { buildGeneralRepoToolDefinitions, callGeneralRepoTool, isGeneralRepoTool, listGeneralRepoRecords, type GeneralRepoToolContext } from './general-repo-access';
-import type { GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
+import type { GeneralRepoCodeGraphAdapter } from '../tools/codegraph-reader';
 import { repoHarnessRepoIdFor } from '../../effects/repo-registry';
 import type { McpPolicy } from './types';
 

@@ -16,7 +16,7 @@ import { buildStateToolDefinitions, callStateTool, isStateTool } from './state-t
 import { buildFleetToolDefinitions, callFleetTool, fleetToolArgumentError, isFleetTool } from './fleet-tools';
 import type { McpPolicy } from './types';
 import type { WorkspaceManager } from './workspaces';
-import type { GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
+import type { GeneralRepoCodeGraphAdapter } from '../tools/codegraph-reader';
 
 export interface McpToolContext {
   repoRoot: string;

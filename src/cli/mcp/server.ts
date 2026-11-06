@@ -8,7 +8,7 @@ import { buildMcpServerInstructions } from './instructions';
 import { getMcpPolicy, parseMcpProfile, sensitiveAllowedRootReason } from './policy';
 import { isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { buildMcpToolDefinitions, callMcpTool, type McpToolContext } from './tools';
-import type { GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
+import type { GeneralRepoCodeGraphAdapter } from '../tools/codegraph-reader';
 import { repoHarnessPackageVersion } from './version';
 import { WorkspaceManager } from './workspaces';
 

@@ -1,15 +1,6 @@
 import { Command } from 'commander';
-import { startMcpStdio } from '../mcp/transports/stdio';
 import { setRepoHarnessAccessMode } from '../../effects/repo-registry';
-import { runMcpDoctor } from '../mcp/doctor';
-import type { GeneralRepoCodeGraphAdapter } from '../mcp/codegraph-adapter';
-
-export interface McpServeOptions {
-  repo?: string;
-  profile: string;
-  enableReader?: boolean;
-  allowRoot?: string[];
-}
+import type { McpServeOptions } from '../mcp/cli-actions';
 
 function collectOption(value: string, previous: string[] = []): string[] {
   return [...previous, value];
@@ -24,8 +15,7 @@ async function runMcpAction(action: () => void | Promise<void>): Promise<void> {
   }
 }
 
-/** `codeGraphAdapter` gives the CodeGraph reads of the served reader tools; the root decides it from the recorded selection. */
-export function buildMcpCommand(codeGraphAdapter: () => GeneralRepoCodeGraphAdapter): Command {
+export function buildMcpCommand(): Command {
   const mcp = new Command('mcp').description('Run and configure the repo-harness MCP workflow sidecar');
 
   mcp
@@ -37,13 +27,8 @@ export function buildMcpCommand(codeGraphAdapter: () => GeneralRepoCodeGraphAdap
     .option('--allow-root <path>', 'Additional non-repo local root for workspace reader/discovery tools; may be repeated', collectOption, [])
     .action(async (rawOpts: McpServeOptions) => {
       await runMcpAction(async () => {
-        await startMcpStdio({
-          repo: rawOpts.repo,
-          profile: rawOpts.profile,
-          enableReader: rawOpts.enableReader === true,
-          allowedRoots: rawOpts.allowRoot,
-          codeGraphAdapter: codeGraphAdapter(),
-        });
+        const { runMcpServeCommand } = await import('../mcp/cli-actions');
+        await runMcpServeCommand(rawOpts);
       });
     });
 
@@ -52,9 +37,10 @@ export function buildMcpCommand(codeGraphAdapter: () => GeneralRepoCodeGraphAdap
     .description('Check repo-harness MCP setup status')
     .option('--repo <path>', 'Repository root to inspect', '.')
     .option('--json', 'Output JSON instead of human-readable text')
-    .action((rawOpts: { repo?: string; json?: boolean }) => {
-      void runMcpAction(() => {
-        console.log(runMcpDoctor(rawOpts).lines.join('\n'));
+    .action(async (rawOpts: { repo?: string; json?: boolean }) => {
+      await runMcpAction(async () => {
+        const { runMcpDoctorCommand } = await import('../mcp/cli-actions');
+        runMcpDoctorCommand(rawOpts);
       });
     });
 

@@ -8,7 +8,7 @@ import { sha256, stableJson } from '../../src/core/review/acceptance-receipt';
 import { assessChange, buildReviewSelectionPacket, type ChangeAssessment } from '../../src/core/review/change-assessment';
 import { buildMcpToolDefinitions, callMcpTool, type McpToolContext } from '../../src/cli/mcp/tools';
 import { WorkspaceManager } from '../../src/cli/mcp/workspaces';
-import { createCodeGraphCliAdapter } from '../../src/cli/mcp/codegraph-adapter';
+import { createCodeGraphCliAdapter } from '../../src/cli/tools/codegraph-reader';
 
 async function withRepo<T>(fn: (repoRoot: string, ctx: McpToolContext) => Promise<T>): Promise<T> {
   const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-tools-'));

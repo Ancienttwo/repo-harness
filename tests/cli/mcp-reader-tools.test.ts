@@ -8,7 +8,7 @@ import { repoHarnessRepoIdFor, type RepoHarnessAccessMode } from '../../src/effe
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { buildReaderToolDefinitions, callReaderTool, createReaderToolContext, type ReaderToolContext } from '../../src/cli/mcp/reader-tools';
 import { WorkspaceManager } from '../../src/cli/mcp/workspaces';
-import { createCodeGraphCliAdapter, type GeneralRepoCodeGraphAdapter } from '../../src/cli/mcp/codegraph-adapter';
+import { createCodeGraphCliAdapter, type GeneralRepoCodeGraphAdapter } from '../../src/cli/tools/codegraph-reader';
 import { currentProcessStartTime } from '../../src/effects/locking/process-start-time';
 
 async function jsonTool(ctx: ReaderToolContext, name: string, args: Record<string, unknown> = {}) {
