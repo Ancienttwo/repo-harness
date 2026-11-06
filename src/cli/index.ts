@@ -34,7 +34,7 @@ import { buildUpgradeCommand } from './commands/upgrade';
 import { buildToolsCommand } from './commands/tools';
 import { registerArchitecturePorts } from '../core/architecture/contracts';
 import { assertPluginCommandSelected, declareArchitectureSelection, pluginSelected, readRecordedSelection, recordedPlugins } from './installer/architecture-selection';
-import { buildHerdrCommand, notifyRelayDoctorCheck } from './commands/herdr';
+import { buildHerdrCommand } from './commands/herdr';
 import { buildEventsCommand } from './commands/events';
 import { buildBrainCommand } from './commands/brain';
 import { buildCapabilityContextCommand } from './commands/capability-context';
@@ -173,7 +173,7 @@ export const CLI_PORTS: {
   readonly doctor: DoctorPorts;
   readonly retention: RetentionPorts;
 } = {
-  doctor: { notifyRelayCheck: notifyRelayDoctorCheck, attentionWatchCheck: (cwd) => attentionWatchDoctorCheck(attentionHostPorts(), () => readLocalRepositoryId({ repo_root: cwd }, url => githubRemoteRepository(url) !== null)) },
+  doctor: { attentionWatchCheck: (cwd) => attentionWatchDoctorCheck(attentionHostPorts(), () => readLocalRepositoryId({ repo_root: cwd }, url => githubRemoteRepository(url) !== null)) },
   retention: {
     rotatingLogs: selectedMcpLogs(),
     commonProtocolRoots: [TASK_INBOX_V2_RELATIVE_PATH],
