@@ -31,11 +31,12 @@ export function reportingLanguageWriteRoute(adapter?: OperatorLanguageSettingsAd
     id: 'settings_report_language_write', path: OPERATOR_REPORT_LANGUAGE_ROUTE,
     decode(fields) {
       if (Object.keys(fields).length !== 1 || typeof fields.preset !== 'string') throw new Error('Expected only preset.');
-      const preset = requireLanguageSettings(adapter).parseReportingPreset(fields.preset);
+      // Adapter availability is checked in execute, so it cannot become invalid_body.
+      const preset = adapter?.parseReportingPreset(fields.preset);
       return {
-        operation: 'settings_report_language', target: 'report_language', input: { preset },
+        operation: 'settings_report_language', target: 'report_language', input: { preset: fields.preset },
         execute: async () => {
-          const result = requireLanguageSettings(adapter).setReportingLanguage(preset);
+          const result = requireLanguageSettings(adapter).setReportingLanguage(preset!);
           if (result.status === 'skipped') throw new OperatorWriteRefusal(409, 'report_language_refused', result.detail,
             'Repair the reported rules file or path, then save the reporting language again.');
           // Apply can fail after one host changed. The write run must mark this

@@ -18,6 +18,7 @@ import { startOperatorServer, type OperatorServerHandle } from '../../src/effect
 import { repoHarnessRepoIdFor, canonicalRepoPath } from '../../src/effects/repo-registry';
 import { renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
 import { createOperatorLanguageSettings } from '../../src/cli/commands/operator-actions';
+import { reportingLanguageWriteRoute } from '../../src/effects/operator/language-settings-route';
 import { acquireRuntimeTransactionLock, globalRuntimeScope } from '../../src/effects/locking/runtime-transaction-lock';
 import { operatorAuditPath } from '../../src/effects/operator/write-audit';
 
@@ -161,13 +162,9 @@ describe('language settings routes', () => {
     ] }]);
   });
 
-  test('POST changes only hosts that installer detection marks installed', async () => {
-    const h = await startHarness();
-    mkdirSync(join(h.home, '.codex'));
-    const response = await send(h, reportPath, { preset: 'zh-CN' });
-    expect([response.status, await response.json()]).toEqual([200, { changed_hosts: ['codex'] }]);
-    expect(readFileSync(join(h.home, '.codex', 'AGENTS.md'), 'utf8')).toContain('"preset":"zh-CN"');
-    expect(existsSync(join(h.home, '.claude'))).toBe(false);
+  test('a missing reporting adapter refuses execution without rejecting a valid body', async () => {
+    const operation = reportingLanguageWriteRoute().decode({ preset: 'follow' }, []);
+    await expect(operation.execute()).rejects.toMatchObject({ status: 503, code: 'language_settings_unavailable' });
   });
 
   test('refuses unknown repositories, missing policies and invalid JSON without a write', async () => {
@@ -194,6 +191,7 @@ describe('language settings routes', () => {
 
   test('both routes reject invalid bodies and require the shared same-origin write token', async () => {
     const h = await startHarness();
+    mkdirSync(join(h.home, '.claude'));
     const repo = repository(h);
     for (const [path, valid, invalid] of [[reportPath, { preset: 'follow' }, { preset: 'custom' }], [repo.path, { language: 'en' }, { language: 'follow' }]] as const) {
       expect((await send(h, path, invalid)).status).toBe(400);

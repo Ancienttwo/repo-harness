@@ -2,10 +2,9 @@ import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { version as PACKAGE_VERSION } from '../../../package.json';
 import { OPERATOR_WEB_PACKAGE_NAME } from '../../core/skill-surface/plugin-manifest';
-import { findInstalledPackageRoot, readPackageManifest, withProcessEnv } from './global-runtime';
+import { findInstalledPackageRoot, readPackageManifest } from './global-runtime';
 import { hostConfigurationRoot, assertConfigurationPath } from '../installer/configuration-ownership';
 import { inspectGlobalContext, parseReportLanguageFlag, preflightGlobalContextRefresh, setReportingLanguage } from '../installer/global-context';
-import { getTarget } from '../installer/targets/registry';
 import type { OperatorLanguageSettingsAdapter } from '../../effects/operator/language-settings-route';
 import { RUNTIME_CAPTURE_PYTHON_UNAVAILABLE } from '../../effects/operator/runtime-capture-pty';
 import { runRuntimeCapture } from '../../effects/operator/runtime-capture';
@@ -132,8 +131,7 @@ export function createOperatorLanguageSettings(
     },
     parseReportingPreset: parseReportLanguageFlag,
     setReportingLanguage(preset) {
-      const installed = withProcessEnv(env, () => hosts.filter(host => getTarget(host)!.detect('global').installed));
-      return setReportingLanguage(home, sourceRoot, installed, preset);
+      return setReportingLanguage(home, sourceRoot, hosts, preset);
     },
     assertPolicyPath: assertConfigurationPath,
   };
