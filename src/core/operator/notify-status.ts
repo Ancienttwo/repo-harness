@@ -1,11 +1,6 @@
 import type { NotifyChannelSecretKey } from '../decision/notify-secret-keys';
 import type { NotifyChannel, RelayAttemptV1, RelayDeliveriesV1 } from '../decision/notify-relay-record';
 
-/** Writes the config and starts the relay; the operator shows it when no install record exists. */
-export const NOTIFY_INSTALL_COMMAND = 'repo-harness herdr notify install';
-/** The one manual command that starts the relay terminal again; the relay never restarts itself. */
-export const NOTIFY_START_COMMAND = 'repo-harness herdr notify start';
-
 /** The channel keys whose presence the status shows. */
 export const NOTIFY_STATUS_KEYS = ['WEBHOOK_URL', 'WEBHOOK_KEY', 'SLACK_WEBHOOK_URL'] as const satisfies readonly NotifyChannelSecretKey[];
 

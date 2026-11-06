@@ -1,6 +1,6 @@
 import { canonicalize } from '../evidence/canonical-json';
 import type { JsonValue } from '../evidence/types';
-import { isPublicWorktreeDirectory, WORKTREE_REASONS, type WorktreeView } from './worktrees';
+import { isPublicWorktreeDirectory, WORKTREE_REASONS, type WorktreeView } from '../public-projections/worktrees';
 
 /**
  * Wire shapes of the green worktree cleanup (slice 5.1): the request of

@@ -131,9 +131,3 @@ export function decodeDocsFile(value: unknown): DocsFileV1 {
   if (typeof v.worktree_differs !== 'boolean') d.fail('worktree_differs');
   return value as DocsFileV1;
 }
-
-/** `owner/name` of a GitHub remote URL (https, scp-like ssh or ssh://), lowercased; null for any other URL. */
-export function githubRemoteRepository(url: string): string | null {
-  const match = /^(?:https:\/\/(?:[^@/]+@)?github\.com\/|git@github\.com:|ssh:\/\/git@github\.com(?::22)?\/)([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100}?)(?:\.git)?\/?$/iu.exec(url.trim());
-  return match ? `${match[1]}/${match[2]}`.toLowerCase() : null;
-}

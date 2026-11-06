@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CI_DAILY_MISSING_KEY_PREFIX, CI_REPAIR_KEY_PREFIX, ciRepairIssueMarker, isCiRepairIssueBody, parseJUnitReport, type TestFileResultV1 } from '../src/core/operator/tests';
+import { CI_DAILY_MISSING_KEY_PREFIX, CI_REPAIR_KEY_PREFIX, ciRepairIssueMarker, isCiRepairIssueBody, parseJUnitReport, type TestFileResultV1 } from '../src/core/ci/test-report';
 import { batchMemberMerges, rollbackParent, type BatchMemberMergeV1 } from '../src/core/publication/merge-readiness';
 const validSha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
 

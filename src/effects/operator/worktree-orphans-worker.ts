@@ -2,7 +2,7 @@ import { lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { systemWorktreeRoot } from '../../core/worktree-location.mjs';
-import { decodeWorktrees, type WorktreesSnapshot, type WorktreeView } from '../../core/operator/worktrees';
+import { decodeWorktrees, type WorktreesSnapshot, type WorktreeView } from '../../core/public-projections/worktrees';
 import { entries, inspectWorktree, protectsCwd } from '../state/coordination-worktree-topology';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { worktreeId } from '../git/worktree-record';

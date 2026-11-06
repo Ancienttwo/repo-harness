@@ -16,7 +16,7 @@ import { MCP_AUDIT_LOG_RELATIVE_PATH } from '../../src/cli/mcp/audit';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { decodeBotAccessSnapshot, projectMcpAuditEntry, projectMcpDoctor, type BotAccessSnapshotV1 } from '../../src/core/operator/bot-access';
 import { botRegistryPath, registerBot } from '../../src/effects/bot-registry';
-import { HC_MIN_VERSION } from '../../src/core/operator/herdr-pin';
+import { HC_MIN_VERSION } from '../../src/core/terminal/herdr-pin';
 import { fakeHc } from '../helpers/fake-hc';
 
 const NOW = new Date('2026-10-27T00:00:00.000Z');

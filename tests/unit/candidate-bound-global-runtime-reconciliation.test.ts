@@ -7,7 +7,7 @@ import { createHash, randomUUID } from 'crypto';
 
 import { copyPackageRuntimeFixture } from '../helpers/repo-fixture';
 import { startFakeHcRelease, writeFakeHc } from '../helpers/fake-hc';
-import { HC_MIN_VERSION } from '../../src/core/operator/herdr-pin';
+import { HC_MIN_VERSION } from '../../src/core/terminal/herdr-pin';
 import { recordPluginSelection } from '../helpers/install-ownership';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 import { beginInstallHostTransaction, readInstallState, versions, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
@@ -836,7 +836,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       const url = `http://127.0.0.1:${await server.port}/herdr-core.tar.gz`;
       // Candidate C reads its own package pin; it points at the fake release.
       const assets = Object.fromEntries(['linux-aarch64', 'linux-x86_64', 'macos-aarch64', 'macos-x86_64', 'windows-x86_64'].map(name => [name, { url, sha256 }]));
-      writeFileSync(join(candidateRoot, 'src', 'core', 'operator', 'herdr-core-pin.json'), `${JSON.stringify({ min_version: HC_MIN_VERSION, release_assets: assets }, null, 2)}\n`);
+      writeFileSync(join(candidateRoot, 'src', 'core', 'terminal', 'herdr-core-pin.json'), `${JSON.stringify({ min_version: HC_MIN_VERSION, release_assets: assets }, null, 2)}\n`);
       const globalPackagePath = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
       mkdirSync(join(home, '.bun', 'install', 'global', 'node_modules'), { recursive: true });
       symlinkSync(parentRoot, globalPackagePath, 'dir');

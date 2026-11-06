@@ -14,6 +14,7 @@ import {
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import { gitExecFileSync, configuredGitBinary, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { acquireExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
+import { observeRemoteRef, pushCommitToNewRemoteRef } from '../publication/new-remote-ref-push';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { withWorktreeTopologyLockAsync, assertNoOwner, assertWorktreeBinding, entries } from '../state/coordination-worktree-topology';
 import { worktreeProcesses, type WorktreeProcess } from '../git/worktree-processes';
@@ -155,12 +156,7 @@ function remoteUrl(env: NodeJS.ProcessEnv, worktree: string, target: DocSessionP
   return urls[0];
 }
 function remoteHead(env: NodeJS.ProcessEnv, worktree: string, url: string, branch: string): string | null {
-  const text = git(env, worktree, ['ls-remote', '--refs', '--', url, `refs/heads/${branch}`]);
-  if (!text) return null;
-  const rows = text.split('\n');
-  const [oid, ref] = rows[0]!.split('\t');
-  if (rows.length !== 1 || !OID.test(oid!) || ref !== `refs/heads/${branch}`) throw new Error('remote branch observation invalid');
-  return oid!;
+  return observeRemoteRef(env, { checkout: worktree, remote_url: url, ref: `refs/heads/${branch}` });
 }
 function outcome(state: State, code?: string): OperatorWriteResponse {
   return { status: code ? 503 : 200, body: {
@@ -284,8 +280,8 @@ async function commitLocked(sid: string, input: DocSessionCommitInput, deps: Doc
       const remote = remoteHead(deps.env, worktree, state.remote_url, record.branch);
       if (remote !== null && remote !== state.commit) throw refusal('remote_changed');
       await auditedStep(sid, 'push', deps, directory, state, async () => {
-        if (remote === null) git(deps.env, worktree, ['push', '--porcelain', '--', state.remote_url, `${state.commit}:refs/heads/${record.branch}`]);
-        if (remoteHead(deps.env, worktree, state.remote_url, record.branch) !== state.commit) throw new Error('push readback failed');
+        const pushed = pushCommitToNewRemoteRef(deps.env, { checkout: worktree, remote_url: state.remote_url, ref: `refs/heads/${record.branch}`, commit: state.commit });
+        if (pushed.state !== 'pushed') throw new Error(`push ${pushed.state}`);
       });
       if (remoteHead(deps.env, worktree, state.remote_url, record.branch) !== state.commit) throw new Error('push readback failed');
       state.stage = 'pushed'; saveState(directory, state);

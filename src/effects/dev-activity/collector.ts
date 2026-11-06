@@ -15,7 +15,7 @@ import { terminateProcessGroup } from '../process-group-termination';
 
 import { DEV_ACTIVITY_SHIPPED_WINDOW_MS, DEV_ACTIVITY_TRUNCATED_REASON_PREFIX, type DevActivitySnapshotV2, type DevActivitySourceHealth } from '../../core/dev-activity/types';
 import type { PullRequestFiles } from '../../core/operator/pull-request-files';
-import { isPublicRepoPath } from '../../core/operator/public-text';
+import { isPublicRepoPath } from '../../core/public-projections/public-text';
 import { unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
 import {
   projectDevActivity,

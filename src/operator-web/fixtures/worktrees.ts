@@ -1,5 +1,5 @@
 // Development fixtures for GET /api/v1/worktrees. Shapes follow
-// src/core/operator/worktrees.ts; every fixture passes the same decoder the
+// src/core/public-projections/worktrees.ts; every fixture passes the same decoder the
 // browser applies to served snapshots. Branches line up with the board fixture
 // so its merged `feat/kanban-status` card joins a green worktree.
 import { decodeWorktreeCleanupResult } from '../../core/operator/worktree-cleanup';
@@ -7,7 +7,7 @@ import {
   cleanupPlanDigestInput, decodeAuthorizedCleanupRequest, decodeCleanupChoices, decodeCleanupExecutionResult, decodeCleanupPlan,
   WORKTREE_CLEANUP_INVESTIGATION_MAX_ITEMS, type CleanupExecutionItem, type CleanupLossSummary, type CleanupPlan, type CleanupPlanItem, type CleanupReason,
 } from '../../core/operator/worktree-cleanup-plan';
-import { unavailableWorktrees, type WorktreeLifecycle, type WorktreeView, type WorktreesSnapshot } from '../../core/operator/worktrees';
+import { unavailableWorktrees, type WorktreeLifecycle, type WorktreeView, type WorktreesSnapshot } from '../../core/public-projections/worktrees';
 import type { WorktreeCleanupWriter } from '../worktrees';
 import type { CleanupPlanPorts } from '../CleanupPlanReview';
 import { HARNESS_ID } from './dev-activity';

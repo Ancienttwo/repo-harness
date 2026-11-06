@@ -68,7 +68,7 @@ export const INTRA_LAYER_CYCLE_ALLOWANCES: Readonly<Record<string, string>> = {}
 
 // Loads the Pi SDK selected on PATH at runtime.
 const RUNTIME_SDK_LOADS: Readonly<Record<string, string>> = {
-  'src/effects/setup/pi-capability-child.ts':
+  'src/effects/pi-capability-child.ts':
     "import(pathToFileURL(join(process.argv[2]!, 'dist/index.js')).href)",
 };
 

@@ -12,7 +12,8 @@
 
 import { realpathSync } from 'node:fs';
 
-import { decodeDocsTree, githubRemoteRepository, OPERATOR_DOCS_TREE_KIND, type DocsTreeV1, type DocsUnavailableReason } from '../../core/operator/docs';
+import { decodeDocsTree, OPERATOR_DOCS_TREE_KIND, type DocsTreeV1, type DocsUnavailableReason } from '../../core/operator/docs';
+import { githubRemoteRepository } from '../../core/board/source';
 import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
 import { withoutRepositorySelectingGitEnv, spawnGit } from '../git/runner';
 import { readRepoHarnessRegistryStrictSnapshot, type RepoHarnessRegisteredRepo } from '../repo-registry';

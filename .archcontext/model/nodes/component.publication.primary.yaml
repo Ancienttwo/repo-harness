@@ -10,6 +10,7 @@ responsibilities:
   - "Provide stablePublicationJson and publicationSha256 for integration evidence digests; no publication receipt reader or writer remains."
   - "Use the shared explicit provider identity, facts and reobservation collector for readiness and integration evidence with typed unavailable results."
   - "Provide provider merge proof to exact worktree cleanup and product integration consumers."
+  - "Define the typed contracts of the publication writes that plugins use."
 source:
   include:
     - src/core/publication/**

@@ -15,7 +15,7 @@ import {
   type BoardSubIssueReadV1,
   type ClaimStatusV1,
 } from './source';
-import { isCiRepairIssueBody } from '../operator/tests';
+import { isCiRepairIssueBody } from '../ci/test-report';
 
 /**
  * The board: one parent issue, its sub-issues and their pull requests, the

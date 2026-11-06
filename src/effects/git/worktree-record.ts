@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { WorktreeLifecycle } from '../../core/operator/worktrees';
+import type { WorktreeLifecycle } from '../../core/public-projections/worktrees';
 import { resolveGitCommonDirectory } from './common-directory';
 
 export interface WorktreeRecord extends WorktreeLifecycle { version: 1; id: string; path: string }

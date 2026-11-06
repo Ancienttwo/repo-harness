@@ -20,6 +20,8 @@ source:
     - src/cli/commands/install.ts
     - src/cli/commands/status.ts
     - src/cli/commands/security.ts
+  exclude:
+    - src/pi/compat.ts
   entrypoints:
     - id: entrypoint.hook-adapters.managed-entries
       path: "src/cli/installer/managed-entries.ts"

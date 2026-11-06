@@ -1,6 +1,6 @@
 import { decodeRuntimeIdentity, decodeRuntimeObservation, projectRuntimeOverlay, runtimeIdentityKey, runtimeBindingKeys, runtimeInteger,
   unavailableRuntimeOverlay, nativeRuntimeFreshness, RUNTIME_LIMIT, NATIVE_RUNTIME_SOURCE_LIMIT, type NativeRuntimeSourceSummary, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay, type RuntimeUnavailableReason } from '../../core/operator/runtime-status';
-import { HcVersionMismatchError } from '../../core/operator/herdr-pin';
+import { HcVersionMismatchError } from '../../core/terminal/herdr-pin';
 import { decodeRuntimeCaptureSnapshot, type NativeRuntimeProvider, type RuntimeCaptureSnapshot } from '../../core/operator/runtime-capture';
 
 /**

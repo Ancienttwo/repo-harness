@@ -11,3 +11,5 @@ responsibilities:
 source:
   include:
     - src/effects/publication/merge-readiness.ts
+    - src/effects/publication/draft-pull-request.ts
+    - src/effects/publication/new-remote-ref-push.ts

@@ -1,16 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  decodeTestsSnapshot,
+  type TestsSnapshotV1,
+} from '../../src/core/operator/tests';
+import {
   CI_DAILY_MISSING_KEY_PREFIX,
   CI_REPAIR_KEY_PREFIX,
   ciRepairIssueMarker,
-  decodeTestsSnapshot,
   isCiRepairIssueBody,
   parseJUnitReport,
   parseTestProjection,
   testRunCommand,
-  type TestsSnapshotV1,
-} from '../../src/core/operator/tests';
+} from '../../src/core/ci/test-report';
 
 /** The shape `bun test --reporter=junit` writes: one file suite, nested describe suites, properties, skipped and failed cases. */
 const REPORT = `<?xml version="1.0" encoding="UTF-8"?>

@@ -6,7 +6,7 @@ runs:
     - shell: bash
       run: |
         set -euo pipefail
-        pin='src/core/operator/herdr-core-pin.json'
+        pin='src/core/terminal/herdr-core-pin.json'
         version="$(jq -er '.min_version' "$pin")"
         case "$(uname -s)-$(uname -m)" in
           Linux-x86_64) asset='linux-x86_64' ;;

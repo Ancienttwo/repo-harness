@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.imports.evidence-ledger
+kind: depends-on
+source: capability.runtime-harness.operator
+target: capability.runtime-harness.evidence-ledger
+intent: "Plugin → core: canonicalize digests and use the JSON value types for doc session finalization, worktree cleanup and the operator write audit"

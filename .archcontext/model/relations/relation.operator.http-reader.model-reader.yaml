@@ -1,6 +1,6 @@
 schemaVersion: archcontext.relation/v1
-id: relation.operator.http-reader.architecture-reader
+id: relation.operator.http-reader.model-reader
 kind: calls
 source: component.operator.primary
-target: component.operator.architecture-reader
+target: component.architecture.model-reader
 intent: "Read the committed architecture model through the shared ArchitectureModelReader"

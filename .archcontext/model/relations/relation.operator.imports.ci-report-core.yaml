@@ -4,5 +4,5 @@
   "kind": "depends-on",
   "source": "capability.runtime-harness.operator",
   "target": "component.evals-checks.ci-report-core",
-  "intent": "Read the tests snapshot decoder, the test projection types and the CI repair keys for the tests board."
+  "intent": "Read the test result types, the test projection parser and the run command for the tests board and its snapshot decoder."
 }

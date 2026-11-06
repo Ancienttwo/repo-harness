@@ -21,7 +21,7 @@ import { createStateInputCollector } from "../src/effects/loop/state-input-colle
 import { resolveHookEffectiveState } from "../src/cli/hook/runtime";
 import { writeShellExecutableFixture } from "./helpers/repo-fixture";
 import { versions } from "../src/cli/installer/install-profile";
-import { HC_MIN_VERSION } from "../src/core/operator/herdr-pin";
+import { HC_MIN_VERSION } from "../src/core/terminal/herdr-pin";
 import { installProfileStatePath } from "../src/cli/installer/install-state";
 import type { PluginId } from "../src/core/skill-surface/plugin-manifest";
 
@@ -1975,7 +1975,7 @@ test.each([
     expect(herdrCore.required).toBe(true);
     expect(herdrCore.status).toBe(status);
     expect(herdrCore.min_version).toBe(HC_MIN_VERSION);
-    expect(herdrCore.min_version_source).toBe("package:src/core/operator/herdr-core-pin.json");
+    expect(herdrCore.min_version_source).toBe("package:src/core/terminal/herdr-core-pin.json");
     if (hcVersion) expect(herdrCore.version).toBe(hcVersion);
     expect(herdrCore.command).toBe(command);
     if (status === "present") {

@@ -8,7 +8,7 @@ import { entries, inspectWorktree } from '../../src/effects/state/coordination-w
 import { prepareWorktreeTrash, renameWorktreeToTrash, worktreeTrashNames } from '../../src/effects/state/worktree-trash';
 import { worktreeId, recordWorktree, readWorktreeRecord, endWorktreeRecord } from '../../src/effects/git/worktree-record';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
-import { decodeWorktrees } from '../../src/core/operator/worktrees';
+import { decodeWorktrees } from '../../src/core/public-projections/worktrees';
 import { collectRepositoryWorktrees, registeredWorktreePaths, repositoryWorktreeRow } from '../../src/effects/operator/worktree-collector-worker';
 import { startWorktreeCollector } from '../../src/effects/operator/worktree-collector';
 import { collectOrphanWorktrees } from '../../src/effects/operator/worktree-orphans-worker';

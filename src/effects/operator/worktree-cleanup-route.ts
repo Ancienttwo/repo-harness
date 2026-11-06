@@ -9,7 +9,7 @@ import {
   type AuthorizedCleanupRequest, type CleanupAdvice, type CleanupChoice, type CleanupExecutionResult, type CleanupPlan, type CleanupPlanItem,
 } from '../../core/operator/worktree-cleanup-plan';
 import { WORKTREE_CLEANUP_MAX_IDS } from '../../core/operator/worktree-cleanup';
-import type { WorktreeView } from '../../core/operator/worktrees';
+import type { WorktreeView } from '../../core/public-projections/worktrees';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { managedWorktreeRoot } from '../git/managed-worktree';
 import { configuredGitBinary, gitExecFileSync, withoutRepositorySelectingGitEnv } from '../git/runner';

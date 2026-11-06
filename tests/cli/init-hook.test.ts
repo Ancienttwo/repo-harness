@@ -17,7 +17,7 @@ import { readUpgradeFixture } from '../helpers/upgrade-fixtures';
 import { renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
 import { CLI_PORTS } from '../../src/cli/index';
 import { initGitRepo } from '../helpers/repo-fixture';
-import { HC_MIN_VERSION } from '../../src/core/operator/herdr-pin';
+import { HC_MIN_VERSION } from '../../src/core/terminal/herdr-pin';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');

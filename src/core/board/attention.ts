@@ -1,7 +1,7 @@
 import { planIssues } from './plan-block';
 import type { BoardItemV1, BoardPullRequestV1, BoardTerminalV1, BoardV1 } from './board';
 import { pathHazardHits } from './hazards';
-import { compareHcVersions } from '../operator/herdr-pin';
+import { compareHcVersions } from '../terminal/herdr-pin';
 
 /**
  * Attention rules over one board. Each rule is a pure function of the board

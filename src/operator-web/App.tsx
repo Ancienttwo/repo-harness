@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { Button, Loader, cn } from '@cloudflare/kumo';
 import { ArrowClockwiseIcon } from '@phosphor-icons/react';
 import type { SetupSnapshotV2 } from '../core/setup/types';
-import type { WorktreesSnapshot } from '../core/operator/worktrees';
+import type { WorktreesSnapshot } from '../core/public-projections/worktrees';
 import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';

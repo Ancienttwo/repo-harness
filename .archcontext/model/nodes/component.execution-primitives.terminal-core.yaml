@@ -1,0 +1,14 @@
+schemaVersion: archcontext.node/v2
+id: component.execution-primitives.terminal-core
+kind: component
+name: Terminal Pin and Pane Prefix
+status: active
+parent: capability.workflow-engine.execution-primitives
+layer: core
+summary: Holds the hc version pin that the hc client, the board and the operator read, and the registry pane prefix format.
+responsibilities:
+  - Own the package hc pin file, the hc version floor, the version order and the release assets.
+  - Own the format of the hand-set registry pane prefix, which the seat pane names also use.
+source:
+  include:
+    - src/core/terminal/**

@@ -6,16 +6,16 @@ import { run, withTempRepo } from "./helpers/repo-fixture";
 import { configureRequiredHerdrSkill } from "../src/cli/commands/herdr-skill";
 import { ensureHerdrCore } from "../src/cli/commands/global-runtime";
 import { startFakeHcRelease } from "./helpers/fake-hc";
-import { HC_MIN_VERSION } from "../src/core/operator/herdr-pin";
+import { HC_MIN_VERSION } from "../src/core/terminal/herdr-pin";
 
 /**
- * The package file `src/core/operator/herdr-core-pin.json` is the single herdr
+ * The package file `src/core/terminal/herdr-core-pin.json` is the single herdr
  * runtime pin. These are drift checks for its readers: CI and the readiness
  * script must derive the floor, URL, and checksum from that file instead of
  * restating them.
  */
 const ROOT = join(import.meta.dir, "..");
-const PIN_FILE = "src/core/operator/herdr-core-pin.json";
+const PIN_FILE = "src/core/terminal/herdr-core-pin.json";
 const CI_PATH = join(ROOT, ".github/workflows/ci.yml");
 const SCRIPT_PATH = join(ROOT, "scripts/check-agent-tooling.sh");
 
@@ -99,7 +99,7 @@ describe("herdr runtime pin has one source of truth", () => {
   test("check-agent-tooling.sh carries no hand-coded herdr version floor", () => {
     const script = readFileSync(SCRIPT_PATH, "utf8");
     expect(script).toContain(`const HERDR_CORE_PIN_SOURCE = "package:${PIN_FILE}";`);
-    expect(script).toContain('require(path.join(PACKAGE_ROOT, "src", "core", "operator", "herdr-core-pin.json"))');
+    expect(script).toContain('require(path.join(PACKAGE_ROOT, "src", "core", "terminal", "herdr-core-pin.json"))');
     expect(script).not.toContain(".ai/harness/policy.json#external_tooling.herdr_core");
     const herdrLines = script.split("\n").filter((line) => /herdr/i.test(line));
     expect(herdrLines.length).toBeGreaterThan(0);
@@ -117,7 +117,7 @@ describe("herdr runtime pin has one source of truth", () => {
 
   test("the browser bundle can read the hc pin check", () => {
     // operator-web builds without Node built-ins, so the hc version check must stay in core.
-    const pin = readFileSync(join(ROOT, 'src/core/operator/herdr-pin.ts'), 'utf8');
+    const pin = readFileSync(join(ROOT, 'src/core/terminal/herdr-pin.ts'), 'utf8');
     expect(pin).not.toMatch(/from '(node:|\.[^']*(effects|operator-web)\b)/);
   });
 });

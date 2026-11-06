@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.architecture.module-cli
+kind: component
+name: Module Command
+status: active
+parent: capability.runtime-harness.architecture
+layer: cli
+summary: The module CLI command of the Architecture plugin.
+responsibilities:
+  - Expose module listing and review prompt export through the module CLI command.
+source:
+  include:
+    - src/cli/commands/module.ts

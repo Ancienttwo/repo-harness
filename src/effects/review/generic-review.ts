@@ -19,7 +19,7 @@ import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint,
 import { gitExecFileSync } from '../git/runner';
 import { isReviewRuntimeId, type ReviewRuntimeId } from '../../core/review/review-runtimes';
 import { piExecutable } from '../pi-executable';
-import { piReviewLaunchBlocker } from '../setup/pi-host-probe';
+import { piReviewLaunchBlocker } from '../pi-host-probe';
 
 type Harness = ReviewRuntimeId;
 interface ReviewSession<Endpoint> {

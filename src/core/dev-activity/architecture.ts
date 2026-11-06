@@ -1,5 +1,5 @@
 import type { ArchitecturePullRequestsSource } from '../operator/architecture-map';
-import { publicDevActivityText } from '../operator/public-text';
+import { publicDevActivityText } from '../public-projections/public-text';
 import type { DevActivitySnapshotV2 } from './types';
 
 /**

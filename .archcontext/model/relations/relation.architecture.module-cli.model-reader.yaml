@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.architecture.module-cli.model-reader
+kind: calls
+source: component.architecture.module-cli
+target: component.architecture.model-reader
+intent: "List modules and export review prompts through the shared ArchitectureModelReader"

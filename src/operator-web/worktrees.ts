@@ -7,7 +7,7 @@ import {
   type WorktreeCleanupRequest,
   type WorktreeCleanupResult,
 } from '../core/operator/worktree-cleanup';
-import { decodeWorktrees, type WorktreeView, type WorktreesSnapshot } from '../core/operator/worktrees';
+import { decodeWorktrees, type WorktreeView, type WorktreesSnapshot } from '../core/public-projections/worktrees';
 import {
   decodeCleanupExecutionResult, decodeCleanupInvestigationJob, decodeCleanupInvestigationStatus, decodeCleanupPlan,
 } from '../core/operator/worktree-cleanup-plan';

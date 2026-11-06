@@ -3,7 +3,7 @@
 // the core that the server's environment selects (`HC_SESSION` / `HC_SOCKET`).
 // Terminal text, titles and working directories never leave this file.
 
-import { HC_MIN_VERSION, HcVersionMismatchError, hcVersionCheck, type HcVersionCheck } from '../../core/operator/herdr-pin';
+import { HC_MIN_VERSION, HcVersionMismatchError, hcVersionCheck, type HcVersionCheck } from '../../core/terminal/herdr-pin';
 import { RH_LABEL, RH_ROLE, hcEvents, hcServerStatusAsync, type HcLabels, type HcTerminal } from '../terminal/herdr-core';
 import type { StructuredRuntimeTransport } from './runtime-source';
 import { RUNTIME_SOURCE_PROTOCOL } from './runtime-source';

@@ -12,14 +12,14 @@ import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readi
 import { collectBoard, readLocalRepositoryId } from '../src/effects/board/collect';
 import type { RunArchctxProcess } from '../src/core/architecture/contracts';
 import { errorEnvelope } from 'archctx-contracts';
-import { githubRemoteRepository } from '../src/core/operator/docs';
+import { githubRemoteRepository } from '../src/core/board/source';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
 import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
 import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herdr-core';
 import { ADVISOR_TRANSCRIPT_LINE_WITHHELD, AdvisorSeatError, advisorSeatSendFailure, advisorTranscriptLines, decodeAdvisorSeatTranscript, readAdvisorSeat, sendToAdvisorSeat } from '../src/core/board/advisor-seat';
 import { decodeBoardParents, type BoardParentsV1 } from '../src/core/board/parents';
 import { BoardSourceError } from '../src/core/board/source';
-import { HC_MIN_VERSION } from '../src/core/operator/herdr-pin';
+import { HC_MIN_VERSION } from '../src/core/terminal/herdr-pin';
 import { BoardParentsError, collectBoardParents } from '../src/effects/board/parents';
 import { ISSUE_FLOW_WORKER_LIMIT } from '../src/core/board/desk';
 import { boardSummary, decodeBoardSummaries } from '../src/core/board/summary';

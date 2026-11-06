@@ -16,7 +16,7 @@ import type { SkillProjectionState } from '../../core/skill-surface/projection-s
 import { MIN_PI_VERSION, piVersionSupported, type PiCapability, type PiHostUnavailableCode } from '../../pi/compat';
 import { piPackagePresent } from '../installer/pi-package';
 import { piExecutable, piExecutableIssue } from '../../effects/pi-executable';
-import { probeInstalledPi } from '../../effects/setup/pi-host-probe';
+import { probeInstalledPi } from '../../effects/pi-host-probe';
 
 import * as fs from 'fs';
 import * as os from 'os';

@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { basename } from 'node:path';
-import { publicDevActivityText } from '../../core/operator/public-text';
-import { decodeWorktrees, unavailableWorktrees, type WorktreesSnapshot } from '../../core/operator/worktrees';
+import { publicDevActivityText } from '../../core/public-projections/public-text';
+import { decodeWorktrees, unavailableWorktrees, type WorktreesSnapshot } from '../../core/public-projections/worktrees';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { runSetupProcess, type SetupProcessRunner } from '../setup/collector';
 import { executionChildEnvironment } from './execution-collector';

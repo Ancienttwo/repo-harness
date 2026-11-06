@@ -3,4 +3,4 @@ id: relation.publication.imports.execution-primitives
 kind: depends-on
 source: capability.organization.publication
 target: capability.workflow-engine.execution-primitives
-intent: "Resolve the Git common directory for the feedback store, and validate the shared task message claim in feedback records"
+intent: "Resolve the Git common directory for the feedback store, validate the shared task message claim in feedback records, and run Git through the shared runner in the new remote ref push operation"
