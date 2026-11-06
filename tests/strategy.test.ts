@@ -208,7 +208,7 @@ describe('optional strategy and progressive memory', () => {
     }
     const help = call(noState, 'status', '--help'); expect(help.status).toBe(0); expect(help.loaded).toBe(0);
     const selected = call(selectedEnv(), 'status', ...repo); expect(selected.status).toBe(0); expect(selected.loaded).toBeGreaterThan(0);
-    const refused = (() => { try { assertPluginCommandSelected({ status: 'recorded', plugins: ['product'] }, 'strategy-memory', 'strategy'); } catch (error) { return error; } })();
+    const refused = (() => { try { assertPluginCommandSelected({ status: 'recorded', selection: ['product'], plugins: ['product'] }, 'strategy-memory', 'strategy'); } catch (error) { return error; } })();
     expect(refused).toBeInstanceOf(InstallStateError); expect((refused as InstallStateError).code).toBe('install_plugin_unavailable');
   });
   test('enum fields reject arrays, objects and null without skipping fact checks', () => {

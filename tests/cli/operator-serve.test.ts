@@ -129,9 +129,13 @@ describe('operator serve command and HTTP boundary', () => {
       mkdirSync(join(unreadable.HOME, '.repo-harness'), { recursive: true });
       writeFileSync(join(unreadable.HOME, '.repo-harness/install-state.json'), '{');
 
+      const recordedAll = selected([]);
+      recordPluginSelection(recordedAll, ['product'], 'all');
+
       const blocked: [string, NodeJS.ProcessEnv, string | RegExp][] = [
         ['core only', selected([]), 'repo-harness install --plugins operator'],
         ['other plugin', selected(['product']), 'repo-harness install --plugins operator,product'],
+        ['recorded all without the plugin', recordedAll, 'repo-harness update'],
         ['no install state', noState, 'repo-harness install'],
         ['unreadable install state', unreadable, /is not valid JSON/],
       ];
