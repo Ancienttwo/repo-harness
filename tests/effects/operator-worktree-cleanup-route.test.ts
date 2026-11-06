@@ -237,7 +237,7 @@ routeTest('the investigation start refuses an exhausted or unknown chatgpt quota
 
 routeTest('the investigation routes start one job, refuse a second while it runs, and record a failure when the child stops before its own record', async f => {
   const ui = join(f.parent, 'ui'); mkdirSync(ui); writeFileSync(join(ui, 'index.html'), '<!doctype html><title>fixture</title>');
-  const childEnv = { HOME: f.env.HOME, REPO_HARNESS_HOME: f.home, REPO_HARNESS_WORKTREE_ROOT: f.parent };
+  const childEnv = { ...f.env, REPO_HARNESS_HOME: f.home, REPO_HARNESS_WORKTREE_ROOT: f.parent };
   let stop: (code: 'timeout' | 'failed') => void = () => {};
   const run_process: typeof runSetupProcess = () => new Promise(resolve => { stop = code => resolve({ ok: false, code }); });
   const server = await startOperatorServer({ port: 0, static_root: ui, env: childEnv,
