@@ -131,7 +131,6 @@ cat > docs/spec.md << 'DOCS_SPEC_EOF'
 DOCS_SPEC_EOF
 # Canonical harness state surface:
 # - .ai/context/context-map.json
-# - .ai/harness/policy.json
 # - .ai/harness/brain-manifest.json
 # - .ai/harness/events.jsonl
 # - .ai/harness/failures/latest.jsonl

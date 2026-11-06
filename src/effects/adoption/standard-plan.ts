@@ -269,18 +269,24 @@ function defaultBranchOf(repoRoot: string, env: NodeJS.ProcessEnv | undefined): 
   throw new ReviewBaseUnresolvedError(repoRoot);
 }
 
+const BRANCH_KEYS = ["base_branch", "review_base", "merge_back"] as const;
+
 /**
- * Only a new policy reads git. An existing policy supplies its own value here so that the
- * key keeps its position in the merged bytes, and a missing key stays missing.
+ * Only a new policy reads git, once, so its three keys cannot differ. An existing policy
+ * supplies its own values here so that each key keeps its position in the merged bytes, and a
+ * missing key stays missing.
  */
-function reviewBaseFor(opts: StandardPlanOptions, policyCurrent: JsonObject | undefined): unknown {
+function branchKeysFor(opts: StandardPlanOptions, policyCurrent: JsonObject | undefined): JsonObject {
   if (policyCurrent !== undefined) {
-    return isObject(policyCurrent.worktree_strategy) ? policyCurrent.worktree_strategy.review_base : undefined;
+    const strategy = isObject(policyCurrent.worktree_strategy) ? policyCurrent.worktree_strategy : {};
+    return Object.fromEntries(BRANCH_KEYS.filter((key) => key in strategy).map((key) => [key, strategy[key]]));
   }
-  return opts.mode === "minimal" ? undefined : defaultBranchOf(opts.repoRoot, opts.env);
+  if (opts.mode === "minimal") return {};
+  const branch = defaultBranchOf(opts.repoRoot, opts.env);
+  return { base_branch: branch, review_base: branch, merge_back: { target: branch } };
 }
 
-export function defaultPolicy(documentationProfile: string, documentationLanguage: string, reviewBase?: unknown): JsonObject {
+export function defaultPolicy(documentationProfile: string, documentationLanguage: string, branchKeys: JsonObject = {}): JsonObject {
   return {
     version: 1,
     tasks: {
@@ -296,11 +302,7 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
     },
     worktree_strategy: {
       worktree_dir_template: DEFAULT_WORKTREE_TEMPLATE,
-      base_branch: "main",
-      ...(reviewBase === undefined ? {} : { review_base: reviewBase }),
-      merge_back: {
-        target: "main",
-      },
+      ...branchKeys,
     },
     harness: {
       policy_file: ".ai/harness/policy.json",
@@ -679,7 +681,7 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
   const documentationProfile = opts.env?.REPO_HARNESS_DOCUMENTATION_PROFILE ?? "minimal-agentic";
   const documentationLanguage = requireDocumentationLanguage(opts.env?.REPO_HARNESS_DOCUMENTATION_LANGUAGE ?? "en");
   const policyCurrent = jsonFile(opts.repoRoot, ".ai/harness/policy.json");
-  const policy = deepMergeDefaults(defaultPolicy(documentationProfile, documentationLanguage, reviewBaseFor(opts, policyCurrent)), policyCurrent);
+  const policy = deepMergeDefaults(defaultPolicy(documentationProfile, documentationLanguage, branchKeysFor(opts, policyCurrent)), policyCurrent);
   const mergedDocumentation = isObject(policy.documentation) ? policy.documentation : {};
   requireDocumentationLanguage(mergedDocumentation.language);
   delete policy.hook_source;

@@ -1191,24 +1191,33 @@ describe("review_base authority", () => {
     mkdirSync(join(repo, ".ai/harness"), { recursive: true });
     writeFileSync(join(repo, ".ai/harness/policy.json"), JSON.stringify({ worktree_strategy: worktreeStrategy }));
   };
+  const everyBranchKey = (branch: string) => ({ base_branch: branch, review_base: branch, merge_back: { target: branch } });
 
   test.each([
     ["remote HEAD wins over the current branch", (repo: string) => {
       committedOnMaster(repo);
       git(repo, "update-ref", "refs/remotes/origin/trunk", "HEAD");
       git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk");
-    }, "trunk"],
-    ["no remote uses the current branch", committedOnMaster, "master"],
-    ["unborn HEAD uses its branch name", onMaster, "master"],
-    ["an existing key stays on a detached HEAD", (repo: string) => { detached(repo); writePolicy(repo, { review_base: "develop" }); }, "develop"],
-    ["a missing key stays missing on a detached HEAD", (repo: string) => { detached(repo); writePolicy(repo, { base_branch: "main" }); }, undefined],
-  ] as const)("%s", (_name, setup, reviewBase) => {
+    }, everyBranchKey("trunk")],
+    ["no remote uses the current branch", committedOnMaster, everyBranchKey("master")],
+    ["unborn HEAD uses its branch name", onMaster, everyBranchKey("master")],
+    ["an existing key stays on a detached HEAD", (repo: string) => { detached(repo); writePolicy(repo, { review_base: "develop" }); }, { review_base: "develop" }],
+    ["a missing key stays missing on a detached HEAD", (repo: string) => { detached(repo); writePolicy(repo, { base_branch: "main" }); }, { base_branch: "main" }],
+    ["an existing policy reads no key from git on another branch", (repo: string) => { committedOnMaster(repo); writePolicy(repo, { review_base: "develop" }); }, { review_base: "develop" }],
+    ["existing keys can differ from each other", (repo: string) => {
+      committedOnMaster(repo);
+      writePolicy(repo, { base_branch: "develop", review_base: "release", merge_back: { target: "main", requires_clean_check: true } });
+    }, { base_branch: "develop", review_base: "release", merge_back: { target: "main", requires_clean_check: true } }],
+    ["merge_back keeps a missing target", (repo: string) => { committedOnMaster(repo); writePolicy(repo, { merge_back: { requires_clean_check: true } }); }, { merge_back: { requires_clean_check: true } }],
+  ] as const)("%s", (_name, setup, branchKeys) => {
     const repo = tempRepo();
     try {
       setup(repo);
       const operation = planAdoption({ repoRoot: repo, mode: "standard" }).operations.find((entry) => entry.path === ".ai/harness/policy.json");
       if (!operation || operation.kind !== "writeFile") throw new Error("policy operation missing");
-      expect(JSON.parse(operation.content).worktree_strategy.review_base).toBe(reviewBase);
+      const { base_branch, review_base, merge_back } = JSON.parse(operation.content).worktree_strategy;
+      const written: object = { base_branch, review_base, merge_back };
+      expect(written).toEqual(branchKeys);
     } finally {
       cleanup(repo);
     }
