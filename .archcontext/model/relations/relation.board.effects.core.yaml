@@ -3,4 +3,4 @@ id: relation.board.effects.core
 kind: calls
 source: component.board.effects
 target: component.board.core
-intent: "Decode the provider reads and project the board"
+intent: "Decode the provider reads, the quota sources and the seats section, and project the board"

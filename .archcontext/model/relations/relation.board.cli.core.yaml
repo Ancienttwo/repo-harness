@@ -3,4 +3,4 @@ id: relation.board.cli.core
 kind: calls
 source: component.board.cli
 target: component.board.core
-intent: "Run the attention rules on the collected board"
+intent: "Run the attention rules on the collected board, build the seat launch and format the quota report"
