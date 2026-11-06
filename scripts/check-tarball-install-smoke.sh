@@ -123,7 +123,7 @@ if (missing.length > 0 || leaked.length > 0 || aiHooks.length > 0 || missingOper
 JS_EOF
 
 mkdir -p "$APP_DIR" "$TARGET_REPO"
-git -C "$TARGET_REPO" init -q
+git -C "$TARGET_REPO" init -q -b main
 
 cd "$APP_DIR"
 bun init -y >/dev/null
@@ -452,7 +452,7 @@ cat >"$STANDALONE_REPO/.ai/context/capabilities.json" <<'REGISTRY_EOF'
   ]
 }
 REGISTRY_EOF
-git -C "$STANDALONE_REPO" init -q
+git -C "$STANDALONE_REPO" init -q -b main
 (cd "$ROOT" && node node_modules/typescript/bin/tsc \
   --ignoreConfig --noEmit --module Preserve --moduleResolution Bundler \
   --target ES2022 --strict --skipLibCheck --types bun-types \
