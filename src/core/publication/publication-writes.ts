@@ -54,6 +54,24 @@ export type NewRemoteRefPushResult =
   | { readonly state: 'refused' }
   | { readonly state: 'unknown' };
 
+export interface AppHookConfig {
+  url: string;
+  content_type: 'json';
+  secret: string;
+  insecure_ssl: '0';
+}
+
+export function checkAppHookConfig(config: AppHookConfig): void {
+  let url: URL;
+  try { url = new URL(config.url); } catch { throw new Error('The GitHub App hook URL must be an HTTPS URL.'); }
+  if (url.protocol !== 'https:' || url.username || url.password) {
+    throw new Error('The GitHub App hook URL must be an HTTPS URL without user information.');
+  }
+  if (config.content_type !== 'json') throw new Error('The GitHub App hook content type must be json.');
+  if (!config.secret || /[\x00-\x1f\x7f]/.test(config.secret)) throw new Error('The GitHub App hook secret is missing or invalid.');
+  if (config.insecure_ssl !== '0') throw new Error('The GitHub App hook must verify SSL.');
+}
+
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
 
 export const validPublicationCommit = (commit: string): boolean => OID.test(commit);

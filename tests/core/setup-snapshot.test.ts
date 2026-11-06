@@ -130,7 +130,7 @@ describe('setup snapshot projection', () => {
     expect(snapshot.hosts.map(host => host.host)).toEqual([...SETUP_HOSTS]);
     expect(snapshot.hosts[1]).toEqual({
       host: 'codex', reported: true, adapter_check: 'needs_agent', detected: true, cli_version: '0.144.2',
-      adapter: { configured: true, managed_entries: 11, expected_entries: 12, projection: 'drift', mismatches: [
+      adapter: { configured: true, managed_entries: 11, expected_entries: 12, projection: 'drift', projection_error: null, mismatches: [
         { kind: 'missing', event: 'Stop', route_id: 'default', field: null },
         { kind: 'field-mismatch', event: 'PreToolUse', route_id: 'edit', field: 'command' },
       ] },
@@ -157,7 +157,13 @@ describe('setup snapshot projection', () => {
   });
 
   test('redacts every path and credential from the fake-credential fixture', () => {
-    const text = JSON.stringify(projectSetupSnapshot(input()));
+    const fixture = input();
+    const snapshot = decodeSetupSnapshot(projectSetupSnapshot({ ...fixture, adapters: fixture.adapters.map(adapter => adapter.id === 'codex'
+      ? { ...adapter, projection: { status: 'drift', mismatches: [], error: 'Missing /Users/alice/.bun/dist/hook-entry.js; run bun add -g repo-harness' } }
+      : adapter) }));
+    expect(snapshot.hosts[1].adapter?.configured).toBe(false);
+    expect(snapshot.hosts[1].adapter?.projection_error).toContain('bun add -g repo-harness');
+    const text = JSON.stringify(snapshot);
     expect(text).not.toContain('/Users/');
     for (const secret of FAKE_SECRETS) expect(text).not.toContain(secret);
     expect(text).toContain('[private path]');
@@ -242,6 +248,7 @@ describe('setup snapshot decoder', () => {
   });
 
   test('rejects unredacted text, extra keys and inconsistent facts', () => {
+    rejects(s => { s.hosts[1].adapter.projection_error = '/Users/alice/private'; });
     rejects(s => { s.checks[0].detail = 'config at /Users/alice/.codex/hooks.json'; });
     rejects(s => { s.checks[0].command = `export GH_TOKEN=${FAKE_SECRETS[1]}`; });
     rejects(s => { s.fleet[0].description = 'C:\\Users\\alice'; });

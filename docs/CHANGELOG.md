@@ -6,6 +6,12 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- Operator `/healthz` now returns protocol 2 and the core package version.
+  The protocol is the desktop integration contract. UI-only changes do not
+  bump it. (#1890)
+- Update `@botiverse/oar` to 0.91.0. A handled input has no turn outcome and
+  cannot complete a review. A Codex `unauthorized` error now stops a review
+  as an auth failure. (#1899)
 - The board now reports `blocked`, `error` and `done` desks and the hc status
   message of each seat. `BOARD_PROTOCOL` moves to 3, `BOARD_PARENTS_PROTOCOL`
   to 4 and `BOARD_SUMMARIES_PROTOCOL` to 3, with no read of the old protocols.

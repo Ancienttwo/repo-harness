@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { versions } from '../../src/cli/installer/install-profile';
-import { test, expect } from 'bun:test';
+import { beforeAll, test, expect } from 'bun:test';
+import { seedGlobalPackageFixture } from '../helpers/install-ownership';
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -9,6 +10,7 @@ import { runUserUninstall } from '../../src/cli/installer/uninstall';
 import { configurationReceiptPath, writeOwnedConfiguration } from '../../src/cli/installer/configuration-ownership';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 const CLI = join(import.meta.dir, '../../src/cli/index.ts');
+beforeAll(() => { seedGlobalPackageFixture(); });
 function fixture(run: (home: string, env: NodeJS.ProcessEnv) => void) {
  const home = mkdtempSync(join(tmpdir(), 'user-uninstall-'));
  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home }; delete env.XDG_STATE_HOME;

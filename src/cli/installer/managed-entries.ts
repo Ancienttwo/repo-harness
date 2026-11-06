@@ -10,10 +10,13 @@
  * verified for Claude in Phase 0: `~/.claude/settings.json` already had a
  * non-repo-harness `rtk hook claude` entry that must survive install).
  *
- * Commands check the repository opt-in marker before starting the hook bin.
- * An opted-in repository requires `repo-harness-hook` on PATH.
+ * Commands check the repository opt-in marker before starting the installed
+ * hook bundle with the Bun runtime resolved during installation.
  */
 
+import { accessSync, constants, realpathSync, statSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
+import { bunGlobalPackageRoot } from './skill-projection';
 import { routesForHost, type AdapterHost, type Route } from '../hook/route-registry';
 import {
   MANAGED_TAG,
@@ -65,15 +68,37 @@ export interface ManagedHookProjectionReport {
   /** Number of repo-harness-owned hook commands observed in the host config. */
   readonly managedEntryCount: number;
   readonly mismatches: readonly ManagedHookProjectionMismatch[];
+  /** Runtime resolution failed, so an exact command comparison is unavailable. */
+  readonly error?: string;
 }
 
-export function buildHookCommand(route: Route, host: HookHost): string {
-  return `: ${MANAGED_TAG}; repo=$(git rev-parse --show-toplevel 2>/dev/null) && [ -f "$repo/.ai/harness/workflow-contract.json" ] || exit 0; export HOOK_REPO_ROOT="$repo"; HOOK_HOST=${host} exec repo-harness-hook ${route.event} --route ${route.routeId}`;
+function resolvedHookPath(path: string, label: string, mode: number): string {
+  try {
+    if (!isAbsolute(path)) throw new Error('expected an absolute path');
+    const resolved = realpathSync(path);
+    if (!statSync(resolved).isFile()) throw new Error('expected a file');
+    accessSync(resolved, mode);
+    return `'${resolved.replaceAll("'", "'\\''")}'`;
+  } catch (error) {
+    throw new Error(`Cannot resolve managed hook ${label} at ${path}: ${(error as Error).message}. Run bun add -g repo-harness, then repo-harness install --location global.`);
+  }
 }
 
-export function buildHookEntry(route: Route, host: HookHost): HookEntry {
+export function buildHookExecCommand(env: NodeJS.ProcessEnv = process.env): string {
+  const bun = resolvedHookPath(process.execPath, 'Bun runtime', constants.X_OK);
+  const root = bunGlobalPackageRoot(env);
+  if (root === null) throw new Error('Cannot resolve the Bun global repo-harness root: set HOME, USERPROFILE or BUN_INSTALL. Run bun add -g repo-harness.');
+  const entry = resolvedHookPath(join(root, 'dist/hook-entry.js'), 'global bundle', constants.R_OK);
+  return `exec ${bun} ${entry}`;
+}
+
+export function buildHookCommand(route: Route, host: HookHost, env: NodeJS.ProcessEnv = process.env): string {
+  return `: ${MANAGED_TAG}; repo=$(git rev-parse --show-toplevel 2>/dev/null) && [ -f "$repo/.ai/harness/workflow-contract.json" ] || exit 0; export HOOK_REPO_ROOT="$repo"; HOOK_HOST=${host} ${buildHookExecCommand(env)} ${route.event} --route ${route.routeId}`;
+}
+
+export function buildHookEntry(route: Route, host: HookHost, env: NodeJS.ProcessEnv = process.env): HookEntry {
   const entry: HookEntry = {
-    hooks: [{ type: 'command', command: buildHookCommand(route, host), timeout: 30 }],
+    hooks: [{ type: 'command', command: buildHookCommand(route, host, env), timeout: 30 }],
   };
   if (route.matcher !== undefined) entry.matcher = route.matcher;
   return entry;
@@ -85,11 +110,11 @@ export function isManagedEntry(entry: HookEntry): boolean {
 }
 
 /** Every hook route is core: each install projects every route that the host supports. */
-export function buildManagedHooks(host: HookHost): HooksByEvent {
+export function buildManagedHooks(host: HookHost, env: NodeJS.ProcessEnv = process.env): HooksByEvent {
   const out: HooksByEvent = {};
   for (const route of routesForHost(host)) {
     if (!out[route.event]) out[route.event] = [];
-    out[route.event].push(buildHookEntry(route, host));
+    out[route.event].push(buildHookEntry(route, host, env));
   }
   return out;
 }
@@ -147,7 +172,7 @@ export function canonicalManagedHookProjection(value: unknown): HooksByEvent {
 /** Any event name parses, so drift reports still name the route of a stale entry for a retired event. */
 function routeFromManagedCommand(command: unknown): { event: string; routeId: string } | null {
   if (typeof command !== 'string') return null;
-  const match = command.match(/repo-harness-hook\s+([A-Za-z]+)\s+--route\s+([A-Za-z0-9_-]+)/);
+  const match = command.match(/\s([A-Za-z]+)\s+--route\s+([A-Za-z0-9_-]+)(?=[\s;]|$)/);
   return match ? { event: match[1], routeId: match[2] } : null;
 }
 
@@ -327,8 +352,21 @@ export function compareManagedHooks(
 export function compareManagedHookProjection(
   actual: unknown,
   host: HookHost,
+  env: NodeJS.ProcessEnv = process.env,
 ): ManagedHookProjectionReport {
-  return compareManagedHooks(actual, buildManagedHooks(host));
+  let expected: HooksByEvent;
+  try {
+    expected = buildManagedHooks(host, env);
+  } catch (error) {
+    return {
+      status: 'drift',
+      expectedEntryCount: routesForHost(host).length,
+      managedEntryCount: actualManagedHooks(actual).length,
+      mismatches: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+  return compareManagedHooks(actual, expected);
 }
 
 export function stripManagedEntries(existing: HooksByEvent | undefined): HooksByEvent {

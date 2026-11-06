@@ -10,7 +10,7 @@ import { hostSkillRoot } from '../../src/effects/host-skill-roots';
 import { checkPiHost } from '../../src/cli/commands/doctor';
 import { dependencies } from '../../package.json';
 import { runTransactionalRuntimeRefresh } from '../../src/cli/index';
-import { recordInstallOwnership } from '../helpers/install-ownership';
+import { recordInstallOwnership, seedGlobalPackageFixture } from '../helpers/install-ownership';
 import { runUserUninstall } from '../../src/cli/installer/uninstall';
 import { bunGlobalPackageRoot } from '../../src/cli/installer/skill-projection';
 import { piAgentDir } from '../../src/effects/pi-agent-dir';
@@ -45,6 +45,7 @@ function createFixture(root: string) {
   const env = { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'), PI_CODING_AGENT_DIR: join(root, 'pi-config'),
     PATH: `${bin}:${process.env.PATH}`, PI_PACKAGE_DIR: undefined, PI_FIXTURE_ROOT: root, PI_FIXTURE_VERSION: '1.5.0', REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') };
   write(join(source, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '0.0.0', dependencies, pi: { extensions: ['./extension.ts'] } }));
+  seedGlobalPackageFixture(env, { mutable: true });
   symlinkSync(join(ROOT, 'node_modules'), join(source, 'node_modules'), 'dir');
   write(join(host, 'package.json'), JSON.stringify({ name: '@earendil-works/pi-coding-agent', version: '1.5.0', type: 'module', main: './dist/index.js' }));
   write(join(host, 'dist/index.js'), `import {readFileSync} from 'node:fs';
