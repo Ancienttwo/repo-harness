@@ -1,0 +1,1 @@
+{schemaVersion: archcontext.relation/v1,id: relation.global-runtime-reconciliation.cli-diagnostics.hc-client,kind: calls,source: component.global-runtime-reconciliation.cli-diagnostics,target: component.execution-primitives.hc-client,intent: List relay terminals by the recorded labels for the Doctor notify relay check.}

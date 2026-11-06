@@ -11,4 +11,3 @@ responsibilities:
 source:
   include:
     - src/cli/commands/herdr.ts
-    - src/cli/commands/herdr-skill.ts

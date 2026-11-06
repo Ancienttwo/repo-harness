@@ -1,0 +1,1 @@
+{schemaVersion: archcontext.relation/v1,id: relation.task-agent-host.primary.runtime-closeout,kind: calls,source: component.task-agent-host.primary,target: component.execution-primitives.runtime-closeout,intent: "Read core session identity and request results, and register worktree runtime bindings."}
