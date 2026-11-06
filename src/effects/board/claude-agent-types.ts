@@ -74,8 +74,10 @@ function declaredName(path: string): string | undefined {
  * `HOME/.claude`, as for the launched host. Identity rules of Claude Code
  * 2.1.316 (init event probe, #1473): a user agent is its frontmatter `name` at
  * any depth, and a file without one is not an agent. A plugin agent is
- * `<manifest name>:<subfolders>:<name>`, where `name` is the frontmatter `name`
- * or else the file name. Agents of project settings and of plugin manifests
+ * `<plugin name>:<subfolders>:<name>`, where `name` is the frontmatter `name`
+ * or else the file name. Claude Code uses the manifest name when present;
+ * without a manifest it uses the marketplace entry name before `@` (#1884).
+ * Agents of project settings and of plugin manifests
  * with custom agent paths are not read.
  */
 export function claudeHostAgentTypes(env: NodeJS.ProcessEnv = process.env): string[] {
@@ -111,8 +113,15 @@ export function claudeHostAgentTypes(env: NodeJS.ProcessEnv = process.env): stri
       if (files.length === 0) return [];
       const manifestPath = join(installPath, '.claude-plugin', 'plugin.json');
       const manifest = readJson(manifestPath);
-      const plugin = manifest === undefined ? undefined : record(manifest, manifestPath).name;
-      if (typeof plugin !== 'string' || plugin === '') throw new ClaudeAgentTypesError(`${manifestPath} has no plugin name.`);
+      let plugin: unknown;
+      if (manifest === undefined) {
+        const separator = key.indexOf('@');
+        if (separator <= 0) throw new ClaudeAgentTypesError(`${registryPath} entry ${key} has no non-empty name before @. Reinstall or disable ${key}.`);
+        plugin = key.slice(0, separator);
+      } else {
+        plugin = record(manifest, manifestPath).name;
+        if (typeof plugin !== 'string' || plugin === '') throw new ClaudeAgentTypesError(`${manifestPath} has no plugin name. Reinstall or disable ${key}.`);
+      }
       return files.map((path) => {
         const folders = relative(agentsDirectory, path).split(sep).slice(0, -1);
         return [plugin, ...folders, declaredName(path) ?? basename(path, '.md')].join(':');

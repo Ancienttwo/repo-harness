@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { seedGlobalPackageFixture } from '../helpers/install-ownership';
 import { execFileSync, spawnSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -10,6 +11,17 @@ import { inspectWorkflowMarker } from '../../src/effects/adoption/workflow-marke
 import { HOST_RENDERERS, type HookOutcome } from '../../src/cli/hook/hook-protocol';
 
 const HOOK_ENTRY = join(import.meta.dir, '..', '..', 'src', 'cli', 'hook-entry.ts');
+const bunInstall = realpathSync(mkdtempSync(join(tmpdir(), 'hrd09-global-bun-')));
+const previousBunInstall = process.env.BUN_INSTALL;
+beforeAll(() => {
+  process.env.BUN_INSTALL = bunInstall;
+  seedGlobalPackageFixture();
+});
+afterAll(() => {
+  if (previousBunInstall === undefined) delete process.env.BUN_INSTALL;
+  else process.env.BUN_INSTALL = previousBunInstall;
+  clean(bunInstall);
+});
 
 describe('hook host output fields', () => {
   const outcome: HookOutcome = {
@@ -289,7 +301,7 @@ describe('typed hook runtime', () => {
     expect(result.stderr).toContain("unknown command 'hook'");
   });
 
-  test('the managed command skips non-opt-in repos and reports a missing bin in opt-in repos', () => {
+  test('the managed command skips non-opt-in repos and starts the bound hook without PATH in opt-in repos', () => {
     const bin = mkdtempSync(join(tmpdir(), 'hrd09-no-hook-bin-'));
     const active = repo();
     const inactive = repo(false);
@@ -302,9 +314,10 @@ describe('typed hook runtime', () => {
       const skipped = spawnSync(shell, ['-c', command], { cwd: inactive, env: hostEnv, encoding: 'utf8' });
       expect(skipped.status).toBe(0);
       expect(skipped.stderr).toBe('');
-      const missing = spawnSync(shell, ['-c', command], { cwd: active, env: hostEnv, encoding: 'utf8' });
-      expect(missing.status).not.toBe(0);
-      expect(missing.stderr).toContain('repo-harness-hook');
+      const started = spawnSync(shell, ['-c', command], { cwd: active, env: hostEnv, encoding: 'utf8' });
+      expect(started.status, started.stderr).toBe(2);
+      expect(started.status).not.toBe(127);
+      expect(started.stderr).not.toContain('not found');
     } finally { clean(active); clean(inactive); clean(bin); }
   });
 

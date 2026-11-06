@@ -42,6 +42,7 @@ export interface SetupRawAdapter {
   readonly expectedEntryCount: number;
   readonly projection?: {
     readonly status: 'consistent' | 'drift';
+    readonly error?: string;
     readonly mismatches: readonly { readonly kind: SetupHookMismatch['kind']; readonly event: string; readonly routeId?: string; readonly field?: SetupHookMismatch['field'] }[];
   };
 }
@@ -136,10 +137,11 @@ function hostFacts(host: SetupHost, input: SetupProjectionInput, checks: Readonl
     detected: entry.installed,
     adapter: entry.installed
       ? {
-        configured: entry.alreadyConfigured,
+        configured: entry.alreadyConfigured && entry.projection?.error === undefined,
         managed_entries: entry.managedEntryCount,
         expected_entries: entry.expectedEntryCount,
         projection: entry.projection?.status ?? null,
+        projection_error: entry.projection?.error === undefined ? null : redact(entry.projection.error),
         mismatches: (entry.projection?.mismatches ?? []).map(mismatch => ({
           kind: mismatch.kind,
           event: redact(mismatch.event),

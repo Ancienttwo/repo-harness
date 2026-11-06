@@ -244,8 +244,12 @@ function hookBlocks(config: HookConfig): Array<{ event: string; hook: HookComman
  * Exact commands the installer writes for a host. The managed marker inside a
  * command only names its owner; any text can repeat it, so it never exempts.
  */
-function generatedHookCommands(host: HookHost): ReadonlySet<string> {
-  return new Set(Object.values(buildManagedHooks(host)).flat().flatMap((entry) => entry.hooks.map((hook) => hook.command)));
+function generatedHookCommands(host: HookHost): ReadonlySet<string> | Error {
+  try {
+    return new Set(Object.values(buildManagedHooks(host)).flat().flatMap((entry) => entry.hooks.map((hook) => hook.command)));
+  } catch (error) {
+    return error instanceof Error ? error : new Error(String(error));
+  }
 }
 
 function scanHookConfig(
@@ -268,6 +272,13 @@ function scanHookConfig(
   const config = parsed as HookConfig;
   const commands = hookBlocks(config);
   const generated = generatedHookCommands(host);
+  if (generated instanceof Error) {
+    findings.push({
+      filePath, ruleId: 'managed-hook-runtime-unavailable', severity: 'fail',
+      summary: `${hostLabel} generated hook commands cannot be verified`,
+      recommendation: generated.message,
+    });
+  }
   if (legacyProjectAdapter && commands.length > 0) {
     findings.push({
       filePath,
@@ -280,7 +291,7 @@ function scanHookConfig(
 
   for (const { event, hook } of commands) {
     const command = typeof hook.command === 'string' ? hook.command : '';
-    if (!command || generated.has(command)) continue;
+    if (!command || (!(generated instanceof Error) && generated.has(command))) continue;
     const suspicious = suspiciousMatch(command);
     findings.push({
       filePath,

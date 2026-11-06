@@ -43,7 +43,7 @@ import { installPiPackage } from '../src/cli/installer/pi-package';
 import { bunGlobalPackageRoot } from '../src/cli/installer/skill-projection';
 import { hostSkillRoot, providerSkillLock } from '../src/effects/host-skill-roots';
 import { MANAGED_AGENTS } from '../src/effects/terminal/task-role-profiles';
-import { recordInstallOwnership, recordPluginSelection } from './helpers/install-ownership';
+import { recordInstallOwnership, recordPluginSelection, seedGlobalPackageFixture } from './helpers/install-ownership';
 import { hashManagedTree } from '../src/effects/managed-tree';
 import { buildManagedHooks } from '../src/cli/installer/managed-entries';
 import { runUserUninstall } from '../src/cli/installer/uninstall';
@@ -89,6 +89,7 @@ function withHome(run: (env: NodeJS.ProcessEnv) => void): void {
     ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'), XDG_STATE_HOME: join(home, '.local', 'state'),
     REPO_HARNESS_HOME: join(home, '.repo-harness'), PATH: `${tools}:/usr/bin:/bin`,
   };
+  seedGlobalPackageFixture(env, { mutable: true });
   for (const key of ['CODEX_SKILLS_ROOT', 'CLAUDE_SKILLS_ROOT', 'PI_CODING_AGENT_DIR', 'REPO_HARNESS_INSTALL_PLUGINS', 'REPO_HARNESS_INCLUDE_PI']) delete env[key];
   try { run(env); } finally { rmSync(home, { recursive: true, force: true }); }
 }
@@ -215,7 +216,7 @@ function writeManagedHostSurfaces(
   symlinkSync(source, canonical);
   writeFileSync(join(home, '.codex', 'hooks.json'), JSON.stringify({
     theme: 'user-owned',
-    hooks: buildManagedHooks('codex'),
+    hooks: buildManagedHooks('codex', env),
   }));
   return { canonical, source };
 }
@@ -313,8 +314,8 @@ describe('install selection', () => {
 
   test('install state protocol 3 names the plugins, and every hook route is core', () => withHome((env) => {
     expect(PLUGIN_IDS).toEqual(['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory']);
-    expect(Object.values(buildManagedHooks('codex')).flat()).toHaveLength(5);
-    expect(Object.values(buildManagedHooks('claude')).flat()).toHaveLength(6);
+    expect(Object.values(buildManagedHooks('codex', env)).flat()).toHaveLength(5);
+    expect(Object.values(buildManagedHooks('claude', env)).flat()).toHaveLength(6);
     expect(planInstallSelection('all', { run: ALL_PLUGINS, record: ALL_PLUGINS }, null, env).protocol).toBe(3);
   }));
 
@@ -734,11 +735,15 @@ describe('install selection', () => {
     const applied = applyInstallSelection([], [], env);
     const adapter = join(env.HOME!, '.codex', 'hooks.json');
     const config = JSON.parse(readFileSync(adapter, 'utf-8'));
+    const original = readFileSync(adapter, 'utf-8');
     delete config.hooks.PreToolUse;
     writeFileSync(adapter, JSON.stringify(config));
     const status = installStateStatus(applied.state, env);
     expect(status.probes.core?.missing).toContain('host-adapters');
     expect(status.drift.missing_owners).toContain('core');
+    writeFileSync(adapter, original);
+    rmSync(join(bunGlobalPackageRoot(env)!, 'dist/hook-entry.js'));
+    expect(installStateStatus(applied.state, env).probes.core?.missing).toContain('host-adapters');
   }));
 
   test('install state is not committed without a complete host projection', () => withHome((env) => {
@@ -1099,7 +1104,7 @@ describe('install selection', () => {
           'user-server': { type: 'stdio', command: 'user-mcp' },
           codegraph: { type: 'stdio', command: 'codegraph', args: ['serve', '--mcp'], alwaysLoad: true },
         } }, null, 2)}\n`);
-        writePath(claudeSettings, `${JSON.stringify({ hooks: buildManagedHooks('claude'), permissions: { allow: ['Bash(ls)'] }, allowedTools: ['Read', 'mcp__codegraph__*'] }, null, 2)}\n`);
+        writePath(claudeSettings, `${JSON.stringify({ hooks: buildManagedHooks('claude', env), permissions: { allow: ['Bash(ls)'] }, allowedTools: ['Read', 'mcp__codegraph__*'] }, null, 2)}\n`);
       };
       if (userSections) writeConfigs();
       const first = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
@@ -1143,7 +1148,7 @@ describe('install selection', () => {
       expect(readFileSync(codexConfig, 'utf-8'), name).toContain('[profiles.user]\nmodel = "user-model"');
       expect(JSON.parse(readFileSync(claudeJson, 'utf-8')), name).toMatchObject({ userSetting: true, mcpServers: { 'user-server': { command: 'user-mcp' } } });
       const settings = JSON.parse(readFileSync(claudeSettings, 'utf-8'));
-      expect([settings.permissions, settings.allowedTools.includes('Read'), settings.hooks], name).toEqual([{ allow: ['Bash(ls)'] }, true, buildManagedHooks('claude')]);
+      expect([settings.permissions, settings.allowedTools.includes('Read'), settings.hooks], name).toEqual([{ allow: ['Bash(ls)'] }, true, buildManagedHooks('claude', env)]);
       const lockState = JSON.parse(readFileSync(lock, 'utf-8'));
       expect(lockState.skills['user-skill'], name).toEqual({ source: 'user/repo' });
       expect(lockState.skills['repo-harness-cross-review'] !== undefined, name).toBe(keep.includes('cross-review'));

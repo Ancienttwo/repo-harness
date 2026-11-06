@@ -293,6 +293,50 @@ describe("repo-harness seats argv", () => {
     });
   });
 
+  test("an enabled plugin without a manifest uses its entry name even when marked orphaned", () => {
+    withHome(undefined, (home) => {
+      rmSync(join(home, "plugin", ".claude-plugin"), { recursive: true });
+      writeFileSync(join(home, "plugin", ".orphaned_at"), "1793467681012");
+      const result = argv(home, "advisor", "--json");
+      expect(result.status).toBe(0);
+      expect(denied(JSON.parse(result.stdout).argv)).toEqual(expect.arrayContaining(["Agent(demo:helper)", "Agent(demo:review:security)"]));
+    });
+  });
+
+  test.each(["demo", "@market"])("a plugin without a manifest refuses invalid entry key %s", (key) => {
+    withHome(undefined, (home) => {
+      rmSync(join(home, "plugin", ".claude-plugin"), { recursive: true });
+      writeFileSync(join(home, ".claude", "settings.json"), JSON.stringify({ enabledPlugins: { [key]: true } }));
+      writeFileSync(join(home, ".claude", "plugins", "installed_plugins.json"), JSON.stringify({ plugins: { [key]: [{ installPath: join(home, "plugin") }] } }));
+      const result = argv(home, "advisor", "--json");
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe("");
+      const error = JSON.parse(result.stderr);
+      expect(error.error).toBe("claude_agent_types_unreadable");
+      expect(error.message).toContain(`entry ${key} has no non-empty name before @. Reinstall or disable ${key}.`);
+    });
+  });
+
+  test("a present plugin manifest without a name fails closed with a repair", () => {
+    withHome(undefined, (home) => {
+      const manifestPath = join(home, "plugin", ".claude-plugin", "plugin.json");
+      writeFileSync(manifestPath, "{}");
+      const result = argv(home, "advisor", "--json");
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(JSON.parse(result.stderr)).toEqual({ ok: false, error: "claude_agent_types_unreadable", message: `${manifestPath} has no plugin name. Reinstall or disable demo@market.` });
+    });
+  });
+
+  test("a present plugin manifest name takes precedence over its entry name", () => {
+    withHome(undefined, (home) => {
+      writeFileSync(join(home, "plugin", ".claude-plugin", "plugin.json"), JSON.stringify({ name: "manifest-name" }));
+      const rules = denied(launch(home, "advisor").argv);
+      expect(rules).toContain("Agent(manifest-name:helper)");
+      expect(rules).not.toContain("Agent(demo:helper)");
+    });
+  });
+
   test("the seat labels hold the GitHub repository id and the dispatch numbers, and need --repository-id", () => {
     withHome(undefined, (home) => {
       // With --repository-id the command also names the pane, so it runs in a registered checkout with a prefix.

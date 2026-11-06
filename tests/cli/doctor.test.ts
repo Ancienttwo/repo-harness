@@ -19,7 +19,7 @@ import {
   runDoctor,
 } from '../../src/cli/commands/doctor';
 import { writeShellExecutableFixture } from '../helpers/repo-fixture';
-import { recordPluginSelection } from '../helpers/install-ownership';
+import { recordPluginSelection, seedGlobalPackageFixture } from '../helpers/install-ownership';
 import { expectedSkillProjections, type SkillProjection } from '../../src/cli/installer/skill-projection';
 import { buildManagedHooks, MANAGED_TAG } from '../../src/cli/installer/managed-entries';
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
@@ -37,12 +37,17 @@ const DEFAULT_FIX_LINE = /run: repo-harness install(?:;|$)/m;
 function withTempHome(fn: (home: string) => void): void {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-doctor-')));
   const prev = process.env.HOME;
+  const prevBunInstall = process.env.BUN_INSTALL;
   process.env.HOME = tmp;
+  process.env.BUN_INSTALL = path.join(tmp, '.bun');
+  seedGlobalPackageFixture();
   try {
     fn(tmp);
   } finally {
     if (prev === undefined) delete process.env.HOME;
     else process.env.HOME = prev;
+    if (prevBunInstall === undefined) delete process.env.BUN_INSTALL;
+    else process.env.BUN_INSTALL = prevBunInstall;
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 }
@@ -254,6 +259,14 @@ describe('doctor command (Phase 1C)', () => {
         expect(adapter.detail).toContain('Stop.default timeout expected=30 actual=150');
         expect(adapter.detail).toContain('repo-harness install --target codex --location global');
         expect(adapter.detail).toContain('repo-harness run <helper>');
+        withEnv({ BUN_INSTALL: path.join(home, 'missing-bun') }, () => {
+          const unavailable = runDoctor(CLI_PORTS.doctor, home, 'codex');
+          for (const id of ['codex-adapter', 'security-config']) {
+            const check = unavailable.checks.find(check => check.id === id)!;
+            expect(check.status).toBe('fail');
+            expect(check.detail).toContain('bun add -g repo-harness');
+          }
+        });
       });
       expect(fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf8')).toBe(before);
     });
@@ -561,6 +574,9 @@ describe('doctor command (Phase 1C)', () => {
           },
         }, null, 2),
       );
+      const unreviewed = runDoctor(CLI_PORTS.doctor).checks.find(check => check.id === 'security-config')!;
+      expect(unreviewed.status).toBe('warn');
+      expect(unreviewed.detail).not.toContain('echo hello');
       fs.writeFileSync(
         configPath,
         JSON.stringify({
@@ -662,6 +678,8 @@ describe('doctor skill projection', () => {
   const root = path.resolve(import.meta.dir, '../..');
   function seed(home: string) {
     const source = path.join(home, '.bun/install/global/node_modules/repo-harness');
+    // These cases need a mutable package copy rather than the shared runtime link.
+    fs.unlinkSync(source);
     fs.mkdirSync(path.join(source, 'assets/skill-commands'), { recursive: true });
     fs.cpSync(path.join(root, 'assets/skill-commands/manifest.json'), path.join(source, 'assets/skill-commands/manifest.json'));
     fs.cpSync(path.join(root, 'assets/workflow-contract.v1.json'), path.join(source, 'assets/workflow-contract.v1.json'));
