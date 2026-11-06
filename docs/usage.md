@@ -292,17 +292,17 @@ Run the operator console on the same machine as the adopted repositories:
 repo-harness operator serve
 ```
 
+The command binds to loopback only and prints the local URL. The console has
+these pages: the development board with its task drawer, repositories, Agents,
+Skills, Hooks, tools, architecture and system status. The theme follows the
+system until you pick one. The language follows your saved choice, then the browser language.
+
 `repo-harness operator`, `repo-harness worktrees` and `repo-harness catch-up`
 need the `operator` plugin. An `all` selection includes it. Add it to an
 explicit list with `repo-harness install --plugins <your plugins>,operator`.
 Without the plugin, each command exits 1 and prints this repair, and no port is
 bound. `repo-harness seats`, `repo-harness quota` and `repo-harness bots` need
 no plugin.
-
-The command binds to loopback only and prints the local URL. The console has
-these pages: the development board with its task drawer, repositories, Agents,
-Skills, Hooks, tools, architecture and system status. The theme follows the
-system until you pick one. The language follows your saved choice, then the browser language.
 
 The approved design allows three bounded writes and nothing else. They open in
 this order: local agent config in `~/.repo-harness/config.json`, docs sessions

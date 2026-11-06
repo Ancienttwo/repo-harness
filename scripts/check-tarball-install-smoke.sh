@@ -626,7 +626,7 @@ const fail = (message) => {
   console.error(`[tarball-smoke] ERROR: ${message}`);
   process.exit(1);
 };
-const env = { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' };
+const env = { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0', HOOK_HOST: 'claude' };
 const loadedIn = (stderr) => Number(/operator-modules:(\d+)/.exec(stderr)?.[1]);
 const run = (entry, args, stdin = 'ignore') => {
   const result = Bun.spawnSync([process.execPath, '--preload', probe, `${installedRoot}/${entry}`, ...args], { cwd: repo, stdin, env });
@@ -648,7 +648,7 @@ const core = [
   ['status --json', cli('status', '--json')],
   ['seats argv worker --json', cli('seats', 'argv', 'worker', '--json')],
   ['quota --json', cli('quota', '--json')],
-  ['hook PreToolUse edit', hook('PreToolUse', 'edit', { tool_name: 'Write', tool_input: { file_path: `${repo}/note.md`, content: 'x' } })],
+  ['hook PreToolUse edit', hook('PreToolUse', 'edit', { tool_name: 'Write', tool_input: { file_path: `${repo}/notes.txt`, content: 'x' } })],
   ['hook Stop default', hook('Stop', 'default', { stop_hook_active: false })],
 ];
 for (const [name, result] of core) {
