@@ -289,7 +289,7 @@ describe('typed hook runtime', () => {
     expect(result.stderr).toContain("unknown command 'hook'");
   });
 
-  test('the managed command skips non-opt-in repos and reports a missing bin in opt-in repos', () => {
+  test('the managed command skips non-opt-in repos and starts the bound hook without PATH in opt-in repos', () => {
     const bin = mkdtempSync(join(tmpdir(), 'hrd09-no-hook-bin-'));
     const active = repo();
     const inactive = repo(false);
@@ -302,9 +302,10 @@ describe('typed hook runtime', () => {
       const skipped = spawnSync(shell, ['-c', command], { cwd: inactive, env: hostEnv, encoding: 'utf8' });
       expect(skipped.status).toBe(0);
       expect(skipped.stderr).toBe('');
-      const missing = spawnSync(shell, ['-c', command], { cwd: active, env: hostEnv, encoding: 'utf8' });
-      expect(missing.status).not.toBe(0);
-      expect(missing.stderr).toContain('repo-harness-hook');
+      const started = spawnSync(shell, ['-c', command], { cwd: active, env: hostEnv, encoding: 'utf8' });
+      expect(started.status).not.toBe(0);
+      expect(started.status).not.toBe(127);
+      expect(started.stderr).not.toContain('not found');
     } finally { clean(active); clean(inactive); clean(bin); }
   });
 

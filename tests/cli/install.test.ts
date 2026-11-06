@@ -8,7 +8,7 @@ import { CLAUDE_STATUS_LINE_PIPE, claudeTarget } from '../../src/cli/installer/t
 import type { Location } from '../../src/cli/installer/types';
 import { readConfigurationReceipt, withConfigurationMutation } from '../../src/cli/installer/configuration-ownership';
 import { isRepoHarnessManagedHookCommand } from '../../src/core/adoption/managed-hook-config';
-import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
+import { buildManagedHooks, compareManagedHookProjection } from '../../src/cli/installer/managed-entries';
 
 const ROOT = path.join(import.meta.dir, '..', '..');
 const CLI = path.join(ROOT, 'src/cli/index.ts');
@@ -387,12 +387,13 @@ describe('install command (Phase 1B)', () => {
     });
   });
 
-  test('every adapter command requires the hook bin only in opted-in repositories', () => {
+  test.each(['codex', 'claude'] as const)('%s: every adapter command binds Bun and the installed bundle behind the opt-in check', (host) => {
     withTempHome((home) => {
-      runInstall({ target: 'codex', location: 'global' });
+      expect(runInstall({ target: host, location: 'global' }).exitCode).toBe(0);
       const data = JSON.parse(
-        fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf-8'),
+        fs.readFileSync(path.join(home, host === 'codex' ? '.codex/hooks.json' : '.claude/settings.json'), 'utf-8'),
       );
+      expect(compareManagedHookProjection(data.hooks, host).status).toBe('consistent');
       for (const [event, entries] of Object.entries(data.hooks) as [string, { hooks: { command: string; timeout?: number }[] }[]][]) {
         for (const entry of entries) {
           const hook = entry.hooks[0];
@@ -401,14 +402,32 @@ describe('install command (Phase 1B)', () => {
           expect(cmd).toContain('repo-harness-managed-hook-v1');
           expect(cmd).toContain('export HOOK_REPO_ROOT="$repo"');
           expect(cmd).toContain('[ -f "$repo/.ai/harness/workflow-contract.json" ]');
-          expect(cmd).toContain('exec repo-harness-hook ');
+          const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+          expect(cmd).toContain(`exec ${quote(fs.realpathSync(process.execPath))} ${quote(fs.realpathSync(path.join(ROOT, 'dist/hook-entry.js')))} ${event} --route `);
           expect(cmd).not.toContain('&& exit 0');
-          expect(cmd).toContain('HOOK_HOST=codex');
+          expect(cmd).toContain(`HOOK_HOST=${host}`);
           expect(cmd).not.toContain('exec repo-harness hook ');
           expect(cmd).not.toContain('command -v');
           expect(hook.timeout).toBe(30);
         }
       }
+      data.hooks.PreToolUse[0].hooks[0].command += ' changed';
+      expect(compareManagedHookProjection(data.hooks, host).mismatches).toEqual([
+        expect.objectContaining({ kind: 'field-mismatch', field: 'command', routeId: 'edit' }),
+      ]);
+    });
+  });
+
+  test('install refuses an unresolved Bun runtime before writing host configuration', () => {
+    withTempHome((home) => {
+      const runtime = process.execPath;
+      try {
+        process.execPath = path.join(home, 'missing-bun');
+        const result = runInstall({ target: 'both', location: 'global' });
+        expect(result.exitCode).toBe(1);
+        expect(result.lines.join('\n')).toContain('Cannot resolve managed hook Bun runtime');
+        expect(fs.readdirSync(home)).toEqual([]);
+      } finally { process.execPath = runtime; }
     });
   });
 
@@ -473,7 +492,7 @@ describe('install command (Phase 1B)', () => {
   test.each([
     // [case, statusLine before install, statusLine the user sets after install, statusLine after uninstall]
     ['none exists', undefined, undefined, undefined],
-    ['an older tagged entry exists', { type: 'command', command: ': repo-harness-managed-hook-v1; exec repo-harness-hook old' }, undefined, undefined],
+    ['an older tagged entry exists', { type: 'command', command: ': repo-harness-managed-hook-v1; exec repo-harness-hook statusline' }, undefined, undefined],
     ['a user status line exists', { type: 'command', command: 'my-line' }, undefined, { type: 'command', command: 'my-line' }],
     ['the user edits the installed one', undefined, { type: 'command', command: 'my-line' }, { type: 'command', command: 'my-line' }],
   ] as const)('claude statusLine when %s: install writes the tagged entry only into an empty or tagged slot, uninstall removes only a tagged one', (_name, existing, edit, remaining) => {
@@ -484,11 +503,19 @@ describe('install command (Phase 1B)', () => {
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         fs.writeFileSync(filePath, `${JSON.stringify({ statusLine: existing }, null, 2)}\n`);
       }
-      const owned = { type: 'command', command: ': repo-harness-managed-hook-v1; exec repo-harness-hook statusline' };
+      const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+      const owned = { type: 'command', command: `: repo-harness-managed-hook-v1; exec ${quote(fs.realpathSync(process.execPath))} ${quote(fs.realpathSync(path.join(ROOT, 'dist/hook-entry.js')))} statusline` };
       const pipeNote = `[claude] note: statusLine exists and is not changed. To capture Claude quota, set its command to: ${CLAUDE_STATUS_LINE_PIPE}`;
       const first = runInstall({ target: 'claude', location: 'global' });
       expect(first.exitCode).toBe(0);
-      expect(JSON.parse(fs.readFileSync(filePath, 'utf-8')).statusLine).toEqual(userLine ? existing : owned);
+      const installed = JSON.parse(fs.readFileSync(filePath, 'utf-8')).statusLine;
+      if (!userLine) {
+        const result = spawnSync('/bin/sh', ['-c', installed.command], {
+          cwd: home, env: { ...process.env, HOME: home, PATH: '/usr/bin:/bin' }, input: '{}', encoding: 'utf8',
+        });
+        expect(result.status, result.stderr).toBe(0);
+      }
+      expect(installed).toEqual(userLine ? existing : owned);
       expect(first.lines.includes(pipeNote)).toBe(userLine);
       expect(runInstall({ target: 'claude', location: 'global' }).lines).toEqual([`[claude] unchanged: ${filePath}`, ...(userLine ? [pipeNote] : [])]);
       if (edit) {
@@ -558,9 +585,7 @@ describe('install command (Phase 1B)', () => {
       const pre = data.hooks.PreToolUse as { hooks: { command: string }[] }[];
       // 2 siblings + 3 managed, including the Bash tripwire.
       expect(pre.length).toBe(5);
-      expect(pre[0].hooks[0].command).toContain('repo-harness-hook PreToolUse');
-      expect(pre[1].hooks[0].command).toContain('repo-harness-hook PreToolUse');
-      expect(pre[2].hooks[0].command).toContain('repo-harness-hook PreToolUse --route bash');
+      expect(pre.slice(0, 3)).toEqual(buildManagedHooks('claude').PreToolUse);
       expect(pre[3].hooks[0].command).toBe('rtk hook claude');
       expect(pre[4].hooks[0].command).toBe('echo repo-harness hook is documented');
     });

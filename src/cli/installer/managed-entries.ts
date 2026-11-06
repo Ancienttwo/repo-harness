@@ -10,10 +10,13 @@
  * verified for Claude in Phase 0: `~/.claude/settings.json` already had a
  * non-repo-harness `rtk hook claude` entry that must survive install).
  *
- * Commands check the repository opt-in marker before starting the hook bin.
- * An opted-in repository requires `repo-harness-hook` on PATH.
+ * Commands check the repository opt-in marker before starting the installed
+ * hook bundle with the Bun runtime resolved during installation.
  */
 
+import { accessSync, constants, realpathSync, statSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { routesForHost, type AdapterHost, type Route } from '../hook/route-registry';
 import {
   MANAGED_TAG,
@@ -67,8 +70,26 @@ export interface ManagedHookProjectionReport {
   readonly mismatches: readonly ManagedHookProjectionMismatch[];
 }
 
+function resolvedHookPath(path: string, label: string, mode: number): string {
+  try {
+    if (!isAbsolute(path)) throw new Error('expected an absolute path');
+    const resolved = realpathSync(path);
+    if (!statSync(resolved).isFile()) throw new Error('expected a file');
+    accessSync(resolved, mode);
+    return `'${resolved.replaceAll("'", "'\\''")}'`;
+  } catch (error) {
+    throw new Error(`Cannot resolve managed hook ${label} at ${path}: ${(error as Error).message}. Reinstall repo-harness with Bun.`);
+  }
+}
+
+export function buildHookExecCommand(): string {
+  const bun = resolvedHookPath(process.execPath, 'Bun runtime', constants.X_OK);
+  const entry = resolvedHookPath(fileURLToPath(new URL('../../../dist/hook-entry.js', import.meta.url)), 'bundle', constants.R_OK);
+  return `exec ${bun} ${entry}`;
+}
+
 export function buildHookCommand(route: Route, host: HookHost): string {
-  return `: ${MANAGED_TAG}; repo=$(git rev-parse --show-toplevel 2>/dev/null) && [ -f "$repo/.ai/harness/workflow-contract.json" ] || exit 0; export HOOK_REPO_ROOT="$repo"; HOOK_HOST=${host} exec repo-harness-hook ${route.event} --route ${route.routeId}`;
+  return `: ${MANAGED_TAG}; repo=$(git rev-parse --show-toplevel 2>/dev/null) && [ -f "$repo/.ai/harness/workflow-contract.json" ] || exit 0; export HOOK_REPO_ROOT="$repo"; HOOK_HOST=${host} ${buildHookExecCommand()} ${route.event} --route ${route.routeId}`;
 }
 
 export function buildHookEntry(route: Route, host: HookHost): HookEntry {
@@ -147,7 +168,7 @@ export function canonicalManagedHookProjection(value: unknown): HooksByEvent {
 /** Any event name parses, so drift reports still name the route of a stale entry for a retired event. */
 function routeFromManagedCommand(command: unknown): { event: string; routeId: string } | null {
   if (typeof command !== 'string') return null;
-  const match = command.match(/repo-harness-hook\s+([A-Za-z]+)\s+--route\s+([A-Za-z0-9_-]+)/);
+  const match = command.match(/\s([A-Za-z]+)\s+--route\s+([A-Za-z0-9_-]+)$/);
   return match ? { event: match[1], routeId: match[2] } : null;
 }
 

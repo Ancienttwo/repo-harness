@@ -134,7 +134,7 @@ function checkPath(): DoctorCheckResult {
     id,
     describe,
     status: 'warn',
-    detail: `${[!resolved && 'repo-harness', !hook && 'repo-harness-hook'].filter(Boolean).join(' and ')} not on PATH; reinstall the repo-harness package. Opted-in repositories require repo-harness-hook.`,
+    detail: `${[!resolved && 'repo-harness', !hook && 'repo-harness-hook'].filter(Boolean).join(' and ')} not on PATH; reinstall the repo-harness package.`,
   };
 }
 

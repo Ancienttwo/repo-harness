@@ -15,6 +15,7 @@ import {
   assertCandidateReconciliationReceipt,
   candidatePackageIdentity,
   encodeCandidateRequest,
+  installedAdapterProjectionDigest,
   managedProjectionDigest,
   publishCandidateReconciliationCapability,
   routeRegistryDigest,
@@ -298,12 +299,13 @@ describe('candidate-bound global runtime reconciliation', () => {
       expect(result.status).toBe(0);
       const receipt = JSON.parse((result.stdout ?? '').toString()) as CandidateReconciliationReceipt;
 
-      const installed = JSON.parse(readFileSync(hookPath, 'utf-8')) as { hooks: Record<string, Array<{ hooks: Array<{ timeout: number }> }>>; custom: unknown };
+      const installed = JSON.parse(readFileSync(hookPath, 'utf-8')) as { hooks: Record<string, Array<{ hooks: Array<{ timeout: number; command: string }> }>>; custom: unknown };
       const installedStop = installed.hooks.Stop?.[0]?.hooks[0]?.timeout;
       expect(installedStop).toBe(30);
       expect(installed.custom).toEqual({ untouched: true });
       expect(receipt.reconciliation_scope).toBe('partial');
-      expect(receipt.adapter_projection_digests.codex).toBe(managedProjectionDigest(buildManagedHooks('codex')));
+      expect<string | null | undefined>(receipt.adapter_projection_digests.codex).toBe(installedAdapterProjectionDigest(hookPath));
+      expect(installed.hooks.Stop[0].hooks[0].command).toContain(`'${join(candidate.root, 'dist/hook-entry.js')}' Stop --route default`);
       expect(readInstallState(env)).toMatchObject({ transaction_id: 'fixture-install', selection: [], plugins: [] });
       rollbackInstallHostTransaction(transaction);
     } finally {
