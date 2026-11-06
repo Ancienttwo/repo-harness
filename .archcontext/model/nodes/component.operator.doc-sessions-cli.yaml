@@ -5,9 +5,9 @@ name: Doc Sessions Command (cli)
 status: active
 parent: capability.runtime-harness.operator
 layer: cli
-summary: The doc-sessions command that reads doc session lists, details, events, diffs, loss and finalization through the operator readers.
+summary: The doc-sessions actions that read doc session lists, details, events, diffs, loss and finalization through the operator readers.
 responsibilities:
-  - Hold the cli-layer doc-sessions command so layer direction is checked per directory. Responsibilities stay with the parent node.
+  - Hold the cli-layer doc-sessions actions so layer direction is checked per directory. Responsibilities stay with the parent node.
 source:
   include:
-    - src/cli/commands/doc-sessions.ts
+    - src/cli/commands/doc-sessions-actions.ts

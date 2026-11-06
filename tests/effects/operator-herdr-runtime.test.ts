@@ -8,7 +8,7 @@ import { configureRuntimeSource } from '../../src/effects/operator/runtime-sourc
 import { createRuntimeStatusObserver } from '../../src/effects/operator/runtime-status';
 import { decodeRuntimeConfig, startRuntimeService } from '../../src/effects/operator/runtime-service';
 import { startOperatorServer } from '../../src/effects/operator/server';
-import { parseOperatorServeOptions } from '../../src/cli/commands/operator';
+import { parseOperatorServeOptions } from '../../src/cli/commands/operator-actions';
 import type { RuntimeIdentity } from '../../src/core/operator/runtime-status';
 import { fakeHc } from '../helpers/fake-hc';
 

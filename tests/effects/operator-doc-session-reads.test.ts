@@ -14,6 +14,7 @@ import {
 import { appendDocSessionEvents } from '../../src/effects/operator/doc-session-events';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { recordPluginSelection } from '../helpers/install-ownership';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
 
 const GUIDE = '# Guide\n\nThe operator reads docs.\nIt never writes main.\n';
@@ -73,6 +74,7 @@ async function session(prepare?: (repo: string) => void, gitBin?: string, instru
   }] }));
   const env = { ...process.env, HOME: userHome, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees,
     ...(gitBin === undefined ? {} : { REPO_HARNESS_GIT_BIN: gitBin }) };
+  recordPluginSelection(env, ['operator']);
   const base = git(['rev-parse', 'HEAD'], repo).trim();
   const sid = randomUUID().replaceAll('-', '');
   const branch = `docs/${sid.slice(0, 12)}`;

@@ -1,4 +1,4 @@
-import { pluginSelectionEnv } from '../helpers/install-ownership';
+import { pluginSelectionEnv, recordPluginSelection } from '../helpers/install-ownership';
 import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync, readdirSync, readFileSync, statSync, openSync, closeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { taskReviewRunner } from '../../src/effects/review-runner/task-review-runner';
+import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
 import { MODULE_ID, MODULE_DOC, MODULE_NODE, moduleRepository, fixtureYaml, fixtureWrite, fixtureCommit, fixtureGit, isNativeExportGitRead } from '../helpers/module-repository';
 import { createHash } from 'node:crypto';
 import { chmodSync, watch, lstatSync, renameSync } from 'node:fs';
@@ -42,10 +43,8 @@ import {
   architectureStatus,
   startOperatorServer,
 } from '../../src/effects/operator/server';
-import {
-  buildOperatorCommand,
-  parseOperatorServeOptions,
-} from '../../src/cli/commands/operator';
+import { buildOperatorCommand } from '../../src/cli/commands/operator';
+import { parseOperatorServeOptions } from '../../src/cli/commands/operator-actions';
 import { decodeArchitectureMapRefusal, projectArchitectureMap, type ArchitectureMapV1, type ArchitecturePullRequestsSource } from '../../src/core/operator/architecture-map';
 import { startArchitectureMapCollector, type ArchitectureMapRepositoryCache } from '../../src/effects/operator/architecture-map-collector';
 import { worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
@@ -109,6 +108,72 @@ describe('operator serve command and HTTP boundary', () => {
     expect(() => parseOperatorServeOptions({ port: '65536' })).toThrow('port');
     expect(() => parseOperatorServeOptions({ timeoutMs: '999' })).toThrow('timeout-ms');
     expect(buildOperatorCommand(taskReviewRunner).name()).toBe('operator');
+  });
+
+  test('the operator selection gates operator, worktrees and catch-up and the Operator code load', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-gate-')));
+    const homes: string[] = [root];
+    try {
+      const probe = join(root, 'load-probe.ts');
+      writeFileSync(probe, `process.on('exit', () => process.stderr.write(\`operator-modules:\${Object.keys(require.cache).filter(path => /[\\\\/]src[\\\\/](?:effects[\\\\/](?:operator|setup|dev-activity)[\\\\/]|core[\\\\/](?:operator|setup|dev-activity)[\\\\/]|effects[\\\\/]configuration[\\\\/]agents-configuration\\.ts|effects[\\\\/]review[\\\\/]docs-host-isolation\\.ts|cli[\\\\/]commands[\\\\/](?:(?:operator|worktrees|catch-up|doc-sessions)-actions|architecture-thread|setup-[a-z-]+)\\.ts)/.test(path)).length}\n\`));\n`);
+      const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
+      const selected = (plugins: readonly PluginId[]) => { const env = pluginSelectionEnv(plugins); homes.push(env.HOME!); return env; };
+      const call = (env: NodeJS.ProcessEnv, ...args: string[]) => {
+        const result = spawnSync(process.execPath, ['--preload', probe, cli, ...args], { cwd: root, encoding: 'utf8', input: '', env: { ...env, REPO_HARNESS_HOME: join(root, 'harness'), BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' } });
+        const lines = result.stderr.split('\n').filter(line => line !== '' && !line.startsWith('operator-modules:'));
+        return { status: result.status, stdout: result.stdout, lines, loaded: Number(/operator-modules:(\d+)/.exec(result.stderr)?.[1]) };
+      };
+      const noState = { ...process.env, HOME: join(root, 'no-state') };
+      mkdirSync(noState.HOME, { recursive: true });
+      const unreadable = { ...process.env, HOME: join(root, 'unreadable') };
+      mkdirSync(join(unreadable.HOME, '.repo-harness'), { recursive: true });
+      writeFileSync(join(unreadable.HOME, '.repo-harness/install-state.json'), '{');
+
+      const blocked: [string, NodeJS.ProcessEnv, string | RegExp][] = [
+        ['core only', selected([]), 'repo-harness install --plugins operator'],
+        ['other plugin', selected(['product']), 'repo-harness install --plugins operator,product'],
+        ['no install state', noState, 'repo-harness install'],
+        ['unreadable install state', unreadable, /is not valid JSON/],
+      ];
+      const commands: [string, string[]][] = [
+        ['operator', ['operator', 'serve', '--port', '0']],
+        ['operator', ['operator', 'capture', '--provider', 'codex', '--source-id', 'gate', '--snapshot', join(root, 'capture.json'), '--', 'true']],
+        ['operator', ['operator', 'cleanup-investigation-job', 'a', 'b', '1']],
+        ['operator', ['operator', 'doc-sessions', 'list']],
+        ['worktrees', ['worktrees', 'list']],
+        ['catch-up', ['catch-up', '--json']],
+      ];
+      for (const [name, env, expected] of blocked) {
+        for (const [command, args] of commands) {
+          const result = call(env, ...args);
+          const label = `${name}: ${args.join(' ')}`;
+          expect(result.status, label).toBe(1);
+          expect(result.stdout, label).toBe('');
+          expect(result.lines.length, label).toBe(1);
+          if (typeof expected === 'string') expect(result.lines[0], label).toBe(`install_plugin_unavailable: repo-harness ${command} needs the operator plugin: the operator plugin is not selected; run: ${expected}`);
+          else expect(result.lines[0], label).toMatch(expected);
+          expect(result.loaded, label).toBe(0);
+        }
+      }
+      expect(existsSync(join(root, 'capture.json'))).toBe(false);
+
+      const coreOnly = selected([]);
+      for (const args of [['operator', '--help'], ['operator', 'serve', '--help'], ['worktrees', '--help'], ['catch-up', '--help'], ['status', '--json'], ['quota', '--json']]) {
+        const result = call(coreOnly, ...args);
+        expect(result.status, args.join(' ')).toBe(0);
+        expect(result.loaded, args.join(' ')).toBe(0);
+      }
+
+      const withPlugin = selected(['operator']);
+      const brief = call(withPlugin, 'catch-up', '--json');
+      expect(brief.status).toBe(0);
+      expect(brief.loaded).toBeGreaterThan(0);
+      const status = call(withPlugin, 'status', '--json');
+      expect(status.status).toBe(0);
+      expect(status.loaded).toBe(0);
+    } finally {
+      for (const home of homes) rmSync(home, { recursive: true, force: true });
+    }
   });
 
   test('UX-local-human-control-board-v1-P1 serves health, the registered repositories without their roots, and static fallback', async () => {
@@ -1413,6 +1478,7 @@ test('operator serve admits explicit native capture snapshots without Herdr or p
   const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
   // The collectors read hc; a fake one comes first on PATH, so the server never reaches a real core.
   const hc = fakeHc('operator-serve-hc');
+  recordPluginSelection({ HOME: home }, ['operator']);
   const child = spawn(process.execPath, [cli, 'operator', 'serve', '--port', '0', '--runtime-status-config', configPath], {
     cwd: home, env: { ...process.env, HOME: home, TMPDIR: home, REPO_HARNESS_HOME: home, FAKE_HC: hc.env.FAKE_HC, PATH: `${hc.env.PATH}:${process.env.PATH}` },
     stdio: ['ignore', 'pipe', 'pipe'],

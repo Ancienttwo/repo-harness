@@ -259,10 +259,6 @@ if ! "$CLI" operator serve --help >/dev/null; then
   exit 1
 fi
 
-start_operator_smoke
-assert_operator_runtime
-stop_operator_smoke
-
 for doc_id in harness-overview agentic-development-flow; do
   if ! "$CLI" docs show "$doc_id" >/dev/null; then
     echo "[tarball-smoke] ERROR: packaged docs registry cannot resolve $doc_id" >&2
@@ -502,6 +498,14 @@ run_recorded_selection_hook PreToolUse edit \
 run_recorded_selection_hook Stop default \
   "{\"session_id\":\"tarball-smoke\",\"hook_event_name\":\"Stop\",\"cwd\":\"$TARGET_REPO\",\"stop_hook_active\":false}"
 
+# `operator serve` needs the operator plugin. Its HOME is its own, so it gets a
+# copy of the recorded `all` selection.
+mkdir -p "$OPERATOR_HOME/.repo-harness"
+cp "$SMOKE_HOME/.repo-harness/install-state.json" "$OPERATOR_HOME/.repo-harness/install-state.json"
+start_operator_smoke
+assert_operator_runtime
+stop_operator_smoke
+
 # `mcp serve` needs the mcp plugin, so the MCP steps run on the recorded `all`
 # selection. Resolve here: the hook runs above can change the state fields.
 (cd "$TARGET_REPO" && "$CLI" state resolve --json) >"$TMP_DIR/effective-state.json"
@@ -604,6 +608,77 @@ if (!refused.stderr.includes('install_plugin_unavailable: ') || !refused.stderr.
 const status = run('status', '--json');
 if (status.status !== 0 || status.loaded !== 0) fail(`status --json with selection [] returned ${status.status} and loaded ${status.loaded} MCP modules`);
 console.log(`[tarball-smoke] OK: mcp serve loads ${selected.loaded} MCP modules with all, 0 with selection []; status --json loads 0.`);
+JS_EOF
+
+# The selection gates the Operator code in the installed package. The owner
+# paths are the model nodes of capability.runtime-harness.operator; the command
+# shells are in the CLI root. The state is selection [] from the MCP step.
+OPERATOR_OWNED='[\\/]src[\\/](?:effects[\\/](?:operator|setup|dev-activity)[\\/]|core[\\/](?:operator|setup|dev-activity)[\\/]|effects[\\/]configuration[\\/]agents-configuration\.ts|effects[\\/]review[\\/]docs-host-isolation\.ts|cli[\\/]commands[\\/](?:(?:operator|worktrees|catch-up|doc-sessions)-actions|architecture-thread|setup-[a-z-]+)\.ts)'
+OPERATOR_LOAD_PROBE="$TMP_DIR/operator-load-probe.ts"
+cat >"$OPERATOR_LOAD_PROBE" <<JS_EOF
+process.on("exit", () => process.stderr.write(\`operator-modules:\${Object.keys(require.cache).filter((path) => /$OPERATOR_OWNED/.test(path)).length}\n\`));
+JS_EOF
+bun - "$INSTALLED_ROOT" "$SMOKE_HOME" "$TARGET_REPO" "$OPERATOR_LOAD_PROBE" "$OPERATOR_OWNED" <<'JS_EOF'
+const [, , installedRoot, home, repo, probe, owned] = process.argv;
+const { readFileSync, writeFileSync } = await import('node:fs');
+const { join } = await import('node:path');
+const fail = (message) => {
+  console.error(`[tarball-smoke] ERROR: ${message}`);
+  process.exit(1);
+};
+const env = { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0', HOOK_HOST: 'claude' };
+const loadedIn = (stderr) => Number(/operator-modules:(\d+)/.exec(stderr)?.[1]);
+const run = (entry, args, stdin = 'ignore') => {
+  const result = Bun.spawnSync([process.execPath, '--preload', probe, `${installedRoot}/${entry}`, ...args], { cwd: repo, stdin, env });
+  const stderr = result.stderr.toString();
+  return { status: result.exitCode, stdout: result.stdout.toString(), stderr, loaded: loadedIn(stderr) };
+};
+const cli = (...args) => run('src/cli/index.ts', args);
+const hook = (event, route, payload) => run('src/cli/hook-entry.ts', [event, '--route', route], new TextEncoder().encode(JSON.stringify({ session_id: 'tarball-smoke', hook_event_name: event, cwd: repo, ...payload })));
+
+const serve = ['operator', 'serve', '--host', '127.0.0.1', '--port', '0'];
+const refused = cli(...serve);
+if (refused.status !== 1 || refused.stdout !== '' || refused.loaded !== 0) {
+  fail(`operator serve with selection [] returned ${refused.status}, ${refused.stdout.length} stdout bytes and ${refused.loaded} Operator modules`);
+}
+if (!refused.stderr.includes('install_plugin_unavailable: ') || !refused.stderr.includes('run: repo-harness install --plugins operator\n')) {
+  fail(`operator serve with selection [] did not print the code and the repair: ${refused.stderr}`);
+}
+const core = [
+  ['status --json', cli('status', '--json')],
+  ['seats argv worker --json', cli('seats', 'argv', 'worker', '--json')],
+  ['quota --json', cli('quota', '--json')],
+  ['hook PreToolUse edit', hook('PreToolUse', 'edit', { tool_name: 'Write', tool_input: { file_path: `${repo}/notes.txt`, content: 'x' } })],
+  ['hook Stop default', hook('Stop', 'default', { stop_hook_active: false })],
+];
+for (const [name, result] of core) {
+  if (result.status !== 0 || result.loaded !== 0) fail(`${name} with selection [] returned ${result.status} and loaded ${result.loaded} Operator modules`);
+}
+// The hook bin is one bundle, so require.cache cannot count inside it. Its module comments can.
+const bundleModules = readFileSync(`${installedRoot}/dist/hook-entry.js`, 'utf8').split('\n').filter((line) => line.startsWith('// src/'));
+if (bundleModules.length === 0) fail('dist/hook-entry.js has no module comments, so the owner check proves nothing');
+const ownedPath = new RegExp(owned);
+const bundled = bundleModules.filter((line) => ownedPath.test(`/${line.slice(3)}`));
+if (bundled.length !== 0) fail(`dist/hook-entry.js bundles Operator modules: ${bundled.join(', ')}`);
+
+const statePath = join(home, '.repo-harness', 'install-state.json');
+const state = JSON.parse(readFileSync(statePath, 'utf8'));
+const { PLUGIN_IDS } = await import(`${installedRoot}/src/core/skill-surface/plugin-manifest.ts`);
+writeFileSync(statePath, JSON.stringify({ ...state, plugins: PLUGIN_IDS.map((id) => ({ id, version: state.core.version })), selection: 'all' }));
+const server = Bun.spawn([process.execPath, '--preload', probe, `${installedRoot}/src/cli/index.ts`, ...serve], { cwd: repo, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe', env });
+const reader = server.stdout.getReader();
+const deadline = setTimeout(() => server.kill('SIGKILL'), 60_000);
+const line = (await reader.read()).value;
+const url = line === undefined ? '' : new TextDecoder().decode(line).trim();
+const health = /^http:\/\/127\.0\.0\.1:\d+$/.test(url) ? await fetch(`${url}/healthz`) : null;
+server.kill('SIGTERM');
+const stderr = await new Response(server.stderr).text();
+const exit = await server.exited;
+clearTimeout(deadline);
+if (health?.ok !== true) fail(`operator serve with all did not answer /healthz: ${url} ${stderr}`);
+const selected = loadedIn(stderr);
+if (exit !== 0 || !(selected > 0)) fail(`operator serve with all returned ${exit} and loaded ${selected} Operator modules`);
+console.log(`[tarball-smoke] OK: operator serve loads ${selected} Operator modules with all and serves; with selection [] it refuses, and status, seats, quota and hook routes load 0; the hook bundle of ${bundleModules.length} modules holds 0.`);
 JS_EOF
 
 echo "[tarball-smoke] OK: ${PACKAGE_NAME}-${PACKAGE_VERSION}.tgz installs, serves the packaged Operator, and packaged CLI bins start."

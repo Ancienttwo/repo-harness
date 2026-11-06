@@ -18,6 +18,18 @@ All notable changes to this skill are documented here.
 - The text of a plugin command guard now starts with
   `install_plugin_unavailable: `. This applies to every guarded command,
   including `strategy` and the architecture commands. (#1849)
+- `operator`, `worktrees` and `catch-up` need the new `operator` plugin.
+  Selection `all` gains it at the next `repo-harness update`. An explicit
+  plugin list does not gain it: add it with
+  `repo-harness install --plugins <your plugins>,operator`. Without the
+  plugin, each command exits 1, prints the repair, loads no Operator module
+  and binds no port. Each `--help` stays open, and `seats`, `quota`, `bots`,
+  `mcp access set` and the status line hook route need no plugin. No migration
+  runs. (#1850)
+- The hc pin moved from `src/core/operator/herdr-core-pin.json` to
+  `src/core/terminal/herdr-core-pin.json`. `runtime.herdr_core.min_version_source`
+  is now `package:src/core/terminal/herdr-core-pin.json`. An external reader of
+  the pin file must change the path. (#1836)
 - Pi hosts need Pi 1.5.0 or newer. `doctor` and the Pi review launch refuse an
   older Pi with `PI_HOST_UNSUPPORTED_VERSION`, and the optional Pi peer range
   is `^1.5.0`. OAR 0.88.0 requires Pi 1.5. (#1854)
@@ -37,6 +49,10 @@ All notable changes to this skill are documented here.
 - repo-harness runs on `@botiverse/oar` 0.88.0, and the bundled Pi packages
   move to 1.5.0. The agent runtime probe lists the DSH (DeepSeek Harness)
   runtime. DSH is not a review, seat or docs-host runtime. (#1854)
+- `repo-harness update` on an explicit plugin list prints one
+  `[plugins] not selected` line for the command plugins that the list omits
+  (`mcp`, `operator`), with one command that keeps the list and adds them.
+  (#1850)
 
 ### Upgrade
 
@@ -44,12 +60,16 @@ All notable changes to this skill are documented here.
   Until then an `all` state does not record it, and the guard prints an
   explicit `--plugins` list. Do not run that list on an `all` state: an
   explicit list stops `all` from growing. (#1849)
+- The same step records `operator`, and the same rule applies to the repair
+  that `operator`, `worktrees` and `catch-up` print on an `all` state. (#1850)
 
 ### Rollback
 
 - An older CLI refuses an install state that names `mcp`, with
   `install_state_invalid`, until a reinstall. Run `repo-harness uninstall`
   with this CLI, then install the older CLI. (#1849)
+- An older CLI refuses an install state that names `operator` in the same way,
+  until a reinstall. The same steps apply. (#1850)
 
 ## [0.26.4] - 2026-11-05
 

@@ -8,7 +8,7 @@ import tokens from '../../docs/design/operator-console/design-system/tokens.json
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
-import { cleanCommand } from '../../src/cli/commands/worktrees';
+import { cleanCommand } from '../../src/cli/commands/worktrees-actions';
 import { decodeWorktreeCleanupRequest, worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
 import { decodeWorktrees, unavailableWorktrees, WORKTREE_REASONS, type WorktreesSnapshot } from '../../src/core/public-projections/worktrees';
 import { selectionDigest } from '../../src/effects/operator/worktree-cleanup';

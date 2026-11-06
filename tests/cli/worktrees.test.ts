@@ -4,10 +4,11 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSyn
 import { basename, join, resolve } from 'node:path';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { recordPluginSelection } from '../helpers/install-ownership';
 import { controlledWorktreeProcessPreload } from '../helpers/controlled-worktree-processes';
 import { decodeWorktreeCleanupRequest, worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
 import type { WorktreeView, WorktreesSnapshot } from '../../src/core/public-projections/worktrees';
-import { cleanCommand, greenCleanupBatches, worktreeListOutput } from '../../src/cli/commands/worktrees';
+import { cleanCommand, greenCleanupBatches, worktreeListOutput } from '../../src/cli/commands/worktrees-actions';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { worktreeId } from '../../src/effects/git/worktree-record';
 import { selectionDigest } from '../../src/effects/operator/worktree-cleanup';
@@ -37,6 +38,7 @@ function fixture() {
   const repo = { id: repoHarnessRepoIdFor(main), path: main, accessMode: 'read_only' as const, source: 'adopt' as const, registeredAt: '2026-10-28T00:00:00.000Z', lastSeenAt: '2026-10-28T00:00:00.000Z' };
   writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [repo] }));
   const env = { ...process.env, HOME: parent, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: root };
+  recordPluginSelection(env, ['operator']);
   const entry = resolve(import.meta.dir, '../../src/cli/index.ts');
   const cli = (...args: string[]) => spawnSync(process.execPath, [entry, 'worktrees', ...args], { cwd: main, env, encoding: 'utf8', timeout: 90_000 });
   // The real process inventory is a separate input. The controlled preload (#1128) gives the CLI an empty, known inventory.

@@ -26,6 +26,7 @@ import {
   chooseCleanupSessionPlan, createCleanupSessionPlan, runAuthorizedCleanup, worktreeCleanupExecuteWriteRoute, worktreeCleanupPlanWriteRoute,
 } from '../../src/effects/operator/worktree-cleanup-route';
 import { loadCleanupInvestigation, loadCleanupSession, saveCleanupInvestigation, saveCleanupSession } from '../../src/effects/operator/worktree-cleanup-store';
+import { pluginSelectionEnv } from '../helpers/install-ownership';
 import { controlledWorktreeProcessPreload } from '../helpers/controlled-worktree-processes';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
 
@@ -65,7 +66,7 @@ function fixture() {
   const repoId = repoHarnessRepoIdFor(repo);
   writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [
     { id: repoId, path: repo, accessMode: 'read_only', source: 'adopt', registeredAt: '2026-11-04T00:00:00.000Z', lastSeenAt: '2026-11-04T00:00:00.000Z' }] }));
-  const env = { ...process.env, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: parent };
+  const env = { ...pluginSelectionEnv(['operator']), REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: parent };
   const id = worktreeId(resolveGitCommonDirectory(repo), realpathSync(tree));
 
   const stateFile = join(parent, 'gh-state.json'), gh = join(bin, 'gh');
@@ -236,7 +237,7 @@ routeTest('the investigation start refuses an exhausted or unknown chatgpt quota
 
 routeTest('the investigation routes start one job, refuse a second while it runs, and record a failure when the child stops before its own record', async f => {
   const ui = join(f.parent, 'ui'); mkdirSync(ui); writeFileSync(join(ui, 'index.html'), '<!doctype html><title>fixture</title>');
-  const childEnv = { REPO_HARNESS_HOME: f.home, REPO_HARNESS_WORKTREE_ROOT: f.parent };
+  const childEnv = { ...f.env, REPO_HARNESS_HOME: f.home, REPO_HARNESS_WORKTREE_ROOT: f.parent };
   let stop: (code: 'timeout' | 'failed') => void = () => {};
   const run_process: typeof runSetupProcess = () => new Promise(resolve => { stop = code => resolve({ ok: false, code }); });
   const server = await startOperatorServer({ port: 0, static_root: ui, env: childEnv,

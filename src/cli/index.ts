@@ -103,6 +103,7 @@ import {
   installProfileTransactionPaths,
   installStateStatus,
   keptPluginLine,
+  commandPluginRepairLines,
   notAddedPluginLine,
   piSkillRootSnapshots,
   planInstallSelection,
@@ -441,7 +442,7 @@ export function runCandidateRuntimeReconciliation(
   const plugins = resolved.run;
   if (plugins.includes('architecture')) registerArchitecturePlugin();
   // Stdout is the receipt; the parent shows this stderr in its reconcile step.
-  for (const line of selectionLines(resolved)) console.error(line);
+  for (const line of [...selectionLines(resolved), ...commandPluginRepairLines(state.selection)]) console.error(line);
   const piSkillRoot = piSkillRootSnapshots(env);
   const runtime = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
     runtimeLock,
@@ -601,7 +602,7 @@ export function runTransactionalRuntimeRefresh(
               agentFleetVerified: agentFleetVerified(result), additionalSurfaces: newPiSurfaces(result), kept: resolved.kept.map(entry => entry.id),
             });
           }
-          result = { ...result, lines: [...selectionLines(resolved), ...result.lines] };
+          result = { ...result, lines: [...selectionLines(resolved), ...commandPluginRepairLines(state.selection), ...result.lines] };
         }
         if ((options.target ?? 'both') === 'both') recordPiInstallOwnership(newPiSurfaces(result), transactionEnv, transaction);
       }
@@ -1056,9 +1057,9 @@ export function buildProgram(): Command {
   program.addCommand(buildBoardCommand(boardHostPorts(), attentionHostPorts()));
   program.addCommand(buildFleetCommand());
   program.addCommand(buildBotsCommand());
-  program.addCommand(buildOperatorCommand(taskReviewRunner));
-  program.addCommand(buildWorktreesCommand());
-  program.addCommand(buildCatchUpCommand());
+  program.addCommand(pluginCommand(buildOperatorCommand(taskReviewRunner), 'operator'));
+  program.addCommand(pluginCommand(buildWorktreesCommand(), 'operator'));
+  program.addCommand(pluginCommand(buildCatchUpCommand(), 'operator'));
   program.addCommand(buildQuotaCommand());
   program.addCommand(pluginCommand(buildRefactorCommand(), 'architecture'));
   program.addCommand(pluginCommand(buildArchitectureProjectionCommand(), 'architecture'));
