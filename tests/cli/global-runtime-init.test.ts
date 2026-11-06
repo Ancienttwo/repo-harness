@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, lstatSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
@@ -10,7 +10,7 @@ import { CLI_PORTS, registerArchitecturePlugin, resolveOptionalRuntimeDeps, runC
 import { copyPackageRuntimeFixture, writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
 import { dependencies, devDependencies } from '../../package.json';
-import { recordInstallOwnership, recordPluginSelection } from '../helpers/install-ownership';
+import { recordInstallOwnership, recordPluginSelection, seedGlobalPackageFixture } from '../helpers/install-ownership';
 import { writeFakeHc } from '../helpers/fake-hc';
 import wazaRules from '../../src/core/skill-surface/waza-shared-rules.json';
 import { applyInstallSelection, beginInstallHostTransaction, installProfileHostMutationPaths, managedInstallSurfaceIsCurrent, readInstallState, recordRefreshedInstallOwnership, loadSkillSurfaceCatalog, rollbackInstallHostTransaction, versions } from '../../src/cli/installer/install-profile';
@@ -22,6 +22,7 @@ import { CandidateRequestProtocolRetiredError, encodeCandidateRequest, parseCand
 import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
 
 const ROOT = join(import.meta.dir, '..', '..');
+beforeAll(() => { seedGlobalPackageFixture(); });
 // The fake managed install follows the repository pins, so an upgrade needs no fixture edit.
 const ARCHCTX_PIN = dependencies.archctx;
 const ARCHCTX_CONTRACTS_PIN = dependencies['archctx-contracts'];
@@ -192,6 +193,7 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
   const harness = join(globalModules, 'repo-harness');
   const archctx = join(globalModules, 'archctx');
   mkdirSync(harness, { recursive: true });
+  seedGlobalPackageFixture({ HOME: home, BUN_INSTALL: join(home, '.bun') }, { mutable: true });
   mkdirSync(join(archctx, 'bin'), { recursive: true });
   mkdirSync(join(globalModules, 'archctx-contracts'), { recursive: true });
   mkdirSync(join(globalModules, '@colbymchenry', 'codegraph'), { recursive: true });
@@ -1600,7 +1602,7 @@ exit 0
       setupManagedRuntimeReadback(home, fakeBin, JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version as string);
       const globalHarness = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
       rmSync(globalHarness, { recursive: true, force: true });
-      symlinkSync(ROOT, globalHarness, 'dir');
+      seedGlobalPackageFixture({ HOME: home, BUN_INSTALL: join(home, '.bun') });
       writeExecutable(join(fakeBin, 'node'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo v22.21.0; exit 0; fi\nexit 1\n');
       recordPluginSelection({ HOME: home });
 
@@ -2252,7 +2254,8 @@ exit 0
       writeFakeHc(fakeBin);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeFakeCodegraph(fakeBin, codegraphLog);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "-" || "\${1:-}" == "-e" || "\${1:-}" == *.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/repo-harness"; chmod +x "$HOME/.bun/bin/repo-harness"; fi\nexit 0\n`);
+      const seedGlobalPackage = `import { seedGlobalPackageFixture } from ${JSON.stringify(new URL('../helpers/install-ownership.ts', import.meta.url).href)}; seedGlobalPackageFixture();`;
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "-" || "\${1:-}" == "-e" || "\${1:-}" == *.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/repo-harness"; chmod +x "$HOME/.bun/bin/repo-harness"; "${process.execPath}" -e '${seedGlobalPackage.replaceAll("'", "'\\''")}' || exit $?; fi\nexit 0\n`);
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
 printf '%s\\n' "$*" >> "${bunxLog}"
@@ -2657,11 +2660,12 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
 
   test('core-only selection reconciliation keeps ownership of explicitly requested new rules', () => {
     withRules(({ home, upstream, env, paths, run }) => {
+      seedGlobalPackageFixture(env);
       for (const path of paths) rmSync(path);
       recordInstallOwnership([], env);
       mkdirSync(join(home, '.codex', 'skills'), { recursive: true });
       symlinkSync(ROOT, join(home, '.codex', 'skills', 'repo-harness'), 'dir');
-      writeFileSync(join(home, '.codex', 'hooks.json'), JSON.stringify({ hooks: buildManagedHooks('codex') }));
+      writeFileSync(join(home, '.codex', 'hooks.json'), JSON.stringify({ hooks: buildManagedHooks('codex', env) }));
       mkdirSync(join(home, '.bun', 'bin'), { recursive: true });
       symlinkSync(CLI, join(home, '.bun', 'bin', 'repo-harness'));
       // Core owns its facades and the agent fleet, so a core-only state needs them present.

@@ -134,7 +134,7 @@ function checkPath(): DoctorCheckResult {
     id,
     describe,
     status: 'warn',
-    detail: `${[!resolved && 'repo-harness', !hook && 'repo-harness-hook'].filter(Boolean).join(' and ')} not on PATH; reinstall the repo-harness package. Opted-in repositories require repo-harness-hook.`,
+    detail: `${[!resolved && 'repo-harness', !hook && 'repo-harness-hook'].filter(Boolean).join(' and ')} not on PATH; reinstall the repo-harness package.`,
   };
 }
 
@@ -314,6 +314,7 @@ function checkTargetInstall(target: (typeof ALL_TARGETS)[number]): DoctorCheckRe
     };
   }
   const projection = inspectManagedProjection(det.configPath, target.id);
+  if (projection.error) return { id, describe, status: 'fail', detail: projection.error };
   if (projection.status === 'drift') {
     return {
       id, describe, status: 'warn',
@@ -376,7 +377,7 @@ function checkSecurityConfig(report: SecurityScanReport): DoctorCheckResult {
     id,
     describe,
     status: report.status === 'fail' ? 'fail' : 'warn',
-    detail: `${report.findings.length} finding(s): ${high} high, ${warn} warn, ${fail} fail${reviewed > 0 ? `; ${reviewed} reviewed exception(s)` : ''}; first=${first.ruleId} at ${first.filePath}`,
+    detail: `${report.findings.length} finding(s): ${high} high, ${warn} warn, ${fail} fail${reviewed > 0 ? `; ${reviewed} reviewed exception(s)` : ''}; first=${first.ruleId} at ${first.filePath}${first.ruleId === 'managed-hook-runtime-unavailable' ? `; ${first.recommendation}` : ''}`,
   };
 }
 
