@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { runGlobalRuntimeSetup, updateLeftoverSummary, updateRegisteredUpgradeSummary } from '../../src/cli/commands/global-runtime';
@@ -7,6 +7,54 @@ import { formatUpgradeSummaryLine, type UpgradeResult } from '../../src/cli/comm
 import type { LeftoverItem } from '../../src/effects/upgrade/legacy-inventory';
 import type { LegacyWorktreeCandidate } from '../../src/effects/upgrade/legacy-worktree-cleanup';
 import { adoptedRepo, commitAll, git, registeredReposFixture, worktreeSnapshot, writeRegistry } from '../helpers/registered-repos';
+import { version as PACKAGE_VERSION } from '../../package.json';
+
+describe('operator console setup', () => {
+  test('installs the local console only when selected and fails updates without a build', () => {
+    const root = mkdtempSync(join(tmpdir(), 'operator-console-'));
+    const source = join(root, 'source');
+    const home = join(root, 'home');
+    const bunInstall = join(root, 'bun');
+    const consoleSource = join(source, 'packages', 'operator-web');
+    const globalModules = join(bunInstall, 'install', 'global', 'node_modules');
+    const installed = join(globalModules, 'repo-harness-operator-web');
+    try {
+      mkdirSync(join(consoleSource, 'dist'), { recursive: true });
+      mkdirSync(join(globalModules, 'repo-harness'), { recursive: true });
+      mkdirSync(home, { recursive: true });
+      writeFileSync(join(consoleSource, 'package.json'), JSON.stringify({ name: 'repo-harness-operator-web', version: PACKAGE_VERSION }));
+      writeFileSync(join(consoleSource, 'dist', 'index.html'), '<html></html>');
+      writeFileSync(join(globalModules, 'repo-harness', 'package.json'), JSON.stringify({ name: 'repo-harness', version: PACKAGE_VERSION }));
+      symlinkSync(join(import.meta.dir, '../../assets'), join(source, 'assets'));
+      const run = (plugins: ('operator')[], updateMode = false) => runGlobalRuntimeSetup({
+        sourceRoot: source, cwd: root, env: { ...process.env, HOME: home, BUN_INSTALL: bunInstall },
+        plugins, updateMode, installCli: false, syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
+      });
+      expect(run([]).steps.find((step) => step.step === 'ensure operator console')).toMatchObject({ status: 'skipped', detail: 'operator plugin not selected' });
+      expect(existsSync(installed)).toBe(false);
+      expect(run(['operator']).steps.find((step) => step.step === 'ensure operator console')).toMatchObject({ status: 'ok' });
+      expect(JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8')).version).toBe(PACKAGE_VERSION);
+      writeFileSync(join(globalModules, 'repo-harness', 'package.json'), JSON.stringify({ name: 'repo-harness', version: '9.9.9' }));
+      const fakeBun = join(root, 'bun-executable');
+      const bunLog = join(root, 'bun.log');
+      writeFileSync(fakeBun, `#!/bin/bash\nif [[ "$1" == "--version" ]]; then echo 1.4.3; exit; fi\nprintf '%s\\n' "$*" >> "${bunLog}"\nversion="\${3#repo-harness-operator-web@}"\nprintf '{"name":"repo-harness-operator-web","version":"%s"}' "$version" > "${join(installed, 'package.json')}"\n`);
+      chmodSync(fakeBun, 0o755);
+      const registryUpdate = runGlobalRuntimeSetup({ sourceRoot: source, cwd: root, plugins: ['operator'], installCli: false,
+        installSpec: 'repo-harness@9.9.9', syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
+        env: { ...process.env, HOME: home, BUN_INSTALL: bunInstall, REPO_HARNESS_BUN_EXECUTABLE: fakeBun } });
+      expect(registryUpdate.steps.find((step) => step.step === 'ensure operator console')).toMatchObject({ status: 'ok' });
+      expect(readFileSync(bunLog, 'utf8')).toContain('add -g repo-harness-operator-web@9.9.9 --no-cache');
+      expect(JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8')).version).toBe('9.9.9');
+      rmSync(join(consoleSource, 'dist', 'index.html'));
+      const failed = run(['operator'], true);
+      expect(failed.exitCode).toBe(1);
+      expect(failed.stdout).toContain('ensure operator console');
+      expect(failed.stdout).toContain('bun run build:operator-web');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
 
 /**
  * Regression guard for the #169 base-dropping class on the setup-global surface.

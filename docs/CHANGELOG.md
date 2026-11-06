@@ -6,6 +6,8 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- Install and update the matching Operator console package when the `operator`
+  plugin is selected. Source installs require `bun run build:operator-web`. (#1892)
 - The built Operator console ships in `repo-harness-operator-web` at the same
   version as the CLI. Core packages and installed skill copies exclude the
   console build and source. Page requests return 503 when the console is

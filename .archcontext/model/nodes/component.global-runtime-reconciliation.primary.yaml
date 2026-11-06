@@ -10,6 +10,7 @@ responsibilities:
   - Keep one skill-root authority for Claude, Codex and Pi, including PI_CODING_AGENT_DIR.
   - Register the Pi package from the installed candidate after mandatory setup succeeds, and retain the created-source ownership result.
   - Run the ordered setup steps and stop at the first failed mandatory step.
+  - Install and verify the matching Operator console package when the operator plugin is selected.
   - Hand the rest of an update to the installed candidate entrypoint after dependency readback.
   - Keep the protected helper platform contract and the verified skill tree commits.
   - Remove retired repo-harness surfaces through the upgrade command with backups.

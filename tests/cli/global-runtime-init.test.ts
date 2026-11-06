@@ -32,10 +32,10 @@ const OBSIDIAN_PROVIDER = 'kepano/obsidian-skills#a1dc48e68138490d522c04cbf58222
 const FULL_PLUGINS = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const;
 
 // An explicit list never grows, so a host `pi` on the developer PATH cannot change the recorded selection.
-function recordExplicitFullSelection(home: string): void {
+function recordExplicitFullSelection(home: string, plugins: readonly PluginId[] = FULL_PLUGINS): void {
   recordInstallOwnership([], { HOME: home });
   const path = installProfileStatePath({ HOME: home });
-  writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf-8')), selection: FULL_PLUGINS }));
+  writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf-8')), ...versions(plugins), selection: plugins }));
 }
 
 function singleFileSkillIntegrity(content: string): string {
@@ -55,6 +55,17 @@ function singleFileManagedTreeHash(content: string): string {
 }
 
 function writeExecutable(filePath: string, content: string): void {
+  if (filePath.endsWith('/bun') && content.startsWith('#!/bin/bash\n')) {
+    const lines = content.split('\n');
+    const log = lines.findIndex((line) => line.includes('"$*"') && line.includes('>>'));
+    lines.splice(log < 0 ? 1 : log + 1, 0, `if [[ "\${1:-}" == add && "\${2:-}" == -g && ( "\${3:-}" == repo-harness-operator-web@* || "\${3:-}" == */packages/operator-web ) ]]; then
+  spec="$3"; version="\${spec#repo-harness-operator-web@}"
+  if [[ "$spec" == */packages/operator-web ]]; then version=$("${process.execPath}" -p 'require(process.argv[1]).version' "$spec/package.json"); fi
+  dest="\${BUN_INSTALL:-$HOME/.bun}/install/global/node_modules/repo-harness-operator-web"
+  mkdir -p "$dest"; printf '{"name":"repo-harness-operator-web","version":"%s"}' "$version" > "$dest/package.json"; exit 0
+fi`);
+    content = lines.join('\n');
+  }
   const interpreter = content.split('\n', 1)[0];
   if (interpreter === '#!/bin/sh' || interpreter === '#!/bin/bash') {
     writeShellExecutableFixture(filePath, content);
@@ -62,6 +73,20 @@ function writeExecutable(filePath: string, content: string): void {
   }
   writeFileSync(filePath, content);
   chmodSync(filePath, 0o755);
+}
+
+function setupConsoleFixture(home: string, source: string): void {
+  const consoleRoot = join(source, 'packages', 'operator-web');
+  mkdirSync(join(consoleRoot, 'dist'), { recursive: true });
+  const manifest = readFileSync(join(source, 'package.json'), 'utf8');
+  const version = JSON.parse(manifest).version;
+  writeFileSync(join(consoleRoot, 'package.json'), JSON.stringify({ name: 'repo-harness-operator-web', version }));
+  writeFileSync(join(consoleRoot, 'dist', 'index.html'), '<html></html>');
+  const cli = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
+  if (!existsSync(join(cli, 'package.json'))) {
+    mkdirSync(cli, { recursive: true });
+    writeFileSync(join(cli, 'package.json'), manifest);
+  }
 }
 
 // scripts/check-agent-tooling.sh (invoked by the CodeGraph configure step)
@@ -539,7 +564,7 @@ describe('install command global runtime bootstrap', () => {
       };
       const harnessVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version as string;
       setupManagedRuntimeReadback(home, fakeBin, harnessVersion);
-      recordExplicitFullSelection(home);
+      recordExplicitFullSelection(home, FULL_PLUGINS.filter(id => id !== 'operator'));
       delete childEnv.REPO_HARNESS_BUN_EXECUTABLE;
 
       const res = spawnSync(
@@ -583,13 +608,16 @@ describe('install command global runtime bootstrap', () => {
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       mkdirSync(join(validatedBun, '..'), { recursive: true });
-      symlinkSync(process.execPath, validatedBun);
+      writeExecutable(validatedBun, `#!/bin/bash\nif [[ "\${1:-}" == add && "\${2:-}" == -g && "\${3:-}" == */packages/operator-web ]]; then\n  dest="$BUN_INSTALL/install/global/node_modules/repo-harness-operator-web"; mkdir -p "$dest"; cp "$3/package.json" "$dest/package.json"; exit 0\nfi\nexec "${process.execPath}" "$@"\n`);
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.0.0; exit 0; fi\nexit 99\n');
       writeFakeHc(fakeBin);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
+      const source = join(tmp, 'source');
+      copyPackageRuntimeFixture(ROOT, source);
+      setupConsoleFixture(home, source);
 
       const result = runGlobalRuntimeSetup({
-        sourceRoot: ROOT,
+        sourceRoot: source,
         cwd: repo,
         target: 'codex',
         plugins: FULL_PLUGINS,
@@ -636,6 +664,10 @@ describe('install command global runtime bootstrap', () => {
       mkdirSync(fakeBin, { recursive: true });
       writeFakeHc(fakeBin);
       setupFakeSource(source);
+      setupConsoleFixture(home, source);
+      const globalDist = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness', 'dist');
+      mkdirSync(globalDist, { recursive: true });
+      copyFileSync(join(ROOT, 'dist', 'hook-entry.js'), join(globalDist, 'hook-entry.js'));
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       mkdirSync(join(home, '.agents', 'rules'), { recursive: true });
       writeFileSync(join(home, '.agents', 'rules', 'anti-patterns.md'), 'anti\n');
@@ -663,12 +695,13 @@ describe('install command global runtime bootstrap', () => {
         env: {
           ...sanitizedChildEnv(),
           HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: '0',
         },
       });
 
-      expect(result.exitCode).toBe(0);
+      expect(result.exitCode, result.stdout).toBe(0);
       expect(readFileSync(bunLog, 'utf-8').trim().split('\n')).toContain(`add -g ${source}`);
       expect(result.steps.find((step) => step.step === 'sync repo-harness skill runtime')?.stdout).toContain(
         'sync runtime',
@@ -1138,7 +1171,7 @@ exit 0
         obsidianSkills: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
-        env: { ...sanitizedChildEnv(), HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+        env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
       });
 
       expect(result.exitCode).toBe(1);
@@ -1228,7 +1261,7 @@ exit 0
         obsidianSkills: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
-        env: { ...sanitizedChildEnv(), HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+        env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
       });
 
       expect(result.exitCode).toBe(1);
@@ -1335,6 +1368,7 @@ exit 0
       writeFakeHc(fakeBin);
       setupFakeSource(source);
       const packDir = join(home, '.repo-harness', 'packages');
+      setupConsoleFixture(home, source);
       mkdirSync(packDir, { recursive: true });
       for (const name of ['repo-harness-9.9.8.tgz', 'repo-harness-0.10.0-local.tgz', 'other-1.0.0.tgz']) writeFileSync(join(packDir, name), '');
       writeReadyOfficialCodexPluginCli(fakeBin, home);
@@ -1387,10 +1421,10 @@ exit 0
         hostAdapters: false,
         externalSkills: false,
         codegraph: false,
-        env: { ...sanitizedChildEnv(), HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+        env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
       });
 
-      expect(result.exitCode).toBe(0);
+      expect(result.exitCode, result.stdout).toBe(0);
       const install = result.steps.find((step) => step.step === 'install repo-harness CLI');
       expect(install?.status).toBe('ok');
       expect(install?.detail).toBe('version=9.9.9; repaired=packed-tarball');
@@ -1418,9 +1452,13 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       writeFakeHc(fakeBin);
+      const source = join(tmp, 'source');
+      copyPackageRuntimeFixture(ROOT, source);
+      setupConsoleFixture(home, source);
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
 
       const result = runGlobalRuntimeSetup({
-        sourceRoot: ROOT,
+        sourceRoot: source,
         cwd: repo,
         target: 'claude',
         plugins: FULL_PLUGINS,
@@ -1515,6 +1553,9 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      const source = join(tmp, 'source');
+      copyPackageRuntimeFixture(ROOT, source);
+      setupConsoleFixture(home, source);
       for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid']) {
         mkdirSync(join(home, '.agents', 'skills', skill), { recursive: true });
         writeFileSync(join(home, '.agents', 'skills', skill, 'SKILL.md'), `# ${skill}\n`);
@@ -1524,7 +1565,7 @@ exit 0
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 0\n');
 
       const result = runGlobalRuntimeSetup({
-        sourceRoot: ROOT,
+        sourceRoot: source,
         cwd: repo,
         target: 'both',
         plugins: FULL_PLUGINS,
@@ -1644,6 +1685,7 @@ exit 0
       mkdirSync(fakeBin, { recursive: true });
       writeFakeHc(fakeBin);
       setupFakeSource(source);
+      setupConsoleFixture(home, source);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
       writeExecutable(join(fakeBin, 'npx'), '#!/bin/bash\nexit 0\n');
@@ -1658,6 +1700,7 @@ exit 0
         env: {
           ...sanitizedChildEnv(),
           HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
         },
       });
@@ -1686,6 +1729,7 @@ exit 0
       mkdirSync(fakeBin, { recursive: true });
       writeFakeHc(fakeBin);
       setupFakeSource(source);
+      setupConsoleFixture(home, source);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
       writeExecutable(join(fakeBin, 'npm'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${npmLog}"\nexit 42\n`);
@@ -1710,7 +1754,7 @@ exit 0
       expect(result.exitCode).toBe(0);
       expect(installStep?.status).toBe('skipped');
       expect(installStep?.detail).toContain('already installed from Bun global package source');
-      expect(readFileSync(bunLog, 'utf-8')).toBe('--version\n');
+      expect(readFileSync(bunLog, 'utf-8')).toBe(`--version\nadd -g ${join(source, 'packages', 'operator-web')}\n`);
       expect(existsSync(npmLog)).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -1735,6 +1779,7 @@ exit 0
       setupFakeSource(source);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       symlinkSync(source, globalPackage, 'dir');
+      setupConsoleFixture(home, source);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
 
       const result = runGlobalRuntimeSetup({
@@ -1757,7 +1802,7 @@ exit 0
       expect(result.exitCode).toBe(0);
       expect(installStep?.status).toBe('skipped');
       expect(installStep?.detail).toContain('already installed from Bun global package source');
-      expect(readFileSync(bunLog, 'utf-8')).toBe('--version\n');
+      expect(readFileSync(bunLog, 'utf-8')).toBe(`--version\nadd -g ${join(source, 'packages', 'operator-web')}\n`);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -1777,6 +1822,7 @@ exit 0
       mkdirSync(fakeBin, { recursive: true });
       writeFakeHc(fakeBin);
       setupFakeSource(source);
+      setupConsoleFixture(home, source);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
 
@@ -1807,7 +1853,7 @@ exit 0
       expect(installStep?.detail).toBe(
         'already installed from Bun global package source; version=9.9.9; latest=99.0.0 available — run: repo-harness update',
       );
-      expect(readFileSync(bunLog, 'utf-8')).toBe('--version\n');
+      expect(readFileSync(bunLog, 'utf-8')).toBe(`--version\nadd -g ${join(source, 'packages', 'operator-web')}\n`);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -1826,6 +1872,7 @@ exit 0
       mkdirSync(fakeBin, { recursive: true });
       writeFakeHc(fakeBin);
       setupFakeSource(source);
+      setupConsoleFixture(home, source);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
 
       const baseEnv: NodeJS.ProcessEnv = {
@@ -1866,7 +1913,7 @@ exit 0
       expect(equalStep?.status).toBe('skipped');
       expect(equalStep?.detail).toBe(expectedDetail);
 
-      expect(readFileSync(bunLog, 'utf-8')).toBe('--version\n--version\n');
+      expect(readFileSync(bunLog, 'utf-8')).toBe(`--version\nadd -g ${join(source, 'packages', 'operator-web')}\n--version\nadd -g ${join(source, 'packages', 'operator-web')}\n`);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -2120,6 +2167,8 @@ exit 0
         'spec=repo-harness@9.9.9',
       );
       expect(readFileSync(bunLog, 'utf-8')).toContain('add -g repo-harness@9.9.9');
+      expect(readFileSync(bunLog, 'utf-8')).toContain('add -g repo-harness-operator-web@9.9.9 --no-cache');
+      expect(JSON.parse(readFileSync(join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness-operator-web', 'package.json'), 'utf8')).version).toBe('9.9.9');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

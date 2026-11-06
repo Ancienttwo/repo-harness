@@ -34,7 +34,7 @@ import {
 import {
   enabledPlugins,
 } from "../installer/install-state";
-import { installSelectionCommand, ownerEnabled, type PluginId } from "../../core/skill-surface/plugin-manifest";
+import { installSelectionCommand, OPERATOR_WEB_PACKAGE_NAME, ownerEnabled, type PluginId } from "../../core/skill-surface/plugin-manifest";
 import { compareHcVersions, HC_MIN_VERSION, HC_RELEASE_ASSETS, type HcReleaseAsset } from "../../core/terminal/herdr-pin";
 import {
   parseSkillSurfaceCatalog,
@@ -1415,6 +1415,33 @@ export function configureProtectedHelperPlatform(
   }
 }
 
+function ensureOperatorConsole(sourceRoot: string, cwd: string, bunExecutable: string, env: NodeJS.ProcessEnv, registry: boolean): GlobalRuntimeStep {
+  const step = 'ensure operator console';
+  const localPackage = join(sourceRoot, 'packages', 'operator-web');
+  if (!registry && !existsSync(join(localPackage, 'dist', 'index.html'))) {
+    return { step, status: 'failed', detail: `console build missing; run bun run build:operator-web in ${sourceRoot}` };
+  }
+  const cliRoot = bunGlobalPackageRoot(env);
+  let cliVersion: unknown;
+  try {
+    cliVersion = cliRoot === null ? null : readPackageManifest(cliRoot).version;
+  } catch (error) {
+    return { step, status: 'failed', detail: `CLI readback failed: ${error instanceof Error ? error.message : String(error)}` };
+  }
+  if (typeof cliVersion !== 'string' || !cliVersion) return { step, status: 'failed', detail: 'installed CLI version is unavailable' };
+  const spec = registry ? `${OPERATOR_WEB_PACKAGE_NAME}@${cliVersion}` : localPackage;
+  const install = runProcess(bunExecutable, ['add', '-g', spec, ...(registry ? ['--no-cache'] : [])], cwd, env);
+  if (install.status !== 'ok') return withStepName(install, step, spec);
+  try {
+    const consoleRoot = findInstalledPackageRoot(cliRoot!, OPERATOR_WEB_PACKAGE_NAME);
+    const version = consoleRoot === null ? null : readPackageManifest(consoleRoot).version;
+    if (version !== cliVersion) return { ...install, step, status: 'failed', detail: `console readback mismatch: expected ${cliVersion}, got ${String(version)}` };
+    return withStepName(install, step, `version=${version}`);
+  } catch (error) {
+    return { ...install, step, status: 'failed', detail: `console readback failed: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
 function ensureCodegraphCli(cwd: string, bunExecutable: string, codegraphVersion: string, env?: NodeJS.ProcessEnv, refresh = false): GlobalRuntimeStep {
   const codegraphPackage = `@colbymchenry/codegraph@${codegraphVersion}`;
   const check = runProcess("codegraph", ["--version"], cwd, env);
@@ -1693,6 +1720,12 @@ export function runGlobalRuntimeSetup(
     if (updateMode && opts.installSpec) steps.push(reconcileManagedRuntime(cwd, bunExecutable, env, opts.installSpec, plugins));
     if (updateMode && steps.some((step) => step.status === "failed")) return finalizeRuntimeResult(steps);
   }
+
+  const consoleStep = plugins.includes('operator')
+    ? ensureOperatorConsole(sourceRoot, cwd, bunExecutable, env, (opts.installSpec?.startsWith('repo-harness@') ?? false) || ((isBunGlobalPackageSource(sourceRoot, env) || isNpxCacheSource(sourceRoot)) && !existsSync(join(sourceRoot, 'packages', 'operator-web', 'package.json'))))
+    : { step: 'ensure operator console', status: 'skipped' as const, detail: 'operator plugin not selected' };
+  steps.push(consoleStep);
+  if (consoleStep.status === 'failed') return finalizeRuntimeResult(steps);
 
   if (updateMode && opts.installSpec) {
     const daemon = inspectManagedDaemonRuntime(cwd, env, plugins);

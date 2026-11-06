@@ -1397,7 +1397,7 @@ function writeState(state: InstallState, env: NodeJS.ProcessEnv): void {
   renameSync(temp, target);
 }
 
-/** Core and every enabled plugin record the running package version until plugins ship separately (#1287 step 4). */
+/** Core and enabled plugins record the running CLI version. */
 export function versions(plugins: readonly PluginId[]): Pick<InstallState, 'core' | 'plugins'> {
   return { core: { version: PACKAGE_VERSION }, plugins: plugins.map(id => ({ id, version: PACKAGE_VERSION })) };
 }
