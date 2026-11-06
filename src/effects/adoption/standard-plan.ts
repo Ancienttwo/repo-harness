@@ -11,6 +11,7 @@ import { managedBlockNeedsUpdate } from "../../core/adoption/managed-block";
 import { renderWorkflowContractMarker } from "../../core/adoption/workflow-contract-asset";
 import { minimumHarnessVersionOf } from "../../core/adoption/minimum-harness-version";
 import { planLegacyLeftovers, stripLegacyHookEntries } from "../upgrade/legacy-inventory";
+import { runGit } from "../git/run-git";
 
 const ASSET_ROOT = join(import.meta.dir, "..", "..", "..", "assets");
 const TEMPLATE_ROOT = join(ASSET_ROOT, "templates");
@@ -235,7 +236,49 @@ function requireDocumentationLanguage(value: unknown): DocumentationLanguage {
   );
 }
 
-export function defaultPolicy(documentationProfile: string, documentationLanguage: string): JsonObject {
+const REMOTE_HEAD_PREFIX = "refs/remotes/origin/";
+
+/** No git ref names a default branch, so `init` cannot author `review_base`. */
+export class ReviewBaseUnresolvedError extends Error {
+  readonly code = "review_base_unresolved";
+
+  constructor(repoRoot: string) {
+    super(
+      `cannot set .ai/harness/policy.json#worktree_strategy.review_base: ${repoRoot} has no refs/remotes/origin/HEAD and no current branch (detached HEAD or not a git repository). Check out a branch or run \`git remote set-head origin --auto\`, then run repo-harness init again. Use --mode minimal for a non-git scaffold.`,
+    );
+    this.name = "ReviewBaseUnresolvedError";
+  }
+}
+
+function symbolicRef(repoRoot: string, env: NodeJS.ProcessEnv | undefined, args: readonly string[]): string | null {
+  const read = runGit(["-C", repoRoot, "symbolic-ref", "--quiet", ...args], { env });
+  if (read.ok) return read.stdout.trim();
+  // Exit 1 is the one answer that means "not a symbolic ref". Any other failure must not select a lower authority.
+  if (read.status === 1 && !read.timedOut) return null;
+  throw new ReviewBaseUnresolvedError(repoRoot);
+}
+
+/** An unborn HEAD still names its branch. The git refs are the authority, read once when the policy is created. */
+function defaultBranchOf(repoRoot: string, env: NodeJS.ProcessEnv | undefined): string {
+  const remoteHead = symbolicRef(repoRoot, env, ["refs/remotes/origin/HEAD"]);
+  if (remoteHead?.startsWith(REMOTE_HEAD_PREFIX)) return remoteHead.slice(REMOTE_HEAD_PREFIX.length);
+  const currentBranch = symbolicRef(repoRoot, env, ["--short", "HEAD"]);
+  if (currentBranch) return currentBranch;
+  throw new ReviewBaseUnresolvedError(repoRoot);
+}
+
+/**
+ * Only a new policy reads git. An existing policy supplies its own value here so that the
+ * key keeps its position in the merged bytes, and a missing key stays missing.
+ */
+function reviewBaseFor(opts: StandardPlanOptions, policyCurrent: JsonObject | undefined): unknown {
+  if (policyCurrent !== undefined) {
+    return isObject(policyCurrent.worktree_strategy) ? policyCurrent.worktree_strategy.review_base : undefined;
+  }
+  return opts.mode === "minimal" ? undefined : defaultBranchOf(opts.repoRoot, opts.env);
+}
+
+export function defaultPolicy(documentationProfile: string, documentationLanguage: string, reviewBase?: unknown): JsonObject {
   return {
     version: 1,
     tasks: {
@@ -252,7 +295,7 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
     worktree_strategy: {
       worktree_dir_template: DEFAULT_WORKTREE_TEMPLATE,
       base_branch: "main",
-      review_base: "main",
+      ...(reviewBase === undefined ? {} : { review_base: reviewBase }),
       merge_back: {
         target: "main",
       },
@@ -632,9 +675,9 @@ function retireAdoptionPolicy(policy: Record<string, unknown>): string[] {
 export function planStandardAdoption(opts: StandardPlanOptions): { operations: AdoptionOperation[]; warnings: AdoptionWarning[] } {
   const operations: AdoptionOperation[] = [];
   const documentationProfile = opts.env?.REPO_HARNESS_DOCUMENTATION_PROFILE ?? "minimal-agentic";
-  const documentationLanguage = opts.env?.REPO_HARNESS_DOCUMENTATION_LANGUAGE ?? "en";
+  const documentationLanguage = requireDocumentationLanguage(opts.env?.REPO_HARNESS_DOCUMENTATION_LANGUAGE ?? "en");
   const policyCurrent = jsonFile(opts.repoRoot, ".ai/harness/policy.json");
-  const policy = deepMergeDefaults(defaultPolicy(documentationProfile, documentationLanguage), policyCurrent);
+  const policy = deepMergeDefaults(defaultPolicy(documentationProfile, documentationLanguage, reviewBaseFor(opts, policyCurrent)), policyCurrent);
   const mergedDocumentation = isObject(policy.documentation) ? policy.documentation : {};
   requireDocumentationLanguage(mergedDocumentation.language);
   delete policy.hook_source;

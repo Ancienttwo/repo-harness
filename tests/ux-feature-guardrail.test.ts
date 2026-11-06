@@ -48,6 +48,7 @@ describe("UX feature pre-implementation guard", () => {
   test("includes the convention in minimal-agentic adoption without a second product surface", () => {
     const repo = mkdtempSync(join(tmpdir(), "repo-harness-ux-guard-"));
     try {
+      expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       const plan = planAdoption({ repoRoot: repo, mode: "standard" });
       const operation = plan.operations.find(
         (entry) => entry.path === "docs/reference-configs/ux-feature-guard.md",

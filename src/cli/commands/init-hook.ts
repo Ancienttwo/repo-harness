@@ -24,6 +24,8 @@ import { readUpgradeDecisions, type UpgradeDecision } from '../../effects/upgrad
 import { installOwnershipReader, planUpgrade } from './upgrade';
 import { stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { planAdoption } from '../../effects/adoption/plan';
+import { ReviewBaseUnresolvedError } from '../../effects/adoption/standard-plan';
+import type { AdoptionPlan } from '../../core/adoption/operations';
 import { isRepoHarnessSourceCheckout } from '../../effects/source-checkout';
 import { resolveRepoRoot } from '../hook/runtime';
 import { isUserLevelAdapter } from './migrate';
@@ -319,7 +321,22 @@ function adoptionRefreshCheck(
     };
   }
 
-  const plan = planAdoption({ repoRoot: report.repo.repoRoot, mode: 'standard', apply: false });
+  let plan: AdoptionPlan;
+  try {
+    plan = planAdoption({ repoRoot: report.repo.repoRoot, mode: 'standard', apply: false });
+  } catch (error) {
+    if (!(error instanceof ReviewBaseUnresolvedError)) throw error;
+    addAction(actions, {
+      id: 'repo.init-refresh',
+      status: 'needs_agent',
+      reason: error.message,
+      requires_agent: true,
+      risk: 'init refuses until the repository names a default branch; repair the git refs first.',
+      targets: [report.repo.repoRoot],
+      verification: verificationCommand(target, checkUpdates),
+    }, [id]);
+    return { id, title, status: 'needs_agent', source: 'status', detail: error.message };
+  }
   if (plan.summary.plannedTotal === 0) {
     return {
       id,
