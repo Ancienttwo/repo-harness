@@ -52,11 +52,6 @@ describe("init-project settings runtime", () => {
       expect(existsSync(join(cwd, "tasks/workstreams"))).toBe(false);
       expect(existsSync(join(cwd, "tasks/current.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/prds/prd.template.md"))).toBe(true);
-      const policy = JSON.parse(readFileSync(join(cwd, ".ai/harness/policy.json"), "utf-8"));
-      expect(policy.active_plan).toBeUndefined();
-      expect(policy.tasks.current_status_file).toBeUndefined();
-      expect(policy.tasks.workstreams_dir).toBeUndefined();
-      expect(policy.tasks.lessons_file).toBe("tasks/lessons.md");
       expect(existsSync(join(cwd, "tasks/todos.md"))).toBe(false);
       expect(existsSync(join(cwd, "tasks/notes"))).toBe(false);
       expect(existsSync(join(cwd, "tasks/reviews"))).toBe(false);

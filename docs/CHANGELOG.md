@@ -9,6 +9,14 @@ All notable changes to this skill are documented here.
 - A plugin command guard on a recorded `all` selection now prints
   `repo-harness update`. An explicit `--plugins` list ended `all`, so later
   plugins did not join at `update`. (#1869)
+- `repo-harness init` writes `base_branch` and `merge_back.target` from the
+  same Git read as `review_base`, only when it creates the policy. An existing
+  policy keeps its keys: a policy without `base_branch` or `merge_back.target`
+  stays without the key, and `init` no longer adds `main` there. (#1865)
+- `scripts/create-project-dirs.sh` and `scripts/init-project.sh` no longer
+  write `.ai/harness/policy.json`. `repo-harness init` is the one policy
+  writer and stays a separate step, so a scaffolded project has no policy
+  until `init` runs. (#1865)
 
 ## [0.26.5] - 2026-11-06
 

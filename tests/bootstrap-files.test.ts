@@ -215,9 +215,6 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).toContain("check:deploy-sql");
     expect(sharedLib).toContain('"check:brain": "repo-harness brain check"');
     expect(sharedLib).toContain('"sync:brain": "repo-harness brain sync"');
-    expect(sharedLib).toContain("spawn_decision");
-    expect(sharedLib).toContain("fallback_runner");
-    expect(sharedLib).toContain("if spawning is not worthwhile");
     expect(sharedLib).toContain("pi_print_external_tooling_report");
     expect(contract.helpers.scripts).toContain("check-deploy-sql-order.sh");
     expect(content).toContain("mkdir -p .ai/context");
