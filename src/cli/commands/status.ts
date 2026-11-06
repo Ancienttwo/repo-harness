@@ -11,7 +11,6 @@ import { version as PACKAGE_VERSION } from '../../../package.json';
 import { ALL_TARGETS } from '../installer/targets/registry';
 import { ROUTES, routesForHost } from '../hook/route-registry';
 import {
-  buildManagedHooks,
   compareManagedHookProjection,
   isManagedEntry,
   type HookHost,
@@ -100,7 +99,7 @@ function countManagedEntries(filePath: string): number {
 }
 
 function expectedManagedEntryCount(host: HookHost): number {
-  return Object.values(buildManagedHooks(host)).reduce((count, entries) => count + entries.length, 0);
+  return routesForHost(host).length;
 }
 
 export function inspectManagedProjection(
@@ -238,7 +237,9 @@ export function formatStatus(report: StatusReport, asJson = false): string {
     if (!t.installed) status = 'host not detected';
     else if (!t.alreadyConfigured) status = 'host present, repo-harness not installed';
     else status = `${t.managedEntryCount}/${t.expectedEntryCount} managed entries`;
-    if (t.alreadyConfigured && t.projection?.status === 'drift' && t.projection.mismatches.length > 0) {
+    if (t.projection?.error) {
+      status += `; projection check failed: ${t.projection.error}`;
+    } else if (t.alreadyConfigured && t.projection?.status === 'drift' && t.projection.mismatches.length > 0) {
       status += `; projection drift: ${t.projection.mismatches.map(formatManagedHookProjectionMismatch).join('; ')}`;
     }
     lines.push(`  ${t.id} (${t.location}): ${status}`);

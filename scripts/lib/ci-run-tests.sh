@@ -244,11 +244,8 @@ _ci_run_bun_test_pool() {
   return "$pool_error"
 }
 
-# dist/ is ignored, so a stale local bundle silently runs old behavior. Build the
-# hook bundle only when a selected file spawns dist/hook-entry.js; every other
-# selection skips the build.
 _ci_build_hook_bundle_if_selected() {
-  grep -qsE 'hook-entry\.js' -- "$@" || return 0
+  grep -qsE 'hook-entry\.js|seedGlobalPackageFixture' -- "$@" || return 0
   (cd "$(dirname "${BASH_SOURCE[0]}")/../.." && bun run build:hook-bundle) || return $?
 }
 
@@ -354,6 +351,7 @@ run_bun_tests() {
 
   # Isolate mode keeps running every selected file after a failure so one early
   # red file cannot hide the rest of the suite from the gate's log.
+  _ci_build_hook_bundle_if_selected ${files[@]+"${files[@]}"} ${serial_files[@]+"${serial_files[@]}"} || return $?
   echo "[ci] parallel files=${#files[@]} jobs=$jobs; serial tail=${#serial_files[@]}"
   if [[ "$jobs" -eq 1 ]]; then
     for file in ${files[@]+"${files[@]}"}; do
@@ -406,7 +404,6 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     exit 2
   fi
   cd "$(dirname "${BASH_SOURCE[0]}")/../.."
-  bun run build:hook-bundle
   bun run build:oar-review-host
   unset BUN_TEST_FILES
   BUN_TEST_ISOLATE_FILES=1

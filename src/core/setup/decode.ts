@@ -99,11 +99,12 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV2 {
     const adapterCheck = nullable(h.adapter_check, x => oneOf(x, SETUP_CHECK_STATUSES, 'adapter_check'));
     const detected = nullable(h.detected, x => bool(x, 'detected'));
     const adapter = nullable(h.adapter, x => {
-      const a = obj(x, ['configured', 'managed_entries', 'expected_entries', 'projection', 'mismatches'], 'adapter');
+      const a = obj(x, ['configured', 'managed_entries', 'expected_entries', 'projection', 'projection_error', 'mismatches'], 'adapter');
       bool(a.configured, 'configured');
       count(a.managed_entries, 'managed_entries');
       count(a.expected_entries, 'expected_entries');
       nullable(a.projection, y => oneOf(y, ['consistent', 'drift'], 'projection'));
+      nullable(a.projection_error, y => text(y, 'projection_error'));
       for (const rawMismatch of array(a.mismatches, 'mismatches')) {
         const m = obj(rawMismatch, ['kind', 'event', 'route_id', 'field'], 'mismatch');
         oneOf(m.kind, SETUP_HOOK_MISMATCH_KINDS, 'mismatch kind');
