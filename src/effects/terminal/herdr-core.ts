@@ -3,6 +3,7 @@ import { createInterface } from 'readline';
 import type { AttentionHostFailureV1, AttentionHostPortsV1, AttentionWatcherV1 } from '../../core/board/attention-delivery';
 import type { BoardHostPortsV1 } from '../../core/board/board';
 import { NOTIFY_SECRET_KEYS } from '../../core/decision/notify-secret-keys';
+import { HC_LOCAL_ADDRESS, isRemoteHcAddress } from '../../core/terminal/hc-address';
 
 /**
  * herdr-core transport: typed `hc` CLI calls with `--json`, its event stream, and `herdr-app do` for pane
@@ -109,16 +110,9 @@ const RH_KEYS: ReadonlySet<string> = new Set(Object.values(RH_LABEL));
 const RH_ROLES: ReadonlySet<string> = new Set(Object.values(RH_ROLE));
 const LABEL_KEY = /^[a-z][a-z0-9._-]{0,63}$/;
 const LABEL_VALUE = /^[\x21-\x7e][\x20-\x7e]{0,255}$/;
-/**
- * hc's own address for a terminal on this core (hc terminals.rs `id_shaped`, floor 0.1.17): `t`, then 1-9, then base-30
- * symbols, for example `t7` or `t1b`. A name can name a later terminal; this address never does, and no name has
- * this shape. hc ids are u32, so an address has at most seven symbols.
- */
-const ADDRESS = /^t[1-9][0-9bcdfghjkmnpqrstvwxyz]{0,6}$/;
-
-/** True when `value` has hc's terminal address shape (see ADDRESS). */
+/** True when `value` has hc's terminal address shape on this core. */
 export function isHcAddress(value: string): boolean {
-  return ADDRESS.test(value);
+  return HC_LOCAL_ADDRESS.test(value);
 }
 
 const invalidResponse = (detail: string) => new HerdrCoreError('hc', 'invalid_response', undefined, undefined, detail);
@@ -257,7 +251,7 @@ function status(value: unknown, where: string): HcStatus | null {
 }
 
 function terminalSummary(value: unknown): HcTerminalSummary {
-  if (!isRecord(value) || !isString(value.address) || (value.state !== 'live' && value.state !== 'finished')) {
+  if (!isRecord(value) || !isString(value.address) || !isHcAddress(value.address) || (value.state !== 'live' && value.state !== 'finished')) {
     throw invalidResponse('terminal is missing address or state');
   }
   // `run` and `ls` rows omit the name of an unnamed terminal; `get` reports it as null.
@@ -340,9 +334,13 @@ export async function hcListAsync(labels: HcLabels, options: HcListOptions = {})
 
 function listResult(result: Record<string, unknown>): HcListTerminal[] {
   if (!Array.isArray(result.terminals)) throw invalidResponse('ls has no terminals array');
-  return result.terminals.map(value => ({
+  return result.terminals.filter(value => !isRemoteTerminal(value)).map(value => ({
     ...terminalSummary(value), agent: optional(value, 'agent', orNull(isString), `terminal ${value.address}`) ?? null,
   }));
+}
+
+function isRemoteTerminal(value: unknown): boolean {
+  return isRecord(value) && isString(value.address) && isRemoteHcAddress(value.address);
 }
 
 const VERSION = /^[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}$/u;
@@ -427,14 +425,17 @@ export function hcRm(terminalAddress: string, options: HerdrCoreOptions = {}): s
 function streamItem(line: string): HcStreamItem | null {
   const value = parseObject('hc', line);
   if (Array.isArray(value.terminals) && Number.isSafeInteger(value.seq)) {
-    return { type: 'snapshot', seq: value.seq as number, terminals: value.terminals.map(terminal) };
+    return { type: 'snapshot', seq: value.seq as number, terminals: value.terminals.filter(row => !isRemoteTerminal(row)).map(terminal) };
   }
   const params = value.params;
+  if (value.method === 'event' && isRecord(params) && isString(params.terminal) && isRemoteHcAddress(params.terminal)) return null;
   if (!isRecord(params) || !Number.isSafeInteger(params.seq)) throw invalidResponse('event line has no params.seq');
   const seq = params.seq as number;
   if (value.method === 'heartbeat') return null;
-  if (value.method === 'missed' && Array.isArray(params.terminals)) return { type: 'missed', seq, terminals: params.terminals.map(terminal) };
-  if (value.method === 'event' && isString(params.terminal) && isString(params.type)
+  if (value.method === 'missed' && Array.isArray(params.terminals)) {
+    return { type: 'missed', seq, terminals: params.terminals.filter(row => !isRemoteTerminal(row)).map(terminal) };
+  }
+  if (value.method === 'event' && isString(params.terminal) && isHcAddress(params.terminal) && isString(params.type)
     && (isRecord(params.data) || (params.data === null && params.type === 'foreground'))) {
     return { type: 'event', seq, terminal: params.terminal, event: params.type, data: params.data };
   }
