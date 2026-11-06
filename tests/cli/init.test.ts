@@ -51,6 +51,11 @@ afterAll(() => {
   rmSync(fakeHcBin, { recursive: true, force: true });
 });
 
+function makeGitRepo(path: string): void {
+  mkdirSync(path, { recursive: true });
+  expect(spawnSync("git", ["init", "-q"], { cwd: path }).status).toBe(0);
+}
+
 function makeExecutable(path: string, body: string): void {
   writeFileSync(path, body);
   chmodSync(path, 0o755);
@@ -204,7 +209,7 @@ describe("init command", () => {
     const configPath = join(accountHome, ".repo-harness/config.json");
     try {
       mkdirSync(source, { recursive: true });
-      mkdirSync(repo, { recursive: true });
+      makeGitRepo(repo);
       mkdirSync(dirname(configPath), { recursive: true });
       setupFakeSource(source);
       writeFileSync(configPath, JSON.stringify({ brainRoot: "/existing/brain" }));
@@ -257,7 +262,7 @@ describe("init command", () => {
     const configPath = join(home, ".repo-harness/config.json");
     try {
       mkdirSync(source, { recursive: true });
-      mkdirSync(repo, { recursive: true });
+      makeGitRepo(repo);
       mkdirSync(dirname(configPath), { recursive: true });
       setupFakeSource(source);
       const original = JSON.stringify({ brainRoot: "/existing/brain" });
@@ -369,7 +374,7 @@ describe("init command", () => {
     const home = join(tmp, "home");
     try {
       mkdirSync(source, { recursive: true });
-      mkdirSync(repo, { recursive: true });
+      makeGitRepo(repo);
       mkdirSync(home, { recursive: true });
       setupFakeSource(source);
 
@@ -470,7 +475,7 @@ describe("init command", () => {
     const home = join(tmp, "home");
     try {
       mkdirSync(source, { recursive: true });
-      mkdirSync(repo, { recursive: true });
+      makeGitRepo(repo);
       setupFakeSource(source);
 
       const result = runSelectedInit({
@@ -518,7 +523,7 @@ describe("init command", () => {
     };
     try {
       mkdirSync(source, { recursive: true });
-      mkdirSync(repo, { recursive: true });
+      makeGitRepo(repo);
       mkdirSync(home, { recursive: true });
       setupFakeSource(source);
       process.env.HOME = home;
@@ -550,7 +555,7 @@ describe("init command", () => {
   test("CLI init --dry-run --json returns the adoption planner protocol", () => {
     const tmp = join(tmpdir(), `repo-harness-init-cli-codegraph-${Date.now()}`);
     try {
-      mkdirSync(tmp, { recursive: true });
+      makeGitRepo(tmp);
       const res = spawnSync(
         "bun",
         [

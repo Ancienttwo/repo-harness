@@ -612,6 +612,7 @@ describe('init-hook command', () => {
       mkdirSync(join(repo, '.ai', 'harness'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
       writeFileSync(join(repo, '.ai', 'harness', 'workflow-contract.json'), '{}\n');
+      expect(spawnSync('git', ['init', '-q'], { cwd: repo }).status).toBe(0);
 
       const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
@@ -633,10 +634,38 @@ describe('init-hook command', () => {
     });
   });
 
+  test('turns an unresolved review base into an Agent action without a refresh command', () => {
+    withTempHome((home, repo) => {
+      mkdirSync(join(repo, '.ai', 'harness'), { recursive: true });
+      writeFileSync(join(repo, '.ai', 'harness', 'workflow-contract.json'), '{}\n');
+      for (const args of [['init', '-q'], ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'base'], ['checkout', '-q', '--detach']]) {
+        expect(spawnSync('git', args, { cwd: repo }).status).toBe(0);
+      }
+
+      const report = runInitHook(CLI_PORTS.doctor, {
+        cwd: repo,
+        target: 'codex',
+        checkUpdates: true,
+        env: { ...process.env, HOME: home },
+        statusReport: statusReportForRepo(repo),
+        doctorReport: baseDoctorReport(),
+        toolingReport: baseToolingReport(),
+      });
+
+      const check = report.checks.find((entry) => entry.id === 'repo.init-refresh');
+      expect(check?.status).toBe('needs_agent');
+      expect(check?.detail).toContain('worktree_strategy.review_base');
+      const action = report.agent_actions.find((entry) => entry.id === 'repo.init-refresh');
+      expect(action?.reason).toContain('worktree_strategy.review_base');
+      expect(action?.command).toBeUndefined();
+    });
+  });
+
   test('reports adopted repo refresh as ok when the adoption dry-run is a no-op', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
+      expect(spawnSync('git', ['init', '-q'], { cwd: repo }).status).toBe(0);
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: 'standard', apply: false }));
       expect(apply.ok).toBe(true);
 

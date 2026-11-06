@@ -517,6 +517,7 @@ describe("state inspection and legacy doc migration", () => {
     const repo = mkdtempSync(join(tmpdir(), "migrate-workflow-docs-"));
 
     try {
+      expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       mkdirSync(join(repo, "docs"), { recursive: true });
       const legacy: Record<string, string> = {
         "docs/TODO.md": "- [ ] port old checklist\n",
@@ -544,6 +545,7 @@ describe("state inspection and legacy doc migration", () => {
       const content = "# Old Todo\n\n- [ ] existing task\n";
 
       try {
+        expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
         mkdirSync(join(repo, "tasks"), { recursive: true });
         writeFileSync(join(repo, "tasks", filename), content);
 

@@ -11,6 +11,7 @@ describe("adoption hook projection", () => {
   test("standard adoption does not project operator libraries", () => {
     const repo = mkdtempSync(join(tmpdir(), "hook-recursive-adoption-"));
     try {
+      expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
       expect(apply.ok).toBe(true);
       expect(existsSync(join(repo, ".ai/hooks/lib/workflow-state.sh"))).toBe(false);
@@ -48,6 +49,7 @@ for (const mode of ['minimal', 'standard'] as const) {
   test(`${mode} adoption omits the library write and keeps a legacy library callable`, () => {
     const repo = mkdtempSync(join(tmpdir(), 'workflow-state-legacy-adoption-'));
     try {
+      expect(spawnSync('git', ['init', '-q'], { cwd: repo }).status).toBe(0);
       const legacy = readUpgradeFixture('upgrade-v0.10-project', '.ai/hooks/lib/workflow-state.sh').toString('utf8');
       mkdirSync(join(repo, '.ai/hooks/lib'), { recursive: true });
       writeFileSync(join(repo, '.ai/hooks/lib/workflow-state.sh'), legacy);

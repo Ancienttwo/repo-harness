@@ -2,6 +2,7 @@ import { join, resolve } from "path";
 import type { AdoptionMode } from "../../core/adoption/modes";
 import type { AdoptionPlan } from "../../core/adoption/operations";
 import { planAdoption } from "../../effects/adoption/plan";
+import { ReviewBaseUnresolvedError } from "../../effects/adoption/standard-plan";
 import { renderAdoptionPlanJson, renderAdoptionPlanObject, renderAdoptionPlanText } from "../../core/adoption/render";
 import { applyAdoptionPlan, type ApplyAdoptionPlanResult } from "../../effects/fs-transaction";
 import { registerRepoHarnessRepo, type RepoHarnessRegisterResult } from "../../effects/repo-registry";
@@ -77,14 +78,15 @@ export function planRepoAdoption(opts: RunAdoptionPlanOptions): RepoAdoptionPlan
   try {
     return { repoRoot, plan: planAdoption({ repoRoot, mode: opts.mode, apply: false, env: opts.env }) };
   } catch (error) {
-    return { repoRoot, error: { code: "invalid_adoption_plan", message: error instanceof Error ? error.message : String(error) } };
+    const code = error instanceof ReviewBaseUnresolvedError ? error.code : "invalid_adoption_plan";
+    return { repoRoot, error: { code, message: error instanceof Error ? error.message : String(error) } };
   }
 }
 
 function createPlan(opts: RunAdoptionPlanOptions) {
   const planned = planRepoAdoption(opts);
   if (planned.error) {
-    return { repoRoot: planned.repoRoot, error: errorOutput(planned.repoRoot, opts.mode, planned.error.code, planned.error.message, opts.json === true) };
+    return { repoRoot: planned.repoRoot, code: planned.error.code, error: errorOutput(planned.repoRoot, opts.mode, planned.error.code, planned.error.message, opts.json === true) };
   }
   return { repoRoot: planned.repoRoot, plan: planned.plan };
 }
@@ -161,7 +163,7 @@ export function runAdoptionApply(opts: RunAdoptionPlanOptions): RunAdoptionApply
       mode: opts.mode,
       ok: false,
       plan: {},
-      errors: [{ code: "invalid_adoption_plan", message: created.error.output.trim() }],
+      errors: [{ code: created.code, message: created.error.output.trim() }],
     };
     return { ...created.error, report };
   }

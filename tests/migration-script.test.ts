@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { spawnSync } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
 import { planAdoption } from "../src/effects/adoption/plan";
@@ -31,6 +32,7 @@ describe("adoption migration cutover", () => {
     const repo = mkdtempSync(join(tmpdir(), "adoption-cleanup-"));
     const root = join(import.meta.dir, "..");
     try {
+      expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       mkdirSync(join(repo, "scripts"), { recursive: true });
       const generated = readFileSync(join(root, "scripts/check-deploy-sql-order.sh"), "utf-8");
       writeFileSync(join(repo, "scripts/check-deploy-sql-order.sh"), generated);

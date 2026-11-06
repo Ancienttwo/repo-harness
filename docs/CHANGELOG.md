@@ -36,6 +36,13 @@ All notable changes to this skill are documented here.
 - Antigravity needs agy CLI 1.5.0 or newer, because OAR 0.88.0 runs `agy acp`.
   The runtime probe reports an older agy as `unsupported`. Antigravity sessions
   from older OAR do not resume. (#1854)
+- `init` no longer writes `review_base: "main"` by default. When it creates
+  `.ai/harness/policy.json`, it reads `refs/remotes/origin/HEAD`, else the
+  current branch, and writes that name as `worktree_strategy.review_base`. An
+  unborn HEAD uses its branch name. An existing policy keeps its keys. In
+  standard mode, a detached HEAD or a non-git target now refuses with
+  `review_base_unresolved`, and the error names the policy key and the repair.
+  Use `--mode minimal` for a non-git scaffold. (#1859)
 
 ### Changed
 
