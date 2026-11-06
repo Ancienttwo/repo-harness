@@ -2,6 +2,14 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Breaking
+
+- Installation refuses configuration receipts with the retired
+  `mcp_servers.repo_harness` selector. Remove the retired entry from
+  `~/.repo-harness/configuration-restore.json` before retrying. (#1839)
+
 ## [0.26.4] - 2026-11-05
 
 This release adds the Office landing page, repository rooms, advisor commands
