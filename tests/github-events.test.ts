@@ -6,6 +6,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { installEvents } from '../src/cli/commands/events';
+import type { AppHookConfig } from '../src/core/publication/publication-writes';
 import * as appHookPublication from '../src/effects/publication/app-hook-config';
 
 const ROOT = join(import.meta.dir, '..');
@@ -291,14 +292,23 @@ describe('repo-harness events install', () => {
 });
 
 describe('App hook config publication', () => {
-  const config: appHookPublication.AppHookConfig = { url: 'https://events.example/', content_type: 'json', secret: SECRET, insecure_ssl: '0' };
+  const config: AppHookConfig = { url: 'https://events.example/', content_type: 'json', secret: SECRET, insecure_ssl: '0' };
+
+  test.each([
+    { status: 200, body: 'not json' }, { status: 200, body: '{"url":' }, { status: 204, body: null },
+  ])('a successful hook write does not require a response body: %j', async ({ status, body }) => {
+    await expect(appHookPublication.publishAppHookConfig(config, {
+      appToken: () => 'token',
+      fetch: (async (_url: string) => new Response(body, { status })) as typeof fetch,
+    })).resolves.toBeUndefined();
+  });
 
   test.each([
     { url: 'invalid' }, { url: 'http://events.example/' }, { url: 'https://user:pass@events.example/' },
     { content_type: 'form' }, { secret: '' }, { secret: 'secret\n' }, { insecure_ssl: '1' },
   ])('rejects an invalid config before token creation or a write: %j', async (invalid) => {
     const calls: string[] = [];
-    await expect(appHookPublication.publishAppHookConfig({ ...config, ...invalid } as appHookPublication.AppHookConfig, {
+    await expect(appHookPublication.publishAppHookConfig({ ...config, ...invalid } as AppHookConfig, {
       appToken: () => { calls.push('token'); return 'token'; },
       fetch: (async (_url: string) => { calls.push('fetch'); return Response.json({}); }) as typeof fetch,
     })).rejects.toThrow('The GitHub App hook');
@@ -310,7 +320,7 @@ describe('App hook config publication', () => {
     await expect(appHookPublication.publishAppHookConfig(config, {
       appToken: () => 'private-token',
       fetch: (async (_url: string): Promise<Response> => { calls++; throw new Error('private-token'); }) as typeof fetch,
-    })).rejects.toThrow('GitHub API PATCH /app/hook/config is unreachable.');
+    })).rejects.toThrow(/^GitHub API PATCH \/app\/hook\/config is unreachable\.$/);
     expect(calls).toBe(1);
   });
 });

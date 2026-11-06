@@ -5,6 +5,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { AppHookConfig } from '../../core/publication/publication-writes.ts';
 import { publishAppHookConfig } from '../../effects/publication/app-hook-config.ts';
 import { askMasked } from './herdr.ts';
 
@@ -87,7 +88,6 @@ export async function installEvents(options: EventsInstallOptions, deps: EventsI
     const endpoint = `GitHub API GET ${path.split('?')[0]}`;
     let response: Response;
     try {
-      // A new JWT for each call: the approval prompt and wrangler can outlast one JWT.
       response = await deps.fetch(`${GITHUB_API}${path}`, {
         method: 'GET', redirect: 'error',
         headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${appJwt(inputs.appId, key, deps.now())}`, 'user-agent': 'repo-harness', 'x-github-api-version': '2022-11-28' },
@@ -137,8 +137,11 @@ export async function installEvents(options: EventsInstallOptions, deps: EventsI
     let url = '';
     try {
       url = wranglerWorkerUrl(outputFile);
-      await publishAppHookConfig({ url, content_type: 'json', secret, insecure_ssl: '0' }, {
-        fetch: deps.fetch, appToken: () => appJwt(inputs.appId, key, deps.now()),
+      const hookConfig: AppHookConfig = { url, content_type: 'json', secret, insecure_ssl: '0' };
+      await publishAppHookConfig(hookConfig, {
+        fetch: deps.fetch,
+        // A new JWT for this write: the approval prompt and wrangler can outlast one JWT.
+        appToken: () => appJwt(inputs.appId, key, deps.now()),
       });
     } catch (error) {
       throw new Error(`The Worker has a new webhook secret, but the GitHub App was not updated: ${(error as Error).message} `

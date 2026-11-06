@@ -1,9 +1,4 @@
-export interface AppHookConfig {
-  url: string;
-  content_type: 'json';
-  secret: string;
-  insecure_ssl: '0';
-}
+import { checkAppHookConfig, type AppHookConfig } from '../../core/publication/publication-writes';
 
 export interface AppHookConfigDeps {
   fetch: typeof fetch;
@@ -12,14 +7,7 @@ export interface AppHookConfigDeps {
 
 /** Publish one App hook config. The caller owns deployment approval and partial-failure recovery. */
 export async function publishAppHookConfig(config: AppHookConfig, deps: AppHookConfigDeps): Promise<void> {
-  let url: URL;
-  try { url = new URL(config.url); } catch { throw new Error('The GitHub App hook URL must be an HTTPS URL.'); }
-  if (url.protocol !== 'https:' || url.username || url.password) {
-    throw new Error('The GitHub App hook URL must be an HTTPS URL without user information.');
-  }
-  if (config.content_type !== 'json') throw new Error('The GitHub App hook content type must be json.');
-  if (!config.secret || /[\x00-\x1f\x7f]/.test(config.secret)) throw new Error('The GitHub App hook secret is missing or invalid.');
-  if (config.insecure_ssl !== '0') throw new Error('The GitHub App hook must verify SSL.');
+  checkAppHookConfig(config);
 
   const endpoint = 'GitHub API PATCH /app/hook/config';
   let response: Response;
@@ -34,5 +22,4 @@ export async function publishAppHookConfig(config: AppHookConfig, deps: AppHookC
     });
   } catch { throw new Error(`${endpoint} is unreachable.`); }
   if (!response.ok) throw new Error(`${endpoint} returned HTTP ${response.status}.`);
-  await response.json();
 }
