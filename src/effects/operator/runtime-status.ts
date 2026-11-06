@@ -2,6 +2,7 @@ import { decodeRuntimeIdentity, decodeRuntimeObservation, projectRuntimeOverlay,
   unavailableRuntimeOverlay, nativeRuntimeFreshness, RUNTIME_LIMIT, NATIVE_RUNTIME_SOURCE_LIMIT, type NativeRuntimeSourceSummary, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay, type RuntimeUnavailableReason } from '../../core/operator/runtime-status';
 import { HcVersionMismatchError } from '../../core/terminal/herdr-pin';
 import { decodeRuntimeCaptureSnapshot, type NativeRuntimeProvider, type RuntimeCaptureSnapshot } from '../../core/operator/runtime-capture';
+import { hcStatusClass } from '../../core/board/desk';
 
 /**
  * Select only the hc status word of the bound terminal. No title, cwd or text inference. A terminal without a
@@ -12,8 +13,12 @@ export function observeHcTerminal(value: unknown, binding: RuntimeIdentity): Run
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const terminal = value as Record<string, unknown>;
   if (terminal.terminal_id !== identity.terminal_id) return null;
-  const states = { idle: 'idle', working: 'working', blocked: 'blocked', done: 'done-unseen' } as const;
-  const state = Object.hasOwn(states, terminal.status as string) ? states[terminal.status as keyof typeof states] : 'unknown';
+  const status = hcStatusClass(typeof terminal.status === 'string' ? terminal.status : null);
+  const states = {
+    idle: 'idle', working: 'working', blocked: 'blocked', done: 'done-unseen',
+    error: 'unknown', unreported: 'unknown', other: 'unknown',
+  } as const;
+  const state = states[status];
   return decodeRuntimeObservation({ identity, revision: runtimeInteger(terminal.revision), state, reason: 'unknown', changed_at: null, source: 'hc-status' });
 }
 export type RuntimeInvalidation = 'updated' | 'reconnect' | 'events_lost' | 'disconnected' | { type: 'failure'; error: unknown };
