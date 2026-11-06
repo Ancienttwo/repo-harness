@@ -1754,7 +1754,7 @@ exit 0
       expect(result.exitCode).toBe(0);
       expect(installStep?.status).toBe('skipped');
       expect(installStep?.detail).toContain('already installed from Bun global package source');
-      expect(readFileSync(bunLog, 'utf-8')).toBe(`--version\nadd -g ${join(source, 'packages', 'operator-web')}\n`);
+      expect(readFileSync(bunLog, 'utf-8')).toBe('--version\n');
       expect(existsSync(npmLog)).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -1802,7 +1802,7 @@ exit 0
       expect(result.exitCode).toBe(0);
       expect(installStep?.status).toBe('skipped');
       expect(installStep?.detail).toContain('already installed from Bun global package source');
-      expect(readFileSync(bunLog, 'utf-8')).toBe(`--version\nadd -g ${join(source, 'packages', 'operator-web')}\n`);
+      expect(readFileSync(bunLog, 'utf-8')).toBe('--version\n');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -1853,7 +1853,7 @@ exit 0
       expect(installStep?.detail).toBe(
         'already installed from Bun global package source; version=9.9.9; latest=99.0.0 available — run: repo-harness update',
       );
-      expect(readFileSync(bunLog, 'utf-8')).toBe(`--version\nadd -g ${join(source, 'packages', 'operator-web')}\n`);
+      expect(readFileSync(bunLog, 'utf-8')).toBe('--version\n');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -1913,7 +1913,7 @@ exit 0
       expect(equalStep?.status).toBe('skipped');
       expect(equalStep?.detail).toBe(expectedDetail);
 
-      expect(readFileSync(bunLog, 'utf-8')).toBe(`--version\nadd -g ${join(source, 'packages', 'operator-web')}\n--version\nadd -g ${join(source, 'packages', 'operator-web')}\n`);
+      expect(readFileSync(bunLog, 'utf-8')).toBe('--version\n--version\n');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

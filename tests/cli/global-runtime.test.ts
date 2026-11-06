@@ -10,6 +10,32 @@ import { adoptedRepo, commitAll, git, registeredReposFixture, worktreeSnapshot, 
 import { version as PACKAGE_VERSION } from '../../package.json';
 
 describe('operator console setup', () => {
+  test('installs a published source outside the global root from the registry', () => {
+    const root = mkdtempSync(join(tmpdir(), 'published-console-'));
+    const source = join(root, 'bunx-123-repo-harness@9.9.9', 'node_modules', 'repo-harness');
+    const home = join(root, 'home');
+    const bunInstall = join(home, '.bun');
+    const modules = join(bunInstall, 'install', 'global', 'node_modules');
+    const bun = join(root, 'bun');
+    const log = join(root, 'bun.log');
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      writeFileSync(join(source, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '9.9.9' }));
+      symlinkSync(join(import.meta.dir, '../../assets'), join(source, 'assets'));
+      writeFileSync(bun, `#!/bin/bash\nif [[ "$1" == --version ]]; then echo 1.4.3; exit; fi\nprintf '%s\\n' "$*" >> "${log}"\ncase "$3" in\n  repo-harness@*) name=repo-harness ;;\n  repo-harness-operator-web@*) name=repo-harness-operator-web ;;\n  *) exit 1 ;;\nesac\nversion="\${3#*@}"\nmkdir -p "${modules}/$name"\nprintf '{"name":"%s","version":"%s"}' "$name" "$version" > "${modules}/$name/package.json"\n`);
+      chmodSync(bun, 0o755);
+      const result = runGlobalRuntimeSetup({ sourceRoot: source, cwd: root, plugins: ['operator'], syncSkill: false,
+        hostAdapters: false, externalSkills: false, codegraph: false,
+        env: { ...process.env, HOME: home, BUN_INSTALL: bunInstall, REPO_HARNESS_BUN_EXECUTABLE: bun } });
+      expect(result.steps.find((step) => step.step === 'install repo-harness CLI')).toMatchObject({ status: 'ok' });
+      expect(result.steps.find((step) => step.step === 'ensure operator console')).toMatchObject({ status: 'ok' });
+      expect(readFileSync(log, 'utf8')).toBe('add -g repo-harness@9.9.9 --no-cache\nadd -g repo-harness-operator-web@9.9.9 --no-cache\n');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('installs the local console only when selected and fails updates without a build', () => {
     const root = mkdtempSync(join(tmpdir(), 'operator-console-'));
     const source = join(root, 'source');
@@ -18,13 +44,15 @@ describe('operator console setup', () => {
     const consoleSource = join(source, 'packages', 'operator-web');
     const globalModules = join(bunInstall, 'install', 'global', 'node_modules');
     const installed = join(globalModules, 'repo-harness-operator-web');
+    const sourceConsole = join(source, 'node_modules', 'repo-harness-operator-web');
     try {
       mkdirSync(join(consoleSource, 'dist'), { recursive: true });
       mkdirSync(join(globalModules, 'repo-harness'), { recursive: true });
       mkdirSync(home, { recursive: true });
       writeFileSync(join(consoleSource, 'package.json'), JSON.stringify({ name: 'repo-harness-operator-web', version: PACKAGE_VERSION }));
       writeFileSync(join(consoleSource, 'dist', 'index.html'), '<html></html>');
-      writeFileSync(join(globalModules, 'repo-harness', 'package.json'), JSON.stringify({ name: 'repo-harness', version: PACKAGE_VERSION }));
+      writeFileSync(join(source, 'package.json'), JSON.stringify({ name: 'repo-harness', version: PACKAGE_VERSION }));
+      symlinkSync(join(source, 'package.json'), join(globalModules, 'repo-harness', 'package.json'));
       symlinkSync(join(import.meta.dir, '../../assets'), join(source, 'assets'));
       const run = (plugins: ('operator')[], updateMode = false) => runGlobalRuntimeSetup({
         sourceRoot: source, cwd: root, env: { ...process.env, HOME: home, BUN_INSTALL: bunInstall },
@@ -33,10 +61,18 @@ describe('operator console setup', () => {
       expect(run([]).steps.find((step) => step.step === 'ensure operator console')).toMatchObject({ status: 'skipped', detail: 'operator plugin not selected' });
       expect(existsSync(installed)).toBe(false);
       expect(run(['operator']).steps.find((step) => step.step === 'ensure operator console')).toMatchObject({ status: 'ok' });
-      expect(JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8')).version).toBe(PACKAGE_VERSION);
+      expect(realpathSync(sourceConsole)).toBe(realpathSync(consoleSource));
+      expect(JSON.parse(readFileSync(join(sourceConsole, 'package.json'), 'utf8')).version).toBe(PACKAGE_VERSION);
+      expect(run(['operator']).steps.find((step) => step.step === 'ensure operator console')).toMatchObject({ status: 'ok' });
+      rmSync(sourceConsole);
+      mkdirSync(sourceConsole);
+      expect(run(['operator']).steps.find((step) => step.step === 'ensure operator console')).toMatchObject({ status: 'failed', detail: expect.stringContaining('not a symlink') });
+      rmSync(sourceConsole, { recursive: true });
+      rmSync(join(globalModules, 'repo-harness', 'package.json'));
       writeFileSync(join(globalModules, 'repo-harness', 'package.json'), JSON.stringify({ name: 'repo-harness', version: '9.9.9' }));
       const fakeBun = join(root, 'bun-executable');
       const bunLog = join(root, 'bun.log');
+      mkdirSync(installed, { recursive: true });
       writeFileSync(fakeBun, `#!/bin/bash\nif [[ "$1" == "--version" ]]; then echo 1.4.3; exit; fi\nprintf '%s\\n' "$*" >> "${bunLog}"\nversion="\${3#repo-harness-operator-web@}"\nprintf '{"name":"repo-harness-operator-web","version":"%s"}' "$version" > "${join(installed, 'package.json')}"\n`);
       chmodSync(fakeBun, 0o755);
       const registryUpdate = runGlobalRuntimeSetup({ sourceRoot: source, cwd: root, plugins: ['operator'], installCli: false,
