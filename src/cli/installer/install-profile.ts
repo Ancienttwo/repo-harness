@@ -260,15 +260,15 @@ function removeCodegraphProjection(path: string): void {
   renameSync(temp, path);
 }
 
-function adapterHasRequiredProjection(path: string, host: HookHost): boolean {
+function adapterHasRequiredProjection(path: string, host: HookHost, env: NodeJS.ProcessEnv): boolean {
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { hooks?: unknown };
-    const projection = compareManagedHookProjection(parsed.hooks ?? {}, host);
+    const projection = compareManagedHookProjection(parsed.hooks ?? {}, host, env);
     // A selection transition may probe still-present managed routes before the
     // installer rewrites the adapter. Extra routes are tolerated by this
     // presence probe, but any required route field drift, duplicate, or
     // missing route is not.
-    return projection.mismatches.every((mismatch) => mismatch.kind === 'unexpected');
+    return projection.error === undefined && projection.mismatches.every((mismatch) => mismatch.kind === 'unexpected');
   } catch {
     return false;
   }
@@ -1167,7 +1167,7 @@ function probeCore(env: NodeJS.ProcessEnv, catalog: SkillSurfaceCatalog, hosts: 
   const adapters = ([
     { path: join(home, '.codex', 'hooks.json'), host: 'codex' },
     { path: join(home, '.claude', 'settings.json'), host: 'claude' },
-  ] as const).filter(({ path, host }) => existsSync(path) && adapterHasRequiredProjection(path, host)).map(({ path }) => path);
+  ] as const).filter(({ path, host }) => existsSync(path) && adapterHasRequiredProjection(path, host, env)).map(({ path }) => path);
   const fleet = completeAgentFleetEvidence(home);
   const coreFacades = ownedProbeSkills(catalog, 'core').filter(pkg => pkg.kind === 'facade');
   return probe({

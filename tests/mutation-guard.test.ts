@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
+import { seedGlobalPackageFixture } from './helpers/install-ownership';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -43,6 +44,7 @@ function failureRecords(cwd: string): Array<Record<string, unknown>> {
 }
 
 const HOOK_ENTRY = join(import.meta.dir, '../src/cli/hook-entry.ts');
+beforeAll(() => { seedGlobalPackageFixture(); });
 
 describe('Bash write tripwire host route', () => {
   test('literal protected destinations block; reads, ordinary writes and unresolved targets pass', () => {
