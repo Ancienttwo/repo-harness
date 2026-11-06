@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.host-setup.architecture-contracts
+kind: reads
+source: component.mcp-sidecar.host-setup
+target: component.contract-assets.architecture-contracts
+intent: "Read the CodeGraph port to build the reader of the served tools"

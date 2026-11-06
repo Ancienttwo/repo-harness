@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.execution-primitives.cli-layer.bot-registry
+kind: calls
+source: component.execution-primitives.cli-layer
+target: component.execution-primitives.bot-registry
+intent: "Register a Bot record for bots register"

@@ -7,7 +7,7 @@ import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { redactMcpText } from '../../src/cli/mcp/redaction';
 import { globMatches, normalizeMcpRelativePath, resolveMcpPath } from '../../src/cli/mcp/paths';
 import { buildMcpToolDefinitions, callMcpTool } from '../../src/cli/mcp/tools';
-import { createCodeGraphCliAdapter } from '../../src/cli/mcp/codegraph-adapter';
+import { createCodeGraphCliAdapter } from '../../src/cli/tools/codegraph-reader';
 import { SEGMENTED_LOG_SEGMENT_BYTES } from '../../src/effects/segmented-log';
 
 async function jsonTool(repoRoot: string, policy: ReturnType<typeof getMcpPolicy>, name: string, args: Record<string, unknown> = {}) {

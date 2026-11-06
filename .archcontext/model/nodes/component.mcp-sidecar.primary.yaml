@@ -10,8 +10,7 @@
   "responsibilities": [
     "Build the server instructions and the closed tool inventory for the selected profile.",
     "Load the user-level config once per server context and refuse a legacy repo-scope config.",
-    "Route each tool call to the workflow, state, publication readiness or reader tool block.",
-    "Serve the PM MCP binding beside the main server."
+    "Route each tool call to the workflow, state, publication readiness or reader tool block."
   ],
   "source": {
     "include": [

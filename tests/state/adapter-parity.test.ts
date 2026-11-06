@@ -10,7 +10,7 @@ import type {
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { buildStateToolDefinitions, callStateTool } from '../../src/cli/mcp/state-tools';
 import { callMcpTool, type McpToolContext } from '../../src/cli/mcp/tools';
-import { createCodeGraphCliAdapter } from '../../src/cli/mcp/codegraph-adapter';
+import { createCodeGraphCliAdapter } from '../../src/cli/tools/codegraph-reader';
 import {
   buildStateSnapshot,
   resolveEffectiveState,

@@ -5,7 +5,7 @@ import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { RETIRED_CHATGPT_STATE_FINDING, runMcpDoctor } from '../../src/cli/mcp/doctor';
 import { createMcpToolContext } from '../../src/cli/mcp/server';
-import { createCodeGraphCliAdapter } from '../../src/cli/mcp/codegraph-adapter';
+import { createCodeGraphCliAdapter } from '../../src/cli/tools/codegraph-reader';
 import { callMcpTool } from '../../src/cli/mcp/tools';
 
 const CLI = join(import.meta.dir, '../..', 'src/cli/index.ts');

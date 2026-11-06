@@ -10,7 +10,7 @@ responsibilities:
 source:
   include:
     - src/cli/tools/codegraph.ts
-    - src/cli/mcp/codegraph-adapter.ts
+    - src/cli/tools/codegraph-reader.ts
     - src/cli/commands/tools.ts
   entrypoints:
     - id: entrypoint.codegraph-readiness.primary

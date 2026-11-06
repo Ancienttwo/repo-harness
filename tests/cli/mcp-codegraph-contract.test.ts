@@ -3,7 +3,7 @@ import { createHash } from 'crypto';
 import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, isAbsolute, join, relative, sep } from 'path';
-import { createCodeGraphCliAdapter } from '../../src/cli/mcp/codegraph-adapter';
+import { createCodeGraphCliAdapter } from '../../src/cli/tools/codegraph-reader';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const SCHEMA_PATH = join(ROOT, 'assets/mcp/general-repo-reader-tools.v1.schema.json');
