@@ -9,15 +9,21 @@ import { planLegacyLeftovers } from "../../src/effects/upgrade/legacy-inventory"
 import { isRepoHarnessSourceCheckout } from "../../src/effects/source-checkout";
 import { applyAdoptionPlan, rollbackAdoptionTransaction } from "../../src/effects/fs-transaction";
 import type { AdoptionOperation, AdoptionPlan } from "../../src/core/adoption/operations";
-import { renderApplyReport } from "../../src/cli/commands/adoption-plan";
+import { planRepoAdoption, renderApplyReport, runAdoptionApply } from "../../src/cli/commands/adoption-plan";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const FS_TRANSACTION = join(ROOT, "src/effects/fs-transaction.ts");
 const CLI = join(ROOT, "src/cli/index.ts");
 const HRD09_LEGACY_FIXTURE = join(ROOT, "tests/fixtures/hrd09-legacy-hook-runtime");
 
-function tempRepo(): string {
+function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "repo-harness-adoption-plan-"));
+}
+
+function tempRepo(): string {
+  const repo = tempDir();
+  expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
+  return repo;
 }
 
 function cleanup(path: string): void {
@@ -1139,7 +1145,7 @@ describe("canonical adoption plan", () => {
 
   test("apply refuses a dangling symlink at a planned target instead of replacing it", () => {
     const repo = tempRepo();
-    const outside = tempRepo();
+    const outside = tempDir();
     try {
       mkdirSync(join(repo, "docs"), { recursive: true });
       symlinkSync(join(outside, "spec.md"), join(repo, "docs", "spec.md"));
@@ -1168,6 +1174,91 @@ describe("canonical adoption plan", () => {
         chmodSync(join(repo, "docs"), 0o755);
       }
       expect(existsSync(join(repo, "docs", "spec.md"))).toBe(true);
+    } finally {
+      cleanup(repo);
+    }
+  });
+});
+
+describe("review_base authority", () => {
+  function git(repo: string, ...args: string[]): void {
+    expect(spawnSync("git", ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", ...args], { cwd: repo }).status).toBe(0);
+  }
+  const onMaster = (repo: string) => git(repo, "symbolic-ref", "HEAD", "refs/heads/master");
+  const committedOnMaster = (repo: string) => { onMaster(repo); git(repo, "commit", "-q", "--allow-empty", "-m", "base"); };
+  const detached = (repo: string) => { committedOnMaster(repo); git(repo, "checkout", "-q", "--detach"); };
+  const writePolicy = (repo: string, worktreeStrategy: object) => {
+    mkdirSync(join(repo, ".ai/harness"), { recursive: true });
+    writeFileSync(join(repo, ".ai/harness/policy.json"), JSON.stringify({ worktree_strategy: worktreeStrategy }));
+  };
+
+  test.each([
+    ["remote HEAD wins over the current branch", (repo: string) => {
+      committedOnMaster(repo);
+      git(repo, "update-ref", "refs/remotes/origin/trunk", "HEAD");
+      git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk");
+    }, "trunk"],
+    ["no remote uses the current branch", committedOnMaster, "master"],
+    ["unborn HEAD uses its branch name", onMaster, "master"],
+    ["an existing key stays on a detached HEAD", (repo: string) => { detached(repo); writePolicy(repo, { review_base: "develop" }); }, "develop"],
+    ["a missing key stays missing on a detached HEAD", (repo: string) => { detached(repo); writePolicy(repo, { base_branch: "main" }); }, undefined],
+  ] as const)("%s", (_name, setup, reviewBase) => {
+    const repo = tempRepo();
+    try {
+      setup(repo);
+      const operation = planAdoption({ repoRoot: repo, mode: "standard" }).operations.find((entry) => entry.path === ".ai/harness/policy.json");
+      if (!operation || operation.kind !== "writeFile") throw new Error("policy operation missing");
+      expect(JSON.parse(operation.content).worktree_strategy.review_base).toBe(reviewBase);
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test.each([
+    ["a detached HEAD", detached],
+    ["a non-git target", (repo: string) => rmSync(join(repo, ".git"), { recursive: true, force: true })],
+  ] as const)("standard init refuses %s before any write", (_name, setup) => {
+    const repo = tempRepo();
+    try {
+      setup(repo);
+      const options = { repo, mode: "standard", explicitRepo: true } as const;
+      const planned = planRepoAdoption(options);
+      expect(planned.error?.code).toBe("review_base_unresolved");
+      expect(planned.error?.message).toContain("worktree_strategy.review_base");
+      expect(planned.error?.message).toContain("git remote set-head origin --auto");
+      expect(runAdoptionApply(options).report.errors?.[0]?.code).toBe("review_base_unresolved");
+      expect(existsSync(join(repo, ".ai"))).toBe(false);
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test.each(["process.env", "opts.env"] as const)("GIT_DIR in %s cannot select another repository", (entry) => {
+    const [foreign, repo, nonGit] = [tempRepo(), tempRepo(), tempDir()];
+    const parentGitDir = process.env.GIT_DIR;
+    const env = entry === "opts.env" ? { GIT_DIR: join(foreign, ".git") } : undefined;
+    const plan = (target: string) => planRepoAdoption({ repo: target, mode: "standard", explicitRepo: true, env });
+    try {
+      git(foreign, "symbolic-ref", "HEAD", "refs/heads/foreign");
+      onMaster(repo);
+      if (entry === "process.env") process.env.GIT_DIR = join(foreign, ".git");
+      const operation = plan(repo).plan?.operations.find((candidate) => candidate.path === ".ai/harness/policy.json");
+      if (!operation || operation.kind !== "writeFile") throw new Error("policy operation missing");
+      expect(JSON.parse(operation.content).worktree_strategy.review_base).toBe("master");
+      expect(plan(nonGit).error?.code).toBe("review_base_unresolved");
+    } finally {
+      if (parentGitDir === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = parentGitDir;
+      for (const path of [foreign, repo, nonGit]) cleanup(path);
+    }
+  });
+
+  test("minimal mode writes no policy and reads no ref on a non-git target", () => {
+    const repo = tempRepo();
+    try {
+      rmSync(join(repo, ".git"), { recursive: true, force: true });
+      const plan = planAdoption({ repoRoot: repo, mode: "minimal" });
+      expect(plan.operations.some((entry) => entry.path === ".ai/harness/policy.json")).toBe(false);
     } finally {
       cleanup(repo);
     }
@@ -1358,7 +1449,7 @@ describe("documentation language policy datum", () => {
   }, 60_000);
 
   test("public init rejects an invalid exported documentation language before writes", () => {
-    const repo = tempRepo();
+    const repo = tempDir();
     const home = tempRepo();
     try {
       const env = { ...process.env, HOME: home, REPO_HARNESS_HOME: join(home, ".repo-harness"), REPO_HARNESS_DOCUMENTATION_LANGUAGE: "zh-TW" };

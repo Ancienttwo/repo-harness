@@ -51,7 +51,7 @@ export function validateRepoAdoptionTarget(
       step: "validate repo target",
       status: "failed",
       detail:
-        `cwd is not inside a git work tree (${repoRoot}); pass --repo <project-path> explicitly for non-git scaffolds`,
+        `cwd is not inside a git work tree (${repoRoot}); pass --repo <project-path> --mode minimal for a non-git scaffold`,
     };
   }
 
