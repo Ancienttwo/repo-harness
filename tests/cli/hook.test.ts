@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -10,6 +10,19 @@ import { inspectWorkflowMarker } from '../../src/effects/adoption/workflow-marke
 import { HOST_RENDERERS, type HookOutcome } from '../../src/cli/hook/hook-protocol';
 
 const HOOK_ENTRY = join(import.meta.dir, '..', '..', 'src', 'cli', 'hook-entry.ts');
+const bunInstall = realpathSync(mkdtempSync(join(tmpdir(), 'hrd09-global-bun-')));
+const previousBunInstall = process.env.BUN_INSTALL;
+beforeAll(() => {
+  const modules = join(bunInstall, 'install/global/node_modules');
+  mkdirSync(modules, { recursive: true });
+  symlinkSync(join(import.meta.dir, '../..'), join(modules, 'repo-harness'), 'dir');
+  process.env.BUN_INSTALL = bunInstall;
+});
+afterAll(() => {
+  if (previousBunInstall === undefined) delete process.env.BUN_INSTALL;
+  else process.env.BUN_INSTALL = previousBunInstall;
+  clean(bunInstall);
+});
 
 describe('hook host output fields', () => {
   const outcome: HookOutcome = {
@@ -303,7 +316,7 @@ describe('typed hook runtime', () => {
       expect(skipped.status).toBe(0);
       expect(skipped.stderr).toBe('');
       const started = spawnSync(shell, ['-c', command], { cwd: active, env: hostEnv, encoding: 'utf8' });
-      expect(started.status).not.toBe(0);
+      expect(started.status, started.stderr).toBe(2);
       expect(started.status).not.toBe(127);
       expect(started.stderr).not.toContain('not found');
     } finally { clean(active); clean(inactive); clean(bin); }

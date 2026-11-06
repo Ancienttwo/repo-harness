@@ -15,8 +15,8 @@
  */
 
 import { accessSync, constants, realpathSync, statSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { isAbsolute, join } from 'node:path';
+import { bunGlobalPackageRoot } from './skill-projection';
 import { routesForHost, type AdapterHost, type Route } from '../hook/route-registry';
 import {
   MANAGED_TAG,
@@ -68,6 +68,8 @@ export interface ManagedHookProjectionReport {
   /** Number of repo-harness-owned hook commands observed in the host config. */
   readonly managedEntryCount: number;
   readonly mismatches: readonly ManagedHookProjectionMismatch[];
+  /** Runtime resolution failed, so an exact command comparison is unavailable. */
+  readonly error?: string;
 }
 
 function resolvedHookPath(path: string, label: string, mode: number): string {
@@ -78,13 +80,15 @@ function resolvedHookPath(path: string, label: string, mode: number): string {
     accessSync(resolved, mode);
     return `'${resolved.replaceAll("'", "'\\''")}'`;
   } catch (error) {
-    throw new Error(`Cannot resolve managed hook ${label} at ${path}: ${(error as Error).message}. Reinstall repo-harness with Bun.`);
+    throw new Error(`Cannot resolve managed hook ${label} at ${path}: ${(error as Error).message}. Run bun add -g repo-harness, then repo-harness install --location global.`);
   }
 }
 
-export function buildHookExecCommand(): string {
+export function buildHookExecCommand(env: NodeJS.ProcessEnv = process.env): string {
   const bun = resolvedHookPath(process.execPath, 'Bun runtime', constants.X_OK);
-  const entry = resolvedHookPath(fileURLToPath(new URL('../../../dist/hook-entry.js', import.meta.url)), 'bundle', constants.R_OK);
+  const root = bunGlobalPackageRoot(env);
+  if (root === null) throw new Error('Cannot resolve the Bun global repo-harness root: set HOME, USERPROFILE or BUN_INSTALL. Run bun add -g repo-harness.');
+  const entry = resolvedHookPath(join(root, 'dist/hook-entry.js'), 'global bundle', constants.R_OK);
   return `exec ${bun} ${entry}`;
 }
 
@@ -168,7 +172,7 @@ export function canonicalManagedHookProjection(value: unknown): HooksByEvent {
 /** Any event name parses, so drift reports still name the route of a stale entry for a retired event. */
 function routeFromManagedCommand(command: unknown): { event: string; routeId: string } | null {
   if (typeof command !== 'string') return null;
-  const match = command.match(/\s([A-Za-z]+)\s+--route\s+([A-Za-z0-9_-]+)$/);
+  const match = command.match(/\s([A-Za-z]+)\s+--route\s+([A-Za-z0-9_-]+)(?=[\s;]|$)/);
   return match ? { event: match[1], routeId: match[2] } : null;
 }
 
@@ -349,7 +353,19 @@ export function compareManagedHookProjection(
   actual: unknown,
   host: HookHost,
 ): ManagedHookProjectionReport {
-  return compareManagedHooks(actual, buildManagedHooks(host));
+  let expected: HooksByEvent;
+  try {
+    expected = buildManagedHooks(host);
+  } catch (error) {
+    return {
+      status: 'drift',
+      expectedEntryCount: routesForHost(host).length,
+      managedEntryCount: actualManagedHooks(actual).length,
+      mismatches: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+  return compareManagedHooks(actual, expected);
 }
 
 export function stripManagedEntries(existing: HooksByEvent | undefined): HooksByEvent {

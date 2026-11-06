@@ -17,12 +17,19 @@ const ROOT = path.join(import.meta.dir, '..', '..');
 function withTempHome(fn: (home: string) => void): void {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-status-')));
   const prev = process.env.HOME;
+  const prevBunInstall = process.env.BUN_INSTALL;
   process.env.HOME = tmp;
+  process.env.BUN_INSTALL = path.join(tmp, '.bun');
+  const modules = path.join(process.env.BUN_INSTALL, 'install/global/node_modules');
+  fs.mkdirSync(modules, { recursive: true });
+  fs.symlinkSync(ROOT, path.join(modules, 'repo-harness'), 'dir');
   try {
     fn(tmp);
   } finally {
     if (prev === undefined) delete process.env.HOME;
     else process.env.HOME = prev;
+    if (prevBunInstall === undefined) delete process.env.BUN_INSTALL;
+    else process.env.BUN_INSTALL = prevBunInstall;
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 }
@@ -58,12 +65,15 @@ describe('status command (Phase 1C)', () => {
   });
 
   test('before install: every host reports alreadyConfigured=false', () => {
-    withTempHome(() => {
+    withTempHome((home) => {
+      process.env.BUN_INSTALL = path.join(home, 'missing-bun');
       const r = runStatus();
       expect(r.targets.length).toBeGreaterThan(0);
       for (const t of r.targets) {
         expect(t.alreadyConfigured).toBe(false);
         expect(t.managedEntryCount).toBe(0);
+        expect(t.expectedEntryCount).toBe(t.id === 'codex' ? 5 : 6);
+        expect(t.projection?.error).toContain('bun add -g repo-harness');
       }
     });
   });

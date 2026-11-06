@@ -17,9 +17,16 @@ function withTempHomeAndRepo(fn: (ctx: { home: string; repo: string; root: strin
   const repo = path.join(root, 'repo');
   fs.mkdirSync(home, { recursive: true });
   fs.mkdirSync(repo, { recursive: true });
+  const prevBunInstall = process.env.BUN_INSTALL;
+  process.env.BUN_INSTALL = path.join(home, '.bun');
+  const modules = path.join(process.env.BUN_INSTALL, 'install/global/node_modules');
+  fs.mkdirSync(modules, { recursive: true });
+  fs.symlinkSync(ROOT, path.join(modules, 'repo-harness'), 'dir');
   try {
     fn({ home, repo, root });
   } finally {
+    if (prevBunInstall === undefined) delete process.env.BUN_INSTALL;
+    else process.env.BUN_INSTALL = prevBunInstall;
     fs.rmSync(root, { recursive: true, force: true });
   }
 }
@@ -59,6 +66,11 @@ describe('security scan command', () => {
       expect(report.findings.map((finding) => finding.ruleId)).toContain('unmanaged-hook-command');
       expect(report.findings.map((finding) => finding.ruleId)).toContain('remote-shell-pipe');
       expect(report.findings.find((finding) => finding.ruleId === 'remote-shell-pipe')?.severity).toBe('high');
+      process.env.BUN_INSTALL = path.join(home, 'missing-bun');
+      const unavailable = runSecurityScan({ cwd: repo, home });
+      expect(unavailable.status).toBe('fail');
+      expect(unavailable.findings.find(finding => finding.ruleId === 'managed-hook-runtime-unavailable')?.recommendation).toContain('bun add -g repo-harness');
+      expect(unavailable.findings.map(finding => finding.ruleId)).toContain('remote-shell-pipe');
     });
   });
 

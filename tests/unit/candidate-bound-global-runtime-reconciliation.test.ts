@@ -32,12 +32,19 @@ const CLI = join(ROOT, 'src', 'cli', 'index.ts');
 // The update runs the Herdr skill step, which spawns `hc` from PATH; a fake hc first on PATH keeps the developer's hc out of every test.
 const fakeHcBin = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-candidate-runtime-hc-')));
 const pathBeforeFakeHc = process.env.PATH;
+const previousBunInstall = process.env.BUN_INSTALL;
 beforeAll(() => {
   writeFakeHc(fakeHcBin);
   process.env.PATH = `${fakeHcBin}:${pathBeforeFakeHc ?? ''}`;
+  process.env.BUN_INSTALL = join(fakeHcBin, '.bun');
+  const modules = join(process.env.BUN_INSTALL, 'install/global/node_modules');
+  mkdirSync(modules, { recursive: true });
+  symlinkSync(ROOT, join(modules, 'repo-harness'), 'dir');
 });
 afterAll(() => {
   process.env.PATH = pathBeforeFakeHc;
+  if (previousBunInstall === undefined) delete process.env.BUN_INSTALL;
+  else process.env.BUN_INSTALL = previousBunInstall;
   rmSync(fakeHcBin, { recursive: true, force: true });
 });
 

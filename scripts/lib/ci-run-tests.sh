@@ -244,21 +244,14 @@ _ci_run_bun_test_pool() {
   return "$pool_error"
 }
 
-# dist/ is ignored, so a stale local bundle silently runs old behavior. Build the
-# hook bundle only when a selected file spawns dist/hook-entry.js; every other
-# selection skips the build.
-_ci_build_hook_bundle_if_selected() {
-  grep -qsE 'hook-entry\.js' -- "$@" || return 0
-  (cd "$(dirname "${BASH_SOURCE[0]}")/../.." && bun run build:hook-bundle) || return $?
-}
-
 run_bun_tests() {
   _ci_prepare_junit_dir || return $?
+  # Install fixtures bind the global bundle even when a selected file does not name it.
+  (cd "$(dirname "${BASH_SOURCE[0]}")/../.." && bun run build:hook-bundle) || return $?
   if [[ "${BUN_TEST_ISOLATE_FILES:-0}" != "1" ]]; then
     local argument
     for argument in "$@"; do
       if [[ "$argument" == --coverage || "$argument" == --coverage=* ]]; then
-        _ci_build_hook_bundle_if_selected "$@" || return $?
         _ci_run_bun_tests_in_temporary_home "$@"
         return
       fi
@@ -306,7 +299,6 @@ run_bun_tests() {
       seen+="$argument"$'\n'
       unique[${#unique[@]}]="$argument"
     done
-    _ci_build_hook_bundle_if_selected "${unique[@]}" || return $?
     _ci_run_bun_tests_in_temporary_home --harness-file-list "${unique[@]}" --harness-options ${options[@]+"${options[@]}"}
     return
   fi
@@ -406,7 +398,6 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     exit 2
   fi
   cd "$(dirname "${BASH_SOURCE[0]}")/../.."
-  bun run build:hook-bundle
   bun run build:oar-review-host
   unset BUN_TEST_FILES
   BUN_TEST_ISOLATE_FILES=1

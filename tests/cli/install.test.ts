@@ -19,6 +19,9 @@ function withTempHome(fn: (home: string) => void): void {
   const prevBunInstall = process.env.BUN_INSTALL;
   process.env.HOME = tmp;
   process.env.BUN_INSTALL = path.join(tmp, '.bun');
+  const globalModules = path.join(process.env.BUN_INSTALL, 'install/global/node_modules');
+  fs.mkdirSync(globalModules, { recursive: true });
+  fs.symlinkSync(ROOT, path.join(globalModules, 'repo-harness'), 'dir');
   try {
     fn(tmp);
   } finally {
@@ -347,6 +350,7 @@ describe('install command (Phase 1B)', () => {
   for (const target of ['codex', 'claude', 'both']) {
     test(`CLI install --target ${target} --location global --dry-run refuses before any host write`, () => {
       withTempHome((home) => {
+        const before = fs.readdirSync(home, { recursive: true }).sort();
         const result = spawnSync(process.execPath, [CLI, 'install', '--target', target, '--location', 'global', '--dry-run'], {
           cwd: ROOT,
           env: { ...process.env, HOME: home, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' },
@@ -354,7 +358,7 @@ describe('install command (Phase 1B)', () => {
         });
         expect(result.status, result.stderr).toBe(1);
         expect(result.stderr).toContain('--dry-run cannot be combined with --location');
-        expect(fs.readdirSync(home)).toEqual([]);
+        expect(fs.readdirSync(home, { recursive: true }).sort()).toEqual(before);
       });
     }, 30_000);
   }
@@ -420,14 +424,29 @@ describe('install command (Phase 1B)', () => {
 
   test('install refuses an unresolved Bun runtime before writing host configuration', () => {
     withTempHome((home) => {
+      const before = fs.readdirSync(home, { recursive: true }).sort();
       const runtime = process.execPath;
       try {
         process.execPath = path.join(home, 'missing-bun');
         const result = runInstall({ target: 'both', location: 'global' });
         expect(result.exitCode).toBe(1);
         expect(result.lines.join('\n')).toContain('Cannot resolve managed hook Bun runtime');
-        expect(fs.readdirSync(home)).toEqual([]);
+        expect(fs.readdirSync(home, { recursive: true }).sort()).toEqual(before);
       } finally { process.execPath = runtime; }
+    });
+  });
+
+  test('install refuses a missing global bundle before writing host configuration and names the repair', () => {
+    withTempHome((home) => {
+      process.env.BUN_INSTALL = path.join(home, 'missing-bun');
+      const globalRoot = path.join(process.env.BUN_INSTALL, 'install/global/node_modules/repo-harness');
+      fs.mkdirSync(globalRoot, { recursive: true });
+      const before = fs.readdirSync(home, { recursive: true }).sort();
+      const result = runInstall({ target: 'both', location: 'global' });
+      expect(result.exitCode).toBe(1);
+      expect(result.lines.join('\n')).toContain(globalRoot);
+      expect(result.lines.join('\n')).toContain('bun add -g repo-harness');
+      expect(fs.readdirSync(home, { recursive: true }).sort()).toEqual(before);
     });
   });
 
