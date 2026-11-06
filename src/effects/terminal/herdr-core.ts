@@ -500,7 +500,7 @@ export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1
             const label = (key: string) => terminal.labels[key];
             return {
               address: terminal.address, name: terminal.name, agent: terminal.agent, state: terminal.state, status: terminal.status?.state ?? null,
-              status_kind: terminal.status?.kind ?? null, status_ms: terminal.status_ms ?? null, turn: terminal.turn, cwd: terminal.cwd ?? null,
+              status_kind: terminal.status?.kind ?? null, status_msg: terminal.status?.msg ?? null, status_ms: terminal.status_ms ?? null, turn: terminal.turn, cwd: terminal.cwd ?? null,
               labels: { seat: label(RH_LABEL.seat), issue: label(RH_LABEL.issue), pr: label(RH_LABEL.pr), parent: label(RH_LABEL.parent) },
             };
           });

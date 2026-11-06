@@ -30,6 +30,8 @@ export interface OfficeDesk {
   readonly agent: string | null;
   /** The hc status word of the seat. */
   readonly status: string | null;
+  /** The hc status message of the seat; null when it has none. */
+  readonly status_msg: string | null;
   readonly state: DeskState;
   readonly issue: number | null;
   /** The pull request that the seat names, else the primary pull request of its item. */
@@ -48,8 +50,10 @@ export interface OfficeQueueEntry {
   readonly pr: number;
   readonly title: string;
   readonly issue: number | null;
-  /** The agent of the seat that names the pull request; null when no live seat does. */
+  /** The agent of the first seat that resolves to the pull request; null when no live seat does. */
   readonly agent: string | null;
+  /** The status message of each live seat that resolves to the pull request. Several seats can share one desk key, so each message keeps its seat. */
+  readonly messages: readonly { readonly address: string; readonly text: string }[];
 }
 
 export interface OfficeBacklogEntry {
@@ -71,6 +75,7 @@ export interface OfficeLead {
   readonly address: string;
   readonly agent: string | null;
   readonly status: string | null;
+  readonly status_msg: string | null;
 }
 
 /** One board change with a server time. */
@@ -105,7 +110,7 @@ export interface OfficeRoom {
 
 function lead(seats: readonly BoardSeatTerminal[], seat: string): OfficeLead | null {
   const terminal = seats.find(entry => entry.seat === seat);
-  return terminal === undefined ? null : { address: terminal.address, agent: terminal.agent, status: terminal.status };
+  return terminal === undefined ? null : { address: terminal.address, agent: terminal.agent, status: terminal.status, status_msg: terminal.status_msg };
 }
 
 function desk(board: BoardV1 | null, terminal: BoardSeatTerminal): OfficeDesk {
@@ -113,7 +118,7 @@ function desk(board: BoardV1 | null, terminal: BoardSeatTerminal): OfficeDesk {
   const pr = board === null ? null : seatPullRequest(board, terminal, item);
   const state = deskState(terminal, item, pr);
   return {
-    address: terminal.address, seat: terminal.seat, agent: terminal.agent, status: terminal.status,
+    address: terminal.address, seat: terminal.seat, agent: terminal.agent, status: terminal.status, status_msg: terminal.status_msg,
     state, issue: terminal.issue, pr: pr?.number ?? terminal.pr,
     title: item?.title ?? pr?.head_ref ?? null,
     branch: terminal.branch,
@@ -170,8 +175,12 @@ export function officeRoom(list: BoardParentsV1, active: { readonly board: Board
     limit: workerLimit(board),
     queue: (board?.pull_requests ?? []).filter(isQueued).map((pr) => {
       const item = board!.items.find(entry => entry.pull_requests.includes(pr.number)) ?? null;
-      const owner = seats.find(seat => seat.pr === pr.number || (item !== null && seat.issue === item.number));
-      return { pr: pr.number, title: item?.title ?? pr.head_ref, issue: item?.number ?? null, agent: owner?.agent ?? null };
+      // The resolution of the desk, so each seat on a queued desk is an owner, on any issue that lists the pull request.
+      const owners = seats.filter(seat => seatPullRequest(board!, seat, seatItem(board!, seat))?.number === pr.number);
+      return {
+        pr: pr.number, title: item?.title ?? pr.head_ref, issue: item?.number ?? null, agent: owners[0]?.agent ?? null,
+        messages: owners.flatMap(seat => (seat.status_msg === null ? [] : [{ address: seat.address, text: seat.status_msg }])),
+      };
     }),
     cart,
     cart_sockets: PLAN_BATCH_MAX_MEMBERS,
@@ -274,7 +283,7 @@ export type OfficeCardSummary =
   | { readonly status: 'loading' }
   | { readonly status: 'not_read' }
   | { readonly status: 'unavailable'; readonly reason: string }
-  | { readonly status: 'observed'; readonly summary: BoardSummaryV1 };
+  | { readonly status: 'observed'; readonly observed_at: string; readonly summary: BoardSummaryV1 };
 
 export interface OfficeCard {
   readonly room: OfficeRoom;
@@ -291,7 +300,7 @@ function cardSummary(read: BoardSummariesRead | null, parent: number | null): Of
   const row = read.summaries.parents.find(entry => entry.parent === parent);
   // The two reads are separate, so a parent can be missing from the second one.
   if (row === undefined || row.status === 'not_read') return { status: 'not_read' };
-  return row.status === 'unavailable' ? { status: 'unavailable', reason: row.reason } : { status: 'observed', summary: row.summary };
+  return row.status === 'unavailable' ? { status: 'unavailable', reason: row.reason } : { status: 'observed', observed_at: row.observed_at, summary: row.summary };
 }
 
 /**

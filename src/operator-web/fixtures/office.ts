@@ -1,6 +1,6 @@
 import { ADVISOR_SEAT_SEND_KIND, ADVISOR_SEAT_TRANSCRIPT_KIND, ADVISOR_TRANSCRIPT_LINE_WITHHELD, decodeAdvisorSeatSend, decodeAdvisorSeatTranscript } from '../../core/board/advisor-seat';
-import { decodeBoard, type BoardItemV1, type BoardPullRequestV1, type BoardTerminalV1, type BoardV1 } from '../../core/board/board';
-import { decodeBoardParents, type BoardParentsSeatV1, type BoardParentsV1 } from '../../core/board/parents';
+import { BOARD_PROTOCOL, decodeBoard, type BoardItemV1, type BoardPullRequestV1, type BoardTerminalV1, type BoardV1 } from '../../core/board/board';
+import { BOARD_PARENTS_PROTOCOL, decodeBoardParents, type BoardParentsSeatV1, type BoardParentsV1 } from '../../core/board/parents';
 import { ISSUE_FLOW_WORKER_LIMIT, type DeskState } from '../../core/board/desk';
 import { BOARD_SUMMARIES_PROTOCOL, boardSummary, type BoardSummarySeatsV1, type BoardSummaryV1 } from '../../core/board/summary';
 import { decodeDevActivitySnapshot } from '../../core/dev-activity/decode';
@@ -39,11 +39,11 @@ function pullRequest(number: number, head_ref: string, required_check: BoardPull
 }
 
 function worker(now: number, address: string, agent: string, status: string, issue: number | null, pr: number | null, branch: string | null): BoardTerminalV1 {
-  return { address, name: null, agent, state: 'live', status, status_kind: null, status_ms: now, turn: 1, branch, seat_status: 'observed', seat: 'worker', issue, pr };
+  return { address, name: null, agent, state: 'live', status, status_kind: null, status_msg: null, status_ms:now, turn: 1, branch, seat_status: 'observed', seat: 'worker', issue, pr };
 }
 
 function lead(address: string, agent: string, seat: string): BoardParentsSeatV1 {
-  return { address, name: null, agent, state: 'live', status: 'idle', status_kind: null, status_ms: null, turn: 1, branch: null, seat_status: 'observed', seat, issue: null, pr: null, parent: null };
+  return { address, name: null, agent, state: 'live', status: 'idle', status_kind: null, status_msg: null, status_ms:null, turn: 1, branch: null, seat_status: 'observed', seat, issue: null, pr: null, parent: null };
 }
 
 const accepted = (at: string): BoardPullRequestV1['acceptance'] => ({ status: 'accepted', via: 'record', accepted_at: at, evidence_url: `${url('pull', OFFICE_PARENT)}#issuecomment-2` });
@@ -53,7 +53,7 @@ export function officeBoard(now: number): BoardV1 {
   const done = { status: 'success', completed_at: ago(9) } as const;
   const terminals = officeWorkers(now);
   return decodeBoard({
-    protocol: 2, kind: 'repo-harness.board', observed_at: ago(0), repository: REPOSITORY, default_branch: 'main', acceptance_merge: 'on',
+    protocol: BOARD_PROTOCOL, kind: 'repo-harness.board', observed_at: ago(0), repository: REPOSITORY, default_branch: 'main', acceptance_merge: 'on',
     parent: { number: OFFICE_PARENT, title: 'Operator console', url: url('issues', OFFICE_PARENT), state: 'open', labels: [], milestone: null },
     plan: {
       status: 'observed', comment_url: `${url('issues', OFFICE_PARENT)}#issuecomment-3`, created_at: ago(8), revision: 7,
@@ -146,9 +146,9 @@ const IDLE_ROOMS: Readonly<Record<string, string>> = {
 function sampleParents(room: SampleRoom, repository: string, now: number): BoardParentsV1 {
   const observed_at = new Date(now).toISOString();
   const seat = (address: string, agent: string | null, status: string, role: string, parent: string | null): BoardParentsSeatV1 =>
-    ({ address, name: null, agent, state: 'live', status, status_kind: null, status_ms: null, turn: 1, branch: null, seat_status: 'observed', seat: role, issue: null, pr: null, parent });
+    ({ address, name: null, agent, state: 'live', status, status_kind: null, status_msg: null, status_ms:null, turn: 1, branch: null, seat_status: 'observed', seat: role, issue: null, pr: null, parent });
   return decodeBoardParents({
-    protocol: 3, kind: 'repo-harness.board-parents', observed_at, repository,
+    protocol: BOARD_PARENTS_PROTOCOL, kind: 'repo-harness.board-parents', observed_at, repository,
     parents: [{ number: room.parent, title: room.name, url: `https://github.com/${repository}/issues/${room.parent}`, updated_at: observed_at, sub_issues: { total: 6, completed: 2 }, seats: room.workers.length }],
     seats: [
       ...(room.orchestrator === null ? [] : [seat('t1', room.orchestrator.agent, 'idle', 'orchestrator', null)]),
@@ -163,10 +163,10 @@ export function officeParents(repositoryId: string, now: number): BoardParentsV1
   const sample = SAMPLE_ROOMS[repositoryId];
   if (sample !== undefined) return sampleParents(sample, `Ancienttwo/${sample.name}`, now);
   if (repositoryId !== HARNESS_ID) {
-    return decodeBoardParents({ protocol: 3, kind: 'repo-harness.board-parents', observed_at, repository: `Ancienttwo/${IDLE_ROOMS[repositoryId]!}`, parents: [], seats: [] });
+    return decodeBoardParents({ protocol: BOARD_PARENTS_PROTOCOL, kind: 'repo-harness.board-parents', observed_at, repository: `Ancienttwo/${IDLE_ROOMS[repositoryId]!}`, parents: [], seats: [] });
   }
   return decodeBoardParents({
-    protocol: 3, kind: 'repo-harness.board-parents', observed_at, repository: REPOSITORY,
+    protocol: BOARD_PARENTS_PROTOCOL, kind: 'repo-harness.board-parents', observed_at, repository: REPOSITORY,
     parents: [{ number: OFFICE_PARENT, title: 'Operator console', url: url('issues', OFFICE_PARENT), updated_at: observed_at, sub_issues: { total: 12, completed: 5 }, seats: 6 }],
     seats: [lead('t3', 'claude-code', 'orchestrator'), lead('t4', 'codex', 'advisor'), ...officeWorkers(now).map(terminal => ({ ...terminal, parent: String(OFFICE_PARENT) }))],
   });

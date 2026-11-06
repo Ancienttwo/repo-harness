@@ -6,6 +6,12 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- The board now reports `blocked`, `error` and `done` desks and the hc status
+  message of each seat. `BOARD_PROTOCOL` moves to 3, `BOARD_PARENTS_PROTOCOL`
+  to 4 and `BOARD_SUMMARIES_PROTOCOL` to 3, with no read of the old protocols.
+  The web client and the server ship together, so an open page must reload. A
+  stored summary shows as unavailable until the next board read writes it.
+  (#1867)
 - A plugin command guard on a recorded `all` selection now prints
   `repo-harness update`. An explicit `--plugins` list ended `all`, so later
   plugins did not join at `update`. (#1869)

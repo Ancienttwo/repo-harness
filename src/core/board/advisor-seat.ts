@@ -1,4 +1,5 @@
 import type { BoardHostPortsV1, BoardSeatTerminalReadV1 } from './board';
+import { hcStatusClass, type HcStatusClass } from './desk';
 import { hasUnredactedSecret, KEY_BEGIN, KEY_END, replaceSecrets } from '../security/secret-patterns';
 import { HC_LOCAL_ADDRESS } from '../terminal/hc-address';
 
@@ -90,12 +91,12 @@ export const ADVISOR_BOSS_COMMAND_TABLE: Readonly<Record<AdvisorBossCommand, { r
  * missing or new status word never sends. With `blocked` the text and Enter
  * could answer a pending prompt.
  */
-const ADVISOR_TURN_OVER: readonly string[] = ['idle', 'done'];
-const ADVISOR_TURN_RUNNING: readonly string[] = ['working', 'blocked'];
+const ADVISOR_TURN: Readonly<Record<HcStatusClass, 'over' | 'running' | 'unknown'>> = {
+  idle: 'over', done: 'over', working: 'running', blocked: 'running', error: 'unknown', unreported: 'unknown', other: 'unknown',
+};
 
 export function advisorTurnState(status: string | null): 'over' | 'running' | 'unknown' {
-  if (status !== null && ADVISOR_TURN_OVER.includes(status)) return 'over';
-  return status !== null && ADVISOR_TURN_RUNNING.includes(status) ? 'running' : 'unknown';
+  return ADVISOR_TURN[hcStatusClass(status)];
 }
 
 export function advisorBossCommandText(command: AdvisorBossCommand, parent: number): string {
@@ -349,6 +350,25 @@ export function advisorTranscriptLines(text: string): readonly string[] {
   const keys = privateKeyLines(lines);
   return Object.freeze(lines.map((line, at) => keys[at] ? ADVISOR_TRANSCRIPT_LINE_WITHHELD : redactAdvisorLine(line)));
 }
+
+/** The longest seat status message that leaves the server. */
+export const SEAT_STATUS_MESSAGE_MAX_CHARS = 200;
+
+/**
+ * hc `status.msg` as one line: the read-back redaction runs on the whole
+ * message, and the cut runs on its result, so no secret fragment can remain.
+ * The last check covers text that only the join or the cut makes match a rule.
+ */
+export function seatStatusMessage(message: string | null): string | null {
+  if (message === null) return null;
+  const line = advisorTranscriptLines(message).join(' ').replace(/\s+/gu, ' ').trim().slice(0, SEAT_STATUS_MESSAGE_MAX_CHARS);
+  if (line === '') return null;
+  return hasUnredactedSecret(line) ? ADVISOR_TRANSCRIPT_LINE_WITHHELD : line;
+}
+
+/** A seat status message that may leave the server: null is no message. */
+export const isSeatStatusMessage = (value: unknown): value is string | null =>
+  value === null || (isPublicLine(value) && value.length <= SEAT_STATUS_MESSAGE_MAX_CHARS);
 
 /**
  * Exactly one live terminal with the advisor seat label. The host read holds

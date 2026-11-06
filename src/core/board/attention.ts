@@ -1,5 +1,6 @@
 import { planIssues } from './plan-block';
 import type { BoardItemV1, BoardPullRequestV1, BoardTerminalV1, BoardV1 } from './board';
+import { hcStatusClass } from './desk';
 import { pathHazardHits } from './hazards';
 import { compareHcVersions } from '../terminal/herdr-pin';
 
@@ -165,7 +166,8 @@ function workerTerminals(context: Context, rule: BoardRuleId): SeatTerminal[] {
 
 function a3(context: Context): void {
   for (const terminal of workerTerminals(context, 'A3')) {
-    if (terminal.status !== 'blocked' && terminal.status !== 'error') continue;
+    const word = hcStatusClass(terminal.status);
+    if (word !== 'blocked' && word !== 'error') continue;
     if (terminal.status_ms === null) {
       skip(context, 'A3', 'status_time_missing', terminal.address);
     } else if (context.now - terminal.status_ms > A3_STUCK_MS) {
@@ -177,7 +179,8 @@ function a3(context: Context): void {
 
 function a4(context: Context): void {
   for (const terminal of workerTerminals(context, 'A4')) {
-    if (terminal.status !== 'done' && terminal.status !== 'idle') continue;
+    const word = hcStatusClass(terminal.status);
+    if (word !== 'done' && word !== 'idle') continue;
     if (terminal.issue === null) {
       skip(context, 'A4', 'issue_label_missing', terminal.address);
       continue;
