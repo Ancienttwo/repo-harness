@@ -8,7 +8,7 @@ The track files stay in the coordinator scratchpad. This note keeps the decision
 
 | Area | Decision | Basis |
 |---|---|---|
-| P7 shape | Move first, then gate. No new port. | `ReviewerRunner` exists (`src/core/review/runner-port.ts:96`). The MCP and Operator gates moved a core edge into core; they added no port. |
+| P7 shape | Move first, then gate. No new port. | `ReviewerRunner` exists (`src/core/review/runner-port.ts:107`). The MCP and Operator gates moved a core edge into core; they added no port. |
 | Review | `review admit`, `revoke` and `publish` stay core and open. `review round`, `status`, `close` and `cancel` need `peer-runtime`. The OAR review host stays in the plugin. | #1287 Review contract: the core owns `AcceptanceReviewResult` and the runner port; "OAR / Herdr task agent" is plugin. The gatekeeper is the default acceptor, so a core-only install can accept and publish without the OAR host. |
 | Worktree closeout | The runtime closeout moves into core with the same argv, JSON and exit codes. | Every closeout runs it (`scripts/contract-worktree-runtime.ts:117` spawns a plugin file). A gate would block closeout after a deselection. |
 | GitHub App hook config | `events install` writes it through core `publication` (owner question P7-Q2). | #1287 rule: "a plugin does not write GitHub directly; it uses core `publication`". Today `src/cli/commands/events.ts:139` sends `PATCH /app/hook/config`. |
@@ -28,7 +28,7 @@ Both tracks:
 - Make the Herdr skill installer (`src/cli/commands/herdr-skill.ts` and its renderer) core. It installs the core `herdr` skill.
 - Guard the four `herdr notify` actions and `events install`. Keep `--help` open.
 - Load a guarded body lazily. Refuse before any credential read, prompt, probe, write or process start.
-- Apply no migration. The `peer-runtime` id exists (`plugin-manifest.ts:12`); only the enforcement changes.
+- Apply no migration. The `peer-runtime` id exists (`src/core/skill-surface/plugin-manifest.ts:14`); only the enforcement changes.
 - Use High PRs in sequence, one writer for each file.
 
 ### Divergences
@@ -72,7 +72,7 @@ Both tracks:
 |---|---|---|---|
 | Source layout | A Bun workspace; move `src/operator-web/**` to `packages/operator-web/`. | No workspace. The source stays. `packages/operator-web/` holds a manifest, a README and the build output. | Opus. A workspace changes `bun.lock` and moves 103 files and 148 imports with no behavior gain. The console has no runtime dependency to link. |
 | Events Worker | A third package, `repo-harness-events-worker`, as D4 says. | Stays in core under `peer-runtime` (narrow D4). | Opus, as owner question Q-W. |
-| Missing console | `operator serve` refuses to start. | Page requests get a typed 503 (`operator_assets_unavailable`, `operator_assets_version_mismatch`); the API keeps working. | Opus. `tests/cli/operator-serve.test.ts:1468-1491` and the vite dev proxy start the server without console files. |
+| Missing console | `operator serve` refuses to start. | Page requests get a typed 503 (`operator_assets_unavailable`, `operator_assets_version_mismatch`); the API keeps working. | Opus. Today a page request without console files already gets a 503, and the API routes answer before that branch (`src/effects/operator/server.ts:1781-1790`). The vite dev server proxies `/api` to a running server (`vite.operator.config.ts:33`). The two new codes and their tests belong to #1891. |
 | UI version check | The UI reads `/healthz` before its first read or write. | The server serves only a console of its own version. | Opus. Equality at serve time removes the mixed pair, except across an update without a restart. The 0.26.5 record already says to restart the server and reload the page together. |
 
 ### Failure modes
@@ -87,7 +87,7 @@ Approved (M98): `/healthz.protocol` is the desktop integration contract only. Th
 
 Q2 follows step 4: lockstep. The health `version` is the core package version. The server reads it from its own package metadata (`package.json`) and imports no CLI code. Today the handler returns `{ok, service, protocol}` with protocol 1 (`src/effects/operator/server.ts:1344-1350`).
 
-The core-side change is one unit: protocol 2, the `version` field, the health test case (`tests/cli/operator-serve.test.ts:114-129`) and the bump rule as an ADR. The shell work starts after P7 (M42) and needs the owner answers for the shell repository and the signing credentials.
+The core-side change is one unit: protocol 2, the `version` field, the health assertions (`tests/cli/operator-serve.test.ts:196-198` and `:258-262`) and the bump rule as an ADR. The shell work starts after P7 (M42) and needs the owner answers for the shell repository and the signing credentials.
 
 ## Order and file handoffs
 
