@@ -6,6 +6,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { repoHarnessPackageVersion } from '../../src/cli/mcp/version';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { recordPluginSelection } from '../helpers/install-ownership';
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -21,7 +22,7 @@ describe('mcp stdio transport', () => {
   test('initializes and calls workspace reader tools over real stdio transport, and runs no CodeGraph binary without the architecture plugin', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-stdio-'));
     const registryHome = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-stdio-home-'));
-    // A HOME with no recorded install selection, and a logging CodeGraph first on PATH.
+    // A HOME that selects `mcp` and not `architecture`, and a logging CodeGraph first on PATH.
     const home = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-stdio-user-'));
     const fakeBin = join(home, 'bin');
     const codegraphLog = join(home, 'codegraph.log');
@@ -38,6 +39,7 @@ describe('mcp stdio transport', () => {
       mkdirSync(join(indexedRoot, '.ai/harness'), { recursive: true });
       writeFileSync(join(indexedRoot, '.ai/harness/policy.json'), '{}\n');
       mkdirSync(join(indexedRoot, '.codegraph'));
+      recordPluginSelection({ ...process.env, HOME: home }, ['mcp']);
       mkdirSync(fakeBin);
       writeFileSync(join(fakeBin, 'codegraph'), `#!/bin/sh\necho "$*" >> '${codegraphLog}'\necho '[]'\n`);
       chmodSync(join(fakeBin, 'codegraph'), 0o755);
