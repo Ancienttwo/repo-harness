@@ -14,6 +14,10 @@ All notable changes to this skill are documented here.
   console build and source. Page requests return 503 when the console is
   absent or has another version; API routes and `/healthz` stay available.
   Run `repo-harness update`, restart the server and reload the page. (#1891)
+- The Herdr notify setup states that the relay child runs the `peer-runtime`
+  command `herdr notify relay`. Its gate reads the selection under the `HOME`
+  of the hc core. Select `peer-runtime` for that `HOME` too, or the relay
+  exits 1 with `install_plugin_unavailable`. (#1906)
 
 ## [0.26.6] - 2026-11-06
 

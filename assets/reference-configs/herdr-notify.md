@@ -122,6 +122,7 @@ The command writes the config to `~/.repo-harness/herdr/notify.env` with file mo
 Then it starts the relay with `hc run --bg --no-parent` in an hc terminal named `rh-notify-relay` with the label `repo-harness.role=notify-relay`.
 The relay terminal has no parent, so it stays when the install terminal ends.
 An hc terminal starts with the core's environment, so install passes the repo-harness home to the relay as `--home <absolute path>`.
+The relay child runs `repo-harness herdr notify relay`, a `peer-runtime` command. Its plugin gate reads the recorded selection under the `HOME` of the hc core, not under `--home`. Select `peer-runtime` for that `HOME` too. Otherwise the relay exits 1 with `install_plugin_unavailable`.
 When a live relay terminal already exists, install starts no second one.
 The relay reads the config again on each event, so a new config takes effect without a restart.
 Each read applies the install rules: HTTPS URLs without user information, a Bot URL and key, a complete Telegram target and done flags of `0` or `1`. An invalid config sends nothing, and the relay screen names the broken rule without its value.
