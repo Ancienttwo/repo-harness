@@ -234,11 +234,15 @@ function decodeRouting(value: unknown, code: string): SeatRoutingV1 {
 }
 
 function decodeSeatsRecord(record: Record<string, unknown>, code: string): SeatsConfigV1 {
-  const seats = Object.fromEntries(SEAT_IDS.map(id => [id, id === 'worker-light' && record[id] === null ? null : decodeSeat(id, record[id], code)])) as Omit<SeatsConfigV1, 'routing'>;
-  const routing = decodeRouting(record.routing, code);
-  if (ROUTING_CLASSES.some(task => routing[task].some(id => seats[id] === null))) invalid(code);
-  if (routing.frontend.some(id => seats[id]!.runtime !== 'claude')) invalid(code);
-  return { ...seats, routing };
+  const seats = Object.fromEntries(SEAT_IDS.filter(id => id in record)
+    .map(id => [id, id === 'worker-light' && record[id] === null ? null : decodeSeat(id, record[id], code)])) as Partial<Omit<SeatsConfigV1, 'routing'>>;
+  const routing = 'routing' in record ? decodeRouting(record.routing, code) : undefined;
+  if (routing !== undefined) {
+    if (ROUTING_CLASSES.some(task => routing[task].some(id => seats[id] === null))) invalid(code);
+    if (routing.frontend.some(id => seats[id] !== undefined && seats[id]!.runtime !== 'claude')) invalid(code);
+  }
+  if (SECTION_KEYS.some(key => !(key in record))) throw new SeatsConfigMigrationRequiredError();
+  return { ...(seats as Omit<SeatsConfigV1, 'routing'>), routing: routing! };
 }
 
 function decodeSeats(value: unknown, code: string): SeatsConfigV1 {
@@ -250,7 +254,6 @@ export function decodeSeatsConfig(value: unknown): SeatsConfigV1 {
   if (value === undefined) return DEFAULT_SEATS_CONFIG;
   const code = 'seats_config_invalid';
   const record = object(value, SECTION_KEYS, code, ['orchestrator', 'advisor', 'worker']);
-  if (SECTION_KEYS.some(key => !(key in record))) throw new SeatsConfigMigrationRequiredError();
   return decodeSeatsRecord(record, code);
 }
 

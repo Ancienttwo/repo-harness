@@ -511,6 +511,14 @@ describe('seat settings contract without transport', () => {
     }
   });
 
+  test('malformed present values stay invalid when introduced keys are missing', () => {
+    const { routing: _routing, ...withoutRouting } = DEFAULT_SEATS_CONFIG;
+    const { gatekeeper: _gatekeeper, ...withoutGatekeeper } = DEFAULT_SEATS_CONFIG;
+    for (const seats of [{ ...withoutRouting, advisor: {} }, { ...withoutGatekeeper, routing: {} }]) {
+      expect(() => decodeSeatsConfig(seats)).toThrow('seats_config_invalid');
+    }
+  });
+
   test('old stored sections require update and GET exposes all seats and routing ranges', () => {
     const original = { orchestrator: DEFAULT_SEATS_CONFIG.orchestrator, advisor: DEFAULT_SEATS_CONFIG.advisor,
       worker: { ...DEFAULT_SEATS_CONFIG.worker, model: 'gpt-6.1-sol' } };
