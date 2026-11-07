@@ -99,7 +99,7 @@ export interface RuntimeCapability {
 }
 
 export interface ToolingTool {
-  path_copy?: { relation: 'managed' | 'unrelated'; fix: string | null } | null;
+  path_copy?: { relation: 'managed' | 'unrelated'; fix_command: string | null; fix_note: string | null } | null;
   name?: string;
   required?: boolean;
   status?: string;
@@ -699,11 +699,11 @@ function toolingChecks(
         : `${tool.status ?? 'unknown'}${update}; ${requirement}${tool.reason ?? 'no detail'}`,
     });
 
-    if (foreignCopy && tool.path_copy?.fix) {
+    if (foreignCopy && tool.path_copy) {
       addAction(actions, {
         id: `tooling.${toolName}.path-copy`, status: 'needs_agent',
-        reason: 'The PATH copy is unrelated to the managed runtime.', requires_agent: true,
-        risk: 'The owner must remove the unrelated copy.', command: tool.path_copy.fix,
+        reason: `The PATH copy is unrelated to the managed runtime.${tool.path_copy.fix_note ? ` ${tool.path_copy.fix_note}` : ''}`, requires_agent: true,
+        risk: 'The owner must remove the unrelated copy.', ...(tool.path_copy.fix_command ? { command: tool.path_copy.fix_command } : {}),
         verification: verificationCommand(target, checkUpdates),
       }, [`tooling.${toolName}`]);
     }

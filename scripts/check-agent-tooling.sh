@@ -1983,7 +1983,8 @@ function detectArchctx(managed) {
   if (managed.status !== "present") {
     warnings.push(`Managed archctx is not usable: ${managed.reason}. Run repo-harness update.`);
   }
-  let fix = null;
+  let fixCommand = null;
+  let fixNote = null;
   if (unrelated) {
     const modules = packageRoot && path.dirname(packageRoot);
     const parent = modules && path.dirname(modules);
@@ -1992,10 +1993,11 @@ function detectArchctx(managed) {
     const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
     const node = prefix && path.join(prefix, 'bin', 'node');
     const npm = prefix && path.join(prefix, process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
-    fix = npm && fs.existsSync(npm) && (process.platform === 'win32' || fs.existsSync(node))
+    fixCommand = npm && fs.existsSync(npm) && (process.platform === 'win32' || fs.existsSync(node))
       ? process.platform === 'win32' ? `"${npm}" --prefix "${prefix}" -g uninstall archctx` : `${quote(node)} ${quote(npm)} --prefix ${quote(prefix)} -g uninstall archctx`
-      : `Remove ${realBin} with the package manager that owns it.`;
-    warnings.push(`PATH archctx ${pathVersion ?? "(unknown version)"} at ${pathBin} is unrelated to the managed archctx ${managed.version ?? "(missing)"}. ${fix}`);
+      : null;
+    fixNote = fixCommand ? null : `Remove ${realBin} with the package manager that owns it.`;
+    warnings.push(`PATH archctx ${pathVersion ?? "(unknown version)"} at ${pathBin} is unrelated to the managed archctx ${managed.version ?? "(missing)"}. ${fixCommand ?? fixNote}`);
   }
   const contractsPackageVersion = archctxContractsVersion();
   const capabilitySource = archctxCapabilitySource();
@@ -2020,7 +2022,7 @@ function detectArchctx(managed) {
     contracts_scope: "release-gated-packed-schema-authority",
     install_mode: "release-gated-runtime-dependency-when-projection-enabled",
     managed,
-    path_copy: pathBin ? { bin_path: pathBin, real_path: realBin, version: pathVersion, relation: unrelated ? "unrelated" : "managed", fix } : null,
+    path_copy: pathBin ? { bin_path: pathBin, real_path: realBin, version: pathVersion, relation: unrelated ? "unrelated" : "managed", fix_command: fixCommand, fix_note: fixNote } : null,
     contracts_package_version: contractsPackageVersion,
     capability_source: capabilitySource,
     capability_source_key: ARCHCTX_CAPABILITY_SOURCE_KEY,
@@ -2028,7 +2030,7 @@ function detectArchctx(managed) {
     nodes_dir: path.join(REPO_ROOT, ARCHCTX_NODES_DIR),
     nodes_dir_present: nodesDirPresent,
     node_count: nodeCount,
-    readiness: "advisory",
+    readiness: unrelated ? "blocked" : "advisory",
     hook_policy: "do-not-block-hooks",
     vendoring_policy: "do-not-vendor",
     impact: {
@@ -2233,7 +2235,7 @@ function printText(result) {
   console.log(`  - Sync index: ${codegraph.sync_command}`);
   console.log("");
 
-  console.log(`ArchContext [${archctx.status}] (advisory)`);
+  console.log(`ArchContext [${archctx.status}]${archctx.path_copy ? ` (PATH copy: ${archctx.path_copy.relation})` : ""}`);
   console.log(`  - Managed CLI: ${archctx.managed.status}${archctx.managed.version ? ` (v${archctx.managed.version})` : ""}${archctx.managed.bin_path ? ` at ${archctx.managed.bin_path}` : ""}; Node ${archctx.managed.node_range ?? "unknown"}; runnable command from ${archctx.managed.command_source}`);
   console.log(`  - PATH copy: ${archctx.path_copy ? `${archctx.path_copy.relation}${archctx.path_copy.version ? ` (v${archctx.path_copy.version})` : ""} at ${archctx.path_copy.bin_path}` : "none"}`);
   for (const warning of archctx.warnings) console.log(`  - Warning: ${warning}`);

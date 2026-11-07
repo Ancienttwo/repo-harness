@@ -339,16 +339,6 @@ function writeCappedFakeTimeout(fakeBin: string, capSeconds = 2) {
   );
 }
 
-// PATH with every directory that ships a real `skills` binary removed, so the
-// absent-binary case cannot silently resolve the developer machine's install.
-function pathWithoutSkillsCli(prefix: string) {
-  const entries = (process.env.PATH ?? "").split(":").filter((dir) => {
-    if (!dir) return false;
-    return !existsSync(join(dir, "skills"));
-  });
-  return [prefix, ...entries].join(":");
-}
-
 function writeFakeCodeGraph(
   fakeBin: string,
   options: { version?: string; status?: "up-to-date" | "stale" | "not-initialized"; logFile?: string } = {}
@@ -714,7 +704,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: pathWithoutSkillsCli(envRoot.fakeBin),
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -1884,7 +1874,8 @@ describe("check-agent-tooling", () => {
       expect(archctx.warnings[0]).toContain(`PATH archctx 0.5.13 at ${join(envRoot.fakeBin, "archctx")} is unrelated to the managed archctx ${packaged.version}`);
       expect(archctx.reason).toContain(archctx.warnings[0]);
       expect(archctx.status).toBe("present");
-      expect(archctx.path_copy.fix).toContain(`--prefix '${envRoot.root}' -g uninstall archctx`);
+      expect(archctx.path_copy.fix_command).toContain(`--prefix '${envRoot.root}' -g uninstall archctx`);
+      expect(archctx.readiness).toBe('blocked');
       rmSync(join(envRoot.fakeBin, 'archctx'));
       symlinkSync(archctx.managed.bin_path, join(envRoot.fakeBin, 'archctx'));
       const managed = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], {
@@ -1914,6 +1905,7 @@ describe("check-agent-tooling", () => {
       const archctxRoot = join(packageRoot, "node_modules", "archctx");
       mkdirSync(archctxRoot, { recursive: true });
       writeFileSync(join(archctxRoot, "package.json"), JSON.stringify({ name: "archctx", version: packaged.version, engines: packaged.engines, bin: { archctx: "./bin/archctx.mjs" } }));
+      writeExecutable(join(envRoot.fakeBin, "archctx"), "#!/bin/sh\necho 0.5.13\n");
 
       const res = spawnSync("bash", [join(packageRoot, "scripts", "check-agent-tooling.sh"), "--json", "--host", "claude"], {
         cwd: envRoot.root,
@@ -1926,8 +1918,10 @@ describe("check-agent-tooling", () => {
       const missing = join(realpathSync(packageRoot), "node_modules", "archctx", "bin", "archctx.mjs");
       expect(archctx.managed).toMatchObject({ status: "invalid", version: null, bin_path: null, reason: `package-local archctx@${packaged.version} binary is missing: ${missing}` });
       expect(archctx.warnings).toContain(`Managed archctx is not usable: ${archctx.managed.reason}. Run repo-harness update.`);
-      // The unrelated PATH copy fails the check even when the managed CLI is invalid.
+      // Capability status and PATH ownership are reported independently.
       expect(archctx.status).toBe("present");
+      expect(archctx.path_copy).toMatchObject({ relation: "unrelated", fix_command: null });
+      expect(archctx.path_copy.fix_note).toContain("package manager that owns it");
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }

@@ -800,7 +800,7 @@ describe('init-hook command', () => {
             install_command: 'install-advisory-tool',
             upgrade_command: 'upgrade-advisory-tool',
           },
-          archctx: { name: 'archctx', required: false, status: 'present', path_copy: { relation: 'unrelated', fix: 'owner uninstall command' } },
+          archctx: { name: 'archctx', required: false, status: 'present', path_copy: { relation: 'unrelated', fix_command: null, fix_note: 'Remove it with its owner.' } },
         }),
       });
 
@@ -809,7 +809,9 @@ describe('init-hook command', () => {
       expect(check?.detail).toContain('optional');
       expect(report.agent_actions.find((entry) => entry.id.startsWith('tooling.advisory_tool.'))).toBeUndefined();
       expect(report.checks.find(entry => entry.id === 'tooling.archctx')?.status).toBe('fail');
-      expect(report.agent_actions.find(entry => entry.id === 'tooling.archctx.path-copy')?.command).toBe('owner uninstall command');
+      const action = report.agent_actions.find(entry => entry.id === 'tooling.archctx.path-copy');
+      expect(action?.command).toBeUndefined();
+      expect(action?.reason).toContain('Remove it with its owner.');
       expect(report.status).toBe('blocked');
     });
   });

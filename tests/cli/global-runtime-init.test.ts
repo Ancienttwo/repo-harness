@@ -910,6 +910,7 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
 
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')).toMatchObject({ status: 'ok' });
+      expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')?.detail).toContain(`archctx@${ARCHCTX_PIN}`);
       const archctxLink = join(home, '.bun', 'bin', 'archctx');
       expect(realpathSync(archctxLink)).toBe(realpathSync(join(home, '.bun', 'install', 'global', 'node_modules', 'archctx', 'bin', 'archctx.mjs')));
       expect(update({ plugins: FULL_PLUGINS }).exitCode).toBe(0);
@@ -919,6 +920,14 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
       expect(conflict.exitCode).toBe(1);
       expect(conflict.steps.find(step => step.step === 'verify managed runtime dependencies')?.detail).toContain('RH_ARCHCTX_BIN_CONFLICT');
       expect(readFileSync(archctxLink, 'utf8')).toBe('owner file');
+      rmSync(archctxLink);
+      symlinkSync(join(home, 'missing-archctx'), archctxLink);
+      expect(update({ plugins: FULL_PLUGINS }).steps.find(step => step.step === 'verify managed runtime dependencies')?.detail).toContain('Move or remove it');
+      rmSync(archctxLink);
+      const bunScript = readFileSync(join(fakeBin, 'bun.fixture-body'), 'utf8');
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
+      expect(update({ plugins: FULL_PLUGINS }).steps.find(step => step.step === 'verify managed runtime dependencies')?.detail).toContain('RH_ARCHCTX_BIN_READBACK');
+      writeShellExecutableFixture(join(fakeBin, 'bun'), bunScript);
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza -g -a codex -s think hunt check health -y');
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add BfdCampos/dotfiles -g -a codex -s mermaid -y');
       expect(readFileSync(bunLog, 'utf-8')).toContain(`add -g @colbymchenry/codegraph@${CODEGRAPH_PIN}`);
@@ -929,7 +938,7 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
       // A plain update's candidate request allows CodeGraph (codegraph: true); without architecture it runs no CodeGraph step.
       rmSync(bunLog);
       const withoutArchitecture = update({ plugins: FULL_PLUGINS.filter(id => id !== 'architecture'), codegraph: true });
-      expect(withoutArchitecture.exitCode).toBe(0);
+      expect(withoutArchitecture.exitCode, JSON.stringify(withoutArchitecture.steps.filter(step => step.status === 'failed'))).toBe(0);
       expect(withoutArchitecture.steps.filter(step => step.step.includes('CodeGraph'))).toEqual([
         { step: 'ensure CodeGraph CLI', status: 'skipped', detail: 'architecture plugin not selected' },
         { step: 'configure CodeGraph MCP', status: 'skipped', detail: 'architecture plugin not selected' },
@@ -1989,7 +1998,7 @@ exit 0
         previous: null,
       })}\n`);
       const candidateVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')).version;
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "pm" && "\${2:-}" == "view" ]]; then printf '%s\\n' '${JSON.stringify(candidateVersion)}'; exit 0; fi\nif [[ "\${1:-}" == */src/cli/index.ts ]]; then exec "${process.execPath}" "$@"; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "pm" && "\${2:-}" == "view" ]]; then printf '%s\\n' '${JSON.stringify(candidateVersion)}'; exit 0; fi\nif [[ "\${1:-}" == */src/cli/index.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ "\${3:-}" == archctx@* ]]; then mkdir -p "$HOME/.bun/bin"; ln -sf "$HOME/.bun/install/global/node_modules/repo-harness/node_modules/archctx/bin/archctx.mjs" "$HOME/.bun/bin/archctx"; fi\nexit 0\n`);
 
       const res = spawnSync(
         process.execPath,
@@ -2142,7 +2151,7 @@ exit 0
       recordExplicitFullSelection(home);
       setupManagedRuntimeReadback(home, fakeBin);
       installCandidateRuntimeFixture(home, '9.9.9');
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == */src/cli/index.ts ]]; then exec "${process.execPath}" "$@"; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == */src/cli/index.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ "\${3:-}" == archctx@* ]]; then mkdir -p "$HOME/.bun/bin"; ln -sf "$HOME/.bun/install/global/node_modules/repo-harness/node_modules/archctx/bin/archctx.mjs" "$HOME/.bun/bin/archctx"; fi\nexit 0\n`);
 
       const res = spawnSync(
         process.execPath,
@@ -2506,6 +2515,7 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
     // The stub agent fleet helper runs under core.
     setupFakeSource(source);
     setupManagedRuntimeReadback(home, fakeBin, '1.0.0');
+    writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nif [[ "${3:-}" == archctx@* ]]; then mkdir -p "$HOME/.bun/bin"; ln -sf "$HOME/.bun/install/global/node_modules/archctx/bin/archctx.mjs" "$HOME/.bun/bin/archctx"; fi\nexit 0\n');
     const globalModules = join(home, '.bun/install/global/node_modules');
     const harnessManifest = join(globalModules, 'repo-harness/package.json');
     writeFileSync(harnessManifest, JSON.stringify({ name: 'repo-harness', version: '1.0.0', dependencies: { archctx: '0.2.3', 'archctx-contracts': '0.2.3' } }));
@@ -2513,7 +2523,7 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
       installCli: false, installSpec: 'repo-harness@9.9.9', updateMode: true,
       syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
       env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
-        PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: process.execPath } };
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun') } };
     const result = runTransactionalRuntimeRefresh(options, (transactionOptions) => {
       setupManagedRuntimeReadback(home, fakeBin, '9.9.9');
       const body = join(fakeBin, 'node.fixture-body');

@@ -497,11 +497,20 @@ function reconcileManagedRuntime(
         const globalManifest = readPackageManifest(join(bunRoot, 'install', 'global'));
         const existing = lstatSync(link, { throwIfNoEntry: false });
         if (existing) {
-          if (realpathSync(link) !== target) return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_CONFLICT: ${link} is not the managed archctx link. Move or remove it, then rerun repo-harness update.` };
+          let linkTarget: string | null = null;
+          try { linkTarget = realpathSync(link); } catch { /* A dangling link is also a conflict. */ }
+          if (linkTarget !== target) return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_CONFLICT: ${link} is not the managed archctx link. Move or remove it, then rerun repo-harness update.` };
           if (recordValue(globalManifest.dependencies).archctx === version) return { step: 'verify managed runtime dependencies', status: 'ok', detail: initial.detail };
         }
         const install = runProcess(bunExecutable, ['add', '-g', `archctx@${version}`], cwd, env);
         if (install.status !== 'ok') return withStepName(install, 'verify managed runtime dependencies', `archctx@${version}`);
+        try {
+          const installedRoot = findInstalledPackageRoot(globalPackageRoot, 'archctx');
+          if (!installedRoot || readPackageManifest(installedRoot).version !== version || realpathSync(link) !== target) throw new Error('installed version or link target does not match');
+        } catch (error) {
+          return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_READBACK: ${link}: ${error instanceof Error ? error.message : String(error)}` };
+        }
+        return { step: 'verify managed runtime dependencies', status: 'ok', detail: `${initial.detail}; archctx@${version}` };
       } catch (error) {
         return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_INVALID: ${link}: ${error instanceof Error ? error.message : String(error)}` };
       }
