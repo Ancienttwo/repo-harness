@@ -22,6 +22,9 @@ import { piExecutable } from '../pi-executable';
 import { piReviewLaunchBlocker } from '../pi-host-probe';
 
 type Harness = ReviewRuntimeId;
+const REVIEWER_LABELS: Record<ReviewRuntimeId, AcceptanceReceipt['reviewer']> = {
+  claude: 'Claude', codex: 'Codex', pi: 'Pi',
+};
 interface ReviewSession<Endpoint> {
   protocol: 1;
   owner_root: string;
@@ -142,6 +145,7 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
     let session: ReviewSession<Endpoint>;
     if (existsSync(join(dir, 'session.json'))) {
       session = readSessionArtifact<ReviewSession<Endpoint>>(join(dir, 'session.json'));
+      if (!isReviewRuntimeId(session.actual_harness)) throw new Error('review_harness_unsupported');
       if (session.protocol !== 1 || session.owner_root !== root || session.campaign_sha256 !== campaign
         || JSON.stringify(session.task_claim) !== JSON.stringify(taskClaim)
         || session.reviewer_repo !== reviewerRepo || canonicalize(JSON.parse(JSON.stringify(session.endpoint))) !== canonicalize(JSON.parse(JSON.stringify(endpoint)))
@@ -304,7 +308,7 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
       subject_sha256: identity.subject_sha256, actual_harness: session.actual_harness, actual_role: GENERIC_REVIEW_ROLE, actual_model: model }, previous);
     const findings = output.findings.filter(finding => finding.status !== 'resolved').map(({ severity, message }) => ({ severity, message }));
     const reviewResult = { ...output, findings };
-    const reviewer = session.actual_harness === 'pi' ? 'Pi' : session.actual_harness === 'codex' ? 'Codex' : 'Claude';
+    const reviewer = REVIEWER_LABELS[session.actual_harness];
     const receipt = await recordAcceptance({ root, authorityHome: options.authorityHome ?? osAccountHome(), authority: options.authority,
       verification: options.verification!, expectedContext: identity,
       disposition: output.verdict === 'PASS' ? 'external_pass' : 'reject', reviewer, source: 'generic-review', actor: null,

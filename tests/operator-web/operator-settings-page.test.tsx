@@ -23,6 +23,7 @@ import {
   type AgentsSettingsRead,
   type AgentsSettingsWrite,
 } from '../../src/operator-web/settings';
+import type { DocumentationLanguage, LanguageRead, ReportingHost, ReportingPreset } from '../../src/operator-web/language-settings';
 import { fetchQuota } from '../../src/operator-web/quota';
 import { busyQuota } from '../../src/operator-web/fixtures/quota';
 
@@ -426,6 +427,71 @@ describe('settings page', () => {
     expect(all('main h2[id]').map(heading => heading.id).filter(id => ['setup-hosts-heading', 'setup-fleet-heading', 'agents-seats-heading', 'agents-quota-heading'].includes(id)))
       .toEqual(name === 'empty' ? ['setup-hosts-heading', 'agents-seats-heading', 'agents-quota-heading'] : ['setup-hosts-heading', 'setup-fleet-heading', 'agents-seats-heading', 'agents-quota-heading']);
     expect(document.querySelector('[data-agents-section="seats"] [data-seats-page]')).not.toBeNull();
+  });
+});
+
+describe('language controls', () => {
+  const host = (name: string, preset: ReportingHost['preset'], state = 'managed-current'): ReportingHost => ({ host: name, state, preset });
+  const refused = (code: string, next_action: string) => ({ state: 'refused' as const, status: 409, error: { code, message: 'Server text.', next_action } });
+  const pressed = (scope: string) => all('[data-language-option]', document.querySelector(scope)!).filter(button => button.getAttribute('aria-pressed') === 'true').map(button => button.dataset.languageOption);
+
+  test('a recorded custom reporting preset shows as current, and picking a preset writes it and reads the hosts again', async () => {
+    let hosts = [host('claude', 'custom'), host('codex', 'custom')];
+    const writes: unknown[] = [];
+    await mount({
+      ...props(server(settings(), [])),
+      readReportingLanguage: async (): Promise<LanguageRead<readonly ReportingHost[]>> => ({ state: 'ok', value: hosts }),
+      writeReportingLanguage: async (preset: ReportingPreset, request_id: string) => {
+        writes.push({ preset, request_id });
+        hosts = hosts.map(entry => host(entry.host, preset));
+        return { state: 'ok', value: { changed_hosts: ['claude', 'codex'] } };
+      },
+    });
+    expect(pressed('[data-language-control="report"]')).toEqual([]);
+    expect(document.querySelector('[data-language-current="custom"]')).not.toBeNull();
+    expect(all('[data-language-host]').map(item => item.dataset.languageHost)).toEqual(['claude', 'codex']);
+    await click(document.querySelector<HTMLElement>('[data-language-control="report"] [data-language-option="en"]')!);
+    expect(writes).toEqual([{ preset: 'en', request_id: expect.stringMatching(UUID) }]);
+    expect(document.querySelector('[data-language-control="report"] [data-save-result]')?.getAttribute('data-save-result')).toBe('saved');
+    expect(pressed('[data-language-control="report"]')).toEqual(['en']);
+    expect(document.querySelector('[data-language-current="custom"]')).toBeNull();
+  });
+
+  test('a refused reporting save names the host state and the route next action', async () => {
+    const hosts = [host('claude', 'follow'), host('codex', null, 'unbalanced')];
+    await mount({
+      ...props(server(settings(), [])),
+      readReportingLanguage: async (): Promise<LanguageRead<readonly ReportingHost[]>> => ({ state: 'ok', value: hosts }),
+      writeReportingLanguage: async () => refused('report_language_refused', 'Repair the reported rules file or path, then save the reporting language again.'),
+    });
+    await click(document.querySelector<HTMLElement>('[data-language-control="report"] [data-language-option="zh-CN"]')!);
+    expect(document.querySelector('[data-language-host="codex"]')?.getAttribute('data-language-host-state')).toBe('unbalanced');
+    const banner = document.querySelector('[data-language-control="report"] [data-save-result="report_language_refused"]')!;
+    expect(banner.textContent).toContain('Repair the file named in the host list');
+  });
+
+  test('the repository documentation language loads, saves and shows the init command for a missing policy', async () => {
+    const writes: unknown[] = [];
+    let stored: DocumentationLanguage = 'follow-user';
+    await mount({
+      ...props(server(settings(), [])),
+      readDocumentationLanguage: id => async (): Promise<LanguageRead<DocumentationLanguage | null>> => (id === REGISTRY.repositories[1]!.repository_id
+        ? { state: 'refused', error: { code: 'policy_missing', message: 'Server text.', next_action: 'repo-harness init' } } : { state: 'ok', value: stored }),
+      writeDocumentationLanguage: id => async (language, request_id) => {
+        writes.push({ id, language, request_id });
+        stored = language;
+        return { state: 'ok', value: { language } };
+      },
+    }, '#repositories');
+    const first = REGISTRY.repositories[0]!.repository_id;
+    const control = (id: string) => `[data-repository-language="${id}"]`;
+    expect(pressed(control(first))).toEqual(['follow-user']);
+    await click(document.querySelector<HTMLElement>(`${control(first)} [data-language-option="zh-CN"]`)!);
+    expect(writes).toEqual([{ id: first, language: 'zh-CN', request_id: expect.stringMatching(UUID) }]);
+    expect(pressed(control(first))).toEqual(['zh-CN']);
+    const missing = document.querySelector(control(REGISTRY.repositories[1]!.repository_id))!;
+    expect(missing.querySelector('[data-save-result="policy_missing"] [data-command] code')?.textContent).toBe('repo-harness init');
+    expect(all('[data-language-option]', missing).every(button => (button as HTMLButtonElement).disabled)).toBe(true);
   });
 });
 

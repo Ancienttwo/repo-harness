@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { defaultRuntimes } from '@botiverse/oar';
@@ -139,10 +139,14 @@ describe('language settings routes', () => {
     const repo = repository(h);
     const raw = '{\r\n\t"other": [1,  2] \t,\r\n\t"documentation" : { "language":"en" , "profile": "full" }\r\n}\r\n';
     writeFileSync(repo.policy, raw);
+    chmodSync(repo.policy, 0o640);
+    const before = statSync(repo.policy);
     expect(await (await fetch(`${h.server.url}${repo.path}`)).json()).toEqual({ language: 'en' });
     const response = await send(h, repo.path, { language: 'zh-CN' });
     expect([response.status, await response.json()]).toEqual([200, { language: 'zh-CN' }]);
     expect(readFileSync(repo.policy, 'utf8')).toBe(raw.replace('"en"', '"zh-CN"'));
+    expect(statSync(repo.policy).ino).not.toBe(before.ino);
+    expect(statSync(repo.policy).mode & 0o777).toBe(before.mode & 0o777);
     expect(await (await fetch(`${h.server.url}${repo.path}`)).json()).toEqual({ language: 'zh-CN' });
     writeFileSync(repo.policy, '{"other":1}\n');
     expect(await (await fetch(`${h.server.url}${repo.path}`)).json()).toEqual({ language: null });

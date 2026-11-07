@@ -3088,7 +3088,7 @@ describe('worktree cleanup plan review (#1720)', () => {
     const agentsPage = async (overrides: Partial<OperatorAppProps> = {}) => {
       const stores = settingsStores(NOW, 'busy');
       installDom('http://127.0.0.1:4318/#agents');
-      await mount(<OperatorApp {...props(busy(), { readAgentsSettings: stores.agents.read, readSeatsSettings: stores.seats.read,
+      await mount(<OperatorApp {...props(busy(), { readAgentsSettings: stores.agents.read, readSeatsSettings: stores.seats.read, readReportingLanguage: stores.reporting.read,
         readSetup: () => new Promise(() => {}), readQuota: () => new Promise(() => {}), ...overrides })} />);
       await settle();
     };
