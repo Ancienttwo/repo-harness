@@ -6,7 +6,6 @@ import {
   DEFAULT_SEATS_CONFIG,
   FRONTEND_SEAT_IDS,
   ROUTING_CLASSES,
-  ROUTING_MODES,
   WORKER_SEAT_IDS,
   CodexSeatNetworkError,
   SeatsConfigMigrationRequiredError,
@@ -90,7 +89,7 @@ export function seatsRanges(enabledRuntimes: readonly string[]): SeatsRangesV1 {
     efforts: EFFORT_LEVELS,
     roles: MANAGED_AGENTS.map(name => ({ name, writable: WRITABLE_AGENTS.has(name) })),
     seats: SEAT_RANGES,
-    routing: { classes: ROUTING_CLASSES, worker_seats: WORKER_SEAT_IDS, frontend_seats: FRONTEND_SEAT_IDS, modes: ROUTING_MODES },
+    routing: { classes: ROUTING_CLASSES, worker_seats: WORKER_SEAT_IDS, frontend_seats: FRONTEND_SEAT_IDS },
   };
 }
 
@@ -137,9 +136,6 @@ function checkModelAndEffort(subject: string, model: SeatModelV1, runtimeId: Sea
 }
 
 export function checkSeatRoutingModels(routing: SeatRoutingV1): void {
-  checkModelAndEffort('routing.hyper.claude', routing.hyper.claude, 'claude');
-  checkModelAndEffort('routing.hyper.advisor', routing.hyper.advisor, 'claude');
-  checkModelAndEffort('routing.hyper.codex', routing.hyper.codex, 'codex');
   checkModelAndEffort('routing.low_quota_explorer', routing.low_quota_explorer, 'claude');
 }
 
@@ -166,7 +162,7 @@ function changedKeys(current: SeatsConfigV1, next: SeatsConfigV1): string[] {
     return FIELDS.filter(field => JSON.stringify(before[field]) !== JSON.stringify(after[field]))
       .map(field => `seats.${id}.${field}`);
   }),
-  ...([...ROUTING_CLASSES, 'mode', 'low_quota_explorer', 'hyper'] as const)
+  ...([...ROUTING_CLASSES, 'claude_saving_below_remaining', 'codex_hyper_at_or_above_remaining', 'low_quota_explorer'] as const)
     .filter(field => JSON.stringify(current.routing[field]) !== JSON.stringify(next.routing[field]))
     .map(field => `seats.routing.${field}`)];
 }

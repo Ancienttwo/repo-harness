@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { formatQuotaReport } from '../../core/board/quota';
 import { readQuotaReport } from '../../effects/board/quota';
-import { formatSeatRoutes, type SeatAccountStates } from '../../core/board/seat-routing';
+import { formatSeatModes, formatSeatRoutes, seatAccountQuotas } from '../../core/board/seat-routing';
 import { readSeatsConfiguration } from '../../effects/board/seats-configuration';
 
 /** Exit 0 when the read completes: a failed source is an `unknown` account with its reason, so the coordinator sees each account. */
@@ -15,7 +15,8 @@ export function buildQuotaCommand(): Command {
         console.log(JSON.stringify(report));
         return;
       }
-      const states = Object.fromEntries(report.accounts.map(account => [account.account, account.state])) as SeatAccountStates;
-      console.log(`${formatQuotaReport(report)}\n${formatSeatRoutes(readSeatsConfiguration(process.env).seats, states)}`);
+      const { seats } = readSeatsConfiguration(process.env);
+      const quota = seatAccountQuotas(report.accounts, seats.routing);
+      console.log(`${formatQuotaReport(report)}\n${formatSeatModes(seats, quota)}\n${formatSeatRoutes(seats, quota)}`);
     });
 }

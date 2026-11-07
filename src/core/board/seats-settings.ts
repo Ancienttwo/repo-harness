@@ -9,7 +9,6 @@ export type WorkerSeatId = typeof WORKER_SEAT_IDS[number];
 export const FRONTEND_SEAT_IDS = ['worker-important', 'worker-important-fast'] as const;
 export const ROUTING_CLASSES = ['important_deep', 'important_fast', 'simple_deep', 'simple_fast', 'frontend'] as const;
 export type RoutingClass = typeof ROUTING_CLASSES[number];
-export const ROUTING_MODES = ['standard', 'hyper'] as const;
 export const SEAT_IDS = ['orchestrator', 'advisor', ...WORKER_SEAT_IDS, 'gatekeeper', 'reviewer'] as const;
 export type SeatId = typeof SEAT_IDS[number];
 export const isWorkerSeat = (seat: SeatId): seat is WorkerSeatId => WORKER_SEAT_IDS.includes(seat as WorkerSeatId);
@@ -41,9 +40,9 @@ export interface SeatModelV1 {
 }
 
 export type SeatRoutingV1 = { readonly [task in RoutingClass]: readonly WorkerSeatId[] } & {
-  readonly mode: typeof ROUTING_MODES[number];
+  readonly claude_saving_below_remaining: number;
+  readonly codex_hyper_at_or_above_remaining: number;
   readonly low_quota_explorer: SeatModelV1;
-  readonly hyper: Readonly<Record<'claude' | 'advisor' | 'codex', SeatModelV1>>;
 };
 export type SeatsConfigV1 = { readonly [seat in Exclude<SeatId, 'worker-light'>]: SeatConfigV1 } & {
   readonly 'worker-light': SeatConfigV1 | null;
@@ -68,18 +67,18 @@ export const DEFAULT_SEATS_CONFIG: SeatsConfigV1 = Object.freeze({
   'worker-deep': Object.freeze({ runtime: 'codex', model: 'gpt-6.1-sol', effort: 'high', tools: WORKER_TOOLS, fleet: WORKER_FLEET }),
   'worker-important': Object.freeze({ runtime: 'claude', model: 'opus', effort: 'medium', tools: WORKER_TOOLS, fleet: WORKER_FLEET }),
   'worker-important-fast': Object.freeze({ runtime: 'claude', model: 'sonnet', effort: 'medium', tools: WORKER_TOOLS, fleet: WORKER_FLEET }),
-  'worker-light': null,
+  'worker-light': Object.freeze({ runtime: 'pi', model: 'magpie/cursor/deepseek-v41-flash-1017', effort: null, tools: WORKER_TOOLS, fleet: Object.freeze([]) }),
   gatekeeper: Object.freeze({ runtime: 'codex', model: 'gpt-6.1-terra', effort: 'high', tools: REVIEW_TOOLS, fleet: Object.freeze([]) }),
   reviewer: Object.freeze({ runtime: 'claude', model: 'opus', effort: 'high', tools: REVIEW_TOOLS, fleet: Object.freeze([]) }),
   routing: Object.freeze({
-    mode: 'standard',
+    claude_saving_below_remaining: 20,
+    codex_hyper_at_or_above_remaining: 50,
     important_deep: Object.freeze(['worker-important', 'worker-deep'] as const),
     important_fast: Object.freeze(['worker-important-fast', 'worker'] as const),
     simple_deep: Object.freeze(['worker-deep', 'worker-important'] as const),
     simple_fast: Object.freeze(['worker'] as const),
     frontend: Object.freeze(['worker-important', 'worker-important-fast'] as const),
     low_quota_explorer: Object.freeze({ model: 'haiku', effort: 'high' }),
-    hyper: Object.freeze({ claude: Object.freeze({ model: 'opus', effort: 'high' }), advisor: Object.freeze({ model: 'opus', effort: 'max' }), codex: Object.freeze({ model: 'gpt-6-astra', effort: 'high' }) }),
   }),
 });
 
@@ -138,7 +137,6 @@ export interface SeatsRangesV1 {
     readonly classes: readonly RoutingClass[];
     readonly worker_seats: readonly WorkerSeatId[];
     readonly frontend_seats: readonly typeof FRONTEND_SEAT_IDS[number][];
-    readonly modes: readonly typeof ROUTING_MODES[number][];
   };
 }
 
@@ -222,8 +220,8 @@ function decodeModel(value: unknown, code: string): SeatModelV1 {
 }
 
 function decodeRouting(value: unknown, code: string): SeatRoutingV1 {
-  const record = object(value, [...ROUTING_CLASSES, 'mode', 'low_quota_explorer', 'hyper'], code);
-  if (!ROUTING_MODES.includes(record.mode as SeatRoutingV1['mode'])) invalid(code);
+  const record = object(value, [...ROUTING_CLASSES, 'claude_saving_below_remaining', 'codex_hyper_at_or_above_remaining', 'low_quota_explorer'], code);
+  const percent = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? value : invalid(code);
   const routes = Object.fromEntries(ROUTING_CLASSES.map(task => {
     const seats = record[task];
     const allowed = task === 'frontend' ? FRONTEND_SEAT_IDS : WORKER_SEAT_IDS;
@@ -231,9 +229,9 @@ function decodeRouting(value: unknown, code: string): SeatRoutingV1 {
       || seats.some(seat => !(allowed as readonly unknown[]).includes(seat))) invalid(code);
     return [task, seats as readonly WorkerSeatId[]];
   })) as Pick<SeatRoutingV1, RoutingClass>;
-  const hyper = object(record.hyper, ['claude', 'advisor', 'codex'], code);
-  return { ...routes, mode: record.mode as SeatRoutingV1['mode'], low_quota_explorer: decodeModel(record.low_quota_explorer, code),
-    hyper: { claude: decodeModel(hyper.claude, code), advisor: decodeModel(hyper.advisor, code), codex: decodeModel(hyper.codex, code) } };
+  return { ...routes, claude_saving_below_remaining: percent(record.claude_saving_below_remaining),
+    codex_hyper_at_or_above_remaining: percent(record.codex_hyper_at_or_above_remaining),
+    low_quota_explorer: decodeModel(record.low_quota_explorer, code) };
 }
 
 function decodeSeatsRecord(record: Record<string, unknown>, code: string): SeatsConfigV1 {
@@ -257,12 +255,15 @@ export function decodeSeatsConfig(value: unknown): SeatsConfigV1 {
   if (value === undefined) return DEFAULT_SEATS_CONFIG;
   const code = 'seats_config_invalid';
   const record = object(value, SECTION_KEYS, code, ['orchestrator', 'advisor', 'worker']);
+  if (typeof record.routing === 'object' && record.routing !== null && ('mode' in record.routing || 'hyper' in record.routing)) {
+    throw new SeatsConfigMigrationRequiredError();
+  }
   return decodeSeatsRecord(record, code);
 }
 
 function decodeRoutingRanges(value: unknown, code: string): SeatsRangesV1['routing'] {
-  const record = object(value, ['classes', 'worker_seats', 'frontend_seats', 'modes'], code);
-  const ranges = { classes: ROUTING_CLASSES, worker_seats: WORKER_SEAT_IDS, frontend_seats: FRONTEND_SEAT_IDS, modes: ROUTING_MODES };
+  const record = object(value, ['classes', 'worker_seats', 'frontend_seats'], code);
+  const ranges = { classes: ROUTING_CLASSES, worker_seats: WORKER_SEAT_IDS, frontend_seats: FRONTEND_SEAT_IDS };
   for (const key of Object.keys(ranges) as (keyof typeof ranges)[]) {
     if (JSON.stringify(record[key]) !== JSON.stringify(ranges[key])) invalid(code);
   }

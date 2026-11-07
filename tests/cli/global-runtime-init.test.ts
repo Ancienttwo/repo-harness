@@ -5,7 +5,8 @@ import { dirname, join } from 'path';
 import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { createHash } from 'crypto';
-import { ownFreshWazaSharedRules, runGlobalRuntimeSetup, verifyInstalledManagedRuntime } from '../../src/cli/commands/global-runtime';
+import { migrateSeatsConfiguration, ownFreshWazaSharedRules, runGlobalRuntimeSetup, verifyInstalledManagedRuntime } from '../../src/cli/commands/global-runtime';
+import { DEFAULT_SEATS_CONFIG, decodeSeatsConfig } from '../../src/core/board/seats-settings';
 import { CLI_PORTS, registerArchitecturePlugin, resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
 import { copyPackageRuntimeFixture, writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
@@ -30,6 +31,33 @@ const CODEGRAPH_PIN = devDependencies['@colbymchenry/codegraph'];
 const CLI = join(ROOT, 'src/cli/index.ts');
 const OBSIDIAN_PROVIDER = 'kepano/obsidian-skills#a1dc48e68138490d522c04cbf5822214c6eb1202';
 const FULL_PLUGINS = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const;
+
+test('update removes stored routing mode and hyper values once and keeps a null worker-light', () => {
+  const home = mkdtempSync(join(tmpdir(), 'quota-mode-migration-'));
+  try {
+    mkdirSync(join(home, '.repo-harness'));
+    const path = join(home, '.repo-harness', 'config.json');
+    const { claude_saving_below_remaining: _claude, codex_hyper_at_or_above_remaining: _codex, ...routes } = DEFAULT_SEATS_CONFIG.routing;
+    const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-light': null, routing: { ...routes, mode: 'hyper', hyper: {
+      claude: { model: 'opus', effort: 'high' }, advisor: { model: 'opus', effort: 'max' }, codex: { model: 'gpt-6-astra', effort: 'high' },
+    } } };
+    expect(() => decodeSeatsConfig(seats)).toThrow(expect.objectContaining({ code: 'seats_config_migration_required' }));
+    const original = JSON.stringify({ seats, security: { mode: 'strict' } });
+    writeFileSync(path, original);
+    expect(migrateSeatsConfiguration({ HOME: home })).toBe(true);
+    const migrated = readFileSync(path, 'utf8');
+    expect(JSON.parse(migrated)).toEqual({ seats: { ...DEFAULT_SEATS_CONFIG, 'worker-light': null }, security: { mode: 'strict' } });
+    expect(decodeSeatsConfig(JSON.parse(migrated).seats).routing).toEqual(DEFAULT_SEATS_CONFIG.routing);
+    expect(migrateSeatsConfiguration({ HOME: home })).toBe(false);
+    expect(readFileSync(path, 'utf8')).toBe(migrated);
+    for (const routing of [{ ...seats.routing, mode: 'other' }, { ...seats.routing, hyper: {} }, { ...seats.routing, extra: true }]) {
+      const invalid = JSON.stringify({ seats: { ...seats, routing } });
+      writeFileSync(path, invalid);
+      expect(() => migrateSeatsConfiguration({ HOME: home })).toThrow('seats_config_invalid');
+      expect(readFileSync(path, 'utf8')).toBe(invalid);
+    }
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
 
 // An explicit list never grows, so a host `pi` on the developer PATH cannot change the recorded selection.
 function recordExplicitFullSelection(home: string, plugins: readonly PluginId[] = FULL_PLUGINS): void {
