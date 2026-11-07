@@ -114,7 +114,12 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
   if (configured === null) throw new SeatsCommandError('seat_not_configured', `The ${id} seat is not configured. Configure it in the seats section before launch.`);
   const account = seatAccount(configured);
   const reading = account === 'claude' ? readClaudeQuota(env) : account === 'chatgpt' ? await readCodexQuota(env, PACKAGE_VERSION) : null;
-  const quota = seatAccountQuotas(reading === null ? [] : [classifyQuotaReading(reading, Date.now())], seats.routing);
+  const readings = reading === null ? [] : [reading];
+  if (id === 'worker-light' && account === 'chatgpt') readings.push(readClaudeQuota(env));
+  const quota = seatAccountQuotas(readings.map(reading => classifyQuotaReading(reading, Date.now())), seats.routing);
+  if (id === 'worker-light' && configured.runtime !== 'pi' && claudeReserved(quota)) {
+    throw new SeatsCommandError('seat_quota_reserved', 'The worker-light seat must use Pi while Claude is reserved. Use the quota routes.');
+  }
   if (account !== null && quota[account].state === 'exhausted') {
     throw new SeatsCommandError('seat_quota_exhausted', `The ${account} account is exhausted. Wait for quota before launching ${id}.`);
   }

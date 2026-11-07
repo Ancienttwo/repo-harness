@@ -6,6 +6,9 @@ import { delimiter, join } from "path";
 import { seatPaneName } from "../../src/core/board/seat-launch";
 import { DEFAULT_SEATS_CONFIG, WORKER_SEAT_IDS } from "../../src/core/board/seats-settings";
 import { repoHarnessRepoIdFor } from "../../src/effects/repo-registry";
+import { classifyQuotaReading } from "../../src/core/board/quota";
+import { formatSeatRoutes, seatAccountQuotas } from "../../src/core/board/seat-routing";
+import { readClaudeQuota } from "../../src/effects/board/quota";
 
 const CLI = join(import.meta.dir, "..", "..", "src/cli/index.ts");
 
@@ -115,6 +118,30 @@ describe("repo-harness seats argv", () => {
       expect([result.status, result.stdout]).toEqual([1, ""]);
       expect(JSON.parse(result.stderr).error).toBe("seat_not_configured");
     });
+  });
+
+  test("saving routes and direct launches reject a non-Pi worker-light", () => {
+    for (const configured of [DEFAULT_SEATS_CONFIG.worker, DEFAULT_SEATS_CONFIG['worker-important-fast']]) {
+      const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-light': configured };
+      withHome(seats, home => {
+        expect(argv(home, 'worker-light', '--json').status).toBe(0);
+        mkdirSync(join(home, '.repo-harness', 'quota'));
+        for (const used of [81, 95]) {
+          writeFileSync(join(home, '.repo-harness', 'quota', 'claude.json'), JSON.stringify({ observed_at: new Date().toISOString(), rate_limits: {
+            seven_day: { used_percentage: used, resets_at: Math.floor(Date.now() / 1000) + 3600 },
+          } }));
+          const quota = seatAccountQuotas([classifyQuotaReading(readClaudeQuota({ HOME: home }), Date.now())], seats.routing);
+          const result = argv(home, 'worker-light', '--json');
+          expect({
+            routes: formatSeatRoutes(seats, quota).split('\n').filter(line => /^route important_/u.test(line)),
+            launch: [result.status, result.stdout, result.stderr ? JSON.parse(result.stderr).error : null],
+          }).toEqual({
+            routes: ['route important_deep: none (worker-light is not a Pi seat)', 'route important_fast: none (worker-light is not a Pi seat)'],
+            launch: [1, '', 'seat_quota_reserved'],
+          });
+        }
+      });
+    }
   });
 
   test("every configured worker seat keeps its brief, labels and issue pane naming", () => {

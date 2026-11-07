@@ -221,6 +221,7 @@ Before each dispatch wave, run `repo-harness quota`. It prints the account
 states and one route line per task class. Launch each task on the seat its
 route line names with `repo-harness seats argv <seat>`; state the boundary
 in the task. A `none` route waits.
+Apply the explorer line through the Claude Agent tool's `model` parameter when you call the explorer.
 
 A tight or exhausted Claude account is reserved for the advisor and
 orchestrator. Its worker classes move to the next eligible seat in their

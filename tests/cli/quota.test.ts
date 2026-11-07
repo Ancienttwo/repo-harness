@@ -46,7 +46,7 @@ describe('seat quota routing', () => {
     for (const task of ['important_deep', 'important_fast']) expect(lines.find(line => line.startsWith(`route ${task}:`)))
       .toContain(`${!reserved && task === 'important_fast' ? 'worker-important-fast' : selected} (`);
     expect(lines.find(line => line.startsWith('route frontend:'))).toContain(reserved ? 'none (' : 'worker-important (');
-    expect(lines).toContain(reserved ? `explorer: haiku high (claude ${account.state})` : 'explorer: default');
+    expect(lines).toContain(reserved ? `explorer: haiku high (claude ${account.state === 'exhausted' ? 'exhausted' : mode}; pass model haiku when you call the explorer)` : 'explorer: default');
     expect(effectiveSeatConfig('advisor', DEFAULT_SEATS_CONFIG, quota).effort).toBe(reserved ? 'high' : 'max');
     expect(effectiveSeatConfig('orchestrator', DEFAULT_SEATS_CONFIG, quota)).toMatchObject({ runtime: 'claude', model: 'opus', effort: 'high' });
     expect(lines.some(line => line.includes('fallback'))).toBe(false);

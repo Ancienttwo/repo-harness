@@ -62,7 +62,10 @@ export function formatSeatRoutes(seats: SeatsConfigV1, quota: SeatAccountQuotas)
   const reserved = claudeReserved(quota);
   const lines = ROUTING_CLASSES.map(task => {
     const savingRoute = reserved && (task === 'important_deep' || task === 'important_fast');
-    if (savingRoute && seats['worker-light'] === null) return `route ${task}: none (worker-light not configured)`;
+    if (savingRoute) {
+      if (seats['worker-light'] === null) return `route ${task}: none (worker-light not configured)`;
+      if (seats['worker-light'].runtime !== 'pi') return `route ${task}: none (worker-light is not a Pi seat)`;
+    }
     const ids = savingRoute ? ['worker-light'] as const : seats.routing[task];
     // The section decoder refuses routes that name an unconfigured seat.
     const candidates = ids.map(id => ({ id, seat: effectiveSeatConfig(id, seats, quota)! }));
@@ -83,7 +86,7 @@ export function formatSeatRoutes(seats: SeatsConfigV1, quota: SeatAccountQuotas)
     return `route ${task}: ${selected.id} (${launchText(selected.seat)}${warning})${skipped}`;
   });
   lines.push(reserved
-    ? `explorer: ${modelText(seats.routing.low_quota_explorer)} (claude ${quota.claude.state})`
+    ? `explorer: ${modelText(seats.routing.low_quota_explorer)} (claude ${quota.claude.state === 'exhausted' ? 'exhausted' : quota.claude.mode}; pass model ${seats.routing.low_quota_explorer.model} when you call the explorer)`
     : 'explorer: default');
   for (const id of ['gatekeeper', 'reviewer'] as const) {
     const seat = effectiveSeatConfig(id, seats, quota);
