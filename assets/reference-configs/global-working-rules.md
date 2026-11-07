@@ -84,7 +84,7 @@ When a task requires broad research, repo archaeology, multi-source synthesis, o
 - Implementation sub-agents may run scoped typecheck and affected tests in their own worktree. They commit early and return their check results. An evidence role whose task is a named check, such as a root-cause reproduction, still runs that check and does not commit.
 - The parent agent owns task management, conflict resolution, build and post-merge integration verification, including typecheck and affected tests.
 - After integration, the parent removes each sub-agent worktree and branch whose commits are in the task branch and whose checkout is clean. It also removes the intermediate build output and temporary files that the work created. Other deletion still needs the user.
-- The orchestrator seat is a long-lived session that starts from `repo-harness seats argv orchestrator`, not a sub-agent. It may call the read-only roles `gatekeeper`, `explorer` and `deep-reasoner` as sub-agents. It dispatches writers (`fast-worker`, `deep-worker`, `root-cause-prover`) and the Codex cross-review only to Herdr seats, for worktree isolation and one writer per file. It edits no product code.
+- The orchestrator seat is a long-lived session that starts from `repo-harness seats argv orchestrator`, not a sub-agent. It may call the read-only roles `explorer` and `deep-reasoner` as sub-agents. It dispatches writers (`fast-worker`, `deep-worker`, `root-cause-prover`), the gatekeeper and the Codex cross-review only to Herdr seats, for worktree isolation and one writer per file. It edits no product code.
 
 ## Peer Harness Collaboration
 

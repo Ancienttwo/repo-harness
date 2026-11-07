@@ -17,6 +17,7 @@ export function buildOperatorCommand(loadReviewHost: () => Promise<CleanupReview
     .option('--max-concurrency <count>', 'Bounded Fleet collection concurrency (1-16)', String(OPERATOR_DEFAULT_MAX_CONCURRENCY))
     .option('--timeout-ms <milliseconds>', 'Fleet collection deadline (1000-30000)', String(OPERATOR_DEFAULT_TIMEOUT_MS))
     .option('--runtime-status-config <path>', 'Explicit read-only runtime source configuration; disabled when absent')
+    .option('--exit-on-stdin-close', 'Shut down when stdin reaches EOF, so a killed parent leaves no server behind')
     .action(async (raw: OperatorServeRawOptions) => (await actions()).serve(raw));
   operator
     .command('capture')
