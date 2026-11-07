@@ -387,6 +387,49 @@ test('seat branch: git in the terminal directory on both reads; each unreadable 
   expect(JSON.stringify([execution, list])).not.toContain(branched);
 });
 
+test('board seats CLI: includes seats without a parent and keeps the repository seat fields and branches', () => {
+  const labels = { 'repo-harness.repository': '1186405141', 'repo-harness.seat': 'worker', 'repo-harness.issue': '1941', 'repo-harness.pr': '1942' };
+  const hc = watchHc({
+    FAKE_LS: ['t1', 't2', 't3', 't4', 't5'].map(address => ({ address, state: 'live' })),
+    FAKE_TERMINALS: {
+      t1: { labels },
+      t2: { labels: { ...labels, 'repo-harness.parent': '1900' } },
+      t3: { labels: { ...labels, 'repo-harness.repository': '99' } },
+      t4: { labels: { ...labels, 'repo-harness.service': 'attention' } },
+      t5: { labels: { 'repo-harness.repository': '1186405141' } },
+    },
+  });
+  initGitRepo(hc.root);
+  const terminals = JSON.parse(hc.options.env.FAKE_TERMINALS);
+  terminals.t1.cwd = hc.root;
+  const result = run(process.execPath, [join(import.meta.dir, '../src/cli/index.ts'), 'board', 'seats', '--json'], hc.root,
+    { ...hc.options.env, FAKE_TERMINALS: JSON.stringify(terminals), REPO_HARNESS_GH_BIN: seatsGh(hc.root) });
+  expect(result.status).toBe(0);
+  expect(result.stderr).toBe('');
+  const document = JSON.parse(result.stdout);
+  expect([document.protocol, document.kind, document.repository_id]).toEqual([1, 'repo-harness.board-seats', '1186405141']);
+  expect(document.seats.map((seat: Json) => [seat.address, seat.seat, seat.issue, seat.pr, seat.parent, seat.branch]))
+    .toEqual([['t1', 'worker', 1941, 1942, null, 'main'], ['t2', 'worker', 1941, 1942, '1900', null]]);
+  expect(result.stdout).not.toContain(hc.root);
+});
+
+function seatsGh(root: string): string {
+  const path = join(root, 'bin/gh');
+  writeFileSync(path, `#!${process.execPath}\nif (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(['api', '--hostname', 'github.com', 'repos/{owner}/{repo}'])) process.exit(2);\nconsole.log('{"id":1186405141}');\n`);
+  chmodSync(path, 0o755);
+  return path;
+}
+
+test('board seats CLI: an hc read failure returns the parents command error shape and no document', () => {
+  const hc = watchHc();
+  writeFileSync(join(hc.root, 'bin/hc'), `#!${process.execPath}\nprocess.exit(9);\n`);
+  const result = run(process.execPath, [join(import.meta.dir, '../src/cli/index.ts'), 'board', 'seats', '--json'], hc.root,
+    { ...hc.options.env, REPO_HARNESS_GH_BIN: seatsGh(hc.root) });
+  expect(result.status).toBe(1);
+  expect(result.stdout).toBe('');
+  expect(JSON.parse(result.stderr)).toEqual({ ok: false, error: 'BoardSeatsError', code: 'seats_hc_failed', message: expect.any(String) });
+});
+
 type GhAnswer = { readonly status: number; readonly stdout: string; readonly stderr?: string };
 
 /** The parent list collector on the recorded hc core; `hc: false` leaves hc off PATH. */
