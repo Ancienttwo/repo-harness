@@ -500,6 +500,12 @@ async function seats(harness: Harness): Promise<ReturnType<typeof decodeSeatsSet
 const filesUnder = (root: string): string[] => readdirSync(root, { recursive: true, encoding: 'utf8' }).sort();
 
 describe('seat settings contract without transport', () => {
+  test('Pi models require a provider and model id', () => {
+    for (const model of ['deepseek', '/deepseek', 'magpie/']) {
+      expect(() => decodeSeatsConfig({ ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, runtime: 'pi', model } })).toThrow('seats_config_invalid');
+    }
+  });
+
   test('review seats reject write tools and every fleet role at the decoder boundary', () => {
     const route = seatsSettingsWriteRoute();
     for (const id of ['gatekeeper', 'reviewer'] as const) {
