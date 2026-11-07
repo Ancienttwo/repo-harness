@@ -202,9 +202,12 @@ function decodeSeat(id: SeatId, value: unknown, code: string): SeatConfigV1 {
   if (!tools.includes('read')) invalid(code);
   const fleet = ascending(record.fleet, isRole, code);
   if ((id === 'gatekeeper' || id === 'reviewer') && (tools.some(tool => !REVIEW_TOOLS.includes(tool)) || fleet.length > 0)) invalid(code);
+  const model = record.runtime === 'pi' && record.model !== null
+    ? (typeof record.model === 'string' && /^[^/]+\/.+$/u.test(record.model) ? record.model : invalid(code))
+    : nullableToken(record.model, code);
   return {
     runtime: record.runtime as SeatRuntime,
-    model: nullableToken(record.model, code),
+    model,
     effort: nullableToken(record.effort, code),
     tools,
     fleet,

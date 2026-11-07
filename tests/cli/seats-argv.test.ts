@@ -151,6 +151,19 @@ describe("repo-harness seats argv", () => {
     }
   });
 
+  test("Pi worker and review seats pass the configured provider and model", () => {
+    for (const seat of ["worker", "reviewer"] as const) {
+      const config = { ...DEFAULT_SEATS_CONFIG[seat], runtime: "pi", model: "magpie/cursor/deepseek-v41-flash-1017", effort: null, fleet: [] };
+      withHome({ ...DEFAULT_SEATS_CONFIG, [seat]: config }, home => {
+        const result = argv(home, seat, ...(seat === "reviewer" ? ["--pr", "1950"] : []), "--json");
+        expect(result.status, result.stderr).toBe(0);
+        const value = JSON.parse(result.stdout);
+        expect(value.argv.slice(0, 5)).toEqual(["pi", "--provider", "magpie", "--model", "cursor/deepseek-v41-flash-1017"]);
+        if (seat === "reviewer") expect(value.argv.slice(5, 12)).toEqual(["--exclude-tools", "edit,write", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-mcp"]);
+      });
+    }
+  });
+
   test("hyper changes model and effort, preserves Pi, and falls back only for an exhausted advisor", () => {
     const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-light': { runtime: 'pi', model: null, effort: null, tools: DEFAULT_SEATS_CONFIG.worker.tools, fleet: [] },
       routing: { ...DEFAULT_SEATS_CONFIG.routing, mode: "hyper" } };

@@ -81,7 +81,7 @@ const RUNTIME_RANGES: Readonly<Record<SeatRuntime, Omit<SeatRuntimeRangeV1, 'id'
       const seat = DEFAULT_SEATS_CONFIG[id];
       return seat?.runtime === 'codex' && seat.model !== null ? [seat.model] : [];
     })])], effort: true, fleet: true },
-  pi: { models: [], effort: false, fleet: false },
+  pi: { models: ['magpie/cursor/deepseek-v41-flash-1017'], effort: false, fleet: false },
 };
 
 export function seatsRanges(enabledRuntimes: readonly string[]): SeatsRangesV1 {
