@@ -519,7 +519,7 @@ describe('architecture map', () => {
     expect([...document.querySelectorAll('.react-flow__node')].map(item => item.getAttribute('data-id')).sort())
       .toEqual([CALLER, CENTER, EXTERNAL, 'domain:public-surface', 'domain:workflow-engine'].sort());
     expect([...document.querySelectorAll('.architecture-modules__domain > b')].map(item => item.textContent)).toEqual(['public-surface', 'workflow-engine']);
-    expect(document.querySelector(`.react-flow__node[data-id="${CENTER}"] .architecture-modules__lines`)?.textContent).toBe('900');
+    expect(document.querySelector(`.react-flow__node[data-id="${CENTER}"] .architecture-modules__size`)?.textContent).toBe('900 · 1');
     // One edge per domain pair with the imports of both directions summed; every capability once, inside its domain; no two boxes overlap.
     expect(layoutModules(mapFor()).edges.map(edge => [edge.source, edge.target, edge.imports])).toEqual([['public-surface', 'workflow-engine', 7]]);
     const recorded = decodeArchitectureMap(recordedMap);
@@ -608,6 +608,7 @@ describe('architecture map', () => {
     const box = (id: string) => document.querySelector(`.react-flow__node[data-id="${id}"] > div`)!;
     const layerButton = (layer: string) => document.querySelector<HTMLButtonElement>(`.architecture-layers [data-layer="${layer}"]`)!;
     const choose = async (layer: string) => { await act(async () => layerButton(layer).click()); await settle(); };
+    const slot = (id: string, layer: string) => box(id).querySelector(`[data-slot="${layer}"]`)?.textContent;
     const gaps = () => [...document.querySelectorAll('.architecture-map__gap')].map(item => `${item.getAttribute('data-gap')}:${item.getAttribute('data-reason')}`);
     const notes = () => [...document.querySelectorAll('.architecture-map__note')].map(item => `${item.getAttribute('data-note')}:${item.getAttribute('data-reason')}`);
 
@@ -618,9 +619,9 @@ describe('architecture map', () => {
     expect([...document.querySelectorAll('.architecture-layers button')].map(item => item.querySelector('.architecture-layers__count')?.textContent ?? null))
       .toEqual(['1 module · 1 commit', '4', null, '2 / 2', '2 decisions']);
     // The changed component marks its capability with the commits that touch it; archctx cut the paths, so that count is a lower bound.
-    // Capabilities with nothing on the layer fade, external systems do not.
-    expect([box(CENTER).getAttribute('data-tone'), box(CENTER).querySelector('.architecture-map__mark')?.textContent]).toEqual(['change', '≥1 commit']);
-    expect([box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual([true, false]);
+    // Every card keeps the same five slots; a count of commits is neutral, and its hover says it in words.
+    expect([slot(CENTER, 'changes'), slot(CALLER, 'changes'), box(CENTER).hasAttribute('data-alert'), box(CENTER).getAttribute('title')]).toEqual(['1+', '', false, '1 commit today · 3 violations · 2 test files: 1 passed, 1 failed, 0 skipped, 0 no result']);
+    expect(box(CENTER).querySelector('.architecture-modules__slots')?.children).toHaveLength(5);
     expect(document.querySelector('[data-layer-summary="changes"]')?.textContent).toContain('≥2 files changed in 1 commit, ≥0 without an owner');
     expect([gaps(), notes()]).toEqual([[], ['changes.truncated:paths']]);
     // The sequence map states the flow steps that archctx cannot tie to the change, in its side panel.
@@ -633,10 +634,15 @@ describe('architecture map', () => {
     await act(async () => box(CENTER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
     expect(document.querySelector('[data-module-commits]')?.textContent).toBe('ccccccc Ledger rows');
+    // The selected card and its declared relations one hop away stay at full opacity; the rest dims.
+    const dimmed = () => [CENTER, CALLER, EXTERNAL].filter(id => document.querySelector(`.react-flow__node[data-id="${id}"] [data-dimmed]`) !== null);
+    expect(dimmed()).toEqual([]);
 
     await choose('violations');
     // The stale anchor on the component, the unprovable flow and the undeclared import: three items on the capability.
-    expect([box(CENTER).getAttribute('data-tone'), box(CENTER).querySelector('.architecture-map__mark')?.textContent, box(CALLER).hasAttribute('data-quiet')]).toEqual(['danger', '3', true]);
+    // Only the active layer's slot carries color: the card and its violations slot are danger, the changes slot is neutral.
+    expect([box(CENTER).getAttribute('data-alert'), slot(CENTER, 'violations'), slot(CALLER, 'violations'), box(CENTER).querySelector('[data-slot="violations"]')?.getAttribute('data-tone'), box(CENTER).querySelector('[data-slot="changes"]')?.getAttribute('data-tone')])
+      .toEqual(['danger', '3', '', 'danger', null]);
     expect(document.querySelector('[data-layer-summary="violations"]')?.textContent).toContain('src/orphan.ts');
     expect(document.querySelector('[data-layer-summary="violations"]')?.textContent).toContain('Flow proofs: 1 of 2 selectors proven; 1 capabilities cannot prove their flow.');
     expect(gaps()).toEqual(['violations.anchors:code_facts_unavailable']);
@@ -644,19 +650,21 @@ describe('architecture map', () => {
     expect(document.querySelector('.architecture-map__legend')?.textContent).toContain('Undeclared import');
 
     await choose('tests');
-    expect([box(CENTER).getAttribute('data-tone'), box(CALLER).getAttribute('data-tone')]).toEqual(['danger', 'muted']);
+    // A failing file shows ✕ and a file without a result shows ?; only the failure turns the card danger.
+    expect([box(CENTER).getAttribute('data-alert'), slot(CENTER, 'tests'), box(CALLER).getAttribute('data-alert'), slot(CALLER, 'tests')]).toEqual(['danger', '1✕', null, '?']);
     expect(document.querySelector('[data-module-tests]')?.textContent).toBe('2 test files: 1 passed, 1 failed, 0 skipped, 0 no result');
 
     await choose('pull_requests');
     expect([gaps(), notes()]).toEqual([['pull_requests:dev_activity_unavailable'], []]);
-    expect(document.querySelectorAll('[data-tone], [data-quiet]')).toHaveLength(0);
+    expect([...document.querySelectorAll('[data-slot="pull_requests"]')].filter(item => item.textContent !== '')).toHaveLength(0);
     await choose('decisions');
     expect([gaps(), notes()]).toEqual([[], []]);
     expect(document.querySelector('[data-layer-summary="decisions"]')?.textContent).toBe('2 decisions; 1 apply to model nodes.Decisions that apply to no node (1)Name things plainly · docs/adr/ADR-0002-naming.md');
-    expect([box(CALLER).getAttribute('data-tone'), box(CALLER).querySelector('.architecture-map__mark')?.textContent, box(CENTER).hasAttribute('data-quiet')]).toEqual(['muted', '1', true]);
+    expect([box(CALLER).hasAttribute('data-alert'), slot(CALLER, 'decisions'), slot(CENTER, 'decisions')]).toEqual([false, '1', '']);
     await act(async () => box(CALLER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
     expect(document.querySelector('[data-module-decisions]')?.textContent).toBe('Route through one router (accepted) · docs/adr/ADR-0001-router.md');
+    expect(dimmed()).toEqual([EXTERNAL]);
 
     // The violations chip counts each item once; a capability's mark counts each item that names one of its nodes once.
     const onlyDebt = (nodes: string[]): ArchitectureMapLayersInput => ({ ...mapLayers, violations: {
@@ -672,7 +680,7 @@ describe('architecture map', () => {
       await settle();
       await choose('violations');
       expect([nodes, document.querySelector('.architecture-layers [data-layer="violations"] .architecture-layers__count')?.textContent,
-        marks.map(([id]) => [id, box(id).querySelector('.architecture-map__mark')?.textContent ?? null])]).toEqual([nodes, '1', marks]);
+        marks.map(([id]) => [id, slot(id, 'violations') || null])]).toEqual([nodes, '1', marks]);
     }
   });
 
@@ -695,6 +703,7 @@ describe('architecture map', () => {
     } });
     await mount(workspace({ readMap: reader({ state: 'ok', map }) }));
     const box = (id: string) => document.querySelector(`.react-flow__node[data-id="${id}"] > div`)!;
+    const prSlot = (id: string) => box(id).querySelector('[data-slot="pull_requests"]')?.textContent;
     const gaps = () => [...document.querySelectorAll('.architecture-map__gap')].map(item => `${item.getAttribute('data-gap')}:${item.getAttribute('data-reason')}`);
     const notes = () => [...document.querySelectorAll('.architecture-map__note')].map(item => `${item.getAttribute('data-note')}:${item.getAttribute('data-reason')}`);
     await act(async () => document.querySelector<HTMLButtonElement>('.architecture-layers [data-layer="pull_requests"]')!.click());
@@ -707,10 +716,9 @@ describe('architecture map', () => {
     const summary = document.querySelector('[data-pull-request="21"]')!.textContent;
     expect(summary).toContain(head.slice(0, 12));
     expect(summary).toContain('2 files changed in 1 node, 1 without an owner');
-    // The changed component marks its capability with the PR's files there; the caller is two hops away.
-    expect([box(CENTER).getAttribute('data-tone'), box(CENTER).querySelector('.architecture-map__mark')?.textContent]).toEqual(['change', '1 file']);
+    // The PR slot counts the open PRs whose impact touches the capability, and the card turns info; the caller is only a dependent.
+    expect([box(CENTER).getAttribute('data-alert'), prSlot(CENTER), prSlot(CALLER), box(CENTER).getAttribute('title')?.includes('1 open PR touches it: #21')]).toEqual(['info', '1', '', true]);
     expect(document.querySelector('.architecture-layers [data-layer="pull_requests"] .architecture-layers__count')?.textContent).toBe('#21 · 1 module');
-    expect([box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual([true, false]);
     expect([gaps(), notes()]).toEqual([[], []]);
     await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-sequence')!.click());
     await settle();
@@ -728,7 +736,8 @@ describe('architecture map', () => {
     });
     await settle();
     expect(gaps()).toEqual(['pull_request:files_truncated']);
-    expect(document.querySelectorAll('[data-tone], [data-quiet]')).toHaveLength(0);
+    // The slot counts every open PR whose impact touches the module, so choosing a PR without impact leaves it.
+    expect(prSlot(CENTER)).toBe('1');
 
     await act(async () => {
       select().value = '23';
@@ -758,8 +767,8 @@ describe('architecture map', () => {
       await settle();
       await act(async () => box(CENTER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
       await settle();
-      expect([box(CENTER).querySelector('.architecture-map__mark')?.textContent, document.querySelector('[data-module-impact="21"]')?.textContent])
-        .toEqual([files, `Changes ${files} here.`]);
+      expect([prSlot(CENTER), document.querySelector('[data-module-impact="21"]')?.textContent])
+        .toEqual(['1', `Changes ${files} here.`]);
     }
   });
 
@@ -780,29 +789,29 @@ describe('architecture map', () => {
     for (const button of document.querySelectorAll<HTMLButtonElement>('.architecture-layers button')) {
       await act(async () => button.click());
       await settle();
-      seen.push([button.getAttribute('data-layer')!, button.getAttribute('data-state'), document.querySelectorAll('[data-quiet]').length]);
+      seen.push([button.getAttribute('data-layer')!, button.getAttribute('data-state'), [...document.querySelectorAll('.architecture-modules__slot')].filter(item => item.textContent !== '').length]);
     }
     expect(seen).toEqual(['changes', 'violations', 'pull_requests', 'tests', 'decisions'].map(layer => [layer, 'ok', 0]));
 
     // Today's changes may mark a node that they removed from the model: that mark lights no map node.
-    // A mark on a current component lights its capability, and the other capabilities stay dimmed.
+    // A mark on a current component fills the changes slot of its capability only.
     const GONE = 'capability.gone';
     const changed = (ids: string[]): ArchitectureMapLayersInput => ({ ...unlit, changes: {
       state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: [{ sha: 'c'.repeat(40), subject: 'Ledger rows', nodes: ids }],
       model: ids.includes(GONE) ? [{ kind: 'nodes', id: GONE, change: 'removed', fields: [] }] : [],
       ...emptyImpact, paths: ids.map(id => ({ path: `src/${id}.ts`, added: 1, deleted: 0, owners: [id], reason_codes: [] })), nodes: ids.map(id => ({ id, files: 1 })),
     } });
-    const quiet: [string[], string[], boolean][] = [];
+    const lit: [string[], string[], boolean][] = [];
     for (const ids of [[GONE], [GONE, PART], [PART]]) {
       await act(async () => root?.render(workspace({ repositoryId: `repo-${ids.join('-')}`, readMap: reader({ state: 'ok', map: mapFor(true, changed(ids)) }) })));
       await settle();
       await act(async () => document.querySelector<HTMLButtonElement>('.architecture-layers [data-layer="changes"]')!.click());
       await settle();
-      quiet.push([ids, [...document.querySelectorAll('[data-quiet]')].map(item => item.closest('.react-flow__node')!.getAttribute('data-id')!).sort(),
+      lit.push([ids, [...document.querySelectorAll('[data-slot="changes"]')].filter(item => item.textContent !== '').map(item => item.closest('.react-flow__node')!.getAttribute('data-id')!).sort(),
         document.querySelector('[data-layer-summary="changes"]')!.textContent!.includes('Model: 0 nodes added, 1 removed')]);
     }
     // The last column: the layer summary still counts the removed node.
-    expect(quiet).toEqual([[[GONE], [], true], [[GONE, PART], [CALLER], true], [[PART], [CALLER], false]]);
+    expect(lit).toEqual([[[GONE], [], true], [[GONE, PART], [CENTER], true], [[PART], [CENTER], false]]);
   });
 
   test('a layer without data is still listed and says why', async () => {
@@ -812,7 +821,7 @@ describe('architecture map', () => {
     expect([changes.getAttribute('data-reason'), changes.getAttribute('data-code')]).toEqual(['archctx_error', 'AC_SCHEMA_INVALID native-context-model-invalid']);
     // Decisions come from the model export, so that layer always has data, even with no decision.
     expect([...document.querySelectorAll('.architecture-layers [data-state="unavailable"]')].map(item => item.getAttribute('data-layer'))).toEqual(['changes', 'violations', 'pull_requests', 'tests']);
-    expect(document.querySelectorAll('[data-quiet]')).toHaveLength(0);
+    expect(document.querySelectorAll('.architecture-modules__box[data-alert]')).toHaveLength(0);
     // An archctx refusal shows archctx's own code.
     await act(async () => document.querySelector<HTMLButtonElement>('.architecture-layers [data-layer="violations"]')!.click());
     await settle();

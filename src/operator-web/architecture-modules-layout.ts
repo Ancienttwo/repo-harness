@@ -8,7 +8,7 @@
 import type { ArchitectureMapNodeV1, ArchitectureMapV1 } from '../core/operator/architecture-map';
 
 export const MODULE_BOX_WIDTH = 200;
-export const MODULE_BOX_HEIGHT = 32;
+export const MODULE_BOX_HEIGHT = 64;
 const MODULE_GAP = 8;
 const DOMAIN_PADDING = 12;
 const DOMAIN_HEADER = 30;

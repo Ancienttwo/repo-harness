@@ -211,7 +211,7 @@
   .architecture-map__legend, .architecture-map__zoom { @apply m-0 flex items-center gap-2 rounded-lg border bg-kumo-base p-1.5 text-xs; border-color: var(--rh-diagram-line); }
   .architecture-map__legend { @apply max-w-[16rem] flex-col items-start gap-1; }
   .architecture-map__legend div { @apply flex items-center gap-2; }
-  .architecture-map__legend dt { @apply w-6 text-center text-kumo-subtle; }
+  .architecture-map__legend dt { @apply min-w-6 text-center text-kumo-subtle; }
   .architecture-map__legend dd { @apply m-0; }
   .architecture-map__swatch { @apply inline-block w-6 border-t-2 align-middle; border-color: var(--text-color-kumo-subtle); }
   .architecture-map__swatch--dashed { border-top-style: dashed; }
@@ -247,21 +247,24 @@
   .architecture-map__command > code { @apply whitespace-normal break-all font-mono; }
   .architecture-modules__domain { @apply relative h-full w-full rounded-xl border bg-kumo-base; border-color: var(--rh-diagram-line); }
   .architecture-modules__domain > b { @apply absolute left-3 top-2 font-mono text-[11px] font-medium tracking-wide text-kumo-subtle; }
-  .architecture-modules__box { @apply relative flex h-full w-full cursor-pointer items-center gap-1.5 rounded-lg border bg-kumo-base px-2 text-xs text-kumo-strong; border-color: var(--rh-diagram-line); }
-  .architecture-modules__box strong { @apply min-w-0 truncate font-normal; }
-  .architecture-modules__lines { @apply ml-auto shrink-0 text-[10.5px] text-kumo-subtle; }
-  .architecture-modules__badge { @apply absolute -top-2 right-[-7px] rounded-full px-1.5 text-[10px] leading-4; }
-  .architecture-modules__badge[data-tone="danger"] { @apply bg-kumo-danger text-white; }
-  .architecture-modules__box[data-layer="changes"] .architecture-modules__badge[data-tone="change"] { @apply left-[-6px] right-auto; background: var(--rh-accent); color: var(--rh-on-accent); }
-  .architecture-modules__box[data-tone="change"] { border-width: 2px; border-color: var(--rh-accent); background: var(--rh-accent-tint); }
-  .architecture-modules__box[data-layer="pull_requests"][data-tone="change"] { @apply border border-kumo-info bg-kumo-base; box-shadow: 0 0 0 3px var(--color-kumo-info-tint), 0 0 0 4px var(--color-kumo-info); }
-  .architecture-modules__box[data-layer="violations"][data-tone="danger"] { @apply border-kumo-danger; }
-  .architecture-modules__box[data-quiet]:not([data-selected]) { opacity: .38; }
+  .architecture-modules__box { @apply relative grid h-full w-full cursor-pointer gap-0.5 rounded-lg border bg-kumo-base px-2 py-1.5 text-left text-xs text-kumo-strong; grid-template-rows: 16px 14px 16px; border-color: var(--rh-diagram-line); }
+  .architecture-modules__name { @apply flex min-w-0 items-center gap-1.5 text-xs leading-4; }
+  .architecture-modules__name strong { @apply min-w-0 truncate font-normal; }
+  .architecture-modules__box[data-deprecated] strong { @apply text-kumo-subtle line-through; }
+  .architecture-modules__status { @apply shrink-0 rounded bg-kumo-recessed px-1 font-mono text-[10px] leading-[14px] text-kumo-subtle; }
+  .architecture-modules__size { @apply text-[10.5px] leading-[14px] text-kumo-subtle; }
+  .architecture-modules__slots { @apply grid grid-cols-5 gap-0.5; }
+  .architecture-modules__slot { @apply flex items-center justify-center rounded text-[10.5px] leading-4 text-kumo-strong; }
+  .architecture-modules__slot[data-active] { @apply bg-kumo-recessed; }
+  .architecture-modules__slot[data-tone="danger"] { @apply bg-kumo-danger-tint text-kumo-danger; }
+  .architecture-modules__slot[data-tone="info"] { @apply bg-kumo-info-tint text-kumo-info; }
+  .architecture-modules__box[data-alert="danger"] { @apply border-kumo-danger; }
+  .architecture-modules__box[data-alert="info"] { @apply border-kumo-info; }
+  .architecture-modules__box[data-dimmed], .architecture-modules__external[data-dimmed] { opacity: .38; }
   .architecture-modules__box[data-selected] { outline: 2px solid var(--text-color-kumo-strong); outline-offset: 2px; }
-  .architecture-modules__test { @apply h-[7px] w-[7px] shrink-0 rounded-full; box-shadow: inset 0 0 0 1px var(--text-color-kumo-subtle); }
-  .architecture-modules__test[data-test="success"] { @apply bg-kumo-success; box-shadow: none; }
-  .architecture-modules__test[data-test="danger"] { @apply bg-kumo-danger; box-shadow: none; }
-  .architecture-modules__test[data-test="muted"] { box-shadow: none; background: var(--text-color-kumo-placeholder); }
+  .architecture-modules__key { @apply grid gap-0.5 text-center text-[10px] text-kumo-subtle; grid-template-columns: repeat(5, 2.25rem); }
+  .architecture-modules__key > span { @apply rounded px-1; }
+  .architecture-modules__key > span[data-active] { @apply bg-kumo-recessed text-kumo-strong; }
   .architecture-modules__external { @apply flex h-full w-full cursor-pointer items-center whitespace-nowrap rounded-full border border-dashed bg-kumo-base px-2.5 text-[11.5px] text-kumo-subtle; border-color: var(--rh-diagram-line); }
   .architecture-modules__external[data-selected] { border-color: var(--rh-accent); color: var(--text-color-kumo-strong); }
   .architecture-modules__heading { @apply flex flex-col gap-0.5; }
@@ -369,6 +372,7 @@
 .architecture-map__edge.is-dim .react-flow__edge-path { stroke-opacity: .08; }
 .architecture-map__edge.is-dim .react-flow__edge-textwrapper { opacity: .2; }
 .architecture-map__edge.is-active .react-flow__edge-path { stroke: var(--rh-accent); stroke-opacity: 1; }
+.architecture-modules__relation .react-flow__edge-path { stroke: var(--rh-accent); stroke-opacity: .7; stroke-width: 1.5px; }
 .architecture-map__edge--undeclared .react-flow__edge-path { stroke: var(--text-color-kumo-danger); stroke-opacity: .9; }
 .architecture-layermap__lane .react-flow__edge-path { stroke-opacity: .85; stroke-width: 1.5; }
 .architecture-layermap__lane .architecture-layermap__lane--dashed { stroke-dasharray: 6 4; }
