@@ -7,6 +7,8 @@ import { Mascot } from './brand';
 import { openPullRequests, repositoryById, snapshotOf, worktreeCount, type DevActivityView } from './dev-activity';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
+import { DocumentationLanguageControl } from './LanguageControls';
+import type { DocumentationLanguageReader, DocumentationLanguageWriter } from './language-settings';
 import { registeredLabel, type RepositoriesView } from './repositories';
 import { CommandLine, SectionTitle, StatusDot, type DotTone } from './ui';
 
@@ -38,10 +40,11 @@ function oldestObservation(repository: DevActivityRepository): string | null {
   return times[0] ?? null;
 }
 
-function RepositoryRow({ repository, registered, activity, now, onOpen, t }: {
+function RepositoryRow({ repository, registered, activity, now, onOpen, readLanguage, writeLanguage, generation, t }: {
   readonly repository: OperatorRepositoryV1; readonly registered: readonly OperatorRepositoryV1[];
   readonly activity: DevActivitySnapshotV2 | null; readonly now: number;
-  readonly onOpen: (id: string) => void; readonly t: OperatorTranslate;
+  readonly onOpen: (id: string) => void; readonly readLanguage: DocumentationLanguageReader; readonly writeLanguage: DocumentationLanguageWriter;
+  readonly generation: number; readonly t: OperatorTranslate;
 }) {
   const id = repository.repository_id;
   const collected = activity ? repositoryById(activity, id) : null;
@@ -79,6 +82,9 @@ function RepositoryRow({ repository, registered, activity, now, onOpen, t }: {
         <span className="shrink-0 text-xs text-kumo-subtle md:w-24">{observed ? ageWords(observed, now, t) : null}</span>
         <CaretRightIcon size={14} aria-hidden="true" className="hidden shrink-0 text-kumo-subtle md:block" />
       </button>
+      <div className="px-4 pb-3 md:pl-[3.75rem]">
+        <DocumentationLanguageControl repositoryId={id} read={readLanguage} write={writeLanguage} generation={generation} t={t} />
+      </div>
     </li>
   );
 }
@@ -109,9 +115,10 @@ function StaleRegistrations({ count, t }: { readonly count: number; readonly t: 
   );
 }
 
-export function RepositoriesPage({ view, activity, now, onOpen, t }: {
+export function RepositoriesPage({ view, activity, now, onOpen, readLanguage, writeLanguage, generation, t }: {
   readonly view: RepositoriesView; readonly activity: DevActivityView; readonly now: number;
-  readonly onOpen: (repositoryId: string) => void; readonly t: OperatorTranslate;
+  readonly onOpen: (repositoryId: string) => void; readonly readLanguage: DocumentationLanguageReader; readonly writeLanguage: DocumentationLanguageWriter;
+  readonly generation: number; readonly t: OperatorTranslate;
 }) {
   const [expanded, setExpanded] = useState(false);
   if (view.kind === 'loading') return <Empty size="sm" icon={<Loader size={24} />} title={t('repositories.loading')} />;
@@ -134,7 +141,7 @@ export function RepositoriesPage({ view, activity, now, onOpen, t }: {
           <ul className="divide-y divide-kumo-hairline overflow-hidden rounded-xl border border-kumo-line bg-kumo-base">
             {shown.map(repository => (
               <RepositoryRow key={repository.repository_id} repository={repository} registered={repositories}
-                activity={snapshotOf(activity)} now={now} onOpen={onOpen} t={t} />
+                activity={snapshotOf(activity)} now={now} onOpen={onOpen} readLanguage={readLanguage} writeLanguage={writeLanguage} generation={generation} t={t} />
             ))}
             {hidden > 0 && <li>
               <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)} data-more-repositories
