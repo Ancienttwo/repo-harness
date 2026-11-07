@@ -145,9 +145,24 @@ is titled `repo-harness 0.27.0` and uses CHANGELOG `[0.27.0]` from that commit.
   0.27.0; the installed console was 0.27.0. On port 4417, `/healthz`
   returned `{"ok":true,"service":"repo-harness-operator","protocol":2,"version":"0.27.0"}`;
   `GET /` and `/assets/index-B3Xkwmft.js` returned 200. The asset was in
-  the installed console `dist/assets/`. This closes the #1892 probe gap.
+  the installed console `dist/assets/`. This run skipped the CLI install
+  step, so it does not cover the bunx bootstrap path that #1892 names.
   A first attempt from a repository working directory refused before writing:
   that repository policy required the architecture plugin.
+- The #1892 bunx path, run separately: disposable HOME and BUN_INSTALL, a
+  neutral working directory, and a PATH with only a `bun` 1.4.3 link and
+  system directories (`repo-harness` not on PATH before the run).
+  `bun x repo-harness@0.27.0 install --plugins operator --no-external-skills
+  --no-codegraph` exited 0 with `install repo-harness CLI -
+  spec=repo-harness@0.27.0` and `ensure operator console - version=0.27.0`.
+  The global CLI link was `<BUN_INSTALL>/bin/repo-harness` ->
+  `../install/global/node_modules/repo-harness/src/cli/index.ts` (not a
+  TMPDIR path); `repo-harness --version` read 0.27.0. Both installed
+  package manifests read 0.27.0. Install state recorded protocol 3, selection
+  `[operator]` and Operator 0.27.0. On port 4418, `/healthz` reported 0.27.0,
+  `GET /` and `/assets/index-B3Xkwmft.js` returned 200, and the asset was in
+  the installed console `dist/assets/`. The server was stopped after the
+  probe. This closes the #1892 probe gap.
 - On the `541df3689` checkout, `bash scripts/check-release-published.sh
   0.27.0` exited 0. It checked both packages, validated the
   `published_tarball`, `clean_install` and `installed_hook_readback` runtime
