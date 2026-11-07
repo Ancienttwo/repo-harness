@@ -50,9 +50,9 @@ export type SeatsConfigV1 = { readonly [seat in Exclude<SeatId, 'worker-light'>]
   readonly routing: SeatRoutingV1;
 };
 
-const WORKER_TOOLS = Object.freeze(['edit', 'gh', 'mcp', 'read', 'shell', 'tasks'] as const);
+const WORKER_TOOLS = Object.freeze(['edit', 'gh', 'mcp', 'net', 'read', 'shell', 'tasks'] as const);
 const WORKER_FLEET = Object.freeze(['deep-reasoner', 'deep-worker', 'explorer', 'fast-worker', 'gatekeeper', 'harness-evaluator', 'root-cause-prover']);
-const REVIEW_TOOLS: readonly SeatTool[] = Object.freeze(['read', 'shell'] as const);
+const REVIEW_TOOLS: readonly SeatTool[] = Object.freeze(['net', 'read', 'shell'] as const);
 
 /**
  * The section an absent `seats` key reads as: the canvas defaults, with the
@@ -83,10 +83,6 @@ export const DEFAULT_SEATS_CONFIG: SeatsConfigV1 = Object.freeze({
   }),
 });
 
-export class CodexSeatNetworkError extends Error {
-  readonly code = 'seat_codex_edit_net';
-}
-
 export const SEATS_CONFIG_UPDATE_ACTION = 'repo-harness update';
 
 export class SeatsConfigMigrationRequiredError extends Error {
@@ -94,17 +90,6 @@ export class SeatsConfigMigrationRequiredError extends Error {
   readonly next_action = SEATS_CONFIG_UPDATE_ACTION;
   constructor() {
     super(`The stored seats section needs a one-shot migration. Run ${SEATS_CONFIG_UPDATE_ACTION}.`);
-  }
-}
-
-/**
- * Owner decision M87 (#1770): a writable Codex sandbox with network reaches loopback TCP, so the operator console
- * write routes, and the herdr-core socket, where `hc exec` runs a command outside the sandbox. The stored section stays
- * readable, so the form can turn `net` off; a save and a launch each call this check.
- */
-export function checkCodexSeatNetwork(seat: SeatId, config: SeatConfigV1): void {
-  if (config.runtime === 'codex' && config.tools.includes('edit') && config.tools.includes('net')) {
-    throw new CodexSeatNetworkError(`The ${seat} seat on Codex cannot have both the edit and net tool groups: a writable Codex seat runs with sandbox network off (#1770). Remove net from that seat.`);
   }
 }
 
