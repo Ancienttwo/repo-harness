@@ -1578,32 +1578,33 @@ test.skipIf(process.platform === 'win32')('operator serve stops on stdin EOF onl
   const env = { ...process.env, HOME: home, TMPDIR: home, REPO_HARNESS_HOME: home, FAKE_HC: hc.env.FAKE_HC, PATH: [hc.env.PATH, process.env.PATH].filter(Boolean).join(delimiter) };
   const argv = (flag: boolean) => [fileURLToPath(new URL('../../src/cli/index.ts', import.meta.url)), 'operator', 'serve', '--port', '0', ...(flag ? ['--exit-on-stdin-close'] : [])];
   const exited = (child: ReturnType<typeof spawn>) => new Promise<number | null>(resolve => child.once('exit', code => resolve(code)));
-  const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
-  const answering = async (url: string) => { try { await fetch(`${url}/healthz`); return true; } catch { return false; } };
-  const started: ReturnType<typeof spawn>[] = [];
-  let holder: ReturnType<typeof spawn> | undefined, serverPid: number | undefined;
+  const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } }, answering = async (url: string) => { try { await fetch(`${url}/healthz`); return true; } catch { return false; } };
+  const started: ReturnType<typeof spawn>[] = []; let holder: ReturnType<typeof spawn> | undefined, serverPid: number | undefined;
+  // Serve child on a writable stdin pipe; `close` resolves once the parent's write side is gone.
+  const serving = async (flag: boolean) => {
+    const child = spawn(process.execPath, argv(flag), { cwd: home, env, stdio: ['pipe', 'pipe', 'ignore'] }); started.push(child);
+    let out = ''; child.stdout.on('data', bytes => { out += bytes.toString(); }); const exit = exited(child), close = new Promise<void>(resolve => { child.stdin!.once('close', resolve); child.stdin!.once('finish', resolve); });
+    await waitFor(() => /http:\/\/127\.0\.0\.1:\d+\n/.test(out), 'ready line', 500);
+    return { child, exit, close, url: out.trim() };
+  };
   try {
-    // Without the flag stdin is unread: the closed pipe changes nothing, so only SIGTERM stops the server.
-    const quiet = spawn(process.execPath, argv(false), { cwd: home, env, stdio: ['pipe', 'pipe', 'ignore'] }); started.push(quiet);
-    let quietOut = ''; quiet.stdout.on('data', bytes => { quietOut += bytes.toString(); }); const quietExit = exited(quiet);
-    await waitFor(() => /http:\/\/127\.0\.0\.1:\d+\n/.test(quietOut), 'ready line', 500); quiet.stdin!.end();
-    expect([quiet.exitCode, await answering(quietOut.trim())]).toEqual([null, true]);
-    quiet.kill('SIGTERM'); expect(await quietExit).toBe(0);
+    // Without the flag stdin is unread, so only SIGTERM stops the server. With it, the pipe closure alone is a clean exit.
+    const quiet = await serving(false); quiet.child.stdin!.end(); await quiet.close;
+    expect([quiet.child.exitCode, await answering(quiet.url)]).toEqual([null, true]);
+    const direct = await serving(true); direct.child.stdin!.end(); await waitFor(() => direct.child.exitCode !== null, 'server exited on stdin EOF', 500);
+    expect([direct.child.exitCode, await answering(direct.url)]).toEqual([0, false]);
+    quiet.child.kill('SIGTERM'); expect(await quiet.exit).toBe(0);
     // A parent killed with SIGKILL closes the stdin pipe it holds, so the server takes the shutdown path and dies.
     const script = join(home, 'holder.mjs'); writeFileSync(script, [`const c = require('node:child_process').spawn(process.execPath, ${JSON.stringify(argv(true))}, { stdio: ['pipe', 'pipe', 'inherit'] });`, 'process.stdout.write(`${c.pid}\n`); c.stdout.pipe(process.stdout); setInterval(() => {}, 1000);'].join('\n'));
     holder = spawn(process.execPath, [script], { cwd: home, env, stdio: ['ignore', 'pipe', 'ignore'] }); const holderExit = exited(holder);
-    let holderOut = ''; holder.stdout!.on('data', bytes => { holderOut += bytes.toString(); });
-    // The PID arrives before readiness, so `finally` can kill a server that never listens.
-    await waitFor(() => holderOut.includes('\n'), 'holder printed the server PID', 500);
-    const pid = Number(holderOut.split('\n')[0]); serverPid = pid;
+    let holderOut = ''; holder.stdout!.on('data', bytes => { holderOut += bytes.toString(); if (serverPid === undefined && holderOut.includes('\n')) serverPid = Number(holderOut.split('\n')[0]); });
     await waitFor(() => /^\d+\nhttp:\/\/127\.0\.0\.1:\d+\n/.test(holderOut), 'holder readiness', 500);
     const url = holderOut.trim().split('\n')[1]!; expect((await fetch(`${url}/healthz`)).status).toBe(200);
     holder.kill('SIGKILL'); expect(await holderExit).toBeNull();
-    for (let attempt = 0; attempt < 500 && (alive(pid) || await answering(url)); attempt += 1) await Bun.sleep(10);
-    expect([alive(pid), await answering(url)]).toEqual([false, false]);
+    for (let attempt = 0; attempt < 500 && (alive(serverPid!) || await answering(url)); attempt += 1) await Bun.sleep(10);
+    expect([alive(serverPid!), await answering(url)]).toEqual([false, false]);
   } finally {
-    for (const child of [...started, holder]) if (child && child.exitCode === null && child.signalCode === null) { const gone = exited(child); child.kill('SIGKILL'); await gone; }
-    if (serverPid !== undefined && alive(serverPid)) { process.kill(serverPid, 'SIGKILL'); for (let attempt = 0; attempt < 500 && alive(serverPid); attempt += 1) await Bun.sleep(10); }
+    for (const child of [...started, holder]) if (child && child.exitCode === null && child.signalCode === null) { const gone = exited(child); child.kill('SIGKILL'); await gone; } if (serverPid !== undefined && alive(serverPid)) { process.kill(serverPid, 'SIGKILL'); for (let attempt = 0; attempt < 500 && alive(serverPid); attempt += 1) await Bun.sleep(10); }
     for (const path of [home, hc.root]) rmSync(path, { recursive: true, force: true });
   }
 });
