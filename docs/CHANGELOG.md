@@ -2,7 +2,24 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.27.0] - 2026-11-07
+
+This release separates the Operator console into a matching npm package and
+installs it when `operator` is selected. It adds quota-aware seats routing
+and Operator language settings.
+
+### Upgrade
+
+- Run `bun add -g repo-harness@0.27.0 --no-cache && repo-harness update --version 0.27.0`.
+  Update installs the matching console when `operator` is selected. Restart
+  the Operator server and reload the page. (#1892, #1916)
+- Users with a stored seats config must run `repo-harness update` before
+  seats or quota routes read it. (#1925, #1928)
+
+### Rollback
+
+- An older CLI ignores the console package. Run
+  `bun remove -g repo-harness-operator-web` to remove it. (#1891, #1908)
 
 ### Changed
 
@@ -16,23 +33,50 @@ All notable changes to this skill are documented here.
   Human `repo-harness quota` output names each route, reserves tight Claude
   capacity for the advisor and orchestrator, and keeps frontend work on Claude.
   Hyper mode shares model overrides between route lines and launch argv;
-  only an exhausted Claude advisor falls back to Codex. Settings reads fill
-  absent new keys, and saves write the full section. Quota JSON is unchanged.
-  (#1925)
+  only an exhausted Claude advisor falls back to Codex. A stored seats config
+  without the new keys fails with `seats_config_migration_required`; update
+  migrates it. A malformed present value stays `seats_config_invalid`.
+  Saves write the full section. Quota JSON is unchanged. (#1925, #1928)
 - Install the matching Operator console when `operator` is selected. Checkout
-  installs link the console and require `bun run build:operator-web`. (#1892)
+  installs link the console and require `bun run build:operator-web`. (#1892, #1916)
 - The npm release gates check both the core and operator web packages at the
   same version. The console publishes first, and the published check verifies
-  both packages. (#1893)
+  both packages. (#1893, #1912)
 - The built Operator console ships in `repo-harness-operator-web` at the same
   version as the CLI. Core packages and installed skill copies exclude the
   console build and source. Page requests return 503 when the console is
   absent or has another version; API routes and `/healthz` stay available.
-  Run `repo-harness update`, restart the server and reload the page. (#1891)
+  Run `repo-harness update`, restart the server and reload the page. (#1891, #1908)
 - The Herdr notify setup states that the relay child runs the `peer-runtime`
   command `herdr notify relay`. Its gate reads the selection under the `HOME`
   of the hc core. Select `peer-runtime` for that `HOME` too, or the relay
-  exits 1 with `install_plugin_unavailable`. (#1906)
+  exits 1 with `install_plugin_unavailable`. (#1906, #1911)
+- Operator exposes routes to read and set the reporting language and a
+  registered repository's documentation language. Writes use the existing
+  Operator write channel. Console controls expose these settings.
+  (#1919, #1921, #1920, #1937)
+- Architecture module cards use a uniform layout with five signal slots.
+  (#1936, #1940)
+
+### Fixed
+
+- Generated context follows the repository documentation language policy.
+  (#1918, #1922)
+- Candidate reconciliation uses the supplied environment for global runtime
+  projection. (#1900, #1923)
+- Operator opens repository policy files without blocking on a FIFO or
+  following a symlink. It writes changes by temp file and rename. (#1927, #1929)
+- Review runtime mappings are exhaustive. An unsupported harness fails with
+  `review_harness_unsupported`. (#1932, #1933, #1938)
+
+### Documentation
+
+- Refresh generated architecture outputs after 0.26.6. (#1882)
+- Refresh the architecture map for P7 and the console package split. (#1913)
+- Record the 0.26.6 publication and installed upgrade evidence. (#1915)
+- Record G10 review isolation research for antigravity and dsh. (#1857, #1930)
+- Clarify null actual model behavior in review. (#1934, #1939)
+- Refresh generated architecture outputs for main at `309ce4556`. (#1910)
 
 ## [0.26.6] - 2026-11-06
 
