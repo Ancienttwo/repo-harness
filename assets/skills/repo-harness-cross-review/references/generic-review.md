@@ -69,8 +69,10 @@ explicitly approved OS boundary; the app adds no vendor arguments.
 
 Claude's current OAR model event is system/init only. It cannot certify the
 actual gateway backend, so the host records a Claude model as `null`. A null
-model still mints a Receipt with `model_relation: unknown`; only
-`different-family` counts as a cross-model review. Hooks,
+model still mints a Receipt with `model_relation: unknown` and grants no
+cross-model claim. A non-string or blank model fails with
+`review_actual_model_unverified`. Only `different-family` counts as a
+cross-model review. Hooks,
 complete packet ingestion, forced host-loss cleanup and native isolation remain
 unverified. On normal cleanup SDK dispose acknowledgement and execution-owner
 exit precede terminal close; missing proof remains pending.

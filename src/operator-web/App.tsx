@@ -52,6 +52,10 @@ import {
 } from './repository-reads';
 import { fetchSetup, setupPageState, useSetup, type SetupReader, type SetupView } from './setup';
 import { AgentsPage, HooksPage, SkillsPage } from './SetupPages';
+import {
+  fetchDocumentationLanguage, fetchReportingLanguage, postDocumentationLanguage, postReportingLanguage,
+  type DocumentationLanguageReader, type DocumentationLanguageWriter, type LanguageReader, type LanguageWriter, type ReportingHost, type ReportingPreset,
+} from './language-settings';
 import { fetchRuntimeOverlay, type RuntimeOverlayReader } from './RuntimeBadges';
 import { SystemPage } from './SystemPage';
 import { TestsPage } from './TestsPage';
@@ -124,6 +128,12 @@ export interface OperatorAppProps {
   /** The agents section and runtime probe behind the Agents page Hosts section, and its one write. */
   readonly readAgentsSettings?: AgentsSettingsReader;
   readonly writeAgentsSettings?: AgentsSettingsWriter;
+  /** The user reporting language of the global rules files, beside the agent settings; separate from the console locale. */
+  readonly readReportingLanguage?: LanguageReader<readonly ReportingHost[]>;
+  readonly writeReportingLanguage?: LanguageWriter<ReportingPreset>;
+  /** Each registered repository's documentation language, on the Repositories page. */
+  readonly readDocumentationLanguage?: DocumentationLanguageReader;
+  readonly writeDocumentationLanguage?: DocumentationLanguageWriter;
   /** The seats section and its ranges behind the Agents page Seats section, and its one write. */
   readonly readSeatsSettings?: SeatsSettingsReader;
   readonly writeSeatsSettings?: SeatsSettingsWriter;
@@ -307,6 +317,10 @@ export function OperatorApp({
   readBotReviews = fetchBotReviews,
   readAgentsSettings = fetchAgentsSettings,
   writeAgentsSettings = postAgentsSettings,
+  readReportingLanguage = fetchReportingLanguage,
+  writeReportingLanguage = postReportingLanguage,
+  readDocumentationLanguage = fetchDocumentationLanguage,
+  writeDocumentationLanguage = postDocumentationLanguage,
   readSeatsSettings = fetchSeatsSettings,
   writeSeatsSettings = postSeatsSettings,
   readQuota = fetchQuota,
@@ -470,12 +484,12 @@ export function OperatorApp({
           {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
           {workspace === 'board' && <BoardPage layout={boardLayout(place.item)} place={boardSubject} room={repositoryRoom} view={board} readBoard={readBoard} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={theme.mode} readBoardParents={readBoardParents} readBoardSummaries={readBoardSummaries} parents={boardParents} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
             repositories={boardOptions} chosenRepository={boardRepository} onRepository={chooseBoardRepository} setup={{ repositories, devActivity, botAccess }} quota={quota.view} />}
-          {workspace === 'repositories' && <RepositoriesPage view={repositories} activity={devActivity} now={now} onOpen={openRepositoryBoard} t={t} />}
+          {workspace === 'repositories' && <RepositoriesPage view={repositories} activity={devActivity} now={now} onOpen={openRepositoryBoard} readLanguage={readDocumentationLanguage} writeLanguage={writeDocumentationLanguage} generation={refreshGeneration} t={t} />}
           {/* Kept mounted after the first visit so the open plan review and the plan selection survive a page change. */}
           {worktreesMounted && <div hidden={workspace !== 'worktrees'}>
             <WorktreesPage view={worktrees} cleanup={worktreeCleanup} plan={worktreeCleanupPlan} now={now} t={t} />
           </div>}
-          {workspace === 'agents' && <AgentsPage view={setup} agents={agentsSettings} seats={seatsSettings} quota={quota} now={now} t={t} />}
+          {workspace === 'agents' && <AgentsPage view={setup} agents={agentsSettings} seats={seatsSettings} quota={quota} readReportingLanguage={readReportingLanguage} writeReportingLanguage={writeReportingLanguage} generation={refreshGeneration} now={now} t={t} />}
           {workspace === 'skills' && <SkillsPage view={setup} now={now} t={t} onOpenTool={id => openPlace({ workspace: 'tools', module: null, item: id })} />}
           {workspace === 'hooks' && <HooksPage view={setup} now={now} t={t} />}
           {workspace === 'cli' && <CliPage view={cliInventory} now={now} t={t} />}
