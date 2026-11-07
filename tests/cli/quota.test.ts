@@ -38,17 +38,20 @@ describe('seat quota routing', () => {
     [81, 'saving', 'worker-light', true],
     [95, 'saving', 'worker-light', true],
   ] as const)('Claude %s%% used derives %s', (used, mode, selected, reserved) => {
+    const seats = { ...DEFAULT_SEATS_CONFIG, orchestrator: { ...DEFAULT_SEATS_CONFIG.orchestrator, model: 'sonnet', effort: 'low' } };
     const account = claude({ seven_day: week(used, 84) });
-    const quota = seatAccountQuotas([account], DEFAULT_SEATS_CONFIG.routing);
+    const quota = seatAccountQuotas([account], seats.routing);
     // All three readings are pace-based tight or exhausted. Only the remaining threshold reserves Claude.
     expect(quota.claude.mode).toBe(mode);
-    const lines = formatSeatRoutes(DEFAULT_SEATS_CONFIG, quota).split('\n');
+    const lines = formatSeatRoutes(seats, quota).split('\n');
     for (const task of ['important_deep', 'important_fast']) expect(lines.find(line => line.startsWith(`route ${task}:`)))
       .toContain(`${!reserved && task === 'important_fast' ? 'worker-important-fast' : selected} (`);
     expect(lines.find(line => line.startsWith('route frontend:'))).toContain(reserved ? 'none (' : 'worker-important (');
     expect(lines).toContain(reserved ? `explorer: haiku high (claude ${account.state === 'exhausted' ? 'exhausted' : mode}; pass model haiku when you call the explorer)` : 'explorer: default');
     expect(effectiveSeatConfig('advisor', DEFAULT_SEATS_CONFIG, quota).effort).toBe(reserved ? 'high' : 'max');
-    expect(effectiveSeatConfig('orchestrator', DEFAULT_SEATS_CONFIG, quota)).toMatchObject({ runtime: 'claude', model: 'opus', effort: 'high' });
+    expect(effectiveSeatConfig('orchestrator', seats, quota)).toEqual(reserved
+      ? { ...seats.orchestrator, model: 'opus', effort: 'high' } : seats.orchestrator);
+    if (reserved) expect(lines).toContain(`reviewer: none (claude ${account.state}, reserved for advisor and orchestrator)`);
     expect(lines.some(line => line.includes('fallback'))).toBe(false);
   });
 
@@ -100,8 +103,9 @@ describe('seat quota routing', () => {
       classifyQuotaReading(decodeCodexRateLimitsResult({ rateLimits: {
         primary: { usedPercent: codexUsed, windowDurationMins: 10080, resetsAt: (NOW + 84 * HOUR) / 1000 },
       } }, new Date(NOW).toISOString()), NOW)];
-    expect(formatSeatRoutes(DEFAULT_SEATS_CONFIG, seatAccountQuotas(accounts, DEFAULT_SEATS_CONFIG.routing)))
-      .toContain(`route important_deep: ${selected} (`);
+    const routes = formatSeatRoutes(DEFAULT_SEATS_CONFIG, seatAccountQuotas(accounts, DEFAULT_SEATS_CONFIG.routing));
+    expect(routes).toContain(`route important_deep: ${selected} (`);
+    if (codexUsed >= 95) expect(routes).toContain('gatekeeper: none (chatgpt exhausted)');
   });
 });
 

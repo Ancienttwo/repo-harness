@@ -218,26 +218,35 @@ module is in the title so that a list view shows the write scopes.
 ### 7.1 Quota check
 
 Before each dispatch wave, run `repo-harness quota`. It prints the account
-states and one route line per task class. Launch each task on the seat its
+states, one mode line per account and one route line per task class. For
+example: `claude mode: saving (5% left < 20%)` and
+`codex mode: hyper (68% left >= 50%)`. Launch each task on the seat its
 route line names with `repo-harness seats argv <seat>`; state the boundary
 in the task. A `none` route waits.
 Apply the explorer line through the Claude Agent tool's `model` parameter when you call the explorer.
 
-A tight or exhausted Claude account is reserved for the advisor and
-orchestrator. Its worker classes move to the next eligible seat in their
-ordered lists. Frontend waits for Claude; it has no non-Claude fallback.
+Claude saving mode applies when weekly remaining quota is below
+`routing.claude_saving_below_remaining` (default 20). Codex hyper mode applies
+when weekly remaining quota is at or above
+`routing.codex_hyper_at_or_above_remaining` (default 50). Modes are derived,
+never stored. Codex hyper seats use `gpt-6-astra` high.
+
+Claude in saving mode or exhausted is reserved for the advisor and
+orchestrator; both use `opus` high. Important non-frontend work then uses a
+configured Pi `worker-light`; a null or non-Pi seat gives a `none` route.
+Frontend waits for Claude; it has no non-Claude fallback.
 An exhausted account takes no new dispatch, review seats included.
+`tight` is a display state only; it does not reserve Claude or change routing.
 
 Claude seats use the Claude account, Codex seats use ChatGPT, and Pi seats
-have no account reading. Routing applies these rules in both standard and
-hyper mode. Put the reading in the `Dispatch reading:` line of each claim:
+have no account reading. Put the reading in the `Dispatch reading:` line of each claim:
 account state, used %, pace, reset time and reading time.
 
 | Account state | Route rule | Coordinator action |
 |---|---|---|
 | normal or surplus | First pass, in configured seat order | Dispatch to the named seat. |
 | unknown | Second pass; the line names the state | Dispatch to the named seat and record the unknown state. |
-| tight | Claude is reserved; ChatGPT is eligible in the second pass | Follow the named route; frontend waits for Claude. |
+| tight | Display only; the seat stays eligible unless Claude is reserved | Follow the named route. |
 | exhausted | The account is excluded | Start no new turn on that account. |
 
 ## 8. Follow up

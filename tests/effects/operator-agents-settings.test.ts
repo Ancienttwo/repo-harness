@@ -647,13 +647,16 @@ describe('seat settings contract without transport', () => {
     writeFileSync(path, original);
     const env = { HOME: home }, settings = readSeatsSettings(env), route = seatsSettingsWriteRoute(env);
     for (const [task, candidates] of [
-      ['simple_fast', ['unknown']], ['simple_fast', ['worker', 'worker']], ['simple_fast', []], ['simple_fast', ['advisor']], ['simple_fast', ['worker-light']],
+      ['simple_fast', ['unknown']], ['simple_fast', ['worker', 'worker']], ['simple_fast', []], ['simple_fast', ['advisor']],
       ['frontend', ['worker']], ['frontend', ['worker-light']],
     ]) {
       expect(() => route.decode({ expected_revision: settings.config.revision, seats: {
-        ...settings.defaults, 'worker-light': null, routing: { ...settings.defaults.routing, [task as string]: candidates },
+        ...settings.defaults, routing: { ...settings.defaults.routing, [task as string]: candidates },
       } }, [])).toThrow('seats_settings_request_invalid');
     }
+    expect(() => route.decode({ expected_revision: settings.config.revision, seats: {
+      ...settings.defaults, 'worker-light': null, routing: { ...settings.defaults.routing, simple_fast: ['worker-light'] },
+    } }, [])).toThrow('seats_settings_request_invalid');
     const changedRuntime = { ...settings.defaults, 'worker-important': { ...settings.defaults['worker-important'], runtime: 'codex', model: 'gpt-6.1-terra' } };
     expect(() => route.decode({ expected_revision: settings.config.revision, seats: changedRuntime }, []))
       .toThrow('seats_settings_request_invalid');
@@ -662,6 +665,17 @@ describe('seat settings contract without transport', () => {
 });
 
 describe('seat settings routes', () => {
+  test('a configured Pi worker-light in a non-frontend class saves and reads back', async () => {
+    const harness = await startHarness({ agents: PANE_AGENTS });
+    const { revision, ...section } = (await seats(harness)).config;
+    const routing = { ...section.routing, simple_fast: ['worker-light'] };
+    const response = await post(harness, { expected_revision: revision, seats: { ...section, routing } }, 'seats');
+    expect(response.status).toBe(200);
+    const stored = (await seats(harness)).config;
+    expect(stored['worker-light']).toEqual(DEFAULT_SEATS_CONFIG['worker-light']);
+    expect(stored.routing.simple_fast).toEqual(['worker-light']);
+  });
+
   test('GET reads the defaults and the ranges from the fleet role profiles', async () => {
     const harness = await startHarness({ agents: PANE_AGENTS });
     const value = await seats(harness);
