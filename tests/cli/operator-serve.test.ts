@@ -101,6 +101,7 @@ describe('operator serve command and HTTP boundary', () => {
       port: 4318,
       max_concurrency: 4,
       timeout_ms: 30_000,
+      exit_on_stdin_close: false,
     });
     expect(parseOperatorServeOptions({ host: '::1', port: '0', maxConcurrency: '1', timeoutMs: '1000' })).toMatchObject({
       host: '::1', port: 0, max_concurrency: 1, timeout_ms: 1_000,
@@ -108,6 +109,7 @@ describe('operator serve command and HTTP boundary', () => {
     expect(() => parseOperatorServeOptions({ host: '0.0.0.0' })).toThrow('127.0.0.1 or ::1');
     expect(() => parseOperatorServeOptions({ port: '65536' })).toThrow('port');
     expect(() => parseOperatorServeOptions({ timeoutMs: '999' })).toThrow('timeout-ms');
+    expect(parseOperatorServeOptions({ exitOnStdinClose: true }).exit_on_stdin_close).toBe(true);
     expect(buildOperatorCommand(() => taskReviewRunner).name()).toBe('operator');
   });
 
@@ -1566,6 +1568,46 @@ test('operator serve admits explicit native capture snapshots without Herdr or p
     expect(readdirSync(root).sort()).toEqual(filesBeforeGet);
     child.kill('SIGTERM'); expect(await exited).toBe(0);
   } finally { if (child.exitCode === null) { child.kill('SIGTERM'); await exited; } for (const path of [root, home, hc.root]) rmSync(path, { recursive: true, force: true }); }
+});
+
+test('operator serve stops on stdin EOF only with --exit-on-stdin-close, so a killed parent leaves no server', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'rh-operator-stdin-home-')), hc = fakeHc('operator-stdin-close');
+  recordPluginSelection({ HOME: home }, ['operator']);
+  const env = { ...process.env, HOME: home, TMPDIR: home, REPO_HARNESS_HOME: home, FAKE_HC: hc.env.FAKE_HC, PATH: `${hc.env.PATH}:${process.env.PATH}` };
+  const argv = (flag: boolean) => [new URL('../../src/cli/index.ts', import.meta.url).pathname, 'operator', 'serve', '--port', '0', ...(flag ? ['--exit-on-stdin-close'] : [])];
+  const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const answering = async (url: string) => { try { await fetch(`${url}/healthz`); return true; } catch { return false; } };
+  const started: ReturnType<typeof spawn>[] = [];
+  const serve = (flag: boolean) => {
+    const child = spawn(process.execPath, argv(flag), { cwd: home, env, stdio: ['pipe', 'pipe', 'ignore'] }); started.push(child);
+    let out = ''; child.stdout.on('data', bytes => { out += bytes.toString(); });
+    return { child, url: waitFor(() => /http:\/\/127\.0\.0\.1:\d+\n/.test(out), 'ready line', 500).then(() => out.trim()) };
+  };
+  let holder: ReturnType<typeof spawn> | undefined, serverPid: number | undefined;
+  try {
+    // Without the flag stdin is not read: the server keeps answering after its pipe closes.
+    const quiet = serve(false), quietUrl = await quiet.url; quiet.child.stdin!.end(); await Bun.sleep(200);
+    expect([quiet.child.exitCode, await answering(quietUrl)]).toEqual([null, true]);
+    // With the flag the closed pipe takes the SIGTERM path, so the server exits 0; a SIGKILLed parent closes that same pipe.
+    const direct = serve(true), exited = new Promise<number | null>(resolve => direct.child.once('exit', code => resolve(code)));
+    await direct.url; direct.child.stdin!.end();
+    expect(await Promise.race([exited, Bun.sleep(10_000).then(() => 'still running' as const)])).toBe(0);
+    const script = join(home, 'holder.mjs'), parent = `const child = require('node:child_process').spawn(process.execPath, ${JSON.stringify(argv(true))}, { stdio: ['pipe', 'pipe', 'inherit'] });`;
+    writeFileSync(script, [parent, 'process.stdout.write(`${child.pid}\n`); child.stdout.pipe(process.stdout); setInterval(() => {}, 1000);'].join('\n'));
+    holder = spawn(process.execPath, [script], { cwd: home, env, stdio: ['ignore', 'pipe', 'ignore'] });
+    let holderOut = ''; holder.stdout!.on('data', bytes => { holderOut += bytes.toString(); });
+    const holderExited = new Promise<number | null>(resolve => holder!.once('exit', code => resolve(code)));
+    await waitFor(() => /^\d+\nhttp:\/\/127\.0\.0\.1:\d+\n/.test(holderOut), 'holder readiness', 500);
+    const [, pid = '', url = ''] = /^(\d+)\n(http:\/\/127\.0\.0\.1:\d+)\n/.exec(holderOut)!;
+    serverPid = Number(pid); expect((await fetch(`${url}/healthz`)).status).toBe(200);
+    holder.kill('SIGKILL'); expect(await holderExited).toBeNull();
+    for (let attempt = 0; attempt < 500 && (alive(serverPid) || await answering(url)); attempt += 1) await Bun.sleep(10);
+    expect([alive(serverPid), await answering(url)]).toEqual([false, false]);
+  } finally {
+    for (const child of [...started, holder]) if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    if (serverPid !== undefined && alive(serverPid)) process.kill(serverPid, 'SIGKILL');
+    for (const path of [home, hc.root]) rmSync(path, { recursive: true, force: true });
+  }
 });
 
 describe('architecture map', () => {
