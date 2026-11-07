@@ -213,7 +213,10 @@ function writeManagedHostSurfaces(
       else markedFacade(join(home, `.${host}`, 'skills', skill));
     }
   }
-  if (plugins.includes('architecture')) writePath(join(home, '.bun', 'bin', 'codegraph'), '#!/bin/sh\n');
+  if (plugins.includes('architecture')) {
+    writePath(join(home, '.bun', 'bin', 'codegraph'), '#!/bin/sh\n');
+    symlinkSync(join(source, 'SKILL.md'), join(home, '.bun', 'bin', 'archctx'));
+  }
   writePath(join(home, '.bun', 'bin', 'repo-harness'), '#!/bin/sh\n');
   symlinkSync(source, canonical);
   writeFileSync(join(home, '.codex', 'hooks.json'), JSON.stringify({
@@ -1124,6 +1127,8 @@ describe('install selection', () => {
       } }, null, 2)}\n`);
       const all = applyInstallSelection('all', ALL_PLUGINS, env, new Date('2026-01-01T00:00:00Z'), first);
       commitInstallHostTransaction(first);
+      const archctx = join(env.HOME!, '.bun', 'bin', 'archctx');
+      expect(all.state.ownership_manifest.find(surface => surface.path === archctx), name).toMatchObject({ owner: 'architecture', type: 'symlink' });
       const owners = new Set(all.state.ownership_manifest.map(({ owner }) => owner));
       for (const owner of ['core', ...HOST_FILE_PLUGINS]) expect(owners.has(owner as PluginId), owner).toBe(true);
       const sections = all.state.ownership_manifest.filter(({ managed_marker }) => managed_marker === 'codegraph-config-projection').map(({ path }) => path);
@@ -1133,6 +1138,7 @@ describe('install selection', () => {
       const removed = prepareInstallSelectionSwitch(keep, env);
       applyInstallSelection(keep, keep, env, new Date('2026-01-02T00:00:00Z'), second);
       commitInstallHostTransaction(second);
+      expect(existsSync(archctx), name).toBe(keep.includes('architecture'));
 
       const state = readInstallState(env)!;
       expect(state.selection, name).toEqual(keep);

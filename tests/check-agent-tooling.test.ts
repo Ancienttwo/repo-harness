@@ -41,7 +41,7 @@ test("strict readiness rejects a missing required Herdr skill", () => {
     const res = spawnSync("bash", [SCRIPT, "--json", "--strict-readiness", "--host", "codex"], {
       cwd: ROOT,
       encoding: "utf8",
-      env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
+      env: { ...process.env, HOME: envRoot.home, PATH: envRoot.fakeBin },
     });
     expect(res.status).toBe(2);
     const report = JSON.parse(res.stdout);
@@ -55,7 +55,7 @@ test("strict readiness rejects a missing required Herdr skill", () => {
     const drift = spawnSync("bash", [SCRIPT, "--json", "--strict-readiness", "--host", "codex"], {
       cwd: ROOT,
       encoding: "utf8",
-      env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
+      env: { ...process.env, HOME: envRoot.home, PATH: envRoot.fakeBin },
     });
     expect(drift.status).toBe(2);
     expect(JSON.parse(drift.stdout).tools.herdr_skill.status).toBe("mismatch");
@@ -66,7 +66,7 @@ test("strict readiness rejects a missing required Herdr skill", () => {
     const unreadable = spawnSync("bash", [SCRIPT, "--json", "--strict-readiness", "--host", "codex"], {
       cwd: ROOT,
       encoding: "utf8",
-      env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
+      env: { ...process.env, HOME: envRoot.home, PATH: envRoot.fakeBin },
     });
     expect(unreadable.status).toBe(2);
     expect(JSON.parse(unreadable.stdout).tools.herdr_skill.status).toBe("invalid");
@@ -74,7 +74,7 @@ test("strict readiness rejects a missing required Herdr skill", () => {
     // The expected text comes only from the hc manual; classic skill output gives no expected text.
     writeExecutable(join(envRoot.fakeBin, "hc"), `#!/bin/sh\nif [ "$1" = --skill ]; then printf '%s\\n' '---' 'name: herdr' '---' 'Check HERDR_ENV before control.'; else printf 'hc ${HC_MIN_VERSION}\\n'; fi\n`);
     const classic = spawnSync("bash", [SCRIPT, "--json", "--strict-readiness", "--host", "codex"], {
-      cwd: ROOT, encoding: "utf8", env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
+      cwd: ROOT, encoding: "utf8", env: { ...process.env, HOME: envRoot.home, PATH: envRoot.fakeBin },
     });
     expect(JSON.parse(classic.stdout).tools.herdr_skill.status).toBe("unavailable");
   } finally {
@@ -90,7 +90,7 @@ test("readiness rejects a stale shared Herdr skill even when both host copies ar
     writeFileSync(join(shared, "SKILL.md"), HERDR_SKILL);
     const check = (host = "both", json = true) => spawnSync("bash", [SCRIPT, ...(json ? ["--json"] : []), "--strict-readiness", "--host", host], {
       cwd: ROOT, encoding: "utf8",
-      env: { ...process.env, HOME: fixture.home, PATH: `${fixture.fakeBin}:${process.env.PATH ?? ""}` },
+      env: { ...process.env, HOME: fixture.home, PATH: fixture.fakeBin },
     });
     const stale = check();
     expect(stale.status).toBe(2);
@@ -167,6 +167,10 @@ function setupFakeEnvironment(prefix: string, plugins: readonly PluginId[] | nul
   if (plugins) recordPluginSelection({ HOME: home }, plugins);
   mkdirSync(join(root, ".codegraph"));
   mkdirSync(fakeBin, { recursive: true });
+  for (const utility of ["dirname", "basename", "node", "bun", "git", "bash", "sh", "which", "uname", "cat", "sleep"]) {
+    const actual = Bun.which(utility);
+    if (actual) symlinkSync(actual, join(fakeBin, utility));
+  }
   // A fake hc first on PATH keeps the developer's herdr-core out of the report.
   writeExecutable(join(fakeBin, "hc"), `#!/bin/sh\nif [ "${'${1:-}'}" = --skill ]; then printf '%s' '${HERDR_SKILL.replaceAll("'", "'\\''")}'; else printf 'hc ${HC_MIN_VERSION}\\n'; fi\n`);
   for (const host of [".claude", ".codex"]) {
@@ -335,16 +339,6 @@ function writeCappedFakeTimeout(fakeBin: string, capSeconds = 2) {
   );
 }
 
-// PATH with every directory that ships a real `skills` binary removed, so the
-// absent-binary case cannot silently resolve the developer machine's install.
-function pathWithoutSkillsCli(prefix: string) {
-  const entries = (process.env.PATH ?? "").split(":").filter((dir) => {
-    if (!dir) return false;
-    return !existsSync(join(dir, "skills"));
-  });
-  return [prefix, ...entries].join(":");
-}
-
 function writeFakeCodeGraph(
   fakeBin: string,
   options: { version?: string; status?: "up-to-date" | "stale" | "not-initialized"; logFile?: string } = {}
@@ -495,7 +489,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -560,7 +554,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -605,7 +599,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -624,7 +618,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -654,7 +648,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -684,7 +678,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -710,7 +704,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: pathWithoutSkillsCli(envRoot.fakeBin),
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -744,7 +738,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph"),
         },
       });
@@ -775,7 +769,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph"),
         },
       });
@@ -831,7 +825,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -874,7 +868,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -916,7 +910,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -971,7 +965,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -1012,7 +1006,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(localBin, "codegraph"),
         },
       });
@@ -1057,7 +1051,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
         },
       });
 
@@ -1086,7 +1080,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph"),
         },
       });
@@ -1123,7 +1117,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph"),
         },
       });
@@ -1171,7 +1165,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph"),
         },
       });
@@ -1275,7 +1269,7 @@ describe("check-agent-tooling", () => {
           env: {
             ...process.env,
             HOME: envRoot.home,
-            PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+            PATH: envRoot.fakeBin,
             AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
           },
         });
@@ -1320,7 +1314,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           HOOK_HOST: "codex",
         },
         payload: {
@@ -1342,7 +1336,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -1362,7 +1356,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           HOOK_HOST: "codex",
         },
         payload: {
@@ -1381,7 +1375,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -1451,7 +1445,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -1490,7 +1484,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -1530,7 +1524,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -1602,7 +1596,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -1631,7 +1625,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -1680,7 +1674,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -1737,7 +1731,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
         },
       });
@@ -1781,7 +1775,7 @@ describe("check-agent-tooling", () => {
         const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude", ...(entry.caller ? ["--architecture-selected"] : [])], {
           cwd: envRoot.root,
           encoding: "utf-8",
-          env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`, AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph") },
+          env: { ...process.env, HOME: envRoot.home, PATH: envRoot.fakeBin, AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph") },
         });
 
         expect(res.status).toBe(0);
@@ -1824,7 +1818,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph"),
         },
       });
@@ -1834,6 +1828,7 @@ describe("check-agent-tooling", () => {
       expect(res.status).toBe(0);
       const report = JSON.parse(res.stdout);
       expect(report.tools.archctx.status).toBe("present");
+      expect(report.tools.archctx.path_copy).toBeNull();
       expect(report.tools.archctx.capability_source).toBe("registry");
       expect(report.tools.archctx.readiness).toBe("advisory");
       expect(report.tools.archctx.nodes_dir_present).toBe(false);
@@ -1849,12 +1844,19 @@ describe("check-agent-tooling", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-archctx-path-copy");
     try {
       writeArchctxRepo(envRoot.root, "registry");
-      writeExecutable(join(envRoot.fakeBin, "archctx"), "#!/bin/sh\necho 0.5.13\n");
+      const packageRoot = join(envRoot.root, 'lib', 'node_modules', 'archctx');
+      mkdirSync(join(packageRoot, 'bin'), { recursive: true });
+      writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({ name: 'archctx', version: '0.5.13' }));
+      writeExecutable(join(packageRoot, 'bin', 'archctx'), "#!/bin/sh\necho help\necho help\n");
+      symlinkSync(join(packageRoot, 'bin', 'archctx'), join(envRoot.fakeBin, 'archctx'));
+      mkdirSync(join(envRoot.root, 'bin'), { recursive: true });
+      writeExecutable(join(envRoot.root, 'bin', 'npm'), '#!/bin/sh\nexit 0\n');
+      writeExecutable(join(envRoot.root, 'bin', 'node'), '#!/bin/sh\nexit 0\n');
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], {
         cwd: envRoot.root,
         encoding: "utf-8",
-        env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
+        env: { ...process.env, HOME: envRoot.home, PATH: envRoot.fakeBin },
       });
 
       expect(res.status).toBe(0);
@@ -1867,12 +1869,22 @@ describe("check-agent-tooling", () => {
         node_range: packaged.engines.node,
         command_source: "repo-harness architecture-projection status --json",
       });
-      expect(archctx.path_copy).toEqual({ bin_path: join(envRoot.fakeBin, "archctx"), version: "0.5.13", relation: "unrelated" });
+      expect(archctx.path_copy).toMatchObject({ bin_path: join(envRoot.fakeBin, "archctx"), real_path: join(packageRoot, 'bin', 'archctx'), version: "0.5.13", relation: "unrelated" });
       expect(archctx.warnings).toHaveLength(1);
       expect(archctx.warnings[0]).toContain(`PATH archctx 0.5.13 at ${join(envRoot.fakeBin, "archctx")} is unrelated to the managed archctx ${packaged.version}`);
       expect(archctx.reason).toContain(archctx.warnings[0]);
-      // The report stays advisory: a PATH copy never changes the tool status.
       expect(archctx.status).toBe("present");
+      expect(archctx.path_copy.fix_command).toContain(`--prefix '${envRoot.root}' -g uninstall archctx`);
+      expect(archctx.readiness).toBe('blocked');
+      rmSync(join(envRoot.fakeBin, 'archctx'));
+      symlinkSync(archctx.managed.bin_path, join(envRoot.fakeBin, 'archctx'));
+      const managed = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], {
+        cwd: envRoot.root, encoding: 'utf8', env: { ...process.env, HOME: envRoot.home, PATH: envRoot.fakeBin },
+      });
+      const managedArchctx = JSON.parse(managed.stdout).tools.archctx;
+      expect(managedArchctx.status).toBe('present');
+      expect(managedArchctx.path_copy.relation).toBe('managed');
+      expect(managedArchctx.warnings).toEqual([]);
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }
@@ -1893,11 +1905,12 @@ describe("check-agent-tooling", () => {
       const archctxRoot = join(packageRoot, "node_modules", "archctx");
       mkdirSync(archctxRoot, { recursive: true });
       writeFileSync(join(archctxRoot, "package.json"), JSON.stringify({ name: "archctx", version: packaged.version, engines: packaged.engines, bin: { archctx: "./bin/archctx.mjs" } }));
+      writeExecutable(join(envRoot.fakeBin, "archctx"), "#!/bin/sh\necho 0.5.13\n");
 
       const res = spawnSync("bash", [join(packageRoot, "scripts", "check-agent-tooling.sh"), "--json", "--host", "claude"], {
         cwd: envRoot.root,
         encoding: "utf-8",
-        env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
+        env: { ...process.env, HOME: envRoot.home, PATH: envRoot.fakeBin },
       });
 
       expect(res.status).toBe(0);
@@ -1905,8 +1918,10 @@ describe("check-agent-tooling", () => {
       const missing = join(realpathSync(packageRoot), "node_modules", "archctx", "bin", "archctx.mjs");
       expect(archctx.managed).toMatchObject({ status: "invalid", version: null, bin_path: null, reason: `package-local archctx@${packaged.version} binary is missing: ${missing}` });
       expect(archctx.warnings).toContain(`Managed archctx is not usable: ${archctx.managed.reason}. Run repo-harness update.`);
-      // The managed CLI is advisory: a broken install never changes the tool status.
+      // Capability status and PATH ownership are reported independently.
       expect(archctx.status).toBe("present");
+      expect(archctx.path_copy).toMatchObject({ relation: "unrelated", fix_command: null });
+      expect(archctx.path_copy.fix_note).toContain("package manager that owns it");
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }
@@ -1927,7 +1942,7 @@ describe("check-agent-tooling", () => {
         env: {
           ...process.env,
           HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          PATH: envRoot.fakeBin,
           AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph"),
         },
       });
@@ -1999,7 +2014,7 @@ test("does not borrow a parent CodeGraph index for a nested checkout", () => {
     const probe = () => {
       const result = spawnSync("bash", [SCRIPT, "--json", "--host", "codex"], {
         cwd: nested, encoding: "utf8",
-        env: { ...process.env, HOME: fixture.home, PATH: `${fixture.fakeBin}:${process.env.PATH ?? ""}`,
+        env: { ...process.env, HOME: fixture.home, PATH: fixture.fakeBin,
           AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(fixture.fakeBin, "codegraph") },
       });
       expect(result.status).toBe(0);

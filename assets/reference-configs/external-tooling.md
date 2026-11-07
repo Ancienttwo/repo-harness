@@ -1020,8 +1020,11 @@ provider process. `repo-harness architecture-projection status --json` adds the
 exact package capability handshake and project apply readiness.
 `projectionProvider.command` is the managed invocation `[nodePath, binaryPath]`.
 Guidance runs archctx only as `"$NODE" "$ARCHCTX" <command>`, with `NODE` and
-`ARCHCTX` taken from that field. A bare archctx on PATH is an unrelated copy and
-can have another version. When the repository has no complete ArchContext model,
+`ARCHCTX` taken from that field. Update installs the pinned CLI entry at
+`<BUN_INSTALL>/bin/archctx`. Setup check fails when PATH resolves to an unrelated
+copy and reports the owner-specific uninstall command. For an npm global copy,
+the command uses the owning prefix's Node and npm with `--prefix <prefix> -g
+uninstall archctx`. When the repository has no complete ArchContext model,
 `next` names the adoption flow in the `repo-harness-architecture` worker
 reference. The running
 repo-harness package owns the `archctx` executable and exact dependency version;
