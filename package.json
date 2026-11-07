@@ -39,6 +39,7 @@
     "references/pm-boundary.md"
   ],
   "bin": {
+    "archctx": "src/cli/archctx.mjs",
     "repo-harness": "src/cli/index.ts",
     "repo-harness-hook": "dist/hook-entry.js"
   },

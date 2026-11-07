@@ -259,9 +259,8 @@ export function decodeRefImpact(value: unknown, source: RefImpactSource): RefImp
 }
 
 export const ARCHITECTURE_DEBT_COMMAND = 'repo-harness architecture-debt --json';
-// archctx names its own CLI in item actions, but a global install has no archctx
-// on PATH. Name the repo-harness command that runs the same report. An archctx
-// action without one points to the full debt report instead.
+// Name the repo-harness command that runs the same report. An archctx action
+// without one points to the full debt report instead.
 export const MANAGED_ARCHCTX_ACTIONS: ReadonlyMap<string, string> = new Map([['archctx docs anchors --json', 'repo-harness architecture-projection anchors --json']]);
 
 export function managedArchctxAction(raw: string): string {
