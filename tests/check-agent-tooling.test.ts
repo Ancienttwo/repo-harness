@@ -167,7 +167,7 @@ function setupFakeEnvironment(prefix: string, plugins: readonly PluginId[] | nul
   if (plugins) recordPluginSelection({ HOME: home }, plugins);
   mkdirSync(join(root, ".codegraph"));
   mkdirSync(fakeBin, { recursive: true });
-  for (const utility of ["dirname", "basename", "node", "bun", "git", "bash", "sh", "which", "uname", "cat"]) {
+  for (const utility of ["dirname", "basename", "node", "bun", "git", "bash", "sh", "which", "uname", "cat", "sleep"]) {
     const actual = Bun.which(utility);
     if (actual) symlinkSync(actual, join(fakeBin, utility));
   }
