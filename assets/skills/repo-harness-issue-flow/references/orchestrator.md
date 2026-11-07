@@ -217,41 +217,27 @@ module is in the title so that a list view shows the write scopes.
 
 ### 7.1 Quota check
 
-Quota belongs to the provider account, not to the host. A seat draws from
-the account of its provider route: Claude Code and pi with an Anthropic
-login share the Claude account; Codex and pi with a ChatGPT login share
-the ChatGPT account.
+Before each dispatch wave, run `repo-harness quota`. It prints the account
+states and one route line per task class. Launch each task on the seat its
+route line names with `repo-harness seats argv <seat>`; state the boundary
+in the task. A `none` route waits.
 
-Before each dispatch wave, run `repo-harness quota --json`. It prints one
-state for each account (`claude`, `chatgpt`) and the windows that it read.
-Apply the table below to each account. Put the reading in the
-`Dispatch reading:` line of each claim of the wave: for each account the
-state, used %, pace, reset time and reading time.
+A tight or exhausted Claude account is reserved for the advisor and
+orchestrator. Its worker classes move to the next eligible seat in their
+ordered lists. Frontend waits for Claude; it has no non-Claude fallback.
+An exhausted account takes no new dispatch, review seats included.
 
-For each window (5 h and weekly), elapsed% = 100 × (1 − (resets_at −
-now) / window) and pace = used% − elapsed%. The account takes the worst
-window state, in the order `exhausted` > `tight` > `unknown` > `normal` >
-`surplus`. A window with no reading (absent, stale or malformed) makes the
-account `unknown`, unless another window is `exhausted` or `tight`.
+Claude seats use the Claude account, Codex seats use ChatGPT, and Pi seats
+have no account reading. Routing applies these rules in both standard and
+hyper mode. Put the reading in the `Dispatch reading:` line of each claim:
+account state, used %, pace, reset time and reading time.
 
-| State | Condition | Coordinator action |
+| Account state | Route rule | Coordinator action |
 |---|---|---|
-| exhausted | used ≥ 95%, or `rate_limit_reached_type` set | No new dispatch to that account, review seats included: start no new turn on it. Spend credits only when the owner allows it; otherwise a merge that needs that account's review seat waits for the reset. |
-| tight | headroom < 15%, or pace > +15 | Must-ship work only. Halve the writer cap. No stretch work. |
-| normal | other | The plan's cap. |
-| surplus | pace < −25 and the reset is less than 24 h away | Pull stretch work forward, up to the full cap. |
-| unknown | no reading, or a reading older than 30 min | Read by hand before the dispatch. No expansion. |
-
-For an `unknown` Claude account, read it by hand with
-`claude -p "/usage" --model haiku --output-format text` from a temporary
-directory. It is a local command, and it shows the model rows (for
-example Opus or Fable) that the status line capture does not have. Use it
-for the manual reading only; no code parses its text. Record the manual
-reading and its source in the `Dispatch reading:` line.
-
-Seat model routing follows the repository's or the user's own routing
-rule. When an account is `tight` or `exhausted`, defer Medium and High
-implementation; do not move it to another provider by default.
+| normal or surplus | First pass, in configured seat order | Dispatch to the named seat. |
+| unknown | Second pass; the line names the state | Dispatch to the named seat and record the unknown state. |
+| tight | Claude is reserved; ChatGPT is eligible in the second pass | Follow the named route; frontend waits for Claude. |
+| exhausted | The account is excluded | Start no new turn on that account. |
 
 ## 8. Follow up
 

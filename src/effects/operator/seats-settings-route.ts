@@ -1,6 +1,7 @@
 import type { JsonValue } from '../../core/evidence/types';
 import {
   DEFAULT_SEATS_CONFIG,
+  SEATS_CONFIG_UPDATE_ACTION,
   decodeSeatsSettings,
   decodeSeatsSettingsRequest,
   decodeSeatsSettingsResult,
@@ -24,6 +25,7 @@ const CHOOSE_FROM_RANGES = 'Choose a value that the seat settings page offers, t
 export const SEATS_CONFIGURATION_FAILURES: Readonly<Record<SeatsConfigurationErrorCode, { readonly status: number; readonly next_action: string }>> = Object.freeze({
   busy: { status: 503, next_action: 'Wait for the runtime transaction to end, then send the change with a new request_id.' },
   config_invalid: { status: 503, next_action: 'Fix the agents and seats sections of ~/.repo-harness/config.json, then reload the page.' },
+  seats_config_migration_required: { status: 503, next_action: SEATS_CONFIG_UPDATE_ACTION },
   config_is_link: { status: 409, next_action: 'Edit the seats section in the file that ~/.repo-harness/config.json links to, or replace the link with a regular file.' },
   revision_conflict: { status: 409, next_action: 'Reload the settings, then apply your change again.' },
   seat_runtime_not_enabled: { status: 422, next_action: 'Enable the runtime in Agent settings, or choose an enabled runtime.' },

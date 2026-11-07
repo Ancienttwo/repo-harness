@@ -1,6 +1,6 @@
 import { AGENT_RUNTIME_CAPABILITIES, decodeAgentsSettings, type AgentsSettingsV1 } from '../../core/board/agents-settings';
 import { isReviewRuntimeId } from '../../core/review/review-runtimes';
-import { DEFAULT_SEATS_CONFIG, SEAT_IDS, decodeSeatsSettings, type SeatsConfigV1, type SeatsSettingsRequestV1, type SeatsSettingsV1 } from '../../core/board/seats-settings';
+import { DEFAULT_SEATS_CONFIG, FRONTEND_SEAT_IDS, ROUTING_CLASSES, ROUTING_MODES, SEAT_IDS, WORKER_SEAT_IDS, decodeSeatsSettings, type SeatsConfigV1, type SeatsSettingsRequestV1, type SeatsSettingsV1 } from '../../core/board/seats-settings';
 import type { DocumentationLanguage, DocumentationLanguageReader, DocumentationLanguageWriter, LanguageRead, LanguageReader, LanguageWriter, ReportingHost, ReportingPreset } from '../language-settings';
 import type { OperatorApiErrorV1 } from '../operator-api-error';
 import type { AgentsSettingsRead, AgentsSettingsWrite, AgentsSettingsPost, SettingsRead, SettingsWrite } from '../settings';
@@ -54,7 +54,7 @@ function seatsRanges(enabled: readonly string[]) {
   return {
     runtimes: [
       { id: 'claude', enabled: enabled.includes('claude'), models: ['opus', 'sonnet', 'haiku', 'fable'], effort: true, fleet: true },
-      { id: 'codex', enabled: enabled.includes('codex'), models: ['gpt-6-luna', 'gpt-6-astra', 'gpt-6.1-sol'], effort: true, fleet: true },
+      { id: 'codex', enabled: enabled.includes('codex'), models: ['gpt-6-luna', 'gpt-6-astra', 'gpt-6.1-sol', 'gpt-6.1-terra'], effort: true, fleet: true },
       { id: 'pi', enabled: enabled.includes('pi'), models: [], effort: false, fleet: false },
     ],
     efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
@@ -63,7 +63,14 @@ function seatsRanges(enabled: readonly string[]) {
       orchestrator: { fleet: SUB_AGENTS.filter(role => !role.writable).map(role => role.name), tools: all.filter(tool => tool !== 'edit') },
       advisor: { fleet: SUB_AGENTS.filter(role => !role.writable).map(role => role.name), tools: all.filter(tool => tool !== 'edit' && tool !== 'gh') },
       worker: { fleet: SUB_AGENTS.map(role => role.name), tools: all },
+      'worker-deep': { fleet: SUB_AGENTS.map(role => role.name), tools: all },
+      'worker-important': { fleet: SUB_AGENTS.map(role => role.name), tools: all },
+      'worker-important-fast': { fleet: SUB_AGENTS.map(role => role.name), tools: all },
+      'worker-light': { fleet: SUB_AGENTS.map(role => role.name), tools: all },
+      gatekeeper: { fleet: [], tools: ['read', 'shell'] },
+      reviewer: { fleet: [], tools: ['read', 'shell'] },
     },
+    routing: { classes: ROUTING_CLASSES, worker_seats: WORKER_SEAT_IDS, frontend_seats: FRONTEND_SEAT_IDS, modes: ROUTING_MODES },
   };
 }
 
@@ -142,16 +149,23 @@ export function settingsStores(now: number, fixture: 'busy' | 'empty' | 'degrade
   const writeSeats = (body: SeatsWrite): Promise<SettingsWrite> => {
     if (fixture === 'degraded' || body.expected_revision !== agents.config.revision) return Promise.resolve(conflict);
     // The route checks every seat against agents.enabled before it writes.
-    const off = SEAT_IDS.find(id => !agents.config.enabled.includes(body.seats[id].runtime));
+    const off = SEAT_IDS.find(id => {
+      const seat = body.seats[id];
+      return seat !== null && !agents.config.enabled.includes(seat.runtime);
+    });
     if (off !== undefined) {
       return Promise.resolve({ state: 'refused', status: 422, error: {
-        code: 'seat_runtime_not_enabled', message: `The ${off} seat runtime ${body.seats[off].runtime} is not enabled in Agent settings.`,
+        code: 'seat_runtime_not_enabled', message: `The ${off} seat runtime ${body.seats[off]!.runtime} is not enabled in Agent settings.`,
         next_action: 'Enable the runtime in Agent settings, or choose an enabled runtime.',
       } });
     }
     const revision = nextRevision();
-    const changed = SEAT_IDS.flatMap(id => (['runtime', 'model', 'effort', 'tools', 'fleet'] as const)
-      .filter(field => String(seats[id][field]) !== String(body.seats[id][field])).map(field => `seats.${id}.${field}`));
+    const changed = SEAT_IDS.flatMap(id => {
+      const before = seats[id], after = body.seats[id];
+      if (before === null || after === null) return before === after ? [] : [`seats.${id}`];
+      return (['runtime', 'model', 'effort', 'tools', 'fleet'] as const)
+        .filter(field => String(before[field]) !== String(after[field])).map(field => `seats.${id}.${field}`);
+    });
     seats = body.seats;
     agents = decodeAgentsSettings({ ...agents, config: { ...agents.config, revision } });
     return Promise.resolve({ state: 'saved', result: { config_revision: revision, changed_keys: changed } });

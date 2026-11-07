@@ -6,7 +6,9 @@ import { realPathOrResolved } from '../../effects/path-identity';
 import type { SkillHost } from '../../effects/host-skill-roots';
 import type { ManagedInstallSurface } from '../installer/install-profile';
 import { architecturePort, isArchitectureUnavailable } from '../../core/architecture/contracts';
-import { globalConfigurationWriter } from '../../effects/configuration/global-configuration';
+import { globalConfigurationWriter, mutateGlobalConfiguration } from '../../effects/configuration/global-configuration';
+import { DEFAULT_SEATS_CONFIG, SeatsConfigMigrationRequiredError, decodeSeatsConfig } from '../../core/board/seats-settings';
+import { checkSeatRoutingModels } from '../../effects/board/seats-configuration';
 import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
 import { createHash } from "crypto";
 import { homedir, tmpdir, userInfo } from "os";
@@ -1705,6 +1707,22 @@ function withPlugin(plugins: readonly PluginId[], id: PluginId): readonly Plugin
   return [...new Set([...plugins, id])].sort() as PluginId[];
 }
 
+/** Update is the only caller that can fill the seats keys introduced in #1925. */
+export function migrateSeatsConfiguration(env: NodeJS.ProcessEnv, runtimeLock?: RuntimeTransactionContext): boolean {
+  return mutateGlobalConfiguration(env, config => {
+    try {
+      decodeSeatsConfig(config.seats);
+      return { value: false };
+    } catch (error) {
+      if (!(error instanceof SeatsConfigMigrationRequiredError)) throw error;
+    }
+    const { orchestrator: _orchestrator, advisor: _advisor, worker: _worker, ...introduced } = DEFAULT_SEATS_CONFIG;
+    const seats = decodeSeatsConfig({ ...introduced, ...(config.seats as Record<string, unknown>) });
+    checkSeatRoutingModels(seats.routing);
+    return { config: { ...config, seats }, value: true };
+  }, { runtimeLock }).value;
+}
+
 export function runGlobalRuntimeSetup(
   opts: GlobalRuntimeOptions = {},
   dependencies?: InitRuntimeDependencies,
@@ -1730,6 +1748,17 @@ export function runGlobalRuntimeSetup(
   // hands update to this candidate without --report-language. The process
   // that reaches the host-write section below applies this plan.
   const globalRules = preflightGlobalContextRefresh(sourceRoot, homeDir(env), hostIds(target), opts.reportLanguage);
+
+  if (updateMode) {
+    const step = 'migrate seats configuration';
+    try {
+      const migrated = migrateSeatsConfiguration(env, opts.runtimeLock);
+      steps.push({ step, status: migrated ? 'ok' : 'skipped', detail: migrated ? 'Wrote the complete seats section.' : 'No seats migration required.' });
+    } catch (error) {
+      steps.push({ step, status: 'failed', detail: error instanceof Error ? error.message : String(error) });
+      return finalizeRuntimeResult(steps);
+    }
+  }
 
   const protectedHelperPlatform = configureProtectedHelperPlatform(cwd, bunExecutable, env, process.platform, opts.runtimeLock);
   steps.push(protectedHelperPlatform);

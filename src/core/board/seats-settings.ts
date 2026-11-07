@@ -1,11 +1,18 @@
 // Public contracts for the seat settings (G33): the `seats` section of
 // `~/.repo-harness/config.json` and GET/POST /api/v1/settings/seats. The
-// decoders check shape only. The allowed models, efforts and fleet roles come
+// decoders check shape and seat invariants. The allowed models, efforts and fleet roles come
 // from the fleet role profiles, so the configuration effect checks them; the
 // GET body carries the result as `ranges`, and the browser renders only that.
 
-export const SEAT_IDS = ['orchestrator', 'advisor', 'worker'] as const;
+export const WORKER_SEAT_IDS = ['worker', 'worker-deep', 'worker-important', 'worker-important-fast', 'worker-light'] as const;
+export type WorkerSeatId = typeof WORKER_SEAT_IDS[number];
+export const FRONTEND_SEAT_IDS = ['worker-important', 'worker-important-fast'] as const;
+export const ROUTING_CLASSES = ['important_deep', 'important_fast', 'simple_deep', 'simple_fast', 'frontend'] as const;
+export type RoutingClass = typeof ROUTING_CLASSES[number];
+export const ROUTING_MODES = ['standard', 'hyper'] as const;
+export const SEAT_IDS = ['orchestrator', 'advisor', ...WORKER_SEAT_IDS, 'gatekeeper', 'reviewer'] as const;
 export type SeatId = typeof SEAT_IDS[number];
+export const isWorkerSeat = (seat: SeatId): seat is WorkerSeatId => WORKER_SEAT_IDS.includes(seat as WorkerSeatId);
 
 /** The runtimes that run in a Herdr pane. */
 export const SEAT_RUNTIMES = ['claude', 'codex', 'pi'] as const;
@@ -28,7 +35,24 @@ export interface SeatConfigV1 {
   readonly fleet: readonly string[];
 }
 
-export type SeatsConfigV1 = { readonly [seat in SeatId]: SeatConfigV1 };
+export interface SeatModelV1 {
+  readonly model: string | null;
+  readonly effort: string | null;
+}
+
+export type SeatRoutingV1 = { readonly [task in RoutingClass]: readonly WorkerSeatId[] } & {
+  readonly mode: typeof ROUTING_MODES[number];
+  readonly low_quota_explorer: SeatModelV1;
+  readonly hyper: Readonly<Record<'claude' | 'advisor' | 'codex', SeatModelV1>>;
+};
+export type SeatsConfigV1 = { readonly [seat in Exclude<SeatId, 'worker-light'>]: SeatConfigV1 } & {
+  readonly 'worker-light': SeatConfigV1 | null;
+  readonly routing: SeatRoutingV1;
+};
+
+const WORKER_TOOLS = Object.freeze(['edit', 'gh', 'mcp', 'read', 'shell', 'tasks'] as const);
+const WORKER_FLEET = Object.freeze(['deep-reasoner', 'deep-worker', 'explorer', 'fast-worker', 'gatekeeper', 'harness-evaluator', 'root-cause-prover']);
+const REVIEW_TOOLS: readonly SeatTool[] = Object.freeze(['read', 'shell'] as const);
 
 /**
  * The section an absent `seats` key reads as: the canvas defaults, with the
@@ -40,14 +64,37 @@ export type SeatsConfigV1 = { readonly [seat in SeatId]: SeatConfigV1 };
 export const DEFAULT_SEATS_CONFIG: SeatsConfigV1 = Object.freeze({
   orchestrator: Object.freeze({ runtime: 'claude', model: 'opus', effort: 'high', tools: Object.freeze(['gh', 'mcp', 'net', 'read', 'shell', 'tasks'] as const), fleet: Object.freeze([]) }),
   advisor: Object.freeze({ runtime: 'claude', model: 'opus', effort: 'max', tools: Object.freeze(['mcp', 'net', 'read', 'shell'] as const), fleet: Object.freeze(['deep-reasoner', 'explorer']) }),
-  worker: Object.freeze({
-    runtime: 'codex', model: 'gpt-6.1-sol', effort: 'high', tools: Object.freeze(['edit', 'gh', 'mcp', 'read', 'shell', 'tasks'] as const),
-    fleet: Object.freeze(['deep-reasoner', 'deep-worker', 'explorer', 'fast-worker', 'gatekeeper', 'harness-evaluator', 'root-cause-prover']),
+  worker: Object.freeze({ runtime: 'codex', model: 'gpt-6.1-terra', effort: 'high', tools: WORKER_TOOLS, fleet: WORKER_FLEET }),
+  'worker-deep': Object.freeze({ runtime: 'codex', model: 'gpt-6.1-sol', effort: 'high', tools: WORKER_TOOLS, fleet: WORKER_FLEET }),
+  'worker-important': Object.freeze({ runtime: 'claude', model: 'opus', effort: 'medium', tools: WORKER_TOOLS, fleet: WORKER_FLEET }),
+  'worker-important-fast': Object.freeze({ runtime: 'claude', model: 'sonnet', effort: 'medium', tools: WORKER_TOOLS, fleet: WORKER_FLEET }),
+  'worker-light': null,
+  gatekeeper: Object.freeze({ runtime: 'codex', model: 'gpt-6.1-terra', effort: 'high', tools: REVIEW_TOOLS, fleet: Object.freeze([]) }),
+  reviewer: Object.freeze({ runtime: 'claude', model: 'opus', effort: 'high', tools: REVIEW_TOOLS, fleet: Object.freeze([]) }),
+  routing: Object.freeze({
+    mode: 'standard',
+    important_deep: Object.freeze(['worker-important', 'worker-deep'] as const),
+    important_fast: Object.freeze(['worker-important-fast', 'worker'] as const),
+    simple_deep: Object.freeze(['worker-deep', 'worker-important'] as const),
+    simple_fast: Object.freeze(['worker'] as const),
+    frontend: Object.freeze(['worker-important', 'worker-important-fast'] as const),
+    low_quota_explorer: Object.freeze({ model: 'haiku', effort: 'high' }),
+    hyper: Object.freeze({ claude: Object.freeze({ model: 'opus', effort: 'high' }), advisor: Object.freeze({ model: 'opus', effort: 'max' }), codex: Object.freeze({ model: 'gpt-6-astra', effort: 'high' }) }),
   }),
 });
 
 export class CodexSeatNetworkError extends Error {
   readonly code = 'seat_codex_edit_net';
+}
+
+export const SEATS_CONFIG_UPDATE_ACTION = 'repo-harness update';
+
+export class SeatsConfigMigrationRequiredError extends Error {
+  readonly code = 'seats_config_migration_required';
+  readonly next_action = SEATS_CONFIG_UPDATE_ACTION;
+  constructor() {
+    super(`The stored seats section needs a one-shot migration. Run ${SEATS_CONFIG_UPDATE_ACTION}.`);
+  }
 }
 
 /**
@@ -87,6 +134,12 @@ export interface SeatsRangesV1 {
   readonly efforts: readonly string[];
   readonly roles: readonly SeatRoleV1[];
   readonly seats: { readonly [seat in SeatId]: SeatRangeV1 };
+  readonly routing: {
+    readonly classes: readonly RoutingClass[];
+    readonly worker_seats: readonly WorkerSeatId[];
+    readonly frontend_seats: readonly typeof FRONTEND_SEAT_IDS[number][];
+    readonly modes: readonly typeof ROUTING_MODES[number][];
+  };
 }
 
 /** GET /api/v1/settings/seats. An absent section reads as the defaults. `revision` is the revision of the whole file. */
@@ -115,11 +168,11 @@ function invalid(code: string): never {
   throw new Error(code);
 }
 
-function object(value: unknown, keys: readonly string[], code: string): Record<string, unknown> {
+function object(value: unknown, keys: readonly string[], code: string, required = keys): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) invalid(code);
   const record = value as Record<string, unknown>;
   for (const key of Object.keys(record)) if (!keys.includes(key)) invalid(code);
-  for (const key of keys) if (!(key in record)) invalid(code);
+  for (const key of required) if (!(key in record)) invalid(code);
   return record;
 }
 
@@ -142,32 +195,79 @@ function ascending<T extends string>(value: unknown, accept: (item: unknown) => 
 const isTool = (value: unknown): value is SeatTool => SEAT_TOOLS.includes(value as SeatTool);
 const isRole = (value: unknown): value is string => typeof value === 'string' && ROLE.test(value);
 
-function decodeSeat(value: unknown, code: string): SeatConfigV1 {
+function decodeSeat(id: SeatId, value: unknown, code: string): SeatConfigV1 {
   const record = object(value, ['runtime', 'model', 'effort', 'tools', 'fleet'], code);
   if (!SEAT_RUNTIMES.includes(record.runtime as SeatRuntime)) invalid(code);
   const tools = ascending(record.tools, isTool, code);
   if (!tools.includes('read')) invalid(code);
+  const fleet = ascending(record.fleet, isRole, code);
+  if ((id === 'gatekeeper' || id === 'reviewer') && (tools.some(tool => !REVIEW_TOOLS.includes(tool)) || fleet.length > 0)) invalid(code);
   return {
     runtime: record.runtime as SeatRuntime,
     model: nullableToken(record.model, code),
     effort: nullableToken(record.effort, code),
     tools,
-    fleet: ascending(record.fleet, isRole, code),
+    fleet,
   };
 }
 
+const SECTION_KEYS = [...SEAT_IDS, 'routing'];
+
+function decodeModel(value: unknown, code: string): SeatModelV1 {
+  const record = object(value, ['model', 'effort'], code);
+  return { model: nullableToken(record.model, code), effort: nullableToken(record.effort, code) };
+}
+
+function decodeRouting(value: unknown, code: string): SeatRoutingV1 {
+  const record = object(value, [...ROUTING_CLASSES, 'mode', 'low_quota_explorer', 'hyper'], code);
+  if (!ROUTING_MODES.includes(record.mode as SeatRoutingV1['mode'])) invalid(code);
+  const routes = Object.fromEntries(ROUTING_CLASSES.map(task => {
+    const seats = record[task];
+    const allowed = task === 'frontend' ? FRONTEND_SEAT_IDS : WORKER_SEAT_IDS;
+    if (!Array.isArray(seats) || seats.length === 0 || new Set(seats).size !== seats.length
+      || seats.some(seat => !(allowed as readonly unknown[]).includes(seat))) invalid(code);
+    return [task, seats as readonly WorkerSeatId[]];
+  })) as Pick<SeatRoutingV1, RoutingClass>;
+  const hyper = object(record.hyper, ['claude', 'advisor', 'codex'], code);
+  return { ...routes, mode: record.mode as SeatRoutingV1['mode'], low_quota_explorer: decodeModel(record.low_quota_explorer, code),
+    hyper: { claude: decodeModel(hyper.claude, code), advisor: decodeModel(hyper.advisor, code), codex: decodeModel(hyper.codex, code) } };
+}
+
+function decodeSeatsRecord(record: Record<string, unknown>, code: string): SeatsConfigV1 {
+  const seats = Object.fromEntries(SEAT_IDS.filter(id => id in record)
+    .map(id => [id, id === 'worker-light' && record[id] === null ? null : decodeSeat(id, record[id], code)])) as Partial<Omit<SeatsConfigV1, 'routing'>>;
+  const routing = 'routing' in record ? decodeRouting(record.routing, code) : undefined;
+  if (routing !== undefined) {
+    if (ROUTING_CLASSES.some(task => routing[task].some(id => seats[id] === null))) invalid(code);
+    if (routing.frontend.some(id => seats[id] !== undefined && seats[id]!.runtime !== 'claude')) invalid(code);
+  }
+  if (SECTION_KEYS.some(key => !(key in record))) throw new SeatsConfigMigrationRequiredError();
+  return { ...(seats as Omit<SeatsConfigV1, 'routing'>), routing: routing! };
+}
+
 function decodeSeats(value: unknown, code: string): SeatsConfigV1 {
-  const record = object(value, SEAT_IDS, code);
-  return { orchestrator: decodeSeat(record.orchestrator, code), advisor: decodeSeat(record.advisor, code), worker: decodeSeat(record.worker, code) };
+  return decodeSeatsRecord(object(value, SECTION_KEYS, code), code);
 }
 
 /** The shape of the stored `seats` section. An absent section (`undefined`) reads as the defaults. */
 export function decodeSeatsConfig(value: unknown): SeatsConfigV1 {
-  return value === undefined ? DEFAULT_SEATS_CONFIG : decodeSeats(value, 'seats_config_invalid');
+  if (value === undefined) return DEFAULT_SEATS_CONFIG;
+  const code = 'seats_config_invalid';
+  const record = object(value, SECTION_KEYS, code, ['orchestrator', 'advisor', 'worker']);
+  return decodeSeatsRecord(record, code);
+}
+
+function decodeRoutingRanges(value: unknown, code: string): SeatsRangesV1['routing'] {
+  const record = object(value, ['classes', 'worker_seats', 'frontend_seats', 'modes'], code);
+  const ranges = { classes: ROUTING_CLASSES, worker_seats: WORKER_SEAT_IDS, frontend_seats: FRONTEND_SEAT_IDS, modes: ROUTING_MODES };
+  for (const key of Object.keys(ranges) as (keyof typeof ranges)[]) {
+    if (JSON.stringify(record[key]) !== JSON.stringify(ranges[key])) invalid(code);
+  }
+  return ranges;
 }
 
 function decodeRanges(value: unknown, code: string): SeatsRangesV1 {
-  const record = object(value, ['runtimes', 'efforts', 'roles', 'seats'], code);
+  const record = object(value, ['runtimes', 'efforts', 'roles', 'seats', 'routing'], code);
   if (!Array.isArray(record.runtimes) || !Array.isArray(record.efforts) || !Array.isArray(record.roles)) invalid(code);
   const runtimes = record.runtimes.map((entry) => {
     const runtime = object(entry, ['id', 'enabled', 'models', 'effort', 'fleet'], code);
@@ -192,7 +292,8 @@ function decodeRanges(value: unknown, code: string): SeatsRangesV1 {
     runtimes,
     efforts: record.efforts.map(effort => text(effort, code)),
     roles,
-    seats: { orchestrator: seat('orchestrator'), advisor: seat('advisor'), worker: seat('worker') },
+    seats: Object.fromEntries(SEAT_IDS.map(id => [id, seat(id)])) as SeatsRangesV1['seats'],
+    routing: decodeRoutingRanges(record.routing, code),
   };
 }
 
@@ -200,7 +301,7 @@ export function decodeSeatsSettings(value: unknown): SeatsSettingsV1 {
   const code = 'seats_settings_invalid';
   const record = object(value, ['protocol', 'kind', 'config', 'defaults', 'ranges'], code);
   if (record.protocol !== 1 || record.kind !== 'operator_seats_settings') invalid(code);
-  const config = object(record.config, ['revision', ...SEAT_IDS], code);
+  const config = object(record.config, ['revision', ...SECTION_KEYS], code);
   const revision = text(config.revision, code);
   if (!REVISION.test(revision)) invalid(code);
   const { revision: _revision, ...section } = config;

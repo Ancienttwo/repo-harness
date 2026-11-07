@@ -3,10 +3,18 @@ import {
   SEAT_IDS,
   SEAT_RUNTIMES,
   SEAT_TOOLS,
+  DEFAULT_SEATS_CONFIG,
+  FRONTEND_SEAT_IDS,
+  ROUTING_CLASSES,
+  ROUTING_MODES,
+  WORKER_SEAT_IDS,
   CodexSeatNetworkError,
+  SeatsConfigMigrationRequiredError,
   checkCodexSeatNetwork,
   decodeSeatsConfig,
   type SeatConfigV1,
+  type SeatModelV1,
+  type SeatRoutingV1,
   type SeatId,
   type SeatRuntime,
   type SeatRuntimeRangeV1,
@@ -27,6 +35,7 @@ import { GlobalConfigurationError, mutateGlobalConfiguration, readGlobalConfigur
 export type SeatsConfigurationErrorCode =
   | 'busy'
   | 'config_invalid'
+  | SeatsConfigMigrationRequiredError['code']
   | 'config_is_link'
   | 'revision_conflict'
   | 'seat_runtime_not_enabled'
@@ -43,7 +52,7 @@ export class SeatsConfigurationError extends Error {
   }
 }
 
-// Every seat range is a projection of the fleet role profiles.
+// Fleet role profiles supply the allowed sub-agents.
 const READ_ONLY_SUB_AGENTS = MANAGED_AGENTS.filter(role => !WRITABLE_AGENTS.has(role));
 const without = (...excluded: SeatTool[]): readonly SeatTool[] => SEAT_TOOLS.filter(tool => !excluded.includes(tool));
 
@@ -56,12 +65,22 @@ const SEAT_RANGES: SeatsRangesV1['seats'] = {
   orchestrator: { fleet: READ_ONLY_SUB_AGENTS, tools: without('edit') },
   advisor: { fleet: READ_ONLY_SUB_AGENTS, tools: without('edit', 'gh') },
   worker: { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
+  'worker-deep': { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
+  'worker-important': { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
+  'worker-important-fast': { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
+  'worker-light': { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
+  gatekeeper: { fleet: [], tools: ['read', 'shell'] },
+  reviewer: { fleet: [], tools: ['read', 'shell'] },
 };
 
 /** Claude takes a fleet model family, Codex a fleet target model. Pi uses its own model and effort, and has no fleet roles. */
 const RUNTIME_RANGES: Readonly<Record<SeatRuntime, Omit<SeatRuntimeRangeV1, 'id' | 'enabled'>>> = {
   claude: { models: Object.keys(MODEL_FAMILY_LABELS), effort: true, fleet: true },
-  codex: { models: [...new Set(Object.values(AGENT_TARGET_OVERRIDES).map(target => target.model))], effort: true, fleet: true },
+  codex: { models: [...new Set([...Object.values(AGENT_TARGET_OVERRIDES).map(target => target.model),
+    ...SEAT_IDS.flatMap(id => {
+      const seat = DEFAULT_SEATS_CONFIG[id];
+      return seat?.runtime === 'codex' && seat.model !== null ? [seat.model] : [];
+    })])], effort: true, fleet: true },
   pi: { models: [], effort: false, fleet: false },
 };
 
@@ -71,6 +90,7 @@ export function seatsRanges(enabledRuntimes: readonly string[]): SeatsRangesV1 {
     efforts: EFFORT_LEVELS,
     roles: MANAGED_AGENTS.map(name => ({ name, writable: WRITABLE_AGENTS.has(name) })),
     seats: SEAT_RANGES,
+    routing: { classes: ROUTING_CLASSES, worker_seats: WORKER_SEAT_IDS, frontend_seats: FRONTEND_SEAT_IDS, modes: ROUTING_MODES },
   };
 }
 
@@ -88,9 +108,12 @@ function enabledRuntimesOf(config: Record<string, unknown>): readonly string[] {
   try { return decodeAgentsConfig(config.agents).enabled; } catch { throw configInvalid('agents'); }
 }
 
-/** The stored section is checked for shape only, so a range that changes later never locks the page; the next save checks it. */
+/** Reads enforce the section contract; only saves enforce the runtime ranges that can change later. */
 function sectionOf(config: Record<string, unknown>): SeatsConfigV1 {
-  try { return decodeSeatsConfig(config.seats); } catch { throw configInvalid('seats'); }
+  try { return decodeSeatsConfig(config.seats); } catch (error) {
+    if (error instanceof SeatsConfigMigrationRequiredError) throw new SeatsConfigurationError(error.code, error.message);
+    throw configInvalid('seats');
+  }
 }
 
 export function readSeatsConfiguration(env: NodeJS.ProcessEnv = process.env): SeatsConfiguration {
@@ -103,18 +126,30 @@ export function readSeatsConfiguration(env: NodeJS.ProcessEnv = process.env): Se
   return { revision: document.revision, seats: sectionOf(document.config), enabled_runtimes: enabledRuntimesOf(document.config) };
 }
 
+function checkModelAndEffort(subject: string, model: SeatModelV1, runtimeId: SeatRuntime): void {
+  const runtime = RUNTIME_RANGES[runtimeId];
+  if (model.model !== null && !runtime.models.includes(model.model)) {
+    throw new SeatsConfigurationError('seat_model_invalid', `The ${subject} cannot use model ${model.model} on ${runtimeId}.`);
+  }
+  if (model.effort !== null && (!runtime.effort || !EFFORT_LEVELS.includes(model.effort))) {
+    throw new SeatsConfigurationError('seat_effort_invalid', `The ${subject} cannot use effort ${model.effort} on ${runtimeId}.`);
+  }
+}
+
+export function checkSeatRoutingModels(routing: SeatRoutingV1): void {
+  checkModelAndEffort('routing.hyper.claude', routing.hyper.claude, 'claude');
+  checkModelAndEffort('routing.hyper.advisor', routing.hyper.advisor, 'claude');
+  checkModelAndEffort('routing.hyper.codex', routing.hyper.codex, 'codex');
+  checkModelAndEffort('routing.low_quota_explorer', routing.low_quota_explorer, 'claude');
+}
+
 function checkSeat(id: SeatId, seat: SeatConfigV1, enabledRuntimes: readonly string[]): void {
   const runtime = RUNTIME_RANGES[seat.runtime];
   const range = SEAT_RANGES[id];
   if (!enabledRuntimes.includes(seat.runtime)) {
     throw new SeatsConfigurationError('seat_runtime_not_enabled', `The ${id} seat runtime ${seat.runtime} is not enabled in Agent settings.`);
   }
-  if (seat.model !== null && !runtime.models.includes(seat.model)) {
-    throw new SeatsConfigurationError('seat_model_invalid', `The ${id} seat cannot use model ${seat.model} on ${seat.runtime}.`);
-  }
-  if (seat.effort !== null && (!runtime.effort || !EFFORT_LEVELS.includes(seat.effort))) {
-    throw new SeatsConfigurationError('seat_effort_invalid', `The ${id} seat cannot use effort ${seat.effort} on ${seat.runtime}.`);
-  }
+  checkModelAndEffort(`${id} seat`, seat, seat.runtime);
   const tool = seat.tools.find(item => !range.tools.includes(item));
   if (tool !== undefined) throw new SeatsConfigurationError('seat_tool_not_allowed', `The ${id} seat cannot have the ${tool} tool group.`);
   checkCodexSeatNetwork(id, seat);
@@ -125,9 +160,15 @@ function checkSeat(id: SeatId, seat: SeatConfigV1, enabledRuntimes: readonly str
 const FIELDS = ['runtime', 'model', 'effort', 'tools', 'fleet'] as const;
 
 function changedKeys(current: SeatsConfigV1, next: SeatsConfigV1): string[] {
-  return SEAT_IDS.flatMap(id => FIELDS
-    .filter(field => JSON.stringify(current[id][field]) !== JSON.stringify(next[id][field]))
-    .map(field => `seats.${id}.${field}`));
+  return [...SEAT_IDS.flatMap(id => {
+    const before = current[id], after = next[id];
+    if (before === null || after === null) return before === after ? [] : [`seats.${id}`];
+    return FIELDS.filter(field => JSON.stringify(before[field]) !== JSON.stringify(after[field]))
+      .map(field => `seats.${id}.${field}`);
+  }),
+  ...([...ROUTING_CLASSES, 'mode', 'low_quota_explorer', 'hyper'] as const)
+    .filter(field => JSON.stringify(current.routing[field]) !== JSON.stringify(next.routing[field]))
+    .map(field => `seats.routing.${field}`)];
 }
 
 /** Replaces the `seats` section. It writes only the configuration file; panes that run keep their launch arguments. */
@@ -138,9 +179,13 @@ export function applySeatsSettings(
   try {
     const result = mutateGlobalConfiguration(env, (config) => {
       const enabled = enabledRuntimesOf(config);
-      for (const id of SEAT_IDS) checkSeat(id, request.seats[id], enabled);
+      for (const id of SEAT_IDS) {
+        const seat = request.seats[id];
+        if (seat !== null) checkSeat(id, seat, enabled);
+      }
+      checkSeatRoutingModels(request.seats.routing);
       const changed = changedKeys(sectionOf(config), request.seats);
-      return { ...(changed.length ? { config: { ...config, seats: request.seats } } : {}), value: changed };
+      return { config: { ...config, seats: request.seats }, value: changed };
     }, { expectedRevision: request.expected_revision });
     return { config_revision: result.revision, changed_keys: result.value };
   } catch (error) {

@@ -4,7 +4,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from "os";
 import { join } from "path";
 import { seatPaneName } from "../../src/core/board/seat-launch";
-import { DEFAULT_SEATS_CONFIG } from "../../src/core/board/seats-settings";
+import { DEFAULT_SEATS_CONFIG, WORKER_SEAT_IDS } from "../../src/core/board/seats-settings";
 import { repoHarnessRepoIdFor } from "../../src/effects/repo-registry";
 
 const CLI = join(import.meta.dir, "..", "..", "src/cli/index.ts");
@@ -87,6 +87,90 @@ const denied = (args: string[]) => values(args, "--disallowedTools");
 const agent = (launch: { argv: string[] }) => launch.argv.slice(5);
 
 describe("repo-harness seats argv", () => {
+  test("an old seats section fails closed with the update action", () => {
+    const seats = { orchestrator: DEFAULT_SEATS_CONFIG.orchestrator, advisor: DEFAULT_SEATS_CONFIG.advisor, worker: DEFAULT_SEATS_CONFIG.worker };
+    withHome(seats, home => {
+      const result = argv(home, "worker", "--json");
+      expect([result.status, result.stdout]).toEqual([1, ""]);
+      expect(JSON.parse(result.stderr)).toMatchObject({ error: "seats_config_migration_required", next_action: "repo-harness update" });
+    });
+  });
+
+  test("an unconfigured worker-light fails with seat_not_configured", () => {
+    withHome(undefined, home => {
+      const result = argv(home, "worker-light", "--json");
+      expect([result.status, result.stdout]).toEqual([1, ""]);
+      expect(JSON.parse(result.stderr).error).toBe("seat_not_configured");
+    });
+  });
+
+  test("every configured worker seat keeps its brief, labels and issue pane naming", () => {
+    const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-light': { runtime: 'pi', model: null, effort: null, tools: DEFAULT_SEATS_CONFIG.worker.tools, fleet: [] } };
+    withHome(seats, home => withRepository(home, "rh", repo => {
+      for (const seat of WORKER_SEAT_IDS) {
+        const result = run(registryEnv(home), [seat, "--repository-id", "1", "--issue", "1925", "--parent", "1924", "--json"], repo);
+        expect(result.status, result.stderr).toBe(0);
+        const value = JSON.parse(result.stdout);
+        expect(value.runtime).toBe(seats[seat].runtime);
+        expect(value.brief).toContain("You are a worker seat.");
+        expect(value.labels).toContain(`repo-harness.seat=${seat}`);
+        expect([value.name, value.tab]).toEqual(["rh-w-1925", "#1924"]);
+      }
+    }));
+  });
+
+  test("gatekeeper and reviewer require a PR and launch read-only reviews", () => {
+    withHome(undefined, home => withRepository(home, "rh", repo => {
+      for (const [seat, role] of [["gatekeeper", "gk"], ["reviewer", "rv"]]) {
+        const missing = argv(home, seat!, "--json");
+        expect([missing.status, JSON.parse(missing.stderr).error]).toEqual([1, "pane_name_invalid"]);
+        const bare = argv(home, seat!, "--pr", "1925", "--json");
+        expect(bare.status, bare.stderr).toBe(0);
+        const result = run(registryEnv(home), [seat!, "--repository-id", "1", "--pr", "1925", "--json"], repo);
+        expect(result.status, result.stderr).toBe(0);
+        const value = JSON.parse(result.stdout);
+        expect([value.name, value.tab]).toEqual([`rh-${role}-1925`, "review"]);
+        expect(value.brief).toContain("Do not edit files, commit, push, or write to GitHub. Report the verdict first");
+        expect(value.brief).not.toContain("You are a worker seat");
+        if (seat === "gatekeeper") expect(agent(value)).toContain("read-only");
+        else expect(tools(agent(value))).toEqual(["Read", "Glob", "Grep", "Bash", "Monitor", "TaskStop"]);
+      }
+    }));
+  });
+
+  test("Pi review seats exclude edit and write tools and report the shell path as common_commands", () => {
+    for (const seat of ["gatekeeper", "reviewer"] as const) {
+      withHome({ ...DEFAULT_SEATS_CONFIG, [seat]: { ...DEFAULT_SEATS_CONFIG[seat], runtime: "pi", model: null, effort: null } }, home => {
+        const result = argv(home, seat, "--pr", "1928", "--json");
+        expect(result.status, result.stderr).toBe(0);
+        const value = JSON.parse(result.stdout);
+        expect(value.argv.slice(0, 8)).toEqual(["pi", "--exclude-tools", "edit,write",
+          "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-mcp"]);
+        expect(value.limits).toContainEqual({ subject: "edit", level: "common_commands" });
+      });
+    }
+  });
+
+  test("hyper changes model and effort, preserves Pi, and falls back only for an exhausted advisor", () => {
+    const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-light': { runtime: 'pi', model: null, effort: null, tools: DEFAULT_SEATS_CONFIG.worker.tools, fleet: [] },
+      routing: { ...DEFAULT_SEATS_CONFIG.routing, mode: "hyper" } };
+    withHome(seats, home => {
+      expect(launch(home, "worker").argv.slice(0, 5)).toEqual(["codex", "-m", "gpt-6-astra", "-c", 'model_reasoning_effort="high"']);
+      expect(launch(home, "worker-important-fast").argv.slice(0, 5)).toEqual(["claude", "--model", "opus", "--effort", "high"]);
+      expect(launch(home, "advisor").argv.slice(0, 5)).toEqual(["claude", "--model", "opus", "--effort", "max"]);
+      expect(launch(home, "worker-light").argv.slice(0, 2)).toEqual(["pi", "--append-system-prompt"]);
+      mkdirSync(join(home, ".repo-harness", "quota"));
+      writeFileSync(join(home, ".repo-harness", "quota", "claude.json"), JSON.stringify({ observed_at: new Date().toISOString(), rate_limits: {
+        seven_day: { used_percentage: 97, resets_at: Math.floor(Date.now() / 1000) + 3600 },
+      } }));
+      const advisor = launch(home, "advisor");
+      expect(advisor.runtime).toBe("codex");
+      expect(advisor.argv.slice(0, 5)).toEqual(["codex", "-m", "gpt-6-astra", "-c", 'model_reasoning_effort="high"']);
+      expect(advisor.brief).toContain("You are the advisor seat");
+      expect(launch(home, "orchestrator").runtime).toBe("claude");
+    });
+  });
+
   test("without a seats section the advisor launch comes from the defaults and briefs the default fleet", () => {
     withHome(undefined, (home) => {
       const advisor = launch(home, "advisor");
@@ -171,7 +255,7 @@ describe("repo-harness seats argv", () => {
       expect(result.status).toBe(0);
       const args: string[] = JSON.parse(result.stdout);
       const instructions = args.at(-1)!;
-      expect(args.slice(0, -1)).toEqual(["codex", "-m", "gpt-6.1-sol", "-c", 'model_reasoning_effort="high"', "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=false", "-c", 'web_search="disabled"', "-c"]);
+      expect(args.slice(0, -1)).toEqual(["codex", "-m", "gpt-6.1-terra", "-c", 'model_reasoning_effort="high"', "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=false", "-c", 'web_search="disabled"', "-c"]);
       expect(instructions).toStartWith('developer_instructions="You are a worker seat.');
       expect(JSON.parse(instructions.slice("developer_instructions=".length))).toContain(handoff);
       expect(JSON.parse(instructions.slice("developer_instructions=".length))).toContain("These limits are instructions only; the host does not enforce them. Keep them yourself. Do not use the task list tools. Do not use MCP tools. Do not write to GitHub.");
@@ -366,7 +450,7 @@ describe("repo-harness seats argv", () => {
         for (const name of ["hc", "codex"]) chmodSync(join(bin, name), 0o755);
         const label = "hc label --json -- t5 repo-harness.seat=worker repo-harness.repository=1186405141 repo-harness.issue=1473 repo-harness.parent=1000";
         for (const [env, error, calls] of [
-          [{ HC_TERMINAL_ID: "t5" }, null, [label, `codex ${agent(worker).length - 1} -m gpt-6.1-sol`]],
+          [{ HC_TERMINAL_ID: "t5" }, null, [label, `codex ${agent(worker).length - 1} -m gpt-6.1-terra`]],
           [{ HC_TERMINAL_ID: "t5", FAKE_HC_FAIL: "1" }, "label_failed", [label]],
           [{}, "terminal_unknown", []],
         ] as const) {

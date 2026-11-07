@@ -163,7 +163,7 @@ describe('agents page seats section', () => {
     expect(request_id).toMatch(UUID);
     expect(expected_revision).toMatch(/^sha256:/u);
     expect(seats.advisor.fleet).toEqual(['deep-reasoner', 'explorer', 'gatekeeper']);
-    expect(Object.keys(seats)).toEqual(['orchestrator', 'advisor', 'worker']);
+    expect(Object.keys(seats)).toEqual(['orchestrator', 'advisor', 'worker', 'worker-deep', 'worker-important', 'worker-important-fast', 'worker-light', 'gatekeeper', 'reviewer', 'routing']);
     expect(document.querySelector('[data-seats-saved]')?.textContent).toContain('Running panes do not change');
 
     await click(pane('orchestrator'));
