@@ -93,7 +93,7 @@ export function settingsStores(now: number, fixture: 'busy' | 'empty' | 'degrade
     })
     : agentsSettingsFixture(now, fixture);
   let seats: SeatsConfigV1 = fixture === 'busy'
-    ? { ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, runtime: 'claude', model: 'sonnet' } }
+    ? { ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, runtime: 'claude', model: 'sonnet' }, 'worker-light': null }
     : DEFAULT_SEATS_CONFIG;
   let serial = 0;
   const nextRevision = () => { serial += 1; return `sha256:${serial.toString(16).padStart(64, '0')}`; };
