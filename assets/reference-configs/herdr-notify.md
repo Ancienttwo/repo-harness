@@ -35,6 +35,8 @@ This topology applies to issue-flow work (`repo-harness-issue-flow`) on herdr-co
 
 Use `hc` for terminals and `herdr-app do` for tabs and panes. In an hc terminal, `HC_TERMINAL_ID` is your address. `hc --help` and `herdr-app commands` are the syntax authority.
 
+Find every live seat of the repository with `repo-harness board seats --json`, including seats without a parent issue. Wait with `hc wait <t>` or follow `hc events`. Never use `sleep` loops to wait for seats.
+
 Commands for the topology steps:
 
 | Step | Command |
@@ -80,7 +82,7 @@ With `--repository-id`, the argv labels its own terminal before the agent starts
 
 With `--repository-id`, `seats argv` also prints the pane name (`name`) and the base tab name (`tab`). Do not type a name.
 
-`herdr-app do tab.new` and `pane.split` set no terminal name: the `--name` of `tab.new` is the tab name, and `pane.split` takes no name. So a seat terminal started by the launch rows has no hc name. Only a Claude seat carries the pane name, as its session name (`-n`) in the argv. A Codex seat has no session-name flag and carries no name. Find a seat terminal by its labels (`hc ls --label`), not by its name.
+`herdr-app do tab.new` and `pane.split` set no terminal name: the `--name` of `tab.new` is the tab name, and `pane.split` takes no name. So a seat terminal started by the launch rows has no hc name. Only a Claude seat carries the pane name, as its session name (`-n`) in the argv. A Codex seat has no session-name flag and carries no name. Find a seat terminal with `repo-harness board seats --json`, which reads its labels.
 
 The pane name is `<prefix>-<role>[-<item>][-<qualifier>]`: at most 32 characters of `a-z 0-9 -`. Examples: `rh-orch`, `rh-adv`, `rh-w-1508`, `rh-w-rel0252`, `rh-rv-1536-codex`, `aip-w-485-device`.
 

@@ -241,6 +241,10 @@ account state, used %, pace, reset time and reading time.
 
 ## 8. Follow up
 
+Find the repository's live seats with `repo-harness board seats --json`.
+It includes seats without a parent issue. Wait for a seat with `hc wait <t>`
+or follow `hc events`. Never use `sleep` loops to wait for seats.
+
 Follow the PR and the issue comments. Do not poll CI with sleeps. Use the
 host's PR events or check when the worker reports.
 

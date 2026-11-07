@@ -11,6 +11,7 @@ import { BoardCollectError, collectBoard, readRepositoryId } from '../../effects
 import { renderDependencyMigrationPlan } from '../../core/board/dependency-migration';
 import { DependencyMigrationError, runDependencyMigration, type DependencyMigrationResultV1 } from '../../effects/board/dependency-migration';
 import { BoardParentsError, collectBoardParents } from '../../effects/board/parents';
+import { BoardSeatsError, collectBoardSeats } from '../../effects/board/seats';
 
 interface BoardOptions {
   readonly parent?: string;
@@ -69,7 +70,7 @@ function attentionText(attention: BoardAttentionV1): string {
  */
 export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: AttentionHostPortsV1): Command {
   const board = new Command('board')
-    .description('Read the board of one parent issue: sub-issues, pull requests, plan block and hc seat terminals')
+    .description('Read a parent issue board, or list the parents and seats of this repository')
     .option('--parent <number>', 'Parent issue number')
     .option('--json', 'Output JSON: the repo-harness.board document, or with attention the repo-harness.board-attention document')
     .action(guarded((options: BoardOptions) => {
@@ -105,6 +106,19 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
       } catch (error) {
         if (!(error instanceof BoardParentsError || error instanceof BoardSourceError || error instanceof BoardCollectError)) throw error;
         const code = error instanceof BoardParentsError ? { code: error.code } : {};
+        process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, ...code, message: error.message })}\n`);
+        process.exitCode = 1;
+      }
+    });
+  board.command('seats')
+    .description('List every live seat of this repository, with or without a parent label (takes --json)')
+    .action((_options: BoardOptions, command: Command) => {
+      try {
+        if (command.optsWithGlobals<BoardOptions>().json !== true) throw new BoardCollectError('board seats prints JSON only; pass --json');
+        process.stdout.write(`${JSON.stringify(collectBoardSeats({ repo_root: process.cwd(), host }))}\n`);
+      } catch (error) {
+        if (!(error instanceof BoardSeatsError || error instanceof BoardCollectError)) throw error;
+        const code = error instanceof BoardSeatsError ? { code: error.code } : {};
         process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, ...code, message: error.message })}\n`);
         process.exitCode = 1;
       }
