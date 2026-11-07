@@ -220,7 +220,11 @@ function piLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'proto
     level: review && group === 'edit' ? pathLevel(group, 'enforced', true) : 'instructions_only',
   }));
   const text = brief(seat, config, [], limits);
-  return { argv: ['pi', ...(review ? ['--exclude-tools', 'edit,write'] : []), '--append-system-prompt', text], brief: text, limits };
+  return {
+    argv: ['pi', ...(review ? ['--exclude-tools', 'edit,write', '--no-extensions', '--no-skills',
+      '--no-prompt-templates', '--no-context-files', '--no-mcp'] : []), '--append-system-prompt', text],
+    brief: text, limits,
+  };
 }
 
 /**

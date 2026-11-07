@@ -135,7 +135,8 @@ describe("repo-harness seats argv", () => {
         const result = argv(home, seat, "--pr", "1928", "--json");
         expect(result.status, result.stderr).toBe(0);
         const value = JSON.parse(result.stdout);
-        expect(value.argv.slice(0, 3)).toEqual(["pi", "--exclude-tools", "edit,write"]);
+        expect(value.argv.slice(0, 8)).toEqual(["pi", "--exclude-tools", "edit,write",
+          "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-mcp"]);
         expect(value.limits).toContainEqual({ subject: "edit", level: "common_commands" });
       });
     }
