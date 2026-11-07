@@ -234,11 +234,12 @@ function decodeRouting(value: unknown, code: string): SeatRoutingV1 {
     low_quota_explorer: decodeModel(record.low_quota_explorer, code) };
 }
 
-function decodeSeatsRecord(record: Record<string, unknown>, code: string): SeatsConfigV1 {
+function decodeSeatsRecord(record: Record<string, unknown>, code: string, requireExplorerModel = true): SeatsConfigV1 {
   const seats = Object.fromEntries(SEAT_IDS.filter(id => id in record)
     .map(id => [id, id === 'worker-light' && record[id] === null ? null : decodeSeat(id, record[id], code)])) as Partial<Omit<SeatsConfigV1, 'routing'>>;
   const routing = 'routing' in record ? decodeRouting(record.routing, code) : undefined;
   if (routing !== undefined) {
+    if (requireExplorerModel && routing.low_quota_explorer.model === null) invalid(code);
     if (ROUTING_CLASSES.some(task => routing[task].some(id => seats[id] === null))) invalid(code);
     if (routing.frontend.some(id => seats[id] !== undefined && seats[id]!.runtime !== 'claude')) invalid(code);
   }
@@ -321,7 +322,8 @@ export function decodeSeatsSettingsRequest(fields: Readonly<Record<string, unkno
   const record = object(fields, ['expected_revision', 'seats'], code);
   const expected = text(record.expected_revision, code);
   if (!REVISION.test(expected)) invalid(code);
-  return { expected_revision: expected, seats: decodeSeats(record.seats, code) };
+  // Save validation returns seat_model_invalid for a null explorer model, as it does for a model outside the runtime range.
+  return { expected_revision: expected, seats: decodeSeatsRecord(object(record.seats, SECTION_KEYS, code), code, false) };
 }
 
 export function decodeSeatsSettingsResult(value: unknown): SeatsSettingsResultV1 {

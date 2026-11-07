@@ -136,6 +136,9 @@ function checkModelAndEffort(subject: string, model: SeatModelV1, runtimeId: Sea
 }
 
 export function checkSeatRoutingModels(routing: SeatRoutingV1): void {
+  if (routing.low_quota_explorer.model === null) {
+    throw new SeatsConfigurationError('seat_model_invalid', 'The routing.low_quota_explorer model is required.');
+  }
   checkModelAndEffort('routing.low_quota_explorer', routing.low_quota_explorer, 'claude');
 }
 

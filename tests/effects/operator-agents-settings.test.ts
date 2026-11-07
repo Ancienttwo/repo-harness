@@ -614,8 +614,9 @@ describe('seat settings contract without transport', () => {
     const original = JSON.stringify({ agents: PANE_AGENTS });
     writeFileSync(path, original);
     const env = { HOME: home }, { revision, ...seats } = readSeatsSettings(env).config;
-    for (const [field, value, code] of [['model', 'gpt-6-astra', 'seat_model_invalid'], ['effort', 'extreme', 'seat_effort_invalid']] as const) {
+    for (const [field, value, code] of [['model', null, 'seat_model_invalid'], ['model', 'gpt-6-astra', 'seat_model_invalid'], ['effort', 'extreme', 'seat_effort_invalid']] as const) {
       const routing = { ...seats.routing, low_quota_explorer: { ...seats.routing.low_quota_explorer, [field]: value } };
+      if (value === null) expect(() => decodeSeatsConfig({ ...seats, routing })).toThrow('seats_config_invalid');
       await expect(seatsSettingsWriteRoute(env).decode({ expected_revision: revision, seats: { ...seats, routing } }, []).execute())
         .rejects.toMatchObject({ status: 422, code });
       expect(readFileSync(path, 'utf8')).toBe(original);
