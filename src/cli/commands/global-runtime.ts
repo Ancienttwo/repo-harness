@@ -14,6 +14,7 @@ import { createHash } from "crypto";
 import { homedir, tmpdir, userInfo } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
+import { createRequire } from 'module';
 import { syncWazaSharedRules, wazaStagingRulesAbsent } from "../installer/waza-rules";
 import { applyGlobalContextRefresh, preflightGlobalContextRefresh, type ReportLanguageFlag } from "../installer/global-context";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
@@ -108,6 +109,43 @@ export interface GlobalRuntimeResult {
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 export const MIN_BUN_VERSION = "1.4.0";
 const PACKED_RELEASE_TARBALL = /^repo-harness-\d+\.\d+\.\d+\.tgz$/;
+
+/** Remove only standalone npm global packages whose prefix can be proven. */
+export function cleanPathArchctx(sourceRoot: string, env: NodeJS.ProcessEnv): string {
+  const managed = new Set<string>();
+  for (const file of [join(sourceRoot, 'src/cli/archctx.mjs'), (() => {
+    try { return createRequire(join(sourceRoot, 'package.json')).resolve('archctx/bin/archctx.mjs'); } catch { return ''; }
+  })()]) {
+    try { managed.add(realpathSync(file)); } catch { /* absent managed entry */ }
+  }
+  const seen = new Set<string>();
+  const messages: string[] = [];
+  for (const dir of (env.PATH ?? '').split(delimiter).filter(Boolean)) {
+    const entry = join(dir, 'archctx');
+    let real: string;
+    try { real = realpathSync(entry); } catch { continue; }
+    if (managed.has(real) || seen.has(real)) continue;
+    seen.add(real);
+    let parent = dirname(real);
+    while (!existsSync(join(parent, 'package.json')) && dirname(parent) !== parent) parent = dirname(parent);
+    let manifest: { name?: string; version?: string } = {};
+    try { manifest = JSON.parse(readFileSync(join(parent, 'package.json'), 'utf8')); } catch { /* ownership is unproven */ }
+    const nodeModules = dirname(parent);
+    const lib = dirname(nodeModules);
+    if (manifest.name !== 'archctx' || parent !== join(nodeModules, 'archctx') || nodeModules !== join(lib, 'node_modules') || lib !== join(dirname(lib), 'lib')) {
+      messages.push(`warn: cannot prove npm global ownership of ${entry}; left unchanged`);
+      continue;
+    }
+    const prefix = dirname(lib);
+    const args = ['-g', '--prefix', prefix, 'uninstall', 'archctx'];
+    const command = `npm -g --prefix '${prefix.replaceAll("'", "'\\''")}' uninstall archctx`;
+    const result = runProcess('npm', args, sourceRoot, env, false);
+    messages.push(result.status === 'ok'
+      ? `Removed ${entry} (archctx ${manifest.version ?? 'version unavailable'}).`
+      : `warn: could not remove ${entry}; run ${command}`);
+  }
+  return messages.join(' ');
+}
 export const CANDIDATE_RECONCILE_STEP = 'reconcile installed candidate runtime';
 
 export function bunVersionIsSupported(version: string | undefined): boolean {
@@ -1783,6 +1821,11 @@ export function runGlobalRuntimeSetup(
     steps.push({ step: "install repo-harness CLI", status: "skipped", detail: "disabled" });
     if (updateMode && opts.installSpec) steps.push(reconcileManagedRuntime(cwd, bunExecutable, env, opts.installSpec, plugins));
     if (updateMode && steps.some((step) => step.status === "failed")) return finalizeRuntimeResult(steps);
+  }
+
+  if (updateMode) {
+    const detail = cleanPathArchctx(sourceRoot, env ?? process.env);
+    if (detail) steps.push({ step: 'clean PATH archctx', status: 'ok', detail });
   }
 
   const consoleStep = plugins.includes('operator')

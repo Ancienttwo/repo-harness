@@ -2,6 +2,12 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- Update removes stale npm-global archctx packages and exposes the managed CLI on PATH. (#1946)
+
 ## [0.27.0] - 2026-11-07
 
 This release separates the Operator console into a matching npm package and

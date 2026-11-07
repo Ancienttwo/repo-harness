@@ -99,6 +99,7 @@ export interface RuntimeCapability {
 }
 
 export interface ToolingTool {
+  path_copy?: { relation?: string } | null;
   name?: string;
   required?: boolean;
   status?: string;
@@ -680,7 +681,7 @@ function toolingChecks(
     const required = tool.required !== false;
     const readinessStatus = required ? toolCheckStatus(toolName, tool.status, target) : 'ok';
     const hasUpdateAction = required && checkUpdates && updateNeedsAgent(tool.update_status);
-    const status: InitHookCheckStatus = hasUpdateAction && readinessStatus === 'ok'
+    const status: InitHookCheckStatus = toolName === 'archctx' && tool.path_copy?.relation === 'stale' ? 'warn' : hasUpdateAction && readinessStatus === 'ok'
       ? 'needs_agent'
       : readinessStatus;
     const update = tool.update_status && tool.update_status !== 'not-checked'

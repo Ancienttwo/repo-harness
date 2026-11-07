@@ -1849,7 +1849,11 @@ describe("check-agent-tooling", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-archctx-path-copy");
     try {
       writeArchctxRepo(envRoot.root, "registry");
-      writeExecutable(join(envRoot.fakeBin, "archctx"), "#!/bin/sh\necho 0.5.13\n");
+      const stale = join(envRoot.root, "lib/node_modules/archctx/bin");
+      mkdirSync(stale, { recursive: true });
+      writeFileSync(join(stale, "..", "package.json"), JSON.stringify({ name: "archctx", version: "0.5.13" }));
+      writeExecutable(join(stale, "archctx"), "#!/bin/sh\nexit 0\n");
+      symlinkSync(join(stale, "archctx"), join(envRoot.fakeBin, "archctx"));
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], {
         cwd: envRoot.root,
@@ -1867,15 +1871,28 @@ describe("check-agent-tooling", () => {
         node_range: packaged.engines.node,
         command_source: "repo-harness architecture-projection status --json",
       });
-      expect(archctx.path_copy).toEqual({ bin_path: join(envRoot.fakeBin, "archctx"), version: "0.5.13", relation: "unrelated" });
+      expect(archctx.path_copy).toEqual({ bin_path: join(envRoot.fakeBin, "archctx"), version: "0.5.13", relation: "stale" });
       expect(archctx.warnings).toHaveLength(1);
-      expect(archctx.warnings[0]).toContain(`PATH archctx 0.5.13 at ${join(envRoot.fakeBin, "archctx")} is unrelated to the managed archctx ${packaged.version}`);
+      expect(archctx.warnings[0]).toContain(`PATH archctx 0.5.13 at ${join(envRoot.fakeBin, "archctx")}`);
+      expect(archctx.warnings[0]).toContain("repo-harness update");
       expect(archctx.reason).toContain(archctx.warnings[0]);
       // The report stays advisory: a PATH copy never changes the tool status.
       expect(archctx.status).toBe("present");
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }
+  }, 15000);
+
+  test("reports the managed PATH archctx without a stale warning", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-archctx-managed-path");
+    try {
+      writeArchctxRepo(envRoot.root, "registry");
+      symlinkSync(join(ROOT, "node_modules/archctx/bin/archctx.mjs"), join(envRoot.fakeBin, "archctx"));
+      const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], { cwd: envRoot.root, encoding: "utf-8", env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` } });
+      const tool = JSON.parse(res.stdout).tools.archctx;
+      expect(tool.path_copy.relation).toBe("managed");
+      expect(tool.warnings).toEqual([]);
+    } finally { rmSync(envRoot.root, { recursive: true, force: true }); }
   }, 15000);
 
   test("reports a managed archctx with the right version but a missing binary as invalid", () => {

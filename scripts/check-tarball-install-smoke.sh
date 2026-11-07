@@ -149,6 +149,10 @@ bun add "$TARBALL_PATH" "$TMP_DIR/$CONSOLE_TARBALL" >/dev/null
 
 CLI="$APP_DIR/node_modules/.bin/repo-harness"
 HOOK="$APP_DIR/node_modules/.bin/repo-harness-hook"
+ARCHCTX="$APP_DIR/node_modules/.bin/archctx"
+"$ARCHCTX" --help > "$TMP_DIR/archctx-shim-help"
+node "$APP_DIR/node_modules/archctx/bin/archctx.mjs" --help > "$TMP_DIR/archctx-managed-help"
+cmp "$TMP_DIR/archctx-shim-help" "$TMP_DIR/archctx-managed-help"
 # This smoke verifies the installed package runtime even when the operator shell
 # is configured to route development CLIs to another source checkout.
 unset REPO_HARNESS_SOURCE_ROOT

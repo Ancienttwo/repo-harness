@@ -138,6 +138,16 @@ function baseToolingReport(tools: ToolingReport['tools'] = {}): ToolingReport {
 }
 
 describe('init-hook command', () => {
+  test('marks a stale PATH archctx as a warning', () => {
+    withTempHome((home, repo) => {
+      const report = runInitHook(CLI_PORTS.doctor, {
+        cwd: repo, target: 'codex', env: { ...process.env, HOME: home },
+        statusReport: baseStatusReport(), doctorReport: baseDoctorReport(),
+        toolingReport: baseToolingReport({ archctx: { status: 'present', reason: 'stale', path_copy: { relation: 'stale' } } }),
+      });
+      expect(report.checks.find(entry => entry.id === 'tooling.archctx')?.status).toBe('warn');
+    });
+  });
   test('prints one leftover summary without listing or changing retired bytes', () => {
     withTempHome((home, repo) => {
       const target = join(home, '.repo-harness/hook-shim.sh');

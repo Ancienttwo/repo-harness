@@ -5,7 +5,7 @@ import { dirname, join } from 'path';
 import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { createHash } from 'crypto';
-import { ownFreshWazaSharedRules, runGlobalRuntimeSetup, verifyInstalledManagedRuntime } from '../../src/cli/commands/global-runtime';
+import { ownFreshWazaSharedRules, runGlobalRuntimeSetup, verifyInstalledManagedRuntime, cleanPathArchctx } from '../../src/cli/commands/global-runtime';
 import { CLI_PORTS, registerArchitecturePlugin, resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
 import { copyPackageRuntimeFixture, writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
@@ -28,6 +28,44 @@ const ARCHCTX_PIN = dependencies.archctx;
 const ARCHCTX_CONTRACTS_PIN = dependencies['archctx-contracts'];
 const CODEGRAPH_PIN = devDependencies['@colbymchenry/codegraph'];
 const CLI = join(ROOT, 'src/cli/index.ts');
+
+test('archctx shim forwards arguments and exit status', () => {
+  const root = mkdtempSync(join(tmpdir(), 'archctx-shim-'));
+  try {
+    const bin = join(root, 'node_modules/archctx/bin');
+    mkdirSync(bin, { recursive: true });
+    copyFileSync(join(ROOT, 'src/cli/archctx.mjs'), join(root, 'archctx.mjs'));
+    writeFileSync(join(bin, 'archctx.mjs'), 'console.log(JSON.stringify(process.argv.slice(2))); process.exit(17);');
+    const child = spawnSync(process.execPath, [join(root, 'archctx.mjs'), 'one', 'two words'], { encoding: 'utf8' });
+    expect(child.status).toBe(17);
+    expect(child.stdout.trim()).toBe('["one","two words"]');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('removes a stale global archctx through its own npm prefix', () => {
+  const root = mkdtempSync(join(tmpdir(), 'archctx-clean-'));
+  try {
+    const bin = join(root, 'bin'); const pkg = join(root, 'lib/node_modules/archctx');
+    mkdirSync(bin, { recursive: true }); mkdirSync(join(pkg, 'bin'), { recursive: true });
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: 'archctx', version: '0.6.1' }));
+    writeExecutable(join(pkg, 'bin/archctx'), '#!/bin/sh\nexit 0\n');
+    symlinkSync(join(pkg, 'bin/archctx'), join(bin, 'archctx'));
+    writeExecutable(join(bin, 'npm'), `#!/bin/sh\nprintf '%s\\n' "$*" > '${root}/npm-log'\n`);
+    const result = cleanPathArchctx(ROOT, { HOME: root, PATH: bin });
+    expect(readFileSync(join(root, 'npm-log'), 'utf8').trim()).toBe(`-g --prefix ${root} uninstall archctx`);
+    expect(result).toContain('0.6.1');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('warns and leaves an unowned archctx executable', () => {
+  const root = mkdtempSync(join(tmpdir(), 'archctx-unowned-'));
+  try {
+    const bin = join(root, 'bin'); mkdirSync(bin, { recursive: true });
+    writeExecutable(join(bin, 'archctx'), '#!/bin/sh\nexit 0\n');
+    expect(cleanPathArchctx(ROOT, { HOME: root, PATH: bin })).toContain('warn');
+    expect(existsSync(join(bin, 'archctx'))).toBe(true);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 const OBSIDIAN_PROVIDER = 'kepano/obsidian-skills#a1dc48e68138490d522c04cbf5822214c6eb1202';
 const FULL_PLUGINS = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const;
 
@@ -2245,6 +2283,11 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       writeFakeHc(fakeBin);
+      const stale = join(tmp, 'lib/node_modules/archctx/bin');
+      mkdirSync(stale, { recursive: true });
+      writeFileSync(join(stale, '..', 'package.json'), JSON.stringify({ name: 'archctx', version: '0.6.1' }));
+      writeExecutable(join(stale, 'archctx'), '#!/bin/sh\nexit 0\n');
+      symlinkSync(join(stale, 'archctx'), join(fakeBin, 'archctx'));
 
       const res = spawnSync('bun', [CLI, 'update', '--check', '--target', 'codex', '--json'], {
         cwd: repo,
@@ -2257,6 +2300,7 @@ exit 0
       const report = JSON.parse(res.stdout);
       expect(report.version).toBe(1);
       expect(report.target).toBe('codex');
+      expect(existsSync(join(fakeBin, 'archctx'))).toBe(true);
       expect(existsSync(join(home, '.repo-harness'))).toBe(false);
       expect(existsSync(join(repo, '.ai'))).toBe(false);
       expect(existsSync(join(repo, 'tasks'))).toBe(false);
