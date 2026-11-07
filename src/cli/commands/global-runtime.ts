@@ -484,22 +484,26 @@ function reconcileManagedRuntime(
   const initial = safeReadManagedRuntime(globalPackageRoot, cwd, env, expectedHarnessVersion, plugins);
   if (initial.status === "ready") {
     if (linkArchctx && plugins.includes('architecture')) {
-      const root = findInstalledPackageRoot(globalPackageRoot, 'archctx')!;
-      const bin = recordValue(readPackageManifest(root).bin).archctx;
-      if (typeof bin !== 'string') return { step: 'verify managed runtime dependencies', status: 'failed', detail: 'RH_ARCHCTX_BIN_INVALID: archctx does not declare bin.archctx' };
-      const target = realpathSync(join(root, bin));
       const bunRoot = env.BUN_INSTALL ?? join(homeDir(env), '.bun');
       const link = join(bunRoot, 'bin', 'archctx');
       try {
+        const root = findInstalledPackageRoot(globalPackageRoot, 'archctx');
+        if (!root) throw new Error('managed archctx package is missing');
+        const bin = recordValue(readPackageManifest(root).bin).archctx;
+        if (typeof bin !== 'string') throw new Error('archctx does not declare bin.archctx');
+        const target = realpathSync(join(root, bin));
+        const version = recordValue(readPackageManifest(globalPackageRoot).dependencies).archctx;
+        if (typeof version !== 'string') throw new Error('repo-harness does not pin archctx');
+        const globalManifest = readPackageManifest(join(bunRoot, 'install', 'global'));
         const existing = lstatSync(link, { throwIfNoEntry: false });
         if (existing) {
-          if (existing.isSymbolicLink() && realPathOrResolved(link) === target) return { step: 'verify managed runtime dependencies', status: 'ok', detail: initial.detail };
-          return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_CONFLICT: ${link} is not the managed archctx link. Move or remove it, then rerun repo-harness update.` };
+          if (realpathSync(link) !== target) return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_CONFLICT: ${link} is not the managed archctx link. Move or remove it, then rerun repo-harness update.` };
+          if (recordValue(globalManifest.dependencies).archctx === version) return { step: 'verify managed runtime dependencies', status: 'ok', detail: initial.detail };
         }
-        mkdirSync(dirname(link), { recursive: true });
-        symlinkSync(target, link, 'file');
+        const install = runProcess(bunExecutable, ['add', '-g', `archctx@${version}`], cwd, env);
+        if (install.status !== 'ok') return withStepName(install, 'verify managed runtime dependencies', `archctx@${version}`);
       } catch (error) {
-        return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_LINK_FAILED: ${link}: ${error instanceof Error ? error.message : String(error)}` };
+        return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_INVALID: ${link}: ${error instanceof Error ? error.message : String(error)}` };
       }
     }
     return { step: "verify managed runtime dependencies", status: "ok", detail: initial.detail };

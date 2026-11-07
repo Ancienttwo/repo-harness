@@ -217,6 +217,7 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
   const harness = join(globalModules, 'repo-harness');
   const archctx = join(globalModules, 'archctx');
   mkdirSync(harness, { recursive: true });
+  writeFileSync(join(home, '.bun', 'install', 'global', 'package.json'), JSON.stringify({ dependencies: {} }));
   seedGlobalPackageFixture({ HOME: home, BUN_INSTALL: join(home, '.bun') }, { mutable: true });
   mkdirSync(join(archctx, 'bin'), { recursive: true });
   mkdirSync(join(globalModules, 'archctx-contracts'), { recursive: true });
@@ -873,7 +874,7 @@ exit 0
       recordInstallOwnership([], { HOME: home });
       recordRefreshedInstallOwnership(stagingRules, { HOME: home }, stagingRules);
       writeFakeCodegraph(fakeBin, codegraphLog);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; fi\nif [[ "\${3:-}" == archctx@* ]]; then mkdir -p "$HOME/.bun/bin"; ln -sf "$HOME/.bun/install/global/node_modules/archctx/bin/archctx.mjs" "$HOME/.bun/bin/archctx"; fi\nexit 0\n`);
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
       writeExecutable(join(fakeBin, 'curl'), `#!/bin/bash

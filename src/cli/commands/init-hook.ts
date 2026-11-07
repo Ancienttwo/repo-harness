@@ -99,6 +99,7 @@ export interface RuntimeCapability {
 }
 
 export interface ToolingTool {
+  path_copy?: { relation: 'managed' | 'unrelated'; fix: string | null } | null;
   name?: string;
   required?: boolean;
   status?: string;
@@ -678,7 +679,8 @@ function toolingChecks(
   const checks: InitHookCheck[] = [];
   for (const [toolName, tool] of Object.entries(report.tools ?? {})) {
     const required = tool.required !== false;
-    const readinessStatus = toolName === 'archctx' && tool.status === 'failed' ? 'fail' : required ? toolCheckStatus(toolName, tool.status, target) : 'ok';
+    const foreignCopy = tool.path_copy?.relation === 'unrelated';
+    const readinessStatus = foreignCopy ? 'fail' : required ? toolCheckStatus(toolName, tool.status, target) : 'ok';
     const hasUpdateAction = required && checkUpdates && updateNeedsAgent(tool.update_status);
     const status: InitHookCheckStatus = hasUpdateAction && readinessStatus === 'ok'
       ? 'needs_agent'
@@ -697,6 +699,14 @@ function toolingChecks(
         : `${tool.status ?? 'unknown'}${update}; ${requirement}${tool.reason ?? 'no detail'}`,
     });
 
+    if (foreignCopy && tool.path_copy?.fix) {
+      addAction(actions, {
+        id: `tooling.${toolName}.path-copy`, status: 'needs_agent',
+        reason: 'The PATH copy is unrelated to the managed runtime.', requires_agent: true,
+        risk: 'The owner must remove the unrelated copy.', command: tool.path_copy.fix,
+        verification: verificationCommand(target, checkUpdates),
+      }, [`tooling.${toolName}`]);
+    }
     if (required && readinessStatus === 'needs_agent') {
       const command = commandForToolGap(toolName, tool, target);
       addAction(actions, {

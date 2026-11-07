@@ -1983,10 +1983,18 @@ function detectArchctx(managed) {
   if (managed.status !== "present") {
     warnings.push(`Managed archctx is not usable: ${managed.reason}. Run repo-harness update.`);
   }
+  let fix = null;
   if (unrelated) {
-    const npm = packageRoot && path.basename(path.dirname(packageRoot)) === 'node_modules'
-      ? path.resolve(packageRoot, '../../..', 'bin', 'npm') : null;
-    const fix = npm && fs.existsSync(npm) ? `Run \`${npm} -g uninstall archctx\`.` : `Remove it with the package manager that owns ${pathBin}.`;
+    const modules = packageRoot && path.dirname(packageRoot);
+    const parent = modules && path.dirname(modules);
+    const prefix = modules && path.basename(modules) === 'node_modules'
+      ? (process.platform === 'win32' ? parent : path.basename(parent) === 'lib' ? path.dirname(parent) : null) : null;
+    const quote = value => `'${value.replaceAll("'", "'\\''")}'`;
+    const node = prefix && path.join(prefix, 'bin', 'node');
+    const npm = prefix && path.join(prefix, process.platform === 'win32' ? 'npm.cmd' : 'bin/npm');
+    fix = npm && fs.existsSync(npm) && (process.platform === 'win32' || fs.existsSync(node))
+      ? process.platform === 'win32' ? `"${npm}" --prefix "${prefix}" -g uninstall archctx` : `${quote(node)} ${quote(npm)} --prefix ${quote(prefix)} -g uninstall archctx`
+      : `Remove ${realBin} with the package manager that owns it.`;
     warnings.push(`PATH archctx ${pathVersion ?? "(unknown version)"} at ${pathBin} is unrelated to the managed archctx ${managed.version ?? "(missing)"}. ${fix}`);
   }
   const contractsPackageVersion = archctxContractsVersion();
@@ -1995,7 +2003,7 @@ function detectArchctx(managed) {
   const nodesDirPresent = fs.existsSync(nodesDir);
   const nodeCount = nodesDirPresent ? archctxNodeCount(nodesDir) : 0;
   const nodesReady = nodesDirPresent && nodeCount > 0;
-  const status = unrelated ? "failed" : capabilitySource === "archcontext" && !nodesReady ? "partial" : "present";
+  const status = capabilitySource === "archcontext" && !nodesReady ? "partial" : "present";
   const sourceReason = capabilitySource === "archcontext"
     ? nodesReady
       ? `Capability source is archcontext and ${ARCHCTX_NODES_DIR} holds ${nodeCount} node file(s).`
@@ -2012,7 +2020,7 @@ function detectArchctx(managed) {
     contracts_scope: "release-gated-packed-schema-authority",
     install_mode: "release-gated-runtime-dependency-when-projection-enabled",
     managed,
-    path_copy: pathBin ? { bin_path: pathBin, version: pathVersion, relation: unrelated ? "unrelated" : "managed" } : null,
+    path_copy: pathBin ? { bin_path: pathBin, real_path: realBin, version: pathVersion, relation: unrelated ? "unrelated" : "managed", fix } : null,
     contracts_package_version: contractsPackageVersion,
     capability_source: capabilitySource,
     capability_source_key: ARCHCTX_CAPABILITY_SOURCE_KEY,
