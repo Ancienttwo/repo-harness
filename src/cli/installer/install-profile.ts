@@ -728,6 +728,7 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
   const { repoHarnessSkills: skills, externalSkills } = catalogMutationPathSkillNames(loadSkillSurfaceCatalog());
   const paths = [
     join(bunRoot, 'bin', 'repo-harness'),
+    join(bunRoot, 'bin', 'archctx'),
     join(bunRoot, 'bin', 'codegraph'),
     join(bunRoot, 'install', 'global', 'package.json'),
     join(bunRoot, 'install', 'global', 'bun.lock'),

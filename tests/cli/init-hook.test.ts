@@ -800,6 +800,7 @@ describe('init-hook command', () => {
             install_command: 'install-advisory-tool',
             upgrade_command: 'upgrade-advisory-tool',
           },
+          archctx: { name: 'archctx', required: false, status: 'failed', reason: 'PATH copy is unrelated' },
         }),
       });
 
@@ -807,7 +808,8 @@ describe('init-hook command', () => {
       expect(check?.status).toBe('ok');
       expect(check?.detail).toContain('optional');
       expect(report.agent_actions.find((entry) => entry.id.startsWith('tooling.advisory_tool.'))).toBeUndefined();
-      expect(report.status).toBe('ok');
+      expect(report.checks.find(entry => entry.id === 'tooling.archctx')?.status).toBe('fail');
+      expect(report.status).toBe('blocked');
     });
   });
 

@@ -1789,7 +1789,7 @@ describe("check-agent-tooling", () => {
         if (entry.status === "present") {
           // The positive control: with the plugin both detectors run their binaries.
           expect(readFileSync(log, "utf-8")).toBe("codegraph --version\ncodegraph status .\narchctx --version\n");
-          expect(archctx.status).toBe("present");
+          expect(archctx.status).toBe("failed");
           continue;
         }
         if (entry.status === "invalid") {
@@ -1849,7 +1849,13 @@ describe("check-agent-tooling", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-archctx-path-copy");
     try {
       writeArchctxRepo(envRoot.root, "registry");
-      writeExecutable(join(envRoot.fakeBin, "archctx"), "#!/bin/sh\necho 0.5.13\n");
+      const packageRoot = join(envRoot.root, 'lib', 'node_modules', 'archctx');
+      mkdirSync(join(packageRoot, 'bin'), { recursive: true });
+      writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({ name: 'archctx', version: '0.5.13' }));
+      writeExecutable(join(packageRoot, 'bin', 'archctx'), "#!/bin/sh\necho help\necho help\n");
+      symlinkSync(join(packageRoot, 'bin', 'archctx'), join(envRoot.fakeBin, 'archctx'));
+      mkdirSync(join(envRoot.root, 'bin'), { recursive: true });
+      writeExecutable(join(envRoot.root, 'bin', 'npm'), '#!/bin/sh\nexit 0\n');
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], {
         cwd: envRoot.root,
@@ -1871,8 +1877,17 @@ describe("check-agent-tooling", () => {
       expect(archctx.warnings).toHaveLength(1);
       expect(archctx.warnings[0]).toContain(`PATH archctx 0.5.13 at ${join(envRoot.fakeBin, "archctx")} is unrelated to the managed archctx ${packaged.version}`);
       expect(archctx.reason).toContain(archctx.warnings[0]);
-      // The report stays advisory: a PATH copy never changes the tool status.
-      expect(archctx.status).toBe("present");
+      expect(archctx.status).toBe("failed");
+      expect(archctx.reason).toContain(`${join(envRoot.root, 'bin', 'npm')} -g uninstall archctx`);
+      rmSync(join(envRoot.fakeBin, 'archctx'));
+      symlinkSync(archctx.managed.bin_path, join(envRoot.fakeBin, 'archctx'));
+      const managed = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], {
+        cwd: envRoot.root, encoding: 'utf8', env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ''}` },
+      });
+      const managedArchctx = JSON.parse(managed.stdout).tools.archctx;
+      expect(managedArchctx.status).toBe('present');
+      expect(managedArchctx.path_copy.relation).toBe('managed');
+      expect(managedArchctx.warnings).toEqual([]);
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }
@@ -1905,8 +1920,8 @@ describe("check-agent-tooling", () => {
       const missing = join(realpathSync(packageRoot), "node_modules", "archctx", "bin", "archctx.mjs");
       expect(archctx.managed).toMatchObject({ status: "invalid", version: null, bin_path: null, reason: `package-local archctx@${packaged.version} binary is missing: ${missing}` });
       expect(archctx.warnings).toContain(`Managed archctx is not usable: ${archctx.managed.reason}. Run repo-harness update.`);
-      // The managed CLI is advisory: a broken install never changes the tool status.
-      expect(archctx.status).toBe("present");
+      // The unrelated PATH copy fails the check even when the managed CLI is invalid.
+      expect(archctx.status).toBe("failed");
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }

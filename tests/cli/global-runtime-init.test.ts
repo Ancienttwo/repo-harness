@@ -909,6 +909,15 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
 
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')).toMatchObject({ status: 'ok' });
+      const archctxLink = join(home, '.bun', 'bin', 'archctx');
+      expect(realpathSync(archctxLink)).toBe(realpathSync(join(home, '.bun', 'install', 'global', 'node_modules', 'archctx', 'bin', 'archctx.mjs')));
+      expect(update({ plugins: FULL_PLUGINS }).exitCode).toBe(0);
+      rmSync(archctxLink);
+      writeFileSync(archctxLink, 'owner file');
+      const conflict = update({ plugins: FULL_PLUGINS });
+      expect(conflict.exitCode).toBe(1);
+      expect(conflict.steps.find(step => step.step === 'verify managed runtime dependencies')?.detail).toContain('RH_ARCHCTX_BIN_CONFLICT');
+      expect(readFileSync(archctxLink, 'utf8')).toBe('owner file');
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza -g -a codex -s think hunt check health -y');
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add BfdCampos/dotfiles -g -a codex -s mermaid -y');
       expect(readFileSync(bunLog, 'utf-8')).toContain(`add -g @colbymchenry/codegraph@${CODEGRAPH_PIN}`);

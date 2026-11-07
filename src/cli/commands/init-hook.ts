@@ -678,7 +678,7 @@ function toolingChecks(
   const checks: InitHookCheck[] = [];
   for (const [toolName, tool] of Object.entries(report.tools ?? {})) {
     const required = tool.required !== false;
-    const readinessStatus = required ? toolCheckStatus(toolName, tool.status, target) : 'ok';
+    const readinessStatus = toolName === 'archctx' && tool.status === 'failed' ? 'fail' : required ? toolCheckStatus(toolName, tool.status, target) : 'ok';
     const hasUpdateAction = required && checkUpdates && updateNeedsAgent(tool.update_status);
     const status: InitHookCheckStatus = hasUpdateAction && readinessStatus === 'ok'
       ? 'needs_agent'
