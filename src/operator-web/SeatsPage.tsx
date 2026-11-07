@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Banner, Button, Empty, Loader, Switch, cn } from '@cloudflare/kumo';
 import { seatAccountQuotas } from '../core/board/seat-routing';
 import { buildSeatLaunch, type SeatLimitLevel } from '../core/board/seat-launch';
-import { SEAT_IDS, SEAT_TOOLS, type RoutingClass, type SeatId, type SeatRuntime, type SeatsConfigV1, type SeatsSettingsV1 } from '../core/board/seats-settings';
+import { SEAT_IDS, SEAT_TOOLS, decodeSeatsSettingsRequest, type RoutingClass, type SeatId, type SeatRuntime, type SeatsConfigV1, type SeatsSettingsV1 } from '../core/board/seats-settings';
 import type { SetupSnapshotV2 } from '../core/setup/types';
 import type { OperatorTranslate } from './i18n';
 import type { QuotaSection } from './quota';
@@ -342,6 +342,16 @@ function RoutingEditor({ form, settings, quota, locked, t }: {
   );
 }
 
+/** The server's request decoder is the one authority for section validity; its refusal code keeps Save off. */
+function sectionRefusal(revision: string, seats: SeatsConfigV1): string | null {
+  try {
+    decodeSeatsSettingsRequest({ expected_revision: revision, seats });
+    return null;
+  } catch (error) {
+    return (error as Error).message;
+  }
+}
+
 /** The seats section of the Agents page. `agents` is the Hosts form, whose switch shows in place for a runtime that is not enabled. */
 export function SeatsSection({ form, agents, setup, quota, t }: {
   readonly form: SeatsSettingsForm; readonly agents: AgentsSettingsForm; readonly setup: SetupSnapshotV2 | null; readonly quota: QuotaSection; readonly t: OperatorTranslate;
@@ -371,6 +381,7 @@ function SeatsBody({ form, agents, setup, quota, t }: {
     const seat = draft[id];
     return seat !== null && !settings.ranges.runtimes.find(entry => entry.id === seat.runtime)!.enabled ? [{ id, runtime: seat.runtime }] : [];
   });
+  const refused = draft === null ? null : sectionRefusal(settings.config.revision, draft);
   return (
     <div className="flex flex-col gap-5" data-seats-page>
       <p className="text-sm text-kumo-subtle">{t('seats.lead')}</p>
@@ -423,7 +434,8 @@ function SeatsBody({ form, agents, setup, quota, t }: {
             )}
           </span>
         ))}
-        <Button variant="primary" onClick={form.submit} disabled={form.request === null || locked || notEnabled.length > 0} data-save="seats">
+        {refused !== null && <span className="text-xs text-kumo-warning" data-save-refused={refused}>{t('seats.savebar.refused', { code: refused })}</span>}
+        <Button variant="primary" onClick={form.submit} disabled={form.request === null || locked || notEnabled.length > 0 || refused !== null} data-save="seats">
           {form.save.kind === 'saving' ? t('settings.saving') : t('settings.save')}
         </Button>
       </div>

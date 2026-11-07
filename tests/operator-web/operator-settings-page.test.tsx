@@ -238,6 +238,10 @@ describe('agents page seats section', () => {
     await click(pick('worker-light'));
     expect([document.querySelector('[aria-label="Configured"]')?.getAttribute('aria-checked'), document.querySelector('[data-seat-tools]')]).toEqual(['false', null]);
     expect([mode('claude').getAttribute('data-mode'), mode('chatgpt').getAttribute('data-mode')]).toEqual(['unknown', 'unknown']);
+    // A frontend route seat on Codex: the request decoder refuses the section, so Save stays off with its code.
+    await click(pick('Important worker'));
+    await click(buttonWithText('Codex'));
+    expect([document.querySelector('[data-save-refused]')?.textContent, seatsSave().disabled]).toEqual(['The section is not valid: seats_settings_request_invalid', true]);
   });
 
   test('the routing lists reorder, add and remove; frontend offers only the Claude worker seats; save sends the routes and thresholds', async () => {
@@ -260,6 +264,17 @@ describe('agents page seats section', () => {
       important_deep: ['worker-deep', 'worker-important'], simple_fast: ['worker-deep'], frontend: ['worker-important-fast'],
       claude_saving_below_remaining: 20, codex_hyper_at_or_above_remaining: 70,
     });
+    // worker-light as the only seat of a route: setting it to not configured empties the route, and the decoder refusal keeps Save off.
+    await click(pick('worker-light'));
+    await click(document.querySelector<HTMLButtonElement>('[aria-label="Configured"]')!);
+    await click(document.querySelector<HTMLButtonElement>('[data-route="simple_fast"] ~ [aria-label="Add worker-light"]')!);
+    for (const seat of routeSeats('simple_fast').filter(seat => seat !== 'worker-light')) {
+      await click(document.querySelector<HTMLButtonElement>(`[data-route="simple_fast"] [aria-label="Remove ${seat}"]`)!);
+    }
+    expect(routeSeats('simple_fast')).toEqual(['worker-light']);
+    await click(document.querySelector<HTMLButtonElement>('[data-worker-light-off]')!);
+    expect(routeSeats('simple_fast')).toEqual([]);
+    expect([document.querySelector('[data-save-refused]')?.getAttribute('data-save-refused'), seatsSave().disabled]).toEqual(['seats_settings_request_invalid', true]);
   });
 
   test('a refused routing save shows the server refusal code', async () => {
