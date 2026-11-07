@@ -202,6 +202,83 @@ describe('agents page seats section', () => {
     expect(seatsSave().disabled).toBe(true);
     await click(seatsSave());
     expect(posts).toHaveLength(0);
+    // The save bar names the seat and offers both ways out: the Pi Hosts switch and worker-light set to null.
+    const blocked = document.querySelector('[data-save-blocked="worker-light"]')!;
+    expect(blocked.textContent).toContain('worker-light runs on Pi, which is not enabled');
+    expect(blocked.querySelector('[aria-label="Enable pi"]')).not.toBeNull();
+    await click(blocked.querySelector<HTMLButtonElement>('[data-worker-light-off]')!);
+    expect(document.querySelector('[data-save-blocked]')).toBeNull();
+    await click(seatsSave());
+    expect(posts[0]!.seats['worker-light']).toBeNull();
+  });
+
+  const pick = (seat: string) => buttonWithText(({ 'worker-light': 'Light worker', gatekeeper: 'Gatekeeper', reviewer: 'Reviewer' } as Record<string, string>)[seat] ?? seat);
+  const routeSeats = (task: string) => all(`[data-route="${task}"] [data-route-seat]`).map(item => item.getAttribute('data-route-seat'));
+  const mode = (account: string) => document.querySelector(`[data-account-mode="${account}"]`)!;
+  async function setThreshold(field: string, value: string) {
+    const input = document.querySelector<HTMLInputElement>(`[data-threshold="${field}"]`)!;
+    // react-dom loads before this DOM exists, so it watches inputs through focus and keyup, not the input event.
+    await act(async () => {
+      input.focus();
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new window.KeyboardEvent('keyup', { key: '0', bubbles: true }) as unknown as Event);
+    });
+    await settle();
+  }
+
+  test('every seat has a card; a review seat shows only its read, shell and network groups and no fleet; modes stay unknown while quota is not read', async () => {
+    await mount(seatsProps([]));
+    expect(all('[role="group"][aria-label="Seat"] button')).toHaveLength(9);
+    await click(pick('gatekeeper'));
+    expect(document.querySelector('[data-seat-card]')?.getAttribute('data-seat-card')).toBe('gatekeeper');
+    expect(all('[data-seat-tools] [role="switch"]').map(node => node.getAttribute('aria-label'))).toEqual(['Allow Read code', 'Allow Shell', 'Allow Network']);
+    expect(document.querySelector('[data-seat-fleet]')).toBeNull();
+    expect(document.querySelector('[data-seat-launch]')?.textContent).toContain('seats argv gatekeeper --repository-id <repository-id> --pr <n>');
+    // busy stores worker-light as null: only the configured switch shows.
+    await click(pick('worker-light'));
+    expect([document.querySelector('[aria-label="Configured"]')?.getAttribute('aria-checked'), document.querySelector('[data-seat-tools]')]).toEqual(['false', null]);
+    expect([mode('claude').getAttribute('data-mode'), mode('chatgpt').getAttribute('data-mode')]).toEqual(['unknown', 'unknown']);
+  });
+
+  test('the routing lists reorder, add and remove; frontend offers only the Claude worker seats; save sends the routes and thresholds', async () => {
+    const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
+    await mount(seatsProps(posts));
+    expect(routeSeats('important_deep')).toEqual(['worker-important', 'worker-deep']);
+    await click(document.querySelector<HTMLButtonElement>('[aria-label="Move worker-deep up"]')!);
+    expect(routeSeats('important_deep')).toEqual(['worker-deep', 'worker-important']);
+    await click(document.querySelector<HTMLButtonElement>('[data-route="simple_fast"] ~ [aria-label="Add worker-deep"]')!);
+    expect(routeSeats('simple_fast')).toEqual(['worker', 'worker-deep']);
+    await click(document.querySelector<HTMLButtonElement>('[data-route="simple_fast"] [aria-label="Remove worker"]')!);
+    expect(routeSeats('simple_fast')).toEqual(['worker-deep']);
+    expect(document.querySelector<HTMLButtonElement>('[data-route="simple_fast"] [aria-label="Remove worker-deep"]')!.disabled).toBe(true);
+    await click(document.querySelector<HTMLButtonElement>('[data-route="frontend"] [aria-label="Remove worker-important"]')!);
+    // worker-light is null in busy, so no list offers it.
+    expect(all('[data-route="frontend"] ~ button').map(button => button.getAttribute('aria-label'))).toEqual(['Add worker-important']);
+    await setThreshold('codex_hyper_at_or_above_remaining', '70');
+    await click(seatsSave());
+    expect(posts[0]!.seats.routing).toMatchObject({
+      important_deep: ['worker-deep', 'worker-important'], simple_fast: ['worker-deep'], frontend: ['worker-important-fast'],
+      claude_saving_below_remaining: 20, codex_hyper_at_or_above_remaining: 70,
+    });
+  });
+
+  test('a refused routing save shows the server refusal code', async () => {
+    await mount({ ...seatsProps([]), writeSeatsSettings: async () => ({ state: 'refused', status: 400, error: {
+      code: 'seats_settings_request_invalid', message: 'The seats section is not valid.', next_action: 'Fix the routing and save again.',
+    } }) });
+    await click(document.querySelector<HTMLButtonElement>('[aria-label="Move worker-deep up"]')!);
+    await click(seatsSave());
+    expect(result()?.getAttribute('data-save-result')).toBe('seats_settings_request_invalid');
+  });
+
+  test('a threshold change moves the shown account mode on the fixture quota report', async () => {
+    // busy quota: Claude has 12% of the week left, ChatGPT 66%.
+    await mount({ ...seatsProps([]), readQuota: async () => ({ state: 'ok', settings: busyQuota(NOW) }) });
+    expect([mode('claude').getAttribute('data-mode'), mode('chatgpt').getAttribute('data-mode')]).toEqual(['saving', 'hyper']);
+    expect(mode('claude').textContent).toContain('12% left this week');
+    await setThreshold('claude_saving_below_remaining', '10');
+    await setThreshold('codex_hyper_at_or_above_remaining', '70');
+    expect([mode('claude').getAttribute('data-mode'), mode('chatgpt').getAttribute('data-mode')]).toEqual(['normal', 'normal']);
   });
 
   test('the runtime choice offers only enabled runtimes; Pi is enabled in place, saved under Hosts, then a seat moves to Pi and saves against the fixture server', async () => {
