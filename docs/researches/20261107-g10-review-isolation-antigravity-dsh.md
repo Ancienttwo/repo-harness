@@ -149,8 +149,15 @@ production profile, `HOME=/Users/chris`:
 
 | Runtime | Result | Command | Evidence |
 |---|---|---|---|
-| antigravity | **PASS for the policy, not measurable inside the session** | `net-probe.mjs` under the production profile; and the tool-turn attempt | Policy: local IPv4 TCP `EPERM`, all IPv6 TCP `EPERM`, remote IPv4 allowed. Inside the antigravity session no `nc` or `curl` runs at all, because the shell tool fails at item 1. The rule holds; the session cannot demonstrate it. |
-| dsh | **PASS** | same OAR turn, `nc -z -w 3 127.0.0.1 3425` and `nc -z -w 3 ::1 443`, then `curl https://api.deepseek.com` | `tcp4-local-rc=1`, `tcp6-local-rc=1` (both closed by policy), `code=401` from the remote endpoint, so remote IPv4 egress is open and reaches the provider. |
+| antigravity | **#1807 baseline PASS for the policy, not measurable inside the session; provider-only NOT MET** | `net-probe.mjs` under the production profile; and the tool-turn attempt | Policy: local IPv4 TCP `EPERM`, all IPv6 TCP `EPERM`, remote IPv4 allowed. Inside the antigravity session no `nc` or `curl` runs at all, because the shell tool fails at item 1. The rule holds; the session cannot demonstrate it. |
+| dsh | **#1807 baseline PASS; provider-only NOT MET** | same OAR turn, `nc -z -w 3 127.0.0.1 3425` and `nc -z -w 3 ::1 443`, then `curl https://api.deepseek.com` | `tcp4-local-rc=1`, `tcp6-local-rc=1` (both closed by policy), `code=401` from the remote endpoint, so remote IPv4 egress is open and reaches the provider. |
+
+The issue's item 3 also requires that the session reaches its model provider only. The production
+profile keeps all remote IPv4 open (`src/effects/review/review-isolation.ts:229-246`), and the
+profile probe above reached `1.1.1.1:443`, which is not a provider. So the #1807 baseline (local
+IPv4 and all IPv6 TCP denied) passes for both runtimes, and the provider-only part is not met by
+the current policy. The `curl` 401 shows that the provider is reachable, not that it is the only
+reachable host.
 
 DNS is allowed through `mDNSResponder` (`review-isolation.ts:245`). Probe: A and AAAA lookups
 resolve (`172.217.116.4`, `2001:4860:4843:400::`); the TCP connect that follows an AAAA result is
