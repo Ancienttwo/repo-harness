@@ -1,6 +1,6 @@
 // The module base map (the ArchModules artboard): the model's capabilities in
 // their domain groups, the external systems above them, one edge per domain pair
-// weighted by imports, and the active layer's marks on each capability. The
+// weighted by imports, and one card per capability with five fixed signal slots. The
 // inspector shows one capability's changes, violations, PR impact, tests and
 // decisions. Every value is the collector's; this view computes only roll-ups.
 
@@ -33,13 +33,13 @@ const compactLines = (lines: number) => new Intl.NumberFormat('en', { notation: 
 interface DomainData extends Record<string, unknown> { readonly domain: string }
 interface ModuleData extends Record<string, unknown> {
   readonly node: ArchitectureMapNodeV1;
-  readonly lines: number | null;
+  readonly size: { readonly lines: number; readonly files: number } | null;
   readonly layer: MapLayerId;
-  readonly mark: ModuleMark | null;
-  readonly quiet: boolean;
+  readonly slots: readonly Slot[];
+  readonly dimmed: boolean;
   readonly t: OperatorTranslate;
 }
-interface ExternalData extends Record<string, unknown> { readonly node: ArchitectureMapNodeV1 }
+interface ExternalData extends Record<string, unknown> { readonly node: ArchitectureMapNodeV1; readonly dimmed: boolean }
 type ModulesNode = Node<DomainData, 'domain'> | Node<ModuleData, 'module'> | Node<ExternalData, 'external'>;
 
 /** Handles exist for edge routing only; the map is read-only, so they accept no connection. */
@@ -53,40 +53,104 @@ const DomainNode = memo(function DomainNode({ data }: NodeProps<Node<DomainData,
   </div>;
 });
 
-/** The badge of the active layer: commits today, violations, files in the PR, decisions; `↳` for a dependent. Tests show as a dot. */
-function badge(layer: MapLayerId, mark: ModuleMark, t: OperatorTranslate): string | null {
-  if (layer === 'tests') return null;
-  if (mark.count === null) return '↳';
-  if (layer === 'changes') return mark.count === 0 ? null : counted(t, mark.count, 'commit', mark.atLeast);
-  if (layer === 'pull_requests') return counted(t, mark.count, 'file', mark.atLeast);
-  return String(mark.count);
+const SLOT_LAYERS: readonly MapLayerId[] = ['changes', 'violations', 'pull_requests', 'tests', 'decisions'];
+type TestsEntry = Extract<ArchitectureMapV1['layers']['tests'], { state: 'ok' }>['capabilities'][number];
+type SlotTone = 'danger' | 'info';
+
+/** One signal slot: `value` is null when the module has nothing to show; `tone` is set only for an actionable state. */
+interface Slot { readonly layer: MapLayerId; readonly value: string | null; readonly tone: SlotTone | null; readonly words: string | null }
+
+interface ModuleSignals {
+  readonly changes: ModuleMark | undefined;
+  readonly violations: number;
+  readonly pullRequests: readonly number[];
+  readonly tests: TestsEntry | undefined;
+  readonly decisions: number;
 }
 
+/** Every capability's raw signals, read through the layer views the map already uses. */
+function moduleSignals(map: ArchitectureMapV1): ReadonlyMap<string, ModuleSignals> {
+  const changes = modulesLayerView(map, 'changes').marks;
+  const violations = modulesLayerView(map, 'violations').marks;
+  const decisions = modulesLayerView(map, 'decisions').marks;
+  const { pull_requests: pullRequests, tests } = map.layers;
+  // A PR touches a module when its impact marks the module itself, not only a dependent.
+  const touching = (pullRequests.state === 'ok' ? pullRequests.pull_requests : []).map(item => ({ number: item.number, marks: modulesLayerView(map, 'pull_requests', item.number).marks }));
+  const results = new Map((tests.state === 'ok' ? tests.capabilities : []).map(entry => [entry.id, entry]));
+  return new Map(map.nodes.filter(node => node.kind === 'capability').map((node): [string, ModuleSignals] => [node.id, {
+    changes: changes.get(node.id),
+    violations: violations.get(node.id)?.count ?? 0,
+    pullRequests: touching.filter(item => item.marks.get(node.id)?.tone === 'change').map(item => item.number),
+    tests: results.get(node.id),
+    decisions: decisions.get(node.id)?.count ?? 0,
+  }]));
+}
+
+type HoverKey = 'changes' | 'violations' | 'pull_requests' | 'decisions';
+function count(t: OperatorTranslate, key: HoverKey, n: number, extra: Record<string, string | number> = {}): string {
+  return t(n === 1 ? `architecture.modules.hover.${key}One` : `architecture.modules.hover.${key}`, { count: n, ...extra });
+}
+
+/**
+ * The five slots in their fixed order. A passing module shows nothing in the tests slot;
+ * only a failure or a missing result does. `words` is the hover text.
+ */
+function slotsOf(signals: ModuleSignals, t: OperatorTranslate): Slot[] {
+  const { changes, violations, pullRequests, tests, decisions } = signals;
+  const commits = changes?.count ?? 0;
+  const mark = changes?.atLeast ? '+' : '';
+  return [
+    { layer: 'changes', tone: null,
+      value: changes === undefined ? null : changes.count === null ? '↳' : commits > 0 ? `${commits}${mark}` : null,
+      words: changes === undefined ? null : changes.count === null ? t('architecture.modules.hover.dependent') : commits > 0 ? count(t, 'changes', commits) : null },
+    { layer: 'violations', tone: 'danger', value: violations > 0 ? String(violations) : null, words: violations > 0 ? count(t, 'violations', violations) : null },
+    { layer: 'pull_requests', tone: 'info', value: pullRequests.length > 0 ? String(pullRequests.length) : null,
+      words: pullRequests.length > 0 ? count(t, 'pull_requests', pullRequests.length, { list: pullRequests.map(number => `#${number}`).join(', ') }) : null },
+    { layer: 'tests', tone: tests !== undefined && tests.failed > 0 ? 'danger' : null,
+      value: tests === undefined ? null : tests.failed > 0 ? `${tests.failed}✕` : tests.no_result > 0 ? '?' : null,
+      words: tests === undefined ? null : t('architecture.layer.node.tests', { files: tests.files, passed: tests.passed, failed: tests.failed, skipped: tests.skipped, noResult: tests.no_result }) },
+    { layer: 'decisions', tone: null, value: decisions > 0 ? String(decisions) : null, words: decisions > 0 ? count(t, 'decisions', decisions) : null },
+  ];
+}
+
+/** The slot of the active layer is the only one that carries a color, and only for an actionable state. */
 const ModuleNode = memo(function ModuleNode({ data, selected }: NodeProps<Node<ModuleData, 'module'>>) {
-  const { node, lines, layer, mark, quiet, t } = data;
-  const label = mark === null ? null : badge(layer, mark, t);
-  return <div className="architecture-modules__box" data-selected={selected || undefined} data-layer={layer} data-tone={mark?.tone} data-quiet={quiet || undefined}>
+  const { node, size, layer, slots, dimmed, t } = data;
+  const alert = slots.find(slot => slot.layer === layer && slot.value !== null)?.tone ?? undefined;
+  const words = slots.flatMap(slot => slot.words ?? []).join(' · ');
+  return <div className="architecture-modules__box" title={words || undefined} data-selected={selected || undefined} data-layer={layer} data-alert={alert} data-dimmed={dimmed || undefined} data-deprecated={node.status === 'deprecated' || undefined}>
     <Handle type="target" position={Position.Top} isConnectable={false} />
     <Handle type="source" position={Position.Bottom} isConnectable={false} />
-    {layer === 'tests' && <span className="architecture-modules__test" data-test={mark?.tone ?? 'none'} />}
-    <strong>{node.name}</strong>
-    {lines !== null && <span className="architecture-modules__lines mono-value">{compactLines(lines)}</span>}
-    {label !== null && <span className="architecture-map__mark architecture-modules__badge mono-value" data-tone={mark!.tone}>{label}</span>}
+    <span className="architecture-modules__name">
+      <strong>{node.name}</strong>
+      {node.status === 'deprecated' && <span className="architecture-modules__status">{t('architecture.modules.deprecated')}</span>}
+    </span>
+    <span className="architecture-modules__size mono-value">{size === null ? '' : `${compactLines(size.lines)} · ${compactLines(size.files)}`}</span>
+    <span className="architecture-modules__slots">
+      {slots.map(slot => <span key={slot.layer} className="architecture-modules__slot mono-value" data-slot={slot.layer} data-active={slot.layer === layer || undefined}
+        data-tone={slot.layer === layer && slot.value !== null ? slot.tone ?? undefined : undefined}>{slot.value}</span>)}
+    </span>
   </div>;
 });
 
+/** Handles exist so that a selected relation can reach an external system; the map accepts no connection. */
 const ExternalNode = memo(function ExternalNode({ data, selected }: NodeProps<Node<ExternalData, 'external'>>) {
-  return <div className="architecture-modules__external" data-selected={selected || undefined}>{data.node.name}</div>;
+  return <div className="architecture-modules__external" data-selected={selected || undefined} data-dimmed={data.dimmed || undefined}>
+    <Handle type="target" position={Position.Top} isConnectable={false} />
+    <Handle type="source" position={Position.Bottom} isConnectable={false} />
+    {data.node.name}
+  </div>;
 });
 
 const NODE_TYPES = { domain: DomainNode, module: ModuleNode, external: ExternalNode };
 
-function Legend({ map, layout, view, t }: { readonly map: ArchitectureMapV1; readonly layout: ModulesLayout; readonly view: ModulesLayerView; readonly t: OperatorTranslate }) {
+function Legend({ map, layout, view, layer, t }: { readonly map: ArchitectureMapV1; readonly layout: ModulesLayout; readonly view: ModulesLayerView; readonly layer: MapLayerId; readonly t: OperatorTranslate }) {
   return <dl className="architecture-map__legend" aria-label={t('architecture.map.legend')}>
     {layout.edges.length > 0 && <div><dt aria-hidden="true">↔</dt><dd>{t('architecture.modules.legend.width')}</dd></div>}
     {view.edges.length > 0 && <div><dt><span className="architecture-map__swatch architecture-map__swatch--undeclared" /></dt><dd>{t('architecture.layer.legend.undeclared')}</dd></div>}
     {layout.externals.length > 0 && <div><dt><span className="architecture-map__swatch architecture-map__swatch--external" /></dt><dd>{t('architecture.map.legend.external')}</dd></div>}
-    {map.sizes.state === 'ok' && <div><dt className="mono-value" aria-hidden="true">1.2k</dt><dd>{t('architecture.modules.legend.lines')}</dd></div>}
+    {map.sizes.state === 'ok' && <div><dt className="mono-value" aria-hidden="true">1.2k · 4</dt><dd>{t('architecture.modules.legend.lines')}</dd></div>}
+    <div><dt className="architecture-modules__key mono-value">{SLOT_LAYERS.map(item => <span key={item} data-active={item === layer || undefined}>{t(`architecture.modules.slot.${item}`)}</span>)}</dt></div>
   </dl>;
 }
 
@@ -210,12 +274,25 @@ function ModulesCanvas({ map, layer, pullRequest, side, onModule, t }: {
   const view = useMemo(() => modulesLayerView(map, layer, pullRequest), [map, layer, pullRequest]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const domains = useMemo(() => new Map(layout.domains.map(item => [item.domain, item])), [layout]);
-  const lines = useMemo(() => new Map(map.sizes.state === 'ok' ? map.sizes.nodes.map(entry => [entry.id, entry.lines]) : []), [map]);
+  const sizes = useMemo(() => new Map(map.sizes.state === 'ok' ? map.sizes.nodes.map(entry => [entry.id, { lines: entry.lines, files: entry.files }]) : []), [map]);
+  const signals = useMemo(() => moduleSignals(map), [map]);
+  // The selected card keeps its declared relations one hop away; both ends are lifted to the capability that holds them.
+  const neighbours = useMemo(() => {
+    const owners = capabilityOwners(map);
+    const drawn = new Set([...layout.capabilities.map(item => item.node.id), ...layout.externals.map(item => item.node.id)]);
+    const lift = (id: string) => owners.get(id) ?? id;
+    return new Set(selectedId === null ? [] : map.relations.flatMap(relation => {
+      const [source, target] = [lift(relation.source), lift(relation.target)];
+      const other = source === selectedId ? target : target === selectedId ? source : null;
+      return other !== null && other !== selectedId && drawn.has(other) ? [other] : [];
+    }));
+  }, [map, layout, selectedId]);
+  const dimmed = (id: string) => selectedId !== null && id !== selectedId && !neighbours.has(id);
 
   const nodes = useMemo<ModulesNode[]>(() => [
     ...layout.externals.map((item): ModulesNode => ({
       id: item.node.id, type: 'external', position: { x: item.x, y: item.y }, width: item.width, height: item.height,
-      data: { node: item.node }, draggable: false, connectable: false, selected: item.node.id === selectedId, ariaLabel: `${item.node.kind} ${item.node.name}`,
+      data: { node: item.node, dimmed: dimmed(item.node.id) }, draggable: false, connectable: false, selected: item.node.id === selectedId, ariaLabel: `${item.node.kind} ${item.node.name}`,
     })),
     ...layout.domains.map((item): ModulesNode => ({
       id: domainId(item.domain), type: 'domain', position: { x: item.x, y: item.y }, width: item.width, height: item.height,
@@ -225,11 +302,11 @@ function ModulesCanvas({ map, layer, pullRequest, side, onModule, t }: {
       const group = domains.get(item.domain)!;
       return {
         id: item.node.id, type: 'module', parentId: domainId(item.domain), position: { x: item.x - group.x, y: item.y - group.y }, width: item.width, height: item.height,
-        data: { node: item.node, lines: lines.get(item.node.id) ?? null, layer, mark: view.marks.get(item.node.id) ?? null, quiet: view.available && !view.marks.has(item.node.id), t },
+        data: { node: item.node, size: sizes.get(item.node.id) ?? null, layer, slots: slotsOf(signals.get(item.node.id)!, t), dimmed: dimmed(item.node.id), t },
         draggable: false, connectable: false, selected: item.node.id === selectedId, ariaLabel: `${item.node.kind} ${item.node.name}`,
       };
     }),
-  ], [layout, domains, lines, layer, view, selectedId, t]);
+  ], [layout, domains, sizes, signals, layer, neighbours, selectedId, t]);
 
   const edges = useMemo<Edge[]>(() => [
     ...layout.edges.map((edge): Edge => ({
@@ -245,7 +322,11 @@ function ModulesCanvas({ map, layer, pullRequest, side, onModule, t }: {
       markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: 'var(--text-color-kumo-danger)' },
       label: String(edge.imports), selectable: false, focusable: false, zIndex: 3,
     })),
-  ], [layout, view]);
+    ...[...neighbours].map((id): Edge => ({
+      id: `relation:${selectedId}->${id}`, source: selectedId!, target: id,
+      className: 'architecture-map__edge architecture-modules__relation', selectable: false, focusable: false, zIndex: 2,
+    })),
+  ], [layout, view, neighbours, selectedId]);
 
   // Selection is the only node change the read-only map applies; click and the keyboard both arrive here.
   const onNodesChange = useCallback((changes: NodeChange<ModulesNode>[]) => {
@@ -273,7 +354,7 @@ function ModulesCanvas({ map, layer, pullRequest, side, onModule, t }: {
         attributionPosition="top-right"
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--rh-diagram-dot)" />
-        <Panel position="bottom-left"><Legend map={map} layout={layout} view={view} t={t} /></Panel>
+        <Panel position="bottom-left"><Legend map={map} layout={layout} view={view} layer={layer} t={t} /></Panel>
         <Panel position="bottom-right"><ZoomControls t={t} /></Panel>
       </ReactFlow>
     </div>
