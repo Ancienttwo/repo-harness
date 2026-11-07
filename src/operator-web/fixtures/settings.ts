@@ -1,6 +1,8 @@
 import { AGENT_RUNTIME_CAPABILITIES, decodeAgentsSettings, type AgentsSettingsV1 } from '../../core/board/agents-settings';
 import { isReviewRuntimeId } from '../../core/review/review-runtimes';
 import { DEFAULT_SEATS_CONFIG, SEAT_IDS, decodeSeatsSettings, type SeatsConfigV1, type SeatsSettingsRequestV1, type SeatsSettingsV1 } from '../../core/board/seats-settings';
+import type { DocumentationLanguage, DocumentationLanguageReader, DocumentationLanguageWriter, LanguageRead, LanguageReader, LanguageWriter, ReportingHost, ReportingPreset } from '../language-settings';
+import type { OperatorApiErrorV1 } from '../operator-api-error';
 import type { AgentsSettingsRead, AgentsSettingsWrite, AgentsSettingsPost, SettingsRead, SettingsWrite } from '../settings';
 
 const REVISION = `sha256:${'4'.repeat(64)}`;
@@ -154,5 +156,36 @@ export function settingsStores(now: number, fixture: 'busy' | 'empty' | 'degrade
     agents = decodeAgentsSettings({ ...agents, config: { ...agents.config, revision } });
     return Promise.resolve({ state: 'saved', result: { config_revision: revision, changed_keys: changed } });
   };
-  return { agents: { read: readAgents, write: writeAgents }, seats: { read: readSeats, write: writeSeats } };
+  return { agents: { read: readAgents, write: writeAgents }, seats: { read: readSeats, write: writeSeats }, ...languageStores(fixture) };
+}
+
+const refusal = (status: number, error: OperatorApiErrorV1) => Promise.resolve({ state: 'refused' as const, status, error });
+
+/**
+ * The language routes in the page. degraded: a rules file with unbalanced markers refuses every
+ * reporting save; empty: no repository has a policy file yet.
+ */
+function languageStores(fixture: 'busy' | 'empty' | 'degraded') {
+  let preset: ReportingPreset = 'follow';
+  const hosts = (): readonly ReportingHost[] => ['claude', 'codex'].map(host => ({
+    host, state: fixture === 'degraded' && host === 'codex' ? 'unbalanced' : 'managed-current', preset,
+  }));
+  const readReporting: LanguageReader<readonly ReportingHost[]> = () => Promise.resolve<LanguageRead<readonly ReportingHost[]>>({ state: 'ok', value: hosts() });
+  const writeReporting: LanguageWriter<ReportingPreset> = (next) => {
+    if (fixture === 'degraded') {
+      return refusal(409, { code: 'report_language_refused', message: 'The codex rules file has unbalanced markers.', next_action: 'Repair the reported rules file or path, then save the reporting language again.' });
+    }
+    preset = next;
+    return Promise.resolve({ state: 'ok', value: { changed_hosts: ['claude', 'codex'] } });
+  };
+  const languages = new Map<string, DocumentationLanguage>();
+  const missing: OperatorApiErrorV1 = { code: 'policy_missing', message: 'The repository policy file is missing.', next_action: 'repo-harness init' };
+  const readDocumentation: DocumentationLanguageReader = repositoryId => () => Promise.resolve<LanguageRead<DocumentationLanguage | null>>(
+    fixture === 'empty' ? { state: 'refused', error: missing } : { state: 'ok', value: languages.get(repositoryId) ?? 'en' });
+  const writeDocumentation: DocumentationLanguageWriter = repositoryId => (language) => {
+    if (fixture === 'empty') return refusal(409, missing);
+    languages.set(repositoryId, language);
+    return Promise.resolve({ state: 'ok', value: { language } });
+  };
+  return { reporting: { read: readReporting, write: writeReporting }, documentation: { read: readDocumentation, write: writeDocumentation } };
 }
