@@ -305,11 +305,10 @@ these pages: the development board with its task drawer, repositories, Agents,
 Skills, Hooks, tools, architecture and system status. The theme follows the
 system until you pick one. The language follows your saved choice, then the browser language.
 
-A parent process that starts the server can make it stop with the parent. Add
-`--exit-on-stdin-close`: the server then reads stdin and shuts down when the
-pipe reaches EOF. The shell of a parent that is killed with SIGKILL closes this
-pipe, so no server stays on the loopback port. Without the flag the server reads
-no stdin and stops only on SIGINT or SIGTERM.
+A parent process that starts the server can make it stop with the parent: give the
+server a dedicated stdin pipe that the parent holds, and add `--exit-on-stdin-close`.
+With the flag, stdin from `/dev/null` ends at once and the server exits; a TTY keeps
+it running until EOF.
 
 `repo-harness operator`, `repo-harness worktrees` and `repo-harness catch-up`
 need the `operator` plugin. An `all` selection includes it. Add it to an
