@@ -111,12 +111,16 @@ function hostExecutable(): { node: string; entry: string } {
     entry: realpathSync(fileURLToPath(new URL('../../../dist/oar-review-host.js', import.meta.url))) };
 }
 /** Only the fixed Node>=24 host executes the OAR installation API. */
+const EXECUTABLE_VARIABLES: Record<ReviewRuntimeId, string | null> = {
+  claude: 'OAR_CLAUDE_BIN', codex: 'OAR_CODEX_BIN', pi: null,
+};
 async function probeReviewInstallation(kind: ReviewRuntimeId, executable?: string): Promise<InstallationSnapshot> {
   const pi = kind === 'pi' ? executable ?? piExecutable() : undefined;
   if (kind === 'pi' && !pi) return { kind: 'not_found' };
   const { node, entry } = hostExecutable();
+  const variable = EXECUTABLE_VARIABLES[kind];
   return JSON.parse(execFileSync(node, [entry, '--installation', kind, ...(pi ? [pi] : [])], { encoding: 'utf8', timeout: 60_000, maxBuffer: 1024 * 1024,
-    env: executable && kind !== 'pi' ? { ...process.env, [kind === 'codex' ? 'OAR_CODEX_BIN' : 'OAR_CLAUDE_BIN']: executable } : process.env })) as InstallationSnapshot;
+    env: executable && variable ? { ...process.env, [variable]: executable } : process.env })) as InstallationSnapshot;
 }
 /** Fleet owns review instructions. Pi owns its native provider/model selection. */
 export function reviewSessionOptions(kind: ReviewRuntimeId, output: string, runtimeHome?: string): SessionOptions {

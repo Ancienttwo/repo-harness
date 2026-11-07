@@ -138,7 +138,7 @@ export function fixtureProps(name: string): OperatorAppProps {
   const botReviews: BotReviewsRead = { state: 'ok', snapshot: decodeSlackReviews(fixture === 'busy' ? busyBotReviews(now)
     : fixture === 'empty' ? slackReviewsUnavailable('slack_pending') : degradedBotReviews(now)) };
   // busy: saves apply in the page; degraded: a timed-out probe, a runtime that left the list, and saves that end in reconcile_required.
-  const { agents: agentsSettings, seats: seatsSettings } = settingsStores(now, fixture);
+  const { agents: agentsSettings, seats: seatsSettings, reporting, documentation } = settingsStores(now, fixture);
   // busy: the latest daily run with one failing file and one file without results; empty: no collection yet; degraded: the run uploaded nothing.
   const tests = (repositoryId: string): TestsRead => fixture === 'busy'
     ? { state: 'ok', snapshot: decodeTestsSnapshot({ ...readyTests(now), repository_id: repositoryId }) }
@@ -189,6 +189,10 @@ export function fixtureProps(name: string): OperatorAppProps {
     writeAgentsSettings: agentsSettings.write,
     readSeatsSettings: seatsSettings.read,
     writeSeatsSettings: seatsSettings.write,
+    readReportingLanguage: reporting.read,
+    writeReportingLanguage: reporting.write,
+    readDocumentationLanguage: documentation.read,
+    writeDocumentationLanguage: documentation.write,
     readQuota: quota,
     readTests: repositoryId => Promise.resolve(tests(repositoryId)),
     // busy: a tree with a dirty file, a diagram and a refused symlink; empty: no collection yet; degraded: the reader is down.
