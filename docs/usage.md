@@ -305,6 +305,11 @@ these pages: the development board with its task drawer, repositories, Agents,
 Skills, Hooks, tools, architecture and system status. The theme follows the
 system until you pick one. The language follows your saved choice, then the browser language.
 
+A parent process that starts the server can make it stop with the parent: give the
+server a dedicated stdin pipe that the parent holds, and add `--exit-on-stdin-close`.
+With the flag, stdin from `/dev/null` ends at once and the server exits; a TTY keeps
+it running until EOF.
+
 `repo-harness operator`, `repo-harness worktrees` and `repo-harness catch-up`
 need the `operator` plugin. An `all` selection includes it. Add it to an
 explicit list with `repo-harness install --plugins <your plugins>,operator`.

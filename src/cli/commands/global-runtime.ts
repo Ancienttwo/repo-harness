@@ -400,6 +400,7 @@ export interface PackageManifest {
   version?: unknown;
   dependencies?: unknown;
   engines?: unknown;
+  bin?: unknown;
 }
 
 interface ManagedRuntimeReadback {
@@ -472,6 +473,7 @@ function reconcileManagedRuntime(
   env: NodeJS.ProcessEnv,
   installSpec: string,
   plugins: readonly PluginId[],
+  linkArchctx = false,
 ): GlobalRuntimeStep {
   const globalPackageRoot = bunGlobalPackageRoot(env);
   if (globalPackageRoot === null) {
@@ -481,6 +483,38 @@ function reconcileManagedRuntime(
   const expectedHarnessVersion = requested && requested !== "latest" && requested !== "next" ? requested : null;
   const initial = safeReadManagedRuntime(globalPackageRoot, cwd, env, expectedHarnessVersion, plugins);
   if (initial.status === "ready") {
+    if (linkArchctx && plugins.includes('architecture')) {
+      const bunRoot = env.BUN_INSTALL ?? join(homeDir(env), '.bun');
+      const link = join(bunRoot, 'bin', 'archctx');
+      try {
+        const root = findInstalledPackageRoot(globalPackageRoot, 'archctx');
+        if (!root) throw new Error('managed archctx package is missing');
+        const bin = recordValue(readPackageManifest(root).bin).archctx;
+        if (typeof bin !== 'string') throw new Error('archctx does not declare bin.archctx');
+        const target = realpathSync(join(root, bin));
+        const version = recordValue(readPackageManifest(globalPackageRoot).dependencies).archctx;
+        if (typeof version !== 'string') throw new Error('repo-harness does not pin archctx');
+        const globalManifest = readPackageManifest(join(bunRoot, 'install', 'global'));
+        const existing = lstatSync(link, { throwIfNoEntry: false });
+        if (existing) {
+          let linkTarget: string | null = null;
+          try { linkTarget = realpathSync(link); } catch { /* A dangling link is also a conflict. */ }
+          if (linkTarget !== target) return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_CONFLICT: ${link} is not the managed archctx link. Move or remove it, then rerun repo-harness update.` };
+          if (recordValue(globalManifest.dependencies).archctx === version) return { step: 'verify managed runtime dependencies', status: 'ok', detail: initial.detail };
+        }
+        const install = runProcess(bunExecutable, ['add', '-g', `archctx@${version}`], cwd, env);
+        if (install.status !== 'ok') return withStepName(install, 'verify managed runtime dependencies', `archctx@${version}`);
+        try {
+          const installedRoot = findInstalledPackageRoot(globalPackageRoot, 'archctx');
+          if (!installedRoot || readPackageManifest(installedRoot).version !== version || realpathSync(link) !== target) throw new Error('installed version or link target does not match');
+        } catch (error) {
+          return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_READBACK: ${link}: ${error instanceof Error ? error.message : String(error)}` };
+        }
+        return { step: 'verify managed runtime dependencies', status: 'ok', detail: `${initial.detail}; archctx@${version}` };
+      } catch (error) {
+        return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_INVALID: ${link}: ${error instanceof Error ? error.message : String(error)}` };
+      }
+    }
     return { step: "verify managed runtime dependencies", status: "ok", detail: initial.detail };
   }
   if (initial.status === "runtime-mismatch") {
@@ -1800,13 +1834,13 @@ export function runGlobalRuntimeSetup(
       return finalizeRuntimeResult(steps);
     }
     if (updateMode && install.status === "ok" && opts.installSpec) {
-      steps.push(reconcileManagedRuntime(cwd, bunExecutable, env, opts.installSpec, plugins));
+      steps.push(reconcileManagedRuntime(cwd, bunExecutable, env, opts.installSpec, plugins, true));
     }
     if (updateMode && steps.some((step) => step.status === "failed")) return finalizeRuntimeResult(steps);
   }
   else {
     steps.push({ step: "install repo-harness CLI", status: "skipped", detail: "disabled" });
-    if (updateMode && opts.installSpec) steps.push(reconcileManagedRuntime(cwd, bunExecutable, env, opts.installSpec, plugins));
+    if (updateMode && opts.installSpec) steps.push(reconcileManagedRuntime(cwd, bunExecutable, env, opts.installSpec, plugins, true));
     if (updateMode && steps.some((step) => step.status === "failed")) return finalizeRuntimeResult(steps);
   }
 

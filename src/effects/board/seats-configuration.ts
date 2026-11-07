@@ -7,9 +7,7 @@ import {
   FRONTEND_SEAT_IDS,
   ROUTING_CLASSES,
   WORKER_SEAT_IDS,
-  CodexSeatNetworkError,
   SeatsConfigMigrationRequiredError,
-  checkCodexSeatNetwork,
   decodeSeatsConfig,
   type SeatConfigV1,
   type SeatModelV1,
@@ -41,8 +39,7 @@ export type SeatsConfigurationErrorCode =
   | 'seat_model_invalid'
   | 'seat_effort_invalid'
   | 'seat_tool_not_allowed'
-  | 'seat_fleet_not_allowed'
-  | CodexSeatNetworkError['code'];
+  | 'seat_fleet_not_allowed';
 
 export class SeatsConfigurationError extends Error {
   constructor(readonly code: SeatsConfigurationErrorCode, message: string) {
@@ -68,8 +65,8 @@ const SEAT_RANGES: SeatsRangesV1['seats'] = {
   'worker-important': { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
   'worker-important-fast': { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
   'worker-light': { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
-  gatekeeper: { fleet: [], tools: ['read', 'shell'] },
-  reviewer: { fleet: [], tools: ['read', 'shell'] },
+  gatekeeper: { fleet: [], tools: ['net', 'read', 'shell'] },
+  reviewer: { fleet: [], tools: ['net', 'read', 'shell'] },
 };
 
 /** Claude takes a fleet model family, Codex a fleet target model. Pi uses its own model and effort, and has no fleet roles. */
@@ -151,7 +148,6 @@ function checkSeat(id: SeatId, seat: SeatConfigV1, enabledRuntimes: readonly str
   checkModelAndEffort(`${id} seat`, seat, seat.runtime);
   const tool = seat.tools.find(item => !range.tools.includes(item));
   if (tool !== undefined) throw new SeatsConfigurationError('seat_tool_not_allowed', `The ${id} seat cannot have the ${tool} tool group.`);
-  checkCodexSeatNetwork(id, seat);
   const role = seat.fleet.find(name => !runtime.fleet || !range.fleet.includes(name));
   if (role !== undefined) throw new SeatsConfigurationError('seat_fleet_not_allowed', `The ${id} seat on ${seat.runtime} cannot call the ${role} sub-agent.`);
 }
@@ -188,7 +184,7 @@ export function applySeatsSettings(
     }, { expectedRevision: request.expected_revision });
     return { config_revision: result.revision, changed_keys: result.value };
   } catch (error) {
-    if (error instanceof GlobalConfigurationError || error instanceof CodexSeatNetworkError) throw new SeatsConfigurationError(error.code, error.message);
+    if (error instanceof GlobalConfigurationError) throw new SeatsConfigurationError(error.code, error.message);
     throw error;
   }
 }

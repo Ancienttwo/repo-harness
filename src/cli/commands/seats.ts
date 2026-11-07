@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { CLAUDE_BUILTIN_AGENT_TYPES, SeatPaneNameError, buildSeatLaunch, seatPaneName, seatTabName, type SeatLaunchV1 } from '../../core/board/seat-launch';
-import { CodexSeatNetworkError, SeatsConfigMigrationRequiredError, SEAT_IDS, checkCodexSeatNetwork, decodeSeatsConfig, isWorkerSeat, type SeatId } from '../../core/board/seats-settings';
+import { SeatsConfigMigrationRequiredError, SEAT_IDS, decodeSeatsConfig, isWorkerSeat, type SeatId } from '../../core/board/seats-settings';
 import { claudeReserved, effectiveSeatConfig, seatAccount, seatAccountQuotas } from '../../core/board/seat-routing';
 import { classifyQuotaReading } from '../../core/board/quota';
 import { readClaudeQuota, readCodexQuota } from '../../effects/board/quota';
@@ -127,7 +127,6 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
     throw new SeatsCommandError('seat_quota_reserved', 'Claude is reserved for the advisor and the orchestrator. Use the quota routes.');
   }
   const effective = effectiveSeatConfig(id, seats, quota)!;
-  checkCodexSeatNetwork(id, effective);
   const labelSet = seatLabels(id, labels);
   // The pane name needs the registry prefix, so it comes only with the seat labels.
   const name = labels.repositoryId === undefined ? null : seatPaneName({
@@ -167,7 +166,7 @@ export function buildSeatsCommand(): Command {
         });
       } catch (error) {
         const code = error instanceof SeatsCommandError || error instanceof ClaudeAgentTypesError || error instanceof SeatPaneNameError
-          || error instanceof RepoHarnessRegistryStrictError || error instanceof CodexSeatNetworkError || error instanceof SeatsConfigMigrationRequiredError ? error.code : 'seat_launch_failed';
+          || error instanceof RepoHarnessRegistryStrictError || error instanceof SeatsConfigMigrationRequiredError ? error.code : 'seat_launch_failed';
         process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: (error as Error).message,
           ...(error instanceof SeatsConfigMigrationRequiredError ? { next_action: error.next_action } : {}) })}\n`);
         process.exitCode = 1;

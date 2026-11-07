@@ -412,6 +412,7 @@ export function ownerForInstallPath(path: string, env: NodeJS.ProcessEnv = proce
   if (AGENT_FLEET_FILE.test(normalized)) return 'core';
   if (wazaRules.files.includes(name) && /\/(?:\.agents|\.codex|\.claude)\/rules\/[^/]+$/.test(normalized)) return 'core';
   if (normalized.endsWith('/bin/codegraph')) return 'architecture';
+  if (normalized.endsWith('/bin/archctx')) return 'architecture';
   if (normalized.endsWith('/bin/repo-harness')) return 'core';
   return null;
 }
@@ -728,6 +729,7 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
   const { repoHarnessSkills: skills, externalSkills } = catalogMutationPathSkillNames(loadSkillSurfaceCatalog());
   const paths = [
     join(bunRoot, 'bin', 'repo-harness'),
+    join(bunRoot, 'bin', 'archctx'),
     join(bunRoot, 'bin', 'codegraph'),
     join(bunRoot, 'install', 'global', 'package.json'),
     join(bunRoot, 'install', 'global', 'bun.lock'),
@@ -927,15 +929,15 @@ export function commitInstallHostTransaction(transaction: InstallHostTransaction
 }
 
 /**
- * The Pi skill-root paths of a refresh, with their existence before it. The
- * candidate process takes them before its setup and records the Pi skill-root
- * receipts itself; it has no backups, and none of these paths needs one.
+ * Candidate-owned paths, with their existence before setup. The candidate has
+ * no backups, and these paths do not need one for ownership capture.
  */
 export function piSkillRootSnapshots(env: NodeJS.ProcessEnv = process.env): HostSurfaceSnapshots {
   const root = `${hostSkillRoot(env.HOME ?? homedir(), 'pi', env)}/`;
+  const archctx = join(env.BUN_INSTALL ?? join(env.HOME ?? homedir(), '.bun'), 'bin', 'archctx');
   return {
     snapshots: installProfileTransactionPaths(env)
-      .filter(path => path.startsWith(root))
+      .filter(path => path.startsWith(root) || path === archctx)
       .map(path => ({ path, existed: existsSync(path) || lstatExists(path), backup_path: null })),
   };
 }

@@ -172,8 +172,11 @@ describe("repo-harness seats argv", () => {
         expect([value.name, value.tab]).toEqual([`rh-${role}-1925`, "review"]);
         expect(value.brief).toContain("Do not edit files, commit, push, or write to GitHub. Report the verdict first");
         expect(value.brief).not.toContain("You are a worker seat");
-        if (seat === "gatekeeper") expect(agent(value)).toContain("read-only");
-        else expect(tools(agent(value))).toEqual(["Read", "Glob", "Grep", "Bash", "Monitor", "TaskStop"]);
+        if (seat === "gatekeeper") {
+          expect(agent(value)).toContain("read-only");
+          expect(agent(value)).not.toContain('web_search="disabled"');
+        } else expect(tools(agent(value))).toEqual(["WebFetch", "WebSearch", "Read", "Glob", "Grep", "Bash", "Monitor", "TaskStop"]);
+        expect(value.brief).not.toContain("Do not use the network.");
       }
     }));
   });
@@ -351,18 +354,16 @@ describe("repo-harness seats argv", () => {
     });
   });
 
-  test("a writable Codex seat has no sandbox network: edit with net is refused, and other seats keep net", () => {
+  test("a writable Codex seat enables sandbox network with net, and other seats keep net", () => {
     withHome(undefined, (home) => {
-      expect(launch(home, "worker").argv).toEqual(expect.arrayContaining(["workspace-write", "sandbox_workspace_write.network_access=false", 'web_search="disabled"']));
+      const worker = launch(home, "worker");
+      expect(worker.argv).toEqual(expect.arrayContaining(["workspace-write", "sandbox_workspace_write.network_access=true"]));
+      expect(worker.argv).not.toContain('web_search="disabled"');
+      expect(worker.brief).not.toContain("Do not use the network.");
     });
     const editNet = ["edit", "net", "read", "shell"];
     withHome({ ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, tools: editNet } }, (home) => {
-      const result = argv(home, "worker", "--json");
-      expect([result.status, result.stdout]).toEqual([1, ""]);
-      const refusal = JSON.parse(result.stderr);
-      expect(refusal.error).toBe("seat_codex_edit_net");
-      expect(refusal.message).toContain("#1770");
-      expect(argv(home, "advisor", "--json").status).toBe(0);
+      expect(launch(home, "worker").argv).toEqual(expect.arrayContaining(["workspace-write", "sandbox_workspace_write.network_access=true"]));
     });
     const seats = {
       ...DEFAULT_SEATS_CONFIG,
