@@ -26,6 +26,7 @@ export interface OperatorServeRawOptions {
   readonly maxConcurrency?: string;
   readonly timeoutMs?: string;
   readonly runtimeStatusConfig?: string;
+  readonly exitOnStdinClose?: boolean;
 }
 
 export interface OperatorServeOptions extends OperatorServerOptions {
@@ -33,6 +34,8 @@ export interface OperatorServeOptions extends OperatorServerOptions {
   readonly port: number;
   readonly max_concurrency: number;
   readonly timeout_ms: number;
+  /** Opt-in: shut down when stdin reaches EOF, so a killed parent cannot leave the server listening. */
+  readonly exit_on_stdin_close: boolean;
 }
 
 export class OperatorArgumentError extends Error {
@@ -83,6 +86,7 @@ export function parseOperatorServeOptions(raw: OperatorServeRawOptions): Operato
     port,
     max_concurrency: maxConcurrency,
     timeout_ms: timeoutMs,
+    exit_on_stdin_close: raw.exitOnStdinClose === true,
   };
 }
 
@@ -149,7 +153,9 @@ export function createOperatorLanguageSettings(
 }
 
 /**
- * Start the local server and keep the CLI alive until an interrupt signal.
+ * Start the local server and keep the CLI alive until an interrupt signal, or
+ * until stdin reaches EOF when `exit_on_stdin_close` is set: a parent that is
+ * killed leaves the child one last signal to read, its own closed pipe.
  * `serve` owns the background Dev Activity, setup, notify, Bot access, CLI
  * inventory, docs and tests collectors; the server stops them on close.
  */
@@ -170,7 +176,9 @@ export async function runOperatorServe(options: OperatorServeOptions): Promise<v
     cli_inventory_collector: { usage_sources: registeredHookTelemetry },
   });
   process.stdout.write(`${server.url}\n`);
+  const stdin = process.stdin;
   let shutdown: (() => void) | undefined;
+  const onStdinClose = () => shutdown?.();
   try {
     await new Promise<void>((resolve, reject) => {
       let shuttingDown = false;
@@ -181,11 +189,22 @@ export async function runOperatorServe(options: OperatorServeOptions): Promise<v
       };
       process.once('SIGINT', shutdown);
       process.once('SIGTERM', shutdown);
+      if (options.exit_on_stdin_close) {
+        // `end` is EOF; `close` is also an ended or destroyed pipe. Without the flag stdin stays unread.
+        stdin.once('end', onStdinClose);
+        stdin.once('close', onStdinClose);
+        stdin.resume();
+      }
     });
   } finally {
     if (shutdown !== undefined) {
       process.removeListener('SIGINT', shutdown);
       process.removeListener('SIGTERM', shutdown);
+    }
+    if (options.exit_on_stdin_close) {
+      stdin.removeListener('end', onStdinClose);
+      stdin.removeListener('close', onStdinClose);
+      stdin.pause();
     }
   }
 }
