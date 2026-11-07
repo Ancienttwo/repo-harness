@@ -87,6 +87,16 @@ export class CodexSeatNetworkError extends Error {
   readonly code = 'seat_codex_edit_net';
 }
 
+export const SEATS_CONFIG_UPDATE_ACTION = 'repo-harness update';
+
+export class SeatsConfigMigrationRequiredError extends Error {
+  readonly code = 'seats_config_migration_required';
+  readonly next_action = SEATS_CONFIG_UPDATE_ACTION;
+  constructor() {
+    super(`The stored seats section needs a one-shot migration. Run ${SEATS_CONFIG_UPDATE_ACTION}.`);
+  }
+}
+
 /**
  * Owner decision M87 (#1770): a writable Codex sandbox with network reaches loopback TCP, so the operator console
  * write routes, and the herdr-core socket, where `hc exec` runs a command outside the sandbox. The stored section stays
@@ -158,11 +168,11 @@ function invalid(code: string): never {
   throw new Error(code);
 }
 
-function object(value: unknown, keys: readonly string[], code: string): Record<string, unknown> {
+function object(value: unknown, keys: readonly string[], code: string, required = keys): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) invalid(code);
   const record = value as Record<string, unknown>;
   for (const key of Object.keys(record)) if (!keys.includes(key)) invalid(code);
-  for (const key of keys) if (!(key in record)) invalid(code);
+  for (const key of required) if (!(key in record)) invalid(code);
   return record;
 }
 
@@ -223,10 +233,7 @@ function decodeRouting(value: unknown, code: string): SeatRoutingV1 {
     hyper: { claude: decodeModel(hyper.claude, code), advisor: decodeModel(hyper.advisor, code), codex: decodeModel(hyper.codex, code) } };
 }
 
-function decodeSeats(value: unknown, code: string, stored = false): SeatsConfigV1 {
-  // Only stored sections may omit the keys added in #1925. POST and GET carry the full contract.
-  const record = object(stored && typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? { ...DEFAULT_SEATS_CONFIG, orchestrator: undefined, advisor: undefined, worker: undefined, ...value } : value, SECTION_KEYS, code);
+function decodeSeatsRecord(record: Record<string, unknown>, code: string): SeatsConfigV1 {
   const seats = Object.fromEntries(SEAT_IDS.map(id => [id, id === 'worker-light' && record[id] === null ? null : decodeSeat(id, record[id], code)])) as Omit<SeatsConfigV1, 'routing'>;
   const routing = decodeRouting(record.routing, code);
   if (ROUTING_CLASSES.some(task => routing[task].some(id => seats[id] === null))) invalid(code);
@@ -234,9 +241,17 @@ function decodeSeats(value: unknown, code: string, stored = false): SeatsConfigV
   return { ...seats, routing };
 }
 
+function decodeSeats(value: unknown, code: string): SeatsConfigV1 {
+  return decodeSeatsRecord(object(value, SECTION_KEYS, code), code);
+}
+
 /** The shape of the stored `seats` section. An absent section (`undefined`) reads as the defaults. */
 export function decodeSeatsConfig(value: unknown): SeatsConfigV1 {
-  return value === undefined ? DEFAULT_SEATS_CONFIG : decodeSeats(value, 'seats_config_invalid', true);
+  if (value === undefined) return DEFAULT_SEATS_CONFIG;
+  const code = 'seats_config_invalid';
+  const record = object(value, SECTION_KEYS, code, ['orchestrator', 'advisor', 'worker']);
+  if (SECTION_KEYS.some(key => !(key in record))) throw new SeatsConfigMigrationRequiredError();
+  return decodeSeatsRecord(record, code);
 }
 
 function decodeRoutingRanges(value: unknown, code: string): SeatsRangesV1['routing'] {

@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { CLAUDE_BUILTIN_AGENT_TYPES, SeatPaneNameError, buildSeatLaunch, seatPaneName, seatTabName, type SeatLaunchV1 } from '../../core/board/seat-launch';
-import { CodexSeatNetworkError, SEAT_IDS, checkCodexSeatNetwork, decodeSeatsConfig, isWorkerSeat, type SeatId } from '../../core/board/seats-settings';
+import { CodexSeatNetworkError, SeatsConfigMigrationRequiredError, SEAT_IDS, checkCodexSeatNetwork, decodeSeatsConfig, isWorkerSeat, type SeatId } from '../../core/board/seats-settings';
 import { effectiveSeatConfig } from '../../core/board/seat-routing';
 import { classifyQuotaReading } from '../../core/board/quota';
 import { readClaudeQuota } from '../../effects/board/quota';
@@ -105,7 +105,10 @@ export function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJ
   let config: Record<string, unknown>;
   try { config = readGlobalConfiguration(env).config; } catch (error) { throw new SeatsCommandError('config_invalid', (error as Error).message); }
   let seats;
-  try { seats = decodeSeatsConfig(config.seats); } catch { throw new SeatsCommandError('config_invalid', 'The seats section of the repo-harness configuration is not valid.'); }
+  try { seats = decodeSeatsConfig(config.seats); } catch (error) {
+    if (error instanceof SeatsConfigMigrationRequiredError) throw error;
+    throw new SeatsCommandError('config_invalid', 'The seats section of the repo-harness configuration is not valid.');
+  }
   const claudeState = id === 'advisor' && seats.routing.mode === 'hyper'
     ? classifyQuotaReading(readClaudeQuota(env), Date.now()).state : null;
   const effective = effectiveSeatConfig(id, seats, claudeState);
@@ -150,8 +153,9 @@ export function buildSeatsCommand(): Command {
         });
       } catch (error) {
         const code = error instanceof SeatsCommandError || error instanceof ClaudeAgentTypesError || error instanceof SeatPaneNameError
-          || error instanceof RepoHarnessRegistryStrictError || error instanceof CodexSeatNetworkError ? error.code : 'seat_launch_failed';
-        process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: (error as Error).message })}\n`);
+          || error instanceof RepoHarnessRegistryStrictError || error instanceof CodexSeatNetworkError || error instanceof SeatsConfigMigrationRequiredError ? error.code : 'seat_launch_failed';
+        process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: (error as Error).message,
+          ...(error instanceof SeatsConfigMigrationRequiredError ? { next_action: error.next_action } : {}) })}\n`);
         process.exitCode = 1;
         return;
       }

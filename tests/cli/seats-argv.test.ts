@@ -87,6 +87,15 @@ const denied = (args: string[]) => values(args, "--disallowedTools");
 const agent = (launch: { argv: string[] }) => launch.argv.slice(5);
 
 describe("repo-harness seats argv", () => {
+  test("an old seats section fails closed with the update action", () => {
+    const seats = { orchestrator: DEFAULT_SEATS_CONFIG.orchestrator, advisor: DEFAULT_SEATS_CONFIG.advisor, worker: DEFAULT_SEATS_CONFIG.worker };
+    withHome(seats, home => {
+      const result = argv(home, "worker", "--json");
+      expect([result.status, result.stdout]).toEqual([1, ""]);
+      expect(JSON.parse(result.stderr)).toMatchObject({ error: "seats_config_migration_required", next_action: "repo-harness update" });
+    });
+  });
+
   test("an unconfigured worker-light fails with seat_not_configured", () => {
     withHome(undefined, home => {
       const result = argv(home, "worker-light", "--json");

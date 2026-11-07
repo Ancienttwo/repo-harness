@@ -13,7 +13,8 @@ import {
   type AgentRuntimesCacheV1,
 } from '../../src/core/board/agents-settings';
 import { DEFAULT_SEATS_CONFIG, ROUTING_CLASSES, SEAT_IDS, decodeSeatsConfig, decodeSeatsSettings, type SeatRoutingV1 } from '../../src/core/board/seats-settings';
-import { readSeatsSettings, seatsSettingsWriteRoute } from '../../src/effects/operator/seats-settings-route';
+import { readSeatsSettings, seatsSettingsWriteRoute, SEATS_CONFIGURATION_FAILURES } from '../../src/effects/operator/seats-settings-route';
+import { migrateSeatsConfiguration } from '../../src/cli/commands/global-runtime';
 import { buildQuotaReport, OPERATOR_QUOTA_PATH, unknownQuotaReading } from '../../src/core/board/quota';
 import { probeAgentRuntimes, registryRuntimes } from '../../src/effects/setup/agent-runtime-probe';
 import { startOperatorServer, type OperatorServerHandle } from '../../src/effects/operator/server';
@@ -510,13 +511,11 @@ describe('seat settings contract without transport', () => {
     }
   });
 
-  test('stored sections fill only absent new keys and GET exposes all seats and routing ranges', () => {
+  test('old stored sections require update and GET exposes all seats and routing ranges', () => {
     const original = { orchestrator: DEFAULT_SEATS_CONFIG.orchestrator, advisor: DEFAULT_SEATS_CONFIG.advisor,
       worker: { ...DEFAULT_SEATS_CONFIG.worker, model: 'gpt-6.1-sol' } };
-    const decoded = decodeSeatsConfig(original);
-    expect(decoded.worker.model).toBe('gpt-6.1-sol');
-    expect(decoded['worker-deep']).toEqual(DEFAULT_SEATS_CONFIG['worker-deep']);
-    expect(decoded.routing).toEqual(DEFAULT_SEATS_CONFIG.routing);
+    expect(() => decodeSeatsConfig(original)).toThrow(expect.objectContaining({ code: 'seats_config_migration_required', next_action: 'repo-harness update' }));
+    expect(SEATS_CONFIGURATION_FAILURES.seats_config_migration_required.next_action).toBe('repo-harness update');
     expect(() => decodeSeatsConfig({ ...original, extra: {} })).toThrow('seats_config_invalid');
     expect(() => decodeSeatsConfig({ advisor: original.advisor, worker: original.worker })).toThrow('seats_config_invalid');
     const home = mkdtempSync(join(tmpdir(), 'seats-contract-'));
@@ -534,19 +533,67 @@ describe('seat settings contract without transport', () => {
     mkdirSync(join(home, '.repo-harness'));
     const path = join(home, '.repo-harness', 'config.json');
     const agents = { ...PANE_AGENTS, enabled: ['claude', 'codex'] };
-    writeFileSync(path, JSON.stringify({ agents, security: { mode: 'strict' }, seats: {
-      orchestrator: DEFAULT_SEATS_CONFIG.orchestrator, advisor: DEFAULT_SEATS_CONFIG.advisor, worker: DEFAULT_SEATS_CONFIG.worker,
-    } }));
-    const env = { HOME: home }, before = readSeatsSettings(env);
+    const originalSeats = { orchestrator: DEFAULT_SEATS_CONFIG.orchestrator, advisor: DEFAULT_SEATS_CONFIG.advisor,
+      worker: { ...DEFAULT_SEATS_CONFIG.worker, model: 'gpt-6.1-sol' } };
+    writeFileSync(path, JSON.stringify({ agents, security: { mode: 'strict' }, seats: originalSeats }));
+    const env = { HOME: home };
+    expect(() => readSeatsSettings(env)).toThrow(expect.objectContaining({ code: 'seats_config_migration_required' }));
+    expect(migrateSeatsConfiguration(env)).toBe(true);
+    const migratedBytes = readFileSync(path, 'utf8');
+    expect(migrateSeatsConfiguration(env)).toBe(false);
+    expect(readFileSync(path, 'utf8')).toBe(migratedBytes);
+    const before = readSeatsSettings(env);
+    const decoded = decodeSeatsConfig(JSON.parse(migratedBytes).seats);
+    for (const id of ['orchestrator', 'advisor', 'worker'] as const) expect(decoded[id]).toEqual(originalSeats[id]);
+    expect(decoded.worker.model).toBe('gpt-6.1-sol');
+    expect(decoded['worker-deep']).toEqual(DEFAULT_SEATS_CONFIG['worker-deep']);
+    expect(decoded.routing).toEqual(DEFAULT_SEATS_CONFIG.routing);
     expect(before.config['worker-light']).toBeNull();
     const routing: SeatRoutingV1 = { ...before.config.routing, mode: 'hyper', simple_fast: ['worker-deep', 'worker'], frontend: ['worker-important-fast'] };
-    const section = { ...before.defaults, routing };
+    const { revision: _revision, ...storedSection } = before.config;
+    const section = { ...storedSection, routing };
     const response = await seatsSettingsWriteRoute(env).decode({ expected_revision: before.config.revision, seats: section }, []).execute();
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ config_revision: sha256(path), changed_keys: ['seats.routing.simple_fast', 'seats.routing.frontend', 'seats.routing.mode'] });
     const after = readSeatsSettings(env);
     expect(after.config).toEqual({ revision: sha256(path), ...section });
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ agents, security: { mode: 'strict' }, seats: section });
+  });
+
+  test('the update migration refuses invalid sections without writing', () => {
+    const home = mkdtempSync(join(tmpdir(), 'seats-migration-'));
+    cleanups.push(() => rmSync(home, { recursive: true, force: true }));
+    mkdirSync(join(home, '.repo-harness'));
+    const path = join(home, '.repo-harness', 'config.json');
+    for (const seats of [
+      { orchestrator: DEFAULT_SEATS_CONFIG.orchestrator, advisor: {}, worker: DEFAULT_SEATS_CONFIG.worker },
+      { orchestrator: DEFAULT_SEATS_CONFIG.orchestrator, advisor: DEFAULT_SEATS_CONFIG.advisor, worker: DEFAULT_SEATS_CONFIG.worker, extra: {} },
+    ]) {
+      const original = JSON.stringify({ seats });
+      writeFileSync(path, original);
+      expect(() => migrateSeatsConfiguration({ HOME: home })).toThrow('seats_config_invalid');
+      expect(readFileSync(path, 'utf8')).toBe(original);
+    }
+  });
+
+  test('routing override models and efforts must fit their target runtimes before save', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'seats-overrides-'));
+    cleanups.push(() => rmSync(home, { recursive: true, force: true }));
+    mkdirSync(join(home, '.repo-harness'));
+    const path = join(home, '.repo-harness', 'config.json');
+    const original = JSON.stringify({ agents: PANE_AGENTS });
+    writeFileSync(path, original);
+    const env = { HOME: home }, { revision, ...seats } = readSeatsSettings(env).config;
+    for (const target of ['claude', 'advisor', 'codex', 'explorer'] as const) {
+      for (const [field, value, code] of [['model', target === 'codex' ? 'opus' : 'gpt-6-astra', 'seat_model_invalid'], ['effort', 'extreme', 'seat_effort_invalid']] as const) {
+        const routing = target === 'explorer'
+          ? { ...seats.routing, low_quota_explorer: { ...seats.routing.low_quota_explorer, [field]: value } }
+          : { ...seats.routing, hyper: { ...seats.routing.hyper, [target]: { ...seats.routing.hyper[target], [field]: value } } };
+        await expect(seatsSettingsWriteRoute(env).decode({ expected_revision: revision, seats: { ...seats, routing } }, []).execute())
+          .rejects.toMatchObject({ status: 422, code });
+        expect(readFileSync(path, 'utf8')).toBe(original);
+      }
+    }
   });
 
   test('routing refuses unknown, duplicate, empty, non-worker and non-Claude frontend seats', () => {

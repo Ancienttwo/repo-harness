@@ -9,9 +9,12 @@ import {
   ROUTING_MODES,
   WORKER_SEAT_IDS,
   CodexSeatNetworkError,
+  SeatsConfigMigrationRequiredError,
   checkCodexSeatNetwork,
   decodeSeatsConfig,
   type SeatConfigV1,
+  type SeatModelV1,
+  type SeatRoutingV1,
   type SeatId,
   type SeatRuntime,
   type SeatRuntimeRangeV1,
@@ -32,6 +35,7 @@ import { GlobalConfigurationError, mutateGlobalConfiguration, readGlobalConfigur
 export type SeatsConfigurationErrorCode =
   | 'busy'
   | 'config_invalid'
+  | SeatsConfigMigrationRequiredError['code']
   | 'config_is_link'
   | 'revision_conflict'
   | 'seat_runtime_not_enabled'
@@ -106,7 +110,10 @@ function enabledRuntimesOf(config: Record<string, unknown>): readonly string[] {
 
 /** Reads enforce the section contract; only saves enforce the runtime ranges that can change later. */
 function sectionOf(config: Record<string, unknown>): SeatsConfigV1 {
-  try { return decodeSeatsConfig(config.seats); } catch { throw configInvalid('seats'); }
+  try { return decodeSeatsConfig(config.seats); } catch (error) {
+    if (error instanceof SeatsConfigMigrationRequiredError) throw new SeatsConfigurationError(error.code, error.message);
+    throw configInvalid('seats');
+  }
 }
 
 export function readSeatsConfiguration(env: NodeJS.ProcessEnv = process.env): SeatsConfiguration {
@@ -119,18 +126,30 @@ export function readSeatsConfiguration(env: NodeJS.ProcessEnv = process.env): Se
   return { revision: document.revision, seats: sectionOf(document.config), enabled_runtimes: enabledRuntimesOf(document.config) };
 }
 
+function checkModelAndEffort(subject: string, model: SeatModelV1, runtimeId: SeatRuntime): void {
+  const runtime = RUNTIME_RANGES[runtimeId];
+  if (model.model !== null && !runtime.models.includes(model.model)) {
+    throw new SeatsConfigurationError('seat_model_invalid', `The ${subject} cannot use model ${model.model} on ${runtimeId}.`);
+  }
+  if (model.effort !== null && (!runtime.effort || !EFFORT_LEVELS.includes(model.effort))) {
+    throw new SeatsConfigurationError('seat_effort_invalid', `The ${subject} cannot use effort ${model.effort} on ${runtimeId}.`);
+  }
+}
+
+export function checkSeatRoutingModels(routing: SeatRoutingV1): void {
+  checkModelAndEffort('routing.hyper.claude', routing.hyper.claude, 'claude');
+  checkModelAndEffort('routing.hyper.advisor', routing.hyper.advisor, 'claude');
+  checkModelAndEffort('routing.hyper.codex', routing.hyper.codex, 'codex');
+  checkModelAndEffort('routing.low_quota_explorer', routing.low_quota_explorer, 'claude');
+}
+
 function checkSeat(id: SeatId, seat: SeatConfigV1, enabledRuntimes: readonly string[]): void {
   const runtime = RUNTIME_RANGES[seat.runtime];
   const range = SEAT_RANGES[id];
   if (!enabledRuntimes.includes(seat.runtime)) {
     throw new SeatsConfigurationError('seat_runtime_not_enabled', `The ${id} seat runtime ${seat.runtime} is not enabled in Agent settings.`);
   }
-  if (seat.model !== null && !runtime.models.includes(seat.model)) {
-    throw new SeatsConfigurationError('seat_model_invalid', `The ${id} seat cannot use model ${seat.model} on ${seat.runtime}.`);
-  }
-  if (seat.effort !== null && (!runtime.effort || !EFFORT_LEVELS.includes(seat.effort))) {
-    throw new SeatsConfigurationError('seat_effort_invalid', `The ${id} seat cannot use effort ${seat.effort} on ${seat.runtime}.`);
-  }
+  checkModelAndEffort(`${id} seat`, seat, seat.runtime);
   const tool = seat.tools.find(item => !range.tools.includes(item));
   if (tool !== undefined) throw new SeatsConfigurationError('seat_tool_not_allowed', `The ${id} seat cannot have the ${tool} tool group.`);
   checkCodexSeatNetwork(id, seat);
@@ -164,6 +183,7 @@ export function applySeatsSettings(
         const seat = request.seats[id];
         if (seat !== null) checkSeat(id, seat, enabled);
       }
+      checkSeatRoutingModels(request.seats.routing);
       const changed = changedKeys(sectionOf(config), request.seats);
       return { config: { ...config, seats: request.seats }, value: changed };
     }, { expectedRevision: request.expected_revision });
