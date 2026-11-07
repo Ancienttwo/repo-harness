@@ -229,6 +229,16 @@ test('packet composition failure starts no pane and saves no packet or request',
   expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
 }, 60_000);
 
+test('a saved session with an unknown harness is refused without a Receipt', async () => {
+  const f = packetRoundFixture();
+  await expect(runReviewRound(f.options, f.effects)).rejects.toThrow();
+  const path = join(f.dir, 'session.json');
+  const session = readSessionArtifact<Record<string, unknown>>(path);
+  writeFileSync(path, JSON.stringify({ ...session, actual_harness: 'unknown' }));
+  await expect(runReviewRound(f.options, f.effects)).rejects.toThrow('review_harness_unsupported');
+  expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
+}, 60_000);
+
 test('packet survives launch failure; same input retries and changed subject fails before launch', async () => {
   const f = packetRoundFixture();
   // Linux keeps the real isolation refusal. Darwin reaches the injected start
