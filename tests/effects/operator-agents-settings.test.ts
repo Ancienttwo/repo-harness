@@ -525,7 +525,7 @@ describe('seat settings contract without transport', () => {
   test('review seats reject write tools and every fleet role at the decoder boundary', () => {
     const route = seatsSettingsWriteRoute();
     for (const id of ['gatekeeper', 'reviewer'] as const) {
-      for (const patch of [...['edit', 'gh', 'mcp', 'net', 'tasks'].map(tool => ({ tools: ['read', tool].sort() })), { fleet: ['explorer'] }]) {
+      for (const patch of [...['edit', 'gh', 'mcp', 'tasks'].map(tool => ({ tools: ['read', tool].sort() })), { fleet: ['explorer'] }]) {
         const seats = { ...DEFAULT_SEATS_CONFIG, [id]: { ...DEFAULT_SEATS_CONFIG[id], ...patch } };
         expect(() => decodeSeatsConfig(seats), `${id} ${JSON.stringify(patch)}`).toThrow('seats_config_invalid');
         expect(() => route.decode({ expected_revision: 'absent', seats }, [])).toThrow('seats_settings_request_invalid');
@@ -554,7 +554,8 @@ describe('seat settings contract without transport', () => {
     expect(Object.keys(settings.defaults)).toEqual([...SEAT_IDS, 'routing']);
     expect(settings.ranges.routing).toEqual({ classes: ROUTING_CLASSES, worker_seats: ['worker', 'worker-deep', 'worker-important', 'worker-important-fast', 'worker-light'],
       frontend_seats: ['worker-important', 'worker-important-fast'], modes: ['standard', 'hyper'] });
-    for (const id of ['gatekeeper', 'reviewer'] as const) expect(settings.ranges.seats[id]).toEqual({ tools: ['read', 'shell'], fleet: [] });
+    for (const id of ['gatekeeper', 'reviewer'] as const) expect(settings.ranges.seats[id]).toEqual({ tools: ['net', 'read', 'shell'], fleet: [] });
+    for (const id of SEAT_IDS) expect(settings.defaults[id]?.tools).toEqual(id === 'worker-light' ? undefined : expect.arrayContaining(['net']));
   });
 
   test('the write route stores the full section and round-trips routing with Pi disabled', async () => {
@@ -700,25 +701,14 @@ describe('seat settings routes', () => {
     expect(readFileSync(harness.configPath, 'utf8')).toBe(original);
   });
 
-  test('a stored Codex seat with edit and net reads back, and each save is refused until net is off', async () => {
+  test('a Codex seat with edit and net saves and reads back', async () => {
     const editNet = ['edit', 'gh', 'mcp', 'net', 'read', 'shell', 'tasks'];
     const harness = await startHarness({ agents: PANE_AGENTS, seats: { ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, tools: editNet } } });
     const { revision, ...section } = (await seats(harness)).config;
     expect(section.worker.tools).toEqual(editNet as typeof section.worker.tools);
-    const original = readFileSync(harness.configPath, 'utf8');
-    const refused = await post(harness, { expected_revision: revision, seats: { ...section, advisor: { ...section.advisor, effort: 'high' } } }, 'seats');
-    const { error } = await refused.json();
-    expect([refused.status, error.code]).toEqual([422, 'seat_codex_edit_net']);
-    expect(error.message).toContain('#1770');
-    expect(readFileSync(harness.configPath, 'utf8')).toBe(original);
-    const fixed = await post(harness, { expected_revision: revision, seats: { ...section, worker: DEFAULT_SEATS_CONFIG.worker } }, 'seats');
-    expect(fixed.status).toBe(200);
-    const { config_revision, changed_keys } = await fixed.json();
-    expect(changed_keys).toEqual(['seats.worker.tools']);
-    // Only a writable Codex seat refuses net: a read-only Codex seat and a Claude seat with edit save it.
-    const advisor = { runtime: 'codex', model: null, effort: null, tools: ['net', 'read'], fleet: [] };
-    const others = await post(harness, { expected_revision: config_revision, seats: { ...section, advisor, worker: { ...section.worker, runtime: 'claude', model: 'opus' } } }, 'seats');
-    expect(others.status).toBe(200);
+    const saved = await post(harness, { expected_revision: revision, seats: { ...section, advisor: { ...section.advisor, effort: 'high' } } }, 'seats');
+    expect(saved.status).toBe(200);
+    expect((await seats(harness)).config.worker.tools).toEqual(editNet as typeof section.worker.tools);
   });
 
   test('the orchestrator fleet takes the three read-only roles and refuses every writer', async () => {

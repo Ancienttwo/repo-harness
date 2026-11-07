@@ -186,7 +186,7 @@ function codexLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'pr
   const off = OFF_GROUPS(config);
   const writable = config.tools.includes('edit');
   const network = config.tools.includes('net');
-  // The sandbox blocks shell writes (`edit`) and shell network access, and `web_search="disabled"` removes web search.
+  // The sandbox blocks shell writes without `edit` and shell network access without `net`; `web_search="disabled"` removes web search.
   // No `-c` override disables every inherited MCP server (probe, #1473): `mcp_servers={}` merges into the table, and
   // `mcp_servers.<name>.enabled=false` needs every server name. So an MCP path to `edit` and `net` always stays open.
   const direct = (group: SeatGroup): SeatLimitLevel => (group === 'edit' || group === 'net' ? 'enforced' : 'instructions_only');
@@ -201,8 +201,7 @@ function codexLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'pr
       ...(config.model === null ? [] : ['-m', config.model]),
       ...(config.effort === null ? [] : ['-c', `model_reasoning_effort=${JSON.stringify(config.effort)}`]),
       '-s', writable ? 'workspace-write' : 'read-only',
-      // `checkCodexSeatNetwork` refuses `edit` with `net` at the launch. The form reads the limits of any draft here, so this does not throw.
-      ...(writable ? ['-c', 'sandbox_workspace_write.network_access=false'] : []),
+      ...(writable ? ['-c', `sandbox_workspace_write.network_access=${network}`] : []),
       ...(network ? [] : ['-c', 'web_search="disabled"']),
       // A JSON string is a TOML basic string, so `-c` reads it back as the same text.
       '-c', `developer_instructions=${JSON.stringify(text)}`,
