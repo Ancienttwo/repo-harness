@@ -553,9 +553,9 @@ describe('seat settings contract without transport', () => {
     const settings = readSeatsSettings({ HOME: home });
     expect(Object.keys(settings.defaults)).toEqual([...SEAT_IDS, 'routing']);
     expect(settings.ranges.routing).toEqual({ classes: ROUTING_CLASSES, worker_seats: ['worker', 'worker-deep', 'worker-important', 'worker-important-fast', 'worker-light'],
-      frontend_seats: ['worker-important', 'worker-important-fast'], modes: ['standard', 'hyper'] });
+      frontend_seats: ['worker-important', 'worker-important-fast'] });
     for (const id of ['gatekeeper', 'reviewer'] as const) expect(settings.ranges.seats[id]).toEqual({ tools: ['net', 'read', 'shell'], fleet: [] });
-    for (const id of SEAT_IDS) expect(settings.defaults[id]?.tools).toEqual(id === 'worker-light' ? undefined : expect.arrayContaining(['net']));
+    for (const id of SEAT_IDS) expect(settings.defaults[id]?.tools).toEqual(expect.arrayContaining(['net']));
   });
 
   test('the write route stores the full section and round-trips routing with Pi disabled', async () => {
@@ -580,12 +580,12 @@ describe('seat settings contract without transport', () => {
     expect(decoded['worker-deep']).toEqual(DEFAULT_SEATS_CONFIG['worker-deep']);
     expect(decoded.routing).toEqual(DEFAULT_SEATS_CONFIG.routing);
     expect(before.config['worker-light']).toBeNull();
-    const routing: SeatRoutingV1 = { ...before.config.routing, mode: 'hyper', simple_fast: ['worker-deep', 'worker'], frontend: ['worker-important-fast'] };
+    const routing: SeatRoutingV1 = { ...before.config.routing, claude_saving_below_remaining: 30, codex_hyper_at_or_above_remaining: 60, simple_fast: ['worker-deep', 'worker'], frontend: ['worker-important-fast'] };
     const { revision: _revision, ...storedSection } = before.config;
     const section = { ...storedSection, routing };
     const response = await seatsSettingsWriteRoute(env).decode({ expected_revision: before.config.revision, seats: section }, []).execute();
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ config_revision: sha256(path), changed_keys: ['seats.routing.simple_fast', 'seats.routing.frontend', 'seats.routing.mode'] });
+    expect(response.body).toEqual({ config_revision: sha256(path), changed_keys: ['seats.routing.simple_fast', 'seats.routing.frontend', 'seats.routing.claude_saving_below_remaining', 'seats.routing.codex_hyper_at_or_above_remaining'] });
     const after = readSeatsSettings(env);
     expect(after.config).toEqual({ revision: sha256(path), ...section });
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ agents, security: { mode: 'strict' }, seats: section });
@@ -615,16 +615,27 @@ describe('seat settings contract without transport', () => {
     const original = JSON.stringify({ agents: PANE_AGENTS });
     writeFileSync(path, original);
     const env = { HOME: home }, { revision, ...seats } = readSeatsSettings(env).config;
-    for (const target of ['claude', 'advisor', 'codex', 'explorer'] as const) {
-      for (const [field, value, code] of [['model', target === 'codex' ? 'opus' : 'gpt-6-astra', 'seat_model_invalid'], ['effort', 'extreme', 'seat_effort_invalid']] as const) {
-        const routing = target === 'explorer'
-          ? { ...seats.routing, low_quota_explorer: { ...seats.routing.low_quota_explorer, [field]: value } }
-          : { ...seats.routing, hyper: { ...seats.routing.hyper, [target]: { ...seats.routing.hyper[target], [field]: value } } };
-        await expect(seatsSettingsWriteRoute(env).decode({ expected_revision: revision, seats: { ...seats, routing } }, []).execute())
-          .rejects.toMatchObject({ status: 422, code });
-        expect(readFileSync(path, 'utf8')).toBe(original);
-      }
+    for (const [field, value, code] of [['model', null, 'seat_model_invalid'], ['model', 'gpt-6-astra', 'seat_model_invalid'], ['effort', 'extreme', 'seat_effort_invalid']] as const) {
+      const routing = { ...seats.routing, low_quota_explorer: { ...seats.routing.low_quota_explorer, [field]: value } };
+      if (value === null) expect(() => decodeSeatsConfig({ ...seats, routing })).toThrow('seats_config_invalid');
+      await expect(seatsSettingsWriteRoute(env).decode({ expected_revision: revision, seats: { ...seats, routing } }, []).execute())
+        .rejects.toMatchObject({ status: 422, code });
+      expect(readFileSync(path, 'utf8')).toBe(original);
     }
+  });
+
+  test('routing accepts percent thresholds and rejects old stored fields on save', () => {
+    const route = seatsSettingsWriteRoute();
+    for (const field of ['claude_saving_below_remaining', 'codex_hyper_at_or_above_remaining']) {
+      for (const value of [0, 100, 25.5]) expect(decodeSeatsConfig({ ...DEFAULT_SEATS_CONFIG,
+        routing: { ...DEFAULT_SEATS_CONFIG.routing, [field]: value } }).routing[field as keyof SeatRoutingV1]).toBe(value);
+      for (const value of [-1, 101, null, '20']) expect(() => route.decode({ expected_revision: 'absent', seats: {
+        ...DEFAULT_SEATS_CONFIG, routing: { ...DEFAULT_SEATS_CONFIG.routing, [field]: value },
+      } }, [])).toThrow('seats_settings_request_invalid');
+    }
+    for (const field of ['mode', 'hyper']) expect(() => route.decode({ expected_revision: 'absent', seats: {
+      ...DEFAULT_SEATS_CONFIG, routing: { ...DEFAULT_SEATS_CONFIG.routing, [field]: field === 'mode' ? 'hyper' : {} },
+    } }, [])).toThrow('seats_settings_request_invalid');
   });
 
   test('routing refuses unknown, duplicate, empty, non-worker and non-Claude frontend seats', () => {
@@ -636,13 +647,16 @@ describe('seat settings contract without transport', () => {
     writeFileSync(path, original);
     const env = { HOME: home }, settings = readSeatsSettings(env), route = seatsSettingsWriteRoute(env);
     for (const [task, candidates] of [
-      ['simple_fast', ['unknown']], ['simple_fast', ['worker', 'worker']], ['simple_fast', []], ['simple_fast', ['advisor']], ['simple_fast', ['worker-light']],
+      ['simple_fast', ['unknown']], ['simple_fast', ['worker', 'worker']], ['simple_fast', []], ['simple_fast', ['advisor']],
       ['frontend', ['worker']], ['frontend', ['worker-light']],
     ]) {
       expect(() => route.decode({ expected_revision: settings.config.revision, seats: {
         ...settings.defaults, routing: { ...settings.defaults.routing, [task as string]: candidates },
       } }, [])).toThrow('seats_settings_request_invalid');
     }
+    expect(() => route.decode({ expected_revision: settings.config.revision, seats: {
+      ...settings.defaults, 'worker-light': null, routing: { ...settings.defaults.routing, simple_fast: ['worker-light'] },
+    } }, [])).toThrow('seats_settings_request_invalid');
     const changedRuntime = { ...settings.defaults, 'worker-important': { ...settings.defaults['worker-important'], runtime: 'codex', model: 'gpt-6.1-terra' } };
     expect(() => route.decode({ expected_revision: settings.config.revision, seats: changedRuntime }, []))
       .toThrow('seats_settings_request_invalid');
@@ -651,6 +665,17 @@ describe('seat settings contract without transport', () => {
 });
 
 describe('seat settings routes', () => {
+  test('a configured Pi worker-light in a non-frontend class saves and reads back', async () => {
+    const harness = await startHarness({ agents: PANE_AGENTS });
+    const { revision, ...section } = (await seats(harness)).config;
+    const routing = { ...section.routing, simple_fast: ['worker-light'] };
+    const response = await post(harness, { expected_revision: revision, seats: { ...section, routing } }, 'seats');
+    expect(response.status).toBe(200);
+    const stored = (await seats(harness)).config;
+    expect(stored['worker-light']).toEqual(DEFAULT_SEATS_CONFIG['worker-light']);
+    expect(stored.routing.simple_fast).toEqual(['worker-light']);
+  });
+
   test('GET reads the defaults and the ranges from the fleet role profiles', async () => {
     const harness = await startHarness({ agents: PANE_AGENTS });
     const value = await seats(harness);

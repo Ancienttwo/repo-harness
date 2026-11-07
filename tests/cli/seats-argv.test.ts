@@ -2,10 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { spawnSync } from "child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { delimiter, join } from "path";
 import { seatPaneName } from "../../src/core/board/seat-launch";
 import { DEFAULT_SEATS_CONFIG, WORKER_SEAT_IDS } from "../../src/core/board/seats-settings";
 import { repoHarnessRepoIdFor } from "../../src/effects/repo-registry";
+import { classifyQuotaReading } from "../../src/core/board/quota";
+import { formatSeatRoutes, seatAccountQuotas } from "../../src/core/board/seat-routing";
+import { readClaudeQuota } from "../../src/effects/board/quota";
 
 const CLI = join(import.meta.dir, "..", "..", "src/cli/index.ts");
 
@@ -31,6 +34,19 @@ function withHome(seats: unknown, fn: (home: string) => void) {
     mkdirSync(join(home, ".claude", "plugins"), { recursive: true });
     writeFileSync(join(home, ".claude", "settings.json"), JSON.stringify({ enabledPlugins: { "demo@market": true } }));
     writeFileSync(join(home, ".claude", "plugins", "installed_plugins.json"), JSON.stringify({ version: 2, plugins: { "demo@market": [{ scope: "user", installPath: plugin }] } }));
+    mkdirSync(join(home, '.quota-bin'));
+    writeFileSync(join(home, 'codex-used'), '51');
+    writeFileSync(join(home, '.quota-bin', 'codex'), `#!${process.execPath}
+require('node:readline').createInterface({ input: process.stdin }).on('line', line => {
+  const message = JSON.parse(line);
+  if (message.method === 'initialize') process.stdout.write(JSON.stringify({ id: message.id, result: {} }) + '\\n');
+  if (message.method === 'account/rateLimits/read') process.stdout.write(JSON.stringify({ id: message.id, result: { rateLimits: {
+    primary: { usedPercent: Number(require('node:fs').readFileSync(require('node:path').join(process.env.HOME, 'codex-used'), 'utf8')),
+      windowDurationMins: 10080, resetsAt: Math.floor(Date.now() / 1000) + 84 * 3600 }
+  } } }) + '\\n');
+});
+`);
+    chmodSync(join(home, '.quota-bin', 'codex'), 0o755);
     fn(home);
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -39,7 +55,7 @@ function withHome(seats: unknown, fn: (home: string) => void) {
 
 function run(env: Record<string, string>, args: string[], cwd?: string) {
   const { CLAUDE_CONFIG_DIR: _inherited, ...base } = process.env;
-  const result = spawnSync("bun", [CLI, "seats", "argv", ...args], { env: { ...base, ...env }, encoding: "utf8", cwd });
+  const result = spawnSync(process.execPath, [CLI, "seats", "argv", ...args], { env: { ...base, ...env, PATH: `${join(env.HOME!, '.quota-bin')}${delimiter}${env.PATH ?? base.PATH ?? ''}` }, encoding: "utf8", cwd });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
@@ -97,11 +113,35 @@ describe("repo-harness seats argv", () => {
   });
 
   test("an unconfigured worker-light fails with seat_not_configured", () => {
-    withHome(undefined, home => {
+    withHome({ ...DEFAULT_SEATS_CONFIG, 'worker-light': null }, home => {
       const result = argv(home, "worker-light", "--json");
       expect([result.status, result.stdout]).toEqual([1, ""]);
       expect(JSON.parse(result.stderr).error).toBe("seat_not_configured");
     });
+  });
+
+  test("saving routes and direct launches reject a non-Pi worker-light", () => {
+    for (const configured of [DEFAULT_SEATS_CONFIG.worker, DEFAULT_SEATS_CONFIG['worker-important-fast']]) {
+      const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-light': configured };
+      withHome(seats, home => {
+        expect(argv(home, 'worker-light', '--json').status).toBe(0);
+        mkdirSync(join(home, '.repo-harness', 'quota'));
+        for (const used of [81, 95]) {
+          writeFileSync(join(home, '.repo-harness', 'quota', 'claude.json'), JSON.stringify({ observed_at: new Date().toISOString(), rate_limits: {
+            seven_day: { used_percentage: used, resets_at: Math.floor(Date.now() / 1000) + 3600 },
+          } }));
+          const quota = seatAccountQuotas([classifyQuotaReading(readClaudeQuota({ HOME: home }), Date.now())], seats.routing);
+          const result = argv(home, 'worker-light', '--json');
+          expect({
+            routes: formatSeatRoutes(seats, quota).split('\n').filter(line => /^route important_/u.test(line)),
+            launch: [result.status, result.stdout, result.stderr ? JSON.parse(result.stderr).error : null],
+          }).toEqual({
+            routes: ['route important_deep: none (worker-light is not a Pi seat)', 'route important_fast: none (worker-light is not a Pi seat)'],
+            launch: [1, '', 'seat_quota_reserved'],
+          });
+        }
+      });
+    }
   });
 
   test("every configured worker seat keeps its brief, labels and issue pane naming", () => {
@@ -167,23 +207,34 @@ describe("repo-harness seats argv", () => {
     }
   });
 
-  test("hyper changes model and effort, preserves Pi, and falls back only for an exhausted advisor", () => {
-    const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-light': { runtime: 'pi', model: null, effort: null, tools: DEFAULT_SEATS_CONFIG.worker.tools, fleet: [] },
-      routing: { ...DEFAULT_SEATS_CONFIG.routing, mode: "hyper" } };
-    withHome(seats, home => {
+  test("quota changes Codex models and Claude control-seat effort, preserves Pi, and stops exhaustion", () => {
+    withHome(DEFAULT_SEATS_CONFIG, home => {
+      writeFileSync(join(home, 'codex-used'), '50');
       expect(launch(home, "worker").argv.slice(0, 5)).toEqual(["codex", "-m", "gpt-6-astra", "-c", 'model_reasoning_effort="high"']);
-      expect(launch(home, "worker-important-fast").argv.slice(0, 5)).toEqual(["claude", "--model", "opus", "--effort", "high"]);
+      writeFileSync(join(home, 'codex-used'), '51');
+      expect(launch(home, "worker").argv.slice(0, 3)).toEqual(["codex", "-m", DEFAULT_SEATS_CONFIG.worker.model]);
+      expect(launch(home, "worker-important-fast").argv.slice(0, 5)).toEqual(["claude", "--model", "sonnet", "--effort", "medium"]);
       expect(launch(home, "advisor").argv.slice(0, 5)).toEqual(["claude", "--model", "opus", "--effort", "max"]);
-      expect(launch(home, "worker-light").argv.slice(0, 2)).toEqual(["pi", "--append-system-prompt"]);
+      expect(launch(home, "worker-light").argv.slice(0, 5)).toEqual(["pi", "--provider", "magpie", "--model", "cursor/deepseek-v41-flash-1017"]);
       mkdirSync(join(home, ".repo-harness", "quota"));
-      writeFileSync(join(home, ".repo-harness", "quota", "claude.json"), JSON.stringify({ observed_at: new Date().toISOString(), rate_limits: {
-        seven_day: { used_percentage: 97, resets_at: Math.floor(Date.now() / 1000) + 3600 },
-      } }));
-      const advisor = launch(home, "advisor");
-      expect(advisor.runtime).toBe("codex");
-      expect(advisor.argv.slice(0, 5)).toEqual(["codex", "-m", "gpt-6-astra", "-c", 'model_reasoning_effort="high"']);
-      expect(advisor.brief).toContain("You are the advisor seat");
-      expect(launch(home, "orchestrator").runtime).toBe("claude");
+      for (const used of [81, 95]) {
+        writeFileSync(join(home, ".repo-harness", "quota", "claude.json"), JSON.stringify({ observed_at: new Date().toISOString(), rate_limits: {
+          seven_day: { used_percentage: used, resets_at: Math.floor(Date.now() / 1000) + 3600 },
+        } }));
+        for (const id of ['advisor', 'orchestrator', 'worker-important-fast']) {
+          const result = argv(home, id, '--json');
+          if (used === 95 || id === 'worker-important-fast') {
+            expect([result.status, result.stdout, JSON.parse(result.stderr).error]).toEqual([1, '', used === 95 ? 'seat_quota_exhausted' : 'seat_quota_reserved']);
+          } else {
+            const value = JSON.parse(result.stdout);
+            const start = value.argv.indexOf('claude');
+            expect(value.argv.slice(start, start + 5)).toEqual(['claude', '--model', 'opus', '--effort', 'high']);
+          }
+        }
+      }
+      writeFileSync(join(home, 'codex-used'), '95');
+      const exhausted = argv(home, 'worker', '--json');
+      expect([exhausted.status, JSON.parse(exhausted.stderr).error]).toEqual([1, 'seat_quota_exhausted']);
     });
   });
 

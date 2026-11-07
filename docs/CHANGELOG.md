@@ -2,6 +2,19 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- Stored quota thresholds replace `routing.mode` and `routing.hyper`.
+  Claude saving and Codex hyper modes follow weekly remaining quota.
+  `repo-harness update` runs the one-shot migration. The decoder refuses
+  the old keys before and after migration. (#1954)
+- The default `worker-light` is now an unsandboxed Pi seat with worker
+  tool groups, including edit, gh, net and shell. A host without Pi enabled
+  cannot save the Seats page until Pi is enabled or `worker-light` is set
+  to `null`. (#1954)
+
 ## [0.27.0] - 2026-11-07
 
 This release separates the Operator console into a matching npm package and

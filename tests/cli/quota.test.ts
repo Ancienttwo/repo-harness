@@ -12,7 +12,7 @@ import {
   formatQuotaReport,
   type QuotaReport,
 } from '../../src/core/board/quota';
-import { formatSeatRoutes, type SeatAccountStates } from '../../src/core/board/seat-routing';
+import { effectiveSeatConfig, formatSeatModes, formatSeatRoutes, seatAccountQuotas } from '../../src/core/board/seat-routing';
 import { DEFAULT_SEATS_CONFIG } from '../../src/core/board/seats-settings';
 
 const ROOT = join(import.meta.dir, '../..');
@@ -34,47 +34,78 @@ const week = (used: number, resetsInHours: number) => ({ used_percentage: used, 
 
 describe('seat quota routing', () => {
   test.each([
-    ['normal', 'normal', ['worker-important', 'worker-deep'], 'worker-important'],
-    ['unknown', 'surplus', ['worker-important', 'worker-deep'], 'worker-deep'],
-    ['tight', 'normal', ['worker-important', 'worker-deep'], 'worker-deep'],
-    ['exhausted', 'normal', ['worker-important', 'worker-deep'], 'worker-deep'],
-    ['tight', 'tight', ['worker-important', 'worker-deep'], 'worker-deep'],
-    ['unknown', 'exhausted', ['worker-important', 'worker-deep'], 'worker-important'],
-    ['exhausted', 'exhausted', ['worker-important', 'worker-deep'], 'none'],
-    ['tight', 'tight', ['worker', 'worker-light'], 'worker-light'],
-  ] as const)('routes claude %s and chatgpt %s through %j to %s', (claude, chatgpt, candidates, selected) => {
-    const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-light': { runtime: 'pi' as const, model: null, effort: null, tools: DEFAULT_SEATS_CONFIG.worker.tools, fleet: [] },
-      routing: { ...DEFAULT_SEATS_CONFIG.routing, important_deep: candidates } };
-    const line = formatSeatRoutes(seats, { claude, chatgpt }).split('\n')[0]!;
-    expect(line).toStartWith(`route important_deep: ${selected} (`);
-    if (selected === 'none') expect(line).toContain('claude exhausted, reserved for advisor and orchestrator; chatgpt exhausted');
-    if (selected === 'worker-deep' && (claude === 'tight' || claude === 'exhausted')) expect(line).toContain(`skipped worker-important: claude ${claude}, reserved for advisor and orchestrator`);
-    if (selected === 'worker-deep' && chatgpt === 'tight') expect(line).toContain('chatgpt tight');
-    if (selected === 'worker-important' && claude === 'unknown') expect(line).toContain('claude unknown');
+    [80, 'normal', 'worker-important', false],
+    [81, 'saving', 'worker-light', true],
+    [95, 'saving', 'worker-light', true],
+  ] as const)('Claude %s%% used derives %s', (used, mode, selected, reserved) => {
+    const seats = { ...DEFAULT_SEATS_CONFIG, orchestrator: { ...DEFAULT_SEATS_CONFIG.orchestrator, model: 'sonnet', effort: 'low' } };
+    const account = claude({ seven_day: week(used, 84) });
+    const quota = seatAccountQuotas([account], seats.routing);
+    // All three readings are pace-based tight or exhausted. Only the remaining threshold reserves Claude.
+    expect(quota.claude.mode).toBe(mode);
+    const lines = formatSeatRoutes(seats, quota).split('\n');
+    for (const task of ['important_deep', 'important_fast']) expect(lines.find(line => line.startsWith(`route ${task}:`)))
+      .toContain(`${!reserved && task === 'important_fast' ? 'worker-important-fast' : selected} (`);
+    expect(lines.find(line => line.startsWith('route frontend:'))).toContain(reserved ? 'none (' : 'worker-important (');
+    expect(lines).toContain(reserved ? `explorer: haiku high (claude ${account.state === 'exhausted' ? 'exhausted' : mode}; pass model haiku when you call the explorer)` : 'explorer: default');
+    expect(effectiveSeatConfig('advisor', DEFAULT_SEATS_CONFIG, quota).effort).toBe(reserved ? 'high' : 'max');
+    expect(effectiveSeatConfig('orchestrator', seats, quota)).toEqual(reserved
+      ? { ...seats.orchestrator, model: 'opus', effort: 'high' } : seats.orchestrator);
+    if (reserved) expect(lines).toContain(`reviewer: none (claude ${account.state}, reserved for advisor and orchestrator)`);
+    expect(lines.some(line => line.includes('fallback'))).toBe(false);
   });
 
-  test.each(['tight', 'exhausted', 'normal', 'unknown'] as const)('explorer selection with claude %s', claude => {
-    const lines = formatSeatRoutes(DEFAULT_SEATS_CONFIG, { claude, chatgpt: 'normal' }).split('\n');
-    expect(lines).toContain(claude === 'tight' || claude === 'exhausted' ? `explorer: haiku high (claude ${claude})` : 'explorer: default');
+  test('saving fails closed when worker-light is null', () => {
+    const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-light': null };
+    const quota = seatAccountQuotas([claude({ seven_day: week(81, 84) })], seats.routing);
+    const lines = formatSeatRoutes(seats, quota).split('\n');
+    for (const task of ['important_deep', 'important_fast']) expect(lines).toContain(`route ${task}: none (worker-light not configured)`);
+    expect(lines).toContain('route frontend: none (claude tight, reserved for advisor and orchestrator; frontend waits for claude)');
   });
 
-  test('frontend waits for tight Claude without a Codex or Pi fallback', () => {
-    expect(formatSeatRoutes(DEFAULT_SEATS_CONFIG, { claude: 'tight', chatgpt: 'surplus' }).split('\n'))
-      .toContain('route frontend: none (claude tight, reserved for advisor and orchestrator; frontend waits for claude)');
+  test.each([50, 51])('Codex %s%% used selects hyper only at or above remaining threshold', used => {
+    const account = classifyQuotaReading(decodeCodexRateLimitsResult({ rateLimits: {
+      primary: { usedPercent: used, windowDurationMins: 10080, resetsAt: (NOW + 84 * HOUR) / 1000 },
+    } }, new Date(NOW).toISOString()), NOW);
+    const quota = seatAccountQuotas([account], DEFAULT_SEATS_CONFIG.routing);
+    const model = used === 50 ? 'gpt-6-astra' : DEFAULT_SEATS_CONFIG.worker.model;
+    expect(quota.chatgpt.mode).toBe(used === 50 ? 'hyper' : 'normal');
+    expect(effectiveSeatConfig('worker', DEFAULT_SEATS_CONFIG, quota).model).toBe(model);
+    expect(formatSeatRoutes(DEFAULT_SEATS_CONFIG, quota)).toContain(`route simple_fast: worker (codex ${model} high`);
+    expect(effectiveSeatConfig('worker-light', DEFAULT_SEATS_CONFIG, quota)).toEqual(DEFAULT_SEATS_CONFIG['worker-light']);
   });
 
-  test('hyper overrides route models and exposes only the exhausted advisor fallback', () => {
-    const seats = { ...DEFAULT_SEATS_CONFIG, routing: { ...DEFAULT_SEATS_CONFIG.routing, mode: 'hyper' as const } };
-    const states: SeatAccountStates = { claude: 'normal', chatgpt: 'normal' };
-    const normal = formatSeatRoutes(seats, states);
-    expect(normal).toContain('route important_deep: worker-important (claude opus high)');
-    expect(normal).toContain('route simple_fast: worker (codex gpt-6-astra high)');
-    expect(normal).toContain('gatekeeper: gatekeeper (codex gpt-6-astra high; chatgpt normal)');
-    expect(normal).toContain('reviewer: reviewer (claude opus high; claude normal)');
-    expect(normal).not.toContain('advisor: fallback');
-    const exhausted = formatSeatRoutes(seats, { ...states, claude: 'exhausted' });
-    expect(exhausted).toContain('advisor: fallback codex gpt-6-astra high (claude exhausted)');
-    expect(exhausted).toContain('route frontend: none (claude exhausted, reserved for advisor and orchestrator; frontend waits for claude)');
+  test('unknown weekly quota has no derived mode; short-window exhaustion still stops Claude', () => {
+    const quota = seatAccountQuotas([claude({ five_hour: week(97, 2) })], DEFAULT_SEATS_CONFIG.routing);
+    expect(quota.claude).toMatchObject({ mode: 'unknown', state: 'exhausted', remaining: null });
+    expect(formatSeatModes(DEFAULT_SEATS_CONFIG, quota)).toBe('claude mode: unknown (weekly quota unavailable)\ncodex mode: unknown (weekly quota unavailable)');
+    expect(formatSeatRoutes(DEFAULT_SEATS_CONFIG, quota)).toContain('route frontend: none (claude exhausted, reserved for advisor and orchestrator; frontend waits for claude)');
+    const missing = seatAccountQuotas([], DEFAULT_SEATS_CONFIG.routing);
+    expect(formatSeatRoutes(DEFAULT_SEATS_CONFIG, missing)).toContain('worker-important (claude opus medium; claude unknown)');
+  });
+
+  test('configured thresholds decide modes while other windows keep their exhaustion stop', () => {
+    const seats = { ...DEFAULT_SEATS_CONFIG, routing: { ...DEFAULT_SEATS_CONFIG.routing,
+      claude_saving_below_remaining: 60, codex_hyper_at_or_above_remaining: 80 } };
+    const accounts = [claude({ seven_day: week(50, 84), five_hour: week(95, 2) }),
+      classifyQuotaReading(decodeCodexRateLimitsResult({ rateLimits: {
+        primary: { usedPercent: 40, windowDurationMins: 10080, resetsAt: (NOW + 84 * HOUR) / 1000 },
+      } }, new Date(NOW).toISOString()), NOW)];
+    const quota = seatAccountQuotas(accounts, seats.routing);
+    expect(formatSeatModes(seats, quota)).toBe('claude mode: saving (50% left < 60%)\ncodex mode: normal (60% left < 80%)');
+    expect(formatSeatRoutes(seats, quota)).toContain('route frontend: none (claude exhausted, reserved for advisor and orchestrator; frontend waits for claude)');
+  });
+
+  test.each([
+    [undefined, 10, 'worker-deep'], [undefined, 97, 'worker-important'], [30, 97, 'worker-important'], [undefined, 80, 'worker-deep'],
+  ])('ordered routing with Claude used %s and Codex used %s selects %s', (used, codexUsed, selected) => {
+    const accounts = [claude(used === undefined ? {} : { seven_day: week(used, 84) }),
+      classifyQuotaReading(decodeCodexRateLimitsResult({ rateLimits: {
+        primary: { usedPercent: codexUsed, windowDurationMins: 10080, resetsAt: (NOW + 84 * HOUR) / 1000 },
+      } }, new Date(NOW).toISOString()), NOW)];
+    const routes = formatSeatRoutes(DEFAULT_SEATS_CONFIG, seatAccountQuotas(accounts, DEFAULT_SEATS_CONFIG.routing));
+    expect(routes).toContain(`route important_deep: ${selected} (`);
+    if (codexUsed >= 95) expect(routes).toContain('gatekeeper: none (chatgpt exhausted)');
   });
 });
 
@@ -275,7 +306,9 @@ describe('repo-harness quota', () => {
   test('reads the capture file and one app-server rateLimits read, grouped by account', () => {
     const f = fixture('ok');
     const resetsAt = Math.floor(Date.now() / 1000) + 2 * 3600;
-    writeFileSync(join(f.home, '.repo-harness', 'quota', 'claude.json'), JSON.stringify({ observed_at: new Date().toISOString(), rate_limits: { five_hour: { used_percentage: 97, resets_at: resetsAt } } }));
+    writeFileSync(join(f.home, '.repo-harness', 'quota', 'claude.json'), JSON.stringify({ observed_at: new Date().toISOString(), rate_limits: {
+      five_hour: { used_percentage: 97, resets_at: resetsAt }, seven_day: { used_percentage: 95, resets_at: resetsAt },
+    } }));
     const result = quota(['--json'], f.env);
     expect(result.status).toBe(0);
     const report = JSON.parse(result.stdout) as QuotaReport;
@@ -293,7 +326,8 @@ describe('repo-harness quota', () => {
     expect(text.status).toBe(0);
     const lines = text.stdout.trim().split('\n');
     expect(lines.slice(0, 2).map(line => line.split(' | ')[0])).toEqual(['claude: exhausted', 'chatgpt: normal']);
-    expect(lines.slice(2).map(line => line.split(':')[0])).toEqual(['route important_deep', 'route important_fast', 'route simple_deep', 'route simple_fast', 'route frontend', 'explorer', 'gatekeeper', 'reviewer']);
+    expect(lines.slice(2, 4)).toEqual(['claude mode: saving (5% left < 20%)', 'codex mode: hyper (99% left >= 50%)']);
+    expect(lines.slice(4).map(line => line.split(':')[0])).toEqual(['route important_deep', 'route important_fast', 'route simple_deep', 'route simple_fast', 'route frontend', 'explorer', 'gatekeeper', 'reviewer']);
   });
 
   test.each([

@@ -7,8 +7,8 @@ import type { SkillHost } from '../../effects/host-skill-roots';
 import type { ManagedInstallSurface } from '../installer/install-profile';
 import { architecturePort, isArchitectureUnavailable } from '../../core/architecture/contracts';
 import { globalConfigurationWriter, mutateGlobalConfiguration } from '../../effects/configuration/global-configuration';
-import { DEFAULT_SEATS_CONFIG, SeatsConfigMigrationRequiredError, decodeSeatsConfig } from '../../core/board/seats-settings';
-import { checkSeatRoutingModels } from '../../effects/board/seats-configuration';
+import { DEFAULT_SEATS_CONFIG, ROUTING_CLASSES, SeatsConfigMigrationRequiredError, decodeSeatsConfig } from '../../core/board/seats-settings';
+import { checkSeatRoutingModels, seatsRanges } from '../../effects/board/seats-configuration';
 import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
 import { createHash } from "crypto";
 import { homedir, tmpdir, userInfo } from "os";
@@ -1741,7 +1741,7 @@ function withPlugin(plugins: readonly PluginId[], id: PluginId): readonly Plugin
   return [...new Set([...plugins, id])].sort() as PluginId[];
 }
 
-/** Update is the only caller that can fill the seats keys introduced in #1925. */
+/** Update is the only caller that fills introduced seats and removes the stored routing mode. */
 export function migrateSeatsConfiguration(env: NodeJS.ProcessEnv, runtimeLock?: RuntimeTransactionContext): boolean {
   return mutateGlobalConfiguration(env, config => {
     try {
@@ -1751,7 +1751,32 @@ export function migrateSeatsConfiguration(env: NodeJS.ProcessEnv, runtimeLock?: 
       if (!(error instanceof SeatsConfigMigrationRequiredError)) throw error;
     }
     const { orchestrator: _orchestrator, advisor: _advisor, worker: _worker, ...introduced } = DEFAULT_SEATS_CONFIG;
-    const seats = decodeSeatsConfig({ ...introduced, ...(config.seats as Record<string, unknown>) });
+    const stored = config.seats as Record<string, unknown>;
+    let routing = stored.routing;
+    if (typeof routing === 'object' && routing !== null && ('mode' in routing || 'hyper' in routing)) {
+      const row = routing as Record<string, unknown>;
+      const keys = [...ROUTING_CLASSES, 'mode', 'low_quota_explorer', 'hyper'];
+      const invalid = (): never => { throw new Error('seats_config_invalid'); };
+      if (keys.some(key => !Object.hasOwn(row, key)) || Object.keys(row).some(key => !keys.includes(key))
+        || (row.mode !== 'standard' && row.mode !== 'hyper')) invalid();
+      const hyper = row.hyper as Record<string, unknown> | null;
+      const targets = ['claude', 'advisor', 'codex'];
+      if (typeof hyper !== 'object' || hyper === null || Array.isArray(hyper)
+        || Object.keys(hyper).length !== targets.length || targets.some(key => !Object.hasOwn(hyper, key))) invalid();
+      const ranges = seatsRanges([]);
+      for (const target of targets) {
+        const value = hyper![target] as Record<string, unknown> | null;
+        const runtime = ranges.runtimes.find(runtime => runtime.id === (target === 'codex' ? 'codex' : 'claude'))!;
+        if (typeof value !== 'object' || value === null || Array.isArray(value) || Object.keys(value).length !== 2
+          || !Object.hasOwn(value, 'model') || !Object.hasOwn(value, 'effort')
+          || value.model !== null && !runtime.models.includes(value.model as string)
+          || value.effort !== null && !ranges.efforts.includes(value.effort as string)) invalid();
+      }
+      const { mode: _mode, hyper: _hyper, ...kept } = row;
+      routing = { ...kept, claude_saving_below_remaining: DEFAULT_SEATS_CONFIG.routing.claude_saving_below_remaining,
+        codex_hyper_at_or_above_remaining: DEFAULT_SEATS_CONFIG.routing.codex_hyper_at_or_above_remaining };
+    }
+    const seats = decodeSeatsConfig({ ...introduced, 'worker-light': null, ...stored, ...(routing === undefined ? {} : { routing }) });
     checkSeatRoutingModels(seats.routing);
     return { config: { ...config, seats }, value: true };
   }, { runtimeLock }).value;

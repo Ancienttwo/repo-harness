@@ -3,9 +3,10 @@ import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { CLAUDE_BUILTIN_AGENT_TYPES, SeatPaneNameError, buildSeatLaunch, seatPaneName, seatTabName, type SeatLaunchV1 } from '../../core/board/seat-launch';
 import { SeatsConfigMigrationRequiredError, SEAT_IDS, decodeSeatsConfig, isWorkerSeat, type SeatId } from '../../core/board/seats-settings';
-import { effectiveSeatConfig } from '../../core/board/seat-routing';
+import { claudeReserved, effectiveSeatConfig, seatAccount, seatAccountQuotas } from '../../core/board/seat-routing';
 import { classifyQuotaReading } from '../../core/board/quota';
-import { readClaudeQuota } from '../../effects/board/quota';
+import { readClaudeQuota, readCodexQuota } from '../../effects/board/quota';
+import { version as PACKAGE_VERSION } from '../../../package.json';
 import { readGlobalConfiguration } from '../../effects/configuration/global-configuration';
 import { resolveGitCommonDirectory } from '../../effects/git/common-directory';
 import { ClaudeAgentTypesError, claudeHostAgentTypes } from '../../effects/board/claude-agent-types';
@@ -16,7 +17,7 @@ import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 const CLI_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
 
 class SeatsCommandError extends Error {
-  constructor(readonly code: 'seat_unknown' | 'seat_not_configured' | 'config_invalid' | 'label_value_invalid' | 'repository_id_required' | 'terminal_unknown', message: string) {
+  constructor(readonly code: 'seat_unknown' | 'seat_not_configured' | 'seat_quota_exhausted' | 'seat_quota_reserved' | 'config_invalid' | 'label_value_invalid' | 'repository_id_required' | 'terminal_unknown', message: string) {
     super(message);
   }
 }
@@ -98,9 +99,9 @@ function panePrefix(cwd: string, env: NodeJS.ProcessEnv): string {
   return prefix;
 }
 
-export function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): SeatLaunchV1 & {
+export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): Promise<SeatLaunchV1 & {
   readonly labels: readonly string[]; readonly name: string | null; readonly tab: string | null;
-} {
+}> {
   const id = seatId(seat);
   let config: Record<string, unknown>;
   try { config = readGlobalConfiguration(env).config; } catch (error) { throw new SeatsCommandError('config_invalid', (error as Error).message); }
@@ -109,10 +110,23 @@ export function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJ
     if (error instanceof SeatsConfigMigrationRequiredError) throw error;
     throw new SeatsCommandError('config_invalid', 'The seats section of the repo-harness configuration is not valid.');
   }
-  const claudeState = id === 'advisor' && seats.routing.mode === 'hyper'
-    ? classifyQuotaReading(readClaudeQuota(env), Date.now()).state : null;
-  const effective = effectiveSeatConfig(id, seats, claudeState);
-  if (effective === null) throw new SeatsCommandError('seat_not_configured', `The ${id} seat is not configured. Configure it in the seats section before launch.`);
+  const configured = seats[id];
+  if (configured === null) throw new SeatsCommandError('seat_not_configured', `The ${id} seat is not configured. Configure it in the seats section before launch.`);
+  const account = seatAccount(configured);
+  const reading = account === 'claude' ? readClaudeQuota(env) : account === 'chatgpt' ? await readCodexQuota(env, PACKAGE_VERSION) : null;
+  const readings = reading === null ? [] : [reading];
+  if (id === 'worker-light' && account === 'chatgpt') readings.push(readClaudeQuota(env));
+  const quota = seatAccountQuotas(readings.map(reading => classifyQuotaReading(reading, Date.now())), seats.routing);
+  if (id === 'worker-light' && configured.runtime !== 'pi' && claudeReserved(quota)) {
+    throw new SeatsCommandError('seat_quota_reserved', 'The worker-light seat must use Pi while Claude is reserved. Use the quota routes.');
+  }
+  if (account !== null && quota[account].state === 'exhausted') {
+    throw new SeatsCommandError('seat_quota_exhausted', `The ${account} account is exhausted. Wait for quota before launching ${id}.`);
+  }
+  if (account === 'claude' && id !== 'advisor' && id !== 'orchestrator' && claudeReserved(quota)) {
+    throw new SeatsCommandError('seat_quota_reserved', 'Claude is reserved for the advisor and the orchestrator. Use the quota routes.');
+  }
+  const effective = effectiveSeatConfig(id, seats, quota)!;
   const labelSet = seatLabels(id, labels);
   // The pane name needs the registry prefix, so it comes only with the seat labels.
   const name = labels.repositoryId === undefined ? null : seatPaneName({
@@ -144,10 +158,10 @@ export function buildSeatsCommand(): Command {
     .option('--release <digits>', 'Release item of a worker pane name, for example 0252 for rh-w-rel0252')
     .option('--qualifier <word>', 'Slice word of a worker pane name when one issue has two live worker panes')
     .option('--json', 'Print the argv, the seat brief, the source, the limits, the labels, the pane name and the tab name as JSON')
-    .action((seat: string, options: SeatLabelInput & { json?: boolean }) => {
-      let launch: ReturnType<typeof seatLaunch>;
+    .action(async (seat: string, options: SeatLabelInput & { json?: boolean }) => {
+      let launch: Awaited<ReturnType<typeof seatLaunch>>;
       try {
-        launch = seatLaunch(seat, {
+        launch = await seatLaunch(seat, {
           repositoryId: options.repositoryId, issue: options.issue, pr: options.pr, parent: options.parent, release: options.release, qualifier: options.qualifier,
         });
       } catch (error) {

@@ -83,6 +83,12 @@ export interface QuotaAccountReport {
 
 export interface QuotaReport { protocol: typeof QUOTA_PROTOCOL; read_at: string; accounts: QuotaAccountReport[] }
 
+/** Only a valid weekly window can decide a seat mode. Other windows still set the hard stop. */
+export function weeklyRemainingPercent(account: QuotaAccountReport | undefined): number | null {
+  const weekly = account?.windows.find(window => window.window_minutes === WEEKLY_WINDOW_MINUTES);
+  return weekly === undefined || weekly.state === 'unknown' || weekly.used_percent === null ? null : 100 - weekly.used_percent;
+}
+
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }

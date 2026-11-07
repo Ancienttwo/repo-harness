@@ -12,7 +12,7 @@ import type { OperatorLocale } from '../../src/operator-web/i18n';
 import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
 import { agentsSettingsFixture, settingsStores } from '../../src/operator-web/fixtures/settings';
-import type { SeatsSettingsRequestV1 } from '../../src/core/board/seats-settings';
+import { DEFAULT_SEATS_CONFIG, type SeatsSettingsRequestV1 } from '../../src/core/board/seats-settings';
 import { registryOf } from '../../src/operator-web/fixtures';
 
 const REGISTRY = registryOf(['repo-harness', 'repo-console']);
@@ -186,6 +186,23 @@ describe('agents page seats section', () => {
 
   const choices = () => all('[data-seat-card] [role="group"][aria-label="Runtime"] button').map(button => button.textContent);
   const inPlace = (runtime: string) => document.querySelector<HTMLButtonElement>(`[data-runtime-enable="${runtime}"] [aria-label="Enable ${runtime}"]`);
+
+  test('the default Pi worker-light keeps Save off when only Claude and Codex are enabled', async () => {
+    const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
+    const stores = settingsStores(NOW, 'busy');
+    const read = await stores.seats.read();
+    if (read.state !== 'ok') throw new Error('fixture read failed');
+    const stored = { ...read.settings, config: { revision: read.settings.config.revision, ...DEFAULT_SEATS_CONFIG } };
+    await mount({ ...seatsProps(posts), readAgentsSettings: stores.agents.read,
+      readSeatsSettings: async () => ({ state: 'ok', settings: stored }) });
+    expect(choices()).toEqual(['Claude Code', 'Codex']);
+    expect(seatsSave().disabled).toBe(true);
+    await click(allow('gatekeeper'));
+    expect(allow('gatekeeper').getAttribute('aria-checked')).toBe('true');
+    expect(seatsSave().disabled).toBe(true);
+    await click(seatsSave());
+    expect(posts).toHaveLength(0);
+  });
 
   test('the runtime choice offers only enabled runtimes; Pi is enabled in place, saved under Hosts, then a seat moves to Pi and saves against the fixture server', async () => {
     const stores = settingsStores(NOW, 'busy');
