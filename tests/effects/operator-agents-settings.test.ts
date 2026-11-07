@@ -500,6 +500,22 @@ async function seats(harness: Harness): Promise<ReturnType<typeof decodeSeatsSet
 const filesUnder = (root: string): string[] => readdirSync(root, { recursive: true, encoding: 'utf8' }).sort();
 
 describe('seat settings contract without transport', () => {
+  test('saves a stored Pi model in range and refuses a model outside it', async () => {
+    const model = 'magpie/cursor/deepseek-v41-flash-1017';
+    const worker = { ...DEFAULT_SEATS_CONFIG.worker, runtime: 'pi', model, effort: null, fleet: [] };
+    const home = mkdtempSync(join(tmpdir(), 'seats-pi-'));
+    cleanups.push(() => rmSync(home, { recursive: true, force: true }));
+    mkdirSync(join(home, '.repo-harness'));
+    writeFileSync(join(home, '.repo-harness', 'config.json'), JSON.stringify({ agents: PANE_AGENTS, seats: { ...DEFAULT_SEATS_CONFIG, worker } }));
+    const env = { HOME: home }, before = readSeatsSettings(env), route = seatsSettingsWriteRoute(env);
+    expect(before.ranges.runtimes.find(runtime => runtime.id === 'pi')?.models).toEqual([model]);
+    const { revision, ...section } = before.config;
+    const saved = await route.decode({ expected_revision: revision, seats: { ...section, advisor: { ...section.advisor, effort: 'medium' } } }, []).execute();
+    expect(saved.status).toBe(200);
+    await expect(route.decode({ expected_revision: readSeatsSettings(env).config.revision, seats: { ...section, worker: { ...worker, model: 'magpie/other' } } }, []).execute())
+      .rejects.toMatchObject({ status: 422, code: 'seat_model_invalid' });
+  });
+
   test('Pi models require a provider and model id', () => {
     for (const model of ['deepseek', '/deepseek', 'magpie/']) {
       expect(() => decodeSeatsConfig({ ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, runtime: 'pi', model } })).toThrow('seats_config_invalid');
