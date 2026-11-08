@@ -189,8 +189,8 @@ function SeatCard({ seat, form, agents, settings, setup, locked, t }: {
             onPick={value => form.edit(current => setSeatRuntime(current, seat, value, ranges))} />
         )}
         {ranges.runtimes.filter(entry => !entry.enabled).map(entry => <InPlaceEnable key={entry.id} runtime={entry.id} agents={agents} t={t} />)}
-        {runtime.enabled && (draft.runtime === 'pi' || (seat === 'orchestrator' && draft.runtime !== 'claude')) && (
-          <span className="text-xs text-kumo-subtle" data-runtime-note>{t(draft.runtime === 'pi' ? 'seats.runtime.piModel' : 'seats.runtime.orchestratorMode')}</span>
+        {runtime.enabled && seat === 'orchestrator' && draft.runtime !== 'claude' && (
+          <span className="text-xs text-kumo-subtle" data-runtime-note>{t('seats.runtime.orchestratorMode')}</span>
         )}
       </Field>
 

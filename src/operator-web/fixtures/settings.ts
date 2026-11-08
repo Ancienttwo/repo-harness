@@ -1,6 +1,6 @@
 import { AGENT_RUNTIME_CAPABILITIES, decodeAgentsSettings, type AgentsSettingsV1 } from '../../core/board/agents-settings';
 import { isReviewRuntimeId } from '../../core/review/review-runtimes';
-import { DEFAULT_SEATS_CONFIG, FRONTEND_SEAT_IDS, ROUTING_CLASSES, SEAT_IDS, WORKER_SEAT_IDS, decodeSeatsSettings, type SeatsConfigV1, type SeatsSettingsRequestV1, type SeatsSettingsV1 } from '../../core/board/seats-settings';
+import { DEFAULT_SEATS_CONFIG, PI_CODEX_MODEL_PREFIX, FRONTEND_SEAT_IDS, ROUTING_CLASSES, SEAT_IDS, WORKER_SEAT_IDS, decodeSeatsSettings, type SeatsConfigV1, type SeatsSettingsRequestV1, type SeatsSettingsV1 } from '../../core/board/seats-settings';
 import type { DocumentationLanguage, DocumentationLanguageReader, DocumentationLanguageWriter, LanguageRead, LanguageReader, LanguageWriter, ReportingHost, ReportingPreset } from '../language-settings';
 import type { OperatorApiErrorV1 } from '../operator-api-error';
 import type { AgentsSettingsRead, AgentsSettingsWrite, AgentsSettingsPost, SettingsRead, SettingsWrite } from '../settings';
@@ -48,14 +48,16 @@ const SUB_AGENTS = [
   { name: 'harness-evaluator', writable: true },
 ];
 
+const CODEX_MODELS = ['gpt-6-luna', 'gpt-6-astra', 'gpt-6.1-sol', 'gpt-6.1-terra'];
+
 /** The ranges the server derives from the fleet role profiles, written out for the in-page store. */
 function seatsRanges(enabled: readonly string[]) {
   const all = ['read', 'edit', 'shell', 'net', 'tasks', 'mcp', 'gh'];
   return {
     runtimes: [
       { id: 'claude', enabled: enabled.includes('claude'), models: ['opus', 'sonnet', 'haiku', 'fable'], effort: true, fleet: true },
-      { id: 'codex', enabled: enabled.includes('codex'), models: ['gpt-6-luna', 'gpt-6-astra', 'gpt-6.1-sol', 'gpt-6.1-terra'], effort: true, fleet: true },
-      { id: 'pi', enabled: enabled.includes('pi'), models: ['magpie/cursor/deepseek-v41-flash-1017', ...['gpt-6-luna', 'gpt-6-astra', 'gpt-6.1-sol', 'gpt-6.1-terra'].map(model => `magpie/codex/${model}`)], effort: true, fleet: false },
+      { id: 'codex', enabled: enabled.includes('codex'), models: CODEX_MODELS, effort: true, fleet: true },
+      { id: 'pi', enabled: enabled.includes('pi'), models: ['magpie/cursor/deepseek-v41-flash-1017', ...CODEX_MODELS.map(model => `${PI_CODEX_MODEL_PREFIX}${model}`)], effort: true, fleet: false },
     ],
     efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
     roles: SUB_AGENTS,
