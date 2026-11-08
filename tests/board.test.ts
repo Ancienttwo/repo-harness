@@ -716,11 +716,15 @@ if (args[0] === 'get') {
   // FAKE_FINISH_AT: the address finishes at its nth get call.
   const finishAt = JSON.parse(process.env.FAKE_FINISH_AT || '{}')[address];
   const gets = require('fs').readFileSync(process.env.HC_LOG, 'utf8').split('\\n').filter(Boolean).map(line => JSON.parse(line)).filter(call => call[0] === 'get' && call.at(-1) === address).length;
-  out({ address, state: finishAt && gets >= finishAt ? 'finished' : 'live', turn: 1, labels: { 'repo-harness.seat': 'x' }, ...terminals[address] });
+  const killed = require('fs').readFileSync(process.env.HC_LOG, 'utf8').split('\\n').filter(Boolean).map(line => JSON.parse(line)).some(call => call[0] === 'kill' && call.at(-1) === address);
+  out({ address, state: killed || (finishAt && gets >= finishAt) ? 'finished' : 'live', turn: 1, labels: { 'repo-harness.seat': 'x' }, ...terminals[address] });
 }
 else if (args[0] === 'send' && process.env.FAKE_SEND_FAIL) { process.stderr.write(JSON.stringify({ error: { kind: 'blocked', message: 'blocked' } })); process.exit(9); }
 else if (args[0] === 'send') out({ started: true, turn: 2 });
 else if (args[0] === 'read') out(JSON.parse(process.env.FAKE_READ));
+else if (args[0] === 'kill') out({ address, state: 'finished', turn: 1, labels: { 'repo-harness.seat': 'x' } });
+else if (args[0] === 'rm' && process.env.FAKE_RM_FAIL) { process.stderr.write(JSON.stringify({ error: { kind: 'blocked', message: 'rm failed' } })); process.exit(9); }
+else if (args[0] === 'rm') out({ removed: address });
 else if (args[0] === 'wait') out({ terminal: address, turn: 2, ...JSON.parse(process.env.FAKE_WAITS)[address] });
 // As the live core: ls --label keeps the rows whose labels carry every pair.
 else if (args[0] === 'ls') out({ terminals: JSON.parse(process.env.FAKE_LS).filter(row => args.every((arg, at) => args[at - 1] !== '--label'
@@ -847,6 +851,17 @@ test('watch service: --watch refuses a terminal without the service labels; star
   const read = boardHostPorts(seats.options).seatTerminals('1186405141');
   expect(read.status === 'observed' && read.terminals.map(terminal => terminal.address)).toEqual(['t3']);
   expect(seats.calls().filter(args => args[0] === 'ls')).toEqual([['ls', '--json', '--label', 'repo-harness.repository=1186405141']]);
+
+  // The closeout listing adds finished terminals (#2021). A kill that finished the terminal before a failed rm leaves it for the retry, which removes it with rm only.
+  const retry = watchHc({ FAKE_RM_FAIL: '1', FAKE_LS: [{ address: 't3', state: 'live' }],
+    FAKE_TERMINALS: { t3: { labels: { 'repo-harness.seat': 'worker', 'repo-harness.repository': '1186405141' } } } });
+  expect(boardHostPorts(retry.options).closeTerminal('t3')).toEqual({ status: 'unavailable', reason: 'hc_failed' });
+  const retryPorts = boardHostPorts({ env: { ...retry.options.env, FAKE_RM_FAIL: '', FAKE_LS: JSON.stringify([{ address: 't3', state: 'finished' }]) } });
+  const finished = retryPorts.closeoutTerminals('1186405141');
+  expect(finished.status === 'observed' && finished.terminals.map(terminal => [terminal.address, terminal.state])).toEqual([['t3', 'finished']]);
+  expect(retryPorts.closeTerminal('t3')).toEqual({ status: 'closed' });
+  expect(retry.calls().filter(args => ['ls', 'kill', 'rm'].includes(args[0]!))).toEqual([
+    ['kill', '--json', '--', 't3'], ['rm', '--json', '--', 't3'], ['ls', '--json', '--label', 'repo-harness.repository=1186405141', '--all'], ['rm', '--json', '--', 't3']]);
 
   // One orchestrator and one advisor serve the repository (#1780): the room of every parent shows them, with or
   // without a parent label. A worker shows only in the room of its parent label; a terminal of another repository never.
@@ -1199,7 +1214,7 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
     return path;
   };
   const clean = worktree('clean', 21, 11), kept = worktree('kept', 22, 12), dirty = worktree('dirty', 23, 13), partial = worktree('partial', 24, 14);
-  const branchfail = worktree('branchfail', 25, 15);
+  const branchfail = worktree('branchfail', 25, 15), rmfail = worktree('rmfail', 26, 16);
   // #21 also closes issue 12 of another repository, which binds no local seat.
   pullRequests['21']!.closingIssuesReferences.push({ number: 12, repository: { id: 'R_other' } });
   // A clean checkout of another project under a stale pr label.
@@ -1220,31 +1235,41 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   const unpushed = checkout('unpushed'), edited = checkout('edited');
   git(unpushed, 'commit', '-q', '--allow-empty', '-m', 'local only');
   writeFileSync(join(edited, 'note.txt'), 'draft');
-  const terminal = (address: string, cwd: string, labels: Record<string, string>) => ({ address, name: null, agent: 'claude-code', state: 'live' as const, status: 'done',
+  const terminal = (address: string, cwd: string | null, labels: Record<string, string>, state: 'live' | 'finished' = 'live') => ({ address, name: null, agent: 'claude-code', state, status: 'done',
     status_kind: null, status_msg: null, status_ms: null, turn: 1, cwd, labels: { seat: 'worker', ...labels } });
   const terminals = [terminal('t1', clean, { issue: '11' }), terminal('t2', clean, { seat: 'gatekeeper', pr: '21' }), terminal('t3', main, { seat: 'orchestrator' }),
     terminal('t4', kept, { issue: '12' }), terminal('t5', unpushed, { seat: 'reviewer', pr: '22' }), terminal('t6', kept, { issue: '12', pr: '99' }),
     terminal('t7', edited, { seat: 'gatekeeper', pr: '22' }), terminal('t8', main, { seat: 'reviewer', pr: '23' }), terminal('t9', main, { seat: 'reviewer', pr: '24' }),
-    terminal('t10', elsewhere, { seat: 'reviewer', pr: '22' }), terminal('t11', main, { seat: 'reviewer', pr: '25' })];
+    terminal('t10', elsewhere, { seat: 'reviewer', pr: '22' }), terminal('t11', main, { seat: 'reviewer', pr: '25' }),
+    // Finished terminals (#2021) pass the same label and checkout proofs as live ones.
+    terminal('t12', clean, { seat: 'reviewer', pr: '21' }, 'finished'), terminal('t13', elsewhere, { seat: 'reviewer', pr: '22' }, 'finished'),
+    terminal('t14', kept, { issue: '12', pr: '99' }, 'finished'), terminal('t15', null, { seat: 'reviewer', pr: '22' }, 'finished'),
+    terminal('t16', main, { seat: 'reviewer', pr: '77' }, 'finished'), terminal('t17', main, { seat: 'reviewer', pr: '26' }, 'finished')];
+  // hc rm of t17 fails until the retry.
+  const rmFails = new Set(['t17']);
   const closed: string[] = [];
   const closeout = (pr: number) => runBoardCloseout({
     repo_root: main, pr, caller_terminal: 't3', processes: () => [],
     stopDaemons: (path) => { if (path === partial) throw new Error('daemon stop failed'); return []; },
-    host: { seatTerminals: () => ({ status: 'observed', terminals }), closeTerminal: (address) => { closed.push(address); return { status: 'closed' }; } },
+    host: { closeoutTerminals: () => ({ status: 'observed', terminals }), closeTerminal: (address) => {
+      if (rmFails.has(address)) return { status: 'unavailable', reason: 'hc_failed' };
+      closed.push(address); return { status: 'closed' };
+    } },
     gh_runner: args => ({ status: 0, stdout: JSON.stringify(args[0] === 'pr' ? pullRequests[args[2]!] : args[0] === 'repo' ? { id: 'R_this' } : { id: 1186405141 }) }),
   });
   const pane = (address: string, seat: string, reason: string | null) => ({ address, seat, outcome: reason === null ? 'closed' as const : 'kept' as const, reason });
   const state = (path: string, outcome: 'removed' | 'kept', reason: string | null) => ({ path, outcome, reason, checkout_present: outcome !== 'removed', branch_present: outcome !== 'removed' });
 
   const removed = await closeout(21);
-  expect([removed.panes, removed.worktree]).toEqual([[pane('t1', 'worker', null), pane('t2', 'gatekeeper', null)], state(clean, 'removed', null)]);
+  expect([removed.panes, removed.worktree]).toEqual([[pane('t1', 'worker', null), pane('t2', 'gatekeeper', null), pane('t12', 'reviewer', null)], state(clean, 'removed', null)]);
   expect([existsSync(clean), run('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/feat/clean'], main).status, git(origin, 'branch', '--list', 'feat/clean')])
     .toEqual([false, 1, 'feat/clean']);
 
   const retained = await closeout(22);
   expect([retained.panes, retained.worktree]).toEqual([
     [pane('t4', 'worker', null), pane('t5', 'reviewer', 'unpushed 1 commit(s) on review/unpushed'), pane('t6', 'worker', 'conflicting_binding pr 99'), pane('t7', 'gatekeeper', 'dirty'),
-      pane('t10', 'reviewer', 'other_repository')],
+      pane('t10', 'reviewer', 'other_repository'),
+      pane('t13', 'reviewer', 'other_repository'), pane('t14', 'worker', 'conflicting_binding pr 99'), pane('t15', 'reviewer', 'cwd_unknown')],
     state(kept, 'kept', 'a pane of the pull request is kept'),
   ]);
   expect(readFileSync(join(kept, '.ai/harness/active-worktree'), 'utf8')).toBe(`${kept}\n`);
@@ -1260,5 +1285,11 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   const half = await closeout(25);
   expect([half.panes, half.worktree]).toEqual([[pane('t11', 'reviewer', null)],
     { path: branchfail, outcome: 'partial', reason: expect.stringContaining('update-ref'), checkout_present: false, branch_present: true }]);
-  expect(closed).toEqual(['t1', 't2', 't4', 't9', 't11']);
+  // A failed hc rm keeps the finished pane and the worktree with the reason; the retry removes both.
+  const rmFailed = await closeout(26);
+  expect([rmFailed.panes, rmFailed.worktree]).toEqual([[pane('t17', 'reviewer', 'hc_failed')], state(rmfail, 'kept', 'a pane of the pull request is kept')]);
+  rmFails.clear();
+  const retried = await closeout(26);
+  expect([retried.panes, retried.worktree]).toEqual([[pane('t17', 'reviewer', null)], state(rmfail, 'removed', null)]);
+  expect(closed).toEqual(['t1', 't2', 't12', 't4', 't9', 't11', 't17']);
 });
