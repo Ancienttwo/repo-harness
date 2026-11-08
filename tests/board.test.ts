@@ -725,12 +725,15 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
     seat('t11', 'orchestrator', 'blocked')];
   const watched = { ...board, execution: { status: 'observed', terminals } } as BoardV1;
   const hc = watchHc({
-    // `get` at the window end: t6 is still blocked, t10 became idle, and the program of t11 ended with its last status blocked.
+    // `get` at the window end: t6 is still blocked, t10 became idle, and t11 is finished (its program exited).
     FAKE_TERMINALS: { t3: {}, t6: { status: { state: 'blocked' } }, t7: {}, t8: {}, t9: {}, t10: { status: { state: 'idle' } },
       t11: { state: 'finished', status: { state: 'blocked' } } },
-    // t7 became idle during the wait. t6 and t10: hc wait returns at once with the terminal still blocked.
-    FAKE_WAITS: { t6: { ended: false, reason: 'blocked', status: 'blocked' }, t7: { ended: false, reason: 'idle', status: 'idle' },
-      t10: { ended: false, reason: 'blocked', status: 'blocked' }, t11: { ended: false, reason: 'blocked', status: 'blocked' } },
+    // The live hc 0.1.18 wait lines. A live terminal that stopped working ends the wait with reason `status` (t7 idle, t6 and t10 blocked);
+    // a program exit ends it with reason `exit` and an exit code (t11).
+    FAKE_WAITS: { t6: { ended: true, reason: 'status', status: 'blocked', exit_code: null, signal: null, children: [] },
+      t7: { ended: true, reason: 'status', status: 'idle', exit_code: null, signal: null, children: [] },
+      t10: { ended: true, reason: 'status', status: 'blocked', exit_code: null, signal: null, children: [] },
+      t11: { ended: true, reason: 'exit', status: null, exit_code: 0, signal: null, children: [] } },
   });
   const logPath = attentionLogPath(1186405141, 1474, { REPO_HARNESS_HOME: hc.root });
   expect(logPath).toBe(join(hc.root, 'board/attention-1186405141-1474.jsonl'));
@@ -768,8 +771,9 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
   const records = () => readFileSync(logPath, 'utf8').split('\n').filter(Boolean).slice(4).map(line => JSON.parse(line));
   expect(records().filter(record => record.kind === 'send').map(record => [record.terminal, record.outcome, record.at])).toEqual([
     ['t3', 'sent', REPLAY_NOW.toISOString()], ['t9', 'sent', REPLAY_NOW.toISOString()], ['t7', 'sent', REPLAY_NOW.toISOString()],
+    ['t11', 'terminal_ended', REPLAY_NOW.toISOString()],
     ['t6', 'skipped_blocked', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()], ['t10', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
-    ['t11', 'terminal_ended', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()], ['t8', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
+    ['t8', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
   ]);
   expect(records().filter(record => record.kind === 'finding').map(record => record.rule)).toEqual(['A1', 'A7', 'R2']);
 

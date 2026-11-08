@@ -582,7 +582,10 @@ export function attentionHostPorts(options: HerdrCoreOptions = {}): AttentionHos
     wait: (terminal, seconds) => {
       try {
         const result = hcWait(terminal, seconds, options);
-        return { status: 'observed', ended: result.ended, reason: result.reason, state: result.status?.state ?? null };
+        // hc reports `ended: true` for a live terminal that stopped working (reason `status`) as well as for an exit;
+        // the program ended only when the terminal is no longer live.
+        const ended = result.ended && hcGet(terminal, options).state !== 'live';
+        return { status: 'observed', ended, reason: result.reason, state: result.status?.state ?? null };
       } catch (error) { return failed(error); }
     },
   };
