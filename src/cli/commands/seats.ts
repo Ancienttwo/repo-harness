@@ -217,9 +217,8 @@ export function buildSeatsCommand(): Command {
         });
         process.stdout.write(`${JSON.stringify({ ok: true, ...result })}\n`);
       } catch (error) {
-        if (!(error instanceof SeatResetError || error instanceof HerdrCoreError)) throw error;
-        const [code, outcome] = error instanceof SeatResetError ? [error.code, error.outcome] : ['hc_failed', 'nothing_sent'];
-        process.stderr.write(`${JSON.stringify({ ok: false, error: code, outcome, message: error.message })}\n`);
+        if (!(error instanceof SeatResetError)) throw error;
+        process.stderr.write(`${JSON.stringify({ ok: false, error: error.code, outcome: error.outcome, message: error.message, logErrors: error.logErrors })}\n`);
         process.exitCode = 1;
       }
     });
