@@ -15,6 +15,8 @@ import { BoardSeatsError, collectBoardSeats } from '../../effects/board/seats';
 import { DispatchError, type DispatchPlanV1 } from '../../core/board/dispatch';
 import { runDispatch } from '../../effects/board/dispatch';
 import { seatLaunch } from './seats';
+import { runBoardCloseout, stopArchitectureDaemons } from '../../effects/board/closeout';
+import { worktreeProcesses } from '../../effects/git/worktree-processes';
 
 interface BoardOptions {
   readonly parent?: string;
@@ -147,6 +149,23 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
         if (!(error instanceof BoardSeatsError || error instanceof BoardCollectError)) throw error;
         const code = error instanceof BoardSeatsError ? { code: error.code } : {};
         process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, ...code, message: error.message })}\n`);
+        process.exitCode = 1;
+      }
+    });
+  board.command('closeout')
+    .description('After a merge, in the primary checkout: close each seat terminal of the pull request whose checkout is clean and pushed, then remove its merged worktree; prints JSON, exit 1 when anything is kept')
+    .requiredOption('--pr <number>', 'The merged pull request')
+    .action(async (options: { pr: string }) => {
+      try {
+        if (!/^[1-9][0-9]*$/u.test(options.pr)) throw new BoardCollectError('--pr must be a pull request number');
+        const repo_root = process.cwd();
+        const result = await runBoardCloseout({ repo_root, pr: Number(options.pr), host, caller_terminal: process.env.HC_TERMINAL_ID ?? null,
+          stopDaemons: worktree => stopArchitectureDaemons(repo_root, worktree), processes: worktreeProcesses });
+        process.stdout.write(`${JSON.stringify(result)}\n`);
+        if (result.panes.some(pane => pane.outcome === 'kept') || result.worktree.outcome !== 'removed' || result.daemon_stop_failures.length > 0) process.exitCode = 1;
+      } catch (error) {
+        if (!(error instanceof BoardCollectError)) throw error;
+        process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, message: error.message })}\n`);
         process.exitCode = 1;
       }
     });

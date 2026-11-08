@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { initGitRepo, run, tmpWorkspace } from './helpers/repo-fixture';
 import { evaluateBoardAttention, type BoardRuleId } from '../src/core/board/attention';
@@ -10,6 +10,7 @@ import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectBoard, readLocalRepositoryId } from '../src/effects/board/collect';
+import { runBoardCloseout } from '../src/effects/board/closeout';
 import type { RunArchctxProcess } from '../src/core/architecture/contracts';
 import { errorEnvelope } from 'archctx-contracts';
 import { githubRemoteRepository } from '../src/core/board/source';
@@ -594,6 +595,10 @@ test('one hit for each rule that the recorded state does not trigger', () => {
     .filter(entry => ['A3', 'A4', 'A5'].includes(entry.rule)).map(entry => [entry.rule, entry.reason, entry.subject])).toEqual([
     ['A3', 'status_time_missing', 't1'], ['A4', 'issue_off_board', 't2'], ['A4', 'issue_label_missing', 't9'], ['A5', 'claim_pr_off_board', '#1477'],
   ]);
+  // A9: a live seat of a merged pull request is reported; a finished one is not.
+  const merged = evaluateBoardAttention({ ...board, pull_requests: board.pull_requests.map(pr => (pr.number === 1494 ? { ...pr, state: 'merged' as const } : pr)),
+    execution: { status: 'observed', terminals: [{ ...done!, pr: 1494 }, { ...done!, address: 't9', pr: 1494, state: 'finished' }] as BoardTerminalV1[] } });
+  expect(merged.findings.filter(finding => finding.rule === 'A9').map(finding => [finding.terminals, finding.pull_requests])).toEqual([[['t2'], [1494]]]);
 });
 
 test('R5: two owning capabilities among the counted paths are a High signal; an unowned or ambiguous path is always reported', () => {
@@ -1150,4 +1155,96 @@ test('advisor seat: plain text reaches only the one live advisor terminal of the
   expect(failure(() => sendToAdvisorSeat(absent.scope, 'status?'))).toMatchObject({ terminal: null, code: 'advisor_seat_absent' });
   const missing = { github_repository_id: 1186405141, parent: 1503, host: boardHostPorts({ env: { PATH: '/nonexistent' } }) };
   expect([code(() => sendToAdvisorSeat(missing, 'status?')), code(() => readAdvisorSeat(missing))]).toEqual(['hc_unavailable', 'hc_unavailable']);
+});
+
+test('board closeout: proofs come first; a bound, clean, pushed seat closes and the merged worktree goes; a dirty, unpushed or conflicting seat, a missing proof and a failed step keep their state with the reason', async () => {
+  const root = tmpWorkspace('board-closeout'); roots.push(root);
+  const main = join(root, 'main'), origin = join(root, 'origin.git');
+  const git = (cwd: string, ...args: string[]) => {
+    const result = run('git', args, cwd);
+    expect(result.status).toBe(0);
+    return result.stdout.trim();
+  };
+  git(root, 'init', '-q', '--bare', '-b', 'main', origin);
+  mkdirSync(main); initGitRepo(main);
+  writeFileSync(join(main, '.gitignore'), '.ai/\n');
+  git(main, 'add', '.'); git(main, 'commit', '-q', '-m', 'base');
+  git(main, 'remote', 'add', 'origin', origin); git(main, 'push', '-q', '-u', 'origin', 'main');
+  const pullRequests: Record<string, Json> = {};
+  const worktree = (name: string, pr: number, issue: number) => {
+    const path = join(root, name);
+    git(main, 'worktree', 'add', '-q', '-b', `feat/${name}`, path);
+    writeFileSync(join(path, `${name}.txt`), name);
+    git(path, 'add', '.'); git(path, 'commit', '-q', '-m', name); git(path, 'push', '-q', '-u', 'origin', `feat/${name}`);
+    mkdirSync(join(path, '.ai/harness'), { recursive: true });
+    writeFileSync(join(path, '.ai/harness/active-worktree'), `${path}\n`);
+    const head = git(path, 'rev-parse', 'HEAD');
+    git(main, 'merge', '-q', '--no-ff', '-m', `merge ${name}`, `feat/${name}`); git(main, 'push', '-q', 'origin', 'main');
+    pullRequests[String(pr)] = { number: pr, state: 'MERGED', baseRefName: 'main', headRefName: `feat/${name}`, headRefOid: head,
+      mergeCommit: { oid: git(main, 'rev-parse', 'HEAD') }, closingIssuesReferences: [{ number: issue, repository: { id: 'R_this' } }] };
+    return path;
+  };
+  const clean = worktree('clean', 21, 11), kept = worktree('kept', 22, 12), dirty = worktree('dirty', 23, 13), partial = worktree('partial', 24, 14);
+  const branchfail = worktree('branchfail', 25, 15);
+  // #21 also closes issue 12 of another repository, which binds no local seat.
+  pullRequests['21']!.closingIssuesReferences.push({ number: 12, repository: { id: 'R_other' } });
+  // A clean checkout of another project under a stale pr label.
+  const elsewhere = join(root, 'elsewhere');
+  mkdirSync(elsewhere); initGitRepo(elsewhere); git(elsewhere, 'commit', '-q', '--allow-empty', '-m', 'other');
+  // Git refuses the deletion of feat/branchfail, so its exact removal stops after the checkout is gone.
+  mkdirSync(join(root, 'hooks'));
+  writeFileSync(join(root, 'hooks/reference-transaction'), `#!/bin/sh\n[ "$1" = prepared ] || exit 0\ngrep -q ' 0\\{40\\} refs/heads/feat/branchfail$' && exit 1\nexit 0\n`);
+  chmodSync(join(root, 'hooks/reference-transaction'), 0o755);
+  git(main, 'config', 'core.hooksPath', join(root, 'hooks'));
+  writeFileSync(join(dirty, 'draft.txt'), 'dirty');
+  // Reviewer checkouts of #22: one with a commit that origin does not have, one with an uncommitted file.
+  const checkout = (name: string) => {
+    const path = join(root, name);
+    git(main, 'worktree', 'add', '-q', '-b', `review/${name}`, path); git(path, 'push', '-q', '-u', 'origin', `review/${name}`);
+    return path;
+  };
+  const unpushed = checkout('unpushed'), edited = checkout('edited');
+  git(unpushed, 'commit', '-q', '--allow-empty', '-m', 'local only');
+  writeFileSync(join(edited, 'note.txt'), 'draft');
+  const terminal = (address: string, cwd: string, labels: Record<string, string>) => ({ address, name: null, agent: 'claude-code', state: 'live' as const, status: 'done',
+    status_kind: null, status_msg: null, status_ms: null, turn: 1, cwd, labels: { seat: 'worker', ...labels } });
+  const terminals = [terminal('t1', clean, { issue: '11' }), terminal('t2', clean, { seat: 'gatekeeper', pr: '21' }), terminal('t3', main, { seat: 'orchestrator' }),
+    terminal('t4', kept, { issue: '12' }), terminal('t5', unpushed, { seat: 'reviewer', pr: '22' }), terminal('t6', kept, { issue: '12', pr: '99' }),
+    terminal('t7', edited, { seat: 'gatekeeper', pr: '22' }), terminal('t8', main, { seat: 'reviewer', pr: '23' }), terminal('t9', main, { seat: 'reviewer', pr: '24' }),
+    terminal('t10', elsewhere, { seat: 'reviewer', pr: '22' }), terminal('t11', main, { seat: 'reviewer', pr: '25' })];
+  const closed: string[] = [];
+  const closeout = (pr: number) => runBoardCloseout({
+    repo_root: main, pr, caller_terminal: 't3', processes: () => [],
+    stopDaemons: (path) => { if (path === partial) throw new Error('daemon stop failed'); return []; },
+    host: { seatTerminals: () => ({ status: 'observed', terminals }), closeTerminal: (address) => { closed.push(address); return { status: 'closed' }; } },
+    gh_runner: args => ({ status: 0, stdout: JSON.stringify(args[0] === 'pr' ? pullRequests[args[2]!] : args[0] === 'repo' ? { id: 'R_this' } : { id: 1186405141 }) }),
+  });
+  const pane = (address: string, seat: string, reason: string | null) => ({ address, seat, outcome: reason === null ? 'closed' as const : 'kept' as const, reason });
+  const state = (path: string, outcome: 'removed' | 'kept', reason: string | null) => ({ path, outcome, reason, checkout_present: outcome !== 'removed', branch_present: outcome !== 'removed' });
+
+  const removed = await closeout(21);
+  expect([removed.panes, removed.worktree]).toEqual([[pane('t1', 'worker', null), pane('t2', 'gatekeeper', null)], state(clean, 'removed', null)]);
+  expect([existsSync(clean), run('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/feat/clean'], main).status, git(origin, 'branch', '--list', 'feat/clean')])
+    .toEqual([false, 1, 'feat/clean']);
+
+  const retained = await closeout(22);
+  expect([retained.panes, retained.worktree]).toEqual([
+    [pane('t4', 'worker', null), pane('t5', 'reviewer', 'unpushed 1 commit(s) on review/unpushed'), pane('t6', 'worker', 'conflicting_binding pr 99'), pane('t7', 'gatekeeper', 'dirty'),
+      pane('t10', 'reviewer', 'other_repository')],
+    state(kept, 'kept', 'a pane of the pull request is kept'),
+  ]);
+  expect(readFileSync(join(kept, '.ai/harness/active-worktree'), 'utf8')).toBe(`${kept}\n`);
+
+  // A missing proof (a dirty worktree) stops before the bound, clean t8 closes.
+  await expect(closeout(23)).rejects.toThrow(`closeout of #23 stopped before any side effect: worktree ${dirty} is dirty or unreadable`);
+  expect([existsSync(join(dirty, 'draft.txt')), run('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/feat/dirty'], main).status]).toEqual([true, 0]);
+
+  // A step that fails after the panes closed returns those outcomes and the observed worktree state.
+  const failed = await closeout(24);
+  expect([failed.panes, failed.worktree]).toEqual([[pane('t9', 'reviewer', null)], state(partial, 'kept', 'daemon stop failed')]);
+  // A branch deletion that fails after the checkout removal is a partial outcome with the observed state.
+  const half = await closeout(25);
+  expect([half.panes, half.worktree]).toEqual([[pane('t11', 'reviewer', null)],
+    { path: branchfail, outcome: 'partial', reason: expect.stringContaining('update-ref'), checkout_present: false, branch_present: true }]);
+  expect(closed).toEqual(['t1', 't2', 't4', 't9', 't11']);
 });

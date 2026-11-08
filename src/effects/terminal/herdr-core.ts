@@ -543,6 +543,16 @@ export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1
         return unavailable(error);
       }
     },
+    closeTerminal: (address) => {
+      try {
+        // hc rm refuses a live terminal, so a kill that did not finish the program keeps the terminal.
+        if (hcGet(address, options).state === 'live' && hcKill(address, options).state !== 'finished') return { status: 'unavailable', reason: 'hc_kill_unfinished' };
+        hcRm(address, options);
+        return { status: 'closed' };
+      } catch (error) {
+        return unavailable(error);
+      }
+    },
   };
 }
 
