@@ -153,10 +153,14 @@ describe('Stop seat reset (#1972)', () => {
       // About 2.6 MB without an assistant entry: the window doubles to the whole file and finds none.
       ['none.jsonl', `${user(1_300_000)}\n${user(1_300_000)}\n`, 0],
     ] as const;
-    expect(cases.map(([name, text]) => {
+    const results = cases.map(([name, text]) => {
       writeFileSync(join(cwd, name), text);
-      return seatStop(cwd, join(cwd, name)).exitCode;
-    })).toEqual(cases.map(([, , exitCode]) => exitCode));
+      return seatStop(cwd, join(cwd, name));
+    });
+    expect(results.map(result => result.exitCode)).toEqual(cases.map(([, , exitCode]) => exitCode));
+    // A reader that threw would also exit 0: the no-assistant row gives no reset message and leaves the last request.
+    expect(results[2]!.systemMessage ?? '').not.toContain('seat reset');
+    expect(JSON.parse(readFileSync(join(dir, 'request.json'), 'utf8')).transcript_path).toBe(join(cwd, 'open.jsonl'));
   });
 });
 
