@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir, userInfo } from 'node:os';
+import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
@@ -88,21 +88,15 @@ function withoutObservationTimes(snapshot: DevActivitySnapshotV2) {
 }
 
 describe('catch-up CLI', () => {
-  test('the install-state fixture accepts only a temporary HOME, judged against the account home', () => {
+  test('the install-state fixture accepts only a HOME inside the temp directory', () => {
     const { HOME: _home, ...withoutHome } = process.env;
-    expect(() => recordPluginSelection(withoutHome, ['operator'])).toThrow('temporary env.HOME');
-    // os.homedir() follows process.env.HOME, so the real home must come from the account record.
-    const previous = process.env.HOME;
-    const startup = mkdtempSync(join(tmpdir(), 'catch-up-guard-startup-'));
+    expect(() => installStateFixturePath(withoutHome)).toThrow('inside the temp directory');
+    expect(() => installStateFixturePath({ HOME: process.cwd() })).toThrow('inside the temp directory');
+    expect(() => installStateFixturePath({ HOME: tmpdir() })).toThrow('inside the temp directory');
     const home = mkdtempSync(join(tmpdir(), 'catch-up-guard-home-'));
-    process.env.HOME = startup;
     try {
-      expect(() => recordPluginSelection({ HOME: userInfo().homedir }, ['operator'])).toThrow('temporary env.HOME');
       expect(installStateFixturePath({ HOME: home })).toStartWith(home);
-    } finally {
-      if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous;
-      for (const path of [startup, home]) rmSync(path, { recursive: true, force: true });
-    }
+    } finally { rmSync(home, { recursive: true, force: true }); }
   });
 
   test('prints the existing snapshot as one JSON line with no text cap', async () => {

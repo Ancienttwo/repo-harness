@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from 'fs';
-import { tmpdir, userInfo } from 'os';
-import { dirname, join, relative, resolve } from 'path';
+import { tmpdir } from 'os';
+import { dirname, isAbsolute, join, relative } from 'path';
 import { versions } from '../../src/cli/installer/install-profile';
 import { installProfileStatePath } from '../../src/cli/installer/install-state';
 import { bunGlobalPackageRoot } from '../../src/cli/installer/skill-projection';
@@ -9,12 +9,13 @@ import type { PluginId, PluginSelection } from '../../src/core/skill-surface/plu
 
 /**
  * Install state resolves to `homedir()` without HOME; a fixture write must never reach the real one.
- * The account record names the real home: `os.homedir()` follows $HOME, which a test may already point at a temp dir.
+ * Bun's `homedir()` and `userInfo().homedir` both follow $HOME, so neither names the real home from a process
+ * that already runs under a temp HOME. The guard accepts only an existing directory strictly inside the temp root.
  */
 export function installStateFixturePath(env: NodeJS.ProcessEnv): string {
-  const real = (path: string) => (existsSync(path) ? realpathSync(path) : resolve(path));
-  if (!env.HOME || real(env.HOME) === real(userInfo().homedir)) {
-    throw new Error('Install-state fixtures need a temporary env.HOME, not a missing HOME or the real home directory');
+  const inside = env.HOME && existsSync(env.HOME) ? relative(realpathSync(tmpdir()), realpathSync(env.HOME)) : '..';
+  if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) {
+    throw new Error('Install-state fixtures need an env.HOME that is an existing directory inside the temp directory');
   }
   return installProfileStatePath(env);
 }
