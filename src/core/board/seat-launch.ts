@@ -90,9 +90,16 @@ const GROUP_TEXT: Readonly<Record<SeatGroup, string>> = {
 const OFF_GROUPS = (config: SeatConfigV1): SeatGroup[] =>
   (['edit', 'shell', 'net', 'tasks', 'mcp', 'gh'] as const).filter(group => !config.tools.includes(group));
 
-const roleList = (fleet: readonly string[]) => fleet.map(role => `\`${role}\``).join(', ');
+/**
+ * pi-subagents 0.87.0 ranks the extra role directory below the user and project role directories, so a
+ * hand-written `explorer` there would shadow a generated one. The generated roles carry this prefix instead.
+ */
+export const piRoleName = (role: string): string => `rh-${role}`;
 
-function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly string[]): string[] {
+type RoleName = (role: string) => string;
+const roleList = (fleet: readonly string[], name: RoleName) => fleet.map(role => `\`${name(role)}\``).join(', ');
+
+function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly string[], name: RoleName): string[] {
   if (seat === 'orchestrator') {
     const queue = config.tools.includes('tasks')
       ? ['Keep worker notices in a triage queue with TaskCreate, TaskUpdate, TaskList and TaskGet, as `references/orchestrator.md` §8.1 of repo-harness-issue-flow says: answer the owner first, then take one queue item at a time by priority.']
@@ -103,7 +110,7 @@ function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly stri
       : 'You do not review a PR that you dispatched; route that review to another seat.';
     const dispatch = fleet.length === 0
       ? 'You do not dispatch sub-agents (the Agent tool) for execution. Dispatch work only to seats through Herdr.'
-      : `You may call these read-only sub-agents: ${roleList(fleet)}. Call no other agent type. Writers and the Codex review run only in Herdr seats: dispatch them to seats through Herdr.`;
+      : `You may call these read-only sub-agents: ${roleList(fleet, name)}. Call no other agent type. Writers and the Codex review run only in Herdr seats: dispatch them to seats through Herdr.`;
     return [
       `You are the orchestrator seat. You hold the coordinator and integrator seats of repo-harness-issue-flow. You dispatch, accept and merge. You do not edit product code, tests or configuration. ${review} You push only the branch of a Codex worker seat handoff: commit its worktree diff with its message and explicit paths only, push the branch, open the PR, and push each fix round. You do not tag, release, delete, or change credentials or permissions.`,
       `${dispatch} When \`publication.acceptance_merge\` is \`on\`, merge only with \`repo-harness publication merge\`. When it is \`off\`, hand each ready PR to the owner.`,
@@ -115,7 +122,7 @@ function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly stri
     const evidence = fleet.length === 0
       ? 'You have no sub-agents. Collect evidence yourself.'
       : [
-        `Collect evidence through your sub-agents: ${roleList(fleet)}. Split one research request into 2 to 4 read-only briefs with scopes that do not overlap, and send them in parallel.`,
+        `Collect evidence through your sub-agents: ${roleList(fleet, name)}. Split one research request into 2 to 4 read-only briefs with scopes that do not overlap, and send them in parallel.`,
         ...(fleet.includes('deep-reasoner') ? ['Use deep-reasoner only for an independent second judgment.'] : []),
         'Keep judgment, synthesis and the proposal for yourself. Run a check of one or two commands yourself.',
       ].join(' ');
@@ -127,11 +134,11 @@ function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly stri
   }
   if (seat === 'gatekeeper' || seat === 'reviewer') {
     return [`You are the ${seat} seat. Perform a read-only review of the assigned PR. Do not edit files, commit, push, or write to GitHub. Report the verdict first, then the findings and evidence.`,
-      fleet.length === 0 ? 'You have no sub-agents.' : `You may call these sub-agents: ${roleList(fleet)}. Call no other agent type.`];
+      fleet.length === 0 ? 'You have no sub-agents.' : `You may call these sub-agents: ${roleList(fleet, name)}. Call no other agent type.`];
   }
   return [
     'You are a worker seat. You deliver one issue or PR and report to the orchestrator.',
-    fleet.length === 0 ? 'You have no sub-agents.' : `You may call these sub-agents: ${roleList(fleet)}. Call no other agent type.`,
+    fleet.length === 0 ? 'You have no sub-agents.' : `You may call these sub-agents: ${roleList(fleet, name)}. Call no other agent type.`,
     ...(config.runtime === 'codex' ? [
       'As a Codex worker seat in a linked contract worktree, edit files and run checks only. Do not run `git fetch`, `git commit` or `git push`. In your last message, give the commit subject and body, the PR title and body, and the check results. The orchestrator commits your worktree diff with that message and explicit paths only, pushes the branch and opens the PR. It is the head owner of record and pushes each fix round; no other agent pushes to that PR. You remain the content author and answer review threads through the orchestrator.',
     ] : []),
@@ -147,20 +154,20 @@ const KEEP_YOURSELF = {
  * `fleet` is the list that the brief names.
  * Each tool group that the host does not fully enforce goes into a keep-yourself paragraph.
  */
-function brief(seat: SeatId, config: SeatConfigV1, fleet: readonly string[], limits: readonly SeatLimitV1[]): string {
+function brief(seat: SeatId, config: SeatConfigV1, fleet: readonly string[], limits: readonly SeatLimitV1[], name: RoleName = role => role): string {
   const kept = (Object.keys(KEEP_YOURSELF) as (keyof typeof KEEP_YOURSELF)[]).flatMap((level) => {
     const groups = limits.flatMap(limit => (limit.level === level && limit.subject !== 'fleet' ? [GROUP_TEXT[limit.subject]] : []));
     return groups.length === 0 ? [] : [`${KEEP_YOURSELF[level]} ${groups.join(' ')}`];
   });
-  return [...roleParagraphs(seat, config, fleet), ...kept].join('\n\n');
+  return [...roleParagraphs(seat, config, fleet, name), ...kept].join('\n\n');
 }
 
 /**
  * Every launch starts with `env`: it unsets the seat identity that a seat parent passes down, so that only a reset
- * seat launch names a seat to the hooks (#1972). `assignments` follow the unset options.
+ * seat launch names a seat to the hooks (#1972), and the Pi role directory, so that only a Pi seat with a fleet names one (#1977). `assignments` follow the unset options.
  */
 function seatEnv(assignments: readonly string[]): string[] {
-  return ['env', '-u', SEAT_ENV, '-u', SEAT_REPOSITORY_ENV, ...assignments];
+  return ['env', '-u', SEAT_ENV, '-u', SEAT_REPOSITORY_ENV, '-u', PI_EXTRA_AGENT_DIRS_ENV, ...assignments];
 }
 
 function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly string[], name: string | undefined, repositoryId: string | undefined): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
@@ -239,7 +246,7 @@ function piLaunch(seat: SeatId, config: SeatConfigV1, roleDirectory: string | un
     })),
     ...(seatTakesFleet(config) ? [{ subject: 'fleet' as const, level: 'instructions_only' as const }] : []),
   ];
-  const text = brief(seat, config, config.fleet, limits);
+  const text = brief(seat, config, config.fleet, limits, piRoleName);
   const slash = config.model?.indexOf('/') ?? -1;
   return {
     argv: [...seatEnv(roleDirectory === undefined ? [] : [`${PI_EXTRA_AGENT_DIRS_ENV}=${roleDirectory}`]), 'pi', ...(config.model === null ? [] : ['--provider', config.model.slice(0, slash), '--model', config.model.slice(slash + 1)]),

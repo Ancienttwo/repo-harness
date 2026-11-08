@@ -104,8 +104,8 @@ function withRepository(home: string, panePrefix: string | undefined, fn: (repo:
 const denied = (args: string[]) => values(args, "--disallowedTools");
 /** With --repository-id the argv is `/bin/sh -c <script> <bun> <cli>` and then the agent argv. */
 const agent = (launch: { argv: string[] }) => launch.argv.slice(5);
-/** Every seat argv first unsets the seat identity that it inherits (#1975); `bare` checks that prefix and drops it. */
-const UNSET_SEAT = ["env", "-u", "REPO_HARNESS_SEAT", "-u", "REPO_HARNESS_SEAT_REPOSITORY"];
+/** Every seat argv first unsets the seat identity that it inherits and the Pi role directory (#1975, #1977); `bare` checks that prefix and drops it. */
+const UNSET_SEAT = ["env", "-u", "REPO_HARNESS_SEAT", "-u", "REPO_HARNESS_SEAT_REPOSITORY", "-u", "PI_SUBAGENT_EXTRA_AGENT_DIRS"];
 function bare(args: string[]): unknown[] {
   expect(args.slice(0, UNSET_SEAT.length)).toEqual(UNSET_SEAT);
   return args.slice(UNSET_SEAT.length);
@@ -241,11 +241,12 @@ describe("repo-harness seats argv", () => {
       const [assignment, command] = bare(gpt.argv) as string[];
       const directory = assignment!.replace("PI_SUBAGENT_EXTRA_AGENT_DIRS=", "");
       expect([command, directory.startsWith(join(realpathSync(home), ".repo-harness", "seats", "pi-fleet"))]).toEqual(["pi", true]);
-      expect(readdirSync(directory).sort()).toEqual(["explorer.md", "fast-worker.md"]);
-      const explorer = readFileSync(join(directory, "explorer.md"), "utf8");
+      expect(readdirSync(directory).sort()).toEqual(["rh-explorer.md", "rh-fast-worker.md"]);
+      const explorer = readFileSync(join(directory, "rh-explorer.md"), "utf8");
+      expect(explorer).toContain("name: rh-explorer\n");
       expect(explorer).toContain("model: magpie/codex/gpt-6-luna\nthinking: high\ntools: read, grep, find, ls, bash\n");
-      expect(readFileSync(join(directory, "fast-worker.md"), "utf8")).toContain("tools: read, grep, find, ls, bash, edit, write\n");
-      expect(gpt.brief).toContain("You may call these sub-agents: `explorer`, `fast-worker`.");
+      expect(readFileSync(join(directory, "rh-fast-worker.md"), "utf8")).toContain("tools: read, grep, find, ls, bash, edit, write\n");
+      expect(gpt.brief).toContain("You may call these sub-agents: `rh-explorer`, `rh-fast-worker`.");
       expect(gpt.limits).toContainEqual({ subject: "fleet", level: "instructions_only" });
       const light = launch(home, "worker-light");
       expect(bare(light.argv)[0]).toBe("pi");
@@ -557,13 +558,13 @@ describe("repo-harness seats argv", () => {
         mkdirSync(bin);
         writeFileSync(join(bin, "hc"), `#!/bin/sh\nprintf 'hc %s\\n' "$*" >> "${log}"\nif [ -n "$FAKE_HC_FAIL" ]; then printf '%s' '{"error":{"kind":"not_found","message":"no terminal"}}' >&2; exit 3; fi\n`
           + `printf '%s' '{"address":"t5","state":"live","labels":{"repo-harness.seat":"worker"},"turn":0}'\n`);
-        writeFileSync(join(bin, "codex"), `#!/bin/sh\nprintf 'codex %s %s %s %s %s\\n' "$#" "$1" "$2" "\${REPO_HARNESS_SEAT-unset}" "\${REPO_HARNESS_SEAT_REPOSITORY-unset}" >> "${log}"\n`);
+        writeFileSync(join(bin, "codex"), `#!/bin/sh\nprintf 'codex %s %s %s %s %s %s\\n' "$#" "$1" "$2" "\${REPO_HARNESS_SEAT-unset}" "\${REPO_HARNESS_SEAT_REPOSITORY-unset}" "\${PI_SUBAGENT_EXTRA_AGENT_DIRS-unset}" >> "${log}"\n`);
         for (const name of ["hc", "codex"]) chmodSync(join(bin, name), 0o755);
         const label = "hc label --json -- t5 repo-harness.seat=worker repo-harness.repository=1186405141 repo-harness.issue=1473 repo-harness.parent=1000";
         for (const [env, error, calls] of [
-          // A worker started from a reset seat's env does not inherit the seat identity (#1975).
-          [{ HC_TERMINAL_ID: "t5", REPO_HARNESS_SEAT: "orchestrator", REPO_HARNESS_SEAT_REPOSITORY: "1186405141" }, null,
-            [label, `codex ${agent(worker).length - agent(worker).indexOf("codex") - 1} -m gpt-6.1-terra unset unset`]],
+          // A worker started from a reset seat's env does not inherit the seat identity or a parent's Pi role directory (#1975, #1977).
+          [{ HC_TERMINAL_ID: "t5", REPO_HARNESS_SEAT: "orchestrator", REPO_HARNESS_SEAT_REPOSITORY: "1186405141", PI_SUBAGENT_EXTRA_AGENT_DIRS: "/parent/pi-fleet" }, null,
+            [label, `codex ${agent(worker).length - agent(worker).indexOf("codex") - 1} -m gpt-6.1-terra unset unset unset`]],
           [{ HC_TERMINAL_ID: "t5", FAKE_HC_FAIL: "1" }, "label_failed", [label]],
           [{}, "terminal_unknown", []],
         ] as const) {
@@ -585,11 +586,11 @@ describe("repo-harness seats argv", () => {
         const orchestrator = named(repo, "orchestrator");
         expect([orchestrator.name, orchestrator.tab]).toEqual(["rh-orch", "orch"]);
         // A Claude seat carries the same name as its session name; the reset seats name their seat and repository in the env (#1972).
-        expect(agent(orchestrator).slice(0, 11)).toEqual(["env", "-u", "REPO_HARNESS_SEAT", "-u", "REPO_HARNESS_SEAT_REPOSITORY", "CLAUDE_CODE_TASK_LIST_ID=repo-harness-orchestrator",
+        expect(agent(orchestrator).slice(0, 13)).toEqual(["env", "-u", "REPO_HARNESS_SEAT", "-u", "REPO_HARNESS_SEAT_REPOSITORY", "-u", "PI_SUBAGENT_EXTRA_AGENT_DIRS", "CLAUDE_CODE_TASK_LIST_ID=repo-harness-orchestrator",
           "REPO_HARNESS_SEAT=orchestrator", "REPO_HARNESS_SEAT_REPOSITORY=1186405141", "claude", "-n", "rh-orch"]);
         const advisor = named(repo, "advisor", "--parent", "1000");
         expect([advisor.name, advisor.tab]).toEqual(["rh-adv", "orch"]);
-        expect(agent(advisor).slice(0, 10)).toEqual(["env", "-u", "REPO_HARNESS_SEAT", "-u", "REPO_HARNESS_SEAT_REPOSITORY", "REPO_HARNESS_SEAT=advisor", "REPO_HARNESS_SEAT_REPOSITORY=1186405141", "claude", "-n", "rh-adv"]);
+        expect(agent(advisor).slice(0, 12)).toEqual(["env", "-u", "REPO_HARNESS_SEAT", "-u", "REPO_HARNESS_SEAT_REPOSITORY", "-u", "PI_SUBAGENT_EXTRA_AGENT_DIRS", "REPO_HARNESS_SEAT=advisor", "REPO_HARNESS_SEAT_REPOSITORY=1186405141", "claude", "-n", "rh-adv"]);
         // A linked worktree resolves to its primary checkout; the default worker runs Codex, which has no session name flag.
         const worker = named(worktree, "worker", "--parent", "1000", "--issue", "1508", "--pr", "1521", "--qualifier", "device");
         expect([worker.name, worker.tab]).toEqual(["rh-w-1508-device", "#1000"]);

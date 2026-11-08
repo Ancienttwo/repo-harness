@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { piRoleName } from '../../core/board/seat-launch';
 import { PI_CODEX_MODEL_PREFIX } from '../../core/board/seats-settings';
 import { globalConfigurationPath } from '../configuration/global-configuration';
 import { AGENT_TARGET_OVERRIDES, WRITABLE_AGENTS, parseFrontmatter, validateFrontmatter } from '../terminal/task-role-profiles';
@@ -25,7 +26,7 @@ function roleFile(role: string): string {
   if (!valid.ok) throw new PiFleetRolesError(`The ${role} fleet source is invalid: ${valid.reason}.`);
   return [
     '---',
-    `name: ${role}`,
+    `name: ${piRoleName(role)}`,
     `description: ${parsed!.description!.replace(valid.sourceDescription, target.targetDescription)}`,
     `model: ${PI_CODEX_MODEL_PREFIX}${target.model}`,
     `thinking: ${target.effort}`,
@@ -46,7 +47,7 @@ function roleFile(role: string): string {
  * each file lands by an atomic rename. A source change gives a new directory; nothing reads a stale one.
  */
 export function writePiFleetRoles(fleet: readonly string[], env: NodeJS.ProcessEnv = process.env): string {
-  const files = fleet.map(role => [`${role}.md`, roleFile(role)] as const);
+  const files = fleet.map(role => [`${piRoleName(role)}.md`, roleFile(role)] as const);
   const digest = createHash('sha256').update(JSON.stringify(files)).digest('hex').slice(0, 16);
   const directory = join(dirname(globalConfigurationPath(env)), 'seats', 'pi-fleet', digest);
   mkdirSync(directory, { recursive: true });
