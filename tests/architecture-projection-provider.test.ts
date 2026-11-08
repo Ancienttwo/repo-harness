@@ -1088,6 +1088,11 @@ describe('package-local ArchContext projection provider', () => {
     rmSync(join(checkout, 'local.txt'));
     expect(await follow(one)).toMatchObject({ code: WRITER_RESTART_EXIT_CODE, published: 0, head: two });
 
+    // A dirty checkout already at main refuses to publish.
+    writeFileSync(join(checkout, 'local.txt'), 'operator edit\n');
+    refused(await follow(two), two, two);
+    rmSync(join(checkout, 'local.txt'));
+
     // An install failure keeps refusing after a restart on the fast-forwarded HEAD.
     const three = push('three', { missing: 'file:./missing' });
     refused(await follow(two), three, three);

@@ -54,9 +54,10 @@ export function syncWriterCheckout(checkoutRoot: string, runningHead: string, bu
     git(['fetch', '--quiet', 'origin', 'main']);
     target = git(['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}']);
     const installed = existsSync(markerPath) ? readFileSync(markerPath, 'utf8').trim() : null;
+    // Local edits are unreviewed code: refuse them whether or not main moved.
+    if (git(['status', '--porcelain']) !== '') throw new Error(`the writer checkout has local changes; it refuses to run or fast-forward ${checkoutRoot}`);
     if (head === target && installed === target && runningHead === target) return { state: 'current' };
     if (head !== target) {
-      if (git(['status', '--porcelain']) !== '') throw new Error(`the writer checkout has local changes; it refuses to fast-forward ${checkoutRoot}`);
       git(['merge', '--ff-only', '--quiet', target]);
       head = git(['rev-parse', 'HEAD']);
       // A checkout ahead of main merges as a no-op; it is not the main code.
