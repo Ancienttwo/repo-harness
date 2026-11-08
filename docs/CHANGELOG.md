@@ -6,6 +6,7 @@ All notable changes to this skill are documented here.
 
 ### Added
 
+- `repo-harness board closeout` also removes finished seat terminals of the merged PR. It lists them with `hc ls --all`, under the same label binding and checkout proofs, and runs `hc rm` only. A retry after a failed `hc rm` now removes the terminal. (#2021)
 - `repo-harness worktrees path --repository <id> --worktree <id>` prints
   the absolute path of one registered worktree as one JSON line. In the
   desktop shell, a registered Worktree row shows "Open in Terminal" and
@@ -33,6 +34,7 @@ All notable changes to this skill are documented here.
 
 ### Fixed
 
+- Board attention rules A3 and A4 and the delivery window recognize every configured worker seat kind. (#2016)
 - `review publish` puts a finding on a line outside the PR diff into the review body, so GitHub no longer rejects the review with HTTP 422. A retry reuses the acceptance claim already on the PR instead of posting a second one (#2009).
 - `contract-worktree start` starts a node-shebang `codegraph` with the trusted node runtime. The installed helper PATH has no node, so the first index of every new worktree failed and `board dispatch` stopped. A failed init now prints the last lines of codegraph's stderr, at most 2000 bytes (#2023).
 
