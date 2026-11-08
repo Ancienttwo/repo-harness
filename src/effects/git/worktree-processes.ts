@@ -71,12 +71,15 @@ export function worktreeProcesses(deadline: number, linuxProbe?: LinuxWorktreePr
   } catch { return null; }
 }
 
-/** The processes of `processes` that are a CodeGraph MCP server bound to exactly `worktree`. An orphaned one outlives its seat pane and keeps the checkout in use. */
+/**
+ * The processes of `processes` that are a CodeGraph MCP server bound to exactly `worktree`. An orphaned one outlives its seat pane and keeps the checkout in use.
+ * The caller passes only processes that hold the worktree, so a look-alike command line cannot reach any other process.
+ */
 export function codegraphServersOf(worktree: string, processes: readonly WorktreeProcess[]): number[] {
   return processes.filter(item => {
     try {
       const command = execFileSync('/bin/ps', ['-o', 'command=', '-p', String(item.pid)], { cwd: '/', encoding: 'utf8', timeout: 5_000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-      return /codegraph(?:\.js)? serve --mcp --path /u.test(command) && command.endsWith(` serve --mcp --path ${worktree}`);
+      return command.endsWith(` codegraph.js serve --mcp --path ${worktree}`);
     } catch { return false; }
   }).map(item => item.pid);
 }

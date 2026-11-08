@@ -38,6 +38,8 @@ export interface BoardCloseoutV1 {
   readonly stopped_codegraph_servers: readonly number[];
 }
 
+export interface CodegraphStop { readonly stopped: readonly number[]; readonly failures: readonly string[] }
+
 export interface BoardCloseoutInput extends GhInput {
   readonly pr: number;
   readonly host: Pick<BoardHostPortsV1, 'closeoutTerminals' | 'closeTerminal'>;
@@ -45,8 +47,8 @@ export interface BoardCloseoutInput extends GhInput {
   readonly stopDaemons: (worktree: string) => readonly string[];
   /** The process inventory (`worktreeProcesses`); null means occupancy is unproven, which keeps the worktree. */
   readonly processes: (deadline: number) => WorktreeProcess[] | null;
-  /** Returns the PIDs of the CodeGraph MCP servers bound to exactly this worktree among the given processes, and sends them SIGTERM. */
-  readonly stopCodegraphServers: (worktree: string, processes: readonly WorktreeProcess[]) => readonly number[];
+  /** Sends SIGTERM to the CodeGraph MCP servers bound to exactly this worktree among the given processes that hold it; returns the signalled PIDs and the signal failures. */
+  readonly stopCodegraphServers: (worktree: string, processes: readonly WorktreeProcess[]) => CodegraphStop;
   /** `HC_TERMINAL_ID` of the caller: closeout never ends its own terminal. */
   readonly caller_terminal: string | null;
 }
@@ -206,7 +208,10 @@ async function removeWorktree(input: BoardCloseoutInput, pr: MergedPullRequest, 
     failures = input.stopDaemons(proof.path);
     // Only a server bound to exactly this path stops; any other process still keeps the worktree.
     const inventory = input.processes(Date.now() + 5_000);
-    if (inventory !== null) stopped = input.stopCodegraphServers(proof.path, inventory.filter(item => protectsCwd(proof.path, item.cwd)));
+    if (inventory !== null) {
+      const stop = input.stopCodegraphServers(proof.path, inventory.filter(item => protectsCwd(proof.path, item.cwd)));
+      stopped = stop.stopped; failures = [...failures, ...stop.failures];
+    }
     const busy = await processesGone(input, proof.path);
     if (busy !== null) return observed(proof, pr, busy, failures, stopped);
     removeExactWorktree(proof.main, { worktree: proof.path, branch: pr.head_ref, head_sha: pr.head_oid, target_ref: TARGET_REF, target_oid: proof.target_oid,
@@ -240,10 +245,16 @@ export async function runBoardCloseout(input: BoardCloseoutInput): Promise<Board
 }
 
 /** SIGTERM to the CodeGraph MCP servers bound to exactly `worktree`; the watchdog child of a server exits when its parent's pipe closes. */
-export function stopCodegraphServers(worktree: string, processes: readonly WorktreeProcess[]): readonly number[] {
-  const pids = codegraphServersOf(worktree, processes);
-  for (const pid of pids) { try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ } }
-  return pids;
+export function stopCodegraphServers(worktree: string, processes: readonly WorktreeProcess[]): CodegraphStop {
+  const stopped: number[] = [], failures: string[] = [];
+  for (const pid of codegraphServersOf(worktree, processes)) {
+    try { process.kill(pid, 'SIGTERM'); stopped.push(pid); }
+    catch (error) {
+      // A server that exited since the inventory is already stopped.
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') failures.push(`codegraph server ${pid}: ${(error as NodeJS.ErrnoException).code ?? (error as Error).message}`);
+    }
+  }
+  return { stopped, failures };
 }
 
 /** The daemon stop of `contract-worktree cleanup`: without the architecture plugin there is no daemon to stop. */

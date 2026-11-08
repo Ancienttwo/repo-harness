@@ -1215,7 +1215,7 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
     return path;
   };
   const clean = worktree('clean', 21, 11), kept = worktree('kept', 22, 12), dirty = worktree('dirty', 23, 13), partial = worktree('partial', 24, 14);
-  const branchfail = worktree('branchfail', 25, 15), rmfail = worktree('rmfail', 26, 16);
+  const branchfail = worktree('branchfail', 25, 15), rmfail = worktree('rmfail', 26, 16), child = worktree('child', 27, 17), sigfail = worktree('sigfail', 28, 18);
   // #21 also closes issue 12 of another repository, which binds no local seat.
   pullRequests['21']!.closingIssuesReferences.push({ number: 12, repository: { id: 'R_other' } });
   // A clean checkout of another project under a stale pr label.
@@ -1245,12 +1245,16 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
     // Finished terminals (#2021) pass the same label and checkout proofs as live ones.
     terminal('t12', clean, { seat: 'reviewer', pr: '21' }, 'finished'), terminal('t13', elsewhere, { seat: 'reviewer', pr: '22' }, 'finished'),
     terminal('t14', kept, { issue: '12', pr: '99' }, 'finished'), terminal('t15', null, { seat: 'reviewer', pr: '22' }, 'finished'),
-    terminal('t16', main, { seat: 'reviewer', pr: '77' }, 'finished'), terminal('t17', main, { seat: 'reviewer', pr: '26' }, 'finished')];
+    terminal('t16', main, { seat: 'reviewer', pr: '77' }, 'finished'), terminal('t17', main, { seat: 'reviewer', pr: '26' }, 'finished'),
+    terminal('t18', main, { seat: 'reviewer', pr: '27' }), terminal('t19', main, { seat: 'reviewer', pr: '28' })];
   // hc rm of t17 fails until the retry.
   const rmFails = new Set(['t17']);
   const closed: string[] = [];
+  // Closeout stops a server and finds a process that still holds the checkout (#2029): a surviving child, or a signal that failed.
+  const holders = [child, sigfail], stops: Record<string, { stopped: number[]; failures: string[] }> = {
+    [child]: { stopped: [4241], failures: [] }, [sigfail]: { stopped: [], failures: ['codegraph server 4240: EPERM'] } };
   const closeout = (pr: number) => runBoardCloseout({
-    repo_root: main, pr, caller_terminal: 't3', processes: () => [], stopCodegraphServers: () => [],
+    repo_root: main, pr, caller_terminal: 't3', processes: () => holders.map(cwd => ({ pid: 4242, cwd })), stopCodegraphServers: (path) => stops[path] ?? { stopped: [], failures: [] },
     stopDaemons: (path) => { if (path === partial) throw new Error('daemon stop failed'); return []; },
     host: { closeoutTerminals: () => ({ status: 'observed', terminals }), closeTerminal: (address) => {
       if (rmFails.has(address)) return { status: 'unavailable', reason: 'hc_failed' };
@@ -1292,7 +1296,14 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   rmFails.clear();
   const retried = await closeout(26);
   expect([retried.panes, retried.worktree]).toEqual([[pane('t17', 'reviewer', null)], state(rmfail, 'removed', null)]);
-  expect(closed).toEqual(['t1', 't2', 't12', 't4', 't9', 't11', 't17']);
+  // A server that stops while its child keeps the checkout: closeout re-reads the inventory and keeps the worktree.
+  const surviving = await closeout(27);
+  expect([surviving.worktree.outcome, surviving.worktree.reason, surviving.stopped_codegraph_servers, surviving.daemon_stop_failures]).toEqual(['kept', 'process_in_use', [4241], []]);
+  // A failed signal is reported, lists no stopped PID, and the holder keeps the worktree.
+  const unsignalled = await closeout(28);
+  expect([unsignalled.worktree.outcome, unsignalled.worktree.reason, unsignalled.stopped_codegraph_servers, unsignalled.daemon_stop_failures])
+    .toEqual(['kept', 'process_in_use', [], ['codegraph server 4240: EPERM']]);
+  expect(closed).toEqual(['t1', 't2', 't12', 't4', 't9', 't11', 't17', 't18', 't19']);
 });
 
 test('closeout stops a CodeGraph MCP server bound to exactly the worktree and no other process', async () => {
@@ -1302,8 +1313,9 @@ test('closeout stops a CodeGraph MCP server bound to exactly the worktree and no
   try {
     await Bun.sleep(200);
     const found = [server, other, bystander].map(child => ({ pid: child.pid, cwd: dir }));
-    expect(stopCodegraphServers(dir, found)).toEqual([server.pid]);
+    expect(stopCodegraphServers(dir, found)).toEqual({ stopped: [server.pid], failures: [] });
     await server.exited;
-    expect([other.killed, bystander.killed]).toEqual([false, false]);
+    // Signal 0 throws only for a process that is gone.
+    expect([other.pid, bystander.pid].map(pid => { try { process.kill(pid, 0); return true; } catch { return false; } })).toEqual([true, true]);
   } finally { server.kill(); other.kill(); bystander.kill(); rmSync(dir, { recursive: true, force: true }); }
 });
