@@ -16,6 +16,7 @@ import { DispatchError, type DispatchPlanV1 } from '../../core/board/dispatch';
 import { runDispatch } from '../../effects/board/dispatch';
 import { seatLaunch } from './seats';
 import { runBoardCloseout, stopArchitectureDaemons } from '../../effects/board/closeout';
+import { worktreeProcesses } from '../../effects/git/worktree-processes';
 
 interface BoardOptions {
   readonly parent?: string;
@@ -159,7 +160,7 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
         if (!/^[1-9][0-9]*$/u.test(options.pr)) throw new BoardCollectError('--pr must be a pull request number');
         const repo_root = process.cwd();
         const result = await runBoardCloseout({ repo_root, pr: Number(options.pr), host, caller_terminal: process.env.HC_TERMINAL_ID ?? null,
-          stopDaemons: worktree => stopArchitectureDaemons(repo_root, worktree) });
+          stopDaemons: worktree => stopArchitectureDaemons(repo_root, worktree), processes: worktreeProcesses });
         process.stdout.write(`${JSON.stringify(result)}\n`);
         if (result.panes.some(pane => pane.outcome === 'kept') || result.worktree.outcome !== 'removed' || result.daemon_stop_failures.length > 0) process.exitCode = 1;
       } catch (error) {

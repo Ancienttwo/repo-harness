@@ -2,7 +2,7 @@ import { lstatSync, realpathSync } from 'fs';
 import { architecturePort, isArchitectureUnavailable } from '../../core/architecture/contracts';
 import type { BoardHostPortsV1, BoardSeatTerminalReadV1 } from '../../core/board/board';
 import { gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
-import { worktreeProcesses } from '../git/worktree-processes';
+import type { WorktreeProcess } from '../git/worktree-processes';
 import { assertNoOwner, checkoutPath, entries, protectsCwd, removeExactWorktree } from '../state/coordination-worktree-topology';
 import { cleanupTaskWorktree } from '../terminal/runtime-closeout';
 import { BoardCollectError, readGhJson, readRepositoryId, type GhInput } from './collect';
@@ -41,6 +41,8 @@ export interface BoardCloseoutInput extends GhInput {
   readonly host: Pick<BoardHostPortsV1, 'seatTerminals' | 'closeTerminal'>;
   /** Stops the architecture daemons of a checkout and returns the failures. */
   readonly stopDaemons: (worktree: string) => readonly string[];
+  /** The process inventory (`worktreeProcesses`); null means occupancy is unproven, which keeps the worktree. */
+  readonly processes: (deadline: number) => WorktreeProcess[] | null;
   /** `HC_TERMINAL_ID` of the caller: closeout never ends its own terminal. */
   readonly caller_terminal: string | null;
 }
@@ -175,10 +177,10 @@ function closePanes(input: BoardCloseoutInput, pr: MergedPullRequest, proof: Clo
 }
 
 /** Waits up to 5 s for the programs of the closed panes to leave the checkout. */
-async function processesGone(path: string): Promise<string | null> {
+async function processesGone(input: BoardCloseoutInput, path: string): Promise<string | null> {
   const deadline = Date.now() + 5_000;
   for (;;) {
-    const processes = worktreeProcesses(Date.now() + 5_000);
+    const processes = input.processes(Date.now() + 5_000);
     if (processes === null) return 'process_unknown';
     if (!processes.some(item => protectsCwd(path, item.cwd))) return null;
     if (Date.now() >= deadline) return 'process_in_use';
@@ -197,7 +199,7 @@ async function removeWorktree(input: BoardCloseoutInput, pr: MergedPullRequest, 
     }
     // A daemon in the checkout would otherwise keep the process wait from ever passing.
     failures = input.stopDaemons(proof.path);
-    const busy = await processesGone(proof.path);
+    const busy = await processesGone(input, proof.path);
     if (busy !== null) return observed(proof, pr, busy, failures);
     removeExactWorktree(proof.main, { worktree: proof.path, branch: pr.head_ref, head_sha: pr.head_oid, target_ref: TARGET_REF, target_oid: proof.target_oid,
       merge_commit_sha: pr.merge_commit }, { closeout: true });

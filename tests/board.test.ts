@@ -1214,7 +1214,7 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
     terminal('t10', elsewhere, { seat: 'reviewer', pr: '22' }), terminal('t11', main, { seat: 'reviewer', pr: '25' })];
   const closed: string[] = [];
   const closeout = (pr: number) => runBoardCloseout({
-    repo_root: main, pr, caller_terminal: 't3',
+    repo_root: main, pr, caller_terminal: 't3', processes: () => [],
     stopDaemons: (path) => { if (path === partial) throw new Error('daemon stop failed'); return []; },
     host: { seatTerminals: () => ({ status: 'observed', terminals }), closeTerminal: (address) => { closed.push(address); return { status: 'closed' }; } },
     gh_runner: args => ({ status: 0, stdout: JSON.stringify(args[0] === 'pr' ? pullRequests[args[2]!] : args[0] === 'repo' ? { id: 'R_this' } : { id: 1186405141 }) }),
