@@ -265,9 +265,16 @@ async function endProviderGroup(provider: ProcessProof, members: GroupProcess[])
  * so the scan cannot be a later group that reused it. A non-leader or a failed proof records none.
  */
 function provenGroupMembers(provider: ProcessProof): GroupProcess[] {
-  if (providerPgid(provider) !== provider.pid || !processProofAlive(provider)) return [];
+  if (providerPgid(provider) !== provider.pid || !leaderAlive(provider)) return [];
   const scanned = providerGroup(provider).filter(member => member.pid !== provider.pid);
-  return processProofAlive(provider) ? scanned : [];
+  return leaderAlive(provider) ? scanned : [];
+}
+/** A reused provider pid means the leader exited: its group is then unproven and only reported, never signalled. */
+function leaderAlive(provider: ProcessProof): boolean {
+  try { return processProofAlive(provider); } catch (error) {
+    if ((error as Error).message === 'task_agent_process_identity_lost') return false;
+    throw error;
+  }
 }
 /** Ends a created terminal, confirms its program exit and ends the recorded members of the provider's group. */
 async function endTerminal(endpoint: HerdrCoreEndpoint, address: string, provider: ProcessProof | null): Promise<boolean> {
@@ -275,7 +282,7 @@ async function endTerminal(endpoint: HerdrCoreEndpoint, address: string, provide
   const members = provider ? provenGroupMembers(provider) : [];
   if (hcKill(address, options).state !== 'finished') return false;
   const deadline = Date.now() + 5000;
-  while (provider && processProofAlive(provider)) {
+  while (provider && leaderAlive(provider)) {
     if (Date.now() >= deadline) return false;
     await Bun.sleep(50);
   }
@@ -312,7 +319,7 @@ async function closeUnboundTaskStart(dir: string, task: string, role: string, mo
       if (!await endTerminal(intent.spec.endpoint, terminal.address, provider)) return { status: 'cleanup_pending', pids: provider ? [provider.pid] : [] };
     } else hcRm(terminal.address, options);
   }
-  if (provider && processProofAlive(provider)) return { status: 'cleanup_pending', pids: [provider.pid], reason: 'terminal_absent' };
+  if (provider && leaderAlive(provider)) return { status: 'cleanup_pending', pids: [provider.pid], reason: 'terminal_absent' };
   const group = provider ? liveProviderGroup(provider) : [];
   if (group.length) return { status: 'cleanup_pending', pids: group, reason: 'provider_group_alive' };
   return finish();
@@ -349,7 +356,7 @@ async function cleanupTaskAgent(repoRoot: string, task: string, role: string, mo
     // A removed terminal after a confirmed exit is a cleanup that ended before closed.json.
     if (readBoundTerminal(binding)) {
       if (!await endTerminal(binding.endpoint, binding.terminal_id, binding.provider)) return { status: 'cleanup_pending', pids: [binding.provider.pid] };
-    } else if (processProofAlive(binding.provider)) return { status: 'cleanup_pending', pids: [binding.provider.pid], reason: 'terminal_absent' };
+    } else if (leaderAlive(binding.provider)) return { status: 'cleanup_pending', pids: [binding.provider.pid], reason: 'terminal_absent' };
     const group = liveProviderGroup(binding.provider);
     if (group.length) return { status: 'cleanup_pending', pids: group, reason: 'provider_group_alive' };
     return closed();
