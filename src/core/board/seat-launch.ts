@@ -2,7 +2,7 @@
 // the seat brief. Each limit names what the host does with it, so the output
 // never claims a limit that the host cannot apply.
 import { PANE_PREFIX } from '../terminal/pane-prefix';
-import { isWorkerSeat, type SeatConfigV1, type SeatId, type SeatTool } from './seats-settings';
+import { isWorkerSeat, seatTakesFleet, type SeatConfigV1, type SeatId, type SeatTool } from './seats-settings';
 import { SEAT_ENV, SEAT_REPOSITORY_ENV, isResetSeat } from './seat-reset';
 
 /** `seats`: the stored section. `defaults`: no section, so `DEFAULT_SEATS_CONFIG`. */
@@ -37,6 +37,9 @@ export interface SeatLaunchV1 {
 
 /** Built-in Claude Code agent types (Claude Code 2.1.316 and 2.1.317 init events and Agent tool), and `fork`. */
 export const CLAUDE_BUILTIN_AGENT_TYPES = ['claude', 'claude-code-guide', 'Explore', 'fork', 'general-purpose', 'Plan', 'statusline-setup', 'web-fetch'] as const;
+
+/** pi-subagents reads this variable per process for extra role directories. */
+export const PI_EXTRA_AGENT_DIRS_ENV = 'PI_SUBAGENT_EXTRA_AGENT_DIRS';
 
 /** The triage queue of the orchestrator seat keeps its name when the seat restarts (#1510). */
 export const ORCHESTRATOR_TASK_LIST_ID = 'repo-harness-orchestrator';
@@ -141,7 +144,7 @@ const KEEP_YOURSELF = {
 } as const;
 
 /**
- * `fleet` is the list that the brief names: Pi has no sub-agents, whatever the stored list holds.
+ * `fleet` is the list that the brief names.
  * Each tool group that the host does not fully enforce goes into a keep-yourself paragraph.
  */
 function brief(seat: SeatId, config: SeatConfigV1, fleet: readonly string[], limits: readonly SeatLimitV1[]): string {
@@ -226,17 +229,20 @@ function codexLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'pr
   };
 }
 
-function piLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
+function piLaunch(seat: SeatId, config: SeatConfigV1, roleDirectory: string | undefined): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
   const review = seat === 'gatekeeper' || seat === 'reviewer';
-  // Pi's denylist blocks the edit/write tools; shell paths stay open.
-  const limits: SeatLimitV1[] = OFF_GROUPS(config).map(group => ({
-    subject: group,
-    level: review && group === 'edit' ? pathLevel(group, 'enforced', true) : 'instructions_only',
-  }));
-  const text = brief(seat, config, [], limits);
+  // Pi's denylist blocks the edit/write tools; shell paths stay open. pi-subagents does not refuse a role outside the fleet.
+  const limits: SeatLimitV1[] = [
+    ...OFF_GROUPS(config).map(group => ({
+      subject: group,
+      level: review && group === 'edit' ? pathLevel(group, 'enforced', true) : 'instructions_only' as const,
+    })),
+    ...(seatTakesFleet(config) ? [{ subject: 'fleet' as const, level: 'instructions_only' as const }] : []),
+  ];
+  const text = brief(seat, config, config.fleet, limits);
   const slash = config.model?.indexOf('/') ?? -1;
   return {
-    argv: [...seatEnv([]), 'pi', ...(config.model === null ? [] : ['--provider', config.model.slice(0, slash), '--model', config.model.slice(slash + 1)]),
+    argv: [...seatEnv(roleDirectory === undefined ? [] : [`${PI_EXTRA_AGENT_DIRS_ENV}=${roleDirectory}`]), 'pi', ...(config.model === null ? [] : ['--provider', config.model.slice(0, slash), '--model', config.model.slice(slash + 1)]),
       ...(config.effort === null ? [] : ['--thinking', config.effort]),
       ...(review ? ['--exclude-tools', 'edit,write', '--no-extensions', '--no-skills',
       '--no-prompt-templates', '--no-context-files', '--no-mcp'] : []), '--append-system-prompt', text],
@@ -248,11 +254,12 @@ function piLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'proto
  * `claudeAgentTypes` is every agent type that a Claude session of this host can
  * call. A Claude seat with a fleet refuses each of them that is not in the fleet.
  * `paneName` (`seatPaneName`) becomes the Claude session name `-n`. `repositoryId` is the checked label value.
+ * `piRoleDirectory` holds the role files of a Pi seat with a fleet; it goes on that seat's argv only.
  */
-export function buildSeatLaunch(seat: SeatId, config: SeatConfigV1, source: SeatLaunchSource, claudeAgentTypes: readonly string[], paneName?: string, repositoryId?: string): SeatLaunchV1 {
+export function buildSeatLaunch(seat: SeatId, config: SeatConfigV1, source: SeatLaunchSource, claudeAgentTypes: readonly string[], paneName?: string, repositoryId?: string, piRoleDirectory?: string): SeatLaunchV1 {
   const launch = config.runtime === 'claude'
     ? claudeLaunch(seat, config, claudeAgentTypes, paneName, repositoryId)
-    : config.runtime === 'codex' ? codexLaunch(seat, config) : piLaunch(seat, config);
+    : config.runtime === 'codex' ? codexLaunch(seat, config) : piLaunch(seat, config, piRoleDirectory);
   return { protocol: 1, kind: 'seat_launch', seat, runtime: config.runtime, source, ...launch };
 }
 

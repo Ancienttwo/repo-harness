@@ -10,6 +10,7 @@ import {
   WORKER_SEAT_IDS,
   SeatsConfigMigrationRequiredError,
   decodeSeatsConfig,
+  seatTakesFleet,
   type SeatConfigV1,
   type SeatModelV1,
   type SeatRoutingV1,
@@ -70,7 +71,7 @@ const SEAT_RANGES: SeatsRangesV1['seats'] = {
   reviewer: { fleet: [], tools: ['net', 'read', 'shell'] },
 };
 
-/** Claude takes a fleet model family, Codex a fleet target model. Pi takes its DeepSeek model or a Codex model behind `magpie/codex/`, takes an effort, and has no fleet roles. */
+/** Claude takes a fleet model family, Codex a fleet target model. Pi takes its DeepSeek model or a Codex model behind `magpie/codex/`, takes an effort, and takes fleet roles only on a Codex model. */
 const CODEX_MODELS = [...new Set([...Object.values(AGENT_TARGET_OVERRIDES).map(target => target.model),
   ...SEAT_IDS.flatMap(id => {
     const seat = DEFAULT_SEATS_CONFIG[id];
@@ -80,7 +81,7 @@ const CODEX_MODELS = [...new Set([...Object.values(AGENT_TARGET_OVERRIDES).map(t
 const RUNTIME_RANGES: Readonly<Record<SeatRuntime, Omit<SeatRuntimeRangeV1, 'id' | 'enabled'>>> = {
   claude: { models: Object.keys(MODEL_FAMILY_LABELS), effort: true, fleet: true },
   codex: { models: CODEX_MODELS, effort: true, fleet: true },
-  pi: { models: ['magpie/cursor/deepseek-v41-flash-1017', ...CODEX_MODELS.map(model => `${PI_CODEX_MODEL_PREFIX}${model}`)], effort: true, fleet: false },
+  pi: { models: ['magpie/cursor/deepseek-v41-flash-1017', ...CODEX_MODELS.map(model => `${PI_CODEX_MODEL_PREFIX}${model}`)], effort: true, fleet: true },
 };
 
 export function seatsRanges(enabledRuntimes: readonly string[]): SeatsRangesV1 {
@@ -151,7 +152,7 @@ function checkSeat(id: SeatId, seat: SeatConfigV1, enabledRuntimes: readonly str
   checkModelAndEffort(`${id} seat`, seat, seat.runtime);
   const tool = seat.tools.find(item => !range.tools.includes(item));
   if (tool !== undefined) throw new SeatsConfigurationError('seat_tool_not_allowed', `The ${id} seat cannot have the ${tool} tool group.`);
-  const role = seat.fleet.find(name => !runtime.fleet || !range.fleet.includes(name));
+  const role = seat.fleet.find(name => !runtime.fleet || !seatTakesFleet(seat) || !range.fleet.includes(name));
   if (role !== undefined) throw new SeatsConfigurationError('seat_fleet_not_allowed', `The ${id} seat on ${seat.runtime} cannot call the ${role} sub-agent.`);
 }
 

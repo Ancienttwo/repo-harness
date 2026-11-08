@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "child_process";
 import { createHash } from "crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { delimiter, dirname, join } from "path";
 import { seatPaneName } from "../../src/core/board/seat-launch";
@@ -231,6 +231,26 @@ describe("repo-harness seats argv", () => {
     expect(formatSeatRoutes(seats, seatAccountQuotas([], seats.routing))).toContain("route simple_fast: worker (pi magpie/codex/gpt-6.1-terra high; chatgpt unknown)");
     const reading = decodeCodexRateLimitsResult({ rateLimits: { primary: { usedPercent: 95, windowDurationMins: 10080, resetsAt: Math.floor(Date.now() / 1000) + 84 * 3600 } } }, new Date().toISOString());
     expect(formatSeatRoutes(seats, seatAccountQuotas([classifyQuotaReading(reading, Date.now())], seats.routing))).toContain("route simple_fast: none (chatgpt exhausted)");
+  });
+
+  test("a Pi GPT seat gets its own fleet roles in a generated directory; a DeepSeek seat gets none", () => {
+    const worker = { ...DEFAULT_SEATS_CONFIG.worker, runtime: "pi" as const, model: "magpie/codex/gpt-6.1-terra", fleet: ["explorer", "fast-worker"] };
+    withHome({ ...DEFAULT_SEATS_CONFIG, worker }, home => {
+      writeFileSync(join(home, 'codex-used'), '51');
+      const gpt = launch(home, "worker");
+      const [assignment, command] = bare(gpt.argv) as string[];
+      const directory = assignment!.replace("PI_SUBAGENT_EXTRA_AGENT_DIRS=", "");
+      expect([command, directory.startsWith(join(realpathSync(home), ".repo-harness", "seats", "pi-fleet"))]).toEqual(["pi", true]);
+      expect(readdirSync(directory).sort()).toEqual(["explorer.md", "fast-worker.md"]);
+      const explorer = readFileSync(join(directory, "explorer.md"), "utf8");
+      expect(explorer).toContain("model: magpie/codex/gpt-6-luna\nthinking: high\ntools: read, grep, find, ls, bash\n");
+      expect(readFileSync(join(directory, "fast-worker.md"), "utf8")).toContain("tools: read, grep, find, ls, bash, edit, write\n");
+      expect(gpt.brief).toContain("You may call these sub-agents: `explorer`, `fast-worker`.");
+      expect(gpt.limits).toContainEqual({ subject: "fleet", level: "instructions_only" });
+      const light = launch(home, "worker-light");
+      expect(bare(light.argv)[0]).toBe("pi");
+      expect(light.brief).toContain("You have no sub-agents.");
+    });
   });
 
   test("quota changes Codex models and Claude control-seat effort, preserves Pi, and stops exhaustion", () => {

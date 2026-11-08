@@ -57,7 +57,7 @@ function seatsRanges(enabled: readonly string[]) {
     runtimes: [
       { id: 'claude', enabled: enabled.includes('claude'), models: ['opus', 'sonnet', 'haiku', 'fable'], effort: true, fleet: true },
       { id: 'codex', enabled: enabled.includes('codex'), models: CODEX_MODELS, effort: true, fleet: true },
-      { id: 'pi', enabled: enabled.includes('pi'), models: ['magpie/cursor/deepseek-v41-flash-1017', ...CODEX_MODELS.map(model => `${PI_CODEX_MODEL_PREFIX}${model}`)], effort: true, fleet: false },
+      { id: 'pi', enabled: enabled.includes('pi'), models: ['magpie/cursor/deepseek-v41-flash-1017', ...CODEX_MODELS.map(model => `${PI_CODEX_MODEL_PREFIX}${model}`)], effort: true, fleet: true },
     ],
     efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
     roles: SUB_AGENTS,
