@@ -151,8 +151,8 @@ describe('agents page seats section', () => {
     await mount(seatsProps(posts));
     expect(document.querySelector('[data-seat-card]')?.getAttribute('data-seat-card')).toBe('advisor');
     for (const label of ['fast-worker', 'deep-worker', 'Edit files', 'GitHub writes']) expect([label, allow(label).disabled]).toEqual([label, true]);
-    // The levels are those of buildSeatLaunch (#1531): Claude advisor with shell on, tasks, edit and gh off.
-    expect(levels()).toEqual(['common_commands', 'enforced', 'common_commands', 'named_types_only']);
+    // The levels are those of buildSeatLaunch (#1531): Claude advisor with shell on, tasks, schedule, edit and gh off.
+    expect(levels()).toEqual(['common_commands', 'enforced', 'enforced', 'common_commands', 'named_types_only']);
     expect(document.querySelector('[data-seat-launch]')?.textContent).toContain('--argv "$(repo-harness seats argv advisor --repository-id <repository-id>)"');
     // The page shows no running pane count: the operator cannot read hc (#1413).
     expect(document.querySelector('[data-seats-page]')?.textContent).not.toMatch(/running \d|\d+ running/u);

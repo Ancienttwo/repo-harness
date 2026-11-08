@@ -63,6 +63,7 @@ const CLAUDE_GROUP_TOOLS: Readonly<Record<SeatTool, readonly string[]>> = {
   shell: ['Bash', 'Monitor', 'TaskStop'],
   net: ['WebFetch', 'WebSearch'],
   tasks: ['TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate'],
+  schedule: ['CronCreate', 'CronList', 'CronDelete'],
   mcp: ['ToolSearch', 'ListMcpResourcesTool', 'ReadMcpResourceTool'],
   gh: [],
 };
@@ -83,12 +84,14 @@ const GROUP_TEXT: Readonly<Record<SeatGroup, string>> = {
   shell: 'Do not run shell commands.',
   net: 'Do not use the network.',
   tasks: 'Do not use the task list tools.',
+  schedule: 'Do not schedule recurring jobs.',
   mcp: 'Do not use MCP tools.',
   gh: 'Do not write to GitHub.',
 };
 
+/** `schedule` is Claude-only (Cron tools): Codex and Pi launches report no limit for it. */
 const OFF_GROUPS = (config: SeatConfigV1): SeatGroup[] =>
-  (['edit', 'shell', 'net', 'tasks', 'mcp', 'gh'] as const).filter(group => !config.tools.includes(group));
+  (['edit', 'shell', 'net', 'tasks', 'schedule', 'mcp', 'gh'] as const).filter(group => !config.tools.includes(group) && (group !== 'schedule' || config.runtime === 'claude'));
 
 /**
  * pi-subagents 0.87.0 ranks the extra role directory below the user and project role directories, so a

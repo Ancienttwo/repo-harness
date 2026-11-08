@@ -346,6 +346,14 @@ describe("repo-harness seats argv", () => {
     });
   });
 
+  test("the schedule group adds the Cron tools to --tools and is off by default", () => {
+    const advisor = { ...DEFAULT_SEATS_CONFIG.advisor, tools: [...DEFAULT_SEATS_CONFIG.advisor.tools, "schedule"].sort() };
+    withHome({ ...DEFAULT_SEATS_CONFIG, advisor }, home => {
+      expect(tools(launch(home, "advisor").argv)).toEqual(expect.arrayContaining(["CronCreate", "CronList", "CronDelete"]));
+      expect(tools(launch(home, "orchestrator").argv)).not.toContain("CronCreate");
+    });
+  });
+
   test("the orchestrator brief names its fleet and its review path; a fleet keeps the Agent tool and refuses every other agent type", () => {
     const seatReview = "You do not review a PR that you dispatched; route that review to another seat.";
     const gatekeeperReview = "You do not review a PR yourself. An independent `gatekeeper` sub-agent may review a PR that you dispatched; route every other review of that PR to another seat.";
