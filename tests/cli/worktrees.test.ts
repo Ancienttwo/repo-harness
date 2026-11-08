@@ -161,4 +161,9 @@ test('path resolves a listed id only inside its own registered repository and re
   // Git still lists a removed directory; its listed id must not resolve to a path that is gone.
   rmSync(f.yellow, { recursive: true, force: true });
   refused(['--repository', repository, '--worktree', worktreeId(resolveGitCommonDirectory(f.main), registeredWorktreePaths(entries(f.main)).find(item => basename(item.path) === 'repo-wt-other')!.path)], 'worktree_not_found');
+  // A registered repository whose Git topology cannot be read, then a registry that cannot be read.
+  rmSync(join(other, '.git'), { recursive: true, force: true });
+  refused(['--repository', otherId, '--worktree', green.id], 'inventory_unavailable');
+  writeFileSync(join(f.home, 'registered-repos.json'), '{');
+  refused(['--repository', repository, '--worktree', green.id], 'inventory_unavailable');
 });
