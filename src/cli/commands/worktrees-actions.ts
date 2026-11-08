@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { decodeWorktreeCleanupRequest, decodeWorktreeCleanupResult, worktreeDigestRow, WORKTREE_CLEANUP_MAX_IDS, type WorktreeCleanupRequest } from '../../core/operator/worktree-cleanup';
 import type { WorktreeView, WorktreesSnapshot } from '../../core/public-projections/worktrees';
 import { resolveGitCommonDirectory } from '../../effects/git/common-directory';
@@ -112,7 +113,8 @@ export async function clean(options: WorktreeCleanOptions): Promise<void> {
   if (result.items.some(item => item.outcome !== 'removed')) process.exitCode = 1;
 }
 
-export interface WorktreePathOptions { readonly repository: string; readonly worktree: string }
+/** Both options are checked here, not by Commander, so a missing one also gets the JSON refusal. */
+export interface WorktreePathOptions { readonly repository?: string; readonly worktree?: string }
 export interface WorktreePathOutput {
   readonly protocol: 1;
   readonly kind: 'operator_worktree_path';
@@ -125,22 +127,24 @@ const PATH_DEADLINE_MS = 25_000;
 
 /** Resolves one registered worktree id inside one registered repository, with the identity rule of the cleanup `locate`. */
 export function path(options: WorktreePathOptions): void {
-  if (!/^repo_[0-9a-f]{16}$/u.test(options.repository) || !/^wt_[a-f0-9]{64}$/u.test(options.worktree)) {
+  const { repository, worktree } = options;
+  if (repository === undefined || worktree === undefined || !/^repo_[0-9a-f]{16}$/u.test(repository) || !/^wt_[a-f0-9]{64}$/u.test(worktree)) {
     fail(true, 'invalid_argument', '--repository needs a repo_ id and --worktree a wt_ id from `worktrees list --json`.');
     return;
   }
   const env = executionChildEnvironment({ ...process.env });
   let repo: RepoHarnessRegisteredRepo | undefined;
-  try { repo = readRepoHarnessRegistryStrictSnapshot({ env }).repos.find(row => row.id === options.repository); }
+  try { repo = readRepoHarnessRegistryStrictSnapshot({ env }).repos.find(row => row.id === repository); }
   catch { fail(true, 'inventory_unavailable', 'The registered repositories cannot be read.'); return; }
   if (!repo) { fail(true, 'repository_not_found', 'The repository is not registered.'); return; }
   let found: string | undefined;
   try {
     const deadline = Date.now() + PATH_DEADLINE_MS;
     const common = resolveGitCommonDirectory(repo.path, undefined, PATH_DEADLINE_MS, env);
-    found = registeredWorktreePaths(entries(repo.path, { deadline })).find(item => worktreeId(common, item.path) === options.worktree)?.path;
+    found = registeredWorktreePaths(entries(repo.path, { deadline })).find(item => worktreeId(common, item.path) === worktree)?.path;
   } catch { fail(true, 'inventory_unavailable', 'The worktrees of the repository cannot be read.'); return; }
-  if (found === undefined) { fail(true, 'worktree_not_found', 'The repository has no registered worktree with this id.'); return; }
-  const output: WorktreePathOutput = { protocol: 1, kind: 'operator_worktree_path', repository_id: repo.id, worktree_id: options.worktree, path: found };
+  // Git keeps listing a removed directory, and the collector marks it `missing` by the same check; it has no real path to open.
+  if (found === undefined || !existsSync(found)) { fail(true, 'worktree_not_found', 'The repository has no registered worktree directory with this id.'); return; }
+  const output: WorktreePathOutput = { protocol: 1, kind: 'operator_worktree_path', repository_id: repo.id, worktree_id: worktree, path: found };
   console.log(JSON.stringify(output));
 }

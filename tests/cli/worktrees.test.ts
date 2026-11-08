@@ -156,4 +156,8 @@ test('path resolves a listed id only inside its own registered repository and re
   refused(['--repository', otherId, '--worktree', green.id], 'worktree_not_found');
   refused(['--repository', repoHarnessRepoIdFor(join(f.parent, 'unregistered')), '--worktree', green.id], 'repository_not_found');
   refused(['--repository', repository, '--worktree', f.green], 'invalid_argument');
+  refused(['--repository', repository], 'invalid_argument');
+  // Git still lists a removed directory; its listed id must not resolve to a path that is gone.
+  rmSync(f.yellow, { recursive: true, force: true });
+  refused(['--repository', repository, '--worktree', worktreeId(resolveGitCommonDirectory(f.main), registeredWorktreePaths(entries(f.main)).find(item => basename(item.path) === 'repo-wt-other')!.path)], 'worktree_not_found');
 });

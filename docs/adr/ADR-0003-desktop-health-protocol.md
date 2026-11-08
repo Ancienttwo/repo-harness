@@ -59,6 +59,8 @@ A protocol-3 shell and server agree on exactly these surfaces:
   registered worktree. A refusal prints `{"error":{"code","message"}}` on
   stderr and exits 2. The codes are `invalid_argument`,
   `inventory_unavailable`, `repository_not_found` and `worktree_not_found`.
+  A worktree that Git lists but whose directory is missing gives
+  `worktree_not_found`.
   The shell runs the command with its login environment. No HTTP response
   carries the path.
 - The page call `window.repoHarnessDesktop.openWorktree({repository_id,
