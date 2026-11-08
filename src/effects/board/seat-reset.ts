@@ -114,12 +114,13 @@ export function runSeatReset(path: string, sha256: string, options: HerdrCoreOpt
     if (!result.ended) throw new SeatResetError('requester_busy', `${requester} did not end its turn in ${WAIT_SECONDS} s (${result.reason}).`);
   };
   wait();
-  hcSend(requester, '/clear', options);
+  // From the /clear send on, the requester may already be cleared, so a failure gives the prompt to send by hand.
   try {
+    hcSend(requester, '/clear', options);
     wait();
     hcSend(requester, seatResumePrompt(identity, caller), options);
   } catch (error) {
-    throw new SeatResetError('resume_not_sent', `${requester} got /clear, but not the resume prompt: ${(error as Error).message}. Send it by hand: ${seatResumePrompt(identity, caller)}`);
+    throw new SeatResetError('resume_not_sent', `${requester} may have got /clear, but not the resume prompt: ${(error as Error).message}. Send it by hand: ${seatResumePrompt(identity, caller)}`);
   }
   return { requester, seat: identity.seat };
 }
