@@ -69,11 +69,14 @@ and older sections remain byte-identical to the final base.
    host after clearing `packages/operator-web/dist` and
    `node_modules/repo-harness-operator-web`. Record the result and require
    green hosted CI before merge.
-2. Record the merge SHA. Run `bash scripts/check-npm-release.sh --prepublish`
-   on the exact merge commit and record its result.
-3. Pack both packages and record their local tarball values below. The owner
-   publishes `repo-harness-operator-web` first, then `repo-harness`, by hand
-   with `npm publish --auth-type=web`.
+2. Record the merge SHA and check out that exact commit. Pack both packages
+   and record their local tarball values below.
+3. The owner publishes by hand with `npm publish --auth-type=web`. npm runs
+   each package's `prepublishOnly` gate (`check-npm-release.sh --prepublish`
+   with `npm_package_name` set) through the npm lifecycle. Publish
+   `repo-harness-operator-web` first and record its gate result. Then
+   publish `repo-harness`; its gate requires the console version on npm.
+   Record that gate result too.
 4. Read both versions from npm and compare their shasum, integrity and file
    counts with the local tarballs. Record the results below.
 5. After owner approval, tag the publish candidate and create the GitHub

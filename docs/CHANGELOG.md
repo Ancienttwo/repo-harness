@@ -22,8 +22,9 @@ herdr-core 0.1.19 and archctx 0.12.0.
   `pi`, and Pi must have that provider and model configured. Otherwise set
   `worker-light` to `null` on the Seats page. (#1954, #1964)
 - Seats with `net` now get network access, including writable Codex seats.
-  This reverses M87 (#1770). Remove `net` from a seat to keep it offline.
-  (#1961, #1962)
+  This reverses M87 (#1770). Removing `net` turns off Codex sandbox network
+  access and web search. Other runtime paths, such as MCP or shell, can stay
+  available. For Pi seats the limit is instructions only. (#1961, #1962)
 - The hc floor moves from 0.1.17 to 0.1.19; 0.28.0 skips 0.1.18.
   `repo-harness update` runs `hc update --version 0.1.19` only when hc is
   below the floor. That restarts the core, so programs in hc terminals end.
