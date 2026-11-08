@@ -36,8 +36,9 @@ not run it unless its task authorizes the push. An operator with Git and gh
 authentication for the target repo sets `ARCHCONTEXT_STATE_DIR` to one stable
 absolute path. The operator then runs
 `repo-harness architecture-projection publish once` in the target repo, or runs
-`repo-harness architecture-projection publish follow` under a process
-supervisor. `repo-harness architecture-projection publish status` with the same
+`publish follow` from a repo-harness Git source checkout under a process
+supervisor; `follow` keeps that checkout at `origin/main` and does not publish
+while it cannot update. `repo-harness architecture-projection publish status` with the same
 `ARCHCONTEXT_STATE_DIR` reports the last run; another state dir reports an empty
 state. The writer pushes only the `archctx/projection` branch and opens or
 updates one rolling PR. Before that PR merges, check out its head in a clean

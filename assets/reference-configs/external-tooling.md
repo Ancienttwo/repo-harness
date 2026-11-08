@@ -1054,11 +1054,43 @@ first: a stale `node_modules` fails the archctx version check. The command
 resolves the archctx pinned by the repo-harness package and a compatible Node
 runtime. It runs archctx in the target repository root, and archctx derives the
 writer repository from that directory. It fixes the upstream target to `origin`,
-base `main`, branch `archctx/projection`, publisher `gh`. `follow` delegates the
-300-second loop to archctx. The command forwards SIGINT and SIGTERM to archctx
-and returns its exit code. archctx owns the shared lock, worktree, render,
-commit, push and rolling PR. It never pushes main. No GitHub App, new secret,
-Actions writer or repo-harness publication loop is used. The operator supplies
+base `main`, branch `archctx/projection`, publisher `gh`. The command forwards
+SIGINT and SIGTERM to archctx and returns its exit code. archctx owns the shared
+lock, worktree, render, commit, push and rolling PR. It never pushes main. No
+GitHub App, new secret or Actions writer is used.
+
+`follow` runs only under bun from a repo-harness Git source checkout. The
+checkout at `origin/main`, with its dependencies installed for that commit, is
+the one owner of the writer code version. archctx uses the checkout only as the
+Git repository and renders in its own detached worktree under
+`ARCHCONTEXT_STATE_DIR`, so moving the checkout does not move the projection
+target. Every 300 seconds, `follow` fetches `origin main`. When main moved, it
+refuses a checkout with local changes, fast-forwards, runs
+`bun install --frozen-lockfile`, records the installed commit in
+`node_modules/.repo-harness-writer-install`, writes an `updated` JSON line and
+exits with status 75. A missing install record also triggers the install and
+the restart. The supervisor restarts the process on that non-zero exit, so the
+next process runs the new code and the archctx that main pins. When the
+checkout, the install record and the running code all match main, `follow` runs
+one archctx `once` publication. When the fetch, the fast-forward or the install
+fails, `follow` writes an `update-failed` JSON line with code
+`writer_update_failed`, the checkout HEAD and the `origin/main` commit to stdout
+on each try, and the same line to stderr once per distinct error. It does not
+publish until the update succeeds. When main moves several times, each move
+costs at most one restart, and launchd `ThrottleInterval` spaces restarts at 300
+seconds. One window stays open: archctx fetches main itself and has no input
+for the checked commit. It fetches before its first render and again in its
+internal retry loop. A main move after the writer's check, before either fetch,
+can render one newer commit with the older writer. The rolling PR's CI does not
+compare renders. The Daily architecture freshness lane runs render equivalence
+on main and fails when the published output differs from what current main
+renders. A version mismatch that renders the same output is harmless. The next
+main move renders again with the new writer. The upstream fix is
+Ancienttwo/arch-context#504 (`--base-sha`). Stale projections then also fail the
+daily architecture freshness check on main, which opens a CI repair issue. A
+local commit or a dirty file that blocks the fast-forward needs an operator
+repair. The installed package is not used for `follow`: releases lag main, and
+a long-running process does not reload a `repo-harness update`. The operator supplies
 existing Git and gh authentication. The resulting PR runs normal CI. The merge
 rule for that PR is below.
 
@@ -1075,8 +1107,9 @@ writer-owned worktree. Do not replace a shared daemon or index other workspaces.
 Inspect facts again if archctx reports a stale index after the base moves; the
 command does not invent a repair.
 
-Run `follow` under the operator's process supervisor after setup. Inspect each
-JSON run result and `status`: `busy` means another writer holds the lock;
+Run `follow` under the operator's process supervisor after setup. The
+supervisor must restart the process after a non-zero exit (launchd: `KeepAlive`
+with `SuccessfulExit` false). Inspect each JSON run result and `status`: `busy` means another writer holds the lock;
 `human-action-required` needs the reported model, proof or ownership decision;
 `failed` carries the upstream error. Do not interpret a live process as
 successful publication.
