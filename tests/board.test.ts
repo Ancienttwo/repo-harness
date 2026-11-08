@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
 import { initGitRepo, run, tmpWorkspace } from './helpers/repo-fixture';
 import { evaluateBoardAttention, type BoardRuleId } from '../src/core/board/attention';
@@ -10,7 +11,7 @@ import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectBoard, readLocalRepositoryId } from '../src/effects/board/collect';
-import { runBoardCloseout } from '../src/effects/board/closeout';
+import { runBoardCloseout, stopCodegraphServers } from '../src/effects/board/closeout';
 import type { RunArchctxProcess } from '../src/core/architecture/contracts';
 import { errorEnvelope } from 'archctx-contracts';
 import { githubRemoteRepository } from '../src/core/board/source';
@@ -1249,7 +1250,7 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   const rmFails = new Set(['t17']);
   const closed: string[] = [];
   const closeout = (pr: number) => runBoardCloseout({
-    repo_root: main, pr, caller_terminal: 't3', processes: () => [],
+    repo_root: main, pr, caller_terminal: 't3', processes: () => [], stopCodegraphServers: () => [],
     stopDaemons: (path) => { if (path === partial) throw new Error('daemon stop failed'); return []; },
     host: { closeoutTerminals: () => ({ status: 'observed', terminals }), closeTerminal: (address) => {
       if (rmFails.has(address)) return { status: 'unavailable', reason: 'hc_failed' };
@@ -1292,4 +1293,17 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   const retried = await closeout(26);
   expect([retried.panes, retried.worktree]).toEqual([[pane('t17', 'reviewer', null)], state(rmfail, 'removed', null)]);
   expect(closed).toEqual(['t1', 't2', 't12', 't4', 't9', 't11', 't17']);
+});
+
+test('closeout stops a CodeGraph MCP server bound to exactly the worktree and no other process', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cg-stop-'));
+  const sleeper = (...args: string[]) => Bun.spawn([process.execPath, '-e', 'setTimeout(() => {}, 60000)', 'codegraph.js', ...args], { cwd: dir, stdio: ['ignore', 'ignore', 'ignore'] });
+  const server = sleeper('serve', '--mcp', '--path', dir), other = sleeper('serve', '--mcp', '--path', `${dir}-other`), bystander = sleeper('index');
+  try {
+    await Bun.sleep(200);
+    const found = [server, other, bystander].map(child => ({ pid: child.pid, cwd: dir }));
+    expect(stopCodegraphServers(dir, found)).toEqual([server.pid]);
+    await server.exited;
+    expect([other.killed, bystander.killed]).toEqual([false, false]);
+  } finally { server.kill(); other.kill(); bystander.kill(); rmSync(dir, { recursive: true, force: true }); }
 });
