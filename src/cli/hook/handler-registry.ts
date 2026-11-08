@@ -9,6 +9,9 @@ import type { HookHandlerContext, HookHandlerResult, TypedHookHandler } from './
 import type { SessionContextSection } from './session-context-budget';
 import { collectArchitectureNotice } from './hook-protocol';
 import { resolveCapabilityOwnership } from '../../effects/state/resolve-effective-state';
+import { payloadString } from './hook-input';
+import { seatResetIdentity } from '../../core/board/seat-reset';
+import { recordSeatSession } from '../../effects/board/seat-reset';
 
 /**
  * A text handler's result. Successful stdout is the model-facing advisory, so
@@ -27,13 +30,32 @@ function textResult(value: { readonly exitCode: number; readonly stdout: string;
   };
 }
 
+/**
+ * A new session of a Claude reset seat (#1972) records the new-session signal of its reset. A failed write gives one
+ * diagnostic and leaves the context unchanged. Sessions without the seat env write nothing.
+ */
+function seatSessionDiagnostic(context: HookHandlerContext): string {
+  const identity = context.identity.host === 'claude' ? seatResetIdentity(context.env) : null;
+  const source = payloadString(context.payload, 'source');
+  const transcriptPath = payloadString(context.payload, 'transcript_path');
+  if (identity === null || (source !== 'clear' && source !== 'startup') || transcriptPath === '') return '';
+  try {
+    recordSeatSession(identity, { sessionId: context.identity.sessionId, transcriptPath, source }, context.now);
+    return '';
+  } catch (error) {
+    return `repo-harness: seat session not recorded: ${(error as Error).message}\n`;
+  }
+}
+
 function runSessionContext(context: HookHandlerContext): HookHandlerResult {
+  const seatDiagnostic = seatSessionDiagnostic(context);
   const resolution = context.collector.getEffectiveState();
   const sections: SessionContextSection[] = [...buildSessionStartSections(resolution), EDIT_GUARD_SCOPE_SECTION];
   const notice = resolution.ok ? collectArchitectureNotice(context.repoRoot, () => resolution.state.capability_ownership, { env: context.env }, 'session-start') : {};
   if (notice.content) sections.push({ id: 'architecture-debt', priority: 2, mandatory: true, content: notice.content, source: 'repo-harness architecture-debt --json', systemMessage: notice.systemMessage });
   const systemMessage = sections.map((section) => section.systemMessage).filter(Boolean).join('\n');
-  return { exitCode: 0, sessionContexts: sections, ...(systemMessage ? { systemMessage } : {}), ...(notice.diagnostics ? { diagnostics: notice.diagnostics } : {}), ...(resolution.ok ? {} : { reason: 'context-unavailable' }) };
+  const diagnostics = `${notice.diagnostics ?? ''}${seatDiagnostic}`;
+  return { exitCode: 0, sessionContexts: sections, ...(systemMessage ? { systemMessage } : {}), ...(diagnostics ? { diagnostics } : {}), ...(resolution.ok ? {} : { reason: 'context-unavailable' }) };
 }
 
 const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freeze({

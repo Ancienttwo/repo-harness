@@ -1,10 +1,13 @@
 import { createHash } from 'crypto';
 import { closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
+import { appendFileSync, existsSync } from 'fs';
 import {
-  handoffIdentity, missingHandoffSections, seatResetRequestPath, seatResumePrompt, type SeatResetIdentity,
+  SEAT_NO_RESET_MESSAGE, SEAT_RESET_RETRIES, handoffIdentity, missingHandoffSections, seatResetLogPath, seatResetRequestPath,
+  seatResumePrompt, seatRewriteMessage, seatSessionPath, type SeatResetIdentity,
 } from '../../core/board/seat-reset';
-import { RH_LABEL, hcList, hcSend, hcWait, type HerdrCoreOptions } from '../terminal/herdr-core';
+import { RH_LABEL, hcGet, hcList, hcSend, hcWait, type HerdrCoreOptions } from '../terminal/herdr-core';
+import { postNotifyEvent } from '../terminal/notify-relay';
 
 const TAIL_BYTES = 1024 * 1024;
 
@@ -63,64 +66,208 @@ export function seatResetRequested(identity: SeatResetIdentity, transcriptPath: 
   }
 }
 
+/**
+ * The SessionStart hook records each new session of a reset seat (`source` clear or startup): the reset command
+ * sends the resume prompt only after this signal names a new transcript.
+ */
+export function recordSeatSession(identity: SeatResetIdentity, session: { readonly sessionId: string | null; readonly transcriptPath: string; readonly source: string }, now: Date): void {
+  const path = seatSessionPath(identity);
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  writeFileSync(path, `${JSON.stringify({ session_id: session.sessionId, transcript_path: session.transcriptPath, source: session.source, started_at: now.toISOString() })}\n`);
+}
+
+/** `nothing_sent`: no terminal got a message. `uncertain`: the requester may already be cleared. */
+export type SeatResetOutcome = 'nothing_sent' | 'rewrite_requested' | 'no_reset' | 'uncertain';
+
 export class SeatResetError extends Error {
   constructor(readonly code: 'handoff_path_invalid' | 'handoff_missing' | 'request_missing' | 'handoff_stale' | 'handoff_sha256_mismatch' | 'handoff_sections_missing'
-    | 'caller_unknown' | 'requester_not_found' | 'requester_busy' | 'resume_not_sent', message: string) {
+    | 'caller_unknown' | 'requester_not_found' | 'requester_busy' | 'resume_not_sent', readonly outcome: SeatResetOutcome, message: string) {
     super(message);
   }
 }
 
-const WAIT_SECONDS = 600;
+type HandoffCode = 'handoff_missing' | 'handoff_stale' | 'handoff_sha256_mismatch' | 'handoff_sections_missing';
+type LogKind = 'rewrite' | 'no_reset' | 'resume' | 'relaunch_failed' | 'resume_not_sent';
 
-/** Checks the handoff of a `RESET-REQUEST`. Any failure throws before a terminal is touched. */
-function checkHandoff(path: string, sha256: string): SeatResetIdentity {
-  const identity = handoffIdentity(path);
-  if (identity === null) throw new SeatResetError('handoff_path_invalid', `${path} is not the handoff path of the orchestrator or advisor seat.`);
-  let requestedAt = Number.NaN;
-  try { requestedAt = Date.parse((JSON.parse(readFileSync(seatResetRequestPath(identity), 'utf8')) as { requested_at: string }).requested_at); } catch { /* checked below */ }
-  if (!Number.isFinite(requestedAt)) {
-    throw new SeatResetError('request_missing', `${seatResetRequestPath(identity)} is missing or not valid: the Stop hook did not ask for this reset.`);
+interface SeatRequest {
+  readonly requestedAt: string;
+  readonly transcriptPath: string | null;
+}
+
+function readRequest(identity: SeatResetIdentity): SeatRequest {
+  let value: { requested_at?: unknown; transcript_path?: unknown } = {};
+  try { value = JSON.parse(readFileSync(seatResetRequestPath(identity), 'utf8')); } catch { /* checked below */ }
+  if (typeof value.requested_at !== 'string' || !Number.isFinite(Date.parse(value.requested_at))) {
+    throw new SeatResetError('request_missing', 'nothing_sent', `${seatResetRequestPath(identity)} is missing or not valid: the Stop hook did not ask for this reset.`);
   }
-  let modifiedAt: number;
-  try { modifiedAt = statSync(path).mtimeMs; } catch { throw new SeatResetError('handoff_missing', `${path} does not exist.`); }
-  if (modifiedAt <= requestedAt) {
-    throw new SeatResetError('handoff_stale', `${path} is older than the reset request of ${new Date(requestedAt).toISOString()}. Ask the ${identity.seat} seat to write it again.`);
-  }
+  return { requestedAt: value.requested_at, transcriptPath: typeof value.transcript_path === 'string' ? value.transcript_path : null };
+}
+
+/** The first failed check of the handoff of a `RESET-REQUEST`, or null when it passes. */
+function handoffProblem(path: string, sha256: string, request: SeatRequest): { readonly code: HandoffCode; readonly message: string } | null {
+  if (!existsSync(path)) return { code: 'handoff_missing', message: `${path} does not exist.` };
+  if (statSync(path).mtimeMs <= Date.parse(request.requestedAt)) return { code: 'handoff_stale', message: `${path} is older than the reset request of ${request.requestedAt}.` };
   const text = readFileSync(path);
   const actual = createHash('sha256').update(text).digest('hex');
-  if (actual !== sha256.toLowerCase()) throw new SeatResetError('handoff_sha256_mismatch', `${path} has sha256 ${actual}, not ${sha256}.`);
+  if (actual !== sha256.toLowerCase()) return { code: 'handoff_sha256_mismatch', message: `${path} has sha256 ${actual}, not ${sha256}.` };
   const missing = missingHandoffSections(text.toString('utf8'));
-  if (missing.length > 0) throw new SeatResetError('handoff_sections_missing', `${path} has no section ${missing.map(section => `"## ${section}"`).join(', ')}.`);
-  return identity;
+  return missing.length === 0 ? null : { code: 'handoff_sections_missing', message: `${path} has no section ${missing.map(section => `"## ${section}"`).join(', ')}.` };
+}
+
+/** The transcript of a session that started at or after `since` and is not the transcript of the request. */
+function newSession(identity: SeatResetIdentity, since: number, request: SeatRequest): string | null {
+  try {
+    const value = JSON.parse(readFileSync(seatSessionPath(identity), 'utf8')) as { transcript_path?: unknown; started_at?: unknown };
+    const fresh = typeof value.started_at === 'string' && Date.parse(value.started_at) >= since;
+    return fresh && typeof value.transcript_path === 'string' && value.transcript_path !== request.transcriptPath ? value.transcript_path : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Mechanical resume evidence: the transcript has a user entry whose text is the resume prompt. */
+function hasUserPrompt(transcript: string, prompt: string): boolean {
+  let text: string;
+  try { text = readFileSync(transcript, 'utf8'); } catch { return false; }
+  return text.split('\n').some((line) => {
+    try {
+      const entry = JSON.parse(line) as { type?: unknown; message?: { content?: unknown } };
+      const content = entry.message?.content;
+      return entry.type === 'user' && (content === prompt
+        || (Array.isArray(content) && content.some(part => (part as { text?: unknown } | null)?.text === prompt)));
+    } catch {
+      return false;
+    }
+  });
+}
+
+function shellQuote(value: string): string {
+  return /^[\w@%+=:,./-]+$/u.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+export interface SeatResetTimeouts {
+  readonly signalMs: number;
+  readonly evidenceMs: number;
+  readonly exitMs: number;
+  readonly pollMs: number;
+}
+
+const TIMEOUTS: SeatResetTimeouts = { signalMs: 60_000, evidenceMs: 120_000, exitMs: 60_000, pollMs: 1_000 };
+const WAIT_SECONDS = 600;
+
+export interface SeatResetOptions extends HerdrCoreOptions {
+  /** The argv of `repo-harness seats argv <seat> --repository-id <id>`, for the relaunch. */
+  readonly relaunchArgv: (identity: SeatResetIdentity) => Promise<readonly string[]>;
+  /** Tests only: shorter waits. */
+  readonly timeouts?: SeatResetTimeouts;
+  readonly notify?: typeof postNotifyEvent;
+}
+
+export interface SeatResetResult {
+  readonly requester: string;
+  readonly seat: string;
+  readonly relaunched: boolean;
 }
 
 /**
- * The peer seat runs this on a `RESET-REQUEST`. It finds the requester by its seat labels, waits for its turn to
- * end, sends `/clear` and then the resume prompt. A failure before `/clear` sends nothing.
+ * The peer seat runs this on a `RESET-REQUEST`. It finds the requester by its seat labels. A failed handoff check
+ * asks for a rewrite, at most 3 times per request, and then tells the requester to continue without a reset. A
+ * valid handoff gets `/clear`; the resume prompt goes out only after the new-session signal, and goes out again
+ * when the signal or the resume evidence is missing, at most 3 times. Then the requester starts again from its
+ * seat argv in the same terminal. Each failure appends one entry to the reset log and posts one notice.
  */
-export function runSeatReset(path: string, sha256: string, options: HerdrCoreOptions = {}): { readonly requester: string; readonly seat: string } {
+export async function runSeatReset(path: string, sha256: string, options: SeatResetOptions): Promise<SeatResetResult> {
   const env = options.env ?? process.env;
-  const identity = checkHandoff(path, sha256);
+  const timeouts = options.timeouts ?? TIMEOUTS;
+  const notify = options.notify ?? postNotifyEvent;
+  const identity = handoffIdentity(path);
+  if (identity === null) throw new SeatResetError('handoff_path_invalid', 'nothing_sent', `${path} is not the handoff path of the orchestrator or advisor seat.`);
+  const request = readRequest(identity);
   const caller = env.HC_TERMINAL_ID;
-  if (!caller) throw new SeatResetError('caller_unknown', 'HC_TERMINAL_ID is not set: run the reset from the peer seat terminal.');
+  if (!caller) throw new SeatResetError('caller_unknown', 'nothing_sent', 'HC_TERMINAL_ID is not set: run the reset from the peer seat terminal.');
   const terminals = hcList({ [RH_LABEL.seat]: identity.seat, [RH_LABEL.repository]: identity.repository }, options);
   if (terminals.length !== 1) {
-    throw new SeatResetError('requester_not_found', `${terminals.length} live terminals carry repo-harness.seat=${identity.seat} and repo-harness.repository=${identity.repository}; the reset needs exactly one.`);
+    throw new SeatResetError('requester_not_found', 'nothing_sent', `${terminals.length} live terminals carry repo-harness.seat=${identity.seat} and repo-harness.repository=${identity.repository}; the reset needs exactly one.`);
   }
   const requester = terminals[0]!.address;
-  if (requester === caller) throw new SeatResetError('caller_unknown', `The ${identity.seat} seat cannot reset itself: run the reset from the peer seat.`);
+  if (requester === caller) throw new SeatResetError('caller_unknown', 'nothing_sent', `The ${identity.seat} seat cannot reset itself: run the reset from the peer seat.`);
+
+  const logPath = seatResetLogPath(identity);
+  const count = (kind: LogKind) => (existsSync(logPath) ? readFileSync(logPath, 'utf8').split('\n') : []).filter((line) => {
+    try {
+      const entry = JSON.parse(line) as { requested_at?: unknown; kind?: unknown };
+      return entry.requested_at === request.requestedAt && entry.kind === kind;
+    } catch {
+      return false;
+    }
+  }).length;
+  const fail = async (kind: LogKind, detail: string) => {
+    const notice = await notify(env, {
+      repository: identity.repository, kind: 'seat.reset_failed', data: { seat: identity.seat, failure: kind, detail, handoff: path },
+      text: `seat reset ${kind}: ${identity.seat} (${detail})`,
+    });
+    appendFileSync(logPath, `${JSON.stringify({ at: new Date().toISOString(), requested_at: request.requestedAt, kind, detail, notice })}\n`);
+  };
+
+  const problem = handoffProblem(path, sha256, request);
+  if (problem !== null) {
+    const rewrites = count('rewrite');
+    if (rewrites < SEAT_RESET_RETRIES) {
+      hcSend(requester, seatRewriteMessage(identity, problem.message, rewrites + 1), options);
+      await fail('rewrite', problem.code);
+      throw new SeatResetError(problem.code, 'rewrite_requested', `${problem.message} Rewrite ${rewrites + 1}/${SEAT_RESET_RETRIES} asked.`);
+    }
+    hcSend(requester, SEAT_NO_RESET_MESSAGE, options);
+    await fail('no_reset', problem.code);
+    throw new SeatResetError(problem.code, 'no_reset', `${problem.message} The rewrites are used up: no reset; the requester continues.`);
+  }
+
   const wait = () => {
     const result = hcWait(requester, WAIT_SECONDS, options);
-    if (!result.ended) throw new SeatResetError('requester_busy', `${requester} did not end its turn in ${WAIT_SECONDS} s (${result.reason}).`);
+    if (!result.ended) throw new SeatResetError('requester_busy', 'nothing_sent', `${requester} did not end its turn in ${WAIT_SECONDS} s (${result.reason}).`);
   };
   wait();
+  const prompt = seatResumePrompt(identity, caller);
+  const poll = async <T>(read: () => T | null, ms: number): Promise<T | null> => {
+    for (const deadline = Date.now() + ms; ; await new Promise(resolve => setTimeout(resolve, timeouts.pollMs))) {
+      const value = read();
+      if (value !== null || Date.now() >= deadline) return value;
+    }
+  };
+  /** Waits for the new-session signal, sends the prompt and waits for the evidence; the failure detail, or null. */
+  const resume = async (since: number): Promise<string | null> => {
+    const transcript = await poll(() => newSession(identity, since, request), timeouts.signalMs);
+    if (transcript === null) return 'no_signal';
+    hcSend(requester, prompt, options);
+    return await poll(() => (hasUserPrompt(transcript, prompt) ? true : null), timeouts.evidenceMs) ? null : 'no_evidence';
+  };
+
   // From the /clear send on, the requester may already be cleared, so a failure gives the prompt to send by hand.
   try {
+    const clearedAt = Date.now();
     hcSend(requester, '/clear', options);
-    wait();
-    hcSend(requester, seatResumePrompt(identity, caller), options);
+    for (let failure = await resume(clearedAt); failure !== null; failure = await resume(clearedAt)) {
+      await fail('resume', failure);
+      if (count('resume') > SEAT_RESET_RETRIES) return await relaunch();
+    }
+    return { requester, seat: identity.seat, relaunched: false };
   } catch (error) {
-    throw new SeatResetError('resume_not_sent', `${requester} may have got /clear, but not the resume prompt: ${(error as Error).message}. Send it by hand: ${seatResumePrompt(identity, caller)}`);
+    if (error instanceof SeatResetError && error.outcome === 'uncertain') throw error;
+    await fail('resume_not_sent', (error as Error).message);
+    throw new SeatResetError('resume_not_sent', 'uncertain', `${requester} may have got /clear, but not the resume prompt: ${(error as Error).message}. Send it by hand: ${prompt}`);
   }
-  return { requester, seat: identity.seat };
+
+  async function relaunch(): Promise<SeatResetResult> {
+    const stop = async (detail: string): Promise<never> => {
+      await fail('relaunch_failed', detail);
+      throw new SeatResetError('resume_not_sent', 'uncertain', `The relaunch of ${requester} failed (${detail}). Start it from \`repo-harness seats argv ${identity!.seat} --repository-id ${identity!.repository}\` and send: ${prompt}`);
+    };
+    wait();
+    hcSend(requester, '/exit', options);
+    if (await poll(() => (hcGet(requester, options).foreground?.name === 'claude' ? null : true), timeouts.exitMs) === null) return stop('claude_did_not_exit');
+    const startedAt = Date.now();
+    hcSend(requester, (await options.relaunchArgv(identity!)).map(shellQuote).join(' '), options);
+    const failure = await resume(startedAt);
+    return failure === null ? { requester, seat: identity!.seat, relaunched: true } : stop(failure);
+  }
 }

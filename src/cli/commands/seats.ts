@@ -207,18 +207,19 @@ export function buildSeatsCommand(): Command {
     });
   seats
     .command('reset')
-    .description('On a RESET-REQUEST from the orchestrator or advisor seat: check its handoff, then send /clear and the resume prompt')
+    .description('On a RESET-REQUEST from the orchestrator or advisor seat: check its handoff, ask for a rewrite or send /clear, then resume it; run it in the background')
     .argument('<handoff>', 'The handoff path of the RESET-REQUEST')
     .argument('<sha256>', 'The handoff sha256 of the RESET-REQUEST')
-    .action((handoff: string, sha256: string) => {
+    .action(async (handoff: string, sha256: string) => {
       try {
-        const result = runSeatReset(handoff, sha256);
+        const result = await runSeatReset(handoff, sha256, {
+          relaunchArgv: async identity => (await seatLaunch(identity.seat, { repositoryId: identity.repository })).argv,
+        });
         process.stdout.write(`${JSON.stringify({ ok: true, ...result })}\n`);
       } catch (error) {
         if (!(error instanceof SeatResetError || error instanceof HerdrCoreError)) throw error;
-        const code = error instanceof SeatResetError ? error.code : 'hc_failed';
-        const prefix = code === 'resume_not_sent' ? '' : 'Nothing was reset: ';
-        process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: `${prefix}${error.message}` })}\n`);
+        const [code, outcome] = error instanceof SeatResetError ? [error.code, error.outcome] : ['hc_failed', 'nothing_sent'];
+        process.stderr.write(`${JSON.stringify({ ok: false, error: code, outcome, message: error.message })}\n`);
         process.exitCode = 1;
       }
     });

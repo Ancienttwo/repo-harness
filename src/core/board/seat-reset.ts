@@ -36,6 +36,14 @@ export const seatHandoffPath = (identity: SeatResetIdentity): string => `${seatR
 /** The hook writes this file when it blocks the stop; a handoff older than it is stale. */
 export const seatResetRequestPath = (identity: SeatResetIdentity): string => `${seatResetDirectory(identity)}/request.json`;
 
+/** The SessionStart hook writes this file for a new session of the seat: the new-session signal of the reset. */
+export const seatSessionPath = (identity: SeatResetIdentity): string => `${seatResetDirectory(identity)}/session.json`;
+/** One JSON line per reset failure. It is the only record of the rewrite and resend counts. */
+export const seatResetLogPath = (identity: SeatResetIdentity): string => `${seatResetDirectory(identity)}/reset-log.jsonl`;
+
+/** At most this many handoff rewrites and resume prompt resends per request. */
+export const SEAT_RESET_RETRIES = 3;
+
 /** The identity of a handoff path, or null when the path is not the handoff path of a reset seat. */
 export function handoffIdentity(path: string): SeatResetIdentity | null {
   const [, repository, seat] = /^\/tmp\/repo-harness-seats\/([^/]+)\/([^/]+)\/handoff\.md$/u.exec(path) ?? [];
@@ -79,7 +87,8 @@ export function seatResetReason(identity: SeatResetIdentity, contextTokens: numb
     seatHandoffTemplate(),
     `2. Take its sha256 with \`shasum -a 256 ${path}\`.`,
     `3. Send \`RESET-REQUEST ${path} <sha256>\` to the ${PEER[identity.seat]} seat (repo-harness.seat=${PEER[identity.seat]}) with hc send, then end your turn.`,
-    `When the ${PEER[identity.seat]} seat is missing or does not answer, tell the owner. Nothing resets.`,
+    `On REWRITE, write the handoff again and send RESET-REQUEST again. On NO-RESET, continue.`,
+    `When the ${PEER[identity.seat]} seat is missing or does not answer, continue without a reset: Claude Code auto-compaction handles the context.`,
   ].join('\n');
 }
 
@@ -87,3 +96,11 @@ export function seatResetReason(identity: SeatResetIdentity, contextTokens: numb
 export function seatResumePrompt(identity: SeatResetIdentity, peerAddress: string): string {
   return `You are ${identity.seat}. Read ${seatHandoffPath(identity)}, check the current state with git/gh, then continue. Then send RESUMED to ${peerAddress} with hc send.`;
 }
+
+/** The message to the requester when its handoff fails a check. */
+export function seatRewriteMessage(identity: SeatResetIdentity, problem: string, attempt: number): string {
+  return `REWRITE ${attempt}/${SEAT_RESET_RETRIES}: ${problem} Write ${seatHandoffPath(identity)} again and send RESET-REQUEST again.`;
+}
+
+/** The message to the requester when its handoff failed every rewrite: no reset, auto-compaction handles the context. */
+export const SEAT_NO_RESET_MESSAGE = 'NO-RESET: the handoff failed every rewrite. Continue your work; Claude Code auto-compaction handles the context.';
