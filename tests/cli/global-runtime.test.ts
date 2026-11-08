@@ -7,6 +7,7 @@ import { formatUpgradeSummaryLine, type UpgradeResult } from '../../src/cli/comm
 import type { LeftoverItem } from '../../src/effects/upgrade/legacy-inventory';
 import type { LegacyWorktreeCandidate } from '../../src/effects/upgrade/legacy-worktree-cleanup';
 import { adoptedRepo, commitAll, git, registeredReposFixture, worktreeSnapshot, writeRegistry } from '../helpers/registered-repos';
+import { installStateFixturePath } from '../helpers/install-ownership';
 import { version as PACKAGE_VERSION } from '../../package.json';
 
 describe('operator console setup', () => {
@@ -131,7 +132,7 @@ describe('global runtime setup command env base', () => {
   function withOverriddenHome(label: string, body: (tmp: string, home: string, statePath: string) => void): void {
     const tmp = join(tmpdir(), `repo-harness-global-runtime-env-base-${label}-${Date.now()}`);
     const home = join(tmp, 'home');
-    const statePath = join(home, '.repo-harness', 'install-state.json');
+    const statePath = installStateFixturePath({ HOME: home });
     const previousHome = process.env.HOME;
     const previousFlag = process.env.AGENTIC_DEV_LINK_INSTALLED_COPIES;
     try {

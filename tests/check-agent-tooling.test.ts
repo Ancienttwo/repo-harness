@@ -14,7 +14,7 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
-import { recordPluginSelection } from "./helpers/install-ownership";
+import { installStateFixturePath, recordPluginSelection } from "./helpers/install-ownership";
 import { createHash } from "crypto";
 import { runSubagentContext } from "../src/cli/hook/subagent-context";
 import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
@@ -22,7 +22,6 @@ import { resolveHookEffectiveState } from "../src/cli/hook/runtime";
 import { writeShellExecutableFixture } from "./helpers/repo-fixture";
 import { versions } from "../src/cli/installer/install-profile";
 import { HC_MIN_VERSION } from "../src/core/terminal/herdr-pin";
-import { installProfileStatePath } from "../src/cli/installer/install-state";
 import type { PluginId } from "../src/core/skill-surface/plugin-manifest";
 
 const ROOT = join(import.meta.dir, "..");
@@ -572,7 +571,7 @@ describe("check-agent-tooling", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-obsidian-managed");
     try {
       mkdirSync(join(envRoot.home, ".repo-harness"), { recursive: true });
-      const statePath = join(envRoot.home, ".repo-harness", "install-state.json");
+      const statePath = installStateFixturePath({ HOME: envRoot.home });
       writeFileSync(statePath, JSON.stringify({
         protocol: 3,
         ...versions(["strategy-memory"]),
@@ -1767,7 +1766,7 @@ describe("check-agent-tooling", () => {
         writeExecutable(join(envRoot.fakeBin, "archctx"), `#!/bin/sh\necho "archctx $*" >> "${log}"\necho 0.5.13\n`);
         if (entry.unreadable) {
           mkdirSync(join(envRoot.home, ".repo-harness"), { recursive: true });
-          writeFileSync(installProfileStatePath({ HOME: envRoot.home }), "{");
+          writeFileSync(installStateFixturePath({ HOME: envRoot.home }), "{");
         }
         if (entry.providerLoadFails) {
           writeExecutable(join(envRoot.fakeBin, "bun"), `#!/bin/sh\nfor a in "$@"; do case "$a" in */effects/architecture/providers.ts) echo "error: Cannot find module './archctx-runtime'" >&2; exit 1;; esac; done\nexec "${process.execPath}" "$@"\n`);

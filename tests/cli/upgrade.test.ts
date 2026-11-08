@@ -22,6 +22,7 @@ import { formatRegisteredUpgradeResult, runRegisteredUpgrade, type RegisteredRep
 import { adoptedRepo, commitAll, git, registeredReposFixture, worktreeSnapshot, writeRegistry, type RegisteredReposFixture } from '../helpers/registered-repos';
 // The sweep's process inventory is a fixture input: Linux CI cannot prove that /proc lists every process.
 import '../helpers/controlled-worktree-processes';
+import { installStateFixturePath } from '../helpers/install-ownership';
 
 const ROOT = join(import.meta.dir, '../..');
 const FIXTURES = join(ROOT, 'tests/fixtures');
@@ -569,7 +570,7 @@ describe('upgrade with real release bytes', () => {
     // A retired facade name: the strict install-state reader accepts a receipt only for a known install path.
     const owned = join(root, 'repo-harness-old-owned'); const unowned = join(root, 'old-user');
     const target = join(opts.home, 'old-package/missing-skill'); symlinkSync(target, owned); symlinkSync(target, unowned);
-    put(join(opts.home, '.repo-harness/install-state.json'), JSON.stringify(priorState('0.19.5', [{ owner: 'core', authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', path: owned, type: 'symlink', content_hash: null, managed_marker: null, symlink_target: target }])));
+    put(installStateFixturePath({ HOME: opts.home }), JSON.stringify(priorState('0.19.5', [{ owner: 'core', authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', path: owned, type: 'symlink', content_hash: null, managed_marker: null, symlink_target: target }])));
     const result = runUpgrade({ ...opts, scope: 'global', apply: true });
     expect(result.exitCode).toBe(0); expect(() => lstatSync(owned)).toThrow(); expect(lstatSync(unowned).isSymbolicLink()).toBe(true);
     expect(result.items.find((item) => item.path === unowned)?.ownership).toBe('unowned');
@@ -690,7 +691,7 @@ describe('upgrade with real release bytes', () => {
   test('manifest-owned refresh updates its backed-up receipt and remains clean', () => sandbox((opts) => {
     seed('upgrade-v0.19.5-home', opts.home);
     const path = join(opts.home, '.codex/skills/repo-harness-cross-review');
-    const statePath = join(opts.home, '.repo-harness/install-state.json');
+    const statePath = installStateFixturePath({ HOME: opts.home });
     const oldHash = hashManagedTree(path);
     const state = priorState('0.19.5', [{ owner: 'cross-review', authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', path, type: 'directory-copy', content_hash: oldHash, managed_marker: 'transaction-created-directory', symlink_target: null }]);
     put(statePath, JSON.stringify(state));
@@ -708,7 +709,7 @@ describe('upgrade with real release bytes', () => {
     const path = join(opts.home, '.codex/skills/repo-harness-cross-review');
     const oldSource = join(opts.home, 'old-package/assets/skills/repo-harness-cross-review');
     const currentSource = join(ROOT, 'assets/skills/repo-harness-cross-review');
-    const statePath = join(opts.home, '.repo-harness/install-state.json');
+    const statePath = installStateFixturePath({ HOME: opts.home });
     put(join(oldSource, 'SKILL.md'), '# old package\n');
     mkdirSync(dirname(path), { recursive: true });
     symlinkSync(oldSource, path);
@@ -752,7 +753,7 @@ describe('upgrade with real release bytes', () => {
     put(join(kept[2]!, 'note'), 'user\n'); cpSync(backup, kept[3]!, { recursive: true });
     // The retired gate and archive paths predate the manifest. A valid install state cannot hold a
     // receipt for a state-root backup, so the backup has no ownership proof.
-    put(join(state, 'install-state.json'), JSON.stringify(priorState('0.19.5', [])));
+    put(installStateFixturePath({ HOME: opts.home }), JSON.stringify(priorState('0.19.5', [])));
     const before = tree(opts.home);
     const check = runUpgrade({ ...opts, scope: 'global', includeStateArtifacts: true });
     for (const path of [gate, archive]) expect(check.items.find((item) => item.path === path)).toMatchObject({ ownership: 'owned-clean',
