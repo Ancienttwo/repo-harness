@@ -222,6 +222,7 @@ function piLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'proto
   const slash = config.model?.indexOf('/') ?? -1;
   return {
     argv: ['pi', ...(config.model === null ? [] : ['--provider', config.model.slice(0, slash), '--model', config.model.slice(slash + 1)]),
+      ...(config.effort === null ? [] : ['--thinking', config.effort]),
       ...(review ? ['--exclude-tools', 'edit,write', '--no-extensions', '--no-skills',
       '--no-prompt-templates', '--no-context-files', '--no-mcp'] : []), '--append-system-prompt', text],
     brief: text, limits,
