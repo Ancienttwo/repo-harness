@@ -129,6 +129,15 @@ describe("SessionStart host envelope", () => {
       expect(existsSync(signal)).toBe(false);
       start("clear");
       expect(JSON.parse(readFileSync(signal, "utf8"))).toEqual({ session_id: "s-1", transcript_path: "/x/new.jsonl", source: "clear", started_at: now.toISOString() });
+      expect(start("startup").diagnostics ?? "").toBe("");
+      expect(JSON.parse(readFileSync(signal, "utf8")).source).toBe("startup");
+      // A seat directory that is a regular file: one diagnostic line, and the context does not change.
+      const written = start("startup");
+      rmSync(dirname(signal), { recursive: true });
+      writeFileSync(dirname(signal), "");
+      const failed = start("startup");
+      expect([failed.exitCode, failed.sessionContexts, failed.systemMessage]).toEqual([0, written.sessionContexts, written.systemMessage]);
+      expect(failed.diagnostics).toMatch(/^repo-harness: seat session not recorded: EEXIST[^\n]*\n$/u);
     } finally {
       rmSync(join("/tmp/repo-harness-seats", repository), { recursive: true, force: true });
       f.cleanup();

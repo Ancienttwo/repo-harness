@@ -609,10 +609,11 @@ describe("repo-harness seats reset (#1972)", () => {
   /**
    * A fake hc at the hc boundary: no real terminal is read or written. `/clear` writes the new-session signal when
    * `signal` is on, a relaunch line always writes it, `/exit` ends claude when `exit` is on, and every resume prompt
-   * lands in the new transcript; the model answers prompt number `evidenceFrom` and later. `sendFail` refuses a send.
+   * lands in the new transcript. The model answers earlier prompts with text only, and prompt number `evidenceFrom` and
+   * later with the Bash tool call that sends RESUMED. `sendFail` refuses a send.
    */
   function withReset(fn: (f: { handoff: string; body: string; sha: (text: string) => string; state: (patch: Record<string, unknown>) => void;
-    reset: (input?: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]> }) => Promise<unknown>;
+    reset: (input?: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void }) => Promise<unknown>;
     sends: () => string[]; calls: () => string[]; log: () => { kind: string; detail: string; notice: string; requested_at: string }[] }) => Promise<void>) {
     return async () => {
       const home = mkdtempSync(join(tmpdir(), "seats-reset-"));
@@ -647,7 +648,9 @@ if (cmd === "send") {
   if (text.startsWith("You are")) {
     const transcript = JSON.parse(fs.readFileSync("${dir}/session.json", "utf8")).transcript_path;
     fs.appendFileSync(transcript, JSON.stringify({ type: "user", message: { role: "user", content: \`<hc from="t2">\${text}</hc>\` } }) + "\\n");
-    if ((st.prompts += 1) >= st.evidenceFrom) fs.appendFileSync(transcript, JSON.stringify({ type: "assistant", message: { content: [] } }) + "\\n");
+    const answer = (st.prompts += 1) >= st.evidenceFrom
+      ? { type: "tool_use", id: "u1", name: "Bash", input: { command: "hc send t2 RESUMED" } } : { type: "text", text: "Reading the handoff." };
+    fs.appendFileSync(transcript, JSON.stringify({ type: "assistant", message: { role: "assistant", content: [answer] } }) + "\\n");
   }
   out({ started: null, turn: 4 });
 }
@@ -661,7 +664,7 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
         const body = HANDOFF_SECTIONS.map(section => `## ${section}\n\nstate\n`).join("\n");
         const sha = (text: string) => createHash("sha256").update(text).digest("hex");
         const requestedAt = new Date(Date.now() - 60_000).toISOString();
-        const reset = async (input: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]> } = {}) => {
+        const reset = async (input: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void } = {}) => {
           const text = input.text ?? body;
           writeFileSync(handoff, text);
           if (input.handoff === false) rmSync(handoff);
@@ -669,6 +672,7 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
           rmSync(join(dir, "request.json"), { force: true });
           if (input.request !== false) writeFileSync(join(dir, "request.json"), JSON.stringify({ requested_at: requestedAt, context_tokens: 400000, transcript_path: join(home, "old.jsonl") }));
           const { HERDR_ENV: _nested, ...base } = process.env;
+          input.before?.();
           try {
             return await runSeatReset(input.path ?? handoff, input.sha256 ?? sha(text), {
               env: { ...base, HOME: home, REPO_HARNESS_HOME: join(home, ".repo-harness"), HC_TERMINAL_ID: input.caller ?? "t2", PATH: `${join(home, "bin")}:/bin:/usr/bin` },
@@ -686,12 +690,13 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
           ? readFileSync(join(dir, "reset-log.jsonl"), "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line)) : [];
         await fn({ handoff, body, sha, state, reset, sends, calls, log });
       } finally {
+        chmodSync(dir, 0o700);
         rmSync(join("/tmp/repo-harness-seats", repository), { recursive: true, force: true });
         rmSync(home, { recursive: true, force: true });
       }
     };
   }
-  const prompt = (handoff: string) => `You are advisor. Read ${handoff}, check the current state with git/gh, then continue. Then send RESUMED to t2 with hc send.`;
+  const prompt = (handoff: string) => `You are advisor. Read ${handoff}, then send RESUMED to t2 with hc send, then check the current state with git/gh and continue.`;
 
   test("a check that finds no request, no requester or a busy requester sends nothing and logs the failure", withReset(async ({ reset, state, sends, log }) => {
     const rows = [
@@ -733,18 +738,32 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
 
   test("a valid handoff waits, sends /clear and the prompt after the new-session signal, and is never reset again", withReset(async ({ handoff, reset, calls, log }) => {
     expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: false, logErrors: [] });
-    expect(await reset()).toEqual({ error: "already_reset", outcome: "nothing_sent" });
+    expect(await reset()).toEqual({ error: "already_claimed", outcome: "nothing_sent" });
     expect(calls()).toEqual(["wait --timeout 600 -- t5", "keys -- t5 / c l e a r enter", `send -- t5 ${prompt(handoff)}`]);
-    expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([["reset", "cleared"], ["already_reset", "The reset request of " + log()[0]!.requested_at + " is already done."]]);
+    expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([["reset", "cleared"], ["already_claimed", "The reset request of " + log()[0]!.requested_at + " is already claimed by an earlier run."]]);
   }));
 
-  test("a reset log that cannot be written does not stop the reset and is reported", withReset(async ({ handoff, reset }) => {
+  test("a claim that cannot be created types nothing", withReset(async ({ handoff, reset, calls }) => {
+    expect(await reset({ before: () => chmodSync(dirname(handoff), 0o500) })).toEqual({ error: "claim_failed", outcome: "nothing_sent" });
+    expect(calls()).toEqual(["wait --timeout 600 -- t5"]);
+  }));
+
+  test("a reset log that cannot be written still ends the retries after 3 in the run and is reported", withReset(async ({ handoff, reset, state, sends }) => {
     mkdirSync(join(dirname(handoff), "reset-log.jsonl"));
-    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: false,
-      logErrors: [expect.stringMatching(/^reset: EISDIR/u)] });
+    state({ signal: false });
+    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: true,
+      logErrors: [...Array(4).fill(expect.stringMatching(/^resume: EISDIR/u)), expect.stringMatching(/^reset: EISDIR/u)] });
+    expect(sends().filter(text => text === "/clear")).toHaveLength(4);
   }));
 
-  test("a prompt that the model does not answer is sent again and the failure is logged", withReset(async ({ handoff, reset, state, sends, log }) => {
+  test("a prompt that is never answered with RESUMED is sent 3 more times, then the requester is relaunched", withReset(async ({ handoff, reset, state, sends, log }) => {
+    state({ evidenceFrom: 5 });
+    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: true, logErrors: [] });
+    expect(sends()).toEqual(["/clear", ...Array(4).fill(prompt(handoff)), "/exit", `sh ${join(dirname(handoff), "relaunch.sh")}`, prompt(handoff)]);
+    expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([...Array(4).fill(["resume", "no_evidence"]), ["reset", "relaunched"]]);
+  }));
+
+  test("a prompt that the model answers without RESUMED is sent again and the failure is logged", withReset(async ({ handoff, reset, state, sends, log }) => {
     state({ evidenceFrom: 2 });
     expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: false, logErrors: [] });
     expect([sends(), log().map(({ kind, detail }) => [kind, detail])]).toEqual([["/clear", prompt(handoff), prompt(handoff)], [["resume", "no_evidence"], ["reset", "cleared"]]]);
