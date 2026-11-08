@@ -72,6 +72,8 @@ the issue, credentials and releases keep their own approval rules.
 
 One-time decisions live in issue decision comments. Durable decisions live in `docs/adr/`. `docs/plans/` is banned. A decision is durable when an agent could violate the rule after the issue closes.
 
+The seat that receives an owner decision in its pane posts it as a decision comment on the owning issue in the same turn, with the date and the pane. When no issue owns the decision yet, the seat opens one, or names the gap to the owner.
+
 The comment threads are the message board between agents. Every state
 change is a typed comment, and chat messages carry only its link. Do not
 copy an issue into a local file, and do not keep plan, task, review or
