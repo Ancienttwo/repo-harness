@@ -267,18 +267,20 @@ bootstrap_worktree_runtime() {
 }
 
 index_worktree_codegraph() {
-  local worktree_path="$1"
-  command -v codegraph >/dev/null 2>&1 || return 0
+  local worktree_path="$1" codegraph_path init_log
+  local -a launcher=()
+  codegraph_path="$(command -v codegraph 2>/dev/null)" || return 0
   [[ "${contract_worktree_start_json:-0}" -eq 1 ]] \
     || printf '%s\n' "[ContractWorktree] Indexing CodeGraph (architecture projection requires code facts)"
-  # The protected helper PATH has no node, and the codegraph launcher starts
-  # with `#!/usr/bin/env node`. The trusted node runtime is the authority.
-  local node_dir="" init_log
-  [[ -z "${REPO_HARNESS_NODE_BIN:-}" ]] || node_dir="$(dirname "$REPO_HARNESS_NODE_BIN"):"
+  # The protected helper PATH has no node, so a launcher that starts with
+  # `#!/usr/bin/env node` cannot run. Start it with the selected runtime.
+  if [[ -n "${REPO_HARNESS_NODE_BIN:-}" ]] && [[ "$(head -n 1 "$codegraph_path" 2>/dev/null)" =~ ^'#!'.*[[:space:]/]node([[:space:]]|$) ]]; then
+    launcher=("$REPO_HARNESS_NODE_BIN")
+  fi
   init_log="$(mktemp)"
-  if ! (cd "$worktree_path" && PATH="${node_dir}${PATH}" codegraph init </dev/null >/dev/null 2>"$init_log"); then
+  if ! (cd "$worktree_path" && "${launcher[@]}" "$codegraph_path" init </dev/null >/dev/null 2>"$init_log"); then
     echo "[ContractWorktree] codegraph init failed; architecture projection will report unresolved-major-change for every capability" >&2
-    tail -n 5 "$init_log" >&2
+    tail -n 5 "$init_log" | tail -c 2000 >&2
     rm -f "$init_log"
     return 1
   fi
