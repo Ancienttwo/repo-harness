@@ -269,12 +269,12 @@ function provenGroupMembers(provider: ProcessProof): GroupProcess[] {
   const scanned = providerGroup(provider).filter(member => member.pid !== provider.pid);
   return leaderAlive(provider) ? scanned : [];
 }
+function processIdentityLost(error: unknown): boolean {
+  return (error as Error).message === 'task_agent_process_identity_lost';
+}
 /** A reused provider pid means the leader exited: its group is then unproven and only reported, never signalled. */
 function leaderAlive(provider: ProcessProof): boolean {
-  try { return processProofAlive(provider); } catch (error) {
-    if ((error as Error).message === 'task_agent_process_identity_lost') return false;
-    throw error;
-  }
+  try { return processProofAlive(provider); } catch (error) { if (processIdentityLost(error)) return false; throw error; }
 }
 /** Ends a created terminal, confirms its program exit and ends the recorded members of the provider's group. */
 async function endTerminal(endpoint: HerdrCoreEndpoint, address: string, provider: ProcessProof | null): Promise<boolean> {
@@ -339,9 +339,12 @@ async function cleanupTaskAgent(repoRoot: string, task: string, role: string, mo
       }
     }
     const closing = existsSync(join(dir, 'close-intent.json'));
-    if (closing && processProofAlive(binding.provider)) assertTaskBinding(binding, true);
+    if (closing && leaderAlive(binding.provider)) assertTaskBinding(binding, true);
     if (!closing) {
-      assertTaskBinding(binding, true);
+      // A reused provider pid of a hc task passes on to the unproven group report; every other binding error stays fatal.
+      try { assertTaskBinding(binding, true); } catch (error) {
+        if (binding.runtime !== 'herdr-core' || !processIdentityLost(error) || leaderAlive(binding.provider)) throw error;
+      }
       writeSessionArtifact(join(dir, 'close-intent.json'), { task, role, provider: binding.provider, mode });
     }
     const closed = () => {

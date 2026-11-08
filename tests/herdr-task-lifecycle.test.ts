@@ -365,13 +365,30 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     process.kill(childOf('late-child'), 'SIGKILL');
     await until(() => !live(childOf('late-child')));
     expect(await api.cancelTaskAgent(fixture, spec.task, 'late-child')).toEqual({ status: 'closed', pids: [] });
+    // A reused provider pid: the recorded proof names another start time for a live pid. Its terminal is gone.
+    // Cleanup sends no signal and reports the pid, before and after close-intent.json.
+    await started('reused');
+    const reusedDir = api.taskSessionDirectory(fixture, spec.task, 'reused');
+    const reusedTerminal = (api.readTaskAgent(fixture, spec.task, 'reused').binding as HerdrTaskBinding).terminal_id;
+    hc(['kill', '--json', '--', reusedTerminal]); hc(['rm', '--json', '--', reusedTerminal]);
+    const reusedPid = spawn(process.execPath, [join(fixture, 'stubborn.js')], { detached: true, stdio: 'ignore' }).pid!;
+    writeFileSync(join(fixture, 'reused.ready.child'), String(reusedPid));
+    const fields = processIdentity(reusedPid).split(/\s+/); fields[6] = String(Number(fields[6]) - 1);
+    for (const name of ['binding.json', 'provider-created.json']) {
+      const record = JSON.parse(readFileSync(join(reusedDir, name), 'utf8'));
+      writeFileSync(join(reusedDir, name), JSON.stringify({ ...record, provider: { ...record.provider, pid: reusedPid, identity: fields.join(' ') } }));
+    }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      expect(await api.cancelTaskAgent(fixture, spec.task, 'reused')).toEqual({ status: 'cleanup_pending', pids: [reusedPid], reason: 'provider_group_alive' });
+    }
+    expect(live(reusedPid)).toBe(true);
   } finally {
     for (const child of owners) {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
       await exited(child);
     }
     // A failed group cleanup must not leave the TERM/HUP-resistant child on the host.
-    for (const role of ['grouped', 'exec-member', 'late-child']) {
+    for (const role of ['grouped', 'exec-member', 'late-child', 'reused']) {
       const childFile = join(fixture, `${role}.ready.child`);
       if (existsSync(childFile)) { try { process.kill(Number(readFileSync(childFile, 'utf8')), 'SIGKILL'); } catch { /* Already absent. */ } }
     }
