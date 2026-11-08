@@ -13,6 +13,7 @@ import { ClaudeAgentTypesError, claudeHostAgentTypes } from '../../effects/board
 import { RepoHarnessRegistryStrictError, canonicalRepoPath, readRepoHarnessRegistryStrictSnapshot, repoCheckoutProbeEnv } from '../../effects/repo-registry';
 import { HerdrCoreError, RH_LABEL, hcLabel, hcLabelPairs, type HcLabels } from '../../effects/terminal/herdr-core';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
+import { SeatResetError, runSeatReset } from '../../effects/board/seat-reset';
 
 const CLI_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
 
@@ -137,7 +138,7 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
   const agentTypes = effective.runtime === 'claude' && effective.fleet.length > 0
     ? [...MANAGED_AGENTS, ...CLAUDE_BUILTIN_AGENT_TYPES, ...claudeHostAgentTypes(env)]
     : [];
-  const launch = buildSeatLaunch(id, effective, config.seats === undefined ? 'defaults' : 'seats', agentTypes, name ?? undefined);
+  const launch = buildSeatLaunch(id, effective, config.seats === undefined ? 'defaults' : 'seats', agentTypes, name ?? undefined, labels.repositoryId);
   return {
     ...launch,
     argv: labelSet === undefined ? launch.argv : selfLabelingArgv(id, labels, launch.argv),
@@ -201,6 +202,23 @@ export function buildSeatsCommand(): Command {
         if (!(error instanceof SeatsCommandError || error instanceof HerdrCoreError)) throw error;
         const code = error instanceof SeatsCommandError ? error.code : 'label_failed';
         process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: `The seat did not start: ${error.message}` })}\n`);
+        process.exitCode = 1;
+      }
+    });
+  seats
+    .command('reset')
+    .description('On a RESET-REQUEST from the orchestrator or advisor seat: check its handoff, then send /clear and the resume prompt')
+    .argument('<handoff>', 'The handoff path of the RESET-REQUEST')
+    .argument('<sha256>', 'The handoff sha256 of the RESET-REQUEST')
+    .action((handoff: string, sha256: string) => {
+      try {
+        const result = runSeatReset(handoff, sha256);
+        process.stdout.write(`${JSON.stringify({ ok: true, ...result })}\n`);
+      } catch (error) {
+        if (!(error instanceof SeatResetError || error instanceof HerdrCoreError)) throw error;
+        const code = error instanceof SeatResetError ? error.code : 'hc_failed';
+        const prefix = code === 'resume_not_sent' ? '' : 'Nothing was reset: ';
+        process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: `${prefix}${error.message}` })}\n`);
         process.exitCode = 1;
       }
     });

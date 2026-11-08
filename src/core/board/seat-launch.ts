@@ -3,6 +3,7 @@
 // never claims a limit that the host cannot apply.
 import { PANE_PREFIX } from '../terminal/pane-prefix';
 import { isWorkerSeat, type SeatConfigV1, type SeatId, type SeatTool } from './seats-settings';
+import { SEAT_ENV, SEAT_REPOSITORY_ENV, isResetSeat } from './seat-reset';
 
 /** `seats`: the stored section. `defaults`: no section, so `DEFAULT_SEATS_CONFIG`. */
 export type SeatLaunchSource = 'seats' | 'defaults';
@@ -151,7 +152,7 @@ function brief(seat: SeatId, config: SeatConfigV1, fleet: readonly string[], lim
   return [...roleParagraphs(seat, config, fleet), ...kept].join('\n\n');
 }
 
-function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly string[], name: string | undefined): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
+function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly string[], name: string | undefined, repositoryId: string | undefined): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
   const on = (group: SeatTool) => config.tools.includes(group);
   // `--tools` cannot name agent types (`Agent(<type>)` there removes the Agent tool), so a fleet keeps the Agent
   // tool and denies every other known type by name.
@@ -165,9 +166,14 @@ function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly s
     { subject: 'fleet', level: config.fleet.length === 0 ? 'enforced' : 'named_types_only' },
   ];
   const text = brief(seat, config, config.fleet, limits);
+  // The Stop hook resets only a session whose env names its seat and repository (#1972).
+  const env = [
+    ...(seat === 'orchestrator' && on('tasks') ? [`CLAUDE_CODE_TASK_LIST_ID=${ORCHESTRATOR_TASK_LIST_ID}`] : []),
+    ...(isResetSeat(seat) && repositoryId !== undefined ? [`${SEAT_ENV}=${seat}`, `${SEAT_REPOSITORY_ENV}=${repositoryId}`] : []),
+  ];
   return {
     argv: [
-      ...(seat === 'orchestrator' && on('tasks') ? ['env', `CLAUDE_CODE_TASK_LIST_ID=${ORCHESTRATOR_TASK_LIST_ID}`] : []),
+      ...(env.length === 0 ? [] : ['env', ...env]),
       'claude',
       ...(name === undefined ? [] : ['-n', name]),
       ...(config.model === null ? [] : ['--model', config.model]),
@@ -232,11 +238,11 @@ function piLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'proto
 /**
  * `claudeAgentTypes` is every agent type that a Claude session of this host can
  * call. A Claude seat with a fleet refuses each of them that is not in the fleet.
- * `paneName` (`seatPaneName`) becomes the Claude session name `-n`.
+ * `paneName` (`seatPaneName`) becomes the Claude session name `-n`. `repositoryId` is the checked label value.
  */
-export function buildSeatLaunch(seat: SeatId, config: SeatConfigV1, source: SeatLaunchSource, claudeAgentTypes: readonly string[], paneName?: string): SeatLaunchV1 {
+export function buildSeatLaunch(seat: SeatId, config: SeatConfigV1, source: SeatLaunchSource, claudeAgentTypes: readonly string[], paneName?: string, repositoryId?: string): SeatLaunchV1 {
   const launch = config.runtime === 'claude'
-    ? claudeLaunch(seat, config, claudeAgentTypes, paneName)
+    ? claudeLaunch(seat, config, claudeAgentTypes, paneName, repositoryId)
     : config.runtime === 'codex' ? codexLaunch(seat, config) : piLaunch(seat, config);
   return { protocol: 1, kind: 'seat_launch', seat, runtime: config.runtime, source, ...launch };
 }
