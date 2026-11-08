@@ -604,7 +604,7 @@ describe("repo-harness seats argv", () => {
 
 describe("repo-harness seats reset (#1972)", () => {
   let runs = 0;
-  const ended = { ended: true, reason: "idle", turn: 3, status: null };
+  const ended = { ended: true, reason: "status", turn: 3, status: "idle" };
   const timeouts = { signalMs: 300, evidenceMs: 300, exitMs: 300, pollMs: 20 };
   /**
    * A fake hc at the hc boundary: no real terminal is read or written. `/clear` writes the new-session signal when
