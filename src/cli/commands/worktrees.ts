@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import type { WorktreeCleanOptions } from './worktrees-actions';
+import type { WorktreeCleanOptions, WorktreePathOptions } from './worktrees-actions';
 
 const actions = () => import('./worktrees-actions');
 
@@ -18,5 +18,11 @@ export function buildWorktreesCommand(): Command {
     .option('--request-id <uuid>', 'Lower-case UUID; reuse it to replay the recorded result')
     .option('--json', 'Output JSON')
     .action(async (options: WorktreeCleanOptions) => (await actions()).clean(options));
+  worktrees
+    .command('path')
+    .description('Print the absolute path of one registered worktree as JSON, for the desktop shell')
+    .requiredOption('--repository <id>', 'Repository id from `worktrees list --json`')
+    .requiredOption('--worktree <id>', 'Worktree id from `worktrees list --json`')
+    .action(async (options: WorktreePathOptions) => (await actions()).path(options));
   return worktrees;
 }

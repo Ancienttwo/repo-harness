@@ -325,6 +325,7 @@ also has a terminal form:
 ```bash
 repo-harness worktrees list            # add --json for ids and selection digests
 repo-harness worktrees clean --ids <id,...> --expected-digest <digest>
+repo-harness worktrees path --repository <repo-id> --worktree <id>  # JSON line with the absolute path; the desktop shell uses it
 ```
  Each write passes an origin check, a write token and a
 precondition check, and is audited before it runs. Host projection (install,
