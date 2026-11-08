@@ -30,6 +30,7 @@ This topology applies to issue-flow work (`repo-harness-issue-flow`) on herdr-co
 - One PR has one pane and one worker agent. Each further worker gets its own pane, as the right split of a tab that is not full or in a new tab. The worker may use the agent-fleet sub-agents (`agents/fleet/`) inside its own pane.
 - Recommended models for a Claude-only setup: the orchestrator runs Opus at high effort, and the advisor runs Opus at max effort. This is a recommendation, not a requirement. No seat requires a specific model (issue-flow D7).
 - Cleanup: after a PR is accepted and merged, the orchestrator closes the worker's pane, which ends the worker process. It then removes the worker's worktree with `git worktree remove <path>` and deletes the merged branch. A pane or worktree with unmerged or dirty work stays, and the orchestrator reports it.
+- Before a worker reports DONE, it stops the background programs it started (a dev server, a daemon started with `nohup` or `setsid`). On Linux and macOS, herdr-core 0.1.19 keeps a deliberately detached program running after its terminal closes, and Windows ends it.
 
 ### Runtime commands
 
