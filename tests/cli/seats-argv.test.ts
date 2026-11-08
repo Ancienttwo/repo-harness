@@ -610,7 +610,8 @@ describe("repo-harness seats reset (#1972)", () => {
    * A fake hc at the hc boundary: no real terminal is read or written. `/clear` writes the new-session signal when
    * `signal` is on, a relaunch line always writes it, `/exit` ends claude when `exit` is on, and every resume prompt
    * lands in the new transcript. The model answers earlier prompts with text only, and prompt number `evidenceFrom` and
-   * later with the Bash tool call that sends RESUMED. `sendFail` refuses a send.
+   * later with the Bash tool call that sends RESUMED and its tool result, an error result before prompt `errorUntil`.
+   * `sendFail` refuses a send.
    */
   function withReset(fn: (f: { handoff: string; body: string; sha: (text: string) => string; state: (patch: Record<string, unknown>) => void;
     reset: (input?: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void }) => Promise<unknown>;
@@ -651,13 +652,15 @@ if (cmd === "send") {
     const answer = (st.prompts += 1) >= st.evidenceFrom
       ? { type: "tool_use", id: "u1", name: "Bash", input: { command: "hc send t2 RESUMED" } } : { type: "text", text: "Reading the handoff." };
     fs.appendFileSync(transcript, JSON.stringify({ type: "assistant", message: { role: "assistant", content: [answer] } }) + "\\n");
+    if (answer.type === "tool_use") fs.appendFileSync(transcript, JSON.stringify({ type: "user", message: { role: "user",
+      content: [{ type: "tool_result", tool_use_id: "u1", is_error: st.prompts < st.errorUntil, content: "" }] } }) + "\\n");
   }
   out({ started: null, turn: 4 });
 }
 fs.writeFileSync("${home}/state.json", JSON.stringify(st));
 `);
         chmodSync(join(home, "bin", "hc"), 0o755);
-        let current: Record<string, unknown> = { terminals: [{ address: "t5", state: "live" }], wait: ended, signal: true, exit: true, foreground: "claude", prompts: 0, evidenceFrom: 1 };
+        let current: Record<string, unknown> = { terminals: [{ address: "t5", state: "live" }], wait: ended, signal: true, exit: true, foreground: "claude", prompts: 0, evidenceFrom: 1, errorUntil: 0 };
         const state = (patch: Record<string, unknown>) => { current = { ...current, ...patch }; writeFileSync(join(home, "state.json"), JSON.stringify(current)); };
         state({});
         writeFileSync(join(home, "calls.log"), "");
@@ -738,7 +741,8 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
 
   test("a valid handoff waits, sends /clear and the prompt after the new-session signal, and is never reset again", withReset(async ({ handoff, reset, calls, log }) => {
     expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: false, logErrors: [] });
-    expect(await reset()).toEqual({ error: "already_claimed", outcome: "nothing_sent" });
+    // A claimed request gets no message, not even REWRITE for a stale handoff.
+    expect(await reset({ stale: true })).toEqual({ error: "already_claimed", outcome: "nothing_sent" });
     expect(calls()).toEqual(["wait --timeout 600 -- t5", "keys -- t5 / c l e a r enter", `send -- t5 ${prompt(handoff)}`]);
     expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([["reset", "cleared"], ["already_claimed", "The reset request of " + log()[0]!.requested_at + " is already claimed by an earlier run."]]);
   }));
@@ -754,6 +758,12 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
     expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: true,
       logErrors: [...Array(4).fill(expect.stringMatching(/^resume: EISDIR/u)), expect.stringMatching(/^reset: EISDIR/u)] });
     expect(sends().filter(text => text === "/clear")).toHaveLength(4);
+  }));
+
+  test("a RESUMED send whose tool result is an error is no evidence, so the prompt is sent again", withReset(async ({ handoff, reset, state, sends, log }) => {
+    state({ errorUntil: 2 });
+    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: false, logErrors: [] });
+    expect([sends(), log().map(({ kind, detail }) => [kind, detail])]).toEqual([["/clear", prompt(handoff), prompt(handoff)], [["resume", "no_evidence"], ["reset", "cleared"]]]);
   }));
 
   test("a prompt that is never answered with RESUMED is sent 3 more times, then the requester is relaunched", withReset(async ({ handoff, reset, state, sends, log }) => {
