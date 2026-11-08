@@ -21,8 +21,9 @@ export function buildWorktreesCommand(): Command {
   worktrees
     .command('path')
     .description('Print the absolute path of one registered worktree as JSON, for the desktop shell')
-    .option('--repository <id>', 'Repository id from `worktrees list --json`')
-    .option('--worktree <id>', 'Worktree id from `worktrees list --json`')
+    // `[id]`: a flag without a value reaches the action, which refuses it with the JSON error instead of Commander's text.
+    .option('--repository [id]', 'Repository id from `worktrees list --json`')
+    .option('--worktree [id]', 'Worktree id from `worktrees list --json`')
     .action(async (options: WorktreePathOptions) => (await actions()).path(options));
   return worktrees;
 }

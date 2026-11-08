@@ -113,8 +113,8 @@ export async function clean(options: WorktreeCleanOptions): Promise<void> {
   if (result.items.some(item => item.outcome !== 'removed')) process.exitCode = 1;
 }
 
-/** Both options are checked here, not by Commander, so a missing one also gets the JSON refusal. */
-export interface WorktreePathOptions { readonly repository?: string; readonly worktree?: string }
+/** Both options are checked here, not by Commander, so a missing one or one without a value (`true`) also gets the JSON refusal. */
+export interface WorktreePathOptions { readonly repository?: string | true; readonly worktree?: string | true }
 export interface WorktreePathOutput {
   readonly protocol: 1;
   readonly kind: 'operator_worktree_path';
@@ -128,7 +128,7 @@ const PATH_DEADLINE_MS = 25_000;
 /** Resolves one registered worktree id inside one registered repository, with the identity rule of the cleanup `locate`. */
 export function path(options: WorktreePathOptions): void {
   const { repository, worktree } = options;
-  if (repository === undefined || worktree === undefined || !/^repo_[0-9a-f]{16}$/u.test(repository) || !/^wt_[a-f0-9]{64}$/u.test(worktree)) {
+  if (typeof repository !== 'string' || typeof worktree !== 'string' || !/^repo_[0-9a-f]{16}$/u.test(repository) || !/^wt_[a-f0-9]{64}$/u.test(worktree)) {
     fail(true, 'invalid_argument', '--repository needs a repo_ id and --worktree a wt_ id from `worktrees list --json`.');
     return;
   }
