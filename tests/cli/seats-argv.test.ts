@@ -622,11 +622,12 @@ describe("repo-harness seats reset (#1972)", () => {
       const body = HANDOFF_SECTIONS.map(section => `## ${section}\n\nstate\n`).join("\n");
       const sha = (text: string) => createHash("sha256").update(text).digest("hex");
       const ended = { ended: true, reason: "idle", turn: 3, status: null };
-      const reset = (input: { path?: string; text?: string; sha256?: string; caller?: string; terminals?: readonly unknown[]; wait?: unknown; request?: boolean; stale?: boolean }) => {
+      const reset = (input: { path?: string; text?: string; sha256?: string; caller?: string; terminals?: readonly unknown[]; wait?: unknown; request?: boolean; stale?: boolean; handoff?: boolean }) => {
         const text = input.text ?? body;
         writeFileSync(handoff, text);
         rmSync(join(dir, "request.json"), { force: true });
         if (input.request !== false) writeFileSync(join(dir, "request.json"), JSON.stringify({ requested_at: new Date(Date.now() - 60_000).toISOString(), context_tokens: 400000 }));
+        if (input.handoff === false) rmSync(handoff);
         if (input.stale === true) utimesSync(handoff, new Date(Date.now() - 120_000), new Date(Date.now() - 120_000));
         writeFileSync(join(home, "ls.json"), JSON.stringify({ terminals: input.terminals ?? [{ address: "t5", state: "live" }] }));
         writeFileSync(join(home, "wait.json"), JSON.stringify(input.wait ?? ended));
@@ -640,6 +641,7 @@ describe("repo-harness seats reset (#1972)", () => {
       const failures = [
         [{ path: "/tmp/repo-harness-seats/x/advisor/handoff.md" }, "handoff_path_invalid"],
         [{ request: false }, "request_missing"],
+        [{ handoff: false }, "handoff_missing"],
         [{ stale: true }, "handoff_stale"],
         [{ sha256: sha("other") }, "handoff_sha256_mismatch"],
         [{ text: body.replace("## Next actions\n", "") }, "handoff_sections_missing"],

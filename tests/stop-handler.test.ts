@@ -150,7 +150,8 @@ describe('Stop seat reset (#1972)', () => {
       // A 1.5 MB line after the entry: the first 1 MB window starts inside it, so the reader doubles the window.
       ['long.jsonl', `${assistant(8_000)}\n${user(1_500_000)}\n`, 2],
       ['open.jsonl', `${user(10)}\n${assistant(8_000)}`, 2],
-      ['none.jsonl', `${user(10)}\n${user(10)}\n`, 0],
+      // About 2.6 MB without an assistant entry: the window doubles to the whole file and finds none.
+      ['none.jsonl', `${user(1_300_000)}\n${user(1_300_000)}\n`, 0],
     ] as const;
     expect(cases.map(([name, text]) => {
       writeFileSync(join(cwd, name), text);
