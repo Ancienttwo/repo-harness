@@ -1,11 +1,20 @@
 import { createHash } from 'crypto';
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
-import { dirname, join, relative } from 'path';
+import { homedir, tmpdir } from 'os';
+import { dirname, join, relative, resolve } from 'path';
 import { versions } from '../../src/cli/installer/install-profile';
 import { installProfileStatePath } from '../../src/cli/installer/install-state';
 import { bunGlobalPackageRoot } from '../../src/cli/installer/skill-projection';
 import type { PluginId, PluginSelection } from '../../src/core/skill-surface/plugin-manifest';
+
+/** Install state resolves to `homedir()` without HOME; a fixture write must never reach the real one. */
+function installStateFixturePath(env: NodeJS.ProcessEnv): string {
+  const real = (path: string) => (existsSync(path) ? realpathSync(path) : resolve(path));
+  if (!env.HOME || real(env.HOME) === real(homedir())) {
+    throw new Error('Install-state fixtures need a temporary env.HOME, not a missing HOME or the real home directory');
+  }
+  return installProfileStatePath(env);
+}
 
 /** Opt in to an installed runtime; callers own the temporary HOME and package mutations. */
 export function seedGlobalPackageFixture(env: NodeJS.ProcessEnv = process.env, options: { sourceRoot?: string; mutable?: true } = {}): string {
@@ -52,7 +61,7 @@ export function recordInstallOwnership(paths: string[], env: NodeJS.ProcessEnv):
       content_hash: `sha256:${hash.digest('hex')}`, symlink_target: null,
     };
   });
-  const statePath = installProfileStatePath(env);
+  const statePath = installStateFixturePath(env);
   mkdirSync(dirname(statePath), { recursive: true });
   writeFileSync(statePath, JSON.stringify({ protocol: 3, ...versions(['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory']), selection: 'all',
     transaction_id: 'owned-upgrade-fixture', applied_at: new Date().toISOString(), ownership_manifest, previous: null }));
@@ -63,7 +72,7 @@ export function recordInstallOwnership(paths: string[], env: NodeJS.ProcessEnv):
  * `selection: 'all'` with a subset is an `all` state recorded before the other plugin ids existed.
  */
 export function recordPluginSelection(env: NodeJS.ProcessEnv, plugins: readonly PluginId[] = ['architecture'], selection: PluginSelection = [...plugins]): void {
-  const statePath = installProfileStatePath(env);
+  const statePath = installStateFixturePath(env);
   mkdirSync(dirname(statePath), { recursive: true });
   writeFileSync(statePath, JSON.stringify({ protocol: 3, ...versions(plugins), selection,
     transaction_id: 'plugin-selection-fixture', applied_at: new Date().toISOString(), ownership_manifest: [], previous: null }));

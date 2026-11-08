@@ -88,6 +88,11 @@ function withoutObservationTimes(snapshot: DevActivitySnapshotV2) {
 }
 
 describe('catch-up CLI', () => {
+  test('the install-state fixture refuses an env without HOME', () => {
+    const { HOME: _home, ...env } = process.env;
+    expect(() => recordPluginSelection(env, ['operator'])).toThrow('temporary env.HOME');
+  });
+
   test('prints the existing snapshot as one JSON line with no text cap', async () => {
     const f = fixture();
     writeFileSync(join(f.repos[0]!, 'fixture.json'), JSON.stringify({ dirty: true, pullRequests: [pullRequest(), pullRequest(8, 'feat/next')] }));
