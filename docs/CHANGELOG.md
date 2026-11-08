@@ -22,6 +22,18 @@ All notable changes to this skill are documented here.
 - `/healthz.protocol` is now 3 (ADR-0003). A protocol-2 desktop app
   refuses a protocol-3 server; update the desktop app together with the
   CLI. (#1968)
+- Host tests take one queue per host. `bash scripts/check-ci.sh <lane>`,
+  `bun run test`, `bun run test:files`, `bun run test:coverage` and the
+  `test:core`, `test:integration` and `test:full` suites wait their turn,
+  run alone and release. Release checks go first, then FIFO. A holder or
+  waiter whose PID is free or reused is skipped and its lock is freed;
+  a holder's lock stays held while its command's process group runs.
+  `bun scripts/host-test-queue.ts status [--json]` shows the holder and the
+  waiters. (#2001)
+
+### Fixed
+
+- `review publish` puts a finding on a line outside the PR diff into the review body, so GitHub no longer rejects the review with HTTP 422. A retry reuses the acceptance claim already on the PR instead of posting a second one (#2009).
 
 ## [0.28.0] - 2026-11-08
 
