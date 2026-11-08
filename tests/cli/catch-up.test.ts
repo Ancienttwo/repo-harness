@@ -2,12 +2,12 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, join, parse } from 'node:path';
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { collectDevActivity } from '../../src/effects/dev-activity/collector';
 import { readRepoHarnessRegistryStrictSnapshot, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { recordPluginSelection } from '../helpers/install-ownership';
+import { installStateFixturePath, recordPluginSelection } from '../helpers/install-ownership';
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -88,6 +88,17 @@ function withoutObservationTimes(snapshot: DevActivitySnapshotV2) {
 }
 
 describe('catch-up CLI', () => {
+  test('the install-state fixture accepts only a HOME inside the temp directory', () => {
+    const { HOME: _home, ...withoutHome } = process.env;
+    expect(() => installStateFixturePath(withoutHome)).toThrow('strictly inside the temp directory');
+    expect(() => installStateFixturePath({ HOME: join(parse(tmpdir()).root, 'repo-harness-outside-home') })).toThrow('strictly inside the temp directory');
+    expect(() => installStateFixturePath({ HOME: process.platform === 'win32' ? tmpdir() : '/tmp' })).toThrow('strictly inside the temp directory');
+    const home = join(tmpdir(), 'catch-up-guard-home-not-created');
+    expect(installStateFixturePath({ HOME: home })).toStartWith(home);
+    if (process.platform !== 'win32') expect(installStateFixturePath({ HOME: '/tmp/catch-up-guard-home' })).toStartWith('/tmp/');
+    if (process.platform !== 'win32') expect(installStateFixturePath({ HOME: '/private/tmp/catch-up-guard-home' })).toStartWith('/private/tmp/');
+  });
+
   test('prints the existing snapshot as one JSON line with no text cap', async () => {
     const f = fixture();
     writeFileSync(join(f.repos[0]!, 'fixture.json'), JSON.stringify({ dirty: true, pullRequests: [pullRequest(), pullRequest(8, 'feat/next')] }));

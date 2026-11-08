@@ -1,11 +1,30 @@
 import { createHash } from 'crypto';
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { dirname, join, relative } from 'path';
+import { dirname, isAbsolute, join, relative, resolve } from 'path';
 import { versions } from '../../src/cli/installer/install-profile';
 import { installProfileStatePath } from '../../src/cli/installer/install-state';
 import { bunGlobalPackageRoot } from '../../src/cli/installer/skill-projection';
 import type { PluginId, PluginSelection } from '../../src/core/skill-surface/plugin-manifest';
+
+/**
+ * Install state resolves to `homedir()` without HOME; a fixture write must never reach the real one.
+ * Bun's `homedir()` and `userInfo().homedir` both follow $HOME, so neither names the real home from a process
+ * that already runs under a temp HOME. The guard accepts only a HOME strictly inside the temp directory, which
+ * need not exist yet: callers let the fixture create it. The temp root may be a symlink (macOS /var), so both forms count.
+ * macOS fixtures that hardcode /tmp sit outside tmpdir(), so POSIX also accepts a HOME strictly inside /tmp or its macOS target /private/tmp.
+ */
+export function installStateFixturePath(env: NodeJS.ProcessEnv): string {
+  const home = env.HOME ? resolve(env.HOME) : undefined;
+  const inside = (root: string) => {
+    const path = home && relative(root, home);
+    return !!path && !path.startsWith('..') && !isAbsolute(path);
+  };
+  if (!inside(tmpdir()) && !inside(realpathSync(tmpdir())) && !(process.platform !== 'win32' && (inside('/tmp') || inside('/private/tmp')))) {
+    throw new Error('Install-state fixtures need an env.HOME strictly inside the temp directory');
+  }
+  return installProfileStatePath(env);
+}
 
 /** Opt in to an installed runtime; callers own the temporary HOME and package mutations. */
 export function seedGlobalPackageFixture(env: NodeJS.ProcessEnv = process.env, options: { sourceRoot?: string; mutable?: true } = {}): string {
@@ -52,7 +71,7 @@ export function recordInstallOwnership(paths: string[], env: NodeJS.ProcessEnv):
       content_hash: `sha256:${hash.digest('hex')}`, symlink_target: null,
     };
   });
-  const statePath = installProfileStatePath(env);
+  const statePath = installStateFixturePath(env);
   mkdirSync(dirname(statePath), { recursive: true });
   writeFileSync(statePath, JSON.stringify({ protocol: 3, ...versions(['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory']), selection: 'all',
     transaction_id: 'owned-upgrade-fixture', applied_at: new Date().toISOString(), ownership_manifest, previous: null }));
@@ -63,7 +82,7 @@ export function recordInstallOwnership(paths: string[], env: NodeJS.ProcessEnv):
  * `selection: 'all'` with a subset is an `all` state recorded before the other plugin ids existed.
  */
 export function recordPluginSelection(env: NodeJS.ProcessEnv, plugins: readonly PluginId[] = ['architecture'], selection: PluginSelection = [...plugins]): void {
-  const statePath = installProfileStatePath(env);
+  const statePath = installStateFixturePath(env);
   mkdirSync(dirname(statePath), { recursive: true });
   writeFileSync(statePath, JSON.stringify({ protocol: 3, ...versions(plugins), selection,
     transaction_id: 'plugin-selection-fixture', applied_at: new Date().toISOString(), ownership_manifest: [], previous: null }));
