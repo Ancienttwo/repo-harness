@@ -884,7 +884,7 @@ describe('single affected verification and daily fallback', () => {
       for (const [mode, typecheck] of [['documentation', false], ['affected', true]] as const) {
         const log = join(repo, `.git/bun-${mode}.log`);
         const lane = spawnSync('/bin/bash', [join(repo, 'scripts/check-ci.sh'), 'affected', '--base', base], { cwd: repo, encoding: 'utf8',
-          env: { PATH: `${join(repo, 'bin')}:/usr/bin:/bin`, HOME: repo, BUN_LOG: log, SELECTED_MODE: mode, REPO_HARNESS_HOST_TEST_QUEUE_HOLDER: 'test' } });
+          env: { PATH: `${join(repo, 'bin')}:/usr/bin:/bin`, HOME: repo, BUN_LOG: log, SELECTED_MODE: mode } });
         expect({ mode, status: lane.status }, lane.stderr).toEqual({ mode, status: 0 });
         expect({ mode, exit: lane.stdout.includes('[ci] Documentation-only diff: no build or test job.') }).toEqual({ mode, exit: !typecheck });
         expect({ mode, typecheck: readFileSync(log, 'utf8').includes('bun run check:type') }).toEqual({ mode, typecheck });
@@ -1009,7 +1009,7 @@ describe('architecture lanes', () => {
     const bin = join(root, 'bin');
     try {
       mkdirSync(join(root, 'repo/scripts/lib'), { recursive: true }); mkdirSync(bin);
-      for (const path of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh', 'scripts/lib/architecture-plugin.sh']) writeFileSync(join(root, 'repo', path), readFileSync(join(ROOT, path)));
+      for (const path of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh', 'scripts/lib/architecture-plugin.sh', 'scripts/host-test-queue.ts']) writeFileSync(join(root, 'repo', path), readFileSync(join(ROOT, path)));
       // The advisory imports the action map from the real source tree.
       symlinkSync(join(ROOT, 'src'), join(root, 'repo/src'));
       // The lane records its architecture selection with the package version.
@@ -1033,7 +1033,7 @@ describe('architecture lanes', () => {
       const summaryPath = join(root, 'out/architecture/summary.json');
       const result = spawnSync('/bin/bash', ['scripts/check-ci.sh', ...args], {
         cwd: join(root, 'repo'), encoding: 'utf8',
-        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, REPO_HARNESS_HOST_TEST_QUEUE_HOLDER: 'test', ...(fixture.summary ? { ARCHITECTURE_SUMMARY: summaryPath } : {}) },
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ...(fixture.summary ? { ARCHITECTURE_SUMMARY: summaryPath } : {}) },
       });
       return {
         status: result.status, stdout: result.stdout, stderr: result.stderr,

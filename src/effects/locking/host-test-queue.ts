@@ -13,8 +13,8 @@ import {
 import { currentProcessStartTime } from './process-start-time.ts';
 
 /**
- * Set in the environment of a queued run. A nested gate inside that run (a
- * lane that runs tests, a test that runs a lane) is already in the queue.
+ * Set in the environment of a queued run to the lock's run id. A nested gate
+ * skips the queue only while this id names the live lock owner.
  */
 export const HOST_TEST_QUEUE_HOLDER_ENV = 'REPO_HARNESS_HOST_TEST_QUEUE_HOLDER';
 
@@ -38,6 +38,10 @@ export interface HostTestQueueEntry extends HostTestRunRequest {
   readonly startTime: string;
   readonly enqueuedAt: string;
   readonly acquiredAt: string | null;
+  /** Run id of the lock this entry holds; null while it waits. */
+  readonly lockToken: string | null;
+  /** Process group of the queued command; null before it starts and on Windows. */
+  readonly pgid: number | null;
 }
 
 export interface HostTestQueueState {
@@ -49,7 +53,10 @@ export interface HostTestQueueState {
 }
 
 export interface HostTestQueueHandle {
+  /** The lock's run id; export it as HOST_TEST_QUEUE_HOLDER_ENV. */
   readonly token: string;
+  /** Binds the lock to the command's process group: the lock stays held while a member lives. */
+  recordGroup(pgid: number): void;
   release(): void;
 }
 
@@ -84,6 +91,8 @@ function toRecord(entry: HostTestQueueEntry): Record<string, unknown> {
     command: entry.command,
     enqueued_at: entry.enqueuedAt,
     acquired_at: entry.acquiredAt,
+    lock_token: entry.lockToken,
+    pgid: entry.pgid,
   };
 }
 
@@ -96,7 +105,7 @@ function parseEntry(text: string): HostTestQueueEntry | null {
   }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  const { token, pid, start_time, kind, cwd, command, enqueued_at, acquired_at } = record;
+  const { token, pid, start_time, kind, cwd, command, enqueued_at, acquired_at, lock_token, pgid } = record;
   if (typeof token !== 'string'
     || typeof pid !== 'number' || !Number.isSafeInteger(pid) || pid < 1
     || typeof start_time !== 'string' || start_time === ''
@@ -104,7 +113,9 @@ function parseEntry(text: string): HostTestQueueEntry | null {
     || typeof cwd !== 'string'
     || !Array.isArray(command) || !command.every((part) => typeof part === 'string')
     || typeof enqueued_at !== 'string' || Number.isNaN(Date.parse(enqueued_at))
-    || (acquired_at !== null && typeof acquired_at !== 'string')) return null;
+    || (acquired_at !== null && typeof acquired_at !== 'string')
+    || (lock_token !== null && typeof lock_token !== 'string')
+    || (pgid !== null && (typeof pgid !== 'number' || !Number.isSafeInteger(pgid) || pgid < 2))) return null;
   return {
     token,
     pid,
@@ -114,6 +125,8 @@ function parseEntry(text: string): HostTestQueueEntry | null {
     command,
     enqueuedAt: enqueued_at,
     acquiredAt: acquired_at,
+    lockToken: lock_token,
+    pgid,
   };
 }
 
@@ -157,22 +170,46 @@ function readTickets(root: string): Ticket[] {
   return tickets;
 }
 
+function groupHasMember(pgid: number): boolean {
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+}
+
+/** A run is live while its wrapper runs or a member of its command group runs. */
+function withGroup(wrapper: ExclusiveDirectoryLockOwnerLiveness, entry: HostTestQueueEntry | undefined): ExclusiveDirectoryLockOwnerLiveness {
+  if (wrapper !== 'dead') return wrapper;
+  return entry?.pgid != null && groupHasMember(entry.pgid) ? 'live' : 'dead';
+}
+
 function liveness(entry: HostTestQueueEntry): ExclusiveDirectoryLockOwnerLiveness {
-  return exclusiveDirectoryLockOwnerLiveness({ lockPath: '', pid: entry.pid, startTime: entry.startTime, token: entry.token });
+  return withGroup(exclusiveDirectoryLockOwnerLiveness({ lockPath: '', pid: entry.pid, startTime: entry.startTime, token: entry.token }), entry);
+}
+
+function holderTicket(tickets: readonly Ticket[], lockToken: string): Ticket | undefined {
+  return tickets.find(({ entry }) => entry.lockToken === lockToken);
+}
+
+function holderOf(root: string, tickets: readonly Ticket[]): { readonly state: HostTestQueueState['holder']; readonly ticket?: Ticket } {
+  const owner = readExclusiveDirectoryLockOwner(root, LOCK_PATH);
+  if (owner === null) return { state: null };
+  const ticket = holderTicket(tickets, owner.token);
+  return {
+    state: { pid: owner.pid, liveness: withGroup(exclusiveDirectoryLockOwnerLiveness(owner), ticket?.entry), entry: ticket?.entry ?? null },
+    ticket,
+  };
 }
 
 function stateOf(root: string, tickets: readonly Ticket[]): HostTestQueueState {
-  const owner = readExclusiveDirectoryLockOwner(root, LOCK_PATH);
-  const holderTicket = owner === null
-    ? undefined
-    : tickets.find(({ entry }) => entry.pid === owner.pid && entry.startTime === owner.startTime && entry.acquiredAt !== null);
+  const { state: holder, ticket: held } = holderOf(root, tickets);
   return {
     root: join(root, QUEUE_DIR),
-    holder: owner === null
-      ? null
-      : { pid: owner.pid, liveness: exclusiveDirectoryLockOwnerLiveness(owner), entry: holderTicket?.entry ?? null },
+    holder,
     waiting: tickets
-      .filter((ticket) => ticket !== holderTicket)
+      .filter((ticket) => ticket !== held)
       .map(({ entry }) => ({ ...entry, liveness: liveness(entry) })),
   };
 }
@@ -183,6 +220,16 @@ export function readHostTestQueueState(env: NodeJS.ProcessEnv = process.env): Ho
   if (!existsSync(join(home, TICKETS_PATH))) return { root: join(home, QUEUE_DIR), holder: null, waiting: [] };
   const root = realpathSync(home);
   return stateOf(root, readTickets(root));
+}
+
+/** True when the environment's run id names the live owner of this host's queue lock. */
+export function isHostTestQueueHolder(env: NodeJS.ProcessEnv = process.env): boolean {
+  const token = env[HOST_TEST_QUEUE_HOLDER_ENV];
+  const home = repoHarnessHome(env);
+  if (!token || !existsSync(join(home, TICKETS_PATH))) return false;
+  const root = realpathSync(home);
+  const { state } = holderOf(root, readTickets(root));
+  return state !== null && state.entry?.lockToken === token && state.liveness !== 'dead';
 }
 
 /**
@@ -217,6 +264,8 @@ export async function enterHostTestQueue(
     startTime: currentProcessStartTime(),
     enqueuedAt: new Date().toISOString(),
     acquiredAt: null,
+    lockToken: null,
+    pgid: null,
   };
   const ticketPath = writeTicket(root, waiting);
   let lock: ExclusiveDirectoryLockHandle | null = null;
@@ -230,6 +279,13 @@ export async function enterHostTestQueue(
           lock = acquireExclusiveDirectoryLock(root, LOCK_PATH, {
             waitTimeoutMs: 1,
             reclaimStaleOwner: true,
+            // A process killed between mkdir and owner publication leaves an empty lock.
+            reclaimStaleEmptyDirectory: true,
+            // A dead wrapper's lock stays held while its command group runs.
+            canReclaimStaleOwner: (owner) => {
+              const entry = holderTicket(readTickets(root), owner.token)?.entry;
+              return entry?.pgid == null || !groupHasMember(entry.pgid);
+            },
             onStaleReclaim: options.onStaleReclaim,
           });
           break;
@@ -247,16 +303,27 @@ export async function enterHostTestQueue(
       }
       await Bun.sleep(pollMs);
     }
-    writeTicket(root, { ...waiting, acquiredAt: new Date().toISOString() });
   } catch (error) {
     lock?.release();
     removeFile(ticketPath);
     throw error;
   }
   const held = lock;
+  let current: HostTestQueueEntry = { ...waiting, acquiredAt: new Date().toISOString(), lockToken: held.ownerToken };
+  try {
+    writeTicket(root, current);
+  } catch (error) {
+    held.release();
+    removeFile(ticketPath);
+    throw error;
+  }
   let released = false;
   return {
-    token: waiting.token,
+    token: held.ownerToken,
+    recordGroup(pgid) {
+      current = { ...current, pgid };
+      writeTicket(root, current);
+    },
     release() {
       if (released) return;
       released = true;

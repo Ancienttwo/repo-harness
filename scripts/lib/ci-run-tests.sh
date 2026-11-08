@@ -405,7 +405,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     exit 2
   fi
   cd "$(dirname "${BASH_SOURCE[0]}")/../.."
-  if [[ -z "${REPO_HARNESS_HOST_TEST_QUEUE_HOLDER:-}" ]]; then
+  if ! bun scripts/host-test-queue.ts held; then
     queue_kind=affected
     [[ "$BUN_TEST_SUITE" != full ]] || queue_kind=full
     exec bun scripts/host-test-queue.ts run --kind "$queue_kind" -- "$BASH" scripts/lib/ci-run-tests.sh ${suite_args[@]+"${suite_args[@]}"}

@@ -22,7 +22,7 @@ if [[ "$#" -gt 0 || ( -n "$base" && "$lane" != affected && "$lane" != architectu
 fi
 
 # Every lane waits its turn in the host test queue: release first, then FIFO.
-if [[ -z "${REPO_HARNESS_HOST_TEST_QUEUE_HOLDER:-}" ]]; then
+if ! bun "$ROOT/scripts/host-test-queue.ts" held; then
   case "$lane" in
     release) queue_kind=release ;;
     all) queue_kind=full ;;

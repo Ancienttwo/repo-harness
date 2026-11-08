@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { spawn } from 'child_process';
-import { mkdtempSync, realpathSync, rmSync } from 'fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import {
   enterHostTestQueue,
   HOST_TEST_QUEUE_HOLDER_ENV,
+  isHostTestQueueHolder,
   readHostTestQueueState,
   type HostTestQueueHandle,
   type HostTestRunKind,
@@ -74,25 +75,47 @@ describe('host test queue', () => {
     expect(order).toEqual(['release', 'affected']);
   });
 
-  test('a killed holder is seen as dead and its lock is freed for the next run', async () => {
+  test('only the live lock owner run id skips the queue', async () => {
+    const env = queueEnv();
+    const handle = await enter(env, 'affected', 'holder');
+    expect(isHostTestQueueHolder({ ...env, [HOST_TEST_QUEUE_HOLDER_ENV]: handle.token })).toBe(true);
+    expect(isHostTestQueueHolder({ ...env, [HOST_TEST_QUEUE_HOLDER_ENV]: 'foreign' })).toBe(false);
+    handle.release();
+    expect(isHostTestQueueHolder({ ...env, [HOST_TEST_QUEUE_HOLDER_ENV]: handle.token })).toBe(false);
+  });
+
+  test('a killed wrapper keeps the lock while its command group runs, and the next run gets it after the group ends', async () => {
     const env = queueEnv();
     const holderEnv = { ...process.env, ...env };
     delete holderEnv[HOST_TEST_QUEUE_HOLDER_ENV];
-    // The child command ends when its parent, the queue holder, is gone.
-    const holder = spawn('bun', ['scripts/host-test-queue.ts', 'run', '--kind', 'full', '--', 'sh', '-c', 'while kill -0 $PPID 2>/dev/null; do sleep 0.1; done'], {
-      cwd: ROOT,
-      env: holderEnv,
-      stdio: 'ignore',
-    });
-    await until(() => readHostTestQueueState(env).holder?.entry);
-    holder.kill('SIGKILL');
-    await until(() => readHostTestQueueState(env).holder?.liveness === 'dead' || null);
+    const wrapper = spawn('bun', ['scripts/host-test-queue.ts', 'run', '--kind', 'full', '--', 'sleep', '30'], { cwd: ROOT, env: holderEnv, stdio: 'ignore' });
+    const pgid = await until(() => readHostTestQueueState(env).holder?.entry?.pgid);
+    wrapper.kill('SIGKILL');
+    await until(() => (wrapper.exitCode !== null || wrapper.signalCode !== null) || null);
+    expect(readHostTestQueueState(env).holder?.liveness).toBe('live');
 
-    const next = await enter(env, 'affected', 'next');
+    let granted = false;
+    const next = enter(env, 'affected', 'next').then((handle) => { granted = true; return handle; });
+    await Bun.sleep(300);
+    expect(granted).toBe(false);
+    process.kill(-pgid, 'SIGKILL');
+
+    const handle = await next;
     const state = readHostTestQueueState(env);
     expect(state.holder?.pid).toBe(process.pid);
     expect(state.holder?.entry?.command).toEqual(['next']);
     expect(state.waiting).toEqual([]);
-    next.release();
+    handle.release();
+  });
+
+  test('an empty lock directory left by a killed publisher is freed', async () => {
+    const env = queueEnv();
+    const lock = join(env.REPO_HARNESS_HOME!, 'host-test-queue', 'holder.lock');
+    mkdirSync(lock, { recursive: true });
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(lock, old, old);
+    const handle = await enter(env, 'affected', 'after-empty');
+    expect(readHostTestQueueState(env).holder?.entry?.command).toEqual(['after-empty']);
+    handle.release();
   });
 });
