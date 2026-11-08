@@ -160,7 +160,6 @@ export interface SeatResetOptions extends HerdrCoreOptions {
   readonly relaunchArgv: (identity: SeatResetIdentity) => Promise<readonly string[]>;
   /** Tests only: shorter waits. */
   readonly timeouts?: SeatResetTimeouts;
-  readonly notify?: typeof postNotifyEvent;
 }
 
 export interface SeatResetResult {
@@ -179,7 +178,6 @@ export interface SeatResetResult {
 export async function runSeatReset(path: string, sha256: string, options: SeatResetOptions): Promise<SeatResetResult> {
   const env = options.env ?? process.env;
   const timeouts = options.timeouts ?? TIMEOUTS;
-  const notify = options.notify ?? postNotifyEvent;
   const identity = handoffIdentity(path);
   if (identity === null) throw new SeatResetError('handoff_path_invalid', 'nothing_sent', `${path} is not the handoff path of the orchestrator or advisor seat.`);
   const request = readRequest(identity);
@@ -202,7 +200,7 @@ export async function runSeatReset(path: string, sha256: string, options: SeatRe
     }
   }).length;
   const fail = async (kind: LogKind, detail: string) => {
-    const notice = await notify(env, {
+    const notice = await postNotifyEvent(env, {
       repository: identity.repository, kind: 'seat.reset_failed', data: { seat: identity.seat, failure: kind, detail, handoff: path },
       text: `seat reset ${kind}: ${identity.seat} (${detail})`,
     });
