@@ -146,6 +146,18 @@ function readAppended(path: string, offset: number): string {
 
 const fileSize = (path: string): number => { try { return statSync(path).size; } catch { return 0; } };
 
+const RESUMED_WORDS: readonly string[] = ['RESUMED', "'RESUMED'", '"RESUMED"'];
+
+/**
+ * Only the one simple command `hc send <peer> RESUMED` counts, with the message bare or in plain quotes. A compound,
+ * piped, background or substituted command, another address and a command that only prints the text all fail the
+ * word compare.
+ */
+function isResumedSend(command: string, peer: string): boolean {
+  const words = command.trim().split(/[ \t]+/u);
+  return words.length === 4 && words[0] === 'hc' && words[1] === 'send' && words[2] === peer && RESUMED_WORDS.includes(words[3]!);
+}
+
 /**
  * Mechanical resume evidence in the text appended after the prompt send: the user entry that holds the resume
  * prompt (hc may wrap it), then an assistant Bash tool call whose command sends RESUMED to the peer with hc send,
@@ -166,7 +178,7 @@ function sentResumed(appended: string, prompt: string, peer: string): boolean {
     if (!asked || entry.type !== 'assistant') continue;
     for (const part of parts) {
       const command = part?.type === 'tool_use' && part.name === 'Bash' ? part.input?.command : undefined;
-      if (typeof command === 'string' && command.includes('hc send') && command.includes(peer) && command.includes('RESUMED')) sends.add(part!.id);
+      if (typeof command === 'string' && isResumedSend(command, peer)) sends.add(part!.id);
     }
   }
   return false;

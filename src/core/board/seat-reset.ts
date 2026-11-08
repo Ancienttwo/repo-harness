@@ -96,7 +96,7 @@ export function seatResetReason(identity: SeatResetIdentity, contextTokens: numb
 
 /** The prompt that the peer sends after `/clear`. RESUMED comes first, so its hc send is the resume evidence. */
 export function seatResumePrompt(identity: SeatResetIdentity, peerAddress: string): string {
-  return `You are ${identity.seat}. Read ${seatHandoffPath(identity)}, then send RESUMED to ${peerAddress} with hc send, then check the current state with git/gh and continue.`;
+  return `You are ${identity.seat}. Read ${seatHandoffPath(identity)}, then run the Bash command \`hc send ${peerAddress} RESUMED\` alone, then check the current state with git/gh and continue.`;
 }
 
 /** The message to the requester when its handoff fails a check. */

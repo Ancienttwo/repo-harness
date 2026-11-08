@@ -619,6 +619,7 @@ describe("repo-harness seats reset (#1972)", () => {
    * `signal` is on, a relaunch line always writes it, `/exit` ends claude when `exit` is on, and every resume prompt
    * lands in the new transcript. The model answers earlier prompts with text only, and prompt number `evidenceFrom` and
    * later with the Bash tool call that sends RESUMED and its tool result, an error result before prompt `errorUntil`.
+   * `answers[n]` replaces the command and the result (ok, error or none) of prompt n + 1.
    * `sendFail` refuses a send.
    */
   function withReset(fn: (f: { handoff: string; body: string; sha: (text: string) => string; state: (patch: Record<string, unknown>) => void;
@@ -657,18 +658,19 @@ if (cmd === "send") {
   if (text.startsWith("You are")) {
     const transcript = JSON.parse(fs.readFileSync("${dir}/session.json", "utf8")).transcript_path;
     fs.appendFileSync(transcript, JSON.stringify({ type: "user", message: { role: "user", content: \`<hc from="t2">\${text}</hc>\` } }) + "\\n");
+    const step = st.answers[st.prompts] ?? { command: "hc send t2 RESUMED", result: st.prompts + 1 < st.errorUntil ? "error" : "ok" };
     const answer = (st.prompts += 1) >= st.evidenceFrom
-      ? { type: "tool_use", id: "u1", name: "Bash", input: { command: "hc send t2 RESUMED" } } : { type: "text", text: "Reading the handoff." };
+      ? { type: "tool_use", id: "u1", name: "Bash", input: { command: step.command } } : { type: "text", text: "Reading the handoff." };
     fs.appendFileSync(transcript, JSON.stringify({ type: "assistant", message: { role: "assistant", content: [answer] } }) + "\\n");
-    if (answer.type === "tool_use") fs.appendFileSync(transcript, JSON.stringify({ type: "user", message: { role: "user",
-      content: [{ type: "tool_result", tool_use_id: "u1", is_error: st.prompts < st.errorUntil, content: "" }] } }) + "\\n");
+    if (answer.type === "tool_use" && step.result !== "none") fs.appendFileSync(transcript, JSON.stringify({ type: "user", message: { role: "user",
+      content: [{ type: "tool_result", tool_use_id: "u1", is_error: step.result === "error", content: "" }] } }) + "\\n");
   }
   out({ started: null, turn: 4 });
 }
 fs.writeFileSync("${home}/state.json", JSON.stringify(st));
 `);
         chmodSync(join(home, "bin", "hc"), 0o755);
-        let current: Record<string, unknown> = { terminals: [{ address: "t5", state: "live" }], wait: ended, signal: true, exit: true, foreground: "claude", prompts: 0, evidenceFrom: 1, errorUntil: 0 };
+        let current: Record<string, unknown> = { terminals: [{ address: "t5", state: "live" }], wait: ended, signal: true, exit: true, foreground: "claude", prompts: 0, evidenceFrom: 1, errorUntil: 0, answers: [] };
         const state = (patch: Record<string, unknown>) => { current = { ...current, ...patch }; writeFileSync(join(home, "state.json"), JSON.stringify(current)); };
         state({});
         writeFileSync(join(home, "calls.log"), "");
@@ -707,7 +709,7 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
       }
     };
   }
-  const prompt = (handoff: string) => `You are advisor. Read ${handoff}, then send RESUMED to t2 with hc send, then check the current state with git/gh and continue.`;
+  const prompt = (handoff: string) => `You are advisor. Read ${handoff}, then run the Bash command \`hc send t2 RESUMED\` alone, then check the current state with git/gh and continue.`;
 
   test("a check that finds no request, no requester or a busy requester sends nothing and logs the failure", withReset(async ({ reset, state, sends, log }) => {
     const rows = [
@@ -792,6 +794,14 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
     state({ evidenceFrom: 5 });
     expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: true, logErrors: [] });
     expect(sends()).toEqual(["/clear", ...Array(4).fill(prompt(handoff)), "/exit", `sh ${join(dirname(handoff), "relaunch.sh")}`, prompt(handoff)]);
+    expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([...Array(4).fill(["resume", "no_evidence"]), ["reset", "relaunched"]]);
+  }));
+
+  test("only a plain `hc send <peer> RESUMED` with a success result is evidence (#1975)", withReset(async ({ handoff, reset, state, sends, log }) => {
+    state({ answers: [{ command: "hc send t20 RESUMED", result: "ok" }, { command: "printf '%s\\n' 'hc send t2 RESUMED'", result: "ok" },
+      { command: "hc send t2 RESUMED", result: "none" }, { command: "hc send t2 RESUMED", result: "error" }] });
+    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: true, logErrors: [] });
+    expect(sends().filter(text => text === prompt(handoff))).toHaveLength(5);
     expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([...Array(4).fill(["resume", "no_evidence"]), ["reset", "relaunched"]]);
   }));
 
