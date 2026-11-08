@@ -729,8 +729,8 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
     FAKE_TERMINALS: { t3: {}, t6: { status: { state: 'blocked' } }, t7: {}, t8: {}, t9: {}, t10: { status: { state: 'idle' } },
       t11: { state: 'finished', status: { state: 'blocked' } } },
     // t7 became idle during the wait. t6 and t10: hc wait returns at once with the terminal still blocked.
-    FAKE_WAITS: { t6: { ended: false, reason: 'blocked', status: { state: 'blocked' } }, t7: { ended: false, reason: 'idle', status: { state: 'idle' } },
-      t10: { ended: false, reason: 'blocked', status: { state: 'blocked' } }, t11: { ended: false, reason: 'blocked', status: { state: 'blocked' } } },
+    FAKE_WAITS: { t6: { ended: false, reason: 'blocked', status: 'blocked' }, t7: { ended: false, reason: 'idle', status: 'idle' },
+      t10: { ended: false, reason: 'blocked', status: 'blocked' }, t11: { ended: false, reason: 'blocked', status: 'blocked' } },
   });
   const logPath = attentionLogPath(1186405141, 1474, { REPO_HARNESS_HOME: hc.root });
   expect(logPath).toBe(join(hc.root, 'board/attention-1186405141-1474.jsonl'));

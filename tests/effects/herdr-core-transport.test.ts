@@ -95,7 +95,8 @@ test('acting on one terminal: send, read, wait, kill and rm check it with get fi
     send: { started: true, status: 'idle', turn: 3 },
     // A partial read: hc reads only the screen of a full-screen app while it works.
     read: { complete: false, how: 'screen', text: 'ready', why: 'working' },
-    wait: { children: [], ended: false, exit_code: null, reason: 'timeout', signal: null, status: null, terminal: 't4', turn: 3 },
+    // The live hc 0.1.18 wait line: `status` is the state string.
+    wait: { children: [], ended: true, exit_code: null, reason: 'status', signal: null, status: 'done', terminal: 't4', turn: 3 },
     // hc omits foreground once the program has finished.
     kill: { ...finished, state: 'finished', reason: 'killed' },
     rm: { removed: 't4' },
@@ -103,7 +104,7 @@ test('acting on one terminal: send, read, wait, kill and rm check it with get fi
   const options = { env: act.env };
   expect(hcSend('t4', 'hello', options)).toEqual({ started: true, turn: 3 });
   expect(hcRead('t4', 5, options)).toEqual({ text: 'ready', complete: false, why: 'working' });
-  expect(hcWait('t4', 1, options)).toEqual({ ended: false, reason: 'timeout', turn: 3, status: null });
+  expect(hcWait('t4', 1, options)).toEqual({ ended: true, reason: 'status', turn: 3, status: { state: 'done' } });
   expect(hcKill('t4', options)).toMatchObject({ state: 'finished', pid: 9, foreground: null, reason: 'killed' });
   expect(hcRm('t4', options)).toBe('t4');
   expect(act.argv()).toEqual([...GET, 'send', '--json', '--', 't4', 'hello', ...GET, 'read', '--json', '--lines', '5', '--', 't4',

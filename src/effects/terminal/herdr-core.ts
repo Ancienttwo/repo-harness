@@ -401,10 +401,12 @@ export function hcWait(terminalAddress: string, seconds: number, options: HerdrC
   if (!Number.isSafeInteger(seconds) || seconds < 1) throw new RangeError('herdr_core_invalid_wait');
   const target = hcGet(terminalAddress, options).address;
   const result = hc('wait', ['--timeout', String(seconds), '--', target], { ...options, timeoutMs: seconds * 1000 + timeoutOf(options) });
-  if (typeof result.ended !== 'boolean' || !isString(result.reason) || !Number.isSafeInteger(result.turn)) {
-    throw invalidResponse('wait has an invalid ended, reason or turn');
+  // Unlike `get`, `wait` prints the status as its state string (hc 0.1.18), or null.
+  const state = result.status ?? null;
+  if (typeof result.ended !== 'boolean' || !isString(result.reason) || !Number.isSafeInteger(result.turn) || !(state === null || isString(state))) {
+    throw invalidResponse('wait has an invalid ended, reason, turn or status');
   }
-  return { ended: result.ended, reason: result.reason, turn: result.turn as number, status: status(result.status ?? null, `wait ${target}`) };
+  return { ended: result.ended, reason: result.reason, turn: result.turn as number, status: state === null ? null : { state } };
 }
 
 /** `hc kill`: end a repo-harness terminal's program (hangup, then escalate). Returns the terminal as hc observed it. */
