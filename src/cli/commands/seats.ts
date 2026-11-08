@@ -13,7 +13,7 @@ import { ClaudeAgentTypesError, claudeHostAgentTypes } from '../../effects/board
 import { RepoHarnessRegistryStrictError, canonicalRepoPath, readRepoHarnessRegistryStrictSnapshot, repoCheckoutProbeEnv } from '../../effects/repo-registry';
 import { HerdrCoreError, RH_LABEL, hcLabel, hcLabelPairs, type HcLabels } from '../../effects/terminal/herdr-core';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
-import { SeatResetError, runSeatReset } from '../../effects/board/seat-reset';
+import { SeatResetError, runSeatReset, type SeatResetNotify } from '../../effects/board/seat-reset';
 
 const CLI_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
 
@@ -146,7 +146,8 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
   };
 }
 
-export function buildSeatsCommand(): Command {
+/** `loadNotify` comes from the composition root, only when peer-runtime is selected. */
+export function buildSeatsCommand(loadNotify?: () => Promise<SeatResetNotify>): Command {
   const seats = new Command('seats').description('Seat launch commands for Herdr panes');
   seats
     .command('argv')
@@ -213,6 +214,7 @@ export function buildSeatsCommand(): Command {
     .action(async (handoff: string, sha256: string) => {
       try {
         const result = await runSeatReset(handoff, sha256, {
+          ...(loadNotify === undefined ? {} : { notify: await loadNotify() }),
           relaunchArgv: async identity => (await seatLaunch(identity.seat, { repositoryId: identity.repository })).argv,
         });
         process.stdout.write(`${JSON.stringify({ ok: true, ...result })}\n`);

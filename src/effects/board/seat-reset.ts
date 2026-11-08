@@ -6,7 +6,6 @@ import {
   seatResetDirectory, seatResumePrompt, seatRewriteMessage, seatSessionPath, type SeatResetIdentity,
 } from '../../core/board/seat-reset';
 import { RH_LABEL, hcGet, hcKeys, hcList, hcSend, hcWait, type HerdrCoreOptions } from '../terminal/herdr-core';
-import { postNotifyEvent } from '../terminal/notify-relay';
 import { readNotifyConfig } from '../terminal/notify-read';
 
 const TAIL_BYTES = 1024 * 1024;
@@ -202,11 +201,18 @@ export interface SeatResetTimeouts {
 const TIMEOUTS: SeatResetTimeouts = { signalMs: 60_000, evidenceMs: 120_000, exitMs: 60_000, pollMs: 1_000 };
 const WAIT_SECONDS = 600;
 
+/** The notice port of the reset: one bot event to the configured notify channels; a failure is a result. */
+export type SeatResetNotify = (env: NodeJS.ProcessEnv, event: {
+  readonly repository: string | null; readonly kind: string; readonly data: Record<string, unknown>; readonly text: string;
+}) => Promise<'sent' | 'failed' | 'not_configured'>;
+
 export interface SeatResetOptions extends HerdrCoreOptions {
   /** The argv of `repo-harness seats argv <seat> --repository-id <id>`, for the relaunch. */
   readonly relaunchArgv: (identity: SeatResetIdentity) => Promise<readonly string[]>;
   /** Tests only: shorter waits. */
   readonly timeouts?: SeatResetTimeouts;
+  /** Posts one notice. Only the peer-runtime plugin supplies it; without it every failure records `not_configured`. */
+  readonly notify?: SeatResetNotify;
 }
 
 export interface SeatResetResult {
@@ -262,8 +268,10 @@ class SeatResetRun {
 
   /** Appends one log entry first, then dispatches its notice without waiting. A failed write is kept for the result. */
   private record(kind: string, detail: string, extra: Record<string, unknown> = {}): void {
+    const notify = this.options.notify;
     let notice: 'none' | 'dispatched' | 'not_configured' | 'config_invalid' = 'none';
-    if (kind !== 'reset') {
+    if (kind !== 'reset' && notify === undefined) notice = 'not_configured';
+    else if (kind !== 'reset') {
       try { notice = readNotifyConfig(this.env) === null ? 'not_configured' : 'dispatched'; } catch { notice = 'config_invalid'; }
     }
     try {
@@ -271,8 +279,8 @@ class SeatResetRun {
     } catch (error) {
       this.logErrors.push(`${kind}: ${sentence(error)}`);
     }
-    if (notice !== 'dispatched') return;
-    this.notices.push(postNotifyEvent(this.env, {
+    if (notice !== 'dispatched' || notify === undefined) return;
+    this.notices.push(notify(this.env, {
       repository: this.identity.repository, kind: 'seat.reset_failed', data: { seat: this.identity.seat, failure: kind, detail, handoff: this.path },
       text: `seat reset ${kind}: ${this.identity.seat} (${detail})`,
     }));
