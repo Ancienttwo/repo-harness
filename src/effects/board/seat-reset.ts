@@ -149,21 +149,26 @@ const fileSize = (path: string): number => { try { return statSync(path).size; }
 
 /**
  * Mechanical resume evidence in the text appended after the prompt send: the user entry that holds the resume
- * prompt (hc may wrap it), then an assistant Bash tool call whose command sends RESUMED to the peer with hc send.
+ * prompt (hc may wrap it), then an assistant Bash tool call whose command sends RESUMED to the peer with hc send,
+ * then its tool result without an error. A refused, failed or missing result is no evidence.
  */
 function sentResumed(appended: string, prompt: string, peer: string): boolean {
+  type Part = { type?: unknown; name?: unknown; text?: unknown; id?: unknown; tool_use_id?: unknown; is_error?: unknown; input?: { command?: unknown } } | null;
   const holds = (value: unknown) => typeof value === 'string' && value.includes(prompt);
   let asked = false;
+  const sends = new Set<unknown>();
   for (const line of appended.split('\n')) {
     let entry: { type?: unknown; message?: { content?: unknown } };
     try { entry = JSON.parse(line); } catch { continue; }
     const content = entry.message?.content;
-    const parts = Array.isArray(content) ? content as ({ type?: unknown; name?: unknown; text?: unknown; input?: { command?: unknown } } | null)[] : [];
+    const parts = Array.isArray(content) ? content as Part[] : [];
+    if (entry.type === 'user' && parts.some(part => part?.type === 'tool_result' && sends.has(part.tool_use_id) && part.is_error !== true)) return true;
     if (entry.type === 'user' && (holds(content) || parts.some(part => holds(part?.text)))) asked = true;
-    if (asked && entry.type === 'assistant' && parts.some((part) => {
+    if (!asked || entry.type !== 'assistant') continue;
+    for (const part of parts) {
       const command = part?.type === 'tool_use' && part.name === 'Bash' ? part.input?.command : undefined;
-      return typeof command === 'string' && command.includes('hc send') && command.includes(peer) && command.includes('RESUMED');
-    })) return true;
+      if (typeof command === 'string' && command.includes('hc send') && command.includes(peer) && command.includes('RESUMED')) sends.add(part!.id);
+    }
   }
   return false;
 }
@@ -303,10 +308,11 @@ class SeatResetRun {
       if (this.request === null) {
         throw this.refuse('request_missing', 'nothing_sent', `${seatResetRequestPath(this.identity)} is missing or not valid: the Stop hook did not ask for this reset.`);
       }
-      this.findRequester();
-      this.checkHandoff(sha256);
+      // A claimed request gets no message at all, not even REWRITE or NO-RESET.
       const claim = seatResetClaimPath(this.identity, this.request.requestedAt);
       if (existsSync(claim)) throw this.alreadyClaimed();
+      this.findRequester();
+      this.checkHandoff(sha256);
       this.wait();
       this.claim(claim);
     } catch (error) {
