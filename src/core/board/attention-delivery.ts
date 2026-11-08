@@ -1,5 +1,6 @@
 import type { BoardAttentionRoute, BoardAttentionV1 } from './attention';
 import type { BoardV1 } from './board';
+import { WORKER_SEAT_IDS } from './seats-settings';
 
 /**
  * The delivery plan of the resident attention watcher (#1509). It is a pure
@@ -39,15 +40,13 @@ export interface AttentionDeliveryPlanV1 {
   readonly skipped: readonly AttentionSkipV1[];
 }
 
-const WORKER_SEAT = 'worker';
-
 function liveSeatTerminals(board: BoardV1, seat: string) {
   if (board.execution.status !== 'observed') return [];
   return board.execution.terminals.filter(terminal => terminal.seat_status === 'observed' && terminal.seat === seat && terminal.state === 'live');
 }
 
 export function attentionWindowMs(board: BoardV1): number {
-  return liveSeatTerminals(board, WORKER_SEAT).length > 0 ? WINDOW_WITH_WORKERS_MS : WINDOW_WITHOUT_WORKERS_MS;
+  return WORKER_SEAT_IDS.some(seat => liveSeatTerminals(board, seat).length > 0) ? WINDOW_WITH_WORKERS_MS : WINDOW_WITHOUT_WORKERS_MS;
 }
 
 export function deliveryTiming(status: string | null): AttentionDeliveryTiming {
