@@ -1099,6 +1099,13 @@ describe('package-local ArchContext projection provider', () => {
     const five = push('five');
     expect(await follow(four)).toMatchObject({ code: WRITER_RESTART_EXIT_CODE, published: 0, head: five });
     expect(await follow(five)).toMatchObject({ code: 0, published: 1, head: five });
+
+    // A checkout that diverged from main refuses the non-fast-forward.
+    git(checkout, ['commit', '-q', '--allow-empty', '-m', 'local']);
+    const local = git(checkout, ['rev-parse', 'HEAD']);
+    refused(await follow(five), local, five);
+    const six = push('six');
+    refused(await follow(five), local, six);
   });
 
   test('publish status runs the package-local archctx writer status in the target repository', () => {

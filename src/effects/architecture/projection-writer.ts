@@ -58,7 +58,9 @@ export function syncWriterCheckout(checkoutRoot: string, runningHead: string, bu
     if (head !== target) {
       if (git(['status', '--porcelain']) !== '') throw new Error(`the writer checkout has local changes; it refuses to fast-forward ${checkoutRoot}`);
       git(['merge', '--ff-only', '--quiet', target]);
-      head = target;
+      head = git(['rev-parse', 'HEAD']);
+      // A checkout ahead of main merges as a no-op; it is not the main code.
+      if (head !== target) throw new Error(`the writer checkout has commits that are not on origin/main; it refuses to run ${head}`);
     }
     if (installed !== target) {
       rmSync(markerPath, { force: true });
