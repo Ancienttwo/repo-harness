@@ -508,6 +508,7 @@ describe('seat settings contract without transport', () => {
     mkdirSync(join(home, '.repo-harness'));
     writeFileSync(join(home, '.repo-harness', 'config.json'), JSON.stringify({ agents: PANE_AGENTS, seats: { ...DEFAULT_SEATS_CONFIG, worker } }));
     const env = { HOME: home }, before = readSeatsSettings(env), route = seatsSettingsWriteRoute(env);
+    expect(before.ranges.runtimes.find(runtime => runtime.id === 'pi')?.models).toEqual(expect.arrayContaining(['magpie/codex/gpt-6.1-terra', 'magpie/codex/gpt-6-astra']));
     expect(before.ranges.runtimes.find(runtime => runtime.id === 'pi')?.models).toEqual([model, ...before.ranges.runtimes.find(runtime => runtime.id === 'codex')!.models.map(m => `magpie/codex/${m}`)]);
     const { revision, ...section } = before.config;
     const saved = await route.decode({ expected_revision: revision, seats: { ...section, advisor: { ...section.advisor, effort: 'medium' } } }, []).execute();
