@@ -1,14 +1,18 @@
 import {
+  ROUTING_CLASSES,
   SEAT_IDS,
   decodeSeatsSettings,
   decodeSeatsSettingsResult,
   type SeatConfigV1,
+  type RoutingClass,
   type SeatId,
+  type SeatModelV1,
   type SeatRuntime,
   type SeatsConfigV1,
   type SeatsSettingsRequestV1,
   type SeatsSettingsV1,
   type SeatTool,
+  type WorkerSeatId,
 } from '../core/board/seats-settings';
 import {
   fetchSettings,
@@ -39,15 +43,19 @@ const sameSeat = (left: SeatConfigV1 | null, right: SeatConfigV1 | null): boolea
   left === null || right === null ? left === right : left.runtime === right.runtime && left.model === right.model && left.effort === right.effort
   && left.tools.join() === right.tools.join() && left.fleet.join() === right.fleet.join();
 
-export const sameSeats = (left: SeatsConfigV1, right: SeatsConfigV1): boolean => SEAT_IDS.every(id => sameSeat(left[id], right[id]));
+const ROUTING_FIELDS = [...ROUTING_CLASSES, 'claude_saving_below_remaining', 'codex_hyper_at_or_above_remaining', 'low_quota_explorer'] as const;
+const changedRouting = (base: SeatsConfigV1, draft: SeatsConfigV1): number =>
+  ROUTING_FIELDS.filter(field => JSON.stringify(base.routing[field]) !== JSON.stringify(draft.routing[field])).length;
 
-/** The number of seat fields that differ, for the save bar. */
+export const sameSeats = (left: SeatsConfigV1, right: SeatsConfigV1): boolean => SEAT_IDS.every(id => sameSeat(left[id], right[id])) && changedRouting(left, right) === 0;
+
+/** The number of seat and routing fields that differ, for the save bar. It counts the fields that the server names in `changed_keys`. */
 export function seatChanges(base: SeatsConfigV1, draft: SeatsConfigV1): number {
   return SEAT_IDS.reduce((count, id) => {
     const before = base[id], after = draft[id];
     return count + (before === null || after === null ? Number(before !== after) : (['runtime', 'model', 'effort', 'tools', 'fleet'] as const)
       .filter(field => String(before[field]) !== String(after[field])).length);
-  }, 0);
+  }, changedRouting(base, draft));
 }
 
 const SEATS_SECTION: SettingsSection<SeatsSettingsV1, SeatsSettingsV1['config'], SeatsConfigV1, SeatsSettingsRequestV1> = {
@@ -66,17 +74,17 @@ export function useSeatsSettingsForm(read: SeatsSettingsReader, write: SeatsSett
 const toggled = <T extends string>(items: readonly T[], item: T, on: boolean): readonly T[] =>
   on ? (items.includes(item) ? items : [...items, item].sort()) : items.filter(value => value !== item);
 
-type RequiredSeatId = Exclude<SeatId, 'worker-light'>;
-const patch = (draft: SeatsConfigV1, seat: RequiredSeatId, change: Partial<SeatConfigV1>): SeatsConfigV1 => ({ ...draft, [seat]: { ...draft[seat], ...change } });
+// The page edits the fields of a configured seat only; a worker-light set to null shows no seat controls.
+const patch = (draft: SeatsConfigV1, seat: SeatId, change: Partial<SeatConfigV1>): SeatsConfigV1 => ({ ...draft, [seat]: { ...draft[seat]!, ...change } });
 
 /**
  * A new runtime keeps the model and effort only where that runtime accepts
  * them, and keeps fleet roles only on a runtime that has them. Codex always
  * runs commands, so its shell group is on.
  */
-export function setSeatRuntime(draft: SeatsConfigV1, seat: RequiredSeatId, runtime: SeatRuntime, ranges: SeatsSettingsV1['ranges']): SeatsConfigV1 {
+export function setSeatRuntime(draft: SeatsConfigV1, seat: SeatId, runtime: SeatRuntime, ranges: SeatsSettingsV1['ranges']): SeatsConfigV1 {
   const range = ranges.runtimes.find(entry => entry.id === runtime)!;
-  const current = draft[seat];
+  const current = draft[seat]!;
   return patch(draft, seat, {
     runtime,
     model: current.model !== null && range.models.includes(current.model) ? current.model : null,
@@ -86,9 +94,23 @@ export function setSeatRuntime(draft: SeatsConfigV1, seat: RequiredSeatId, runti
   });
 }
 
-export const setSeatModel = (draft: SeatsConfigV1, seat: RequiredSeatId, model: string | null): SeatsConfigV1 => patch(draft, seat, { model });
-export const setSeatEffort = (draft: SeatsConfigV1, seat: RequiredSeatId, effort: string | null): SeatsConfigV1 => patch(draft, seat, { effort });
-export const setSeatTool = (draft: SeatsConfigV1, seat: RequiredSeatId, tool: SeatTool, on: boolean): SeatsConfigV1 =>
-  patch(draft, seat, { tools: toggled(draft[seat].tools, tool, on) });
-export const setSeatRole = (draft: SeatsConfigV1, seat: RequiredSeatId, role: string, on: boolean): SeatsConfigV1 =>
-  patch(draft, seat, { fleet: toggled(draft[seat].fleet, role, on) });
+export const setSeatModel = (draft: SeatsConfigV1, seat: SeatId, model: string | null): SeatsConfigV1 => patch(draft, seat, { model });
+export const setSeatEffort = (draft: SeatsConfigV1, seat: SeatId, effort: string | null): SeatsConfigV1 => patch(draft, seat, { effort });
+export const setSeatTool = (draft: SeatsConfigV1, seat: SeatId, tool: SeatTool, on: boolean): SeatsConfigV1 =>
+  patch(draft, seat, { tools: toggled(draft[seat]!.tools, tool, on) });
+export const setSeatRole = (draft: SeatsConfigV1, seat: SeatId, role: string, on: boolean): SeatsConfigV1 =>
+  patch(draft, seat, { fleet: toggled(draft[seat]!.fleet, role, on) });
+
+/** A worker-light set to null leaves the routes, since the section refuses a route that names an unconfigured seat. */
+export function setWorkerLight(draft: SeatsConfigV1, seat: SeatConfigV1 | null): SeatsConfigV1 {
+  if (seat !== null) return { ...draft, 'worker-light': seat };
+  const routes = Object.fromEntries(ROUTING_CLASSES.map(task => [task, draft.routing[task].filter(id => id !== 'worker-light')]));
+  return { ...draft, 'worker-light': null, routing: { ...draft.routing, ...routes } };
+}
+
+export const setRoute = (draft: SeatsConfigV1, task: RoutingClass, seats: readonly WorkerSeatId[]): SeatsConfigV1 =>
+  ({ ...draft, routing: { ...draft.routing, [task]: seats } });
+export const setThreshold = (draft: SeatsConfigV1, field: 'claude_saving_below_remaining' | 'codex_hyper_at_or_above_remaining', value: number): SeatsConfigV1 =>
+  ({ ...draft, routing: { ...draft.routing, [field]: value } });
+export const setExplorer = (draft: SeatsConfigV1, change: Partial<SeatModelV1>): SeatsConfigV1 =>
+  ({ ...draft, routing: { ...draft.routing, low_quota_explorer: { ...draft.routing.low_quota_explorer, ...change } } });

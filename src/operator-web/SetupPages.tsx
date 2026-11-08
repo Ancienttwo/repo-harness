@@ -434,7 +434,7 @@ export function AgentsPage({ agents, seats, quota, readReportingLanguage, writeR
           <ReportingLanguage headingId="setup-language-heading" read={readReportingLanguage} write={writeReportingLanguage} generation={generation} t={props.t} />
         </Card>
         {snapshot && <FleetTable snapshot={snapshot} t={props.t} />}
-        <SeatsSection form={seats} agents={agents} setup={snapshot} t={props.t} />
+        <SeatsSection form={seats} agents={agents} setup={snapshot} quota={quota} t={props.t} />
         <QuotaSection quota={quota} now={props.now} t={props.t} />
       </>}
     </SetupFrame>
