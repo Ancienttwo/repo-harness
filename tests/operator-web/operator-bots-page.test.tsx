@@ -79,7 +79,7 @@ const settle = () => act(async () => { for (let turn = 0; turn < 5; turn++) awai
 const page = () => document.querySelector<HTMLElement>('[data-bots-page]')!;
 const section = (name: string) => document.querySelector<HTMLElement>(`[data-bots-section="${name}"]`)!;
 const all = (selector: string, scope: ParentNode = document) => Array.from(scope.querySelectorAll<HTMLElement>(selector));
-const HC_REPAIR = ['hc update --version 0.1.17', 'hc server restart'];
+const HC_REPAIR = ['hc update --version 0.1.18', 'hc server restart'];
 const commands = (scope: ParentNode = document) => all('[data-command] code', scope).map(code => code.textContent);
 const freshness = () => document.querySelector<HTMLElement>('[data-freshness-source="bots"]');
 const navLink = (workspace: string) => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!;
@@ -170,7 +170,7 @@ describe('Bots page', () => {
     expect(notify.querySelector('[data-notify-channel="discord"]')?.textContent).toBe('Discordnot configured');
     expect(commands(notify)).toEqual([]);
     const hc = section('hc');
-    expect(hc.querySelector('[data-hc-version]')?.textContent).toBe('hc 0.1.17 · compatible (needs 0.1.17 or later)');
+    expect(hc.querySelector('[data-hc-version]')?.textContent).toBe('hc 0.1.18 · compatible (needs 0.1.18 or later)');
     expect(hc.querySelector('[data-herdr-app]')?.textContent).toBe('Herdr.app · no version pin yet');
     const terminals = all('[data-hc-terminal]', hc);
     expect(terminals.map(row => [row.getAttribute('data-hc-terminal'), row.getAttribute('data-terminal-status')])).toEqual([
@@ -182,8 +182,8 @@ describe('Bots page', () => {
 
   test('1-BOTS-F1 an hc core below the pin shows the expected and the actual version, the repair commands in order and no terminal state, never "not connected"', async () => {
     for (const [locale, words, repair, unavailable] of [
-      ['zh', 'hc core 0.1.15 · 版本过低：需要 0.1.17 或更高，终端状态暂不可读', '如果 hc --version 低于 0.1.17，运行第一条命令，它会重启 core；否则运行第二条命令。', '暂不可读'],
-      ['en', 'hc core 0.1.15 · too old: needs 0.1.17 or later. Terminal state is not read.', 'If hc --version is below 0.1.17, run the first command. It restarts the core. If not, run the second command.', 'not read'],
+      ['zh', 'hc core 0.1.15 · 版本过低：需要 0.1.18 或更高，终端状态暂不可读', '如果 hc --version 低于 0.1.18，运行第一条命令，它会重启 core；否则运行第二条命令。', '暂不可读'],
+      ['en', 'hc core 0.1.15 · too old: needs 0.1.18 or later. Terminal state is not read.', 'If hc --version is below 0.1.18, run the first command. It restarts the core. If not, run the second command.', 'not read'],
     ] as const) {
       await remount('#bots', props(serve(ok(degradedBotAccess(NOW))), locale));
       const hc = section('hc');

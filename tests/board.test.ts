@@ -91,7 +91,7 @@ function replay(options: Replay = {}): BoardV1 {
     repo_root: root,
     parent: 1474,
     now: () => options.now ?? REPLAY_NOW,
-    host: options.host ?? boardHostPorts({ env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES, HC_VERSION: options.hcVersion ?? '0.1.17' } }),
+    host: options.host ?? boardHostPorts({ env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES, HC_VERSION: options.hcVersion ?? '0.1.18' } }),
     gh_runner: (args) => {
       if (args[0] === 'repo') return answer({ nameWithOwner: 'Ancienttwo/repo-harness' });
       if (args[1] === 'graphql') return answer(args.some(arg => arg.includes('subIssues')) ? parent : pulls);
@@ -136,7 +136,7 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
   expect(board.pull_requests[0]!.acceptance).toMatchObject({ status: 'accepted', via: 'record', accepted_at: '2026-11-02T21:12:35Z' });
   expect(board.plan).toMatchObject({ status: 'unavailable', reason: 'plan block invalid: the plan comment has 0 fenced json blocks, expected 1' });
   expect(board.daily_run).toMatchObject({ status: 'observed', conclusion: 'failure', open_repair_issues: [] });
-  expect(board.tooling).toEqual({ hc: { status: 'observed', version: '0.1.17', min_version: HC_MIN_VERSION }, herdr_app: { status: 'not_pinned' } });
+  expect(board.tooling).toEqual({ hc: { status: 'observed', version: '0.1.18', min_version: HC_MIN_VERSION }, herdr_app: { status: 'not_pinned' } });
   expect(board.execution.status === 'observed' && board.execution.terminals.map(terminal => terminal.seat_status === 'observed'
     ? [terminal.address, terminal.seat, terminal.issue, terminal.status, terminal.agent] : [terminal.address, terminal.reason, terminal.agent])).toEqual([
     ['t1', 'worker', 1476, 'blocked', 'codex'], ['t2', 'worker', 1475, 'done', 'claude-code'],
@@ -693,7 +693,12 @@ appendFileSync(process.env.HC_LOG, JSON.stringify(args) + '\\n');
 const terminals = JSON.parse(process.env.FAKE_TERMINALS);
 const address = args.at(-1);
 const out = value => console.log(JSON.stringify(value));
-if (args[0] === 'get') out({ address, state: 'live', turn: 1, labels: { 'repo-harness.seat': 'x' }, ...terminals[address] });
+if (args[0] === 'get') {
+  // FAKE_FINISH_AT: the address finishes at its nth get call.
+  const finishAt = JSON.parse(process.env.FAKE_FINISH_AT || '{}')[address];
+  const gets = require('fs').readFileSync(process.env.HC_LOG, 'utf8').split('\\n').filter(Boolean).map(line => JSON.parse(line)).filter(call => call[0] === 'get' && call.at(-1) === address).length;
+  out({ address, state: finishAt && gets >= finishAt ? 'finished' : 'live', turn: 1, labels: { 'repo-harness.seat': 'x' }, ...terminals[address] });
+}
 else if (args[0] === 'send' && process.env.FAKE_SEND_FAIL) { process.stderr.write(JSON.stringify({ error: { kind: 'blocked', message: 'blocked' } })); process.exit(9); }
 else if (args[0] === 'send') out({ started: true, turn: 2 });
 else if (args[0] === 'read') out(JSON.parse(process.env.FAKE_READ));
@@ -722,15 +727,20 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
     ({ address, name: null, agent: null, state: 'live', status, status_kind: null, status_msg: null, status_ms: null, turn: 1, branch: null, seat_status: 'observed', seat: seatName, issue: null, pr: null }) as BoardTerminalV1;
   const terminals = [seat('t1', 'worker', 'working'), seat('t3', 'orchestrator', 'idle'), seat('t6', 'orchestrator', 'blocked'),
     seat('t7', 'orchestrator', 'blocked'), seat('t8', 'orchestrator', 'working'), seat('t9', 'advisor', 'done'), seat('t10', 'orchestrator', 'blocked'),
-    seat('t11', 'orchestrator', 'blocked')];
+    seat('t11', 'orchestrator', 'blocked'), seat('t12', 'orchestrator', 'blocked')];
   const watched = { ...board, execution: { status: 'observed', terminals } } as BoardV1;
   const hc = watchHc({
-    // `get` at the window end: t6 is still blocked, t10 became idle, and the program of t11 ended with its last status blocked.
+    // `get` at the window end: t6 is still blocked, t10 became idle, t11 is finished (its program exited), and t12 finishes at its third get: the wait's address check, the post-wait check, then the window end.
     FAKE_TERMINALS: { t3: {}, t6: { status: { state: 'blocked' } }, t7: {}, t8: {}, t9: {}, t10: { status: { state: 'idle' } },
-      t11: { state: 'finished', status: { state: 'blocked' } } },
-    // t7 became idle during the wait. t6 and t10: hc wait returns at once with the terminal still blocked.
-    FAKE_WAITS: { t6: { ended: false, reason: 'blocked', status: { state: 'blocked' } }, t7: { ended: false, reason: 'idle', status: { state: 'idle' } },
-      t10: { ended: false, reason: 'blocked', status: { state: 'blocked' } }, t11: { ended: false, reason: 'blocked', status: { state: 'blocked' } } },
+      t11: { state: 'finished', status: { state: 'blocked' } }, t12: { status: { state: 'blocked' } } },
+    FAKE_FINISH_AT: { t12: 3 },
+    // The live hc 0.1.18 wait lines. A live terminal that stopped working ends the wait with reason `status` (t7 idle, t6 and t10 blocked);
+    // a program exit ends it with reason `exit` and an exit code (t11).
+    FAKE_WAITS: { t6: { ended: true, reason: 'status', status: 'blocked', exit_code: null, signal: null, children: [] },
+      t7: { ended: true, reason: 'status', status: 'idle', exit_code: null, signal: null, children: [] },
+      t10: { ended: true, reason: 'status', status: 'blocked', exit_code: null, signal: null, children: [] },
+      t11: { ended: true, reason: 'exit', status: null, exit_code: 0, signal: null, children: [] },
+      t12: { ended: true, reason: 'status', status: 'blocked', exit_code: null, signal: null, children: [] } },
   });
   const logPath = attentionLogPath(1186405141, 1474, { REPO_HARNESS_HOME: hc.root });
   expect(logPath).toBe(join(hc.root, 'board/attention-1186405141-1474.jsonl'));
@@ -762,14 +772,17 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
     ['send', '--json', '--', 't7', orchestrator],
     ['wait', '--json', '--timeout', '900', '--', 't10'],
     ['wait', '--json', '--timeout', '900', '--', 't11'],
+    ['wait', '--json', '--timeout', '900', '--', 't12'],
     ['send', '--json', '--', 't10', orchestrator],
     ['send', '--json', '--', 't8', orchestrator],
   ]);
   const records = () => readFileSync(logPath, 'utf8').split('\n').filter(Boolean).slice(4).map(line => JSON.parse(line));
   expect(records().filter(record => record.kind === 'send').map(record => [record.terminal, record.outcome, record.at])).toEqual([
     ['t3', 'sent', REPLAY_NOW.toISOString()], ['t9', 'sent', REPLAY_NOW.toISOString()], ['t7', 'sent', REPLAY_NOW.toISOString()],
+    ['t11', 'terminal_ended', REPLAY_NOW.toISOString()],
     ['t6', 'skipped_blocked', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()], ['t10', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
-    ['t11', 'terminal_ended', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()], ['t8', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
+    ['t12', 'terminal_ended', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
+    ['t8', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
   ]);
   expect(records().filter(record => record.kind === 'finding').map(record => record.rule)).toEqual(['A1', 'A7', 'R2']);
 

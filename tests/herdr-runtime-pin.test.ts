@@ -35,9 +35,9 @@ function herdrInstallStep() {
 }
 
 describe("herdr runtime pin has one source of truth", () => {
-  test("the herdr-core pin names an official release asset for each platform of the 0.1.17 manifest", () => {
+  test("the herdr-core pin names an official release asset for each platform of the 0.1.18 manifest", () => {
     const core = readPin();
-    expect(core.min_version).toBe("0.1.17");
+    expect(core.min_version).toBe("0.1.18");
     for (const platform of ['linux-aarch64', 'linux-x86_64', 'macos-aarch64', 'macos-x86_64', 'windows-x86_64']) {
       const asset = core.release_assets?.[platform];
       expect(asset?.sha256).toMatch(/^[0-9a-f]{64}$/);
@@ -122,7 +122,7 @@ describe("herdr runtime pin has one source of truth", () => {
   });
 });
 
-// The first lines of `hc --skill` from the pinned herdr-core 0.1.17 release.
+// The first lines of `hc --skill` from the pinned herdr-core 0.1.18 release.
 const HC_MANUAL = "# hc manual (herdr-core)\n\nThe current manual for herdr-core's CLI, `hc`. It is not `herdr`, the older\nterminal multiplexer.\n\n"
   + "# hc: programs and agents that stay alive\n\n`$HC_TERMINAL_ID` is your address. Terminals you start are your children.\n";
 
