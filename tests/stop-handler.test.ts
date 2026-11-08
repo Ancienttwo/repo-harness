@@ -103,6 +103,35 @@ describe('Stop writes no recovery views', () => {
   });
 });
 
+describe('Stop seat reset (#1972)', () => {
+  test('a reset seat below the threshold stops; at the threshold it blocks once and records the request', () => {
+    const cwd = fixture();
+    // The request path is fixed under /tmp; a repository id per run keeps the runs apart.
+    const repository = String(9_100_000_000 + process.pid);
+    const dir = join('/tmp/repo-harness-seats', repository, 'orchestrator');
+    const transcript = join(cwd, 'transcript.jsonl');
+    const assistant = (input: number) => JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: input, cache_read_input_tokens: 370_000, cache_creation_input_tokens: 2_000 } } });
+    const now = new Date('2026-11-08T08:00:00.000Z');
+    const stop = (active: boolean) => runStopHandler({
+      collector: collector(cwd), payload: { stop_hook_active: active, transcript_path: transcript }, dependencies: { now: () => now },
+      env: { REPO_HARNESS_SEAT: 'orchestrator', REPO_HARNESS_SEAT_REPOSITORY: repository },
+    });
+    try {
+      writeFileSync(transcript, `${assistant(7_999)}\n${JSON.stringify({ type: 'system', subtype: 'turn_duration' })}\n`);
+      expect([stop(false), existsSync(dir)]).toEqual([{ exitCode: 0, stdout: '', stderr: '' }, false]);
+      writeFileSync(transcript, `${assistant(7_999)}\n${assistant(8_000)}\n`);
+      const blocked = stop(false);
+      expect([blocked.exitCode, blocked.stdout]).toEqual([2, '']);
+      expect(blocked.stderr).toContain('the orchestrator seat context is 380000 tokens');
+      expect(blocked.stderr).toContain(`Send \`RESET-REQUEST ${dir}/handoff.md <sha256>\` to the advisor seat`);
+      expect(JSON.parse(readFileSync(join(dir, 'request.json'), 'utf8'))).toEqual({ requested_at: now.toISOString(), context_tokens: 380_000 });
+      expect(stop(true)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    } finally {
+      rmSync(join('/tmp/repo-harness-seats', repository), { recursive: true, force: true });
+    }
+  });
+});
+
 describe('Stop architecture debt notice', () => {
   function noticeFixture() { const root = agentNoticeFixture(); fixtures.push(root); return root; }
   function stop(cwd: string, options: Partial<StopRuntimeInput> = {}) {

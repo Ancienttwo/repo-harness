@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { createHash } from "crypto";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { delimiter, join } from "path";
 import { seatPaneName } from "../../src/core/board/seat-launch";
+import { HANDOFF_SECTIONS } from "../../src/core/board/seat-reset";
 import { DEFAULT_SEATS_CONFIG, WORKER_SEAT_IDS } from "../../src/core/board/seats-settings";
 import { repoHarnessRepoIdFor } from "../../src/effects/repo-registry";
 import { classifyQuotaReading, decodeCodexRateLimitsResult } from "../../src/core/board/quota";
@@ -553,11 +555,12 @@ describe("repo-harness seats argv", () => {
         const named = (cwd: string, ...args: string[]) => JSON.parse(run(registryEnv(home), [...args, "--repository-id", "1186405141", "--json"], cwd).stdout);
         const orchestrator = named(repo, "orchestrator");
         expect([orchestrator.name, orchestrator.tab]).toEqual(["rh-orch", "orch"]);
-        // A Claude seat carries the same name as its session name.
-        expect(agent(orchestrator).slice(2, 5)).toEqual(["claude", "-n", "rh-orch"]);
+        // A Claude seat carries the same name as its session name; the reset seats name their seat and repository in the env (#1972).
+        expect(agent(orchestrator).slice(0, 7)).toEqual(["env", "CLAUDE_CODE_TASK_LIST_ID=repo-harness-orchestrator",
+          "REPO_HARNESS_SEAT=orchestrator", "REPO_HARNESS_SEAT_REPOSITORY=1186405141", "claude", "-n", "rh-orch"]);
         const advisor = named(repo, "advisor", "--parent", "1000");
         expect([advisor.name, advisor.tab]).toEqual(["rh-adv", "orch"]);
-        expect(agent(advisor).slice(0, 3)).toEqual(["claude", "-n", "rh-adv"]);
+        expect(agent(advisor).slice(0, 6)).toEqual(["env", "REPO_HARNESS_SEAT=advisor", "REPO_HARNESS_SEAT_REPOSITORY=1186405141", "claude", "-n", "rh-adv"]);
         // A linked worktree resolves to its primary checkout; the default worker runs Codex, which has no session name flag.
         const worker = named(worktree, "worker", "--parent", "1000", "--issue", "1508", "--pr", "1521", "--qualifier", "device");
         expect([worker.name, worker.tab]).toEqual(["rh-w-1508-device", "#1000"]);
@@ -595,5 +598,51 @@ describe("repo-harness seats argv", () => {
       expect(result.stdout).toBe("");
       expect(JSON.parse(result.stderr).error).toBe("config_invalid");
     });
+  });
+});
+
+describe("repo-harness seats reset (#1972)", () => {
+  test("a stale or mismatched handoff sends nothing; a valid one waits, sends /clear and then the resume prompt", () => {
+    const home = mkdtempSync(join(tmpdir(), "seats-reset-"));
+    // The handoff path is fixed under /tmp; a repository id per run keeps the runs apart.
+    const repository = String(9_000_000_000 + process.pid);
+    const dir = join("/tmp/repo-harness-seats", repository, "advisor");
+    const handoff = join(dir, "handoff.md");
+    try {
+      const bin = join(home, "bin"), log = join(home, "calls.log");
+      mkdirSync(bin);
+      // A fake hc at the hc boundary: no real terminal is read or written.
+      writeFileSync(join(bin, "hc"), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${log}"\ncase "$1" in\n`
+        + `ls) printf '%s' '{"terminals":[{"address":"t5","state":"live"}]}' ;;\n`
+        + `get) printf '%s' '{"address":"t5","state":"live","labels":{"repo-harness.seat":"advisor"},"turn":3}' ;;\n`
+        + `wait) printf '%s' '{"ended":true,"reason":"idle","turn":3,"status":null}' ;;\n`
+        + `send) printf '%s' '{"started":null,"turn":4}' ;;\nesac\n`);
+      chmodSync(join(bin, "hc"), 0o755);
+      mkdirSync(dir, { recursive: true });
+      const body = HANDOFF_SECTIONS.map(section => `## ${section}\n\nstate\n`).join("\n");
+      const sha = (text: string) => createHash("sha256").update(text).digest("hex");
+      const reset = (sha256: string) => {
+        writeFileSync(log, "");
+        const { HERDR_ENV: _nested, ...base } = process.env;
+        const result = spawnSync(process.execPath, [CLI, "seats", "reset", handoff, sha256],
+          { env: { ...base, HOME: home, HC_TERMINAL_ID: "t2", PATH: `${bin}:/bin:/usr/bin` }, encoding: "utf8" });
+        const sent = readFileSync(log, "utf8").split("\n").filter(line => line.startsWith("send "));
+        return { status: result.status, error: result.status === 0 ? null : JSON.parse(result.stderr).error, sent };
+      };
+      const request = (at: Date) => writeFileSync(join(dir, "request.json"), JSON.stringify({ requested_at: at.toISOString(), context_tokens: 400000 }));
+      writeFileSync(handoff, body);
+      utimesSync(handoff, new Date(Date.now() - 120_000), new Date(Date.now() - 120_000));
+      request(new Date(Date.now() - 60_000));
+      expect(reset(sha(body))).toEqual({ status: 1, error: "handoff_stale", sent: [] });
+      writeFileSync(handoff, body);
+      expect(reset(sha("other"))).toEqual({ status: 1, error: "handoff_sha256_mismatch", sent: [] });
+      expect(reset(sha(body))).toEqual({ status: 0, error: null, sent: [
+        "send --json -- t5 /clear",
+        `send --json -- t5 You are advisor. Read ${handoff}, check the current state with git/gh, then continue. Then send RESUMED to t2 with hc send.`,
+      ] });
+    } finally {
+      rmSync(join("/tmp/repo-harness-seats", repository), { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
