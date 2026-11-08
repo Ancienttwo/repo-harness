@@ -1060,18 +1060,29 @@ lock, worktree, render, commit, push and rolling PR. It never pushes main. No
 GitHub App, new secret or Actions writer is used.
 
 `follow` runs only under bun from a repo-harness Git source checkout. The
-checkout at `origin/main` is the one owner of the writer code version. Every 300
-seconds, `follow` fetches `origin main`. When main moved, it fast-forwards the
-checkout, runs `bun install --frozen-lockfile`, writes an `updated` JSON line and
-exits with status 75. The supervisor restarts it on that non-zero exit, so the
-next process runs the new code and the archctx that main pins. When the checkout
-is current, `follow` runs one archctx `once` publication. When the fetch, the
-fast-forward or the install fails, `follow` writes an `update-failed` JSON line
-to stdout on each try and one notice to stderr per distinct error. It does not
-publish until the update succeeds. A local commit or a dirty file that blocks
-the fast-forward needs an operator repair. The installed package is not used for
-`follow`: releases lag main, and a long-running process does not reload a
-`repo-harness update`. The operator supplies
+checkout at `origin/main`, with its dependencies installed for that commit, is
+the one owner of the writer code version. archctx uses the checkout only as the
+Git repository and renders in its own detached worktree under
+`ARCHCONTEXT_STATE_DIR`, so moving the checkout does not move the projection
+target. Every 300 seconds, `follow` fetches `origin main`. When main moved, it
+refuses a checkout with local changes, fast-forwards, runs
+`bun install --frozen-lockfile`, records the installed commit in
+`node_modules/.repo-harness-writer-install`, writes an `updated` JSON line and
+exits with status 75. A missing install record also triggers the install and
+the restart. The supervisor restarts the process on that non-zero exit, so the
+next process runs the new code and the archctx that main pins. When the
+checkout, the install record and the running code all match main, `follow` runs
+one archctx `once` publication. When the fetch, the fast-forward or the install
+fails, `follow` writes an `update-failed` JSON line with code
+`writer_update_failed`, the checkout HEAD and the `origin/main` commit to stdout
+on each try, and the same line to stderr once per distinct error. It does not
+publish until the update succeeds. When main moves several times, each move
+costs at most one restart, and launchd `ThrottleInterval` spaces restarts at 300
+seconds; no run publishes with older code. Stale projections then also fail the
+daily architecture freshness check on main, which opens a CI repair issue. A
+local commit or a dirty file that blocks the fast-forward needs an operator
+repair. The installed package is not used for `follow`: releases lag main, and
+a long-running process does not reload a `repo-harness update`. The operator supplies
 existing Git and gh authentication. The resulting PR runs normal CI. The merge
 rule for that PR is below.
 

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { isAbsolute } from 'node:path';
-import { realpathSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
+import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { PROJECTION_WRITER_DEFAULT_BRANCH } from 'archctx-contracts';
 import { resolveCompatibleNodeRuntime, resolvePackageLocalArchctx } from './archctx-provider';
@@ -30,20 +30,46 @@ export function architectureWriterArgs(mode: string, stateDir: string | undefine
 
 export type WriterCheckoutSync = { state: 'current' } | { state: 'updated'; from: string; to: string };
 
+/** Lives in `node_modules`, so a removed dependency tree also removes the install proof. */
+const INSTALL_MARKER = 'node_modules/.repo-harness-writer-install';
+
+export class WriterUpdateFailure extends Error {
+  constructor(message: string, readonly head: string | null, readonly target: string | null) { super(message); }
+}
+
 /**
- * The writer code is the checkout at `origin/main`. A checkout that cannot fast-forward,
- * or whose dependencies do not install, throws; the caller then does not publish.
- * `runningHead` is the commit the running process loaded: a moved HEAD alone does not reload code.
+ * The writer code is the checkout at `origin/main` with its dependencies installed for that commit.
+ * archctx uses the checkout only as the Git repository: it renders in its own detached worktree
+ * under ARCHCONTEXT_STATE_DIR, so moving this checkout's HEAD does not move the projection target.
+ * `runningHead` is the commit the running process loaded. Any fast-forward or install returns
+ * `updated`, because the process must restart to load the new code and dependencies.
  */
 export function syncWriterCheckout(checkoutRoot: string, runningHead: string, bun: string): WriterCheckoutSync {
   const git = (args: string[]) => gitExecFileSync(['-C', checkoutRoot, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  git(['fetch', '--quiet', 'origin', 'main']);
-  const target = git(['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}']);
-  if (target === runningHead) return { state: 'current' };
-  if (git(['rev-parse', 'HEAD']) !== target) git(['merge', '--ff-only', '--quiet', target]);
-  const install = runProcess(bun, ['install', '--frozen-lockfile'], { cwd: checkoutRoot, timeoutMs: FOLLOW_INTERVAL_MS });
-  if (install.status !== 0) throw new Error(`bun install --frozen-lockfile failed in ${checkoutRoot}: ${(install.stderr || install.error || '').trim()}`);
-  return { state: 'updated', from: runningHead, to: target };
+  const markerPath = join(checkoutRoot, INSTALL_MARKER);
+  let head: string | null = null;
+  let target: string | null = null;
+  try {
+    head = git(['rev-parse', 'HEAD']);
+    git(['fetch', '--quiet', 'origin', 'main']);
+    target = git(['rev-parse', '--verify', 'refs/remotes/origin/main^{commit}']);
+    const installed = existsSync(markerPath) ? readFileSync(markerPath, 'utf8').trim() : null;
+    if (head === target && installed === target && runningHead === target) return { state: 'current' };
+    if (head !== target) {
+      if (git(['status', '--porcelain']) !== '') throw new Error(`the writer checkout has local changes; it refuses to fast-forward ${checkoutRoot}`);
+      git(['merge', '--ff-only', '--quiet', target]);
+      head = target;
+    }
+    if (installed !== target) {
+      rmSync(markerPath, { force: true });
+      const install = runProcess(bun, ['install', '--frozen-lockfile'], { cwd: checkoutRoot, timeoutMs: FOLLOW_INTERVAL_MS });
+      if (install.status !== 0) throw new Error(`bun install --frozen-lockfile failed: ${(install.stderr || install.error || '').trim()}`);
+      writeFileSync(markerPath, `${target}\n`);
+    }
+    return { state: 'updated', from: runningHead, to: target };
+  } catch (error) {
+    throw new WriterUpdateFailure((error instanceof Error ? error.message : String(error)).trim(), head, target);
+  }
 }
 
 export interface FollowWriterPorts {
@@ -56,9 +82,9 @@ export interface FollowWriterPorts {
 }
 
 /**
- * Each iteration first updates the writer code. An update failure logs a JSON line every
- * iteration and one notice per distinct error, and skips publication: the running code
- * may be older than the archctx that main pins.
+ * Each iteration first updates the writer code. An update failure writes a JSON line to stdout
+ * every iteration and the same line to stderr once per distinct error, and skips publication:
+ * the running code may be older than the archctx that main pins.
  */
 export async function followArchitectureWriter(checkoutRoot: string, runningHead: string, bun: string, ports: FollowWriterPorts): Promise<number> {
   let noticed: string | null = null;
@@ -68,10 +94,11 @@ export async function followArchitectureWriter(checkoutRoot: string, runningHead
       sync = syncWriterCheckout(checkoutRoot, runningHead, bun);
       noticed = null;
     } catch (error) {
-      const message = (error instanceof Error ? error.message : String(error)).trim();
-      ports.stdout(JSON.stringify({ schemaVersion: UPDATE_SCHEMA_VERSION, result: 'update-failed', runningHead, error: message, at: new Date().toISOString() }));
-      if (noticed !== message) ports.stderr(`repo-harness architecture writer cannot update ${checkoutRoot} to origin/main and does not publish until it can: ${message}`);
-      noticed = message;
+      if (!(error instanceof WriterUpdateFailure)) throw error;
+      const line = JSON.stringify({ schemaVersion: UPDATE_SCHEMA_VERSION, result: 'update-failed', code: 'writer_update_failed', checkout: checkoutRoot, runningHead, head: error.head, target: error.target, error: error.message, at: new Date().toISOString() });
+      ports.stdout(line);
+      if (noticed !== error.message) ports.stderr(line);
+      noticed = error.message;
     }
     if (sync?.state === 'updated') {
       ports.stdout(JSON.stringify({ schemaVersion: UPDATE_SCHEMA_VERSION, result: 'updated', from: sync.from, to: sync.to, at: new Date().toISOString() }));

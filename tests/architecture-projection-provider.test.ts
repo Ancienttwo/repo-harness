@@ -1035,19 +1035,25 @@ describe('package-local ArchContext projection provider', () => {
     expect(() => architectureWriterArgs('push-main', '/tmp/writer-state')).toThrow('Usage');
   });
 
-  test('follow publishes only from a checkout at origin/main and restarts after a fast-forward', async () => {
+  test('follow publishes only from an installed checkout at origin/main and restarts after each update', async () => {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-writer-follow-'));
     roots.push(root);
     const git = (cwd: string, args: string[]) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
     const [checkout, author] = ['checkout', 'author'].map((name) => join(root, name));
+    const push = (message: string, dependencies: Record<string, string> = {}) => {
+      writeFileSync(join(author, 'package.json'), `${JSON.stringify({ name: 'writer-fixture', version: '0.0.0', dependencies })}\n`);
+      git(author, ['commit', '-q', '--allow-empty', '-am', message]);
+      git(author, ['push', '-q', 'origin', 'HEAD:main']);
+      return git(author, ['rev-parse', 'HEAD']);
+    };
     git(root, ['init', '-q', '--bare', '-b', 'main', 'origin.git']);
     git(root, ['clone', '-q', 'origin.git', 'author']);
-    writeFileSync(join(author, 'package.json'), '{"name":"writer-fixture","version":"0.0.0"}\n');
+    writeFileSync(join(author, '.gitignore'), 'node_modules/\n');
+    writeFileSync(join(author, 'package.json'), '{}\n');
     git(author, ['add', '.']);
-    git(author, ['commit', '-q', '-m', 'one']);
-    git(author, ['push', '-q', 'origin', 'HEAD:main']);
+    const one = push('one');
     git(root, ['clone', '-q', 'origin.git', 'checkout']);
-    const follow = async (runningHead: string, waits: boolean[]) => {
+    const follow = async (runningHead: string, waits: boolean[] = []) => {
       const seen = { published: 0, stdout: [] as string[], stderr: [] as string[] };
       const code = await followArchitectureWriter(checkout, runningHead, process.execPath, {
         publishOnce: async () => { seen.published += 1; return 0; },
@@ -1055,27 +1061,44 @@ describe('package-local ArchContext projection provider', () => {
         stdout: (line) => seen.stdout.push(line),
         stderr: (line) => seen.stderr.push(line),
       });
-      return { code, ...seen, head: git(checkout, ['rev-parse', 'HEAD']) };
+      const result = (lines: string[]) => lines.map((line) => JSON.parse(line) as { result: string; code?: string; head?: string | null; target?: string | null });
+      return { code, published: seen.published, stdout: result(seen.stdout), stderr: result(seen.stderr), head: git(checkout, ['rev-parse', 'HEAD']) };
+    };
+    const refused = (run: Awaited<ReturnType<typeof follow>>, head: string, target: string | null) => {
+      expect(run).toMatchObject({ code: 0, published: 0, head });
+      expect(run.stderr).toEqual([expect.objectContaining({ result: 'update-failed', code: 'writer_update_failed', head, target })]);
     };
 
-    const one = git(checkout, ['rev-parse', 'HEAD']);
-    expect(await follow(one, [])).toMatchObject({ code: 0, published: 1, stderr: [], head: one });
+    // A checkout with no install proof installs and restarts before it publishes.
+    expect(await follow(one)).toMatchObject({ code: WRITER_RESTART_EXIT_CODE, published: 0, head: one });
+    expect(await follow(one)).toMatchObject({ code: 0, published: 1, stderr: [], head: one });
 
-    git(author, ['commit', '-q', '--allow-empty', '-m', 'two']);
-    git(author, ['push', '-q', 'origin', 'HEAD:main']);
-    const two = git(author, ['rev-parse', 'HEAD']);
-    const updated = await follow(one, []);
-    expect(updated).toMatchObject({ code: WRITER_RESTART_EXIT_CODE, published: 0, stderr: [], head: two });
-    expect(JSON.parse(updated.stdout[0]!)).toMatchObject({ result: 'updated', from: one, to: two });
+    // A failed fetch publishes nothing; repeated failures write one notice and a stdout line per try.
+    const url = git(checkout, ['remote', 'get-url', 'origin']);
+    git(checkout, ['remote', 'set-url', 'origin', join(root, 'missing.git')]);
+    const offline = await follow(one, [false, true]);
+    refused(offline, one, null);
+    expect(offline.stdout.map((line) => line.result)).toEqual(['update-failed', 'update-failed']);
+    git(checkout, ['remote', 'set-url', 'origin', url]);
 
-    git(checkout, ['commit', '-q', '--allow-empty', '-m', 'local']);
-    git(author, ['commit', '-q', '--allow-empty', '-m', 'three']);
-    git(author, ['push', '-q', 'origin', 'HEAD:main']);
-    const local = git(checkout, ['rev-parse', 'HEAD']);
-    const diverged = await follow(two, [false, true]);
-    expect(diverged).toMatchObject({ code: 0, published: 0, head: local });
-    expect(diverged.stdout.map((line) => (JSON.parse(line) as { result: string }).result)).toEqual(['update-failed', 'update-failed']);
-    expect(diverged.stderr).toHaveLength(1);
+    // A dirty checkout refuses the fast-forward.
+    const two = push('two');
+    writeFileSync(join(checkout, 'local.txt'), 'operator edit\n');
+    refused(await follow(one), one, two);
+    rmSync(join(checkout, 'local.txt'));
+    expect(await follow(one)).toMatchObject({ code: WRITER_RESTART_EXIT_CODE, published: 0, head: two });
+
+    // An install failure keeps refusing after a restart on the fast-forwarded HEAD.
+    const three = push('three', { missing: 'file:./missing' });
+    refused(await follow(two), three, three);
+    refused(await follow(three), three, three);
+
+    // Each later main update restarts once, then the current checkout publishes.
+    const four = push('four');
+    expect(await follow(three)).toMatchObject({ code: WRITER_RESTART_EXIT_CODE, published: 0, head: four });
+    const five = push('five');
+    expect(await follow(four)).toMatchObject({ code: WRITER_RESTART_EXIT_CODE, published: 0, head: five });
+    expect(await follow(five)).toMatchObject({ code: 0, published: 1, head: five });
   });
 
   test('publish status runs the package-local archctx writer status in the target repository', () => {
