@@ -96,6 +96,7 @@ test('hc task sessions serialize concurrent starts, reconcile crashes, deliver b
       hc(['send', '--json', '--', (binding as HerdrTaskBinding).terminal_id, `Read task request ${join(dir, `request-${request.round}.json`)}; write its result only to ${request.result_ref}.`]);
     });
   const peer = join(fixture, 'peer.ts');
+  writeFileSync(join(fixture, 'stubborn.js'), "process.on('SIGTERM',()=>{});process.on('SIGHUP',()=>{});setInterval(()=>{},1000);");
   writeFileSync(peer, `
 import {appendFileSync,readFileSync,renameSync,writeFileSync} from 'fs'; import {spawn} from 'child_process';
 import {writeSessionArtifact} from ${JSON.stringify(ioModulePath)};
@@ -103,7 +104,12 @@ const ready=process.argv[2];
 process.stdin.setRawMode(true); process.stdout.write('\\x1b[?2004h');
 appendFileSync(${JSON.stringify(join(fixture, 'launches'))},ready.split('/').pop().replace('.ready','')+'\\n');
 // A child in the leader's process group before ready; it ignores TERM and terminal hangup.
-if(ready.endsWith('/grouped.ready'))writeFileSync(ready+'.child',String(spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});process.on('SIGHUP',()=>{});setInterval(()=>{},1000)"],{stdio:'ignore'}).pid));
+const stubborn=['-e',"process.on('SIGTERM',()=>{});process.on('SIGHUP',()=>{});setInterval(()=>{},1000)"];
+if(ready.endsWith('/grouped.ready'))writeFileSync(ready+'.child',String(spawn(process.execPath,stubborn,{stdio:'ignore'}).pid));
+// A member that execs on TERM into a program that ignores TERM: its command name changes, its start time does not.
+if(ready.endsWith('/exec-member.ready'))writeFileSync(ready+'.child',String(spawn('/bin/sh',['-c',"trap '' HUP; trap 'exec "+process.execPath+" ${join(fixture, 'stubborn.js')}' TERM; while :; do sleep 0.2; done"],{stdio:'ignore'}).pid));
+// On hangup the leader starts a group child that ignores TERM and hangup, then exits: no live leader proves that child.
+if(ready.endsWith('/late-child.ready'))process.on('SIGHUP',()=>{writeFileSync(ready+'.child',String(spawn(process.execPath,stubborn,{stdio:'ignore'}).pid));process.exit(0);});
 writeFileSync(ready+'.tmp',JSON.stringify({pid:process.pid})); renameSync(ready+'.tmp',ready);
 let buffer=''; process.stdin.on('data',chunk=>{
  buffer+=chunk.toString(); if (!/[\\r\\n]/.test(buffer)) return;
@@ -348,14 +354,27 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     expect(run('ps', ['-p', String(childPid), '-o', 'pgid='], fixture, env)).toBe(String(leaderPid));
     expect(await api.cancelTaskAgent(fixture, spec.task, 'grouped')).toEqual({ status: 'closed', pids: [] });
     expect([live(leaderPid), live(childPid), gone(grouped.terminal_id)]).toEqual([false, false, true]);
+    const childOf = (role: string) => Number(readFileSync(join(fixture, `${role}.ready.child`), 'utf8'));
+    // A member that execs keeps its recorded start time, so cleanup still ends it.
+    await started('exec-member');
+    expect(await api.cancelTaskAgent(fixture, spec.task, 'exec-member')).toEqual({ status: 'closed', pids: [] });
+    expect(live(childOf('exec-member'))).toBe(false);
+    // A group child that no live leader proves is reported, not signalled; cleanup closes after it ends.
+    await started('late-child');
+    expect(await api.cancelTaskAgent(fixture, spec.task, 'late-child')).toEqual({ status: 'cleanup_pending', pids: [childOf('late-child')], reason: 'provider_group_alive' });
+    process.kill(childOf('late-child'), 'SIGKILL');
+    await until(() => !live(childOf('late-child')));
+    expect(await api.cancelTaskAgent(fixture, spec.task, 'late-child')).toEqual({ status: 'closed', pids: [] });
   } finally {
     for (const child of owners) {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
       await exited(child);
     }
     // A failed group cleanup must not leave the TERM/HUP-resistant child on the host.
-    const childFile = join(fixture, 'grouped.ready.child');
-    if (existsSync(childFile)) { try { process.kill(Number(readFileSync(childFile, 'utf8')), 'SIGKILL'); } catch { /* Already absent. */ } }
+    for (const role of ['grouped', 'exec-member', 'late-child']) {
+      const childFile = join(fixture, `${role}.ready.child`);
+      if (existsSync(childFile)) { try { process.kill(Number(readFileSync(childFile, 'utf8')), 'SIGKILL'); } catch { /* Already absent. */ } }
+    }
   }
 }), 60_000);
 
