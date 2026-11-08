@@ -205,18 +205,21 @@ describe("contract-worktree helper integration", () => {
         commitAll(cwd, "seed codegraph start");
         mkdirSync(join(cwd, ".codegraph"));
         mkdirSync(fakeBin);
-        writeFileSync(join(fakeBin, "codegraph"), `#!/bin/sh\necho "$*" >> "${log}"\n`, { mode: 0o755 });
+        writeFileSync(join(fakeBin, "codegraph"), `#!/bin/sh\necho "$* $(command -v node)" >> "${log}"\n`, { mode: 0o755 });
+        const nodeDir = join(cwd, "nodedir");
+        mkdirSync(nodeDir);
+        writeFileSync(join(nodeDir, "node"), "#!/bin/sh\n", { mode: 0o755 });
         if (entry.state === "selected") recordPluginSelection({ HOME: home });
         else if (entry.state) {
           mkdirSync(join(home, ".repo-harness"), { recursive: true });
           writeFileSync(installStateFixturePath({ HOME: home }), entry.state);
         } else mkdirSync(home, { recursive: true });
 
-        const started = start(["--issue", "123", "--path", worktreePath, "--fresh"], cwd, { HOME: home, PATH: `${fakeBin}:${GH_DIR}:${process.env.PATH ?? ""}` });
+        const started = start(["--issue", "123", "--path", worktreePath, "--fresh"], cwd, { HOME: home, REPO_HARNESS_NODE_BIN: join(nodeDir, "node"), PATH: `${fakeBin}:${GH_DIR}:${process.env.PATH ?? ""}` });
         expect(started.status, `${started.stdout}\n${started.stderr}`).toBe(0);
         expect(existsSync(join(worktreePath, ".git"))).toBe(true);
         if (entry.skipped === null) {
-          expect(readFileSync(log, "utf8")).toBe("init\n");
+          expect(readFileSync(log, "utf8")).toBe(`init ${nodeDir}/node\n`);
         } else {
           expect(existsSync(log)).toBe(false);
           expect(started.stderr).toContain(`[architecture] skipped CodeGraph index of the worktree: ${entry.skipped}`);

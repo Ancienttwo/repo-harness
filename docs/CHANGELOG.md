@@ -34,6 +34,7 @@ All notable changes to this skill are documented here.
 ### Fixed
 
 - `review publish` puts a finding on a line outside the PR diff into the review body, so GitHub no longer rejects the review with HTTP 422. A retry reuses the acceptance claim already on the PR instead of posting a second one (#2009).
+- `contract-worktree start` runs `codegraph init` with the trusted node runtime on PATH. The installed helper PATH has no node, so the first index of every new worktree failed and `board dispatch` stopped. A failed init now prints the last lines of codegraph's stderr (#2023).
 
 ## [0.28.0] - 2026-11-08
 

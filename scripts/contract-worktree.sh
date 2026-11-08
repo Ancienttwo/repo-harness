@@ -271,10 +271,18 @@ index_worktree_codegraph() {
   command -v codegraph >/dev/null 2>&1 || return 0
   [[ "${contract_worktree_start_json:-0}" -eq 1 ]] \
     || printf '%s\n' "[ContractWorktree] Indexing CodeGraph (architecture projection requires code facts)"
-  if ! (cd "$worktree_path" && codegraph init >/dev/null 2>&1); then
+  # The protected helper PATH has no node, and the codegraph launcher starts
+  # with `#!/usr/bin/env node`. The trusted node runtime is the authority.
+  local node_dir="" init_log
+  [[ -z "${REPO_HARNESS_NODE_BIN:-}" ]] || node_dir="$(dirname "$REPO_HARNESS_NODE_BIN"):"
+  init_log="$(mktemp)"
+  if ! (cd "$worktree_path" && PATH="${node_dir}${PATH}" codegraph init </dev/null >/dev/null 2>"$init_log"); then
     echo "[ContractWorktree] codegraph init failed; architecture projection will report unresolved-major-change for every capability" >&2
+    tail -n 5 "$init_log" >&2
+    rm -f "$init_log"
     return 1
   fi
+  rm -f "$init_log"
 }
 
 run_contract_runtime() {
