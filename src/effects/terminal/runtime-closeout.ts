@@ -1,7 +1,7 @@
 import { assertProcessProof, assertSessionDirectory, assertCreated, classicRecordRetired, taskSessionDirectory, TASK_SESSIONS_PATH, sameSessionData, readStartIntent, readTaskAgent, readTaskBinding, readWorkspaceBinding, workspaceDirectory, processProofAlive,
   type CreatedTerminal, type HerdrCoreEndpoint, type HerdrTaskBinding, type StartIntent, type TaskPaneBinding, type TaskWorkspaceBinding } from './task-session-record';
 import { taskBindingSha256 } from './task-session-admission';
-import { ensureSessionDirectory, readSessionArtifact, writeSessionArtifact } from './task-session-io';
+import { ensureSessionDirectory, processIdentity, readSessionArtifact, writeSessionArtifact } from './task-session-io';
 import { constants, closeSync, existsSync, fsyncSync, openSync, readdirSync, realpathSync, renameSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { randomUUID } from 'crypto';
@@ -219,17 +219,56 @@ export async function notifyTaskWorktreeMerged(repoRoot: string, owner: string,
   });
 }
 
-/** Ends a created terminal and confirms its program exit. hc kill ends the whole program group. */
-async function endTerminal(endpoint: HerdrCoreEndpoint, address: string, provider: ProcessProof | null): Promise<boolean> {
+/** Other members of the provider's process group, recorded while the leader's proof holds (#754). */
+function providerGroupMembers(provider: ProcessProof): ProcessProof[] {
+  // Windows has no process groups; hc ends the program's process tree there.
+  if (process.platform === 'win32' || provider.identity.split(/\s+/)[1] !== String(provider.pid) || !processProofAlive(provider)) return [];
+  const members: ProcessProof[] = [];
+  for (const row of execFileSync('ps', ['-A', '-o', 'pid=,pgid='], { encoding: 'utf8' }).trim().split('\n')) {
+    const [pid, pgid] = row.trim().split(/\s+/).map(Number);
+    if (pgid !== provider.pid || pid === provider.pid) continue;
+    try { members.push({ pid, identity: processIdentity(pid) }); } catch (error) { if (!processGone(error)) throw error; }
+  }
+  return members;
+}
+/** ps exits 1 for an absent pid; a changed identity is a reused pid, not this group's member. */
+function processGone(error: unknown): boolean {
+  return (error as Error).message === 'task_agent_process_identity_lost' || (error as { status?: number }).status === 1;
+}
+function memberAlive(member: ProcessProof): boolean {
+  try { return processProofAlive(member); } catch (error) { if (processGone(error)) return false; throw error; }
+}
+/**
+ * hc 0.1.19 keeps a group member that ignores hangup alive after its terminal ends, so cleanup ends the group:
+ * TERM, wait, KILL, wait. A recorded member that still has its identity has stayed in the group since the
+ * leader's proof, so the group id was not reused. Returns the members that are still alive.
+ */
+async function endProviderGroup(pgid: number, members: ProcessProof[]): Promise<number[]> {
+  for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
+    if (!members.some(memberAlive)) return [];
+    try { process.kill(-pgid, signal); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+    const deadline = Date.now() + 2000;
+    while (members.some(memberAlive) && Date.now() < deadline) await Bun.sleep(50);
+  }
+  return members.filter(memberAlive).map(member => member.pid);
+}
+/** Ends a created terminal, confirms its program exit and ends the provider's group. Returns null when all ended, else the pids still pending. */
+async function endTerminal(endpoint: HerdrCoreEndpoint, address: string, provider: ProcessProof | null): Promise<number[] | null> {
   const options = coreOptions(endpoint);
-  if (hcKill(address, options).state !== 'finished') return false;
+  const pending = provider ? [provider.pid] : [];
+  const members = provider ? providerGroupMembers(provider) : [];
+  if (hcKill(address, options).state !== 'finished') return pending;
   const deadline = Date.now() + 5000;
   while (provider && processProofAlive(provider)) {
-    if (Date.now() >= deadline) return false;
+    if (Date.now() >= deadline) return pending;
     await Bun.sleep(50);
   }
+  if (provider) {
+    const survivors = await endProviderGroup(provider.pid, members);
+    if (survivors.length) return survivors;
+  }
   hcRm(address, options);
-  return true;
+  return null;
 }
 async function closeUnboundTaskStart(dir: string, task: string, role: string, mode: 'close' | 'cancel'): Promise<TaskCleanupResult> {
   const intent = readStartIntent(join(dir, 'intent.json'));
@@ -257,7 +296,8 @@ async function closeUnboundTaskStart(dir: string, task: string, role: string, mo
     if (terminal.name !== intent.terminal_name || !sameSessionData(ownLabels(terminal.labels), intentLabels(intent))
       || (provider && terminal.pid !== provider.pid)) throw new Error('task_agent_terminal_identity_lost');
     if (terminal.state === 'live') {
-      if (!await endTerminal(intent.spec.endpoint, terminal.address, provider)) return { status: 'cleanup_pending', pids: provider ? [provider.pid] : [] };
+      const pending = await endTerminal(intent.spec.endpoint, terminal.address, provider);
+      if (pending) return { status: 'cleanup_pending', pids: pending };
     } else hcRm(terminal.address, options);
   }
   if (provider && processProofAlive(provider)) return { status: 'cleanup_pending', pids: [provider.pid], reason: 'terminal_absent' };
@@ -294,7 +334,8 @@ async function cleanupTaskAgent(repoRoot: string, task: string, role: string, mo
     }
     // A removed terminal after a confirmed exit is a cleanup that ended before closed.json.
     if (readBoundTerminal(binding)) {
-      if (!await endTerminal(binding.endpoint, binding.terminal_id, binding.provider)) return { status: 'cleanup_pending', pids: [binding.provider.pid] };
+      const pending = await endTerminal(binding.endpoint, binding.terminal_id, binding.provider);
+      if (pending) return { status: 'cleanup_pending', pids: pending };
     } else if (processProofAlive(binding.provider)) return { status: 'cleanup_pending', pids: [binding.provider.pid], reason: 'terminal_absent' };
     return closed();
   });

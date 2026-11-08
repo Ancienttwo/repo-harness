@@ -338,8 +338,8 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     const lostIntent = api.readSessionArtifact<{ intent_id: string }>(join(lostDir, 'intent.json'));
     expect(JSON.parse(hc(['ls', '--json', '--all', '--label', `repo-harness.request=${lostIntent.intent_id}`])).terminals).toEqual([]);
 
-    // #754: the program leads its group and is the provider, not its child. hc kill
-    // ends the child that ignores TERM and hangup with the leader; cleanup sends no signal.
+    // #754: the program leads its group and is the provider, not its child. Cleanup ends
+    // the child that ignores TERM and hangup with the leader, also when hc kill leaves it.
     await started('grouped');
     const leaderPid = JSON.parse(readFileSync(join(fixture, 'grouped.ready'), 'utf8')).pid;
     const childPid = Number(readFileSync(join(fixture, 'grouped.ready.child'), 'utf8'));
