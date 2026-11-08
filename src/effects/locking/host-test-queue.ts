@@ -40,7 +40,12 @@ export interface HostTestQueueEntry extends HostTestRunRequest {
   readonly acquiredAt: string | null;
   /** Run id of the lock this entry holds; null while it waits. */
   readonly lockToken: string | null;
-  /** Process group of the queued command; null before it starts and on Windows. */
+  /**
+   * Process group of the queued command; null before it starts. On Windows it
+   * stays null: there are no POSIX process groups, so the lock follows the
+   * wrapper alone, and a child that outlives a killed wrapper can overlap the
+   * next run (accepted residual F8 on #2018).
+   */
   readonly pgid: number | null;
 }
 
