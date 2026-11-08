@@ -6,6 +6,8 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- Update archctx and archctx-contracts to 0.12.0. This release removes the GitHub App governance bridge (ADR-0053), which repo-harness did not use. (#1995)
+
 - The docs reader uses mermaid 12.3.0, and the operator-web tests use happy-dom 21.0.4.
   Mermaid 12 draws diagrams with ELK layout and the `neo` look by default. (#1987)
 - Stored quota thresholds replace `routing.mode` and `routing.hyper`.
