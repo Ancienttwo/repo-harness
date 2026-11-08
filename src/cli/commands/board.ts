@@ -161,7 +161,7 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
         const result = await runBoardCloseout({ repo_root, pr: Number(options.pr), host, caller_terminal: process.env.HC_TERMINAL_ID ?? null,
           stopDaemons: worktree => stopArchitectureDaemons(repo_root, worktree) });
         process.stdout.write(`${JSON.stringify(result)}\n`);
-        if (result.panes.some(pane => pane.outcome === 'kept') || result.worktree.outcome === 'kept' || result.daemon_stop_failures.length > 0) process.exitCode = 1;
+        if (result.panes.some(pane => pane.outcome === 'kept') || result.worktree.outcome !== 'removed' || result.daemon_stop_failures.length > 0) process.exitCode = 1;
       } catch (error) {
         if (!(error instanceof BoardCollectError)) throw error;
         process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, message: error.message })}\n`);

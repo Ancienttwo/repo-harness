@@ -1157,7 +1157,7 @@ test('advisor seat: plain text reaches only the one live advisor terminal of the
   expect([code(() => sendToAdvisorSeat(missing, 'status?')), code(() => readAdvisorSeat(missing))]).toEqual(['hc_unavailable', 'hc_unavailable']);
 });
 
-test('board closeout: a clean, pushed seat closes and its merged worktree goes; a dirty or unpushed seat and its worktree stay with the reason', async () => {
+test('board closeout: proofs come first; a bound, clean, pushed seat closes and the merged worktree goes; a dirty, unpushed or conflicting seat, a missing proof and a failed step keep their state with the reason', async () => {
   const root = tmpWorkspace('board-closeout'); roots.push(root);
   const main = join(root, 'main'), origin = join(root, 'origin.git');
   const git = (cwd: string, ...args: string[]) => {
@@ -1180,39 +1180,54 @@ test('board closeout: a clean, pushed seat closes and its merged worktree goes; 
     writeFileSync(join(path, '.ai/harness/active-worktree'), `${path}\n`);
     const head = git(path, 'rev-parse', 'HEAD');
     git(main, 'merge', '-q', '--no-ff', '-m', `merge ${name}`, `feat/${name}`); git(main, 'push', '-q', 'origin', 'main');
-    pullRequests[String(pr)] = { number: pr, state: 'MERGED', headRefName: `feat/${name}`, headRefOid: head,
+    pullRequests[String(pr)] = { number: pr, state: 'MERGED', baseRefName: 'main', headRefName: `feat/${name}`, headRefOid: head,
       mergeCommit: { oid: git(main, 'rev-parse', 'HEAD') }, closingIssuesReferences: [{ number: issue }] };
     return path;
   };
-  const clean = worktree('clean', 21, 11), kept = worktree('kept', 22, 12);
-  writeFileSync(join(kept, 'draft.txt'), 'dirty');
-  // A second checkout of #22's reviewer with a commit that origin does not have.
-  const review = join(root, 'review');
-  git(main, 'worktree', 'add', '-q', '-b', 'review/22', review);
-  git(review, 'push', '-q', '-u', 'origin', 'review/22'); git(review, 'commit', '-q', '--allow-empty', '-m', 'local only');
+  const clean = worktree('clean', 21, 11), kept = worktree('kept', 22, 12), dirty = worktree('dirty', 23, 13), partial = worktree('partial', 24, 14);
+  writeFileSync(join(dirty, 'draft.txt'), 'dirty');
+  // Reviewer checkouts of #22: one with a commit that origin does not have, one with an uncommitted file.
+  const checkout = (name: string) => {
+    const path = join(root, name);
+    git(main, 'worktree', 'add', '-q', '-b', `review/${name}`, path); git(path, 'push', '-q', '-u', 'origin', `review/${name}`);
+    return path;
+  };
+  const unpushed = checkout('unpushed'), edited = checkout('edited');
+  git(unpushed, 'commit', '-q', '--allow-empty', '-m', 'local only');
+  writeFileSync(join(edited, 'note.txt'), 'draft');
   const terminal = (address: string, cwd: string, labels: Record<string, string>) => ({ address, name: null, agent: 'claude-code', state: 'live' as const, status: 'done',
     status_kind: null, status_msg: null, status_ms: null, turn: 1, cwd, labels: { seat: 'worker', ...labels } });
   const terminals = [terminal('t1', clean, { issue: '11' }), terminal('t2', clean, { seat: 'gatekeeper', pr: '21' }), terminal('t3', main, { seat: 'orchestrator' }),
-    terminal('t4', kept, { issue: '12' }), terminal('t5', review, { seat: 'reviewer', pr: '22' })];
+    terminal('t4', kept, { issue: '12' }), terminal('t5', unpushed, { seat: 'reviewer', pr: '22' }), terminal('t6', kept, { issue: '12', pr: '99' }),
+    terminal('t7', edited, { seat: 'gatekeeper', pr: '22' }), terminal('t8', main, { seat: 'reviewer', pr: '23' }), terminal('t9', main, { seat: 'reviewer', pr: '24' })];
   const closed: string[] = [];
   const closeout = (pr: number) => runBoardCloseout({
-    repo_root: main, pr, caller_terminal: 't3', stopDaemons: () => [],
+    repo_root: main, pr, caller_terminal: 't3',
+    stopDaemons: (path) => { if (path === partial) throw new Error('daemon stop failed'); return []; },
     host: { seatTerminals: () => ({ status: 'observed', terminals }), closeTerminal: (address) => { closed.push(address); return { status: 'closed' }; } },
     gh_runner: args => ({ status: 0, stdout: JSON.stringify(args[0] === 'pr' ? pullRequests[args[2]!] : { id: 1186405141 }) }),
   });
+  const pane = (address: string, seat: string, reason: string | null) => ({ address, seat, outcome: reason === null ? 'closed' as const : 'kept' as const, reason });
+  const state = (path: string, outcome: 'removed' | 'kept', reason: string | null) => ({ path, outcome, reason, checkout_present: outcome !== 'removed', branch_present: outcome !== 'removed' });
 
   const removed = await closeout(21);
-  expect([removed.panes, removed.worktree]).toEqual([
-    [{ address: 't1', seat: 'worker', outcome: 'closed', reason: null }, { address: 't2', seat: 'gatekeeper', outcome: 'closed', reason: null }],
-    { path: clean, outcome: 'removed', reason: null },
-  ]);
+  expect([removed.panes, removed.worktree]).toEqual([[pane('t1', 'worker', null), pane('t2', 'gatekeeper', null)], state(clean, 'removed', null)]);
   expect([existsSync(clean), run('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/feat/clean'], main).status, git(origin, 'branch', '--list', 'feat/clean')])
     .toEqual([false, 1, 'feat/clean']);
 
   const retained = await closeout(22);
   expect([retained.panes, retained.worktree]).toEqual([
-    [{ address: 't4', seat: 'worker', outcome: 'kept', reason: 'dirty' }, { address: 't5', seat: 'reviewer', outcome: 'kept', reason: 'unpushed 1 commit(s) on review/22' }],
-    { path: kept, outcome: 'kept', reason: 'a pane of the pull request is kept' },
+    [pane('t4', 'worker', null), pane('t5', 'reviewer', 'unpushed 1 commit(s) on review/unpushed'), pane('t6', 'worker', 'conflicting_binding pr 99'), pane('t7', 'gatekeeper', 'dirty')],
+    state(kept, 'kept', 'a pane of the pull request is kept'),
   ]);
-  expect([closed, existsSync(join(kept, 'draft.txt')), readFileSync(join(kept, '.ai/harness/active-worktree'), 'utf8')]).toEqual([['t1', 't2'], true, `${kept}\n`]);
+  expect(readFileSync(join(kept, '.ai/harness/active-worktree'), 'utf8')).toBe(`${kept}\n`);
+
+  // A missing proof (a dirty worktree) stops before the bound, clean t8 closes.
+  await expect(closeout(23)).rejects.toThrow(`closeout of #23 stopped before any side effect: worktree ${dirty} is dirty or unreadable`);
+  expect([existsSync(join(dirty, 'draft.txt')), run('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/feat/dirty'], main).status]).toEqual([true, 0]);
+
+  // A step that fails after the panes closed returns those outcomes and the observed worktree state.
+  const failed = await closeout(24);
+  expect([failed.panes, failed.worktree]).toEqual([[pane('t9', 'reviewer', null)], state(partial, 'kept', 'daemon stop failed')]);
+  expect(closed).toEqual(['t1', 't2', 't4', 't9']);
 });
