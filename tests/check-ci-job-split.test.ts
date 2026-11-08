@@ -884,7 +884,7 @@ describe('single affected verification and daily fallback', () => {
       for (const [mode, typecheck] of [['documentation', false], ['affected', true]] as const) {
         const log = join(repo, `.git/bun-${mode}.log`);
         const lane = spawnSync('/bin/bash', [join(repo, 'scripts/check-ci.sh'), 'affected', '--base', base], { cwd: repo, encoding: 'utf8',
-          env: { PATH: `${join(repo, 'bin')}:/usr/bin:/bin`, HOME: repo, BUN_LOG: log, SELECTED_MODE: mode } });
+          env: { PATH: `${join(repo, 'bin')}:/usr/bin:/bin`, HOME: repo, BUN_LOG: log, SELECTED_MODE: mode, REPO_HARNESS_HOST_TEST_QUEUE_HOLDER: 'test' } });
         expect({ mode, status: lane.status }, lane.stderr).toEqual({ mode, status: 0 });
         expect({ mode, exit: lane.stdout.includes('[ci] Documentation-only diff: no build or test job.') }).toEqual({ mode, exit: !typecheck });
         expect({ mode, typecheck: readFileSync(log, 'utf8').includes('bun run check:type') }).toEqual({ mode, typecheck });
@@ -1033,7 +1033,7 @@ describe('architecture lanes', () => {
       const summaryPath = join(root, 'out/architecture/summary.json');
       const result = spawnSync('/bin/bash', ['scripts/check-ci.sh', ...args], {
         cwd: join(root, 'repo'), encoding: 'utf8',
-        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ...(fixture.summary ? { ARCHITECTURE_SUMMARY: summaryPath } : {}) },
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, REPO_HARNESS_HOST_TEST_QUEUE_HOLDER: 'test', ...(fixture.summary ? { ARCHITECTURE_SUMMARY: summaryPath } : {}) },
       });
       return {
         status: result.status, stdout: result.stdout, stderr: result.stderr,

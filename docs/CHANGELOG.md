@@ -18,6 +18,14 @@ All notable changes to this skill are documented here.
   refuses a protocol-3 server; update the desktop app together with the
   CLI. (#1968)
 
+- Host tests take one queue per host. `bash scripts/check-ci.sh <lane>`,
+  `bun run test`, `bun run test:files`, `bun run test:coverage` and the
+  `test:core`, `test:integration` and `test:full` suites wait their turn,
+  run alone and release. Release checks go first, then FIFO. A holder or
+  waiter whose PID is free or reused is skipped and its lock is freed.
+  `bun scripts/host-test-queue.ts status [--json]` shows the holder and the
+  waiters. (#2001)
+
 ## [0.28.0] - 2026-11-08
 
 This release derives each account's seat mode from weekly quota, makes

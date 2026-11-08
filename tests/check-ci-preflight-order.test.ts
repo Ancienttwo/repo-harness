@@ -26,7 +26,7 @@ test("daily governance records failure without authorizing PR coverage", () => {
     const result = spawnSync("/bin/bash", ["scripts/check-ci.sh", "governance"], {
       cwd: fixture,
       encoding: "utf-8",
-      env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, REPO_HARNESS_HOST_TEST_QUEUE_HOLDER: "test" },
     });
     expect(result.status, result.stdout + result.stderr).toBe(19);
     expect(result.stdout).toContain("[ci] workflow checks");
