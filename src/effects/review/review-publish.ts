@@ -1,11 +1,12 @@
 import { spawnSync } from 'child_process';
 import { lstatSync, readFileSync } from 'fs';
 import {
-  blockingFindings,
+  patchRightLines,
   renderAcceptanceClaim,
   renderAcceptanceRecord,
   reviewPayloadFromReceipt,
   validateReviewPublishReceipt,
+  type ReviewDiffLines,
   type ReviewPublishReceipt,
 } from '../../core/review/review-publish';
 
@@ -60,6 +61,8 @@ export interface ReviewPublishInput {
 const MAX_RECEIPT_BYTES = 1024 * 1024;
 const GH_TIMEOUT_MS = 30_000;
 const GH_MAX_BUFFER = 4 * 1024 * 1024;
+const PAGE_SIZE = 100;
+const MAX_PAGES = 30;
 const PR_FIELDS = 'number,headRefOid,url';
 
 function errorMessage(error: unknown): string {
@@ -184,6 +187,38 @@ function prHead(run: ReviewPublishGhRunner, prNumber: number): PullRequestHead {
   return { slug: match[1]!, headSha: value.headRefOid };
 }
 
+/** Read every page of a list endpoint; a read that ends early or exceeds the page cap fails. */
+function ghPages(run: ReviewPublishGhRunner, endpoint: string): Record<string, unknown>[] {
+  const items: Record<string, unknown>[] = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const args = ['api', endpoint + '?per_page=' + PAGE_SIZE + '&page=' + page, '--hostname', 'github.com'];
+    const result = run(args);
+    if (result.error || result.status !== 0) {
+      throw new Error('gh ' + args.join(' ') + ' failed: ' + (result.error?.message ?? (result.stderr.trim() || 'exit ' + String(result.status))));
+    }
+    const value: unknown = JSON.parse(result.stdout);
+    if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'object' || entry === null)) throw new Error('gh ' + args.join(' ') + ' returned a non-list');
+    items.push(...(value as Record<string, unknown>[]));
+    if (value.length < PAGE_SIZE) return items;
+  }
+  throw new Error(endpoint + ' lists more than ' + MAX_PAGES * PAGE_SIZE + ' entries');
+}
+
+function prDiffLines(run: ReviewPublishGhRunner, slug: string, prNumber: number): ReviewDiffLines {
+  const lines = new Map<string, ReadonlySet<number>>();
+  for (const file of ghPages(run, 'repos/' + slug + '/pulls/' + prNumber + '/files')) {
+    if (typeof file.filename !== 'string') throw new Error('provider listed a changed file without a name');
+    lines.set(file.filename, patchRightLines(typeof file.patch === 'string' ? file.patch : undefined));
+  }
+  return lines;
+}
+
+/** The URL of an acceptance claim with this exact body, so a retry reuses it instead of posting a second one. */
+function existingClaimUrl(run: ReviewPublishGhRunner, slug: string, prNumber: number, body: string): string | null {
+  const match = ghPages(run, 'repos/' + slug + '/issues/' + prNumber + '/comments').find((comment) => comment.body === body);
+  return match === undefined ? null : postedUrl(match, slug, prNumber, false);
+}
+
 function postedUrl(value: Record<string, unknown>, slug: string, prNumber: number, review: boolean): string {
   const url = value.html_url;
   const pattern = review
@@ -203,8 +238,8 @@ function postComment(run: ReviewPublishGhRunner, slug: string, prNumber: number,
   }
 }
 
-function postReview(run: ReviewPublishGhRunner, slug: string, prNumber: number, headSha: string, receipt: ReviewPublishReceipt): string {
-  const rendered = reviewPayloadFromReceipt(receipt);
+function postReview(run: ReviewPublishGhRunner, slug: string, prNumber: number, headSha: string, receipt: ReviewPublishReceipt, diffLines: ReviewDiffLines): { readonly url: string; readonly threads: number } {
+  const rendered = reviewPayloadFromReceipt(receipt, diffLines);
   const payload = {
     commit_id: headSha,
     event: 'COMMENT',
@@ -226,7 +261,7 @@ function postReview(run: ReviewPublishGhRunner, slug: string, prNumber: number, 
     // its binding is wrong. Keep that URL for inspection instead of discarding it.
     throw new GhMutationUnknownError(errorMessage(error), error, reviewUrl);
   }
-  return reviewUrl;
+  return { url: reviewUrl, threads: rendered.comments.length };
 }
 
 function partial(message: string, posted: readonly string[], cause?: unknown): ReviewPublishError {
@@ -257,6 +292,15 @@ export function publishReview(input: ReviewPublishInput): ReviewPublishResult {
     throw new ReviewPublishError('review_subject_stale',
       'review receipt subject ' + receipt.subject_sha + ' is not the PR head ' + pr.headSha + '; nothing was posted', 2);
   }
+  const claimBody = renderAcceptanceClaim(receipt);
+  let diffLines: ReviewDiffLines;
+  let existingClaim: string | null;
+  try {
+    diffLines = prDiffLines(run, pr.slug, input.prNumber);
+    existingClaim = existingClaimUrl(run, pr.slug, input.prNumber, claimBody);
+  } catch (error) {
+    throw new ReviewPublishError('review_publish_provider_unavailable', 'nothing was posted: ' + errorMessage(error), 1);
+  }
   const posted: string[] = [];
   const confirmHead = (stage: string): void => {
     let current: PullRequestHead;
@@ -272,7 +316,7 @@ export function publishReview(input: ReviewPublishInput): ReviewPublishResult {
   };
   let claimUrl: string;
   try {
-    claimUrl = postComment(run, pr.slug, input.prNumber, renderAcceptanceClaim(receipt));
+    claimUrl = existingClaim ?? postComment(run, pr.slug, input.prNumber, claimBody);
   } catch (error) {
     if (error instanceof GhMutationUnknownError) {
       if (error.confirmedUrl !== undefined) posted.push(error.confirmedUrl);
@@ -283,8 +327,9 @@ export function publishReview(input: ReviewPublishInput): ReviewPublishResult {
   posted.push(claimUrl);
   confirmHead('review');
   let reviewUrl: string;
+  let threads: number;
   try {
-    reviewUrl = postReview(run, pr.slug, input.prNumber, pr.headSha, receipt);
+    ({ url: reviewUrl, threads } = postReview(run, pr.slug, input.prNumber, pr.headSha, receipt, diffLines));
   } catch (error) {
     if (error instanceof GhMutationUnknownError) {
       if (error.confirmedUrl !== undefined && !posted.includes(error.confirmedUrl)) posted.push(error.confirmedUrl);
@@ -312,6 +357,6 @@ export function publishReview(input: ReviewPublishInput): ReviewPublishResult {
     claim_url: claimUrl,
     review_url: reviewUrl,
     record_url: recordUrl,
-    threads: blockingFindings(receipt).length,
+    threads,
   });
 }
