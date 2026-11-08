@@ -38,7 +38,7 @@ export interface BoardCloseoutV1 {
 
 export interface BoardCloseoutInput extends GhInput {
   readonly pr: number;
-  readonly host: Pick<BoardHostPortsV1, 'seatTerminals' | 'closeTerminal'>;
+  readonly host: Pick<BoardHostPortsV1, 'closeoutTerminals' | 'closeTerminal'>;
   /** Stops the architecture daemons of a checkout and returns the failures. */
   readonly stopDaemons: (worktree: string) => readonly string[];
   /** The process inventory (`worktreeProcesses`); null means occupancy is unproven, which keeps the worktree. */
@@ -162,7 +162,7 @@ function paneBinding(terminal: BoardSeatTerminalReadV1, pr: MergedPullRequest): 
 }
 
 function closePanes(input: BoardCloseoutInput, pr: MergedPullRequest, proof: CloseoutProof): BoardCloseoutPaneV1[] {
-  const read = input.host.seatTerminals(String(readRepositoryId(input)));
+  const read = input.host.closeoutTerminals(String(readRepositoryId(input)));
   if (read.status === 'unavailable') throw new BoardCollectError(`the seat terminals are unavailable: ${read.reason}`);
   return read.terminals.flatMap((terminal): BoardCloseoutPaneV1[] => {
     const binding = paneBinding(terminal, pr);

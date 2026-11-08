@@ -702,11 +702,15 @@ if (args[0] === 'get') {
   // FAKE_FINISH_AT: the address finishes at its nth get call.
   const finishAt = JSON.parse(process.env.FAKE_FINISH_AT || '{}')[address];
   const gets = require('fs').readFileSync(process.env.HC_LOG, 'utf8').split('\\n').filter(Boolean).map(line => JSON.parse(line)).filter(call => call[0] === 'get' && call.at(-1) === address).length;
-  out({ address, state: finishAt && gets >= finishAt ? 'finished' : 'live', turn: 1, labels: { 'repo-harness.seat': 'x' }, ...terminals[address] });
+  const killed = require('fs').readFileSync(process.env.HC_LOG, 'utf8').split('\\n').filter(Boolean).map(line => JSON.parse(line)).some(call => call[0] === 'kill' && call.at(-1) === address);
+  out({ address, state: killed || (finishAt && gets >= finishAt) ? 'finished' : 'live', turn: 1, labels: { 'repo-harness.seat': 'x' }, ...terminals[address] });
 }
 else if (args[0] === 'send' && process.env.FAKE_SEND_FAIL) { process.stderr.write(JSON.stringify({ error: { kind: 'blocked', message: 'blocked' } })); process.exit(9); }
 else if (args[0] === 'send') out({ started: true, turn: 2 });
 else if (args[0] === 'read') out(JSON.parse(process.env.FAKE_READ));
+else if (args[0] === 'kill') out({ address, state: 'finished', turn: 1, labels: { 'repo-harness.seat': 'x' } });
+else if (args[0] === 'rm' && process.env.FAKE_RM_FAIL) { process.stderr.write(JSON.stringify({ error: { kind: 'blocked', message: 'rm failed' } })); process.exit(9); }
+else if (args[0] === 'rm') out({ removed: address });
 else if (args[0] === 'wait') out({ terminal: address, turn: 2, ...JSON.parse(process.env.FAKE_WAITS)[address] });
 // As the live core: ls --label keeps the rows whose labels carry every pair.
 else if (args[0] === 'ls') out({ terminals: JSON.parse(process.env.FAKE_LS).filter(row => args.every((arg, at) => args[at - 1] !== '--label'
@@ -833,6 +837,17 @@ test('watch service: --watch refuses a terminal without the service labels; star
   const read = boardHostPorts(seats.options).seatTerminals('1186405141');
   expect(read.status === 'observed' && read.terminals.map(terminal => terminal.address)).toEqual(['t3']);
   expect(seats.calls().filter(args => args[0] === 'ls')).toEqual([['ls', '--json', '--label', 'repo-harness.repository=1186405141']]);
+
+  // The closeout listing adds finished terminals (#2021). A kill that finished the terminal before a failed rm leaves it for the retry, which removes it with rm only.
+  const retry = watchHc({ FAKE_RM_FAIL: '1', FAKE_LS: [{ address: 't3', state: 'live' }],
+    FAKE_TERMINALS: { t3: { labels: { 'repo-harness.seat': 'worker', 'repo-harness.repository': '1186405141' } } } });
+  expect(boardHostPorts(retry.options).closeTerminal('t3')).toEqual({ status: 'unavailable', reason: 'hc_failed' });
+  const retryPorts = boardHostPorts({ env: { ...retry.options.env, FAKE_RM_FAIL: '', FAKE_LS: JSON.stringify([{ address: 't3', state: 'finished' }]) } });
+  const finished = retryPorts.closeoutTerminals('1186405141');
+  expect(finished.status === 'observed' && finished.terminals.map(terminal => [terminal.address, terminal.state])).toEqual([['t3', 'finished']]);
+  expect(retryPorts.closeTerminal('t3')).toEqual({ status: 'closed' });
+  expect(retry.calls().filter(args => ['ls', 'kill', 'rm'].includes(args[0]!))).toEqual([
+    ['kill', '--json', '--', 't3'], ['rm', '--json', '--', 't3'], ['ls', '--json', '--label', 'repo-harness.repository=1186405141', '--all'], ['rm', '--json', '--', 't3']]);
 
   // One orchestrator and one advisor serve the repository (#1780): the room of every parent shows them, with or
   // without a parent label. A worker shows only in the room of its parent label; a terminal of another repository never.
@@ -1216,7 +1231,7 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   const closeout = (pr: number) => runBoardCloseout({
     repo_root: main, pr, caller_terminal: 't3', processes: () => [],
     stopDaemons: (path) => { if (path === partial) throw new Error('daemon stop failed'); return []; },
-    host: { seatTerminals: () => ({ status: 'observed', terminals }), closeTerminal: (address) => { closed.push(address); return { status: 'closed' }; } },
+    host: { closeoutTerminals: () => ({ status: 'observed', terminals }), closeTerminal: (address) => { closed.push(address); return { status: 'closed' }; } },
     gh_runner: args => ({ status: 0, stdout: JSON.stringify(args[0] === 'pr' ? pullRequests[args[2]!] : args[0] === 'repo' ? { id: 'R_this' } : { id: 1186405141 }) }),
   });
   const pane = (address: string, seat: string, reason: string | null) => ({ address, seat, outcome: reason === null ? 'closed' as const : 'kept' as const, reason });
