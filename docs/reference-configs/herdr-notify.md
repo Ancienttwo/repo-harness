@@ -63,8 +63,8 @@ Before each dispatch wave, run `repo-harness quota`. Launch each task with `repo
 | `worker-important` | Claude, `opus`, medium |
 | `worker-important-fast` | Claude, `sonnet`, medium |
 | `worker-light` | Pi, `magpie/cursor/deepseek-v41-flash-1017`, no effort; worker tool groups; no fleet |
-| `gatekeeper` | Codex, `gpt-6.1-terra`, high; read and shell only |
-| `reviewer` | Claude, `opus`, high; read and shell only |
+| `gatekeeper` | Codex, `gpt-6.1-terra`, high; read, shell and network |
+| `reviewer` | Claude, `opus`, high; read, shell and network |
 
 All worker seats use worker briefs, labels and pane names. `gatekeeper` and `reviewer` need `--pr <n>`; their pane names are `<prefix>-gk-<pr>` and `<prefix>-rv-<pr>`. They report a read-only verdict first and do not edit, commit, push or write to GitHub.
 

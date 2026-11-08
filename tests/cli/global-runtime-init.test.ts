@@ -1560,10 +1560,10 @@ fi
 exit 0
 `);
 
-      const result = runGlobalRuntimeSetup({
+      const runInstall = () => runGlobalRuntimeSetup({
         sourceRoot: ROOT,
         cwd: repo,
-        target: 'claude',
+        target: 'both',
         plugins: [],
         installCli: false,
         syncSkill: false,
@@ -1573,6 +1573,10 @@ exit 0
         brainRoot: join(home, 'brain'),
         env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
       });
+      const first = runInstall();
+      expect(first.exitCode).toBe(0);
+      // The second run preflights the host paths that the first run linked.
+      const result = runInstall();
 
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === 'cross-review skills')).toMatchObject({
@@ -1583,6 +1587,8 @@ exit 0
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add BfdCampos/dotfiles -g -a codex -s mermaid -y');
       expect(realpathSync(join(home, '.claude', 'skills', 'think'))).toBe(realpathSync(join(home, '.agents', 'skills', 'think')));
       expect(existsSync(join(home, '.claude', 'skills', 'mermaid', 'SKILL.md'))).toBe(true);
+      expect(realpathSync(join(home, '.codex', 'skills', 'mermaid'))).toBe(realpathSync(join(home, '.agents', 'skills', 'mermaid')));
+      expect(lstatSync(join(home, '.codex', 'skills', 'mermaid')).isSymbolicLink()).toBe(true);
       expect(existsSync(join(home, '.claude', 'skills', 'repo-harness-cross-review'))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });

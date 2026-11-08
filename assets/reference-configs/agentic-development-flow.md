@@ -112,7 +112,7 @@ The orchestrator seat is the long-lived coordinator and integrator seat of
 `repo-harness-issue-flow`. Start it with the argv that
 `repo-harness seats argv orchestrator` prints. It dispatches work and follows
 PRs and CI. It edits no product code. It may call the read-only roles
-`gatekeeper`, `explorer` and `deep-reasoner` as sub-agents. The writers
+`explorer` and `deep-reasoner` as sub-agents. The gatekeeper, the writers
 (`fast-worker`, `deep-worker`, `root-cause-prover`) and the Codex
 cross-review never run as its sub-agents: they run in Herdr seats, for
 worktree isolation and one writer per file.
