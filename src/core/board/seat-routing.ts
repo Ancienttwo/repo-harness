@@ -1,5 +1,5 @@
 import { weeklyRemainingPercent, type QuotaAccount, type QuotaAccountReport, type QuotaState } from './quota';
-import { ROUTING_CLASSES, type SeatConfigV1, type SeatId, type SeatRoutingV1, type SeatsConfigV1 } from './seats-settings';
+import { PI_CODEX_MODEL_PREFIX, ROUTING_CLASSES, isPiCodexSeat, type SeatConfigV1, type SeatId, type SeatRoutingV1, type SeatsConfigV1 } from './seats-settings';
 
 export const CODEX_HYPER_MODEL = Object.freeze({ model: 'gpt-6-astra', effort: 'high' });
 interface AccountQuota { readonly state: QuotaState; readonly remaining: number | null }
@@ -24,7 +24,7 @@ export function seatAccountQuotas(accounts: readonly QuotaAccountReport[], routi
 export const claudeReserved = (quota: SeatAccountQuotas): boolean => quota.claude.mode === 'saving' || quota.claude.state === 'exhausted';
 
 export function seatAccount(seat: SeatConfigV1): QuotaAccount | null {
-  return seat.runtime === 'claude' ? 'claude' : seat.runtime === 'codex' ? 'chatgpt' : null;
+  return seat.runtime === 'claude' ? 'claude' : seat.runtime === 'codex' || isPiCodexSeat(seat) ? 'chatgpt' : null;
 }
 
 /** One model projection serves the launch argv and the human dispatch lines. */
@@ -33,6 +33,7 @@ export function effectiveSeatConfig(id: SeatId, seats: SeatsConfigV1, quota: Sea
   const seat = seats[id];
   if (seat === null) return seat;
   if (seat.runtime === 'codex' && quota.chatgpt.mode === 'hyper') return { ...seat, ...CODEX_HYPER_MODEL };
+  if (isPiCodexSeat(seat) && quota.chatgpt.mode === 'hyper') return { ...seat, model: `${PI_CODEX_MODEL_PREFIX}${CODEX_HYPER_MODEL.model}`, effort: CODEX_HYPER_MODEL.effort };
   if (seat.runtime === 'claude' && (id === 'advisor' || id === 'orchestrator') && claudeReserved(quota)) {
     return { ...seat, model: 'opus', effort: 'high' };
   }
