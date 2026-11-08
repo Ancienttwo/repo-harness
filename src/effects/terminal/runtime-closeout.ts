@@ -221,20 +221,25 @@ export async function notifyTaskWorktreeMerged(repoRoot: string, owner: string,
 
 /** A process in the provider's group. `key` (pid, pgid, start time) survives exec; the command name does not. */
 interface GroupProcess { pid: number; key: string; exited: boolean }
-/** The processes in the group that the provider leads (#754). Windows has no process groups; hc ends the program's process tree there. */
+/** The process group recorded in the provider proof. hc starts the program as its group leader (#754). */
+function providerPgid(provider: ProcessProof): number {
+  return Number(provider.identity.trim().split(/\s+/)[1]);
+}
+/** The processes in the provider's recorded group. Windows has no process groups; hc ends the program's process tree there. */
 function providerGroup(provider: ProcessProof): GroupProcess[] {
-  if (process.platform === 'win32' || provider.identity.trim().split(/\s+/)[1] !== String(provider.pid)) return [];
+  if (process.platform === 'win32') return [];
+  const pgid = String(providerPgid(provider));
   const group: GroupProcess[] = [];
   for (const row of execFileSync('ps', ['-A', '-o', 'pid=,pgid=,lstart=,stat='], { encoding: 'utf8' }).trim().split('\n')) {
     const fields = row.trim().split(/\s+/);
-    if (fields[1] !== String(provider.pid)) continue;
+    if (fields[1] !== pgid) continue;
     const stat = fields[7] ?? '';
     // Darwin E is a process in exit, as in processProofAlive.
     group.push({ pid: Number(fields[0]), key: fields.slice(0, 7).join(' '), exited: stat.startsWith('Z') || (process.platform === 'darwin' && stat.includes('E')) });
   }
   return group;
 }
-/** Live pids in the provider's group. Cleanup reports them and does not signal them: without a live leader they are unproven. */
+/** Live pids in the provider's group. Cleanup reports them and does not signal them: without a live leader proof they are unproven. */
 function liveProviderGroup(provider: ProcessProof): number[] {
   return providerGroup(provider).filter(member => !member.exited).map(member => member.pid);
 }
@@ -255,10 +260,19 @@ async function endProviderGroup(provider: ProcessProof, members: GroupProcess[])
     while (recordedAlive() && Date.now() < deadline) await Bun.sleep(50);
   }
 }
+/**
+ * Members of the group the provider leads, scanned between two leader proofs: a live leader keeps its group id,
+ * so the scan cannot be a later group that reused it. A non-leader or a failed proof records none.
+ */
+function provenGroupMembers(provider: ProcessProof): GroupProcess[] {
+  if (providerPgid(provider) !== provider.pid || !processProofAlive(provider)) return [];
+  const scanned = providerGroup(provider).filter(member => member.pid !== provider.pid);
+  return processProofAlive(provider) ? scanned : [];
+}
 /** Ends a created terminal, confirms its program exit and ends the recorded members of the provider's group. */
 async function endTerminal(endpoint: HerdrCoreEndpoint, address: string, provider: ProcessProof | null): Promise<boolean> {
   const options = coreOptions(endpoint);
-  const members = provider && processProofAlive(provider) ? providerGroup(provider).filter(member => member.pid !== provider.pid) : [];
+  const members = provider ? provenGroupMembers(provider) : [];
   if (hcKill(address, options).state !== 'finished') return false;
   const deadline = Date.now() + 5000;
   while (provider && processProofAlive(provider)) {
