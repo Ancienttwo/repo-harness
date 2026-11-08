@@ -9,7 +9,7 @@ import { HC_LOCAL_ADDRESS, isRemoteHcAddress } from '../../core/terminal/hc-addr
  * herdr-core transport: typed `hc` CLI calls with `--json`, its event stream, and `herdr-app do` for pane
  * placement. Every call is scoped to repo-harness terminals: lists and streams need a repo-harness label
  * filter, and calls on one terminal need its `t<n>` address and a repo-harness label on it.
- * hc (floor 0.1.17) reports no API generation in its CLI output; the shape validation below is the only guard.
+ * hc (floor 0.1.18) reports no API generation in its CLI output; the shape validation below is the only guard.
  */
 export const HERDR_CORE_TIMEOUT_MS = 10_000;
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
@@ -285,7 +285,7 @@ function ownedTerminal(value: unknown): HcTerminal {
   return result;
 }
 
-/** `hc --version`: the installed client version (`hc 0.1.17`). It reads no core and no terminal. */
+/** `hc --version`: the installed client version (`hc 0.1.18`). It reads no core and no terminal. */
 export function hcVersion(options: HerdrCoreOptions = {}): string {
   const result = run('hc', ['--version'], options);
   if (result.signal || result.status !== 0) throw new HerdrCoreError('hc', 'failed', result.status ?? undefined);
@@ -401,10 +401,12 @@ export function hcWait(terminalAddress: string, seconds: number, options: HerdrC
   if (!Number.isSafeInteger(seconds) || seconds < 1) throw new RangeError('herdr_core_invalid_wait');
   const target = hcGet(terminalAddress, options).address;
   const result = hc('wait', ['--timeout', String(seconds), '--', target], { ...options, timeoutMs: seconds * 1000 + timeoutOf(options) });
-  if (typeof result.ended !== 'boolean' || !isString(result.reason) || !Number.isSafeInteger(result.turn)) {
-    throw invalidResponse('wait has an invalid ended, reason or turn');
+  // Unlike `get`, `wait` prints the status as its state string (hc 0.1.18), or null.
+  const state = result.status ?? null;
+  if (typeof result.ended !== 'boolean' || !isString(result.reason) || !Number.isSafeInteger(result.turn) || !(state === null || isString(state))) {
+    throw invalidResponse('wait has an invalid ended, reason, turn or status');
   }
-  return { ended: result.ended, reason: result.reason, turn: result.turn as number, status: status(result.status ?? null, `wait ${target}`) };
+  return { ended: result.ended, reason: result.reason, turn: result.turn as number, status: state === null ? null : { state } };
 }
 
 /** `hc kill`: end a repo-harness terminal's program (hangup, then escalate). Returns the terminal as hc observed it. */
@@ -580,7 +582,10 @@ export function attentionHostPorts(options: HerdrCoreOptions = {}): AttentionHos
     wait: (terminal, seconds) => {
       try {
         const result = hcWait(terminal, seconds, options);
-        return { status: 'observed', ended: result.ended, reason: result.reason, state: result.status?.state ?? null };
+        // hc reports `ended: true` for a live terminal that stopped working (reason `status`) as well as for an exit;
+        // the program ended only when the terminal is no longer live.
+        const ended = result.ended && hcGet(terminal, options).state !== 'live';
+        return { status: 'observed', ended, reason: result.reason, state: result.status?.state ?? null };
       } catch (error) { return failed(error); }
     },
   };

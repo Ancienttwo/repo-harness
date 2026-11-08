@@ -6,7 +6,7 @@ import { delimiter, join } from "path";
 import { seatPaneName } from "../../src/core/board/seat-launch";
 import { DEFAULT_SEATS_CONFIG, WORKER_SEAT_IDS } from "../../src/core/board/seats-settings";
 import { repoHarnessRepoIdFor } from "../../src/effects/repo-registry";
-import { classifyQuotaReading } from "../../src/core/board/quota";
+import { classifyQuotaReading, decodeCodexRateLimitsResult } from "../../src/core/board/quota";
 import { formatSeatRoutes, seatAccountQuotas } from "../../src/core/board/seat-routing";
 import { readClaudeQuota } from "../../src/effects/board/quota";
 
@@ -205,6 +205,23 @@ describe("repo-harness seats argv", () => {
         if (seat === "reviewer") expect(value.argv.slice(5, 12)).toEqual(["--exclude-tools", "edit,write", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-mcp"]);
       });
     }
+  });
+
+  test("a Pi GPT worker passes thinking, draws on the ChatGPT account and takes the hyper model", () => {
+    const worker = { ...DEFAULT_SEATS_CONFIG.worker, runtime: "pi" as const, model: "magpie/codex/gpt-6.1-terra", fleet: [] };
+    withHome({ ...DEFAULT_SEATS_CONFIG, worker }, home => {
+      writeFileSync(join(home, 'codex-used'), '51');
+      expect(launch(home, "worker").argv.slice(0, 7)).toEqual(["pi", "--provider", "magpie", "--model", "codex/gpt-6.1-terra", "--thinking", "high"]);
+      writeFileSync(join(home, 'codex-used'), '50');
+      expect(launch(home, "worker").argv.slice(0, 7)).toEqual(["pi", "--provider", "magpie", "--model", "codex/gpt-6-astra", "--thinking", "high"]);
+      writeFileSync(join(home, 'codex-used'), '95');
+      const exhausted = argv(home, "worker", "--json");
+      expect([exhausted.status, JSON.parse(exhausted.stderr).error]).toEqual([1, "seat_quota_exhausted"]);
+    });
+    const seats = { ...DEFAULT_SEATS_CONFIG, worker };
+    expect(formatSeatRoutes(seats, seatAccountQuotas([], seats.routing))).toContain("route simple_fast: worker (pi magpie/codex/gpt-6.1-terra high; chatgpt unknown)");
+    const reading = decodeCodexRateLimitsResult({ rateLimits: { primary: { usedPercent: 95, windowDurationMins: 10080, resetsAt: Math.floor(Date.now() / 1000) + 84 * 3600 } } }, new Date().toISOString());
+    expect(formatSeatRoutes(seats, seatAccountQuotas([classifyQuotaReading(reading, Date.now())], seats.routing))).toContain("route simple_fast: none (chatgpt exhausted)");
   });
 
   test("quota changes Codex models and Claude control-seat effort, preserves Pi, and stops exhaustion", () => {

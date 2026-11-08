@@ -319,13 +319,13 @@ describe('agents page seats section', () => {
     await click(buttonWithText('Pi'));
     expect(levels()).toEqual(['instructions_only', 'instructions_only', 'instructions_only']);
     expect(allow('explorer').disabled).toBe(true);
-    expect((buttonWithText('max') as HTMLButtonElement).disabled).toBe(true);
+    expect((buttonWithText('max') as HTMLButtonElement).disabled).toBe(false);
     // An agents draft edited before the seats save moves to the seats revision the same way.
     await click(use('codex', 'review'));
     await click(seatsSave());
     await settle();
     expect(posts).toHaveLength(1);
-    expect(posts[0]!.seats.advisor).toMatchObject({ runtime: 'pi', model: null, effort: null, fleet: [] });
+    expect(posts[0]!.seats.advisor).toMatchObject({ runtime: 'pi', model: null, effort: 'max', fleet: [] });
     expect(document.querySelector('[data-seats-saved]')).not.toBeNull();
     await click(saveButton());
     expect(result()?.getAttribute('data-save-result')).toBe('saved');
