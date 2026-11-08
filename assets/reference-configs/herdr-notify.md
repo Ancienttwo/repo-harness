@@ -78,6 +78,22 @@ Routing selects the first eligible seat with a known account state, or a Pi seat
 
 With `--repository-id`, the argv labels its own terminal before the agent starts: it runs `repo-harness seats label`, which sets the seat labels on `HC_TERMINAL_ID`, and then starts the agent. The board finds seats only by these labels; a terminal without them leaves the execution axis `unavailable` (`no_seat_terminals`). When the label fails, the agent does not start and the terminal shows the error. Each start prints the new `terminal`. `<repository-id>` is the GitHub numeric repository id (`gh api repos/<owner>/<repo> --jq .id`). Leave out `--issue` and `--pr` for the orchestrator and the advisor.
 
+### Seat reset
+
+A Claude orchestrator or advisor seat resets through a handoff before auto-compaction (#1972). Opus auto-compaction started at 461k-467k context tokens on Max. With `--repository-id`, `seats argv` sets `REPO_HARNESS_SEAT` and `REPO_HARNESS_SEAT_REPOSITORY` in the env of these two seats. Only that env names the seat for the Stop hook. Worker seats do not reset.
+
+1. When the context of the last assistant entry of the transcript is 380,000 tokens or more, the Stop hook blocks the stop once. It records the request in `/tmp/repo-harness-seats/<repository-id>/<seat>/request.json`.
+2. The seat writes `/tmp/repo-harness-seats/<repository-id>/<seat>/handoff.md` with the fixed sections that the block reason gives: role, hard rules, current state, in progress, owner decisions pending, next actions and the resume checklist. It sends `RESET-REQUEST <path> <sha256>` to the peer seat.
+3. The peer runs `repo-harness seats reset <path> <sha256>`. The command finds the requester by the `repo-harness.seat` and `repo-harness.repository` labels. It fails and sends nothing when the handoff is not newer than the request, its sha256 is different, or a section is missing. Otherwise it waits with `hc wait`, sends `/clear`, and sends the resume prompt.
+4. The requester reads the handoff, checks the current state with git and gh, and sends `RESUMED` to the peer.
+
+Protocol rules:
+
+- One reset at a time. When both seats are at the threshold, the advisor resets first.
+- The peer sends no other message to the requester until `RESUMED`.
+- After 3 rewrites of one handoff, the peer stops and tells the owner.
+- When the peer seat is missing or does not answer, the requester tells the owner. Nothing resets.
+
 ### Pane and tab names
 
 With `--repository-id`, `seats argv` also prints the pane name (`name`) and the base tab name (`tab`). Do not type a name.
