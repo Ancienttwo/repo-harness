@@ -207,6 +207,18 @@ describe("repo-harness seats argv", () => {
     }
   });
 
+  test("a Pi GPT worker passes thinking, draws on the ChatGPT account and takes the hyper model", () => {
+    const worker = { ...DEFAULT_SEATS_CONFIG.worker, runtime: "pi" as const, model: "magpie/codex/gpt-6.1-terra", fleet: [] };
+    withHome({ ...DEFAULT_SEATS_CONFIG, worker }, home => {
+      writeFileSync(join(home, 'codex-used'), '51');
+      expect(launch(home, "worker").argv.slice(0, 7)).toEqual(["pi", "--provider", "magpie", "--model", "codex/gpt-6.1-terra", "--thinking", "high"]);
+      writeFileSync(join(home, 'codex-used'), '50');
+      expect(launch(home, "worker").argv.slice(0, 7)).toEqual(["pi", "--provider", "magpie", "--model", "codex/gpt-6-astra", "--thinking", "high"]);
+    });
+    const quota = seatAccountQuotas([], DEFAULT_SEATS_CONFIG.routing);
+    expect(formatSeatRoutes({ ...DEFAULT_SEATS_CONFIG, worker }, quota)).toContain("route simple_fast: worker (pi magpie/codex/gpt-6.1-terra high; chatgpt unknown)");
+  });
+
   test("quota changes Codex models and Claude control-seat effort, preserves Pi, and stops exhaustion", () => {
     withHome(DEFAULT_SEATS_CONFIG, home => {
       writeFileSync(join(home, 'codex-used'), '50');

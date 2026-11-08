@@ -508,10 +508,13 @@ describe('seat settings contract without transport', () => {
     mkdirSync(join(home, '.repo-harness'));
     writeFileSync(join(home, '.repo-harness', 'config.json'), JSON.stringify({ agents: PANE_AGENTS, seats: { ...DEFAULT_SEATS_CONFIG, worker } }));
     const env = { HOME: home }, before = readSeatsSettings(env), route = seatsSettingsWriteRoute(env);
-    expect(before.ranges.runtimes.find(runtime => runtime.id === 'pi')?.models).toEqual([model]);
+    expect(before.ranges.runtimes.find(runtime => runtime.id === 'pi')?.models).toEqual([model, ...before.ranges.runtimes.find(runtime => runtime.id === 'codex')!.models.map(m => `magpie/codex/${m}`)]);
     const { revision, ...section } = before.config;
     const saved = await route.decode({ expected_revision: revision, seats: { ...section, advisor: { ...section.advisor, effort: 'medium' } } }, []).execute();
     expect(saved.status).toBe(200);
+    const gpt = { ...worker, model: 'magpie/codex/gpt-6.1-terra', effort: 'high' };
+    expect((await route.decode({ expected_revision: readSeatsSettings(env).config.revision, seats: { ...section, worker: gpt } }, []).execute()).status).toBe(200);
+    expect(readSeatsSettings(env).config.worker).toMatchObject({ runtime: 'pi', model: gpt.model, effort: 'high' });
     await expect(route.decode({ expected_revision: readSeatsSettings(env).config.revision, seats: { ...section, worker: { ...worker, model: 'magpie/other' } } }, []).execute())
       .rejects.toMatchObject({ status: 422, code: 'seat_model_invalid' });
   });

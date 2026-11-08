@@ -34,6 +34,11 @@ export interface SeatConfigV1 {
   readonly fleet: readonly string[];
 }
 
+/** A Pi seat on this model prefix runs a Codex-range GPT model through magpie: it draws on the same ChatGPT account as a Codex seat. */
+export const PI_CODEX_MODEL_PREFIX = 'magpie/codex/';
+export const isPiCodexSeat = (seat: { readonly runtime: SeatRuntime; readonly model: string | null }): boolean =>
+  seat.runtime === 'pi' && seat.model?.startsWith(PI_CODEX_MODEL_PREFIX) === true;
+
 export interface SeatModelV1 {
   readonly model: string | null;
   readonly effort: string | null;
