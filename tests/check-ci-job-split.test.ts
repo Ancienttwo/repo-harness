@@ -1009,7 +1009,7 @@ describe('architecture lanes', () => {
     const bin = join(root, 'bin');
     try {
       mkdirSync(join(root, 'repo/scripts/lib'), { recursive: true }); mkdirSync(bin);
-      for (const path of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh', 'scripts/lib/architecture-plugin.sh']) writeFileSync(join(root, 'repo', path), readFileSync(join(ROOT, path)));
+      for (const path of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh', 'scripts/lib/architecture-plugin.sh', 'scripts/host-test-queue.ts']) writeFileSync(join(root, 'repo', path), readFileSync(join(ROOT, path)));
       // The advisory imports the action map from the real source tree.
       symlinkSync(join(ROOT, 'src'), join(root, 'repo/src'));
       // The lane records its architecture selection with the package version.

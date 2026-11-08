@@ -135,6 +135,7 @@ A new pane goes into the first tab of its kind with fewer than 3 panes. When eve
 - Run the full suite for dependency manifests, shared test/runtime foundations, releases, the daily run, or a named integration invariant that focused checks cannot cover.
 - When full coverage is required, run `bun run test:full` once on the final rebased head.
 - `test:core` excludes the slow integration files. `test:integration` runs those files. `test:full` runs their complete union.
+- Test commands take the host test queue themselves: `bash scripts/check-ci.sh <lane>`, `bun run test:files` and the `test:*` suites wait their turn, run alone and release. Release checks go first, then FIFO. Do not wait for a coordinator message to start them. `bun scripts/host-test-queue.ts status` shows the holder and the waiters.
 - Full runs use eight isolated file workers. Run files with shared ports or shared HOME writes in the serial tail.
 - Tests with port 0 and an isolated HOME can run in parallel.
 - For a baseline comparison, run only the test files that failed.

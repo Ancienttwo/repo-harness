@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 # PR CI verifies one candidate; daily and release callers explicitly select the full lanes.
+lane_args=("$@")
 lane="${1:-affected}"
 base=""
 if [[ "$#" -gt 0 ]]; then shift; fi
@@ -18,6 +19,16 @@ if [[ "$#" -gt 0 || ( -n "$base" && "$lane" != affected && "$lane" != architectu
   echo "Usage: scripts/check-ci.sh [affected|all|governance|functional|architecture|release] [--base <git-ref>]" >&2
   echo "       scripts/check-ci.sh architecture-advisory --base <git-ref>" >&2
   exit 2
+fi
+
+# Every lane waits its turn in the host test queue: release first, then FIFO.
+if ! bun "$ROOT/scripts/host-test-queue.ts" held; then
+  case "$lane" in
+    release) queue_kind=release ;;
+    all) queue_kind=full ;;
+    *) queue_kind=affected ;;
+  esac
+  exec bun "$ROOT/scripts/host-test-queue.ts" run --kind "$queue_kind" -- "$BASH" "$ROOT/scripts/check-ci.sh" ${lane_args[@]+"${lane_args[@]}"}
 fi
 
 BUN_TEST_TIMEOUT_MS="${BUN_TEST_TIMEOUT_MS:-60000}"
