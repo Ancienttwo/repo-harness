@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from 'fs';
+import { lstatSync, realpathSync } from 'fs';
 import { architecturePort, isArchitectureUnavailable } from '../../core/architecture/contracts';
 import type { BoardHostPortsV1, BoardSeatTerminalReadV1 } from '../../core/board/board';
 import { gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
@@ -27,10 +27,10 @@ export interface BoardCloseoutV1 {
   readonly pr: number;
   readonly merge_commit: string;
   readonly panes: readonly BoardCloseoutPaneV1[];
-  /** `partial`: one of the checkout and the local branch is gone; the two flags say which. */
+  /** `partial`: one of the checkout and the local branch is gone; the two flags say which. `unknown`: a flag is null because its readback failed. */
   readonly worktree: {
-    readonly path: string; readonly outcome: 'removed' | 'kept' | 'partial'; readonly reason: string | null;
-    readonly checkout_present: boolean; readonly branch_present: boolean;
+    readonly path: string; readonly outcome: 'removed' | 'kept' | 'partial' | 'unknown'; readonly reason: string | null;
+    readonly checkout_present: boolean | null; readonly branch_present: boolean | null;
   };
   /** The architecture daemon stop of the removed worktree; it never blocks the removal, as in `contract-worktree cleanup`. */
   readonly daemon_stop_failures: readonly string[];
@@ -67,20 +67,39 @@ function readMergedPullRequest(input: BoardCloseoutInput): MergedPullRequest {
     || typeof merge !== 'string' || !OID.test(merge) || !Array.isArray(read.closingIssuesReferences)) {
     throw new BoardCollectError(`gh pr view ${input.pr} has no head branch, head sha, merge commit or closing issue list`);
   }
-  const closing = read.closingIssuesReferences.map(entry => (entry as { number?: unknown } | null)?.number);
-  if (!closing.every(number => Number.isSafeInteger(number))) throw new BoardCollectError(`gh pr view ${input.pr} has an invalid closing issue`);
-  return { number: input.pr, head_ref: read.headRefName, head_oid: read.headRefOid, merge_commit: merge, closing_issues: closing as number[] };
+  const repository = (readGhJson(input, ['repo', 'view', '--json', 'id']) as { id?: unknown } | null)?.id;
+  if (typeof repository !== 'string' || repository === '') throw new BoardCollectError('gh repo view has no repository id');
+  const references = read.closingIssuesReferences.map(entry => entry as { number?: unknown; repository?: { id?: unknown } | null } | null);
+  if (!references.every(entry => Number.isSafeInteger(entry?.number) && typeof entry?.repository?.id === 'string')) {
+    throw new BoardCollectError(`gh pr view ${input.pr} has an invalid closing issue`);
+  }
+  // Seat issue labels name issues of this repository, so an issue that the PR closes elsewhere binds no pane.
+  const closing = references.filter(entry => entry!.repository!.id === repository).map(entry => entry!.number as number);
+  return { number: input.pr, head_ref: read.headRefName, head_oid: read.headRefOid, merge_commit: merge, closing_issues: closing };
 }
 
-function git(cwd: string, args: readonly string[]): { readonly ok: boolean; readonly out: string } {
+/** `status` is null when git did not run to an exit (spawn error, timeout or signal). */
+function git(cwd: string, args: readonly string[]): { readonly ok: boolean; readonly status: number | null; readonly out: string } {
   // The directory selects the repository, so a git variable of this process must not.
   const run = gitSpawnSync([...args], { cwd, env: withoutRepositorySelectingGitEnv(), encoding: 'utf8', timeout: 10_000 });
-  return { ok: run.error === undefined && run.status === 0, out: (run.stdout ?? '').trim() };
+  const status = run.error === undefined ? run.status : null;
+  return { ok: status === 0, status, out: (run.stdout ?? '').trim() };
+}
+
+/** The canonical common Git directory of the checkout at `cwd`, or null when git cannot read it. */
+function commonDirectory(cwd: string): string | null {
+  const read = git(cwd, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+  if (!read.ok) return null;
+  try { return realpathSync(read.out); } catch { return null; }
 }
 
 /** The reason to keep the pane of `cwd`, or null when its checkout is clean and fully on `origin/<branch>`. */
-function paneKeepReason(cwd: string | null): string | null {
+function paneKeepReason(cwd: string | null, common: string): string | null {
   if (cwd === null) return 'cwd_unknown';
+  // A label can outlive its checkout: the pane must work in a checkout of this repository.
+  const own = commonDirectory(cwd);
+  if (own === null) return 'repository_unproven';
+  if (own !== common) return 'other_repository';
   const status = git(cwd, ['status', '--porcelain', '--untracked-files=all']);
   if (!status.ok) return 'git_status_failed';
   if (status.out !== '') return 'dirty';
@@ -97,6 +116,8 @@ const TARGET_REF = 'refs/remotes/origin/main';
 /** The proofs that every side effect needs. A missing one stops closeout before it closes a pane. */
 interface CloseoutProof {
   readonly main: string;
+  /** The canonical common Git directory of this repository; every pane checkout must share it. */
+  readonly common: string;
   readonly path: string;
   readonly target_oid: string;
 }
@@ -106,6 +127,8 @@ function proveCloseout(input: BoardCloseoutInput, pr: MergedPullRequest): Closeo
   const topology = entries(input.repo_root);
   const main = checkoutPath(topology[0]!.path);
   if (checkoutPath(input.repo_root) !== main) fail(`closeout runs in the primary checkout ${main}`);
+  const common = commonDirectory(main);
+  if (common === null) fail('the common Git directory is unreadable');
   if (!git(main, ['fetch', '--quiet', 'origin', 'main']).ok) fail('git fetch origin main failed');
   const target = git(main, ['rev-parse', '--verify', `${TARGET_REF}^{commit}`]);
   if (!target.ok) fail(`${TARGET_REF} is unavailable`);
@@ -120,7 +143,7 @@ function proveCloseout(input: BoardCloseoutInput, pr: MergedPullRequest): Closeo
   if (!status.ok || status.out !== '') fail(`worktree ${path} is dirty or unreadable`);
   // The worktree's own marker is the closeout's to drop; any other marker that names it is another owner.
   try { assertNoOwner(main, path, {}, true); } catch (error) { fail(`worktree ${path}: ${(error as Error).message}`); }
-  return { main, path, target_oid: target.out };
+  return { main, common: common!, path, target_oid: target.out };
 }
 
 /**
@@ -136,7 +159,7 @@ function paneBinding(terminal: BoardSeatTerminalReadV1, pr: MergedPullRequest): 
   return labels.pr === undefined ? 'bound' : 'conflict';
 }
 
-function closePanes(input: BoardCloseoutInput, pr: MergedPullRequest): BoardCloseoutPaneV1[] {
+function closePanes(input: BoardCloseoutInput, pr: MergedPullRequest, proof: CloseoutProof): BoardCloseoutPaneV1[] {
   const read = input.host.seatTerminals(String(readRepositoryId(input)));
   if (read.status === 'unavailable') throw new BoardCollectError(`the seat terminals are unavailable: ${read.reason}`);
   return read.terminals.flatMap((terminal): BoardCloseoutPaneV1[] => {
@@ -144,7 +167,7 @@ function closePanes(input: BoardCloseoutInput, pr: MergedPullRequest): BoardClos
     if (binding === 'none') return [];
     const pane = { address: terminal.address, seat: terminal.labels.seat ?? null };
     const keep = binding === 'conflict' ? `conflicting_binding pr ${terminal.labels.pr}`
-      : terminal.address === input.caller_terminal ? 'caller_terminal' : paneKeepReason(terminal.cwd);
+      : terminal.address === input.caller_terminal ? 'caller_terminal' : paneKeepReason(terminal.cwd, proof.common);
     if (keep !== null) return [{ ...pane, outcome: 'kept', reason: keep }];
     const closed = input.host.closeTerminal(terminal.address);
     return [closed.status === 'closed' ? { ...pane, outcome: 'closed', reason: null } : { ...pane, outcome: 'kept', reason: closed.reason }];
@@ -188,16 +211,21 @@ type WorktreeOutcome = Pick<BoardCloseoutV1, 'worktree' | 'daemon_stop_failures'
 
 /** The worktree result as observed after the last step, so a partial removal reports what is left. */
 function observed(proof: CloseoutProof, pr: MergedPullRequest, reason: string | null, daemon_stop_failures: readonly string[]): WorktreeOutcome {
-  const checkout_present = existsSync(proof.path);
-  const branch_present = git(proof.main, ['show-ref', '--verify', '--quiet', `refs/heads/${pr.head_ref}`]).ok;
-  const outcome = !checkout_present && !branch_present && reason === null ? 'removed' : checkout_present && branch_present ? 'kept' : 'partial';
-  return { worktree: { path: proof.path, outcome, reason, checkout_present, branch_present }, daemon_stop_failures };
+  let checkout_present: boolean | null;
+  try { lstatSync(proof.path); checkout_present = true; }
+  catch (error) { checkout_present = (error as NodeJS.ErrnoException).code === 'ENOENT' ? false : null; }
+  // show-ref exits 1 only for a proven absent ref; any other result leaves the branch state unknown.
+  const ref = git(proof.main, ['show-ref', '--verify', '--quiet', `refs/heads/${pr.head_ref}`]).status;
+  const branch_present = ref === 0 ? true : ref === 1 ? false : null;
+  const unknown = checkout_present === null || branch_present === null;
+  const outcome = unknown ? 'unknown' : !checkout_present && !branch_present && reason === null ? 'removed' : checkout_present && branch_present ? 'kept' : 'partial';
+  return { worktree: { path: proof.path, outcome, reason: unknown && reason === null ? 'worktree or branch readback failed' : reason, checkout_present, branch_present }, daemon_stop_failures };
 }
 
 export async function runBoardCloseout(input: BoardCloseoutInput): Promise<BoardCloseoutV1> {
   const pr = readMergedPullRequest(input);
   const proof = proveCloseout(input, pr);
-  const panes = closePanes(input, pr);
+  const panes = closePanes(input, pr, proof);
   return { kind: BOARD_CLOSEOUT_KIND, pr: pr.number, merge_commit: pr.merge_commit, panes, ...await removeWorktree(input, pr, proof, panes) };
 }
 
