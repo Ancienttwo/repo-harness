@@ -513,8 +513,10 @@ describe('seat settings contract without transport', () => {
     const saved = await route.decode({ expected_revision: revision, seats: { ...section, advisor: { ...section.advisor, effort: 'medium' } } }, []).execute();
     expect(saved.status).toBe(200);
     const gpt = { ...worker, model: 'magpie/codex/gpt-6.1-terra', effort: 'high' };
-    expect((await route.decode({ expected_revision: readSeatsSettings(env).config.revision, seats: { ...section, worker: gpt } }, []).execute()).status).toBe(200);
-    expect(readSeatsSettings(env).config.worker).toMatchObject({ runtime: 'pi', model: gpt.model, effort: 'high' });
+    expect(() => route.decode({ expected_revision: readSeatsSettings(env).config.revision, seats: { ...section, worker: { ...worker, fleet: ['explorer'] } } }, []))
+      .toThrow('seats_settings_request_invalid');
+    expect((await route.decode({ expected_revision: readSeatsSettings(env).config.revision, seats: { ...section, worker: { ...gpt, fleet: ['explorer'] } } }, []).execute()).status).toBe(200);
+    expect(readSeatsSettings(env).config.worker).toMatchObject({ runtime: 'pi', model: gpt.model, effort: 'high', fleet: ['explorer'] });
     await expect(route.decode({ expected_revision: readSeatsSettings(env).config.revision, seats: { ...section, worker: { ...worker, model: 'magpie/other' } } }, []).execute())
       .rejects.toMatchObject({ status: 422, code: 'seat_model_invalid' });
   });
@@ -689,7 +691,7 @@ describe('seat settings routes', () => {
     expect(value.ranges.seats.worker.fleet).not.toContain('orchestrator');
     // The core defaults stay inside the ranges that the fleet role profiles give.
     expect(value.defaults.worker.fleet).toEqual([...value.ranges.seats.worker.fleet].sort());
-    expect(value.ranges.runtimes.map(runtime => [runtime.id, runtime.enabled, runtime.fleet])).toEqual([['claude', true, true], ['codex', true, true], ['pi', true, false]]);
+    expect(value.ranges.runtimes.map(runtime => [runtime.id, runtime.enabled, runtime.fleet])).toEqual([['claude', true, true], ['codex', true, true], ['pi', true, true]]);
   });
 
   test('POST replaces only the seats section and touches nothing outside config.json', async () => {
@@ -717,7 +719,6 @@ describe('seat settings routes', () => {
       ['advisor', { tools: ['edit', 'read'] }, 'seat_tool_not_allowed'],
       ['advisor', { tools: ['gh', 'read'] }, 'seat_tool_not_allowed'],
       ['orchestrator', { tools: ['edit', 'read'] }, 'seat_tool_not_allowed'],
-      ['advisor', { runtime: 'pi', model: null, effort: null }, 'seat_fleet_not_allowed'],
       ['worker', { runtime: 'codex' }, 'seat_runtime_not_enabled'],
       ['advisor', { model: 'gpt-6-astra' }, 'seat_model_invalid'],
       ['advisor', { effort: 'extreme' }, 'seat_effort_invalid'],

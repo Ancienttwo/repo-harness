@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Banner, Button, Empty, Loader, Switch, cn } from '@cloudflare/kumo';
 import { seatAccountQuotas } from '../core/board/seat-routing';
 import { buildSeatLaunch, type SeatLimitLevel } from '../core/board/seat-launch';
-import { SEAT_IDS, SEAT_TOOLS, decodeSeatsSettingsRequest, type RoutingClass, type SeatId, type SeatRuntime, type SeatsConfigV1, type SeatsSettingsV1 } from '../core/board/seats-settings';
+import { SEAT_IDS, SEAT_TOOLS, decodeSeatsSettingsRequest, seatTakesFleet, type RoutingClass, type SeatId, type SeatRuntime, type SeatsConfigV1, type SeatsSettingsV1 } from '../core/board/seats-settings';
 import type { SetupSnapshotV2 } from '../core/setup/types';
 import type { OperatorTranslate } from './i18n';
 import type { QuotaSection } from './quota';
@@ -242,7 +242,7 @@ function SeatCard({ seat, form, agents, settings, setup, locked, t }: {
         </li>
         {roles.map((role) => {
           const on = draft.fleet.includes(role.name);
-          const why = role.writable === null ? t('seats.fleet.why.unknown') : !runtime.fleet ? t('seats.fleet.why.pi')
+          const why = role.writable === null ? t('seats.fleet.why.unknown') : !runtime.fleet || !seatTakesFleet(draft) ? t('seats.fleet.why.pi')
             : !range.fleet.includes(role.name) ? t('seats.fleet.why.writable') : null;
           return (
             <ToggleRow key={role.name} name={role.name} mono detail={fleetDetail(setup, role.name)}

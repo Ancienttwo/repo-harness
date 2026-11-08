@@ -38,6 +38,9 @@ export interface SeatConfigV1 {
 export const PI_CODEX_MODEL_PREFIX = 'magpie/codex/';
 export const isPiCodexSeat = (seat: { readonly runtime: SeatRuntime; readonly model: string | null }): boolean =>
   seat.runtime === 'pi' && seat.model?.startsWith(PI_CODEX_MODEL_PREFIX) === true;
+/** The fleet roles are pinned to GPT models, so a Pi seat takes them only on a GPT model. */
+export const seatTakesFleet = (seat: { readonly runtime: SeatRuntime; readonly model: string | null }): boolean =>
+  seat.runtime !== 'pi' || isPiCodexSeat(seat);
 
 export interface SeatModelV1 {
   readonly model: string | null;
@@ -193,6 +196,7 @@ function decodeSeat(id: SeatId, value: unknown, code: string): SeatConfigV1 {
   const model = record.runtime === 'pi' && record.model !== null
     ? (typeof record.model === 'string' && /^[^/]+\/.+$/u.test(record.model) ? record.model : invalid(code))
     : nullableToken(record.model, code);
+  if (fleet.length > 0 && !seatTakesFleet({ runtime: record.runtime as SeatRuntime, model })) invalid(code);
   return {
     runtime: record.runtime as SeatRuntime,
     model,
