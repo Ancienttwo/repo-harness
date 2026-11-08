@@ -4,7 +4,9 @@ import { collectProtectedPathNotice } from './protected-path-notice';
 import { publishCheckpointFromLedger } from '../../effects/evidence/checkpoint-store';
 import type { StateInputCollector } from '../../effects/loop/state-input-collector';
 import { resolveCapabilityOwnership } from '../../effects/state/resolve-effective-state';
-import { payloadValue, type HookIdentity, type HookPayload } from './hook-input';
+import { payloadString, payloadValue, type HookIdentity, type HookPayload } from './hook-input';
+import { SEAT_RESET_CONTEXT_TOKENS, seatResetIdentity, seatResetReason } from '../../core/board/seat-reset';
+import { readTranscriptContextTokens, writeSeatResetRequest } from '../../effects/board/seat-reset';
 
 export type StopCollector = Pick<StateInputCollector, 'getRepoRoot'>;
 
@@ -42,7 +44,24 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     return { exitCode: 0, stdout: '', stderr: '' };
   }
   try { publishCheckpointFromLedger(repoRoot, () => now); } catch { /* a failed publish never blocks the turn */ }
+  const reset = opts.identity.host === 'claude' ? seatResetBlock(opts.payload, env, now) : null;
+  if (reset !== null) return reset;
   return opts.identity.host === 'claude' ? claudeNotices(repoRoot, env) : codexNotices(repoRoot, env);
+}
+
+/**
+ * An orchestrator or advisor seat at or above the reset threshold blocks the stop once (exit 2 gives the reason to
+ * the model; the next Stop has `stop_hook_active`), so the seat writes its handoff and asks its peer for the reset.
+ * Only the env of `repo-harness seats argv` names the seat.
+ */
+function seatResetBlock(payload: HookPayload, env: NodeJS.ProcessEnv, now: Date): StopHandlerResult | null {
+  const identity = seatResetIdentity(env);
+  const transcript = payloadString(payload, 'transcript_path');
+  if (identity === null || transcript === '') return null;
+  const context = readTranscriptContextTokens(transcript);
+  if (context === null || context < SEAT_RESET_CONTEXT_TOKENS) return null;
+  writeSeatResetRequest(identity, now, context);
+  return { exitCode: 2, stdout: '', stderr: `${seatResetReason(identity, context)}\n` };
 }
 
 /** The architecture and protected path notices fail independently. */
