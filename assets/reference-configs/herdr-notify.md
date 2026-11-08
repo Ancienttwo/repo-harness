@@ -84,15 +84,19 @@ A Claude orchestrator or advisor seat resets through a handoff before auto-compa
 
 1. When the context of the last assistant entry of the transcript is 380,000 tokens or more, the Stop hook blocks the stop once per transcript. It records the request time and the transcript path in `/tmp/repo-harness-seats/<repository-id>/<seat>/request.json`. `/clear` starts a new transcript, so the next crossing blocks again.
 2. The seat writes `/tmp/repo-harness-seats/<repository-id>/<seat>/handoff.md` with the fixed sections that the block reason gives: role, hard rules, current state, in progress, owner decisions pending, next actions and the resume checklist. It sends `RESET-REQUEST <path> <sha256>` to the peer seat.
-3. The peer runs `repo-harness seats reset <path> <sha256>`. The command finds the requester by the `repo-harness.seat` and `repo-harness.repository` labels. It fails and sends nothing when the handoff is not newer than the request, its sha256 is different, or a section is missing. Otherwise it waits with `hc wait`, sends `/clear`, and sends the resume prompt.
+3. The peer runs `repo-harness seats reset <path> <sha256>` in the background; one run can take about 10 minutes. The command finds the requester by the `repo-harness.seat` and `repo-harness.repository` labels. When the handoff is not newer than the request, its sha256 is different, or a section is missing, it sends `REWRITE` to the requester and resets nothing. Otherwise it waits with `hc wait` and sends `/clear`. The SessionStart hook of the new session writes `session.json` next to the handoff. The command sends the resume prompt only after that file names a new transcript. The resume evidence is a user entry in the new transcript whose text is the resume prompt.
 4. The requester reads the handoff, checks the current state with git and gh, and sends `RESUMED` to the peer.
 
-Protocol rules:
+Protocol rules. The reset runs with no human step; an owner command is never part of it (owner decision 2026-11-08):
 
-- One reset at a time. When both seats are at the threshold, the advisor resets first.
-- From `RESET-REQUEST` until `RESUMED`, the peer sends the requester nothing except the reset.
-- After 3 rewrites of one handoff, the peer stops and tells the owner.
-- When the peer seat is missing or does not answer, the requester tells the owner. Nothing resets.
+- One reset at a time. When both seats cross the threshold, the advisor resets first.
+- The peer sends no other message to the requester from `RESET-REQUEST` until `RESUMED`.
+- Handoff check fails: the peer asks for a rewrite, at most 3 times. Then no reset: the seat continues, and Claude Code auto-compaction handles its context.
+- Peer seat missing or not answering: no reset, same as above.
+- No new-session signal or no `RESUMED` in time: the peer sends the resume prompt again, at most 3 times. Then the other seat starts the requester again in the same terminal from `repo-harness seats argv <seat> --repository-id <id>` and sends the resume prompt.
+- Each of these failures writes one entry to a reset log next to the handoff and sends one notice. The flow does not wait for anyone to read it.
+
+`seats reset` runs these rules. The reset log `reset-log.jsonl` is the only record of the rewrite and resend counts. The notice is one `seat.reset_failed` bot event to the notify channels. Without a notify config, the log entry records `not_configured`.
 
 ### Pane and tab names
 
