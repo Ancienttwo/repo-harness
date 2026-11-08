@@ -14,7 +14,7 @@ const DAY = 86_400_000;
 const at = (time: number) => new Date(time).toISOString();
 
 /** The policy pin of the scenario; the server reads the real one from the registered repository policies. */
-const PIN = { min_version: '0.1.17' };
+const PIN = { min_version: '0.1.18' };
 const REGISTRY_REVISION = `sha256:${'4c'.repeat(32)}`;
 
 function notifyStatus(now: number, last: NotifyDeliveryV1): NotifyStatusV1 {
@@ -47,7 +47,7 @@ export function busyBotAccess(now: number): BotAccessSnapshotV1 {
       { repo_id: DOCS_ID, label: 'field-notes', access_mode: 'read_only', last_audit: { state: 'missing' } },
     ] },
     hc: {
-      state: 'ok', version: { state: 'ok', value: { state: 'aligned', expected: PIN, actual: { version: '0.1.17' } } }, herdr_app: { state: 'not_pinned' },
+      state: 'ok', version: { state: 'ok', value: { state: 'aligned', expected: PIN, actual: { version: '0.1.18' } } }, herdr_app: { state: 'not_pinned' },
       terminals: { state: 'ok', value: [
         { address: 't12', name: 'task-1f0c2a9e4b7d3c5a8e61', status: 'working' },
         { address: 't1b', name: 'task-7a3e9c1d5b2f4e6a8c90', status: 'blocked' },
