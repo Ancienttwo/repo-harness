@@ -133,7 +133,11 @@ function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly stri
     ];
   }
   if (seat === 'gatekeeper' || seat === 'reviewer') {
-    return [`You are the ${seat} seat. Perform a read-only review of the assigned PR. Do not edit files, commit, push, or write to GitHub. Report the verdict first, then the findings and evidence.`,
+    // A reviewer with `net` publishes its own round (#1996); the brief is the only limit on a Pi seat, which has no sandbox.
+    const limit = config.tools.includes('net')
+      ? 'Do not edit files, commit or push. Do not write to GitHub, with one exception: publish your own round with `repo-harness review publish --pr <number> --receipt <path>`. Run no other GitHub write.'
+      : 'Do not edit files, commit, push, or write to GitHub.';
+    return [`You are the ${seat} seat. Perform a read-only review of the assigned PR. ${limit} Report the verdict first, then the findings and evidence.`,
       fleet.length === 0 ? 'You have no sub-agents.' : `You may call these sub-agents: ${roleList(fleet, name)}. Call no other agent type.`];
   }
   return [

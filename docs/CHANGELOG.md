@@ -15,6 +15,7 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- The brief of a review seat with the `net` tool group lets it publish its own round with `repo-harness review publish` (#1996). It forbids every other GitHub write. A seat without `net` keeps the full GitHub write ban.
 - `/healthz.protocol` is now 3 (ADR-0003). A protocol-2 desktop app
   refuses a protocol-3 server; update the desktop app together with the
   CLI. (#1968)
