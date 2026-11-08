@@ -6,6 +6,8 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- The docs reader uses mermaid 12.3.0, and the operator-web tests use happy-dom 21.0.4.
+  Mermaid 12 draws diagrams with ELK layout and the `neo` look by default. (#1987)
 - Stored quota thresholds replace `routing.mode` and `routing.hyper`.
   Claude saving and Codex hyper modes follow weekly remaining quota.
   `repo-harness update` runs the one-shot migration. The decoder refuses
