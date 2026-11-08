@@ -170,6 +170,10 @@ export interface BoardHostPortsV1 {
   readonly advisorRead: (address: string, lines: number) =>
     | { readonly status: 'observed'; readonly text: string; readonly complete: boolean; readonly why: string | null }
     | { readonly status: 'unavailable'; readonly reason: string };
+  /** `hc kill`, then `hc rm`, of a seat terminal that the post-merge closeout resolved from `seatTerminals` (#2005). */
+  readonly closeTerminal: (address: string) =>
+    | { readonly status: 'closed' }
+    | { readonly status: 'unavailable'; readonly reason: string };
 }
 
 export type BoardExecutionV1 =

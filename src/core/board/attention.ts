@@ -1,6 +1,6 @@
 import { planIssues } from './plan-block';
 import type { BoardItemV1, BoardPullRequestV1, BoardTerminalV1, BoardV1 } from './board';
-import { hcStatusClass } from './desk';
+import { hcStatusClass, liveSeats, seatItem, seatPullRequest } from './desk';
 import { pathHazardHits } from './hazards';
 import { compareHcVersions } from '../terminal/herdr-pin';
 
@@ -27,7 +27,7 @@ const A2_BATCH_MAX = 6;
 const WORKER_SEAT = 'worker';
 const RED_CONCLUSIONS = new Set(['failure', 'timed_out', 'startup_failure']);
 
-export type BoardRuleId = 'A1' | 'A2' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5';
+export type BoardRuleId = 'A1' | 'A2' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'A9' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5';
 export type BoardAttentionRoute = 'orchestrator' | 'advisor';
 
 export interface BoardFindingV1 {
@@ -259,6 +259,19 @@ function a8(context: Context): void {
   if (compareHcVersions(hc.version, hc.min_version) < 0) find(context, 'A8', {}, `hc client ${hc.version} is below the repo-harness floor ${hc.min_version}; run hc update --version ${hc.min_version}`);
 }
 
+/** A9: a seat of a merged pull request is still open; the post-merge closeout closed it or kept it with a reason (#2005). */
+function a9(context: Context): void {
+  const execution = context.board.execution;
+  if (execution.status === 'unavailable') return skip(context, 'A9', execution.reason);
+  for (const terminal of liveSeats(execution.terminals)) {
+    if (terminal.issue === null && terminal.pr === null) continue;
+    const pr = seatPullRequest(context.board, terminal, seatItem(context.board, terminal));
+    if (pr?.state !== 'merged') continue;
+    find(context, 'A9', { issues: terminal.issue === null ? [] : [terminal.issue], pull_requests: [pr.number], terminals: [terminal.address] },
+      `${terminal.seat} ${terminal.address} of merged #${pr.number} is still open; run repo-harness board closeout --pr ${pr.number}`);
+  }
+}
+
 function r1(context: Context): void {
   const plan = context.board.plan;
   if (plan.status === 'unavailable') return skip(context, 'R1', 'plan_unavailable', plan.comment_url);
@@ -389,7 +402,7 @@ function r4(context: Context): void {
 
 export function evaluateBoardAttention(board: BoardV1): BoardAttentionV1 {
   const context: Context = { board, now: Date.parse(board.observed_at), findings: [], unevaluated: [] };
-  for (const rule of [a1, a2, a3, a4, a5, a6, a7, a8, r1, r2, r3, r4, r5]) rule(context);
+  for (const rule of [a1, a2, a3, a4, a5, a6, a7, a8, a9, r1, r2, r3, r4, r5]) rule(context);
   return Object.freeze({
     protocol: BOARD_ATTENTION_PROTOCOL,
     kind: BOARD_ATTENTION_KIND,

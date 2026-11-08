@@ -71,7 +71,7 @@ export interface BoardCollectInput {
   readonly now?: () => Date;
 }
 
-type GhInput = Pick<BoardCollectInput, 'repo_root' | 'gh_bin' | 'gh_runner'>;
+export type GhInput = Pick<BoardCollectInput, 'repo_root' | 'gh_bin' | 'gh_runner'>;
 
 function runGh(input: GhInput, args: readonly string[]): { readonly status: number | null; readonly stdout: string; readonly stderr?: string } {
   return input.gh_runner?.(args) ?? spawnSync(input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
@@ -79,7 +79,8 @@ function runGh(input: GhInput, args: readonly string[]): { readonly status: numb
   });
 }
 
-function gh(input: GhInput, args: readonly string[]): unknown {
+/** One gh call that prints JSON; a failed call or invalid JSON is a `BoardCollectError`. */
+export function readGhJson(input: GhInput, args: readonly string[]): unknown {
   const result = runGh(input, args);
   if (result.status !== 0) throw new BoardCollectError(`gh ${args.slice(0, 2).join(' ')} failed: ${(result.stderr ?? '').trim() || `exit ${result.status}`}`);
   try {
@@ -92,7 +93,7 @@ function gh(input: GhInput, args: readonly string[]): unknown {
 function graphql(input: GhInput, query: string, variables: Readonly<Record<string, string | number>>): unknown {
   const args = ['api', 'graphql', '--hostname', 'github.com', '-f', `query=${query}`,
     ...Object.entries(variables).flatMap(([key, value]) => [typeof value === 'number' ? '-F' : '-f', `${key}=${value}`])];
-  const response = gh(input, args) as { data?: unknown; errors?: unknown } | null;
+  const response = readGhJson(input, args) as { data?: unknown; errors?: unknown } | null;
   if (response === null || typeof response !== 'object' || response.errors !== undefined) {
     throw new BoardCollectError(`GitHub GraphQL refused the board read: ${JSON.stringify(response?.errors ?? response).slice(0, 500)}`);
   }
@@ -102,7 +103,7 @@ function graphql(input: GhInput, query: string, variables: Readonly<Record<strin
 function dailyRun(input: BoardCollectInput, repository: string, branch: string): BoardDailyRunInputV1 {
   let body: unknown;
   try {
-    body = gh(input, ['api', '--hostname', 'github.com',
+    body = readGhJson(input, ['api', '--hostname', 'github.com',
       `repos/${repository}/actions/workflows/ci.yml/runs?event=schedule&status=completed&per_page=1&branch=${encodeURIComponent(branch)}`]);
   } catch (error) {
     if (error instanceof BoardCollectError) return { status: 'unavailable', reason: 'github_unavailable' };
@@ -202,7 +203,7 @@ export function pathOwners(input: Pick<BoardCollectInput, 'repo_root' | 'archctx
 
 /** The GitHub numeric id of the local repository: the value of the `repo-harness.repository` label. */
 export function readRepositoryId(input: GhInput): number {
-  const id = (gh(input, ['api', '--hostname', 'github.com', 'repos/{owner}/{repo}']) as { id?: unknown } | null)?.id;
+  const id = (readGhJson(input, ['api', '--hostname', 'github.com', 'repos/{owner}/{repo}']) as { id?: unknown } | null)?.id;
   if (!Number.isSafeInteger(id) || (id as number) < 1) throw new BoardCollectError('the local GitHub repository id is unknown');
   return id as number;
 }
@@ -218,7 +219,7 @@ export function readLocalRepositoryId(input: GhInput, isGitHubRemote: (url: stri
 
 /** The one read of the parent issue, its sub-issues and their comments; the board and dispatch share it. */
 export function readParent(input: Pick<BoardCollectInput, 'repo_root' | 'gh_bin' | 'gh_runner' | 'parent' | 'now'>): { readonly parent: BoardParentReadV1; readonly observed_at: string } {
-  const repository = (gh(input, ['repo', 'view', '--json', 'nameWithOwner']) as { nameWithOwner?: unknown } | null)?.nameWithOwner;
+  const repository = (readGhJson(input, ['repo', 'view', '--json', 'nameWithOwner']) as { nameWithOwner?: unknown } | null)?.nameWithOwner;
   if (typeof repository !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository)) throw new BoardCollectError('the local GitHub repository is unknown');
   const [owner, name] = repository.split('/') as [string, string];
   const observedAt = (input.now?.() ?? new Date()).toISOString();

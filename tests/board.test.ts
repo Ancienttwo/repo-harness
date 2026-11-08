@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { initGitRepo, run, tmpWorkspace } from './helpers/repo-fixture';
 import { evaluateBoardAttention, type BoardRuleId } from '../src/core/board/attention';
@@ -10,6 +10,7 @@ import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectBoard, readLocalRepositoryId } from '../src/effects/board/collect';
+import { runBoardCloseout } from '../src/effects/board/closeout';
 import type { RunArchctxProcess } from '../src/core/architecture/contracts';
 import { errorEnvelope } from 'archctx-contracts';
 import { githubRemoteRepository } from '../src/core/board/source';
@@ -594,6 +595,10 @@ test('one hit for each rule that the recorded state does not trigger', () => {
     .filter(entry => ['A3', 'A4', 'A5'].includes(entry.rule)).map(entry => [entry.rule, entry.reason, entry.subject])).toEqual([
     ['A3', 'status_time_missing', 't1'], ['A4', 'issue_off_board', 't2'], ['A4', 'issue_label_missing', 't9'], ['A5', 'claim_pr_off_board', '#1477'],
   ]);
+  // A9: a live seat of a merged pull request is reported; a finished one is not.
+  const merged = evaluateBoardAttention({ ...board, pull_requests: board.pull_requests.map(pr => (pr.number === 1494 ? { ...pr, state: 'merged' as const } : pr)),
+    execution: { status: 'observed', terminals: [{ ...done!, pr: 1494 }, { ...done!, address: 't9', pr: 1494, state: 'finished' }] as BoardTerminalV1[] } });
+  expect(merged.findings.filter(finding => finding.rule === 'A9').map(finding => [finding.terminals, finding.pull_requests])).toEqual([[['t2'], [1494]]]);
 });
 
 test('R5: two owning capabilities among the counted paths are a High signal; an unowned or ambiguous path is always reported', () => {
@@ -1150,4 +1155,64 @@ test('advisor seat: plain text reaches only the one live advisor terminal of the
   expect(failure(() => sendToAdvisorSeat(absent.scope, 'status?'))).toMatchObject({ terminal: null, code: 'advisor_seat_absent' });
   const missing = { github_repository_id: 1186405141, parent: 1503, host: boardHostPorts({ env: { PATH: '/nonexistent' } }) };
   expect([code(() => sendToAdvisorSeat(missing, 'status?')), code(() => readAdvisorSeat(missing))]).toEqual(['hc_unavailable', 'hc_unavailable']);
+});
+
+test('board closeout: a clean, pushed seat closes and its merged worktree goes; a dirty or unpushed seat and its worktree stay with the reason', async () => {
+  const root = tmpWorkspace('board-closeout'); roots.push(root);
+  const main = join(root, 'main'), origin = join(root, 'origin.git');
+  const git = (cwd: string, ...args: string[]) => {
+    const result = run('git', args, cwd);
+    expect(result.status).toBe(0);
+    return result.stdout.trim();
+  };
+  git(root, 'init', '-q', '--bare', '-b', 'main', origin);
+  mkdirSync(main); initGitRepo(main);
+  writeFileSync(join(main, '.gitignore'), '.ai/\n');
+  git(main, 'add', '.'); git(main, 'commit', '-q', '-m', 'base');
+  git(main, 'remote', 'add', 'origin', origin); git(main, 'push', '-q', '-u', 'origin', 'main');
+  const pullRequests: Record<string, Json> = {};
+  const worktree = (name: string, pr: number, issue: number) => {
+    const path = join(root, name);
+    git(main, 'worktree', 'add', '-q', '-b', `feat/${name}`, path);
+    writeFileSync(join(path, `${name}.txt`), name);
+    git(path, 'add', '.'); git(path, 'commit', '-q', '-m', name); git(path, 'push', '-q', '-u', 'origin', `feat/${name}`);
+    mkdirSync(join(path, '.ai/harness'), { recursive: true });
+    writeFileSync(join(path, '.ai/harness/active-worktree'), `${path}\n`);
+    const head = git(path, 'rev-parse', 'HEAD');
+    git(main, 'merge', '-q', '--no-ff', '-m', `merge ${name}`, `feat/${name}`); git(main, 'push', '-q', 'origin', 'main');
+    pullRequests[String(pr)] = { number: pr, state: 'MERGED', headRefName: `feat/${name}`, headRefOid: head,
+      mergeCommit: { oid: git(main, 'rev-parse', 'HEAD') }, closingIssuesReferences: [{ number: issue }] };
+    return path;
+  };
+  const clean = worktree('clean', 21, 11), kept = worktree('kept', 22, 12);
+  writeFileSync(join(kept, 'draft.txt'), 'dirty');
+  // A second checkout of #22's reviewer with a commit that origin does not have.
+  const review = join(root, 'review');
+  git(main, 'worktree', 'add', '-q', '-b', 'review/22', review);
+  git(review, 'push', '-q', '-u', 'origin', 'review/22'); git(review, 'commit', '-q', '--allow-empty', '-m', 'local only');
+  const terminal = (address: string, cwd: string, labels: Record<string, string>) => ({ address, name: null, agent: 'claude-code', state: 'live' as const, status: 'done',
+    status_kind: null, status_msg: null, status_ms: null, turn: 1, cwd, labels: { seat: 'worker', ...labels } });
+  const terminals = [terminal('t1', clean, { issue: '11' }), terminal('t2', clean, { seat: 'gatekeeper', pr: '21' }), terminal('t3', main, { seat: 'orchestrator' }),
+    terminal('t4', kept, { issue: '12' }), terminal('t5', review, { seat: 'reviewer', pr: '22' })];
+  const closed: string[] = [];
+  const closeout = (pr: number) => runBoardCloseout({
+    repo_root: main, pr, caller_terminal: 't3', stopDaemons: () => [],
+    host: { seatTerminals: () => ({ status: 'observed', terminals }), closeTerminal: (address) => { closed.push(address); return { status: 'closed' }; } },
+    gh_runner: args => ({ status: 0, stdout: JSON.stringify(args[0] === 'pr' ? pullRequests[args[2]!] : { id: 1186405141 }) }),
+  });
+
+  const removed = await closeout(21);
+  expect([removed.panes, removed.worktree]).toEqual([
+    [{ address: 't1', seat: 'worker', outcome: 'closed', reason: null }, { address: 't2', seat: 'gatekeeper', outcome: 'closed', reason: null }],
+    { path: clean, outcome: 'removed', reason: null },
+  ]);
+  expect([existsSync(clean), run('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/feat/clean'], main).status, git(origin, 'branch', '--list', 'feat/clean')])
+    .toEqual([false, 1, 'feat/clean']);
+
+  const retained = await closeout(22);
+  expect([retained.panes, retained.worktree]).toEqual([
+    [{ address: 't4', seat: 'worker', outcome: 'kept', reason: 'dirty' }, { address: 't5', seat: 'reviewer', outcome: 'kept', reason: 'unpushed 1 commit(s) on review/22' }],
+    { path: kept, outcome: 'kept', reason: 'a pane of the pull request is kept' },
+  ]);
+  expect([closed, existsSync(join(kept, 'draft.txt')), readFileSync(join(kept, '.ai/harness/active-worktree'), 'utf8')]).toEqual([['t1', 't2'], true, `${kept}\n`]);
 });
