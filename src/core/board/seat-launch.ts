@@ -136,7 +136,7 @@ function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly stri
     ];
   }
   if (seat === 'gatekeeper' || seat === 'reviewer') {
-    // A reviewer with `net` publishes its own round (#1996); the brief is the only limit on a Pi seat, which has no sandbox.
+    // A reviewer with `net` publishes its own round (#1996); the brief is the only limit on every runtime.
     const limit = config.tools.includes('net')
       ? `Do not edit files, commit or push. ${REVIEW_PUBLISH_TEXT}`
       : 'Do not edit files, commit, push, or write to GitHub.';
