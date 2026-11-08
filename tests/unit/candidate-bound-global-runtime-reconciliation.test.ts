@@ -8,7 +8,7 @@ import { createHash, randomUUID } from 'crypto';
 import { copyPackageRuntimeFixture } from '../helpers/repo-fixture';
 import { startFakeHcRelease, writeFakeHc } from '../helpers/fake-hc';
 import { HC_MIN_VERSION } from '../../src/core/terminal/herdr-pin';
-import { recordPluginSelection, seedGlobalPackageFixture } from '../helpers/install-ownership';
+import { installStateFixturePath, recordPluginSelection, seedGlobalPackageFixture } from '../helpers/install-ownership';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 import { beginInstallHostTransaction, readInstallState, versions, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
 import {
@@ -124,7 +124,7 @@ function requireLegacyRenderer(packageRoot: string): void {
 
 function writeCoreOnlyInstallState(home: string): void {
   mkdirSync(join(home, '.repo-harness'), { recursive: true });
-  writeFileSync(join(home, '.repo-harness', 'install-state.json'), `${JSON.stringify({
+  writeFileSync(installStateFixturePath({ HOME: home }), `${JSON.stringify({
     protocol: 3,
     selection: [],
     ...versions([]),
@@ -914,7 +914,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       const globalModules = join(home, '.bun', 'install', 'global', 'node_modules');
       seedGlobalPackageFixture({ HOME: home, BUN_INSTALL: join(home, '.bun') });
       mkdirSync(join(home, '.repo-harness'), { recursive: true });
-      writeFileSync(join(home, '.repo-harness', 'install-state.json'), `${JSON.stringify({
+      writeFileSync(installStateFixturePath({ HOME: home }), `${JSON.stringify({
         protocol: 3,
         selection: [],
         ...versions([]),

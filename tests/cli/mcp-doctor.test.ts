@@ -4,7 +4,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, sy
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
-import { pluginSelectionEnv } from '../helpers/install-ownership';
+import { installStateFixturePath, pluginSelectionEnv } from '../helpers/install-ownership';
 import { RETIRED_CHATGPT_STATE_FINDING, runMcpDoctor } from '../../src/cli/mcp/doctor';
 import { createMcpToolContext } from '../../src/cli/mcp/server';
 import { createCodeGraphCliAdapter } from '../../src/cli/tools/codegraph-reader';
@@ -127,7 +127,7 @@ describe('mcp doctor and local config', () => {
       mkdirSync(noState.HOME, { recursive: true });
       const unreadable = { ...process.env, HOME: join(userHome, 'unreadable') };
       mkdirSync(join(unreadable.HOME, '.repo-harness'), { recursive: true });
-      writeFileSync(join(unreadable.HOME, '.repo-harness/install-state.json'), '{');
+      writeFileSync(installStateFixturePath(unreadable), '{');
 
       const needs = (name: string, repair: string) => `install_plugin_unavailable: repo-harness mcp ${name} needs the mcp plugin: the mcp plugin is not selected; run: ${repair}`;
       const blocked: [string, NodeJS.ProcessEnv, string | RegExp][] = [

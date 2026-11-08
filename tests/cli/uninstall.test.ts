@@ -1,10 +1,10 @@
 import { createHash } from 'crypto';
 import { versions } from '../../src/cli/installer/install-profile';
 import { beforeAll, test, expect } from 'bun:test';
-import { seedGlobalPackageFixture } from '../helpers/install-ownership';
+import { installStateFixturePath, seedGlobalPackageFixture } from '../helpers/install-ownership';
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, relative } from 'path';
 import { spawnSync } from 'child_process';
 import { runUserUninstall } from '../../src/cli/installer/uninstall';
 import { configurationReceiptPath, writeOwnedConfiguration } from '../../src/cli/installer/configuration-ownership';
@@ -91,7 +91,7 @@ test('restores Codex MCP section while preserving other TOML tables',()=>fixture
 }));
 
 function profile(home: string, entries: any[]) {
- put(home,'.repo-harness/install-state.json',JSON.stringify({protocol:3,...versions(['architecture']),selection:['architecture'],transaction_id:'fixture',applied_at:new Date().toISOString(),ownership_manifest:entries,previous:null}));
+ put(home,relative(home,installStateFixturePath({HOME:home})),JSON.stringify({protocol:3,...versions(['architecture']),selection:['architecture'],transaction_id:'fixture',applied_at:new Date().toISOString(),ownership_manifest:entries,previous:null}));
 }
 function ownedFile(path: string, content: string) { return {owner:'core',authority:'repo-harness-install-transaction',removal:'managed-surfaces-only',path,type:'managed-file',content_hash:`sha256:${createHash('sha256').update(content).digest('hex')}`,managed_marker:'transaction-created-file',symlink_target:null}; }
 test('removes profile-owned rules and retires profile but preserves user files',()=>fixture((home,env)=>{

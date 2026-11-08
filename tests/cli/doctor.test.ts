@@ -1,6 +1,5 @@
 import { CLI_PORTS, registerArchitecturePlugin } from '../../src/cli/index';
 import { ownerForInstallPath, versions } from '../../src/cli/installer/install-profile';
-import { installProfileStatePath } from '../../src/cli/installer/install-state';
 import { installSelectionCommand, type PluginId } from '../../src/core/skill-surface/plugin-manifest';
 import { hashManagedTree } from '../../src/effects/managed-tree';
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
@@ -20,7 +19,7 @@ import {
   runDoctor,
 } from '../../src/cli/commands/doctor';
 import { writeShellExecutableFixture } from '../helpers/repo-fixture';
-import { recordPluginSelection, seedGlobalPackageFixture } from '../helpers/install-ownership';
+import { installStateFixturePath, recordPluginSelection, seedGlobalPackageFixture } from '../helpers/install-ownership';
 import { expectedSkillProjections, type SkillProjection } from '../../src/cli/installer/skill-projection';
 import { buildManagedHooks, MANAGED_TAG } from '../../src/cli/installer/managed-entries';
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
@@ -658,7 +657,7 @@ describe('doctor command (Phase 1C)', () => {
 
       // A selection without architecture has no CodeGraph: one na row replaces the CodeGraph checks and doctor probes nothing.
       fs.rmSync(logFile);
-      const statePath = installProfileStatePath(env);
+      const statePath = installStateFixturePath(env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.writeFileSync(statePath, JSON.stringify({ protocol: 3, ...versions(['product']), selection: ['product'], transaction_id: 'doctor',
         applied_at: '2026-11-01T00:00:00.000Z', ownership_manifest: [], previous: null }));
@@ -734,7 +733,7 @@ describe('doctor skill projection', () => {
     const crossReview = 'repo-harness-cross-review';
     const allProjections = expectedSkillProjections(catalog.catalog, packageRoot, home, FULL_PLUGINS, f.env);
     const codexProjection = (name: string): SkillProjection => allProjections.find(p => p.host === 'codex' && p.name === name)!;
-    const ledgerPath = path.join(home, '.repo-harness/install-state.json');
+    const ledgerPath = installStateFixturePath({ HOME: home });
     const cases: { state: string; name: string; ledger?: boolean; setup: (p: SkillProjection) => void }[] = [
       { state: 'ok link', name: crossReview, setup: p => fs.symlinkSync(p.source, p.destination) },
       { state: 'dangling link', name: crossReview, setup: p => fs.symlinkSync(path.join(home, 'missing'), p.destination) },
@@ -818,7 +817,7 @@ describe('doctor skill projection', () => {
       fs.symlinkSync(projection.source, projection.destination);
     }
     // A protocol 3 ledger that owns only the claude links.
-    const ledger = path.join(home, '.repo-harness/install-state.json');
+    const ledger = installStateFixturePath({ HOME: home });
     fs.mkdirSync(path.dirname(ledger), { recursive: true });
     fs.writeFileSync(ledger, JSON.stringify({ protocol: 3, ...versions(recorded), selection: 'all',
       transaction_id: 'claude-only-test', applied_at: new Date(0).toISOString(), previous: null,
@@ -907,7 +906,7 @@ describe('doctor skill projection', () => {
   test('reports ledger type drift and installStateStatus drift without changing the ledger', () => withTempHome(home => {
     const f = seed(home);
     fs.symlinkSync(f.source, f.destination);
-    const ledger = path.join(home, '.repo-harness/install-state.json');
+    const ledger = installStateFixturePath({ HOME: home });
     fs.mkdirSync(path.dirname(ledger), { recursive: true });
     fs.writeFileSync(ledger, JSON.stringify({ protocol: 3, ...versions(FULL_PLUGINS), selection: 'all',
       transaction_id: 'projection-test', applied_at: new Date(0).toISOString(), previous: null,
@@ -976,7 +975,7 @@ test('each skill-projection repair command keeps the recorded selection and pass
     const router = path.join(home, '.codex/skills/repo-harness');
     fs.mkdirSync(path.dirname(router), { recursive: true });
     fs.symlinkSync(home, router);
-    const statePath = path.join(home, '.repo-harness/install-state.json');
+    const statePath = installStateFixturePath({ HOME: home });
     fs.mkdirSync(path.dirname(statePath), { recursive: true });
     fs.writeFileSync(statePath, JSON.stringify({ protocol: 3, ...versions(row.plugins), selection: row.selection, transaction_id: 'repair', applied_at: new Date(0).toISOString(),
       previous: null, ownership_manifest: [{ owner: 'core', authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', path: router, type: 'symlink',
