@@ -19,6 +19,10 @@ All notable changes to this skill are documented here.
   refuses a protocol-3 server; update the desktop app together with the
   CLI. (#1968)
 
+### Fixed
+
+- `review publish` puts a finding on a line outside the PR diff into the review body, so GitHub no longer rejects the review with HTTP 422. A retry reuses the acceptance claim already on the PR instead of posting a second one (#2009).
+
 ## [0.28.0] - 2026-11-08
 
 This release derives each account's seat mode from weekly quota, makes

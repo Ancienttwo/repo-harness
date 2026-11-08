@@ -248,15 +248,45 @@ export function renderInlineComment(finding: ReviewPublishBlockingFinding): Revi
   });
 }
 
-/** Review API payload fields that come from the receipt. The caller adds the commit id. */
-export function reviewPayloadFromReceipt(receipt: ReviewPublishReceipt): {
+/** New-file line numbers per path that a pull-request diff shows. */
+export type ReviewDiffLines = ReadonlyMap<string, ReadonlySet<number>>;
+
+/**
+ * The new-file lines that one file patch shows: added and context lines of
+ * every hunk. A file without a patch (binary, too large) shows none.
+ */
+export function patchRightLines(patch: string | undefined): ReadonlySet<number> {
+  const lines = new Set<number>();
+  if (patch === undefined) return lines;
+  let next = 0;
+  for (const row of patch.split('\n')) {
+    const header = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(row);
+    if (header) { next = Number(header[1]); continue; }
+    if (next === 0 || !(row.startsWith(' ') || row.startsWith('+'))) continue;
+    lines.add(next++);
+  }
+  return lines;
+}
+
+/**
+ * Review API payload fields that come from the receipt. The caller adds the
+ * commit id. GitHub rejects an inline comment on a line outside the diff, so
+ * such a finding goes into the review body instead.
+ */
+export function reviewPayloadFromReceipt(receipt: ReviewPublishReceipt, diffLines: ReviewDiffLines): {
   readonly event: 'COMMENT';
   readonly body: string;
   readonly comments: readonly ReviewInlineComment[];
 } {
+  const inDiff = (entry: ReviewPublishBlockingFinding) => diffLines.get(entry.path)?.has(entry.line) === true;
+  const blocking = blockingFindings(receipt);
+  const outside = blocking.filter((entry) => !inDiff(entry));
+  const body = renderAcceptanceReview(receipt) + (outside.length
+    ? '\n## Findings outside the diff\n\n' + outside.map((entry) => '- ' + findingSummary(entry)).join('\n') + '\n'
+    : '');
   return Object.freeze({
     event: 'COMMENT' as const,
-    body: renderAcceptanceReview(receipt),
-    comments: Object.freeze(blockingFindings(receipt).map(renderInlineComment)),
+    body,
+    comments: Object.freeze(blocking.filter(inDiff).map(renderInlineComment)),
   });
 }

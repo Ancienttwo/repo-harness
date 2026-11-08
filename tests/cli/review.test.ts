@@ -5,6 +5,7 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { taskReviewRunner } from '../../src/effects/review-runner/task-review-runner';
 import { buildReviewCommand, pullRequestSelectionFromOptions } from '../../src/cli/commands/review';
+import { renderAcceptanceClaim, validateReviewPublishReceipt } from '../../src/core/review/review-publish';
 import { createReviewAdmission, reviewCampaignKey, type ReviewAdmissionInput } from '../../src/core/review/authority-context';
 import { readReviewAdmission } from '../../src/effects/admission/admission-store';
 import { gatesDirectoryName } from '../../src/effects/git/repository-identity';
@@ -168,7 +169,12 @@ function publishReceipt(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function publishFixture(scenario = passingScenario()) {
+// Lines 10-14 of src/example.ts are in the PR diff; the default F1 finding sits on line 12.
+const DIFF_PATCH = '@@ -10,3 +10,5 @@\n context\n-old\n+new\n+added\n context\n context\n';
+const publishScenario = (overrides: Parameters<typeof passingScenario>[0] = {}) =>
+  passingScenario({ changedFiles: [{ filename: 'src/example.ts', patch: DIFF_PATCH }], ...overrides });
+
+function publishFixture(scenario = publishScenario()) {
   const root = tmpWorkspace('review-publish-root'); roots.push(root);
   const gh = installFakeGh(root, scenario);
   return { root, gh, receipt: join(root, 'receipt.json') };
@@ -251,8 +257,45 @@ test('a PASS receipt with no P1/P2 opens no review thread', async () => {
   expect(review.event).toBe('COMMENT');
 });
 
+test('a finding outside the diff goes into the review body, not an inline comment', async () => {
+  const fixture = publishFixture();
+  const outside = { id: 'F2', severity: 'P2', path: 'src/example.ts', line: 15, evidence: 'A pre-existing call site ignores the result.', fix: 'Check the result.' };
+  const result = await runPublish(fixture, publishReceipt({ findings: [
+    { id: 'F1', severity: 'P1', path: 'src/example.ts', line: 12, evidence: 'The guard drops the last item.', fix: 'Use the inclusive bound.' }, outside] }));
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, threads: 1 });
+  const review = JSON.parse(postedInputs(fixture, '/reviews')[0]!.input);
+  expect(review.comments).toHaveLength(1);
+  expect(review.comments[0].line).toBe(12);
+  expect(review.body).toContain('## Findings outside the diff');
+  expect(review.body).toContain('F2 at src/example.ts:15');
+  expect(review.body).not.toContain('F1 at');
+});
+
+test('a retry reuses the claim already on the PR instead of posting a second one', async () => {
+  const claimUrl = 'https://github.com/example/repo-harness/pull/' + PUBLISH_PR + '#issuecomment-777';
+  const claimBody = renderAcceptanceClaim(validateReviewPublishReceipt(publishReceipt()));
+  const fixture = publishFixture(publishScenario({ existingComments: [{ body: claimBody, html_url: claimUrl }] }));
+  const result = await runPublish(fixture, publishReceipt());
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout).claim_url).toBe(claimUrl);
+  expect(fixture.gh.inputs().filter((entry) => entry.input.includes('repo-harness acceptance claim'))).toHaveLength(0);
+  expect(JSON.parse(postedInputs(fixture, '/issues/' + PUBLISH_PR + '/comments').find((entry) => entry.input !== '')!.input).body).toContain('Claim: ' + claimUrl);
+});
+
+test('a later conflicting claim for the same subject and round stops the retry even after an identical one', async () => {
+  const claimBody = renderAcceptanceClaim(validateReviewPublishReceipt(publishReceipt({ risk_tier: 'low' })));
+  const fixture = publishFixture(publishScenario({ existingComments: [
+    { body: renderAcceptanceClaim(validateReviewPublishReceipt(publishReceipt())), html_url: 'https://github.com/example/repo-harness/pull/' + PUBLISH_PR + '#issuecomment-777' },
+    { body: claimBody, html_url: 'https://github.com/example/repo-harness/pull/' + PUBLISH_PR + '#issuecomment-778' }] }));
+  const result = await runPublish(fixture, publishReceipt());
+  expect(result.status).toBe(2);
+  expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, error: 'review_publish_conflict', exit_code: 2, posted: [] });
+  expect(fixture.gh.inputs().some((entry) => entry.input !== '')).toBe(false);
+});
+
 test('a failure after the claim stops with review_publish_partial and the posted URLs', async () => {
-  const fixture = publishFixture(passingScenario({ failPost: 'review' }));
+  const fixture = publishFixture(publishScenario({ failPost: 'review' }));
   const result = await runPublish(fixture, publishReceipt());
   expect(result.status).toBe(5);
   const output = JSON.parse(result.stdout);
@@ -264,7 +307,7 @@ test('a failure after the claim stops with review_publish_partial and the posted
 });
 
 test('a POST with an unknown outcome exits 5 with the confirmed URLs and is not retried', async () => {
-  const fixture = publishFixture(passingScenario({ unknownPost: 'review' }));
+  const fixture = publishFixture(publishScenario({ unknownPost: 'review' }));
   const result = await runPublish(fixture, publishReceipt());
   expect(result.status).toBe(5);
   const output = JSON.parse(result.stdout);
@@ -278,7 +321,7 @@ test('a POST with an unknown outcome exits 5 with the confirmed URLs and is not 
 });
 
 test('a claim POST with no provider answer exits 5 with no confirmed URL and requires inspection', async () => {
-  const fixture = publishFixture(passingScenario({ unknownPost: 'claim', unknownPostMode: 'timeout' }));
+  const fixture = publishFixture(publishScenario({ unknownPost: 'claim', unknownPostMode: 'timeout' }));
   const result = await runPublish(fixture, publishReceipt());
   expect(result.status).toBe(5);
   const output = JSON.parse(result.stdout);
@@ -289,7 +332,7 @@ test('a claim POST with no provider answer exits 5 with no confirmed URL and req
 });
 
 test('a POST transport failure with exit 1 and EOF reports the unknown outcome', async () => {
-  const fixture = publishFixture(passingScenario({ unknownPost: 'review', unknownPostMode: 'transport' }));
+  const fixture = publishFixture(publishScenario({ unknownPost: 'review', unknownPostMode: 'transport' }));
   const result = await runPublish(fixture, publishReceipt());
   expect(result.status).toBe(5);
   const output = JSON.parse(result.stdout);
@@ -302,7 +345,7 @@ test('a POST transport failure with exit 1 and EOF reports the unknown outcome',
 });
 
 test('a record POST whose response fails URL validation exits 5 and keeps the confirmed URLs', async () => {
-  const fixture = publishFixture(passingScenario({ unknownPost: 'record', unknownPostMode: 'bad_url' }));
+  const fixture = publishFixture(publishScenario({ unknownPost: 'record', unknownPostMode: 'bad_url' }));
   const result = await runPublish(fixture, publishReceipt());
   expect(result.status).toBe(5);
   const output = JSON.parse(result.stdout);
@@ -316,7 +359,7 @@ test('a record POST whose response fails URL validation exits 5 and keeps the co
 
 test('a valid review URL with a wrong binding or state is retained in the unknown outcome', async () => {
   for (const reviewBinding of ['wrong_commit', 'wrong_state'] as const) {
-    const fixture = publishFixture(passingScenario({ reviewBinding }));
+    const fixture = publishFixture(publishScenario({ reviewBinding }));
     const result = await runPublish(fixture, publishReceipt());
     expect(result.status).toBe(5);
     const output = JSON.parse(result.stdout);
@@ -332,7 +375,7 @@ test('a valid review URL with a wrong binding or state is retained in the unknow
 
 test('head movement between the claim and the review stops before the review', async () => {
   const moved = 'f'.repeat(40);
-  const fixture = publishFixture(passingScenario({ headSequence: [PUBLISH_HEAD, moved] }));
+  const fixture = publishFixture(publishScenario({ headSequence: [PUBLISH_HEAD, moved] }));
   const result = await runPublish(fixture, publishReceipt());
   expect(result.status).toBe(5);
   const output = JSON.parse(result.stdout);
@@ -347,7 +390,7 @@ test('head movement between the claim and the review stops before the review', a
 
 test('head movement between the review and the record stops before the record', async () => {
   const moved = 'f'.repeat(40);
-  const fixture = publishFixture(passingScenario({ headSequence: [PUBLISH_HEAD, PUBLISH_HEAD, moved] }));
+  const fixture = publishFixture(publishScenario({ headSequence: [PUBLISH_HEAD, PUBLISH_HEAD, moved] }));
   const result = await runPublish(fixture, publishReceipt());
   expect(result.status).toBe(5);
   const output = JSON.parse(result.stdout);

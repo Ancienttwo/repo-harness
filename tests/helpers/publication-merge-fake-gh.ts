@@ -47,7 +47,9 @@ export interface PublicationMergeScenario {
   /** The unfiltered check view the coverage rule reads. */
   readonly allChecks?: readonly { readonly name: string; readonly bucket: string }[];
   /** The REST pull-request files view; `previous_filename` marks a rename source. */
-  readonly changedFiles?: readonly { readonly filename: string; readonly previous_filename?: string }[];
+  readonly changedFiles?: readonly { readonly filename: string; readonly previous_filename?: string; readonly patch?: string }[];
+  /** Issue comments already on the PR, as the provider lists them. */
+  readonly existingComments?: readonly { readonly body: string; readonly html_url: string }[];
   readonly unresolvedThreads?: number;
   readonly changesRequested?: boolean;
   readonly title?: string;
@@ -172,6 +174,7 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
       reviewThreads: { pageInfo: { hasNextPage: false }, nodes: Array.from({ length: scenario.unresolvedThreads ?? 0 }, () => ({ isResolved: false, comments: { nodes: [] } })) },
     } } } });
   }
+  if (sub?.startsWith(`${root}/issues/${PR}/comments?`)) return ok(scenario.existingComments ?? []);
   if (sub === `${root}/issues/${PR}/comments`) {
     const payload = input ? JSON.parse(input) as { body?: unknown } : {};
     const body = typeof payload.body === 'string' ? payload.body : '';
@@ -199,7 +202,8 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
   }
   if (sub?.startsWith(`${root}/pulls/${PR}/files?`)) {
     return ok((scenario.changedFiles ?? []).map((file) => ({ filename: file.filename,
-      ...(file.previous_filename === undefined ? {} : { previous_filename: file.previous_filename }) })));
+      ...(file.previous_filename === undefined ? {} : { previous_filename: file.previous_filename }),
+      ...(file.patch === undefined ? {} : { patch: file.patch }) })));
   }
   if (sub?.startsWith(`${root}/contents/.github/workflows/ci-report.yml`)) return notFound();
   if (sub === `${root}/contents/.ai/harness/policy.json?ref=${baseSha}`) return policyFile(scenario.policyBase);
