@@ -27,9 +27,9 @@ executes them or stops and asks.
 
 A **seat** is a process seat: the orchestrator, the advisor or a worker. A
 **sub-agent** is an `agents/fleet/` role that runs inside a seat process.
-The orchestrator calls only the read-only sub-agents `gatekeeper`,
-`explorer` and `deep-reasoner`. Writers, `root-cause-prover` included, and
-the Codex cross-review run in seats.
+The orchestrator calls only the read-only sub-agents `explorer` and
+`deep-reasoner`. The gatekeeper, the writers, `root-cause-prover`
+included, and the Codex cross-review run in Herdr seats.
 A **claim role** is the GitHub role that a claim gives: coordinator,
 writer, head owner, integrator or acceptor.
 
@@ -38,7 +38,7 @@ writer, head owner, integrator or acceptor.
 | Orchestrator | Any host's long-lived top-level session with network access, started from `repo-harness seats argv orchestrator` | Coordinator of the parent issue; integrator | Implements a child issue in its own sub-tree; calls a writer sub-agent (`fast-worker`, `deep-worker`, `root-cause-prover`) or runs the Codex cross-review as a sub-agent |
 | Gap reviewer | A different model family from the orchestrator, when one is available | None. Comments on the drafts | Rewrites the split or decides scope |
 | Worker | Any capable coding model | Writer of one issue or PR slot, dispatched by the coordinator; head owner of its PR | Posts its own claim, widens scope, merges, pushes to another owner's branch |
-| Acceptor | A seat holds the acceptor role and can call the gatekeeper sub-agent, the default reviewer. The orchestrator does not review a PR itself; an independent gatekeeper sub-agent of its seat may review a PR that it dispatched. The Codex cross-review and every other review run in another seat. For the High tier, a different model family when available; otherwise a fresh same-family context | Acceptor of one review in one round | Reviews its own code, pushes code |
+| Acceptor | A seat holds the acceptor role. The default reviewer is the gatekeeper in its own Herdr seat; the acceptor does not call it as a sub-agent. The orchestrator does not review a PR itself; a gatekeeper seat reviews each PR that the orchestrator dispatches. The Codex cross-review and every other review run in another seat. For the High tier, a different model family when available; otherwise a fresh same-family context | Acceptor of one review in one round | Reviews its own code, pushes code |
 
 The suggested models are advice, not a requirement. Any capable host may
 hold any claim role. The High tier records its `model_relation` in the
