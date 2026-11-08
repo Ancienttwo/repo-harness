@@ -1054,11 +1054,24 @@ first: a stale `node_modules` fails the archctx version check. The command
 resolves the archctx pinned by the repo-harness package and a compatible Node
 runtime. It runs archctx in the target repository root, and archctx derives the
 writer repository from that directory. It fixes the upstream target to `origin`,
-base `main`, branch `archctx/projection`, publisher `gh`. `follow` delegates the
-300-second loop to archctx. The command forwards SIGINT and SIGTERM to archctx
-and returns its exit code. archctx owns the shared lock, worktree, render,
-commit, push and rolling PR. It never pushes main. No GitHub App, new secret,
-Actions writer or repo-harness publication loop is used. The operator supplies
+base `main`, branch `archctx/projection`, publisher `gh`. The command forwards
+SIGINT and SIGTERM to archctx and returns its exit code. archctx owns the shared
+lock, worktree, render, commit, push and rolling PR. It never pushes main. No
+GitHub App, new secret or Actions writer is used.
+
+`follow` runs only under bun from a repo-harness Git source checkout. The
+checkout at `origin/main` is the one owner of the writer code version. Every 300
+seconds, `follow` fetches `origin main`. When main moved, it fast-forwards the
+checkout, runs `bun install --frozen-lockfile`, writes an `updated` JSON line and
+exits with status 75. The supervisor restarts it on that non-zero exit, so the
+next process runs the new code and the archctx that main pins. When the checkout
+is current, `follow` runs one archctx `once` publication. When the fetch, the
+fast-forward or the install fails, `follow` writes an `update-failed` JSON line
+to stdout on each try and one notice to stderr per distinct error. It does not
+publish until the update succeeds. A local commit or a dirty file that blocks
+the fast-forward needs an operator repair. The installed package is not used for
+`follow`: releases lag main, and a long-running process does not reload a
+`repo-harness update`. The operator supplies
 existing Git and gh authentication. The resulting PR runs normal CI. The merge
 rule for that PR is below.
 
@@ -1075,8 +1088,9 @@ writer-owned worktree. Do not replace a shared daemon or index other workspaces.
 Inspect facts again if archctx reports a stale index after the base moves; the
 command does not invent a repair.
 
-Run `follow` under the operator's process supervisor after setup. Inspect each
-JSON run result and `status`: `busy` means another writer holds the lock;
+Run `follow` under the operator's process supervisor after setup. The
+supervisor must restart the process after a non-zero exit (launchd: `KeepAlive`
+with `SuccessfulExit` false). Inspect each JSON run result and `status`: `busy` means another writer holds the lock;
 `human-action-required` needs the reported model, proof or ownership decision;
 `failed` carries the upstream error. Do not interpret a live process as
 successful publication.

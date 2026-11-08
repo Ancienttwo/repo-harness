@@ -42,7 +42,7 @@ import { trustedNodeCandidates } from '../src/effects/runtime/node-candidates';
 import { buildArchitectureProjectionCommand } from '../src/cli/commands/architecture-projection';
 import { architectureProjectionExitCode, humanActionLine } from '../src/cli/commands/architecture-projection-actions';
 import { applyArchitectureProjection } from '../src/effects/architecture/projection-apply';
-import { architectureWriterArgs } from '../src/effects/architecture/projection-writer';
+import { architectureWriterArgs, followArchitectureWriter, WRITER_RESTART_EXIT_CODE } from '../src/effects/architecture/projection-writer';
 import { recordPluginSelection } from './helpers/install-ownership';
 
 const PACKAGE_ROOT = join(import.meta.dir, '..');
@@ -1023,16 +1023,59 @@ describe('package-local ArchContext projection provider', () => {
     expect(command.commands.find((candidate) => candidate.name() === 'publish')!.options).toEqual([]);
   });
 
-  test('writer delegates a fixed rolling target and loop to archctx with explicit state', () => {
+  test('writer delegates a fixed rolling target to archctx with explicit state; follow runs once per iteration', () => {
     const status = architectureWriterArgs('status', '/tmp/writer-state');
     expect(status).toEqual(['projection', 'publish-status', '--remote', 'origin', '--base', 'main', '--json']);
     expect(status).not.toContain('--accept-observed-major-change');
     const once = architectureWriterArgs('once', '/tmp/writer-state');
     expect(once).toEqual(['projection', 'publish', '--remote', 'origin', '--base', 'main', '--branch', 'archctx/projection', '--publisher', 'gh', '--accept-observed-major-change', '--json']);
-    expect(architectureWriterArgs('follow', '/tmp/writer-state')).toEqual([...once.slice(0, -1), '--follow', '--interval', '300', '--json']);
+    expect(architectureWriterArgs('follow', '/tmp/writer-state')).toEqual(once);
     expect(() => architectureWriterArgs('once', undefined)).toThrow('ARCHCONTEXT_STATE_DIR');
     expect(() => architectureWriterArgs('once', 'relative')).toThrow('absolute');
     expect(() => architectureWriterArgs('push-main', '/tmp/writer-state')).toThrow('Usage');
+  });
+
+  test('follow publishes only from a checkout at origin/main and restarts after a fast-forward', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-writer-follow-'));
+    roots.push(root);
+    const git = (cwd: string, args: string[]) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const [checkout, author] = ['checkout', 'author'].map((name) => join(root, name));
+    git(root, ['init', '-q', '--bare', '-b', 'main', 'origin.git']);
+    git(root, ['clone', '-q', 'origin.git', 'author']);
+    writeFileSync(join(author, 'package.json'), '{"name":"writer-fixture","version":"0.0.0"}\n');
+    git(author, ['add', '.']);
+    git(author, ['commit', '-q', '-m', 'one']);
+    git(author, ['push', '-q', 'origin', 'HEAD:main']);
+    git(root, ['clone', '-q', 'origin.git', 'checkout']);
+    const follow = async (runningHead: string, waits: boolean[]) => {
+      const seen = { published: 0, stdout: [] as string[], stderr: [] as string[] };
+      const code = await followArchitectureWriter(checkout, runningHead, process.execPath, {
+        publishOnce: async () => { seen.published += 1; return 0; },
+        wait: async () => waits.shift() ?? true,
+        stdout: (line) => seen.stdout.push(line),
+        stderr: (line) => seen.stderr.push(line),
+      });
+      return { code, ...seen, head: git(checkout, ['rev-parse', 'HEAD']) };
+    };
+
+    const one = git(checkout, ['rev-parse', 'HEAD']);
+    expect(await follow(one, [])).toMatchObject({ code: 0, published: 1, stderr: [], head: one });
+
+    git(author, ['commit', '-q', '--allow-empty', '-m', 'two']);
+    git(author, ['push', '-q', 'origin', 'HEAD:main']);
+    const two = git(author, ['rev-parse', 'HEAD']);
+    const updated = await follow(one, []);
+    expect(updated).toMatchObject({ code: WRITER_RESTART_EXIT_CODE, published: 0, stderr: [], head: two });
+    expect(JSON.parse(updated.stdout[0]!)).toMatchObject({ result: 'updated', from: one, to: two });
+
+    git(checkout, ['commit', '-q', '--allow-empty', '-m', 'local']);
+    git(author, ['commit', '-q', '--allow-empty', '-m', 'three']);
+    git(author, ['push', '-q', 'origin', 'HEAD:main']);
+    const local = git(checkout, ['rev-parse', 'HEAD']);
+    const diverged = await follow(two, [false, true]);
+    expect(diverged).toMatchObject({ code: 0, published: 0, head: local });
+    expect(diverged.stdout.map((line) => (JSON.parse(line) as { result: string }).result)).toEqual(['update-failed', 'update-failed']);
+    expect(diverged.stderr).toHaveLength(1);
   });
 
   test('publish status runs the package-local archctx writer status in the target repository', () => {
