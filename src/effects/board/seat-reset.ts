@@ -44,11 +44,23 @@ export function readTranscriptContextTokens(path: string): number | null {
   }
 }
 
-/** The Stop hook records when it asked for the reset; the reset command refuses a handoff older than this. */
-export function writeSeatResetRequest(identity: SeatResetIdentity, now: Date, contextTokens: number): void {
+/**
+ * The Stop hook records when it asked for the reset and for which transcript; the reset command refuses a handoff
+ * older than this. `/clear` starts a new transcript, so the next crossing asks again.
+ */
+export function writeSeatResetRequest(identity: SeatResetIdentity, now: Date, contextTokens: number, transcriptPath: string): void {
   const path = seatResetRequestPath(identity);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writeFileSync(path, `${JSON.stringify({ requested_at: now.toISOString(), context_tokens: contextTokens })}\n`);
+  writeFileSync(path, `${JSON.stringify({ requested_at: now.toISOString(), context_tokens: contextTokens, transcript_path: transcriptPath })}\n`);
+}
+
+/** True when the Stop hook already asked for a reset of this transcript; an absent or unreadable request is false. */
+export function seatResetRequested(identity: SeatResetIdentity, transcriptPath: string): boolean {
+  try {
+    return (JSON.parse(readFileSync(seatResetRequestPath(identity), 'utf8')) as { transcript_path?: unknown }).transcript_path === transcriptPath;
+  } catch {
+    return false;
+  }
 }
 
 export class SeatResetError extends Error {
