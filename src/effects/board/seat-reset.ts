@@ -4,9 +4,9 @@ import { dirname } from 'path';
 import { appendFileSync, existsSync } from 'fs';
 import {
   SEAT_NO_RESET_MESSAGE, SEAT_RESET_RETRIES, handoffIdentity, missingHandoffSections, seatResetLogPath, seatResetRequestPath,
-  seatResumePrompt, seatRewriteMessage, seatSessionPath, type SeatResetIdentity,
+  seatResetDirectory, seatResumePrompt, seatRewriteMessage, seatSessionPath, type SeatResetIdentity,
 } from '../../core/board/seat-reset';
-import { RH_LABEL, hcGet, hcList, hcSend, hcWait, type HerdrCoreOptions } from '../terminal/herdr-core';
+import { RH_LABEL, hcGet, hcKeys, hcList, hcSend, hcWait, type HerdrCoreOptions } from '../terminal/herdr-core';
 import { postNotifyEvent } from '../terminal/notify-relay';
 
 const TAIL_BYTES = 1024 * 1024;
@@ -125,7 +125,7 @@ function newSession(identity: SeatResetIdentity, since: number, request: SeatReq
   }
 }
 
-/** Mechanical resume evidence: the transcript has a user entry whose text is the resume prompt. */
+/** Mechanical resume evidence: the transcript has a user entry whose text holds the resume prompt (hc may wrap it). */
 function hasUserPrompt(transcript: string, prompt: string): boolean {
   let text: string;
   try { text = readFileSync(transcript, 'utf8'); } catch { return false; }
@@ -133,12 +133,24 @@ function hasUserPrompt(transcript: string, prompt: string): boolean {
     try {
       const entry = JSON.parse(line) as { type?: unknown; message?: { content?: unknown } };
       const content = entry.message?.content;
-      return entry.type === 'user' && (content === prompt
-        || (Array.isArray(content) && content.some(part => (part as { text?: unknown } | null)?.text === prompt)));
+      const holds = (value: unknown) => typeof value === 'string' && value.includes(prompt);
+      return entry.type === 'user' && (holds(content) || (Array.isArray(content) && content.some(part => holds((part as { text?: unknown } | null)?.text))));
     } catch {
       return false;
     }
   });
+}
+
+/** The characters that `hc keys` takes as single-character key names, and the space key. */
+const TYPABLE = /^[A-Za-z0-9 /.-]+$/u;
+
+/**
+ * Types one line and Enter with `hc keys`. `hc send` wraps its text in an envelope, so Claude reads a sent slash
+ * command as chat text and a shell reads a sent line as a parse error.
+ */
+function typeLine(terminal: string, line: string, options: HerdrCoreOptions): void {
+  if (!TYPABLE.test(line)) throw new Error(`${JSON.stringify(line)} has a character that hc keys cannot type`);
+  hcKeys(terminal, [...[...line].map(character => (character === ' ' ? 'space' : character)), 'enter'], options);
 }
 
 function shellQuote(value: string): string {
@@ -243,7 +255,7 @@ export async function runSeatReset(path: string, sha256: string, options: SeatRe
   // From the /clear send on, the requester may already be cleared, so a failure gives the prompt to send by hand.
   try {
     const clearedAt = Date.now();
-    hcSend(requester, '/clear', options);
+    typeLine(requester, '/clear', options);
     for (let failure = await resume(clearedAt); failure !== null; failure = await resume(clearedAt)) {
       await fail('resume', failure);
       if (count('resume') > SEAT_RESET_RETRIES) return await relaunch();
@@ -261,10 +273,14 @@ export async function runSeatReset(path: string, sha256: string, options: SeatRe
       throw new SeatResetError('resume_not_sent', 'uncertain', `The relaunch of ${requester} failed (${detail}). Start it from \`repo-harness seats argv ${identity!.seat} --repository-id ${identity!.repository}\` and send: ${prompt}`);
     };
     wait();
-    hcSend(requester, '/exit', options);
+    typeLine(requester, '/exit', options);
     if (await poll(() => (hcGet(requester, options).foreground?.name === 'claude' ? null : true), timeouts.exitMs) === null) return stop('claude_did_not_exit');
+    // The argv needs characters that hc keys cannot type, so the login shell runs it from a script.
+    const script = `${seatResetDirectory(identity!)}/relaunch.sh`;
+    if (!TYPABLE.test(script) || script.includes(' ')) return stop('relaunch_path_untypable');
+    writeFileSync(script, `${(await options.relaunchArgv(identity!)).map(shellQuote).join(' ')}\n`, { mode: 0o700 });
     const startedAt = Date.now();
-    hcSend(requester, (await options.relaunchArgv(identity!)).map(shellQuote).join(' '), options);
+    typeLine(requester, `sh ${script}`, options);
     const failure = await resume(startedAt);
     return failure === null ? { requester, seat: identity!.seat, relaunched: true } : stop(failure);
   }

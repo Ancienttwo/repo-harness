@@ -3,7 +3,7 @@ import { spawnSync } from "child_process";
 import { createHash } from "crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { delimiter, join } from "path";
+import { delimiter, dirname, join } from "path";
 import { seatPaneName } from "../../src/core/board/seat-launch";
 import { HANDOFF_SECTIONS } from "../../src/core/board/seat-reset";
 import { SeatResetError, runSeatReset } from "../../src/effects/board/seat-reset";
@@ -633,18 +633,23 @@ const session = transcript => fs.writeFileSync("${dir}/session.json", JSON.strin
 if (cmd === "ls") out({ terminals: st.terminals });
 if (cmd === "get") out({ address: "t5", state: "live", labels: { "repo-harness.seat": "advisor" }, turn: 3, foreground: { pid: 1, name: st.foreground, argv: [], cwd: "/" } });
 if (cmd === "wait") out(st.wait);
+// As the real hc: keys arrive as typed input; send wraps its text in an envelope, so a sent slash command is chat text.
+if (cmd === "keys") {
+  const line = rest.slice(2).filter(key => key !== "enter").map(key => (key === "space" ? " " : key)).join("");
+  if (line === "/clear" && st.signal) session("${home}/cleared.jsonl");
+  if (line === "/exit" && st.exit) st.foreground = "zsh";
+  if (line.startsWith("sh ")) session("${home}/relaunched.jsonl");
+  out({ status: null, turn: 4 });
+}
 if (cmd === "send") {
   const text = rest[rest.length - 1];
-  if (text === "/clear" && st.signal) session("${home}/cleared.jsonl");
-  if (text === "/exit" && st.exit) st.foreground = "zsh";
-  if (text.startsWith("/bin/sh")) session("${home}/relaunched.jsonl");
   if (text.startsWith("You are") && (st.prompts += 1) >= st.evidenceFrom) {
     const transcript = JSON.parse(fs.readFileSync("${dir}/session.json", "utf8")).transcript_path;
-    fs.appendFileSync(transcript, JSON.stringify({ type: "user", message: { role: "user", content: text } }) + "\\n");
+    fs.appendFileSync(transcript, JSON.stringify({ type: "user", message: { role: "user", content: \`<hc from="t2">\${text}</hc>\` } }) + "\\n");
   }
-  fs.writeFileSync("${home}/state.json", JSON.stringify(st));
   out({ started: null, turn: 4 });
 }
+fs.writeFileSync("${home}/state.json", JSON.stringify(st));
 `);
         chmodSync(join(home, "bin", "hc"), 0o755);
         let current: Record<string, unknown> = { terminals: [{ address: "t5", state: "live" }], wait: ended, signal: true, exit: true, foreground: "claude", prompts: 0, evidenceFrom: 1 };
@@ -671,8 +676,10 @@ if (cmd === "send") {
             return { error: (error as SeatResetError).code, outcome: (error as SeatResetError).outcome };
           }
         };
-        const calls = () => readFileSync(join(home, "calls.log"), "utf8").split("\n").filter(line => /^(wait|send) /u.test(line));
-        const sends = () => calls().filter(line => line.startsWith("send ")).map(line => line.slice("send -- t5 ".length));
+        const calls = () => readFileSync(join(home, "calls.log"), "utf8").split("\n").filter(line => /^(wait|send|keys) /u.test(line));
+        // What reached the requester, in order: a sent text, or a typed line.
+        const sends = () => calls().filter(line => !line.startsWith("wait ")).map(line => (line.startsWith("send ") ? line.slice("send -- t5 ".length)
+          : line.slice("keys -- t5 ".length).split(" ").filter(key => key !== "enter").map(key => (key === "space" ? " " : key)).join("")));
         const log = () => existsSync(join(dir, "reset-log.jsonl"))
           ? readFileSync(join(dir, "reset-log.jsonl"), "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line)) : [];
         await fn({ handoff, body, sha, state, reset, sends, calls, log });
@@ -718,7 +725,7 @@ if (cmd === "send") {
 
   test("a valid handoff waits, sends /clear, and sends the resume prompt after the new-session signal", withReset(async ({ handoff, reset, calls, log }) => {
     expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: false });
-    expect(calls()).toEqual(["wait --timeout 600 -- t5", "send -- t5 /clear", `send -- t5 ${prompt(handoff)}`]);
+    expect(calls()).toEqual(["wait --timeout 600 -- t5", "keys -- t5 / c l e a r enter", `send -- t5 ${prompt(handoff)}`]);
     expect(log()).toEqual([]);
   }));
 
@@ -731,7 +738,9 @@ if (cmd === "send") {
   test("no new-session signal after 3 resends relaunches the requester from its seat argv in the same terminal", withReset(async ({ handoff, reset, state, sends, log }) => {
     state({ signal: false });
     expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: true });
-    expect(sends()).toEqual(["/clear", "/exit", "/bin/sh -c 'exec claude' 'x y'", prompt(handoff)]);
+    const script = join(dirname(handoff), "relaunch.sh");
+    expect(sends()).toEqual(["/clear", "/exit", `sh ${script}`, prompt(handoff)]);
+    expect(readFileSync(script, "utf8")).toBe("/bin/sh -c 'exec claude' 'x y'\n");
     expect(log().map(({ kind, detail }) => [kind, detail])).toEqual(Array(4).fill(["resume", "no_signal"]));
   }));
 
