@@ -58,21 +58,21 @@ interface StopNotice {
 /**
  * An orchestrator or advisor seat at or above the reset threshold blocks the stop once per transcript (exit 2 gives
  * the reason to the model), so the seat writes its handoff and asks its peer for the reset. Only the env of
- * `repo-harness seats argv` names the seat. An unreadable transcript resets nothing and names the path.
+ * `repo-harness seats argv` names the seat. Any failure of this step resets nothing, names the failure and keeps
+ * the notices.
  */
 function seatReset(payload: HookPayload, env: NodeJS.ProcessEnv, now: Date): { readonly block: StopHandlerResult } | { readonly notices: readonly StopNotice[] } {
-  const identity = seatResetIdentity(env);
-  const transcript = payloadString(payload, 'transcript_path');
-  if (identity === null || transcript === '' || seatResetRequested(identity, transcript)) return { notices: [] };
-  let context: number | null;
   try {
-    context = readTranscriptContextTokens(transcript);
+    const identity = seatResetIdentity(env);
+    const transcript = payloadString(payload, 'transcript_path');
+    if (identity === null || transcript === '' || seatResetRequested(identity, transcript)) return { notices: [] };
+    const context = readTranscriptContextTokens(transcript);
+    if (context === null || context < SEAT_RESET_CONTEXT_TOKENS) return { notices: [] };
+    writeSeatResetRequest(identity, now, context, transcript);
+    return { block: { exitCode: 2, stdout: '', stderr: `${seatResetReason(identity, context)}\n` } };
   } catch (error) {
-    return { notices: [{ systemMessage: `repo-harness: seat reset skipped: transcript ${transcript} is not readable (${(error as Error).message}).` }] };
+    return { notices: [{ systemMessage: `repo-harness: seat reset skipped: ${(error as Error).message}` }] };
   }
-  if (context === null || context < SEAT_RESET_CONTEXT_TOKENS) return { notices: [] };
-  writeSeatResetRequest(identity, now, context, transcript);
-  return { block: { exitCode: 2, stdout: '', stderr: `${seatResetReason(identity, context)}\n` } };
 }
 
 /** The architecture and protected path notices fail independently. */
