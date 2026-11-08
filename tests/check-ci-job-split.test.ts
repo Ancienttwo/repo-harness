@@ -1000,7 +1000,7 @@ describe('architecture lanes', () => {
     fromNode: 'component.operator.primary', toNode: 'component.task-agent-host.primary', severity: constraintId === PLUGIN_INTERNALS ? 'error' : 'warning' });
   // An `archctx constraints check --json` envelope. The layer-direction warning keeps the global status violated, as on main.
   const constraints = (fields: Record<string, unknown> = {}) => JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'constraints', data: {
-    schemaVersion: 'archcontext.dependency-constraint-evaluation/v1', status: 'violated', coverage: 'complete', reasonCodes: [],
+    schemaVersion: 'archcontext.dependency-constraint-evaluation/v1', status: 'violated', coverage: 'complete', reasonCodes: [], warnings: [],
     constraintIds: [LAYER_DIRECTION, PLUGIN_INTERNALS], importEdgeCount: 5521, unresolvedImports: [], violations: [constraintViolation(LAYER_DIRECTION)], ...fields } });
 
   // Real check-ci.sh with stub CLI results. `bun -e` and the shell logic stay real.
