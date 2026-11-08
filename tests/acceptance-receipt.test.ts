@@ -1002,6 +1002,11 @@ test('review publish turns a P1 receipt into one unresolved thread that merge re
       if (args[0] === 'pr' && args[1] === 'view') {
         return { status: 0, stdout: JSON.stringify({ number: PR_NUMBER, headRefOid: PUBLISH_HEAD, url: `https://github.com/${SLUG}/pull/${PR_NUMBER}` }), stderr: '' };
       }
+      // Read side of the publisher: no earlier claim, and a diff that shows lines 10-14 of src/example.ts.
+      if (args[0] === 'api' && args[1]?.startsWith(`repos/${SLUG}/issues/${PR_NUMBER}/comments?`)) return { status: 0, stdout: '[]', stderr: '' };
+      if (args[0] === 'api' && args[1]?.startsWith(`repos/${SLUG}/pulls/${PR_NUMBER}/files?`)) {
+        return { status: 0, stdout: JSON.stringify([{ filename: 'src/example.ts', patch: '@@ -10,3 +10,5 @@\n context\n-old\n+new\n+added\n context\n context' }]), stderr: '' };
+      }
       if (args[0] === 'api' && args[1] === `repos/${SLUG}/issues/${PR_NUMBER}/comments`) {
         return { status: 0, stdout: JSON.stringify({ html_url: `https://github.com/${SLUG}/pull/${PR_NUMBER}#issuecomment-${writes.length}` }), stderr: '' };
       }
