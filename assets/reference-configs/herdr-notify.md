@@ -78,6 +78,26 @@ Routing selects the first eligible seat with a known account state, or a Pi seat
 
 With `--repository-id`, the argv labels its own terminal before the agent starts: it runs `repo-harness seats label`, which sets the seat labels on `HC_TERMINAL_ID`, and then starts the agent. The board finds seats only by these labels; a terminal without them leaves the execution axis `unavailable` (`no_seat_terminals`). When the label fails, the agent does not start and the terminal shows the error. Each start prints the new `terminal`. `<repository-id>` is the GitHub numeric repository id (`gh api repos/<owner>/<repo> --jq .id`). Leave out `--issue` and `--pr` for the orchestrator and the advisor.
 
+### Seat reset
+
+A Claude orchestrator or advisor seat resets through a handoff before auto-compaction (#1972). Opus auto-compaction started at 461k-467k context tokens on Max. With `--repository-id`, `seats argv` sets `REPO_HARNESS_SEAT` and `REPO_HARNESS_SEAT_REPOSITORY` in the env of these two seats. Only that env names the seat for the Stop hook. Worker seats do not reset.
+
+1. When the context of the last assistant entry of the transcript is 380,000 tokens or more, the Stop hook blocks the stop once per transcript. It records the request time and the transcript path in `/tmp/repo-harness-seats/<repository-id>/<seat>/request.json`. `/clear` starts a new transcript, so the next crossing blocks again.
+2. The seat writes `/tmp/repo-harness-seats/<repository-id>/<seat>/handoff.md` with the fixed sections that the block reason gives: role, hard rules, current state, in progress, owner decisions pending, next actions and the resume checklist. It sends `RESET-REQUEST <path> <sha256>` to the peer seat.
+3. The peer runs `repo-harness seats reset <path> <sha256>` in the background; one run can take about 10 minutes. The command finds the requester by the `repo-harness.seat` and `repo-harness.repository` labels. When the handoff is not newer than the request, its sha256 is different, or a section is missing, it sends `REWRITE` to the requester and resets nothing. Otherwise it waits with `hc wait` and sends `/clear`. The SessionStart hook of the new session writes `session.json` next to the handoff. The command sends the resume prompt only after that file names a new transcript. The resume prompt asks for `RESUMED` first. The resume evidence is an assistant Bash tool call in the new transcript, after the user entry that holds the prompt, whose command is exactly the one simple command `hc send <peer> RESUMED` (the message bare or in plain quotes), and then its tool result without an error. A compound command, another address and a command that only prints the text are no evidence. Only the bytes appended after the prompt send are read.
+4. The requester reads the handoff, sends `RESUMED` to the peer, then checks the current state with git and gh and continues.
+
+Protocol rules. The reset runs with no human step; an owner command is never part of it (owner decision 2026-11-08):
+
+- One reset at a time. When both seats cross the threshold, the advisor resets first.
+- The peer sends no other message to the requester from `RESET-REQUEST` until `RESUMED`.
+- Handoff check fails: the peer asks for a rewrite, at most 3 times. Then no reset: the seat continues, and Claude Code auto-compaction handles its context.
+- Peer seat missing or not answering: no reset, same as above.
+- No new-session signal: `/clear` is typed again. No answer to the resume prompt (no `RESUMED` send in the new transcript): the prompt is sent again. One attempt and at most 3 retries in total, then the other seat starts the requester again in the same terminal from `repo-harness seats argv <seat> --repository-id <id>` and sends the resume prompt.
+- Each of these failures writes one entry to a reset log next to the handoff and sends one notice. The flow does not wait for anyone to read it.
+
+`seats reset` runs these rules. It types `/clear`, `/exit` and the relaunch line (`sh <reset dir>/relaunch.sh`) with `hc keys`: `hc send` wraps its text in an envelope, so Claude reads a sent slash command as chat text. The reset log `reset-log.jsonl` is the only record of the rewrite and resend counts across runs; one run also stops after one attempt and 3 retries when the log cannot be written. Before `/clear`, a run claims the request with an exclusive create of `claim-<requested_at digits>` next to the handoff. A second run for the same request, also after an uncertain first run, sends nothing (`already_claimed`); a claim that cannot be created types nothing (`claim_failed`). A completed reset adds a `reset` entry. Each failure first appends its log entry, then posts one `seat.reset_failed` bot event to the notify channels; the run waits at most 5 s in total for the notices at its end. A log entry that cannot be written is reported in the result as `logErrors`. Without a notify config, the log entry records `not_configured`. A handoff path that is not `/tmp/repo-harness-seats/<repository-id>/<seat>/handoff.md` names no seat, so it gives only the command error, with no log entry and no notice.
+
 ### Pane and tab names
 
 With `--repository-id`, `seats argv` also prints the pane name (`name`) and the base tab name (`tab`). Do not type a name.

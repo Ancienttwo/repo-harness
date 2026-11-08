@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, mkdirSync } from 'fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, mkdirSync } from 'fs';
 import { spawnSync } from 'child_process';
 import { dirname, join } from 'path';
 import { tmpdir } from 'os';
@@ -100,6 +100,67 @@ describe('Stop writes no recovery views', () => {
     expect(runStopHandler({ collector: collector(cwd), payload: { stop_hook_active: true } }))
       .toEqual({ exitCode: 0, stdout: '', stderr: '' });
     expect(existsSync(join(cwd, '.ai/harness/handoff'))).toBe(false);
+  });
+});
+
+describe('Stop seat reset (#1972)', () => {
+  // The request path is fixed under /tmp; a repository id per run keeps the runs apart.
+  const repository = String(9_100_000_000 + process.pid);
+  const dir = join('/tmp/repo-harness-seats', repository, 'orchestrator');
+  const assistant = (input: number) => JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: input, cache_read_input_tokens: 370_000, cache_creation_input_tokens: 2_000 } } });
+  const user = (size: number) => JSON.stringify({ type: 'user', message: { content: 'x'.repeat(size) } });
+  const now = new Date('2026-11-08T08:00:00.000Z');
+  function seatStop(cwd: string, transcript: string, active = false) {
+    return runStopHandler({
+      collector: collector(cwd), payload: { stop_hook_active: active, transcript_path: transcript }, dependencies: { now: () => now },
+      env: { REPO_HARNESS_SEAT: 'orchestrator', REPO_HARNESS_SEAT_REPOSITORY: repository },
+    });
+  }
+  afterEach(() => {
+    rmSync(join('/tmp/repo-harness-seats', repository), { recursive: true, force: true });
+  });
+
+  test('a reset seat below the threshold stops; at the threshold it blocks once per transcript and records the request', () => {
+    const cwd = fixture();
+    const transcript = join(cwd, 'transcript.jsonl');
+    const stop = (active: boolean, path = transcript) => seatStop(cwd, path, active);
+    writeFileSync(transcript, `${assistant(7_999)}\n${JSON.stringify({ type: 'system', subtype: 'turn_duration' })}\n`);
+    expect([stop(false), existsSync(dir)]).toEqual([{ exitCode: 0, stdout: '', stderr: '' }, false]);
+    writeFileSync(transcript, `${assistant(7_999)}\n${assistant(8_000)}\n`);
+    const blocked = stop(false);
+    expect([blocked.exitCode, blocked.stdout]).toEqual([2, '']);
+    expect(blocked.stderr).toContain('the orchestrator seat context is 380000 tokens');
+    expect(blocked.stderr).toContain(`Send \`RESET-REQUEST ${dir}/handoff.md <sha256>\` to the advisor seat`);
+    expect(JSON.parse(readFileSync(join(dir, 'request.json'), 'utf8'))).toEqual({ requested_at: now.toISOString(), context_tokens: 380_000, transcript_path: transcript });
+    expect(stop(true)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    // A later turn of the same transcript does not ask again, so the first handoff stays newer than the request.
+    expect(stop(false)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    // A failed read or request write resets nothing, names the failure and keeps exit 0.
+    const missing = join(cwd, 'missing.jsonl');
+    expect(stop(false, missing)).toMatchObject({ exitCode: 0, systemMessage: expect.stringContaining(`seat reset skipped: ENOENT: no such file or directory, open '${missing}'`) });
+    const next = join(cwd, 'next.jsonl');
+    writeFileSync(next, `${assistant(8_000)}\n`);
+    chmodSync(join(dir, 'request.json'), 0o400);
+    expect(stop(false, next)).toMatchObject({ exitCode: 0, systemMessage: expect.stringContaining(`seat reset skipped: EACCES: permission denied, open '${dir}/request.json'`) });
+  });
+
+  test('the tail reader finds the last assistant entry past a cut window line and without a final newline', () => {
+    const cwd = fixture();
+    const cases = [
+      // A 1.5 MB line after the entry: the first 1 MB window starts inside it, so the reader doubles the window.
+      ['long.jsonl', `${assistant(8_000)}\n${user(1_500_000)}\n`, 2],
+      ['open.jsonl', `${user(10)}\n${assistant(8_000)}`, 2],
+      // About 2.6 MB without an assistant entry: the window doubles to the whole file and finds none.
+      ['none.jsonl', `${user(1_300_000)}\n${user(1_300_000)}\n`, 0],
+    ] as const;
+    const results = cases.map(([name, text]) => {
+      writeFileSync(join(cwd, name), text);
+      return seatStop(cwd, join(cwd, name));
+    });
+    expect(results.map(result => result.exitCode)).toEqual(cases.map(([, , exitCode]) => exitCode));
+    // A reader that threw would also exit 0: the no-assistant row gives no reset message and leaves the last request.
+    expect(results[2]!.systemMessage ?? '').not.toContain('seat reset');
+    expect(JSON.parse(readFileSync(join(dir, 'request.json'), 'utf8')).transcript_path).toBe(join(cwd, 'open.jsonl'));
   });
 });
 

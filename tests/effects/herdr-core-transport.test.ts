@@ -4,7 +4,7 @@ import { join } from 'path';
 import { tmpWorkspace } from '../helpers/repo-fixture';
 import {
   HerdrCoreError, RH_LABEL, RH_NOTIFY_LABELS, RH_NOTIFY_RELAY, hcEvents, hcGet, hcKill, hcLabel, hcList, hcListAsync, hcRead, hcRm, hcRun,
-  hcSend, hcServerStatusAsync, hcWait, herdrAppCommand, herdrAppDo, type HcLabels, type HcStreamItem,
+  hcKeys, hcSend, hcServerStatusAsync, hcWait, herdrAppCommand, herdrAppDo, type HcLabels, type HcStreamItem,
 } from '../../src/effects/terminal/herdr-core';
 import { NOTIFY_SECRET_KEYS } from '../../src/core/decision/notify-secret-keys';
 
@@ -89,10 +89,11 @@ test('success: labels go in on run and list, and come back out of get', async ()
   expect(label.argv()).toEqual(['label', '--json', '--', 't4', 'repo-harness.task=1475']);
 });
 
-test('acting on one terminal: send, read, wait, kill and rm check it with get first', () => {
+test('acting on one terminal: send, keys, read, wait, kill and rm check it with get first', () => {
   const { foreground: _, ...finished } = TERMINAL;
   const act = fake('ok', TERMINAL, {
     send: { started: true, status: 'idle', turn: 3 },
+    keys: { status: null, turn: 3 },
     // A partial read: hc reads only the screen of a full-screen app while it works.
     read: { complete: false, how: 'screen', text: 'ready', why: 'working' },
     // The live hc 0.1.18 wait line: `status` is the state string.
@@ -103,11 +104,12 @@ test('acting on one terminal: send, read, wait, kill and rm check it with get fi
   });
   const options = { env: act.env };
   expect(hcSend('t4', 'hello', options)).toEqual({ started: true, turn: 3 });
+  expect(hcKeys('t4', ['/', 'x', 'enter'], options)).toEqual({ turn: 3 });
   expect(hcRead('t4', 5, options)).toEqual({ text: 'ready', complete: false, why: 'working' });
   expect(hcWait('t4', 1, options)).toEqual({ ended: true, reason: 'status', turn: 3, status: { state: 'done' } });
   expect(hcKill('t4', options)).toMatchObject({ state: 'finished', pid: 9, foreground: null, reason: 'killed' });
   expect(hcRm('t4', options)).toBe('t4');
-  expect(act.argv()).toEqual([...GET, 'send', '--json', '--', 't4', 'hello', ...GET, 'read', '--json', '--lines', '5', '--', 't4',
+  expect(act.argv()).toEqual([...GET, 'send', '--json', '--', 't4', 'hello', ...GET, 'keys', '--json', '--', 't4', '/', 'x', 'enter', ...GET, 'read', '--json', '--lines', '5', '--', 't4',
     ...GET, 'wait', '--json', '--timeout', '1', '--', 't4', ...GET, 'kill', '--json', '--', 't4', ...GET, 'rm', '--json', '--', 't4']);
 });
 

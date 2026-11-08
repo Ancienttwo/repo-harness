@@ -9,7 +9,7 @@ import { askMasked } from '../../src/cli/commands/herdr-actions';
 import type { HcEventStream, HcStreamItem, HcTerminal } from '../../src/effects/terminal/herdr-core';
 import { NOTIFY_CHANNEL_SECRET_KEYS } from '../../src/core/decision/notify-secret-keys';
 import { notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath } from '../../src/effects/terminal/notify-read';
-import { createNotifyRelay, runNotifyRelay } from '../../src/effects/terminal/notify-relay';
+import { createNotifyRelay, postNotifyEvent, runNotifyRelay } from '../../src/effects/terminal/notify-relay';
 import { tmpWorkspace } from '../helpers/repo-fixture';
 
 const ROOT = join(import.meta.dir, '../..');
@@ -173,6 +173,26 @@ describe('notify relay', () => {
       await f.feed(turn('t7', 'blocked'));
       const everything = JSON.stringify(f.calls.map(call => call.body)) + f.log.join('\n') + readFileSync(notifyDeliveriesPath(f.env), 'utf8');
       for (const secret of [KEY, SLACK, DISCORD, TOKEN, 'bot.example']) expect(everything).not.toContain(secret);
+    } finally { f.cleanup(); }
+  });
+
+  test('one bot event outside the relay reaches every channel, and a failure or a missing config is a result (#1972)', async () => {
+    const event = { repository: '1186405141', kind: 'seat.reset_failed', data: { seat: 'advisor' }, text: 'seat reset resume: advisor (no_signal)' };
+    const f = relayFixture();
+    let status = 200;
+    const send = (async (url: string | URL | Request, init?: RequestInit) => {
+      f.calls.push({ url: String(url), init: init!, body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+      return new Response('{"ok":true}', { status });
+    }) as typeof fetch;
+    try {
+      expect(await postNotifyEvent(f.env, event, send)).toBe('sent');
+      expect(f.calls).toHaveLength(4);
+      expect(assertBotEvent(f.calls[0]!.body)).toMatchObject({ source: 'herdr', repository: '1186405141', kind: 'seat.reset_failed', data: { seat: 'advisor' } });
+      status = 500;
+      expect(await postNotifyEvent(f.env, event, send)).toBe('failed');
+      rmSync(notifyConfigPath(f.env));
+      expect(await postNotifyEvent(f.env, event, send)).toBe('not_configured');
+      expect(f.calls).toHaveLength(8);
     } finally { f.cleanup(); }
   });
 
