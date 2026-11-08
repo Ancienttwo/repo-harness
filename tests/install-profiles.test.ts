@@ -43,7 +43,7 @@ import { installPiPackage } from '../src/cli/installer/pi-package';
 import { bunGlobalPackageRoot } from '../src/cli/installer/skill-projection';
 import { hostSkillRoot, providerSkillLock } from '../src/effects/host-skill-roots';
 import { MANAGED_AGENTS } from '../src/effects/terminal/task-role-profiles';
-import { recordInstallOwnership, recordPluginSelection, seedGlobalPackageFixture } from './helpers/install-ownership';
+import { installStateFixturePath, recordInstallOwnership, recordPluginSelection, seedGlobalPackageFixture } from './helpers/install-ownership';
 import { hashManagedTree } from '../src/effects/managed-tree';
 import { buildManagedHooks } from '../src/cli/installer/managed-entries';
 import { runUserUninstall } from '../src/cli/installer/uninstall';
@@ -332,7 +332,7 @@ describe('install selection', () => {
       { protocol: 2, profile: 'full', components: P2_FULL, bridge: [protocol2Bridge] },
     ] as const;
     for (const row of rows) withHome((env) => {
-      const statePath = installProfileStatePath(env);
+      const statePath = installStateFixturePath(env);
       writePath(statePath, `${JSON.stringify({
         protocol: row.protocol,
         profile: row.profile,
@@ -469,7 +469,7 @@ describe('install selection', () => {
   }));
 
   test('the strict reader rejects a selection that differs from its plugins, a missing selection and an unknown plugin', () => withHome((env) => {
-    const statePath = installProfileStatePath(env);
+    const statePath = installStateFixturePath(env);
     const { selection: _selection, ...withoutSelection } = seededState(['platform'], ['platform']) as Record<string, unknown>;
     const { previous: _previous, ...snapshotWithoutSelection } = withoutSelection;
     const plugin = (id: string) => ({ id, version: versions([]).core.version });
@@ -543,7 +543,7 @@ describe('install selection', () => {
       managed_marker: null,
       symlink_target: oldSource,
     } as const;
-    const statePath = installProfileStatePath(env);
+    const statePath = installStateFixturePath(env);
     const state = seededState([], [], [receipt]);
     writePath(statePath, `${JSON.stringify(state)}\n`);
     expect(readInstallState(env)?.ownership_manifest).toEqual([receipt]);
@@ -906,7 +906,7 @@ describe('install selection', () => {
     writeManagedHostSurfaces(env);
     const adapter = join(env.HOME!, '.codex', 'hooks.json');
     const before = readFileSync(adapter);
-    const statePath = installProfileStatePath(env);
+    const statePath = installStateFixturePath(env);
     const lockPath = skillLock(env);
     writePath(statePath, '{"previous":"state"}\n');
     writePath(lockPath, '{"previous":"lock"}\n');
@@ -1172,7 +1172,7 @@ describe('install selection', () => {
     const external = join(env.HOME!, 'user-owned.txt');
     const content = 'must survive';
     writeFileSync(external, content);
-    writePath(installProfileStatePath(env), `${JSON.stringify(seededState(ALL_PLUGINS, 'all', [{
+    writePath(installStateFixturePath(env), `${JSON.stringify(seededState(ALL_PLUGINS, 'all', [{
       owner: 'core',
       authority: 'repo-harness-install-transaction',
       removal: 'managed-surfaces-only',
@@ -1297,7 +1297,7 @@ describe('install selection', () => {
   test('after a candidate handoff the parent leaves the install state to the candidate', () => withHome((env) => {
     writeManagedHostSurfaces(env, ALL_PLUGINS);
     applyInstallSelection('all', ALL_PLUGINS, env);
-    const statePath = installProfileStatePath(env);
+    const statePath = installStateFixturePath(env);
     // A newer candidate records a plugin that this version does not know.
     const candidateState = `${JSON.stringify({ ...seededState(ALL_PLUGINS, 'all'), plugins: [...versions(ALL_PLUGINS).plugins, { id: 'future-plugin', version: versions([]).core.version }] })}\n`;
     const result = runTransactionalRuntimeRefresh({ env, cwd: env.HOME, target: 'both' }, (): GlobalRuntimeResult => {
@@ -1350,7 +1350,7 @@ describe('install selection', () => {
     expect(installStateStatus(recorded, env).drift.status).toBe('consistent');
 
     // Bootstrap has no prior manifest, so applyInstallSelection adopts directly.
-    rmSync(installProfileStatePath(env));
+    rmSync(installStateFixturePath(env));
     const adopted = applyInstallSelection('all', ALL_PLUGINS, env, new Date(), undefined, { agentFleetVerified: true }).state;
     expect(adopted.ownership_manifest.map(({ path }) => path).sort()).toEqual(recordedPaths.sort());
 
@@ -1619,7 +1619,7 @@ describe('skill projection ownership', () => {
           expect(state.ownership_manifest.find(surface => surface.path === dest)?.owner).toBe('core');
         }
         if (acquisition === 'recorded-under-another-owner') {
-          const ledgerPath = installProfileStatePath(env);
+          const ledgerPath = installStateFixturePath(env);
           const recorded = JSON.parse(readFileSync(ledgerPath, 'utf8'));
           for (const surface of recorded.ownership_manifest) {
             if (paths.includes(surface.path)) surface.owner = 'product';
