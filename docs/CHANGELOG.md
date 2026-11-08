@@ -14,6 +14,12 @@ All notable changes to this skill are documented here.
   tool groups, including edit, gh, net and shell. A host without Pi enabled
   cannot save the Seats page until Pi is enabled or `worker-light` is set
   to `null`. (#1954)
+- `architecture-projection publish follow` keeps its source checkout at
+  `origin/main` with dependencies installed for that commit. When main moves,
+  it refuses a dirty checkout, fast-forwards, reinstalls and exits 75 for a
+  supervisor restart. It does not publish while the update fails, and logs a
+  `writer_update_failed` JSON line. It runs one archctx `once` per 300-second
+  iteration. (#1983)
 
 ## [0.27.0] - 2026-11-07
 
