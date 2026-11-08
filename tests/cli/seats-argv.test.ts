@@ -6,7 +6,7 @@ import { tmpdir } from "os";
 import { delimiter, dirname, join } from "path";
 import { seatPaneName } from "../../src/core/board/seat-launch";
 import { HANDOFF_SECTIONS } from "../../src/core/board/seat-reset";
-import { SeatResetError, runSeatReset } from "../../src/effects/board/seat-reset";
+import { SeatResetError, runSeatReset, type SeatResetNotify } from "../../src/effects/board/seat-reset";
 import { DEFAULT_SEATS_CONFIG, WORKER_SEAT_IDS } from "../../src/core/board/seats-settings";
 import { repoHarnessRepoIdFor } from "../../src/effects/repo-registry";
 import { classifyQuotaReading, decodeCodexRateLimitsResult } from "../../src/core/board/quota";
@@ -614,8 +614,8 @@ describe("repo-harness seats reset (#1972)", () => {
    * `sendFail` refuses a send.
    */
   function withReset(fn: (f: { handoff: string; body: string; sha: (text: string) => string; state: (patch: Record<string, unknown>) => void;
-    reset: (input?: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void }) => Promise<unknown>;
-    sends: () => string[]; calls: () => string[]; log: () => { kind: string; detail: string; notice: string; requested_at: string }[] }) => Promise<void>) {
+    reset: (input?: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void; notify?: SeatResetNotify }) => Promise<unknown>;
+    home: string; sends: () => string[]; calls: () => string[]; log: () => { kind: string; detail: string; notice: string; requested_at: string }[] }) => Promise<void>) {
     return async () => {
       const home = mkdtempSync(join(tmpdir(), "seats-reset-"));
       // The handoff path is fixed under /tmp; a repository id per run keeps the runs apart.
@@ -667,7 +667,7 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
         const body = HANDOFF_SECTIONS.map(section => `## ${section}\n\nstate\n`).join("\n");
         const sha = (text: string) => createHash("sha256").update(text).digest("hex");
         const requestedAt = new Date(Date.now() - 60_000).toISOString();
-        const reset = async (input: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void } = {}) => {
+        const reset = async (input: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void; notify?: SeatResetNotify } = {}) => {
           const text = input.text ?? body;
           writeFileSync(handoff, text);
           if (input.handoff === false) rmSync(handoff);
@@ -679,7 +679,7 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
           try {
             return await runSeatReset(input.path ?? handoff, input.sha256 ?? sha(text), {
               env: { ...base, HOME: home, REPO_HARNESS_HOME: join(home, ".repo-harness"), HC_TERMINAL_ID: input.caller ?? "t2", PATH: `${join(home, "bin")}:/bin:/usr/bin` },
-              timeouts, relaunchArgv: input.relaunchArgv ?? (async () => ["/bin/sh", "-c", "exec claude", "x y"]),
+              timeouts, notify: input.notify, relaunchArgv: input.relaunchArgv ?? (async () => ["/bin/sh", "-c", "exec claude", "x y"]),
             });
           } catch (error) {
             return { error: (error as SeatResetError).code, outcome: (error as SeatResetError).outcome };
@@ -691,7 +691,7 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
           : line.slice("keys -- t5 ".length).split(" ").filter(key => key !== "enter").map(key => (key === "space" ? " " : key)).join("")));
         const log = () => existsSync(join(dir, "reset-log.jsonl"))
           ? readFileSync(join(dir, "reset-log.jsonl"), "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line)) : [];
-        await fn({ handoff, body, sha, state, reset, sends, calls, log });
+        await fn({ home, handoff, body, sha, state, reset, sends, calls, log });
       } finally {
         chmodSync(dir, 0o700);
         rmSync(join("/tmp/repo-harness-seats", repository), { recursive: true, force: true });
@@ -737,6 +737,20 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
       ["message_not_sent", expect.stringContaining("The rewrite message to t5 failed"), "not_configured"], ["rewrite", "handoff_missing", "not_configured"], ["rewrite", "handoff_stale", "not_configured"],
       ["rewrite", "handoff_sha256_mismatch", "not_configured"], ["no_reset", "handoff_sections_missing", "not_configured"],
     ]);
+  }));
+
+  test("with a notify config, the plugin notice port gets one call per failure", withReset(async ({ home, reset, log }) => {
+    mkdirSync(join(home, ".repo-harness", "herdr"), { recursive: true, mode: 0o700 });
+    writeFileSync(join(home, ".repo-harness", "herdr", "notify.env"), "WEBHOOK_URL='https://bot.example/routine'\nWEBHOOK_KEY='k'\n", { mode: 0o600 });
+    const events: unknown[] = [];
+    const notify: SeatResetNotify = async (_env, event) => { events.push(event); return "sent"; };
+    expect(await reset({ handoff: false, notify })).toEqual({ error: "handoff_missing", outcome: "rewrite_requested" });
+    expect(await reset({ stale: true, notify })).toEqual({ error: "handoff_stale", outcome: "rewrite_requested" });
+    expect(events).toEqual([
+      expect.objectContaining({ kind: "seat.reset_failed", data: expect.objectContaining({ seat: "advisor", failure: "rewrite", detail: "handoff_missing" }) }),
+      expect.objectContaining({ kind: "seat.reset_failed", data: expect.objectContaining({ failure: "rewrite", detail: "handoff_stale" }) }),
+    ]);
+    expect(log().map(({ notice }) => notice)).toEqual(["dispatched", "dispatched"]);
   }));
 
   test("a valid handoff waits, sends /clear and the prompt after the new-session signal, and is never reset again", withReset(async ({ handoff, reset, calls, log }) => {
