@@ -104,7 +104,7 @@ describe('Stop writes no recovery views', () => {
 });
 
 describe('Stop seat reset (#1972)', () => {
-  test('a reset seat below the threshold stops; at the threshold it blocks once and records the request', () => {
+  test('a reset seat below the threshold stops; at the threshold it blocks once per transcript and records the request', () => {
     const cwd = fixture();
     // The request path is fixed under /tmp; a repository id per run keeps the runs apart.
     const repository = String(9_100_000_000 + process.pid);
@@ -112,8 +112,8 @@ describe('Stop seat reset (#1972)', () => {
     const transcript = join(cwd, 'transcript.jsonl');
     const assistant = (input: number) => JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: input, cache_read_input_tokens: 370_000, cache_creation_input_tokens: 2_000 } } });
     const now = new Date('2026-11-08T08:00:00.000Z');
-    const stop = (active: boolean) => runStopHandler({
-      collector: collector(cwd), payload: { stop_hook_active: active, transcript_path: transcript }, dependencies: { now: () => now },
+    const stop = (active: boolean, path = transcript) => runStopHandler({
+      collector: collector(cwd), payload: { stop_hook_active: active, transcript_path: path }, dependencies: { now: () => now },
       env: { REPO_HARNESS_SEAT: 'orchestrator', REPO_HARNESS_SEAT_REPOSITORY: repository },
     });
     try {
@@ -124,8 +124,12 @@ describe('Stop seat reset (#1972)', () => {
       expect([blocked.exitCode, blocked.stdout]).toEqual([2, '']);
       expect(blocked.stderr).toContain('the orchestrator seat context is 380000 tokens');
       expect(blocked.stderr).toContain(`Send \`RESET-REQUEST ${dir}/handoff.md <sha256>\` to the advisor seat`);
-      expect(JSON.parse(readFileSync(join(dir, 'request.json'), 'utf8'))).toEqual({ requested_at: now.toISOString(), context_tokens: 380_000 });
+      expect(JSON.parse(readFileSync(join(dir, 'request.json'), 'utf8'))).toEqual({ requested_at: now.toISOString(), context_tokens: 380_000, transcript_path: transcript });
       expect(stop(true)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+      // A later turn of the same transcript does not ask again, so the first handoff stays newer than the request.
+      expect(stop(false)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+      const missing = join(cwd, 'missing.jsonl');
+      expect(stop(false, missing)).toMatchObject({ exitCode: 0, systemMessage: expect.stringContaining(`seat reset skipped: transcript ${missing} is not readable`) });
     } finally {
       rmSync(join('/tmp/repo-harness-seats', repository), { recursive: true, force: true });
     }
