@@ -222,18 +222,16 @@ function prDiffLines(run: ReviewPublishGhRunner, slug: string, prNumber: number)
  */
 function existingClaimUrl(run: ReviewPublishGhRunner, slug: string, prNumber: number, receipt: ReviewPublishReceipt, body: string): string | null {
   const identity = ['Round: ' + receipt.round, 'Subject: ' + receipt.subject_sha];
-  for (const comment of ghPages(run, 'repos/' + slug + '/issues/' + prNumber + '/comments')) {
-    if (typeof comment.body !== 'string' || !comment.body.startsWith('repo-harness acceptance claim\n')) continue;
-    const lines = comment.body.split('\n');
-    if (!identity.every((line) => lines.includes(line))) continue;
-    if (comment.body !== body) {
-      throw new ReviewPublishError('review_publish_conflict',
-        'the PR already has an acceptance claim for subject ' + receipt.subject_sha + ' round ' + receipt.round + ' with other fields; nothing was posted: '
-        + String(comment.html_url), 2);
-    }
-    return postedUrl(comment, slug, prNumber, false);
+  const claims = ghPages(run, 'repos/' + slug + '/issues/' + prNumber + '/comments').filter((comment) =>
+    typeof comment.body === 'string' && comment.body.startsWith('repo-harness acceptance claim\n')
+    && identity.every((line) => (comment.body as string).split('\n').includes(line)));
+  const conflict = claims.find((comment) => comment.body !== body);
+  if (conflict !== undefined) {
+    throw new ReviewPublishError('review_publish_conflict',
+      'the PR already has an acceptance claim for subject ' + receipt.subject_sha + ' round ' + receipt.round + ' with other fields; nothing was posted: '
+      + String(conflict.html_url), 2);
   }
-  return null;
+  return claims.length === 0 ? null : postedUrl(claims[0]!, slug, prNumber, false);
 }
 
 function postedUrl(value: Record<string, unknown>, slug: string, prNumber: number, review: boolean): string {

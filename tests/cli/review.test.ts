@@ -283,9 +283,11 @@ test('a retry reuses the claim already on the PR instead of posting a second one
   expect(JSON.parse(postedInputs(fixture, '/issues/' + PUBLISH_PR + '/comments').find((entry) => entry.input !== '')!.input).body).toContain('Claim: ' + claimUrl);
 });
 
-test('a retry with a different tier for the same subject and round stops on a claim conflict', async () => {
+test('a later conflicting claim for the same subject and round stops the retry even after an identical one', async () => {
   const claimBody = renderAcceptanceClaim(validateReviewPublishReceipt(publishReceipt({ risk_tier: 'low' })));
-  const fixture = publishFixture(publishScenario({ existingComments: [{ body: claimBody, html_url: 'https://github.com/example/repo-harness/pull/' + PUBLISH_PR + '#issuecomment-778' }] }));
+  const fixture = publishFixture(publishScenario({ existingComments: [
+    { body: renderAcceptanceClaim(validateReviewPublishReceipt(publishReceipt())), html_url: 'https://github.com/example/repo-harness/pull/' + PUBLISH_PR + '#issuecomment-777' },
+    { body: claimBody, html_url: 'https://github.com/example/repo-harness/pull/' + PUBLISH_PR + '#issuecomment-778' }] }));
   const result = await runPublish(fixture, publishReceipt());
   expect(result.status).toBe(2);
   expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, error: 'review_publish_conflict', exit_code: 2, posted: [] });
