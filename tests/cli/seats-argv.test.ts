@@ -104,6 +104,12 @@ function withRepository(home: string, panePrefix: string | undefined, fn: (repo:
 const denied = (args: string[]) => values(args, "--disallowedTools");
 /** With --repository-id the argv is `/bin/sh -c <script> <bun> <cli>` and then the agent argv. */
 const agent = (launch: { argv: string[] }) => launch.argv.slice(5);
+/** Every seat argv first unsets the seat identity that it inherits (#1975); `bare` checks that prefix and drops it. */
+const UNSET_SEAT = ["env", "-u", "REPO_HARNESS_SEAT", "-u", "REPO_HARNESS_SEAT_REPOSITORY"];
+function bare(args: string[]): unknown[] {
+  expect(args.slice(0, UNSET_SEAT.length)).toEqual(UNSET_SEAT);
+  return args.slice(UNSET_SEAT.length);
+}
 
 describe("repo-harness seats argv", () => {
   test("an old seats section fails closed with the update action", () => {
@@ -190,7 +196,7 @@ describe("repo-harness seats argv", () => {
         const result = argv(home, seat, "--pr", "1928", "--json");
         expect(result.status, result.stderr).toBe(0);
         const value = JSON.parse(result.stdout);
-        expect(value.argv.slice(0, 8)).toEqual(["pi", "--exclude-tools", "edit,write",
+        expect(bare(value.argv).slice(0, 8)).toEqual(["pi", "--exclude-tools", "edit,write",
           "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-mcp"]);
         expect(value.limits).toContainEqual({ subject: "edit", level: "common_commands" });
       });
@@ -204,8 +210,8 @@ describe("repo-harness seats argv", () => {
         const result = argv(home, seat, ...(seat === "reviewer" ? ["--pr", "1950"] : []), "--json");
         expect(result.status, result.stderr).toBe(0);
         const value = JSON.parse(result.stdout);
-        expect(value.argv.slice(0, 5)).toEqual(["pi", "--provider", "magpie", "--model", "cursor/deepseek-v41-flash-1017"]);
-        if (seat === "reviewer") expect(value.argv.slice(5, 12)).toEqual(["--exclude-tools", "edit,write", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-mcp"]);
+        expect(bare(value.argv).slice(0, 5)).toEqual(["pi", "--provider", "magpie", "--model", "cursor/deepseek-v41-flash-1017"]);
+        if (seat === "reviewer") expect(bare(value.argv).slice(5, 12)).toEqual(["--exclude-tools", "edit,write", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files", "--no-mcp"]);
       });
     }
   });
@@ -214,9 +220,9 @@ describe("repo-harness seats argv", () => {
     const worker = { ...DEFAULT_SEATS_CONFIG.worker, runtime: "pi" as const, model: "magpie/codex/gpt-6.1-terra", fleet: [] };
     withHome({ ...DEFAULT_SEATS_CONFIG, worker }, home => {
       writeFileSync(join(home, 'codex-used'), '51');
-      expect(launch(home, "worker").argv.slice(0, 7)).toEqual(["pi", "--provider", "magpie", "--model", "codex/gpt-6.1-terra", "--thinking", "high"]);
+      expect(bare(launch(home, "worker").argv).slice(0, 7)).toEqual(["pi", "--provider", "magpie", "--model", "codex/gpt-6.1-terra", "--thinking", "high"]);
       writeFileSync(join(home, 'codex-used'), '50');
-      expect(launch(home, "worker").argv.slice(0, 7)).toEqual(["pi", "--provider", "magpie", "--model", "codex/gpt-6-astra", "--thinking", "high"]);
+      expect(bare(launch(home, "worker").argv).slice(0, 7)).toEqual(["pi", "--provider", "magpie", "--model", "codex/gpt-6-astra", "--thinking", "high"]);
       writeFileSync(join(home, 'codex-used'), '95');
       const exhausted = argv(home, "worker", "--json");
       expect([exhausted.status, JSON.parse(exhausted.stderr).error]).toEqual([1, "seat_quota_exhausted"]);
@@ -230,12 +236,12 @@ describe("repo-harness seats argv", () => {
   test("quota changes Codex models and Claude control-seat effort, preserves Pi, and stops exhaustion", () => {
     withHome(DEFAULT_SEATS_CONFIG, home => {
       writeFileSync(join(home, 'codex-used'), '50');
-      expect(launch(home, "worker").argv.slice(0, 5)).toEqual(["codex", "-m", "gpt-6-astra", "-c", 'model_reasoning_effort="high"']);
+      expect(bare(launch(home, "worker").argv).slice(0, 5)).toEqual(["codex", "-m", "gpt-6-astra", "-c", 'model_reasoning_effort="high"']);
       writeFileSync(join(home, 'codex-used'), '51');
-      expect(launch(home, "worker").argv.slice(0, 3)).toEqual(["codex", "-m", DEFAULT_SEATS_CONFIG.worker.model]);
-      expect(launch(home, "worker-important-fast").argv.slice(0, 5)).toEqual(["claude", "--model", "sonnet", "--effort", "medium"]);
-      expect(launch(home, "advisor").argv.slice(0, 5)).toEqual(["claude", "--model", "opus", "--effort", "max"]);
-      expect(launch(home, "worker-light").argv.slice(0, 5)).toEqual(["pi", "--provider", "magpie", "--model", "cursor/deepseek-v41-flash-1017"]);
+      expect(bare(launch(home, "worker").argv).slice(0, 3)).toEqual(["codex", "-m", DEFAULT_SEATS_CONFIG.worker.model]);
+      expect(bare(launch(home, "worker-important-fast").argv).slice(0, 5)).toEqual(["claude", "--model", "sonnet", "--effort", "medium"]);
+      expect(bare(launch(home, "advisor").argv).slice(0, 5)).toEqual(["claude", "--model", "opus", "--effort", "max"]);
+      expect(bare(launch(home, "worker-light").argv).slice(0, 5)).toEqual(["pi", "--provider", "magpie", "--model", "cursor/deepseek-v41-flash-1017"]);
       mkdirSync(join(home, ".repo-harness", "quota"));
       for (const used of [81, 95]) {
         writeFileSync(join(home, ".repo-harness", "quota", "claude.json"), JSON.stringify({ observed_at: new Date().toISOString(), rate_limits: {
@@ -263,7 +269,7 @@ describe("repo-harness seats argv", () => {
       const advisor = launch(home, "advisor");
       expect(advisor.source).toBe("defaults");
       expect(advisor.brief).toContain("Collect evidence through your sub-agents: `deep-reasoner`, `explorer`.");
-      expect(advisor.argv.slice(0, 5)).toEqual(["claude", "--model", "opus", "--effort", "max"]);
+      expect(bare(advisor.argv).slice(0, 5)).toEqual(["claude", "--model", "opus", "--effort", "max"]);
       expect(advisor.argv.at(-1)).toBe(advisor.brief);
       // The allow list holds only the tools of the enabled groups; every other built-in tool, such as Workflow, is off.
       expect(tools(advisor.argv)).toEqual(["ToolSearch", "ListMcpResourcesTool", "ReadMcpResourceTool", "WebFetch", "WebSearch", "Read", "Glob", "Grep",
@@ -290,7 +296,7 @@ describe("repo-harness seats argv", () => {
       expect(tools(advisor.argv)).not.toContain("Agent");
       expect(denied(advisor.argv).some((rule: string) => rule.startsWith("Agent("))).toBe(false);
       const worker = launch(home, "worker");
-      expect(worker.argv).toEqual(["pi", "--append-system-prompt", worker.brief]);
+      expect(bare(worker.argv)).toEqual(["pi", "--append-system-prompt", worker.brief]);
       expect(worker.brief).toContain("You have no sub-agents.");
       expect(worker.limits).toContainEqual({ subject: "gh", level: "instructions_only" });
       expect(worker.brief).toContain("These limits are instructions only; the host does not enforce them. Keep them yourself. Do not use the network. Do not use the task list tools. Do not use MCP tools. Do not write to GitHub.");
@@ -300,7 +306,7 @@ describe("repo-harness seats argv", () => {
   test("the orchestrator seat names its triage queue and allows exactly its groups' tools, without the Agent tool", () => {
     withHome(undefined, (home) => {
       const orchestrator = launch(home, "orchestrator").argv;
-      expect(orchestrator.slice(0, 3)).toEqual(["env", "CLAUDE_CODE_TASK_LIST_ID=repo-harness-orchestrator", "claude"]);
+      expect(bare(orchestrator).slice(0, 2)).toEqual(["CLAUDE_CODE_TASK_LIST_ID=repo-harness-orchestrator", "claude"]);
       expect(tools(orchestrator)).toEqual(["ToolSearch", "ListMcpResourcesTool", "ReadMcpResourceTool", "WebFetch", "WebSearch", "Read", "Glob", "Grep",
         "Bash", "Monitor", "TaskStop", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate"]);
       expect(orchestrator).not.toContain("--disallowedTools");
@@ -342,7 +348,7 @@ describe("repo-harness seats argv", () => {
       expect(result.status).toBe(0);
       const args: string[] = JSON.parse(result.stdout);
       const instructions = args.at(-1)!;
-      expect(args.slice(0, -1)).toEqual(["codex", "-m", "gpt-6.1-terra", "-c", 'model_reasoning_effort="high"', "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=false", "-c", 'web_search="disabled"', "-c"]);
+      expect(bare(args).slice(0, -1)).toEqual(["codex", "-m", "gpt-6.1-terra", "-c", 'model_reasoning_effort="high"', "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=false", "-c", 'web_search="disabled"', "-c"]);
       expect(instructions).toStartWith('developer_instructions="You are a worker seat.');
       expect(JSON.parse(instructions.slice("developer_instructions=".length))).toContain(handoff);
       expect(JSON.parse(instructions.slice("developer_instructions=".length))).toContain("These limits are instructions only; the host does not enforce them. Keep them yourself. Do not use the task list tools. Do not use MCP tools. Do not write to GitHub.");
@@ -367,7 +373,7 @@ describe("repo-harness seats argv", () => {
       expect(worker.limits).toContainEqual({ subject: "net", level: "common_commands" });
       expect(worker.brief).toContain("The host refuses only common commands for these limits. Keep them yourself. Do not use the network.");
       const advisor = launch(home, "advisor");
-      expect(advisor.argv.slice(0, 5)).toEqual(["codex", "-s", "read-only", "-c", 'web_search="disabled"']);
+      expect(bare(advisor.argv).slice(0, 5)).toEqual(["codex", "-s", "read-only", "-c", 'web_search="disabled"']);
       expect(advisor.limits).toContainEqual({ subject: "net", level: "common_commands" });
       expect(advisor.limits).toContainEqual({ subject: "edit", level: "common_commands" });
       expect(advisor.limits).toContainEqual({ subject: "fleet", level: "instructions_only" });
@@ -392,13 +398,13 @@ describe("repo-harness seats argv", () => {
     };
     withHome(seats, (home) => {
       const advisor = launch(home, "advisor").argv;
-      expect(advisor.slice(0, 3)).toEqual(["codex", "-s", "read-only"]);
+      expect(bare(advisor).slice(0, 3)).toEqual(["codex", "-s", "read-only"]);
       expect(advisor.join(" ")).not.toContain("network_access");
       expect(advisor).not.toContain('web_search="disabled"');
       expect(tools(launch(home, "worker").argv)).toEqual(expect.arrayContaining(["Edit", "WebFetch"]));
     });
     withHome({ ...seats, worker: { ...seats.worker, runtime: "pi" } }, (home) => {
-      expect(launch(home, "worker").argv[0]).toBe("pi");
+      expect(bare(launch(home, "worker").argv)[0]).toBe("pi");
     });
   });
 
@@ -531,11 +537,13 @@ describe("repo-harness seats argv", () => {
         mkdirSync(bin);
         writeFileSync(join(bin, "hc"), `#!/bin/sh\nprintf 'hc %s\\n' "$*" >> "${log}"\nif [ -n "$FAKE_HC_FAIL" ]; then printf '%s' '{"error":{"kind":"not_found","message":"no terminal"}}' >&2; exit 3; fi\n`
           + `printf '%s' '{"address":"t5","state":"live","labels":{"repo-harness.seat":"worker"},"turn":0}'\n`);
-        writeFileSync(join(bin, "codex"), `#!/bin/sh\nprintf 'codex %s %s %s\\n' "$#" "$1" "$2" >> "${log}"\n`);
+        writeFileSync(join(bin, "codex"), `#!/bin/sh\nprintf 'codex %s %s %s %s %s\\n' "$#" "$1" "$2" "\${REPO_HARNESS_SEAT-unset}" "\${REPO_HARNESS_SEAT_REPOSITORY-unset}" >> "${log}"\n`);
         for (const name of ["hc", "codex"]) chmodSync(join(bin, name), 0o755);
         const label = "hc label --json -- t5 repo-harness.seat=worker repo-harness.repository=1186405141 repo-harness.issue=1473 repo-harness.parent=1000";
         for (const [env, error, calls] of [
-          [{ HC_TERMINAL_ID: "t5" }, null, [label, `codex ${agent(worker).length - 1} -m gpt-6.1-terra`]],
+          // A worker started from a reset seat's env does not inherit the seat identity (#1975).
+          [{ HC_TERMINAL_ID: "t5", REPO_HARNESS_SEAT: "orchestrator", REPO_HARNESS_SEAT_REPOSITORY: "1186405141" }, null,
+            [label, `codex ${agent(worker).length - agent(worker).indexOf("codex") - 1} -m gpt-6.1-terra unset unset`]],
           [{ HC_TERMINAL_ID: "t5", FAKE_HC_FAIL: "1" }, "label_failed", [label]],
           [{}, "terminal_unknown", []],
         ] as const) {
@@ -557,11 +565,11 @@ describe("repo-harness seats argv", () => {
         const orchestrator = named(repo, "orchestrator");
         expect([orchestrator.name, orchestrator.tab]).toEqual(["rh-orch", "orch"]);
         // A Claude seat carries the same name as its session name; the reset seats name their seat and repository in the env (#1972).
-        expect(agent(orchestrator).slice(0, 7)).toEqual(["env", "CLAUDE_CODE_TASK_LIST_ID=repo-harness-orchestrator",
+        expect(agent(orchestrator).slice(0, 11)).toEqual(["env", "-u", "REPO_HARNESS_SEAT", "-u", "REPO_HARNESS_SEAT_REPOSITORY", "CLAUDE_CODE_TASK_LIST_ID=repo-harness-orchestrator",
           "REPO_HARNESS_SEAT=orchestrator", "REPO_HARNESS_SEAT_REPOSITORY=1186405141", "claude", "-n", "rh-orch"]);
         const advisor = named(repo, "advisor", "--parent", "1000");
         expect([advisor.name, advisor.tab]).toEqual(["rh-adv", "orch"]);
-        expect(agent(advisor).slice(0, 6)).toEqual(["env", "REPO_HARNESS_SEAT=advisor", "REPO_HARNESS_SEAT_REPOSITORY=1186405141", "claude", "-n", "rh-adv"]);
+        expect(agent(advisor).slice(0, 10)).toEqual(["env", "-u", "REPO_HARNESS_SEAT", "-u", "REPO_HARNESS_SEAT_REPOSITORY", "REPO_HARNESS_SEAT=advisor", "REPO_HARNESS_SEAT_REPOSITORY=1186405141", "claude", "-n", "rh-adv"]);
         // A linked worktree resolves to its primary checkout; the default worker runs Codex, which has no session name flag.
         const worker = named(worktree, "worker", "--parent", "1000", "--issue", "1508", "--pr", "1521", "--qualifier", "device");
         expect([worker.name, worker.tab]).toEqual(["rh-w-1508-device", "#1000"]);

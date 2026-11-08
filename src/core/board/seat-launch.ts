@@ -152,6 +152,14 @@ function brief(seat: SeatId, config: SeatConfigV1, fleet: readonly string[], lim
   return [...roleParagraphs(seat, config, fleet), ...kept].join('\n\n');
 }
 
+/**
+ * Every launch starts with `env`: it unsets the seat identity that a seat parent passes down, so that only a reset
+ * seat launch names a seat to the hooks (#1972). `assignments` follow the unset options.
+ */
+function seatEnv(assignments: readonly string[]): string[] {
+  return ['env', '-u', SEAT_ENV, '-u', SEAT_REPOSITORY_ENV, ...assignments];
+}
+
 function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly string[], name: string | undefined, repositoryId: string | undefined): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
   const on = (group: SeatTool) => config.tools.includes(group);
   // `--tools` cannot name agent types (`Agent(<type>)` there removes the Agent tool), so a fleet keeps the Agent
@@ -173,7 +181,7 @@ function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly s
   ];
   return {
     argv: [
-      ...(env.length === 0 ? [] : ['env', ...env]),
+      ...seatEnv(env),
       'claude',
       ...(name === undefined ? [] : ['-n', name]),
       ...(config.model === null ? [] : ['--model', config.model]),
@@ -203,6 +211,7 @@ function codexLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'pr
   const text = brief(seat, config, config.fleet, limits);
   return {
     argv: [
+      ...seatEnv([]),
       'codex',
       ...(config.model === null ? [] : ['-m', config.model]),
       ...(config.effort === null ? [] : ['-c', `model_reasoning_effort=${JSON.stringify(config.effort)}`]),
@@ -227,7 +236,7 @@ function piLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'proto
   const text = brief(seat, config, [], limits);
   const slash = config.model?.indexOf('/') ?? -1;
   return {
-    argv: ['pi', ...(config.model === null ? [] : ['--provider', config.model.slice(0, slash), '--model', config.model.slice(slash + 1)]),
+    argv: [...seatEnv([]), 'pi', ...(config.model === null ? [] : ['--provider', config.model.slice(0, slash), '--model', config.model.slice(slash + 1)]),
       ...(config.effort === null ? [] : ['--thinking', config.effort]),
       ...(review ? ['--exclude-tools', 'edit,write', '--no-extensions', '--no-skills',
       '--no-prompt-templates', '--no-context-files', '--no-mcp'] : []), '--append-system-prompt', text],
