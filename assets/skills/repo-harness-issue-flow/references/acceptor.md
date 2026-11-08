@@ -12,8 +12,8 @@ acceptance record (`docs/reference-configs/agentic-development-flow.md`,
 Review by risk).
 
 The gatekeeper is the default acceptor (D6). It reviews the diff and
-returns a verdict and findings. It has no network, so the session that
-runs the round publishes the result.
+returns a verdict and findings. A seat without the `net` tool group has no
+network, so the session that runs the round publishes the result.
 
 No host and no model is mandatory (D7). Any host that can read the PR and
 return the result schema can accept.
@@ -101,8 +101,9 @@ posts in this order:
 - the `acceptance record`.
 
 It posts no APPROVE review and no REQUEST_CHANGES review. A gatekeeper
-has no network, so the session that runs the round publishes its receipt.
-A reviewer with network access may publish its own round.
+seat without the `net` tool group has no network, so the session that runs
+the round publishes its receipt. A reviewer with the `net` tool group may
+publish its own round.
 
 `review publish` accepts rounds 1 to 3 only. For a round above 3, the
 session that runs the round posts the `acceptance record` by hand, in the
