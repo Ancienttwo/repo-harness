@@ -608,12 +608,12 @@ describe("repo-harness seats reset (#1972)", () => {
   const timeouts = { signalMs: 300, evidenceMs: 300, exitMs: 300, pollMs: 20 };
   /**
    * A fake hc at the hc boundary: no real terminal is read or written. `/clear` writes the new-session signal when
-   * `signal` is on, a relaunch line always writes it, `/exit` ends claude when `exit` is on, and resume prompt number
-   * `evidenceFrom` and later land in the new transcript.
+   * `signal` is on, a relaunch line always writes it, `/exit` ends claude when `exit` is on, and every resume prompt
+   * lands in the new transcript; the model answers prompt number `evidenceFrom` and later. `sendFail` refuses a send.
    */
   function withReset(fn: (f: { handoff: string; body: string; sha: (text: string) => string; state: (patch: Record<string, unknown>) => void;
     reset: (input?: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]> }) => Promise<unknown>;
-    sends: () => string[]; calls: () => string[]; log: () => { kind: string; detail: string; notice: string }[] }) => Promise<void>) {
+    sends: () => string[]; calls: () => string[]; log: () => { kind: string; detail: string; notice: string; requested_at: string }[] }) => Promise<void>) {
     return async () => {
       const home = mkdtempSync(join(tmpdir(), "seats-reset-"));
       // The handoff path is fixed under /tmp; a repository id per run keeps the runs apart.
@@ -641,11 +641,13 @@ if (cmd === "keys") {
   if (line.startsWith("sh ")) session("${home}/relaunched.jsonl");
   out({ status: null, turn: 4 });
 }
+if (cmd === "send" && st.sendFail) { process.stderr.write(JSON.stringify({ error: { kind: "blocked", message: "blocked" } })); process.exit(9); }
 if (cmd === "send") {
   const text = rest[rest.length - 1];
-  if (text.startsWith("You are") && (st.prompts += 1) >= st.evidenceFrom) {
+  if (text.startsWith("You are")) {
     const transcript = JSON.parse(fs.readFileSync("${dir}/session.json", "utf8")).transcript_path;
     fs.appendFileSync(transcript, JSON.stringify({ type: "user", message: { role: "user", content: \`<hc from="t2">\${text}</hc>\` } }) + "\\n");
+    if ((st.prompts += 1) >= st.evidenceFrom) fs.appendFileSync(transcript, JSON.stringify({ type: "assistant", message: { content: [] } }) + "\\n");
   }
   out({ started: null, turn: 4 });
 }
@@ -691,7 +693,7 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
   }
   const prompt = (handoff: string) => `You are advisor. Read ${handoff}, check the current state with git/gh, then continue. Then send RESUMED to t2 with hc send.`;
 
-  test("a check that finds no request, no requester or a busy requester sends nothing", withReset(async ({ reset, state, sends }) => {
+  test("a check that finds no request, no requester or a busy requester sends nothing and logs the failure", withReset(async ({ reset, state, sends, log }) => {
     const rows = [
       [{ path: "/tmp/repo-harness-seats/x/advisor/handoff.md" }, "handoff_path_invalid"],
       [{ request: false }, "request_missing"],
@@ -705,9 +707,14 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
       results.push(await reset(input));
     }
     expect([results, sends()]).toEqual([rows.map(([, error]) => ({ error, outcome: "nothing_sent" })), []]);
+    // An invalid handoff path names no seat, so it has no log entry.
+    expect(log().map(({ kind }) => kind)).toEqual(["request_missing", "caller_unknown", "requester_not_found", "requester_busy"]);
   }));
 
-  test("a failed handoff check asks for 3 rewrites of one request, then tells the requester to continue", withReset(async ({ reset, sha, body, sends, log }) => {
+  test("a failed handoff check asks for 3 rewrites of one request, then tells the requester to continue", withReset(async ({ reset, sha, body, state, sends, log }) => {
+    state({ sendFail: true });
+    expect(await reset({ handoff: false })).toEqual({ error: "message_not_sent", outcome: "uncertain" });
+    state({ sendFail: false });
     const results = [
       await reset({ handoff: false }), await reset({ stale: true }), await reset({ sha256: sha("other") }),
       await reset({ text: body.replace("## Next actions\n", "") }),
@@ -716,45 +723,53 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
       { error: "handoff_missing", outcome: "rewrite_requested" }, { error: "handoff_stale", outcome: "rewrite_requested" },
       { error: "handoff_sha256_mismatch", outcome: "rewrite_requested" }, { error: "handoff_sections_missing", outcome: "no_reset" },
     ]);
-    expect(sends().map(text => text.split(":")[0])).toEqual(["REWRITE 1/3", "REWRITE 2/3", "REWRITE 3/3", "NO-RESET"]);
+    // The refused send counts no rewrite, so the next run asks for rewrite 1/3 again.
+    expect(sends().map(text => text.split(":")[0])).toEqual(["REWRITE 1/3", "REWRITE 1/3", "REWRITE 2/3", "REWRITE 3/3", "NO-RESET"]);
     expect(log().map(({ kind, detail, notice }) => [kind, detail, notice])).toEqual([
-      ["rewrite", "handoff_missing", "not_configured"], ["rewrite", "handoff_stale", "not_configured"],
+      ["message_not_sent", expect.stringContaining("The rewrite message to t5 failed"), "not_configured"], ["rewrite", "handoff_missing", "not_configured"], ["rewrite", "handoff_stale", "not_configured"],
       ["rewrite", "handoff_sha256_mismatch", "not_configured"], ["no_reset", "handoff_sections_missing", "not_configured"],
     ]);
   }));
 
-  test("a valid handoff waits, sends /clear, and sends the resume prompt after the new-session signal", withReset(async ({ handoff, reset, calls, log }) => {
-    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: false });
+  test("a valid handoff waits, sends /clear and the prompt after the new-session signal, and is never reset again", withReset(async ({ handoff, reset, calls, log }) => {
+    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: false, logErrors: [] });
+    expect(await reset()).toEqual({ error: "already_reset", outcome: "nothing_sent" });
     expect(calls()).toEqual(["wait --timeout 600 -- t5", "keys -- t5 / c l e a r enter", `send -- t5 ${prompt(handoff)}`]);
-    expect(log()).toEqual([]);
+    expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([["reset", "cleared"], ["already_reset", "The reset request of " + log()[0]!.requested_at + " is already done."]]);
   }));
 
-  test("missing resume evidence resends the prompt and logs the failure", withReset(async ({ handoff, reset, state, sends, log }) => {
+  test("a reset log that cannot be written does not stop the reset and is reported", withReset(async ({ handoff, reset }) => {
+    mkdirSync(join(dirname(handoff), "reset-log.jsonl"));
+    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: false,
+      logErrors: [expect.stringMatching(/^reset: EISDIR/u)] });
+  }));
+
+  test("a prompt that the model does not answer is sent again and the failure is logged", withReset(async ({ handoff, reset, state, sends, log }) => {
     state({ evidenceFrom: 2 });
-    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: false });
-    expect([sends(), log().map(({ kind, detail }) => [kind, detail])]).toEqual([["/clear", prompt(handoff), prompt(handoff)], [["resume", "no_evidence"]]]);
+    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: false, logErrors: [] });
+    expect([sends(), log().map(({ kind, detail }) => [kind, detail])]).toEqual([["/clear", prompt(handoff), prompt(handoff)], [["resume", "no_evidence"], ["reset", "cleared"]]]);
   }));
 
-  test("no new-session signal after 3 resends relaunches the requester from its seat argv in the same terminal", withReset(async ({ handoff, reset, state, sends, log }) => {
+  test("no new-session signal types /clear again 3 times, then relaunches the requester from its seat argv in the same terminal", withReset(async ({ handoff, reset, state, sends, log }) => {
     state({ signal: false });
-    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: true });
+    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: true, logErrors: [] });
     const script = join(dirname(handoff), "relaunch.sh");
-    expect(sends()).toEqual(["/clear", "/exit", `sh ${script}`, prompt(handoff)]);
+    expect(sends()).toEqual([...Array(4).fill("/clear"), "/exit", `sh ${script}`, prompt(handoff)]);
     expect(readFileSync(script, "utf8")).toBe("/bin/sh -c 'exec claude' 'x y'\n");
-    expect(log().map(({ kind, detail }) => [kind, detail])).toEqual(Array(4).fill(["resume", "no_signal"]));
+    expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([...Array(4).fill(["resume", "no_signal"]), ["reset", "relaunched"]]);
   }));
 
   test("a relaunch argv that cannot be built types no /exit and leaves the session running", withReset(async ({ reset, state, sends, log }) => {
     state({ signal: false });
     const relaunchArgv = async (): Promise<string[]> => { throw new Error("The stored seats section needs a one-shot migration. Run repo-harness update."); };
     expect(await reset({ relaunchArgv })).toEqual({ error: "resume_not_sent", outcome: "uncertain" });
-    expect([sends(), log().at(-1)?.kind, log().at(-1)?.detail]).toEqual([["/clear"], "relaunch_failed",
+    expect([sends(), log().at(-1)?.kind, log().at(-1)?.detail]).toEqual([Array(4).fill("/clear"), "relaunch_failed",
       "relaunch_argv_failed: The stored seats section needs a one-shot migration. Run repo-harness update"]);
   }));
 
   test("a relaunch that cannot end claude logs the failure and reports an uncertain reset", withReset(async ({ reset, state, sends, log }) => {
     state({ signal: false, exit: false });
     expect(await reset()).toEqual({ error: "resume_not_sent", outcome: "uncertain" });
-    expect([sends(), log().at(-1)?.kind, log().at(-1)?.detail]).toEqual([["/clear", "/exit"], "relaunch_failed", "claude_did_not_exit"]);
+    expect([sends(), log().at(-1)?.kind, log().at(-1)?.detail]).toEqual([[...Array(4).fill("/clear"), "/exit"], "relaunch_failed", "claude_did_not_exit"]);
   }));
 });
