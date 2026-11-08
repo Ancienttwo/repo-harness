@@ -143,6 +143,7 @@ test('path resolves a listed id only inside its own registered repository and re
   const other = join(f.parent, 'other');
   mkdirSync(other);
   initGitRepo(other);
+  writeFileSync(join(other, 'README.md'), 'other');
   commitAll(other, 'base');
   const registry = JSON.parse(readFileSync(join(f.home, 'registered-repos.json'), 'utf8'));
   const otherId = repoHarnessRepoIdFor(realpathSync(other));
