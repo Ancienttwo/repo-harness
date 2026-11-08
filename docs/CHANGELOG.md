@@ -10,6 +10,7 @@ All notable changes to this skill are documented here.
 
 - The docs reader uses mermaid 12.3.0, and the operator-web tests use happy-dom 21.0.4.
   Mermaid 12 draws diagrams with ELK layout and the `neo` look by default. (#1987)
+- The herdr-core floor is 0.1.19. On Linux and macOS, a deliberately detached program survives its terminal close. Task agent cancel and close now end the provider's process group themselves (TERM, then KILL), so a group member that ignores hangup still ends (#754). (#1991)
 - Stored quota thresholds replace `routing.mode` and `routing.hyper`.
   Claude saving and Codex hyper modes follow weekly remaining quota.
   `repo-harness update` runs the one-shot migration. The decoder refuses

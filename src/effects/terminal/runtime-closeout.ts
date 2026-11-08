@@ -219,16 +219,75 @@ export async function notifyTaskWorktreeMerged(repoRoot: string, owner: string,
   });
 }
 
-/** Ends a created terminal and confirms its program exit. hc kill ends the whole program group. */
+/** A process in the provider's group. `key` (pid, pgid, start time) survives exec; the command name does not. */
+interface GroupProcess { pid: number; key: string; exited: boolean }
+/** The process group recorded in the provider proof. hc starts the program as its group leader (#754). */
+function providerPgid(provider: ProcessProof): number {
+  return Number(provider.identity.trim().split(/\s+/)[1]);
+}
+/** The processes in the provider's recorded group. Windows has no process groups; hc ends the program's process tree there. */
+function providerGroup(provider: ProcessProof): GroupProcess[] {
+  if (process.platform === 'win32') return [];
+  const pgid = String(providerPgid(provider));
+  const group: GroupProcess[] = [];
+  for (const row of execFileSync('ps', ['-A', '-o', 'pid=,pgid=,lstart=,stat='], { encoding: 'utf8' }).trim().split('\n')) {
+    const fields = row.trim().split(/\s+/);
+    if (fields[1] !== pgid) continue;
+    const stat = fields[7] ?? '';
+    // Darwin E is a process in exit, as in processProofAlive.
+    group.push({ pid: Number(fields[0]), key: fields.slice(0, 7).join(' '), exited: stat.startsWith('Z') || (process.platform === 'darwin' && stat.includes('E')) });
+  }
+  return group;
+}
+/** Live pids in the provider's group. Cleanup reports them and does not signal them: without a live leader proof they are unproven. */
+function liveProviderGroup(provider: ProcessProof): number[] {
+  return providerGroup(provider).filter(member => !member.exited).map(member => member.pid);
+}
+/**
+ * hc 0.1.19 keeps a group member that ignores hangup alive after its terminal ends, so cleanup ends the group:
+ * TERM, wait, KILL, wait. Members are recorded while the leader proof holds. A recorded member that still has
+ * its key has stayed in the group since then, so the group id was not reused.
+ */
+async function endProviderGroup(provider: ProcessProof, members: GroupProcess[]): Promise<void> {
+  const keys = new Set(members.map(member => member.key));
+  const recordedAlive = () => providerGroup(provider).some(member => !member.exited && keys.has(member.key));
+  for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
+    // Residual: if every member exits after this check and the pid space wraps to this group id before the
+    // signal, the signal reaches the new group. macOS has no group handle that closes this window.
+    if (!recordedAlive()) return;
+    try { process.kill(-provider.pid, signal); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+    const deadline = Date.now() + 2000;
+    while (recordedAlive() && Date.now() < deadline) await Bun.sleep(50);
+  }
+}
+/**
+ * Members of the group the provider leads, scanned between two leader proofs: a live leader keeps its group id,
+ * so the scan cannot be a later group that reused it. A non-leader or a failed proof records none.
+ */
+function provenGroupMembers(provider: ProcessProof): GroupProcess[] {
+  if (providerPgid(provider) !== provider.pid || !leaderAlive(provider)) return [];
+  const scanned = providerGroup(provider).filter(member => member.pid !== provider.pid);
+  return leaderAlive(provider) ? scanned : [];
+}
+function processIdentityLost(error: unknown): boolean {
+  return (error as Error).message === 'task_agent_process_identity_lost';
+}
+/** A reused provider pid means the leader exited: its group is then unproven and only reported, never signalled. */
+function leaderAlive(provider: ProcessProof): boolean {
+  try { return processProofAlive(provider); } catch (error) { if (processIdentityLost(error)) return false; throw error; }
+}
+/** Ends a created terminal, confirms its program exit and ends the recorded members of the provider's group. */
 async function endTerminal(endpoint: HerdrCoreEndpoint, address: string, provider: ProcessProof | null): Promise<boolean> {
   const options = coreOptions(endpoint);
+  const members = provider ? provenGroupMembers(provider) : [];
   if (hcKill(address, options).state !== 'finished') return false;
   const deadline = Date.now() + 5000;
-  while (provider && processProofAlive(provider)) {
+  while (provider && leaderAlive(provider)) {
     if (Date.now() >= deadline) return false;
     await Bun.sleep(50);
   }
   hcRm(address, options);
+  if (provider) await endProviderGroup(provider, members);
   return true;
 }
 async function closeUnboundTaskStart(dir: string, task: string, role: string, mode: 'close' | 'cancel'): Promise<TaskCleanupResult> {
@@ -260,7 +319,9 @@ async function closeUnboundTaskStart(dir: string, task: string, role: string, mo
       if (!await endTerminal(intent.spec.endpoint, terminal.address, provider)) return { status: 'cleanup_pending', pids: provider ? [provider.pid] : [] };
     } else hcRm(terminal.address, options);
   }
-  if (provider && processProofAlive(provider)) return { status: 'cleanup_pending', pids: [provider.pid], reason: 'terminal_absent' };
+  if (provider && leaderAlive(provider)) return { status: 'cleanup_pending', pids: [provider.pid], reason: 'terminal_absent' };
+  const group = provider ? liveProviderGroup(provider) : [];
+  if (group.length) return { status: 'cleanup_pending', pids: group, reason: 'provider_group_alive' };
   return finish();
 }
 async function cleanupTaskAgent(repoRoot: string, task: string, role: string, mode: 'close' | 'cancel'): Promise<TaskCleanupResult> {
@@ -278,9 +339,12 @@ async function cleanupTaskAgent(repoRoot: string, task: string, role: string, mo
       }
     }
     const closing = existsSync(join(dir, 'close-intent.json'));
-    if (closing && processProofAlive(binding.provider)) assertTaskBinding(binding, true);
+    if (closing && leaderAlive(binding.provider)) assertTaskBinding(binding, true);
     if (!closing) {
-      assertTaskBinding(binding, true);
+      // A reused provider pid of a hc task passes on to the unproven group report; every other binding error stays fatal.
+      try { assertTaskBinding(binding, true); } catch (error) {
+        if (binding.runtime !== 'herdr-core' || !processIdentityLost(error) || leaderAlive(binding.provider)) throw error;
+      }
       writeSessionArtifact(join(dir, 'close-intent.json'), { task, role, provider: binding.provider, mode });
     }
     const closed = () => {
@@ -295,7 +359,9 @@ async function cleanupTaskAgent(repoRoot: string, task: string, role: string, mo
     // A removed terminal after a confirmed exit is a cleanup that ended before closed.json.
     if (readBoundTerminal(binding)) {
       if (!await endTerminal(binding.endpoint, binding.terminal_id, binding.provider)) return { status: 'cleanup_pending', pids: [binding.provider.pid] };
-    } else if (processProofAlive(binding.provider)) return { status: 'cleanup_pending', pids: [binding.provider.pid], reason: 'terminal_absent' };
+    } else if (leaderAlive(binding.provider)) return { status: 'cleanup_pending', pids: [binding.provider.pid], reason: 'terminal_absent' };
+    const group = liveProviderGroup(binding.provider);
+    if (group.length) return { status: 'cleanup_pending', pids: group, reason: 'provider_group_alive' };
     return closed();
   });
 }

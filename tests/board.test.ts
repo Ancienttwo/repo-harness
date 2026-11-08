@@ -91,7 +91,7 @@ function replay(options: Replay = {}): BoardV1 {
     repo_root: root,
     parent: 1474,
     now: () => options.now ?? REPLAY_NOW,
-    host: options.host ?? boardHostPorts({ env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES, HC_VERSION: options.hcVersion ?? '0.1.18' } }),
+    host: options.host ?? boardHostPorts({ env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES, HC_VERSION: options.hcVersion ?? '0.1.19' } }),
     gh_runner: (args) => {
       if (args[0] === 'repo') return answer({ nameWithOwner: 'Ancienttwo/repo-harness' });
       if (args[1] === 'graphql') return answer(args.some(arg => arg.includes('subIssues')) ? parent : pulls);
@@ -136,7 +136,7 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
   expect(board.pull_requests[0]!.acceptance).toMatchObject({ status: 'accepted', via: 'record', accepted_at: '2026-11-02T21:12:35Z' });
   expect(board.plan).toMatchObject({ status: 'unavailable', reason: 'plan block invalid: the plan comment has 0 fenced json blocks, expected 1' });
   expect(board.daily_run).toMatchObject({ status: 'observed', conclusion: 'failure', open_repair_issues: [] });
-  expect(board.tooling).toEqual({ hc: { status: 'observed', version: '0.1.18', min_version: HC_MIN_VERSION }, herdr_app: { status: 'not_pinned' } });
+  expect(board.tooling).toEqual({ hc: { status: 'observed', version: '0.1.19', min_version: HC_MIN_VERSION }, herdr_app: { status: 'not_pinned' } });
   expect(board.execution.status === 'observed' && board.execution.terminals.map(terminal => terminal.seat_status === 'observed'
     ? [terminal.address, terminal.seat, terminal.issue, terminal.status, terminal.agent] : [terminal.address, terminal.reason, terminal.agent])).toEqual([
     ['t1', 'worker', 1476, 'blocked', 'codex'], ['t2', 'worker', 1475, 'done', 'claude-code'],

@@ -96,6 +96,7 @@ test('hc task sessions serialize concurrent starts, reconcile crashes, deliver b
       hc(['send', '--json', '--', (binding as HerdrTaskBinding).terminal_id, `Read task request ${join(dir, `request-${request.round}.json`)}; write its result only to ${request.result_ref}.`]);
     });
   const peer = join(fixture, 'peer.ts');
+  writeFileSync(join(fixture, 'stubborn.js'), "process.on('SIGTERM',()=>{});process.on('SIGHUP',()=>{});setInterval(()=>{},1000);");
   writeFileSync(peer, `
 import {appendFileSync,readFileSync,renameSync,writeFileSync} from 'fs'; import {spawn} from 'child_process';
 import {writeSessionArtifact} from ${JSON.stringify(ioModulePath)};
@@ -103,7 +104,12 @@ const ready=process.argv[2];
 process.stdin.setRawMode(true); process.stdout.write('\\x1b[?2004h');
 appendFileSync(${JSON.stringify(join(fixture, 'launches'))},ready.split('/').pop().replace('.ready','')+'\\n');
 // A child in the leader's process group before ready; it ignores TERM and terminal hangup.
-if(ready.endsWith('/grouped.ready'))writeFileSync(ready+'.child',String(spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});process.on('SIGHUP',()=>{});setInterval(()=>{},1000)"],{stdio:'ignore'}).pid));
+const stubborn=['-e',"process.on('SIGTERM',()=>{});process.on('SIGHUP',()=>{});setInterval(()=>{},1000)"];
+if(ready.endsWith('/grouped.ready'))writeFileSync(ready+'.child',String(spawn(process.execPath,stubborn,{stdio:'ignore'}).pid));
+// A member that execs on TERM into a program that ignores TERM: its command name changes, its start time does not.
+if(ready.endsWith('/exec-member.ready'))writeFileSync(ready+'.child',String(spawn('/bin/sh',['-c',"trap '' HUP; trap 'exec "+process.execPath+" ${join(fixture, 'stubborn.js')}' TERM; while :; do sleep 0.2; done"],{stdio:'ignore'}).pid));
+// On hangup the leader starts a group child that ignores TERM and hangup, then exits: no live leader proves that child.
+if(ready.endsWith('/late-child.ready'))process.on('SIGHUP',()=>{writeFileSync(ready+'.child',String(spawn(process.execPath,stubborn,{stdio:'ignore'}).pid));process.exit(0);});
 writeFileSync(ready+'.tmp',JSON.stringify({pid:process.pid})); renameSync(ready+'.tmp',ready);
 let buffer=''; process.stdin.on('data',chunk=>{
  buffer+=chunk.toString(); if (!/[\\r\\n]/.test(buffer)) return;
@@ -338,8 +344,8 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     const lostIntent = api.readSessionArtifact<{ intent_id: string }>(join(lostDir, 'intent.json'));
     expect(JSON.parse(hc(['ls', '--json', '--all', '--label', `repo-harness.request=${lostIntent.intent_id}`])).terminals).toEqual([]);
 
-    // #754: the program leads its group and is the provider, not its child. hc kill
-    // ends the child that ignores TERM and hangup with the leader; cleanup sends no signal.
+    // #754: the program leads its group and is the provider, not its child. Cleanup ends
+    // the child that ignores TERM and hangup with the leader, also when hc kill leaves it.
     await started('grouped');
     const leaderPid = JSON.parse(readFileSync(join(fixture, 'grouped.ready'), 'utf8')).pid;
     const childPid = Number(readFileSync(join(fixture, 'grouped.ready.child'), 'utf8'));
@@ -348,14 +354,55 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     expect(run('ps', ['-p', String(childPid), '-o', 'pgid='], fixture, env)).toBe(String(leaderPid));
     expect(await api.cancelTaskAgent(fixture, spec.task, 'grouped')).toEqual({ status: 'closed', pids: [] });
     expect([live(leaderPid), live(childPid), gone(grouped.terminal_id)]).toEqual([false, false, true]);
+    const childOf = (role: string) => Number(readFileSync(join(fixture, `${role}.ready.child`), 'utf8'));
+    // A member that execs keeps its recorded start time, so cleanup still ends it.
+    await started('exec-member');
+    expect(await api.cancelTaskAgent(fixture, spec.task, 'exec-member')).toEqual({ status: 'closed', pids: [] });
+    expect(live(childOf('exec-member'))).toBe(false);
+    // A group child that no live leader proves is reported, not signalled; cleanup closes after it ends.
+    // The premise (the child outlives its leader) holds on macOS. Linux CI observed the child end with its leader,
+    // most likely because the leader's exit hangs up the terminal's foreground group before the new child has
+    // installed its hangup handler. With no live group process, closed is the correct result there.
+    await started('late-child');
+    const lateResult = await api.cancelTaskAgent(fixture, spec.task, 'late-child');
+    if (process.platform === 'darwin') {
+      expect(live(childOf('late-child'))).toBe(true);
+      expect(lateResult).toEqual({ status: 'cleanup_pending', pids: [childOf('late-child')], reason: 'provider_group_alive' });
+      process.kill(childOf('late-child'), 'SIGKILL');
+      await until(() => !live(childOf('late-child')));
+      expect(await api.cancelTaskAgent(fixture, spec.task, 'late-child')).toEqual({ status: 'closed', pids: [] });
+    } else {
+      const state = spawnSync('ps', ['-o', 'stat=', '-p', String(childOf('late-child'))], { encoding: 'utf8' }).stdout.trim();
+      expect(state === '' || state.startsWith('Z')).toBe(true);
+      expect(lateResult).toEqual({ status: 'closed', pids: [] });
+    }
+    // A reused provider pid: the recorded proof names another start time for a live pid. Its terminal is gone.
+    // Cleanup sends no signal and reports the pid, before and after close-intent.json.
+    await started('reused');
+    const reusedDir = api.taskSessionDirectory(fixture, spec.task, 'reused');
+    const reusedTerminal = (api.readTaskAgent(fixture, spec.task, 'reused').binding as HerdrTaskBinding).terminal_id;
+    hc(['kill', '--json', '--', reusedTerminal]); hc(['rm', '--json', '--', reusedTerminal]);
+    const reusedPid = spawn(process.execPath, [join(fixture, 'stubborn.js')], { detached: true, stdio: 'ignore' }).pid!;
+    writeFileSync(join(fixture, 'reused.ready.child'), String(reusedPid));
+    const fields = processIdentity(reusedPid).split(/\s+/); fields[6] = String(Number(fields[6]) - 1);
+    for (const name of ['binding.json', 'provider-created.json']) {
+      const record = JSON.parse(readFileSync(join(reusedDir, name), 'utf8'));
+      writeFileSync(join(reusedDir, name), JSON.stringify({ ...record, provider: { ...record.provider, pid: reusedPid, identity: fields.join(' ') } }));
+    }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      expect(await api.cancelTaskAgent(fixture, spec.task, 'reused')).toEqual({ status: 'cleanup_pending', pids: [reusedPid], reason: 'provider_group_alive' });
+    }
+    expect(live(reusedPid)).toBe(true);
   } finally {
     for (const child of owners) {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
       await exited(child);
     }
     // A failed group cleanup must not leave the TERM/HUP-resistant child on the host.
-    const childFile = join(fixture, 'grouped.ready.child');
-    if (existsSync(childFile)) { try { process.kill(Number(readFileSync(childFile, 'utf8')), 'SIGKILL'); } catch { /* Already absent. */ } }
+    for (const role of ['grouped', 'exec-member', 'late-child', 'reused']) {
+      const childFile = join(fixture, `${role}.ready.child`);
+      if (existsSync(childFile)) { try { process.kill(Number(readFileSync(childFile, 'utf8')), 'SIGKILL'); } catch { /* Already absent. */ } }
+    }
   }
 }), 60_000);
 
