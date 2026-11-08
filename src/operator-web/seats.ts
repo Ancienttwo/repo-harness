@@ -1,6 +1,7 @@
 import {
   ROUTING_CLASSES,
   SEAT_IDS,
+  seatTakesFleet,
   decodeSeatsSettings,
   decodeSeatsSettingsResult,
   type SeatConfigV1,
@@ -79,22 +80,27 @@ const patch = (draft: SeatsConfigV1, seat: SeatId, change: Partial<SeatConfigV1>
 
 /**
  * A new runtime keeps the model and effort only where that runtime accepts
- * them, and keeps fleet roles only on a runtime that has them. Codex always
+ * them, and keeps fleet roles only where the runtime and model take them. Codex always
  * runs commands, so its shell group is on.
  */
 export function setSeatRuntime(draft: SeatsConfigV1, seat: SeatId, runtime: SeatRuntime, ranges: SeatsSettingsV1['ranges']): SeatsConfigV1 {
   const range = ranges.runtimes.find(entry => entry.id === runtime)!;
   const current = draft[seat]!;
+  const model = current.model !== null && range.models.includes(current.model) ? current.model : null;
   return patch(draft, seat, {
     runtime,
-    model: current.model !== null && range.models.includes(current.model) ? current.model : null,
+    model,
     effort: range.effort ? current.effort : null,
-    fleet: range.fleet ? current.fleet : [],
+    fleet: range.fleet && seatTakesFleet({ runtime, model }) ? current.fleet : [],
     tools: runtime === 'codex' ? toggled(current.tools, 'shell', true) : current.tools,
   });
 }
 
-export const setSeatModel = (draft: SeatsConfigV1, seat: SeatId, model: string | null): SeatsConfigV1 => patch(draft, seat, { model });
+/** A Pi seat that leaves the GPT models loses its fleet roles, as a runtime change does. */
+export const setSeatModel = (draft: SeatsConfigV1, seat: SeatId, model: string | null): SeatsConfigV1 => {
+  const current = draft[seat]!;
+  return patch(draft, seat, { model, fleet: seatTakesFleet({ runtime: current.runtime, model }) ? current.fleet : [] });
+};
 export const setSeatEffort = (draft: SeatsConfigV1, seat: SeatId, effort: string | null): SeatsConfigV1 => patch(draft, seat, { effort });
 export const setSeatTool = (draft: SeatsConfigV1, seat: SeatId, tool: SeatTool, on: boolean): SeatsConfigV1 =>
   patch(draft, seat, { tools: toggled(draft[seat]!.tools, tool, on) });
