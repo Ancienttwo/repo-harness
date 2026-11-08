@@ -1,9 +1,8 @@
 import { createHash } from 'crypto';
-import { closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'fs';
+import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
-import { appendFileSync, existsSync } from 'fs';
 import {
-  SEAT_NO_RESET_MESSAGE, SEAT_RESET_RETRIES, handoffIdentity, missingHandoffSections, seatResetLogPath, seatResetRequestPath,
+  SEAT_NO_RESET_MESSAGE, SEAT_RESET_RETRIES, handoffIdentity, missingHandoffSections, seatResetClaimPath, seatResetLogPath, seatResetRequestPath,
   seatResetDirectory, seatResumePrompt, seatRewriteMessage, seatSessionPath, type SeatResetIdentity,
 } from '../../core/board/seat-reset';
 import { RH_LABEL, hcGet, hcKeys, hcList, hcSend, hcWait, type HerdrCoreOptions } from '../terminal/herdr-core';
@@ -81,7 +80,7 @@ export function recordSeatSession(identity: SeatResetIdentity, session: { readon
 export type SeatResetOutcome = 'nothing_sent' | 'rewrite_requested' | 'no_reset' | 'uncertain';
 
 export type SeatResetCode = 'handoff_path_invalid' | 'handoff_missing' | 'request_missing' | 'handoff_stale' | 'handoff_sha256_mismatch'
-  | 'handoff_sections_missing' | 'already_reset' | 'caller_unknown' | 'requester_not_found' | 'requester_busy' | 'message_not_sent'
+  | 'handoff_sections_missing' | 'already_claimed' | 'claim_failed' | 'caller_unknown' | 'requester_not_found' | 'requester_busy' | 'message_not_sent'
   | 'hc_failed' | 'resume_not_sent';
 
 export class SeatResetError extends Error {
@@ -132,21 +131,39 @@ function newSession(identity: SeatResetIdentity, since: number, request: SeatReq
   }
 }
 
+/** The bytes of a file after `offset`, or '' when it is missing; the evidence poll reads only what was appended. */
+function readAppended(path: string, offset: number): string {
+  let fd: number;
+  try { fd = openSync(path, 'r'); } catch { return ''; }
+  try {
+    const length = Math.max(0, fstatSync(fd).size - offset);
+    const buffer = Buffer.alloc(length);
+    readSync(fd, buffer, 0, length, offset);
+    return buffer.toString('utf8');
+  } finally {
+    closeSync(fd);
+  }
+}
+
+const fileSize = (path: string): number => { try { return statSync(path).size; } catch { return 0; } };
+
 /**
- * Mechanical resume evidence: the transcript has a user entry that holds the resume prompt (hc may wrap it), and an
- * assistant entry after it, so the model has answered the prompt.
+ * Mechanical resume evidence in the text appended after the prompt send: the user entry that holds the resume
+ * prompt (hc may wrap it), then an assistant Bash tool call whose command sends RESUMED to the peer with hc send.
  */
-function hasAnsweredPrompt(transcript: string, prompt: string): boolean {
-  let text: string;
-  try { text = readFileSync(transcript, 'utf8'); } catch { return false; }
+function sentResumed(appended: string, prompt: string, peer: string): boolean {
   const holds = (value: unknown) => typeof value === 'string' && value.includes(prompt);
   let asked = false;
-  for (const line of text.split('\n')) {
+  for (const line of appended.split('\n')) {
     let entry: { type?: unknown; message?: { content?: unknown } };
     try { entry = JSON.parse(line); } catch { continue; }
     const content = entry.message?.content;
-    if (asked && entry.type === 'assistant') return true;
-    if (entry.type === 'user' && (holds(content) || (Array.isArray(content) && content.some(part => holds((part as { text?: unknown } | null)?.text))))) asked = true;
+    const parts = Array.isArray(content) ? content as ({ type?: unknown; name?: unknown; text?: unknown; input?: { command?: unknown } } | null)[] : [];
+    if (entry.type === 'user' && (holds(content) || parts.some(part => holds(part?.text)))) asked = true;
+    if (asked && entry.type === 'assistant' && parts.some((part) => {
+      const command = part?.type === 'tool_use' && part.name === 'Bash' ? part.input?.command : undefined;
+      return typeof command === 'string' && command.includes('hc send') && command.includes(peer) && command.includes('RESUMED');
+    })) return true;
   }
   return false;
 }
@@ -229,6 +246,7 @@ class SeatResetRun {
   private readonly logPath: string;
   private request: SeatRequest | null = null;
   private requester = '';
+  private caller = '';
   private prompt = '';
 
   constructor(private readonly identity: SeatResetIdentity, private readonly path: string, private readonly options: SeatResetOptions) {
@@ -285,10 +303,12 @@ class SeatResetRun {
       if (this.request === null) {
         throw this.refuse('request_missing', 'nothing_sent', `${seatResetRequestPath(this.identity)} is missing or not valid: the Stop hook did not ask for this reset.`);
       }
-      if (this.count('reset') > 0) throw this.refuse('already_reset', 'nothing_sent', `The reset request of ${this.request.requestedAt} is already done.`);
       this.findRequester();
       this.checkHandoff(sha256);
+      const claim = seatResetClaimPath(this.identity, this.request.requestedAt);
+      if (existsSync(claim)) throw this.alreadyClaimed();
       this.wait();
+      this.claim(claim);
     } catch (error) {
       if (error instanceof SeatResetError) throw error;
       throw this.refuse('hc_failed', 'nothing_sent', `hc failed before /clear: ${sentence(error)}.`);
@@ -302,6 +322,20 @@ class SeatResetRun {
     }
   }
 
+  private alreadyClaimed(): SeatResetError {
+    return this.refuse('already_claimed', 'nothing_sent', `The reset request of ${this.request!.requestedAt} is already claimed by an earlier run.`);
+  }
+
+  /** The exclusive create is the claim: a concurrent run gets EEXIST. Any other failure types nothing. */
+  private claim(path: string): void {
+    try {
+      closeSync(openSync(path, 'wx', 0o600));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw this.alreadyClaimed();
+      throw this.refuse('claim_failed', 'nothing_sent', `${path} could not be created: ${sentence(error)}.`);
+    }
+  }
+
   private findRequester(): void {
     const caller = this.env.HC_TERMINAL_ID;
     if (!caller) throw this.refuse('caller_unknown', 'nothing_sent', 'HC_TERMINAL_ID is not set: run the reset from the peer seat terminal.');
@@ -311,6 +345,7 @@ class SeatResetRun {
     }
     this.requester = terminals[0]!.address;
     if (this.requester === caller) throw this.refuse('caller_unknown', 'nothing_sent', `The ${this.identity.seat} seat cannot reset itself: run the reset from the peer seat.`);
+    this.caller = caller;
     this.prompt = seatResumePrompt(this.identity, caller);
   }
 
@@ -347,10 +382,11 @@ class SeatResetRun {
     return this.poll(() => newSession(this.identity, since, this.request!), this.timeouts.signalMs);
   }
 
-  /** Sends the prompt; true when the model answers it in the new transcript within the evidence window. */
+  /** Sends the prompt; true when the model sends RESUMED in the new transcript within the evidence window. */
   private async promptAnswered(session: NewSession): Promise<boolean> {
+    const offset = fileSize(session.transcript);
     hcSend(this.requester, this.prompt, this.options);
-    return await this.poll(() => (hasAnsweredPrompt(session.transcript, this.prompt) ? true : null), this.timeouts.evidenceMs) !== null;
+    return await this.poll(() => (sentResumed(readAppended(session.transcript, offset), this.prompt, this.caller) ? true : null), this.timeouts.evidenceMs) !== null;
   }
 
   private done(session: NewSession, relaunched: boolean): Omit<SeatResetResult, 'logErrors'> {
@@ -363,12 +399,13 @@ class SeatResetRun {
     let since = Date.now();
     typeLine(this.requester, '/clear', this.options);
     let session: NewSession | null = null;
-    for (;;) {
+    // The log counts across runs; the run counts too, so an unwritable log still ends the retries.
+    for (let failures = 1; ; failures += 1) {
       session ??= await this.waitForSession(since);
       const failure = session === null ? 'no_signal' : await this.promptAnswered(session) ? null : 'no_evidence';
       if (failure === null) return this.done(session!, false);
       this.record('resume', failure);
-      if (this.count('resume') > SEAT_RESET_RETRIES) return this.relaunch();
+      if (failures > SEAT_RESET_RETRIES || this.count('resume') > SEAT_RESET_RETRIES) return this.relaunch();
       if (failure === 'no_signal') {
         since = Date.now();
         typeLine(this.requester, '/clear', this.options);

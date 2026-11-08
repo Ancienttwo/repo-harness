@@ -40,6 +40,8 @@ export const seatResetRequestPath = (identity: SeatResetIdentity): string => `${
 export const seatSessionPath = (identity: SeatResetIdentity): string => `${seatResetDirectory(identity)}/session.json`;
 /** One JSON line per reset failure. It is the only record of the rewrite and resend counts. */
 export const seatResetLogPath = (identity: SeatResetIdentity): string => `${seatResetDirectory(identity)}/reset-log.jsonl`;
+/** Created once with an exclusive create before `/clear`: no second run clears the same request. */
+export const seatResetClaimPath = (identity: SeatResetIdentity, requestedAt: string): string => `${seatResetDirectory(identity)}/claim-${requestedAt.replace(/\D/gu, '')}`;
 
 /** At most this many handoff rewrites and resume prompt resends per request. */
 export const SEAT_RESET_RETRIES = 3;
@@ -92,9 +94,9 @@ export function seatResetReason(identity: SeatResetIdentity, contextTokens: numb
   ].join('\n');
 }
 
-/** The prompt that the peer sends after `/clear`. */
+/** The prompt that the peer sends after `/clear`. RESUMED comes first, so its hc send is the resume evidence. */
 export function seatResumePrompt(identity: SeatResetIdentity, peerAddress: string): string {
-  return `You are ${identity.seat}. Read ${seatHandoffPath(identity)}, check the current state with git/gh, then continue. Then send RESUMED to ${peerAddress} with hc send.`;
+  return `You are ${identity.seat}. Read ${seatHandoffPath(identity)}, then send RESUMED to ${peerAddress} with hc send, then check the current state with git/gh and continue.`;
 }
 
 /** The message to the requester when its handoff fails a check. */
