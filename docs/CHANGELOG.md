@@ -2,6 +2,22 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Added
+
+- `repo-harness worktrees path --repository <id> --worktree <id>` prints
+  the absolute path of one registered worktree as one JSON line. In the
+  desktop shell, a registered Worktree row shows "Open in Terminal" and
+  "Open in Editor". The page passes only ids; the shell resolves the path
+  with the command. A plain browser shows no open control. (#1968)
+
+### Changed
+
+- `/healthz.protocol` is now 3 (ADR-0003). A protocol-2 desktop app
+  refuses a protocol-3 server; update the desktop app together with the
+  CLI. (#1968)
+
 ## [0.28.0] - 2026-11-08
 
 This release derives each account's seat mode from weekly quota, makes
@@ -46,19 +62,7 @@ herdr-core 0.1.19 and archctx 0.12.0.
   `seats_config_invalid`, so seats and quota routes stay unavailable until
   the routing section has the 0.27.0 shape again. (#1954)
 
-### Added
-
-- `repo-harness worktrees path --repository <id> --worktree <id>` prints
-  the absolute path of one registered worktree as one JSON line. In the
-  desktop shell, a registered Worktree row shows "Open in Terminal" and
-  "Open in Editor". The page passes only ids; the shell resolves the path
-  with the command. A plain browser shows no open control. (#1968)
-
 ### Changed
-
-- `/healthz.protocol` is now 3 (ADR-0003). A protocol-2 desktop app
-  refuses a protocol-3 server; update the desktop app together with the
-  CLI. (#1968)
 
 - Stored quota thresholds replace `routing.mode` and `routing.hyper`.
   Claude saving and Codex hyper modes follow weekly remaining quota.
