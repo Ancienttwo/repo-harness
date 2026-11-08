@@ -34,6 +34,7 @@ All notable changes to this skill are documented here.
 
 ### Fixed
 
+- Board attention rules A3 and A4 and the delivery window recognize every configured worker seat kind. (#2016)
 - `review publish` puts a finding on a line outside the PR diff into the review body, so GitHub no longer rejects the review with HTTP 422. A retry reuses the acceptance claim already on the PR instead of posting a second one (#2009).
 
 ## [0.28.0] - 2026-11-08

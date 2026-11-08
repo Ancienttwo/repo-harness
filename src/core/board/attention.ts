@@ -3,6 +3,7 @@ import type { BoardItemV1, BoardPullRequestV1, BoardTerminalV1, BoardV1 } from '
 import { hcStatusClass, liveSeats, seatItem, seatPullRequest } from './desk';
 import { pathHazardHits } from './hazards';
 import { compareHcVersions } from '../terminal/herdr-pin';
+import { WORKER_SEAT_IDS } from './seats-settings';
 
 /**
  * Attention rules over one board. Each rule is a pure function of the board
@@ -24,7 +25,7 @@ export const R1_UNPLANNED_ITEMS = 3;
 export const R4_STALLED_MS = 4 * 60 * MINUTE;
 /** The member cap of an integration batch (`orchestrator.md` §9.1). */
 const A2_BATCH_MAX = 6;
-const WORKER_SEAT = 'worker';
+const WORKER_SEATS = new Set<string>(WORKER_SEAT_IDS);
 const RED_CONCLUSIONS = new Set(['failure', 'timed_out', 'startup_failure']);
 
 export type BoardRuleId = 'A1' | 'A2' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'A9' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5';
@@ -160,7 +161,7 @@ function workerTerminals(context: Context, rule: BoardRuleId): SeatTerminal[] {
       skip(context, rule, terminal.reason, terminal.address);
       return [];
     }
-    return terminal.seat === WORKER_SEAT && terminal.state === 'live' ? [terminal] : [];
+    return WORKER_SEATS.has(terminal.seat) && terminal.state === 'live' ? [terminal] : [];
   });
 }
 

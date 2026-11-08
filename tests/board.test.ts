@@ -172,6 +172,20 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
   ]);
 });
 
+test('attention rules and delivery windows recognize all worker seat kinds', () => {
+  const board = replay();
+  if (board.execution.status !== 'observed') throw new Error('the replay observes the seats');
+  const [blocked, done] = board.execution.terminals;
+  for (const seat of ['worker', 'worker-deep', 'worker-important', 'worker-important-fast', 'worker-light', 'orchestrator', 'worker-custom']) {
+    const terminals = [{ ...blocked!, seat }, { ...done!, seat }] as BoardTerminalV1[];
+    const candidate: BoardV1 = { ...board, items: board.items.map(item => item.number === 1475 ? { ...item, claim_status: { status_kind: 'none' } } : item), execution: { status: 'observed', terminals } };
+    const attention = evaluateBoardAttention(candidate);
+    const worker = seat !== 'orchestrator' && seat !== 'worker-custom';
+    expect(attention.findings.filter(finding => finding.rule === 'A3' || finding.rule === 'A4').map(finding => finding.rule)).toEqual(worker ? ['A3', 'A4'] : []);
+    expect(planAttentionDeliveries(candidate, attention, 0).window_ms).toBe(worker ? WINDOW_WITH_WORKERS_MS : WINDOW_WITHOUT_WORKERS_MS);
+  }
+});
+
 test('board summary counts the recorded PRs, planned issue members and orchestrator findings', () => {
   const board = replay();
   expect(boardSummary(board)).toEqual({ queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, current_batch: null, needs_you: 3, worker_limit: ISSUE_FLOW_WORKER_LIMIT,
