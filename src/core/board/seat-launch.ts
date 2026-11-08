@@ -183,7 +183,11 @@ function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly s
     ...(config.fleet.length > 0 ? [...new Set(agentTypes)].filter(type => !config.fleet.includes(type)).sort().map(type => `Agent(${type})`) : []),
   ];
   const limits: SeatLimitV1[] = [
-    ...OFF_GROUPS(config).map(group => ({ subject: group, level: pathLevel(group, 'enforced', on('shell') || on('mcp')) })),
+    // A shell can schedule jobs (crontab, launchctl), so the Cron tools are not the only path to this group.
+    ...OFF_GROUPS(config).map(group => ({
+      subject: group,
+      level: group === 'schedule' && on('shell') ? 'instructions_only' : pathLevel(group, 'enforced', on('shell') || on('mcp')),
+    })),
     { subject: 'fleet', level: config.fleet.length === 0 ? 'enforced' : 'named_types_only' },
   ];
   const text = brief(seat, config, config.fleet, limits);

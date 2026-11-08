@@ -350,8 +350,26 @@ describe("repo-harness seats argv", () => {
     const advisor = { ...DEFAULT_SEATS_CONFIG.advisor, tools: [...DEFAULT_SEATS_CONFIG.advisor.tools, "schedule"].sort() };
     withHome({ ...DEFAULT_SEATS_CONFIG, advisor }, home => {
       expect(tools(launch(home, "advisor").argv)).toEqual(expect.arrayContaining(["CronCreate", "CronList", "CronDelete"]));
-      expect(tools(launch(home, "orchestrator").argv)).not.toContain("CronCreate");
+      const off = tools(launch(home, "orchestrator").argv);
+      for (const tool of ["CronCreate", "CronList", "CronDelete"]) expect(off).not.toContain(tool);
+      expect(launch(home, "advisor").limits).toContainEqual({ subject: "gh", level: "common_commands" });
+      expect(launch(home, "orchestrator").limits).toContainEqual({ subject: "schedule", level: "instructions_only" });
+      expect(launch(home, "orchestrator").brief).toContain("Do not schedule recurring jobs.");
     });
+  });
+
+  test("the schedule group changes no Codex or Pi argv, and a stored config without it decodes unchanged", () => {
+    for (const runtime of ["codex", "pi"] as const) {
+      const base = { ...DEFAULT_SEATS_CONFIG.advisor, runtime, model: runtime === "pi" ? "magpie/codex/gpt-6-astra" : "gpt-6.1-terra", effort: null, fleet: [] };
+      const argvWith = (seatTools: string[]) => withHome({ ...DEFAULT_SEATS_CONFIG, advisor: { ...base, tools: seatTools } }, home => { out.push(launch(home, "advisor").argv); });
+      const out: string[][] = [];
+      argvWith(["mcp", "net", "read", "shell"]);
+      argvWith(["mcp", "net", "read", "schedule", "shell"]);
+      expect(out[1]).toEqual(out[0]);
+    }
+    // A config stored before the group existed lists no schedule and still launches.
+    const stored = { ...DEFAULT_SEATS_CONFIG, advisor: { ...DEFAULT_SEATS_CONFIG.advisor, tools: ["mcp", "net", "read", "shell"] } };
+    withHome(stored, home => expect(launch(home, "advisor").source).toBe("seats"));
   });
 
   test("the orchestrator brief names its fleet and its review path; a fleet keeps the Agent tool and refuses every other agent type", () => {
