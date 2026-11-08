@@ -170,7 +170,7 @@ function publishReceipt(overrides: Record<string, unknown> = {}) {
 }
 
 // Lines 10-14 of src/example.ts are in the PR diff; the default F1 finding sits on line 12.
-const DIFF_PATCH = '@@ -10,3 +10,5 @@\n context\n-old\n+new\n+added\n context\n context';
+const DIFF_PATCH = '@@ -10,3 +10,5 @@\n context\n-old\n+new\n+added\n context\n context\n';
 const publishScenario = (overrides: Parameters<typeof passingScenario>[0] = {}) =>
   passingScenario({ changedFiles: [{ filename: 'src/example.ts', patch: DIFF_PATCH }], ...overrides });
 
@@ -259,7 +259,7 @@ test('a PASS receipt with no P1/P2 opens no review thread', async () => {
 
 test('a finding outside the diff goes into the review body, not an inline comment', async () => {
   const fixture = publishFixture();
-  const outside = { id: 'F2', severity: 'P2', path: 'src/example.ts', line: 342, evidence: 'A pre-existing call site ignores the result.', fix: 'Check the result.' };
+  const outside = { id: 'F2', severity: 'P2', path: 'src/example.ts', line: 15, evidence: 'A pre-existing call site ignores the result.', fix: 'Check the result.' };
   const result = await runPublish(fixture, publishReceipt({ findings: [
     { id: 'F1', severity: 'P1', path: 'src/example.ts', line: 12, evidence: 'The guard drops the last item.', fix: 'Use the inclusive bound.' }, outside] }));
   expect(result.status, result.stderr).toBe(0);
@@ -268,7 +268,7 @@ test('a finding outside the diff goes into the review body, not an inline commen
   expect(review.comments).toHaveLength(1);
   expect(review.comments[0].line).toBe(12);
   expect(review.body).toContain('## Findings outside the diff');
-  expect(review.body).toContain('F2 at src/example.ts:342');
+  expect(review.body).toContain('F2 at src/example.ts:15');
   expect(review.body).not.toContain('F1 at');
 });
 
@@ -281,6 +281,15 @@ test('a retry reuses the claim already on the PR instead of posting a second one
   expect(JSON.parse(result.stdout).claim_url).toBe(claimUrl);
   expect(fixture.gh.inputs().filter((entry) => entry.input.includes('repo-harness acceptance claim'))).toHaveLength(0);
   expect(JSON.parse(postedInputs(fixture, '/issues/' + PUBLISH_PR + '/comments').find((entry) => entry.input !== '')!.input).body).toContain('Claim: ' + claimUrl);
+});
+
+test('a retry with a different tier for the same subject and round stops on a claim conflict', async () => {
+  const claimBody = renderAcceptanceClaim(validateReviewPublishReceipt(publishReceipt({ risk_tier: 'low' })));
+  const fixture = publishFixture(publishScenario({ existingComments: [{ body: claimBody, html_url: 'https://github.com/example/repo-harness/pull/' + PUBLISH_PR + '#issuecomment-778' }] }));
+  const result = await runPublish(fixture, publishReceipt());
+  expect(result.status).toBe(2);
+  expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, error: 'review_publish_conflict', exit_code: 2, posted: [] });
+  expect(fixture.gh.inputs().some((entry) => entry.input !== '')).toBe(false);
 });
 
 test('a failure after the claim stops with review_publish_partial and the posted URLs', async () => {

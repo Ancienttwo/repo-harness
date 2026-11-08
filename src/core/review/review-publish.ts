@@ -262,7 +262,7 @@ export function patchRightLines(patch: string | undefined): ReadonlySet<number> 
   for (const row of patch.split('\n')) {
     const header = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(row);
     if (header) { next = Number(header[1]); continue; }
-    if (next === 0 || row.startsWith('-') || row.startsWith('\\')) continue;
+    if (next === 0 || !(row.startsWith(' ') || row.startsWith('+'))) continue;
     lines.add(next++);
   }
   return lines;

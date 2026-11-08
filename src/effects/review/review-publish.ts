@@ -13,6 +13,7 @@ import {
 export type ReviewPublishErrorCode =
   | 'review_receipt_invalid'
   | 'review_subject_stale'
+  | 'review_publish_conflict'
   | 'review_publish_partial'
   | 'review_publish_unknown'
   | 'review_publish_provider_unavailable'
@@ -213,10 +214,26 @@ function prDiffLines(run: ReviewPublishGhRunner, slug: string, prNumber: number)
   return lines;
 }
 
-/** The URL of an acceptance claim with this exact body, so a retry reuses it instead of posting a second one. */
-function existingClaimUrl(run: ReviewPublishGhRunner, slug: string, prNumber: number, body: string): string | null {
-  const match = ghPages(run, 'repos/' + slug + '/issues/' + prNumber + '/comments').find((comment) => comment.body === body);
-  return match === undefined ? null : postedUrl(match, slug, prNumber, false);
+/**
+ * The URL of the acceptance claim already on the PR for this subject and
+ * round, or null. A claim for the same subject and round with other fields
+ * (tier, agent) is a conflict: a second claim would be ambiguous and an
+ * overwrite is not allowed.
+ */
+function existingClaimUrl(run: ReviewPublishGhRunner, slug: string, prNumber: number, receipt: ReviewPublishReceipt, body: string): string | null {
+  const identity = ['Round: ' + receipt.round, 'Subject: ' + receipt.subject_sha];
+  for (const comment of ghPages(run, 'repos/' + slug + '/issues/' + prNumber + '/comments')) {
+    if (typeof comment.body !== 'string' || !comment.body.startsWith('repo-harness acceptance claim\n')) continue;
+    const lines = comment.body.split('\n');
+    if (!identity.every((line) => lines.includes(line))) continue;
+    if (comment.body !== body) {
+      throw new ReviewPublishError('review_publish_conflict',
+        'the PR already has an acceptance claim for subject ' + receipt.subject_sha + ' round ' + receipt.round + ' with other fields; nothing was posted: '
+        + String(comment.html_url), 2);
+    }
+    return postedUrl(comment, slug, prNumber, false);
+  }
+  return null;
 }
 
 function postedUrl(value: Record<string, unknown>, slug: string, prNumber: number, review: boolean): string {
@@ -297,8 +314,9 @@ export function publishReview(input: ReviewPublishInput): ReviewPublishResult {
   let existingClaim: string | null;
   try {
     diffLines = prDiffLines(run, pr.slug, input.prNumber);
-    existingClaim = existingClaimUrl(run, pr.slug, input.prNumber, claimBody);
+    existingClaim = existingClaimUrl(run, pr.slug, input.prNumber, receipt, claimBody);
   } catch (error) {
+    if (error instanceof ReviewPublishError) throw error;
     throw new ReviewPublishError('review_publish_provider_unavailable', 'nothing was posted: ' + errorMessage(error), 1);
   }
   const posted: string[] = [];
