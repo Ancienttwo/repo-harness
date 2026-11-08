@@ -2459,6 +2459,29 @@ describe('worktree page', () => {
     }
   });
 
+  test('#1968 only the desktop shell gets open controls, on registered rows without a missing directory, and a click passes ids only', async () => {
+    installDom(WORKTREES_URL);
+    await mount(<OperatorApp {...props(busy())} />);
+    expect(document.querySelectorAll('[data-open-worktree]')).toHaveLength(0);
+
+    installDom(WORKTREES_URL);
+    const requests: unknown[] = [];
+    Object.assign(window, { repoHarnessDesktop: { openWorktree: async (request: unknown) => { requests.push(request); } } });
+    const snapshot = rejudged({ 'repo-harness-wt-oar': { reasons: ['missing'] } });
+    await mount(<OperatorApp {...props(busy(), { initialWorktrees: snapshot, readWorktrees: async () => snapshot })} />);
+    const opens = (directory: string) => Array.from(worktreeRow(directory).querySelectorAll('[data-open-worktree]')).map(button => button.getAttribute('data-open-worktree'));
+    for (const directory of ['repo-harness', 'feat-kanban-status', 'operator-site-csp']) expect(opens(directory)).toEqual(['terminal', 'editor']);
+    expect(opens('repo-harness-wt-oar')).toEqual([]);
+    expect(group('unassigned').querySelectorAll('[data-open-worktree]')).toHaveLength(0);
+    const green = rowOf('feat-kanban-status');
+    await act(async () => worktreeRow('feat-kanban-status').querySelector<HTMLButtonElement>('[data-open-worktree="editor"]')!.click());
+    await act(async () => worktreeRow('feat-kanban-status').querySelector<HTMLButtonElement>('[data-open-worktree="terminal"]')!.click());
+    expect(requests).toEqual([
+      { repository_id: green.repository_id, worktree_id: green.id, target: 'editor' },
+      { repository_id: green.repository_id, worktree_id: green.id, target: 'terminal' },
+    ]);
+  });
+
   test('pending, unreachable and partial collections each say so', async () => {
     installDom(WORKTREES_URL);
     await mount(<OperatorApp {...props(busy(), { initialWorktrees: unavailableWorktrees(), readWorktrees: async () => unavailableWorktrees() })} />);

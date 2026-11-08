@@ -234,7 +234,7 @@ describe('operator serve command and HTTP boundary', () => {
           expect(body.error.next_action).toContain('repo-harness update');
           const health = await fetch(`${server.url}/healthz`);
           expect(health.status).toBe(200);
-          expect(await health.json()).toEqual({ ok: true, service: 'repo-harness-operator', protocol: 2, version: PACKAGE_VERSION });
+          expect(await health.json()).toEqual({ ok: true, service: 'repo-harness-operator', protocol: 3, version: PACKAGE_VERSION });
           expect((await fetch(`${server.url}/api/v1/repositories`)).status).toBe(200);
         } finally { await server.close(); }
       }
@@ -261,7 +261,7 @@ describe('operator serve command and HTTP boundary', () => {
     try {
       const health = await fetch(`${server.url}/healthz`);
       expect(health.status).toBe(200);
-      expect(await health.json()).toEqual({ ok: true, service: 'repo-harness-operator', protocol: 2, version: PACKAGE_VERSION });
+      expect(await health.json()).toEqual({ ok: true, service: 'repo-harness-operator', protocol: 3, version: PACKAGE_VERSION });
 
       const rejectedHost = await fetch(`${server.url}/api/v1/repositories`, {
         headers: { Host: 'attacker.example' },
@@ -325,7 +325,7 @@ describe('operator serve command and HTTP boundary', () => {
         headers: { Origin: server.url },
       });
       expect(health.status).toBe(200);
-      expect(await health.json()).toEqual({ ok: true, service: 'repo-harness-operator', protocol: 2, version: PACKAGE_VERSION });
+      expect(await health.json()).toEqual({ ok: true, service: 'repo-harness-operator', protocol: 3, version: PACKAGE_VERSION });
 
       const api = await fetch(`${server.url}/api/v1/dev-activity`, {
         headers: { Host: `[::1]:${server.port}`, Origin: server.url },

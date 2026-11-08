@@ -1,15 +1,23 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { decodeWorktreeCleanupRequest, decodeWorktreeCleanupResult, worktreeDigestRow, WORKTREE_CLEANUP_MAX_IDS, type WorktreeCleanupRequest } from '../../core/operator/worktree-cleanup';
 import type { WorktreeView, WorktreesSnapshot } from '../../core/public-projections/worktrees';
+import { resolveGitCommonDirectory } from '../../effects/git/common-directory';
+import { worktreeId } from '../../effects/git/worktree-record';
 import { executionChildEnvironment } from '../../effects/operator/execution-collector';
 import { runWorktreeCleanup, selectionDigest, worktreeCleanupOperation, WORKTREE_CLEANUP_CLI_DEADLINE_MS } from '../../effects/operator/worktree-cleanup';
 import { collectWorktreesOnce, emptyWorktreeSizeCache } from '../../effects/operator/worktree-collector';
 import { parseOperatorRequestId, runOperatorWrite, type OperatorWriteErrorBodyV1 } from '../../effects/operator/write-run';
+import { registeredWorktreePaths } from '../../effects/operator/worktree-collector-worker';
+import { readRepoHarnessRegistryStrictSnapshot, type RepoHarnessRegisteredRepo } from '../../effects/repo-registry';
 import { runSetupProcess } from '../../effects/setup/collector';
+import { entries } from '../../effects/state/coordination-worktree-topology';
 
 /**
- * `repo-harness worktrees list|clean`: the CLI side of the Worktree page.
+ * `repo-harness worktrees list|clean|path`: the CLI side of the Worktree page.
  * `clean` runs the same effect and write run as `POST /api/v1/worktrees/cleanup`.
+ * `path` serves the desktop shell, which opens a row in a local app; no HTTP
+ * response carries a worktree path (operator invariant 7).
  */
 
 export interface WorktreeListOutput {
@@ -103,4 +111,40 @@ export async function clean(options: WorktreeCleanOptions): Promise<void> {
   if (options.json) console.log(JSON.stringify({ request_id: requestId, ...result }, null, 2));
   else for (const item of result.items) console.log([item.outcome, item.directory, item.reason ?? '-', item.id].join('\t'));
   if (result.items.some(item => item.outcome !== 'removed')) process.exitCode = 1;
+}
+
+/** Both options are checked here, not by Commander, so a missing one or one without a value (`true`) also gets the JSON refusal. */
+export interface WorktreePathOptions { readonly repository?: string | true; readonly worktree?: string | true }
+export interface WorktreePathOutput {
+  readonly protocol: 1;
+  readonly kind: 'operator_worktree_path';
+  readonly repository_id: string;
+  readonly worktree_id: string;
+  readonly path: string;
+}
+
+const PATH_DEADLINE_MS = 25_000;
+
+/** Resolves one registered worktree id inside one registered repository, with the identity rule of the cleanup `locate`. */
+export function path(options: WorktreePathOptions): void {
+  const { repository, worktree } = options;
+  if (typeof repository !== 'string' || typeof worktree !== 'string' || !/^repo_[0-9a-f]{16}$/u.test(repository) || !/^wt_[a-f0-9]{64}$/u.test(worktree)) {
+    fail(true, 'invalid_argument', '--repository needs a repo_ id and --worktree a wt_ id from `worktrees list --json`.');
+    return;
+  }
+  const env = executionChildEnvironment({ ...process.env });
+  let repo: RepoHarnessRegisteredRepo | undefined;
+  try { repo = readRepoHarnessRegistryStrictSnapshot({ env }).repos.find(row => row.id === repository); }
+  catch { fail(true, 'inventory_unavailable', 'The registered repositories cannot be read.'); return; }
+  if (!repo) { fail(true, 'repository_not_found', 'The repository is not registered.'); return; }
+  let found: string | undefined;
+  try {
+    const deadline = Date.now() + PATH_DEADLINE_MS;
+    const common = resolveGitCommonDirectory(repo.path, undefined, PATH_DEADLINE_MS, env);
+    found = registeredWorktreePaths(entries(repo.path, { deadline })).find(item => worktreeId(common, item.path) === worktree)?.path;
+  } catch { fail(true, 'inventory_unavailable', 'The worktrees of the repository cannot be read.'); return; }
+  // Git keeps listing a removed directory, and the collector marks it `missing` by the same check; it has no real path to open.
+  if (found === undefined || !existsSync(found)) { fail(true, 'worktree_not_found', 'The repository has no registered worktree directory with this id.'); return; }
+  const output: WorktreePathOutput = { protocol: 1, kind: 'operator_worktree_path', repository_id: repo.id, worktree_id: worktree, path: found };
+  console.log(JSON.stringify(output));
 }

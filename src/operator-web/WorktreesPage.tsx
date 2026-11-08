@@ -3,6 +3,7 @@ import { Banner, Button } from '@cloudflare/kumo';
 import { WarningIcon } from '@phosphor-icons/react';
 import { WORKTREE_CLEANUP_MAX_IDS, type WorktreeCleanupItem, type WorktreeCleanupResult } from '../core/operator/worktree-cleanup';
 import type { WorktreeView } from '../core/public-projections/worktrees';
+import { desktopBridge, type RepoHarnessDesktopBridge } from './desktop-bridge';
 import { CleanupPlanReview, JUDGMENT_TONE as TONE, refusalText, type CleanupPlanPorts } from './CleanupPlanReview';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
@@ -95,6 +96,19 @@ interface RowCleanup {
   readonly toggle: (id: string, on: boolean) => void;
 }
 
+/** Registered rows with a directory open in a local app through the desktop shell; the shell resolves the path and shows failures. */
+function OpenControls({ tree, bridge, t }: { readonly tree: WorktreeView; readonly bridge: RepoHarnessDesktopBridge | null; readonly t: OperatorTranslate }) {
+  const repositoryId = tree.repository_id;
+  if (bridge === null || repositoryId === null || tree.reasons.includes('missing')) return null;
+  const open = (target: 'terminal' | 'editor') => { void bridge.openWorktree({ repository_id: repositoryId, worktree_id: tree.id, target }); };
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button variant="secondary" size="sm" onClick={() => open('terminal')} data-open-worktree="terminal">{t('worktrees.open.terminal')}</Button>
+      <Button variant="secondary" size="sm" onClick={() => open('editor')} data-open-worktree="editor">{t('worktrees.open.editor')}</Button>
+    </div>
+  );
+}
+
 function WorktreeRow({ tree, cleanup, now, t }: { readonly tree: WorktreeView; readonly cleanup: RowCleanup; readonly now: number; readonly t: OperatorTranslate }) {
   const occupancy = tree.process_count === null ? t('worktrees.processesUnknown') : tree.process_count > 0 ? t('worktrees.processes', { count: tree.process_count }) : null;
   return (
@@ -124,6 +138,7 @@ function WorktreeRow({ tree, cleanup, now, t }: { readonly tree: WorktreeView; r
         <p className="text-xs text-kumo-default" data-loss>{t('worktrees.loss')}: {lossWords(tree, t)}</p>
         {cleanup.removed && <p className="text-xs font-medium text-kumo-success" data-removed>{t('worktrees.removedPending')}</p>}
         <Lifecycle tree={tree} now={now} t={t} />
+        <OpenControls tree={tree} bridge={desktopBridge()} t={t} />
         {cleanup.selectable && cleanup.digest !== undefined && (
           <details className="text-xs" data-clean-command>
             <summary className="cursor-pointer text-kumo-subtle">{t('worktrees.command')}</summary>

@@ -132,3 +132,38 @@ test('17 green rows give JSON batches and human commands that each pass the requ
   // One builder: the JSON batches are the batches the human output prints.
   expect(worktreeListOutput(snapshot).green).toEqual(batches);
 });
+
+test('path resolves a listed id only inside its own registered repository and refuses others with a JSON error and exit 2', () => {
+  const f = fixture();
+  const { output, row } = listed(f);
+  const green = row('repo-wt-feature'), repository = output.snapshot.repositories[0].repository_id as string;
+  const resolved = f.cli('path', '--repository', repository, '--worktree', green.id);
+  expect(resolved.status).toBe(0);
+  expect(JSON.parse(resolved.stdout)).toEqual({ protocol: 1, kind: 'operator_worktree_path', repository_id: repository, worktree_id: green.id, path: realpathSync(f.green) });
+  const other = join(f.parent, 'other');
+  mkdirSync(other);
+  initGitRepo(other);
+  writeFileSync(join(other, 'README.md'), 'other');
+  commitAll(other, 'base');
+  const registry = JSON.parse(readFileSync(join(f.home, 'registered-repos.json'), 'utf8'));
+  const otherId = repoHarnessRepoIdFor(realpathSync(other));
+  registry.repos.push({ ...registry.repos[0], id: otherId, path: realpathSync(other) });
+  writeFileSync(join(f.home, 'registered-repos.json'), JSON.stringify(registry));
+  const refused = (args: string[], code: string) => {
+    const result = f.cli('path', ...args);
+    expect([result.status, result.stdout, JSON.parse(result.stderr).error.code]).toEqual([2, '', code]);
+  };
+  refused(['--repository', otherId, '--worktree', green.id], 'worktree_not_found');
+  refused(['--repository', repoHarnessRepoIdFor(join(f.parent, 'unregistered')), '--worktree', green.id], 'repository_not_found');
+  refused(['--repository', repository, '--worktree', f.green], 'invalid_argument');
+  refused(['--repository', repository], 'invalid_argument');
+  refused(['--repository', repository, '--worktree'], 'invalid_argument');
+  // Git still lists a removed directory; its listed id must not resolve to a path that is gone.
+  rmSync(f.yellow, { recursive: true, force: true });
+  refused(['--repository', repository, '--worktree', worktreeId(resolveGitCommonDirectory(f.main), registeredWorktreePaths(entries(f.main)).find(item => basename(item.path) === 'repo-wt-other')!.path)], 'worktree_not_found');
+  // A registered repository whose Git topology cannot be read, then a registry that cannot be read.
+  rmSync(join(other, '.git'), { recursive: true, force: true });
+  refused(['--repository', otherId, '--worktree', green.id], 'inventory_unavailable');
+  writeFileSync(join(f.home, 'registered-repos.json'), '{');
+  refused(['--repository', repository, '--worktree', green.id], 'inventory_unavailable');
+});
