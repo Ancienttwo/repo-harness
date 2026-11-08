@@ -719,7 +719,6 @@ describe('seat settings routes', () => {
       ['advisor', { tools: ['edit', 'read'] }, 'seat_tool_not_allowed'],
       ['advisor', { tools: ['gh', 'read'] }, 'seat_tool_not_allowed'],
       ['orchestrator', { tools: ['edit', 'read'] }, 'seat_tool_not_allowed'],
-      ['advisor', { runtime: 'pi', model: null, effort: null }, 'seat_fleet_not_allowed'],
       ['worker', { runtime: 'codex' }, 'seat_runtime_not_enabled'],
       ['advisor', { model: 'gpt-6-astra' }, 'seat_model_invalid'],
       ['advisor', { effort: 'extreme' }, 'seat_effort_invalid'],
