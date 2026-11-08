@@ -2,15 +2,52 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.28.0] - 2026-11-08
+
+This release derives each account's seat mode from weekly quota, makes
+every seat, route and threshold editable on the Seats page, and gives
+seats with the `net` tool group network access. Orchestrator and advisor
+seats reset through a checked handoff before auto-compaction. It pins
+herdr-core 0.1.19 and archctx 0.12.0.
+
+### Upgrade
+
+- Run `bun add -g repo-harness@0.28.0 --no-cache && repo-harness update --version 0.28.0`.
+  Restart the Operator server and reload the page.
+- Update migrates a stored `seats.routing.mode` and `seats.routing.hyper`
+  once to the two quota thresholds. Before update, seats and quota routes
+  fail with `seats_config_migration_required`. (#1954, #1960)
+- The default `worker-light` is a Pi seat on
+  `magpie/cursor/deepseek-v41-flash-1017`. `agents.enabled` must include
+  `pi`, and Pi must have that provider and model configured. Otherwise set
+  `worker-light` to `null` on the Seats page. (#1954, #1964)
+- Seats with `net` now get network access, including writable Codex seats.
+  This reverses M87 (#1770). Removing `net` turns off Codex sandbox network
+  access and web search. Other runtime paths, such as MCP or shell, can stay
+  available. For Pi seats the limit is instructions only. (#1961, #1962)
+- The hc floor moves from 0.1.17 to 0.1.19; 0.28.0 skips 0.1.18.
+  `repo-harness update` runs `hc update --version 0.1.19` only when hc is
+  below the floor. That restarts the core, so programs in hc terminals end.
+  Finish or stop agent sessions first. (#1979, #1981, #1991, #1992)
+- On Linux and macOS, closing a pane no longer ends a deliberately detached
+  program (`nohup`, `setsid`, daemon). Stop background servers before you
+  close the pane. Windows still ends everything. Terminals opened before
+  the core update keep the old behavior until you reopen them.
+  (#1991, #1992)
+- Update installs the managed `archctx` entry at 0.12.0. The package
+  depends on archctx-contracts 0.12.0. archctx 0.12.0 removes the GitHub
+  App governance bridge (ADR-0053); repo-harness used none of it.
+  (#1946, #1952, #1995, #1999)
+
+### Rollback
+
+- Run `bun add -g repo-harness@0.27.0 --no-cache && repo-harness update --version 0.27.0`.
+  The 0.27.0 decoder refuses the migrated `seats.routing` keys with
+  `seats_config_invalid`, so seats and quota routes stay unavailable until
+  the routing section has the 0.27.0 shape again. (#1954)
 
 ### Changed
 
-- Update archctx and archctx-contracts to 0.12.0. This release removes the GitHub App governance bridge (ADR-0053), which repo-harness did not use. (#1995)
-
-- The docs reader uses mermaid 12.3.0, and the operator-web tests use happy-dom 21.0.4.
-  Mermaid 12 draws diagrams with ELK layout and the `neo` look by default. (#1987)
-- The herdr-core floor is 0.1.19. On Linux and macOS, a deliberately detached program survives its terminal close. Task agent cancel and close now end the provider's process group themselves (TERM, then KILL), so a group member that ignores hangup still ends (#754). (#1991)
 - Stored quota thresholds replace `routing.mode` and `routing.hyper`.
   Claude saving and Codex hyper modes follow weekly remaining quota.
   `repo-harness update` runs the one-shot migration. The decoder refuses
@@ -19,12 +56,80 @@ All notable changes to this skill are documented here.
   tool groups, including edit, gh, net and shell. A host without Pi enabled
   cannot save the Seats page until Pi is enabled or `worker-light` is set
   to `null`. (#1954)
+- A writable Codex seat with `net` runs with
+  `sandbox_workspace_write.network_access=true`. A read-only review seat
+  with `net` stays `-s read-only` and allows web search. Worker and review
+  defaults include `net`. `seat_codex_edit_net` is removed. (#1961, #1962)
+- The Seats page edits every seat, the ordered routing lists, the
+  low-quota explorer and the two quota thresholds. Save stays off while the
+  shared decoder refuses the draft and shows the refusal code. (#1926, #1964)
+- A Pi seat model is `<provider>/<model id>`; the launch passes
+  `--provider` and `--model`. The decoder refuses another shape. (#1950, #1956)
+- A Pi seat on `magpie/codex/<model>` runs the GPT family as a Codex
+  alternative. It takes an effort (`--thinking`), counts against the
+  ChatGPT account and gets the Codex hyper model. (#1976, #1978)
+- `repo-harness board seats --json` lists every live seat of one
+  repository, including seats without a parent issue. (#1944, #1949)
+- `repo-harness operator serve --exit-on-stdin-close` stops the server when
+  stdin closes, so a crashed desktop shell leaves no server. (#1935, #1953)
+- Update and install with `architecture` add the pinned archctx with Bun.
+  A foreign `<bun>/bin/archctx` fails with `RH_ARCHCTX_BIN_CONFLICT`.
+  `init-hook check` fails `tooling.archctx` for an unrelated PATH copy and
+  names the fix. (#1946, #1952)
+- Dependencies move within their major versions, including OAR 0.95.0 and
+  archctx 0.11.4. Codex review runs now log `collabAgentToolCall` tool
+  events (OAR 0.93); no parser reads them. (#1980, #1984)
+- The architecture constraints report is decoded with the schema that
+  archctx-contracts 0.11.4 publishes. A rejected report names the schema
+  path. (#1982, #1985)
+- The global working rules dispatch the gatekeeper only to a Herdr seat, so
+  update no longer reverts that owner rule. (#1945, #1948)
+- Update archctx and archctx-contracts to 0.12.0. This release removes
+  the GitHub App governance bridge (ADR-0053), which repo-harness did not
+  use. (#1995, #1999)
+- The docs reader uses mermaid 12.3.0, and the operator-web tests use
+  happy-dom 21.0.4. Mermaid 12 draws diagrams with ELK layout and the `neo`
+  look by default. (#1987, #1994)
 - `architecture-projection publish follow` keeps its source checkout at
   `origin/main` with dependencies installed for that commit. When main moves,
   it refuses a dirty checkout, fast-forwards, reinstalls and exits 75 for a
   supervisor restart. It does not publish while the update fails, and logs a
   `writer_update_failed` JSON line. It runs one archctx `once` per 300-second
-  iteration. (#1983)
+  iteration. (#1983, #1989)
+- Task agent cancel and close end the provider's whole process group
+  (TERM, then KILL) after two leader proofs, so a group member that ignores
+  hangup still ends (#754). An unproven group is reported as
+  `cleanup_pending` `provider_group_alive` and is never signaled.
+  (#1991, #1992)
+- Orchestrator and advisor Claude seats reset through a checked handoff.
+  When `REPO_HARNESS_SEAT` and `REPO_HARNESS_SEAT_REPOSITORY` are set, the
+  Stop hook asks for a handoff at 380,000 context tokens, and SessionStart
+  records the new session. Other sessions are unchanged. (#1972, #1975)
+- A Pi seat on `magpie/codex/*` gets its own fleet roles, named `rh-<role>`,
+  through `PI_SUBAGENT_EXTRA_AGENT_DIRS`. Other Pi seats get no fleet; the
+  decoder refuses one. (#1977, #1993)
+
+### Fixed
+
+- The board watcher parses the `hc wait` status of hc 0.1.18 and later
+  and reports a program end only for a terminal that is no longer live.
+  (#1979, #1981)
+
+### Tests
+
+- Test fixtures refuse install-state writes outside a temp HOME, and every
+  direct write goes through that guard. (#1957, #1967, #1971, #1986)
+- The Mermaid install projects twice into one scratch HOME. (#1958, #1970)
+
+### Documentation
+
+- Record the 0.27.0 publication and upgrade evidence. (#1947)
+- Refresh generated architecture outputs. (#1942, #1955)
+- Seat docs describe the #1961 network rule. (#1963, #1965)
+- The issue-flow skill and development flow run the gatekeeper only in a
+  Herdr seat. (#1951, #1966)
+- The seat that receives an owner decision posts it to the issue.
+  (#1973, #1974)
 
 ## [0.27.0] - 2026-11-07
 
