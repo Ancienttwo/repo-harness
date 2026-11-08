@@ -96,7 +96,7 @@ Protocol rules. The reset runs with no human step; an owner command is never par
 - No new-session signal or no `RESUMED` in time: the peer sends the resume prompt again, at most 3 times. Then the other seat starts the requester again in the same terminal from `repo-harness seats argv <seat> --repository-id <id>` and sends the resume prompt.
 - Each of these failures writes one entry to a reset log next to the handoff and sends one notice. The flow does not wait for anyone to read it.
 
-`seats reset` runs these rules. The reset log `reset-log.jsonl` is the only record of the rewrite and resend counts. The notice is one `seat.reset_failed` bot event to the notify channels. Without a notify config, the log entry records `not_configured`.
+`seats reset` runs these rules. It types `/clear`, `/exit` and the relaunch line (`sh <reset dir>/relaunch.sh`) with `hc keys`: `hc send` wraps its text in an envelope, so Claude reads a sent slash command as chat text. The reset log `reset-log.jsonl` is the only record of the rewrite and resend counts. The notice is one `seat.reset_failed` bot event to the notify channels. Without a notify config, the log entry records `not_configured`.
 
 ### Pane and tab names
 
