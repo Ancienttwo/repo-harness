@@ -1,5 +1,5 @@
 import { weeklyRemainingPercent, type QuotaAccount, type QuotaAccountReport, type QuotaState } from './quota';
-import { PI_CODEX_MODEL_PREFIX, ROUTING_CLASSES, isPiCodexSeat, type SeatConfigV1, type SeatId, type SeatRoutingV1, type SeatsConfigV1 } from './seats-settings';
+import { PI_CODEX_MODEL_PREFIX, ROUTING_CLASSES, isPiCodexSeat, type RoutingClass, type SeatConfigV1, type SeatId, type SeatRoutingV1, type SeatsConfigV1 } from './seats-settings';
 
 export const CODEX_HYPER_MODEL = Object.freeze({ model: 'gpt-6-astra', effort: 'high' });
 interface AccountQuota { readonly state: QuotaState; readonly remaining: number | null }
@@ -58,34 +58,46 @@ export function formatSeatModes(seats: SeatsConfigV1, quota: SeatAccountQuotas):
     line('chatgpt', 'codex', seats.routing.codex_hyper_at_or_above_remaining, quota.chatgpt.mode === 'hyper' ? '>=' : '<')].join('\n');
 }
 
+export type SeatRouteV1 =
+  | { readonly id: SeatId; readonly seat: SeatConfigV1; readonly line: string }
+  | { readonly id: null; readonly line: string };
+
+/**
+ * The seat for one task class: the one source of the `route` line and of dispatch.
+ * `allow` removes seats before the account rules apply (for example Pi seats for work that touches credentials).
+ */
+export function selectSeatRoute(task: RoutingClass, seats: SeatsConfigV1, quota: SeatAccountQuotas, allow: (seat: SeatConfigV1) => boolean = () => true): SeatRouteV1 {
+  const reserved = claudeReserved(quota);
+  const savingRoute = reserved && (task === 'important_deep' || task === 'important_fast');
+  if (savingRoute) {
+    if (seats['worker-light'] === null) return { id: null, line: `route ${task}: none (worker-light not configured)` };
+    if (seats['worker-light'].runtime !== 'pi') return { id: null, line: `route ${task}: none (worker-light is not a Pi seat)` };
+  }
+  const ids = savingRoute ? ['worker-light'] as const : seats.routing[task];
+  // The section decoder refuses routes that name an unconfigured seat.
+  const candidates = ids.map(id => ({ id, seat: effectiveSeatConfig(id, seats, quota)! })).filter(({ seat }) => allow(seat));
+  if (candidates.length === 0) return { id: null, line: `route ${task}: none (no seat in the route may take this task)` };
+  const state = (seat: SeatConfigV1) => {
+    const account = seatAccount(seat);
+    return account === null ? null : quota[account].state;
+  };
+  const available = candidates.filter(({ seat }) => state(seat) !== 'exhausted' && !(seatAccount(seat) === 'claude' && reserved));
+  const selected = available.find(({ seat }) => state(seat) !== 'unknown')
+    ?? available.find(({ seat }) => state(seat) === 'unknown');
+  if (selected === undefined) {
+    const reasons = [...new Set(candidates.map(({ seat }) => accountText(seat, quota)))].join('; ');
+    return { id: null, line: `route ${task}: none (${reasons}${task === 'frontend' ? '; frontend waits for claude' : ''})` };
+  }
+  const selectedState = state(selected.seat);
+  const warning = selectedState === 'unknown' || selectedState === 'tight' ? `; ${accountText(selected.seat, quota)}` : '';
+  const skipped = candidates.slice(0, candidates.indexOf(selected)).map(({ id, seat }) => `; skipped ${id}: ${accountText(seat, quota)}`).join('');
+  return { id: selected.id, seat: selected.seat, line: `route ${task}: ${selected.id} (${launchText(selected.seat)}${warning})${skipped}` };
+}
+
 /** The saving threshold reserves Claude; pace-based tight is only a display state. */
 export function formatSeatRoutes(seats: SeatsConfigV1, quota: SeatAccountQuotas): string {
   const reserved = claudeReserved(quota);
-  const lines = ROUTING_CLASSES.map(task => {
-    const savingRoute = reserved && (task === 'important_deep' || task === 'important_fast');
-    if (savingRoute) {
-      if (seats['worker-light'] === null) return `route ${task}: none (worker-light not configured)`;
-      if (seats['worker-light'].runtime !== 'pi') return `route ${task}: none (worker-light is not a Pi seat)`;
-    }
-    const ids = savingRoute ? ['worker-light'] as const : seats.routing[task];
-    // The section decoder refuses routes that name an unconfigured seat.
-    const candidates = ids.map(id => ({ id, seat: effectiveSeatConfig(id, seats, quota)! }));
-    const state = (seat: SeatConfigV1) => {
-      const account = seatAccount(seat);
-      return account === null ? null : quota[account].state;
-    };
-    const available = candidates.filter(({ seat }) => state(seat) !== 'exhausted' && !(seatAccount(seat) === 'claude' && reserved));
-    const selected = available.find(({ seat }) => state(seat) !== 'unknown')
-      ?? available.find(({ seat }) => state(seat) === 'unknown');
-    if (selected === undefined) {
-      const reasons = [...new Set(candidates.map(({ seat }) => accountText(seat, quota)))].join('; ');
-      return `route ${task}: none (${reasons}${task === 'frontend' ? '; frontend waits for claude' : ''})`;
-    }
-    const selectedState = state(selected.seat);
-    const warning = selectedState === 'unknown' || selectedState === 'tight' ? `; ${accountText(selected.seat, quota)}` : '';
-    const skipped = candidates.slice(0, candidates.indexOf(selected)).map(({ id, seat }) => `; skipped ${id}: ${accountText(seat, quota)}`).join('');
-    return `route ${task}: ${selected.id} (${launchText(selected.seat)}${warning})${skipped}`;
-  });
+  const lines: string[] = ROUTING_CLASSES.map(task => selectSeatRoute(task, seats, quota).line);
   lines.push(reserved
     ? `explorer: ${modelText(seats.routing.low_quota_explorer)} (claude ${quota.claude.state === 'exhausted' ? 'exhausted' : quota.claude.mode}; pass model ${seats.routing.low_quota_explorer.model} when you call the explorer)`
     : 'explorer: default');

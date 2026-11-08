@@ -11,6 +11,7 @@ All notable changes to this skill are documented here.
   desktop shell, a registered Worktree row shows "Open in Terminal" and
   "Open in Editor". The page passes only ids; the shell resolves the path
   with the command. A plain browser shows no open control. (#1968)
+- `repo-harness board dispatch --parent <n> --space <id> [--dry-run]` starts a worker seat for each ready sub-issue of the plan. An issue is ready when it is open, in the plan, not held, has no open blocker and no active claim, and the parent has fewer live worker seats than `seat_limits.worker`. The seat comes from the quota route of the issue's `route:<class>` label. Work with the `touches:credentials` label never goes to a Pi seat. (#2004)
 
 ### Changed
 

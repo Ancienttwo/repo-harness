@@ -327,6 +327,12 @@ function field(body: string, name: string): string | null {
   return line === undefined ? null : line.slice(name.length + 2).trim();
 }
 
+/** The `Claim:` URL that an `issue claim status` comment names; null when it names none. */
+export function claimStatusTarget(comment: BoardCommentV1): string | null {
+  const value = field(comment.body, 'Claim');
+  return value === null || value === '' ? null : value;
+}
+
 export interface ClaimStatusV1 {
   readonly url: string;
   readonly created_at: string;

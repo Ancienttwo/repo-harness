@@ -5,7 +5,7 @@ import {
   type BoardPathOwnerV1, type BoardPathOwnersV1, type BoardSeatTerminalInputV1, type BoardSeatTerminalReadV1, type BoardToolingV1, type BoardV1,
 } from '../../core/board/board';
 import { ADVISOR_SEAT } from '../../core/board/advisor-seat';
-import { BOARD_PAGE, decodeParentRead, decodePullRequestsRead, type BoardPullRequestReadV1 } from '../../core/board/source';
+import { BOARD_PAGE, decodeParentRead, decodePullRequestsRead, type BoardParentReadV1, type BoardPullRequestReadV1 } from '../../core/board/source';
 import { normalizeCapabilityPath } from '../../core/capabilities/registry';
 import { HC_MIN_VERSION } from '../../core/terminal/herdr-pin';
 import { parsePublicationPolicy, policyFileFromContents, PUBLICATION_POLICY_PATH, type PolicyFileAtRef } from '../../core/publication/acceptance-merge-policy';
@@ -89,7 +89,7 @@ function gh(input: GhInput, args: readonly string[]): unknown {
   }
 }
 
-function graphql(input: BoardCollectInput, query: string, variables: Readonly<Record<string, string | number>>): unknown {
+function graphql(input: GhInput, query: string, variables: Readonly<Record<string, string | number>>): unknown {
   const args = ['api', 'graphql', '--hostname', 'github.com', '-f', `query=${query}`,
     ...Object.entries(variables).flatMap(([key, value]) => [typeof value === 'number' ? '-F' : '-f', `${key}=${value}`])];
   const response = gh(input, args) as { data?: unknown; errors?: unknown } | null;
@@ -216,7 +216,8 @@ export function readLocalRepositoryId(input: GhInput, isGitHubRemote: (url: stri
   return github ? readRepositoryId(input) : null;
 }
 
-export function collectBoard(input: BoardCollectInput): BoardV1 {
+/** The one read of the parent issue, its sub-issues and their comments; the board and dispatch share it. */
+export function readParent(input: Pick<BoardCollectInput, 'repo_root' | 'gh_bin' | 'gh_runner' | 'parent' | 'now'>): { readonly parent: BoardParentReadV1; readonly observed_at: string } {
   const repository = (gh(input, ['repo', 'view', '--json', 'nameWithOwner']) as { nameWithOwner?: unknown } | null)?.nameWithOwner;
   if (typeof repository !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository)) throw new BoardCollectError('the local GitHub repository is unknown');
   const [owner, name] = repository.split('/') as [string, string];
@@ -224,6 +225,13 @@ export function collectBoard(input: BoardCollectInput): BoardV1 {
   const parent = decodeParentRead(graphql(input, PARENT_QUERY, {
     owner, name, number: input.parent, repairs: `repo:${repository} is:issue is:open in:title "CI repair"`,
   }), repository);
+  return { parent, observed_at: observedAt };
+}
+
+export function collectBoard(input: BoardCollectInput): BoardV1 {
+  const { parent, observed_at: observedAt } = readParent(input);
+  const repository = parent.repository.name_with_owner;
+  const [owner, name] = repository.split('/') as [string, string];
   const candidates = [...new Set(parent.sub_issues.flatMap(issue => issue.pull_request_candidates))].sort((left, right) => left - right);
   const reads: BoardPullRequestReadV1[] = candidates.length === 0 ? [] : decodePullRequestsRead(graphql(input, pullRequestsQuery(candidates), { owner, name }), candidates);
   const linked = linkedPullRequests(parent, reads);
