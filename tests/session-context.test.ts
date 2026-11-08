@@ -2,7 +2,7 @@ import { agentNoticeFixture, NOTICE_CAPABILITY } from './helpers/agent-notice';
 import { fixtureWrite, fixtureGit, fixtureCommit } from './helpers/module-repository';
 import { describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { buildSessionStartSections } from "../src/cli/hook/session-context";
@@ -111,6 +111,28 @@ describe("SessionStart host envelope", () => {
       });
       expect(result.sessionContexts!.find(({ id }) => id === "edit-guard-scope")).toMatchObject({ mandatory: true, content: EDIT_GUARD_SCOPE });
     } finally { f.cleanup(); }
+  });
+
+  test("a cleared or new Claude reset seat session writes the new-session signal; another source writes nothing (#1972)", () => {
+    const f = fixture("session-seat-signal");
+    // The signal path is fixed under /tmp; a repository id per run keeps the runs apart.
+    const repository = String(9_200_000_000 + process.pid);
+    const signal = join("/tmp/repo-harness-seats", repository, "advisor", "session.json");
+    const now = new Date("2026-11-08T09:00:00.000Z");
+    const start = (source: string) => getHandlerForRoute(getRoute("SessionStart", "default")!).run({
+      event: "SessionStart", repoRoot: f.root, payload: { source, transcript_path: "/x/new.jsonl" }, identity: hookIdentity({ sessionId: "s-1" }),
+      env: { ...process.env, HOME: f.home, REPO_HARNESS_SEAT: "advisor", REPO_HARNESS_SEAT_REPOSITORY: repository }, now,
+      collector: createStateInputCollector({ repoRoot: f.root, resolveEffectiveState: () => ({ ok: true, state: resolveEffectiveState(f.root) }) }),
+    });
+    try {
+      start("compact");
+      expect(existsSync(signal)).toBe(false);
+      start("clear");
+      expect(JSON.parse(readFileSync(signal, "utf8"))).toEqual({ session_id: "s-1", transcript_path: "/x/new.jsonl", source: "clear", started_at: now.toISOString() });
+    } finally {
+      rmSync(join("/tmp/repo-harness-seats", repository), { recursive: true, force: true });
+      f.cleanup();
+    }
   });
 
   test("a resume file adds no resume text and no resume pointer", () => {
