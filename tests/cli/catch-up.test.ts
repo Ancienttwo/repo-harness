@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, userInfo } from 'node:os';
 import { basename, join } from 'node:path';
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { collectDevActivity } from '../../src/effects/dev-activity/collector';
 import { readRepoHarnessRegistryStrictSnapshot, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { recordPluginSelection } from '../helpers/install-ownership';
+import { installStateFixturePath, recordPluginSelection } from '../helpers/install-ownership';
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -88,9 +88,15 @@ function withoutObservationTimes(snapshot: DevActivitySnapshotV2) {
 }
 
 describe('catch-up CLI', () => {
-  test('the install-state fixture refuses an env without HOME', () => {
-    const { HOME: _home, ...env } = process.env;
-    expect(() => recordPluginSelection(env, ['operator'])).toThrow('temporary env.HOME');
+  test('the install-state fixture accepts only a temporary HOME, judged against the account home', () => {
+    const { HOME: _home, ...withoutHome } = process.env;
+    expect(() => recordPluginSelection(withoutHome, ['operator'])).toThrow('temporary env.HOME');
+    // process.env.HOME may already be a temp dir here, so the real home comes from the account record.
+    expect(() => recordPluginSelection({ ...process.env, HOME: userInfo().homedir }, ['operator'])).toThrow('temporary env.HOME');
+    const home = mkdtempSync(join(tmpdir(), 'catch-up-guard-home-'));
+    try {
+      expect(installStateFixturePath({ HOME: home })).toStartWith(home);
+    } finally { rmSync(home, { recursive: true, force: true }); }
   });
 
   test('prints the existing snapshot as one JSON line with no text cap', async () => {

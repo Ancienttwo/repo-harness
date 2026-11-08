@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { seedGlobalPackageFixture } from '../helpers/install-ownership';
+import { installStateFixturePath, seedGlobalPackageFixture } from '../helpers/install-ownership';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -8,7 +8,6 @@ import { runStatus, formatStatus } from '../../src/cli/commands/status';
 import { runInstall } from '../../src/cli/commands/install';
 import { registerArchitecturePlugin } from '../../src/cli/index';
 import { versions } from '../../src/cli/installer/install-profile';
-import { installProfileStatePath } from '../../src/cli/installer/install-state';
 import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
 
 const FULL_PLUGINS: readonly PluginId[] = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory'];
@@ -34,7 +33,7 @@ function withTempHome(fn: (home: string) => void): void {
 }
 
 function writeInstallStateFixture(plugins: readonly PluginId[]): void {
-  const statePath = installProfileStatePath(process.env);
+  const statePath = installStateFixturePath(process.env);
   fs.mkdirSync(path.dirname(statePath), { recursive: true });
   fs.writeFileSync(statePath, JSON.stringify({
     protocol: 3,
@@ -371,7 +370,7 @@ describe('status command (Phase 1C)', () => {
     // hides a broken host install behind text that reads as "just run
     // install", when actually something needs repairing.
     withTempHome(() => {
-      const statePath = installProfileStatePath(process.env);
+      const statePath = installStateFixturePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.writeFileSync(statePath, '{not valid json');
 
@@ -388,7 +387,7 @@ describe('status command (Phase 1C)', () => {
 
   test('installState reports invalid when a plugin entry fails readInstallState validation', () => {
     withTempHome(() => {
-      const statePath = installProfileStatePath(process.env);
+      const statePath = installStateFixturePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       const { core } = versions([]);
       fs.writeFileSync(statePath, JSON.stringify({
@@ -410,7 +409,7 @@ describe('status command (Phase 1C)', () => {
 
   test('installState names the next step for protocol 1 and protocol 2 states', () => {
     withTempHome(() => {
-      const statePath = installProfileStatePath(process.env);
+      const statePath = installStateFixturePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.writeFileSync(statePath, JSON.stringify({
         protocol: 1,
@@ -458,7 +457,7 @@ describe('status command (Phase 1C)', () => {
     // A syntactically valid state with missing plugins must remain
     // diagnosable instead of reaching formatStatus's `.plugins.join()`.
     withTempHome(() => {
-      const statePath = installProfileStatePath(process.env);
+      const statePath = installStateFixturePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.writeFileSync(statePath, JSON.stringify({
         protocol: 3,
@@ -481,7 +480,7 @@ describe('status command (Phase 1C)', () => {
 
   test('installState reports invalid instead of crashing when plugins is a non-array value', () => {
     withTempHome(() => {
-      const statePath = installProfileStatePath(process.env);
+      const statePath = installStateFixturePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.writeFileSync(statePath, JSON.stringify({
         protocol: 3,

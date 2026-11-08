@@ -1,16 +1,19 @@
 import { createHash } from 'crypto';
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from 'fs';
-import { homedir, tmpdir } from 'os';
+import { tmpdir, userInfo } from 'os';
 import { dirname, join, relative, resolve } from 'path';
 import { versions } from '../../src/cli/installer/install-profile';
 import { installProfileStatePath } from '../../src/cli/installer/install-state';
 import { bunGlobalPackageRoot } from '../../src/cli/installer/skill-projection';
 import type { PluginId, PluginSelection } from '../../src/core/skill-surface/plugin-manifest';
 
-/** Install state resolves to `homedir()` without HOME; a fixture write must never reach the real one. */
-function installStateFixturePath(env: NodeJS.ProcessEnv): string {
+/**
+ * Install state resolves to `homedir()` without HOME; a fixture write must never reach the real one.
+ * The account record names the real home: `os.homedir()` follows $HOME, which a test may already point at a temp dir.
+ */
+export function installStateFixturePath(env: NodeJS.ProcessEnv): string {
   const real = (path: string) => (existsSync(path) ? realpathSync(path) : resolve(path));
-  if (!env.HOME || real(env.HOME) === real(homedir())) {
+  if (!env.HOME || real(env.HOME) === real(userInfo().homedir)) {
     throw new Error('Install-state fixtures need a temporary env.HOME, not a missing HOME or the real home directory');
   }
   return installProfileStatePath(env);
