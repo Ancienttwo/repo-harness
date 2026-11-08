@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { dirname, isAbsolute, join, relative } from 'path';
+import { dirname, isAbsolute, join, relative, resolve } from 'path';
 import { versions } from '../../src/cli/installer/install-profile';
 import { installProfileStatePath } from '../../src/cli/installer/install-state';
 import { bunGlobalPackageRoot } from '../../src/cli/installer/skill-projection';
@@ -10,12 +10,18 @@ import type { PluginId, PluginSelection } from '../../src/core/skill-surface/plu
 /**
  * Install state resolves to `homedir()` without HOME; a fixture write must never reach the real one.
  * Bun's `homedir()` and `userInfo().homedir` both follow $HOME, so neither names the real home from a process
- * that already runs under a temp HOME. The guard accepts only an existing directory strictly inside the temp root.
+ * that already runs under a temp HOME. The guard accepts only a HOME strictly inside the temp directory, which
+ * need not exist yet: callers let the fixture create it. The temp root may be a symlink (macOS /var), so both forms count.
+ * macOS fixtures that hardcode /tmp sit outside tmpdir(), so POSIX also accepts a HOME strictly inside /tmp or its macOS target /private/tmp.
  */
 export function installStateFixturePath(env: NodeJS.ProcessEnv): string {
-  const inside = env.HOME && existsSync(env.HOME) ? relative(realpathSync(tmpdir()), realpathSync(env.HOME)) : '..';
-  if (inside === '' || inside.startsWith('..') || isAbsolute(inside)) {
-    throw new Error('Install-state fixtures need an env.HOME that is an existing directory inside the temp directory');
+  const home = env.HOME ? resolve(env.HOME) : undefined;
+  const inside = (root: string) => {
+    const path = home && relative(root, home);
+    return !!path && !path.startsWith('..') && !isAbsolute(path);
+  };
+  if (!inside(tmpdir()) && !inside(realpathSync(tmpdir())) && !(process.platform !== 'win32' && (inside('/tmp') || inside('/private/tmp')))) {
+    throw new Error('Install-state fixtures need an env.HOME strictly inside the temp directory');
   }
   return installProfileStatePath(env);
 }
