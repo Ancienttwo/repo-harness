@@ -5,12 +5,11 @@ import { spawnSync } from 'node:child_process';
 import { copyPackageRuntimeFixture, tmpWorkspace } from '../helpers/repo-fixture';
 import { installPiPackage, piPackagePresent, piUserPackageSources, runPi, planPiPackage } from '../../src/cli/installer/pi-package';
 import { installStateStatus, piPackageSurface, readInstallState, recordPiInstallOwnership, versions } from '../../src/cli/installer/install-profile';
-import { installProfileStatePath } from '../../src/cli/installer/install-state';
 import { hostSkillRoot } from '../../src/effects/host-skill-roots';
 import { checkPiHost } from '../../src/cli/commands/doctor';
 import { dependencies } from '../../package.json';
 import { runTransactionalRuntimeRefresh } from '../../src/cli/index';
-import { recordInstallOwnership, seedGlobalPackageFixture } from '../helpers/install-ownership';
+import { installStateFixturePath, recordInstallOwnership, seedGlobalPackageFixture } from '../helpers/install-ownership';
 import { runUserUninstall } from '../../src/cli/installer/uninstall';
 import { bunGlobalPackageRoot } from '../../src/cli/installer/skill-projection';
 import { piAgentDir } from '../../src/effects/pi-agent-dir';
@@ -26,7 +25,7 @@ const CLI = join(ROOT, 'src/cli/index.ts');
 const PI_FULL_PLUGINS = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory'] as const;
 function recordPiSelection(env: NodeJS.ProcessEnv): void {
   recordInstallOwnership([], env);
-  const path = installProfileStatePath(env);
+  const path = installStateFixturePath(env);
   const seeded = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
   writeFileSync(path, JSON.stringify({ ...seeded, ...versions(PI_FULL_PLUGINS), selection: PI_FULL_PLUGINS }));
 }

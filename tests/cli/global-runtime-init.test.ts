@@ -11,11 +11,10 @@ import { CLI_PORTS, registerArchitecturePlugin, resolveOptionalRuntimeDeps, runC
 import { copyPackageRuntimeFixture, writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
 import { dependencies, devDependencies } from '../../package.json';
-import { recordInstallOwnership, recordPluginSelection, seedGlobalPackageFixture } from '../helpers/install-ownership';
+import { installStateFixturePath, recordInstallOwnership, recordPluginSelection, seedGlobalPackageFixture } from '../helpers/install-ownership';
 import { writeFakeHc } from '../helpers/fake-hc';
 import wazaRules from '../../src/core/skill-surface/waza-shared-rules.json';
 import { applyInstallSelection, beginInstallHostTransaction, installProfileHostMutationPaths, managedInstallSurfaceIsCurrent, readInstallState, recordRefreshedInstallOwnership, loadSkillSurfaceCatalog, rollbackInstallHostTransaction, versions } from '../../src/cli/installer/install-profile';
-import { installProfileStatePath } from '../../src/cli/installer/install-state';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 import { MANAGED_AGENTS } from '../../src/effects/terminal/task-role-profiles';
 import { applyGlobalContextRefresh, inspectGlobalContext, preflightGlobalContextRefresh, renderGlobalRulesBlock, setReportingLanguage } from '../../src/cli/installer/global-context';
@@ -62,7 +61,7 @@ test('update removes stored routing mode and hyper values once and keeps a null 
 // An explicit list never grows, so a host `pi` on the developer PATH cannot change the recorded selection.
 function recordExplicitFullSelection(home: string, plugins: readonly PluginId[] = FULL_PLUGINS): void {
   recordInstallOwnership([], { HOME: home });
-  const path = installProfileStatePath({ HOME: home });
+  const path = installStateFixturePath({ HOME: home });
   writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf-8')), ...versions(plugins), selection: plugins }));
 }
 
@@ -824,7 +823,7 @@ exit 0
         writeFileSync(join(home, '.agents', 'skills', skill, 'SKILL.md'), `# old ${skill}\n`);
       }
       mkdirSync(join(home, '.repo-harness'), { recursive: true });
-      writeFileSync(join(home, '.repo-harness', 'install-state.json'), `${JSON.stringify({
+      writeFileSync(installStateFixturePath({ HOME: home }), `${JSON.stringify({
         protocol: 3,
         selection: ['strategy-memory'],
         ...versions(['strategy-memory']),
@@ -2022,7 +2021,7 @@ exit 0
       mkdirSync(join(home, '.repo-harness'), { recursive: true });
       setupManagedRuntimeReadback(home, fakeBin);
       installCandidateRuntimeFixture(home, JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')).version as string);
-      writeFileSync(join(home, '.repo-harness', 'install-state.json'), `${JSON.stringify({
+      writeFileSync(installStateFixturePath({ HOME: home }), `${JSON.stringify({
         protocol: 3,
         selection: FULL_PLUGINS,
         ...versions(FULL_PLUGINS),
@@ -2235,7 +2234,7 @@ exit 0
       mkdirSync(join(home, '.repo-harness'), { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
-      writeFileSync(join(home, '.repo-harness', 'install-state.json'), `${JSON.stringify({
+      writeFileSync(installStateFixturePath({ HOME: home }), `${JSON.stringify({
         protocol: 1,
         profile: 'product-planning',
         components: [
@@ -2759,7 +2758,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
   test('requires an install state before it creates new staging rules', () => {
     withRules(({ home, paths, run }) => {
       for (const path of paths) rmSync(path);
-      rmSync(join(home, '.repo-harness', 'install-state.json'));
+      rmSync(installStateFixturePath({ HOME: home }));
       const result = run();
       expect(result.exitCode).toBe(1);
       expect(result.steps.find(({ step }) => step === 'sync Waza shared rules')).toMatchObject({

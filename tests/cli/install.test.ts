@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { seedGlobalPackageFixture } from '../helpers/install-ownership';
+import { installStateFixturePath, seedGlobalPackageFixture } from '../helpers/install-ownership';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -262,7 +262,7 @@ describe('install command (Phase 1B)', () => {
 
   test('adapter-only install rejects protocol-1 state before mutating host config', () => {
     withTempHome((home) => {
-      const statePath = path.join(home, '.repo-harness', 'install-state.json');
+      const statePath = installStateFixturePath({ HOME: home });
       const hooksPath = path.join(home, '.codex', 'hooks.json');
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.mkdirSync(path.dirname(hooksPath), { recursive: true });
@@ -321,7 +321,7 @@ describe('install command (Phase 1B)', () => {
           const files = {
             '.claude/settings.json': '{"theme":"user"}\n',
             '.codex/hooks.json': '{"hooks":{}}\n',
-            '.repo-harness/install-state.json': 'invalid profile state\n',
+            [path.relative(home, installStateFixturePath({ HOME: home }))]: 'invalid profile state\n',
             'project/.claude/settings.json': '{"permissions":{"allow":["user"]}}\n',
           };
           for (const [relativePath, content] of Object.entries(files)) {

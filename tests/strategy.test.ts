@@ -7,7 +7,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, lstatSync, utimesSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { parseStrategyDocument, validateProposal, type StrategyDocument, type StrategyPacket } from '../src/core/strategy/contracts';
 import { collectStrategyContext, validateStrategyRequest, StrategySourceDriftError, StrategyReader, strategyHash, strategyStatus, REPOSITORY_PILOT_READ_LIMITS } from '../src/effects/strategy/context';
 import { projectStrategySkill } from '../src/effects/strategy/skill';
@@ -16,7 +16,7 @@ import { facadesForSelection, hostSkillPlacements, parseSkillSurfaceCatalog } fr
 import { PLUGIN_IDS, type PluginId } from '../src/core/skill-surface/plugin-manifest';
 import { assertPluginCommandSelected } from '../src/cli/installer/architecture-selection';
 import { InstallStateError } from '../src/cli/installer/install-state';
-import { pluginSelectionEnv } from './helpers/install-ownership';
+import { installStateFixturePath, pluginSelectionEnv } from './helpers/install-ownership';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -193,7 +193,7 @@ describe('optional strategy and progressive memory', () => {
       return { status: result.status, stderr: result.stderr, loaded: Number(/strategy-modules:(\d+)/.exec(result.stderr)?.[1]) };
     };
     const noState = { ...process.env, HOME: temp() };
-    const unreadable = { ...process.env, HOME: temp() }; write(unreadable.HOME, '.repo-harness/install-state.json', '{');
+    const unreadable = { ...process.env, HOME: temp() }; write(unreadable.HOME, relative(unreadable.HOME, installStateFixturePath(unreadable)), '{');
     const repo = ['--repo', root];
     const blocked: [string, NodeJS.ProcessEnv, string[], string][] = [
       ...[['status'], ['pilot'], ['context'], ['validate', 'proposal.json'], ['install-skill', '--dry-run'], ['uninstall-skill', '--dry-run']].map((args): [string, NodeJS.ProcessEnv, string[], string] =>

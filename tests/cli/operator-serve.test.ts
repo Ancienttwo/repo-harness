@@ -1,5 +1,5 @@
 import { version as PACKAGE_VERSION } from '../../package.json';
-import { pluginSelectionEnv, recordPluginSelection } from '../helpers/install-ownership';
+import { installStateFixturePath, pluginSelectionEnv, recordPluginSelection } from '../helpers/install-ownership';
 import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync, readdirSync, readFileSync, statSync, openSync, closeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -131,7 +131,7 @@ describe('operator serve command and HTTP boundary', () => {
       mkdirSync(noState.HOME, { recursive: true });
       const unreadable = { ...process.env, HOME: join(root, 'unreadable') };
       mkdirSync(join(unreadable.HOME, '.repo-harness'), { recursive: true });
-      writeFileSync(join(unreadable.HOME, '.repo-harness/install-state.json'), '{');
+      writeFileSync(installStateFixturePath(unreadable), '{');
 
       const recordedAll = selected([]);
       recordPluginSelection(recordedAll, ['product'], 'all');

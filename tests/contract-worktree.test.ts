@@ -21,8 +21,7 @@ import { sweepManagedWorktrees } from '../src/effects/state/coordination-worktre
 import { defaultPolicy } from "../src/effects/adoption/standard-plan";
 import { copyHelpers, ROOT } from "./helpers/helper-script-fixture";
 import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixture";
-import { recordPluginSelection } from "./helpers/install-ownership";
-import { installProfileStatePath } from "../src/cli/installer/install-state";
+import { installStateFixturePath, recordPluginSelection } from "./helpers/install-ownership";
 
 setDefaultTimeout(30000);
 
@@ -210,7 +209,7 @@ describe("contract-worktree helper integration", () => {
         if (entry.state === "selected") recordPluginSelection({ HOME: home });
         else if (entry.state) {
           mkdirSync(join(home, ".repo-harness"), { recursive: true });
-          writeFileSync(installProfileStatePath({ HOME: home }), entry.state);
+          writeFileSync(installStateFixturePath({ HOME: home }), entry.state);
         } else mkdirSync(home, { recursive: true });
 
         const started = start(["--issue", "123", "--path", worktreePath, "--fresh"], cwd, { HOME: home, PATH: `${fakeBin}:${GH_DIR}:${process.env.PATH ?? ""}` });
