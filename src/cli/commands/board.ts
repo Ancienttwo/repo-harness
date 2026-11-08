@@ -12,6 +12,9 @@ import { renderDependencyMigrationPlan } from '../../core/board/dependency-migra
 import { DependencyMigrationError, runDependencyMigration, type DependencyMigrationResultV1 } from '../../effects/board/dependency-migration';
 import { BoardParentsError, collectBoardParents } from '../../effects/board/parents';
 import { BoardSeatsError, collectBoardSeats } from '../../effects/board/seats';
+import { DispatchError, type DispatchPlanV1 } from '../../core/board/dispatch';
+import { runDispatch } from '../../effects/board/dispatch';
+import { seatLaunch } from './seats';
 
 interface BoardOptions {
   readonly parent?: string;
@@ -52,6 +55,12 @@ function migrationText(result: DependencyMigrationResultV1): string {
   return [...result.labels.map(label => `label ${label.name}: ${label.result}`),
     ...result.edges.map(edge => `#${edge.issue} blocked by #${edge.blocker}: ${edge.result} (line ${edge.line_number}: ${edge.line.trim()})`),
     ...result.skipped.map(line => `#${line.issue} line ${line.line_number}: skipped (${line.line.trim()})`)].join('\n') + '\n';
+}
+
+function dispatchText(plan: DispatchPlanV1, started: readonly number[]): string {
+  return plan.decisions.map(decision => decision.action === 'skip'
+    ? `#${decision.issue} skipped (${decision.reason}): ${decision.detail}`
+    : `#${decision.issue} ${started.includes(decision.issue) ? 'started' : 'ready'} on ${decision.seat}: ${decision.route_line}`).join('\n') + '\n';
 }
 
 function attentionText(attention: BoardAttentionV1): string {
@@ -107,6 +116,24 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
         if (!(error instanceof BoardParentsError || error instanceof BoardSourceError || error instanceof BoardCollectError)) throw error;
         const code = error instanceof BoardParentsError ? { code: error.code } : {};
         process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, ...code, message: error.message })}\n`);
+        process.exitCode = 1;
+      }
+    });
+  board.command('dispatch')
+    .description('Start a seat for each ready sub-issue of the plan (takes --parent): worktree, claim comment and worker tab, on the seat that the quota route names')
+    .requiredOption('--space <id>', 'Herdr space that receives the worker tabs')
+    .option('--dry-run', 'Print the decision for each plan issue and start nothing')
+    .action(async (options: { space: string; dryRun?: boolean }, command: Command) => {
+      try {
+        const parent = parentNumber(command.optsWithGlobals<BoardOptions>());
+        const result = await runDispatch({
+          repo_root: process.cwd(), parent, space: options.space, host, dry_run: options.dryRun === true,
+          launch: (seat, labels, cwd) => seatLaunch(seat, labels, process.env, cwd),
+        });
+        process.stdout.write(dispatchText(result.plan, result.started.map(entry => entry.issue)));
+      } catch (error) {
+        if (!(error instanceof BoardCollectError || error instanceof BoardSourceError || error instanceof DispatchError)) throw error;
+        process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, message: error.message })}\n`);
         process.exitCode = 1;
       }
     });

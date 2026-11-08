@@ -223,6 +223,7 @@ example: `claude mode: saving (5% left < 20%)` and
 `codex mode: hyper (68% left >= 50%)`. Launch each task on the seat its
 route line names with `repo-harness seats argv <seat>`; state the boundary
 in the task. A `none` route waits.
+`repo-harness board dispatch --parent <n> --space <id>` applies this step to every ready issue of the plan: it reads the `route:<class>` label of each issue (and `touches:credentials`), starts the worktree, posts the claim and opens the worker tab. `--dry-run` prints the decisions only. An issue without one `route:<class>` label is reported and not dispatched.
 Apply the explorer line through the Claude Agent tool's `model` parameter when you call the explorer.
 
 Claude saving mode applies when weekly remaining quota is below
