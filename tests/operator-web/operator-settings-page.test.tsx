@@ -319,7 +319,7 @@ describe('agents page seats section', () => {
     await click(buttonWithText('Pi'));
     expect(levels()).toEqual(['instructions_only', 'instructions_only', 'instructions_only']);
     expect(allow('explorer').disabled).toBe(true);
-    expect((buttonWithText('max') as HTMLButtonElement).disabled).toBe(true);
+    expect((buttonWithText('max') as HTMLButtonElement).disabled).toBe(false);
     // An agents draft edited before the seats save moves to the seats revision the same way.
     await click(use('codex', 'review'));
     await click(seatsSave());
