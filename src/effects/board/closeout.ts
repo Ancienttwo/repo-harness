@@ -1,8 +1,9 @@
-import { lstatSync, realpathSync } from 'fs';
+import { execFileSync } from 'child_process';
+import { lstatSync, readdirSync, readlinkSync, realpathSync } from 'fs';
 import { architecturePort, isArchitectureUnavailable } from '../../core/architecture/contracts';
 import type { BoardHostPortsV1, BoardSeatTerminalReadV1 } from '../../core/board/board';
 import { gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
-import { codegraphServersOf, type WorktreeProcess } from '../git/worktree-processes';
+import type { WorktreeProcess } from '../git/worktree-processes';
 import { assertNoOwner, checkoutPath, entries, protectsCwd, removeExactWorktree } from '../state/coordination-worktree-topology';
 import { cleanupTaskWorktree } from '../terminal/runtime-closeout';
 import { BoardCollectError, readGhJson, readRepositoryId, type GhInput } from './collect';
@@ -242,6 +243,30 @@ export async function runBoardCloseout(input: BoardCloseoutInput): Promise<Board
   const proof = proveCloseout(input, pr);
   const panes = closePanes(input, pr, proof);
   return { kind: BOARD_CLOSEOUT_KIND, pr: pr.number, merge_commit: pr.merge_commit, panes, ...await removeWorktree(input, pr, proof, panes) };
+}
+
+/** The paths that process `pid` holds open; null when the platform probe cannot prove them. */
+function openPaths(pid: number): string[] | null {
+  try {
+    if (process.platform === 'linux') return readdirSync(`/proc/${pid}/fd`).map(fd => readlinkSync(`/proc/${pid}/fd/${fd}`));
+    if (process.platform !== 'darwin') return null;
+    const output = execFileSync('/usr/sbin/lsof', ['-p', String(pid), '-Fn'], { cwd: '/', encoding: 'utf8', timeout: 5_000, maxBuffer: 8 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+    return output.split('\n').filter(line => line.startsWith('n')).map(line => line.slice(1));
+  } catch { return null; }
+}
+
+/**
+ * The processes of `processes` that are a CodeGraph MCP server of `worktree`. An orphaned one outlives its seat pane and keeps the checkout in use.
+ * The caller passes only processes that hold the worktree. A server is bound to the worktree by an open file under its `.codegraph/` index, not by the flattened command line.
+ */
+export function codegraphServersOf(worktree: string, processes: readonly WorktreeProcess[]): number[] {
+  const index = `${realpathSync(worktree)}/.codegraph/`;
+  return processes.filter(item => {
+    try {
+      const command = execFileSync('/bin/ps', ['-o', 'command=', '-p', String(item.pid)], { cwd: '/', encoding: 'utf8', timeout: 5_000, stdio: ['ignore', 'pipe', 'ignore'] });
+      return command.includes('codegraph.js serve --mcp') && (openPaths(item.pid) ?? []).some(path => path.startsWith(index));
+    } catch { return false; }
+  }).map(item => item.pid);
 }
 
 /** SIGTERM to the CodeGraph MCP servers bound to exactly `worktree`; the watchdog child of a server exits when its parent's pipe closes. */

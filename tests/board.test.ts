@@ -1308,14 +1308,19 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
 
 test('closeout stops a CodeGraph MCP server bound to exactly the worktree and no other process', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cg-stop-'));
-  const sleeper = (...args: string[]) => Bun.spawn([process.execPath, '-e', 'setTimeout(() => {}, 60000)', 'codegraph.js', ...args], { cwd: dir, stdio: ['ignore', 'ignore', 'ignore'] });
-  const server = sleeper('serve', '--mcp', '--path', dir), other = sleeper('serve', '--mcp', '--path', `${dir}-other`), bystander = sleeper('index');
+  const db = join(dir, '.codegraph/codegraph.db');
+  mkdirSync(join(dir, '.codegraph')); writeFileSync(db, '');
+  // The installed CodeGraph runs an absolute script path. `opens` is the file the process holds open.
+  const script = '/opt/codegraph/lib/dist/bin/codegraph.js';
+  const sleeper = (opens: string, ...args: string[]) => Bun.spawn([process.execPath, '-e', "require('fs').openSync(process.argv[1], 'r'); setTimeout(() => {}, 60000)", opens, script, ...args],
+    { cwd: dir, stdio: ['ignore', 'ignore', 'ignore'] });
+  const server = sleeper(db, 'serve', '--mcp', '--path', dir), elsewhere = sleeper(__filename, 'serve', '--mcp', '--path', dir), bystander = sleeper(db, 'index');
   try {
     await Bun.sleep(200);
-    const found = [server, other, bystander].map(child => ({ pid: child.pid, cwd: dir }));
+    const found = [server, elsewhere, bystander].map(child => ({ pid: child.pid, cwd: dir }));
     expect(stopCodegraphServers(dir, found)).toEqual({ stopped: [server.pid], failures: [] });
     await server.exited;
     // Signal 0 throws only for a process that is gone.
-    expect([other.pid, bystander.pid].map(pid => { try { process.kill(pid, 0); return true; } catch { return false; } })).toEqual([true, true]);
-  } finally { server.kill(); other.kill(); bystander.kill(); rmSync(dir, { recursive: true, force: true }); }
+    expect([elsewhere.pid, bystander.pid].map(pid => { try { process.kill(pid, 0); return true; } catch { return false; } })).toEqual([true, true]);
+  } finally { server.kill(); elsewhere.kill(); bystander.kill(); rmSync(dir, { recursive: true, force: true }); }
 });
