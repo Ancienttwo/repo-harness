@@ -19,8 +19,10 @@ export type MermaidRenderer = (id: string, source: string, mode: ThemeMode) => P
 
 // An image cannot load the page's web fonts, so the diagram names system faces.
 // Without suppressErrorRendering, a failed render leaves Mermaid's error SVG in document.body.
+// Mermaid 12 defaults to the ELK layout and the neo look; dagre and classic keep the 11.x diagrams.
 export const MERMAID_CONFIG = {
   startOnLoad: false, securityLevel: 'strict', htmlLabels: false, suppressErrorRendering: true,
+  layout: 'dagre', look: 'classic',
   fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
 } as const;
 
