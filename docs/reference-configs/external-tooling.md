@@ -1078,7 +1078,12 @@ fails, `follow` writes an `update-failed` JSON line with code
 on each try, and the same line to stderr once per distinct error. It does not
 publish until the update succeeds. When main moves several times, each move
 costs at most one restart, and launchd `ThrottleInterval` spaces restarts at 300
-seconds; no run publishes with older code. Stale projections then also fail the
+seconds. One window stays open: archctx fetches main again inside its run and
+has no input for the checked commit. A main move in the seconds between the
+writer's check and the archctx fetch can render one newer commit with the older
+writer. The rolling PR's CI render check catches an archctx pin mismatch, and
+the next main move re-renders with the new writer. The upstream fix is
+Ancienttwo/arch-context#504 (`--base-sha`). Stale projections then also fail the
 daily architecture freshness check on main, which opens a CI repair issue. A
 local commit or a dirty file that blocks the fast-forward needs an operator
 repair. The installed package is not used for `follow`: releases lag main, and
