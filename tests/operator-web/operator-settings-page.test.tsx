@@ -325,7 +325,7 @@ describe('agents page seats section', () => {
     await click(seatsSave());
     await settle();
     expect(posts).toHaveLength(1);
-    expect(posts[0]!.seats.advisor).toMatchObject({ runtime: 'pi', model: null, effort: null, fleet: [] });
+    expect(posts[0]!.seats.advisor).toMatchObject({ runtime: 'pi', model: null, effort: 'max', fleet: [] });
     expect(document.querySelector('[data-seats-saved]')).not.toBeNull();
     await click(saveButton());
     expect(result()?.getAttribute('data-save-result')).toBe('saved');
