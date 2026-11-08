@@ -153,6 +153,9 @@ function typeLine(terminal: string, line: string, options: HerdrCoreOptions): vo
   hcKeys(terminal, [...[...line].map(character => (character === ' ' ? 'space' : character)), 'enter'], options);
 }
 
+/** An error message without its final period, for use inside a sentence. */
+const sentence = (error: unknown): string => (error as Error).message.replace(/\.$/u, '');
+
 function shellQuote(value: string): string {
   return /^[\w@%+=:,./-]+$/u.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
 }
@@ -263,22 +266,29 @@ export async function runSeatReset(path: string, sha256: string, options: SeatRe
     return { requester, seat: identity.seat, relaunched: false };
   } catch (error) {
     if (error instanceof SeatResetError && error.outcome === 'uncertain') throw error;
-    await fail('resume_not_sent', (error as Error).message);
-    throw new SeatResetError('resume_not_sent', 'uncertain', `${requester} may have got /clear, but not the resume prompt: ${(error as Error).message}. Send it by hand: ${prompt}`);
+    await fail('resume_not_sent', sentence(error));
+    throw new SeatResetError('resume_not_sent', 'uncertain', `${requester} may have got /clear, but not the resume prompt: ${sentence(error)}. Send it by hand: ${prompt}`);
   }
 
   async function relaunch(): Promise<SeatResetResult> {
-    const stop = async (detail: string): Promise<never> => {
+    const stop = async (detail: string, running = false): Promise<never> => {
       await fail('relaunch_failed', detail);
-      throw new SeatResetError('resume_not_sent', 'uncertain', `The relaunch of ${requester} failed (${detail}). Start it from \`repo-harness seats argv ${identity!.seat} --repository-id ${identity!.repository}\` and send: ${prompt}`);
+      const next = running ? `No key was typed; its session still runs. Send it: ${prompt}`
+        : `Start it from \`repo-harness seats argv ${identity!.seat} --repository-id ${identity!.repository}\` and send: ${prompt}`;
+      throw new SeatResetError('resume_not_sent', 'uncertain', `The relaunch of ${requester} failed (${detail}). ${next}`);
     };
+    // The argv needs characters that hc keys cannot type, so the login shell runs it from a script. The script is
+    // ready before /exit, so a failed build leaves the running session in place.
+    const script = `${seatResetDirectory(identity!)}/relaunch.sh`;
+    if (!TYPABLE.test(script) || script.includes(' ')) return stop('relaunch_path_untypable', true);
+    try {
+      writeFileSync(script, `${(await options.relaunchArgv(identity!)).map(shellQuote).join(' ')}\n`, { mode: 0o700 });
+    } catch (error) {
+      return stop(`relaunch_argv_failed: ${sentence(error)}`, true);
+    }
     wait();
     typeLine(requester, '/exit', options);
     if (await poll(() => (hcGet(requester, options).foreground?.name === 'claude' ? null : true), timeouts.exitMs) === null) return stop('claude_did_not_exit');
-    // The argv needs characters that hc keys cannot type, so the login shell runs it from a script.
-    const script = `${seatResetDirectory(identity!)}/relaunch.sh`;
-    if (!TYPABLE.test(script) || script.includes(' ')) return stop('relaunch_path_untypable');
-    writeFileSync(script, `${(await options.relaunchArgv(identity!)).map(shellQuote).join(' ')}\n`, { mode: 0o700 });
     const startedAt = Date.now();
     typeLine(requester, `sh ${script}`, options);
     const failure = await resume(startedAt);

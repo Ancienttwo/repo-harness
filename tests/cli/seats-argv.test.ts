@@ -612,7 +612,7 @@ describe("repo-harness seats reset (#1972)", () => {
    * `evidenceFrom` and later land in the new transcript.
    */
   function withReset(fn: (f: { handoff: string; body: string; sha: (text: string) => string; state: (patch: Record<string, unknown>) => void;
-    reset: (input?: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean }) => Promise<unknown>;
+    reset: (input?: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]> }) => Promise<unknown>;
     sends: () => string[]; calls: () => string[]; log: () => { kind: string; detail: string; notice: string }[] }) => Promise<void>) {
     return async () => {
       const home = mkdtempSync(join(tmpdir(), "seats-reset-"));
@@ -659,7 +659,7 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
         const body = HANDOFF_SECTIONS.map(section => `## ${section}\n\nstate\n`).join("\n");
         const sha = (text: string) => createHash("sha256").update(text).digest("hex");
         const requestedAt = new Date(Date.now() - 60_000).toISOString();
-        const reset = async (input: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean } = {}) => {
+        const reset = async (input: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]> } = {}) => {
           const text = input.text ?? body;
           writeFileSync(handoff, text);
           if (input.handoff === false) rmSync(handoff);
@@ -670,7 +670,7 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
           try {
             return await runSeatReset(input.path ?? handoff, input.sha256 ?? sha(text), {
               env: { ...base, HOME: home, REPO_HARNESS_HOME: join(home, ".repo-harness"), HC_TERMINAL_ID: input.caller ?? "t2", PATH: `${join(home, "bin")}:/bin:/usr/bin` },
-              timeouts, relaunchArgv: async () => ["/bin/sh", "-c", "exec claude", "x y"],
+              timeouts, relaunchArgv: input.relaunchArgv ?? (async () => ["/bin/sh", "-c", "exec claude", "x y"]),
             });
           } catch (error) {
             return { error: (error as SeatResetError).code, outcome: (error as SeatResetError).outcome };
@@ -742,6 +742,14 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
     expect(sends()).toEqual(["/clear", "/exit", `sh ${script}`, prompt(handoff)]);
     expect(readFileSync(script, "utf8")).toBe("/bin/sh -c 'exec claude' 'x y'\n");
     expect(log().map(({ kind, detail }) => [kind, detail])).toEqual(Array(4).fill(["resume", "no_signal"]));
+  }));
+
+  test("a relaunch argv that cannot be built types no /exit and leaves the session running", withReset(async ({ reset, state, sends, log }) => {
+    state({ signal: false });
+    const relaunchArgv = async (): Promise<string[]> => { throw new Error("The stored seats section needs a one-shot migration. Run repo-harness update."); };
+    expect(await reset({ relaunchArgv })).toEqual({ error: "resume_not_sent", outcome: "uncertain" });
+    expect([sends(), log().at(-1)?.kind, log().at(-1)?.detail]).toEqual([["/clear"], "relaunch_failed",
+      "relaunch_argv_failed: The stored seats section needs a one-shot migration. Run repo-harness update"]);
   }));
 
   test("a relaunch that cannot end claude logs the failure and reports an uncertain reset", withReset(async ({ reset, state, sends, log }) => {
