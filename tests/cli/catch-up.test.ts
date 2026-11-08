@@ -91,12 +91,18 @@ describe('catch-up CLI', () => {
   test('the install-state fixture accepts only a temporary HOME, judged against the account home', () => {
     const { HOME: _home, ...withoutHome } = process.env;
     expect(() => recordPluginSelection(withoutHome, ['operator'])).toThrow('temporary env.HOME');
-    // process.env.HOME may already be a temp dir here, so the real home comes from the account record.
-    expect(() => recordPluginSelection({ ...process.env, HOME: userInfo().homedir }, ['operator'])).toThrow('temporary env.HOME');
+    // os.homedir() follows process.env.HOME, so the real home must come from the account record.
+    const previous = process.env.HOME;
+    const startup = mkdtempSync(join(tmpdir(), 'catch-up-guard-startup-'));
     const home = mkdtempSync(join(tmpdir(), 'catch-up-guard-home-'));
+    process.env.HOME = startup;
     try {
+      expect(() => recordPluginSelection({ HOME: userInfo().homedir }, ['operator'])).toThrow('temporary env.HOME');
       expect(installStateFixturePath({ HOME: home })).toStartWith(home);
-    } finally { rmSync(home, { recursive: true, force: true }); }
+    } finally {
+      if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous;
+      for (const path of [startup, home]) rmSync(path, { recursive: true, force: true });
+    }
   });
 
   test('prints the existing snapshot as one JSON line with no text cap', async () => {
