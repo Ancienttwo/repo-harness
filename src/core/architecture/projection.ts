@@ -1,7 +1,5 @@
 import {
   ARCHCTX_CAPABILITIES_SCHEMA_VERSION,
-  DEPENDENCY_CONSTRAINT_REASON_CODES,
-  DEPENDENCY_CONSTRAINT_STATUSES,
   NATIVE_CONTEXT_PROFILE,
   NATIVE_CONTEXT_SCHEMA_VERSION,
   nativeContextSchemaResolver,
@@ -27,6 +25,7 @@ import projectionReadbackSchema from 'archctx-contracts/schemas/runtime/projecti
 import docsAnchorsSchema from 'archctx-contracts/schemas/runtime/docs-anchors.schema.json';
 import architectureDebtSchema from 'archctx-contracts/schemas/runtime/architecture-debt.schema.json';
 import flowSelectorCheckSchema from 'archctx-contracts/schemas/runtime/flow-selector-check.schema.json';
+import dependencyConstraintEvaluationSchema from 'archctx-contracts/schemas/runtime/dependency-constraint-evaluation.schema.json';
 import refImpactSchema from 'archctx-contracts/schemas/runtime/ref-impact.schema.json';
 import nativeContextExportSchema from 'archctx-contracts/schemas/runtime/native-context-export.schema.json';
 import nodeSchema from 'archctx-contracts/schemas/repo/architecture-node.schema.json';
@@ -209,38 +208,9 @@ export function decodeFlowSelectorCheck(value: unknown): ArchitectureFlowSelecto
   return decode(flowSelectorCheckSchema, value, 'flows check report') as unknown as ArchitectureFlowSelectorCheckV1;
 }
 
-/**
- * `archctx constraints check` has no published JSON schema. Validate the fields
- * the readers consume (the operator map and the CI plugin-internals gate)
- * against the exported contract's vocabulary.
- */
+/** ArchContext owns the `constraints check` report contract; this applies its published schema. */
 export function decodeConstraintEvaluation(value: unknown): DependencyConstraintEvaluationV1 {
-  const report = record(value, 'archctx constraints check');
-  const strings = (entry: unknown) => Array.isArray(entry) && entry.every(item => typeof item === 'string');
-  if (report.schemaVersion !== 'archcontext.dependency-constraint-evaluation/v1') throw new Error('archctx constraints check schema mismatch');
-  if (!(DEPENDENCY_CONSTRAINT_STATUSES as readonly unknown[]).includes(report.status)) throw new Error('archctx constraints check status is invalid');
-  if (!['complete', 'partial', 'unknown'].includes(report.coverage as string)) throw new Error('archctx constraints check coverage is invalid');
-  if (!Array.isArray(report.reasonCodes) || !report.reasonCodes.every(code => (DEPENDENCY_CONSTRAINT_REASON_CODES as readonly unknown[]).includes(code))) {
-    throw new Error('archctx constraints check reason codes are invalid');
-  }
-  if (!strings(report.constraintIds)) throw new Error('archctx constraints check constraint ids are invalid');
-  if (typeof report.importEdgeCount !== 'number' || !Number.isSafeInteger(report.importEdgeCount) || report.importEdgeCount < 0) {
-    throw new Error('archctx constraints check import edge count is invalid');
-  }
-  if (!Array.isArray(report.unresolvedImports) || !report.unresolvedImports.every((entry) => {
-    const unresolved = record(entry, 'archctx constraints check unresolved import');
-    return typeof unresolved.from === 'string' && typeof unresolved.specifier === 'string';
-  })) throw new Error('archctx constraints check unresolved imports are invalid');
-  if (!Array.isArray(report.violations)) throw new Error('archctx constraints check omitted violations');
-  for (const entry of report.violations) {
-    const violation = record(entry, 'archctx constraints check violation');
-    const optional = (field: unknown) => field === undefined || typeof field === 'string';
-    if (!['constraintId', 'fromPath', 'toPath', 'fromNode', 'toNode'].every(field => typeof violation[field] === 'string')
-      || !optional(violation.fromLayer) || !optional(violation.toLayer) || !['error', 'warning'].includes(violation.severity as string)) {
-      throw new Error('archctx constraints check violation is invalid');
-    }
-  }
-  return report as unknown as DependencyConstraintEvaluationV1;
+  return decode(dependencyConstraintEvaluationSchema, value, 'constraints check report') as unknown as DependencyConstraintEvaluationV1;
 }
 
 /** `refs`: `archctx impact --base --head`; `paths`: `--paths-from`, which reads the worktree model at `head`. */

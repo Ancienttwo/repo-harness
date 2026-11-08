@@ -859,13 +859,13 @@ describe('architecture map', () => {
     const violation = (fromPath: string, constraintId = LAYER) => ({
       constraintId, fromPath, toPath: 'src/cli/index.ts', fromNode: CAP, toNode: OTHER, fromLayer: 'core', toLayer: 'cli', severity: 'warning' as const,
     });
-    const report = (fields: Record<string, unknown> = {}) => decodeConstraintEvaluation({
-      schemaVersion: 'archcontext.dependency-constraint-evaluation/v1', status: 'violated', coverage: 'complete', reasonCodes: [],
+    const report = (fields: Record<string, unknown> = {}) => decodeConstraintEvaluation(JSON.parse(JSON.stringify({
+      schemaVersion: 'archcontext.dependency-constraint-evaluation/v1', status: 'violated', coverage: 'complete', reasonCodes: [], warnings: [],
       constraintIds: [LAYER, 'constraint.architecture.no-ui'], importEdgeCount: 40, unresolvedImports: [],
       violations: [violation('src/core/a.ts'), violation('src/core/b.ts'),
         { ...violation('src/core/c.ts', 'constraint.architecture.no-ui'), fromLayer: undefined, toLayer: undefined }],
       ...fields,
-    });
+    })));
     const known = new Set([CAP, OTHER, PART]);
     const layered = new Set([LAYER]);
     expect(layerDirectionSection(report(), layered, known)).toEqual({ state: 'ok', imports: 40,
@@ -879,9 +879,9 @@ describe('architecture map', () => {
     expect(undetermined(['layer-endpoint-unclassified'])).toEqual({ state: 'unavailable', reason: 'layer_endpoint_unclassified' });
     expect(undetermined(['code-facts-stale'])).toEqual({ state: 'unavailable', reason: 'code_facts_unavailable' });
     expect(undetermined(['unresolved-import'])).toEqual({ state: 'unavailable', reason: 'code_facts_incomplete' });
-    expect(() => report({ status: 'unknown' })).toThrow('archctx constraints check status is invalid');
-    expect(() => report({ reasonCodes: ['not-a-code'] })).toThrow('archctx constraints check reason codes are invalid');
-    expect(() => report({ unresolvedImports: [{ from: 'src/core/a.ts' }] })).toThrow('archctx constraints check unresolved imports are invalid');
+    expect(() => report({ status: 'unknown' })).toThrow('constraints check report invalid: $.status');
+    expect(() => report({ reasonCodes: ['not-a-code'] })).toThrow('constraints check report invalid: $.reasonCodes[0]');
+    expect(() => report({ unresolvedImports: [{ from: 'src/core/a.ts' }] })).toThrow('constraints check report invalid: $.unresolvedImports[0].specifier');
   });
 
   test('a checkout or edit during a cycle drops PR impact when the model moved and each violation check when the tree moved', () => {
