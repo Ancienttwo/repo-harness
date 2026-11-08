@@ -1,7 +1,7 @@
 import { PlanBlockError, decodePlanBlock, type PlanBlockV1 } from './plan-block';
 import { selectSeatRoute, type SeatAccountQuotas } from './seat-routing';
 import { ROUTING_CLASSES, isWorkerSeat, type RoutingClass, type SeatId, type SeatsConfigV1 } from './seats-settings';
-import { newestProtocolComment, parseClaimStatus, protocolComments, type BoardParentReadV1, type BoardSubIssueReadV1 } from './source';
+import { claimStatusTarget, newestProtocolComment, parseClaimStatus, protocolComments, type BoardParentReadV1, type BoardSubIssueReadV1 } from './source';
 
 /**
  * Dispatch (#2004): which sub-issues of a parent are ready, and which seat each one gets. It is a pure
@@ -26,7 +26,7 @@ export class DispatchError extends Error {
 export type DispatchSkipReason = 'not_sub_issue' | 'closed' | 'held' | 'blocked' | 'claimed' | 'kind_label_invalid' | 'no_route' | 'over_limit';
 
 export type DispatchDecisionV1 =
-  | { readonly issue: number; readonly action: 'dispatch'; readonly title: string; readonly route_class: RoutingClass; readonly seat: SeatId; readonly route_line: string }
+  | { readonly issue: number; readonly action: 'dispatch'; readonly title: string; readonly route_class: RoutingClass; readonly credentials: boolean; readonly seat: SeatId; readonly route_line: string }
   | { readonly issue: number; readonly action: 'skip'; readonly reason: DispatchSkipReason; readonly detail: string };
 
 /** A live terminal with its raw labels, as the board host reads it. */
@@ -64,8 +64,9 @@ function planOf(parent: BoardParentReadV1): PlanBlockV1 {
 function claimDetail(issue: BoardSubIssueReadV1): string | null {
   const claim = newestProtocolComment(issue.comments, CLAIM_HEADER);
   if (claim === null) return issue.comments.truncated ? 'older comments were not read, so a claim cannot be ruled out' : null;
+  // A status closes the claim it names, not any claim: a delayed status of an older claim leaves this one active.
   const closing = protocolComments(issue.comments, CLAIM_STATUS_HEADER)
-    .filter(comment => comment.created_at >= claim.created_at)
+    .filter(comment => claimStatusTarget(comment) === claim.url)
     .map(parseClaimStatus)
     .some(status => status !== null && (status.status === 'done' || status.status.startsWith('released')));
   return closing ? null : `active claim ${claim.url}`;
@@ -85,7 +86,9 @@ export function planDispatch(input: DispatchInputV1): DispatchPlanV1 {
   const parentLabel = String(parent.parent.number);
   const liveWorkers = input.terminals.filter(({ state, labels }) => state === 'live' && labels.parent === parentLabel
     && labels.seat !== undefined && isWorkerSeat(labels.seat as SeatId));
-  const liveIssues = new Set(liveWorkers.map(({ labels }) => labels.issue));
+  // A seat started without a parent label still occupies its issue, so occupancy reads every live worker of the repository.
+  const liveIssues = new Set(input.terminals.filter(({ state, labels }) => state === 'live' && labels.seat !== undefined && isWorkerSeat(labels.seat as SeatId))
+    .map(({ labels }) => labels.issue));
   const held = new Map(plan.holds.map(hold => [hold.issue, hold.reason]));
   const issues = new Map(parent.sub_issues.map(issue => [issue.number, issue]));
   let running = liveWorkers.length;
@@ -102,11 +105,12 @@ export function planDispatch(input: DispatchInputV1): DispatchPlanV1 {
     if (claim !== null) return skip('claimed', claim);
     const kind = routeClass(issue.labels);
     if ('error' in kind) return skip('kind_label_invalid', kind.error);
-    const route = selectSeatRoute(kind.kind, seats, quota, issue.labels.includes(CREDENTIALS_LABEL) ? seat => seat.runtime !== 'pi' : undefined);
+    const credentials = issue.labels.includes(CREDENTIALS_LABEL);
+    const route = selectSeatRoute(kind.kind, seats, quota, credentials ? seat => seat.runtime !== 'pi' : undefined);
     if (route.id === null) return skip('no_route', route.line);
     if (running >= plan.seat_limits.worker) return skip('over_limit', `${running} of ${plan.seat_limits.worker} worker seats run`);
     running += 1;
-    return { issue: number, action: 'dispatch', title: issue.title, route_class: kind.kind, seat: route.id, route_line: route.line };
+    return { issue: number, action: 'dispatch', title: issue.title, route_class: kind.kind, credentials, seat: route.id, route_line: route.line };
   });
   return Object.freeze({ plan, live_workers: liveWorkers.length, decisions: Object.freeze(decisions) });
 }
