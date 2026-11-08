@@ -106,7 +106,7 @@ function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly stri
       : [];
     // A gatekeeper sub-agent is an independent reviewer inside this seat; every other review and every writer stays in a seat.
     const review = fleet.includes('gatekeeper')
-      ? 'You do not review a PR yourself. An independent `gatekeeper` sub-agent may review a PR that you dispatched; route every other review of that PR to another seat.'
+      ? `You do not review a PR yourself. An independent \`${name('gatekeeper')}\` sub-agent may review a PR that you dispatched; route every other review of that PR to another seat.`
       : 'You do not review a PR that you dispatched; route that review to another seat.';
     const dispatch = fleet.length === 0
       ? 'You do not dispatch sub-agents (the Agent tool) for execution. Dispatch work only to seats through Herdr.'
@@ -123,7 +123,7 @@ function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly stri
       ? 'You have no sub-agents. Collect evidence yourself.'
       : [
         `Collect evidence through your sub-agents: ${roleList(fleet, name)}. Split one research request into 2 to 4 read-only briefs with scopes that do not overlap, and send them in parallel.`,
-        ...(fleet.includes('deep-reasoner') ? ['Use deep-reasoner only for an independent second judgment.'] : []),
+        ...(fleet.includes('deep-reasoner') ? [`Use ${name('deep-reasoner')} only for an independent second judgment.`] : []),
         'Keep judgment, synthesis and the proposal for yourself. Run a check of one or two commands yourself.',
       ].join(' ');
     return [

@@ -254,6 +254,17 @@ describe("repo-harness seats argv", () => {
     });
   });
 
+  test("every role name in a Pi advisor brief is the generated rh- name", () => {
+    const advisor = { ...DEFAULT_SEATS_CONFIG.advisor, runtime: "pi" as const, model: "magpie/codex/gpt-6-astra", effort: null, fleet: ["deep-reasoner", "explorer"] };
+    withHome({ ...DEFAULT_SEATS_CONFIG, advisor }, home => {
+      writeFileSync(join(home, 'codex-used'), '51');
+      const { brief } = launch(home, "advisor");
+      expect(brief).toContain("`rh-deep-reasoner`, `rh-explorer`");
+      expect(brief).toContain("Use rh-deep-reasoner only for an independent second judgment.");
+      expect(brief).not.toMatch(/(?<!rh-)deep-reasoner/u);
+    });
+  });
+
   test("quota changes Codex models and Claude control-seat effort, preserves Pi, and stops exhaustion", () => {
     withHome(DEFAULT_SEATS_CONFIG, home => {
       writeFileSync(join(home, 'codex-used'), '50');
