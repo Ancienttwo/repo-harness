@@ -13,6 +13,7 @@ import { ClaudeAgentTypesError, claudeHostAgentTypes } from '../../effects/board
 import { RepoHarnessRegistryStrictError, canonicalRepoPath, readRepoHarnessRegistryStrictSnapshot, repoCheckoutProbeEnv } from '../../effects/repo-registry';
 import { HerdrCoreError, RH_LABEL, hcLabel, hcLabelPairs, type HcLabels } from '../../effects/terminal/herdr-core';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
+import { SeatResetError, runSeatReset, type SeatResetNotify } from '../../effects/board/seat-reset';
 
 const CLI_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
 
@@ -137,7 +138,7 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
   const agentTypes = effective.runtime === 'claude' && effective.fleet.length > 0
     ? [...MANAGED_AGENTS, ...CLAUDE_BUILTIN_AGENT_TYPES, ...claudeHostAgentTypes(env)]
     : [];
-  const launch = buildSeatLaunch(id, effective, config.seats === undefined ? 'defaults' : 'seats', agentTypes, name ?? undefined);
+  const launch = buildSeatLaunch(id, effective, config.seats === undefined ? 'defaults' : 'seats', agentTypes, name ?? undefined, labels.repositoryId);
   return {
     ...launch,
     argv: labelSet === undefined ? launch.argv : selfLabelingArgv(id, labels, launch.argv),
@@ -145,7 +146,8 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
   };
 }
 
-export function buildSeatsCommand(): Command {
+/** `loadNotify` comes from the composition root, only when peer-runtime is selected. */
+export function buildSeatsCommand(loadNotify?: () => Promise<SeatResetNotify>): Command {
   const seats = new Command('seats').description('Seat launch commands for Herdr panes');
   seats
     .command('argv')
@@ -201,6 +203,24 @@ export function buildSeatsCommand(): Command {
         if (!(error instanceof SeatsCommandError || error instanceof HerdrCoreError)) throw error;
         const code = error instanceof SeatsCommandError ? error.code : 'label_failed';
         process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: `The seat did not start: ${error.message}` })}\n`);
+        process.exitCode = 1;
+      }
+    });
+  seats
+    .command('reset')
+    .description('On a RESET-REQUEST from the orchestrator or advisor seat: check its handoff, ask for a rewrite or send /clear, then resume it; run it in the background')
+    .argument('<handoff>', 'The handoff path of the RESET-REQUEST')
+    .argument('<sha256>', 'The handoff sha256 of the RESET-REQUEST')
+    .action(async (handoff: string, sha256: string) => {
+      try {
+        const result = await runSeatReset(handoff, sha256, {
+          ...(loadNotify === undefined ? {} : { notify: await loadNotify() }),
+          relaunchArgv: async identity => (await seatLaunch(identity.seat, { repositoryId: identity.repository })).argv,
+        });
+        process.stdout.write(`${JSON.stringify({ ok: true, ...result })}\n`);
+      } catch (error) {
+        if (!(error instanceof SeatResetError)) throw error;
+        process.stderr.write(`${JSON.stringify({ ok: false, error: error.code, outcome: error.outcome, message: error.message, logErrors: error.logErrors })}\n`);
         process.exitCode = 1;
       }
     });

@@ -4,7 +4,9 @@ import { collectProtectedPathNotice } from './protected-path-notice';
 import { publishCheckpointFromLedger } from '../../effects/evidence/checkpoint-store';
 import type { StateInputCollector } from '../../effects/loop/state-input-collector';
 import { resolveCapabilityOwnership } from '../../effects/state/resolve-effective-state';
-import { payloadValue, type HookIdentity, type HookPayload } from './hook-input';
+import { payloadString, payloadValue, type HookIdentity, type HookPayload } from './hook-input';
+import { SEAT_RESET_CONTEXT_TOKENS, seatResetIdentity, seatResetReason } from '../../core/board/seat-reset';
+import { readTranscriptContextTokens, seatResetRequested, writeSeatResetRequest } from '../../effects/board/seat-reset';
 
 export type StopCollector = Pick<StateInputCollector, 'getRepoRoot'>;
 
@@ -42,14 +44,43 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     return { exitCode: 0, stdout: '', stderr: '' };
   }
   try { publishCheckpointFromLedger(repoRoot, () => now); } catch { /* a failed publish never blocks the turn */ }
-  return opts.identity.host === 'claude' ? claudeNotices(repoRoot, env) : codexNotices(repoRoot, env);
+  if (opts.identity.host !== 'claude') return codexNotices(repoRoot, env);
+  const reset = seatReset(opts.payload, env, now);
+  return 'block' in reset ? reset.block : claudeNotices(repoRoot, env, reset.notices);
+}
+
+interface StopNotice {
+  readonly content?: string;
+  readonly systemMessage?: string;
+  readonly diagnostics?: string;
+}
+
+/**
+ * An orchestrator or advisor seat at or above the reset threshold blocks the stop once per transcript (exit 2 gives
+ * the reason to the model), so the seat writes its handoff and asks its peer for the reset. Only the env of
+ * `repo-harness seats argv` names the seat. Any failure of this step resets nothing, names the failure and keeps
+ * the notices.
+ */
+function seatReset(payload: HookPayload, env: NodeJS.ProcessEnv, now: Date): { readonly block: StopHandlerResult } | { readonly notices: readonly StopNotice[] } {
+  try {
+    const identity = seatResetIdentity(env);
+    const transcript = payloadString(payload, 'transcript_path');
+    if (identity === null || transcript === '' || seatResetRequested(identity, transcript)) return { notices: [] };
+    const context = readTranscriptContextTokens(transcript);
+    if (context === null || context < SEAT_RESET_CONTEXT_TOKENS) return { notices: [] };
+    writeSeatResetRequest(identity, now, context, transcript);
+    return { block: { exitCode: 2, stdout: '', stderr: `${seatResetReason(identity, context)}\n` } };
+  } catch (error) {
+    return { notices: [{ systemMessage: `repo-harness: seat reset skipped: ${(error as Error).message}` }] };
+  }
 }
 
 /** The architecture and protected path notices fail independently. */
-function claudeNotices(repoRoot: string, env: NodeJS.ProcessEnv): StopHandlerResult {
-  const notices = [
+function claudeNotices(repoRoot: string, env: NodeJS.ProcessEnv, extra: readonly StopNotice[]): StopHandlerResult {
+  const notices: StopNotice[] = [
     collectArchitectureNotice(repoRoot, options => resolveCapabilityOwnership(repoRoot, undefined, options), { env }),
     collectProtectedPathNotice(repoRoot, env),
+    ...extra,
   ];
   const joined = (field: 'content' | 'systemMessage') => notices.map(notice => notice[field]).filter(Boolean).join('\n');
   const systemMessage = joined('systemMessage');

@@ -1070,7 +1070,9 @@ export function buildProgram(): Command {
   program.addCommand(pluginCommand(buildArchitectureDebtCommand(), 'architecture'));
   program.addCommand(pluginCommand(buildStrategyCommand(), 'strategy-memory'));
   program.addCommand(buildRetentionCommand(CLI_PORTS.retention));
-  program.addCommand(buildSeatsCommand());
+  // The seat reset posts notices through the notify relay only when peer-runtime is selected.
+  program.addCommand(buildSeatsCommand(pluginSelected(recordedSelection, 'peer-runtime')
+    ? async () => (await import('../effects/terminal/notify-relay')).postNotifyEvent : undefined));
   program
     .command('__reconcile-installed-runtime', { hidden: true })
     .description('Internal candidate-owned managed runtime reconciliation')

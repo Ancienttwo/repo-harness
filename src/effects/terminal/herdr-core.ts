@@ -384,6 +384,17 @@ export function hcSend(terminalAddress: string, text: string, options: HerdrCore
   return { started: result.started, turn: result.turn as number };
 }
 
+/**
+ * `hc keys`: press named keys in a repo-harness terminal. A single character is its own key name. Unlike `send`,
+ * no envelope wraps the keys, so a program reads them as typed input (a slash command, a shell line).
+ */
+export function hcKeys(terminalAddress: string, keys: readonly string[], options: HerdrCoreOptions = {}): { readonly turn: number } {
+  const target = hcGet(terminalAddress, options).address;
+  const result = hc('keys', ['--', target, ...keys], options);
+  if (!Number.isSafeInteger(result.turn)) throw invalidResponse('keys has an invalid turn');
+  return { turn: result.turn as number };
+}
+
 /** `hc read`: the screen plus `lines` of history of a repo-harness terminal, and whether the text is complete. */
 export function hcRead(terminalAddress: string, lines = 0, options: HerdrCoreOptions = {}): HcReadResult {
   if (!Number.isSafeInteger(lines) || lines < 0) throw new RangeError('herdr_core_invalid_lines');

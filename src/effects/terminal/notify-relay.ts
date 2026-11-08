@@ -60,6 +60,27 @@ function targets(config: NotifyConfig, state: 'blocked' | 'done', envelope: unkn
     && (state === 'blocked' || config[`${CHANNEL_NAMES[target.channel]}_NOTIFY_DONE` as typeof NOTIFY_DONE_KEYS[number]] === '1'));
 }
 
+/**
+ * One bot event outside the relay (#1972), on every channel, as for a blocked turn. It waits for no reader:
+ * each post has the 5 s timeout, and a failure is a result, never a throw.
+ */
+export async function postNotifyEvent(env: NodeJS.ProcessEnv, event: { readonly repository: string | null; readonly kind: string; readonly data: Record<string, unknown>; readonly text: string }, send: typeof fetch = fetch): Promise<'sent' | 'failed' | 'not_configured'> {
+  let config;
+  try { config = readNotifyConfig(env); } catch { return 'failed'; }
+  if (config === null) return 'not_configured';
+  const envelope = botEvent({ source: 'herdr', repository: event.repository, kind: event.kind, ts: new Date().toISOString(), data: event.data });
+  const results = await Promise.all(targets(config, 'blocked', envelope, event.text).map(async (target) => {
+    try {
+      const response = await send(target.url, {
+        method: 'POST', headers: { 'content-type': 'application/json', ...target.headers },
+        body: JSON.stringify(target.body), signal: AbortSignal.timeout(TIMEOUT_MS), redirect: 'error',
+      });
+      return response.ok;
+    } catch { return false; }
+  }));
+  return results.every(Boolean) ? 'sent' : 'failed';
+}
+
 export interface NotifyRelayDeps {
   readonly env: NodeJS.ProcessEnv;
   readonly send?: typeof fetch;
