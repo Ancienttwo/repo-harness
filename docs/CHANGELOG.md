@@ -9,6 +9,10 @@ All notable changes to this skill are documented here.
 
 - `bash scripts/release-owner-steps.sh plan <version>` prints the owner's release command list, bound to the release commit on `origin/main`: publish both packages, read them back, tag that commit, create the GitHub Release, then the post-release steps. `check published` and `check tagged` read back each owner step and stop at the first failure; `notes` prints the CHANGELOG section. The script only reads git, npm and GitHub. `check:release-published --before-tag` skips only the tag check. (#2006)
 
+### Documentation
+
+- Record the 0.29.0 publication in its release checklist. (#2065)
+
 ## [0.29.0] - 2026-11-09
 
 This release lets the board run the issue flow: `board dispatch` starts a
