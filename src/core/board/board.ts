@@ -101,7 +101,8 @@ export interface BoardPullRequestV1 {
   readonly tier: BoardTier | null;
   /**
    * An unknown tier counts as High here (fail closed). `pending`: an open High pull request whose head does not meet the High acceptance rule and has no acceptance row
-   * from a Claude reviewer. `recorded`: such a row exists. `not_required` for any other pull request, and for a High head that meets the rule without a Claude row.
+   * from a Claude reviewer, or an open Medium one whose head has a claimed PASS row but no claimed different-family PASS row and no Claude row. `recorded`: such a
+   * Claude row exists. `not_required` for any other pull request, and for a head that meets its rule without a Claude row.
    */
   readonly claude_review: BoardClaudeReviewV1;
 }
@@ -353,9 +354,9 @@ function highRuleMet(read: BoardPullRequestReadV1, head: readonly AcceptanceRowV
   return new Set(passes.map(row => row.claim)).size >= 2 && passes.some(row => row.different_family);
 }
 
-/** The Medium rule (`acceptor.md` section 2.2): one claimed PASS row of the head recorded `different-family`, and no `FAIL` row; `unknown` never counts. */
+/** The Medium rule (`acceptor.md` section 2.2): one claimed PASS row of the head recorded `different-family`; `unknown` never counts. The caller has ruled out a `FAIL` row. */
 function mediumRuleMet(read: BoardPullRequestReadV1, head: readonly AcceptanceRowV1[]): boolean {
-  return !head.some(row => row.verdict === 'FAIL') && claimedRows(read, head).some(row => row.different_family);
+  return claimedRows(read, head).some(row => row.different_family);
 }
 
 /** The review rule of a pull request: `high` for an open pull request of High or unknown tier, `medium` for an open Medium one, `none` otherwise. */
@@ -379,15 +380,19 @@ function effectiveTier(closes: readonly number[], refs: readonly number[], files
 }
 
 /**
- * The Claude review state of a pull request: a projection of the High rule, not a second rule. `recorded`: a Claude reviewer has a row
- * for the head. `pending`: the High rule is not met for the head and no Claude row exists, so the Claude reviewer seat supplies the
- * missing review (the second review for a Claude writer, the different-family review for any other writer).
+ * The Claude review state of a pull request: a projection of the High and Medium rules, not a second rule. `recorded`: a Claude reviewer
+ * has a row for the head. High `pending`: the High rule is not met for the head and no Claude row exists, so the Claude reviewer seat
+ * supplies the missing review (the second review for a Claude writer, the different-family review for any other writer). Medium
+ * `pending`: the non-Claude gatekeeper passed the head in the writer's own family, so the Claude reviewer supplies the different-family review.
  */
 function claudeReview(read: BoardPullRequestReadV1, tier: BoardTier | null): BoardClaudeReviewV1 {
-  if (reviewRule(read, tier) !== 'high') return 'not_required';
+  const rule = reviewRule(read, tier);
+  if (rule === 'none') return 'not_required';
   const head = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER).flatMap(record => parseAcceptanceRecord(record) ?? []).filter(row => row.subject_sha === read.head_sha);
   if (head.some(row => row.harness === 'claude')) return 'recorded';
-  return highRuleMet(read, head) ? 'not_required' : 'pending';
+  if (rule === 'high') return highRuleMet(read, head) ? 'not_required' : 'pending';
+  if (head.some(row => row.verdict === 'FAIL')) return 'not_required';
+  return claimedRows(read, head).length > 0 && !mediumRuleMet(read, head) ? 'pending' : 'not_required';
 }
 
 function bodyLinks(repository: string, body: string): { readonly closes: number[]; readonly refs: number[] } {

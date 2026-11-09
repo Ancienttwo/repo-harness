@@ -227,6 +227,11 @@ test('High acceptance: PASS rows of the head from two distinct claims, one recor
   // Medium needs one claimed different-family PASS row (#2084): an unclaimed row with no relation does not count.
   expect(pr1491(head([['pi', '', null]], 'tier:medium'))).toMatchObject({ acceptance: { status: 'not_accepted' }, claude_review: 'not_required' });
   expect(pr1491(head([gatekeeper], 'tier:medium'))).toMatchObject({ acceptance: { status: 'accepted', via: 'record' }, claude_review: 'not_required' });
+  // An unclaimed different-family row proves no review either.
+  expect(pr1491(head([['pi', '']], 'tier:medium'))).toMatchObject({ acceptance: { status: 'not_accepted' }, claude_review: 'not_required' });
+  // A same-family gatekeeper PASS leaves the different-family review to the Claude reviewer: pending, then accepted on its row.
+  expect(pr1491(head([['pi', claimUrl(1), 'same-family']], 'tier:medium'))).toMatchObject({ acceptance: { status: 'not_accepted' }, claude_review: 'pending' });
+  expect(pr1491(head([['pi', claimUrl(1), 'same-family'], ['claude', claimUrl(2)]], 'tier:medium'))).toMatchObject({ acceptance: { status: 'accepted' }, claude_review: 'recorded' });
 });
 
 test('replay: the recorded #1474 reads project to a board, and its findings come from the recorded state', () => {

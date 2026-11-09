@@ -9,7 +9,8 @@ import { claimStatusTarget, newestProtocolComment, parseAcceptanceRecord, parseC
  * that head for that seat until a `repo-harness review start status` comment with `Status: released` names it. The marker is the
  * one record that a seat started for a head, so a second run, or a seat that ended without a record, never starts a second seat
  * of the same role, and a seat that was not sent retries without restarting the other. The gatekeeper always starts; the
- * Claude reviewer starts too while the board reports `claude_review: pending`.
+ * Claude reviewer starts too while the board reports `claude_review: pending`. A Medium head takes a non-Claude gatekeeper, so the
+ * Claude reviewer is the different family whenever the gatekeeper shares the writer's family.
  */
 export const REVIEW_START_HEADER = 'repo-harness review start';
 export const REVIEW_START_STATUS_HEADER = 'repo-harness review start status';
@@ -26,7 +27,7 @@ export interface ReviewSeatStartV1 {
 
 export type ReviewDecisionV1 =
   | { readonly pr: number; readonly action: 'start'; readonly head_ref: string; readonly head_sha: string; readonly tier: 'medium' | 'high'; readonly seats: readonly ReviewSeatStartV1[];
-      /** The Claude reviewer seat supplies one of the two High reviews, so the gatekeeper must not run Claude. */
+      /** The Claude reviewer seat supplies one of the two High reviews, or the Medium different-family review, so the gatekeeper must not run Claude. */
       readonly needs_non_claude_gatekeeper: boolean }
   | { readonly pr: number; readonly action: 'skip'; readonly reason: ReviewSkipReason; readonly detail: string };
 
@@ -81,6 +82,7 @@ export function planReview(input: ReviewInputV1): readonly ReviewDecisionV1[] {
     const seats = required.filter(seat => !liveMarkers(page, seat).some(marker => field(marker, 'Subject') === pr.head_sha))
       .map((seat): ReviewSeatStartV1 => ({ seat, delta_from: deltaBase(page, pr.head_sha, seat) }));
     if (seats.length === 0) return skip('started', `a start marker of every required seat covers ${pr.head_sha}`);
-    return { pr: pr.number, action: 'start', head_ref: pr.head_ref, head_sha: pr.head_sha, tier, seats, needs_non_claude_gatekeeper: pr.claude_review !== 'not_required' };
+    // A Medium gatekeeper is non-Claude, so a same-family PASS means a non-Claude writer and the Claude reviewer is the different family.
+    return { pr: pr.number, action: 'start', head_ref: pr.head_ref, head_sha: pr.head_sha, tier, seats, needs_non_claude_gatekeeper: tier === 'medium' || pr.claude_review !== 'not_required' };
   });
 }

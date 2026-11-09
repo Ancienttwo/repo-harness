@@ -129,10 +129,11 @@ test('a Claude gatekeeper for a head that needs both reviews posts no marker and
   const result = await executeReview(plan([pr(1, { claude_review: 'pending' })]), context, p);
   expect(result).toMatchObject({ started: [], refused: [{ pr: 1, reason: expect.stringContaining('gatekeeper_is_claude') }] });
   expect([p.comments.length, p.tabs.length]).toEqual([0, 0]);
-  // A Medium head, and a High head from a Claude writer, need no second review, so a Claude gatekeeper stays allowed.
+  // A High head that meets its rule needs no second review, so a Claude gatekeeper stays allowed. A Medium head takes a
+  // non-Claude gatekeeper, so that the Claude reviewer can supply the different family (#2084).
   const allowed = ports({ launch: async seat => ({ argv: [seat], tab: seat, runtime: 'claude' }) });
   const ok = await executeReview(plan([pr(1), pr(2, { tier: 'high', claude_review: 'not_required' })]), context, allowed);
-  expect(ok).toMatchObject({ started: [{ pr: 1, seat: 'gatekeeper' }, { pr: 2, seat: 'gatekeeper' }], refused: [] });
+  expect(ok).toMatchObject({ started: [{ pr: 2, seat: 'gatekeeper' }], refused: [{ pr: 1, reason: expect.stringContaining('gatekeeper_is_claude') }] });
 });
 
 test('a reviewer that sent nothing releases its own marker and leaves the started gatekeeper alone', async () => {
