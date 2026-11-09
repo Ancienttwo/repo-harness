@@ -152,6 +152,26 @@ export function resolveHarnessPaths(cwd: string): HarnessPaths {
   };
 }
 
+/**
+ * Directories below `_ops/` that agent edits and Bash writes may target. An
+ * absent key is an empty list. An entry must be a canonical repo-relative path
+ * strictly below `_ops`; any other value throws so the caller keeps denying.
+ */
+export function agentWritablePrivateDirs(policy: WorkflowPolicy): readonly string[] {
+  const jqPath = '.operations.agent_writable_private_dirs';
+  const value = policyValue(policy, jqPath);
+  if (value === POLICY_FIELD_ABSENT) return [];
+  if (!Array.isArray(value)) throw new Error(`invalid workflow policy value ${jqPath}: not an array`);
+  return value.map((entry: unknown) => {
+    const segments = typeof entry === 'string' ? entry.split('/') : [];
+    if (typeof entry !== 'string' || /[\\\0\n\r]/.test(entry) || win32.isAbsolute(entry) || /^[A-Za-z]:/.test(entry)
+      || segments.length < 2 || segments[0] !== '_ops' || segments.some(s => s === '' || s === '.' || s === '..')) {
+      throw new Error(`invalid workflow policy entry ${jqPath}: ${JSON.stringify(entry)} is not a canonical directory strictly below _ops/`);
+    }
+    return entry;
+  });
+}
+
 function policyString(policy: WorkflowPolicy, jqPath: string, fallback: string): string {
   const value = policyValue(policy, jqPath);
   if (value === POLICY_FIELD_ABSENT) return fallback;
