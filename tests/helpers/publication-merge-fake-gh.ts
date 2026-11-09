@@ -22,7 +22,7 @@ export const MERGE_COMMIT = 'c'.repeat(40);
 export const QUEUE_PARENT = '9'.repeat(40);
 export const QUEUE_ENTRY = 'MQE_publication_merge';
 /** A base that requires a squash merge queue, as a ruleset sets it. */
-export const QUEUE_RULES = [{ type: 'merge_queue', parameters: { merge_method: 'SQUASH' } }] as const;
+export const QUEUE_RULES = [{ type: 'merge_queue', parameters: { merge_method: 'SQUASH', grouping_strategy: 'ALLGREEN' } }] as const;
 const REPOSITORY_NODE = 'R_publication_merge';
 const PR_NODE = 'PR_publication_merge';
 
@@ -49,7 +49,14 @@ export interface PublicationMergeScenario {
   /** The PR is in the merge queue before the executor runs. */
   readonly queued?: boolean;
   /** The PR state that each successive queue readback reports; the last answer repeats. */
-  readonly queueSequence?: readonly ('queued' | 'merged' | 'removed')[];
+  readonly queueSequence?: readonly ('queued' | 'merged' | 'removed' | 'replaced' | 'closed' | 'moved' | 'unreadable')[];
+  /** How enqueuePullRequest answers; default `ok`. */
+  readonly enqueue?: 'ok' | 'graphql_error' | 'kill' | 'incomplete';
+  /** The merge commit and the queue parent this scenario reports; default MERGE_COMMIT and QUEUE_PARENT. */
+  readonly mergeCommit?: string;
+  readonly queueParent?: string;
+  /** The conclusion of the merge commit's merge_group CI run; `missing` lists no run. Default `success`. */
+  readonly queueRun?: 'success' | 'failure' | 'missing';
   /** The compare status of the expected base against the queue commit's parent; default `ahead`. */
   readonly queueParentStatus?: string;
   readonly checks?: 'pass' | 'pending';
@@ -139,6 +146,8 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
   const [command, sub] = args;
   const headSha = scenario.head ?? HEAD;
   const baseSha = scenario.base ?? BASE;
+  const mergeSha = scenario.mergeCommit ?? MERGE_COMMIT;
+  const queueParent = scenario.queueParent ?? QUEUE_PARENT;
   if (command === 'repo' && sub === 'view') return ok({ id: REPOSITORY_NODE, nameWithOwner: REPOSITORY });
   if (command === 'pr' && sub === 'view') {
     const sequence = scenario.headSequence;
@@ -167,17 +176,25 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
         return { status: 1, stdout: JSON.stringify({ data: null, errors: [{ type: 'INTERNAL', message: 'Something went wrong while executing your query.' }] }), stderr: 'gh: Something went wrong' };
       }
       if (scenario.merge === 'null_errors') return { status: 1, stdout: JSON.stringify({ errors: [null] }), stderr: 'gh: error' };
-      return ok({ data: { mergePullRequest: { pullRequest: { number: PR, state: 'MERGED', mergeCommit: { oid: MERGE_COMMIT } } } } });
+      return ok({ data: { mergePullRequest: { pullRequest: { number: PR, state: 'MERGED', mergeCommit: { oid: mergeSha } } } } });
     }
     if (query.includes('enqueuePullRequest')) {
+      if (scenario.enqueue === 'kill') return { status: null, stdout: '', stderr: '' };
+      if (scenario.enqueue === 'incomplete') return ok({ data: { enqueuePullRequest: { mergeQueueEntry: null } } });
+      if (scenario.enqueue === 'graphql_error') {
+        return { status: 1, stdout: JSON.stringify({ data: { enqueuePullRequest: null }, errors: [{ type: 'UNPROCESSABLE', message: 'Pull request is not mergeable.' }] }), stderr: 'gh: Pull request is not mergeable.' };
+      }
       return ok({ data: { enqueuePullRequest: { mergeQueueEntry: { id: QUEUE_ENTRY, state: 'QUEUED', position: 1 } } } });
     }
     if (isQueueReadback(args)) {
       const sequence = scenario.queueSequence ?? ['merged'];
       const state = sequence[Math.min(prReadbackAttempt, sequence.length - 1)];
-      return ok({ data: { repository: { pullRequest: { number: PR, state: state === 'merged' ? 'MERGED' : 'OPEN', headRefOid: headSha,
-        mergeCommit: state === 'merged' ? { oid: MERGE_COMMIT } : null,
-        mergeQueueEntry: state === 'queued' ? { id: QUEUE_ENTRY, state: 'AWAITING_CHECKS', position: 1 } : null } } } });
+      if (state === 'unreadable') return { status: 1, stdout: '', stderr: 'gh: connection reset' };
+      const entryId = state === 'replaced' ? `${QUEUE_ENTRY}_2` : QUEUE_ENTRY;
+      return ok({ data: { repository: { pullRequest: { number: PR,
+        state: state === 'merged' ? 'MERGED' : state === 'closed' ? 'CLOSED' : 'OPEN', headRefOid: state === 'moved' ? MERGE_COMMIT : headSha,
+        mergeCommit: state === 'merged' ? { oid: mergeSha } : null,
+        mergeQueueEntry: state === 'queued' || state === 'replaced' ? { id: entryId, state: 'AWAITING_CHECKS', position: 1 } : null } } } });
     }
     if (query.includes('closingIssuesReferences')) {
       return ok({ data: { repository: { nameWithOwner: REPOSITORY, pullRequest: {
@@ -247,7 +264,7 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     const state = sequence === undefined ? scenario.readback : sequence[Math.min(prReadbackAttempt, sequence.length - 1)];
     if (state === 'fail') return { status: 1, stdout: '', stderr: 'gh: connection reset' };
     if (state === 'open') return ok({ number: PR, state: 'open', merged: false, merge_commit_sha: null, head: { sha: headSha }, base: { ref: 'main' } });
-    return ok({ number: PR, state: 'closed', merged: true, merge_commit_sha: scenario.readbackMergeSha ?? MERGE_COMMIT, head: { sha: headSha }, base: { ref: 'main' } });
+    return ok({ number: PR, state: 'closed', merged: true, merge_commit_sha: scenario.readbackMergeSha ?? mergeSha, head: { sha: headSha }, base: { ref: 'main' } });
   }
   if (scenario.compareCommits && sub === `${root}/compare/${baseSha}...${headSha}?per_page=100`) {
     const selected = { total_commits: scenario.compareCommits.length,
@@ -257,12 +274,17 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     if (jq < 0) return ok({ ...selected, files: [{ filename: 'large.txt', patch: 'x'.repeat(scenario.comparePatchBytes ?? 0) }] });
     if (args[jq + 1] === COMPARE_COMMITS_JQ) return ok(selected);
   }
-  if (sub === `${root}/compare/${baseSha}...${QUEUE_PARENT}` && args[args.indexOf('--jq') + 1] === '{status, behind_by}') {
+  if (sub === `${root}/compare/${baseSha}...${queueParent}` && args[args.indexOf('--jq') + 1] === '{status, behind_by}') {
     const status = scenario.queueParentStatus ?? 'ahead';
     return ok({ status, behind_by: status === 'ahead' ? 0 : 1 });
   }
-  if (sub === `${root}/git/commits/${MERGE_COMMIT}`) {
-    return ok({ sha: MERGE_COMMIT, parents: (scenario.parents ?? [BASE]).map((sha) => ({ sha })) });
+  if (sub === `${root}/git/commits/${mergeSha}`) {
+    return ok({ sha: mergeSha, parents: (scenario.parents ?? [BASE]).map((sha) => ({ sha })) });
+  }
+  if (sub === `${root}/actions/runs?head_sha=${mergeSha}&event=merge_group&per_page=100`
+    && args[args.indexOf('--jq') + 1] === '[.workflow_runs[] | {path, head_sha, status, conclusion}]') {
+    const run = scenario.queueRun ?? 'success';
+    return ok(run === 'missing' ? [] : [{ path: '.github/workflows/ci.yml', head_sha: mergeSha, status: 'completed', conclusion: run }]);
   }
   return { status: 2, stdout: '', stderr: `unexpected fake gh args: ${args.join(' ')}` };
 }

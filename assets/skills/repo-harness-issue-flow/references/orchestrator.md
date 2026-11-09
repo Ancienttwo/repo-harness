@@ -387,16 +387,19 @@ repo-harness publication merge --repository <owner/name> --repository-id <id> --
 `publication.acceptance_merge` in `.ai/harness/policy.json` on the PR base
 decides whether the executor merges. The default branch needs required
 checks and enforce_admins. Without a merge queue the checks must be strict.
-With a merge queue (a ruleset), the queue must squash and the repository
-default squash message must be `PR_TITLE` and `PR_BODY`; `--batch` is
-refused. If it does not, the executor refuses with
+With a merge queue (a ruleset), the queue must squash with the `ALLGREEN`
+grouping strategy and the repository default squash message must be
+`PR_TITLE` and `PR_BODY`; `--batch` is refused. If it does not, the executor refuses with
 `base_protection_insufficient`.
 
 With a merge queue, the executor enqueues the PR, writes `{"queued": ...}`
 to stderr and waits up to 90 minutes for the queue to merge or remove it.
-Run it as a background command. A BEHIND PR needs no sync: the queue tests
-it on the current base, and the executor proves that the merge commit's
-parent descends from the `--base` you reviewed.
+Run it as a background command in a checkout of the repository. A BEHIND
+PR needs no sync: the queue tests it on the current base. The executor
+proves that the merge commit's parent descends from the `--base` you
+reviewed, that its tree is a clean `git merge-tree` of that parent and
+`--head` (it fetches the commits from github.com with gh credentials), and
+that its own `merge_group` CI run succeeded.
 
 Act on the exit code. Post every result as `integration status` on the PR.
 

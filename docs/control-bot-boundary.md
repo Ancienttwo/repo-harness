@@ -68,9 +68,11 @@ gets no acceptance pane and no acceptance record.
   PR base SHA. With `off`, it exits 3 and merges nothing.
 - The executor needs default-branch protection with required checks and
   enforce_admins. Without a merge queue the checks must be strict. With a
-  merge queue the queue rule must squash and the repository default squash
-  message must be `PR_TITLE` and `PR_BODY`. Without them it refuses with
-  `base_protection_insufficient`.
+  merge queue the queue rule must squash with the `ALLGREEN` grouping
+  strategy, and the repository default squash message must be `PR_TITLE`
+  and `PR_BODY`. Without them it refuses with
+  `base_protection_insufficient`. A queue merge also needs a git checkout
+  and gh credentials that can fetch the repository.
 - The Bot owner manages the GitHub token permissions. In cloud-only mode the
   token needs Administration read permission, so that the executor can read
   branch protection. Without it the executor refuses with

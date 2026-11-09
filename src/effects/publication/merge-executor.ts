@@ -133,6 +133,7 @@ const READBACK_DELAYS_MS = readbackDelays(READBACK_WINDOW_MS);
 /** A queue entry waits for the full Required / CI run of its group; the CI test job alone may take 60 minutes. */
 const QUEUE_WINDOW_MS = 90 * 60_000;
 const QUEUE_POLL_MS = 30_000;
+const QUEUE_CONFIRM_MS = 5_000;
 
 type PublicationMergeInput = PullRequestReadinessInput & {
   /** `--batch`: merge an `integration/<parent>-batch-<n>` PR with a two-parent merge commit instead of a squash. */
@@ -424,6 +425,10 @@ function assertBaseProtection(input: PublicationMergeInput, branch: string, targ
   if (!isObject(parameters) || parameters.merge_method !== 'SQUASH') {
     throw new Refusal('base_protection_insufficient', `the ${branch} merge queue must merge with the SQUASH method`);
   }
+  // ALLGREEN gives each entry its own merge_group run on the commit that becomes its merge commit.
+  if (parameters.grouping_strategy !== 'ALLGREEN') {
+    throw new Refusal('base_protection_insufficient', `the ${branch} merge queue must use the ALLGREEN grouping strategy`);
+  }
   if (input.batch) {
     throw new Refusal('base_protection_insufficient', `--batch needs a two-parent merge commit; the ${branch} merge queue squashes`);
   }
@@ -531,19 +536,38 @@ function observeQueue(input: PublicationMergeInput, timeoutMs: number): QueueObs
   return entry === null ? { state: 'unreadable', evidence } : { state: 'queued', entry };
 }
 
-/** Polls until the queue merges or removes the PR. Only reads repeat; nothing is re-enqueued. */
-function awaitQueue(input: PublicationMergeInput): string {
+/**
+ * Polls until the queue merges or ends the acknowledged entry. A missing entry or
+ * an entry with another id ends this operation: a merge after a re-enqueue is
+ * not this executor's merge. One confirming read follows, because the provider
+ * can clear the entry before it shows the merge. Only reads repeat; nothing is
+ * re-enqueued.
+ */
+function awaitQueue(input: PublicationMergeInput, entryId: string): string {
   const now = input.readback_now ?? Date.now;
+  const wait = input.readback_wait ?? waitForReadback;
   const deadline = now() + QUEUE_WINDOW_MS;
   let last = 'no queue readback';
+  /** Set by a read that showed no entry; the next read confirms the removal. */
+  let removed = false;
   for (;;) {
     const remaining = deadline - now();
     if (remaining <= 0) throw new UnknownOutcome(`the merge queue did not merge or remove the PR within ${QUEUE_WINDOW_MS} ms; last ${last}`);
     const observation = observeQueue(input, Math.min(remaining, PROVIDER_TIMEOUT_MS));
     if (observation.state === 'merged') return observation.merge_commit_sha;
-    if (observation.state === 'removed') throw new QueueRemoved('the merge queue removed the PR without a merge');
-    last = observation.state === 'queued' ? `queue entry ${observation.entry.id}: ${observation.entry.state}` : observation.evidence;
-    (input.readback_wait ?? waitForReadback)(Math.min(QUEUE_POLL_MS, Math.max(deadline - now(), 0)));
+    if (observation.state === 'unreadable') {
+      last = observation.evidence;
+    } else if (observation.state === 'queued' && observation.entry.id === entryId) {
+      last = `queue entry ${entryId}: ${observation.entry.state}`;
+      removed = false;
+    } else if (observation.state === 'queued') {
+      throw new QueueRemoved(`queue entry ${observation.entry.id} replaced queue entry ${entryId}`);
+    } else {
+      if (removed) throw new QueueRemoved(`queue entry ${entryId} was removed without a merge`);
+      last = `queue entry ${entryId} removed`;
+      removed = true;
+    }
+    wait(Math.min(removed ? QUEUE_CONFIRM_MS : QUEUE_POLL_MS, Math.max(deadline - now(), 0)));
   }
 }
 
@@ -648,6 +672,59 @@ function attemptMergeProof(input: PublicationMergeInput, mergeCommitSha: string,
   return { kind: 'proven', parent: input.expected_base_sha };
 }
 
+const GIT_TIMEOUT_MS = 120_000;
+
+function runGit(input: PublicationMergeInput, args: readonly string[]): ProviderResult {
+  const result = spawnSync('git', ['-C', input.repo_root, ...args], {
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, encoding: 'utf-8', timeout: GIT_TIMEOUT_MS, killSignal: 'SIGKILL',
+  });
+  const failure = result.error?.message ?? (result.signal ? `terminated by ${result.signal}` : undefined);
+  return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '', ...(failure ? { failure } : {}) };
+}
+
+function gitOutput(input: PublicationMergeInput, args: readonly string[]): string {
+  const result = runGit(input, args);
+  if (result.failure || result.status !== 0) {
+    throw new UnknownOutcome(`git ${args.find((arg) => !arg.startsWith('-') && !arg.includes('='))}: ${(result.failure ?? result.stderr).trim() || `exit ${result.status}`}`);
+  }
+  return result.stdout.trim();
+}
+
+/**
+ * The queue squash must hold exactly the reviewed head merged onto its parent.
+ * The executor fetches the three commits from github.com with gh credentials,
+ * so no local remote name matters, and compares the merge commit's tree with a
+ * clean `git merge-tree` of the parent and the expected head.
+ */
+function proveQueueContent(input: PublicationMergeInput, mergeCommitSha: string, parentSha: string): void {
+  const gh = (input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh').replace(/'/gu, `'\\''`);
+  gitOutput(input, ['-c', 'credential.helper=', '-c', `credential.helper=!'${gh}' auth git-credential`,
+    'fetch', '--quiet', '--no-tags', '--no-write-fetch-head', `https://github.com/${input.repository}.git`,
+    parentSha, input.expected_head_sha, mergeCommitSha]);
+  const merged = runGit(input, ['merge-tree', '--write-tree', '--no-messages', parentSha, input.expected_head_sha]);
+  const tree = merged.stdout.trim().split('\n')[0] ?? '';
+  if (merged.failure || merged.status !== 0 || !SHA.test(tree)) {
+    throw new UnknownOutcome(`the reviewed head ${input.expected_head_sha} does not merge cleanly onto the queue parent ${parentSha}: ${(merged.failure ?? merged.stderr).trim() || `exit ${merged.status}`}`);
+  }
+  const actual = gitOutput(input, ['rev-parse', '--verify', `${mergeCommitSha}^{tree}`]);
+  if (actual !== tree) {
+    throw new UnknownOutcome(`queue commit ${mergeCommitSha} has tree ${actual}; a merge of ${input.expected_head_sha} onto ${parentSha} has tree ${tree}`);
+  }
+}
+
+/** The merge commit is the head of its own ALLGREEN merge_group, so its own CI run is the queue's Required / CI. */
+function proveQueueRun(input: PublicationMergeInput, mergeCommitSha: string): void {
+  const args = ['api', `repos/${input.repository}/actions/runs?head_sha=${mergeCommitSha}&event=merge_group&per_page=100`,
+    '--jq', '[.workflow_runs[] | {path, head_sha, status, conclusion}]'];
+  const read = runGh(input, args);
+  const runs = read.failure || read.status !== 0 ? undefined : parseJson(read.stdout);
+  if (!Array.isArray(runs)) throw new UnknownOutcome(`merge_group CI readback failed: ${describeCall(args, read)}`);
+  const ci = runs.filter((run) => isObject(run) && run.path === '.github/workflows/ci.yml' && run.head_sha === mergeCommitSha);
+  if (!ci.some((run) => run.status === 'completed' && run.conclusion === 'success')) {
+    throw new UnknownOutcome(`queue commit ${mergeCommitSha} has no successful merge_group CI run (${ci.length} CI runs read)`);
+  }
+}
+
 /** Bounded retry: the merge request is sent once; only these readback attempts repeat. */
 function proveMerge(input: PublicationMergeInput, mergeCommitSha: string, baseRef: string, queue: boolean): string {
   const now = input.readback_now ?? Date.now;
@@ -749,7 +826,7 @@ function mergeThroughQueue(input: PublicationMergeInput, prepared: PreparedMerge
     entry.value = outcome.queued;
   }
   input.on_queued?.(entry.value);
-  return awaitQueue(input);
+  return awaitQueue(input, entry.value.id);
 }
 
 export function executePublicationMerge(input: PublicationMergeInput): PublicationMergeResult {
@@ -772,6 +849,10 @@ export function executePublicationMerge(input: PublicationMergeInput): Publicati
     }
     mergeCommitSha = merged;
     parentSha = proveMerge(input, mergeCommitSha, prepared.base_ref, prepared.queue);
+    if (prepared.queue) {
+      proveQueueContent(input, mergeCommitSha, parentSha);
+      proveQueueRun(input, mergeCommitSha);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (error instanceof QueueRemoved) return failure(6, 'merge_queue_removed', `${message}; queue entry ${entry.value?.id}`);
