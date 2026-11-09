@@ -116,6 +116,14 @@ test('a launch that sent nothing releases the marker; an ambiguous one keeps it'
   expect(unknown.comments).toHaveLength(1);
 });
 
+test('a reviewer seat that does not launch Claude posts no marker and opens no tab', async () => {
+  const p = ports({ launch: async seat => ({ argv: [seat], tab: seat, runtime: seat === 'reviewer' ? 'codex' : 'claude' }) });
+  const result = await executeReview(plan([pr(1, { claude_review: 'pending' })]), context, p);
+  expect(result.started).toMatchObject([{ seat: 'gatekeeper' }]);
+  expect(result.refused).toMatchObject([{ pr: 1, reason: expect.stringContaining('reviewer_not_claude') }]);
+  expect([p.comments.length, p.tabs.length]).toEqual([1, 1]);
+});
+
 test('a reviewer that sent nothing releases its own marker and leaves the started gatekeeper alone', async () => {
   let tabs = 0;
   const p = ports({ openTab: () => { tabs += 1; if (tabs === 2) throw new HerdrCoreError('herdr-app', 'missing'); } });

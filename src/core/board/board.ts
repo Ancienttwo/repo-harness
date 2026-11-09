@@ -305,18 +305,22 @@ function acceptance(read: BoardPullRequestReadV1, check: BoardRequiredCheckV1, c
   const records = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER);
   const passes: BoardCommentV1[] = [];
   let failed = false;
+  let otherPass = false;
   for (const record of records) {
     const rows = parseAcceptanceRecord(record);
     if (rows === null) return { status: 'unknown', reason: 'acceptance_record_unparsed', evidence_url: record.url };
     const head = rows.filter(row => row.subject_sha === read.head_sha);
     if (head.some(row => row.verdict === 'FAIL')) failed = true;
-    else if (head.length > 0) passes.push(record);
+    else if (head.length > 0) {
+      passes.push(record);
+      if (head.some(row => row.harness !== 'claude')) otherPass = true;
+    }
   }
   if (!failed && passes.length > 0) {
     // An older comment outside the read can hold a FAIL on the head.
     if (read.comments.truncated) return { status: 'unknown', reason: 'comments_truncated', evidence_url: null };
-    // A High head from a non-Claude writer needs the Claude review too, so a PASS row of another reviewer does not accept it.
-    if (claude !== 'pending') {
+    // A High head from a non-Claude writer needs both reviews: a PASS row of a non-Claude reviewer and a Claude verdict. Either alone does not accept it.
+    if (claude === 'not_required' || (claude === 'recorded' && otherPass)) {
       const newest = passes.reduce((latest, record) => (record.created_at >= latest.created_at ? record : latest));
       return { status: 'accepted', via: 'record', accepted_at: newest.created_at, evidence_url: newest.url };
     }
