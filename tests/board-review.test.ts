@@ -14,7 +14,7 @@ type Tier = 'low' | 'medium' | 'high' | null;
 const pr = (number: number, extra: Partial<BoardPullRequestV1> = {}): BoardPullRequestV1 => ({
   number, url: '', state: 'open', is_draft: false, base_ref: 'main', base_sha: SHA, head_ref: `feat/${number}`, head_sha: SHA, head_committed_at: '', merged_at: null,
   closes: [number * 10], refs: [], files: [], required_check: { status: 'success', completed_at: '' }, acceptance: { status: 'not_accepted' }, merge_readiness: null,
-  tier: 'medium', claude_review: 'not_required', merge_hold: { status: 'none' }, ...extra,
+  tier: 'high', claude_review: 'not_required', writer_family: null, merge_hold: { status: 'none' }, ...extra,
 });
 const board = (prs: BoardPullRequestV1[]): BoardV1 => ({ pull_requests: prs }) as unknown as BoardV1;
 const comment = (body: string, url = 'https://example.test/c'): BoardCommentV1 => ({ url, created_at: '2026-11-09T10:00:00Z', author_association: 'OWNER', body });
@@ -42,6 +42,13 @@ test('an unknown tier is reviewed as High; a pending Claude review adds the revi
   expect(start).toMatchObject({ action: 'start', tier: 'high' });
   expect(seatsOf(start)).toEqual(['gatekeeper', 'reviewer']);
   expect(seatsOf(plan([pr(1, { tier: 'high', claude_review: 'recorded' })])[0])).toEqual(['gatekeeper']);
+});
+
+test('a Medium head starts the one seat of the other family than the writer; an unknown writer family starts none', () => {
+  const medium = (writer_family: BoardPullRequestV1['writer_family']) => plan([pr(1, { tier: 'medium', writer_family })]);
+  expect(medium('anthropic')[0]).toMatchObject({ action: 'start', seats: [{ seat: 'gatekeeper' }], needs_non_claude_gatekeeper: true });
+  expect(medium('openai')[0]).toMatchObject({ action: 'start', seats: [{ seat: 'reviewer' }], needs_non_claude_gatekeeper: false });
+  expect(label(medium(null))).toEqual(['1:writer_family_unknown']);
 });
 
 test('a marker covers one seat: a started gatekeeper leaves the reviewer to start, and a marker without a seat covers none', () => {
@@ -129,10 +136,10 @@ test('a Claude gatekeeper for a head that needs both reviews posts no marker and
   const result = await executeReview(plan([pr(1, { claude_review: 'pending' })]), context, p);
   expect(result).toMatchObject({ started: [], refused: [{ pr: 1, reason: expect.stringContaining('gatekeeper_is_claude') }] });
   expect([p.comments.length, p.tabs.length]).toEqual([0, 0]);
-  // A Medium head, and a High head from a Claude writer, need no second review, so a Claude gatekeeper stays allowed.
+  // A Medium head of a Claude writer refuses a Claude gatekeeper too; a High head that needs no second review allows one.
   const allowed = ports({ launch: async seat => ({ argv: [seat], tab: seat, runtime: 'claude' }) });
-  const ok = await executeReview(plan([pr(1), pr(2, { tier: 'high', claude_review: 'not_required' })]), context, allowed);
-  expect(ok).toMatchObject({ started: [{ pr: 1, seat: 'gatekeeper' }, { pr: 2, seat: 'gatekeeper' }], refused: [] });
+  const ok = await executeReview(plan([pr(1, { tier: 'medium', writer_family: 'anthropic' }), pr(2)]), context, allowed);
+  expect(ok).toMatchObject({ started: [{ pr: 2, seat: 'gatekeeper' }], refused: [{ pr: 1, reason: expect.stringContaining('gatekeeper_is_claude') }] });
 });
 
 test('a reviewer that sent nothing releases its own marker and leaves the started gatekeeper alone', async () => {

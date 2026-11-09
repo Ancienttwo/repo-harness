@@ -8,13 +8,15 @@ import { claimStatusTarget, newestProtocolComment, parseAcceptanceRecord, parseC
  * A start marker is one `repo-harness review start` comment with `Subject: <head sha>` and `Seat: gatekeeper|reviewer`. It covers
  * that head for that seat until a `repo-harness review start status` comment with `Status: released` names it. The marker is the
  * one record that a seat started for a head, so a second run, or a seat that ended without a record, never starts a second seat
- * of the same role, and a seat that was not sent retries without restarting the other. The gatekeeper always starts; the
- * Claude reviewer starts too while the board reports `claude_review: pending`.
+ * of the same role, and a seat that was not sent retries without restarting the other. A High head starts the gatekeeper, and the
+ * Claude reviewer too while the board reports `claude_review: pending`. A Medium head starts the one seat of the other family than
+ * the writer's: a non-Claude gatekeeper for a Claude writer, the Claude reviewer for any other known family. An unknown writer family
+ * starts no seat, because no seat is sure to record `different-family`.
  */
 export const REVIEW_START_HEADER = 'repo-harness review start';
 export const REVIEW_START_STATUS_HEADER = 'repo-harness review start status';
 
-export type ReviewSkipReason = 'not_open' | 'draft' | 'ci_not_green' | 'accepted' | 'acceptance_unknown' | 'started';
+export type ReviewSkipReason = 'not_open' | 'draft' | 'ci_not_green' | 'accepted' | 'acceptance_unknown' | 'started' | 'writer_family_unknown';
 
 export type ReviewSeat = 'gatekeeper' | 'reviewer';
 
@@ -26,7 +28,7 @@ export interface ReviewSeatStartV1 {
 
 export type ReviewDecisionV1 =
   | { readonly pr: number; readonly action: 'start'; readonly head_ref: string; readonly head_sha: string; readonly tier: 'medium' | 'high'; readonly seats: readonly ReviewSeatStartV1[];
-      /** The Claude reviewer seat supplies one of the two High reviews, so the gatekeeper must not run Claude. */
+      /** The Claude reviewer seat supplies one of the two High reviews, or the writer of a Medium head is Claude, so the gatekeeper must not run Claude. */
       readonly needs_non_claude_gatekeeper: boolean }
   | { readonly pr: number; readonly action: 'skip'; readonly reason: ReviewSkipReason; readonly detail: string };
 
@@ -74,13 +76,15 @@ export function planReview(input: ReviewInputV1): readonly ReviewDecisionV1[] {
     // An unknown tier is High: a pull request that no tier label covers still gets a review.
     const tier = pr.tier ?? 'high';
     if (tier === 'low') return skip('accepted', 'a Low pull request takes no review seat');
+    if (tier === 'medium' && pr.writer_family === null) return skip('writer_family_unknown', 'no writer claim of the head branch names a claude or codex runtime, so no seat is sure to be the other family');
     const page = input.comments.get(pr.number);
     if (page === undefined) return skip('started', 'the comments of the pull request were not read');
     if (page.truncated) return skip('started', 'older comments were not read, so a start marker cannot be ruled out');
-    const required: readonly ReviewSeat[] = pr.claude_review === 'pending' ? ['gatekeeper', 'reviewer'] : ['gatekeeper'];
+    const required: readonly ReviewSeat[] = tier === 'medium' ? [pr.writer_family === 'anthropic' ? 'gatekeeper' : 'reviewer']
+      : pr.claude_review === 'pending' ? ['gatekeeper', 'reviewer'] : ['gatekeeper'];
     const seats = required.filter(seat => !liveMarkers(page, seat).some(marker => field(marker, 'Subject') === pr.head_sha))
       .map((seat): ReviewSeatStartV1 => ({ seat, delta_from: deltaBase(page, pr.head_sha, seat) }));
     if (seats.length === 0) return skip('started', `a start marker of every required seat covers ${pr.head_sha}`);
-    return { pr: pr.number, action: 'start', head_ref: pr.head_ref, head_sha: pr.head_sha, tier, seats, needs_non_claude_gatekeeper: pr.claude_review !== 'not_required' };
+    return { pr: pr.number, action: 'start', head_ref: pr.head_ref, head_sha: pr.head_sha, tier, seats, needs_non_claude_gatekeeper: tier === 'medium' ? pr.writer_family === 'anthropic' : pr.claude_review !== 'not_required' };
   });
 }
