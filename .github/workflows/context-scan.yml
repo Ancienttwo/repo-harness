@@ -1,0 +1,29 @@
+name: Context scan
+
+on:
+  pull_request:
+    paths:
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - '**/AGENTS.md'
+      - '**/CLAUDE.md'
+      - 'scripts/check-context-files.sh'
+      - '.github/workflows/context-scan.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: context-scan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Context scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: bash scripts/check-context-files.sh
