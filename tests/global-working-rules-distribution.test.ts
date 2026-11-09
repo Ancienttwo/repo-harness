@@ -297,10 +297,10 @@ describe("root rule invariants", () => {
   test("both root files keep the hard boundaries and the risk-tier rule", () => {
     for (const file of RULE_FILES) {
       const content = rootRules(file);
-      expect(content).toContain("Keep four hard boundaries: main publication, deletion, credentials/permissions, and release/production operations.");
+      expect(content).toContain("The owner keeps every security decision (owner, 2026-11-09, #2008): credentials, tokens and secrets");
       expect(content).toContain("current task explicitly authorizes main publication");
       expect(content).toContain("`publication.acceptance_merge` is `on` in the policy on the PR base");
-      expect(content).toContain("Deletion, credentials/permissions and release/production need user approval.");
+      expect(content).toContain("A production deployment needs an explicit owner authorization for that deployment; no standing GO and no joint decision covers it.");
       expect(content).toContain("[Review by risk](docs/reference-configs/agentic-development-flow.md#review-by-risk)");
       expect(content).toContain("Changing implementation and test assertions together does not raise the tier.");
     }
