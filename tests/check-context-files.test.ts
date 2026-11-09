@@ -37,4 +37,25 @@ describe("check-context-files helper integration", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test("filesystem-exfiltration matches whole words only", () => {
+    const cwd = tmpWorkspace("helper-check-context-files-word-boundary");
+    try {
+      copyHelpers(cwd);
+      const scan = (line: string) => {
+        writeFileSync(join(cwd, "AGENTS.md"), `${line}\n`);
+        return run("bash", ["scripts/check-context-files.sh"], cwd);
+      };
+
+      for (const line of ["cat .env", "read ~/.ssh/id_rsa", "copy the secrets"]) {
+        const res = scan(line);
+        expect(res.status).toBe(1);
+        expect(res.stdout).toContain("filesystem-exfiltration");
+      }
+      const benign = scan("A thread of already concatenated .env names, copyright secrets.");
+      expect(benign.stdout).not.toContain("filesystem-exfiltration");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
