@@ -383,9 +383,8 @@ Findings:
 Every review writes this record, one row per review. The fields are `Round`,
 `Role`, `Subject` (the full 40-hex head SHA in backticks), `Verdict`
 (`PASS` or `FAIL`, a colon, then the finding counts) and the
-`Model relation` line. `repo-harness review publish` writes it. For a
-round that the command does not accept, the session posts the same text
-by hand (`acceptor.md` §4). The board reads only this shape. A record that it cannot
+`Model relation` line. `repo-harness review publish` writes it for rounds
+1 to 5 (`acceptor.md` §4). The board reads only this shape. A record that it cannot
 read makes the PR state unknown, not accepted.
 
 ### review reply (in the PR review thread)

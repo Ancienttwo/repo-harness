@@ -133,7 +133,7 @@ export function validateReviewPublishReceipt(value: unknown): ReviewPublishRecei
   exactFields(value, TOP_FIELDS, 'receipt');
   if (value.protocol !== 1) invalid('protocol must be 1');
   if (value.kind !== 'repo-harness-review-publish-receipt') invalid('kind is invalid');
-  if (typeof value.round !== 'number' || !Number.isSafeInteger(value.round) || value.round < 1 || value.round > 3) invalid('round must be an integer from 1 to 3');
+  if (typeof value.round !== 'number' || !Number.isSafeInteger(value.round) || value.round < 1 || value.round > 5) invalid('round must be an integer from 1 to 5');
   if (!['low', 'medium', 'high'].includes(String(value.risk_tier))) invalid('risk_tier is invalid');
   if (!['PASS', 'FAIL'].includes(String(value.verdict))) invalid('verdict is invalid');
   if (!['different-family', 'same-family', 'unknown'].includes(String(value.model_relation))) invalid('model_relation is invalid');

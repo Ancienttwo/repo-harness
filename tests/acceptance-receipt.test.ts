@@ -993,6 +993,9 @@ test('review publish turns a P1 receipt into one unresolved thread that merge re
   expect(() => validateReviewPublishReceipt({ ...receipt, findings: receipt.findings.slice(1) })).toThrow('FAIL requires');
   expect(() => validateReviewPublishReceipt({ ...receipt, subject_sha: 'not-a-sha' })).toThrow('subject_sha');
   expect(() => validateReviewPublishReceipt({ ...receipt, findings: [{ ...receipt.findings[0], path: '../outside.ts' }] })).toThrow('repository-relative');
+  // Round 5 is the hard stop of the fix loop (acceptor.md section 2.2), so the publisher takes rounds 1 to 5.
+  expect(validateReviewPublishReceipt({ ...receipt, round: 5 }).round).toBe(5);
+  expect(() => validateReviewPublishReceipt({ ...receipt, round: 6 })).toThrow('round must be an integer from 1 to 5');
 
   const writes: Array<{ readonly args: string[]; readonly input: string }> = [];
   const result = publishReview({
