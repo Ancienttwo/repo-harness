@@ -123,6 +123,37 @@ function rules(board: BoardV1): BoardRuleId[] {
   return evaluateBoardAttention(board).findings.map(finding => finding.rule);
 }
 
+test('claude_review: only a branch-bound writer claim that names Claude, with every linked tier observed, skips the second review; a Claude record row for the head settles it', () => {
+  const claim = (runtime: string, branch: string) => comment(`repo-harness issue claim\nStatus: active\nRole: writer\nBranch: ${branch}\nRuntime: ${runtime}`, '2026-11-02T10:00:00Z');
+  const record = (sha: string, role: string) => `repo-harness acceptance record\n\n| Round | Role | Subject | Verdict |\n|---|---|---|---|\n| 1 | ${role}, read-only | \`${sha}\` | PASS: 0 P1 |\n`;
+  const board = replay({
+    parent: (data) => {
+      for (const [number, runtime, branch] of [[1475, 'claude', 'feat/1475-hc-transport'], [1479, 'claude', 'feat/1479-notify-relay'], [1476, 'codex', 'feat/1476-sessions-herdr-core']] as const) {
+        const node = issueNode(data, number);
+        node.labels.nodes.push({ name: 'tier:high' });
+        node.comments.nodes.push(claim(runtime, branch));
+      }
+    },
+    pulls: (data) => {
+      const { pr1494, pr1499 } = data.repository;
+      pr1494.body += '\nCloses #1460\n';
+      pr1499.comments.nodes.push(comment(record(pr1499.headRefOid, 'claude (opus)'), '2026-11-02T22:00:00Z'));
+    },
+  });
+  // #1494 also closes #1460, outside the board: its tier is unknown and counts as High, so the claude claim is not enough.
+  expect(board.pull_requests.map(pr => [pr.number, pr.tier, pr.claude_review])).toEqual([[1491, 'high', 'not_required'], [1494, null, 'pending'], [1499, 'high', 'recorded']]);
+  // A10 reads the open, non-draft #1491: a Claude writer claim gives no finding; a Codex claim with no Claude row does.
+  expect(evaluateBoardAttention(board).findings.filter(finding => finding.rule === 'A10')).toEqual([]);
+  const codex = replay({
+    parent: (data) => {
+      const node = issueNode(data, 1475);
+      node.labels.nodes.push({ name: 'tier:high' });
+      node.comments.nodes.push(claim('codex', 'feat/1475-hc-transport'));
+    },
+  });
+  expect(evaluateBoardAttention(codex).findings.filter(finding => finding.rule === 'A10').map(finding => finding.pull_requests)).toEqual([[1491]]);
+});
+
 test('replay: the recorded #1474 reads project to a board, and its findings come from the recorded state', () => {
   const board = replay();
   expect(decodeBoard(JSON.parse(JSON.stringify(board)))).toEqual(board);
@@ -163,6 +194,7 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
   expect(attention.unevaluated.map(entry => [entry.rule, entry.reason, entry.subject])).toEqual([
     ['A3', 'seat_label_missing', 't4'],
     ['A4', 'seat_label_missing', 't4'],
+    ['A10', 'tier_label_missing', '#1491'],
     ['R1', 'plan_unavailable', 'https://github.com/Ancienttwo/repo-harness/issues/1474#issuecomment-6588782468'],
     ['R3', 'tier_label_missing', '#1494 #1479'],
     ['R3', 'tier_label_missing', '#1499 #1476'],
@@ -516,7 +548,7 @@ test('acceptance: round-4 records with bare SHAs, an unparsed record, and a Low 
   expect(board.pull_requests.map(pr => [pr.number, pr.acceptance.status, 'via' in pr.acceptance ? pr.acceptance.via : 'reason' in pr.acceptance ? pr.acceptance.reason : null])).toEqual([
     [1491, 'unknown', 'acceptance_record_unparsed'], [1494, 'not_accepted', null], [1499, 'accepted', 'record'],
   ]);
-  expect(evaluateBoardAttention(board).unevaluated.filter(entry => entry.subject === '#1491').map(entry => entry.rule)).toEqual(['A1', 'A2']);
+  expect(evaluateBoardAttention(board).unevaluated.filter(entry => entry.subject === '#1491').map(entry => entry.rule)).toEqual(['A1', 'A2', 'A10']);
 });
 
 // One round is one subject SHA: both reviews of a High round are rows of round 1 on one head (#1538).

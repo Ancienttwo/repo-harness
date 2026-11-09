@@ -322,7 +322,7 @@ export function newestProtocolComment(page: BoardCommentPageV1, header: string):
   return protocolComments(page, header).reduce<BoardCommentV1 | null>((newest, comment) => (newest === null || comment.created_at >= newest.created_at ? comment : newest), null);
 }
 
-function field(body: string, name: string): string | null {
+export function field(body: string, name: string): string | null {
   const line = body.replace(/\r\n/gu, '\n').split('\n').find(entry => entry.startsWith(`${name}: `));
   return line === undefined ? null : line.slice(name.length + 2).trim();
 }
@@ -360,10 +360,12 @@ export interface AcceptanceRowV1 {
   readonly round: number;
   readonly subject_sha: string;
   readonly verdict: 'PASS' | 'FAIL';
+  /** The review runtime that the Role cell starts with (`review publish` writes `<harness> (<model>), read-only`); null for a subject line. */
+  readonly harness: 'claude' | 'codex' | 'pi' | null;
 }
 
 // The subject cell holds the SHA bare or in paired backticks (the receipt tool and the round-4 records differ).
-const RECORD_TABLE_ROW = /^\|\s*([1-9][0-9]*)\b[^|]*\|[^|]*\|\s*(`?)([0-9a-f]{40})\2\s*\|\s*(PASS|FAIL)\b/u;
+const RECORD_TABLE_ROW = /^\|\s*([1-9][0-9]*)\b[^|]*\|([^|]*)\|\s*(`?)([0-9a-f]{40})\3\s*\|\s*(PASS|FAIL)\b/u;
 // Rounds above 3 have no receipt; the coordinator writes one `Subject: <sha>. Round <n> (...): PASS|FAIL` line.
 const RECORD_SUBJECT_LINE = /^Subject: ([0-9a-f]{40})\. Round ([1-9][0-9]*) .*?: (PASS|FAIL)\b/u;
 
@@ -377,9 +379,9 @@ export function parseAcceptanceRecord(comment: BoardCommentV1): readonly Accepta
   const rows: AcceptanceRowV1[] = [];
   for (const line of comment.body.replace(/\r\n/gu, '\n').split('\n')) {
     const table = RECORD_TABLE_ROW.exec(line);
-    if (table) rows.push(Object.freeze({ round: Number(table[1]), subject_sha: table[3]!, verdict: table[4] as 'PASS' | 'FAIL' }));
+    if (table) rows.push(Object.freeze({ round: Number(table[1]), subject_sha: table[4]!, verdict: table[5] as 'PASS' | 'FAIL', harness: /^\s*(claude|codex|pi)\b/u.exec(table[2]!)?.[1] as AcceptanceRowV1['harness'] ?? null }));
     const subject = RECORD_SUBJECT_LINE.exec(line);
-    if (subject) rows.push(Object.freeze({ round: Number(subject[2]), subject_sha: subject[1]!, verdict: subject[3] as 'PASS' | 'FAIL' }));
+    if (subject) rows.push(Object.freeze({ round: Number(subject[2]), subject_sha: subject[1]!, verdict: subject[3] as 'PASS' | 'FAIL', harness: null }));
   }
   return rows.length === 0 ? null : Object.freeze(rows);
 }

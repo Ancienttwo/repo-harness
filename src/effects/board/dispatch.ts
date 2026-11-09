@@ -63,12 +63,13 @@ function startWorktree(input: DispatchInput, issue: number): { readonly path: st
   return { path: start.worktree_path, branch: start.branch };
 }
 
-function claimBody(decision: DispatchedV1, branch: string, tab: string | null): string {
+function claimBody(decision: DispatchedV1, branch: string, tab: string | null, runtime: SeatConfigV1['runtime']): string {
   return [
     'repo-harness issue claim',
     'Status: active',
     'Role: writer',
     `Agent: ${decision.seat}, session ${tab ?? 'unnamed tab'}`,
+    `Runtime: ${runtime}`,
     `Branch: ${branch}`,
     `Scope: issue #${decision.issue} as its body states it`,
     'Not in scope: anything the issue body does not name',
@@ -102,7 +103,7 @@ export async function executeDispatch(plan: DispatchPlanV1, context: { readonly 
     const launch = await ports.launch(decision.seat, labels, worktree.path);
     // The launch reads the seats configuration again, so the runtime that will run is checked here, not the planned one.
     if (decision.credentials && launch.runtime === 'pi') throw new DispatchError(`#${decision.issue} touches credentials and its launch resolved to a Pi seat; nothing was started`);
-    const claimUrl = ports.comment(decision.issue, claimBody(decision, worktree.branch, launch.tab));
+    const claimUrl = ports.comment(decision.issue, claimBody(decision, worktree.branch, launch.tab, launch.runtime));
     try {
       ports.openTab({
         ...(launch.tab === null ? {} : { name: launch.tab }), space: context.space, folder: worktree.path, argv: launch.argv, task: packet(decision, worktree.path, claimUrl),

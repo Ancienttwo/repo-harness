@@ -5,6 +5,7 @@ import { isSeatStatusMessage, seatStatusMessage } from './advisor-seat';
 import { decodePlanBlock, PlanBlockError, type PlanBlockV1 } from './plan-block';
 import {
   BoardSourceError,
+  field,
   newestProtocolComment,
   parseAcceptanceRecord,
   parseClaimStatus,
@@ -31,7 +32,7 @@ export type BoardTier = 'low' | 'medium' | 'high';
 const TIER_LABELS: Readonly<Record<string, BoardTier>> = { 'tier:low': 'low', 'tier:medium': 'medium', 'tier:high': 'high' };
 const PLAN_HEADER = 'repo-harness plan';
 const CLAIM_STATUS_HEADER = 'repo-harness issue claim status';
-const ACCEPTANCE_RECORD_HEADER = 'repo-harness acceptance record';
+export const ACCEPTANCE_RECORD_HEADER = 'repo-harness acceptance record';
 const REQUIRED_CHECK = 'Required / CI';
 
 export type BoardPlanV1 =
@@ -70,6 +71,8 @@ export type BoardAcceptanceV1 =
   | { readonly status: 'not_accepted' }
   | { readonly status: 'unknown'; readonly reason: 'acceptance_record_unparsed' | 'comments_truncated'; readonly evidence_url: string | null };
 
+export type BoardClaudeReviewV1 = 'not_required' | 'pending' | 'recorded';
+
 export interface BoardPullRequestV1 {
   readonly number: number;
   readonly url: string;
@@ -88,6 +91,13 @@ export interface BoardPullRequestV1 {
   readonly acceptance: BoardAcceptanceV1;
   /** The single-PR readiness projection, for open pull requests only. */
   readonly merge_readiness: PullRequestReadinessV2 | null;
+  /** The highest review tier of the linked issues (the parent excluded); null when the pull request links none, or one is outside the board or has no tier label. */
+  readonly tier: BoardTier | null;
+  /**
+   * An unknown tier counts as High here (fail closed). `pending`: a High pull request whose writer claim does not prove a Claude runtime and that has no acceptance row from a
+   * Claude reviewer for its head. `recorded`: such a row exists. Always `not_required` for a pull request that is not open.
+   */
+  readonly claude_review: BoardClaudeReviewV1;
 }
 
 export type BoardTerminalV1 = {
@@ -316,6 +326,28 @@ function acceptance(read: BoardPullRequestReadV1, check: BoardRequiredCheckV1, c
   return { status: 'not_accepted' };
 }
 
+const CLAIM_HEADER = 'repo-harness issue claim';
+
+/** True only when the newest writer claim bound to the PR branch names the Claude runtime: any other claim, or none, is an unknown writer. */
+function writerIsClaude(issue: BoardSubIssueReadV1 | undefined, headRef: string): boolean {
+  if (issue === undefined) return false;
+  const claims = protocolComments(issue.comments, CLAIM_HEADER).filter(claim => field(claim.body, 'Role') === 'writer' && field(claim.body, 'Branch') === headRef);
+  const newest = claims.length === 0 ? null : newestProtocolComment({ ...issue.comments, comments: claims }, CLAIM_HEADER);
+  return newest !== null && field(newest.body, 'Runtime') === 'claude';
+}
+
+/** The tier of a pull request and its Claude review state. Every unknown input reads as the strict case. */
+function reviewNeeds(read: BoardPullRequestReadV1, closes: readonly number[], refs: readonly number[], parent: BoardParentReadV1, tiers: ReadonlyMap<number, BoardTier | null>): Pick<BoardPullRequestV1, 'tier' | 'claude_review'> {
+  const linked = [...new Set([...closes, ...refs])].filter(number => number !== parent.parent.number);
+  const known = linked.map(number => tiers.get(number) ?? null);
+  const tier: BoardTier | null = linked.length === 0 || known.includes(null) ? null : known.includes('high') ? 'high' : known.includes('medium') ? 'medium' : 'low';
+  const issues = new Map(parent.sub_issues.map(issue => [issue.number, issue]));
+  const needed = read.state === 'open' && (tier === null || tier === 'high') && !(linked.length > 0 && linked.every(number => writerIsClaude(issues.get(number), read.head_ref)));
+  const recorded = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER)
+    .some(record => parseAcceptanceRecord(record)?.some(row => row.harness === 'claude' && row.subject_sha === read.head_sha) === true);
+  return { tier, claude_review: !needed ? 'not_required' : recorded ? 'recorded' : 'pending' };
+}
+
 function bodyLinks(repository: string, body: string): { readonly closes: number[]; readonly refs: number[] } {
   const prefix = `${repository.toLowerCase()}#`;
   const closes = parseClosingReferences(repository, body).references
@@ -359,6 +391,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
       // A closed issue outside this board has no observed tier, so it withholds the Low path.
       acceptance: acceptance(read, check, closes.map(number => tiers.get(number) ?? null)),
       merge_readiness: readiness ?? null,
+      ...reviewNeeds(read, closes, refs, input.parent, tiers),
     });
   }).sort((left, right) => left.number - right.number);
   if (input.path_owners.status === 'observed') {
