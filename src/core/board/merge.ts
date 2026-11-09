@@ -46,6 +46,7 @@ export type BoardMergeRefusalV1 =
   | 'acceptance_merge_off'
   | 'plan_unavailable'
   | 'draft'
+  | 'item_off_board'
   | 'held'
   | 'hold_unknown'
   | 'plan_hold'
@@ -70,8 +71,12 @@ function refusal(board: BoardV1, pr: BoardPullRequestV1): { readonly reason: Boa
   if (board.plan.status !== 'observed') return { reason: 'plan_unavailable', detail: `the plan is ${board.plan.status}` };
   if (pr.is_draft) return { reason: 'draft', detail: `#${pr.number} is a draft` };
   const onBoard = new Map(board.items.map(item => [item.number, item] as const));
+  const linked = [...new Set([...pr.closes, ...pr.refs])].filter(number => number !== board.parent.number).sort((left, right) => left - right);
+  // An issue outside the board has no observed state, holds or plan position, so it fails closed.
+  const offBoard = linked.filter(number => !onBoard.has(number));
+  if (offBoard.length > 0) return { reason: 'item_off_board', detail: `${offBoard.map(number => `#${number}`).join(' ')} not a sub-issue of #${board.parent.number}` };
   // A board PR always links an item of the parent (`linkedPullRequests`), so `items` is never empty.
-  const items = [...new Set([...pr.closes, ...pr.refs])].filter(number => onBoard.has(number)).sort((left, right) => left - right);
+  const items = linked;
   const holds = [
     { where: `parent #${board.parent.number}`, hold: board.merge_hold },
     ...items.map(number => ({ where: `issue #${number}`, hold: onBoard.get(number)!.merge_hold })),
@@ -89,9 +94,10 @@ function refusal(board: BoardV1, pr: BoardPullRequestV1): { readonly reason: Boa
   const unordered = items.filter(number => !plan.merge_order.includes(number));
   if (unordered.length > 0) return { reason: 'not_in_merge_order', detail: `${unordered.map(number => `#${number}`).join(' ')} not in the plan merge_order` };
   const last = Math.max(...items.map(number => plan.merge_order.indexOf(number)));
-  // Every entry before the last linked item must be closed, or closed by this PR when it merges; a ref does not deliver an issue.
-  // An earlier issue outside the board has no observed state, so it blocks like an open one.
-  const earlier = plan.merge_order.slice(0, last).filter(number => !pr.closes.includes(number) && onBoard.get(number)?.state !== 'closed');
+  // Every entry before each linked item must be closed. An earlier issue outside the board has no observed state, so it blocks like an open one.
+  const earlier = plan.merge_order.slice(0, last).filter(number => onBoard.get(number)?.state !== 'closed');
+  const own = earlier.find(number => pr.closes.includes(number));
+  if (own !== undefined) return { reason: 'merge_order', detail: `earlier plan item #${own} is closed only by this PR; reorder the plan or split the PR` };
   if (earlier.length > 0) return { reason: 'merge_order', detail: `earlier in merge_order and not closed: ${earlier.map(number => `#${number}`).join(' ')}` };
   // The provisional `tier_low` path needs an evidence check by a seat, so an unattended merge takes a record at every tier.
   // A record acceptance of a High head from a non-Claude writer already includes its Claude review (`acceptance` in board.ts).

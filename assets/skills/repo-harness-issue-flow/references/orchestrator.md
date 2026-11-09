@@ -523,11 +523,12 @@ are true:
 
 - `publication.acceptance_merge` is `on` on the default branch, and the
   plan comment is observed.
-- The PR is open and not draft, and it closes or refs an item of the parent.
+- The PR is open and not draft, and every issue that it closes or refs
+  (the parent excluded) is an item of the parent.
 - No hold record is in force on the parent, on the PR's issues or on the PR.
 - The plan does not hold its issues, its issues are in `merge_order`, and
-  every issue before each of them in `merge_order` is closed or is one of
-  its own issues.
+  every issue before each of them in `merge_order` is closed. A PR that
+  closes an earlier plan item is refused: reorder the plan or split the PR.
 - An acceptance record has a PASS row for the head, at every tier. The
   provisional `tier_low` status is not enough: post the Low record after
   you check the verification evidence.

@@ -517,6 +517,11 @@ test('board merge: no plan, a draft, plan holds, plan order for every linked ite
     mergeReason({}, { ready: [] }),
     mergeReason({}, { policy: POLICY_ABSENT }),
   ]).toEqual(['plan_unavailable', 'draft', 'plan_hold', 'merge_order', 'merge_order', 'merge_order', 'not_in_merge_order', 'not_accepted', 'not_accepted', 'required_check', 'not_ready', 'acceptance_merge_off']);
+  // A PR that closes an earlier plan item can never see it closed first; a linked issue outside the board fails closed.
+  const decision = (edit: Parameters<typeof mergeReplay>[0]) => boardMergeDecisions(replay(mergeReplay(edit))).find(entry => entry.pr === 1491);
+  expect(decision({ order: [1475, 1479], pulls: (data) => { data.repository.pr1491.body += '\nCloses #1479\n'; } }))
+    .toMatchObject({ reason: 'merge_order', detail: 'earlier plan item #1475 is closed only by this PR; reorder the plan or split the PR' });
+  expect(decision({ pulls: (data) => { data.repository.pr1491.body += '\nRefs #1460\n'; } })).toMatchObject({ reason: 'item_off_board' });
   // The Low PR is accepted on the provisional tier_low path, which an unattended merge does not take.
   expect(replay(mergeReplay({ ...lowGreen, order: [1479, 1475] })).pull_requests.find(pr => pr.number === 1494)!.acceptance).toMatchObject({ status: 'accepted', via: 'tier_low' });
 });
