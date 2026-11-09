@@ -250,8 +250,15 @@ function openPaths(pid: number): string[] | null {
   try {
     if (process.platform === 'linux') return readdirSync(`/proc/${pid}/fd`).map(fd => readlinkSync(`/proc/${pid}/fd/${fd}`));
     if (process.platform !== 'darwin') return null;
-    const output = execFileSync('/usr/sbin/lsof', ['-p', String(pid), '-Fn'], { cwd: '/', encoding: 'utf8', timeout: 5_000, maxBuffer: 8 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
-    return output.split('\n').filter(line => line.startsWith('n')).map(line => line.slice(1));
+    const output = execFileSync('/usr/sbin/lsof', ['-p', String(pid), '-Ffn'], { cwd: '/', encoding: 'utf8', timeout: 5_000, maxBuffer: 8 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+    // An `f` field opens each record; only a numeric descriptor is an open file (cwd, txt and mem are not).
+    const paths: string[] = [];
+    let isFile = false;
+    for (const line of output.split('\n')) {
+      if (line.startsWith('f')) isFile = /^f\d+$/u.test(line);
+      else if (line.startsWith('n') && isFile) paths.push(line.slice(1));
+    }
+    return paths;
   } catch { return null; }
 }
 
@@ -264,7 +271,7 @@ export function codegraphServersOf(worktree: string, processes: readonly Worktre
   return processes.filter(item => {
     try {
       const command = execFileSync('/bin/ps', ['-o', 'command=', '-p', String(item.pid)], { cwd: '/', encoding: 'utf8', timeout: 5_000, stdio: ['ignore', 'pipe', 'ignore'] });
-      return command.includes('codegraph.js serve --mcp') && (openPaths(item.pid) ?? []).some(path => path.startsWith(index));
+      return /codegraph\.js serve --mcp\b/u.test(command) && command.trimEnd().endsWith(` --path ${worktree}`) && (openPaths(item.pid) ?? []).some(path => path.startsWith(index));
     } catch { return false; }
   }).map(item => item.pid);
 }

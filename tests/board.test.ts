@@ -1312,15 +1312,17 @@ test('closeout stops a CodeGraph MCP server bound to exactly the worktree and no
   mkdirSync(join(dir, '.codegraph')); writeFileSync(db, '');
   // The installed CodeGraph runs an absolute script path. `opens` is the file the process holds open.
   const script = '/opt/codegraph/lib/dist/bin/codegraph.js';
-  const sleeper = (opens: string, ...args: string[]) => Bun.spawn([process.execPath, '-e', "require('fs').openSync(process.argv[1], 'r'); setTimeout(() => {}, 60000)", opens, script, ...args],
-    { cwd: dir, stdio: ['ignore', 'ignore', 'ignore'] });
-  const server = sleeper(db, 'serve', '--mcp', '--path', dir), elsewhere = sleeper(__filename, 'serve', '--mcp', '--path', dir), bystander = sleeper(db, 'index');
+  const sleeper = (opens: string, args: string[], cwd = dir) => Bun.spawn([process.execPath, '-e', "require('fs').openSync(process.argv[1], 'r'); setTimeout(() => {}, 60000)", opens, script, ...args],
+    { cwd, stdio: ['ignore', 'ignore', 'ignore'] });
+  const serve = ['serve', '--mcp', '--path', dir];
+  // Not a server of this worktree: no index file open but the cwd under .codegraph (an lsof cwd record), another --path with the index open, a non-server with it open.
+  const server = sleeper(db, serve), elsewhere = sleeper(__filename, serve, join(dir, '.codegraph')), otherPath = sleeper(db, ['serve', '--mcp', '--path', `${dir}-other`]), bystander = sleeper(db, ['index']);
   try {
     await Bun.sleep(200);
-    const found = [server, elsewhere, bystander].map(child => ({ pid: child.pid, cwd: dir }));
+    const found = [server, elsewhere, otherPath, bystander].map(child => ({ pid: child.pid, cwd: dir }));
     expect(stopCodegraphServers(dir, found)).toEqual({ stopped: [server.pid], failures: [] });
     await server.exited;
     // Signal 0 throws only for a process that is gone.
-    expect([elsewhere.pid, bystander.pid].map(pid => { try { process.kill(pid, 0); return true; } catch { return false; } })).toEqual([true, true]);
-  } finally { server.kill(); elsewhere.kill(); bystander.kill(); rmSync(dir, { recursive: true, force: true }); }
+    expect([elsewhere.pid, otherPath.pid, bystander.pid].map(pid => { try { process.kill(pid, 0); return true; } catch { return false; } })).toEqual([true, true, true]);
+  } finally { server.kill(); elsewhere.kill(); otherPath.kill(); bystander.kill(); rmSync(dir, { recursive: true, force: true }); }
 });
