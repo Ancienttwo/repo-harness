@@ -9,7 +9,10 @@ and the board are in `board.md`. The round record is in `orchestrator.md`
 
 A Low PR that meets the Low accept-seat skip takes no round and no
 acceptance record (`docs/reference-configs/agentic-development-flow.md`,
-Review by risk).
+Review by risk). The board marks such a PR `accepted` via `tier_low` from
+`Required / CI` and the closing-issue tiers only. That status is
+provisional: the merging seat confirms the verification evidence in the PR
+body before the merge.
 
 The gatekeeper is the default acceptor (D6). It reviews the diff and
 returns a verdict and findings. A seat without the `net` tool group has no
@@ -60,21 +63,30 @@ The table rules govern how the row combines with the review.
    changed after round 1) and the sibling cases of each of its findings.
 3. **Round 3** runs with no owner question when the round-2 findings are in
    the fix delta. It has the scope of round 2.
-4. **After round 3.** When every remaining finding is P2, all of them are
-   in one bug family, and none concerns security, secrets, data or
-   authentication, the coordinator merges on the last green SHA. The
-   acceptance record states the limit, and one follow-up issue holds that
-   family. Before the merge, the coordinator resolves each remaining P2
-   thread with a reply that links the follow-up issue (§6). A P0 or P1
-   finding, or a security, secrets, data or authentication finding,
-   becomes a parked owner gate
-   (`docs/reference-configs/agentic-development-flow.md`, Park a gate).
-   Other work continues.
+4. **After round 3.** The loop continues without the owner while each
+   round has fewer findings than the round before, the scope does not grow
+   and no new P0 or P1 finding appears. Round 5 is a hard stop. When every
+   remaining finding is P2, all of them are in one bug family, and none
+   concerns security, secrets, data or authentication, a recorded decision
+   (the owner, or a joint decision of the orchestrator and the advisor) may
+   move that family to one follow-up issue after round 3 or round 4. The
+   coordinator then resolves each remaining P2 thread with a reply that
+   links the follow-up issue (§6). The deferral takes effect at the next
+   head: a fix, a sync with main, or the commit that adds the follow-up
+   link. A `FAIL` row stays on its head, so the next round reviews that new
+   head with those threads deferred. It must return `PASS` for that head
+   before the PR merges, and its record names the follow-up issue. A `FAIL`
+   in round 5 is a hard stop and takes no deferral.
+   A grown scope, a new P0 or P1 finding, a blocking finding after round 5,
+   or a security, secrets, data or authentication finding becomes a parked
+   owner gate (`docs/reference-configs/agentic-development-flow.md`, Park a
+   gate). Other work continues.
 
 The worker fixes each finding by the class rule (`worker.md` §7).
 
 Return `PASS` or `FAIL`. A `FAIL` has at least one P0, P1 or P2 finding.
-Rule 4 decides whether a P2-only `FAIL` after round 3 merges.
+Rule 4 decides whether a `FAIL` after round 3 takes another round, defers a
+P2 family or becomes an owner gate. A merge always needs a `PASS` record.
 
 ### 2.3 Review bot reference
 
@@ -90,9 +102,9 @@ findings:
 
 | Decision | Meaning | Effect |
 |---|---|---|
-| `adopt` | The finding is real. | It is a finding of this round with its own severity. It counts as a finding in the review loop limit of #2008 rule 1. |
-| `decline` | The finding is wrong, out of scope or not worth a fix. | One-line reason. It does not count in that limit. |
-| `outdated` | The finding is on an older head, and the current head no longer contains the code. | No triage again. It does not count in that limit. |
+| `adopt` | The finding is real. | It is a finding of this round with its own severity. It counts as a finding of the review loop (§2.2). |
+| `decline` | The finding is wrong, out of scope or not worth a fix. | One-line reason. It does not count as a finding of the loop. |
+| `outdated` | The finding is on an older head, and the current head no longer contains the code. | No triage again. It does not count as a finding of the loop. |
 
 The bot's "Codex Review Summary" status comment with no findings
 (`codex-review-state` `has_any_findings: false`) gets no reply. The record
@@ -167,8 +179,8 @@ Act on the exit code:
 The merge executor refuses a PR with an unresolved review thread (D6).
 A bot thread is a reference input (§2.3): the coordinator answers and
 resolves it, and the bot never adds or removes a gate by itself.
-A rule-4 merge (§2.2) passes this check only after the coordinator
-resolves the remaining P2 threads (§6).
+A PR with a rule-4 deferral (§2.2) passes this check only after the
+coordinator resolves the deferred P2 threads (§6).
 
 ## 5. Result schema
 
@@ -216,8 +228,9 @@ merge (D7).
 Only the acceptor of a round resolves its threads. It resolves a thread
 after the next round confirms the fix on a new subject SHA.
 
-The coordinator resolves a bot thread (§2.3). The coordinator may also resolve a thread with a written rejection reason, or
-with the follow-up issue link of a rule-4 merge (§2.2). Both are a
+The coordinator resolves a bot thread (§2.3). The coordinator may also
+resolve a thread with a written rejection reason, or
+with the follow-up issue link of a rule-4 deferral (§2.2). Both are a
 `review reply` (`templates.md`).
 
 The head owner replies with the fix SHA and does not resolve. No worker

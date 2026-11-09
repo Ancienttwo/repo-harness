@@ -407,16 +407,16 @@ A PR is eligible when all of these are true:
 
 - It is open and not draft.
 - Its required checks are SUCCESS on its own head.
-- Its tier review passed on a subject SHA, or rule 4 of `acceptor.md`
-  §2.2 applies. A Low PR needs no review, but
+- Its tier review passed on a subject SHA. A rule-4 deferral of
+  `acceptor.md` §2.2 still needs that `PASS`. A Low PR needs no review, but
   its PR body must hold the author verification evidence
   (`docs/reference-configs/agentic-development-flow.md`, Review by risk).
 - Its head equals the reviewed subject, or adds only conflict-free merges
   of main since it. `git rev-list --no-merges <subject>..<head> ^origin/main`
   prints nothing.
 - It has no unresolved review thread that a person started. A review bot
-  thread is advisory input and does not block. For a rule-4 merge, you
-  resolve the remaining P2 threads first (`acceptor.md` §6).
+  thread is advisory input and does not block. For a rule-4 deferral, you
+  resolve the deferred P2 threads first (`acceptor.md` §6).
 - Its closing references are correct.
 
 ```bash

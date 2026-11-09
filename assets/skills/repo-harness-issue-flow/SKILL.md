@@ -50,8 +50,11 @@ role has one holder at a time. Every PR has one head owner, the only agent that
 pushes to it. Claims, handoffs and dependency rules are in
 `references/board.md`.
 
-The user stays the owner. Publication to the main branch, deletion outside
-the issue, credentials and releases keep their own approval rules.
+The user stays the owner and keeps every security decision. The root
+`CLAUDE.md` and `AGENTS.md` list them: credentials, permissions, the safety
+net, deletion that git cannot restore, and production. The life cycle makes
+every other decision by the rules below and the root life-cycle rules
+(owner, 2026-11-09, #2008).
 
 ## Where each fact lives
 
@@ -134,3 +137,29 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   `publication.acceptance_merge` in the policy on the PR base. When it is
   off, the executor does not merge and the owner merges. Exit codes:
   `references/orchestrator.md` §9.
+- Merge by rule, every tier. In an owner-approved batch, the orchestrator
+  merges a Medium or High PR when its acceptance record is PASS for the
+  head, `Required / CI` passed and each review-bot comment has a response.
+  A High PR also needs its cross-model review PASS. A Low PR that meets the
+  Low accept-seat skip merges on `Required / CI` and its verification
+  evidence, with no acceptance record. The board `tier_low` status is
+  provisional; confirm the evidence before the merge (`references/acceptor.md` §1). The rolling projection PR
+  (`archctx/projection`) merges on green CI; its merge is its acceptance.
+- Fix rounds. A review loop continues after round 3 without the owner while
+  each round has fewer findings than the round before, the scope does not
+  grow and no new P0 or P1 finding appears. Round 5 is a hard stop. A grown
+  scope or a new P0 or P1 finding goes to the owner (`references/acceptor.md`
+  §2.2). For issue-flow review loops, this rule replaces the three-round cap
+  of the managed global working rules.
+- Dispatch. After the owner approves a batch parent and its plan comment,
+  the orchestrator dispatches the plan's issues in plan order with no other
+  owner step. A new issue or a changed order goes to the owner or to a joint
+  decision.
+- Joint decision. The orchestrator and the advisor make a decision that
+  otherwise goes to the owner when both agree, unless it touches security.
+  Before the action, the orchestrator posts it on the owning issue or PR as
+  `Joint decision (orchestrator + advisor)` with the reason. A joint decision
+  never replaces the High-tier cross-model review.
+- Owner override. An owner reply on the issue or PR wins over these rules.
+  A "stop" or "no" ends the action at the next step, and an action not yet
+  taken is not taken.
