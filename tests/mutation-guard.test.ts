@@ -144,13 +144,14 @@ describe('Bash write tripwire host route', () => {
           ['rm -rf _op[^x]'], ['rm -rf _op[]s]'], ['rm -rf _op[z-a]'], ['echo value > loop/x'], ['rm -rf src/up/_op*'],
           ['cd src/* && rm -rf ../../_ops'], ['echo value > _op{s,x}/a && (echo ok)'], ['rm -rf _op@(s|x)'], ['echo value > _o\\\nps/x'],
           ['rm -rf x{999999999999999999999..999999999999999999999}'], ['rm -rf s*/../_ops'], ['cd -P _ops && rm -rf env'],
+          ['rm -rf _op[!S]'], ['cd _op[s] && rm -rf env'],
         ] as [string, string?][]) {
           const result = invokeBash(command, hookCwd);
           expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 2 });
         }
         for (const command of ['rm src/*.tmp', 'echo value > _o/*', 'rm -rf *.log', 'rm -rf _ops_old*', 'rm -rf src/{a,b}.tmp',
           'rm -rf .??*', `rm -rf '${root}'/scratch*`, "rm -rf _op'{s,x}'*", "rm -rf '~+'/*", 'cd _ref* && rg x > /tmp/out',
-          'echo $(date) > report.txt']) {
+          'echo $(date) > report.txt', `cd '${root}'/scr* && rm -rf build`]) {
           expect({ command, status: invokeBash(command).status }).toEqual({ command, status: 0 });
         }
       } finally { rmSync(outside, { recursive: true, force: true }); }
@@ -177,6 +178,7 @@ describe('Bash write tripwire host route', () => {
         `git worktree add ${managed}/nested/x`, `git worktree add ${join(managed, '..')}/x`,
         `git -C ${cwd} worktree add ../x`, `git -C src worktree add ../../x`, 'git -C src worktree add ../x',
         'cd src && git worktree add ../x', 'git status && git worktree add ../x', "git worktree add '../x'",
+        'git worktree add ../x\nf() { :; }',
       ]) {
         const result = invokeBash(command);
         expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 2 });

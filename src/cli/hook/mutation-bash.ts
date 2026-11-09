@@ -58,7 +58,7 @@ function words(line: string): Word[] | null {
       result.push({ value: ch, pattern: ch, literal: true, operator: true });
       continue;
     }
-    if (/[$`*?{}~]/.test(ch)) literal = false;
+    if (/[$`*?[{}~]/.test(ch)) literal = false;
     value += ch; pattern += ch; active = true;
   }
   if (quote) return null;
@@ -123,15 +123,18 @@ function cdOperand(segment: readonly Word[]): { target: Word; plain: boolean } |
 function walkCommands(command: string, cwd: string, visit: CommandVisitor): void {
   if (command.length > 65_536) return;
   const parsed: { tokens: Word[]; body: string }[] = [];
-  let depth = 0;
+  let depth = 0, unparsed = false;
   const lines = command.split('\n');
   for (let line = 0; line < lines.length; line++) {
     let text = lines[line]!;
     let tokens = words(text);
     // A quoted argument or a backslash-newline continues on the next physical line.
     while (!tokens && line + 1 < lines.length) tokens = words(text += `\n${lines[++line]}`);
-    if (!tokens) return visit.unparsed?.();
-    for (const token of tokens) if (token.operator && (token.value === '(' ? ++depth : token.value === ')' ? --depth : 0) < 0) return visit.unparsed?.();
+    // The complete lines before a line outside the grammar are still judged, as bash runs them.
+    if (!tokens || tokens.some(token => token.operator && (token.value === '(' ? ++depth : token.value === ')' ? --depth : 0) < 0)) {
+      unparsed = true;
+      break;
+    }
     let body = '';
     const here = tokens.findIndex(token => token.operator && token.value.startsWith('<<'));
     if (here >= 0) {
@@ -148,7 +151,8 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
     }
     parsed.push({ tokens, body });
   }
-  if (depth) return visit.unparsed?.();
+  // The shell rejects an input that ends inside `(`; only the Bash route denies it, as unparsed.
+  if (depth > 0 && !unparsed) return visit.unparsed?.();
   let commandCwd: string | null = cwd;
   // A subshell does not move the shell that started it.
   const outer: (string | null)[] = [];
@@ -169,7 +173,7 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
       const token = tokens[i]!;
       if (token.operator && [';', '|', '||', '&', '&&'].includes(token.value)) { flush(token.value); continue; }
       if (token.operator && token.value === '(') { flush('('); outer.push(commandCwd); continue; }
-      if (token.operator && token.value === ')') { flush(')'); commandCwd = outer.pop()!; continue; }
+      if (token.operator && token.value === ')') { flush(')'); commandCwd = outer.pop() ?? null; continue; }
       if (token.operator && ['>', '>>', '<', '<<', '<<-'].includes(token.value)) {
         const target = tokens[++i];
         if (target?.operator && target.value === '&' && (token.value === '>' || token.value === '<')) {
@@ -183,6 +187,7 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
     }
     flush();
   }
+  if (unparsed) visit.unparsed?.();
 }
 
 /** Shell pattern match of one path segment; a pattern that does not compile matches, so the guard fails closed. */
@@ -203,8 +208,9 @@ function segmentMatches(pattern: string, name: string): boolean {
       i = close;
     } else source += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
-  // Case-insensitive, so `_OP*` and a `nocaseglob` shell also count; `u` folds `ſ` to `s` as APFS does.
-  try { return new RegExp(`^${source}$`, 'iu').test(name); } catch { return true; }
+  // A match with or without case counts: the shell glob is case-sensitive, but `nocaseglob` and the filesystem are not.
+  // `u` folds `ſ` to `s` as APFS does.
+  try { return new RegExp(`^${source}$`, 'u').test(name) || new RegExp(`^${source}$`, 'iu').test(name); } catch { return true; }
 }
 
 /** Index of the first unescaped glob character of a pattern, or -1. */
@@ -391,7 +397,9 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
       if (cd && (!cd.plain || !cd.target.literal)) {
         const found = candidates.length, failed = unresolved.length;
         add(cd.target.pattern, commandCwd);
-        if (candidates.length > found || unresolved.length > failed) cwdMayBeProtected = true;
+        // An external candidate counts only when its write-through path is protected.
+        const reach = candidates.slice(found).map(path => isAbsolute(path) ? realRel(path) : path);
+        if (unresolved.length > failed || reach.some(path => path !== null && protectedPath(path))) cwdMayBeProtected = true;
         candidates.length = found; unresolved.length = failed;
       }
       for (const target of commandTargets(segment, body)) add(target, commandCwd);
