@@ -180,11 +180,9 @@ module is in the title so that a list view shows the write scopes.
   report channel. Do not restate the requirement in chat. A second copy
   becomes a second authority.
 - Post the claim, then the packet. Post one `issue claim` on the child
-  issue for the worker: `Role: writer`, `Agent:` the worker identity,
-  `Branch:` the branch that the packet names, `Scope` and `Not in scope`
-  from the issue, and `Coordinator:` the URL of your own parent claim. The
-  claim is the worker's identity on the board, and the worker never posts
-  one. Dispatch only after the claim is on the issue.
+  issue for the worker with the required fields in `templates.md` § issue
+  claim. The claim is the worker's identity on the board, and the worker
+  never posts one. Dispatch only after the claim is on the issue.
 - Dispatch in parallel only when the write scopes are disjoint and each
   dependency is merged, or its contract is stable and the issue allows
   early start.

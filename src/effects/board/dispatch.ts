@@ -64,7 +64,7 @@ function startWorktree(input: DispatchInput, issue: number): { readonly path: st
   return { path: start.worktree_path, branch: start.branch };
 }
 
-function claimBody(decision: DispatchedV1, branch: string, tab: string | null, runtime: SeatConfigV1['runtime']): string {
+function claimBody(decision: DispatchedV1, branch: string, tab: string | null, runtime: SeatConfigV1['runtime'], coordinator: string): string {
   return [
     'repo-harness issue claim',
     'Status: active',
@@ -74,6 +74,7 @@ function claimBody(decision: DispatchedV1, branch: string, tab: string | null, r
     `Branch: ${branch}`,
     `Scope: issue #${decision.issue} as its body states it`,
     'Not in scope: anything the issue body does not name',
+    `Coordinator: ${coordinator}`,
     `Dispatch reading: ${decision.route_line}`,
   ].join('\n');
 }
@@ -96,6 +97,7 @@ function releaseClaim(ports: DispatchPorts, issue: number, claimUrl: string): vo
  */
 export async function executeDispatch(plan: DispatchPlanV1, context: { readonly repositoryId: string; readonly parent: number; readonly space: string; readonly dry_run: boolean }, ports: DispatchPorts): Promise<DispatchResultV1['started']> {
   const started: Array<DispatchResultV1['started'][number]> = [];
+  if (plan.decisions.some(decision => decision.action === 'dispatch') && plan.coordinator === null) throw new DispatchError(`#${context.parent} has no active coordinator claim${plan.parent_comments_truncated ? ' in the comments that were read; older parent comments were not read' : ''}; nothing was started`);
   if (context.dry_run) return started;
   for (const decision of plan.decisions) {
     if (decision.action !== 'dispatch') continue;
@@ -104,7 +106,7 @@ export async function executeDispatch(plan: DispatchPlanV1, context: { readonly 
     const launch = await ports.launch(decision.seat, labels, worktree.path);
     // The launch reads the seats configuration again, so the runtime that will run is checked here, not the planned one.
     if (decision.credentials && launch.runtime === 'pi') throw new DispatchError(`#${decision.issue} touches credentials and its launch resolved to a Pi seat; nothing was started`);
-    const claimUrl = ports.comment(decision.issue, claimBody(decision, worktree.branch, launch.tab, launch.runtime));
+    const claimUrl = ports.comment(decision.issue, claimBody(decision, worktree.branch, launch.tab, launch.runtime, plan.coordinator!));
     try {
       ports.openTab({
         ...(launch.tab === null ? {} : { name: launch.tab }), space: context.space, folder: worktree.path, argv: launch.argv, task: packet(decision, worktree.path, claimUrl),
