@@ -385,10 +385,18 @@ repo-harness publication merge --repository <owner/name> --repository-id <id> --
 
 `--head` and `--base` are the SHAs you reviewed.
 `publication.acceptance_merge` in `.ai/harness/policy.json` on the PR base
-decides whether the executor merges. The default branch needs strict
-required checks and enforce_admins, and no merge queue (classic protection
-or rulesets). If it does not, the executor refuses with
+decides whether the executor merges. The default branch needs required
+checks and enforce_admins. Without a merge queue the checks must be strict.
+With a merge queue (a ruleset), the queue must squash and the repository
+default squash message must be `PR_TITLE` and `PR_BODY`; `--batch` is
+refused. If it does not, the executor refuses with
 `base_protection_insufficient`.
+
+With a merge queue, the executor enqueues the PR, writes `{"queued": ...}`
+to stderr and waits up to 90 minutes for the queue to merge or remove it.
+Run it as a background command. A BEHIND PR needs no sync: the queue tests
+it on the current base, and the executor proves that the merge commit's
+parent descends from the `--base` you reviewed.
 
 Act on the exit code. Post every result as `integration status` on the PR.
 
@@ -399,6 +407,7 @@ Act on the exit code. Post every result as `integration status` on the PR.
 | 4 | Refused before any merge request | For `base_protection_insufficient`, `publication_policy_invalid` (base policy) and `provider_unavailable`, hand it to the owner. For any other blocker, hand the PR to its head owner with the `blockers` |
 | 5 | `merge_outcome_unknown` | Stop. Report to the owner. Never retry |
 | 6 | `provider_rejected` | Post the GitHub error as it is. Hand it to the owner |
+| 6 | `merge_queue_removed` | The queue removed the PR (a failed queue check or a conflict). Hand it to its head owner with the queue run |
 
 - Use `Closes #N` only in the PR that finishes the issue. Earlier PRs of a
   multi-PR issue use `Refs #N`. Before merge, check

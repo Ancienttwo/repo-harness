@@ -524,6 +524,7 @@ describe('single affected verification and daily fallback', () => {
     expect(selectCoverage({ ...input, actualHead: '2'.repeat(40), diffRaw: record }).mode).toBe('invalid');
     expect(selectCoverage({ ...input, eventName: 'schedule', diffRaw: null }).mode).toBe('daily');
     expect(selectCoverage({ ...input, eventName: 'push', event: { before: sha }, diffRaw: record }).mode).toBe('report');
+    expect(selectCoverage({ ...input, eventName: 'merge_group', event: { merge_group: { base_sha: sha } }, diffRaw: record }).mode).toBe('affected');
   });
 
   test('real dependency and runtime consumers expand transitively; unknown coverage fails instead of full-suite', async () => {
@@ -590,7 +591,8 @@ describe('single affected verification and daily fallback', () => {
     // State boundaries run beside selection on every event except a push to main, and Required / CI requires them.
     expect(jobs['state-boundaries'].needs).toBeUndefined();
     expect(jobs['state-boundaries'].if).toBe("github.event_name != 'push'");
-    expect(jobs.required.if).toBe("always() && github.event_name == 'pull_request'");
+    expect(workflow.on.merge_group).toEqual({ types: ['checks_requested'] });
+    expect(jobs.required.if).toBe("always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')");
     const pushJobs = Object.entries(jobs).filter(([, job]: [string, any]) => !job.needs && job.if !== "github.event_name != 'push'").map(([id]) => id);
     expect(pushJobs).toEqual(['selection']);
     expect(jobs.selection.steps.some((step: any) => step.run === 'bun run check:state-boundaries')).toBe(false);
@@ -977,7 +979,7 @@ describe('single affected verification and daily fallback', () => {
     expect(advisory.permissions).toBeUndefined();
     expect(jobs.required.steps[0].env.ARCHITECTURE_RESULT).toBe('${{ needs.architecture-advisory.result }}');
     const warn = advisory.steps.find((step: any) => step.name === 'Check the plugin-internals constraint and warn about architecture debt');
-    expect(warn.env).toEqual({ BASE_SHA: '${{ github.event.pull_request.base.sha }}' });
+    expect(warn.env).toEqual({ BASE_SHA: '${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}' });
     expect(warn.run).toBe('bash scripts/check-ci.sh architecture-advisory --base "$BASE_SHA"');
     expect(advisory.steps.find((step: any) => step.uses === 'actions/checkout@v4').with['fetch-depth']).toBe(0);
   });

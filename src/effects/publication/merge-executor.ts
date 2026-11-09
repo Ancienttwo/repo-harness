@@ -2,11 +2,14 @@
  * The only automated merge path to the default branch.
  *
  * Every step before the mutation reads; a refusal at any step sends no merge
- * request. The mutation is sent once. After it is sent, the result is a
+ * request. The mutation is sent once. When the base requires a merge queue,
+ * the mutation enqueues the PR instead, and the executor waits for the queue
+ * to merge or remove it. After it is sent, the result is a
  * rejection only when an error response is followed by a readback of the PR
  * still open at the expected head, and a merge only when the merge commit has
  * the expected parents: the expected base for a squash, the expected base and
- * head for a batch merge commit. Everything else is an unknown outcome. The executor
+ * head for a batch merge commit, and for a queue squash one parent that is the
+ * expected base or a descendant of it. A queue removal is a rejection. Everything else is an unknown outcome. The executor
  * never resends the merge request; only the provider readback repeats, inside
  * a bounded window, because a merge response can arrive before the read model
  * shows the merge.
@@ -46,13 +49,15 @@ export type PublicationMergeRefusalCode =
   | 'closing_references_incomplete'
   | 'closing_references_mismatch'
   | 'batch_ref_invalid'
-  | 'batch_has_own_commit';
+  | 'batch_has_own_commit'
+  | 'merge_queue_entry_exists';
 
 export type PublicationMergeErrorCode =
   | 'acceptance_merge_off'
   | PublicationMergeRefusalCode
   | 'merge_outcome_unknown'
-  | 'provider_rejected';
+  | 'provider_rejected'
+  | 'merge_queue_removed';
 
 export interface PublicationMergeDocument {
   readonly protocol: 1;
@@ -64,7 +69,7 @@ export interface PublicationMergeDocument {
   readonly base_ref: string;
   readonly base_sha: string;
   readonly merge_commit_sha: string;
-  /** The first parent: the expected base, the mainline that `git revert -m 1` keeps. */
+  /** The first parent: the mainline that `git revert -m 1` keeps. The expected base, or a descendant of it after a merge queue. */
   readonly parent_sha: string;
   /** Batch only: both proven parents, `[expected base, expected head]`. */
   readonly parent_shas?: readonly [string, string];
@@ -72,6 +77,8 @@ export interface PublicationMergeDocument {
   readonly revert: string;
   /** GraphQL errors that came with a merge the readback proved. */
   readonly provider_errors?: string;
+  /** Present when the merge went through the base branch's merge queue. */
+  readonly merge_queue_entry?: string;
 }
 
 export interface PublicationMergeFailure {
@@ -88,7 +95,7 @@ export type PublicationMergeResult =
 
 class Refusal extends Error {
   constructor(
-    readonly code: Exclude<PublicationMergeErrorCode, 'merge_outcome_unknown' | 'provider_rejected'>,
+    readonly code: Exclude<PublicationMergeErrorCode, 'merge_outcome_unknown' | 'provider_rejected' | 'merge_queue_removed'>,
     message: string,
     readonly blockers?: readonly MergeReadinessBlockerV1[],
   ) {
@@ -98,6 +105,9 @@ class Refusal extends Error {
 }
 
 class UnknownOutcome extends Error {}
+
+/** The queue dropped the PR without a merge: a failed queue check, a conflict or a manual removal. */
+class QueueRemoved extends Error {}
 
 const PROVIDER_TIMEOUT_MS = 30_000;
 const SHA = /^[0-9a-f]{40}$/u;
@@ -120,6 +130,9 @@ function readbackDelays(windowMs: number): readonly number[] {
   return delays;
 }
 const READBACK_DELAYS_MS = readbackDelays(READBACK_WINDOW_MS);
+/** A queue entry waits for the full Required / CI run of its group; the CI test job alone may take 60 minutes. */
+const QUEUE_WINDOW_MS = 90 * 60_000;
+const QUEUE_POLL_MS = 30_000;
 
 type PublicationMergeInput = PullRequestReadinessInput & {
   /** `--batch`: merge an `integration/<parent>-batch-<n>` PR with a two-parent merge commit instead of a squash. */
@@ -128,7 +141,15 @@ type PublicationMergeInput = PullRequestReadinessInput & {
   readonly readback_wait?: (milliseconds: number) => void;
   readonly readback_now?: () => number;
   readonly readback_timeout?: (milliseconds: number) => void;
+  /** Called once when the PR is in the merge queue, before the wait for its merge. */
+  readonly on_queued?: (entry: MergeQueueEntry) => void;
 };
+
+export interface MergeQueueEntry {
+  readonly id: string;
+  readonly state: string;
+  readonly position: number | null;
+}
 
 function waitForReadback(milliseconds: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
@@ -203,6 +224,7 @@ interface MergeTarget {
   /** null when the provider omits the field; that fails closed like an enabled queue. */
   readonly merge_queue_enabled: boolean | null;
   readonly auto_merge_enabled: boolean;
+  readonly in_merge_queue: boolean;
   readonly head_sha: string;
   readonly head_ref: string;
   readonly base_sha: string;
@@ -211,7 +233,7 @@ interface MergeTarget {
   readonly closing_has_next_page: boolean;
 }
 
-const TARGET_QUERY = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number title body state isCrossRepository headRefOid headRefName baseRefOid baseRefName isMergeQueueEnabled autoMergeRequest{enabledAt} closingIssuesReferences(first:100){pageInfo{hasNextPage} nodes{number repository{nameWithOwner}}}}}}';
+const TARGET_QUERY = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number title body state isCrossRepository headRefOid headRefName baseRefOid baseRefName isMergeQueueEnabled mergeQueueEntry{id} autoMergeRequest{enabledAt} closingIssuesReferences(first:100){pageInfo{hasNextPage} nodes{number repository{nameWithOwner}}}}}}';
 
 /** One read of the PR fields the executor owns: fork, auto-merge, message text and closing links. */
 function readMergeTarget(input: PullRequestReadinessInput): MergeTarget {
@@ -229,6 +251,7 @@ function readMergeTarget(input: PullRequestReadinessInput): MergeTarget {
     || typeof pr.headRefOid !== 'string' || typeof pr.headRefName !== 'string' || pr.headRefName === ''
     || typeof pr.baseRefOid !== 'string' || typeof pr.baseRefName !== 'string' || pr.baseRefName === ''
     || (pr.autoMergeRequest !== null && !isObject(pr.autoMergeRequest))
+    || (pr.mergeQueueEntry !== null && !isObject(pr.mergeQueueEntry))
     || typeof pageInfo.hasNextPage !== 'boolean' || !Array.isArray(closing.nodes)) {
     throw new Refusal('provider_data_incomplete', 'provider PR identity is incomplete');
   }
@@ -248,6 +271,7 @@ function readMergeTarget(input: PullRequestReadinessInput): MergeTarget {
     is_cross_repository: pr.isCrossRepository,
     merge_queue_enabled: typeof pr.isMergeQueueEnabled === 'boolean' ? pr.isMergeQueueEnabled : null,
     auto_merge_enabled: pr.autoMergeRequest !== null,
+    in_merge_queue: pr.mergeQueueEntry !== null,
     head_sha: pr.headRefOid,
     head_ref: pr.headRefName,
     base_sha: pr.baseRefOid,
@@ -260,6 +284,7 @@ function readMergeTarget(input: PullRequestReadinessInput): MergeTarget {
 function assertSameRepositoryTarget(target: MergeTarget): void {
   if (target.is_cross_repository) throw new Refusal('cross_repository_pr', 'the executor merges only same-repository PRs');
   if (target.auto_merge_enabled) throw new Refusal('auto_merge_enabled', 'the PR has an auto-merge request');
+  if (target.in_merge_queue) throw new Refusal('merge_queue_entry_exists', 'the PR is already in the merge queue; the executor did not enqueue it');
 }
 
 /**
@@ -320,26 +345,56 @@ function readPolicyAt(input: PullRequestReadinessInput, ref: string): PolicyFile
   return file;
 }
 
-function readDefaultBranch(input: PullRequestReadinessInput): string {
+interface RepositorySettings {
+  readonly default_branch: string;
+  /** The queue composes its squash message from these settings; the executor sends no message to it. */
+  readonly squash_title: unknown;
+  readonly squash_message: unknown;
+}
+
+function readRepository(input: PullRequestReadinessInput): RepositorySettings {
   const repository = field(read(input, ['api', `repos/${input.repository}`]), 'REST repository');
   if (String(repository.id) !== input.provider_repository_id || repository.full_name !== input.repository
     || typeof repository.default_branch !== 'string' || repository.default_branch === '') {
     throw new Refusal('provider_data_incomplete', 'provider repository does not match the selection');
   }
-  return repository.default_branch;
+  return { default_branch: repository.default_branch,
+    squash_title: repository.squash_merge_commit_title, squash_message: repository.squash_merge_commit_message };
 }
 
-/** Classic branch protection does not report a merge queue; the PR field does, whichever setting enables it. */
-function assertNoMergeQueue(target: MergeTarget): void {
-  if (target.merge_queue_enabled !== false) {
-    throw new Refusal('base_protection_insufficient', target.merge_queue_enabled === null
-      ? 'the provider did not report whether the base branch requires a merge queue'
-      : 'the base branch requires a merge queue');
+/**
+ * The ruleset and the PR field must agree. A queue that no readable ruleset sets
+ * has an unknown merge method, so it is refused like an unreported one.
+ */
+function assertQueueState(target: MergeTarget, queueRule: boolean): void {
+  if (target.merge_queue_enabled === null) {
+    throw new Refusal('base_protection_insufficient', 'the provider did not report whether the base branch requires a merge queue');
+  }
+  if (target.merge_queue_enabled !== queueRule) {
+    throw new Refusal('base_protection_insufficient', queueRule
+      ? 'the branch rules require a merge queue, but the PR does not report one'
+      : 'the base branch requires a merge queue that no readable ruleset sets');
   }
 }
 
-/** D7: GitHub pins only the head. Strict status checks turn a moved base into a provider-side rejection. */
-function assertBaseProtection(input: PullRequestReadinessInput, branch: string, target: MergeTarget): void {
+/**
+ * The queue squashes with the repository's default message. Only the PR title and
+ * body make that message the one the closing-reference check reads.
+ */
+function assertQueueMessage(settings: RepositorySettings): void {
+  if (settings.squash_title !== 'PR_TITLE' || settings.squash_message !== 'PR_BODY') {
+    throw new Refusal('base_protection_insufficient',
+      'a merge queue squash needs the repository default squash message PR_TITLE and PR_BODY');
+  }
+}
+
+/**
+ * D7: GitHub pins only the head. Without a queue, strict status checks turn a moved
+ * base into a provider-side rejection. With a squash merge queue, the queue tests
+ * the PR on the current base, so strict checks are not needed. Returns whether the
+ * base requires the queue.
+ */
+function assertBaseProtection(input: PublicationMergeInput, branch: string, target: MergeTarget): boolean {
   const root = `repos/${input.repository}/branches/${encodeURIComponent(branch)}`;
   const value = read(input, ['api', `${root}/protection`], true);
   if (value === null) {
@@ -349,18 +404,30 @@ function assertBaseProtection(input: PullRequestReadinessInput, branch: string, 
   const protection = field(value, 'branch protection');
   const checks = protection.required_status_checks;
   const admins = protection.enforce_admins;
-  if (!isObject(checks) || checks.strict !== true || !isObject(admins) || admins.enabled !== true) {
-    throw new Refusal('base_protection_insufficient', `${branch} protection must require strict status checks and enforce_admins`);
+  if (!isObject(checks) || !isObject(admins) || admins.enabled !== true) {
+    throw new Refusal('base_protection_insufficient', `${branch} protection must require status checks and enforce_admins`);
   }
   const rules = read(input, ['api', `repos/${input.repository}/rules/branches/${encodeURIComponent(branch)}?per_page=100`]);
   if (!Array.isArray(rules) || rules.length >= 100) throw new Refusal('provider_data_incomplete', 'branch rules were not exhaustively observed');
   if (rules.some((rule) => !isObject(rule) || typeof rule.type !== 'string')) {
     throw new Refusal('provider_data_incomplete', 'branch rule is incomplete');
   }
-  if (rules.some((rule) => (rule as Record<string, unknown>).type === 'merge_queue')) {
-    throw new Refusal('base_protection_insufficient', `${branch} requires a merge queue`);
+  const queueRules = (rules as Record<string, unknown>[]).filter((rule) => rule.type === 'merge_queue');
+  if (queueRules.length > 1) throw new Refusal('base_protection_insufficient', `${branch} has more than one merge queue rule`);
+  const queue = queueRules.length === 1;
+  assertQueueState(target, queue);
+  if (!queue) {
+    if (checks.strict !== true) throw new Refusal('base_protection_insufficient', `${branch} protection must require strict status checks`);
+    return false;
   }
-  assertNoMergeQueue(target);
+  const parameters = queueRules[0]!.parameters;
+  if (!isObject(parameters) || parameters.merge_method !== 'SQUASH') {
+    throw new Refusal('base_protection_insufficient', `the ${branch} merge queue must merge with the SQUASH method`);
+  }
+  if (input.batch) {
+    throw new Refusal('base_protection_insufficient', `--batch needs a two-parent merge commit; the ${branch} merge queue squashes`);
+  }
+  return true;
 }
 
 interface BasePolicy {
@@ -409,6 +476,77 @@ function sendMerge(input: PublicationMergeInput, target: MergeTarget, headline: 
   return { merged: commit.oid };
 }
 
+const ENQUEUE_MUTATION = 'mutation($pullRequestId:ID!,$expectedHeadOid:GitObjectID!){enqueuePullRequest(input:{pullRequestId:$pullRequestId,expectedHeadOid:$expectedHeadOid}){mergeQueueEntry{id state position}}}';
+
+function queueEntry(value: unknown): MergeQueueEntry | null {
+  if (!isObject(value) || typeof value.id !== 'string' || value.id === '' || typeof value.state !== 'string'
+    || (value.position !== null && !Number.isSafeInteger(value.position))) return null;
+  return { id: value.id, state: value.state, position: value.position as number | null };
+}
+
+/** Sent once, like the merge. An error response is not proof of a rejection; the caller reads the PR back. */
+function sendEnqueue(input: PublicationMergeInput, target: MergeTarget): { readonly queued: MergeQueueEntry } | { readonly provider_errors: string } {
+  const args = ['api', 'graphql', '-f', `query=${ENQUEUE_MUTATION}`, '-f', `pullRequestId=${target.id}`,
+    '-f', `expectedHeadOid=${input.expected_head_sha}`];
+  const result = runGh(input, args);
+  if (result.failure || result.status === null) throw new UnknownOutcome(`enqueue request did not complete: ${describeCall(args, result)}`);
+  const value = parseJson(result.stdout);
+  if (!isObject(value)) throw new UnknownOutcome(`enqueue response is not a JSON object: ${describeCall(args, result)}`);
+  if (value.errors !== undefined && !(Array.isArray(value.errors) && value.errors.length === 0)) {
+    return { provider_errors: JSON.stringify(value.errors) };
+  }
+  if (result.status !== 0) throw new UnknownOutcome(`enqueue request failed: ${describeCall(args, result)}`);
+  const payload = isObject(value.data) ? value.data.enqueuePullRequest : undefined;
+  const entry = queueEntry(isObject(payload) ? payload.mergeQueueEntry : undefined);
+  if (entry === null) throw new UnknownOutcome('enqueue response is incomplete');
+  return { queued: entry };
+}
+
+const QUEUE_READBACK_QUERY = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){number state headRefOid mergeCommit{oid} mergeQueueEntry{id state position}}}}';
+
+type QueueObservation =
+  | { readonly state: 'queued'; readonly entry: MergeQueueEntry }
+  | { readonly state: 'removed' }
+  | { readonly state: 'merged'; readonly merge_commit_sha: string }
+  | { readonly state: 'unreadable'; readonly evidence: string };
+
+/** One queue read. A PR that moved its head or closed is an unknown outcome: the queue drops a pushed PR. */
+function observeQueue(input: PublicationMergeInput, timeoutMs: number): QueueObservation {
+  const [owner, name] = input.repository.split('/');
+  const args = ['api', 'graphql', '-f', `query=${QUEUE_READBACK_QUERY}`, '-f', `owner=${owner}`, '-f', `name=${name}`, '-F', `number=${input.pr_number}`];
+  const read = readbackValue(input, args, timeoutMs);
+  if (!read.ok) return { state: 'unreadable', evidence: read.failure };
+  const repository = isObject(read.value.data) ? read.value.data.repository : undefined;
+  const pr = isObject(repository) ? repository.pullRequest : undefined;
+  if (!isObject(pr) || pr.number !== input.pr_number) return { state: 'unreadable', evidence: 'queue readback has no PR' };
+  const evidence = `queue readback: state=${String(pr.state)} head=${String(pr.headRefOid)}`;
+  if (pr.state === 'MERGED') {
+    const commit = isObject(pr.mergeCommit) ? pr.mergeCommit.oid : undefined;
+    if (typeof commit === 'string' && SHA.test(commit)) return { state: 'merged', merge_commit_sha: commit };
+    return { state: 'unreadable', evidence };
+  }
+  if (pr.state !== 'OPEN' || pr.headRefOid !== input.expected_head_sha) throw new UnknownOutcome(`the PR left the queue without a merge: ${evidence}`);
+  if (pr.mergeQueueEntry === null) return { state: 'removed' };
+  const entry = queueEntry(pr.mergeQueueEntry);
+  return entry === null ? { state: 'unreadable', evidence } : { state: 'queued', entry };
+}
+
+/** Polls until the queue merges or removes the PR. Only reads repeat; nothing is re-enqueued. */
+function awaitQueue(input: PublicationMergeInput): string {
+  const now = input.readback_now ?? Date.now;
+  const deadline = now() + QUEUE_WINDOW_MS;
+  let last = 'no queue readback';
+  for (;;) {
+    const remaining = deadline - now();
+    if (remaining <= 0) throw new UnknownOutcome(`the merge queue did not merge or remove the PR within ${QUEUE_WINDOW_MS} ms; last ${last}`);
+    const observation = observeQueue(input, Math.min(remaining, PROVIDER_TIMEOUT_MS));
+    if (observation.state === 'merged') return observation.merge_commit_sha;
+    if (observation.state === 'removed') throw new QueueRemoved('the merge queue removed the PR without a merge');
+    last = observation.state === 'queued' ? `queue entry ${observation.entry.id}: ${observation.entry.state}` : observation.evidence;
+    (input.readback_wait ?? waitForReadback)(Math.min(QUEUE_POLL_MS, Math.max(deadline - now(), 0)));
+  }
+}
+
 type ErrorReadback = { readonly state: 'open' } | { readonly state: 'merged'; readonly merge_commit_sha: string };
 
 /** After an error response: OPEN at the expected head proves no merge; MERGED needs the normal proof. */
@@ -453,8 +591,23 @@ function expectedParents(input: PublicationMergeInput): readonly string[] {
   return input.batch ? [input.expected_base_sha, input.expected_head_sha] : [input.expected_base_sha];
 }
 
+/** A queue squash has one parent: the queue's base, which is the expected base or a descendant of it. */
+function queueParentProof(input: PublicationMergeInput, commit: Record<string, unknown>, timeoutMs: number): ProofAttempt & { readonly parent?: string } {
+  const parents = commit.parents;
+  const parent = Array.isArray(parents) && parents.length === 1 && isObject(parents[0]) ? parents[0].sha : undefined;
+  if (typeof parent !== 'string' || !SHA.test(parent)) {
+    return { kind: 'contradiction', evidence: `queue commit ${String(commit.sha)} does not have exactly one parent` };
+  }
+  if (parent === input.expected_base_sha) return { kind: 'proven', parent };
+  const compare = readbackValue(input, ['api', `repos/${input.repository}/compare/${input.expected_base_sha}...${parent}`,
+    '--jq', '{status, behind_by}'], timeoutMs);
+  if (!compare.ok) return { kind: 'pending', evidence: compare.failure };
+  if (compare.value.status === 'ahead' && compare.value.behind_by === 0) return { kind: 'proven', parent };
+  return { kind: 'contradiction', evidence: `queue parent ${parent} does not descend from the expected base ${input.expected_base_sha} (compare status ${String(compare.value.status)})` };
+}
+
 /** One readback attempt: the PR is merged at the response SHA by one commit with exactly the expected parents. */
-function attemptMergeProof(input: PublicationMergeInput, mergeCommitSha: string, baseRef: string, deadline: number): ProofAttempt {
+function attemptMergeProof(input: PublicationMergeInput, mergeCommitSha: string, baseRef: string, deadline: number, queue: boolean): ProofAttempt & { readonly parent?: string } {
   const now = input.readback_now ?? Date.now;
   const remaining = () => deadline - now();
   const prTimeout = remaining();
@@ -478,6 +631,13 @@ function attemptMergeProof(input: PublicationMergeInput, mergeCommitSha: string,
   const commitRead = readbackValue(input, ['api', `repos/${input.repository}/git/commits/${mergeCommitSha}`], commitTimeout);
   if (!commitRead.ok) return { kind: 'pending', evidence: commitRead.failure, pr: evidence };
   const commit = commitRead.value;
+  if (queue) {
+    if (commit.sha !== mergeCommitSha) return { kind: 'contradiction', evidence: `commit readback returned ${String(commit.sha)} for ${mergeCommitSha}` };
+    const compareTimeout = remaining();
+    if (compareTimeout <= 0) return { kind: 'pending', evidence, pr: evidence };
+    input.readback_timeout?.(compareTimeout);
+    return queueParentProof(input, commit, compareTimeout);
+  }
   const parents = commit.parents;
   const expected = expectedParents(input);
   if (commit.sha !== mergeCommitSha || !Array.isArray(parents) || parents.length !== expected.length
@@ -485,11 +645,11 @@ function attemptMergeProof(input: PublicationMergeInput, mergeCommitSha: string,
     const observed = Array.isArray(parents) ? `[${parents.map((parent) => isObject(parent) ? String(parent.sha) : '?').join(', ')}]` : String(parents);
     return { kind: 'contradiction', evidence: `commit ${String(commit.sha)} has parents ${observed}; expected exactly [${expected.join(', ')}]` };
   }
-  return { kind: 'proven' };
+  return { kind: 'proven', parent: input.expected_base_sha };
 }
 
 /** Bounded retry: the merge request is sent once; only these readback attempts repeat. */
-function proveMerge(input: PublicationMergeInput, mergeCommitSha: string, baseRef: string): void {
+function proveMerge(input: PublicationMergeInput, mergeCommitSha: string, baseRef: string, queue: boolean): string {
   const now = input.readback_now ?? Date.now;
   const deadline = now() + READBACK_WINDOW_MS;
   let lastPrEvidence: string | undefined;
@@ -497,8 +657,8 @@ function proveMerge(input: PublicationMergeInput, mergeCommitSha: string, baseRe
     if (now() >= deadline) {
       throw new UnknownOutcome(`merge readback did not confirm the merge within ${READBACK_WINDOW_MS} ms: readback window exhausted${lastPrEvidence !== undefined ? `; last PR readback: ${lastPrEvidence}` : ''}`);
     }
-    const proof = attemptMergeProof(input, mergeCommitSha, baseRef, deadline);
-    if (proof.kind === 'proven') return;
+    const proof = attemptMergeProof(input, mergeCommitSha, baseRef, deadline, queue);
+    if (proof.kind === 'proven') return proof.parent!;
     if (proof.kind === 'contradiction') {
       throw new UnknownOutcome(`merge readback contradicts the merge response: ${proof.evidence}`);
     }
@@ -523,6 +683,8 @@ interface PreparedMerge {
   readonly target: MergeTarget;
   readonly headline: string;
   readonly base_ref: string;
+  /** The base requires a merge queue: the executor enqueues instead of merging. */
+  readonly queue: boolean;
 }
 
 /** Steps 1-6. Each refusal throws before any mutation. */
@@ -540,8 +702,10 @@ function prepareMerge(input: PublicationMergeInput): PreparedMerge {
     assertBatchHasNoOwnCommit(input);
   }
   const policy = readPolicy(input);
-  const defaultBranch = readDefaultBranch(input);
-  assertBaseProtection(input, defaultBranch, initial);
+  const repository = readRepository(input);
+  const defaultBranch = repository.default_branch;
+  const queue = assertBaseProtection(input, defaultBranch, initial);
+  if (queue) assertQueueMessage(repository);
   // Readiness reuses the base policy file this executor already read.
   const verdict = collectPullRequestMergeReadiness({ ...input, policy_file_at_base: policy.file });
   if (!verdict.ready) {
@@ -550,7 +714,7 @@ function prepareMerge(input: PublicationMergeInput): PreparedMerge {
   // Message text and closing links come from one read bound to the expected head and base.
   const target = readMergeTarget(input);
   assertSameRepositoryTarget(target);
-  assertNoMergeQueue(target);
+  assertQueueState(target, queue);
   if (target.state !== 'OPEN' || target.head_sha !== input.expected_head_sha
     || target.base_sha !== input.expected_base_sha || target.base_ref !== defaultBranch) {
     throw new Refusal('pr_changed_after_readiness', 'the PR state, head or base changed after the readiness verdict');
@@ -559,7 +723,33 @@ function prepareMerge(input: PublicationMergeInput): PreparedMerge {
   const closing = checkClosingReferences({ repository: input.repository, commit_headline: headline, commit_body: target.body,
     linked: { references: target.closing_references, has_next_page: target.closing_has_next_page } });
   if (!closing.ok) throw new Refusal(closing.code, closing.message);
-  return { target, headline, base_ref: defaultBranch };
+  return { target, headline, base_ref: defaultBranch, queue };
+}
+
+/** Direct merge: the response or the error readback names the merge commit. Returns null for a proven rejection. */
+function mergeDirectly(input: PublicationMergeInput, prepared: PreparedMerge, errors: { value?: string }): string | null {
+  const outcome = sendMerge(input, prepared.target, prepared.headline);
+  if (!('provider_errors' in outcome)) return outcome.merged;
+  errors.value = outcome.provider_errors;
+  const readback = readBackAfterError(input);
+  return readback.state === 'open' ? null : readback.merge_commit_sha;
+}
+
+/** Queue merge: enqueue once, then wait for the queue. Returns null for a proven rejection. */
+function mergeThroughQueue(input: PublicationMergeInput, prepared: PreparedMerge, errors: { value?: string }, entry: { value?: MergeQueueEntry }): string | null {
+  const outcome = sendEnqueue(input, prepared.target);
+  if ('provider_errors' in outcome) {
+    errors.value = outcome.provider_errors;
+    const observation = observeQueue(input, PROVIDER_TIMEOUT_MS);
+    if (observation.state === 'removed') return null;
+    if (observation.state === 'merged') return observation.merge_commit_sha;
+    if (observation.state === 'unreadable') throw new UnknownOutcome(`queue readback after the error response failed: ${observation.evidence}`);
+    entry.value = observation.entry;
+  } else {
+    entry.value = outcome.queued;
+  }
+  input.on_queued?.(entry.value);
+  return awaitQueue(input);
 }
 
 export function executePublicationMerge(input: PublicationMergeInput): PublicationMergeResult {
@@ -572,23 +762,23 @@ export function executePublicationMerge(input: PublicationMergeInput): Publicati
     return failure(4, code, error instanceof Error ? error.message : String(error));
   }
   let mergeCommitSha: string;
-  let providerErrors: string | undefined;
+  let parentSha: string;
+  const errors: { value?: string } = {};
+  const entry: { value?: MergeQueueEntry } = {};
   try {
-    const outcome = sendMerge(input, prepared.target, prepared.headline);
-    if ('provider_errors' in outcome) {
-      providerErrors = outcome.provider_errors;
-      const readback = readBackAfterError(input);
-      if (readback.state === 'open') return failure(6, 'provider_rejected', `GitHub rejected mergePullRequest: ${providerErrors}`);
-      mergeCommitSha = readback.merge_commit_sha;
-    } else {
-      mergeCommitSha = outcome.merged;
+    const merged = prepared.queue ? mergeThroughQueue(input, prepared, errors, entry) : mergeDirectly(input, prepared, errors);
+    if (merged === null) {
+      return failure(6, 'provider_rejected', `GitHub rejected ${prepared.queue ? 'enqueuePullRequest' : 'mergePullRequest'}: ${errors.value}`);
     }
-    proveMerge(input, mergeCommitSha, prepared.base_ref);
+    mergeCommitSha = merged;
+    parentSha = proveMerge(input, mergeCommitSha, prepared.base_ref, prepared.queue);
   } catch (error) {
-    // The request may have reached GitHub. The owner checks the PR; the executor does not retry.
     const message = error instanceof Error ? error.message : String(error);
-    return failure(5, 'merge_outcome_unknown', providerErrors ? `${message}; provider errors: ${providerErrors}` : message);
+    if (error instanceof QueueRemoved) return failure(6, 'merge_queue_removed', `${message}; queue entry ${entry.value?.id}`);
+    // The request may have reached GitHub. The owner checks the PR; the executor does not retry.
+    return failure(5, 'merge_outcome_unknown', errors.value ? `${message}; provider errors: ${errors.value}` : message);
   }
+  const providerErrors = errors.value;
   return {
     exit_code: 0,
     document: {
@@ -601,11 +791,12 @@ export function executePublicationMerge(input: PublicationMergeInput): Publicati
       base_ref: prepared.base_ref,
       base_sha: input.expected_base_sha,
       merge_commit_sha: mergeCommitSha,
-      parent_sha: input.expected_base_sha,
+      parent_sha: parentSha,
       ...(input.batch ? { parent_shas: [input.expected_base_sha, input.expected_head_sha] as const } : {}),
       policy_ref: input.expected_base_sha,
       revert: input.batch ? `git revert -m 1 ${mergeCommitSha}` : `git revert ${mergeCommitSha}`,
       ...(providerErrors ? { provider_errors: providerErrors } : {}),
+      ...(entry.value ? { merge_queue_entry: entry.value.id } : {}),
     },
   };
 }

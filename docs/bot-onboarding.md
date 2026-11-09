@@ -118,8 +118,9 @@ Formal production coding stays with Worker-Herdr (Herdr), not cloud.
 | Cloud only | GitHub issues and comments | CI and the `acceptance record` on the PR | Cloud sandbox with repo-harness, working `gh auth` (token with Administration read permission) and a checkout runs `repo-harness publication merge` |
 
 A Bot record does not grant merge permission. The executor merges only when
-`publication.acceptance_merge` is `on` on the PR base, and it needs strict
-required checks and enforce_admins on the default branch. The Bot owner
+`publication.acceptance_merge` is `on` on the PR base, and it needs required
+checks and enforce_admins on the default branch: strict checks, or a squash
+merge queue. The Bot owner
 manages the GitHub token permissions. A cloud-only token needs Administration
 read permission to let the executor read branch protection; without it the
 executor refuses with `base_protection_insufficient`. See

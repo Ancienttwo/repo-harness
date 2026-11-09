@@ -18,6 +18,11 @@ export const PR = 42;
 export const HEAD = 'a'.repeat(40);
 export const BASE = 'b'.repeat(40);
 export const MERGE_COMMIT = 'c'.repeat(40);
+/** The main commit that the merge queue put under the PR: a descendant of BASE. */
+export const QUEUE_PARENT = '9'.repeat(40);
+export const QUEUE_ENTRY = 'MQE_publication_merge';
+/** A base that requires a squash merge queue, as a ruleset sets it. */
+export const QUEUE_RULES = [{ type: 'merge_queue', parameters: { merge_method: 'SQUASH' } }] as const;
 const REPOSITORY_NODE = 'R_publication_merge';
 const PR_NODE = 'PR_publication_merge';
 
@@ -37,7 +42,16 @@ export interface PublicationMergeScenario {
   readonly mergeQueueEnabled?: boolean | 'missing';
   /** null is an unprotected branch (404). */
   readonly protection?: { readonly strict: boolean; readonly enforce_admins: boolean } | null;
-  readonly rules?: readonly { readonly type: string }[];
+  readonly rules?: readonly { readonly type: string; readonly parameters?: Record<string, unknown> }[];
+  /** The repository default squash title and message; default PR_TITLE and PR_BODY. */
+  readonly squashTitle?: string;
+  readonly squashMessage?: string;
+  /** The PR is in the merge queue before the executor runs. */
+  readonly queued?: boolean;
+  /** The PR state that each successive queue readback reports; the last answer repeats. */
+  readonly queueSequence?: readonly ('queued' | 'merged' | 'removed')[];
+  /** The compare status of the expected base against the queue commit's parent; default `ahead`. */
+  readonly queueParentStatus?: string;
   readonly checks?: 'pass' | 'pending';
   /** The PR head and base this scenario reports; defaults to the module constants. */
   readonly head?: string;
@@ -155,11 +169,22 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
       if (scenario.merge === 'null_errors') return { status: 1, stdout: JSON.stringify({ errors: [null] }), stderr: 'gh: error' };
       return ok({ data: { mergePullRequest: { pullRequest: { number: PR, state: 'MERGED', mergeCommit: { oid: MERGE_COMMIT } } } } });
     }
+    if (query.includes('enqueuePullRequest')) {
+      return ok({ data: { enqueuePullRequest: { mergeQueueEntry: { id: QUEUE_ENTRY, state: 'QUEUED', position: 1 } } } });
+    }
+    if (isQueueReadback(args)) {
+      const sequence = scenario.queueSequence ?? ['merged'];
+      const state = sequence[Math.min(prReadbackAttempt, sequence.length - 1)];
+      return ok({ data: { repository: { pullRequest: { number: PR, state: state === 'merged' ? 'MERGED' : 'OPEN', headRefOid: headSha,
+        mergeCommit: state === 'merged' ? { oid: MERGE_COMMIT } : null,
+        mergeQueueEntry: state === 'queued' ? { id: QUEUE_ENTRY, state: 'AWAITING_CHECKS', position: 1 } : null } } } });
+    }
     if (query.includes('closingIssuesReferences')) {
       return ok({ data: { repository: { nameWithOwner: REPOSITORY, pullRequest: {
         id: PR_NODE, number: PR, title: scenario.title ?? '', body: scenario.body ?? '', state: 'OPEN',
         isCrossRepository: scenario.isCrossRepository ?? false, headRefOid: headSha, headRefName: scenario.headRef ?? 'feat/executor', baseRefOid: baseSha, baseRefName: 'main',
         ...(scenario.mergeQueueEnabled === 'missing' ? {} : { isMergeQueueEnabled: scenario.mergeQueueEnabled ?? false }),
+        mergeQueueEntry: scenario.queued ? { id: QUEUE_ENTRY } : null,
         autoMergeRequest: scenario.autoMerge ? { enabledAt: '2026-10-30T00:00:00Z' } : null,
         closingIssuesReferences: { pageInfo: { hasNextPage: scenario.closingHasNextPage ?? false },
           nodes: (scenario.closing ?? []).map((reference) => {
@@ -195,7 +220,10 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
       state: scenario.reviewBinding === 'wrong_state' ? 'APPROVED' : 'COMMENTED',
       html_url: `https://github.com/${REPOSITORY}/pull/${PR}#pullrequestreview-${numericId(input)}` });
   }
-  if (sub === root) return ok({ id: Number(REPOSITORY_ID), node_id: REPOSITORY_NODE, full_name: REPOSITORY, default_branch: 'main' });
+  if (sub === root) {
+    return ok({ id: Number(REPOSITORY_ID), node_id: REPOSITORY_NODE, full_name: REPOSITORY, default_branch: 'main',
+      squash_merge_commit_title: scenario.squashTitle ?? 'PR_TITLE', squash_merge_commit_message: scenario.squashMessage ?? 'PR_BODY' });
+  }
   if (sub === `${root}/actions/runs/123`) {
     return ok({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: headSha, status: 'completed', conclusion: 'success',
       pull_requests: [{ number: PR, head: { sha: headSha }, base: { sha: baseSha } }] });
@@ -229,6 +257,10 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     if (jq < 0) return ok({ ...selected, files: [{ filename: 'large.txt', patch: 'x'.repeat(scenario.comparePatchBytes ?? 0) }] });
     if (args[jq + 1] === COMPARE_COMMITS_JQ) return ok(selected);
   }
+  if (sub === `${root}/compare/${baseSha}...${QUEUE_PARENT}` && args[args.indexOf('--jq') + 1] === '{status, behind_by}') {
+    const status = scenario.queueParentStatus ?? 'ahead';
+    return ok({ status, behind_by: status === 'ahead' ? 0 : 1 });
+  }
   if (sub === `${root}/git/commits/${MERGE_COMMIT}`) {
     return ok({ sha: MERGE_COMMIT, parents: (scenario.parents ?? [BASE]).map((sha) => ({ sha })) });
   }
@@ -241,6 +273,15 @@ function numericId(value: string): number {
 
 export function isMergeMutation(args: readonly string[]): boolean {
   return args[0] === 'api' && args[1] === 'graphql' && graphqlQuery(args).includes('mergePullRequest');
+}
+
+export function isEnqueueMutation(args: readonly string[]): boolean {
+  return args[0] === 'api' && args[1] === 'graphql' && graphqlQuery(args).includes('enqueuePullRequest');
+}
+
+export function isQueueReadback(args: readonly string[]): boolean {
+  const query = graphqlQuery(args);
+  return args[0] === 'api' && args[1] === 'graphql' && query.includes('mergeQueueEntry{id state position}') && !query.includes('mutation');
 }
 
 /** The value of one `-f name=value` GraphQL variable. */
