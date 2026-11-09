@@ -65,16 +65,20 @@ The table rules govern how the row combines with the review.
    authentication, the coordinator merges on the last green SHA. The
    acceptance record states the limit, and one follow-up issue holds that
    family. Before the merge, the coordinator resolves each remaining P2
-   thread with a reply that links the follow-up issue (§6). A P0 or P1
-   finding, or a security, secrets, data or authentication finding,
-   becomes a parked owner gate
+   thread with a reply that links the follow-up issue (§6). Otherwise the
+   loop continues without the owner while each round has fewer findings
+   than the round before, the scope does not grow and no new P0 or P1
+   finding appears. Round 5 is a hard stop. A grown scope, a new P0 or P1
+   finding, a blocking finding after round 5, or a security, secrets, data
+   or authentication finding becomes a parked owner gate
    (`docs/reference-configs/agentic-development-flow.md`, Park a gate).
    Other work continues.
 
 The worker fixes each finding by the class rule (`worker.md` §7).
 
 Return `PASS` or `FAIL`. A `FAIL` has at least one P0, P1 or P2 finding.
-Rule 4 decides whether a P2-only `FAIL` after round 3 merges.
+Rule 4 decides whether a `FAIL` after round 3 merges, takes another round
+or becomes an owner gate.
 
 ## 3. Findings
 

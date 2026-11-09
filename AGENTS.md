@@ -3,8 +3,23 @@
 ## Workflow
 - Multi-agent work follows `repo-harness-issue-flow` (`assets/skills/repo-harness-issue-flow/SKILL.md`): roles, claims, handoff, dispatch, acceptance and merge.
 - `docs/architecture/archimap.html` is the single architecture entry. It links each module to its archctx-projected capability doc in `docs/architecture/modules/`. Change boundaries only through `repo-harness-architecture`; do not hand-write other architecture docs.
-- Keep four hard boundaries: main publication, deletion, credentials/permissions, and release/production operations.
-- Only when the current task explicitly authorizes main publication, and `publication.acceptance_merge` is `on` in the policy on the PR base, is publication allowed; the skill defines who merges. Push/tag need task authorization. Deletion, credentials/permissions and release/production need user approval. An explicit no-merge instruction always wins.
+- The owner keeps every security decision (owner, 2026-11-09, #2008):
+  - Credentials, tokens and secrets, and each change that reads, moves or exposes them.
+  - Permissions: seat tool grants, network access, sandbox settings, hooks and confirmation bypass.
+  - The safety net: branch protection, `publication.acceptance_merge`, force push to main and the `Required / CI` definition.
+  - Deletion that git cannot restore: unpushed commits, dirty worktrees, and owner files outside a repository (`~/.repo-harness`, `~/.claude`, `~/.codex` and similar) without a backup.
+  - Production: `npm publish` (owner npm 2FA), the release tag, the GitHub Release and each production deployment. A production deployment needs an explicit owner authorization for that deployment. No standing GO and no joint decision covers it.
+- Main publication needs `publication.acceptance_merge` `on` in the policy on the PR base. Then a PR merges when the current task explicitly authorizes main publication, or by rule 2 below; the skill defines who merges. Push needs task authorization. An explicit no-merge instruction always wins.
+- Life-cycle rules (owner, 2026-11-09, #2008):
+  1. Fix rounds: a review loop continues after round 3 without the owner while each round has fewer findings than the round before, the scope does not grow and no new P0 or P1 finding appears. Round 5 is a hard stop. A grown scope or a new P0 or P1 finding goes to the owner.
+  2. Merge by rule, every tier: in an owner-approved batch, a PR merges when its acceptance record is PASS for the head, `Required / CI` passed and each review-bot comment has a response. A High PR also needs its cross-model review PASS. Each PR body keeps its rollback line: a `git revert` of the squash commit, unless the body states a different rollback.
+  3. The rolling projection PR (`archctx/projection`) merges on green CI. Its merge is its acceptance.
+  4. An owner decision that the receiving seat posts on the issue or PR authorizes the other seats. No seat asks for a second confirmation in another pane.
+  5. Dispatch: after the owner approves a batch parent and its plan comment, the plan's issues dispatch in plan order. A new issue or a changed order goes to the owner or to rule 7.
+  6. The GitHub setting "Automatically delete head branches" deletes merged head branches. It covers merged branches only.
+  7. Joint decision: the orchestrator and the advisor make a decision that otherwise goes to the owner when both agree, unless the decision touches security. Before the action, they post it on the owning issue or PR as `Joint decision (orchestrator + advisor)` with the reason. Both seats run the same model family, so a joint decision is not an independent review; it never replaces the High-tier cross-model review.
+  8. Owner override: an owner reply on the issue or PR wins over these rules. A "stop" or "no" ends the action at the next step, and an action not yet taken is not taken.
+- Release and staging: the life cycle goes as far as the release PR: release prep, the version and CHANGELOG commits, push, the PR, its checks and its merge by rule 2. A staging or test deployment (a scratch-HOME install of the packed tarball, the release dry run, a prerelease environment, the Windows test box) is a joint decision.
 - The diff's [Review by risk](docs/reference-configs/agentic-development-flow.md#review-by-risk) tier selects independent review; the skill defines the reviewers and their model families. Changing implementation and test assertions together does not raise the tier.
 - Create task worktrees only at `/tmp/<repo>-wt-<slug>` (Windows: `os.tmpdir()`) with `repo-harness run contract-worktree start --issue <number>`, or `git worktree add` with that path. Never create one beside the main checkout (`../`). Commit or push before a reboot or a tmp cleanup. Closeout and sweep remove only merged, clean and unowned worktrees; to keep one, give it an unmerged commit, keep it dirty, or mark or lock it.
 - For non-trivial work, follow the global Progressive Due Diligence rule (P1 map, P2 trace, P3 decision) before design decisions or code edits.
