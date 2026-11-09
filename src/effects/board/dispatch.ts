@@ -1,7 +1,7 @@
 import { spawnSync } from 'child_process';
 import { DispatchError, planDispatch, type DispatchDecisionV1, type DispatchPlanV1 } from '../../core/board/dispatch';
 import type { BoardHostPortsV1 } from '../../core/board/board';
-import { seatAccountQuotas } from '../../core/board/seat-routing';
+import { effectiveSeatConfig, seatAccountQuotas } from '../../core/board/seat-routing';
 import { withSeatLine } from '../../core/board/seat-line';
 import type { SeatConfigV1, SeatId } from '../../core/board/seats-settings';
 import { HerdrCoreError, herdrAppDo } from '../terminal/herdr-core';
@@ -64,13 +64,14 @@ function startWorktree(input: DispatchInput, issue: number): { readonly path: st
   return { path: start.worktree_path, branch: start.branch };
 }
 
-function claimBody(decision: DispatchedV1, branch: string, tab: string | null, runtime: SeatConfigV1['runtime'], coordinator: string): string {
+function claimBody(decision: DispatchedV1, branch: string, tab: string | null, runtime: SeatConfigV1['runtime'], model: string | null, coordinator: string): string {
   return [
     'repo-harness issue claim',
     'Status: active',
     'Role: writer',
     `Agent: ${decision.seat}, session ${tab ?? 'unnamed tab'}`,
     `Runtime: ${runtime}`,
+    ...(model === null ? [] : [`Model: ${model}`]),
     `Branch: ${branch}`,
     `Scope: issue #${decision.issue} as its body states it`,
     'Not in scope: anything the issue body does not name',
@@ -95,7 +96,7 @@ function releaseClaim(ports: DispatchPorts, issue: number, claimUrl: string): vo
  * (`seats argv`). A launch that failed before the request keeps no claim; one that may have created the tab keeps it and
  * stops, because a retry could start a second worker.
  */
-export async function executeDispatch(plan: DispatchPlanV1, context: { readonly repositoryId: string; readonly parent: number; readonly space: string; readonly dry_run: boolean }, ports: DispatchPorts): Promise<DispatchResultV1['started']> {
+export async function executeDispatch(plan: DispatchPlanV1, context: { readonly repositoryId: string; readonly parent: number; readonly space: string; readonly dry_run: boolean; readonly model: (seat: SeatId) => string | null }, ports: DispatchPorts): Promise<DispatchResultV1['started']> {
   const started: Array<DispatchResultV1['started'][number]> = [];
   if (plan.decisions.some(decision => decision.action === 'dispatch') && plan.coordinator === null) throw new DispatchError(`#${context.parent} has no active coordinator claim${plan.parent_comments_truncated ? ' in the comments that were read; older parent comments were not read' : ''}; nothing was started`);
   if (context.dry_run) return started;
@@ -106,7 +107,7 @@ export async function executeDispatch(plan: DispatchPlanV1, context: { readonly 
     const launch = await ports.launch(decision.seat, labels, worktree.path);
     // The launch reads the seats configuration again, so the runtime that will run is checked here, not the planned one.
     if (decision.credentials && launch.runtime === 'pi') throw new DispatchError(`#${decision.issue} touches credentials and its launch resolved to a Pi seat; nothing was started`);
-    const claimUrl = ports.comment(decision.issue, claimBody(decision, worktree.branch, launch.tab, launch.runtime, plan.coordinator!));
+    const claimUrl = ports.comment(decision.issue, claimBody(decision, worktree.branch, launch.tab, launch.runtime, context.model(decision.seat), plan.coordinator!));
     try {
       ports.openTab({
         ...(launch.tab === null ? {} : { name: launch.tab }), space: context.space, folder: worktree.path, argv: launch.argv, task: packet(decision, worktree.path, claimUrl),
@@ -132,7 +133,10 @@ export async function runDispatch(input: DispatchInput): Promise<DispatchResultV
   const { seats } = readSeatsConfiguration(process.env);
   const quota = seatAccountQuotas((await readQuotaReport(process.env)).accounts, seats.routing);
   const plan = planDispatch({ parent, terminals: terminals.terminals, seats, quota });
-  const started = await executeDispatch(plan, { repositoryId, parent: input.parent, space: input.space, dry_run: input.dry_run }, {
+  const started = await executeDispatch(plan, { repositoryId, parent: input.parent, space: input.space, dry_run: input.dry_run,
+    // The same projection that `seatLaunch` uses for the argv, so the claim names the model that runs.
+    model: seat => effectiveSeatConfig(seat, seats, quota)?.model ?? null,
+  }, {
     startWorktree: issue => startWorktree(input, issue),
     comment: (issue, body) => gh(input, ['issue', 'comment', String(issue), '--body-file', '-'], withSeatLine(body)),
     openTab: args => { herdrAppDo('tab.new', args); },
