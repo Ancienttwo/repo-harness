@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -10,7 +10,10 @@ import { decodeBoard, type BoardHostPortsV1, type BoardTerminalV1, type BoardV1 
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
-import { collectBoard, readLocalRepositoryId } from '../src/effects/board/collect';
+import { collectBoard, readLocalRepositoryId, type BoardCollectInput } from '../src/effects/board/collect';
+import { runBoardMerge } from '../src/effects/board/merge';
+import { boardMergeDecisions } from '../src/core/board/merge';
+import { provenMergeOnlySyncs } from '../src/effects/board/merge-only-sync';
 import { runBoardCloseout, stopCodegraphServers } from '../src/effects/board/closeout';
 import type { RunArchctxProcess } from '../src/core/architecture/contracts';
 import { githubRemoteRepository, parseRefs } from '../src/core/board/source';
@@ -71,6 +74,10 @@ interface Replay {
   /** The version that the fake hc reports; the recorded core reported 0.1.17. */
   readonly hcVersion?: string;
   readonly now?: Date;
+  /** The open pull requests whose readiness is ready; the default is #1491. */
+  readonly ready?: readonly number[];
+  /** The git proof of a merge-only sync; the default proves none. */
+  readonly mergeOnlySyncs?: BoardCollectInput['merge_only_syncs'];
 }
 
 function issueNode(data: Json, number: number): Json {
@@ -85,6 +92,10 @@ function comment(body: string, createdAt: string): Json {
 const POLICY_ABSENT = { status: 1, stdout: '{"message":"Not Found","status":"404"}', stderr: 'gh: Not Found (HTTP 404)' };
 
 function replay(options: Replay = {}): BoardV1 {
+  return collectBoard(replayInput(options));
+}
+
+function replayInput(options: Replay): BoardCollectInput {
   const root = tmpWorkspace('board'); roots.push(root);
   mkdirSync(join(root, 'bin'));
   writeFileSync(join(root, 'bin/hc'), HC); chmodSync(join(root, 'bin/hc'), 0o755);
@@ -92,7 +103,7 @@ function replay(options: Replay = {}): BoardV1 {
   const pulls = JSON.parse(fixture('pull-requests-1474.graphql.json')); options.pulls?.(pulls.data);
   const resolved = JSON.parse(fixture('archctx-resolve-1474.json')); options.owners?.(resolved.data.results);
   const answer = (value: unknown) => ({ status: 0, stdout: typeof value === 'string' ? value : JSON.stringify(value) });
-  return collectBoard({
+  return {
     repo_root: root,
     parent: 1474,
     now: () => options.now ?? REPLAY_NOW,
@@ -102,10 +113,12 @@ function replay(options: Replay = {}): BoardV1 {
       if (args[1] === 'graphql') return answer(args.some(arg => arg.includes('subIssues')) ? parent : pulls);
       if (args.some(arg => arg.includes('actions/workflows/ci.yml/runs'))) return answer(fixture('daily-run.json'));
       if (args.includes('repos/Ancienttwo/repo-harness/contents/.ai/harness/policy.json?ref=main')) return options.policy ?? POLICY_ABSENT;
+      if (args.includes('repos/{owner}/{repo}')) return answer({ id: 1_000_001 });
       throw new Error(`unexpected gh call: ${args.join(' ')}`);
     },
     // #1491 is the only PR that the recorded data shows as accepted; the readiness projection has its own suite.
-    readiness: (selection) => ({ ...selection, protocol: 2, kind: 'repo-harness-pull-request-readiness', ready: selection.pr_number === 1491 }) as unknown as PullRequestReadinessV2,
+    readiness: (selection) => ({ ...selection, protocol: 2, kind: 'repo-harness-pull-request-readiness', ready: (options.ready ?? [1491]).includes(selection.pr_number), blockers: [] }) as unknown as PullRequestReadinessV2,
+    merge_only_syncs: options.mergeOnlySyncs ?? (() => []),
     // archctx 0.11.2 at d0f4223f4 on the files of the open PRs. A request gets the recorded result of each of its
     // paths, in its order; exit 2 when one is ambiguous. An unrecorded path fails the test.
     archctx: {
@@ -120,7 +133,7 @@ function replay(options: Replay = {}): BoardV1 {
         return { status, signal: null, stdout: JSON.stringify({ ...resolved, data: { results } }), stderr: '' };
       }),
     },
-  });
+  };
 }
 
 function rules(board: BoardV1): BoardRuleId[] {
@@ -307,7 +320,7 @@ test('High acceptance: PASS rows of the head from two distinct claims, one recor
     [[['pi', claimUrl(1), null], ['codex', claimUrl(2), null]], 'not_accepted', 'pending'],
     // A FAIL row of the head withholds the rule from both projections.
     [[gatekeeper, ['codex', claimUrl(2)], ['codex', claimUrl(3), 'same-family', 'FAIL']], 'not_accepted', 'pending'],
-    // Rows of an earlier head do not carry over to a sync head.
+    // Rows of an earlier head do not carry over to a head that git did not prove a merge-only sync of it.
     [[['pi', claimUrl(4), 'different-family', 'PASS', OLD], ['codex', claimUrl(6), 'different-family', 'PASS', OLD]], 'not_accepted', 'pending'],
   ];
   const projected = cases.map(([rows]) => head(rows));
@@ -505,7 +518,9 @@ test('one strict summary decoder checks snapshots and route rows', () => {
 test('decoders refuse an unknown protocol or kind', () => {
   expect(() => decodeBoard({ protocol: 2, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 2');
   expect(() => decodeBoard({ protocol: 1, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 1');
-  expect(() => decodeBoard({ protocol: 3, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
+  // A protocol-3 board has no merge_hold fields.
+  expect(() => decodeBoard({ protocol: 3, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 3');
+  expect(() => decodeBoard({ protocol: 4, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
   const block = (value: Json) => `repo-harness plan\n\n\`\`\`json\n${JSON.stringify(value)}\n\`\`\`\n`;
   const valid = { protocol: 1, kind: 'repo-harness.plan', merge_order: [1475], holds: [], batches: [], seat_limits: { worker: 3 } } as const;
   expect(decodePlanBlock(block(valid))).toEqual(valid);
@@ -548,6 +563,112 @@ test('plan revision: the ordinal of the newest plan comment among the write-acce
     revision([first]), revision([first, second, third]), revision([first, invalid, third]), revision([first, second, request]),
     revision([first, second], true), revision([first, invalid]), revision([]),
   ]).toEqual([1, 3, 3, 2, null, 'unavailable', 'absent']);
+});
+
+const POLICY_ON = { status: 0, stdout: JSON.stringify({ type: 'file', path: '.ai/harness/policy.json', encoding: 'base64', content: Buffer.from('{"publication":{"acceptance_merge":"on"}}').toString('base64') }) };
+
+/** #1491 (closes #1475) is accepted by record, green and ready; the plan orders #1475 first and #1475 is tier:medium. */
+function mergeReplay(edit: { parent?: (data: Json) => void; pulls?: (data: Json) => void; order?: number[]; holds?: Json[] } = {}, options: Replay = {}): Replay {
+  return {
+    policy: POLICY_ON,
+    ...options,
+    parent: (data) => {
+      const block = { protocol: 1, kind: 'repo-harness.plan', merge_order: edit.order ?? [1475, 1479], holds: edit.holds ?? [], batches: [], seat_limits: { worker: 4 } };
+      data.repository.issue.comments.nodes.push(comment(`repo-harness plan\n\n\`\`\`json\n${JSON.stringify(block)}\n\`\`\``, '2026-11-02T22:00:00Z'));
+      issueNode(data, 1475).labels.nodes.push({ name: 'tier:medium' });
+      edit.parent?.(data);
+    },
+    pulls: edit.pulls,
+  };
+}
+
+function mergeReason(edit: Parameters<typeof mergeReplay>[0] = {}, options: Replay = {}, pr = 1491): string {
+  const decision = boardMergeDecisions(replay(mergeReplay(edit, options))).find(entry => entry.pr === pr)!;
+  return decision.eligible ? 'eligible' : decision.reason;
+}
+
+test('board merge: an accepted, green, ready PR first in plan order is eligible, A11 wakes the orchestrator, and the merge pins its head and base', () => {
+  const board = replay(mergeReplay());
+  expect(evaluateBoardAttention(board).findings.filter(finding => finding.rule === 'A11').map(finding => [finding.pull_requests, finding.message]))
+    .toEqual([[[1491], 'eligible: run repo-harness board merge --parent 1474 --pr 1491']]);
+  const pr = board.pull_requests.find(entry => entry.number === 1491)!;
+  const calls: Json[] = [];
+  const merge = (input: Json) => { calls.push(input); return { exit_code: 0, document: { ok: true } } as never; };
+  const merged = runBoardMerge({ ...replayInput(mergeReplay()), pr: null, dry_run: false, merge });
+  expect([merged.target, merged.exit_code]).toEqual([1491, 0]);
+  expect(calls.map(call => [call.pr_number, call.expected_head_sha, call.expected_base_sha, call.provider_repository_id, call.repository]))
+    .toEqual([[1491, pr.head_sha, pr.base_sha, '1000001', 'Ancienttwo/repo-harness']]);
+  const dry = runBoardMerge({ ...replayInput(mergeReplay()), pr: 1491, dry_run: true, merge });
+  const refused = runBoardMerge({ ...replayInput(mergeReplay()), pr: 1494, dry_run: false, merge });
+  expect([dry.target, dry.exit_code, refused.target, refused.exit_code, calls.length]).toEqual([1491, 0, null, 4, 1]);
+  // A proven merge-only sync of the accepted head carries its acceptance (`via: 'sync'`) and stays eligible.
+  const synced = mergeReplay({ pulls: (data) => { const { pr1491 } = data.repository; pr1491.headRefOid = pr1491.commits.nodes[0].commit.oid = 'c'.repeat(40); } }, { mergeOnlySyncs: (_input, candidates) => candidates.filter(sha => sha === pr.head_sha) });
+  expect(replay(synced).pull_requests.find(entry => entry.number === 1491)!.acceptance).toMatchObject({ status: 'accepted', via: 'sync', carried_from: pr.head_sha });
+  expect(boardMergeDecisions(replay(synced)).find(entry => entry.pr === 1491)).toEqual({ pr: 1491, eligible: true });
+});
+
+test('board merge: every hold stays in force until a strictly newer release on its own thread; Issues: scopes only a parent hold', () => {
+  const HOLD = 'repo-harness merge hold\nReason: owner said stop';
+  const RELEASE = 'repo-harness merge hold released';
+  type Thread = 'parent' | 'issue' | 'pr';
+  const on = (...records: [Thread, string, string][]) => ({
+    parent: (data: Json) => {
+      for (const [thread, body, at] of records) {
+        if (thread === 'parent') data.repository.issue.comments.nodes.push(comment(body, at));
+        if (thread === 'issue') issueNode(data, 1475).comments.nodes.push(comment(body, at));
+      }
+    },
+    pulls: (data: Json) => { for (const [thread, body, at] of records) if (thread === 'pr') data.repository.pr1491.comments.nodes.push(comment(body, at)); },
+  });
+  expect([
+    mergeReason(on(['pr', HOLD, '2026-11-02T21:00:00Z'])),
+    mergeReason(on(['pr', HOLD, '2026-11-02T21:00:00Z'], ['pr', RELEASE, '2026-11-02T21:30:00Z'])),
+    mergeReason(on(['pr', HOLD, '2026-11-02T21:00:00Z'], ['pr', RELEASE, '2026-11-02T21:00:00Z'])),
+    mergeReason(on(['pr', HOLD, '2026-11-02T21:00:00Z'], ['issue', RELEASE, '2026-11-02T21:30:00Z'])),
+    mergeReason(on(['issue', `${HOLD}\nIssues: #999`, '2026-11-02T21:00:00Z'])),
+    mergeReason(on(['parent', `${HOLD}\nIssues: #1479`, '2026-11-02T21:00:00Z'])),
+    mergeReason(on(['parent', HOLD, '2026-11-02T21:00:00Z'])),
+    mergeReason(on(['parent', HOLD, '2026-11-02T21:00:00Z'], ['parent', `${HOLD}\nIssues: #1479`, '2026-11-02T21:10:00Z'])),
+    mergeReason({ parent: (data) => { data.repository.issue.comments.pageInfo.hasPreviousPage = true; } }),
+    // Truncated: the oldest parent comment read is 18:33:49Z. A release at that boundary can tie an omitted hold; a later one cannot.
+    ...['2026-11-02T18:33:49Z', '2026-11-02T21:00:00Z'].map(at => mergeReason({ parent: (data) => {
+      data.repository.issue.comments.nodes.push(comment(RELEASE, at));
+      data.repository.issue.comments.pageInfo.hasPreviousPage = true;
+    } })),
+  ]).toEqual(['held', 'eligible', 'held', 'held', 'held', 'eligible', 'held', 'held', 'hold_unknown', 'hold_unknown', 'eligible']);
+});
+
+test('board merge: no plan, a draft, plan holds, plan order for every linked item, the provisional Low path, a missing Claude review, a red Required / CI, readiness and the policy switch each refuse', () => {
+  const lowGreen = {
+    parent: (data: Json) => { issueNode(data, 1479).labels.nodes.push({ name: 'tier:low' }); },
+    pulls: (data: Json) => {
+      const { pr1494 } = data.repository;
+      pr1494.isDraft = false;
+      withoutHazards(pr1494);
+      pr1494.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' });
+    },
+  };
+  expect([
+    mergeReason({ parent: (data) => { data.repository.issue.comments.nodes.pop(); } }),
+    mergeReason({}, {}, 1499),
+    mergeReason({ holds: [{ issue: 1475, reason: 'owner item' }] }),
+    mergeReason({ order: [1479, 1475] }),
+    mergeReason({ order: [1475, 1479, 1476], pulls: (data) => { data.repository.pr1491.body += '\nRefs #1476\n'; } }),
+    mergeReason({ order: [1476, 1475], pulls: (data) => { data.repository.pr1491.body += '\nRefs #1476\n'; } }),
+    mergeReason({ order: [1479] }),
+    mergeReason({ ...lowGreen, order: [1479, 1475] }, {}, 1494),
+    mergeReason({ parent: (data) => { issueNode(data, 1475).labels.nodes = []; } }),
+    mergeReason({ pulls: (data) => { for (const check of data.repository.pr1491.commits.nodes[0].commit.statusCheckRollup.contexts.nodes) if (check.name === 'Required / CI') check.conclusion = 'FAILURE'; } }),
+    mergeReason({}, { ready: [] }),
+    mergeReason({}, { policy: POLICY_ABSENT }),
+  ]).toEqual(['plan_unavailable', 'draft', 'plan_hold', 'merge_order', 'merge_order', 'merge_order', 'not_in_merge_order', 'not_accepted', 'not_accepted', 'required_check', 'not_ready', 'acceptance_merge_off']);
+  // A PR that closes an earlier plan item can never see it closed first; a linked issue outside the board fails closed.
+  const decision = (edit: Parameters<typeof mergeReplay>[0]) => boardMergeDecisions(replay(mergeReplay(edit))).find(entry => entry.pr === 1491);
+  expect(decision({ order: [1475, 1479], pulls: (data) => { data.repository.pr1491.body += '\nCloses #1479\n'; } }))
+    .toMatchObject({ reason: 'merge_order', detail: 'earlier plan item #1475 is closed only by this PR; split the PR' });
+  expect(decision({ pulls: (data) => { data.repository.pr1491.body += '\nRefs #1460\n'; } })).toMatchObject({ reason: 'item_off_board' });
+  // The Low PR is accepted on the provisional tier_low path, which an unattended merge does not take.
+  expect(replay(mergeReplay({ ...lowGreen, order: [1479, 1475] })).pull_requests.find(pr => pr.number === 1494)!.acceptance).toMatchObject({ status: 'accepted', via: 'tier_low' });
 });
 
 test('merge policy: the policy file of the default branch through the one parser; only an absent file or key reads as off', () => {
@@ -1518,6 +1639,147 @@ test('closeout stops a CodeGraph MCP server bound to exactly the worktree and no
     // Signal 0 throws only for a process that is gone.
     expect([elsewhere.pid, otherPath.pid, bystander.pid].map(pid => { try { process.kill(pid, 0); return true; } catch { return false; } })).toEqual([true, true, true]);
   } finally { server.kill(); elsewhere.kill(); otherPath.kill(); bystander.kill(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+describe('merge-only sync carry (#2074)', () => {
+  const reviewed = 'c'.repeat(40);
+  const hook = 'src/cli/hook/runtime.ts';
+  const receipt = (harness: 'claude' | 'pi', subject_sha: string, model_relation: ModelRelation, verdict: 'PASS' | 'FAIL' = 'PASS'): ReviewPublishReceipt => ({
+    protocol: 1, kind: 'repo-harness-review-publish-receipt', round: 1, subject_sha, risk_tier: 'high', reviewer: { harness, actual_model: null }, verdict, model_relation, summary: 'Reviewed.', findings: [],
+  });
+
+  test('the rows of a reviewed head accept a later High head only when git proves a merge-only sync and no hook path changes', () => {
+    const calls: (readonly string[])[] = [];
+    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly syncFailAt?: string; readonly split?: boolean; readonly headPass?: boolean; readonly hookFile?: boolean } = {}) => replay({
+      parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
+      pulls: (data) => {
+        const { pr1499 } = data.repository;
+        // The two round-1 reviews of the reviewed head, each with its own claim (`acceptor.md` section 2.2).
+        // `split`: the second review is on the newer proven sync head B, so neither head has both reviews.
+        for (const [at, harness, relation, subject] of [['00:10', 'pi', 'different-family', reviewed], ['00:11', 'claude', 'same-family', options.split ? 'b'.repeat(40) : reviewed]] as const) {
+          const claim = comment(renderAcceptanceClaim(receipt(harness, subject, relation)), `2026-11-03T${at}:00Z`);
+          pr1499.comments.nodes.push(claim, comment(renderAcceptanceRecord(receipt(harness, subject, relation), claim.url), `2026-11-03T${at}:30Z`));
+        }
+        // Another proven sync head B of the same patch failed its sync check, after both PASS rows or between them: no PASS skips it.
+        if (options.syncFailAt !== undefined) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', 'b'.repeat(40), 'different-family', 'FAIL'), ''), `2026-11-03T${options.syncFailAt}Z`));
+        // `headPass`: the head has both reviews of its own.
+        if (options.headPass) {
+          for (const [at, harness, relation] of [['00:40', 'pi', 'different-family'], ['00:41', 'claude', 'same-family']] as const) {
+            const claim = comment(renderAcceptanceClaim(receipt(harness, pr1499.headRefOid, relation)), `2026-11-03T${at}:00Z`);
+            pr1499.comments.nodes.push(claim, comment(renderAcceptanceRecord(receipt(harness, pr1499.headRefOid, relation), claim.url), `2026-11-03T${at}:30Z`));
+          }
+        }
+        if (options.headFail) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', pr1499.headRefOid, 'different-family', 'FAIL'), ''), '2026-11-03T00:30:00Z'));
+        if (options.hookFile) pr1499.files.nodes.push({ path: hook });
+      },
+      owners: (results) => {
+        if (options.hookFile) results.push({ path: hook, matched: true, ambiguous: false, owningCapabilityId: 'capability.runtime-harness.hook-adapters' });
+      },
+      // Git proves the reviewed head and B; the older subjects of the recorded comments are not syncs of the head.
+      mergeOnlySyncs: (input, candidates) => {
+        if (input.pr === 1499) calls.push(candidates);
+        return options.proven === false ? [] : candidates.filter(sha => sha === reviewed || sha === 'b'.repeat(40));
+      },
+    }).pull_requests.find(pr => pr.number === 1499)!;
+    expect(carry()).toMatchObject({ tier: 'high', claude_review: 'recorded', acceptance: { status: 'accepted', via: 'sync', carried_from: reviewed, accepted_at: '2026-11-03T00:11:30Z', evidence_url: comment('', '2026-11-03T00:11:30Z').url } });
+    expect(calls[0]).toContain(reviewed);
+    expect(carry({ proven: false }).acceptance).toEqual({ status: 'not_accepted' });
+    for (const at of ['00:20:00', '00:10:45']) expect(carry({ syncFailAt: at }).acceptance).toEqual({ status: 'not_accepted' });
+    expect(carry({ split: true }).acceptance).toEqual({ status: 'not_accepted' });
+    // A FAIL on a proven earlier head stops only the carry: the head's own two reviews still accept it.
+    expect(carry({ syncFailAt: '00:20:00', headPass: true }).acceptance).toMatchObject({ status: 'accepted', via: 'record', accepted_at: '2026-11-03T00:41:30Z' });
+    calls.length = 0;
+    expect(carry({ headFail: true }).acceptance).toEqual({ status: 'not_accepted' });
+    expect(carry({ hookFile: true }).acceptance).toEqual({ status: 'not_accepted' });
+    // A FAIL on the head and an owner-approved hook diff leave git no candidate.
+    expect(calls).toEqual([[], []]);
+  });
+
+  test('git proves clean merges of the base; an extra commit, a conflict, a moved edit, a whitespace change, a missing object and a failed fetch give no proof', () => {
+    const root = tmpWorkspace('merge-only-sync'); roots.push(root);
+    const clone = join(root, '.clone');
+    const git = (...args: string[]) => {
+      const result = run('git', args, args[0] === '-C' ? tmpdir() : root);
+      expect(result.status).toBe(0);
+      return result.stdout.trim();
+    };
+    const write = (files: Readonly<Record<string, string | undefined>>) => { for (const [path, text] of Object.entries(files)) if (text !== undefined) writeFileSync(join(root, path), text); };
+    // run.sh has two blocks with the same context; the PR edits the first.
+    const block = (name: string, verdict: string) => `# ${name}\ncheck() {\n  printf ${verdict}\n}\n`;
+    initGitRepo(root);
+    write({ 'f.txt': '1\n2\n3\n4\n5\n', 'b.txt': 'b\n', 'run.sh': block('alice', 'deny') + 'x\ny\nz\n' + block('bob', 'deny'), 'ci.yml': 'jobs:\n  test:\n    runs-on: x\n' });
+    git('add', '.'); git('commit', '-m', 'base');
+    const initial = git('rev-parse', 'HEAD');
+    git('checkout', '-b', 'feature');
+    const reviewed = { 'f.txt': '1\nsay "two words"\n3\n4\n5\n', 'run.sh': block('alice', 'allow') + 'rm -rf ./build\ny\nz\n' + block('bob', 'deny'), 'ci.yml': 'jobs:\n  test:\n    runs-on: x\n    needs: ci\n' };
+    write(reviewed); git('commit', '-am', 'feature');
+    const subject = git('rev-parse', 'HEAD');
+    // The clone has the reviewed head but not the sync head or the new base, so its proof needs the fetch.
+    git('clone', '--quiet', root, clone);
+    const stale = git('-C', clone, 'rev-parse', 'refs/remotes/origin/main');
+    git('checkout', 'main');
+    write({ 'b.txt': 'b2\n' }); git('commit', '-am', 'main moves');
+    const base = git('rev-parse', 'HEAD');
+    git('checkout', 'feature');
+    git('merge', '--no-edit', 'main');
+    const sync = git('rev-parse', 'HEAD');
+    const proven = (head: string, sha = subject, baseSha = base) => provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: baseSha, head_sha: head }, [sha]).length === 1;
+    expect(proven(sync)).toBe(true);
+    git('update-ref', 'refs/pull/1/head', sync);
+    const fromClone = () => provenMergeOnlySyncs({ repo_root: clone, pr: 1, base_ref: 'main', base_sha: base, head_sha: sync }, [subject]);
+    git('-C', clone, 'remote', 'set-url', 'origin', join(root, 'missing'));
+    expect(fromClone()).toEqual([]);
+    git('-C', clone, 'remote', 'set-url', 'origin', root);
+    expect(fromClone()).toEqual([subject]);
+    // The fetch writes objects only: no remote-tracking ref moves and no FETCH_HEAD appears.
+    expect(git('-C', clone, 'rev-parse', 'refs/remotes/origin/main')).toBe(stale);
+    expect(existsSync(join(clone, '.git/FETCH_HEAD'))).toBe(false);
+    write({ 'f.txt': '1\nsay "two words"\n3\n4\nfive\n' }); git('commit', '-am', 'new work');
+    expect(proven(git('rev-parse', 'HEAD'))).toBe(false);
+    // Each merge of main that changes one byte of the clean merge result gives no proof.
+    const evilMerge = (files: Readonly<Record<string, string | undefined>>): boolean => {
+      git('reset', '--hard', subject);
+      git('merge', '--no-commit', 'main');
+      write(files); git('commit', '-am', 'merge with an edit');
+      return proven(git('rev-parse', 'HEAD'));
+    };
+    expect([
+      // The edit moves to the block with the same context.
+      { 'run.sh': block('alice', 'deny') + 'rm -rf ./build\ny\nz\n' + block('bob', 'allow') },
+      { 'f.txt': '1\nsay "twowords"\n3\n4\n5\n' },
+      { 'run.sh': reviewed['run.sh'].replace('rm -rf ./build', 'rm -rf . /build') },
+      { 'ci.yml': 'jobs:\n  test:\n    runs-on: x\nneeds: ci\n' },
+    ].map(evilMerge)).toEqual([false, false, false, false]);
+    // main changes the PR line too: the merge conflicts, and a resolution to the exact PR side still gives no proof.
+    git('checkout', 'main');
+    write({ 'f.txt': '1\nsay "other"\n3\n4\n5\n' }); git('commit', '-am', 'main edits the PR line');
+    const conflicting = git('rev-parse', 'HEAD');
+    git('checkout', 'feature'); git('reset', '--hard', subject);
+    expect(run('git', ['merge', 'main'], root).status).not.toBe(0);
+    write(reviewed); git('commit', '-am', 'resolve to the PR side');
+    expect(proven(git('rev-parse', 'HEAD'), subject, conflicting)).toBe(false);
+    expect(proven(sync, 'd'.repeat(40))).toBe(false);
+    // The base absorbed the reviewed change, so the no-op merge H leaves an empty PR diff: no proof.
+    git('checkout', '-b', 'absorbed', base); git('merge', '--no-edit', subject);
+    const absorbed = git('rev-parse', 'HEAD');
+    git('checkout', '-B', 'noop', subject); git('merge', '--no-ff', '--no-edit', 'absorbed');
+    expect(proven(git('rev-parse', 'HEAD'), subject, absorbed)).toBe(false);
+    // A failed ancestry check gives no proof: of one merge parent, even when the other parent is in the base; or of another candidate,
+    // whose FAIL rows the board could then not place.
+    const failing = (ancestor: string, of: string, candidates: readonly string[]): readonly string[] => {
+      const wrapper = join(root, '.git-fails');
+      writeFileSync(wrapper, `#!/bin/sh\n[ "$1 $2 $3 $4" = "merge-base --is-ancestor ${ancestor} ${of}" ] && exit 128\nexec git "$@"\n`); chmodSync(wrapper, 0o755);
+      const previous = process.env.REPO_HARNESS_GIT_BIN;
+      process.env.REPO_HARNESS_GIT_BIN = wrapper;
+      try { return provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: base, head_sha: sync }, candidates); } finally {
+        if (previous === undefined) delete process.env.REPO_HARNESS_GIT_BIN; else process.env.REPO_HARNESS_GIT_BIN = previous;
+      }
+    };
+    expect(failing(subject, base, [subject])).toEqual([]);
+    expect(failing(initial, sync, [subject, initial])).toEqual([]);
+    // Without the error, the other candidate is just not a sync (the PR commit lies between it and the head).
+    expect(provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: base, head_sha: sync }, [subject, initial])).toEqual([subject]);
+  });
 });
 
 test('watch window --review: each start or refusal is a log line and an orchestrator message; a failed run is a refusal line', async () => {

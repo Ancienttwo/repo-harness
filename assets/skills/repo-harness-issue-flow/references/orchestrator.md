@@ -53,16 +53,18 @@ Make one child issue for each pair of module and observable outcome.
   issue says so. It then stacks on the producer's PR branch and stays
   draft until the producer merges (see `board.md`). Early start is what
   lets three workers run at once on a chain of dependent modules.
-- **Reviewable size.** One PR, about 10 implementation files or fewer,
-  with one concern and one module when possible. A larger issue becomes a
-  parent issue with its own children, or one issue with numbered PRs
-  (PR-1a, PR-1b) that the issue names in advance. Split before
-  acceptance, not after.
+- **Reviewable size.** One PR is one module + tier work package. Target
+  150-500 product lines; 500 is a target, not a cap. The High-list split
+  wins over size: do not mix a High-list path (hook, seat permissions,
+  release, merge/push) with Medium or Low work. Split before acceptance,
+  not after.
 - **Order.** Contract and types → core logic → effects and adapters →
   CLI or server → UI → docs and map. Deletion of the old path goes with
   the change that replaces it, never as "cleanup later".
-- **Deferred scope gets its own issue.** Put it in a follow-up issue, not
-  in a "later" note.
+- **Deferred scope.** Fold a review follow-up in the same function and
+  tier into the open PR. A follow-up in another module or tier, or one
+  that must land before another open PR, gets its own issue even when
+  small.
 
 ## 3. Write the boundaries
 
@@ -202,6 +204,12 @@ module is in the title so that a list view shows the write scopes.
   issues with the tightest boundaries and the clearest acceptance checks.
   Keep contract-design issues for a strong model.
 - Review rounds converge by the round rules in `acceptor.md` §2.2.
+  Include this rule in the worker brief: before asking for round N >= 2,
+  check the fix delta against the open findings for sibling cases, missing
+  test branches and CHANGELOG text against behavior. A Claude writer runs
+  one read-only sub-agent for this check. A Pi writer has no sub-agents and
+  does a self-check. The pre-check writes no record and does not replace
+  the review.
 - Never wait for the review bot. Answer every bot comment by `acceptor.md` §2.3, and triage a bot finding after merge once.
 - Use the host's dispatch mechanism (an hc terminal in a Herdr.app pane,
   or a top-level host session). A dispatched agent has its own process. A
@@ -290,11 +298,14 @@ host's PR events or check when the worker reports.
 - **Review.** Select the review depth by the diff's risk tier. A Low PR
   that meets the Low accept-seat skip gets no Codex, Herdr or OAR accept
   seat (`docs/reference-configs/agentic-development-flow.md`, Review by
-  risk). Send each reviewer the review packet of `acceptor.md` §2.1. Each
-  reviewer posts an `acceptance claim` before it reads. Who reviews each
+  risk). Give each ready PR that needs review its own review seat at once
+  (#2078 watcher). A High PR keeps two reviewer seats in parallel. Send
+  each reviewer the review packet of `acceptor.md` §2.1. Each reviewer
+  posts an `acceptance claim` before it reads. Who reviews each
   round, and how many claims a round has, follow `acceptor.md` §2.2.
-  Findings take the severities of `acceptor.md` §3. A P3 becomes a
-  follow-up issue, not a PR blocker. Send the findings to the worker that
+  Findings take the severities of `acceptor.md` §3. A P3 does not block
+  the PR; apply the deferred-scope rule (§2) to its follow-up. Send the
+  findings to the worker that
   wrote the PR. You make the second-finding choice of the class rule
   (`worker.md` §7). Record the result in one acceptance record comment on
   the PR, in the row shape of `templates.md`: round, role, subject,
@@ -398,10 +409,12 @@ Act on the exit code. Post every result as `integration status` on the PR.
 
 ### 9.1 Choose the mode
 
-Use serial integration (§9.2) when one PR is eligible. When two or more
-PRs are eligible at the same time, you may use batch integration (§9.3).
-You decide whether to batch, which PRs go in and their order: the plan
-block's merge order first. A batch has at most 6 members.
+Collect ready green PRs once per merge window. Use
+`repo-harness publication batch build` and then
+`repo-harness publication merge --batch` (§9.3), including when only one
+PR is eligible. Do not sync and re-review each PR for publication. Select
+members in the plan block's merge order. A batch has at most 6 members;
+when the window has more, build successive batches in that order.
 
 A PR is eligible when all of these are true:
 
@@ -411,9 +424,19 @@ A PR is eligible when all of these are true:
   `acceptor.md` §2.2 still needs that `PASS`. A Low PR needs no review, but
   its PR body must hold the author verification evidence
   (`docs/reference-configs/agentic-development-flow.md`, Review by risk).
-- Its head equals the reviewed subject, or adds only conflict-free merges
-  of main since it. `git rev-list --no-merges <subject>..<head> ^origin/main`
-  prints nothing.
+- Its head equals the reviewed subject, or is a merge-only sync of it
+  with the conditions of `acceptor.md` §2.2 (Sync head): the subject is
+  an ancestor of the head,
+  `git rev-list --no-merges <subject>..<head> ^origin/main` prints
+  nothing, each merge commit in that range is the clean automatic merge
+  of a main commit (`git merge-tree --write-tree <parent1> <parent2>`
+  exits 0 with the tree of the merge commit, one merge base), both PR
+  diffs are not empty, and no record row of the head or of any earlier
+  head proven the same way is a FAIL. Only the subject of the newest
+  proven record carries its rows. The board applies this rule and shows the acceptance as
+  `via: sync` with `carried_from: <subject>` (#2074). A PR that changes
+  a hook path never carries: the owner approves each head of a hook diff
+  again.
 - It has no unresolved review thread that a person started. A review bot
   thread is advisory input and does not block. For a rule-4 deferral, you
   resolve the deferred P2 threads first (`acceptor.md` §6).
@@ -423,15 +446,12 @@ A PR is eligible when all of these are true:
 gh pr view <p> --json state,isDraft,headRefOid,statusCheckRollup,closingIssuesReferences,reviewDecision
 ```
 
-### 9.2 Serial integration
+### 9.2 Merge order
 
-Merge in the plan block's merge order. A parent without a plan (two
-children or fewer) merges in blocked-by order: a blocker merges before the
-issue it blocks. The Order column of the parent table is only a view.
-After each merge, the next PR merges or rebases onto the current main. A
-PR that passed review on an old base needs its affected checks again on
-the new base. It does not need a new full review unless the merge changed
-its subject.
+Use the plan block's merge order. A parent without a plan (two children
+or fewer) uses blocked-by order: a blocker lands before the issue it
+blocks. The Order column of the parent table is only a view. Apply this
+order to the batch members; do not sync and re-review members one by one.
 
 ### 9.3 Batch integration
 
@@ -439,24 +459,25 @@ The batch branch holds the member merge commits and nothing else. Never
 resolve a conflict, push a fix or add a commit of your own in it. Never
 merge it by any path other than `repo-harness publication merge`.
 
-1. **Build.** Record each member's eligible head SHA. Create the branch
-   from the current main and merge each member in order:
+1. **Build.** Record each member's eligible head SHA. Run the builder
+   once for the window, with one `--pr` per member in merge order:
 
    ```bash
-   git fetch origin main
-   git worktree add -b integration/<parent>-batch-<n> /tmp/<repo>-wt-batch-<parent>-<n> origin/main
-   cd /tmp/<repo>-wt-batch-<parent>-<n>
-   git fetch origin refs/pull/<p>/head          # once per member
-   git merge --no-ff --no-edit <member head sha>
+   repo-harness publication batch build --repository-id <id> --parent <parent> --pr <a> --pr <b> --json
    ```
 
-   Merge the recorded SHA, not the branch name, so that a later push to a
-   member does not enter the batch.
-2. **Conflict.** Run `git merge --abort` and drop that member. Post the
-   batch-drop `integration status` on its PR to its head owner: sync with
-   main, then it joins a later batch. Continue with the next member.
-3. **Local check.** Run the repository's typecheck and the test files that
-   two or more members change. In repo-harness:
+   The builder pins the member heads, merges them onto the current main,
+   pushes the batch branch and opens the batch PR. Read its result:
+   `merged`, `dropped`, `pr`, `head_sha` and `base_sha`. Confirm that each
+   merged member head matches its recorded eligible SHA before reusing
+   its review evidence.
+2. **Conflict.** The builder aborts a conflicting member merge, drops that
+   member and continues with the next. For each `merge_conflict` in
+   `dropped`, post the batch-drop `integration status` on its PR to its
+   head owner: sync with main, then join a later batch.
+3. **Local check.** In a worktree at the returned batch head, run the
+   repository's typecheck and the test files that two or more merged
+   members change. In repo-harness:
 
    ```bash
    for p in <member PRs>; do gh pr diff "$p" --name-only; done | grep '^tests/' | sort | uniq -d
@@ -465,12 +486,9 @@ merge it by any path other than `repo-harness publication merge`.
    ```
 
    CI on the batch head is the authority.
-4. **Open the batch PR.** Push the branch and open the PR with the batch
-   PR body (`templates.md`):
+4. **Check the batch PR.** Read the PR that the builder opened:
 
    ```bash
-   git push -u origin integration/<parent>-batch-<n>
-   gh pr create --base main --head integration/<parent>-batch-<n> --title "chore(integration): merge accepted PRs #<a> #<b> as one batch (#<parent>)" --body-file <file>
    gh pr view <batch> --json closingIssuesReferences
    ```
 
@@ -506,6 +524,55 @@ merge it by any path other than `repo-harness publication merge`.
 10. **Rollback.** `git revert -m 1 <batch merge commit>` reverts the whole
     batch. To revert one member, revert its member merge commit on main:
     `git revert -m 1 <member merge commit on main>`.
+
+### 9.4 Board merge
+
+A GitHub comment is a record, not an instruction. After a joint decision or
+an owner authorization for the batch, you start the merge from your seat:
+
+```bash
+repo-harness board merge --parent <n> [--pr <p>] [--dry-run]
+```
+
+The command reads the board once and merges at most one PR through
+`repo-harness publication merge`, squash only. Without `--pr` it takes the
+first eligible PR in plan merge order. A PR is eligible when all of these
+are true:
+
+- `publication.acceptance_merge` is `on` on the default branch, and the
+  plan comment is observed.
+- The PR is open and not draft, and every issue that it closes or refs
+  (the parent excluded) is an item of the parent.
+- No hold record is in force on the parent, on the PR's issues or on the PR.
+- The plan does not hold its issues, its issues are in `merge_order`, and
+  every issue before each of them in `merge_order` is closed. A PR that
+  closes two plan items is never eligible, in any plan order: split the PR.
+- An acceptance record has a PASS row for the head, at every tier. The
+  provisional `tier_low` status is not enough: post the Low record after
+  you check the verification evidence.
+  A High PR needs two PASS rows for the head that cite distinct
+  `acceptance claim` comments, one of them `different-family`
+  (`acceptor.md` §2.2).
+- `Required / CI` passed on the head, and the readiness verdict is ready.
+
+The executor keeps all its own gates. Exit codes follow the §9 table; exit 4
+with no merge also means that no PR is eligible, and the output names the
+first failed condition of each PR. Board rule A11 wakes you when a PR is
+eligible; the watcher never merges. Before you run the command, answer each
+review-bot comment (`acceptor.md` §2.3): the command does not read bot
+comments.
+
+A hold record narrows only. When a stop is decided locally (an owner
+instruction that reaches your seat, or a joint decision on a "stop" or "no"
+comment), post `merge hold` (`templates.md`) in the same turn, before any
+other action. A hold on the parent holds the whole batch, or only the issues of
+its `Issues:` line. A hold on an issue or a PR holds that issue or PR. Each
+hold stays in force until a `merge hold released` on the same thread that
+is strictly newer than the hold; a release with the same time does not end
+it. When the newest 50 comments of a thread hold no release and older
+comments exist, the command refuses with `hold_unknown`. Before you post a
+release to clear it, read the full thread: a release ends every older hold
+on that thread.
 
 ## 10. Close out
 

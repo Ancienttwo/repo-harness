@@ -71,12 +71,31 @@ The table rules govern how the row combines with the review.
    and no `FAIL` row. A Medium head needs one `PASS` row and no `FAIL`
    row.
 
-   **Sync head.** A sync with main makes a new head, and the board reads
-   only the rows of the current head. A sync check reviews the sync delta
-   and writes one record row for the new head. A Medium sync head needs
-   one sync check row. A High sync head needs the round-1 rule: two sync
-   check rows from distinct claims, at least one different-family. The
-   acceptance of an earlier head does not carry over.
+   The review brief requires each reviewer, in its first round, to group
+   findings by bug family. For each family, list every sibling case and
+   every missing test branch in one finding.
+
+   **Sync head.** A sync with main makes a new head. The board counts
+   the rows of an earlier reviewed head as rows of the new head when git
+   proves the new head a merge-only sync of it: the reviewed head is an
+   ancestor of the new head, `git rev-list --no-merges <reviewed>..<head>
+   ^origin/main` prints nothing, and each merge commit in that range is
+   the clean automatic merge of a main commit:
+   `git merge-tree --write-tree <parent1> <parent2>` exits 0 with the
+   tree of the merge commit, and the parents have one merge base. Both
+   PR diffs (from the one merge base with main) must not be empty. The
+   board reads the rows of the new head and of the newest proven
+   reviewed head only, so reviews split across older heads do not add
+   up. A FAIL row on any proven head, or on the new head, stops the
+   carry, and a git error on any candidate proves none. The board then shows `via: sync` with
+   `carried_from` (#2074), and the new head needs CI only. Any other sync
+   head (a conflict, even one resolved to the PR side; an edit in the
+   merge; a new commit; a failed git step) needs a sync check: a review
+   of the sync delta that writes one record row for the new head. A
+   Medium sync head needs one sync check row. A High sync head needs the
+   round-1 rule: two sync check rows from distinct claims, at least one
+   different-family. A PR that changes a hook path never carries: the
+   owner approves each head of a hook diff again.
 2. **Round 2.** The reviewer or reviewers that raised a blocking finding
    read the fix delta (the hunks that changed after round 1) and the
    sibling cases of each of its findings. On a High or unknown-tier PR,
@@ -88,12 +107,13 @@ The table rules govern how the row combines with the review.
 3. **Round 3** runs with no owner question when the round-2 findings are in
    the fix delta. It has the scope of round 2.
 4. **After round 3.** A fix loop continues after round 3 without the owner
-   while each round has fewer findings than the round before and the scope
-   does not grow. A grown scope is a joint decision. A new P0 finding, or a
-   new P1 finding about security, secrets, data or authentication, stops the
-   loop at the owner; any other new P1 finding does not stop it. Round 5 is
-   the hard stop. When every remaining finding is P2, all of them are in one
-   bug family, and none concerns security, secrets, data or authentication,
+   while each round has fewer blocking findings (P0-P2) than the round
+   before and the scope does not grow. A grown scope is a joint decision.
+   A new P0 finding, or a new P1 finding about security, secrets, data or
+   authentication, stops the loop at the owner; any other new P1 finding
+   does not stop it. Round 5 is the hard stop. When every remaining finding
+   is P2, all of them are in one bug family, and none concerns security,
+   secrets, data or authentication,
    a recorded decision (the owner, or a joint decision of the orchestrator
    and the advisor) may move that family to one follow-up issue after round
    3 or round 4. The coordinator then resolves each remaining P2 thread with
@@ -109,6 +129,11 @@ The table rules govern how the row combines with the review.
    Other work continues.
 
 The worker fixes each finding by the class rule (`worker.md` §7).
+If a new P1 appears in the fix delta in two rounds in a row, stop
+patching. The orchestrator and the advisor then make a joint decision to
+rescope the PR or revert it to the last clean rule. The owner stop for a
+new P0 or a new P1 about security, secrets, data or authentication still
+applies.
 
 Return `PASS` or `FAIL`. A `FAIL` has at least one P0, P1 or P2 finding.
 Rule 4 decides whether a `FAIL` after round 3 takes another round, defers a

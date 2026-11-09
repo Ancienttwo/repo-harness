@@ -25,7 +25,7 @@ const HOUR = 3_600_000;
 
 function item(number: number, title: string, pull_requests: readonly number[], claim: 'observed' | 'none', at: string): BoardItemV1 {
   return {
-    number, title, url: url('issues', number), state: 'open', labels: [], tier: null, milestone: null, blocked_by: [], pull_requests,
+    number, title, url: url('issues', number), state: 'open', labels: [], tier: null, milestone: null, blocked_by: [], pull_requests, merge_hold: { status: 'none' },
     claim_status: claim === 'none' ? { status_kind: 'none' }
       : { status_kind: 'observed', url: `${url('issues', number)}#issuecomment-1`, created_at: at, status: 'active', pr: null, head_sha: null },
   };
@@ -34,7 +34,7 @@ function item(number: number, title: string, pull_requests: readonly number[], c
 function pullRequest(number: number, head_ref: string, required_check: BoardPullRequestV1['required_check'], acceptance: BoardPullRequestV1['acceptance'], at: string): BoardPullRequestV1 {
   return {
     number, url: url('pull', number), state: 'open', is_draft: false, base_ref: 'main', base_sha: 'a'.repeat(40), head_ref, head_sha: 'b'.repeat(40),
-    head_committed_at: at, merged_at: null, closes: [], refs: [OFFICE_PARENT], files: [], required_check, acceptance, merge_readiness: null, tier: 'medium', claude_review: 'not_required',
+    head_committed_at: at, merged_at: null, closes: [], refs: [OFFICE_PARENT], files: [], required_check, acceptance, merge_readiness: null, tier: 'medium', claude_review: 'not_required', merge_hold: { status: 'none' },
   };
 }
 
@@ -59,6 +59,7 @@ export function officeBoard(now: number): BoardV1 {
       status: 'observed', comment_url: `${url('issues', OFFICE_PARENT)}#issuecomment-3`, created_at: ago(8), revision: 7,
       block: { protocol: 1, kind: 'repo-harness.plan', merge_order: [1315, 1320, 1311, 1324, 1321, 1323, 1295], holds: [{ issue: 1316, reason: '等 DSH 通道' }], batches: [[1315, 1320, 1311, 1324, 1321]], seat_limits: { worker: 6 } },
     },
+    merge_hold: { status: 'none' },
     items: [
       item(1299, 'DSH 插件前端：拒绝记录 tab', [], 'observed', ago(7)),
       item(1305, 'init 刷新后 package.json 仍调用已退役 helper', [], 'none', ago(7)),
