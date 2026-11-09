@@ -7,11 +7,9 @@ and the board are in `board.md`. The round record is in `orchestrator.md`
 
 ## 1. Who accepts
 
-In an owner-approved batch, a Low PR takes one gatekeeper round, because
-merge by rule needs a `PASS` record at every tier (root `CLAUDE.md` and
-`AGENTS.md`, rule 2). Outside such a batch, a Low PR that meets the Low
-accept-seat skip takes no round and no acceptance record
-(`docs/reference-configs/agentic-development-flow.md`, Review by risk).
+A Low PR that meets the Low accept-seat skip takes no round and no
+acceptance record (`docs/reference-configs/agentic-development-flow.md`,
+Review by risk).
 
 The gatekeeper is the default acceptor (D6). It reviews the diff and
 returns a verdict and findings. A seat without the `net` tool group has no

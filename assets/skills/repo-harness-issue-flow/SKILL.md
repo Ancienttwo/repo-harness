@@ -138,9 +138,11 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   off, the executor does not merge and the owner merges. Exit codes:
   `references/orchestrator.md` §9.
 - Merge by rule, every tier. In an owner-approved batch, the orchestrator
-  merges a PR when its acceptance record is PASS for the head,
-  `Required / CI` passed and each review-bot comment has a response. A High
-  PR also needs its cross-model review PASS. The rolling projection PR
+  merges a Medium or High PR when its acceptance record is PASS for the
+  head, `Required / CI` passed and each review-bot comment has a response.
+  A High PR also needs its cross-model review PASS. A Low PR that meets the
+  Low accept-seat skip merges on `Required / CI` and its verification
+  evidence, with no acceptance record (`references/acceptor.md` §1). The rolling projection PR
   (`archctx/projection`) merges on green CI; its merge is its acceptance.
 - Fix rounds. A review loop continues after round 3 without the owner while
   each round has fewer findings than the round before, the scope does not
