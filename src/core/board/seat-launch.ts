@@ -133,7 +133,7 @@ function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly stri
         'Keep judgment, synthesis and the proposal for yourself. Run a check of one or two commands yourself.',
       ].join(' ');
     return [
-      'You are the advisor seat. You serve only the orchestrator. You do research and write proposals. You do not edit code, commit or write to GitHub.',
+      'You are the advisor seat. You serve only the orchestrator. You do research and write proposals. You do not commit or write to GitHub. Edit files only for your proposals.',
       'You may read the processes of worker seats (hc ls, hc get and hc read on seat-labeled terminals) for evidence. You do not send messages or keys to a worker. You report only to the orchestrator.',
       evidence,
     ];
