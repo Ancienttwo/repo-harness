@@ -165,7 +165,7 @@ page. No config migration runs.
 - Merge-commit gates, from the t5 record on #2065: the full daily run
   42584700893 at `382608b27` succeeded (all jobs). The console gate ran in
   the npm lifecycle. Core printed `[release] OK: prepublish fast gate
-  passed`. Owner-machine upgrade: not yet run.
+  passed`. Owner-host upgrade: see Post-publish checks.
 
 ## Publication
 
@@ -191,9 +191,18 @@ Publish candidate merge SHA: `382608b27e92bf5ccf5b58574b126f987572a584`
   serve` `/healthz` = `{"version":"0.29.0","protocol":3}`; `GET /` 200.
 - `bash scripts/check-release-published.sh 0.29.0`: `[release-published]
   OK: registry, dist-tag, tarball, tag, and local version files agree.`
-- Owner machine: run the upgrade command and record the installed version
-  and the desktop app protocol. Result: pending. The t5 record lists it as
-  open.
+- Owner host (Max), t5 record on #2065: `bun add -g repo-harness@0.29.0
+  --no-cache` installed 2 packages; `repo-harness --version` = 0.29.0.
+  `repo-harness update --version 0.29.0`: seats migration not required;
+  CLI install ok; installed candidate runtime ok (candidate 0.29.0, scope
+  complete); global working rules unchanged; herdr-core hc 0.1.19, no
+  change. It reported 18 leftovers (0 removable), 1 legacy sibling worktree
+  (needs provider proof; not removed) and 5 of 14 registered repos with
+  pending project upgrade work. After the update, the `~/.claude/settings.json`
+  hooks and `~/.repo-harness/config.json` were unchanged, and `seats argv
+  advisor` and `seats argv worker` decoded the stored config.
+- Desktop app protocol: not read. No desktop app is installed on Max. The
+  check stays open for the next desktop build (#1298).
 
 ## Rollback
 
