@@ -201,9 +201,11 @@ Edit guards:
   apply_patch writes below a listed directory pass. Bash writes there stay
   denied, because Bash targets come from text. The guard denies a listed target
   unless it is written as its canonical repository path: a root alias, another
-  letter case, a `.` or `..` segment, or an existing symlink changes the
-  spelling. It also denies a glob character and a dangling symlink at or below
-  the listed directory. An invalid entry denies every `_ops/`
+  letter case, a `.` or `..` segment, or an existing symlink that resolves
+  inside the repository changes the spelling. It also denies a glob character
+  and a dangling symlink at or below the listed directory. A symlink that
+  resolves outside the repository follows the ordinary external-path rule for
+  Edit and Write. An invalid entry denies every `_ops/`
   write and the reason names the entry. Stop still reports these changes.
 - `ApplyPatchScopeGuard`: Codex `apply_patch` input has no parseable target
   path.
