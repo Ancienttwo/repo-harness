@@ -6,6 +6,7 @@ import { decodePlanBlock, PlanBlockError, type PlanBlockV1 } from './plan-block'
 import {
   BoardSourceError,
   commentId,
+  field,
   newestProtocolComment,
   parseAcceptanceRecord,
   parseClaimStatus,
@@ -337,13 +338,13 @@ function acceptance(read: BoardPullRequestReadV1, check: BoardRequiredCheckV1, c
 /**
  * The High rule (`acceptor.md` section 2.2), for High and unknown tiers: PASS rows of the head from two distinct review claims,
  * and at least one of them recorded `Model relation: different-family` to the writer. An unknown writer family records `unknown`,
- * so it fails closed. A row counts only when its `Claim:` cites an `acceptance claim` comment of the pull request; the comment id is the
- * claim identity. A head with a `FAIL` row does not meet the rule.
+ * so it fails closed. A row counts only when its `Claim:` cites an `acceptance claim` comment of the pull request with the row's
+ * `Subject:` and `Round:` (`review publish` writes both); the comment id is the claim identity. A head with a `FAIL` row does not meet the rule.
  */
 function highRuleMet(read: BoardPullRequestReadV1, head: readonly AcceptanceRowV1[]): boolean {
   if (head.some(row => row.verdict === 'FAIL')) return false;
-  const claims = new Set(protocolComments(read.comments, ACCEPTANCE_CLAIM_HEADER).map(claim => commentId(claim.url)));
-  const passes = head.filter(row => row.claim !== null && claims.has(row.claim));
+  const claims = new Map(protocolComments(read.comments, ACCEPTANCE_CLAIM_HEADER).map(claim => [commentId(claim.url), `${field(claim.body, 'Round')} ${field(claim.body, 'Subject')}`] as const));
+  const passes = head.filter(row => row.claim !== null && claims.get(row.claim) === `${row.round} ${row.subject_sha}`);
   return new Set(passes.map(row => row.claim)).size >= 2 && passes.some(row => row.different_family);
 }
 

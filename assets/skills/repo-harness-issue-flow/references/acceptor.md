@@ -63,7 +63,7 @@ The table rules govern how the row combines with the review.
    identical `Agent:` line on one round share one claim and count once.
    The board accepts a High head, or a head of unknown tier, only when it
    has `PASS` rows that cite two distinct `acceptance claim` comments of
-   the PR, at least one of them with `Model relation: different-family`,
+   the PR, each with the row's `Subject` and `Round`, at least one of them with `Model relation: different-family`,
    and no `FAIL` row. A Medium head needs one `PASS` row and no `FAIL`
    row.
 

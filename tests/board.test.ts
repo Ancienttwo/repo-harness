@@ -25,6 +25,8 @@ import { HC_MIN_VERSION } from '../src/core/terminal/herdr-pin';
 import { BoardParentsError, collectBoardParents } from '../src/effects/board/parents';
 import { hcStatusClass, ISSUE_FLOW_WORKER_LIMIT } from '../src/core/board/desk';
 import { boardSummary, decodeBoardSummaries } from '../src/core/board/summary';
+import { renderAcceptanceClaim, renderAcceptanceRecord, type ReviewPublishReceipt } from '../src/core/review/review-publish';
+import type { ModelRelation } from '../src/core/review/acceptance-receipt';
 import boardParentsFixture from '../src/operator-web/fixtures/board-parents.json';
 
 // Recorded on 2026-11-03: the two GraphQL reads of parent #1474 with the collector's own queries, the newest
@@ -139,11 +141,12 @@ test('Low acceptance uses the effective tier of every linked issue: a Low closin
 
 test('High acceptance: PASS rows of the head from two distinct claims, one recorded different-family; claude_review and A10 project the same rule', () => {
   const claim = (runtime: string, branch: string) => comment(`repo-harness issue claim\nStatus: active\nRole: writer\nBranch: ${branch}\nRuntime: ${runtime}`, '2026-11-02T10:00:00Z');
-  // `acceptance claim` comment n of a pull request; its comment id comes from its time.
+  // The claim and the record are the `review publish` wire format. Claim n is an `acceptance claim` comment whose id comes from its time.
+  const receipt = (harness: 'claude' | 'codex' | 'pi', subject_sha: string, model_relation: ModelRelation = 'different-family', verdict: 'PASS' | 'FAIL' = 'PASS', round = 1): ReviewPublishReceipt => ({
+    protocol: 1, kind: 'repo-harness-review-publish-receipt', round, subject_sha, risk_tier: 'high', reviewer: { harness, actual_model: null }, verdict, model_relation, summary: 'Reviewed.', findings: [],
+  });
   const claimAt = (n: number) => `2026-11-02T21:0${n}:00Z`;
   const claimUrl = (n: number, path = 'pull/1491') => `https://github.com/Ancienttwo/repo-harness/${path}#issuecomment-${Date.parse(claimAt(n))}`;
-  const record = (sha: string, role: string, claimLine: string, relation = 'different-family', verdict = 'PASS') =>
-    `repo-harness acceptance record\nClaim: ${claimLine}\n\n| Round | Role | Subject | Verdict |\n|---|---|---|---|\n| 1 | ${role}, read-only | \`${sha}\` | ${verdict}: 0 P1 |\n${relation === '' ? '' : `\nModel relation: ${relation}\n`}`;
   const parent = (data: Json) => {
     for (const [number, runtime, branch] of [[1475, 'claude', 'feat/1475-hc-transport'], [1479, 'claude', 'feat/1479-notify-relay'], [1476, 'codex', 'feat/1476-sessions-herdr-core']] as const) {
       const node = issueNode(data, number);
@@ -156,9 +159,10 @@ test('High acceptance: PASS rows of the head from two distinct claims, one recor
     pulls: (data) => {
       const { pr1494, pr1499 } = data.repository;
       pr1494.body += '\nCloses #1460\n';
-      for (const pr of [pr1494, pr1499]) pr.comments.nodes.push(comment('repo-harness acceptance claim\nRole: acceptor', claimAt(1)));
-      pr1499.comments.nodes.push(comment(record(pr1499.headRefOid, 'claude (opus)', claimUrl(1, 'pull/1499')), '2026-11-02T22:00:00Z'));
-      pr1494.comments.nodes.push(comment(record(pr1494.headRefOid, 'pi (gpt)', claimUrl(1, 'pull/1494')), '2026-11-02T22:00:00Z'));
+      for (const [pr, harness] of [[pr1494, 'pi'], [pr1499, 'claude']] as const) {
+        pr.comments.nodes.push(comment(renderAcceptanceClaim(receipt(harness, pr.headRefOid)), claimAt(1)));
+        pr.comments.nodes.push(comment(renderAcceptanceRecord(receipt(harness, pr.headRefOid), claimUrl(1, `pull/${pr.number}`)), '2026-11-02T22:00:00Z'));
+      }
     },
   });
   // One different-family PASS is one review: #1494 (unknown tier, counted as High) and #1499 are not accepted.
@@ -167,41 +171,50 @@ test('High acceptance: PASS rows of the head from two distinct claims, one recor
   ]);
   // A Claude writer claim no longer skips the second review: A10 reads the open, non-draft #1491.
   expect(evaluateBoardAttention(board).findings.filter(finding => finding.rule === 'A10').map(finding => finding.pull_requests)).toEqual([[1491]]);
-  type Row = readonly [role: string, claimLine: string, relation?: string, verdict?: string, sha?: string];
+  // A row: the reviewer, the claim line it cites, its relation (null drops the line), verdict and subject (null is the head).
+  type Row = readonly [harness: 'claude' | 'codex' | 'pi', claimLine: string, relation?: ModelRelation | null, verdict?: 'PASS' | 'FAIL', sha?: string];
+  const OLD = 'e'.repeat(40);
   const head = (rows: readonly Row[], tier = 'tier:high') => replay({
     parent: (data) => { parent(data); const labels = issueNode(data, 1475).labels.nodes; labels[labels.length - 1] = { name: tier }; },
     pulls: (data) => {
       const { pr1491 } = data.repository;
-      pr1491.comments.nodes.push(...[1, 2, 3].map(n => comment('repo-harness acceptance claim\nRole: acceptor', claimAt(n))));
-      pr1491.comments.nodes.push(...rows.map(([role, claimLine, relation, verdict, sha], at) => comment(record(sha ?? pr1491.headRefOid, role, claimLine, relation, verdict), `2026-11-02T22:0${at}:00Z`)));
+      // Claims 1-3 are round 1 of the head; claims 4 and 6 are round 1 of an earlier head; claim 5 is round 2 of the head.
+      const claims: readonly (readonly [number, string, number])[] = [[1, pr1491.headRefOid, 1], [2, pr1491.headRefOid, 1], [3, pr1491.headRefOid, 1], [4, OLD, 1], [5, pr1491.headRefOid, 2], [6, OLD, 1]];
+      pr1491.comments.nodes.push(...claims.map(([n, sha, round]) => comment(renderAcceptanceClaim(receipt('codex', sha, 'different-family', 'PASS', round)), claimAt(n))));
+      pr1491.comments.nodes.push(...rows.map(([harness, claimLine, relation = 'different-family', verdict = 'PASS', sha = pr1491.headRefOid], at) => {
+        const body = renderAcceptanceRecord(receipt(harness, sha, relation ?? 'unknown', verdict), claimLine);
+        return comment(relation === null ? body.replace(/^Model relation: .*\n/mu, '') : body, `2026-11-02T22:0${at}:00Z`);
+      }));
     },
   });
-  const gatekeeper: Row = ['pi (gpt)', claimUrl(1)];
+  const gatekeeper: Row = ['pi', claimUrl(1)];
   const cases: readonly (readonly [readonly Row[], string, string])[] = [
-    [[gatekeeper, ['claude (opus)', claimUrl(2), 'same-family']], 'accepted', 'recorded'],
-    [[gatekeeper, ['codex (gpt)', claimUrl(2)]], 'accepted', 'not_required'],
+    [[gatekeeper, ['claude', claimUrl(2), 'same-family']], 'accepted', 'recorded'],
+    [[gatekeeper, ['codex', claimUrl(2)]], 'accepted', 'not_required'],
     // The Claude writer's gatekeeper alone waits for the Claude reviewer.
     [[gatekeeper], 'not_accepted', 'pending'],
     // One claim cited by its pull and its issues URL is one review.
-    [[gatekeeper, ['codex (gpt)', claimUrl(1, 'issues/1491')]], 'not_accepted', 'pending'],
-    // A blank, malformed or unknown claim proves no review.
-    [[gatekeeper, ['codex (gpt)', '']], 'not_accepted', 'pending'],
-    [[gatekeeper, ['codex (gpt)', 'see above']], 'not_accepted', 'pending'],
-    [[gatekeeper, ['codex (gpt)', claimUrl(9)]], 'not_accepted', 'pending'],
+    [[gatekeeper, ['codex', claimUrl(1, 'issues/1491')]], 'not_accepted', 'pending'],
+    // A blank, malformed or unknown claim proves no review; so does a claim of an earlier head or of another round.
+    [[gatekeeper, ['codex', '']], 'not_accepted', 'pending'],
+    [[gatekeeper, ['codex', 'see above']], 'not_accepted', 'pending'],
+    [[gatekeeper, ['codex', claimUrl(9)]], 'not_accepted', 'pending'],
+    [[gatekeeper, ['codex', claimUrl(4)]], 'not_accepted', 'pending'],
+    [[gatekeeper, ['codex', claimUrl(5)]], 'not_accepted', 'pending'],
     // No row recorded different-family: `unknown` (an unknown writer family) or no relation line.
-    [[['pi (gpt)', claimUrl(1), 'unknown'], ['claude (opus)', claimUrl(2), 'same-family']], 'not_accepted', 'recorded'],
-    [[['pi (gpt)', claimUrl(1), ''], ['codex (gpt)', claimUrl(2), '']], 'not_accepted', 'pending'],
+    [[['pi', claimUrl(1), 'unknown'], ['claude', claimUrl(2), 'same-family']], 'not_accepted', 'recorded'],
+    [[['pi', claimUrl(1), null], ['codex', claimUrl(2), null]], 'not_accepted', 'pending'],
     // A FAIL row of the head withholds the rule from both projections.
-    [[gatekeeper, ['codex (gpt)', claimUrl(2)], ['codex (gpt)', claimUrl(3), 'same-family', 'FAIL']], 'not_accepted', 'pending'],
+    [[gatekeeper, ['codex', claimUrl(2)], ['codex', claimUrl(3), 'same-family', 'FAIL']], 'not_accepted', 'pending'],
     // Rows of an earlier head do not carry over to a sync head.
-    [[['pi (gpt)', claimUrl(1), 'different-family', 'PASS', 'e'.repeat(40)], ['codex (gpt)', claimUrl(2), 'different-family', 'PASS', 'e'.repeat(40)]], 'not_accepted', 'pending'],
+    [[['pi', claimUrl(4), 'different-family', 'PASS', OLD], ['codex', claimUrl(6), 'different-family', 'PASS', OLD]], 'not_accepted', 'pending'],
   ];
   const projected = cases.map(([rows]) => head(rows));
   const pr1491 = (projection: BoardV1) => projection.pull_requests.find(pr => pr.number === 1491)!;
   expect(projected.map(pr1491).map(pr => [pr.acceptance.status, pr.claude_review] as string[])).toEqual(cases.map(([, status, claude]) => [status, claude]));
   expect(evaluateBoardAttention(projected[1]!).findings.filter(finding => finding.rule === 'A10')).toEqual([]);
   // Medium keeps one PASS row, with no claim or relation check.
-  expect(pr1491(head([['pi (gpt)', '', '']], 'tier:medium'))).toMatchObject({ acceptance: { status: 'accepted', via: 'record' }, claude_review: 'not_required' });
+  expect(pr1491(head([['pi', '', null]], 'tier:medium'))).toMatchObject({ acceptance: { status: 'accepted', via: 'record' }, claude_review: 'not_required' });
 });
 
 test('replay: the recorded #1474 reads project to a board, and its findings come from the recorded state', () => {
