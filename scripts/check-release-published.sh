@@ -7,6 +7,14 @@ cd "$ROOT"
 PACKAGE_NAME="$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.name)')"
 PACKAGE_VERSION="${1:-$(bun -e 'const pkg = await Bun.file("package.json").json(); console.log(pkg.version)')}"
 CONSOLE_NAME="$(bun -e 'import { OPERATOR_WEB_PACKAGE_NAME } from "./src/core/skill-surface/plugin-manifest.ts"; console.log(OPERATOR_WEB_PACKAGE_NAME)')"
+# `--before-tag` skips only the Git tag check: the owner reads the registry back before the tag (#2006).
+TAG_CHECK=1
+if [[ "${2:-}" == "--before-tag" ]]; then
+  TAG_CHECK=0
+elif [[ -n "${2:-}" ]]; then
+  echo "usage: $0 [version] [--before-tag]" >&2
+  exit 2
+fi
 NPM_RELEASE_REGISTRY="${NPM_RELEASE_REGISTRY:-https://registry.npmjs.org/}"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -82,7 +90,11 @@ bun scripts/runtime-evidence-receipt.ts verify \
   --installed-hook "$RUNTIME_APP/node_modules/.bin/repo-harness-hook" \
   --hook-repo "$RUNTIME_REPO"
 
-git rev-parse -q --verify "refs/tags/v${PACKAGE_VERSION}" >/dev/null
 bun scripts/check-skill-version.ts --project . >/dev/null
+if [[ "$TAG_CHECK" == 0 ]]; then
+  echo "[release-published] OK: registry, dist-tag, tarball, and local version files agree; the tag is not checked."
+  exit 0
+fi
+git rev-parse -q --verify "refs/tags/v${PACKAGE_VERSION}" >/dev/null
 
 echo "[release-published] OK: registry, dist-tag, tarball, tag, and local version files agree."
