@@ -368,7 +368,9 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     if (process.platform === 'darwin') {
       expect(live(childOf('late-child'))).toBe(true);
       expect(lateResult).toEqual({ status: 'cleanup_pending', pids: [childOf('late-child')], reason: 'provider_group_alive' });
-      process.kill(childOf('late-child'), 'SIGKILL');
+      const latePid = childOf('late-child');
+      expect(latePid).toBeGreaterThan(0);
+      process.kill(latePid, 'SIGKILL');
       await until(() => !live(childOf('late-child')));
       expect(await api.cancelTaskAgent(fixture, spec.task, 'late-child')).toEqual({ status: 'closed', pids: [] });
     } else {
@@ -401,7 +403,9 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     // A failed group cleanup must not leave the TERM/HUP-resistant child on the host.
     for (const role of ['grouped', 'exec-member', 'late-child', 'reused']) {
       const childFile = join(fixture, `${role}.ready.child`);
-      if (existsSync(childFile)) { try { process.kill(Number(readFileSync(childFile, 'utf8')), 'SIGKILL'); } catch { /* Already absent. */ } }
+      // A half-written file reads as pid 0, and kill(0) would signal this whole process group.
+      const childPid = existsSync(childFile) ? Number(readFileSync(childFile, 'utf8')) : 0;
+      if (childPid > 0) { try { process.kill(childPid, 'SIGKILL'); } catch { /* Already absent. */ } }
     }
   }
 }), 60_000);

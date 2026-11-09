@@ -4,6 +4,7 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 - `repo-harness board review` also starts the Claude `reviewer` seat when a pull request shows `claude_review: pending`. A start marker now carries `Seat: gatekeeper|reviewer` (a marker without `Seat` covers no seat), so a seat that was not sent retries without restarting the other. The delta base of each seat comes from an acceptance row of that seat's own family (Claude for the reviewer, another harness for the gatekeeper); otherwise the seat reviews the whole diff. Board acceptance via a record no longer accepts a head while `claude_review` is `pending`. The `second_reviewer_required` output is gone. (#2025)
+- Two test fixtures no longer read a half-written pid file as pid 0. The dev-activity collector test waits for a non-empty pid, and the herdr task lifecycle cleanup skips a pid that is not positive. Before, `process.kill(0, 'SIGKILL')` could stop the whole CI test group with exit 137. (#2052)
 
 ### Changed
 
@@ -17,6 +18,7 @@ All notable changes to this skill are documented here.
 ### Added
 
 - `repo-harness board merge --parent <n> [--pr <p>] [--dry-run]` merges one eligible PR of a batch through `publication merge`. It requires a PASS acceptance record for the head at every tier, the Claude review row for High, `Required / CI`, a ready readiness verdict, plan merge order and no hold. `repo-harness merge hold` and `merge hold released` records on the parent, an issue or a PR narrow it. Board rule A11 wakes the orchestrator when a PR is eligible; the watcher never merges. The board document is protocol 4; a protocol-3 board fails decode. (#2003)
+- `global-working-rules.md` carries an opt-in Delegation profile outside the managed block. The managed block and the downstream defaults stay unchanged. (#2011)
 - The issue-flow acceptor SOP treats the GitHub review bot as a reference. The coordinator decides `adopt`, `decline` or `outdated` for each bot finding, replies, resolves the thread and records the decision in one plain PR comment. Only adopted findings count in the review loop. (#2007)
 - `repo-harness board closeout` stops a CodeGraph MCP server whose command line names exactly the merged worktree (`serve --mcp --path <worktree>`) and lists its PID in `stopped_codegraph_servers`. Any other process, or a process that stays after the stop, still keeps the worktree with `process_in_use`. (#2029)
 - A Claude seat can take the new `schedule` tool group (`CronCreate`, `CronList`, `CronDelete`). The group is off for every seat by default; Codex and Pi launches ignore it. (#2014)
