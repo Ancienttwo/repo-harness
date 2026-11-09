@@ -18,8 +18,10 @@ CONSOLE_DIR="packages/operator-web"
 # gets empty scratch config files and never reads the owner's npmrc or writes under the owner HOME.
 NPM_SCRATCH="$(mktemp -d)"
 trap 'rm -rf "$NPM_SCRATCH"' EXIT
-: >"$NPM_SCRATCH/npmrc"
-export npm_config_userconfig="$NPM_SCRATCH/npmrc" npm_config_globalconfig="$NPM_SCRATCH/npmrc"
+# npm refuses one file as both the user and the global config, so each gets its own.
+: >"$NPM_SCRATCH/user-npmrc"
+: >"$NPM_SCRATCH/global-npmrc"
+export npm_config_userconfig="$NPM_SCRATCH/user-npmrc" npm_config_globalconfig="$NPM_SCRATCH/global-npmrc"
 export npm_config_cache="$NPM_SCRATCH/cache" npm_config_logs_dir="$NPM_SCRATCH/logs"
 
 usage() {

@@ -307,7 +307,9 @@ describe("Bootstrap Script Contracts", () => {
       git("tag", "-a", "v1.1.0", first, "-m", "v1.1.0");
       git("push", "-q", "origin", "v1.1.0");
       mkdirSync(join(dir, "bin"));
-      writeFileSync(join(dir, "bin/npm"), "#!/bin/bash\n[[ -f \"$npm_config_userconfig\" && ! -s \"$npm_config_userconfig\" && \"$npm_config_globalconfig\" == \"$npm_config_userconfig\" ]] && echo \"$npm_config_userconfig\" >> \"$HOME/npm-config\"\necho 'npm error code E404 not in this registry' >&2\nexit 1\n", { mode: 0o755 });
+      // The real npm config loader runs with the script's env; it needs no network.
+      const realNpm = Bun.which("npm")!;
+      writeFileSync(join(dir, "bin/npm"), `#!/bin/bash\n[[ -f \"$npm_config_userconfig\" && ! -s \"$npm_config_userconfig\" && -f \"$npm_config_globalconfig\" && ! -s \"$npm_config_globalconfig\" && \"$npm_config_globalconfig\" != \"$npm_config_userconfig\" ]] && echo \"$npm_config_userconfig\" >> \"$HOME/npm-config\"\n${realNpm} config get registry >/dev/null && echo loaded >> \"$HOME/npm-loader\"\necho 'npm error code E404 not in this registry' >&2\nexit 1\n`, { mode: 0o755 });
       const realGit = Bun.which("git")!;
       writeFileSync(join(dir, "bin/git"), `#!/bin/bash\n[[ -n "$FAIL_TAGS" && "$1 $2" == "ls-remote --tags" ]] && exit 128\nexec ${realGit} "$@"\n`, { mode: 0o755 });
       writeFileSync(join(dir, "bin/gh"), `#!/bin/bash\ncase "$1 $2" in\n  "repo view") echo owner/repo ;;\n  "api repos/owner/repo") echo 42 ;;\n  "release view") echo "{\\"tagName\\":\\"$3\\",\\"isDraft\\":false,\\"isPrerelease\\":false}" ;;\n  *) exit 1 ;;\nesac\n`, { mode: 0o755 });
@@ -330,6 +332,7 @@ describe("Bootstrap Script Contracts", () => {
       // Each npm call saw an empty scratch npmrc outside HOME, never the owner's.
       const npmConfigs = readFileSync(join(dir, "npm-config"), "utf8").trim().split("\n");
       expect(npmConfigs).toHaveLength(2);
+      expect(readFileSync(join(dir, "npm-loader"), "utf8")).toBe("loaded\nloaded\n");
       for (const config of npmConfigs) expect(config.startsWith(dir)).toBe(false);
       expect(runIn(repo, ["plan", planVersion], { FAIL_TAGS: "1" }).stderr).toContain("git ls-remote --tags origin failed");
       git("tag", `v${planVersion}`, third);
