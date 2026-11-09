@@ -68,6 +68,8 @@ export type BoardRequiredCheckV1 =
 export type BoardAcceptanceV1 =
   /** `record`: an acceptance record has a PASS row for the head, no record has a FAIL row for it, and `claude_review` is not `pending`. `tier_low`: every closed issue is `tier:low` and `Required / CI` passed. */
   | { readonly status: 'accepted'; readonly via: 'record' | 'tier_low'; readonly accepted_at: string; readonly evidence_url: string }
+  /** `record` on the rows of `carried_from`, an earlier reviewed head of which the head is a merge-only sync (#2074). */
+  | { readonly status: 'accepted'; readonly via: 'sync'; readonly carried_from: string; readonly accepted_at: string; readonly evidence_url: string }
   | { readonly status: 'not_accepted' }
   | { readonly status: 'unknown'; readonly reason: 'acceptance_record_unparsed' | 'comments_truncated'; readonly evidence_url: string | null };
 
@@ -95,7 +97,7 @@ export interface BoardPullRequestV1 {
   readonly tier: BoardTier | null;
   /**
    * An unknown tier counts as High here (fail closed). `pending`: a High pull request whose writer claim does not prove a Claude runtime and that has no acceptance row from a
-   * Claude reviewer for its head. `recorded`: such a row exists. Always `not_required` for a pull request that is not open.
+   * Claude reviewer for its head or for an earlier head of which the head is a proven merge-only sync. `recorded`: such a row exists. Always `not_required` for a pull request that is not open.
    */
   readonly claude_review: BoardClaudeReviewV1;
 }
@@ -242,6 +244,8 @@ export interface BoardInputV1 {
   readonly acceptance_merge: BoardAcceptanceMergeV1;
   readonly pull_requests: readonly BoardPullRequestReadV1[];
   readonly readiness: readonly PullRequestReadinessV2[];
+  /** For each open pull request, the candidates of `syncCarryCandidates` that git proved to be merge-only syncs of the head (`provenMergeOnlySyncs`). */
+  readonly merge_only_syncs: ReadonlyMap<number, readonly string[]>;
   readonly path_owners: BoardPathOwnersV1;
   readonly execution: BoardExecutionV1;
   readonly daily_run: BoardDailyRunInputV1;
@@ -270,6 +274,12 @@ export function decodeBoard(value: unknown): BoardV1 {
     if (revision !== null && (!Number.isSafeInteger(revision) || revision < 1)) throw new Error(`invalid board plan revision: ${String(revision)}`);
   }
   if (board.execution?.status === 'observed') checkSeatTerminals(board.execution.terminals);
+  for (const pr of board.pull_requests ?? []) {
+    const { acceptance } = pr;
+    if (acceptance?.status === 'accepted' && acceptance.via === 'sync' && !/^[0-9a-f]{40}$/u.test(String(acceptance.carried_from))) {
+      throw new Error(`invalid board carried_from on PR #${pr.number}: ${String(acceptance.carried_from)}`);
+    }
+  }
   return board as BoardV1;
 }
 
@@ -300,19 +310,45 @@ function requiredCheck(read: BoardPullRequestReadV1): BoardRequiredCheckV1 {
   return { status: run.conclusion === 'SUCCESS' ? 'success' : 'failure', completed_at: run.completed_at };
 }
 
-function acceptance(read: BoardPullRequestReadV1, check: BoardRequiredCheckV1, closedTiers: readonly (BoardTier | null)[], claude: BoardClaudeReviewV1): BoardAcceptanceV1 {
+/**
+ * The capability that owns the hook paths. The owner approves a hook diff for one exact head, and a joint decision cannot carry that
+ * approval to a sync head (#2048), so a pull request that changes one of its paths never carries an acceptance.
+ */
+const OWNER_APPROVED_CAPABILITY = 'capability.runtime-harness.hook-adapters';
+
+/**
+ * The earlier reviewed heads whose acceptance rows could carry to the head of an open pull request (#2074): each subject with a PASS row
+ * that is not the head. None when a row fails the head, the file list is incomplete, the path owners are unknown, or a changed path is a
+ * hook path or ambiguous.
+ * Only git can prove a carry (`provenMergeOnlySyncs`); the board then applies the same rows rules as to the head itself.
+ */
+export function syncCarryCandidates(read: BoardPullRequestReadV1, owners: BoardPathOwnersV1): readonly string[] {
+  if (read.state !== 'open' || read.files === null || owners.status !== 'observed') return [];
+  const files = new Set(read.files);
+  if (owners.owners.some(owner => files.has(owner.path) && (owner.status === 'ambiguous' || (owner.status === 'owned' && owner.capability === OWNER_APPROVED_CAPABILITY)))) return [];
+  const rows = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER).flatMap(record => parseAcceptanceRecord(record) ?? []);
+  if (rows.some(row => row.verdict === 'FAIL' && row.subject_sha === read.head_sha)) return [];
+  return [...new Set(rows.filter(row => row.verdict === 'PASS' && row.subject_sha !== read.head_sha).map(row => row.subject_sha))];
+}
+
+/** The head and each candidate that git proved a merge-only sync of it: their rows count as rows of the head. */
+function reviewedSubjects(read: BoardPullRequestReadV1, owners: BoardPathOwnersV1, proven: readonly string[]): ReadonlySet<string> {
+  return new Set([read.head_sha, ...syncCarryCandidates(read, owners).filter(sha => proven.includes(sha))]);
+}
+
+function acceptance(read: BoardPullRequestReadV1, subjects: ReadonlySet<string>, check: BoardRequiredCheckV1, closedTiers: readonly (BoardTier | null)[], claude: BoardClaudeReviewV1): BoardAcceptanceV1 {
   // One round is one subject SHA, and a High round has two reviews of it (`acceptor.md`, section 2): every record counts.
   const records = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER);
-  const passes: BoardCommentV1[] = [];
+  const passes: { readonly record: BoardCommentV1; readonly subject: string }[] = [];
   let failed = false;
   let otherPass = false;
   for (const record of records) {
     const rows = parseAcceptanceRecord(record);
     if (rows === null) return { status: 'unknown', reason: 'acceptance_record_unparsed', evidence_url: record.url };
-    const head = rows.filter(row => row.subject_sha === read.head_sha);
+    const head = rows.filter(row => subjects.has(row.subject_sha));
     if (head.some(row => row.verdict === 'FAIL')) failed = true;
     else if (head.length > 0) {
-      passes.push(record);
+      passes.push({ record, subject: head.some(row => row.subject_sha === read.head_sha) ? read.head_sha : head[0]!.subject_sha });
       if (head.some(row => row.harness !== null && row.harness !== 'claude')) otherPass = true;
     }
   }
@@ -321,8 +357,11 @@ function acceptance(read: BoardPullRequestReadV1, check: BoardRequiredCheckV1, c
     if (read.comments.truncated) return { status: 'unknown', reason: 'comments_truncated', evidence_url: null };
     // A High head from a non-Claude writer needs both reviews: a PASS row of a named non-Claude harness and a Claude verdict. Either alone does not accept it.
     if (claude === 'not_required' || (claude === 'recorded' && otherPass)) {
-      const newest = passes.reduce((latest, record) => (record.created_at >= latest.created_at ? record : latest));
-      return { status: 'accepted', via: 'record', accepted_at: newest.created_at, evidence_url: newest.url };
+      const newest = passes.reduce((latest, pass) => (pass.record.created_at >= latest.record.created_at ? pass : latest));
+      const accepted = { accepted_at: newest.record.created_at, evidence_url: newest.record.url };
+      // A head that has its own PASS row is accepted on its record; otherwise the newest carried record names its reviewed head.
+      if (passes.some(pass => pass.subject === read.head_sha)) return { status: 'accepted', via: 'record', ...accepted };
+      return { status: 'accepted', via: 'sync', carried_from: newest.subject, ...accepted };
     }
   }
   if (records.length === 0 && read.comments.truncated) return { status: 'unknown', reason: 'comments_truncated', evidence_url: null };
@@ -351,11 +390,11 @@ function effectiveTier(closes: readonly number[], refs: readonly number[], paren
 }
 
 /** The Claude review state of a pull request. Every unknown input reads as the strict case. */
-function claudeReview(read: BoardPullRequestReadV1, linked: readonly number[], tier: BoardTier | null, parent: BoardParentReadV1): BoardClaudeReviewV1 {
+function claudeReview(read: BoardPullRequestReadV1, subjects: ReadonlySet<string>, linked: readonly number[], tier: BoardTier | null, parent: BoardParentReadV1): BoardClaudeReviewV1 {
   const issues = new Map(parent.sub_issues.map(issue => [issue.number, issue]));
   const needed = read.state === 'open' && (tier === null || tier === 'high') && !(linked.length > 0 && linked.every(number => writerIsClaude(issues.get(number), read.head_ref)));
   const recorded = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER)
-    .some(record => parseAcceptanceRecord(record)?.some(row => row.harness === 'claude' && row.subject_sha === read.head_sha) === true);
+    .some(record => parseAcceptanceRecord(record)?.some(row => row.harness === 'claude' && subjects.has(row.subject_sha)) === true);
   return !needed ? 'not_required' : recorded ? 'recorded' : 'pending';
 }
 
@@ -383,7 +422,8 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
     const { closes, refs } = bodyLinks(repository, read.body);
     const check = requiredCheck(read);
     const { linked, tier } = effectiveTier(closes, refs, input.parent, tiers);
-    const claude = claudeReview(read, linked, tier, input.parent);
+    const subjects = reviewedSubjects(read, input.path_owners, input.merge_only_syncs.get(read.number) ?? []);
+    const claude = claudeReview(read, subjects, linked, tier, input.parent);
     const readiness = read.state === 'open' ? input.readiness.find(entry => entry.pr_number === read.number) : undefined;
     if (read.state === 'open' && readiness === undefined) throw new Error(`board input has no merge readiness for open PR #${read.number}`);
     return Object.freeze({
@@ -402,7 +442,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
       files: read.files,
       required_check: check,
       // An issue outside this board has no observed tier, so it withholds the Low path; so does any non-Low linked issue.
-      acceptance: acceptance(read, check, [tier], claude),
+      acceptance: acceptance(read, subjects, check, [tier], claude),
       merge_readiness: readiness ?? null,
       tier,
       claude_review: claude,

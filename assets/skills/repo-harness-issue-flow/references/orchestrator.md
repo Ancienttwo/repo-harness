@@ -411,9 +411,14 @@ A PR is eligible when all of these are true:
   `acceptor.md` §2.2 still needs that `PASS`. A Low PR needs no review, but
   its PR body must hold the author verification evidence
   (`docs/reference-configs/agentic-development-flow.md`, Review by risk).
-- Its head equals the reviewed subject, or adds only conflict-free merges
-  of main since it. `git rev-list --no-merges <subject>..<head> ^origin/main`
-  prints nothing.
+- Its head equals the reviewed subject, or is a merge-only sync of it:
+  the subject is an ancestor of the head,
+  `git rev-list --no-merges <subject>..<head> ^origin/main` prints nothing,
+  and `git diff <merge-base> <head> | git patch-id --stable` is equal for
+  the subject and the head. The board applies this rule and shows the
+  acceptance as `via: sync` with `carried_from: <subject>` (#2074). A PR
+  that changes a hook path never carries: the owner approves each head of
+  a hook diff again.
 - It has no unresolved review thread that a person started. A review bot
   thread is advisory input and does not block. For a rule-4 deferral, you
   resolve the deferred P2 threads first (`acceptor.md` §6).

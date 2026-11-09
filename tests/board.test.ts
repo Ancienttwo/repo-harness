@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -10,7 +10,8 @@ import { decodeBoard, type BoardHostPortsV1, type BoardTerminalV1, type BoardV1 
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
-import { collectBoard, readLocalRepositoryId } from '../src/effects/board/collect';
+import { collectBoard, readLocalRepositoryId, type BoardCollectInput } from '../src/effects/board/collect';
+import { provenMergeOnlySyncs } from '../src/effects/board/merge-only-sync';
 import { runBoardCloseout, stopCodegraphServers } from '../src/effects/board/closeout';
 import type { RunArchctxProcess } from '../src/core/architecture/contracts';
 import { errorEnvelope } from 'archctx-contracts';
@@ -68,6 +69,8 @@ interface Replay {
   /** The version that the fake hc reports; the recorded core reported 0.1.17. */
   readonly hcVersion?: string;
   readonly now?: Date;
+  /** The git proof of a merge-only sync; the default proves none. */
+  readonly mergeOnlySyncs?: BoardCollectInput['merge_only_syncs'];
 }
 
 function issueNode(data: Json, number: number): Json {
@@ -103,6 +106,7 @@ function replay(options: Replay = {}): BoardV1 {
     },
     // #1491 is the only PR that the recorded data shows as accepted; the readiness projection has its own suite.
     readiness: (selection) => ({ ...selection, protocol: 2, kind: 'repo-harness-pull-request-readiness', ready: selection.pr_number === 1491 }) as unknown as PullRequestReadinessV2,
+    merge_only_syncs: options.mergeOnlySyncs ?? (() => []),
     // archctx 0.11.2 at d0f4223f4 on the files of the open PRs. A request gets the recorded result of each of its
     // paths, in its order; exit 2 when one is ambiguous. An unrecorded path fails the test.
     archctx: {
@@ -1390,4 +1394,67 @@ test('closeout stops a CodeGraph MCP server bound to exactly the worktree and no
     // Signal 0 throws only for a process that is gone.
     expect([elsewhere.pid, otherPath.pid, bystander.pid].map(pid => { try { process.kill(pid, 0); return true; } catch { return false; } })).toEqual([true, true, true]);
   } finally { server.kill(); elsewhere.kill(); otherPath.kill(); bystander.kill(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+describe('merge-only sync carry (#2074)', () => {
+  const reviewed = 'c'.repeat(40);
+  const record = (sha: string, role: string, verdict: 'PASS' | 'FAIL') => `repo-harness acceptance record\n\n| Round | Role | Subject | Verdict |\n|---|---|---|---|\n| 1 | ${role}, read-only | \`${sha}\` | ${verdict} |\n`;
+  const hook = 'src/cli/hook/runtime.ts';
+
+  test('the rows of a reviewed head accept a later head only when git proves a merge-only sync and no hook path changes', () => {
+    const calls: string[] = [];
+    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly hookFile?: boolean } = {}) => replay({
+      pulls: (data) => {
+        const { pr1499 } = data.repository;
+        pr1499.comments.nodes.push(comment(record(reviewed, 'pi (gpt)', 'PASS'), '2026-11-03T00:20:00Z'), comment(record(reviewed, 'claude (opus)', 'PASS'), '2026-11-03T00:21:00Z'));
+        if (options.headFail) pr1499.comments.nodes.push(comment(record(pr1499.headRefOid, 'pi (gpt)', 'FAIL'), '2026-11-03T00:30:00Z'));
+        if (options.hookFile) pr1499.files.nodes.push({ path: hook });
+      },
+      owners: (results) => {
+        if (options.hookFile) results.push({ path: hook, matched: true, ambiguous: false, owningCapabilityId: 'capability.runtime-harness.hook-adapters' });
+      },
+      mergeOnlySyncs: (input, candidates) => {
+        if (input.pr === 1499) calls.push(`${input.base_ref} ${input.head_sha} ${candidates.join(',')}`);
+        return options.proven === false ? [] : candidates;
+      },
+    }).pull_requests.find(pr => pr.number === 1499)!.acceptance;
+    expect(carry()).toEqual({ status: 'accepted', via: 'sync', carried_from: reviewed, accepted_at: '2026-11-03T00:21:00Z', evidence_url: comment('', '2026-11-03T00:21:00Z').url });
+    expect(calls).toEqual([`feat/1475-hc-transport 23627c4f5a717f0434df1468dc72a5042678a95d ${reviewed}`]);
+    expect(carry({ proven: false })).toEqual({ status: 'not_accepted' });
+    calls.length = 0;
+    expect(carry({ headFail: true })).toEqual({ status: 'not_accepted' });
+    expect(carry({ hookFile: true })).toEqual({ status: 'not_accepted' });
+    // A FAIL on the head and an owner-approved hook diff leave git no candidate.
+    expect(calls).toEqual(Array(2).fill('feat/1475-hc-transport 23627c4f5a717f0434df1468dc72a5042678a95d '));
+  });
+
+  test('git proves a merge of the base and refuses an extra commit, a merge that changes the PR patch and a missing object', () => {
+    const root = tmpWorkspace('merge-only-sync'); roots.push(root);
+    const git = (...args: string[]) => {
+      const result = run('git', args, root);
+      expect(result.status).toBe(0);
+      return result.stdout.trim();
+    };
+    initGitRepo(root);
+    writeFileSync(join(root, 'f.txt'), '1\n2\n3\n4\n5\n'); writeFileSync(join(root, 'b.txt'), 'b\n');
+    git('add', '.'); git('commit', '-m', 'base');
+    git('checkout', '-b', 'feature');
+    writeFileSync(join(root, 'f.txt'), '1\ntwo\n3\n4\n5\n'); git('commit', '-am', 'feature');
+    const subject = git('rev-parse', 'HEAD');
+    git('checkout', 'main');
+    writeFileSync(join(root, 'b.txt'), 'b2\n'); git('commit', '-am', 'main moves');
+    const base = git('rev-parse', 'HEAD');
+    git('checkout', 'feature');
+    git('merge', '--no-edit', 'main');
+    const sync = git('rev-parse', 'HEAD');
+    const proven = (head: string, sha = subject) => provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: base, head_sha: head }, [sha]).length === 1;
+    expect(proven(sync)).toBe(true);
+    writeFileSync(join(root, 'f.txt'), '1\ntwo\n3\n4\nfive\n'); git('commit', '-am', 'new work');
+    expect(proven(git('rev-parse', 'HEAD'))).toBe(false);
+    git('reset', '--hard', subject);
+    git('merge', '--no-commit', 'main');
+    writeFileSync(join(root, 'f.txt'), '1\ntwo\nthree\n4\n5\n'); git('commit', '-am', 'merge that changes the patch');
+    expect(proven(git('rev-parse', 'HEAD'))).toBe(false);
+    expect(proven(sync, 'd'.repeat(40))).toBe(false);
+  });
 });
