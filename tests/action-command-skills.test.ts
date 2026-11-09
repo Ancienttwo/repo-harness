@@ -593,22 +593,22 @@ describe("repo-harness action command skills", () => {
     expect(acceptor).toContain("repo-harness-review-publish-receipt");
     expect(acceptor).toContain("review_publish_unknown");
     expect(acceptor).toContain("model_relation");
-    // M32: reviewers read CI and the recorded evidence. M33 rule 4: a P2-only FAIL after round 3 can merge.
+    // M32: reviewers read CI and the recorded evidence. #2008 rule 4: a P2 family can be deferred; a merge needs a PASS.
     const flat = (text: string) => text.replace(/\s+/g, " ");
     expect(flat(acceptor)).toContain("Never rerun a passing typecheck or test.");
     expect(flat(acceptor)).toContain("Round 3** runs with no owner question");
-    expect(flat(acceptor)).toContain("Rule 4 decides whether a P2-only `FAIL` after round 3 merges.");
+    expect(flat(acceptor)).toContain("Rule 4 decides whether a `FAIL` after round 3 takes another round, defers a P2 family or becomes an owner gate. A merge always needs a `PASS` record.");
     expect(worker).toContain("**Fix the class.**");
 
-    // rv1608-r1-02: every rule that resolves threads or needs zero open threads allows the rule-4 merge.
+    // rv1608-r1-02: every rule that resolves threads or needs zero open threads allows the rule-4 deferral.
     const ruleFourThreadSites: Array<[string, string]> = [
       ["references/acceptor.md", "resolves each remaining P2 thread with a reply that links the follow-up issue (§6)"],
-      ["references/acceptor.md", "A rule-4 merge (§2.2) passes this check only after the coordinator resolves the remaining P2 threads (§6)"],
-      ["references/acceptor.md", "or with the follow-up issue link of a rule-4 merge (§2.2)"],
+      ["references/acceptor.md", "A PR with a rule-4 deferral (§2.2) passes this check only after the coordinator resolves the deferred P2 threads (§6)"],
+      ["references/acceptor.md", "or with the follow-up issue link of a rule-4 deferral (§2.2)"],
       ["references/board.md", "or with the rule-4 follow-up issue link (`acceptor.md` §2.2)"],
       ["references/templates.md", "| deferred #<follow-up issue>"],
-      ["references/orchestrator.md", "For a rule-4 merge, you resolve the remaining P2 threads first (`acceptor.md` §6)"],
-      ["references/orchestrator.md", "or rule 4 of `acceptor.md` §2.2 applies."],
+      ["references/orchestrator.md", "For a rule-4 deferral, you resolve the deferred P2 threads first (`acceptor.md` §6)"],
+      ["references/orchestrator.md", "A rule-4 deferral of `acceptor.md` §2.2 still needs that `PASS`."],
     ];
     for (const [path, text] of ruleFourThreadSites) {
       expect(flat(readFileSync(join(SKILLS_ROOT, "repo-harness-issue-flow", path), "utf-8"))).toContain(text);
