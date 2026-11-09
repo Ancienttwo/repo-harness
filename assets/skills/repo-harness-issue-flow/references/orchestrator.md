@@ -202,6 +202,7 @@ module is in the title so that a list view shows the write scopes.
   issues with the tightest boundaries and the clearest acceptance checks.
   Keep contract-design issues for a strong model.
 - Review rounds converge by the round rules in `acceptor.md` §2.2.
+- Never wait for the review bot. Answer every bot comment by `acceptor.md` §2.3, and triage a bot finding after merge once.
 - Use the host's dispatch mechanism (an hc terminal in a Herdr.app pane,
   or a top-level host session). A dispatched agent has its own process. A
   sub-agent runs inside a seat process and is not a dispatch target. You

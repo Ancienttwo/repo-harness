@@ -90,6 +90,54 @@ Return `PASS` or `FAIL`. A `FAIL` has at least one P0, P1 or P2 finding.
 Rule 4 decides whether a `FAIL` after round 3 takes another round, defers a
 P2 family or becomes an owner gate. A merge always needs a `PASS` record.
 
+### 2.3 Review bot reference
+
+The review bot that the owner configured on GitHub
+(`chatgpt-codex-connector[bot]` on PRs) is a reference. It never gates a
+merge and no round waits for it. It does not comment on every PR. When it
+has commented, every bot comment gets a response: each review thread, each
+PR comment and each issue comment.
+
+The coordinator decides each bot finding. When an acceptor round is
+active, the acceptor reads the bot threads and comments on the current
+head next to the diff and raises each real one as its own finding, with
+its severity. When no round is active (a Low PR that skips the accept
+seat, or a bot finding after the last round), the coordinator reads them.
+The decision is one of:
+
+| Decision | Meaning | Effect |
+|---|---|---|
+| `adopt` | The finding is real. | It is a finding of the review loop (§2.2) with its severity. A blocking one adopted after the last round goes to the author as a fix round, and a gatekeeper seat reviews the new head before the merge; the earlier `PASS` does not cover it. |
+| `decline` | The finding is wrong, out of scope or not worth a fix. | One-line reason. It is not a finding of the loop. |
+| `outdated` | The finding is on an older head, and the current head no longer contains the code. | No triage again. It is not a finding of the loop. |
+
+The `acceptance record` and the publish receipt carry no bot decision
+(`review publish` renders only severity findings). The coordinator posts
+the decisions in one plain PR comment, one line each:
+`Review-bot reference: <comment id or thread> adopt|decline|outdated: <reason>`.
+The bot's "Codex Review Summary" with no findings
+(`codex-review-state` `has_any_findings: false`) gets the line
+`Review-bot reference: no findings at <sha>: no action` and no reply on
+the summary. A summary with findings gets one decision per finding.
+
+The coordinator writes the replies, so each role keeps one GitHub write
+path. The acceptor stays read-only. The reply uses the `review reply`
+shape (`templates.md`): `rejected` for a decline or an outdated finding,
+`fixed <sha>` for an adopted one after its fix round, and `deferred
+#<follow-up issue>` for a rule-4 deferral. An adopted P3 gets `fixed <sha>`
+when it is fixed and `deferred #<follow-up issue>` otherwise, each with the
+reason in `Why`. A thread that the coordinator answers with `rejected` or
+`deferred` is resolved with its reply. An adopted thread with a fix is resolved when the
+fix round that addresses it is pushed.
+
+A bot finding that arrives after the merge is triaged once: `decline`, or
+`adopt` as a new issue under the batch parent. The merged PR is not
+reopened.
+
+The merge executor still refuses a PR with an unresolved thread
+(`unresolved_threads`). The change is who resolves a bot thread, not the
+gate.
+
 ## 3. Findings
 
 | Severity | Meaning | Where it goes |
@@ -140,8 +188,9 @@ Act on the exit code:
 | 5 | `review_publish_partial`, `review_publish_unknown` | Stop and inspect the PR. Never retry before you confirm which comments exist. |
 | 1 | `review_publish_provider_unavailable`, `review_publish_failed` | Report the error and the posted URLs. |
 
-The merge executor refuses a PR with an unresolved review thread that a
-person started (D6). A review bot thread is advisory and does not block.
+The merge executor refuses a PR with an unresolved review thread (D6).
+A bot thread is a reference input (§2.3): the coordinator answers and
+resolves it, and the bot never adds or removes a gate by itself.
 A PR with a rule-4 deferral (§2.2) passes this check only after the
 coordinator resolves the deferred P2 threads (§6).
 
@@ -191,7 +240,8 @@ merge (D7).
 Only the acceptor of a round resolves its threads. It resolves a thread
 after the next round confirms the fix on a new subject SHA.
 
-The coordinator may resolve a thread with a written rejection reason, or
+The coordinator resolves a bot thread (§2.3). The coordinator may also
+resolve a thread with a written rejection reason, or
 with the follow-up issue link of a rule-4 deferral (§2.2). Both are a
 `review reply` (`templates.md`).
 
