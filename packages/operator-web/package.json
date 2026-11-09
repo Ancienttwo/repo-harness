@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Ancienttwo/repo-harness.git",
+    "url": "git+https://github.com/aimpact-inc/repo-harness.git",
     "directory": "packages/operator-web"
   },
   "files": ["dist/"],

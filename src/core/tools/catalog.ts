@@ -16,7 +16,7 @@ const TOOL_TAG_LIMIT = 6;
 /** Also the `#tools/<id>` path parameter. */
 const TOOL_ID = /^[a-z0-9][a-z0-9-]{0,63}$/u;
 /** `docs_anchor` values are anchors in this document. */
-export const EXTERNAL_TOOLING_DOC_URL = 'https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/external-tooling.md';
+export const EXTERNAL_TOOLING_DOC_URL = 'https://github.com/aimpact-inc/repo-harness/blob/main/docs/reference-configs/external-tooling.md';
 
 export type ToolKind = typeof TOOL_KINDS[number];
 export type ToolCategory = typeof TOOL_CATEGORIES[number];

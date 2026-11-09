@@ -48,12 +48,12 @@ Windows. No Node.js required.
 
 ```bash
 # 1. Install the CLI and user-level hook adapters
-curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.sh | sh
 ```
 
 ```powershell
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.ps1 | iex
 ```
 
 Already have Bun? Use `bunx repo-harness@latest install` instead.
@@ -306,7 +306,7 @@ commands. More in the [usage guide](docs/usage.md#skills).
 ## Contributing
 
 ```bash
-git clone https://github.com/Ancienttwo/repo-harness.git ~/Projects/repo-harness
+git clone https://github.com/aimpact-inc/repo-harness.git ~/Projects/repo-harness
 cd ~/Projects/repo-harness && bun src/cli/index.ts update
 bun run check:ci   # the single CI-equivalent gate
 ```
