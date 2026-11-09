@@ -10,6 +10,8 @@ All notable changes to this skill are documented here.
 
 ### Added
 
+- `bash scripts/release-owner-steps.sh plan <version>` prints the owner's release command list, bound to the release commit on `origin/main`: publish both packages, read them back, tag that commit, create the GitHub Release, then the post-release steps. `check published` and `check tagged` read back each owner step and stop at the first failure; `notes` prints the CHANGELOG section. The script only reads git, npm and GitHub. `check:release-published --before-tag` skips only the tag check. (#2006)
+
 - `repo-harness board closeout` stops a CodeGraph MCP server whose command line names exactly the merged worktree (`serve --mcp --path <worktree>`) and lists its PID in `stopped_codegraph_servers`. Any other process, or a process that stays after the stop, still keeps the worktree with `process_in_use`. (#2029)
 - A Claude seat can take the new `schedule` tool group (`CronCreate`, `CronList`, `CronDelete`). The group is off for every seat by default; Codex and Pi launches ignore it. (#2014)
 - `repo-harness board closeout` also removes finished seat terminals of the merged PR. It lists them with `hc ls --all`, under the same label binding and checkout proofs, and runs `hc rm` only. A retry after a failed `hc rm` now removes the terminal. (#2021)

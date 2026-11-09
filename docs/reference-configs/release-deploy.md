@@ -29,6 +29,35 @@ and the core gate requires the matching operator web version on npm. After both
 publishes, `check:release-published` verifies both registry tarballs and latest
 tags, the Git version tag, and the core runtime receipt.
 
+## Owner Release GO
+
+The life cycle stops at the merged release PR. npm publish needs the owner's
+npm 2FA, so publish, the tag and the GitHub Release stay with the owner.
+After the release PR merges, run `git fetch origin` and then
+`bash scripts/release-owner-steps.sh plan <version>`. The script only reads.
+It finds the first-parent commit on `origin/main` that set both package
+versions, and it fails when `origin/main` is stale, either version is on
+npm, the tag exists or CHANGELOG has no section for the version. It prints
+one command list bound to that commit:
+
+1. A detached worktree of the release commit and `bun install --frozen-lockfile`.
+2. `npm publish --auth-type=web` for the console, then for the core package.
+3. `check published <version>`: `check:release-published --before-tag`
+   reads back version, `latest` dist-tag, integrity and the runtime receipt.
+4. The annotated tag at the release commit and its push.
+5. `gh release create --verify-tag` with the CHANGELOG section as notes
+   (`notes <version>`).
+6. `check tagged <version>`: the remote tag is at the release commit, and
+   the GitHub Release is not a draft or a prerelease.
+
+At the first failure the owner stops and reports. Nothing is retried or
+published again. The owner gives one GO for the list:
+`Release GO: repo-harness <version> at <sha>`, the first line of the plan.
+After step 6 passes, the orchestrator and the advisor decide together on the
+post-release steps that the plan prints: `repo-harness update` on the owner
+host, the Upgrade steps of the release notes, and the relaunch of both seats
+from `repo-harness seats argv <seat> --repository-id <id>`.
+
 ## Webapp Release Shape
 
 - For a SaaS webapp with public SEO/SSR plus authenticated workspace, prefer one
