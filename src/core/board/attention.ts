@@ -1,4 +1,5 @@
 import { planIssues } from './plan-block';
+import { boardMergeDecisions } from './merge';
 import type { BoardItemV1, BoardPullRequestV1, BoardTerminalV1, BoardV1 } from './board';
 import { hcStatusClass, liveSeats, seatItem, seatPullRequest } from './desk';
 import { pathHazardHits, pathHighHits } from './hazards';
@@ -28,7 +29,7 @@ const A2_BATCH_MAX = 6;
 const WORKER_SEATS = new Set<string>(WORKER_SEAT_IDS);
 const RED_CONCLUSIONS = new Set(['failure', 'timed_out', 'startup_failure']);
 
-export type BoardRuleId = 'A1' | 'A2' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'A9' | 'A10' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5';
+export type BoardRuleId = 'A1' | 'A2' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'A9' | 'A10' | 'A11' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5';
 export type BoardAttentionRoute = 'orchestrator' | 'advisor';
 
 export interface BoardFindingV1 {
@@ -281,6 +282,15 @@ function a10(context: Context): void {
   }
 }
 
+/** A11: an open pull request meets every `board merge` condition. The watcher only wakes the orchestrator; the merge starts from its seat. */
+function a11(context: Context): void {
+  for (const decision of boardMergeDecisions(context.board).filter(entry => entry.eligible)) {
+    const pr = context.board.pull_requests.find(entry => entry.number === decision.pr)!;
+    find(context, 'A11', { issues: itemsOf(context.board, pr), pull_requests: [pr.number] },
+      `eligible: run repo-harness board merge --parent ${context.board.parent.number} --pr ${pr.number}`);
+  }
+}
+
 function r1(context: Context): void {
   const plan = context.board.plan;
   if (plan.status === 'unavailable') return skip(context, 'R1', 'plan_unavailable', plan.comment_url);
@@ -358,7 +368,7 @@ function r4(context: Context): void {
 
 export function evaluateBoardAttention(board: BoardV1): BoardAttentionV1 {
   const context: Context = { board, now: Date.parse(board.observed_at), findings: [], unevaluated: [] };
-  for (const rule of [a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, r1, r2, r3, r4, r5]) rule(context);
+  for (const rule of [a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, r1, r2, r3, r4, r5]) rule(context);
   return Object.freeze({
     protocol: BOARD_ATTENTION_PROTOCOL,
     kind: BOARD_ATTENTION_KIND,

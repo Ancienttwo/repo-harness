@@ -2,6 +2,7 @@ import { parseClosingReferences } from '../publication/closing-references';
 import type { AcceptanceMergeSwitch } from '../publication/acceptance-merge-policy';
 import type { PullRequestReadinessV2 } from '../publication/merge-readiness';
 import { isSeatStatusMessage, seatStatusMessage } from './advisor-seat';
+import { readMergeHold, type BoardMergeHoldV1 } from './merge';
 import { decodePlanBlock, PlanBlockError, type PlanBlockV1 } from './plan-block';
 import {
   BoardSourceError,
@@ -28,7 +29,7 @@ import { pathHazardHits, pathHighHits } from './hazards';
  * It is a read model. GitHub and hc stay the authorities; the board keeps
  * their observation time and never writes back.
  */
-export const BOARD_PROTOCOL = 3 as const;
+export const BOARD_PROTOCOL = 4 as const;
 export const BOARD_KIND = 'repo-harness.board' as const;
 
 export type BoardTier = 'low' | 'medium' | 'high';
@@ -63,6 +64,7 @@ export interface BoardItemV1 {
   readonly claim_status: BoardClaimStatusV1;
   /** Pull requests whose body closes or refs this issue. */
   readonly pull_requests: readonly number[];
+  readonly merge_hold: BoardMergeHoldV1;
 }
 
 export type BoardRequiredCheckV1 =
@@ -107,6 +109,7 @@ export interface BoardPullRequestV1 {
    * The rows of an earlier head of which the head is a proven merge-only sync count as rows of the head (#2074).
    */
   readonly claude_review: BoardClaudeReviewV1;
+  readonly merge_hold: BoardMergeHoldV1;
 }
 
 export type BoardTerminalV1 = {
@@ -233,6 +236,8 @@ export interface BoardV1 {
   readonly acceptance_merge: BoardAcceptanceMergeV1;
   readonly parent: { readonly number: number; readonly title: string; readonly url: string; readonly state: 'open' | 'closed'; readonly labels: readonly string[]; readonly milestone: string | null };
   readonly plan: BoardPlanV1;
+  /** The hold record on the parent: it holds the whole batch, or the issues of its `Issues:` line. */
+  readonly merge_hold: BoardMergeHoldV1;
   readonly items: readonly BoardItemV1[];
   readonly pull_requests: readonly BoardPullRequestV1[];
   readonly path_owners: BoardPathOwnersV1;
@@ -478,6 +483,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
       merge_readiness: readiness ?? null,
       tier,
       claude_review: claude,
+      merge_hold: readMergeHold(read.comments, false),
     });
   }).sort((left, right) => left.number - right.number);
   if (input.path_owners.status === 'observed') {
@@ -496,6 +502,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
     blocked_by: issue.blocked_by,
     claim_status: claimStatus(issue),
     pull_requests: Object.freeze(pullRequests.filter(pr => pr.closes.includes(issue.number) || pr.refs.includes(issue.number)).map(pr => pr.number)),
+    merge_hold: readMergeHold(issue.comments, false),
   })).sort((left, right) => left.number - right.number);
   const daily: BoardDailyRunV1 = input.daily_run.status === 'unavailable' ? input.daily_run : {
     ...input.daily_run,
@@ -511,6 +518,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
     acceptance_merge: input.acceptance_merge,
     parent: Object.freeze({ number: parent.number, title: parent.title, url: parent.url, state: parent.state, labels: parent.labels, milestone: parent.milestone }),
     plan: projectPlan(parent),
+    merge_hold: readMergeHold(parent.comments, true),
     items: Object.freeze(items),
     pull_requests: Object.freeze(pullRequests),
     path_owners: input.path_owners,
