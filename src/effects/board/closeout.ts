@@ -1,5 +1,6 @@
 import { execFileSync } from 'child_process';
 import { lstatSync, readdirSync, readlinkSync, realpathSync } from 'fs';
+import { parseRefs } from '../../core/board/source';
 import { architecturePort, isArchitectureUnavailable } from '../../core/architecture/contracts';
 import type { BoardHostPortsV1, BoardSeatTerminalReadV1 } from '../../core/board/board';
 import { gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
@@ -60,7 +61,7 @@ interface MergedPullRequest {
   readonly head_oid: string;
   readonly merge_commit: string;
   readonly closing_issues: readonly number[];
-  /** The closing issues plus each issue that the PR body names after a `Refs`, `Closes`, `Fixes` or `Resolves` keyword. */
+  /** The closing issues plus the `Refs #n` issues of the PR body. */
   readonly referenced_issues: readonly number[];
 }
 
@@ -86,8 +87,7 @@ function readMergedPullRequest(input: BoardCloseoutInput): MergedPullRequest {
   }
   // Seat issue labels name issues of this repository, so an issue that the PR closes elsewhere binds no pane.
   const closing = references.filter(entry => entry!.repository!.id === repository).map(entry => entry!.number as number);
-  const named = [...read.body.matchAll(/\b(?:refs?|closes?|fix(?:es)?|resolves?)\s+#(\d+)\b/giu)].map(match => Number(match[1]));
-  return { number: input.pr, head_ref: read.headRefName, head_oid: read.headRefOid, merge_commit: merge, closing_issues: closing, referenced_issues: [...closing, ...named] };
+  return { number: input.pr, head_ref: read.headRefName, head_oid: read.headRefOid, merge_commit: merge, closing_issues: closing, referenced_issues: [...closing, ...parseRefs(read.body)] };
 }
 
 /** `status` is null when git did not run to an exit (spawn error, timeout or signal). */
@@ -168,7 +168,7 @@ function inHeadWorktree(cwd: string | null, pr: MergedPullRequest, proof: Closeo
 
 /**
  * The binding of a seat terminal to the PR: its pr label, a closing-issue label, or (a `Refs`-only PR has no closing issue, #2071)
- * a cwd in the PR head worktree. The branch binding needs no issue label, or an issue label that the PR closes or references.
+ * a cwd in the PR head worktree whose seat carries an issue label that the PR references.
  * A binding without the pr label next to the pr label of another PR is a conflict; closeout refuses that pane.
  * A terminal without a seat label is a task session; the runtime cleanup of the worktree owns it.
  */
@@ -177,8 +177,8 @@ function paneBinding(terminal: BoardSeatTerminalReadV1, pr: MergedPullRequest, p
   if (labels.seat === undefined) return 'none';
   if (labels.pr === String(pr.number)) return 'bound';
   const closes = labels.issue !== undefined && pr.closing_issues.some(issue => String(issue) === labels.issue);
-  const issueFits = labels.issue === undefined || pr.referenced_issues.some(issue => String(issue) === labels.issue);
-  if (!closes && !(issueFits && inHeadWorktree(terminal.cwd, pr, proof))) return 'none';
+  const refs = labels.issue !== undefined && pr.referenced_issues.some(issue => String(issue) === labels.issue);
+  if (!closes && !(refs && inHeadWorktree(terminal.cwd, pr, proof))) return 'none';
   return labels.pr === undefined ? 'bound' : 'conflict';
 }
 

@@ -1324,7 +1324,7 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   // #29 only says `Refs #19`: no closing issue, so its seats bind by the head branch of their checkout (#2071).
   const refsonly = worktree('refsonly', 29, 19);
   pullRequests['29']!.closingIssuesReferences = []; pullRequests['29']!.body = 'Refs #19';
-  // #30 closes issue 20 and names issue 21: a head-worktree seat of issue 77 binds nothing, one of issue 21 closes, and one under another PR's label is a conflict that keeps the worktree.
+  // #30 closes issue 20 and names issue 21: a head-worktree seat of issue 77 binds nothing, one of issue 21 closes, and one of issue 21 under another PR's label is a conflict that keeps the worktree.
   const refsconf = worktree('refsconf', 30, 20);
   pullRequests['30']!.body = 'Closes #20\nRefs #21';
   // #21 also closes issue 12 of another repository, which binds no local seat.
@@ -1360,8 +1360,8 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
     terminal('t18', main, { seat: 'reviewer', pr: '27' }), terminal('t19', main, { seat: 'reviewer', pr: '28' }),
     terminal('t20', refsonly, { issue: '19' }),
     terminal('t21', refsconf, { issue: '77' }), terminal('t23', refsconf, { issue: '21' }),
-    // Not bound: another issue in the Refs-only worktree, an unresolved cwd and another repository, all without a pr label.
-    terminal('t24', refsonly, { issue: '77' }), terminal('t25', null, { seat: 'reviewer' }), terminal('t26', elsewhere, { seat: 'reviewer' }), terminal('t22', refsconf, { seat: 'reviewer', pr: '99' })];
+    // Not bound: another issue and no issue label in the Refs-only worktree, an unresolved cwd and another repository, all without a pr label.
+    terminal('t24', refsonly, { issue: '77' }), terminal('t27', refsonly, {}), terminal('t25', null, { seat: 'reviewer' }), terminal('t26', elsewhere, { seat: 'reviewer' }), terminal('t22', refsconf, { seat: 'reviewer', issue: '21', pr: '99' })];
   // hc rm of t17 fails until the retry.
   const rmFails = new Set(['t17']);
   const closed: string[] = [];
