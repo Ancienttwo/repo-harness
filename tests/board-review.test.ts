@@ -58,6 +58,8 @@ test('the delta base is an earlier head that has an acceptance record; otherwise
   expect(base(page(marker(OLD), record(OLD)))).toBe(OLD);
   // A Claude reviewer's row does not show that the gatekeeper finished.
   expect(base(page(marker(OLD), record(OLD, 'claude (opus)')))).toBeNull();
+  // A row whose reviewer is not named gives no base either.
+  expect(base(page(marker(OLD), record(OLD, 'acceptor')))).toBeNull();
 });
 
 function ports(overrides: Partial<ReviewPorts> = {}): ReviewPorts & { comments: string[]; tabs: Record<string, unknown>[] } {
