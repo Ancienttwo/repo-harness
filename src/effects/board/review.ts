@@ -24,7 +24,11 @@ export interface ReviewInput extends Pick<BoardCollectInput, 'repo_root' | 'pare
   readonly launch: ReviewLaunch;
   /** Plan only: no marker, no seat. */
   readonly dry_run: boolean;
+  /** Called at each start and refusal as it happens, so a caller keeps the completed ones when a later step throws. */
+  readonly observe?: ReviewObserver;
 }
+
+export type ReviewObserver = (event: { readonly kind: 'started'; readonly pr: number; readonly seat: ReviewSeatStartV1['seat']; readonly marker_url: string } | { readonly kind: 'refused'; readonly pr: number; readonly reason: string }) => void;
 
 /** The writes and reads of one start. Each is a process boundary, so tests replace them. */
 export interface ReviewPorts {
@@ -89,27 +93,28 @@ const NOT_SENT: ReadonlySet<string> = new Set(['missing', 'nested', 'invalid_lab
  * without a second one of the other. A launch that may have created the tab keeps its marker and stops, because a retry could
  * start a second seat of that role for the head.
  */
-export async function executeReview(decisions: readonly ReviewDecisionV1[], context: { readonly repositoryId: string; readonly parent: number; readonly space: string; readonly dry_run: boolean }, ports: ReviewPorts): Promise<Omit<ReviewResultV1, 'decisions'>> {
+export async function executeReview(decisions: readonly ReviewDecisionV1[], context: { readonly repositoryId: string; readonly parent: number; readonly space: string; readonly dry_run: boolean; readonly observe?: ReviewObserver }, ports: ReviewPorts): Promise<Omit<ReviewResultV1, 'decisions'>> {
   const started: Array<ReviewResultV1['started'][number]> = [];
   const refused: Array<ReviewResultV1['refused'][number]> = [];
   if (context.dry_run) return { started, refused };
+  const refuse = (pr: number, reason: string) => { refused.push({ pr, reason }); context.observe?.({ kind: 'refused', pr, reason }); };
   for (const decision of decisions) {
     if (decision.action !== 'start') continue;
     const worktree = ports.worktree(decision.head_ref, decision.head_sha);
     if ('refusal' in worktree) {
-      refused.push({ pr: decision.pr, reason: worktree.refusal });
+      refuse(decision.pr, worktree.refusal);
       continue;
     }
     for (const start of decision.seats) {
       // The launch is read before the marker: a configuration error then leaves no marker, so a retry works once it is fixed.
       const launch = await ports.launch(start.seat, { repositoryId: context.repositoryId, pr: String(decision.pr), parent: String(context.parent) }, worktree.path);
       if (start.seat === 'gatekeeper' && decision.needs_non_claude_gatekeeper && launch.runtime === 'claude') {
-        refused.push({ pr: decision.pr, reason: 'gatekeeper_is_claude: this head needs a non-Claude gatekeeper PASS besides the Claude review; set the gatekeeper runtime to another harness' });
+        refuse(decision.pr, 'gatekeeper_is_claude: this head needs a non-Claude gatekeeper PASS besides the Claude review; set the gatekeeper runtime to another harness');
         break;
       }
       // Only a Claude review records the verdict that the board waits for, so another runtime would leave the head pending behind its own marker.
       if (start.seat === 'reviewer' && launch.runtime !== 'claude') {
-        refused.push({ pr: decision.pr, reason: `reviewer_not_claude: the reviewer seat launches ${launch.runtime}; set its runtime to claude` });
+        refuse(decision.pr, `reviewer_not_claude: the reviewer seat launches ${launch.runtime}; set its runtime to claude`);
         continue;
       }
       const markerUrl = ports.comment(decision.pr, markerBody(decision, start));
@@ -123,6 +128,7 @@ export async function executeReview(decisions: readonly ReviewDecisionV1[], cont
         throw new BoardCollectError(`launch_unknown for the ${start.seat} of PR #${decision.pr}: ${error.message}. The marker ${markerUrl} stays; check hc ls for the tab before a retry`);
       }
       started.push({ pr: decision.pr, seat: start.seat, marker_url: markerUrl });
+      context.observe?.({ kind: 'started', pr: decision.pr, seat: start.seat, marker_url: markerUrl });
     }
   }
   return { started, refused };
@@ -155,7 +161,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResultV1> {
     const open = board.pull_requests.filter(pr => pr.state === 'open' && !pr.is_draft && pr.required_check.status === 'success' && pr.acceptance.status === 'not_accepted');
     const comments = new Map(open.map(pr => [pr.number, readComments(input, pr.number)]));
     const decisions = planReview({ board, comments });
-    return { decisions, ...await executeReview(decisions, { repositoryId, parent: input.parent, space: input.space, dry_run: input.dry_run }, {
+    return { decisions, ...await executeReview(decisions, { repositoryId, parent: input.parent, space: input.space, dry_run: input.dry_run, observe: input.observe }, {
       worktree: (ref, sha) => worktreeAt(input, ref, sha),
       comment: (pr, body) => gh(input, ['pr', 'comment', String(pr), '--body-file', '-'], body),
       openTab: args => { herdrAppDo('tab.new', args); },
