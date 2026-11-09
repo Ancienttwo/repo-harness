@@ -80,6 +80,8 @@ copy an issue into a local file, and do not keep plan, task, review or
 notes files. A copy drifts, and the next agent cannot tell which version
 is current.
 
+Every comment that a seat writes ends with one line `Seat: <seat id> <hc address>`, for example `Seat: advisor t5`. The line tells a reader which seat wrote the comment. It is not authentication: no command refuses or accepts a comment by it, and the runtime authority stays local. A command that posts a protocol comment adds the line when `REPO_HARNESS_SEAT` and `HC_TERMINAL_ID` are set; a seat that posts by hand writes it.
+
 ## Mode selection
 
 - Orchestrator work (split a goal, write or fix issues, dispatch, follow PRs,
