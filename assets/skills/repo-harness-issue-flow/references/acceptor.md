@@ -22,12 +22,13 @@ No host and no model is mandatory (D7). Any host that can read the PR and
 return the result schema can accept.
 
 - The acceptor did not write the subject SHA.
-- For the High tier, prefer a reviewer from a different model family.
-- When no other family is available, use a fresh context of the same
-  family. Record `model_relation: same-family` in the receipt. This does
-  not block the merge.
+- For the High tier, at least one of the two reviews of a head comes from
+  a model family different from the writer's (§2.2).
+- The other High review can use a fresh context of the writer's family.
+  Record `model_relation: same-family` in its receipt.
 - When the author model or the reviewer model is unknown, record
-  `model_relation: unknown`.
+  `model_relation: unknown`. An `unknown` row does not count as the
+  different-family review.
 
 ## 2. Take one round
 
@@ -54,13 +55,39 @@ The table rules govern how the row combines with the review.
 
 1. **Round 1** is the full tier review. Round 1 of a High PR has two
    reviews of one subject SHA, and both take the same round number: the
-   gatekeeper and a second reviewer, preferably from a different model
-   family (§1). They run in parallel, and each is blind to the other's
-   result. Each review has its own `acceptance claim` and its own record
+   gatekeeper and a second reviewer. At least one of the two is from a
+   model family different from the writer's (§1). They run in parallel,
+   and each is blind to the other's result. Each review has its own
+   `acceptance claim` and its own record row. `review publish` keys a
+   claim by round, subject and `Agent:` line, so two reviewers with an
+   identical `Agent:` line on one round share one claim and count once.
+   The board accepts a High head, or a head of unknown tier, only when it
+   has `PASS` rows that cite two distinct `acceptance claim` comments of
+   the PR, each with the row's `Subject` and `Round`, at least one of them with `Model relation: different-family`,
+   and no `FAIL` row. A Medium head needs one `PASS` row and no `FAIL`
    row.
-2. **Round 2.** Only the reviewer or reviewers that raised a blocking
-   finding take the round. Each reads the fix delta (the hunks that
-   changed after round 1) and the sibling cases of each of its findings.
+
+   **Sync head.** A sync with main makes a new head. When git proves the
+   new head a merge-only sync of a reviewed head, the board counts the
+   rows of the reviewed head as rows of the new head and shows `via: sync`
+   with `carried_from` (#2074). A merge-only sync has the reviewed head as
+   an ancestor, adds only merge commits outside main, and keeps the PR
+   patch id (`git diff <merge-base> <head> | git patch-id --stable`). It
+   needs CI only. Any other sync head (a conflict resolution that changes
+   the PR patch, a new commit, a failed git step) needs a sync check: a
+   review of the sync delta that writes one record row for the new head.
+   A Medium sync head needs one sync check row. A High sync head needs the
+   round-1 rule: two sync check rows from distinct claims, at least one
+   different-family. A PR that changes a hook path never carries: the
+   owner approves each head of a hook diff again.
+2. **Round 2.** The reviewer or reviewers that raised a blocking finding
+   read the fix delta (the hunks that changed after round 1) and the
+   sibling cases of each of its findings. On a High or unknown-tier PR,
+   the fix head needs the round-1 rule too: a reviewer of round 1 that
+   raised no blocking finding takes a delta check of the fix head, with
+   the same scope as a sync check, and records its own row. Together the
+   rows of the fix head come from two distinct claims, at least one
+   different-family.
 3. **Round 3** runs with no owner question when the round-2 findings are in
    the fix delta. It has the scope of round 2.
 4. **After round 3.** A fix loop continues after round 3 without the owner
@@ -170,14 +197,11 @@ The review brief states that limit. On every seat, Codex and Pi included,
 the one-write limit is a brief rule only. On a Codex seat the sandbox
 limits files only.
 
-`review publish` accepts rounds 1 to 3 only. For a round above 3, the
-session that runs the round posts the `acceptance record` by hand, in the
-same shape (`templates.md`, acceptance record): one row with the fields
-`Round`, `Role`, `Subject` (the full head SHA), `Verdict` (`PASS` or
-`FAIL` with the finding counts), then the `Model relation` line and the
-findings. Post line findings as review threads (`board.md` rule 5). Do not
-write the verdict in free prose: the board cannot read it, and the PR does
-not count as accepted.
+`review publish` accepts rounds 1 to 5. Round 5 is the hard stop (§2.2),
+so every review round publishes its claim and record with this command.
+Do not post a claim or a record by hand, and do not write the verdict in
+free prose: the board counts a High row only when it cites a published
+claim, and the PR does not count as accepted.
 
 Act on the exit code:
 
@@ -217,7 +241,7 @@ from `src/core/review/review-publish.ts`:
 ```text
 protocol: 1
 kind: repo-harness-review-publish-receipt
-round: <1..3>
+round: <1..5>
 subject_sha: <the PR head>
 risk_tier: low | medium | high
 reviewer: { harness: <review runtime id>, actual_model: <model> | null }

@@ -26,6 +26,8 @@ import { HC_MIN_VERSION } from '../src/core/terminal/herdr-pin';
 import { BoardParentsError, collectBoardParents } from '../src/effects/board/parents';
 import { hcStatusClass, ISSUE_FLOW_WORKER_LIMIT } from '../src/core/board/desk';
 import { boardSummary, decodeBoardSummaries } from '../src/core/board/summary';
+import { renderAcceptanceClaim, renderAcceptanceRecord, type ReviewPublishReceipt } from '../src/core/review/review-publish';
+import type { ModelRelation } from '../src/core/review/acceptance-receipt';
 import boardParentsFixture from '../src/operator-web/fixtures/board-parents.json';
 
 // Recorded on 2026-11-03: the two GraphQL reads of parent #1474 with the collector's own queries, the newest
@@ -141,9 +143,14 @@ test('Low acceptance uses the effective tier of every linked issue: a Low closin
   expect([via(''), via('\nRefs #1476\n'), via('\nRefs #1460\n')]).toEqual(['accepted', 'not_accepted', 'not_accepted']);
 });
 
-test('claude_review: only a branch-bound writer claim that names Claude, with every linked tier observed, skips the second review; a Claude record row for the head settles it', () => {
+test('High acceptance: PASS rows of the head from two distinct claims, one recorded different-family; claude_review and A10 project the same rule', () => {
   const claim = (runtime: string, branch: string) => comment(`repo-harness issue claim\nStatus: active\nRole: writer\nBranch: ${branch}\nRuntime: ${runtime}`, '2026-11-02T10:00:00Z');
-  const record = (sha: string, role: string) => `repo-harness acceptance record\n\n| Round | Role | Subject | Verdict |\n|---|---|---|---|\n| 1 | ${role}, read-only | \`${sha}\` | PASS: 0 P1 |\n`;
+  // The claim and the record are the `review publish` wire format. Claim n is an `acceptance claim` comment whose id comes from its time.
+  const receipt = (harness: 'claude' | 'codex' | 'pi', subject_sha: string, model_relation: ModelRelation = 'different-family', verdict: 'PASS' | 'FAIL' = 'PASS', round = 1): ReviewPublishReceipt => ({
+    protocol: 1, kind: 'repo-harness-review-publish-receipt', round, subject_sha, risk_tier: 'high', reviewer: { harness, actual_model: null }, verdict, model_relation, summary: 'Reviewed.', findings: [],
+  });
+  const claimAt = (n: number) => `2026-11-02T21:0${n}:00Z`;
+  const claimUrl = (n: number, path = 'pull/1491') => `https://github.com/Ancienttwo/repo-harness/${path}#issuecomment-${Date.parse(claimAt(n))}`;
   const parent = (data: Json) => {
     for (const [number, runtime, branch] of [[1475, 'claude', 'feat/1475-hc-transport'], [1479, 'claude', 'feat/1479-notify-relay'], [1476, 'codex', 'feat/1476-sessions-herdr-core']] as const) {
       const node = issueNode(data, number);
@@ -156,31 +163,64 @@ test('claude_review: only a branch-bound writer claim that names Claude, with ev
     pulls: (data) => {
       const { pr1494, pr1499 } = data.repository;
       pr1494.body += '\nCloses #1460\n';
-      pr1499.comments.nodes.push(comment(record(pr1499.headRefOid, 'claude (opus)'), '2026-11-02T22:00:00Z'));
-      pr1494.comments.nodes.push(comment(record(pr1494.headRefOid, 'pi (gpt)'), '2026-11-02T22:00:00Z'));
+      for (const [pr, harness] of [[pr1494, 'pi'], [pr1499, 'claude']] as const) {
+        pr.comments.nodes.push(comment(renderAcceptanceClaim(receipt(harness, pr.headRefOid)), claimAt(1)));
+        pr.comments.nodes.push(comment(renderAcceptanceRecord(receipt(harness, pr.headRefOid), claimUrl(1, `pull/${pr.number}`)), '2026-11-02T22:00:00Z'));
+      }
     },
   });
-  // A gatekeeper PASS alone leaves #1494 not accepted while its Claude review is pending.
-  expect(board.pull_requests.find(pr => pr.number === 1494)!.acceptance.status).toBe('not_accepted');
-  // #1494 also closes #1460, outside the board: its tier is unknown and counts as High, so the claude claim is not enough.
-  expect(board.pull_requests.map(pr => [pr.number, pr.tier, pr.claude_review])).toEqual([[1491, 'high', 'not_required'], [1494, null, 'pending'], [1499, 'high', 'recorded']]);
-  // #1499 has a Claude PASS and no gatekeeper PASS, so it is not accepted until a non-Claude PASS exists too.
-  expect(board.pull_requests.find(pr => pr.number === 1499)!.acceptance.status).toBe('not_accepted');
-  // A PASS row that names no harness (a subject line, an unknown role) does not stand for the gatekeeper.
-  const unnamed = replay({ parent, pulls: (data) => { const { pr1499 } = data.repository; pr1499.comments.nodes.push(comment(record(pr1499.headRefOid, 'claude (opus)'), '2026-11-02T22:00:00Z'), comment(record(pr1499.headRefOid, 'acceptor'), '2026-11-02T22:01:00Z')); } });
-  expect(unnamed.pull_requests.find(pr => pr.number === 1499)!.acceptance.status).toBe('not_accepted');
-  const both = replay({ parent, pulls: (data) => { const { pr1499 } = data.repository; pr1499.comments.nodes.push(comment(record(pr1499.headRefOid, 'claude (opus)'), '2026-11-02T22:00:00Z'), comment(record(pr1499.headRefOid, 'pi (gpt)'), '2026-11-02T22:01:00Z')); } });
-  expect(both.pull_requests.find(pr => pr.number === 1499)!.acceptance).toMatchObject({ status: 'accepted', via: 'record' });
-  // A10 reads the open, non-draft #1491: a Claude writer claim gives no finding; a Codex claim with no Claude row does.
-  expect(evaluateBoardAttention(board).findings.filter(finding => finding.rule === 'A10')).toEqual([]);
-  const codex = replay({
-    parent: (data) => {
-      const node = issueNode(data, 1475);
-      node.labels.nodes.push({ name: 'tier:high' });
-      node.comments.nodes.push(claim('codex', 'feat/1475-hc-transport'));
+  // One different-family PASS is one review: #1494 (unknown tier, counted as High) and #1499 are not accepted.
+  expect(board.pull_requests.map(pr => [pr.number, pr.tier, pr.claude_review, pr.acceptance.status])).toEqual([
+    [1491, 'high', 'pending', 'not_accepted'], [1494, null, 'pending', 'not_accepted'], [1499, 'high', 'recorded', 'not_accepted'],
+  ]);
+  // A Claude writer claim no longer skips the second review: A10 reads the open, non-draft #1491.
+  expect(evaluateBoardAttention(board).findings.filter(finding => finding.rule === 'A10').map(finding => finding.pull_requests)).toEqual([[1491]]);
+  // A row: the reviewer, the claim line it cites, its relation (null drops the line), verdict, subject (default the head) and round.
+  type Row = readonly [harness: 'claude' | 'codex' | 'pi', claimLine: string, relation?: ModelRelation | null, verdict?: 'PASS' | 'FAIL', sha?: string, round?: number];
+  const OLD = 'e'.repeat(40);
+  const head = (rows: readonly Row[], tier = 'tier:high') => replay({
+    parent: (data) => { parent(data); const labels = issueNode(data, 1475).labels.nodes; labels[labels.length - 1] = { name: tier }; },
+    pulls: (data) => {
+      const { pr1491 } = data.repository;
+      // Claims 1-3 are round 1 of the head; claims 4 and 6 are round 1 of an earlier head; claim 5 is round 2 and claims 7-8 round 4 of the head.
+      const claims: readonly (readonly [number, string, number])[] = [[1, pr1491.headRefOid, 1], [2, pr1491.headRefOid, 1], [3, pr1491.headRefOid, 1], [4, OLD, 1], [5, pr1491.headRefOid, 2], [6, OLD, 1], [7, pr1491.headRefOid, 4], [8, pr1491.headRefOid, 4]];
+      pr1491.comments.nodes.push(...claims.map(([n, sha, round]) => comment(renderAcceptanceClaim(receipt('codex', sha, 'different-family', 'PASS', round)), claimAt(n))));
+      pr1491.comments.nodes.push(...rows.map(([harness, claimLine, relation = 'different-family', verdict = 'PASS', sha = pr1491.headRefOid, round = 1], at) => {
+        const body = renderAcceptanceRecord(receipt(harness, sha, relation ?? 'unknown', verdict, round), claimLine);
+        return comment(relation === null ? body.replace(/^Model relation: .*\n/mu, '') : body, `2026-11-02T22:0${at}:00Z`);
+      }));
     },
   });
-  expect(evaluateBoardAttention(codex).findings.filter(finding => finding.rule === 'A10').map(finding => finding.pull_requests)).toEqual([[1491]]);
+  const gatekeeper: Row = ['pi', claimUrl(1)];
+  const cases: readonly (readonly [readonly Row[], string, string])[] = [
+    [[gatekeeper, ['claude', claimUrl(2), 'same-family']], 'accepted', 'recorded'],
+    [[gatekeeper, ['codex', claimUrl(2)]], 'accepted', 'not_required'],
+    // A High head that converges in round 4 publishes two claimed rows of that round.
+    [[['pi', claimUrl(7), 'different-family', 'PASS', undefined, 4], ['claude', claimUrl(8), 'same-family', 'PASS', undefined, 4]], 'accepted', 'recorded'],
+    // The Claude writer's gatekeeper alone waits for the Claude reviewer.
+    [[gatekeeper], 'not_accepted', 'pending'],
+    // One claim cited by its pull and its issues URL is one review.
+    [[gatekeeper, ['codex', claimUrl(1, 'issues/1491')]], 'not_accepted', 'pending'],
+    // A blank, malformed or unknown claim proves no review; so does a claim of an earlier head or of another round.
+    [[gatekeeper, ['codex', '']], 'not_accepted', 'pending'],
+    [[gatekeeper, ['codex', 'see above']], 'not_accepted', 'pending'],
+    [[gatekeeper, ['codex', claimUrl(9)]], 'not_accepted', 'pending'],
+    [[gatekeeper, ['codex', claimUrl(4)]], 'not_accepted', 'pending'],
+    [[gatekeeper, ['codex', claimUrl(5)]], 'not_accepted', 'pending'],
+    // No row recorded different-family: `unknown` (an unknown writer family) or no relation line.
+    [[['pi', claimUrl(1), 'unknown'], ['claude', claimUrl(2), 'same-family']], 'not_accepted', 'recorded'],
+    [[['pi', claimUrl(1), null], ['codex', claimUrl(2), null]], 'not_accepted', 'pending'],
+    // A FAIL row of the head withholds the rule from both projections.
+    [[gatekeeper, ['codex', claimUrl(2)], ['codex', claimUrl(3), 'same-family', 'FAIL']], 'not_accepted', 'pending'],
+    // Rows of an earlier head do not carry over to a head that git did not prove a merge-only sync of it.
+    [[['pi', claimUrl(4), 'different-family', 'PASS', OLD], ['codex', claimUrl(6), 'different-family', 'PASS', OLD]], 'not_accepted', 'pending'],
+  ];
+  const projected = cases.map(([rows]) => head(rows));
+  const pr1491 = (projection: BoardV1) => projection.pull_requests.find(pr => pr.number === 1491)!;
+  expect(projected.map(pr1491).map(pr => [pr.acceptance.status, pr.claude_review] as string[])).toEqual(cases.map(([, status, claude]) => [status, claude]));
+  expect(evaluateBoardAttention(projected[1]!).findings.filter(finding => finding.rule === 'A10')).toEqual([]);
+  // Medium keeps one PASS row, with no claim or relation check.
+  expect(pr1491(head([['pi', '', null]], 'tier:medium'))).toMatchObject({ acceptance: { status: 'accepted', via: 'record' }, claude_review: 'not_required' });
 });
 
 test('replay: the recorded #1474 reads project to a board, and its findings come from the recorded state', () => {
@@ -1398,16 +1438,23 @@ test('closeout stops a CodeGraph MCP server bound to exactly the worktree and no
 
 describe('merge-only sync carry (#2074)', () => {
   const reviewed = 'c'.repeat(40);
-  const record = (sha: string, role: string, verdict: 'PASS' | 'FAIL') => `repo-harness acceptance record\n\n| Round | Role | Subject | Verdict |\n|---|---|---|---|\n| 1 | ${role}, read-only | \`${sha}\` | ${verdict} |\n`;
   const hook = 'src/cli/hook/runtime.ts';
+  const receipt = (harness: 'claude' | 'pi', subject_sha: string, model_relation: ModelRelation, verdict: 'PASS' | 'FAIL' = 'PASS'): ReviewPublishReceipt => ({
+    protocol: 1, kind: 'repo-harness-review-publish-receipt', round: 1, subject_sha, risk_tier: 'high', reviewer: { harness, actual_model: null }, verdict, model_relation, summary: 'Reviewed.', findings: [],
+  });
 
-  test('the rows of a reviewed head accept a later head only when git proves a merge-only sync and no hook path changes', () => {
+  test('the rows of a reviewed head accept a later High head only when git proves a merge-only sync and no hook path changes', () => {
     const calls: string[] = [];
     const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly hookFile?: boolean } = {}) => replay({
+      parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
       pulls: (data) => {
         const { pr1499 } = data.repository;
-        pr1499.comments.nodes.push(comment(record(reviewed, 'pi (gpt)', 'PASS'), '2026-11-03T00:20:00Z'), comment(record(reviewed, 'claude (opus)', 'PASS'), '2026-11-03T00:21:00Z'));
-        if (options.headFail) pr1499.comments.nodes.push(comment(record(pr1499.headRefOid, 'pi (gpt)', 'FAIL'), '2026-11-03T00:30:00Z'));
+        // The two round-1 reviews of the reviewed head, each with its own claim (`acceptor.md` section 2.2).
+        for (const [at, harness, relation] of [['00:10', 'pi', 'different-family'], ['00:11', 'claude', 'same-family']] as const) {
+          const claim = comment(renderAcceptanceClaim(receipt(harness, reviewed, relation)), `2026-11-03T${at}:00Z`);
+          pr1499.comments.nodes.push(claim, comment(renderAcceptanceRecord(receipt(harness, reviewed, relation), claim.url), `2026-11-03T${at}:30Z`));
+        }
+        if (options.headFail) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', pr1499.headRefOid, 'different-family', 'FAIL'), ''), '2026-11-03T00:30:00Z'));
         if (options.hookFile) pr1499.files.nodes.push({ path: hook });
       },
       owners: (results) => {
@@ -1417,13 +1464,13 @@ describe('merge-only sync carry (#2074)', () => {
         if (input.pr === 1499) calls.push(`${input.base_ref} ${input.head_sha} ${candidates.join(',')}`);
         return options.proven === false ? [] : candidates;
       },
-    }).pull_requests.find(pr => pr.number === 1499)!.acceptance;
-    expect(carry()).toEqual({ status: 'accepted', via: 'sync', carried_from: reviewed, accepted_at: '2026-11-03T00:21:00Z', evidence_url: comment('', '2026-11-03T00:21:00Z').url });
+    }).pull_requests.find(pr => pr.number === 1499)!;
+    expect(carry()).toMatchObject({ tier: 'high', claude_review: 'recorded', acceptance: { status: 'accepted', via: 'sync', carried_from: reviewed, accepted_at: '2026-11-03T00:11:30Z', evidence_url: comment('', '2026-11-03T00:11:30Z').url } });
     expect(calls).toEqual([`feat/1475-hc-transport 23627c4f5a717f0434df1468dc72a5042678a95d ${reviewed}`]);
-    expect(carry({ proven: false })).toEqual({ status: 'not_accepted' });
+    expect(carry({ proven: false }).acceptance).toEqual({ status: 'not_accepted' });
     calls.length = 0;
-    expect(carry({ headFail: true })).toEqual({ status: 'not_accepted' });
-    expect(carry({ hookFile: true })).toEqual({ status: 'not_accepted' });
+    expect(carry({ headFail: true }).acceptance).toEqual({ status: 'not_accepted' });
+    expect(carry({ hookFile: true }).acceptance).toEqual({ status: 'not_accepted' });
     // A FAIL on the head and an owner-approved hook diff leave git no candidate.
     expect(calls).toEqual(Array(2).fill('feat/1475-hc-transport 23627c4f5a717f0434df1468dc72a5042678a95d '));
   });
