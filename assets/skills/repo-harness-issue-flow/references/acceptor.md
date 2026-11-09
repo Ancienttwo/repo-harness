@@ -96,27 +96,36 @@ merge and no round waits for it. It does not comment on every PR. When it
 has commented, every bot comment gets a response: each review thread, each
 PR comment and each issue comment.
 
-The acceptor reads the bot threads and comments on the current head next
-to the diff. For each bot finding it records one decision in the round's
-findings:
+The coordinator decides each bot finding. When an acceptor round is
+active, the acceptor reads the bot threads and comments on the current
+head next to the diff and raises each real one as its own finding, with
+its severity. When no round is active (a Low PR that skips the accept
+seat, or a bot finding after the last round), the coordinator reads them.
+The decision is one of:
 
 | Decision | Meaning | Effect |
 |---|---|---|
-| `adopt` | The finding is real. | It is a finding of this round with its own severity. It counts as a finding of the review loop (§2.2). |
-| `decline` | The finding is wrong, out of scope or not worth a fix. | One-line reason. It does not count as a finding of the loop. |
-| `outdated` | The finding is on an older head, and the current head no longer contains the code. | No triage again. It does not count as a finding of the loop. |
+| `adopt` | The finding is real. | It is a finding of the review loop (§2.2) with its severity. |
+| `decline` | The finding is wrong, out of scope or not worth a fix. | One-line reason. It is not a finding of the loop. |
+| `outdated` | The finding is on an older head, and the current head no longer contains the code. | No triage again. It is not a finding of the loop. |
 
-The bot's "Codex Review Summary" status comment with no findings
-(`codex-review-state` `has_any_findings: false`) gets no reply. The record
-of that head states it: `bot review: no findings at <sha>`. A summary with
-findings gets one decision per finding.
+The `acceptance record` and the publish receipt carry no bot decision
+(`review publish` renders only severity findings). The coordinator posts
+the decisions in one plain PR comment, one line each:
+`Review-bot reference: <comment id or thread> adopt|decline|outdated: <reason>`.
+The bot's "Codex Review Summary" with no findings
+(`codex-review-state` `has_any_findings: false`) gets the line
+`Review-bot reference: no findings at <sha>: no action` and no reply on
+the summary. A summary with findings gets one decision per finding.
 
 The coordinator writes the replies, so each role keeps one GitHub write
 path. The acceptor stays read-only. The reply uses the `review reply`
 shape (`templates.md`): `rejected` for a decline or an outdated finding,
-`fixed <sha>` for an adopted one after its fix round. A declined or
-outdated thread is resolved with its reply. An adopted thread is resolved
-when the fix round that addresses it is pushed.
+`fixed <sha>` for an adopted one after its fix round, and for an adopted
+P3 or a rule-4 deferral the reason or the follow-up issue link. A thread
+that the coordinator answers with `rejected`, `deferred` or a P3 reason is
+resolved with its reply. An adopted thread with a fix is resolved when the
+fix round that addresses it is pushed.
 
 A bot finding that arrives after the merge is triaged once: `decline`, or
 `adopt` as a new issue under the batch parent. The merged PR is not
