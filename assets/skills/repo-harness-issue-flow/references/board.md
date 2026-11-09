@@ -57,7 +57,8 @@ Rules that keep the topology safe:
 
 One `issue claim` comment takes one claim role. `issue claim` is seat-only:
 only the active coordinator holder posts it (see "Seat-only comment
-kinds"). The required fields are in `templates.md` § issue claim.
+kinds"). A claim that takes over a role also carries `Prior claim`. The
+required fields are in `templates.md` § issue claim.
 Board rules 2, 3 and 8 apply: one identity, read back, and
 stop on an uncertain read or post.
 
