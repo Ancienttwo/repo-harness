@@ -12,7 +12,7 @@
 
 import { appendFileSync, existsSync, lstatSync, mkdirSync, realpathSync } from 'fs';
 import { tmpdir } from 'os';
-import { dirname, isAbsolute, join, posix, relative, resolve, sep, win32 } from 'path';
+import { dirname, isAbsolute, join, posix, relative, sep, win32 } from 'path';
 import { managedWorktreeRoot } from '../../effects/git/managed-worktree';
 import {
   canonicalExternalPath,
@@ -125,22 +125,6 @@ export function runMutationDenial(opts: MutationGuardInput, denial: Denial): Mut
 function firstDenial(repoRoot: string, rawPaths: readonly string[], bashRoots: readonly string[] | null = null): Denial | null {
   let writableDirs: WritablePrivateDirs | undefined;
   for (const raw of rawPaths) {
-    // The allowlist check reads the target as written: normalizeFilePath follows symlinks.
-    if (bashRoots === null) {
-      const lexical = lexicalRepoPath(repoRoot, raw);
-      if (lexical !== null && protectedRepoDir(lexical) === '_ops') {
-        writableDirs ??= readWritablePrivateDirs(repoRoot);
-        const dir = writableDirs.ok ? writableDirs.dirs.find(d => lexical.startsWith(`${d}/`)) : undefined;
-        const unsafe = dir && writableTargetHazard(repoRoot, raw, lexical, dir);
-        if (unsafe) {
-          return {
-            guard: 'OpsPrivateGuard',
-            reason: `${raw} is a write target inside a writable _ops/ directory that ${unsafe}.`,
-            fix: 'Name one literal file by a canonical path that is not a symlink and has no . or .. segment.',
-          };
-        }
-      }
-    }
     const filePath = normalizeFilePath(repoRoot, raw);
     // normalizeFilePath leaves an absolute path raw both for a verified external
     // target and for input it could not resolve (e.g. `/repo/src/../_ops/x`);
@@ -169,7 +153,20 @@ function firstDenial(repoRoot: string, rawPaths: readonly string[], bashRoots: r
     if (protectedRepoDir(filePath) === '_ops') {
       if (bashRoots === null) {
         writableDirs ??= readWritablePrivateDirs(repoRoot);
-        if (writableDirs.ok && writableDirs.dirs.some(dir => filePath.startsWith(`${dir}/`))) continue;
+        const dir = writableDirs.ok ? writableDirs.dirs.find(d => filePath.startsWith(`${d}/`)) : undefined;
+        if (dir) {
+          // normalizeFilePath follows symlinks and folds case and root aliases. Only a target written as its
+          // canonical repository path is the file the allowlist names.
+          if (spelledRepoPath(repoRoot, raw) === filePath) {
+            const unsafe = writableTargetHazard(repoRoot, filePath, dir);
+            if (!unsafe) continue;
+            return {
+              guard: 'OpsPrivateGuard',
+              reason: `${filePath} is a write target inside a writable _ops/ directory that ${unsafe}.`,
+              fix: 'Name one literal file that is not a symlink.',
+            };
+          }
+        }
       }
       return {
         guard: 'OpsPrivateGuard',
@@ -184,22 +181,16 @@ function firstDenial(repoRoot: string, rawPaths: readonly string[], bashRoots: r
   return null;
 }
 
-/** The repository-relative target with `.` and `..` resolved but no symlink followed; null outside the repository. */
-function lexicalRepoPath(repoRoot: string, raw: string): string | null {
-  const rel = relative(repoRoot, resolve(repoRoot, raw)).split(sep).join('/');
-  return rel === '' || rel === '..' || rel.startsWith('../') || isAbsolutePathInAnyGrammar(rel) ? null : rel;
+/** The raw target spelled relative to the repository root, with no resolution of `.`, `..`, case or aliases. */
+function spelledRepoPath(repoRoot: string, raw: string): string {
+  return raw.startsWith(`${repoRoot}/`) ? raw.slice(repoRoot.length + 1) : raw;
 }
 
-/**
- * Why an allowlisted target is unsafe, or null. A glob, a `.` or `..` segment, or a symlink at or below the
- * allowlisted directory can send the write to a file the allowlist does not name. A missing tail is a new file.
- */
-function writableTargetHazard(repoRoot: string, raw: string, lexical: string, dir: string): string | null {
-  if (/[*?[]/.test(raw)) return 'contains a glob character';
-  if (raw.split(/[\\/]/).some(part => part === '.' || part === '..')) return 'contains a . or .. path segment';
-  const parts = lexical.split('/');
+/** A glob or a dangling symlink at or below the allowlisted directory can send the write to a file the allowlist does not name. */
+function writableTargetHazard(repoRoot: string, filePath: string, dir: string): string | null {
+  if (/[*?[]/.test(filePath)) return 'contains a glob character';
   let current = repoRoot;
-  for (const [index, part] of parts.entries()) {
+  for (const [index, part] of filePath.split('/').entries()) {
     current = join(current, part);
     if (index < dir.split('/').length - 1) continue;
     const stat = lstatSync(current, { throwIfNoEntry: false });

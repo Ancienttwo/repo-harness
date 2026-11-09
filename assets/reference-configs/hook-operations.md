@@ -200,8 +200,10 @@ Edit guards:
   of `.ai/harness/policy.json`, for example `["_ops/dispatch"]`. Edit, Write and
   apply_patch writes below a listed directory pass. Bash writes there stay
   denied, because Bash targets come from text. The guard denies a listed target
-  that has a glob character or a `.` or `..` segment, or that passes through a
-  symlink at or below the listed directory. An invalid entry denies every `_ops/`
+  unless it is written as its canonical repository path: a root alias, another
+  letter case, a `.` or `..` segment, or an existing symlink changes the
+  spelling. It also denies a glob character and a dangling symlink at or below
+  the listed directory. An invalid entry denies every `_ops/`
   write and the reason names the entry. Stop still reports these changes.
 - `ApplyPatchScopeGuard`: Codex `apply_patch` input has no parseable target
   path.
