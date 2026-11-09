@@ -1445,7 +1445,7 @@ describe('merge-only sync carry (#2074)', () => {
 
   test('the rows of a reviewed head accept a later High head only when git proves a merge-only sync and no hook path changes', () => {
     const calls: string[] = [];
-    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly hookFile?: boolean } = {}) => replay({
+    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly laterFail?: boolean; readonly hookFile?: boolean } = {}) => replay({
       parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
       pulls: (data) => {
         const { pr1499 } = data.repository;
@@ -1454,6 +1454,8 @@ describe('merge-only sync carry (#2074)', () => {
           const claim = comment(renderAcceptanceClaim(receipt(harness, reviewed, relation)), `2026-11-03T${at}:00Z`);
           pr1499.comments.nodes.push(claim, comment(renderAcceptanceRecord(receipt(harness, reviewed, relation), claim.url), `2026-11-03T${at}:30Z`));
         }
+        // A later sync head B of the same patch failed its sync check: the older PASS of the reviewed head must not skip it.
+        if (options.laterFail) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', 'b'.repeat(40), 'different-family', 'FAIL'), ''), '2026-11-03T00:20:00Z'));
         if (options.headFail) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', pr1499.headRefOid, 'different-family', 'FAIL'), ''), '2026-11-03T00:30:00Z'));
         if (options.hookFile) pr1499.files.nodes.push({ path: hook });
       },
@@ -1470,15 +1472,17 @@ describe('merge-only sync carry (#2074)', () => {
     expect(carry({ proven: false }).acceptance).toEqual({ status: 'not_accepted' });
     calls.length = 0;
     expect(carry({ headFail: true }).acceptance).toEqual({ status: 'not_accepted' });
+    expect(carry({ laterFail: true }).acceptance).toEqual({ status: 'not_accepted' });
     expect(carry({ hookFile: true }).acceptance).toEqual({ status: 'not_accepted' });
-    // A FAIL on the head and an owner-approved hook diff leave git no candidate.
-    expect(calls).toEqual(Array(2).fill('feat/1475-hc-transport 23627c4f5a717f0434df1468dc72a5042678a95d '));
+    // A FAIL on the head, a FAIL on the newest reviewed head and an owner-approved hook diff leave git no candidate.
+    expect(calls).toEqual(Array(3).fill('feat/1475-hc-transport 23627c4f5a717f0434df1468dc72a5042678a95d '));
   });
 
-  test('git proves a merge of the base and refuses an extra commit, a merge that changes the PR patch and a missing object', () => {
+  test('git proves a merge of the base and refuses an extra commit, a merge that changes the PR patch or only its whitespace, a missing object and a failed fetch', () => {
     const root = tmpWorkspace('merge-only-sync'); roots.push(root);
+    const clone = join(root, '.clone');
     const git = (...args: string[]) => {
-      const result = run('git', args, root);
+      const result = run('git', args, args[0] === '-C' ? tmpdir() : root);
       expect(result.status).toBe(0);
       return result.stdout.trim();
     };
@@ -1486,8 +1490,11 @@ describe('merge-only sync carry (#2074)', () => {
     writeFileSync(join(root, 'f.txt'), '1\n2\n3\n4\n5\n'); writeFileSync(join(root, 'b.txt'), 'b\n');
     git('add', '.'); git('commit', '-m', 'base');
     git('checkout', '-b', 'feature');
-    writeFileSync(join(root, 'f.txt'), '1\ntwo\n3\n4\n5\n'); git('commit', '-am', 'feature');
+    writeFileSync(join(root, 'f.txt'), '1\ntwo words\n3\n4\n5\n'); git('commit', '-am', 'feature');
     const subject = git('rev-parse', 'HEAD');
+    // The clone has the reviewed head but not the sync head or the new base, so its proof needs the fetch.
+    git('clone', '--quiet', root, clone);
+    const stale = git('-C', clone, 'rev-parse', 'refs/remotes/origin/main');
     git('checkout', 'main');
     writeFileSync(join(root, 'b.txt'), 'b2\n'); git('commit', '-am', 'main moves');
     const base = git('rev-parse', 'HEAD');
@@ -1496,11 +1503,24 @@ describe('merge-only sync carry (#2074)', () => {
     const sync = git('rev-parse', 'HEAD');
     const proven = (head: string, sha = subject) => provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: base, head_sha: head }, [sha]).length === 1;
     expect(proven(sync)).toBe(true);
-    writeFileSync(join(root, 'f.txt'), '1\ntwo\n3\n4\nfive\n'); git('commit', '-am', 'new work');
+    git('update-ref', 'refs/pull/1/head', sync);
+    const fromClone = () => provenMergeOnlySyncs({ repo_root: clone, pr: 1, base_ref: 'main', base_sha: base, head_sha: sync }, [subject]);
+    git('-C', clone, 'remote', 'set-url', 'origin', join(root, 'missing'));
+    expect(fromClone()).toEqual([]);
+    git('-C', clone, 'remote', 'set-url', 'origin', root);
+    expect(fromClone()).toEqual([subject]);
+    // The fetch writes objects only: no remote-tracking ref moves and no FETCH_HEAD appears.
+    expect(git('-C', clone, 'rev-parse', 'refs/remotes/origin/main')).toBe(stale);
+    expect(existsSync(join(clone, '.git/FETCH_HEAD'))).toBe(false);
+    writeFileSync(join(root, 'f.txt'), '1\ntwo words\n3\n4\nfive\n'); git('commit', '-am', 'new work');
     expect(proven(git('rev-parse', 'HEAD'))).toBe(false);
     git('reset', '--hard', subject);
     git('merge', '--no-commit', 'main');
-    writeFileSync(join(root, 'f.txt'), '1\ntwo\nthree\n4\n5\n'); git('commit', '-am', 'merge that changes the patch');
+    writeFileSync(join(root, 'f.txt'), '1\ntwo words\nthree\n4\n5\n'); git('commit', '-am', 'merge that changes the patch');
+    expect(proven(git('rev-parse', 'HEAD'))).toBe(false);
+    git('reset', '--hard', subject);
+    git('merge', '--no-commit', 'main');
+    writeFileSync(join(root, 'f.txt'), '1\ntwowords\n3\n4\n5\n'); git('commit', '-am', 'merge that changes only whitespace');
     expect(proven(git('rev-parse', 'HEAD'))).toBe(false);
     expect(proven(sync, 'd'.repeat(40))).toBe(false);
   });

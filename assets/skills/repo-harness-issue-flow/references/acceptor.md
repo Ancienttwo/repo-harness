@@ -68,11 +68,12 @@ The table rules govern how the row combines with the review.
    row.
 
    **Sync head.** A sync with main makes a new head. When git proves the
-   new head a merge-only sync of a reviewed head, the board counts the
-   rows of the reviewed head as rows of the new head and shows `via: sync`
+   new head a merge-only sync of the newest reviewed head, and no row of
+   either head is a FAIL, the board counts the rows of the reviewed head
+   as rows of the new head and shows `via: sync`
    with `carried_from` (#2074). A merge-only sync has the reviewed head as
    an ancestor, adds only merge commits outside main, and keeps the PR
-   patch id (`git diff <merge-base> <head> | git patch-id --stable`). It
+   patch id (`git diff --binary <merge-base> <head> | git patch-id --verbatim`). It
    needs CI only. Any other sync head (a conflict resolution that changes
    the PR patch, a new commit, a failed git step) needs a sync check: a
    review of the sync delta that writes one record row for the new head.

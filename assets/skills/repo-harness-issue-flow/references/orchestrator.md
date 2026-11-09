@@ -414,7 +414,7 @@ A PR is eligible when all of these are true:
 - Its head equals the reviewed subject, or is a merge-only sync of it:
   the subject is an ancestor of the head,
   `git rev-list --no-merges <subject>..<head> ^origin/main` prints nothing,
-  and `git diff <merge-base> <head> | git patch-id --stable` is equal for
+  and `git diff --binary <merge-base> <head> | git patch-id --verbatim` is equal for
   the subject and the head. The board applies this rule and shows the
   acceptance as `via: sync` with `carried_from: <subject>` (#2074). A PR
   that changes a hook path never carries: the owner approves each head of

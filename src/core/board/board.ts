@@ -323,18 +323,25 @@ function requiredCheck(read: BoardPullRequestReadV1): BoardRequiredCheckV1 {
 const OWNER_APPROVED_CAPABILITY = 'capability.runtime-harness.hook-adapters';
 
 /**
- * The earlier reviewed heads whose acceptance rows could carry to the head of an open pull request (#2074): each subject with a PASS row
- * that is not the head. None when a row fails the head, the file list is incomplete, the path owners are unknown, or a changed path is a
- * hook path or ambiguous.
+ * The earlier reviewed head whose acceptance rows could carry to the head of an open pull request (#2074): the subject of the newest
+ * record row that names another head than the current one. Only the newest reviewed head can carry, so a FAIL on a later sync head is
+ * never skipped for an older PASS. None when that subject or the head has a FAIL row, the file list is incomplete, the path owners are
+ * unknown, or a changed path is a hook path or ambiguous.
  * Only git can prove a carry (`provenMergeOnlySyncs`); the board then applies the same rules to these rows as to rows of the head.
  */
 export function syncCarryCandidates(read: BoardPullRequestReadV1, owners: BoardPathOwnersV1): readonly string[] {
   if (read.state !== 'open' || read.files === null || owners.status !== 'observed') return [];
   const files = new Set(read.files);
   if (owners.owners.some(owner => files.has(owner.path) && (owner.status === 'ambiguous' || (owner.status === 'owned' && owner.capability === OWNER_APPROVED_CAPABILITY)))) return [];
-  const rows = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER).flatMap(record => parseAcceptanceRecord(record) ?? []);
+  const records = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER)
+    .map(record => ({ created_at: record.created_at, rows: parseAcceptanceRecord(record) ?? [] }));
+  const rows = records.flatMap(record => record.rows);
   if (rows.some(row => row.verdict === 'FAIL' && row.subject_sha === read.head_sha)) return [];
-  return [...new Set(rows.filter(row => row.verdict === 'PASS' && row.subject_sha !== read.head_sha).map(row => row.subject_sha))];
+  const earlier = records.filter(record => record.rows.some(row => row.subject_sha !== read.head_sha));
+  if (earlier.length === 0) return [];
+  const newest = earlier.reduce((latest, record) => (record.created_at >= latest.created_at ? record : latest));
+  const subject = newest.rows.filter(row => row.subject_sha !== read.head_sha).at(-1)!.subject_sha;
+  return rows.some(row => row.subject_sha === subject && row.verdict === 'FAIL') ? [] : [subject];
 }
 
 /** The head and each candidate that git proved a merge-only sync of it: their rows count as rows of the head. */
@@ -360,10 +367,11 @@ function acceptance(read: BoardPullRequestReadV1, subjects: ReadonlySet<string>,
     // An older comment outside the read can hold a FAIL on the head.
     if (read.comments.truncated) return { status: 'unknown', reason: 'comments_truncated', evidence_url: null };
     if (!strict || highRuleMet(read, head)) {
-      const newest = passes.reduce((latest, pass) => (pass.record.created_at >= latest.record.created_at ? pass : latest));
+      // A head that has its own PASS row is accepted on its newest own record; otherwise the newest carried record names its reviewed head.
+      const own = passes.filter(pass => pass.subject === read.head_sha);
+      const newest = (own.length > 0 ? own : passes).reduce((latest, pass) => (pass.record.created_at >= latest.record.created_at ? pass : latest));
       const accepted = { accepted_at: newest.record.created_at, evidence_url: newest.record.url };
-      // A head that has its own PASS row is accepted on its record; otherwise the newest carried record names its reviewed head.
-      if (passes.some(pass => pass.subject === read.head_sha)) return { status: 'accepted', via: 'record', ...accepted };
+      if (own.length > 0) return { status: 'accepted', via: 'record', ...accepted };
       return { status: 'accepted', via: 'sync', carried_from: newest.subject, ...accepted };
     }
   }

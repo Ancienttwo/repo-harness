@@ -24,7 +24,10 @@ function ok(repoRoot: string, args: readonly string[], input?: Buffer): Buffer |
 
 const hasCommit = (repoRoot: string, sha: string): boolean => ok(repoRoot, ['cat-file', '-e', `${sha}^{commit}`]) !== null;
 
-/** The stable patch id of the PR diff of one head: `git diff <merge-base> <head> | git patch-id --stable`. Null when git cannot compute it. */
+/**
+ * The patch id of the PR diff of one head: `git diff <merge-base> <head> | git patch-id --verbatim`. `--verbatim` keeps whitespace, so a
+ * merge that changes a space inside a string or an indentation changes the id; `--stable` would strip it. Null when git cannot compute it.
+ */
 function prPatchId(repoRoot: string, baseSha: string, head: string): string | null {
   const bases = ok(repoRoot, ['merge-base', '--all', baseSha, head])?.toString('utf8').trim().split('\n') ?? [];
   // A criss-cross history has no one PR diff.
@@ -32,7 +35,7 @@ function prPatchId(repoRoot: string, baseSha: string, head: string): string | nu
   // `--binary` puts the content of a binary file in the patch, so a changed blob changes the id.
   const diff = ok(repoRoot, ['diff', '--binary', '--no-renames', '--no-ext-diff', '--no-textconv', '--no-color', bases[0]!, head]);
   if (diff === null || diff.length === 0) return null;
-  const id = ok(repoRoot, ['patch-id', '--stable'], diff)?.toString('utf8').trim().split(/\s+/u)[0];
+  const id = ok(repoRoot, ['patch-id', '--verbatim'], diff)?.toString('utf8').trim().split(/\s+/u)[0];
   return id !== undefined && /^[0-9a-f]{40}$/u.test(id) ? id : null;
 }
 
@@ -45,9 +48,9 @@ export function provenMergeOnlySyncs(input: MergeOnlySyncInput, reviewed: readon
   const { repo_root: root, base_sha: base, head_sha: head } = input;
   if (reviewed.length === 0) return [];
   if (![base, head, ...reviewed].every(sha => hasCommit(root, sha))) {
-    // No destination ref: the fetch writes objects and FETCH_HEAD only.
-    ok(root, ['fetch', '--no-tags', '--quiet', 'origin', `refs/pull/${input.pr}/head`, `refs/heads/${input.base_ref}`]);
-    if (![base, head].every(sha => hasCommit(root, sha))) return [];
+    // `--refmap=` drops the configured `remote.origin.fetch` mapping and the refspecs name no destination, so the fetch writes objects only.
+    const fetched = ok(root, ['fetch', '--no-tags', '--quiet', '--refmap=', '--no-write-fetch-head', 'origin', `refs/pull/${input.pr}/head`, `refs/heads/${input.base_ref}`]);
+    if (fetched === null || ![base, head].every(sha => hasCommit(root, sha))) return [];
   }
   const headId = prPatchId(root, base, head);
   if (headId === null) return [];
