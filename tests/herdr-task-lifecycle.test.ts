@@ -401,7 +401,9 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     // A failed group cleanup must not leave the TERM/HUP-resistant child on the host.
     for (const role of ['grouped', 'exec-member', 'late-child', 'reused']) {
       const childFile = join(fixture, `${role}.ready.child`);
-      if (existsSync(childFile)) { try { process.kill(Number(readFileSync(childFile, 'utf8')), 'SIGKILL'); } catch { /* Already absent. */ } }
+      // A half-written file reads as pid 0, and kill(0) would signal this whole process group.
+      const childPid = existsSync(childFile) ? Number(readFileSync(childFile, 'utf8')) : 0;
+      if (childPid > 0) { try { process.kill(childPid, 'SIGKILL'); } catch { /* Already absent. */ } }
     }
   }
 }), 60_000);
