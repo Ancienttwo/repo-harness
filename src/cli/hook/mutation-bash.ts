@@ -58,7 +58,7 @@ function words(line: string): Word[] | null {
       result.push({ value: ch, pattern: ch, literal: true, operator: true });
       continue;
     }
-    if (/[$`*?[{}~]/.test(ch)) literal = false;
+    if (/[$`*?{}~]/.test(ch)) literal = false;
     value += ch; pattern += ch; active = true;
   }
   if (quote) return null;
@@ -397,9 +397,7 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
       if (cd && (!cd.plain || !cd.target.literal)) {
         const found = candidates.length, failed = unresolved.length;
         add(cd.target.pattern, commandCwd);
-        // An external candidate counts only when its write-through path is protected.
-        const reach = candidates.slice(found).map(path => isAbsolute(path) ? realRel(path) : path);
-        if (unresolved.length > failed || reach.some(path => path !== null && protectedPath(path))) cwdMayBeProtected = true;
+        if (candidates.length > found || unresolved.length > failed) cwdMayBeProtected = true;
         candidates.length = found; unresolved.length = failed;
       }
       for (const target of commandTargets(segment, body)) add(target, commandCwd);
