@@ -259,6 +259,8 @@ field is missing it posts `issue claim status` with `Status: released`,
 then one complete claim. It names the missing fields in a `To: <agent>`
 comment and does not dispatch until the corrected claim is on the board.
 
+Every template below ends with the line `Seat: <seat id> <hc address>` when a seat posts it by hand. The line is a reader trace; no decoder reads it. The `review start` marker keeps its own `Seat:` field and takes no second line.
+
 `issue claim` is seat-only. The coordinator posts it, including the
 claim of each agent it dispatches. Such a claim names the agent in
 `Agent:` and the coordinator's own claim in `Coordinator:`. Any other
@@ -397,11 +399,21 @@ Why: <reason; for fixed, the test that fails on the base>
 
 The head owner replies `fixed` or `disputed` and leaves the thread open.
 Only the coordinator replies `rejected`, or `deferred` for a rule-4
-merge (`acceptor.md` §2.2), then resolves the thread (`board.md` rule 5).
+deferral (`acceptor.md` §2.2), then resolves the thread (`board.md` rule 5).
 A comment from a reviewer without a claim role, such as an
-outside contributor or an independent bot, is optional input: the head
-owner or the coordinator decides whether to adopt it, and answers with the
-same reply.
+outside contributor, is optional input: the head owner or the coordinator
+decides whether to adopt it, and answers with the same reply. A review bot
+comment follows `acceptor.md` §2.3: the coordinator answers every one.
+
+### review-bot reference (plain PR comment, written by the coordinator)
+
+```text
+Review-bot reference: <comment id or thread> adopt|decline|outdated: <reason>
+Review-bot reference: no findings at <sha>: no action
+```
+
+`acceptor.md` §2.3 defines the decisions. It is not part of the
+`acceptance record`.
 
 ### unblocked
 

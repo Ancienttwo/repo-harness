@@ -215,13 +215,15 @@ function prDiffLines(run: ReviewPublishGhRunner, slug: string, prNumber: number)
 }
 
 /**
- * The URL of the acceptance claim already on the PR for this subject and
- * round, or null. A claim for the same subject and round with other fields
- * (tier, agent) is a conflict: a second claim would be ambiguous and an
- * overwrite is not allowed.
+ * The URL of this reviewer's acceptance claim already on the PR for this
+ * subject and round, or null. A High round has two reviews of one subject
+ * (`acceptor.md` section 2.2), so the agent is part of the claim identity:
+ * another agent posts its own claim. A claim of the same agent, subject and
+ * round with other fields (tier) is a conflict: a second claim would be
+ * ambiguous and an overwrite is not allowed.
  */
 function existingClaimUrl(run: ReviewPublishGhRunner, slug: string, prNumber: number, receipt: ReviewPublishReceipt, body: string): string | null {
-  const identity = ['Round: ' + receipt.round, 'Subject: ' + receipt.subject_sha];
+  const identity = ['Round: ' + receipt.round, 'Subject: ' + receipt.subject_sha, body.split('\n').find((line) => line.startsWith('Agent: '))!];
   const claims = ghPages(run, 'repos/' + slug + '/issues/' + prNumber + '/comments').filter((comment) =>
     typeof comment.body === 'string' && comment.body.startsWith('repo-harness acceptance claim\n')
     && identity.every((line) => (comment.body as string).split('\n').includes(line)));
