@@ -22,6 +22,10 @@ No host and no model is mandatory (D7). Any host that can read the PR and
 return the result schema can accept.
 
 - The acceptor did not write the subject SHA.
+- The tier comes from the High list, the change hazard list and the Low
+  rules in `docs/reference-configs/agentic-development-flow.md`, Review by
+  risk. Code that writes comments, records, reviews or labels to GitHub is
+  Medium unless it also hits the High list.
 - For the High tier, at least one of the two reviews of a head comes from
   a model family different from the writer's (§2.2).
 - The other High review can use a fresh context of the writer's family.
