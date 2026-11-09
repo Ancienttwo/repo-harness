@@ -3,6 +3,7 @@
 All notable changes to this skill are documented here.
 
 ## [Unreleased]
+- `repo-harness review publish` keys an acceptance claim by round, subject and agent. The second reviewer of a High round posts its own claim and record for the same head; before, it exited 2 with `review_publish_conflict`. A retry of the same agent still reuses its claim, and the same agent with another tier is still a conflict. (#2061)
 - `repo-harness board review` also starts the Claude `reviewer` seat when a pull request shows `claude_review: pending`. A start marker now carries `Seat: gatekeeper|reviewer` (a marker without `Seat` covers no seat), so a seat that was not sent retries without restarting the other. The delta base of each seat comes from an acceptance row of that seat's own family (Claude for the reviewer, another harness for the gatekeeper); otherwise the seat reviews the whole diff. Board acceptance via a record no longer accepts a head while `claude_review` is `pending`. The `second_reviewer_required` output is gone. (#2025)
 - Two test fixtures no longer read a half-written pid file as pid 0. The dev-activity collector test waits for a non-empty pid, and the herdr task lifecycle cleanup skips a pid that is not positive. Before, `process.kill(0, 'SIGKILL')` could stop the whole CI test group with exit 137. (#2052)
 

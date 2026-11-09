@@ -294,6 +294,25 @@ test('a later conflicting claim for the same subject and round stops the retry e
   expect(fixture.gh.inputs().some((entry) => entry.input !== '')).toBe(false);
 });
 
+// A High round has two reviews of one subject (acceptor.md section 2.2): they publish in turn, each with its own claim (#2061).
+test('a second reviewer agent of the same subject and round posts its own claim and record', async () => {
+  const pass = (harness: string, actual_model: string) => publishReceipt({ reviewer: { harness, actual_model }, verdict: 'PASS', summary: 'No blocking finding.', findings: [] });
+  const posted = (fixture: ReturnType<typeof publishFixture>) => postedInputs(fixture, '/issues/' + PUBLISH_PR + '/comments')
+    .filter((entry) => entry.input !== '').map((entry) => (JSON.parse(entry.input) as { body: string }).body);
+  const first = publishFixture();
+  const gatekeeper = await runPublish(first, pass('codex', 'gpt-5.1-codex'));
+  expect(gatekeeper.status, gatekeeper.stderr).toBe(0);
+  const firstClaim = JSON.parse(gatekeeper.stdout).claim_url as string;
+  const [claimBody, recordBody] = posted(first);
+  const second = publishFixture(publishScenario({ existingComments: [{ body: claimBody!, html_url: firstClaim }, { body: recordBody!, html_url: JSON.parse(gatekeeper.stdout).record_url }] }));
+  const reviewer = await runPublish(second, pass('claude', 'claude-opus-5-5'));
+  expect(reviewer.status, reviewer.stderr).toBe(0);
+  const secondClaim = JSON.parse(reviewer.stdout).claim_url as string;
+  expect(secondClaim).not.toBe(firstClaim);
+  expect(posted(second).map((body) => body.split('\n')[0])).toEqual(['repo-harness acceptance claim', 'repo-harness acceptance record']);
+  expect([recordBody, posted(second)[1]].map((body) => body!.split('\n')[1])).toEqual(['Claim: ' + firstClaim, 'Claim: ' + secondClaim]);
+});
+
 test('a failure after the claim stops with review_publish_partial and the posted URLs', async () => {
   const fixture = publishFixture(publishScenario({ failPost: 'review' }));
   const result = await runPublish(fixture, publishReceipt());
