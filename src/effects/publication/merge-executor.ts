@@ -817,8 +817,14 @@ function mergeThroughQueue(input: PublicationMergeInput, prepared: PreparedMerge
   const outcome = sendEnqueue(input, prepared.target);
   if ('provider_errors' in outcome) {
     errors.value = outcome.provider_errors;
-    const observation = observeQueue(input, PROVIDER_TIMEOUT_MS);
-    if (observation.state === 'removed') return null;
+    let observation = observeQueue(input, PROVIDER_TIMEOUT_MS);
+    if (observation.state === 'removed') {
+      // A rejection needs two reads, like a removal in the wait. The PR was not queued before
+      // the request, so an entry seen here is taken as this request's entry.
+      (input.readback_wait ?? waitForReadback)(QUEUE_CONFIRM_MS);
+      observation = observeQueue(input, PROVIDER_TIMEOUT_MS);
+      if (observation.state === 'removed') return null;
+    }
     if (observation.state === 'merged') return observation.merge_commit_sha;
     if (observation.state === 'unreadable') throw new UnknownOutcome(`queue readback after the error response failed: ${observation.evidence}`);
     entry.value = observation.entry;

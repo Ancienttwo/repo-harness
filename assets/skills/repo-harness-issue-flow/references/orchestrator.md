@@ -410,7 +410,7 @@ Act on the exit code. Post every result as `integration status` on the PR.
 | 4 | Refused before any merge request | For `base_protection_insufficient`, `publication_policy_invalid` (base policy) and `provider_unavailable`, hand it to the owner. For any other blocker, hand the PR to its head owner with the `blockers` |
 | 5 | `merge_outcome_unknown` | Stop. Report to the owner. Never retry |
 | 6 | `provider_rejected` | Post the GitHub error as it is. Hand it to the owner |
-| 6 | `merge_queue_removed` | The queue removed the PR (a failed queue check or a conflict). Hand it to its head owner with the queue run |
+| 6 | `merge_queue_removed` | The queue removed the PR (a failed queue check or a conflict), or another entry replaced the executor's entry. Hand it to its head owner with the queue run |
 
 - Use `Closes #N` only in the PR that finishes the issue. Earlier PRs of a
   multi-PR issue use `Refs #N`. Before merge, check

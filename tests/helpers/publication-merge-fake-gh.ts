@@ -56,7 +56,7 @@ export interface PublicationMergeScenario {
   readonly mergeCommit?: string;
   readonly queueParent?: string;
   /** The conclusion of the merge commit's merge_group CI run; `missing` lists no run. Default `success`. */
-  readonly queueRun?: 'success' | 'failure' | 'missing';
+  readonly queueRun?: 'success' | 'failure' | 'missing' | 'unreadable';
   /** The compare status of the expected base against the queue commit's parent; default `ahead`. */
   readonly queueParentStatus?: string;
   readonly checks?: 'pass' | 'pending';
@@ -284,6 +284,7 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
   if (sub === `${root}/actions/runs?head_sha=${mergeSha}&event=merge_group&per_page=100`
     && args[args.indexOf('--jq') + 1] === '[.workflow_runs[] | {path, head_sha, status, conclusion}]') {
     const run = scenario.queueRun ?? 'success';
+    if (run === 'unreadable') return { status: 1, stdout: '', stderr: 'gh: connection reset' };
     return ok(run === 'missing' ? [] : [{ path: '.github/workflows/ci.yml', head_sha: mergeSha, status: 'completed', conclusion: run }]);
   }
   return { status: 2, stdout: '', stderr: `unexpected fake gh args: ${args.join(' ')}` };
