@@ -49,9 +49,9 @@ export interface PublicationMergeScenario {
   /** The PR is in the merge queue before the executor runs. */
   readonly queued?: boolean;
   /** The PR state that each successive queue readback reports; the last answer repeats. */
-  readonly queueSequence?: readonly ('queued' | 'merged' | 'removed' | 'replaced' | 'closed' | 'moved' | 'unreadable')[];
+  readonly queueSequence?: readonly ('queued' | 'merged' | 'removed' | 'replaced' | 'closed' | 'moved' | 'unreadable' | 'wrong_pr' | 'bad_oid')[];
   /** How enqueuePullRequest answers; default `ok`. */
-  readonly enqueue?: 'ok' | 'graphql_error' | 'kill' | 'incomplete';
+  readonly enqueue?: 'ok' | 'graphql_error' | 'kill' | 'incomplete' | 'malformed_json' | 'nonzero' | 'bad_entry';
   /** The merge commit and the queue parent this scenario reports; default MERGE_COMMIT and QUEUE_PARENT. */
   readonly mergeCommit?: string;
   readonly queueParent?: string;
@@ -181,6 +181,11 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     if (query.includes('enqueuePullRequest')) {
       if (scenario.enqueue === 'kill') return { status: null, stdout: '', stderr: '' };
       if (scenario.enqueue === 'incomplete') return ok({ data: { enqueuePullRequest: { mergeQueueEntry: null } } });
+      if (scenario.enqueue === 'bad_entry') return ok({ data: { enqueuePullRequest: { mergeQueueEntry: { id: QUEUE_ENTRY, state: 'QUEUED', position: 'first' } } } });
+      if (scenario.enqueue === 'malformed_json') return { status: 0, stdout: '{"data":' };
+      if (scenario.enqueue === 'nonzero') {
+        return { status: 1, stdout: JSON.stringify({ data: { enqueuePullRequest: { mergeQueueEntry: { id: QUEUE_ENTRY, state: 'QUEUED', position: 1 } } } }), stderr: 'gh: HTTP 502' };
+      }
       if (scenario.enqueue === 'graphql_error') {
         return { status: 1, stdout: JSON.stringify({ data: { enqueuePullRequest: null }, errors: [{ type: 'UNPROCESSABLE', message: 'Pull request is not mergeable.' }] }), stderr: 'gh: Pull request is not mergeable.' };
       }
@@ -191,9 +196,9 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
       const state = sequence[Math.min(prReadbackAttempt, sequence.length - 1)];
       if (state === 'unreadable') return { status: 1, stdout: '', stderr: 'gh: connection reset' };
       const entryId = state === 'replaced' ? `${QUEUE_ENTRY}_2` : QUEUE_ENTRY;
-      return ok({ data: { repository: { pullRequest: { number: PR,
-        state: state === 'merged' ? 'MERGED' : state === 'closed' ? 'CLOSED' : 'OPEN', headRefOid: state === 'moved' ? MERGE_COMMIT : headSha,
-        mergeCommit: state === 'merged' ? { oid: mergeSha } : null,
+      return ok({ data: { repository: { pullRequest: { number: state === 'wrong_pr' ? PR + 1 : PR,
+        state: state === 'merged' || state === 'bad_oid' ? 'MERGED' : state === 'closed' ? 'CLOSED' : 'OPEN', headRefOid: state === 'moved' ? MERGE_COMMIT : headSha,
+        mergeCommit: state === 'merged' ? { oid: mergeSha } : state === 'bad_oid' ? { oid: 'not-a-sha' } : null,
         mergeQueueEntry: state === 'queued' || state === 'replaced' ? { id: entryId, state: 'AWAITING_CHECKS', position: 1 } : null } } } });
     }
     if (query.includes('closingIssuesReferences')) {

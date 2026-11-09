@@ -72,7 +72,7 @@ gets no acceptance pane and no acceptance record.
   strategy, and the repository default squash message must be `PR_TITLE`
   and `PR_BODY`. Without them it refuses with
   `base_protection_insufficient`. A queue merge also needs a git checkout
-  and gh credentials that can fetch the repository.
+  whose `origin` remote git can fetch.
 - The Bot owner manages the GitHub token permissions. In cloud-only mode the
   token needs Administration read permission, so that the executor can read
   branch protection. Without it the executor refuses with

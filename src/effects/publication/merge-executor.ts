@@ -674,41 +674,44 @@ function attemptMergeProof(input: PublicationMergeInput, mergeCommitSha: string,
 
 const GIT_TIMEOUT_MS = 120_000;
 
-function runGit(input: PublicationMergeInput, args: readonly string[]): ProviderResult {
+/** Exit status only: git stderr can carry transport and credential diagnostics, and the result document is printed. */
+type GitRun = { readonly ok: true; readonly stdout: string } | { readonly ok: false; readonly reason: string };
+
+function runGit(input: PublicationMergeInput, args: readonly string[]): GitRun {
   const result = spawnSync('git', ['-C', input.repo_root, ...args], {
     env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, encoding: 'utf-8', timeout: GIT_TIMEOUT_MS, killSignal: 'SIGKILL',
   });
-  const failure = result.error?.message ?? (result.signal ? `terminated by ${result.signal}` : undefined);
-  return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '', ...(failure ? { failure } : {}) };
-}
-
-function gitOutput(input: PublicationMergeInput, args: readonly string[]): string {
-  const result = runGit(input, args);
-  if (result.failure || result.status !== 0) {
-    throw new UnknownOutcome(`git ${args.find((arg) => !arg.startsWith('-') && !arg.includes('='))}: ${(result.failure ?? result.stderr).trim() || `exit ${result.status}`}`);
-  }
-  return result.stdout.trim();
+  if (result.error || result.signal) return { ok: false, reason: result.signal ? `terminated by ${result.signal}` : 'did not start' };
+  return result.status === 0 ? { ok: true, stdout: result.stdout ?? '' } : { ok: false, reason: `exit ${result.status}` };
 }
 
 /**
  * The queue squash must hold exactly the reviewed head merged onto its parent.
- * The executor fetches the three commits from github.com with gh credentials,
- * so no local remote name matters, and compares the merge commit's tree with a
- * clean `git merge-tree` of the parent and the expected head.
+ * Like the merge-only sync proof, the executor fetches from the checkout's
+ * `origin` with the operator's own git setup and sets no credential helper.
+ * The proof is content-addressed: commits fetched from any remote match the
+ * expected SHAs or fail. It compares the merge commit's tree with a clean
+ * `git merge-tree` of the parent and the expected head.
  */
-function proveQueueContent(input: PublicationMergeInput, mergeCommitSha: string, parentSha: string): void {
-  const gh = (input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh').replace(/'/gu, `'\\''`);
-  gitOutput(input, ['-c', 'credential.helper=', '-c', `credential.helper=!'${gh}' auth git-credential`,
-    'fetch', '--quiet', '--no-tags', '--no-write-fetch-head', `https://github.com/${input.repository}.git`,
-    parentSha, input.expected_head_sha, mergeCommitSha]);
-  const merged = runGit(input, ['merge-tree', '--write-tree', '--no-messages', parentSha, input.expected_head_sha]);
-  const tree = merged.stdout.trim().split('\n')[0] ?? '';
-  if (merged.failure || merged.status !== 0 || !SHA.test(tree)) {
-    throw new UnknownOutcome(`the reviewed head ${input.expected_head_sha} does not merge cleanly onto the queue parent ${parentSha}: ${(merged.failure ?? merged.stderr).trim() || `exit ${merged.status}`}`);
+function proveQueueContent(input: PublicationMergeInput, mergeCommitSha: string, parentSha: string, baseRef: string): void {
+  const commits = [parentSha, input.expected_head_sha, mergeCommitSha];
+  const present = () => commits.every((sha) => runGit(input, ['cat-file', '-e', `${sha}^{commit}`]).ok);
+  if (!present()) {
+    // `--refmap=` drops the configured `remote.origin.fetch` mapping and the refspecs name no destination, so the fetch writes objects only.
+    const fetched = runGit(input, ['fetch', '--no-tags', '--quiet', '--refmap=', '--no-write-fetch-head', 'origin',
+      `refs/pull/${input.pr_number}/head`, `refs/heads/${baseRef}`]);
+    if (!fetched.ok) throw new UnknownOutcome(`git fetch from origin failed (${fetched.reason}); the queue merge content is not proven`);
+    if (!present()) throw new UnknownOutcome('origin does not have the queue parent, the reviewed head and the merge commit; the queue merge content is not proven');
   }
-  const actual = gitOutput(input, ['rev-parse', '--verify', `${mergeCommitSha}^{tree}`]);
-  if (actual !== tree) {
-    throw new UnknownOutcome(`queue commit ${mergeCommitSha} has tree ${actual}; a merge of ${input.expected_head_sha} onto ${parentSha} has tree ${tree}`);
+  const merged = runGit(input, ['merge-tree', '--write-tree', '--no-messages', parentSha, input.expected_head_sha]);
+  const tree = merged.ok ? merged.stdout.trim().split('\n')[0] ?? '' : '';
+  if (!SHA.test(tree)) {
+    throw new UnknownOutcome(`the reviewed head ${input.expected_head_sha} does not merge cleanly onto the queue parent ${parentSha} (git merge-tree ${merged.ok ? 'printed no tree' : merged.reason})`);
+  }
+  const actual = runGit(input, ['rev-parse', '--verify', `${mergeCommitSha}^{tree}`]);
+  if (!actual.ok) throw new UnknownOutcome(`git rev-parse of the queue commit tree failed (${actual.reason})`);
+  if (actual.stdout.trim() !== tree) {
+    throw new UnknownOutcome(`queue commit ${mergeCommitSha} has tree ${actual.stdout.trim()}; a merge of ${input.expected_head_sha} onto ${parentSha} has tree ${tree}`);
   }
 }
 
@@ -856,7 +859,7 @@ export function executePublicationMerge(input: PublicationMergeInput): Publicati
     mergeCommitSha = merged;
     parentSha = proveMerge(input, mergeCommitSha, prepared.base_ref, prepared.queue);
     if (prepared.queue) {
-      proveQueueContent(input, mergeCommitSha, parentSha);
+      proveQueueContent(input, mergeCommitSha, parentSha, prepared.base_ref);
       proveQueueRun(input, mergeCommitSha);
     }
   } catch (error) {

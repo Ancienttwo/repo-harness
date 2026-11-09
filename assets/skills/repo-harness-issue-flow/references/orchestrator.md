@@ -398,7 +398,8 @@ Run it as a background command in a checkout of the repository. A BEHIND
 PR needs no sync: the queue tests it on the current base. The executor
 proves that the merge commit's parent descends from the `--base` you
 reviewed, that its tree is a clean `git merge-tree` of that parent and
-`--head` (it fetches the commits from github.com with gh credentials), and
+`--head` (it fetches the commits from the checkout's `origin` with your
+own git setup), and
 that its own `merge_group` CI run succeeded.
 
 Act on the exit code. Post every result as `integration status` on the PR.

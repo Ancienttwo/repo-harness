@@ -414,12 +414,12 @@ describe('publication merge execution', () => {
 });
 
 /**
- * A real repository for the queue content proof. The executor fetches from
- * https://github.com/<repository>.git; `url.<dir>.insteadOf` in the environment
- * points that URL at this bare repository, so production code runs unchanged.
+ * A real repository for the queue content proof. Each run gets a new checkout
+ * whose `origin` is a bare repository with `refs/pull/42/head` and a `main` that
+ * holds the scenario's merge commit, so the production fetch runs unchanged.
  */
 interface QueueRepo {
-  readonly root: string;
+  readonly remote: string;
   readonly base: string;
   readonly head: string;
   /** main after another PR merged: a child of base. */
@@ -431,6 +431,8 @@ interface QueueRepo {
   readonly wrongMerge: string;
   /** main after a change to the file that head adds: head does not merge onto it. */
   readonly conflictParent: string;
+  /** A commit on conflictParent that stands for the provider's merge. */
+  readonly conflictMerge: string;
 }
 
 function git(cwd: string, ...args: string[]): string {
@@ -443,7 +445,6 @@ function git(cwd: string, ...args: string[]): string {
 function buildQueueRepo(): QueueRepo {
   const work = join(scratch, 'queue-work');
   const remote = join(scratch, 'queue-remote.git');
-  const root = join(scratch, 'queue-root');
   mkdirSync(work);
   git(work, 'init', '-q', '-b', 'main');
   const commit = (file: string, text: string, message: string) => {
@@ -463,33 +464,33 @@ function buildQueueRepo(): QueueRepo {
   const merge = squash(parent);
   const mergeOnBase = squash(base);
   const wrongMerge = git(work, 'commit-tree', `${parent}^{tree}`, '-p', parent, '-m', 'wrong');
-  for (const [name, sha] of [['merge', merge], ['merge-on-base', mergeOnBase], ['wrong', wrongMerge], ['conflict', conflictParent]]) git(work, 'branch', name!, sha!);
+  const conflictMerge = git(work, 'commit-tree', `${parent}^{tree}`, '-p', conflictParent, '-m', 'provider merge');
+  for (const [name, sha] of [['merge', merge], ['merge-on-base', mergeOnBase], ['wrong', wrongMerge], ['conflict', conflictMerge]]) git(work, 'branch', name!, sha!);
   git(scratch, 'clone', '-q', '--bare', work, remote);
+  git(remote, 'update-ref', `refs/pull/${PR}/head`, head);
+  return { remote, base, head, parent, merge, mergeOnBase, wrongMerge, conflictParent, conflictMerge };
+}
+
+let queueRoots = 0;
+/** A new checkout with an empty object store; origin's main is `mainTip`. */
+function queueCheckout(repo: QueueRepo, mainTip: string, origin = repo.remote): string {
+  git(repo.remote, 'update-ref', 'refs/heads/main', mainTip);
+  const root = join(scratch, `queue-root-${queueRoots++}`);
   mkdirSync(root);
   git(root, 'init', '-q');
-  return { root, base, head, parent, merge, mergeOnBase, wrongMerge, conflictParent };
+  git(root, 'remote', 'add', 'origin', origin);
+  return root;
 }
 
 describe('publication merge through a required merge queue', () => {
   let repo: QueueRepo;
-  const saved = { count: process.env.GIT_CONFIG_COUNT, key: process.env.GIT_CONFIG_KEY_0, value: process.env.GIT_CONFIG_VALUE_0 };
-  beforeAll(() => {
-    repo = buildQueueRepo();
-    process.env.GIT_CONFIG_COUNT = '1';
-    process.env.GIT_CONFIG_KEY_0 = `url.${join(scratch, 'queue-remote.git')}.insteadOf`;
-    process.env.GIT_CONFIG_VALUE_0 = `https://github.com/${REPOSITORY}.git`;
-  });
-  afterAll(() => {
-    for (const [key, value] of [['GIT_CONFIG_COUNT', saved.count], ['GIT_CONFIG_KEY_0', saved.key], ['GIT_CONFIG_VALUE_0', saved.value]] as const) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
-  });
+  beforeAll(() => { repo = buildQueueRepo(); });
   const queueScenario = (overrides: Partial<PublicationMergeScenario> = {}) => passingScenario({ rules: QUEUE_RULES, mergeQueueEnabled: true,
     protection: { strict: false, enforce_admins: true }, head: repo.head, base: repo.base, mergeCommit: repo.merge, queueParent: repo.parent,
     parents: [repo.parent], ...overrides });
-  const run = (scenario: PublicationMergeScenario, options: MergeInProcessOptions = {}) =>
-    mergeInProcessAt(repo.root, scenario, { readbackWait: () => {}, readbackNow: () => 0, head: repo.head, base: repo.base, ...options });
+  const run = (scenario: PublicationMergeScenario, options: MergeInProcessOptions = {}, origin?: string) =>
+    mergeInProcessAt(queueCheckout(repo, scenario.mergeCommit ?? repo.merge, origin), scenario,
+      { readbackWait: () => {}, readbackNow: () => 0, head: repo.head, base: repo.base, ...options });
 
   test.each([
     ['onto a moved main', () => ({}), () => repo.parent, true],
@@ -510,7 +511,7 @@ describe('publication merge through a required merge queue', () => {
   });
 
   test('the CLI reports the queue entry on stderr and the merge on stdout', () => {
-    const cli = mergeCli(queueScenario(), [], repo.head, repo.base, repo.root);
+    const cli = mergeCli(queueScenario(), [], repo.head, repo.base, queueCheckout(repo, repo.merge));
     expect(cli.status).toBe(0);
     expect(JSON.parse(cli.stderr.trim().split('\n').at(-1)!)).toEqual({ queued: { id: QUEUE_ENTRY, state: 'QUEUED', position: 1 } });
     expect(cli.document).toMatchObject({ merge_commit_sha: repo.merge, parent_sha: repo.parent, merge_queue_entry: QUEUE_ENTRY });
@@ -527,17 +528,22 @@ describe('publication merge through a required merge queue', () => {
   test.each([
     ['a confirmed removal', { queueSequence: ['queued', 'removed', 'removed'] }, 6, 'merge_queue_removed', 'was removed without a merge'],
     ['a removal around an unreadable read', { queueSequence: ['queued', 'removed', 'unreadable', 'removed'] }, 6, 'merge_queue_removed', 'was removed without a merge'],
+    ['a removal after the entry came back', { queueSequence: ['queued', 'removed', 'queued', 'removed', 'removed'] }, 6, 'merge_queue_removed', 'was removed without a merge'],
     ['a replacement entry', { queueSequence: ['queued', 'replaced', 'merged'] }, 6, 'merge_queue_removed', `${QUEUE_ENTRY}_2 replaced queue entry ${QUEUE_ENTRY}`],
     ['a moved head', { queueSequence: ['queued', 'moved'] }, 5, 'merge_outcome_unknown', 'left the queue without a merge'],
     ['a closed PR', { queueSequence: ['closed'] }, 5, 'merge_outcome_unknown', 'state=CLOSED'],
     ['a merge commit with another tree', () => ({ mergeCommit: repo.wrongMerge }), 5, 'merge_outcome_unknown', 'a merge of'],
-    ['a head that conflicts with the queue parent', () => ({ queueParent: repo.conflictParent, parents: [repo.conflictParent] }), 5, 'merge_outcome_unknown', 'does not merge cleanly'],
+    ['a head that conflicts with the queue parent', () => ({ mergeCommit: repo.conflictMerge, queueParent: repo.conflictParent, parents: [repo.conflictParent] }), 5, 'merge_outcome_unknown', 'does not merge cleanly'],
     ['an unreadable merge_group run list', { queueRun: 'unreadable' }, 5, 'merge_outcome_unknown', 'merge_group CI readback failed'],
     ['a failed merge_group run', { queueRun: 'failure' }, 5, 'merge_outcome_unknown', 'no successful merge_group CI run'],
     ['no merge_group run', { queueRun: 'missing' }, 5, 'merge_outcome_unknown', 'no successful merge_group CI run'],
     ['a parent that does not descend from the reviewed base', { queueParentStatus: 'diverged' }, 5, 'merge_outcome_unknown', 'does not descend from the expected base'],
     ['an enqueue that never completes', { enqueue: 'kill' }, 5, 'merge_outcome_unknown', 'enqueue request did not complete'],
     ['an incomplete enqueue response', { enqueue: 'incomplete' }, 5, 'merge_outcome_unknown', 'enqueue response is incomplete'],
+    ['an enqueue entry with a malformed position', { enqueue: 'bad_entry' }, 5, 'merge_outcome_unknown', 'enqueue response is incomplete'],
+    ['an enqueue response that is not JSON', { enqueue: 'malformed_json' }, 5, 'merge_outcome_unknown', 'enqueue response is not a JSON object'],
+    ['a failed enqueue call without GraphQL errors', { enqueue: 'nonzero' }, 5, 'merge_outcome_unknown', 'enqueue request failed'],
+    ['an enqueue error, a removal read, then an unreadable read', { enqueue: 'graphql_error', queueSequence: ['removed', 'unreadable'] }, 5, 'merge_outcome_unknown', 'Pull request is not mergeable.'],
     ['an enqueue error with the PR not queued on two reads', { enqueue: 'graphql_error', queueSequence: ['removed', 'removed'] }, 6, 'provider_rejected', 'Pull request is not mergeable.'],
     ['an enqueue error with an unreadable PR', { enqueue: 'graphql_error', queueSequence: ['unreadable'] }, 5, 'merge_outcome_unknown', 'Pull request is not mergeable.'],
   ] as const)('%s fails without a second enqueue', (_label, overrides, exitCode, error, message) => {
@@ -555,10 +561,34 @@ describe('publication merge through a required merge queue', () => {
     expect(result).toMatchObject({ exit_code: 0, document: { merge_commit_sha: repo.merge, provider_errors: expect.stringContaining('Pull request is not mergeable.') } });
   });
 
-  test('a queue proof without a fetchable repository exits 5', () => {
-    const { result } = mergeInProcessAt(scratch, queueScenario(), { readbackWait: () => {}, readbackNow: () => 0, head: repo.head, base: repo.base });
+  test('a failed fetch from origin exits 5 and keeps git stderr out of the result', () => {
+    const missing = join(scratch, 'no-such-remote.git');
+    const { result } = run(queueScenario(), {}, missing);
     expect(result.document).toMatchObject({ ok: false, exit_code: 5, error: 'merge_outcome_unknown' });
-    expect(failureOf(result).message).toContain('git fetch');
+    expect(failureOf(result).message).toContain('git fetch from origin failed (exit 128)');
+    expect(failureOf(result).message).not.toContain(missing);
+  });
+
+  test.each([
+    ['an enqueue error with the PR already merged', { enqueue: 'graphql_error', queueSequence: ['merged'] }, 0],
+    ['an enqueue error, a removal read, then the merge', { enqueue: 'graphql_error', queueSequence: ['removed', 'merged'] }, 1],
+  ] as const)('%s proves the merge and keeps the provider error', (_label, overrides, waits) => {
+    const calls: number[] = [];
+    const { result, enqueues } = run(queueScenario(overrides), { readbackWait: (ms) => calls.push(ms) });
+    expect(result).toMatchObject({ exit_code: 0, document: { merge_commit_sha: repo.merge, provider_errors: expect.stringContaining('Pull request is not mergeable.') } });
+    expect(calls).toHaveLength(waits);
+    expect(enqueues).toHaveLength(1);
+  });
+
+  test.each([
+    ['unreadable', 'readback failed'],
+    ['wrong_pr', 'queue readback has no PR'],
+    ['bad_oid', 'state=MERGED'],
+  ] as const)('a queue readback that stays %s until the window ends exits 5 with its evidence', (state, evidence) => {
+    let clock = 0;
+    const { result } = run(queueScenario({ queueSequence: ['queued', state] }), { readbackNow: () => clock, readbackWait: (ms) => { clock += ms; } });
+    expect(result.document).toMatchObject({ ok: false, exit_code: 5, error: 'merge_outcome_unknown' });
+    expect(failureOf(result).message).toContain(evidence);
   });
 
   test('a queue that neither merges nor removes the PR within 90 minutes exits 5', () => {
