@@ -63,24 +63,26 @@ The table rules govern how the row combines with the review.
    changed after round 1) and the sibling cases of each of its findings.
 3. **Round 3** runs with no owner question when the round-2 findings are in
    the fix delta. It has the scope of round 2.
-4. **After round 3.** The loop continues without the owner while each
-   round has fewer findings than the round before, the scope does not grow
-   and no new P0 or P1 finding appears. Round 5 is a hard stop. When every
-   remaining finding is P2, all of them are in one bug family, and none
-   concerns security, secrets, data or authentication, a recorded decision
-   (the owner, or a joint decision of the orchestrator and the advisor) may
-   move that family to one follow-up issue after round 3 or round 4. The
-   coordinator then resolves each remaining P2 thread with a reply that
-   links the follow-up issue (§6). The deferral takes effect at the next
-   head: a fix, a sync with main, or the commit that adds the follow-up
-   link. A `FAIL` row stays on its head, so the next round reviews that new
-   head with those threads deferred. It must return `PASS` for that head
-   before the PR merges, and its record names the follow-up issue. A `FAIL`
-   in round 5 is a hard stop and takes no deferral.
-   A grown scope, a new P0 or P1 finding, a blocking finding after round 5,
-   or a security, secrets, data or authentication finding becomes a parked
-   owner gate (`docs/reference-configs/agentic-development-flow.md`, Park a
-   gate). Other work continues.
+4. **After round 3.** A fix loop continues after round 3 without the owner
+   while each round has fewer findings than the round before and the scope
+   does not grow. A grown scope is a joint decision. A new P0 finding, or a
+   new P1 finding about security, secrets, data or authentication, stops the
+   loop at the owner; any other new P1 finding does not stop it. Round 5 is
+   the hard stop. When every remaining finding is P2, all of them are in one
+   bug family, and none concerns security, secrets, data or authentication,
+   a recorded decision (the owner, or a joint decision of the orchestrator
+   and the advisor) may move that family to one follow-up issue after round
+   3 or round 4. The coordinator then resolves each remaining P2 thread with
+   a reply that links the follow-up issue (§6). The deferral takes effect at
+   the next head: a fix, a sync with main, or the commit that adds the
+   follow-up link. A `FAIL` row stays on its head, so the next round reviews
+   that new head with those threads deferred. It must return `PASS` for that
+   head before the PR merges, and its record names the follow-up issue. A
+   `FAIL` in round 5 is a hard stop and takes no deferral. A new P0 finding,
+   a new P1 finding about security, secrets, data or authentication, or a
+   blocking finding after round 5 becomes a parked owner gate
+   (`docs/reference-configs/agentic-development-flow.md`, Park a gate).
+   Other work continues.
 
 The worker fixes each finding by the class rule (`worker.md` §7).
 
