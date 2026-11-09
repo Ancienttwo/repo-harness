@@ -6,6 +6,9 @@
  * blocked-by edge or pull request would change the board without a trace.
  */
 
+import type { Nodes } from 'mdast';
+import { fromMarkdown } from 'mdast-util-from-markdown';
+
 export class BoardSourceError extends Error {
   constructor(message: string) {
     super(`board source invalid: ${message}`);
@@ -400,9 +403,28 @@ export function parseAcceptanceRecord(comment: BoardCommentV1): readonly Accepta
 
 const REFS = /(?<![A-Za-z0-9_])refs?\s*:?\s*#([1-9][0-9]*)/giu;
 
-/** Issue numbers after `Refs #n` in a pull request body. Closing keywords are `parseClosingReferences`. */
+/** Text within one Markdown block; NUL barriers prevent matches across excluded content. */
+function inlineRefsText(node: Nodes): string {
+  if (node.type === 'text') return node.value;
+  if (node.type === 'break') return '\n';
+  if (node.type === 'html') return node.value.replace(/<!--[\s\S]*?(?:-->|$)/gu, '\0');
+  if (node.type === 'inlineCode') return '\0';
+  return 'children' in node ? node.children.map(inlineRefsText).join('') : '\0';
+}
+
+/** Issue numbers outside code blocks, HTML comments and quotes. Closing keywords are `parseClosingReferences`. */
 export function parseRefs(body: string): number[] {
-  return [...new Set([...body.matchAll(REFS)].map(match => Number(match[1])))].sort((left, right) => left - right);
+  const refs = new Set<number>();
+  function visit(node: Nodes): void {
+    if (node.type === 'code' || node.type === 'blockquote') return;
+    if (node.type === 'paragraph' || node.type === 'heading' || node.type === 'tableCell' || node.type === 'html') {
+      for (const match of inlineRefsText(node).matchAll(REFS)) refs.add(Number(match[1]));
+    } else if ('children' in node) {
+      node.children.forEach(visit);
+    }
+  }
+  visit(fromMarkdown(body));
+  return [...refs].sort((left, right) => left - right);
 }
 
 /** `owner/name` of a GitHub remote URL (https, scp-like ssh or ssh://), lowercased; null for any other URL. */

@@ -16,7 +16,7 @@ import { boardMergeDecisions } from '../src/core/board/merge';
 import { provenMergeOnlySyncs } from '../src/effects/board/merge-only-sync';
 import { runBoardCloseout, stopCodegraphServers } from '../src/effects/board/closeout';
 import type { RunArchctxProcess } from '../src/core/architecture/contracts';
-import { githubRemoteRepository } from '../src/core/board/source';
+import { githubRemoteRepository, parseRefs } from '../src/core/board/source';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
 import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
 import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herdr-core';
@@ -140,6 +140,96 @@ function rules(board: BoardV1): BoardRuleId[] {
   return evaluateBoardAttention(board).findings.map(finding => finding.rule);
 }
 
+test.each([
+  ['inline code', '`Refs #19`', []],
+  ['multiple backticks', '``Refs #19 `example` ``', []],
+  ['multiline code span', '`Refs\n#19`', []],
+  ['inline code cannot join a ref', 'Refs `example` #19', []],
+  ['inline code before a colon', 'Refs`example`: #19', []],
+  ['inline code after a colon', 'Refs:`example`#19', []],
+  ['multiple-backtick span cannot join a ref', 'Refs ``example `code` `` #19', []],
+  ['issue example inside an inline code gap', 'Refs `#5` #19', []],
+  ['inline comment cannot join a ref', 'Refs <!-- example --> #19', []],
+  ['short inline comment cannot join a ref', 'Refs <!-- x --> #19', []],
+  ['image cannot join a ref', 'Refs ![a](x.png) #19', []],
+  ['reference image cannot join a ref', 'Refs ![a][pic] #19\n\n[pic]: x.png', []],
+  ['image alt text is excluded', '![Refs #5](x.png) Refs #19', [19]],
+  ['backtick fence', '```text\nRefs #19\n```', []],
+  ['tilde fence', '~~~\nRefs #19\n~~~', []],
+  ['longer fence', '````\n```\nRefs #19\n````', []],
+  ['mismatched fence marker', '```\n~~~\nRefs #19\n```', []],
+  ['unclosed CRLF backtick fence', '```\r\nRefs #19', []],
+  ['unclosed tilde fence', '~~~\nRefs #19', []],
+  ['indented fence', '   ```\n   Refs #19\n   ```\n\nRefs #7', [7]],
+  ['quote', '> Refs #19', []],
+  ['indented quote', '  > Refs #19', []],
+  ['nested quote', '>> Refs #19', []],
+  ['quoted fence', '> ```\n> Refs #19\n> ```\n\nRefs #7', [7]],
+  ['nested quoted fence', '> > ~~~\n> > Refs #19\n> > ~~~\n\nRefs #7', [7]],
+  ['plain ref', 'Refs #19', [19]],
+  ['colon ref', 'Refs: #19', [19]],
+  ['escaped backticks', '\\`Refs #19\\`', [19]],
+  ['unmatched backtick', '`Refs #19', [19]],
+  ['sorted unique refs', 'Refs #19\nRefs #7\nref: #19', [7, 19]],
+  ['heading boundary', '`intro\n# Refs #21\n`', [21]],
+  ['list boundary', '`intro\n- Refs #22\n`', [22]],
+  ['thematic break', '`intro\n\n---\nRefs #23\n\n`', [23]],
+  ['indented code boundary', '`intro\n\n    code\n\nRefs #24\n\n`', [24]],
+  ['multiple-backtick paragraph boundary', '``intro\n\nRefs #25\n\n``', [25]],
+  ['closed list backtick fence', '- ```\n  Refs #19\n  ```\n\nRefs #7', [7]],
+  ['closed list tilde fence', '- ~~~\n  Refs #19\n  ~~~\n\nRefs #7', [7]],
+  ['outdented backtick starts a root fence', '- ```\n  Refs #19\n ```\n\nRefs #7', []],
+  ['outdented tilde starts a root fence', '- ~~~\n  Refs #19\n ~~~\n\nRefs #7', []],
+  ['unclosed list backtick fence', '- ```\n  Refs #19\n\nRefs #7', [7]],
+  ['unclosed list tilde fence', '- ~~~\n  Refs #19\n\nRefs #7', [7]],
+  ['paragraph boundary before later inline code', 'The ` key breaks X.\n\nRefs #19\n\nRun `bun test`.', [19]],
+  ['list item boundary before later code', '- the ` key\n- Refs #19\n- run `x`', [19]],
+  ['heading boundary before later code', 'Use ` here\n## Links\nRefs #19\nsee `y`', [19]],
+  ['text after a closed list example', '- ```text\n  example\n  ```\n\nRefs #19', [19]],
+  ['indented code', '    Refs #19', []],
+  ['indented code with fence', '    ```\n    Refs #19', []],
+  ['HTML comment', '<!-- Refs #19 -->', []],
+  ['list quote', '- > Refs #19', []],
+  ['lazy quote continuation', '> example\nRefs #19', []],
+  ['block HTML', '<div>\nRefs #19\n</div>\n\nRefs #7', [7, 19]],
+  ['inline HTML attributes', '<span title="Refs #19"></span> Refs #7', [7, 19]],
+  ['image followed by a visible ref', 'Screenshot:\n\n<img width="300" alt="ui" src="https://x/y.png">\nRefs #19', [19]],
+  ['details containing a visible ref', '<details><summary>Why</summary>\nRefs #19\n</details>', [19]],
+  ['HTML break followed by a visible ref', 'Intro\n\n<br>\nRefs #19', [19]],
+  ['HTML comment followed by visible text', '<!-- Refs #5 --> Refs #19', [19]],
+  ['HTML comment followed by a different ref', '<!-- Refs #19 --> Refs #7', [7]],
+  ['adjacent comments followed by visible text', '<!-- Refs #19 --><!-- Refs #21 -->\n\nRefs #7', [7]],
+  ['adjacent comments hide their refs', '<!-- a --><!-- Refs #5 -->', []],
+  ['comment inside an HTML block', '<div>\n<!-- Refs #5 -->\n</div>', []],
+  ['comment and visible text inside an HTML block', '<div>\n<!-- Refs #19 -->\nRefs #7\n</div>', [7]],
+  ['comment after an image tag', '<img src="x.png">\n<!-- Refs #19 -->\nRefs #7', [7]],
+  ['unclosed HTML comment', '<!-- Refs #19', []],
+  ['unclosed multiline HTML comment', '<!--\nRefs #19', []],
+  ['multiline comment inside an HTML block', '<div>\n<!--\nRefs #5\n-->\nRefs #19\n</div>', [19]],
+  ['comment cannot join a ref inside HTML', '<div>\nRefs <!-- x --> #19\n</div>', []],
+  ['hard break', 'Refs  \n#19', [19]],
+  ['hard break after a colon', 'Refs:  \n#19', [19]],
+  ['CRLF hard break', 'Refs  \r\n#19', [19]],
+  ['CRLF hard break after a colon', 'Refs:  \r\n#19', [19]],
+  ['emphasis and link children', '**Refs:** [#19](https://example.com)', [19]],
+  ['link text', '[Refs #19](https://example.test)', [19]],
+  ['link destination is excluded', '[link](https://example.test/Refs#19)', []],
+  ['autolink text', '<https://example.test/Refs#19>', [19]],
+  ['HTML entities in text', 'Ref&#115;&nbsp;&#35;19', [19]],
+  ['entity-escaped comment is visible text', '&lt;!-- Refs #19 --&gt;', [19]],
+  ['HTML entity after an inline tag', '<span title="ui"></span>Refs &#35;19', [19]],
+  ['separate text nodes cannot join a ref', 'Refs\n\n#19', []],
+] as const)('parseRefs: %s', (_kind, body, expected) => {
+  expect(parseRefs(body)).toEqual([...expected]);
+});
+
+test('board selection and projection use the same refs outside code and quotes', () => {
+  for (const example of ['`Refs #1476`', '```\nRefs #1476\n```', '> Refs #1476']) {
+    const board = (body: string) => replay({ pulls: (data) => { data.repository.pr1491.body = body; } });
+    expect(board(example).pull_requests.some(pr => pr.number === 1491)).toBe(false);
+    expect(board(`${example}\n\nRefs: #1475`).pull_requests.find(pr => pr.number === 1491)!.refs).toEqual([1475]);
+  }
+});
 /** Drops the `.github/` paths of a recorded pull request, so its tier comes from its labels, not from the change hazard list. */
 function withoutHazards(pr: Json): void {
   pr.files.nodes = pr.files.nodes.filter((node: Json) => !node.path.startsWith('.github/'));
