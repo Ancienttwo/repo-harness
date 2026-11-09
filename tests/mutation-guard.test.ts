@@ -63,11 +63,11 @@ describe('Bash write tripwire host route', () => {
       const outsideHome = '/repo-harness-bash-guard-home';
       symlinkSync('/', join(root, 'root-alias'));
       symlinkSync(join(outsideHome, 'new-file'), join(root, 'dangling'));
-      const invokeBash = (command: string, hookCwd = cwd) => spawnSync(process.execPath,
+      const invokeBash = (command: string, hookCwd = cwd, hookHome = home) => spawnSync(process.execPath,
         [HOOK_ENTRY, 'PreToolUse', '--route', 'bash'], {
           cwd: hookCwd, encoding: 'utf8',
           input: JSON.stringify({ tool_name: 'Bash', cwd: hookCwd, tool_input: { command } }),
-          env: { PATH: process.env.PATH, HOME: home, HOOK_HOST: 'claude', HOOK_REPO_ROOT: cwd },
+          env: { PATH: process.env.PATH, HOME: hookHome, HOOK_HOST: 'claude', HOOK_REPO_ROOT: cwd },
         });
       for (const command of [
         'echo value > _ops/env/a.env', 'cat <<EOF >> "_ref/upstream.txt"\ntext\nEOF',
@@ -89,6 +89,17 @@ describe('Bash write tripwire host route', () => {
         `python3 -c "open('_ops/a.env', 'w').write('x')"`,
         `node -e "require('fs').writeFileSync('_ref/a.txt', 'x')"`,
         "python3 - <<'PY'\nopen('_ops/a.env', 'w').write('x')\nPY",
+        // Unsupported heredocs and substitutions fail closed, including when their output looks safe.
+        'echo x > _ops/x; cat <<A <<B\nx\nA\ny\nB', 'cat <<"$D" > _ops/x\nx\n$D',
+        'cat <<A <<B\nx\nA\ny\nB\necho x > _ops/later',
+        'cat <<"$D" > report.txt\nrm -rf /tmp/example\n$D',
+        'cat <<A > a.txt; cat <<B > b.txt\nx\nA\nrm -rf /tmp/example\nB',
+        'echo "$(echo x > _ops/x)" > report.txt', 'echo `echo x > _ops/x` > report.txt',
+        'echo "`echo x > _ops/x`" > report.txt', 'rm -rf $(true) _ops',
+        'echo pre$(echo x > _ops/x)post > report.txt', 'echo $(date) > report.txt',
+        'cd $(printf src)\necho value > _ops/local.txt',
+        'diff <(ls) x; rm -rf _ops', 'tee >(cat) _ops/y', 'diff <(echo x > _ops/x) x',
+        "echo v > '_ops/a\nb'", 'rm ~/_ops/x', 'rm ~root/_ops/x',
       ]) {
         const result = invokeBash(command);
         expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 2 });
@@ -102,10 +113,7 @@ describe('Bash write tripwire host route', () => {
         'echo value > /dev/fd/2', 'echo value > /dev/tty', 'cp _ops/input safe.txt "2">/dev/null',
         'cd src && echo value > _ops/local.txt', 'cd "$TARGET" && rm _ops/file',
         'cd _ops | cat; echo value > report.txt',
-        'cd $(printf src)\necho value > _ops/local.txt',
         "printf '%s\\n' 'example:\nrm -rf /tmp/example\n'",
-        'cat <<"$D" > report.txt\nrm -rf /tmp/example\n$D',
-        'cat <<A > a.txt; cat <<B > b.txt\nx\nA\nrm -rf /tmp/example\nB',
         "cat <<'EOF' > report.txt\nrm -rf _ops/cache\nEOF",
         `echo value > '${root}/outside.txt'`, 'echo value > /tmp/repo-harness-bash-guard-scratch.json',
         `cp safe.txt '${root}/ok.txt' && rm -rf '${root}/scratch'`,
@@ -113,6 +121,7 @@ describe('Bash write tripwire host route', () => {
         const result = invokeBash(command);
         expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 0 });
       }
+      expect(invokeBash('rm ~/_ops/x', cwd, cwd).status).toBe(2);
       expect(invokeBash('echo value > _ops/local.txt', join(cwd, 'src')).status).toBe(0);
       expect(invokeBash('echo value > ../_ops/a.env', join(cwd, 'src')).status).toBe(2);
       expect(existsSync(join(cwd, '_ops'))).toBe(false);
@@ -133,6 +142,9 @@ describe('Bash write tripwire host route', () => {
         symlinkSync('a/../_ops/env/secret', join(cwd, 'src/nested'));
         symlinkSync('loop', join(cwd, 'loop'));
         symlinkSync('..', join(cwd, 'src/up'));
+        symlinkSync('_ops', join(cwd, 'lnk'));
+        mkdirSync(join(outside, 'x-safe'));
+        symlinkSync(join(cwd, '_ops'), join(outside, 'ops-alias'));
         for (const [command, hookCwd] of [
           ['echo value > ./_op[s]/env/x'], ['echo value > _op*/env/x'], ['rm -rf _?ef'], ['rm -rf src/../_op[!x]'],
           ['echo value > _ops/env/*'], ['cp safe.txt _ops/env/*'], ['rm *', join(cwd, '_ops/env')], ['rm -rf *'],
@@ -145,13 +157,18 @@ describe('Bash write tripwire host route', () => {
           ['cd src/* && rm -rf ../../_ops'], ['echo value > _op{s,x}/a && (echo ok)'], ['rm -rf _op@(s|x)'], ['echo value > _o\\\nps/x'],
           ['rm -rf x{999999999999999999999..999999999999999999999}'], ['rm -rf s*/../_ops'], ['cd -P _ops && rm -rf env'],
           ['rm -rf _op[!S]'], ['cd -P /etc && rm passwd'],
+          ['cd src/* && rm _ops/x'], ['rm -rf l*/env'], ['rm -rf s*/l/y.env'],
+          ['cd _op[s] && rm -rf env'], [`cd ${outside}/ops-alias/e* && rm secret`],
         ] as [string, string?][]) {
           const result = invokeBash(command, hookCwd);
           expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 2 });
         }
         for (const command of ['rm src/*.tmp', 'echo value > _o/*', 'rm -rf *.log', 'rm -rf _ops_old*', 'rm -rf src/{a,b}.tmp',
           'rm -rf .??*', `rm -rf '${root}'/scratch*`, "rm -rf _op'{s,x}'*", "rm -rf '~+'/*", 'cd _ref* && rg x > /tmp/out',
-          'echo $(date) > report.txt']) {
+          '(cd _op*); cd src; echo x > safe.txt', '(cd _op*); echo x > safe.txt',
+          `cd ${outside}/x* && rm -rf build`, `cd -P ${outside}/x* && rm -rf build`,
+          "echo '$(echo x > _ops/x)' > report.txt", 'echo "\\$(echo x > _ops/x)" > report.txt',
+          "echo x > 'src/a\nb'", "cd '_op[s]' && echo x > safe.txt", 'echo "<(ls)" > report.txt']) {
           expect({ command, status: invokeBash(command).status }).toEqual({ command, status: 0 });
         }
       } finally { rmSync(outside, { recursive: true, force: true }); }

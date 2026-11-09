@@ -1,5 +1,5 @@
 /** A literal tripwire, not a shell interpreter. No state or process reads; `git worktree add` also reads the managed root. */
-import { lstatSync, readlinkSync, realpathSync } from 'fs';
+import { lstatSync, readdirSync, readlinkSync, realpathSync } from 'fs';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'path';
 import { isManagedWorktreePath, managedWorktreeRoot } from '../../effects/git/managed-worktree';
 import { payloadString } from './hook-input';
@@ -32,6 +32,9 @@ function words(line: string): Word[] | null {
       if (line[i + 1] === '\n') { i++; continue; }
       quoted(line[++i]!); active = true; plain = false; continue;
     }
+    // Substitutions execute nested shell text. Refuse them rather than split the enclosing command.
+    if (quote !== "'" && (ch === '`' || (ch === '$' && line[i + 1] === '(')
+      || (!quote && (ch === '<' || ch === '>') && line[i + 1] === '('))) return null;
     if (quote) {
       if (ch === quote) quote = '';
       else { quoted(ch); if (quote === '"' && /[$`]/.test(ch)) literal = false; }
@@ -52,8 +55,8 @@ function words(line: string): Word[] | null {
       continue;
     }
     if (ch === '(' || ch === ')') {
-      // `$(`, `=(` and `<(` open a subshell; `(` glued to another word (a function, extglob or zsh qualifier) is outside this grammar.
-      if (ch === '(' && active && !/[$=]$/.test(value)) return null;
+      // `$(` and backticks were refused above. A glued `(` (a function, extglob or zsh qualifier) is outside this grammar.
+      if (ch === '(' && active && !/=$/.test(value)) return null;
       flush();
       result.push({ value: ch, pattern: ch, literal: true, operator: true });
       continue;
@@ -107,6 +110,8 @@ interface CommandVisitor {
   redirect?(target: Word, cwd: string | null): void;
   /** The command is outside the parsed grammar; nothing of it was visited. */
   unparsed?(): void;
+  /** Save and restore caller state at subshell boundaries. */
+  scope?(enter: boolean): void;
 }
 
 /** The directory operand of `cd`; `plain` is false when an option comes before it. Null for any other form. */
@@ -140,7 +145,10 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
     if (here >= 0) {
       const delimiter = tokens[here + 1];
       if (!delimiter?.literal || delimiter.operator
-        || tokens.filter(token => token.operator && token.value.startsWith('<<')).length !== 1) break;
+        || tokens.filter(token => token.operator && token.value.startsWith('<<')).length !== 1) {
+        unparsed = true;
+        break;
+      }
       const content: string[] = [];
       while (++line < lines.length) {
         const current = tokens[here]!.value === '<<-' ? lines[line]!.replace(/^\t+/, '') : lines[line]!;
@@ -162,7 +170,8 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
       visit.command?.(segment, body, commandCwd);
       if (segment[0]?.value === 'cd') {
         const cd = cdOperand(segment);
-        commandCwd = separator === '&&' && commandCwd && cd?.plain && cd.target.literal && !cd.target.value.startsWith('-')
+        commandCwd = separator === '&&' && commandCwd && cd?.plain && cd.target.literal
+          && globIndex(cd.target.pattern) < 0 && !cd.target.value.startsWith('-')
           ? resolve(commandCwd, cd.target.value) : null;
       } else if (['source', '.', 'eval', 'pushd', 'popd', 'command', 'builtin'].includes(segment[0]?.value ?? '')) {
         commandCwd = null;
@@ -172,8 +181,8 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
     for (let i = 0; i < tokens.length; i++) {
       const token = tokens[i]!;
       if (token.operator && [';', '|', '||', '&', '&&'].includes(token.value)) { flush(token.value); continue; }
-      if (token.operator && token.value === '(') { flush('('); outer.push(commandCwd); continue; }
-      if (token.operator && token.value === ')') { flush(')'); commandCwd = outer.pop() ?? null; continue; }
+      if (token.operator && token.value === '(') { flush('('); outer.push(commandCwd); visit.scope?.(true); continue; }
+      if (token.operator && token.value === ')') { flush(')'); commandCwd = outer.pop() ?? null; visit.scope?.(false); continue; }
       if (token.operator && ['>', '>>', '<', '<<', '<<-'].includes(token.value)) {
         const target = tokens[++i];
         if (target?.operator && target.value === '&' && (token.value === '>' || token.value === '<')) {
@@ -220,6 +229,30 @@ function globIndex(pattern: string): number {
     else if ('*?['.includes(pattern[i]!)) return i;
   }
   return -1;
+}
+
+/** First symlink matched by a glob, including literal suffix components. Such writes are outside this grammar. */
+function globSymlink(directory: string, pattern: string): string | null {
+  let visited = 0;
+  const walk = (dir: string, tail: string): string | null => {
+    const [head = '', ...rest] = tail.split('/');
+    const names = globIndex(head) < 0 ? [unescapePattern(head)] : readdirSync(dir).filter(name => segmentMatches(head, name));
+    if ((visited += names.length) > 4096) throw Object.assign(new Error('glob above 4096 paths'), { code: 'GLOB_LIMIT' });
+    for (const name of names) {
+      const path = `${dir}/${name}`;
+      const stat = lstatSync(path, { throwIfNoEntry: false });
+      if (stat?.isSymbolicLink()) return path;
+      if (rest.length && stat?.isDirectory()) {
+        const hit = walk(path, rest.join('/'));
+        if (hit) return hit;
+      }
+    }
+    return null;
+  };
+  try { return walk(directory, pattern); } catch (error) {
+    if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return null;
+    throw error;
+  }
 }
 
 /** macOS and Windows filesystems ignore case by default, so `_OPS/x` writes into `_ops`. The result uses the protected spelling. */
@@ -336,9 +369,10 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
   };
   /** Set once a `cd` could have moved the shell into a protected directory. */
   let cwdMayBeProtected = false;
+  const outerProtected: boolean[] = [];
   const addPath = (pattern: string, commandCwd: string | null) => {
     let candidate = unescapePattern(pattern);
-    if (!candidate || /[$`\n\r]/.test(candidate) || ['/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty'].includes(candidate)
+    if (!candidate || /[$`]/.test(candidate) || ['/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty'].includes(candidate)
       || /^\/dev\/fd\/\d+$/.test(candidate)) return;
     if (!isAbsolute(candidate) && !commandCwd) {
       // From an unknown directory, a relative target is safe only when it neither climbs out nor starts in a protected directory.
@@ -356,6 +390,12 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
         return;
       }
       const dir = unescapePattern(pattern.slice(0, cut)) || '.';
+      try {
+        const link = globSymlink(isAbsolute(dir) ? dir : `${base}/${dir}`, pattern.slice(cut));
+        if (link) unresolved.push(`${link} (a glob matches a symbolic link)`);
+      } catch (error) {
+        unresolved.push(`${candidate} (${(error as NodeJS.ErrnoException).code ?? String(error)})`);
+      }
       const atRoot = resolve(base, dir) === resolve(repoRoot) || realRel(isAbsolute(dir) ? dir : `${base}/${dir}`) === '';
       const segment = pattern.slice(cut).split('/', 1)[0]!;
       if (atRoot) candidates.push(...PROTECTED_REPO_DIRS.filter(name => segmentMatches(segment, name)));
@@ -386,7 +426,8 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
       // Tilde expansion follows brace expansion. `~+` is the working directory; OLDPWD (`~-`) is not known here.
       if (/^~-(?:\/|$)/.test(word)) unresolved.push(`${unescapePattern(word)} (OLDPWD)`);
       else if (/^~\+(?:\/|$)/.test(word)) addPath(`.${word.slice(2)}`, commandCwd);
-      else if (!word.startsWith('~')) addPath(word, commandCwd);
+      else if (word.startsWith('~')) unresolved.push(`${unescapePattern(word)} (home directory expansion)`);
+      else addPath(word, commandCwd);
     }
   };
   walkCommands(command, cwd, {
@@ -394,16 +435,22 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
       // After a `cd` with an option or an expanded operand the directory is not tracked. Its reachable targets
       // decide whether a later relative write can land in a protected directory; the cd itself writes nothing.
       const cd = cdOperand(segment);
-      if (cd && (!cd.plain || !cd.target.literal)) {
+      if (cd && (!cd.plain || !cd.target.literal || globIndex(cd.target.pattern) >= 0)) {
         const found = candidates.length, failed = unresolved.length;
         add(cd.target.pattern, commandCwd);
-        if (candidates.length > found || unresolved.length > failed) cwdMayBeProtected = true;
+        // A glob verified outside the repository cannot select a protected directory. Keep literal option-bearing cd fail-closed.
+        if (candidates.slice(found).some(path => !isAbsolute(path) || globIndex(cd.target.pattern) < 0 || realRel(path) !== null)
+          || unresolved.length > failed) cwdMayBeProtected = true;
         candidates.length = found; unresolved.length = failed;
       }
       for (const target of commandTargets(segment, body)) add(target, commandCwd);
     },
     redirect: (target, commandCwd) => add(target.pattern, commandCwd),
-    unparsed: () => { unresolved.push('the command (unbalanced parentheses, an unclosed quote or a `(` glued to a word)'); },
+    scope: enter => {
+      if (enter) outerProtected.push(cwdMayBeProtected);
+      else cwdMayBeProtected = outerProtected.pop() ?? false;
+    },
+    unparsed: () => { unresolved.push('the command (unsupported heredoc, substitution, parentheses or quoting)'); },
   });
   return { paths: [...new Set(candidates)], unresolved };
 }
@@ -478,7 +525,7 @@ export function runBashMutationGuard(opts: MutationGuardInput): MutationGuardRes
     return runMutationDenial(opts, {
       guard: 'RepoScopeGuard',
       reason: `The destination of the Bash write target ${unresolved[0]} is not known.`,
-      fix: 'Write to a path whose directories exist and can be read, from a known working directory, without a symlink loop, `~-`, a glob that can reach `..`, a large brace expansion or shell syntax outside the parsed grammar.',
+      fix: 'Write to a path whose directories exist and can be read, from a known working directory, without a symlink loop, a glob that matches a symlink, an unresolved tilde form, a glob that can reach `..`, a large expansion or shell syntax outside the parsed grammar.',
     });
   }
   if (paths.length) {
