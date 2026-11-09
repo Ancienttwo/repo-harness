@@ -14,7 +14,7 @@ import { collectBoard, readLocalRepositoryId } from '../src/effects/board/collec
 import { runBoardCloseout, stopCodegraphServers } from '../src/effects/board/closeout';
 import type { RunArchctxProcess } from '../src/core/architecture/contracts';
 import { errorEnvelope } from 'archctx-contracts';
-import { githubRemoteRepository } from '../src/core/board/source';
+import { githubRemoteRepository, parseRefs } from '../src/core/board/source';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
 import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
 import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herdr-core';
@@ -125,6 +125,28 @@ function replay(options: Replay = {}): BoardV1 {
 function rules(board: BoardV1): BoardRuleId[] {
   return evaluateBoardAttention(board).findings.map(finding => finding.rule);
 }
+
+test.each([
+  ['inline code spans', ['`Refs #19`', '``Refs #19 `example` ``', '`Refs\n#19`', 'Refs `example` #19']],
+  ['fenced code blocks', ['```text\nRefs #19\n```', '~~~\nRefs #19\n~~~', '````\n```\nRefs #19\n````', '```\n~~~\nRefs #19\n```', '```\r\nRefs #19']],
+  ['quoted lines', ['> Refs #19', '  > Refs #19', '>> Refs #19']],
+] as const)('parseRefs ignores %s', (_kind, bodies) => {
+  for (const body of bodies) {
+    expect(parseRefs(body)).toEqual([]);
+  }
+});
+
+test.each(['Refs #19', 'Refs: #19', '\\`Refs #19\\`', '`Refs #19'])('parseRefs keeps plain text: %s', (body) => {
+  expect(parseRefs(`${body}\nRefs #7\nref: #19`)).toEqual([7, 19]);
+});
+
+test('board selection and projection use the same refs outside code and quotes', () => {
+  for (const example of ['`Refs #1476`', '```\nRefs #1476\n```', '> Refs #1476']) {
+    const board = (body: string) => replay({ pulls: (data) => { data.repository.pr1491.body = body; } });
+    expect(board(example).pull_requests.some(pr => pr.number === 1491)).toBe(false);
+    expect(board(`${example}\n\nRefs: #1475`).pull_requests.find(pr => pr.number === 1491)!.refs).toEqual([1475]);
+  }
+});
 
 test('Low acceptance uses the effective tier of every linked issue: a Low closing issue with a High or unobserved ref is not accepted by tier', () => {
   const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' };
