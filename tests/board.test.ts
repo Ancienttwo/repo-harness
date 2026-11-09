@@ -486,7 +486,12 @@ test('board merge: every hold stays in force until a strictly newer release on i
     mergeReason(on(['parent', HOLD, '2026-11-02T21:00:00Z'])),
     mergeReason(on(['parent', HOLD, '2026-11-02T21:00:00Z'], ['parent', `${HOLD}\nIssues: #1479`, '2026-11-02T21:10:00Z'])),
     mergeReason({ parent: (data) => { data.repository.issue.comments.pageInfo.hasPreviousPage = true; } }),
-  ]).toEqual(['held', 'eligible', 'held', 'held', 'held', 'eligible', 'held', 'held', 'hold_unknown']);
+    // Truncated: the oldest parent comment read is 18:33:49Z. A release at that boundary can tie an omitted hold; a later one cannot.
+    ...['2026-11-02T18:33:49Z', '2026-11-02T21:00:00Z'].map(at => mergeReason({ parent: (data) => {
+      data.repository.issue.comments.nodes.push(comment(RELEASE, at));
+      data.repository.issue.comments.pageInfo.hasPreviousPage = true;
+    } })),
+  ]).toEqual(['held', 'eligible', 'held', 'held', 'held', 'eligible', 'held', 'held', 'hold_unknown', 'hold_unknown', 'eligible']);
 });
 
 test('board merge: no plan, a draft, plan holds, plan order for every linked item, the provisional Low path, a missing Claude review, a red Required / CI, readiness and the policy switch each refuse', () => {
@@ -504,13 +509,14 @@ test('board merge: no plan, a draft, plan holds, plan order for every linked ite
     mergeReason({ holds: [{ issue: 1475, reason: 'owner item' }] }),
     mergeReason({ order: [1479, 1475] }),
     mergeReason({ order: [1475, 1479, 1476], pulls: (data) => { data.repository.pr1491.body += '\nRefs #1476\n'; } }),
+    mergeReason({ order: [1476, 1475], pulls: (data) => { data.repository.pr1491.body += '\nRefs #1476\n'; } }),
     mergeReason({ order: [1479] }),
     mergeReason({ ...lowGreen, order: [1479, 1475] }, {}, 1494),
     mergeReason({ parent: (data) => { issueNode(data, 1475).labels.nodes = []; } }),
     mergeReason({ pulls: (data) => { for (const check of data.repository.pr1491.commits.nodes[0].commit.statusCheckRollup.contexts.nodes) if (check.name === 'Required / CI') check.conclusion = 'FAILURE'; } }),
     mergeReason({}, { ready: [] }),
     mergeReason({}, { policy: POLICY_ABSENT }),
-  ]).toEqual(['plan_unavailable', 'draft', 'plan_hold', 'merge_order', 'merge_order', 'not_in_merge_order', 'not_accepted', 'claude_review_pending', 'required_check', 'not_ready', 'acceptance_merge_off']);
+  ]).toEqual(['plan_unavailable', 'draft', 'plan_hold', 'merge_order', 'merge_order', 'merge_order', 'not_in_merge_order', 'not_accepted', 'not_accepted', 'required_check', 'not_ready', 'acceptance_merge_off']);
   // The Low PR is accepted on the provisional tier_low path, which an unattended merge does not take.
   expect(replay(mergeReplay({ ...lowGreen, order: [1479, 1475] })).pull_requests.find(pr => pr.number === 1494)!.acceptance).toMatchObject({ status: 'accepted', via: 'tier_low' });
 });

@@ -531,7 +531,8 @@ are true:
 - An acceptance record has a PASS row for the head, at every tier. The
   provisional `tier_low` status is not enough: post the Low record after
   you check the verification evidence.
-- A High PR has its Claude review row for the head (board rule A10).
+  For a High PR from a non-Claude writer, the PASS needs its Claude
+  review row for the head too (board rule A10).
 - `Required / CI` passed on the head, and the readiness verdict is ready.
 
 The executor keeps all its own gates. Exit codes follow the §9 table; exit 4
@@ -541,9 +542,10 @@ eligible; the watcher never merges. Before you run the command, answer each
 review-bot comment (`acceptor.md` §2.3): the command does not read bot
 comments.
 
-A hold record narrows only. When the owner says "stop" or "no" in prose,
-post `merge hold` (`templates.md`) in the same turn, before any other
-action. A hold on the parent holds the whole batch, or only the issues of
+A hold record narrows only. When a stop is decided locally (an owner
+instruction that reaches your seat, or a joint decision on a "stop" or "no"
+comment), post `merge hold` (`templates.md`) in the same turn, before any
+other action. A hold on the parent holds the whole batch, or only the issues of
 its `Issues:` line. A hold on an issue or a PR holds that issue or PR. Each
 hold stays in force until a `merge hold released` on the same thread that
 is strictly newer than the hold; a release with the same time does not end

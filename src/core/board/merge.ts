@@ -19,17 +19,21 @@ export interface BoardMergeHoldRecordV1 {
 export type BoardMergeHoldV1 =
   | { readonly status: 'none' }
   | { readonly status: 'held'; readonly holds: readonly BoardMergeHoldRecordV1[] }
-  /** The read is truncated and its newest comments hold no release: an older hold can still be in force. */
+  /** The read is truncated and no release in it is strictly newer than its oldest comment: an omitted hold can still be in force. */
   | { readonly status: 'unknown'; readonly reason: 'comments_truncated' };
 
 /**
  * Every hold of one thread stays in force until a strictly newer release on
  * that thread. A release with the same time as a hold does not end it, so an
- * unknown order fails closed. `scoped` reads the `Issues:` line (the parent).
+ * unknown order fails closed. On a truncated read, every omitted comment is
+ * at or before the oldest comment read, so only a release strictly after
+ * that boundary ends the omitted holds. `scoped` reads the `Issues:` line
+ * (the parent).
  */
 export function readMergeHold(page: BoardCommentPageV1, scoped: boolean): BoardMergeHoldV1 {
   const released = protocolComments(page, MERGE_HOLD_RELEASED_HEADER).map(record => record.created_at).sort().at(-1) ?? null;
-  if (released === null && page.truncated) return { status: 'unknown', reason: 'comments_truncated' };
+  const boundary = page.comments.map(comment => comment.created_at).sort()[0] ?? null;
+  if (page.truncated && (released === null || boundary === null || released <= boundary)) return { status: 'unknown', reason: 'comments_truncated' };
   const holds = protocolComments(page, MERGE_HOLD_HEADER).filter(record => released === null || record.created_at >= released).map((record) => {
     const line = scoped ? record.body.replace(/\r\n/gu, '\n').split('\n').find(entry => entry.startsWith('Issues: ')) : undefined;
     const issues = line === undefined ? [] : [...line.matchAll(/#([1-9][0-9]*)/gu)].map(match => Number(match[1]));
@@ -48,7 +52,6 @@ export type BoardMergeRefusalV1 =
   | 'not_in_merge_order'
   | 'merge_order'
   | 'not_accepted'
-  | 'claude_review_pending'
   | 'required_check'
   | 'not_ready';
 
@@ -86,14 +89,15 @@ function refusal(board: BoardV1, pr: BoardPullRequestV1): { readonly reason: Boa
   const unordered = items.filter(number => !plan.merge_order.includes(number));
   if (unordered.length > 0) return { reason: 'not_in_merge_order', detail: `${unordered.map(number => `#${number}`).join(' ')} not in the plan merge_order` };
   const last = Math.max(...items.map(number => plan.merge_order.indexOf(number)));
-  // Every entry before the last linked item must be closed or delivered by this PR. An earlier issue outside the board has no observed state, so it blocks like an open one.
-  const earlier = plan.merge_order.slice(0, last).filter(number => !items.includes(number) && onBoard.get(number)?.state !== 'closed');
+  // Every entry before the last linked item must be closed, or closed by this PR when it merges; a ref does not deliver an issue.
+  // An earlier issue outside the board has no observed state, so it blocks like an open one.
+  const earlier = plan.merge_order.slice(0, last).filter(number => !pr.closes.includes(number) && onBoard.get(number)?.state !== 'closed');
   if (earlier.length > 0) return { reason: 'merge_order', detail: `earlier in merge_order and not closed: ${earlier.map(number => `#${number}`).join(' ')}` };
   // The provisional `tier_low` path needs an evidence check by a seat, so an unattended merge takes a record at every tier.
+  // A record acceptance of a High head from a non-Claude writer already includes its Claude review (`acceptance` in board.ts).
   if (pr.acceptance.status !== 'accepted' || pr.acceptance.via !== 'record') {
     return { reason: 'not_accepted', detail: `#${pr.number} has no PASS acceptance record for ${pr.head_sha.slice(0, 9)} (${pr.acceptance.status === 'accepted' ? pr.acceptance.via : pr.acceptance.status})` };
   }
-  if (pr.claude_review === 'pending') return { reason: 'claude_review_pending', detail: `#${pr.number} needs a Claude review row for ${pr.head_sha.slice(0, 9)}` };
   if (pr.required_check.status !== 'success') return { reason: 'required_check', detail: `Required / CI is ${pr.required_check.status}` };
   if (pr.merge_readiness?.ready !== true) {
     return { reason: 'not_ready', detail: `readiness blockers: ${pr.merge_readiness?.blockers.map(blocker => blocker.code).join(', ') || 'none observed'}` };
