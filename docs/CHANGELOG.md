@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `bash scripts/release-owner-steps.sh plan <version>` prints the owner's release command list, bound to the release commit on `origin/main`: publish both packages, read them back, tag that commit, create the GitHub Release, then the post-release steps. `check published` and `check tagged` read back each owner step and stop at the first failure; `notes` prints the CHANGELOG section. The script only reads git, npm and GitHub. `check:release-published --before-tag` skips only the tag check. (#2006)
+
 ## [0.29.0] - 2026-11-09
 
 This release lets the board run the issue flow: `board dispatch` starts a
@@ -62,7 +66,6 @@ to agent edits.
 
 ### Added
 
-- `bash scripts/release-owner-steps.sh plan <version>` prints the owner's release command list, bound to the release commit on `origin/main`: publish both packages, read them back, tag that commit, create the GitHub Release, then the post-release steps. `check published` and `check tagged` read back each owner step and stop at the first failure; `notes` prints the CHANGELOG section. The script only reads git, npm and GitHub. `check:release-published --before-tag` skips only the tag check. (#2006)
 - `repo-harness board dispatch --parent <n> --space <id> [--dry-run]` starts a worker seat for each ready sub-issue of the plan. An issue is ready when it is open, in the plan, not held, has no open blocker and no active claim, and the parent has fewer live worker seats than `seat_limits.worker`. The seat comes from the quota route of the issue's `route:<class>` label. Work with the `touches:credentials` label never goes to a Pi seat. (#2004)
 - `repo-harness board review --parent <n> --space <id> [--dry-run]` starts the gatekeeper seat for each open, non-draft pull request whose `Required / CI` passed, whose tier is Medium or High, and that has no acceptance and no start marker for its head. The tier is the highest tier of the issues it closes or refs (the parent excluded); an issue outside the board or without a tier label counts as High. The seat opens in the writer worktree, and only when that worktree is at the PR head. One `repo-harness review start` comment marks the head, so a head starts once; a run holds a per-repository lock and reads the board inside it. A new head starts a delta review only when an earlier started head has an acceptance record; otherwise the review is full. A High pull request needs a Claude review too, unless its writer claim (`Role: writer`, `Branch:` equal to the PR branch) names the Claude runtime. The board shows it as `claude_review: pending` (new `tier` and `claude_review` fields on each pull request, additive, same board protocol), and attention rule A10 reports it (an unknown tier too) until a Claude reviewer has an acceptance row for the head. The Low acceptance path uses the same tier of every linked issue. `board dispatch` now writes a `Runtime:` line in the claim. The seat stays read-only. (#2002)
 - `repo-harness board closeout --pr <n>` closes the clean, pushed seat terminals of a merged PR

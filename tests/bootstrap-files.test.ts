@@ -351,6 +351,7 @@ describe("Bootstrap Script Contracts", () => {
       expect(runIn(worktree, ["guard", planVersion, third]).status).toBe(0);
       const guardRefusals: Array<[string, string[], string]> = [
         [repo, [planVersion, third], "the checkout is"],
+        [repo, [`9.${process.pid}.0`, third], `/tmp/repo-harness-wt-release-9.${process.pid}.0 does not exist`],
         [worktree, [planVersion, second], `HEAD is ${third}, not the release commit ${second}`],
         [otherWorktree, [otherVersion, third], `package.json has version ${planVersion}, not ${otherVersion}`],
       ];
