@@ -9,7 +9,10 @@ and the board are in `board.md`. The round record is in `orchestrator.md`
 
 A Low PR that meets the Low accept-seat skip takes no round and no
 acceptance record (`docs/reference-configs/agentic-development-flow.md`,
-Review by risk).
+Review by risk). The board marks such a PR `accepted` via `tier_low` from
+`Required / CI` and the closing-issue tiers only. That status is
+provisional: the merging seat confirms the verification evidence in the PR
+body before the merge.
 
 The gatekeeper is the default acceptor (D6). It reviews the diff and
 returns a verdict and findings. A seat without the `net` tool group has no

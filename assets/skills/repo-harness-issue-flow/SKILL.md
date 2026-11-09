@@ -142,7 +142,8 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   head, `Required / CI` passed and each review-bot comment has a response.
   A High PR also needs its cross-model review PASS. A Low PR that meets the
   Low accept-seat skip merges on `Required / CI` and its verification
-  evidence, with no acceptance record (`references/acceptor.md` §1). The rolling projection PR
+  evidence, with no acceptance record. The board `tier_low` status is
+  provisional; confirm the evidence before the merge (`references/acceptor.md` §1). The rolling projection PR
   (`archctx/projection`) merges on green CI; its merge is its acceptance.
 - Fix rounds. A review loop continues after round 3 without the owner while
   each round has fewer findings than the round before, the scope does not
