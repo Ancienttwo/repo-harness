@@ -63,6 +63,7 @@ const CLAUDE_GROUP_TOOLS: Readonly<Record<SeatTool, readonly string[]>> = {
   shell: ['Bash', 'Monitor', 'TaskStop'],
   net: ['WebFetch', 'WebSearch'],
   tasks: ['TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate'],
+  schedule: ['CronCreate', 'CronList', 'CronDelete'],
   mcp: ['ToolSearch', 'ListMcpResourcesTool', 'ReadMcpResourceTool'],
   gh: [],
 };
@@ -83,6 +84,7 @@ const GROUP_TEXT: Readonly<Record<SeatGroup, string>> = {
   shell: 'Do not run shell commands.',
   net: 'Do not use the network.',
   tasks: 'Do not use the task list tools.',
+  schedule: 'Do not schedule recurring jobs.',
   mcp: 'Do not use MCP tools.',
   gh: 'Do not write to GitHub.',
 };
@@ -90,8 +92,9 @@ const GROUP_TEXT: Readonly<Record<SeatGroup, string>> = {
 /** The one GitHub write of a review seat with `net` (#1996). Its keep-yourself paragraph repeats it so that the two texts agree. */
 const REVIEW_PUBLISH_TEXT = 'Do not write to GitHub, with one exception: publish your own round with `repo-harness review publish --pr <number> --receipt <path>`. Run no other GitHub write.';
 
+/** `schedule` is Claude-only (Cron tools): Codex and Pi launches report no limit for it. */
 const OFF_GROUPS = (config: SeatConfigV1): SeatGroup[] =>
-  (['edit', 'shell', 'net', 'tasks', 'mcp', 'gh'] as const).filter(group => !config.tools.includes(group));
+  (['edit', 'shell', 'net', 'tasks', 'schedule', 'mcp', 'gh'] as const).filter(group => !config.tools.includes(group) && (group !== 'schedule' || config.runtime === 'claude'));
 
 /**
  * pi-subagents 0.87.0 ranks the extra role directory below the user and project role directories, so a
@@ -130,7 +133,7 @@ function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly stri
         'Keep judgment, synthesis and the proposal for yourself. Run a check of one or two commands yourself.',
       ].join(' ');
     return [
-      'You are the advisor seat. You serve only the orchestrator. You do research and write proposals. You do not edit code, commit or write to GitHub.',
+      'You are the advisor seat. You serve only the orchestrator. You do research and write proposals. You do not commit or write to GitHub. Edit files only for your proposals.',
       'You may read the processes of worker seats (hc ls, hc get and hc read on seat-labeled terminals) for evidence. You do not send messages or keys to a worker. You report only to the orchestrator.',
       evidence,
     ];
@@ -189,7 +192,11 @@ function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly s
     ...(config.fleet.length > 0 ? [...new Set(agentTypes)].filter(type => !config.fleet.includes(type)).sort().map(type => `Agent(${type})`) : []),
   ];
   const limits: SeatLimitV1[] = [
-    ...OFF_GROUPS(config).map(group => ({ subject: group, level: pathLevel(group, 'enforced', on('shell') || on('mcp')) })),
+    // A shell can schedule jobs (crontab, launchctl) and an MCP tool may, so the Cron tools are not the only path to this group.
+    ...OFF_GROUPS(config).map(group => ({
+      subject: group,
+      level: group === 'schedule' && (on('shell') || on('mcp')) ? 'instructions_only' : pathLevel(group, 'enforced', on('shell') || on('mcp')),
+    })),
     { subject: 'fleet', level: config.fleet.length === 0 ? 'enforced' : 'named_types_only' },
   ];
   const text = brief(seat, config, config.fleet, limits);
