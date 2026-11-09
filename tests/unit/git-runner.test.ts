@@ -6,6 +6,8 @@ import { resolveGitCommonDirectory } from '../../src/effects/git/common-director
 import { runGit } from '../../src/effects/git/run-git';
 import {
   DEFAULT_GIT_TIMEOUT_MS,
+  GitExecError,
+  gitExecFile,
   gitExecFileSync,
   gitSpawnSync,
   resolveGitExecutable,
@@ -124,6 +126,60 @@ describe('git runner', () => {
       gitBin: '/fixture/pinned/git', encoding: 'utf8', env: { FIXTURE_PIN: 'retained' },
     }))).toThrow(denied);
     expect(calls).toBe(1);
+  });
+
+  test('a local git command runs without provider tokens, with or without a caller env', () => {
+    const root = tmpWorkspace('git-runner-tokens');
+    const tokens = { GH_TOKEN: 'fake-gh', GITHUB_TOKEN: 'fake-github', GH_ENTERPRISE_TOKEN: 'fake-ghe', GITHUB_ENTERPRISE_TOKEN: 'fake-github-e' };
+    const previous = Object.fromEntries(Object.keys(tokens).map(key => [key, process.env[key]]));
+    try {
+      const gitBin = writeGit(root, '#!/bin/sh\nprintf "%s" "${GH_TOKEN-}${GITHUB_TOKEN-}${GH_ENTERPRISE_TOKEN-}${GITHUB_ENTERPRISE_TOKEN-}"\n');
+      expect(gitExecFileSync(['-C', root, 'cat-file', '-t', 'HEAD'], { gitBin, encoding: 'utf8', env: { ...process.env, ...tokens } })).toBe('');
+      expect(runGit(['rev-parse', 'HEAD'], { gitBin, env: tokens }).stdout).toBe('');
+      Object.assign(process.env, tokens);
+      expect(gitSpawnSync(['merge-tree', '--write-tree', 'a', 'b'], { gitBin, encoding: 'utf8' }).stdout).toBe('');
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('fetch and push keep the caller token for the gh credential helper', async () => {
+    const root = tmpWorkspace('git-runner-credential');
+    const token = 'fake-credential-token';
+    const authorized: string[] = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        const auth = request.headers.get('authorization');
+        if (!auth) return new Response('', { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="fixture"' } });
+        authorized.push(`${new URL(request.url).searchParams.get('service')} ${auth}`);
+        return new Response('', { status: 403 });
+      },
+    });
+    try {
+      // Same reply shape as `gh auth git-credential get`, which reads GH_TOKEN first.
+      const helper = join(root, 'gh-credential');
+      writeFileSync(helper, '#!/bin/sh\n[ "$1" = get ] || exit 0\ncat >/dev/null\nprintf "username=x-access-token\\npassword=%s\\n" "$GH_TOKEN"\n', { mode: 0o755 });
+      const repo = join(root, 'repo');
+      gitExecFileSync(['init', '-q', repo]);
+      const env = { PATH: process.env.PATH, HOME: root, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0', GH_TOKEN: token };
+      const url = `http://127.0.0.1:${server.port}/fixture.git`;
+      const credential = ['-C', repo, '-c', 'credential.helper=', '-c', `credential.helper=!${helper}`];
+      for (const args of [[...credential, 'fetch', url], [...credential, 'push', url, ':refs/heads/fixture']]) {
+        const failure = await gitExecFile(args, { env, timeout: 30_000 }).then(() => undefined, (error: unknown) => error);
+        expect(failure).toBeInstanceOf(GitExecError);
+        expect((failure as GitExecError).stderr).not.toContain(token);
+      }
+      const basic = `Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
+      expect(authorized).toEqual([`git-upload-pack ${basic}`, `git-receive-pack ${basic}`]);
+    } finally {
+      server.stop(true);
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test('src starts git only through the runner', () => {
