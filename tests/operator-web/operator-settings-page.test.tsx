@@ -146,11 +146,12 @@ describe('agents page seats section', () => {
   const pane = (seat: string) => document.querySelector<HTMLButtonElement>(`[data-pane="${seat}"]`)!;
   const levels = () => [...document.querySelectorAll('[data-seat-card] [data-limit]')].map(node => node.getAttribute('data-limit'));
 
-  test('the advisor cannot take a writable role, edit or GitHub writes; save sends the whole section and leaves running panes alone', async () => {
+  test('the advisor cannot take a writable role or GitHub writes, and can take edit; save sends the whole section and leaves running panes alone', async () => {
     const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
     await mount(seatsProps(posts));
     expect(document.querySelector('[data-seat-card]')?.getAttribute('data-seat-card')).toBe('advisor');
-    for (const label of ['fast-worker', 'deep-worker', 'Edit files', 'GitHub writes']) expect([label, allow(label).disabled]).toEqual([label, true]);
+    for (const label of ['fast-worker', 'deep-worker', 'GitHub writes']) expect([label, allow(label).disabled]).toEqual([label, true]);
+    expect(allow('Edit files').disabled).toBe(false);
     // The levels are those of buildSeatLaunch (#1531): Claude advisor with shell on, tasks, schedule, edit and gh off.
     expect(levels()).toEqual(['common_commands', 'enforced', 'instructions_only', 'common_commands', 'named_types_only']);
     expect(document.querySelector('[data-seat-launch]')?.textContent).toContain('--argv "$(repo-harness seats argv advisor --repository-id <repository-id>)"');

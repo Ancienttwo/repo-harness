@@ -716,7 +716,6 @@ describe('seat settings routes', () => {
     const original = readFileSync(harness.configPath, 'utf8');
     for (const [seat, patch, code] of [
       ['advisor', { fleet: ['explorer', 'fast-worker'] }, 'seat_fleet_not_allowed'],
-      ['advisor', { tools: ['edit', 'read'] }, 'seat_tool_not_allowed'],
       ['advisor', { tools: ['gh', 'read'] }, 'seat_tool_not_allowed'],
       ['orchestrator', { tools: ['edit', 'read'] }, 'seat_tool_not_allowed'],
       ['worker', { runtime: 'codex' }, 'seat_runtime_not_enabled'],
@@ -728,6 +727,15 @@ describe('seat settings routes', () => {
       expect([seat, response.status, (await response.json()).error.code]).toEqual([seat, 422, code]);
     }
     expect(readFileSync(harness.configPath, 'utf8')).toBe(original);
+  });
+
+  test('an advisor config with edit saves; an orchestrator config with edit stays refused', async () => {
+    const harness = await startHarness({ agents: PANE_AGENTS });
+    const { revision, ...section } = (await seats(harness)).config;
+    const advisor = { ...section.advisor, tools: ['edit', 'read'] as typeof section.advisor.tools };
+    const saved = await post(harness, { expected_revision: revision, seats: { ...section, advisor } }, 'seats');
+    expect(saved.status).toBe(200);
+    expect((await seats(harness)).config.advisor.tools).toEqual(['edit', 'read']);
   });
 
   test('a Codex seat with edit and net saves and reads back', async () => {

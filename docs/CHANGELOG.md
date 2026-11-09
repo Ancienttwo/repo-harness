@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- The seats range lets the advisor seat take the `edit` tool group, as the owner approved. The orchestrator range still refuses `edit`. (#2032)
+
 ### Added
 
 - `repo-harness board closeout` stops a CodeGraph MCP server whose command line names exactly the merged worktree (`serve --mcp --path <worktree>`) and lists its PID in `stopped_codegraph_servers`. Any other process, or a process that stays after the stop, still keeps the worktree with `process_in_use`. (#2029)
