@@ -3,6 +3,7 @@
 All notable changes to this skill are documented here.
 
 ## [Unreleased]
+- `board attention --watch --deliver --review --space <id>` runs the `board review` path once per window, after the board read and before delivery, and starts only the read-only review seats. Each start or refusal is one `review` line in the attention jsonl and one hc message to the orchestrator; a failed run is a refusal line and does not end the watcher. `board attention start --review --space <id>` starts the watcher with the flag. The flag is off by default. (#2078)
 - Board acceptance of an open High or unknown-tier pull request needs `PASS` rows of the head that cite two distinct `acceptance claim` comments of the pull request with the row's subject and round (the comment id is the identity), at least one with `Model relation: different-family`, and no `FAIL` row. One review no longer accepts a High head. A missing, blank or malformed `Claim:`, or one that names no claim comment, proves no claim, and `Model relation: unknown` (an unknown writer family) never counts as the different-family review. `claude_review` is now a projection of that rule: `pending` for every open High head that does not meet it and has no Claude row, a Claude writer included, so `board review` starts the Claude reviewer seat and A10 reports the head until the second review exists. The writer claim's `Runtime:` no longer decides it. A sync head is a new head: High needs two sync check rows by the same rule, Medium one (`acceptor.md` §2.2). `repo-harness review publish` accepts rounds 1 to 5 (round 5 is the hard stop), so a High head that converges in round 4 or 5 also gets two claimed rows; the hand-posted record of a round above 3 is retired. Medium and Low are unchanged. (#2061)
 
 ### Fixed
@@ -16,6 +17,10 @@ All notable changes to this skill are documented here.
 ### Documentation
 
 - Record the 0.29.0 publication in its release checklist. (#2065)
+
+### Fixed
+
+- `board closeout` also closes the seat terminals that work in the PR head worktree, so a PR that only says `Refs #<issue>` closes its seats and removes its worktree in one run. Such a seat needs an issue label that the PR closes or that `parseRefs` reads after `Refs` in the PR body. (#2071)
 
 ## [0.29.0] - 2026-11-09
 
