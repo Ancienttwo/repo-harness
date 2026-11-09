@@ -403,16 +403,13 @@ export function parseAcceptanceRecord(comment: BoardCommentV1): readonly Accepta
 
 const REFS = /(?<![A-Za-z0-9_])refs?\s*:?\s*#([1-9][0-9]*)/giu;
 
-/** Text within one Markdown block; excluded inline content separates its neighbours. */
+/** Text within one Markdown block; NUL barriers prevent matches across excluded content. */
 function inlineRefsText(node: Nodes): string {
   if (node.type === 'text') return node.value;
   if (node.type === 'break') return '\n';
-  if (node.type === 'html') {
-    const value = node.value.trim();
-    return value.startsWith('<!--') && value.indexOf('-->') === value.length - 3 ? ' ' : node.value;
-  }
-  if (node.type === 'inlineCode') return ' ';
-  return 'children' in node ? node.children.map(inlineRefsText).join('') : ' ';
+  if (node.type === 'html') return node.value.replace(/<!--[\s\S]*?(?:-->|$)/gu, '\0');
+  if (node.type === 'inlineCode') return '\0';
+  return 'children' in node ? node.children.map(inlineRefsText).join('') : '\0';
 }
 
 /** Issue numbers outside code blocks, HTML comments and quotes. Closing keywords are `parseClosingReferences`. */
