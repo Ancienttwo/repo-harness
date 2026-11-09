@@ -14,7 +14,7 @@ import { BoardParentsError, collectBoardParents } from '../../effects/board/pare
 import { BoardSeatsError, collectBoardSeats } from '../../effects/board/seats';
 import { DispatchError, type DispatchPlanV1 } from '../../core/board/dispatch';
 import { runDispatch } from '../../effects/board/dispatch';
-import { runReview, type ReviewResultV1 } from '../../effects/board/review';
+import { runReview, type ReviewObserver, type ReviewResultV1 } from '../../effects/board/review';
 import { seatLaunch } from './seats';
 import { runBoardCloseout, stopArchitectureDaemons, stopCodegraphServers } from '../../effects/board/closeout';
 import { worktreeProcesses } from '../../effects/git/worktree-processes';
@@ -27,6 +27,8 @@ interface BoardOptions {
 interface AttentionOptions extends BoardOptions {
   readonly watch?: boolean;
   readonly deliver?: boolean;
+  readonly review?: boolean;
+  readonly space?: string;
 }
 
 const CLI_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
@@ -103,22 +105,28 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
     .description('Run the attention rules on the board of one parent issue (takes the board options --parent and --json)')
     .option('--watch', 'Stay resident: one board read per window (15 min while a worker seat runs, else 60 min); runs only in the terminal that `attention start` opens')
     .option('--deliver', 'With --watch: send the findings to the seat terminals with hc send')
+    .option('--review', 'With --watch --deliver: run `board review` once per window and report each start or refusal (needs --space)')
+    .option('--space <id>', 'With --review: the Herdr space that receives the review tabs')
     .action(async (_options: AttentionOptions, command: Command) => {
       const options = command.optsWithGlobals<AttentionOptions>();
       if (options.watch === true) return watchAttention(options, host, attentionHost);
       guarded((options: AttentionOptions) => {
         if (options.deliver === true) throw new AttentionWatchError('--deliver needs --watch');
+        if (options.review === true) throw new AttentionWatchError('--review needs --watch');
         const attention = evaluateBoardAttention(collectBoard({ repo_root: process.cwd(), parent: parentNumber(options), host }));
         process.stdout.write(options.json === true ? `${JSON.stringify(attention)}\n` : attentionText(attention));
       })(options);
     });
   attention.command('start')
     .description('Start the resident watcher (--watch --deliver) of one parent issue in a new hc terminal, unless one is live (takes --parent)')
-    .action((_options: BoardOptions, command: Command) => guarded((options: BoardOptions) => {
+    .option('--review', 'Start the watcher with --review (needs --space)')
+    .option('--space <id>', 'With --review: the Herdr space that receives the review tabs')
+    .action((_options: AttentionOptions, command: Command) => guarded((options: AttentionOptions) => {
+      if (options.review === true && options.space === undefined) throw new AttentionWatchError('--review needs --space');
       const parent = parentNumber(options);
-      const result = startAttentionWatch({ parent, repository_id: readRepositoryId({ repo_root: process.cwd() }), repo_root: process.cwd(), cli: [process.execPath, CLI_ENTRY], host: attentionHost });
+      const result = startAttentionWatch({ parent, repository_id: readRepositoryId({ repo_root: process.cwd() }), repo_root: process.cwd(), cli: [process.execPath, CLI_ENTRY], host: attentionHost, ...(options.review === true ? { review_space: options.space } : {}) });
       process.stdout.write(`${result.started ? 'Started' : 'Already live:'} the attention watcher of #${parent} in hc terminal ${result.address}.\n`);
-    })(command.optsWithGlobals<BoardOptions>()));
+    })(command.optsWithGlobals<AttentionOptions>()));
   board.command('parents')
     .description('List the open parent issues of this repository: open issues with sub-issues, their progress and live hc seat count (takes --json)')
     .action((_options: BoardOptions, command: Command) => {
@@ -243,13 +251,21 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
   return board;
 }
 
+function reviewRunner(options: AttentionOptions, parent: number, host: BoardHostPortsV1): (observe: ReviewObserver) => Promise<unknown> {
+  if (options.deliver !== true) throw new AttentionWatchError('--review needs --deliver');
+  const space = options.space;
+  if (space === undefined) throw new AttentionWatchError('--review needs --space');
+  return observe => runReview({ repo_root: process.cwd(), parent, space, host, dry_run: false, observe, launch: (seat, labels, cwd) => seatLaunch(seat, labels, process.env, cwd) });
+}
+
 /** The resident loop. A failed board read or hc check ends it with exit 1; doctor then reports the watcher stopped. */
 async function watchAttention(options: AttentionOptions, host: BoardHostPortsV1, attentionHost: AttentionHostPortsV1): Promise<void> {
   try {
     const parent = parentNumber(options);
     const repositoryId = serviceTerminalRepository(parent, attentionHost);
+    const review = options.review === true ? reviewRunner(options, parent, host) : undefined;
     const input = {
-      parent, deliver: options.deliver === true, log_path: attentionLogPath(repositoryId, parent),
+      parent, deliver: options.deliver === true, review, log_path: attentionLogPath(repositoryId, parent),
       collect: () => collectBoard({ repo_root: process.cwd(), parent, host }), host: attentionHost,
     };
     for (;;) await runAttentionWindow(input);
