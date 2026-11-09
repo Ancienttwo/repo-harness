@@ -1446,14 +1446,16 @@ test('watch window --review: each start or refusal is a log line and an orchestr
     async () => ({ decisions: [], started: [{ pr: 7, seat: 'reviewer', marker_url: 'https://example.test/m' }], refused: [{ pr: 8, reason: 'no worktree' }] }),
     async () => ({ decisions: [], started: [], refused: [] }),
     async () => { throw new BoardCollectError('another board review run holds the lock'); },
+    async () => { throw new Error('seat_not_configured: the reviewer seat has no runtime'); },
   ];
   for (const review of runs) {
     await runAttentionWindow({ parent: 1474, deliver: true, review, log_path: logPath, collect: () => ({ ...board, execution: { status: 'observed', terminals } }) as BoardV1, host: hc.host, now: () => REPLAY_NOW, sleep: async () => {} });
   }
   const records = readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
-  expect(records.filter(record => record.kind === 'review').map(record => [record.pr, record.seat, record.outcome])).toEqual([[7, 'reviewer', 'started'], [8, null, 'refused'], [null, null, 'refused']]);
+  expect(records.filter(record => record.kind === 'review').map(record => [record.pr, record.seat, record.outcome])).toEqual([[7, 'reviewer', 'started'], [8, null, 'refused'], [null, null, 'refused'], [null, null, 'refused']]);
   expect(hc.calls().filter(args => args[0] === 'send' && args.at(-1)?.includes(' review: ')).map(args => args.at(-1))).toEqual([
     '[rh-attention] #1474 review: PR #7 started on reviewer: https://example.test/m; PR #8 refused: no worktree',
     '[rh-attention] #1474 review: refused: another board review run holds the lock',
+    '[rh-attention] #1474 review: refused: seat_not_configured: the reviewer seat has no runtime',
   ]);
 });

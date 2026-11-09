@@ -99,8 +99,7 @@ async function reviewWindow(review: () => Promise<ReviewResultV1>, log: (record:
     for (const entry of result.started) note(entry.pr, entry.seat, 'started', entry.marker_url);
     for (const entry of result.refused) note(entry.pr, null, 'refused', entry.reason);
   } catch (error) {
-    if (!(error instanceof BoardCollectError)) throw error;
-    note(null, null, 'refused', error.message);
+    note(null, null, 'refused', error instanceof Error ? error.message : String(error));
   }
   return lines;
 }
