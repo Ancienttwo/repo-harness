@@ -206,6 +206,12 @@ You are the head owner. Only you push to this branch.
   second finding in one bug family, push no other instance fix. The
   coordinator first chooses a design change or rule 4 of `acceptor.md`
   §2.2.
+- **Pre-check before review.** Before asking for round N >= 2, check the
+  fix delta against the open findings for sibling cases, missing test
+  branches and CHANGELOG text against behavior. A Claude writer runs one
+  read-only sub-agent for this check. A Pi writer has no sub-agents and
+  does a self-check. The pre-check writes no record and does not replace
+  the review.
 - **Main moved.** When the coordinator posts `unblocked` or asks for a
   sync, retarget a stacked PR to main, merge the current main into your
   branch (no force push), run the affected checks and post `integration
