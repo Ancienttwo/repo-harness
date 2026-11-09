@@ -1307,11 +1307,17 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
     const head = git(path, 'rev-parse', 'HEAD');
     git(main, 'merge', '-q', '--no-ff', '-m', `merge ${name}`, `feat/${name}`); git(main, 'push', '-q', 'origin', 'main');
     pullRequests[String(pr)] = { number: pr, state: 'MERGED', baseRefName: 'main', headRefName: `feat/${name}`, headRefOid: head,
-      mergeCommit: { oid: git(main, 'rev-parse', 'HEAD') }, closingIssuesReferences: [{ number: issue, repository: { id: 'R_this' } }] };
+      mergeCommit: { oid: git(main, 'rev-parse', 'HEAD') }, closingIssuesReferences: [{ number: issue, repository: { id: 'R_this' } }], body: '' };
     return path;
   };
   const clean = worktree('clean', 21, 11), kept = worktree('kept', 22, 12), dirty = worktree('dirty', 23, 13), partial = worktree('partial', 24, 14);
   const branchfail = worktree('branchfail', 25, 15), rmfail = worktree('rmfail', 26, 16), child = worktree('child', 27, 17), sigfail = worktree('sigfail', 28, 18);
+  // #29 only says `Refs #19`: no closing issue, so its seats bind by the head branch of their checkout (#2071).
+  const refsonly = worktree('refsonly', 29, 19);
+  pullRequests['29']!.closingIssuesReferences = []; pullRequests['29']!.body = 'Refs #19';
+  // #30 closes issue 20 and names issue 21: a head-worktree seat of issue 77 binds nothing, one of issue 21 closes, and one of issue 21 under another PR's label is a conflict that keeps the worktree.
+  const refsconf = worktree('refsconf', 30, 20);
+  pullRequests['30']!.body = 'Closes #20\nRefs #21';
   // #21 also closes issue 12 of another repository, which binds no local seat.
   pullRequests['21']!.closingIssuesReferences.push({ number: 12, repository: { id: 'R_other' } });
   // A clean checkout of another project under a stale pr label.
@@ -1342,7 +1348,11 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
     terminal('t12', clean, { seat: 'reviewer', pr: '21' }, 'finished'), terminal('t13', elsewhere, { seat: 'reviewer', pr: '22' }, 'finished'),
     terminal('t14', kept, { issue: '12', pr: '99' }, 'finished'), terminal('t15', null, { seat: 'reviewer', pr: '22' }, 'finished'),
     terminal('t16', main, { seat: 'reviewer', pr: '77' }, 'finished'), terminal('t17', main, { seat: 'reviewer', pr: '26' }, 'finished'),
-    terminal('t18', main, { seat: 'reviewer', pr: '27' }), terminal('t19', main, { seat: 'reviewer', pr: '28' })];
+    terminal('t18', main, { seat: 'reviewer', pr: '27' }), terminal('t19', main, { seat: 'reviewer', pr: '28' }),
+    terminal('t20', refsonly, { issue: '19' }),
+    terminal('t21', refsconf, { issue: '77' }), terminal('t23', refsconf, { issue: '21' }),
+    // Not bound: another issue and no issue label in the Refs-only worktree, an unresolved cwd and another repository with the referenced issue label, all without a pr label.
+    terminal('t24', refsonly, { issue: '77' }), terminal('t27', refsonly, {}), terminal('t25', null, { seat: 'reviewer', issue: '19' }), terminal('t26', elsewhere, { seat: 'reviewer', issue: '19' }), terminal('t22', refsconf, { seat: 'reviewer', issue: '21', pr: '99' })];
   // hc rm of t17 fails until the retry.
   const rmFails = new Set(['t17']);
   const closed: string[] = [];
@@ -1399,7 +1409,12 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   const unsignalled = await closeout(28);
   expect([unsignalled.worktree.outcome, unsignalled.worktree.reason, unsignalled.stopped_codegraph_servers, unsignalled.daemon_stop_failures])
     .toEqual(['kept', 'process_in_use', [], ['codegraph server 4240: EPERM']]);
-  expect(closed).toEqual(['t1', 't2', 't12', 't4', 't9', 't11', 't17', 't18', 't19']);
+  // The seat of the Refs-only PR closes by its branch and the worktree goes with it.
+  const refs = await closeout(29);
+  expect([refs.panes, refs.worktree]).toEqual([[pane('t20', 'worker', null)], state(refsonly, 'removed', null)]);
+  const conflict = await closeout(30);
+  expect([conflict.panes, conflict.worktree]).toEqual([[pane('t23', 'worker', null), pane('t22', 'reviewer', 'conflicting_binding pr 99')], state(refsconf, 'kept', 'a pane of the pull request is kept')]);
+  expect(closed).toEqual(['t1', 't2', 't12', 't4', 't9', 't11', 't17', 't18', 't19', 't20', 't23']);
 });
 
 test('closeout stops a CodeGraph MCP server bound to exactly the worktree and no other process', async () => {
