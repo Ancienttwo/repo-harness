@@ -74,9 +74,12 @@ The table rules govern how the row combines with the review.
    ^origin/main` prints nothing, and each merge commit in that range is
    the clean automatic merge of a main commit:
    `git merge-tree --write-tree <parent1> <parent2>` exits 0 with the
-   tree of the merge commit, and the parents have one merge base. The
-   rows of every proven head count, so a FAIL row on any of them, or on
-   the new head, stops the carry. The board then shows `via: sync` with
+   tree of the merge commit, and the parents have one merge base. Both
+   PR diffs (from the one merge base with main) must not be empty. The
+   board reads the rows of the new head and of the newest proven
+   reviewed head only, so reviews split across older heads do not add
+   up. A FAIL row on any proven head, or on the new head, stops the
+   carry, and a git error on any candidate proves none. The board then shows `via: sync` with
    `carried_from` (#2074), and the new head needs CI only. Any other sync
    head (a conflict, even one resolved to the PR side; an edit in the
    merge; a new commit; a failed git step) needs a sync check: a review

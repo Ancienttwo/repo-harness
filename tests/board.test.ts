@@ -1465,7 +1465,7 @@ describe('merge-only sync carry (#2074)', () => {
 
   test('the rows of a reviewed head accept a later High head only when git proves a merge-only sync and no hook path changes', () => {
     const calls: (readonly string[])[] = [];
-    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly syncFailAt?: string; readonly split?: boolean; readonly hookFile?: boolean } = {}) => replay({
+    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly syncFailAt?: string; readonly split?: boolean; readonly headPass?: boolean; readonly hookFile?: boolean } = {}) => replay({
       parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
       pulls: (data) => {
         const { pr1499 } = data.repository;
@@ -1477,6 +1477,13 @@ describe('merge-only sync carry (#2074)', () => {
         }
         // Another proven sync head B of the same patch failed its sync check, after both PASS rows or between them: no PASS skips it.
         if (options.syncFailAt !== undefined) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', 'b'.repeat(40), 'different-family', 'FAIL'), ''), `2026-11-03T${options.syncFailAt}Z`));
+        // `headPass`: the head has both reviews of its own.
+        if (options.headPass) {
+          for (const [at, harness, relation] of [['00:40', 'pi', 'different-family'], ['00:41', 'claude', 'same-family']] as const) {
+            const claim = comment(renderAcceptanceClaim(receipt(harness, pr1499.headRefOid, relation)), `2026-11-03T${at}:00Z`);
+            pr1499.comments.nodes.push(claim, comment(renderAcceptanceRecord(receipt(harness, pr1499.headRefOid, relation), claim.url), `2026-11-03T${at}:30Z`));
+          }
+        }
         if (options.headFail) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', pr1499.headRefOid, 'different-family', 'FAIL'), ''), '2026-11-03T00:30:00Z'));
         if (options.hookFile) pr1499.files.nodes.push({ path: hook });
       },
@@ -1494,6 +1501,8 @@ describe('merge-only sync carry (#2074)', () => {
     expect(carry({ proven: false }).acceptance).toEqual({ status: 'not_accepted' });
     for (const at of ['00:20:00', '00:10:45']) expect(carry({ syncFailAt: at }).acceptance).toEqual({ status: 'not_accepted' });
     expect(carry({ split: true }).acceptance).toEqual({ status: 'not_accepted' });
+    // A FAIL on a proven earlier head stops only the carry: the head's own two reviews still accept it.
+    expect(carry({ syncFailAt: '00:20:00', headPass: true }).acceptance).toMatchObject({ status: 'accepted', via: 'record', accepted_at: '2026-11-03T00:41:30Z' });
     calls.length = 0;
     expect(carry({ headFail: true }).acceptance).toEqual({ status: 'not_accepted' });
     expect(carry({ hookFile: true }).acceptance).toEqual({ status: 'not_accepted' });
@@ -1515,6 +1524,7 @@ describe('merge-only sync carry (#2074)', () => {
     initGitRepo(root);
     write({ 'f.txt': '1\n2\n3\n4\n5\n', 'b.txt': 'b\n', 'run.sh': block('alice', 'deny') + 'x\ny\nz\n' + block('bob', 'deny'), 'ci.yml': 'jobs:\n  test:\n    runs-on: x\n' });
     git('add', '.'); git('commit', '-m', 'base');
+    const initial = git('rev-parse', 'HEAD');
     git('checkout', '-b', 'feature');
     const reviewed = { 'f.txt': '1\nsay "two words"\n3\n4\n5\n', 'run.sh': block('alice', 'allow') + 'rm -rf ./build\ny\nz\n' + block('bob', 'deny'), 'ci.yml': 'jobs:\n  test:\n    runs-on: x\n    needs: ci\n' };
     write(reviewed); git('commit', '-am', 'feature');
@@ -1569,13 +1579,21 @@ describe('merge-only sync carry (#2074)', () => {
     const absorbed = git('rev-parse', 'HEAD');
     git('checkout', '-B', 'noop', subject); git('merge', '--no-ff', '--no-edit', 'absorbed');
     expect(proven(git('rev-parse', 'HEAD'), subject, absorbed)).toBe(false);
-    // A failed ancestry check of one merge parent gives no proof, even when the other parent is in the base.
-    const wrapper = join(root, '.git-fails');
-    writeFileSync(wrapper, `#!/bin/sh\n[ "$1 $2 $3 $4" = "merge-base --is-ancestor ${subject} ${base}" ] && exit 128\nexec git "$@"\n`); chmodSync(wrapper, 0o755);
-    const previous = process.env.REPO_HARNESS_GIT_BIN;
-    process.env.REPO_HARNESS_GIT_BIN = wrapper;
-    try { expect(proven(sync)).toBe(false); } finally { if (previous === undefined) delete process.env.REPO_HARNESS_GIT_BIN; else process.env.REPO_HARNESS_GIT_BIN = previous; }
-    expect(proven(sync)).toBe(true);
+    // A failed ancestry check gives no proof: of one merge parent, even when the other parent is in the base; or of another candidate,
+    // whose FAIL rows the board could then not place.
+    const failing = (ancestor: string, of: string, candidates: readonly string[]): readonly string[] => {
+      const wrapper = join(root, '.git-fails');
+      writeFileSync(wrapper, `#!/bin/sh\n[ "$1 $2 $3 $4" = "merge-base --is-ancestor ${ancestor} ${of}" ] && exit 128\nexec git "$@"\n`); chmodSync(wrapper, 0o755);
+      const previous = process.env.REPO_HARNESS_GIT_BIN;
+      process.env.REPO_HARNESS_GIT_BIN = wrapper;
+      try { return provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: base, head_sha: sync }, candidates); } finally {
+        if (previous === undefined) delete process.env.REPO_HARNESS_GIT_BIN; else process.env.REPO_HARNESS_GIT_BIN = previous;
+      }
+    };
+    expect(failing(subject, base, [subject])).toEqual([]);
+    expect(failing(initial, sync, [subject, initial])).toEqual([]);
+    // Without the error, the other candidate is just not a sync (the PR commit lies between it and the head).
+    expect(provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: base, head_sha: sync }, [subject, initial])).toEqual([subject]);
   });
 });
 
