@@ -24,10 +24,10 @@ GitHub issue 和 PR 管理任务身份、范围和状态；人只负责决定是
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.sh | sh
 
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.ps1 | iex
 ```
 
 如果 Bun 已经在 PATH 上，也可以直接运行：

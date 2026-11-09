@@ -222,7 +222,7 @@ module is in the title so that a list view shows the write scopes.
   dispatched; route every other review of it to another seat. A dispatch
   does not grant publication, deletion or credential authority.
   For the Herdr pane topology, follow
-  [Herdr Dispatch](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch).
+  [Herdr Dispatch](https://github.com/aimpact-inc/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch).
 
 ### 7.1 Quota check
 
