@@ -532,8 +532,9 @@ are true:
 - An acceptance record has a PASS row for the head, at every tier. The
   provisional `tier_low` status is not enough: post the Low record after
   you check the verification evidence.
-  For a High PR from a non-Claude writer, the PASS needs its Claude
-  review row for the head too (board rule A10).
+  A High PR needs two PASS rows for the head that cite distinct
+  `acceptance claim` comments, one of them `different-family`
+  (`acceptor.md` §2.2).
 - `Required / CI` passed on the head, and the readiness verdict is ready.
 
 The executor keeps all its own gates. Exit codes follow the §9 table; exit 4

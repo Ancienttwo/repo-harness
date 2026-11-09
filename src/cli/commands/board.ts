@@ -79,8 +79,9 @@ function reviewText(result: ReviewResultV1): string {
   return `${lines.join('\n')}\n`;
 }
 
-function mergeText(result: BoardMergeResultV1, dryRun: boolean): string {
+function mergeText(result: BoardMergeResultV1, requested: number | null, dryRun: boolean): string {
   const lines = result.decisions.map(decision => (decision.eligible ? `PR #${decision.pr} eligible` : `PR #${decision.pr} not eligible (${decision.reason}): ${decision.detail}`));
+  if (requested !== null && !result.decisions.some(decision => decision.pr === requested)) lines.push(`PR #${requested} is not an open pull request of the board`);
   if (result.target === null) lines.push('no eligible pull request selected; nothing merged');
   else if (dryRun) lines.push(`PR #${result.target} would merge`);
   else lines.push(JSON.stringify(result.merge));
@@ -191,9 +192,9 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
     .action((options: { pr?: string; dryRun?: boolean }, command: Command) => {
       try {
         if (options.pr !== undefined && !/^[1-9][0-9]*$/u.test(options.pr)) throw new BoardCollectError('--pr must be a pull request number');
-        const result = runBoardMerge({ repo_root: process.cwd(), parent: parentNumber(command.optsWithGlobals<BoardOptions>()), host,
-          pr: options.pr === undefined ? null : Number(options.pr), dry_run: options.dryRun === true });
-        process.stdout.write(mergeText(result, options.dryRun === true));
+        const pr = options.pr === undefined ? null : Number(options.pr);
+        const result = runBoardMerge({ repo_root: process.cwd(), parent: parentNumber(command.optsWithGlobals<BoardOptions>()), host, pr, dry_run: options.dryRun === true });
+        process.stdout.write(mergeText(result, pr, options.dryRun === true));
         process.exitCode = result.exit_code;
       } catch (error) {
         if (!(error instanceof BoardCollectError || error instanceof BoardSourceError)) throw error;
