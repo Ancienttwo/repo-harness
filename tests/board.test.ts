@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -13,6 +13,7 @@ import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readi
 import { collectBoard, readLocalRepositoryId, type BoardCollectInput } from '../src/effects/board/collect';
 import { runBoardMerge } from '../src/effects/board/merge';
 import { boardMergeDecisions } from '../src/core/board/merge';
+import { provenMergeOnlySyncs } from '../src/effects/board/merge-only-sync';
 import { runBoardCloseout, stopCodegraphServers } from '../src/effects/board/closeout';
 import type { RunArchctxProcess } from '../src/core/architecture/contracts';
 import { githubRemoteRepository } from '../src/core/board/source';
@@ -75,6 +76,8 @@ interface Replay {
   readonly now?: Date;
   /** The open pull requests whose readiness is ready; the default is #1491. */
   readonly ready?: readonly number[];
+  /** The git proof of a merge-only sync; the default proves none. */
+  readonly mergeOnlySyncs?: BoardCollectInput['merge_only_syncs'];
 }
 
 function issueNode(data: Json, number: number): Json {
@@ -115,6 +118,7 @@ function replayInput(options: Replay): BoardCollectInput {
     },
     // #1491 is the only PR that the recorded data shows as accepted; the readiness projection has its own suite.
     readiness: (selection) => ({ ...selection, protocol: 2, kind: 'repo-harness-pull-request-readiness', ready: (options.ready ?? [1491]).includes(selection.pr_number), blockers: [] }) as unknown as PullRequestReadinessV2,
+    merge_only_syncs: options.mergeOnlySyncs ?? (() => []),
     // archctx 0.11.2 at d0f4223f4 on the files of the open PRs. A request gets the recorded result of each of its
     // paths, in its order; exit 2 when one is ambiguous. An unrecorded path fails the test.
     archctx: {
@@ -226,7 +230,7 @@ test('High acceptance: PASS rows of the head from two distinct claims, one recor
     [[['pi', claimUrl(1), null], ['codex', claimUrl(2), null]], 'not_accepted', 'pending'],
     // A FAIL row of the head withholds the rule from both projections.
     [[gatekeeper, ['codex', claimUrl(2)], ['codex', claimUrl(3), 'same-family', 'FAIL']], 'not_accepted', 'pending'],
-    // Rows of an earlier head do not carry over to a sync head.
+    // Rows of an earlier head do not carry over to a head that git did not prove a merge-only sync of it.
     [[['pi', claimUrl(4), 'different-family', 'PASS', OLD], ['codex', claimUrl(6), 'different-family', 'PASS', OLD]], 'not_accepted', 'pending'],
   ];
   const projected = cases.map(([rows]) => head(rows));
@@ -1541,6 +1545,147 @@ test('closeout stops a CodeGraph MCP server bound to exactly the worktree and no
     // Signal 0 throws only for a process that is gone.
     expect([elsewhere.pid, otherPath.pid, bystander.pid].map(pid => { try { process.kill(pid, 0); return true; } catch { return false; } })).toEqual([true, true, true]);
   } finally { server.kill(); elsewhere.kill(); otherPath.kill(); bystander.kill(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+describe('merge-only sync carry (#2074)', () => {
+  const reviewed = 'c'.repeat(40);
+  const hook = 'src/cli/hook/runtime.ts';
+  const receipt = (harness: 'claude' | 'pi', subject_sha: string, model_relation: ModelRelation, verdict: 'PASS' | 'FAIL' = 'PASS'): ReviewPublishReceipt => ({
+    protocol: 1, kind: 'repo-harness-review-publish-receipt', round: 1, subject_sha, risk_tier: 'high', reviewer: { harness, actual_model: null }, verdict, model_relation, summary: 'Reviewed.', findings: [],
+  });
+
+  test('the rows of a reviewed head accept a later High head only when git proves a merge-only sync and no hook path changes', () => {
+    const calls: (readonly string[])[] = [];
+    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly syncFailAt?: string; readonly split?: boolean; readonly headPass?: boolean; readonly hookFile?: boolean } = {}) => replay({
+      parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
+      pulls: (data) => {
+        const { pr1499 } = data.repository;
+        // The two round-1 reviews of the reviewed head, each with its own claim (`acceptor.md` section 2.2).
+        // `split`: the second review is on the newer proven sync head B, so neither head has both reviews.
+        for (const [at, harness, relation, subject] of [['00:10', 'pi', 'different-family', reviewed], ['00:11', 'claude', 'same-family', options.split ? 'b'.repeat(40) : reviewed]] as const) {
+          const claim = comment(renderAcceptanceClaim(receipt(harness, subject, relation)), `2026-11-03T${at}:00Z`);
+          pr1499.comments.nodes.push(claim, comment(renderAcceptanceRecord(receipt(harness, subject, relation), claim.url), `2026-11-03T${at}:30Z`));
+        }
+        // Another proven sync head B of the same patch failed its sync check, after both PASS rows or between them: no PASS skips it.
+        if (options.syncFailAt !== undefined) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', 'b'.repeat(40), 'different-family', 'FAIL'), ''), `2026-11-03T${options.syncFailAt}Z`));
+        // `headPass`: the head has both reviews of its own.
+        if (options.headPass) {
+          for (const [at, harness, relation] of [['00:40', 'pi', 'different-family'], ['00:41', 'claude', 'same-family']] as const) {
+            const claim = comment(renderAcceptanceClaim(receipt(harness, pr1499.headRefOid, relation)), `2026-11-03T${at}:00Z`);
+            pr1499.comments.nodes.push(claim, comment(renderAcceptanceRecord(receipt(harness, pr1499.headRefOid, relation), claim.url), `2026-11-03T${at}:30Z`));
+          }
+        }
+        if (options.headFail) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', pr1499.headRefOid, 'different-family', 'FAIL'), ''), '2026-11-03T00:30:00Z'));
+        if (options.hookFile) pr1499.files.nodes.push({ path: hook });
+      },
+      owners: (results) => {
+        if (options.hookFile) results.push({ path: hook, matched: true, ambiguous: false, owningCapabilityId: 'capability.runtime-harness.hook-adapters' });
+      },
+      // Git proves the reviewed head and B; the older subjects of the recorded comments are not syncs of the head.
+      mergeOnlySyncs: (input, candidates) => {
+        if (input.pr === 1499) calls.push(candidates);
+        return options.proven === false ? [] : candidates.filter(sha => sha === reviewed || sha === 'b'.repeat(40));
+      },
+    }).pull_requests.find(pr => pr.number === 1499)!;
+    expect(carry()).toMatchObject({ tier: 'high', claude_review: 'recorded', acceptance: { status: 'accepted', via: 'sync', carried_from: reviewed, accepted_at: '2026-11-03T00:11:30Z', evidence_url: comment('', '2026-11-03T00:11:30Z').url } });
+    expect(calls[0]).toContain(reviewed);
+    expect(carry({ proven: false }).acceptance).toEqual({ status: 'not_accepted' });
+    for (const at of ['00:20:00', '00:10:45']) expect(carry({ syncFailAt: at }).acceptance).toEqual({ status: 'not_accepted' });
+    expect(carry({ split: true }).acceptance).toEqual({ status: 'not_accepted' });
+    // A FAIL on a proven earlier head stops only the carry: the head's own two reviews still accept it.
+    expect(carry({ syncFailAt: '00:20:00', headPass: true }).acceptance).toMatchObject({ status: 'accepted', via: 'record', accepted_at: '2026-11-03T00:41:30Z' });
+    calls.length = 0;
+    expect(carry({ headFail: true }).acceptance).toEqual({ status: 'not_accepted' });
+    expect(carry({ hookFile: true }).acceptance).toEqual({ status: 'not_accepted' });
+    // A FAIL on the head and an owner-approved hook diff leave git no candidate.
+    expect(calls).toEqual([[], []]);
+  });
+
+  test('git proves clean merges of the base; an extra commit, a conflict, a moved edit, a whitespace change, a missing object and a failed fetch give no proof', () => {
+    const root = tmpWorkspace('merge-only-sync'); roots.push(root);
+    const clone = join(root, '.clone');
+    const git = (...args: string[]) => {
+      const result = run('git', args, args[0] === '-C' ? tmpdir() : root);
+      expect(result.status).toBe(0);
+      return result.stdout.trim();
+    };
+    const write = (files: Readonly<Record<string, string | undefined>>) => { for (const [path, text] of Object.entries(files)) if (text !== undefined) writeFileSync(join(root, path), text); };
+    // run.sh has two blocks with the same context; the PR edits the first.
+    const block = (name: string, verdict: string) => `# ${name}\ncheck() {\n  printf ${verdict}\n}\n`;
+    initGitRepo(root);
+    write({ 'f.txt': '1\n2\n3\n4\n5\n', 'b.txt': 'b\n', 'run.sh': block('alice', 'deny') + 'x\ny\nz\n' + block('bob', 'deny'), 'ci.yml': 'jobs:\n  test:\n    runs-on: x\n' });
+    git('add', '.'); git('commit', '-m', 'base');
+    const initial = git('rev-parse', 'HEAD');
+    git('checkout', '-b', 'feature');
+    const reviewed = { 'f.txt': '1\nsay "two words"\n3\n4\n5\n', 'run.sh': block('alice', 'allow') + 'rm -rf ./build\ny\nz\n' + block('bob', 'deny'), 'ci.yml': 'jobs:\n  test:\n    runs-on: x\n    needs: ci\n' };
+    write(reviewed); git('commit', '-am', 'feature');
+    const subject = git('rev-parse', 'HEAD');
+    // The clone has the reviewed head but not the sync head or the new base, so its proof needs the fetch.
+    git('clone', '--quiet', root, clone);
+    const stale = git('-C', clone, 'rev-parse', 'refs/remotes/origin/main');
+    git('checkout', 'main');
+    write({ 'b.txt': 'b2\n' }); git('commit', '-am', 'main moves');
+    const base = git('rev-parse', 'HEAD');
+    git('checkout', 'feature');
+    git('merge', '--no-edit', 'main');
+    const sync = git('rev-parse', 'HEAD');
+    const proven = (head: string, sha = subject, baseSha = base) => provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: baseSha, head_sha: head }, [sha]).length === 1;
+    expect(proven(sync)).toBe(true);
+    git('update-ref', 'refs/pull/1/head', sync);
+    const fromClone = () => provenMergeOnlySyncs({ repo_root: clone, pr: 1, base_ref: 'main', base_sha: base, head_sha: sync }, [subject]);
+    git('-C', clone, 'remote', 'set-url', 'origin', join(root, 'missing'));
+    expect(fromClone()).toEqual([]);
+    git('-C', clone, 'remote', 'set-url', 'origin', root);
+    expect(fromClone()).toEqual([subject]);
+    // The fetch writes objects only: no remote-tracking ref moves and no FETCH_HEAD appears.
+    expect(git('-C', clone, 'rev-parse', 'refs/remotes/origin/main')).toBe(stale);
+    expect(existsSync(join(clone, '.git/FETCH_HEAD'))).toBe(false);
+    write({ 'f.txt': '1\nsay "two words"\n3\n4\nfive\n' }); git('commit', '-am', 'new work');
+    expect(proven(git('rev-parse', 'HEAD'))).toBe(false);
+    // Each merge of main that changes one byte of the clean merge result gives no proof.
+    const evilMerge = (files: Readonly<Record<string, string | undefined>>): boolean => {
+      git('reset', '--hard', subject);
+      git('merge', '--no-commit', 'main');
+      write(files); git('commit', '-am', 'merge with an edit');
+      return proven(git('rev-parse', 'HEAD'));
+    };
+    expect([
+      // The edit moves to the block with the same context.
+      { 'run.sh': block('alice', 'deny') + 'rm -rf ./build\ny\nz\n' + block('bob', 'allow') },
+      { 'f.txt': '1\nsay "twowords"\n3\n4\n5\n' },
+      { 'run.sh': reviewed['run.sh'].replace('rm -rf ./build', 'rm -rf . /build') },
+      { 'ci.yml': 'jobs:\n  test:\n    runs-on: x\nneeds: ci\n' },
+    ].map(evilMerge)).toEqual([false, false, false, false]);
+    // main changes the PR line too: the merge conflicts, and a resolution to the exact PR side still gives no proof.
+    git('checkout', 'main');
+    write({ 'f.txt': '1\nsay "other"\n3\n4\n5\n' }); git('commit', '-am', 'main edits the PR line');
+    const conflicting = git('rev-parse', 'HEAD');
+    git('checkout', 'feature'); git('reset', '--hard', subject);
+    expect(run('git', ['merge', 'main'], root).status).not.toBe(0);
+    write(reviewed); git('commit', '-am', 'resolve to the PR side');
+    expect(proven(git('rev-parse', 'HEAD'), subject, conflicting)).toBe(false);
+    expect(proven(sync, 'd'.repeat(40))).toBe(false);
+    // The base absorbed the reviewed change, so the no-op merge H leaves an empty PR diff: no proof.
+    git('checkout', '-b', 'absorbed', base); git('merge', '--no-edit', subject);
+    const absorbed = git('rev-parse', 'HEAD');
+    git('checkout', '-B', 'noop', subject); git('merge', '--no-ff', '--no-edit', 'absorbed');
+    expect(proven(git('rev-parse', 'HEAD'), subject, absorbed)).toBe(false);
+    // A failed ancestry check gives no proof: of one merge parent, even when the other parent is in the base; or of another candidate,
+    // whose FAIL rows the board could then not place.
+    const failing = (ancestor: string, of: string, candidates: readonly string[]): readonly string[] => {
+      const wrapper = join(root, '.git-fails');
+      writeFileSync(wrapper, `#!/bin/sh\n[ "$1 $2 $3 $4" = "merge-base --is-ancestor ${ancestor} ${of}" ] && exit 128\nexec git "$@"\n`); chmodSync(wrapper, 0o755);
+      const previous = process.env.REPO_HARNESS_GIT_BIN;
+      process.env.REPO_HARNESS_GIT_BIN = wrapper;
+      try { return provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: base, head_sha: sync }, candidates); } finally {
+        if (previous === undefined) delete process.env.REPO_HARNESS_GIT_BIN; else process.env.REPO_HARNESS_GIT_BIN = previous;
+      }
+    };
+    expect(failing(subject, base, [subject])).toEqual([]);
+    expect(failing(initial, sync, [subject, initial])).toEqual([]);
+    // Without the error, the other candidate is just not a sync (the PR commit lies between it and the head).
+    expect(provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: base, head_sha: sync }, [subject, initial])).toEqual([subject]);
+  });
 });
 
 test('watch window --review: each start or refusal is a log line and an orchestrator message; a failed run is a refusal line', async () => {

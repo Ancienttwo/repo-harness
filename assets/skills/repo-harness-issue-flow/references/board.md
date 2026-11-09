@@ -180,8 +180,9 @@ after each claim or status change.
   the plan block's merge order. A parent without a plan (two children or
   fewer) merges in blocked-by order, and the Order column of the parent
   table is only a view. After each merge, the next PR syncs with
-  main. The new head needs sync check rows by the tier rule
-  (`acceptor.md` §2.2, Sync head). A changed subject needs a new round.
+  main. A merge-only sync keeps the acceptance of the reviewed head; any
+  other new head needs sync check rows by the tier rule (`acceptor.md`
+  §2.2, Sync head). A changed subject needs a new round.
 - **Batch integration.** When two or more PRs are eligible at the same
   time, the integrator may merge them through one batch PR with one CI run.
   The integrator picks the members (at most 6) and their order. The batch

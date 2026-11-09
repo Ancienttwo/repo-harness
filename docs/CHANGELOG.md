@@ -20,6 +20,10 @@ All notable changes to this skill are documented here.
 
 - Record the 0.29.0 publication in its release checklist. (#2065)
 
+### Changed
+
+- Board acceptance carries the acceptance rows of an earlier reviewed head to a later head that is a merge-only sync of it. Git must prove two facts: the reviewed head is an ancestor of the head, and each commit that the head adds outside the reviewed head and the base is the clean automatic merge of a base commit (`git merge-tree --write-tree` of its parents exits 0 with the tree of the merge commit, one merge base). The board reads the rows of the head and of the newest proven reviewed head, and a FAIL row on any proven head or on the head stops the carry. An empty PR diff, or a git error on any candidate, gives no proof. The board then reports `via: sync` with `carried_from: <reviewed head>`, so a sync after a merge needs CI only. A conflict (even one resolved to the PR side), an edit in a merge, a new commit, a failed git step or fetch, an incomplete file list or a hook path keeps the head unaccepted until its own review. (#2074)
+
 ### Fixed
 
 - `board closeout` also closes the seat terminals that work in the PR head worktree, so a PR that only says `Refs #<issue>` closes its seats and removes its worktree in one run. Such a seat needs an issue label that the PR closes or that `parseRefs` reads after `Refs` in the PR body. (#2071)
