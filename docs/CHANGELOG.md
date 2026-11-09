@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Documentation
+
+- Record the 0.29.0 publication in its release checklist. (#2065)
+
 ## [0.29.0] - 2026-11-09
 
 This release lets the board run the issue flow: `board dispatch` starts a

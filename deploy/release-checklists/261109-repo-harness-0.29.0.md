@@ -15,7 +15,7 @@
   or hc pin; no range PR changed them.
 - Owner GO on the plan (J38, recorded on #2000): the release PR starts
   after #2059 merged and a dispatched daily is green.
-- Publish status: pending. Owner authorization on #2065 (comment
+- Publish status: published. Owner authorization on #2065 (comment
   6734527876, 2026-11-09) covers the 0.29.0 production release only: the
   advisor seat t5 runs the publish, tag and Release steps after this PR
   merges with green CI. t5 gives the owner each npm web-auth URL, and the
@@ -162,30 +162,38 @@ page. No config migration runs.
   base.
 - Test budget on the prep diff: 0 test lines, 1 added product line in
   `src` and `scripts`, 0 new test files.
-- Hosted CI and merge-commit prepublish gate: pending. No publication or
-  installed upgrade has run.
+- Merge-commit gates, from the t5 record on #2065: the full daily run
+  42584700893 at `382608b27` succeeded (all jobs). The console gate ran in
+  the npm lifecycle. Core printed `[release] OK: prepublish fast gate
+  passed`. Owner-machine upgrade: not yet run.
 
 ## Publication
 
-Publish candidate merge SHA: pending.
+Source: t5 publication record on #2065, with the owner's npm web 2FA.
 
-| Order | Name | Shasum | Integrity | File count |
-|---|---|---|---|---|
-| 1 | `repo-harness-operator-web@0.29.0` | pending | pending | pending |
-| 2 | `repo-harness@0.29.0` | pending | pending | pending |
+Publish candidate merge SHA: `382608b27e92bf5ccf5b58574b126f987572a584`
+(#2067).
 
-Record local tarball values and registry readback for each field before
-marking publication complete. Tag and GitHub Release: pending.
+| Order | Name | Shasum | Integrity | File count | Local = registry |
+|---|---|---|---|---|---|
+| 1 | `repo-harness-operator-web@0.29.0` | `862ed54067ebfd0564cf8797f58a250243ed3517` | `sha512-MhWlN/ULNxLPlnzheG3UJ3M0AKgy7ZGln6ewnkte+oZ0jQ+wyDoMCvRz75Qkwvq7cIEBmsC6Fl42hmadnwwLEg==` | 129 | yes |
+| 2 | `repo-harness@0.29.0` | `486c2aff56a6697adc9e16a5e681923166067395` | `sha512-CtzIoqxV/XD2ID0TDzVqpk30CEgTV8hsLEHdwK/n3DUIbY3EcCM/tUotkjhph+25hmx4M/xEJmC9I/D/bA5OWw==` | 716 | yes |
+
+- dist-tag `latest` = 0.29.0.
+- Tag `v0.29.0` (annotated, `d2c28aec9`) points to `382608b27`.
+- GitHub Release: https://github.com/Ancienttwo/repo-harness/releases/tag/v0.29.0
+  (notes = CHANGELOG `[0.29.0]`).
 
 ## Post-publish checks
 
-- In a disposable HOME and BUN_INSTALL, run `bun x repo-harness@0.29.0
-  install --plugins operator`, start `repo-harness operator serve` and
-  verify that `/healthz` reports 0.29.0, protocol 3, and `GET /` returns
-  200. Result: pending.
-- Run `bash scripts/check-release-published.sh 0.29.0`. Result: pending.
-- On the owner machine, run the upgrade command and record the installed
-  version and the desktop app protocol. Result: pending.
+- Disposable HOME and BUN_INSTALL: `bun x repo-harness@0.29.0 install
+  --plugins operator` exit 0; `repo-harness --version` 0.29.0; `operator
+  serve` `/healthz` = `{"version":"0.29.0","protocol":3}`; `GET /` 200.
+- `bash scripts/check-release-published.sh 0.29.0`: `[release-published]
+  OK: registry, dist-tag, tarball, tag, and local version files agree.`
+- Owner machine: run the upgrade command and record the installed version
+  and the desktop app protocol. Result: pending. The t5 record lists it as
+  open.
 
 ## Rollback
 
