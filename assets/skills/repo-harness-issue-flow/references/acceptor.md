@@ -234,7 +234,7 @@ from `src/core/review/review-publish.ts`:
 ```text
 protocol: 1
 kind: repo-harness-review-publish-receipt
-round: <1..3>
+round: <1..5>
 subject_sha: <the PR head>
 risk_tier: low | medium | high
 reviewer: { harness: <review runtime id>, actual_model: <model> | null }
