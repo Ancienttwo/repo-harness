@@ -190,14 +190,11 @@ The review brief states that limit. On every seat, Codex and Pi included,
 the one-write limit is a brief rule only. On a Codex seat the sandbox
 limits files only.
 
-`review publish` accepts rounds 1 to 3 only. For a round above 3, the
-session that runs the round posts the `acceptance record` by hand, in the
-same shape (`templates.md`, acceptance record): one row with the fields
-`Round`, `Role`, `Subject` (the full head SHA), `Verdict` (`PASS` or
-`FAIL` with the finding counts), then the `Model relation` line and the
-findings. Post line findings as review threads (`board.md` rule 5). Do not
-write the verdict in free prose: the board cannot read it, and the PR does
-not count as accepted.
+`review publish` accepts rounds 1 to 5. Round 5 is the hard stop (§2.2),
+so every review round publishes its claim and record with this command.
+Do not post a claim or a record by hand, and do not write the verdict in
+free prose: the board counts a High row only when it cites a published
+claim, and the PR does not count as accepted.
 
 Act on the exit code:
 

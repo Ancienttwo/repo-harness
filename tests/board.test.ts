@@ -171,18 +171,18 @@ test('High acceptance: PASS rows of the head from two distinct claims, one recor
   ]);
   // A Claude writer claim no longer skips the second review: A10 reads the open, non-draft #1491.
   expect(evaluateBoardAttention(board).findings.filter(finding => finding.rule === 'A10').map(finding => finding.pull_requests)).toEqual([[1491]]);
-  // A row: the reviewer, the claim line it cites, its relation (null drops the line), verdict and subject (null is the head).
-  type Row = readonly [harness: 'claude' | 'codex' | 'pi', claimLine: string, relation?: ModelRelation | null, verdict?: 'PASS' | 'FAIL', sha?: string];
+  // A row: the reviewer, the claim line it cites, its relation (null drops the line), verdict, subject (default the head) and round.
+  type Row = readonly [harness: 'claude' | 'codex' | 'pi', claimLine: string, relation?: ModelRelation | null, verdict?: 'PASS' | 'FAIL', sha?: string, round?: number];
   const OLD = 'e'.repeat(40);
   const head = (rows: readonly Row[], tier = 'tier:high') => replay({
     parent: (data) => { parent(data); const labels = issueNode(data, 1475).labels.nodes; labels[labels.length - 1] = { name: tier }; },
     pulls: (data) => {
       const { pr1491 } = data.repository;
-      // Claims 1-3 are round 1 of the head; claims 4 and 6 are round 1 of an earlier head; claim 5 is round 2 of the head.
-      const claims: readonly (readonly [number, string, number])[] = [[1, pr1491.headRefOid, 1], [2, pr1491.headRefOid, 1], [3, pr1491.headRefOid, 1], [4, OLD, 1], [5, pr1491.headRefOid, 2], [6, OLD, 1]];
+      // Claims 1-3 are round 1 of the head; claims 4 and 6 are round 1 of an earlier head; claim 5 is round 2 and claims 7-8 round 4 of the head.
+      const claims: readonly (readonly [number, string, number])[] = [[1, pr1491.headRefOid, 1], [2, pr1491.headRefOid, 1], [3, pr1491.headRefOid, 1], [4, OLD, 1], [5, pr1491.headRefOid, 2], [6, OLD, 1], [7, pr1491.headRefOid, 4], [8, pr1491.headRefOid, 4]];
       pr1491.comments.nodes.push(...claims.map(([n, sha, round]) => comment(renderAcceptanceClaim(receipt('codex', sha, 'different-family', 'PASS', round)), claimAt(n))));
-      pr1491.comments.nodes.push(...rows.map(([harness, claimLine, relation = 'different-family', verdict = 'PASS', sha = pr1491.headRefOid], at) => {
-        const body = renderAcceptanceRecord(receipt(harness, sha, relation ?? 'unknown', verdict), claimLine);
+      pr1491.comments.nodes.push(...rows.map(([harness, claimLine, relation = 'different-family', verdict = 'PASS', sha = pr1491.headRefOid, round = 1], at) => {
+        const body = renderAcceptanceRecord(receipt(harness, sha, relation ?? 'unknown', verdict, round), claimLine);
         return comment(relation === null ? body.replace(/^Model relation: .*\n/mu, '') : body, `2026-11-02T22:0${at}:00Z`);
       }));
     },
@@ -191,6 +191,8 @@ test('High acceptance: PASS rows of the head from two distinct claims, one recor
   const cases: readonly (readonly [readonly Row[], string, string])[] = [
     [[gatekeeper, ['claude', claimUrl(2), 'same-family']], 'accepted', 'recorded'],
     [[gatekeeper, ['codex', claimUrl(2)]], 'accepted', 'not_required'],
+    // A High head that converges in round 4 publishes two claimed rows of that round.
+    [[['pi', claimUrl(7), 'different-family', 'PASS', undefined, 4], ['claude', claimUrl(8), 'same-family', 'PASS', undefined, 4]], 'accepted', 'recorded'],
     // The Claude writer's gatekeeper alone waits for the Claude reviewer.
     [[gatekeeper], 'not_accepted', 'pending'],
     // One claim cited by its pull and its issues URL is one review.

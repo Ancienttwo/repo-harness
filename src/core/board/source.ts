@@ -370,7 +370,7 @@ export interface AcceptanceRowV1 {
 
 // The subject cell holds the SHA bare or in paired backticks (the receipt tool and the round-4 records differ).
 const RECORD_TABLE_ROW = /^\|\s*([1-9][0-9]*)\b[^|]*\|([^|]*)\|\s*(`?)([0-9a-f]{40})\3\s*\|\s*(PASS|FAIL)\b/u;
-// Rounds above 3 have no receipt; the coordinator writes one `Subject: <sha>. Round <n> (...): PASS|FAIL` line.
+// Older records of rounds above 3 were posted by hand as one `Subject: <sha>. Round <n> (...): PASS|FAIL` line; they name no claim.
 const RECORD_SUBJECT_LINE = /^Subject: ([0-9a-f]{40})\. Round ([1-9][0-9]*) .*?: (PASS|FAIL)\b/u;
 
 const COMMENT_URL = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/(?:pull|issues)\/[1-9][0-9]*#issuecomment-([1-9][0-9]*)$/u;
