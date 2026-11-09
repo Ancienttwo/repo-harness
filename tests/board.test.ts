@@ -129,17 +129,54 @@ function rules(board: BoardV1): BoardRuleId[] {
 }
 
 test.each([
-  ['inline code spans', ['`Refs #19`', '``Refs #19 `example` ``', '`Refs\n#19`', 'Refs `example` #19']],
-  ['fenced code blocks', ['```text\nRefs #19\n```', '~~~\nRefs #19\n~~~', '````\n```\nRefs #19\n````', '```\n~~~\nRefs #19\n```', '```\r\nRefs #19']],
-  ['quoted lines', ['> Refs #19', '  > Refs #19', '>> Refs #19']],
-] as const)('parseRefs ignores %s', (_kind, bodies) => {
-  for (const body of bodies) {
-    expect(parseRefs(body)).toEqual([]);
-  }
-});
-
-test.each(['Refs #19', 'Refs: #19', '\\`Refs #19\\`', '`Refs #19'])('parseRefs keeps plain text: %s', (body) => {
-  expect(parseRefs(`${body}\nRefs #7\nref: #19`)).toEqual([7, 19]);
+  ['inline code', '`Refs #19`', []],
+  ['multiple backticks', '``Refs #19 `example` ``', []],
+  ['multiline code span', '`Refs\n#19`', []],
+  ['code cannot join a ref', 'Refs `example` #19', []],
+  ['backtick fence', '```text\nRefs #19\n```', []],
+  ['tilde fence', '~~~\nRefs #19\n~~~', []],
+  ['longer fence', '````\n```\nRefs #19\n````', []],
+  ['mismatched fence marker', '```\n~~~\nRefs #19\n```', []],
+  ['unclosed CRLF backtick fence', '```\r\nRefs #19', []],
+  ['unclosed tilde fence', '~~~\nRefs #19', []],
+  ['indented fence', '   ```\n   Refs #19\n   ```\n\nRefs #7', [7]],
+  ['quote', '> Refs #19', []],
+  ['indented quote', '  > Refs #19', []],
+  ['nested quote', '>> Refs #19', []],
+  ['quoted fence', '> ```\n> Refs #19\n> ```\n\nRefs #7', [7]],
+  ['nested quoted fence', '> > ~~~\n> > Refs #19\n> > ~~~\n\nRefs #7', [7]],
+  ['plain ref', 'Refs #19', [19]],
+  ['colon ref', 'Refs: #19', [19]],
+  ['escaped backticks', '\\`Refs #19\\`', [19]],
+  ['unmatched backtick', '`Refs #19', [19]],
+  ['sorted unique refs', 'Refs #19\nRefs #7\nref: #19', [7, 19]],
+  ['R1 separate paragraphs', '`intro\n\nRefs #19\n\n`', [19]],
+  ['R1 heading boundary', '`intro\n# Refs #21\n`', [21]],
+  ['R1 list boundary', '`intro\n- Refs #22\n`', [22]],
+  ['R1 thematic break', '`intro\n\n---\nRefs #23\n\n`', [23]],
+  ['R1 indented code boundary', '`intro\n\n    code\n\nRefs #24\n\n`', [24]],
+  ['R1 multiple-backtick boundary', '``intro\n\nRefs #25\n\n``', [25]],
+  ['R2 closed list backtick fence', '- ```\n  Refs #19\n  ```\n\nRefs #7', [7]],
+  ['R2 closed list tilde fence', '- ~~~\n  Refs #19\n  ~~~\n\nRefs #7', [7]],
+  ['R2 outdented backtick fence (literal review case)', '- ```\n  Refs #19\n ```\n\nRefs #7', []],
+  ['R2 outdented tilde fence (literal review case)', '- ~~~\n  Refs #19\n ~~~\n\nRefs #7', []],
+  ['R2 unclosed list backtick fence', '- ```\n  Refs #19\n\nRefs #7', [7]],
+  ['R2 unclosed list tilde fence', '- ~~~\n  Refs #19\n\nRefs #7', [7]],
+  ['F1 later paragraph code', 'The ` key breaks X.\n\nRefs #19\n\nRun `bun test`.', [19]],
+  ['F1 later list item code', '- the ` key\n- Refs #19\n- run `x`', [19]],
+  ['F1 later heading code', 'Use ` here\n## Links\nRefs #19\nsee `y`', [19]],
+  ['bot unmatched paragraph opener', '`unfinished\n\nRefs #19\n\nUse `code` here.', [19]],
+  ['bot closed list example', '- ```text\n  example\n  ```\n\nRefs #19', [19]],
+  ['F2 indented code', '    Refs #19', []],
+  ['F2 indented code with fence', '    ```\n    Refs #19', []],
+  ['F2 HTML comment', '<!-- Refs #19 -->', []],
+  ['F2 list quote', '- > Refs #19', []],
+  ['F2 lazy quote continuation', '> example\nRefs #19', []],
+  ['block HTML', '<div>\nRefs #19\n</div>\n\nRefs #7', [7]],
+  ['inline HTML', '<span title="Refs #19"></span> Refs #7', [7]],
+  ['separate text nodes cannot join a ref', 'Refs\n\n#19', []],
+] as const)('parseRefs: %s', (_kind, body, expected) => {
+  expect(parseRefs(body)).toEqual([...expected]);
 });
 
 test('board selection and projection use the same refs outside code and quotes', () => {

@@ -6,6 +6,9 @@
  * blocked-by edge or pull request would change the board without a trace.
  */
 
+import type { Nodes } from 'mdast';
+import { fromMarkdown } from 'mdast-util-from-markdown';
+
 export class BoardSourceError extends Error {
   constructor(message: string) {
     super(`board source invalid: ${message}`);
@@ -400,44 +403,19 @@ export function parseAcceptanceRecord(comment: BoardCommentV1): readonly Accepta
 
 const REFS = /(?<![A-Za-z0-9_])refs?\s*:?\s*#([1-9][0-9]*)/giu;
 
-/** Keep separators where examples were removed so they cannot join two parts of a ref. */
-function refsText(body: string): string {
-  let fence: { marker: string; length: number } | null = null;
-  const text = body.replace(/\r\n?/gu, '\n').split('\n').map(line => {
-    if (fence !== null) {
-      const close = /^ {0,3}(`{3,}|~{3,})[ \t]*$/u.exec(line);
-      if (close && close[1]![0] === fence.marker && close[1]!.length >= fence.length) fence = null;
-      return '\0';
-    }
-    if (/^[ \t]*>/u.test(line)) return '\0';
-    const open = /^ {0,3}(`{3,}|~{3,})(.*)$/u.exec(line);
-    if (open && (open[1]![0] === '~' || !open[2]!.includes('`'))) {
-      fence = { marker: open[1]![0]!, length: open[1]!.length };
-      return '\0';
-    }
-    return line;
-  }).join('\n');
-  // Escapes apply outside code spans; a span closes with an equal backtick run.
-  const tokens = /\\[^\n]|`+/gu;
-  let result = '';
-  let start = 0;
-  for (let token = tokens.exec(text); token !== null; token = tokens.exec(text)) {
-    if (!token[0].startsWith('`')) continue;
-    const runs = /`+|\0/gu;
-    runs.lastIndex = tokens.lastIndex;
-    let close = runs.exec(text);
-    while (close !== null && close[0] !== '\0' && close[0].length !== token[0].length) close = runs.exec(text);
-    if (close === null || close[0] === '\0') continue;
-    result += `${text.slice(start, token.index)}\0`;
-    start = runs.lastIndex;
-    tokens.lastIndex = start;
-  }
-  return result + text.slice(start);
-}
-
-/** Issue numbers after plain-text `Refs #n` in a pull request body. Closing keywords are `parseClosingReferences`. */
+/** Issue numbers in Markdown text outside code, HTML and quotes. Closing keywords are `parseClosingReferences`. */
 export function parseRefs(body: string): number[] {
-  return [...new Set([...refsText(body).matchAll(REFS)].map(match => Number(match[1])))].sort((left, right) => left - right);
+  const refs = new Set<number>();
+  function visit(node: Nodes): void {
+    if (node.type === 'code' || node.type === 'inlineCode' || node.type === 'html' || node.type === 'blockquote') return;
+    if (node.type === 'text') {
+      for (const match of node.value.matchAll(REFS)) refs.add(Number(match[1]));
+    } else if ('children' in node) {
+      node.children.forEach(visit);
+    }
+  }
+  visit(fromMarkdown(body));
+  return [...refs].sort((left, right) => left - right);
 }
 
 /** `owner/name` of a GitHub remote URL (https, scp-like ssh or ssh://), lowercased; null for any other URL. */
