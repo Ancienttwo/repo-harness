@@ -77,8 +77,9 @@ The table rules govern how the row combines with the review.
 The worker fixes each finding by the class rule (`worker.md` §7).
 
 Return `PASS` or `FAIL`. A `FAIL` has at least one P0, P1 or P2 finding.
-Rule 4 decides whether a `FAIL` after round 3 merges, takes another round
-or becomes an owner gate.
+Rule 4 decides whether a P2-only `FAIL` after round 3 merges. It also
+decides whether another `FAIL` after round 3 takes another round or becomes
+an owner gate.
 
 ## 3. Findings
 
