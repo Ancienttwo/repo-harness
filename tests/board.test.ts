@@ -162,6 +162,9 @@ test('claude_review: only a branch-bound writer claim that names Claude, with ev
   expect(board.pull_requests.map(pr => [pr.number, pr.tier, pr.claude_review])).toEqual([[1491, 'high', 'not_required'], [1494, null, 'pending'], [1499, 'high', 'recorded']]);
   // #1499 has a Claude PASS and no gatekeeper PASS, so it is not accepted until a non-Claude PASS exists too.
   expect(board.pull_requests.find(pr => pr.number === 1499)!.acceptance.status).toBe('not_accepted');
+  // A PASS row that names no harness (a subject line, an unknown role) does not stand for the gatekeeper.
+  const unnamed = replay({ parent, pulls: (data) => { const { pr1499 } = data.repository; pr1499.comments.nodes.push(comment(record(pr1499.headRefOid, 'claude (opus)'), '2026-11-02T22:00:00Z'), comment(record(pr1499.headRefOid, 'acceptor'), '2026-11-02T22:01:00Z')); } });
+  expect(unnamed.pull_requests.find(pr => pr.number === 1499)!.acceptance.status).toBe('not_accepted');
   const both = replay({ parent, pulls: (data) => { const { pr1499 } = data.repository; pr1499.comments.nodes.push(comment(record(pr1499.headRefOid, 'claude (opus)'), '2026-11-02T22:00:00Z'), comment(record(pr1499.headRefOid, 'pi (gpt)'), '2026-11-02T22:01:00Z')); } });
   expect(both.pull_requests.find(pr => pr.number === 1499)!.acceptance).toMatchObject({ status: 'accepted', via: 'record' });
   // A10 reads the open, non-draft #1491: a Claude writer claim gives no finding; a Codex claim with no Claude row does.

@@ -313,13 +313,13 @@ function acceptance(read: BoardPullRequestReadV1, check: BoardRequiredCheckV1, c
     if (head.some(row => row.verdict === 'FAIL')) failed = true;
     else if (head.length > 0) {
       passes.push(record);
-      if (head.some(row => row.harness !== 'claude')) otherPass = true;
+      if (head.some(row => row.harness !== null && row.harness !== 'claude')) otherPass = true;
     }
   }
   if (!failed && passes.length > 0) {
     // An older comment outside the read can hold a FAIL on the head.
     if (read.comments.truncated) return { status: 'unknown', reason: 'comments_truncated', evidence_url: null };
-    // A High head from a non-Claude writer needs both reviews: a PASS row of a non-Claude reviewer and a Claude verdict. Either alone does not accept it.
+    // A High head from a non-Claude writer needs both reviews: a PASS row of a named non-Claude harness and a Claude verdict. Either alone does not accept it.
     if (claude === 'not_required' || (claude === 'recorded' && otherPass)) {
       const newest = passes.reduce((latest, record) => (record.created_at >= latest.created_at ? record : latest));
       return { status: 'accepted', via: 'record', accepted_at: newest.created_at, evidence_url: newest.url };

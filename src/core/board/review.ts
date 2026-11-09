@@ -25,7 +25,9 @@ export interface ReviewSeatStartV1 {
 }
 
 export type ReviewDecisionV1 =
-  | { readonly pr: number; readonly action: 'start'; readonly head_ref: string; readonly head_sha: string; readonly tier: 'medium' | 'high'; readonly seats: readonly ReviewSeatStartV1[] }
+  | { readonly pr: number; readonly action: 'start'; readonly head_ref: string; readonly head_sha: string; readonly tier: 'medium' | 'high'; readonly seats: readonly ReviewSeatStartV1[];
+      /** The board accepts the head only with a named non-Claude PASS and a Claude verdict, so its gatekeeper must not run Claude. */
+      readonly needs_non_claude_gatekeeper: boolean }
   | { readonly pr: number; readonly action: 'skip'; readonly reason: ReviewSkipReason; readonly detail: string };
 
 export interface ReviewInputV1 {
@@ -79,6 +81,6 @@ export function planReview(input: ReviewInputV1): readonly ReviewDecisionV1[] {
     const seats = required.filter(seat => !liveMarkers(page, seat).some(marker => field(marker, 'Subject') === pr.head_sha))
       .map((seat): ReviewSeatStartV1 => ({ seat, delta_from: deltaBase(page, pr.head_sha, seat) }));
     if (seats.length === 0) return skip('started', `a start marker of every required seat covers ${pr.head_sha}`);
-    return { pr: pr.number, action: 'start', head_ref: pr.head_ref, head_sha: pr.head_sha, tier, seats };
+    return { pr: pr.number, action: 'start', head_ref: pr.head_ref, head_sha: pr.head_sha, tier, seats, needs_non_claude_gatekeeper: pr.claude_review !== 'not_required' };
   });
 }

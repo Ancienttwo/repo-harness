@@ -80,7 +80,7 @@ function ports(overrides: Partial<ReviewPorts> = {}): ReviewPorts & { comments: 
     worktree: () => ({ path: '/tmp/w' }),
     comment: (_pr, body) => { comments.push(body); return `https://example.test/c${comments.length}`; },
     openTab: args => { tabs.push(args); },
-    launch: async () => ({ argv: ['agent'], tab: 'review', runtime: 'claude' }),
+    launch: async seat => ({ argv: ['agent'], tab: 'review', runtime: seat === 'reviewer' ? 'claude' : 'codex' }),
     ...overrides,
   };
 }
@@ -89,7 +89,7 @@ const context = { repositoryId: '1', parent: 100, space: 's', dry_run: false };
 
 test('each required seat opens its tab with its launch argv in the writer worktree, after its own marker', async () => {
   const seats: string[] = [];
-  const p = ports({ launch: async seat => { seats.push(seat); return { argv: [seat], tab: seat, runtime: 'claude' }; } });
+  const p = ports({ launch: async seat => { seats.push(seat); return { argv: [seat], tab: seat, runtime: seat === 'reviewer' ? 'claude' : 'codex' }; } });
   const result = await executeReview(plan([pr(1, { claude_review: 'pending' })]), context, p);
   expect(result.started).toMatchObject([{ pr: 1, seat: 'gatekeeper' }, { pr: 1, seat: 'reviewer' }]);
   expect(seats).toEqual(['gatekeeper', 'reviewer']);
@@ -117,11 +117,18 @@ test('a launch that sent nothing releases the marker; an ambiguous one keeps it'
 });
 
 test('a reviewer seat that does not launch Claude posts no marker and opens no tab', async () => {
-  const p = ports({ launch: async seat => ({ argv: [seat], tab: seat, runtime: seat === 'reviewer' ? 'codex' : 'claude' }) });
+  const p = ports({ launch: async seat => ({ argv: [seat], tab: seat, runtime: 'codex' }) });
   const result = await executeReview(plan([pr(1, { claude_review: 'pending' })]), context, p);
   expect(result.started).toMatchObject([{ seat: 'gatekeeper' }]);
   expect(result.refused).toMatchObject([{ pr: 1, reason: expect.stringContaining('reviewer_not_claude') }]);
   expect([p.comments.length, p.tabs.length]).toEqual([1, 1]);
+});
+
+test('a Claude gatekeeper for a head that needs both reviews posts no marker and starts no seat', async () => {
+  const p = ports({ launch: async seat => ({ argv: [seat], tab: seat, runtime: 'claude' }) });
+  const result = await executeReview(plan([pr(1, { claude_review: 'pending' })]), context, p);
+  expect(result).toMatchObject({ started: [], refused: [{ pr: 1, reason: expect.stringContaining('gatekeeper_is_claude') }] });
+  expect([p.comments.length, p.tabs.length]).toEqual([0, 0]);
 });
 
 test('a reviewer that sent nothing releases its own marker and leaves the started gatekeeper alone', async () => {
