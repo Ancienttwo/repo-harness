@@ -403,13 +403,25 @@ export function parseAcceptanceRecord(comment: BoardCommentV1): readonly Accepta
 
 const REFS = /(?<![A-Za-z0-9_])refs?\s*:?\s*#([1-9][0-9]*)/giu;
 
-/** Issue numbers in Markdown text outside code, HTML and quotes. Closing keywords are `parseClosingReferences`. */
+/** Text within one Markdown block; excluded inline content separates its neighbours. */
+function inlineRefsText(node: Nodes): string {
+  if (node.type === 'text') return node.value;
+  if (node.type === 'break') return '\n';
+  if (node.type === 'html') {
+    const value = node.value.trim();
+    return value.startsWith('<!--') && value.indexOf('-->') === value.length - 3 ? ' ' : node.value;
+  }
+  if (node.type === 'inlineCode') return ' ';
+  return 'children' in node ? node.children.map(inlineRefsText).join('') : ' ';
+}
+
+/** Issue numbers outside code blocks, HTML comments and quotes. Closing keywords are `parseClosingReferences`. */
 export function parseRefs(body: string): number[] {
   const refs = new Set<number>();
   function visit(node: Nodes): void {
-    if (node.type === 'code' || node.type === 'inlineCode' || node.type === 'html' || node.type === 'blockquote') return;
-    if (node.type === 'text') {
-      for (const match of node.value.matchAll(REFS)) refs.add(Number(match[1]));
+    if (node.type === 'code' || node.type === 'blockquote') return;
+    if (node.type === 'paragraph' || node.type === 'heading' || node.type === 'tableCell' || node.type === 'html') {
+      for (const match of inlineRefsText(node).matchAll(REFS)) refs.add(Number(match[1]));
     } else if ('children' in node) {
       node.children.forEach(visit);
     }
