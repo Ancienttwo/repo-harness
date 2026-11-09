@@ -117,12 +117,8 @@ describe('Bash write tripwire host route', () => {
       expect(invokeBash('echo value > ../_ops/a.env', join(cwd, 'src')).status).toBe(2);
       expect(existsSync(join(cwd, '_ops'))).toBe(false);
       writePolicy(cwd, ['_ops/dispatch']);
-      expect(invokeBash('echo value > _ops/dispatch/plan.md').status).toBe(0);
-      expect(invokeBash('echo value > _ops/env/a.env').status).toBe(2);
-      writePolicy(cwd, ['_ops']);
-      const invalid = invokeBash('echo value > _ops/dispatch/plan.md');
-      expect(invalid.status).toBe(2);
-      expect(invalid.stderr).toContain('agent_writable_private_dirs: "_ops"');
+      // The allowlist is for structured tools; Bash targets are inferred from text.
+      expect(invokeBash('echo value > _ops/dispatch/plan.md').status).toBe(2);
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 
@@ -212,6 +208,7 @@ describe('mutation boundaries', () => {
   });
   test('policy-listed _ops subdirectories accept edits; the rest of _ops and invalid entries stay denied', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-ops-writable-')));
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-ops-outside-')));
     try {
       initRepo(cwd);
       writePolicy(cwd, ['_ops/dispatch']);
@@ -227,7 +224,25 @@ describe('mutation boundaries', () => {
       }
       writePolicy(cwd, '_ops/dispatch');
       expect(edit(cwd, '_ops/dispatch/plan.md').stderr).toContain('agent_writable_private_dirs: not an array');
-    } finally { rmSync(cwd, { recursive: true, force: true }); }
+      writePolicy(cwd, ['_ops/dispatch']);
+      mkdirSync(join(cwd, '_ops/dispatch'), { recursive: true });
+      writeFileSync(join(cwd, '_ops/dispatch/real.md'), 'x');
+      symlinkSync(join(cwd, '_ops/dispatch/real.md'), join(cwd, '_ops/dispatch/inside.md'));
+      symlinkSync(join(outside, 'file'), join(cwd, '_ops/dispatch/outside.md'));
+      mkdirSync(join(cwd, '_ops/env'), { recursive: true });
+      for (const path of ['_ops/dispatch/inside.md', '_ops/dispatch/outside.md', '_ops/dispatch/x/../plan.md', '_ops/dispatch/./plan.md', '_ops/dispatch/plans/*']) {
+        const result = edit(cwd, path);
+        expect({ path, exitCode: result.exitCode }).toEqual({ path, exitCode: 2 });
+      }
+      symlinkSync(join(cwd, '_ops/env/new.env'), join(cwd, '_ops/dispatch/dangling.md'));
+      expect(edit(cwd, '_ops/dispatch/dangling.md').stderr).toContain('resolves through the symlink _ops/dispatch/dangling.md');
+      // A root alias and, on a case-insensitive volume, a case variant name the same file but not the listed spelling.
+      symlinkSync(cwd, join(outside, 'alias'));
+      const spellings = [join(outside, 'alias/_ops/dispatch/plan.md')];
+      if (existsSync(join(cwd, 'readme.md'))) spellings.push('_ops/DISPATCH/plan.md', '_OPS/dispatch/plan.md');
+      for (const path of spellings) expect({ path, exitCode: edit(cwd, path).exitCode }).toEqual({ path, exitCode: 2 });
+      expect(edit(cwd, join(cwd, '_ops/dispatch/new/plan.md')).exitCode).toBe(0);
+    } finally { rmSync(cwd, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
   });
   test('a denial writes one stderr reason with its fix and one failure record with the payload run id', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-denial-')));
