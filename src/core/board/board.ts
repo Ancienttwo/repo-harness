@@ -336,16 +336,20 @@ function writerIsClaude(issue: BoardSubIssueReadV1 | undefined, headRef: string)
   return newest !== null && field(newest.body, 'Runtime') === 'claude';
 }
 
-/** The tier of a pull request and its Claude review state. Every unknown input reads as the strict case. */
-function reviewNeeds(read: BoardPullRequestReadV1, closes: readonly number[], refs: readonly number[], parent: BoardParentReadV1, tiers: ReadonlyMap<number, BoardTier | null>): Pick<BoardPullRequestV1, 'tier' | 'claude_review'> {
+/** The one effective tier of a pull request, for the Low acceptance path and the review planner alike: null unless every linked issue (the parent excluded) is on the board with a tier label. */
+function effectiveTier(closes: readonly number[], refs: readonly number[], parent: BoardParentReadV1, tiers: ReadonlyMap<number, BoardTier | null>): { readonly linked: readonly number[]; readonly tier: BoardTier | null } {
   const linked = [...new Set([...closes, ...refs])].filter(number => number !== parent.parent.number);
   const known = linked.map(number => tiers.get(number) ?? null);
-  const tier: BoardTier | null = linked.length === 0 || known.includes(null) ? null : known.includes('high') ? 'high' : known.includes('medium') ? 'medium' : 'low';
+  return { linked, tier: linked.length === 0 || known.includes(null) ? null : known.includes('high') ? 'high' : known.includes('medium') ? 'medium' : 'low' };
+}
+
+/** The Claude review state of a pull request. Every unknown input reads as the strict case. */
+function claudeReview(read: BoardPullRequestReadV1, linked: readonly number[], tier: BoardTier | null, parent: BoardParentReadV1): BoardClaudeReviewV1 {
   const issues = new Map(parent.sub_issues.map(issue => [issue.number, issue]));
   const needed = read.state === 'open' && (tier === null || tier === 'high') && !(linked.length > 0 && linked.every(number => writerIsClaude(issues.get(number), read.head_ref)));
   const recorded = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER)
     .some(record => parseAcceptanceRecord(record)?.some(row => row.harness === 'claude' && row.subject_sha === read.head_sha) === true);
-  return { tier, claude_review: !needed ? 'not_required' : recorded ? 'recorded' : 'pending' };
+  return !needed ? 'not_required' : recorded ? 'recorded' : 'pending';
 }
 
 function bodyLinks(repository: string, body: string): { readonly closes: number[]; readonly refs: number[] } {
@@ -371,6 +375,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
   const pullRequests = linkedPullRequests(input.parent, input.pull_requests).map((read): BoardPullRequestV1 => {
     const { closes, refs } = bodyLinks(repository, read.body);
     const check = requiredCheck(read);
+    const { linked, tier } = effectiveTier(closes, refs, input.parent, tiers);
     const readiness = read.state === 'open' ? input.readiness.find(entry => entry.pr_number === read.number) : undefined;
     if (read.state === 'open' && readiness === undefined) throw new Error(`board input has no merge readiness for open PR #${read.number}`);
     return Object.freeze({
@@ -388,10 +393,11 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
       refs: Object.freeze(refs),
       files: read.files,
       required_check: check,
-      // A closed issue outside this board has no observed tier, so it withholds the Low path.
-      acceptance: acceptance(read, check, closes.map(number => tiers.get(number) ?? null)),
+      // An issue outside this board has no observed tier, so it withholds the Low path; so does any non-Low linked issue.
+      acceptance: acceptance(read, check, [tier]),
       merge_readiness: readiness ?? null,
-      ...reviewNeeds(read, closes, refs, input.parent, tiers),
+      tier,
+      claude_review: claudeReview(read, linked, tier, input.parent),
     });
   }).sort((left, right) => left.number - right.number);
   if (input.path_owners.status === 'observed') {

@@ -19,7 +19,7 @@ const pr = (number: number, extra: Partial<BoardPullRequestV1> = {}): BoardPullR
 const board = (prs: BoardPullRequestV1[]): BoardV1 => ({ pull_requests: prs }) as unknown as BoardV1;
 const comment = (body: string, url = 'https://example.test/c'): BoardCommentV1 => ({ url, created_at: '2026-11-09T10:00:00Z', author_association: 'OWNER', body });
 const marker = (head: string, url = 'https://example.test/m1') => comment(`repo-harness review start\nSubject: ${head}`, url);
-const record = (head: string) => comment(`repo-harness acceptance record\n\n| Round | Role | Subject | Verdict |\n|---|---|---|---|\n| 1 | pi | \`${head}\` | FAIL: 1 P1 |`);
+const record = (head: string, role = 'pi') => comment(`repo-harness acceptance record\n\n| Round | Role | Subject | Verdict |\n|---|---|---|---|\n| 1 | ${role} | \`${head}\` | FAIL: 1 P1 |`);
 const page = (...comments: BoardCommentV1[]): BoardCommentPageV1 => ({ truncated: false, comments });
 
 function plan(prs: BoardPullRequestV1[], comments: BoardCommentPageV1 = page()): readonly ReviewDecisionV1[] {
@@ -56,6 +56,8 @@ test('the delta base is an earlier head that has an acceptance record; otherwise
   const base = (comments: BoardCommentPageV1) => (plan([pr(1)], comments)[0] as Extract<ReviewDecisionV1, { action: 'start' }>).delta_from;
   expect(base(page(marker(OLD)))).toBeNull();
   expect(base(page(marker(OLD), record(OLD)))).toBe(OLD);
+  // A Claude reviewer's row does not show that the gatekeeper finished.
+  expect(base(page(marker(OLD), record(OLD, 'claude (opus)')))).toBeNull();
 });
 
 function ports(overrides: Partial<ReviewPorts> = {}): ReviewPorts & { comments: string[]; tabs: Record<string, unknown>[] } {

@@ -40,11 +40,12 @@ function liveMarkers(page: BoardCommentPageV1): BoardCommentV1[] {
 }
 
 /**
- * The newest earlier head that a live marker started and that has an acceptance record row. A start that never produced a
- * record (a seat that ended, or one that was never sent) gives no base, so the review then covers the whole diff.
+ * The newest earlier head that a live marker started and that has an acceptance row from a non-Claude reviewer. The runner
+ * starts the gatekeeper, and the Claude reviewer's row is not evidence that the gatekeeper finished. A start without such a
+ * row gives no base, so the review then covers the whole diff.
  */
 function deltaBase(page: BoardCommentPageV1, head: string): string | null {
-  const recorded = new Set(protocolComments(page, ACCEPTANCE_RECORD_HEADER).flatMap(record => parseAcceptanceRecord(record) ?? []).map(row => row.subject_sha));
+  const recorded = new Set(protocolComments(page, ACCEPTANCE_RECORD_HEADER).flatMap(record => parseAcceptanceRecord(record) ?? []).filter(row => row.harness !== 'claude').map(row => row.subject_sha));
   const earlier = liveMarkers(page).filter(marker => field(marker, 'Subject') !== head && recorded.has(field(marker, 'Subject') ?? ''));
   const newest = earlier.length === 0 ? null : newestProtocolComment({ ...page, comments: earlier }, REVIEW_START_HEADER);
   return newest === null ? null : field(newest, 'Subject');

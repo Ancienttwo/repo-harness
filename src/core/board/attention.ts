@@ -276,12 +276,8 @@ function a9(context: Context): void {
 /** A10: an open High pull request needs a Claude review (its writer claim does not prove a Claude runtime) and no Claude reviewer has a row for its head. No merge gate holds it, so the board does. */
 function a10(context: Context): void {
   for (const pr of openPullRequests(context.board).filter(entry => !entry.is_draft && entry.claude_review === 'pending')) {
-    if (pr.tier === null) {
-      skip(context, 'A10', 'tier_label_missing', `#${pr.number}`);
-      continue;
-    }
     find(context, 'A10', { issues: itemsOf(context.board, pr), pull_requests: [pr.number] },
-      `#${pr.number} is High tier and has no Claude review of ${pr.head_sha.slice(0, 9)}; start the Claude reviewer seat`);
+      `#${pr.number} is ${pr.tier === null ? 'of unknown tier (counted as High)' : 'High tier'} and has no Claude review of ${pr.head_sha.slice(0, 9)}; start the Claude reviewer seat`);
   }
 }
 
