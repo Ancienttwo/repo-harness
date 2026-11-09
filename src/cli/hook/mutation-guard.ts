@@ -149,7 +149,15 @@ function firstDenial(repoRoot: string, paths: readonly string[], bashRoots: read
     }
     if (protectedRepoDir(filePath) === '_ops') {
       writableDirs ??= readWritablePrivateDirs(repoRoot);
-      if (writableDirs.ok && writableDirs.dirs.some(dir => filePath.startsWith(`${dir}/`))) continue;
+      if (writableDirs.ok && writableDirs.dirs.some(dir => filePath.startsWith(`${dir}/`))) {
+        const unsafe = writableTargetHazard(repoRoot, filePath);
+        if (!unsafe) continue;
+        return {
+          guard: 'OpsPrivateGuard',
+          reason: `${filePath} is a write target inside a writable _ops/ directory that ${unsafe}.`,
+          fix: 'Name one literal file that is not a symlink; the shell could expand the target to a file outside the allowlist.',
+        };
+      }
       return {
         guard: 'OpsPrivateGuard',
         reason: `${filePath} is under _ops/, the ignored local private operations state for secrets, real env files, provider state, artifacts, logs, and scratch files.`
@@ -159,6 +167,19 @@ function firstDenial(repoRoot: string, paths: readonly string[], bashRoots: read
           : 'Correct .operations.agent_writable_private_dirs in .ai/harness/policy.json; until then every _ops/ write stays denied.',
       };
     }
+  }
+  return null;
+}
+
+/** A glob or a symlink can redirect an allowlisted write to a file the allowlist does not name. A missing path is a new file. */
+function writableTargetHazard(repoRoot: string, filePath: string): string | null {
+  if (/[*?[]/.test(filePath)) return 'contains a glob character';
+  let current = repoRoot;
+  for (const part of filePath.split('/')) {
+    current = join(current, part);
+    const stat = lstatSync(current, { throwIfNoEntry: false });
+    if (!stat) return null;
+    if (stat.isSymbolicLink()) return `resolves through the symlink ${relative(repoRoot, current)}`;
   }
   return null;
 }

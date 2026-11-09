@@ -119,6 +119,18 @@ describe('Bash write tripwire host route', () => {
       writePolicy(cwd, ['_ops/dispatch']);
       expect(invokeBash('echo value > _ops/dispatch/plan.md').status).toBe(0);
       expect(invokeBash('echo value > _ops/env/a.env').status).toBe(2);
+      const glob = invokeBash('tee _ops/dispatch/plans/*');
+      expect(glob.status).toBe(2);
+      expect(glob.stderr).toContain('_ops/dispatch/plans/*');
+      mkdirSync(join(cwd, '_ops/env'), { recursive: true });
+      mkdirSync(join(cwd, '_ops/dispatch'), { recursive: true });
+      writeFileSync(join(cwd, '_ops/env/secret.env'), 'x');
+      symlinkSync(join(cwd, '_ops/env/secret.env'), join(cwd, '_ops/dispatch/link.md'));
+      const link = invokeBash('echo value > _ops/dispatch/link.md');
+      expect(link.status).toBe(2);
+      expect(link.stderr).toContain('_ops/env/secret.env');
+      symlinkSync(join(cwd, '_ops/env/new.env'), join(cwd, '_ops/dispatch/dangling.md'));
+      expect(invokeBash('echo value > _ops/dispatch/dangling.md').stderr).toContain('symlink _ops/dispatch/dangling.md');
       writePolicy(cwd, ['_ops']);
       const invalid = invokeBash('echo value > _ops/dispatch/plan.md');
       expect(invalid.status).toBe(2);
