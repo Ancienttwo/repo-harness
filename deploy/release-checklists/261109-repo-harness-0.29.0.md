@@ -14,8 +14,13 @@
   or hc pin; no range PR changed them.
 - Owner GO on the plan (J38, recorded on #2000): the release PR starts
   after #2059 merged and a dispatched daily is green.
-- Publish status: pending. The owner publishes both packages, console
-  first, then core, with `npm publish --auth-type=web` (Q3a–Q3c, #1287).
+- Publish status: pending. Owner authorization on #2065 (comment
+  6734527876, 2026-11-09) covers the 0.29.0 production release only: the
+  advisor seat t5 runs the publish, tag and Release steps after this PR
+  merges with green CI. t5 gives the owner each npm web-auth URL, and the
+  owner completes the npm 2FA in the browser. The owner keeps control of
+  publication, the tag and the GitHub Release. Order: console first, then
+  core, with `npm publish --auth-type=web` (Q3a–Q3c, #1287).
 
 ## Daily evidence
 
@@ -87,7 +92,10 @@ APFS volume, a glob segment that can match `..`, and brace and `~+` forms.
 These gaps existed before 0.29.0; #2048 added no regression. They stay
 open in #2060 and need an owner-approved hook change.
 
-## Publication steps for the owner
+## Publication steps
+
+t5 runs these steps under the owner authorization in Scope and authority.
+The owner completes each npm web authentication.
 
 1. Pin the prep head. Run `bun run check:release` on the
    host after clearing `packages/operator-web/dist` and
@@ -95,16 +103,17 @@ open in #2060 and need an owner-approved hook change.
    green hosted CI before merge.
 2. Record the merge SHA and check out that exact commit. Pack both packages
    and record their local tarball values below.
-3. The owner publishes by hand with `npm publish --auth-type=web`. npm runs
-   each package's `prepublishOnly` gate (`check-npm-release.sh --prepublish`
-   with `npm_package_name` set) through the npm lifecycle. Publish
+3. t5 runs `npm publish --auth-type=web` and gives the owner the web-auth
+   URL; the owner completes the 2FA in the browser. npm runs each package's
+   `prepublishOnly` gate (`check-npm-release.sh --prepublish` with
+   `npm_package_name` set) through the npm lifecycle. Publish
    `repo-harness-operator-web` first and record its gate result. Then
    publish `repo-harness`; its gate requires the console version on npm.
    Record that gate result too.
 4. Read both versions from npm and compare their shasum, integrity and file
    counts with the local tarballs. Record the results below.
-5. After owner approval, tag the publish candidate and create the GitHub
-   Release from CHANGELOG `[0.29.0]`. Run the post-publish checks below.
+5. t5 tags `v0.29.0` on the merge SHA and creates the GitHub Release from
+   CHANGELOG `[0.29.0]`. Run the post-publish checks below.
 
 ## Upgrade steps for users
 
