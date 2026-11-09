@@ -40,7 +40,7 @@ export interface AttentionDeliveryPlanV1 {
   readonly skipped: readonly AttentionSkipV1[];
 }
 
-function liveSeatTerminals(board: BoardV1, seat: string) {
+export function liveSeatTerminals(board: BoardV1, seat: string) {
   if (board.execution.status !== 'observed') return [];
   return board.execution.terminals.filter(terminal => terminal.seat_status === 'observed' && terminal.seat === seat && terminal.state === 'live');
 }
