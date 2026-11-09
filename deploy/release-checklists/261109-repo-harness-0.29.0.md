@@ -2,10 +2,11 @@
 
 ## Scope and authority
 
-- Final base: `766e0e32bbcac40e768063ceaf8fbb6ba70cd94b` on `main`, the
-  commit the release PR branches from (issue #2065).
+- Final base: `9a42fd12116b8c60dc147ed00509583e94e6de7d` on `main`. The
+  release PR branched from `766e0e32b` and merged `origin/main` once, on
+  t2's request, to take the #2068 review-publish fix (J40).
 - Previous release: `v0.28.0`. Range:
-  `v0.28.0..766e0e32bbcac40e768063ceaf8fbb6ba70cd94b` (30 first-parent
+  `v0.28.0..9a42fd12116b8c60dc147ed00509583e94e6de7d` (33 first-parent
   commits).
 - Release date and record prefix: UTC 2026-11-09, from `date -u`. Update
   both when publication moves to another date.
@@ -26,8 +27,9 @@
 
 - Daily run https://github.com/Ancienttwo/repo-harness/actions/runs/42577018596
   at `a99fc44cd` (#2059 merge): success.
-- The base moved one commit after that run: `766e0e32b` (#2055). The
-  release PR's own `Required / CI` covers the delta from `a99fc44cd` to the
+- The base moved four commits after that run: #2055, #2063, #2062 and
+  #2068, ending at `9a42fd121`. The release PR's own `Required / CI`
+  covers the delta from `a99fc44cd` to the
   branch point.
 
 ## Cause of the release
@@ -76,12 +78,15 @@ CHANGELOG diff. None means the commit added no CHANGELOG entry.
 | #2050 | `831d080f4` | Documentation | Architecture projection refresh | None |
 | #2059 | `a99fc44cd` | Fixed, Upgrade | ContextScan whole words | None |
 | #2055 | `766e0e32b` | Changed, Upgrade | Seat line on seat comments | #2051 (Unreleased) |
+| #2063 | `e9e490bff` | Fixed | ContextScan workflow on PRs that change rule files | None |
+| #2062 | `cb8c2873b` | Documentation | Architecture projection refresh | None |
+| #2068 | `9a42fd121` | Fixed | One acceptance claim per reviewer agent on a head | #2061 (Unreleased) |
 
 The `[Unreleased]` entries move into `[0.29.0]` and are sorted into Added,
 Changed, Fixed and Tests. Two entries change: the #2002 entry drops the
 hand start of the Claude reviewer and `second_reviewer_required`, which
 #2025 replaced, and the #2041 entry names the open gaps in #2060. New
-entries cover #2037/#2040, #2056 and the projection refreshes. Every range
+entries cover #2037/#2040, #2056, #2063 and the projection refreshes. Every range
 PR appears in CHANGELOG `[0.29.0]`. The `[0.28.0]` and older sections
 remain byte-identical to the final base.
 
@@ -130,8 +135,8 @@ page. No config migration runs.
 
 ## Acceptance environment
 
-- Subject: `766e0e32b` plus the prep diff. Host Max, Darwin 25.5.0 arm64.
-- Prep head `0130aa52f` on macOS 26.5 arm64, Bun 1.4.3, Node v24.22.1:
+- Subject: `9a42fd121` plus the prep diff. Host Max, Darwin 25.5.0 arm64.
+- Prep head `0130aa52f` on `766e0e32b`, macOS 26.5 arm64, Bun 1.4.3, Node v24.22.1:
   the console dist and console `node_modules` link were absent before the
   run. `bun install --frozen-lockfile`, then `bun run check:release` exited
   0 with `[ci] OK` and `[release] OK: npm package gate passed.`
@@ -145,6 +150,11 @@ page. No config migration runs.
   tests/bootstrap-files.test.ts tests/skill-version.test.ts
   tests/operator-web/operator-bots-page.test.tsx`: 15, 10 and 14 pass,
   0 fail.
+- After the merge of `origin/main` at `9a42fd121`: `bun run check:type`
+  exit 0; `bun run test:files tests/cli/review.test.ts
+  tests/bootstrap-files.test.ts tests/skill-version.test.ts`: 22, 15 and
+  10 pass, 0 fail. The merge adds no package or lockfile change, so the
+  `check:release` result above stays valid for the package contents.
 - `git diff --check` against the final base: exit 0. Historical CHANGELOG
   byte comparison from `[0.28.0]` through the end: identical to the final
   base.

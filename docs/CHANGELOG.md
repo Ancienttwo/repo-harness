@@ -104,6 +104,8 @@ to agent edits.
 - The Bash write tripwire denies more forms that can write under `_ops/` or `_ref/`: a glob whose segment at the repository root can match a protected directory (`_op*/env/x`, `./_op[s]/x`, `rm -rf *`), an unquoted glob destination (`echo x > _ops/env/*`, `rm *` in `_ops/env`), a symlink below `_ops/` that leads outside the repository, and a symlink, dangling or not, that leads into `_ops/` or `_ref/`. Gaps that existed before this release stay open in #2060. (#2041)
 - The tarball install smoke compares `/healthz` with the installed package's `OPERATOR_SERVER_PROTOCOL` and `OPERATOR_SERVICE_NAME`. It expected protocol 2 after #1990 raised the protocol to 3, so the daily package job failed. (#2033)
 - The governance ContextScan matches `read`, `cat` and `copy` as whole words. Before, `cat` inside "publication" in `AGENTS.md` failed the Daily run. (#2056)
+- A `context-scan` workflow runs the ContextScan on a pull request that changes a root or nested `AGENTS.md` or `CLAUDE.md`, the scan script or the workflow. It is not part of `Required / CI`. (#2057)
+- `repo-harness review publish` keys an acceptance claim by round, subject and agent. The second reviewer of a High round posts its own claim and record for the same head; before, it exited 2 with `review_publish_conflict`. A retry of the same agent still reuses its claim, and the same agent with another tier is still a conflict. (#2061)
 - Board attention rules A3 and A4 and the delivery window recognize every configured worker seat kind. (#2016)
 - Board rule R2 no longer counts `docs/CHANGELOG.md` as a shared file of two open PRs. A pair that shares other files still gets the finding, and the message names only those files. (#2034)
 - `review publish` puts a finding on a line outside the PR diff into the review body, so GitHub no longer rejects the review with HTTP 422. A retry reuses the acceptance claim already on the PR instead of posting a second one (#2009).
@@ -115,7 +117,7 @@ to agent edits.
 
 ### Documentation
 
-- Refresh generated architecture outputs. (#2012, #2019, #2036, #2043, #2050)
+- Refresh generated architecture outputs. (#2012, #2019, #2036, #2043, #2050, #2062)
 
 ## [0.28.0] - 2026-11-08
 
