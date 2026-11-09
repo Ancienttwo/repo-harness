@@ -11,6 +11,7 @@ All notable changes to this skill are documented here.
 
 ### Added
 
+- `repo-harness board merge --parent <n> [--pr <p>] [--dry-run]` merges one eligible PR of a batch through `publication merge`. It requires a PASS acceptance record for the head at every tier, the Claude review row for High, `Required / CI`, a ready readiness verdict, plan merge order and no hold. `repo-harness merge hold` and `merge hold released` records on the parent, an issue or a PR narrow it. Board rule A11 wakes the orchestrator when a PR is eligible; the watcher never merges. (#2003)
 - The issue-flow acceptor SOP treats the GitHub review bot as a reference. The acceptor records `adopt`, `decline` or `outdated` for each bot finding. The coordinator replies and resolves the thread. Only adopted findings count in the review loop limit. A bot summary with no findings goes into the acceptance record. (#2007)
 - `repo-harness board closeout` stops a CodeGraph MCP server whose command line names exactly the merged worktree (`serve --mcp --path <worktree>`) and lists its PID in `stopped_codegraph_servers`. Any other process, or a process that stays after the stop, still keeps the worktree with `process_in_use`. (#2029)
 - A Claude seat can take the new `schedule` tool group (`CronCreate`, `CronList`, `CronDelete`). The group is off for every seat by default; Codex and Pi launches ignore it. (#2014)

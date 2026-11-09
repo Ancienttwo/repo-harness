@@ -10,7 +10,9 @@ import { decodeBoard, type BoardHostPortsV1, type BoardTerminalV1, type BoardV1 
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
-import { collectBoard, readLocalRepositoryId } from '../src/effects/board/collect';
+import { collectBoard, readLocalRepositoryId, type BoardCollectInput } from '../src/effects/board/collect';
+import { runBoardMerge } from '../src/effects/board/merge';
+import { boardMergeDecisions } from '../src/core/board/merge';
 import { runBoardCloseout, stopCodegraphServers } from '../src/effects/board/closeout';
 import type { RunArchctxProcess } from '../src/core/architecture/contracts';
 import { errorEnvelope } from 'archctx-contracts';
@@ -68,6 +70,8 @@ interface Replay {
   /** The version that the fake hc reports; the recorded core reported 0.1.17. */
   readonly hcVersion?: string;
   readonly now?: Date;
+  /** The open pull requests whose readiness is ready; the default is #1491. */
+  readonly ready?: readonly number[];
 }
 
 function issueNode(data: Json, number: number): Json {
@@ -82,6 +86,10 @@ function comment(body: string, createdAt: string): Json {
 const POLICY_ABSENT = { status: 1, stdout: '{"message":"Not Found","status":"404"}', stderr: 'gh: Not Found (HTTP 404)' };
 
 function replay(options: Replay = {}): BoardV1 {
+  return collectBoard(replayInput(options));
+}
+
+function replayInput(options: Replay): BoardCollectInput {
   const root = tmpWorkspace('board'); roots.push(root);
   mkdirSync(join(root, 'bin'));
   writeFileSync(join(root, 'bin/hc'), HC); chmodSync(join(root, 'bin/hc'), 0o755);
@@ -89,7 +97,7 @@ function replay(options: Replay = {}): BoardV1 {
   const pulls = JSON.parse(fixture('pull-requests-1474.graphql.json')); options.pulls?.(pulls.data);
   const resolved = JSON.parse(fixture('archctx-resolve-1474.json')); options.owners?.(resolved.data.results);
   const answer = (value: unknown) => ({ status: 0, stdout: typeof value === 'string' ? value : JSON.stringify(value) });
-  return collectBoard({
+  return {
     repo_root: root,
     parent: 1474,
     now: () => options.now ?? REPLAY_NOW,
@@ -99,10 +107,11 @@ function replay(options: Replay = {}): BoardV1 {
       if (args[1] === 'graphql') return answer(args.some(arg => arg.includes('subIssues')) ? parent : pulls);
       if (args.some(arg => arg.includes('actions/workflows/ci.yml/runs'))) return answer(fixture('daily-run.json'));
       if (args.includes('repos/Ancienttwo/repo-harness/contents/.ai/harness/policy.json?ref=main')) return options.policy ?? POLICY_ABSENT;
+      if (args.includes('repos/{owner}/{repo}')) return answer({ id: 1_000_001 });
       throw new Error(`unexpected gh call: ${args.join(' ')}`);
     },
     // #1491 is the only PR that the recorded data shows as accepted; the readiness projection has its own suite.
-    readiness: (selection) => ({ ...selection, protocol: 2, kind: 'repo-harness-pull-request-readiness', ready: selection.pr_number === 1491 }) as unknown as PullRequestReadinessV2,
+    readiness: (selection) => ({ ...selection, protocol: 2, kind: 'repo-harness-pull-request-readiness', ready: (options.ready ?? [1491]).includes(selection.pr_number), blockers: [] }) as unknown as PullRequestReadinessV2,
     // archctx 0.11.2 at d0f4223f4 on the files of the open PRs. A request gets the recorded result of each of its
     // paths, in its order; exit 2 when one is ambiguous. An unrecorded path fails the test.
     archctx: {
@@ -117,7 +126,7 @@ function replay(options: Replay = {}): BoardV1 {
         return { status, signal: null, stdout: JSON.stringify({ ...resolved, data: { results } }), stderr: '' };
       }),
     },
-  });
+  };
 }
 
 function rules(board: BoardV1): BoardRuleId[] {
@@ -402,6 +411,82 @@ test('plan revision: the ordinal of the newest plan comment among the write-acce
     revision([first]), revision([first, second, third]), revision([first, invalid, third]), revision([first, second, request]),
     revision([first, second], true), revision([first, invalid]), revision([]),
   ]).toEqual([1, 3, 3, 2, null, 'unavailable', 'absent']);
+});
+
+const POLICY_ON = { status: 0, stdout: JSON.stringify({ type: 'file', path: '.ai/harness/policy.json', encoding: 'base64', content: Buffer.from('{"publication":{"acceptance_merge":"on"}}').toString('base64') }) };
+
+/** #1491 (closes #1475) is accepted by record, green and ready; the plan orders #1475 first and #1475 is tier:medium. */
+function mergeReplay(edit: { parent?: (data: Json) => void; pulls?: (data: Json) => void; order?: number[]; holds?: Json[] } = {}, options: Replay = {}): Replay {
+  return {
+    policy: POLICY_ON,
+    ...options,
+    parent: (data) => {
+      const block = { protocol: 1, kind: 'repo-harness.plan', merge_order: edit.order ?? [1475, 1479], holds: edit.holds ?? [], batches: [], seat_limits: { worker: 4 } };
+      data.repository.issue.comments.nodes.push(comment(`repo-harness plan\n\n\`\`\`json\n${JSON.stringify(block)}\n\`\`\``, '2026-11-02T22:00:00Z'));
+      issueNode(data, 1475).labels.nodes.push({ name: 'tier:medium' });
+      edit.parent?.(data);
+    },
+    pulls: edit.pulls,
+  };
+}
+
+function mergeReason(edit: Parameters<typeof mergeReplay>[0] = {}, options: Replay = {}, pr = 1491): string {
+  const decision = boardMergeDecisions(replay(mergeReplay(edit, options))).find(entry => entry.pr === pr)!;
+  return decision.eligible ? 'eligible' : decision.reason;
+}
+
+test('board merge: an accepted, green, ready PR first in plan order is eligible, A11 wakes the orchestrator, and the merge pins its head and base', () => {
+  const board = replay(mergeReplay());
+  expect(evaluateBoardAttention(board).findings.filter(finding => finding.rule === 'A11').map(finding => [finding.pull_requests, finding.message]))
+    .toEqual([[[1491], 'eligible: run repo-harness board merge --parent 1474 --pr 1491']]);
+  const pr = board.pull_requests.find(entry => entry.number === 1491)!;
+  const calls: Json[] = [];
+  const merge = (input: Json) => { calls.push(input); return { exit_code: 0, document: { ok: true } } as never; };
+  const merged = runBoardMerge({ ...replayInput(mergeReplay()), pr: null, dry_run: false, merge });
+  expect([merged.target, merged.exit_code]).toEqual([1491, 0]);
+  expect(calls.map(call => [call.pr_number, call.expected_head_sha, call.expected_base_sha, call.provider_repository_id, call.repository]))
+    .toEqual([[1491, pr.head_sha, pr.base_sha, '1000001', 'Ancienttwo/repo-harness']]);
+  const dry = runBoardMerge({ ...replayInput(mergeReplay()), pr: 1491, dry_run: true, merge });
+  const refused = runBoardMerge({ ...replayInput(mergeReplay()), pr: 1494, dry_run: false, merge });
+  expect([dry.target, dry.exit_code, refused.target, refused.exit_code, calls.length]).toEqual([1491, 0, null, 4, 1]);
+});
+
+test('board merge: hold records narrow the merge; a newer release on the same thread ends a hold', () => {
+  const hold = (body: string, at: string) => comment(body, at);
+  const onPr = (...bodies: [string, string][]) => ({ pulls: (data: Json) => { data.repository.pr1491.comments.nodes.push(...bodies.map(([body, at]) => hold(body, at))); } });
+  const onParent = (body: string, truncated = false) => ({ parent: (data: Json) => {
+    data.repository.issue.comments.nodes.push(hold(body, '2026-11-02T21:00:00Z'));
+    data.repository.issue.comments.pageInfo.hasPreviousPage = truncated;
+  } });
+  expect([
+    mergeReason(onPr(['repo-harness merge hold\nReason: owner said stop', '2026-11-02T21:00:00Z'])),
+    mergeReason(onPr(['repo-harness merge hold\nReason: owner said stop', '2026-11-02T21:00:00Z'], ['repo-harness merge hold released', '2026-11-02T21:30:00Z'])),
+    mergeReason(onParent('repo-harness merge hold\nIssues: #1479')),
+    mergeReason(onParent('repo-harness merge hold')),
+    mergeReason({ parent: (data) => { data.repository.issue.comments.pageInfo.hasPreviousPage = true; } }),
+  ]).toEqual(['held', 'eligible', 'eligible', 'held', 'hold_unknown']);
+});
+
+test('board merge: plan holds, plan order, the provisional Low path, a missing Claude review, readiness and the policy switch each refuse', () => {
+  const lowGreen = {
+    parent: (data: Json) => { issueNode(data, 1479).labels.nodes.push({ name: 'tier:low' }); },
+    pulls: (data: Json) => {
+      const { pr1494 } = data.repository;
+      pr1494.isDraft = false;
+      pr1494.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' });
+    },
+  };
+  expect([
+    mergeReason({ holds: [{ issue: 1475, reason: 'owner item' }] }),
+    mergeReason({ order: [1479, 1475] }),
+    mergeReason({ order: [1479] }),
+    mergeReason({ ...lowGreen, order: [1479, 1475] }, {}, 1494),
+    mergeReason({ parent: (data) => { issueNode(data, 1475).labels.nodes = []; } }),
+    mergeReason({}, { ready: [] }),
+    mergeReason({}, { policy: POLICY_ABSENT }),
+  ]).toEqual(['plan_hold', 'merge_order', 'not_in_merge_order', 'not_accepted', 'claude_review_pending', 'not_ready', 'acceptance_merge_off']);
+  // The Low PR is accepted on the provisional tier_low path, which an unattended merge does not take.
+  expect(replay(mergeReplay({ ...lowGreen, order: [1479, 1475] })).pull_requests.find(pr => pr.number === 1494)!.acceptance).toMatchObject({ status: 'accepted', via: 'tier_low' });
 });
 
 test('merge policy: the policy file of the default branch through the one parser; only an absent file or key reads as off', () => {

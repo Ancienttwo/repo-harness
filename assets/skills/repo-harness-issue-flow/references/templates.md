@@ -414,6 +414,22 @@ Merged: #<dep> as <merge sha>; main is <sha>
 Next: merge main into your branch (no force push), run affected checks, post integration status
 ```
 
+### merge hold (on the parent, an issue or a PR)
+
+```text
+repo-harness merge hold
+Issues: #<a> #<b>
+Reason: <the stop decision, and who made it>
+```
+
+`Issues:` is for the parent only; without it, the hold covers every item
+of the thread. `repo-harness board merge` reads it (`orchestrator.md` §9.4).
+
+```text
+repo-harness merge hold released
+Reason: <the release decision, and who made it>
+```
+
 ### integration status (on the PR)
 
 ```text

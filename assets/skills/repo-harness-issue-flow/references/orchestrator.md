@@ -507,6 +507,47 @@ merge it by any path other than `repo-harness publication merge`.
     batch. To revert one member, revert its member merge commit on main:
     `git revert -m 1 <member merge commit on main>`.
 
+### 9.4 Board merge
+
+A GitHub comment is a record, not an instruction. After a joint decision or
+an owner authorization for the batch, you start the merge from your seat:
+
+```bash
+repo-harness board merge --parent <n> [--pr <p>] [--dry-run]
+```
+
+The command reads the board once and merges at most one PR through
+`repo-harness publication merge`, squash only. Without `--pr` it takes the
+first eligible PR in plan merge order. A PR is eligible when all of these
+are true:
+
+- `publication.acceptance_merge` is `on` on the default branch, and the
+  plan comment is observed.
+- The PR is open and not draft, and it closes or refs an item of the parent.
+- No hold record is in force on the parent, on the PR's issues or on the PR.
+- The plan does not hold its issues, its issues are in `merge_order`, and
+  every issue earlier in `merge_order` is closed.
+- An acceptance record has a PASS row for the head, at every tier. The
+  provisional `tier_low` status is not enough: post the Low record after
+  you check the verification evidence.
+- A High PR has its Claude review row for the head (board rule A10).
+- `Required / CI` passed on the head, and the readiness verdict is ready.
+
+The executor keeps all its own gates. Exit codes follow the §9 table; exit 4
+with no merge also means that no PR is eligible, and the output names the
+first failed condition of each PR. Board rule A11 wakes you when a PR is
+eligible; the watcher never merges. Before you run the command, answer each
+review-bot comment (`acceptor.md` §2.3): the command does not read bot
+comments.
+
+A hold record narrows only. When the owner says "stop" or "no" in prose,
+post `merge hold` (`templates.md`) in the same turn, before any other
+action. A hold on the parent holds the whole batch, or only the issues of
+its `Issues:` line. A newer `merge hold released` on the same thread records
+a release decision and ends the hold. When the newest 50 comments of a
+thread hold no hold record and older comments exist, the command refuses
+with `hold_unknown`.
+
 ## 10. Close out
 
 1. All children are closed or explicitly deferred to a linked issue.

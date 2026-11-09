@@ -15,6 +15,7 @@ import { BoardSeatsError, collectBoardSeats } from '../../effects/board/seats';
 import { DispatchError, type DispatchPlanV1 } from '../../core/board/dispatch';
 import { runDispatch } from '../../effects/board/dispatch';
 import { runReview, type ReviewResultV1 } from '../../effects/board/review';
+import { runBoardMerge, type BoardMergeResultV1 } from '../../effects/board/merge';
 import { seatLaunch } from './seats';
 import { runBoardCloseout, stopArchitectureDaemons, stopCodegraphServers } from '../../effects/board/closeout';
 import { worktreeProcesses } from '../../effects/git/worktree-processes';
@@ -73,6 +74,14 @@ function reviewText(result: ReviewResultV1): string {
     ? `PR #${decision.pr} skipped (${decision.reason}): ${decision.detail}`
     : refused.has(decision.pr) ? `PR #${decision.pr} refused: ${refused.get(decision.pr)}`
       : `PR #${decision.pr} ${started.has(decision.pr) ? 'started' : 'ready'} on gatekeeper: ${decision.reason}${decision.second_reviewer_required ? '; second_reviewer_required: start the Claude reviewer by hand' : ''}`);
+  return `${lines.join('\n')}\n`;
+}
+
+function mergeText(result: BoardMergeResultV1, dryRun: boolean): string {
+  const lines = result.decisions.map(decision => (decision.eligible ? `PR #${decision.pr} eligible` : `PR #${decision.pr} not eligible (${decision.reason}): ${decision.detail}`));
+  if (result.target === null) lines.push('no eligible pull request selected; nothing merged');
+  else if (dryRun) lines.push(`PR #${result.target} would merge`);
+  else lines.push(JSON.stringify(result.merge));
   return `${lines.join('\n')}\n`;
 }
 
@@ -161,6 +170,23 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
           launch: (seat, labels, cwd) => seatLaunch(seat, labels, process.env, cwd),
         });
         process.stdout.write(reviewText(result));
+      } catch (error) {
+        if (!(error instanceof BoardCollectError || error instanceof BoardSourceError)) throw error;
+        process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, message: error.message })}\n`);
+        process.exitCode = 1;
+      }
+    });
+  board.command('merge')
+    .description('Merge one eligible pull request of the parent with publication merge (takes --parent): PASS record for the head, Required / CI, readiness, plan order and no hold. Start it from the orchestrator seat; exit codes follow publication merge, 4 when none is eligible')
+    .option('--pr <number>', 'The pull request to merge; default: the first eligible one in plan merge order')
+    .option('--dry-run', 'Print the decision for each pull request and merge nothing')
+    .action((options: { pr?: string; dryRun?: boolean }, command: Command) => {
+      try {
+        if (options.pr !== undefined && !/^[1-9][0-9]*$/u.test(options.pr)) throw new BoardCollectError('--pr must be a pull request number');
+        const result = runBoardMerge({ repo_root: process.cwd(), parent: parentNumber(command.optsWithGlobals<BoardOptions>()), host,
+          pr: options.pr === undefined ? null : Number(options.pr), dry_run: options.dryRun === true });
+        process.stdout.write(mergeText(result, options.dryRun === true));
+        process.exitCode = result.exit_code;
       } catch (error) {
         if (!(error instanceof BoardCollectError || error instanceof BoardSourceError)) throw error;
         process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, message: error.message })}\n`);
