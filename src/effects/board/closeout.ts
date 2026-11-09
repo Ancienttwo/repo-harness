@@ -264,7 +264,8 @@ function openPaths(pid: number): string[] | null {
 
 /**
  * The processes of `processes` that are a CodeGraph MCP server of `worktree`. An orphaned one outlives its seat pane and keeps the checkout in use.
- * The caller passes only processes that hold the worktree. A server is bound to the worktree by an open file under its `.codegraph/` index, not by the flattened command line.
+ * The caller passes only processes that hold the worktree. A server is bound to the worktree by an open file under its `.codegraph/` index and a command that ends with `--path <worktree>`.
+ * Accepted residual: `ps` flattens argv, so a server of another worktree is stopped if its path argument itself contains ` --path <worktree>`, it holds this index through a symlink and its cwd is in this worktree. The worst case stops one CodeGraph server; no data is lost (#2030).
  */
 export function codegraphServersOf(worktree: string, processes: readonly WorktreeProcess[]): number[] {
   const index = `${realpathSync(worktree)}/.codegraph/`;
