@@ -158,6 +158,8 @@ function segmentMatches(pattern: string, name: string): boolean {
     const close = ch === '[' ? pattern.indexOf(']', i + (negated ? 3 : 2)) : -1;
     if (ch === '*') source += '.*';
     else if (ch === '?') source += '.';
+    // A nested `[` (a POSIX class such as [[:lower:]]) is outside this grammar, so the pattern matches.
+    else if (close > 0 && pattern.slice(i + 1, close).includes('[')) return true;
     else if (close > 0) {
       source += `[${negated ? '^' : ''}${pattern.slice(i + (negated ? 2 : 1), close).replace(/[\\\]]/g, '\\$&')}]`;
       i = close;
@@ -166,39 +168,49 @@ function segmentMatches(pattern: string, name: string): boolean {
   try { return new RegExp(`^${source}$`).test(name); } catch { return true; }
 }
 
-/** The path the kernel writes through: every symlink is followed, a dangling one too, before the next `..`. */
-function writeThroughPath(path: string): string | null {
+/** The path the kernel writes through: every symlink is followed, a dangling one too, before the next `..`. Throws when it cannot resolve. */
+function writeThroughPath(path: string): string {
   const split = (value: string) => value.slice(parse(value).root.length).split(sep === '/' ? '/' : /[\\/]/);
   const pending = split(path);
   let current = parse(path).root;
-  try {
-    for (let links = 0; pending.length;) {
-      const part = pending.shift()!;
-      if (!part || part === '.') continue;
-      if (part === '..') { current = dirname(current); continue; }
-      const next = join(current, part);
-      if (!lstatSync(next, { throwIfNoEntry: false })?.isSymbolicLink()) { current = next; continue; }
-      if (++links > 40) return null;
-      const link = resolve(current, readlinkSync(next));
-      pending.unshift(...split(link));
-      current = parse(link).root;
-    }
-  } catch { return null; }
+  for (let links = 0; pending.length;) {
+    const part = pending.shift()!;
+    if (!part || part === '.') continue;
+    if (part === '..') { current = dirname(current); continue; }
+    const next = join(current, part);
+    if (!lstatSync(next, { throwIfNoEntry: false })?.isSymbolicLink()) { current = next; continue; }
+    if (++links > 40) throw Object.assign(new Error(`too many symbolic links: ${path}`), { code: 'ELOOP' });
+    // The raw link target is walked part by part, so a link inside it is followed before its `..`.
+    const link = readlinkSync(next);
+    pending.unshift(...split(link));
+    if (isAbsolute(link)) current = parse(link).root;
+  }
   return current;
 }
 
+interface BashWriteTargets {
+  readonly paths: readonly string[];
+  /** Targets whose write-through path could not be resolved, with the error code. */
+  readonly unresolved: readonly string[];
+}
+
 /** Only destinations in the supported literal forms reach filesystem validation. */
-export function bashWriteTargets(command: string, repoRoot: string, cwd: string): readonly string[] {
-  if (!/(?:>|\b(?:rm|mv|cp|tee|sed|python\d*|node)\b)/.test(command)) return [];
+export function bashWriteTargets(command: string, repoRoot: string, cwd: string): BashWriteTargets {
+  if (!/(?:>|\b(?:rm|mv|cp|tee|sed|python\d*|node)\b)/.test(command)) return { paths: [], unresolved: [] };
   const candidates: string[] = [];
+  const unresolved: string[] = [];
   let realRoot: string | undefined;
-  /** The repository-relative write-through path, or null when it is outside the repository or unresolved. */
+  /** The repository-relative write-through path; null only for a path verified outside the repository. */
   const realRel = (spelled: string): string | null => {
-    const real = writeThroughPath(spelled);
-    if (real === null) return null;
-    try { realRoot ??= realpathSync(repoRoot); } catch { return null; }
-    const rel = relative(realRoot, real);
-    return isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`) ? null : rel.split(sep).join('/');
+    try {
+      const real = writeThroughPath(spelled);
+      realRoot ??= realpathSync(repoRoot);
+      const rel = relative(realRoot, real);
+      return isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`) ? null : rel.split(sep).join('/');
+    } catch (error) {
+      unresolved.push(`${spelled} (${(error as NodeJS.ErrnoException).code ?? String(error)})`);
+      return null;
+    }
   };
   const add = (candidate: string, commandCwd: string | null) => {
     if (!candidate || /[$`{}~\n\r]/.test(candidate) || ['/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty'].includes(candidate)
@@ -234,7 +246,7 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
     command: (segment, body, commandCwd) => { for (const target of commandTargets(segment, body)) add(target, commandCwd); },
     redirect: add,
   });
-  return [...new Set(candidates)];
+  return { paths: [...new Set(candidates)], unresolved };
 }
 
 // Options of `git worktree add` that take no operand, and those that take one.
@@ -302,7 +314,14 @@ export function runBashMutationGuard(opts: MutationGuardInput): MutationGuardRes
   const cwd = payloadString(opts.payload, 'cwd');
   // A missing or non-absolute host cwd gives no reliable destination authority.
   if (!isAbsolute(cwd)) return { exitCode: 0, stdout: '', stderr: '' };
-  const paths = bashWriteTargets(command, opts.repoRoot, cwd);
+  const { paths, unresolved } = bashWriteTargets(command, opts.repoRoot, cwd);
+  if (unresolved.length) {
+    return runMutationDenial(opts, {
+      guard: 'RepoScopeGuard',
+      reason: `The Bash write target ${unresolved[0]} does not resolve through its symlinks, so its destination is not known.`,
+      fix: 'Write to a path whose directories exist and can be read, without a symlink loop.',
+    });
+  }
   if (paths.length) {
     const result = runMutationPathGuard(opts, paths);
     if (result.exitCode !== 0) return result;
