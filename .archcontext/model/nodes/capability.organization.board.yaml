@@ -12,7 +12,7 @@
     "Read the seat labels of the hc terminals that carry the parent label; a terminal without a seat label stays unavailable.",
     "Reuse the single-PR merge readiness projection for open pull requests; never decide merge readiness again.",
     "Run the attention rules with constant thresholds; list a rule whose input is unavailable as unevaluated.",
-    "Own the change hazard list in assets/review-hazards.v1.json and its decoder; rule R3 reads only the path-visible entries.",
+    "Own the change hazard list in assets/review-hazards.v1.json, the High list in assets/review-high-list.v1.json and their decoder; rule R3 reads only the path-visible hazards and rule R5 only the path-visible High signals.",
     "Own the quota read model (#1716) with one strict decoder per source, for the Claude capture file contract and the codex app-server account/rateLimits/read result; a missing or malformed field makes its window unknown with a named reason, and each window is classified by the decision table, worst window first.",
     "Own the quota readers of repo-harness quota. They read the Claude capture file under HOME and run one codex app-server initialize and account/rateLimits/read exchange that starts no model turn; a failed read is an unknown account with its reason.",
     "Own the status line route that writes the Claude capture file; the route is core and has no plugin gate.",

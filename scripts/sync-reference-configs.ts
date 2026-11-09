@@ -10,7 +10,7 @@ import {
   type ProjectionFileRecord,
 } from "../src/effects/source-projection";
 import { TOOL_CATALOG, type ToolCatalogV1 } from "../src/core/tools/catalog";
-import { REVIEW_HAZARDS, type ReviewHazardsV1 } from "../src/core/board/hazards";
+import { REVIEW_HAZARDS, REVIEW_HIGH_LIST, type ReviewHazardsV1, type ReviewHighListV1, type ReviewPathEntry } from "../src/core/board/hazards";
 
 type Mode = "check" | "write";
 
@@ -26,6 +26,9 @@ const CATALOG_END = "<!-- tool-catalog:resources:end -->";
 const HAZARDS_DOC = "agentic-development-flow.md";
 const HAZARDS_BEGIN = "<!-- review-hazards:list:begin -->";
 const HAZARDS_END = "<!-- review-hazards:list:end -->";
+/** The High list table of the same doc, owned by assets/review-high-list.v1.json. */
+const HIGH_LIST_BEGIN = "<!-- review-high-list:list:begin -->";
+const HIGH_LIST_END = "<!-- review-high-list:list:end -->";
 
 function usage(): never {
   process.stderr.write("Usage: bun scripts/sync-reference-configs.ts [--check|--write]\n");
@@ -68,15 +71,27 @@ function resourceTable(catalog: ToolCatalogV1): string {
   return ["| Repo | Use it for | License |", "| --- | --- | --- |", ...rows].join("\n");
 }
 
+function pathCell(entry: ReviewPathEntry): string {
+  return entry.path_visible ? entry.paths.map((path) => `\`${path}\``).join(", ") : "None (`path_visible: false`)";
+}
+
 function hazardTable(list: ReviewHazardsV1): string {
-  const rows = list.hazards.map((hazard) =>
-    `| ${hazard.text} | ${hazard.path_visible ? hazard.paths.map((path) => `\`${path}\``).join(", ") : "None (`path_visible: false`)"} |`);
   return [
     "The board rule R3 reads only the rows with `path_visible: true`: a changed path that matches one of their patterns is a hit. Reviewers apply every row.",
     "",
     "| Hazard | Paths that R3 reads |",
     "| --- | --- |",
-    ...rows,
+    ...list.hazards.map((hazard) => `| ${hazard.text} | ${pathCell(hazard)} |`),
+  ].join("\n");
+}
+
+function highListTable(list: ReviewHighListV1): string {
+  return [
+    "The board rule R5 reads only the rows with `path_visible: true`: a changed path that matches one of their patterns is a hit. Reviewers apply every row to the whole diff; a path outside the patterns can still be High.",
+    "",
+    "| High signal | Paths that R5 reads |",
+    "| --- | --- |",
+    ...list.signals.map((signal) => `| ${signal.text} | ${pathCell(signal)} |`),
   ].join("\n");
 }
 
@@ -108,6 +123,11 @@ export function renderHazardRegion(markdown: string, list: ReviewHazardsV1): str
   return renderRegion(markdown, HAZARDS_DOC, HAZARDS_BEGIN, HAZARDS_END, hazardTable(list));
 }
 
+/** Renders the High list table of agentic-development-flow.md from `list`. */
+export function renderHighListRegion(markdown: string, list: ReviewHighListV1): string {
+  return renderRegion(markdown, HAZARDS_DOC, HIGH_LIST_BEGIN, HIGH_LIST_END, highListTable(list));
+}
+
 function main(): void {
   const mode = parseMode(process.argv.slice(2));
   const inventory = referenceConfigInventory();
@@ -123,6 +143,7 @@ function main(): void {
   const regions = [
     { doc: CATALOG_DOC, label: "tool catalog", render: (markdown: string) => renderToolCatalogRegion(markdown, TOOL_CATALOG) },
     { doc: HAZARDS_DOC, label: "review hazards", render: (markdown: string) => renderHazardRegion(markdown, REVIEW_HAZARDS) },
+    { doc: HAZARDS_DOC, label: "review high list", render: (markdown: string) => renderHighListRegion(markdown, REVIEW_HIGH_LIST) },
   ];
   for (const region of regions) {
     const file = readProjectionFile(CANONICAL_ROOT, region.doc);

@@ -1,0 +1,41 @@
+{
+  "high_list_version": "repo-harness.review-high-list.v1",
+  "signals": [
+    {
+      "id": "permissions",
+      "text": "Changes permissions, sandbox settings or seat tool grants.",
+      "path_visible": true,
+      "paths": [".claude/**", ".codex/**", "src/core/board/seats-settings.ts", "src/core/board/seat-launch.ts", "src/effects/board/seats-configuration.ts"]
+    },
+    {
+      "id": "hooks",
+      "text": "Changes a hook or the mutation guard.",
+      "path_visible": true,
+      "paths": ["src/cli/hook/**", "src/cli/hook-entry.ts"]
+    },
+    {
+      "id": "secrets",
+      "text": "Reads, moves or exposes credentials, tokens or secrets.",
+      "path_visible": true,
+      "paths": ["src/core/security/**"]
+    },
+    {
+      "id": "deletion",
+      "text": "Changes a path that deletes files, worktrees, branches or seats.",
+      "path_visible": true,
+      "paths": ["src/effects/board/closeout.ts", "src/cli/installer/uninstall.ts", "scripts/ship-worktrees.sh", "scripts/worktree-merge-lib.sh"]
+    },
+    {
+      "id": "release",
+      "text": "Changes release, publish or deploy, including `deploy/sql/`.",
+      "path_visible": true,
+      "paths": ["deploy/sql/**", "src/core/release/**", "src/effects/release/**", "scripts/check-npm-release.sh", "scripts/check-release-published.sh"]
+    },
+    {
+      "id": "merge-push",
+      "text": "Changes a merge or push path: the publication executor, branch protection or force push.",
+      "path_visible": true,
+      "paths": ["src/core/publication/acceptance-merge-policy.ts", "src/core/publication/merge-readiness.ts", "src/effects/publication/merge-executor.ts", "src/effects/publication/merge-readiness.ts", "src/effects/publication/new-remote-ref-push.ts", "scripts/merge-gate.ts"]
+    }
+  ]
+}
