@@ -48,6 +48,18 @@ function failureRecords(cwd: string): Array<Record<string, unknown>> {
 }
 
 const HOOK_ENTRY = join(import.meta.dir, '../src/cli/hook-entry.ts');
+// Each row is also measured against the pinned origin/main in the PR differential table.
+const WORKTREE_SUBSTITUTION_CASES = [
+  'echo $(date) && git worktree add ../x', 'echo "$(date)" && git worktree add ../x',
+  'echo `date` && git worktree add ../x', 'echo "$(date)"\ngit worktree add ../x',
+  'X=$(pwd) git worktree add ../x', 'echo pre$(date)post; git worktree add ../x',
+  'echo `date`; git worktree add ../x', 'echo $(date)\ngit worktree add ../x',
+  'echo `date`\ngit worktree add ../x', 'git worktree add --detach ../x "$(printf HEAD)"',
+  'echo $(date) && git "worktree" "add" ../x', 'echo $(date) && git worktree ad\\\nd ../x',
+  'git worktree add --detach ../x $(printf HEAD)', 'git worktree add --detach ../x HEAD && echo "$(date)"',
+  'diff <(ls) x; git worktree add ../x', 'cat <<A <<B\nx\nA\ny\nB\ngit worktree add ../x',
+  'git worktree add "$(mktemp -d)"', 'git worktree add ../x $(date)\n(',
+] as const;
 beforeAll(() => { seedGlobalPackageFixture(); });
 
 describe('Bash write tripwire host route', () => {
@@ -100,6 +112,10 @@ describe('Bash write tripwire host route', () => {
         'cd $(printf src)\necho value > _ops/local.txt',
         'diff <(ls) x; rm -rf _ops', 'tee >(cat) _ops/y', 'diff <(echo x > _ops/x) x',
         "echo v > '_ops/a\nb'", 'rm ~/_ops/x', 'rm ~root/_ops/x',
+        'cat <<EOF > report.txt\n$(echo x > _ops/x)\nEOF', 'cat <<EOF > report.txt\n`echo x > _ref/x`\nEOF',
+        'cat <<-EOF > report.txt\n\t$(echo x > _ops/x)\n\tEOF', "cat <<EOF > report.txt\n'$(echo x > _ops/x)'\nEOF",
+        'cat <<EOF > report.txt\n\\$(date) $(echo x > _ops/x)\nEOF',
+        'cat <<EOF > report.txt\n\\\\$(echo x > _ops/x)\nEOF', 'cat <<EOF > report.txt\n$\\\n(echo x > _ops/x)\nEOF',
       ]) {
         const result = invokeBash(command);
         expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 2 });
@@ -115,6 +131,9 @@ describe('Bash write tripwire host route', () => {
         'cd _ops | cat; echo value > report.txt',
         "printf '%s\\n' 'example:\nrm -rf /tmp/example\n'",
         "cat <<'EOF' > report.txt\nrm -rf _ops/cache\nEOF",
+        "cat <<'EOF' > report.txt\n$(echo x > _ops/x)\nEOF", 'cat <<"EOF" > report.txt\n`echo x > _ref/x`\nEOF',
+        'cat <<\\EOF > report.txt\n$(echo x > _ops/x)\nEOF', 'cat <<E""OF > report.txt\n$(echo x > _ops/x)\nEOF',
+        'cat <<EOF > report.txt\n\\$(echo x > _ops/x)\nEOF', 'cat <<EOF > report.txt\n\\`echo x > _ref/x\\`\nEOF',
         `echo value > '${root}/outside.txt'`, 'echo value > /tmp/repo-harness-bash-guard-scratch.json',
         `cp safe.txt '${root}/ok.txt' && rm -rf '${root}/scratch'`,
       ]) {
@@ -197,7 +216,7 @@ describe('Bash write tripwire host route', () => {
         `git -C ${cwd} worktree add ../x`, `git -C src worktree add ../../x`, 'git -C src worktree add ../x',
         'cd src && git worktree add ../x', 'git status && git worktree add ../x', "git worktree add '../x'",
         'git worktree add ../x\nf() { :; }', 'git worktree add /etc/wt[1]',
-        'git worktree add --detach ../x HEAD && echo "$(date)"',
+        ...WORKTREE_SUBSTITUTION_CASES,
       ]) {
         const result = invokeBash(command);
         expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 2 });
@@ -209,11 +228,11 @@ describe('Bash write tripwire host route', () => {
         `git -C ${cwd} worktree add ${managed}/repo-wt-x`, `git -C src worktree add ../../managed/repo-wt-x`,
         `git worktree add "${managed}/repo-wt-x"`, `cd ${managed} && git worktree add repo-wt-x`,
         // The target or its directory is not certain, so the guard does not guess.
-        'git worktree add "$DIR"', 'git worktree add $DIR/x', 'git worktree add ~/x', 'git worktree add "$(mktemp -d)"',
+        'git worktree add "$DIR"', 'git worktree add $DIR/x', 'git worktree add ~/x',
         'git worktree add "$HOME/x"', 'git worktree add ../x*', 'git worktree add', 'git worktree add a b c',
         'git worktree add --orphan ../x', 'git worktree add -fq ../x', 'git -c core.x=1 worktree add ../x',
         'git -C "$D" worktree add ../x', 'cd "$D" && git worktree add ../x', 'cd src; git worktree add ../x',
-        'cd src\ngit worktree add ../x', 'git worktree add ../x $(date)\n(', 'git worktree list', 'git worktree remove ../x',
+        'cd src\ngit worktree add ../x', 'git worktree list', 'git worktree remove ../x',
         'git worktree prune', 'echo "git worktree add ../x"', 'git log --grep "worktree add ../x"',
         'command git worktree add ../x', 'FOO=1 git worktree add ../x',
       ]) {

@@ -7,7 +7,7 @@ import { runMutationDenial, runMutationPathGuard, type Denial, type MutationGuar
 import { PROTECTED_REPO_DIRS } from './mutation-protected-dirs';
 
 /** `pattern` is `value` with each quoted or escaped glob, brace or tilde character escaped by a backslash. */
-interface Word { value: string; pattern: string; literal: boolean; operator?: true }
+interface Word { value: string; pattern: string; literal: boolean; operator?: true; quoted?: boolean }
 
 /** A glob, brace or tilde form is expanded or bounded later; a parameter or command substitution is not. */
 const pathOperand = (word: Word) => word.literal || !/[$`]/.test(word.value);
@@ -23,7 +23,7 @@ function words(line: string, final = false): WordScan | null {
   const unparsed = (): WordScan => ({ tokens: result.slice(0, boundary), complete: false });
   let value = '', pattern = '', literal = true, plain = true, active = false, quote = '';
   const flush = () => {
-    if (active) result.push({ value, pattern, literal });
+    if (active) result.push({ value, pattern, literal, quoted: !plain });
     value = ''; pattern = ''; literal = true; plain = true; active = false;
   };
   const quoted = (ch: string) => { value += ch; pattern += escapePattern(ch); };
@@ -130,6 +130,19 @@ function cdOperand(segment: readonly Word[]): { target: Word; plain: boolean } |
   return i === segment.length - 1 ? { target: segment[i]!, plain } : null;
 }
 
+/** Quotes in an unquoted heredoc body are data. Backslashes can quote substitution markers or join lines. */
+function heredocSubstitution(body: string): boolean {
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] === '\\') { i++; continue; }
+    if (body[i] === '`') return true;
+    if (body[i] !== '$') continue;
+    let next = i + 1;
+    while (body[next] === '\\' && body[next + 1] === '\n') next += 2;
+    if (body[next] === '(') return true;
+  }
+  return false;
+}
+
 /** Visits each literal command segment and output redirect, tracking the working directory the same way for every caller. */
 function walkCommands(command: string, cwd: string, visit: CommandVisitor): void {
   if (command.length > 65_536) return;
@@ -165,6 +178,7 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
         content.push(lines[line]!);
       }
       body = content.join('\n');
+      if (!delimiter.quoted && heredocSubstitution(body)) unparsed = true;
     }
     parsed.push({ tokens, body });
     if (unparsed) break;
@@ -504,7 +518,7 @@ const WORKTREE_ADD_DENIAL = (target: string, root: string): Denial => ({
   fix: `Create the worktree under ${root} as <repo>-wt-<slug>, or run \`repo-harness run contract-worktree start --issue <number>\`.`,
 });
 
-/** Only a literal `git worktree add` target that resolves outside the managed root is denied. */
+/** Literal worktree targets and unparsed commands that mention worktrees fail closed. */
 function worktreeAddDenial(command: string, cwd: string): Denial | null {
   if (!/\bworktree\b/.test(command)) return null;
   let denial: Denial | null = null;
@@ -518,6 +532,13 @@ function worktreeAddDenial(command: string, cwd: string): Denial | null {
       try { root = managedWorktreeRoot(); } catch { return; }
       try { parent = realpathSync(parent); } catch { /* A missing parent cannot be the managed root. */ }
       if (!isManagedWorktreePath(join(parent, basename(target)), root)) denial = WORKTREE_ADD_DENIAL(target, root);
+    },
+    unparsed: () => {
+      denial ??= {
+        guard: 'WorktreeCreateGuard',
+        reason: 'The command mentions worktree and contains shell syntax outside the parsed grammar.',
+        fix: 'Use a separate parsed command, or run `repo-harness run contract-worktree start --issue <number>`.',
+      };
     },
   });
   return denial;
