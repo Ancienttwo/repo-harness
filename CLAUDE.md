@@ -13,7 +13,7 @@
 - Read `tasks/lessons.md` at session start and apply its active lessons. Current repo state and evidence override a lesson.
 - Ordinary tasks use the PR description: goal, scope, changes, verification, risk and rollback. No plan, contract, review, notes or approval artifact is mandatory. Record a one-time decision in the issue.
 - GitHub operations (PRs, reviews, merges, labels, releases, comments) go only through the gh/git CLI or the GitHub API. Never use simulated browser clicks on github.com: the account can be banned.
-- Preserve `agents/fleet/`, release checklists and downstream `assets/templates`. `.ai/harness/workflow-contract.json` is the opt-in marker. `assets/workflow-contract.v1.json` is the contract. `_ops/` is ignored private operations state: never commit or agent-edit it, except directories listed in `operations.agent_writable_private_dirs`. `_ref/` is an ignored reference cache; cite influential revisions. Follow deploy SQL policy, otherwise use ascending 4-digit files under `deploy/sql/`.
+- Preserve `agents/fleet/`, release checklists and downstream `assets/templates`. `.ai/harness/workflow-contract.json` is the opt-in marker. `assets/workflow-contract.v1.json` is the contract. `_ops/` is ignored private operations state: never commit or agent-edit it, except directories listed in `operations.agent_writable_private_dirs`, which only Edit, Write and apply_patch may write; Bash stays denied under `_ops/`. `_ref/` is an ignored reference cache; cite influential revisions. Follow deploy SQL policy, otherwise use ascending 4-digit files under `deploy/sql/`.
 
 ## Code Optimization Principles
 - Identify observable conditions, controllable inputs, the invariant and the actual pressure point before changing structure.

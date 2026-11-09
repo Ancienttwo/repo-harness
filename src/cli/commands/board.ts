@@ -14,6 +14,7 @@ import { BoardParentsError, collectBoardParents } from '../../effects/board/pare
 import { BoardSeatsError, collectBoardSeats } from '../../effects/board/seats';
 import { DispatchError, type DispatchPlanV1 } from '../../core/board/dispatch';
 import { runDispatch } from '../../effects/board/dispatch';
+import { runReview, type ReviewResultV1 } from '../../effects/board/review';
 import { seatLaunch } from './seats';
 import { runBoardCloseout, stopArchitectureDaemons, stopCodegraphServers } from '../../effects/board/closeout';
 import { worktreeProcesses } from '../../effects/git/worktree-processes';
@@ -63,6 +64,16 @@ function dispatchText(plan: DispatchPlanV1, started: readonly number[]): string 
   return plan.decisions.map(decision => decision.action === 'skip'
     ? `#${decision.issue} skipped (${decision.reason}): ${decision.detail}`
     : `#${decision.issue} ${started.includes(decision.issue) ? 'started' : 'ready'} on ${decision.seat}: ${decision.route_line}`).join('\n') + '\n';
+}
+
+function reviewText(result: ReviewResultV1): string {
+  const started = new Set(result.started.map(entry => entry.pr));
+  const refused = new Map(result.refused.map(entry => [entry.pr, entry.reason]));
+  const lines = result.decisions.map(decision => decision.action === 'skip'
+    ? `PR #${decision.pr} skipped (${decision.reason}): ${decision.detail}`
+    : refused.has(decision.pr) ? `PR #${decision.pr} refused: ${refused.get(decision.pr)}`
+      : `PR #${decision.pr} ${started.has(decision.pr) ? 'started' : 'ready'} on gatekeeper: ${decision.reason}${decision.second_reviewer_required ? '; second_reviewer_required: start the Claude reviewer by hand' : ''}`);
+  return `${lines.join('\n')}\n`;
 }
 
 function attentionText(attention: BoardAttentionV1): string {
@@ -135,6 +146,23 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
         process.stdout.write(dispatchText(result.plan, result.started.map(entry => entry.issue)));
       } catch (error) {
         if (!(error instanceof BoardCollectError || error instanceof BoardSourceError || error instanceof DispatchError)) throw error;
+        process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, message: error.message })}\n`);
+        process.exitCode = 1;
+      }
+    });
+  board.command('review')
+    .description('Start the review seat of each ready, green pull request with no start marker for its head (takes --parent): marker comment and review tab in the writer worktree')
+    .requiredOption('--space <id>', 'Herdr space that receives the review tabs')
+    .option('--dry-run', 'Print the decision for each pull request and start nothing')
+    .action(async (options: { space: string; dryRun?: boolean }, command: Command) => {
+      try {
+        const result = await runReview({
+          repo_root: process.cwd(), parent: parentNumber(command.optsWithGlobals<BoardOptions>()), space: options.space, host, dry_run: options.dryRun === true,
+          launch: (seat, labels, cwd) => seatLaunch(seat, labels, process.env, cwd),
+        });
+        process.stdout.write(reviewText(result));
+      } catch (error) {
+        if (!(error instanceof BoardCollectError || error instanceof BoardSourceError)) throw error;
         process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, message: error.message })}\n`);
         process.exitCode = 1;
       }

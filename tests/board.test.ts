@@ -124,6 +124,50 @@ function rules(board: BoardV1): BoardRuleId[] {
   return evaluateBoardAttention(board).findings.map(finding => finding.rule);
 }
 
+test('Low acceptance uses the effective tier of every linked issue: a Low closing issue with a High or unobserved ref is not accepted by tier', () => {
+  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' };
+  const via = (refs: string) => replay({
+    parent: (data) => { issueNode(data, 1479).labels.nodes.push({ name: 'tier:low' }); issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
+    pulls: (data) => {
+      const { pr1494 } = data.repository;
+      pr1494.body += refs;
+      pr1494.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push(green);
+    },
+  }).pull_requests.find(pr => pr.number === 1494)!.acceptance.status;
+  expect([via(''), via('\nRefs #1476\n'), via('\nRefs #1460\n')]).toEqual(['accepted', 'not_accepted', 'not_accepted']);
+});
+
+test('claude_review: only a branch-bound writer claim that names Claude, with every linked tier observed, skips the second review; a Claude record row for the head settles it', () => {
+  const claim = (runtime: string, branch: string) => comment(`repo-harness issue claim\nStatus: active\nRole: writer\nBranch: ${branch}\nRuntime: ${runtime}`, '2026-11-02T10:00:00Z');
+  const record = (sha: string, role: string) => `repo-harness acceptance record\n\n| Round | Role | Subject | Verdict |\n|---|---|---|---|\n| 1 | ${role}, read-only | \`${sha}\` | PASS: 0 P1 |\n`;
+  const board = replay({
+    parent: (data) => {
+      for (const [number, runtime, branch] of [[1475, 'claude', 'feat/1475-hc-transport'], [1479, 'claude', 'feat/1479-notify-relay'], [1476, 'codex', 'feat/1476-sessions-herdr-core']] as const) {
+        const node = issueNode(data, number);
+        node.labels.nodes.push({ name: 'tier:high' });
+        node.comments.nodes.push(claim(runtime, branch));
+      }
+    },
+    pulls: (data) => {
+      const { pr1494, pr1499 } = data.repository;
+      pr1494.body += '\nCloses #1460\n';
+      pr1499.comments.nodes.push(comment(record(pr1499.headRefOid, 'claude (opus)'), '2026-11-02T22:00:00Z'));
+    },
+  });
+  // #1494 also closes #1460, outside the board: its tier is unknown and counts as High, so the claude claim is not enough.
+  expect(board.pull_requests.map(pr => [pr.number, pr.tier, pr.claude_review])).toEqual([[1491, 'high', 'not_required'], [1494, null, 'pending'], [1499, 'high', 'recorded']]);
+  // A10 reads the open, non-draft #1491: a Claude writer claim gives no finding; a Codex claim with no Claude row does.
+  expect(evaluateBoardAttention(board).findings.filter(finding => finding.rule === 'A10')).toEqual([]);
+  const codex = replay({
+    parent: (data) => {
+      const node = issueNode(data, 1475);
+      node.labels.nodes.push({ name: 'tier:high' });
+      node.comments.nodes.push(claim('codex', 'feat/1475-hc-transport'));
+    },
+  });
+  expect(evaluateBoardAttention(codex).findings.filter(finding => finding.rule === 'A10').map(finding => finding.pull_requests)).toEqual([[1491]]);
+});
+
 test('replay: the recorded #1474 reads project to a board, and its findings come from the recorded state', () => {
   const board = replay();
   expect(decodeBoard(JSON.parse(JSON.stringify(board)))).toEqual(board);
@@ -155,6 +199,7 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
     ['A1', 'orchestrator', [1491], []],
     ['A3', 'orchestrator', [], ['t1']],
     ['A7', 'orchestrator', [], []],
+    ['A10', 'orchestrator', [1491], []],
     ['R2', 'advisor', [1494, 1499], []],
   ]);
   // t4 has no seat label: the board does not guess its seat. The plan comment has no block, so R1 and R4 wait.
@@ -189,7 +234,7 @@ test('attention rules and delivery windows recognize all worker seat kinds', () 
 
 test('board summary counts the recorded PRs, planned issue members and orchestrator findings', () => {
   const board = replay();
-  expect(boardSummary(board)).toEqual({ queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, current_batch: null, needs_you: 3, worker_limit: ISSUE_FLOW_WORKER_LIMIT,
+  expect(boardSummary(board)).toEqual({ queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, current_batch: null, needs_you: 4, worker_limit: ISSUE_FLOW_WORKER_LIMIT,
     seats: { status: 'observed', stalled: 0, desks: [
       { seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'blocked' }, { seat: 'worker', agent: 'claude-code', issue: 1475, pr: 1491, state: 'done' },
     ] } });
@@ -798,7 +843,7 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
   await window();
   expect(slept).toEqual([WINDOW_WITH_WORKERS_MS]);
   // One line per seat terminal: all findings of its route in this window.
-  const orchestrator = '[rh-attention] #1474 A1: #1491 is accepted and ready, unmerged for 137 min; A7: the daily full run is failure (https://github.com/Ancienttwo/repo-harness/actions/runs/41358255043) and no CI repair issue is open';
+  const orchestrator = '[rh-attention] #1474 A1: #1491 is accepted and ready, unmerged for 137 min; A7: the daily full run is failure (https://github.com/Ancienttwo/repo-harness/actions/runs/41358255043) and no CI repair issue is open; A10: #1491 is of unknown tier (counted as High) and has no Claude review of 20e2cbd21; start the Claude reviewer seat';
   expect(hc.calls().filter(args => args[0] !== 'get')).toEqual([
     ['send', '--json', '--', 't3', orchestrator],
     ['send', '--json', '--', 't9', expect.stringMatching(/^\[rh-attention\] #1474 R2: #1494 and #1499 both change .+ with no dependency edge$/u)],
@@ -819,7 +864,7 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
     ['t12', 'terminal_ended', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
     ['t8', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
   ]);
-  expect(records().filter(record => record.kind === 'finding').map(record => record.rule)).toEqual(['A1', 'A7', 'R2']);
+  expect(records().filter(record => record.kind === 'finding').map(record => record.rule)).toEqual(['A1', 'A7', 'A10', 'R2']);
 
   await runAttentionWindow({ parent: 1475, deliver: true, log_path: otherLogPath, collect: () => ({ ...watched, parent: { ...watched.parent, number: 1475 } }), host: hc.host,
     now: () => new Date(clock), sleep: async () => {} });
