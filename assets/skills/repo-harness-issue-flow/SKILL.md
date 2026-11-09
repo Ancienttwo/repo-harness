@@ -146,7 +146,8 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   each round has fewer findings than the round before, the scope does not
   grow and no new P0 or P1 finding appears. Round 5 is a hard stop. A grown
   scope or a new P0 or P1 finding goes to the owner (`references/acceptor.md`
-  §2.2).
+  §2.2). For issue-flow review loops, this rule replaces the three-round cap
+  of the managed global working rules.
 - Dispatch. After the owner approves a batch parent and its plan comment,
   the orchestrator dispatches the plan's issues in plan order with no other
   owner step. A new issue or a changed order goes to the owner or to a joint
