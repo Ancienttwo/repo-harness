@@ -40,7 +40,7 @@ scan_pattern() {
 
 scan_pattern "prompt-injection" '(ignore (all|any|previous) instructions|reveal (the )?(system|developer) prompt|bypass (the )?(guard|policy)|override (the )?(policy|guard))'
 scan_pattern "secret-exfiltration" '(print|show|copy|upload|send).*(api key|token|secret|credential|\.env)|curl .*https?://|wget .*https?://'
-scan_pattern "filesystem-exfiltration" '(read|cat|copy).*(\.env|id_rsa|config\.yaml|secrets?)'
+scan_pattern "filesystem-exfiltration" '\b(read|cat|copy)\b.*(\.env|id_rsa|config\.yaml|secrets?)'
 
 if [[ "$issues" -gt 0 ]]; then
   echo "[ContextScan] FAIL (${issues} suspicious pattern(s))"

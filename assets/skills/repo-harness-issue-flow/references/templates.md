@@ -259,6 +259,8 @@ field is missing it posts `issue claim status` with `Status: released`,
 then one complete claim. It names the missing fields in a `To: <agent>`
 comment and does not dispatch until the corrected claim is on the board.
 
+Every template below ends with the line `Seat: <seat id> <hc address>` when a seat posts it by hand. The line is a reader trace; no decoder reads it. The `review start` marker keeps its own `Seat:` field and takes no second line.
+
 `issue claim` is seat-only. The coordinator posts it, including the
 claim of each agent it dispatches. Such a claim names the agent in
 `Agent:` and the coordinator's own claim in `Coordinator:`. Any other
@@ -381,9 +383,8 @@ Findings:
 Every review writes this record, one row per review. The fields are `Round`,
 `Role`, `Subject` (the full 40-hex head SHA in backticks), `Verdict`
 (`PASS` or `FAIL`, a colon, then the finding counts) and the
-`Model relation` line. `repo-harness review publish` writes it. For a
-round that the command does not accept, the session posts the same text
-by hand (`acceptor.md` §4). The board reads only this shape. A record that it cannot
+`Model relation` line. `repo-harness review publish` writes it for rounds
+1 to 5 (`acceptor.md` §4). The board reads only this shape. A record that it cannot
 read makes the PR state unknown, not accepted.
 
 ### review reply (in the PR review thread)

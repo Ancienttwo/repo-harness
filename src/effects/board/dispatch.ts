@@ -2,6 +2,7 @@ import { spawnSync } from 'child_process';
 import { DispatchError, planDispatch, type DispatchDecisionV1, type DispatchPlanV1 } from '../../core/board/dispatch';
 import type { BoardHostPortsV1 } from '../../core/board/board';
 import { seatAccountQuotas } from '../../core/board/seat-routing';
+import { withSeatLine } from '../../core/board/seat-line';
 import type { SeatConfigV1, SeatId } from '../../core/board/seats-settings';
 import { HerdrCoreError, herdrAppDo } from '../terminal/herdr-core';
 import { runHelper } from '../runtime/helper-runner';
@@ -131,7 +132,7 @@ export async function runDispatch(input: DispatchInput): Promise<DispatchResultV
   const plan = planDispatch({ parent, terminals: terminals.terminals, seats, quota });
   const started = await executeDispatch(plan, { repositoryId, parent: input.parent, space: input.space, dry_run: input.dry_run }, {
     startWorktree: issue => startWorktree(input, issue),
-    comment: (issue, body) => gh(input, ['issue', 'comment', String(issue), '--body-file', '-'], body),
+    comment: (issue, body) => gh(input, ['issue', 'comment', String(issue), '--body-file', '-'], withSeatLine(body)),
     openTab: args => { herdrAppDo('tab.new', args); },
     launch: input.launch,
   });
