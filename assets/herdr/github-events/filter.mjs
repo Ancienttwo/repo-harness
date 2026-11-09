@@ -6,7 +6,8 @@ export const PROTOCOL_HEADERS = [
   'repo-harness issue claim', 'repo-harness issue claim status', 'repo-harness boundary question',
   'repo-harness scope change', 'repo-harness decision', 'repo-harness plan', 'repo-harness handoff',
   'repo-harness acceptance claim', 'repo-harness acceptance record', 'repo-harness review reply',
-  'repo-harness unblocked', 'repo-harness integration status',
+  'repo-harness unblocked', 'repo-harness integration status', 'repo-harness merge hold',
+  'repo-harness merge hold released',
 ];
 export const REQUIRED_CHECK = 'Required / CI';
 
