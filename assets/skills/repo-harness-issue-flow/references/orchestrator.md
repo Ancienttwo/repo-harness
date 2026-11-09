@@ -528,7 +528,7 @@ are true:
 - No hold record is in force on the parent, on the PR's issues or on the PR.
 - The plan does not hold its issues, its issues are in `merge_order`, and
   every issue before each of them in `merge_order` is closed. A PR that
-  closes an earlier plan item is refused: reorder the plan or split the PR.
+  closes two plan items is never eligible, in any plan order: split the PR.
 - An acceptance record has a PASS row for the head, at every tier. The
   provisional `tier_low` status is not enough: post the Low record after
   you check the verification evidence.
@@ -551,7 +551,9 @@ its `Issues:` line. A hold on an issue or a PR holds that issue or PR. Each
 hold stays in force until a `merge hold released` on the same thread that
 is strictly newer than the hold; a release with the same time does not end
 it. When the newest 50 comments of a thread hold no release and older
-comments exist, the command refuses with `hold_unknown`.
+comments exist, the command refuses with `hold_unknown`. Before you post a
+release to clear it, read the full thread: a release ends every older hold
+on that thread.
 
 ## 10. Close out
 

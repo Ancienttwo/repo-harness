@@ -97,7 +97,7 @@ function refusal(board: BoardV1, pr: BoardPullRequestV1): { readonly reason: Boa
   // Every entry before each linked item must be closed. An earlier issue outside the board has no observed state, so it blocks like an open one.
   const earlier = plan.merge_order.slice(0, last).filter(number => onBoard.get(number)?.state !== 'closed');
   const own = earlier.find(number => pr.closes.includes(number));
-  if (own !== undefined) return { reason: 'merge_order', detail: `earlier plan item #${own} is closed only by this PR; reorder the plan or split the PR` };
+  if (own !== undefined) return { reason: 'merge_order', detail: `earlier plan item #${own} is closed only by this PR; split the PR` };
   if (earlier.length > 0) return { reason: 'merge_order', detail: `earlier in merge_order and not closed: ${earlier.map(number => `#${number}`).join(' ')}` };
   // The provisional `tier_low` path needs an evidence check by a seat, so an unattended merge takes a record at every tier.
   // A record acceptance of a High head from a non-Claude writer already includes its Claude review (`acceptance` in board.ts).
