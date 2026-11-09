@@ -331,6 +331,6 @@ None of these are bundled dependencies; see
 
 ## Release & license
 
-- npm: `repo-harness@0.29.0` · workflow stamp `repo-harness@0.29.0+template@0.29.0`
+- npm: `repo-harness@0.29.1` · workflow stamp `repo-harness@0.29.1+template@0.29.1`
 - History: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 - License: MIT — see [`LICENSE`](LICENSE)
