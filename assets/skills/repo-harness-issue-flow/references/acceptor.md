@@ -26,8 +26,6 @@ return the result schema can accept.
   rules in `docs/reference-configs/agentic-development-flow.md`, Review by
   risk. Code that writes comments, records, reviews or labels to GitHub is
   Medium unless it also hits the High list.
-- For the Medium tier, the one review comes from a model family different
-  from the writer's.
 - For the High tier, at least one of the two reviews of a head comes from
   a model family different from the writer's (§2.2).
 - The other High review can use a fresh context of the writer's family.
@@ -70,15 +68,13 @@ The table rules govern how the row combines with the review.
    The board accepts a High head, or a head of unknown tier, only when it
    has `PASS` rows that cite two distinct `acceptance claim` comments of
    the PR, each with the row's `Subject` and `Round`, at least one of them with `Model relation: different-family`,
-   and no `FAIL` row. A Medium head needs one `PASS` row that cites an
-   `acceptance claim` comment of the PR the same way and records
-   `Model relation: different-family`, and no `FAIL` row. A `same-family`
-   or `unknown` row does not count for Medium.
+   and no `FAIL` row. A Medium head needs one `PASS` row and no `FAIL`
+   row.
 
    **Sync head.** A sync with main makes a new head, and the board reads
    only the rows of the current head. A sync check reviews the sync delta
    and writes one record row for the new head. A Medium sync head needs
-   one sync check row under the Medium rule above. A High sync head needs the round-1 rule: two sync
+   one sync check row. A High sync head needs the round-1 rule: two sync
    check rows from distinct claims, at least one different-family. The
    acceptance of an earlier head does not carry over.
 2. **Round 2.** The reviewer or reviewers that raised a blocking finding

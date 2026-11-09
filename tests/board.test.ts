@@ -224,14 +224,8 @@ test('High acceptance: PASS rows of the head from two distinct claims, one recor
   const pr1491 = (projection: BoardV1) => projection.pull_requests.find(pr => pr.number === 1491)!;
   expect(projected.map(pr1491).map(pr => [pr.acceptance.status, pr.claude_review] as string[])).toEqual(cases.map(([, status, claude]) => [status, claude]));
   expect(evaluateBoardAttention(projected[1]!).findings.filter(finding => finding.rule === 'A10')).toEqual([]);
-  // Medium needs one claimed different-family PASS row (#2084): an unclaimed row with no relation does not count.
-  expect(pr1491(head([['pi', '', null]], 'tier:medium'))).toMatchObject({ acceptance: { status: 'not_accepted' }, claude_review: 'not_required' });
-  expect(pr1491(head([gatekeeper], 'tier:medium'))).toMatchObject({ acceptance: { status: 'accepted', via: 'record' }, claude_review: 'not_required' });
-  // An unclaimed different-family row proves no review either.
-  expect(pr1491(head([['pi', '']], 'tier:medium'))).toMatchObject({ acceptance: { status: 'not_accepted' }, claude_review: 'not_required' });
-  // A same-family gatekeeper PASS leaves the different-family review to the Claude reviewer: pending, then accepted on its row.
-  expect(pr1491(head([['pi', claimUrl(1), 'same-family']], 'tier:medium'))).toMatchObject({ acceptance: { status: 'not_accepted' }, claude_review: 'pending' });
-  expect(pr1491(head([['pi', claimUrl(1), 'same-family'], ['claude', claimUrl(2)]], 'tier:medium'))).toMatchObject({ acceptance: { status: 'accepted' }, claude_review: 'recorded' });
+  // Medium keeps one PASS row, with no claim or relation check.
+  expect(pr1491(head([['pi', '', null]], 'tier:medium'))).toMatchObject({ acceptance: { status: 'accepted', via: 'record' }, claude_review: 'not_required' });
 });
 
 test('replay: the recorded #1474 reads project to a board, and its findings come from the recorded state', () => {
@@ -727,25 +721,25 @@ test('one hit for each rule that the recorded state does not trigger', () => {
   expect(merged.findings.filter(finding => finding.rule === 'A9').map(finding => [finding.terminals, finding.pull_requests])).toEqual([[['t2'], [1494]]]);
 });
 
-test('R5 and the effective tier read the High list: board record-writing code is Medium on one different-family PASS row; a hook change is High and needs two', () => {
+test('R5 and the effective tier read the High list: board record-writing code is Medium on one PASS row; a hook change is High and needs two', () => {
   const [hook, boardWriter] = ['src/cli/hook/mutation-guard.ts', 'src/effects/board/review.ts'];
-  const receipt = (subject_sha: string, model_relation: ModelRelation): ReviewPublishReceipt => ({
-    protocol: 1, kind: 'repo-harness-review-publish-receipt', round: 1, subject_sha, risk_tier: 'medium', reviewer: { harness: 'codex', actual_model: null }, verdict: 'PASS', model_relation, summary: 'Reviewed.', findings: [],
+  const receipt = (subject_sha: string): ReviewPublishReceipt => ({
+    protocol: 1, kind: 'repo-harness-review-publish-receipt', round: 1, subject_sha, risk_tier: 'medium', reviewer: { harness: 'codex', actual_model: null }, verdict: 'PASS', model_relation: 'different-family', summary: 'Reviewed.', findings: [],
   });
   const claimAt = '2026-11-02T21:01:00Z';
-  // #1499 closes tier:medium #1476, changes `files` and has one claimed PASS row of its head with `relation`.
-  const board = (files: string[], tier: string, incomplete: boolean, relation: ModelRelation) => replay({
+  // #1499 closes tier:medium #1476, changes `files` and has one claimed different-family PASS row of its head.
+  const board = (files: string[], tier: string, incomplete: boolean) => replay({
     owners: (results) => { results.push(...files.filter(path => !results.some(entry => entry.path === path)).map(path => ({ path, matched: false, ambiguous: false, owningCapabilityId: null }))); },
     parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: tier }); },
     pulls: (data) => {
       const { pr1499 } = data.repository;
       pr1499.files = { totalCount: files.length + (incomplete ? 1 : 0), nodes: files.map(path => ({ path })) };
-      pr1499.comments.nodes.push(comment(renderAcceptanceClaim(receipt(pr1499.headRefOid, relation)), claimAt));
-      pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt(pr1499.headRefOid, relation), `https://github.com/Ancienttwo/repo-harness/pull/1499#issuecomment-${Date.parse(claimAt)}`), '2026-11-02T22:00:00Z'));
+      pr1499.comments.nodes.push(comment(renderAcceptanceClaim(receipt(pr1499.headRefOid)), claimAt));
+      pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt(pr1499.headRefOid), `https://github.com/Ancienttwo/repo-harness/pull/1499#issuecomment-${Date.parse(claimAt)}`), '2026-11-02T22:00:00Z'));
     },
   });
-  const view = (files: string[], tier = 'tier:medium', incomplete = false, relation: ModelRelation = 'different-family') => {
-    const read = board(files, tier, incomplete, relation);
+  const view = (files: string[], tier = 'tier:medium', incomplete = false) => {
+    const read = board(files, tier, incomplete);
     const pr = read.pull_requests.find(entry => entry.number === 1499)!;
     const attention = evaluateBoardAttention(read);
     return [pr.tier, pr.acceptance.status,
@@ -753,8 +747,6 @@ test('R5 and the effective tier read the High list: board record-writing code is
       ...attention.unevaluated.filter(entry => entry.rule === 'R5' && entry.subject?.startsWith('#1499') === true).map(entry => `${entry.reason}: ${entry.subject}`)];
   };
   expect(view([boardWriter])).toEqual(['medium', 'accepted']);
-  // A same-family Medium PASS row alone is not the different-family review.
-  expect(view([boardWriter], 'tier:medium', false, 'same-family')).toEqual(['medium', 'not_accepted']);
   expect(view([boardWriter, hook])).toEqual(['high', 'not_accepted', `#1499 changes ${hook} (hooks), a High signal, but #1476 is tier:medium`]);
   expect(view([hook], 'tier:high')).toEqual(['high', 'not_accepted']);
   // A change hazard path sets the High tier too; R3 names the label.

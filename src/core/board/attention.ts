@@ -273,11 +273,11 @@ function a9(context: Context): void {
   }
 }
 
-/** A10: an open High or Medium pull request whose head does not meet its acceptance rule has no Claude reviewer row for its head (`claude_review: pending`). No merge gate holds it, so the board does. */
+/** A10: an open High pull request whose head does not meet the High acceptance rule has no Claude reviewer row for its head (`claude_review: pending`). No merge gate holds it, so the board does. */
 function a10(context: Context): void {
   for (const pr of openPullRequests(context.board).filter(entry => !entry.is_draft && entry.claude_review === 'pending')) {
     find(context, 'A10', { issues: itemsOf(context.board, pr), pull_requests: [pr.number] },
-      `#${pr.number} is ${pr.tier === null ? 'of unknown tier (counted as High)' : pr.tier === 'medium' ? 'Medium tier' : 'High tier'} and has no Claude review of ${pr.head_sha.slice(0, 9)}; start the Claude reviewer seat`);
+      `#${pr.number} is ${pr.tier === null ? 'of unknown tier (counted as High)' : 'High tier'} and has no Claude review of ${pr.head_sha.slice(0, 9)}; start the Claude reviewer seat`);
   }
 }
 

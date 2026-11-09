@@ -109,7 +109,7 @@ export async function executeReview(decisions: readonly ReviewDecisionV1[], cont
       // The launch is read before the marker: a configuration error then leaves no marker, so a retry works once it is fixed.
       const launch = await ports.launch(start.seat, { repositoryId: context.repositoryId, pr: String(decision.pr), parent: String(context.parent) }, worktree.path);
       if (start.seat === 'gatekeeper' && decision.needs_non_claude_gatekeeper && launch.runtime === 'claude') {
-        refuse(decision.pr, 'gatekeeper_is_claude: this head needs a non-Claude gatekeeper, so that the Claude reviewer is the other model family; set the gatekeeper runtime to another harness');
+        refuse(decision.pr, 'gatekeeper_is_claude: this head needs a non-Claude gatekeeper PASS besides the Claude review; set the gatekeeper runtime to another harness');
         break;
       }
       // Only a Claude review records the verdict that the board waits for, so another runtime would leave the head pending behind its own marker.
