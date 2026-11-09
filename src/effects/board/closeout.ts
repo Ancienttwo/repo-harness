@@ -155,24 +155,27 @@ function proveCloseout(input: BoardCloseoutInput, pr: MergedPullRequest): Closeo
   return { main, common: common!, path, target_oid: target.out };
 }
 
-/** True when `cwd` is a checkout of this repository whose current branch is the PR head branch. */
-function onHeadBranch(cwd: string | null, pr: MergedPullRequest, common: string): boolean {
-  if (cwd === null || commonDirectory(cwd) !== common) return false;
+/** True when `cwd` is inside the PR head worktree, which is never the primary checkout, on the PR head branch. */
+function inHeadWorktree(cwd: string | null, pr: MergedPullRequest, proof: CloseoutProof): boolean {
+  if (cwd === null || commonDirectory(cwd) !== proof.common) return false;
+  const top = git(cwd, ['rev-parse', '--show-toplevel']);
   const branch = git(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
-  return branch.ok && branch.out === pr.head_ref;
+  try { return top.ok && branch.ok && branch.out === pr.head_ref && realpathSync(top.out) === realpathSync(proof.path) && proof.path !== proof.main; } catch { return false; }
 }
 
 /**
- * The binding of a seat terminal to the PR: its pr label, a closing-issue label, or a cwd on the PR head branch
- * (a `Refs`-only PR has no closing issue, #2071). A binding without the pr label next to the pr label of another PR is a conflict; closeout refuses that pane.
+ * The binding of a seat terminal to the PR: its pr label, a closing-issue label, or (a `Refs`-only PR has no closing issue, #2071)
+ * a cwd in the PR head worktree. The branch binding needs no issue label, or an issue label that the PR closes, or a PR without closing issues.
+ * A binding without the pr label next to the pr label of another PR is a conflict; closeout refuses that pane.
  * A terminal without a seat label is a task session; the runtime cleanup of the worktree owns it.
  */
-function paneBinding(terminal: BoardSeatTerminalReadV1, pr: MergedPullRequest, common: string): 'bound' | 'conflict' | 'none' {
+function paneBinding(terminal: BoardSeatTerminalReadV1, pr: MergedPullRequest, proof: CloseoutProof): 'bound' | 'conflict' | 'none' {
   const { labels } = terminal;
   if (labels.seat === undefined) return 'none';
   if (labels.pr === String(pr.number)) return 'bound';
-  const byIssue = labels.issue !== undefined && pr.closing_issues.some(issue => String(issue) === labels.issue);
-  if (!byIssue && !onHeadBranch(terminal.cwd, pr, common)) return 'none';
+  const closes = labels.issue !== undefined && pr.closing_issues.some(issue => String(issue) === labels.issue);
+  const issueFits = labels.issue === undefined || closes || pr.closing_issues.length === 0;
+  if (!closes && !(issueFits && inHeadWorktree(terminal.cwd, pr, proof))) return 'none';
   return labels.pr === undefined ? 'bound' : 'conflict';
 }
 
@@ -180,7 +183,7 @@ function closePanes(input: BoardCloseoutInput, pr: MergedPullRequest, proof: Clo
   const read = input.host.closeoutTerminals(String(readRepositoryId(input)));
   if (read.status === 'unavailable') throw new BoardCollectError(`the seat terminals are unavailable: ${read.reason}`);
   return read.terminals.flatMap((terminal): BoardCloseoutPaneV1[] => {
-    const binding = paneBinding(terminal, pr, proof.common);
+    const binding = paneBinding(terminal, pr, proof);
     if (binding === 'none') return [];
     const pane = { address: terminal.address, seat: terminal.labels.seat ?? null };
     const keep = binding === 'conflict' ? `conflicting_binding pr ${terminal.labels.pr}`
