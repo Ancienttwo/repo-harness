@@ -153,8 +153,10 @@ page. No config migration runs.
 - After the merge of `origin/main` at `9a42fd121`: `bun run check:type`
   exit 0; `bun run test:files tests/cli/review.test.ts
   tests/bootstrap-files.test.ts tests/skill-version.test.ts`: 22, 15 and
-  10 pass, 0 fail. The merge adds no package or lockfile change, so the
-  `check:release` result above stays valid for the package contents.
+  10 pass, 0 fail. The merge changes no manifest or lockfile, but
+  #2068 changes `src/effects/review/review-publish.ts`, which ships in the
+  tarball. The `check:release` result above covers `0130aa52f`; hosted CI
+  and the merge-commit prepublish gate cover the merged head.
 - `git diff --check` against the final base: exit 0. Historical CHANGELOG
   byte comparison from `[0.28.0]` through the end: identical to the final
   base.
