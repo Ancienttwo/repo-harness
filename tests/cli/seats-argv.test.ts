@@ -179,7 +179,8 @@ describe("repo-harness seats argv", () => {
         expect(result.status, result.stderr).toBe(0);
         const value = JSON.parse(result.stdout);
         expect([value.name, value.tab]).toEqual([`rh-${role}-1925`, "review"]);
-        expect(value.brief).toContain("Do not edit files, commit, push, or write to GitHub. Report the verdict first");
+        expect(value.brief).toContain("Do not edit files, commit or push. Do not write to GitHub, with one exception: publish your own round with `repo-harness review publish --pr <number> --receipt <path>`. Run no other GitHub write. Report the verdict first");
+        expect(value.brief).not.toContain("Do not write to GitHub.");
         expect(value.brief).not.toContain("You are a worker seat");
         if (seat === "gatekeeper") {
           expect(agent(value)).toContain("read-only");
@@ -344,6 +345,35 @@ describe("repo-harness seats argv", () => {
       expect(orchestrator).not.toContain("--disallowedTools");
       expect(orchestrator).not.toContain("--strict-mcp-config");
     });
+  });
+
+  test("the schedule group adds the Cron tools to --tools and is off by default", () => {
+    const advisor = { ...DEFAULT_SEATS_CONFIG.advisor, tools: [...DEFAULT_SEATS_CONFIG.advisor.tools, "schedule"].sort() };
+    withHome({ ...DEFAULT_SEATS_CONFIG, advisor }, home => {
+      expect(tools(launch(home, "advisor").argv)).toEqual(expect.arrayContaining(["CronCreate", "CronList", "CronDelete"]));
+      const off = tools(launch(home, "orchestrator").argv);
+      for (const tool of ["CronCreate", "CronList", "CronDelete"]) expect(off).not.toContain(tool);
+      expect(launch(home, "advisor").limits).toContainEqual({ subject: "gh", level: "common_commands" });
+      expect(launch(home, "orchestrator").limits).toContainEqual({ subject: "schedule", level: "instructions_only" });
+      expect(launch(home, "orchestrator").brief).toContain("Do not schedule recurring jobs.");
+      // Shell off, MCP on: the MCP path alone keeps the limit instructions_only.
+      const mcpOnly = { ...DEFAULT_SEATS_CONFIG.advisor, tools: ["mcp", "read"] };
+      withHome({ ...DEFAULT_SEATS_CONFIG, advisor: mcpOnly }, home2 => expect(launch(home2, "advisor").limits).toContainEqual({ subject: "schedule", level: "instructions_only" }));
+    });
+  });
+
+  test("the schedule group changes no Codex or Pi argv, and a stored config without it decodes unchanged", () => {
+    for (const runtime of ["codex", "pi"] as const) {
+      const base = { ...DEFAULT_SEATS_CONFIG.advisor, runtime, model: runtime === "pi" ? "magpie/codex/gpt-6-astra" : "gpt-6.1-terra", effort: null, fleet: [] };
+      const argvWith = (seatTools: string[]) => withHome({ ...DEFAULT_SEATS_CONFIG, advisor: { ...base, tools: seatTools } }, home => { out.push(launch(home, "advisor").argv); });
+      const out: string[][] = [];
+      argvWith(["mcp", "net", "read", "shell"]);
+      argvWith(["mcp", "net", "read", "schedule", "shell"]);
+      expect(out[1]).toEqual(out[0]);
+    }
+    // A config stored before the group existed lists no schedule and still launches.
+    const stored = { ...DEFAULT_SEATS_CONFIG, advisor: { ...DEFAULT_SEATS_CONFIG.advisor, tools: ["mcp", "net", "read", "shell"] } };
+    withHome(stored, home => expect(launch(home, "advisor").source).toBe("seats"));
   });
 
   test("the orchestrator brief names its fleet and its review path; a fleet keeps the Agent tool and refuses every other agent type", () => {

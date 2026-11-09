@@ -7,6 +7,7 @@ All notable changes to this skill are documented here.
 ### Added
 
 - `repo-harness board closeout` stops a CodeGraph MCP server whose command line names exactly the merged worktree (`serve --mcp --path <worktree>`) and lists its PID in `stopped_codegraph_servers`. Any other process, or a process that stays after the stop, still keeps the worktree with `process_in_use`. (#2029)
+- A Claude seat can take the new `schedule` tool group (`CronCreate`, `CronList`, `CronDelete`). The group is off for every seat by default; Codex and Pi launches ignore it. (#2014)
 - `repo-harness board closeout` also removes finished seat terminals of the merged PR. It lists them with `hc ls --all`, under the same label binding and checkout proofs, and runs `hc rm` only. A retry after a failed `hc rm` now removes the terminal. (#2021)
 - `repo-harness worktrees path --repository <id> --worktree <id>` prints
   the absolute path of one registered worktree as one JSON line. In the
@@ -21,6 +22,7 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- The brief of a review seat with the `net` tool group lets it publish its own round with `repo-harness review publish` (#1996). It forbids every other GitHub write. A seat without `net` keeps the full GitHub write ban.
 - `/healthz.protocol` is now 3 (ADR-0003). A protocol-2 desktop app
   refuses a protocol-3 server; update the desktop app together with the
   CLI. (#1968)

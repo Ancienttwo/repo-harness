@@ -52,7 +52,7 @@ const CODEX_MODELS = ['gpt-6-luna', 'gpt-6-astra', 'gpt-6.1-sol', 'gpt-6.1-terra
 
 /** The ranges the server derives from the fleet role profiles, written out for the in-page store. */
 function seatsRanges(enabled: readonly string[]) {
-  const all = ['read', 'edit', 'shell', 'net', 'tasks', 'mcp', 'gh'];
+  const all = ['read', 'edit', 'shell', 'net', 'tasks', 'schedule', 'mcp', 'gh'];
   return {
     runtimes: [
       { id: 'claude', enabled: enabled.includes('claude'), models: ['opus', 'sonnet', 'haiku', 'fable'], effort: true, fleet: true },

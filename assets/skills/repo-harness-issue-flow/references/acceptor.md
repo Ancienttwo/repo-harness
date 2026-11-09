@@ -102,8 +102,11 @@ posts in this order:
 
 It posts no APPROVE review and no REQUEST_CHANGES review. A gatekeeper
 seat without the `net` tool group has no network, so the session that runs
-the round publishes its receipt. A reviewer with the `net` tool group may
-publish its own round.
+the round publishes its receipt. A reviewer with the `net` tool group
+publishes its own round with this one command and no other GitHub write.
+The review brief states that limit. On every seat, Codex and Pi included,
+the one-write limit is a brief rule only. On a Codex seat the sandbox
+limits files only.
 
 `review publish` accepts rounds 1 to 3 only. For a round above 3, the
 session that runs the round posts the `acceptance record` by hand, in the
