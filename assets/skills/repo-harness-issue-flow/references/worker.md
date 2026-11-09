@@ -233,9 +233,11 @@ You are the head owner. Only you push to this branch.
   exact head SHA. Then stop pushing.
 - **Report to the coordinator only on PASS, a boundary question or a
   fix-loop stop.** Send no notice for a push, a green CI run or a FAIL
-  that you fix yourself. A fix-loop stop is a new P0 finding, a new P1
-  finding about security, secrets, data or authentication, a grown scope,
-  or round 5 (`acceptor.md` §2.2). Every host message to the coordinator
+  that you fix yourself. A fix-loop stop is any stop or coordinator-decision
+  gate of this section (three failed CI fix rounds, the second finding in
+  one bug family) and of `acceptor.md` §2.2 (the round limits, the
+  blocking-finding count, a new P0 or sensitive P1, a grown scope, a new
+  P1 in two consecutive fix deltas). Every host message to the coordinator
   starts with `[rh-notice] <kind> #<issue>`. Select the form by content:
   - **Simple:** a fact or a question that changes no board state and
     needs no decision. Examples: dispatch received, a factual question
