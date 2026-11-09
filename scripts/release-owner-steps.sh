@@ -107,7 +107,8 @@ guard() {
   [[ "$CALLER_DIR" == "$expected" && "$(pwd -P)" == "$expected" ]] || fail "the checkout is $CALLER_DIR, not $expected."
   head="$(git rev-parse HEAD)" || fail "git rev-parse HEAD failed."
   [[ "$head" == "$sha" ]] || fail "HEAD is $head, not the release commit $sha."
-  status="$(git status --porcelain)" || fail "git status failed."
+  # No optional locks: git status must not refresh the index of the release checkout.
+  status="$(GIT_OPTIONAL_LOCKS=0 git status --porcelain)" || fail "git status failed."
   [[ -z "$status" ]] || fail "the checkout has changes; publish only the release commit."
   for file in package.json "$CONSOLE_DIR/package.json"; do
     got="$(json_field version < "$file")"
@@ -127,7 +128,7 @@ repository_slug() {
 }
 
 plan() {
-  local version="$1" sha slug repository_id console_name core_name upgrade worktree remote_tag
+  local version="$1" sha slug repository_id console_name core_name upgrade worktree remote_tag local_tag
   sha="$(release_commit "$version")"
   release_notes "$version" "$sha" >/dev/null
   { read -r console_name; read -r core_name; } < <(package_names "$sha")
@@ -137,7 +138,11 @@ plan() {
   remote_tag="$(remote_tag_refs "$version")"
   [[ -z "$remote_tag" ]] || fail "tag v${version} already exists on $REMOTE."
   # Worktrees share tags: a local tag would stop step 5 after both packages are on npm.
-  ! git rev-parse -q --verify "refs/tags/v${version}" >/dev/null || fail "tag v${version} already exists in this repository."
+  # rev-parse --verify exits 1 for a missing ref; any other failure proves nothing.
+  local_tag=0
+  git rev-parse -q --verify "refs/tags/v${version}" >/dev/null || local_tag=$?
+  [[ "$local_tag" != 0 ]] || fail "tag v${version} already exists in this repository."
+  [[ "$local_tag" == 1 ]] || fail "git rev-parse of tag v${version} failed."
   slug="$(repository_slug)"
   repository_id="$(gh api "repos/$slug" --jq .id)" || fail "gh api repos/$slug failed."
   upgrade="$(release_notes "$version" "$sha" | awk '/^### Upgrade/ { found = 1; next } /^### / { found = 0 } found { print }')"

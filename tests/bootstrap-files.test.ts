@@ -285,10 +285,10 @@ describe("Bootstrap Script Contracts", () => {
       mkdirSync(join(repo, "packages/operator-web"), { recursive: true });
       mkdirSync(join(repo, "docs"));
       copyFileSync(join(ROOT, "scripts/release-owner-steps.sh"), join(repo, "scripts/release-owner-steps.sh"));
-      const release = (version: string) => {
+      const release = (version: string, section = true) => {
         writeFileSync(join(repo, "package.json"), `{\n  "name": "repo-harness",\n  "version": "${version}"\n}\n`);
         writeFileSync(join(repo, "packages/operator-web/package.json"), `{\n  "name": "repo-harness-operator-web",\n  "version": "${version}"\n}\n`);
-        writeFileSync(join(repo, "docs/CHANGELOG.md"), `# Changelog\n\n## [${version}] - 2026-11-09\n\nRelease ${version}.\n\n### Upgrade\n\nRun step ${version}.\n\n### Changed\n\n- Change.\n\n## [0.0.1]\n\nOld.\n`);
+        writeFileSync(join(repo, "docs/CHANGELOG.md"), `# Changelog\n\n## [${section ? version : "0.0.2"}] - 2026-11-09\n\nRelease ${version}.\n\n### Upgrade\n\nRun step ${version}.\n\n### Changed\n\n- Change.\n\n## [0.0.1]\n\nOld.\n`);
         git("add", "-A");
         git("commit", "-qm", `release ${version}`);
         return git("rev-parse", "HEAD");
@@ -309,10 +309,10 @@ describe("Bootstrap Script Contracts", () => {
       mkdirSync(join(dir, "bin"));
       // The real npm config loader runs with the script's env; it needs no network.
       const realNpm = Bun.which("npm")!;
-      writeFileSync(join(dir, "bin/npm"), `#!/bin/bash\n[[ -f \"$npm_config_userconfig\" && ! -s \"$npm_config_userconfig\" && -f \"$npm_config_globalconfig\" && ! -s \"$npm_config_globalconfig\" && \"$npm_config_globalconfig\" != \"$npm_config_userconfig\" ]] && echo \"$npm_config_userconfig\" >> \"$HOME/npm-config\"\n${realNpm} config get registry >/dev/null && echo loaded >> \"$HOME/npm-loader\"\necho 'npm error code E404 not in this registry' >&2\nexit 1\n`, { mode: 0o755 });
+      writeFileSync(join(dir, "bin/npm"), `#!/bin/bash\n[[ -f \"$npm_config_userconfig\" && ! -s \"$npm_config_userconfig\" && -f \"$npm_config_globalconfig\" && ! -s \"$npm_config_globalconfig\" && \"$npm_config_globalconfig\" != \"$npm_config_userconfig\" ]] && echo \"$npm_config_userconfig\" >> \"$HOME/npm-config\"\n${realNpm} config get registry >/dev/null && echo loaded >> \"$HOME/npm-loader\"\n[[ \"$NPM_VIEW\" == published ]] && exit 0\n[[ \"$NPM_VIEW\" == error ]] && { echo 'npm error code ETIMEDOUT' >&2; exit 1; }\necho 'npm error code E404 not in this registry' >&2\nexit 1\n`, { mode: 0o755 });
       const realGit = Bun.which("git")!;
-      writeFileSync(join(dir, "bin/git"), `#!/bin/bash\n[[ -n "$FAIL_TAGS" && "$1 $2" == "ls-remote --tags" ]] && exit 128\nexec ${realGit} "$@"\n`, { mode: 0o755 });
-      writeFileSync(join(dir, "bin/gh"), `#!/bin/bash\ncase "$1 $2" in\n  "repo view") echo owner/repo ;;\n  "api repos/owner/repo") echo 42 ;;\n  "release view") echo "{\\"tagName\\":\\"$3\\",\\"isDraft\\":false,\\"isPrerelease\\":false}" ;;\n  *) exit 1 ;;\nesac\n`, { mode: 0o755 });
+      writeFileSync(join(dir, "bin/git"), `#!/bin/bash\n[[ -n "$FAIL_TAGS" && "$1 $2" == "ls-remote --tags" ]] && exit 128\n[[ -n "$FAIL_TAG_PARSE" && "$1 $4" == "rev-parse refs/tags/"* ]] && exit 128\nexec ${realGit} "$@"\n`, { mode: 0o755 });
+      writeFileSync(join(dir, "bin/gh"), `#!/bin/bash\ncase "$1 $2" in\n  "repo view") echo owner/repo ;;\n  "api repos/owner/repo") echo 42 ;;\n  "release view") case "$RELEASE_STATE" in missing) exit 1 ;; draft) d=true p=false ;; prerelease) d=false p=true ;; *) d=false p=false ;; esac; echo "{\\"tagName\\":\\"$3\\",\\"isDraft\\":$d,\\"isPrerelease\\":$p}" ;;\n  *) exit 1 ;;\nesac\n`, { mode: 0o755 });
       const runIn = (cwd: string, args: string[], env: Record<string, string> = {}) => spawnSync("bash", ["scripts/release-owner-steps.sh", ...args], {
         cwd, encoding: "utf8", env: { ...process.env, HOME: dir, GIT_CONFIG_GLOBAL: "/dev/null", PATH: `${join(dir, "bin")}:${process.env.PATH}`, ...env },
       });
@@ -334,7 +334,13 @@ describe("Bootstrap Script Contracts", () => {
       expect(npmConfigs).toHaveLength(2);
       expect(readFileSync(join(dir, "npm-loader"), "utf8")).toBe("loaded\nloaded\n");
       for (const config of npmConfigs) expect(config.startsWith(dir)).toBe(false);
-      expect(runIn(repo, ["plan", planVersion], { FAIL_TAGS: "1" }).stderr).toContain("git ls-remote --tags origin failed");
+      const planRefusals: Array<[Record<string, string>, string]> = [
+        [{ FAIL_TAGS: "1" }, "git ls-remote --tags origin failed"],
+        [{ FAIL_TAG_PARSE: "1" }, `git rev-parse of tag v${planVersion} failed`],
+        [{ NPM_VIEW: "published" }, `repo-harness-operator-web@${planVersion} is already on npm`],
+        [{ NPM_VIEW: "error" }, `unable to prove repo-harness-operator-web@${planVersion} is unpublished`],
+      ];
+      for (const [env, message] of planRefusals) expect(runIn(repo, ["plan", planVersion], env).stderr).toContain(message);
       git("tag", `v${planVersion}`, third);
       expect(run("plan", planVersion).stderr).toContain(`tag v${planVersion} already exists in this repository`);
       git("tag", "-d", `v${planVersion}`);
@@ -360,13 +366,19 @@ describe("Bootstrap Script Contracts", () => {
       const wrongTag = run("check", "tagged", "1.1.0");
       expect(wrongTag.status).toBe(1);
       expect(wrongTag.stderr).toContain(`tag v1.1.0 is at ${first}, not at the release commit ${second}`);
+      expect(run("check", "tagged", planVersion).stderr).toContain(`tag v${planVersion} is not on origin`);
+      for (const [state, message] of [["missing", "is missing"], ["draft", "is a draft"], ["prerelease", "is a prerelease"]]) {
+        expect(runIn(repo, ["check", "tagged", "1.0.0"], { RELEASE_STATE: state }).stderr).toContain(`GitHub Release v1.0.0 ${message}`);
+      }
 
-      release("1.3.0");
+      release("1.3.0", false);
       git("push", "-q", "origin", "main");
       git("update-ref", "refs/remotes/origin/main", third);
       const stale = run("plan", "1.3.0");
       expect(stale.status).toBe(1);
       expect(stale.stderr).toContain("Run git fetch origin first");
+      git("fetch", "-q", "origin");
+      expect(run("plan", "1.3.0").stderr).toContain("has no [1.3.0] section");
     } finally {
       rmSync(worktree, { recursive: true, force: true });
       rmSync(otherWorktree, { recursive: true, force: true });

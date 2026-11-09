@@ -41,19 +41,22 @@ npm, the tag exists or CHANGELOG has no section for the version. It prints
 one command list bound to that commit:
 
 1. A detached worktree of the release commit and `bun install --frozen-lockfile`.
-2. `npm publish --auth-type=web` for the console, then for the core package.
-3. `check published <version>`: `check:release-published --before-tag`
+2. `guard <version> <sha>`, then `npm publish --auth-type=web` for the console.
+3. `guard <version> <sha>`, then `npm publish --auth-type=web` for the core
+   package. `guard` refuses another directory, another HEAD, a changed tree
+   or another package version.
+4. `check published <version>`: `check:release-published --before-tag`
    reads back version, `latest` dist-tag, integrity and the runtime receipt.
-4. The annotated tag at the release commit and its push.
-5. `gh release create --verify-tag` with the CHANGELOG section as notes
-   (`notes <version>`).
-6. `check tagged <version>`: the remote tag is at the release commit, and
+5. The annotated tag at the release commit and its push.
+6. `notes <version>` writes the CHANGELOG section to a file, then
+   `gh release create --verify-tag` uses it as the notes.
+7. `check tagged <version>`: the remote tag is at the release commit, and
    the GitHub Release is not a draft or a prerelease.
 
 At the first failure the owner stops and reports. Nothing is retried or
 published again. The owner gives one GO for the list:
 `Release GO: repo-harness <version> at <sha>`, the first line of the plan.
-After step 6 passes, the orchestrator and the advisor decide together on the
+After step 7 passes, the orchestrator and the advisor decide together on the
 post-release steps that the plan prints: `repo-harness update` on the owner
 host, the Upgrade steps of the release notes, and the relaunch of both seats
 from `repo-harness seats argv <seat> --repository-id <id>`.
