@@ -1,10 +1,11 @@
 import { appendFileSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { evaluateBoardAttention } from '../../core/board/attention';
-import { ADVISOR_CAP_SPAN_MS, planAttentionDeliveries, type AttentionDeliveryV1, type AttentionHostPortsV1 } from '../../core/board/attention-delivery';
+import { ADVISOR_CAP_SPAN_MS, liveSeatTerminals, planAttentionDeliveries, type AttentionDeliveryV1, type AttentionHostPortsV1 } from '../../core/board/attention-delivery';
 import type { BoardV1 } from '../../core/board/board';
 import { repoHarnessHome } from '../repo-harness-home';
 import { BoardCollectError } from './collect';
+import type { ReviewResultV1 } from './review';
 
 /**
  * The resident attention watcher (#1509). It runs in an hc terminal that
@@ -32,6 +33,7 @@ export type AttentionSendOutcome = 'sent' | 'send_failed' | 'skipped_blocked' | 
 /** One log line. The log is append-only; the weekly threshold review reads it. */
 export type AttentionLogRecordV1 = { readonly at: string; readonly window: string; readonly parent: number } & (
   | { readonly kind: 'finding'; readonly rule: string; readonly route: string; readonly message: string }
+  | { readonly kind: 'review'; readonly pr: number | null; readonly seat: string | null; readonly outcome: 'started' | 'refused'; readonly detail: string | null }
   | { readonly kind: 'skip'; readonly route: string; readonly reason: string }
   | { readonly kind: 'send'; readonly route: string; readonly terminal: string; readonly rules: readonly string[]; readonly outcome: AttentionSendOutcome; readonly detail: string | null }
 );
@@ -69,6 +71,8 @@ export function advisorWakes(path: string, now: Date): number {
 export interface AttentionWindowInput {
   readonly parent: number;
   readonly deliver: boolean;
+  /** The same code path as `board review --parent <n>`; set only when the watcher starts with `--review`, which needs `deliver`. */
+  readonly review?: () => Promise<ReviewResultV1>;
   readonly log_path: string;
   readonly collect: () => BoardV1;
   readonly host: AttentionHostPortsV1;
@@ -77,6 +81,29 @@ export interface AttentionWindowInput {
 }
 
 const sleepFor = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, Math.max(0, ms)));
+
+/**
+ * One review pass: one log line and one message line per start or refusal. A
+ * refused run (the lock, `gh`, an unknown launch) is a line too, so it never
+ * ends the watcher; the marker of a started seat keeps the next window from a
+ * second start for the same head.
+ */
+async function reviewWindow(review: () => Promise<ReviewResultV1>, log: (record: Record<string, unknown>) => void): Promise<string[]> {
+  const lines: string[] = [];
+  const note = (pr: number | null, seat: string | null, outcome: 'started' | 'refused', detail: string | null) => {
+    log({ kind: 'review', pr, seat, outcome, detail });
+    lines.push(pr === null ? `refused: ${detail}` : `PR #${pr} ${outcome}${seat === null ? '' : ` on ${seat}`}${detail === null ? '' : `: ${detail}`}`);
+  };
+  try {
+    const result = await review();
+    for (const entry of result.started) note(entry.pr, entry.seat, 'started', entry.marker_url);
+    for (const entry of result.refused) note(entry.pr, null, 'refused', entry.reason);
+  } catch (error) {
+    if (!(error instanceof BoardCollectError)) throw error;
+    note(null, null, 'refused', error.message);
+  }
+  return lines;
+}
 
 /**
  * One window. A blocked terminal gets `hc wait` up to the window end. When the
@@ -94,6 +121,7 @@ export async function runAttentionWindow(input: AttentionWindowInput): Promise<v
   const board = input.collect();
   const attention = evaluateBoardAttention(board);
   for (const finding of attention.findings) log({ kind: 'finding', rule: finding.rule, route: finding.route, message: finding.message });
+  const reviewLines = input.review === undefined ? [] : await reviewWindow(input.review, log);
   const plan = planAttentionDeliveries(board, attention, advisorWakes(input.log_path, started));
   const end = started.getTime() + plan.window_ms;
   if (!input.deliver) return sleep(end - now().getTime());
@@ -106,6 +134,13 @@ export async function runAttentionWindow(input: AttentionWindowInput): Promise<v
     if (sent.status === 'sent') record(delivery, 'sent');
     else record(delivery, 'send_failed', sent.detail);
   };
+  if (reviewLines.length > 0) {
+    const text = `[rh-attention] #${input.parent} review: ${reviewLines.join('; ')}`;
+    for (const terminal of liveSeatTerminals(board, 'orchestrator')) {
+      const sent = input.host.send(terminal.address, text);
+      log({ kind: 'send', route: 'orchestrator', terminal: terminal.address, rules: ['review'], outcome: sent.status === 'sent' ? 'sent' : 'send_failed', detail: sent.status === 'sent' ? null : sent.detail });
+    }
+  }
   for (const delivery of plan.deliveries.filter(entry => entry.timing === 'now')) send(delivery);
   const stillBlocked: AttentionDeliveryV1[] = [];
   for (const delivery of plan.deliveries.filter(entry => entry.timing === 'after_wait')) {
@@ -141,6 +176,8 @@ export function serviceTerminalRepository(parent: number, host: AttentionHostPor
 /** Start the watcher of one board unless a live one runs. Returns its address and whether it was started now. */
 export function startAttentionWatch(input: {
   readonly parent: number; readonly repository_id: number; readonly repo_root: string; readonly cli: readonly [string, ...string[]]; readonly host: AttentionHostPortsV1;
+  /** The Herdr space for review tabs; set to start the watcher with `--review`. */
+  readonly review_space?: string;
 }): { readonly address: string; readonly started: boolean } {
   const scope = { repository: input.repository_id, parent: input.parent };
   const refuse = (detail: string) => new AttentionWatchError(`hc did not start the attention watcher: ${detail}`);
@@ -148,7 +185,8 @@ export function startAttentionWatch(input: {
   if (read.status === 'failed') throw refuse(read.detail);
   const live = read.watchers.find(watcher => watcher.state === 'live');
   if (live !== undefined) return { address: live.address, started: false };
-  const started = input.host.startWatcher(scope, input.repo_root, [...input.cli, 'board', 'attention', '--parent', String(input.parent), '--watch', '--deliver']);
+  const started = input.host.startWatcher(scope, input.repo_root, [...input.cli, 'board', 'attention', '--parent', String(input.parent), '--watch', '--deliver',
+    ...(input.review_space === undefined ? [] : ['--review', '--space', input.review_space])]);
   if (started.status === 'failed') throw refuse(started.detail);
   return { address: started.address, started: true };
 }

@@ -26,6 +26,8 @@ import { BoardParentsError, collectBoardParents } from '../src/effects/board/par
 import { hcStatusClass, ISSUE_FLOW_WORKER_LIMIT } from '../src/core/board/desk';
 import { boardSummary, decodeBoardSummaries } from '../src/core/board/summary';
 import { renderAcceptanceClaim, renderAcceptanceRecord, type ReviewPublishReceipt } from '../src/core/review/review-publish';
+import type { ReviewResultV1 } from '../src/effects/board/review';
+import { BoardCollectError } from '../src/effects/board/collect';
 import type { ModelRelation } from '../src/core/review/acceptance-receipt';
 import boardParentsFixture from '../src/operator-web/fixtures/board-parents.json';
 
@@ -949,6 +951,9 @@ test('watch service: --watch refuses a terminal without the service labels; star
     ['run', '--json', '--bg', '--label', 'repo-harness.service=attention', '--label', 'repo-harness.repository=1186405141', '--label', 'repo-harness.parent=1503',
       '--cwd', '/repo', '--no-parent', '--', 'bun', 'cli.ts', 'board', 'attention', '--parent', '1503', '--watch', '--deliver'],
   ]]);
+  const reviewHc = watchHc();
+  startAttentionWatch({ parent: 1503, repository_id: 1186405141, repo_root: '/repo', cli: ['bun', 'cli.ts'], host: reviewHc.host, review_space: 'sp1' });
+  expect(reviewHc.calls().at(-1)?.slice(-5)).toEqual(['--watch', '--deliver', '--review', '--space', 'sp1']);
   expect(start([{ address: 't5', state: 'live' }])[0]).toEqual({ address: 't5', started: false });
 
   // The board of the same parent in hc: the watcher is not a seat terminal.
@@ -1430,4 +1435,25 @@ test('closeout stops a CodeGraph MCP server bound to exactly the worktree and no
     // Signal 0 throws only for a process that is gone.
     expect([elsewhere.pid, otherPath.pid, bystander.pid].map(pid => { try { process.kill(pid, 0); return true; } catch { return false; } })).toEqual([true, true, true]);
   } finally { server.kill(); elsewhere.kill(); otherPath.kill(); bystander.kill(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('watch window --review: each start or refusal is a log line and an orchestrator message; a failed run is a refusal line', async () => {
+  const board = replay();
+  const terminals = [{ address: 't3', name: null, agent: null, state: 'live', status: 'idle', status_kind: null, status_msg: null, status_ms: null, turn: 1, branch: null, seat_status: 'observed', seat: 'orchestrator', issue: null, pr: null }] as BoardTerminalV1[];
+  const hc = watchHc({ FAKE_TERMINALS: { t3: {} } });
+  const logPath = attentionLogPath(1186405141, 1474, { REPO_HARNESS_HOME: hc.root });
+  const runs: Array<() => Promise<ReviewResultV1>> = [
+    async () => ({ decisions: [], started: [{ pr: 7, seat: 'reviewer', marker_url: 'https://example.test/m' }], refused: [{ pr: 8, reason: 'no worktree' }] }),
+    async () => ({ decisions: [], started: [], refused: [] }),
+    async () => { throw new BoardCollectError('another board review run holds the lock'); },
+  ];
+  for (const review of runs) {
+    await runAttentionWindow({ parent: 1474, deliver: true, review, log_path: logPath, collect: () => ({ ...board, execution: { status: 'observed', terminals } }) as BoardV1, host: hc.host, now: () => REPLAY_NOW, sleep: async () => {} });
+  }
+  const records = readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
+  expect(records.filter(record => record.kind === 'review').map(record => [record.pr, record.seat, record.outcome])).toEqual([[7, 'reviewer', 'started'], [8, null, 'refused'], [null, null, 'refused']]);
+  expect(hc.calls().filter(args => args[0] === 'send' && args.at(-1)?.includes(' review: ')).map(args => args.at(-1))).toEqual([
+    '[rh-attention] #1474 review: PR #7 started on reviewer: https://example.test/m; PR #8 refused: no worktree',
+    '[rh-attention] #1474 review: refused: another board review run holds the lock',
+  ]);
 });
