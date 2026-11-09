@@ -14,9 +14,12 @@ REMOTE="${RELEASE_REMOTE:-origin}"
 NPM_RELEASE_REGISTRY="${NPM_RELEASE_REGISTRY:-https://registry.npmjs.org/}"
 CONSOLE_DIR="packages/operator-web"
 
-# npm view, pack and install write a cache and logs; keep them out of the owner HOME. Registry reads need no auth.
+# npm view, pack and install read config and write a cache and logs. Public registry reads need no auth, so npm
+# gets empty scratch config files and never reads the owner's npmrc or writes under the owner HOME.
 NPM_SCRATCH="$(mktemp -d)"
 trap 'rm -rf "$NPM_SCRATCH"' EXIT
+: >"$NPM_SCRATCH/npmrc"
+export npm_config_userconfig="$NPM_SCRATCH/npmrc" npm_config_globalconfig="$NPM_SCRATCH/npmrc"
 export npm_config_cache="$NPM_SCRATCH/cache" npm_config_logs_dir="$NPM_SCRATCH/logs"
 
 usage() {
@@ -96,13 +99,14 @@ release_worktree() {
 
 # Run right before each npm publish: the checkout must be the approved release commit, unchanged.
 guard() {
-  local version="$1" sha="$2" expected head file got
+  local version="$1" sha="$2" expected head status file got
   expected="$(cd "$(release_worktree "$version")" 2>/dev/null && pwd -P)" || fail "$(release_worktree "$version") does not exist."
   # The publish that follows runs in the caller's directory, so the guard checks that directory and this script's checkout.
   [[ "$CALLER_DIR" == "$expected" && "$(pwd -P)" == "$expected" ]] || fail "the checkout is $CALLER_DIR, not $expected."
   head="$(git rev-parse HEAD)" || fail "git rev-parse HEAD failed."
   [[ "$head" == "$sha" ]] || fail "HEAD is $head, not the release commit $sha."
-  [[ -z "$(git status --porcelain)" ]] || fail "the checkout has changes; publish only the release commit."
+  status="$(git status --porcelain)" || fail "git status failed."
+  [[ -z "$status" ]] || fail "the checkout has changes; publish only the release commit."
   for file in package.json "$CONSOLE_DIR/package.json"; do
     got="$(json_field version < "$file")"
     [[ "$got" == "$version" ]] || fail "$file has version $got, not ${version}."

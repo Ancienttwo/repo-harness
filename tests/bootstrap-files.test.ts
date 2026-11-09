@@ -215,7 +215,7 @@ describe("Bootstrap Script Contracts", () => {
       const bun = Bun.which("bun")!;
       writeFileSync(join(dir, "bin/bun"), `#!/bin/bash\nif [[ "\${1:-}" == run && "\${2:-}" == check:helpers ]] || [[ "\${1:-}" == scripts/runtime-evidence-receipt.ts || "\${1:-}" == scripts/check-skill-version.ts ]]; then exit 0; fi\nexec "${bun}" "$@"\n`, { mode: 0o755 });
       writeFileSync(join(dir, "bin/npm"), `#!/bin/bash\necho "$*" >> "$CALLS"\nif [[ "$1" == view && "$2" == *@* ]]; then\n  if [[ "$PUBLISHED" == "$2" || "$PUBLISHED" == both ]]; then printf '{"version":"%s","dist.integrity":"sha512-x","dist.shasum":"abc","dist.tarball":"url"}\\n' "\${VIEW_VERSION:-${version}}"; exit 0; fi\n  echo 'E404 not in this registry' >&2; exit 1\nfi\nif [[ "$1" == view ]]; then printf '{"latest":"%s"}\\n' "\${LATEST:-${version}}"; exit 0; fi\nif [[ "$1" == pack ]]; then name="\${2%@*}"; echo "[{\\\"filename\\\":\\\"$name-${version}.tgz\\\",\\\"integrity\\\":\\\"\${INTEGRITY:-sha512-x}\\\",\\\"shasum\\\":\\\"abc\\\"}]"; exit 0; fi\nexit 0\n`, { mode: 0o755 });
-      writeFileSync(join(dir, "bin/git"), "#!/bin/bash\nexit 0\n", { mode: 0o755 });
+      writeFileSync(join(dir, "bin/git"), "#!/bin/bash\n[[ \"$1\" == rev-parse && -n \"$NO_TAG\" ]] && exit 1\nexit 0\n", { mode: 0o755 });
       writeFileSync(join(dir, "scripts/check-ci.sh"), "#!/bin/bash\nexit 0\n");
       const calls = join(dir, "calls");
       const runGate = (script: string, args: string[], env: Record<string, string>) => spawnSync("bash", [join(dir, "scripts", script), ...args], {
@@ -241,6 +241,8 @@ describe("Bootstrap Script Contracts", () => {
       const beforeTag = runGate("check-release-published.sh", [version, "--before-tag"], { PUBLISHED: "both" });
       expect(beforeTag.status).toBe(0);
       expect(beforeTag.stdout).toContain("the tag is not checked");
+      expect(runGate("check-release-published.sh", [version, "--before-tag"], { PUBLISHED: "both", NO_TAG: "1" }).status).toBe(0);
+      expect(runGate("check-release-published.sh", [version], { PUBLISHED: "both", NO_TAG: "1" }).status).not.toBe(0);
       for (const [env, message] of [[{ VIEW_VERSION: "0.0.0" }, "npm view returned version 0.0.0"], [{ LATEST: "0.0.0" }, "latest dist-tag is 0.0.0"], [{ INTEGRITY: "wrong" }, "packed tarball integrity does not match"]] as const) {
         const mismatch = runGate("check-release-published.sh", [version, "--before-tag"], { PUBLISHED: "both", ...env });
         expect(mismatch.status).not.toBe(0);
@@ -270,6 +272,8 @@ describe("Bootstrap Script Contracts", () => {
     // guard accepts only the worktree path that plan prints; the pid keeps parallel runs apart.
     const planVersion = `1.2.${process.pid}`;
     const worktree = `/tmp/repo-harness-wt-release-${planVersion}`;
+    const otherVersion = `1.4.${process.pid}`;
+    const otherWorktree = `/tmp/repo-harness-wt-release-${otherVersion}`;
     try {
       const repo = join(dir, "repo");
       const git = (...args: string[]) => {
@@ -303,7 +307,9 @@ describe("Bootstrap Script Contracts", () => {
       git("tag", "-a", "v1.1.0", first, "-m", "v1.1.0");
       git("push", "-q", "origin", "v1.1.0");
       mkdirSync(join(dir, "bin"));
-      writeFileSync(join(dir, "bin/npm"), "#!/bin/bash\necho 'npm error code E404 not in this registry' >&2\nexit 1\n", { mode: 0o755 });
+      writeFileSync(join(dir, "bin/npm"), "#!/bin/bash\n[[ -f \"$npm_config_userconfig\" && ! -s \"$npm_config_userconfig\" && \"$npm_config_globalconfig\" == \"$npm_config_userconfig\" ]] && echo \"$npm_config_userconfig\" >> \"$HOME/npm-config\"\necho 'npm error code E404 not in this registry' >&2\nexit 1\n", { mode: 0o755 });
+      const realGit = Bun.which("git")!;
+      writeFileSync(join(dir, "bin/git"), `#!/bin/bash\n[[ -n "$FAIL_TAGS" && "$1 $2" == "ls-remote --tags" ]] && exit 128\nexec ${realGit} "$@"\n`, { mode: 0o755 });
       writeFileSync(join(dir, "bin/gh"), `#!/bin/bash\ncase "$1 $2" in\n  "repo view") echo owner/repo ;;\n  "api repos/owner/repo") echo 42 ;;\n  "release view") echo "{\\"tagName\\":\\"$3\\",\\"isDraft\\":false,\\"isPrerelease\\":false}" ;;\n  *) exit 1 ;;\nesac\n`, { mode: 0o755 });
       const runIn = (cwd: string, args: string[], env: Record<string, string> = {}) => spawnSync("bash", ["scripts/release-owner-steps.sh", ...args], {
         cwd, encoding: "utf8", env: { ...process.env, HOME: dir, GIT_CONFIG_GLOBAL: "/dev/null", PATH: `${join(dir, "bin")}:${process.env.PATH}`, ...env },
@@ -321,16 +327,29 @@ describe("Bootstrap Script Contracts", () => {
       expect(plan.stdout).toContain(`git tag -a v${planVersion} ${third}`);
       expect(plan.stdout).toContain(`Run step ${planVersion}.`);
       expect(plan.stdout).toContain("--repository-id 42");
+      // Each npm call saw an empty scratch npmrc outside HOME, never the owner's.
+      const npmConfigs = readFileSync(join(dir, "npm-config"), "utf8").trim().split("\n");
+      expect(npmConfigs).toHaveLength(2);
+      for (const config of npmConfigs) expect(config.startsWith(dir)).toBe(false);
+      expect(runIn(repo, ["plan", planVersion], { FAIL_TAGS: "1" }).stderr).toContain("git ls-remote --tags origin failed");
       git("tag", `v${planVersion}`, third);
       expect(run("plan", planVersion).stderr).toContain(`tag v${planVersion} already exists in this repository`);
       git("tag", "-d", `v${planVersion}`);
       expect(runIn(repo, ["plan", planVersion], { RELEASE_REMOTE: "missing" }).stderr).toContain("git ls-remote missing refs/heads/main failed");
 
       git("worktree", "add", "-q", "--detach", worktree, third);
+      git("worktree", "add", "-q", "--detach", otherWorktree, third);
       expect(runIn(worktree, ["guard", planVersion, third]).status).toBe(0);
-      const wrongHead = runIn(worktree, ["guard", planVersion, second]);
-      expect(wrongHead.status).toBe(1);
-      expect(wrongHead.stderr).toContain(`HEAD is ${third}, not the release commit ${second}`);
+      const guardRefusals: Array<[string, string[], string]> = [
+        [repo, [planVersion, third], "the checkout is"],
+        [worktree, [planVersion, second], `HEAD is ${third}, not the release commit ${second}`],
+        [otherWorktree, [otherVersion, third], `package.json has version ${planVersion}, not ${otherVersion}`],
+      ];
+      for (const [cwd, args, message] of guardRefusals) expect(runIn(cwd, ["guard", ...args]).stderr).toContain(message);
+      writeFileSync(join(worktree, "dirty"), "");
+      expect(runIn(worktree, ["guard", planVersion, third]).stderr).toContain("the checkout has changes");
+      writeFileSync(spawnSync("git", ["rev-parse", "--path-format=absolute", "--git-path", "index"], { cwd: worktree, encoding: "utf8" }).stdout.trim(), "broken");
+      expect(runIn(worktree, ["guard", planVersion, third]).stderr).toContain("git status failed");
       expect(run("notes", "1.0.0").stdout).toBe("\nRelease 1.0.0.\n\n### Upgrade\n\nRun step 1.0.0.\n\n### Changed\n\n- Change.\n");
       expect(run("plan", "1.0.0").stderr).toContain("tag v1.0.0 already exists on origin");
 
@@ -347,6 +366,7 @@ describe("Bootstrap Script Contracts", () => {
       expect(stale.stderr).toContain("Run git fetch origin first");
     } finally {
       rmSync(worktree, { recursive: true, force: true });
+      rmSync(otherWorktree, { recursive: true, force: true });
       rmSync(dir, { recursive: true, force: true });
     }
   });
