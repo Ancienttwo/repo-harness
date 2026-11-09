@@ -1,5 +1,6 @@
 import { execFileSync } from 'child_process';
 import { lstatSync, readdirSync, readlinkSync, realpathSync } from 'fs';
+import { parseRefs } from '../../core/board/source';
 import { architecturePort, isArchitectureUnavailable } from '../../core/architecture/contracts';
 import type { BoardHostPortsV1, BoardSeatTerminalReadV1 } from '../../core/board/board';
 import { gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
@@ -60,21 +61,23 @@ interface MergedPullRequest {
   readonly head_oid: string;
   readonly merge_commit: string;
   readonly closing_issues: readonly number[];
+  /** The closing issues plus the `Refs #n` issues of the PR body. */
+  readonly referenced_issues: readonly number[];
 }
 
 const OID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u;
 
 function readMergedPullRequest(input: BoardCloseoutInput): MergedPullRequest {
-  const read = readGhJson(input, ['pr', 'view', String(input.pr), '--json', 'number,state,baseRefName,headRefName,headRefOid,mergeCommit,closingIssuesReferences']) as {
-    number?: unknown; state?: unknown; baseRefName?: unknown; headRefName?: unknown; headRefOid?: unknown; mergeCommit?: { oid?: unknown } | null; closingIssuesReferences?: unknown;
+  const read = readGhJson(input, ['pr', 'view', String(input.pr), '--json', 'number,state,baseRefName,headRefName,headRefOid,mergeCommit,closingIssuesReferences,body']) as {
+    number?: unknown; state?: unknown; baseRefName?: unknown; headRefName?: unknown; headRefOid?: unknown; mergeCommit?: { oid?: unknown } | null; closingIssuesReferences?: unknown; body?: unknown;
   } | null;
   if (read?.number !== input.pr) throw new BoardCollectError(`gh pr view ${input.pr} returned another pull request`);
   if (read.state !== 'MERGED') throw new BoardCollectError(`#${input.pr} is not merged (${String(read.state)}); closeout runs only after a merge`);
   if (read.baseRefName !== 'main') throw new BoardCollectError(`#${input.pr} merged into ${String(read.baseRefName)}; closeout proves merges into main only`);
   const merge = read.mergeCommit?.oid;
   if (typeof read.headRefName !== 'string' || typeof read.headRefOid !== 'string' || !OID.test(read.headRefOid)
-    || typeof merge !== 'string' || !OID.test(merge) || !Array.isArray(read.closingIssuesReferences)) {
-    throw new BoardCollectError(`gh pr view ${input.pr} has no head branch, head sha, merge commit or closing issue list`);
+    || typeof merge !== 'string' || !OID.test(merge) || !Array.isArray(read.closingIssuesReferences) || typeof read.body !== 'string') {
+    throw new BoardCollectError(`gh pr view ${input.pr} has no head branch, head sha, merge commit or closing issue list or body`);
   }
   const repository = (readGhJson(input, ['repo', 'view', '--json', 'id']) as { id?: unknown } | null)?.id;
   if (typeof repository !== 'string' || repository === '') throw new BoardCollectError('gh repo view has no repository id');
@@ -84,7 +87,7 @@ function readMergedPullRequest(input: BoardCloseoutInput): MergedPullRequest {
   }
   // Seat issue labels name issues of this repository, so an issue that the PR closes elsewhere binds no pane.
   const closing = references.filter(entry => entry!.repository!.id === repository).map(entry => entry!.number as number);
-  return { number: input.pr, head_ref: read.headRefName, head_oid: read.headRefOid, merge_commit: merge, closing_issues: closing };
+  return { number: input.pr, head_ref: read.headRefName, head_oid: read.headRefOid, merge_commit: merge, closing_issues: closing, referenced_issues: [...closing, ...parseRefs(read.body)] };
 }
 
 /** `status` is null when git did not run to an exit (spawn error, timeout or signal). */
@@ -155,16 +158,27 @@ function proveCloseout(input: BoardCloseoutInput, pr: MergedPullRequest): Closeo
   return { main, common: common!, path, target_oid: target.out };
 }
 
+/** True when `cwd` is inside the PR head worktree on the PR head branch; the worktree is a linked one, so the primary checkout never matches. */
+function inHeadWorktree(cwd: string | null, pr: MergedPullRequest, proof: CloseoutProof): boolean {
+  if (cwd === null || commonDirectory(cwd) !== proof.common) return false;
+  const top = git(cwd, ['rev-parse', '--show-toplevel']);
+  const branch = git(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
+  try { return top.ok && branch.ok && branch.out === pr.head_ref && realpathSync(top.out) === realpathSync(proof.path); } catch { return false; }
+}
+
 /**
- * The binding of a seat terminal to the PR, by labels only: its pr label, or a closing-issue label with no pr label.
- * A closing-issue label next to the pr label of another PR is a conflict; closeout refuses that pane.
+ * The binding of a seat terminal to the PR: its pr label, a closing-issue label, or (a `Refs`-only PR has no closing issue, #2071)
+ * a cwd in the PR head worktree whose seat carries an issue label that the PR references.
+ * A binding without the pr label next to the pr label of another PR is a conflict; closeout refuses that pane.
  * A terminal without a seat label is a task session; the runtime cleanup of the worktree owns it.
  */
-function paneBinding(terminal: BoardSeatTerminalReadV1, pr: MergedPullRequest): 'bound' | 'conflict' | 'none' {
+function paneBinding(terminal: BoardSeatTerminalReadV1, pr: MergedPullRequest, proof: CloseoutProof): 'bound' | 'conflict' | 'none' {
   const { labels } = terminal;
   if (labels.seat === undefined) return 'none';
   if (labels.pr === String(pr.number)) return 'bound';
-  if (labels.issue === undefined || !pr.closing_issues.some(issue => String(issue) === labels.issue)) return 'none';
+  const closes = labels.issue !== undefined && pr.closing_issues.some(issue => String(issue) === labels.issue);
+  const refs = labels.issue !== undefined && pr.referenced_issues.some(issue => String(issue) === labels.issue);
+  if (!closes && !(refs && inHeadWorktree(terminal.cwd, pr, proof))) return 'none';
   return labels.pr === undefined ? 'bound' : 'conflict';
 }
 
@@ -172,7 +186,7 @@ function closePanes(input: BoardCloseoutInput, pr: MergedPullRequest, proof: Clo
   const read = input.host.closeoutTerminals(String(readRepositoryId(input)));
   if (read.status === 'unavailable') throw new BoardCollectError(`the seat terminals are unavailable: ${read.reason}`);
   return read.terminals.flatMap((terminal): BoardCloseoutPaneV1[] => {
-    const binding = paneBinding(terminal, pr);
+    const binding = paneBinding(terminal, pr, proof);
     if (binding === 'none') return [];
     const pane = { address: terminal.address, seat: terminal.labels.seat ?? null };
     const keep = binding === 'conflict' ? `conflicting_binding pr ${terminal.labels.pr}`
