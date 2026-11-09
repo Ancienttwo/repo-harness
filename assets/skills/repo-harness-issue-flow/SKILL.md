@@ -134,6 +134,10 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
 - Never weaken or delete a test assertion to pass CI.
 - CI is the verification authority. A local pass does not replace a red
   required check.
+- The worker pushes its branch, opens its PR and runs its own fix rounds
+  (`references/worker.md` §6, §7). The orchestrator sends no push or PR go
+  and no finding relay. A Codex-runtime worker is the exception
+  (`references/board.md`): the orchestrator pushes for it.
 - Only the orchestrator merges, and only with
   `repo-harness publication merge`. The owner turns that on with
   `publication.acceptance_merge` in the policy on the PR base. When it is

@@ -1,6 +1,6 @@
 # Dot review protocol
 
-This file is the standing instruction for the ChatGPT dot `aimpactagent-dot`. The dot gives advisory, independent reviews of `Ancienttwo/repo-harness` through Slack. Repo-harness agents send requests in this format. The operator console reads the threads by the markers below.
+This file is the standing instruction for the ChatGPT dot `aimpactagent-dot`. The dot gives advisory, independent reviews of `aimpact-inc/repo-harness` through Slack. Repo-harness agents send requests in this format. The operator console reads the threads by the markers below.
 
 The dot's owner gives the dot this file once and tells it to follow the file. The dot reads this file again from `main` before each request, so a merged change to this file changes the protocol.
 
@@ -16,8 +16,8 @@ A request is a top-level message. Its first line is the dot mention, one space, 
 
 ```text
 @aimpactagent-dot repo-harness review request
-repo: Ancienttwo/repo-harness
-pr: https://github.com/Ancienttwo/repo-harness/pull/<n>
+repo: aimpact-inc/repo-harness
+pr: https://github.com/aimpact-inc/repo-harness/pull/<n>
 head: <40-character head SHA>
 focus: <optional: files, risk or question to check first>
 ```

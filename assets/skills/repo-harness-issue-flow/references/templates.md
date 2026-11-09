@@ -499,8 +499,8 @@ Issue: <URL>
 Slot: <PR slot or "whole issue">
 Worktree: /tmp/<repo>-wt-<issue>-<slug> on <type>/<issue>-<slug> from origin/main
 Model: <model>
-Report: status comments on the issue; nudge <coordinator channel> with the comment URL
-Authority: implement, push the PR branch, open the PR. No merge, no deletion outside the issue, no credentials.
+Report: status comments on the issue; nudge <coordinator channel> only on PASS, a boundary question or a fix-loop stop
+Authority: implement, push the PR branch as soon as checks pass, open the PR, run your own fix rounds. No merge, no deletion outside the issue, no credentials.
 ```
 
 Paste this checklist under the packet when the issue does not already

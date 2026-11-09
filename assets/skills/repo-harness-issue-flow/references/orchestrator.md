@@ -222,7 +222,7 @@ module is in the title so that a list view shows the write scopes.
   dispatched; route every other review of it to another seat. A dispatch
   does not grant publication, deletion or credential authority.
   For the Herdr pane topology, follow
-  [Herdr Dispatch](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch).
+  [Herdr Dispatch](https://github.com/aimpact-inc/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch).
 
 ### 7.1 Quota check
 
@@ -270,6 +270,11 @@ or follow `hc events`. Never use `sleep` loops to wait for seats.
 Follow the PR and the issue comments. Do not poll CI with sleeps. Use the
 host's PR events or check when the worker reports.
 
+- **Worker PR.** A worker pushes its branch and opens its PR as soon as its
+  checks pass. Do not send a push or PR go. You keep dispatch, joint
+  decisions, the merge, and the review start with `repo-harness board
+  review`. A worker reports to you only on PASS, a boundary question or a
+  fix-loop stop.
 - **Draft PR.** A writer keeps its PR draft until its verification
   evidence exists. Do not follow CI on a draft push by push. Act on the
   worker's `ready for review` notice (§8.1).
@@ -306,7 +311,10 @@ host's PR events or check when the worker reports.
   Findings take the severities of `acceptor.md` §3. A P3 does not block
   the PR; apply the deferred-scope rule (§2) to its follow-up. Send the
   findings to the worker that
-  wrote the PR. You make the second-finding choice of the class rule
+  wrote the PR only when the worker cannot read them: the worker reads the
+  acceptance records and review threads on its PR and runs its own fix
+  rounds (`worker.md` §7). A Codex worker is the exception: you push its
+  fix rounds (`board.md`). You make the second-finding choice of the class rule
   (`worker.md` §7). Record the result in one acceptance record comment on
   the PR, in the row shape of `templates.md`: round, role, subject,
   verdict and model relation.
@@ -549,7 +557,9 @@ are true:
   closes two plan items is never eligible, in any plan order: split the PR.
 - An acceptance record has a PASS row for the head, at every tier. The
   provisional `tier_low` status is not enough: post the Low record after
-  you check the verification evidence.
+  you check the verification evidence. A merge-only sync head carries its
+  acceptance per `acceptor.md` §2.2 (`via: sync`, #2074), so `board merge`
+  accepts it.
   A High PR needs two PASS rows for the head that cite distinct
   `acceptance claim` comments, one of them `different-family`
   (`acceptor.md` §2.2).
