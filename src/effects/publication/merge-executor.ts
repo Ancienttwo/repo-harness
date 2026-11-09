@@ -25,6 +25,7 @@ import {
   type PublicationPolicy,
 } from '../../core/publication/acceptance-merge-policy';
 import { checkClosingReferences, type ClosingIssueReference } from '../../core/publication/closing-references';
+import { gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { BATCH_COMMIT_LIMIT, BATCH_REF, batchMemberMerges, type MergeReadinessBlockerV1 } from '../../core/publication/merge-readiness';
 import {
   MergeReadinessError,
@@ -678,8 +679,9 @@ const GIT_TIMEOUT_MS = 120_000;
 type GitRun = { readonly ok: true; readonly stdout: string } | { readonly ok: false; readonly reason: string };
 
 function runGit(input: PublicationMergeInput, args: readonly string[]): GitRun {
-  const result = spawnSync('git', ['-C', input.repo_root, ...args], {
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }, encoding: 'utf-8', timeout: GIT_TIMEOUT_MS, killSignal: 'SIGKILL',
+  // Like the merge-only sync proof: the checkout is the cwd, and GIT_DIR-style variables cannot select another repository.
+  const result = gitSpawnSync(args, {
+    cwd: input.repo_root, env: { ...withoutRepositorySelectingGitEnv(), GIT_TERMINAL_PROMPT: '0' }, encoding: 'utf-8', timeout: GIT_TIMEOUT_MS, killSignal: 'SIGKILL',
   });
   if (result.error || result.signal) return { ok: false, reason: result.signal ? `terminated by ${result.signal}` : 'did not start' };
   return result.status === 0 ? { ok: true, stdout: result.stdout ?? '' } : { ok: false, reason: `exit ${result.status}` };
