@@ -39,8 +39,8 @@ installs the Bash tripwire hook from #2069.
 | #2087 | `1304e7a54` | Fixed | Markdown-aware reference parser | None |
 
 The `[Unreleased]` entries move into `[0.29.1]` and are sorted into Added,
-Changed, Fixed and Documentation. New entries cover #2085 and #2086. The
-projection refreshes add no entry. The `[0.29.0]` and older sections stay
+Changed, Fixed and Documentation. New entries cover #2085, #2086 and the
+projection refreshes (#2070, #2075). The `[0.29.0]` and older sections stay
 byte-identical to the base.
 
 ## Publication steps
@@ -50,13 +50,12 @@ merges with green CI.
 
 1. Run `bun run check:release` on the host after clearing
    `packages/operator-web/dist` and `node_modules/repo-harness-operator-web`.
-2. Check out the merge SHA. Pack both packages and record their local values.
-3. Publish `repo-harness-operator-web` first, then `repo-harness`, with
-   `npm publish --auth-type=web` (owner 2FA).
-4. Compare npm shasum, integrity and file counts with the local tarballs.
-5. Tag `v0.29.1` on the merge SHA and create the GitHub Release from
-   CHANGELOG `[0.29.1]`. Run `bash scripts/release-owner-steps.sh plan 0.29.1`
-   for the command list and `bash scripts/check-release-published.sh 0.29.1`.
+2. Before any publish, run `bash scripts/release-owner-steps.sh plan 0.29.1`
+   from the merge commit on `origin/main`. `plan` refuses once a package is
+   on npm or the tag exists. Follow its numbered owner steps in order.
+3. After the publish steps, run `bash scripts/release-owner-steps.sh check
+   published 0.29.1`. After the tag and the GitHub Release, run `check tagged
+   0.29.1`. Record the shasum, integrity and file count of each package.
 
 ## Upgrade steps for users
 
@@ -68,7 +67,30 @@ Restart the Operator server and reload the page.
 
 ## Acceptance environment
 
-Filled in by the prep PR verification and the publication record.
+Pending: the `bun run check:release` run on the prep head is recorded on
+PR #2094 and copied here at publication time.
+
+## Publication
+
+Publish candidate merge SHA: pending.
+
+| Order | Name | Shasum | Integrity | File count |
+|---|---|---|---|---|
+| 1 | `repo-harness-operator-web@0.29.1` | pending | pending | pending |
+| 2 | `repo-harness@0.29.1` | pending | pending | pending |
+
+Record local tarball values and registry readback for each field before
+marking publication complete. Tag and GitHub Release: pending.
+
+## Post-publish checks
+
+- In a disposable HOME and BUN_INSTALL, run `bun x repo-harness@0.29.1
+  install --plugins operator`, start `repo-harness operator serve` and
+  verify that `/healthz` reports 0.29.1 and its protocol, and `GET /` returns
+  200. Result: pending.
+- Run `bash scripts/check-release-published.sh 0.29.1`. Result: pending.
+- On the owner machine, run the upgrade command and record the installed
+  version. Result: pending.
 
 ## Rollback
 

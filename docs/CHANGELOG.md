@@ -33,6 +33,7 @@ Bash tripwire and a Markdown-aware reference parser.
 
 - The issue-flow skill and the root agent rules use one module + tier work package per PR (150-500 product lines), publish ready green PRs once per window with `publication batch build` and `publication merge --batch`, count only blocking findings (P0-P2) in the fix-loop rule, and add the writer pre-check before round 2 and later. (#2086)
 - Record the 0.29.0 publication in its release checklist. (#2065)
+- Refresh generated architecture outputs. (#2070, #2075)
 
 ### Upgrade
 
