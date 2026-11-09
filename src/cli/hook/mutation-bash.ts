@@ -14,9 +14,13 @@ const pathOperand = (word: Word) => word.literal || !/[$`]/.test(word.value);
 const escapePattern = (text: string) => text.replace(/[\\*?[\]{},~]/g, '\\$&');
 const unescapePattern = (pattern: string) => pattern.replace(/\\(.)/gs, '$1');
 
+interface WordScan { tokens: Word[]; complete: boolean }
+
 /** Quotes are removed only to locate literal operands. Expansions stay unresolved. */
-function words(line: string): Word[] | null {
+function words(line: string, final = false): WordScan | null {
   const result: Word[] = [];
+  let boundary = 0;
+  const unparsed = (): WordScan => ({ tokens: result.slice(0, boundary), complete: false });
   let value = '', pattern = '', literal = true, plain = true, active = false, quote = '';
   const flush = () => {
     if (active) result.push({ value, pattern, literal });
@@ -27,14 +31,14 @@ function words(line: string): Word[] | null {
     const ch = line[i]!;
     if (!quote && ch === '#' && !active) break;
     if (ch === '\\' && quote !== "'") {
-      if (i + 1 === line.length) return null;
+      if (i + 1 === line.length) return final ? unparsed() : null;
       // A backslash-newline joins the two lines.
       if (line[i + 1] === '\n') { i++; continue; }
       quoted(line[++i]!); active = true; plain = false; continue;
     }
     // Substitutions execute nested shell text. Refuse them rather than split the enclosing command.
     if (quote !== "'" && (ch === '`' || (ch === '$' && line[i + 1] === '(')
-      || (!quote && (ch === '<' || ch === '>') && line[i + 1] === '('))) return null;
+      || (!quote && (ch === '<' || ch === '>') && line[i + 1] === '('))) return unparsed();
     if (quote) {
       if (ch === quote) quote = '';
       else { quoted(ch); if (quote === '"' && /[$`]/.test(ch)) literal = false; }
@@ -51,12 +55,14 @@ function words(line: string): Word[] | null {
       let op = ch;
       if (line[i + 1] === ch && ch !== ';') op += line[++i];
       if (op === '<<' && line[i + 1] === '-') op += line[++i];
+      const descriptor = op === '&' && ['<', '>'].includes(result.at(-1)?.value ?? '');
       result.push({ value: op, pattern: op, literal: true, operator: true });
+      if (!descriptor && [';', '|', '||', '&', '&&'].includes(op)) boundary = result.length;
       continue;
     }
     if (ch === '(' || ch === ')') {
       // `$(` and backticks were refused above. A glued `(` (a function, extglob or zsh qualifier) is outside this grammar.
-      if (ch === '(' && active && !/=$/.test(value)) return null;
+      if (ch === '(' && active && !/=$/.test(value)) return unparsed();
       flush();
       result.push({ value: ch, pattern: ch, literal: true, operator: true });
       continue;
@@ -64,9 +70,9 @@ function words(line: string): Word[] | null {
     if (/[$`*?{}~]/.test(ch)) literal = false;
     value += ch; pattern += ch; active = true;
   }
-  if (quote) return null;
+  if (quote) return final ? unparsed() : null;
   flush();
-  return result;
+  return { tokens: result, complete: true };
 }
 
 function scriptTargets(program: string, source: string): string[] {
@@ -132,11 +138,14 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
   const lines = command.split('\n');
   for (let line = 0; line < lines.length; line++) {
     let text = lines[line]!;
-    let tokens = words(text);
+    let scan = words(text);
     // A quoted argument or a backslash-newline continues on the next physical line.
-    while (!tokens && line + 1 < lines.length) tokens = words(text += `\n${lines[++line]}`);
-    // The complete lines before a line outside the grammar are still judged, as bash runs them.
-    if (!tokens || tokens.some(token => token.operator && (token.value === '(' ? ++depth : token.value === ')' ? --depth : 0) < 0)) {
+    while (!scan && line + 1 < lines.length) scan = words(text += `\n${lines[++line]}`);
+    scan ??= words(text, true)!;
+    const tokens = scan.tokens;
+    unparsed = !scan.complete;
+    // Keep complete commands before unsupported syntax on the same line.
+    if (tokens.some(token => token.operator && (token.value === '(' ? ++depth : token.value === ')' ? --depth : 0) < 0)) {
       unparsed = true;
       break;
     }
@@ -158,6 +167,7 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
       body = content.join('\n');
     }
     parsed.push({ tokens, body });
+    if (unparsed) break;
   }
   // The shell rejects an input that ends inside `(`; only the Bash route denies it, as unparsed.
   if (depth > 0 && !unparsed) return visit.unparsed?.();
@@ -438,9 +448,7 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
       if (cd && (!cd.plain || !cd.target.literal || globIndex(cd.target.pattern) >= 0)) {
         const found = candidates.length, failed = unresolved.length;
         add(cd.target.pattern, commandCwd);
-        // A glob verified outside the repository cannot select a protected directory. Keep literal option-bearing cd fail-closed.
-        if (candidates.slice(found).some(path => !isAbsolute(path) || globIndex(cd.target.pattern) < 0 || realRel(path) !== null)
-          || unresolved.length > failed) cwdMayBeProtected = true;
+        if (candidates.length > found || unresolved.length > failed) cwdMayBeProtected = true;
         candidates.length = found; unresolved.length = failed;
       }
       for (const target of commandTargets(segment, body)) add(target, commandCwd);

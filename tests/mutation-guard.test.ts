@@ -159,6 +159,8 @@ describe('Bash write tripwire host route', () => {
           ['rm -rf _op[!S]'], ['cd -P /etc && rm passwd'],
           ['cd src/* && rm _ops/x'], ['rm -rf l*/env'], ['rm -rf s*/l/y.env'],
           ['cd _op[s] && rm -rf env'], [`cd ${outside}/ops-alias/e* && rm secret`],
+          ['cd /et[c] && rm passwd'], ['cd -P /et[c] && rm passwd'],
+          [`cd ${outside}/x* && rm -rf build`], [`cd -P ${outside}/x* && rm -rf build`],
         ] as [string, string?][]) {
           const result = invokeBash(command, hookCwd);
           expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 2 });
@@ -166,7 +168,6 @@ describe('Bash write tripwire host route', () => {
         for (const command of ['rm src/*.tmp', 'echo value > _o/*', 'rm -rf *.log', 'rm -rf _ops_old*', 'rm -rf src/{a,b}.tmp',
           'rm -rf .??*', `rm -rf '${root}'/scratch*`, "rm -rf _op'{s,x}'*", "rm -rf '~+'/*", 'cd _ref* && rg x > /tmp/out',
           '(cd _op*); cd src; echo x > safe.txt', '(cd _op*); echo x > safe.txt',
-          `cd ${outside}/x* && rm -rf build`, `cd -P ${outside}/x* && rm -rf build`,
           "echo '$(echo x > _ops/x)' > report.txt", 'echo "\\$(echo x > _ops/x)" > report.txt',
           "echo x > 'src/a\nb'", "cd '_op[s]' && echo x > safe.txt", 'echo "<(ls)" > report.txt']) {
           expect({ command, status: invokeBash(command).status }).toEqual({ command, status: 0 });
@@ -196,6 +197,7 @@ describe('Bash write tripwire host route', () => {
         `git -C ${cwd} worktree add ../x`, `git -C src worktree add ../../x`, 'git -C src worktree add ../x',
         'cd src && git worktree add ../x', 'git status && git worktree add ../x', "git worktree add '../x'",
         'git worktree add ../x\nf() { :; }', 'git worktree add /etc/wt[1]',
+        'git worktree add --detach ../x HEAD && echo "$(date)"',
       ]) {
         const result = invokeBash(command);
         expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 2 });
