@@ -11,3 +11,4 @@ responsibilities:
 source:
   include:
     - assets/review-hazards.v1.json
+    - assets/review-high-list.v1.json

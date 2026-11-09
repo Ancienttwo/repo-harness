@@ -142,9 +142,23 @@ The diff sets the tier. The author does not: a human change and a model change w
 
 | Tier | Signals |
 | --- | --- |
-| Low | No Medium or High signal, including local changes with clear behavior and docs, tests, comments or translations alone. |
-| Medium | Cross-module behavior changes; public API changes; more than 10 non-generated implementation files; shared runtime changes; authentication-adjacent changes; or unresolved behavior uncertainty. |
-| High | Any hit on the [change hazard list](#change-hazards); permissions or sandbox grants; hooks and the mutation guard; deletion paths; `deploy/sql/`; code that writes to GitHub; or a change across more than one capability boundary in `.archcontext/model/`. |
+| Low | Docs only; tests only; the generated projection PR (`archctx/projection`); or a fix of at most 50 changed lines (added plus deleted, `git diff --numstat`) with no hit on the High list or the change hazard list. |
+| Medium | Every change that is not Low or High. This includes code that writes comments, records, reviews or labels to GitHub, cross-module behavior, public API and shared runtime changes, and a change across more than one capability boundary. |
+| High | Any hit on the [change hazard list](#change-hazards) or the [High list](#high-list): permissions, sandbox settings or seat tool grants; hooks and the mutation guard; credentials, tokens and secrets; deletion paths; release, publish and deploy, including `deploy/sql/`; merge and push paths (the publication executor, branch protection, force push). |
+
+#### High list
+<!-- review-high-list:list:begin -->
+The board rule R5 reads only the rows with `path_visible: true`: a changed path that matches one of their patterns is a hit. Reviewers apply every row to the whole diff; a path outside the patterns can still be High.
+
+| High signal | Paths that R5 reads |
+| --- | --- |
+| Changes permissions, sandbox settings or seat tool grants. | `.claude/**`, `.codex/**`, `src/core/board/seats-settings.ts`, `src/core/board/seat-launch.ts`, `src/effects/board/seats-configuration.ts` |
+| Changes a hook or the mutation guard. | `src/cli/hook/**`, `src/cli/hook-entry.ts` |
+| Reads, moves or exposes credentials, tokens or secrets. | `src/core/security/**` |
+| Changes a path that deletes files, worktrees, branches or seats. | `src/effects/board/closeout.ts`, `src/cli/installer/uninstall.ts`, `scripts/ship-worktrees.sh`, `scripts/worktree-merge-lib.sh` |
+| Changes release, publish or deploy, including `deploy/sql/`. | `deploy/sql/**`, `src/core/release/**`, `src/effects/release/**`, `scripts/check-npm-release.sh`, `scripts/check-release-published.sh` |
+| Changes a merge or push path: the publication executor, branch protection or force push. | `src/core/publication/acceptance-merge-policy.ts`, `src/core/publication/merge-readiness.ts`, `src/effects/publication/batch-build.ts`, `src/effects/publication/merge-executor.ts`, `src/effects/publication/merge-readiness.ts`, `src/effects/publication/new-remote-ref-push.ts`, `scripts/merge-gate.ts` |
+<!-- review-high-list:list:end -->
 
 Review follows the `repo-harness-issue-flow` skill, [references/acceptor.md](../../assets/skills/repo-harness-issue-flow/references/acceptor.md). The tier selects the depth: no independent review for Low, one fresh-context review for Medium, and the gatekeeper plus one review for High, at least one of the two from a model family different from the writer's. The round rules (who reviews each round, the claims of a round, the round-2 scope and the convergence rule) are only in [references/acceptor.md §2.2](../../assets/skills/repo-harness-issue-flow/references/acceptor.md#22-rounds). The Acceptor SOP owns the round, findings and publish steps.
 
