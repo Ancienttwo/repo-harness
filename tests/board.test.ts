@@ -327,10 +327,19 @@ test('High acceptance: PASS rows of the head from two distinct claims, one recor
   const pr1491 = (projection: BoardV1) => projection.pull_requests.find(pr => pr.number === 1491)!;
   expect(projected.map(pr1491).map(pr => [pr.acceptance.status, pr.claude_review] as string[])).toEqual(cases.map(([, status, claude]) => [status, claude]));
   expect(evaluateBoardAttention(projected[1]!).findings.filter(finding => finding.rule === 'A10')).toEqual([]);
-  // Medium needs one claimed PASS row recorded different-family; a same-family PASS alone does not accept (#2084).
-  expect(([[gatekeeper], [['claude', claimUrl(1), 'same-family']]] as const).map(rows => pr1491(head(rows, 'tier:medium')).acceptance.status)).toEqual(['accepted', 'not_accepted']);
+  // Medium needs one claimed PASS row recorded different-family; a same-family PASS alone, or an unclaimed one, does not accept (#2084).
+  expect(([[gatekeeper], [['claude', claimUrl(1), 'same-family']], [['pi', '']]] as const).map(rows => pr1491(head(rows, 'tier:medium')).acceptance.status)).toEqual(['accepted', 'not_accepted', 'not_accepted']);
   // The writer claim bound to the head branch gives the family that the Medium review seat differs from; #1494 links an issue outside the board.
   expect(board.pull_requests.map(pr => pr.writer_family)).toEqual(['anthropic', null, 'openai']);
+  // A Pi runtime names no family, and linked issues whose claims of the branch disagree give none; agreeing issues keep it.
+  const family = (edit: (data: Json) => void, pulls?: (data: Json) => void) => pr1491(replay({ parent: (data) => { parent(data); edit(data); }, pulls })).writer_family;
+  const refs1479 = (data: Json) => { data.repository.pr1491.body += '\nRefs #1479\n'; };
+  const second = (runtime: string) => (data: Json) => { issueNode(data, 1479).comments.nodes.push(claim(runtime, 'feat/1475-hc-transport')); };
+  expect([
+    family((data) => { const node = issueNode(data, 1475).comments.nodes.find((entry: Json) => entry.body.includes('Runtime: claude')); node.body = node.body.replace('Runtime: claude', 'Runtime: pi'); }),
+    family(second('codex'), refs1479),
+    family(second('claude'), refs1479),
+  ]).toEqual([null, null, 'anthropic']);
 });
 
 test('replay: the recorded #1474 reads project to a board, and its findings come from the recorded state', () => {

@@ -423,9 +423,9 @@ function highRuleMet(read: BoardPullRequestReadV1, head: readonly AcceptanceRowV
   return new Set(passes.map(row => row.claim)).size >= 2 && passes.some(row => row.different_family);
 }
 
-/** The Medium rule (`acceptor.md` section 2.2): one claimed PASS row of the head recorded `different-family`; `unknown` never counts. A head with a `FAIL` row does not meet it. */
+/** The Medium rule (`acceptor.md` section 2.2): one claimed PASS row of the head recorded `different-family`; `unknown` never counts. `acceptance` has ruled out a `FAIL` row. */
 function mediumRuleMet(read: BoardPullRequestReadV1, head: readonly AcceptanceRowV1[]): boolean {
-  return !head.some(row => row.verdict === 'FAIL') && claimedRows(read, head).some(row => row.different_family);
+  return claimedRows(read, head).some(row => row.different_family);
 }
 
 /** The review rule of a pull request: `high` for an open pull request of High or unknown tier, `medium` for an open Medium one, `none` otherwise. */
