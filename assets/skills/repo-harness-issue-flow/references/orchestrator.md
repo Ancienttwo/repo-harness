@@ -526,7 +526,8 @@ are true:
 - The PR is open and not draft, and it closes or refs an item of the parent.
 - No hold record is in force on the parent, on the PR's issues or on the PR.
 - The plan does not hold its issues, its issues are in `merge_order`, and
-  every issue earlier in `merge_order` is closed.
+  every issue before each of them in `merge_order` is closed or is one of
+  its own issues.
 - An acceptance record has a PASS row for the head, at every tier. The
   provisional `tier_low` status is not enough: post the Low record after
   you check the verification evidence.
@@ -543,10 +544,11 @@ comments.
 A hold record narrows only. When the owner says "stop" or "no" in prose,
 post `merge hold` (`templates.md`) in the same turn, before any other
 action. A hold on the parent holds the whole batch, or only the issues of
-its `Issues:` line. A newer `merge hold released` on the same thread records
-a release decision and ends the hold. When the newest 50 comments of a
-thread hold no hold record and older comments exist, the command refuses
-with `hold_unknown`.
+its `Issues:` line. A hold on an issue or a PR holds that issue or PR. Each
+hold stays in force until a `merge hold released` on the same thread that
+is strictly newer than the hold; a release with the same time does not end
+it. When the newest 50 comments of a thread hold no release and older
+comments exist, the command refuses with `hold_unknown`.
 
 ## 10. Close out
 

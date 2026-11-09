@@ -423,7 +423,7 @@ Reason: <the stop decision, and who made it>
 ```
 
 `Issues:` is for the parent only; without it, the hold covers every item
-of the thread. `repo-harness board merge` reads it (`orchestrator.md` §9.4).
+of the batch. A hold on an issue or a PR covers that issue or PR. `repo-harness board merge` reads it (`orchestrator.md` §9.4).
 
 ```text
 repo-harness merge hold released

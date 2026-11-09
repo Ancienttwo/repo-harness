@@ -10,29 +10,38 @@ import { protocolComments, type BoardCommentPageV1 } from './source';
 export const MERGE_HOLD_HEADER = 'repo-harness merge hold';
 export const MERGE_HOLD_RELEASED_HEADER = 'repo-harness merge hold released';
 
+export interface BoardMergeHoldRecordV1 {
+  readonly comment_url: string;
+  /** The `Issues:` line of a parent hold; null holds every item of the thread. Always null on an issue or a PR thread. */
+  readonly issues: readonly number[] | null;
+}
+
 export type BoardMergeHoldV1 =
   | { readonly status: 'none' }
-  /** `issues`: the `Issues:` line of a parent hold; null holds every item of the thread. */
-  | { readonly status: 'held'; readonly comment_url: string; readonly issues: readonly number[] | null }
-  /** The read is truncated and its newest comments hold no hold record: an older hold can still be in force. */
+  | { readonly status: 'held'; readonly holds: readonly BoardMergeHoldRecordV1[] }
+  /** The read is truncated and its newest comments hold no release: an older hold can still be in force. */
   | { readonly status: 'unknown'; readonly reason: 'comments_truncated' };
 
-/** The newest hold or release record of one thread decides; a release ends every hold of that thread. */
-export function readMergeHold(page: BoardCommentPageV1): BoardMergeHoldV1 {
-  const records = [...protocolComments(page, MERGE_HOLD_HEADER), ...protocolComments(page, MERGE_HOLD_RELEASED_HEADER)];
-  const newest = records.reduce<(typeof records)[number] | null>((latest, record) => (latest === null || record.created_at >= latest.created_at ? record : latest), null);
-  if (newest === null) return page.truncated ? { status: 'unknown', reason: 'comments_truncated' } : { status: 'none' };
-  if (newest.body.replace(/\r\n/gu, '\n').split('\n', 1)[0]!.trim() === MERGE_HOLD_RELEASED_HEADER) return { status: 'none' };
-  const line = newest.body.replace(/\r\n/gu, '\n').split('\n').find(entry => entry.startsWith('Issues: '));
-  const issues = line === undefined ? null : [...line.matchAll(/#([1-9][0-9]*)/gu)].map(match => Number(match[1]));
-  return { status: 'held', comment_url: newest.url, issues: issues === null || issues.length === 0 ? null : Object.freeze(issues) };
+/**
+ * Every hold of one thread stays in force until a strictly newer release on
+ * that thread. A release with the same time as a hold does not end it, so an
+ * unknown order fails closed. `scoped` reads the `Issues:` line (the parent).
+ */
+export function readMergeHold(page: BoardCommentPageV1, scoped: boolean): BoardMergeHoldV1 {
+  const released = protocolComments(page, MERGE_HOLD_RELEASED_HEADER).map(record => record.created_at).sort().at(-1) ?? null;
+  if (released === null && page.truncated) return { status: 'unknown', reason: 'comments_truncated' };
+  const holds = protocolComments(page, MERGE_HOLD_HEADER).filter(record => released === null || record.created_at >= released).map((record) => {
+    const line = scoped ? record.body.replace(/\r\n/gu, '\n').split('\n').find(entry => entry.startsWith('Issues: ')) : undefined;
+    const issues = line === undefined ? [] : [...line.matchAll(/#([1-9][0-9]*)/gu)].map(match => Number(match[1]));
+    return Object.freeze({ comment_url: record.url, issues: issues.length === 0 ? null : Object.freeze(issues) });
+  });
+  return holds.length === 0 ? { status: 'none' } : { status: 'held', holds: Object.freeze(holds) };
 }
 
 export type BoardMergeRefusalV1 =
   | 'acceptance_merge_off'
   | 'plan_unavailable'
   | 'draft'
-  | 'no_item'
   | 'held'
   | 'hold_unknown'
   | 'plan_hold'
@@ -47,8 +56,10 @@ export type BoardMergeDecisionV1 =
   | { readonly pr: number; readonly eligible: true }
   | { readonly pr: number; readonly eligible: false; readonly reason: BoardMergeRefusalV1; readonly detail: string };
 
-function covers(hold: BoardMergeHoldV1, items: readonly number[]): boolean {
-  return hold.status === 'held' && (hold.issues === null || items.some(item => hold.issues!.includes(item)));
+/** The first hold in force for these items; the `Issues:` scope only exists on a parent hold. */
+function covering(hold: BoardMergeHoldV1, items: readonly number[]): BoardMergeHoldRecordV1 | null {
+  if (hold.status !== 'held') return null;
+  return hold.holds.find(record => record.issues === null || items.some(item => record.issues!.includes(item))) ?? null;
 }
 
 function refusal(board: BoardV1, pr: BoardPullRequestV1): { readonly reason: BoardMergeRefusalV1; readonly detail: string } | null {
@@ -56,15 +67,17 @@ function refusal(board: BoardV1, pr: BoardPullRequestV1): { readonly reason: Boa
   if (board.plan.status !== 'observed') return { reason: 'plan_unavailable', detail: `the plan is ${board.plan.status}` };
   if (pr.is_draft) return { reason: 'draft', detail: `#${pr.number} is a draft` };
   const onBoard = new Map(board.items.map(item => [item.number, item] as const));
+  // A board PR always links an item of the parent (`linkedPullRequests`), so `items` is never empty.
   const items = [...new Set([...pr.closes, ...pr.refs])].filter(number => onBoard.has(number)).sort((left, right) => left - right);
-  if (items.length === 0) return { reason: 'no_item', detail: `#${pr.number} closes or refs no item of #${board.parent.number}` };
   const holds = [
     { where: `parent #${board.parent.number}`, hold: board.merge_hold },
     ...items.map(number => ({ where: `issue #${number}`, hold: onBoard.get(number)!.merge_hold })),
     { where: `PR #${pr.number}`, hold: pr.merge_hold },
   ];
-  const held = holds.find(entry => covers(entry.hold, items));
-  if (held !== undefined && held.hold.status === 'held') return { reason: 'held', detail: `merge hold on ${held.where}: ${held.hold.comment_url}` };
+  for (const entry of holds) {
+    const record = covering(entry.hold, items);
+    if (record !== null) return { reason: 'held', detail: `merge hold on ${entry.where}: ${record.comment_url}` };
+  }
   const unknown = holds.find(entry => entry.hold.status === 'unknown');
   if (unknown !== undefined) return { reason: 'hold_unknown', detail: `the comments of ${unknown.where} are truncated and hold no hold record` };
   const plan = board.plan.block;
@@ -72,9 +85,9 @@ function refusal(board: BoardV1, pr: BoardPullRequestV1): { readonly reason: Boa
   if (planHold !== undefined) return { reason: 'plan_hold', detail: `the plan holds #${planHold.issue}: ${planHold.reason}` };
   const unordered = items.filter(number => !plan.merge_order.includes(number));
   if (unordered.length > 0) return { reason: 'not_in_merge_order', detail: `${unordered.map(number => `#${number}`).join(' ')} not in the plan merge_order` };
-  const first = Math.min(...items.map(number => plan.merge_order.indexOf(number)));
-  // An earlier issue outside the board has no observed state, so it blocks like an open one.
-  const earlier = plan.merge_order.slice(0, first).filter(number => onBoard.get(number)?.state !== 'closed');
+  const last = Math.max(...items.map(number => plan.merge_order.indexOf(number)));
+  // Every entry before the last linked item must be closed or delivered by this PR. An earlier issue outside the board has no observed state, so it blocks like an open one.
+  const earlier = plan.merge_order.slice(0, last).filter(number => !items.includes(number) && onBoard.get(number)?.state !== 'closed');
   if (earlier.length > 0) return { reason: 'merge_order', detail: `earlier in merge_order and not closed: ${earlier.map(number => `#${number}`).join(' ')}` };
   // The provisional `tier_low` path needs an evidence check by a seat, so an unattended merge takes a record at every tier.
   if (pr.acceptance.status !== 'accepted' || pr.acceptance.via !== 'record') {

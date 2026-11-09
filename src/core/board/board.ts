@@ -26,7 +26,7 @@ import { isCiRepairIssueBody } from '../ci/test-report';
  * It is a read model. GitHub and hc stay the authorities; the board keeps
  * their observation time and never writes back.
  */
-export const BOARD_PROTOCOL = 3 as const;
+export const BOARD_PROTOCOL = 4 as const;
 export const BOARD_KIND = 'repo-harness.board' as const;
 
 export type BoardTier = 'low' | 'medium' | 'high';
@@ -403,7 +403,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
       merge_readiness: readiness ?? null,
       tier,
       claude_review: claudeReview(read, linked, tier, input.parent),
-      merge_hold: readMergeHold(read.comments),
+      merge_hold: readMergeHold(read.comments, false),
     });
   }).sort((left, right) => left.number - right.number);
   if (input.path_owners.status === 'observed') {
@@ -422,7 +422,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
     blocked_by: issue.blocked_by,
     claim_status: claimStatus(issue),
     pull_requests: Object.freeze(pullRequests.filter(pr => pr.closes.includes(issue.number) || pr.refs.includes(issue.number)).map(pr => pr.number)),
-    merge_hold: readMergeHold(issue.comments),
+    merge_hold: readMergeHold(issue.comments, false),
   })).sort((left, right) => left.number - right.number);
   const daily: BoardDailyRunV1 = input.daily_run.status === 'unavailable' ? input.daily_run : {
     ...input.daily_run,
@@ -438,7 +438,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
     acceptance_merge: input.acceptance_merge,
     parent: Object.freeze({ number: parent.number, title: parent.title, url: parent.url, state: parent.state, labels: parent.labels, milestone: parent.milestone }),
     plan: projectPlan(parent),
-    merge_hold: readMergeHold(parent.comments),
+    merge_hold: readMergeHold(parent.comments, true),
     items: Object.freeze(items),
     pull_requests: Object.freeze(pullRequests),
     path_owners: input.path_owners,

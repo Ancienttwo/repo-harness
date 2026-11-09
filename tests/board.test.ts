@@ -368,7 +368,9 @@ test('one strict summary decoder checks snapshots and route rows', () => {
 test('decoders refuse an unknown protocol or kind', () => {
   expect(() => decodeBoard({ protocol: 2, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 2');
   expect(() => decodeBoard({ protocol: 1, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 1');
-  expect(() => decodeBoard({ protocol: 3, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
+  // A protocol-3 board has no merge_hold fields.
+  expect(() => decodeBoard({ protocol: 3, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 3');
+  expect(() => decodeBoard({ protocol: 4, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
   const block = (value: Json) => `repo-harness plan\n\n\`\`\`json\n${JSON.stringify(value)}\n\`\`\`\n`;
   const valid = { protocol: 1, kind: 'repo-harness.plan', merge_order: [1475], holds: [], batches: [], seat_limits: { worker: 3 } } as const;
   expect(decodePlanBlock(block(valid))).toEqual(valid);
@@ -451,23 +453,33 @@ test('board merge: an accepted, green, ready PR first in plan order is eligible,
   expect([dry.target, dry.exit_code, refused.target, refused.exit_code, calls.length]).toEqual([1491, 0, null, 4, 1]);
 });
 
-test('board merge: hold records narrow the merge; a newer release on the same thread ends a hold', () => {
-  const hold = (body: string, at: string) => comment(body, at);
-  const onPr = (...bodies: [string, string][]) => ({ pulls: (data: Json) => { data.repository.pr1491.comments.nodes.push(...bodies.map(([body, at]) => hold(body, at))); } });
-  const onParent = (body: string, truncated = false) => ({ parent: (data: Json) => {
-    data.repository.issue.comments.nodes.push(hold(body, '2026-11-02T21:00:00Z'));
-    data.repository.issue.comments.pageInfo.hasPreviousPage = truncated;
-  } });
+test('board merge: every hold stays in force until a strictly newer release on its own thread; Issues: scopes only a parent hold', () => {
+  const HOLD = 'repo-harness merge hold\nReason: owner said stop';
+  const RELEASE = 'repo-harness merge hold released';
+  type Thread = 'parent' | 'issue' | 'pr';
+  const on = (...records: [Thread, string, string][]) => ({
+    parent: (data: Json) => {
+      for (const [thread, body, at] of records) {
+        if (thread === 'parent') data.repository.issue.comments.nodes.push(comment(body, at));
+        if (thread === 'issue') issueNode(data, 1475).comments.nodes.push(comment(body, at));
+      }
+    },
+    pulls: (data: Json) => { for (const [thread, body, at] of records) if (thread === 'pr') data.repository.pr1491.comments.nodes.push(comment(body, at)); },
+  });
   expect([
-    mergeReason(onPr(['repo-harness merge hold\nReason: owner said stop', '2026-11-02T21:00:00Z'])),
-    mergeReason(onPr(['repo-harness merge hold\nReason: owner said stop', '2026-11-02T21:00:00Z'], ['repo-harness merge hold released', '2026-11-02T21:30:00Z'])),
-    mergeReason(onParent('repo-harness merge hold\nIssues: #1479')),
-    mergeReason(onParent('repo-harness merge hold')),
+    mergeReason(on(['pr', HOLD, '2026-11-02T21:00:00Z'])),
+    mergeReason(on(['pr', HOLD, '2026-11-02T21:00:00Z'], ['pr', RELEASE, '2026-11-02T21:30:00Z'])),
+    mergeReason(on(['pr', HOLD, '2026-11-02T21:00:00Z'], ['pr', RELEASE, '2026-11-02T21:00:00Z'])),
+    mergeReason(on(['pr', HOLD, '2026-11-02T21:00:00Z'], ['issue', RELEASE, '2026-11-02T21:30:00Z'])),
+    mergeReason(on(['issue', `${HOLD}\nIssues: #999`, '2026-11-02T21:00:00Z'])),
+    mergeReason(on(['parent', `${HOLD}\nIssues: #1479`, '2026-11-02T21:00:00Z'])),
+    mergeReason(on(['parent', HOLD, '2026-11-02T21:00:00Z'])),
+    mergeReason(on(['parent', HOLD, '2026-11-02T21:00:00Z'], ['parent', `${HOLD}\nIssues: #1479`, '2026-11-02T21:10:00Z'])),
     mergeReason({ parent: (data) => { data.repository.issue.comments.pageInfo.hasPreviousPage = true; } }),
-  ]).toEqual(['held', 'eligible', 'eligible', 'held', 'hold_unknown']);
+  ]).toEqual(['held', 'eligible', 'held', 'held', 'held', 'eligible', 'held', 'held', 'hold_unknown']);
 });
 
-test('board merge: plan holds, plan order, the provisional Low path, a missing Claude review, readiness and the policy switch each refuse', () => {
+test('board merge: no plan, a draft, plan holds, plan order for every linked item, the provisional Low path, a missing Claude review, a red Required / CI, readiness and the policy switch each refuse', () => {
   const lowGreen = {
     parent: (data: Json) => { issueNode(data, 1479).labels.nodes.push({ name: 'tier:low' }); },
     pulls: (data: Json) => {
@@ -477,14 +489,18 @@ test('board merge: plan holds, plan order, the provisional Low path, a missing C
     },
   };
   expect([
+    mergeReason({ parent: (data) => { data.repository.issue.comments.nodes.pop(); } }),
+    mergeReason({}, {}, 1499),
     mergeReason({ holds: [{ issue: 1475, reason: 'owner item' }] }),
     mergeReason({ order: [1479, 1475] }),
+    mergeReason({ order: [1475, 1479, 1476], pulls: (data) => { data.repository.pr1491.body += '\nRefs #1476\n'; } }),
     mergeReason({ order: [1479] }),
     mergeReason({ ...lowGreen, order: [1479, 1475] }, {}, 1494),
     mergeReason({ parent: (data) => { issueNode(data, 1475).labels.nodes = []; } }),
+    mergeReason({ pulls: (data) => { for (const check of data.repository.pr1491.commits.nodes[0].commit.statusCheckRollup.contexts.nodes) if (check.name === 'Required / CI') check.conclusion = 'FAILURE'; } }),
     mergeReason({}, { ready: [] }),
     mergeReason({}, { policy: POLICY_ABSENT }),
-  ]).toEqual(['plan_hold', 'merge_order', 'not_in_merge_order', 'not_accepted', 'claude_review_pending', 'not_ready', 'acceptance_merge_off']);
+  ]).toEqual(['plan_unavailable', 'draft', 'plan_hold', 'merge_order', 'merge_order', 'not_in_merge_order', 'not_accepted', 'claude_review_pending', 'required_check', 'not_ready', 'acceptance_merge_off']);
   // The Low PR is accepted on the provisional tier_low path, which an unattended merge does not take.
   expect(replay(mergeReplay({ ...lowGreen, order: [1479, 1475] })).pull_requests.find(pr => pr.number === 1494)!.acceptance).toMatchObject({ status: 'accepted', via: 'tier_low' });
 });
