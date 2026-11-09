@@ -14,7 +14,7 @@ import { BoardParentsError, collectBoardParents } from '../../effects/board/pare
 import { BoardSeatsError, collectBoardSeats } from '../../effects/board/seats';
 import { DispatchError, type DispatchPlanV1 } from '../../core/board/dispatch';
 import { runDispatch } from '../../effects/board/dispatch';
-import { runReview, type ReviewResultV1 } from '../../effects/board/review';
+import { runReview, type ReviewObserver, type ReviewResultV1 } from '../../effects/board/review';
 import { seatLaunch } from './seats';
 import { runBoardCloseout, stopArchitectureDaemons, stopCodegraphServers } from '../../effects/board/closeout';
 import { worktreeProcesses } from '../../effects/git/worktree-processes';
@@ -251,11 +251,11 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
   return board;
 }
 
-function reviewRunner(options: AttentionOptions, parent: number, host: BoardHostPortsV1): () => Promise<ReviewResultV1> {
+function reviewRunner(options: AttentionOptions, parent: number, host: BoardHostPortsV1): (observe: ReviewObserver) => Promise<unknown> {
   if (options.deliver !== true) throw new AttentionWatchError('--review needs --deliver');
   const space = options.space;
   if (space === undefined) throw new AttentionWatchError('--review needs --space');
-  return () => runReview({ repo_root: process.cwd(), parent, space, host, dry_run: false, launch: (seat, labels, cwd) => seatLaunch(seat, labels, process.env, cwd) });
+  return observe => runReview({ repo_root: process.cwd(), parent, space, host, dry_run: false, observe, launch: (seat, labels, cwd) => seatLaunch(seat, labels, process.env, cwd) });
 }
 
 /** The resident loop. A failed board read or hc check ends it with exit 1; doctor then reports the watcher stopped. */
