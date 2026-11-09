@@ -135,7 +135,7 @@ test('execute starts the worktree, posts the claim, then opens the tab; a dry ru
   expect(dry.calls).toEqual([]);
 });
 
-test('dispatch writes the newest active coordinator claim URL', async () => {
+test('dispatch writes the earliest active coordinator claim URL', async () => {
   const parent = read([issue(1)]);
   const newer = comment('repo-harness issue claim\nStatus: active\nRole: coordinator', '2026-11-09T11:00:00Z');
   const released = comment('repo-harness issue claim\nStatus: active\nRole: coordinator', '2026-11-09T12:00:00Z');
@@ -144,7 +144,7 @@ test('dispatch writes the newest active coordinator claim URL', async () => {
   let body = '';
   const run = ports({ comment: (_issue, text) => { body = text; return 'claim'; } });
   await executeDispatch(plan, context, run.base);
-  expect(body).toContain(`\nCoordinator: ${newer.url}\n`);
+  expect(body).toContain(`\nCoordinator: ${coordinator.url}\n`);
 });
 
 test('dispatch refuses before any writes without an active coordinator claim', async () => {
@@ -154,6 +154,27 @@ test('dispatch refuses before any writes without an active coordinator claim', a
   const run = ports();
   await expect(executeDispatch(plan, context, run.base)).rejects.toThrow(/no active coordinator claim/);
   expect(run.calls).toEqual([]);
+});
+
+test('a released successor does not reactivate its predecessor; dry run reports truncated comments', async () => {
+  const parent = read([issue(1)]);
+  const successor = comment(`repo-harness issue claim\nStatus: active\nRole: coordinator\nPrior claim: ${coordinator.url}`, '2026-11-09T11:00:00Z');
+  const status = comment(`repo-harness issue claim status\nClaim: ${successor.url}\nStatus: released`, '2026-11-09T12:00:00Z');
+  const plan = planDispatch({ seats: DEFAULT_SEATS_CONFIG, quota: NORMAL, terminals: [], parent: { ...parent, parent: { ...parent.parent, comments: { truncated: true, comments: [...parent.parent.comments.comments, successor, status] } } } });
+  const run = ports();
+  for (const dry_run of [false, true]) {
+    await expect(executeDispatch(plan, { ...context, dry_run }, run.base)).rejects.toThrow(/no active coordinator claim.*older parent comments were not read/);
+  }
+  expect(run.calls).toEqual([]);
+});
+
+test('coordinator ties use comment IDs and a handoff selects the successor', () => {
+  const parent = read([issue(1)]);
+  const first = { ...coordinator, url: 'https://github.com/o/r/issues/100#issuecomment-9' };
+  const second = { ...coordinator, url: 'https://github.com/o/r/issues/100#issuecomment-10' };
+  const selected = (claims: BoardCommentV1[]) => planDispatch({ seats: DEFAULT_SEATS_CONFIG, quota: NORMAL, terminals: [], parent: { ...parent, parent: { ...parent.parent, comments: { truncated: false, comments: [comment(planBody(4)), ...claims] } } } }).coordinator;
+  expect(selected([second, first])).toBe(first.url);
+  expect(selected([first, { ...second, body: `${second.body}\nPrior claim: ${first.url}` }])).toBe(second.url);
 });
 
 test('a tab failure before the request releases the claim; an ambiguous one keeps it and reports launch_unknown', async () => {

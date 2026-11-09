@@ -97,8 +97,8 @@ function releaseClaim(ports: DispatchPorts, issue: number, claimUrl: string): vo
  */
 export async function executeDispatch(plan: DispatchPlanV1, context: { readonly repositoryId: string; readonly parent: number; readonly space: string; readonly dry_run: boolean }, ports: DispatchPorts): Promise<DispatchResultV1['started']> {
   const started: Array<DispatchResultV1['started'][number]> = [];
+  if (plan.decisions.some(decision => decision.action === 'dispatch') && plan.coordinator === null) throw new DispatchError(`#${context.parent} has no active coordinator claim${plan.parent_comments_truncated ? ' in the comments that were read; older parent comments were not read' : ''}; nothing was started`);
   if (context.dry_run) return started;
-  if (plan.decisions.some(decision => decision.action === 'dispatch') && plan.coordinator === null) throw new DispatchError(`#${context.parent} has no active coordinator claim; nothing was started`);
   for (const decision of plan.decisions) {
     if (decision.action !== 'dispatch') continue;
     const worktree = ports.startWorktree(decision.issue);

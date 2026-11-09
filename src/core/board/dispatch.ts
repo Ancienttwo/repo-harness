@@ -1,7 +1,7 @@
 import { PlanBlockError, decodePlanBlock, type PlanBlockV1 } from './plan-block';
 import { selectSeatRoute, type SeatAccountQuotas } from './seat-routing';
 import { ROUTING_CLASSES, isWorkerSeat, type RoutingClass, type SeatId, type SeatsConfigV1 } from './seats-settings';
-import { claimStatusTarget, field, newestProtocolComment, parseClaimStatus, protocolComments, type BoardParentReadV1, type BoardSubIssueReadV1 } from './source';
+import { claimStatusTarget, commentId, field, newestProtocolComment, parseClaimStatus, protocolComments, type BoardCommentPageV1, type BoardCommentV1, type BoardParentReadV1, type BoardSubIssueReadV1 } from './source';
 
 /**
  * Dispatch (#2004): which sub-issues of a parent are ready, and which seat each one gets. It is a pure
@@ -47,6 +47,7 @@ export interface DispatchPlanV1 {
   /** Live worker seats that carry this parent's label before this dispatch. */
   readonly live_workers: number;
   readonly coordinator: string | null;
+  readonly parent_comments_truncated: boolean;
   readonly decisions: readonly DispatchDecisionV1[];
 }
 
@@ -61,16 +62,27 @@ function planOf(parent: BoardParentReadV1): PlanBlockV1 {
   }
 }
 
+function closedClaims(comments: BoardCommentPageV1): Set<string | null> {
+  return new Set(protocolComments(comments, CLAIM_STATUS_HEADER).filter(comment => {
+    const status = parseClaimStatus(comment)?.status;
+    return status === 'done' || status?.startsWith('released');
+  }).map(claimStatusTarget));
+}
+
+function claimOrder(a: BoardCommentV1, b: BoardCommentV1): number {
+  const time = a.created_at.localeCompare(b.created_at);
+  if (time !== 0) return time;
+  const aId = commentId(a.url) ?? a.url;
+  const bId = commentId(b.url) ?? b.url;
+  return aId.length - bId.length || aId.localeCompare(bId);
+}
+
 /** Claimed: the newest claim is not released or done, or the comments are cut and the claim state cannot be known. */
 function claimDetail(issue: BoardSubIssueReadV1): string | null {
   const claim = newestProtocolComment(issue.comments, CLAIM_HEADER);
   if (claim === null) return issue.comments.truncated ? 'older comments were not read, so a claim cannot be ruled out' : null;
-  // A status closes the claim it names, not any claim: a delayed status of an older claim leaves this one active.
-  const closing = protocolComments(issue.comments, CLAIM_STATUS_HEADER)
-    .filter(comment => claimStatusTarget(comment) === claim.url)
-    .map(parseClaimStatus)
-    .some(status => status !== null && (status.status === 'done' || status.status.startsWith('released')));
-  return closing ? null : `active claim ${claim.url}`;
+  // A status closes only the claim it names, even if it arrives late.
+  return closedClaims(issue.comments).has(claim.url) ? null : `active claim ${claim.url}`;
 }
 
 /** The one route class that the labels name, or the reason that they do not. */
@@ -85,13 +97,11 @@ export function planDispatch(input: DispatchInputV1): DispatchPlanV1 {
   const { parent, seats, quota } = input;
   const plan = planOf(parent);
   const comments = parent.parent.comments;
-  const closed = new Set(protocolComments(comments, CLAIM_STATUS_HEADER).filter(comment => {
-    const status = parseClaimStatus(comment)?.status;
-    return status === 'done' || status?.startsWith('released');
-  }).map(claimStatusTarget));
-  const coordinator = protocolComments(comments, CLAIM_HEADER)
-    .filter(comment => field(comment.body, 'Role') === 'coordinator' && field(comment.body, 'Status') === 'active' && !closed.has(comment.url))
-    .reduce<typeof comments.comments[number] | null>((latest, comment) => latest === null || comment.created_at >= latest.created_at ? comment : latest, null);
+  const closed = closedClaims(comments);
+  const claims = protocolComments(comments, CLAIM_HEADER)
+    .filter(comment => field(comment.body, 'Role') === 'coordinator' && field(comment.body, 'Status') === 'active');
+  const coordinator = claims.filter(claim => !closed.has(claim.url) && !claims.some(next =>
+    field(next.body, 'Prior claim') === claim.url && claimOrder(claim, next) < 0)).sort(claimOrder)[0];
   const parentLabel = String(parent.parent.number);
   const liveWorkers = input.terminals.filter(({ state, labels }) => state === 'live' && labels.parent === parentLabel
     && labels.seat !== undefined && isWorkerSeat(labels.seat as SeatId));
@@ -121,5 +131,5 @@ export function planDispatch(input: DispatchInputV1): DispatchPlanV1 {
     running += 1;
     return { issue: number, action: 'dispatch', title: issue.title, route_class: kind.kind, credentials, seat: route.id, route_line: route.line };
   });
-  return Object.freeze({ plan, live_workers: liveWorkers.length, coordinator: coordinator?.url ?? null, decisions: Object.freeze(decisions) });
+  return Object.freeze({ plan, live_workers: liveWorkers.length, coordinator: coordinator?.url ?? null, parent_comments_truncated: comments.truncated, decisions: Object.freeze(decisions) });
 }
