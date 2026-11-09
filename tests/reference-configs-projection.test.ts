@@ -1,8 +1,8 @@
 import { describe, test, expect } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
-import { renderHazardRegion } from "../scripts/sync-reference-configs";
-import { REVIEW_HAZARDS } from "../src/core/board/hazards";
+import { renderHazardRegion, renderHighListRegion } from "../scripts/sync-reference-configs";
+import { REVIEW_HAZARDS, REVIEW_HIGH_LIST } from "../src/core/board/hazards";
 
 const ROOT = join(import.meta.dir, "..");
 const SOURCE_DIR = join(ROOT, "assets/reference-configs");
@@ -120,6 +120,11 @@ describe("change hazard list", () => {
     const changed = { ...REVIEW_HAZARDS, hazards: REVIEW_HAZARDS.hazards.map((hazard) => ({ id: hazard.id, text: hazard.text, path_visible: false as const })) };
     expect(renderHazardRegion(doc, changed)).not.toBe(doc);
     expect(() => renderHazardRegion(doc.replace("<!-- review-hazards:list:end -->", ""), REVIEW_HAZARDS)).toThrow("exactly one");
+    // assets/review-high-list.v1.json owns the High list table the same way.
+    expect(renderHighListRegion(doc, REVIEW_HIGH_LIST)).toBe(doc);
+    const handEdited = doc.replace("`src/cli/hook/**`, ", "");
+    expect(handEdited).not.toBe(doc);
+    expect(renderHighListRegion(handEdited, REVIEW_HIGH_LIST)).not.toBe(handEdited);
   });
 
   test("Review by risk and the external protocol link the shared list", () => {

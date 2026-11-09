@@ -20,6 +20,7 @@ import {
   type ClaimStatusV1,
 } from './source';
 import { isCiRepairIssueBody } from '../ci/test-report';
+import { pathHazardHits, pathHighHits } from './hazards';
 
 /**
  * The board: one parent issue, its sub-issues and their pull requests, the
@@ -96,7 +97,7 @@ export interface BoardPullRequestV1 {
   readonly acceptance: BoardAcceptanceV1;
   /** The single-PR readiness projection, for open pull requests only. */
   readonly merge_readiness: PullRequestReadinessV2 | null;
-  /** The highest review tier of the linked issues (the parent excluded); null when the pull request links none, or one is outside the board or has no tier label. */
+  /** `high` when a changed path is on the High list or the change hazard list, or the file list is incomplete; otherwise the highest review tier of the linked issues (the parent excluded), null when the pull request links none, or one is outside the board or has no tier label. */
   readonly tier: BoardTier | null;
   /**
    * An unknown tier counts as High here (fail closed). `pending`: an open High pull request whose head does not meet the High acceptance rule and has no acceptance row
@@ -353,8 +354,14 @@ function strictReview(read: BoardPullRequestReadV1, tier: BoardTier | null): boo
   return read.state === 'open' && (tier === null || tier === 'high');
 }
 
-/** The one effective tier of a pull request, for the Low acceptance path and the review planner alike: null unless every linked issue (the parent excluded) is on the board with a tier label. */
-function effectiveTier(closes: readonly number[], refs: readonly number[], parent: BoardParentReadV1, tiers: ReadonlyMap<number, BoardTier | null>): BoardTier | null {
+/**
+ * The one effective tier of a pull request, for the Low acceptance path and the review planner alike. A changed path on the High
+ * list or the change hazard list sets High whatever the labels say (`agentic-development-flow.md`, Review by risk); R3 and R5 name
+ * the labels to fix. An incomplete file list can hide such a path, so it sets High too. Otherwise null unless every linked issue
+ * (the parent excluded) is on the board with a tier label.
+ */
+function effectiveTier(closes: readonly number[], refs: readonly number[], files: readonly string[] | null, parent: BoardParentReadV1, tiers: ReadonlyMap<number, BoardTier | null>): BoardTier | null {
+  if (files === null || pathHighHits(files).length > 0 || pathHazardHits(files).length > 0) return 'high';
   const linked = [...new Set([...closes, ...refs])].filter(number => number !== parent.parent.number);
   const known = linked.map(number => tiers.get(number) ?? null);
   return linked.length === 0 || known.includes(null) ? null : known.includes('high') ? 'high' : known.includes('medium') ? 'medium' : 'low';
@@ -395,7 +402,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
   const pullRequests = linkedPullRequests(input.parent, input.pull_requests).map((read): BoardPullRequestV1 => {
     const { closes, refs } = bodyLinks(repository, read.body);
     const check = requiredCheck(read);
-    const tier = effectiveTier(closes, refs, input.parent, tiers);
+    const tier = effectiveTier(closes, refs, read.files, input.parent, tiers);
     const claude = claudeReview(read, tier);
     const readiness = read.state === 'open' ? input.readiness.find(entry => entry.pr_number === read.number) : undefined;
     if (read.state === 'open' && readiness === undefined) throw new Error(`board input has no merge readiness for open PR #${read.number}`);
