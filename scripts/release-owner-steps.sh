@@ -130,6 +130,8 @@ repository_slug() {
 plan() {
   local version="$1" sha slug repository_id console_name core_name upgrade worktree remote_tag local_tag
   sha="$(release_commit "$version")"
+  # The owner runs guard, notes and the readbacks from the release commit's own checkout.
+  git cat-file -e "$sha:scripts/release-owner-steps.sh" 2>/dev/null || fail "the release commit $sha has no scripts/release-owner-steps.sh; release a commit that has it."
   release_notes "$version" "$sha" >/dev/null
   { read -r console_name; read -r core_name; } < <(package_names "$sha")
   [[ -n "$console_name" && -n "$core_name" ]] || fail "the package manifests at $sha name no package."

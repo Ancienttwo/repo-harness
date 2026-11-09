@@ -380,6 +380,12 @@ describe("Bootstrap Script Contracts", () => {
       expect(stale.stderr).toContain("Run git fetch origin first");
       git("fetch", "-q", "origin");
       expect(run("plan", "1.3.0").stderr).toContain("has no [1.3.0] section");
+      release("1.5.0");
+      git("rm", "-q", "--cached", "scripts/release-owner-steps.sh");
+      git("commit", "-q", "--amend", "-m", "release 1.5.0 without the owner steps");
+      git("push", "-q", "-f", "origin", "main");
+      git("fetch", "-q", "origin");
+      expect(run("plan", "1.5.0").stderr).toContain("has no scripts/release-owner-steps.sh");
     } finally {
       rmSync(worktree, { recursive: true, force: true });
       rmSync(otherWorktree, { recursive: true, force: true });
