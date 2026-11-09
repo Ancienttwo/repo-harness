@@ -153,13 +153,10 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
     if (!candidate || /[$`{}~\n\r]/.test(candidate) || ['/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty'].includes(candidate)
       || /^\/dev\/fd\/\d+$/.test(candidate)) return;
     // A glob under a known literal directory can only mutate that directory.
-    let globTarget: string | null = null;
     if (/[*?\[]/.test(candidate)) {
       const prefix = candidate.split(/[*?\[]/, 1)[0]!;
       const slash = prefix.lastIndexOf('/');
       if (slash < 0) return;
-      // The private-directory guard needs the glob itself to refuse it.
-      globTarget = candidate;
       candidate = prefix.slice(0, slash + 1);
     }
     if (!isAbsolute(candidate) && !commandCwd) return;
@@ -170,8 +167,7 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
     // Keep `..` in a target that leaves the repository, so the canonical check refuses it.
     if (leaves && candidate.replaceAll('\\', '/').split('/').includes('..')) {
       candidates.push(isAbsolute(candidate) ? candidate : `${commandCwd}/${candidate}`);
-    } else if (globTarget && protectedRepoDir(rel) === '_ops') candidates.push(resolve(commandCwd ?? cwd, globTarget));
-    else if (leaves || protectedRepoDir(rel)) candidates.push(target);
+    } else if (leaves || protectedRepoDir(rel)) candidates.push(target);
   };
   walkCommands(command, cwd, {
     command: (segment, body, commandCwd) => { for (const target of commandTargets(segment, body)) add(target, commandCwd); },

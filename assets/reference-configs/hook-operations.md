@@ -197,8 +197,11 @@ Edit guards:
 - `ExternalReferenceGuard`: the target is under `_ref/`.
 - `OpsPrivateGuard`: the target is under `_ops/`. A repository can list
   directories strictly below `_ops/` in `operations.agent_writable_private_dirs`
-  of `.ai/harness/policy.json`, for example `["_ops/dispatch"]`. Edit and Bash
-  writes below a listed directory pass. An invalid entry denies every `_ops/`
+  of `.ai/harness/policy.json`, for example `["_ops/dispatch"]`. Edit, Write and
+  apply_patch writes below a listed directory pass. Bash writes there stay
+  denied, because Bash targets come from text. The guard denies a listed target
+  that has a glob character or a `.` or `..` segment, or that passes through a
+  symlink at or below the listed directory. An invalid entry denies every `_ops/`
   write and the reason names the entry. Stop still reports these changes.
 - `ApplyPatchScopeGuard`: Codex `apply_patch` input has no parseable target
   path.

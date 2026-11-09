@@ -12,7 +12,7 @@
 
 import { appendFileSync, existsSync, lstatSync, mkdirSync, realpathSync } from 'fs';
 import { tmpdir } from 'os';
-import { dirname, isAbsolute, join, posix, relative, sep, win32 } from 'path';
+import { dirname, isAbsolute, join, posix, relative, resolve, sep, win32 } from 'path';
 import { managedWorktreeRoot } from '../../effects/git/managed-worktree';
 import {
   canonicalExternalPath,
@@ -65,20 +65,18 @@ export function runMutationGuard(opts: MutationGuardInput): MutationGuardResult 
   const { repoRoot, payload } = opts;
   const command = payloadString(payload, 'tool_input.command');
   const filePath = payloadString(payload, 'tool_input.file_path');
-  const paths = command
-    ? extractApplyPatchPaths(repoRoot, command)
-    : (filePath ? [normalizeFilePath(repoRoot, filePath)] : []);
+  const rawPaths = command ? extractApplyPatchPaths(command) : (filePath ? [filePath] : []);
+  const paths = rawPaths.map(raw => normalizeFilePath(repoRoot, raw));
   const denial = paths.length === 0
     ? (command ? APPLY_PATCH_SCOPE_DENIAL : EDIT_SCOPE_DENIAL)
-    : firstDenial(repoRoot, paths);
+    : firstDenial(repoRoot, rawPaths);
   if (denial) return deny(repoRoot, denial, opts.identity.runId);
   return { exitCode: 0, stdout: capabilityOwnerLines(repoRoot, paths), stderr: '' };
 }
 
 /** Bash uses the same private path authority; outside the repository it may write only below a Bash write root. */
 export function runMutationPathGuard(opts: MutationGuardInput, rawPaths: readonly string[]): MutationGuardResult {
-  const paths = rawPaths.map(raw => normalizeFilePath(opts.repoRoot, raw));
-  const denial = firstDenial(opts.repoRoot, paths, bashWriteRoots());
+  const denial = firstDenial(opts.repoRoot, rawPaths, bashWriteRoots());
   return denial ? deny(opts.repoRoot, denial, opts.identity.runId) : { exitCode: 0, stdout: '', stderr: '' };
 }
 
@@ -119,10 +117,31 @@ export function runMutationDenial(opts: MutationGuardInput, denial: Denial): Mut
   return deny(opts.repoRoot, denial, opts.identity.runId);
 }
 
-/** `bashRoots` null is the Edit/Write rule: any verified external path passes. */
-function firstDenial(repoRoot: string, paths: readonly string[], bashRoots: readonly string[] | null = null): Denial | null {
+/**
+ * `bashRoots` null is the Edit/Write rule: any verified external path passes.
+ * Only that structured route may use the `_ops` allowlist; Bash targets are
+ * inferred from text, so every Bash write under `_ops/` stays denied.
+ */
+function firstDenial(repoRoot: string, rawPaths: readonly string[], bashRoots: readonly string[] | null = null): Denial | null {
   let writableDirs: WritablePrivateDirs | undefined;
-  for (const filePath of paths) {
+  for (const raw of rawPaths) {
+    // The allowlist check reads the target as written: normalizeFilePath follows symlinks.
+    if (bashRoots === null) {
+      const lexical = lexicalRepoPath(repoRoot, raw);
+      if (lexical !== null && protectedRepoDir(lexical) === '_ops') {
+        writableDirs ??= readWritablePrivateDirs(repoRoot);
+        const dir = writableDirs.ok ? writableDirs.dirs.find(d => lexical.startsWith(`${d}/`)) : undefined;
+        const unsafe = dir && writableTargetHazard(repoRoot, raw, lexical, dir);
+        if (unsafe) {
+          return {
+            guard: 'OpsPrivateGuard',
+            reason: `${raw} is a write target inside a writable _ops/ directory that ${unsafe}.`,
+            fix: 'Name one literal file by a canonical path that is not a symlink and has no . or .. segment.',
+          };
+        }
+      }
+    }
+    const filePath = normalizeFilePath(repoRoot, raw);
     // normalizeFilePath leaves an absolute path raw both for a verified external
     // target and for input it could not resolve (e.g. `/repo/src/../_ops/x`);
     // only the first, or for Edit/Write a foreign Win32 drive path, may skip
@@ -148,35 +167,41 @@ function firstDenial(repoRoot: string, paths: readonly string[], bashRoots: read
       };
     }
     if (protectedRepoDir(filePath) === '_ops') {
-      writableDirs ??= readWritablePrivateDirs(repoRoot);
-      if (writableDirs.ok && writableDirs.dirs.some(dir => filePath.startsWith(`${dir}/`))) {
-        const unsafe = writableTargetHazard(repoRoot, filePath);
-        if (!unsafe) continue;
-        return {
-          guard: 'OpsPrivateGuard',
-          reason: `${filePath} is a write target inside a writable _ops/ directory that ${unsafe}.`,
-          fix: 'Name one literal file that is not a symlink; the shell could expand the target to a file outside the allowlist.',
-        };
+      if (bashRoots === null) {
+        writableDirs ??= readWritablePrivateDirs(repoRoot);
+        if (writableDirs.ok && writableDirs.dirs.some(dir => filePath.startsWith(`${dir}/`))) continue;
       }
       return {
         guard: 'OpsPrivateGuard',
         reason: `${filePath} is under _ops/, the ignored local private operations state for secrets, real env files, provider state, artifacts, logs, and scratch files.`
-          + (writableDirs.ok ? '' : ` The policy allowlist is not usable: ${writableDirs.error}`),
-        fix: writableDirs.ok
-          ? 'Commit deploy/ runbooks, release checklists, scripts, submissions, and env examples; do not write _ops/* through agent edits.'
-          : 'Correct .operations.agent_writable_private_dirs in .ai/harness/policy.json; until then every _ops/ write stays denied.',
+          + (writableDirs?.ok === false ? ` The policy allowlist is not usable: ${writableDirs.error}` : ''),
+        fix: writableDirs?.ok === false
+          ? 'Correct .operations.agent_writable_private_dirs in .ai/harness/policy.json; until then every _ops/ write stays denied.'
+          : 'Commit deploy/ runbooks, release checklists, scripts, submissions, and env examples; do not write _ops/* through agent edits.',
       };
     }
   }
   return null;
 }
 
-/** A glob or a symlink can redirect an allowlisted write to a file the allowlist does not name. A missing path is a new file. */
-function writableTargetHazard(repoRoot: string, filePath: string): string | null {
-  if (/[*?[]/.test(filePath)) return 'contains a glob character';
+/** The repository-relative target with `.` and `..` resolved but no symlink followed; null outside the repository. */
+function lexicalRepoPath(repoRoot: string, raw: string): string | null {
+  const rel = relative(repoRoot, resolve(repoRoot, raw)).split(sep).join('/');
+  return rel === '' || rel === '..' || rel.startsWith('../') || isAbsolutePathInAnyGrammar(rel) ? null : rel;
+}
+
+/**
+ * Why an allowlisted target is unsafe, or null. A glob, a `.` or `..` segment, or a symlink at or below the
+ * allowlisted directory can send the write to a file the allowlist does not name. A missing tail is a new file.
+ */
+function writableTargetHazard(repoRoot: string, raw: string, lexical: string, dir: string): string | null {
+  if (/[*?[]/.test(raw)) return 'contains a glob character';
+  if (raw.split(/[\\/]/).some(part => part === '.' || part === '..')) return 'contains a . or .. path segment';
+  const parts = lexical.split('/');
   let current = repoRoot;
-  for (const part of filePath.split('/')) {
+  for (const [index, part] of parts.entries()) {
     current = join(current, part);
+    if (index < dir.split('/').length - 1) continue;
     const stat = lstatSync(current, { throwIfNoEntry: false });
     if (!stat) return null;
     if (stat.isSymbolicLink()) return `resolves through the symlink ${relative(repoRoot, current)}`;
@@ -279,13 +304,13 @@ const PATCH_WS = '[\\t\\n\\v\\f\\r \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\
 const APPLY_PATCH_FILE_LINE = new RegExp(`^${PATCH_WS}*\\*\\*\\* (?:Add|Update|Delete) File: (.+?)${PATCH_WS}*$`, 's');
 const APPLY_PATCH_MOVE_LINE = new RegExp(`^\\*\\*\\* Move to: (.+?)${PATCH_WS}*$`, 's');
 
-function extractApplyPatchPaths(repoRoot: string, command: string): readonly string[] {
+function extractApplyPatchPaths(command: string): readonly string[] {
   const paths: string[] = [];
   for (const line of command.split('\n')) {
     const fileMatch = APPLY_PATCH_FILE_LINE.exec(line);
     const moveMatch = fileMatch ? null : APPLY_PATCH_MOVE_LINE.exec(line);
     const raw = fileMatch?.[1] ?? moveMatch?.[1];
-    if (raw) paths.push(normalizeFilePath(repoRoot, raw));
+    if (raw) paths.push(raw);
   }
   return paths;
 }
