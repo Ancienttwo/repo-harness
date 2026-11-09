@@ -152,8 +152,11 @@ test('claude_review: only a branch-bound writer claim that names Claude, with ev
       const { pr1494, pr1499 } = data.repository;
       pr1494.body += '\nCloses #1460\n';
       pr1499.comments.nodes.push(comment(record(pr1499.headRefOid, 'claude (opus)'), '2026-11-02T22:00:00Z'));
+      pr1494.comments.nodes.push(comment(record(pr1494.headRefOid, 'pi (gpt)'), '2026-11-02T22:00:00Z'));
     },
   });
+  // A gatekeeper PASS alone leaves #1494 not accepted while its Claude review is pending.
+  expect(board.pull_requests.find(pr => pr.number === 1494)!.acceptance.status).toBe('not_accepted');
   // #1494 also closes #1460, outside the board: its tier is unknown and counts as High, so the claude claim is not enough.
   expect(board.pull_requests.map(pr => [pr.number, pr.tier, pr.claude_review])).toEqual([[1491, 'high', 'not_required'], [1494, null, 'pending'], [1499, 'high', 'recorded']]);
   // A10 reads the open, non-draft #1491: a Claude writer claim gives no finding; a Codex claim with no Claude row does.
@@ -178,8 +181,8 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
   expect(board.pull_requests.map(pr => [pr.number, pr.base_ref, pr.required_check.status])).toEqual([
     [1491, 'main', 'success'], [1494, 'feat/1475-hc-transport', 'missing'], [1499, 'feat/1475-hc-transport', 'missing'],
   ]);
-  // The round-6 record is a subject line, not a table row (rounds above 3 have no receipt).
-  expect(board.pull_requests[0]!.acceptance).toMatchObject({ status: 'accepted', via: 'record', accepted_at: '2026-11-02T21:12:35Z' });
+  // The round-6 record is a subject line, not a table row (rounds above 3 have no receipt). It names no Claude reviewer, and #1491 has no Claude writer claim, so the head waits for the Claude review.
+  expect(board.pull_requests[0]!.acceptance).toMatchObject({ status: 'not_accepted' });
   expect(board.plan).toMatchObject({ status: 'unavailable', reason: 'plan block invalid: the plan comment has 0 fenced json blocks, expected 1' });
   expect(board.daily_run).toMatchObject({ status: 'observed', conclusion: 'failure', open_repair_issues: [] });
   expect(board.tooling).toEqual({ hc: { status: 'observed', version: '0.1.19', min_version: HC_MIN_VERSION }, herdr_app: { status: 'not_pinned' } });
@@ -196,7 +199,6 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
 
   const attention = evaluateBoardAttention(board);
   expect(attention.findings.map(finding => [finding.rule, finding.route, finding.pull_requests, finding.terminals])).toEqual([
-    ['A1', 'orchestrator', [1491], []],
     ['A3', 'orchestrator', [], ['t1']],
     ['A7', 'orchestrator', [], []],
     ['A10', 'orchestrator', [1491], []],
@@ -234,16 +236,16 @@ test('attention rules and delivery windows recognize all worker seat kinds', () 
 
 test('board summary counts the recorded PRs, planned issue members and orchestrator findings', () => {
   const board = replay();
-  expect(boardSummary(board)).toEqual({ queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, current_batch: null, needs_you: 4, worker_limit: ISSUE_FLOW_WORKER_LIMIT,
+  expect(boardSummary(board)).toEqual({ queue: 1, ci_failures: 0, batch: { accepted: null, size: null }, current_batch: null, needs_you: 3,  worker_limit: ISSUE_FLOW_WORKER_LIMIT,
     seats: { status: 'observed', stalled: 0, desks: [
-      { seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'blocked' }, { seat: 'worker', agent: 'claude-code', issue: 1475, pr: 1491, state: 'done' },
+      { seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'blocked' }, { seat: 'worker', agent: 'claude-code', issue: 1475, pr: 1491, state: 'acceptance_queue' },
     ] } });
   const block = { protocol: 1, kind: 'repo-harness.plan', merge_order: [], holds: [], batches: [[1475, 1476], [1477, 1479]], seat_limits: { worker: 4 } } as const;
   const planned: BoardV1 = { ...board, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at, revision: 1,
     block },
     pull_requests: board.pull_requests.map(pr => pr.number === 1494 ? { ...pr, required_check: { status: 'failure', completed_at: board.observed_at } }
       : pr.number === 1499 ? { ...pr, state: 'closed' } : pr) };
-  expect(boardSummary(planned)).toMatchObject({ queue: 0, ci_failures: 1, batch: { accepted: 1, size: 4 }, current_batch: { accepted: 1, size: 2 }, worker_limit: 4 });
+  expect(boardSummary(planned)).toMatchObject({ queue: 1, ci_failures: 1, batch: { accepted: 0, size: 4 }, current_batch: { accepted: 0, size: 2 }, worker_limit: 4 });
   const accepted = planned.pull_requests.find(pr => pr.number === 1491)!;
   const reopened: BoardV1 = { ...planned,
     items: planned.items.map(item => item.number === 1475 ? { ...item, pull_requests: [1491, 1500] } : item),
@@ -256,7 +258,7 @@ test('board summary counts the recorded PRs, planned issue members and orchestra
   const observedPlan = (batches: readonly (readonly number[])[]): BoardV1['plan'] => ({ status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at, revision: 1, block: { ...block, batches } });
   // One exact row per plan state.
   for (const [plan, batch, current_batch, worker_limit] of [
-    [observedPlan(block.batches), { accepted: 1, size: 4 }, { accepted: 1, size: 2 }, 4],
+    [observedPlan(block.batches), { accepted: 0, size: 4 }, { accepted: 0, size: 2 }, 4],
     [observedPlan([]), { accepted: 0, size: 0 }, null, 4],
     [{ status: 'absent', truncated: false }, { accepted: null, size: null }, null, ISSUE_FLOW_WORKER_LIMIT],
     [{ status: 'unavailable', comment_url: 'https://github.com/plan', reason: 'plan block invalid' }, { accepted: null, size: null }, null, ISSUE_FLOW_WORKER_LIMIT],
@@ -560,7 +562,7 @@ test('acceptance: round-4 records with bare SHAs, an unparsed record, and a Low 
   });
   // #1494: the FAIL row parses, and the unread tier of #1460 withholds the Low path. #1499: the PASS row accepts.
   expect(board.pull_requests.map(pr => [pr.number, pr.acceptance.status, 'via' in pr.acceptance ? pr.acceptance.via : 'reason' in pr.acceptance ? pr.acceptance.reason : null])).toEqual([
-    [1491, 'unknown', 'acceptance_record_unparsed'], [1494, 'not_accepted', null], [1499, 'accepted', 'record'],
+    [1491, 'unknown', 'acceptance_record_unparsed'], [1494, 'not_accepted', null], [1499, 'not_accepted', null],
   ]);
   expect(evaluateBoardAttention(board).unevaluated.filter(entry => entry.subject === '#1491').map(entry => entry.rule)).toEqual(['A1', 'A2']);
 });
@@ -581,7 +583,7 @@ test('acceptance: every record on the head counts, and one FAIL withholds accept
   });
   expect(board.pull_requests.map(pr => [pr.number, pr.acceptance])).toEqual([
     [1491, { status: 'unknown', reason: 'comments_truncated', evidence_url: null }],
-    [1494, { status: 'accepted', via: 'record', accepted_at: '2026-11-03T00:27:00Z', evidence_url: 'https://github.com/Ancienttwo/repo-harness/issues/1#issuecomment-1793665620000' }],
+    [1494, { status: 'not_accepted' }],
     [1499, { status: 'not_accepted' }],
   ]);
 });
@@ -613,10 +615,9 @@ test('one hit for each rule that the recorded state does not trigger', () => {
     },
   });
   const hits = rules(board);
-  for (const rule of ['A2', 'A4', 'A5', 'A6', 'A8', 'R1', 'R3', 'R4', 'R5'] as const) expect(hits).toContain(rule);
+  for (const rule of ['A4', 'A5', 'A6', 'A8', 'R1', 'R3', 'R4', 'R5'] as const) expect(hits).toContain(rule);
   const findings = evaluateBoardAttention(board).findings;
   expect(findings.find(finding => finding.rule === 'A8')?.message).toBe(`hc client 0.1.15 is below the repo-harness floor ${HC_MIN_VERSION}; run hc update --version ${HC_MIN_VERSION}`);
-  expect(findings.find(finding => finding.rule === 'A2')?.pull_requests).toEqual([1491, 1499]);
   expect(findings.filter(finding => finding.rule === 'A6').map(finding => finding.issues)).toEqual([[1477, 1490], [1478, 1480]]);
   expect(findings.find(finding => finding.rule === 'R1')?.issues).toEqual([1477, 1478, 1479, 1480, 1481, 1482, 1483]);
   // R3: #1494 changes `.github/` for tier:medium #1479. #1499 (tier:low #1476) changes no hazard path. A tier:high item is no hit.
@@ -746,7 +747,7 @@ test('A2 finds a batch behind an overlapping pull request, and a plan hold remov
       }
     },
   })).findings.filter(finding => ['A1', 'A2', 'R4'].includes(finding.rule)).map(finding => [finding.rule, finding.pull_requests]);
-  expect(findings([])).toEqual([['A1', [1491]], ['A2', [1494, 1499]], ['R4', [1491]], ['R4', [1494]], ['R4', [1499]]]);
+  expect(findings([])).toEqual([['A2', [1494, 1499]], ['R4', [1494]], ['R4', [1499]]]);
   expect(findings([1475, 1479])).toEqual([['R4', [1499]]]);
 });
 
@@ -843,7 +844,7 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
   await window();
   expect(slept).toEqual([WINDOW_WITH_WORKERS_MS]);
   // One line per seat terminal: all findings of its route in this window.
-  const orchestrator = '[rh-attention] #1474 A1: #1491 is accepted and ready, unmerged for 137 min; A7: the daily full run is failure (https://github.com/Ancienttwo/repo-harness/actions/runs/41358255043) and no CI repair issue is open; A10: #1491 is of unknown tier (counted as High) and has no Claude review of 20e2cbd21; start the Claude reviewer seat';
+  const orchestrator = '[rh-attention] #1474 A7: the daily full run is failure (https://github.com/Ancienttwo/repo-harness/actions/runs/41358255043) and no CI repair issue is open; A10: #1491 is of unknown tier (counted as High) and has no Claude review of 20e2cbd21; start the Claude reviewer seat';
   expect(hc.calls().filter(args => args[0] !== 'get')).toEqual([
     ['send', '--json', '--', 't3', orchestrator],
     ['send', '--json', '--', 't9', expect.stringMatching(/^\[rh-attention\] #1474 R2: #1494 and #1499 both change .+ with no dependency edge$/u)],
@@ -864,7 +865,7 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
     ['t12', 'terminal_ended', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
     ['t8', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
   ]);
-  expect(records().filter(record => record.kind === 'finding').map(record => record.rule)).toEqual(['A1', 'A7', 'A10', 'R2']);
+  expect(records().filter(record => record.kind === 'finding').map(record => record.rule)).toEqual(['A7', 'A10', 'R2']);
 
   await runAttentionWindow({ parent: 1475, deliver: true, log_path: otherLogPath, collect: () => ({ ...watched, parent: { ...watched.parent, number: 1475 } }), host: hc.host,
     now: () => new Date(clock), sleep: async () => {} });

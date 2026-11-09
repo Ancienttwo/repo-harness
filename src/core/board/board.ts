@@ -66,7 +66,7 @@ export type BoardRequiredCheckV1 =
   | { readonly status: 'pending' | 'missing' };
 
 export type BoardAcceptanceV1 =
-  /** `record`: an acceptance record has a PASS row for the head, and no record has a FAIL row for it. `tier_low`: every closed issue is `tier:low` and `Required / CI` passed. */
+  /** `record`: an acceptance record has a PASS row for the head, no record has a FAIL row for it, and `claude_review` is not `pending`. `tier_low`: every closed issue is `tier:low` and `Required / CI` passed. */
   | { readonly status: 'accepted'; readonly via: 'record' | 'tier_low'; readonly accepted_at: string; readonly evidence_url: string }
   | { readonly status: 'not_accepted' }
   | { readonly status: 'unknown'; readonly reason: 'acceptance_record_unparsed' | 'comments_truncated'; readonly evidence_url: string | null };
@@ -300,7 +300,7 @@ function requiredCheck(read: BoardPullRequestReadV1): BoardRequiredCheckV1 {
   return { status: run.conclusion === 'SUCCESS' ? 'success' : 'failure', completed_at: run.completed_at };
 }
 
-function acceptance(read: BoardPullRequestReadV1, check: BoardRequiredCheckV1, closedTiers: readonly (BoardTier | null)[]): BoardAcceptanceV1 {
+function acceptance(read: BoardPullRequestReadV1, check: BoardRequiredCheckV1, closedTiers: readonly (BoardTier | null)[], claude: BoardClaudeReviewV1): BoardAcceptanceV1 {
   // One round is one subject SHA, and a High round has two reviews of it (`acceptor.md`, section 2): every record counts.
   const records = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER);
   const passes: BoardCommentV1[] = [];
@@ -315,8 +315,11 @@ function acceptance(read: BoardPullRequestReadV1, check: BoardRequiredCheckV1, c
   if (!failed && passes.length > 0) {
     // An older comment outside the read can hold a FAIL on the head.
     if (read.comments.truncated) return { status: 'unknown', reason: 'comments_truncated', evidence_url: null };
-    const newest = passes.reduce((latest, record) => (record.created_at >= latest.created_at ? record : latest));
-    return { status: 'accepted', via: 'record', accepted_at: newest.created_at, evidence_url: newest.url };
+    // A High head from a non-Claude writer needs the Claude review too, so a PASS row of another reviewer does not accept it.
+    if (claude !== 'pending') {
+      const newest = passes.reduce((latest, record) => (record.created_at >= latest.created_at ? record : latest));
+      return { status: 'accepted', via: 'record', accepted_at: newest.created_at, evidence_url: newest.url };
+    }
   }
   if (records.length === 0 && read.comments.truncated) return { status: 'unknown', reason: 'comments_truncated', evidence_url: null };
   // A Low pull request has no accept seat (`agentic-development-flow.md`, Review by risk).
@@ -376,6 +379,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
     const { closes, refs } = bodyLinks(repository, read.body);
     const check = requiredCheck(read);
     const { linked, tier } = effectiveTier(closes, refs, input.parent, tiers);
+    const claude = claudeReview(read, linked, tier, input.parent);
     const readiness = read.state === 'open' ? input.readiness.find(entry => entry.pr_number === read.number) : undefined;
     if (read.state === 'open' && readiness === undefined) throw new Error(`board input has no merge readiness for open PR #${read.number}`);
     return Object.freeze({
@@ -394,10 +398,10 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
       files: read.files,
       required_check: check,
       // An issue outside this board has no observed tier, so it withholds the Low path; so does any non-Low linked issue.
-      acceptance: acceptance(read, check, [tier]),
+      acceptance: acceptance(read, check, [tier], claude),
       merge_readiness: readiness ?? null,
       tier,
-      claude_review: claudeReview(read, linked, tier, input.parent),
+      claude_review: claude,
     });
   }).sort((left, right) => left.number - right.number);
   if (input.path_owners.status === 'observed') {

@@ -2,7 +2,7 @@ import { spawnSync } from 'child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { collectBoard, type BoardCollectInput, BoardCollectError, readRepositoryId } from './collect';
-import { planReview, REVIEW_START_HEADER, REVIEW_START_STATUS_HEADER, type ReviewDecisionV1 } from '../../core/board/review';
+import { planReview, REVIEW_START_HEADER, REVIEW_START_STATUS_HEADER, type ReviewDecisionV1, type ReviewSeatStartV1 } from '../../core/board/review';
 import type { BoardCommentPageV1 } from '../../core/board/source';
 import type { SeatConfigV1, SeatId } from '../../core/board/seats-settings';
 import { gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
@@ -38,7 +38,7 @@ export interface ReviewPorts {
 
 export interface ReviewResultV1 {
   readonly decisions: readonly ReviewDecisionV1[];
-  readonly started: readonly { readonly pr: number; readonly marker_url: string }[];
+  readonly started: readonly { readonly pr: number; readonly seat: ReviewSeatStartV1['seat']; readonly marker_url: string }[];
   readonly refused: readonly { readonly pr: number; readonly reason: string }[];
 }
 
@@ -68,24 +68,26 @@ function worktreeAt(input: Pick<ReviewInput, 'repo_root'>, headRef: string, head
   return head.stdout.trim() === headSha ? { path } : { refusal: `the worktree of ${headRef} is at ${head.stdout.trim()}, not at the PR head ${headSha}` };
 }
 
-function markerBody(decision: StartDecision): string {
-  return [REVIEW_START_HEADER, `Subject: ${decision.head_sha}`, `PR: #${decision.pr}`, `Reading: ${decision.reason}`].join('\n');
+function markerBody(decision: StartDecision, start: ReviewSeatStartV1): string {
+  const reading = start.delta_from === null ? 'full review' : `delta review since ${start.delta_from}`;
+  return [REVIEW_START_HEADER, `Subject: ${decision.head_sha}`, `Seat: ${start.seat}`, `PR: #${decision.pr}`, `Reading: ${reading}`].join('\n');
 }
 
-function packet(decision: StartDecision): string {
-  const scope = decision.delta_from === null
+function packet(decision: StartDecision, start: ReviewSeatStartV1): string {
+  const scope = start.delta_from === null
     ? 'Review the whole diff.'
-    : `This is a delta review. Review the hunks that changed since ${decision.delta_from} and the sibling cases of each earlier finding.`;
-  return `Task: review PR #${decision.pr} at head ${decision.head_sha} (tier ${decision.tier}), as the gatekeeper of repo-harness-issue-flow. The worktree is at that head. ${scope} Read the PR body, the issue and the recorded evidence first: gh pr view ${decision.pr} --comments. You are read-only: print your acceptance receipt block (repo-harness-review-publish-receipt, subject_sha ${decision.head_sha}) in this pane and report to the orchestrator.`;
+    : `This is a delta review. Review the hunks that changed since ${start.delta_from} and the sibling cases of each earlier finding.`;
+  return `Task: review PR #${decision.pr} at head ${decision.head_sha} (tier ${decision.tier}), as the ${start.seat} of repo-harness-issue-flow. The worktree is at that head. ${scope} Read the PR body, the issue and the recorded evidence first: gh pr view ${decision.pr} --comments. You are read-only: print your acceptance receipt block (repo-harness-review-publish-receipt, subject_sha ${decision.head_sha}) in this pane and report to the orchestrator.`;
 }
 
 /** Failures that stop `tab.new` before it sends a request. Any other failure may follow a created tab. */
 const NOT_SENT: ReadonlySet<string> = new Set(['missing', 'nested', 'invalid_labels', 'invalid_address']);
 
 /**
- * Start the gatekeeper seat of each `start` decision: refuse unless the writer's worktree is at the head, then post the head
- * marker and open the tab. A launch that failed before any request releases the marker, so a retry can start. A launch that
- * may have created the tab keeps the marker and stops, because a retry could start a second seat for the head.
+ * Start each required seat of each `start` decision: refuse unless the writer's worktree is at the head, then post the seat's head
+ * marker and open its tab. A launch that failed before any request releases that seat's marker only, so a retry starts that seat
+ * without a second one of the other. A launch that may have created the tab keeps its marker and stops, because a retry could
+ * start a second seat of that role for the head.
  */
 export async function executeReview(decisions: readonly ReviewDecisionV1[], context: { readonly repositoryId: string; readonly parent: number; readonly space: string; readonly dry_run: boolean }, ports: ReviewPorts): Promise<Omit<ReviewResultV1, 'decisions'>> {
   const started: Array<ReviewResultV1['started'][number]> = [];
@@ -98,18 +100,20 @@ export async function executeReview(decisions: readonly ReviewDecisionV1[], cont
       refused.push({ pr: decision.pr, reason: worktree.refusal });
       continue;
     }
-    const markerUrl = ports.comment(decision.pr, markerBody(decision));
-    try {
-      const launch = await ports.launch('gatekeeper', { repositoryId: context.repositoryId, pr: String(decision.pr), parent: String(context.parent) }, worktree.path);
-      ports.openTab({ ...(launch.tab === null ? {} : { name: launch.tab }), space: context.space, folder: worktree.path, argv: launch.argv, task: packet(decision) });
-    } catch (error) {
-      if (!(error instanceof HerdrCoreError) || NOT_SENT.has(error.reason)) {
-        ports.comment(decision.pr, `${REVIEW_START_STATUS_HEADER}\nClaim: ${markerUrl}\nStatus: released`);
-        throw error;
+    for (const start of decision.seats) {
+      const markerUrl = ports.comment(decision.pr, markerBody(decision, start));
+      try {
+        const launch = await ports.launch(start.seat, { repositoryId: context.repositoryId, pr: String(decision.pr), parent: String(context.parent) }, worktree.path);
+        ports.openTab({ ...(launch.tab === null ? {} : { name: launch.tab }), space: context.space, folder: worktree.path, argv: launch.argv, task: packet(decision, start) });
+      } catch (error) {
+        if (!(error instanceof HerdrCoreError) || NOT_SENT.has(error.reason)) {
+          ports.comment(decision.pr, `${REVIEW_START_STATUS_HEADER}\nClaim: ${markerUrl}\nStatus: released`);
+          throw error;
+        }
+        throw new BoardCollectError(`launch_unknown for the ${start.seat} of PR #${decision.pr}: ${error.message}. The marker ${markerUrl} stays; check hc ls for the tab before a retry`);
       }
-      throw new BoardCollectError(`launch_unknown for PR #${decision.pr}: ${error.message}. The marker ${markerUrl} stays; check hc ls for the tab before a retry`);
+      started.push({ pr: decision.pr, seat: start.seat, marker_url: markerUrl });
     }
-    started.push({ pr: decision.pr, marker_url: markerUrl });
   }
   return { started, refused };
 }
