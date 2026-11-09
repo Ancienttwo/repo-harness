@@ -3,10 +3,15 @@
 All notable changes to this skill are documented here.
 
 ## [Unreleased]
+- `repo-harness board review` also starts the Claude `reviewer` seat when a pull request shows `claude_review: pending`. A start marker now carries `Seat: gatekeeper|reviewer` (a marker without `Seat` covers no seat), so a seat that was not sent retries without restarting the other. The delta base of each seat comes from an acceptance row of that seat's own family (Claude for the reviewer, another harness for the gatekeeper); otherwise the seat reviews the whole diff. Board acceptance via a record no longer accepts a head while `claude_review` is `pending`. The `second_reviewer_required` output is gone. (#2025)
 
 ### Changed
 
 - The seats range lets the advisor seat take the `edit` tool group, as the owner approved. The orchestrator range still refuses `edit`. (#2032)
+
+### Fixed
+
+- The tarball install smoke compares `/healthz` with the installed package's `OPERATOR_SERVER_PROTOCOL` and `OPERATOR_SERVICE_NAME`. It expected protocol 2 after #1990 raised the protocol to 3, so the daily package job failed. (#2033)
 
 ### Added
 
