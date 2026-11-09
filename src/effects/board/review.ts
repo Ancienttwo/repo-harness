@@ -24,6 +24,8 @@ export interface ReviewInput extends Pick<BoardCollectInput, 'repo_root' | 'pare
   readonly launch: ReviewLaunch;
   /** Plan only: no marker, no seat. */
   readonly dry_run: boolean;
+  /** Review this pull request only. */
+  readonly pr?: number;
   /** Called at each start and refusal as it happens, so a caller keeps the completed ones when a later step throws. */
   readonly observe?: ReviewObserver;
 }
@@ -158,9 +160,10 @@ export async function runReview(input: ReviewInput): Promise<ReviewResultV1> {
   const repositoryId = String(readRepositoryId(input));
   const result = await withReviewLock(repositoryId, async () => {
     const board = collectBoard({ repo_root: input.repo_root, parent: input.parent, host: input.host });
-    const open = board.pull_requests.filter(pr => pr.state === 'open' && !pr.is_draft && pr.required_check.status === 'success' && pr.acceptance.status === 'not_accepted');
+    if (input.pr !== undefined && !board.pull_requests.some(pr => pr.number === input.pr)) throw new BoardCollectError(`#${input.pr} is not a pull request of #${input.parent}`);
+    const open = board.pull_requests.filter(pr => (input.pr === undefined || pr.number === input.pr) && pr.state === 'open' && !pr.is_draft && pr.required_check.status === 'success' && pr.acceptance.status === 'not_accepted');
     const comments = new Map(open.map(pr => [pr.number, readComments(input, pr.number)]));
-    const decisions = planReview({ board, comments });
+    const decisions = planReview({ board, comments }).filter(decision => input.pr === undefined || decision.pr === input.pr);
     return { decisions, ...await executeReview(decisions, { repositoryId, parent: input.parent, space: input.space, dry_run: input.dry_run, observe: input.observe }, {
       worktree: (ref, sha) => worktreeAt(input, ref, sha),
       comment: (pr, body) => gh(input, ['pr', 'comment', String(pr), '--body-file', '-'], body),

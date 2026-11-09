@@ -171,11 +171,14 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
   board.command('review')
     .description('Start the review seat of each ready, green pull request with no start marker for its head (takes --parent): marker comment and review tab in the writer worktree')
     .requiredOption('--space <id>', 'Herdr space that receives the review tabs')
+    .option('--pr <number>', 'Review this pull request only')
     .option('--dry-run', 'Print the decision for each pull request and start nothing')
-    .action(async (options: { space: string; dryRun?: boolean }, command: Command) => {
+    .action(async (options: { space: string; pr?: string; dryRun?: boolean }, command: Command) => {
       try {
+        if (options.pr !== undefined && !/^[1-9][0-9]*$/u.test(options.pr)) throw new BoardCollectError('--pr must be a pull request number');
         const result = await runReview({
           repo_root: process.cwd(), parent: parentNumber(command.optsWithGlobals<BoardOptions>()), space: options.space, host, dry_run: options.dryRun === true,
+          ...(options.pr === undefined ? {} : { pr: Number(options.pr) }),
           launch: (seat, labels, cwd) => seatLaunch(seat, labels, process.env, cwd),
         });
         process.stdout.write(reviewText(result));

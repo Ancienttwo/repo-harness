@@ -180,11 +180,9 @@ module is in the title so that a list view shows the write scopes.
   report channel. Do not restate the requirement in chat. A second copy
   becomes a second authority.
 - Post the claim, then the packet. Post one `issue claim` on the child
-  issue for the worker: `Role: writer`, `Agent:` the worker identity,
-  `Branch:` the branch that the packet names, `Scope` and `Not in scope`
-  from the issue, and `Coordinator:` the URL of your own parent claim. The
-  claim is the worker's identity on the board, and the worker never posts
-  one. Dispatch only after the claim is on the issue.
+  issue for the worker with the required fields in `templates.md` § issue
+  claim. The claim is the worker's identity on the board, and the worker
+  never posts one. Dispatch only after the claim is on the issue.
 - Dispatch in parallel only when the write scopes are disjoint and each
   dependency is merged, or its contract is stable and the issue allows
   early start.
@@ -233,7 +231,7 @@ example: `claude mode: saving (5% left < 20%)` and
 route line names with `repo-harness seats argv <seat>`; state the boundary
 in the task. A `none` route waits.
 `repo-harness board dispatch --parent <n> --space <id>` applies this step to every ready issue of the plan: it reads the `route:<class>` label of each issue (and `touches:credentials`), starts the worktree, posts the claim and opens the worker tab. `--dry-run` prints the decisions only. An issue without one `route:<class>` label is reported and not dispatched.
-`repo-harness board review --parent <n> --space <id>` starts the gatekeeper seat for each ready, green Medium or High pull request that has no gatekeeper start marker for its head. When the board shows `claude_review: pending` (an open High or unknown-tier head that does not meet the High acceptance rule and has no Claude reviewer row), it also starts the reviewer seat; each seat has its own marker, so a seat that was not sent retries alone. `--dry-run` prints the decisions only. A High head is not accepted until it has `PASS` rows from two distinct claims, one of them different-family to the writer (`acceptor.md` §2.2).
+`repo-harness board review --parent <n> --space <id>` starts the gatekeeper seat for each ready, green High pull request that has no gatekeeper start marker for its head. When the board shows `claude_review: pending` (an open High or unknown-tier head that does not meet the High acceptance rule and has no Claude reviewer row), it also starts the reviewer seat; each seat has its own marker, so a seat that was not sent retries alone. A Medium head gets one seat of the other family than the board's `writer_family` (the `modelFamily` of the `Model:` line of the writer claim of the head branch): a non-Claude gatekeeper for a Claude writer, the Claude reviewer for any other known family. An unknown writer family (no such claim, no `Model:` line, an unmatched model, or linked issues that disagree) starts no seat and is skipped as `writer_family_unknown`; the orchestrator then starts by hand one reviewer seat of a model family known to differ from the writer's, and that review records its own `Model relation:`. `--pr <n>` reviews that pull request only. A pull request that links a plan-held issue is skipped as `plan_hold`. `--dry-run` prints the decisions only. A High head is not accepted until it has `PASS` rows from two distinct claims, one of them different-family to the writer; a Medium head needs one claimed `PASS` row recorded different-family (`acceptor.md` §2.2).
 Apply the explorer line through the Claude Agent tool's `model` parameter when you call the explorer.
 
 Claude saving mode applies when weekly remaining quota is below

@@ -251,7 +251,7 @@ test('Low acceptance uses the effective tier of every linked issue: a Low closin
 });
 
 test('High acceptance: PASS rows of the head from two distinct claims, one recorded different-family; claude_review and A10 project the same rule', () => {
-  const claim = (runtime: string, branch: string) => comment(`repo-harness issue claim\nStatus: active\nRole: writer\nBranch: ${branch}\nRuntime: ${runtime}`, '2026-11-02T10:00:00Z');
+  const claim = (model: string, branch: string) => comment(`repo-harness issue claim\nStatus: active\nRole: writer\nBranch: ${branch}\nRuntime: pi${model === '' ? '' : `\nModel: ${model}`}`, '2026-11-02T10:00:00Z');
   // The claim and the record are the `review publish` wire format. Claim n is an `acceptance claim` comment whose id comes from its time.
   const receipt = (harness: 'claude' | 'codex' | 'pi', subject_sha: string, model_relation: ModelRelation = 'different-family', verdict: 'PASS' | 'FAIL' = 'PASS', round = 1): ReviewPublishReceipt => ({
     protocol: 1, kind: 'repo-harness-review-publish-receipt', round, subject_sha, risk_tier: 'high', reviewer: { harness, actual_model: null }, verdict, model_relation, summary: 'Reviewed.', findings: [],
@@ -259,7 +259,7 @@ test('High acceptance: PASS rows of the head from two distinct claims, one recor
   const claimAt = (n: number) => `2026-11-02T21:0${n}:00Z`;
   const claimUrl = (n: number, path = 'pull/1491') => `https://github.com/Ancienttwo/repo-harness/${path}#issuecomment-${Date.parse(claimAt(n))}`;
   const parent = (data: Json) => {
-    for (const [number, runtime, branch] of [[1475, 'claude', 'feat/1475-hc-transport'], [1479, 'claude', 'feat/1479-notify-relay'], [1476, 'codex', 'feat/1476-sessions-herdr-core']] as const) {
+    for (const [number, runtime, branch] of [[1475, 'claude-sonnet-5-5', 'feat/1475-hc-transport'], [1479, 'claude-sonnet-5-5', 'feat/1479-notify-relay'], [1476, 'gpt-5.5', 'feat/1476-sessions-herdr-core']] as const) {
       const node = issueNode(data, number);
       node.labels.nodes.push({ name: 'tier:high' });
       node.comments.nodes.push(claim(runtime, branch));
@@ -327,8 +327,20 @@ test('High acceptance: PASS rows of the head from two distinct claims, one recor
   const pr1491 = (projection: BoardV1) => projection.pull_requests.find(pr => pr.number === 1491)!;
   expect(projected.map(pr1491).map(pr => [pr.acceptance.status, pr.claude_review] as string[])).toEqual(cases.map(([, status, claude]) => [status, claude]));
   expect(evaluateBoardAttention(projected[1]!).findings.filter(finding => finding.rule === 'A10')).toEqual([]);
-  // Medium keeps one PASS row, with no claim or relation check.
-  expect(pr1491(head([['pi', '', null]], 'tier:medium'))).toMatchObject({ acceptance: { status: 'accepted', via: 'record' }, claude_review: 'not_required' });
+  // Medium needs one claimed PASS row recorded different-family; a same-family PASS alone, or an unclaimed one, does not accept (#2084).
+  expect(([[gatekeeper], [['claude', claimUrl(1), 'same-family']], [['pi', '']]] as const).map(rows => pr1491(head(rows, 'tier:medium')).acceptance.status)).toEqual(['accepted', 'not_accepted', 'not_accepted']);
+  // The writer claim bound to the head branch gives the family that the Medium review seat differs from; #1494 links an issue outside the board.
+  expect(board.pull_requests.map(pr => pr.writer_family)).toEqual(['anthropic', null, 'openai']);
+  // A claim without a Model line names no family (Runtime is not read), a Pi writer takes the family of its model, and linked issues whose claims of the branch disagree give none; agreeing issues keep it.
+  const family = (edit: (data: Json) => void, pulls?: (data: Json) => void) => pr1491(replay({ parent: (data) => { parent(data); edit(data); }, pulls })).writer_family;
+  const refs1479 = (data: Json) => { data.repository.pr1491.body += '\nRefs #1479\n'; };
+  const second = (runtime: string) => (data: Json) => { issueNode(data, 1479).comments.nodes.push(claim(runtime, 'feat/1475-hc-transport')); };
+  expect([
+    family((data) => { const node = issueNode(data, 1475).comments.nodes.find((entry: Json) => entry.body.includes('Model: claude')); node.body = node.body.replace(/\nModel: .*/u, ''); }),
+    family((data) => { const node = issueNode(data, 1475).comments.nodes.find((entry: Json) => entry.body.includes('Model: claude')); node.body = node.body.replace(/Model: .*/u, 'Model: magpie/deepseek-v4'); }),
+    family(second('gpt-5.5'), refs1479),
+    family(second('claude-opus-5-5'), refs1479),
+  ]).toEqual([null, 'deepseek', null, 'anthropic']);
 });
 
 test('replay: the recorded #1474 reads project to a board, and its findings come from the recorded state', () => {
@@ -578,7 +590,15 @@ function mergeReplay(edit: { parent?: (data: Json) => void; pulls?: (data: Json)
       issueNode(data, 1475).labels.nodes.push({ name: 'tier:medium' });
       edit.parent?.(data);
     },
-    pulls: edit.pulls,
+    pulls: (data) => {
+      // The Medium rule needs a claimed different-family PASS row of the head; the recorded #1491 record has no claim.
+      const { pr1491 } = data.repository;
+      const receipt: ReviewPublishReceipt = { protocol: 1, kind: 'repo-harness-review-publish-receipt', round: 1, subject_sha: pr1491.headRefOid, risk_tier: 'medium', reviewer: { harness: 'codex', actual_model: null }, verdict: 'PASS', model_relation: 'different-family', summary: 'Reviewed.', findings: [] };
+      const claimAt = '2026-11-02T21:01:00Z';
+      pr1491.comments.nodes.push(comment(renderAcceptanceClaim(receipt), claimAt));
+      pr1491.comments.nodes.push(comment(renderAcceptanceRecord(receipt, `https://github.com/Ancienttwo/repo-harness/pull/1491#issuecomment-${Date.parse(claimAt)}`), '2026-11-02T21:02:00Z'));
+      edit.pulls?.(data);
+    },
   };
 }
 

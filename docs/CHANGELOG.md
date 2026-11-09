@@ -3,6 +3,7 @@
 All notable changes to this skill are documented here.
 
 ## [Unreleased]
+- Board acceptance of an open Medium pull request needs one `PASS` row of the head that cites an `acceptance claim` of the pull request with its subject and round and records `Model relation: different-family`; `same-family`, `unknown` and unclaimed rows do not count. The board projects `writer_family` from the `Runtime:` of the writer claim of the head branch (`claude` anthropic, `codex` openai, otherwise null). `board review` starts one Medium seat of the other family: a non-Claude gatekeeper for a Claude writer, the Claude reviewer for a Codex writer; an unknown writer family starts no seat (`writer_family_unknown`). High and Low are unchanged. (#2084)
 
 ## [0.29.1] - 2026-11-09
 
