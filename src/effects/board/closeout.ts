@@ -155,16 +155,24 @@ function proveCloseout(input: BoardCloseoutInput, pr: MergedPullRequest): Closeo
   return { main, common: common!, path, target_oid: target.out };
 }
 
+/** True when `cwd` is a checkout of this repository whose current branch is the PR head branch. */
+function onHeadBranch(cwd: string | null, pr: MergedPullRequest, common: string): boolean {
+  if (cwd === null || commonDirectory(cwd) !== common) return false;
+  const branch = git(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD']);
+  return branch.ok && branch.out === pr.head_ref;
+}
+
 /**
- * The binding of a seat terminal to the PR, by labels only: its pr label, or a closing-issue label with no pr label.
- * A closing-issue label next to the pr label of another PR is a conflict; closeout refuses that pane.
+ * The binding of a seat terminal to the PR: its pr label, a closing-issue label, or a cwd on the PR head branch
+ * (a `Refs`-only PR has no closing issue, #2071). A binding without the pr label next to the pr label of another PR is a conflict; closeout refuses that pane.
  * A terminal without a seat label is a task session; the runtime cleanup of the worktree owns it.
  */
-function paneBinding(terminal: BoardSeatTerminalReadV1, pr: MergedPullRequest): 'bound' | 'conflict' | 'none' {
+function paneBinding(terminal: BoardSeatTerminalReadV1, pr: MergedPullRequest, common: string): 'bound' | 'conflict' | 'none' {
   const { labels } = terminal;
   if (labels.seat === undefined) return 'none';
   if (labels.pr === String(pr.number)) return 'bound';
-  if (labels.issue === undefined || !pr.closing_issues.some(issue => String(issue) === labels.issue)) return 'none';
+  const byIssue = labels.issue !== undefined && pr.closing_issues.some(issue => String(issue) === labels.issue);
+  if (!byIssue && !onHeadBranch(terminal.cwd, pr, common)) return 'none';
   return labels.pr === undefined ? 'bound' : 'conflict';
 }
 
@@ -172,7 +180,7 @@ function closePanes(input: BoardCloseoutInput, pr: MergedPullRequest, proof: Clo
   const read = input.host.closeoutTerminals(String(readRepositoryId(input)));
   if (read.status === 'unavailable') throw new BoardCollectError(`the seat terminals are unavailable: ${read.reason}`);
   return read.terminals.flatMap((terminal): BoardCloseoutPaneV1[] => {
-    const binding = paneBinding(terminal, pr);
+    const binding = paneBinding(terminal, pr, proof.common);
     if (binding === 'none') return [];
     const pane = { address: terminal.address, seat: terminal.labels.seat ?? null };
     const keep = binding === 'conflict' ? `conflicting_binding pr ${terminal.labels.pr}`

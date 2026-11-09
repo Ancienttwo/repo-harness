@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- `board closeout` also closes the seat terminals whose checkout is on the head branch of the PR, so a PR that only says `Refs #<issue>` closes its seats and removes its worktree in one run (#2071).
+
 ## [0.29.0] - 2026-11-09
 
 This release lets the board run the issue flow: `board dispatch` starts a

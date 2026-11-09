@@ -1281,6 +1281,9 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   };
   const clean = worktree('clean', 21, 11), kept = worktree('kept', 22, 12), dirty = worktree('dirty', 23, 13), partial = worktree('partial', 24, 14);
   const branchfail = worktree('branchfail', 25, 15), rmfail = worktree('rmfail', 26, 16), child = worktree('child', 27, 17), sigfail = worktree('sigfail', 28, 18);
+  // #29 only says `Refs #19`: no closing issue, so its seats bind by the head branch of their checkout (#2071).
+  const refsonly = worktree('refsonly', 29, 19);
+  pullRequests['29']!.closingIssuesReferences = [];
   // #21 also closes issue 12 of another repository, which binds no local seat.
   pullRequests['21']!.closingIssuesReferences.push({ number: 12, repository: { id: 'R_other' } });
   // A clean checkout of another project under a stale pr label.
@@ -1311,7 +1314,8 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
     terminal('t12', clean, { seat: 'reviewer', pr: '21' }, 'finished'), terminal('t13', elsewhere, { seat: 'reviewer', pr: '22' }, 'finished'),
     terminal('t14', kept, { issue: '12', pr: '99' }, 'finished'), terminal('t15', null, { seat: 'reviewer', pr: '22' }, 'finished'),
     terminal('t16', main, { seat: 'reviewer', pr: '77' }, 'finished'), terminal('t17', main, { seat: 'reviewer', pr: '26' }, 'finished'),
-    terminal('t18', main, { seat: 'reviewer', pr: '27' }), terminal('t19', main, { seat: 'reviewer', pr: '28' })];
+    terminal('t18', main, { seat: 'reviewer', pr: '27' }), terminal('t19', main, { seat: 'reviewer', pr: '28' }),
+    terminal('t20', refsonly, { issue: '19' })];
   // hc rm of t17 fails until the retry.
   const rmFails = new Set(['t17']);
   const closed: string[] = [];
@@ -1368,7 +1372,10 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   const unsignalled = await closeout(28);
   expect([unsignalled.worktree.outcome, unsignalled.worktree.reason, unsignalled.stopped_codegraph_servers, unsignalled.daemon_stop_failures])
     .toEqual(['kept', 'process_in_use', [], ['codegraph server 4240: EPERM']]);
-  expect(closed).toEqual(['t1', 't2', 't12', 't4', 't9', 't11', 't17', 't18', 't19']);
+  // The seat of the Refs-only PR closes by its branch and the worktree goes with it.
+  const refs = await closeout(29);
+  expect([refs.panes, refs.worktree]).toEqual([[pane('t20', 'worker', null)], state(refsonly, 'removed', null)]);
+  expect(closed).toEqual(['t1', 't2', 't12', 't4', 't9', 't11', 't17', 't18', 't19', 't20']);
 });
 
 test('closeout stops a CodeGraph MCP server bound to exactly the worktree and no other process', async () => {
