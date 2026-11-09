@@ -3,30 +3,50 @@
 All notable changes to this skill are documented here.
 
 ## [Unreleased]
+
+## [0.29.1] - 2026-11-09
+
+This release lets the board merge one eligible batch PR (`board merge`), makes
+High-tier acceptance need two PASS reviews, and moves the review tier to a
+High list. It also carries the merge-only sync rule for acceptance, a wider
+Bash tripwire and a Markdown-aware reference parser.
+
+### Added
+
 - `repo-harness board merge --parent <n> [--pr <p>] [--dry-run]` merges one eligible PR of a batch through `publication merge`. It requires a PASS acceptance record for the head at every tier, for High the two PASS rows of the board acceptance rule (#2061), `Required / CI`, a ready readiness verdict, plan merge order and no hold. `repo-harness merge hold` and `merge hold released` records on the parent, an issue or a PR narrow it, and the GitHub events Worker filter passes both headers. Board rule A11 wakes the orchestrator when a PR is eligible; the watcher never merges. The board document is protocol 4; a protocol-3 board fails decode. (#2003)
-- Review by risk follows the owner ABD decision (#2079). High is only permissions, sandbox and tool grants; hooks and the mutation guard; credentials and secrets; deletion; release, publish and deploy; merge and push paths; and the change hazard list. Code that writes GitHub comments, records, reviews or labels is Medium. Low is docs-only, tests-only, the projection PR, or a fix of at most 50 changed lines outside the High list. `assets/review-high-list.v1.json` holds the path-visible High list; `agentic-development-flow.md` renders it. Board rule R5 reads it instead of the capability count. A changed path on the High list or the hazard list, or an incomplete file list, sets the effective tier of a pull request to High, so `board review` and acceptance use the same tier.
 - `board attention --watch --deliver --review --space <id>` runs the `board review` path once per window, after the board read and before delivery, and starts only the read-only review seats. Each start or refusal is one `review` line in the attention jsonl and one hc message to the orchestrator; a failed run is a refusal line and does not end the watcher. `board attention start --review --space <id>` starts the watcher with the flag. The flag is off by default. (#2078)
+- `bash scripts/release-owner-steps.sh plan <version>` prints the owner's release command list, bound to the release commit on `origin/main`: publish both packages, read them back, tag that commit, create the GitHub Release, then the post-release steps. `check published` and `check tagged` read back each owner step and stop at the first failure; `notes` prints the CHANGELOG section. The script only reads git, npm and GitHub. `check:release-published --before-tag` skips only the tag check. (#2006)
+
+### Changed
+
+- Review by risk follows the owner ABD decision (#2079). High is only permissions, sandbox and tool grants; hooks and the mutation guard; credentials and secrets; deletion; release, publish and deploy; merge and push paths; and the change hazard list. Code that writes GitHub comments, records, reviews or labels is Medium. Low is docs-only, tests-only, the projection PR, or a fix of at most 50 changed lines outside the High list. `assets/review-high-list.v1.json` holds the path-visible High list; `agentic-development-flow.md` renders it. Board rule R5 reads it instead of the capability count. A changed path on the High list or the hazard list, or an incomplete file list, sets the effective tier of a pull request to High, so `board review` and acceptance use the same tier.
 - Board acceptance of an open High or unknown-tier pull request needs `PASS` rows of the head that cite two distinct `acceptance claim` comments of the pull request with the row's subject and round (the comment id is the identity), at least one with `Model relation: different-family`, and no `FAIL` row. One review no longer accepts a High head. A missing, blank or malformed `Claim:`, or one that names no claim comment, proves no claim, and `Model relation: unknown` (an unknown writer family) never counts as the different-family review. `claude_review` is now a projection of that rule: `pending` for every open High head that does not meet it and has no Claude row, a Claude writer included, so `board review` starts the Claude reviewer seat and A10 reports the head until the second review exists. The writer claim's `Runtime:` no longer decides it. A sync head is a new head: High needs two sync check rows by the same rule, Medium one (`acceptor.md` §2.2). `repo-harness review publish` accepts rounds 1 to 5 (round 5 is the hard stop), so a High head that converges in round 4 or 5 also gets two claimed rows; the hand-posted record of a round above 3 is retired. Medium and Low are unchanged. (#2061)
+- Board acceptance carries the acceptance rows of an earlier reviewed head to a later head that is a merge-only sync of it. Git must prove two facts: the reviewed head is an ancestor of the head, and each commit that the head adds outside the reviewed head and the base is the clean automatic merge of a base commit (`git merge-tree --write-tree` of its parents exits 0 with the tree of the merge commit, one merge base). The board reads the rows of the head and of the newest proven reviewed head, and a FAIL row on any proven head or on the head stops the carry. An empty PR diff, or a git error on any candidate, gives no proof. The board then reports `via: sync` with `carried_from: <reviewed head>`, so a sync after a merge needs CI only. A conflict (even one resolved to the PR side), an edit in a merge, a new commit, a failed git step or fetch, an incomplete file list or a hook path keeps the head unaccepted until its own review. (#2074)
+- The repository moved to `aimpact-inc/repo-harness` (same repository id; old URLs redirect). The package `repository.url`, the external tooling doc URL in the tool catalog, and the install and clone lines in README and `docs/usage.md` use the new owner. Localized READMEs and the rest follow in #2095.
 
 ### Fixed
 
 - The Bash write tripwire denies more forms that reach `_ops` or `_ref`. A case variant such as `_OPS/x` counts as `_ops/x`, because macOS and Windows filesystems ignore case by default. Unquoted brace words (`_op{s,x}`, `_op{r..t}`) are expanded and `~+` reads as the working directory; quoted characters stay literal. Subshells and `$(...)` between commands are parsed, and a backslash-newline or a quoted newline joins lines; heredoc forms outside the grammar, quoted or mid-argument command substitution, process substitution, glob matches that are symlinks, a bracket-only `cd` glob (`cd _op[s]`), a target with a quoted newline, `~` and `~user` stay unmodeled (#2082). After a `cd` with an option or an expanded operand that can reach a protected or external directory, a relative write is denied. Denied as targets with no known destination: a glob that can reach `..` (bash 3.2 expands `.*` to `..`), a relative `..` target from an unknown directory, `~-`, a brace expansion above 1024 words or outside safe integers, and a command with unbalanced parentheses, an unclosed quote or a `(` glued to a word. (#2060)
-
-### Added
-
-- `bash scripts/release-owner-steps.sh plan <version>` prints the owner's release command list, bound to the release commit on `origin/main`: publish both packages, read them back, tag that commit, create the GitHub Release, then the post-release steps. `check published` and `check tagged` read back each owner step and stop at the first failure; `notes` prints the CHANGELOG section. The script only reads git, npm and GitHub. `check:release-published --before-tag` skips only the tag check. (#2006)
+- `board closeout` also closes the seat terminals that work in the PR head worktree, so a PR that only says `Refs #<issue>` closes its seats and removes its worktree in one run. Such a seat needs an issue label that the PR closes or that `parseRefs` reads after `Refs` in the PR body. (#2071)
+- The board reference parser reads the PR and issue body as Markdown. A reference example in a code span, code block, blockquote or HTML comment no longer links an issue, and a real reference after a line break or after HTML still does. Board selection, effective tiers and closeout share this one parser. It adds the runtime dependency `mdast-util-from-markdown@2.1.0`, already in the lockfile. (#2085)
 
 ### Documentation
 
+- The issue-flow skill and the root agent rules use one module + tier work package per PR (150-500 product lines), publish ready green PRs once per window with `publication batch build` and `publication merge --batch`, count only blocking findings (P0-P2) in the fix-loop rule, and add the writer pre-check before round 2 and later. (#2086)
 - Record the 0.29.0 publication in its release checklist. (#2065)
+- Refresh generated architecture outputs. (#2070, #2075)
 
-### Changed
+### Upgrade
 
-- Board acceptance carries the acceptance rows of an earlier reviewed head to a later head that is a merge-only sync of it. Git must prove two facts: the reviewed head is an ancestor of the head, and each commit that the head adds outside the reviewed head and the base is the clean automatic merge of a base commit (`git merge-tree --write-tree` of its parents exits 0 with the tree of the merge commit, one merge base). The board reads the rows of the head and of the newest proven reviewed head, and a FAIL row on any proven head or on the head stops the carry. An empty PR diff, or a git error on any candidate, gives no proof. The board then reports `via: sync` with `carried_from: <reviewed head>`, so a sync after a merge needs CI only. A conflict (even one resolved to the PR side), an edit in a merge, a new commit, a failed git step or fetch, an incomplete file list or a hook path keeps the head unaccepted until its own review. (#2074)
+- Run `bun add -g repo-harness@0.29.1 --no-cache && repo-harness update --version 0.29.1`.
+  Restart the Operator server and reload the page.
+- Installed 0.29.0 lacks the two-row High check (#2061), the Medium/High lists of #2083 and the merge-only sync carry of #2081. The board document is protocol 4 (#2003), so update the Operator server and any board reader together.
+- `repo-harness update` installs the Bash tripwire hook from #2069. The tripwire is still a literal-write check, not a shell parser; the forms it leaves unmodeled are listed in #2082.
 
-### Fixed
+### Rollback
 
-- `board closeout` also closes the seat terminals that work in the PR head worktree, so a PR that only says `Refs #<issue>` closes its seats and removes its worktree in one run. Such a seat needs an issue label that the PR closes or that `parseRefs` reads after `Refs` in the PR body. (#2071)
+- Run `bun add -g repo-harness@0.29.0 --no-cache && repo-harness update --version 0.29.0`.
+  The 0.29.0 CLI has no `board merge` and decodes only protocol-3 board documents. The 0.29.0 hook returns to the narrower tripwire. (#2003, #2060)
 
 ## [0.29.0] - 2026-11-09
 

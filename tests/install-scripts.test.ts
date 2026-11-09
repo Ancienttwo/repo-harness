@@ -52,8 +52,8 @@ describe("install script contracts", () => {
     const zhReadme = read("README.zh-CN.md");
     const pkg = JSON.parse(read("package.json"));
 
-    expect(readme).toContain("curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh");
-    expect(readme).toContain("irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex");
+    expect(readme).toContain("curl -fsSL https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.sh | sh");
+    expect(readme).toContain("irm https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.ps1 | iex");
     expect(pkg.engines.bun).toBe(`>=${MIN_BUN_VERSION}`);
     expect(readme).toContain(MIN_BUN_VERSION);
     expect(readme).not.toContain("npm install -g repo-harness");
