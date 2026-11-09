@@ -37,4 +37,18 @@ describe("check-context-files helper integration", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test("check-context-files matches whole words only", () => {
+    const cwd = tmpWorkspace("helper-check-context-files-words");
+    try {
+      copyHelpers(cwd);
+      writeFileSync(join(cwd, "AGENTS.md"), "Publication needs a review of secrets.\n");
+      expect(run("bash", ["scripts/check-context-files.sh"], cwd).status).toBe(0);
+
+      writeFileSync(join(cwd, "AGENTS.md"), "cat the secrets file\n");
+      expect(run("bash", ["scripts/check-context-files.sh"], cwd).status).toBe(1);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
