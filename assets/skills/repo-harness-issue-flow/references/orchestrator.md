@@ -53,16 +53,18 @@ Make one child issue for each pair of module and observable outcome.
   issue says so. It then stacks on the producer's PR branch and stays
   draft until the producer merges (see `board.md`). Early start is what
   lets three workers run at once on a chain of dependent modules.
-- **Reviewable size.** One PR, about 10 implementation files or fewer,
-  with one concern and one module when possible. A larger issue becomes a
-  parent issue with its own children, or one issue with numbered PRs
-  (PR-1a, PR-1b) that the issue names in advance. Split before
-  acceptance, not after.
+- **Reviewable size.** One PR is one module + tier work package. Target
+  150-500 product lines; 500 is a target, not a cap. The High-list split
+  wins over size: do not mix a High-list path (hook, seat permissions,
+  release, merge/push) with Medium or Low work. Split before acceptance,
+  not after.
 - **Order.** Contract and types → core logic → effects and adapters →
   CLI or server → UI → docs and map. Deletion of the old path goes with
   the change that replaces it, never as "cleanup later".
-- **Deferred scope gets its own issue.** Put it in a follow-up issue, not
-  in a "later" note.
+- **Deferred scope.** Fold a review follow-up in the same function and
+  tier into the open PR. A follow-up in another module or tier, or one
+  that must land before another open PR, gets its own issue even when
+  small.
 
 ## 3. Write the boundaries
 
@@ -202,6 +204,12 @@ module is in the title so that a list view shows the write scopes.
   issues with the tightest boundaries and the clearest acceptance checks.
   Keep contract-design issues for a strong model.
 - Review rounds converge by the round rules in `acceptor.md` §2.2.
+  Include this rule in the worker brief: before asking for round N >= 2,
+  check the fix delta against the open findings for sibling cases, missing
+  test branches and CHANGELOG text against behavior. A Claude writer runs
+  one read-only sub-agent for this check. A Pi writer has no sub-agents and
+  does a self-check. The pre-check writes no record and does not replace
+  the review.
 - Never wait for the review bot. Answer every bot comment by `acceptor.md` §2.3, and triage a bot finding after merge once.
 - Use the host's dispatch mechanism (an hc terminal in a Herdr.app pane,
   or a top-level host session). A dispatched agent has its own process. A
@@ -290,11 +298,14 @@ host's PR events or check when the worker reports.
 - **Review.** Select the review depth by the diff's risk tier. A Low PR
   that meets the Low accept-seat skip gets no Codex, Herdr or OAR accept
   seat (`docs/reference-configs/agentic-development-flow.md`, Review by
-  risk). Send each reviewer the review packet of `acceptor.md` §2.1. Each
-  reviewer posts an `acceptance claim` before it reads. Who reviews each
+  risk). Give each ready PR that needs review its own review seat at once
+  (#2078 watcher). A High PR keeps two reviewer seats in parallel. Send
+  each reviewer the review packet of `acceptor.md` §2.1. Each reviewer
+  posts an `acceptance claim` before it reads. Who reviews each
   round, and how many claims a round has, follow `acceptor.md` §2.2.
-  Findings take the severities of `acceptor.md` §3. A P3 becomes a
-  follow-up issue, not a PR blocker. Send the findings to the worker that
+  Findings take the severities of `acceptor.md` §3. A P3 does not block
+  the PR; apply the deferred-scope rule (§2) to its follow-up. Send the
+  findings to the worker that
   wrote the PR. You make the second-finding choice of the class rule
   (`worker.md` §7). Record the result in one acceptance record comment on
   the PR, in the row shape of `templates.md`: round, role, subject,
@@ -398,10 +409,12 @@ Act on the exit code. Post every result as `integration status` on the PR.
 
 ### 9.1 Choose the mode
 
-Use serial integration (§9.2) when one PR is eligible. When two or more
-PRs are eligible at the same time, you may use batch integration (§9.3).
-You decide whether to batch, which PRs go in and their order: the plan
-block's merge order first. A batch has at most 6 members.
+Collect ready green PRs once per merge window. Use
+`repo-harness publication batch build` and then
+`repo-harness publication merge --batch` (§9.3), including when only one
+PR is eligible. Do not sync and re-review each PR for publication. Select
+members in the plan block's merge order. A batch has at most 6 members;
+when the window has more, build successive batches in that order.
 
 A PR is eligible when all of these are true:
 
@@ -433,15 +446,12 @@ A PR is eligible when all of these are true:
 gh pr view <p> --json state,isDraft,headRefOid,statusCheckRollup,closingIssuesReferences,reviewDecision
 ```
 
-### 9.2 Serial integration
+### 9.2 Merge order
 
-Merge in the plan block's merge order. A parent without a plan (two
-children or fewer) merges in blocked-by order: a blocker merges before the
-issue it blocks. The Order column of the parent table is only a view.
-After each merge, the next PR merges or rebases onto the current main. A
-PR that passed review on an old base needs its affected checks again on
-the new base. It does not need a new full review unless the merge changed
-its subject.
+Use the plan block's merge order. A parent without a plan (two children
+or fewer) uses blocked-by order: a blocker lands before the issue it
+blocks. The Order column of the parent table is only a view. Apply this
+order to the batch members; do not sync and re-review members one by one.
 
 ### 9.3 Batch integration
 
@@ -449,24 +459,25 @@ The batch branch holds the member merge commits and nothing else. Never
 resolve a conflict, push a fix or add a commit of your own in it. Never
 merge it by any path other than `repo-harness publication merge`.
 
-1. **Build.** Record each member's eligible head SHA. Create the branch
-   from the current main and merge each member in order:
+1. **Build.** Record each member's eligible head SHA. Run the builder
+   once for the window, with one `--pr` per member in merge order:
 
    ```bash
-   git fetch origin main
-   git worktree add -b integration/<parent>-batch-<n> /tmp/<repo>-wt-batch-<parent>-<n> origin/main
-   cd /tmp/<repo>-wt-batch-<parent>-<n>
-   git fetch origin refs/pull/<p>/head          # once per member
-   git merge --no-ff --no-edit <member head sha>
+   repo-harness publication batch build --repository-id <id> --parent <parent> --pr <a> --pr <b> --json
    ```
 
-   Merge the recorded SHA, not the branch name, so that a later push to a
-   member does not enter the batch.
-2. **Conflict.** Run `git merge --abort` and drop that member. Post the
-   batch-drop `integration status` on its PR to its head owner: sync with
-   main, then it joins a later batch. Continue with the next member.
-3. **Local check.** Run the repository's typecheck and the test files that
-   two or more members change. In repo-harness:
+   The builder pins the member heads, merges them onto the current main,
+   pushes the batch branch and opens the batch PR. Read its result:
+   `merged`, `dropped`, `pr`, `head_sha` and `base_sha`. Confirm that each
+   merged member head matches its recorded eligible SHA before reusing
+   its review evidence.
+2. **Conflict.** The builder aborts a conflicting member merge, drops that
+   member and continues with the next. For each `merge_conflict` in
+   `dropped`, post the batch-drop `integration status` on its PR to its
+   head owner: sync with main, then join a later batch.
+3. **Local check.** In a worktree at the returned batch head, run the
+   repository's typecheck and the test files that two or more merged
+   members change. In repo-harness:
 
    ```bash
    for p in <member PRs>; do gh pr diff "$p" --name-only; done | grep '^tests/' | sort | uniq -d
@@ -475,12 +486,9 @@ merge it by any path other than `repo-harness publication merge`.
    ```
 
    CI on the batch head is the authority.
-4. **Open the batch PR.** Push the branch and open the PR with the batch
-   PR body (`templates.md`):
+4. **Check the batch PR.** Read the PR that the builder opened:
 
    ```bash
-   git push -u origin integration/<parent>-batch-<n>
-   gh pr create --base main --head integration/<parent>-batch-<n> --title "chore(integration): merge accepted PRs #<a> #<b> as one batch (#<parent>)" --body-file <file>
    gh pr view <batch> --json closingIssuesReferences
    ```
 
