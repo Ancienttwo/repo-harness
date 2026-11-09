@@ -368,7 +368,9 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     if (process.platform === 'darwin') {
       expect(live(childOf('late-child'))).toBe(true);
       expect(lateResult).toEqual({ status: 'cleanup_pending', pids: [childOf('late-child')], reason: 'provider_group_alive' });
-      process.kill(childOf('late-child'), 'SIGKILL');
+      const latePid = childOf('late-child');
+      expect(latePid).toBeGreaterThan(0);
+      process.kill(latePid, 'SIGKILL');
       await until(() => !live(childOf('late-child')));
       expect(await api.cancelTaskAgent(fixture, spec.task, 'late-child')).toEqual({ status: 'closed', pids: [] });
     } else {

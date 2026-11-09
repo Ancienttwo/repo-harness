@@ -197,12 +197,13 @@ setInterval(() => {}, 1000);
         for (let waited = 0; waited < 2000 && !(existsSync(ready) && readFileSync(ready, 'utf8') !== ''); waited += 10) await Bun.sleep(10);
         expect(existsSync(ready)).toBe(true);
         pid = Number(readFileSync(ready, 'utf8'));
+        expect(Number.isInteger(pid) && pid > 0).toBe(true);
         if (cause === 'aborted') controller.abort();
         expect(await pending).toEqual({ ok: false, code: cause });
         expect(() => process.kill(pid!, 0)).toThrow();
         expect(readFileSync(term, 'utf8')).toBe('received');
       } finally {
-        if (pid !== undefined) { try { process.kill(pid, 'SIGKILL'); } catch { /* fixture already exited */ } }
+        if (pid !== undefined && pid > 0) { try { process.kill(pid, 'SIGKILL'); } catch { /* fixture already exited */ } }
         rmSync(f.root, { recursive: true, force: true });
       }
     });
@@ -228,11 +229,12 @@ process.exit(0);
       for (let waited = 0; waited < deadline_ms && !(existsSync(ready) && readFileSync(ready, 'utf8') !== ''); waited += 10) await Bun.sleep(10);
       expect(existsSync(ready)).toBe(true);
       pid = Number(readFileSync(ready, 'utf8'));
+      expect(Number.isInteger(pid) && pid > 0).toBe(true);
       expect(await pending).toEqual({ ok: false, code: 'timeout' });
       expect(Date.now() - started).toBeLessThan(deadline_ms + 5000);
       expect(() => process.kill(pid!, 0)).toThrow();
     } finally {
-      if (pid !== undefined) { try { process.kill(pid, 'SIGKILL'); } catch { /* fixture already exited */ } }
+      if (pid !== undefined && pid > 0) { try { process.kill(pid, 'SIGKILL'); } catch { /* fixture already exited */ } }
       rmSync(f.root, { recursive: true, force: true });
     }
   });
