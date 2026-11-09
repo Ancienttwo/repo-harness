@@ -207,7 +207,9 @@ const origin = new URL(baseUrl).origin;
 const health = await fetch(`${baseUrl}/healthz`);
 if (!health.ok) fail(`/healthz returned ${health.status}`);
 const healthBody = await health.json();
-if (healthBody?.ok !== true || healthBody?.service !== 'repo-harness-operator' || healthBody?.protocol !== 2 || healthBody?.version !== packageVersion) {
+// Compare with the installed package's own constants, so a protocol bump cannot fail here on a stale literal.
+const { OPERATOR_SERVER_PROTOCOL, OPERATOR_SERVICE_NAME } = await import(`${process.cwd()}/node_modules/repo-harness/src/effects/operator/server.ts`);
+if (healthBody?.ok !== true || healthBody?.service !== OPERATOR_SERVICE_NAME || healthBody?.protocol !== OPERATOR_SERVER_PROTOCOL || healthBody?.version !== packageVersion) {
   fail('/healthz did not return the operator health contract');
 }
 const page = await fetch(`${baseUrl}/`);
