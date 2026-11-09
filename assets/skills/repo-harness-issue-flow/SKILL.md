@@ -145,12 +145,13 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   evidence, with no acceptance record. The board `tier_low` status is
   provisional; confirm the evidence before the merge (`references/acceptor.md` §1). The rolling projection PR
   (`archctx/projection`) merges on green CI; its merge is its acceptance.
-- Fix rounds. A review loop continues after round 3 without the owner while
-  each round has fewer findings than the round before, the scope does not
-  grow and no new P0 or P1 finding appears. Round 5 is a hard stop. A grown
-  scope or a new P0 or P1 finding goes to the owner (`references/acceptor.md`
-  §2.2). For issue-flow review loops, this rule replaces the three-round cap
-  of the managed global working rules.
+- Fix rounds. A fix loop continues after round 3 without the owner while
+  each round has fewer findings than the round before and the scope does not
+  grow. It stops at the owner on a grown scope, a new P0 finding, or a new
+  P1 finding about security, secrets, data or authentication; any other new
+  P1 finding does not stop the loop. Round 5 is the hard stop. Details:
+  `references/acceptor.md` §2.2. For issue-flow review loops, this rule
+  replaces the three-round cap of the managed global working rules.
 - Dispatch. After the owner approves a batch parent and its plan comment,
   the orchestrator dispatches the plan's issues in plan order with no other
   owner step. A new issue or a changed order goes to the owner or to a joint
