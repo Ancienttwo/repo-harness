@@ -75,12 +75,27 @@ The table rules govern how the row combines with the review.
    findings by bug family. For each family, list every sibling case and
    every missing test branch in one finding.
 
-   **Sync head.** A sync with main makes a new head, and the board reads
-   only the rows of the current head. A sync check reviews the sync delta
-   and writes one record row for the new head. A Medium sync head needs
-   one sync check row. A High sync head needs the round-1 rule: two sync
-   check rows from distinct claims, at least one different-family. The
-   acceptance of an earlier head does not carry over.
+   **Sync head.** A sync with main makes a new head. The board counts
+   the rows of an earlier reviewed head as rows of the new head when git
+   proves the new head a merge-only sync of it: the reviewed head is an
+   ancestor of the new head, `git rev-list --no-merges <reviewed>..<head>
+   ^origin/main` prints nothing, and each merge commit in that range is
+   the clean automatic merge of a main commit:
+   `git merge-tree --write-tree <parent1> <parent2>` exits 0 with the
+   tree of the merge commit, and the parents have one merge base. Both
+   PR diffs (from the one merge base with main) must not be empty. The
+   board reads the rows of the new head and of the newest proven
+   reviewed head only, so reviews split across older heads do not add
+   up. A FAIL row on any proven head, or on the new head, stops the
+   carry, and a git error on any candidate proves none. The board then shows `via: sync` with
+   `carried_from` (#2074), and the new head needs CI only. Any other sync
+   head (a conflict, even one resolved to the PR side; an edit in the
+   merge; a new commit; a failed git step) needs a sync check: a review
+   of the sync delta that writes one record row for the new head. A
+   Medium sync head needs one sync check row. A High sync head needs the
+   round-1 rule: two sync check rows from distinct claims, at least one
+   different-family. A PR that changes a hook path never carries: the
+   owner approves each head of a hook diff again.
 2. **Round 2.** The reviewer or reviewers that raised a blocking finding
    read the fix delta (the hunks that changed after round 1) and the
    sibling cases of each of its findings. On a High or unknown-tier PR,

@@ -1,7 +1,7 @@
 import { spawnSync } from 'child_process';
 import { architecturePort, isArchitectureUnavailable, type ArchctxProviderOptions } from '../../core/architecture/contracts';
 import {
-  linkedPullRequests, projectBoard, seatTerminal, type BoardAcceptanceMergeV1, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1,
+  linkedPullRequests, projectBoard, seatTerminal, syncCarryCandidates, type BoardAcceptanceMergeV1, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1,
   type BoardPathOwnerV1, type BoardPathOwnersV1, type BoardSeatTerminalInputV1, type BoardSeatTerminalReadV1, type BoardToolingV1, type BoardV1,
 } from '../../core/board/board';
 import { ADVISOR_SEAT } from '../../core/board/advisor-seat';
@@ -12,6 +12,7 @@ import { parsePublicationPolicy, policyFileFromContents, PUBLICATION_POLICY_PATH
 import type { PullRequestReadinessV2, PullRequestSelectionV2 } from '../../core/publication/merge-readiness';
 import { gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { collectPullRequestMergeReadiness } from '../publication/merge-readiness';
+import { provenMergeOnlySyncs, type MergeOnlySyncInput } from './merge-only-sync';
 
 const GH_TIMEOUT_MS = 30_000;
 const SEAT_GIT_TIMEOUT_MS = 10_000;
@@ -65,6 +66,8 @@ export interface BoardCollectInput {
   readonly gh_runner?: (args: readonly string[]) => { readonly status: number; readonly stdout: string; readonly stderr?: string };
   /** Effect seam for tests: the single-PR readiness projection. */
   readonly readiness?: (selection: PullRequestSelectionV2) => PullRequestReadinessV2;
+  /** Effect seam for tests: the reviewed heads of which git proves the head a merge-only sync. */
+  readonly merge_only_syncs?: typeof provenMergeOnlySyncs;
   /** Effect seam for tests: the archctx process of the path owner read. */
   readonly archctx?: ArchctxProviderOptions;
   readonly host: BoardHostPortsV1;
@@ -243,13 +246,20 @@ export function collectBoard(input: BoardCollectInput): BoardV1 {
     };
     return input.readiness?.(selection) ?? collectPullRequestMergeReadiness({ ...selection, repo_root: input.repo_root, gh_bin: input.gh_bin });
   });
+  const owners = pathOwners(input, linked);
+  const proveSyncs = input.merge_only_syncs ?? provenMergeOnlySyncs;
+  const mergeOnlySyncs = new Map(linked.map((read) => {
+    const sync: MergeOnlySyncInput = { repo_root: input.repo_root, pr: read.number, base_ref: read.base_ref, base_sha: read.base_sha, head_sha: read.head_sha };
+    return [read.number, proveSyncs(sync, syncCarryCandidates(read, owners))] as const;
+  }));
   return projectBoard({
     observed_at: observedAt,
     parent,
     acceptance_merge: acceptanceMerge(input, repository, parent.repository.default_branch),
     pull_requests: reads,
     readiness,
-    path_owners: pathOwners(input, linked),
+    merge_only_syncs: mergeOnlySyncs,
+    path_owners: owners,
     execution: execution(input, parent.repository.database_id),
     daily_run: dailyRun(input, repository, parent.repository.default_branch),
     tooling: tooling(input),
