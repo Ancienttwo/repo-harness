@@ -21,6 +21,7 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- The brief of a review seat with the `net` tool group lets it publish its own round with `repo-harness review publish` (#1996). It forbids every other GitHub write. A seat without `net` keeps the full GitHub write ban.
 - `/healthz.protocol` is now 3 (ADR-0003). A protocol-2 desktop app
   refuses a protocol-3 server; update the desktop app together with the
   CLI. (#1968)
@@ -36,6 +37,7 @@ All notable changes to this skill are documented here.
 ### Fixed
 
 - Board attention rules A3 and A4 and the delivery window recognize every configured worker seat kind. (#2016)
+- Board rule R2 no longer counts `docs/CHANGELOG.md` as a shared file of two open PRs. A pair that shares other files still gets the finding, and the message names only those files. (#2034)
 - `review publish` puts a finding on a line outside the PR diff into the review body, so GitHub no longer rejects the review with HTTP 422. A retry reuses the acceptance claim already on the PR instead of posting a second one (#2009).
 - `contract-worktree start` starts a node-shebang `codegraph` with the trusted node runtime. The installed helper PATH has no node, so the first index of every new worktree failed and `board dispatch` stopped. A failed init now prints the last lines of codegraph's stderr, at most 2000 bytes (#2023).
 

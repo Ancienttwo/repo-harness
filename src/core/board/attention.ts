@@ -284,13 +284,16 @@ function r1(context: Context): void {
   }
 }
 
+/** Almost every pull request appends one line here, so a shared hit is one rebase, not a conflict between the changes. */
+const R2_IGNORED_PATH = 'docs/CHANGELOG.md';
+
 function r2(context: Context): void {
   const open = openPullRequests(context.board);
   for (const pr of open.filter(entry => entry.files === null)) skip(context, 'R2', 'files_incomplete', `#${pr.number}`);
   const complete = open.filter(pr => pr.files !== null);
   for (const [index, left] of complete.entries()) {
     for (const right of complete.slice(index + 1)) {
-      const shared = left.files!.filter(path => right.files!.includes(path));
+      const shared = left.files!.filter(path => path !== R2_IGNORED_PATH && right.files!.includes(path));
       if (shared.length > 0 && !hasEdge(context.board, left, right)) {
         find(context, 'R2', { pull_requests: [left.number, right.number] },
           `#${left.number} and #${right.number} both change ${shared.slice(0, 3).join(', ')}${shared.length > 3 ? ` and ${shared.length - 3} more` : ''} with no dependency edge`);

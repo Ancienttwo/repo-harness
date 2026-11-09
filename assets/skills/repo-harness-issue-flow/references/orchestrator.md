@@ -297,6 +297,9 @@ host's PR events or check when the worker reports.
   (`worker.md` §7). Record the result in one acceptance record comment on
   the PR, in the row shape of `templates.md`: round, role, subject,
   verdict and model relation.
+  The review brief lets a reviewer with the `net` tool group publish only
+  its own round with `repo-harness review publish`. It forbids every
+  other GitHub write.
 - **Defensive code.** Reject compatibility branches, fallbacks and
   speculative guards that the issue did not ask for, even when the tests
   pass. Quote the boundary line. This is the most common reason to send a

@@ -704,6 +704,17 @@ test('A2 finds a batch behind an overlapping pull request, and a plan hold remov
   expect(findings([1475, 1479])).toEqual([['R4', [1499]]]);
 });
 
+test('R2 does not count docs/CHANGELOG.md as a shared file', () => {
+  const r2 = (first: string[], second: string[]) => evaluateBoardAttention(replay({
+    owners: (results) => { results.push(...[...first, ...second].map(path => ({ path, matched: false, ambiguous: false, owningCapabilityId: null }))); },
+    pulls: (data) => {
+      for (const [pr, paths] of [[data.repository.pr1494, first], [data.repository.pr1499, second]] as const) pr.files = { totalCount: paths.length, nodes: paths.map(path => ({ path })) };
+    },
+  })).findings.filter(finding => finding.rule === 'R2').map(finding => finding.message);
+  expect(r2(['docs/CHANGELOG.md'], ['docs/CHANGELOG.md'])).toEqual([]);
+  expect(r2(['docs/CHANGELOG.md', 'src/a.ts'], ['docs/CHANGELOG.md', 'src/a.ts'])).toEqual(['#1494 and #1499 both change src/a.ts with no dependency edge']);
+});
+
 // A fake hc for the watcher: every call is logged; `get` answers from FAKE_TERMINALS, `wait` from FAKE_WAITS by address.
 const WATCH_HC = `#!${process.execPath}
 const { appendFileSync } = require('fs');
