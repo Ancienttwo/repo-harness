@@ -1,7 +1,7 @@
 import { PlanBlockError, decodePlanBlock, type PlanBlockV1 } from './plan-block';
 import { selectSeatRoute, type SeatAccountQuotas } from './seat-routing';
 import { ROUTING_CLASSES, isWorkerSeat, type RoutingClass, type SeatId, type SeatsConfigV1 } from './seats-settings';
-import { claimStatusTarget, newestProtocolComment, parseClaimStatus, protocolComments, type BoardParentReadV1, type BoardSubIssueReadV1 } from './source';
+import { claimStatusTarget, field, newestProtocolComment, parseClaimStatus, protocolComments, type BoardParentReadV1, type BoardSubIssueReadV1 } from './source';
 
 /**
  * Dispatch (#2004): which sub-issues of a parent are ready, and which seat each one gets. It is a pure
@@ -46,6 +46,7 @@ export interface DispatchPlanV1 {
   readonly plan: PlanBlockV1;
   /** Live worker seats that carry this parent's label before this dispatch. */
   readonly live_workers: number;
+  readonly coordinator: string | null;
   readonly decisions: readonly DispatchDecisionV1[];
 }
 
@@ -83,6 +84,14 @@ function routeClass(labels: readonly string[]): { readonly kind: RoutingClass } 
 export function planDispatch(input: DispatchInputV1): DispatchPlanV1 {
   const { parent, seats, quota } = input;
   const plan = planOf(parent);
+  const comments = parent.parent.comments;
+  const closed = new Set(protocolComments(comments, CLAIM_STATUS_HEADER).filter(comment => {
+    const status = parseClaimStatus(comment)?.status;
+    return status === 'done' || status?.startsWith('released');
+  }).map(claimStatusTarget));
+  const coordinator = protocolComments(comments, CLAIM_HEADER)
+    .filter(comment => field(comment.body, 'Role') === 'coordinator' && field(comment.body, 'Status') === 'active' && !closed.has(comment.url))
+    .reduce<typeof comments.comments[number] | null>((latest, comment) => latest === null || comment.created_at >= latest.created_at ? comment : latest, null);
   const parentLabel = String(parent.parent.number);
   const liveWorkers = input.terminals.filter(({ state, labels }) => state === 'live' && labels.parent === parentLabel
     && labels.seat !== undefined && isWorkerSeat(labels.seat as SeatId));
@@ -112,5 +121,5 @@ export function planDispatch(input: DispatchInputV1): DispatchPlanV1 {
     running += 1;
     return { issue: number, action: 'dispatch', title: issue.title, route_class: kind.kind, credentials, seat: route.id, route_line: route.line };
   });
-  return Object.freeze({ plan, live_workers: liveWorkers.length, decisions: Object.freeze(decisions) });
+  return Object.freeze({ plan, live_workers: liveWorkers.length, coordinator: coordinator?.url ?? null, decisions: Object.freeze(decisions) });
 }
