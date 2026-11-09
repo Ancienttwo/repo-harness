@@ -511,6 +511,10 @@ test('board merge: an accepted, green, ready PR first in plan order is eligible,
   const dry = runBoardMerge({ ...replayInput(mergeReplay()), pr: 1491, dry_run: true, merge });
   const refused = runBoardMerge({ ...replayInput(mergeReplay()), pr: 1494, dry_run: false, merge });
   expect([dry.target, dry.exit_code, refused.target, refused.exit_code, calls.length]).toEqual([1491, 0, null, 4, 1]);
+  // A proven merge-only sync of the accepted head carries its acceptance (`via: 'sync'`) and stays eligible.
+  const synced = mergeReplay({ pulls: (data) => { const { pr1491 } = data.repository; pr1491.headRefOid = pr1491.commits.nodes[0].commit.oid = 'c'.repeat(40); } }, { mergeOnlySyncs: (_input, candidates) => candidates.filter(sha => sha === pr.head_sha) });
+  expect(replay(synced).pull_requests.find(entry => entry.number === 1491)!.acceptance).toMatchObject({ status: 'accepted', via: 'sync', carried_from: pr.head_sha });
+  expect(boardMergeDecisions(replay(synced)).find(entry => entry.pr === 1491)).toEqual({ pr: 1491, eligible: true });
 });
 
 test('board merge: every hold stays in force until a strictly newer release on its own thread; Issues: scopes only a parent hold', () => {
