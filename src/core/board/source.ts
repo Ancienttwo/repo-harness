@@ -362,7 +362,7 @@ export interface AcceptanceRowV1 {
   readonly verdict: 'PASS' | 'FAIL';
   /** The review runtime that the Role cell starts with (`review publish` writes `<harness> (<model>), read-only`); null for a subject line. */
   readonly harness: 'claude' | 'codex' | 'pi' | null;
-  /** The record's `Claim:` URL, which identifies one review; null when the record names none. */
+  /** The issue comment id of the record's `Claim:` URL, which identifies one review; null when the line is missing or is not a comment URL. */
   readonly claim: string | null;
   /** True only when the record's `Model relation:` line is `different-family`: the reviewer's recorded `modelRelation` verdict against the writer. */
   readonly different_family: boolean;
@@ -373,6 +373,13 @@ const RECORD_TABLE_ROW = /^\|\s*([1-9][0-9]*)\b[^|]*\|([^|]*)\|\s*(`?)([0-9a-f]{
 // Rounds above 3 have no receipt; the coordinator writes one `Subject: <sha>. Round <n> (...): PASS|FAIL` line.
 const RECORD_SUBJECT_LINE = /^Subject: ([0-9a-f]{40})\. Round ([1-9][0-9]*) .*?: (PASS|FAIL)\b/u;
 
+const COMMENT_URL = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/(?:pull|issues)\/[1-9][0-9]*#issuecomment-([1-9][0-9]*)$/u;
+
+/** The id of a GitHub issue comment URL: the one identity of a comment, whatever its `pull` or `issues` path. Null for any other text. */
+export function commentId(url: string): string | null {
+  return COMMENT_URL.exec(url)?.[1] ?? null;
+}
+
 /**
  * The rows of an `acceptance record` comment: the table rows that `review
  * publish` writes, or the one subject line of a later round. Null when the
@@ -381,7 +388,7 @@ const RECORD_SUBJECT_LINE = /^Subject: ([0-9a-f]{40})\. Round ([1-9][0-9]*) .*?:
  */
 export function parseAcceptanceRecord(comment: BoardCommentV1): readonly AcceptanceRowV1[] | null {
   const rows: AcceptanceRowV1[] = [];
-  const record = { claim: field(comment.body, 'Claim'), different_family: field(comment.body, 'Model relation') === 'different-family' };
+  const record = { claim: commentId(field(comment.body, 'Claim') ?? ''), different_family: field(comment.body, 'Model relation') === 'different-family' };
   for (const line of comment.body.replace(/\r\n/gu, '\n').split('\n')) {
     const table = RECORD_TABLE_ROW.exec(line);
     if (table) rows.push(Object.freeze({ round: Number(table[1]), subject_sha: table[4]!, verdict: table[5] as 'PASS' | 'FAIL', harness: /^\s*(claude|codex|pi)\b/u.exec(table[2]!)?.[1] as AcceptanceRowV1['harness'] ?? null, ...record }));

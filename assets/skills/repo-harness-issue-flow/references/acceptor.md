@@ -55,13 +55,17 @@ The table rules govern how the row combines with the review.
 
 1. **Round 1** is the full tier review. Round 1 of a High PR has two
    reviews of one subject SHA, and both take the same round number: the
-   gatekeeper and a second reviewer, preferably from a different model
-   family (§1). They run in parallel, and each is blind to the other's
-   result. Each review has its own `acceptance claim` and its own record
-   row. The board accepts a High head, or a head of unknown tier, only
-   when it has `PASS` rows from two distinct `Claim:` URLs, at least one
-   of them with `Model relation: different-family`, and no `FAIL` row.
-   A Medium head needs one `PASS` row and no `FAIL` row.
+   gatekeeper and a second reviewer. At least one of the two is from a
+   model family different from the writer's (§1). They run in parallel,
+   and each is blind to the other's result. Each review has its own
+   `acceptance claim` and its own record row. `review publish` keys a
+   claim by round, subject and `Agent:` line, so two reviewers with an
+   identical `Agent:` line on one round share one claim and count once.
+   The board accepts a High head, or a head of unknown tier, only when it
+   has `PASS` rows that cite two distinct `acceptance claim` comments of
+   the PR, at least one of them with `Model relation: different-family`,
+   and no `FAIL` row. A Medium head needs one `PASS` row and no `FAIL`
+   row.
 
    **Sync head.** A sync with main makes a new head, and the board reads
    only the rows of the current head. A sync check reviews the sync delta
@@ -69,9 +73,14 @@ The table rules govern how the row combines with the review.
    one sync check row. A High sync head needs the round-1 rule: two sync
    check rows from distinct claims, at least one different-family. The
    acceptance of an earlier head does not carry over.
-2. **Round 2.** Only the reviewer or reviewers that raised a blocking
-   finding take the round. Each reads the fix delta (the hunks that
-   changed after round 1) and the sibling cases of each of its findings.
+2. **Round 2.** The reviewer or reviewers that raised a blocking finding
+   read the fix delta (the hunks that changed after round 1) and the
+   sibling cases of each of its findings. On a High or unknown-tier PR,
+   the fix head needs the round-1 rule too: a reviewer of round 1 that
+   raised no blocking finding takes a delta check of the fix head, with
+   the same scope as a sync check, and records its own row. Together the
+   rows of the fix head come from two distinct claims, at least one
+   different-family.
 3. **Round 3** runs with no owner question when the round-2 findings are in
    the fix delta. It has the scope of round 2.
 4. **After round 3.** A fix loop continues after round 3 without the owner

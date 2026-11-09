@@ -5,6 +5,7 @@ import { isSeatStatusMessage, seatStatusMessage } from './advisor-seat';
 import { decodePlanBlock, PlanBlockError, type PlanBlockV1 } from './plan-block';
 import {
   BoardSourceError,
+  commentId,
   newestProtocolComment,
   parseAcceptanceRecord,
   parseClaimStatus,
@@ -33,6 +34,7 @@ const TIER_LABELS: Readonly<Record<string, BoardTier>> = { 'tier:low': 'low', 't
 const PLAN_HEADER = 'repo-harness plan';
 const CLAIM_STATUS_HEADER = 'repo-harness issue claim status';
 export const ACCEPTANCE_RECORD_HEADER = 'repo-harness acceptance record';
+const ACCEPTANCE_CLAIM_HEADER = 'repo-harness acceptance claim';
 const REQUIRED_CHECK = 'Required / CI';
 
 export type BoardPlanV1 =
@@ -319,7 +321,7 @@ function acceptance(read: BoardPullRequestReadV1, check: BoardRequiredCheckV1, c
   if (!failed && passes.length > 0) {
     // An older comment outside the read can hold a FAIL on the head.
     if (read.comments.truncated) return { status: 'unknown', reason: 'comments_truncated', evidence_url: null };
-    if (!strict || highRuleMet(head)) {
+    if (!strict || highRuleMet(read, head)) {
       const newest = passes.reduce((latest, record) => (record.created_at >= latest.created_at ? record : latest));
       return { status: 'accepted', via: 'record', accepted_at: newest.created_at, evidence_url: newest.url };
     }
@@ -335,10 +337,13 @@ function acceptance(read: BoardPullRequestReadV1, check: BoardRequiredCheckV1, c
 /**
  * The High rule (`acceptor.md` section 2.2), for High and unknown tiers: PASS rows of the head from two distinct review claims,
  * and at least one of them recorded `Model relation: different-family` to the writer. An unknown writer family records `unknown`,
- * so it fails closed. A record without a `Claim:` line proves no review claim.
+ * so it fails closed. A row counts only when its `Claim:` cites an `acceptance claim` comment of the pull request; the comment id is the
+ * claim identity. A head with a `FAIL` row does not meet the rule.
  */
-function highRuleMet(head: readonly AcceptanceRowV1[]): boolean {
-  const passes = head.filter(row => row.verdict === 'PASS' && row.claim !== null);
+function highRuleMet(read: BoardPullRequestReadV1, head: readonly AcceptanceRowV1[]): boolean {
+  if (head.some(row => row.verdict === 'FAIL')) return false;
+  const claims = new Set(protocolComments(read.comments, ACCEPTANCE_CLAIM_HEADER).map(claim => commentId(claim.url)));
+  const passes = head.filter(row => row.claim !== null && claims.has(row.claim));
   return new Set(passes.map(row => row.claim)).size >= 2 && passes.some(row => row.different_family);
 }
 
@@ -363,7 +368,7 @@ function claudeReview(read: BoardPullRequestReadV1, tier: BoardTier | null): Boa
   if (!strictReview(read, tier)) return 'not_required';
   const head = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER).flatMap(record => parseAcceptanceRecord(record) ?? []).filter(row => row.subject_sha === read.head_sha);
   if (head.some(row => row.harness === 'claude')) return 'recorded';
-  return highRuleMet(head) ? 'not_required' : 'pending';
+  return highRuleMet(read, head) ? 'not_required' : 'pending';
 }
 
 function bodyLinks(repository: string, body: string): { readonly closes: number[]; readonly refs: number[] } {

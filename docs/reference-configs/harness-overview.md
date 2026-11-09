@@ -47,14 +47,15 @@ advice, not a gate. Any host can fill a seat.
 | --- | --- | --- |
 | Orchestrator | Long-lived top-level session, strong reasoning model | Issues, comments and dispatch; no product code |
 | Worker | Capable coding model | One issue's branch and PR |
-| Acceptor | Fresh context, read-only; a different model family for High when available | Review threads and the acceptance record |
+| Acceptor | Fresh context, read-only; for High, two reviews of each head, at least one from a model family different from the writer's | Review threads and the acceptance record |
 | Gap reviewer | Different family from the orchestrator | Comments on drafts; no scope decision |
 
 `repo-harness seats argv <seat>` prints the launch argv of the
 orchestrator, advisor and worker seats. `agents/fleet/` holds the sub-agent
 roles that a seat may call; the installer projects each role to Claude and
-Codex. The High tier prefers a different model family; a fresh same-family
-context is valid and records `model_relation` in the receipt.
+Codex. The High tier needs two reviews of each head, at least one from a
+model family different from the writer's; the other can be a fresh
+same-family context. Each review records `model_relation` in its receipt.
 
 ## Tools
 
