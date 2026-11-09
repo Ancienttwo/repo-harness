@@ -202,6 +202,7 @@ module is in the title so that a list view shows the write scopes.
   issues with the tightest boundaries and the clearest acceptance checks.
   Keep contract-design issues for a strong model.
 - Review rounds converge by the round rules in `acceptor.md` §2.2.
+- Never wait for the review bot. Answer every bot comment by `acceptor.md` §2.3, and triage a bot finding after merge once.
 - Use the host's dispatch mechanism (an hc terminal in a Herdr.app pane,
   or a top-level host session). A dispatched agent has its own process. A
   sub-agent runs inside a seat process and is not a dispatch target. You
@@ -406,16 +407,16 @@ A PR is eligible when all of these are true:
 
 - It is open and not draft.
 - Its required checks are SUCCESS on its own head.
-- Its tier review passed on a subject SHA, or rule 4 of `acceptor.md`
-  §2.2 applies. A Low PR needs no review, but
+- Its tier review passed on a subject SHA. A rule-4 deferral of
+  `acceptor.md` §2.2 still needs that `PASS`. A Low PR needs no review, but
   its PR body must hold the author verification evidence
   (`docs/reference-configs/agentic-development-flow.md`, Review by risk).
 - Its head equals the reviewed subject, or adds only conflict-free merges
   of main since it. `git rev-list --no-merges <subject>..<head> ^origin/main`
   prints nothing.
 - It has no unresolved review thread that a person started. A review bot
-  thread is advisory input and does not block. For a rule-4 merge, you
-  resolve the remaining P2 threads first (`acceptor.md` §6).
+  thread is advisory input and does not block. For a rule-4 deferral, you
+  resolve the deferred P2 threads first (`acceptor.md` §6).
 - Its closing references are correct.
 
 ```bash

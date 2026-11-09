@@ -9,7 +9,10 @@ and the board are in `board.md`. The round record is in `orchestrator.md`
 
 A Low PR that meets the Low accept-seat skip takes no round and no
 acceptance record (`docs/reference-configs/agentic-development-flow.md`,
-Review by risk).
+Review by risk). The board marks such a PR `accepted` via `tier_low` from
+`Required / CI` and the closing-issue tiers only. That status is
+provisional: the merging seat confirms the verification evidence in the PR
+body before the merge.
 
 The gatekeeper is the default acceptor (D6). It reviews the diff and
 returns a verdict and findings. A seat without the `net` tool group has no
@@ -60,21 +63,80 @@ The table rules govern how the row combines with the review.
    changed after round 1) and the sibling cases of each of its findings.
 3. **Round 3** runs with no owner question when the round-2 findings are in
    the fix delta. It has the scope of round 2.
-4. **After round 3.** When every remaining finding is P2, all of them are
-   in one bug family, and none concerns security, secrets, data or
-   authentication, the coordinator merges on the last green SHA. The
-   acceptance record states the limit, and one follow-up issue holds that
-   family. Before the merge, the coordinator resolves each remaining P2
-   thread with a reply that links the follow-up issue (§6). A P0 or P1
-   finding, or a security, secrets, data or authentication finding,
-   becomes a parked owner gate
+4. **After round 3.** A fix loop continues after round 3 without the owner
+   while each round has fewer findings than the round before and the scope
+   does not grow. A grown scope is a joint decision. A new P0 finding, or a
+   new P1 finding about security, secrets, data or authentication, stops the
+   loop at the owner; any other new P1 finding does not stop it. Round 5 is
+   the hard stop. When every remaining finding is P2, all of them are in one
+   bug family, and none concerns security, secrets, data or authentication,
+   a recorded decision (the owner, or a joint decision of the orchestrator
+   and the advisor) may move that family to one follow-up issue after round
+   3 or round 4. The coordinator then resolves each remaining P2 thread with
+   a reply that links the follow-up issue (§6). The deferral takes effect at
+   the next head: a fix, a sync with main, or the commit that adds the
+   follow-up link. A `FAIL` row stays on its head, so the next round reviews
+   that new head with those threads deferred. It must return `PASS` for that
+   head before the PR merges, and its record names the follow-up issue. A
+   `FAIL` in round 5 is a hard stop and takes no deferral. A new P0 finding,
+   a new P1 finding about security, secrets, data or authentication, or a
+   blocking finding after round 5 becomes a parked owner gate
    (`docs/reference-configs/agentic-development-flow.md`, Park a gate).
    Other work continues.
 
 The worker fixes each finding by the class rule (`worker.md` §7).
 
 Return `PASS` or `FAIL`. A `FAIL` has at least one P0, P1 or P2 finding.
-Rule 4 decides whether a P2-only `FAIL` after round 3 merges.
+Rule 4 decides whether a `FAIL` after round 3 takes another round, defers a
+P2 family or becomes an owner gate. A merge always needs a `PASS` record.
+
+### 2.3 Review bot reference
+
+The review bot that the owner configured on GitHub
+(`chatgpt-codex-connector[bot]` on PRs) is a reference. It never gates a
+merge and no round waits for it. It does not comment on every PR. When it
+has commented, every bot comment gets a response: each review thread, each
+PR comment and each issue comment.
+
+The coordinator decides each bot finding. When an acceptor round is
+active, the acceptor reads the bot threads and comments on the current
+head next to the diff and raises each real one as its own finding, with
+its severity. When no round is active (a Low PR that skips the accept
+seat, or a bot finding after the last round), the coordinator reads them.
+The decision is one of:
+
+| Decision | Meaning | Effect |
+|---|---|---|
+| `adopt` | The finding is real. | It is a finding of the review loop (§2.2) with its severity. A blocking one adopted after the last round goes to the author as a fix round, and a gatekeeper seat reviews the new head before the merge; the earlier `PASS` does not cover it. |
+| `decline` | The finding is wrong, out of scope or not worth a fix. | One-line reason. It is not a finding of the loop. |
+| `outdated` | The finding is on an older head, and the current head no longer contains the code. | No triage again. It is not a finding of the loop. |
+
+The `acceptance record` and the publish receipt carry no bot decision
+(`review publish` renders only severity findings). The coordinator posts
+the decisions in one plain PR comment, one line each:
+`Review-bot reference: <comment id or thread> adopt|decline|outdated: <reason>`.
+The bot's "Codex Review Summary" with no findings
+(`codex-review-state` `has_any_findings: false`) gets the line
+`Review-bot reference: no findings at <sha>: no action` and no reply on
+the summary. A summary with findings gets one decision per finding.
+
+The coordinator writes the replies, so each role keeps one GitHub write
+path. The acceptor stays read-only. The reply uses the `review reply`
+shape (`templates.md`): `rejected` for a decline or an outdated finding,
+`fixed <sha>` for an adopted one after its fix round, and `deferred
+#<follow-up issue>` for a rule-4 deferral. An adopted P3 gets `fixed <sha>`
+when it is fixed and `deferred #<follow-up issue>` otherwise, each with the
+reason in `Why`. A thread that the coordinator answers with `rejected` or
+`deferred` is resolved with its reply. An adopted thread with a fix is resolved when the
+fix round that addresses it is pushed.
+
+A bot finding that arrives after the merge is triaged once: `decline`, or
+`adopt` as a new issue under the batch parent. The merged PR is not
+reopened.
+
+The merge executor still refuses a PR with an unresolved thread
+(`unresolved_threads`). The change is who resolves a bot thread, not the
+gate.
 
 ## 3. Findings
 
@@ -126,10 +188,11 @@ Act on the exit code:
 | 5 | `review_publish_partial`, `review_publish_unknown` | Stop and inspect the PR. Never retry before you confirm which comments exist. |
 | 1 | `review_publish_provider_unavailable`, `review_publish_failed` | Report the error and the posted URLs. |
 
-The merge executor refuses a PR with an unresolved review thread that a
-person started (D6). A review bot thread is advisory and does not block.
-A rule-4 merge (§2.2) passes this check only after the coordinator
-resolves the remaining P2 threads (§6).
+The merge executor refuses a PR with an unresolved review thread (D6).
+A bot thread is a reference input (§2.3): the coordinator answers and
+resolves it, and the bot never adds or removes a gate by itself.
+A PR with a rule-4 deferral (§2.2) passes this check only after the
+coordinator resolves the deferred P2 threads (§6).
 
 ## 5. Result schema
 
@@ -177,8 +240,9 @@ merge (D7).
 Only the acceptor of a round resolves its threads. It resolves a thread
 after the next round confirms the fix on a new subject SHA.
 
-The coordinator may resolve a thread with a written rejection reason, or
-with the follow-up issue link of a rule-4 merge (§2.2). Both are a
+The coordinator resolves a bot thread (§2.3). The coordinator may also
+resolve a thread with a written rejection reason, or
+with the follow-up issue link of a rule-4 deferral (§2.2). Both are a
 `review reply` (`templates.md`).
 
 The head owner replies with the fix SHA and does not resolve. No worker
