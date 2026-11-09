@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- The seats range lets the advisor seat take the `edit` tool group, as the owner approved. The orchestrator range still refuses `edit`. (#2032)
+
 ### Added
 
 - A Claude seat can take the new `schedule` tool group (`CronCreate`, `CronList`, `CronDelete`). The group is off for every seat by default; Codex and Pi launches ignore it. (#2014)

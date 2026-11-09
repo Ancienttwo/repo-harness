@@ -8,7 +8,7 @@ files link it and do not restate it.
 
 The advisor is the long-lived hc terminal in the pane beside the orchestrator
 ([Issue-flow topology](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#issue-flow-topology)).
-It holds no claim role. It does not edit code, commit, write to GitHub or
+It holds no claim role. It does not commit, write to GitHub or
 decide.
 
 ## 1. Triggers

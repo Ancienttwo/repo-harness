@@ -63,7 +63,7 @@ function seatsRanges(enabled: readonly string[]) {
     roles: SUB_AGENTS,
     seats: {
       orchestrator: { fleet: SUB_AGENTS.filter(role => !role.writable).map(role => role.name), tools: all.filter(tool => tool !== 'edit') },
-      advisor: { fleet: SUB_AGENTS.filter(role => !role.writable).map(role => role.name), tools: all.filter(tool => tool !== 'edit' && tool !== 'gh') },
+      advisor: { fleet: SUB_AGENTS.filter(role => !role.writable).map(role => role.name), tools: all.filter(tool => tool !== 'gh') },
       worker: { fleet: SUB_AGENTS.map(role => role.name), tools: all },
       'worker-deep': { fleet: SUB_AGENTS.map(role => role.name), tools: all },
       'worker-important': { fleet: SUB_AGENTS.map(role => role.name), tools: all },

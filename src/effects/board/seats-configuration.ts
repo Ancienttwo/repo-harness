@@ -56,12 +56,12 @@ const without = (...excluded: SeatTool[]): readonly SeatTool[] => SEAT_TOOLS.fil
 
 /**
  * Owner rules: the orchestrator and the advisor call only the read-only roles (M40); the writers, root-cause-prover
- * included, and the Codex review run in Herdr seats; the orchestrator and the advisor do not edit (#1472); the advisor
- * does not write GitHub (#1472).
+ * included, and the Codex review run in Herdr seats; the orchestrator does not edit (#1472); the advisor may edit
+ * for its proposals (owner decision, #2032) and does not write GitHub (#1472).
  */
 const SEAT_RANGES: SeatsRangesV1['seats'] = {
   orchestrator: { fleet: READ_ONLY_SUB_AGENTS, tools: without('edit') },
-  advisor: { fleet: READ_ONLY_SUB_AGENTS, tools: without('edit', 'gh') },
+  advisor: { fleet: READ_ONLY_SUB_AGENTS, tools: without('gh') },
   worker: { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
   'worker-deep': { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
   'worker-important': { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
