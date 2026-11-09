@@ -131,6 +131,8 @@ test('a dead cat-file process stays dead for reads until the next cycle restarts
   const first = docs.read(f.id);
   if (first.state !== 'ready') throw new Error('not ready');
   const pid = Number(readFileSync(f.pids, 'utf8'));
+  // An empty read is pid 0, and kill(0) would signal this whole process group.
+  expect(pid).toBeGreaterThan(0);
   process.kill(pid, 'SIGKILL');
   for (let attempt = 0; attempt < 100 && first.reader.running; attempt++) await Bun.sleep(10);
   let code: string | null = null;
