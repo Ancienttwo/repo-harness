@@ -2,6 +2,7 @@ import { parseClosingReferences } from '../publication/closing-references';
 import type { AcceptanceMergeSwitch } from '../publication/acceptance-merge-policy';
 import type { PullRequestReadinessV2 } from '../publication/merge-readiness';
 import { isSeatStatusMessage, seatStatusMessage } from './advisor-seat';
+import { modelFamily } from '../review/acceptance-receipt';
 import { readMergeHold, type BoardMergeHoldV1 } from './merge';
 import { decodePlanBlock, PlanBlockError, type PlanBlockV1 } from './plan-block';
 import {
@@ -84,9 +85,8 @@ export type BoardAcceptanceV1 =
 
 export type BoardClaudeReviewV1 = 'not_required' | 'pending' | 'recorded';
 
-/** The model family of a writer runtime. A Pi seat runs any model, so its runtime names no family. */
-export type BoardWriterFamily = 'anthropic' | 'openai';
-const RUNTIME_FAMILIES: ReadonlyMap<string, BoardWriterFamily> = new Map([['claude', 'anthropic'], ['codex', 'openai']]);
+/** The model family of a writer, from `modelFamily` on the `Model:` line of its claim. */
+export type BoardWriterFamily = string;
 
 export interface BoardPullRequestV1 {
   readonly number: number;
@@ -469,7 +469,8 @@ function writerFamily(read: BoardPullRequestReadV1, closes: readonly number[], r
     if (issue === undefined) return null;
     const claims = protocolComments(issue.comments, CLAIM_HEADER).filter(claim => field(claim.body, 'Role') === 'writer' && field(claim.body, 'Branch') === read.head_ref);
     const newest = claims.length === 0 ? null : newestProtocolComment({ ...issue.comments, comments: claims }, CLAIM_HEADER);
-    return newest === null ? null : RUNTIME_FAMILIES.get(field(newest.body, 'Runtime') ?? '') ?? null;
+    const model = newest === null ? null : field(newest.body, 'Model');
+    return model === null ? null : modelFamily(model);
   }));
   const [family] = families;
   return families.size === 1 && family !== undefined ? family : null;

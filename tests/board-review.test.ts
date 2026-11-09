@@ -16,14 +16,15 @@ const pr = (number: number, extra: Partial<BoardPullRequestV1> = {}): BoardPullR
   closes: [number * 10], refs: [], files: [], required_check: { status: 'success', completed_at: '' }, acceptance: { status: 'not_accepted' }, merge_readiness: null,
   tier: 'high', claude_review: 'not_required', writer_family: null, merge_hold: { status: 'none' }, ...extra,
 });
-const board = (prs: BoardPullRequestV1[]): BoardV1 => ({ pull_requests: prs }) as unknown as BoardV1;
+const board = (prs: BoardPullRequestV1[], holds: { issue: number; reason: string }[] = []): BoardV1 =>
+  ({ pull_requests: prs, parent: { number: 1 }, plan: { status: 'observed', block: { holds } } }) as unknown as BoardV1;
 const comment = (body: string, url = 'https://example.test/c'): BoardCommentV1 => ({ url, created_at: '2026-11-09T10:00:00Z', author_association: 'OWNER', body });
 const marker = (head: string, url = 'https://example.test/m1', seat = 'gatekeeper') => comment(`repo-harness review start\nSubject: ${head}\nSeat: ${seat}`, url);
 const record = (head: string, role = 'pi') => comment(`repo-harness acceptance record\n\n| Round | Role | Subject | Verdict |\n|---|---|---|---|\n| 1 | ${role} | \`${head}\` | FAIL: 1 P1 |`);
 const page = (...comments: BoardCommentV1[]): BoardCommentPageV1 => ({ truncated: false, comments });
 
-function plan(prs: BoardPullRequestV1[], comments: BoardCommentPageV1 = page()): readonly ReviewDecisionV1[] {
-  return planReview({ board: board(prs), comments: new Map(prs.map(entry => [entry.number, comments])) });
+function plan(prs: BoardPullRequestV1[], comments: BoardCommentPageV1 = page(), holds: { issue: number; reason: string }[] = []): readonly ReviewDecisionV1[] {
+  return planReview({ board: board(prs, holds), comments: new Map(prs.map(entry => [entry.number, comments])) });
 }
 const label = (decisions: readonly ReviewDecisionV1[]) => decisions.map(decision => decision.action === 'skip' ? `${decision.pr}:${decision.reason}` : `${decision.pr}:start`);
 
@@ -49,6 +50,10 @@ test('a Medium head starts the one seat of the other family than the writer; an 
   expect(medium('anthropic')[0]).toMatchObject({ action: 'start', seats: [{ seat: 'gatekeeper' }], needs_non_claude_gatekeeper: true });
   expect(medium('openai')[0]).toMatchObject({ action: 'start', seats: [{ seat: 'reviewer' }], needs_non_claude_gatekeeper: false });
   expect(label(medium(null))).toEqual(['1:writer_family_unknown']);
+});
+
+test('a pull request that links a plan-held issue is skipped; the others still start', () => {
+  expect(label(plan([pr(1), pr(2)], page(), [{ issue: 10, reason: 'owner decision' }]))).toEqual(['1:plan_hold', '2:start']);
 });
 
 test('a marker covers one seat: a started gatekeeper leaves the reviewer to start, and a marker without a seat covers none', () => {

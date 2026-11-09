@@ -122,7 +122,7 @@ function ports(overrides: Partial<DispatchPorts> = {}) {
   };
   return { calls, base };
 }
-const context = { repositoryId: '9', parent: 100, space: 's1', dry_run: false };
+const context = { repositoryId: '9', parent: 100, space: 's1', dry_run: false, model: (): string | null => 'claude-sonnet-5-5' };
 const planOf = (labels: string[]): DispatchPlanV1 => planDispatch({ seats: DEFAULT_SEATS_CONFIG, quota: NORMAL, terminals: [], parent: read([issue(1, { labels })]) });
 
 test('execute starts the worktree, posts the claim, then opens the tab; a dry run writes nothing', async () => {
@@ -145,6 +145,14 @@ test('dispatch writes the earliest active coordinator claim URL', async () => {
   const run = ports({ comment: (_issue, text) => { body = text; return 'claim'; } });
   await executeDispatch(plan, context, run.base);
   expect(body).toContain(`\nCoordinator: ${coordinator.url}\n`);
+});
+
+test('the claim names the model from the context; a seat with no model writes no Model line', async () => {
+  const bodies: string[] = [];
+  const run = ports({ comment: (_issue, text) => { bodies.push(text); return 'claim'; } });
+  await executeDispatch(planOf(['route:important_deep']), context, run.base);
+  await executeDispatch(planOf(['route:important_deep']), { ...context, model: () => null }, run.base);
+  expect(bodies.map(body => body.split('\n').filter(line => line.startsWith('Model: ')))).toEqual([['Model: claude-sonnet-5-5'], []]);
 });
 
 test('dispatch refuses before any writes without an active coordinator claim', async () => {

@@ -245,6 +245,7 @@ Role: writer                    # required: coordinator | writer | integrator
 Slot: PR-1b                     # only for a named PR slot
 Agent: <kind>, session <id>     # required
 Runtime: <claude|codex|pi>      # required on a writer claim
+Model: <model id>               # required on a dispatched writer claim; omitted when the seat sets no model
 Branch: <type>/<issue>-<slug>   # required
 Scope: <what this claim covers> # required
 Not in scope: <what it leaves>  # required
@@ -255,10 +256,11 @@ Prior claim: <comment URL>      # required on a handoff
 
 `Status`, `Role`, `Agent`, `Branch`, `Scope` and `Not in scope` are
 required. A writer claim, a handoff claim included, also requires
-`Runtime:`, the runtime of the writer seat: the board reads it as the
-writer's model family for the Medium review seat (`orchestrator.md`,
-`board review`). A dispatched writer claim also requires `Coordinator`,
-the coordinator's own claim URL. A handoff claim also requires `Prior claim`. A claim
+`Runtime:`, the runtime of the writer seat. A dispatched writer claim also
+requires `Model:`, the model id of the writer seat, and `Coordinator`, the
+coordinator's own claim URL. The board reads the family of `Model:`
+(`modelFamily`) as the writer's model family for the Medium review seat
+(`orchestrator.md`, `board review`); a claim without `Model:` has no family. A handoff claim also requires `Prior claim`. A claim
 without any of them is invalid. The coordinator reads its claim back; when a
 field is missing it posts `issue claim status` with `Status: released`,
 then one complete claim. It names the missing fields in a `To: <agent>`

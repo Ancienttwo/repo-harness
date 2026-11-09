@@ -1,4 +1,5 @@
 import type { BoardPullRequestV1, BoardV1 } from './board';
+import type { PlanHoldV1 } from './plan-block';
 import { protocolComments, type BoardCommentPageV1 } from './source';
 
 /**
@@ -66,6 +67,13 @@ function covering(hold: BoardMergeHoldV1, items: readonly number[]): BoardMergeH
   return hold.holds.find(record => record.issues === null || items.some(item => record.issues!.includes(item))) ?? null;
 }
 
+/** The plan hold on an issue that the pull request links; `board merge` and `board review` share this check. A plan that is not observed holds nothing here: merge refuses it first. */
+export function planHoldOf(board: BoardV1, pr: BoardPullRequestV1): PlanHoldV1 | null {
+  if (board.plan.status !== 'observed') return null;
+  const linked = new Set([...pr.closes, ...pr.refs]);
+  return board.plan.block.holds.find(hold => hold.issue !== board.parent.number && linked.has(hold.issue)) ?? null;
+}
+
 function refusal(board: BoardV1, pr: BoardPullRequestV1): { readonly reason: BoardMergeRefusalV1; readonly detail: string } | null {
   if (board.acceptance_merge !== 'on') return { reason: 'acceptance_merge_off', detail: `publication.acceptance_merge is ${board.acceptance_merge} on ${board.default_branch}` };
   if (board.plan.status !== 'observed') return { reason: 'plan_unavailable', detail: `the plan is ${board.plan.status}` };
@@ -89,8 +97,8 @@ function refusal(board: BoardV1, pr: BoardPullRequestV1): { readonly reason: Boa
   const unknown = holds.find(entry => entry.hold.status === 'unknown');
   if (unknown !== undefined) return { reason: 'hold_unknown', detail: `the comments of ${unknown.where} are truncated and hold no hold record` };
   const plan = board.plan.block;
-  const planHold = plan.holds.find(hold => items.includes(hold.issue));
-  if (planHold !== undefined) return { reason: 'plan_hold', detail: `the plan holds #${planHold.issue}: ${planHold.reason}` };
+  const planHold = planHoldOf(board, pr);
+  if (planHold !== null) return { reason: 'plan_hold', detail: `the plan holds #${planHold.issue}: ${planHold.reason}` };
   const unordered = items.filter(number => !plan.merge_order.includes(number));
   if (unordered.length > 0) return { reason: 'not_in_merge_order', detail: `${unordered.map(number => `#${number}`).join(' ')} not in the plan merge_order` };
   const last = Math.max(...items.map(number => plan.merge_order.indexOf(number)));
