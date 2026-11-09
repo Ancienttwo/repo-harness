@@ -14,7 +14,7 @@ type Tier = 'low' | 'medium' | 'high' | null;
 const pr = (number: number, extra: Partial<BoardPullRequestV1> = {}): BoardPullRequestV1 => ({
   number, url: '', state: 'open', is_draft: false, base_ref: 'main', base_sha: SHA, head_ref: `feat/${number}`, head_sha: SHA, head_committed_at: '', merged_at: null,
   closes: [number * 10], refs: [], files: [], required_check: { status: 'success', completed_at: '' }, acceptance: { status: 'not_accepted' }, merge_readiness: null,
-  tier: 'medium', claude_review: 'not_required', ...extra,
+  tier: 'medium', claude_review: 'not_required', merge_hold: { status: 'none' }, ...extra,
 });
 const board = (prs: BoardPullRequestV1[]): BoardV1 => ({ pull_requests: prs }) as unknown as BoardV1;
 const comment = (body: string, url = 'https://example.test/c'): BoardCommentV1 => ({ url, created_at: '2026-11-09T10:00:00Z', author_association: 'OWNER', body });

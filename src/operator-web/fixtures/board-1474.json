@@ -1,5 +1,5 @@
 {
-  "protocol": 3,
+  "protocol": 4,
   "kind": "repo-harness.board",
   "observed_at": "2026-11-02T23:29:42.936Z",
   "repository": "Ancienttwo/repo-harness",
@@ -19,6 +19,9 @@
     "status": "unavailable",
     "comment_url": "https://github.com/Ancienttwo/repo-harness/issues/1474#issuecomment-6588782468",
     "reason": "plan block invalid: the plan comment has 0 fenced json blocks, expected 1"
+  },
+  "merge_hold": {
+    "status": "none"
   },
   "items": [
     {
@@ -42,7 +45,10 @@
       },
       "pull_requests": [
         1491
-      ]
+      ],
+      "merge_hold": {
+        "status": "none"
+      }
     },
     {
       "number": 1476,
@@ -65,7 +71,10 @@
       },
       "pull_requests": [
         1499
-      ]
+      ],
+      "merge_hold": {
+        "status": "none"
+      }
     },
     {
       "number": 1477,
@@ -81,7 +90,10 @@
       "claim_status": {
         "status_kind": "none"
       },
-      "pull_requests": []
+      "pull_requests": [],
+      "merge_hold": {
+        "status": "none"
+      }
     },
     {
       "number": 1478,
@@ -97,7 +109,10 @@
       "claim_status": {
         "status_kind": "none"
       },
-      "pull_requests": []
+      "pull_requests": [],
+      "merge_hold": {
+        "status": "none"
+      }
     },
     {
       "number": 1479,
@@ -120,7 +135,10 @@
       },
       "pull_requests": [
         1494
-      ]
+      ],
+      "merge_hold": {
+        "status": "none"
+      }
     },
     {
       "number": 1480,
@@ -136,7 +154,10 @@
       "claim_status": {
         "status_kind": "none"
       },
-      "pull_requests": []
+      "pull_requests": [],
+      "merge_hold": {
+        "status": "none"
+      }
     },
     {
       "number": 1481,
@@ -152,7 +173,10 @@
       "claim_status": {
         "status_kind": "none"
       },
-      "pull_requests": []
+      "pull_requests": [],
+      "merge_hold": {
+        "status": "none"
+      }
     },
     {
       "number": 1482,
@@ -168,7 +192,10 @@
       "claim_status": {
         "status_kind": "none"
       },
-      "pull_requests": []
+      "pull_requests": [],
+      "merge_hold": {
+        "status": "none"
+      }
     },
     {
       "number": 1483,
@@ -184,7 +211,10 @@
       "claim_status": {
         "status_kind": "none"
       },
-      "pull_requests": []
+      "pull_requests": [],
+      "merge_hold": {
+        "status": "none"
+      }
     }
   ],
   "pull_requests": [
@@ -232,6 +262,9 @@
         "kind": "repo-harness-pull-request-readiness",
         "ready": true,
         "blockers": []
+      },
+      "merge_hold": {
+        "status": "none"
       }
     },
     {
@@ -333,6 +366,9 @@
             "attention_owner": "agent"
           }
         ]
+      },
+      "merge_hold": {
+        "status": "none"
       }
     },
     {
@@ -413,6 +449,9 @@
             "attention_owner": "agent"
           }
         ]
+      },
+      "merge_hold": {
+        "status": "none"
       }
     }
   ],
