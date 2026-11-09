@@ -16,11 +16,8 @@ All notable changes to this skill are documented here.
 
 ### Added
 
-<<<<<<< HEAD
 - `global-working-rules.md` carries an opt-in Delegation profile outside the managed block. The managed block and the downstream defaults stay unchanged. (#2011)
-=======
 - The issue-flow acceptor SOP treats the GitHub review bot as a reference. The coordinator decides `adopt`, `decline` or `outdated` for each bot finding, replies, resolves the thread and records the decision in one plain PR comment. Only adopted findings count in the review loop. (#2007)
->>>>>>> origin/main
 - `repo-harness board closeout` stops a CodeGraph MCP server whose command line names exactly the merged worktree (`serve --mcp --path <worktree>`) and lists its PID in `stopped_codegraph_servers`. Any other process, or a process that stays after the stop, still keeps the worktree with `process_in_use`. (#2029)
 - A Claude seat can take the new `schedule` tool group (`CronCreate`, `CronList`, `CronDelete`). The group is off for every seat by default; Codex and Pi launches ignore it. (#2014)
 - `repo-harness board closeout` also removes finished seat terminals of the merged PR. It lists them with `hc ls --all`, under the same label binding and checkout proofs, and runs `hc rm` only. A retry after a failed `hc rm` now removes the terminal. (#2021)
