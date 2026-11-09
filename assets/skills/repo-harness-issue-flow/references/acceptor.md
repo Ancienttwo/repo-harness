@@ -105,7 +105,7 @@ The decision is one of:
 
 | Decision | Meaning | Effect |
 |---|---|---|
-| `adopt` | The finding is real. | It is a finding of the review loop (§2.2) with its severity. |
+| `adopt` | The finding is real. | It is a finding of the review loop (§2.2) with its severity. A blocking one adopted after the last round goes to the author as a fix round, and a gatekeeper seat reviews the new head before the merge; the earlier `PASS` does not cover it. |
 | `decline` | The finding is wrong, out of scope or not worth a fix. | One-line reason. It is not a finding of the loop. |
 | `outdated` | The finding is on an older head, and the current head no longer contains the code. | No triage again. It is not a finding of the loop. |
 
@@ -121,10 +121,11 @@ the summary. A summary with findings gets one decision per finding.
 The coordinator writes the replies, so each role keeps one GitHub write
 path. The acceptor stays read-only. The reply uses the `review reply`
 shape (`templates.md`): `rejected` for a decline or an outdated finding,
-`fixed <sha>` for an adopted one after its fix round, and for an adopted
-P3 or a rule-4 deferral the reason or the follow-up issue link. A thread
-that the coordinator answers with `rejected`, `deferred` or a P3 reason is
-resolved with its reply. An adopted thread with a fix is resolved when the
+`fixed <sha>` for an adopted one after its fix round, and `deferred
+#<follow-up issue>` for a rule-4 deferral. An adopted P3 gets `fixed <sha>`
+when it is fixed and `deferred #<follow-up issue>` otherwise, each with the
+reason in `Why`. A thread that the coordinator answers with `rejected` or
+`deferred` is resolved with its reply. An adopted thread with a fix is resolved when the
 fix round that addresses it is pushed.
 
 A bot finding that arrives after the merge is triaged once: `decline`, or
