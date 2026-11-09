@@ -6,6 +6,7 @@ All notable changes to this skill are documented here.
 
 ### Added
 
+- A Claude seat can take the new `schedule` tool group (`CronCreate`, `CronList`, `CronDelete`). The group is off for every seat by default; Codex and Pi launches ignore it. (#2014)
 - `repo-harness board closeout` also removes finished seat terminals of the merged PR. It lists them with `hc ls --all`, under the same label binding and checkout proofs, and runs `hc rm` only. A retry after a failed `hc rm` now removes the terminal. (#2021)
 - `repo-harness worktrees path --repository <id> --worktree <id>` prints
   the absolute path of one registered worktree as one JSON line. In the

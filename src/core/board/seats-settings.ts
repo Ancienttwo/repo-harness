@@ -18,7 +18,7 @@ export const SEAT_RUNTIMES = ['claude', 'codex', 'pi'] as const;
 export type SeatRuntime = typeof SEAT_RUNTIMES[number];
 
 /** Tool groups. `read` is always on. */
-export const SEAT_TOOLS = ['read', 'edit', 'shell', 'net', 'tasks', 'mcp', 'gh'] as const;
+export const SEAT_TOOLS = ['read', 'edit', 'shell', 'net', 'tasks', 'schedule', 'mcp', 'gh'] as const;
 export type SeatTool = typeof SEAT_TOOLS[number];
 
 const TOKEN = /^[a-z0-9][a-z0-9.-]{0,63}$/u;

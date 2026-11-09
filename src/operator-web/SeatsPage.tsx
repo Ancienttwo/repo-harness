@@ -220,7 +220,7 @@ function SeatCard({ seat, form, agents, settings, setup, locked, t }: {
           const hostWhy = draft.runtime === 'pi' ? t('seats.tools.why.pi')
             : tool === 'read' ? t('seats.tools.why.read')
               : draft.runtime === 'codex' && tool === 'shell' && on ? t('seats.tools.why.codexShell')
-                : draft.runtime === 'codex' && tool === 'tasks' ? t('seats.tools.why.codexTasks') : null;
+                : draft.runtime === 'codex' && (tool === 'tasks' || tool === 'schedule') ? t('seats.tools.why.codexTasks') : null;
           const why = ruled ? t(tool === 'edit' || tool === 'gh' ? `seats.tools.rule.${tool}` : 'seats.tools.rule.other') : hostWhy;
           // A group that is on has no limit; an off group shows how the host applies the limit.
           const level = levelOf(tool);
