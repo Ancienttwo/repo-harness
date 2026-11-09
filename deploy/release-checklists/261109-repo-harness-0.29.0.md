@@ -1,0 +1,161 @@
+# repo-harness 0.29.0 publication record
+
+## Scope and authority
+
+- Final base: `766e0e32bbcac40e768063ceaf8fbb6ba70cd94b` on `main`, the
+  commit the release PR branches from (issue #2065).
+- Previous release: `v0.28.0`. Range:
+  `v0.28.0..766e0e32bbcac40e768063ceaf8fbb6ba70cd94b` (30 first-parent
+  commits).
+- Release date and record prefix: UTC 2026-11-09, from `date -u`. Update
+  both when publication moves to another date.
+- The core package, console package, skill and template stamps, README and
+  Operator fixture move to 0.29.0. This prep changes no dependency, lockfile
+  or hc pin; no range PR changed them.
+- Owner GO on the plan (J38, recorded on #2000): the release PR starts
+  after #2059 merged and a dispatched daily is green.
+- Publish status: pending. The owner publishes both packages, console
+  first, then core, with `npm publish --auth-type=web` (Q3a–Q3c, #1287).
+
+## Daily evidence
+
+- Daily run https://github.com/Ancienttwo/repo-harness/actions/runs/42577018596
+  at `a99fc44cd` (#2059 merge): success.
+- The base moved one commit after that run: `766e0e32b` (#2055). The
+  release PR's own `Required / CI` covers the delta from `a99fc44cd` to the
+  branch point.
+
+## Cause of the release
+
+The board runs the issue flow: `board dispatch` starts worker seats for
+ready sub-issues, `board review` starts the gatekeeper and Claude reviewer
+seats, and `board closeout` closes seat terminals and removes the merged
+worktree. The owner delegates merge, dispatch and fix-round decisions to
+the life cycle (#2008). The Operator protocol moves to 3. A repository can
+open listed `_ops/` directories to agent edits, and the Bash tripwire
+denies more glob and symlink forms. The release also fixes the daily
+package and ContextScan failures.
+
+Each first-parent range commit was checked with `git show --stat` and its
+CHANGELOG diff. None means the commit added no CHANGELOG entry.
+
+| PR | Commit | Section in 0.29.0 | Change | Original CHANGELOG reference |
+|---|---|---|---|---|
+| #2012 | `04af12afa` | Documentation | Architecture projection refresh | None |
+| #1990 | `cd9a808b3` | Added, Changed, Upgrade, Rollback | `worktrees path`, desktop open controls, protocol 3 | #1968 (Unreleased) |
+| #2017 | `f55f97a8d` | Added, Upgrade | `board dispatch` | #2004 (Unreleased) |
+| #2015 | `1367db55f` | Fixed | Out-of-diff finding in the review body | #2009 (Unreleased) |
+| #2018 | `628be0863` | Changed | Host test queue | #2001 (Unreleased) |
+| #2020 | `6bf01ef3a` | Added | `board closeout` | #2005 (Unreleased) |
+| #2027 | `dccc0bca6` | Fixed | Attention rules see every worker seat kind | #2016 (Unreleased) |
+| #2026 | `13ef1a049` | Added | Closeout removes finished seat terminals | #2021 (Unreleased) |
+| #2028 | `408f09e92` | Fixed | codegraph init with the trusted node | #2023 (Unreleased) |
+| #2019 | `e9d127b33` | Documentation | Architecture projection refresh | None |
+| #2035 | `2f84d6474` | Fixed | R2 ignores `docs/CHANGELOG.md` | #2034 (Unreleased) |
+| #2024 | `3426462db` | Changed | Review seat with `net` publishes its round | #1996 (Unreleased) |
+| #2031 | `09c29c178` | Added, Upgrade, Rollback | `schedule` tool group | #2014 (Unreleased) |
+| #2038 | `944eef21f` | Changed, Upgrade, Rollback | Advisor range allows `edit` | #2032 (Unreleased) |
+| #2030 | `b201e68a3` | Added | Closeout stops the bound CodeGraph MCP server | #2029 (Unreleased) |
+| #2037 | `929f86111` | Added, Upgrade, Rollback | Policy-listed writable `_ops/` directories | None |
+| #2036 | `e5541c58b` | Documentation | Architecture projection refresh | None |
+| #2040 | `d9190d528` | Added, Upgrade | Bash allowance withdrawn; canonical targets only | None |
+| #2022 | `e25fd8bd4` | Added | `board review` starts the gatekeeper seat | #2002 (Unreleased) |
+| #2043 | `0ecdca0b9` | Documentation | Architecture projection refresh | None |
+| #2046 | `f818709f6` | Fixed | Tarball smoke `/healthz` constants | #2033 (Unreleased) |
+| #2044 | `b6807bb9e` | Changed | `board review` starts the Claude reviewer seat | #2025 (Unreleased) |
+| #2048 | `aea34b425` | Fixed, Upgrade | Bash tripwire globs and symlinks | #2041 (Unreleased) |
+| #2042 | `4681bcbdd` | Changed, Upgrade | #2008 delegation rules | #2008 (Unreleased) |
+| #2045 | `566dce155` | Added, Upgrade | Review bot is a reference | #2007 (Unreleased) |
+| #2047 | `57a44e132` | Added | Opt-in Delegation profile | #2011 (Unreleased) |
+| #2054 | `fe9dbdf1b` | Tests | Half-written pid file | #2052 (Unreleased) |
+| #2050 | `831d080f4` | Documentation | Architecture projection refresh | None |
+| #2059 | `a99fc44cd` | Fixed, Upgrade | ContextScan whole words | None |
+| #2055 | `766e0e32b` | Changed, Upgrade | Seat line on seat comments | #2051 (Unreleased) |
+
+The `[Unreleased]` entries move into `[0.29.0]` and are sorted into Added,
+Changed, Fixed and Tests. Two entries change: the #2002 entry drops the
+hand start of the Claude reviewer and `second_reviewer_required`, which
+#2025 replaced, and the #2041 entry names the open gaps in #2060. New
+entries cover #2037/#2040, #2056 and the projection refreshes. Every range
+PR appears in CHANGELOG `[0.29.0]`. The `[0.28.0]` and older sections
+remain byte-identical to the final base.
+
+## Known gap
+
+The Bash tripwire misses a case-variant `_OPS` path on a case-insensitive
+APFS volume, a glob segment that can match `..`, and brace and `~+` forms.
+These gaps existed before 0.29.0; #2048 added no regression. They stay
+open in #2060 and need an owner-approved hook change.
+
+## Publication steps for the owner
+
+1. Pin the prep head. Run `bun run check:release` on the
+   host after clearing `packages/operator-web/dist` and
+   `node_modules/repo-harness-operator-web`. Record the result and require
+   green hosted CI before merge.
+2. Record the merge SHA and check out that exact commit. Pack both packages
+   and record their local tarball values below.
+3. The owner publishes by hand with `npm publish --auth-type=web`. npm runs
+   each package's `prepublishOnly` gate (`check-npm-release.sh --prepublish`
+   with `npm_package_name` set) through the npm lifecycle. Publish
+   `repo-harness-operator-web` first and record its gate result. Then
+   publish `repo-harness`; its gate requires the console version on npm.
+   Record that gate result too.
+4. Read both versions from npm and compare their shasum, integrity and file
+   counts with the local tarballs. Record the results below.
+5. After owner approval, tag the publish candidate and create the GitHub
+   Release from CHANGELOG `[0.29.0]`. Run the post-publish checks below.
+
+## Upgrade steps for users
+
+```bash
+bun add -g repo-harness@0.29.0 --no-cache && repo-harness update --version 0.29.0
+```
+
+Restart the Operator server and reload the page. Update the desktop app
+together with the CLI: `/healthz.protocol` is now 3, and a protocol-2
+desktop app refuses the server. To use `board dispatch`, create the
+`route:<class>` and `touches:credentials` labels in the repository.
+`schedule` and advisor `edit` stay off until you turn them on in the Seats
+page. No config migration runs.
+
+## Acceptance environment
+
+- Subject: `766e0e32b` plus the prep diff. Host Max, Darwin 25.5.0 arm64.
+- Prep head: pending. `bun run check:release` result: pending.
+- `git diff --check` against the final base: pending. Historical CHANGELOG
+  byte comparison from `[0.28.0]` through the end: pending.
+- Test budget on the prep diff: 0 test lines, 1 added product line in
+  `src` and `scripts`, 0 new test files.
+- Hosted CI and merge-commit prepublish gate: pending. No publication or
+  installed upgrade has run.
+
+## Publication
+
+Publish candidate merge SHA: pending.
+
+| Order | Name | Shasum | Integrity | File count |
+|---|---|---|---|---|
+| 1 | `repo-harness-operator-web@0.29.0` | pending | pending | pending |
+| 2 | `repo-harness@0.29.0` | pending | pending | pending |
+
+Record local tarball values and registry readback for each field before
+marking publication complete. Tag and GitHub Release: pending.
+
+## Post-publish checks
+
+- In a disposable HOME and BUN_INSTALL, run `bun x repo-harness@0.29.0
+  install --plugins operator`, start `repo-harness operator serve` and
+  verify that `/healthz` reports 0.29.0, protocol 3, and `GET /` returns
+  200. Result: pending.
+- Run `bash scripts/check-release-published.sh 0.29.0`. Result: pending.
+- On the owner machine, run the upgrade command and record the installed
+  version and the desktop app protocol. Result: pending.
+
+## Rollback
+
+Before publication, close the prep PR or revert its merge. After
+publication, retain the published tag and use a new patch release for a
+correction. A 0.28.0 CLI refuses a stored seats config that lists
+`schedule` or advisor `edit`, and ignores
+`operations.agent_writable_private_dirs`.
