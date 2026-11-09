@@ -2,7 +2,8 @@
  * Mutation guard: the in-process decision handler for `PreToolUse.edit`.
  *
  * It keeps only the path boundaries that block: repository scope, `_ref`,
- * `_ops`, and a parseable target. Target paths come from
+ * `_ops` (except the policy's `operations.agent_writable_private_dirs`), and a
+ * parseable target. Target paths come from
  * `tool_input.file_path`, or from the apply_patch text in
  * `tool_input.command`. The guard checks them in order and stops at the first
  * denial. A denial writes one stderr reason with its fix and one failure
@@ -19,7 +20,13 @@ import {
   isForeignDriveAbsolutePath,
 } from '../../effects/state/collect-state-inputs';
 import { parseStatusZ, splitNul } from '../../effects/review/diff-fingerprint';
-import { capabilityOwnersForPaths, FAILURE_LOG_FILE, type CapabilityPathOwner } from '../../effects/state/resolve-effective-state';
+import {
+  agentWritablePrivateDirs,
+  capabilityOwnersForPaths,
+  FAILURE_LOG_FILE,
+  readWorkflowPolicy,
+  type CapabilityPathOwner,
+} from '../../effects/state/resolve-effective-state';
 import { payloadString, type HookIdentity, type HookPayload } from './hook-input';
 import { protectedRepoDir } from './mutation-protected-dirs';
 import { gitExecFileSync } from '../../effects/git/runner';
@@ -114,6 +121,7 @@ export function runMutationDenial(opts: MutationGuardInput, denial: Denial): Mut
 
 /** `bashRoots` null is the Edit/Write rule: any verified external path passes. */
 function firstDenial(repoRoot: string, paths: readonly string[], bashRoots: readonly string[] | null = null): Denial | null {
+  let writableDirs: WritablePrivateDirs | undefined;
   for (const filePath of paths) {
     // normalizeFilePath leaves an absolute path raw both for a verified external
     // target and for input it could not resolve (e.g. `/repo/src/../_ops/x`);
@@ -140,14 +148,30 @@ function firstDenial(repoRoot: string, paths: readonly string[], bashRoots: read
       };
     }
     if (protectedRepoDir(filePath) === '_ops') {
+      writableDirs ??= readWritablePrivateDirs(repoRoot);
+      if (writableDirs.ok && writableDirs.dirs.some(dir => filePath.startsWith(`${dir}/`))) continue;
       return {
         guard: 'OpsPrivateGuard',
-        reason: `${filePath} is under _ops/, the ignored local private operations state for secrets, real env files, provider state, artifacts, logs, and scratch files.`,
-        fix: 'Commit deploy/ runbooks, release checklists, scripts, submissions, and env examples; do not write _ops/* through agent edits.',
+        reason: `${filePath} is under _ops/, the ignored local private operations state for secrets, real env files, provider state, artifacts, logs, and scratch files.`
+          + (writableDirs.ok ? '' : ` The policy allowlist is not usable: ${writableDirs.error}`),
+        fix: writableDirs.ok
+          ? 'Commit deploy/ runbooks, release checklists, scripts, submissions, and env examples; do not write _ops/* through agent edits.'
+          : 'Correct .operations.agent_writable_private_dirs in .ai/harness/policy.json; until then every _ops/ write stays denied.',
       };
     }
   }
   return null;
+}
+
+type WritablePrivateDirs = { readonly ok: true; readonly dirs: readonly string[] } | { readonly ok: false; readonly error: string };
+
+/** Read only when a target is under _ops/; a policy that does not parse grants nothing. */
+function readWritablePrivateDirs(repoRoot: string): WritablePrivateDirs {
+  try {
+    return { ok: true, dirs: agentWritablePrivateDirs(readWorkflowPolicy(repoRoot)) };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 function deny(repoRoot: string, denial: Denial, runId: string | null): MutationGuardResult {
