@@ -273,7 +273,7 @@ function a9(context: Context): void {
   }
 }
 
-/** A10: an open High pull request needs a Claude review (its writer claim does not prove a Claude runtime) and no Claude reviewer has a row for its head. No merge gate holds it, so the board does. */
+/** A10: an open High pull request whose head does not meet the High acceptance rule has no Claude reviewer row for its head (`claude_review: pending`). No merge gate holds it, so the board does. */
 function a10(context: Context): void {
   for (const pr of openPullRequests(context.board).filter(entry => !entry.is_draft && entry.claude_review === 'pending')) {
     find(context, 'A10', { issues: itemsOf(context.board, pr), pull_requests: [pr.number] },

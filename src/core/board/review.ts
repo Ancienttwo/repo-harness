@@ -26,7 +26,7 @@ export interface ReviewSeatStartV1 {
 
 export type ReviewDecisionV1 =
   | { readonly pr: number; readonly action: 'start'; readonly head_ref: string; readonly head_sha: string; readonly tier: 'medium' | 'high'; readonly seats: readonly ReviewSeatStartV1[];
-      /** The board accepts the head only with a named non-Claude PASS and a Claude verdict, so its gatekeeper must not run Claude. */
+      /** The Claude reviewer seat supplies one of the two High reviews, so the gatekeeper must not run Claude. */
       readonly needs_non_claude_gatekeeper: boolean }
   | { readonly pr: number; readonly action: 'skip'; readonly reason: ReviewSkipReason; readonly detail: string };
 
