@@ -16,7 +16,7 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
-- Board acceptance carries the acceptance rows of the newest reviewed head to a later head that is a merge-only sync of it. A FAIL row on that reviewed head or on the head stops the carry. Git must prove three facts: the reviewed head is an ancestor of the head, the head adds only merge commits outside the base, and both heads have the same PR patch id (`git diff --binary <merge-base> <head> | git patch-id --verbatim`). The board then reports `via: sync` with `carried_from: <reviewed head>`, so a sync after a merge needs CI only. Any other change, a failed git step, a missing object after one fetch, an incomplete file list or a hook path keeps the head unaccepted until its own review. (#2074)
+- Board acceptance carries the acceptance rows of an earlier reviewed head to a later head that is a merge-only sync of it. Git must prove two facts: the reviewed head is an ancestor of the head, and each commit that the head adds outside the reviewed head and the base is the clean automatic merge of a base commit (`git merge-tree --write-tree` of its parents exits 0 with the tree of the merge commit, one merge base). The rows of every proven head count, so a FAIL row on any of them or on the head stops the carry. The board then reports `via: sync` with `carried_from: <reviewed head>`, so a sync after a merge needs CI only. A conflict (even one resolved to the PR side), an edit in a merge, a new commit, a failed git step or fetch, an incomplete file list or a hook path keeps the head unaccepted until its own review. (#2074)
 
 ## [0.29.0] - 2026-11-09
 

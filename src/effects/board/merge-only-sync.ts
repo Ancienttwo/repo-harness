@@ -1,7 +1,7 @@
 import { gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
 
 const SYNC_GIT_TIMEOUT_MS = 30_000;
-const SYNC_DIFF_MAX_BYTES = 256 * 1024 * 1024;
+const SHA = /^[0-9a-f]{40}$/u;
 
 export interface MergeOnlySyncInput {
   readonly repo_root: string;
@@ -11,38 +11,43 @@ export interface MergeOnlySyncInput {
   readonly head_sha: string;
 }
 
-function git(repoRoot: string, args: readonly string[], input?: Buffer) {
-  return gitSpawnSync(args, {
-    cwd: repoRoot, env: withoutRepositorySelectingGitEnv(), input, maxBuffer: SYNC_DIFF_MAX_BYTES, timeout: SYNC_GIT_TIMEOUT_MS, killSignal: 'SIGKILL',
-  });
-}
-
-function ok(repoRoot: string, args: readonly string[], input?: Buffer): Buffer | null {
-  const run = git(repoRoot, args, input);
-  return run.error === undefined && run.status === 0 ? run.stdout : null;
+/** The trimmed stdout of a git call that exited 0; null for any other end. */
+function ok(repoRoot: string, args: readonly string[]): string | null {
+  const run = gitSpawnSync(args, { cwd: repoRoot, env: withoutRepositorySelectingGitEnv(), encoding: 'utf8', timeout: SYNC_GIT_TIMEOUT_MS, killSignal: 'SIGKILL' });
+  return run.error === undefined && run.status === 0 ? run.stdout.trim() : null;
 }
 
 const hasCommit = (repoRoot: string, sha: string): boolean => ok(repoRoot, ['cat-file', '-e', `${sha}^{commit}`]) !== null;
+const isAncestor = (repoRoot: string, ancestor: string, of: string): boolean => ok(repoRoot, ['merge-base', '--is-ancestor', ancestor, of]) !== null;
 
 /**
- * The patch id of the PR diff of one head: `git diff <merge-base> <head> | git patch-id --verbatim`. `--verbatim` keeps whitespace, so a
- * merge that changes a space inside a string or an indentation changes the id; `--stable` would strip it. Null when git cannot compute it.
+ * True when one merge commit is the clean automatic merge of its two parents: one parent is in the base, the parents have one merge
+ * base, and `git merge-tree --write-tree` of the parents exits 0 with the tree of the merge commit. Each byte of the merge result is
+ * then what git computes, so a merge that moves, edits or re-indents a line of the PR is refused. A conflict, even one resolved to the
+ * PR side, gives no proof.
  */
-function prPatchId(repoRoot: string, baseSha: string, head: string): string | null {
-  const bases = ok(repoRoot, ['merge-base', '--all', baseSha, head])?.toString('utf8').trim().split('\n') ?? [];
-  // A criss-cross history has no one PR diff.
-  if (bases.length !== 1 || !/^[0-9a-f]{40}$/u.test(bases[0]!)) return null;
-  // `--binary` puts the content of a binary file in the patch, so a changed blob changes the id.
-  const diff = ok(repoRoot, ['diff', '--binary', '--no-renames', '--no-ext-diff', '--no-textconv', '--no-color', bases[0]!, head]);
-  if (diff === null || diff.length === 0) return null;
-  const id = ok(repoRoot, ['patch-id', '--verbatim'], diff)?.toString('utf8').trim().split(/\s+/u)[0];
-  return id !== undefined && /^[0-9a-f]{40}$/u.test(id) ? id : null;
+function cleanMergeOfBase(repoRoot: string, base: string, line: string): boolean {
+  const [merge, ...parents] = line.split(' ');
+  if (merge === undefined || parents.length !== 2 || ![merge, ...parents].every(sha => SHA.test(sha))) return false;
+  const [left, right] = parents as [string, string];
+  if (!isAncestor(repoRoot, left, base) && !isAncestor(repoRoot, right, base)) return false;
+  if (ok(repoRoot, ['merge-base', '--all', left, right])?.split('\n').length !== 1) return false;
+  const tree = ok(repoRoot, ['merge-tree', '--write-tree', left, right]);
+  return tree !== null && SHA.test(tree) && tree === ok(repoRoot, ['rev-parse', `${merge}^{tree}`]);
+}
+
+/** The head adds, outside the reviewed head and the base, only clean automatic merges of the base, and at least one. */
+function mergeOnlySync(repoRoot: string, base: string, head: string, reviewed: string): boolean {
+  if (!hasCommit(repoRoot, reviewed) || !isAncestor(repoRoot, reviewed, head)) return false;
+  if (ok(repoRoot, ['rev-list', '--no-merges', head, `^${reviewed}`, `^${base}`]) !== '') return false;
+  const merges = ok(repoRoot, ['rev-list', '--merges', '--parents', head, `^${reviewed}`, `^${base}`]);
+  return merges !== null && merges !== '' && merges.split('\n').every(line => cleanMergeOfBase(repoRoot, base, line));
 }
 
 /**
- * The reviewed heads of which git proves the head a merge-only sync (#2074): the reviewed head is an ancestor of the head, every commit
- * that the head adds outside the base is a merge commit, and the PR patch ids of both heads are equal. Any git failure, a missing object
- * after one fetch, or a criss-cross merge base leaves a reviewed head out: the head then needs its own review.
+ * The reviewed heads of which git proves the head a merge-only sync (#2074): the reviewed head is an ancestor of the head, and every
+ * commit that the head adds outside the reviewed head and the base is a clean automatic merge of the base (`cleanMergeOfBase`). Any git
+ * failure, a failed fetch or an object still missing after it leaves a reviewed head out: the head then needs its own review.
  */
 export function provenMergeOnlySyncs(input: MergeOnlySyncInput, reviewed: readonly string[]): readonly string[] {
   const { repo_root: root, base_sha: base, head_sha: head } = input;
@@ -52,10 +57,5 @@ export function provenMergeOnlySyncs(input: MergeOnlySyncInput, reviewed: readon
     const fetched = ok(root, ['fetch', '--no-tags', '--quiet', '--refmap=', '--no-write-fetch-head', 'origin', `refs/pull/${input.pr}/head`, `refs/heads/${input.base_ref}`]);
     if (fetched === null || ![base, head].every(sha => hasCommit(root, sha))) return [];
   }
-  const headId = prPatchId(root, base, head);
-  if (headId === null) return [];
-  return reviewed.filter(sha => hasCommit(root, sha)
-    && ok(root, ['merge-base', '--is-ancestor', sha, head]) !== null
-    && ok(root, ['rev-list', '--no-merges', head, `^${sha}`, `^${base}`])?.length === 0
-    && prPatchId(root, base, sha) === headId);
+  return reviewed.filter(sha => mergeOnlySync(root, base, head, sha));
 }

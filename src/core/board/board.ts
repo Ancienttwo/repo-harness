@@ -323,25 +323,18 @@ function requiredCheck(read: BoardPullRequestReadV1): BoardRequiredCheckV1 {
 const OWNER_APPROVED_CAPABILITY = 'capability.runtime-harness.hook-adapters';
 
 /**
- * The earlier reviewed head whose acceptance rows could carry to the head of an open pull request (#2074): the subject of the newest
- * record row that names another head than the current one. Only the newest reviewed head can carry, so a FAIL on a later sync head is
- * never skipped for an older PASS. None when that subject or the head has a FAIL row, the file list is incomplete, the path owners are
- * unknown, or a changed path is a hook path or ambiguous.
- * Only git can prove a carry (`provenMergeOnlySyncs`); the board then applies the same rules to these rows as to rows of the head.
+ * The earlier reviewed heads that could carry their acceptance rows to the head of an open pull request (#2074): every other subject
+ * with a record row, PASS or FAIL. Git proves which of them the head is a merge-only sync of (`provenMergeOnlySyncs`); the rows of all
+ * proven heads then count as rows of the head, so a FAIL on any of them, earlier or later than a PASS, stops the carry. None when a row
+ * fails the head, the file list is incomplete, the path owners are unknown, or a changed path is a hook path or ambiguous.
  */
 export function syncCarryCandidates(read: BoardPullRequestReadV1, owners: BoardPathOwnersV1): readonly string[] {
   if (read.state !== 'open' || read.files === null || owners.status !== 'observed') return [];
   const files = new Set(read.files);
   if (owners.owners.some(owner => files.has(owner.path) && (owner.status === 'ambiguous' || (owner.status === 'owned' && owner.capability === OWNER_APPROVED_CAPABILITY)))) return [];
-  const records = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER)
-    .map(record => ({ created_at: record.created_at, rows: parseAcceptanceRecord(record) ?? [] }));
-  const rows = records.flatMap(record => record.rows);
+  const rows = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER).flatMap(record => parseAcceptanceRecord(record) ?? []);
   if (rows.some(row => row.verdict === 'FAIL' && row.subject_sha === read.head_sha)) return [];
-  const earlier = records.filter(record => record.rows.some(row => row.subject_sha !== read.head_sha));
-  if (earlier.length === 0) return [];
-  const newest = earlier.reduce((latest, record) => (record.created_at >= latest.created_at ? record : latest));
-  const subject = newest.rows.filter(row => row.subject_sha !== read.head_sha).at(-1)!.subject_sha;
-  return rows.some(row => row.subject_sha === subject && row.verdict === 'FAIL') ? [] : [subject];
+  return [...new Set(rows.filter(row => row.subject_sha !== read.head_sha).map(row => row.subject_sha))];
 }
 
 /** The head and each candidate that git proved a merge-only sync of it: their rows count as rows of the head. */

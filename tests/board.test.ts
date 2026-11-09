@@ -1449,8 +1449,8 @@ describe('merge-only sync carry (#2074)', () => {
   });
 
   test('the rows of a reviewed head accept a later High head only when git proves a merge-only sync and no hook path changes', () => {
-    const calls: string[] = [];
-    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly laterFail?: boolean; readonly hookFile?: boolean } = {}) => replay({
+    const calls: (readonly string[])[] = [];
+    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly syncFailAt?: string; readonly hookFile?: boolean } = {}) => replay({
       parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
       pulls: (data) => {
         const { pr1499 } = data.repository;
@@ -1459,31 +1459,32 @@ describe('merge-only sync carry (#2074)', () => {
           const claim = comment(renderAcceptanceClaim(receipt(harness, reviewed, relation)), `2026-11-03T${at}:00Z`);
           pr1499.comments.nodes.push(claim, comment(renderAcceptanceRecord(receipt(harness, reviewed, relation), claim.url), `2026-11-03T${at}:30Z`));
         }
-        // A later sync head B of the same patch failed its sync check: the older PASS of the reviewed head must not skip it.
-        if (options.laterFail) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', 'b'.repeat(40), 'different-family', 'FAIL'), ''), '2026-11-03T00:20:00Z'));
+        // Another proven sync head B of the same patch failed its sync check, after both PASS rows or between them: no PASS skips it.
+        if (options.syncFailAt !== undefined) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', 'b'.repeat(40), 'different-family', 'FAIL'), ''), `2026-11-03T${options.syncFailAt}Z`));
         if (options.headFail) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', pr1499.headRefOid, 'different-family', 'FAIL'), ''), '2026-11-03T00:30:00Z'));
         if (options.hookFile) pr1499.files.nodes.push({ path: hook });
       },
       owners: (results) => {
         if (options.hookFile) results.push({ path: hook, matched: true, ambiguous: false, owningCapabilityId: 'capability.runtime-harness.hook-adapters' });
       },
+      // Git proves the reviewed head and B; the older subjects of the recorded comments are not syncs of the head.
       mergeOnlySyncs: (input, candidates) => {
-        if (input.pr === 1499) calls.push(`${input.base_ref} ${input.head_sha} ${candidates.join(',')}`);
-        return options.proven === false ? [] : candidates;
+        if (input.pr === 1499) calls.push(candidates);
+        return options.proven === false ? [] : candidates.filter(sha => sha === reviewed || sha === 'b'.repeat(40));
       },
     }).pull_requests.find(pr => pr.number === 1499)!;
     expect(carry()).toMatchObject({ tier: 'high', claude_review: 'recorded', acceptance: { status: 'accepted', via: 'sync', carried_from: reviewed, accepted_at: '2026-11-03T00:11:30Z', evidence_url: comment('', '2026-11-03T00:11:30Z').url } });
-    expect(calls).toEqual([`feat/1475-hc-transport 23627c4f5a717f0434df1468dc72a5042678a95d ${reviewed}`]);
+    expect(calls[0]).toContain(reviewed);
     expect(carry({ proven: false }).acceptance).toEqual({ status: 'not_accepted' });
+    for (const at of ['00:20:00', '00:10:45']) expect(carry({ syncFailAt: at }).acceptance).toEqual({ status: 'not_accepted' });
     calls.length = 0;
     expect(carry({ headFail: true }).acceptance).toEqual({ status: 'not_accepted' });
-    expect(carry({ laterFail: true }).acceptance).toEqual({ status: 'not_accepted' });
     expect(carry({ hookFile: true }).acceptance).toEqual({ status: 'not_accepted' });
-    // A FAIL on the head, a FAIL on the newest reviewed head and an owner-approved hook diff leave git no candidate.
-    expect(calls).toEqual(Array(3).fill('feat/1475-hc-transport 23627c4f5a717f0434df1468dc72a5042678a95d '));
+    // A FAIL on the head and an owner-approved hook diff leave git no candidate.
+    expect(calls).toEqual([[], []]);
   });
 
-  test('git proves a merge of the base and refuses an extra commit, a merge that changes the PR patch or only its whitespace, a missing object and a failed fetch', () => {
+  test('git proves clean merges of the base; an extra commit, a conflict, a moved edit, a whitespace change, a missing object and a failed fetch give no proof', () => {
     const root = tmpWorkspace('merge-only-sync'); roots.push(root);
     const clone = join(root, '.clone');
     const git = (...args: string[]) => {
@@ -1491,22 +1492,26 @@ describe('merge-only sync carry (#2074)', () => {
       expect(result.status).toBe(0);
       return result.stdout.trim();
     };
+    const write = (files: Readonly<Record<string, string | undefined>>) => { for (const [path, text] of Object.entries(files)) if (text !== undefined) writeFileSync(join(root, path), text); };
+    // run.sh has two blocks with the same context; the PR edits the first.
+    const block = (name: string, verdict: string) => `# ${name}\ncheck() {\n  printf ${verdict}\n}\n`;
     initGitRepo(root);
-    writeFileSync(join(root, 'f.txt'), '1\n2\n3\n4\n5\n'); writeFileSync(join(root, 'b.txt'), 'b\n');
+    write({ 'f.txt': '1\n2\n3\n4\n5\n', 'b.txt': 'b\n', 'run.sh': block('alice', 'deny') + 'x\ny\nz\n' + block('bob', 'deny'), 'ci.yml': 'jobs:\n  test:\n    runs-on: x\n' });
     git('add', '.'); git('commit', '-m', 'base');
     git('checkout', '-b', 'feature');
-    writeFileSync(join(root, 'f.txt'), '1\ntwo words\n3\n4\n5\n'); git('commit', '-am', 'feature');
+    const reviewed = { 'f.txt': '1\nsay "two words"\n3\n4\n5\n', 'run.sh': block('alice', 'allow') + 'rm -rf ./build\ny\nz\n' + block('bob', 'deny'), 'ci.yml': 'jobs:\n  test:\n    runs-on: x\n    needs: ci\n' };
+    write(reviewed); git('commit', '-am', 'feature');
     const subject = git('rev-parse', 'HEAD');
     // The clone has the reviewed head but not the sync head or the new base, so its proof needs the fetch.
     git('clone', '--quiet', root, clone);
     const stale = git('-C', clone, 'rev-parse', 'refs/remotes/origin/main');
     git('checkout', 'main');
-    writeFileSync(join(root, 'b.txt'), 'b2\n'); git('commit', '-am', 'main moves');
+    write({ 'b.txt': 'b2\n' }); git('commit', '-am', 'main moves');
     const base = git('rev-parse', 'HEAD');
     git('checkout', 'feature');
     git('merge', '--no-edit', 'main');
     const sync = git('rev-parse', 'HEAD');
-    const proven = (head: string, sha = subject) => provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: base, head_sha: head }, [sha]).length === 1;
+    const proven = (head: string, sha = subject, baseSha = base) => provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: baseSha, head_sha: head }, [sha]).length === 1;
     expect(proven(sync)).toBe(true);
     git('update-ref', 'refs/pull/1/head', sync);
     const fromClone = () => provenMergeOnlySyncs({ repo_root: clone, pr: 1, base_ref: 'main', base_sha: base, head_sha: sync }, [subject]);
@@ -1517,16 +1522,30 @@ describe('merge-only sync carry (#2074)', () => {
     // The fetch writes objects only: no remote-tracking ref moves and no FETCH_HEAD appears.
     expect(git('-C', clone, 'rev-parse', 'refs/remotes/origin/main')).toBe(stale);
     expect(existsSync(join(clone, '.git/FETCH_HEAD'))).toBe(false);
-    writeFileSync(join(root, 'f.txt'), '1\ntwo words\n3\n4\nfive\n'); git('commit', '-am', 'new work');
+    write({ 'f.txt': '1\nsay "two words"\n3\n4\nfive\n' }); git('commit', '-am', 'new work');
     expect(proven(git('rev-parse', 'HEAD'))).toBe(false);
-    git('reset', '--hard', subject);
-    git('merge', '--no-commit', 'main');
-    writeFileSync(join(root, 'f.txt'), '1\ntwo words\nthree\n4\n5\n'); git('commit', '-am', 'merge that changes the patch');
-    expect(proven(git('rev-parse', 'HEAD'))).toBe(false);
-    git('reset', '--hard', subject);
-    git('merge', '--no-commit', 'main');
-    writeFileSync(join(root, 'f.txt'), '1\ntwowords\n3\n4\n5\n'); git('commit', '-am', 'merge that changes only whitespace');
-    expect(proven(git('rev-parse', 'HEAD'))).toBe(false);
+    // Each merge of main that changes one byte of the clean merge result gives no proof.
+    const evilMerge = (files: Readonly<Record<string, string | undefined>>): boolean => {
+      git('reset', '--hard', subject);
+      git('merge', '--no-commit', 'main');
+      write(files); git('commit', '-am', 'merge with an edit');
+      return proven(git('rev-parse', 'HEAD'));
+    };
+    expect([
+      // The edit moves to the block with the same context.
+      { 'run.sh': block('alice', 'deny') + 'rm -rf ./build\ny\nz\n' + block('bob', 'allow') },
+      { 'f.txt': '1\nsay "twowords"\n3\n4\n5\n' },
+      { 'run.sh': reviewed['run.sh'].replace('rm -rf ./build', 'rm -rf . /build') },
+      { 'ci.yml': 'jobs:\n  test:\n    runs-on: x\nneeds: ci\n' },
+    ].map(evilMerge)).toEqual([false, false, false, false]);
+    // main changes the PR line too: the merge conflicts, and a resolution to the exact PR side still gives no proof.
+    git('checkout', 'main');
+    write({ 'f.txt': '1\nsay "other"\n3\n4\n5\n' }); git('commit', '-am', 'main edits the PR line');
+    const conflicting = git('rev-parse', 'HEAD');
+    git('checkout', 'feature'); git('reset', '--hard', subject);
+    expect(run('git', ['merge', 'main'], root).status).not.toBe(0);
+    write(reviewed); git('commit', '-am', 'resolve to the PR side');
+    expect(proven(git('rev-parse', 'HEAD'), subject, conflicting)).toBe(false);
     expect(proven(sync, 'd'.repeat(40))).toBe(false);
   });
 });

@@ -67,17 +67,21 @@ The table rules govern how the row combines with the review.
    and no `FAIL` row. A Medium head needs one `PASS` row and no `FAIL`
    row.
 
-   **Sync head.** A sync with main makes a new head. When git proves the
-   new head a merge-only sync of the newest reviewed head, and no row of
-   either head is a FAIL, the board counts the rows of the reviewed head
-   as rows of the new head and shows `via: sync`
-   with `carried_from` (#2074). A merge-only sync has the reviewed head as
-   an ancestor, adds only merge commits outside main, and keeps the PR
-   patch id (`git diff --binary <merge-base> <head> | git patch-id --verbatim`). It
-   needs CI only. Any other sync head (a conflict resolution that changes
-   the PR patch, a new commit, a failed git step) needs a sync check: a
-   review of the sync delta that writes one record row for the new head.
-   A Medium sync head needs one sync check row. A High sync head needs the
+   **Sync head.** A sync with main makes a new head. The board counts
+   the rows of an earlier reviewed head as rows of the new head when git
+   proves the new head a merge-only sync of it: the reviewed head is an
+   ancestor of the new head, `git rev-list --no-merges <reviewed>..<head>
+   ^origin/main` prints nothing, and each merge commit in that range is
+   the clean automatic merge of a main commit:
+   `git merge-tree --write-tree <parent1> <parent2>` exits 0 with the
+   tree of the merge commit, and the parents have one merge base. The
+   rows of every proven head count, so a FAIL row on any of them, or on
+   the new head, stops the carry. The board then shows `via: sync` with
+   `carried_from` (#2074), and the new head needs CI only. Any other sync
+   head (a conflict, even one resolved to the PR side; an edit in the
+   merge; a new commit; a failed git step) needs a sync check: a review
+   of the sync delta that writes one record row for the new head. A
+   Medium sync head needs one sync check row. A High sync head needs the
    round-1 rule: two sync check rows from distinct claims, at least one
    different-family. A PR that changes a hook path never carries: the
    owner approves each head of a hook diff again.
