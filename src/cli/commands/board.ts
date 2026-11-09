@@ -68,12 +68,12 @@ function dispatchText(plan: DispatchPlanV1, started: readonly number[]): string 
 }
 
 function reviewText(result: ReviewResultV1): string {
-  const started = new Set(result.started.map(entry => entry.pr));
+  const started = new Set(result.started.map(entry => `${entry.pr}:${entry.seat}`));
   const refused = new Map(result.refused.map(entry => [entry.pr, entry.reason]));
   const lines = result.decisions.map(decision => decision.action === 'skip'
     ? `PR #${decision.pr} skipped (${decision.reason}): ${decision.detail}`
     : refused.has(decision.pr) ? `PR #${decision.pr} refused: ${refused.get(decision.pr)}`
-      : `PR #${decision.pr} ${started.has(decision.pr) ? 'started' : 'ready'} on gatekeeper: ${decision.reason}${decision.second_reviewer_required ? '; second_reviewer_required: start the Claude reviewer by hand' : ''}`);
+      : `PR #${decision.pr} ${decision.seats.map(({ seat, delta_from }) => `${started.has(`${decision.pr}:${seat}`) ? 'started' : 'ready'} on ${seat} (${delta_from === null ? 'full review' : `delta review since ${delta_from}`})`).join('; ')}`);
   return `${lines.join('\n')}\n`;
 }
 

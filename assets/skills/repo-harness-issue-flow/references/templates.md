@@ -376,8 +376,6 @@ Findings:
 
 - <severity> <id> at <path>:<line>: <evidence> -> <fix>
 - <none when the round has no finding>
-- bot <thread or comment URL>: adopt <severity> | decline: <reason> | outdated
-- bot review: no findings at <sha>   (only for a no-findings bot summary)
 ```
 
 Every review writes this record, one row per review. The fields are `Round`,
@@ -404,6 +402,16 @@ A comment from a reviewer without a claim role, such as an
 outside contributor, is optional input: the head owner or the coordinator
 decides whether to adopt it, and answers with the same reply. A review bot
 comment follows `acceptor.md` §2.3: the coordinator answers every one.
+
+### review-bot reference (plain PR comment, written by the coordinator)
+
+```text
+Review-bot reference: <comment id or thread> adopt|decline|outdated: <reason>
+Review-bot reference: no findings at <sha>: no action
+```
+
+`acceptor.md` §2.3 defines the decisions. It is not part of the
+`acceptance record`.
 
 ### unblocked
 

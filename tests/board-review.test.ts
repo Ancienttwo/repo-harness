@@ -18,7 +18,7 @@ const pr = (number: number, extra: Partial<BoardPullRequestV1> = {}): BoardPullR
 });
 const board = (prs: BoardPullRequestV1[]): BoardV1 => ({ pull_requests: prs }) as unknown as BoardV1;
 const comment = (body: string, url = 'https://example.test/c'): BoardCommentV1 => ({ url, created_at: '2026-11-09T10:00:00Z', author_association: 'OWNER', body });
-const marker = (head: string, url = 'https://example.test/m1') => comment(`repo-harness review start\nSubject: ${head}`, url);
+const marker = (head: string, url = 'https://example.test/m1', seat = 'gatekeeper') => comment(`repo-harness review start\nSubject: ${head}\nSeat: ${seat}`, url);
 const record = (head: string, role = 'pi') => comment(`repo-harness acceptance record\n\n| Round | Role | Subject | Verdict |\n|---|---|---|---|\n| 1 | ${role} | \`${head}\` | FAIL: 1 P1 |`);
 const page = (...comments: BoardCommentV1[]): BoardCommentPageV1 => ({ truncated: false, comments });
 
@@ -35,10 +35,20 @@ test('a ready, green pull request starts; every other state is skipped with its 
   ]))).toEqual(['1:start', '2:draft', '3:ci_not_green', '4:accepted', '5:accepted', '6:not_open', '7:acceptance_unknown']);
 });
 
-test('an unknown tier is reviewed as High and carries the second-review flag from the board', () => {
+const seatsOf = (decision: ReviewDecisionV1 | undefined) => decision?.action === 'start' ? decision.seats.map(entry => entry.seat) : [];
+
+test('an unknown tier is reviewed as High; a pending Claude review adds the reviewer seat', () => {
   const [start] = plan([pr(1, { tier: null, claude_review: 'pending' })]);
-  expect(start).toMatchObject({ action: 'start', tier: 'high', second_reviewer_required: true });
-  expect(plan([pr(1, { tier: 'high', claude_review: 'recorded' })])[0]).toMatchObject({ second_reviewer_required: false });
+  expect(start).toMatchObject({ action: 'start', tier: 'high' });
+  expect(seatsOf(start)).toEqual(['gatekeeper', 'reviewer']);
+  expect(seatsOf(plan([pr(1, { tier: 'high', claude_review: 'recorded' })])[0])).toEqual(['gatekeeper']);
+});
+
+test('a marker covers one seat: a started gatekeeper leaves the reviewer to start, and a marker without a seat covers none', () => {
+  const pending = pr(1, { claude_review: 'pending' });
+  expect(seatsOf(plan([pending], page(marker(SHA)))[0])).toEqual(['reviewer']);
+  expect(label(plan([pending], page(marker(SHA), marker(SHA, 'https://example.test/m2', 'reviewer'))))).toEqual(['1:started']);
+  expect(seatsOf(plan([pr(1)], page(comment(`repo-harness review start\nSubject: ${SHA}`)))[0])).toEqual(['gatekeeper']);
 });
 
 test('a start marker covers its head; a truncated or missing comment page starts nothing', () => {
@@ -52,14 +62,14 @@ test('a released marker frees its head', () => {
   expect(label(plan([pr(1)], page(marker(SHA), released)))).toEqual(['1:start']);
 });
 
-test('the delta base is an earlier head that has an acceptance record; otherwise the review is full', () => {
-  const base = (comments: BoardCommentPageV1) => (plan([pr(1)], comments)[0] as Extract<ReviewDecisionV1, { action: 'start' }>).delta_from;
-  expect(base(page(marker(OLD)))).toBeNull();
-  expect(base(page(marker(OLD), record(OLD)))).toBe(OLD);
-  // A Claude reviewer's row does not show that the gatekeeper finished.
-  expect(base(page(marker(OLD), record(OLD, 'claude (opus)')))).toBeNull();
-  // A row whose reviewer is not named gives no base either.
-  expect(base(page(marker(OLD), record(OLD, 'acceptor')))).toBeNull();
+test('the delta base of a seat is an earlier head that its own family reviewed; otherwise the seat reviews the whole diff', () => {
+  const bases = (comments: BoardCommentPageV1) => (plan([pr(1, { claude_review: 'pending' })], comments)[0] as Extract<ReviewDecisionV1, { action: 'start' }>).seats.map(entry => entry.delta_from);
+  const reviewerMarker = marker(OLD, 'https://example.test/m2', 'reviewer');
+  expect(bases(page(marker(OLD)))).toEqual([null, null]);
+  expect(bases(page(marker(OLD), record(OLD)))).toEqual([OLD, null]);
+  // A gatekeeper row alone gives the reviewer no base, and a Claude row alone gives the gatekeeper none.
+  expect(bases(page(marker(OLD), reviewerMarker, record(OLD, 'claude (opus)')))).toEqual([null, OLD]);
+  expect(bases(page(marker(OLD), record(OLD, 'acceptor')))).toEqual([null, null]);
 });
 
 function ports(overrides: Partial<ReviewPorts> = {}): ReviewPorts & { comments: string[]; tabs: Record<string, unknown>[] } {
@@ -70,19 +80,22 @@ function ports(overrides: Partial<ReviewPorts> = {}): ReviewPorts & { comments: 
     worktree: () => ({ path: '/tmp/w' }),
     comment: (_pr, body) => { comments.push(body); return `https://example.test/c${comments.length}`; },
     openTab: args => { tabs.push(args); },
-    launch: async () => ({ argv: ['agent'], tab: 'review', runtime: 'claude' }),
+    launch: async seat => ({ argv: ['agent'], tab: 'review', runtime: seat === 'reviewer' ? 'claude' : 'codex' }),
     ...overrides,
   };
 }
 const high = plan([pr(1)]);
 const context = { repositoryId: '1', parent: 100, space: 's', dry_run: false };
 
-test('the gatekeeper opens its tab with the launch argv in the writer worktree, after the head marker', async () => {
-  const p = ports();
-  const result = await executeReview(high, context, p);
-  expect(result.started).toMatchObject([{ pr: 1 }]);
-  expect(p.comments[0]).toContain(`Subject: ${SHA}`);
-  expect(p.tabs[0]).toMatchObject({ argv: ['agent'], folder: '/tmp/w', name: 'review', space: 's' });
+test('each required seat opens its tab with its launch argv in the writer worktree, after its own marker', async () => {
+  const seats: string[] = [];
+  const p = ports({ launch: async seat => { seats.push(seat); return { argv: [seat], tab: seat, runtime: seat === 'reviewer' ? 'claude' : 'codex' }; } });
+  const result = await executeReview(plan([pr(1, { claude_review: 'pending' })]), context, p);
+  expect(result.started).toMatchObject([{ pr: 1, seat: 'gatekeeper' }, { pr: 1, seat: 'reviewer' }]);
+  expect(seats).toEqual(['gatekeeper', 'reviewer']);
+  expect(p.comments[0]).toContain(`Subject: ${SHA}\nSeat: gatekeeper`);
+  expect(p.comments[1]).toContain('Seat: reviewer');
+  expect(p.tabs[1]).toMatchObject({ argv: ['reviewer'], folder: '/tmp/w', name: 'reviewer', space: 's' });
 });
 
 test('a dry run, and a worktree off the head, write no marker and open no seat', async () => {
@@ -101,6 +114,33 @@ test('a launch that sent nothing releases the marker; an ambiguous one keeps it'
   const unknown = failing('timeout');
   await expect(executeReview(high, context, unknown)).rejects.toThrow('launch_unknown');
   expect(unknown.comments).toHaveLength(1);
+});
+
+test('a reviewer seat that does not launch Claude posts no marker and opens no tab', async () => {
+  const p = ports({ launch: async seat => ({ argv: [seat], tab: seat, runtime: 'codex' }) });
+  const result = await executeReview(plan([pr(1, { claude_review: 'pending' })]), context, p);
+  expect(result.started).toMatchObject([{ seat: 'gatekeeper' }]);
+  expect(result.refused).toMatchObject([{ pr: 1, reason: expect.stringContaining('reviewer_not_claude') }]);
+  expect([p.comments.length, p.tabs.length]).toEqual([1, 1]);
+});
+
+test('a Claude gatekeeper for a head that needs both reviews posts no marker and starts no seat', async () => {
+  const p = ports({ launch: async seat => ({ argv: [seat], tab: seat, runtime: 'claude' }) });
+  const result = await executeReview(plan([pr(1, { claude_review: 'pending' })]), context, p);
+  expect(result).toMatchObject({ started: [], refused: [{ pr: 1, reason: expect.stringContaining('gatekeeper_is_claude') }] });
+  expect([p.comments.length, p.tabs.length]).toEqual([0, 0]);
+  // A Medium head, and a High head from a Claude writer, need no second review, so a Claude gatekeeper stays allowed.
+  const allowed = ports({ launch: async seat => ({ argv: [seat], tab: seat, runtime: 'claude' }) });
+  const ok = await executeReview(plan([pr(1), pr(2, { tier: 'high', claude_review: 'not_required' })]), context, allowed);
+  expect(ok).toMatchObject({ started: [{ pr: 1, seat: 'gatekeeper' }, { pr: 2, seat: 'gatekeeper' }], refused: [] });
+});
+
+test('a reviewer that sent nothing releases its own marker and leaves the started gatekeeper alone', async () => {
+  let tabs = 0;
+  const p = ports({ openTab: () => { tabs += 1; if (tabs === 2) throw new HerdrCoreError('herdr-app', 'missing'); } });
+  await expect(executeReview(plan([pr(1, { claude_review: 'pending' })]), context, p)).rejects.toThrow();
+  expect(p.comments).toHaveLength(3);
+  expect(p.comments[2]).toContain('Claim: https://example.test/c2\nStatus: released');
 });
 
 test('a second run under the held repository lock starts nothing', async () => {

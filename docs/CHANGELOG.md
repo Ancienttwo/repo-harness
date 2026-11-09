@@ -3,16 +3,21 @@
 All notable changes to this skill are documented here.
 
 ## [Unreleased]
+- `repo-harness board review` also starts the Claude `reviewer` seat when a pull request shows `claude_review: pending`. A start marker now carries `Seat: gatekeeper|reviewer` (a marker without `Seat` covers no seat), so a seat that was not sent retries without restarting the other. The delta base of each seat comes from an acceptance row of that seat's own family (Claude for the reviewer, another harness for the gatekeeper); otherwise the seat reviews the whole diff. Board acceptance via a record no longer accepts a head while `claude_review` is `pending`. The `second_reviewer_required` output is gone. (#2025)
 
 ### Changed
 
 - The root `CLAUDE.md` and `AGENTS.md`, the issue-flow skill and the Herdr Dispatch guide state the owner decisions of #2008. Merge by rule at every tier, fix rounds up to round 5 while findings shrink, ordered dispatch of an approved batch plan, and joint orchestrator + advisor decisions replace the four hard boundaries. The owner keeps credentials, permissions, the safety net, deletion that git cannot restore, `npm publish`, the tag, the GitHub Release and production deployments. (#2008)
 - The seats range lets the advisor seat take the `edit` tool group, as the owner approved. The orchestrator range still refuses `edit`. (#2032)
 
+### Fixed
+
+- The tarball install smoke compares `/healthz` with the installed package's `OPERATOR_SERVER_PROTOCOL` and `OPERATOR_SERVICE_NAME`. It expected protocol 2 after #1990 raised the protocol to 3, so the daily package job failed. (#2033)
+
 ### Added
 
 - `repo-harness board merge --parent <n> [--pr <p>] [--dry-run]` merges one eligible PR of a batch through `publication merge`. It requires a PASS acceptance record for the head at every tier, the Claude review row for High, `Required / CI`, a ready readiness verdict, plan merge order and no hold. `repo-harness merge hold` and `merge hold released` records on the parent, an issue or a PR narrow it. Board rule A11 wakes the orchestrator when a PR is eligible; the watcher never merges. The board document is protocol 4; a protocol-3 board fails decode. (#2003)
-- The issue-flow acceptor SOP treats the GitHub review bot as a reference. The acceptor records `adopt`, `decline` or `outdated` for each bot finding. The coordinator replies and resolves the thread. Only adopted findings count in the review loop limit. A bot summary with no findings goes into the acceptance record. (#2007)
+- The issue-flow acceptor SOP treats the GitHub review bot as a reference. The coordinator decides `adopt`, `decline` or `outdated` for each bot finding, replies, resolves the thread and records the decision in one plain PR comment. Only adopted findings count in the review loop. (#2007)
 - `repo-harness board closeout` stops a CodeGraph MCP server whose command line names exactly the merged worktree (`serve --mcp --path <worktree>`) and lists its PID in `stopped_codegraph_servers`. Any other process, or a process that stays after the stop, still keeps the worktree with `process_in_use`. (#2029)
 - A Claude seat can take the new `schedule` tool group (`CronCreate`, `CronList`, `CronDelete`). The group is off for every seat by default; Codex and Pi launches ignore it. (#2014)
 - `repo-harness board closeout` also removes finished seat terminals of the merged PR. It lists them with `hc ls --all`, under the same label binding and checkout proofs, and runs `hc rm` only. A retry after a failed `hc rm` now removes the terminal. (#2021)
@@ -45,6 +50,7 @@ All notable changes to this skill are documented here.
 
 ### Fixed
 
+- The Bash write tripwire denies more forms that can write under `_ops/` or `_ref/`: a glob whose segment at the repository root can match a protected directory (`_op*/env/x`, `./_op[s]/x`, `rm -rf *`), an unquoted glob destination (`echo x > _ops/env/*`, `rm *` in `_ops/env`), a symlink below `_ops/` that leads outside the repository, and a symlink, dangling or not, that leads into `_ops/` or `_ref/`. (#2041)
 - Board attention rules A3 and A4 and the delivery window recognize every configured worker seat kind. (#2016)
 - Board rule R2 no longer counts `docs/CHANGELOG.md` as a shared file of two open PRs. A pair that shares other files still gets the finding, and the message names only those files. (#2034)
 - `review publish` puts a finding on a line outside the PR diff into the review body, so GitHub no longer rejects the review with HTTP 422. A retry reuses the acceptance claim already on the PR instead of posting a second one (#2009).
