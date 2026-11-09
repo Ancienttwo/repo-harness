@@ -214,7 +214,7 @@ describe("Bootstrap Script Contracts", () => {
       mkdirSync(join(dir, "bin"));
       const bun = Bun.which("bun")!;
       writeFileSync(join(dir, "bin/bun"), `#!/bin/bash\nif [[ "\${1:-}" == run && "\${2:-}" == check:helpers ]] || [[ "\${1:-}" == scripts/runtime-evidence-receipt.ts || "\${1:-}" == scripts/check-skill-version.ts ]]; then exit 0; fi\nexec "${bun}" "$@"\n`, { mode: 0o755 });
-      writeFileSync(join(dir, "bin/npm"), `#!/bin/bash\necho "$*" >> "$CALLS"\nif [[ "$1" == view && "$2" == *@* ]]; then\n  if [[ "$PUBLISHED" == "$2" || "$PUBLISHED" == both ]]; then echo '{"version":"${version}","dist.integrity":"sha512-x","dist.shasum":"abc","dist.tarball":"url"}'; exit 0; fi\n  echo 'E404 not in this registry' >&2; exit 1\nfi\nif [[ "$1" == view ]]; then echo '{"latest":"${version}"}'; exit 0; fi\nif [[ "$1" == pack ]]; then name="\${2%@*}"; echo "[{\\\"filename\\\":\\\"$name-${version}.tgz\\\",\\\"integrity\\\":\\\"\${INTEGRITY:-sha512-x}\\\",\\\"shasum\\\":\\\"abc\\\"}]"; exit 0; fi\nexit 0\n`, { mode: 0o755 });
+      writeFileSync(join(dir, "bin/npm"), `#!/bin/bash\necho "$*" >> "$CALLS"\nif [[ "$1" == view && "$2" == *@* ]]; then\n  if [[ "$PUBLISHED" == "$2" || "$PUBLISHED" == both ]]; then printf '{"version":"%s","dist.integrity":"sha512-x","dist.shasum":"abc","dist.tarball":"url"}\\n' "\${VIEW_VERSION:-${version}}"; exit 0; fi\n  echo 'E404 not in this registry' >&2; exit 1\nfi\nif [[ "$1" == view ]]; then printf '{"latest":"%s"}\\n' "\${LATEST:-${version}}"; exit 0; fi\nif [[ "$1" == pack ]]; then name="\${2%@*}"; echo "[{\\\"filename\\\":\\\"$name-${version}.tgz\\\",\\\"integrity\\\":\\\"\${INTEGRITY:-sha512-x}\\\",\\\"shasum\\\":\\\"abc\\\"}]"; exit 0; fi\nexit 0\n`, { mode: 0o755 });
       writeFileSync(join(dir, "bin/git"), "#!/bin/bash\nexit 0\n", { mode: 0o755 });
       writeFileSync(join(dir, "scripts/check-ci.sh"), "#!/bin/bash\nexit 0\n");
       const calls = join(dir, "calls");
@@ -241,6 +241,11 @@ describe("Bootstrap Script Contracts", () => {
       const beforeTag = runGate("check-release-published.sh", [version, "--before-tag"], { PUBLISHED: "both" });
       expect(beforeTag.status).toBe(0);
       expect(beforeTag.stdout).toContain("the tag is not checked");
+      for (const [env, message] of [[{ VIEW_VERSION: "0.0.0" }, "npm view returned version 0.0.0"], [{ LATEST: "0.0.0" }, "latest dist-tag is 0.0.0"], [{ INTEGRITY: "wrong" }, "packed tarball integrity does not match"]] as const) {
+        const mismatch = runGate("check-release-published.sh", [version, "--before-tag"], { PUBLISHED: "both", ...env });
+        expect(mismatch.status).not.toBe(0);
+        expect(mismatch.stderr).toContain(message);
+      }
       const badIntegrity = runGate("check-release-published.sh", [version], { PUBLISHED: "both", INTEGRITY: "wrong" });
       expect(badIntegrity.status).not.toBe(0);
       expect(badIntegrity.stderr).toContain(`repo-harness-operator-web@${version}`);
@@ -262,6 +267,9 @@ describe("Bootstrap Script Contracts", () => {
 
   test("release owner steps bind the command list and the tag readback to the release commit (#2006)", () => {
     const dir = mkdtempSync(join(tmpdir(), "release-owner-"));
+    // guard accepts only the worktree path that plan prints; the pid keeps parallel runs apart.
+    const planVersion = `1.2.${process.pid}`;
+    const worktree = `/tmp/repo-harness-wt-release-${planVersion}`;
     try {
       const repo = join(dir, "repo");
       const git = (...args: string[]) => {
@@ -297,20 +305,32 @@ describe("Bootstrap Script Contracts", () => {
       mkdirSync(join(dir, "bin"));
       writeFileSync(join(dir, "bin/npm"), "#!/bin/bash\necho 'npm error code E404 not in this registry' >&2\nexit 1\n", { mode: 0o755 });
       writeFileSync(join(dir, "bin/gh"), `#!/bin/bash\ncase "$1 $2" in\n  "repo view") echo owner/repo ;;\n  "api repos/owner/repo") echo 42 ;;\n  "release view") echo "{\\"tagName\\":\\"$3\\",\\"isDraft\\":false,\\"isPrerelease\\":false}" ;;\n  *) exit 1 ;;\nesac\n`, { mode: 0o755 });
-      const run = (...args: string[]) => spawnSync("bash", ["scripts/release-owner-steps.sh", ...args], {
-        cwd: repo, encoding: "utf8", env: { ...process.env, HOME: dir, GIT_CONFIG_GLOBAL: "/dev/null", PATH: `${join(dir, "bin")}:${process.env.PATH}` },
+      const runIn = (cwd: string, args: string[], env: Record<string, string> = {}) => spawnSync("bash", ["scripts/release-owner-steps.sh", ...args], {
+        cwd, encoding: "utf8", env: { ...process.env, HOME: dir, GIT_CONFIG_GLOBAL: "/dev/null", PATH: `${join(dir, "bin")}:${process.env.PATH}`, ...env },
       });
+      const run = (...args: string[]) => runIn(repo, args);
 
-      const third = release("1.2.0");
+      const third = release(planVersion);
       git("push", "-q", "origin", "main");
       git("fetch", "-q", "origin");
-      const plan = run("plan", "1.2.0");
+      const plan = run("plan", planVersion);
       expect(plan.stderr).toBe("");
-      expect(plan.stdout).toContain(`Release GO: repo-harness 1.2.0 at ${third}`);
-      expect(plan.stdout).toContain(`git worktree add --detach /tmp/repo-harness-wt-release-1.2.0 ${third}`);
-      expect(plan.stdout).toContain(`git tag -a v1.2.0 ${third}`);
-      expect(plan.stdout).toContain("Run step 1.2.0.");
+      expect(plan.stdout).toContain(`Release GO: repo-harness ${planVersion} at ${third}`);
+      expect(plan.stdout).toContain(`git worktree add --detach ${worktree} ${third}`);
+      expect(plan.stdout).toContain(`guard ${planVersion} ${third} && npm publish`);
+      expect(plan.stdout).toContain(`git tag -a v${planVersion} ${third}`);
+      expect(plan.stdout).toContain(`Run step ${planVersion}.`);
       expect(plan.stdout).toContain("--repository-id 42");
+      git("tag", `v${planVersion}`, third);
+      expect(run("plan", planVersion).stderr).toContain(`tag v${planVersion} already exists in this repository`);
+      git("tag", "-d", `v${planVersion}`);
+      expect(runIn(repo, ["plan", planVersion], { RELEASE_REMOTE: "missing" }).stderr).toContain("git ls-remote missing refs/heads/main failed");
+
+      git("worktree", "add", "-q", "--detach", worktree, third);
+      expect(runIn(worktree, ["guard", planVersion, third]).status).toBe(0);
+      const wrongHead = runIn(worktree, ["guard", planVersion, second]);
+      expect(wrongHead.status).toBe(1);
+      expect(wrongHead.stderr).toContain(`HEAD is ${third}, not the release commit ${second}`);
       expect(run("notes", "1.0.0").stdout).toBe("\nRelease 1.0.0.\n\n### Upgrade\n\nRun step 1.0.0.\n\n### Changed\n\n- Change.\n");
       expect(run("plan", "1.0.0").stderr).toContain("tag v1.0.0 already exists on origin");
 
@@ -326,6 +346,7 @@ describe("Bootstrap Script Contracts", () => {
       expect(stale.status).toBe(1);
       expect(stale.stderr).toContain("Run git fetch origin first");
     } finally {
+      rmSync(worktree, { recursive: true, force: true });
       rmSync(dir, { recursive: true, force: true });
     }
   });

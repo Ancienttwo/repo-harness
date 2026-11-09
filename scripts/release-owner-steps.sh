@@ -3,8 +3,10 @@ set -euo pipefail
 
 # The owner release steps (#2006). The life cycle stops at the merged release PR. npm publish needs the owner's
 # npm 2FA, so publish, the tag and the GitHub Release stay with the owner. This script only reads git, npm and
-# GitHub: `plan` prints the owner command list bound to one release commit, and `check` reads back each owner step.
+# GitHub: `plan` prints the owner command list bound to one release commit, `guard` runs before each publish, and
+# `check` reads back each owner step.
 
+CALLER_DIR="$(pwd -P)"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
@@ -12,8 +14,13 @@ REMOTE="${RELEASE_REMOTE:-origin}"
 NPM_RELEASE_REGISTRY="${NPM_RELEASE_REGISTRY:-https://registry.npmjs.org/}"
 CONSOLE_DIR="packages/operator-web"
 
+# npm view, pack and install write a cache and logs; keep them out of the owner HOME. Registry reads need no auth.
+NPM_SCRATCH="$(mktemp -d)"
+trap 'rm -rf "$NPM_SCRATCH"' EXIT
+export npm_config_cache="$NPM_SCRATCH/cache" npm_config_logs_dir="$NPM_SCRATCH/logs"
+
 usage() {
-  echo "usage: $0 plan <version> | notes <version> | check published <version> | check tagged <version>" >&2
+  echo "usage: $0 plan <version> | notes <version> | guard <version> <sha> | check published <version> | check tagged <version>" >&2
   exit 2
 }
 
@@ -30,7 +37,7 @@ json_field() {
 # local remote ref must equal the live remote: a stale ref would bind the steps to an old main.
 release_commit() {
   local version="$1" live local_ref sha candidate file got
-  live="$(git ls-remote "$REMOTE" refs/heads/main | cut -f1)"
+  live="$(git ls-remote "$REMOTE" refs/heads/main | cut -f1)" || fail "git ls-remote $REMOTE refs/heads/main failed."
   local_ref="$(git rev-parse -q --verify "refs/remotes/$REMOTE/main" || true)"
   [[ -n "$live" ]] || fail "git ls-remote $REMOTE refs/heads/main returned no commit."
   [[ "$live" == "$local_ref" ]] || fail "$REMOTE/main is $local_ref, the remote is $live. Run git fetch $REMOTE first."
@@ -83,34 +90,63 @@ require_unpublished() {
   rm -f "$stderr"
 }
 
+release_worktree() {
+  echo "/tmp/repo-harness-wt-release-$1"
+}
+
+# Run right before each npm publish: the checkout must be the approved release commit, unchanged.
+guard() {
+  local version="$1" sha="$2" expected head file got
+  expected="$(cd "$(release_worktree "$version")" 2>/dev/null && pwd -P)" || fail "$(release_worktree "$version") does not exist."
+  # The publish that follows runs in the caller's directory, so the guard checks that directory and this script's checkout.
+  [[ "$CALLER_DIR" == "$expected" && "$(pwd -P)" == "$expected" ]] || fail "the checkout is $CALLER_DIR, not $expected."
+  head="$(git rev-parse HEAD)" || fail "git rev-parse HEAD failed."
+  [[ "$head" == "$sha" ]] || fail "HEAD is $head, not the release commit $sha."
+  [[ -z "$(git status --porcelain)" ]] || fail "the checkout has changes; publish only the release commit."
+  for file in package.json "$CONSOLE_DIR/package.json"; do
+    got="$(json_field version < "$file")"
+    [[ "$got" == "$version" ]] || fail "$file has version $got, not ${version}."
+  done
+  echo "[release-owner] OK: guard. $expected is the release commit $sha at ${version}."
+}
+
+remote_tag_refs() {
+  local version="$1" refs
+  refs="$(git ls-remote --tags "$REMOTE" "refs/tags/v${version}" "refs/tags/v${version}^{}")" || fail "git ls-remote --tags $REMOTE failed."
+  printf '%s' "$refs"
+}
+
 repository_slug() {
   gh repo view --json nameWithOwner --jq .nameWithOwner || fail "gh repo view failed."
 }
 
 plan() {
-  local version="$1" sha slug repository_id console_name core_name upgrade worktree
+  local version="$1" sha slug repository_id console_name core_name upgrade worktree remote_tag
   sha="$(release_commit "$version")"
   release_notes "$version" "$sha" >/dev/null
   { read -r console_name; read -r core_name; } < <(package_names "$sha")
   [[ -n "$console_name" && -n "$core_name" ]] || fail "the package manifests at $sha name no package."
   require_unpublished "${console_name}@${version}"
   require_unpublished "${core_name}@${version}"
-  [[ -z "$(git ls-remote --tags "$REMOTE" "refs/tags/v${version}")" ]] || fail "tag v${version} already exists on $REMOTE."
+  remote_tag="$(remote_tag_refs "$version")"
+  [[ -z "$remote_tag" ]] || fail "tag v${version} already exists on $REMOTE."
+  # Worktrees share tags: a local tag would stop step 5 after both packages are on npm.
+  ! git rev-parse -q --verify "refs/tags/v${version}" >/dev/null || fail "tag v${version} already exists in this repository."
   slug="$(repository_slug)"
   repository_id="$(gh api "repos/$slug" --jq .id)" || fail "gh api repos/$slug failed."
   upgrade="$(release_notes "$version" "$sha" | awk '/^### Upgrade/ { found = 1; next } /^### / { found = 0 } found { print }')"
-  worktree="/tmp/repo-harness-wt-release-${version}"
+  worktree="$(release_worktree "$version")"
 
   cat <<EOF
 Release GO: ${core_name} ${version} at ${sha}
 
 Owner steps. Run them in order. At the first failure, stop and report it; do not retry or publish again.
 1. git fetch ${REMOTE} && git worktree add --detach ${worktree} ${sha} && cd ${worktree} && bun install --frozen-lockfile
-2. (cd ${CONSOLE_DIR} && npm publish --auth-type=web)
-3. npm publish --auth-type=web
+2. bash scripts/release-owner-steps.sh guard ${version} ${sha} && (cd ${CONSOLE_DIR} && npm publish --auth-type=web)
+3. bash scripts/release-owner-steps.sh guard ${version} ${sha} && npm publish --auth-type=web
 4. bash scripts/release-owner-steps.sh check published ${version}
 5. git tag -a v${version} ${sha} -m "${core_name} ${version}" && git push ${REMOTE} v${version}
-6. gh release create v${version} --repo ${slug} --verify-tag --title "${core_name} ${version}" --notes-file <(bash scripts/release-owner-steps.sh notes ${version})
+6. bash scripts/release-owner-steps.sh notes ${version} > ${worktree}.notes.md && gh release create v${version} --repo ${slug} --verify-tag --title "${core_name} ${version}" --notes-file ${worktree}.notes.md
 7. bash scripts/release-owner-steps.sh check tagged ${version}
 
 Post-release steps, a joint decision of the orchestrator and the advisor after step 7 passes:
@@ -133,7 +169,7 @@ check_published() {
 check_tagged() {
   local version="$1" sha refs tag_commit slug release
   sha="$(release_commit "$version")"
-  refs="$(git ls-remote --tags "$REMOTE" "refs/tags/v${version}" "refs/tags/v${version}^{}")"
+  refs="$(remote_tag_refs "$version")"
   [[ -n "$refs" ]] || fail "tag v${version} is not on $REMOTE."
   # An annotated tag has a peeled ^{} line, which names the commit; a lightweight tag names the commit itself.
   tag_commit="$(awk '/\^\{\}$/ { peeled = $1 } { direct = $1 } END { print peeled ? peeled : direct }' <<<"$refs")"
@@ -153,6 +189,7 @@ case "${1:-}" in
     sha="$(release_commit "$2")"
     release_notes "$2" "$sha"
     ;;
+  guard) [[ $# -eq 3 ]] || usage; guard "$2" "$3" ;;
   check)
     [[ $# -eq 3 ]] || usage
     case "$2" in
