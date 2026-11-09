@@ -67,7 +67,11 @@ gets no acceptance pane and no acceptance record.
   `publication.acceptance_merge` is `on` in `.ai/harness/policy.json` on the
   PR base SHA. With `off`, it exits 3 and merges nothing.
 - The executor needs default-branch protection with required checks and
-  enforce_admins. Without a merge queue the checks must be strict. With a
+  enforce_admins. `publication.merge_queue` (default `off`) selects the
+  path: `off` merges directly and refuses a base that requires a merge
+  queue; `on` enqueues and refuses a base without one
+  (`merge_queue_policy_mismatch`, no fallback to the other path). Without
+  a merge queue the checks must be strict. With a
   merge queue the queue rule must squash with the `ALLGREEN` grouping
   strategy, and the repository default squash message must be `PR_TITLE`
   and `PR_BODY`. Without them it refuses with

@@ -2,9 +2,9 @@
  * The only automated merge path to the default branch.
  *
  * Every step before the mutation reads; a refusal at any step sends no merge
- * request. The mutation is sent once. When the base requires a merge queue,
- * the mutation enqueues the PR instead, and the executor waits for the queue
- * to merge or remove it. After it is sent, the result is a
+ * request. The mutation is sent once. When `publication.merge_queue` is on and
+ * the base requires a merge queue, the mutation enqueues the PR instead, and the
+ * executor waits for the queue to merge or remove it. After it is sent, the result is a
  * rejection only when an error response is followed by a readback of the PR
  * still open at the expected head, and a merge only when the merge commit has
  * the expected parents: the expected base for a squash, the expected base and
@@ -21,6 +21,7 @@ import {
   parsePublicationPolicy,
   policyFileFromContents,
   publicationPolicyChanged,
+  type MergeQueueSwitch,
   type PolicyFileAtRef,
   type PublicationPolicy,
 } from '../../core/publication/acceptance-merge-policy';
@@ -51,7 +52,8 @@ export type PublicationMergeRefusalCode =
   | 'closing_references_mismatch'
   | 'batch_ref_invalid'
   | 'batch_has_own_commit'
-  | 'merge_queue_entry_exists';
+  | 'merge_queue_entry_exists'
+  | 'merge_queue_policy_mismatch';
 
 export type PublicationMergeErrorCode =
   | 'acceptance_merge_off'
@@ -396,7 +398,7 @@ function assertQueueMessage(settings: RepositorySettings): void {
  * the PR on the current base, so strict checks are not needed. Returns whether the
  * base requires the queue.
  */
-function assertBaseProtection(input: PublicationMergeInput, branch: string, target: MergeTarget): boolean {
+function assertBaseProtection(input: PublicationMergeInput, branch: string, target: MergeTarget, mergeQueue: MergeQueueSwitch): boolean {
   const root = `repos/${input.repository}/branches/${encodeURIComponent(branch)}`;
   const value = read(input, ['api', `${root}/protection`], true);
   if (value === null) {
@@ -418,6 +420,13 @@ function assertBaseProtection(input: PublicationMergeInput, branch: string, targ
   if (queueRules.length > 1) throw new Refusal('base_protection_insufficient', `${branch} has more than one merge queue rule`);
   const queue = queueRules.length === 1;
   assertQueueState(target, queue);
+  // The switch selects the path and the base must match it; no mismatch falls back to the other path.
+  if (mergeQueue === 'on' && !queue) {
+    throw new Refusal('merge_queue_policy_mismatch', `publication.merge_queue is on, but ${branch} does not require a merge queue`);
+  }
+  if (mergeQueue === 'off' && queue) {
+    throw new Refusal('merge_queue_policy_mismatch', `${branch} requires a merge queue, but publication.merge_queue is off`);
+  }
   if (!queue) {
     if (checks.strict !== true) throw new Refusal('base_protection_insufficient', `${branch} protection must require strict status checks`);
     return false;
@@ -786,7 +795,7 @@ function prepareMerge(input: PublicationMergeInput): PreparedMerge {
   const policy = readPolicy(input);
   const repository = readRepository(input);
   const defaultBranch = repository.default_branch;
-  const queue = assertBaseProtection(input, defaultBranch, initial);
+  const queue = assertBaseProtection(input, defaultBranch, initial, policy.policy.merge_queue);
   if (queue) assertQueueMessage(repository);
   // Readiness reuses the base policy file this executor already read.
   const verdict = collectPullRequestMergeReadiness({ ...input, policy_file_at_base: policy.file });

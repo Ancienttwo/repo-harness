@@ -386,13 +386,17 @@ repo-harness publication merge --repository <owner/name> --repository-id <id> --
 `--head` and `--base` are the SHAs you reviewed.
 `publication.acceptance_merge` in `.ai/harness/policy.json` on the PR base
 decides whether the executor merges. The default branch needs required
-checks and enforce_admins. Without a merge queue the checks must be strict.
+checks and enforce_admins. `publication.merge_queue` (default `off`)
+selects the path: `off` merges directly, `on` enqueues. When the switch and
+the base's merge queue disagree, the executor refuses with
+`merge_queue_policy_mismatch` and does not use the other path.
+Without a merge queue the checks must be strict.
 With a merge queue (a ruleset), the queue must squash with the `ALLGREEN`
 grouping strategy and the repository default squash message must be
 `PR_TITLE` and `PR_BODY`; `--batch` is refused. If it does not, the executor refuses with
 `base_protection_insufficient`.
 
-With a merge queue, the executor enqueues the PR, writes `{"queued": ...}`
+With `publication.merge_queue` `on`, the executor enqueues the PR, writes `{"queued": ...}`
 to stderr and waits up to 90 minutes for the queue to merge or remove it.
 Run it as a background command in a checkout of the repository. A BEHIND
 PR needs no sync: the queue tests it on the current base. The executor
@@ -408,7 +412,7 @@ Act on the exit code. Post every result as `integration status` on the PR.
 |---|---|---|
 | 0 | Merged | Post the merge SHA, the parent SHA and the revert command. Post `unblocked` on each dependent PR |
 | 3 | Switch is off (`acceptance_merge_off`) | Post `To: owner`: the PR is ready, the owner merges. Do not merge another way |
-| 4 | Refused before any merge request | For `base_protection_insufficient`, `publication_policy_invalid` (base policy) and `provider_unavailable`, hand it to the owner. For any other blocker, hand the PR to its head owner with the `blockers` |
+| 4 | Refused before any merge request | For `base_protection_insufficient`, `merge_queue_policy_mismatch`, `publication_policy_invalid` (base policy) and `provider_unavailable`, hand it to the owner. For any other blocker, hand the PR to its head owner with the `blockers` |
 | 5 | `merge_outcome_unknown` | Stop. Report to the owner. Never retry |
 | 6 | `provider_rejected` | Post the GitHub error as it is. Hand it to the owner |
 | 6 | `merge_queue_removed` | The queue removed the PR (a failed queue check or a conflict), or another entry replaced the executor's entry. Hand it to its head owner with the queue run |

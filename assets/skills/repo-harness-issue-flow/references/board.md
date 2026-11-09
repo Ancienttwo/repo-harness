@@ -180,7 +180,7 @@ after each claim or status change.
   the plan block's merge order. A parent without a plan (two children or
   fewer) merges in blocked-by order, and the Order column of the parent
   table is only a view. After each merge, the next PR syncs with
-  main, except when main requires a merge queue: the queue tests each PR
+  main, except when `publication.merge_queue` is `on`: the queue tests each PR
   on the current main, so a BEHIND PR merges with no sync. A merge-only sync keeps the acceptance of the reviewed head; any
   other new head needs sync check rows by the tier rule (`acceptor.md`
   §2.2, Sync head). A changed subject needs a new round.

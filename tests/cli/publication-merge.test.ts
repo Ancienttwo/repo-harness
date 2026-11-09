@@ -14,6 +14,7 @@ import {
   HEAD,
   MERGE_COMMIT,
   PR,
+  POLICY_QUEUE,
   QUEUE_ENTRY,
   QUEUE_PARENT,
   QUEUE_RULES,
@@ -109,6 +110,7 @@ function mergeCli(scenario: PublicationMergeScenario, extraArgs: readonly string
 }
 
 const policy = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
+const QUEUE_ON = { policyBase: POLICY_QUEUE, policyHead: POLICY_QUEUE };
 
 describe('publication merge refusals send no mergePullRequest', () => {
   test.each([
@@ -129,6 +131,7 @@ describe('publication merge refusals send no mergePullRequest', () => {
     ['non-object publication', policy({ publication: 'on' })],
     ['unknown publication field', policy({ publication: { acceptance_merge: 'on', bypass: true } })],
     ['invalid JSON', '{ "publication": { "acceptance_merge": "on" '],
+    ['merge_queue "yes"', policy({ publication: { acceptance_merge: 'on', merge_queue: 'yes' } })],
   ] as const)('base switch %s fails closed as publication_policy_invalid', (_label, policyBase) => {
     const { result, mutations } = mergeInProcess(passingScenario({ policyBase }));
     expect(result.document).toMatchObject({ ok: false, exit_code: 4, error: 'publication_policy_invalid' });
@@ -155,10 +158,12 @@ describe('publication merge refusals send no mergePullRequest', () => {
     ['merge queue rule', { rules: [{ type: 'pull_request' }, { type: 'merge_queue' }] }, 'base_protection_insufficient'],
     ['merge queue from classic protection', { rules: [], mergeQueueEnabled: true }, 'base_protection_insufficient'],
     ['unreported merge queue state', { mergeQueueEnabled: 'missing' }, 'base_protection_insufficient'],
-    ['merge queue with the MERGE method', { rules: [{ type: 'merge_queue', parameters: { merge_method: 'MERGE' } }], mergeQueueEnabled: true }, 'base_protection_insufficient'],
-    ['merge queue with HEADGREEN grouping', { rules: [{ type: 'merge_queue', parameters: { merge_method: 'SQUASH', grouping_strategy: 'HEADGREEN' } }], mergeQueueEnabled: true }, 'base_protection_insufficient'],
-    ['merge queue with a commit-list squash message', { rules: QUEUE_RULES, mergeQueueEnabled: true, squashMessage: 'COMMIT_MESSAGES' }, 'base_protection_insufficient'],
-    ['PR already in the merge queue', { rules: QUEUE_RULES, mergeQueueEnabled: true, queued: true }, 'merge_queue_entry_exists'],
+    ['merge queue switch on without a merge queue', QUEUE_ON, 'merge_queue_policy_mismatch'],
+    ['required merge queue with the switch off', { rules: QUEUE_RULES, mergeQueueEnabled: true }, 'merge_queue_policy_mismatch'],
+    ['merge queue with the MERGE method', { ...QUEUE_ON, rules: [{ type: 'merge_queue', parameters: { merge_method: 'MERGE' } }], mergeQueueEnabled: true }, 'base_protection_insufficient'],
+    ['merge queue with HEADGREEN grouping', { ...QUEUE_ON, rules: [{ type: 'merge_queue', parameters: { merge_method: 'SQUASH', grouping_strategy: 'HEADGREEN' } }], mergeQueueEnabled: true }, 'base_protection_insufficient'],
+    ['merge queue with a commit-list squash message', { ...QUEUE_ON, rules: QUEUE_RULES, mergeQueueEnabled: true, squashMessage: 'COMMIT_MESSAGES' }, 'base_protection_insufficient'],
+    ['PR already in the merge queue', { ...QUEUE_ON, rules: QUEUE_RULES, mergeQueueEnabled: true, queued: true }, 'merge_queue_entry_exists'],
   ] as const)('%s is refused', (_label, overrides, error) => {
     const { result, mutations } = mergeInProcess(passingScenario(overrides));
     expect(result.document).toMatchObject({ ok: false, exit_code: 4, error });
@@ -485,7 +490,7 @@ function queueCheckout(repo: QueueRepo, mainTip: string, origin = repo.remote): 
 describe('publication merge through a required merge queue', () => {
   let repo: QueueRepo;
   beforeAll(() => { repo = buildQueueRepo(); });
-  const queueScenario = (overrides: Partial<PublicationMergeScenario> = {}) => passingScenario({ rules: QUEUE_RULES, mergeQueueEnabled: true,
+  const queueScenario = (overrides: Partial<PublicationMergeScenario> = {}) => passingScenario({ ...QUEUE_ON, rules: QUEUE_RULES, mergeQueueEnabled: true,
     protection: { strict: false, enforce_admins: true }, head: repo.head, base: repo.base, mergeCommit: repo.merge, queueParent: repo.parent,
     parents: [repo.parent], ...overrides });
   const run = (scenario: PublicationMergeScenario, options: MergeInProcessOptions = {}, origin?: string) =>
@@ -600,7 +605,7 @@ describe('publication merge through a required merge queue', () => {
   });
 
   test('--batch is refused when the base requires a merge queue', () => {
-    const { result, enqueues } = mergeInProcess(passingScenario({ rules: QUEUE_RULES, mergeQueueEnabled: true, headRef: BATCH_REF, compareCommits: BATCH_COMMITS }), { batch: true });
+    const { result, enqueues } = mergeInProcess(passingScenario({ ...QUEUE_ON, rules: QUEUE_RULES, mergeQueueEnabled: true, headRef: BATCH_REF, compareCommits: BATCH_COMMITS }), { batch: true });
     expect(failureOf(result)).toMatchObject({ exit_code: 4, error: 'base_protection_insufficient' });
     expect(enqueues).toHaveLength(0);
   });

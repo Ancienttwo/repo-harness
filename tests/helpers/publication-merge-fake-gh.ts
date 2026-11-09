@@ -27,6 +27,7 @@ const REPOSITORY_NODE = 'R_publication_merge';
 const PR_NODE = 'PR_publication_merge';
 
 export const POLICY_ON = `${JSON.stringify({ merge_gate: { enabled: true }, publication: { acceptance_merge: 'on' } }, null, 2)}\n`;
+export const POLICY_QUEUE = `${JSON.stringify({ merge_gate: { enabled: true }, publication: { acceptance_merge: 'on', merge_queue: 'on' } }, null, 2)}\n`;
 export const POLICY_COVERAGE = `${JSON.stringify({ merge_gate: { enabled: true }, publication: {
   acceptance_merge: 'on',
   required_check_coverage: { protected_paths: ['api-surface/**'], required_checks: ['Required / CI', 'build, typecheck, test (matrix)'] },
