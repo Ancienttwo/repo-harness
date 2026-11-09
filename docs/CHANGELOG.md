@@ -47,6 +47,7 @@ All notable changes to this skill are documented here.
 
 ### Fixed
 
+- The Bash write tripwire denies more forms that can write under `_ops/` or `_ref/`: a glob whose segment at the repository root can match a protected directory (`_op*/env/x`, `./_op[s]/x`, `rm -rf *`), an unquoted glob destination (`echo x > _ops/env/*`, `rm *` in `_ops/env`), a symlink below `_ops/` that leads outside the repository, and a symlink, dangling or not, that leads into `_ops/` or `_ref/`. (#2041)
 - Board attention rules A3 and A4 and the delivery window recognize every configured worker seat kind. (#2016)
 - Board rule R2 no longer counts `docs/CHANGELOG.md` as a shared file of two open PRs. A pair that shares other files still gets the finding, and the message names only those files. (#2034)
 - `review publish` puts a finding on a line outside the PR diff into the review body, so GitHub no longer rejects the review with HTTP 422. A retry reuses the acceptance claim already on the PR instead of posting a second one (#2009).
