@@ -1,5 +1,5 @@
 import { ACCEPTANCE_RECORD_HEADER, type BoardPullRequestV1, type BoardV1 } from './board';
-import { planHoldOf } from './merge';
+import { planRefusal } from './merge';
 import { claimStatusTarget, newestProtocolComment, parseAcceptanceRecord, parseClaimStatus, protocolComments, type BoardCommentPageV1, type BoardCommentV1 } from './source';
 
 /**
@@ -17,7 +17,7 @@ import { claimStatusTarget, newestProtocolComment, parseAcceptanceRecord, parseC
 export const REVIEW_START_HEADER = 'repo-harness review start';
 export const REVIEW_START_STATUS_HEADER = 'repo-harness review start status';
 
-export type ReviewSkipReason = 'not_open' | 'draft' | 'ci_not_green' | 'accepted' | 'acceptance_unknown' | 'started' | 'writer_family_unknown' | 'plan_hold';
+export type ReviewSkipReason = 'not_open' | 'draft' | 'ci_not_green' | 'accepted' | 'acceptance_unknown' | 'started' | 'writer_family_unknown' | 'plan_hold' | 'plan_unavailable';
 
 export type ReviewSeat = 'gatekeeper' | 'reviewer';
 
@@ -71,8 +71,8 @@ export function planReview(input: ReviewInputV1): readonly ReviewDecisionV1[] {
     const skip = (reason: ReviewSkipReason, detail: string): ReviewDecisionV1 => ({ pr: pr.number, action: 'skip', reason, detail });
     if (pr.state !== 'open') return skip('not_open', `the pull request is ${pr.state}`);
     if (pr.is_draft) return skip('draft', 'the pull request is a draft');
-    const held = planHoldOf(board, pr);
-    if (held !== null) return skip('plan_hold', `the plan holds #${held.issue}: ${held.reason}`);
+    const refused = planRefusal(board, pr);
+    if (refused !== null) return skip(refused.reason, refused.detail);
     if (pr.required_check.status !== 'success') return skip('ci_not_green', `Required / CI is ${pr.required_check.status}`);
     if (pr.acceptance.status === 'accepted') return skip('accepted', `an acceptance covers ${pr.head_sha}`);
     if (pr.acceptance.status === 'unknown') return skip('acceptance_unknown', pr.acceptance.reason);

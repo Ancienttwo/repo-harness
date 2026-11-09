@@ -56,6 +56,12 @@ test('a pull request that links a plan-held issue is skipped; the others still s
   expect(label(plan([pr(1), pr(2)], page(), [{ issue: 10, reason: 'owner decision' }]))).toEqual(['1:plan_hold', '2:start']);
 });
 
+test('an unobserved plan skips every pull request', () => {
+  const unplanned = { ...board([pr(1), pr(2)]), plan: { status: 'absent', truncated: false } } as unknown as BoardV1;
+  const comments = new Map([[1, page()], [2, page()]]);
+  expect(label(planReview({ board: unplanned, comments }))).toEqual(['1:plan_unavailable', '2:plan_unavailable']);
+});
+
 test('a marker covers one seat: a started gatekeeper leaves the reviewer to start, and a marker without a seat covers none', () => {
   const pending = pr(1, { claude_review: 'pending' });
   expect(seatsOf(plan([pending], page(marker(SHA)))[0])).toEqual(['reviewer']);
