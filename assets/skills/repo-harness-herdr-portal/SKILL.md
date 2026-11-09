@@ -25,7 +25,7 @@ an @mention of `portal-<slug>`.
 - Not for review or acceptance: use `repo-harness-cross-review` or
   `repo-harness review round --launch app-terminal`.
 - Already in an hc terminal (`HC_TERMINAL_ID` set): use `hc` and `herdr-app`
-  directly ([Herdr Dispatch](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch)).
+  directly ([Herdr Dispatch](https://github.com/aimpact-inc/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch)).
 - Not for Codex or any second-model terminal in v2.
 
 ## Gates
