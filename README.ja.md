@@ -24,10 +24,10 @@ hooks を提供します。GitHub issue と PR がタスクの内容、範囲、
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.sh | sh
 
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.ps1 | iex
 ```
 
 Bun がすでに PATH にある場合は、次のコマンドも使えます。

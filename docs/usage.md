@@ -31,10 +31,10 @@ tools). `jq` is optional. No Node.js required — the installer uses Bun >=
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.sh | sh
 
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.ps1 | iex
 ```
 
 With Bun >= 1.4.0 already on PATH, skip the shell installer. Package-manager-owned
@@ -53,7 +53,7 @@ reports at least `min_version` of `src/core/terminal/herdr-core-pin.json` in the
 Persistent review hosting requires POSIX process groups; on Windows use WSL.
 Missing, unusable or older hc blocks host readiness. Before upgrading from tmux,
 drain existing reviewers using the previous version and explicitly rebind terminal
-endpoints. See [runtime cutover](https://github.com/Ancienttwo/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260909-herdr-runtime-cutover.md).
+endpoints. See [runtime cutover](https://github.com/aimpact-inc/repo-harness/blob/archive/docs-researches-20261004/docs/researches/20260909-herdr-runtime-cutover.md).
 
 ### 2. Bootstrap the host runtime
 
@@ -440,7 +440,7 @@ and `repo-harness docs show harness-overview`.
 Editing the package itself needs a source checkout:
 
 ```bash
-git clone https://github.com/Ancienttwo/repo-harness.git ~/Projects/repo-harness
+git clone https://github.com/aimpact-inc/repo-harness.git ~/Projects/repo-harness
 cd ~/Projects/repo-harness && bun src/cli/index.ts update
 ```
 

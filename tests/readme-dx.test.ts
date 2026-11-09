@@ -50,7 +50,7 @@ describe("README DX contract", () => {
       expect(localized.trimEnd().split("\n").length, file).toBeLessThanOrEqual(60);
       expect(localized).toContain(languageSwitcher);
       expect(localized).toContain(
-        "curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh",
+        "curl -fsSL https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.sh | sh",
       );
       expect(localized).toContain("bunx repo-harness@latest install");
       expect(localized).toContain("repo-harness init --dry-run");

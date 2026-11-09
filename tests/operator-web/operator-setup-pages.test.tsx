@@ -579,7 +579,7 @@ describe('Tools page', () => {
     const links = Array.from(drawer()!.querySelectorAll('a')).map(link => [link.getAttribute('href'), link.getAttribute('rel')]);
     expect(links).toEqual([
       ['https://github.com/colbymchenry/codegraph', 'noreferrer noopener'],
-      ['https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/external-tooling.md#codegraph', 'noreferrer noopener'],
+      ['https://github.com/aimpact-inc/repo-harness/blob/main/docs/reference-configs/external-tooling.md#codegraph', 'noreferrer noopener'],
     ]);
     await act(async () => { document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as Event); });
     expect(window.location.hash).toBe('#tools');
