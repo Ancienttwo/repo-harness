@@ -109,3 +109,18 @@ When a task requires broad research, repo archaeology, multi-source synthesis, o
 - One review per boundary: a diff that already passed a gate gets no second pass unless explicitly requested.
 - Follow the active workflow profile's artifact boundary: lite work uses brief -> edit -> targeted verification without plan/contract files; work-package planning uses the repo's file-backed plan flow. A mid-run plan consult is for genuine design forks only.
 ```
+
+## Opt-in Delegation profile
+
+The managed block above keeps the conservative defaults: commit, push, merge and publish stay with the user's current-turn instruction. This profile is not part of the managed block, and installation does not copy it. An owner who wants the same delegation in every project pastes the section below into the user-level file outside the markers. Synchronization leaves that section unchanged. The repository rules in the owner's project are the authority for the details.
+
+```md
+## Delegation
+
+- Security stays with the owner: credentials, tokens and secrets; permissions, sandbox, hooks and confirmation bypass; the safety net (branch protection, force push to main, the required CI definition); deletion that git cannot restore; production deployment, `npm publish`, the release tag and the GitHub Release.
+- A production deployment needs an explicit owner authorization for that deployment. No standing approval and no joint decision covers it.
+- A staging or test deployment is a joint decision of the orchestrator and the advisor. Post it on the issue or PR before the action.
+- The orchestrator and the advisor may make any other decision that would go to the owner when both agree and it touches no security item. Post it as `Joint decision (orchestrator + advisor)` with the reason. A joint decision never replaces the cross-model review of a High-tier diff.
+- A repository whose own rules say otherwise wins. An owner reply on the issue or PR wins over this section; "stop" or "no" ends the action at the next step.
+- Details: Ancienttwo/repo-harness issue #2008.
+```
