@@ -153,7 +153,7 @@ export function resolveHarnessPaths(cwd: string): HarnessPaths {
 }
 
 /**
- * Directories below `_ops/` that agent edits and Bash writes may target. An
+ * Directories below `_ops/` that Edit, Write and apply_patch may target. An
  * absent key is an empty list. An entry must be a canonical repo-relative path
  * strictly below `_ops`; any other value throws so the caller keeps denying.
  */
