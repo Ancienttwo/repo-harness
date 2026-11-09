@@ -1465,14 +1465,15 @@ describe('merge-only sync carry (#2074)', () => {
 
   test('the rows of a reviewed head accept a later High head only when git proves a merge-only sync and no hook path changes', () => {
     const calls: (readonly string[])[] = [];
-    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly syncFailAt?: string; readonly hookFile?: boolean } = {}) => replay({
+    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly syncFailAt?: string; readonly split?: boolean; readonly hookFile?: boolean } = {}) => replay({
       parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
       pulls: (data) => {
         const { pr1499 } = data.repository;
         // The two round-1 reviews of the reviewed head, each with its own claim (`acceptor.md` section 2.2).
-        for (const [at, harness, relation] of [['00:10', 'pi', 'different-family'], ['00:11', 'claude', 'same-family']] as const) {
-          const claim = comment(renderAcceptanceClaim(receipt(harness, reviewed, relation)), `2026-11-03T${at}:00Z`);
-          pr1499.comments.nodes.push(claim, comment(renderAcceptanceRecord(receipt(harness, reviewed, relation), claim.url), `2026-11-03T${at}:30Z`));
+        // `split`: the second review is on the newer proven sync head B, so neither head has both reviews.
+        for (const [at, harness, relation, subject] of [['00:10', 'pi', 'different-family', reviewed], ['00:11', 'claude', 'same-family', options.split ? 'b'.repeat(40) : reviewed]] as const) {
+          const claim = comment(renderAcceptanceClaim(receipt(harness, subject, relation)), `2026-11-03T${at}:00Z`);
+          pr1499.comments.nodes.push(claim, comment(renderAcceptanceRecord(receipt(harness, subject, relation), claim.url), `2026-11-03T${at}:30Z`));
         }
         // Another proven sync head B of the same patch failed its sync check, after both PASS rows or between them: no PASS skips it.
         if (options.syncFailAt !== undefined) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', 'b'.repeat(40), 'different-family', 'FAIL'), ''), `2026-11-03T${options.syncFailAt}Z`));
@@ -1492,6 +1493,7 @@ describe('merge-only sync carry (#2074)', () => {
     expect(calls[0]).toContain(reviewed);
     expect(carry({ proven: false }).acceptance).toEqual({ status: 'not_accepted' });
     for (const at of ['00:20:00', '00:10:45']) expect(carry({ syncFailAt: at }).acceptance).toEqual({ status: 'not_accepted' });
+    expect(carry({ split: true }).acceptance).toEqual({ status: 'not_accepted' });
     calls.length = 0;
     expect(carry({ headFail: true }).acceptance).toEqual({ status: 'not_accepted' });
     expect(carry({ hookFile: true }).acceptance).toEqual({ status: 'not_accepted' });
@@ -1562,6 +1564,18 @@ describe('merge-only sync carry (#2074)', () => {
     write(reviewed); git('commit', '-am', 'resolve to the PR side');
     expect(proven(git('rev-parse', 'HEAD'), subject, conflicting)).toBe(false);
     expect(proven(sync, 'd'.repeat(40))).toBe(false);
+    // The base absorbed the reviewed change, so the no-op merge H leaves an empty PR diff: no proof.
+    git('checkout', '-b', 'absorbed', base); git('merge', '--no-edit', subject);
+    const absorbed = git('rev-parse', 'HEAD');
+    git('checkout', '-B', 'noop', subject); git('merge', '--no-ff', '--no-edit', 'absorbed');
+    expect(proven(git('rev-parse', 'HEAD'), subject, absorbed)).toBe(false);
+    // A failed ancestry check of one merge parent gives no proof, even when the other parent is in the base.
+    const wrapper = join(root, '.git-fails');
+    writeFileSync(wrapper, `#!/bin/sh\n[ "$1 $2 $3 $4" = "merge-base --is-ancestor ${subject} ${base}" ] && exit 128\nexec git "$@"\n`); chmodSync(wrapper, 0o755);
+    const previous = process.env.REPO_HARNESS_GIT_BIN;
+    process.env.REPO_HARNESS_GIT_BIN = wrapper;
+    try { expect(proven(sync)).toBe(false); } finally { if (previous === undefined) delete process.env.REPO_HARNESS_GIT_BIN; else process.env.REPO_HARNESS_GIT_BIN = previous; }
+    expect(proven(sync)).toBe(true);
   });
 });
 
