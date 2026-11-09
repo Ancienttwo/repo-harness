@@ -79,9 +79,8 @@ The table rules govern how the row combines with the review.
    that new head with those threads deferred. It must return `PASS` for that
    head before the PR merges, and its record names the follow-up issue. A
    `FAIL` in round 5 is a hard stop and takes no deferral. A new P0 finding,
-   a new P1 finding about security, secrets, data or authentication, a
-   blocking finding after round 5, or a security, secrets, data or
-   authentication finding becomes a parked owner gate
+   a new P1 finding about security, secrets, data or authentication, or a
+   blocking finding after round 5 becomes a parked owner gate
    (`docs/reference-configs/agentic-development-flow.md`, Park a gate).
    Other work continues.
 
