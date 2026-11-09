@@ -160,6 +160,8 @@ export interface BoardHostPortsV1 {
   readonly seatTerminals: (repositoryId: string) =>
     | { readonly status: 'observed'; readonly terminals: readonly BoardSeatTerminalReadV1[] }
     | { readonly status: 'unavailable'; readonly reason: string };
+  /** `seatTerminals` with finished terminals too (`hc ls --all`). Only the post-merge closeout reads it, to remove a finished seat terminal (#2021). */
+  readonly closeoutTerminals: BoardHostPortsV1['seatTerminals'];
   /** The installed hc client version, `x.y.z`. */
   readonly hcVersion: () => { readonly status: 'observed'; readonly version: string } | { readonly status: 'unavailable'; readonly reason: string };
   /** `hc send` of plain text to the advisor terminal that the caller resolved from `seatTerminals` (#1756). */
@@ -169,6 +171,10 @@ export interface BoardHostPortsV1 {
   /** `hc read --lines <lines>` of the advisor terminal that the caller resolved from `seatTerminals` (#1756). */
   readonly advisorRead: (address: string, lines: number) =>
     | { readonly status: 'observed'; readonly text: string; readonly complete: boolean; readonly why: string | null }
+    | { readonly status: 'unavailable'; readonly reason: string };
+  /** `hc kill`, then `hc rm`, of a seat terminal that the post-merge closeout resolved from `closeoutTerminals` (#2005). */
+  readonly closeTerminal: (address: string) =>
+    | { readonly status: 'closed' }
     | { readonly status: 'unavailable'; readonly reason: string };
 }
 

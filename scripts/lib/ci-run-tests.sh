@@ -393,6 +393,7 @@ run_bun_tests() {
 # Direct use runs a complete suite. Sourcing keeps the caller's settings.
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   set -euo pipefail
+  suite_args=("$@")
   BUN_TEST_SUITE="${1:-full}"
   if [[ "$#" -gt 0 ]]; then shift; fi
   if [[ "$#" -eq 2 && "$1" == --timeout && "$2" =~ ^[1-9][0-9]*$ ]]; then
@@ -404,6 +405,11 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     exit 2
   fi
   cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+  if ! bun scripts/host-test-queue.ts held; then
+    queue_kind=affected
+    [[ "$BUN_TEST_SUITE" != full ]] || queue_kind=full
+    exec bun scripts/host-test-queue.ts run --kind "$queue_kind" -- "$BASH" scripts/lib/ci-run-tests.sh ${suite_args[@]+"${suite_args[@]}"}
+  fi
   bun run build:oar-review-host
   unset BUN_TEST_FILES
   BUN_TEST_ISOLATE_FILES=1

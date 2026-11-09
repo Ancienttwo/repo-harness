@@ -502,26 +502,28 @@ export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1
     if (error instanceof HerdrCoreError) return { status: 'unavailable', reason: `hc_${error.reason}` } as const;
     throw error;
   };
+  const readSeatTerminals = (repositoryId: string, all: boolean): ReturnType<BoardHostPortsV1['seatTerminals']> => {
+    try {
+      // A watcher terminal (#1509) carries the repository and parent labels too, but it is a program, not a seat.
+      const terminals = hcList({ [RH_LABEL.repository]: repositoryId }, { ...options, all })
+        .map(({ address, agent }) => ({ ...hcGet(address, options), agent }))
+        .filter(terminal => terminal.labels[RH_LABEL.service] === undefined)
+        .map((terminal) => {
+          const label = (key: string) => terminal.labels[key];
+          return {
+            address: terminal.address, name: terminal.name, agent: terminal.agent, state: terminal.state, status: terminal.status?.state ?? null,
+            status_kind: terminal.status?.kind ?? null, status_msg: terminal.status?.msg ?? null, status_ms: terminal.status_ms ?? null, turn: terminal.turn, cwd: terminal.cwd ?? null,
+            labels: { seat: label(RH_LABEL.seat), issue: label(RH_LABEL.issue), pr: label(RH_LABEL.pr), parent: label(RH_LABEL.parent) },
+          };
+        });
+      return { status: 'observed', terminals };
+    } catch (error) {
+      return unavailable(error);
+    }
+  };
   return {
-    seatTerminals: (repositoryId) => {
-      try {
-        // A watcher terminal (#1509) carries the repository and parent labels too, but it is a program, not a seat.
-        const terminals = hcList({ [RH_LABEL.repository]: repositoryId }, options)
-          .map(({ address, agent }) => ({ ...hcGet(address, options), agent }))
-          .filter(terminal => terminal.labels[RH_LABEL.service] === undefined)
-          .map((terminal) => {
-            const label = (key: string) => terminal.labels[key];
-            return {
-              address: terminal.address, name: terminal.name, agent: terminal.agent, state: terminal.state, status: terminal.status?.state ?? null,
-              status_kind: terminal.status?.kind ?? null, status_msg: terminal.status?.msg ?? null, status_ms: terminal.status_ms ?? null, turn: terminal.turn, cwd: terminal.cwd ?? null,
-              labels: { seat: label(RH_LABEL.seat), issue: label(RH_LABEL.issue), pr: label(RH_LABEL.pr), parent: label(RH_LABEL.parent) },
-            };
-          });
-        return { status: 'observed', terminals };
-      } catch (error) {
-        return unavailable(error);
-      }
-    },
+    seatTerminals: (repositoryId) => readSeatTerminals(repositoryId, false),
+    closeoutTerminals: (repositoryId) => readSeatTerminals(repositoryId, true),
     hcVersion: () => {
       try {
         return { status: 'observed', version: hcVersion(options) };
@@ -539,6 +541,16 @@ export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1
     advisorRead: (address, lines) => {
       try {
         return { status: 'observed', ...hcRead(address, lines, options) };
+      } catch (error) {
+        return unavailable(error);
+      }
+    },
+    closeTerminal: (address) => {
+      try {
+        // hc rm refuses a live terminal, so a kill that did not finish the program keeps the terminal.
+        if (hcGet(address, options).state === 'live' && hcKill(address, options).state !== 'finished') return { status: 'unavailable', reason: 'hc_kill_unfinished' };
+        hcRm(address, options);
+        return { status: 'closed' };
       } catch (error) {
         return unavailable(error);
       }

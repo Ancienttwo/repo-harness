@@ -229,6 +229,50 @@ describe("contract-worktree helper integration", () => {
     }
   }, 60000);
 
+  test("contract-worktree start runs a node-shebang CodeGraph with the selected runtime and bounds its failure output", () => {
+    for (const failing of [false, true]) {
+      const cwd = tmpWorkspace(`helper-contract-start-codegraph-node-${failing}`);
+      const worktreePath = `${cwd}-wt`;
+      const home = join(cwd, "home");
+      const fakeBin = join(cwd, "fakebin");
+      const nodeDir = join(cwd, "nodedir");
+      const log = join(cwd, "runtime.log");
+      try {
+        copyHelpers(cwd);
+        initGitRepo(cwd);
+        writeFileSync(join(cwd, ".gitignore"), ".codegraph/\nhome/\nfakebin/\nnodedir/\nruntime.log\n");
+        commitAll(cwd, "seed codegraph node start");
+        mkdirSync(join(cwd, ".codegraph"));
+        mkdirSync(fakeBin);
+        mkdirSync(nodeDir);
+        writeFileSync(join(fakeBin, "codegraph"), "#!/usr/bin/env node\n", { mode: 0o755 });
+        // A same-named executable next to the runtime must not replace the one found on PATH.
+        writeFileSync(join(nodeDir, "codegraph"), `#!/bin/sh\necho shadowed >> "${log}"\n`, { mode: 0o755 });
+        const body = failing ? `head -c 5000 /dev/zero | tr '\\0' x >&2; exit 1` : "exit 0";
+        writeFileSync(join(nodeDir, "runtime-x"), `#!/bin/sh\necho "$*" >> "${log}"\n${body}\n`, { mode: 0o755 });
+        recordPluginSelection({ HOME: home });
+
+        const started = start(["--issue", "123", "--path", worktreePath, "--fresh"], cwd, {
+          HOME: home,
+          REPO_HARNESS_NODE_BIN: join(nodeDir, "runtime-x"),
+          PATH: `${fakeBin}:${GH_DIR}:${process.env.PATH ?? ""}`,
+        });
+        expect(readFileSync(log, "utf8")).toBe(`${join(fakeBin, "codegraph")} init\n`);
+        if (failing) {
+          expect(started.status).not.toBe(0);
+          expect(started.stderr).toContain("codegraph init failed");
+          expect(started.stderr).not.toContain("x".repeat(2001));
+        } else {
+          expect(started.status, `${started.stdout}\n${started.stderr}`).toBe(0);
+        }
+      } finally {
+        run("git", ["worktree", "remove", "--force", worktreePath], cwd);
+        rmSync(worktreePath, { recursive: true, force: true });
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    }
+  }, 60000);
+
   test("contract-worktree start uses --type for the branch prefix", () => {
     const cwd = tmpWorkspace("helper-contract-start-type");
     const worktreePath = `${cwd}-wt-type`;

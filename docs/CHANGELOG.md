@@ -6,12 +6,17 @@ All notable changes to this skill are documented here.
 
 ### Added
 
+- `repo-harness board closeout` also removes finished seat terminals of the merged PR. It lists them with `hc ls --all`, under the same label binding and checkout proofs, and runs `hc rm` only. A retry after a failed `hc rm` now removes the terminal. (#2021)
 - `repo-harness worktrees path --repository <id> --worktree <id>` prints
   the absolute path of one registered worktree as one JSON line. In the
   desktop shell, a registered Worktree row shows "Open in Terminal" and
   "Open in Editor". The page passes only ids; the shell resolves the path
   with the command. A plain browser shows no open control. (#1968)
 - `repo-harness board dispatch --parent <n> --space <id> [--dry-run]` starts a worker seat for each ready sub-issue of the plan. An issue is ready when it is open, in the plan, not held, has no open blocker and no active claim, and the parent has fewer live worker seats than `seat_limits.worker`. The seat comes from the quota route of the issue's `route:<class>` label. Work with the `touches:credentials` label never goes to a Pi seat. (#2004)
+- `repo-harness board closeout --pr <n>` closes the clean, pushed seat terminals of a merged PR
+  and removes its merged worktree through the `contract-worktree cleanup` path. A dirty or
+  unpushed pane and its worktree stay with the reason. Board rule A9 reports each live seat
+  of a merged PR. (#2005)
 
 ### Changed
 
@@ -19,10 +24,21 @@ All notable changes to this skill are documented here.
 - `/healthz.protocol` is now 3 (ADR-0003). A protocol-2 desktop app
   refuses a protocol-3 server; update the desktop app together with the
   CLI. (#1968)
+- Host tests take one queue per host. `bash scripts/check-ci.sh <lane>`,
+  `bun run test`, `bun run test:files`, `bun run test:coverage` and the
+  `test:core`, `test:integration` and `test:full` suites wait their turn,
+  run alone and release. Release checks go first, then FIFO. A holder or
+  waiter whose PID is free or reused is skipped and its lock is freed;
+  a holder's lock stays held while its command's process group runs.
+  `bun scripts/host-test-queue.ts status [--json]` shows the holder and the
+  waiters. (#2001)
 
 ### Fixed
 
+- Board attention rules A3 and A4 and the delivery window recognize every configured worker seat kind. (#2016)
+- Board rule R2 no longer counts `docs/CHANGELOG.md` as a shared file of two open PRs. A pair that shares other files still gets the finding, and the message names only those files. (#2034)
 - `review publish` puts a finding on a line outside the PR diff into the review body, so GitHub no longer rejects the review with HTTP 422. A retry reuses the acceptance claim already on the PR instead of posting a second one (#2009).
+- `contract-worktree start` starts a node-shebang `codegraph` with the trusted node runtime. The installed helper PATH has no node, so the first index of every new worktree failed and `board dispatch` stopped. A failed init now prints the last lines of codegraph's stderr, at most 2000 bytes (#2023).
 
 ## [0.28.0] - 2026-11-08
 
