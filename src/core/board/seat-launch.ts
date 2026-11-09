@@ -87,6 +87,9 @@ const GROUP_TEXT: Readonly<Record<SeatGroup, string>> = {
   gh: 'Do not write to GitHub.',
 };
 
+/** The one GitHub write of a review seat with `net` (#1996). Its keep-yourself paragraph repeats it so that the two texts agree. */
+const REVIEW_PUBLISH_TEXT = 'Do not write to GitHub, with one exception: publish your own round with `repo-harness review publish --pr <number> --receipt <path>`. Run no other GitHub write.';
+
 const OFF_GROUPS = (config: SeatConfigV1): SeatGroup[] =>
   (['edit', 'shell', 'net', 'tasks', 'mcp', 'gh'] as const).filter(group => !config.tools.includes(group));
 
@@ -133,7 +136,11 @@ function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly stri
     ];
   }
   if (seat === 'gatekeeper' || seat === 'reviewer') {
-    return [`You are the ${seat} seat. Perform a read-only review of the assigned PR. Do not edit files, commit, push, or write to GitHub. Report the verdict first, then the findings and evidence.`,
+    // A reviewer with `net` publishes its own round (#1996); the brief is the only limit on every runtime.
+    const limit = config.tools.includes('net')
+      ? `Do not edit files, commit or push. ${REVIEW_PUBLISH_TEXT}`
+      : 'Do not edit files, commit, push, or write to GitHub.';
+    return [`You are the ${seat} seat. Perform a read-only review of the assigned PR. ${limit} Report the verdict first, then the findings and evidence.`,
       fleet.length === 0 ? 'You have no sub-agents.' : `You may call these sub-agents: ${roleList(fleet, name)}. Call no other agent type.`];
   }
   return [
@@ -156,7 +163,9 @@ const KEEP_YOURSELF = {
  */
 function brief(seat: SeatId, config: SeatConfigV1, fleet: readonly string[], limits: readonly SeatLimitV1[], name: RoleName = role => role): string {
   const kept = (Object.keys(KEEP_YOURSELF) as (keyof typeof KEEP_YOURSELF)[]).flatMap((level) => {
-    const groups = limits.flatMap(limit => (limit.level === level && limit.subject !== 'fleet' ? [GROUP_TEXT[limit.subject]] : []));
+    const publishes = (seat === 'gatekeeper' || seat === 'reviewer') && config.tools.includes('net');
+    const groups = limits.flatMap(limit => (limit.level === level && limit.subject !== 'fleet'
+      ? [limit.subject === 'gh' && publishes ? REVIEW_PUBLISH_TEXT : GROUP_TEXT[limit.subject]] : []));
     return groups.length === 0 ? [] : [`${KEEP_YOURSELF[level]} ${groups.join(' ')}`];
   });
   return [...roleParagraphs(seat, config, fleet, name), ...kept].join('\n\n');
