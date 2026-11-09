@@ -15,7 +15,7 @@ All notable changes to this skill are documented here.
 
 ### Fixed
 
-- `board closeout` also closes the seat terminals that work in the PR head worktree, so a PR that only says `Refs #<issue>` closes its seats and removes its worktree in one run. Such a seat needs no issue label or an issue label that the PR body names after `Refs`, `Closes`, `Fixes` or `Resolves`. (#2071)
+- `board closeout` also closes the seat terminals that work in the PR head worktree, so a PR that only says `Refs #<issue>` closes its seats and removes its worktree in one run. Such a seat needs an issue label that the PR closes or that `parseRefs` reads after `Refs` in the PR body. (#2071)
 
 ## [0.29.0] - 2026-11-09
 

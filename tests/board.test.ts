@@ -1360,8 +1360,8 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
     terminal('t18', main, { seat: 'reviewer', pr: '27' }), terminal('t19', main, { seat: 'reviewer', pr: '28' }),
     terminal('t20', refsonly, { issue: '19' }),
     terminal('t21', refsconf, { issue: '77' }), terminal('t23', refsconf, { issue: '21' }),
-    // Not bound: another issue and no issue label in the Refs-only worktree, an unresolved cwd and another repository, all without a pr label.
-    terminal('t24', refsonly, { issue: '77' }), terminal('t27', refsonly, {}), terminal('t25', null, { seat: 'reviewer' }), terminal('t26', elsewhere, { seat: 'reviewer' }), terminal('t22', refsconf, { seat: 'reviewer', issue: '21', pr: '99' })];
+    // Not bound: another issue and no issue label in the Refs-only worktree, an unresolved cwd and another repository with the referenced issue label, all without a pr label.
+    terminal('t24', refsonly, { issue: '77' }), terminal('t27', refsonly, {}), terminal('t25', null, { seat: 'reviewer', issue: '19' }), terminal('t26', elsewhere, { seat: 'reviewer', issue: '19' }), terminal('t22', refsconf, { seat: 'reviewer', issue: '21', pr: '99' })];
   // hc rm of t17 fails until the retry.
   const rmFails = new Set(['t17']);
   const closed: string[] = [];
