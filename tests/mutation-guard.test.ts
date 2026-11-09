@@ -37,6 +37,10 @@ function edit(cwd: string, filePath: string) {
   return invoke(cwd, { tool_input: { file_path: filePath } });
 }
 
+function writePolicy(cwd: string, dirs: unknown): void {
+  writeFileSync(join(cwd, '.ai/harness/policy.json'), `${JSON.stringify({ operations: { private_dir: '_ops', agent_writable_private_dirs: dirs } })}\n`);
+}
+
 function failureRecords(cwd: string): Array<Record<string, unknown>> {
   const path = join(cwd, '.ai/harness/failures/latest.jsonl');
   if (!existsSync(path)) return [];
@@ -112,6 +116,13 @@ describe('Bash write tripwire host route', () => {
       expect(invokeBash('echo value > _ops/local.txt', join(cwd, 'src')).status).toBe(0);
       expect(invokeBash('echo value > ../_ops/a.env', join(cwd, 'src')).status).toBe(2);
       expect(existsSync(join(cwd, '_ops'))).toBe(false);
+      writePolicy(cwd, ['_ops/dispatch']);
+      expect(invokeBash('echo value > _ops/dispatch/plan.md').status).toBe(0);
+      expect(invokeBash('echo value > _ops/env/a.env').status).toBe(2);
+      writePolicy(cwd, ['_ops']);
+      const invalid = invokeBash('echo value > _ops/dispatch/plan.md');
+      expect(invalid.status).toBe(2);
+      expect(invalid.stderr).toContain('agent_writable_private_dirs: "_ops"');
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 
@@ -198,6 +209,25 @@ describe('mutation boundaries', () => {
       }
       expect(existsSync(join(outside, 'secret.ts'))).toBe(false);
     } finally { rmSync(cwd, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
+  });
+  test('policy-listed _ops subdirectories accept edits; the rest of _ops and invalid entries stay denied', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-ops-writable-')));
+    try {
+      initRepo(cwd);
+      writePolicy(cwd, ['_ops/dispatch']);
+      expect(edit(cwd, '_ops/dispatch/plan.md')).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+      for (const path of ['_ops/dispatch', '_ops/dispatcher/plan.md', '_ops/secret.env', '_ref/dispatch/plan.md']) {
+        expect({ path, exitCode: edit(cwd, path).exitCode }).toEqual({ path, exitCode: 2 });
+      }
+      for (const entry of ['_ops', '_ops/', '/_ops/dispatch', '_ops/../dispatch', '_ops/./dispatch', '_ops\\dispatch', '_ref/dispatch', 7]) {
+        writePolicy(cwd, [entry]);
+        const result = edit(cwd, '_ops/dispatch/plan.md');
+        expect({ entry, exitCode: result.exitCode }).toEqual({ entry, exitCode: 2 });
+        expect(result.stderr).toContain(`agent_writable_private_dirs: ${JSON.stringify(entry)} is not a canonical directory`);
+      }
+      writePolicy(cwd, '_ops/dispatch');
+      expect(edit(cwd, '_ops/dispatch/plan.md').stderr).toContain('agent_writable_private_dirs: not an array');
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
   });
   test('a denial writes one stderr reason with its fix and one failure record with the payload run id', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-denial-')));
