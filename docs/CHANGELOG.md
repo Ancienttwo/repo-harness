@@ -14,6 +14,7 @@ All notable changes to this skill are documented here.
 
 ### Fixed
 
+- The Bash write tripwire denies more literal forms that reach `_ops` or `_ref`. A case variant such as `_OPS/x` counts as `_ops/x`, because macOS and Windows filesystems ignore case by default. Unquoted brace words (`_op{s,x}`, `_op{r..t}`) are expanded, `~+` reads as the working directory, and a `cd` to an expanded operand is checked like a write target. A glob segment that can match `..` (bash 3.2 expands `.*` to `..`), `~-` and a brace expansion of more than 1024 words are denied as targets with no known destination. (#2060)
 - The tarball install smoke compares `/healthz` with the installed package's `OPERATOR_SERVER_PROTOCOL` and `OPERATOR_SERVICE_NAME`. It expected protocol 2 after #1990 raised the protocol to 3, so the daily package job failed. (#2033)
 
 ### Added
