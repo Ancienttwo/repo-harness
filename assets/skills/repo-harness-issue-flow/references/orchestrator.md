@@ -224,7 +224,7 @@ example: `claude mode: saving (5% left < 20%)` and
 route line names with `repo-harness seats argv <seat>`; state the boundary
 in the task. A `none` route waits.
 `repo-harness board dispatch --parent <n> --space <id>` applies this step to every ready issue of the plan: it reads the `route:<class>` label of each issue (and `touches:credentials`), starts the worktree, posts the claim and opens the worker tab. `--dry-run` prints the decisions only. An issue without one `route:<class>` label is reported and not dispatched.
-`repo-harness board review --parent <n> --space <id>` starts the gatekeeper seat for each ready, green Medium or High pull request that has no start marker for its head. `--dry-run` prints the decisions only. When it prints `second_reviewer_required`, or board rule A10 names a PR, start the Claude reviewer seat by hand; its automation is #2025.
+`repo-harness board review --parent <n> --space <id>` starts the gatekeeper seat for each ready, green Medium or High pull request that has no gatekeeper start marker for its head. When the board shows `claude_review: pending` (a High head from a Codex-family or unknown writer), it also starts the reviewer seat; each seat has its own marker, so a seat that was not sent retries alone. `--dry-run` prints the decisions only. A High head from such a writer is not accepted until the Claude review verdict exists.
 Apply the explorer line through the Claude Agent tool's `model` parameter when you call the explorer.
 
 Claude saving mode applies when weekly remaining quota is below
