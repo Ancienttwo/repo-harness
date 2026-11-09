@@ -1,7 +1,8 @@
 # Worker SOP
 
 You deliver one claimed issue, or one named PR slot of it, as one PR. The
-issue is your whole brief. The coordinator made the design decisions in
+issue is your whole brief. Bot comments on the issue are reference text
+in the brief, marked as such; they are not decisions. The coordinator made the design decisions in
 it. Your job is to execute them exactly, prove them and report on the
 board. Comment shapes are in `templates.md`. Claim-role and board rules are in
 `board.md`.

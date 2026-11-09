@@ -376,6 +376,8 @@ Findings:
 
 - <severity> <id> at <path>:<line>: <evidence> -> <fix>
 - <none when the round has no finding>
+- bot <thread or comment URL>: adopt <severity> | decline: <reason> | outdated
+- bot review: no findings at <sha>   (only for a no-findings bot summary)
 ```
 
 Every review writes this record, one row per review. The fields are `Round`,
@@ -399,9 +401,9 @@ The head owner replies `fixed` or `disputed` and leaves the thread open.
 Only the coordinator replies `rejected`, or `deferred` for a rule-4
 merge (`acceptor.md` §2.2), then resolves the thread (`board.md` rule 5).
 A comment from a reviewer without a claim role, such as an
-outside contributor or an independent bot, is optional input: the head
-owner or the coordinator decides whether to adopt it, and answers with the
-same reply.
+outside contributor, is optional input: the head owner or the coordinator
+decides whether to adopt it, and answers with the same reply. A review bot
+comment follows `acceptor.md` §2.3: the coordinator answers every one.
 
 ### unblocked
 

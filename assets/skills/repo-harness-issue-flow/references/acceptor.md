@@ -76,6 +76,44 @@ The worker fixes each finding by the class rule (`worker.md` §7).
 Return `PASS` or `FAIL`. A `FAIL` has at least one P0, P1 or P2 finding.
 Rule 4 decides whether a P2-only `FAIL` after round 3 merges.
 
+### 2.3 Review bot reference
+
+The review bot that the owner configured on GitHub
+(`chatgpt-codex-connector[bot]` on PRs) is a reference. It never gates a
+merge and no round waits for it. It does not comment on every PR. When it
+has commented, every bot comment gets a response: each review thread, each
+PR comment and each issue comment.
+
+The acceptor reads the bot threads and comments on the current head next
+to the diff. For each bot finding it records one decision in the round's
+findings:
+
+| Decision | Meaning | Effect |
+|---|---|---|
+| `adopt` | The finding is real. | It is a finding of this round with its own severity. It counts as a finding in the review loop limit of #2008 rule 1. |
+| `decline` | The finding is wrong, out of scope or not worth a fix. | One-line reason. It does not count in that limit. |
+| `outdated` | The finding is on an older head, and the current head no longer contains the code. | No triage again. It does not count in that limit. |
+
+The bot's "Codex Review Summary" status comment with no findings
+(`codex-review-state` `has_any_findings: false`) gets no reply. The record
+of that head states it: `bot review: no findings at <sha>`. A summary with
+findings gets one decision per finding.
+
+The coordinator writes the replies, so each role keeps one GitHub write
+path. The acceptor stays read-only. The reply uses the `review reply`
+shape (`templates.md`): `rejected` for a decline or an outdated finding,
+`fixed <sha>` for an adopted one after its fix round. A declined or
+outdated thread is resolved with its reply. An adopted thread is resolved
+when the fix round that addresses it is pushed.
+
+A bot finding that arrives after the merge is triaged once: `decline`, or
+`adopt` as a new issue under the batch parent. The merged PR is not
+reopened.
+
+The merge executor still refuses a PR with an unresolved thread
+(`unresolved_threads`). The change is who resolves a bot thread, not the
+gate.
+
 ## 3. Findings
 
 | Severity | Meaning | Where it goes |
@@ -126,8 +164,9 @@ Act on the exit code:
 | 5 | `review_publish_partial`, `review_publish_unknown` | Stop and inspect the PR. Never retry before you confirm which comments exist. |
 | 1 | `review_publish_provider_unavailable`, `review_publish_failed` | Report the error and the posted URLs. |
 
-The merge executor refuses a PR with an unresolved review thread that a
-person started (D6). A review bot thread is advisory and does not block.
+The merge executor refuses a PR with an unresolved review thread (D6).
+A bot thread is a reference input (§2.3): the coordinator answers and
+resolves it, and the bot never adds or removes a gate by itself.
 A rule-4 merge (§2.2) passes this check only after the coordinator
 resolves the remaining P2 threads (§6).
 
@@ -177,7 +216,7 @@ merge (D7).
 Only the acceptor of a round resolves its threads. It resolves a thread
 after the next round confirms the fix on a new subject SHA.
 
-The coordinator may resolve a thread with a written rejection reason, or
+The coordinator resolves a bot thread (§2.3). The coordinator may also resolve a thread with a written rejection reason, or
 with the follow-up issue link of a rule-4 merge (§2.2). Both are a
 `review reply` (`templates.md`).
 
