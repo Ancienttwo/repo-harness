@@ -9,6 +9,10 @@ All notable changes to this skill are documented here.
 
 - The seats range lets the advisor seat take the `edit` tool group, as the owner approved. The orchestrator range still refuses `edit`. (#2032)
 
+### Fixed
+
+- The tarball install smoke compares `/healthz` with the installed package's `OPERATOR_SERVER_PROTOCOL` and `OPERATOR_SERVICE_NAME`. It expected protocol 2 after #1990 raised the protocol to 3, so the daily package job failed. (#2033)
+
 ### Added
 
 - `repo-harness board closeout` stops a CodeGraph MCP server whose command line names exactly the merged worktree (`serve --mcp --path <worktree>`) and lists its PID in `stopped_codegraph_servers`. Any other process, or a process that stays after the stop, still keeps the worktree with `process_in_use`. (#2029)
