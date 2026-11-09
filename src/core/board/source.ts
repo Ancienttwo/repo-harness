@@ -362,6 +362,10 @@ export interface AcceptanceRowV1 {
   readonly verdict: 'PASS' | 'FAIL';
   /** The review runtime that the Role cell starts with (`review publish` writes `<harness> (<model>), read-only`); null for a subject line. */
   readonly harness: 'claude' | 'codex' | 'pi' | null;
+  /** The record's `Claim:` URL, which identifies one review; null when the record names none. */
+  readonly claim: string | null;
+  /** True only when the record's `Model relation:` line is `different-family`: the reviewer's recorded `modelRelation` verdict against the writer. */
+  readonly different_family: boolean;
 }
 
 // The subject cell holds the SHA bare or in paired backticks (the receipt tool and the round-4 records differ).
@@ -377,11 +381,12 @@ const RECORD_SUBJECT_LINE = /^Subject: ([0-9a-f]{40})\. Round ([1-9][0-9]*) .*?:
  */
 export function parseAcceptanceRecord(comment: BoardCommentV1): readonly AcceptanceRowV1[] | null {
   const rows: AcceptanceRowV1[] = [];
+  const record = { claim: field(comment.body, 'Claim'), different_family: field(comment.body, 'Model relation') === 'different-family' };
   for (const line of comment.body.replace(/\r\n/gu, '\n').split('\n')) {
     const table = RECORD_TABLE_ROW.exec(line);
-    if (table) rows.push(Object.freeze({ round: Number(table[1]), subject_sha: table[4]!, verdict: table[5] as 'PASS' | 'FAIL', harness: /^\s*(claude|codex|pi)\b/u.exec(table[2]!)?.[1] as AcceptanceRowV1['harness'] ?? null }));
+    if (table) rows.push(Object.freeze({ round: Number(table[1]), subject_sha: table[4]!, verdict: table[5] as 'PASS' | 'FAIL', harness: /^\s*(claude|codex|pi)\b/u.exec(table[2]!)?.[1] as AcceptanceRowV1['harness'] ?? null, ...record }));
     const subject = RECORD_SUBJECT_LINE.exec(line);
-    if (subject) rows.push(Object.freeze({ round: Number(subject[2]), subject_sha: subject[1]!, verdict: subject[3] as 'PASS' | 'FAIL', harness: null }));
+    if (subject) rows.push(Object.freeze({ round: Number(subject[2]), subject_sha: subject[1]!, verdict: subject[3] as 'PASS' | 'FAIL', harness: null, ...record }));
   }
   return rows.length === 0 ? null : Object.freeze(rows);
 }

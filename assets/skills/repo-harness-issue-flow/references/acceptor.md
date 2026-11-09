@@ -22,12 +22,13 @@ No host and no model is mandatory (D7). Any host that can read the PR and
 return the result schema can accept.
 
 - The acceptor did not write the subject SHA.
-- For the High tier, prefer a reviewer from a different model family.
-- When no other family is available, use a fresh context of the same
-  family. Record `model_relation: same-family` in the receipt. This does
-  not block the merge.
+- For the High tier, at least one of the two reviews of a head comes from
+  a model family different from the writer's (§2.2).
+- The other High review can use a fresh context of the writer's family.
+  Record `model_relation: same-family` in its receipt.
 - When the author model or the reviewer model is unknown, record
-  `model_relation: unknown`.
+  `model_relation: unknown`. An `unknown` row does not count as the
+  different-family review.
 
 ## 2. Take one round
 
@@ -57,7 +58,17 @@ The table rules govern how the row combines with the review.
    gatekeeper and a second reviewer, preferably from a different model
    family (§1). They run in parallel, and each is blind to the other's
    result. Each review has its own `acceptance claim` and its own record
-   row.
+   row. The board accepts a High head, or a head of unknown tier, only
+   when it has `PASS` rows from two distinct `Claim:` URLs, at least one
+   of them with `Model relation: different-family`, and no `FAIL` row.
+   A Medium head needs one `PASS` row and no `FAIL` row.
+
+   **Sync head.** A sync with main makes a new head, and the board reads
+   only the rows of the current head. A sync check reviews the sync delta
+   and writes one record row for the new head. A Medium sync head needs
+   one sync check row. A High sync head needs the round-1 rule: two sync
+   check rows from distinct claims, at least one different-family. The
+   acceptance of an earlier head does not carry over.
 2. **Round 2.** Only the reviewer or reviewers that raised a blocking
    finding take the round. Each reads the fix delta (the hunks that
    changed after round 1) and the sibling cases of each of its findings.

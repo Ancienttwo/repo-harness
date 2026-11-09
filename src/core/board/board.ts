@@ -5,7 +5,6 @@ import { isSeatStatusMessage, seatStatusMessage } from './advisor-seat';
 import { decodePlanBlock, PlanBlockError, type PlanBlockV1 } from './plan-block';
 import {
   BoardSourceError,
-  field,
   newestProtocolComment,
   parseAcceptanceRecord,
   parseClaimStatus,
@@ -14,6 +13,7 @@ import {
   type BoardCommentV1,
   type BoardParentReadV1,
   type BoardPullRequestReadV1,
+  type AcceptanceRowV1,
   type BoardSubIssueReadV1,
   type ClaimStatusV1,
 } from './source';
@@ -66,7 +66,9 @@ export type BoardRequiredCheckV1 =
   | { readonly status: 'pending' | 'missing' };
 
 export type BoardAcceptanceV1 =
-  /** `record`: an acceptance record has a PASS row for the head, no record has a FAIL row for it, and `claude_review` is not `pending`. `tier_low`: every closed issue is `tier:low` and `Required / CI` passed. */
+  /**
+   * `record`: an acceptance record has a PASS row for the head and no record has a FAIL row for it; an open High or unknown-tier pull request
+   * also needs PASS rows of two distinct claims, one recorded `different-family` (`acceptor.md` section 2.2). `tier_low`: every closed issue is `tier:low` and `Required / CI` passed. */
   | { readonly status: 'accepted'; readonly via: 'record' | 'tier_low'; readonly accepted_at: string; readonly evidence_url: string }
   | { readonly status: 'not_accepted' }
   | { readonly status: 'unknown'; readonly reason: 'acceptance_record_unparsed' | 'comments_truncated'; readonly evidence_url: string | null };
@@ -94,8 +96,8 @@ export interface BoardPullRequestV1 {
   /** The highest review tier of the linked issues (the parent excluded); null when the pull request links none, or one is outside the board or has no tier label. */
   readonly tier: BoardTier | null;
   /**
-   * An unknown tier counts as High here (fail closed). `pending`: a High pull request whose writer claim does not prove a Claude runtime and that has no acceptance row from a
-   * Claude reviewer for its head. `recorded`: such a row exists. Always `not_required` for a pull request that is not open.
+   * An unknown tier counts as High here (fail closed). `pending`: an open High pull request whose head does not meet the High acceptance rule and has no acceptance row
+   * from a Claude reviewer. `recorded`: such a row exists. `not_required` for any other pull request, and for a High head that meets the rule without a Claude row.
    */
   readonly claude_review: BoardClaudeReviewV1;
 }
@@ -300,27 +302,24 @@ function requiredCheck(read: BoardPullRequestReadV1): BoardRequiredCheckV1 {
   return { status: run.conclusion === 'SUCCESS' ? 'success' : 'failure', completed_at: run.completed_at };
 }
 
-function acceptance(read: BoardPullRequestReadV1, check: BoardRequiredCheckV1, closedTiers: readonly (BoardTier | null)[], claude: BoardClaudeReviewV1): BoardAcceptanceV1 {
+function acceptance(read: BoardPullRequestReadV1, check: BoardRequiredCheckV1, closedTiers: readonly (BoardTier | null)[], strict: boolean): BoardAcceptanceV1 {
   // One round is one subject SHA, and a High round has two reviews of it (`acceptor.md`, section 2): every record counts.
   const records = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER);
   const passes: BoardCommentV1[] = [];
+  const head: AcceptanceRowV1[] = [];
   let failed = false;
-  let otherPass = false;
   for (const record of records) {
     const rows = parseAcceptanceRecord(record);
     if (rows === null) return { status: 'unknown', reason: 'acceptance_record_unparsed', evidence_url: record.url };
-    const head = rows.filter(row => row.subject_sha === read.head_sha);
-    if (head.some(row => row.verdict === 'FAIL')) failed = true;
-    else if (head.length > 0) {
-      passes.push(record);
-      if (head.some(row => row.harness !== null && row.harness !== 'claude')) otherPass = true;
-    }
+    const own = rows.filter(row => row.subject_sha === read.head_sha);
+    head.push(...own);
+    if (own.some(row => row.verdict === 'FAIL')) failed = true;
+    else if (own.length > 0) passes.push(record);
   }
   if (!failed && passes.length > 0) {
     // An older comment outside the read can hold a FAIL on the head.
     if (read.comments.truncated) return { status: 'unknown', reason: 'comments_truncated', evidence_url: null };
-    // A High head from a non-Claude writer needs both reviews: a PASS row of a named non-Claude harness and a Claude verdict. Either alone does not accept it.
-    if (claude === 'not_required' || (claude === 'recorded' && otherPass)) {
+    if (!strict || highRuleMet(head)) {
       const newest = passes.reduce((latest, record) => (record.created_at >= latest.created_at ? record : latest));
       return { status: 'accepted', via: 'record', accepted_at: newest.created_at, evidence_url: newest.url };
     }
@@ -333,30 +332,38 @@ function acceptance(read: BoardPullRequestReadV1, check: BoardRequiredCheckV1, c
   return { status: 'not_accepted' };
 }
 
-const CLAIM_HEADER = 'repo-harness issue claim';
+/**
+ * The High rule (`acceptor.md` section 2.2), for High and unknown tiers: PASS rows of the head from two distinct review claims,
+ * and at least one of them recorded `Model relation: different-family` to the writer. An unknown writer family records `unknown`,
+ * so it fails closed. A record without a `Claim:` line proves no review claim.
+ */
+function highRuleMet(head: readonly AcceptanceRowV1[]): boolean {
+  const passes = head.filter(row => row.verdict === 'PASS' && row.claim !== null);
+  return new Set(passes.map(row => row.claim)).size >= 2 && passes.some(row => row.different_family);
+}
 
-/** True only when the newest writer claim bound to the PR branch names the Claude runtime: any other claim, or none, is an unknown writer. */
-function writerIsClaude(issue: BoardSubIssueReadV1 | undefined, headRef: string): boolean {
-  if (issue === undefined) return false;
-  const claims = protocolComments(issue.comments, CLAIM_HEADER).filter(claim => field(claim.body, 'Role') === 'writer' && field(claim.body, 'Branch') === headRef);
-  const newest = claims.length === 0 ? null : newestProtocolComment({ ...issue.comments, comments: claims }, CLAIM_HEADER);
-  return newest !== null && field(newest.body, 'Runtime') === 'claude';
+/** The High rule applies to an open pull request of High or unknown tier. */
+function strictReview(read: BoardPullRequestReadV1, tier: BoardTier | null): boolean {
+  return read.state === 'open' && (tier === null || tier === 'high');
 }
 
 /** The one effective tier of a pull request, for the Low acceptance path and the review planner alike: null unless every linked issue (the parent excluded) is on the board with a tier label. */
-function effectiveTier(closes: readonly number[], refs: readonly number[], parent: BoardParentReadV1, tiers: ReadonlyMap<number, BoardTier | null>): { readonly linked: readonly number[]; readonly tier: BoardTier | null } {
+function effectiveTier(closes: readonly number[], refs: readonly number[], parent: BoardParentReadV1, tiers: ReadonlyMap<number, BoardTier | null>): BoardTier | null {
   const linked = [...new Set([...closes, ...refs])].filter(number => number !== parent.parent.number);
   const known = linked.map(number => tiers.get(number) ?? null);
-  return { linked, tier: linked.length === 0 || known.includes(null) ? null : known.includes('high') ? 'high' : known.includes('medium') ? 'medium' : 'low' };
+  return linked.length === 0 || known.includes(null) ? null : known.includes('high') ? 'high' : known.includes('medium') ? 'medium' : 'low';
 }
 
-/** The Claude review state of a pull request. Every unknown input reads as the strict case. */
-function claudeReview(read: BoardPullRequestReadV1, linked: readonly number[], tier: BoardTier | null, parent: BoardParentReadV1): BoardClaudeReviewV1 {
-  const issues = new Map(parent.sub_issues.map(issue => [issue.number, issue]));
-  const needed = read.state === 'open' && (tier === null || tier === 'high') && !(linked.length > 0 && linked.every(number => writerIsClaude(issues.get(number), read.head_ref)));
-  const recorded = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER)
-    .some(record => parseAcceptanceRecord(record)?.some(row => row.harness === 'claude' && row.subject_sha === read.head_sha) === true);
-  return !needed ? 'not_required' : recorded ? 'recorded' : 'pending';
+/**
+ * The Claude review state of a pull request: a projection of the High rule, not a second rule. `recorded`: a Claude reviewer has a row
+ * for the head. `pending`: the High rule is not met for the head and no Claude row exists, so the Claude reviewer seat supplies the
+ * missing review (the second review for a Claude writer, the different-family review for any other writer).
+ */
+function claudeReview(read: BoardPullRequestReadV1, tier: BoardTier | null): BoardClaudeReviewV1 {
+  if (!strictReview(read, tier)) return 'not_required';
+  const head = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER).flatMap(record => parseAcceptanceRecord(record) ?? []).filter(row => row.subject_sha === read.head_sha);
+  if (head.some(row => row.harness === 'claude')) return 'recorded';
+  return highRuleMet(head) ? 'not_required' : 'pending';
 }
 
 function bodyLinks(repository: string, body: string): { readonly closes: number[]; readonly refs: number[] } {
@@ -382,8 +389,8 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
   const pullRequests = linkedPullRequests(input.parent, input.pull_requests).map((read): BoardPullRequestV1 => {
     const { closes, refs } = bodyLinks(repository, read.body);
     const check = requiredCheck(read);
-    const { linked, tier } = effectiveTier(closes, refs, input.parent, tiers);
-    const claude = claudeReview(read, linked, tier, input.parent);
+    const tier = effectiveTier(closes, refs, input.parent, tiers);
+    const claude = claudeReview(read, tier);
     const readiness = read.state === 'open' ? input.readiness.find(entry => entry.pr_number === read.number) : undefined;
     if (read.state === 'open' && readiness === undefined) throw new Error(`board input has no merge readiness for open PR #${read.number}`);
     return Object.freeze({
@@ -402,7 +409,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
       files: read.files,
       required_check: check,
       // An issue outside this board has no observed tier, so it withholds the Low path; so does any non-Low linked issue.
-      acceptance: acceptance(read, check, [tier], claude),
+      acceptance: acceptance(read, check, [tier], strictReview(read, tier)),
       merge_readiness: readiness ?? null,
       tier,
       claude_review: claude,

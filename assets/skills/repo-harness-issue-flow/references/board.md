@@ -33,10 +33,10 @@ Rules that keep the topology safe:
   PR. The Codex seat remains the content author and answers review threads
   through the orchestrator.
 - **Acceptor ≠ writer.** The acceptor of a round did not write the subject
-  SHA. For the High tier, prefer an acceptor from a different model family.
-  When no other family is available, use a fresh same-family context and
-  record `model_relation: same-family` in the acceptance record. A
-  same-family review does not block the merge.
+  SHA. A High head needs two reviews, and at least one of them comes from a
+  model family different from the writer's (`acceptor.md` §2.2). The other
+  can use a fresh same-family context and record
+  `model_relation: same-family` in the acceptance record.
 - **A coordinator of a sub-tree does not write in it.** A child issue that
   turns out to be large becomes a parent. Its claimant becomes the
   coordinator of that sub-tree, opens grandchildren and dispatches them.
@@ -180,9 +180,8 @@ after each claim or status change.
   the plan block's merge order. A parent without a plan (two children or
   fewer) merges in blocked-by order, and the Order column of the parent
   table is only a view. After each merge, the next PR syncs with
-  main. When the sync delta has no conflict and leaves the reviewed source unchanged,
-  the acceptance stays valid with the delta recorded. A changed subject
-  needs a new round.
+  main. The new head needs sync check rows by the tier rule
+  (`acceptor.md` §2.2, Sync head). A changed subject needs a new round.
 - **Batch integration.** When two or more PRs are eligible at the same
   time, the integrator may merge them through one batch PR with one CI run.
   The integrator picks the members (at most 6) and their order. The batch

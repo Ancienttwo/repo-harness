@@ -137,9 +137,9 @@ test('Low acceptance uses the effective tier of every linked issue: a Low closin
   expect([via(''), via('\nRefs #1476\n'), via('\nRefs #1460\n')]).toEqual(['accepted', 'not_accepted', 'not_accepted']);
 });
 
-test('claude_review: only a branch-bound writer claim that names Claude, with every linked tier observed, skips the second review; a Claude record row for the head settles it', () => {
+test('High acceptance: PASS rows of the head from two distinct claims, one recorded different-family; claude_review and A10 project the same rule', () => {
   const claim = (runtime: string, branch: string) => comment(`repo-harness issue claim\nStatus: active\nRole: writer\nBranch: ${branch}\nRuntime: ${runtime}`, '2026-11-02T10:00:00Z');
-  const record = (sha: string, role: string) => `repo-harness acceptance record\n\n| Round | Role | Subject | Verdict |\n|---|---|---|---|\n| 1 | ${role}, read-only | \`${sha}\` | PASS: 0 P1 |\n`;
+  const record = (sha: string, role: string, id: number, relation = 'different-family') => `repo-harness acceptance record\nClaim: https://github.com/Ancienttwo/repo-harness/pull/1#issuecomment-${id}\n\n| Round | Role | Subject | Verdict |\n|---|---|---|---|\n| 1 | ${role}, read-only | \`${sha}\` | PASS: 0 P1 |\n\nModel relation: ${relation}\n`;
   const parent = (data: Json) => {
     for (const [number, runtime, branch] of [[1475, 'claude', 'feat/1475-hc-transport'], [1479, 'claude', 'feat/1479-notify-relay'], [1476, 'codex', 'feat/1476-sessions-herdr-core']] as const) {
       const node = issueNode(data, number);
@@ -152,31 +152,32 @@ test('claude_review: only a branch-bound writer claim that names Claude, with ev
     pulls: (data) => {
       const { pr1494, pr1499 } = data.repository;
       pr1494.body += '\nCloses #1460\n';
-      pr1499.comments.nodes.push(comment(record(pr1499.headRefOid, 'claude (opus)'), '2026-11-02T22:00:00Z'));
-      pr1494.comments.nodes.push(comment(record(pr1494.headRefOid, 'pi (gpt)'), '2026-11-02T22:00:00Z'));
+      pr1499.comments.nodes.push(comment(record(pr1499.headRefOid, 'claude (opus)', 1), '2026-11-02T22:00:00Z'));
+      pr1494.comments.nodes.push(comment(record(pr1494.headRefOid, 'pi (gpt)', 2), '2026-11-02T22:00:00Z'));
     },
   });
-  // A gatekeeper PASS alone leaves #1494 not accepted while its Claude review is pending.
-  expect(board.pull_requests.find(pr => pr.number === 1494)!.acceptance.status).toBe('not_accepted');
-  // #1494 also closes #1460, outside the board: its tier is unknown and counts as High, so the claude claim is not enough.
-  expect(board.pull_requests.map(pr => [pr.number, pr.tier, pr.claude_review])).toEqual([[1491, 'high', 'not_required'], [1494, null, 'pending'], [1499, 'high', 'recorded']]);
-  // #1499 has a Claude PASS and no gatekeeper PASS, so it is not accepted until a non-Claude PASS exists too.
-  expect(board.pull_requests.find(pr => pr.number === 1499)!.acceptance.status).toBe('not_accepted');
-  // A PASS row that names no harness (a subject line, an unknown role) does not stand for the gatekeeper.
-  const unnamed = replay({ parent, pulls: (data) => { const { pr1499 } = data.repository; pr1499.comments.nodes.push(comment(record(pr1499.headRefOid, 'claude (opus)'), '2026-11-02T22:00:00Z'), comment(record(pr1499.headRefOid, 'acceptor'), '2026-11-02T22:01:00Z')); } });
-  expect(unnamed.pull_requests.find(pr => pr.number === 1499)!.acceptance.status).toBe('not_accepted');
-  const both = replay({ parent, pulls: (data) => { const { pr1499 } = data.repository; pr1499.comments.nodes.push(comment(record(pr1499.headRefOid, 'claude (opus)'), '2026-11-02T22:00:00Z'), comment(record(pr1499.headRefOid, 'pi (gpt)'), '2026-11-02T22:01:00Z')); } });
-  expect(both.pull_requests.find(pr => pr.number === 1499)!.acceptance).toMatchObject({ status: 'accepted', via: 'record' });
-  // A10 reads the open, non-draft #1491: a Claude writer claim gives no finding; a Codex claim with no Claude row does.
-  expect(evaluateBoardAttention(board).findings.filter(finding => finding.rule === 'A10')).toEqual([]);
-  const codex = replay({
-    parent: (data) => {
-      const node = issueNode(data, 1475);
-      node.labels.nodes.push({ name: 'tier:high' });
-      node.comments.nodes.push(claim('codex', 'feat/1475-hc-transport'));
-    },
-  });
-  expect(evaluateBoardAttention(codex).findings.filter(finding => finding.rule === 'A10').map(finding => finding.pull_requests)).toEqual([[1491]]);
+  // One different-family PASS is one review: #1494 (unknown tier, counted as High) and #1499 are not accepted.
+  expect(board.pull_requests.map(pr => [pr.number, pr.tier, pr.claude_review, pr.acceptance.status])).toEqual([
+    [1491, 'high', 'pending', 'not_accepted'], [1494, null, 'pending', 'not_accepted'], [1499, 'high', 'recorded', 'not_accepted'],
+  ]);
+  // A Claude writer claim no longer skips the second review: A10 reads the open, non-draft #1491.
+  expect(evaluateBoardAttention(board).findings.filter(finding => finding.rule === 'A10').map(finding => finding.pull_requests)).toEqual([[1491]]);
+  const head = (rows: readonly (readonly [string, number, string])[]) => replay({ parent, pulls: (data) => {
+    const { pr1491 } = data.repository;
+    pr1491.comments.nodes.push(...rows.map(([role, id, relation], at) => comment(record(pr1491.headRefOid, role, id, relation), `2026-11-02T22:0${at}:00Z`)));
+  } });
+  const pr1491 = (projected: BoardV1) => projected.pull_requests.find(pr => pr.number === 1491)!;
+  const cases = [
+    head([['pi (gpt)', 1, 'different-family'], ['claude (opus)', 2, 'same-family']]),
+    head([['pi (gpt)', 1, 'different-family'], ['claude (opus)', 1, 'same-family']]),
+    head([['pi (gpt)', 1, 'unknown'], ['claude (opus)', 2, 'same-family']]),
+    head([['pi (gpt)', 1, 'different-family'], ['codex (gpt)', 2, 'different-family']]),
+  ];
+  // Two claims with one different-family row accept; one claim twice, or no different-family row (an unknown writer family records `unknown`), does not.
+  expect(cases.map(pr1491).map(pr => [pr.acceptance.status, pr.claude_review])).toEqual([
+    ['accepted', 'recorded'], ['not_accepted', 'recorded'], ['not_accepted', 'recorded'], ['accepted', 'not_required'],
+  ]);
+  expect(evaluateBoardAttention(cases[3]!).findings.filter(finding => finding.rule === 'A10')).toEqual([]);
 });
 
 test('replay: the recorded #1474 reads project to a board, and its findings come from the recorded state', () => {
