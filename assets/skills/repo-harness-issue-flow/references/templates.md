@@ -399,9 +399,19 @@ The head owner replies `fixed` or `disputed` and leaves the thread open.
 Only the coordinator replies `rejected`, or `deferred` for a rule-4
 deferral (`acceptor.md` §2.2), then resolves the thread (`board.md` rule 5).
 A comment from a reviewer without a claim role, such as an
-outside contributor or an independent bot, is optional input: the head
-owner or the coordinator decides whether to adopt it, and answers with the
-same reply.
+outside contributor, is optional input: the head owner or the coordinator
+decides whether to adopt it, and answers with the same reply. A review bot
+comment follows `acceptor.md` §2.3: the coordinator answers every one.
+
+### review-bot reference (plain PR comment, written by the coordinator)
+
+```text
+Review-bot reference: <comment id or thread> adopt|decline|outdated: <reason>
+Review-bot reference: no findings at <sha>: no action
+```
+
+`acceptor.md` §2.3 defines the decisions. It is not part of the
+`acceptance record`.
 
 ### unblocked
 
