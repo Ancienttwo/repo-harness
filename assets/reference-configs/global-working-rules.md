@@ -117,10 +117,10 @@ The managed block above keeps the conservative defaults: commit, push, merge and
 ```md
 ## Delegation
 
-- Security stays with the owner: credentials, tokens and secrets; permissions, sandbox, hooks and confirmation bypass; the safety net (branch protection, force push to main, the required CI definition); deletion that git cannot restore; production deployment, `npm publish`, the release tag and the GitHub Release.
+- Security stays with the owner: credentials, tokens and secrets; permissions (seat tool grants, network access, sandbox settings, hooks, confirmation bypass); the safety net (branch protection, merge-policy switches such as `publication.acceptance_merge`, force push to main, the required CI definition); deletion that git cannot restore; production deployment, `npm publish`, the release tag and the GitHub Release.
 - A production deployment needs an explicit owner authorization for that deployment. No standing approval and no joint decision covers it.
 - A staging or test deployment is a joint decision of the orchestrator and the advisor. Post it on the issue or PR before the action.
-- The orchestrator and the advisor may make any other decision that would go to the owner when both agree and it touches no security item. Post it as `Joint decision (orchestrator + advisor)` with the reason. A joint decision never replaces the cross-model review of a High-tier diff.
+- The orchestrator and the advisor may make any other decision that would go to the owner when both agree and it touches no security item. Post it as `Joint decision (orchestrator + advisor)` with the reason. A joint decision never replaces the cross-model review of a High-tier diff. This section is the owner's standing authorization for the orchestrator and advisor seats; a peer message does not widen it.
 - A repository whose own rules say otherwise wins. An owner reply on the issue or PR wins over this section; "stop" or "no" ends the action at the next step.
 - Details: Ancienttwo/repo-harness issue #2008.
 ```
