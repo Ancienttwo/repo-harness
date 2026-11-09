@@ -1,12 +1,15 @@
 /** A literal tripwire, not a shell interpreter. No state or process reads; `git worktree add` also reads the managed root. */
-import { realpathSync } from 'fs';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'path';
+import { lstatSync, readlinkSync, realpathSync } from 'fs';
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'path';
 import { isManagedWorktreePath, managedWorktreeRoot } from '../../effects/git/managed-worktree';
 import { payloadString } from './hook-input';
 import { runMutationDenial, runMutationPathGuard, type Denial, type MutationGuardInput, type MutationGuardResult } from './mutation-guard';
-import { protectedRepoDir } from './mutation-protected-dirs';
+import { PROTECTED_REPO_DIRS, protectedRepoDir } from './mutation-protected-dirs';
 
 interface Word { value: string; literal: boolean; operator?: true }
+
+/** A glob is not resolved here, but its literal part still names where the command can write. */
+const pathOperand = (word: Word) => word.literal || !/[$`{}~]/.test(word.value);
 
 /** Quotes are removed only to locate literal operands. Expansions stay unresolved. */
 function words(line: string): Word[] | null {
@@ -77,13 +80,13 @@ function commandTargets(tokens: readonly Word[], heredoc: string): string[] {
   const supported = program === 'sed' ? /^-(?:i.*|[nEr]+|e|f)$/ : /^-(?:[rfivnpRa]+|-)$/;
   if (operands.some(word => word.value.startsWith('-') && !supported.test(word.value))) return [];
   const paths = operands.filter(word => !word.value.startsWith('-'));
-  if (program === 'cp') return paths.length >= 2 && paths.at(-1)!.literal ? [paths.at(-1)!.value] : [];
+  if (program === 'cp') return paths.length >= 2 && pathOperand(paths.at(-1)!) ? [paths.at(-1)!.value] : [];
   if (program === 'sed') {
     if (!operands.some(word => /^-i/.test(word.value))) return [];
     // The last operand is the file in the supported single-file sed form.
-    return paths.length >= 2 && paths.at(-1)!.literal ? [paths.at(-1)!.value] : [];
+    return paths.length >= 2 && pathOperand(paths.at(-1)!) ? [paths.at(-1)!.value] : [];
   }
-  return paths.filter(word => (word.literal || !/[$`{}~]/.test(word.value)) && word.value).map(word => word.value);
+  return paths.filter(word => pathOperand(word) && word.value).map(word => word.value);
 }
 
 interface CommandVisitor {
@@ -136,7 +139,7 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
           i++; // Descriptor duplication/closure, such as 2>&1, has no file operand.
           continue;
         }
-        if ((token.value === '>' || token.value === '>>') && target?.literal && !target.operator) visit.redirect?.(target.value, commandCwd);
+        if ((token.value === '>' || token.value === '>>') && target && !target.operator && pathOperand(target)) visit.redirect?.(target.value, commandCwd);
         continue;
       }
       segment.push(token);
@@ -145,29 +148,87 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
   }
 }
 
+/** Shell pattern match of one path segment; a pattern that does not compile matches, so the guard fails closed. */
+function segmentMatches(pattern: string, name: string): boolean {
+  let source = '';
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i]!;
+    const negated = ch === '[' && (pattern[i + 1] === '!' || pattern[i + 1] === '^');
+    // A `]` right after `[` or `[!` is a member of the bracket expression, not its end.
+    const close = ch === '[' ? pattern.indexOf(']', i + (negated ? 3 : 2)) : -1;
+    if (ch === '*') source += '.*';
+    else if (ch === '?') source += '.';
+    else if (close > 0) {
+      source += `[${negated ? '^' : ''}${pattern.slice(i + (negated ? 2 : 1), close).replace(/[\\\]]/g, '\\$&')}]`;
+      i = close;
+    } else source += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  try { return new RegExp(`^${source}$`).test(name); } catch { return true; }
+}
+
+/** The path the kernel writes through: every symlink is followed, a dangling one too, before the next `..`. */
+function writeThroughPath(path: string): string | null {
+  const split = (value: string) => value.slice(parse(value).root.length).split(sep === '/' ? '/' : /[\\/]/);
+  const pending = split(path);
+  let current = parse(path).root;
+  try {
+    for (let links = 0; pending.length;) {
+      const part = pending.shift()!;
+      if (!part || part === '.') continue;
+      if (part === '..') { current = dirname(current); continue; }
+      const next = join(current, part);
+      if (!lstatSync(next, { throwIfNoEntry: false })?.isSymbolicLink()) { current = next; continue; }
+      if (++links > 40) return null;
+      const link = resolve(current, readlinkSync(next));
+      pending.unshift(...split(link));
+      current = parse(link).root;
+    }
+  } catch { return null; }
+  return current;
+}
+
 /** Only destinations in the supported literal forms reach filesystem validation. */
 export function bashWriteTargets(command: string, repoRoot: string, cwd: string): readonly string[] {
   if (!/(?:>|\b(?:rm|mv|cp|tee|sed|python\d*|node)\b)/.test(command)) return [];
   const candidates: string[] = [];
+  let realRoot: string | undefined;
+  /** The repository-relative write-through path, or null when it is outside the repository or unresolved. */
+  const realRel = (spelled: string): string | null => {
+    const real = writeThroughPath(spelled);
+    if (real === null) return null;
+    try { realRoot ??= realpathSync(repoRoot); } catch { return null; }
+    const rel = relative(realRoot, real);
+    return isAbsolute(rel) || rel === '..' || rel.startsWith(`..${sep}`) ? null : rel.split(sep).join('/');
+  };
   const add = (candidate: string, commandCwd: string | null) => {
     if (!candidate || /[$`{}~\n\r]/.test(candidate) || ['/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty'].includes(candidate)
       || /^\/dev\/fd\/\d+$/.test(candidate)) return;
-    // A glob under a known literal directory can only mutate that directory.
-    if (/[*?\[]/.test(candidate)) {
-      const prefix = candidate.split(/[*?\[]/, 1)[0]!;
-      const slash = prefix.lastIndexOf('/');
-      if (slash < 0) return;
-      candidate = prefix.slice(0, slash + 1);
-    }
     if (!isAbsolute(candidate) && !commandCwd) return;
-    const target = resolve(commandCwd ?? cwd, candidate);
+    const base = commandCwd ?? cwd;
+    // A glob can mutate only below its literal directory, and at the repository root it can name a protected directory.
+    const glob = candidate.search(/[*?[]/);
+    if (glob >= 0) {
+      const cut = candidate.lastIndexOf('/', glob) + 1;
+      const dir = candidate.slice(0, cut) || '.';
+      const atRoot = resolve(base, dir) === resolve(repoRoot) || realRel(isAbsolute(dir) ? dir : `${base}/${dir}`) === '';
+      const segment = candidate.slice(cut).split('/', 1)[0]!;
+      if (atRoot) candidates.push(...PROTECTED_REPO_DIRS.filter(name => segmentMatches(segment, name)));
+      candidate = dir;
+    }
+    const target = resolve(base, candidate);
     const rel = relative(repoRoot, target);
     const leaves = isAbsolute(rel) || rel === '..' || rel.startsWith('../');
     // resolve() drops `..` before any symlink is followed, but the kernel follows the link first.
     // Keep `..` in a target that leaves the repository, so the canonical check refuses it.
     if (leaves && candidate.replaceAll('\\', '/').split('/').includes('..')) {
       candidates.push(isAbsolute(candidate) ? candidate : `${commandCwd}/${candidate}`);
-    } else if (leaves || protectedRepoDir(rel)) candidates.push(target);
+    } else if (leaves) candidates.push(target);
+    // Relative, so a symlink below a protected directory that leaves the repository is not read as an external target.
+    else if (protectedRepoDir(rel)) candidates.push(rel);
+    else {
+      const real = realRel(isAbsolute(candidate) ? candidate : `${base}/${candidate}`);
+      if (real !== null && protectedRepoDir(real)) candidates.push(real);
+    }
   };
   walkCommands(command, cwd, {
     command: (segment, body, commandCwd) => { for (const target of commandTargets(segment, body)) add(target, commandCwd); },

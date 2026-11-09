@@ -119,6 +119,26 @@ describe('Bash write tripwire host route', () => {
       writePolicy(cwd, ['_ops/dispatch']);
       // The allowlist is for structured tools; Bash targets are inferred from text.
       expect(invokeBash('echo value > _ops/dispatch/plan.md').status).toBe(2);
+      // A glob that can match a protected directory, or a symlink on either side of _ops, is judged by where the write can land.
+      const outside = realpathSync(mkdtempSync('/tmp/bash-write-guard-outside-'));
+      try {
+        writeFileSync(join(outside, 'secret'), 'x');
+        mkdirSync(join(cwd, '_ops/env'), { recursive: true });
+        symlinkSync(join(outside, 'secret'), join(cwd, '_ops/env/link'));
+        symlinkSync('../_ops/env', join(cwd, 'src/l'));
+        symlinkSync('../_ops/env/new.env', join(cwd, 'src/leaf'));
+        for (const [command, hookCwd] of [
+          ['echo value > ./_op[s]/env/x'], ['echo value > _op*/env/x'], ['rm -rf _?ef'], ['rm -rf src/../_op[!x]'],
+          ['echo value > _ops/env/*'], ['cp safe.txt _ops/env/*'], ['rm *', join(cwd, '_ops/env')], ['rm -rf *'],
+          ['echo value > _ops/env/link'], ['echo value > src/l/y.env'], ['echo value > src/leaf'], ['rm src/l/*'],
+        ] as [string, string?][]) {
+          const result = invokeBash(command, hookCwd);
+          expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 2 });
+        }
+        for (const command of ['rm src/*.tmp', 'echo value > _o/*', 'rm -rf *.log', 'rm -rf _ops_old*']) {
+          expect({ command, status: invokeBash(command).status }).toEqual({ command, status: 0 });
+        }
+      } finally { rmSync(outside, { recursive: true, force: true }); }
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 
