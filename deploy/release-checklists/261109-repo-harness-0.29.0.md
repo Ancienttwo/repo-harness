@@ -122,9 +122,23 @@ page. No config migration runs.
 ## Acceptance environment
 
 - Subject: `766e0e32b` plus the prep diff. Host Max, Darwin 25.5.0 arm64.
-- Prep head: pending. `bun run check:release` result: pending.
-- `git diff --check` against the final base: pending. Historical CHANGELOG
-  byte comparison from `[0.28.0]` through the end: pending.
+- Prep head `0130aa52f` on macOS 26.5 arm64, Bun 1.4.3, Node v24.22.1:
+  the console dist and console `node_modules` link were absent before the
+  run. `bun install --frozen-lockfile`, then `bun run check:release` exited
+  0 with `[ci] OK` and `[release] OK: npm package gate passed.`
+- The tarball smoke loaded 32 MCP modules with all selected and 0 with an
+  empty selection. Operator loaded 86 modules with all selected and served;
+  it refused an empty selection. Status, seats, quota and hook routes each
+  loaded 0 modules. The 98-module hook bundle held 0; peer-runtime loaded 4
+  when selected. `repo-harness-0.29.0.tgz` installed, served the packaged
+  Operator, and started the packaged CLI bins.
+- `bun run check:type`: exit 0. `bun run test:files
+  tests/bootstrap-files.test.ts tests/skill-version.test.ts
+  tests/operator-web/operator-bots-page.test.tsx`: 15, 10 and 14 pass,
+  0 fail.
+- `git diff --check` against the final base: exit 0. Historical CHANGELOG
+  byte comparison from `[0.28.0]` through the end: identical to the final
+  base.
 - Test budget on the prep diff: 0 test lines, 1 added product line in
   `src` and `scripts`, 0 new test files.
 - Hosted CI and merge-commit prepublish gate: pending. No publication or
