@@ -355,6 +355,9 @@ describe("repo-harness seats argv", () => {
       expect(launch(home, "advisor").limits).toContainEqual({ subject: "gh", level: "common_commands" });
       expect(launch(home, "orchestrator").limits).toContainEqual({ subject: "schedule", level: "instructions_only" });
       expect(launch(home, "orchestrator").brief).toContain("Do not schedule recurring jobs.");
+      // Shell off, MCP on: the MCP path alone keeps the limit instructions_only.
+      const mcpOnly = { ...DEFAULT_SEATS_CONFIG.advisor, tools: ["mcp", "read"] };
+      withHome({ ...DEFAULT_SEATS_CONFIG, advisor: mcpOnly }, home2 => expect(launch(home2, "advisor").limits).toContainEqual({ subject: "schedule", level: "instructions_only" }));
     });
   });
 
