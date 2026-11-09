@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { DispatchError, planDispatch, type DispatchPlanV1 } from '../src/core/board/dispatch';
 import { executeDispatch, type DispatchPorts } from '../src/effects/board/dispatch';
+import { withSeatLine } from '../src/core/board/seat-line';
 import { HerdrCoreError } from '../src/effects/terminal/herdr-core';
 import type { SeatAccountQuotas } from '../src/core/board/seat-routing';
 import { DEFAULT_SEATS_CONFIG } from '../src/core/board/seats-settings';
@@ -147,4 +148,10 @@ test('a credentials issue whose launch resolves to Pi starts no claim and no tab
   const run = ports({ launch: async () => ({ argv: ['agent'], tab: null, runtime: 'pi' }) });
   await expect(executeDispatch(planOf(['route:important_deep', 'touches:credentials']), context, run.base)).rejects.toThrow(/Pi seat/);
   expect(run.calls).toEqual(['worktree 1']);
+});
+
+test('a seat comment gets the Seat line only when the seat env and the hc address are both set', () => {
+  expect(withSeatLine('body', { REPO_HARNESS_SEAT: 'advisor', HC_TERMINAL_ID: 't5' })).toBe('body\nSeat: advisor t5');
+  expect(withSeatLine('body', { REPO_HARNESS_SEAT: 'advisor' })).toBe('body');
+  expect(withSeatLine('body', { HC_TERMINAL_ID: 't5' })).toBe('body');
 });

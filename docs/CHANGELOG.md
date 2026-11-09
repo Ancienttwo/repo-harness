@@ -8,6 +8,7 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- Every seat comment ends with `Seat: <seat id> <hc address>`, a reader trace only. The issue-flow skill states the rule. `repo-harness board dispatch` adds the line to its claim comments when `REPO_HARNESS_SEAT` and `HC_TERMINAL_ID` are set. No command refuses a comment without it. (#2051)
 - The root `CLAUDE.md` and `AGENTS.md`, the issue-flow skill and the Herdr Dispatch guide state the owner decisions of #2008. Merge by rule at every tier, fix rounds up to round 5 while findings shrink, ordered dispatch of an approved batch plan, and joint orchestrator + advisor decisions replace the four hard boundaries. The owner keeps credentials, permissions, the safety net, deletion that git cannot restore, `npm publish`, the tag, the GitHub Release and production deployments. (#2008)
 - The seats range lets the advisor seat take the `edit` tool group, as the owner approved. The orchestrator range still refuses `edit`. (#2032)
 

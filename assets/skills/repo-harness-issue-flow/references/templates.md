@@ -259,6 +259,8 @@ field is missing it posts `issue claim status` with `Status: released`,
 then one complete claim. It names the missing fields in a `To: <agent>`
 comment and does not dispatch until the corrected claim is on the board.
 
+Every template below ends with the line `Seat: <seat id> <hc address>` when a seat posts it by hand. The line is a reader trace; no decoder reads it. The `review start` marker keeps its own `Seat:` field and takes no second line.
+
 `issue claim` is seat-only. The coordinator posts it, including the
 claim of each agent it dispatches. Such a claim names the agent in
 `Agent:` and the coordinator's own claim in `Coordinator:`. Any other
