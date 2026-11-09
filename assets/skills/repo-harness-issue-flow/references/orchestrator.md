@@ -267,7 +267,8 @@ host's PR events or check when the worker reports.
   order first. Do not spend fix or review rounds on a PR above a red PR in the
   same chain.
 - **Low and docs-only PR.** Read the status and report it. Do not push fix
-  rounds of your own. The Low accept-seat skip
+  rounds of your own. In an owner-approved batch, it takes one gatekeeper
+  round (`acceptor.md` §1). Outside such a batch, the Low accept-seat skip
   (`docs/reference-configs/agentic-development-flow.md`, Review by risk)
   sets its review.
 - **CI red.** The worker owns the fix. Send the failing job name and the
@@ -285,10 +286,11 @@ host's PR events or check when the worker reports.
   and post a `scope change` comment that says what changed and why), or
   open a new issue for the extra work and keep the PR narrow. Never let the
   worker widen the PR without an issue change.
-- **Review.** Select the review depth by the diff's risk tier. A Low PR
-  that meets the Low accept-seat skip gets no Codex, Herdr or OAR accept
-  seat (`docs/reference-configs/agentic-development-flow.md`, Review by
-  risk). Send each reviewer the review packet of `acceptor.md` §2.1. Each
+- **Review.** Select the review depth by the diff's risk tier. A Low PR in
+  an owner-approved batch gets one gatekeeper round. Outside such a batch,
+  a Low PR that meets the Low accept-seat skip gets no Codex, Herdr or OAR
+  accept seat (`docs/reference-configs/agentic-development-flow.md`, Review
+  by risk). Send each reviewer the review packet of `acceptor.md` §2.1. Each
   reviewer posts an `acceptance claim` before it reads. Who reviews each
   round, and how many claims a round has, follow `acceptor.md` §2.2.
   Findings take the severities of `acceptor.md` §3. A P3 becomes a
@@ -406,8 +408,9 @@ A PR is eligible when all of these are true:
 - It is open and not draft.
 - Its required checks are SUCCESS on its own head.
 - Its tier review passed on a subject SHA. A rule-4 deferral of
-  `acceptor.md` §2.2 still needs that `PASS`. A Low PR needs no review, but
-  its PR body must hold the author verification evidence
+  `acceptor.md` §2.2 still needs that `PASS`. Outside an owner-approved batch,
+  a Low PR that meets the Low accept-seat skip needs no review, but its PR
+  body must hold the author verification evidence
   (`docs/reference-configs/agentic-development-flow.md`, Review by risk).
 - Its head equals the reviewed subject, or adds only conflict-free merges
   of main since it. `git rev-list --no-merges <subject>..<head> ^origin/main`
@@ -476,9 +479,10 @@ merge it by any path other than `repo-harness publication merge`.
    nothing else.
 5. **Review.** Every member merged without conflict, and the batch adds no
    commit of its own. The batch reuses the member acceptance records and
-   needs no new review round. A Low member has no acceptance record to
-   reuse (`docs/reference-configs/agentic-development-flow.md`, Review by
-   risk).
+   needs no new review round. A Low member from an owner-approved batch
+   reuses its gatekeeper record. A Low member outside such a batch has no
+   acceptance record to reuse
+   (`docs/reference-configs/agentic-development-flow.md`, Review by risk).
 6. **Red CI.** Do not fix it in the batch branch. Classify the failure
    first; a known flake gets one rerun (§8). Drop the member that changes
    the failing test or the source it covers, and post the batch-drop

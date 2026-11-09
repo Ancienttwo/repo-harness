@@ -7,9 +7,11 @@ and the board are in `board.md`. The round record is in `orchestrator.md`
 
 ## 1. Who accepts
 
-A Low PR that meets the Low accept-seat skip takes no round and no
-acceptance record (`docs/reference-configs/agentic-development-flow.md`,
-Review by risk).
+In an owner-approved batch, a Low PR takes one gatekeeper round, because
+merge by rule needs a `PASS` record at every tier (root `CLAUDE.md` and
+`AGENTS.md`, rule 2). Outside such a batch, a Low PR that meets the Low
+accept-seat skip takes no round and no acceptance record
+(`docs/reference-configs/agentic-development-flow.md`, Review by risk).
 
 The gatekeeper is the default acceptor (D6). It reviews the diff and
 returns a verdict and findings. A seat without the `net` tool group has no
@@ -66,10 +68,14 @@ The table rules govern how the row combines with the review.
    remaining finding is P2, all of them are in one bug family, and none
    concerns security, secrets, data or authentication, a recorded decision
    (the owner, or a joint decision of the orchestrator and the advisor) may
-   move that family to one follow-up issue. The coordinator then resolves
-   each remaining P2 thread with a reply that links the follow-up issue
-   (§6). The next round reviews with those threads deferred. It must return
-   `PASS` before the PR merges, and its record names the follow-up issue.
+   move that family to one follow-up issue after round 3 or round 4. The
+   coordinator then resolves each remaining P2 thread with a reply that
+   links the follow-up issue (§6). The deferral takes effect at the next
+   head: a fix, a sync with main, or the commit that adds the follow-up
+   link. A `FAIL` row stays on its head, so the next round reviews that new
+   head with those threads deferred. It must return `PASS` for that head
+   before the PR merges, and its record names the follow-up issue. A `FAIL`
+   in round 5 is a hard stop and takes no deferral.
    A grown scope, a new P0 or P1 finding, a blocking finding after round 5,
    or a security, secrets, data or authentication finding becomes a parked
    owner gate (`docs/reference-configs/agentic-development-flow.md`, Park a
