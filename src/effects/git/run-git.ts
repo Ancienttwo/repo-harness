@@ -6,13 +6,22 @@ export function runGit(
   args: readonly string[],
   opts: RunProcessOptions & { gitBin?: string } = {},
 ): ProcessRunResult {
-  const { gitBin, timeoutMs, env, inheritEnv, redactions, ...rest } = opts;
+  const { gitBin, timeoutMs, env, inheritEnv, redactions, stdio, ...rest } = opts;
   const childEnv = inheritEnv === false ? env : { ...process.env, ...env };
-  return runProcess(resolveGitExecutable(gitBin, env), [...args], {
+  const tokenRedactions = providerTokenRedactions(childEnv);
+  // An inherited stream reaches the terminal before any replacement, so a call that holds a token captures it and forwards the replaced text.
+  const captured = stdio === 'inherit' && tokenRedactions.length > 0;
+  const result = runProcess(resolveGitExecutable(gitBin, env), [...args], {
     ...rest,
     env: gitChildEnv(args, childEnv),
     inheritEnv: false,
-    redactions: [...providerTokenRedactions(childEnv), ...(redactions ?? DEFAULT_REDACTIONS)],
+    stdio: captured ? 'pipe' : stdio,
+    redactions: [...tokenRedactions, ...(redactions ?? DEFAULT_REDACTIONS)],
     timeoutMs: timeoutMs === undefined ? resolveGitTimeout(undefined) : timeoutMs,
   });
+  if (captured) {
+    process.stdout.write(result.stdout);
+    process.stderr.write(result.stderr);
+  }
+  return result;
 }

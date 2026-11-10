@@ -11,6 +11,8 @@ import {
 export interface ProcessOutputRedaction {
   readonly pattern: RegExp;
   readonly replacement: string;
+  /** Removed from the end of output that was cut short, where a cut can leave part of a secret. */
+  readonly tail?: RegExp;
 }
 
 export interface RunProcessOptions {
@@ -99,8 +101,10 @@ function terminateAbandonedProcessGroup(pid: number, taskkillBin?: string): stri
 export function redactProcessOutput(
   value: string,
   redactions: readonly ProcessOutputRedaction[] = DEFAULT_REDACTIONS,
+  cut = false,
 ): string {
-  return redactions.reduce((current, redaction) => current.replace(redaction.pattern, redaction.replacement), value);
+  const replaced = redactions.reduce((current, redaction) => current.replace(redaction.pattern, redaction.replacement), value);
+  return cut ? redactions.reduce((current, redaction) => (redaction.tail ? current.replace(redaction.tail, "") : current), replaced) : replaced;
 }
 
 export function capProcessOutput(value: string, maxBytes = DEFAULT_PROCESS_MAX_OUTPUT_BYTES): string {
@@ -250,11 +254,14 @@ export function runProcess(command: string, args: readonly string[], opts: RunPr
   const stderr = supervised?.stderr ?? (typeof result?.stderr === "string" ? result.stderr : "");
   const rawError = supervised?.receipt.spawnError ?? (error ? errorMessage(error) : "");
   const timeoutMessage = timedOut ? `process timed out after ${timeoutMs}ms: ${redactedCommand.join(" ")}` : "";
+  // A timeout, a spawn error such as the buffer limit, or a capture that reached its limit cut the output at any byte.
+  const cut = timedOut || rawError !== "" || signal !== null
+    || Buffer.byteLength(stdout, "utf8") > maxOutputBytes || Buffer.byteLength(stderr, "utf8") > maxOutputBytes;
   const failureMessage = [timeoutMessage, rawError].filter(Boolean).join("\n");
   const stderrDetails = [timeoutMessage, rawError]
     .filter((detail) => detail && !stderr.includes(detail))
     .join("\n");
-  const stderrOrError = [stderr, stderrDetails].filter(Boolean).join("\n");
+  const stderrOrError = [redactProcessOutput(stderr, redactions, cut), stderrDetails].filter(Boolean).join("\n");
 
   return {
     ok: status === 0 && !rawError && !timedOut,
@@ -262,7 +269,7 @@ export function runProcess(command: string, args: readonly string[], opts: RunPr
     signal,
     timedOut,
     command: redactedCommand,
-    stdout: capProcessOutput(redactProcessOutput(stdout, redactions), maxOutputBytes),
+    stdout: capProcessOutput(redactProcessOutput(stdout, redactions, cut), maxOutputBytes),
     stderr: capProcessOutput(redactProcessOutput(stderrOrError, redactions), maxOutputBytes),
     error: redactProcessOutput(failureMessage, redactions),
   };

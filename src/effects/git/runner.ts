@@ -98,12 +98,26 @@ export function gitChildEnv(args: readonly string[], env: NodeJS.ProcessEnv | un
 
 const REDACTED = '[redacted]';
 
-/** Provider-token values in the parent environment and in the caller env, longest first. */
+/**
+ * A shorter value is not a real provider token: it would corrupt ordinary output
+ * (a one-letter value turns `status` into `st[redacted]tus`). GitHub tokens have 40 or more characters.
+ */
+export const MIN_PROVIDER_TOKEN_LENGTH = 8;
+
+/**
+ * Provider-token values in the parent environment and in the caller env, longest first.
+ * A value that is too short, or that the marker itself contains, is malformed authority:
+ * replacing it would corrupt output or leave the value in the marker, so the call fails closed.
+ */
 function providerTokenValues(env: NodeJS.ProcessEnv | undefined): string[] {
   const values = new Set<string>();
   for (const source of [process.env, env ?? {}]) {
     for (const [key, value] of Object.entries(source)) {
-      if (PROVIDER_TOKEN_ENV.has(key.toUpperCase()) && value) values.add(value);
+      if (!PROVIDER_TOKEN_ENV.has(key.toUpperCase()) || !value) continue;
+      if (value.length < MIN_PROVIDER_TOKEN_LENGTH || REDACTED.includes(value)) {
+        throw new Error(`${key} is shorter than ${MIN_PROVIDER_TOKEN_LENGTH} characters or part of the redaction marker; git does not run with a malformed provider token`);
+      }
+      values.add(value);
     }
   }
   return [...values].sort((left, right) => right.length - left.length);
@@ -113,13 +127,30 @@ function redactText(text: string, values: readonly string[]): string {
   return values.reduce((current, value) => current.split(value).join(REDACTED), text);
 }
 
+/** Drops a trailing part of a token value, which an output cut inside the value leaves behind. */
+function trimTokenPrefixTail(text: string, values: readonly string[]): string {
+  let cut = text.length;
+  for (const value of values) {
+    for (let length = Math.min(value.length - 1, text.length); length > 0; length--) {
+      if (text.endsWith(value.slice(0, length))) { cut = Math.min(cut, text.length - length); break; }
+    }
+  }
+  return text.slice(0, cut);
+}
+
+/** `cut` marks output of a call that ended early, so a token value may be cut in two at its end. */
+function redactBytes(text: string, values: readonly string[], cut: boolean): string {
+  const redacted = redactText(text, values);
+  return cut ? trimTokenPrefixTail(redacted, values) : redacted;
+}
+
 /** Buffers are matched byte for byte (latin1), so binary git output outside a token stays intact. */
-function redactOutput<T extends string | Buffer | null | undefined>(output: T, values: readonly string[]): T {
-  if (typeof output === 'string') return redactText(output, values) as T;
+function redactOutput<T extends string | Buffer | null | undefined>(output: T, values: readonly string[], cut = false): T {
+  if (typeof output === 'string') return redactBytes(output, values, cut) as T;
   if (!Buffer.isBuffer(output)) return output;
-  const bytes = values.map(value => Buffer.from(value));
-  if (!bytes.some(value => output.includes(value))) return output;
-  return Buffer.from(redactText(output.toString('latin1'), values.map(value => Buffer.from(value).toString('latin1'))), 'latin1') as T;
+  const latin1 = (text: string) => Buffer.from(text).toString('latin1');
+  const marked = Buffer.from(redactBytes(output.toString('latin1'), values.map(latin1), cut), 'latin1');
+  return (marked.equals(output) ? output : marked) as T;
 }
 
 function redactThrown(error: unknown, values: readonly string[]): unknown {
@@ -127,16 +158,17 @@ function redactThrown(error: unknown, values: readonly string[]): unknown {
   const fields = error as Error & { stdout?: unknown; stderr?: unknown; output?: unknown };
   error.message = redactText(error.message, values);
   if (typeof error.stack === 'string') error.stack = redactText(error.stack, values);
-  fields.stdout = redactOutput(fields.stdout as string | Buffer | undefined, values);
-  fields.stderr = redactOutput(fields.stderr as string | Buffer | undefined, values);
-  if (Array.isArray(fields.output)) fields.output = fields.output.map(entry => redactOutput(entry as Buffer | null, values));
+  fields.stdout = redactOutput(fields.stdout as string | Buffer | undefined, values, true);
+  fields.stderr = redactOutput(fields.stderr as string | Buffer | undefined, values, true);
+  if (Array.isArray(fields.output)) fields.output = fields.output.map(entry => redactOutput(entry as Buffer | null, values, true));
   return error;
 }
 
 function redactSpawnResult<R extends SpawnSyncReturns<string | Buffer>>(result: R, values: readonly string[]): R {
-  result.stdout = redactOutput(result.stdout, values);
-  result.stderr = redactOutput(result.stderr, values);
-  if (Array.isArray(result.output)) result.output = result.output.map(entry => redactOutput(entry, values));
+  const cut = result.error !== undefined || result.signal !== null || result.status === null;
+  result.stdout = redactOutput(result.stdout, values, cut);
+  result.stderr = redactOutput(result.stderr, values, cut);
+  if (Array.isArray(result.output)) result.output = result.output.map(entry => redactOutput(entry, values, cut));
   if (result.error) redactThrown(result.error, values);
   return result;
 }
@@ -154,8 +186,8 @@ function captureInheritedStderr(stdio: Stdio, forwardsByDefault: boolean): Stdio
   return undefined;
 }
 
-function forwardStderr(stderr: string | Buffer | null | undefined, values: readonly string[]): void {
-  if (stderr && stderr.length > 0) process.stderr.write(redactOutput(stderr, values));
+function forwardStderr(stderr: string | Buffer | null | undefined, values: readonly string[], cut = false): void {
+  if (stderr && stderr.length > 0) process.stderr.write(redactOutput(stderr, values, cut));
 }
 
 const GENERIC_GIT_NAMES = new Set(['git', 'git.exe']);
@@ -223,11 +255,12 @@ export function gitExecFileSync(args: readonly string[], options: GitExecOptions
     const captured = values.length > 0 ? captureInheritedStderr(bound.options.stdio, true) : undefined;
     if (!captured) return redactOutput(execFileSyncRaw(bound.bin, argv, bound.options), values);
     const result = spawnSyncRaw(bound.bin, argv, { ...bound.options, stdio: captured });
-    forwardStderr(result.stderr, values);
-    if (result.error) throw result.error;
-    if (result.status !== 0) {
-      throw Object.assign(new Error(`Command failed: ${[bound.bin, ...argv].join(' ')}\n${String(result.stderr ?? '')}`), { status: result.status, signal: result.signal, stdout: result.stdout, stderr: result.stderr });
-    }
+    forwardStderr(result.stderr, values, result.error !== undefined || result.signal !== null);
+    const failure = result.error ?? (result.status !== 0
+      ? new Error(`Command failed: ${[bound.bin, ...argv].join(' ')}\n${String(result.stderr ?? '')}`)
+      : undefined);
+    // Same fields as the error execFileSync throws, so the shape does not depend on a token being present.
+    if (failure) throw Object.assign(failure, { status: result.status, signal: result.signal, stdout: result.stdout, stderr: result.stderr, output: result.output });
     return redactOutput(result.stdout, values);
   } catch (error) {
     throw redactThrown(error, values);
@@ -253,13 +286,18 @@ export function gitSpawnSync(args: readonly string[], options: GitSpawnOptions =
   }
   const captured = values.length > 0 ? captureInheritedStderr(bound.options.stdio, false) : undefined;
   const result = redactSpawnResult(spawnSyncRaw(bound.bin, argv, captured ? { ...bound.options, stdio: captured } : bound.options), values);
-  if (captured) forwardStderr(result.stderr, values);
+  if (captured) forwardStderr(result.stderr, values, result.error !== undefined || result.signal !== null);
   return result;
 }
 
 export function spawnGit(args: readonly string[], options: SpawnOptions & GitCallFields = {}): ChildProcess {
   const { gitBin, env, direct: _direct, ...rest } = options;
-  return spawnRaw(resolveGitExecutable(gitBin, env), [...args], { ...rest, env: gitChildEnv(args, env) });
+  const childEnv = gitChildEnv(args, env);
+  // The caller owns the raw streams and nothing here can replace a token value in them.
+  if (providerTokenValues(childEnv ?? process.env).length > 0) {
+    throw new Error(`spawnGit streams output unredacted and the environment of git ${args[0] ?? ''} keeps a provider token; use gitExecFile`);
+  }
+  return spawnRaw(resolveGitExecutable(gitBin, env), [...args], { ...rest, env: childEnv });
 }
 
 /** Wait after SIGTERM before a timed-out async git call sends SIGKILL. */
@@ -295,8 +333,8 @@ export interface GitExecAsyncOptions extends GitCallFields {
  */
 export function gitExecFile(args: readonly string[], options: GitExecAsyncOptions = {}): Promise<string> {
   const { gitBin, env, cwd, timeout } = options;
-  const values = providerTokenValues(env);
   return new Promise((resolveOutput, reject) => {
+    const values = providerTokenValues(env);
     const child = spawnRaw(resolveGitExecutable(gitBin, env), [...args], { cwd, env: gitChildEnv(args, env), stdio: ['ignore', 'pipe', 'pipe'] });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
@@ -317,13 +355,16 @@ export function gitExecFile(args: readonly string[], options: GitExecAsyncOption
       clearTimeout(killTimer);
       child.stdout!.destroy();
       child.stderr!.destroy();
-      const errorText = redactText(Buffer.concat(stderr).toString('utf8'), values);
       const status = exited?.code ?? null;
       const signal = exited?.signal ?? null;
-      if (spawnError) reject(new GitExecError(`git ${args[0] ?? ''} could not start: ${redactText(spawnError.message, values)}`, null, null, false, ''));
-      else if (timedOut) reject(new GitExecError(`git ${args[0] ?? ''} timed out`, null, signal, true, errorText));
-      else if (overflow) reject(new GitExecError(`git ${args[0] ?? ''} output exceeded ${GIT_OUTPUT_MAX_BYTES} bytes`, null, signal, false, errorText));
-      else if (status !== 0) reject(new GitExecError(`git ${args[0] ?? ''} failed (${signal ?? `exit ${status}`})`, status, signal, false, errorText));
+      const errorText = redactBytes(Buffer.concat(stderr).toString('utf8'), values, timedOut || overflow || signal !== null);
+      // The first argument can carry a token value, so the whole message is replaced, not its parts.
+      const failure = (message: string, code: number | null, signalName: NodeJS.Signals | null, timeout: boolean, text: string) =>
+        reject(new GitExecError(redactText(message, values), code, signalName, timeout, text));
+      if (spawnError) failure(`git ${args[0] ?? ''} could not start: ${spawnError.message}`, null, null, false, '');
+      else if (timedOut) failure(`git ${args[0] ?? ''} timed out`, null, signal, true, errorText);
+      else if (overflow) failure(`git ${args[0] ?? ''} output exceeded ${GIT_OUTPUT_MAX_BYTES} bytes`, null, signal, false, errorText);
+      else if (status !== 0) failure(`git ${args[0] ?? ''} failed (${signal ?? `exit ${status}`})`, status, signal, false, errorText);
       else resolveOutput(redactText(Buffer.concat(stdout).toString('utf8'), values));
     };
     const collect = (into: Buffer[]) => (chunk: Buffer) => {
@@ -355,6 +396,12 @@ export function gitExecFile(args: readonly string[], options: GitExecAsyncOption
 }
 
 /** Output redactions for the provider-token values that a git child can print. */
-export function providerTokenRedactions(env: NodeJS.ProcessEnv | undefined): { readonly pattern: RegExp; readonly replacement: string }[] {
-  return providerTokenValues(env).map(value => ({ pattern: new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replacement: REDACTED }));
+export function providerTokenRedactions(env: NodeJS.ProcessEnv | undefined): { readonly pattern: RegExp; readonly replacement: string; readonly tail: RegExp }[] {
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return providerTokenValues(env).map(value => ({
+    pattern: new RegExp(escape(value), 'g'),
+    replacement: REDACTED,
+    // Every proper prefix, longest first, anchored at the end of the output.
+    tail: new RegExp(`(?:${Array.from({ length: value.length - 1 }, (_, index) => escape(value.slice(0, value.length - 1 - index))).join('|')})$`),
+  }));
 }
