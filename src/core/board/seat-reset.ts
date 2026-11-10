@@ -79,11 +79,10 @@ export function missingHandoffSections(text: string): string[] {
 
 const PEER: Readonly<Record<ResetSeat, ResetSeat>> = { orchestrator: 'advisor', advisor: 'orchestrator' };
 
-/** The block reason of the Stop hook: the model writes the handoff, then asks its peer seat for the reset. */
-export function seatResetReason(identity: SeatResetIdentity, contextTokens: number): string {
+/** The handoff steps: the model writes the handoff, then asks its peer seat for the reset. The Stop hook and `seats handoff` print them. */
+export function seatResetSteps(identity: SeatResetIdentity): string {
   const path = seatHandoffPath(identity);
   return [
-    `repo-harness: the ${identity.seat} seat context is ${contextTokens} tokens, at or above ${SEAT_RESET_CONTEXT_TOKENS}. Reset before auto-compaction.`,
     `1. Write the handoff to ${path} with exactly these sections:`,
     '',
     seatHandoffTemplate(),
@@ -92,6 +91,11 @@ export function seatResetReason(identity: SeatResetIdentity, contextTokens: numb
     `On REWRITE, write the handoff again and send RESET-REQUEST again. On NO-RESET, continue.`,
     `When the ${PEER[identity.seat]} seat is missing or does not answer, continue without a reset: Claude Code auto-compaction handles the context.`,
   ].join('\n');
+}
+
+/** The block reason of the Stop hook: the token reason, then the handoff steps. */
+export function seatResetReason(identity: SeatResetIdentity, contextTokens: number): string {
+  return `repo-harness: the ${identity.seat} seat context is ${contextTokens} tokens, at or above ${SEAT_RESET_CONTEXT_TOKENS}. Reset before auto-compaction.\n${seatResetSteps(identity)}`;
 }
 
 /** The prompt that the peer sends after `/clear`. RESUMED comes first, so its hc send is the resume evidence. */

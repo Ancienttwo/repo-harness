@@ -67,7 +67,7 @@ const WAZA_SKILLS = ['think', 'hunt', 'check', 'health', 'mermaid'];
 const PLUGIN_SKILLS: Readonly<Partial<Record<PluginId, readonly (readonly ['codex' | 'claude', string])[]>>> = {
   architecture: [['codex', 'repo-harness-architecture'], ['codex', 'repo-harness-archimap']],
   'cross-review': [['codex', 'repo-harness-cross-review']],
-  'peer-runtime': [['claude', 'repo-harness-herdr-portal']],
+  'peer-runtime': [['claude', 'repo-harness-herdr-portal'], ['claude', 'repo-harness-orchestrator'], ['claude', 'repo-harness-advisor'], ['claude', 'repo-harness-seat-handoff']],
   platform: [['codex', 'windows-python-first']],
   product: [['codex', 'repo-harness-product']],
   'strategy-memory': [['codex', 'obsidian-memory']],
@@ -202,6 +202,9 @@ function writeManagedHostSurfaces(
   const markedFacade = (dest: string) => {
     writePath(join(source, FACADE_SOURCES.get(basename(dest))!, 'SKILL.md'), '# managed\n');
     writeMarkedFacade(dest, '# managed\n');
+    // A host root that holds a facade also holds its canonical router copy, which proves the facade canonical.
+    const router = join(dirname(dest), 'repo-harness');
+    if (dirname(dest) !== dirname(canonical) && !existsSync(router)) symlinkSync(source, router);
   };
   for (const facade of CORE_FACADES) markedFacade(join(home, '.codex', 'skills', facade));
   for (const skill of WAZA_SKILLS) writePath(join(home, '.codex', 'skills', skill, 'SKILL.md'), '# external\n');
