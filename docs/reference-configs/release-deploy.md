@@ -68,6 +68,10 @@ Each script step fetches `main` first, so a merge to `main` during the run
 does not stop it. A failed step stops the run. A rerun of a published version
 stops at the guard in `lane`; nothing is published again.
 
+npm provenance records the workflow run commit (`GITHUB_SHA`), which is the
+`main` head at dispatch, not the input SHA. Dispatch right after the release
+PR merges, so that the two commits are the same or close.
+
 ### Owner setup (#2194)
 
 - npm Trusted Publishing for each of `repo-harness-operator-web` and
@@ -86,20 +90,21 @@ the step, and do only the steps that are not done. Stop at the first failure
 and report it.
 
 1. Worktree: `git fetch origin && git worktree add --detach /tmp/repo-harness-wt-release-<version> <sha> && cd /tmp/repo-harness-wt-release-<version> && bun install --frozen-lockfile`
-2. Core package: when `npm view repo-harness@<version> version` prints the
-   version, skip this step. Otherwise run
-   `bash scripts/release-owner-steps.sh guard <version> <sha> && npm publish --auth-type=web`.
-   (When `npm view repo-harness-operator-web@<version> version` prints nothing,
-   publish the console first the same way from `packages/operator-web`.)
-3. `bash scripts/release-owner-steps.sh check published <version>`
-4. Tag: run `git ls-remote --tags origin "refs/tags/v<version>" "refs/tags/v<version>^{}"`.
+2. Console package: when `npm view repo-harness-operator-web@<version> version`
+   prints the version, skip this step. Otherwise run, from the worktree root:
+   `bash scripts/release-owner-steps.sh guard <version> <sha> && (cd packages/operator-web && npm publish --auth-type=web)`
+3. Core package: when `npm view repo-harness@<version> version` prints the
+   version, skip this step. Otherwise run, from the worktree root:
+   `bash scripts/release-owner-steps.sh guard <version> <sha> && npm publish --auth-type=web`
+4. `bash scripts/release-owner-steps.sh check published <version>`
+5. Tag: run `git ls-remote --tags origin "refs/tags/v<version>" "refs/tags/v<version>^{}"`.
    No output: run `git tag -a v<version> <sha> -m "repo-harness <version>" && git push origin v<version>`.
    A `^{}` line that names `<sha>`: the tag is done; skip.
    Any other output: stop and report.
-5. GitHub Release: run `gh release view v<version> --json tagName,isDraft,isPrerelease`.
+6. GitHub Release: run `gh release view v<version> --json tagName,isDraft,isPrerelease`.
    Not found: run `bash scripts/release-owner-steps.sh notes <version> > /tmp/repo-harness-wt-release-<version>.notes.md && gh release create v<version> --verify-tag --title "repo-harness <version>" --notes-file /tmp/repo-harness-wt-release-<version>.notes.md`.
-   Found: skip; step 6 checks it.
-6. `bash scripts/release-owner-steps.sh check tagged <version>`
+   Found: skip; step 7 checks it.
+7. `bash scripts/release-owner-steps.sh check tagged <version>`
 
 `bash scripts/release-owner-steps.sh plan <version>` stays a read-only
 preflight: it runs the guard checks for a version and prints the release

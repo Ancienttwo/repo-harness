@@ -126,15 +126,15 @@ jobs:
     env:
       VERSION: ${{ needs.validate.outputs.version }}
       TARBALLS: ${{ github.workspace }}/release-tarballs
-    # Only this workflow's inline steps and pinned actions run here; the tarballs are data.
+    # Only this workflow's inline steps and SHA-pinned actions run here; the tarballs are data.
     steps:
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
       # npm Trusted Publishing needs npm 11.5.1 or later.
       - name: Require OIDC-capable npm
         run: node -e 'const [a, b, c] = process.argv[1].split(".").map(Number); if (a < 11 || (a === 11 && (b < 5 || (b === 5 && c < 1)))) { console.error(`npm ${process.argv[1]} cannot publish with OIDC; 11.5.1 or later is required.`); process.exit(1); }' "$(npm --version)"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release-tarballs
           path: ${{ env.TARBALLS }}
@@ -172,10 +172,10 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
+    # GH_TOKEN reaches only the steps that call gh; install and readback steps run package scripts.
     env:
       SHA: ${{ inputs.sha }}
       VERSION: ${{ needs.validate.outputs.version }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -198,15 +198,21 @@ jobs:
           bash scripts/release-owner-steps.sh check published "$VERSION"
       # The API creates the annotated tag, so the checkout keeps no credentials.
       - name: Create the annotated tag
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags" -f tag="v$VERSION" -f message="repo-harness $VERSION" -f object="$SHA" -f type=commit --jq .sha)"
           gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/v$VERSION" -f sha="$tag_object" >/dev/null
       - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git fetch -q --no-tags origin +refs/heads/main:refs/remotes/origin/main
           bash scripts/release-owner-steps.sh notes "$VERSION" > "$RUNNER_TEMP/notes.md"
           gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --title "repo-harness $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
       - name: Read back the tag and the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git fetch -q --no-tags origin +refs/heads/main:refs/remotes/origin/main
           bash scripts/release-owner-steps.sh check tagged "$VERSION"
