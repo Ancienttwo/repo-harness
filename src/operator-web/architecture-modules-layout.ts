@@ -138,10 +138,24 @@ export function layoutModules(map: ArchitectureMapV1): ModulesLayout {
   };
 }
 
-/** The scene with each domain route that carries one of `imports` (capability pairs) drawn as an undeclared import; the route keeps its direction. */
-export function markUndeclared(layout: ModulesLayout, imports: readonly { readonly source: string; readonly target: string }[]): PlacedScene {
+/** How a card takes part in an undeclared import inside its own domain: it imports (`out`), it is imported (`in`), or both. */
+export type UndeclaredEnd = 'out' | 'in' | 'both';
+
+/**
+ * The undeclared imports (capability pairs) on the scene. An import between two domains marks its domain route, which keeps
+ * its direction. An import inside one domain has no route, so it marks the two cards with their direction.
+ */
+export function markUndeclared(layout: ModulesLayout, imports: readonly { readonly source: string; readonly target: string }[]): { readonly scene: PlacedScene; readonly cards: ReadonlyMap<string, UndeclaredEnd> } {
   const domainOf = new Map(layout.capabilities.map(node => [node.id, node.domain!]));
-  const marked = new Set(imports.map(edge => `imports:${domainOf.get(edge.source)}->${domainOf.get(edge.target)}`));
-  if (!layout.scene.routes.some(route => marked.has(route.id))) return layout.scene;
-  return { ...layout.scene, routes: layout.scene.routes.map(route => marked.has(route.id) ? { ...route, kind: 'undeclared', dashed: true } : route) };
+  const routes = new Set<string>();
+  const cards = new Map<string, UndeclaredEnd>();
+  const mark = (id: string, end: 'out' | 'in') => cards.set(id, cards.has(id) && cards.get(id) !== end ? 'both' : end);
+  for (const edge of imports) {
+    const [source, target] = [domainOf.get(edge.source)!, domainOf.get(edge.target)!];
+    if (source !== target) routes.add(`imports:${source}->${target}`);
+    else { mark(edge.source, 'out'); mark(edge.target, 'in'); }
+  }
+  const scene = routes.size === 0 ? layout.scene
+    : { ...layout.scene, routes: layout.scene.routes.map(route => routes.has(route.id) ? { ...route, kind: 'undeclared', dashed: true } : route) };
+  return { scene, cards };
 }

@@ -10,7 +10,7 @@ import type { Node, NodeProps } from '@xyflow/react';
 import { flowSteps, type ArchitectureMapNodeV1, type ArchitectureMapV1 } from '../core/operator/architecture-map';
 import { archctxCode, capabilityOwners, impactPaths, impactTargets, modulesLayerView, type MapLayerId, type ModuleMark } from './architecture-map-layers';
 import { counted, FactList, FixCommand, NodeDetails, nodeSize, violationFacts } from './architecture-map-parts';
-import { domainId, layoutModules, markUndeclared, type ModulesLayout } from './architecture-modules-layout';
+import { domainId, layoutModules, markUndeclared, type ModulesLayout, type UndeclaredEnd } from './architecture-modules-layout';
 import type { SceneBox } from './architecture-scene';
 import { ArchitectureSceneCanvas, SceneHandles, type SceneLegendEntry, type SceneNodeView } from './ArchitectureSceneCanvas';
 import type { OperatorTranslate } from './i18n';
@@ -29,6 +29,7 @@ interface ModuleData extends Record<string, unknown> {
   readonly layer: MapLayerId;
   readonly slots: readonly Slot[];
   readonly neighbour: Neighbour | null;
+  readonly undeclared: UndeclaredEnd | null;
   readonly dimmed: boolean;
   readonly t: OperatorTranslate;
 }
@@ -103,10 +104,10 @@ function slotsOf(signals: ModuleSignals, t: OperatorTranslate): Slot[] {
 
 /** The slot of the active layer is the only one that carries a color, and only for an actionable state. */
 const ModuleNode = memo(function ModuleNode({ data, selected }: NodeProps<Node<ModuleData, 'module'>>) {
-  const { node, size, layer, slots, neighbour, dimmed, t } = data;
+  const { node, size, layer, slots, neighbour, undeclared, dimmed, t } = data;
   const alert = slots.find(slot => slot.layer === layer && slot.value !== null)?.tone ?? undefined;
   const words = slots.flatMap(slot => slot.words ?? []).join(' · ');
-  return <div className="architecture-modules__box" title={words || undefined} data-selected={selected || undefined} data-layer={layer} data-alert={alert} data-neighbour={neighbour ?? undefined} data-dimmed={dimmed || undefined} data-deprecated={node.status === 'deprecated' || undefined}>
+  return <div className="architecture-modules__box" title={words || undefined} data-selected={selected || undefined} data-layer={layer} data-alert={alert} data-neighbour={neighbour ?? undefined} data-undeclared={undeclared ?? undefined} data-dimmed={dimmed || undefined} data-deprecated={node.status === 'deprecated' || undefined}>
     <span className="architecture-modules__name">
       <strong>{node.name}</strong>
       {node.status === 'deprecated' && <span className="architecture-modules__status">{t('architecture.modules.deprecated')}</span>}
@@ -138,40 +139,47 @@ function legend(map: ArchitectureMapV1, layout: ModulesLayout, undeclared: boole
   ];
 }
 
-/** One relation of the selected card: the other card or external system, the direction, the declared relation kinds and the `deps` imports. */
-interface CardRelation { readonly direction: Direction; readonly other: string; readonly kinds: readonly string[]; readonly imports: number | null }
+/** One model relation of the selected card or of a node inside it: the direction, the other end as the model names it and the capability that holds it, the kind and the `deps` imports between the two capabilities. */
+interface CardRelation { readonly id: string; readonly direction: Direction; readonly other: string; readonly holder: string; readonly kind: string; readonly imports: number | null }
 
-/**
- * The declared relations of `selected` between cards and external systems on the map, with both ends lifted to the
- * capability that holds them, one row for each direction and other end. A relation inside one capability is no relation between cards.
- */
-function cardRelations(map: ArchitectureMapV1, layout: ModulesLayout, selected: string): CardRelation[] {
+/** Each model relation with an end in `selected` or in a node it holds; a relation with both ends inside it counts as out of its source. */
+function cardRelations(map: ArchitectureMapV1, selected: string): CardRelation[] {
+  const owners = capabilityOwners(map);
+  const lift = (id: string) => owners.get(id) ?? id;
+  const imports = new Map(map.dependencies.state === 'ok' ? map.dependencies.edges.map(edge => [`${edge.source}\n${edge.target}`, edge.imports]) : []);
+  return map.relations.flatMap((relation): CardRelation[] => {
+    const [source, target] = [lift(relation.source), lift(relation.target)];
+    const direction: Direction | null = source === selected ? 'out' : target === selected ? 'in' : null;
+    if (direction === null) return [];
+    return [{
+      id: relation.id, direction, other: direction === 'out' ? relation.target : relation.source, holder: direction === 'out' ? target : source, kind: relation.kind,
+      imports: source === target ? null : imports.get(`${source}\n${target}`) ?? null,
+    }];
+  });
+}
+
+/** The cards and external systems on the map that a relation joins to `selected`, with the direction; both ends lifted to their capability. */
+function neighboursOf(map: ArchitectureMapV1, layout: ModulesLayout, selected: string): ReadonlyMap<string, Neighbour> {
   const owners = capabilityOwners(map);
   const drawn = new Set([...layout.capabilities, ...layout.externals].map(node => node.id));
   const lift = (id: string) => owners.get(id) ?? id;
-  const imports = new Map(map.dependencies.state === 'ok' ? map.dependencies.edges.map(edge => [`${edge.source}\n${edge.target}`, edge.imports]) : []);
-  const rows = new Map<string, { direction: Direction; other: string; kinds: Set<string> }>();
+  const result = new Map<string, Neighbour>();
   for (const relation of map.relations) {
     const [source, target] = [lift(relation.source), lift(relation.target)];
     const direction: Direction | null = source === target ? null : source === selected ? 'out' : target === selected ? 'in' : null;
     const other = direction === 'out' ? target : source;
     if (direction === null || !drawn.has(other)) continue;
-    const key = `${direction}\n${other}`;
-    const row = rows.get(key) ?? rows.set(key, { direction, other, kinds: new Set() }).get(key)!;
-    row.kinds.add(relation.kind);
+    result.set(other, result.has(other) && result.get(other) !== direction ? 'both' : direction);
   }
-  return [...rows.values()].map(row => ({
-    direction: row.direction, other: row.other, kinds: [...row.kinds],
-    imports: imports.get(row.direction === 'out' ? `${selected}\n${row.other}` : `${row.other}\n${selected}`) ?? null,
-  }));
+  return result;
 }
 
-function CardRelations({ relations, names, t }: { readonly relations: readonly CardRelation[]; readonly names: ReadonlyMap<string, string>; readonly t: OperatorTranslate }) {
+function CardRelations({ selected, relations, names, t }: { readonly selected: string; readonly relations: readonly CardRelation[]; readonly names: ReadonlyMap<string, string>; readonly t: OperatorTranslate }) {
   return <>
     <h4>{t('architecture.modules.relations', { count: relations.length })}</h4>
     {relations.length === 0 ? <p className="detail-quiet">{t('architecture.none')}</p> : <ul data-card-relations>{relations.map(row =>
-      <li key={`${row.direction}:${row.other}`} data-relation={`${row.direction}:${row.other}`}>
-        <span className="mono-value">{t(`architecture.modules.direction.${row.direction}`)}</span> {names.get(row.other)} · <code>{row.kinds.join(', ')}</code>
+      <li key={row.id} data-relation-id={row.id} data-direction={row.direction}>
+        <span className="mono-value">{t(`architecture.modules.direction.${row.direction}`)}</span> {names.get(row.other)}{row.holder !== row.other && row.holder !== selected && <> ({names.get(row.holder)})</>} · <code>{row.kind}</code>
         {row.imports !== null && <span className="mono-value"> · {t('architecture.map.imports', { count: row.imports })}</span>}
       </li>)}</ul>}
   </>;
@@ -282,7 +290,7 @@ function ModuleDetails({ map, pullRequest, node, relations, onModule, t }: {
       {parts.map(part => <FixCommand key={part} part={part} t={t} />)}
     </>}
     <button type="button" className="operator-button operator-button--secondary" onClick={() => onModule(node.id)}>{t('architecture.map.open')}</button>
-    <CardRelations relations={relations} names={names} t={t} />
+    <CardRelations selected={node.id} relations={relations} names={names} t={t} />
   </>;
 }
 
@@ -299,19 +307,14 @@ export function ArchitectureModules({ map, layer, pullRequest, selectedId, onSel
 }) {
   const layout = useMemo(() => layoutModules(map), [map]);
   const view = useMemo(() => modulesLayerView(map, layer, pullRequest), [map, layer, pullRequest]);
-  const scene = useMemo(() => markUndeclared(layout, view.edges), [layout, view]);
-  const names = useMemo(() => new Map(map.nodes.map(node => [node.id, node.name])), [map]);
+  const { scene, cards: undeclared } = useMemo(() => markUndeclared(layout, view.edges), [layout, view]);
   const nodes = useMemo(() => new Map(map.nodes.map(node => [node.id, node])), [map]);
   const sizes = useMemo(() => new Map(map.sizes.state === 'ok' ? map.sizes.nodes.map(entry => [entry.id, { lines: entry.lines, files: entry.files }]) : []), [map]);
   const signals = useMemo(() => moduleSignals(map), [map]);
   const selected = selectedId === null ? null : nodes.get(selectedId) ?? null;
-  const relations = useMemo(() => selected === null ? [] : cardRelations(map, layout, selected.id), [map, layout, selected]);
+  const relations = useMemo(() => selected === null ? [] : cardRelations(map, selected.id), [map, selected]);
   // Selection adds no route: it lights the in and out neighbours and dims every other card.
-  const neighbours = useMemo(() => {
-    const result = new Map<string, Neighbour>();
-    for (const row of relations) result.set(row.other, result.has(row.other) && result.get(row.other) !== row.direction ? 'both' : row.direction);
-    return result;
-  }, [relations]);
+  const neighbours = useMemo(() => selected === null ? new Map<string, Neighbour>() : neighboursOf(map, layout, selected.id), [map, layout, selected]);
 
   const nodeView = useCallback((box: SceneBox): SceneNodeView => {
     if (box.parent === null && box.kind === 'frame') {
@@ -324,13 +327,13 @@ export function ArchitectureModules({ map, layer, pullRequest, selectedId, onSel
     if (node.kind === 'external-system') return { type: 'external', ariaLabel: `${node.kind} ${node.name}`, selection: node.id, data: { node, neighbour, dimmed } satisfies ExternalData };
     return {
       type: 'module', ariaLabel: `${node.kind} ${node.name}`, selection: node.id,
-      data: { node, size: sizes.get(node.id) ?? null, layer, slots: slotsOf(signals.get(node.id)!, t), neighbour, dimmed, t } satisfies ModuleData,
+      data: { node, size: sizes.get(node.id) ?? null, layer, slots: slotsOf(signals.get(node.id)!, t), neighbour, undeclared: undeclared.get(node.id) ?? null, dimmed, t } satisfies ModuleData,
     };
-  }, [nodes, neighbours, selectedId, sizes, signals, layer, t]);
+  }, [nodes, neighbours, undeclared, selectedId, sizes, signals, layer, t]);
 
   return <div className="architecture-map" data-view="modules" data-node-count={map.nodes.length} data-relation-count={map.relations.length} data-edge-count={layout.edges.length} data-layer={layer}>
     <ArchitectureSceneCanvas label={t('architecture.map.label')} scene={scene} nodeTypes={NODE_TYPES} view={nodeView}
-      selected={selectedId} onSelect={onSelect} legend={legend(map, layout, scene !== layout.scene, layer, t)} t={t} />
+      selected={selectedId} onSelect={onSelect} legend={legend(map, layout, scene !== layout.scene || undeclared.size > 0, layer, t)} t={t} />
     <aside className="architecture-map__inspector" aria-label={t('architecture.map.inspector')} data-node-id={selected?.id}>
       {side}
       {selected === null ? <>

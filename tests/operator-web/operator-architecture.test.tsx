@@ -553,14 +553,14 @@ describe('architecture map', () => {
     await settle();
     const inspector = document.querySelector('.architecture-map__inspector')!;
     expect(inspector.getAttribute('data-node-id')).toBe(CALLER);
-    expect([...inspector.querySelectorAll('[data-relation]')].map(item => item.textContent)).toEqual([`out Name ${CENTER} · calls · 7 imports`]);
+    expect([...inspector.querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toEqual([`out Name ${CENTER} · calls · 7 imports`]);
     expect(inspector.textContent).toContain('100 lines in 1 files');
     await act(async () => [...inspector.querySelectorAll('button')].find(item => item.textContent === 'Open module')!.click());
     expect(opened).toEqual([CALLER]);
-    // A relation of a component counts for its capability; the relation to its own component is no relation between cards.
+    // The group's relation to its own member has no line on the canvas, but the inspector lists it.
     await act(async () => document.querySelector(`.react-flow__node[data-id="${CENTER}"]`)!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
-    expect([...document.querySelectorAll('.architecture-map__inspector [data-relation]')].map(item => item.getAttribute('data-relation'))).toEqual([`in:${CALLER}`, `out:${EXTERNAL}`]);
+    expect([...document.querySelectorAll('.architecture-map__inspector [data-relation-id]')].map(item => item.getAttribute('data-relation-id'))).toContain('relation.a-own');
   });
 
   test('a selected card on the recorded map lights its in and out neighbours, dims the rest, adds no route, and lists each relation with direction and imports', async () => {
@@ -575,9 +575,19 @@ describe('architecture map', () => {
     expect([card('capability.organization.board').getAttribute('data-neighbour'), card('capability.verification.evals-checks').getAttribute('data-neighbour'),
       card('capability.organization.board').hasAttribute('data-dimmed'), card('capability.public-surface.adoption').hasAttribute('data-dimmed')]).toEqual(['out', 'both', false, true]);
     expect(edges()).toBe(before);
-    const row = (key: string) => document.querySelector(`.architecture-map__inspector [data-relation="${key}"]`)?.textContent;
-    expect([row('out:capability.organization.board'), row('out:capability.verification.evals-checks'), row('in:capability.verification.evals-checks')])
-      .toEqual(['out Board · depends-on · 12 imports', 'out Evals And Checks · depends-on · 7 imports', 'in Evals And Checks · depends-on · 291 imports']);
+    // One row for each model relation, with its direction, the other end (and the card that holds it), the kind and the imports between the two capabilities.
+    const rows = [...document.querySelectorAll('.architecture-map__inspector [data-relation-id]')].map(item => item.textContent);
+    for (const row of ['out Board · depends-on · 12 imports', 'out CI Report Core (Evals And Checks) · depends-on · 7 imports', 'in Evals And Checks · depends-on · 291 imports']) expect(rows).toContain(row);
+    // The violations lens: an undeclared import inside one domain has no route, so it marks its two cards with the direction.
+    await act(async () => document.querySelector<HTMLButtonElement>('.architecture-layers [data-layer="violations"]')!.click());
+    await settle();
+    const marks = Object.fromEntries([...document.querySelectorAll('.architecture-modules__box[data-undeclared]')].map(item => [item.closest('.react-flow__node')!.getAttribute('data-id'), item.getAttribute('data-undeclared')]));
+    expect(marks).toEqual({
+      'capability.runtime-harness.operator': 'both', 'capability.runtime-harness.architecture': 'in', 'capability.runtime-harness.refactor-program': 'out',
+      'capability.runtime-harness.task-agent-host': 'out', 'capability.runtime-harness.global-runtime-reconciliation': 'in',
+      'capability.workflow-engine.execution-primitives': 'out', 'capability.workflow-engine.workflow-state': 'in',
+    });
+    expect(edges()).toBe(before);
   });
 
   test('a missing line or import source is stated with its reason, and a failed read names its state and next step', async () => {
@@ -1240,7 +1250,7 @@ describe('sequence and topology base maps', () => {
     await click(`.react-flow__node[data-id="${CENTER}"]`);
     expect(inspector().getAttribute('data-node-id')).toBe(CENTER);
     expect([inspector().querySelector('[data-module-domain]')?.textContent, inspector().querySelector('[data-node-size]')?.textContent]).toEqual(['workflow-engine', '900 lines in 1 files']);
-    expect(inspector().querySelector(`[data-relation="in:${CALLER}"]`)?.textContent).toBe(`in Name ${CALLER} · calls · 7 imports`);
+    expect([...inspector().querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toContain(`in Name ${CALLER} · calls · 7 imports`);
     expect([...inspector().querySelectorAll('[data-layer-facts="violations"] > li')].map(item => item.textContent)).toEqual([
       'Flow proof cannot be proven (2 diagnostics)flows check',
       // The flow's steps joined to archctx's proof by selector: route is proven and the outcome steps have no proof, so only append is listed.
