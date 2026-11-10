@@ -154,19 +154,20 @@ jobs:
             fi
             grep -Eq 'E404|404 Not Found|No match found|not in this registry' "$RUNNER_TEMP/npm-view.err" || { cat "$RUNNER_TEMP/npm-view.err"; fail "unable to prove $name@$VERSION is unpublished."; }
           done
-      - name: Publish repo-harness-operator-web
-        run: npm publish "$TARBALLS/repo-harness-operator-web-$VERSION.tgz" --provenance --ignore-scripts
-      # The core package depends on the matching web version, so npm must show it first.
-      - name: Wait until npm shows repo-harness-operator-web
+      # The core package depends on the matching web version, so npm must show the web package first.
+      # The published job reads repo-harness back at once, so npm must show the core package too.
+      - name: Publish each package and wait until npm shows it
         run: |
-          for _ in $(seq 30); do
-            [[ "$(npm view "repo-harness-operator-web@$VERSION" version 2>/dev/null)" == "$VERSION" ]] && exit 0
-            sleep 10
+          set -euo pipefail
+          for name in repo-harness-operator-web repo-harness; do
+            npm publish "$TARBALLS/$name-$VERSION.tgz" --provenance --ignore-scripts
+            shown=false
+            for _ in $(seq 30); do
+              [[ "$(npm view "$name@$VERSION" version 2>/dev/null)" == "$VERSION" ]] && { shown=true; break; }
+              sleep 10
+            done
+            [[ "$shown" == true ]] || { echo "::error::npm does not show $name@$VERSION after 5 minutes."; exit 1; }
           done
-          echo "::error::npm does not show repo-harness-operator-web@$VERSION after 5 minutes."
-          exit 1
-      - name: Publish repo-harness
-        run: npm publish "$TARBALLS/repo-harness-$VERSION.tgz" --provenance --ignore-scripts
 
   published:
     name: Read back the published packages
