@@ -4,7 +4,7 @@ import type { ModuleDetailV1, ModuleIndexV1, ModuleState } from '../core/archite
 import type { ModuleReviewPromptV1 } from '../core/review/module-review-prompt';
 import { decodeArchitectureModuleDetail, decodeArchitectureModuleIndex, decodeArchitectureReviewPrompt } from '../core/operator/architecture';
 import { ArchitectureHistory, type HistorySummary } from './ArchitectureHistory';
-import { ArchitectureMap, selectionReducer, type ArchitectureBaseMap, type ArchitectureMapReader, type ArchitectureMapSummary } from './ArchitectureMap';
+import { ArchitectureMap, type ArchitectureSelect, type ArchitectureSelections, type ArchitectureBaseMap, type ArchitectureMapReader, type ArchitectureMapSummary } from './ArchitectureMap';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { ModuleGraph } from './ModuleGraph';
 import { useObservationRefresh } from './useObservationRefresh';
@@ -278,6 +278,14 @@ function ViewTabs({ view, counts, onChange, t }: {
   </div>;
 }
 
+/** The base-map selections of one repository and one shown map commit; another repository or commit empties them. */
+interface SelectionStore { readonly repositoryId: string; readonly commit: string | null; readonly selections: ArchitectureSelections }
+type StoreAction = { readonly type: 'select'; readonly select: ArchitectureSelect } | { readonly type: 'shown'; readonly repositoryId: string; readonly commit: string | null };
+function selectionStore(state: SelectionStore, action: StoreAction): SelectionStore {
+  if (action.type === 'select') return { ...state, selections: { ...state.selections, [action.select.view]: { scope: action.select.scope, id: action.select.id } } };
+  return action.repositoryId === state.repositoryId && action.commit === state.commit ? state : { repositoryId: action.repositoryId, commit: action.commit, selections: {} };
+}
+
 export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule, onSource, refreshGeneration, readMap, t }: {
   readonly repositoryId: string;
   /** `owner/name` on GitHub, for commit links in the history. */
@@ -292,7 +300,11 @@ export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule
   readonly t: OperatorTranslate;
 }) {
   const [view, setView] = useState<ArchitectureView>('map');
-  const [selections, select] = useReducer(selectionReducer, {});
+  const [store, dispatchSelection] = useReducer(selectionStore, { repositoryId, commit: null, selections: {} });
+  // A new repository empties the selections during this render, whatever tab shows.
+  if (store.repositoryId !== repositoryId) dispatchSelection({ type: 'shown', repositoryId, commit: null });
+  const selections = store.repositoryId === repositoryId ? store.selections : {};
+  const select = useCallback((action: ArchitectureSelect) => dispatchSelection({ type: 'select', select: action }), []);
   const root = repositoryPath(repositoryId);
   const modulePath = moduleId === null ? null : `${root}/${moduleId}`;
   const index = useArchitectureRead(moduleId === null && view === 'modules' ? root : null, decodeArchitectureModuleIndex, refreshGeneration);
@@ -307,8 +319,10 @@ export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule
   }, [repositoryId]);
   const onSummary = useCallback((summary: ArchitectureMapSummary | null) => {
     setMapSource(summary === null ? null : { commit: summary.commit, collectedAt: summary.collectedAt, headRef: summary.headRef, archctxVersion: summary.archctxVersion });
+    // A new shown commit empties the selections; a closed map (null) keeps them.
+    if (summary !== null) dispatchSelection({ type: 'shown', repositoryId, commit: summary.commit });
     if (summary !== null) count({ map: summary.modules, sequence: summary.flows });
-  }, [count]);
+  }, [count, repositoryId]);
   const onHistory = useCallback((summary: HistorySummary | null) => {
     setHistorySource(summary);
     if (summary !== null) count({ history: summary.total });

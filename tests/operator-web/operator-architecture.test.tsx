@@ -1454,6 +1454,15 @@ describe('sequence and topology base maps', () => {
       await tab('topology');
       expect([other, inspector().getAttribute('data-node-id')]).toEqual([other, SERVER]);
     }
+    // Another repository and back while Sequence shows: the selection goes, whatever tab shows when the repository changes.
+    await tab('sequence');
+    for (const repositoryId of ['repo-other', REPO]) {
+      await act(async () => root?.render(workspace({ repositoryId, readMap: reader(runtimeMap()) })));
+      await settle();
+    }
+    await tab('topology');
+    expect(inspector().getAttribute('data-node-id')).toBeNull();
+    await click(`.react-flow__node[data-id="${SERVER}"]`);
     await segment('namespace');
     await segment('process');
     expect(inspector().getAttribute('data-node-id')).toBeNull();

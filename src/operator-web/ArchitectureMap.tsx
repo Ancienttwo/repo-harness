@@ -269,12 +269,12 @@ function MapGaps({ map, t }: { readonly map: ArchitectureMapV1; readonly t: Oper
 }
 
 /**
- * The selected model node of each base map, with the scope that it was chosen in: a selection shows only while its
- * view shows the same scope. The architecture workspace holds it, so it outlives every view tab.
+ * The selected model node of each base map, with the view state that it was chosen in (for the topology: the segment
+ * and the legacy switch). The architecture workspace holds it, so it outlives every view tab, and empties it when the
+ * repository or the shown commit changes. A selection shows only while its view shows the same view state.
  */
 export type ArchitectureSelections = Partial<Record<ArchitectureBaseMap, { readonly scope: string; readonly id: string | null }>>;
 export type ArchitectureSelect = { readonly view: ArchitectureBaseMap; readonly scope: string; readonly id: string | null };
-export const selectionReducer = (state: ArchitectureSelections, { view, scope, id }: ArchitectureSelect): ArchitectureSelections => ({ ...state, [view]: { scope, id } });
 
 /**
  * The committed model on one base map, with line and import counts from the map collector.
@@ -309,14 +309,11 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   const pullRequest = map === null ? null : listed ? picked : firstImpactPullRequest(map);
   const defaultBase = useMemo(() => map === null || view !== 'topology' ? 'namespace' : defaultTopologyBase(map), [map, view]);
   const topologyBase = chosenBase ?? defaultBase;
-  const topologyScope = `${repositoryId}:${map?.commit}:${topologyBase}:${legacy}`;
-  const storedTopology = selections.topology;
-  const topologySelected = storedTopology?.scope === topologyScope ? storedTopology.id : null;
-  // A new segment, legacy switch, repository or commit drops the selection, so going back does not bring it back.
-  // Only the topology view with a map on screen computes its own scope, so another view tab and a remount that still reads the map keep the selection.
-  useEffect(() => {
-    if (view === 'topology' && map !== null && storedTopology !== undefined && storedTopology.scope !== topologyScope) select({ view: 'topology', scope: topologyScope, id: null });
-  }, [view, map, storedTopology, topologyScope, select]);
+  const topologyScope = `${topologyBase}:${legacy}`;
+  const topologySelected = selections.topology?.scope === topologyScope ? selections.topology.id : null;
+  // A segment or legacy change drops the topology selection where it happens, so going back does not bring it back.
+  const chooseBase = useCallback((base: TopologyBase) => { setTopologyBase(base); select({ view: 'topology', scope: '', id: null }); }, [select]);
+  const chooseLegacy = useCallback((value: boolean) => { setLegacy(value); select({ view: 'topology', scope: '', id: null }); }, [select]);
   const onTopologySelect = useCallback((id: string | null) => select({ view: 'topology', scope: topologyScope, id }), [topologyScope, select]);
   useEffect(() => {
     onSummary(map === null ? null : {
@@ -339,7 +336,7 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
         <span id="architecture-layers-label" className="architecture-lens__label">{t('architecture.layers')}</span>
         <LayerBar map={map} layer={layer} pullRequest={pullRequest} onLayer={setLayer} t={t} />
         {view === 'sequence' ? <SequenceLensTools map={map} layer={layer} pullRequest={pullRequest} flowId={flow} t={t} />
-          : view === 'topology' ? <TopologyLensTools map={map} base={topologyBase} onBase={setTopologyBase} legacy={legacy} onLegacy={setLegacy} t={t} />
+          : view === 'topology' ? <TopologyLensTools map={map} base={topologyBase} onBase={chooseBase} legacy={legacy} onLegacy={chooseLegacy} t={t} />
           : <span className="architecture-lens__hint">{t('architecture.lens.hint')}</span>}
       </div>
       {view === 'modules' && <ArchitectureModules key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} side={side} onModule={onModule} t={t} />}
