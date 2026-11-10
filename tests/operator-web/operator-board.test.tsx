@@ -1042,10 +1042,11 @@ describe('board office (#1755)', () => {
       : { state: 'ok', list: id === idle ? { ...PARENTS, parents: [], seats: [] } : PARENTS };
     const waiting: { readonly read: string; readonly finish: () => void }[] = [];
     const delayed = <T,>(read: string, answer: T) => new Promise<T>(resolve => waiting.push({ read, finish: () => resolve(answer) }));
+    const asked: string[] = [];
     await mount(<OperatorApp {...props(busy(), {
       initialRepositories: five, readRepositories: async () => five,
       readBoardParents: id => delayed(`parents:${id}`, parents(id)),
-      readBoardSummaries: id => delayed(`summaries:${id}`, summaryRead(id, { parent: 1474, status: 'not_read' })),
+      readBoardSummaries: (id, parent) => { asked.push(`${id}:${parent}`); return delayed(`summaries:${id}`, summaryRead(id, { parent, status: 'not_read' })); },
     })} />);
     for (const read of [`parents:${seated}`, `summaries:${seated}`, `parents:${idle}`, `parents:${failed}`, `parents:${last}`, `summaries:${last}`]) {
       await settle();
@@ -1054,6 +1055,8 @@ describe('board office (#1755)', () => {
     }
     await settle();
     expect(waiting).toEqual([]);
+    // One summaries read per repository with an active parent, and it names that parent.
+    expect(asked).toEqual([`${seated}:1474`, `${last}:1474`]);
     expect(rows('[data-office-card="loading"]')).toHaveLength(0);
     const refused = rows(`[data-office-card="failed"][data-repository="${failed}"][data-board-parents-reason="parents_hc_failed"]`);
     expect(refused).toHaveLength(1);

@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { BoardV1 } from '../../core/board/board';
-import type { BoardParentsV1 } from '../../core/board/parents';
 import { BOARD_SUMMARIES_PROTOCOL, boardSummary, decodeBoardSummaries, type BoardSummariesV1, type BoardSummaryEntryV1 } from '../../core/board/summary';
 import { repoHarnessHome } from '../repo-harness-home';
 
@@ -44,8 +43,8 @@ export function writeBoardSummary(env: NodeJS.ProcessEnv, repositoryId: string, 
   catch (error) { unlinkSync(temporary); throw error; }
 }
 
-/** Only the parents read supplies membership. This reads no board and starts no refresh. */
-export function readBoardSummaries(env: NodeJS.ProcessEnv, repositoryId: string, parents: BoardParentsV1): BoardSummariesV1 {
+/** This reads no board, no registry and starts no refresh. An id with no stored file answers `not_read`. */
+export function readBoardSummaries(env: NodeJS.ProcessEnv, repositoryId: string, parent: number): BoardSummariesV1 {
   return { protocol: BOARD_SUMMARIES_PROTOCOL, kind: 'repo-harness.board-summaries', repository_id: repositoryId,
-    parents: parents.parents.map(parent => readSnapshot(env, repositoryId, parent.number)) };
+    parents: [readSnapshot(env, repositoryId, parent)] };
 }
