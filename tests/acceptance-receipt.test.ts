@@ -80,8 +80,8 @@ test('provider expected-context fence rejects each stale identity without overwr
 });
 
 test('model family ignores routing providers and the relation fails closed', () => {
-  expect(['magpie/anthropic/claude-opus-5-5', 'cursor/deepseek-v41-flash-1017', 'deepseek-v41-flash-1017', 'GPT-6.1-Sol', 'o3-mini', 'fixture/unlisted']
-    .map(modelFamily)).toEqual(['anthropic', 'deepseek', 'deepseek', 'openai', 'openai', null]);
+  expect(['magpie/anthropic/claude-opus-5-5', 'cursor/deepseek-v41-flash-1017', 'deepseek-v41-flash-1017', 'GPT-6.1-Sol', 'o3-mini', 'fable', 'fixture/unlisted']
+    .map(modelFamily)).toEqual(['anthropic', 'deepseek', 'deepseek', 'openai', 'openai', 'anthropic', null]);
   expect(modelRelation(['gpt-6.1-sol'], 'gpt-6-astra')).toBe('same-family');
   expect(modelRelation(['magpie/anthropic/claude-opus-5-5'], 'claude-sonnet-5')).toBe('same-family');
   expect(modelRelation(['gpt-6.1-sol', 'deepseek-v41'], 'anthropic/claude-opus-5-5')).toBe('different-family');
