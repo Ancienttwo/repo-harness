@@ -1,8 +1,17 @@
-import { projectBoardSeats, type BoardSeatsV1 } from '../../core/board/parents';
-import type { BoardSeatTerminalInputV1 } from '../../core/board/board';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { devNull } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { decodeBoardParents, joinBoardParents, projectBoardSeats, type BoardParentsV1, type BoardSeatsV1 } from '../../core/board/parents';
+import { decodeBoard, type BoardSeatTerminalInputV1, type BoardV1 } from '../../core/board/board';
 import { githubRemoteRepository } from '../../core/board/source';
+import { sha256Hex } from '../../core/evidence/sha256';
+import type { BoardParentsReadFailure, BoardReadFailure } from '../../core/operator/board-read';
 import { readLocalRepositoryIdAsync } from '../board/collect';
 import { gitExecFile, withoutRepositorySelectingGitEnv } from '../git/runner';
+import { spawnRegisteredProcessGroup } from '../process-group-registry';
+import { terminateProcessGroup } from '../process-group-termination';
+import type { BoardWorkerAnswer, BoardWorkerQuery, GitHubRateLimit } from './board-observer-worker';
+import { executionChildEnvironment } from './execution-collector';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { boardSeatTerminals, hcEvents, hcListAsync, RH_LABEL, type HcEventStream, type HcLabels, type HcListTerminal, type HcStreamItem } from '../terminal/herdr-core';
 import { readHcSnapshot, type HcSnapshot } from './herdr-runtime-transport';
@@ -10,12 +19,37 @@ import { readHcSnapshot, type HcSnapshot } from './herdr-runtime-transport';
 export const BOARD_SEATS_DEBOUNCE_MS = 100;
 const RETRY_MIN_MS = 1000;
 const FACTS_INTERVAL_MS = 30_000;
+/** One board read makes several GitHub reads and one merge readiness read per open pull request. */
+export const BOARD_FACTS_DEADLINE_MS = 90_000;
+/** A board GET keeps its parent observed for this long (#2155 D2). */
+export const BOARD_LEASE_MS = 10 * 60_000;
+/** Below this share of the GitHub budget the gap between cycles grows in proportion. */
+const RATE_LIMIT_LOW_SHARE = 0.25;
+const RATE_LIMIT_GAP_MAX_MS = 15 * 60_000;
+const WORKER_TERMINATION_GRACE_MS = 500;
+const WORKER_OUTPUT_LIMIT = 16 * 1024 * 1024;
+const WORKER_ENTRY = fileURLToPath(new URL('./board-observer-worker.ts', import.meta.url));
 
 type Repository = { readonly id: string; readonly path: string };
 export type BoardSeatsCache =
   | { readonly state: 'pending' }
   | { readonly state: 'unavailable'; readonly reason: 'registry_unavailable' | 'repository_not_found' | 'parents_github_failed' | 'parents_hc_failed'; readonly cause?: 'github_remote_missing' }
   | { readonly state: 'ready'; readonly value: BoardSeatsV1 };
+/** The last read of one facts document. `pending` until the worker has read it once. */
+export type BoardFactsCache<T, F extends string> =
+  | { readonly state: 'pending' }
+  | { readonly state: 'unavailable'; readonly reason: F }
+  | { readonly state: 'ready'; readonly value: T; readonly etag: string };
+export type BoardDocumentCache = BoardFactsCache<BoardV1, Exclude<BoardReadFailure, 'board_parent_invalid' | 'board_pending'>>;
+export type BoardParentsCache = BoardFactsCache<BoardParentsV1, Exclude<BoardParentsReadFailure, 'parents_pending' | 'parents_hc_failed'>>;
+
+/** The memory reads of the board routes. No read starts a process. */
+export interface BoardObserverReads {
+  seats(repositoryId: string): BoardSeatsCache;
+  /** Also adds or renews the lease of the parent. */
+  board(repositoryId: string, parent: number): BoardDocumentCache;
+  parents(repositoryId: string): BoardParentsCache;
+}
 
 export interface BoardObserverPorts {
   repositories(): readonly Repository[];
@@ -24,6 +58,8 @@ export interface BoardObserverPorts {
   snapshot(labels: HcLabels, signal: AbortSignal): Promise<HcSnapshot>;
   list(labels: HcLabels, signal: AbortSignal): Promise<readonly HcListTerminal[]>;
   branch(cwd: string | null, signal: AbortSignal): Promise<string | null>;
+  /** The resident facts worker: a group leader on POSIX that answers one JSON line for each request line. */
+  spawnWorker(): ChildProcess;
 }
 
 export interface BoardObserverOptions {
@@ -34,6 +70,8 @@ export interface BoardObserverOptions {
     setTimeout(callback: () => void, ms: number): ReturnType<typeof setTimeout>;
     clearTimeout(timer: ReturnType<typeof setTimeout>): void;
   };
+  /** A board that the worker read and that passed the decoder. A throw makes the cache entry `board_unavailable`. */
+  readonly on_board?: (repositoryId: string, board: BoardV1) => void;
 }
 
 function observerPorts(env: NodeJS.ProcessEnv): BoardObserverPorts {
@@ -53,7 +91,37 @@ function observerPorts(env: NodeJS.ProcessEnv): BoardObserverPorts {
       try { return (await gitExecFile(['symbolic-ref', '--quiet', '--short', 'HEAD'], { cwd, env: childEnv, signal, timeout: 10_000 })).trim() || null; }
       catch (error) { if (signal.aborted) throw error; return null; }
     },
+    spawnWorker: () => spawnBoardWorker(env),
   };
+}
+
+/**
+ * The registered root alone selects the repository: no GH_REPO or Git
+ * repository override reaches the worker. Each gh read runs in its root, and
+ * Bun loads no bunfig.toml or .env from a repository or from the server cwd.
+ */
+export function spawnBoardWorker(env: NodeJS.ProcessEnv): ChildProcess {
+  const workerEnv: NodeJS.ProcessEnv = { ...executionChildEnvironment(env), GH_PROMPT_DISABLED: '1' };
+  delete workerEnv.GH_REPO;
+  return spawnRegisteredProcessGroup('operator-board-observer', () => spawn(process.execPath, ['--no-env-file', `--config=${devNull}`, WORKER_ENTRY], {
+    env: workerEnv, stdio: ['pipe', 'pipe', 'ignore'], detached: process.platform !== 'win32', windowsHide: true,
+  }));
+}
+
+/** The gap after a cycle: the base interval, longer in proportion when the GitHub budget is low. */
+function cycleGap(rate: GitHubRateLimit | null): number {
+  const share = rate === null ? 1 : rate.remaining / rate.limit;
+  if (share >= RATE_LIMIT_LOW_SHARE) return FACTS_INTERVAL_MS;
+  return Math.min(RATE_LIMIT_GAP_MAX_MS, FACTS_INTERVAL_MS * RATE_LIMIT_LOW_SHARE / Math.max(share, 1 / rate!.limit));
+}
+
+const etagOf = (value: unknown) => `"${sha256Hex(JSON.stringify(value))}"`;
+const boardKey = (repositoryId: string, parent: number) => `${repositoryId}#${parent}`;
+
+interface Worker {
+  readonly child: ChildProcess;
+  readonly exited: Promise<void>;
+  waiting: ((line: string | null) => void) | null;
 }
 
 type CancelTimer = () => void;
@@ -233,6 +301,7 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
     registryWork = (async () => {
       try {
         const repositories = ports.repositories(); registryFailed = false;
+        applyFactsRegistry(repositories);
         const byId = new Map(repositories.map(repository => [repository.id, repository]));
         const retired: Promise<void>[] = [];
         for (const [id, state] of states) if (byId.get(id)?.path !== state.repository.path) { states.delete(id); retired.push(stop(state)); }
@@ -241,22 +310,186 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
         for (const repository of repositories) if (!states.has(repository.id)) start(repository);
       } catch {
         registryFailed = true;
+        applyFactsRegistry(null);
         const retired = [...states.values()]; states.clear();
         await Promise.all(retired.map(stop));
       }
       if (!observer.signal.aborted) timer(observer.signal, cycle, FACTS_INTERVAL_MS);
     })();
   }
+
+  // Board facts: one resident worker reads one document at a time. The routes
+  // read only these maps; a cycle replaces each entry when its read settles.
+  const boards = new Map<string, BoardDocumentCache>();
+  const parentsDocuments = new Map<string, BoardParentsCache>();
+  const leases = new Map<string, { readonly repository_id: string; readonly parent: number; until: number }>();
+  let factsRepositories: ReadonlySet<string> | null = null;
+  let factsRegistryFailed = false;
+  let worker: Worker | null = null;
+  let nextRequest = 0;
+  let factsWork: Promise<void> | null = null;
+  let gap: { readonly cancel: CancelTimer; readonly wakeable: boolean } | null = null;
+
+  function startWorker(): Worker {
+    const child = ports.spawnWorker();
+    let resolveExit!: () => void;
+    const started: Worker = { child, exited: new Promise(resolve => { resolveExit = resolve; }), waiting: null };
+    let buffer = '';
+    const answer = (line: string | null) => { const waiting = started.waiting; started.waiting = null; waiting?.(line); };
+    const ended = () => { if (worker === started) worker = null; answer(null); resolveExit(); };
+    child.once('close', ended);
+    child.once('error', ended);
+    child.stdin!.on('error', () => {});
+    child.stdout!.setEncoding('utf8');
+    child.stdout!.on('data', (chunk: string) => {
+      buffer += chunk;
+      for (let end = buffer.indexOf('\n'); end >= 0; end = buffer.indexOf('\n')) {
+        const line = buffer.slice(0, end);
+        buffer = buffer.slice(end + 1);
+        answer(line);
+      }
+      if (buffer.length > WORKER_OUTPUT_LIMIT) void retire(started);
+    });
+    return started;
+  }
+  /** Kill the worker's process group. The next request starts a new worker with empty stores. */
+  async function retire(retired: Worker): Promise<void> {
+    if (worker === retired) worker = null;
+    const waiting = retired.waiting; retired.waiting = null; waiting?.(null);
+    if (retired.child.pid !== undefined) await terminateProcessGroup(retired.child.pid, WORKER_TERMINATION_GRACE_MS).catch(() => {});
+    else retired.child.kill('SIGKILL');
+    await retired.exited;
+  }
+  /** One request under the deadline. Null: the worker did not start, crashed, wrote an invalid answer or the observer closed. */
+  async function ask(request: BoardWorkerQuery): Promise<BoardWorkerAnswer | 'timeout' | null> {
+    if (observer.signal.aborted) return null;
+    let current: Worker;
+    // A failed spawn becomes the unavailable answer of each document; the next request tries a new worker.
+    try { current = worker ??= startWorker(); } catch { return null; }
+    const id = ++nextRequest;
+    const line = await new Promise<string | null | 'timeout'>((resolve) => {
+      const deadline = timer(observer.signal, () => resolve('timeout'), BOARD_FACTS_DEADLINE_MS);
+      current.waiting = value => { deadline(); resolve(value); };
+      current.child.stdin!.write(`${JSON.stringify({ ...request, id })}\n`);
+    });
+    if (line === 'timeout') { await retire(current); return 'timeout'; }
+    let answer: BoardWorkerAnswer | null = null;
+    try { answer = line === null ? null : JSON.parse(line) as BoardWorkerAnswer; } catch { /* invalid answer */ }
+    if (answer?.id !== id || typeof answer.ok !== 'boolean') { await retire(current); return null; }
+    return answer;
+  }
+  function readParents(answer: BoardWorkerAnswer | 'timeout' | null): BoardParentsCache {
+    if (answer === 'timeout') return { state: 'unavailable', reason: 'parents_timeout' };
+    if (answer === null) return { state: 'unavailable', reason: 'parents_unavailable' };
+    if (!answer.ok) return { state: 'unavailable', reason: answer.code as Extract<BoardParentsCache, { state: 'unavailable' }>['reason'] };
+    try { const value = decodeBoardParents(answer.value); return { state: 'ready', value, etag: etagOf(value) }; }
+    catch { return { state: 'unavailable', reason: 'parents_invalid' }; }
+  }
+  function readBoard(repositoryId: string, parent: number, answer: BoardWorkerAnswer | 'timeout' | null): BoardDocumentCache {
+    if (answer === 'timeout') return { state: 'unavailable', reason: 'board_timeout' };
+    if (answer === null) return { state: 'unavailable', reason: 'board_unavailable' };
+    if (!answer.ok) return { state: 'unavailable', reason: answer.code as Extract<BoardDocumentCache, { state: 'unavailable' }>['reason'] };
+    let value: BoardV1;
+    try { value = decodeBoard(answer.value); if (value.parent.number !== parent) throw new Error('board of another parent'); }
+    catch { return { state: 'unavailable', reason: 'board_invalid' }; }
+    try { options.on_board?.(repositoryId, value); } catch { return { state: 'unavailable', reason: 'board_unavailable' }; }
+    return { state: 'ready', value, etag: etagOf(value) };
+  }
+  /** Each open parent with a live seat, then each leased parent; parents with no answer yet come first. */
+  function observedBoards(repositories: readonly Repository[]): { readonly repository: Repository; readonly parent: number }[] {
+    const now = clock.now().getTime();
+    for (const [key, lease] of leases) if (lease.until <= now) leases.delete(key);
+    const observed = new Map<string, { readonly repository: Repository; readonly parent: number }>();
+    for (const repository of repositories) {
+      const parents = parentsDocuments.get(repository.id), seats = states.get(repository.id)?.cache;
+      if (parents?.state === 'ready' && seats?.state === 'ready') {
+        for (const parent of joinBoardParents(parents.value, seats.value).parents) {
+          if (parent.seats > 0) observed.set(boardKey(repository.id, parent.number), { repository, parent: parent.number });
+        }
+      }
+      for (const lease of leases.values()) if (lease.repository_id === repository.id) observed.set(boardKey(repository.id, lease.parent), { repository, parent: lease.parent });
+    }
+    return [...observed].sort(([left], [right]) => Number(boards.has(left)) - Number(boards.has(right))).map(([, board]) => board);
+  }
+  /**
+   * Each registry read, by the seats cycle or a facts cycle, applies at once:
+   * a removed repository loses its documents, and a failed read empties them,
+   * even while a low GitHub budget holds the next facts cycle back.
+   */
+  function applyFactsRegistry(repositories: readonly Repository[] | null) {
+    if (repositories === null) { factsRegistryFailed = true; boards.clear(); parentsDocuments.clear(); return; }
+    factsRegistryFailed = false;
+    const registered = factsRepositories = new Set(repositories.map(repository => repository.id));
+    for (const id of parentsDocuments.keys()) if (!registered.has(id)) parentsDocuments.delete(id);
+    for (const key of boards.keys()) if (!registered.has(key.slice(0, key.lastIndexOf('#')))) boards.delete(key);
+  }
+  async function factsCycle(): Promise<number> {
+    let repositories: readonly Repository[];
+    try { repositories = ports.repositories(); }
+    catch { applyFactsRegistry(null); return FACTS_INTERVAL_MS; }
+    applyFactsRegistry(repositories);
+    // With no registered repository the worker does not start.
+    if (repositories.length === 0) return FACTS_INTERVAL_MS;
+    const rate = await ask({ kind: 'rate_limit' });
+    for (const repository of repositories) {
+      const answer = await ask({ kind: 'parents', repo_root: repository.path });
+      if (observer.signal.aborted) return FACTS_INTERVAL_MS;
+      parentsDocuments.set(repository.id, readParents(answer));
+    }
+    const used = new Set<string>();
+    for (const { repository, parent } of observedBoards(repositories)) {
+      const key = boardKey(repository.id, parent);
+      const answer = await ask({ kind: 'board', repo_root: repository.path, parent, key });
+      if (observer.signal.aborted) return FACTS_INTERVAL_MS;
+      boards.set(key, readBoard(repository.id, parent, answer));
+      used.add(key);
+    }
+    for (const key of boards.keys()) if (!used.has(key)) boards.delete(key);
+    await ask({ kind: 'retain', keys: [...used] });
+    return cycleGap(rate !== null && rate !== 'timeout' && rate.ok ? rate.value as GitHubRateLimit : null);
+  }
+  function runFacts() {
+    gap = null;
+    // A cycle that throws keeps the documents it published; the server stays up and the next cycle retries.
+    factsWork = factsCycle().catch(() => FACTS_INTERVAL_MS).then((ms) => {
+      factsWork = null;
+      if (observer.signal.aborted) return;
+      gap = { cancel: timer(observer.signal, runFacts, ms), wakeable: ms <= FACTS_INTERVAL_MS };
+    });
+  }
+  /** A new lease starts the next cycle at once unless a low GitHub budget set the gap. */
+  function lease(repositoryId: string, parent: number) {
+    if (factsRegistryFailed || (factsRepositories !== null && !factsRepositories.has(repositoryId))) return;
+    const key = boardKey(repositoryId, parent), until = clock.now().getTime() + BOARD_LEASE_MS;
+    const held = leases.get(key);
+    if (held !== undefined) { held.until = until; return; }
+    leases.set(key, { repository_id: repositoryId, parent, until });
+    if (gap?.wakeable) { gap.cancel(); runFacts(); }
+  }
+
   cycle();
+  runFacts();
   return {
-    read(repositoryId: string): BoardSeatsCache {
+    seats(repositoryId: string): BoardSeatsCache {
       return registryFailed ? { state: 'unavailable', reason: 'registry_unavailable' }
         : states.get(repositoryId)?.cache ?? { state: 'unavailable', reason: 'repository_not_found' };
+    },
+    board(repositoryId: string, parent: number): BoardDocumentCache {
+      lease(repositoryId, parent);
+      if (factsRegistryFailed) return { state: 'unavailable', reason: 'registry_unavailable' };
+      if (factsRepositories !== null && !factsRepositories.has(repositoryId)) return { state: 'unavailable', reason: 'repository_not_found' };
+      return boards.get(boardKey(repositoryId, parent)) ?? { state: 'pending' };
+    },
+    parents(repositoryId: string): BoardParentsCache {
+      if (factsRegistryFailed) return { state: 'unavailable', reason: 'registry_unavailable' };
+      if (factsRepositories !== null && !factsRepositories.has(repositoryId)) return { state: 'unavailable', reason: 'repository_not_found' };
+      return parentsDocuments.get(repositoryId) ?? { state: 'pending' };
     },
     close(): Promise<void> {
       if (closeWork !== null) return closeWork;
       observer.abort();
-      closeWork = Promise.all([...states.values()].map(stop).concat(registryWork ?? [])).then(() => {});
+      const facts = (worker === null ? Promise.resolve() : retire(worker)).then(async () => { await factsWork; });
+      closeWork = Promise.all([...states.values()].map(stop).concat(registryWork ?? [], facts)).then(() => {});
       return closeWork;
     },
   };

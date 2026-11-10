@@ -396,7 +396,7 @@ export function OperatorApp({
     if (openRepository !== null) chooseBoardRepository(openRepository);
   }, [openRepository, chooseBoardRepository]);
   const boardOptions = registered.map(row => ({ id: row.repository_id, label: registeredLabel(registered, row.repository_id) }));
-  // The parent list reads only on the list layout: the overview reads its own, and a second read at the same time gets parents_busy.
+  // The parent list reads only on the list layout: the overview reads its own.
   const boardParents = useBoardParents(readBoardParents, workspace === 'board' && boardLayout(place.item) === 'list' && boardSubject === null ? boardListRepository(boardOptions, boardRepository) : null, refreshGeneration);
 
   useEffect(() => {

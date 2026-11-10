@@ -26,6 +26,9 @@ export interface BoardSubject {
   readonly parent: number;
 }
 
+/** The board, parents and seats routes answer from the observer's memory, so these reads poll each 3 s (#2155 D6). */
+export const BOARD_CACHE_POLL_MS = 3000;
+
 function boardReason(code: string): BoardReason {
   return (BOARD_READ_FAILURES as readonly string[]).includes(code) ? code as BoardReadFailure : 'unreachable';
 }
@@ -51,7 +54,7 @@ export async function fetchBoard(subject: BoardSubject, signal: AbortSignal): Pr
  * drops it (ADR-0002 Versions: no last good copy after a refusal).
  */
 const STALE_BOARD_KEPT: ReadonlySet<BoardReason> = new Set<BoardReason>([
-  'unreachable', 'board_busy', 'board_timeout', 'board_unavailable', 'board_collect_failed', 'registry_unavailable',
+  'unreachable', 'board_pending', 'board_timeout', 'board_unavailable', 'board_collect_failed', 'registry_unavailable',
 ]);
 
 /** A failed refresh keeps the last board of the same subject only for the failures in STALE_BOARD_KEPT. */
@@ -82,7 +85,7 @@ export function useBoard(read: BoardReader, subject: BoardSubject | null, genera
     // `key` identifies `subject`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [read, key]);
-  useObservationRefresh(observe, JSON.stringify(['board', key, generation]), { enabled: subject !== null });
+  useObservationRefresh(observe, JSON.stringify(['board', key, generation]), { enabled: subject !== null, interval: BOARD_CACHE_POLL_MS });
   if (subject === null) return null;
   return state !== null && state.key === key ? state.view : { kind: 'loading' };
 }
@@ -119,7 +122,7 @@ export type BoardParentsView =
   | { readonly kind: 'failed'; readonly reason: BoardParentsReason }
   | { readonly kind: 'ready'; readonly list: BoardParentsV1 };
 
-/** Null without a repository; otherwise loading until the first read of this repository settles. A typed refusal keeps the 30 s cycle, as for the board. */
+/** Null without a repository; otherwise loading until the first read of this repository settles. A typed refusal keeps the poll cycle, as for the board. */
 export function useBoardParents(read: BoardParentsReader, repositoryId: string | null, generation: number): BoardParentsView | null {
   const [state, setState] = useState<{ readonly key: string; readonly view: BoardParentsView } | null>(null);
   const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
@@ -129,7 +132,7 @@ export function useBoardParents(read: BoardParentsReader, repositoryId: string |
     setState({ key: repositoryId, view: result.state === 'ok' ? { kind: 'ready', list: result.list } : { kind: 'failed', reason: result.reason } });
     return result.state === 'ok' || result.reason !== 'unreachable';
   }, [read, repositoryId]);
-  useObservationRefresh(observe, JSON.stringify(['board-parents', repositoryId, generation]), { enabled: repositoryId !== null });
+  useObservationRefresh(observe, JSON.stringify(['board-parents', repositoryId, generation]), { enabled: repositoryId !== null, interval: BOARD_CACHE_POLL_MS });
   if (repositoryId === null) return null;
   return state !== null && state.key === repositoryId ? state.view : { kind: 'loading' };
 }
@@ -172,7 +175,7 @@ export function useBoardSeats(read: BoardSeatsReader, repositoryId: string | nul
     setState({ key: repositoryId, view: result.state === 'pending' ? { kind: 'loading' } : result.state === 'ok' ? { kind: 'ready', seats: result.seats } : { kind: 'failed', reason: result.reason } });
     return result.state !== 'unavailable' || result.reason !== 'unreachable';
   }, [read, repositoryId]);
-  useObservationRefresh(observe, JSON.stringify(['board-seats', repositoryId, generation]), { enabled: repositoryId !== null, interval: 3000 });
+  useObservationRefresh(observe, JSON.stringify(['board-seats', repositoryId, generation]), { enabled: repositoryId !== null, interval: BOARD_CACHE_POLL_MS });
   if (repositoryId === null) return null;
   return state?.key === repositoryId ? state.view : { kind: 'loading' };
 }

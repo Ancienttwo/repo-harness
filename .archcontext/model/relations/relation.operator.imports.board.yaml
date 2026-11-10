@@ -3,4 +3,4 @@ id: relation.operator.imports.board
 kind: depends-on
 source: capability.runtime-harness.operator
 target: capability.organization.board
-intent: "Serve and show the board of one parent issue: decode the board CLI output and evaluate the attention rules in the browser. Read the seat, quota and agent settings contracts, read quota through the core readers, and save seats through the core writer."
+intent: "Serve and show the board of one parent issue: decode the board and parent documents that the board observer worker reads, and evaluate the attention rules in the browser. Read the seat, quota and agent settings contracts, read quota through the core readers, and save seats through the core writer."
