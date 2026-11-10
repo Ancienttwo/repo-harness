@@ -1,7 +1,7 @@
 import { version as PACKAGE_VERSION } from '../../package.json';
 import { installStateFixturePath, pluginSelectionEnv, recordPluginSelection } from '../helpers/install-ownership';
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync, readdirSync, readFileSync, statSync, openSync, closeSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,7 +43,6 @@ import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import boardParents from '../../src/operator-web/fixtures/board-parents.json';
 import boardSeats from '../../src/operator-web/fixtures/board-seats.json';
 import { decodeBoardParents, decodeBoardSeats } from '../../src/core/board/parents';
-import { boardSummary, decodeBoardSummaries } from '../../src/core/board/summary';
 
 import {
   architectureStatus,

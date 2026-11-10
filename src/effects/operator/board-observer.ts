@@ -22,7 +22,7 @@ const FACTS_INTERVAL_MS = 30_000;
 /** One board read makes several GitHub reads and one merge readiness read per open pull request. */
 export const BOARD_FACTS_DEADLINE_MS = 90_000;
 /** A board GET keeps its parent observed for this long (#2155 D2). */
-const BOARD_LEASE_MS = 10 * 60_000;
+export const BOARD_LEASE_MS = 10 * 60_000;
 /** Below this share of the GitHub budget the gap between cycles grows in proportion. */
 const RATE_LIMIT_LOW_SHARE = 0.25;
 const RATE_LIMIT_GAP_MAX_MS = 15 * 60_000;
@@ -358,10 +358,12 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
     else retired.child.kill('SIGKILL');
     await retired.exited;
   }
-  /** One request under the deadline. Null: the worker crashed, wrote an invalid answer or the observer closed. */
+  /** One request under the deadline. Null: the worker did not start, crashed, wrote an invalid answer or the observer closed. */
   async function ask(request: BoardWorkerQuery): Promise<BoardWorkerAnswer | 'timeout' | null> {
     if (observer.signal.aborted) return null;
-    const current = worker ??= startWorker();
+    let current: Worker;
+    // A failed spawn becomes the unavailable answer of each document; the next request tries a new worker.
+    try { current = worker ??= startWorker(); } catch { return null; }
     const id = ++nextRequest;
     const line = await new Promise<string | null | 'timeout'>((resolve) => {
       const deadline = timer(observer.signal, () => resolve('timeout'), BOARD_FACTS_DEADLINE_MS);
@@ -436,7 +438,8 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
   }
   function runFacts() {
     gap = null;
-    factsWork = factsCycle().then((ms) => {
+    // A cycle that throws keeps the documents it published; the server stays up and the next cycle retries.
+    factsWork = factsCycle().catch(() => FACTS_INTERVAL_MS).then((ms) => {
       factsWork = null;
       if (observer.signal.aborted) return;
       gap = { cancel: timer(observer.signal, runFacts, ms), wakeable: ms <= FACTS_INTERVAL_MS };

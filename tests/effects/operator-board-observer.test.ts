@@ -6,8 +6,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { PassThrough } from 'node:stream';
-import { BOARD_FACTS_DEADLINE_MS, BOARD_SEATS_DEBOUNCE_MS, startBoardObserver, type BoardObserverOptions, type BoardObserverPorts } from '../../src/effects/operator/board-observer';
-import type { BoardWorkerRequest } from '../../src/effects/operator/board-observer-worker';
+import { BOARD_FACTS_DEADLINE_MS, BOARD_LEASE_MS, BOARD_SEATS_DEBOUNCE_MS, startBoardObserver, type BoardObserverOptions, type BoardObserverPorts } from '../../src/effects/operator/board-observer';
+import { answerBoardWorkerRequest, type BoardWorkerRequest } from '../../src/effects/operator/board-observer-worker';
+import { createKeyedSources } from '../../src/effects/board/keyed-sources';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { RH_LABEL, type HcStreamItem, type HcTerminal } from '../../src/effects/terminal/herdr-core';
 import { decodeBoardSeats } from '../../src/core/board/parents';
@@ -472,4 +473,50 @@ test('each board that the worker reads replaces its private summary, and the sum
     expect((await fetch(`${path}?parent=1474`, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
     expect(reads()).toBe(4);
   } finally { await server.close(); rmSync(home, { recursive: true, force: true }); }
+});
+
+test('board facts: a worker that does not start leaves typed unavailable documents, the server keeps answering and the next cycle retries', async () => {
+  const f = fixture();
+  const spawn = f.ports.spawnWorker;
+  let failures = 0;
+  f.ports.spawnWorker = () => { failures++; throw new Error('spawn failed'); };
+  const server = await startOperatorServer({ port: 0, board_observer: { ports: f.ports, clock: f.clock } });
+  const parents = `${server.url}/api/v1/repositories/repo-a/board/parents`;
+  const code = async (response: Response) => [response.status, ((await response.json()) as { error: { code: string } }).error.code];
+  try {
+    await until(() => failures >= 2);
+    await f.tick(0);
+    expect(await code(await fetch(parents))).toEqual([503, 'parents_unavailable']);
+    f.ports.spawnWorker = spawn;
+    await f.tick(30_000);
+    await until(() => f.worker.spawned[0]?.requests.some(request => request.kind === 'retain') === true);
+    expect((await fetch(parents)).status).toBe(200);
+  } finally { await server.close(); }
+});
+
+test('board facts: each cycle removes the board documents and worker stores that it did not read', async () => {
+  const f = fixture();
+  const home = mkdtempSync(join(tmpdir(), 'board-retain-'));
+  const server = await startOperatorServer({ port: 0, env: { REPO_HARNESS_HOME: home }, board_observer: { ports: f.ports, clock: f.clock } });
+  const path = (parent: number) => `${server.url}/api/v1/repositories/repo-a/board?parent=${parent}`;
+  const retains = () => f.worker.spawned[0]!.requests.flatMap(request => request.kind === 'retain' ? [request.keys] : []);
+  try {
+    await until(() => f.worker.spawned.length === 1 && retains().length === 1);
+    await f.tick(0); f.emit('snapshot'); await f.tick(BOARD_SEATS_DEBOUNCE_MS);
+    // A GET leases 1651, which has no seat, and starts a cycle that reads it with 1474.
+    await fetch(path(1651));
+    await until(() => retains().length === 2);
+    expect(retains()[1]).toEqual(['repo-a#1474', 'repo-a#1651']);
+    expect((await fetch(path(1651))).status).toBe(200);
+    // The lease ends: the next cycle reads only 1474, retains only its store and drops the 1651 document.
+    // Cycles keep running while the clock passes the lease; the cycle after the lease end retains only 1474.
+    await f.tick(BOARD_LEASE_MS); await f.tick(30_000);
+    await until(() => retains().at(-1)?.length === 1);
+    expect(retains().at(-1)).toEqual(['repo-a#1474']);
+    expect(((await (await fetch(path(1651))).json()) as { error: { code: string } }).error.code).toBe('board_pending');
+  } finally { await server.close(); rmSync(home, { recursive: true, force: true }); }
+  // The worker side of `retain`: only the listed stores stay.
+  const stores = new Map([['repo-a#1474', createKeyedSources()], ['repo-a#1651', createKeyedSources()]]);
+  expect(answerBoardWorkerRequest({ id: 7, kind: 'retain', keys: ['repo-a#1474'] }, stores, {} as never)).toEqual({ id: 7, ok: true, value: null });
+  expect([...stores.keys()]).toEqual(['repo-a#1474']);
 });
