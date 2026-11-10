@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { sha256Hex } from '../core/evidence/sha256';
 import {
   cpSync,
   lstatSync,
@@ -165,7 +166,7 @@ export function commitVerifiedSkillTree(
     };
   }
   const canonicalDestination = join(parent, basename(destination));
-  const key = createHash("sha256").update(canonicalDestination).digest("hex");
+  const key = sha256Hex(canonicalDestination);
   const transactionPrefix = `.repo-harness-skill-stage-${key}-`;
   const lock = acquireExclusiveDirectoryLock(parent, `.repo-harness-skill-lock-${key}`, {
     reclaimStaleOwner: true,

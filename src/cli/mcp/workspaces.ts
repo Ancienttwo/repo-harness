@@ -1,7 +1,8 @@
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'fs';
-import { basename, isAbsolute, relative, resolve, sep } from 'path';
-import { globMatches, isPathInside } from './paths';
+import { basename, isAbsolute, relative, resolve } from 'path';
+import { globMatches, isPathInside, toPosixPath } from './paths';
 import { sensitiveAllowedRootReason } from './policy';
 import type { McpPolicy } from './types';
 
@@ -59,12 +60,8 @@ export class WorkspaceError extends Error {
 
 const DEFAULT_MAX_WORKSPACES = 16;
 
-function toPosixPath(value: string): string {
-  return value.split(sep).join('/').replace(/\\+/g, '/');
-}
-
 function rootIdFor(canonicalPath: string): string {
-  return `root_${createHash('sha256').update(canonicalPath).digest('hex').slice(0, 16)}`;
+  return `root_${sha256Hex(canonicalPath).slice(0, 16)}`;
 }
 
 function stableDisplayName(canonicalPath: string): string {

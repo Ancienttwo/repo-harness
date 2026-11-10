@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { cleanupContentsDigestInput, type CleanupLossEvidence } from '../../core/operator/worktree-cleanup-observation';
 import {
@@ -15,7 +15,7 @@ export interface CleanupObservation {
   /** Null means incomplete evidence, including an unsupported orphan or path. */
   readonly loss: CleanupLossEvidence | null;
 }
-const sha256 = (input: string) => createHash('sha256').update(input).digest('hex');
+const sha256 = (input: string) => sha256Hex(input);
 
 /** Bind complete raw contents, directory incarnation, index and all unpublished commits. */
 export function cleanupLossSha256(observed: CleanupObservation): string | null {

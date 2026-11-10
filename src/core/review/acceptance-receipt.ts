@@ -1,7 +1,7 @@
 import type { ReviewAdmission, ReviewAuthorityContext } from './authority-context';
 import type { RequiredCheckFailureEvidenceV1 } from '../evidence/required-check-evidence';
 import type { RequiredCheckCoverageEvidenceV1 } from '../publication/required-check-coverage';
-import { createHash } from 'crypto';
+import { sha256Prefixed } from '../evidence/sha256';
 import { modelFamily } from './model-family';
 import { isReviewRuntimeId, type ReviewRuntimeId } from './review-runtimes';
 
@@ -272,7 +272,7 @@ export function fail(message: string, code = 1): never {
 }
 
 export function sha256(value: string | Buffer): string {
-  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+  return sha256Prefixed(value);
 }
 
 export function stableJson(value: unknown): string {
@@ -385,12 +385,6 @@ export function authorityFingerprint(content: string): string {
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-export function acceptanceContractField(markdown: string, label: string): string {
-  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = markdown.match(new RegExp(`^> \\*\\*${escaped}\\*\\*:[ \\t]*(.+?)[ \\t]*$`, 'm'));
-  return match?.[1]?.replace(/^`|`$/g, '').trim() ?? '';
 }
 
 export function parseAcceptancePolicy(contractText: string): AcceptancePolicy {

@@ -1,5 +1,5 @@
 import { renderHerdrSkill } from "./herdr-skill-render.mjs";
-import { createHash } from "node:crypto";
+import { sha256Prefixed } from "../../core/evidence/sha256";
 import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -14,7 +14,7 @@ type Step = { step: string; status: "ok" | "failed"; detail: string };
 type BackupCleanup = (path: string) => void;
 
 function digest(content: string): string {
-  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+  return sha256Prefixed(content);
 }
 
 function ownedSkillIsIntact(directory: string): boolean {

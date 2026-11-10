@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { lstatSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { makeOperationId, type AdoptionPlan, type WriteFileOperation } from '../../core/adoption/operations';
@@ -80,7 +80,7 @@ export function planWorktreeTemplate(repoRoot: string): WorktreeTemplatePlan {
   return {
     item: { path: POLICY_PATH, action: 'rewrite', current, replacement,
       reason: 'Legacy template; existing worktrees stay where they are.' },
-    write: { content, expectedContentHash: `sha256:${createHash('sha256').update(text).digest('hex')}` },
+    write: { content, expectedContentHash: sha256Prefixed(text) },
   };
 }
 

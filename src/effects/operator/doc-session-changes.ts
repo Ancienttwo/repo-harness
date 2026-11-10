@@ -4,7 +4,7 @@
 // the server runs it in the bounded task-read child, so git never blocks the
 // serve loop. A read writes nothing: no index refresh, no object, no lock.
 
-import { createHash } from 'node:crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
@@ -41,11 +41,10 @@ export class DocSessionReadError extends Error {
 }
 const fail = (code: DocSessionReadFailure): never => { throw new DocSessionReadError(code); };
 
-const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
 /** `diff_sha256` of an observation; #1023 compares it with `expected_diff_sha256`. */
-export const docSessionDiffSha256 = (baseCommit: string, changes: readonly DocSessionChange[]): string => sha256(docSessionDiffDigestInput(baseCommit, changes));
+export const docSessionDiffSha256 = (baseCommit: string, changes: readonly DocSessionChange[]): string => sha256Hex(docSessionDiffDigestInput(baseCommit, changes));
 /** `loss_sha256` of an observation; #1023 compares it with `expected_loss_sha256`. */
-export const docSessionLossSha256 = (loss: DocSessionLossInput): string => sha256(docSessionLossDigestInput(loss));
+export const docSessionLossSha256 = (loss: DocSessionLossInput): string => sha256Hex(docSessionLossDigestInput(loss));
 
 type Git = (cwd: string, args: string[], allowNoMatch?: boolean) => string;
 

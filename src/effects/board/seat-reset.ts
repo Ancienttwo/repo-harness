@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
 import {
@@ -127,7 +127,7 @@ function handoffProblem(path: string, sha256: string, request: SeatRequest): { r
   if (!existsSync(path)) return { code: 'handoff_missing', message: `${path} does not exist.` };
   if (statSync(path).mtimeMs <= Date.parse(request.requestedAt)) return { code: 'handoff_stale', message: `${path} is older than the reset request of ${request.requestedAt}.` };
   const text = readFileSync(path);
-  const actual = createHash('sha256').update(text).digest('hex');
+  const actual = sha256Hex(text);
   if (actual !== sha256.toLowerCase()) return { code: 'handoff_sha256_mismatch', message: `${path} has sha256 ${actual}, not ${sha256}.` };
   const missing = missingHandoffSections(text.toString('utf8'));
   return missing.length === 0 ? null : { code: 'handoff_sections_missing', message: `${path} has no section ${missing.map(section => `"## ${section}"`).join(', ')}.` };

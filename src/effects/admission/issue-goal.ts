@@ -1,6 +1,6 @@
 import { readActiveReviewAdmission, readReviewAdmissionForObservation, assertReviewAdmissionGoal } from './admission-store';
 import { bindReviewAdmission, type ReviewAuthorityInput } from '../../core/review/authority-context';
-import { createHash } from 'node:crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { fetchGithubIssues, type GithubCommandRunner } from '../github/issues';
 import { parseExternalSourcesPolicy, requireManualGithubPolicy, type ExternalSourcesPolicyV1 } from '../github/policy';
@@ -28,10 +28,10 @@ export function observeReviewIssueGoal(input: {
   // Goal revision is content identity, not issue activity. Comments and labels
   // can change updated_at without changing the approved goal.
   const content = canonicalize({ title: issue.title, body: issue.body });
-  const revision = `sha256:${createHash('sha256').update(canonicalize({
+  const revision = sha256Prefixed(canonicalize({
     repository_id: input.repository_id, issue_id: input.issue_id,
     content,
-  })).digest('hex')}`;
+  }));
   return Object.freeze({ revision, content });
 }
 

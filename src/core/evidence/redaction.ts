@@ -75,7 +75,7 @@
  * exactly as before; this is an accepted, out-of-ruling-scope residual since
  * no consumer gates on those fields' exact value.
  */
-import { createHash } from "crypto";
+import { sha256Prefixed } from "./sha256";
 import type { JsonValue } from "./types";
 import { mapStringLeaves } from "./json-walk";
 
@@ -197,7 +197,7 @@ interface Span {
 }
 
 function hashSecret(secret: string): string {
-  return `sha256:${createHash("sha256").update(secret).digest("hex")}`;
+  return sha256Prefixed(secret);
 }
 
 function findKnownSecretSpans(text: string, knownSecretValues: readonly string[]): Span[] {

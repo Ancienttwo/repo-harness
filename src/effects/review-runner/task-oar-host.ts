@@ -1,12 +1,13 @@
 import { consumePrePromptInbox, recordPrePromptInboxAccepted } from './task-pre-prompt-inbox-consumer';
 import { isReviewRuntimeId } from '../../core/review/review-runtimes';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { claudeRuntime, codexRuntime, createPiRuntime, createRuntimeRegistry, type Runtime, type Session, type SessionOptions } from '@botiverse/oar';
 import { scriptedRuntime } from '@botiverse/oar/testing';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { processIdentity, readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
 import type { HostRoundObservation, ProcessProof, ReviewHostSpec, ReviewIsolationAdmission, TaskRequest } from '../../core/review/runner-port';
 import { dirname } from 'node:path';
@@ -80,7 +81,7 @@ export async function runHostFileRequest(host: OarReviewHost, spec: ReviewHostSp
     || request.context_ref !== join(spec.output, `context-${request.round}.txt`)
     || request.result_ref !== join(spec.output, `result-${request.round}.json`)) throw new Error('OAR_HOST_REQUEST_INVALID');
   const content = readFileSync(request.context_ref, 'utf8');
-  if (`sha256:${createHash('sha256').update(content).digest('hex')}` !== request.context_sha256) throw new Error('OAR_HOST_CONTEXT_MISMATCH');
+  if (sha256Prefixed(content) !== request.context_sha256) throw new Error('OAR_HOST_CONTEXT_MISMATCH');
   const started = readSessionArtifact<{ request_id: string; provider: ProcessProof }>(join(spec.requestDirectory, `started-${request.round}.json`));
   if (started.request_id !== request.request_id || started.provider?.pid !== process.pid || !started.provider.identity) throw new Error('OAR_HOST_REQUEST_IDENTITY_MISMATCH');
   const consumed_at = Date.now();

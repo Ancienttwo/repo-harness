@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync } from 'fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { hashManagedTree, installedCopyTreeOptions, OWNER_MARKER } from '../managed-tree';
@@ -73,7 +73,7 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 function hash(bytes: string | Buffer): string {
-  return `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+  return sha256Prefixed(bytes);
 }
 function stat(path: string): ReturnType<typeof lstatSync> | null {
   try { return lstatSync(path); } catch (error) {
