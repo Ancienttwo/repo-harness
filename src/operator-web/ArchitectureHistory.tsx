@@ -4,23 +4,12 @@
 // only draws them: it computes no delta and parses no subject.
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Background,
-  BackgroundVariant,
-  Handle,
-  MarkerType,
-  Panel,
-  Position,
-  ReactFlow,
-  ReactFlowProvider,
-  type Edge,
-  type Node,
-  type NodeProps,
-} from '@xyflow/react';
-import '@xyflow/react/dist/base.css';
+import type { Node, NodeProps } from '@xyflow/react';
 import type { ArchitectureHistory as HistoryPage, HistoryEdge, HistoryMilestone, HistoryNode } from 'archctx-contracts';
-import { ZoomControls } from './architecture-map-parts';
-import { layoutArchitectureMap, type MapLayoutInput, type MapLayoutNode } from './architecture-map-layout';
+import { layoutArchitectureMap, type MapLayoutInput } from './architecture-map-layout';
+import type { SceneBox, SceneRoute } from './architecture-scene';
+import { ArchitectureSceneCanvas, SceneHandles, type SceneLegendEntry, type SceneNodeView } from './ArchitectureSceneCanvas';
+import type { ArchitectureSelect, ArchitectureSelections } from './ArchitectureMap';
 import type { OperatorTranslate } from './i18n';
 import { CommandLine } from './ui';
 import { useObservationRefresh } from './useObservationRefresh';
@@ -87,8 +76,8 @@ export function historyShape(milestones: readonly HistoryMilestone[], milestone:
   return {
     input: {
       nodes: [
-        ...domains.map(domain => ({ id: domainId(domain), kind: 'domain', name: domain, layer: null, parent: null })),
-        ...capabilities.map(node => ({ id: node.id, kind: 'capability', name: node.name, layer: null, parent: node.domain === null ? null : domainId(node.domain) })),
+        ...domains.map(domain => ({ id: domainId(domain), kind: 'domain', name: domain, parent: null })),
+        ...capabilities.map(node => ({ id: node.id, kind: 'capability', name: node.name, parent: node.domain === null ? null : domainId(node.domain) })),
       ],
       relations: [...milestone.edges, ...removedEdges].map(edge => ({ id: edgeId(edge), kind: 'relation', source: edge.source, target: edge.target })),
     },
@@ -179,43 +168,34 @@ function useHistory(path: string, read: HistoryReader, generation: number) {
   return { ...shown, loadMore, retry };
 }
 
-interface HistoryNodeData extends Record<string, unknown> {
-  readonly item: MapLayoutNode;
+interface HistoryBoxData extends Record<string, unknown> {
+  readonly name: string;
   readonly diff: HistoryDiff | null;
   readonly from: string | null;
-  readonly count: number;
   readonly quiet: boolean;
-  readonly selected: boolean;
 }
-type HistoryFlowNode = Node<HistoryNodeData, 'box' | 'group'>;
+interface HistoryGroupData extends Record<string, unknown> { readonly name: string; readonly count: number }
 
 const MARK: Readonly<Record<HistoryDiff, string>> = { added: '+', removed: '−', renamed: '~', inside: '•' };
 const short = (rev: string) => rev.slice(0, 7);
 
-function Handles() {
-  return <>
-    <Handle type="target" position={Position.Top} isConnectable={false} />
-    <Handle type="source" position={Position.Bottom} isConnectable={false} />
-  </>;
-}
-
-const HistoryBox = memo(function HistoryBox({ data }: NodeProps<HistoryFlowNode>) {
-  const { item, diff, from, quiet, selected } = data;
-  return <div className="architecture-history__node" title={item.node.id} data-node-id={item.node.id} data-diff={diff ?? undefined}
+const HistoryBox = memo(function HistoryBox({ id, data, selected }: NodeProps<Node<HistoryBoxData, 'box'>>) {
+  const { name, diff, from, quiet } = data;
+  return <div className="architecture-history__node" title={id} data-node-id={id} data-diff={diff ?? undefined}
     data-quiet={quiet || undefined} data-selected={selected || undefined}>
-    <Handles />
+    <SceneHandles />
     <b className="architecture-history__mark" aria-hidden="true">{diff && MARK[diff]}</b>
     <span className="architecture-history__name">
-      <span>{item.node.name}</span>
+      <span>{name}</span>
       {from !== null && <s className="architecture-history__from">{from}</s>}
     </span>
   </div>;
 });
 
-const HistoryGroup = memo(function HistoryGroup({ data }: NodeProps<HistoryFlowNode>) {
-  return <div className="architecture-history__group" data-node-id={data.item.node.id}>
-    <Handles />
-    <span>{data.item.node.name} · {data.count}</span>
+const HistoryGroup = memo(function HistoryGroup({ id, data }: NodeProps<Node<HistoryGroupData, 'group'>>) {
+  return <div className="architecture-history__group" data-node-id={id}>
+    <SceneHandles />
+    <span>{data.name} · {data.count}</span>
   </div>;
 });
 
@@ -229,6 +209,11 @@ function marksOf(milestone: ValidMilestone, shape: HistoryShape): Marks {
   const touched = new Set(shape.nodes.keys());
   for (const relation of shape.input.relations) if (shape.edges.has(relation.id)) { touched.add(relation.source); touched.add(relation.target); }
   return { nodes: shape.nodes, edges: shape.edges, touched };
+}
+
+/** The milestone shape that the layout places: each relation takes its change (`added`, `removed`) as its kind, an unchanged one `relation`. */
+export function historyLayoutInput(shape: HistoryShape, edges: ReadonlyMap<string, HistoryEdgeDiff>): MapLayoutInput {
+  return { nodes: shape.input.nodes, relations: shape.input.relations.map(relation => ({ ...relation, kind: edges.get(relation.id) ?? 'relation' })) };
 }
 
 const PICK_ORDER: readonly HistoryDiff[] = ['removed', 'added', 'renamed', 'inside'];
@@ -247,89 +232,65 @@ function captionOf(milestone: ValidMilestone, skipped: number | null, t: Operato
   return skipped > 0 ? t('architectureHistory.caption.skipped', { ...revs, count: skipped }) : `${revs.base} → ${revs.rev}`;
 }
 
+/** The legend rows: the four capability changes and the two relation changes. */
+function legendOf(t: OperatorTranslate): SceneLegendEntry[] {
+  return [
+    ...(['added', 'removed', 'renamed', 'inside'] as const).map(diff => ({
+      key: diff, swatch: <i className="architecture-history__swatch" data-diff={diff} />, text: t(`architecture.history.diff.${diff}`),
+    })),
+    ...(['added', 'removed'] as const).map(diff => ({
+      key: `edge-${diff}`, swatch: <i className="architecture-history__line" data-diff={diff} />, text: t(`architecture.history.edge.${diff}`),
+    })),
+  ];
+}
+
 function MilestoneMap({ milestone, shape, marks, skipped, selected, onSelect, t }: {
   readonly milestone: ValidMilestone;
   readonly shape: HistoryShape;
   readonly marks: Marks;
   readonly skipped: number | null;
   readonly selected: string | null;
-  readonly onSelect: (id: string) => void;
+  readonly onSelect: (id: string | null) => void;
   readonly t: OperatorTranslate;
 }) {
   const [focus, setFocus] = useState(false);
-  const [hovered, setHovered] = useState<string | null>(null);
   const highlight = milestone.delta.baseRev !== null;
-  const layout = useMemo(() => layoutArchitectureMap(shape.input), [shape]);
-  const items = useMemo(() => new Map(layout.nodes.map(item => [item.node.id, item])), [layout]);
+  const quiet = highlight && focus;
+  const layout = useMemo(() => layoutArchitectureMap(historyLayoutInput(shape, marks.edges)), [shape, marks]);
+  const nodes = useMemo(() => new Map(shape.input.nodes.map(node => [node.id, node])), [shape]);
   const members = useMemo(() => {
     const count = new Map<string, number>();
     for (const node of shape.input.nodes) if (node.parent !== null) count.set(node.parent, (count.get(node.parent) ?? 0) + 1);
     return count;
   }, [shape]);
-  const nodes = useMemo<HistoryFlowNode[]>(() => layout.nodes.map(item => {
-    const parent = item.node.parent === null ? null : items.get(item.node.parent)!;
-    const diff = marks.nodes.get(item.node.id) ?? null;
+  const view = useCallback((box: SceneBox): SceneNodeView => {
+    const node = nodes.get(box.id)!;
+    if (box.kind === 'frame') return { type: 'group', ariaLabel: `${node.kind} ${node.name}`, selection: null, data: { name: node.name, count: members.get(node.id) ?? 0 } satisfies HistoryGroupData };
+    const diff = marks.nodes.get(node.id) ?? null;
     return {
-      id: item.node.id,
-      type: item.group ? 'group' : 'box',
-      position: { x: item.x - (parent?.x ?? 0), y: item.y - (parent?.y ?? 0) },
-      width: item.width,
-      height: item.height,
-      ...(parent ? { parentId: parent.node.id } : {}),
-      data: {
-        item, diff, from: diff === 'renamed' ? shape.renamed.get(item.node.id)!.from : null, count: members.get(item.node.id) ?? 0,
-        quiet: highlight && focus && !item.group && !marks.touched.has(item.node.id), selected: item.node.id === selected,
-      },
-      draggable: false,
-      connectable: false,
-      selectable: false,
-      ariaLabel: `${item.node.kind} ${item.node.name}${diff ? ` (${t(`architecture.history.diff.${diff}`)})` : ''}`,
+      type: 'box', selection: node.id,
+      ariaLabel: `${node.kind} ${node.name}${diff ? ` (${t(`architecture.history.diff.${diff}`)})` : ''}`,
+      data: { name: node.name, diff, from: diff === 'renamed' ? shape.renamed.get(node.id)!.from : null, quiet: quiet && !marks.touched.has(node.id) } satisfies HistoryBoxData,
     };
-  }), [layout, items, marks, members, shape, highlight, focus, selected, t]);
-  const edges = useMemo<Edge[]>(() => layout.edges.map(({ relation }) => {
-    const diff = marks.edges.get(relation.id);
-    const hot = hovered !== null && (relation.source === hovered || relation.target === hovered);
-    const state = hot ? ' is-hot' : hovered !== null ? ' is-cold' : highlight && focus && !diff ? ' is-quiet' : '';
-    return {
-      id: relation.id,
-      source: relation.source,
-      target: relation.target,
-      className: `architecture-history__edge${diff ? ` architecture-history__edge--${diff}` : ''}${state}`,
-      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: 'var(--rh-diagram-line)' },
-      selectable: false,
-      focusable: false,
-      zIndex: diff || hot ? 2 : 1,
-    };
-  }), [layout, marks, hovered, highlight, focus]);
-  return <section className="architecture-history__canvas" aria-label={t('architecture.history.map')}>
-    <ReactFlow<HistoryFlowNode, Edge> nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} nodesDraggable={false} nodesConnectable={false}
-      edgesFocusable={false} minZoom={0.05} maxZoom={2} fitView attributionPosition="top-right"
-      onNodeClick={(_, node) => { if (node.type === 'box') onSelect(node.id); }}
-      onNodeMouseEnter={(_, node) => setHovered(node.type === 'box' ? node.id : null)} onNodeMouseLeave={() => setHovered(null)}>
-      <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--rh-diagram-dot)" />
-      <Panel position="top-left"><p className="architecture-history__caption" data-base-rev={milestone.delta.baseRev ?? ''}>{captionOf(milestone, skipped, t)}</p></Panel>
-      <Panel position="bottom-left"><HistoryLegend t={t} /></Panel>
-      <Panel position="bottom-right"><div className="architecture-history__tools">
-        <label>
-          <button type="button" role="switch" className="architecture-history__switch" aria-checked={highlight && focus} disabled={!highlight}
-            onClick={() => setFocus(!focus)} />
-          {t('architecture.history.focus')}
-        </label>
-        <ZoomControls t={t} />
-      </div></Panel>
-    </ReactFlow>
-  </section>;
-}
-
-function HistoryLegend({ t }: { readonly t: OperatorTranslate }) {
-  return <dl className="architecture-history__legend" aria-label={t('architecture.history.legend')}>
-    {(['added', 'removed', 'renamed', 'inside'] as const).map(diff => <div key={diff}>
-      <dt><i className="architecture-history__swatch" data-diff={diff} /></dt><dd>{t(`architecture.history.diff.${diff}`)}</dd>
-    </div>)}
-    {(['added', 'removed'] as const).map(diff => <div key={`edge-${diff}`}>
-      <dt><i className="architecture-history__line" data-diff={diff} /></dt><dd>{t(`architecture.history.edge.${diff}`)}</dd>
-    </div>)}
-  </dl>;
+  }, [nodes, members, marks, shape, quiet, t]);
+  const routeLabel = useCallback((route: SceneRoute) => {
+    const words = [t('architecture.modules.route.relation', { source: nodes.get(route.source)!.name, target: nodes.get(route.target)!.name }),
+      `${layout.relations.get(route.id)!.length} ${t('architecture.history.count.relations')}`];
+    return (route.kind === 'relation' ? words : [...words, t(`architecture.history.edge.${route.kind as HistoryEdgeDiff}`)]).join(' · ');
+  }, [nodes, layout, t]);
+  const legend = useMemo(() => legendOf(t), [t]);
+  return <div className="architecture-history__stage" data-focus={quiet || undefined}>
+    <div className="architecture-history__bar">
+      <p className="architecture-history__caption" data-base-rev={milestone.delta.baseRev ?? ''}>{captionOf(milestone, skipped, t)}</p>
+      <label className="architecture-history__focus">
+        <button type="button" role="switch" className="architecture-history__switch" aria-checked={quiet} disabled={!highlight}
+          onClick={() => setFocus(!focus)} />
+        {t('architecture.history.focus')}
+      </label>
+    </div>
+    <ArchitectureSceneCanvas label={t('architecture.history.map')} scene={layout.scene} nodeTypes={NODE_TYPES} view={view}
+      selected={selected} emphasis={null} routeLabel={routeLabel} onSelect={onSelect} legend={legend} t={t} />
+  </div>;
 }
 
 function CommitLink({ github, rev }: { readonly github: string | null; readonly rev: string }) {
@@ -473,19 +434,21 @@ function Inspector({ milestone, shape, marks, skipped, selected, github, t }: {
 }
 
 /** Read-only: every request is a GET of the history route. */
-export function ArchitectureHistory({ path, github, read, refreshGeneration, onSummary, t }: {
+export function ArchitectureHistory({ path, github, read, refreshGeneration, selection, select, onSummary, t }: {
   readonly path: string;
   /** `owner/name` on GitHub; without it a commit shows as text. */
   readonly github: string | null;
   readonly read: HistoryReader;
   readonly refreshGeneration: number;
+  /** The History entry of the workspace selection store; its scope is the milestone revision. */
+  readonly selection: ArchitectureSelections['history'] | null;
+  readonly select: (action: ArchitectureSelect) => void;
   /** Receives the summary of the timeline on screen, and `null` when none shows or the view closes. */
   readonly onSummary: (summary: HistorySummary | null) => void;
   readonly t: OperatorTranslate;
 }) {
   const history = useHistory(path, read, refreshGeneration);
   const [picked, setPicked] = useState<string | null>(null);
-  const [node, setNode] = useState<string | null>(null);
   const { timeline } = history;
   const milestones = useMemo(() => timeline?.milestones ?? [], [timeline]);
   const milestone = milestones.find(item => item.rev === picked) ?? milestones.at(-1) ?? null;
@@ -493,8 +456,14 @@ export function ArchitectureHistory({ path, github, read, refreshGeneration, onS
   const shape = useMemo(() => valid === null ? null : historyShape(milestones, valid), [milestones, valid]);
   const marks = useMemo(() => valid === null || shape === null ? null : marksOf(valid, shape), [valid, shape]);
   const skipped = valid === null ? 0 : skippedMilestones(milestones, valid);
-  const selected = shape === null || marks === null ? null : node !== null && shape.capabilities.has(node) ? node : firstCapability(marks, shape);
-  const select = (rev: string) => { setPicked(rev); setNode(null); };
+  // A selection made on this milestone wins, an empty one included; with none, the inspector opens on the first marked capability.
+  const chosen = valid !== null && selection?.scope === valid.rev ? selection : null;
+  const selected = shape === null || marks === null ? null
+    : chosen === null ? firstCapability(marks, shape) : chosen.id !== null && shape.capabilities.has(chosen.id) ? chosen.id : null;
+  const rev = valid?.rev ?? '';
+  const onNode = useCallback((id: string | null) => select({ view: 'history', scope: rev, id }), [select, rev]);
+  // A milestone change drops the History selection, so the inspector opens on the new milestone's first marked capability.
+  const pick = (next: string) => { setPicked(next); select({ view: 'history', scope: '', id: null }); };
 
   const head = timeline?.head ?? null;
   const total = timeline?.total ?? 0;
@@ -520,13 +489,13 @@ export function ArchitectureHistory({ path, github, read, refreshGeneration, onS
     </div>}
     <div className="architecture-history__body" data-stale={history.error !== null || undefined}>
       {milestone === null ? <p className="architecture-history__empty">{t('architecture.history.empty')}</p> : <>
-        <MilestoneList timeline={timeline} selected={milestone.rev} onSelect={select} more={history.more} onMore={history.loadMore} t={t} />
+        <MilestoneList timeline={timeline} selected={milestone.rev} onSelect={pick} more={history.more} onMore={history.loadMore} t={t} />
         {milestone.error
           ? <section className="architecture-history__canvas" aria-label={t('architecture.history.map')}>
             <p className="architecture-history__caption">{t('architectureHistory.caption.error', { rev: short(milestone.rev) })}</p>
             <div className="architecture-history__canvas-error"><code>{milestone.error.code}</code>{milestone.error.path && <p><code>{milestone.error.path}</code></p>}</div>
           </section>
-          : <ReactFlowProvider><MilestoneMap key={milestone.rev} milestone={milestone} shape={shape!} marks={marks!} skipped={skipped} selected={selected} onSelect={setNode} t={t} /></ReactFlowProvider>}
+          : <MilestoneMap key={milestone.rev} milestone={milestone} shape={shape!} marks={marks!} skipped={skipped} selected={selected} onSelect={onNode} t={t} />}
         <Inspector milestone={milestone} shape={shape} marks={marks} skipped={skipped} selected={selected} github={github} t={t} />
       </>}
     </div>
