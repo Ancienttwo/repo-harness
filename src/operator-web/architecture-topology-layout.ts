@@ -15,7 +15,7 @@
 import type { ArchitectureMapNodeV1, ArchitectureMapV1 } from '../core/operator/architecture-map';
 import { DASHED_KINDS } from './architecture-map-layout';
 import { runtimePlacement, type RuntimePlacement } from './architecture-runtime';
-import { borderPoint, labelAt, placeLayered, routeMiddle, sceneExtent, type PlacedScene, type Point, type SceneBox, type SceneRoute } from './architecture-scene';
+import { borderPoint, labelAt, placeLayered, repairRoute, routeMiddle, sceneExtent, type PlacedScene, type Point, type SceneBox, type SceneRoute } from './architecture-scene';
 
 export type TopologyBase = 'process' | 'namespace' | 'mount';
 export const TOPOLOGY_BASES: readonly TopologyBase[] = ['process', 'namespace', 'mount'];
@@ -278,16 +278,18 @@ function layoutNamespaces(map: ArchitectureMapV1, visible: Visible, repair: bool
     return [rect.id, { ...rect, x: rect.x + at.x, y: rect.y + at.y }] as const;
   }));
   const centre = (rect: SceneBox): Point => [rect.x + rect.width / 2, rect.y + rect.height / 2];
-  // A nested end continues the route from its top-level frame's border to its own border; ends in one top-level frame join directly.
+  // A nested end continues the route from its top-level frame's border to its own border; ends in one top-level frame join
+  // directly. The repair then clears every box that is not an end or a frame around an end, nested boxes included.
   const lifted = new Map(placed.routes.map(route => [route.id, route]));
+  const lineage = (id: string) => { const ids = [id]; while (container.has(ids[ids.length - 1]!)) ids.push(container.get(ids[ids.length - 1]!)!); return ids; };
   const routes = [...edges.values()].map((edge): SceneRoute => {
     const [source, target] = [rects.get(edge.source)!, rects.get(edge.target)!];
     const route = lifted.get(edge.id);
-    if (route === undefined) return { ...routeOf(edge), points: [borderPoint(source, centre(target)), borderPoint(target, centre(source))] };
-    const points = [...route.points];
-    if (route.source !== edge.source) points.unshift(borderPoint(source, points[0]!));
-    if (route.target !== edge.target) points.push(borderPoint(target, points[points.length - 1]!));
-    return { ...routeOf(edge), points };
+    const points: Point[] = route === undefined ? [borderPoint(source, centre(target)), borderPoint(target, centre(source))] : [...route.points];
+    if (route !== undefined && route.source !== edge.source) points.unshift(borderPoint(source, points[0]!));
+    if (route !== undefined && route.target !== edge.target) points.push(borderPoint(target, points[points.length - 1]!));
+    const allowed = new Set([...lineage(edge.source), ...lineage(edge.target)]);
+    return { ...routeOf(edge), points: repair ? repairRoute(points, [...rects.values()].filter(rect => !allowed.has(rect.id))) : points };
   });
   return { base: 'namespace', boxes, edges: [...edges.values()], unplaced: [], scene: sceneOf(boxes, [...rects.values()], routes, [...edges.values()]) };
 }

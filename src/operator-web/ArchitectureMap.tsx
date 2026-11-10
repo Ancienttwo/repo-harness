@@ -269,8 +269,8 @@ function MapGaps({ map, t }: { readonly map: ArchitectureMapV1; readonly t: Oper
 }
 
 /**
- * The selected model node of each base map, with the scope that it was chosen in: a selection holds only while its
- * view shows the same scope, so a new commit or another topology segment starts with no selection.
+ * The selected model node of each base map, with the scope that it was chosen in: a selection shows only while its
+ * view shows the same scope.
  */
 type Selections = Partial<Record<ArchitectureBaseMap, { readonly scope: string; readonly id: string | null }>>;
 type SelectAction = { readonly view: ArchitectureBaseMap; readonly scope: string; readonly id: string | null };
@@ -309,7 +309,13 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   const topologyBase = chosenBase ?? defaultBase;
   const [selections, select] = useReducer(selectionReducer, {});
   const topologyScope = `${repositoryId}:${map?.commit}:${topologyBase}:${legacy}`;
-  const topologySelected = selections.topology?.scope === topologyScope ? selections.topology.id : null;
+  const storedTopology = selections.topology;
+  const topologySelected = storedTopology?.scope === topologyScope ? storedTopology.id : null;
+  // A new segment, legacy switch, repository or commit drops the selection, so going back does not bring it back.
+  // Only the topology view computes its own segment, so another view tab keeps the selection.
+  useEffect(() => {
+    if (view === 'topology' && storedTopology !== undefined && storedTopology.scope !== topologyScope) select({ view: 'topology', scope: topologyScope, id: null });
+  }, [view, storedTopology, topologyScope]);
   const onTopologySelect = useCallback((id: string | null) => select({ view: 'topology', scope: topologyScope, id }), [topologyScope]);
   useEffect(() => {
     onSummary(map === null ? null : {

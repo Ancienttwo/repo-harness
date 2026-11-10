@@ -19,7 +19,7 @@ import { runtimePlacement } from '../../src/operator-web/architecture-runtime';
 import { layoutSequence, SEQUENCE_COLUMN } from '../../src/operator-web/architecture-sequence-layout';
 import { SEQUENCE_SVG_FONT, SEQUENCE_SVG_HEADER_WIDTH, SEQUENCE_SVG_TERMINAL_WIDTH, sequenceSvg, textWidth } from '../../src/operator-web/architecture-sequence-svg';
 import { defaultTopologyBase, layoutTopology, type TopologyBase } from '../../src/operator-web/architecture-topology-layout';
-import { routePath, sceneFindings, sceneSvg } from '../../src/operator-web/architecture-scene';
+import { repairRoute, routePath, sceneFindings, sceneSvg } from '../../src/operator-web/architecture-scene';
 import { contentBox, firstViewport } from '../../src/operator-web/architecture-map-parts';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import type { ArchitectureHistory as HistoryPage } from 'archctx-contracts';
@@ -1072,6 +1072,18 @@ describe('sequence and topology base maps', () => {
       { kind: 'label', ids: ['http', 'a-c'] },
       { kind: 'first-rank', ids: ['a', 'b'] },
     ]);
+    // The check and the repair read the drawn curve: the straight segments clear the probe box, the curve through (12.5, 87.5) does not.
+    const curve = route('curve', 'a', 'c', [[0, 0], [0, 100], [100, 100]]);
+    const probe = { boxes: [box('a', -50, -40), box('c', 100, 80), { ...box('probe', 10, 85), width: 8, height: 8 }], routes: [curve], labels: [], extent: { width: 300, height: 300 } };
+    expect(sceneFindings(probe)).toEqual([{ kind: 'route-through-box', ids: ['curve', 'probe'] }]);
+    expect(sceneFindings({ ...probe, routes: [{ ...curve, points: repairRoute(curve.points, [probe.boxes[2]!]) }] })).toEqual([]);
+    // Three stacked mounts in one namespace: the route from the first to the third clears the middle one.
+    const stacked = runtimeMap({
+      nodes: [...runtimeMap().nodes, ...['a', 'b', 'c'].map((id, order) => ({ ...mapNode(`mount.${id}`, 'mount'), mount: { source: null, target: `mnt/${id}`, mode: 'rw', order } as const }))],
+      relations: [...runtimeMap().relations, ...['a', 'b', 'c'].map(id => mapRelation(`relation.m-${id}`, 'mounts', HOST, `mount.${id}`)), mapRelation('relation.a-c', 'calls', 'mount.a', 'mount.c')],
+    });
+    const namespaces = (repair: boolean) => sceneFindings(layoutTopology(stacked, runtimePlacement(stacked), 'namespace', true, repair).scene);
+    expect([namespaces(false), namespaces(true)]).toEqual([[{ kind: 'route-through-box', ids: ['topology:mount.a\nmount.c\ncalls', 'mount.b'] }], []]);
   });
 
   test('the first view centres content that fits and opens a wide map or an unsized canvas at 85% on its top-left corner; the topology opens on a segment with boxes', () => {
@@ -1425,6 +1437,14 @@ describe('sequence and topology base maps', () => {
     expect([...inspector().querySelectorAll('[data-fix-command]')].map(item => item.getAttribute('data-fix-command'))).toEqual(['flows', 'dependencies']);
     await click(`.react-flow__node[data-id="${SERVER}"]`);
     expect([inspector().querySelector('[data-runs-in]')?.textContent, inspector().querySelector('[data-deployed]')?.textContent]).toEqual([`In: Name ${HOST}`, `Name ${CENTER} · 900 lines in 1 files`]);
+    // The selection stays across a base-map tab change and goes with a segment change, so going back does not bring it back.
+    await tab('sequence');
+    await tab('topology');
+    expect(inspector().getAttribute('data-node-id')).toBe(SERVER);
+    await segment('namespace');
+    await segment('process');
+    expect(inspector().getAttribute('data-node-id')).toBeNull();
+    await click(`.react-flow__node[data-id="${SERVER}"]`);
 
     await chooseLayer('tests');
     expect(notes()).toEqual(['topology.unplaced_marks:deployment_undeclared', 'topology.unplaced:deployment_undeclared']);

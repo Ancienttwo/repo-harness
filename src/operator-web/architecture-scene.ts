@@ -77,6 +77,28 @@ export function routePath(points: readonly Point[]): string {
   return parts.join(' ');
 }
 
+/** Points on each quadratic curve of the drawn geometry. */
+const CURVE_STEPS = 16;
+
+function quadratic(from: Point, control: Point, to: Point): Point[] {
+  return Array.from({ length: CURVE_STEPS }, (_, index) => {
+    const t = (index + 1) / CURVE_STEPS, u = 1 - t;
+    return [u * u * from[0] + 2 * u * t * control[0] + t * t * to[0], u * u * from[1] + 2 * u * t * control[1] + t * t * to[1]] as const;
+  });
+}
+
+/** The line that `routePath` draws, as a polyline: the straight ends and each curve in `CURVE_STEPS` points. */
+export function routeGeometry(points: readonly Point[]): Point[] {
+  const last = points.length - 1;
+  if (last === 1) return [points[0]!, points[1]!];
+  const line: Point[] = [points[0]!, middle(points[0]!, points[1]!)];
+  for (let index = 1; index < last; index++) line.push(...quadratic(middle(points[index - 1]!, points[index]!), points[index]!, middle(points[index]!, points[index + 1]!)));
+  line.push(points[last]!);
+  return line;
+}
+
+const pairs = (line: readonly Point[]) => line.slice(1).map((point, index) => [line[index]!, point] as const);
+
 /** The label box of `text` centred on `at`. */
 export function labelAt(text: string, at: Point, route: string | null): SceneLabel {
   const width = text.length * LABEL_CHAR;
@@ -145,11 +167,8 @@ const corners = (box: Rect): readonly Point[] => [
   [box.x - DETOUR_GAP, box.y + box.height + DETOUR_GAP], [box.x + box.width + DETOUR_GAP, box.y + box.height + DETOUR_GAP],
 ];
 
-/**
- * Adds a detour point outside the nearest corner of each box that a segment goes through, until no segment goes
- * through a box that is not an end. A corner that clears the box on both new segments wins over a shorter one.
- */
-function repairRoute(points: readonly Point[], obstacles: readonly Rect[]): Point[] {
+/** Adds a detour point outside the nearest corner of each box that a straight segment goes through. A corner that clears the box on both new segments wins over a shorter one. */
+function detour(points: readonly Point[], obstacles: readonly Rect[]): Point[] {
   const route = [...points];
   for (let round = 0; round < 4 * obstacles.length + 8; round++) {
     const index = route.slice(1).findIndex((point, at) => obstacles.some(box => enters(route[at]!, point, box)));
@@ -162,6 +181,33 @@ function repairRoute(points: readonly Point[], obstacles: readonly Rect[]): Poin
     route.splice(index + 1, 0, ranked[0]!.corner);
   }
   return route;
+}
+
+/** The point `length` px from `from` toward `to`, at most a quarter of the way. */
+function toward(from: Point, to: Point, length: number): Point {
+  const share = Math.min(length / Math.max(distance(from, to), 0.01), 0.25);
+  return [round1(from[0] + (to[0] - from[0]) * share), round1(from[1] + (to[1] - from[1]) * share)];
+}
+
+/**
+ * The curve at an inner point cuts the corner between the two segment middles. When that curve enters a box, two
+ * points on the segments close to the inner point make the curve hug the corner; a box that the straight segments
+ * clear then stays clear. Each round halves the distance.
+ */
+function tighten(points: readonly Point[], obstacles: readonly Rect[]): Point[] {
+  let route = [...points];
+  for (let round = 0, length = 8; round < 6; round++, length /= 2) {
+    const cuts = (index: number) => index > 0 && index < route.length - 1 && pairs([middle(route[index - 1]!, route[index]!),
+      ...quadratic(middle(route[index - 1]!, route[index]!), route[index]!, middle(route[index]!, route[index + 1]!))]).some(([a, b]) => obstacles.some(box => enters(a, b, box)));
+    if (!route.some((_, index) => cuts(index))) break;
+    route = route.flatMap((point, index) => cuts(index) ? [toward(point, route[index - 1]!, length), point, toward(point, route[index + 1]!, length)] : [point]);
+  }
+  return route;
+}
+
+/** Repairs a route so that the line `routePath` draws goes through none of `obstacles`: corner detours, then tighter curves. */
+export function repairRoute(points: readonly Point[], obstacles: readonly Rect[]): Point[] {
+  return tighten(detour(points, obstacles), obstacles);
 }
 
 /** The size of the canvas that holds every box and every route point, with `margin` px on the right and at the bottom. */
@@ -184,7 +230,7 @@ export interface LayeredGraph {
 
 /**
  * A free graph placed top to bottom by a dagre multigraph: every node is a top-level box, and every edge keeps its
- * own route from the dagre points, rounded to 0.1 px. `repair` false leaves a route that goes through a third box.
+ * own route from the dagre points, rounded to 0.1 px. `repair` false leaves a drawn route that goes through a third box.
  */
 export function placeLayered(input: LayeredGraph, repair = true): PlacedScene {
   const graph = new dagre.graphlib.Graph({ multigraph: true });
@@ -238,8 +284,8 @@ function firstRank(boxes: readonly SceneBox[]): SceneBox[] {
 }
 
 /**
- * The geometry check of a scene. It reports sibling boxes that overlap, a route that goes through a box that is not
- * an end or the ancestor of an end, a route end more than 1 px from its box border, a label box that touches a box or
+ * The geometry check of a scene, on the line that `routePath` draws. It reports sibling boxes that overlap, a route
+ * that goes through a box that is not an end or the ancestor of an end, a route end more than 1 px from its box border, a label box that touches a box or
  * another route, and, with `view`, a first view that cuts the first rank at the top or the bottom or shows none of its boxes whole.
  */
 export function sceneFindings(scene: PlacedScene, view: SceneView | null = null): SceneFinding[] {
@@ -249,7 +295,8 @@ export function sceneFindings(scene: PlacedScene, view: SceneView | null = null)
     for (const b of scene.boxes.slice(index + 1)) if (a.parent === b.parent && overlaps(a, b)) findings.push({ kind: 'overlap', ids: [a.id, b.id] });
   }
   const lineage = (id: string) => { const ids = new Set<string>(); for (let cursor: string | null = id; cursor !== null; cursor = byId.get(cursor)?.parent ?? null) ids.add(cursor); return ids; };
-  const segments = (route: SceneRoute) => route.points.slice(1).map((point, index) => [route.points[index]!, point] as const);
+  const drawn = new Map(scene.routes.map(route => [route.id, pairs(routeGeometry(route.points))]));
+  const segments = (route: SceneRoute) => drawn.get(route.id)!;
   for (const route of scene.routes) {
     const allowed = new Set([...lineage(route.source), ...lineage(route.target)]);
     for (const box of scene.boxes) {
