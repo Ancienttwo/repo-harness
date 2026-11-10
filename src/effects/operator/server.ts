@@ -1670,7 +1670,7 @@ export async function startOperatorServer(
         return;
       }
       const seats = cache.value;
-      const etag = `"${createHash('sha256').update(JSON.stringify(seats)).digest('hex')}"`;
+      const etag = `"${sha256Hex(JSON.stringify(seats))}"`;
       if (request.headers['if-none-match'] === etag) { response.writeHead(304, { ...jsonHeaders(), ETag: etag }); response.end(); }
       else sendJson(response, 200, seats, headOnly, { ETag: etag });
       return;
