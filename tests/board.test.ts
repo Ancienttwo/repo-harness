@@ -1177,21 +1177,24 @@ test('watch window skips a provider 5xx and resumes at the next window', async (
   const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
   const delays: number[] = [];
   let reads = 0;
+  const longMessage = `gh: ${'x'.repeat(350)} (HTTP 504)`;
   const input = { parent: 1474, deliver: false, log_path: logPath, host: hc.host, now: () => REPLAY_NOW,
     sleep: async (ms: number) => { delays.push(ms); }, collect: () => {
-      if (reads++ === 0) readGhJson({ repo_root: hc.root, gh_runner: () => ({ status: 1, stdout: '', stderr: 'gh: HTTP 504' }) }, ['api', 'graphql']);
+      if (reads++ === 0) readGhJson({ repo_root: hc.root, gh_runner: () => ({ status: 1, stdout: '', stderr: longMessage }) }, ['api', 'graphql']);
       return replay();
     } };
   try {
     await runAttentionWindow(input);
     expect(stderr).toHaveBeenCalledTimes(1);
-    expect(String(stderr.mock.calls[0]?.[0])).toContain('HTTP 504');
-    expect(readFileSync(logPath, 'utf8').trim().split('\n')).toHaveLength(1);
-    expect(readFileSync(logPath, 'utf8')).toContain('HTTP 504');
+    const expectedMessage = `gh api graphql failed: ${longMessage}`.slice(0, 300);
+    expect(JSON.parse(String(stderr.mock.calls[0]?.[0])).message).toBe(expectedMessage);
+    const logLines = readFileSync(logPath, 'utf8').trim().split('\n');
+    expect(logLines).toHaveLength(1);
+    expect(JSON.parse(logLines[0]!).message).toBe(expectedMessage);
     await runAttentionWindow(input);
     expect(reads).toBe(2);
     expect(delays[0]).toBe(WINDOW_WITH_WORKERS_MS);
-    for (const [message, status] of [['gh: HTTP 403', 403], ['gh failed', null]] as const) {
+    for (const [message, status] of [['gh: server says HTTP 503 (HTTP 403)', 403], ['HTTP 403: forbidden', 403], ['gh: server says HTTP 503', null], ['gh failed', null]] as const) {
       const collect = () => readGhJson({ repo_root: hc.root, gh_runner: () => ({ status: 1, stdout: '', stderr: message }) }, ['api', 'graphql']) as BoardV1;
       try { collect(); throw new Error('expected failure'); } catch (error) {
         expect(error).toBeInstanceOf(BoardCollectError);

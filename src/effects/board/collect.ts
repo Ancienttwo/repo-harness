@@ -87,7 +87,7 @@ export function readGhJson(input: GhInput, args: readonly string[]): unknown {
   const result = runGh(input, args);
   if (result.status !== 0) {
     const stderr = (result.stderr ?? '').trim();
-    const status = /\bHTTP (\d{3})\b/u.exec(stderr);
+    const status = /\(HTTP (\d{3})\)$/u.exec(stderr) ?? /^HTTP (\d{3}):/mu.exec(stderr);
     throw new BoardCollectError(`gh ${args.slice(0, 2).join(' ')} failed: ${stderr || `exit ${result.status}`}`, status === null ? null : Number(status[1]));
   }
   try {
