@@ -14,7 +14,7 @@
 import * as dagre from '@dagrejs/dagre';
 import type { ArchitectureMapNodeV1, ArchitectureMapV1 } from '../core/operator/architecture-map';
 import { DASHED_KINDS } from './architecture-map-layout';
-import type { RuntimePlacement } from './architecture-runtime';
+import { runtimePlacement, type RuntimePlacement } from './architecture-runtime';
 
 export type TopologyBase = 'process' | 'namespace' | 'mount';
 export const TOPOLOGY_BASES: readonly TopologyBase[] = ['process', 'namespace', 'mount'];
@@ -93,6 +93,18 @@ export function layoutTopology(map: ArchitectureMapV1, placement: (nodeId: strin
   if (base === 'process') return layoutProcesses(map, placement, visible);
   if (base === 'namespace') return layoutNamespaces(map, visible);
   return layoutMounters(map, visible);
+}
+
+/**
+ * The segment that the map opens on: the first of namespace, process and mount whose layout, legacy stores shown,
+ * has two or more boxes that are not external systems; else the first with one; else namespace.
+ */
+export function defaultTopologyBase(map: ArchitectureMapV1): TopologyBase {
+  const placement = runtimePlacement(map);
+  const order: readonly TopologyBase[] = ['namespace', 'process', 'mount'];
+  const counts = order.map(base => layoutTopology(map, placement, base, true).boxes.filter(box => box.node.kind !== 'external-system').length);
+  const index = [2, 1].map(least => counts.findIndex(count => count >= least)).find(found => found >= 0);
+  return index === undefined ? 'namespace' : order[index]!;
 }
 
 /** The namespace that a process runs in, or null when the model names none. */

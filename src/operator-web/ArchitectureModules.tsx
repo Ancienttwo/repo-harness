@@ -21,7 +21,7 @@ import {
 } from '@xyflow/react';
 import { flowSteps, type ArchitectureMapNodeV1, type ArchitectureMapV1 } from '../core/operator/architecture-map';
 import { archctxCode, capabilityOwners, impactPaths, impactTargets, modulesLayerView, type MapLayerId, type ModuleMark, type ModulesLayerView } from './architecture-map-layers';
-import { counted, FactList, FixCommand, NodeDetails, NodeRelations, nodeSize, violationFacts, ZoomControls } from './architecture-map-parts';
+import { contentBox, counted, FactList, FirstViewport, FixCommand, NodeDetails, NodeRelations, nodeSize, violationFacts, ZoomControls } from './architecture-map-parts';
 import { layoutModules, type DomainSide, type ModulesLayout } from './architecture-modules-layout';
 import type { OperatorTranslate } from './i18n';
 
@@ -335,6 +335,7 @@ function ModulesCanvas({ map, layer, pullRequest, side, onModule, t }: {
     else if (changes.some(change => change.type === 'select')) setSelectedId(null);
   }, []);
 
+  const content = useMemo(() => contentBox([...layout.externals, ...layout.domains]), [layout]);
   const selected = selectedId === null ? null : map.nodes.find(node => node.id === selectedId) ?? null;
   return <div className="architecture-map" data-view="modules" data-node-count={map.nodes.length} data-relation-count={map.relations.length} data-layer={layer}>
     <div className="architecture-map__canvas" aria-label={t('architecture.map.label')} role="region">
@@ -348,11 +349,9 @@ function ModulesCanvas({ map, layer, pullRequest, side, onModule, t }: {
         edgesFocusable={false}
         minZoom={0.05}
         maxZoom={2}
-        fitView
-        // A narrow canvas opens at a readable zoom on the map's centre; Fit still shows the whole map.
-        fitViewOptions={{ maxZoom: 1, minZoom: 0.6, padding: 0.04 }}
         attributionPosition="top-right"
       >
+        <FirstViewport content={content} />
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--rh-diagram-dot)" />
         <Panel position="bottom-left"><Legend map={map} layout={layout} view={view} layer={layer} t={t} /></Panel>
         <Panel position="bottom-right"><ZoomControls t={t} /></Panel>
