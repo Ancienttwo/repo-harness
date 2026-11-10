@@ -9,7 +9,7 @@ import { joinBoardParents, type BoardParentsV1, type BoardSeatsV1 } from '../cor
 import { PLAN_BATCH_MAX_MEMBERS } from '../core/board/plan-block';
 import { decodeBoardSummaries, type BoardSummariesV1, type BoardSummaryV1 } from '../core/board/summary';
 import { BOARD_PARENTS_READ_FAILURES, type BoardParentsReadFailure } from '../core/operator/board-read';
-import type { BoardParentsReader, BoardParentsReason, BoardParentsView, BoardSeatsReader, BoardSeatsView } from './board-view';
+import { BOARD_CACHE_POLL_MS, type BoardParentsReader, type BoardParentsReason, type BoardParentsView, type BoardSeatsReader, type BoardSeatsView } from './board-view';
 import { asApiError } from './operator-api-error';
 import { useObservationRefresh } from './useObservationRefresh';
 
@@ -286,8 +286,8 @@ export function useOfficeOverview(repositories: readonly string[], readParents: 
     }
     return complete;
   }, [readSummaries, key, generation]);
-  useObservationRefresh(observeParents, JSON.stringify(['office-parents', key, generation]), { enabled: repositories.length > 0 });
-  useObservationRefresh(observeSeats, JSON.stringify(['office-seats', key, generation]), { enabled: repositories.length > 0, interval: 3000 });
+  useObservationRefresh(observeParents, JSON.stringify(['office-parents', key, generation]), { enabled: repositories.length > 0, interval: BOARD_CACHE_POLL_MS });
+  useObservationRefresh(observeSeats, JSON.stringify(['office-seats', key, generation]), { enabled: repositories.length > 0, interval: BOARD_CACHE_POLL_MS });
   const reloadSummaries = useObservationRefresh(observeSummaries, JSON.stringify(['office-summaries', key, generation]), { enabled: active !== '[]' });
   useEffect(() => { reloadSummaries(); }, [active, reloadSummaries]);
   useEffect(() => {

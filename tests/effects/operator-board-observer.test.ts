@@ -1,10 +1,48 @@
-import { expect, test } from 'bun:test';
-import { BOARD_SEATS_DEBOUNCE_MS, startBoardObserver, type BoardObserverOptions, type BoardObserverPorts } from '../../src/effects/operator/board-observer';
+import { expect, spyOn, test } from 'bun:test';
+import * as childProcess from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { closeSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createInterface } from 'node:readline';
+import { PassThrough } from 'node:stream';
+import { BOARD_FACTS_DEADLINE_MS, BOARD_SEATS_DEBOUNCE_MS, startBoardObserver, type BoardObserverOptions, type BoardObserverPorts } from '../../src/effects/operator/board-observer';
+import type { BoardWorkerRequest } from '../../src/effects/operator/board-observer-worker';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { RH_LABEL, type HcStreamItem, type HcTerminal } from '../../src/effects/terminal/herdr-core';
 import { decodeBoardSeats } from '../../src/core/board/parents';
 import { decodeBoard } from '../../src/core/board/board';
+import { boardSummary, decodeBoardSummaries } from '../../src/core/board/summary';
 import board from '../../src/operator-web/fixtures/board-1474.json';
+import boardParents from '../../src/operator-web/fixtures/board-parents.json';
+
+type WorkerReply = { readonly ok: true; readonly value: unknown } | { readonly ok: false; readonly code: string };
+/** Each fake worker records its requests; a reply of null never answers, as a blocked worker. */
+function workers() {
+  const spawned: { readonly requests: BoardWorkerRequest[]; killed: boolean }[] = [];
+  let reply = (request: BoardWorkerRequest): WorkerReply | null => request.kind === 'rate_limit' ? { ok: false, code: 'rate_limit_unavailable' }
+    : request.kind === 'parents' ? { ok: true, value: boardParents } : request.kind === 'board' ? { ok: true, value: { ...board, parent: { ...board.parent, number: request.parent } } } : { ok: true, value: null };
+  const spawnWorker = () => {
+    const child = new EventEmitter() as childProcess.ChildProcess;
+    const stdin = new PassThrough(), stdout = new PassThrough(), record = { requests: [] as BoardWorkerRequest[], killed: false };
+    spawned.push(record);
+    Object.assign(child, { stdin, stdout, pid: undefined, kill() { record.killed = true; child.emit('close', null, 'SIGKILL'); return true; } });
+    createInterface({ input: stdin }).on('line', (line) => {
+      const request = JSON.parse(line) as BoardWorkerRequest;
+      record.requests.push(request);
+      const answer = reply(request);
+      if (answer !== null) stdout.write(`${JSON.stringify({ id: request.id, ...answer })}\n`);
+    });
+    return child;
+  };
+  return { spawnWorker, spawned, reply(next: typeof reply) { reply = next; } };
+}
+
+/** The fake worker answers on stream ticks, outside the fake clock. */
+async function until(condition: () => boolean) {
+  for (let turn = 0; turn < 500 && !condition(); turn++) await new Promise(resolve => setTimeout(resolve, 2));
+  expect(condition()).toBe(true);
+}
 
 function fixture() {
   let now = Date.parse('2026-11-10T00:00:00Z'), id = 0;
@@ -33,7 +71,9 @@ function fixture() {
   let reads = 0, branches = 0, seq = 1;
   let snapshotGate: Promise<void> | null = null;
   const streams: { readonly emit: (item: HcStreamItem) => void; readonly end: () => void; closed: boolean }[] = [];
+  const worker = workers();
   const ports: BoardObserverPorts = {
+    spawnWorker: worker.spawnWorker,
     repositories: () => registered ? [{ id: 'repo-a', path: '/repo' }] : [],
     identify: async () => '1186405141',
     subscribe(labels, emit) {
@@ -51,14 +91,14 @@ function fixture() {
     seq++;
     streams.at(-1)!.emit(type === 'event' ? { type, seq, terminal: 't1', event: 'status', data: {} } : { type, seq, terminals: rows });
   };
-  return { ports, clock, terminal, tick, emit, streams, now: () => now, reads: () => reads, branches: () => branches, timers: () => timers.size,
+  return { ports, clock, worker, terminal, tick, emit, streams, now: () => now, reads: () => reads, branches: () => branches, timers: () => timers.size,
     rows(value: readonly HcTerminal[]) { rows = value; }, branch(value: string) { branch = value; }, remove() { registered = false; }, gate(value: Promise<void> | null) { snapshotGate = value; } };
 }
 
 test('seats observer debounces snapshots, events and missed snapshots, reconnects and serves cached documents within one poll', async () => {
   const f = fixture();
   const observer = startBoardObserver({ ports: f.ports, clock: f.clock });
-  const server = await startOperatorServer({ port: 0, read_board_seats: observer.read, read_board: async () => decodeBoard(board) });
+  const server = await startOperatorServer({ port: 0, board_cache: observer });
   const path = `${server.url}/api/v1/repositories/repo-a/board/seats`;
   const seats = async () => decodeBoardSeats(await (await fetch(path)).json());
   try {
@@ -89,6 +129,9 @@ test('seats observer debounces snapshots, events and missed snapshots, reconnect
     expect(f.branches()).toBe(branchReads);
     f.branch('feat/facts-cycle');
     const beforeFacts = f.reads();
+    // The first board GET leases 1474 and starts a facts cycle; the polls then answer from memory.
+    await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`);
+    await until(() => f.worker.spawned[0]!.requests.filter(request => request.kind === 'retain').length === 2);
     for (let poll = 0; poll < 3; poll++) expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
     await f.tick(3000); expect(f.reads()).toBe(beforeFacts);
     await f.tick(30_000);
@@ -117,13 +160,13 @@ test('failed snapshot and list reads recover on an owned retry without a stream 
     const observer = startBoardObserver({ ports: f.ports, clock: f.clock });
     try {
       await f.tick(0); f.emit('snapshot'); await f.tick(100);
-      expect(observer.read('repo-a').state).toBe('unavailable');
+      expect(observer.seats('repo-a').state).toBe('unavailable');
       expect(calls).toBe(1);
       await f.tick(999); expect(calls).toBe(1);
       await f.tick(1); expect(calls).toBe(2);
       await f.tick(1999); expect(calls).toBe(2);
       await f.tick(1); expect(calls).toBe(3);
-      expect(observer.read('repo-a').state).toBe('ready');
+      expect(observer.seats('repo-a').state).toBe('ready');
     } finally { await observer.close(); }
     const ended = calls; await f.tick(60_000); expect(calls).toBe(ended);
   }
@@ -146,10 +189,10 @@ test('a failed periodic refresh retains branch demand through a retry with uncha
       expect(f.branches()).toBe(1);
       f.branch('feat/after-period'); fail = true;
       await f.tick(30_000);
-      expect(observer.read('repo-a').state).toBe('unavailable');
+      expect(observer.seats('repo-a').state).toBe('unavailable');
       expect(f.branches()).toBe(1);
       await f.tick(1000);
-      const ready = observer.read('repo-a');
+      const ready = observer.seats('repo-a');
       expect(ready.state).toBe('ready');
       expect(ready.state === 'ready' && ready.value.seats[0]!.branch).toBe('feat/after-period');
       expect(f.branches()).toBe(2);
@@ -171,7 +214,7 @@ test('an older successful branch read does not acknowledge a newer force-refresh
     f.branch('feat/first-period'); await f.tick(30_000);
     expect(f.branches()).toBe(2);
     f.branch('feat/newer-request'); f.emit('missed'); release(); await f.tick(100);
-    const ready = observer.read('repo-a');
+    const ready = observer.seats('repo-a');
     expect(ready.state === 'ready' && ready.value.seats[0]!.branch).toBe('feat/newer-request');
     expect(f.branches()).toBe(3);
   } finally { await observer.close(); }
@@ -194,10 +237,10 @@ test('a busy stream cannot bypass refresh backoff or queue an immediate read aft
     await f.tick(0); const started = f.now();
     f.emit('snapshot'); await f.tick(100);
     f.emit('event'); release(); await f.tick(0);
-    expect(observer.read('repo-a').state).toBe('unavailable');
+    expect(observer.seats('repo-a').state).toBe('unavailable');
     for (let elapsed = 0; elapsed < 3000; elapsed += 50) { f.emit('event'); await f.tick(50); }
     expect(calls.map(at => at - started)).toEqual([100, 1100, 3100]);
-    expect(observer.read('repo-a').state).toBe('ready');
+    expect(observer.seats('repo-a').state).toBe('ready');
   } finally { await observer.close(); }
   const ended = calls.length; await f.tick(60_000); expect(calls).toHaveLength(ended);
 });
@@ -210,11 +253,11 @@ test('a failed refresh and stream end keep independent reconnect and refresh ret
   const observer = startBoardObserver({ ports: f.ports, clock: f.clock });
   try {
     await f.tick(0); f.emit('snapshot'); await f.tick(100);
-    expect(observer.read('repo-a').state).toBe('unavailable');
+    expect(observer.seats('repo-a').state).toBe('unavailable');
     f.streams[0]!.end(); await f.tick(1000);
     expect(f.streams).toHaveLength(2);
     f.emit('snapshot'); await f.tick(100);
-    expect(observer.read('repo-a').state).toBe('ready');
+    expect(observer.seats('repo-a').state).toBe('ready');
   } finally { await observer.close(); }
 });
 
@@ -249,7 +292,7 @@ test('identity failures back off to the facts interval and a missing remote is a
   const noRemote = startBoardObserver({ ports: missing.ports, clock: missing.clock });
   try {
     await missing.tick(0);
-    expect(noRemote.read('repo-a')).toEqual({ state: 'unavailable', reason: 'parents_github_failed', cause: 'github_remote_missing' });
+    expect(noRemote.seats('repo-a')).toEqual({ state: 'unavailable', reason: 'parents_github_failed', cause: 'github_remote_missing' });
     expect(missing.streams).toHaveLength(0);
   } finally { await noRemote.close(); }
 });
@@ -298,4 +341,135 @@ test('a reconnect during a pending snapshot discards the old result, drains the 
     expect(decodeBoardSeats(await response.json()).seats.map(row => row.address)).toEqual(['t9']);
   } finally { await server.close(); }
   expect(f.streams.at(-1)!.closed).toBe(true);
+});
+
+test('board facts: an observed board answers from memory with no process, an unobserved parent is leased, and a blocked worker is killed at its deadline', async () => {
+  const f = fixture();
+  const home = mkdtempSync(join(tmpdir(), 'board-facts-'));
+  const server = await startOperatorServer({ port: 0, env: { REPO_HARNESS_HOME: home }, board_observer: { ports: f.ports, clock: f.clock } });
+  const path = (parent: number) => `${server.url}/api/v1/repositories/repo-a/board?parent=${parent}`;
+  const code = async (response: Response) => [response.status, ((await response.json()) as { error: { code: string } }).error.code];
+  const requests = () => f.worker.spawned.flatMap(worker => worker.requests);
+  const cycles = () => requests().filter(request => request.kind === 'retain').length;
+  const boards = (worker = 0) => f.worker.spawned[worker]!.requests.flatMap(request => request.kind === 'board' ? [request.parent] : []);
+  const spawns = [spyOn(childProcess, 'spawn'), spyOn(childProcess, 'spawnSync'), spyOn(childProcess, 'execFile')];
+  try {
+    await until(() => cycles() === 1);
+    await f.tick(0); f.emit('snapshot'); await f.tick(BOARD_SEATS_DEBOUNCE_MS);
+    // The next cycle observes 1474: an open parent with a live seat.
+    await f.tick(30_000); await until(() => cycles() === 2);
+    expect(boards()).toEqual([1474]);
+    const ready = await fetch(path(1474)), tag = ready.headers.get('etag')!;
+    expect([ready.status, decodeBoard(await ready.json()).parent.number]).toEqual([200, 1474]);
+    expect((await fetch(path(1474), { headers: { 'If-None-Match': tag } })).status).toBe(304);
+    for (const spy of spawns) expect(spy).not.toHaveBeenCalled();
+    // 1651 has no seat: the GET answers board_pending, and its lease starts the next cycle at once.
+    await until(() => cycles() === 3);
+    expect(await code(await fetch(path(1651)))).toEqual([503, 'board_pending']);
+    await until(() => cycles() === 4);
+    expect(boards().slice(-2)).toEqual([1651, 1474]);
+    expect((await fetch(path(1651))).status).toBe(200);
+
+    // The worker blocks on 1474. The server still answers, and the deadline kills the worker.
+    const answer = (request: BoardWorkerRequest) => request.kind === 'board' && request.parent === 1474 ? null
+      : request.kind === 'board' ? { ok: true as const, value: { ...board, parent: { ...board.parent, number: request.parent } } } : { ok: true as const, value: request.kind === 'parents' ? boardParents : null };
+    f.worker.reply(answer);
+    await f.tick(30_000); await until(() => boards().length === 5);
+    expect((await fetch(path(1474))).status).toBe(200);
+    expect(f.worker.spawned[0]!.killed).toBe(false);
+    await f.tick(BOARD_FACTS_DEADLINE_MS);
+    expect(f.worker.spawned[0]!.killed).toBe(true);
+    expect(await code(await fetch(path(1474)))).toEqual([504, 'board_timeout']);
+    // A new worker, with empty stores, reads the rest of the cycle; the next cycle reads 1474 again.
+    await until(() => cycles() === 5);
+    f.worker.reply(request => request.kind === 'board' ? { ok: true, value: { ...board, parent: { ...board.parent, number: request.parent } } } : answer(request));
+    await f.tick(30_000); await until(() => cycles() === 6);
+    expect(boards(1)).toEqual([1651, 1474, 1651]);
+    expect((await fetch(path(1474))).status).toBe(200);
+    for (const spy of spawns) expect(spy).not.toHaveBeenCalled();
+  } finally {
+    for (const spy of spawns) spy.mockRestore();
+    await server.close();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('board facts: a low GitHub budget lengthens the gap between cycles', async () => {
+  const f = fixture();
+  f.worker.reply(request => request.kind === 'rate_limit' ? { ok: true, value: { remaining: 50, limit: 5000 } } : { ok: true, value: request.kind === 'parents' ? boardParents : null });
+  const observer = startBoardObserver({ ports: f.ports, clock: f.clock });
+  const cycles = () => f.worker.spawned[0]!.requests.filter(request => request.kind === 'retain').length;
+  try {
+    await until(() => f.worker.spawned.length === 1 && cycles() === 1);
+    // 1 % of the budget remains: the 30 s gap grows to 30 s × 0.25 / 0.01 = 750 s.
+    await f.tick(749_000); expect(cycles()).toBe(1);
+    await f.tick(1_000); await until(() => cycles() === 2);
+  } finally { await observer.close(); }
+});
+
+test('each board that the worker reads replaces its private summary, and the summary route reads one stored parent and starts no read', async () => {
+  const f = fixture();
+  const home = mkdtempSync(join(tmpdir(), 'board-summaries-'));
+  let current = decodeBoard(board);
+  f.worker.reply(request => request.kind === 'board' ? { ok: true, value: current } : request.kind === 'parents' ? { ok: true, value: boardParents }
+    : request.kind === 'retain' ? { ok: true, value: null } : { ok: false, code: 'rate_limit_unavailable' });
+  const server = await startOperatorServer({ port: 0, env: { REPO_HARNESS_HOME: home }, board_observer: { ports: f.ports, clock: f.clock } });
+  const requests = () => f.worker.spawned.flatMap(worker => worker.requests);
+  const reads = () => requests().filter(request => request.kind === 'board').length;
+  const cycles = () => requests().filter(request => request.kind === 'retain').length;
+  const cycle = async () => { const done = cycles(); await f.tick(30_000); await until(() => cycles() === done + 1); };
+  const path = `${server.url}/api/v1/repositories/repo-a/board/summaries`;
+  const target = join(home, 'board/summaries/repo-a-1474.json');
+  const get = async (parent = 1474) => {
+    const response = await fetch(`${path}?parent=${parent}`);
+    expect(response.status).toBe(200);
+    return decodeBoardSummaries(await response.json());
+  };
+  try {
+    expect((await get()).parents).toEqual([{ parent: 1474, status: 'not_read' }]);
+    await until(() => cycles() === 1);
+    await f.tick(0); f.emit('snapshot'); await f.tick(BOARD_SEATS_DEBOUNCE_MS);
+    expect(reads()).toBe(0);
+    await cycle();
+    const first = readFileSync(target, 'utf8'), inode = statSync(target).ino, fd = openSync(target, 'r');
+    try {
+      if (process.platform !== 'win32') expect(statSync(target).mode & 0o777).toBe(0o600);
+      expect(decodeBoardSummaries(JSON.parse(first)).parents).toEqual([{ parent: 1474, status: 'observed', observed_at: current.observed_at,
+        summary: { queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, current_batch: null, needs_you: 3, worker_limit: 8,
+          seats: { status: 'observed', stalled: 0, desks: [
+            { seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'blocked' }, { seat: 'worker', agent: 'claude-code', issue: 1475, pr: 1491, state: 'done' },
+          ] } } }]);
+      expect((await get()).parents).toEqual([JSON.parse(first).parents[0]]);
+      expect((await get(1651)).parents).toEqual([{ parent: 1651, status: 'not_read' }]);
+      current = { ...current, observed_at: new Date(Date.parse(current.observed_at) + 60_000).toISOString() };
+      await cycle();
+      expect(readFileSync(fd, 'utf8')).toBe(first);
+      expect(statSync(target).ino).not.toBe(inode);
+      expect((await get()).parents[0]).toMatchObject({ status: 'observed', observed_at: current.observed_at });
+      current = decodeBoard(board);
+      await cycle();
+      expect((await get()).parents[0]).toMatchObject({ observed_at: new Date(Date.parse(current.observed_at) + 60_000).toISOString() });
+    } finally { closeSync(fd); }
+    expect(readdirSync(join(home, 'board/summaries'))).toEqual(['repo-a-1474.json']);
+    writeFileSync(target, '{');
+    expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' });
+    // A snapshot of the old protocol is refused, not translated, and the next board read replaces it.
+    writeFileSync(target, JSON.stringify({ ...JSON.parse(first), protocol: 1 }));
+    expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' });
+    await cycle();
+    expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'observed', observed_at: current.observed_at, summary: boardSummary(current) });
+    writeFileSync(target, JSON.stringify({ ...JSON.parse(first), repository_id: 'repo-b' }));
+    expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_subject_invalid' });
+    rmSync(target); mkdirSync(target);
+    expect((await get()).parents[0]).toMatchObject({ parent: 1474, status: 'unavailable', reason: expect.stringContaining('snapshot_read_failed:') });
+    for (const query of ['', '?parent=0', '?parent=1474&parent=1651', '?all=1']) {
+      const refused = await fetch(`${path}${query}`);
+      expect([refused.status, ((await refused.json()) as { error: { code: string; message: string } }).error]).toEqual([400,
+        expect.objectContaining({ code: 'invalid_request', message: 'The board summaries route needs exactly one parent issue number.' })]);
+    }
+    expect((await fetch(`${path}?parent=1474`, { method: 'HEAD' })).status).toBe(405);
+    expect((await fetch(`${path}?parent=1474`, { headers: { Origin: 'http://foreign.invalid' } })).status).toBe(403);
+    expect((await fetch(`${path}?parent=1474`, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
+    expect(reads()).toBe(4);
+  } finally { await server.close(); rmSync(home, { recursive: true, force: true }); }
 });
