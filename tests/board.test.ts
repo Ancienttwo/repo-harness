@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -10,7 +10,7 @@ import { decodeBoard, type BoardHostPortsV1, type BoardTerminalV1, type BoardV1 
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
-import { collectBoard, readLocalRepositoryId, type BoardCollectInput } from '../src/effects/board/collect';
+import { collectBoard, readGhJson, readLocalRepositoryId, type BoardCollectInput } from '../src/effects/board/collect';
 import { runBoardMerge } from '../src/effects/board/merge';
 import { boardMergeDecisions } from '../src/core/board/merge';
 import { provenMergeOnlySyncs } from '../src/effects/board/merge-only-sync';
@@ -236,18 +236,46 @@ function withoutHazards(pr: Json): void {
   pr.files.totalCount = pr.files.nodes.length;
 }
 
+/** Keeps the first three recorded files of #1494 (20 changed lines, no hazard path), so its Low label holds for a fix within the Low bound. */
+function asSmallFix(pr: Json): void {
+  pr.files.nodes = pr.files.nodes.slice(0, 3);
+  pr.files.totalCount = 3;
+}
+
 test('Low acceptance uses the effective tier of every linked issue: a Low closing issue with a High or unobserved ref is not accepted by tier', () => {
   const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' };
   const via = (refs: string) => replay({
     parent: (data) => { issueNode(data, 1479).labels.nodes.push({ name: 'tier:low' }); issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
     pulls: (data) => {
       const { pr1494 } = data.repository;
-      withoutHazards(pr1494);
+      asSmallFix(pr1494);
       pr1494.body += refs;
       pr1494.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push(green);
     },
   }).pull_requests.find(pr => pr.number === 1494)!.acceptance.status;
   expect([via(''), via('\nRefs #1476\n'), via('\nRefs #1460\n')]).toEqual(['accepted', 'not_accepted', 'not_accepted']);
+});
+
+test('Low labels give Low to a fix of at most 50 changed lines, and to docs only, tests only or the projection PR at any size', () => {
+  // #1494 closes only #1479, which is tier:low.
+  const tier = (files: Json[], head = 'feat/1479-notify-relay') => replay({
+    owners: (results) => { results.push(...files.map(file => ({ path: file.path, matched: false, ambiguous: false, owningCapabilityId: null }))); },
+    parent: (data) => { issueNode(data, 1479).labels.nodes.push({ name: 'tier:low' }); },
+    pulls: (data) => { Object.assign(data.repository.pr1494, { headRefName: head, files: { totalCount: files.length, nodes: files } }); },
+  }).pull_requests.find(pr => pr.number === 1494)!.tier;
+  const file = (path: string, additions: number, deletions: number) => ({ path, additions, deletions });
+  expect([
+    tier([file('src/a.ts', 30, 20)]),
+    tier([file('src/a.ts', 30, 21)]),
+    // A file without a deletion count makes the size unknown.
+    tier([{ path: 'src/a.ts', additions: 1 }]),
+    tier([file('docs/a.md', 300, 0)]),
+    tier([file('README.md', 300, 0)]),
+    // Documentation is what `isDocumentationPath` names: a non-Markdown file under docs/ is not.
+    tier([file('docs/architecture/archimap.html', 300, 0)]),
+    tier([file('tests/a.test.ts', 300, 0)]),
+    tier([file('src/a.ts', 300, 0)], 'archctx/projection'),
+  ]).toEqual(['low', 'medium', 'medium', 'low', 'low', 'medium', 'low', 'low']);
 });
 
 test('High acceptance: PASS rows of the head from two distinct claims, one recorded different-family; claude_review and A10 project the same rule', () => {
@@ -664,7 +692,7 @@ test('board merge: no plan, a draft, plan holds, plan order for every linked ite
     pulls: (data: Json) => {
       const { pr1494 } = data.repository;
       pr1494.isDraft = false;
-      withoutHazards(pr1494);
+      asSmallFix(pr1494);
       pr1494.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' });
     },
   };
@@ -895,7 +923,7 @@ test('one hit for each rule that the recorded state does not trigger', () => {
       const pr1499 = data.repository.pr1499;
       pr1499.baseRefName = 'main';
       pr1499.isDraft = false;
-      pr1499.files = { totalCount: 1, nodes: [{ path: 'src/effects/terminal/task-session.ts' }] };
+      pr1499.files = { totalCount: 1, nodes: [{ path: 'src/effects/terminal/task-session.ts', additions: 10, deletions: 2 }] };
       pr1499.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' });
       // #1494 (tier:medium #1479) changes a hook: R5.
       data.repository.pr1494.files.nodes.push({ path: hook });
@@ -999,7 +1027,7 @@ test('A2 finds a batch behind an overlapping pull request, and a plan hold remov
     pulls: (data) => {
       // #1491 changes a and b, #1494 a, #1499 b: only #1494 and #1499 can batch.
       for (const [pr, paths] of [[data.repository.pr1491, ['a', 'b']], [data.repository.pr1494, ['a']], [data.repository.pr1499, ['b']]] as const) {
-        pr.files = { totalCount: paths.length, nodes: paths.map(path => ({ path })) };
+        pr.files = { totalCount: paths.length, nodes: paths.map(path => ({ path, additions: 1, deletions: 0 })) };
         if (pr.number === 1491) continue;
         Object.assign(pr, { baseRefName: 'main', isDraft: false });
         pr.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push(green);
@@ -1141,6 +1169,43 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
   // Without observed seat terminals, the skip names the board's execution reason.
   expect(planAttentionDeliveries({ ...board, execution: { status: 'unavailable', reason: 'no_seat_terminals' } }, evaluateBoardAttention(watched), 0).skipped)
     .toEqual([{ route: 'orchestrator', reason: 'no_seat_terminals' }, { route: 'advisor', reason: 'no_seat_terminals' }]);
+});
+
+test('watch window skips a provider 5xx and resumes at the next window', async () => {
+  const hc = watchHc({});
+  const logPath = attentionLogPath(1186405141, 1474, { REPO_HARNESS_HOME: hc.root });
+  const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+  const delays: number[] = [];
+  let reads = 0;
+  const longMessage = `gh: ${'x'.repeat(350)} (HTTP 504)`;
+  const input = { parent: 1474, deliver: false, log_path: logPath, host: hc.host, now: () => REPLAY_NOW,
+    sleep: async (ms: number) => { delays.push(ms); }, collect: () => {
+      if (reads++ === 0) readGhJson({ repo_root: hc.root, gh_runner: () => ({ status: 1, stdout: '', stderr: longMessage }) }, ['api', 'graphql']);
+      return replay();
+    } };
+  try {
+    await runAttentionWindow(input);
+    expect(stderr).toHaveBeenCalledTimes(1);
+    const expectedMessage = `gh api graphql failed: ${longMessage}`.slice(0, 300);
+    expect(JSON.parse(String(stderr.mock.calls[0]?.[0])).message).toBe(expectedMessage);
+    const logLines = readFileSync(logPath, 'utf8').trim().split('\n');
+    expect(logLines).toHaveLength(1);
+    expect(JSON.parse(logLines[0]!).message).toBe(expectedMessage);
+    await runAttentionWindow(input);
+    expect(reads).toBe(2);
+    expect(delays[0]).toBe(WINDOW_WITH_WORKERS_MS);
+    await runAttentionWindow({ ...input, collect: () => readGhJson({ repo_root: hc.root, gh_runner: () => ({ status: 1, stdout: '', stderr: 'gh: HTTP 504' }) }, ['api', 'graphql']) as BoardV1 });
+    expect(JSON.parse(String(stderr.mock.calls[1]?.[0])).message).toContain('gh: HTTP 504');
+    for (const [message, status] of [['gh: HTTP 403', 403], ['gh: server says HTTP 503 (HTTP 403)', 403], ['HTTP 403: forbidden', 403], ['gh: server says HTTP 503', null], ['gh failed', null]] as const) {
+      const collect = () => readGhJson({ repo_root: hc.root, gh_runner: () => ({ status: 1, stdout: '', stderr: message }) }, ['api', 'graphql']) as BoardV1;
+      try { collect(); throw new Error('expected failure'); } catch (error) {
+        expect(error).toBeInstanceOf(BoardCollectError);
+        expect((error as BoardCollectError).httpStatus).toBe(status);
+      }
+      await expect(runAttentionWindow({ ...input, collect })).rejects.toBeInstanceOf(BoardCollectError);
+    }
+    expect(stderr).toHaveBeenCalledTimes(2);
+  } finally { stderr.mockRestore(); }
 });
 
 test('watch service: --watch refuses a terminal without the service labels; start runs one watcher; doctor reads the labels', () => {
@@ -1670,7 +1735,7 @@ describe('merge-only sync carry (#2074)', () => {
 
   test('the rows of a reviewed head accept a later High head only when git proves a merge-only sync and no hook path changes', () => {
     const calls: (readonly string[])[] = [];
-    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly syncFailAt?: string; readonly split?: boolean; readonly headPass?: boolean; readonly hookFile?: boolean } = {}) => replay({
+    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly syncFailAt?: string; readonly failSubject?: string; readonly split?: boolean; readonly headPass?: boolean; readonly hookFile?: boolean } = {}) => replay({
       parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
       pulls: (data) => {
         const { pr1499 } = data.repository;
@@ -1680,8 +1745,8 @@ describe('merge-only sync carry (#2074)', () => {
           const claim = comment(renderAcceptanceClaim(receipt(harness, subject, relation)), `2026-11-03T${at}:00Z`);
           pr1499.comments.nodes.push(claim, comment(renderAcceptanceRecord(receipt(harness, subject, relation), claim.url), `2026-11-03T${at}:30Z`));
         }
-        // Another proven sync head B of the same patch failed its sync check, after both PASS rows or between them: no PASS skips it.
-        if (options.syncFailAt !== undefined) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', 'b'.repeat(40), 'different-family', 'FAIL'), ''), `2026-11-03T${options.syncFailAt}Z`));
+        // A FAIL record on proven sync head B (or on `failSubject`) of the same patch, at `syncFailAt`.
+        if (options.syncFailAt !== undefined) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', options.failSubject ?? 'b'.repeat(40), 'different-family', 'FAIL'), ''), `2026-11-03T${options.syncFailAt}Z`));
         // `headPass`: the head has both reviews of its own.
         if (options.headPass) {
           for (const [at, harness, relation] of [['00:40', 'pi', 'different-family'], ['00:41', 'claude', 'same-family']] as const) {
@@ -1704,7 +1769,11 @@ describe('merge-only sync carry (#2074)', () => {
     expect(carry()).toMatchObject({ tier: 'high', claude_review: 'recorded', acceptance: { status: 'accepted', via: 'sync', carried_from: reviewed, accepted_at: '2026-11-03T00:11:30Z', evidence_url: comment('', '2026-11-03T00:11:30Z').url } });
     expect(calls[0]).toContain(reviewed);
     expect(carry({ proven: false }).acceptance).toEqual({ status: 'not_accepted' });
-    for (const at of ['00:20:00', '00:10:45']) expect(carry({ syncFailAt: at }).acceptance).toEqual({ status: 'not_accepted' });
+    // The newest proven reviewed subject decides (#2107): a FAIL on B after both PASS rows makes B the source and stops the carry;
+    // a FAIL on B that the newer PASS record on the reviewed head supersedes does not; a FAIL on the source itself stops it even when older.
+    expect(carry({ syncFailAt: '00:20:00' }).acceptance).toEqual({ status: 'not_accepted' });
+    expect(carry({ syncFailAt: '00:10:45' }).acceptance).toMatchObject({ status: 'accepted', via: 'sync', carried_from: reviewed, accepted_at: '2026-11-03T00:11:30Z' });
+    expect(carry({ syncFailAt: '00:05:00', failSubject: reviewed }).acceptance).toEqual({ status: 'not_accepted' });
     expect(carry({ split: true }).acceptance).toEqual({ status: 'not_accepted' });
     // A FAIL on a proven earlier head stops only the carry: the head's own two reviews still accept it.
     expect(carry({ syncFailAt: '00:20:00', headPass: true }).acceptance).toMatchObject({ status: 'accepted', via: 'record', accepted_at: '2026-11-03T00:41:30Z' });

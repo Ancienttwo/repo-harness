@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { evaluateBoardAttention } from '../../core/board/attention';
-import { ADVISOR_CAP_SPAN_MS, deliveryTiming, liveSeatTerminals, planAttentionDeliveries, type AttentionDeliveryV1, type AttentionHostPortsV1 } from '../../core/board/attention-delivery';
+import { ADVISOR_CAP_SPAN_MS, WINDOW_WITH_WORKERS_MS, deliveryTiming, liveSeatTerminals, planAttentionDeliveries, type AttentionDeliveryV1, type AttentionHostPortsV1 } from '../../core/board/attention-delivery';
 import type { BoardV1 } from '../../core/board/board';
 import { repoHarnessHome } from '../repo-harness-home';
 import { BoardCollectError } from './collect';
@@ -12,8 +12,8 @@ import type { ReviewObserver } from './review';
  * carries the service label and the repository and parent labels of its
  * board. Each window it reads the board once, runs the attention rules, sends
  * the findings to the seat terminals and appends every finding and every send
- * attempt to its log. A failed board read ends the watcher; doctor then
- * reports it stopped.
+ * attempt to its log. A provider 5xx skips one window; other board read failures
+ * end the watcher, and doctor then reports it stopped.
  */
 export class AttentionWatchError extends Error {
   constructor(message: string) {
@@ -32,6 +32,7 @@ export type AttentionSendOutcome = 'sent' | 'send_failed' | 'skipped_blocked' | 
 
 /** One log line. The log is append-only; the weekly threshold review reads it. */
 export type AttentionLogRecordV1 = { readonly at: string; readonly window: string; readonly parent: number } & (
+  | { readonly kind: 'error'; readonly message: string }
   | { readonly kind: 'finding'; readonly rule: string; readonly route: string; readonly message: string }
   | { readonly kind: 'review'; readonly pr: number | null; readonly seat: string | null; readonly outcome: 'started' | 'refused'; readonly detail: string | null }
   | { readonly kind: 'skip'; readonly route: string; readonly reason: string }
@@ -116,7 +117,14 @@ export async function runAttentionWindow(input: AttentionWindowInput): Promise<v
   const started = now();
   const window = started.toISOString();
   const log = (record: Record<string, unknown>) => append(input.log_path, { at: now().toISOString(), window, parent: input.parent, ...record } as AttentionLogRecordV1);
-  const board = input.collect();
+  let board: BoardV1;
+  try { board = input.collect(); } catch (error) {
+    if (!(error instanceof BoardCollectError && error.httpStatus !== null && error.httpStatus >= 500 && error.httpStatus <= 599)) throw error;
+    const message = error.message.slice(0, 300);
+    process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, message })}\n`);
+    log({ kind: 'error', message });
+    return sleep(started.getTime() + WINDOW_WITH_WORKERS_MS - now().getTime());
+  }
   const attention = evaluateBoardAttention(board);
   for (const finding of attention.findings) log({ kind: 'finding', rule: finding.rule, route: finding.route, message: finding.message });
   const reviewLines = input.review === undefined ? [] : await reviewWindow(input.review, log);

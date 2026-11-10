@@ -199,8 +199,9 @@ const SHA40 = /^[0-9a-f]{40}$/u;
 const GIT_OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
 const ACTIONS_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/actions\/runs\/\d+\/job\/\d+$/u;
 
-const ASSERTION_PATTERN = /(assertion(?:error)?|expected\b.*\b(?:to|deeply) equal|deeply equal|expected\b.*\breceived\b|toBe\(|toEqual\(|mismatch)/iu;
-const DEPENDENCY_PATTERN = /(install|setup|dependency|lockfile|npm err|pnpm err|yarn err|bun install|package (?:fetch|resolution)|registry)/iu;
+const ASSERTION_PATTERN = /(assertion(?:error)?|expected\b.*\b(?:to|deeply) equal|deeply equal|expected\b.*\breceived\b|toBe\(|toEqual\(|\bmismatch)/iu;
+const DEPENDENCY_PATTERN = /\b(?:(?:re|pre|post)?install(?:ing)?|npm\s+ci)\b/iu;
+const DEPENDENCY_ERROR_PATTERN = /\b(?:(?:npm|pnpm|yarn)\s+(?:err!|error)|ERR_PNPM_[A-Z_]+|(?:lockfile|registry|package (?:fetch|resolution))\b[^\r\n]*\b(?:error|failed|failure|unavailable|timeout|timed out|5\d\d)|(?:error|failed|failure)\b[^\r\n]*\b(?:lockfile|registry|package (?:fetch|resolution)))/iu;
 const PLATFORM_PATTERN = /(runner (?:has |was )?(?:shutdown|shut down|received a shutdown|terminated|lost)|lost communication with the (?:runner|server)|the operation was canceled because|service unavailable|internal server error|bad gateway|gateway timeout|ECONN(?:RESET|REFUSED)|ETIMEDOUT|EAI_AGAIN|Could not resolve host)/iu;
 const NETWORK_PATTERN = /(service unavailable|internal server error|bad gateway|gateway timeout|ECONN(?:RESET|REFUSED)|ETIMEDOUT|EAI_AGAIN|Could not resolve host|registry\b.*\b(?:unavailable|timeout|5\d\d))/iu;
 
@@ -463,10 +464,11 @@ function failureShapeOf(attempt: RequiredCheckAttemptObservationV1): RequiredChe
     || platformLines(attempt).some((line) => /runner|shutdown|shut down|lost communication/iu.test(line))) {
     return 'runner_abort';
   }
-  const dependencySource = `${attempt.steps.join(' ')}\n${attempt.failure_excerpt ?? ''}`;
-  if (DEPENDENCY_PATTERN.test(dependencySource)) return 'dependency_install_failure';
+  // The collector puts only failed steps in `steps`; passed steps stay in `scope`.
+  if (attempt.steps.some((step) => DEPENDENCY_PATTERN.test(step))) return 'dependency_install_failure';
   if (attempt.failure_excerpt !== null) {
     if (ASSERTION_PATTERN.test(attempt.failure_excerpt)) return 'assertion_mismatch';
+    if (DEPENDENCY_ERROR_PATTERN.test(attempt.failure_excerpt)) return 'dependency_install_failure';
     if (/\btimed out\b/iu.test(attempt.failure_excerpt)) return 'timeout';
   }
   // Several steps failing together is the provider-visible runner-abort shape;

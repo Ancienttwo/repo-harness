@@ -1,3 +1,4 @@
+import { PROJECTION_WRITER_DEFAULT_BRANCH } from 'archctx-contracts';
 import { parseClosingReferences } from '../publication/closing-references';
 import type { AcceptanceMergeSwitch } from '../publication/acceptance-merge-policy';
 import type { PullRequestReadinessV2 } from '../publication/merge-readiness';
@@ -21,6 +22,7 @@ import {
   type BoardSubIssueReadV1,
   type ClaimStatusV1,
 } from './source';
+import { documentationOnly } from '../ci/documentation-path';
 import { isCiRepairIssueBody } from '../ci/test-report';
 import { pathHazardHits, pathHighHits } from './hazards';
 
@@ -106,7 +108,7 @@ export interface BoardPullRequestV1 {
   readonly acceptance: BoardAcceptanceV1;
   /** The single-PR readiness projection, for open pull requests only. */
   readonly merge_readiness: PullRequestReadinessV2 | null;
-  /** `high` when a changed path is on the High list or the change hazard list, or the file list is incomplete; otherwise the highest review tier of the linked issues (the parent excluded), null when the pull request links none, or one is outside the board or has no tier label. */
+  /** `high` when a changed path is on the High list or the change hazard list, or the file list is incomplete; otherwise the highest review tier of the linked issues (the parent excluded), null when the pull request links none, or one is outside the board or has no tier label; `medium` for Low labels on a fix of more than 50 changed lines or of unknown size. */
   readonly tier: BoardTier | null;
   /**
    * An unknown tier counts as High here (fail closed). `pending`: an open High pull request whose head does not meet the High acceptance rule and has no acceptance row
@@ -356,17 +358,18 @@ export function syncCarryCandidates(read: BoardPullRequestReadV1, owners: BoardP
 
 /**
  * The head, and the newest proven reviewed head when it can carry: the subject of the newest record with a row of a proven head. Only
- * its rows count with the rows of the head, so reviews split across older heads never add up. A FAIL row on any proven head, earlier or
- * later than a PASS, stops the carry.
+ * its rows count with the rows of the head, so reviews split across older heads never add up. A FAIL row on that subject, in any record,
+ * stops the carry; a FAIL row on an older proven subject that the newer record supersedes does not (#2107).
  */
 function reviewedSubjects(read: BoardPullRequestReadV1, owners: BoardPathOwnersV1, proven: readonly string[]): ReadonlySet<string> {
   const syncs = new Set(syncCarryCandidates(read, owners).filter(sha => proven.includes(sha)));
   const records = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER)
     .map(record => ({ created_at: record.created_at, rows: (parseAcceptanceRecord(record) ?? []).filter(row => syncs.has(row.subject_sha)) }))
     .filter(record => record.rows.length > 0);
-  if (records.length === 0 || records.some(record => record.rows.some(row => row.verdict === 'FAIL'))) return new Set([read.head_sha]);
-  const newest = records.reduce((latest, record) => (record.created_at >= latest.created_at ? record : latest));
-  return new Set([read.head_sha, newest.rows.at(-1)!.subject_sha]);
+  if (records.length === 0) return new Set([read.head_sha]);
+  const subject = records.reduce((latest, record) => (record.created_at >= latest.created_at ? record : latest)).rows.at(-1)!.subject_sha;
+  if (records.some(record => record.rows.some(row => row.subject_sha === subject && row.verdict === 'FAIL'))) return new Set([read.head_sha]);
+  return new Set([read.head_sha, subject]);
 }
 
 function acceptance(read: BoardPullRequestReadV1, subjects: ReadonlySet<string>, check: BoardRequiredCheckV1, closedTiers: readonly (BoardTier | null)[], rule: ReviewRule): BoardAcceptanceV1 {
@@ -435,17 +438,29 @@ function reviewRule(read: BoardPullRequestReadV1, tier: BoardTier | null): Revie
   return tier === null || tier === 'high' ? 'high' : tier === 'medium' ? 'medium' : 'none';
 }
 
+/** The Low bound of a fix in added plus deleted lines (`agentic-development-flow.md`, Review by risk). */
+const LOW_FIX_MAX_LINES = 50;
+
+/** Docs only, tests only and the projection pull request are Low at any size; every other change is a fix that the size bound applies to. */
+function sizeExempt(read: BoardPullRequestReadV1, files: readonly string[]): boolean {
+  return read.head_ref === PROJECTION_WRITER_DEFAULT_BRANCH || documentationOnly(files) || files.every(path => path.startsWith('tests/'));
+}
+
 /**
  * The one effective tier of a pull request, for the Low acceptance path and the review planner alike. A changed path on the High
  * list or the change hazard list sets High whatever the labels say (`agentic-development-flow.md`, Review by risk); R3 and R5 name
  * the labels to fix. An incomplete file list can hide such a path, so it sets High too. Otherwise null unless every linked issue
- * (the parent excluded) is on the board with a tier label.
+ * (the parent excluded) is on the board with a tier label. Low labels on a fix of more than 50 changed lines, or of unknown size, give Medium.
  */
-function effectiveTier(closes: readonly number[], refs: readonly number[], files: readonly string[] | null, parent: BoardParentReadV1, tiers: ReadonlyMap<number, BoardTier | null>): BoardTier | null {
+function effectiveTier(read: BoardPullRequestReadV1, closes: readonly number[], refs: readonly number[], parent: BoardParentReadV1, tiers: ReadonlyMap<number, BoardTier | null>): BoardTier | null {
+  const files = read.files;
   if (files === null || pathHighHits(files).length > 0 || pathHazardHits(files).length > 0) return 'high';
   const linked = [...new Set([...closes, ...refs])].filter(number => number !== parent.parent.number);
   const known = linked.map(number => tiers.get(number) ?? null);
-  return linked.length === 0 || known.includes(null) ? null : known.includes('high') ? 'high' : known.includes('medium') ? 'medium' : 'low';
+  if (linked.length === 0 || known.includes(null)) return null;
+  if (known.includes('high')) return 'high';
+  if (known.includes('medium')) return 'medium';
+  return sizeExempt(read, files) || (read.changed_lines !== null && read.changed_lines <= LOW_FIX_MAX_LINES) ? 'low' : 'medium';
 }
 
 /**
@@ -499,7 +514,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
   const pullRequests = linkedPullRequests(input.parent, input.pull_requests).map((read): BoardPullRequestV1 => {
     const { closes, refs } = bodyLinks(repository, read.body);
     const check = requiredCheck(read);
-    const tier = effectiveTier(closes, refs, read.files, input.parent, tiers);
+    const tier = effectiveTier(read, closes, refs, input.parent, tiers);
     const subjects = reviewedSubjects(read, input.path_owners, input.merge_only_syncs.get(read.number) ?? []);
     const claude = claudeReview(read, subjects, tier);
     const readiness = read.state === 'open' ? input.readiness.find(entry => entry.pr_number === read.number) : undefined;
