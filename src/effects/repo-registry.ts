@@ -38,7 +38,6 @@ interface RepoHarnessRegistryFile {
   readonly repos: readonly RepoHarnessRegisteredRepo[];
 }
 
-const REGISTRY_LOCK_RETRY_MS = 10;
 const REGISTRY_LOCK_TIMEOUT_MS = 10_000;
 
 export interface RepoHarnessAccessUpdateResult extends RepoHarnessRegisterResult {
@@ -554,24 +553,6 @@ export function withRepoHarnessRegistryAuthorizationLock<T>(
   ));
 }
 
-/** Hold the existing authorization lock until a bounded launch or delivery settles. */
-export async function withRepoHarnessRegistryAuthorizationLockAsync<T>(
-  opts: { readonly env?: NodeJS.ProcessEnv } = {},
-  action: (snapshot: RepoHarnessRegistryStrictSnapshot) => Promise<T>,
-): Promise<T> {
-  const deadline = Date.now() + REGISTRY_LOCK_TIMEOUT_MS;
-  let release: () => void;
-  for (;;) {
-    try { release = acquireRegistryMutationLock(repoHarnessRegisteredReposPath(opts.env), 1); break; }
-    catch (error) {
-      if (!(error instanceof RegistryMutationLockTimeoutError) || Date.now() >= deadline) throw error;
-      await new Promise(resolve => setTimeout(resolve, REGISTRY_LOCK_RETRY_MS));
-    }
-  }
-  try { return await action(readRepoHarnessRegistryStrictSnapshot({ env: opts.env, adoptedOnly: false })); }
-  finally { release(); }
-}
-
 export function repoHarnessAuthorizationRevision(env: NodeJS.ProcessEnv = process.env): number {
   return readRegistryFile(repoHarnessRegisteredReposPath(env)).authorizationRevision;
 }
@@ -764,35 +745,6 @@ export function setRepoHarnessAccessMode(
       authorizationRevision,
     };
   });
-}
-
-/** Restore only proven setup-owned rows while holding the registry's mutation lock. */
-export function restoreRepoHarnessRegistryEntries(
-  changes: readonly { before: RepoHarnessRegisteredRepo | null; installed: RepoHarnessRegisteredRepo }[],
-  opts: { env?: NodeJS.ProcessEnv; dryRun?: boolean } = {},
-): { restored: string[]; conflicts: string[] } {
-  const apply = () => {
-    const snapshot = readRepoHarnessRegistryStrictSnapshot({ env: opts.env });
-    let repos = [...snapshot.repos];
-    const restored: string[] = [], conflicts: string[] = [];
-    for (const entry of changes) {
-      strictRegistryEntry(entry.installed, 0);
-      if (entry.before) strictRegistryEntry(entry.before, 0);
-      if (entry.before && entry.before.path !== entry.installed.path) throw new Error('registry restore identity mismatch');
-      const current = repos.find((row) => row.path === entry.installed.path) ?? null;
-      const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-      if (equal(current, entry.before)) { restored.push(entry.installed.path); continue; }
-      if (!equal(current, entry.installed)) { conflicts.push(entry.installed.path); continue; }
-      repos = repos.filter((row) => row.path !== entry.installed.path);
-      if (entry.before) repos.push(entry.before);
-      restored.push(entry.installed.path);
-    }
-    if (!opts.dryRun && JSON.stringify(repos) !== JSON.stringify(snapshot.repos)) {
-      writeRegistryFile(snapshot.registryPath, repos, snapshot.authorizationRevision + 1);
-    }
-    return { restored, conflicts };
-  };
-  return opts.dryRun ? apply() : withRegistryMutationLock(repoHarnessRegisteredReposPath(opts.env), apply);
 }
 
 export type RepoHarnessBackfillRejectionReason = "missing" | "unreadable" | "not_adopted" | RepoHarnessCheckoutRejectionReason;

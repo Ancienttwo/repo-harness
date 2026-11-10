@@ -39,13 +39,16 @@ function withHome(seats: unknown, fn: (home: string) => void) {
     writeFileSync(join(home, ".claude", "plugins", "installed_plugins.json"), JSON.stringify({ version: 2, plugins: { "demo@market": [{ scope: "user", installPath: plugin }] } }));
     mkdirSync(join(home, '.quota-bin'));
     writeFileSync(join(home, 'codex-used'), '51');
+    writeFileSync(join(home, 'codex-credits'), 'false');
     writeFileSync(join(home, '.quota-bin', 'codex'), `#!${process.execPath}
 require('node:readline').createInterface({ input: process.stdin }).on('line', line => {
   const message = JSON.parse(line);
   if (message.method === 'initialize') process.stdout.write(JSON.stringify({ id: message.id, result: {} }) + '\\n');
   if (message.method === 'account/rateLimits/read') process.stdout.write(JSON.stringify({ id: message.id, result: { rateLimits: {
     primary: { usedPercent: Number(require('node:fs').readFileSync(require('node:path').join(process.env.HOME, 'codex-used'), 'utf8')),
-      windowDurationMins: 10080, resetsAt: Math.floor(Date.now() / 1000) + 84 * 3600 }
+      windowDurationMins: 10080, resetsAt: Math.floor(Date.now() / 1000) + 84 * 3600 },
+    credits: { hasCredits: require('node:fs').readFileSync(require('node:path').join(process.env.HOME, 'codex-credits'), 'utf8').trim() === 'true',
+      unlimited: false, balance: require('node:fs').readFileSync(require('node:path').join(process.env.HOME, 'codex-credits'), 'utf8').trim() === 'true' ? '34410.83' : '0' }
   } } }) + '\\n');
 });
 `);
@@ -292,8 +295,19 @@ describe("repo-harness seats argv", () => {
         }
       }
       writeFileSync(join(home, 'codex-used'), '95');
+      writeFileSync(join(home, 'codex-credits'), 'false');
       const exhausted = argv(home, 'worker', '--json');
       expect([exhausted.status, JSON.parse(exhausted.stderr).error]).toEqual([1, 'seat_quota_exhausted']);
+      // #2251: the flag admits the seat only when the account still has credits. Without the flag nothing changes.
+      for (const credits of ['false', 'true']) {
+        writeFileSync(join(home, 'codex-credits'), credits);
+        const granted = argv(home, 'worker', '--json', '--spend-credits');
+        expect([credits, granted.status, granted.stderr ? JSON.parse(granted.stderr).error : null])
+          .toEqual([credits, credits === 'true' ? 0 : 1, credits === 'true' ? null : 'seat_quota_exhausted']);
+        expect(argv(home, 'worker', '--json').status).toBe(1);
+      }
+      expect(bare(JSON.parse(argv(home, 'worker', '--json', '--spend-credits').stdout).argv).slice(0, 3))
+        .toEqual(['codex', '-m', DEFAULT_SEATS_CONFIG.worker.model]);
     });
   });
 
