@@ -1371,6 +1371,7 @@ describe('board office (#1755)', () => {
       expect(document.querySelector('[data-plan]')?.getAttribute('data-plan')).toBe('reading');
       expect(document.querySelector('[data-plan]')?.textContent).toBe('Reading the board');
       expect(document.querySelector('[data-feed-empty]')?.textContent).toBe('Reading the board');
+      expect(document.querySelector('[data-board-office="room"] [role="img"]')?.getAttribute('aria-label')).toEndWith(', reading the board.');
       await act(async () => rows('[data-desk="t2"]')[0]!.click());
       await act(async () => pending[0]!({ state: 'ok', board }));
       await settle();
@@ -1379,6 +1380,13 @@ describe('board office (#1755)', () => {
       expect(rows('[data-desk="t2"]')[0]!.getAttribute('aria-pressed')).toBe('true');
       await act(async () => root?.unmount());
     }
+
+    // A selected parent with no live seat: the pending read wins over the empty-room line.
+    officeAt(`/${HARNESS_ID}/1474`);
+    await mount(<OperatorApp {...props(busy(), { readBoard, readBoardParents: async () => ({ state: 'ok', list: { ...PARENTS, seats: [] } }) })} />);
+    await settle();
+    expect(document.querySelector('[data-feed-empty]')?.textContent).toBe('Reading the board');
+    await act(async () => root?.unmount());
 
     boardAt();
     pending.length = 0;

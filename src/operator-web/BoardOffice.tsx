@@ -15,7 +15,7 @@ import { OfficeAdvisorDialog, type AdvisorMessageWriter, type AdvisorTranscriptR
 import { OfficeSetupChecklist, officeSetupRows, officeToolingFails, type OfficeSetupReads } from './OfficeSetupChecklist';
 import { useBossCommands, type BossCommands, type BossCommandWriter, type BossNotice } from './office-boss';
 import { WriteReloadBanner } from './operator-write';
-import { agentPortrait, bossPortrait, composeMiniRoom, composeRoom, deskOutfit, deskVignette, queueOutfit, sceneEffect, stageOutfit, type ScenePath } from './office-scene';
+import { agentPortrait, bossPortrait, composeMiniRoom, composeRoom, deskOutfit, deskVignette, queueOutfit, sceneEffect, stageOutfit, type ScenePath, type SceneRoom } from './office-scene';
 import { BOSS_ICONS, sceneAgent, type BossPose } from './office-sprites';
 import type { ThemeMode } from './theme';
 import { Age, CopyButton, PageLink } from './ui';
@@ -499,7 +499,7 @@ function feedText(event: OfficeFeedEvent, room: OfficeRoom, t: OperatorTranslate
 }
 
 function OfficeFeed({ room, lit, parent, reading, t }: { readonly room: OfficeRoom; readonly lit: boolean; readonly parent: number | null; readonly reading: boolean; readonly t: OperatorTranslate }) {
-  const empty = !lit ? t('board.office.feed.noSeats') : parent === null ? t('board.office.feed.noParent') : reading ? t('board.office.board.reading') : t('board.office.feed.none');
+  const empty = reading ? t('board.office.board.reading') : !lit ? t('board.office.feed.noSeats') : parent === null ? t('board.office.feed.noParent') : t('board.office.feed.none');
   return (
     <section className="board-office__panel board-office__feed" aria-labelledby="board-office-feed">
       <h3 id="board-office-feed">{t('board.office.feed')}</h3>
@@ -536,6 +536,7 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
   const name = repository.split('/').at(-1)!;
   const planText = reading ? t('board.office.board.reading') : plan.status !== 'observed' ? t('board.office.plan.none')
     : plan.revision === null ? t('board.office.plan.observed') : t('board.office.plan.revision', { revision: plan.revision });
+  const scenePlan: SceneRoom['plan'] = reading ? 'reading' : plan.status === 'observed' ? { revision: plan.revision, order: plan.merge_order, limit: plan.worker_limit, batch: plan.batch } : null;
   const effect = sceneEffect(boss.effect, clock.now, clock.still);
   const queueEntries = new Set(room.queue.map(entry => `queue:${entry.pr}`));
   const keys = new Set([...room.desks.map(deskKey), ...queueEntries, 'queue', 'door', 'tray', 'cart', ...(room.orchestrator === null ? [] : ['orchestrator']), ...(room.advisor === null ? [] : ['advisor'])]);
@@ -546,7 +547,7 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
     name, parent, lit,
     orchestrator: room.orchestrator === null ? null : sceneAgent(room.orchestrator.agent),
     advisor: room.advisor === null ? null : sceneAgent(room.advisor.agent),
-    plan: reading ? 'reading' : plan.status === 'observed' ? { revision: plan.revision, order: plan.merge_order, limit: plan.worker_limit, batch: plan.batch } : null,
+    plan: scenePlan,
     limit: room.limit,
     desks: room.desks.map(desk => ({ key: deskKey(desk), agent: sceneAgent(desk.agent), state: desk.state, number: deskNumber(desk, t), label: deskStateName(desk, t) })),
     queue: room.queue.map(entry => ({ key: `queue:${entry.pr}`, agent: sceneAgent(entry.agent), pr: entry.pr })),
@@ -618,7 +619,7 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
   const { notice } = boss;
   const sceneLabel = t('board.office.scene', {
     repository, parent: parent === null ? t('board.office.parent.none') : `#${parent}`, workers: room.desks.length, queue: room.queue.length,
-    plan: t(plan.status === 'observed' ? 'board.office.scene.plan' : 'board.office.scene.noPlan'),
+    plan: t(scenePlan === 'reading' ? 'board.office.scene.reading' : scenePlan === null ? 'board.office.scene.noPlan' : 'board.office.scene.plan'),
   });
   return (
     <section className="board-office" data-board-office="room" data-board-parent={parent ?? undefined} data-board-repository={repositoryId}>
