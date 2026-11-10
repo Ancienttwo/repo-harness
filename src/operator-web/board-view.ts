@@ -82,7 +82,7 @@ export function useBoard(read: BoardReader, subject: BoardSubject | null, genera
     // `key` identifies `subject`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [read, key]);
-  useObservationRefresh(observe, JSON.stringify(['board', key, generation]), { enabled: subject !== null, interval: 3000 });
+  useObservationRefresh(observe, JSON.stringify(['board', key, generation]), { enabled: subject !== null });
   if (subject === null) return null;
   return state !== null && state.key === key ? state.view : { kind: 'loading' };
 }
@@ -129,7 +129,7 @@ export function useBoardParents(read: BoardParentsReader, repositoryId: string |
     setState({ key: repositoryId, view: result.state === 'ok' ? { kind: 'ready', list: result.list } : { kind: 'failed', reason: result.reason } });
     return result.state === 'ok' || result.reason !== 'unreachable';
   }, [read, repositoryId]);
-  useObservationRefresh(observe, JSON.stringify(['board-parents', repositoryId, generation]), { enabled: repositoryId !== null, interval: 3000 });
+  useObservationRefresh(observe, JSON.stringify(['board-parents', repositoryId, generation]), { enabled: repositoryId !== null });
   if (repositoryId === null) return null;
   return state !== null && state.key === repositoryId ? state.view : { kind: 'loading' };
 }

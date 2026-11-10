@@ -51,7 +51,7 @@ function fixture() {
     seq++;
     streams.at(-1)!.emit(type === 'event' ? { type, seq, terminal: 't1', event: 'status', data: {} } : { type, seq, terminals: rows });
   };
-  return { ports, clock, terminal, tick, emit, streams, now: () => now, reads: () => reads, branches: () => branches,
+  return { ports, clock, terminal, tick, emit, streams, now: () => now, reads: () => reads, branches: () => branches, timers: () => timers.size,
     rows(value: readonly HcTerminal[]) { rows = value; }, branch(value: string) { branch = value; }, remove() { registered = false; }, gate(value: Promise<void> | null) { snapshotGate = value; } };
 }
 
@@ -119,12 +119,73 @@ test('failed snapshot and list reads recover on an owned retry without a stream 
       await f.tick(0); f.emit('snapshot'); await f.tick(100);
       expect(observer.read('repo-a').state).toBe('unavailable');
       expect(calls).toBe(1);
-      await f.tick(1100); expect(calls).toBe(2);
-      await f.tick(2000); expect(calls).toBe(2);
-      await f.tick(100); expect(calls).toBe(3);
+      await f.tick(999); expect(calls).toBe(1);
+      await f.tick(1); expect(calls).toBe(2);
+      await f.tick(1999); expect(calls).toBe(2);
+      await f.tick(1); expect(calls).toBe(3);
       expect(observer.read('repo-a').state).toBe('ready');
     } finally { await observer.close(); }
     const ended = calls; await f.tick(60_000); expect(calls).toBe(ended);
+  }
+});
+
+test('a busy stream cannot bypass refresh backoff or queue an immediate read after a dirty failure', async () => {
+  const f = fixture();
+  const original = f.ports.list;
+  const calls: number[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  f.ports.list = async (...args) => {
+    calls.push(f.now());
+    if (calls.length === 1) await gate;
+    if (calls.length < 3) throw new Error('transient');
+    return original(...args);
+  };
+  const observer = startBoardObserver({ ports: f.ports, clock: f.clock });
+  try {
+    await f.tick(0); const started = f.now();
+    f.emit('snapshot'); await f.tick(100);
+    f.emit('event'); release(); await f.tick(0);
+    expect(observer.read('repo-a').state).toBe('unavailable');
+    for (let elapsed = 0; elapsed < 3000; elapsed += 50) { f.emit('event'); await f.tick(50); }
+    expect(calls.map(at => at - started)).toEqual([100, 1100, 3100]);
+    expect(observer.read('repo-a').state).toBe('ready');
+  } finally { await observer.close(); }
+  const ended = calls.length; await f.tick(60_000); expect(calls).toHaveLength(ended);
+});
+
+test('a failed refresh and stream end keep independent reconnect and refresh retries', async () => {
+  const f = fixture();
+  const original = f.ports.list;
+  let calls = 0;
+  f.ports.list = async (...args) => { if (++calls === 1) throw new Error('transient'); return original(...args); };
+  const observer = startBoardObserver({ ports: f.ports, clock: f.clock });
+  try {
+    await f.tick(0); f.emit('snapshot'); await f.tick(100);
+    expect(observer.read('repo-a').state).toBe('unavailable');
+    f.streams[0]!.end(); await f.tick(1000);
+    expect(f.streams).toHaveLength(2);
+    f.emit('snapshot'); await f.tick(100);
+    expect(observer.read('repo-a').state).toBe('ready');
+  } finally { await observer.close(); }
+});
+
+test('removal and close cancel both pending retry states and leave no timer or new child', async () => {
+  for (const action of ['remove', 'close'] as const) {
+    const f = fixture();
+    let calls = 0;
+    f.ports.list = async () => { calls++; throw new Error('offline'); };
+    const observer = startBoardObserver({ ports: f.ports, clock: f.clock });
+    await f.tick(0);
+    if (action === 'remove') await f.tick(29_000);
+    f.emit('snapshot'); await f.tick(100);
+    f.streams[0]!.end(); await f.tick(0);
+    expect(calls).toBe(1);
+    if (action === 'remove') { f.remove(); await f.tick(900); }
+    await observer.close();
+    expect(f.timers()).toBe(0);
+    await f.tick(120_000);
+    expect(calls).toBe(1); expect(f.streams).toHaveLength(1);
   }
 });
 

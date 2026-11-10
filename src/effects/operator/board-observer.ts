@@ -57,6 +57,7 @@ function observerPorts(env: NodeJS.ProcessEnv): BoardObserverPorts {
 }
 
 type CancelTimer = () => void;
+interface RetryState { timer: CancelTimer | null; delay: number }
 interface RepositoryState {
   readonly repository: Repository;
   readonly abort: AbortController;
@@ -67,8 +68,8 @@ interface RepositoryState {
   generation: number;
   seq: number;
   connected: boolean;
-  retry: CancelTimer | null;
-  retryDelay: number;
+  readonly refreshRetry: RetryState;
+  readonly connectRetry: RetryState;
   debounce: CancelTimer | null;
   pending: Promise<void> | null;
   request: AbortController | null;
@@ -109,21 +110,18 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
   };
   const active = (state: RepositoryState) => !observer.signal.aborted && !state.abort.signal.aborted;
   const current = (state: RepositoryState, generation: number) => active(state) && generation === state.generation;
-  const clearRetry = (state: RepositoryState) => { state.retry?.(); state.retry = null; };
-
-  function retry(state: RepositoryState, run: () => void) {
-    if (!active(state) || state.retry !== null) return;
-    state.retry = timer(state.abort.signal, () => { state.retry = null; run(); }, state.retryDelay);
-    state.retryDelay = Math.min(state.retryDelay * 2, FACTS_INTERVAL_MS);
+  function retry(state: RepositoryState, slot: RetryState, run: () => void) {
+    if (!active(state) || slot.timer !== null) return;
+    slot.timer = timer(state.abort.signal, () => { slot.timer = null; run(); }, slot.delay);
+    slot.delay = Math.min(slot.delay * 2, FACTS_INTERVAL_MS);
   }
   function schedule(state: RepositoryState, allBranches = false) {
     state.dirty = true; state.allBranches ||= allBranches;
-    if (!active(state) || !state.connected || state.debounce !== null || state.pending !== null) return;
+    if (!active(state) || !state.connected || state.refreshRetry.timer !== null || state.debounce !== null || state.pending !== null) return;
     state.debounce = timer(state.abort.signal, () => { state.debounce = null; refresh(state); }, BOARD_SEATS_DEBOUNCE_MS);
   }
   function refresh(state: RepositoryState) {
-    if (!active(state) || !state.connected || state.labels === null || state.pending !== null) return;
-    clearRetry(state);
+    if (!active(state) || !state.connected || state.labels === null || state.pending !== null || state.refreshRetry.timer !== null) return;
     const generation = state.generation, labels = state.labels, allBranches = state.allBranches;
     state.dirty = false; state.allBranches = false;
     const request = new AbortController();
@@ -150,11 +148,12 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
         if (!current(state, generation)) return;
         state.terminals = new Map(observations.map(observation => [observation.value.address, observation]));
         state.cache = { state: 'ready', value: projectBoardSeats(labels[RH_LABEL.repository]!, snapshot.observedAt, observations.map(observation => observation.value)) };
-        state.retryDelay = RETRY_MIN_MS;
+        state.refreshRetry.delay = RETRY_MIN_MS;
       } catch {
         if (current(state, generation)) {
           state.cache = { state: 'unavailable', reason: 'parents_hc_failed' };
-          retry(state, () => schedule(state));
+          state.dirty = true;
+          retry(state, state.refreshRetry, () => refresh(state));
         }
       }
     })().finally(() => {
@@ -172,13 +171,15 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
       state.generation++; state.connected = false; state.stream = null;
       state.request?.abort();
       state.debounce?.(); state.debounce = null;
-      state.cache = { state: 'pending' };
-      retry(state, () => connect(state));
+      state.cache = { state: 'pending' }; state.dirty = true;
+      retry(state, state.connectRetry, () => connect(state));
     };
     try {
       const stream = ports.subscribe(state.labels!, item => {
         if (!current(state, generation) || item.seq <= state.seq) return;
-        state.seq = item.seq; state.connected = true;
+        state.seq = item.seq;
+        if (!state.connected) state.connectRetry.delay = RETRY_MIN_MS;
+        state.connected = true;
         schedule(state, item.type !== 'event');
       }, state.abort.signal);
       state.stream = stream;
@@ -197,19 +198,20 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
       } catch {
         if (!active(state)) return;
         state.cache = { state: 'unavailable', reason: 'parents_github_failed' };
-        retry(state, () => identify(state));
+        retry(state, state.connectRetry, () => identify(state));
       }
     })().finally(() => { state.identifying = false; });
     track(state, work);
   }
   function start(repository: Repository) {
     const state: RepositoryState = { repository, abort: new AbortController(), work: new Set(), cache: { state: 'pending' }, labels: null,
-      stream: null, generation: 0, seq: -1, connected: false, retry: null, retryDelay: RETRY_MIN_MS, debounce: null,
+      stream: null, generation: 0, seq: -1, connected: false,
+      refreshRetry: { timer: null, delay: RETRY_MIN_MS }, connectRetry: { timer: null, delay: RETRY_MIN_MS }, debounce: null,
       pending: null, request: null, identifying: false, stopping: null, dirty: false, allBranches: false, terminals: new Map() };
     states.set(repository.id, state);
     const facts = () => {
       timer(state.abort.signal, () => {
-        if (state.labels === null && state.retry === null) identify(state);
+        if (state.labels === null && state.connectRetry.timer === null) identify(state);
         else if (state.connected) schedule(state, true);
         facts();
       }, FACTS_INTERVAL_MS);

@@ -229,7 +229,7 @@ export async function fetchBoardSummaries(repositoryId: string, parent: number, 
 export type OfficeRepositoryView =
   | { readonly kind: 'loading' }
   | { readonly kind: 'failed'; readonly reason: BoardParentsReason }
-  | { readonly kind: 'ready'; readonly list: BoardParentsV1 | null; readonly seats: BoardSeatsV1; readonly summaries: BoardSummariesRead | null };
+  | { readonly kind: 'ready'; readonly parents: BoardParentsView; readonly seats: BoardSeatsV1; readonly summaries: BoardSummariesRead | null };
 
 const LOADING: OfficeRepositoryView = { kind: 'loading' };
 /** A repository that no read has reached yet loads. */
@@ -286,7 +286,7 @@ export function useOfficeOverview(repositories: readonly string[], readParents: 
     }
     return complete;
   }, [readSummaries, key, generation]);
-  useObservationRefresh(observeParents, JSON.stringify(['office-parents', key, generation]), { enabled: repositories.length > 0, interval: 3000 });
+  useObservationRefresh(observeParents, JSON.stringify(['office-parents', key, generation]), { enabled: repositories.length > 0 });
   useObservationRefresh(observeSeats, JSON.stringify(['office-seats', key, generation]), { enabled: repositories.length > 0, interval: 3000 });
   const reloadSummaries = useObservationRefresh(observeSummaries, JSON.stringify(['office-summaries', key, generation]), { enabled: active !== '[]' });
   useEffect(() => { reloadSummaries(); }, [active, reloadSummaries]);
@@ -303,8 +303,8 @@ export function useOfficeOverview(repositories: readonly string[], readParents: 
     if (document?.kind !== 'ready') return [id, LOADING];
     const parent = list?.kind === 'ready' ? activeParent(list.list, document.seats) : null;
     const summary = summaries.get(id);
-    return [id, { kind: 'ready', seats: document.seats, list: list?.kind === 'ready' ? list.list : null,
-      summaries: list?.kind === 'failed' ? { state: 'unavailable', reason: list.reason } : summary?.parent === parent ? summary.read : null }];
+    return [id, { kind: 'ready', seats: document.seats, parents: list ?? { kind: 'loading' },
+      summaries: summary?.parent === parent ? summary.read : null }];
   }));
 }
 
@@ -321,6 +321,7 @@ export interface OfficeCard {
   readonly lit: boolean;
   /** The active parent: the same parent as the room that the card opens. */
   readonly parent: number | null;
+  readonly parents: BoardParentsView;
   readonly summary: OfficeCardSummary;
 }
 
@@ -357,9 +358,11 @@ function cardDesks(desks: readonly OfficeDesk[], document: BoardSeatsV1, parent:
 /** One card per repository. The summary is the row of the active parent; no sum over parents, because the rows of old parents are stale. */
 export function officeCard(view: Extract<OfficeRepositoryView, { readonly kind: 'ready' }>): OfficeCard {
   const room = officeRoom(view.seats, null);
-  const parent = view.list === null ? null : activeParent(view.list, view.seats);
-  const summary = view.list === null ? { status: 'loading' } as const : cardSummary(view.summaries, parent);
-  return { room: { ...room, desks: cardDesks(room.desks, view.seats, parent, summary) }, lit: officeLit(room), parent, summary };
+  const { parents } = view;
+  const parent = parents.kind === 'ready' ? activeParent(parents.list, view.seats) : null;
+  const summary: OfficeCardSummary = parents.kind === 'failed' ? { status: 'unavailable', reason: parents.reason }
+    : parents.kind === 'loading' ? { status: 'loading' } : cardSummary(view.summaries, parent);
+  return { room: { ...room, desks: cardDesks(room.desks, view.seats, parent, summary) }, lit: officeLit(room), parent, parents, summary };
 }
 
 /** Waiting for you, then CI failed, then the other lit rooms, then the idle rooms. A card with no read yet ranks with the lit rooms. */

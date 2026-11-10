@@ -175,15 +175,20 @@ function RepositoryCard({ repository, view, card, frame, now, mode, onOpen, t }:
   }
   const room = card!;
   const chips = cardChips(room, t);
-  const { summary, parent, lit } = room;
+  const { summary, parent, parents, lit } = room;
+  const parentLabel = parents.kind === 'loading' ? t('board.parents.loading.title')
+    : parents.kind === 'failed' ? t('board.parents.failed.title')
+    : !lit ? t('board.office.noParent') : parent === null ? t('board.office.parent.none') : t('board.office.parent', { number: parent });
   const waiting = summary.status === 'observed' && summary.summary.needs_you > 0;
-  const label = lit ? t('board.office.card.open', { repository: repository.label, chips: chips.map(([, , text]) => text).join(t('board.office.boss.separator')) })
+  const label = lit || parents.kind !== 'ready' ? t('board.office.card.open', { repository: repository.label,
+    chips: [...(parents.kind === 'ready' ? [] : [parentLabel]), ...chips.map(([, , text]) => text)].join(t('board.office.boss.separator')) })
     : t('board.office.card.idleLabel', { repository: repository.label });
   return (
-    <button type="button" className="board-office__card" aria-label={label} data-office-card={lit ? 'room' : 'idle'} data-repository={repository.id} data-parent={parent ?? undefined} data-waiting={waiting ? '' : undefined}
+    <button type="button" className="board-office__card" aria-label={label} data-office-card={lit ? 'room' : 'idle'} data-repository={repository.id} data-parent={parent ?? undefined} data-board-parents-reason={parents.kind === 'failed' ? parents.reason : undefined} data-waiting={waiting ? '' : undefined}
       onClick={() => onOpen(boardRoomLocation(repository.id))}>
       <MiniRoom card={room} frame={frame} mode={mode} />
-      <span className="board-office__card-name">{name}<span>{!lit ? t('board.office.noParent') : parent === null ? t('board.office.parent.none') : t('board.office.parent', { number: parent })}</span>{summary.status === 'observed' && <span data-office-observed={summary.observed_at}><Age at={summary.observed_at} now={now} t={t} /></span>}</span>
+      <span className="board-office__card-name">{name}<span>{parentLabel}</span>{summary.status === 'observed' && <span data-office-observed={summary.observed_at}><Age at={summary.observed_at} now={now} t={t} /></span>}</span>
+      {parents.kind === 'failed' && <span className="board-office__card-reason">{t(`board.reason.${parents.reason}` as OperatorMessageKey)}</span>}
       <span className="board-office__card-chips">{chips.map(([key, tone, text]) => <span key={key} className="board-office__card-chip" data-office-chip={key} data-tone={tone}>{text}</span>)}</span>
     </button>
   );

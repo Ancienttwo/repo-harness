@@ -707,7 +707,7 @@ describe('board page', () => {
     } finally { globalThis.fetch = original; }
   });
 
-  test('a typed refusal keeps the 3 s cycle of board, parents and seats; only unreachable backs the loop off', async () => {
+  test('seats keep a 3 s poll while board and parent facts keep a 30 s poll; only unreachable backs off', async () => {
     const subject: BoardSubject = { repository_id: HARNESS_ID, parent: 1474 };
     const repositories = [HARNESS_ID];
     const noSummaries: BoardSummariesReader = async () => ({ state: 'unavailable', reason: 'unreachable' });
@@ -741,8 +741,8 @@ describe('board page', () => {
     try {
       for (const [Probe, delay] of [
         [probes.seats('parents_hc_failed'), 3000], [probes.seats('unreachable'), 6000],
-        [probes.parents('parents_github_failed'), 3000], [probes.board('board_collect_failed'), 3000], [probes.overview('parents_hc_failed'), 3000],
-        [probes.parents('unreachable'), 6000], [probes.board('unreachable'), 6000], [probes.overview('unreachable'), 6000],
+        [probes.parents('parents_github_failed'), 30_000], [probes.board('board_collect_failed'), 30_000], [probes.overview('parents_hc_failed'), 30_000],
+        [probes.parents('unreachable'), 60_000], [probes.board('unreachable'), 60_000], [probes.overview('unreachable'), 60_000],
       ] as const) {
         delays.length = 0;
         await mount(<Probe />);
@@ -1138,6 +1138,37 @@ describe('board office (#1755)', () => {
     expect(window.location.hash).toBe(`#board/office/${idle}`);
   });
 
+  test('the overview keeps parent loading and failure distinct from a confirmed absent parent', async () => {
+    for (const occupied of [true, false]) {
+      officeAt();
+      const one = fiveRegistered([HARNESS_ID]);
+      let finish!: (read: BoardParentsRead) => void;
+      let readParents = () => new Promise<BoardParentsRead>(resolve => { finish = resolve; });
+      await mount(<OperatorApp {...props(busy(), {
+        initialRepositories: one, readRepositories: async () => one,
+        readBoardParents: () => readParents(),
+        readBoardSeats: async () => ({ state: 'ok', seats: { ...SEATS, seats: occupied ? SEATS.seats : [] } }),
+      })} />);
+      await settle();
+      const card = () => document.querySelector<HTMLElement>(`[data-office-card][data-repository="${HARNESS_ID}"]`)!;
+      expect(card().textContent).toContain(translate('en', 'board.parents.loading.title'));
+      expect(card().textContent).not.toMatch(/no parent/iu);
+      expect(card().getAttribute('aria-label')).not.toMatch(/no parent/iu);
+      await act(async () => finish({ state: 'unavailable', reason: 'parents_github_failed' }));
+      await settle();
+      expect(card().textContent).toContain(translate('en', 'board.reason.parents_github_failed'));
+      expect(card().getAttribute('data-board-parents-reason')).toBe('parents_github_failed');
+      expect(card().textContent).not.toMatch(/no parent/iu);
+      expect(card().getAttribute('aria-label')).not.toMatch(/no parent/iu);
+      readParents = async () => ({ state: 'ok', list: { ...PARENTS, parents: [] } });
+      await act(async () => rows('button').find(element => element.textContent?.includes('Refresh'))!.click());
+      await settle();
+      expect(card().textContent).toMatch(/no parent/iu);
+      expect(card().getAttribute('data-board-parents-reason')).toBeNull();
+      await act(async () => root?.unmount()); root = null;
+    }
+  });
+
   test('the card and the office chips show only what the server sent: the row of the active parent, with no chip for a missing value', async () => {
     officeAt();
     const parentless = { ...PARENTS, parents: [] };
@@ -1195,7 +1226,7 @@ describe('board office (#1755)', () => {
     type ListedSeat = BoardSeatsV1['seats'][number];
     const row = (issue: number | null, pr: number | null, state: DeskState) => ({ seat: 'worker', agent: null, issue, pr, state });
     const desks = (seats: BoardSummarySeatsV1, ...listed: readonly ListedSeat[]) => officeCard({
-      kind: 'ready', list: { ...PARENTS, parents: PARENTS.parents.filter(parent => parent.number === 1474) }, seats: { ...SEATS, seats: listed }, summaries: summaryRead('repo_1000000000000001', observed({ queue: 0, ci_failures: 0, batch: { accepted: 0, size: 1 }, needs_you: 0, seats })),
+      kind: 'ready', parents: { kind: 'ready', list: { ...PARENTS, parents: PARENTS.parents.filter(parent => parent.number === 1474) } }, seats: { ...SEATS, seats: listed }, summaries: summaryRead('repo_1000000000000001', observed({ queue: 0, ci_failures: 0, batch: { accepted: 0, size: 1 }, needs_you: 0, seats })),
     }).room.desks.map(desk => desk.state);
     const same = { ...seat('t1', 'worker', 7, null, 'working'), parent: '1474' };
     const twin = { ...same, address: 't2' };
@@ -1291,7 +1322,7 @@ describe('board office (#1755)', () => {
 
   test('the sample leads equal the mockup: an empty seat stays empty, and an occupied seat with an unknown agent stays occupied', () => {
     const repository = fixtureProps(OFFICE_FIXTURE).initialRepositories!.repositories.find(row => row.display_name === 'arch-context')!.repository_id;
-    const { room } = officeCard({ kind: 'ready', list: officeParents(repository, NOW), seats: officeSeats(repository, NOW), summaries: null });
+    const { room } = officeCard({ kind: 'ready', parents: { kind: 'ready', list: officeParents(repository, NOW) }, seats: officeSeats(repository, NOW), summaries: null });
     expect([room.orchestrator?.agent, room.advisor]).toEqual([null, null]);
     expect(room.orchestrator).not.toBeNull();
     const lead = (orchestrator: SceneMiniRoom['orchestrator']) => composeMiniRoom({ orchestrator, advisor: null, plan: false, needsYou: false, desks: [], limit: null, queue: 0, cart: 0, idle: false }, { frame: 0, night: false });
@@ -2241,7 +2272,7 @@ describe('office setup checklist (#1788)', () => {
     const failedRoom = (reason: BoardParentsReason) => ({ view: { kind: 'failed', reason }, card: null }) as const;
     const loadingRoom = { view: { kind: 'loading' }, card: null } as const;
     const readyRoom = (list: BoardParentsV1, summaries: BoardSummariesRead | null = null, seats: BoardSeatsV1 = list === EMPTY ? { ...SEATS, seats: [] } : SEATS) => {
-      const view = { kind: 'ready', list, seats, summaries } as const;
+      const view = { kind: 'ready', parents: { kind: 'ready', list }, seats, summaries } as const;
       return { view, card: officeCard(view) };
     };
     const overview = (...rooms: Extract<OfficeSetupScope, { kind: 'overview' }>['rooms']): OfficeSetupScope => ({ kind: 'overview', rooms });
