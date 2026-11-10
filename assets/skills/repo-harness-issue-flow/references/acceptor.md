@@ -14,11 +14,11 @@ Review by risk). The board marks such a PR `accepted` via `tier_low` from
 provisional: the merging seat confirms the verification evidence in the PR
 body before the merge.
 
-The gatekeeper is the default acceptor (D6). It reviews the diff and
+The gatekeeper is the default acceptor. It reviews the diff and
 returns a verdict and findings. A seat without the `net` tool group has no
 network, so the session that runs the round publishes the result.
 
-No host and no model is mandatory (D7). Any host that can read the PR and
+No host and no model is mandatory. Any host that can read the PR and
 return the result schema can accept.
 
 - The acceptor did not write the subject SHA.
@@ -95,7 +95,7 @@ The table rules govern how the row combines with the review.
    record, or on the new head, stops the carry. A FAIL row on an older
    proven head that a newer record supersedes does not stop it. A git
    error on any candidate proves none. The board then shows `via: sync` with
-   `carried_from` (#2074), and the new head needs CI only. Any other sync
+   `carried_from`, and the new head needs CI only. Any other sync
    head (a conflict, even one resolved to the PR side; an edit in the
    merge; a new commit; a failed git step) needs a sync check: a review
    of the sync delta that writes one record row for the new head. A
@@ -209,8 +209,8 @@ defect in code that the PR does not change is a note, not a finding.
 ## 4. Publish
 
 The session that runs the round writes one publish receipt and runs
-`repo-harness review publish --pr <n> --receipt <path> [--json]`
-(#1224). The command reads the PR head, refuses a stale subject, then
+`repo-harness review publish --pr <n> --receipt <path> [--json]`.
+The command reads the PR head, refuses a stale subject, then
 posts in this order:
 
 - the `acceptance claim`;
@@ -241,7 +241,7 @@ Act on the exit code:
 | 5 | `review_publish_partial`, `review_publish_unknown` | Stop and inspect the PR. Never retry before you confirm which comments exist. |
 | 1 | `review_publish_provider_unavailable`, `review_publish_failed` | Report the error and the posted URLs. |
 
-The merge executor refuses a PR with an unresolved review thread (D6).
+The merge executor refuses a PR with an unresolved review thread.
 A bot thread is a reference input (§2.3): the coordinator answers and
 resolves it, and the bot never adds or removes a gate by itself.
 A PR with a rule-4 deferral (§2.2) passes this check only after the
@@ -286,7 +286,7 @@ blocking finding names one path, one line, the evidence and the smallest
 fix. A P3 finding carries no location. `model_relation` comes from the
 closed family table in `acceptance-receipt.ts`. A Claude turn has an
 unobserved model, so its value is `unknown`. This does not block the
-merge (D7).
+merge.
 
 ## 6. Resolve threads
 
