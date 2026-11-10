@@ -4,6 +4,7 @@
  * read from disk and performs the quarantine write; everything here is a
  * deterministic function of its inputs so replay is provably reproducible.
  */
+import { isRecord } from "./is-record";
 import type { EvidenceEventRecord, EvidenceLogRecord, GenesisRecord, SubjectIdentity, TrustClass } from "./types";
 
 export type ParsedLogLine =
@@ -19,10 +20,6 @@ const TRUST_CLASSES: ReadonlySet<string> = new Set<TrustClass>([
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isValidGenesis(value: unknown): value is GenesisRecord {

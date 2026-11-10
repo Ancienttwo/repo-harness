@@ -5,6 +5,7 @@ import { userInfo } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, failureIssues, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
+import { isRecord } from '../../core/evidence/is-record';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { selectCompatibleNode } from '../runtime/node-runtime';
 import { runProcess } from '../process-runner';
@@ -637,4 +638,3 @@ export function capabilitySource(repoRoot: string): ArchitectureProjectionReadin
 function parseJson(text: string, label: string): unknown {
   try { return JSON.parse(text); } catch { throw new Error(`${label} returned corrupt JSON`); }
 }
-function isRecord(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object' && !Array.isArray(value); }

@@ -1,3 +1,4 @@
+import { isRecord } from '../../core/evidence/is-record';
 import { sha256Prefixed } from '../../core/evidence/sha256';
 import { lstatSync, readFileSync } from 'fs';
 import { join } from 'path';
@@ -35,10 +36,6 @@ export interface WorktreeTemplateOutcome {
 
 function report(current: string | undefined, reason: string): WorktreeTemplatePlan {
   return { item: { path: POLICY_PATH, action: 'report', ...(current === undefined ? {} : { current }), reason } };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function escapeRegExp(text: string): string {

@@ -4,6 +4,7 @@
 // a closed diagnostic-code union. This module never touches fs/process;
 // callers own reading manifest.json and (optionally) proving a package's
 // source path exists on disk.
+import { isRecord } from "../evidence/is-record";
 import { HOST_PROGRAM_PLUGINS, isSurfaceOwner, ownerEnabled, SURFACE_OWNERS, type PluginId, type SurfaceOwner } from "./plugin-manifest";
 
 export const SKILL_SURFACE_CATALOG_VERSION = 4 as const;
@@ -161,12 +162,6 @@ export interface SkillSurfaceCatalogOptions {
   readonly declared?: boolean;
   /** Caller-supplied fs existence probe for package.source. Omit to skip missing-source detection (pure core never touches fs itself). */
   readonly exists?: (path: string) => boolean;
-}
-
-type UnknownRecord = Record<string, unknown>;
-
-function isRecord(value: unknown): value is UnknownRecord {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function diagnostic(

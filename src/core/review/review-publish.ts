@@ -1,3 +1,4 @@
+import { isRecord } from '../evidence/is-record';
 import { isReviewRuntimeId, type ReviewRuntimeId } from './review-runtimes';
 import type { ModelRelation } from './acceptance-receipt';
 
@@ -68,10 +69,6 @@ const MAX_PATH = 1_024;
 
 function invalid(message: string): never {
   throw new Error('review publish receipt is invalid: ' + message);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function exactFields(value: Record<string, unknown>, fields: readonly string[], label: string): void {

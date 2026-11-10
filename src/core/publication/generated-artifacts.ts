@@ -20,6 +20,7 @@
  * JSON-pointer resolution and the check result shape. It performs no I/O.
  */
 
+import { isRecord } from '../evidence/is-record';
 import { PUBLICATION_POLICY_PATH } from './policy-path';
 import { protectedPathMatches } from './required-check-coverage';
 
@@ -97,10 +98,6 @@ export type GeneratedArtifactsParseResult =
 export type GeneratedArtifactsResolveResult =
   | { readonly ok: true; readonly text: string }
   | { readonly ok: false; readonly message: string };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 
 function fail(message: string): never {
   throw new Error(message);

@@ -22,6 +22,7 @@
  * buckets; this module never clears a blocker.
  */
 
+import { isRecord } from './is-record';
 import type { RequiredCheckTestExecutionV1 } from './test-execution-evidence';
 import { testIdentifierPresent } from './test-execution-evidence';
 
@@ -208,10 +209,6 @@ const NETWORK_PATTERN = /(service unavailable|internal server error|bad gateway|
 const FAILED_CONCLUSIONS: ReadonlySet<RequiredCheckAttemptConclusion> = new Set([
   'failure', 'timed_out', 'cancelled',
 ]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 
 function fail(message: string): never {
   throw new Error(message);

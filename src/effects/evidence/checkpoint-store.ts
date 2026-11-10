@@ -52,6 +52,7 @@ import { resolveInsideRepo } from "../path-safety";
 import { readAcceptedEvents } from "./event-log";
 import { resolveBlobsDir, resolveLogPath } from "./paths";
 import type { EvidenceEventRecord } from "../../core/evidence/types";
+import { isRecord } from "../../core/evidence/is-record";
 import { readCheckpointSnapshot } from "./checkpoint-snapshot";
 import { acquireExclusiveDirectoryLock } from "../locking/exclusive-directory-lock";
 import { sha256Hex } from "../../core/evidence/sha256";
@@ -217,10 +218,6 @@ export class CheckpointResolutionError extends Error {
     super(message);
     this.name = "CheckpointResolutionError";
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readTextOrNull(path: string): string | null {
