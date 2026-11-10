@@ -349,6 +349,32 @@ describe('archimap measure reports board geometry', () => {
     expect(geometry.findings.map((f) => f.kind)).toEqual(['line_end_open', 'line_end_open']);
   });
 
+  // Probes of PR #2168 rounds 1-6 and the owner-approved design table. The node is (0,0)-(100,100) unless `node` is set.
+  const throughBox: { d: string; node?: [number, number]; found: boolean }[] = [
+    { d: 'M0 50 H150 V60 H50 H150', found: true },
+    { d: 'M0 50 H16', node: [16, 100], found: false },
+    { d: 'M5 50 H-5 H-100', found: false },
+    { d: 'M-100 50 H-5 H5', found: false },
+    { d: 'M1 40 V50', found: false },
+    { d: 'M1 50 V40', found: false },
+    { d: 'M-100 50 H5 H-100', found: false },
+    { d: 'M50 50 H50', found: true },
+    { d: 'M-50 50 H150', found: true },
+    { d: 'M-80 50 H0', found: false },
+    { d: 'M-80 50 H8', found: false },
+    { d: 'M-80 50 H9', found: true },
+    { d: 'M-10 4 L4 -10', found: false },
+    { d: 'M-10 40 L40 -10', found: true },
+    { d: 'M-50 3 H150', found: false },
+    { d: 'M-50 8 H150', found: false },
+  ];
+  test.each(throughBox)('line_through_box by the 8 px inset rule: $d', ({ d, node, found }) => {
+    const [width, height] = node ?? [100, 100];
+    const body = `<div class="node" style="left:0px;top:0px;width:${width}px;height:${height}px"></div>${paths(d)}`;
+    const kinds = run([board('1 · Probe', body)]).findings.map((f) => f.kind);
+    expect(kinds.includes('line_through_box')).toBe(found);
+  });
+
   test('markup outside a board does not make a node-free board checked', () => {
     const unplaced = `${board('A', '<div class="panel"></div>')}${box('node', 0, 0)}`;
     const geometry = run([unplaced]);
