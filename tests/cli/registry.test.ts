@@ -201,13 +201,30 @@ describe('repo registration persistence', () => {
       writeFileSync(registryPath, JSON.stringify({ version: 1, authorizationRevision: 0, repos: [entry(first!, 'rh'), entry(second!, 'rh')] }));
       expect(() => readRepoHarnessRegistryStrictSnapshot({ env, adoptedOnly: false })).toThrow('duplicate pane prefix rh');
 
+      rmSync(registryPath);
+      expect(() => setRepoHarnessPanePrefix(second!, 'sc', { env })).toThrow('not registered');
+      expect(existsSync(registryPath)).toBe(false);
       writeFileSync(registryPath, JSON.stringify({ version: 1, authorizationRevision: 0, repos: [entry(first!, 'rh')] }));
-      const set = setRepoHarnessPanePrefix(second!, 'sc', { env });
-      expect(set).toEqual(expect.objectContaining({ registered: true, panePrefix: 'sc' }));
-      expect(readRepoHarnessRegistryStrictSnapshot({ env, adoptedOnly: false }).repos.map((repo) => repo.panePrefix).sort()).toEqual(['rh', 'sc']);
-      expect(repoHarnessAuthorizationRevision(env)).toBe(0);
-      expect(() => setRepoHarnessPanePrefix(second!, 'rh', { env })).toThrow('already set');
-      expect(() => setRepoHarnessPanePrefix(second!, 'Bad', { env })).toThrow('pane prefix must match');
+      const unregistered = readFileSync(registryPath, 'utf8');
+      expect(() => setRepoHarnessPanePrefix(second!, 'sc', { env })).toThrow('not registered');
+      expect(readFileSync(registryPath, 'utf8')).toBe(unregistered);
+
+      const other = { ...entry(second!, 'sc'), accessMode: 'read_write', source: 'adopt', lastSeenAt: '2026-11-04T00:00:00.000Z' };
+      const { panePrefix: _none, ...unset } = entry(first!, 'x');
+      const write = (repos: object[]) => writeFileSync(registryPath, JSON.stringify({ version: 1, authorizationRevision: 7, repos }));
+      write([unset, other]);
+      expect(() => setRepoHarnessPanePrefix(first!, 'sc', { env })).toThrow('already set');
+      expect(readRepoHarnessRegistryStrictSnapshot({ env, adoptedOnly: false }).repos.find((repo) => repo.path === first)?.panePrefix).toBeUndefined();
+      expect(() => setRepoHarnessPanePrefix(first!, 'Bad', { env })).toThrow('pane prefix must match');
+
+      const before = readFileSync(registryPath, 'utf8');
+      expect(setRepoHarnessPanePrefix(second!, 'sc', { env }).changed).toBe(false);
+      expect(readFileSync(registryPath, 'utf8')).toBe(before);
+
+      expect(setRepoHarnessPanePrefix(first!, 'rh', { env }).changed).toBe(true);
+      const after = JSON.parse(readFileSync(registryPath, 'utf8'));
+      expect(after.authorizationRevision).toBe(7);
+      expect(after.repos).toEqual([{ ...unset, panePrefix: 'rh' }, other].sort((l, r) => l.path.localeCompare(r.path)));
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
     }

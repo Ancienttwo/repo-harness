@@ -660,8 +660,6 @@ describe("repo-harness seats argv", () => {
         expect(JSON.parse(result.stderr).error).toBe("pane_name_invalid");
         expect(JSON.parse(result.stderr).message).toContain("seats prefix");
 
-        mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
-        writeFileSync(join(repo, ".ai", "harness", "policy.json"), "{}\n");
         const prefix = (value: string) => spawnSync(process.execPath, [CLI, "seats", "prefix", "--repo", repo, "--pane-prefix", value], { env: { ...process.env, ...registryEnv(home) }, encoding: "utf8" });
         expect(prefix("Bad").status).toBe(1);
         const set = prefix("rhx");
