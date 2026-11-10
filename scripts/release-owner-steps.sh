@@ -54,9 +54,13 @@ release_commit() {
     fi
   done
   [[ -n "$sha" ]] || fail "no first-parent commit on $REMOTE/main sets package.json version ${version}."
+  # Both versions change in the release commit: a version already in its parent was bumped by another commit.
   for file in package.json "$CONSOLE_DIR/package.json"; do
     got="$(git show "$sha:$file" | json_field version)"
     [[ "$got" == "$version" ]] || fail "$file at $sha has version $got, not ${version}."
+    git rev-parse -q --verify "$sha^1" >/dev/null || continue
+    got="$(git show "$sha^1:$file" | json_field version)"
+    [[ "$got" != "$version" ]] || fail "$file already has version ${version} at the parent of $sha; $sha is not the release commit."
   done
   echo "$sha"
 }

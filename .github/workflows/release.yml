@@ -1,8 +1,12 @@
 name: Release
+run-name: Release ${{ inputs.sha }}
 
 # One run publishes both packages, tags the release commit and creates its GitHub Release (#2194).
 # The `release` environment requires the owner's approval; that approval authorizes this deployment.
-# npm Trusted Publishing (OIDC) authenticates the publishes; no npm token exists.
+# npm Trusted Publishing (OIDC) authenticates the publishes; each trusted publisher names this workflow and the
+# `release` environment, so no other job can publish. No npm token exists.
+# No code from the input checkout runs before `validate` proves the SHA is a release commit on main, and the
+# checked-out code never runs in a job that holds id-token: write before that proof.
 on:
   workflow_dispatch:
     inputs:
@@ -18,21 +22,88 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Publish, tag and release
+  validate:
+    name: Validate the release commit
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.validate.outputs.version }}
+    env:
+      SHA: ${{ inputs.sha }}
+    steps:
+      # Only git and jq run here; the input commit is read as data, never checked out or run.
+      # grep reads all input without -q: an early exit would end git with SIGPIPE, which pipefail reports.
+      - id: validate
+        name: Refuse a commit that is not a release commit on main
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || fail "$SHA is not a full commit SHA."
+          git init -q release-check
+          cd release-check
+          git fetch -q --no-tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" +refs/heads/main:refs/remotes/origin/main
+          git rev-list --first-parent refs/remotes/origin/main | grep -x "$SHA" >/dev/null || fail "$SHA is not a first-parent commit of main."
+          parent="$(git rev-parse "$SHA^1")"
+          version="$(git show "$SHA:package.json" | jq -r .version)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || fail "package.json at $SHA has version $version."
+          for file in package.json packages/operator-web/package.json; do
+            now="$(git show "$SHA:$file" | jq -r .version)"
+            before="$(git show "$parent:$file" | jq -r .version)"
+            [[ "$now" == "$version" ]] || fail "$file at $SHA has version $now, not $version."
+            [[ "$before" != "$version" ]] || fail "$file already has version $version at the parent $parent; $SHA is not the release commit."
+          done
+          git show "$SHA:docs/CHANGELOG.md" | grep -F "## [$version]" >/dev/null || fail "docs/CHANGELOG.md at $SHA has no [$version] section."
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "$SHA is the release commit of $version."
+
+  lane:
+    name: Release check lane
+    needs: validate
+    runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      BUN_TEST_MAX_CONCURRENCY: '1'
+      BUN_TEST_TIMEOUT_MS: '60000'
+      BUN_TEST_ISOLATE_FILES: '1'
+      BUN_TEST_JOBS: '8'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - run: sudo apt-get update && sudo apt-get install -y jq rsync
+      - run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - name: Install pinned herdr-core runtime
+        uses: ./.github/actions/install-pinned-herdr-core
+      - run: bun install --frozen-lockfile
+      - run: bun run check:release
+
+  publish:
+    name: Publish, tag and release
+    needs: [validate, lane]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: release
     permissions:
       contents: write
       id-token: write
     env:
       SHA: ${{ inputs.sha }}
-      BUN_TEST_MAX_CONCURRENCY: '1'
-      BUN_TEST_TIMEOUT_MS: '60000'
-      BUN_TEST_ISOLATE_FILES: '1'
-      BUN_TEST_JOBS: '8'
+      VERSION: ${{ needs.validate.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,48 +119,42 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.3
-      - run: sudo apt-get update && sudo apt-get install -y jq rsync
       - run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
-      - name: Install pinned herdr-core runtime
-        uses: ./.github/actions/install-pinned-herdr-core
       - run: bun install --frozen-lockfile
-      - name: Refuse a commit that is not an unpublished release commit
-        id: guard
+      # The script compares origin/main with the live main, so each script step fetches main first;
+      # a merge to main during the run does not stop it.
+      - name: Guard the release commit and its unpublished version
         run: |
-          version="$(bash scripts/release-owner-steps.sh workflow-guard "$SHA")"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Release check lane
-        run: bun run check:release
-      - name: Guard again before the publishes
-        run: bash scripts/release-owner-steps.sh workflow-guard "$SHA"
+          git fetch -q --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          [[ "$(bash scripts/release-owner-steps.sh workflow-guard "$SHA")" == "$VERSION" ]]
       - name: Publish repo-harness-operator-web
         working-directory: packages/operator-web
         run: npm publish --provenance
       - name: Publish repo-harness
         run: npm publish --provenance
       - name: Read back the published packages
-        env:
-          VERSION: ${{ steps.guard.outputs.version }}
-        run: bash scripts/release-owner-steps.sh check published "$VERSION"
+        run: |
+          git fetch -q --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          bash scripts/release-owner-steps.sh check published "$VERSION"
       # The API creates the annotated tag, so the checkout keeps no credentials.
       - name: Create the annotated tag
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.guard.outputs.version }}
         run: |
           tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags" -f tag="v$VERSION" -f message="repo-harness $VERSION" -f object="$SHA" -f type=commit --jq .sha)"
           gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/v$VERSION" -f sha="$tag_object" >/dev/null
       - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.guard.outputs.version }}
         run: |
+          git fetch -q --no-tags origin +refs/heads/main:refs/remotes/origin/main
           bash scripts/release-owner-steps.sh notes "$VERSION" > "$RUNNER_TEMP/notes.md"
           gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --title "repo-harness $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
       - name: Read back the tag and the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.guard.outputs.version }}
-        run: bash scripts/release-owner-steps.sh check tagged "$VERSION"
+        run: |
+          git fetch -q --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          bash scripts/release-owner-steps.sh check tagged "$VERSION"
