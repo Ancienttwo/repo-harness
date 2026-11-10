@@ -8,7 +8,7 @@ import { buildModuleReviewPrompt, type ModuleReviewPromptV1 } from '../../src/co
 import { OperatorApp } from '../../src/operator-web/App';
 import { ArchitectureWorkspace, reviewPromptCommand, type ArchitectureSource } from '../../src/operator-web/ArchitectureWorkspace';
 import { fetchArchitectureMap, type ArchitectureMapRead, type ArchitectureMapReader } from '../../src/operator-web/ArchitectureMap';
-import { layoutArchitectureMap, MAP_NODE_MIN_WIDTH, type MapLayoutNode } from '../../src/operator-web/architecture-map-layout';
+import { layoutArchitectureMap } from '../../src/operator-web/architecture-map-layout';
 import { layoutModules } from '../../src/operator-web/architecture-modules-layout';
 import { layoutLayers } from '../../src/operator-web/architecture-layers-layout';
 import {
@@ -23,7 +23,7 @@ import { repairRoute, routePath, sceneBounds, sceneFindings, sceneSvg, textWidth
 import { contentBox, firstViewport } from '../../src/operator-web/architecture-map-parts';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import type { ArchitectureHistory as HistoryPage } from 'archctx-contracts';
-import { historyShape, skippedMilestones, type ValidMilestone } from '../../src/operator-web/ArchitectureHistory';
+import { historyLayoutInput, historyShape, skippedMilestones, type ValidMilestone } from '../../src/operator-web/ArchitectureHistory';
 // Three real `archctx history --ref dd9ccef3 --offset N --limit M --json` pages of this repository.
 import historyPages from '../fixtures/architecture-history/repo-harness-pages.json';
 import { ModuleGraph } from '../../src/operator-web/ModuleGraph';
@@ -402,112 +402,6 @@ describe('architecture map', () => {
       ResizeObserver: window.ResizeObserver, SVGElement: window.SVGElement, DOMMatrixReadOnly: window.DOMMatrixReadOnly,
       requestAnimationFrame: window.requestAnimationFrame.bind(window), cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
     });
-  });
-
-  test('every model node is placed once, members inside their group, siblings apart, nested groups and the recorded map included; no relation crosses its own group box', () => {
-    const overlaps = (a: MapLayoutNode, b: MapLayoutNode) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-    // Three namespace levels, with a relation that ends on the deepest one.
-    const nested = projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z',
-      nodes: [mapNode('namespace.a', 'namespace'), mapNode('namespace.a-b', 'namespace', 'namespace.a'), mapNode('namespace.a-b-c', 'namespace', 'namespace.a-b'),
-        mapNode('namespace.a-d', 'namespace', 'namespace.a'), mapNode('process.p', 'process')],
-      // A group to a member two levels down, and a member back to its own group: both lines would cross the group box.
-      relations: [mapRelation('relation.p-runs', 'runs-in', 'process.p', 'namespace.a-b-c'), mapRelation('relation.a-holds', 'calls', 'namespace.a', 'namespace.a-b-c'),
-        mapRelation('relation.c-up', 'calls', 'namespace.a-b-c', 'namespace.a-b')], flows: [], flow_evidence: [],
-      sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers,
-      layer_order: undeclaredLayers,
-    });
-    const recorded = decodeArchitectureMap(recordedMap);
-    const cases: [ArchitectureMapV1, string[] | null][] = [[mapFor(), ['relation.a-own']], [nested, ['relation.a-holds', 'relation.c-up']], [recorded, null]];
-    for (const [map, undrawn] of cases) {
-      const layout = layoutArchitectureMap(map);
-      expect(layout.nodes.map(item => item.node.id).sort()).toEqual(map.nodes.map(node => node.id).sort());
-      const placed = new Map(layout.nodes.map(item => [item.node.id, item]));
-      for (const item of layout.nodes) {
-        if (item.node.parent === null) continue;
-        const group = placed.get(item.node.parent)!;
-        expect(group.group).toBe(true);
-        expect(item.x >= group.x && item.y >= group.y && item.x + item.width <= group.x + group.width && item.y + item.height <= group.y + group.height).toBe(true);
-      }
-      const siblings = new Map<string | null, MapLayoutNode[]>();
-      for (const item of layout.nodes) siblings.set(item.node.parent, [...(siblings.get(item.node.parent) ?? []), item]);
-      for (const group of siblings.values()) for (const [index, a] of group.entries()) for (const b of group.slice(index + 1)) expect(overlaps(a, b)).toBe(false);
-      // React Flow places a member relative to a parent that comes earlier in the list.
-      for (const [index, item] of layout.nodes.entries()) {
-        if (item.node.parent !== null) expect(layout.nodes.findIndex(other => other.node.id === item.node.parent)).toBeLessThan(index);
-      }
-      // The canvas draws every relation except one between a group and a node inside it; the map count keeps them all.
-      const ancestors = (id: string): string[] => { const out: string[] = []; for (let cursor = placed.get(id)!.node.parent; cursor !== null; cursor = placed.get(cursor)!.node.parent) out.push(cursor); return out; };
-      const inside = map.relations.filter(relation => ancestors(relation.target).includes(relation.source) || ancestors(relation.source).includes(relation.target)).map(relation => relation.id);
-      expect(inside).toEqual(undrawn ?? inside);
-      expect(inside.length).toBeGreaterThan(0);
-      expect(layout.edges.map(edge => edge.relation.id)).toEqual(map.relations.map(relation => relation.id).filter(id => !inside.includes(id)));
-    }
-  });
-
-  test('without bands, top-level nodes that no relation links to another top-level node sit on a near-square grid; with bands they keep one row', () => {
-    const overlaps = (a: MapLayoutNode, b: MapLayoutNode) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-    // Nine capabilities like an unlayered model whose relations stay inside each capability.
-    const loose = (layerOrder: ArchitectureLayerOrderV1) => projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z', layer_order: layerOrder,
-      nodes: Array.from({ length: 9 }, (_, index) => mapNode(`capability.loose.c${index}`, 'capability')), relations: [], flows: [], flow_evidence: [],
-      sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers,
-    });
-    const rows = (map: ArchitectureMapV1) => new Set(layoutArchitectureMap(map).nodes.map(item => item.y)).size;
-    expect([rows(loose(undeclaredLayers)), rows(loose(coreOnly))]).toEqual([3, 1]);
-    const grid = layoutArchitectureMap(loose(undeclaredLayers));
-    for (const [index, a] of grid.nodes.entries()) for (const b of grid.nodes.slice(index + 1)) expect(overlaps(a, b)).toBe(false);
-    // A linked pair keeps its dagre ranks, and the unlinked node sits below them.
-    const linked = layoutArchitectureMap(mapFor(true, mapLayers, undeclaredLayers));
-    const box = new Map(linked.nodes.map(item => [item.node.id, item]));
-    expect(box.get(CALLER)!.y + box.get(CALLER)!.height).toBeLessThan(box.get(CENTER)!.y);
-    expect(box.get(EXTERNAL)!.y).toBeGreaterThan(box.get(CENTER)!.y);
-  });
-
-  test('box width follows lines, I/O relations are dashed, and only a capability pair with imports is weighted', () => {
-    const layout = layoutArchitectureMap(mapFor());
-    const width = (id: string) => layout.nodes.find(item => item.node.id === id)!.width;
-    expect(width(PART)).toBeGreaterThan(width(CALLER));
-    expect(width(EXTERNAL)).toBe(MAP_NODE_MIN_WIDTH);
-    const edges = new Map(layout.edges.map(edge => [edge.relation.id, edge]));
-    expect(edges.get('relation.c-git')!.dashed).toBe(true);
-    expect(edges.get('relation.b-router')!.dashed).toBe(false);
-    expect(edges.get('relation.b-router')).toMatchObject({ imports: 7, strokeWidth: 6 });
-    expect(edges.get('relation.c-git')).toMatchObject({ imports: null, strokeWidth: 1 });
-    const bare = layoutArchitectureMap(mapFor(false));
-    expect(bare.nodes.every(item => item.size === null && (item.group || item.width === MAP_NODE_MIN_WIDTH))).toBe(true);
-    expect(bare.edges.every(edge => edge.imports === null)).toBe(true);
-  });
-
-  test('with a layer order each layer is one band, top to bottom, and a relation against the order keeps the bands; without one there is no band', () => {
-    const below = (upper: { y: number; height: number }, lower: { y: number }) => upper.y + upper.height < lower.y;
-    // CALLER (cli) calls CENTER (core); the git read points from core to external; the extra relation points up, against the order.
-    const ordered = projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z',
-      nodes: [{ ...mapNode(CENTER, 'capability'), layer: 'core' }, { ...mapNode(PART, 'component', CENTER), layer: 'core' }, { ...mapNode(CALLER, 'capability'), layer: 'cli' },
-        { ...mapNode(EXTERNAL, 'external-system'), layer: 'external' }, { ...mapNode('process.loose', 'process'), layer: null }],
-      relations: [mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL), mapRelation('relation.d-up', 'calls', EXTERNAL, CALLER)], flows: [], flow_evidence: [],
-      sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers,
-      layer_order: { state: 'ok', layers: ['cli', 'web', 'core', 'external'] },
-    });
-    const layout = layoutArchitectureMap(ordered);
-    // A declared layer with no node has no band; the model's unlayered nodes take the last band.
-    expect(layout.bands.map(band => band.layer)).toEqual(['cli', 'core', 'external', null]);
-    for (const [index, band] of layout.bands.slice(1).entries()) expect(below(layout.bands[index]!, band)).toBe(true);
-    const box = new Map(layout.nodes.map(item => [item.node.id, item]));
-    for (const item of layout.nodes.filter(entry => entry.node.parent === null)) {
-      const band = layout.bands.find(entry => entry.layer === item.node.layer)!;
-      expect(item.y >= band.y && item.y + item.height <= band.y + band.height).toBe(true);
-    }
-    expect(below(box.get(CALLER)!, box.get(CENTER)!) && below(box.get(CENTER)!, box.get(EXTERNAL)!) && below(box.get(EXTERNAL)!, box.get('process.loose')!)).toBe(true);
-    expect(layoutArchitectureMap(mapFor(true, mapLayers, undeclaredLayers)).bands).toEqual([]);
-
-    // The recorded map of this repository: its bands follow the model's order, and top-level boxes do not overlap.
-    const recorded = decodeArchitectureMap(recordedMap);
-    const real = layoutArchitectureMap(recorded);
-    const used = new Set(recorded.nodes.filter(node => node.parent === null).map(node => node.layer));
-    expect(recorded.layer_order.state === 'ok' && real.bands.map(band => band.layer)).toEqual(recorded.layer_order.state === 'ok' ? recorded.layer_order.layers.filter(layer => used.has(layer)) : []);
-    for (const [index, band] of real.bands.slice(1).entries()) expect(below(real.bands[index]!, band)).toBe(true);
   });
 
   test('the map is the default view: capabilities in domain groups, external systems, one directed route per domain pair with imports; selecting a node lists its relations with import counts', async () => {
@@ -1621,6 +1515,29 @@ describe('architecture history', () => {
     expect(shape.edges.size).toBe(0);
   });
 
+  test('each recorded milestone is one placed scene with no finding; routes run between top-level owners, one per owner pair and change', () => {
+    for (const name of Object.keys(historyPages) as (keyof typeof historyPages)[]) {
+      const history = page(name);
+      for (const item of history.milestones) {
+        if (item.error) continue;
+        const shape = historyShape(history.milestones, item);
+        const input = historyLayoutInput(shape, shape.edges);
+        const { scene, relations } = layoutArchitectureMap(input);
+        expect([item.rev, sceneFindings(scene)]).toEqual([item.rev, []]);
+        expect(scene.boxes.map(box => box.id).sort()).toEqual(input.nodes.map(node => node.id).sort());
+        const parents = new Map(input.nodes.map(node => [node.id, node.parent]));
+        const owner = (id: string): string => parents.get(id) ?? id;
+        const top = new Set(scene.boxes.filter(box => box.parent === null).map(box => box.id));
+        expect(scene.routes.every(route => top.has(route.source) && top.has(route.target) && route.source !== route.target)).toBe(true);
+        // Every relation between two owners is behind exactly the route of its owner pair and change; a relation inside one owner has none.
+        const expected = input.relations.filter(relation => owner(relation.source) !== owner(relation.target))
+          .map(relation => `${relation.kind}:${owner(relation.source)}->${owner(relation.target)} ${relation.id}`).sort();
+        expect([...relations].flatMap(([id, ids]) => ids.map(relation => `${id} ${relation}`)).sort()).toEqual(expected);
+        expect(scene.routes.map(route => [route.kind, route.dashed])).toEqual([...relations.keys()].map(id => [id.split(':')[0], id.startsWith('removed:')]));
+      }
+    }
+  });
+
   test('the newest page shows first, an error milestone shows only its code, the base across it is named, and an older page pins the first head', async () => {
     // archctx pages run oldest first: a one-milestone read gives the head and the total (50), then the newest page.
     const gap = page('gap');
@@ -1646,6 +1563,20 @@ describe('architecture history', () => {
       await act(async () => document.querySelector<HTMLElement>(`li[data-milestone-rev^="${prefix}"]`)!.click());
       await settle();
     };
+    // The workspace store keeps a History selection of the shown milestone across a tab change; another milestone drops it.
+    const inspected = () => document.querySelector('.architecture-history__inspector')?.getAttribute('data-node-id');
+    const opened = inspected();
+    const other = [...document.querySelectorAll('.architecture-history__node')].map(item => item.getAttribute('data-node-id')!).find(id => id !== opened)!;
+    await act(async () => document.querySelector(`.react-flow__node[data-id="${other}"]`)!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await settle();
+    for (const tab of ['#architecture-tab-modules', '#architecture-tab-history']) {
+      await act(async () => document.querySelector<HTMLButtonElement>(tab)!.click());
+      await settle();
+    }
+    expect(inspected()).toBe(other);
+    await pick('06a42cf1');
+    await pick('c17d3b51');
+    expect(inspected()).toBe(opened);
     // The oldest milestone read compares with a base that is not read yet: no gap count is made up.
     await pick('06a42cf1');
     expect(document.querySelector('.architecture-history__caption')?.textContent).toBe('c4a2cd0 → 06a42cf · the base is not read yet');
@@ -1675,6 +1606,14 @@ describe('architecture history', () => {
     expect(inspector.querySelectorAll('li[data-diff="removed"]')).toHaveLength(5);
     // Four removed components: two belong to the removed capabilities, so only engineer-scheduling and task-fleet count as changed inside.
     expect(document.querySelector('li[data-milestone-rev^="d02a082f"] [data-tone="inside"]')?.textContent).toBe('•2');
+    // The canvas draws each route of the placed scene; the removed relations between owners keep the removed class.
+    const shape = historyShape([...removal.milestones, ...gap.milestones], milestone(removal, 'd02a082f'));
+    const { scene } = layoutArchitectureMap(historyLayoutInput(shape, shape.edges));
+    const edges = [...document.querySelectorAll('.architecture-history__stage .react-flow__edge')];
+    expect(edges.map(edge => [edge.getAttribute('data-id'), edge.querySelector('.react-flow__edge-path')?.getAttribute('d')])).toEqual(scene.routes.map(route => [route.id, routePath(route.points)]));
+    expect(edges.filter(edge => edge.classList.contains('architecture-map__edge--removed')).map(edge => edge.getAttribute('data-id')))
+      .toEqual(['removed:domain:organization->domain:workflow-engine', 'removed:domain:runtime-harness->domain:organization', 'removed:domain:runtime-harness->domain:workflow-engine']);
+
   });
 
   // cx1735-r1-inspector-drops-removed-relations: the relation list comes from the delta, not from the drawn shape.

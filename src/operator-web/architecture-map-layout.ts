@@ -1,83 +1,48 @@
-// Automatic layout of a whole-model map (History draws its milestones with it). A capability with components
-// is a group that holds them on a grid; dagre then places the groups and every
-// other top-level node, with each relation counted on its top-level ends. With
-// the model's layer order, each top-level node sits in its own layer's band,
-// the first layer at the top. Without it, the top-level nodes that no relation
-// links to another top-level node sit on the same grid below the dagre rows, so
-// they do not all fall into one rank. Box width follows the node's line count
-// from the collector. This module computes positions only and adds no fact to the map.
-// A history milestone has no sizes, layer order or imports, so those inputs are optional.
+// Layout of a History milestone shape as one placed scene. A node with members
+// is a group that holds them on a grid, in input order, at their own size, so a
+// group may hold groups. `placeLayered` places each top-level node that a route
+// joins; the top-level nodes that no route joins sit on a near-square grid
+// below them, so they do not all fall into the first rank. Routes run between
+// top-level owners only: the relations of one directed owner pair with one
+// kind are one route, and a relation inside one owner has no route. This module
+// computes positions only and adds no fact to the map.
 
-import * as dagre from '@dagrejs/dagre';
-import type { ArchitectureMapNodeV1, ArchitectureMapRelationV1, ArchitectureMapV1 } from '../core/operator/architecture-map';
+import type { ArchitectureMapNodeV1, ArchitectureMapRelationV1 } from '../core/operator/architecture-map';
+import { placeLayered, sceneExtent, type PlacedScene, type SceneBox, type SceneRoute } from './architecture-scene';
 
 export const MAP_NODE_HEIGHT = 48;
-export const MAP_NODE_MIN_WIDTH = 160;
-export const MAP_NODE_MAX_WIDTH = 280;
-/** The title band of a group, above its components. */
+export const MAP_NODE_WIDTH = 160;
+/** The title band of a group, above its members. */
 export const MAP_GROUP_HEADER = 36;
 const MAP_GROUP_PADDING = 12;
 const MAP_GROUP_GAP = 12;
 const MAP_NODE_SEP = 24;
 const MAP_RANK_SEP = 64;
 const MAP_MARGIN = 24;
+/** The route kind that History draws dashed: a relation that the milestone removed. */
+const DASHED_KIND = 'removed';
 
 /** Relations between processes, hosts and data. The canvas draws them dashed; code relations stay solid. */
 export const DASHED_KINDS: ReadonlySet<string> = new Set(['spawns', 'runs-in', 'deployed-on', 'mounts', 'reads', 'writes', 'publishes', 'subscribes']);
 
-/** The node and relation fields that the layout and the canvases read. */
-export type MapLayoutInputNode = Pick<ArchitectureMapNodeV1, 'id' | 'kind' | 'name' | 'layer' | 'parent'>;
+/** The node and relation fields that the layout reads. A relation's `kind` becomes the kind of its route. */
+export type MapLayoutInputNode = Pick<ArchitectureMapNodeV1, 'id' | 'kind' | 'name' | 'parent'>;
 export type MapLayoutInputRelation = Pick<ArchitectureMapRelationV1, 'id' | 'kind' | 'source' | 'target'>;
 export interface MapLayoutInput {
   readonly nodes: readonly MapLayoutInputNode[];
   readonly relations: readonly MapLayoutInputRelation[];
-  readonly sizes?: ArchitectureMapV1['sizes'];
-  readonly layer_order?: ArchitectureMapV1['layer_order'];
-  readonly dependencies?: ArchitectureMapV1['dependencies'];
 }
 
-export interface MapLayoutNode {
-  readonly node: MapLayoutInputNode;
-  /** Top-left corner on the canvas. */
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-  /** A capability that holds components. */
-  readonly group: boolean;
-  readonly size: { readonly files: number; readonly lines: number } | null;
-}
-
-export interface MapLayoutEdge {
-  readonly relation: MapLayoutInputRelation;
-  readonly dashed: boolean;
-  /** Imports behind a capability-to-capability relation; null when `archctx deps` has no count for it. */
-  readonly imports: number | null;
-  readonly strokeWidth: number;
-}
-
-/** The rows of one layer: the top-level nodes of that layer, and their members. */
-export interface MapLayoutBand {
-  /** null: top-level nodes that the model gives no layer. */
-  readonly layer: string | null;
-  /** Left edge of the band's leftmost node. */
-  readonly x: number;
-  readonly y: number;
-  readonly height: number;
-}
-
+/**
+ * Boxes: every input node once, by its id; a group (kind `frame`) comes before its members, a node with no members has kind `box`.
+ * Routes: one per directed top-level owner pair and relation kind, with an arrow at the target.
+ */
 export interface MapLayout {
-  /** Every model node once; a group comes before its components. */
-  readonly nodes: readonly MapLayoutNode[];
-  /** The relations that the canvas draws: every relation except one between a group and a node inside it, which would cross the group box. */
-  readonly edges: readonly MapLayoutEdge[];
-  /** Top to bottom in the layer order; empty when the map has no layer order. */
-  readonly bands: readonly MapLayoutBand[];
-  readonly width: number;
-  readonly height: number;
+  readonly scene: PlacedScene;
+  /** The relation ids behind each route. */
+  readonly relations: ReadonlyMap<string, readonly string[]>;
 }
 
-interface Box { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 interface Size { readonly width: number; readonly height: number }
 
 /**
@@ -98,126 +63,72 @@ function grid(own: readonly Size[], gap: number): { readonly cells: readonly { x
 }
 
 export function layoutArchitectureMap(map: MapLayoutInput): MapLayout {
-  const sizes = new Map(map.sizes?.state === 'ok' ? map.sizes.nodes.map(size => [size.id, { files: size.files, lines: size.lines }]) : []);
   const members = new Map<string, MapLayoutInputNode[]>();
   for (const node of map.nodes) if (node.parent !== null) members.set(node.parent, [...(members.get(node.parent) ?? []), node]);
-  const leafLines = map.nodes.flatMap(node => members.has(node.id) ? [] : [sizes.get(node.id)?.lines ?? 0]);
-  const maxLines = Math.max(1, ...leafLines);
-  // Square root: the largest module would otherwise flatten every other box to the minimum.
-  const width = (id: string): number => MAP_NODE_MIN_WIDTH
-    + Math.round((MAP_NODE_MAX_WIDTH - MAP_NODE_MIN_WIDTH) * Math.sqrt((sizes.get(id)?.lines ?? 0) / maxLines));
 
-  // Members sit on a grid inside their group, in model order, at their own size, so a group may hold groups.
-  // Sizes resolve from the leaves up.
-  const inner = new Map<string, Box>();
-  const sizeCache = new Map<string, Size>();
+  // Sizes resolve from the leaves up; each member keeps its offset inside its group.
+  const inner = new Map<string, { x: number; y: number }>();
+  const sizes = new Map<string, Size>();
   const sizeOf = (id: string): Size => {
-    const cached = sizeCache.get(id);
+    const cached = sizes.get(id);
     if (cached) return cached;
     const nodes = members.get(id);
-    if (!nodes) return { width: width(id), height: MAP_NODE_HEIGHT };
-    const own = nodes.map(node => sizeOf(node.id));
-    const cells = grid(own, MAP_GROUP_GAP);
-    nodes.forEach((node, index) => {
-      inner.set(node.id, { x: MAP_GROUP_PADDING + cells.cells[index]!.x, y: MAP_GROUP_HEADER + cells.cells[index]!.y, ...own[index]! });
-    });
-    const size = {
-      width: Math.max(MAP_NODE_MIN_WIDTH, cells.width) + 2 * MAP_GROUP_PADDING,
-      height: MAP_GROUP_HEADER + cells.height + MAP_GROUP_PADDING,
-    };
-    sizeCache.set(id, size);
+    let size: Size = { width: MAP_NODE_WIDTH, height: MAP_NODE_HEIGHT };
+    if (nodes) {
+      const own = nodes.map(node => sizeOf(node.id));
+      const cells = grid(own, MAP_GROUP_GAP);
+      nodes.forEach((node, index) => inner.set(node.id, { x: MAP_GROUP_PADDING + cells.cells[index]!.x, y: MAP_GROUP_HEADER + cells.cells[index]!.y }));
+      size = { width: Math.max(MAP_NODE_WIDTH, cells.width) + 2 * MAP_GROUP_PADDING, height: MAP_GROUP_HEADER + cells.height + MAP_GROUP_PADDING };
+    }
+    sizes.set(id, size);
     return size;
   };
 
-  const top = map.nodes.filter(node => node.parent === null);
   const parents = new Map(map.nodes.map(node => [node.id, node.parent]));
   // The decoder refuses parent cycles, so every chain ends at a top-level node.
-  const rootOf = (id: string): string => { let cursor = id; while (parents.get(cursor)) cursor = parents.get(cursor)!; return cursor; };
-  const owner = new Map(map.nodes.map(node => [node.id, rootOf(node.id)]));
-  const order = map.layer_order?.state === 'ok' ? map.layer_order.layers : null;
-  const linked = new Set<string>();
+  const ownerOf = (id: string): string => { let cursor = id; while (parents.get(cursor)) cursor = parents.get(cursor)!; return cursor; };
+  const pairs = new Map<string, { readonly source: string; readonly target: string; readonly kind: string; readonly relations: string[] }>();
   for (const relation of map.relations) {
-    const source = owner.get(relation.source)!;
-    const target = owner.get(relation.target)!;
-    if (source !== target) { linked.add(source); linked.add(target); }
-  }
-  // Without bands, dagre gives every unlinked top-level node the same rank; the grid below the dagre rows places them instead.
-  const loose = order === null ? top.filter(node => !linked.has(node.id)) : [];
-  const ranked = order === null ? top.filter(node => linked.has(node.id)) : top;
-  const graph = new dagre.graphlib.Graph();
-  // A long relation adds one dummy node per rank it crosses; a small edge spacing keeps those from widening the map.
-  graph.setGraph({ rankdir: 'TB', ranker: 'tight-tree', nodesep: MAP_NODE_SEP, ranksep: MAP_RANK_SEP, edgesep: 4, marginx: MAP_MARGIN, marginy: MAP_MARGIN });
-  graph.setDefaultEdgeLabel(() => ({}));
-  for (const node of ranked) graph.setNode(node.id, sizeOf(node.id));
-  // Band of each top-level node: its layer's position in the order; the model's unlayered nodes go below the last layer.
-  const band = new Map(order === null ? [] : top.map(node => [node.id, node.layer === null ? order.length : order.indexOf(node.layer)]));
-  const used = [...new Set(band.values())].sort((a, b) => a - b);
-  // A zero-size anchor above each band and one below the last: every node of a band ranks below its anchor and above the next.
-  // The anchors leave one empty rank between two bands.
-  const anchor = (index: number) => `\0band:${index}`;
-  used.forEach((value, index) => {
-    graph.setNode(anchor(index), { width: 0, height: 0 });
-    if (index === used.length - 1) graph.setNode(anchor(index + 1), { width: 0, height: 0 });
-    for (const node of top) {
-      if (band.get(node.id) !== value) continue;
-      graph.setEdge(anchor(index), node.id, { weight: 1, minlen: 1 });
-      graph.setEdge(node.id, anchor(index + 1), { weight: 1, minlen: 1 });
-    }
-  });
-  for (const relation of map.relations) {
-    let source = owner.get(relation.source)!;
-    let target = owner.get(relation.target)!;
+    const [source, target] = [ownerOf(relation.source), ownerOf(relation.target)];
     if (source === target) continue;
-    // A relation against the layer order still pulls its ends together; it points down so the bands stay acyclic.
-    if (order !== null && band.get(source)! > band.get(target)!) [source, target] = [target, source];
-    const existing = graph.edge(source, target) as { weight?: number } | undefined;
-    graph.setEdge(source, target, { weight: (existing?.weight ?? 0) + 1 });
+    const id = `${relation.kind}:${source}->${target}`;
+    if (!pairs.has(id)) pairs.set(id, { source, target, kind: relation.kind, relations: [] });
+    pairs.get(id)!.relations.push(relation.id);
   }
-  dagre.layout(graph);
-
-  const placed = new Map<string, Box>();
-  for (const node of ranked) {
-    const center = graph.node(node.id) as { x: number; y: number; width: number; height: number };
-    placed.set(node.id, { x: center.x - center.width / 2, y: center.y - center.height / 2, width: center.width, height: center.height });
-  }
-  const looseTop = ranked.length === 0 ? MAP_MARGIN : Math.max(...[...placed.values()].map(box => box.y + box.height)) + MAP_RANK_SEP;
-  const looseSizes = loose.map(node => sizeOf(node.id));
-  grid(looseSizes, MAP_NODE_SEP).cells.forEach((cell, index) => {
-    placed.set(loose[index]!.id, { x: MAP_MARGIN + cell.x, y: looseTop + cell.y, ...looseSizes[index]! });
+  const top = map.nodes.filter(node => node.parent === null);
+  const linked = new Set([...pairs.values()].flatMap(pair => [pair.source, pair.target]));
+  const kindOf = (id: string) => members.has(id) ? 'frame' : 'box';
+  const placed = placeLayered({
+    nodes: top.filter(node => linked.has(node.id)).map(node => ({ id: node.id, kind: kindOf(node.id), ...sizeOf(node.id) })),
+    edges: [...pairs].map(([id, pair]) => ({
+      id, source: pair.source, target: pair.target, kind: pair.kind, arrows: { start: false, end: true },
+      dashed: pair.kind === DASHED_KIND, width: pair.kind === 'relation' ? 1.5 : 2, weight: pair.relations.length,
+    })),
+    nodesep: MAP_NODE_SEP, ranksep: MAP_RANK_SEP, margin: MAP_MARGIN,
   });
-  // Parents before members at every depth: React Flow places a member relative to a parent it has already seen.
-  const nodes: MapLayoutNode[] = [];
-  const visit = (node: MapLayoutInputNode, parent: Box | null) => {
-    const own = parent === null ? placed.get(node.id)! : inner.get(node.id)!;
-    const box = { x: (parent?.x ?? 0) + own.x, y: (parent?.y ?? 0) + own.y, width: own.width, height: own.height };
-    nodes.push({ node, ...box, group: members.has(node.id), size: sizes.get(node.id) ?? null });
+
+  const loose = top.filter(node => !linked.has(node.id));
+  const looseTop = placed.boxes.length === 0 ? MAP_MARGIN : Math.max(...placed.boxes.map(box => box.y + box.height)) + MAP_RANK_SEP;
+  const looseSizes = loose.map(node => sizeOf(node.id));
+  const looseBoxes = grid(looseSizes, MAP_NODE_SEP).cells.map((cell, index): SceneBox => ({
+    id: loose[index]!.id, parent: null, x: MAP_MARGIN + cell.x, y: looseTop + cell.y, ...looseSizes[index]!, kind: kindOf(loose[index]!.id),
+  }));
+  const topBoxes = new Map([...placed.boxes, ...looseBoxes].map(box => [box.id, box]));
+
+  // Parents before members at every depth: the canvas places a member relative to a parent that it has already seen.
+  const boxes: SceneBox[] = [];
+  const visit = (node: MapLayoutInputNode, parent: SceneBox | null) => {
+    const offset = inner.get(node.id);
+    const box = parent === null ? topBoxes.get(node.id)!
+      : { id: node.id, parent: parent.id, x: parent.x + offset!.x, y: parent.y + offset!.y, ...sizeOf(node.id), kind: kindOf(node.id) };
+    boxes.push(box);
     for (const member of members.get(node.id) ?? []) visit(member, box);
   };
   for (const node of top) visit(node, null);
 
-  const imports = new Map(map.dependencies?.state === 'ok' ? map.dependencies.edges.map(edge => [`${edge.source}\n${edge.target}`, edge.imports]) : []);
-  const maxImports = Math.max(1, ...imports.values());
-  const contains = (outer: string, id: string): boolean => {
-    for (let cursor = parents.get(id); cursor; cursor = parents.get(cursor)) if (cursor === outer) return true;
-    return false;
+  const routes: readonly SceneRoute[] = placed.routes;
+  return {
+    scene: { boxes, routes, labels: [], extent: sceneExtent(boxes, routes, MAP_MARGIN) },
+    relations: new Map([...pairs].map(([id, pair]) => [id, pair.relations])),
   };
-  const edges = map.relations.filter(relation => !contains(relation.source, relation.target) && !contains(relation.target, relation.source)).map(relation => {
-    const count = imports.get(`${relation.source}\n${relation.target}`) ?? null;
-    return {
-      relation,
-      dashed: DASHED_KINDS.has(relation.kind),
-      imports: count,
-      strokeWidth: count === null ? 1 : 1 + Math.round(50 * Math.sqrt(count / maxImports)) / 10,
-    };
-  });
-
-  const bands = used.map(value => {
-    const rows = top.filter(node => band.get(node.id) === value).map(node => placed.get(node.id)!);
-    const y = Math.min(...rows.map(box => box.y));
-    return { layer: order![value] ?? null, x: Math.min(...rows.map(box => box.x)), y, height: Math.max(...rows.map(box => box.y + box.height)) - y };
-  });
-
-  const right = Math.max(0, ...nodes.map(node => node.x + node.width));
-  const bottom = Math.max(0, ...nodes.map(node => node.y + node.height));
-  return { nodes, edges, bands, width: right, height: bottom };
 }
