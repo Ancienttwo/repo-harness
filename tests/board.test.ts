@@ -673,7 +673,7 @@ test('board merge: an accepted, green, ready PR first in plan order is eligible,
   expect(boardMergeDecisions(replay(synced)).find(entry => entry.pr === 1491)).toEqual({ pr: 1491, eligible: true });
 });
 
-test('board read: every sub-issue page of the parent reaches the board and the merge_order gate; a truncated or repeating page fails closed', () => {
+test('board read: every sub-issue page of the parent reaches the board and the merge_order gate; a truncated or repeating page, a repeated cursor and a stream above the page cap fail closed', () => {
   const single = replay();
   const paged = replay({ pages: { size: 4 } });
   expect(paged.items.map(item => [item.number, item.pull_requests])).toEqual(single.items.map(item => [item.number, item.pull_requests]));
@@ -686,9 +686,23 @@ test('board read: every sub-issue page of the parent reaches the board and the m
   expect([
     refusal((pages) => { pages[1]!.data.repository.issue.subIssues.pageInfo.endCursor = null; }),
     refusal((pages) => { pages[2]!.data.repository.issue.subIssues.nodes.push(pages[0]!.data.repository.issue.subIssues.nodes[0]); }),
+    refusal((pages) => { pages[1]!.data.repository.issue.subIssues.pageInfo.endCursor = 'c1'; }),
+    refusal((pages) => { pages[2]!.data.repository.issue.subIssues.pageInfo = { hasNextPage: true, endCursor: 'c1' }; }),
+    // An advancing stream of empty pages: page n names cursor c(n+1).
+    refusal((pages) => {
+      pages[2]!.data.repository.issue.subIssues.pageInfo.hasNextPage = true;
+      for (let at = 3; at <= 25; at += 1) {
+        const page = structuredClone(pages[2]!);
+        page.data.repository.issue.subIssues = { pageInfo: { hasNextPage: true, endCursor: `c${at + 1}` }, nodes: [] };
+        pages.push(page);
+      }
+    }),
   ]).toEqual([
     'board source invalid: page 1 issue.subIssues.pageInfo.endCursor is not a cursor',
     'board source invalid: sub-issue #1475 is on more than one page',
+    'board source invalid: issue.subIssues cursor c1 repeats',
+    'board source invalid: issue.subIssues cursor c1 repeats',
+    'board source invalid: issue.subIssues has more than 20 pages of 50',
   ]);
 });
 

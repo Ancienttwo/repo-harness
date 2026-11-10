@@ -5,7 +5,7 @@ import {
   type BoardPathOwnerV1, type BoardPathOwnersV1, type BoardSeatTerminalInputV1, type BoardSeatTerminalReadV1, type BoardToolingV1, type BoardV1,
 } from '../../core/board/board';
 import { ADVISOR_SEAT } from '../../core/board/advisor-seat';
-import { BOARD_PAGE, decodeParentRead, decodePullRequestsRead, parentReadNextCursor, type BoardParentReadV1, type BoardPullRequestReadV1 } from '../../core/board/source';
+import { BOARD_PAGE, BOARD_SUB_ISSUE_PAGES, BoardSourceError, decodeParentRead, decodePullRequestsRead, parentReadNextCursor, type BoardParentReadV1, type BoardPullRequestReadV1 } from '../../core/board/source';
 import { normalizeCapabilityPath } from '../../core/capabilities/registry';
 import { HC_MIN_VERSION } from '../../core/terminal/herdr-pin';
 import { parsePublicationPolicy, policyFileFromContents, PUBLICATION_POLICY_PATH, type PolicyFileAtRef } from '../../core/publication/acceptance-merge-policy';
@@ -232,7 +232,12 @@ export function readParent(input: Pick<BoardCollectInput, 'repo_root' | 'gh_bin'
   const observedAt = (input.now?.() ?? new Date()).toISOString();
   const variables = { owner, name, number: input.parent, repairs: `repo:${repository} is:issue is:open in:title "CI repair"` };
   const pages = [graphql(input, PARENT_QUERY, variables)];
+  // The decoder runs after the last page, so a repeated cursor or an endless stream must stop the loop here.
+  const cursors = new Set<string>();
   for (let after = parentReadNextCursor(pages[0], 0); after !== null; after = parentReadNextCursor(pages.at(-1), pages.length - 1)) {
+    if (cursors.has(after)) throw new BoardSourceError(`issue.subIssues cursor ${after} repeats`);
+    if (pages.length === BOARD_SUB_ISSUE_PAGES) throw new BoardSourceError(`issue.subIssues has more than ${BOARD_SUB_ISSUE_PAGES} pages of ${BOARD_PAGE.sub_issues}`);
+    cursors.add(after);
     pages.push(graphql(input, PARENT_QUERY, { ...variables, after }));
   }
   const parent = decodeParentRead(pages, repository);

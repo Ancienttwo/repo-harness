@@ -88,6 +88,9 @@ export interface BoardPullRequestReadV1 {
   readonly comments: BoardCommentPageV1;
 }
 
+/** The most sub-issue pages that one parent read follows: 1000 sub-issues. */
+export const BOARD_SUB_ISSUE_PAGES = 20;
+
 export const BOARD_PAGE = { labels: 50, comments: 50, sub_issues: 50, blocked_by: 50, timeline: 100, files: 100, checks: 100, repairs: 50 } as const;
 
 type Json = Record<string, unknown>;
