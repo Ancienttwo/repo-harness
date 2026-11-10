@@ -341,6 +341,11 @@ describe("Bootstrap Script Contracts", () => {
         [{ NPM_VIEW: "error" }, `unable to prove repo-harness-operator-web@${planVersion} is unpublished`],
       ];
       for (const [env, message] of planRefusals) expect(runIn(repo, ["plan", planVersion], env).stderr).toContain(message);
+      // The release workflow names only a SHA: it gets the version back, and a copy of the release tree is refused.
+      expect(run("workflow-guard", third).stdout).toBe(`${planVersion}\n`);
+      const copy = git("commit-tree", `${third}^{tree}`, "-p", third, "-m", "not the release commit");
+      expect(run("workflow-guard", copy).stderr).toContain(`${copy} is not the release commit of ${planVersion}; that is ${third}`);
+      expect(runIn(repo, ["workflow-guard", third], { NPM_VIEW: "published" }).stderr).toContain(`repo-harness-operator-web@${planVersion} is already on npm`);
       git("tag", `v${planVersion}`, third);
       expect(run("plan", planVersion).stderr).toContain(`tag v${planVersion} already exists in this repository`);
       git("tag", "-d", `v${planVersion}`);
@@ -380,6 +385,12 @@ describe("Bootstrap Script Contracts", () => {
       expect(stale.stderr).toContain("Run git fetch origin first");
       git("fetch", "-q", "origin");
       expect(run("plan", "1.3.0").stderr).toContain("has no [1.3.0] section");
+      writeFileSync(join(repo, "packages/operator-web/package.json"), `{\n  "name": "repo-harness-operator-web",\n  "version": "1.6.0"\n}\n`);
+      git("commit", "-qam", "web version only");
+      const coreBump = release("1.6.0");
+      git("push", "-q", "origin", "main");
+      git("fetch", "-q", "origin");
+      expect(run("plan", "1.6.0").stderr).toContain(`packages/operator-web/package.json already has version 1.6.0 at the parent of ${coreBump}`);
       release("1.5.0");
       git("rm", "-q", "--cached", "scripts/release-owner-steps.sh");
       git("commit", "-q", "--amend", "-m", "release 1.5.0 without the owner steps");
