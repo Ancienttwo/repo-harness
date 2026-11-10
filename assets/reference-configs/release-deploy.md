@@ -39,30 +39,34 @@ release commit. The orchestrator seat starts it:
 owner step is one action: approve that run. The approval is the explicit
 authorization for that production deployment.
 
-No code from the input commit runs before the commit is proved a release
-commit on `main`, and the job that holds `id-token: write` runs only after
-that proof. The run has three jobs:
+The job that holds `id-token: write` runs no code from the input commit. The
+run has four jobs:
 
-1. `validate` (`contents: read`, `main` only): git commands written in the
-   workflow read the SHA as data. The job refuses a SHA that is not 40 hex
+1. `validate` (`contents: read`, `main` only): git and jq commands written in
+   the workflow read the SHA as data. The job refuses a SHA that is not 40 hex
    characters or not a first-parent commit of a fresh `main`, a commit where
    either package version is not the target version or is already the target
    version in its first parent, and a commit with no CHANGELOG section.
-2. `lane` (`contents: read`): `bun install` and `bun run check:release`.
-3. `publish` (`release` environment, `contents: write` and `id-token: write`):
-   - `bash scripts/release-owner-steps.sh workflow-guard <sha>` refuses a
-     version that is on npm, an existing tag and a changed checkout.
-   - `npm publish --provenance` for `repo-harness-operator-web`, then for
-     `repo-harness`.
-   - `check published <version>` reads both packages back.
-   - The annotated tag `v<version>` at the SHA, created through the GitHub API.
-   - `gh release create --verify-tag` with the CHANGELOG section.
-   - `check tagged <version>`: the remote tag is at the release commit, and the
-     GitHub Release is not a draft or a prerelease.
+2. `lane` (`contents: read`): checks out the SHA, runs `bun install`,
+   `bun run check:release` and
+   `bash scripts/release-owner-steps.sh workflow-guard <sha>` (a version that
+   is on npm, an existing tag or a changed checkout fails). `npm pack` packs
+   both packages; it runs the `prepack` builds. The job uploads both tarballs.
+3. `publish` (`release` environment, `contents: read` and `id-token: write`):
+   no checkout. It downloads the tarballs. Inline steps check that each
+   tarball holds the package name and version and that npm does not have the
+   version. `npm publish <tarball> --provenance --ignore-scripts` publishes
+   `repo-harness-operator-web`, waits until npm shows it, then publishes
+   `repo-harness`. No package script runs.
+4. `release` (`contents: write`): checks out the SHA, runs `bun install` and
+   `check published <version>`, creates the annotated tag `v<version>` at the
+   SHA through the GitHub API, runs `gh release create --verify-tag` with the
+   CHANGELOG section, and runs `check tagged <version>` (the remote tag is at
+   the release commit; the GitHub Release is not a draft or a prerelease).
 
 Each script step fetches `main` first, so a merge to `main` during the run
 does not stop it. A failed step stops the run. A rerun of a published version
-stops at the guard; nothing is published again.
+stops at the guard in `lane`; nothing is published again.
 
 ### Owner setup (#2194)
 
@@ -76,18 +80,26 @@ stops at the guard; nothing is published again.
 
 ### Partial publish recovery
 
-When `repo-harness-operator-web` is on npm and the `repo-harness` publish
-failed, the owner completes the release by hand from the release commit:
+When the run stops after a publish, a rerun refuses. The owner completes the
+release by hand from the release commit. Read the state of each step before
+the step, and do only the steps that are not done. Stop at the first failure
+and report it.
 
-1. `git fetch origin && git worktree add --detach /tmp/repo-harness-wt-release-<version> <sha> && cd /tmp/repo-harness-wt-release-<version> && bun install --frozen-lockfile`
-2. `bash scripts/release-owner-steps.sh guard <version> <sha> && npm publish --auth-type=web`
+1. Worktree: `git fetch origin && git worktree add --detach /tmp/repo-harness-wt-release-<version> <sha> && cd /tmp/repo-harness-wt-release-<version> && bun install --frozen-lockfile`
+2. Core package: when `npm view repo-harness@<version> version` prints the
+   version, skip this step. Otherwise run
+   `bash scripts/release-owner-steps.sh guard <version> <sha> && npm publish --auth-type=web`.
+   (When `npm view repo-harness-operator-web@<version> version` prints nothing,
+   publish the console first the same way from `packages/operator-web`.)
 3. `bash scripts/release-owner-steps.sh check published <version>`
-4. `git tag -a v<version> <sha> -m "repo-harness <version>" && git push origin v<version>`
-5. `bash scripts/release-owner-steps.sh notes <version> > /tmp/repo-harness-wt-release-<version>.notes.md && gh release create v<version> --verify-tag --title "repo-harness <version>" --notes-file /tmp/repo-harness-wt-release-<version>.notes.md`
+4. Tag: run `git ls-remote --tags origin "refs/tags/v<version>" "refs/tags/v<version>^{}"`.
+   No output: run `git tag -a v<version> <sha> -m "repo-harness <version>" && git push origin v<version>`.
+   A `^{}` line that names `<sha>`: the tag is done; skip.
+   Any other output: stop and report.
+5. GitHub Release: run `gh release view v<version> --json tagName,isDraft,isPrerelease`.
+   Not found: run `bash scripts/release-owner-steps.sh notes <version> > /tmp/repo-harness-wt-release-<version>.notes.md && gh release create v<version> --verify-tag --title "repo-harness <version>" --notes-file /tmp/repo-harness-wt-release-<version>.notes.md`.
+   Found: skip; step 6 checks it.
 6. `bash scripts/release-owner-steps.sh check tagged <version>`
-
-When both packages are on npm and a later step failed, start at step 3. Stop
-at the first failure and report it.
 
 `bash scripts/release-owner-steps.sh plan <version>` stays a read-only
 preflight: it runs the guard checks for a version and prints the release

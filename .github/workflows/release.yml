@@ -5,8 +5,10 @@ run-name: Release ${{ inputs.sha }}
 # The `release` environment requires the owner's approval; that approval authorizes this deployment.
 # npm Trusted Publishing (OIDC) authenticates the publishes; each trusted publisher names this workflow and the
 # `release` environment, so no other job can publish. No npm token exists.
-# No code from the input checkout runs before `validate` proves the SHA is a release commit on main, and the
-# checked-out code never runs in a job that holds id-token: write before that proof.
+# `validate` reads the input commit as data with inline git. `lane` installs, checks, guards and packs the input
+# commit without id-token. `publish` holds id-token and runs no code from the input commit: it has no checkout,
+# reads the packed tarballs as data and publishes them with --ignore-scripts. `release` reads back, tags and
+# creates the GitHub Release without id-token.
 on:
   workflow_dispatch:
     inputs:
@@ -60,13 +62,15 @@ jobs:
           echo "$SHA is the release commit of $version."
 
   lane:
-    name: Release check lane
+    name: Check, guard and pack
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
       contents: read
     env:
+      SHA: ${{ inputs.sha }}
+      VERSION: ${{ needs.validate.outputs.version }}
       BUN_TEST_MAX_CONCURRENCY: '1'
       BUN_TEST_TIMEOUT_MS: '60000'
       BUN_TEST_ISOLATE_FILES: '1'
@@ -91,19 +95,87 @@ jobs:
         uses: ./.github/actions/install-pinned-herdr-core
       - run: bun install --frozen-lockfile
       - run: bun run check:release
+      # The script compares origin/main with the live main, so each script step fetches main first.
+      - name: Guard the release commit and its unpublished version
+        run: |
+          git fetch -q --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          [[ "$(bash scripts/release-owner-steps.sh workflow-guard "$SHA")" == "$VERSION" ]]
+      # npm pack runs the prepack builds; publish later runs no package script.
+      - name: Pack both packages
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-tarballs"
+          (cd packages/operator-web && npm pack --pack-destination "$RUNNER_TEMP/release-tarballs")
+          npm pack --pack-destination "$RUNNER_TEMP/release-tarballs"
+          ls "$RUNNER_TEMP/release-tarballs/repo-harness-operator-web-$VERSION.tgz" "$RUNNER_TEMP/release-tarballs/repo-harness-$VERSION.tgz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-tarballs
+          path: ${{ runner.temp }}/release-tarballs/*.tgz
+          if-no-files-found: error
+          retention-days: 7
 
   publish:
-    name: Publish, tag and release
+    name: Publish
     needs: [validate, lane]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     environment: release
     permissions:
-      contents: write
+      contents: read
       id-token: write
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+      TARBALLS: ${{ github.workspace }}/release-tarballs
+    # Only this workflow's inline steps and pinned actions run here; the tarballs are data.
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # npm Trusted Publishing needs npm 11.5.1 or later.
+      - name: Require OIDC-capable npm
+        run: node -e 'const [a, b, c] = process.argv[1].split(".").map(Number); if (a < 11 || (a === 11 && (b < 5 || (b === 5 && c < 1)))) { console.error(`npm ${process.argv[1]} cannot publish with OIDC; 11.5.1 or later is required.`); process.exit(1); }' "$(npm --version)"
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-tarballs
+          path: ${{ env.TARBALLS }}
+      - name: Check the tarballs and that both versions are unpublished
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$*"; exit 1; }
+          for name in repo-harness-operator-web repo-harness; do
+            tarball="$TARBALLS/$name-$VERSION.tgz"
+            manifest="$(tar -xOzf "$tarball" package/package.json)"
+            [[ "$(jq -r .name <<<"$manifest")" == "$name" && "$(jq -r .version <<<"$manifest")" == "$VERSION" ]] || fail "$tarball does not hold $name@$VERSION."
+            if npm view "$name@$VERSION" version --json 2>"$RUNNER_TEMP/npm-view.err" >/dev/null; then
+              fail "$name@$VERSION is already on npm."
+            fi
+            grep -Eq 'E404|404 Not Found|No match found|not in this registry' "$RUNNER_TEMP/npm-view.err" || { cat "$RUNNER_TEMP/npm-view.err"; fail "unable to prove $name@$VERSION is unpublished."; }
+          done
+      - name: Publish repo-harness-operator-web
+        run: npm publish "$TARBALLS/repo-harness-operator-web-$VERSION.tgz" --provenance --ignore-scripts
+      # The core package depends on the matching web version, so npm must show it first.
+      - name: Wait until npm shows repo-harness-operator-web
+        run: |
+          for _ in $(seq 30); do
+            [[ "$(npm view "repo-harness-operator-web@$VERSION" version 2>/dev/null)" == "$VERSION" ]] && exit 0
+            sleep 10
+          done
+          echo "::error::npm does not show repo-harness-operator-web@$VERSION after 5 minutes."
+          exit 1
+      - name: Publish repo-harness
+        run: npm publish "$TARBALLS/repo-harness-$VERSION.tgz" --provenance --ignore-scripts
+
+  release:
+    name: Read back, tag and release
+    needs: [validate, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
     env:
       SHA: ${{ inputs.sha }}
       VERSION: ${{ needs.validate.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -113,9 +185,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      # npm Trusted Publishing needs npm 11.5.1 or later.
-      - name: Require OIDC-capable npm
-        run: node -e 'const [a, b, c] = process.argv[1].split(".").map(Number); if (a < 11 || (a === 11 && (b < 5 || (b === 5 && c < 1)))) { console.error(`npm ${process.argv[1]} cannot publish with OIDC; 11.5.1 or later is required.`); process.exit(1); }' "$(npm --version)"
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.3
@@ -123,38 +192,21 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
       - run: bun install --frozen-lockfile
-      # The script compares origin/main with the live main, so each script step fetches main first;
-      # a merge to main during the run does not stop it.
-      - name: Guard the release commit and its unpublished version
-        run: |
-          git fetch -q --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          [[ "$(bash scripts/release-owner-steps.sh workflow-guard "$SHA")" == "$VERSION" ]]
-      - name: Publish repo-harness-operator-web
-        working-directory: packages/operator-web
-        run: npm publish --provenance
-      - name: Publish repo-harness
-        run: npm publish --provenance
       - name: Read back the published packages
         run: |
           git fetch -q --no-tags origin +refs/heads/main:refs/remotes/origin/main
           bash scripts/release-owner-steps.sh check published "$VERSION"
       # The API creates the annotated tag, so the checkout keeps no credentials.
       - name: Create the annotated tag
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags" -f tag="v$VERSION" -f message="repo-harness $VERSION" -f object="$SHA" -f type=commit --jq .sha)"
           gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/v$VERSION" -f sha="$tag_object" >/dev/null
       - name: Create the GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           git fetch -q --no-tags origin +refs/heads/main:refs/remotes/origin/main
           bash scripts/release-owner-steps.sh notes "$VERSION" > "$RUNNER_TEMP/notes.md"
           gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --title "repo-harness $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
       - name: Read back the tag and the GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           git fetch -q --no-tags origin +refs/heads/main:refs/remotes/origin/main
           bash scripts/release-owner-steps.sh check tagged "$VERSION"
