@@ -10,7 +10,7 @@ import {
   type ArchitectureMapV1,
 } from '../core/operator/architecture-map';
 import { archctxCode, mapLayerView, type MapLayerId, type MapMark } from './architecture-map-layers';
-import { firstViewport, FixCommand, Mark, NodeDetails, Note, nodeSize, ZoomControls } from './architecture-map-parts';
+import { contentBox, FirstViewport, FixCommand, Mark, NodeDetails, Note, nodeSize, ZoomControls } from './architecture-map-parts';
 import { runtimePlacement, type RuntimePlacement } from './architecture-runtime';
 import { layoutSequence, SEQUENCE_COLUMN, SEQUENCE_HEADER, type SequenceBox } from './architecture-sequence-layout';
 import { sequenceSvg } from './architecture-sequence-svg';
@@ -183,7 +183,6 @@ function SequenceCanvas({ map, flow, layer, pullRequest, selection, onSelect, t 
 }) {
   const placement = useMemo(() => runtimePlacement(map), [map]);
   const layout = useMemo(() => layoutSequence(flow, placement), [flow, placement]);
-  const firstView = useMemo(() => firstViewport(Math.min(...layout.boxes.map(box => box.x)), Math.min(...layout.boxes.map(box => box.y))), [layout]);
   const view = useMemo(() => mapLayerView(map, layer, pullRequest), [map, layer, pullRequest]);
   const reached = useMemo(() => reachedSteps(map, layer, pullRequest), [map, layer, pullRequest]);
   const proven = useMemo(() => proofs(map), [map]);
@@ -232,6 +231,8 @@ function SequenceCanvas({ map, flow, layer, pullRequest, selection, onSelect, t 
       })),
     ];
   }, [map, flow, layout, view, reached, proven, names, selection, layer, t]);
+  // Every sequence node is top-level, so the nodes give the content box.
+  const content = useMemo(() => contentBox(nodes.map(node => ({ x: node.position.x, y: node.position.y, width: node.width!, height: node.height! }))), [nodes]);
 
   // Selection is the only change the read-only canvas applies; click and the keyboard both arrive here.
   const onNodesChange = useCallback((changes: NodeChange<SequenceNode>[]) => {
@@ -253,9 +254,9 @@ function SequenceCanvas({ map, flow, layer, pullRequest, selection, onSelect, t 
         nodesConnectable={false}
         minZoom={0.1}
         maxZoom={2}
-        defaultViewport={firstView}
         attributionPosition="top-right"
       >
+        <FirstViewport content={content} />
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--rh-diagram-dot)" />
         <Panel position="bottom-left"><Legend t={t} /></Panel>
         <Panel position="bottom-right"><ZoomControls t={t} /></Panel>
