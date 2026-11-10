@@ -182,6 +182,7 @@ export interface ProviderMergeReadinessFactsV1 {
   readonly review_decision: string | null;
   readonly unresolved_thread_count: number | null;
   readonly rollback_boundary: MergeReadinessRollbackBoundary | null;
+  /** All base-protected contexts; the effect rejects a missing context before projection. */
   readonly checks: readonly {
     readonly name: string;
     readonly bucket: RequiredCheckBucketV1;
@@ -448,7 +449,7 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
     if (provider.review_decision === 'CHANGES_REQUESTED') push(blockers, 'changes_requested');
     if (!Number.isSafeInteger(provider.unresolved_thread_count) || provider.unresolved_thread_count! < 0) push(blockers, 'provider_data_incomplete');
     else if (provider.unresolved_thread_count! > 0) push(blockers, 'unresolved_threads');
-    if (!provider.checks.some(check => check.name === 'Required / CI')) push(blockers, 'provider_data_incomplete');
+    if (provider.checks.length === 0) push(blockers, 'provider_data_incomplete');
     if (provider.checks.some(check => check.bucket === 'pending')) push(blockers, 'checks_pending');
     if (provider.checks.some(check => check.bucket !== 'pass' && check.bucket !== 'pending')) push(blockers, 'checks_failed');
     if (provider.mergeable !== 'MERGEABLE') push(blockers, 'not_mergeable');

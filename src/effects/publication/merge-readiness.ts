@@ -91,6 +91,8 @@ export interface PublicationReadinessInput {
    * of a second contents read. The ref must be the expected base.
    */
   readonly policy_file_at_base?: PolicyFileAtRef;
+  /** Internal effect seam: status checks from the executor's base protection read. */
+  readonly required_status_checks_at_base?: unknown;
 }
 
 export interface ProviderIdentity {
@@ -337,6 +339,7 @@ interface ProviderCheck {
   readonly name: string;
   readonly bucket: ProviderCheckBucket;
   readonly link: string;
+  readonly workflow: string;
 }
 
 function providerCheck(value: unknown): ProviderCheck {
@@ -348,9 +351,9 @@ function providerCheck(value: unknown): ProviderCheck {
   return Object.freeze({
     name: string(check.name, 'provider required check name'),
     bucket: check.bucket as ProviderCheckBucket,
-    // A required check can be external and have no Actions link; only
-    // Required / CI is required to link one.
+    // External status checks need no Actions link.
     link: typeof check.link === 'string' ? check.link : '',
+    workflow: typeof check.workflow === 'string' ? check.workflow : '',
   });
 }
 
@@ -359,10 +362,24 @@ function checkArray(value: unknown): ProviderCheck[] {
   return value.map(providerCheck);
 }
 
-function requiredCIRunPath(identity: ProviderIdentity, checks: readonly ProviderCheck[]): string {
-  const required = checks.filter(check => check.name === 'Required / CI');
-  if (required.length !== 1) throw new MergeReadinessError('provider_data_incomplete', 'exactly one Required / CI check is required');
-  return checkLink(identity, required[0]!).run_api_path;
+function protectedChecks(identity: ProviderIdentity, prNumber: number, input: PublicationReadinessInput): ProviderCheck[] {
+  const required = input.required_status_checks_at_base === undefined
+    ? object(gh(input, ['api', `repos/${identity.repo_name_with_owner}/branches/${encodeURIComponent(identity.base_ref)}/protection`]), 'base protection').required_status_checks
+    : input.required_status_checks_at_base;
+  const contexts = object(required, 'base required status checks').contexts;
+  if (!Array.isArray(contexts) || contexts.length === 0) {
+    throw new MergeReadinessError('provider_data_incomplete', 'base protection must require at least one status check context');
+  }
+  const names = new Set(contexts.map(context => string(context, 'protected check context')));
+  const checks = checkArray(gh(input, [
+    'pr', 'checks', String(prNumber), '--required', '--json', 'name,bucket,link,workflow',
+  ], [0, 1, 8]));
+  for (const name of names) {
+    if (!checks.some(check => check.name === name)) {
+      throw new MergeReadinessError('provider_data_incomplete', `protected check context is missing: ${name}`);
+    }
+  }
+  return checks.filter(check => names.has(check.name));
 }
 
 interface RequiredCheckLink {
@@ -374,13 +391,13 @@ interface RequiredCheckLink {
 
 function checkLink(identity: ProviderIdentity, check: ProviderCheck): RequiredCheckLink {
   let url: URL;
-  try { url = new URL(check.link); } catch { throw new MergeReadinessError('provider_data_incomplete', 'required CI check URL unavailable'); }
+  try { url = new URL(check.link); } catch { throw new MergeReadinessError('provider_data_incomplete', 'required Actions check URL unavailable'); }
   const segments = url.pathname.split('/').filter(Boolean);
   const [owner, repo] = identity.repo_name_with_owner.split('/');
   if (url.protocol !== 'https:' || url.hostname !== 'github.com' || segments.length !== 7
     || segments[0] !== owner || segments[1] !== repo || segments[2] !== 'actions'
     || segments[3] !== 'runs' || segments[5] !== 'job' || !/^\d+$/.test(segments[4]!) || !/^\d+$/.test(segments[6]!)) {
-    throw new MergeReadinessError('provider_data_incomplete', 'required CI is not a repository Actions check');
+    throw new MergeReadinessError('provider_data_incomplete', 'required check is not a repository Actions check');
   }
   return Object.freeze({
     run_id: Number(segments[4]),
@@ -415,19 +432,6 @@ function requiredCheckRunFacts(identity: ProviderIdentity, value: unknown, label
     run_attempt: Number(attempt),
     workflow_id: Number.isSafeInteger(run.workflow_id) && Number(run.workflow_id) > 0 ? Number(run.workflow_id) : null,
   });
-}
-
-function validateRequiredCIRun(identity: ProviderIdentity, value: unknown, checks: readonly ProviderCheck[]): RequiredCheckRunFacts {
-  const run = object(value, 'required CI run');
-  if (run.path !== '.github/workflows/ci.yml' || run.event !== 'pull_request') {
-    throw new MergeReadinessError('provider_data_incomplete', 'required CI does not bind this PR/head/base');
-  }
-  const facts = requiredCheckRunFacts(identity, value, 'required CI run');
-  const required = checks.find(check => check.name === 'Required / CI')!;
-  if (required.bucket === 'pass' && (run.status !== 'completed' || run.conclusion !== 'success')) {
-    throw new MergeReadinessError('provider_data_incomplete', 'green required check has no successful trusted CI run');
-  }
-  return facts;
 }
 
 type AttemptConclusion = 'success' | 'failure' | 'timed_out' | 'cancelled' | 'skipped' | 'unknown';
@@ -686,21 +690,17 @@ function* checkEvidence(
 function* requiredCheckFailures(
   identity: ProviderIdentity,
   checks: readonly ProviderCheck[],
-  firstRun: RequiredCheckRunFacts,
 ): Generator<ProviderRequest, RequiredCheckFailureEvidenceV1[], unknown> {
   const evidence: RequiredCheckFailureEvidenceV1[] = [];
+  const runs = new Map<string, RequiredCheckRunFacts>();
   for (const check of checks) {
-    let link: RequiredCheckLink;
-    try {
-      link = checkLink(identity, check);
-    } catch (error) {
-      // Only Required / CI must be a repository Actions check. Other required
-      // checks keep their bucket and blocker without invented evidence.
-      if (check.name === 'Required / CI') throw error;
-      continue;
+    if (check.workflow === '' && !/^https?:\/\/github\.com\/[^/]+\/[^/]+\/actions\//u.test(check.link)) continue;
+    const link = checkLink(identity, check);
+    let run = runs.get(link.run_api_path);
+    if (run === undefined) {
+      run = requiredCheckRunFacts(identity, yield { args: ['api', link.run_api_path] }, 'required check run');
+      runs.set(link.run_api_path, run);
     }
-    const run = check.name === 'Required / CI' ? firstRun
-      : requiredCheckRunFacts(identity, yield { args: ['api', link.run_api_path] }, 'required check run');
     const failure = yield* checkEvidence(identity, check, run, link);
     if (failure) evidence.push(failure);
   }
@@ -931,12 +931,8 @@ function* rollbackBoundary(identity: ProviderIdentity): Generator<string, Provid
 }
 
 export function observeProviderReadinessFacts(identity: ProviderIdentity, receipt: Pick<PullRequestSelectionV2, 'pr_number'>, input: PublicationReadinessInput): ProviderMergeReadinessFactsV1 {
-  const checks = gh(input, [
-    'pr', 'checks', String(receipt.pr_number), '--required', '--json', 'name,bucket,link',
-  ], [0, 1, 8]);
-  const providers = checkArray(checks);
-  const firstRun = validateRequiredCIRun(identity, gh(input, ['api', requiredCIRunPath(identity, providers)]), providers);
-  const checkFailures = driveRequestsSync(requiredCheckFailures(identity, providers, firstRun), input);
+  const checks = protectedChecks(identity, receipt.pr_number, input);
+  const checkFailures = driveRequestsSync(requiredCheckFailures(identity, checks), input);
   const policy = publicationPolicy(input, identity.base_sha);
   const coverage = coverageFacts(identity, input, policy);
   const generated = generatedArtifactsFacts(identity, input, policy);
