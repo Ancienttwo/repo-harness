@@ -240,6 +240,7 @@ export const officeRepositoryView = (views: ReadonlyMap<string, OfficeRepository
  * in each repository its parents, then its summaries. The parents read takes a slot of the server's board read cap, and that limit
  * lives in effects, so the web keeps no copy of it. The summaries read takes
  * no slot and names the active parent of the list read in the same cycle.
+ * Only a read with no answer backs the loop off; a typed refusal is an answer.
  */
 export function useOfficeOverview(repositories: readonly string[], readParents: BoardParentsReader, readSummaries: BoardSummariesReader, generation: number): ReadonlyMap<string, OfficeRepositoryView> {
   const [views, setViews] = useState<ReadonlyMap<string, OfficeRepositoryView>>(new Map());
@@ -252,7 +253,7 @@ export function useOfficeOverview(repositories: readonly string[], readParents: 
       const parents = await readParents(id, signal);
       if (signal.aborted) return false;
       if (parents.state !== 'ok') {
-        complete = false;
+        if (parents.reason === 'unreachable') complete = false;
         show(id, () => ({ kind: 'failed', reason: parents.reason }));
         continue;
       }
@@ -262,7 +263,7 @@ export function useOfficeOverview(repositories: readonly string[], readParents: 
       if (active === null) continue;
       const summaries = await readSummaries(id, active, signal);
       if (signal.aborted) return false;
-      if (summaries.state !== 'ok') complete = false;
+      if (summaries.state !== 'ok' && summaries.reason === 'unreachable') complete = false;
       show(id, () => ({ kind: 'ready', list: parents.list, summaries }));
     }
     return complete;
