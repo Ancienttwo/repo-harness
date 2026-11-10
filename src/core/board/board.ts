@@ -356,17 +356,18 @@ export function syncCarryCandidates(read: BoardPullRequestReadV1, owners: BoardP
 
 /**
  * The head, and the newest proven reviewed head when it can carry: the subject of the newest record with a row of a proven head. Only
- * its rows count with the rows of the head, so reviews split across older heads never add up. A FAIL row on any proven head, earlier or
- * later than a PASS, stops the carry.
+ * its rows count with the rows of the head, so reviews split across older heads never add up. A FAIL row on that subject, in any record,
+ * stops the carry; a FAIL row on an older proven subject that the newer record supersedes does not (#2107).
  */
 function reviewedSubjects(read: BoardPullRequestReadV1, owners: BoardPathOwnersV1, proven: readonly string[]): ReadonlySet<string> {
   const syncs = new Set(syncCarryCandidates(read, owners).filter(sha => proven.includes(sha)));
   const records = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER)
     .map(record => ({ created_at: record.created_at, rows: (parseAcceptanceRecord(record) ?? []).filter(row => syncs.has(row.subject_sha)) }))
     .filter(record => record.rows.length > 0);
-  if (records.length === 0 || records.some(record => record.rows.some(row => row.verdict === 'FAIL'))) return new Set([read.head_sha]);
-  const newest = records.reduce((latest, record) => (record.created_at >= latest.created_at ? record : latest));
-  return new Set([read.head_sha, newest.rows.at(-1)!.subject_sha]);
+  if (records.length === 0) return new Set([read.head_sha]);
+  const subject = records.reduce((latest, record) => (record.created_at >= latest.created_at ? record : latest)).rows.at(-1)!.subject_sha;
+  if (records.some(record => record.rows.some(row => row.subject_sha === subject && row.verdict === 'FAIL'))) return new Set([read.head_sha]);
+  return new Set([read.head_sha, subject]);
 }
 
 function acceptance(read: BoardPullRequestReadV1, subjects: ReadonlySet<string>, check: BoardRequiredCheckV1, closedTiers: readonly (BoardTier | null)[], rule: ReviewRule): BoardAcceptanceV1 {

@@ -1702,7 +1702,7 @@ describe('merge-only sync carry (#2074)', () => {
 
   test('the rows of a reviewed head accept a later High head only when git proves a merge-only sync and no hook path changes', () => {
     const calls: (readonly string[])[] = [];
-    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly syncFailAt?: string; readonly split?: boolean; readonly headPass?: boolean; readonly hookFile?: boolean } = {}) => replay({
+    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly syncFailAt?: string; readonly failSubject?: string; readonly split?: boolean; readonly headPass?: boolean; readonly hookFile?: boolean } = {}) => replay({
       parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
       pulls: (data) => {
         const { pr1499 } = data.repository;
@@ -1712,8 +1712,8 @@ describe('merge-only sync carry (#2074)', () => {
           const claim = comment(renderAcceptanceClaim(receipt(harness, subject, relation)), `2026-11-03T${at}:00Z`);
           pr1499.comments.nodes.push(claim, comment(renderAcceptanceRecord(receipt(harness, subject, relation), claim.url), `2026-11-03T${at}:30Z`));
         }
-        // Another proven sync head B of the same patch failed its sync check, after both PASS rows or between them: no PASS skips it.
-        if (options.syncFailAt !== undefined) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', 'b'.repeat(40), 'different-family', 'FAIL'), ''), `2026-11-03T${options.syncFailAt}Z`));
+        // A FAIL record on proven sync head B (or on `failSubject`) of the same patch, at `syncFailAt`.
+        if (options.syncFailAt !== undefined) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', options.failSubject ?? 'b'.repeat(40), 'different-family', 'FAIL'), ''), `2026-11-03T${options.syncFailAt}Z`));
         // `headPass`: the head has both reviews of its own.
         if (options.headPass) {
           for (const [at, harness, relation] of [['00:40', 'pi', 'different-family'], ['00:41', 'claude', 'same-family']] as const) {
@@ -1736,7 +1736,11 @@ describe('merge-only sync carry (#2074)', () => {
     expect(carry()).toMatchObject({ tier: 'high', claude_review: 'recorded', acceptance: { status: 'accepted', via: 'sync', carried_from: reviewed, accepted_at: '2026-11-03T00:11:30Z', evidence_url: comment('', '2026-11-03T00:11:30Z').url } });
     expect(calls[0]).toContain(reviewed);
     expect(carry({ proven: false }).acceptance).toEqual({ status: 'not_accepted' });
-    for (const at of ['00:20:00', '00:10:45']) expect(carry({ syncFailAt: at }).acceptance).toEqual({ status: 'not_accepted' });
+    // The newest proven reviewed subject decides (#2107): a FAIL on B after both PASS rows makes B the source and stops the carry;
+    // a FAIL on B that the newer PASS record on the reviewed head supersedes does not; a FAIL on the source itself stops it even when older.
+    expect(carry({ syncFailAt: '00:20:00' }).acceptance).toEqual({ status: 'not_accepted' });
+    expect(carry({ syncFailAt: '00:10:45' }).acceptance).toMatchObject({ status: 'accepted', via: 'sync', carried_from: reviewed, accepted_at: '2026-11-03T00:11:30Z' });
+    expect(carry({ syncFailAt: '00:05:00', failSubject: reviewed }).acceptance).toEqual({ status: 'not_accepted' });
     expect(carry({ split: true }).acceptance).toEqual({ status: 'not_accepted' });
     // A FAIL on a proven earlier head stops only the carry: the head's own two reviews still accept it.
     expect(carry({ syncFailAt: '00:20:00', headPass: true }).acceptance).toMatchObject({ status: 'accepted', via: 'record', accepted_at: '2026-11-03T00:41:30Z' });
