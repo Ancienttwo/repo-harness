@@ -3,17 +3,6 @@ import { spawnSync } from 'node:child_process';
 import { isAbsolute, join, posix } from 'node:path';
 import { inside, prepareCodexHome } from './review-isolation';
 import { isRepositoryRelativePath } from '../../core/operator/doc-session-events';
-import type { DocsHostRuntimeId } from '../../core/operator/docs-host-runtimes';
-import type { ModelApiEndpoint } from './docs-host-proxy';
-
-/**
- * Model API hosts per verified runtime (`DOCS_HOST_RUNTIME_IDS`). Empty while no
- * runtime is verified: the owner closed the docs host stack (#1149, option 3).
- * A runtime that joins the allowlist also lists its endpoints here. Claude keeps
- * its macOS login in the Keychain, which this host denies. The access token is
- * checked for the whole run, so no auth refresh host is open.
- */
-export const DOCS_HOST_MODEL_API: Readonly<Record<DocsHostRuntimeId, readonly ModelApiEndpoint[]>> = Object.freeze({});
 
 export const DOCS_HOST_PROJECTION_MANIFEST = 'docs/architecture/.projection-manifest.json';
 

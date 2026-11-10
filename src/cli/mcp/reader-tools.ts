@@ -1,7 +1,6 @@
 import { createHash } from 'crypto';
 import { closeSync, lstatSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'fs';
 import { opendir } from 'fs/promises';
-import { join } from 'path';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { redactMcpText } from './redaction';
 import { repoHarnessPackageVersion } from './version';
@@ -463,8 +462,4 @@ export function createReaderToolContext(repoRoot: string, policy: McpPolicy, cod
     codeGraphAdapter,
     testHooks,
   };
-}
-
-export function localReaderSmokeFile(repoRoot: string): string {
-  return join(repoRoot, 'README.md');
 }
