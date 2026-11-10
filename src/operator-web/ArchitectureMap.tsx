@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '@xyflow/react/dist/base.css';
 import {
   decodeArchitectureMap,
@@ -23,7 +23,7 @@ import { ArchitectureLayers } from './ArchitectureLayers';
 import { ArchitectureModules } from './ArchitectureModules';
 import { ArchitectureSequence, SequenceLensTools } from './ArchitectureSequence';
 import { ArchitectureTopology, TopologyLensTools } from './ArchitectureTopology';
-import type { TopologyBase } from './architecture-topology-layout';
+import { defaultTopologyBase, type TopologyBase } from './architecture-topology-layout';
 import type { OperatorTranslate } from './i18n';
 import { useObservationRefresh } from './useObservationRefresh';
 
@@ -58,7 +58,8 @@ function useArchitectureMap(read: ArchitectureMapReader, repositoryId: string, g
       if (next.state === 'ok' && shown !== null && JSON.stringify(shown) === JSON.stringify({ ...next.map, collected_at: shown.collected_at })) return current;
       return { repositoryId, read: next };
     });
-    return next.state === 'ok';
+    // Only a read that reached no route backs off; a refusal such as a pending map is a typed answer, read again at the normal interval.
+    return !(next.state === 'unavailable' && next.reason === 'unreachable');
   }, [read, repositoryId]);
   useObservationRefresh(request, JSON.stringify([repositoryId, generation]));
   return result?.repositoryId === repositoryId ? result.read : null;
@@ -286,8 +287,8 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   const [layer, setLayer] = useState<MapLayerId>('changes');
   const [picked, setPicked] = useState<number | null>(null);
   const [flow, setFlow] = useState<string | null>(null);
-  // The ArchTopology artboard opens on the namespace segment with the legacy stores shown.
-  const [topologyBase, setTopologyBase] = useState<TopologyBase>('namespace');
+  // The ArchTopology artboard opens on a segment that has boxes, with the legacy stores shown, until the person chooses a segment.
+  const [chosenBase, setTopologyBase] = useState<TopologyBase | null>(null);
   const [legacy, setLegacy] = useState(true);
   // The last good map stays on screen through a failed refresh; a new repository starts empty.
   const shown = useRef<{ repositoryId: string; map: ArchitectureMapV1 } | null>(null);
@@ -296,6 +297,8 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   // A picked PR that a refresh no longer lists falls back to the first PR with impact data.
   const listed = map !== null && map.layers.pull_requests.state === 'ok' && map.layers.pull_requests.pull_requests.some(item => item.number === picked);
   const pullRequest = map === null ? null : listed ? picked : firstImpactPullRequest(map);
+  const defaultBase = useMemo(() => map === null || view !== 'topology' ? 'namespace' : defaultTopologyBase(map), [map, view]);
+  const topologyBase = chosenBase ?? defaultBase;
   useEffect(() => {
     onSummary(map === null ? null : {
       commit: map.commit, collectedAt: map.collected_at, headRef: map.head_ref, archctxVersion: map.archctx_version,
