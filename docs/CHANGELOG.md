@@ -34,7 +34,7 @@ All notable changes to this skill are documented here.
 ### Fixed
 
 - [fix(board): read every comment page of the batch parent (#2157)](https://github.com/aimpact-inc/repo-harness/pull/2158). A parent thread above 10,000 comments fails the board read and dispatch closed with `board source invalid: issue.comments has more than 100 pages of 100`; it never reads a partial thread.
-- [fix(board): read every sub-issue page of the batch parent (#2123)](https://github.com/aimpact-inc/repo-harness/pull/2130). `readParent` runs the same query again with each cursor until the last page.
+- [fix(board): read every sub-issue page of the batch parent (#2123)](https://github.com/aimpact-inc/repo-harness/pull/2130). `readParent` runs the same query again with each cursor until the last page. A repeated cursor and more than `BOARD_SUB_ISSUE_PAGES` (20) pages fail closed in the `readParent` loop.
 - [fix(board): an unreadable reviewed head gives no merge-only sync proof (#2091)](https://github.com/aimpact-inc/repo-harness/pull/2136). A reviewed head that git cannot read must not drop a FAIL candidate from the merge-only sync proof.
 - [fix(seats): restrict resets to the same repository peer (#2196)](https://github.com/aimpact-inc/repo-harness/pull/2199). Check that the reset caller is the opposite peer seat in the same repository as the handoff.
 - [fix(git): replace provider-token values in git output and errors (#2131)](https://github.com/aimpact-inc/repo-harness/pull/2169). `spawnGit` and `runGit` throw for a call that keeps a token.
@@ -49,7 +49,7 @@ All notable changes to this skill are documented here.
 
 ### Documentation
 
-- [docs(rules): code ownership default in the global working rules (#2187)](https://github.com/aimpact-inc/repo-harness/pull/2188). The sync treats an unlisted section as a user section, so the entry is required.
+- [docs(rules): code ownership default in the global working rules (#2187)](https://github.com/aimpact-inc/repo-harness/pull/2188). The sync treats an unlisted section as a user section, so the `SHIPPED_GLOBAL_RULES_SECTIONS` entry is required.
 - [docs(rules): clarify owner decisions for hooks (#2195)](https://github.com/aimpact-inc/repo-harness/pull/2197). Changes to hook behavior or configuration remain owner decisions.
 - [docs(issue-flow): clarify model-free writer claims (#2127)](https://github.com/aimpact-inc/repo-harness/pull/2128). Keep a dispatched writer claim valid when the seat has no configured model.
 - [docs(herdr-notify): set pane prefix with seats command (#2137)](https://github.com/aimpact-inc/repo-harness/pull/2139). Replace the manual registry edit in both herdr-notify reference copies with `repo-harness seats prefix --repo <path> --pane-prefix <p>`.

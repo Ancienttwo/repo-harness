@@ -236,7 +236,8 @@ export function renderAcceptanceRecord(receipt: ReviewPublishReceipt, claimUrl: 
     '',
     'Findings:',
     '',
-    ...(receipt.findings.length ? receipt.findings.map((entry) => '- ' + findingSummary(entry)) : ['- none']),
+    // One finding is one bullet line: `parseRecordFindings` (board) reads exactly this shape.
+    ...(receipt.findings.length ? receipt.findings.map((entry) => '- ' + findingSummary(entry).replace(/\s+/gu, ' ')) : ['- none']),
     '',
   ].join('\n');
 }
