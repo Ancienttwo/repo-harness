@@ -180,12 +180,12 @@ function publishFixture(scenario = publishScenario()) {
   return { root, gh, receipt: join(root, 'receipt.json') };
 }
 
-async function runPublish(fixture: ReturnType<typeof publishFixture>, receipt: unknown) {
+async function runPublish(fixture: ReturnType<typeof publishFixture>, receipt: unknown, extraArgs: readonly string[] = []) {
   writeFileSync(fixture.receipt, JSON.stringify(receipt));
   const previous = process.env.REPO_HARNESS_GH_BIN;
   process.env.REPO_HARNESS_GH_BIN = fixture.gh.bin;
   try {
-    return await runReview(publishHome(), ['publish', '--repo', fixture.root, '--pr', String(PUBLISH_PR), '--receipt', fixture.receipt, '--json']);
+    return await runReview(publishHome(), ['publish', '--repo', fixture.root, '--pr', String(PUBLISH_PR), '--receipt', fixture.receipt, '--json', ...extraArgs]);
   } finally {
     if (previous === undefined) delete process.env.REPO_HARNESS_GH_BIN;
     else process.env.REPO_HARNESS_GH_BIN = previous;
@@ -233,6 +233,56 @@ test('a FAIL receipt with no blocking finding is invalid and posts nothing', asy
   expect(result.status).toBe(2);
   expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, error: 'review_receipt_invalid', exit_code: 2, posted: [] });
   expect(fixture.gh.calls()).toEqual([]);
+});
+
+const OWNER_BASE = 'https://github.com/example/repo-harness';
+const ownerRecord = (path: string) => OWNER_BASE + path + '#issuecomment-900';
+
+test('a round above 5 without an owner record is refused and posts nothing', async () => {
+  const fixture = publishFixture();
+  const result = await runPublish(fixture, publishReceipt({ round: 6 }));
+  expect(result.status).toBe(2);
+  expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, error: 'review_receipt_invalid', posted: [] });
+  expect(fixture.gh.inputs().some((entry) => entry.input !== '')).toBe(false);
+});
+
+test('a round above 5 with an owner record on the PR names it in the claim and the record', async () => {
+  const url = ownerRecord('/pull/' + PUBLISH_PR);
+  const fixture = publishFixture();
+  const result = await runPublish(fixture, publishReceipt({ round: 6 }), ['--owner-record', url]);
+  expect(result.status, result.stderr).toBe(0);
+  const posts = fixture.gh.inputs().filter((entry) => entry.input !== '').map((entry) => JSON.parse(entry.input));
+  expect(posts[0].body).toContain('Round: 6\n');
+  expect(posts[0].body).toContain('Owner record: ' + url);
+  expect(posts[2].body).toContain('Owner record: ' + url);
+});
+
+test('a round above 5 accepts an owner record on an issue the PR closes and refuses other issues', async () => {
+  const closing = publishFixture(publishScenario({ closing: ['example/repo-harness#2000'] }));
+  const accepted = await runPublish(closing, publishReceipt({ round: 6 }), ['--owner-record', ownerRecord('/issues/2000')]);
+  expect(accepted.status, accepted.stderr).toBe(0);
+  const other = publishFixture(publishScenario({ closing: ['example/repo-harness#2000'] }));
+  const refused = await runPublish(other, publishReceipt({ round: 6 }), ['--owner-record', ownerRecord('/issues/2001')]);
+  expect(refused.status).toBe(2);
+  expect(other.gh.inputs().some((entry) => entry.input !== '')).toBe(false);
+});
+
+test('an owner record must match the closing issue repository and the path kind', async () => {
+  const refuse = async (closing: string, path: string) => {
+    const fixture = publishFixture(publishScenario({ closing: [closing] }));
+    const result = await runPublish(fixture, publishReceipt({ round: 6 }), ['--owner-record', ownerRecord(path)]);
+    expect(result.status).toBe(2);
+    expect(fixture.gh.inputs().some((entry) => entry.input !== '')).toBe(false);
+  };
+  await refuse('other/repo#2000', '/issues/2000');
+  await refuse('example/repo-harness#2000', '/pull/2000');
+});
+
+test('an owner record with a round up to 5 is refused', async () => {
+  const fixture = publishFixture();
+  const result = await runPublish(fixture, publishReceipt({ round: 5 }), ['--owner-record', ownerRecord('/pull/' + PUBLISH_PR)]);
+  expect(result.status).toBe(2);
+  expect(fixture.gh.inputs().some((entry) => entry.input !== '')).toBe(false);
 });
 
 test('a stale subject exits 2 and posts nothing', async () => {
