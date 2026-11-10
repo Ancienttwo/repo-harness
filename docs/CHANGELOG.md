@@ -3,7 +3,34 @@
 All notable changes to this skill are documented here.
 
 ## [Unreleased]
-- Board acceptance of an open Medium pull request needs one `PASS` row of the head that cites an `acceptance claim` of the pull request with its subject and round and records `Model relation: different-family`; `same-family`, `unknown` and unclaimed rows do not count. The board projects `writer_family` from the `Runtime:` of the writer claim of the head branch (`claude` anthropic, `codex` openai, otherwise null). `board review` starts one Medium seat of the other family: a non-Claude gatekeeper for a Claude writer, the Claude reviewer for a Codex writer; an unknown writer family starts no seat (`writer_family_unknown`). High and Low are unchanged. (#2084)
+
+## [0.29.2] - 2026-11-10
+
+### Changed
+
+- Medium acceptance requires a claimed different-family PASS row. `board review` selects a reviewer of a different family. A FAIL row blocks acceptance. (#2084, PR #2098)
+- Dispatch binds each writer claim to the active parent coordinator. It refuses dispatch when no active coordinator claim is available. (#2100, PR #2104)
+- Dispatch writes the writer model in the claim. The board derives the writer family from `Model:`, skips plan-held PRs in review, and accepts `board review --pr <n>`. Claims without a model have an unknown family. (#2101, PR #2105)
+- The newest proven reviewed subject decides merge-only sync carry. A FAIL on that subject or the head blocks carry; a FAIL on an older proven subject does not. (#2107, PR #2110)
+
+### Fixed
+
+- The attention watcher records provider HTTP 5xx failures and retries in the next 15-minute window. Other board read errors still stop it. (#2109, PR #2111)
+- Required check evidence classifies install failures from failed install steps or matching install error text. Setup warnings alone no longer mask assertion or timeout failures. (#2108, PR #2112)
+
+### Documentation
+
+- The issue-flow worker pushes its branch, opens its PR and handles its own fix rounds. The orchestrator retains dispatch, review starts and merge. (#2066, PR #2097)
+- Current reference configs, skill links and localized install instructions use the transferred repository address `aimpact-inc/repo-harness`. (#2095, PR #2099)
+
+### Upgrade
+
+- Run `bun add -g repo-harness@0.29.2 --no-cache && repo-harness update --version 0.29.2`. Restart the Operator server and reload the page.
+- Installed 0.29.1 does not write the `Coordinator:` and `Model:` claim lines, apply the newest-subject carry rule, or keep the attention watcher running after a provider 5xx. Claims without `Model:` have an unknown writer family; start a different-family review by hand when needed.
+
+### Rollback
+
+- Run `bun add -g repo-harness@0.29.1 --no-cache && repo-harness update --version 0.29.1`. Restart the Operator server and reload the page.
 
 ## [0.29.1] - 2026-11-09
 
@@ -22,7 +49,7 @@ Bash tripwire and a Markdown-aware reference parser.
 
 - Review by risk follows the owner ABD decision (#2079). High is only permissions, sandbox and tool grants; hooks and the mutation guard; credentials and secrets; deletion; release, publish and deploy; merge and push paths; and the change hazard list. Code that writes GitHub comments, records, reviews or labels is Medium. Low is docs-only, tests-only, the projection PR, or a fix of at most 50 changed lines outside the High list. `assets/review-high-list.v1.json` holds the path-visible High list; `agentic-development-flow.md` renders it. Board rule R5 reads it instead of the capability count. A changed path on the High list or the hazard list, or an incomplete file list, sets the effective tier of a pull request to High, so `board review` and acceptance use the same tier.
 - Board acceptance of an open High or unknown-tier pull request needs `PASS` rows of the head that cite two distinct `acceptance claim` comments of the pull request with the row's subject and round (the comment id is the identity), at least one with `Model relation: different-family`, and no `FAIL` row. One review no longer accepts a High head. A missing, blank or malformed `Claim:`, or one that names no claim comment, proves no claim, and `Model relation: unknown` (an unknown writer family) never counts as the different-family review. `claude_review` is now a projection of that rule: `pending` for every open High head that does not meet it and has no Claude row, a Claude writer included, so `board review` starts the Claude reviewer seat and A10 reports the head until the second review exists. The writer claim's `Runtime:` no longer decides it. A sync head is a new head: High needs two sync check rows by the same rule, Medium one (`acceptor.md` §2.2). `repo-harness review publish` accepts rounds 1 to 5 (round 5 is the hard stop), so a High head that converges in round 4 or 5 also gets two claimed rows; the hand-posted record of a round above 3 is retired. Medium and Low are unchanged. (#2061)
-- Board acceptance carries the acceptance rows of an earlier reviewed head to a later head that is a merge-only sync of it. Git must prove two facts: the reviewed head is an ancestor of the head, and each commit that the head adds outside the reviewed head and the base is the clean automatic merge of a base commit (`git merge-tree --write-tree` of its parents exits 0 with the tree of the merge commit, one merge base). The board reads the rows of the head and of the newest proven reviewed head, and a FAIL row on any proven head or on the head stops the carry. An empty PR diff, or a git error on any candidate, gives no proof. The board then reports `via: sync` with `carried_from: <reviewed head>`, so a sync after a merge needs CI only. A conflict (even one resolved to the PR side), an edit in a merge, a new commit, a failed git step or fetch, an incomplete file list or a hook path keeps the head unaccepted until its own review. (#2074)
+- Board acceptance carries the acceptance rows of an earlier reviewed head to a later head that is a merge-only sync of it. Git must prove two facts: the reviewed head is an ancestor of the head, and each commit that the head adds outside the reviewed head and the base is the clean automatic merge of a base commit (`git merge-tree --write-tree` of its parents exits 0 with the tree of the merge commit, one merge base). The board reads the rows of the head and of the newest proven reviewed subject. A FAIL row on that subject or the head stops the carry; a FAIL on an older proven subject does not. (#2107) An empty PR diff, or a git error on any candidate, gives no proof. The board then reports `via: sync` with `carried_from: <reviewed head>`, so a sync after a merge needs CI only. A conflict (even one resolved to the PR side), an edit in a merge, a new commit, a failed git step or fetch, an incomplete file list or a hook path keeps the head unaccepted until its own review. (#2074)
 - The repository moved to `aimpact-inc/repo-harness` (same repository id; old URLs redirect). The package `repository.url`, the external tooling doc URL in the tool catalog, and the install and clone lines in README and `docs/usage.md` use the new owner. Localized READMEs and the rest follow in #2095.
 
 ### Fixed
