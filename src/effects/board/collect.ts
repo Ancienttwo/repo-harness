@@ -52,7 +52,7 @@ export function pullRequestsQuery(numbers: readonly number[]): string {
 }
 
 export class BoardCollectError extends Error {
-  constructor(message: string) {
+  constructor(message: string, readonly httpStatus: number | null = null) {
     super(message);
     this.name = 'BoardCollectError';
   }
@@ -85,7 +85,11 @@ function runGh(input: GhInput, args: readonly string[]): { readonly status: numb
 /** One gh call that prints JSON; a failed call or invalid JSON is a `BoardCollectError`. */
 export function readGhJson(input: GhInput, args: readonly string[]): unknown {
   const result = runGh(input, args);
-  if (result.status !== 0) throw new BoardCollectError(`gh ${args.slice(0, 2).join(' ')} failed: ${(result.stderr ?? '').trim() || `exit ${result.status}`}`);
+  if (result.status !== 0) {
+    const stderr = (result.stderr ?? '').trim();
+    const status = /\bHTTP (\d{3})\b/u.exec(stderr);
+    throw new BoardCollectError(`gh ${args.slice(0, 2).join(' ')} failed: ${stderr || `exit ${result.status}`}`, status === null ? null : Number(status[1]));
+  }
   try {
     return JSON.parse(result.stdout);
   } catch {
