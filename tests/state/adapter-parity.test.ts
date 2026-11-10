@@ -4,7 +4,6 @@ import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import type {
   EffectiveState,
-  EffectiveStateRiskInput,
   StateSnapshot,
 } from '../../src/core/state/types';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
@@ -17,11 +16,8 @@ import {
 } from '../../src/effects/state/resolve-effective-state';
 import { stateVersionOwnerPath } from '../../src/effects/state/git-state-version-store';
 import {
-  CLI,
   EFFECTIVE_STATE_SCENARIOS,
   HOOK_ENTRY,
-  PLAN,
-  ROOT,
   createEffectiveStateFixture,
   effectiveStateCliRiskArgs,
   runStateCli,

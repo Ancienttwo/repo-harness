@@ -1,18 +1,14 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
-  realpathSync,
   rmSync,
   writeFileSync
 } from "fs";
-import { tmpdir } from "os";
 import { join } from "path";
 
-import { copyHelpers, HELPER_DIR, ROOT } from "./helpers/helper-script-fixture";
+import { copyHelpers } from "./helpers/helper-script-fixture";
 import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixture";
 
 setDefaultTimeout(30000);

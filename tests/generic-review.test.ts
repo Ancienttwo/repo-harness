@@ -968,9 +968,9 @@ for (const harness of ['codex', 'claude', 'pi'] as const) darwinTest(`zero-model
 
 // Mandatory B first proof. Dummy Node processes only; no OAR/vendor Session.
 darwinTest('OAR isolation: Seatbelt denies paired host and descendant writes with output-only allowance', async () => {
-  const { mkdirSync, writeFileSync, symlinkSync, realpathSync } = await import('node:fs');
+  const { mkdirSync, writeFileSync, symlinkSync } = await import('node:fs');
   const { spawnSync } = await import('node:child_process');
-  const { reviewIsolationPolicy, reviewHostTemporaryDirectory, prepareCodexHome } = await import('../src/effects/review/review-isolation');
+  const { reviewIsolationPolicy, reviewHostTemporaryDirectory } = await import('../src/effects/review/review-isolation');
   const root = tmpWorkspace('oar-isolation'); roots.push(root);
   const subject = join(root, 'subject'), primary = join(root, 'primary'), owner = join(root, 'owner-record'), journal = join(root, 'journal'), git = join(root, 'git-common'), output = join(root, 'output');
   for (const dir of [subject, primary, owner, journal, git, output]) mkdirSync(dir);
@@ -1208,7 +1208,7 @@ let calls=0;await assert.rejects(openScriptedReviewHost({cwd:output},()=>{},asyn
 });
 
 darwinTest('OAR installation is probed by the fixed Node host, never the Bun controller', async () => {
-  const { mkdirSync, writeFileSync, realpathSync, chmodSync } = await import('node:fs');
+  const { writeFileSync, chmodSync } = await import('node:fs');
   const probeReviewInstallation = (await import('../src/effects/review-runner/task-review-runner')).taskReviewRunner.installation;
   const root = tmpWorkspace('oar-node-installation'); roots.push(root);
   const trace = join(root, 'parent.txt'), executable = join(root, 'fake-codex');
