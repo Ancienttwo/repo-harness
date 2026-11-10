@@ -48,11 +48,13 @@ export function buildPublicationCommand(): Command {
       }
     });
   withSelection(publication.command('merge')
-    .description('Squash-merge one same-repository PR when the base policy enables acceptance merge and every gate passes')
+    .description('Squash-merge one same-repository PR, or enqueue it when the base requires a merge queue, when the base policy enables acceptance merge and every gate passes')
     .option('--batch', 'Merge an integration/<parent>-batch-<n> PR with a two-parent merge commit instead of a squash'),
   'Output the publication merge result document')
     .action((options: PullRequestSelectionOptions & { readonly batch?: true }) => {
-      const result = executePublicationMerge({ ...selection(options), batch: options.batch === true });
+      const result = executePublicationMerge({ ...selection(options), batch: options.batch === true,
+        // The queue wait can take the length of a CI run; stderr shows the entry while stdout keeps the one result document.
+        on_queued: (entry) => process.stderr.write(`${JSON.stringify({ queued: entry })}\n`) });
       process.stdout.write(`${JSON.stringify(result.document)}\n`);
       process.exitCode = result.exit_code;
     });
