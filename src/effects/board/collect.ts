@@ -1,4 +1,4 @@
-import { spawnSync } from 'child_process';
+import { execFile, spawnSync, type ExecFileException } from 'child_process';
 import { architecturePort, isArchitectureUnavailable, type ArchctxProviderOptions } from '../../core/architecture/contracts';
 import {
   linkedPullRequests, projectBoard, seatTerminal, syncCarryCandidates, type BoardAcceptanceMergeV1, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1,
@@ -12,7 +12,7 @@ import { normalizeCapabilityPath } from '../../core/capabilities/registry';
 import { HC_MIN_VERSION } from '../../core/terminal/herdr-pin';
 import { parsePublicationPolicy, policyFileFromContents, PUBLICATION_POLICY_PATH, type PolicyFileAtRef } from '../../core/publication/acceptance-merge-policy';
 import type { PullRequestReadinessV2, PullRequestSelectionV2 } from '../../core/publication/merge-readiness';
-import { gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
+import { GitExecError, gitExecFile, gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { collectPullRequestMergeReadiness } from '../publication/merge-readiness';
 import { provenMergeOnlySyncs, type MergeOnlySyncInput } from './merge-only-sync';
 
@@ -96,7 +96,10 @@ function runGh(input: GhInput, args: readonly string[]): { readonly status: numb
 
 /** One gh call that prints JSON; a failed call or invalid JSON is a `BoardCollectError`. */
 export function readGhJson(input: GhInput, args: readonly string[]): unknown {
-  const result = runGh(input, args);
+  return ghJson(args, runGh(input, args));
+}
+
+function ghJson(args: readonly string[], result: { readonly status: number | null; readonly stdout: string; readonly stderr?: string }): unknown {
   if (result.status !== 0) {
     const stderr = (result.stderr ?? '').trim();
     const status = /\(HTTP (\d{3})\)$/u.exec(stderr) ?? /^gh: HTTP (\d{3})$/mu.exec(stderr) ?? /^HTTP (\d{3}):/mu.exec(stderr);
@@ -220,11 +223,21 @@ export function pathOwners(input: Pick<BoardCollectInput, 'repo_root' | 'archctx
   return { status: 'observed', owners: Object.freeze(paths.map(path => ({ ...owners.get(normalizeCapabilityPath(path, input.repo_root))!, path }))) };
 }
 
-/** The GitHub numeric id of the local repository: the value of the `repo-harness.repository` label. */
-export function readRepositoryId(input: GhInput): number {
-  const id = (readGhJson(input, ['api', '--hostname', 'github.com', 'repos/{owner}/{repo}']) as { id?: unknown } | null)?.id;
+const REPOSITORY_ID_ARGS = ['api', '--hostname', 'github.com', 'repos/{owner}/{repo}'] as const;
+
+function repositoryId(value: unknown): number {
+  const id = (value as { id?: unknown } | null)?.id;
   if (!Number.isSafeInteger(id) || (id as number) < 1) throw new BoardCollectError('the local GitHub repository id is unknown');
   return id as number;
+}
+
+/** The GitHub numeric id of the local repository: the value of the `repo-harness.repository` label. */
+export function readRepositoryId(input: GhInput): number {
+  return repositoryId(readGhJson(input, REPOSITORY_ID_ARGS));
+}
+
+function hasGitHubRemote(remotes: string, isGitHubRemote: (url: string) => boolean): boolean {
+  return remotes.split('\n').some(line => line !== '' && isGitHubRemote(line.slice(line.indexOf(' ') + 1)));
 }
 
 /** The repository id of a checkout, or null when no remote URL of it is a GitHub URL: gh then has no repository to read. */
@@ -232,8 +245,37 @@ export function readLocalRepositoryId(input: GhInput, isGitHubRemote: (url: stri
   const remotes = gitSpawnSync(['config', '--local', '--get-regexp', '^remote\\..*\\.url$'], { cwd: input.repo_root, encoding: 'utf8' });
   // Exit 1: the checkout has no remote URL.
   if (remotes.error !== undefined || (remotes.status !== 0 && remotes.status !== 1)) throw new BoardCollectError('git did not list the remote URLs of this checkout');
-  const github = remotes.stdout.split('\n').some(line => line !== '' && isGitHubRemote(line.slice(line.indexOf(' ') + 1)));
-  return github ? readRepositoryId(input) : null;
+  return hasGitHubRemote(remotes.stdout, isGitHubRemote) ? readRepositoryId(input) : null;
+}
+
+/** The same local admission, query and decoders, with cancellable children for resident observers. */
+export async function readLocalRepositoryIdAsync(input: {
+  readonly repo_root: string; readonly gh_bin?: string; readonly env: NodeJS.ProcessEnv; readonly signal: AbortSignal;
+}, isGitHubRemote: (url: string) => boolean): Promise<number | null> {
+  let remotes: string;
+  try {
+    remotes = await gitExecFile(['config', '--local', '--get-regexp', '^remote\\..*\\.url$'], { cwd: input.repo_root, env: input.env, signal: input.signal });
+  } catch (error) {
+    if (error instanceof GitExecError && error.status === 1) remotes = '';
+    else throw error;
+  }
+  if (!hasGitHubRemote(remotes, isGitHubRemote)) return null;
+  if (input.signal.aborted) throw new DOMException('repository read aborted', 'AbortError');
+  const env = withoutRepositorySelectingGitEnv(input.env);
+  delete env.GH_REPO;
+  const result = await new Promise<{ readonly status: number | null; readonly stdout: string; readonly stderr: string }>((resolve, reject) => {
+    let output: { readonly error: ExecFileException | null; readonly stdout: string; readonly stderr: string };
+    const child = execFile(input.gh_bin ?? input.env.REPO_HARNESS_GH_BIN ?? 'gh', [...REPOSITORY_ID_ARGS], {
+      cwd: input.repo_root, env: { ...env, GH_HOST: 'github.com' }, signal: input.signal, timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL', encoding: 'utf8',
+    }, (error, stdout, stderr) => { output = { error, stdout, stderr }; });
+    // The abort callback can run before exit. Reap the child before this read settles.
+    child.once('close', () => {
+      if (input.signal.aborted) reject(new DOMException('repository read aborted', 'AbortError'));
+      else if (output.error && typeof output.error.code !== 'number') reject(output.error);
+      else resolve({ status: output.error?.code as number ?? 0, stdout: output.stdout, stderr: output.stderr });
+    });
+  });
+  return repositoryId(ghJson(REPOSITORY_ID_ARGS, result));
 }
 
 /** The read of the parent issue, every page of its sub-issues and their comments; the board and dispatch share it. */

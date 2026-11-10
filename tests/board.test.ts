@@ -11,7 +11,7 @@ import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectPullRequestMergeReadiness } from '../src/effects/publication/merge-readiness';
-import { collectBoard, readGhJson, readParent, readLocalRepositoryId, type BoardCollectInput } from '../src/effects/board/collect';
+import { collectBoard, readGhJson, readParent, readLocalRepositoryId, readLocalRepositoryIdAsync, seatTerminalsWithBranches, type BoardCollectInput } from '../src/effects/board/collect';
 import { runBoardMerge } from '../src/effects/board/merge';
 import { boardMergeDecisions } from '../src/core/board/merge';
 import { provenMergeOnlySyncs } from '../src/effects/board/merge-only-sync';
@@ -22,7 +22,7 @@ import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migr
 import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
 import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herdr-core';
 import { ADVISOR_TRANSCRIPT_LINE_WITHHELD, AdvisorSeatError, advisorSeatSendFailure, advisorTranscriptLines, advisorTurnState, decodeAdvisorSeatTranscript, readAdvisorSeat, seatStatusMessage, SEAT_STATUS_MESSAGE_MAX_CHARS, sendToAdvisorSeat } from '../src/core/board/advisor-seat';
-import { decodeBoardParents, type BoardParentsV1 } from '../src/core/board/parents';
+import { decodeBoardParents, decodeBoardSeats, projectBoardSeats, joinBoardParents, type BoardParentsV1 } from '../src/core/board/parents';
 import { BoardSourceError } from '../src/core/board/source';
 import { planDispatch } from '../src/core/board/dispatch';
 import { DEFAULT_SEATS_CONFIG } from '../src/core/board/seats-settings';
@@ -35,6 +35,7 @@ import type { ReviewObserver } from '../src/effects/board/review';
 import { BoardCollectError } from '../src/effects/board/collect';
 import type { ModelRelation } from '../src/core/review/acceptance-receipt';
 import boardParentsFixture from '../src/operator-web/fixtures/board-parents.json';
+import boardSeatsFixture from '../src/operator-web/fixtures/board-seats.json';
 
 // Recorded on 2026-11-03: the two GraphQL reads of parent #1474 with the collector's own queries, the newest
 // scheduled ci.yml run (cut to the fields the collector reads), and `hc ls --json` / `hc get --json` of five seat
@@ -688,18 +689,18 @@ test('decoders refuse a missing or invalid plan revision, merge policy or seat b
   const plan = (revision: unknown) => ({ ...recorded, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: recorded.observed_at, revision, block: {} } });
   const seat = (branch: unknown) => [{ ...recorded.execution.terminals[0], branch }];
   const board = (branch: unknown) => ({ ...recorded, execution: { status: 'observed', terminals: seat(branch) } });
-  const parents = (branch: unknown) => ({ ...boardParentsFixture, seats: seat(branch) });
+  const parents = (branch: unknown) => ({ ...boardSeatsFixture, seats: seat(branch).map(row => ({ ...row, parent: '1474' })) });
   const { acceptance_merge: _dropped, ...noPolicy } = recorded;
   for (const invalid of [plan(undefined), plan(0), plan(1.5), plan('1'), noPolicy, { ...recorded, acceptance_merge: 'maybe' }, board(undefined), board('')]) {
     expect(() => decodeBoard(invalid)).toThrow('invalid board');
   }
   for (const valid of [plan(null), plan(7), { ...recorded, acceptance_merge: 'unknown' }, board(null), board('main')]) expect(decodeBoard(valid)).toEqual(valid);
-  for (const invalid of [parents(undefined), parents(''), { ...parents(null), seats: undefined }]) expect(() => decodeBoardParents(invalid)).toThrow('board seat');
-  expect(decodeBoardParents(parents('main')).seats[0]!.branch).toBe('main');
+  for (const invalid of [parents(undefined), parents(''), { ...parents(null), seats: undefined }]) expect(() => decodeBoardSeats(invalid)).toThrow('board seat');
+  expect(decodeBoardSeats(parents('main')).seats[0]!.branch).toBe('main');
   // A status message that leaves the server is one redacted line within the limit, and null is no message.
-  const message = (status_msg: unknown) => ({ ...boardParentsFixture, seats: [{ ...recorded.execution.terminals[0], status_msg }] });
-  for (const invalid of [undefined, 7, 'a\nb', 'c'.repeat(SEAT_STATUS_MESSAGE_MAX_CHARS + 1), `ghp_${'a'.repeat(30)}`]) expect(() => decodeBoardParents(message(invalid))).toThrow('invalid board seat status message on t1');
-  for (const valid of [null, 'c'.repeat(SEAT_STATUS_MESSAGE_MAX_CHARS)]) expect(decodeBoardParents(message(valid)).seats[0]!.status_msg).toBe(valid);
+  const message = (status_msg: unknown) => ({ ...boardSeatsFixture, seats: [{ ...recorded.execution.terminals[0], status_msg, parent: '1474' }] });
+  for (const invalid of [undefined, 7, 'a\nb', 'c'.repeat(SEAT_STATUS_MESSAGE_MAX_CHARS + 1), `ghp_${'a'.repeat(30)}`]) expect(() => decodeBoardSeats(message(invalid))).toThrow('invalid board seat status message on t1');
+  for (const valid of [null, 'c'.repeat(SEAT_STATUS_MESSAGE_MAX_CHARS)]) expect(decodeBoardSeats(message(valid)).seats[0]!.status_msg).toBe(valid);
   expect(() => decodeBoard({ ...recorded, execution: { status: 'observed', terminals: message('a\nb').seats } })).toThrow('invalid board seat status message on t1');
 });
 
@@ -928,7 +929,9 @@ test('seat branch: git in the terminal directory on both reads; each unreadable 
   const expected = [['t1', 'feat/1806-seat'], ['t2', null], ['t3', null], ['t4', null], ['t5', null]];
   const execution = replay({ host: boardHostPorts(hc.options) }).execution;
   expect(execution.status === 'observed' && execution.terminals.map(seat => [seat.address, seat.branch])).toEqual(expected);
-  const list = collectBoardParents({ repo_root: hc.root, now: () => REPLAY_NOW, host: boardHostPorts(hc.options), gh_runner: () => ({ status: 0, stdout: fixture('open-issues.graphql.json') }) });
+  const read = boardHostPorts(hc.options).seatTerminals('1186405141');
+  if (read.status !== 'observed') throw new Error(read.reason);
+  const list = projectBoardSeats('1186405141', REPLAY_NOW.toISOString(), seatTerminalsWithBranches(read.terminals));
   expect(list.seats.map(seat => [seat.address, seat.branch])).toEqual(expected);
   expect(JSON.stringify([execution, list])).not.toContain(plain);
   expect(JSON.stringify([execution, list])).not.toContain(branched);
@@ -987,6 +990,39 @@ function replayParents(gh: (args: readonly string[]) => GhAnswer, hc = true): Bo
   return collectBoardParents({ repo_root: root, now: () => REPLAY_NOW, gh_runner: gh, host: boardHostPorts({ env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES } }) });
 }
 
+test('parent counts retain nonempty seat labels with invalid issue or PR labels, and exclude an empty seat label', () => {
+  const { parent: _parent, seat_status: _status, seat: _seat, issue: _issue, pr: _pr, ...terminal } = boardSeatsFixture.seats[0]!;
+  const seats = projectBoardSeats('1186405141', REPLAY_NOW.toISOString(), [
+    { ...terminal, state: 'live', labels: { seat: 'worker', parent: '1474', issue: 'invalid' } },
+    { ...terminal, state: 'live', address: 't2', labels: { seat: 'worker', parent: '1474', pr: 'invalid' } },
+    { ...terminal, state: 'live', address: 't3', labels: { seat: '', parent: '1651' } },
+  ]);
+  expect(decodeBoardSeats(JSON.parse(JSON.stringify(seats))).seats.map(seat => [seat.seat, seat.seat_status])).toEqual([
+    ['worker', 'unavailable'], ['worker', 'unavailable'], ['', 'unavailable'],
+  ]);
+  const joined = joinBoardParents(decodeBoardParents(boardParentsFixture), seats);
+  expect(joined.parents.map(parent => [parent.number, parent.seats])).toEqual([[1474, 2], [1651, 0]]);
+  expect(joined.active_parent).toBe(1474);
+});
+
+test('async repository identity shares local admission and repository-id decoding; a checkout without a GitHub remote starts no gh', async () => {
+  const root = tmpWorkspace('board-async-identity'); roots.push(root); initGitRepo(root);
+  const log = join(root, 'gh.log'), gh = join(root, 'gh');
+  writeFileSync(gh, `#!${process.execPath}\nrequire('node:fs').appendFileSync(process.env.IDENTITY_LOG, JSON.stringify(process.argv.slice(2)) + '\\n');\nconsole.log(process.env.IDENTITY_REPLY);\n`, { mode: 0o755 });
+  const env = { ...process.env, IDENTITY_LOG: log, IDENTITY_REPLY: '{"id":1186405141}' };
+  const input = { repo_root: root, gh_bin: gh, env, signal: new AbortController().signal };
+  const isGitHubRemote = (url: string) => githubRemoteRepository(url) !== null;
+  expect(await readLocalRepositoryIdAsync(input, isGitHubRemote)).toBeNull();
+  expect(existsSync(log)).toBe(false);
+  expect(run('git', ['config', 'remote.origin.url', 'https://gitlab.com/local/repo.git'], root).status).toBe(0);
+  expect(await readLocalRepositoryIdAsync(input, isGitHubRemote)).toBeNull();
+  expect(existsSync(log)).toBe(false);
+  expect(run('git', ['config', 'remote.origin.url', 'https://github.com/aimpact-inc/repo-harness.git'], root).status).toBe(0);
+  expect(await readLocalRepositoryIdAsync(input, isGitHubRemote)).toBe(1186405141);
+  expect(JSON.parse(readFileSync(log, 'utf8'))).toEqual(['api', '--hostname', 'github.com', 'repos/{owner}/{repo}']);
+  await expect(readLocalRepositoryIdAsync({ ...input, env: { ...env, IDENTITY_REPLY: '{"id":0}' } }, isGitHubRemote)).rejects.toThrow('the local GitHub repository id is unknown');
+});
+
 test('parent list: one paginated issue read and one hc list give the open parents with progress and live seats, seats first', () => {
   // Recorded on 2026-11-04: `gh api graphql --paginate --slurp` with OPEN_ISSUES_QUERY on Ancienttwo/repo-harness, one page
   // of twelve open issues; #1651 is the only one with sub-issues. #1474 is closed now, so the replay adds it as an older
@@ -1002,9 +1038,9 @@ test('parent list: one paginated issue read and one hc list give the open parent
   expect(list).toEqual(decodeBoardParents(boardParentsFixture));
   expect(list.repository).toBe('Ancienttwo/repo-harness');
   // t1-t3 have a seat label; t4 has none, and t5 is a seat of another repository with the same parent.
-  expect(list.parents.map(parent => [parent.number, `${parent.sub_issues.completed}/${parent.sub_issues.total}`, parent.seats])).toEqual([[1474, '2/9', 3], [1651, '3/9', 0]]);
+  expect(joinBoardParents(list, decodeBoardSeats(boardSeatsFixture)).parents.map(parent => [parent.number, `${parent.sub_issues.completed}/${parent.sub_issues.total}`, parent.seats])).toEqual([[1474, '2/9', 3], [1651, '3/9', 0]]);
   // The seats list keeps every seat terminal of the repository with its hc agent kind, status word and raw parent label.
-  expect(list.seats.map(seat => [seat.address, seat.seat_status === 'observed' && [seat.seat, seat.issue, seat.pr], seat.parent, seat.agent, seat.status]))
+  expect(decodeBoardSeats(boardSeatsFixture).seats.map(seat => [seat.address, seat.seat_status === 'observed' && [seat.seat, seat.issue, seat.pr], seat.parent, seat.agent, seat.status]))
     .toEqual([['t1', ['worker', 1476, 1499], '1474', 'codex', 'blocked'], ['t2', ['worker', 1475, 1491], '1474', 'claude-code', 'done'], ['t3', ['orchestrator', null, null], '1474', null, 'idle']]);
   expect(calls).toHaveLength(1);
   expect(calls[0]!.filter(arg => !arg.startsWith('query='))).toEqual(['api', 'graphql', '--hostname', 'github.com', '--paginate', '--slurp', '-f', '-F', 'owner={owner}', '-F', 'name={repo}']);
@@ -1018,8 +1054,11 @@ test('parent list: one paginated issue read and one hc list give the open parent
   expect([
     failure(() => replayParents(() => ({ status: 1, stdout: '', stderr: 'HTTP 502' }))),
     failure(() => replayParents(answer([split[0]]))),
-    failure(() => replayParents(answer(pages), false)),
-  ]).toEqual(['parents_github_failed', new BoardSourceError('').name, 'parents_hc_failed']);
+  ]).toEqual(['parents_github_failed', new BoardSourceError('').name]);
+  expect(replayParents(answer(pages), false)).toEqual(list);
+  expect(() => decodeBoardParents({ ...list, protocol: 4 })).toThrow('unsupported board parents protocol: 4');
+  expect('seats' in list).toBe(false);
+  expect(list.parents.every(parent => !('seats' in parent))).toBe(true);
 });
 
 // The round-4 records of #1499 (PASS) and #1494 (FAIL) as posted: bare SHAs in the subject cell.
@@ -1443,8 +1482,9 @@ test('watch service: --watch refuses a terminal without the service labels; star
   expect(office.status === 'observed' && office.terminals.slice(0, 2).map(terminal => terminal.status_msg)).toEqual(['push failed: ghp_[REDACTED]', null]);
   // The parent list of the repository keeps every seat, with or without a parent label (#1785); the watcher and the
   // other repository never show, and an invalid label shows as such.
-  const officeSeats = collectBoardParents({ repo_root: repositoryTerminals.root, now: () => REPLAY_NOW, host: boardHostPorts(repositoryTerminals.options),
-    gh_runner: () => ({ status: 0, stdout: fixture('open-issues.graphql.json') }) }).seats;
+  const seatRead = boardHostPorts(repositoryTerminals.options).seatTerminals('1186405141');
+  if (seatRead.status !== 'observed') throw new Error(seatRead.reason);
+  const officeSeats = projectBoardSeats('1186405141', REPLAY_NOW.toISOString(), seatTerminalsWithBranches(seatRead.terminals)).seats;
   expect(officeSeats.map(seat => [seat.address, seat.seat_status === 'observed' ? [seat.seat, seat.issue] : seat.reason, seat.parent, seat.agent])).toEqual([
     ['t7', ['orchestrator', null], null, 'claude'], ['t11', ['advisor', null], null, 'codex'], ['t12', ['orchestrator', null], '1503', 'claude'],
     ['t16', ['worker', 1721], '1474', 'claude'], ['t17', ['worker', 1773], '1503', 'codex'], ['t18', ['worker', 1774], null, 'claude'],

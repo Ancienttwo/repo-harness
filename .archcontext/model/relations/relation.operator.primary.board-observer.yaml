@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.primary.board-observer
+kind: calls
+source: component.operator.primary
+target: component.operator.board-observer
+intent: Start one repository seats observer per server, serve its seats document from memory with an ETag and close its streams with the server.

@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { spawn } from 'child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import {
@@ -39,6 +39,31 @@ afterEach(() => {
 });
 
 describe('host test queue', () => {
+  test.each(['ESRCH', 'EPERM', 'EINVAL', undefined])('process liveness: group probe %s controls queue state and preserves tickets on error', async code => {
+    const env = queueEnv(), pid = 2_147_483_647, pgid = pid - 1;
+    const directory = join(env.REPO_HARNESS_HOME!, 'host-test-queue', 'tickets');
+    mkdirSync(directory, { recursive: true });
+    const ticket = join(directory, '0-holder.json');
+    writeFileSync(ticket, JSON.stringify({ token: 'holder', pid, start_time: 'exited', kind: 'full', cwd: ROOT,
+      command: ['holder'], enqueued_at: new Date().toISOString(), acquired_at: null, lock_token: null, pgid }));
+    const originalKill = process.kill;
+    const error = Object.assign(new Error('group probe failed'), { code });
+    const probe = spyOn(process, 'kill').mockImplementation((target, signal) => {
+      if (target === pid && signal === 0) throw Object.assign(new Error('wrapper exited'), { code: 'ESRCH' });
+      if (target === -pgid && signal === 0) throw error;
+      return originalKill(target, signal);
+    });
+    try {
+      if (code === 'ESRCH' || code === 'EPERM') {
+        expect(readHostTestQueueState(env).waiting[0]?.liveness).toBe(code === 'ESRCH' ? 'dead' : 'live');
+      } else {
+        expect(() => readHostTestQueueState(env)).toThrow(error);
+        await expect(enter(env, 'affected', 'next')).rejects.toThrow(error);
+        expect(existsSync(ticket)).toBe(true);
+      }
+    } finally { probe.mockRestore(); }
+  });
+
   test('a free queue grants the run, shows its holder and is free after release', async () => {
     const env = queueEnv();
     const handle = await enter(env, 'affected', 'first');

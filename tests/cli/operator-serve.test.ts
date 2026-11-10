@@ -38,7 +38,8 @@ import { decodeBoard } from '../../src/core/board/board';
 import { BoardReadError, readRepositoryAdvisorTranscript, readRepositoryBoard, readRepositoryBoardParents, sendRepositoryAdvisor, type BoardParentsReadInput, type BoardReadInput } from '../../src/effects/operator/board-read';
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import boardParents from '../../src/operator-web/fixtures/board-parents.json';
-import { decodeBoardParents } from '../../src/core/board/parents';
+import boardSeats from '../../src/operator-web/fixtures/board-seats.json';
+import { decodeBoardParents, decodeBoardSeats } from '../../src/core/board/parents';
 import { boardSummary, decodeBoardSummaries } from '../../src/core/board/summary';
 
 import {
@@ -751,7 +752,7 @@ describe('operator serve command and HTTP boundary', () => {
     let hold: () => void = () => {};
     let started: () => void = () => {};
     const boardStarted = new Promise<void>(resolve => { started = resolve; });
-    const server = await startOperatorServer({ port: 0, max_concurrency: 1, read_board_parents: input => { inputs.push(input); return result(); },
+    const server = await startOperatorServer({ port: 0, max_concurrency: 1, read_board_seats: () => ({ state: 'ready', value: decodeBoardSeats(boardSeats) }), read_board_parents: input => { inputs.push(input); return result(); },
       read_board: () => new Promise(resolve => { hold = () => resolve(decodeBoard(board1474)); started(); }) });
     const get = (path: string, init: RequestInit = {}) => fetch(`${server.url}${path}`, init);
     const code = async (response: Response) => ((await response.json()) as { error: { code: string } }).error.code;
@@ -766,8 +767,8 @@ describe('operator serve command and HTTP boundary', () => {
         const response = await get(path);
         expect([response.status, await code(response)]).toEqual([status, failure]);
       }
-      // Protocol 1 is the retired parent list without the seats list (#1785).
-      result = async () => ({ ...list, protocol: 1 });
+      // Protocol 4 carried seats and counts. The decoder refuses it.
+      result = async () => ({ ...list, protocol: 4 });
       const invalid = await get(path);
       expect([invalid.status, await code(invalid)]).toEqual([503, 'parents_invalid']);
       const head = await get(path, { method: 'HEAD' });
@@ -777,6 +778,9 @@ describe('operator serve command and HTTP boundary', () => {
       await boardStarted;
       // The summaries route takes no slot of the cap.
       expect((await get('/api/v1/repositories/repo-a/board/summaries?parent=1474')).status).toBe(200);
+      const seats = await get('/api/v1/repositories/repo-a/board/seats');
+      expect([seats.status, await seats.json()]).toEqual([200, boardSeats]);
+      expect((await get('/api/v1/repositories/repo-a/board/seats?parent=1474')).status).toBe(400);
       const busy = await get(path);
       expect([busy.status, await code(busy)]).toEqual([503, 'parents_busy']);
       hold();
@@ -1356,7 +1360,7 @@ test('architecture GET and HEAD match CLI digests and keep closed argv with zero
   const spawnSpy = spyOn(childProcess, 'spawn').mockImplementation(((command: string, args: string[], options: unknown) => {
     spawned.push([command, ...args]); return originalSpawn(command, args, options as never);
   }) as typeof childProcess.spawn);
-  const server = await startOperatorServer({ port: 0, env, timeout_ms: 10000 });
+  const server = await startOperatorServer({ port: 0, env, timeout_ms: 10000, read_board_seats: () => ({ state: 'pending' }) });
   const path = `/api/v1/repositories/${registry.ids[0]}/architecture/modules`;
   try {
     const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
@@ -1433,7 +1437,7 @@ test('architecture rejects F-01 query injections before any child and refuses cr
   const registry = registryHome([{ path: root, accessMode: 'read_only' }]), git = architectureGit(scratch);
   writeFileSync(join(scratch, 'index.html'), '<!doctype html><title>Static fixture</title>');
   const processSpy = spyOn(childProcess, 'spawn');
-  const server = await startOperatorServer({ port: 0, static_root: scratch, env: { ...process.env, ...registry.env, ...git.env } });
+  const server = await startOperatorServer({ port: 0, static_root: scratch, read_board_seats: () => ({ state: 'pending' }), env: { ...process.env, ...registry.env, ...git.env } });
   const path = `/api/v1/repositories/${registry.ids[0]}/architecture/modules/${MODULE_ID}/review-prompt`;
   try {
     for (const method of ['GET', 'HEAD']) {

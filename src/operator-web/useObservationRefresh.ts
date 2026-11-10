@@ -9,7 +9,7 @@ const OBSERVATION_INTERVAL_MS = 30_000;
 export function useObservationRefresh(
   read: (signal: AbortSignal) => Promise<boolean>,
   identity: string,
-  { enabled = true, immediate = true }: { readonly enabled?: boolean; readonly immediate?: boolean } = {},
+  { enabled = true, immediate = true, interval = OBSERVATION_INTERVAL_MS }: { readonly enabled?: boolean; readonly immediate?: boolean; readonly interval?: number } = {},
 ): () => void {
   const requestRef = useRef<() => void>(() => {});
   const pausedRef = useRef(false);
@@ -28,7 +28,7 @@ export function useObservationRefresh(
     const schedule = () => {
       if (disposed || active || !visible()) return;
       clearTimer();
-      timer = setTimeout(request, OBSERVATION_INTERVAL_MS * 2 ** failures);
+      timer = setTimeout(request, interval * 2 ** failures);
     };
     const request = () => {
       if (disposed) return;
@@ -59,6 +59,6 @@ export function useObservationRefresh(
       document.removeEventListener('visibilitychange', visibilityChanged);
       if (requestRef.current === request) requestRef.current = () => {};
     };
-  }, [read, identity, enabled, immediate]);
+  }, [read, identity, enabled, immediate, interval]);
   return useCallback(() => requestRef.current(), []);
 }

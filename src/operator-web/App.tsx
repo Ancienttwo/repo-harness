@@ -10,7 +10,7 @@ import { BoardPage, boardListRepository } from './BoardPage';
 import { fetchBoardSummaries, type BoardSummariesReader } from './board-office';
 import { postBossCommand, type BossCommandWriter } from './office-boss';
 import { fetchAdvisorTranscript, postAdvisorMessage, type AdvisorMessageWriter, type AdvisorTranscriptReader } from './OfficeAdvisorDialog';
-import { fetchBoard, fetchBoardParents, useBoard, useBoardParents, type BoardParentsReader, type BoardReader, type BoardView } from './board-view';
+import { fetchBoard, fetchBoardParents, fetchBoardSeats, useBoard, useBoardParents, type BoardSeatsReader, type BoardParentsReader, type BoardReader, type BoardView } from './board-view';
 import { fetchBotAccess, fetchBotReviews, useBotAccess, useBotReviews, type BotAccessReader, type BotReviewsReader } from './bots';
 import { BotsFreshness, BotsPage } from './BotsPage';
 import { fetchAgentsSettings, postAgentsSettings, useAgentsSettingsForm, type AgentsSettingsReader, type AgentsSettingsWriter } from './settings';
@@ -30,6 +30,7 @@ import { useLocale, type OperatorLocale, type OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
 import { NavRail, RailMenuButton, switchOption, useRailCollapsed, type RepositorySwitchModel } from './NavRail';
 import type { ArchitectureMapReader } from './ArchitectureMap';
+import type { HistoryReader } from './ArchitectureHistory';
 import type { ArchitectureSource } from './ArchitectureWorkspace';
 import type { NotifyStatusReader } from './NotifyStatus';
 import { RepositoriesPage } from './RepositoriesPage';
@@ -90,6 +91,7 @@ export interface OperatorAppProps {
   readonly readBoard?: BoardReader;
   /** The parent list route of one repository, behind the Board page without a board. */
   readonly readBoardParents?: BoardParentsReader;
+  readonly readBoardSeats?: BoardSeatsReader;
   /** The stored board summaries of one repository, behind the office overview. */
   readonly readBoardSummaries?: BoardSummariesReader;
   /** The boss command route of the office room (#1757). */
@@ -121,6 +123,8 @@ export interface OperatorAppProps {
   readonly readTaskMessages?: TaskMessagesReader;
   /** The architecture map route; the Architecture workspace reads it from the server when absent. */
   readonly readArchitectureMap?: ArchitectureMapReader;
+  /** The architecture history route; the History view reads it from the server when absent. */
+  readonly readArchitectureHistory?: HistoryReader;
   /** The Bot access collector's cached snapshot behind the Bots page. */
   readonly readBotAccess?: BotAccessReader;
   /** The Slack review collector's cached Dot review threads, the Bots page's second read. */
@@ -294,6 +298,7 @@ export function OperatorApp({
   initialRuntimeOverlay,
   readBoard = fetchBoard,
   readBoardParents = fetchBoardParents,
+  readBoardSeats = fetchBoardSeats,
   readBoardSummaries = fetchBoardSummaries,
   writeBossCommand = postBossCommand,
   readAdvisorTranscript = fetchAdvisorTranscript,
@@ -313,6 +318,7 @@ export function OperatorApp({
   readExecution = fetchExecution,
   readTaskMessages = fetchTaskMessages,
   readArchitectureMap,
+  readArchitectureHistory,
   readBotAccess = fetchBotAccess,
   readBotReviews = fetchBotReviews,
   readAgentsSettings = fetchAgentsSettings,
@@ -482,7 +488,7 @@ export function OperatorApp({
         </header>
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-1 pb-10 rail:px-6" data-workspace={workspace}>
           {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
-          {workspace === 'board' && <BoardPage layout={boardLayout(place.item)} place={boardSubject} room={repositoryRoom} view={board} readBoard={readBoard} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={theme.mode} readBoardParents={readBoardParents} readBoardSummaries={readBoardSummaries} parents={boardParents} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
+          {workspace === 'board' && <BoardPage layout={boardLayout(place.item)} place={boardSubject} room={repositoryRoom} view={board} readBoard={readBoard} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={theme.mode} readBoardParents={readBoardParents} readBoardSeats={readBoardSeats} readBoardSummaries={readBoardSummaries} parents={boardParents} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
             repositories={boardOptions} chosenRepository={boardRepository} onRepository={chooseBoardRepository} setup={{ repositories, devActivity, botAccess }} quota={quota.view} />}
           {workspace === 'repositories' && <RepositoriesPage view={repositories} activity={devActivity} now={now} onOpen={openRepositoryBoard} readLanguage={readDocumentationLanguage} writeLanguage={writeDocumentationLanguage} generation={refreshGeneration} t={t} />}
           {/* Kept mounted after the first visit so the open plan review and the plan selection survive a page change. */}
@@ -502,7 +508,7 @@ export function OperatorApp({
           {workspace === 'tests' && <TestsPage repositoryId={activeRepository?.repository_id ?? null} readTests={readTests} generation={refreshGeneration} now={now} t={t} />}
           {workspace === 'architecture' && (!activeRepository ? <p role="status" className="text-sm text-kumo-subtle">{t('repository.select')}</p>
             : <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
-              <ArchitectureWorkspace repositoryId={activeRepository.repository_id} github={(devSnapshot && repositoryById(devSnapshot, activeRepository.repository_id)?.github) ?? null} moduleId={place.module} refreshGeneration={refreshGeneration} readMap={readArchitectureMap}
+              <ArchitectureWorkspace repositoryId={activeRepository.repository_id} github={(devSnapshot && repositoryById(devSnapshot, activeRepository.repository_id)?.github) ?? null} moduleId={place.module} refreshGeneration={refreshGeneration} readMap={readArchitectureMap} readHistory={readArchitectureHistory}
                 onModule={module => openPlace({ workspace: 'architecture', module, item: null })} onSource={setArchitectureSource} t={t} />
             </Suspense>)}
           {workspace === 'bots' && <BotsPage view={botAccess} reviews={botReviews} now={now} t={t} />}

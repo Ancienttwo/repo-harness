@@ -6,6 +6,7 @@ import { canonicalize } from '../../core/evidence/canonical-json';
 import type { ProcessProof, TaskAgentSpec, TaskSessionAdmission, TerminalHostSpec } from '../../core/review/runner-port';
 import { taskSessionKey, taskWorkspaceKey } from '../git/repository-identity';
 import { taskRepository, type TaskRepository } from '../git/task-repository';
+import { processExists } from '../process-group-termination';
 import { processIdentity, readSessionArtifact } from './task-session-io';
 
 /** One herdr-core core, addressed by its socket (`HC_SOCKET`). `home` is the directory that review
@@ -122,7 +123,7 @@ export function assertProcessProof(proof: ProcessProof): void {
   if (processIdentity(proof.pid) !== proof.identity) throw new Error('task_agent_process_identity_lost');
 }
 export function processProofAlive(proof: ProcessProof): boolean {
-  try { process.kill(proof.pid, 0); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false; throw error; }
+  if (!processExists(proof.pid)) return false;
   try {
     let identityError: unknown;
     try { assertProcessProof(proof); } catch (error) { identityError = error; }
@@ -143,7 +144,7 @@ export function processProofAlive(proof: ProcessProof): boolean {
   } catch (error) {
     // Exit can occur between kill(0) and ps. Confirm absence; an extant reused
     // PID or a permission/inspection failure remains a hard identity refusal.
-    try { process.kill(proof.pid, 0); } catch (gone) { if ((gone as NodeJS.ErrnoException).code === 'ESRCH') return false; throw gone; }
+    if (!processExists(proof.pid)) return false;
     throw error;
   }
   return true;
