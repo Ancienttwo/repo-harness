@@ -14,6 +14,7 @@ import { parsePublicationPolicy, policyFileFromContents, PUBLICATION_POLICY_PATH
 import type { PullRequestReadinessV2, PullRequestSelectionV2 } from '../../core/publication/merge-readiness';
 import { GitExecError, gitExecFile, gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { collectPullRequestMergeReadiness } from '../publication/merge-readiness';
+import { createKeyedSources, readinessKey, type KeyedSources } from './keyed-sources';
 import { provenMergeOnlySyncs, type MergeOnlySyncInput } from './merge-only-sync';
 
 const GH_TIMEOUT_MS = 30_000;
@@ -48,10 +49,16 @@ export const PARENT_QUERY = `query($owner: String!, $name: String!, $number: Int
   repairs: search(query: $repairs, type: ISSUE, first: ${BOARD_PAGE.repairs}) { issueCount nodes { ... on Issue { number body } } }
 }`;
 
+/** The identity, review and head-rollup fields are the readiness inputs of the keyed source store; nested thread comments stay out. */
 const PULL_REQUEST_FIELDS = `number url state isDraft body baseRefName baseRefOid headRefName headRefOid mergedAt
+  changedFiles mergeable reviewDecision isCrossRepository
+  latestOpinionatedReviews(first: ${BOARD_PAGE.reviews}) { pageInfo { hasNextPage } nodes { state } }
+  reviewThreads(first: ${BOARD_PAGE.threads}) { totalCount pageInfo { hasNextPage } nodes { isResolved } }
   files(first: ${BOARD_PAGE.files}) { totalCount nodes { path additions deletions } }
   commits(last: 1) { nodes { commit { oid committedDate statusCheckRollup {
-    contexts(first: ${BOARD_PAGE.checks}) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion completedAt } } }
+    contexts(first: ${BOARD_PAGE.checks}) { pageInfo { hasNextPage } nodes {
+      ... on CheckRun { name status conclusion completedAt detailsUrl } ... on StatusContext { context state targetUrl createdAt }
+    } }
   } } } }
   ${COMMENTS}`;
 
@@ -311,32 +318,16 @@ function followCursor(first: unknown, cursor: (data: unknown, at: number) => str
 
 /**
  * The provider transport of the readiness reads of one board read. Every pull
- * request of the repository gets the same repository identity, and every pull
- * request on the same base gets the same base-commit facts, so those reads run
- * once. The pull request identity, checks, reviews and stack lists run each time,
- * so the identity and stack fences of each read stay. A failure is not stored.
- * The answers live only as long as this function's return value.
+ * request of the repository gets the same repository identity, so those reads
+ * run once; the keyed source store answers the content-addressed reads. The
+ * pull request identity, checks, reviews and stack lists run each time, so the
+ * identity and stack fences of each read stay. A failure is not stored. The
+ * answers live only as long as this function's return value.
  */
 function boardReadinessTransport(input: GhInput, repository: string): GhRunner {
   const root = `repos/${repository}`;
-  const reusable = (args: readonly string[]): boolean => {
-    if (args[0] === 'repo' && args[1] === 'view') return true;
-    if (args.length !== 4 || args[0] !== 'api' || args[2] !== '--hostname' || args[3] !== 'github.com') return false;
-    const path = args[1]!;
-    return path === root || [`${root}/contents/`, `${root}/commits/`, `${root}/git/commits/`].some(prefix => path.startsWith(prefix))
-      || (path.startsWith(`${root}/pulls/`) && /^\d+$/u.test(path.slice(`${root}/pulls/`.length)));
-  };
-  // GitHub answers an absent file with exit 1 and a JSON body of status 404.
-  const storable = (status: number, stdout: string): boolean => {
-    if (status === 0) return true;
-    if (status !== 1) return false;
-    try {
-      const body: unknown = JSON.parse(stdout);
-      return body !== null && typeof body === 'object' && !Array.isArray(body) && (body as { status?: unknown }).status === '404';
-    } catch {
-      return false;
-    }
-  };
+  const reusable = (args: readonly string[]): boolean => (args[0] === 'repo' && args[1] === 'view')
+    || (args.length === 4 && args[0] === 'api' && args[1] === root && args[2] === '--hostname' && args[3] === 'github.com');
   const answers = new Map<string, ReturnType<GhRunner>>();
   return (args) => {
     const key = reusable(args) ? JSON.stringify(args) : null;
@@ -345,12 +336,18 @@ function boardReadinessTransport(input: GhInput, repository: string): GhRunner {
     const result = runGh(input, args);
     // No exit status (spawn error, timeout) is -1, which no reader accepts: the read reports provider_unavailable.
     const answer = { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr || result.error?.message || '' };
-    if (key !== null && storable(answer.status, answer.stdout)) answers.set(key, answer);
+    if (key !== null && answer.status === 0) answers.set(key, answer);
     return answer;
   };
 }
 
+/** One board read through a fresh keyed source store: the path of every act. */
 export function collectBoard(input: BoardCollectInput): BoardV1 {
+  return collectBoardThrough(input, createKeyedSources());
+}
+
+/** One board read through `sources`. Only the attention watcher keeps a store across reads. */
+export function collectBoardThrough(input: BoardCollectInput, sources: KeyedSources): BoardV1 {
   const { parent, observed_at: observedAt } = readParent(input);
   const repository = parent.repository.name_with_owner;
   const [owner, name] = repository.split('/') as [string, string];
@@ -363,7 +360,11 @@ export function collectBoard(input: BoardCollectInput): BoardV1 {
       provider_repository_id: String(parent.repository.database_id), repository, pr_number: read.number,
       expected_head_sha: read.head_sha, expected_base_sha: read.base_sha,
     };
-    return input.readiness?.(selection) ?? collectPullRequestMergeReadiness({ ...selection, repo_root: input.repo_root, gh_bin: input.gh_bin, gh_runner: readinessTransport });
+    const key = readinessKey({ repository_id: parent.repository.database_id, default_branch: parent.repository.default_branch, read, reads });
+    const now = input.now?.() ?? new Date();
+    return sources.readiness(key, now, () => input.readiness?.(selection) ?? collectPullRequestMergeReadiness({
+      ...selection, repo_root: input.repo_root, gh_bin: input.gh_bin, gh_runner: sources.transport(read, now, readinessTransport),
+    }));
   });
   const owners = pathOwners(input, linked);
   const proveSyncs = input.merge_only_syncs ?? provenMergeOnlySyncs;

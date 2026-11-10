@@ -35,7 +35,7 @@ import { pathHazardHits, pathHighHits } from './hazards';
  * It is a read model. GitHub and hc stay the authorities; the board keeps
  * their observation time and never writes back.
  */
-export const BOARD_PROTOCOL = 4 as const;
+export const BOARD_PROTOCOL = 5 as const;
 export const BOARD_KIND = 'repo-harness.board' as const;
 
 export type BoardTier = 'low' | 'medium' | 'high';
@@ -112,6 +112,8 @@ export interface BoardPullRequestV1 {
   readonly acceptance: BoardAcceptanceV1;
   /** The single-PR readiness projection, for open pull requests only. */
   readonly merge_readiness: PullRequestReadinessV2 | null;
+  /** The read time of `merge_readiness`: a stored answer keeps the time of its read. Null when `merge_readiness` is null. */
+  readonly merge_readiness_observed_at: string | null;
   /** `high` when a changed path is on the High list or the change hazard list, or the file list is incomplete; otherwise the highest review tier of the linked issues (the parent excluded), null when the pull request links none, or one is outside the board or has no tier label; `medium` for Low labels on a fix of more than 50 changed lines or of unknown size. */
   readonly tier: BoardTier | null;
   /**
@@ -267,12 +269,18 @@ export type BoardDailyRunInputV1 =
   | { readonly status: 'observed'; readonly run_url: string; readonly conclusion: string | null; readonly created_at: string }
   | { readonly status: 'unavailable'; readonly reason: string };
 
+/** One readiness answer and the time of the read that produced it. */
+export interface BoardReadinessV1 {
+  readonly readiness: PullRequestReadinessV2;
+  readonly observed_at: string;
+}
+
 export interface BoardInputV1 {
   readonly observed_at: string;
   readonly parent: BoardParentReadV1;
   readonly acceptance_merge: BoardAcceptanceMergeV1;
   readonly pull_requests: readonly BoardPullRequestReadV1[];
-  readonly readiness: readonly PullRequestReadinessV2[];
+  readonly readiness: readonly BoardReadinessV1[];
   /** For each open pull request, the candidates of `syncCarryCandidates` that git proved to be merge-only syncs of the head (`provenMergeOnlySyncs`). */
   readonly merge_only_syncs: ReadonlyMap<number, readonly string[]>;
   readonly path_owners: BoardPathOwnersV1;
@@ -307,6 +315,10 @@ export function decodeBoard(value: unknown): BoardV1 {
     const { acceptance } = pr;
     if (acceptance?.status === 'accepted' && acceptance.via === 'sync' && !/^[0-9a-f]{40}$/u.test(String(acceptance.carried_from))) {
       throw new Error(`invalid board carried_from on PR #${pr.number}: ${String(acceptance.carried_from)}`);
+    }
+    const observedAt: unknown = pr.merge_readiness_observed_at;
+    if (pr.merge_readiness === null ? observedAt !== null : typeof observedAt !== 'string' || Number.isNaN(Date.parse(observedAt))) {
+      throw new Error(`invalid board merge_readiness_observed_at on PR #${pr.number}: ${String(observedAt)}`);
     }
   }
   return board as BoardV1;
@@ -533,7 +545,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
     const tier = effectiveTier(read, closes, refs, input.parent, tiers);
     const subjects = reviewedSubjects(read, input.path_owners, input.merge_only_syncs.get(read.number) ?? []);
     const claude = claudeReview(read, subjects, tier);
-    const readiness = read.state === 'open' ? input.readiness.find(entry => entry.pr_number === read.number) : undefined;
+    const readiness = read.state === 'open' ? input.readiness.find(entry => entry.readiness.pr_number === read.number) : undefined;
     if (read.state === 'open' && readiness === undefined) throw new Error(`board input has no merge readiness for open PR #${read.number}`);
     return Object.freeze({
       number: read.number,
@@ -552,7 +564,8 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
       required_check: check,
       // An issue outside this board has no observed tier, so it withholds the Low path; so does any non-Low linked issue.
       acceptance: acceptance(read, subjects, check, [tier], reviewRule(read, tier)),
-      merge_readiness: readiness ?? null,
+      merge_readiness: readiness?.readiness ?? null,
+      merge_readiness_observed_at: readiness?.observed_at ?? null,
       tier,
       claude_review: claude,
       writer_family: writerFamily(read, closes, refs, input.parent),

@@ -86,6 +86,30 @@ export interface BoardPullRequestReadV1 {
   readonly changed_lines: number | null;
   readonly checks: readonly BoardCheckRunReadV1[];
   readonly comments: BoardCommentPageV1;
+  readonly readiness_inputs: BoardReadinessInputsV1;
+}
+
+/** One check run or commit status of the head commit, as the readiness key reads it. */
+export interface BoardRollupContextV1 {
+  readonly type: 'CheckRun' | 'StatusContext';
+  readonly name: string;
+  readonly status: string;
+  readonly conclusion: string | null;
+  readonly completed_at: string | null;
+  readonly details_url: string | null;
+}
+
+/** The fields of the pull request read that merge readiness also reads; the keyed source store digests them. */
+export interface BoardReadinessInputsV1 {
+  readonly changed_files: number;
+  readonly mergeable: string;
+  readonly review_decision: string | null;
+  readonly cross_repository: boolean;
+  /** The states of the latest opinionated reviews; null when the read did not return all of them. */
+  readonly review_states: readonly string[] | null;
+  /** `isResolved` of each review thread and the thread count; null when the read did not return all threads. */
+  readonly threads: { readonly total: number; readonly resolved: readonly boolean[] } | null;
+  readonly rollup: readonly BoardRollupContextV1[];
 }
 
 /** The most sub-issue pages that one parent read follows: 1000 sub-issues. */
@@ -97,7 +121,7 @@ export const BOARD_SUB_ISSUE_PAGES = 20;
  */
 export const BOARD_PARENT_COMMENT_PAGES = 100;
 
-export const BOARD_PAGE = { labels: 50, comments: 50, parent_comments: 100, sub_issues: 50, blocked_by: 50, timeline: 100, files: 100, checks: 100, repairs: 50 } as const;
+export const BOARD_PAGE = { labels: 50, comments: 50, parent_comments: 100, sub_issues: 50, blocked_by: 50, timeline: 100, files: 100, checks: 100, repairs: 50, reviews: 20, threads: 50 } as const;
 
 type Json = Record<string, unknown>;
 
@@ -301,18 +325,9 @@ export function decodePullRequestsRead(data: unknown, numbers: readonly number[]
     const filePaths = fileNodes.map((node, index) => str(node.path, `${label}.files[${index}].path`));
     const complete = files.totalCount === filePaths.length;
     const counted = complete && fileNodes.every(node => [node.additions, node.deletions].every(count => Number.isSafeInteger(count) && (count as number) >= 0));
-    const rollup = commit.statusCheckRollup === null ? null : obj(commit.statusCheckRollup, `${label}.statusCheckRollup`);
-    const checks = rollup === null ? [] : nodes(rollup.contexts, `${label}.contexts`, 'hasNextPage').flatMap((entry, index) => {
-      const context = obj(entry, `${label}.contexts[${index}]`);
-      // A commit status (StatusContext) has no `name`; the board reads check runs only.
-      if (context.name === undefined) return [];
-      return [Object.freeze({
-        name: str(context.name, `${label}.contexts[${index}].name`),
-        status: str(context.status, `${label}.contexts[${index}].status`),
-        conclusion: nullableStr(context.conclusion, `${label}.contexts[${index}].conclusion`),
-        completed_at: context.completedAt === null ? null : time(context.completedAt, `${label}.contexts[${index}].completedAt`),
-      })];
-    });
+    const rollup = commit.statusCheckRollup === null ? [] : rollupContexts(obj(commit.statusCheckRollup, `${label}.statusCheckRollup`), label);
+    // The board rules read check runs only.
+    const checks = rollup.filter(context => context.type === 'CheckRun').map(({ name, status, conclusion, completed_at }) => Object.freeze({ name, status, conclusion, completed_at }));
     return Object.freeze({
       number,
       url: str(node.url, `${label}.url`),
@@ -329,7 +344,62 @@ export function decodePullRequestsRead(data: unknown, numbers: readonly number[]
       changed_lines: counted ? fileNodes.reduce((sum, node) => sum + (node.additions as number) + (node.deletions as number), 0) : null,
       checks: Object.freeze(checks),
       comments: comments(node.comments, `${label}.comments`),
+      readiness_inputs: readinessInputs(node, rollup, label),
     });
+  });
+}
+
+function rollupContexts(rollup: Json, label: string): BoardRollupContextV1[] {
+  return nodes(rollup.contexts, `${label}.contexts`, 'hasNextPage').map((entry, index) => {
+    const context = obj(entry, `${label}.contexts[${index}]`);
+    const at = `${label}.contexts[${index}]`;
+    if (context.name !== undefined) {
+      return Object.freeze({
+        type: 'CheckRun', name: str(context.name, `${at}.name`), status: str(context.status, `${at}.status`),
+        conclusion: nullableStr(context.conclusion, `${at}.conclusion`),
+        completed_at: context.completedAt === null ? null : time(context.completedAt, `${at}.completedAt`),
+        details_url: nullableStr(context.detailsUrl, `${at}.detailsUrl`),
+      } as const);
+    }
+    if (context.context !== undefined) {
+      return Object.freeze({
+        type: 'StatusContext', name: str(context.context, `${at}.context`), status: str(context.state, `${at}.state`), conclusion: null,
+        completed_at: time(context.createdAt, `${at}.createdAt`), details_url: nullableStr(context.targetUrl, `${at}.targetUrl`),
+      } as const);
+    }
+    return fail(`${at} is neither a check run nor a commit status`);
+  });
+}
+
+function complete(connection: unknown, label: string): unknown[] | null {
+  const value = obj(connection, label);
+  const more = obj(value.pageInfo, `${label}.pageInfo`).hasNextPage;
+  if (typeof more !== 'boolean') fail(`${label}.pageInfo.hasNextPage is not a boolean`);
+  return more ? null : nodes(value, label, null);
+}
+
+function readinessInputs(node: Json, rollup: readonly BoardRollupContextV1[], label: string): BoardReadinessInputsV1 {
+  if (!Number.isSafeInteger(node.changedFiles) || (node.changedFiles as number) < 0) fail(`${label}.changedFiles is not a count`);
+  if (typeof node.isCrossRepository !== 'boolean') fail(`${label}.isCrossRepository is not a boolean`);
+  const reviews = complete(node.latestOpinionatedReviews, `${label}.latestOpinionatedReviews`);
+  const threads = obj(node.reviewThreads, `${label}.reviewThreads`);
+  const threadNodes = complete(threads, `${label}.reviewThreads`);
+  if (!Number.isSafeInteger(threads.totalCount) || (threads.totalCount as number) < 0) fail(`${label}.reviewThreads.totalCount is not a count`);
+  return Object.freeze({
+    changed_files: node.changedFiles as number,
+    mergeable: str(node.mergeable, `${label}.mergeable`),
+    review_decision: nullableStr(node.reviewDecision, `${label}.reviewDecision`),
+    cross_repository: node.isCrossRepository,
+    review_states: reviews === null ? null : Object.freeze(reviews.map((entry, index) => str(obj(entry, `${label}.latestOpinionatedReviews[${index}]`).state, `${label}.latestOpinionatedReviews[${index}].state`))),
+    threads: threadNodes === null ? null : Object.freeze({
+      total: threads.totalCount as number,
+      resolved: Object.freeze(threadNodes.map((entry, index) => {
+        const resolved = obj(entry, `${label}.reviewThreads[${index}]`).isResolved;
+        if (typeof resolved !== 'boolean') fail(`${label}.reviewThreads[${index}].isResolved is not a boolean`);
+        return resolved;
+      })),
+    }),
+    rollup: Object.freeze([...rollup]),
   });
 }
 

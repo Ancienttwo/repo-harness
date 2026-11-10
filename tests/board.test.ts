@@ -11,7 +11,8 @@ import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectPullRequestMergeReadiness } from '../src/effects/publication/merge-readiness';
-import { collectBoard, readGhJson, readParent, readLocalRepositoryId, readLocalRepositoryIdAsync, seatTerminalsWithBranches, type BoardCollectInput } from '../src/effects/board/collect';
+import { collectBoard, collectBoardThrough, readGhJson, readParent, readLocalRepositoryId, readLocalRepositoryIdAsync, seatTerminalsWithBranches, type BoardCollectInput } from '../src/effects/board/collect';
+import { createKeyedSources, KEYED_SOURCE_MAX_AGE_MS } from '../src/effects/board/keyed-sources';
 import { runBoardMerge } from '../src/effects/board/merge';
 import { boardMergeDecisions } from '../src/core/board/merge';
 import { provenMergeOnlySyncs } from '../src/effects/board/merge-only-sync';
@@ -274,7 +275,7 @@ function asSmallFix(pr: Json): void {
 }
 
 test('Low acceptance uses the effective tier of every linked issue: a Low closing issue with a High or unobserved ref is not accepted by tier', () => {
-  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' };
+  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null };
   const via = (refs: string) => replay({
     parent: (data) => { issueNode(data, 1479).labels.nodes.push({ name: 'tier:low' }); issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
     pulls: (data) => {
@@ -532,6 +533,75 @@ test('board read: the readiness reads of one board share one answer for the repo
   expect(count(failed.calls, 'api repos/Ancienttwo/repo-harness --hostname')).toBe(2);
 });
 
+test('keyed sources: an unchanged board makes no readiness call, a changed key input or the maximum age reads that pull request again, and a stored answer equals a fresh read', () => {
+  const input = replayInput({});
+  const boardGh = input.gh_runner!;
+  const readiness = recordedReadinessGh(() => false);
+  let calls: string[] = [];
+  let edit: ((data: Json) => void) | null = null;
+  let now = REPLAY_NOW;
+  const gh: BoardCollectInput['gh_runner'] = (args) => {
+    if (args.at(-1) === 'github.com' || args.includes('github.com/Ancienttwo/repo-harness')) {
+      calls.push(args.join(' '));
+      return readiness(args);
+    }
+    const answer = boardGh(args);
+    if (edit === null || !args.some(arg => arg.includes('pr1499: pullRequest'))) return answer;
+    const pulls = JSON.parse(answer.stdout);
+    edit(pulls.data);
+    return { ...answer, stdout: JSON.stringify(pulls) };
+  };
+  const sources = createKeyedSources();
+  const read = () => collectBoardThrough({ ...input, readiness: undefined, gh_runner: gh, now: () => now }, sources);
+  const first = read();
+  const open = first.pull_requests.filter(pr => pr.state === 'open');
+  expect(open.map(pr => [pr.number, pr.merge_readiness_observed_at])).toEqual([1491, 1494, 1499].map(number => [number, REPLAY_NOW.toISOString()]));
+  for (const pr of open) {
+    expect(pr.merge_readiness).toEqual(collectPullRequestMergeReadiness({ provider_repository_id: '1186405141', repository: 'Ancienttwo/repo-harness', pr_number: pr.number,
+      expected_head_sha: pr.head_sha, expected_base_sha: pr.base_sha, repo_root: '/nonexistent', gh_runner: readiness }));
+  }
+
+  calls = [];
+  now = new Date(REPLAY_NOW.getTime() + 60_000);
+  const second = read();
+  expect(calls).toEqual([]);
+  expect(second.pull_requests).toEqual(first.pull_requests);
+
+  // One resolved review thread on #1499 changes only its key.
+  edit = (data) => { data.repository.pr1499.reviewThreads = { totalCount: 1, pageInfo: { hasNextPage: false }, nodes: [{ isResolved: true }] }; };
+  const third = read();
+  expect(calls.length).toBeGreaterThan(0);
+  expect(calls.filter(call => /^pr (view|list) /u.test(call) && !call.startsWith('pr view 1499 ') && !call.startsWith('pr list --head feat/1475-hc-transport '))).toEqual([]);
+  expect(third.pull_requests.map(pr => [pr.number, pr.merge_readiness_observed_at])).toEqual([[1491, REPLAY_NOW.toISOString()], [1494, REPLAY_NOW.toISOString()], [1499, now.toISOString()]]);
+
+  calls = [];
+  now = new Date(REPLAY_NOW.getTime() + KEYED_SOURCE_MAX_AGE_MS);
+  read();
+  for (const number of [1491, 1494]) expect(calls.filter(call => call.startsWith(`pr view ${number} `))).toHaveLength(2);
+});
+
+test('acts read through a fresh keyed source store: each collectBoard and board merge call on the default path reads readiness again', () => {
+  let reads = 0;
+  const input = replayInput(mergeReplay());
+  const counted: BoardCollectInput = { ...input, readiness: (selection) => { reads++; return input.readiness!(selection); } };
+  collectBoard(counted);
+  collectBoard(counted);
+  expect(reads).toBe(6);
+  const merge = () => ({ exit_code: 0, document: { ok: true } }) as never;
+  expect(runBoardMerge({ ...counted, pr: null, dry_run: false, merge }).target).toBe(1491);
+  expect(runBoardMerge({ ...counted, pr: null, dry_run: false, merge }).target).toBe(1491);
+  expect(reads).toBe(12);
+});
+
+test('the board decoder refuses protocol 4 and a readiness read time that does not match the readiness', () => {
+  const recorded = JSON.parse(JSON.stringify(replay()));
+  expect(() => decodeBoard({ ...recorded, protocol: 4 })).toThrow('unsupported board protocol: 4');
+  const withTime = (at: unknown, readiness = true) => ({ ...recorded, pull_requests: recorded.pull_requests.map((pr: Json) => pr.number === 1491
+    ? { ...pr, merge_readiness: readiness ? pr.merge_readiness : null, merge_readiness_observed_at: at } : pr) });
+  expect(decodeBoard(withTime(REPLAY_NOW.toISOString())).pull_requests.find(pr => pr.number === 1491)!.merge_readiness_observed_at).toBe(REPLAY_NOW.toISOString());
+  for (const invalid of [withTime(null), withTime('not a time'), withTime(REPLAY_NOW.toISOString(), false)]) expect(() => decodeBoard(invalid)).toThrow('invalid board merge_readiness_observed_at on PR #1491');
+});
+
 test('attention rules and delivery windows recognize all worker seat kinds', () => {
   const board = replay();
   if (board.execution.status !== 'observed') throw new Error('the replay observes the seats');
@@ -675,7 +745,7 @@ test('decoders refuse an unknown protocol or kind', () => {
   expect(() => decodeBoard({ protocol: 1, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 1');
   // A protocol-3 board has no merge_hold fields.
   expect(() => decodeBoard({ protocol: 3, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 3');
-  expect(() => decodeBoard({ protocol: 4, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
+  expect(() => decodeBoard({ protocol: 5, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
   const block = (value: Json) => `repo-harness plan\n\n\`\`\`json\n${JSON.stringify(value)}\n\`\`\`\n`;
   const valid = { protocol: 1, kind: 'repo-harness.plan', merge_order: [1475], holds: [], batches: [], seat_limits: { worker: 3 } } as const;
   expect(decodePlanBlock(block(valid))).toEqual(valid);
@@ -865,7 +935,7 @@ test('board merge: no plan, a draft, plan holds, plan order for every linked ite
       const { pr1494 } = data.repository;
       pr1494.isDraft = false;
       asSmallFix(pr1494);
-      pr1494.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' });
+      pr1494.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null });
     },
   };
   expect([
@@ -1066,7 +1136,7 @@ const ROUND_4_PASS_1499 = "repo-harness acceptance record\nAgent: Claude Code (c
 const ROUND_4_FAIL_1494 = "repo-harness acceptance record\nAgent: Claude Code (claude-opus-5-5) coordinator, session d2630775\n\n| Round | Seat | Subject | Verdict |\n|---|---|---|---|\n| 4 | acceptor (gatekeeper, fresh Claude context, read-only) | 5c5139981b0bc5a620e3b2cd0605d61e4c76991d | FAIL: 1 P2, 1 P3 |\n\nModel relation: same-family\nThe receipt tool takes rounds 1-3 only, so this comment holds round 4.\n\nDelta 5c5139981 and merge aa8b6c3cc (remerge-diff empty). The round 3 fix is correct: the doctor relay check passes `hcOptions()`, and the doctor test fails without it. check:type pass; check:state-boundaries pass (533 files); `tests/cli/doctor.test.ts` 48/48 in 3 runs (the worker's earlier 2 failures did not reproduce); the 13 other affected files pass with the PR body counts; CI green.\n\nFindings (sibling sweep of hc calls in the changed files):\n- rv1494-r4-status-forwards-notify-secrets, P2, `src/effects/operator/notify-status.ts:80`: `readNotifyChannelStatus` passes `{ ...process.env, ...input.env }` unscrubbed to `hcListAsync`. A probe with a fake hc showed `WEBHOOK_URL` and `TELEGRAM_BOT_TOKEN` in the child env. The PR Risk section says this read starts a stopped core, so that core keeps the values and later terminals inherit them. Fix: move the `NOTIFY_SECRET_KEYS` scrub into one exported helper beside `NOTIFY_SECRET_KEYS` in `notify-relay.ts`; use it in `hcOptions()` and for the hc env here; extend one case in `tests/effects/operator-notify-status.test.ts` with an env-dumping fake hc.\n- rv1494-r4-relay-events-env-unscrubbed, P3, `src/cli/commands/herdr.ts:197` and `notify-relay.ts:254`: the relay passes `process.env` to `hcEvents`. A hand run from a shell that exports the values can start a core that keeps them. Use the same helper.\n\nDecision: not accepted at 5c5139981. The writer fixes both items with the one helper. Round 5 needs the owner's approval: rounds 1-4 all failed, which reaches the fix-and-review cap.\n";
 
 test('acceptance: round-4 records with bare SHAs, an unparsed record, and a Low closing issue outside the board', () => {
-  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' };
+  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null };
   const board = replay({
     parent: (data) => { for (const number of [1476, 1479]) issueNode(data, number).labels.nodes.push({ name: 'tier:low' }); },
     pulls: (data) => {
@@ -1134,7 +1204,7 @@ test('one hit for each rule that the recorded state does not trigger', () => {
       pr1499.baseRefName = 'main';
       pr1499.isDraft = false;
       pr1499.files = { totalCount: 1, nodes: [{ path: 'src/effects/terminal/task-session.ts', additions: 10, deletions: 2 }] };
-      pr1499.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' });
+      pr1499.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null });
       // #1494 (tier:medium #1479) changes a hook: R5.
       data.repository.pr1494.files.nodes.push({ path: hook });
       data.repository.pr1494.files.totalCount += 1;
@@ -1284,7 +1354,7 @@ test('a rendered record with multiline finding values parses to its finding IDs'
 });
 
 test('A2 finds a batch behind an overlapping pull request, and a plan hold removes a PR from A1, A2 and R4', () => {
-  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' };
+  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null };
   const findings = (holds: number[]) => evaluateBoardAttention(replay({
     now: new Date('2026-11-03T02:00:00Z'),
     owners: (results) => { results.push(...['a', 'b'].map(path => ({ path, matched: false, ambiguous: false, owningCapabilityId: null }))); },
