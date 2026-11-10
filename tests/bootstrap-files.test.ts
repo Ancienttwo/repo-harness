@@ -404,6 +404,34 @@ describe("Bootstrap Script Contracts", () => {
     }
   });
 
+  test("the release workflow and the owner helper extract the CHANGELOG section with one awk program (#2204)", () => {
+    // The tag job holds contents: write and runs only inline steps, so its copy cannot call the script.
+    // This check binds the two copies: one program text, and one result on the same CHANGELOG.
+    const program = (file: string): string => {
+      const body = read(file).match(/awk -v heading="[^"]*" '([\s\S]*?)'/u)?.[1];
+      if (body === undefined) throw new Error(`${file} has no awk program on a "## [<version>]" heading.`);
+      return body.split("\n").map((line) => line.trim()).filter(Boolean).join("\n");
+    };
+    const workflow = program(".github/workflows/release.yml");
+    const ownerSteps = program("scripts/release-owner-steps.sh");
+    expect(workflow.split("\n")).toEqual(ownerSteps.split("\n"));
+    const awk = Bun.which("awk");
+    // A host without awk keeps the text check only; the release runs on a runner that has awk.
+    if (!awk) return;
+    const changelog = "# Changelog\n\n## [Unreleased]\n\n- Not yet released.\n\n## [1.2.3] - 2026-11-10\n\n### Changed\n\n- A change.\n\n## [1.2.30]\n\n- A later patch.\n";
+    // The expected notes also pin what the shared program selects: the [1.2.3] run stops at [1.2.30], and the [Unreleased] heading is a section too.
+    const fixtures: Array<[string, string]> = [
+      ["## [1.2.3]", "\n### Changed\n\n- A change.\n\n"],
+      ["## [1.2.30]", "\n- A later patch.\n"],
+      ["## [Unreleased]", "\n- Not yet released.\n\n"],
+      ["## [9.9.9]", ""],
+    ];
+    const extract = (body: string, heading: string) => spawnSync(awk, ["-v", `heading=${heading}`, body], { input: changelog, encoding: "utf8" }).stdout;
+    for (const [heading, notes] of fixtures) {
+      for (const body of [workflow, ownerSteps]) expect(extract(body, heading)).toBe(notes);
+    }
+  });
+
   test("create-project-dirs should create tasks primary files", () => {
     const content = read("scripts/create-project-dirs.sh");
     const sharedLib = read("scripts/lib/project-init-lib.sh");
