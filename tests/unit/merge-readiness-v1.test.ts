@@ -357,6 +357,8 @@ describe('required-check failure evidence', () => {
 
   test.each([
     ['Run bun install --frozen-lockfile', null], ['Run npm ci', null],
+    ['Installing dependencies', null], ['Run npm run preinstall', null],
+    ['Run npm run postinstall', null], ['Reinstall dependencies', null],
     ['Run tests', 'npm ERR! code ERESOLVE'], ['Run tests', 'pnpm error ERR_PNPM_OUTDATED_LOCKFILE'],
     ['Run tests', 'ERR_PNPM_FETCH_404'],
     ['Run tests', 'error: lockfile had changes, but lockfile is frozen'],
@@ -371,12 +373,14 @@ describe('required-check failure evidence', () => {
 
   test.each([
     [`${nodeDeprecation}\nAssertionError: expected 1 to deeply equal 2`, 'assertion_mismatch'],
+    ['AssertionError: expected "registry failed" to equal "ok"', 'assertion_mismatch'],
     ['lockfile registry dependency install setup', 'other'],
     ['registry documentation\nerror: test process exited', 'other'],
-  ] as const)('an excerpt without an install error keeps its failure shape: %s', (excerpt, shape) => {
+  ] as const)('excerpt assertions and non-install text keep their failure shape: %s', (excerpt, shape) => {
     const evidence = assessRequiredCheckFailure(requiredCheckObservation([
       requiredCheckAttempt({ steps: ['Run tests'], failure_excerpt: excerpt, logs_available: excerpt !== null,
-        scope: { executed: ['Set up job', 'Install dependencies', 'Run oven-sh/setup-bun@v2', 'Run tests'], skipped: [] } }),
+        scope: { executed: ['Set up job', 'Install dependencies', 'Installing dependencies', 'Run npm run preinstall',
+          'Run npm run postinstall', 'Reinstall dependencies', 'Run oven-sh/setup-bun@v2', 'Run tests'], skipped: [] } }),
     ]));
     expect(evidence.failed.shape).toBe(shape);
   });
