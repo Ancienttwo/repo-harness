@@ -39,7 +39,7 @@ export const PARENT_QUERY = `query($owner: String!, $name: String!, $number: Int
 }`;
 
 const PULL_REQUEST_FIELDS = `number url state isDraft body baseRefName baseRefOid headRefName headRefOid mergedAt
-  files(first: ${BOARD_PAGE.files}) { totalCount nodes { path } }
+  files(first: ${BOARD_PAGE.files}) { totalCount nodes { path additions deletions } }
   commits(last: 1) { nodes { commit { oid committedDate statusCheckRollup {
     contexts(first: ${BOARD_PAGE.checks}) { pageInfo { hasNextPage } nodes { ... on CheckRun { name status conclusion completedAt } } }
   } } } }

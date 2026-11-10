@@ -29,7 +29,7 @@ script such as `bun run check:ci` already runs.
 
 ## Which lane the change will get
 
-`scripts/select-ci-coverage.ts#isDocumentationPath` is the whole documentation
+`src/core/ci/documentation-path.ts#isDocumentationPath` is the whole documentation
 allowlist:
 
 - `README.md` and `DEBUG.md`
