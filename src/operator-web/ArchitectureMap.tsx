@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import '@xyflow/react/dist/base.css';
 import {
   decodeArchitectureMap,
@@ -269,6 +269,14 @@ function MapGaps({ map, t }: { readonly map: ArchitectureMapV1; readonly t: Oper
 }
 
 /**
+ * The selected model node of each base map, with the scope that it was chosen in: a selection holds only while its
+ * view shows the same scope, so a new commit or another topology segment starts with no selection.
+ */
+type Selections = Partial<Record<ArchitectureBaseMap, { readonly scope: string; readonly id: string | null }>>;
+type SelectAction = { readonly view: ArchitectureBaseMap; readonly scope: string; readonly id: string | null };
+const selectionReducer = (state: Selections, { view, scope, id }: SelectAction): Selections => ({ ...state, [view]: { scope, id } });
+
+/**
  * The committed model on one base map, with line and import counts from the map collector.
  * The read, the active layer, the chosen PR and the chosen flow stay when the base map changes.
  */
@@ -299,6 +307,10 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   const pullRequest = map === null ? null : listed ? picked : firstImpactPullRequest(map);
   const defaultBase = useMemo(() => map === null || view !== 'topology' ? 'namespace' : defaultTopologyBase(map), [map, view]);
   const topologyBase = chosenBase ?? defaultBase;
+  const [selections, select] = useReducer(selectionReducer, {});
+  const topologyScope = `${repositoryId}:${map?.commit}:${topologyBase}:${legacy}`;
+  const topologySelected = selections.topology?.scope === topologyScope ? selections.topology.id : null;
+  const onTopologySelect = useCallback((id: string | null) => select({ view: 'topology', scope: topologyScope, id }), [topologyScope]);
   useEffect(() => {
     onSummary(map === null ? null : {
       commit: map.commit, collectedAt: map.collected_at, headRef: map.head_ref, archctxVersion: map.archctx_version,
@@ -325,7 +337,7 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
       </div>
       {view === 'modules' && <ArchitectureModules key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} side={side} onModule={onModule} t={t} />}
       {view === 'sequence' && <ArchitectureSequence key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} flowId={flow} onFlow={setFlow} side={side} onModule={onModule} t={t} />}
-      {view === 'topology' && <ArchitectureTopology key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} base={topologyBase} legacy={legacy} side={side} onModule={onModule} t={t} />}
+      {view === 'topology' && <ArchitectureTopology key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} base={topologyBase} legacy={legacy} selectedId={topologySelected} onSelect={onTopologySelect} side={side} onModule={onModule} t={t} />}
     </>}
   </div>;
 }
