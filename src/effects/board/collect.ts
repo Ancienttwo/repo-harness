@@ -5,7 +5,7 @@ import {
   type BoardPathOwnerV1, type BoardPathOwnersV1, type BoardSeatTerminalInputV1, type BoardSeatTerminalReadV1, type BoardToolingV1, type BoardV1,
 } from '../../core/board/board';
 import { ADVISOR_SEAT } from '../../core/board/advisor-seat';
-import { BOARD_PAGE, decodeParentRead, decodePullRequestsRead, type BoardParentReadV1, type BoardPullRequestReadV1 } from '../../core/board/source';
+import { BOARD_PAGE, decodeParentRead, decodePullRequestsRead, parentReadNextCursor, type BoardParentReadV1, type BoardPullRequestReadV1 } from '../../core/board/source';
 import { normalizeCapabilityPath } from '../../core/capabilities/registry';
 import { HC_MIN_VERSION } from '../../core/terminal/herdr-pin';
 import { parsePublicationPolicy, policyFileFromContents, PUBLICATION_POLICY_PATH, type PolicyFileAtRef } from '../../core/publication/acceptance-merge-policy';
@@ -20,13 +20,13 @@ const SEAT_GIT_TIMEOUT_MS = 10_000;
 const COMMENTS = `comments(last: ${BOARD_PAGE.comments}) { pageInfo { hasPreviousPage } nodes { url createdAt authorAssociation body } }`;
 const ISSUE_FIELDS = `number title url state labels(first: ${BOARD_PAGE.labels}) { pageInfo { hasNextPage } nodes { name } } milestone { title } ${COMMENTS}`;
 
-/** One read of the parent: its sub-issues with blocked-by edges, claim comments and cross-referenced PR numbers. */
-export const PARENT_QUERY = `query($owner: String!, $name: String!, $number: Int!, $repairs: String!) {
+/** One page of the parent read: its sub-issues with blocked-by edges, claim comments and cross-referenced PR numbers. `$after` selects the sub-issue page. */
+export const PARENT_QUERY = `query($owner: String!, $name: String!, $number: Int!, $repairs: String!, $after: String) {
   repository(owner: $owner, name: $name) {
     databaseId nameWithOwner defaultBranchRef { name }
     issue(number: $number) {
       ${ISSUE_FIELDS}
-      subIssues(first: ${BOARD_PAGE.sub_issues}) { pageInfo { hasNextPage } nodes {
+      subIssues(first: ${BOARD_PAGE.sub_issues}, after: $after) { pageInfo { hasNextPage endCursor } nodes {
         ${ISSUE_FIELDS}
         blockedBy(first: ${BOARD_PAGE.blocked_by}) { pageInfo { hasNextPage } nodes { number state } }
         timelineItems(itemTypes: [CROSS_REFERENCED_EVENT], last: ${BOARD_PAGE.timeline}) { pageInfo { hasPreviousPage } nodes {
@@ -224,15 +224,18 @@ export function readLocalRepositoryId(input: GhInput, isGitHubRemote: (url: stri
   return github ? readRepositoryId(input) : null;
 }
 
-/** The one read of the parent issue, its sub-issues and their comments; the board and dispatch share it. */
+/** The read of the parent issue, every page of its sub-issues and their comments; the board and dispatch share it. */
 export function readParent(input: Pick<BoardCollectInput, 'repo_root' | 'gh_bin' | 'gh_runner' | 'parent' | 'now'>): { readonly parent: BoardParentReadV1; readonly observed_at: string } {
   const repository = (readGhJson(input, ['repo', 'view', '--json', 'nameWithOwner']) as { nameWithOwner?: unknown } | null)?.nameWithOwner;
   if (typeof repository !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(repository)) throw new BoardCollectError('the local GitHub repository is unknown');
   const [owner, name] = repository.split('/') as [string, string];
   const observedAt = (input.now?.() ?? new Date()).toISOString();
-  const parent = decodeParentRead(graphql(input, PARENT_QUERY, {
-    owner, name, number: input.parent, repairs: `repo:${repository} is:issue is:open in:title "CI repair"`,
-  }), repository);
+  const variables = { owner, name, number: input.parent, repairs: `repo:${repository} is:issue is:open in:title "CI repair"` };
+  const pages = [graphql(input, PARENT_QUERY, variables)];
+  for (let after = parentReadNextCursor(pages[0], 0); after !== null; after = parentReadNextCursor(pages.at(-1), pages.length - 1)) {
+    pages.push(graphql(input, PARENT_QUERY, { ...variables, after }));
+  }
+  const parent = decodeParentRead(pages, repository);
   return { parent, observed_at: observedAt };
 }
 

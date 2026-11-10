@@ -62,6 +62,8 @@ else process.exit(2);
 
 interface Replay {
   readonly parent?: (data: Json) => void;
+  /** Splits the edited parent read into sub-issue pages of this size, linked by cursors `c1`, `c2`...; then edits the pages. */
+  readonly pages?: { readonly size: number; readonly edit?: (pages: Json[]) => void };
   readonly pulls?: (data: Json) => void;
   /** Edits the recorded `archctx resolve` results of the open pull request files. */
   readonly owners?: (results: Json[]) => void;
@@ -84,6 +86,16 @@ function issueNode(data: Json, number: number): Json {
   return data.repository.issue.subIssues.nodes.find((node: Json) => node.number === number);
 }
 
+function subIssuePages(read: Json, size: number): Json[] {
+  const { nodes } = read.data.repository.issue.subIssues;
+  const count = Math.ceil(nodes.length / size);
+  return Array.from({ length: count }, (_, at) => {
+    const page = structuredClone(read);
+    page.data.repository.issue.subIssues = { pageInfo: { hasNextPage: at < count - 1, endCursor: `c${at + 1}` }, nodes: nodes.slice(at * size, (at + 1) * size) };
+    return page;
+  });
+}
+
 function comment(body: string, createdAt: string): Json {
   return { url: `https://github.com/Ancienttwo/repo-harness/issues/1#issuecomment-${Date.parse(createdAt)}`, createdAt, authorAssociation: 'OWNER', body };
 }
@@ -100,6 +112,8 @@ function replayInput(options: Replay): BoardCollectInput {
   mkdirSync(join(root, 'bin'));
   writeFileSync(join(root, 'bin/hc'), HC); chmodSync(join(root, 'bin/hc'), 0o755);
   const parent = JSON.parse(fixture('parent-1474.graphql.json')); options.parent?.(parent.data);
+  const parentPages = options.pages === undefined ? [parent] : subIssuePages(parent, options.pages.size);
+  options.pages?.edit?.(parentPages);
   const pulls = JSON.parse(fixture('pull-requests-1474.graphql.json')); options.pulls?.(pulls.data);
   const resolved = JSON.parse(fixture('archctx-resolve-1474.json')); options.owners?.(resolved.data.results);
   const answer = (value: unknown) => ({ status: 0, stdout: typeof value === 'string' ? value : JSON.stringify(value) });
@@ -110,7 +124,11 @@ function replayInput(options: Replay): BoardCollectInput {
     host: options.host ?? boardHostPorts({ env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES, HC_VERSION: options.hcVersion ?? '0.1.19' } }),
     gh_runner: (args) => {
       if (args[0] === 'repo') return answer({ nameWithOwner: 'Ancienttwo/repo-harness' });
-      if (args[1] === 'graphql') return answer(args.some(arg => arg.includes('subIssues')) ? parent : pulls);
+      if (args[1] === 'graphql' && args.some(arg => arg.includes('subIssues'))) {
+        const after = args.find(arg => arg.startsWith('after='));
+        return answer(parentPages[after === undefined ? 0 : Number(after.slice('after=c'.length))]);
+      }
+      if (args[1] === 'graphql') return answer(pulls);
       if (args.some(arg => arg.includes('actions/workflows/ci.yml/runs'))) return answer(fixture('daily-run.json'));
       if (args.includes('repos/Ancienttwo/repo-harness/contents/.ai/harness/policy.json?ref=main')) return options.policy ?? POLICY_ABSENT;
       if (args.includes('repos/{owner}/{repo}')) return answer({ id: 1_000_001 });
@@ -653,6 +671,25 @@ test('board merge: an accepted, green, ready PR first in plan order is eligible,
   const synced = mergeReplay({ pulls: (data) => { const { pr1491 } = data.repository; pr1491.headRefOid = pr1491.commits.nodes[0].commit.oid = 'c'.repeat(40); } }, { mergeOnlySyncs: (_input, candidates) => candidates.filter(sha => sha === pr.head_sha) });
   expect(replay(synced).pull_requests.find(entry => entry.number === 1491)!.acceptance).toMatchObject({ status: 'accepted', via: 'sync', carried_from: pr.head_sha });
   expect(boardMergeDecisions(replay(synced)).find(entry => entry.pr === 1491)).toEqual({ pr: 1491, eligible: true });
+});
+
+test('board read: every sub-issue page of the parent reaches the board and the merge_order gate; a truncated or repeating page fails closed', () => {
+  const single = replay();
+  const paged = replay({ pages: { size: 4 } });
+  expect(paged.items.map(item => [item.number, item.pull_requests])).toEqual(single.items.map(item => [item.number, item.pull_requests]));
+  // #1482 is on the third page: the gate sees it closed, as it sees a closed sub-issue on the first page.
+  const closedOnLastPage = mergeReplay({ order: [1482, 1475], parent: (data) => { issueNode(data, 1482).state = 'CLOSED'; } }, { pages: { size: 4 } });
+  expect(boardMergeDecisions(replay(closedOnLastPage)).find(entry => entry.pr === 1491)).toEqual({ pr: 1491, eligible: true });
+  const refusal = (edit: (pages: Json[]) => void) => {
+    try { replay({ pages: { size: 4, edit } }); return 'read'; } catch (error) { return error instanceof BoardSourceError ? error.message : String(error); }
+  };
+  expect([
+    refusal((pages) => { pages[1]!.data.repository.issue.subIssues.pageInfo.endCursor = null; }),
+    refusal((pages) => { pages[2]!.data.repository.issue.subIssues.nodes.push(pages[0]!.data.repository.issue.subIssues.nodes[0]); }),
+  ]).toEqual([
+    'board source invalid: page 1 issue.subIssues.pageInfo.endCursor is not a cursor',
+    'board source invalid: sub-issue #1475 is on more than one page',
+  ]);
 });
 
 test('board merge: every hold stays in force until a strictly newer release on its own thread; Issues: scopes only a parent hold', () => {
