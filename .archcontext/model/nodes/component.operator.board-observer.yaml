@@ -1,0 +1,16 @@
+schemaVersion: archcontext.node/v2
+id: component.operator.board-observer
+kind: component
+name: Board Observer
+status: active
+parent: capability.runtime-harness.operator
+layer: effects
+summary: Observes live repository seats through one hc invalidation stream and publishes an in-memory seats document.
+responsibilities:
+  - Hold one hc events stream per registered repository, debounce changes, replace observations from a snapshot and join agent values from hc ls by address.
+  - Use the shared hc seat-terminal mapping, omit finished and service terminals, and read each changed terminal branch asynchronously in its working directory.
+  - Refresh all seat branches on each facts cycle, reconnect after a stream loss and stop subscriptions when the server closes or a repository leaves the registry.
+  - Own every repository child, deadline and retry through an abort signal; drain children on removal or close, and retry failed reads with backoff capped at the facts interval.
+source:
+  include:
+    - src/effects/operator/board-observer.ts

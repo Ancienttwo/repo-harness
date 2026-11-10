@@ -30,6 +30,7 @@ source:
     - specs/tla/checks.tsv
     - .claude/skills/verify-boss-command/SKILL.md
   exclude:
+    - src/effects/operator/board-observer.ts
     - src/effects/operator/bot-access.ts
     - src/effects/operator/notify-collector.ts
     - src/effects/operator/slack-review-collector.ts

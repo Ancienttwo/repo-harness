@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, mkdirSync, readFileSync, rmSync, watch, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpWorkspace } from '../helpers/repo-fixture';
 import {
@@ -52,6 +52,23 @@ async function asyncFailure(call: () => Promise<unknown>): Promise<HerdrCoreErro
 }
 
 const GET = ['get', '--json', '--', 't4'];
+
+test('aborting an async list reaps its hc child before the read settles', async () => {
+  const run = fake('hang');
+  const ready = join(run.root, 'ready');
+  writeFileSync(join(run.root, 'bin/hc'), `#!${process.execPath}\nconst fs = require('node:fs');\nprocess.on('SIGTERM', () => {});\nfs.writeFileSync(${JSON.stringify(ready + '.tmp')}, String(process.pid));\nfs.renameSync(${JSON.stringify(ready + '.tmp')}, ${JSON.stringify(ready)});\nsetInterval(() => {}, 1000);\n`);
+  const controller = new AbortController();
+  const watcher = watch(run.root);
+  const started = new Promise<void>(resolve => watcher.on('change', (_event, name) => { if (name === 'ready') resolve(); }));
+  try {
+    const result = hcListAsync(RH_NOTIFY_LABELS, { env: run.env, signal: controller.signal }).catch((error: unknown) => error);
+    await started;
+    const pid = Number(readFileSync(ready, 'utf8'));
+    controller.abort();
+    expect(await result).toMatchObject({ name: 'AbortError' });
+    expect(() => process.kill(pid, 0)).toThrow();
+  } finally { controller.abort(); watcher.close(); }
+});
 
 test('success: labels go in on run and list, and come back out of get', async () => {
   const run = fake('ok', { address: 't4', agent: 'claude', cwd: '/w', name: 'rh-worker', state: 'live', turn: 0 });
