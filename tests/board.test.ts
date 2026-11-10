@@ -1236,7 +1236,7 @@ test('acceptance disposition: a FAIL row is ignored only when every finding of i
   });
   const failAt = '2026-11-02T22:00:00Z';
   const failUrl = `${base}/pull/1499#issuecomment-${Date.parse(failAt)}`;
-  const status = (dispositions: string[]) => {
+  const status = (dispositions: string[], mangleSecond = false) => {
     const read = replay({
       owners: (results) => { results.push({ path: boardWriter, matched: false, ambiguous: false, owningCapabilityId: null }); },
       parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: 'tier:medium' }); },
@@ -1247,7 +1247,9 @@ test('acceptance disposition: a FAIL row is ignored only when every finding of i
         const claimAt = '2026-11-02T21:01:00Z';
         const claimUrl = `${base}/pull/1499#issuecomment-${Date.parse(claimAt)}`;
         pr1499.comments.nodes.push(comment(renderAcceptanceClaim(receipt(head, 'PASS', 1)), claimAt));
-        pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt(head, 'FAIL', 1), claimUrl), failAt));
+        const failRecord = renderAcceptanceRecord(receipt(head, 'FAIL', 1), claimUrl);
+        // A bullet marker outside the record shape makes the finding list unreadable.
+        pr1499.comments.nodes.push(comment(mangleSecond ? failRecord.replace('- P2 R1-2', '* P2 R1-2') : failRecord, failAt));
         const passClaimAt = '2026-11-02T22:20:00Z';
         pr1499.comments.nodes.push(comment(renderAcceptanceClaim(receipt(head, 'PASS', 2)), passClaimAt));
         pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt(head, 'PASS', 2), `${base}/pull/1499#issuecomment-${Date.parse(passClaimAt)}`), '2026-11-02T22:30:00Z'));
@@ -1262,6 +1264,8 @@ test('acceptance disposition: a FAIL row is ignored only when every finding of i
   expect(status([disposition('R1-1')])).toBe('not_accepted');
   expect(status([disposition('R1-1'), disposition('R1-2')])).toBe('accepted');
   expect(status([disposition('R1-1, R1-2')])).toBe('accepted');
+  expect(status([disposition('R1-1')], true)).toBe('not_accepted');
+  expect(status([disposition('R1-1, R1-2')], true)).toBe('not_accepted');
   expect(status([disposition('R1-1, R1-2', `${base}/pull/1499#issuecomment-7`)])).toBe('not_accepted');
   expect(status([disposition('R1-1, R1-2', failUrl, 'd'.repeat(40))])).toBe('not_accepted');
 });

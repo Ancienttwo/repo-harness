@@ -478,15 +478,15 @@ export function parseAcceptanceRecord(comment: BoardCommentV1): readonly Accepta
 const RECORD_FINDING = /^- P[0-3] ([^\s:]+)(?: at |: )/u;
 
 /**
- * The finding IDs of an `acceptance record`, from its `Findings:` bullets. Null when the section is missing, holds no bullet, or holds
- * a bullet outside the template shape: a finding that has no ID cannot be named by a disposition, so the record stays unresolvable.
+ * The finding IDs of an `acceptance record`, from the lines after its `Findings:` line. Every non-empty line must be a finding bullet
+ * of the `review publish` shape. A missing section, no line, or any other line (another bullet marker, indentation, a continuation)
+ * returns null: a finding that cannot be read cannot be named by a disposition, so the record stays unresolvable.
  */
 export function parseRecordFindings(comment: BoardCommentV1): readonly string[] | null {
   const lines = comment.body.replace(/\r\n/gu, '\n').split('\n');
   const start = lines.findIndex(line => line.trim() === 'Findings:');
   if (start < 0) return null;
-  const bullets = lines.slice(start + 1).filter(line => line.startsWith('- '));
-  const ids = bullets.map(line => RECORD_FINDING.exec(line)?.[1]);
+  const ids = lines.slice(start + 1).filter(line => line.trim() !== '').map(line => RECORD_FINDING.exec(line)?.[1]);
   return ids.length === 0 || ids.some(id => id === undefined) ? null : Object.freeze(ids as string[]);
 }
 
