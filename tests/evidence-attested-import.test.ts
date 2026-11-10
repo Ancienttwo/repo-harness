@@ -92,7 +92,7 @@ function baseReceipt(root: string, overrides: Partial<AttestedReceiptInput> = {}
 describe("importAttestedEvidence: trust mapping", () => {
   test("external_pass maps to external_attested", () => {
     withTempRepo("attested-import-external-pass", (repoRoot) => {
-      const { contractRelative } = setupFixtureRepo(repoRoot);
+      setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt: baseReceipt(repoRoot) });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
@@ -108,7 +108,7 @@ describe("importAttestedEvidence: trust mapping", () => {
 
   test("user_waiver maps to human_acceptance", () => {
     withTempRepo("attested-import-user-waiver", (repoRoot) => {
-      const { contractRelative } = setupFixtureRepo(repoRoot);
+      setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
         authority: authorityFor(repoRoot),
@@ -127,7 +127,7 @@ describe("importAttestedEvidence: trust mapping", () => {
 
   test("emits the complete D3 field set and a redaction-safe short payload", () => {
     withTempRepo("attested-import-d3-fields", (repoRoot) => {
-      const { contractRelative } = setupFixtureRepo(repoRoot, { allowedPaths: ["src/a.ts", "src/b.ts"] });
+      setupFixtureRepo(repoRoot, { allowedPaths: ["src/a.ts", "src/b.ts"] });
       const receipt = baseReceipt(repoRoot);
       const result = importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt });
       expect(result.ok).toBe(true);
@@ -163,7 +163,7 @@ describe("importAttestedEvidence: trust mapping", () => {
 describe("importAttestedEvidence: fail-closed paths", () => {
   test("unknown disposition fails closed and appends nothing", () => {
     withTempRepo("attested-import-unknown-disposition", (repoRoot) => {
-      const { contractRelative } = setupFixtureRepo(repoRoot);
+      setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
         authority: authorityFor(repoRoot),
@@ -179,7 +179,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
 
   test("a completely bogus disposition also fails closed", () => {
     withTempRepo("attested-import-bogus-disposition", (repoRoot) => {
-      const { contractRelative } = setupFixtureRepo(repoRoot);
+      setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
         authority: authorityFor(repoRoot),
@@ -194,7 +194,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
 
   test("missing actor (empty reviewer) fails closed and appends nothing", () => {
     withTempRepo("attested-import-missing-actor", (repoRoot) => {
-      const { contractRelative } = setupFixtureRepo(repoRoot);
+      setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
         authority: authorityFor(repoRoot),
@@ -210,7 +210,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
 
   test("missing reason (blank summary) fails closed and appends nothing", () => {
     withTempRepo("attested-import-missing-reason", (repoRoot) => {
-      const { contractRelative } = setupFixtureRepo(repoRoot);
+      setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
         authority: authorityFor(repoRoot),
@@ -225,7 +225,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
 
   test("missing subject (empty subject_sha256) fails closed and appends nothing", () => {
     withTempRepo("attested-import-missing-subject-hash", (repoRoot) => {
-      const { contractRelative } = setupFixtureRepo(repoRoot);
+      setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
         authority: authorityFor(repoRoot),
@@ -240,7 +240,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
 
   test("missing subject (empty target_revision) fails closed and appends nothing", () => {
     withTempRepo("attested-import-missing-target-revision", (repoRoot) => {
-      const { contractRelative } = setupFixtureRepo(repoRoot);
+      setupFixtureRepo(repoRoot);
       const result = importAttestedEvidence({
         repoRoot,
         authority: authorityFor(repoRoot),
@@ -255,7 +255,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
 
   test("a revoked admission fails closed despite a contract file and appends nothing", () => {
     withTempRepo("attested-import-uncommitted-contract", (repoRoot) => {
-      const { contractRelative } = setupFixtureRepo(repoRoot, { commitContract: false });
+      setupFixtureRepo(repoRoot, { commitContract: false });
       writeFileSync(join(admissions.get(repoRoot)!.directory, 'active.json'), JSON.stringify({ protocol: 1, revision: 2, grant_sha256: null }));
       const result = importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt: baseReceipt(repoRoot) });
       expect(result.ok).toBe(false);
@@ -269,7 +269,7 @@ describe("importAttestedEvidence: fail-closed paths", () => {
 describe("importAttestedEvidence: default-deny at trust level", () => {
   test("an attested-only ledger leaves the authoritative filter empty", () => {
     withTempRepo("attested-import-default-deny", (repoRoot) => {
-      const { contractRelative } = setupFixtureRepo(repoRoot);
+      setupFixtureRepo(repoRoot);
       const first = importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt: baseReceipt(repoRoot) });
       const second = importAttestedEvidence({
         repoRoot,
@@ -302,7 +302,7 @@ describe("importAttestedEvidence: default-deny at trust level", () => {
 describe("importAttestedEvidence: idempotency and genesis", () => {
   test("identical re-import dedups to one accepted event (two physical appends)", () => {
     withTempRepo("attested-import-idempotent", (repoRoot) => {
-      const { contractRelative } = setupFixtureRepo(repoRoot);
+      setupFixtureRepo(repoRoot);
       const receipt = baseReceipt(repoRoot);
 
       const first = importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt, correlationRunId: "run-a" });
@@ -328,7 +328,7 @@ describe("importAttestedEvidence: idempotency and genesis", () => {
 
   test("re-importing a receipt with a different subject is not deduped", () => {
     withTempRepo("attested-import-distinct-subject", (repoRoot) => {
-      const { contractRelative } = setupFixtureRepo(repoRoot);
+      setupFixtureRepo(repoRoot);
       const first = importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt: baseReceipt(repoRoot) });
       const second = importAttestedEvidence({
         repoRoot,
@@ -347,7 +347,7 @@ describe("importAttestedEvidence: idempotency and genesis", () => {
 
   test("genesis is written once with LEDGER_EPOCH_START_SHA across repeated imports", () => {
     withTempRepo("attested-import-genesis-once", (repoRoot) => {
-      const { contractRelative } = setupFixtureRepo(repoRoot);
+      setupFixtureRepo(repoRoot);
       expect(readGenesisRecord(repoRoot)).toBeNull();
 
       const receipt = baseReceipt(repoRoot);
@@ -376,7 +376,7 @@ describe("importAttestedEvidence: unterminated log tail", () => {
   for (const tail of ["sole genesis", "event"] as const) {
     test(`an unterminated ${tail} record fails closed as unterminated_log_tail, not genesis_epoch_conflict`, () => {
       withTempRepo("attested-import-unterminated-tail", (repoRoot) => {
-        const { contractRelative } = setupFixtureRepo(repoRoot);
+        setupFixtureRepo(repoRoot);
         if (tail === "sole genesis") {
           appendGenesisRecord(repoRoot, LEDGER_EPOCH_START_SHA, { worktreeId: "attested-import-unterminated-tail" });
         } else {
@@ -405,7 +405,7 @@ describe("importAttestedEvidence: unterminated log tail", () => {
 describe("importAttestedEvidence: corrupt terminated log line", () => {
   test("a terminated line that does not parse fails closed as corrupt_log_tail and does not append", () => {
     withTempRepo("attested-import-corrupt-line", (repoRoot) => {
-      const { contractRelative } = setupFixtureRepo(repoRoot);
+      setupFixtureRepo(repoRoot);
       expect(importAttestedEvidence({ repoRoot, authority: authorityFor(repoRoot), receipt: baseReceipt(repoRoot) }).ok).toBe(true);
       const logPath = join(repoRoot, ".ai", "harness", "evidence", "events", "log.jsonl");
       writeFileSync(logPath, Buffer.concat([readFileSync(logPath), Buffer.from("{\"kind\":\"evidence_event\"}{\n")]));
