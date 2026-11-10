@@ -452,6 +452,15 @@ function clipSegment(s: Segment, b: Box): [Point, Point] | null {
   return [{ x: s.a.x + t0 * dx, y: s.a.y + t0 * dy }, { x: s.a.x + t1 * dx, y: s.a.y + t1 * dy }];
 }
 
+// A segment has a point strictly inside the box when its clipped part has an interior midpoint.
+// This also holds for a zero-length segment, which clips to a single point.
+function entersInterior(s: Segment, b: Box): Point | null {
+  const part = clipSegment(s, b);
+  if (part === null) return null;
+  const mid = { x: (part[0].x + part[1].x) / 2, y: (part[0].y + part[1].y) / 2 };
+  return mid.x > b.left && mid.x < b.right && mid.y > b.top && mid.y < b.bottom ? mid : null;
+}
+
 function boardBoxes(html: string, caption: string, classes: string[]): { box: Box; text: string }[] {
   const found: { box: Box; text: string }[] = [];
   for (const tag of html.matchAll(/<(?:a|div)\b([^>]*)>/g)) {
@@ -513,6 +522,19 @@ function boardFindings(caption: string, html: string): GeometryFinding[] {
       if (!borders.some((b) => borderDistance(p, b) <= END_TOLERANCE)) {
         add("line_end_open", p.x, p.y, `path end (${p.x},${p.y}) is more than ${END_TOLERANCE} px from every node and panel border`);
       }
+    }
+  }
+
+  // A node border has a tolerance of END_TOLERANCE: a segment runs through a node when it has a
+  // point more than that far inside every side, so path ends need no special case.
+  const insets = nodes.map((n) => ({
+    node: n,
+    inset: { left: n.left + END_TOLERANCE, top: n.top + END_TOLERANCE, right: n.right - END_TOLERANCE, bottom: n.bottom - END_TOLERANCE },
+  }));
+  for (const s of allSegments) {
+    for (const { node, inset } of insets) {
+      const hit = entersInterior(s, inset);
+      if (hit) add("line_through_box", hit.x, hit.y, `path segment (${s.a.x},${s.a.y})-(${s.b.x},${s.b.y}) runs more than ${END_TOLERANCE} px inside node ${at(node)}`);
     }
   }
 
