@@ -1866,6 +1866,11 @@ describe('merge-only sync carry (#2074)', () => {
     };
     expect(failing(subject, base, [subject])).toEqual([]);
     expect(failing(initial, sync, [subject, initial])).toEqual([]);
+    // A failed existence check of one candidate, after the preflight passed, gives no proof for any candidate.
+    const wrapper = join(root, '.git-fails-rev-parse');
+    writeFileSync(wrapper, `#!/bin/sh\n[ "$1 $2 $3 $4" = "rev-parse --verify --quiet ${initial}^{commit}" ] && exit 128\nexec git "$@"\n`); chmodSync(wrapper, 0o755);
+    process.env.REPO_HARNESS_GIT_BIN = wrapper;
+    try { expect(provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: base, head_sha: sync }, [subject, initial])).toEqual([]); } finally { delete process.env.REPO_HARNESS_GIT_BIN; }
     // Without the error, the other candidate is just not a sync (the PR commit lies between it and the head).
     expect(provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: base, head_sha: sync }, [subject, initial])).toEqual([subject]);
   });
