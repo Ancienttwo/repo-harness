@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from "os";
 import { delimiter, dirname, join } from "path";
 import { seatPaneName } from "../../src/core/board/seat-launch";
-import { HANDOFF_SECTIONS } from "../../src/core/board/seat-reset";
+import { HANDOFF_SECTIONS, seatResetReason, seatResetSteps } from "../../src/core/board/seat-reset";
 import { SeatResetError, runSeatReset, type SeatResetNotify } from "../../src/effects/board/seat-reset";
 import { DEFAULT_SEATS_CONFIG, WORKER_SEAT_IDS } from "../../src/core/board/seats-settings";
 import { repoHarnessRepoIdFor } from "../../src/effects/repo-registry";
@@ -679,6 +679,56 @@ describe("repo-harness seats argv", () => {
       expect(result.stdout).toBe("");
       expect(JSON.parse(result.stderr).error).toBe("config_invalid");
     });
+  });
+});
+
+describe("repo-harness seats handoff (#2175)", () => {
+  test("it fails closed without a seat identity, a session record or a context, else records the request and prints the hook steps", () => {
+    const home = mkdtempSync(join(tmpdir(), "seats-handoff-"));
+    // The seat directory is fixed under /tmp; a repository id per run keeps the runs apart.
+    const repository = String(8_000_000_000 + process.pid);
+    const dir = join("/tmp/repo-harness-seats", repository, "orchestrator");
+    const transcript = join(home, "transcript.jsonl");
+    const handoff = (seat: Record<string, string>) => {
+      const { REPO_HARNESS_SEAT: _seat, REPO_HARNESS_SEAT_REPOSITORY: _repository, ...base } = process.env;
+      const result = spawnSync(process.execPath, [CLI, "seats", "handoff"], { env: { ...base, HOME: home, ...seat }, encoding: "utf8" });
+      return { status: result.status, stdout: result.stdout, error: result.stderr === "" ? null : JSON.parse(result.stderr).error };
+    };
+    const seat = { REPO_HARNESS_SEAT: "orchestrator", REPO_HARNESS_SEAT_REPOSITORY: repository };
+    try {
+      const failures = [handoff({}), handoff({ REPO_HARNESS_SEAT: "worker", REPO_HARNESS_SEAT_REPOSITORY: repository }), handoff(seat)];
+      mkdirSync(dir, { recursive: true });
+      // A record with a readable transcript but any field unlike recordSeatSession writes it is not the SessionStart record.
+      writeFileSync(transcript, `${JSON.stringify({ type: "assistant", message: { usage: { input_tokens: 10 } } })}\n`);
+      const record = { session_id: "s", transcript_path: transcript, source: "startup", started_at: new Date().toISOString() };
+      const { session_id: _missing, ...noSessionId } = record;
+      const malformed = [{ transcript_path: transcript }, noSessionId, { ...record, source: "bogus" }, { ...record, started_at: "2024" }];
+      for (const bad of malformed) {
+        writeFileSync(join(dir, "session.json"), JSON.stringify(bad));
+        failures.push(handoff(seat));
+      }
+      writeFileSync(join(dir, "session.json"), JSON.stringify(record));
+      writeFileSync(transcript, `${JSON.stringify({ type: "user", message: { role: "user", content: "hi" } })}\n`);
+      failures.push(handoff(seat));
+      expect(failures).toEqual([
+        { status: 1, stdout: "", error: "seat_identity_missing" }, { status: 1, stdout: "", error: "seat_identity_missing" },
+        { status: 1, stdout: "", error: "seat_session_unknown" },
+        ...malformed.map(() => ({ status: 1, stdout: "", error: "seat_session_unknown" })),
+        { status: 1, stdout: "", error: "seat_context_unknown" },
+      ]);
+      expect(existsSync(join(dir, "request.json"))).toBe(false);
+
+      writeFileSync(transcript, `${JSON.stringify({ type: "assistant", message: { usage: { input_tokens: 10, cache_read_input_tokens: 200_000, cache_creation_input_tokens: 5 } } })}\n`, { flag: "a" });
+      const identity = { seat: "orchestrator", repository } as const;
+      expect(handoff(seat)).toEqual({ status: 0, stdout: `${seatResetSteps(identity)}\n`, error: null });
+      // The Stop hook prints the same steps after its token line.
+      expect(seatResetReason(identity, 1).split("\n").slice(1).join("\n")).toBe(seatResetSteps(identity));
+      const request = JSON.parse(readFileSync(join(dir, "request.json"), "utf8"));
+      expect([request.context_tokens, request.transcript_path, Number.isFinite(Date.parse(request.requested_at))]).toEqual([200_015, transcript, true]);
+    } finally {
+      rmSync(join("/tmp/repo-harness-seats", repository), { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
 
