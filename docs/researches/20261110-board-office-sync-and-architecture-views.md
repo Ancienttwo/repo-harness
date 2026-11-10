@@ -56,7 +56,7 @@ Method: the `gh_runner`, `readiness` and host seams of `collectBoard`, `collectB
 Totals for #1474: 5 + 3 × 15 = **50 `gh`**, 6 `hc`, 4 `git`. The parents read: 1 `gh`, 5 `hc`, 3 `git`. The comment at `server.ts:1595` says "about ten GitHub reads".
 
 The 15 calls of one readiness read, in order: `repo view`, `pr view`, `api repos/<r>`, `pr checks --required`, `api actions/runs/<id>`, `contents/.ai/harness/policy.json?ref=<base>`, `contents/.github/workflows/ci-report.yml?ref=<base>`, `commits/<base>/pulls`, `git/commits/<base>`, `pulls/<parent PR>`, `commits/<parent>/pulls`, `api graphql` (reviews), `repo view`, `pr view`, `api repos/<r>`.
-Four of them read the repository identity. Six read facts of the base commit only. Five read the pull request. Pull requests of one batch usually share one base commit, so 10 of the 15 calls return the same answer for each of them: the board makes 15 N calls where 5 N + 10 different answers exist.
+Four of them read the repository identity. Six read facts of the base commit only. Five read the pull request. Pull requests of one batch usually share one base commit, so 10 of the 15 calls return the same answer for each of them. The 10 calls hold 8 different answers, because the repository identity is read two times. The board makes 15 N calls where 5 N + 8 different answers exist.
 
 Timing in this container: one `gh api` round trip 0.48 s to 0.56 s (5 runs; `gh --version` alone 0.04 s); one CLI start (`bun src/cli/index.ts board parents`, stopped at the option check) 0.12 s to 0.29 s.
 
@@ -221,7 +221,7 @@ The sequence view is not a graph layout. It keeps `layoutSequence` and takes the
 | 5 | One viewport rule; data-driven first lens and first segment | small | No cut or empty first view |
 | 6 | Directed edges from layout points in Modules and Topology; one edge type | medium | Readable relations; edge geometry exists outside a browser |
 | 7 | Placed-scene check in Bun and one browser smoke test | medium | Defects of section 3 fail a check |
-| 8 | Read the 10 shared answers of the readiness read once for each board read | medium | 5 N + 10 calls, not 15 N: 25, not 45, for 3 pull requests |
+| 8 | Read the 8 shared answers of the readiness reads once for each board read | medium | 5 N + 8 calls, not 15 N: 23, not 45, for 3 pull requests |
 | 9 | Resident board observer in `operator serve` with keyed sources, hc events and ETag answers | large | A board with no change costs 2 calls; a seat change reaches the desk at the poll interval of a cached route |
 | 10 | Shared collector and browser hook (5.1); one canvas shell and scene pipeline (5.3) | large, mostly mechanical | One place for each rule |
 
