@@ -316,7 +316,6 @@ or `repair`). The error names the one-shot cleanup. Run
 Hooks do not record architecture drift. They keep no queue and no drift cursor,
 and they run no projection or LLM work. Architecture updates are explicit:
 
-- `repo-harness run workstream-sync` maintains durable capability workstreams.
 - Agents read architecture documents on demand, fix debt, and update the model and human prose. The archctx rolling writer publishes generated regions and the manifest.
 
 `repo-harness state resolve --json` reports `capability_ownership`. It is a
@@ -484,7 +483,9 @@ After handler or workflow-contract changes, run:
 
 ```bash
 bun test
-repo-harness run check-task-sync
-repo-harness run check-task-workflow
-repo-harness init --repo . --dry-run
+bash scripts/check-ci.sh governance
 ```
+
+That lane also runs the state boundary check, the helper projection check and
+`repo-harness init --repo . --dry-run` (`scripts/check-ci.sh:232`,
+`scripts/check-ci.sh:238`, `scripts/check-ci.sh:252`).
