@@ -11,7 +11,7 @@ Evidence grades: **measured** (a count or a time from a run in this container), 
 
 | Question | Finding | Grade |
 |---|---|---|
-| Why does the Office sync slowly? | Each board GET starts a new CLI process, and that process reads every source again, one child process after the other. The recorded #1474 board (3 open pull requests, 4 seat terminals) costs 50 `gh`, 6 `hc` and 4 `git` processes. One `gh` round trip took 0.48 s to 0.56 s here, so `gh` alone is about 25 s. | measured counts, derived time |
+| Why does the Office sync slowly? | Each board GET starts a new CLI process, and that process reads every source again, one child process after the other. The recorded #1474 board (3 open pull requests, 2 of them stacked on the third; 4 seat terminals) costs 36 `gh`, 6 `hc` and 4 `git` processes. One `gh` round trip took 0.48 s to 0.56 s here, so `gh` alone is about 18 s. Three pull requests on the default branch cost 50 `gh` processes, about 25 s. | measured counts, derived time |
 | | The browser asks every 30 s, and every 60 s or 120 s after a refusal. The room shows no desk before the board read ends. The overview shows the desk states and counts of the last board GET of each room, and no process refreshes them. | read |
 | Is the pixel scene the cause? | No. The room uses 4.3% of the main thread and causes no long task. | measured |
 | Why is the architecture view quality low? | Five canvases, five layout modules, three SVG exporters and one hand-placed HTML map draw the same model. Only the Layers view routes its edges from layout data. Two views open at a fixed 85% zoom, and the topology view anchors it on one box in model order. The tests run in happy-dom, which draws no edge and has no geometry. | read, observed |
@@ -36,14 +36,14 @@ Evidence grades: **measured** (a count or a time from a run in this container), 
 
 ### 1.2 Cost of one read (measured)
 
-Method: the `gh_runner`, `readiness` and host seams of `collectBoard`, `collectBoardParents` and `collectPullRequestMergeReadiness` with counting test doubles, on the recorded #1474 reads. Each count is one `spawnSync` in production.
+Method: the `gh_runner` and host seams of `collectBoard`, `collectBoardParents` and `collectPullRequestMergeReadiness` with a counting provider double, on the recorded #1474 reads. The readiness reader ran unchanged; the double answers each of its calls from the recorded pull requests. Each count is one `spawnSync` in production.
 
 | Read | Source | Processes | Code |
 |---|---|---|---|
 | Board | Repository name | 1 `gh` | `collect.ts:229` |
 | | Parent issue, sub-issues and comments | 1 `gh` for each page of sub-issues | `collect.ts:233-242` |
 | | Linked pull requests | 1 `gh` | `collect.ts:252` |
-| | Merge readiness of each open pull request | 11 `gh`; 15 `gh` when the base commit has `.github/workflows/ci-report.yml`, as this repository has | `collect.ts:254-260`, `src/effects/publication/merge-readiness.ts:1152-1170` |
+| | Merge readiness of each open pull request | On the default branch: 11 `gh`; 15 `gh` when the base commit has `.github/workflows/ci-report.yml`, as this repository has. A member of a one-level stack: 8 `gh` | `collect.ts:254-260`, `src/effects/publication/merge-readiness.ts:1152-1170` |
 | | Path owners | 1 `archctx resolve` batch | `collect.ts:193-209` |
 | | Merge-only sync proof, for each pull request with an earlier reviewed head | `git`; one `git fetch` when a commit is missing | `src/effects/board/merge-only-sync.ts:107-118` |
 | | `publication.acceptance_merge` | 1 `gh` | `collect.ts:136-149` |
@@ -53,26 +53,26 @@ Method: the `gh_runner`, `readiness` and host seams of `collectBoard`, `collectB
 | Parents | Open issues | 1 `gh` for each 100 open issues | `src/effects/board/parents.ts:44-47` |
 | | Seat terminals | 1 `hc ls`, 1 `hc get` for each terminal, 1 `git` for each seat | `parents.ts:56-58` |
 
-Totals for #1474: 5 + 3 × 15 = **50 `gh`**, 6 `hc`, 4 `git`. The parents read: 1 `gh`, 5 `hc`, 3 `git`. The comment at `server.ts:1595` says "about ten GitHub reads".
+Totals for #1474: one pull request on main and two stacked on it, so 5 + 15 + 8 + 8 = **36 `gh`** (32 when the base has no `ci-report.yml`), 6 `hc`, 4 `git`. Three pull requests on the default branch cost 5 + 3 × 15 = 50 `gh`. The parents read: 1 `gh`, 5 `hc`, 3 `git`. The comment at `server.ts:1595` says "about ten GitHub reads".
 
 The 15 calls of one readiness read, in order: `repo view`, `pr view`, `api repos/<r>`, `pr checks --required`, `api actions/runs/<id>`, `contents/.ai/harness/policy.json?ref=<base>`, `contents/.github/workflows/ci-report.yml?ref=<base>`, `commits/<base>/pulls`, `git/commits/<base>`, `pulls/<parent PR>`, `commits/<parent>/pulls`, `api graphql` (reviews), `repo view`, `pr view`, `api repos/<r>`.
-Four of them read the repository identity. Six read facts of the base commit only. Five read the pull request. Pull requests of one batch usually share one base commit, so 10 of the 15 calls return the same answer for each of them. The 10 calls hold 8 different answers, because the repository identity is read two times. The board makes 15 N calls where 5 N + 8 different answers exist.
+Four of them read the repository identity: 2 answers, the same for each pull request of the repository. Six read facts of the base commit only: the same for each pull request with the same base SHA. Five read the pull request. For N pull requests on the default branch the board makes 15 N calls. The different answers are between 5 N + 8 (one base SHA) and 11 N + 2 (N base SHAs). A stack member makes 8 calls, and 4 of them read the repository identity.
 
 Timing in this container: one `gh api` round trip 0.48 s to 0.56 s (5 runs; `gh --version` alone 0.04 s); one CLI start (`bun src/cli/index.ts board parents`, stopped at the option check) 0.12 s to 0.29 s.
 
 ### 1.3 Latency budget (derived)
 
-`T(board) ≈ 0.5 s × (5 + 15 × open pull requests)` plus the `hc`, `git` and `archctx` processes. The read is ended at 90 s (`src/effects/operator/board-read.ts:18`).
+`T(board) ≈ 0.5 s × (5 + 15 × pull requests on the default branch + 8 × stack members)` plus the `hc`, `git` and `archctx` processes. The read is ended at 90 s (`src/effects/operator/board-read.ts:18`).
 
 | Path | Latency |
 |---|---|
-| Room, first desk on screen | `T(parents) + T(board)`: about 25 s for 3 open pull requests, about 48 s for 6 |
+| Room, first desk on screen | `T(parents) + T(board)`: about 18 s for the recorded board; about 25 s for 3 pull requests on the default branch, about 48 s for 6 |
 | Seat status word changes, desk follows | 0 to 30 s wait, then `T(parents)`; the wait is 60 s or 120 s after a refusal |
 | CI or acceptance changes, desk follows | 0 to 30 s wait, then `T(board)` |
 | Overview, 8 repositories, 4 with an active parent | 12 parents reads in sequence for each cycle |
 | Overview desk states, queue, CI and "needs you" counts | The age of the last board GET of that room: no upper limit |
 
-Prediction for the owner host: `time repo-harness board --parent <n> --json` is near `(5 + 15 × open pull requests)` times the time of one `gh api` call on that host.
+Prediction for the owner host: `time repo-harness board --parent <n> --json` is near `(5 + 15 × pull requests on the default branch + 8 × stack members)` times the time of one `gh api` call on that host.
 
 ### 1.4 What does not cause it: the scene
 
@@ -221,7 +221,7 @@ The sequence view is not a graph layout. It keeps `layoutSequence` and takes the
 | 5 | One viewport rule; data-driven first lens and first segment | small | No cut or empty first view |
 | 6 | Directed edges from layout points in Modules and Topology; one edge type | medium | Readable relations; edge geometry exists outside a browser |
 | 7 | Placed-scene check in Bun and one browser smoke test | medium | Defects of section 3 fail a check |
-| 8 | Read the 8 shared answers of the readiness reads once for each board read | medium | 5 N + 8 calls, not 15 N: 23, not 45, for 3 pull requests |
+| 8 | Read the repository identity and the base-commit facts once for each board read | medium | 26 `gh` processes, not 36, for the recorded board. For N pull requests on the default branch: between 5 N + 8 and 11 N + 2 readiness calls, not 15 N |
 | 9 | Resident board observer in `operator serve` with keyed sources, hc events and ETag answers | large | A board with no change costs 2 calls; a seat change reaches the desk at the poll interval of a cached route |
 | 10 | Shared collector and browser hook (5.1); one canvas shell and scene pipeline (5.3) | large, mostly mechanical | One place for each rule |
 
@@ -239,7 +239,7 @@ Steps 1 to 5 change no boundary. Steps 8 to 10 change the board protocol or a mo
 ## 7. Limits
 
 - No read ran against GitHub GraphQL or hc here. The call counts are exact; the times are products of a `gh` round trip measured through this container's proxy.
-- The counts are for a required check that passed, with no coverage policy, no generated-artifact policy and no stacked pull request. A failed required check adds reads of its jobs, workflow file and annotations (`merge-readiness.ts:569-683`). An active generated-artifact policy runs the declared command on the merge tree in each readiness read (`merge-readiness.ts:858-876`).
+- The counts are for a required check that passed, with no coverage policy and no generated-artifact policy. Each stack member of the recorded board has one level. The base SHA of a pull request is the value that GitHub reports for it; this research did not measure how often the pull requests of one batch share one. A failed required check adds reads of its jobs, workflow file and annotations (`merge-readiness.ts:569-683`). An active generated-artifact policy runs the declared command on the merge tree in each readiness read (`merge-readiness.ts:858-876`).
 - The CPU numbers are from headless Chromium, which has no compositor on a display.
 - The architecture renders use one model. A model with no layer order or no process nodes takes other layout paths.
 - History and the module detail graph were not rendered: they read routes that the fixture does not serve.
