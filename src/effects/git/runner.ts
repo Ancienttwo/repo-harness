@@ -126,18 +126,39 @@ function providerTokenValues(env: NodeJS.ProcessEnv): string[] {
 }
 
 /** `spawnGit` and `runGit` cannot replace values in their output, so they refuse a call that keeps a token. */
+/** The subcommand git runs, or an empty name. Runner messages name it and no argument value. */
+function subcommandOf(args: readonly string[]): string {
+  const at = gitSubcommandIndex(args);
+  return at >= 0 ? args[at]! : '';
+}
+
 export function refuseProviderToken(entry: string, args: readonly string[], childEnv: NodeJS.ProcessEnv | undefined): void {
   if (hasProviderToken(childEnv ?? process.env)) {
-    throw new Error(`${entry} cannot replace provider-token values and the environment of git ${args[0] ?? ''} keeps one; use gitExecFileSync, gitSpawnSync or gitExecFile`);
+    throw new Error(`${entry} cannot replace provider-token values and the environment of git ${subcommandOf(args)} keeps one; use gitExecFileSync, gitSpawnSync or gitExecFile`);
   }
 }
 
-/** A call that keeps a token needs stdout and stderr pipes that the runner reads and replaces. */
-function assertRunnerOwnedOutput(stdio: ExecFileSyncOptions['stdio']): void {
-  const streams = stdio === undefined || typeof stdio === 'string' ? [stdio, stdio, stdio] : stdio;
+/** The option keys that the remote git callers pass. A call that keeps a token accepts no other key. */
+const REMOTE_CALL_OPTION_KEYS = new Set(['cwd', 'env', 'gitBin', 'timeout', 'maxBuffer', 'encoding', 'input', 'killSignal', 'stdio']);
+
+/**
+ * A call that keeps a token needs stdout and stderr pipes that the runner reads and replaces.
+ * Returns the stdin mode; the runner sets stdout and stderr itself.
+ */
+function remoteStdio(stdio: ExecFileSyncOptions['stdio']): 'pipe' | 'ignore' {
+  const streams = stdio === undefined || stdio === null || typeof stdio === 'string' ? [stdio, stdio, stdio] : stdio;
   for (const stream of [streams[1], streams[2]]) {
     if (stream !== undefined && stream !== null && stream !== 'pipe' && stream !== 'ignore') {
       throw new Error('a git call that keeps a provider token needs runner-owned stdout and stderr pipes; inherit, an fd number and a raw stream are refused');
+    }
+  }
+  return streams[0] === 'ignore' ? 'ignore' : 'pipe';
+}
+
+function assertRemoteCallOptions(args: readonly string[], options: object): void {
+  for (const key of Object.keys(options)) {
+    if (!REMOTE_CALL_OPTION_KEYS.has(key)) {
+      throw new Error(`git ${subcommandOf(args)} keeps a provider token and refuses the option "${key}"; a remote call takes only ${[...REMOTE_CALL_OPTION_KEYS].join(', ')}`);
     }
   }
 }
@@ -159,24 +180,37 @@ function redactOutput<T extends string | Buffer | null | undefined>(output: T, v
 
 const outputLimitHit = (error: unknown): boolean => (error as NodeJS.ErrnoException | undefined)?.code === 'ENOBUFS';
 
-function redactThrown(error: unknown, values: readonly string[]): unknown {
-  if (!(error instanceof Error)) return error;
-  const fields = error as Error & { stdout?: unknown; stderr?: unknown; output?: unknown };
-  const cut = outputLimitHit(error);
-  error.message = redactText(error.message, values);
-  if (typeof error.stack === 'string') error.stack = redactText(error.stack, values);
-  fields.stdout = redactOutput(fields.stdout as string | Buffer | undefined, values, cut);
-  fields.stderr = redactOutput(fields.stderr as string | Buffer | undefined, values, cut);
-  if (Array.isArray(fields.output)) fields.output = fields.output.map(entry => redactOutput(entry as Buffer | null, values, cut));
-  return error;
+type Encoding = BufferEncoding | 'buffer' | null | undefined;
+
+/** The runner captures bytes and replaces values first; the caller encoding applies to the replaced bytes. */
+function encoded<T>(output: T, encoding: Encoding): T | string {
+  return Buffer.isBuffer(output) && typeof encoding === 'string' && encoding !== 'buffer' ? output.toString(encoding) : output;
 }
 
-function redactSpawnResult<R extends SpawnSyncReturns<string | Buffer>>(result: R, values: readonly string[]): R {
+/** A new error built from replaced fields only, so no field of the original (spawnargs, path, cmd) keeps a value. */
+function rebuildError(error: unknown, values: readonly string[], encoding: Encoding): unknown {
+  if (!(error instanceof Error)) return error;
+  const cut = outputLimitHit(error);
+  const rebuilt = new Error(redactText(error.message, values));
+  rebuilt.name = error.name;
+  const clean = (value: unknown, streamCut: boolean): unknown => {
+    if (typeof value === 'string') return redactText(value, values);
+    if (Buffer.isBuffer(value)) return encoded(redactOutput(value, values, streamCut), encoding);
+    return Array.isArray(value) ? value.map(entry => clean(entry, streamCut)) : value;
+  };
+  for (const [key, value] of Object.entries(error)) {
+    (rebuilt as unknown as Record<string, unknown>)[key] = clean(value, cut && (key === 'stdout' || key === 'stderr' || key === 'output'));
+  }
+  return rebuilt;
+}
+
+function redactSpawnResult<R extends SpawnSyncReturns<string | Buffer>>(result: R, values: readonly string[], encoding: Encoding): R {
   const cut = outputLimitHit(result.error);
-  result.stdout = redactOutput(result.stdout, values, cut);
-  result.stderr = redactOutput(result.stderr, values, cut);
-  if (Array.isArray(result.output)) result.output = result.output.map(entry => redactOutput(entry, values, cut));
-  if (result.error) redactThrown(result.error, values);
+  const replace = (output: string | Buffer | null) => encoded(redactOutput(output, values, cut), encoding);
+  result.stdout = replace(result.stdout) as never;
+  result.stderr = replace(result.stderr) as never;
+  if (Array.isArray(result.output)) result.output = result.output.map(replace) as never;
+  if (result.error) result.error = rebuildError(result.error, values, encoding) as Error;
   return result;
 }
 
@@ -217,7 +251,7 @@ type GitCallFields = { gitBin?: string; direct?: boolean };
 function bindGit<T extends GitCallFields & { timeout?: number; env?: NodeJS.ProcessEnv }>(
   args: readonly string[],
   options: T,
-): { bin: string; values: string[]; options: Omit<T, 'gitBin' | 'direct'> & { timeout: number } } {
+): { bin: string; values: string[]; encoding: Encoding; options: Omit<T, 'gitBin' | 'direct'> & { timeout: number } } {
   const { gitBin, direct, timeout, env, ...rest } = options;
   // Observation policy allows the caller's git name. Re-entering it from the
   // observation executor would loop, so that executor sets direct.
@@ -226,12 +260,13 @@ function bindGit<T extends GitCallFields & { timeout?: number; env?: NodeJS.Proc
   const childEnv = gitChildEnv(args, env);
   // The values to replace come from the env this child gets, once per call.
   const values = hasProviderToken(childEnv ?? process.env) ? providerTokenValues(childEnv ?? process.env) : [];
-  if (values.length > 0) assertRunnerOwnedOutput((options as ExecFileSyncOptions).stdio);
-  return {
-    bin,
-    values,
-    options: { ...rest, env: childEnv, timeout: resolveGitTimeout(timeout) } as Omit<T, 'gitBin' | 'direct'> & { timeout: number },
-  };
+  const bound = (extra: object) => ({ ...rest, ...extra, env: childEnv, timeout: resolveGitTimeout(timeout) }) as Omit<T, 'gitBin' | 'direct'> & { timeout: number };
+  const caller = options as ExecFileSyncOptions;
+  if (values.length === 0) return { bin, values, encoding: undefined, options: bound({}) };
+  assertRemoteCallOptions(args, options);
+  // After the caller options, so no caller value can turn a stream, the encoding or the shell back on.
+  const stdin = remoteStdio(caller.stdio);
+  return { bin, values, encoding: caller.encoding, options: bound({ stdio: [stdin, 'pipe', 'pipe'], encoding: 'buffer', shell: false }) };
 }
 
 type GitExecStringOptions = ExecFileSyncOptionsWithStringEncoding & GitCallFields;
@@ -245,13 +280,12 @@ export function gitExecFileSync(args: readonly string[], options: GitExecOptions
   const argv = [...args];
   const run = (): string | Buffer => currentReadonlyObservation() !== undefined && options.direct !== true
     ? observationExecFileSync(bound.bin, argv, bound.options) as string | Buffer
-    // Without stdio, execFileSync would copy the child's stderr to ours before any replacement.
-    : execFileSyncRaw(bound.bin, argv, bound.values.length > 0 ? { stdio: 'pipe' as const, ...bound.options } : bound.options);
+    : execFileSyncRaw(bound.bin, argv, bound.options);
   if (bound.values.length === 0) return run();
   try {
-    return redactOutput(run(), bound.values);
+    return encoded(redactOutput(run(), bound.values), bound.encoding);
   } catch (error) {
-    throw redactThrown(error, bound.values);
+    throw rebuildError(error, bound.values, bound.encoding);
   }
 }
 
@@ -269,9 +303,9 @@ export function gitSpawnSync(args: readonly string[], options: GitSpawnOptions =
     : spawnSyncRaw(bound.bin, argv, bound.options);
   if (bound.values.length === 0) return run();
   try {
-    return redactSpawnResult(run(), bound.values);
+    return redactSpawnResult(run(), bound.values, bound.encoding);
   } catch (error) {
-    throw redactThrown(error, bound.values);
+    throw rebuildError(error, bound.values, bound.encoding);
   }
 }
 
@@ -342,13 +376,12 @@ export function gitExecFile(args: readonly string[], options: GitExecAsyncOption
       const signal = exited?.signal ?? null;
       const redactAll = (text: string, cut = false) => values.length > 0 ? redactText(text, values, cut) : text;
       const errorText = redactAll(Buffer.concat(stderr).toString('utf8'), overflow);
-      // The first argument can carry a token value, so the whole message is replaced, not its parts.
       const failure = (message: string, code: number | null, signalName: NodeJS.Signals | null, timeout: boolean, text: string) =>
         reject(new GitExecError(redactAll(message), code, signalName, timeout, text));
-      if (spawnError) failure(`git ${args[0] ?? ''} could not start: ${spawnError.message}`, null, null, false, '');
-      else if (timedOut) failure(`git ${args[0] ?? ''} timed out`, null, signal, true, errorText);
-      else if (overflow) failure(`git ${args[0] ?? ''} output exceeded ${GIT_OUTPUT_MAX_BYTES} bytes`, null, signal, false, errorText);
-      else if (status !== 0) failure(`git ${args[0] ?? ''} failed (${signal ?? `exit ${status}`})`, status, signal, false, errorText);
+      if (spawnError) failure(`git ${subcommandOf(args)} could not start: ${spawnError.message}`, null, null, false, '');
+      else if (timedOut) failure(`git ${subcommandOf(args)} timed out`, null, signal, true, errorText);
+      else if (overflow) failure(`git ${subcommandOf(args)} output exceeded ${GIT_OUTPUT_MAX_BYTES} bytes`, null, signal, false, errorText);
+      else if (status !== 0) failure(`git ${subcommandOf(args)} failed (${signal ?? `exit ${status}`})`, status, signal, false, errorText);
       else resolveOutput(redactAll(Buffer.concat(stdout).toString('utf8')));
     };
     const collect = (into: Buffer[]) => (chunk: Buffer) => {

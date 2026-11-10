@@ -195,6 +195,22 @@ exit 3
         expect(leaked(error.message, error.stderr), mode).toBe(false);
       }
       expect(await gitExecFile(['fetch', 'ok'], { gitBin, env })).toBe('out [redacted]\n');
+      // A caller stdio of undefined or null cannot turn stderr forwarding back on.
+      for (const stdio of [undefined, null] as const) {
+        const written: string[] = [];
+        const realWrite = process.stderr.write;
+        process.stderr.write = ((chunk: string | Uint8Array) => { written.push(String(chunk)); return true; }) as typeof process.stderr.write;
+        try { gitExecFileSync(['fetch', 'ok'], { gitBin, env, stdio: stdio as never }); } finally { process.stderr.write = realWrite; }
+        expect(written, String(stdio)).toEqual([]);
+      }
+      // Values are replaced before the caller encoding applies, so a decoded base64 result holds no token.
+      const based = gitExecFileSync(['fetch', 'ok'], { gitBin, env, encoding: 'base64' });
+      expect(Buffer.from(based, 'base64').toString()).toBe('out [redacted]\n');
+      expect(Buffer.from(gitSpawnSync(['fetch', 'ok'], { gitBin, env, encoding: 'base64' }).stdout, 'base64').toString()).toBe('out [redacted]\n');
+      // The rebuilt error holds no token in its path or spawnargs.
+      const missing = caught(() => gitExecFileSync(['fetch', token], { gitBin: join(root, token), env, encoding: 'utf8' })) as Error & { path?: string; spawnargs?: string[] };
+      expect(leaked(missing.message, missing.path, missing.spawnargs?.join(' '))).toBe(false);
+      expect(missing.path).toContain('[redacted]');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -209,6 +225,13 @@ exit 3
     }
     expect(() => spawnGit(['fetch', 'origin'], { env, stdio: 'ignore' })).toThrow('keeps one');
     expect(() => runGit(['fetch', 'origin'], { env })).toThrow('keeps one');
+    // A remote call takes only the option keys of the remote callers, and a refusal names no argument value.
+    expect(() => gitExecFileSync(['fetch'], { env, shell: true } as never)).toThrow('refuses the option "shell"');
+    expect(() => gitSpawnSync(['fetch'], { env, argv0: 'x' } as never)).toThrow('refuses the option "argv0"');
+    for (const refused of [() => runGit([`--git-dir=${token}`, 'fetch'], { env }), () => spawnGit([`--git-dir=${token}`, 'fetch'], { env })]) {
+      expect(refused).toThrow('git fetch keeps one');
+      expect(refused).not.toThrow(token);
+    }
     for (const GH_TOKEN of ['short', 'redacted']) {
       expect(() => gitExecFileSync(['fetch'], { env: { GH_TOKEN } })).toThrow('malformed provider token');
       await expect(gitExecFile(['fetch'], { env: { GH_TOKEN } })).rejects.toThrow('malformed provider token');
