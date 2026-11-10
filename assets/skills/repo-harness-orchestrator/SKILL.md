@@ -42,6 +42,7 @@ spaces=$(printf '%s' "$layout" | jq -ec --arg n "$name" --arg s "$SPACE" '.space
 space=$(printf '%s' "$spaces" | jq -r '.[0]')
 
 # 3. Duplicate check, local terminals only.
+# Seats are per host: the board reads local terminals only (src/effects/terminal/herdr-core.ts:337), and another machine may run the same seat.
 seats=$(hc ls --json --label repo-harness.seat=orchestrator --label "repo-harness.repository=$id") || stop 'hc ls failed'
 live=$(printf '%s' "$seats" | jq -ec '.terminals | arrays | [.[] | .address | select(contains("/") | not)]') || stop 'hc ls has no terminal list'
 [ "$live" = '[]' ] || stop "refused: repository $id already has a live orchestrator seat at $(printf '%s' "$live" | jq -r 'join(", ")')"
