@@ -1,4 +1,4 @@
-import { ACCEPTANCE_RECORD_HEADER, type BoardPullRequestV1, type BoardV1 } from './board';
+import { ACCEPTANCE_RECORD_HEADER, type BoardV1 } from './board';
 import { planRefusal } from './merge';
 import { claimStatusTarget, newestProtocolComment, parseAcceptanceRecord, parseClaimStatus, protocolComments, type BoardCommentPageV1, type BoardCommentV1 } from './source';
 

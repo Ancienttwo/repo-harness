@@ -3,7 +3,6 @@ import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readF
 import { basename, dirname, isAbsolute, relative, resolve } from 'path';
 import {
   readRegisteredRepoHarnessRepos,
-  repoHarnessRepoIdFor,
   type RepoHarnessAccessMode,
 } from '../../../effects/repo-registry';
 import { globMatches, isPathInside, toPosixPath } from '../paths';
