@@ -246,6 +246,9 @@ orchestrator; both use `opus` high. Important non-frontend work then uses a
 configured Pi `worker-light`; a null or non-Pi seat gives a `none` route.
 Frontend waits for Claude; it has no non-Claude fallback.
 An exhausted account takes no new dispatch, review seats included.
+Only while an owner authorization for credits is recorded on the batch
+parent, pass `--spend-credits` to both commands and name the flag in the
+dispatch note.
 `tight` is a display state only; it does not reserve Claude or change routing.
 
 Claude seats use the Claude account, Codex seats and Pi seats on `magpie/codex/` use ChatGPT, and the DeepSeek Pi seat

@@ -16,6 +16,7 @@ import {
 } from 'fs';
 import { randomUUID } from 'crypto';
 import { isAbsolute, join, relative, resolve, sep } from 'path';
+import { processExists } from '../process-group-termination';
 import { currentProcessStartTime, readProcessStartTime } from './process-start-time.ts';
 
 const LOCK_STALE_MS = 30_000;
@@ -150,11 +151,7 @@ function ownerTokenFromFileName(entry: string): { readonly token: string; readon
 let lastLiveOwner: { readonly pid: number; readonly startTime: string; readonly checkedAt: number } | null = null;
 
 function ownerLiveness(pid: number, startTime: string | null): ExclusiveDirectoryLockOwnerLiveness {
-  try {
-    process.kill(pid, 0);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return 'dead';
-  }
+  if (!processExists(pid)) return 'dead';
   // Without a start time, a live PID may be a reuse, so it is not proven live.
   if (startTime === null) return 'unverified';
   // Waiters poll every 10 ms. Reuse of a recently verified owner's PID needs
@@ -413,7 +410,6 @@ function reclaimStaleLockDirectory(
   const observedToken = ownerTokenFromFileName(entry);
   if (observedToken === null) return false;
   const observedOwnerPath = join(location.lockPath, entry);
-  let reclaim = false;
   let observedOwnerIdentity: FileIdentity;
   try {
     const observedOwner = lstatSync(observedOwnerPath);
@@ -435,15 +431,14 @@ function reclaimStaleLockDirectory(
     const startTime = recordedStartTime(ownerRecord);
     if (startTime === null) return false;
     owner = { lockPath: location.lockPath, pid: observedToken.pid, startTime, token: observedToken.token };
-    reclaim = ownerRecord.token === observedToken.token
-      && ownerRecord.pid === observedToken.pid
-      && !ownerIsAlive(owner.pid, owner.startTime)
-      && (!canReclaimStaleOwner || canReclaimStaleOwner(owner, ownerRecord) === true);
   } catch {
     // A filename and elapsed time cannot authenticate a malformed owner record.
     return false;
   }
-  if (!reclaim) return false;
+  if (ownerRecord.token !== observedToken.token
+    || ownerRecord.pid !== observedToken.pid
+    || ownerIsAlive(owner.pid, owner.startTime)
+    || (canReclaimStaleOwner && canReclaimStaleOwner(owner, ownerRecord) !== true)) return false;
 
   try {
     assertLockAncestors(location);
@@ -455,9 +450,13 @@ function reclaimStaleLockDirectory(
       || !sameFileIdentity(fileIdentity(currentOwner), observedOwnerIdentity)
       || readdirSync(location.lockPath).length !== 1
       || readdirSync(location.lockPath)[0] !== entry
-      || readFileSync(observedOwnerPath, 'utf-8') !== observedBytes
-      || ownerIsAlive(owner.pid, owner.startTime)
-      || (canReclaimStaleOwner && canReclaimStaleOwner(owner, ownerRecord) !== true)) return false;
+      || readFileSync(observedOwnerPath, 'utf-8') !== observedBytes) return false;
+  } catch {
+    return false;
+  }
+  if (ownerIsAlive(owner.pid, owner.startTime)
+    || (canReclaimStaleOwner && canReclaimStaleOwner(owner, ownerRecord) !== true)) return false;
+  try {
     // Delete only the exact observed token. A legitimate new owner always has
     // a different UUID filename, so its token makes rmdir fail closed.
     unlinkSync(observedOwnerPath);

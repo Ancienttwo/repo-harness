@@ -130,6 +130,40 @@ describe('exclusive directory lock owner identity', () => {
     expect(readExclusiveDirectoryLockOwner(root, LOCK)).toBeNull();
   });
 
+  test('stale-owner callback errors reach acquisition at both proof checks and preserve the owner', () => {
+    for (const failAt of [1, 2]) {
+      const root = temporaryRoot();
+      const ownerPath = forgeOwner(root, { pid: process.pid, start_time: `${currentProcessStartTime()}-earlier-process` });
+      const before = readFileSync(ownerPath, 'utf-8');
+      const failure = Object.assign(new Error('stale-owner probe failed'), { code: 'EIO' });
+      let calls = 0;
+      expect(() => acquireExclusiveDirectoryLock(root, LOCK, {
+        waitTimeoutMs: 1,
+        canReclaimStaleOwner: () => { if (++calls === failAt) throw failure; return true; },
+      })).toThrow(failure);
+      expect(calls).toBe(failAt);
+      expect(readFileSync(ownerPath, 'utf-8')).toBe(before);
+    }
+  });
+
+  test('owner liveness distinguishes absent, inaccessible and failed probes', () => {
+    const kill = process.kill;
+    const owner = { lockPath: '', pid: process.pid, startTime: null, token: '' };
+    try {
+      for (const [code, result] of [['ESRCH', 'dead'], ['EPERM', 'unverified'], ['EIO', null]] as const) {
+        const failure = Object.assign(new Error(code), { code });
+        process.kill = () => { throw failure; };
+        if (result === null) {
+          expect(() => exclusiveDirectoryLockOwnerLiveness(owner)).toThrow(failure);
+          const root = temporaryRoot();
+          const ownerPath = forgeOwner(root, { pid: owner.pid, start_time: 'recorded-start-time' });
+          expect(() => acquireExclusiveDirectoryLock(root, LOCK, { waitTimeoutMs: 1 })).toThrow(failure);
+          expect(existsSync(ownerPath)).toBe(true);
+        } else expect(exclusiveDirectoryLockOwnerLiveness(owner)).toBe(result);
+      }
+    } finally { process.kill = kill; }
+  });
+
   test('the process table reports a stable start time for a live PID and none for an exited one', () => {
     expect(readProcessStartTime(process.pid)).toBe(currentProcessStartTime());
     expect(readProcessStartTime(process.pid)).toBe(currentProcessStartTime());
