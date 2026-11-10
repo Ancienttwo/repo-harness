@@ -3,8 +3,8 @@
  * re-importing the same external attestation twice yields exactly one
  * accepted event).
  */
-import { createHash } from "crypto";
 import { canonicalize } from "./canonical-json";
+import { sha256Prefixed } from "./sha256";
 import type { JsonValue, SubjectIdentity, TrustClass } from "./types";
 
 export interface IdempotencyInput {
@@ -43,6 +43,5 @@ export function computeIdempotencyKey(input: IdempotencyInput): string {
     payload_hash: input.payloadHash,
     producer: input.producer,
   };
-  const digest = createHash("sha256").update(canonicalize(composite)).digest("hex");
-  return `sha256:${digest}`;
+  return sha256Prefixed(canonicalize(composite));
 }

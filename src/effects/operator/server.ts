@@ -53,7 +53,7 @@ import type { BoardParentsReadFailure, BoardReadFailure } from '../../core/opera
 import { startNotifyCollector, type NotifyCacheV1 } from './notify-collector';
 import { readOperatorRepositories } from './repositories';
 import type { OperatorRepositoriesV1 } from '../../core/operator/repositories';
-import { createHash } from 'node:crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { decodeOperatorDocSessionDiff, decodeOperatorDocSessionLoss, DOC_SESSION_READ_FAILURES, type DocSessionReadFailure } from '../../core/operator/doc-session-changes';
 import { OPERATOR_SESSION_DIFF_ROUTE, OPERATOR_SESSION_LOSS_ROUTE } from './doc-session-changes';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -1004,7 +1004,7 @@ export async function startOperatorServer(
       if (response.destroyed) return;
       if (failure) sendJson(response, failureStatus(failure),{code:failure},headOnly);
       else if (cacheRequest) {
-        const etag = `"${createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')}"`;
+        const etag = `"${sha256Hex(JSON.stringify(snapshot))}"`;
         if (cacheRequest.headers['if-none-match'] === etag) {
           response.writeHead(304, { ...jsonHeaders(), ETag: etag }); response.end();
         } else sendJson(response, 200, snapshot, headOnly, { ETag: etag });
@@ -1670,7 +1670,7 @@ export async function startOperatorServer(
         return;
       }
       const seats = cache.value;
-      const etag = `"${createHash('sha256').update(JSON.stringify(seats)).digest('hex')}"`;
+      const etag = `"${sha256Hex(JSON.stringify(seats))}"`;
       if (request.headers['if-none-match'] === etag) { response.writeHead(304, { ...jsonHeaders(), ETag: etag }); response.end(); }
       else sendJson(response, 200, seats, headOnly, { ETag: etag });
       return;

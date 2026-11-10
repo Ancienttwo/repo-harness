@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { sha256Prefixed } from '../evidence/sha256';
 import type {
   WorkflowProfile,
   WorkflowProfileResult,
@@ -60,10 +60,10 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
   // computed -- no re-hashing of source content, no projection, time, or PID
   // input -- so projection-only churn can never move it, only real subject or
   // blocker progress can.
-  const progressToken = `sha256:${createHash('sha256').update(JSON.stringify({
+  const progressToken = sha256Prefixed(JSON.stringify({
     subject_revision: input.subjectRevision,
     hard_blockers: blockers,
-  })).digest('hex')}`;
+  }));
 
   const phase = blockers.length > 0 ? 'blocked' : 'idle';
   const nextAction = blockers.length > 0

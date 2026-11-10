@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ARCHCTX_REQUIRED_VERSION } from '../../core/architecture/projection';
@@ -44,7 +45,7 @@ export function archcontextResolveFileCache(repoRoot: string): ArchcontextResolv
         encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000,
       }).trim().split('\n');
       bound = gitDir && head ? {
-        key: createHash('sha256').update(JSON.stringify([ARCHCTX_REQUIRED_VERSION, realpathSync(repoRoot), head, modelDigest(repoRoot)])).digest('hex'),
+        key: sha256Hex(JSON.stringify([ARCHCTX_REQUIRED_VERSION, realpathSync(repoRoot), head, modelDigest(repoRoot)])),
         path: join(gitDir, CACHE_FILE),
       } : null;
     } catch {

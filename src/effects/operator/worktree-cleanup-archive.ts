@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { closeSync, fsyncSync, fstatSync, readSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { canonicalize } from '../../core/evidence/canonical-json';
@@ -18,7 +19,7 @@ export class CleanupArchiveError extends Error {
   constructor(readonly code: 'changed' | 'unsafe_git_content' | 'unsupported' | 'archive_conflict' | 'unavailable') { super(`cleanup_archive_${code}`); }
 }
 function fail(code: CleanupArchiveError['code']): never { throw new CleanupArchiveError(code); }
-const hex = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
+const hex = (data: string | Buffer) => sha256Hex(data);
 type Original = { kind: 'file' | 'symlink'; mode: number } | { kind: 'index'; mode: string; stage: number; oid: string }
   | { kind: 'commit'; oid: string; parents: readonly string[] } | { kind: 'manifest' };
 interface Artifact {

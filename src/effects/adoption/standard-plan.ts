@@ -1,5 +1,5 @@
 import { DEFAULT_WORKTREE_TEMPLATE } from "../../core/worktree-location.mjs";
-import { createHash } from "crypto";
+import { sha256Prefixed } from "../../core/evidence/sha256";
 import { existsSync, lstatSync, readdirSync, readFileSync } from "fs";
 import { basename, dirname, join, relative, resolve, sep } from "path";
 import type { AdoptionMode } from "../../core/adoption/modes";
@@ -115,7 +115,7 @@ function directoryExists(repoRoot: string, path: string): boolean {
 }
 
 function contentHash(content: string): string {
-  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+  return sha256Prefixed(content);
 }
 
 function writeOperation(

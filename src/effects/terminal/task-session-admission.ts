@@ -1,6 +1,6 @@
 /** Reads the live review admission of a persisted task session. It observes approval and never creates a claim or task state. */
 import { existsSync, realpathSync } from 'node:fs';
-import { createHash } from 'node:crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { join } from 'node:path';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { validateTaskClaimReference } from '../../core/review/authority-context';
@@ -41,7 +41,7 @@ export function observeTaskSessionAdmission(repoRoot: string, spec: Pick<HerdrTa
   };
 }
 function sessionDigest(value: unknown): string {
-  return `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(value)))).digest('hex')}`;
+  return sha256Prefixed(canonicalize(JSON.parse(JSON.stringify(value))));
 }
 /** The request and native-session `session_binding_sha256` of a task binding. */
 export function taskBindingSha256(binding: TaskPaneBinding): string { return sessionDigest(binding); }

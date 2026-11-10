@@ -6,7 +6,7 @@
  * the run stops before it guesses an edge.
  */
 
-import { createHash } from 'crypto';
+import { sha256Prefixed } from '../evidence/sha256';
 
 /** The plan tier labels (`templates.md`, Plan data). */
 export const TIER_LABELS = Object.freeze([
@@ -227,7 +227,7 @@ export function dependencyPlanDigest(plan: Omit<DependencyMigrationPlanV1, 'dige
     plan.ambiguous.map(line => [line.issue, line.line_number, line.line]),
     plan.unparsed.map(line => [line.issue, line.line_number, line.line, line.reason]),
   ];
-  return `sha256:${createHash('sha256').update(JSON.stringify(items)).digest('hex')}`;
+  return sha256Prefixed(JSON.stringify(items));
 }
 
 /** Refusals stop first and name every refused line; otherwise parse errors stop and name every line. */
