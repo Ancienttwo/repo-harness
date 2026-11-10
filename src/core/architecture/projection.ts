@@ -32,7 +32,7 @@ import nodeSchema from 'archctx-contracts/schemas/repo/architecture-node.schema.
 import relationSchema from 'archctx-contracts/schemas/repo/architecture-relation.schema.json';
 import flowSchema from 'archctx-contracts/schemas/repo/architecture-flow.schema.json';
 import { dependencies } from '../../../package.json';
-import type { ArchitectureProjectionPolicy, ProjectionApplyMode, ProjectionProvider } from './contracts';
+import type { ArchitectureProjectionPolicy } from './contracts';
 
 export const ARCHCTX_REQUIRED_VERSION = dependencies.archctx;
 
