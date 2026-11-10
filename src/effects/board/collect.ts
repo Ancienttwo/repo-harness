@@ -5,7 +5,9 @@ import {
   type BoardPathOwnerV1, type BoardPathOwnersV1, type BoardSeatTerminalInputV1, type BoardSeatTerminalReadV1, type BoardToolingV1, type BoardV1,
 } from '../../core/board/board';
 import { ADVISOR_SEAT } from '../../core/board/advisor-seat';
-import { BOARD_PAGE, BOARD_SUB_ISSUE_PAGES, BoardSourceError, decodeParentRead, decodePullRequestsRead, parentReadNextCursor, type BoardParentReadV1, type BoardPullRequestReadV1 } from '../../core/board/source';
+import {
+  BOARD_PAGE, BOARD_PARENT_COMMENT_PAGES, BOARD_SUB_ISSUE_PAGES, BoardSourceError, decodeParentRead, decodePullRequestsRead, parentCommentsPreviousCursor, parentReadNextCursor, type BoardParentReadV1, type BoardPullRequestReadV1,
+} from '../../core/board/source';
 import { normalizeCapabilityPath } from '../../core/capabilities/registry';
 import { HC_MIN_VERSION } from '../../core/terminal/herdr-pin';
 import { parsePublicationPolicy, policyFileFromContents, PUBLICATION_POLICY_PATH, type PolicyFileAtRef } from '../../core/publication/acceptance-merge-policy';
@@ -17,17 +19,25 @@ import { provenMergeOnlySyncs, type MergeOnlySyncInput } from './merge-only-sync
 const GH_TIMEOUT_MS = 30_000;
 const SEAT_GIT_TIMEOUT_MS = 10_000;
 
-const COMMENTS = `comments(last: ${BOARD_PAGE.comments}) { pageInfo { hasPreviousPage } nodes { url createdAt authorAssociation body } }`;
-const ISSUE_FIELDS = `number title url state labels(first: ${BOARD_PAGE.labels}) { pageInfo { hasNextPage } nodes { name } } milestone { title } ${COMMENTS}`;
+const COMMENT_NODES = 'nodes { url createdAt authorAssociation body }';
+const COMMENTS = `comments(last: ${BOARD_PAGE.comments}) { pageInfo { hasPreviousPage } ${COMMENT_NODES} }`;
+const ISSUE_FIELDS = `number title url state labels(first: ${BOARD_PAGE.labels}) { pageInfo { hasNextPage } nodes { name } } milestone { title }`;
+/** The parent thread holds the plan, the coordinator claim and the merge holds, so the read follows its comment cursor to the oldest page. */
+const parentComments = (before: string) => `comments(last: ${BOARD_PAGE.parent_comments}${before}) { pageInfo { hasPreviousPage startCursor } ${COMMENT_NODES} }`;
+
+/** One older comment page of the parent; `$before` is the start cursor of the newer page. */
+export const PARENT_COMMENTS_QUERY = `query($owner: String!, $name: String!, $number: Int!, $before: String!) {
+  repository(owner: $owner, name: $name) { issue(number: $number) { ${parentComments(', before: $before')} } }
+}`;
 
 /** One page of the parent read: its sub-issues with blocked-by edges, claim comments and cross-referenced PR numbers. `$after` selects the sub-issue page. */
 export const PARENT_QUERY = `query($owner: String!, $name: String!, $number: Int!, $repairs: String!, $after: String) {
   repository(owner: $owner, name: $name) {
     databaseId nameWithOwner defaultBranchRef { name }
     issue(number: $number) {
-      ${ISSUE_FIELDS}
+      ${ISSUE_FIELDS} ${parentComments('')}
       subIssues(first: ${BOARD_PAGE.sub_issues}, after: $after) { pageInfo { hasNextPage endCursor } nodes {
-        ${ISSUE_FIELDS}
+        ${ISSUE_FIELDS} ${COMMENTS}
         blockedBy(first: ${BOARD_PAGE.blocked_by}) { pageInfo { hasNextPage } nodes { number state } }
         timelineItems(itemTypes: [CROSS_REFERENCED_EVENT], last: ${BOARD_PAGE.timeline}) { pageInfo { hasPreviousPage } nodes {
           ... on CrossReferencedEvent { source { ... on PullRequest { number repository { nameWithOwner } } } }
@@ -231,17 +241,28 @@ export function readParent(input: Pick<BoardCollectInput, 'repo_root' | 'gh_bin'
   const [owner, name] = repository.split('/') as [string, string];
   const observedAt = (input.now?.() ?? new Date()).toISOString();
   const variables = { owner, name, number: input.parent, repairs: `repo:${repository} is:issue is:open in:title "CI repair"` };
-  const pages = [graphql(input, PARENT_QUERY, variables)];
+  const first = graphql(input, PARENT_QUERY, variables);
+  const pages = followCursor(first, parentReadNextCursor, after => graphql(input, PARENT_QUERY, { ...variables, after }),
+    'issue.subIssues', BOARD_PAGE.sub_issues, BOARD_SUB_ISSUE_PAGES);
+  const commentPages = followCursor(first, parentCommentsPreviousCursor, before => graphql(input, PARENT_COMMENTS_QUERY, { owner, name, number: input.parent, before }),
+    'issue.comments', BOARD_PAGE.parent_comments, BOARD_PARENT_COMMENT_PAGES);
+  const parent = decodeParentRead(pages, commentPages, repository);
+  return { parent, observed_at: observedAt };
+}
+
+/** `first` and each page that a cursor of the page before it selects, up to `cap` pages. */
+function followCursor(first: unknown, cursor: (data: unknown, at: number) => string | null, read: (cursor: string) => unknown,
+  connection: string, size: number, cap: number): unknown[] {
+  const pages = [first];
   // The decoder runs after the last page, so a repeated cursor or an endless stream must stop the loop here.
   const cursors = new Set<string>();
-  for (let after = parentReadNextCursor(pages[0], 0); after !== null; after = parentReadNextCursor(pages.at(-1), pages.length - 1)) {
-    if (cursors.has(after)) throw new BoardSourceError(`issue.subIssues cursor ${after} repeats`);
-    if (pages.length === BOARD_SUB_ISSUE_PAGES) throw new BoardSourceError(`issue.subIssues has more than ${BOARD_SUB_ISSUE_PAGES} pages of ${BOARD_PAGE.sub_issues}`);
-    cursors.add(after);
-    pages.push(graphql(input, PARENT_QUERY, { ...variables, after }));
+  for (let next = cursor(first, 0); next !== null; next = cursor(pages.at(-1), pages.length - 1)) {
+    if (cursors.has(next)) throw new BoardSourceError(`${connection} cursor ${next} repeats`);
+    if (pages.length === cap) throw new BoardSourceError(`${connection} has more than ${cap} pages of ${size}`);
+    cursors.add(next);
+    pages.push(read(next));
   }
-  const parent = decodeParentRead(pages, repository);
-  return { parent, observed_at: observedAt };
+  return pages;
 }
 
 export function collectBoard(input: BoardCollectInput): BoardV1 {
