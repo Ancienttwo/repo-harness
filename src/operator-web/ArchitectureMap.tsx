@@ -269,12 +269,12 @@ function MapGaps({ map, t }: { readonly map: ArchitectureMapV1; readonly t: Oper
 }
 
 /**
- * The selected model node of each base map, with the view state that it was chosen in (for the topology: the segment
- * and the legacy switch). The architecture workspace holds it, so it outlives every view tab, and empties it when the
+ * The selected model node of each base map and of History, with the view state that it was chosen in (for the topology: the segment
+ * and the legacy switch; for History: the milestone revision). The architecture workspace holds it, so it outlives every view tab, and empties it when the
  * repository or the shown commit changes. A selection shows only while its view shows the same view state.
  */
-export type ArchitectureSelections = Partial<Record<ArchitectureBaseMap, { readonly scope: string; readonly id: string | null }>>;
-export type ArchitectureSelect = { readonly view: ArchitectureBaseMap; readonly scope: string; readonly id: string | null };
+export type ArchitectureSelections = Partial<Record<ArchitectureBaseMap | 'history', { readonly scope: string; readonly id: string | null }>>;
+export type ArchitectureSelect = { readonly view: ArchitectureBaseMap | 'history'; readonly scope: string; readonly id: string | null };
 
 /**
  * The committed model on one base map, with line and import counts from the map collector.

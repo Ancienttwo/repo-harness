@@ -1013,15 +1013,6 @@ export function verificationOutcomeProvenance(input: MaterializedVerificationInp
   };
 }
 
-export function admittedVerificationProvenance(input: VerificationInput) {
-  const active = readAdmission(input);
-  const plan = active.admission.verification_plan;
-  return { admission_identity: active.admission.admission_sha256, grant_identity: active.grant_sha256,
-    campaign_identity: active.admission.campaign_sha256,
-    check_set_identity: sha256(canonicalize(plan.checks.map(check => check.id))),
-    environment: resolveToolchain(input.env ?? process.env).providerId, check_ids: plan.checks.map(check => check.id) };
-}
-
 function subjectIdentity(context: PreparedContext, check: VerificationCheck): AdmittedReviewSubjectIdentity | EvalCatalogSubjectIdentity {
   return {
     authority_commit: context.snapshot.head_commit,

@@ -474,6 +474,42 @@ export function parseAcceptanceRecord(comment: BoardCommentV1): readonly Accepta
   return rows.length === 0 ? null : Object.freeze(rows);
 }
 
+// A finding bullet of `review publish`: `- <severity> <id> at <path>:<line>: ...`, or `- P3 <id>: ...` for a NIT.
+const RECORD_FINDING = /^- P[0-3] ([^\s:]+)(?: at |: )/u;
+
+/**
+ * The finding IDs of an `acceptance record`, from the lines after its `Findings:` line. Every non-empty line must be a finding bullet
+ * of the `review publish` shape. A missing section, no line, or any other line (another bullet marker, indentation, a continuation)
+ * returns null: a finding that cannot be read cannot be named by a disposition, so the record stays unresolvable.
+ */
+export function parseRecordFindings(comment: BoardCommentV1): readonly string[] | null {
+  const lines = comment.body.replace(/\r\n/gu, '\n').split('\n');
+  const start = lines.findIndex(line => line.trim() === 'Findings:');
+  if (start < 0) return null;
+  const ids = lines.slice(start + 1).filter(line => line.trim() !== '').map(line => RECORD_FINDING.exec(line)?.[1]);
+  return ids.length === 0 || ids.some(id => id === undefined) ? null : Object.freeze(ids as string[]);
+}
+
+export interface AcceptanceDispositionV1 {
+  /** The comment id of the FAIL record that the disposition names. */
+  readonly record: string;
+  readonly subject_sha: string;
+  readonly findings: readonly string[];
+}
+
+/**
+ * An `acceptance disposition` comment (`templates.md`): the coordinator resolves named findings of one FAIL record at one subject
+ * with a recorded decision. Null unless `Record:` and `Decision:` are comment URLs, `Subject:` is a full SHA and `Findings:` lists IDs.
+ */
+export function parseAcceptanceDisposition(comment: BoardCommentV1): AcceptanceDispositionV1 | null {
+  const record = commentId(field(comment.body, 'Record') ?? '');
+  const decision = commentId(field(comment.body, 'Decision') ?? '');
+  const subject = /^[0-9a-f]{40}$/u.exec(field(comment.body, 'Subject') ?? '')?.[0];
+  const findings = (field(comment.body, 'Findings') ?? '').split(',').map(id => id.trim()).filter(id => id !== '');
+  if (record === null || decision === null || subject === undefined || findings.length === 0) return null;
+  return Object.freeze({ record, subject_sha: subject, findings: Object.freeze(findings) });
+}
+
 const REFS = /(?<![A-Za-z0-9_])refs?\s*:?\s*#([1-9][0-9]*)/giu;
 
 /** Text within one Markdown block; NUL barriers prevent matches across excluded content. */

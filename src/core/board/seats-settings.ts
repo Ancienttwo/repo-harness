@@ -70,7 +70,7 @@ const REVIEW_TOOLS: readonly SeatTool[] = Object.freeze(['net', 'read', 'shell']
  */
 export const DEFAULT_SEATS_CONFIG: SeatsConfigV1 = Object.freeze({
   orchestrator: Object.freeze({ runtime: 'claude', model: 'opus', effort: 'high', tools: Object.freeze(['gh', 'mcp', 'net', 'read', 'shell', 'tasks'] as const), fleet: Object.freeze([]) }),
-  advisor: Object.freeze({ runtime: 'claude', model: 'opus', effort: 'max', tools: Object.freeze(['mcp', 'net', 'read', 'shell'] as const), fleet: Object.freeze(['deep-reasoner', 'explorer']) }),
+  advisor: Object.freeze({ runtime: 'claude', model: 'fable', effort: 'high', tools: Object.freeze(['mcp', 'net', 'read', 'shell'] as const), fleet: Object.freeze(['deep-reasoner', 'explorer']) }),
   worker: Object.freeze({ runtime: 'codex', model: 'gpt-6.1-terra', effort: 'high', tools: WORKER_TOOLS, fleet: WORKER_FLEET }),
   'worker-deep': Object.freeze({ runtime: 'codex', model: 'gpt-6.1-sol', effort: 'high', tools: WORKER_TOOLS, fleet: WORKER_FLEET }),
   'worker-important': Object.freeze({ runtime: 'claude', model: 'opus', effort: 'medium', tools: WORKER_TOOLS, fleet: WORKER_FLEET }),
