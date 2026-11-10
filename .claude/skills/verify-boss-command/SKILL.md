@@ -1,6 +1,6 @@
 ---
 name: verify-boss-command
-description: "TLA+ model checks of the boss command send: the operator write run and the cooldown from the audit log. Use before you change src/effects/operator/write-run.ts, src/effects/operator/advisor-seat-route.ts, src/effects/operator/write-audit.ts, src/core/board/advisor-seat.ts or src/effects/operator/board-read.ts."
+description: "TLA+ model checks of the boss command send: the operator write run and the cooldown from the audit log. Use before you change src/effects/operator/write-run.ts, src/effects/operator/advisor-seat-route.ts, src/effects/operator/write-audit.ts, src/core/board/advisor-seat.ts, src/effects/operator/board-read.ts or src/effects/operator/server.ts."
 ---
 
 # Verify the boss command
@@ -33,7 +33,7 @@ Sync commit: `b9dee51ee0390b300951123607144d680add2339` (PR base). Move it forwa
 
 `Admit` is one step of the model because the lookup, the intent append, the read of the log and the cooldown decision run with no `await` between them. A change that puts an `await` there makes the model wrong: split the step before you run the check.
 
-A change touches the verified code when `git diff b9dee51ee0390b300951123607144d680add2339 -- src/effects/operator/write-run.ts src/effects/operator/advisor-seat-route.ts src/effects/operator/write-audit.ts src/core/board/advisor-seat.ts src/effects/operator/board-read.ts` is not empty.
+A change touches the verified code when `git diff b9dee51ee0390b300951123607144d680add2339 -- src/effects/operator/write-run.ts src/effects/operator/advisor-seat-route.ts src/effects/operator/write-audit.ts src/core/board/advisor-seat.ts src/effects/operator/board-read.ts src/effects/operator/server.ts` is not empty.
 
 ## Run
 
