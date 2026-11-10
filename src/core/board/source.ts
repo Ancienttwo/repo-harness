@@ -1,9 +1,11 @@
 /**
  * Decoders for the provider reads behind the board: the parent GraphQL read,
  * the pull request GraphQL read, and the protocol comments in them. Each
- * decoder refuses the first field it cannot read, and a connection that has
- * more pages than one read returns fails closed, because a missing sub-issue,
- * blocked-by edge or pull request would change the board without a trace.
+ * decoder refuses the first field it cannot read. The collector follows the
+ * cursor of the parent's sub-issues to the last page; any other connection
+ * that has more pages than one read returns fails closed, because a missing
+ * sub-issue, blocked-by edge or pull request would change the board without a
+ * trace.
  */
 
 import type { Nodes } from 'mdast';
@@ -85,6 +87,9 @@ export interface BoardPullRequestReadV1 {
   readonly checks: readonly BoardCheckRunReadV1[];
   readonly comments: BoardCommentPageV1;
 }
+
+/** The most sub-issue pages that one parent read follows: 1000 sub-issues. */
+export const BOARD_SUB_ISSUE_PAGES = 20;
 
 export const BOARD_PAGE = { labels: 50, comments: 50, sub_issues: 50, blocked_by: 50, timeline: 100, files: 100, checks: 100, repairs: 50 } as const;
 
@@ -169,30 +174,62 @@ function issue(value: unknown, label: string): BoardIssueReadV1 {
   };
 }
 
-/** `data` of the parent read (`PARENT_QUERY` in the board collector). */
-export function decodeParentRead(data: unknown, repository: string): BoardParentReadV1 {
-  const root = obj(data, 'data');
+function subIssueRead(entry: unknown, label: string, repository: string): BoardSubIssueReadV1 {
+  const node = obj(entry, label);
+  const candidates = nodes(node.timelineItems, `${label}.timelineItems`, 'hasPreviousPage').flatMap((item) => {
+    const source = (item as Json | null)?.source as Json | undefined;
+    // A cross-reference from an issue has no PR fields; one from another repository is not ours.
+    if (source === undefined || source.number === undefined) return [];
+    const sourceRepo = str(obj(source.repository, `${label} source repository`).nameWithOwner, `${label} source repository`);
+    return sourceRepo.toLowerCase() === repository.toLowerCase() ? [int(source.number, `${label} source number`)] : [];
+  });
+  return Object.freeze({
+    ...issue(node, label),
+    blocked_by: Object.freeze(nodes(node.blockedBy, `${label}.blockedBy`, 'hasNextPage').map((edge, edgeIndex) => {
+      const blocker = obj(edge, `${label}.blockedBy[${edgeIndex}]`);
+      return Object.freeze({ number: int(blocker.number, `${label}.blockedBy number`), state: issueState(blocker.state, `${label}.blockedBy state`) });
+    })),
+    pull_request_candidates: Object.freeze([...new Set(candidates)].sort((left, right) => left - right)),
+  });
+}
+
+function parentSubIssues(data: unknown, at: number): Json {
+  return obj(obj(obj(obj(data, `page ${at} data`).repository, `page ${at} repository`).issue, `page ${at} issue`).subIssues, `page ${at} issue.subIssues`);
+}
+
+/** The cursor of the next sub-issue page of one parent read, or null on the last page. */
+export function parentReadNextCursor(data: unknown, at: number): string | null {
+  const info = obj(parentSubIssues(data, at).pageInfo, `page ${at} issue.subIssues.pageInfo`);
+  if (info.hasNextPage === false) return null;
+  if (info.hasNextPage !== true) fail(`page ${at} issue.subIssues.pageInfo.hasNextPage is not a boolean`);
+  if (typeof info.endCursor !== 'string' || info.endCursor === '') fail(`page ${at} issue.subIssues.pageInfo.endCursor is not a cursor`);
+  return info.endCursor;
+}
+
+/**
+ * The `data` of each sub-issue page of the parent read (`PARENT_QUERY` in the
+ * board collector), in cursor order. Every page names the same repository and
+ * parent, and only the last page has no next page. The repository, parent and
+ * repairs come from the first page.
+ */
+export function decodeParentRead(pages: readonly unknown[], repository: string): BoardParentReadV1 {
+  if (pages.length === 0) fail('the parent read has no page');
+  const root = obj(pages[0], 'data');
   const repo = obj(root.repository, 'repository');
   const nameWithOwner = str(repo.nameWithOwner, 'repository.nameWithOwner');
   if (nameWithOwner.toLowerCase() !== repository.toLowerCase()) fail(`repository is ${nameWithOwner}, expected ${repository}`);
   const parentNode = obj(repo.issue, 'issue');
-  const subIssues = nodes(parentNode.subIssues, 'issue.subIssues', 'hasNextPage').map((entry, index) => {
-    const label = `subIssues[${index}]`;
-    const node = obj(entry, label);
-    const candidates = nodes(node.timelineItems, `${label}.timelineItems`, 'hasPreviousPage').flatMap((item) => {
-      const source = (item as Json | null)?.source as Json | undefined;
-      // A cross-reference from an issue has no PR fields; one from another repository is not ours.
-      if (source === undefined || source.number === undefined) return [];
-      const sourceRepo = str(obj(source.repository, `${label} source repository`).nameWithOwner, `${label} source repository`);
-      return sourceRepo.toLowerCase() === repository.toLowerCase() ? [int(source.number, `${label} source number`)] : [];
-    });
-    return Object.freeze({
-      ...issue(node, label),
-      blocked_by: Object.freeze(nodes(node.blockedBy, `${label}.blockedBy`, 'hasNextPage').map((edge, edgeIndex) => {
-        const blocker = obj(edge, `${label}.blockedBy[${edgeIndex}]`);
-        return Object.freeze({ number: int(blocker.number, `${label}.blockedBy number`), state: issueState(blocker.state, `${label}.blockedBy state`) });
-      })),
-      pull_request_candidates: Object.freeze([...new Set(candidates)].sort((left, right) => left - right)),
+  const seen = new Set<number>();
+  const subIssues = pages.flatMap((page, at) => {
+    const pageRepo = obj(obj(page, `page ${at} data`).repository, `page ${at} repository`);
+    if (pageRepo.nameWithOwner !== nameWithOwner || obj(pageRepo.issue, `page ${at} issue`).number !== parentNode.number) fail(`page ${at} names another repository or parent`);
+    if ((parentReadNextCursor(page, at) !== null) !== (at < pages.length - 1)) fail(`page ${at} issue.subIssues.pageInfo.hasNextPage does not match the page count`);
+    return nodes(parentSubIssues(page, at), `page ${at} issue.subIssues`, null).map((entry, index) => {
+      const subIssue = subIssueRead(entry, `page ${at} subIssues[${index}]`, repository);
+      // A sub-issue list that changed between two page reads can repeat an entry.
+      if (seen.has(subIssue.number)) fail(`sub-issue #${subIssue.number} is on more than one page`);
+      seen.add(subIssue.number);
+      return subIssue;
     });
   });
   const search = obj(root.repairs, 'repairs');
