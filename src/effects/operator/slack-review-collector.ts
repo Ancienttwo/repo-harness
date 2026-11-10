@@ -19,6 +19,7 @@ import {
   type SlackReviewThreadV1,
 } from '../../core/operator/slack-review';
 import { BotRegistryError, readBotRegistry } from '../bot-registry';
+import { keepMarkedObservation, startObservationLoop } from '../observation-loop';
 import { repoHarnessHome } from '../repo-harness-home';
 
 export const SLACK_REVIEW_INTERVAL_MS = 60_000;
@@ -213,42 +214,32 @@ export interface SlackReviewCollectorHandle {
 
 /**
  * Collect at start, then every interval after the previous cycle settles. Cycles never overlap.
- * A rate limit keeps the previous threads, marked stale; every other failure replaces them.
+ * Keep rule: a rate limit keeps the previous threads at their collection time, marked stale; every other
+ * failure replaces them.
  */
 export function startSlackReviewCollector(options: SlackReviewCollectorOptions = {}): SlackReviewCollectorHandle {
-  let cache: SlackReviewsSnapshotV1 = slackReviewsUnavailable('slack_pending');
-  let closed = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let inflight: Promise<void> | null = null;
-  const abort = new AbortController();
-  const cycle = (): Promise<void> => {
-    inflight = readSlackReviewThreads({ ...options, signal: abort.signal })
-      .then(({ threads, truncated }) => {
-        if (!closed) cache = { protocol: 1, kind: 'operator_bot_reviews', reason: null, stale: false, truncated, collected_at: (options.now?.() ?? new Date()).toISOString(), threads };
-      }, (error: unknown) => {
-        if (closed) return;
-        const reason = error instanceof SlackReviewError ? error.reason : 'slack_unavailable';
-        cache = reason === 'slack_rate_limited' && cache.collected_at !== null
-          ? { ...cache, reason, stale: true }
-          : slackReviewsUnavailable(reason);
-      })
-      .finally(() => {
-        inflight = null;
-        if (closed) return;
-        timer = setTimeout(() => { void cycle(); }, options.interval_ms ?? SLACK_REVIEW_INTERVAL_MS);
-        timer.unref?.();
-      });
-    return inflight;
-  };
-  void cycle();
-  return Object.freeze({
-    read: () => cache,
-    settled: () => inflight ?? Promise.resolve(),
-    close: async () => {
-      closed = true;
-      clearTimeout(timer);
-      abort.abort();
-      await inflight;
+  const loop = startObservationLoop<SlackReviewsSnapshotV1, SlackReviewReason>({
+    cycle: async ({ signal }) => {
+      try {
+        const { threads, truncated } = await readSlackReviewThreads({ ...options, signal });
+        return { state: 'observed', value: { protocol: 1, kind: 'operator_bot_reviews', reason: null, stale: false, truncated,
+          collected_at: (options.now?.() ?? new Date()).toISOString(), threads } };
+      } catch (error) {
+        return { state: 'unavailable', reason: error instanceof SlackReviewError ? error.reason : 'slack_unavailable' };
+      }
     },
+    keep: keepMarkedObservation<SlackReviewsSnapshotV1, SlackReviewReason>((value, reason) =>
+      (reason === 'slack_rate_limited' && value.collected_at !== null ? { ...value, reason, stale: true } : slackReviewsUnavailable(reason))),
+    failure: 'slack_unavailable',
+    interval_ms: options.interval_ms ?? SLACK_REVIEW_INTERVAL_MS,
+  });
+  return Object.freeze({
+    read: (): SlackReviewsSnapshotV1 => {
+      const state = loop.read();
+      if (state.state === 'pending') return slackReviewsUnavailable('slack_pending');
+      return state.state === 'observed' ? state.value : slackReviewsUnavailable(state.reason);
+    },
+    settled: loop.settled,
+    close: loop.close,
   });
 }

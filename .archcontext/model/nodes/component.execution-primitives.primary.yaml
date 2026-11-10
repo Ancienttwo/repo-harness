@@ -5,17 +5,19 @@ name: Bounded Process And Lock Primitives
 status: active
 parent: capability.workflow-engine.execution-primitives
 layer: effects
-summary: Spawns supervised children and holds canonical directory locks under the Git common dir.
+summary: Spawns supervised children, holds canonical directory locks under the Git common dir, and runs the shared observation loop of the resident collectors.
 responsibilities:
   - Spawn the supervisor and the process-group launcher, kill TERM then KILL, and reconcile the receipt with the exit status.
   - Keep the expensive-run lock while a process group is not confirmed dead.
   - Create lock directories one ancestor at a time and reject symlinks and identity changes.
   - Keep one worktree lifecycle record per directory incarnation in the common Git directory, and read process cwd for sweep and console occupancy checks.
+  - Run the shared observation loop: one cycle in flight, the next cycle after the previous one settles, close that aborts the running read, and the published states pending, observed with its observation time, and unavailable with its reason. Each collector passes its own keep rule, so a failed cycle has one defined result per consumer (#2216).
 source:
   include:
     - src/effects/process-*.ts
     - src/effects/expensive-run-lock.ts
     - src/effects/readonly-observation.ts
+    - src/effects/observation-loop.ts
     - src/effects/atomic-append.ts
     - src/effects/runtime/os-account-home.ts
     - src/effects/locking/**

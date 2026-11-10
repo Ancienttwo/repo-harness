@@ -33,7 +33,8 @@ import { MCP_AUDIT_LOG_RELATIVE_PATH } from '../../core/public-projections/mcp-a
 import { readBotRegistry } from '../bot-registry';
 import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError } from '../repo-registry';
 import { HerdrCoreError } from '../terminal/herdr-core';
-import { TASK_SESSION_LABELS, observeHcCore, readHcSnapshot } from './herdr-runtime-transport';
+import { observeHcCore, readHcSnapshot, TASK_SESSION_LABELS } from './herdr-runtime-transport';
+import { keepObservation, startObservationLoop } from '../observation-loop';
 import type { NotifyCacheV1 } from './notify-collector';
 
 const runFile = promisify(execFile);
@@ -235,33 +236,22 @@ export interface BotAccessCollectorOptions extends BotAccessReadInput {
 }
 
 export function startBotAccessCollector(options: BotAccessCollectorOptions): BotAccessCollectorHandle {
-  let cache: BotAccessCacheV1 = { state: 'pending' };
-  let closed = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let inflight: Promise<void> | null = null;
-  const cycle = (): Promise<void> => {
-    inflight = collectBotAccess(options)
-      .then(snapshot => { if (!closed) cache = { state: 'ok', snapshot }; }, () => {
-        // An unexpected failure keeps the last snapshot; it is no reason to show nothing.
-        if (!closed && cache.state !== 'ok') cache = { state: 'failed', reason: 'bot_access_failed' };
-      })
-      .finally(() => {
-        inflight = null;
-        if (closed) return;
-        timer = setTimeout(cycle, options.interval_ms ?? BOT_ACCESS_INTERVAL_MS);
-        timer.unref?.();
-      });
-    return inflight;
-  };
-  if (options.first_cycle_after === undefined) void cycle();
-  else inflight = options.first_cycle_after.then(() => (closed ? undefined : cycle()));
+  // Keep rule: an unexpected failure keeps the last snapshot at its observation time; it is no reason to show nothing.
+  const loop = startObservationLoop<BotAccessSnapshotV1, 'bot_access_failed'>({
+    cycle: async () => ({ state: 'observed', value: await collectBotAccess(options) }),
+    keep: keepObservation,
+    failure: 'bot_access_failed',
+    interval_ms: options.interval_ms ?? BOT_ACCESS_INTERVAL_MS,
+    first_cycle_after: options.first_cycle_after,
+  });
   return Object.freeze({
-    read: () => cache,
-    settled: () => inflight ?? Promise.resolve(),
-    close: async () => {
-      closed = true;
-      clearTimeout(timer);
-      await inflight;
+    read: (): BotAccessCacheV1 => {
+      const state = loop.read();
+      if (state.state === 'pending') return { state: 'pending' };
+      if (state.state === 'unavailable') return { state: 'failed', reason: state.reason };
+      return { state: 'ok', snapshot: state.value };
     },
+    settled: loop.settled,
+    close: loop.close,
   });
 }
