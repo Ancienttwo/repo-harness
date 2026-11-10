@@ -208,9 +208,8 @@ export function layoutSequence(flow: Required, placement: (nodeId: string) => Ru
     labels.push(labelAt(label, centre, id));
     messages.set(id, { outcome, step, tone, status });
   }
-  const extent = sceneExtent(boxes, routes, MARGIN);
   return {
-    scene: { boxes, routes, labels, extent: { width: Math.max(extent.width, ...labels.map(item => item.x + item.width + MARGIN)), height: extent.height } },
+    scene: { boxes, routes, labels, extent: sceneExtent(boxes, routes, MARGIN, labels) },
     parts, messages, lines: box => titles.has(box.id) ? [titles.get(box.id)!] : [],
   };
 }

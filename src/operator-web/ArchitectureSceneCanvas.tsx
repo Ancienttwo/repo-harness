@@ -23,8 +23,8 @@ import {
   type NodeTypes,
 } from '@xyflow/react';
 import '@xyflow/react/dist/base.css';
-import { contentBox, FirstViewport, ZoomControls } from './architecture-map-parts';
-import { routePath, sceneSvg, type PlacedScene, type SceneBox, type SceneLabel, type SceneRoute } from './architecture-scene';
+import { FirstViewport, ZoomControls } from './architecture-map-parts';
+import { routePath, sceneBounds, sceneSvg, type PlacedScene, type SceneBox, type SceneLabel, type SceneRoute } from './architecture-scene';
 import type { OperatorTranslate } from './i18n';
 
 interface RouteData extends Record<string, unknown> {
@@ -109,7 +109,7 @@ const noRouteSelection = () => null;
 
 function SceneFlow({ scene, nodeTypes, view, selected, emphasis = selected, routeLabel, routeSelection = noRouteSelection, onSelect, legend, t }: SceneCanvasProps) {
   const views = useMemo(() => new Map(scene.boxes.map(box => [box.id, view(box)])), [scene, view]);
-  const content = useMemo(() => contentBox(scene.boxes), [scene]);
+  const content = useMemo(() => sceneBounds(scene), [scene]);
   const nodes = useMemo<Node[]>(() => {
     const byId = new Map(scene.boxes.map(box => [box.id, box]));
     return scene.boxes.map(box => {
@@ -176,7 +176,7 @@ function SceneFlow({ scene, nodeTypes, view, selected, emphasis = selected, rout
     <Panel position="bottom-left"><dl className="architecture-map__legend" aria-label={t('architecture.map.legend')}>
       {legend.map(entry => <div key={entry.key}><dt>{entry.swatch}</dt><dd>{entry.text}</dd></div>)}
     </dl></Panel>
-    <Panel position="bottom-right"><ZoomControls t={t} /></Panel>
+    <Panel position="bottom-right"><ZoomControls bounds={content} t={t} /></Panel>
   </ReactFlow>;
 }
 

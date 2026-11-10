@@ -19,7 +19,7 @@ import {
 import { runtimePlacement } from '../../src/operator-web/architecture-runtime';
 import { layoutSequence } from '../../src/operator-web/architecture-sequence-layout';
 import { defaultTopologyBase, layoutTopology, type TopologyBase } from '../../src/operator-web/architecture-topology-layout';
-import { repairRoute, routePath, sceneFindings, sceneSvg, textWidth, type PlacedScene, type SceneBox } from '../../src/operator-web/architecture-scene';
+import { repairRoute, routePath, sceneBounds, sceneFindings, sceneSvg, textWidth, type PlacedScene, type SceneBox } from '../../src/operator-web/architecture-scene';
 import { contentBox, firstViewport } from '../../src/operator-web/architecture-map-parts';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import type { ArchitectureHistory as HistoryPage } from 'archctx-contracts';
@@ -1033,13 +1033,13 @@ describe('sequence and topology base maps', () => {
     expect([kept, refused].map(band => [band.x < lifeline('pipe'), band.x + band.width > lifeline('git')])).toEqual([[true, true], [true, false]]);
     expect(sceneFindings(scene)).toEqual([]);
 
-    // Wide text: a CJK message label, a self message, a long participant name, and long band and terminal labels. Every box
+    // Wide text: a CJK message label, a self message on the last participant, a long participant name, and long band and terminal labels. Every box
     // grows to its text, the scene check finds nothing, and the file keeps each whole text inside its view box.
     const cjk = (text: string) => text.repeat(4);
     const [route, append] = flow.steps;
     const [keptOutcome, refusedOutcome] = flow.outcomes;
     const wide = { ...flow,
-      steps: [{ ...route!, label: cjk('流水线先校验请求和账本状态') }, { ...append!, to: 'pipe', label: 'WRITE THE WHOLE MEMBER ROW BEFORE ANY OTHER WRITER MOVES' }],
+      steps: [{ ...route!, label: cjk('流水线先校验请求和账本状态') }, { ...append!, from: 'git', to: 'git', label: 'WRITE THE WHOLE MEMBER ROW BEFORE ANY OTHER WRITER MOVES' }],
       outcomes: [
         { ...keptOutcome!, label: cjk('账本行已保存并提交到 git'), terminal: { participant: 'git', label: 'WROTE THE COMMITTED LEDGER ROW AND RETURNED ITS SHA TO THE MAIN WINDOW' } },
         { ...refusedOutcome!, label: 'Row refused because the ledger rejected the append for a known reason', terminal: { participant: 'router', label: '停止：返回拒绝原因和账本代码给路由器' } },
@@ -1050,6 +1050,13 @@ describe('sequence and topology base maps', () => {
     const texts = [...wideLayout.scene.boxes.flatMap(box => wideLayout.lines(box)), ...wideLayout.scene.labels.map(label => label.text)];
     expect([sceneFindings(wideLayout.scene), fits(wideLayout.scene, wideLayout.lines), texts.length, texts.filter(item => !wideSvg.includes(`>${item}</text>`))])
       .toEqual([[], [], 3 + 4 + 2 + 2 + 4, []]);
+    // The self message's label lies right of every lifeline; the bounds that the extent, the first view and Fit read hold every box, label and route point.
+    const bounds = sceneBounds(wideLayout.scene);
+    const held = (x: number, y: number, width = 0, height = 0) => x >= bounds.x && y >= bounds.y && x + width <= bounds.x + bounds.width && y + height <= bounds.y + bounds.height;
+    const selfLabel = wideLayout.scene.labels.find(label => label.route === 'message::append')!;
+    expect([selfLabel.x > Math.max(...wideLayout.scene.boxes.filter(box => box.kind === 'lifeline').map(box => box.x + box.width)),
+      [...wideLayout.scene.boxes, ...wideLayout.scene.labels].every(item => held(item.x, item.y, item.width, item.height)),
+      wideLayout.scene.routes.every(route => route.points.every(([x, y]) => held(x, y))), wideLayout.scene.extent.width === bounds.x + bounds.width + 16]).toEqual([true, true, true, true]);
 
     // The recorded map: every flow passes the scene check, labels included; each label is its step's whole label, each box fits its text, and the
     // file draws one path for each message with the route's path. The other base maps write the same files as on main 2418cd6fc.

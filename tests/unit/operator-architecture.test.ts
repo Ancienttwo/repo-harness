@@ -726,6 +726,9 @@ describe('architecture map', () => {
     refused(value => { value.flows[0].capability = PART; });
     refused(value => { value.flows[1].id = FLOW; });
     refused(value => { value.flows[1].participants = []; });
+    // archctx's flow schema requires a participant and a main step in each required flow.
+    refused(value => { Object.assign(value.flows[0], { participants: [], steps: [], outcomes: [] }); });
+    refused(value => { value.flows[0].steps = []; });
     refused(value => { value.flows[0].steps[0].label = 'Write /Users/someone/ledger.db'; });
     refused(value => { value.flows[0].steps[0].evidence.extra = 'x'; });
     // Declared code: once per selector, for a selector a step names, from a node of the map, at a public path or null.

@@ -262,13 +262,18 @@ export function repairRoute(points: readonly Point[], obstacles: readonly Rect[]
   return withoutRepeats(tighten(detour(points, obstacles), obstacles));
 }
 
-/** The size of the canvas that holds every box and every route point, with `margin` px on the right and at the bottom. */
-export function sceneExtent(boxes: readonly SceneBox[], routes: readonly SceneRoute[], margin: number): PlacedScene['extent'] {
-  const points = routes.flatMap(route => route.points);
-  return {
-    width: Math.max(0, ...boxes.map(box => box.x + box.width), ...points.map(point => point[0])) + margin,
-    height: Math.max(0, ...boxes.map(box => box.y + box.height), ...points.map(point => point[1])) + margin,
-  };
+/** The bounding box of everything that a scene draws: its boxes, its route points and its label boxes. The canvas, its Fit and `sceneExtent` read it. */
+export function sceneBounds(scene: Pick<PlacedScene, 'boxes' | 'routes' | 'labels'>): Rect {
+  const rects: Rect[] = [...scene.boxes, ...scene.labels, ...scene.routes.flatMap(route => route.points.map(([x, y]) => ({ x, y, width: 0, height: 0 })))];
+  if (rects.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
+  const left = Math.min(...rects.map(rect => rect.x)), top = Math.min(...rects.map(rect => rect.y));
+  return { x: left, y: top, width: Math.max(...rects.map(rect => rect.x + rect.width)) - left, height: Math.max(...rects.map(rect => rect.y + rect.height)) - top };
+}
+
+/** The size of the canvas that holds everything that the scene draws, with `margin` px on the right and at the bottom. */
+export function sceneExtent(boxes: readonly SceneBox[], routes: readonly SceneRoute[], margin: number, labels: readonly SceneLabel[] = []): PlacedScene['extent'] {
+  const bounds = sceneBounds({ boxes, routes, labels });
+  return { width: Math.max(0, bounds.x + bounds.width) + margin, height: Math.max(0, bounds.y + bounds.height) + margin };
 }
 
 export interface LayeredGraph {
