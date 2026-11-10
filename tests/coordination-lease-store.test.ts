@@ -31,7 +31,6 @@ import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
 import { withExclusiveDirectoryLock } from '../src/effects/locking/exclusive-directory-lock';
 
 const FIXTURES = new Set<string>();
-const REPO_ROOT = join(import.meta.dir, '..');
 
 function run(cwd: string, args: readonly string[]): void {
   const result = spawnSync('git', [...args], { cwd, encoding: 'utf-8' });

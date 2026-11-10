@@ -139,7 +139,7 @@ describe('provider feedback common-directory store', () => {
     expect(() => readFeedbackEvents(root, PUBLICATION_ID)).toThrow('feedback event is unsafe');
 
     const completed = reaction();
-    const reactionPath = seedReactionReceipt(root, PUBLICATION_ID, completed);
+    seedReactionReceipt(root, PUBLICATION_ID, completed);
     expect(readReactionAttemptReceipts(root, PUBLICATION_ID)).toEqual([completed]);
     const common = resolveGitCommonDirectory(root);
     const publicationDirectory = join(common, 'repo-harness', 'feedback', 'v1', PUBLICATION_ID.slice('sha256:'.length));

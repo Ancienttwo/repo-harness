@@ -357,8 +357,6 @@ describe("run-skill-evals execution", () => {
     const stubDir = join(disposableRepo, "bin");
     const configPath = join(disposableRepo, "evals", "benchmark.config.json");
     const evalsPath = join(disposableRepo, "evals", "evals.json");
-    const workspaceRoot = join(disposableRepo, ".ai", "harness", "evals", "workspace");
-    const summaryPath = join(disposableRepo, "reports", "benchmark.md");
     mkdirSync(stubDir, { recursive: true });
     mkdirSync(disposableHome, { recursive: true });
     mkdirSync(ambientHome, { recursive: true });

@@ -22,7 +22,6 @@ import { prepareChangeAssessment } from '../src/effects/review/change-assessment
 const tempDirs: string[] = [];
 const admissions = new Map<string, ReturnType<typeof seedReviewAdmissionFixture>>();
 const authorityFor = (root: string) => admissions.get(root)!.source;
-const SOURCE_ROOT = join(import.meta.dir, '..');
 afterEach(() => { for (const path of tempDirs.splice(0)) rmSync(path, { recursive: true, force: true }); });
 
 function git(cwd: string, ...args: string[]): string {
