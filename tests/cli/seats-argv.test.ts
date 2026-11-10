@@ -855,17 +855,18 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
   test.each([
     ["advisor", "repository", "1"], ["advisor", "repository", undefined],
     ["advisor", "seat", "advisor"], ["advisor", "seat", "worker"], ["advisor", "seat", undefined],
-    ["orchestrator", "seat", "orchestrator"],
+    ["orchestrator", "seat", "orchestrator"], ["advisor", "labels", undefined],
   ] as const)("caller mismatch: target %s, %s=%s sends no message or key", (seat, field, value) => withReset(async ({ handoff, reset, state, calls, log }) => {
     const labels: Record<string, string> = { "repo-harness.repository": dirname(dirname(handoff)).split("/").at(-1)!, "repo-harness.seat": seat === "advisor" ? "orchestrator" : "advisor" };
     if (value === undefined) delete labels[`repo-harness.${field}`];
     else labels[`repo-harness.${field}`] = value;
-    state({ callerLabels: labels });
+    state({ callerLabels: field === "labels" ? {} : labels });
     // Refuse both /clear for a valid handoff and REWRITE for a missing handoff.
     expect(await reset()).toEqual({ error: "caller_unknown", outcome: "nothing_sent" });
     expect(await reset({ handoff: false })).toEqual({ error: "caller_unknown", outcome: "nothing_sent" });
     expect(calls()).toEqual([]);
-    expect(log().map(({ detail }) => detail)).toEqual(Array(2).fill(expect.stringContaining(`repo-harness.${field}`)));
+    const required = field === "labels" ? Object.entries(labels).map(([key, value]) => `${key}=${value}`) : [`repo-harness.${field}`];
+    for (const label of required) expect(log().map(({ detail }) => detail)).toEqual(Array(2).fill(expect.stringContaining(label)));
   }, seat)());
 
   test("an advisor peer can reset the orchestrator in the same repository", withReset(async ({ reset, sends }) => {
