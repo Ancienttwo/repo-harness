@@ -19,7 +19,7 @@ import {
 import { runtimePlacement } from '../../src/operator-web/architecture-runtime';
 import { layoutSequence } from '../../src/operator-web/architecture-sequence-layout';
 import { defaultTopologyBase, layoutTopology, type TopologyBase } from '../../src/operator-web/architecture-topology-layout';
-import { repairRoute, routePath, sceneFindings, sceneSvg } from '../../src/operator-web/architecture-scene';
+import { repairRoute, routePath, sceneFindings, sceneSvg, textWidth, type PlacedScene, type SceneBox } from '../../src/operator-web/architecture-scene';
 import { contentBox, firstViewport } from '../../src/operator-web/architecture-map-parts';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import type { ArchitectureHistory as HistoryPage } from 'archctx-contracts';
@@ -1003,9 +1003,17 @@ describe('sequence and topology base maps', () => {
     const twice = runtimeMap({ relations: [...runtimeMap().relations, mapRelation('relation.h-deploy', 'deployed-on', CENTER, CLI)] });
     expect(runtimePlacement(twice)(PART)).toEqual({ kind: 'unknown', reason: 'deployment_ambiguous' });
     const unmarked = { tone: () => null, status: () => null };
+    const named = (names: (node: string) => string) => ({ process: (where: { kind: string }) => `Process ${where.kind}`, participant: (participant: { node: string }) => names(participant.node) });
+    // Each text holder is as wide as its text at the shared estimate with a 12 px pad on each side, and the file holds every box and label.
+    const fits = (scene: PlacedScene, lines: (box: SceneBox) => readonly string[]) => {
+      const { width, height } = scene.extent;
+      const inside = (item: { x: number; y: number; width: number; height: number }) => item.x >= 0 && item.y >= 0 && item.x + item.width <= width && item.y + item.height <= height;
+      return [...scene.boxes.filter(box => !inside(box) || lines(box).some(line => textWidth(line, 'title') + 24 > box.width)).map(box => box.id),
+        ...scene.labels.filter(label => !inside(label) || label.width !== textWidth(label.text, 'label')).map(label => label.text)];
+    };
     // The ledger is listed after the router but shares the pipe's process, so it sits next to the pipe.
     const reordered = { ...flow, participants: [flow.participants[1]!, flow.participants[0]!, flow.participants[3]!, flow.participants[2]!] };
-    const { scene } = layoutSequence(reordered, place, unmarked);
+    const { scene } = layoutSequence(reordered, place, unmarked, named(node => `Name ${node}`));
     const box = new Map(scene.boxes.map(item => [item.id, item]));
     const headers = scene.boxes.filter(item => item.id.startsWith('participant:'));
     expect(scene.boxes.filter(item => item.parent === null && item.id.startsWith('box:')).map(item => [item.id, headers.filter(header => header.parent === item.id).map(header => header.id)])).toEqual([
@@ -1025,15 +1033,33 @@ describe('sequence and topology base maps', () => {
     expect([kept, refused].map(band => [band.x < lifeline('pipe'), band.x + band.width > lifeline('git')])).toEqual([[true, true], [true, false]]);
     expect(sceneFindings(scene)).toEqual([]);
 
-    // The recorded map: every flow passes the scene check, labels included; each label is its step's whole label, and the
+    // Wide text: a CJK message label, a self message, a long participant name, and long band and terminal labels. Every box
+    // grows to its text, the scene check finds nothing, and the file keeps each whole text inside its view box.
+    const cjk = (text: string) => text.repeat(4);
+    const [route, append] = flow.steps;
+    const [keptOutcome, refusedOutcome] = flow.outcomes;
+    const wide = { ...flow,
+      steps: [{ ...route!, label: cjk('流水线先校验请求和账本状态') }, { ...append!, to: 'pipe', label: 'WRITE THE WHOLE MEMBER ROW BEFORE ANY OTHER WRITER MOVES' }],
+      outcomes: [
+        { ...keptOutcome!, label: cjk('账本行已保存并提交到 git'), terminal: { participant: 'git', label: 'WROTE THE COMMITTED LEDGER ROW AND RETURNED ITS SHA TO THE MAIN WINDOW' } },
+        { ...refusedOutcome!, label: 'Row refused because the ledger rejected the append for a known reason', terminal: { participant: 'router', label: '停止：返回拒绝原因和账本代码给路由器' } },
+      ] };
+    const wideNames = (node: string) => node === CENTER ? 'Pipeline Workflow Engine Capability With Many Many Words' : node === CALLER ? '路由器：根路由在流水线之前选择处理程序' : `Name ${node}`;
+    const wideLayout = layoutSequence(wide, place, unmarked, named(wideNames));
+    const wideSvg = sceneSvg(wideLayout.scene, wideLayout.lines);
+    const texts = [...wideLayout.scene.boxes.flatMap(box => wideLayout.lines(box)), ...wideLayout.scene.labels.map(label => label.text)];
+    expect([sceneFindings(wideLayout.scene), fits(wideLayout.scene, wideLayout.lines), texts.length, texts.filter(item => !wideSvg.includes(`>${item}</text>`))])
+      .toEqual([[], [], 3 + 4 + 2 + 2 + 4, []]);
+
+    // The recorded map: every flow passes the scene check, labels included; each label is its step's whole label, each box fits its text, and the
     // file draws one path for each message with the route's path. The other base maps write the same files as on main 2418cd6fc.
     const recorded = decodeArchitectureMap(recordedMap);
     const placed = runtimePlacement(recorded);
     const flows = recorded.flows.flatMap(entry => entry.applicability === 'required' ? [entry] : []);
     const results = flows.map(entry => {
-      const layout = layoutSequence(entry, placed, unmarked);
+      const layout = layoutSequence(entry, placed, unmarked, named(node => recorded.nodes.find(item => item.id === node)!.name));
       const paths = [...sceneSvg(layout.scene, () => []).matchAll(/<path class="route[^"]*" stroke-width="[^"]*" d="([^"]*)"/gu)].map(match => match[1]);
-      return { findings: sceneFindings(layout.scene), whole: layout.scene.labels.every(label => label.text === layout.messages.get(label.route!)!.step.label),
+      return { findings: sceneFindings(layout.scene), whole: layout.scene.labels.every(label => label.text === layout.messages.get(label.route!)!.step.label) && fits(layout.scene, layout.lines).length === 0,
         paths: JSON.stringify(paths) === JSON.stringify(layout.scene.routes.map(route => routePath(route.points))) && paths.length === flowSteps(entry).length };
     });
     expect([flows.length, results.filter(result => result.findings.length > 0 || !result.whole || !result.paths)]).toEqual([31, []]);

@@ -13,7 +13,7 @@ import { archctxCode, mapLayerView, type MapLayerId, type MapMark } from './arch
 import { FixCommand, Mark, NodeDetails, Note, nodeSize } from './architecture-map-parts';
 import { runtimePlacement, type RuntimePlacement } from './architecture-runtime';
 import type { SceneBox, SceneRoute } from './architecture-scene';
-import { layoutSequence, type MessageTone, type SequenceLayout, type SequencePart } from './architecture-sequence-layout';
+import { fragmentTag, layoutSequence, type MessageTone, type SequenceLayout, type SequencePart } from './architecture-sequence-layout';
 import { ArchitectureSceneCanvas, downloadSceneSvg, SceneHandles, type SceneLegendEntry, type SceneNodeView } from './ArchitectureSceneCanvas';
 import type { ArchitectureSelections } from './ArchitectureMap';
 import type { OperatorTranslate } from './i18n';
@@ -68,7 +68,8 @@ const FragmentNode = memo(function FragmentNode({ data }: NodeProps<Node<Fragmen
 });
 const HeaderNode = memo(function HeaderNode({ data, selected }: NodeProps<Node<HeaderData, 'header'>>) {
   return <div className="architecture-map__box architecture-sequence__header" data-kind={data.kind} data-selected={selected || undefined} data-tone={data.mark?.tone} data-quiet={data.quiet || undefined}>
-    <span className="architecture-map__title"><strong title={data.name}>{data.name}</strong><Mark mark={data.mark} /></span>
+    <strong className="architecture-sequence__name">{data.name}</strong>
+    {data.mark !== null && <span className="architecture-sequence__header-mark"><Mark mark={data.mark} /></span>}
   </div>;
 });
 const LifelineNode = memo(function LifelineNode() { return <div className="architecture-sequence__lifeline"><SceneHandles /></div>; });
@@ -76,8 +77,6 @@ const TerminalNode = memo(function TerminalNode({ data }: NodeProps<Node<Termina
   return <div className="architecture-sequence__terminal" data-kind={data.kind} title={data.label}>{data.label}</div>;
 });
 const NODE_TYPES = { box: BoxNode, fragment: FragmentNode, header: HeaderNode, lifeline: LifelineNode, terminal: TerminalNode };
-
-const fragmentTag = (index: number) => index === 0 ? 'alt' : 'else';
 
 function placementText(placement: RuntimePlacement, names: ReadonlyMap<string, string>, t: OperatorTranslate): string {
   return placement.kind === 'process' ? names.get(placement.process) ?? placement.process
@@ -165,31 +164,23 @@ function legend(t: OperatorTranslate): SceneLegendEntry[] {
 }
 
 /** The placed scene of one flow, with the messages that the active layer marks. The canvas and the SVG file both read it. */
-function flowLayout(map: ArchitectureMapV1, flow: RequiredFlow, layer: MapLayerId, pullRequest: number | null): SequenceLayout {
+function flowLayout(map: ArchitectureMapV1, flow: RequiredFlow, layer: MapLayerId, pullRequest: number | null, t: OperatorTranslate): SequenceLayout {
   const reached = reachedSteps(map, layer, pullRequest);
   const proven = proofs(map);
+  const names = new Map(map.nodes.map(node => [node.id, node.name]));
   return layoutSequence(flow, runtimePlacement(map), {
     tone: (outcome, step) => messageTone(layer, reached, proven, flow.id, outcome, step),
     status: step => { const status = proven?.get(flowSelectorKey(step.evidence)); return status === undefined || status === 'proven' ? null : status; },
+  }, {
+    process: placement => boxTitle(placement, names, t),
+    // The decoder admits a flow only when each participant names a map node.
+    participant: participant => names.get(participant.node)!,
   });
 }
 
 /** The title of a process box. */
 function boxTitle(placement: RuntimePlacement, names: ReadonlyMap<string, string>, t: OperatorTranslate): string {
   return placement.kind === 'unknown' ? t('architecture.sequence.unknown') : placementText(placement, names, t);
-}
-
-/** The text lines of each box in the SVG file. */
-function sceneLines(layout: SequenceLayout, map: ArchitectureMapV1, t: OperatorTranslate): (box: SceneBox) => readonly string[] {
-  const names = new Map(map.nodes.map(node => [node.id, node.name]));
-  return box => {
-    const part = layout.parts.get(box.id)!;
-    if (part.kind === 'process') return [boxTitle(part.placement, names, t)];
-    if (part.kind === 'participant') return [names.get(part.participant.node) ?? part.participant.node];
-    if (part.kind === 'fragment') return [`${fragmentTag(part.index)} ${part.outcome.label}`];
-    if (part.kind === 'terminal') return [part.outcome.terminal.label];
-    return [];
-  };
 }
 
 /** The selected box or route of the flow on screen: a participant header id or a message route id. */
@@ -292,8 +283,8 @@ export function SequenceLensTools({ map, layer, pullRequest, flowId, t }: {
   const flow = shownFlow(map, layer, reached, proven, flowId);
   const exportSvg = () => {
     if (flow.applicability !== 'required') return;
-    const layout = flowLayout(map, flow, layer, pullRequest);
-    downloadSceneSvg(`${flow.id}.svg`, layout.scene, sceneLines(layout, map, t));
+    const layout = flowLayout(map, flow, layer, pullRequest, t);
+    downloadSceneSvg(`${flow.id}.svg`, layout.scene, layout.lines);
   };
   return <div className="architecture-lens__tools">
     <span data-sequence-summary>{t('architecture.sequence.summary', coverage)}</span>
@@ -340,7 +331,7 @@ export function ArchitectureSequence({ map, layer, pullRequest, flowId, onFlow, 
   const proven = useMemo(() => proofs(map), [map]);
   const lit = useMemo(() => litFlows(map, layer, reached, proven), [map, layer, reached, proven]);
   const flow = map.flows.length === 0 ? null : shownFlow(map, layer, reached, proven, flowId);
-  const layout = useMemo(() => flow?.applicability === 'required' ? flowLayout(map, flow, layer, pullRequest) : null, [map, flow, layer, pullRequest]);
+  const layout = useMemo(() => flow?.applicability === 'required' ? flowLayout(map, flow, layer, pullRequest, t) : null, [map, flow, layer, pullRequest, t]);
   const flowKey = flow?.id ?? '';
   const select = useCallback((id: string | null) => onSelect(flowKey, id), [flowKey, onSelect]);
   if (flow === null) {

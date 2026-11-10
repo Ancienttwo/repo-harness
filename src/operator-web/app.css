@@ -307,6 +307,7 @@
   .architecture-sequence__header[data-kind="capability"] { @apply bg-kumo-info-tint; }
   .architecture-sequence__header[data-kind="external-system"] { @apply bg-transparent; }
   .architecture-sequence__header strong { @apply text-xs; }
+  .architecture-sequence__name { @apply block whitespace-nowrap; }
   .architecture-sequence__terminal { @apply h-full w-full overflow-hidden rounded-md border bg-kumo-base px-2 py-1 text-center text-[11px] font-semibold leading-[12px]; }
   .architecture-sequence__terminal[data-kind="success"] { @apply border-kumo-success text-kumo-success; }
   .architecture-sequence__terminal[data-kind="error"] { @apply border-kumo-danger text-kumo-danger; }

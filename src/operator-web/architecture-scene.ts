@@ -53,9 +53,24 @@ export interface PlacedScene {
   readonly extent: { readonly width: number; readonly height: number };
 }
 
-/** The estimate of a label box: the checks have no font metrics. */
+/** The estimate of one narrow character: the checks have no font metrics. */
 const LABEL_CHAR = 7;
 const LABEL_HEIGHT = 16;
+/** The bold 13 px box title is the largest text that a box draws in the file; it gets this factor over the label estimate. */
+const TITLE_FACTOR = 1.5;
+/** Latin glyphs that a proportional font draws at almost 1 em; in the monospace label font every ASCII glyph has one width. */
+const WIDE_LATIN = new Set(['M', 'W', 'm', 'w', '@', '%']);
+
+/**
+ * The estimated width of `text` in px: 7 px for each narrow character, 2 for a wide one such as CJK. `label` is the
+ * monospace route label; `title` is a box title, where `M`, `W`, `m`, `w`, `@` and `%` also count 2 and the sum gets
+ * `TITLE_FACTOR`. Each holder of text in a scene takes its width from here.
+ */
+export function textWidth(text: string, font: 'label' | 'title'): number {
+  let units = 0;
+  for (const char of text) units += char.charCodeAt(0) >= 128 || (font === 'title' && WIDE_LATIN.has(char)) ? 2 : 1;
+  return Math.ceil(units * LABEL_CHAR * (font === 'title' ? TITLE_FACTOR : 1));
+}
 /** A detour runs over box corners grown by this many px on both axes. */
 const DETOUR_GAP = 12;
 
@@ -101,7 +116,7 @@ const pairs = (line: readonly Point[]) => line.slice(1).map((point, index) => [l
 
 /** The label box of `text` centred on `at`. */
 export function labelAt(text: string, at: Point, route: string | null): SceneLabel {
-  const width = text.length * LABEL_CHAR;
+  const width = textWidth(text, 'label');
   return { text, x: round1(at[0] - width / 2), y: round1(at[1] - LABEL_HEIGHT / 2), width, height: LABEL_HEIGHT, route };
 }
 
