@@ -9,11 +9,11 @@ Host: Linux container. Each count is from a run in this container.
 
 | Question | Finding |
 |---|---|
-| Does a state machine model find what the reading did not? | Yes, in the least tested machine. The resident collector publishes the result of one repository only when the last repository of the cycle ends (4 collectors). The collector test passes with each of its three close guards removed. Both were not in the earlier note. |
+| Does a state machine model find what the reading did not? | Yes, in the least tested machine. The resident collector publishes the result of one repository only when the last repository of the cycle ends (the architecture map, tests and docs collectors). The collector test passes with each of its three close guards removed. Both were not in the earlier note. |
 | What does it cost? | 7 models, 28 TLC configs, one command, 26 s. The largest model has 72,018 states. |
 | Where does it add nothing to the tests? | The console read loop and the boss command send: the unit tests fail for each of their 7 guard removals. The models add each order of the steps and the crash at each step boundary. |
 | Does it fit the architecture model? | The repository has the slot: `extensions.behaviorSpecs` on a model node, one TLA+ spec (`specs/tla/ShipCloseoutClaim.tla`), a hand-composed behavior board in `archimap.html`. 6 of the 7 new models fit the declared kind `archcontext.state-machine/v1` that archctx plans; the boss command send does not. |
-| Does it find refactoring candidates? | It makes two known ones exact. The 11 resident collectors are one machine with three policy points (publish, keep on failure, first-cycle gate), and 4 of them share the publish defect. The console readers are one loop with two refusal rules. |
+| Does it find refactoring candidates? | It makes two known ones exact. The 11 resident collectors are one machine with three policy points (publish, keep on failure, first-cycle gate), and 3 of them share the publish defect. The console readers are one loop with two refusal rules. |
 
 ## 1. Models
 
@@ -56,7 +56,7 @@ The close guards of the other 10 collectors were not tried.
 | # | Rule | The code breaks it in this way | Harm | State |
 |---|---|---|---|---|
 | F1 | `RefusalKeepsCadence`, `PendingKeepsCadence` | A reader returns `false` for a typed refusal, and "not collected yet" is a refusal. | A 60 s or 120 s cycle after one refusal. | known: #2149, #2151 |
-| F2 | `CollectedResultIsServed`, `BuiltMapIsServed` | `states = next` runs after the last child (`architecture-map-collector.ts:141`; the same line in `docs-collector.ts:150`, `execution-collector.ts:108`, `tests-collector.ts:290`). | The first map of each repository waits for every repository. One child at its limit (120 s + 20 s + the termination grace) holds all maps back for that time, in each cycle. | new |
+| F2 | `CollectedResultIsServed`, `BuiltMapIsServed` | `states = next` runs after the last repository: `architecture-map-collector.ts:141` and `tests-collector.ts:290` (one repository at a time), `docs-collector.ts:150` (all repositories in parallel, so each waits for the slowest). `execution-collector.ts:108` has one child for all repositories, so no repository waits there. | The first map of each repository waits for every repository. One child at its limit (120 s + 20 s + the termination grace) holds all maps back for that time, in each cycle. | new |
 | F3 | the three close guards | No test fails when a guard goes. | A later change can start a child or a timer after `operator serve` closed the collector, with no failed check. | new: a test gap |
 | F4 | `SeatsShowWithParentsList` | The room waits for the board read. | A loading screen for the time of the board read. | known: #2149 |
 | F5 | `SeatsStayOnScreen` | A failed parents refresh sets the view to `failed` (`board-view.ts:126`), and the page shows the setup checklist. A board refusal outside `STALE_BOARD_KEPT` shows the failure screen. | The seats go away for 60 s after one failed parents refresh. #2149 does not change this. | new: the owner decides the rule |

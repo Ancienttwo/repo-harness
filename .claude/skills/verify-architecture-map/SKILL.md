@@ -43,7 +43,7 @@ Sync commit: `c9af3b06c3361b4e46b5254d1629e0537acccac0` (main). Move it forward 
 | the lens, the flow and the segment | `src/operator-web/ArchitectureMap.tsx:286-291` |
 | the selection | `ArchitectureModules.tsx:275`, `ArchitectureLayers.tsx:162`, `ArchitectureSequence.tsx:382`, `ArchitectureTopology.tsx:180` |
 
-The docs, execution and tests collectors publish in the same way (`states = next` at `docs-collector.ts:150`, `execution-collector.ts:108`, `tests-collector.ts:290`). The model reads only the architecture map collector. Read the other file against the header of `ResidentCollector.tla` before you rely on the model for it.
+The tests collector has the same loop (`tests-collector.ts:279-292`). The docs collector runs its repositories in parallel and publishes after the slowest (`docs-collector.ts:147-152`). The execution collector has one child for all repositories. The model reads only the architecture map collector. Read the other file against the header of `ResidentCollector.tla` before you rely on the model for it.
 
 A change touches the verified code when `git diff c9af3b06c3361b4e46b5254d1629e0537acccac0 -- src/effects/operator/architecture-map-collector.ts src/operator-web/ArchitectureMap.tsx src/operator-web/ArchitectureWorkspace.tsx` is not empty.
 
