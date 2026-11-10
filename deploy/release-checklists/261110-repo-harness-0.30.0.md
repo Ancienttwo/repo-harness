@@ -7,8 +7,8 @@
   goes to the next release.
 - Release date and record prefix: UTC 2026-11-10, from `date -u`.
 - The core package, Operator web package, skill and template stamps, and README
-  move to 0.30.0. The range adds no runtime dependency and no `hc` pin, so
-  `bun.lock` stays as it is at the base.
+  move to 0.30.0. The range changes no `package.json` dependency, no `hc` pin and
+  no `bun.lock`, so the lockfile stays as it is at the base.
 - Joint decision on #2207 (orchestrator + advisor), plan revision 1.
 - Publish status: not published. The life cycle stops at the merged release
   PR. `npm publish`, the tag and the GitHub Release stay with the owner and
@@ -16,12 +16,16 @@
 
 ## Cause of the release
 
-Installed 0.29.2 reads only the newest 50 comments and the newest 50 sub-issues
-of a batch parent, so a long parent reports `hold_unknown` and refuses every
-merge (#2157, #2123). It resets a seat from a caller in another repository
-(#2196), and a provider token can reach a local git child process (#2102,
-#2131). It also has no release workflow: publication is a manual command list
-(#2194).
+An installed 0.29.2 has these defects. The board reads one page of 50 comments
+of the parent thread, so a longer thread reads as truncated and can report
+`merge_hold: unknown` (`comments_truncated`), which refuses the merge with
+`hold_unknown` (#2157). The board also reads one page of 50 sub-issues, so a
+parent with more than 50 sub-issues fails the source read with `issue.subIssues
+has more pages than one read returns`, and dispatch, review, merge and the
+attention watcher stop together (#2123). A seat reset accepts a caller from
+another repository (#2196), and a provider token reaches the environment of a
+local git child process (#2102, #2131). 0.29.2 also has no release workflow:
+publication is a manual command list (#2194).
 
 | PR | Commit | Section in 0.30.0 | Change |
 |---|---|---|---|
@@ -66,7 +70,7 @@ merge (#2157, #2123). It resets a seat from a caller in another repository
 | #2206 | `e8c717a26` | Tests | One CHANGELOG extraction drift check |
 
 The `[Unreleased]` section held no entry at the base. The `[0.29.2]` and older
-sections stay byte-identical to the base.
+sections are byte-identical to the base.
 
 ## Publication steps
 
@@ -78,19 +82,39 @@ Release; no seat publishes, tags or releases.
    `repo-harness-operator-web` and for `repo-harness`: repository
    `aimpact-inc/repo-harness`, workflow `release.yml`, environment `release`.
    The GitHub environment `release`: the owner as the required reviewer and a
-   deployment branch policy of `main` only.
+   deployment branch policy of `main` only. Until both exist, a run stops at
+   the `publish` environment gate or at `npm publish`.
 2. After the merge, run `gh workflow run release.yml -f sha=<merged release
    commit>`. The owner approves the run in the `release` environment. That
    approval is the authorization for this deployment.
-3. Read back the version in each job. The run refuses a commit that is not the
-   release commit and stops at the first failed step. Record the shasum,
-   integrity and file count of each package from `check published`.
-4. After the run, read `bash scripts/release-owner-steps.sh check tagged
-   0.30.0` for the tag and the GitHub Release.
+3. Read each job of the run. `validate` refuses a commit that is not the release
+   commit of its own `package.json` version. `lane` runs `bun run check:release`
+   and `workflow-guard`, then packs both tarballs. `publish` publishes the
+   console tarball, waits until npm shows it, then publishes the core tarball.
+   `published` runs `check published 0.30.0`. `tag` creates the annotated tag
+   and the GitHub Release. `tagged` runs `check tagged 0.30.0`. The run stops at
+   the first failed step.
+4. Record the values of step 3 in the Publication table below. `check
+   published` reads each package with `npm view` and `npm pack` and compares the
+   shasum and the integrity; it prints no field values, so read them from the
+   registry: `npm view repo-harness@0.30.0 dist --json` and `npm view
+   repo-harness-operator-web@0.30.0 dist --json` give `shasum`, `integrity`,
+   `fileCount` and `tarball`.
 
-`bash scripts/release-owner-steps.sh plan 0.30.0` stays a read-only preflight
-and prints the manual command list. Use that list only as the partial-publish
-recovery path in `release-deploy.md`, when a run stops after a publish.
+`bash scripts/release-owner-steps.sh plan 0.30.0` is a pre-publication preflight
+only. It runs `preflight`, which requires both versions to be unpublished and
+`v0.30.0` to be absent, so it fails after the first publish. Do not use its
+command list for recovery.
+
+### Recovery after a partial publish
+
+This is an owner step. The procedure is the "Partial publish recovery" section
+of `docs/reference-configs/release-deploy.md`, which this release ships. A
+rerun of the workflow is not the recovery: `lane` runs `workflow-guard`, which
+fails once a version is on npm. Follow the section's numbered steps and do only
+the steps that are not done yet; `bash scripts/release-owner-steps.sh guard
+<version> <sha>` is the supported pre-publish check there, and `check published`
+and `check tagged` are the supported readbacks. Stop at the first failure.
 
 ## Upgrade steps for users
 
@@ -102,9 +126,11 @@ Restart the Operator server and reload the page.
 
 ## Acceptance environment
 
-Pending: `bun run check:type`, `bun run check:reference-configs`, the affected
-test files and `git diff --check` on the prep head are recorded in the prep PR.
-`bun run check:release` is pending the owner publication steps and CI.
+Pending: `bun run check:type`, `bun run check:helpers`, `bun run
+check:reference-configs`, the affected test files and `git diff --check` on the
+prep head are recorded in the prep PR. `bun run check:release` is not run here:
+it needs the registry and npm, and it is pending the owner publication steps
+and CI.
 
 ## Publication
 
@@ -115,15 +141,17 @@ Publish candidate merge SHA: pending.
 | 1 | `repo-harness-operator-web@0.30.0` | pending | pending | pending |
 | 2 | `repo-harness@0.30.0` | pending | pending | pending |
 
-Record the registry readback for each field before publication is complete.
-Tag and GitHub Release: pending.
+Read each field from the registry readback in step 4 before publication is
+complete. Tag and GitHub Release: pending.
 
 ## Post-publish checks
 
 - In a disposable HOME and BUN_INSTALL, install 0.30.0, start
   `repo-harness operator serve` and verify that `/healthz` reports 0.30.0 and
   protocol 3, and that `GET /` returns 200. Result: pending.
-- Run `bash scripts/check-release-published.sh 0.30.0`. Result: pending.
+- `bash scripts/check-release-published.sh 0.30.0` reads both packages from the
+  registry, compares each tarball with its registry metadata, runs the runtime
+  receipt and checks `v0.30.0`. Result: pending.
 - On the owner machine, run the upgrade command and record the installed
   version. Result: pending.
 
@@ -131,5 +159,6 @@ Tag and GitHub Release: pending.
 
 Before publication, close the prep PR or revert its merge. After publication,
 retain the published tag and use a new patch release for a correction. A
-0.29.2 CLI has no `release.yml` and no `seats prefix`, and its board refuses a
-batch parent that holds more than 50 comments or more than 50 sub-issues.
+0.29.2 CLI has no `release.yml`, no `seats prefix` and no `review publish
+--owner-record`, and its board reads 50 comments and 50 sub-issues of a batch
+parent.
