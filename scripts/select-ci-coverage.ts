@@ -177,7 +177,7 @@ export type PlatformInputs = { native: ReadonlySet<string>; home: ReadonlySet<st
 export function selectPlatformCoverage(paths: readonly string[], inputs: PlatformInputs): { native_oar: boolean; home_isolation: boolean } {
   const shared = paths.some(path => path.startsWith('.github/')
     || ['package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json', 'scripts/check-ci.sh'].includes(path)
-    || path.startsWith('scripts/lib/') || /^scripts\/select-[^/]+\.ts$/.test(path));
+    || path.startsWith('scripts/lib/') || /^scripts\/select-[^/]+\.ts$/.test(path) || path === 'src/core/ci/documentation-path.ts');
   return {
     // The native job installs the hc version pinned in this package file (install-pinned-herdr-core action).
     native_oar: shared || paths.some(path => path === 'src/core/terminal/herdr-core-pin.json' || inputs.native.has(path)),
