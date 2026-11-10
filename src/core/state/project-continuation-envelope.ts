@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Prefixed } from '../evidence/sha256';
 import { evaluateAttemptStall, type AttemptLedgerRead } from './attempt-ledger';
 import type {
   ContinuationEnvelopeV2,
@@ -11,7 +11,7 @@ const CONTINUE_COMMAND = 'repo-harness state resolve --json';
 
 /** Stable execution-unit identity: the next action, not projection text. */
 function continueUnitRef(nextAction: string): string {
-  return `sha256:${createHash('sha256').update(nextAction).digest('hex')}`;
+  return sha256Prefixed(nextAction);
 }
 
 /** Routes that hand the caller work to do, and so can be circuit-broken. */

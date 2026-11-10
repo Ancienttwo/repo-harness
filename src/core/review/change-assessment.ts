@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { sha256Prefixed } from '../evidence/sha256';
 
 import type { StrictRiskCategory, WorkflowProfile } from '../workflow/profile';
 
@@ -133,7 +133,7 @@ function stableJson(value: unknown): string {
 }
 
 function sha256(value: unknown): string {
-  return `sha256:${createHash('sha256').update(stableJson(value)).digest('hex')}`;
+  return sha256Prefixed(stableJson(value));
 }
 
 function validSubject(subject: AssessmentSubject): boolean {

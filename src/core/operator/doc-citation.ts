@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Hex } from '../evidence/sha256';
 
 /**
  * G8 reference protocol. A citation names whole lines of one file at one
@@ -44,7 +44,7 @@ const SHA256_HEX = /^[0-9a-f]{64}$/u;
 const COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
 const CITATION_KEYS = ['commit', 'end_line', 'file_sha256', 'path', 'range_sha256', 'start_line'];
 
-const sha256 = (text: string) => createHash('sha256').update(Buffer.from(text, 'utf8')).digest('hex');
+const sha256 = (text: string) => sha256Hex(Buffer.from(text, 'utf8'));
 
 /**
  * Closed decoder for one citation. `path` is returned as sent; the caller owns

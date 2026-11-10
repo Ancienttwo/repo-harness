@@ -1,5 +1,5 @@
 /** Offline, exact-byte Task Inbox layout transaction. */
-import { createHash } from 'node:crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { TASK_INBOX_RETIREMENT_MARKER, taskInboxRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
@@ -35,7 +35,7 @@ export class TaskInboxMigrationError extends Error {
   constructor(message: string) { super(message); this.name = 'TaskInboxMigrationError'; }
 }
 function refuse(message: string): never { throw new TaskInboxMigrationError(message); }
-function sha(bytes: string | Buffer): string { return `sha256:${createHash('sha256').update(bytes).digest('hex')}`; }
+function sha(bytes: string | Buffer): string { return sha256Prefixed(bytes); }
 function json(value: unknown): string { return `${JSON.stringify(value)}\n`; }
 function equal(a: unknown, b: unknown): boolean { return json(a) === json(b); }
 function readFile(path: string, max = Number.MAX_SAFE_INTEGER): Buffer {

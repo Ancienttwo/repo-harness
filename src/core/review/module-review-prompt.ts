@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Hex } from '../evidence/sha256';
 import type { JsonValue } from '../evidence/types';
 import { canonicalize } from '../evidence/canonical-json';
 import type { DocsAnchorsReportV1 } from 'archctx-contracts';
@@ -7,7 +7,7 @@ import { REVIEW_FINDING_RULES } from './generic-review';
 import { containsSecret } from '../security/secret-patterns';
 
 export const MODULE_PROMPT_VERSION = `2.findings-${REVIEW_FINDING_RULES.prompt_version}`;
-export const sha256 = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
+export const sha256 = (bytes: string | Uint8Array): string => sha256Hex(bytes);
 export interface PromptSource {
   path: string; sha256: string; bytes: number; class: 'required' | 'optional'; disposition: 'included' | 'omitted' | 'chunked';
 }

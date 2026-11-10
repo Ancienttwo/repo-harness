@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { canonicalize } from '../../core/evidence/canonical-json';
@@ -6,7 +6,7 @@ import { readTaskAgent, type NativeTaskSessionBinding, type TaskPaneBinding } fr
 import { readSessionArtifact, writeSessionArtifact } from './task-session-io';
 
 const canonical = (value: unknown) => canonicalize(JSON.parse(JSON.stringify(value)));
-const digest = (value: unknown) => `sha256:${createHash('sha256').update(canonical(value)).digest('hex')}`;
+const digest = (value: unknown) => sha256Prefixed(canonical(value));
 
 /** The controlled OAR host writes ready only after native start/resume succeeds.
  * Pinned OAR 0.95.0 uses Claude's --session-id/--resume and Codex's

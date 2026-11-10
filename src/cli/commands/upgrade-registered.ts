@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { lstatSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { formatJson } from '../installer/shared';
@@ -157,7 +157,7 @@ function approvedSweep(plan: RepoPlan): WorktreeSweepPlan {
 /** Repo classification is checked again before each write, so the revision binds only the registry and the sweep steps. */
 function planRevision(registryRevision: string, repos: readonly { readonly path: string }[], plans: readonly RepoPlan[]): string {
   const sweeps = plans.map((plan, index) => ({ path: repos[index]!.path, sweep: boundSweepSteps(approvedSweep(plan)) }));
-  return `sha256:${createHash('sha256').update(JSON.stringify({ registry: registryRevision, repos: sweeps })).digest('hex')}`;
+  return sha256Prefixed(JSON.stringify({ registry: registryRevision, repos: sweeps }));
 }
 
 function skipped(path: string, classification: Exclude<Classification, { ready: true }>): RegisteredRepoResult {
