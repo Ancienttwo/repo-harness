@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { API } from 'typescript/unstable/async';
 import { createVirtualFileSystem } from 'typescript/unstable/fs';
 import { isImportDeclaration, isObjectLiteralExpression, isPropertyAssignment, isShorthandPropertyAssignment, isStringLiteralLikeNode, type Node, type SourceFile } from 'typescript/unstable/ast';
-import { isDocumentationPath } from './select-ci-coverage';
+import { isDocumentationPath } from '../src/core/ci/documentation-path';
 import { createPathEvaluator, walk } from './lib/path-values';
 
 const launchers = new Set(['spawn', 'spawnSync', 'execFile', 'execFileSync', 'execSync', 'exec']);

@@ -4,6 +4,7 @@ import { dirname, join, posix } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { discoverPathReferences, loadPathReferences, savePathReferences, sourceKey } from './ci-path-consumers';
+import { documentationOnly, isDocumentationPath } from '../src/core/ci/documentation-path';
 
 export type CoverageInput = {
   eventName: string; event: unknown; headSha: string; actualHead: string; diffRaw: string | null;
@@ -13,18 +14,6 @@ export function validSha(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
 }
 
-export function isDocumentationPath(path: string): boolean {
-  if (path.split('/').some(part => !part || part === '.' || part === '..')) return false;
-  if (path.startsWith('docs/reference-configs/')) return false;
-  return path === 'README.md' || path === 'DEBUG.md'
-    || (path.startsWith('examples/') && path.endsWith('.md'))
-    || path === 'tasks/lessons.md'
-    || (path.startsWith('docs/') && path.endsWith('.md'));
-}
-/** A diff of documentation paths only selects just the tests that name a changed document. */
-export function documentationOnly(paths: readonly string[]): boolean {
-  return paths.length > 0 && paths.every(isDocumentationPath);
-}
 export function diffBase(eventName: string, event: unknown): unknown {
   const payload = event as any;
   if (eventName === 'pull_request') return payload?.pull_request?.base?.sha;
@@ -191,7 +180,7 @@ export type PlatformInputs = { native: ReadonlySet<string>; home: ReadonlySet<st
 export function selectPlatformCoverage(paths: readonly string[], inputs: PlatformInputs): { native_oar: boolean; home_isolation: boolean } {
   const shared = paths.some(path => path.startsWith('.github/')
     || ['package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json', 'scripts/check-ci.sh'].includes(path)
-    || path.startsWith('scripts/lib/') || /^scripts\/select-[^/]+\.ts$/.test(path));
+    || path.startsWith('scripts/lib/') || /^scripts\/select-[^/]+\.ts$/.test(path) || path === 'src/core/ci/documentation-path.ts');
   return {
     // The native job installs the hc version pinned in this package file (install-pinned-herdr-core action).
     native_oar: shared || paths.some(path => path === 'src/core/terminal/herdr-core-pin.json' || inputs.native.has(path)),

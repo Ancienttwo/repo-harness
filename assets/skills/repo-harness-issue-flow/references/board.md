@@ -181,7 +181,10 @@ after each claim or status change.
   fewer) merges in blocked-by order, and the Order column of the parent
   table is only a view. After each merge, the next PR syncs with
   main, except when `publication.merge_queue` is `on`: the queue tests each PR
-  on the current main, so a BEHIND PR merges with no sync. A merge-only sync keeps the acceptance of the reviewed head; any
+  on the current main, so a BEHIND PR merges with no sync. A merge-only
+  sync keeps the acceptance of the newest proven reviewed head, unless that
+  head or the new head has a FAIL row; an older superseded FAIL row does
+  not count. Any
   other new head needs sync check rows by the tier rule (`acceptor.md`
   §2.2, Sync head). A changed subject needs a new round.
 - **Batch integration.** When two or more PRs are eligible at the same
