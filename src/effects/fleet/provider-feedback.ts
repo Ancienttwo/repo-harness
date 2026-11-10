@@ -1,6 +1,7 @@
 import { type TaskMessageClaim } from '../../core/messages/task-message-claim';
 /** Manual GitHub feedback observation and durable intake. */
 import { spawnSync } from 'child_process';
+import { gitSpawnSync } from '../git/runner';
 
 import { buildFeedbackDeliveryReceipt, buildFeedbackEvent, deriveFeedbackRevision, deriveReactionToken, projectRepairOffer, transitionFeedbackDeliveryReceipt, type FeedbackDeliveryTransitionInput, type FeedbackCheckConclusion, type FeedbackEventV1, type FeedbackFailingCheckV1, type FeedbackMergeability, type RepairOfferProjection } from '../../core/publication/feedback';
 import { existsSync } from 'node:fs';
@@ -650,7 +651,7 @@ export function prepareFeedbackSubject(input: Omit<FeedbackIntakeInput, 'publica
 }
 
 function executionHead(input: FeedbackIntakeInput, executionRoot: string): string | null {
-  const head = spawnSync(input.git_bin ?? 'git', ['rev-parse', 'HEAD'], { cwd: executionRoot, encoding: 'utf8' });
+  const head = gitSpawnSync(['rev-parse', 'HEAD'], { cwd: executionRoot, encoding: 'utf8', gitBin: input.git_bin });
   return head.status === 0 ? head.stdout.trim() : null;
 }
 

@@ -29,7 +29,7 @@ import { resolveBlobsDir } from "./paths";
 import { LEDGER_EPOCH_START_SHA } from "./epoch";
 import { appendEvidenceEvent, appendGenesisRecord, readAcceptedEvents, readGenesisRecord } from "./event-log";
 import { collectDenylistSecretValues } from "./secret-env";
-import { gitExecFileSync, isGitExecutableName } from '../git/runner';
+import { gitExecFileSync } from '../git/runner';
 
 const EVENT_TYPE = "verification_execution.result";
 const PRODUCER = "verification-execution";
@@ -289,23 +289,9 @@ function resolveExecutablePath(command: string, env: NodeJS.ProcessEnv): string 
   throw new Error(`verification toolchain executable is unavailable: ${command}`);
 }
 
-function versionOf(command: string, args: readonly string[], env: NodeJS.ProcessEnv): string {
+function versionOf(command: string, read: () => string): string {
   try {
-    // File workers share CPU and process startup. Keep discovery bounded under load.
-    const version = (isGitExecutableName(command)
-      ? gitExecFileSync([...args], {
-        gitBin: command,
-        encoding: "utf8",
-        env,
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: 15_000,
-      })
-      : execFileSync(command, [...args], {
-        encoding: "utf8",
-        env,
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: 15_000,
-      })).trim();
+    const version = read().trim();
     if (!version) throw new Error("empty version output");
     return version;
   } catch (error) {
@@ -352,6 +338,8 @@ function resolveToolchain(env: NodeJS.ProcessEnv): { readonly hash: string; read
       throw new Error(`verification runner source is unavailable (${name}): ${error instanceof Error ? error.message : String(error)}`);
     }
   }));
+  // File workers share CPU and process startup. Keep discovery bounded under load.
+  const probe = { encoding: "utf8" as const, env, stdio: ["ignore", "pipe", "pipe"] as ["ignore", "pipe", "pipe"], timeout: 15_000 };
   const toolchain = {
     protocol: 1,
     package_version: packageVersion,
@@ -359,9 +347,9 @@ function resolveToolchain(env: NodeJS.ProcessEnv): { readonly hash: string; read
     platform: { os: process.platform, arch: process.arch },
     path: env.PATH ?? null,
     tools: {
-      git: { path: git, version: versionOf(git, ["--version"], env) },
-      bash: { path: bash, version: versionOf(bash, ["--version"], env) },
-      bun: { path: bun, version: versionOf(bun, ["--version"], env) },
+      git: { path: git, version: versionOf(git, () => gitExecFileSync(["--version"], { ...probe, gitBin: git })) },
+      bash: { path: bash, version: versionOf(bash, () => execFileSync(bash, ["--version"], probe)) },
+      bun: { path: bun, version: versionOf(bun, () => execFileSync(bun, ["--version"], probe)) },
     },
   };
   const hash = sha256(canonicalize(toolchain));

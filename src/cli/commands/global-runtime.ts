@@ -24,6 +24,7 @@ import {
 import { runInstall, type InstallTargetSpec } from "./install";
 import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { DEFAULT_PROCESS_MAX_BUFFER_BYTES, redactProcessOutput, runProcess as runBoundedProcess } from "../../effects/process-runner";
+import { gitChildEnv } from "../../effects/git/runner";
 import { leftoverCheckWarning } from "./upgrade";
 import { commitVerifiedSkillTree, skillTreeSha256 } from "../../effects/skill-tree-integrity";
 import {
@@ -1438,7 +1439,7 @@ export function configureProtectedHelperPlatform(
       TEMP: runtime.tempDir,
       TMP: runtime.tempDir,
     };
-    const git = runProcess(contract.git_bin, ['--version'], cwd, probeEnv, false);
+    const git = runProcess(contract.git_bin, ['--version'], cwd, gitChildEnv(['--version'], probeEnv), false);
     if (git.status !== 'ok') {
       return { ...git, step: 'configure protected helper platform', detail: 'Git for Windows probe failed' };
     }

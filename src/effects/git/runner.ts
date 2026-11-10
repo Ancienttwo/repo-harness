@@ -1,4 +1,3 @@
-import { basename } from 'node:path';
 import {
   execFileSync as execFileSyncRaw,
   spawn as spawnRaw,
@@ -46,42 +45,56 @@ export function withoutRepositorySelectingGitEnv(env: NodeJS.ProcessEnv = proces
 }
 
 /** Provider tokens that gh, and the `gh auth git-credential` helper that git starts, read from the environment. */
-const PROVIDER_TOKEN_ENV = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'] as const;
+const PROVIDER_TOKEN_ENV = new Set(['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN']);
 
 /** Subcommands that contact a remote, so git can start a credential helper that needs a provider token. */
 const CREDENTIAL_GIT_COMMANDS = new Set(['fetch', 'pull', 'push', 'ls-remote', 'clone']);
-/** Global options that take the next argument as their value. */
-const VALUED_GIT_GLOBAL_OPTIONS = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--super-prefix']);
+/** Global options that select no mode and take no value. */
+const GIT_GLOBAL_FLAGS = new Set([
+  '-p', '--paginate', '-P', '--no-pager', '--bare', '--no-replace-objects', '--no-lazy-fetch', '--no-optional-locks',
+  '--no-advice', '--literal-pathspecs', '--glob-pathspecs', '--noglob-pathspecs', '--icase-pathspecs',
+]);
+/** Global options that take the next argument as their value, or an attached `=value`. */
+const VALUED_GIT_GLOBAL_OPTIONS = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--attr-source']);
 
+/**
+ * The subcommand git runs, or undefined. Help, version and path modes, unknown
+ * options and a valued option without its value give undefined.
+ */
 function gitSubcommand(args: readonly string[]): string | undefined {
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!;
-    if (VALUED_GIT_GLOBAL_OPTIONS.has(arg)) index++;
-    else if (!arg.startsWith('-')) return arg;
+    if (GIT_GLOBAL_FLAGS.has(arg)) continue;
+    if (VALUED_GIT_GLOBAL_OPTIONS.has(arg)) {
+      if (++index >= args.length) return undefined;
+      continue;
+    }
+    if (arg.startsWith('--') && arg.includes('=') && VALUED_GIT_GLOBAL_OPTIONS.has(arg.slice(0, arg.indexOf('=')))) continue;
+    return arg.startsWith('-') ? undefined : arg;
   }
   return undefined;
+}
+
+/** A copy of env without provider tokens. Names match without case, as Windows reads them. */
+export function withoutProviderTokens(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([key]) => !PROVIDER_TOKEN_ENV.has(key.toUpperCase())));
 }
 
 /**
  * Environment of one git child. Only a subcommand that contacts a remote keeps
  * the provider tokens; every other git process, and the hooks, merge drivers
- * and filters it starts, runs without them. An unknown subcommand loses them.
+ * and filters it starts, runs without them.
  */
 export function gitChildEnv(args: readonly string[], env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv | undefined {
-  if (CREDENTIAL_GIT_COMMANDS.has(gitSubcommand(args) ?? '')) return env;
-  const next = { ...(env ?? process.env) };
-  for (const key of PROVIDER_TOKEN_ENV) delete next[key];
-  return next;
+  const subcommand = gitSubcommand(args);
+  if (subcommand !== undefined && CREDENTIAL_GIT_COMMANDS.has(subcommand)) return env;
+  return withoutProviderTokens(env);
 }
 
 const GENERIC_GIT_NAMES = new Set(['git', 'git.exe']);
 
 export function configuredGitBinary(env: NodeJS.ProcessEnv = process.env): string {
   return env.REPO_HARNESS_GIT_BIN ?? 'git';
-}
-
-export function isGitExecutableName(command: string): boolean {
-  return GENERIC_GIT_NAMES.has(basename(command).toLowerCase());
 }
 
 function configuredFrom(env: NodeJS.ProcessEnv | undefined, onlyOwn: boolean): string | undefined {
