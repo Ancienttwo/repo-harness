@@ -1224,6 +1224,48 @@ test('R5 and the effective tier read the High list: board record-writing code is
   expect(view([boardWriter], 'tier:medium', true)).toEqual(['high', 'not_accepted', 'files_incomplete: #1499']);
 });
 
+test('acceptance disposition: a FAIL row is ignored only when every finding of its record is resolved for that record and subject', () => {
+  const boardWriter = 'src/effects/board/review.ts';
+  const base = 'https://github.com/Ancienttwo/repo-harness';
+  const receipt = (subject_sha: string, verdict: 'PASS' | 'FAIL', round: number): ReviewPublishReceipt => ({
+    protocol: 1, kind: 'repo-harness-review-publish-receipt', round, subject_sha, risk_tier: 'medium', reviewer: { harness: 'codex', actual_model: null }, verdict, model_relation: 'different-family', summary: 'Reviewed.',
+    findings: verdict === 'PASS' ? [] : [
+      { id: 'R1-1', severity: 'P2', path: 'a.ts', line: 1, evidence: 'e', fix: 'f' },
+      { id: 'R1-2', severity: 'P2', path: 'b.ts', line: 2, evidence: 'e', fix: 'f' },
+    ],
+  });
+  const failAt = '2026-11-02T22:00:00Z';
+  const failUrl = `${base}/pull/1499#issuecomment-${Date.parse(failAt)}`;
+  const status = (dispositions: string[]) => {
+    const read = replay({
+      owners: (results) => { results.push({ path: boardWriter, matched: false, ambiguous: false, owningCapabilityId: null }); },
+      parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: 'tier:medium' }); },
+      pulls: (data) => {
+        const { pr1499 } = data.repository;
+        const head = pr1499.headRefOid;
+        pr1499.files = { totalCount: 1, nodes: [{ path: boardWriter }] };
+        const claimAt = '2026-11-02T21:01:00Z';
+        const claimUrl = `${base}/pull/1499#issuecomment-${Date.parse(claimAt)}`;
+        pr1499.comments.nodes.push(comment(renderAcceptanceClaim(receipt(head, 'PASS', 1)), claimAt));
+        pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt(head, 'FAIL', 1), claimUrl), failAt));
+        const passClaimAt = '2026-11-02T22:20:00Z';
+        pr1499.comments.nodes.push(comment(renderAcceptanceClaim(receipt(head, 'PASS', 2)), passClaimAt));
+        pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt(head, 'PASS', 2), `${base}/pull/1499#issuecomment-${Date.parse(passClaimAt)}`), '2026-11-02T22:30:00Z'));
+        dispositions.forEach((body, index) => pr1499.comments.nodes.push(comment(body, `2026-11-02T22:4${index}:00Z`)));
+      },
+    });
+    return read.pull_requests.find(entry => entry.number === 1499)!.acceptance.status;
+  };
+  const disposition = (findings: string, record = failUrl, subject = replay().pull_requests.find(entry => entry.number === 1499)!.head_sha) =>
+    `repo-harness acceptance disposition\nRecord: ${record}\nSubject: ${subject}\nFindings: ${findings}\nDecision: ${base}/issues/2202#issuecomment-1\n`;
+  expect(status([])).toBe('not_accepted');
+  expect(status([disposition('R1-1')])).toBe('not_accepted');
+  expect(status([disposition('R1-1'), disposition('R1-2')])).toBe('accepted');
+  expect(status([disposition('R1-1, R1-2')])).toBe('accepted');
+  expect(status([disposition('R1-1, R1-2', `${base}/pull/1499#issuecomment-7`)])).toBe('not_accepted');
+  expect(status([disposition('R1-1, R1-2', failUrl, 'd'.repeat(40))])).toBe('not_accepted');
+});
+
 test('A2 finds a batch behind an overlapping pull request, and a plan hold removes a PR from A1, A2 and R4', () => {
   const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' };
   const findings = (holds: number[]) => evaluateBoardAttention(replay({

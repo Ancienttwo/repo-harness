@@ -397,6 +397,21 @@ Every review writes this record, one row per review. The fields are `Round`,
 1 to 5 (`acceptor.md` §4). The board reads only this shape. A record that it cannot
 read makes the PR state unknown, not accepted.
 
+### acceptance disposition (on the PR, coordinator only)
+
+```text
+repo-harness acceptance disposition
+Record: <FAIL acceptance record comment URL>
+Subject: <40-hex subject sha of the FAIL row>
+Findings: <finding ids, comma separated>
+Decision: <comment URL of the decision that resolves them, for example a boundary answer>
+```
+
+The board ignores a FAIL row only when the disposition names its record and
+subject and lists every finding ID of that record. One unresolved finding, or a
+record whose `Findings:` bullets do not follow the record shape, keeps the row
+failing. A later PASS record never clears a FAIL row by itself.
+
 ### review reply (in the PR review thread)
 
 ```text
