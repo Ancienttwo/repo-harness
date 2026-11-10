@@ -8,6 +8,7 @@ import {
 import { userInfo } from 'os';
 import { dirname, isAbsolute, join, win32 } from 'path';
 import { dlopen, FFIType, ptr } from 'bun:ffi';
+import { isRecord } from '../../core/evidence/is-record';
 import { mutateGlobalConfiguration } from '../configuration/global-configuration';
 import type { RuntimeTransactionContext } from '../locking/runtime-transaction-lock';
 
@@ -108,10 +109,6 @@ type DiscoverOptions = {
   nativeSystemToolsDirectory?: string;
   nativeTempDirectory?: string;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function exactKeys(value: Record<string, unknown>, expected: readonly string[], label: string): void {
   const actual = Object.keys(value).sort();

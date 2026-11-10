@@ -1,4 +1,5 @@
-import { isRecord, sha256, stableJson } from './acceptance-receipt';
+import { isRecord } from '../evidence/is-record';
+import { sha256, stableJson } from './acceptance-receipt';
 import {
   validateChangeAssessment,
   validateReviewSelectionPacketAgainstAssessment,

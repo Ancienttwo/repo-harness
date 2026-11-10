@@ -13,6 +13,7 @@
  * evidence shape and its validator. The provider read and the blocker
  * projection live elsewhere; nothing here performs I/O.
  */
+import { isRecord } from '../evidence/is-record';
 
 export const REQUIRED_CHECK_COVERAGE_PROTOCOL = 1 as const;
 export const REQUIRED_CHECK_COVERAGE_KIND = 'repo-harness-required-check-coverage' as const;
@@ -68,10 +69,6 @@ export interface RequiredCheckCoverageFailureV1 {
 }
 
 const SHA40 = /^[0-9a-f]{40}$/u;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 
 function fail(message: string): never {
   throw new Error(message);
