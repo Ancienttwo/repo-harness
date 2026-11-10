@@ -513,25 +513,34 @@ function boardFindings(caption: string, html: string): GeometryFinding[] {
     subpaths.flatMap((pts) => pts.slice(1).map((b, i) => ({ a: pts[i]!, b })));
   const allSegments = lines.flatMap(segmentsOf);
 
-  for (const subpaths of lines) {
-    const first = subpaths[0]?.[0];
-    const lastSub = subpaths[subpaths.length - 1];
-    const last = lastSub?.[lastSub.length - 1];
-    if (first === undefined || last === undefined) continue;
-    const ends = [first, last];
-    for (const p of ends) {
+  const lerp = (from: Point, to: Point, by: number): Point => {
+    const length = Math.hypot(to.x - from.x, to.y - from.y);
+    return { x: from.x + ((to.x - from.x) * by) / length, y: from.y + ((to.y - from.y) * by) / length };
+  };
+  for (const subpath of lines.flat()) {
+    if (subpath.length < 2) continue;
+    const first = subpath[0]!;
+    const last = subpath[subpath.length - 1]!;
+    for (const p of [first, last]) {
       if (!borders.some((b) => borderDistance(p, b) <= END_TOLERANCE)) {
         add("line_end_open", p.x, p.y, `path end (${p.x},${p.y}) is more than ${END_TOLERANCE} px from every node and panel border`);
       }
     }
     for (const node of nodes) {
-      if (ends.some((p) => borderDistance(p, node) <= END_TOLERANCE)) continue;
-      for (const segment of segmentsOf(subpaths)) {
-        const hit = entersInterior(segment, node);
-        if (hit) {
-          add("line_through_box", hit.x, hit.y, `path segment (${segment.a.x},${segment.a.y})-(${segment.b.x},${segment.b.y}) enters node ${at(node)}`);
-          break;
-        }
+      // An end that touches this node attaches there; the first END_TOLERANCE px of that end segment are not tested.
+      const startsAt = borderDistance(first, node) <= END_TOLERANCE;
+      const endsAt = borderDistance(last, node) <= END_TOLERANCE;
+      const hit = segmentsOf([subpath]).flatMap((segment, k, all) => {
+        let { a, b } = segment;
+        const long = Math.hypot(b.x - a.x, b.y - a.y) > END_TOLERANCE;
+        if (k === 0 && startsAt) a = long ? lerp(a, b, END_TOLERANCE) : b;
+        if (k === all.length - 1 && endsAt) b = long ? lerp(b, a, END_TOLERANCE) : a;
+        const point = entersInterior({ a, b }, node);
+        return point ? [{ point, segment }] : [];
+      })[0];
+      if (hit) {
+        const { point, segment } = hit;
+        add("line_through_box", point.x, point.y, `path segment (${segment.a.x},${segment.a.y})-(${segment.b.x},${segment.b.y}) enters node ${at(node)}`);
       }
     }
   }
@@ -545,6 +554,23 @@ function boardFindings(caption: string, html: string): GeometryFinding[] {
   return findings;
 }
 
+// The content of the first `.board` element after a caption, or null when the next caption comes first.
+function boardContent(html: string, caption: string, from: number, captions: RegExpMatchArray[]): string | null {
+  const open = /<div\b[^>]*\bclass\s*=\s*"(?:[^"]*\s)?board(?:\s[^"]*)?"[^>]*>/g;
+  open.lastIndex = from;
+  const start = open.exec(html);
+  const limit = captions.find((c) => (c.index ?? 0) >= from)?.index ?? html.length;
+  if (start === null || start.index >= limit) return null;
+  const tags = /<(\/?)div\b[^>]*>/g;
+  tags.lastIndex = start.index + start[0].length;
+  let depth = 1;
+  for (let tag = tags.exec(html); tag !== null; tag = tags.exec(html)) {
+    depth += tag[1] ? -1 : 1;
+    if (depth === 0) return html.slice(start.index + start[0].length, tag.index);
+  }
+  throw new UsageError(`geometry_board_unclosed:${caption}`);
+}
+
 function geometryOf(mapPath: string): { checked: string[]; unchecked: string[]; findings: GeometryFinding[] } {
   const html = readFileSync(mapPath, "utf8")
     .replace(/<!--[\s\S]*?-->/g, "")
@@ -552,16 +578,16 @@ function geometryOf(mapPath: string): { checked: string[]; unchecked: string[]; 
     .replace(/<defs\b[\s\S]*?<\/defs>/gi, "");
   const captions = [...html.matchAll(/<h2\b[^>]*\bclass\s*=\s*"[^"]*\bcaption\b[^"]*"[^>]*>([\s\S]*?)<\/h2>/g)];
   const result = { checked: [] as string[], unchecked: [] as string[], findings: [] as GeometryFinding[] };
-  captions.forEach((match, i) => {
+  for (const match of captions) {
     const caption = (match[1] ?? "").replace(/<[^>]*>/g, "").trim();
-    const body = html.slice((match.index ?? 0) + match[0].length, captions[i + 1]?.index ?? html.length);
-    if (!/<(?:a|div)\b[^>]*\bclass\s*=\s*"(?:[^"]*\s)?node(?:\s[^"]*)?"/.test(body)) {
+    const body = boardContent(html, caption, (match.index ?? 0) + match[0].length, captions);
+    if (body === null || !/<(?:a|div)\b[^>]*\bclass\s*=\s*"(?:[^"]*\s)?node(?:\s[^"]*)?"/.test(body)) {
       result.unchecked.push(caption);
-      return;
+      continue;
     }
     result.checked.push(caption);
     result.findings.push(...boardFindings(caption, body));
-  });
+  }
   return result;
 }
 

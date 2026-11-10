@@ -339,4 +339,26 @@ describe('archimap measure reports board geometry', () => {
     expect(failure.status).toBe(2);
     expect(failure.stderr).toContain('geometry_path_unsupported:1 · Curve');
   });
+
+  const run = (boards: string[]) => {
+    const root = mapRoot(boards);
+    return (JSON.parse(runMeasure(['--root', root, ...mapArgs(root)])) as { geometry: Geometry }).geometry;
+  };
+
+  test('a path that re-enters a node it starts at is reported', () => {
+    const geometry = run([board('1 · Reentry', `${box('node', 200, 200)}${box('node', 320, 200)}${paths('M200 250 H100 V260 H320')}`)]);
+    expect(geometry.findings.map((f) => f.kind)).toEqual(['line_through_box']);
+  });
+
+  test('each subpath of a path is checked for open ends', () => {
+    const geometry = run([board('1 · Subpaths', `${box('node', 0, 0)}${box('node', -200, 0)}${paths('M0 20 H-100 M-300 20 H-400 M0 40 H-100')}`)]);
+    expect(geometry.findings.map((f) => f.kind)).toEqual(['line_end_open', 'line_end_open']);
+  });
+
+  test('markup outside a board does not make a node-free board checked', () => {
+    const unplaced = `${board('A', '<div class="panel"></div>')}${box('node', 0, 0)}`;
+    const geometry = run([unplaced]);
+    expect(geometry.unchecked).toEqual(['A']);
+    expect(geometry.findings).toEqual([]);
+  });
 });
