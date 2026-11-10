@@ -75,14 +75,18 @@ export function recordSeatSession(identity: SeatResetIdentity, session: { readon
   writeFileSync(path, `${JSON.stringify({ session_id: session.sessionId, transcript_path: session.transcriptPath, source: session.source, started_at: now.toISOString() })}\n`);
 }
 
-/** The transcript of the seat session that the SessionStart hook recorded, or null when the record is missing or not valid. */
+/**
+ * The transcript of the seat session that the SessionStart hook recorded, or null when the record is missing or does
+ * not have every field of `recordSeatSession` with its type.
+ */
 export function readSeatSessionTranscript(identity: SeatResetIdentity): string | null {
-  try {
-    const value = (JSON.parse(readFileSync(seatSessionPath(identity), 'utf8')) as { transcript_path?: unknown }).transcript_path;
-    return typeof value === 'string' && value !== '' ? value : null;
-  } catch {
-    return null;
-  }
+  let value: unknown;
+  try { value = JSON.parse(readFileSync(seatSessionPath(identity), 'utf8')); } catch { return null; }
+  if (typeof value !== 'object' || value === null) return null;
+  const { session_id: sessionId, transcript_path: transcript, source, started_at: startedAt } = value as Record<string, unknown>;
+  const valid = (sessionId === null || typeof sessionId === 'string') && typeof transcript === 'string' && transcript !== ''
+    && typeof source === 'string' && typeof startedAt === 'string' && Number.isFinite(Date.parse(startedAt));
+  return valid ? transcript : null;
 }
 
 /** `nothing_sent`: no terminal got a message. `uncertain`: the requester may already be cleared, or got part of a message. */

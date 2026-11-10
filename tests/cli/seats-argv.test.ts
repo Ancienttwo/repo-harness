@@ -698,12 +698,17 @@ describe("repo-harness seats handoff (#2175)", () => {
     try {
       const failures = [handoff({}), handoff({ REPO_HARNESS_SEAT: "worker", REPO_HARNESS_SEAT_REPOSITORY: repository }), handoff(seat)];
       mkdirSync(dir, { recursive: true });
+      // A record with only a readable transcript is not the SessionStart record.
+      writeFileSync(transcript, `${JSON.stringify({ type: "assistant", message: { usage: { input_tokens: 10 } } })}\n`);
+      writeFileSync(join(dir, "session.json"), JSON.stringify({ transcript_path: transcript }));
+      failures.push(handoff(seat));
       writeFileSync(join(dir, "session.json"), JSON.stringify({ session_id: "s", transcript_path: transcript, source: "startup", started_at: new Date().toISOString() }));
       writeFileSync(transcript, `${JSON.stringify({ type: "user", message: { role: "user", content: "hi" } })}\n`);
       failures.push(handoff(seat));
       expect(failures).toEqual([
         { status: 1, stdout: "", error: "seat_identity_missing" }, { status: 1, stdout: "", error: "seat_identity_missing" },
-        { status: 1, stdout: "", error: "seat_session_unknown" }, { status: 1, stdout: "", error: "seat_context_unknown" },
+        { status: 1, stdout: "", error: "seat_session_unknown" }, { status: 1, stdout: "", error: "seat_session_unknown" },
+        { status: 1, stdout: "", error: "seat_context_unknown" },
       ]);
       expect(existsSync(join(dir, "request.json"))).toBe(false);
 

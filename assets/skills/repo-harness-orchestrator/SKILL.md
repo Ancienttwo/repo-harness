@@ -14,30 +14,47 @@ skill copies none of them. The role rules stay in `repo-harness-issue-flow`.
 A running session cannot get tool limits or env after its start, so this skill never
 turns the current session into the seat. It always starts a new terminal.
 
-## Steps
+## Run
 
-Run each step from the project checkout. Stop at the first failure and report its
-command and output. Do not retry with another runtime: a missing `hc` or `herdr-app`
-stops with `herdr-core is not available`; there is no tmux fallback.
+Run the script below as one Bash command from the project checkout. Set `SPACE` to the
+space id when the user named one (`--space <id>`); otherwise leave it empty. Every
+probe is its own checked step: a failed or unparsable probe stops the script, and is
+never read as "no seat" or "no space". A non-zero exit starts nothing; report its
+stderr. A missing `hc` or `herdr-app` stops the script; there is no tmux fallback.
 
-1. Repository: `id=$(gh api 'repos/{owner}/{repo}' --jq .id)` and
-   `name=$(gh api 'repos/{owner}/{repo}' --jq .name)`. `gh` reads the git remote of
-   the cwd, so each project gets its own seats. The folder is the primary checkout:
-   `folder=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")`.
-2. Space: when the user named a space id (`--space <id>`), it must be the `id` of a
-   local space in `herdr-app ls` (no `<machine>/` prefix). Otherwise take the local
-   space whose `name` is `$name`:
-   `herdr-app ls | jq -r --arg n "$name" '[.spaces[] | select((.id | contains("/") | not) and .name == $n) | .id]'`.
-   Zero or more than one id: stop with `space does not resolve for <name>: <ids>; invoke again with --space <id>`.
-   Never use the selected space.
-3. Duplicate check, local terminals only:
-   `hc ls --json --label repo-harness.seat=orchestrator --label "repo-harness.repository=$id" | jq -r '[.terminals[] | select(.address | contains("/") | not) | .address]'`.
-   A non-empty list: stop with `refused: repository <id> already has a live orchestrator seat at <address>`.
-4. Start:
-   `herdr-app do tab.new --space <space> --name "$(repo-harness seats argv orchestrator --repository-id "$id" --json | jq -r .tab)" --folder "$folder" --argv "$(repo-harness seats argv orchestrator --repository-id "$id")"`.
-   A failed `seats argv` (stderr JSON with `ok: false`) stops before `tab.new`.
-5. Report the new terminal address from the command output. When the output names
-   none, run the step 3 query again: the argv labels its own terminal before the agent
-   starts. Report `source:` and each `limit` line of `seats argv` stderr.
+```bash
+SPACE=''
+stop() { printf 'repo-harness-orchestrator: %s\n' "$1" >&2; exit 1; }
+for tool in gh git jq hc herdr-app repo-harness; do command -v "$tool" >/dev/null || stop "$tool is not available"; done
+
+# 1. Repository: gh reads the git remote of the cwd, so each project has its own seats.
+repo=$(gh api 'repos/{owner}/{repo}') || stop 'gh cannot read the repository of the cwd git remote'
+id=$(printf '%s' "$repo" | jq -er '.id | numbers') || stop 'the repository has no numeric id'
+name=$(printf '%s' "$repo" | jq -er '.name | strings') || stop 'the repository has no name'
+common=$(git rev-parse --path-format=absolute --git-common-dir) || stop 'the cwd is not in a git checkout'
+folder=$(dirname "$common")
+
+# 2. Space: the named id, else the one local space named after the repository. Never the selected space.
+layout=$(herdr-app ls) || stop 'herdr-app ls failed'
+spaces=$(printf '%s' "$layout" | jq -ec --arg n "$name" --arg s "$SPACE" '.spaces | arrays
+  | [.[] | select((.id | contains("/") | not) and (if $s == "" then .name == $n else .id == $s end)) | .id]') || stop 'herdr-app ls has no space list'
+[ "$(printf '%s' "$spaces" | jq length)" = 1 ] || stop "space does not resolve for $name: $spaces; invoke again with --space <id>"
+space=$(printf '%s' "$spaces" | jq -r '.[0]')
+
+# 3. Duplicate check, local terminals only.
+seats=$(hc ls --json --label repo-harness.seat=orchestrator --label "repo-harness.repository=$id") || stop 'hc ls failed'
+live=$(printf '%s' "$seats" | jq -ec '.terminals | arrays | [.[] | .address | select(contains("/") | not)]') || stop 'hc ls has no terminal list'
+[ "$live" = '[]' ] || stop "refused: repository $id already has a live orchestrator seat at $(printf '%s' "$live" | jq -r 'join(", ")')"
+
+# 4. Launch: seats argv first, checked, then Herdr with the checked values.
+launch=$(repo-harness seats argv orchestrator --repository-id "$id" --json) || stop 'repo-harness seats argv orchestrator failed'
+argv=$(printf '%s' "$launch" | jq -ec '.argv | select(type == "array" and length > 0 and all(.[]; type == "string"))') || stop 'seats argv gave no argv'
+tab=$(printf '%s' "$launch" | jq -er '.tab | strings | select(. != "")') || stop 'seats argv gave no tab name'
+herdr-app do tab.new --space "$space" --name "$tab" --folder "$folder" --argv "$argv" || stop 'herdr-app tab.new failed'
+```
+
+Then report the new terminal address from the `tab.new` output. When the output names
+none, run the step 3 probe again: the argv labels its own terminal before the agent
+starts. Report the `limits` of the `seats argv` JSON.
 
 The advisor starts next with `repo-harness-advisor`.
