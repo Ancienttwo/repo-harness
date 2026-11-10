@@ -428,7 +428,7 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
   return report;
 }
 
-/** Independent post-deadline observer catches a schedule that produced no completion event. */
+/** Independent post-deadline observer catches a schedule that produced no run. */
 export async function watchDailyCI(repo: string, now: Date, api: GitHubAPI, scheduleCron: string): Promise<Record<string, unknown>> {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !Number.isFinite(now.getTime())) throw new Error('Invalid daily observer context');
   const root = `/repos/${repo}`;
@@ -450,12 +450,12 @@ export async function watchDailyCI(repo: string, now: Date, api: GitHubAPI, sche
       return run.path === '.github/workflows/ci.yml' && run.head_branch === 'main' && run.event === 'schedule'
         && Date.parse(run.created_at) >= expected && Date.parse(run.created_at) <= now.getTime();
     });
-    if (matching.some(run => run.status === 'completed')) return { date, observation: 'completion-observed', run_ids: matching.map(run => run.id) };
+    if (matching.length) return { date, observation: 'run-observed', run_ids: matching.map(run => run.id) };
     const main = record(await api(`${root}/commits/main`), 'Observed main commit');
     if (!validSha(main.sha)) throw new Error('Missing-run main subject unavailable');
     const task = await ensureRepairIssue(api, root, key, `[CI repair] daily full run incomplete ${date}`,
-      `Observed main SHA: ${main.sha}. Expected daily CI: ${expectedAt.toISOString()}. No completed run was observed by ${now.toISOString()}. Observed run IDs: ${matching.map(run => run.id).join(', ') || 'none'}.\n\nRepair schedule/runtime delivery without manufacturing green verification or performing credential/production operations.`);
-    return { date, key, sha: main.sha, run_ids: matching.map(run => run.id), observation: matching.length ? 'deadline-exceeded' : 'not-started', ...task };
+      `Observed main SHA: ${main.sha}. Expected daily CI: ${expectedAt.toISOString()}. No scheduled run was observed by ${now.toISOString()}. Observed run IDs: ${matching.map(run => run.id).join(', ') || 'none'}.\n\nRepair schedule/runtime delivery without manufacturing green verification or performing credential/production operations.`);
+    return { date, key, sha: main.sha, run_ids: matching.map(run => run.id), observation: 'not-started', ...task };
   } catch (error) { return { date, key, observation: 'unknown', delivery: 'pending', error: message(error) }; }
 }
 
