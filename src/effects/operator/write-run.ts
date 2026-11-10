@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 
 import { canonicalize } from '../../core/evidence/canonical-json';
 import type { JsonValue } from '../../core/evidence/types';
@@ -73,7 +73,7 @@ export function parseOperatorRequestId(value: unknown): string | null {
 
 /** The one hash that binds a request_id to its operation, target and input; the audit records carry it as `binding_sha256`. */
 export function operatorWriteBinding(operation: string, target: string, input: JsonValue): string {
-  return createHash('sha256').update(canonicalize({ operation, target, input })).digest('hex');
+  return sha256Hex(canonicalize({ operation, target, input }));
 }
 
 function failure(status: number, code: string, message: string, nextAction: string): OperatorWriteResponse {
@@ -143,7 +143,7 @@ export async function runOperatorWrite(
   const auditPath = operatorAuditPathIn(root);
   const targetKey = `${root}\0${operation.target}`;
   if (activeTargets.has(targetKey)) return busy(requestId);
-  const targetLock = acquire(root, `locks/target-${createHash('sha256').update(operation.target).digest('hex').slice(0, 32)}`, TARGET_LOCK_WAIT_MS);
+  const targetLock = acquire(root, `locks/target-${sha256Hex(operation.target).slice(0, 32)}`, TARGET_LOCK_WAIT_MS);
   if (targetLock === 'busy') return busy(requestId);
   if (targetLock === 'unavailable') return auditUnavailable(requestId);
   activeTargets.add(targetKey);

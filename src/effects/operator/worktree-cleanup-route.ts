@@ -1,4 +1,5 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -184,7 +185,7 @@ function verifyPrivateArtifacts(staged: StagedCleanupArchive): void {
     const fd = openSync(join(staged.private_directory!, artifact.path), constants.O_RDONLY | constants.O_NOFOLLOW);
     let bytes: Buffer;
     try { if (!fstatSync(fd).isFile()) throw new Error('cleanup archive preservation changed'); bytes = readFileSync(fd); } finally { closeSync(fd); }
-    if (bytes.length !== artifact.size || createHash('sha256').update(bytes).digest('hex') !== artifact.sha256) throw new Error('cleanup archive preservation changed');
+    if (bytes.length !== artifact.size || sha256Hex(bytes) !== artifact.sha256) throw new Error('cleanup archive preservation changed');
   }
 }
 

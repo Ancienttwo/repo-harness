@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import {
   closeSync,
   constants,
@@ -110,7 +111,7 @@ export interface CandidateReceiptExpectation {
 }
 
 export function sha256(value: string | Buffer): string {
-  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+  return sha256Prefixed(value);
 }
 
 function fileIdentity(stat: { readonly dev: number; readonly ino: number }): FileIdentity {

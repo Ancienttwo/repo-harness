@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { canonicalize } from '../../core/evidence/canonical-json';
@@ -7,7 +7,7 @@ import { taskRepository } from '../git/task-repository';
 import { readSessionArtifact } from '../terminal/task-session-io';
 import { processProofAlive, readTaskAgent, taskSessionDirectory, taskSessionDirectories, type NativeTaskSessionBinding, type TaskPaneBinding } from '../terminal/task-session-record';
 
-const digest = (value: unknown) => `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(value)))).digest('hex')}`;
+const digest = (value: unknown) => sha256Prefixed(canonicalize(JSON.parse(JSON.stringify(value))));
 // Admission records the full ref; Dev Activity names a branch without this prefix.
 const BRANCH_REF = 'refs/heads/';
 

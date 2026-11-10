@@ -2,7 +2,7 @@ import { existsSync, lstatSync, realpathSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import type { McpPathDecision, McpPathIntent, McpPolicy } from './types';
 
-function toPosixPath(value: string): string {
+export function toPosixPath(value: string): string {
   return value.split(sep).join('/').replace(/\\+/g, '/');
 }
 

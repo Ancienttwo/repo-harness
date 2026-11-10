@@ -28,7 +28,7 @@
  * checkpoint contains event metadata and decision payloads that the event
  * writer already redacted. Blob payloads pass an integrity check before use.
  */
-import { createHash, randomBytes } from "crypto";
+import { randomBytes } from "crypto";
 import {
   closeSync,
   constants,
@@ -55,6 +55,7 @@ import type { EvidenceEventRecord } from "../../core/evidence/types";
 import { readCheckpointSnapshot } from "./checkpoint-snapshot";
 import { acquireExclusiveDirectoryLock } from "../locking/exclusive-directory-lock";
 import { canonicalize } from "../../core/evidence/canonical-json";
+import { sha256Hex } from "../../core/evidence/sha256";
 import {
   buildCheckpointProjection,
   checkpointBodyHashHex,
@@ -467,7 +468,7 @@ export function readDecisionPayload(repoRoot: string, event: EvidenceEventRecord
     throw new Error(`invalid decision blob reference: ${event.event_id}`);
   }
   const bytes = readFileSync(join(resolveBlobsDir(repoRoot), digest));
-  if (createHash("sha256").update(bytes).digest("hex") !== digest
+  if (sha256Hex(bytes) !== digest
     || event.payload_hash !== `sha256:${digest}` || event.blob_bytes !== bytes.length) {
     throw new Error(`decision blob integrity check failed: ${event.event_id}`);
   }

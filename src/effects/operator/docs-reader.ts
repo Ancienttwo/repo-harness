@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { ChildProcess } from 'node:child_process';
@@ -119,10 +119,6 @@ export function validDocsRef(ref: string): boolean {
   const name = /^refs\/(?:heads|remotes)\/(.+)$/.exec(ref)?.[1];
   return name !== undefined && /^[A-Za-z0-9._/-]+$/.test(name) && !name.startsWith('-') && !name.startsWith('/') && !name.endsWith('/')
     && !name.includes('..') && !name.includes('//') && !name.endsWith('.lock') && !name.split('/').some(part => part.startsWith('.'));
-}
-
-function sha256(bytes: Buffer): string {
-  return createHash('sha256').update(bytes).digest('hex');
 }
 
 function utf8(bytes: Buffer): string | null {
@@ -340,7 +336,7 @@ export class DocsReader {
     if (entry.facts.size > DOCS_FILE_MAX_BYTES) throw new DocsReadError('too_large', path);
     if (!entry.facts.text) throw new DocsReadError('not_text', path);
     const blob = await this.worker.contents(entry.oid);
-    if (!blob?.bytes || blob.type !== 'blob' || sha256(blob.bytes) !== entry.facts.sha256) throw new DocsReadError('git_read_failed', path);
+    if (!blob?.bytes || blob.type !== 'blob' || sha256Hex(blob.bytes) !== entry.facts.sha256) throw new DocsReadError('git_read_failed', path);
     // The worktree can change while the resident worker answers the object request.
     const worktree = this.physical(path);
     const text = utf8(blob.bytes)!;
@@ -398,7 +394,7 @@ export class DocsReader {
     if (info.size <= DOCS_FILE_MAX_BYTES) {
       const blob = await this.worker.contents(oid);
       if (!blob?.bytes) throw new DocsReadError('git_read_failed');
-      facts = { size: blob.size, sha256: sha256(blob.bytes), text: utf8(blob.bytes) !== null };
+      facts = { size: blob.size, sha256: sha256Hex(blob.bytes), text: utf8(blob.bytes) !== null };
     }
     this.facts.set(oid, facts);
     return facts;

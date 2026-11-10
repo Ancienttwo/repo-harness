@@ -13,7 +13,7 @@ import {
   rmSync,
   writeSync,
 } from "fs";
-import { createHash } from "crypto";
+import { sha256Prefixed } from "../core/evidence/sha256";
 import { basename, dirname, relative, resolve, sep } from "path";
 import type {
   AdoptionOperation,
@@ -200,7 +200,7 @@ function sanitizeBackupStem(path: string): string {
 }
 
 function contentHash(content: string | Buffer): string {
-  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+  return sha256Prefixed(content);
 }
 
 function checkExpectedFileState(repoRoot: string, operation: AdoptionOperation): string | null {
