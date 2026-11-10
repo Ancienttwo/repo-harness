@@ -54,7 +54,6 @@ import { resolveBlobsDir, resolveLogPath } from "./paths";
 import type { EvidenceEventRecord } from "../../core/evidence/types";
 import { readCheckpointSnapshot } from "./checkpoint-snapshot";
 import { acquireExclusiveDirectoryLock } from "../locking/exclusive-directory-lock";
-import { canonicalize } from "../../core/evidence/canonical-json";
 import { sha256Hex } from "../../core/evidence/sha256";
 import {
   buildCheckpointProjection,
