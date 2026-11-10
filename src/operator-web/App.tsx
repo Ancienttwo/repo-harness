@@ -348,12 +348,14 @@ export function OperatorApp({
   const registered = repositoriesOf(repositories);
   // Pin the first registered repository once it is known. The server sorts by name, so a later
   // registration that sorts first must not move the single-repository pages; only the switcher changes the pin.
+  // A stored pin that the loaded list does not name (an unregistered repository) is re-pinned too.
   const firstRegistered = registered[0]?.repository_id ?? null;
-  if (repositoryId === null && firstRegistered !== null) setRepositoryId(firstRegistered);
+  const activeRepository = registered.find(repo => repo.repository_id === repositoryId) ?? null;
+  const pinValid = repositoryId !== null && (repositories.kind !== 'ready' || activeRepository !== null);
+  if (!pinValid && firstRegistered !== null) setRepositoryId(firstRegistered);
   useEffect(() => {
     if (repositoryId !== null) writeStorage(OPERATOR_REPOSITORY_STORAGE_KEY, repositoryId);
   }, [repositoryId]);
-  const activeRepository = registered.find(repo => repo.repository_id === repositoryId) ?? null;
 
   const devActivity = useDevActivity(readDevActivity, initialDevActivity, refreshGeneration);
   const devSnapshot = snapshotOf(devActivity);
@@ -429,7 +431,12 @@ export function OperatorApp({
     } : null,
     options,
     allowAll: false,
-    onSelect: id => { if (id !== null) switchRepository(id); },
+    // A module id or a docs path names a place in the old repository, so the page opens at its root.
+    onSelect: id => {
+      if (id === null) return;
+      switchRepository(id);
+      if (place.module !== null || place.item !== null) openPlace({ workspace, module: null, item: null });
+    },
   } : workspace === 'board' ? {
     // A board names one repository; another repository needs its own parent issue.
     mode: 'current',
