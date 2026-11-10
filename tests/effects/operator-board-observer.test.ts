@@ -129,6 +129,54 @@ test('failed snapshot and list reads recover on an owned retry without a stream 
   }
 });
 
+test('a failed periodic refresh retains branch demand through a retry with unchanged terminal signatures', async () => {
+  for (const failedPort of ['snapshot', 'list'] as const) {
+    const f = fixture();
+    let fail = false;
+    if (failedPort === 'snapshot') {
+      const original = f.ports.snapshot;
+      f.ports.snapshot = async (...args) => { if (fail) { fail = false; throw new Error('transient'); } return original(...args); };
+    } else {
+      const original = f.ports.list;
+      f.ports.list = async (...args) => { if (fail) { fail = false; throw new Error('transient'); } return original(...args); };
+    }
+    const observer = startBoardObserver({ ports: f.ports, clock: f.clock });
+    try {
+      await f.tick(0); f.emit('snapshot'); await f.tick(100);
+      expect(f.branches()).toBe(1);
+      f.branch('feat/after-period'); fail = true;
+      await f.tick(30_000);
+      expect(observer.read('repo-a').state).toBe('unavailable');
+      expect(f.branches()).toBe(1);
+      await f.tick(1000);
+      const ready = observer.read('repo-a');
+      expect(ready.state).toBe('ready');
+      expect(ready.state === 'ready' && ready.value.seats[0]!.branch).toBe('feat/after-period');
+      expect(f.branches()).toBe(2);
+      f.emit('event'); await f.tick(100);
+      expect(f.branches()).toBe(2);
+    } finally { await observer.close(); }
+  }
+});
+
+test('an older successful branch read does not acknowledge a newer force-refresh request', async () => {
+  const f = fixture();
+  const observer = startBoardObserver({ ports: f.ports, clock: f.clock });
+  try {
+    await f.tick(0); f.emit('snapshot'); await f.tick(100);
+    const original = f.ports.branch;
+    let release!: () => void, hold = true;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    f.ports.branch = async (...args) => { const value = await original(...args); if (hold) { hold = false; await gate; } return value; };
+    f.branch('feat/first-period'); await f.tick(30_000);
+    expect(f.branches()).toBe(2);
+    f.branch('feat/newer-request'); f.emit('missed'); release(); await f.tick(100);
+    const ready = observer.read('repo-a');
+    expect(ready.state === 'ready' && ready.value.seats[0]!.branch).toBe('feat/newer-request');
+    expect(f.branches()).toBe(3);
+  } finally { await observer.close(); }
+});
+
 test('a busy stream cannot bypass refresh backoff or queue an immediate read after a dirty failure', async () => {
   const f = fixture();
   const original = f.ports.list;

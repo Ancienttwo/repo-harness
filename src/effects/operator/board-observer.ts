@@ -76,7 +76,9 @@ interface RepositoryState {
   identifying: boolean;
   stopping: Promise<void> | null;
   dirty: boolean;
-  allBranches: boolean;
+  /** A force request stays pending until a successful refresh publishes that revision. */
+  branchesRequested: number;
+  branchesObserved: number;
   terminals: Map<string, { readonly signature: string; readonly value: BoardSeatTerminalInputV1 }>;
 }
 
@@ -116,14 +118,16 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
     slot.delay = Math.min(slot.delay * 2, FACTS_INTERVAL_MS);
   }
   function schedule(state: RepositoryState, allBranches = false) {
-    state.dirty = true; state.allBranches ||= allBranches;
+    state.dirty = true;
+    if (allBranches) state.branchesRequested++;
     if (!active(state) || !state.connected || state.refreshRetry.timer !== null || state.debounce !== null || state.pending !== null) return;
     state.debounce = timer(state.abort.signal, () => { state.debounce = null; refresh(state); }, BOARD_SEATS_DEBOUNCE_MS);
   }
   function refresh(state: RepositoryState) {
     if (!active(state) || !state.connected || state.labels === null || state.pending !== null || state.refreshRetry.timer !== null) return;
-    const generation = state.generation, labels = state.labels, allBranches = state.allBranches;
-    state.dirty = false; state.allBranches = false;
+    const generation = state.generation, labels = state.labels, branchRevision = state.branchesRequested;
+    const allBranches = branchRevision !== state.branchesObserved;
+    state.dirty = false;
     const request = new AbortController();
     state.request = request;
     const signal = AbortSignal.any([state.abort.signal, request.signal]);
@@ -148,6 +152,7 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
         if (!current(state, generation)) return;
         state.terminals = new Map(observations.map(observation => [observation.value.address, observation]));
         state.cache = { state: 'ready', value: projectBoardSeats(labels[RH_LABEL.repository]!, snapshot.observedAt, observations.map(observation => observation.value)) };
+        if (allBranches) state.branchesObserved = branchRevision;
         state.refreshRetry.delay = RETRY_MIN_MS;
       } catch {
         if (current(state, generation)) {
@@ -207,7 +212,7 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
     const state: RepositoryState = { repository, abort: new AbortController(), work: new Set(), cache: { state: 'pending' }, labels: null,
       stream: null, generation: 0, seq: -1, connected: false,
       refreshRetry: { timer: null, delay: RETRY_MIN_MS }, connectRetry: { timer: null, delay: RETRY_MIN_MS }, debounce: null,
-      pending: null, request: null, identifying: false, stopping: null, dirty: false, allBranches: false, terminals: new Map() };
+      pending: null, request: null, identifying: false, stopping: null, dirty: false, branchesRequested: 0, branchesObserved: 0, terminals: new Map() };
     states.set(repository.id, state);
     const facts = () => {
       timer(state.abort.signal, () => {
