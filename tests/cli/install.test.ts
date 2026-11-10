@@ -498,7 +498,7 @@ describe('install command (Phase 1B)', () => {
       expect(data.hooks.UserPromptSubmit.length).toBe(1);
       expect(data.hooks.SubagentStart).toBeUndefined();
       expect(data.hooks.SubagentStop).toBeUndefined();
-      for (const [event, entries] of Object.entries(data.hooks) as [string, { hooks: { command: string; timeout?: number }[] }[]][]) {
+      for (const [, entries] of Object.entries(data.hooks) as [string, { hooks: { command: string; timeout?: number }[] }[]][]) {
         for (const entry of entries) {
           expect(entry.hooks[0].command).toContain('HOOK_HOST=claude');
           expect(entry.hooks[0].timeout).toBe(30);

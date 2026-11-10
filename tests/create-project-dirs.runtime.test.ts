@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
@@ -8,7 +8,6 @@ import { planAdoption } from "../src/effects/adoption/plan";
 import { adoptionTemplateFile } from "../src/effects/adoption/manifest-templates";
 import { parseExternalSourcesPolicy } from "../src/effects/github/policy";
 import { ARCHCTX_REQUIRED_VERSION, readArchitectureProjectionPolicy } from "../src/core/architecture/projection";
-import { MANAGED_AGENTS } from "../src/effects/terminal/task-role-profiles";
 
 const ROOT = join(import.meta.dir, "..");
 const REFERENCE_STUB_MARKER = "<!-- repo-harness: reference-config-stub v1 -->";

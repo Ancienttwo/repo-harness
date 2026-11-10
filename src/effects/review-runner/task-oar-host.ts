@@ -3,7 +3,7 @@ import { isReviewRuntimeId } from '../../core/review/review-runtimes';
 import { sha256Prefixed } from '../../core/evidence/sha256';
 import { claudeRuntime, codexRuntime, createPiRuntime, createRuntimeRegistry, type Runtime, type Session, type SessionOptions } from '@botiverse/oar';
 import { scriptedRuntime } from '@botiverse/oar/testing';
-import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';

@@ -7,10 +7,7 @@ import {
   TESTS_CHANNEL,
   type TestsSnapshotV1,
 } from '../../core/operator/tests';
-import {
-  TEST_PROJECTION_SCHEMA,
-  testRunCommand,
-} from '../../core/ci/test-report';
+import { testRunCommand } from '../../core/ci/test-report';
 
 function projection(file: string, capabilities: readonly { id: string; via: ('import' | 'verification')[] }[]) {
   return { file, capabilities, command: testRunCommand(file) };
