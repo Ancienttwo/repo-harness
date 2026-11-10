@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BoardAttentionV1 } from '../core/board/attention';
 import type { BoardAcceptanceMergeV1, BoardItemV1, BoardV1 } from '../core/board/board';
 import {
   currentBatch, deskState, hasDesk, isQueued, liveSeats, seatItem, seatPullRequest, workerLimit,
   type BoardCurrentBatch, type BoardSeatTerminal, type DeskState,
 } from '../core/board/desk';
-import type { BoardParentsV1 } from '../core/board/parents';
+import { joinBoardParents, type BoardParentsV1, type BoardSeatsV1 } from '../core/board/parents';
 import { PLAN_BATCH_MAX_MEMBERS } from '../core/board/plan-block';
 import { decodeBoardSummaries, type BoardSummariesV1, type BoardSummaryV1 } from '../core/board/summary';
 import { BOARD_PARENTS_READ_FAILURES, type BoardParentsReadFailure } from '../core/operator/board-read';
-import type { BoardParentsReader, BoardParentsReason } from './board-view';
+import type { BoardParentsReader, BoardParentsReason, BoardParentsView, BoardSeatsReader, BoardSeatsView } from './board-view';
 import { asApiError } from './operator-api-error';
 import { useObservationRefresh } from './useObservationRefresh';
 
@@ -153,9 +153,9 @@ function mines(attention: BoardAttentionV1, desks: readonly OfficeDesk[]): Reado
   return named;
 }
 
-/** The room of one repository: every live seat from the parent list, and the board and its attention when a parent is active. */
-export function officeRoom(list: BoardParentsV1, active: { readonly board: BoardV1; readonly attention: BoardAttentionV1 } | null): OfficeRoom {
-  const seats = liveSeats(list.seats);
+/** The room of one repository: its live seats, and the board and attention when a parent is active. */
+export function officeRoom(document: BoardSeatsV1, active: { readonly board: BoardV1; readonly attention: BoardAttentionV1 } | null): OfficeRoom {
+  const seats = liveSeats(document.seats);
   const board = active?.board ?? null;
   const desks = seats.filter(hasDesk).map(seat => desk(board, seat));
   const plan = board?.plan.status === 'observed' ? board.plan : null;
@@ -194,8 +194,8 @@ export function officeRoom(list: BoardParentsV1, active: { readonly board: Board
 }
 
 /** The parent a room with no selected parent shows: the first with a live seat, in the server's order. */
-export function activeParent(list: BoardParentsV1): number | null {
-  return list.parents.find(parent => parent.seats > 0)?.number ?? null;
+export function activeParent(list: BoardParentsV1, seats: BoardSeatsV1): number | null {
+  return joinBoardParents(list, seats).active_parent;
 }
 
 /** The room has someone in it. */
@@ -229,54 +229,79 @@ export async function fetchBoardSummaries(repositoryId: string, parent: number, 
 export type OfficeRepositoryView =
   | { readonly kind: 'loading' }
   | { readonly kind: 'failed'; readonly reason: BoardParentsReason }
-  | { readonly kind: 'ready'; readonly list: BoardParentsV1; readonly summaries: BoardSummariesRead | null };
+  | { readonly kind: 'ready'; readonly list: BoardParentsV1 | null; readonly seats: BoardSeatsV1; readonly summaries: BoardSummariesRead | null };
 
 const LOADING: OfficeRepositoryView = { kind: 'loading' };
 /** A repository that no read has reached yet loads. */
 export const officeRepositoryView = (views: ReadonlyMap<string, OfficeRepositoryView>, id: string): OfficeRepositoryView => views.get(id) ?? LOADING;
 
-/**
- * The reads of the overview run one at a time: the repositories in order, and
- * in each repository its parents, then its summaries. The parents read takes a slot of the server's board read cap, and that limit
- * lives in effects, so the web keeps no copy of it. The summaries read takes
- * no slot and names the active parent of the list read in the same cycle.
- * Only a read with no answer backs the loop off; a typed refusal is an answer.
- */
-export function useOfficeOverview(repositories: readonly string[], readParents: BoardParentsReader, readSummaries: BoardSummariesReader, generation: number): ReadonlyMap<string, OfficeRepositoryView> {
-  const [views, setViews] = useState<ReadonlyMap<string, OfficeRepositoryView>>(new Map());
+/** Seats and parent facts refresh independently. A slow facts read cannot hold up a room. */
+export function useOfficeOverview(repositories: readonly string[], readParents: BoardParentsReader, readSummaries: BoardSummariesReader, generation: number, readSeats: BoardSeatsReader): ReadonlyMap<string, OfficeRepositoryView> {
+  const [parents, setParents] = useState<ReadonlyMap<string, BoardParentsView>>(new Map());
+  const [seats, setSeats] = useState<ReadonlyMap<string, BoardSeatsView>>(new Map());
+  const [summaries, setSummaries] = useState<ReadonlyMap<string, { readonly parent: number; readonly read: BoardSummariesRead }>>(new Map());
   const key = JSON.stringify(repositories);
-  const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
-    const show = (id: string, next: (current: OfficeRepositoryView) => OfficeRepositoryView) =>
-      setViews(current => new Map(current).set(id, next(officeRepositoryView(current, id))));
+  const repositoryIds = useRef(repositories);
+  repositoryIds.current = repositories;
+  const observeParents = useCallback(async (signal: AbortSignal) => {
     let complete = true;
-    for (const id of JSON.parse(key) as readonly string[]) {
-      const parents = await readParents(id, signal);
+    for (const id of repositoryIds.current) {
+      const result = await readParents(id, signal);
       if (signal.aborted) return false;
-      if (parents.state !== 'ok') {
-        if (parents.reason === 'unreachable') complete = false;
-        show(id, () => ({ kind: 'failed', reason: parents.reason }));
-        continue;
-      }
-      const active = activeParent(parents.list);
-      // A refresh keeps the summaries of the last read on the card until its new read settles.
-      show(id, current => ({ kind: 'ready', list: parents.list, summaries: active !== null && current.kind === 'ready' ? current.summaries : null }));
-      if (active === null) continue;
-      const summaries = await readSummaries(id, active, signal);
-      if (signal.aborted) return false;
-      if (summaries.state !== 'ok' && summaries.reason === 'unreachable') complete = false;
-      show(id, () => ({ kind: 'ready', list: parents.list, summaries }));
+      setParents(current => new Map(current).set(id, result.state === 'ok' ? { kind: 'ready', list: result.list } : { kind: 'failed', reason: result.reason }));
+      if (result.state !== 'ok' && result.reason === 'unreachable') complete = false;
     }
     return complete;
-  }, [readParents, readSummaries, key]);
-  useObservationRefresh(observe, JSON.stringify(['office-overview', key, generation]), { enabled: repositories.length > 0 });
-  // Reads stop while the tab is hidden, so a kept view has no known age. The rooms load again on return, and the next cycle confirms each one.
+  }, [readParents, key]);
+  const observeSeats = useCallback(async (signal: AbortSignal) => {
+    let complete = true;
+    for (const id of repositoryIds.current) {
+      const result = await readSeats(id, signal);
+      if (signal.aborted) return false;
+      setSeats(current => new Map(current).set(id, result.state === 'ok' ? { kind: 'ready', seats: result.seats } : { kind: 'failed', reason: result.reason }));
+      if (result.state !== 'ok' && result.reason === 'unreachable') complete = false;
+    }
+    return complete;
+  }, [readSeats, key]);
+  const activeParents = useRef<readonly (readonly [string, number])[]>([]);
+  activeParents.current = repositories.flatMap(id => {
+    const list = parents.get(id), document = seats.get(id);
+    if (list?.kind !== 'ready' || document?.kind !== 'ready') return [];
+    const parent = activeParent(list.list, document.seats);
+    return parent === null ? [] : [[id, parent] as const];
+  });
+  const active = JSON.stringify(activeParents.current);
+  const observeSummaries = useCallback(async (signal: AbortSignal) => {
+    let complete = true;
+    for (const [id, parent] of activeParents.current) {
+      const read = await readSummaries(id, parent, signal);
+      if (signal.aborted) return false;
+      setSummaries(current => new Map(current).set(id, { parent, read }));
+      if (read.state !== 'ok' && read.reason === 'unreachable') complete = false;
+    }
+    return complete;
+  }, [readSummaries, active]);
+  useObservationRefresh(observeParents, JSON.stringify(['office-parents', key, generation]), { enabled: repositories.length > 0, interval: 3000 });
+  useObservationRefresh(observeSeats, JSON.stringify(['office-seats', key, generation]), { enabled: repositories.length > 0, interval: 3000 });
+  useObservationRefresh(observeSummaries, JSON.stringify(['office-summaries', active, generation]), { enabled: active !== '[]' });
   useEffect(() => {
-    const forget = () => { if (document.visibilityState === 'hidden') setViews(new Map()); };
+    const forget = () => {
+      if (document.visibilityState === 'hidden') { setParents(new Map()); setSeats(new Map()); setSummaries(new Map()); }
+    };
     document.addEventListener('visibilitychange', forget);
     return () => document.removeEventListener('visibilitychange', forget);
   }, []);
-  return views;
+  return new Map(repositories.map(id => {
+    const list = parents.get(id), document = seats.get(id);
+    if (document?.kind === 'failed') return [id, document];
+    if (document?.kind !== 'ready') return [id, LOADING];
+    const parent = list?.kind === 'ready' ? activeParent(list.list, document.seats) : null;
+    const summary = summaries.get(id);
+    return [id, { kind: 'ready', seats: document.seats, list: list?.kind === 'ready' ? list.list : null,
+      summaries: list?.kind === 'failed' ? { state: 'unavailable', reason: list.reason } : summary?.parent === parent ? summary.read : null }];
+  }));
 }
+
 
 export type OfficeCardSummary =
   | { readonly status: 'no_parent' }
@@ -304,17 +329,17 @@ function cardSummary(read: BoardSummariesRead | null, parent: number | null): Of
 }
 
 /**
- * The desks of the card: the parent-list seats with the desk states of the
+ * The desks of the card: the observed seats with the desk states of the
  * summary. The rows are the seats of the active parent, so only a seat with that
  * parent label takes one. A row has no address, so it joins on its labels and
  * serves one desk. Any other seat, or a seat with no row, keeps its seat-only
  * state. A summary with no seats gives no desk.
  */
-function cardDesks(desks: readonly OfficeDesk[], list: BoardParentsV1, parent: number | null, summary: OfficeCardSummary): readonly OfficeDesk[] {
+function cardDesks(desks: readonly OfficeDesk[], document: BoardSeatsV1, parent: number | null, summary: OfficeCardSummary): readonly OfficeDesk[] {
   if (summary.status !== 'observed') return desks;
   const { seats } = summary.summary;
   if (seats.status === 'unavailable') return [];
-  const owned = new Set(list.seats.filter(seat => seat.parent === String(parent)).map(seat => seat.address));
+  const owned = new Set(document.seats.filter(seat => seat.parent === String(parent)).map(seat => seat.address));
   const rows = [...seats.desks];
   return desks.map((desk) => {
     if (!owned.has(desk.address)) return desk;
@@ -325,10 +350,10 @@ function cardDesks(desks: readonly OfficeDesk[], list: BoardParentsV1, parent: n
 
 /** One card per repository. The summary is the row of the active parent; no sum over parents, because the rows of old parents are stale. */
 export function officeCard(view: Extract<OfficeRepositoryView, { readonly kind: 'ready' }>): OfficeCard {
-  const room = officeRoom(view.list, null);
-  const parent = activeParent(view.list);
-  const summary = cardSummary(view.summaries, parent);
-  return { room: { ...room, desks: cardDesks(room.desks, view.list, parent, summary) }, lit: officeLit(room), parent, summary };
+  const room = officeRoom(view.seats, null);
+  const parent = view.list === null ? null : activeParent(view.list, view.seats);
+  const summary = view.list === null ? { status: 'loading' } as const : cardSummary(view.summaries, parent);
+  return { room: { ...room, desks: cardDesks(room.desks, view.seats, parent, summary) }, lit: officeLit(room), parent, summary };
 }
 
 /** Waiting for you, then CI failed, then the other lit rooms, then the idle rooms. A card with no read yet ranks with the lit rooms. */

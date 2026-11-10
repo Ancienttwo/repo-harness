@@ -3,12 +3,12 @@ import { Banner, cn } from '@cloudflare/kumo';
 import { MagnifyingGlassIcon, WarningIcon } from '@phosphor-icons/react';
 import type { BoardFindingV1 } from '../core/board/attention';
 import type { BoardItemV1, BoardPullRequestV1, BoardV1 } from '../core/board/board';
-import type { BoardParentsV1, BoardParentV1 } from '../core/board/parents';
+import { joinBoardParents, type BoardParentsV1, type BoardParentV1, type BoardSeatsV1 } from '../core/board/parents';
 import { primaryPullRequest } from '../core/board/pull-requests';
 import type { QuotaAccountReport } from '../core/board/quota';
 import {
   BOARD_STAGES, findingItem, itemStage, itemTerminals, shippedToday,
-  useBoard, useBoardParents, type BoardParentsReader, type BoardParentsView, type BoardReader, type BoardReason, type BoardStage, type BoardView,
+  useBoard, useBoardParents, useBoardSeats, type BoardSeatsReader, type BoardSeatsView, type BoardParentsReader, type BoardParentsView, type BoardReader, type BoardReason, type BoardStage, type BoardView,
 } from './board-view';
 import { activeParent, officeLit, officeRoom, type BoardSummariesReader } from './board-office';
 import { BoardLayoutSwitch, BoardOfficeOverview, BoardOfficeRoom } from './BoardOffice';
@@ -49,7 +49,7 @@ function parentMatches(parent: BoardParentV1, query: string): boolean {
 }
 
 function ParentRow({ repository, parent, onOpen, now, t }: {
-  readonly repository: string; readonly parent: BoardParentV1;
+  readonly repository: string; readonly parent: BoardParentV1 & { readonly seats: number };
   readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
 }) {
   const { total, completed } = parent.sub_issues;
@@ -82,12 +82,13 @@ function ParentRow({ repository, parent, onOpen, now, t }: {
  * row opens that parent's board; a closed parent's board stays reachable
  * through its `#board/<repository>/<parent>` link.
  */
-function ParentList({ repositories, repository, onRepository, parents, onOpen, now, t }: {
+function ParentList({ repositories, repository, onRepository, parents, seats, onOpen, now, t }: {
   readonly repositories: readonly BoardRepositoryOption[]; readonly repository: string | null; readonly onRepository: (id: string) => void;
+  readonly seats: BoardSeatsView | null;
   readonly parents: BoardParentsView | null; readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
 }) {
   const [query, setQuery] = useState('');
-  const shown = useMemo(() => parents?.kind === 'ready' ? parents.list.parents.filter(parent => parentMatches(parent, query)) : [], [parents, query]);
+  const shown = useMemo(() => parents?.kind === 'ready' && seats?.kind === 'ready' ? joinBoardParents(parents.list, seats.seats).parents.filter(parent => parentMatches(parent, query)) : [], [parents, seats, query]);
   const field = 'h-9 rounded-md border border-kumo-line bg-kumo-base px-2.5 text-sm text-kumo-default focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:outline-none';
   return (
     <section className="flex w-full max-w-4xl flex-col gap-4" aria-labelledby="board-parents" data-board-subject>
@@ -114,6 +115,8 @@ function ParentList({ repositories, repository, onRepository, parents, onOpen, n
             <BoardState title={t('board.parents.failed.title')} description={t(`board.reason.${parents.reason}` as OperatorMessageKey)} command="repo-harness board parents --json" />
           </div>
         )
+        : seats?.kind === 'loading' ? <BoardState loading title={t('board.loading.title')} description={t('board.office.card.loading')} />
+        : seats?.kind === 'failed' ? <BoardState title={t('board.parents.failed.title')} description={t(`board.reason.${seats.reason}` as OperatorMessageKey)} command="repo-harness board seats --json" />
         : parents.list.parents.length === 0 ? <BoardState title={t('board.parents.empty.title')} description={t('board.parents.empty.body')} />
         : shown.length === 0 ? <BoardState title={t('board.parents.noMatch.title')} description={t('board.parents.noMatch.body', { query: query.trim() })} />
         : (
@@ -402,8 +405,8 @@ function BoardDrawer({ view, place, readExecution, readTaskMessages, generation,
 }
 
 /** The room of one repository: its seats, and the board and Task drawer of the active parent. `reading`: the board read is pending. */
-function OfficeRoomView({ repositoryId, list, view, reading, place, parent, quota, setup, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
-  readonly repositoryId: string; readonly list: BoardParentsV1; readonly view: (BoardView & { readonly kind: 'ready' }) | null; readonly reading: boolean;
+function OfficeRoomView({ repositoryId, list, seats, parents, view, reading, place, parent, quota, setup, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
+  readonly repositoryId: string; readonly list: BoardParentsV1 | null; readonly seats: BoardSeatsV1; readonly parents: BoardParentsView; readonly view: (BoardView & { readonly kind: 'ready' }) | null; readonly reading: boolean;
   readonly place: BoardPlace | null; readonly parent: number | null; readonly quota: QuotaView; readonly setup: OfficeSetupReads; readonly writeBossCommand: BossCommandWriter;
   readonly readAdvisorTranscript: AdvisorTranscriptReader; readonly writeAdvisorMessage: AdvisorMessageWriter; readonly mode: ThemeMode;
   readonly readExecution: ExecutionReader; readonly readTaskMessages: TaskMessagesReader; readonly generation: number;
@@ -411,21 +414,21 @@ function OfficeRoomView({ repositoryId, list, view, reading, place, parent, quot
 }) {
   const board = view?.board ?? null;
   const attention = view?.attention ?? null;
-  const room = useMemo(() => officeRoom(list, board === null || attention === null ? null : { board, attention }), [list, board, attention]);
+  const room = useMemo(() => officeRoom(seats, board === null || attention === null ? null : { board, attention }), [seats, board, attention]);
   // j/k in the drawer move through the desks, then the acceptance queue.
   const accounts = quotaAccounts(quota);
   const order = board === null ? [] : [...new Set([...room.desks.map(desk => desk.drawerIssue), ...room.queue.map(entry => entry.issue)])]
     .flatMap(issue => board.items.find(item => item.number === issue) ?? []);
   return (
     <>
-      <BoardOfficeRoom key={`${repositoryId}:${parent}`} repository={list.repository} repositoryId={repositoryId} parent={parent} defaultBranch={board?.default_branch ?? null} room={room} reading={reading} place={place} writeBoss={writeBossCommand} readAdvisor={readAdvisorTranscript} writeAdvisor={writeAdvisorMessage} mode={mode} onOpen={onOpen} now={now} t={t}
+      <BoardOfficeRoom key={`${repositoryId}:${parent}`} repository={list?.repository ?? repositoryId} repositoryId={repositoryId} parent={parent} defaultBranch={board?.default_branch ?? null} room={room} reading={reading} place={place} writeBoss={writeBossCommand} readAdvisor={readAdvisorTranscript} writeAdvisor={writeAdvisorMessage} mode={mode} onOpen={onOpen} now={now} t={t}
         banners={view === null ? null : (
           <>
             <SourceBanners board={view.board} refreshFailed={view.refreshFailed} unevaluated={view.attention.unevaluated.length} quota={quota} t={t} />
             {accounts.length > 0 && <AttentionSection count={accounts.length} t={t}>{accounts.map(account => <QuotaAttentionRow key={account.account} account={account} now={now} t={t} />)}</AttentionSection>}
           </>
         )}
-        setup={officeLit(room) ? null : <OfficeSetupChecklist rows={officeSetupRows(setup, { kind: 'room', repositoryId, parent, parents: { kind: 'ready', list }, plan: reading ? 'unread' : board?.plan ?? 'no_parent' }, t)} t={t} />} />
+        setup={officeLit(room) ? null : <OfficeSetupChecklist rows={officeSetupRows(setup, { kind: 'room', repositoryId, parent, parents, seats: { kind: 'ready', seats }, plan: reading ? 'unread' : board?.plan ?? 'no_parent' }, t)} t={t} />} />
       {view !== null && place !== null && (
         <BoardDrawer view={view} place={place} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} order={order} onOpen={onOpen} now={now} t={t} />
       )}
@@ -438,27 +441,27 @@ function OfficeRoomView({ repositoryId, list, view, reading, place, parent, quot
  * location with a parent shows the board that the App read; a location
  * without one reads the board of the active parent, if the repository has one.
  */
-function OfficeRepository({ repositoryId, place, placeView, quota, setup, readBoard, readBoardParents, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
+function OfficeRepository({ repositoryId, place, placeView, quota, setup, readBoard, readBoardParents, readBoardSeats, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
   readonly repositoryId: string; readonly place: BoardPlace | null; readonly placeView: BoardView | null; readonly quota: QuotaView; readonly setup: OfficeSetupReads;
-  readonly readBoard: BoardReader; readonly readBoardParents: BoardParentsReader; readonly writeBossCommand: BossCommandWriter;
+  readonly readBoard: BoardReader; readonly readBoardParents: BoardParentsReader; readonly readBoardSeats: BoardSeatsReader; readonly writeBossCommand: BossCommandWriter;
   readonly readAdvisorTranscript: AdvisorTranscriptReader; readonly writeAdvisorMessage: AdvisorMessageWriter; readonly mode: ThemeMode;
   readonly readExecution: ExecutionReader; readonly readTaskMessages: TaskMessagesReader; readonly generation: number;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
 }) {
   const parents = useBoardParents(readBoardParents, repositoryId, generation)!;
-  const active = place === null && parents.kind === 'ready' ? activeParent(parents.list) : null;
+  const seats = useBoardSeats(readBoardSeats, repositoryId, generation)!;
+  const active = place === null && parents.kind === 'ready' && seats.kind === 'ready' ? activeParent(parents.list, seats.seats) : null;
   const activeView = useBoard(readBoard, useMemo(() => (active === null ? null : { repository_id: repositoryId, parent: active }), [repositoryId, active]), generation);
   const view = place === null ? activeView : placeView;
   const parent = place?.parent ?? active;
-  if (parents.kind === 'failed') {
+  if (seats.kind === 'failed') {
     return (
-      <div className="board-office" data-board-parents-reason={parents.reason}>
-        <OfficeSetupChecklist rows={officeSetupRows(setup, { kind: 'room', repositoryId, parent, parents, plan: 'unread' }, t)} t={t} />
+      <div className="board-office" data-board-parents-reason={seats.reason}>
+        <OfficeSetupChecklist rows={officeSetupRows(setup, { kind: 'room', repositoryId, parent, parents, seats, plan: 'unread' }, t)} t={t} />
       </div>
     );
   }
-  // The room draws from the parent list at once; the board fills it in when its read settles.
-  if (parents.kind === 'loading') return <BoardState loading title={t('board.loading.title')} description={t('board.office.card.loading')} />;
+  if (seats.kind === 'loading') return <BoardState loading title={t('board.loading.title')} description={t('board.office.card.loading')} />;
   if (view?.kind === 'failed') {
     return (
       <div data-board-reason={view.reason}>
@@ -466,10 +469,10 @@ function OfficeRepository({ repositoryId, place, placeView, quota, setup, readBo
       </div>
     );
   }
-  return <OfficeRoomView repositoryId={repositoryId} list={parents.list} view={view?.kind === 'ready' ? view : null} reading={view?.kind === 'loading'} place={place} parent={parent} quota={quota} setup={setup} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={mode} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} onOpen={onOpen} now={now} t={t} />;
+  return <OfficeRoomView repositoryId={repositoryId} list={parents.kind === 'ready' ? parents.list : null} seats={seats.seats} parents={parents} view={view?.kind === 'ready' ? view : null} reading={view?.kind === 'loading'} place={place} parent={parent} quota={quota} setup={setup} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={mode} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} onOpen={onOpen} now={now} t={t} />;
 }
 
-export function BoardPage({ layout, place, room, view, parents, repositories, chosenRepository, onRepository, setup, quota, readBoard, readBoardParents, readBoardSummaries, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
+export function BoardPage({ layout, place, room, view, parents, repositories, chosenRepository, onRepository, setup, quota, readBoard, readBoardParents, readBoardSeats, readBoardSummaries, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
   /** The layout of the location; with a board it equals `place.layout`. */
   readonly layout: BoardLayout;
   readonly place: BoardPlace | null;
@@ -479,6 +482,7 @@ export function BoardPage({ layout, place, room, view, parents, repositories, ch
   readonly readBoard: BoardReader;
   /** The parents route: the office overview reads it once for each registered repository, and a room reads its seats. */
   readonly readBoardParents: BoardParentsReader;
+  readonly readBoardSeats: BoardSeatsReader;
   /** The summaries route: the office overview reads it after the parents of each repository with an active parent. */
   readonly readBoardSummaries: BoardSummariesReader;
   /** The boss command route of the office room (#1757). */
@@ -507,11 +511,13 @@ export function BoardPage({ layout, place, room, view, parents, repositories, ch
   readonly now: number;
   readonly t: OperatorTranslate;
 }) {
-  const office = { quota, setup, readBoard, readBoardParents, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t };
+  const listRepository = place === null && room === null && layout === 'list' ? boardListRepository(repositories, chosenRepository) : null;
+  const listSeats = useBoardSeats(readBoardSeats, listRepository, generation);
+  const office = { quota, setup, readBoard, readBoardParents, readBoardSeats, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t };
   if (place === null || view === null) {
     if (room !== null) return <OfficeRepository repositoryId={room} place={null} placeView={null} {...office} />;
-    if (layout === 'office') return <BoardOfficeOverview repositories={repositories} readParents={readBoardParents} readSummaries={readBoardSummaries} setup={setup} generation={generation} mode={mode} onOpen={onOpen} t={t} />;
-    return <ParentList repositories={repositories} repository={boardListRepository(repositories, chosenRepository)} onRepository={onRepository} parents={parents} onOpen={onOpen} now={now} t={t} />;
+    if (layout === 'office') return <BoardOfficeOverview repositories={repositories} readParents={readBoardParents} readSeats={readBoardSeats} readSummaries={readBoardSummaries} setup={setup} generation={generation} mode={mode} onOpen={onOpen} t={t} />;
+    return <ParentList repositories={repositories} repository={boardListRepository(repositories, chosenRepository)} onRepository={onRepository} parents={parents} seats={listSeats} onOpen={onOpen} now={now} t={t} />;
   }
   if (view.kind === 'failed') {
     return (

@@ -1,7 +1,7 @@
 import { execFile, spawn, spawnSync, type ExecFileException, type SpawnSyncReturns } from 'child_process';
 import { createInterface } from 'readline';
 import type { AttentionHostFailureV1, AttentionHostPortsV1, AttentionWatcherV1 } from '../../core/board/attention-delivery';
-import type { BoardHostPortsV1 } from '../../core/board/board';
+import type { BoardHostPortsV1, BoardSeatTerminalReadV1 } from '../../core/board/board';
 import { NOTIFY_SECRET_KEYS } from '../../core/decision/notify-secret-keys';
 import { HC_LOCAL_ADDRESS, isRemoteHcAddress } from '../../core/terminal/hc-address';
 
@@ -496,6 +496,16 @@ export function herdrAppDo(command: HerdrAppPlacement, args: Readonly<Record<str
   return invoke(program, rest, options);
 }
 
+/** The single seat-terminal mapping for board reads, closeout selection and the observer. */
+export function boardSeatTerminals(terminals: readonly (HcTerminal & { readonly agent: string | null })[]): BoardSeatTerminalReadV1[] {
+  return terminals.filter(terminal => terminal.labels[RH_LABEL.service] === undefined).map(terminal => ({
+    address: terminal.address, name: terminal.name, agent: terminal.agent, state: terminal.state, status: terminal.status?.state ?? null,
+    status_kind: terminal.status?.kind ?? null, status_msg: terminal.status?.msg ?? null, status_ms: terminal.status_ms ?? null,
+    turn: terminal.turn, cwd: terminal.cwd ?? null,
+    labels: { seat: terminal.labels[RH_LABEL.seat], issue: terminal.labels[RH_LABEL.issue], pr: terminal.labels[RH_LABEL.pr], parent: terminal.labels[RH_LABEL.parent] },
+  }));
+}
+
 /** The board host port (#1505): the seat terminals of one repository with their parent labels (#1780), the hc version, and the advisor seat send and read (#1756). */
 export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1 {
   const unavailable = (error: unknown) => {
@@ -505,17 +515,8 @@ export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1
   const readSeatTerminals = (repositoryId: string, all: boolean): ReturnType<BoardHostPortsV1['seatTerminals']> => {
     try {
       // A watcher terminal (#1509) carries the repository and parent labels too, but it is a program, not a seat.
-      const terminals = hcList({ [RH_LABEL.repository]: repositoryId }, { ...options, all })
-        .map(({ address, agent }) => ({ ...hcGet(address, options), agent }))
-        .filter(terminal => terminal.labels[RH_LABEL.service] === undefined)
-        .map((terminal) => {
-          const label = (key: string) => terminal.labels[key];
-          return {
-            address: terminal.address, name: terminal.name, agent: terminal.agent, state: terminal.state, status: terminal.status?.state ?? null,
-            status_kind: terminal.status?.kind ?? null, status_msg: terminal.status?.msg ?? null, status_ms: terminal.status_ms ?? null, turn: terminal.turn, cwd: terminal.cwd ?? null,
-            labels: { seat: label(RH_LABEL.seat), issue: label(RH_LABEL.issue), pr: label(RH_LABEL.pr), parent: label(RH_LABEL.parent) },
-          };
-        });
+      const terminals = boardSeatTerminals(hcList({ [RH_LABEL.repository]: repositoryId }, { ...options, all })
+        .map(({ address, agent }) => ({ ...hcGet(address, options), agent })));
       return { status: 'observed', terminals };
     } catch (error) {
       return unavailable(error);

@@ -2,7 +2,6 @@ import { spawnSync } from 'child_process';
 import type { BoardHostPortsV1 } from '../../core/board/board';
 import { projectBoardParents, type BoardParentsV1 } from '../../core/board/parents';
 import { decodeOpenIssuesRead } from '../../core/board/source';
-import { seatTerminalsWithBranches } from './collect';
 
 const GH_TIMEOUT_MS = 60_000;
 
@@ -27,18 +26,14 @@ export class BoardParentsError extends Error {
 
 export interface BoardParentsCollectInput {
   readonly repo_root: string;
+  /** Kept in the CLI composition input; parent facts do not read hc. */
   readonly host: BoardHostPortsV1;
   /** Effect seam for tests: answers the gh argument list. */
   readonly gh_runner?: (args: readonly string[]) => { readonly status: number; readonly stdout: string; readonly stderr?: string };
   readonly now?: () => Date;
 }
 
-/**
- * One paginated GraphQL read of the open issues, one hc list of the
- * repository's seat terminals and one git read of each seat's branch. gh fills
- * `{owner}` and `{repo}` from the checkout, so no other read names the
- * repository.
- */
+/** One paginated GitHub read. gh resolves the repository from the checkout. */
 export function collectBoardParents(input: BoardParentsCollectInput): BoardParentsV1 {
   const observedAt = (input.now?.() ?? new Date()).toISOString();
   const args = ['api', 'graphql', '--hostname', 'github.com', '--paginate', '--slurp', '-f', `query=${OPEN_ISSUES_QUERY}`, '-F', 'owner={owner}', '-F', 'name={repo}'];
@@ -53,7 +48,5 @@ export function collectBoardParents(input: BoardParentsCollectInput): BoardParen
     throw new BoardParentsError('parents_github_failed', 'gh api graphql returned invalid JSON');
   }
   const issues = decodeOpenIssuesRead(pages);
-  const seats = input.host.seatTerminals(String(issues.repository.database_id));
-  if (seats.status === 'unavailable') throw new BoardParentsError('parents_hc_failed', `hc could not list the seat terminals: ${seats.reason}`);
-  return projectBoardParents({ observed_at: observedAt, issues, terminals: seatTerminalsWithBranches(seats.terminals) });
+  return projectBoardParents({ observed_at: observedAt, issues });
 }

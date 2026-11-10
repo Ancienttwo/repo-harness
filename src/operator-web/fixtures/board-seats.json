@@ -1,0 +1,59 @@
+{
+  "protocol": 1,
+  "kind": "repo-harness.board-seats",
+  "observed_at": "2026-11-02T23:29:42.936Z",
+  "repository_id": "1186405141",
+  "seats": [
+    {
+      "address": "t1",
+      "name": "w1476",
+      "agent": "codex",
+      "state": "live",
+      "status": "blocked",
+      "status_kind": "question",
+      "status_msg": null,
+      "status_ms": 1793661522936,
+      "turn": 0,
+      "branch": null,
+      "seat_status": "observed",
+      "seat": "worker",
+      "issue": 1476,
+      "pr": 1499,
+      "parent": "1474"
+    },
+    {
+      "address": "t2",
+      "name": "w1475",
+      "agent": "claude-code",
+      "state": "live",
+      "status": "done",
+      "status_kind": null,
+      "status_msg": null,
+      "status_ms": 1793661522954,
+      "turn": 0,
+      "branch": null,
+      "seat_status": "observed",
+      "seat": "worker",
+      "issue": 1475,
+      "pr": 1491,
+      "parent": "1474"
+    },
+    {
+      "address": "t3",
+      "name": "orch",
+      "agent": null,
+      "state": "live",
+      "status": "idle",
+      "status_kind": null,
+      "status_msg": null,
+      "status_ms": 1793661522964,
+      "turn": 0,
+      "branch": null,
+      "seat_status": "observed",
+      "seat": "orchestrator",
+      "issue": null,
+      "pr": null,
+      "parent": "1474"
+    }
+  ]
+}

@@ -7,7 +7,7 @@ import {
   officeCard, officeCardRank, officeLit, officeRepositoryView, officeTotals, useOfficeOverview,
   type BoardSummariesReader, type OfficeCard, type OfficeDesk, type OfficeFeedEvent, type OfficeLead, type OfficeRepositoryView, type OfficeRoom, type OfficeTotals,
 } from './board-office';
-import type { BoardParentsReader } from './board-view';
+import type { BoardParentsReader, BoardSeatsReader } from './board-view';
 import type { BoardRepositoryOption } from './BoardPage';
 import { useModalFocus } from './Drawer';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
@@ -196,12 +196,12 @@ const OVERVIEW_FRAME_MS = 400;
  * No board selected: one mini room per registered repository, from its seats
  * and the stored summary of its active parent. The overview reads no board.
  */
-export function BoardOfficeOverview({ repositories, readParents, readSummaries, setup, generation, mode, onOpen, t }: {
-  readonly repositories: readonly BoardRepositoryOption[]; readonly readParents: BoardParentsReader; readonly readSummaries: BoardSummariesReader; readonly setup: OfficeSetupReads; readonly generation: number;
+export function BoardOfficeOverview({ repositories, readParents, readSeats, readSummaries, setup, generation, mode, onOpen, t }: {
+  readonly repositories: readonly BoardRepositoryOption[]; readonly readParents: BoardParentsReader; readonly readSeats: BoardSeatsReader; readonly readSummaries: BoardSummariesReader; readonly setup: OfficeSetupReads; readonly generation: number;
   readonly mode: ThemeMode; readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate;
 }) {
   const ids = useMemo(() => repositories.map(repository => repository.id), [repositories]);
-  const views = useOfficeOverview(ids, readParents, readSummaries, generation);
+  const views = useOfficeOverview(ids, readParents, readSummaries, generation, readSeats);
   const { frame, now } = useClock(OVERVIEW_FRAME_MS);
   const rooms = useMemo(() => repositories.map((repository) => {
     const view = officeRepositoryView(views, repository.id);

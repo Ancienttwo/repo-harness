@@ -33,8 +33,9 @@ import architectureMap from './architecture-map.json';
 import board1474 from './board-1474.json';
 // The parent list projected from the recorded GitHub read and the same hc reads (tests/board.test.ts, parent list).
 import boardParents from './board-parents.json';
+import boardSeats from './board-seats.json';
 import { decodeBoard } from '../../core/board/board';
-import { decodeBoardParents } from '../../core/board/parents';
+import { decodeBoardParents, decodeBoardSeats } from '../../core/board/parents';
 import { BOARD_SUMMARIES_PROTOCOL, boardSummary } from '../../core/board/summary';
 import type { BoardSummariesRead } from '../board-office';
 import type { BoardParentsRead, BoardRead } from '../board-view';
@@ -151,7 +152,7 @@ export function fixtureProps(name: string): OperatorAppProps {
   // busy: the recorded parents of repo-harness, none elsewhere; empty: no open parent issue; degraded: hc could not list the seats.
   const recordedParents = decodeBoardParents(boardParents);
   const parents = (repositoryId: string): BoardParentsRead => fixture === 'degraded' ? { state: 'unavailable', reason: 'parents_hc_failed' }
-    : { state: 'ok', list: fixture === 'busy' && repositoryId === HARNESS_ID ? recordedParents : { ...recordedParents, parents: [], seats: [] } };
+    : { state: 'ok', list: fixture === 'busy' && repositoryId === HARNESS_ID ? recordedParents : { ...recordedParents, parents: [] } };
   // busy: the board route has read #1474 and no other parent.
   const summaries = (repositoryId: string, asked: number): BoardSummariesRead => ({ state: 'ok', summaries: {
     protocol: BOARD_SUMMARIES_PROTOCOL, kind: 'repo-harness.board-summaries', repository_id: repositoryId,
@@ -160,6 +161,8 @@ export function fixtureProps(name: string): OperatorAppProps {
   } });
   return {
     readBoard: subject => Promise.resolve(board(subject.repository_id, subject.parent)),
+    readBoardSeats: async repositoryId => fixture === 'degraded' ? { state: 'unavailable', reason: 'parents_hc_failed' }
+      : { state: 'ok', seats: decodeBoardSeats({ ...boardSeats, seats: fixture === 'busy' && repositoryId === HARNESS_ID ? boardSeats.seats : [] }) },
     readBoardParents: repositoryId => Promise.resolve(parents(repositoryId)),
     readBoardSummaries: (repositoryId, parent) => Promise.resolve(summaries(repositoryId, parent)),
     fetchDevActivity: () => Promise.resolve(activity),

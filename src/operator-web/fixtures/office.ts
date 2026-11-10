@@ -1,6 +1,6 @@
 import { ADVISOR_SEAT_SEND_KIND, ADVISOR_SEAT_TRANSCRIPT_KIND, ADVISOR_TRANSCRIPT_LINE_WITHHELD, decodeAdvisorSeatSend, decodeAdvisorSeatTranscript } from '../../core/board/advisor-seat';
 import { BOARD_PROTOCOL, decodeBoard, type BoardItemV1, type BoardPullRequestV1, type BoardTerminalV1, type BoardV1 } from '../../core/board/board';
-import { BOARD_PARENTS_PROTOCOL, decodeBoardParents, type BoardParentsSeatV1, type BoardParentsV1 } from '../../core/board/parents';
+import { BOARD_PARENTS_PROTOCOL, decodeBoardParents, decodeBoardSeats, type BoardParentsSeatV1, type BoardParentsV1, type BoardSeatsV1 } from '../../core/board/parents';
 import { ISSUE_FLOW_WORKER_LIMIT, type DeskState } from '../../core/board/desk';
 import { BOARD_SUMMARIES_PROTOCOL, boardSummary, type BoardSummaryEntryV1, type BoardSummarySeatsV1, type BoardSummaryV1 } from '../../core/board/summary';
 import { decodeDevActivitySnapshot } from '../../core/dev-activity/decode';
@@ -144,13 +144,13 @@ const IDLE_ROOMS: Readonly<Record<string, string>> = {
   repo_a4a4a4a4a4a4a4a4: 'byok-sdk', repo_a5a5a5a5a5a5a5a5: 'fortune-algo', repo_a6a6a6a6a6a6a6a6: 'hegui-agent', repo_a7a7a7a7a7a7a7a7: 'enterprise-brain',
 };
 
-function sampleParents(room: SampleRoom, repository: string, now: number): BoardParentsV1 {
+function sampleParents(room: SampleRoom, repository: string, now: number) {
   const observed_at = new Date(now).toISOString();
   const seat = (address: string, agent: string | null, status: string, role: string, parent: string | null): BoardParentsSeatV1 =>
     ({ address, name: null, agent, state: 'live', status, status_kind: null, status_msg: null, status_ms:null, turn: 1, branch: null, seat_status: 'observed', seat: role, issue: null, pr: null, parent });
-  return decodeBoardParents({
+  return documents({
     protocol: BOARD_PARENTS_PROTOCOL, kind: 'repo-harness.board-parents', observed_at, repository,
-    parents: [{ number: room.parent, title: room.name, url: `https://github.com/${repository}/issues/${room.parent}`, updated_at: observed_at, sub_issues: { total: 6, completed: 2 }, seats: room.workers.length }],
+    parents: [{ number: room.parent, title: room.name, url: `https://github.com/${repository}/issues/${room.parent}`, updated_at: observed_at, sub_issues: { total: 6, completed: 2 } }],
     seats: [
       ...(room.orchestrator === null ? [] : [seat('t1', room.orchestrator.agent, 'idle', 'orchestrator', null)]),
       ...(room.advisor === null ? [] : [seat('t2', room.advisor.agent, 'idle', 'advisor', null)]),
@@ -159,19 +159,30 @@ function sampleParents(room: SampleRoom, repository: string, now: number): Board
   });
 }
 
-export function officeParents(repositoryId: string, now: number): BoardParentsV1 {
+function officeObservation(repositoryId: string, now: number) {
   const observed_at = new Date(now).toISOString();
   const sample = SAMPLE_ROOMS[repositoryId];
   if (sample !== undefined) return sampleParents(sample, `Ancienttwo/${sample.name}`, now);
   if (repositoryId !== HARNESS_ID) {
-    return decodeBoardParents({ protocol: BOARD_PARENTS_PROTOCOL, kind: 'repo-harness.board-parents', observed_at, repository: `Ancienttwo/${IDLE_ROOMS[repositoryId]!}`, parents: [], seats: [] });
+    return documents({ protocol: BOARD_PARENTS_PROTOCOL, kind: 'repo-harness.board-parents', observed_at, repository: `Ancienttwo/${IDLE_ROOMS[repositoryId]!}`, parents: [], seats: [] });
   }
-  return decodeBoardParents({
+  return documents({
     protocol: BOARD_PARENTS_PROTOCOL, kind: 'repo-harness.board-parents', observed_at, repository: REPOSITORY,
-    parents: [{ number: OFFICE_PARENT, title: 'Operator console', url: url('issues', OFFICE_PARENT), updated_at: observed_at, sub_issues: { total: 12, completed: 5 }, seats: 6 }],
+    parents: [{ number: OFFICE_PARENT, title: 'Operator console', url: url('issues', OFFICE_PARENT), updated_at: observed_at, sub_issues: { total: 12, completed: 5 } }],
     seats: [lead('t3', 'claude-code', 'orchestrator'), lead('t4', 'codex', 'advisor'), ...officeWorkers(now).map(terminal => ({ ...terminal, parent: String(OFFICE_PARENT) }))],
   });
 }
+
+function documents(value: BoardParentsV1 & { readonly seats: readonly BoardParentsSeatV1[] }) {
+  const { seats, parents, ...facts } = value;
+  return {
+    parents: decodeBoardParents({ ...facts, parents }),
+    seats: decodeBoardSeats({ protocol: 1, kind: 'repo-harness.board-seats', repository_id: '1186405141', observed_at: value.observed_at, seats }),
+  };
+}
+
+export const officeParents = (repositoryId: string, now: number): BoardParentsV1 => officeObservation(repositoryId, now).parents;
+export const officeSeats = (repositoryId: string, now: number): BoardSeatsV1 => officeObservation(repositoryId, now).seats;
 
 function officeSummaries(repositoryId: string, asked: number, now: number): BoardSummariesRead {
   const sample = SAMPLE_ROOMS[repositoryId];
@@ -240,6 +251,7 @@ export function officeProps(busy: OperatorAppProps): OperatorAppProps {
     readBoard: (subject): Promise<BoardRead> => Promise.resolve(subject.repository_id === HARNESS_ID && subject.parent === OFFICE_PARENT
       ? { state: 'ok', board: officeBoard(now) } : { state: 'unavailable', reason: 'board_parent_invalid' }),
     readBoardParents: (repositoryId): Promise<BoardParentsRead> => Promise.resolve({ state: 'ok', list: officeParents(repositoryId, now) }),
+    readBoardSeats: async repositoryId => ({ state: 'ok', seats: officeSeats(repositoryId, now) }),
     readBoardSummaries: (repositoryId, parent) => Promise.resolve(officeSummaries(repositoryId, parent, now)),
     readRepositories: () => Promise.resolve(officeRepositories),
     initialRepositories: officeRepositories,
@@ -302,10 +314,7 @@ export function officeSetupProps(office: OperatorAppProps, gap: OfficeSetupGap):
       const read = await office.readBotAccess!(signal);
       return read.state === 'ok' ? { ...read, snapshot: { ...read.snapshot, hc: { state: 'unavailable', reason: 'hc_missing' } } } : read;
     },
-    readBoardParents: !emptyRooms ? office.readBoardParents : (repositoryId): Promise<BoardParentsRead> => {
-      const list = officeParents(repositoryId, now);
-      return Promise.resolve({ state: 'ok', list: { ...list, seats: [], parents: list.parents.map(parent => ({ ...parent, seats: 0 })) } });
-    },
+    readBoardSeats: !emptyRooms ? office.readBoardSeats : async repositoryId => ({ state: 'ok', seats: { ...officeSeats(repositoryId, now), seats: [] } }),
     readBoard: gap !== 'plan' ? office.readBoard : async (subject, signal) => {
       const read = await office.readBoard!(subject, signal);
       return read.state === 'ok' ? { ...read, board: { ...read.board, plan: { status: 'absent', truncated: false } } } : read;
