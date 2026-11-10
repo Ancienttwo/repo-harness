@@ -131,7 +131,8 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     const head = sequence?.length ? sequence[Math.min(prViewAttempt, sequence.length - 1)]! : headSha;
     return ok({ number: PR, url: `https://github.com/${REPOSITORY}/pull/${PR}`, state: 'OPEN', isDraft: false,
       headRefOid: head, headRefName: scenario.headRef ?? 'feat/executor', baseRefOid: baseSha, baseRefName: 'main', body: scenario.body ?? '',
-      reviewDecision: '', changedFiles: scenario.changedFiles?.length ?? 0, mergeable: 'MERGEABLE' });
+      reviewDecision: '', changedFiles: scenario.changedFiles?.length ?? 0, mergeable: 'MERGEABLE',
+      closingIssuesReferences: (scenario.closing ?? []).map((reference) => ({ number: Number(reference.split('#')[1]) })) });
   }
   if (command === 'pr' && sub === 'checks') {
     const bucket = scenario.checks ?? 'pass';
