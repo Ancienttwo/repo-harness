@@ -301,6 +301,7 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
     registryWork = (async () => {
       try {
         const repositories = ports.repositories(); registryFailed = false;
+        applyFactsRegistry(repositories);
         const byId = new Map(repositories.map(repository => [repository.id, repository]));
         const retired: Promise<void>[] = [];
         for (const [id, state] of states) if (byId.get(id)?.path !== state.repository.path) { states.delete(id); retired.push(stop(state)); }
@@ -309,6 +310,7 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
         for (const repository of repositories) if (!states.has(repository.id)) start(repository);
       } catch {
         registryFailed = true;
+        applyFactsRegistry(null);
         const retired = [...states.values()]; states.clear();
         await Promise.all(retired.map(stop));
       }
@@ -409,15 +411,25 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
     }
     return [...observed].sort(([left], [right]) => Number(boards.has(left)) - Number(boards.has(right))).map(([, board]) => board);
   }
+  /**
+   * Each registry read, by the seats cycle or a facts cycle, applies at once:
+   * a removed repository loses its documents, and a failed read empties them,
+   * even while a low GitHub budget holds the next facts cycle back.
+   */
+  function applyFactsRegistry(repositories: readonly Repository[] | null) {
+    if (repositories === null) { factsRegistryFailed = true; boards.clear(); parentsDocuments.clear(); return; }
+    factsRegistryFailed = false;
+    const registered = factsRepositories = new Set(repositories.map(repository => repository.id));
+    for (const id of parentsDocuments.keys()) if (!registered.has(id)) parentsDocuments.delete(id);
+    for (const key of boards.keys()) if (!registered.has(key.slice(0, key.lastIndexOf('#')))) boards.delete(key);
+  }
   async function factsCycle(): Promise<number> {
     let repositories: readonly Repository[];
     try { repositories = ports.repositories(); }
-    catch { factsRegistryFailed = true; boards.clear(); parentsDocuments.clear(); return FACTS_INTERVAL_MS; }
-    factsRegistryFailed = false;
-    factsRepositories = new Set(repositories.map(repository => repository.id));
-    for (const id of parentsDocuments.keys()) if (!factsRepositories.has(id)) parentsDocuments.delete(id);
+    catch { applyFactsRegistry(null); return FACTS_INTERVAL_MS; }
+    applyFactsRegistry(repositories);
     // With no registered repository the worker does not start.
-    if (repositories.length === 0) { boards.clear(); return FACTS_INTERVAL_MS; }
+    if (repositories.length === 0) return FACTS_INTERVAL_MS;
     const rate = await ask({ kind: 'rate_limit' });
     for (const repository of repositories) {
       const answer = await ask({ kind: 'parents', repo_root: repository.path });

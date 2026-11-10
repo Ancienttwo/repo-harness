@@ -520,3 +520,27 @@ test('board facts: each cycle removes the board documents and worker stores that
   expect(answerBoardWorkerRequest({ id: 7, kind: 'retain', keys: ['repo-a#1474'] }, stores, {} as never)).toEqual({ id: 7, ok: true, value: null });
   expect([...stores.keys()]).toEqual(['repo-a#1474']);
 });
+
+test('board facts: a repository that the registry cycle removes during a long gap stops serving its documents before the next facts cycle', async () => {
+  const f = fixture();
+  const home = mkdtempSync(join(tmpdir(), 'board-removal-'));
+  const server = await startOperatorServer({ port: 0, env: { REPO_HARNESS_HOME: home }, board_observer: { ports: f.ports, clock: f.clock } });
+  const path = `${server.url}/api/v1/repositories/repo-a/board?parent=1474`, parents = `${server.url}/api/v1/repositories/repo-a/board/parents`;
+  const code = async (response: Response) => [response.status, ((await response.json()) as { error: { code: string } }).error.code];
+  const retains = () => f.worker.spawned[0]!.requests.filter(request => request.kind === 'retain').length;
+  try {
+    await until(() => f.worker.spawned.length === 1 && retains() === 1);
+    await f.tick(0); f.emit('snapshot'); await f.tick(BOARD_SEATS_DEBOUNCE_MS);
+    // 1 % of the GitHub budget remains: the cycle that the lease starts reads 1474, then waits 750 s.
+    f.worker.reply(request => request.kind === 'rate_limit' ? { ok: true, value: { remaining: 50, limit: 5000 } }
+      : request.kind === 'board' ? { ok: true, value: board } : { ok: true, value: request.kind === 'parents' ? boardParents : null });
+    await fetch(path);
+    await until(() => retains() === 2);
+    expect([(await fetch(path)).status, (await fetch(parents)).status]).toEqual([200, 200]);
+    f.remove();
+    await f.tick(30_000);
+    expect(retains()).toBe(2);
+    expect(await code(await fetch(path))).toEqual([404, 'repository_not_found']);
+    expect(await code(await fetch(parents))).toEqual([404, 'repository_not_found']);
+  } finally { await server.close(); rmSync(home, { recursive: true, force: true }); }
+});
