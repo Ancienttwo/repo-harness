@@ -86,7 +86,9 @@ export interface BoardCollectInput {
 
 export type GhInput = Pick<BoardCollectInput, 'repo_root' | 'gh_bin' | 'gh_runner'>;
 
-function runGh(input: GhInput, args: readonly string[]): { readonly status: number | null; readonly stdout: string; readonly stderr?: string } {
+type GhRunner = NonNullable<BoardCollectInput['gh_runner']>;
+
+function runGh(input: GhInput, args: readonly string[]): { readonly status: number | null; readonly stdout: string; readonly stderr?: string; readonly error?: Error } {
   return input.gh_runner?.(args) ?? spawnSync(input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
     cwd: input.repo_root, env: { ...process.env, GH_HOST: 'github.com' }, encoding: 'utf-8', timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL',
   });
@@ -265,6 +267,47 @@ function followCursor(first: unknown, cursor: (data: unknown, at: number) => str
   return pages;
 }
 
+/**
+ * The provider transport of the readiness reads of one board read. Every pull
+ * request of the repository gets the same repository identity, and every pull
+ * request on the same base gets the same base-commit facts, so those reads run
+ * once. The pull request identity, checks, reviews and stack lists run each time,
+ * so the identity and stack fences of each read stay. A failure is not stored.
+ * The answers live only as long as this function's return value.
+ */
+function boardReadinessTransport(input: GhInput, repository: string): GhRunner {
+  const root = `repos/${repository}`;
+  const reusable = (args: readonly string[]): boolean => {
+    if (args[0] === 'repo' && args[1] === 'view') return true;
+    if (args.length !== 4 || args[0] !== 'api' || args[2] !== '--hostname' || args[3] !== 'github.com') return false;
+    const path = args[1]!;
+    return path === root || [`${root}/contents/`, `${root}/commits/`, `${root}/git/commits/`].some(prefix => path.startsWith(prefix))
+      || (path.startsWith(`${root}/pulls/`) && /^\d+$/u.test(path.slice(`${root}/pulls/`.length)));
+  };
+  // GitHub answers an absent file with exit 1 and a JSON body of status 404.
+  const storable = (status: number, stdout: string): boolean => {
+    if (status === 0) return true;
+    if (status !== 1) return false;
+    try {
+      const body: unknown = JSON.parse(stdout);
+      return body !== null && typeof body === 'object' && !Array.isArray(body) && (body as { status?: unknown }).status === '404';
+    } catch {
+      return false;
+    }
+  };
+  const answers = new Map<string, ReturnType<GhRunner>>();
+  return (args) => {
+    const key = reusable(args) ? JSON.stringify(args) : null;
+    const stored = key === null ? undefined : answers.get(key);
+    if (stored !== undefined) return stored;
+    const result = runGh(input, args);
+    // No exit status (spawn error, timeout) is -1, which no reader accepts: the read reports provider_unavailable.
+    const answer = { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr || result.error?.message || '' };
+    if (key !== null && storable(answer.status, answer.stdout)) answers.set(key, answer);
+    return answer;
+  };
+}
+
 export function collectBoard(input: BoardCollectInput): BoardV1 {
   const { parent, observed_at: observedAt } = readParent(input);
   const repository = parent.repository.name_with_owner;
@@ -272,12 +315,13 @@ export function collectBoard(input: BoardCollectInput): BoardV1 {
   const candidates = [...new Set(parent.sub_issues.flatMap(issue => issue.pull_request_candidates))].sort((left, right) => left - right);
   const reads: BoardPullRequestReadV1[] = candidates.length === 0 ? [] : decodePullRequestsRead(graphql(input, pullRequestsQuery(candidates), { owner, name }), candidates);
   const linked = linkedPullRequests(parent, reads);
+  const readinessTransport = boardReadinessTransport(input, repository);
   const readiness = linked.filter(read => read.state === 'open').map((read) => {
     const selection: PullRequestSelectionV2 = {
       provider_repository_id: String(parent.repository.database_id), repository, pr_number: read.number,
       expected_head_sha: read.head_sha, expected_base_sha: read.base_sha,
     };
-    return input.readiness?.(selection) ?? collectPullRequestMergeReadiness({ ...selection, repo_root: input.repo_root, gh_bin: input.gh_bin });
+    return input.readiness?.(selection) ?? collectPullRequestMergeReadiness({ ...selection, repo_root: input.repo_root, gh_bin: input.gh_bin, gh_runner: readinessTransport });
   });
   const owners = pathOwners(input, linked);
   const proveSyncs = input.merge_only_syncs ?? provenMergeOnlySyncs;
