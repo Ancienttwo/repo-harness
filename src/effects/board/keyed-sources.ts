@@ -1,9 +1,9 @@
-import { createHash } from 'crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import type { BoardPullRequestReadV1 } from '../../core/board/source';
 import type { BoardReadinessV1 } from '../../core/board/board';
 import type { PullRequestReadinessV2 } from '../../core/publication/merge-readiness';
 
-/** The inputs outside a key (branch protection, the base policy, review-bot accounts, the local generated-artifact run) age out after this. */
+/** The inputs outside a key (branch protection, review-bot accounts, the local generated-artifact run) age out after this. */
 export const KEYED_SOURCE_MAX_AGE_MS = 60 * 60_000;
 
 /** The readiness stack walk stops at this depth; a longer chain is not keyed. */
@@ -36,16 +36,16 @@ export interface KeyedSources {
 export function createKeyedSources(): KeyedSources {
   const answers = new Map<string, Entry<BoardReadinessV1>>();
   const contents = new Map<string, Entry<GhAnswer>>();
-  const fresh = <T>(map: Map<string, Entry<T>>, key: string, nowMs: number): T | undefined => {
-    const entry = map.get(key);
-    if (entry === undefined) return undefined;
-    if (nowMs - entry.at_ms < KEYED_SOURCE_MAX_AGE_MS) return entry.value;
-    map.delete(key);
-    return undefined;
+  // A key that no read asks for again stays in the map, so each readiness call removes every aged entry: the watcher store stays bounded.
+  const sweep = (nowMs: number): void => {
+    for (const map of [answers, contents] as Map<string, Entry<unknown>>[]) {
+      for (const [key, entry] of map) if (nowMs - entry.at_ms >= KEYED_SOURCE_MAX_AGE_MS) map.delete(key);
+    }
   };
   return {
     readiness(key, now, read) {
-      const stored = key === null ? undefined : fresh(answers, key, now.getTime());
+      sweep(now.getTime());
+      const stored = key === null ? undefined : answers.get(key)?.value;
       if (stored !== undefined) return stored;
       const readiness = read();
       const answer = Object.freeze({ readiness, observed_at: now.toISOString() });
@@ -55,7 +55,7 @@ export function createKeyedSources(): KeyedSources {
     transport(selection, now, next) {
       return (args) => {
         const key = contentKey(args, selection);
-        const stored = key === null ? undefined : fresh(contents, key, now.getTime());
+        const stored = key === null ? undefined : contents.get(key)?.value;
         if (stored !== undefined) return stored;
         const answer = next(args);
         if (key !== null && stableContent(args[1]!, answer)) contents.set(key, { value: answer, at_ms: now.getTime() });
@@ -69,9 +69,10 @@ const SHA = '[0-9a-f]{40}';
 /**
  * Content-addressed reads: a path that names its commit, the rollback parent
  * pull request (stored only once merged), and the jobs and annotations of one
- * run attempt and check run.
+ * run attempt and check run. The pull requests of a commit are not stored: the
+ * list can gain a pull request later.
  */
-const BY_SHA = [new RegExp(`/contents/[^?]+\\?ref=${SHA}$`, 'u'), new RegExp(`/commits/${SHA}/pulls\\?per_page=100$`, 'u'), new RegExp(`/git/commits/${SHA}$`, 'u'),
+const BY_SHA = [new RegExp(`/contents/[^?]+\\?ref=${SHA}$`, 'u'), new RegExp(`/git/commits/${SHA}$`, 'u'),
   /\/pulls\/\d+$/u, /\/actions\/runs\/\d+\/attempts\/\d+\/jobs\?per_page=100$/u, /\/check-runs\/\d+\/annotations\?per_page=100$/u];
 /** The changed-file pages belong to the head and base of the pull request that reads them. */
 const FILE_PAGE = /\/pulls\/\d+\/files\?per_page=\d+&page=\d+$/u;
@@ -142,5 +143,5 @@ export function readinessKey(input: { readonly repository_id: number; readonly d
     inputs.rollup.map(context => [context.type, context.name, context.status, context.conclusion, context.completed_at, context.details_url]),
     stack,
   ];
-  return createHash('sha256').update(JSON.stringify(facts)).digest('hex');
+  return sha256Hex(JSON.stringify(facts));
 }
