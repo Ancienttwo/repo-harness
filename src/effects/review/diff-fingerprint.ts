@@ -8,29 +8,6 @@ import { gitExecFileSync, gitSpawnSync } from '../git/runner';
 // so instead of collapsing distinct contents to one fixed hash we mark the
 // fingerprint degraded and fail closed (status: unknown).
 const PATCH_HASH_MAX_BUFFER = 64 * 1024 * 1024;
-// Untracked files up to this size are content-hashed; above it the content
-// cannot be fully observed, so the fingerprint is marked degraded (fail-closed)
-// rather than silently recording metadata only.
-const UNTRACKED_HASH_MAX_BYTES = 64 * 1024 * 1024;
-
-export interface DiffFingerprintInput {
-  readonly repoRoot: string;
-  readonly baseRef?: string;
-  readonly paths: readonly string[];
-  readonly policyVersion: number;
-  readonly purpose?: string;
-}
-
-export interface DiffFingerprint {
-  readonly base_ref: string;
-  readonly base_rev: string;
-  readonly paths: readonly string[];
-  readonly staged_diff_hash: string;
-  readonly unstaged_diff_hash: string;
-  readonly status_hash: string;
-  readonly untracked_hash: string;
-  readonly fingerprint: string;
-}
 
 export const REVIEW_SUBJECT_SCOPE = 'normalized-final-content';
 
@@ -151,10 +128,6 @@ function hashText(text: string): string {
   return `sha256:${createHash('sha256').update(text).digest('hex')}`;
 }
 
-function hashUnknown(label: string): string {
-  return hashText(`repo-harness:${label}:unavailable`);
-}
-
 function stableJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
@@ -167,21 +140,6 @@ function stableJson(value: unknown): string {
 
 function hashJson(value: unknown): string {
   return hashText(stableJson(value));
-}
-
-// A successful, genuinely empty patch hashes to hashText('') — distinct from a
-// command failure, which marks ctx.degraded and returns hashUnknown(label).
-function hashGitPatch(repoRoot: string, args: readonly string[], label: string, ctx: FingerprintCtx): string {
-  const res = gitRun(repoRoot, args, PATCH_HASH_MAX_BUFFER);
-  if (!res.ok) {
-    ctx.degraded = true;
-    return hashUnknown(label);
-  }
-  return hashText(res.text);
-}
-
-function hashEmptyGitPatch(): string {
-  return hashText('');
 }
 
 // Split a NUL-delimited git buffer into verbatim utf-8 tokens. When ctx is
@@ -208,117 +166,6 @@ export function splitNul(buf: Buffer, ctx?: FingerprintCtx): string[] {
   }
   if (start < buf.length) push(start, buf.length);
   return parts;
-}
-
-function untrackedContentHash(repoRoot: string, paths: readonly string[], ctx: FingerprintCtx): string {
-  const entries: Array<Record<string, unknown>> = [];
-  for (const path of paths) {
-    const statusRes = gitRun(repoRoot, ['status', '--porcelain=v1', '-z', '--', path]);
-    if (!statusRes.ok) {
-      ctx.degraded = true;
-      continue;
-    }
-    if (!statusRes.text.split('\0').some((token) => token.startsWith('?? '))) continue;
-
-    const absolute = join(repoRoot, path);
-    assertObservationPath(absolute);
-    try {
-      // lstat, never stat: an untracked symlink must be fingerprinted by its own
-      // target and type, not by the content it points at. statSync would follow
-      // the link and miss a retarget to a same-content file, and existsSync would
-      // skip a dangling symlink entirely.
-      const stat = lstatSync(absolute);
-      if (stat.isSymbolicLink()) {
-        // Hash the raw link-target bytes (hex): a symlink target is an arbitrary
-        // byte string, and the default utf-8 decode of readlinkSync would collapse
-        // two distinct non-utf-8 targets to the same replacement string — a
-        // fingerprint collision. Hex is lossless, so any retarget changes the hash.
-        entries.push({ path, type: 'symlink', target_hex: readlinkSync(absolute, { encoding: 'buffer' }).toString('hex') });
-        continue;
-      }
-      if (!stat.isFile()) {
-        // Directory, socket, fifo, gitlink, etc.: its content cannot be modelled
-        // as a blob, so fail closed rather than silently ignore it.
-        ctx.degraded = true;
-        entries.push({ path, type: 'other' });
-        continue;
-      }
-      if (stat.size > UNTRACKED_HASH_MAX_BYTES) {
-        // Cannot fully observe the content of an oversized untracked file.
-        ctx.degraded = true;
-        entries.push({ path, type: 'file', oversized: true, size: stat.size });
-        continue;
-      }
-      entries.push({
-        path,
-        type: 'file',
-        // The executable bit becomes the committed blob mode (100755 vs 100644),
-        // so a chmod with no content change is a real implementation diff.
-        executable: (stat.mode & 0o111) !== 0,
-        sha256: createHash('sha256').update(readFileSync(absolute)).digest('hex'),
-      });
-    } catch {
-      ctx.degraded = true;
-      entries.push({ path, unreadable: true });
-    }
-  }
-  return hashJson(entries);
-}
-
-export function buildDiffFingerprint(input: DiffFingerprintInput, ctx: FingerprintCtx = { degraded: false }): DiffFingerprint {
-  const baseRef = input.baseRef ?? 'HEAD';
-  const paths = uniqueSorted(input.paths);
-  const pathspec = ['--', ...paths];
-  const baseRevRes = gitRun(input.repoRoot, ['rev-parse', '--verify', baseRef]);
-  const baseRev = baseRevRes.text.trim() || baseRef;
-  let status = '';
-  if (paths.length > 0) {
-    const statusRes = gitRun(input.repoRoot, ['status', '--porcelain=v1', '--untracked-files=all', '--', ...paths]);
-    if (!statusRes.ok) ctx.degraded = true;
-    status = statusRes.text;
-  }
-  const stagedDiffHash = paths.length > 0
-    ? hashGitPatch(
-        input.repoRoot,
-        ['diff', '--cached', '--no-ext-diff', '--binary', '--find-renames', ...pathspec],
-        'staged-diff',
-        ctx,
-      )
-    : hashEmptyGitPatch();
-  const unstagedDiffHash = paths.length > 0
-    ? hashGitPatch(
-        input.repoRoot,
-        ['diff', '--no-ext-diff', '--binary', '--find-renames', ...pathspec],
-        'unstaged-diff',
-        ctx,
-      )
-    : hashEmptyGitPatch();
-  const statusHash = hashText(status);
-  const untrackedHash = untrackedContentHash(input.repoRoot, paths, ctx);
-
-  const fingerprint = hashJson({
-    version: 1,
-    purpose: input.purpose ?? 'diff',
-    base_ref: baseRef,
-    base_rev: baseRev,
-    paths,
-    policy_version: input.policyVersion,
-    staged_diff_hash: stagedDiffHash,
-    unstaged_diff_hash: unstagedDiffHash,
-    status_hash: statusHash,
-    untracked_hash: untrackedHash,
-  });
-
-  return Object.freeze({
-    base_ref: baseRef,
-    base_rev: baseRev,
-    paths,
-    staged_diff_hash: stagedDiffHash,
-    unstaged_diff_hash: unstagedDiffHash,
-    status_hash: statusHash,
-    untracked_hash: untrackedHash,
-    fingerprint,
-  });
 }
 
 // Parse `git status --porcelain=v1 -z`. Each entry is `XY <path>`; rename/copy
