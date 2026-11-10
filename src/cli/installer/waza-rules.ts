@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync } from 'fs';
+import { lstatSync, mkdtempSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import wazaRules from '../../core/skill-surface/waza-shared-rules.json';

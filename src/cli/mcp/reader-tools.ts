@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { closeSync, lstatSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'fs';
+import { closeSync, lstatSync, openSync, readFileSync, readSync, statSync } from 'fs';
 import { opendir } from 'fs/promises';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { redactMcpText } from './redaction';

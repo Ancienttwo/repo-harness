@@ -1,5 +1,5 @@
 import { retiredDeliveryChannel, TaskMessageError } from '../messages/task-message-error';
-import { validateTaskMessageClaim, sameTaskMessageClaim, type TaskMessageClaim } from '../messages/task-message-claim';
+import { validateTaskMessageClaim, type TaskMessageClaim } from '../messages/task-message-claim';
 /** Active admitted inbox wire. Legacy v1 is decoded only by explicit history readers. */
 import { canonicalize } from '../evidence/canonical-json';
 import { TASK_DIGEST_PATTERN } from '../state/coordination-identity';

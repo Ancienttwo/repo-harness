@@ -17,8 +17,7 @@ import { homedir } from 'os';
 import { dirname, join } from 'path';
 import { createInterface } from 'readline/promises';
 import { fileURLToPath } from 'url';
-import { askConfirm } from './tty-prompt';
-import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
+import { runInstall, runUninstall } from './commands/install';
 import { planPiPackage, removePiPackage } from './installer/pi-package';
 import { newPiPackagesSinceTransaction, recordPiInstallOwnership, recordUnresolvedPiOwnership, type ManagedInstallSurface } from './installer/install-profile';
 import { parsePluginList, PLUGIN_IDS, selectionLabel, type PluginId, type PluginSelection } from '../core/skill-surface/plugin-manifest';
@@ -127,7 +126,6 @@ import {
   assertLocation,
   assertAdoptionMode,
 } from './commands/validators';
-import type { Location } from './installer/types';
 
 // The recorded selection, read once per process. Core reaches the architecture code only through the ports.
 const recordedSelection = readRecordedSelection();

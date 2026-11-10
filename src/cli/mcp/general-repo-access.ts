@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'crypto';
 import { closeSync, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeSync, type Dirent } from 'fs';
-import { dirname, join, relative, resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 import { dlopen } from 'bun:ffi';
 import { repoHarnessRegisteredReposPath, type RepoHarnessAccessMode } from '../../effects/repo-registry';
 import {
@@ -912,12 +912,6 @@ function addManifestCount(counts: ManifestCounts, entry: ManifestEntry): void {
   if (entry.type === 'file' && entry.binary === false) counts.text += 1;
   if (entry.type === 'file' && entry.binary === true) counts.binary += 1;
   if (entry.type === 'file' && entry.binary === undefined) counts.content_deferred += 1;
-}
-
-function countsForEntries(entries: ManifestEntry[]): ManifestCounts {
-  const counts = emptyManifestCounts();
-  for (const entry of entries) addManifestCount(counts, entry);
-  return counts;
 }
 
 function codeGraphMetadataIndex(repo: RepoRecord, ignore: IgnorePolicy, codeGraph: CodeGraphRepoSnapshot): { byPath: Map<string, CodeGraphEntryMetadata>; filteredPaths: number; laggingPaths: Set<string> } {
