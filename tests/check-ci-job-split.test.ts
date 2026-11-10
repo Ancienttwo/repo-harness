@@ -711,7 +711,8 @@ describe('single affected verification and daily fallback', () => {
     for (const path of bundleInputPaths({ inputs: { 'src/host.ts': {}, './src/host-dependency.ts': {} } })) native.add(path);
     const home = platformImportClosure(['tests/home.test.ts', 'tests/preload.ts'], sources);
     const inputs = { native, home };
-    for (const path of ['.github/actions/install/action.yml', 'package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json', 'scripts/check-ci.sh', 'scripts/lib/test-home-isolation.mjs', 'scripts/select-ci-coverage.ts', 'src/core/ci/documentation-path.ts']) {
+    for (const path of ['.github/actions/install/action.yml', 'package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json', 'scripts/check-ci.sh', 'scripts/lib/test-home-isolation.mjs', 'scripts/select-ci-coverage.ts', 'src/core/ci/documentation-path.ts',
+      'scripts/ci-path-consumers.ts', 'scripts/ci-documentation-consumers.ts']) {
       expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: true });
     }
     for (const path of ['src/host.ts', 'src/host-dependency.ts', 'tests/native.test.ts', 'tests/helpers/nested.ts']) {

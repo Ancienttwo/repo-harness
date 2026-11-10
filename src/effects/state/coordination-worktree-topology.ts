@@ -4,7 +4,7 @@ import { worktreeProcesses, type WorktreeProcess } from '../git/worktree-process
 import { readWorktreeRecord, readWorktreeRecordById, endWorktreeRecord } from '../git/worktree-record';
 import { createHash, randomUUID } from 'crypto';
 import { execFileSync } from 'child_process';
-import { gitExecFileSync, withoutRepositorySelectingGitEnv } from '../git/runner';
+import { gitExecFileSync, withoutProviderTokens, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, unlinkSync, mkdirSync, renameSync } from 'fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'path';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
@@ -118,7 +118,8 @@ export type LocalMergeMode = 'ancestor' | 'absorbed' | 'unmerged';
 export function localMergeMode(root: string, head: string, target: string, limits: Limits): LocalMergeMode {
   const output = execFileSync('bash', [mergeLibraryPath(), '--target', target, head], {
     cwd: root, encoding: 'utf8', timeout: timeout(limits), stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...withoutRepositorySelectingGitEnv(), REPO_HARNESS_GIT_BIN: gitBinary(limits) },
+    // The library runs only local git (merge-base, rev-parse, merge-tree), so no provider token reaches it or a merge driver.
+    env: { ...withoutProviderTokens(withoutRepositorySelectingGitEnv()), REPO_HARNESS_GIT_BIN: gitBinary(limits) },
   }).trim();
   const mode = output.split('\t')[1];
   if (mode === 'ancestor' || mode === 'absorbed' || mode === 'unmerged') return mode;
