@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -10,7 +10,7 @@ import { decodeBoard, type BoardHostPortsV1, type BoardTerminalV1, type BoardV1 
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
-import { collectBoard, readLocalRepositoryId, type BoardCollectInput } from '../src/effects/board/collect';
+import { collectBoard, readGhJson, readLocalRepositoryId, type BoardCollectInput } from '../src/effects/board/collect';
 import { runBoardMerge } from '../src/effects/board/merge';
 import { boardMergeDecisions } from '../src/core/board/merge';
 import { provenMergeOnlySyncs } from '../src/effects/board/merge-only-sync';
@@ -1141,6 +1141,38 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
   // Without observed seat terminals, the skip names the board's execution reason.
   expect(planAttentionDeliveries({ ...board, execution: { status: 'unavailable', reason: 'no_seat_terminals' } }, evaluateBoardAttention(watched), 0).skipped)
     .toEqual([{ route: 'orchestrator', reason: 'no_seat_terminals' }, { route: 'advisor', reason: 'no_seat_terminals' }]);
+});
+
+test('watch window skips a provider 5xx and resumes at the next window', async () => {
+  const hc = watchHc({});
+  const logPath = attentionLogPath(1186405141, 1474, { REPO_HARNESS_HOME: hc.root });
+  const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+  const delays: number[] = [];
+  let reads = 0;
+  const input = { parent: 1474, deliver: false, log_path: logPath, host: hc.host, now: () => REPLAY_NOW,
+    sleep: async (ms: number) => { delays.push(ms); }, collect: () => {
+      if (reads++ === 0) readGhJson({ repo_root: hc.root, gh_runner: () => ({ status: 1, stdout: '', stderr: 'gh: HTTP 504' }) }, ['api', 'graphql']);
+      return replay();
+    } };
+  try {
+    await runAttentionWindow(input);
+    expect(stderr).toHaveBeenCalledTimes(1);
+    expect(String(stderr.mock.calls[0]?.[0])).toContain('HTTP 504');
+    expect(readFileSync(logPath, 'utf8').trim().split('\n')).toHaveLength(1);
+    expect(readFileSync(logPath, 'utf8')).toContain('HTTP 504');
+    await runAttentionWindow(input);
+    expect(reads).toBe(2);
+    expect(delays[0]).toBe(WINDOW_WITH_WORKERS_MS);
+    for (const [message, status] of [['gh: HTTP 403', 403], ['gh failed', null]] as const) {
+      const collect = () => readGhJson({ repo_root: hc.root, gh_runner: () => ({ status: 1, stdout: '', stderr: message }) }, ['api', 'graphql']) as BoardV1;
+      try { collect(); throw new Error('expected failure'); } catch (error) {
+        expect(error).toBeInstanceOf(BoardCollectError);
+        expect((error as BoardCollectError).httpStatus).toBe(status);
+      }
+      await expect(runAttentionWindow({ ...input, collect })).rejects.toBeInstanceOf(BoardCollectError);
+    }
+    expect(stderr).toHaveBeenCalledTimes(1);
+  } finally { stderr.mockRestore(); }
 });
 
 test('watch service: --watch refuses a terminal without the service labels; start runs one watcher; doctor reads the labels', () => {
