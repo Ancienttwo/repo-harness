@@ -318,6 +318,38 @@ describe('operator web interactions', () => {
     expect(config.server.proxy['/api']).toBe(process.env.OPERATOR_API_ORIGIN ?? 'http://127.0.0.1:4318');
   });
 
+  test('the browser import graph from main.tsx reaches no Node built-in', async () => {
+    const { builtinModules } = await import('node:module');
+    const { posix } = await import('node:path');
+    const builtins = new Set(builtinModules.map(name => name.replace(/^node:/u, '').split('/')[0]));
+    const resolve = async (from: string, specifier: string): Promise<string | null> => {
+      const base = posix.join(posix.dirname(from), specifier);
+      for (const candidate of [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`, base]) {
+        if (/\.tsx?$/u.test(candidate) && await Bun.file(candidate).exists()) return candidate;
+      }
+      return null;
+    };
+    const chains = new Map<string, string[]>([['src/operator-web/main.tsx', ['src/operator-web/main.tsx']]]);
+    const queue = ['src/operator-web/main.tsx'];
+    const offenders: string[] = [];
+    for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
+      const chain = chains.get(file)!;
+      const loader = file.endsWith('.tsx') ? 'tsx' : 'ts';
+      for (const { path: specifier } of new Bun.Transpiler({ loader }).scanImports(await Bun.file(file).text())) {
+        if (specifier.startsWith('.')) {
+          const target = await resolve(file, specifier);
+          if (target !== null && !chains.has(target)) {
+            chains.set(target, [...chain, target]);
+            queue.push(target);
+          }
+        } else if (specifier.startsWith('node:') || builtins.has(specifier.split('/')[0])) {
+          offenders.push(`${file} imports ${specifier} via ${chain.join(' -> ')}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   test('holds the Kumo import order, motion and type-size floor in one stylesheet', async () => {
     const css = await Bun.file('src/operator-web/app.css').text();
 
