@@ -2,8 +2,8 @@
 // gap and note lines, layer facts, and the inspector body of a model node.
 // Every number is the collector's; every command is a collector read.
 
-import { useMemo } from 'react';
-import { useReactFlow, useViewport } from '@xyflow/react';
+import { useEffect, useMemo, useRef } from 'react';
+import { useReactFlow, useStore, useStoreApi, useViewport } from '@xyflow/react';
 import {
   ARCHITECTURE_VIOLATION_READS,
   architectureViolationCommand,
@@ -19,14 +19,51 @@ import { CopyButton } from './ui';
 
 /** Zoom of the first view: a 13 px title shows at 11 px. */
 const MAP_READABLE_ZOOM = 0.85;
+/** 24 px on each side of the content; 120 px at the bottom keeps the legend and the zoom controls off it. */
+const VIEW_MARGIN = 24;
+const VIEW_BOTTOM = 120;
+
+export interface Rect { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+export interface Viewport { readonly x: number; readonly y: number; readonly zoom: number }
+
+/** The bounding box of every box of a layout. */
+export function contentBox(boxes: readonly Rect[]): Rect {
+  const left = Math.min(...boxes.map(box => box.x));
+  const top = Math.min(...boxes.map(box => box.y));
+  return { x: left, y: top, width: Math.max(...boxes.map(box => box.x + box.width)) - left, height: Math.max(...boxes.map(box => box.y + box.height)) - top };
+}
 
 /**
- * The first view of a base map: readable zoom, anchored at the top-left content corner
- * (`left`, `top`). The map of a real model is wider than the canvas, and a fit would shrink
- * its labels below reading size; Fit still shows the whole map.
+ * The first view of a base map. Content that fits at a readable zoom is centred, at most at 100%.
+ * Content that does not fit, or a canvas without a size, opens at the readable zoom with the content's
+ * top-left corner at the canvas's top-left; a fit would shrink its labels below reading size. Fit still shows the whole map.
  */
-export function firstViewport(left: number, top: number): { readonly x: number; readonly y: number; readonly zoom: number } {
-  return { x: -(left - 24) * MAP_READABLE_ZOOM, y: -(top - 24) * MAP_READABLE_ZOOM, zoom: MAP_READABLE_ZOOM };
+export function firstViewport(content: Rect, canvas: { readonly width: number; readonly height: number }): Viewport {
+  const fit = Math.min((canvas.width - 2 * VIEW_MARGIN) / content.width, (canvas.height - VIEW_MARGIN - VIEW_BOTTOM) / content.height);
+  if (!(canvas.width > 0) || !(canvas.height > 0) || fit < MAP_READABLE_ZOOM) {
+    return { x: VIEW_MARGIN - content.x * MAP_READABLE_ZOOM, y: VIEW_MARGIN - content.y * MAP_READABLE_ZOOM, zoom: MAP_READABLE_ZOOM };
+  }
+  const zoom = Math.min(fit, 1);
+  return {
+    x: (canvas.width - content.width * zoom) / 2 - content.x * zoom,
+    y: VIEW_MARGIN + (canvas.height - VIEW_MARGIN - VIEW_BOTTOM - content.height * zoom) / 2 - content.y * zoom,
+    zoom,
+  };
+}
+
+/** Sets the first view one time, when React Flow has its canvas size and its zoom handler. */
+export function FirstViewport({ content }: { readonly content: Rect }) {
+  const store = useStoreApi();
+  const flow = useReactFlow();
+  const ready = useStore(state => state.panZoom !== null && state.width > 0 && state.height > 0);
+  const done = useRef(false);
+  useEffect(() => {
+    if (!ready || done.current) return;
+    done.current = true;
+    const { width, height } = store.getState();
+    void flow.setViewport(firstViewport(content, { width, height }));
+  }, [ready, content, flow, store]);
+  return null;
 }
 
 export type CountUnit = 'file' | 'commit' | 'node' | 'relation' | 'decision' | 'module';

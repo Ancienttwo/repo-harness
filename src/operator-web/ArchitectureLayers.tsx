@@ -23,7 +23,7 @@ import {
 } from '@xyflow/react';
 import type { ArchitectureMapV1 } from '../core/operator/architecture-map';
 import { archctxCode } from './architecture-map-layers';
-import { Note, ZoomControls } from './architecture-map-parts';
+import { contentBox, FirstViewport, Note, ZoomControls } from './architecture-map-parts';
 import { compactLines, lanePath, layersSvg, layoutLayers, type LayerBand, type LayerLane } from './architecture-layers-layout';
 import type { OperatorTranslate } from './i18n';
 
@@ -161,6 +161,8 @@ function LayersCanvas({ map, order, t }: { readonly map: ArchitectureMapV1; read
   const layout = useMemo(() => layoutLayers(map, order), [map, order]);
   const [selected, setSelected] = useState<string | null>(null);
   const lanes = useMemo(() => layout.lanes(selected), [layout, selected]);
+  // A band's label sits left of the band, so each row spans from the label to the band's right edge.
+  const content = useMemo(() => contentBox(layout.bands.map(band => ({ x: layout.labelX, y: band.y, width: band.x + band.width - layout.labelX, height: band.height }))), [layout]);
   const unlayered = map.nodes.filter(node => node.layer === null).length;
 
   const nodes = useMemo<LayersNode[]>(() => layout.bands.flatMap((band): LayersNode[] => [
@@ -210,11 +212,9 @@ function LayersCanvas({ map, order, t }: { readonly map: ArchitectureMapV1; read
           edgesFocusable={false}
           minZoom={0.05}
           maxZoom={2}
-          fitView
-          // As on the module map, a narrow canvas opens at a readable zoom on the map's centre; the bottom padding keeps the last band clear of the legend.
-          fitViewOptions={{ maxZoom: 1, minZoom: 0.6, padding: { top: '16px', right: '16px', bottom: '88px', left: '16px' } }}
           attributionPosition="top-right"
         >
+          <FirstViewport content={content} />
           <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--rh-diagram-dot)" />
           <Panel position="bottom-left"><Legend map={map} t={t} /></Panel>
           <Panel position="bottom-right"><ZoomControls t={t} /></Panel>
