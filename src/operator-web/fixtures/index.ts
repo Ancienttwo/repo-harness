@@ -153,15 +153,15 @@ export function fixtureProps(name: string): OperatorAppProps {
   const parents = (repositoryId: string): BoardParentsRead => fixture === 'degraded' ? { state: 'unavailable', reason: 'parents_hc_failed' }
     : { state: 'ok', list: fixture === 'busy' && repositoryId === HARNESS_ID ? recordedParents : { ...recordedParents, parents: [], seats: [] } };
   // busy: the board route has read #1474 and no other parent.
-  const summaries = (repositoryId: string): BoardSummariesRead => ({ state: 'ok', summaries: {
+  const summaries = (repositoryId: string, asked: number): BoardSummariesRead => ({ state: 'ok', summaries: {
     protocol: BOARD_SUMMARIES_PROTOCOL, kind: 'repo-harness.board-summaries', repository_id: repositoryId,
-    parents: recordedParents.parents.map(({ number }) => (number === recorded.parent.number
-      ? { parent: number, status: 'observed', observed_at: recorded.observed_at, summary: boardSummary(recorded) } : { parent: number, status: 'not_read' })),
+    parents: [asked === recorded.parent.number
+      ? { parent: asked, status: 'observed', observed_at: recorded.observed_at, summary: boardSummary(recorded) } : { parent: asked, status: 'not_read' }],
   } });
   return {
     readBoard: subject => Promise.resolve(board(subject.repository_id, subject.parent)),
     readBoardParents: repositoryId => Promise.resolve(parents(repositoryId)),
-    readBoardSummaries: repositoryId => Promise.resolve(summaries(repositoryId)),
+    readBoardSummaries: (repositoryId, parent) => Promise.resolve(summaries(repositoryId, parent)),
     fetchDevActivity: () => Promise.resolve(activity),
     initialDevActivity: activity,
     readRuntimeStatus: fixture === 'degraded' ? unavailable('runtime') : () => Promise.resolve(runtime),

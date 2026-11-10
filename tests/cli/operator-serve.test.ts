@@ -685,21 +685,20 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
-  test('board reads replace private summaries and the summary route reads only the listed parents', async () => {
+  test('board reads replace private summaries and the summary route reads one stored parent without a board CLI run', async () => {
     const home = mkdtempSync(join(tmpdir(), 'board-summaries-'));
     let board = decodeBoard(board1474), reads = 0;
-    const list = decodeBoardParents(boardParents);
     const server = await startOperatorServer({ port: 0, env: { REPO_HARNESS_HOME: home },
-      read_board: async () => { reads++; return board; }, read_board_parents: async () => list });
+      read_board: async () => { reads++; return board; }, read_board_parents: async () => { throw new Error('summaries must not read parents'); } });
     const path = `${server.url}/api/v1/repositories/repo-a/board/summaries`;
     const target = join(home, 'board/summaries/repo-a-1474.json');
-    const get = async () => {
-      const response = await fetch(path);
+    const get = async (parent = 1474) => {
+      const response = await fetch(`${path}?parent=${parent}`);
       expect(response.status).toBe(200);
       return decodeBoardSummaries(await response.json());
     };
     try {
-      expect((await get()).parents).toEqual(list.parents.map(parent => ({ parent: parent.number, status: 'not_read' })));
+      expect((await get()).parents).toEqual([{ parent: 1474, status: 'not_read' }]);
       expect(reads).toBe(0);
       expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
       const first = readFileSync(target, 'utf8'), inode = statSync(target).ino, fd = openSync(target, 'r');
@@ -710,7 +709,8 @@ describe('operator serve command and HTTP boundary', () => {
             seats: { status: 'observed', stalled: 0, desks: [
               { seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'blocked' }, { seat: 'worker', agent: 'claude-code', issue: 1475, pr: 1491, state: 'done' },
             ] } } }]);
-        expect((await get()).parents).toEqual([JSON.parse(first).parents[0], { parent: 1651, status: 'not_read' }]);
+        expect((await get()).parents).toEqual([JSON.parse(first).parents[0]]);
+        expect((await get(1651)).parents).toEqual([{ parent: 1651, status: 'not_read' }]);
         board = { ...board, observed_at: new Date(Date.parse(board.observed_at) + 60_000).toISOString() };
         expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
         expect(readFileSync(fd, 'utf8')).toBe(first);
@@ -732,10 +732,14 @@ describe('operator serve command and HTTP boundary', () => {
       expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_subject_invalid' });
       rmSync(target); mkdirSync(target);
       expect((await get()).parents[0]).toMatchObject({ parent: 1474, status: 'unavailable', reason: expect.stringContaining('snapshot_read_failed:') });
-      expect((await fetch(`${path}?all=1`)).status).toBe(400);
-      expect((await fetch(path, { method: 'HEAD' })).status).toBe(405);
-      expect((await fetch(path, { headers: { Origin: 'http://foreign.invalid' } })).status).toBe(403);
-      expect((await fetch(path, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
+      for (const query of ['', '?parent=0', '?parent=1474&parent=1651', '?all=1']) {
+        const refused = await fetch(`${path}${query}`);
+        expect([refused.status, ((await refused.json()) as { error: { code: string; message: string } }).error]).toEqual([400,
+          expect.objectContaining({ code: 'invalid_request', message: 'The board summaries route needs exactly one parent issue number.' })]);
+      }
+      expect((await fetch(`${path}?parent=1474`, { method: 'HEAD' })).status).toBe(405);
+      expect((await fetch(`${path}?parent=1474`, { headers: { Origin: 'http://foreign.invalid' } })).status).toBe(403);
+      expect((await fetch(`${path}?parent=1474`, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
       expect(reads).toBe(4);
     } finally { await server.close(); rmSync(home, { recursive: true, force: true }); }
   });
@@ -771,8 +775,8 @@ describe('operator serve command and HTTP boundary', () => {
       // A board read in flight holds the one slot of the shared cap.
       const board = get('/api/v1/repositories/repo-a/board?parent=1474');
       await boardStarted;
-      const summariesBusy = await get('/api/v1/repositories/repo-a/board/summaries');
-      expect([summariesBusy.status, await code(summariesBusy)]).toEqual([503, 'parents_busy']);
+      // The summaries route takes no slot of the cap.
+      expect((await get('/api/v1/repositories/repo-a/board/summaries?parent=1474')).status).toBe(200);
       const busy = await get(path);
       expect([busy.status, await code(busy)]).toEqual([503, 'parents_busy']);
       hold();
