@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { extname, relative, resolve } from 'node:path';
+import { createServer, type ViteDevServer } from 'vite';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
@@ -229,6 +231,9 @@ describe('bounded observation lifecycle',()=>{
 });
 
 describe('operator web interactions', () => {
+  let server: ViteDevServer | undefined;
+  afterAll(async () => { await server?.close(); });
+
   test('the page Refresh action also re-requests the Notify panel', async () => {
     let notify = 0;
     window.location.hash = '#system';
@@ -319,39 +324,35 @@ describe('operator web interactions', () => {
   });
 
   test('the browser import graph from main.tsx reaches no Node built-in', async () => {
-    const { builtinModules } = await import('node:module');
-    const { posix } = await import('node:path');
-    const { stat } = await import('node:fs/promises');
-    const builtins = new Set(builtinModules.map(name => name.replace(/^node:/u, '').split('/')[0]));
-    // Vite order: the exact file, then source extensions, then a directory index; `./x.js` also resolves to `./x.ts` or `./x.tsx`.
-    const resolve = async (from: string, specifier: string): Promise<string | null> => {
-      const base = posix.join(posix.dirname(from), specifier);
-      const stem = base.replace(/\.(?:js|jsx)$/u, '');
-      const sourceStems = stem === base ? [] : [`${stem}.ts`, `${stem}.tsx`];
-      for (const candidate of [base, ...sourceStems, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`]) {
-        if (await Bun.file(candidate).exists() && !(await stat(candidate)).isDirectory()) return candidate;
-      }
-      return null;
+    // Vite is the browser resolver: a built-in resolves to `__vite-browser-external`, and an unresolved import is null.
+    server = await createServer({
+      configFile: resolve('vite.operator.config.ts'),
+      server: { middlewareMode: true, hmr: false, ws: false },
+      optimizeDeps: { noDiscovery: true, entries: [] },
+      logLevel: 'silent',
+    });
+    const loaders: Record<string, 'ts' | 'tsx' | 'js' | 'jsx'> = {
+      '.ts': 'ts', '.mts': 'ts', '.cts': 'ts', '.tsx': 'tsx', '.js': 'js', '.mjs': 'js', '.cjs': 'js', '.jsx': 'jsx',
     };
-    const chains = new Map<string, string[]>([['src/operator-web/main.tsx', ['src/operator-web/main.tsx']]]);
-    const queue = ['src/operator-web/main.tsx'];
+    const entry = resolve('src/operator-web/main.tsx');
+    const chains = new Map<string, string[]>([[entry, ['src/operator-web/main.tsx']]]);
+    const queue = [entry];
     const offenders: string[] = [];
     for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
       const chain = chains.get(file)!;
-      const loader = file.endsWith('.tsx') ? 'tsx' : 'ts';
+      const loader = loaders[extname(file)]!;
       for (const { path: specifier } of new Bun.Transpiler({ loader }).scanImports(await Bun.file(file).text())) {
-        if (specifier.startsWith('.')) {
-          // Assets (.css, .svg, .json, ...) carry no imports; only a script specifier must resolve.
-          if (!['', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'].includes(posix.extname(specifier))) continue;
-          const target = await resolve(file, specifier);
-          if (target === null) offenders.push(`${file} imports ${specifier}, which does not resolve, via ${chain.join(' -> ')}`);
-          else if (/\.tsx?$/u.test(target) && !chains.has(target)) {
-            chains.set(target, [...chain, target]);
-            queue.push(target);
-          }
-        } else if (specifier.startsWith('node:') || builtins.has(specifier.split('/')[0])) {
-          offenders.push(`${file} imports ${specifier} via ${chain.join(' -> ')}`);
+        const resolved = (await server.pluginContainer.resolveId(specifier, file))?.id;
+        const via = `${chain.join(' -> ')} -> ${specifier}`;
+        if (resolved === undefined || resolved.startsWith('__vite-browser-external')) {
+          offenders.push(`${file} imports ${specifier}, which ${resolved === undefined ? 'does not resolve' : 'is a Node built-in'}, via ${via}`);
+          continue;
         }
+        const target = resolved.split('?')[0];
+        // Dependencies, assets and virtual ids are leaves.
+        if (target.startsWith('\0') || target.includes('/node_modules/') || loaders[extname(target)] === undefined || chains.has(target)) continue;
+        chains.set(target, [...chain, relative(process.cwd(), target)]);
+        queue.push(target);
       }
     }
     expect(offenders).toEqual([]);
