@@ -366,8 +366,8 @@ host's PR events or check when the worker reports.
   that class: the worker fixes the diff, the owner gets the infrastructure
   failure, and a stale base gets a sync with main. Do not rerun the job
   again. A job that was cancelled or timed out with no failed assertion is
-  infrastructure: it starts no fix round, and the merge-only sync before
-  the merge runs it again.
+  infrastructure: it starts no fix round. Rerun the failed job once on the
+  same head. A second identical cancel goes to the owner.
 - **Uncovered path.** A CI selection failure `Affected coverage is unknown
   for: <paths>` is a map bug. The worker fixes the consumer edge
   (`scripts/ci-path-consumers.ts`) or the test import. Never widen to the
@@ -695,9 +695,10 @@ on that thread.
 3. Post a closing comment on the parent: merged PRs, deferred issues,
    remaining risk. Then close it, when the owner's instruction covers
    closing.
-4. Close each finished worker pane after its PR merges. Before you close a
-   pane, run `git log origin/<branch>..HEAD` in its worktree: a worker can
-   commit after its last notice, and the closeout must not lose that
-   commit.
+4. Close each finished worker pane after its PR merges, with
+   `repo-harness board closeout --pr <n>`. It confirms that the checkout is
+   clean and pushed, closes each seat terminal of the PR, then removes the
+   merged worktree; a checkout with an unpushed commit is kept and the
+   command exits 1.
 5. Add a lesson to `tasks/lessons.md` only for a mistake that repeated or
    that a rule would have prevented.

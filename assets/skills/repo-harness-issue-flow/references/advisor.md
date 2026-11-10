@@ -40,13 +40,18 @@ the change, so the check must come from outside its session.
    4. A merge order with a held entry before ready work; an issue whose
       blocker is gone; two issues with one design.
    5. A quota change that changes a route line; a dead watcher.
-   6. Items for the owner: security and production only.
+   6. A replan trigger of `replan.md` §1. When one holds, send
+      `[rh-notice] replan #<parent>`.
+   7. Items for the owner: security and production only.
 3. **Write the plan** in your scratch space: changes since the last plan,
    blockers, the next dispatch for each batch parent (issue, seat from the
    route line, tier, file overlap, trigger), the joint decisions that you
    propose.
-4. **Send the orchestrator one line** with the plan path and the top action.
-   Send only facts that a command of this run showed.
+4. **Send the orchestrator one line**, starting with
+   `[rh-notice] advisor-plan #<parent> <plan path>`, with the top action. So
+   the line enters the triage queue (`orchestrator.md` §8.1) and is not
+   taken for the owner's words. Send only facts that a command of this run
+   showed.
 5. **Tell the owner** the owner items and a status of three lines. When
    nothing changed, one line.
 
