@@ -337,6 +337,7 @@ export class GitExecError extends Error {
 }
 
 export interface GitExecAsyncOptions extends GitCallFields {
+  readonly signal?: AbortSignal;
   readonly cwd?: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly timeout?: number;
@@ -350,8 +351,9 @@ export interface GitExecAsyncOptions extends GitCallFields {
  * the timeout, too much output or a spawn failure.
  */
 export function gitExecFile(args: readonly string[], options: GitExecAsyncOptions = {}): Promise<string> {
-  const { gitBin, env, cwd, timeout } = options;
+  const { gitBin, env, cwd, timeout, signal: abortSignal } = options;
   return new Promise((resolveOutput, reject) => {
+    if (abortSignal?.aborted) { reject(new DOMException('git call aborted', 'AbortError')); return; }
     const childEnv = gitChildEnv(args, env);
     const values = hasProviderToken(childEnv ?? process.env) ? providerTokenValues(childEnv ?? process.env) : [];
     const child = spawnRaw(resolveGitExecutable(gitBin, env), [...args], { cwd, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -360,18 +362,22 @@ export function gitExecFile(args: readonly string[], options: GitExecAsyncOption
     let bytes = 0;
     let exited: { readonly code: number | null; readonly signal: NodeJS.Signals | null } | null = null;
     let timedOut = false;
+    let aborted = false;
     let overflow = false;
     let settled = false;
     let killTimer: ReturnType<typeof setTimeout> | undefined;
     const terminate = () => {
+      if (aborted && killTimer !== undefined) return;
       child.kill('SIGTERM');
       killTimer = setTimeout(() => child.kill('SIGKILL'), GIT_KILL_GRACE_MS);
     };
+    const abort = () => { aborted = true; if (exited) finish(); else terminate(); };
     const finish = (spawnError?: Error) => {
       if (settled) return;
       settled = true;
       clearTimeout(deadline);
       clearTimeout(killTimer);
+      abortSignal?.removeEventListener('abort', abort);
       child.stdout!.destroy();
       child.stderr!.destroy();
       const status = exited?.code ?? null;
@@ -380,7 +386,8 @@ export function gitExecFile(args: readonly string[], options: GitExecAsyncOption
       const errorText = redactAll(Buffer.concat(stderr).toString('utf8'), overflow);
       const failure = (message: string, code: number | null, signalName: NodeJS.Signals | null, timeout: boolean, text: string) =>
         reject(new GitExecError(redactAll(message), code, signalName, timeout, text));
-      if (spawnError) failure(`git ${subcommandOf(args)} could not start: ${spawnError.message}`, null, null, false, '');
+      if (aborted) reject(new DOMException('git call aborted', 'AbortError'));
+      else if (spawnError) failure(`git ${subcommandOf(args)} could not start: ${spawnError.message}`, null, null, false, '');
       else if (timedOut) failure(`git ${subcommandOf(args)} timed out`, null, signal, true, errorText);
       else if (overflow) failure(`git ${subcommandOf(args)} output exceeded ${GIT_OUTPUT_MAX_BYTES} bytes`, null, signal, false, errorText);
       else if (status !== 0) failure(`git ${subcommandOf(args)} failed (${signal ?? `exit ${status}`})`, status, signal, false, errorText);
@@ -405,11 +412,13 @@ export function gitExecFile(args: readonly string[], options: GitExecAsyncOption
     child.on('error', (error) => { if (child.pid === undefined) finish(error); });
     child.on('exit', (code, signal) => {
       exited = { code, signal };
-      if (timedOut || overflow) finish();
+      if (timedOut || overflow || aborted) finish();
     });
     child.on('close', (code, signal) => {
       exited ??= { code, signal };
       finish();
     });
+    abortSignal?.addEventListener('abort', abort, { once: true });
+    if (abortSignal?.aborted) abort();
   });
 }

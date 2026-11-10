@@ -1,6 +1,6 @@
 {
-  "version": "0.29.2",
-  "templateVersion": "0.29.2",
+  "version": "0.30.0",
+  "templateVersion": "0.30.0",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {

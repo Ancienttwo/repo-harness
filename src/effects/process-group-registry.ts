@@ -13,7 +13,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 
-import { processGroupExists, signalProcessGroup, terminateProcessGroupSync } from './process-group-termination';
+import { processExists, processGroupExists, signalProcessGroup, terminateProcessGroupSync } from './process-group-termination';
 import { repoHarnessHome } from './repo-harness-home';
 
 const RECORD_KIND = 'repo-harness-detached-process-group';
@@ -83,15 +83,6 @@ export function spawnRegisteredProcessGroup<T extends ChildProcess>(service: str
   return child;
 }
 
-function ownerRuns(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
-  }
-}
-
 function readRecord(path: string, ownerPid: number, pgid: number): ProcessGroupRecord | null {
   try {
     const value = JSON.parse(readFileSync(path, 'utf8')) as Partial<ProcessGroupRecord>;
@@ -154,7 +145,7 @@ export function reapOrphanedProcessGroups(env: NodeJS.ProcessEnv = process.env):
     if (!match) continue;
     const ownerPid = Number(match[1]);
     const pgid = Number(match[2]);
-    if (ownerRuns(ownerPid)) continue;
+    if (processExists(ownerPid)) continue;
     const path = recordPath(directory, ownerPid, pgid);
     const record = readRecord(path, ownerPid, pgid);
     if (record !== null && record.hostname !== hostname()) continue;

@@ -87,14 +87,15 @@ export function Mark({ mark }: { readonly mark: MapMark | null }) {
   return mark === null ? null : <span className="architecture-map__mark mono-value" data-tone={mark.tone}>{mark.label}</span>;
 }
 
-export function ZoomControls({ t }: { readonly t: OperatorTranslate }) {
+/** `bounds`: the content that Fit shows; without it Fit shows every node. */
+export function ZoomControls({ bounds, t }: { readonly bounds?: Rect; readonly t: OperatorTranslate }) {
   const flow = useReactFlow();
   const { zoom } = useViewport();
   return <div className="architecture-map__zoom" role="group" aria-label={t('architecture.map.zoom')}>
     <button type="button" aria-label={t('architecture.map.zoomOut')} onClick={() => { void flow.zoomOut(); }}>−</button>
     <button type="button" aria-label={t('architecture.map.zoomReset')} className="mono-value" onClick={() => { void flow.zoomTo(1); }}>{Math.round(zoom * 100)}%</button>
     <button type="button" aria-label={t('architecture.map.zoomIn')} onClick={() => { void flow.zoomIn(); }}>+</button>
-    <button type="button" aria-label={t('architecture.map.fitLabel')} onClick={() => { void flow.fitView(); }}>{t('architecture.map.fit')}</button>
+    <button type="button" aria-label={t('architecture.map.fitLabel')} onClick={() => { void (bounds ? flow.fitBounds(bounds, { padding: 0.1 }) : flow.fitView()); }}>{t('architecture.map.fit')}</button>
   </div>;
 }
 

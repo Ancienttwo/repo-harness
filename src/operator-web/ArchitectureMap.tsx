@@ -269,12 +269,12 @@ function MapGaps({ map, t }: { readonly map: ArchitectureMapV1; readonly t: Oper
 }
 
 /**
- * The selected model node of each base map, with the view state that it was chosen in (for the topology: the segment
- * and the legacy switch). The architecture workspace holds it, so it outlives every view tab, and empties it when the
+ * The selected model node of each base map and of History, with the view state that it was chosen in (for the topology: the segment
+ * and the legacy switch; for History: the milestone revision). The architecture workspace holds it, so it outlives every view tab, and empties it when the
  * repository or the shown commit changes. A selection shows only while its view shows the same view state.
  */
-export type ArchitectureSelections = Partial<Record<ArchitectureBaseMap, { readonly scope: string; readonly id: string | null }>>;
-export type ArchitectureSelect = { readonly view: ArchitectureBaseMap; readonly scope: string; readonly id: string | null };
+export type ArchitectureSelections = Partial<Record<ArchitectureBaseMap | 'history', { readonly scope: string; readonly id: string | null }>>;
+export type ArchitectureSelect = { readonly view: ArchitectureBaseMap | 'history'; readonly scope: string; readonly id: string | null };
 
 /**
  * The committed model on one base map, with line and import counts from the map collector.
@@ -317,6 +317,9 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   const onTopologySelect = useCallback((id: string | null) => select({ view: 'topology', scope: topologyScope, id }), [topologyScope, select]);
   const onModulesSelect = useCallback((id: string | null) => select({ view: 'modules', scope: '', id }), [select]);
   const onLayersSelect = useCallback((id: string | null) => select({ view: 'layers', scope: '', id }), [select]);
+  const onSequenceSelect = useCallback((flowId: string, id: string | null) => select({ view: 'sequence', scope: flowId, id }), [select]);
+  // A flow change drops the sequence selection where it happens, so going back to the flow does not bring it back.
+  const chooseFlow = useCallback((id: string) => { setFlow(id); select({ view: 'sequence', scope: '', id: null }); }, [select]);
   useEffect(() => {
     onSummary(map === null ? null : {
       commit: map.commit, collectedAt: map.collected_at, headRef: map.head_ref, archctxVersion: map.archctx_version,
@@ -342,7 +345,7 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
           : <span className="architecture-lens__hint">{t('architecture.lens.hint')}</span>}
       </div>
       {view === 'modules' && <ArchitectureModules key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} selectedId={selections.modules?.id ?? null} onSelect={onModulesSelect} side={side} onModule={onModule} t={t} />}
-      {view === 'sequence' && <ArchitectureSequence key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} flowId={flow} onFlow={setFlow} side={side} onModule={onModule} t={t} />}
+      {view === 'sequence' && <ArchitectureSequence key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} flowId={flow} onFlow={chooseFlow} selection={selections.sequence ?? null} onSelect={onSequenceSelect} side={side} onModule={onModule} t={t} />}
       {view === 'topology' && <ArchitectureTopology key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} base={topologyBase} legacy={legacy} selectedId={topologySelected} onSelect={onTopologySelect} side={side} onModule={onModule} t={t} />}
     </>}
   </div>;

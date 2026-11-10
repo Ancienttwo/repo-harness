@@ -4,6 +4,83 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-11-10
+
+### Added
+
+- [feat(release): one workflow run publishes, tags and releases a merged release commit (#2194)](https://github.com/aimpact-inc/repo-harness/pull/2198). One run of `.github/workflows/release.yml` publishes, tags and releases a merged release commit after the owner approves the run in the GitHub `release` environment.
+- [feat(review): publish a round above 5 only with an owner-record URL](https://github.com/aimpact-inc/repo-harness/pull/2138)
+- [feat(publication): enqueue through a required merge queue; CI runs on merge_group (#2076)](https://github.com/aimpact-inc/repo-harness/pull/2089). The direct merge stays the default.
+- [feat(seats): seats prefix sets panePrefix in the registry (#2058)](https://github.com/aimpact-inc/repo-harness/pull/2129). `repo-harness seats prefix --repo <path> --pane-prefix <p>` sets the prefix and prints JSON (`ok`, `path`, `registryPath`, `registered`, `changed`, `panePrefix`).
+- [feat(seats): explicit orchestrator, advisor and seat-handoff skills (#2175)](https://github.com/aimpact-inc/repo-harness/pull/2182). Each launch skill is one Bash script: `gh api`, `herdr-app ls`, `hc ls` and `seats argv --json` run as separate checked steps; a failed or unparsable probe stops the script and never reads as "no seat" or "no space".
+- [feat(archimap): measure.ts reports geometry findings of the boards that hold nodes](https://github.com/aimpact-inc/repo-harness/pull/2168). Findings do not change the exit code.
+- [feat(archimap): measure.ts reports line_through_box by the 8 px inset rule (#2185)](https://github.com/aimpact-inc/repo-harness/pull/2189). `measure.ts --map` reports `line_through_box` by one stated rule with no path-end case.
+- [feat(operator-web): the module map draws directed domain routes and lists a selected card's relations (#2153)](https://github.com/aimpact-inc/repo-harness/pull/2200). A selected card shows its relations in the right panel (PRD 2-ARCH-P2).
+- [feat(specs): check the boss command send with TLC (#2180)](https://github.com/aimpact-inc/repo-harness/pull/2191). Keep a checked TLA+ model of the boss command send on main, with one command to run it and an architecture entry that names it.
+- [feat(operator): observe repository seats from hc events (#2163)](https://github.com/aimpact-inc/repo-harness/pull/2201). Serve seats from memory so a seats GET starts no CLI read.
+
+### Changed
+
+- [feat(operator-web): one first-viewport rule for the architecture maps (#2151)](https://github.com/aimpact-inc/repo-harness/pull/2167). Each architecture map opens with its first row and its left edge on screen, at a readable size.
+- [feat(operator-web): topology routes follow the dagre route on screen and in the SVG file (#2152)](https://github.com/aimpact-inc/repo-harness/pull/2192)
+- [feat(operator-web): Layers draws its lanes on the placed scene and the shared shell (#2160)](https://github.com/aimpact-inc/repo-harness/pull/2203). Layers uses the shared scene, shell and exporter.
+- [feat(operator-web): Sequence returns a placed scene, and message labels fit their columns (#2161)](https://github.com/aimpact-inc/repo-harness/pull/2205). Its SVG file draws the picture on the screen.
+- [feat(operator-web): the Office room shows the seats before the board read ends (#2149)](https://github.com/aimpact-inc/repo-harness/pull/2174)
+- [feat(operator): the board summaries route reads one parent and starts no board CLI run](https://github.com/aimpact-inc/repo-harness/pull/2159). A missing, repeated or other key gets 400 `invalid_request` with `The board summaries route needs exactly one parent issue number.`
+- [perf(board): one board read asks GitHub once for the repository identity and each base-commit fact (#2150)](https://github.com/aimpact-inc/repo-harness/pull/2184). It stores an answer only for exit 0, or exit 1 with a JSON object body of `"status": "404"`.
+- [fix(board): Low labels give Medium to a fix above 50 changed lines or of unknown size (#2113)](https://github.com/aimpact-inc/repo-harness/pull/2118). The High-list, hazard and incomplete-file-list checks still run first and are unchanged.
+- [refactor(review): remove the unused v1 diff fingerprint (#2211)](https://github.com/aimpact-inc/repo-harness/pull/2226). The unused v1 path and one unused provenance copy are gone.
+
+### Fixed
+
+- [fix(board): read every comment page of the batch parent (#2157)](https://github.com/aimpact-inc/repo-harness/pull/2158). A parent thread above 10,000 comments fails the board read and dispatch closed with `board source invalid: issue.comments has more than 100 pages of 100`; it never reads a partial thread.
+- [fix(board): read every sub-issue page of the batch parent (#2123)](https://github.com/aimpact-inc/repo-harness/pull/2130). `readParent` runs the same query again with each cursor until the last page. A repeated cursor and more than `BOARD_SUB_ISSUE_PAGES` (20) pages fail closed in the `readParent` loop.
+- [fix(board): an unreadable reviewed head gives no merge-only sync proof (#2091)](https://github.com/aimpact-inc/repo-harness/pull/2136). A reviewed head that git cannot read must not drop a FAIL candidate from the merge-only sync proof.
+- [fix(seats): restrict resets to the same repository peer (#2196)](https://github.com/aimpact-inc/repo-harness/pull/2199). Check that the reset caller is the opposite peer seat in the same repository as the handoff.
+- [fix(git): replace provider-token values in git output and errors (#2131)](https://github.com/aimpact-inc/repo-harness/pull/2169). `spawnGit` and `runGit` throw for a call that keeps a token.
+- [fix(git): keep provider tokens away from local git child processes (#2102)](https://github.com/aimpact-inc/repo-harness/pull/2103). Git child processes do not get provider tokens, except the remote operations that need them for `gh auth git-credential`.
+- [fix(review): move modelFamily to its own module so the browser graph imports no Node built-in (#2146)](https://github.com/aimpact-inc/repo-harness/pull/2170). `modelFamily` now lives in `src/core/review/model-family.ts`, which has no import.
+- [fix(operator): the architecture map collector publishes a repository when its child returns](https://github.com/aimpact-inc/repo-harness/pull/2186). A failed child publishes `unavailable` at once.
+- [fix(board): read gh status and cap watcher errors (#2120)](https://github.com/aimpact-inc/repo-harness/pull/2124). Read a whole `gh: HTTP NNN` line, a trailing `(HTTP NNN)`, or an `HTTP NNN:` line.
+- [fix(ci): count late scheduled runs as delivered (#2121)](https://github.com/aimpact-inc/repo-harness/pull/2126). Count a matching scheduled `ci.yml` run on `main` as delivered when its status is `requested`, `queued`, `pending`, `waiting`, `in_progress` or `completed`.
+- [fix(ci): select shared platform lanes for consumer scripts (#2132)](https://github.com/aimpact-inc/repo-harness/pull/2144). Add `scripts/ci-path-consumers.ts` and `scripts/ci-documentation-consumers.ts` to the existing shared-input predicate.
+- [fix(evidence): classify package manager mismatch codes (#2122)](https://github.com/aimpact-inc/repo-harness/pull/2125). Existing assertions retain precedence over excerpt install errors.
+- [fix(evidence): recognize install verbs and prioritize excerpt assertions (#2114)](https://github.com/aimpact-inc/repo-harness/pull/2116). Recognize failed install steps with install verb forms and give excerpt assertions priority over excerpt install errors.
+
+### Documentation
+
+- [docs(rules): code ownership default in the global working rules (#2187)](https://github.com/aimpact-inc/repo-harness/pull/2188). The sync treats an unlisted section as a user section, so the `SHIPPED_GLOBAL_RULES_SECTIONS` entry is required.
+- [docs(rules): clarify owner decisions for hooks (#2195)](https://github.com/aimpact-inc/repo-harness/pull/2197). Changes to hook behavior or configuration remain owner decisions.
+- [docs(issue-flow): clarify model-free writer claims (#2127)](https://github.com/aimpact-inc/repo-harness/pull/2128). Keep a dispatched writer claim valid when the seat has no configured model.
+- [docs(herdr-notify): set pane prefix with seats command (#2137)](https://github.com/aimpact-inc/repo-harness/pull/2139). Replace the manual registry edit in both herdr-notify reference copies with `repo-harness seats prefix --repo <path> --pane-prefix <p>`.
+- [docs(release): record 0.29.2 publication (#2143)](https://github.com/aimpact-inc/repo-harness/pull/2147). Update the 0.29.2 checklist with the registry readback, release tag, GitHub Release and post-publish checks.
+- [chore(projection): refresh generated architecture outputs for main@edf140e8e63f](https://github.com/aimpact-inc/repo-harness/pull/2119)
+- [chore(projection): refresh generated architecture outputs for main@f39523789188](https://github.com/aimpact-inc/repo-harness/pull/2141)
+- [chore(projection): refresh generated architecture outputs for main@67fefda5110f](https://github.com/aimpact-inc/repo-harness/pull/2171)
+- [chore(projection): refresh generated architecture outputs for main@e8c717a26ae6](https://github.com/aimpact-inc/repo-harness/pull/2183)
+- [skills: verify-boss-command names src/effects/operator/server.ts in its change list (#2209)](https://github.com/aimpact-inc/repo-harness/pull/2210). The verify-boss-command skill tells a person to run the TLA+ check when `src/effects/operator/server.ts` changes.
+- [chore(projection): refresh generated architecture outputs for main@176afd079d9a](https://github.com/aimpact-inc/repo-harness/pull/2217)
+- [docs(rules): the publish gate is the owner's release environment approval](https://github.com/aimpact-inc/repo-harness/pull/2224). Since #2194 (PR #2198), `release.yml` publishes after the owner approves its run in the GitHub `release` environment.
+
+### Tests
+
+- [test(release): one drift check binds the two CHANGELOG section extractions (#2204)](https://github.com/aimpact-inc/repo-harness/pull/2206). A check now fails when the two inline `awk` copies drift.
+- [test(herdr-task): synchronize late child before leader exit (#2140)](https://github.com/aimpact-inc/repo-harness/pull/2142). The child now sends an IPC readiness message after it installs its TERM and HUP handlers.
+
+### Upgrade
+
+- Upgrade with `bun add -g repo-harness@0.30.0 --no-cache && repo-harness update --version 0.30.0`; restart the Operator server and reload the page. Version sources: `package.json`, `packages/operator-web/package.json` and `assets/skill-version.json`.
+- Before the first owner run of `.github/workflows/release.yml`, create and verify npm Trusted Publishing for both packages (repository `aimpact-inc/repo-harness`, workflow `release.yml`, environment `release`) and the GitHub `release` environment (owner required reviewer, `main` only, admin bypass disabled). Use the read-only environment check in `deploy/release-checklists/261110-repo-harness-0.30.0.md` before dispatch. ([PR #2198](https://github.com/aimpact-inc/repo-harness/pull/2198))
+- `src/cli/installer/global-context.ts` adds `Code Ownership` to the shipped titles. Sync replaces the managed block and legacy sections with shipped titles outside the markers; personal sections with other titles outside the markers stay. ([PR #2188](https://github.com/aimpact-inc/repo-harness/pull/2188))
+- The two launch skills are `assets/skills/repo-harness-orchestrator/SKILL.md` and `assets/skills/repo-harness-advisor/SKILL.md`; they use `seats argv`. The handoff skill, `assets/skills/repo-harness-seat-handoff/SKILL.md`, invokes `seats handoff` and follows its printed steps. `assets/skill-commands/manifest.json` declares all three for Claude with owner `peer-runtime`; the selected plugins must include `peer-runtime`. ([PR #2182](https://github.com/aimpact-inc/repo-harness/pull/2182))
+- `src/effects/operator/server.ts` changes the board summaries route: 0.29.2 accepted a request with no query string and rejected query parameters; 0.30.0 requires exactly one `parent` query parameter and returns 400 `invalid_request` without it. ([PR #2159](https://github.com/aimpact-inc/repo-harness/pull/2159))
+- `src/core/board/parents.ts` changes the parents document to protocol 5 and refuses protocol 4; `src/effects/operator/server.ts` serves seats separately. Update custom parents-route clients with the CLI and web console. ([PR #2201](https://github.com/aimpact-inc/repo-harness/pull/2201))
+- `src/core/publication/acceptance-merge-policy.ts` defaults `publication.merge_queue` to `off`. A repository that enables it needs the `merge_group` trigger and matching `Required / CI` jobs, as shipped in `.github/workflows/ci.yml`. ([PR #2089](https://github.com/aimpact-inc/repo-harness/pull/2089))
+
+### Rollback
+
+- Run `bun add -g repo-harness@0.29.2 --no-cache && repo-harness update --version 0.29.2`. Restart the Operator server and reload the page. Version sources: `package.json` and `packages/operator-web/package.json` at `v0.29.2`.
+
 ## [0.29.2] - 2026-11-10
 
 ### Changed

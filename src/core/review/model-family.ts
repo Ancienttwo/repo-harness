@@ -2,7 +2,7 @@
  * prefix (`magpie/`, `cursor/`) is a gateway label, so only the last `/`
  * segment is matched. An unmatched model has no family. */
 const MODEL_FAMILY_PREFIXES: readonly (readonly [string, string])[] = [
-  ['claude-', 'anthropic'], ['opus', 'anthropic'], ['sonnet', 'anthropic'], ['haiku', 'anthropic'],
+  ['claude-', 'anthropic'], ['opus', 'anthropic'], ['sonnet', 'anthropic'], ['haiku', 'anthropic'], ['fable', 'anthropic'],
   ['gpt-', 'openai'], ['o3', 'openai'], ['o4', 'openai'],
   ['deepseek-', 'deepseek'],
   ['gemini-', 'google'],
