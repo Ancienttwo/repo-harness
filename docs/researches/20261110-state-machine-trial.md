@@ -366,9 +366,9 @@ archctx plans a declared kind `archcontext.state-machine/v1` under `.archcontext
 
 | Model | Fits | Reason |
 |---|---|---|
-| The four flow models | yes | 3 to 6 finite variables, 29 to 76 states. Each rule is a forbidden combination. 6 rules need a history variable: a region that no code symbol backs. |
+| The four flow models | yes | 3 to 7 finite variables, 29 to 76 states. Each rule is a forbidden combination. 5 of their 11 rules need a history variable: a region that no code symbol backs. |
 | `ObservationLoop` | yes | Each variable is finite. `min(failures + 1, 2)` is three steps. |
-| `ResidentCollector` | yes, for a fixed count of repositories | "For each repository" becomes one region set for each repository. |
+| `ResidentCollector` | yes, for a fixed count of repositories | "For each repository" becomes one region set for each repository. 3 of its 5 rules need a history variable. |
 | `BossCommandSend` | no | The guards are arithmetic over values that a step writes: `IntentAt(other) + Window > now` over an append-only log and a clock. As enum guards the cooldown is one step for each pair of times. |
 | `ShipCloseoutClaim` (in the repository) | no | 1,348,960 states with two ships and two recoveries. |
 
