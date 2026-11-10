@@ -5,10 +5,13 @@ run-name: Release ${{ inputs.sha }}
 # The `release` environment requires the owner's approval; that approval authorizes this deployment.
 # npm Trusted Publishing (OIDC) authenticates the publishes; each trusted publisher names this workflow and the
 # `release` environment, so no other job can publish. No npm token exists.
-# `validate` reads the input commit as data with inline git. `lane` installs, checks, guards and packs the input
-# commit without id-token. `publish` holds id-token and runs no code from the input commit: it has no checkout,
-# reads the packed tarballs as data and publishes them with --ignore-scripts. `release` reads back, tags and
-# creates the GitHub Release without id-token.
+# Rule: a job that holds id-token or contents: write runs only inline workflow steps and SHA-pinned actions;
+# it checks out no code to run and runs no install, repo script or package script. Steps share one runner and
+# uid, so a step-scoped token does not protect it from earlier dependency code in the same job.
+# `validate` reads the input commit as data. `lane` installs, checks, guards and packs it (contents: read).
+# `publish` (id-token) publishes the packed tarballs with --ignore-scripts. `published` reads the packages back
+# (contents: read). `tag` (contents: write) creates the tag and the GitHub Release with inline git and gh.
+# `tagged` reads the tag and the GitHub Release back (contents: read).
 on:
   workflow_dispatch:
     inputs:
@@ -165,16 +168,14 @@ jobs:
       - name: Publish repo-harness
         run: npm publish "$TARBALLS/repo-harness-$VERSION.tgz" --provenance --ignore-scripts
 
-  release:
-    name: Read back, tag and release
+  published:
+    name: Read back the published packages
     needs: [validate, publish]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
-      contents: write
-    # GH_TOKEN reaches only the steps that call gh; install and readback steps run package scripts.
+      contents: read
     env:
-      SHA: ${{ inputs.sha }}
       VERSION: ${{ needs.validate.outputs.version }}
     steps:
       - uses: actions/checkout@v4
@@ -192,24 +193,62 @@ jobs:
           git config --global user.name 'github-actions[bot]'
           git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
       - run: bun install --frozen-lockfile
-      - name: Read back the published packages
-        run: |
+      # The script compares origin/main with the live main, so it fetches main first.
+      - run: |
           git fetch -q --no-tags origin +refs/heads/main:refs/remotes/origin/main
           bash scripts/release-owner-steps.sh check published "$VERSION"
-      # The API creates the annotated tag, so the checkout keeps no credentials.
+
+  tag:
+    name: Tag and release
+    needs: [validate, published]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      SHA: ${{ inputs.sha }}
+      VERSION: ${{ needs.validate.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    # Only git, awk and gh from the runner run here; the input commit is read as data.
+    steps:
+      - name: Read the CHANGELOG section
+        run: |
+          set -euo pipefail
+          git init -q release-notes
+          cd release-notes
+          git fetch -q --no-tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$SHA"
+          # awk reads to the end: an early exit would end git show with SIGPIPE, which pipefail reports.
+          git show "$SHA:docs/CHANGELOG.md" | awk -v heading="## [$VERSION]" '
+            index($0, heading) == 1 { found = 1; next }
+            /^## \[/ { found = 0 }
+            found { print }
+          ' > "$RUNNER_TEMP/notes.md"
+          grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md" || { echo "::error::docs/CHANGELOG.md at $SHA has no [$VERSION] section."; exit 1; }
       - name: Create the annotated tag
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags" -f tag="v$VERSION" -f message="repo-harness $VERSION" -f object="$SHA" -f type=commit --jq .sha)"
           gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/v$VERSION" -f sha="$tag_object" >/dev/null
       - name: Create the GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git fetch -q --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          bash scripts/release-owner-steps.sh notes "$VERSION" > "$RUNNER_TEMP/notes.md"
-          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --title "repo-harness $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+        run: gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --title "repo-harness $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+
+  tagged:
+    name: Read back the tag and the GitHub Release
+    needs: [validate, tag]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
       - name: Read back the tag and the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

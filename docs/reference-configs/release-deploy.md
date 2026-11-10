@@ -39,8 +39,11 @@ release commit. The orchestrator seat starts it:
 owner step is one action: approve that run. The approval is the explicit
 authorization for that production deployment.
 
-The job that holds `id-token: write` runs no code from the input commit. The
-run has four jobs:
+A job that holds `id-token: write` or `contents: write` runs only inline
+workflow steps and SHA-pinned actions. It checks out no code to run and runs
+no install, repository script or package script. The steps of a job share one
+runner and user, so a token set on one step is not safe from dependency code
+that an earlier step of the same job ran. The run has six jobs:
 
 1. `validate` (`contents: read`, `main` only): git and jq commands written in
    the workflow read the SHA as data. The job refuses a SHA that is not 40 hex
@@ -58,11 +61,15 @@ run has four jobs:
    version. `npm publish <tarball> --provenance --ignore-scripts` publishes
    `repo-harness-operator-web`, waits until npm shows it, then publishes
    `repo-harness`. No package script runs.
-4. `release` (`contents: write`): checks out the SHA, runs `bun install` and
-   `check published <version>`, creates the annotated tag `v<version>` at the
-   SHA through the GitHub API, runs `gh release create --verify-tag` with the
-   CHANGELOG section, and runs `check tagged <version>` (the remote tag is at
-   the release commit; the GitHub Release is not a draft or a prerelease).
+4. `published` (`contents: read`): checks out the SHA, runs `bun install` and
+   `check published <version>`.
+5. `tag` (`contents: write`): no checkout. Inline git fetches the SHA and awk
+   reads its CHANGELOG section. `gh api` creates the annotated tag
+   `v<version>` at the SHA, and `gh release create --verify-tag` creates the
+   GitHub Release with that section.
+6. `tagged` (`contents: read`): checks out the SHA and runs
+   `check tagged <version>` (the remote tag is at the release commit; the
+   GitHub Release is not a draft or a prerelease).
 
 Each script step fetches `main` first, so a merge to `main` during the run
 does not stop it. A failed step stops the run. A rerun of a published version
