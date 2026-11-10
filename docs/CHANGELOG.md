@@ -4,6 +4,8 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+- The herdr-core floor is 0.1.20 (#2255). Run `hc update` to 0.1.20 before this release is installed: an hc 0.1.19 client fails the floor check.
+
 ## [0.30.0] - 2026-11-10
 
 ### Added

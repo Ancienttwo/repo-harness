@@ -84,7 +84,7 @@ export function officeBoard(now: number): BoardV1 {
     path_owners: { status: 'observed', owners: [] },
     execution: { status: 'observed', terminals },
     daily_run: { status: 'observed', run_url: url('actions/runs', 1), conclusion: 'success', created_at: ago(12), open_repair_issues: [] },
-    tooling: { hc: { status: 'observed', version: '0.1.20', min_version: '0.1.19' }, herdr_app: { status: 'not_pinned' } },
+    tooling: { hc: { status: 'observed', version: '0.1.20', min_version: '0.1.20' }, herdr_app: { status: 'not_pinned' } },
   });
 }
 

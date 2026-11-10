@@ -9,7 +9,7 @@ import { HC_LOCAL_ADDRESS, isRemoteHcAddress } from '../../core/terminal/hc-addr
  * herdr-core transport: typed `hc` CLI calls with `--json`, its event stream, and `herdr-app do` for pane
  * placement. Every call is scoped to repo-harness terminals: lists and streams need a repo-harness label
  * filter, and calls on one terminal need its `t<n>` address and a repo-harness label on it.
- * hc (floor 0.1.19) reports no API generation in its CLI output; the shape validation below is the only guard.
+ * hc (floor 0.1.20) reports no API generation in its CLI output; the shape validation below is the only guard.
  */
 export const HERDR_CORE_TIMEOUT_MS = 10_000;
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
@@ -292,7 +292,7 @@ function ownedTerminal(value: unknown): HcTerminal {
   return result;
 }
 
-/** `hc --version`: the installed client version (`hc 0.1.19`). It reads no core and no terminal. */
+/** `hc --version`: the installed client version (`hc 0.1.20`). It reads no core and no terminal. */
 export function hcVersion(options: HerdrCoreOptions = {}): string {
   const result = run('hc', ['--version'], options);
   if (result.signal || result.status !== 0) throw new HerdrCoreError('hc', 'failed', result.status ?? undefined);
