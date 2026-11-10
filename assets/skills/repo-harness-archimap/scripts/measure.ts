@@ -424,19 +424,6 @@ function borderDistance(p: Point, b: Box): number {
   return Math.min(p.x - b.left, b.right - p.x, p.y - b.top, b.bottom - p.y);
 }
 
-// The sides of a box whose border segment (corners included) is within END_TOLERANCE of a point.
-function nearBorders(p: Point, b: Box): string[] {
-  const alongY = Math.max(b.top - p.y, 0, p.y - b.bottom);
-  const alongX = Math.max(b.left - p.x, 0, p.x - b.right);
-  const distances: [string, number][] = [
-    ["left", Math.hypot(p.x - b.left, alongY)],
-    ["right", Math.hypot(p.x - b.right, alongY)],
-    ["top", Math.hypot(p.y - b.top, alongX)],
-    ["bottom", Math.hypot(p.y - b.bottom, alongX)],
-  ];
-  return distances.filter(([, d]) => d <= END_TOLERANCE).map(([side]) => side);
-}
-
 function overlapArea(a: Box, b: Box): Box | null {
   const left = Math.max(a.left, b.left);
   const top = Math.max(a.top, b.top);
@@ -526,10 +513,6 @@ function boardFindings(caption: string, html: string): GeometryFinding[] {
     subpaths.flatMap((pts) => pts.slice(1).map((b, i) => ({ a: pts[i]!, b })));
   const allSegments = lines.flatMap(segmentsOf);
 
-  const lerp = (from: Point, to: Point, by: number): Point => {
-    const length = Math.hypot(to.x - from.x, to.y - from.y);
-    return { x: from.x + ((to.x - from.x) * by) / length, y: from.y + ((to.y - from.y) * by) / length };
-  };
   for (const subpath of lines.flat()) {
     if (subpath.length < 2) continue;
     const first = subpath[0]!;
@@ -539,30 +522,16 @@ function boardFindings(caption: string, html: string): GeometryFinding[] {
         add("line_end_open", p.x, p.y, `path end (${p.x},${p.y}) is more than ${END_TOLERANCE} px from every node and panel border`);
       }
     }
+    // A node border has a tolerance of END_TOLERANCE: a segment must reach a point deeper than that inside the node.
     for (const node of nodes) {
-      // Only the two path ends attach to a node. For a segment with an attached end:
-      // both ends near the node and on different borders is a crossing; on a shared border it is an attachment;
-      // one end near trims END_TOLERANCE px at that end; no end near is tested in full.
-      const hit = segmentsOf([subpath]).flatMap((segment, k, all) => {
-        const { a: from, b: to } = segment;
-        const sidesFrom = k === 0 ? nearBorders(from, node) : [];
-        const sidesTo = k === all.length - 1 ? nearBorders(to, node) : [];
-        let a = from;
-        let b = to;
-        if (sidesFrom.length > 0 && sidesTo.length > 0) {
-          if (sidesFrom.some((side) => sidesTo.includes(side))) return [];
-        } else if (sidesFrom.length > 0 || sidesTo.length > 0) {
-          const length = Math.hypot(to.x - from.x, to.y - from.y);
-          if (length <= END_TOLERANCE) return [];
-          if (sidesFrom.length > 0) a = lerp(from, to, END_TOLERANCE);
-          else b = lerp(to, from, END_TOLERANCE);
+      const inner = { left: node.left + END_TOLERANCE, top: node.top + END_TOLERANCE, right: node.right - END_TOLERANCE, bottom: node.bottom - END_TOLERANCE };
+      if (inner.left >= inner.right || inner.top >= inner.bottom) continue;
+      for (const segment of segmentsOf([subpath])) {
+        const hit = entersInterior(segment, inner);
+        if (hit) {
+          add("line_through_box", hit.x, hit.y, `path segment (${segment.a.x},${segment.a.y})-(${segment.b.x},${segment.b.y}) enters node ${at(node)}`);
+          break;
         }
-        const point = entersInterior({ a, b }, node);
-        return point ? [{ point, segment }] : [];
-      })[0];
-      if (hit) {
-        const { point, segment } = hit;
-        add("line_through_box", point.x, point.y, `path segment (${segment.a.x},${segment.a.y})-(${segment.b.x},${segment.b.y}) enters node ${at(node)}`);
       }
     }
   }

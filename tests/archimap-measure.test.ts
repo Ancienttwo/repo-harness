@@ -345,54 +345,40 @@ describe('archimap measure reports board geometry', () => {
     return (JSON.parse(runMeasure(['--root', root, ...mapArgs(root)])) as { geometry: Geometry }).geometry;
   };
 
-  test('a path that re-enters a node it starts at is reported', () => {
-    const geometry = run([board('1 · Reentry', `${box('node', 200, 200)}${box('node', 320, 200)}${paths('M200 250 H100 V260 H320')}`)]);
-    expect(geometry.findings.map((f) => f.kind)).toEqual(['line_through_box']);
-  });
-
-  test('a short segment that crosses a node from border to border is reported', () => {
-    const narrow = '<div class="node" style="left:0px;top:0px;width:16px;height:100px"></div>';
-    const geometry = run([board('1 · Short crossing', `${narrow}${paths('M0 50 H16')}`)]);
-    expect(geometry.findings.map((f) => f.kind)).toEqual(['line_through_box']);
-  });
-
+  // The rule (references/visual-language.md): a segment is line_through_box when it has a point inside a
+  // node that is more than 8 px from that node's nearest border.
+  const narrow = box('node', 0, 0).replace('width:100px', 'width:16px');
+  const left = box('node', -200, 0);
   test.each([
-    ['probe', 'M5 50 H-5 H-100'],
-    ['reverse', 'M-100 50 H-5 H5'],
-    ['corner clip', 'M-4 4 H4'],
-  ])('an attachment near one border of a node is not a crossing: %s', (_name, d) => {
-    const nodes = `${box('node', 0, 0)}${box('node', -200, 0)}`;
-    const geometry = run([board('1 · Attachment', `${nodes}${paths(d)}`)]);
-    expect(geometry.findings).toEqual([]);
+    ['round 1 re-entry', box('node', 0, 0), 'M0 50 H150 V60 H50 H150', true],
+    ['round 2 node 16 px wide', narrow, 'M0 50 H16', false],
+    ['round 3 probe', box('node', 0, 0) + left, 'M5 50 H-5 H-100', false],
+    ['round 3 reverse', box('node', 0, 0) + left, 'M-100 50 H-5 H5', false],
+    ['round 4 probe', box('node', 0, 0), 'M1 40 V50', false],
+    ['round 4 reverse', box('node', 0, 0), 'M1 50 V40', false],
+    ['round 5 probe', box('node', 0, 0), 'M-100 50 H5 H-100', false],
+    ['straight through', box('node', 0, 0), 'M-50 50 H150', true],
+    ['attached from outside', box('node', 0, 0), 'M-80 50 H0', false],
+    ['end 8 px inside', box('node', 0, 0), 'M-80 50 H8', false],
+    ['end 9 px inside', box('node', 0, 0), 'M-80 50 H9', true],
+    ['corner clip', box('node', 0, 0), 'M-10 4 L4 -10', false],
+    ['corner cut 40 px', box('node', 0, 0), 'M-10 40 L40 -10', true],
+    ['along the top border 3 px inside', box('node', 0, 0), 'M-50 3 H150', false],
+  ])('line_through_box follows the stated rule: %s', (name, nodes, d, expected) => {
+    const found = run([board(name, `${nodes}${paths(d)}`)]).findings.some((f) => f.kind === 'line_through_box');
+    expect(found).toBe(expected);
   });
 
-  test('short attached segments follow the border rule; a true pass-through is reported', () => {
+  test('short segments around a node follow the stated rule', () => {
     type P = [number, number];
-    const near = ([x, y]: P) => {
-      const ay = Math.max(-y, 0, y - 100);
-      const ax = Math.max(-x, 0, x - 100);
-      const d = { l: Math.hypot(x, ay), r: Math.hypot(x - 100, ay), t: Math.hypot(y, ax), b: Math.hypot(y - 100, ax) };
-      return Object.entries(d).filter(([, v]) => v <= 8).map(([k]) => k);
-    };
-    const inside = (a: P, b: P) => {
+    const deep = ([x, y]: P) => x > 8 && x < 92 && y > 8 && y < 92;
+    const reaches = (a: P, b: P) => {
       const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) * 10);
-      return Array.from({ length: n + 1 }, (_, k) => [a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]).some(([x, y]) => x! > 0 && x! < 100 && y! > 0 && y! < 100);
-    };
-    const expected = (a: P, b: P) => {
-      const sa = near(a);
-      const sb = near(b);
-      const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      if (sa.length && sb.length) return !sa.some((s) => sb.includes(s)) && inside(a, b);
-      if (sa.length || sb.length) {
-        if (length <= 8) return false;
-        const u: P = [(b[0] - a[0]) / length, (b[1] - a[1]) / length];
-        return sa.length ? inside([a[0] + u[0] * 8, a[1] + u[1] * 8], b) : inside(a, [b[0] - u[0] * 8, b[1] - u[1] * 8]);
-      }
-      return inside(a, b);
+      return Array.from({ length: n + 1 }, (_, k): P => [a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]).some(deep);
     };
     const starts: P[] = [];
-    for (const d of [-3, 0, 3]) for (const along of [50, 2]) starts.push([d, along], [100 - d, along], [along, d], [along, 100 - d]);
-    const cases: { name: string; a: P; b: P }[] = [{ name: 'pass-through', a: [5, 50], b: [200, 50] }];
+    for (const d of [-3, 0, 3, 9]) for (const along of [50, 2]) starts.push([d, along], [100 - d, along], [along, d], [along, 100 - d]);
+    const cases: { name: string; a: P; b: P }[] = [];
     for (const a of starts) {
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as P[]) {
         for (const length of [1, 5, 8, 10, 16, 20]) cases.push({ name: `${a} ${dx},${dy} ${length}`, a, b: [a[0] + dx * length, a[1] + dy * length] });
@@ -400,8 +386,9 @@ describe('archimap measure reports board geometry', () => {
     }
     const boards = cases.map((c) => board(c.name, `${box('node', 0, 0)}${paths(`M${c.a[0]} ${c.a[1]} L${c.b[0]} ${c.b[1]}`)}`));
     const through = new Set(run(boards).findings.filter((f) => f.kind === 'line_through_box').map((f) => f.board));
-    expect(cases.filter((c) => through.has(c.name)).map((c) => c.name)).toEqual(cases.filter((c) => expected(c.a, c.b)).map((c) => c.name));
-    expect(through.has('pass-through')).toBe(true);
+    const expected = cases.filter((c) => reaches(c.a, c.b)).map((c) => c.name);
+    expect(expected.length).toBeGreaterThan(0);
+    expect(cases.filter((c) => through.has(c.name)).map((c) => c.name)).toEqual(expected);
   });
 
   test('each subpath of a path is checked for open ends', () => {
