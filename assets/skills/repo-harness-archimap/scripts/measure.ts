@@ -424,6 +424,18 @@ function borderDistance(p: Point, b: Box): number {
   return Math.min(p.x - b.left, b.right - p.x, p.y - b.top, b.bottom - p.y);
 }
 
+// The sides of a box whose border is within END_TOLERANCE of a point.
+function nearBorders(p: Point, b: Box): string[] {
+  if (borderDistance(p, b) > END_TOLERANCE) return [];
+  const sides: [string, number, boolean][] = [
+    ["left", p.x - b.left, p.y >= b.top - END_TOLERANCE && p.y <= b.bottom + END_TOLERANCE],
+    ["right", p.x - b.right, p.y >= b.top - END_TOLERANCE && p.y <= b.bottom + END_TOLERANCE],
+    ["top", p.y - b.top, p.x >= b.left - END_TOLERANCE && p.x <= b.right + END_TOLERANCE],
+    ["bottom", p.y - b.bottom, p.x >= b.left - END_TOLERANCE && p.x <= b.right + END_TOLERANCE],
+  ];
+  return sides.filter(([, offset, within]) => within && Math.abs(offset) <= END_TOLERANCE).map(([side]) => side);
+}
+
 function overlapArea(a: Box, b: Box): Box | null {
   const left = Math.max(a.left, b.left);
   const top = Math.max(a.top, b.top);
@@ -534,12 +546,17 @@ function boardFindings(caption: string, html: string): GeometryFinding[] {
         const { a: from, b: to } = segment;
         let a = from;
         let b = to;
-        // A segment that runs border to border is a crossing, so no attached end is trimmed on it.
-        const borderToBorder = borderDistance(from, node) <= END_TOLERANCE && borderDistance(to, node) <= END_TOLERANCE;
-        if (!borderToBorder) {
-          const long = Math.hypot(to.x - from.x, to.y - from.y) > END_TOLERANCE;
-          if (k === 0 && startsAt) a = long ? lerp(from, to, END_TOLERANCE) : to;
-          if (k === all.length - 1 && endsAt) b = long ? lerp(to, from, END_TOLERANCE) : from;
+        // A segment whose two ends touch different borders of this node crosses it, so no end is trimmed.
+        // Ends that share a border (an end near a corner touches two) are attachments.
+        const sidesFrom = nearBorders(from, node);
+        const sidesTo = nearBorders(to, node);
+        const crossing = sidesFrom.length > 0 && sidesTo.length > 0 && !sidesFrom.some((side) => sidesTo.includes(side));
+        const trimStart = k === 0 && startsAt;
+        const trimEnd = k === all.length - 1 && endsAt;
+        if (!crossing && (trimStart || trimEnd)) {
+          if (Math.hypot(to.x - from.x, to.y - from.y) <= END_TOLERANCE) return [];
+          if (trimStart) a = lerp(from, to, END_TOLERANCE);
+          if (trimEnd) b = lerp(to, from, END_TOLERANCE);
         }
         const point = entersInterior({ a, b }, node);
         return point ? [{ point, segment }] : [];

@@ -356,6 +356,16 @@ describe('archimap measure reports board geometry', () => {
     expect(geometry.findings.map((f) => f.kind)).toEqual(['line_through_box']);
   });
 
+  test.each([
+    ['probe', 'M5 50 H-5 H-100'],
+    ['reverse', 'M-100 50 H-5 H5'],
+    ['corner clip', 'M-4 4 H4'],
+  ])('an attachment near one border of a node is not a crossing: %s', (_name, d) => {
+    const nodes = `${box('node', 0, 0)}${box('node', -200, 0)}`;
+    const geometry = run([board('1 · Attachment', `${nodes}${paths(d)}`)]);
+    expect(geometry.findings).toEqual([]);
+  });
+
   test('each subpath of a path is checked for open ends', () => {
     const geometry = run([board('1 · Subpaths', `${box('node', 0, 0)}${box('node', -200, 0)}${paths('M0 20 H-100 M-300 20 H-400 M0 40 H-100')}`)]);
     expect(geometry.findings.map((f) => f.kind)).toEqual(['line_end_open', 'line_end_open']);
