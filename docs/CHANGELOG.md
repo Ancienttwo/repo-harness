@@ -4,6 +4,73 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-11-10
+
+### Added
+
+- `.github/workflows/release.yml` publishes both packages, tags the release commit and creates its GitHub Release in one run. The `publish` job waits in the `release` environment, and npm Trusted Publishing gives the token, so no npm token exists. A job that holds `id-token` or `contents: write` runs only inline steps and SHA-pinned actions. (#2194, PR #2198)
+- `repo-harness review publish --owner-record <url>` publishes a round above 5 only with an owner record on the PR or an issue it closes. Without it the command refuses with `review_receipt_invalid` and posts nothing. (#2135, PR #2138)
+- `publication.merge_queue: on` enqueues the merge through the GitHub merge queue instead of merging directly, and `Required / CI` runs on `merge_group` with the same job names. A merge then stops the `BEHIND` sync, full CI run and sync check of every other green PR. The default is `off`. (#2076, PR #2089)
+- `repo-harness seats prefix --repo <path> --pane-prefix <p>` sets `panePrefix` in `registered-repos.json` under the registry mutation lock. (#2058, PR #2129)
+- The launch skills `repo-harness-orchestrator`, `repo-harness-advisor` and `repo-harness-seat-handoff` start a correct seat of any project by explicit invocation, from `repo-harness seats argv`. Each refuses a second live seat of its kind in that repository. (#2175, PR #2182)
+- `measure.ts --map` reports `geometry` findings (`box_overlap`, `line_end_open`, `label_on_line`, `label_on_box`) for each board that holds a node, and `line_through_box` by the 8 px inset rule. The findings do not change the exit code. (#2154, PR #2168; #2185, PR #2189)
+- The module map draws one directed route for each domain pair with `deps` imports, with a width from the import count and an arrow at the target. A selected card shows its relations in the right panel, and an undeclared import marks its route or its two cards. (#2153, PR #2200)
+- `specs/tla/check.sh` runs a checked TLA+ model of the boss command send, and the architecture model names it. (#2180, PR #2191)
+
+### Changed
+
+- Every architecture map opens with its first row and its left edge on screen, and the topology opens on a segment that has boxes. One `firstViewport(content, canvas)` rule serves Modules, Layers, Sequence and Topology. (#2151, PR #2167)
+- Topology and the module map draw each route on its dagre route, on screen and in the SVG file. `repairRoute` moves a segment that crosses a box onto the obstacle corners, and `sceneFindings` fails a check when a drawn route still crosses a box. The selection store lives in the workspace, so a selection outlives a view tab change. (#2152, PR #2192)
+- Layers renders the shared `ArchitectureSceneCanvas` and downloads through `sceneSvg`. Its protocol labels move to the inspector list, because a 28 px canvas label cannot clear the twin lane 12 px away. (#2160, PR #2203)
+- The Office room shows the seats when the parent list arrives; the board facts fill in later, and a typed refusal is read again after 30 s. (#2149, PR #2174)
+- The board summaries route takes exactly one `parent=<issue number>` query key and answers one stored entry. It starts no board CLI run and takes no slot of the board read cap, so one overview cycle starts one board run for each repository, not two. (#2148, PR #2159)
+- One board read asks GitHub once for the repository identity and once for each base-commit fact, not once for each open pull request. (#2150, PR #2184)
+- A `tier:low` label on a fix of more than 50 changed lines, or of unknown size, gives Medium. Documentation only, tests only and the projection PR stay Low at any size. (#2113, PR #2118)
+
+### Fixed
+
+- The board reads every comment page of the batch parent, up to 100 pages of 100. A long thread no longer reports `merge_hold: unknown` and refuses every PR with `hold_unknown`, and the plan, the coordinator claim and the hold records no longer fall out of the read window. (#2157, PR #2158)
+- The board reads every sub-issue page of the batch parent, up to 20 pages of 50. A larger batch no longer stops dispatch, review, merge and the attention watcher together. (#2123, PR #2130)
+- A reviewed head that git cannot read gives no merge-only proof, so it cannot drop a `FAIL` candidate from the carry. `merge-base --is-ancestor` decides the ancestry: exit 0 is yes, exit 1 is no, any other end is an error. (#2091, PR #2136)
+- A seat reset reads the caller labels first and requires the handoff repository label and the opposite peer seat. A mismatch refuses with `caller_unknown` and `nothing_sent`, before a rewrite is sent or a key is typed. (#2196, PR #2199)
+- Provider-token values are replaced in git output, errors and stderr, not only kept out of the child environment. (#2131, PR #2169)
+- Only the remote git subcommands (`fetch`, `pull`, `push`, `ls-remote`, `clone`) keep the provider tokens in their child environment. Every other subcommand, an unknown option and a `--help` form get the token-free environment. (#2102, PR #2103)
+- `modelFamily` lives in `src/core/review/model-family.ts`, so the browser graph imports no Node built-in and `bun run dev:operator` no longer shows a blank page. A test walks the value imports of `src/operator-web/main.tsx` and stops the next one. (#2146, PR #2170)
+- The architecture map collector publishes a repository when its child returns, so the page gets that map before the cycle ends. A failed child publishes `unavailable` at once. (#2176, PR #2186)
+- The attention watcher reads the HTTP status from all three `gh` status formats and caps a skipped-window message at 300 characters in stderr and in the attention log. A 504 skips the window; a 403 exits. (#2120, PR #2124)
+- A late scheduled `ci.yml` run counts as delivered when it is requested, queued, pending, waiting or in progress, so no false missing-run repair issue is opened. (#2121, PR #2126)
+- A change to `scripts/ci-path-consumers.ts` or `scripts/ci-documentation-consumers.ts` selects the `native_oar` and `home_isolation` lanes. (#2132, PR #2144)
+- Required check evidence needs a word boundary before the assertion keyword `mismatch`, so a package manager error code no longer classifies as an assertion. A package-manager mismatch code counts as a dependency install failure. (#2122, PR #2125)
+- Failed install steps are recognized by the install verbs (`install`, `installing`, `preinstall`, `postinstall`, `reinstall`), and an excerpt assertion is checked before an excerpt install error. (#2114, PR #2116)
+
+### Documentation
+
+- The global working rules carry a `Code Ownership` section: the repository is the agent's own by default, so an agent refactors duplicates and older model-written code instead of adding layers. The section is a shipped section, so `repo-harness update` syncs it. (#2187, PR #2188)
+- A change to hook behavior or hook configuration stays an owner decision. A change under `src/cli/hook/**` that changes neither takes the High review rule. (#2195, PR #2197)
+- A dispatched writer claim without a `Model:` line stays valid; the board then derives no writer family. (#2127, PR #2128)
+- The herdr-notify reference sets the pane prefix with `repo-harness seats prefix`, not by a hand edit of the registry. (#2137, PR #2139)
+- The 0.29.2 publication record lists the registry readback, the tag and the GitHub Release. (#2143, PR #2147)
+- Refresh the generated architecture outputs. (PR #2119, PR #2141, PR #2171)
+
+### Tests
+
+- One drift check binds the CHANGELOG section extraction of the release workflow and of `scripts/release-owner-steps.sh`, and it runs both copies on one fixture when the host has `awk`. (#2204, PR #2206)
+- The late-child cancellation test synchronizes the child before the leader exits, so it no longer races on Linux. (#2140, PR #2142)
+
+### Upgrade
+
+- Run `bun add -g repo-harness@0.30.0 --no-cache && repo-harness update --version 0.30.0`. Restart the Operator server and reload the page.
+- The release now runs from `.github/workflows/release.yml`, which 0.29.2 does not contain. Before the first release run, the owner sets npm Trusted Publishing for `repo-harness-operator-web` and for `repo-harness`: repository `aimpact-inc/repo-harness`, workflow `release.yml`, environment `release`. The owner also creates the GitHub environment `release`, with the owner as the required reviewer and `main` as the only deployment branch. Without both, a run stops at the environment or at `npm publish`.
+- `repo-harness update` syncs the new `Code Ownership` section of the global working rules, and it writes the three explicit-invoke launch skills `repo-harness-orchestrator`, `repo-harness-advisor` and `repo-harness-seat-handoff` into the skill root. The managed block of the user-level `AGENTS.md` and `CLAUDE.md` grows by the same section; an edit inside the block is replaced.
+- A client of the board summaries route must send exactly one `parent` query parameter. The 0.29.2 route accepted no parameter, and the new route answers 400 `invalid_request` without one. The Operator server protocol is still 3.
+- `publication.merge_queue` is `off` unless the policy sets `on`. A repository that turns it on must add a `merge_group` trigger to its own `ci.yml`, with the same `Required / CI` job names.
+- Installed 0.29.2 reads only the newest 50 comments and the newest 50 sub-issues of a batch parent, so a long parent reports `hold_unknown` and refuses every merge. 0.29.2 also resets a seat from any caller in any repository, and a provider token can reach a local git child process.
+
+### Rollback
+
+- Run `bun add -g repo-harness@0.29.2 --no-cache && repo-harness update --version 0.29.2`. Restart the Operator server and reload the page.
+- A 0.29.2 board refuses a batch parent with more than 50 comments or more than 50 sub-issues, and it merges only through the direct path. The 0.29.2 CLI has no `seats prefix`, no `review publish --owner-record` and no `release.yml`; the release then needs the manual `scripts/release-owner-steps.sh plan` steps.
+
 ## [0.29.2] - 2026-11-10
 
 ### Changed
