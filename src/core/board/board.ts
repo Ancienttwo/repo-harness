@@ -106,7 +106,7 @@ export interface BoardPullRequestV1 {
   readonly acceptance: BoardAcceptanceV1;
   /** The single-PR readiness projection, for open pull requests only. */
   readonly merge_readiness: PullRequestReadinessV2 | null;
-  /** `high` when a changed path is on the High list or the change hazard list, or the file list is incomplete; otherwise the highest review tier of the linked issues (the parent excluded), null when the pull request links none, or one is outside the board or has no tier label. */
+  /** `high` when a changed path is on the High list or the change hazard list, or the file list is incomplete; otherwise the highest review tier of the linked issues (the parent excluded), null when the pull request links none, or one is outside the board or has no tier label; `medium` for Low labels on a fix of more than 50 changed lines or of unknown size. */
   readonly tier: BoardTier | null;
   /**
    * An unknown tier counts as High here (fail closed). `pending`: an open High pull request whose head does not meet the High acceptance rule and has no acceptance row
@@ -436,17 +436,30 @@ function reviewRule(read: BoardPullRequestReadV1, tier: BoardTier | null): Revie
   return tier === null || tier === 'high' ? 'high' : tier === 'medium' ? 'medium' : 'none';
 }
 
+/** The Low bound of a fix in added plus deleted lines, and the head branch of the generated projection pull request (`agentic-development-flow.md`, Review by risk). */
+const LOW_FIX_MAX_LINES = 50;
+const PROJECTION_BRANCH = 'archctx/projection';
+
+/** Docs only, tests only and the projection pull request are Low at any size; every other change is a fix that the size bound applies to. */
+function sizeExempt(read: BoardPullRequestReadV1, files: readonly string[]): boolean {
+  return read.head_ref === PROJECTION_BRANCH || files.every(path => path.startsWith('docs/')) || files.every(path => path.startsWith('tests/'));
+}
+
 /**
  * The one effective tier of a pull request, for the Low acceptance path and the review planner alike. A changed path on the High
  * list or the change hazard list sets High whatever the labels say (`agentic-development-flow.md`, Review by risk); R3 and R5 name
  * the labels to fix. An incomplete file list can hide such a path, so it sets High too. Otherwise null unless every linked issue
- * (the parent excluded) is on the board with a tier label.
+ * (the parent excluded) is on the board with a tier label. Low labels on a fix of more than 50 changed lines, or of unknown size, give Medium.
  */
-function effectiveTier(closes: readonly number[], refs: readonly number[], files: readonly string[] | null, parent: BoardParentReadV1, tiers: ReadonlyMap<number, BoardTier | null>): BoardTier | null {
+function effectiveTier(read: BoardPullRequestReadV1, closes: readonly number[], refs: readonly number[], parent: BoardParentReadV1, tiers: ReadonlyMap<number, BoardTier | null>): BoardTier | null {
+  const files = read.files;
   if (files === null || pathHighHits(files).length > 0 || pathHazardHits(files).length > 0) return 'high';
   const linked = [...new Set([...closes, ...refs])].filter(number => number !== parent.parent.number);
   const known = linked.map(number => tiers.get(number) ?? null);
-  return linked.length === 0 || known.includes(null) ? null : known.includes('high') ? 'high' : known.includes('medium') ? 'medium' : 'low';
+  if (linked.length === 0 || known.includes(null)) return null;
+  if (known.includes('high')) return 'high';
+  if (known.includes('medium')) return 'medium';
+  return sizeExempt(read, files) || (read.changed_lines !== null && read.changed_lines <= LOW_FIX_MAX_LINES) ? 'low' : 'medium';
 }
 
 /**
@@ -500,7 +513,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
   const pullRequests = linkedPullRequests(input.parent, input.pull_requests).map((read): BoardPullRequestV1 => {
     const { closes, refs } = bodyLinks(repository, read.body);
     const check = requiredCheck(read);
-    const tier = effectiveTier(closes, refs, read.files, input.parent, tiers);
+    const tier = effectiveTier(read, closes, refs, input.parent, tiers);
     const subjects = reviewedSubjects(read, input.path_owners, input.merge_only_syncs.get(read.number) ?? []);
     const claude = claudeReview(read, subjects, tier);
     const readiness = read.state === 'open' ? input.readiness.find(entry => entry.pr_number === read.number) : undefined;

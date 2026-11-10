@@ -236,18 +236,43 @@ function withoutHazards(pr: Json): void {
   pr.files.totalCount = pr.files.nodes.length;
 }
 
+/** Keeps the first three recorded files of #1494 (20 changed lines, no hazard path), so its Low label holds for a fix within the Low bound. */
+function asSmallFix(pr: Json): void {
+  pr.files.nodes = pr.files.nodes.slice(0, 3);
+  pr.files.totalCount = 3;
+}
+
 test('Low acceptance uses the effective tier of every linked issue: a Low closing issue with a High or unobserved ref is not accepted by tier', () => {
   const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' };
   const via = (refs: string) => replay({
     parent: (data) => { issueNode(data, 1479).labels.nodes.push({ name: 'tier:low' }); issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
     pulls: (data) => {
       const { pr1494 } = data.repository;
-      withoutHazards(pr1494);
+      asSmallFix(pr1494);
       pr1494.body += refs;
       pr1494.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push(green);
     },
   }).pull_requests.find(pr => pr.number === 1494)!.acceptance.status;
   expect([via(''), via('\nRefs #1476\n'), via('\nRefs #1460\n')]).toEqual(['accepted', 'not_accepted', 'not_accepted']);
+});
+
+test('Low labels give Low to a fix of at most 50 changed lines, and to docs only, tests only or the projection PR at any size', () => {
+  // #1494 closes only #1479, which is tier:low.
+  const tier = (files: Json[], head = 'feat/1479-notify-relay') => replay({
+    owners: (results) => { results.push(...files.map(file => ({ path: file.path, matched: false, ambiguous: false, owningCapabilityId: null }))); },
+    parent: (data) => { issueNode(data, 1479).labels.nodes.push({ name: 'tier:low' }); },
+    pulls: (data) => { Object.assign(data.repository.pr1494, { headRefName: head, files: { totalCount: files.length, nodes: files } }); },
+  }).pull_requests.find(pr => pr.number === 1494)!.tier;
+  const file = (path: string, additions: number, deletions: number) => ({ path, additions, deletions });
+  expect([
+    tier([file('src/a.ts', 30, 20)]),
+    tier([file('src/a.ts', 30, 21)]),
+    // A file without a deletion count makes the size unknown.
+    tier([{ path: 'src/a.ts', additions: 1 }]),
+    tier([file('docs/a.md', 300, 0)]),
+    tier([file('tests/a.test.ts', 300, 0)]),
+    tier([file('src/a.ts', 300, 0)], 'archctx/projection'),
+  ]).toEqual(['low', 'medium', 'medium', 'low', 'low', 'low']);
 });
 
 test('High acceptance: PASS rows of the head from two distinct claims, one recorded different-family; claude_review and A10 project the same rule', () => {
@@ -664,7 +689,7 @@ test('board merge: no plan, a draft, plan holds, plan order for every linked ite
     pulls: (data: Json) => {
       const { pr1494 } = data.repository;
       pr1494.isDraft = false;
-      withoutHazards(pr1494);
+      asSmallFix(pr1494);
       pr1494.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' });
     },
   };
@@ -895,7 +920,7 @@ test('one hit for each rule that the recorded state does not trigger', () => {
       const pr1499 = data.repository.pr1499;
       pr1499.baseRefName = 'main';
       pr1499.isDraft = false;
-      pr1499.files = { totalCount: 1, nodes: [{ path: 'src/effects/terminal/task-session.ts' }] };
+      pr1499.files = { totalCount: 1, nodes: [{ path: 'src/effects/terminal/task-session.ts', additions: 10, deletions: 2 }] };
       pr1499.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' });
       // #1494 (tier:medium #1479) changes a hook: R5.
       data.repository.pr1494.files.nodes.push({ path: hook });
@@ -999,7 +1024,7 @@ test('A2 finds a batch behind an overlapping pull request, and a plan hold remov
     pulls: (data) => {
       // #1491 changes a and b, #1494 a, #1499 b: only #1494 and #1499 can batch.
       for (const [pr, paths] of [[data.repository.pr1491, ['a', 'b']], [data.repository.pr1494, ['a']], [data.repository.pr1499, ['b']]] as const) {
-        pr.files = { totalCount: paths.length, nodes: paths.map(path => ({ path })) };
+        pr.files = { totalCount: paths.length, nodes: paths.map(path => ({ path, additions: 1, deletions: 0 })) };
         if (pr.number === 1491) continue;
         Object.assign(pr, { baseRefName: 'main', isDraft: false });
         pr.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push(green);

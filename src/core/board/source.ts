@@ -80,6 +80,8 @@ export interface BoardPullRequestReadV1 {
   readonly merged_at: string | null;
   /** Null when the pull request changes more files than one read returns. */
   readonly files: readonly string[] | null;
+  /** The added plus deleted lines of `files`, from the same read; null when `files` is null or a file has no count. */
+  readonly changed_lines: number | null;
   readonly checks: readonly BoardCheckRunReadV1[];
   readonly comments: BoardCommentPageV1;
 }
@@ -228,7 +230,10 @@ export function decodePullRequestsRead(data: unknown, numbers: readonly number[]
     const headSha = sha(node.headRefOid, `${label}.headRefOid`);
     if (commit.oid !== headSha) fail(`${label} last commit is not the head`);
     const files = obj(node.files, `${label}.files`);
-    const filePaths = nodes(files, `${label}.files`, null).map((entry, index) => str(obj(entry, `${label}.files[${index}]`).path, `${label}.files[${index}].path`));
+    const fileNodes = nodes(files, `${label}.files`, null).map((entry, index) => obj(entry, `${label}.files[${index}]`));
+    const filePaths = fileNodes.map((node, index) => str(node.path, `${label}.files[${index}].path`));
+    const complete = files.totalCount === filePaths.length;
+    const counted = complete && fileNodes.every(node => [node.additions, node.deletions].every(count => Number.isSafeInteger(count) && (count as number) >= 0));
     const rollup = commit.statusCheckRollup === null ? null : obj(commit.statusCheckRollup, `${label}.statusCheckRollup`);
     const checks = rollup === null ? [] : nodes(rollup.contexts, `${label}.contexts`, 'hasNextPage').flatMap((entry, index) => {
       const context = obj(entry, `${label}.contexts[${index}]`);
@@ -253,7 +258,8 @@ export function decodePullRequestsRead(data: unknown, numbers: readonly number[]
       head_sha: headSha,
       head_committed_at: time(commit.committedDate, `${label} head committedDate`),
       merged_at: node.mergedAt === null ? null : time(node.mergedAt, `${label}.mergedAt`),
-      files: files.totalCount === filePaths.length ? Object.freeze(filePaths) : null,
+      files: complete ? Object.freeze(filePaths) : null,
+      changed_lines: counted ? fileNodes.reduce((sum, node) => sum + (node.additions as number) + (node.deletions as number), 0) : null,
       checks: Object.freeze(checks),
       comments: comments(node.comments, `${label}.comments`),
     });
