@@ -104,12 +104,15 @@ const ready=process.argv[2];
 process.stdin.setRawMode(true); process.stdout.write('\\x1b[?2004h');
 appendFileSync(${JSON.stringify(join(fixture, 'launches'))},ready.split('/').pop().replace('.ready','')+'\\n');
 // A child in the leader's process group before ready; it ignores TERM and terminal hangup.
-const stubborn=['-e',"process.on('SIGTERM',()=>{});process.on('SIGHUP',()=>{});setInterval(()=>{},1000)"];
+const stubborn=['-e',"process.on('SIGTERM',()=>{});process.on('SIGHUP',()=>{});process.send?.('ready');setInterval(()=>{},1000)"];
 if(ready.endsWith('/grouped.ready'))writeFileSync(ready+'.child',String(spawn(process.execPath,stubborn,{stdio:'ignore'}).pid));
 // A member that execs on TERM into a program that ignores TERM: its command name changes, its start time does not.
 if(ready.endsWith('/exec-member.ready'))writeFileSync(ready+'.child',String(spawn('/bin/sh',['-c',"trap '' HUP; trap 'exec "+process.execPath+" ${join(fixture, 'stubborn.js')}' TERM; while :; do sleep 0.2; done"],{stdio:'ignore'}).pid));
-// On hangup the leader starts a group child that ignores TERM and hangup, then exits: no live leader proves that child.
-if(ready.endsWith('/late-child.ready'))process.on('SIGHUP',()=>{writeFileSync(ready+'.child',String(spawn(process.execPath,stubborn,{stdio:'ignore'}).pid));process.exit(0);});
+// On hangup the leader starts a group child, then waits for its signal handlers before exiting.
+if(ready.endsWith('/late-child.ready'))process.on('SIGHUP',()=>{
+ const child=spawn(process.execPath,stubborn,{stdio:['ignore','ignore','ignore','ipc']});
+ writeFileSync(ready+'.child',String(child.pid));child.once('message',()=>process.exit(0));
+});
 writeFileSync(ready+'.tmp',JSON.stringify({pid:process.pid})); renameSync(ready+'.tmp',ready);
 let buffer=''; process.stdin.on('data',chunk=>{
  buffer+=chunk.toString(); if (!/[\\r\\n]/.test(buffer)) return;
@@ -359,25 +362,20 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     await started('exec-member');
     expect(await api.cancelTaskAgent(fixture, spec.task, 'exec-member')).toEqual({ status: 'closed', pids: [] });
     expect(live(childOf('exec-member'))).toBe(false);
-    // A group child that no live leader proves is reported, not signalled; cleanup closes after it ends.
-    // The premise (the child outlives its leader) holds on macOS. Linux CI observed the child end with its leader,
-    // most likely because the leader's exit hangs up the terminal's foreground group before the new child has
-    // installed its hangup handler. With no live group process, closed is the correct result there.
+    // A child born on hangup confirms its handlers before the leader exits. It outlives the leader on both
+    // platforms, so no live leader proves it: cleanup must report the child without signalling it.
     await started('late-child');
     const lateResult = await api.cancelTaskAgent(fixture, spec.task, 'late-child');
-    if (process.platform === 'darwin') {
-      expect(live(childOf('late-child'))).toBe(true);
-      expect(lateResult).toEqual({ status: 'cleanup_pending', pids: [childOf('late-child')], reason: 'provider_group_alive' });
-      const latePid = childOf('late-child');
-      expect(latePid).toBeGreaterThan(0);
-      process.kill(latePid, 'SIGKILL');
-      await until(() => !live(childOf('late-child')));
-      expect(await api.cancelTaskAgent(fixture, spec.task, 'late-child')).toEqual({ status: 'closed', pids: [] });
-    } else {
-      const state = spawnSync('ps', ['-o', 'stat=', '-p', String(childOf('late-child'))], { encoding: 'utf8' }).stdout.trim();
-      expect(state === '' || state.startsWith('Z')).toBe(true);
-      expect(lateResult).toEqual({ status: 'closed', pids: [] });
-    }
+    const latePid = childOf('late-child');
+    expect(latePid).toBeGreaterThan(0);
+    expect(live(latePid)).toBe(true);
+    expect(lateResult).toEqual({ status: 'cleanup_pending', pids: [latePid], reason: 'provider_group_alive' });
+    process.kill(latePid, 'SIGKILL');
+    await until(() => {
+      const state = spawnSync('ps', ['-o', 'stat=', '-p', String(latePid)], { encoding: 'utf8' }).stdout.trim();
+      return state === '' || state.startsWith('Z');
+    });
+    expect(await api.cancelTaskAgent(fixture, spec.task, 'late-child')).toEqual({ status: 'closed', pids: [] });
     // A reused provider pid: the recorded proof names another start time for a live pid. Its terminal is gone.
     // Cleanup sends no signal and reports the pid, before and after close-intent.json.
     await started('reused');
