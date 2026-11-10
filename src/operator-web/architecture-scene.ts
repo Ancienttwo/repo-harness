@@ -56,7 +56,7 @@ export interface PlacedScene {
 /** The estimate of a label box: the checks have no font metrics. */
 const LABEL_CHAR = 7;
 const LABEL_HEIGHT = 16;
-/** A detour point sits this far outside the corner of the box that a route went through, on both axes. */
+/** A detour runs over box corners grown by this many px on both axes. */
 const DETOUR_GAP = 12;
 
 const round1 = (value: number) => Math.round(value * 10) / 10;
@@ -167,18 +167,51 @@ const corners = (box: Rect): readonly Point[] => [
   [box.x - DETOUR_GAP, box.y + box.height + DETOUR_GAP], [box.x + box.width + DETOUR_GAP, box.y + box.height + DETOUR_GAP],
 ];
 
-/** Adds a detour point outside the nearest corner of each box that a straight segment goes through. A corner that clears the box on both new segments wins over a shorter one. */
+/** `point` lies inside `box`, more than 0.5 px from its border. */
+const inside = (point: Point, box: Rect) => point[0] > box.x + 0.5 && point[0] < box.x + box.width - 0.5 && point[1] > box.y + 0.5 && point[1] < box.y + box.height - 0.5;
+
+/**
+ * The shortest path from `from` to `to` over the corners of every obstacle grown by `DETOUR_GAP`, where each step goes
+ * through no obstacle; null when no such path exists. It is Dijkstra on a finite node set, so it ends.
+ */
+function shortestDetour(from: Point, to: Point, obstacles: readonly Rect[]): Point[] | null {
+  const nodes: Point[] = [from, to, ...obstacles.flatMap(corners).filter(point => !obstacles.some(box => inside(point, box)))];
+  const cost = nodes.map(() => Infinity);
+  const previous = nodes.map(() => -1);
+  const settled = nodes.map(() => false);
+  cost[0] = 0;
+  for (;;) {
+    let next = -1;
+    for (const [index, value] of cost.entries()) if (!settled[index] && value < Infinity && (next < 0 || value < cost[next]!)) next = index;
+    if (next < 0) return null;
+    if (next === 1) break;
+    settled[next] = true;
+    for (const [index, node] of nodes.entries()) {
+      const value = cost[next]! + distance(nodes[next]!, node);
+      if (!settled[index] && value < cost[index]! && !obstacles.some(box => enters(nodes[next]!, node, box))) { cost[index] = value; previous[index] = next; }
+    }
+  }
+  const path: Point[] = [];
+  for (let index = 1; index >= 0; index = previous[index]!) path.unshift(nodes[index]!);
+  return path;
+}
+
+/** Replaces each straight segment that goes through an obstacle with its shortest detour; a segment with no detour stays, and the check reports it. */
 function detour(points: readonly Point[], obstacles: readonly Rect[]): Point[] {
-  const route = [...points];
-  for (let round = 0; round < 4 * obstacles.length + 8; round++) {
-    const index = route.slice(1).findIndex((point, at) => obstacles.some(box => enters(route[at]!, point, box)));
-    if (index < 0) break;
-    const [a, b] = [route[index]!, route[index + 1]!];
-    const box = obstacles.find(item => enters(a, b, item))!;
-    const ranked = corners(box)
-      .map(corner => ({ corner, length: distance(a, corner) + distance(corner, b), clear: !enters(a, corner, box) && !enters(corner, b, box) }))
-      .sort((left, right) => Number(right.clear) - Number(left.clear) || left.length - right.length);
-    route.splice(index + 1, 0, ranked[0]!.corner);
+  return points.flatMap((point, index) => {
+    const next = points[index + 1];
+    if (next === undefined || !obstacles.some(box => enters(point, next, box))) return [point];
+    return (shortestDetour(point, next, obstacles) ?? [point, next]).slice(0, -1);
+  });
+}
+
+/** Removes each loop: when a point comes back, the points between its two visits go. The ends stay. */
+function withoutRepeats(points: readonly Point[]): Point[] {
+  const route: Point[] = [];
+  for (const point of points) {
+    const seen = route.findIndex(item => item[0] === point[0] && item[1] === point[1]);
+    if (seen >= 0) route.length = seen;
+    route.push(point);
   }
   return route;
 }
@@ -205,9 +238,13 @@ function tighten(points: readonly Point[], obstacles: readonly Rect[]): Point[] 
   return route;
 }
 
-/** Repairs a route so that the line `routePath` draws goes through none of `obstacles`: corner detours, then tighter curves. */
+/**
+ * Repairs a route so that the line `routePath` draws goes through none of `obstacles`: the shortest corner detour for
+ * each straight segment that goes through one, then tighter curves, with no repeated point. The ends stay. A route
+ * that still goes through a box stays so, and `sceneFindings` reports it.
+ */
 export function repairRoute(points: readonly Point[], obstacles: readonly Rect[]): Point[] {
-  return tighten(detour(points, obstacles), obstacles);
+  return withoutRepeats(tighten(detour(points, obstacles), obstacles));
 }
 
 /** The size of the canvas that holds every box and every route point, with `margin` px on the right and at the bottom. */

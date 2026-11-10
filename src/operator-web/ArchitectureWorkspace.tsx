@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { Json } from 'archctx-contracts';
 import type { ModuleDetailV1, ModuleIndexV1, ModuleState } from '../core/architecture/module-view';
 import type { ModuleReviewPromptV1 } from '../core/review/module-review-prompt';
 import { decodeArchitectureModuleDetail, decodeArchitectureModuleIndex, decodeArchitectureReviewPrompt } from '../core/operator/architecture';
 import { ArchitectureHistory, type HistorySummary } from './ArchitectureHistory';
-import { ArchitectureMap, type ArchitectureBaseMap, type ArchitectureMapReader, type ArchitectureMapSummary } from './ArchitectureMap';
+import { ArchitectureMap, selectionReducer, type ArchitectureBaseMap, type ArchitectureMapReader, type ArchitectureMapSummary } from './ArchitectureMap';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { ModuleGraph } from './ModuleGraph';
 import { useObservationRefresh } from './useObservationRefresh';
@@ -292,6 +292,7 @@ export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule
   readonly t: OperatorTranslate;
 }) {
   const [view, setView] = useState<ArchitectureView>('map');
+  const [selections, select] = useReducer(selectionReducer, {});
   const root = repositoryPath(repositoryId);
   const modulePath = moduleId === null ? null : `${root}/${moduleId}`;
   const index = useArchitectureRead(moduleId === null && view === 'modules' ? root : null, decodeArchitectureModuleIndex, refreshGeneration);
@@ -326,7 +327,7 @@ export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule
       <ViewTabs view={view} counts={counts?.repositoryId === repositoryId ? counts.value : {}} onChange={setView} t={t} />
       <div id="architecture-view" className="architecture-view" role="tabpanel" aria-labelledby={`architecture-tab-${view}`}>
         {view === 'history' ? <ArchitectureHistory path={historyPath(repositoryId)} github={github} read={fetchArchitecture} refreshGeneration={refreshGeneration} onSummary={onHistory} t={t} />
-          : view !== 'modules' ? <ArchitectureMap repositoryId={repositoryId} view={BASE_MAPS[view]} read={readMap} refreshGeneration={refreshGeneration} onModule={onModule} onSummary={onSummary} t={t} /> : <>
+          : view !== 'modules' ? <ArchitectureMap repositoryId={repositoryId} view={BASE_MAPS[view]} read={readMap} refreshGeneration={refreshGeneration} selections={selections} select={select} onModule={onModule} onSummary={onSummary} t={t} /> : <>
             <ReadStatus read={index} loading="architecture.loading" t={t} />
             {index.value && <ModuleList index={index.value} onModule={onModule} t={t} />}
           </>}

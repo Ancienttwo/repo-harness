@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '@xyflow/react/dist/base.css';
 import {
   decodeArchitectureMap,
@@ -270,21 +270,23 @@ function MapGaps({ map, t }: { readonly map: ArchitectureMapV1; readonly t: Oper
 
 /**
  * The selected model node of each base map, with the scope that it was chosen in: a selection shows only while its
- * view shows the same scope.
+ * view shows the same scope. The architecture workspace holds it, so it outlives every view tab.
  */
-type Selections = Partial<Record<ArchitectureBaseMap, { readonly scope: string; readonly id: string | null }>>;
-type SelectAction = { readonly view: ArchitectureBaseMap; readonly scope: string; readonly id: string | null };
-const selectionReducer = (state: Selections, { view, scope, id }: SelectAction): Selections => ({ ...state, [view]: { scope, id } });
+export type ArchitectureSelections = Partial<Record<ArchitectureBaseMap, { readonly scope: string; readonly id: string | null }>>;
+export type ArchitectureSelect = { readonly view: ArchitectureBaseMap; readonly scope: string; readonly id: string | null };
+export const selectionReducer = (state: ArchitectureSelections, { view, scope, id }: ArchitectureSelect): ArchitectureSelections => ({ ...state, [view]: { scope, id } });
 
 /**
  * The committed model on one base map, with line and import counts from the map collector.
  * The read, the active layer, the chosen PR and the chosen flow stay when the base map changes.
  */
-export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchArchitectureMap, refreshGeneration, onModule, onSummary, t }: {
+export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchArchitectureMap, refreshGeneration, selections, select, onModule, onSummary, t }: {
   readonly repositoryId: string;
   readonly view?: ArchitectureBaseMap;
   readonly read?: ArchitectureMapReader;
   readonly refreshGeneration: number;
+  readonly selections: ArchitectureSelections;
+  readonly select: (action: ArchitectureSelect) => void;
   readonly onModule: (id: string) => void;
   /** Receives the summary of the map on screen: `null` while no map shows and when the view closes. A failed refresh keeps the shown map, so it keeps the summary. */
   readonly onSummary: (summary: ArchitectureMapSummary | null) => void;
@@ -307,16 +309,15 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   const pullRequest = map === null ? null : listed ? picked : firstImpactPullRequest(map);
   const defaultBase = useMemo(() => map === null || view !== 'topology' ? 'namespace' : defaultTopologyBase(map), [map, view]);
   const topologyBase = chosenBase ?? defaultBase;
-  const [selections, select] = useReducer(selectionReducer, {});
   const topologyScope = `${repositoryId}:${map?.commit}:${topologyBase}:${legacy}`;
   const storedTopology = selections.topology;
   const topologySelected = storedTopology?.scope === topologyScope ? storedTopology.id : null;
   // A new segment, legacy switch, repository or commit drops the selection, so going back does not bring it back.
-  // Only the topology view computes its own segment, so another view tab keeps the selection.
+  // Only the topology view with a map on screen computes its own scope, so another view tab and a remount that still reads the map keep the selection.
   useEffect(() => {
-    if (view === 'topology' && storedTopology !== undefined && storedTopology.scope !== topologyScope) select({ view: 'topology', scope: topologyScope, id: null });
-  }, [view, storedTopology, topologyScope]);
-  const onTopologySelect = useCallback((id: string | null) => select({ view: 'topology', scope: topologyScope, id }), [topologyScope]);
+    if (view === 'topology' && map !== null && storedTopology !== undefined && storedTopology.scope !== topologyScope) select({ view: 'topology', scope: topologyScope, id: null });
+  }, [view, map, storedTopology, topologyScope, select]);
+  const onTopologySelect = useCallback((id: string | null) => select({ view: 'topology', scope: topologyScope, id }), [topologyScope, select]);
   useEffect(() => {
     onSummary(map === null ? null : {
       commit: map.commit, collectedAt: map.collected_at, headRef: map.head_ref, archctxVersion: map.archctx_version,

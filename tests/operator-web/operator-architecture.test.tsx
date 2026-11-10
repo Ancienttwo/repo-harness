@@ -1076,7 +1076,18 @@ describe('sequence and topology base maps', () => {
     const curve = route('curve', 'a', 'c', [[0, 0], [0, 100], [100, 100]]);
     const probe = { boxes: [box('a', -50, -40), box('c', 100, 80), { ...box('probe', 10, 85), width: 8, height: 8 }], routes: [curve], labels: [], extent: { width: 300, height: 300 } };
     expect(sceneFindings(probe)).toEqual([{ kind: 'route-through-box', ids: ['curve', 'probe'] }]);
-    expect(sceneFindings({ ...probe, routes: [{ ...curve, points: repairRoute(curve.points, [probe.boxes[2]!]) }] })).toEqual([]);
+    // The repair keeps the ends, repeats no point and clears every obstacle: the drawn curve here and a straight route between two boxes that one corner detour cannot clear.
+    const repairs = [
+      { name: 'curve', points: curve.points, ends: [box('a', -50, -40), box('c', 100, 80)], obstacles: [probe.boxes[2]!] },
+      { name: 'two boxes', points: [[20, 110], [500, 110]] as const, ends: [{ ...box('a', 0, 100), width: 20, height: 20 }, { ...box('c', 500, 100), width: 20, height: 20 }],
+        obstacles: [{ ...box('low', 62, 113), width: 35, height: 51 }, { ...box('high', 97, 30), width: 53, height: 106 }] },
+    ];
+    for (const entry of repairs) {
+      const points = repairRoute(entry.points, entry.obstacles);
+      const scene = { boxes: [...entry.ends, ...entry.obstacles], routes: [{ ...curve, points }], labels: [], extent: { width: 600, height: 300 } };
+      expect([entry.name, sceneFindings(scene), points[0], points.at(-1), new Set(points.map(point => point.join())).size])
+        .toEqual([entry.name, [], entry.points[0], entry.points.at(-1), points.length]);
+    }
     // Three stacked mounts in one namespace: the route from the first to the third clears the middle one.
     const stacked = runtimeMap({
       nodes: [...runtimeMap().nodes, ...['a', 'b', 'c'].map((id, order) => ({ ...mapNode(`mount.${id}`, 'mount'), mount: { source: null, target: `mnt/${id}`, mode: 'rw', order } as const }))],
@@ -1437,10 +1448,12 @@ describe('sequence and topology base maps', () => {
     expect([...inspector().querySelectorAll('[data-fix-command]')].map(item => item.getAttribute('data-fix-command'))).toEqual(['flows', 'dependencies']);
     await click(`.react-flow__node[data-id="${SERVER}"]`);
     expect([inspector().querySelector('[data-runs-in]')?.textContent, inspector().querySelector('[data-deployed]')?.textContent]).toEqual([`In: Name ${HOST}`, `Name ${CENTER} · 900 lines in 1 files`]);
-    // The selection stays across a base-map tab change and goes with a segment change, so going back does not bring it back.
-    await tab('sequence');
-    await tab('topology');
-    expect(inspector().getAttribute('data-node-id')).toBe(SERVER);
+    // The selection stays across every view tab and goes with a segment change, so going back does not bring it back.
+    for (const other of ['sequence', 'modules', 'history']) {
+      await tab(other);
+      await tab('topology');
+      expect([other, inspector().getAttribute('data-node-id')]).toEqual([other, SERVER]);
+    }
     await segment('namespace');
     await segment('process');
     expect(inspector().getAttribute('data-node-id')).toBeNull();
