@@ -17,7 +17,7 @@ export interface SceneBox {
   readonly y: number;
   readonly width: number;
   readonly height: number;
-  /** The drawing class of the box in the SVG file. */
+  /** The drawing classes of the box in the SVG file, separated by spaces. */
   readonly kind: string;
 }
 
@@ -369,6 +369,12 @@ const STYLE = [
   '.label-box{fill:#FFFFFF}.label{font-family:ui-monospace,monospace;font-size:11px;fill:#1F2328}',
 ].join('');
 
+/** Drawing classes of one view only. The file carries such a rule only when a box uses its class, so the files of the other views do not change. */
+const VIEW_STYLE: Readonly<Record<string, string>> = {
+  band: '.band{fill:none;stroke:none}',
+  selected: '.selected{stroke:#F08A3C;stroke-width:2}',
+};
+
 const escape = (value: string) => value.replace(/[&<>"]/gu, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]!);
 
 /** The text lines of a box in the file: the first line is its title. A box lower than two lines holds one centred line. */
@@ -399,9 +405,11 @@ export function sceneSvg(scene: PlacedScene, lines: (box: SceneBox) => readonly 
     parts.push(`<rect class="label-box" x="${label.x}" y="${label.y}" width="${label.width}" height="${label.height}" rx="3"/>`,
       `<text class="label" x="${label.x + label.width / 2}" y="${label.y + 12}" text-anchor="middle">${escape(label.text)}</text>`);
   }
+  const used = new Set(scene.boxes.flatMap(box => box.kind.split(' ')));
+  const viewStyle = Object.entries(VIEW_STYLE).filter(([name]) => used.has(name)).map(([, rule]) => rule).join('');
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
-    `<style>${STYLE}</style>`,
+    `<style>${STYLE}${viewStyle}</style>`,
     '<defs><marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L8 4L0 8z" fill="#5B6573"/></marker></defs>',
     `<rect width="${width}" height="${height}" fill="#FFFFFF"/>`,
     ...parts,
