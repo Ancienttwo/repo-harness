@@ -8,6 +8,7 @@ import type { WatchClock } from './vendor/policy.ts';
 export const HEAD = 'a'.repeat(40);
 export const BASE = 'b'.repeat(40);
 export const OTHER = 'c'.repeat(40);
+const REQUIRED_CONTEXT = 'Required / CI';
 export const context = (number = 1): PrContext => ({ owner: 'fixture', repo: 'offline', number: parsePrNumber(number) });
 export const options: PollingOptions = { interval: 10, sweepInterval: 300, timeout: 40, maxQueryErrors: 5, allowDraft: false };
 export interface RawCheck { name: string; bucket: string; state: string; link: string }
@@ -49,7 +50,7 @@ export function fixture(name = 'clean', patch: Partial<Fixture> = {}): Fixture {
 export function changePr(name: string, patch: Partial<RawPr>): Fixture {
   return fixture(name, { pr: { ...fixture().pr, ...patch } });
 }
-export function check(bucket = 'pass', name = 'Required / CI'): RawCheck {
+export function check(bucket = 'pass', name = REQUIRED_CONTEXT): RawCheck {
   return { name, bucket, state: bucket === 'pass' ? 'SUCCESS' : bucket === 'pending' ? 'PENDING' : 'FAILURE',
     link: 'https://github.com/fixture/offline/actions/runs/123/job/456' };
 }
@@ -124,6 +125,7 @@ export function collectBaseline(f: Fixture) {
       let status = 0;
       if (args[0] === 'repo' && args[1] === 'view') value = { id: 'R_fixture', nameWithOwner: 'fixture/offline' };
       else if (args[0] === 'api' && args[1] === 'repos/fixture/offline') value = { id: 1001, node_id: 'R_fixture', full_name: 'fixture/offline', default_branch: 'main' };
+      else if (args[0] === 'api' && args[1] === 'repos/fixture/offline/branches/main/protection') value = { required_status_checks: { contexts: [REQUIRED_CONTEXT] } };
       else if (args[0] === 'pr' && args[1] === 'view') {
         current = source.readIdentity();
         value = current;
