@@ -2,7 +2,7 @@ import { ADVISOR_SEAT_SEND_KIND, ADVISOR_SEAT_TRANSCRIPT_KIND, ADVISOR_TRANSCRIP
 import { BOARD_PROTOCOL, decodeBoard, type BoardItemV1, type BoardPullRequestV1, type BoardTerminalV1, type BoardV1 } from '../../core/board/board';
 import { BOARD_PARENTS_PROTOCOL, decodeBoardParents, type BoardParentsSeatV1, type BoardParentsV1 } from '../../core/board/parents';
 import { ISSUE_FLOW_WORKER_LIMIT, type DeskState } from '../../core/board/desk';
-import { BOARD_SUMMARIES_PROTOCOL, boardSummary, type BoardSummarySeatsV1, type BoardSummaryV1 } from '../../core/board/summary';
+import { BOARD_SUMMARIES_PROTOCOL, boardSummary, type BoardSummaryEntryV1, type BoardSummarySeatsV1, type BoardSummaryV1 } from '../../core/board/summary';
 import { decodeDevActivitySnapshot } from '../../core/dev-activity/decode';
 import { decodeOperatorRepositories } from '../../core/operator/repositories';
 import type { OperatorAppProps } from '../App';
@@ -173,11 +173,12 @@ export function officeParents(repositoryId: string, now: number): BoardParentsV1
   });
 }
 
-function officeSummaries(repositoryId: string, now: number): BoardSummariesRead {
+function officeSummaries(repositoryId: string, asked: number, now: number): BoardSummariesRead {
   const sample = SAMPLE_ROOMS[repositoryId];
   // The mockup's repo-harness card waits for nobody; the sample board has an A2 finding.
   const row = sample !== undefined ? { parent: sample.parent, summary: sample.summary } : { parent: OFFICE_PARENT, summary: { ...boardSummary(officeBoard(now)), needs_you: 0 } };
-  return { state: 'ok', summaries: { protocol: BOARD_SUMMARIES_PROTOCOL, kind: 'repo-harness.board-summaries', repository_id: repositoryId, parents: [{ ...row, status: 'observed', observed_at: new Date(now).toISOString() }] } };
+  const entry: BoardSummaryEntryV1 = asked === row.parent ? { ...row, status: 'observed', observed_at: new Date(now).toISOString() } : { parent: asked, status: 'not_read' };
+  return { state: 'ok', summaries: { protocol: BOARD_SUMMARIES_PROTOCOL, kind: 'repo-harness.board-summaries', repository_id: repositoryId, parents: [entry] } };
 }
 
 const officeRepositories = decodeOperatorRepositories({
@@ -239,7 +240,7 @@ export function officeProps(busy: OperatorAppProps): OperatorAppProps {
     readBoard: (subject): Promise<BoardRead> => Promise.resolve(subject.repository_id === HARNESS_ID && subject.parent === OFFICE_PARENT
       ? { state: 'ok', board: officeBoard(now) } : { state: 'unavailable', reason: 'board_parent_invalid' }),
     readBoardParents: (repositoryId): Promise<BoardParentsRead> => Promise.resolve({ state: 'ok', list: officeParents(repositoryId, now) }),
-    readBoardSummaries: repositoryId => Promise.resolve(officeSummaries(repositoryId, now)),
+    readBoardSummaries: (repositoryId, parent) => Promise.resolve(officeSummaries(repositoryId, parent, now)),
     readRepositories: () => Promise.resolve(officeRepositories),
     initialRepositories: officeRepositories,
     writeBossCommand: officeBossWriter(),

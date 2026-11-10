@@ -1,11 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, relative } from 'node:path';
 import { tmpWorkspace } from '../helpers/repo-fixture';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { runGit } from '../../src/effects/git/run-git';
 import {
   DEFAULT_GIT_TIMEOUT_MS,
+  GitExecError,
+  gitExecFile,
   gitExecFileSync,
   gitSpawnSync,
   resolveGitExecutable,
@@ -126,11 +129,93 @@ describe('git runner', () => {
     expect(calls).toBe(1);
   });
 
+  test('a local git command runs without provider tokens, with or without a caller env', () => {
+    const root = tmpWorkspace('git-runner-tokens');
+    const tokens = { GH_TOKEN: 'fake-gh', GITHUB_TOKEN: 'fake-github', GH_ENTERPRISE_TOKEN: 'fake-ghe', GITHUB_ENTERPRISE_TOKEN: 'fake-github-e' };
+    const previous = Object.fromEntries(Object.keys(tokens).map(key => [key, process.env[key]]));
+    try {
+      const gitBin = writeGit(root, '#!/bin/sh\nprintf "%s" "${GH_TOKEN-}${GITHUB_TOKEN-}${GH_ENTERPRISE_TOKEN-}${GITHUB_ENTERPRISE_TOKEN-}${gh_token-}${GitHub_Token-}"\n');
+      const caseVariants = { gh_token: 'fake-lower', GitHub_Token: 'fake-mixed' };
+      expect(gitExecFileSync(['-C', root, 'cat-file', '-t', 'HEAD'], { gitBin, encoding: 'utf8', env: { ...process.env, ...tokens, ...caseVariants } })).toBe('');
+      expect(runGit(['rev-parse', 'HEAD'], { gitBin, env: tokens }).stdout).toBe('');
+      Object.assign(process.env, tokens);
+      expect(gitSpawnSync(['merge-tree', '--write-tree', 'a', 'b'], { gitBin, encoding: 'utf8' }).stdout).toBe('');
+      // Help, version and unknown-option forms, and option values, do not run the remote command they name.
+      for (const args of [['--help', 'fetch'], ['-h', 'push'], ['--version', 'push'], ['--unknown', 'clone'], ['--git-dirX', 'fetch'],
+        ['-c', 'x=fetch', 'status'], ['--attr-source', 'fetch', 'version'], ['-C'], ['fetch', '--help'], ['-C', 'x', 'push', '--help'],
+        ['push', 'origin', '--help']]) {
+        expect(gitSpawnSync(args, { gitBin, encoding: 'utf8' }).stdout, args.join(' ')).toBe('');
+      }
+      // Real git: `<cmd> --help` starts the man viewer with the env the runner chose.
+      const viewer = ['-c', 'help.format=man', '-c', 'man.viewer=probe', '-c', 'man.probe.cmd=printf "viewer-saw:%s" "$GH_TOKEN"; true'];
+      for (const command of ['fetch', 'pull', 'push', 'clone', 'ls-remote']) {
+        expect(gitSpawnSync([...viewer, command, '--help'], { encoding: 'utf8', env: { ...process.env, HOME: root, GIT_CONFIG_NOSYSTEM: '1', ...tokens } }).stdout, command).toBe('viewer-saw:');
+      }
+      for (const args of [['-C', root, '-c', 'a=b', '--no-pager', '--git-dir=x', 'fetch'], ['--attr-source=HEAD', 'ls-remote']]) {
+        expect(gitSpawnSync(args, { gitBin, encoding: 'utf8' }).stdout, args.join(' ')).toBe(Object.values(tokens).join(''));
+      }
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('fetch and push keep the caller token for gh auth git-credential', async () => {
+    const gh = Bun.which('gh');
+    if (!gh) throw new Error('gh is required on PATH for the credential-helper case');
+    const root = tmpWorkspace('git-runner-credential');
+    const token = 'fake-credential-token';
+    const authorized: string[] = [];
+    let server: ReturnType<typeof Bun.serve> | undefined;
+    try {
+      // gh answers only https requests, so the localhost fixture serves TLS with a throwaway certificate.
+      const [key, cert] = [join(root, 'key.pem'), join(root, 'cert.pem')];
+      execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=127.0.0.1', '-days', '1', '-keyout', key, '-out', cert], { stdio: 'ignore' });
+      server = Bun.serve({
+        hostname: '127.0.0.1',
+        port: 0,
+        tls: { key: readFileSync(key, 'utf8'), cert: readFileSync(cert, 'utf8') },
+        fetch(request) {
+          const auth = request.headers.get('authorization');
+          if (!auth) return new Response('', { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="fixture"' } });
+          authorized.push(`${new URL(request.url).searchParams.get('service')} ${auth}`);
+          return new Response('', { status: 403 });
+        },
+      });
+      const repo = join(root, 'repo');
+      gitExecFileSync(['init', '-q', repo]);
+      // gh reads GH_ENTERPRISE_TOKEN for a host other than github.com; the empty config dir holds no login.
+      const env = { PATH: process.env.PATH, HOME: root, GH_CONFIG_DIR: join(root, 'gh'), GH_NO_UPDATE_NOTIFIER: '1',
+        GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0', GH_ENTERPRISE_TOKEN: token };
+      const url = `https://127.0.0.1:${server.port}/fixture.git`;
+      const credential = ['-C', repo, '-c', 'http.sslVerify=false', '-c', 'credential.helper=', '-c', `credential.helper=!'${gh}' auth git-credential`];
+      for (const args of [[...credential, 'fetch', url], [...credential, 'push', url, ':refs/heads/fixture']]) {
+        const failure = await gitExecFile(args, { env, timeout: 30_000 }).then(() => undefined, (error: unknown) => error);
+        expect(failure).toBeInstanceOf(GitExecError);
+        expect((failure as GitExecError).stderr).not.toContain(token);
+      }
+      const basic = `Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
+      expect(authorized).toEqual([`git-upload-pack ${basic}`, `git-receive-pack ${basic}`]);
+    } finally {
+      server?.stop(true);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('src starts git only through the runner', () => {
     const patterns = [
       /\b(?:execFileSync|spawnSync|spawn|execFile|observationExecFileSync|observationSpawnSync|runProcess|runBoundedProcess)\(\s*['"]git['"]/g,
       /\b(?:execFileSync|spawnSync)\(\s*(?:(?:gitBin|input\.gitBin|opts\.gitBin|runtime\.gitBin)\b|(?:gitBinary|configuredGitBinary)\s*\()/g,
       /\brunBoundedProcess\(\s*runtime\?\.gitBin/g,
+      /\b(?:execFileSync|spawnSync|spawn|execFile|runProcess|runBoundedProcess)\(\s*[\w.?]*\bgit_bin\b(?![^\n]*gitChildEnv\()/g,
+      // A branch that hands the same configured binary to the runner and to a raw launcher. The observation
+      // executor (direct: true) is exempt: the runner already filtered the env it receives.
+      /gitBin:\s*(\w+)(?![^}\n]*direct:\s*true)[\s\S]{0,300}?:\s*(?:execFileSync|spawnSync|spawn|execFile)\(\s*\1\b/g,
+      // A script that runs git through REPO_HARNESS_GIT_BIN with an inherited env.
+      /\.\.\.(?!withoutProviderTokens\()[^,}\n]*,\s*REPO_HARNESS_GIT_BIN:/g,
     ];
     for (const source of [
       "execFileSync(configuredGitBinary(), ['status'])",
@@ -139,6 +224,9 @@ describe('git runner', () => {
       "spawnSync(input.gitBin, ['status'])",
       "spawnSync(runtime.gitBin, ['status'])",
       "spawnSync(opts.gitBin, ['status'])",
+      "spawnSync(input.git_bin ?? 'git', ['rev-parse', 'HEAD'])",
+      "isGit ? gitExecFileSync(args, { gitBin: command }) : execFileSync(command, args)",
+      "env: { ...withoutRepositorySelectingGitEnv(), REPO_HARNESS_GIT_BIN: gitBinary(limits) }",
     ]) {
       expect(patterns.some(pattern => {
         pattern.lastIndex = 0;

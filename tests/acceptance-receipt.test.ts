@@ -994,9 +994,9 @@ test('review publish turns a P1 receipt into one unresolved thread that merge re
   expect(() => validateReviewPublishReceipt({ ...receipt, findings: receipt.findings.slice(1) })).toThrow('FAIL requires');
   expect(() => validateReviewPublishReceipt({ ...receipt, subject_sha: 'not-a-sha' })).toThrow('subject_sha');
   expect(() => validateReviewPublishReceipt({ ...receipt, findings: [{ ...receipt.findings[0], path: '../outside.ts' }] })).toThrow('repository-relative');
-  // Round 5 is the hard stop of the fix loop (acceptor.md section 2.2), so the publisher takes rounds 1 to 5.
-  expect(validateReviewPublishReceipt({ ...receipt, round: 5 }).round).toBe(5);
-  expect(() => validateReviewPublishReceipt({ ...receipt, round: 6 })).toThrow('round must be an integer from 1 to 5');
+  // The round-5 hard stop (acceptor.md section 2.2) lives in publishReview, which sees --owner-record; tests/cli/review.test.ts covers it.
+  expect(validateReviewPublishReceipt({ ...receipt, round: 6 }).round).toBe(6);
+  expect(() => validateReviewPublishReceipt({ ...receipt, round: 0 })).toThrow('round must be a positive integer');
 
   const writes: Array<{ readonly args: string[]; readonly input: string }> = [];
   const result = publishReview({
@@ -1004,7 +1004,7 @@ test('review publish turns a P1 receipt into one unresolved thread that merge re
     ghRunner: (args, input = '') => {
       writes.push({ args: [...args], input });
       if (args[0] === 'pr' && args[1] === 'view') {
-        return { status: 0, stdout: JSON.stringify({ number: PR_NUMBER, headRefOid: PUBLISH_HEAD, url: `https://github.com/${SLUG}/pull/${PR_NUMBER}` }), stderr: '' };
+        return { status: 0, stdout: JSON.stringify({ number: PR_NUMBER, headRefOid: PUBLISH_HEAD, url: `https://github.com/${SLUG}/pull/${PR_NUMBER}`, closingIssuesReferences: [] }), stderr: '' };
       }
       // Read side of the publisher: no earlier claim, and a diff that shows lines 10-14 of src/example.ts.
       if (args[0] === 'api' && args[1]?.startsWith(`repos/${SLUG}/issues/${PR_NUMBER}/comments?`)) return { status: 0, stdout: '[]', stderr: '' };
