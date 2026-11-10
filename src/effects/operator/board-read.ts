@@ -4,30 +4,21 @@ import { fileURLToPath } from 'node:url';
 import { withoutRepositorySelectingGitEnv } from '../git/runner';
 import { spawnRegisteredProcessGroup } from '../process-group-registry';
 import { terminateProcessGroup } from '../process-group-termination';
-import type { BoardParentsReadFailure, BoardReadFailure } from '../../core/operator/board-read';
 import { ADVISOR_SEAT_CLI_FAILURES, type AdvisorSeatFailure } from '../../core/board/advisor-seat';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 
-/**
- * The board CLI is the composition root that passes the hc host ports to the
- * collector, so the operator runs it as a child instead of importing the
- * terminal plugin (Surface contract, docs/adr/ADR-0002 rule 5).
- */
+/** The advisor send and read-back run the board CLI as a child: it reads hc and GitHub synchronously. */
 const BOARD_CLI_ENTRY = fileURLToPath(new URL('../../cli/index.ts', import.meta.url));
-/** One board read makes several GitHub reads and one merge readiness read per open pull request. */
-export const BOARD_READ_TIMEOUT_MS = 90_000;
+const BOARD_READ_TIMEOUT_MS = 90_000;
 const BOARD_TERMINATION_GRACE_MS = 500;
 const BOARD_OUTPUT_LIMIT = 16 * 1024 * 1024;
 
 /** The failures of one CLI run; the route adds its own request, decode and capacity refusals. */
-export type BoardRunFailure = Exclude<BoardReadFailure, 'board_parent_invalid' | 'board_invalid' | 'board_busy'>;
-export type BoardParentsRunFailure = Exclude<BoardParentsReadFailure, 'parents_invalid' | 'parents_busy'>;
 export type AdvisorSeatRunFailure = Exclude<AdvisorSeatFailure, 'advisor_busy' | 'advisor_invalid' | 'invalid_request'>;
-type RunFailure = BoardRunFailure | BoardParentsRunFailure | AdvisorSeatRunFailure;
 
 export class BoardReadError extends Error {
   constructor(
-    readonly code: RunFailure,
+    readonly code: AdvisorSeatRunFailure,
     /** The `failure` report of a failed `board advisor send`, undecoded; the route decodes it. */
     readonly failure?: unknown,
   ) {
@@ -36,13 +27,10 @@ export class BoardReadError extends Error {
   }
 }
 
-export interface BoardParentsReadInput {
+export interface BoardReadInput {
   readonly repository_id: string;
   readonly env: NodeJS.ProcessEnv;
   readonly signal: AbortSignal;
-}
-
-export interface BoardReadInput extends BoardParentsReadInput {
   readonly parent: number;
 }
 
@@ -60,7 +48,7 @@ function cliError(stderr: string): CliError | null {
 }
 
 /** The codes of one board CLI mode. */
-interface BoardCliMode<F extends RunFailure> {
+interface BoardCliMode<F extends AdvisorSeatRunFailure> {
   readonly args: readonly string[];
   /** Written to the child's stdin; without it the child's stdin is closed. */
   readonly stdin?: string;
@@ -70,24 +58,6 @@ interface BoardCliMode<F extends RunFailure> {
   readonly unavailable: F;
   readonly failure: (error: CliError | null) => F;
 }
-
-const BOARD_MODE = (parent: number): BoardCliMode<BoardRunFailure> => ({
-  args: ['board', '--parent', String(parent), '--json'],
-  timeout: 'board_timeout',
-  unavailable: 'board_unavailable',
-  failure: error => error?.error === 'BoardCollectError' ? 'board_collect_failed' : error?.error === 'BoardSourceError' ? 'board_source_invalid' : 'board_unavailable',
-});
-
-const PARENTS_MODE: BoardCliMode<BoardParentsRunFailure> = {
-  args: ['board', 'parents', '--json'],
-  timeout: 'parents_timeout',
-  unavailable: 'parents_unavailable',
-  failure: (error) => {
-    if (error?.error === 'BoardSourceError') return 'parents_source_invalid';
-    if (error?.error === 'BoardParentsError' && (error.code === 'parents_github_failed' || error.code === 'parents_hc_failed')) return error.code;
-    return 'parents_unavailable';
-  },
-};
 
 const ADVISOR_MODE = (args: readonly string[], stdin?: string): BoardCliMode<AdvisorSeatRunFailure> => ({
   args: ['board', 'advisor', ...args, '--json'],
@@ -100,19 +70,6 @@ const ADVISOR_MODE = (args: readonly string[], stdin?: string): BoardCliMode<Adv
     return error?.error === 'BoardCollectError' ? 'github_unavailable' : 'advisor_unavailable';
   },
 });
-
-/**
- * Run `repo-harness board --parent <n> --json` in the registered repository
- * root and return its stdout as parsed JSON. The caller decodes it.
- */
-export function readRepositoryBoard(input: BoardReadInput): Promise<unknown> {
-  return runBoardCli(input, BOARD_MODE(input.parent));
-}
-
-/** Run `repo-harness board parents --json` the same way: the parent list of the Board page. */
-export function readRepositoryBoardParents(input: BoardParentsReadInput): Promise<unknown> {
-  return runBoardCli(input, PARENTS_MODE);
-}
 
 /** `repo-harness board advisor send --parent <n> --json` with the text on stdin. A `read_only` repository refuses it. */
 export function sendRepositoryAdvisor(input: BoardReadInput & { readonly text: string }): Promise<unknown> {
@@ -129,7 +86,7 @@ export function readRepositoryAdvisorTranscript(input: BoardReadInput): Promise<
  * leads a registered process group; a deadline or abort terminates the group
  * (Windows: the `taskkill /T` tree) before the read settles.
  */
-function runBoardCli<F extends RunFailure>(input: BoardParentsReadInput, mode: BoardCliMode<F>): Promise<unknown> {
+function runBoardCli<F extends AdvisorSeatRunFailure>(input: BoardReadInput, mode: BoardCliMode<F>): Promise<unknown> {
   let root: string;
   try {
     const repository = readRepoHarnessRegistryStrictSnapshot({ env: input.env }).repos.find(repo => repo.id === input.repository_id);

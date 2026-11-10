@@ -707,7 +707,7 @@ describe('board page', () => {
     } finally { globalThis.fetch = original; }
   });
 
-  test('seats keep a 3 s poll while board and parent facts keep a 30 s poll; only unreachable backs off', async () => {
+  test('seats, board and parent facts poll each 3 s from the cached routes; only unreachable backs off', async () => {
     const subject: BoardSubject = { repository_id: HARNESS_ID, parent: 1474 };
     const repositories = [HARNESS_ID];
     const noSummaries: BoardSummariesReader = async () => ({ state: 'unavailable', reason: 'unreachable' });
@@ -741,8 +741,8 @@ describe('board page', () => {
     try {
       for (const [Probe, delay] of [
         [probes.seats('parents_hc_failed'), 3000], [probes.seats('unreachable'), 6000],
-        [probes.parents('parents_github_failed'), 30_000], [probes.board('board_collect_failed'), 30_000], [probes.overview('parents_hc_failed'), 30_000],
-        [probes.parents('unreachable'), 60_000], [probes.board('unreachable'), 60_000], [probes.overview('unreachable'), 60_000],
+        [probes.parents('parents_github_failed'), 3000], [probes.board('board_collect_failed'), 3000], [probes.overview('parents_hc_failed'), 3000],
+        [probes.parents('unreachable'), 6000], [probes.board('unreachable'), 6000], [probes.overview('unreachable'), 6000],
       ] as const) {
         delays.length = 0;
         await mount(<Probe />);
@@ -1180,7 +1180,7 @@ describe('board office (#1755)', () => {
       { id: 'repo_1000000000000003', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed({ queue: 1, ci_failures: 1, batch: { accepted: 3, size: 8 }, current_batch: { accepted: 2, size: 5 }, needs_you: 2 })), chips: ['needs you 2', '2/8', 'queue 1', 'CI ✗ 1', 'batch 2/6'] },
       { id: 'repo_1000000000000004', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, { parent: 1474, status: 'not_read' }), chips: ['worker 2', 'board not read'] },
       { id: 'repo_1000000000000005', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, { parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' }), chips: ['worker 2', 'no summary'] },
-      { id: 'repo_1000000000000006', list: { state: 'ok', list: PARENTS }, read: () => ({ state: 'unavailable', reason: 'parents_busy' }), chips: ['worker 2', 'no summary'] },
+      { id: 'repo_1000000000000006', list: { state: 'ok', list: PARENTS }, read: () => ({ state: 'unavailable', reason: 'parents_unavailable' }), chips: ['worker 2', 'no summary'] },
       // Another parent's row is never this card's row.
       { id: 'repo_1000000000000007', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, { ...observed({ ...zero, queue: 9 }), parent: 1651 }), chips: ['worker 2', 'board not read'] },
       { id: 'repo_1000000000000008', list: { state: 'ok', list: parentless }, read: () => { throw new Error('a repository with no active parent reads no summaries'); }, chips: ['worker 2'], name: 'no parent' },
@@ -2326,7 +2326,7 @@ describe('office setup checklist (#1788)', () => {
       [overview(failedRoom('parents_invalid')), 'unknown', planWords(1, 'parents_invalid'), anyRead],
       [overview(loadingRoom), 'unknown', planWords(1, 'no read yet'), anyRead],
       [overview(readyRoom(PARENTS)), 'unknown', planWords(1, 'no read yet'), anyRead],
-      [overview(readyRoom(PARENTS, { state: 'unavailable', reason: 'parents_busy' })), 'unknown', planWords(1, 'parents_busy'), anyRead],
+      [overview(readyRoom(PARENTS, { state: 'unavailable', reason: 'parents_unavailable' })), 'unknown', planWords(1, 'parents_unavailable'), anyRead],
       [overview(readyRoom(PARENTS, summaryRead({ parent: 1474, status: 'not_read' }))), 'unknown', planWords(1, 'not_read'), anyRead],
       [overview(readyRoom(PARENTS, summaryRead({ parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' }))), 'unknown', planWords(1, 'snapshot_invalid'), anyRead],
       [overview(readyRoom(PARENTS, summary({ accepted: null, size: null }))), 'unknown', planWords(1, 'plan_not_observed'), anyRead],

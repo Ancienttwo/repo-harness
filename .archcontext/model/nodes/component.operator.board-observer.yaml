@@ -5,12 +5,15 @@ name: Board Observer
 status: active
 parent: capability.runtime-harness.operator
 layer: effects
-summary: Observes live repository seats through one hc invalidation stream and publishes an in-memory seats document.
+summary: Observes live repository seats through one hc invalidation stream and board facts through one resident supervised worker, and publishes the seats, parents and board documents in memory.
 responsibilities:
   - Hold one hc events stream per registered repository, debounce changes, replace observations from a snapshot and join agent values from hc ls by address.
   - Use the shared hc seat-terminal mapping, omit finished and service terminals, and read each changed terminal branch asynchronously in its working directory.
   - Refresh all seat branches on each facts cycle, reconnect after a stream loss and stop subscriptions when the server closes or a repository leaves the registry.
   - Own every repository child, deadline and retry through an abort signal; drain children on removal or close, and retry failed reads with backoff capped at the facts interval.
+  - Run one resident board facts worker per server that reads one document at a time with a 90 s deadline; kill and restart it at a deadline or crash, so a restart empties its keyed source stores.
+  - Observe each open parent with a live seat and each parent that a board GET leased in the last 10 minutes; a GET for an unobserved parent answers board_pending and adds the lease. Each cycle removes the documents and stores it did not read and waits longer when the GitHub rate limit is low.
 source:
   include:
     - src/effects/operator/board-observer.ts
+    - src/effects/operator/board-observer-worker.ts

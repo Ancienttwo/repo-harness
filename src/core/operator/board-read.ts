@@ -11,7 +11,7 @@ export const BOARD_READ_FAILURES = [
   'board_unavailable',
   'board_timeout',
   'board_invalid',
-  'board_busy',
+  'board_pending',
 ] as const;
 export type BoardReadFailure = typeof BOARD_READ_FAILURES[number];
 
@@ -29,6 +29,6 @@ export const BOARD_PARENTS_READ_FAILURES = [
   'parents_unavailable',
   'parents_timeout',
   'parents_invalid',
-  'parents_busy',
+  'parents_pending',
 ] as const;
 export type BoardParentsReadFailure = typeof BOARD_PARENTS_READ_FAILURES[number];
