@@ -36,6 +36,14 @@ export const seatHandoffPath = (identity: SeatResetIdentity): string => `${seatR
 /** The hook writes this file when it blocks the stop; a handoff older than it is stale. */
 export const seatResetRequestPath = (identity: SeatResetIdentity): string => `${seatResetDirectory(identity)}/request.json`;
 
+/** The SessionStart sources that record a new session of the seat. */
+export const SEAT_SESSION_SOURCES = ['startup', 'clear'] as const;
+export type SeatSessionSource = typeof SEAT_SESSION_SOURCES[number];
+
+export function isSeatSessionSource(value: unknown): value is SeatSessionSource {
+  return SEAT_SESSION_SOURCES.includes(value as SeatSessionSource);
+}
+
 /** The SessionStart hook writes this file for a new session of the seat: the new-session signal of the reset. */
 export const seatSessionPath = (identity: SeatResetIdentity): string => `${seatResetDirectory(identity)}/session.json`;
 /** One JSON line per reset failure. It is the only record of the rewrite and resend counts. */
