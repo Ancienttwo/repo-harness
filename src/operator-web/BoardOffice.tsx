@@ -15,7 +15,7 @@ import { OfficeAdvisorDialog, type AdvisorMessageWriter, type AdvisorTranscriptR
 import { OfficeSetupChecklist, officeSetupRows, officeToolingFails, type OfficeSetupReads } from './OfficeSetupChecklist';
 import { useBossCommands, type BossCommands, type BossCommandWriter, type BossNotice } from './office-boss';
 import { WriteReloadBanner } from './operator-write';
-import { agentPortrait, bossPortrait, composeMiniRoom, composeRoom, deskOutfit, deskVignette, queueOutfit, sceneEffect, stageOutfit, type ScenePath } from './office-scene';
+import { agentPortrait, bossPortrait, composeMiniRoom, composeRoom, deskOutfit, deskVignette, queueOutfit, sceneEffect, stageOutfit, type ScenePath, type SceneRoom } from './office-scene';
 import { BOSS_ICONS, sceneAgent, type BossPose } from './office-sprites';
 import type { ThemeMode } from './theme';
 import { Age, CopyButton, PageLink } from './ui';
@@ -498,8 +498,8 @@ function feedText(event: OfficeFeedEvent, room: OfficeRoom, t: OperatorTranslate
   return event.carted ? t('board.office.feed.carted', { number: event.pr, accepted: room.cart?.accepted.length ?? 0, sockets: room.cart_sockets }) : t('board.office.feed.accepted', { number: event.pr });
 }
 
-function OfficeFeed({ room, lit, parent, t }: { readonly room: OfficeRoom; readonly lit: boolean; readonly parent: number | null; readonly t: OperatorTranslate }) {
-  const empty = !lit ? t('board.office.feed.noSeats') : parent === null ? t('board.office.feed.noParent') : t('board.office.feed.none');
+function OfficeFeed({ room, lit, parent, reading, t }: { readonly room: OfficeRoom; readonly lit: boolean; readonly parent: number | null; readonly reading: boolean; readonly t: OperatorTranslate }) {
+  const empty = reading ? t('board.office.board.reading') : !lit ? t('board.office.feed.noSeats') : parent === null ? t('board.office.feed.noParent') : t('board.office.feed.none');
   return (
     <section className="board-office__panel board-office__feed" aria-labelledby="board-office-feed">
       <h3 id="board-office-feed">{t('board.office.feed')}</h3>
@@ -514,11 +514,12 @@ function OfficeFeed({ room, lit, parent, t }: { readonly room: OfficeRoom; reado
  * One room is one repository (#1787): every live seat at a desk, the plan of
  * the active parent on the whiteboard, and the seat detail and feed beside the
  * scene. The scene follows the approved S0 mockup; an empty room stays
- * furnished and takes the night palette.
+ * furnished and takes the night palette. While the board read is pending
+ * (`reading`), the room draws its seats from the parent list alone.
  */
-export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranch, room, place, banners, setup, writeBoss, readAdvisor, writeAdvisor, mode, onOpen, now, t }: {
+export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranch, room, reading, place, banners, setup, writeBoss, readAdvisor, writeAdvisor, mode, onOpen, now, t }: {
   readonly repository: string; readonly repositoryId: string; readonly parent: number | null; readonly defaultBranch: string | null;
-  readonly room: OfficeRoom; readonly place: BoardPlace | null; readonly banners: ReactNode; readonly setup: ReactNode; readonly writeBoss: BossCommandWriter;
+  readonly room: OfficeRoom; readonly reading: boolean; readonly place: BoardPlace | null; readonly banners: ReactNode; readonly setup: ReactNode; readonly writeBoss: BossCommandWriter;
   readonly readAdvisor: AdvisorTranscriptReader; readonly writeAdvisor: AdvisorMessageWriter; readonly mode: ThemeMode;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
 }) {
@@ -533,8 +534,9 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
   const idle = !lit && parent === null;
   const { plan } = room;
   const name = repository.split('/').at(-1)!;
-  const planText = plan.status !== 'observed' ? t('board.office.plan.none')
+  const planText = reading ? t('board.office.board.reading') : plan.status !== 'observed' ? t('board.office.plan.none')
     : plan.revision === null ? t('board.office.plan.observed') : t('board.office.plan.revision', { revision: plan.revision });
+  const scenePlan: SceneRoom['plan'] = reading ? 'reading' : plan.status === 'observed' ? { revision: plan.revision, order: plan.merge_order, limit: plan.worker_limit, batch: plan.batch } : null;
   const effect = sceneEffect(boss.effect, clock.now, clock.still);
   const queueEntries = new Set(room.queue.map(entry => `queue:${entry.pr}`));
   const keys = new Set([...room.desks.map(deskKey), ...queueEntries, 'queue', 'door', 'tray', 'cart', ...(room.orchestrator === null ? [] : ['orchestrator']), ...(room.advisor === null ? [] : ['advisor'])]);
@@ -545,7 +547,7 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
     name, parent, lit,
     orchestrator: room.orchestrator === null ? null : sceneAgent(room.orchestrator.agent),
     advisor: room.advisor === null ? null : sceneAgent(room.advisor.agent),
-    plan: plan.status === 'observed' ? { revision: plan.revision, order: plan.merge_order, limit: plan.worker_limit, batch: plan.batch } : null,
+    plan: scenePlan,
     limit: room.limit,
     desks: room.desks.map(desk => ({ key: deskKey(desk), agent: sceneAgent(desk.agent), state: desk.state, number: deskNumber(desk, t), label: deskStateName(desk, t) })),
     queue: room.queue.map(entry => ({ key: `queue:${entry.pr}`, agent: sceneAgent(entry.agent), pr: entry.pr })),
@@ -606,7 +608,9 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
     <>
       <h1>{name}</h1>
       <span className="board-office__parent">{parent === null ? t('board.office.parent.none') : t('board.office.parent', { number: parent })}</span>
-      {plan.status === 'observed'
+      {reading
+        ? <span className="board-office__chip" data-plan="reading">{t('board.office.board.reading')}</span>
+        : plan.status === 'observed'
         ? <span className="board-office__chip" data-plan="observed">{plan.revision === null ? <>{t('board.office.plan')} · <Age at={plan.created_at} now={now} t={t} bare /></> : t('board.office.plan.revision', { revision: plan.revision })}</span>
         : <span className="board-office__chip" data-tone={parent === null ? undefined : 'gap'} data-plan="none">{idle ? t('board.office.idle') : t('board.office.plan.none')}</span>}
     </>
@@ -615,7 +619,7 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
   const { notice } = boss;
   const sceneLabel = t('board.office.scene', {
     repository, parent: parent === null ? t('board.office.parent.none') : `#${parent}`, workers: room.desks.length, queue: room.queue.length,
-    plan: t(plan.status === 'observed' ? 'board.office.scene.plan' : 'board.office.scene.noPlan'),
+    plan: t(scenePlan === 'reading' ? 'board.office.scene.reading' : scenePlan === null ? 'board.office.scene.noPlan' : 'board.office.scene.plan'),
   });
   return (
     <section className="board-office" data-board-office="room" data-board-parent={parent ?? undefined} data-board-repository={repositoryId}>
@@ -651,7 +655,7 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
         </div>
         <aside className="board-office__aside" aria-label={t('board.office.panel.label')}>
           <OfficePanel view={panelView(selected, room, parent, defaultBranch, planText, clock.frame, t)} onIssue={openIssue} onPick={setPicked} onChat={canChat && selected === 'advisor' ? () => setChat(true) : null} t={t} />
-          <OfficeFeed room={room} lit={lit} parent={parent} t={t} />
+          <OfficeFeed room={room} lit={lit} parent={parent} reading={reading} t={t} />
         </aside>
       </div>
       {setup}

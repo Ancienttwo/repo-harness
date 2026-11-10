@@ -451,7 +451,8 @@ export interface SceneRoom {
   readonly lit: boolean;
   readonly orchestrator: SceneAgent | null;
   readonly advisor: SceneAgent | null;
-  readonly plan: { readonly revision: number | null; readonly order: readonly number[]; readonly limit: number; readonly batch: number } | null;
+  /** `reading` while the board read of the room is pending; null when the board has no plan. */
+  readonly plan: { readonly revision: number | null; readonly order: readonly number[]; readonly limit: number; readonly batch: number } | 'reading' | null;
   /** The worker limit that sets the free and the roped desks. */
   readonly limit: number;
   readonly desks: readonly SceneDesk[];
@@ -625,7 +626,8 @@ function wall(fb: FrameBuffer, room: SceneRoom, night: boolean, f: number, heigh
 
   // The whiteboard: the plan of the active parent. The advisor owns a new seat limit, so 收放 asks instead of showing a number.
   const plan = room.plan;
-  const lines = plan !== null
+  const lines = plan === 'reading' ? ['READING', '', '', '']
+    : plan !== null
     ? [plan.revision === null ? 'PLAN' : `PLAN R${plan.revision}`, plan.order.slice(0, BOARD_LINE).join(' '), plan.order.slice(BOARD_LINE, BOARD_LINE * 2).join(' '), valve ? 'SEATS ?' : `SEATS ${plan.limit} · BATCH ${plan.batch}`]
     : [room.parent === null ? '' : 'NO PLAN', '', '', ''];
   fb.box(160, 3, 92, 34, 'paper');

@@ -21,7 +21,7 @@ import {
 import '@xyflow/react/dist/base.css';
 import type { ArchitectureMapNodeV1, ArchitectureMapV1 } from '../core/operator/architecture-map';
 import { mapLayerView, type MapLayerId, type MapMark } from './architecture-map-layers';
-import { firstViewport, Mark, NodeDetails, Note, nodeSize, ZoomControls } from './architecture-map-parts';
+import { contentBox, FirstViewport, Mark, NodeDetails, Note, nodeSize, ZoomControls } from './architecture-map-parts';
 import { runtimePlacement } from './architecture-runtime';
 import {
   layoutTopology, processNamespace, TOPOLOGY_BASES, TOPOLOGY_BOX_HEADER, TOPOLOGY_KINDS, TOPOLOGY_MEMBER, topologySvg,
@@ -182,11 +182,7 @@ function TopologyCanvas({ map, layout, layer, pullRequest, side, onModule, t }: 
   // Canvas id to model node id; selection and the inspector use the model id.
   const modelIds = useMemo(() => new Map(layout.boxes.flatMap(box => [[box.node.id, box.node.id] as const,
     ...box.members.map(member => [memberId(box.node.id, member.id), member.id] as const)])), [layout]);
-  // The first view opens on the first top-level box, a runtime box on the process segment; the rest is a pan or a Fit away.
-  const firstView = useMemo(() => {
-    const anchor = layout.boxes.find(box => box.parent === null && box.node.kind !== 'external-system')!;
-    return firstViewport(anchor.x, anchor.y);
-  }, [layout]);
+  const content = useMemo(() => contentBox(layout.boxes), [layout]);
   // A box is lit when a node it shows, or a node that runs in it, holds a mark; a frame is lit through what it holds.
   const lit = useMemo(() => {
     const holder = new Map(layout.boxes.flatMap(box => box.members.map(member => [member.id, box.node.id] as const)));
@@ -260,9 +256,9 @@ function TopologyCanvas({ map, layout, layer, pullRequest, side, onModule, t }: 
         edgesFocusable={false}
         minZoom={0.05}
         maxZoom={2}
-        defaultViewport={firstView}
         attributionPosition="top-right"
       >
+        <FirstViewport content={content} />
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--rh-diagram-dot)" />
         <Panel position="bottom-left"><Legend base={layout.base} t={t} /></Panel>
         <Panel position="bottom-right"><ZoomControls t={t} /></Panel>

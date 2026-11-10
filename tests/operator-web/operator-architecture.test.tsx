@@ -18,7 +18,8 @@ import {
 import { runtimePlacement } from '../../src/operator-web/architecture-runtime';
 import { layoutSequence, SEQUENCE_COLUMN } from '../../src/operator-web/architecture-sequence-layout';
 import { SEQUENCE_SVG_FONT, SEQUENCE_SVG_HEADER_WIDTH, SEQUENCE_SVG_TERMINAL_WIDTH, sequenceSvg, textWidth } from '../../src/operator-web/architecture-sequence-svg';
-import { layoutTopology, topologySvg, type TopologyBase } from '../../src/operator-web/architecture-topology-layout';
+import { defaultTopologyBase, layoutTopology, topologySvg, type TopologyBase } from '../../src/operator-web/architecture-topology-layout';
+import { contentBox, firstViewport } from '../../src/operator-web/architecture-map-parts';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import type { ArchitectureHistory as HistoryPage } from 'archctx-contracts';
 import { historyShape, skippedMilestones, type ValidMilestone } from '../../src/operator-web/ArchitectureHistory';
@@ -603,6 +604,26 @@ describe('architecture map', () => {
       .toEqual({ state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-document-marker-invalid' });
   });
 
+  test('a pending map is read again 30 s later; only an unreachable route backs off to 60 s', async () => {
+    const originalSet = globalThis.setTimeout;
+    const delays: number[] = [];
+    globalThis.setTimeout = ((run: () => void, delay = 0) => {
+      if (delay < 30_000) return originalSet(run, delay);
+      delays.push(delay);
+      return 0;
+    }) as unknown as typeof setTimeout;
+    try {
+      for (const [read, delay] of [[{ state: 'unavailable', reason: 'architecture_map_pending' }, 30_000], [{ state: 'unavailable', reason: 'unreachable' }, 60_000]] as const) {
+        delays.length = 0;
+        await act(async () => root?.unmount());
+        await mount(workspace({ repositoryId: `repo-${read.reason}`, readMap: reader(read) }));
+        expect(delays).toEqual([delay]);
+      }
+    } finally {
+      globalThis.setTimeout = originalSet;
+    }
+  });
+
   test('the map opens on today\'s changes, and each layer marks nodes from the collector\'s facts or states its reason', async () => {
     await mount(workspace({ readMap: reader({ state: 'ok', map: mapFor() }) }));
     const box = (id: string) => document.querySelector(`.react-flow__node[data-id="${id}"] > div`)!;
@@ -1017,6 +1038,17 @@ describe('sequence and topology base maps', () => {
     expect([inside('mount.config', HOST), inside('mount.cache', HOST), inside('namespace.remote', HOST), frames.get('mount.config')!.y < frames.get('mount.cache')!.y]).toEqual([true, true, false, true]);
   });
 
+  test('the first view centres content that fits and opens a wide map or an unsized canvas at 85% on its top-left corner; the topology opens on a segment with boxes', () => {
+    const close = (view: { x: number; y: number; zoom: number }) => [view.x, view.y, view.zoom].map(value => Math.round(value * 1000) / 1000);
+    expect(close(firstViewport({ x: 0, y: 0, width: 1000, height: 500 }, { width: 1200, height: 800 }))).toEqual([100, 102, 1]);
+    expect(close(firstViewport({ x: 40, y: 16, width: 3000, height: 900 }, { width: 1200, height: 800 }))).toEqual([-10, 10.4, 0.85]);
+    expect(close(firstViewport({ x: 24, y: 24, width: 800, height: 600 }, { width: 0, height: 0 }))).toEqual([3.6, 3.6, 0.85]);
+    // The recorded map has one namespace and fourteen processes; two namespaces win; a map without runtime nodes keeps the namespace segment.
+    const flat = runtimeMap({ nodes: runtimeMap().nodes.filter(node => !['process', 'namespace'].includes(node.kind)), relations: runtimeMap().relations.filter(relation => !['runs-in', 'deployed-on', 'spawns'].includes(relation.kind)) });
+    expect([decodeArchitectureMap(recordedMap), runtimeMap({ nodes: [...runtimeMap().nodes, mapNode('namespace.remote', 'namespace')] }), flat].map(defaultTopologyBase))
+      .toEqual(['process', 'namespace', 'namespace']);
+  });
+
   test('the tabs follow the design order and the layer stays when the base map changes', async () => {
     await mount(workspace({ readMap: reader(runtimeMap()) }));
     // The module map tab counts capabilities and the sequence tab counts flows.
@@ -1325,20 +1357,23 @@ describe('sequence and topology base maps', () => {
     await mount(workspace({ readMap: reader(runtimeMap()) }));
     await tab('topology');
     const box = (id: string) => document.querySelector(`.react-flow__node[data-id="${id}"] > div`)!;
-    // The artboard opens on the namespace segment. The host frame holds no mount and is lit through the server that runs in it; no node is deprecated.
-    expect(document.querySelector('[data-topology-base][aria-pressed="true"]')?.getAttribute('data-topology-base')).toBe('namespace');
+    // The model has two processes and one namespace, so the artboard opens on the process segment.
+    expect(document.querySelector('[data-topology-base][aria-pressed="true"]')?.getAttribute('data-topology-base')).toBe('process');
+    const canvas = () => document.querySelector('[data-view="topology"]')!;
+    expect([canvas().getAttribute('data-base'), canvas().getAttribute('data-node-count'), canvas().getAttribute('data-edge-count')]).toEqual(['process', '3', '2']);
+    expect(document.querySelector(`.react-flow__node[data-id="${SERVER}/${CENTER}"]`)?.classList.contains('react-flow__node-member')).toBe(true);
+    expect(document.querySelector(`.react-flow__node[data-id="${EXTERNAL}"] .architecture-topology__box`)?.getAttribute('data-kind')).toBe('external-system');
+    expect(notes()).toEqual(['topology.unplaced:deployment_undeclared']);
+    // The first view comes from the bounding box of every box and the canvas size that React Flow reports.
+    // happy-dom lays out no element, so React Flow reports its fallback size, 500 × 500.
+    const view = firstViewport(contentBox(layoutTopology(runtimeMap(), runtimePlacement(runtimeMap()), 'process', true).boxes), { width: 500, height: 500 });
+    expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).toBe(`translate(${view.x}px,${view.y}px) scale(${view.zoom})`);
+    // The host frame holds no mount and is lit through the server that runs in it; no node is deprecated.
+    await segment('namespace');
     expect([box(HOST).querySelector('[data-namespace-empty]')?.textContent, box(HOST).hasAttribute('data-quiet')]).toEqual(['No mount', false]);
     const legacy = document.querySelector<HTMLButtonElement>('[data-topology-legacy]')!;
     expect([legacy.disabled, legacy.getAttribute('aria-pressed'), legacy.textContent]).toEqual([true, 'true', 'Legacy stores0']);
     await segment('process');
-    const canvas = document.querySelector('[data-view="topology"]')!;
-    expect([canvas.getAttribute('data-base'), canvas.getAttribute('data-node-count'), canvas.getAttribute('data-edge-count')]).toEqual(['process', '3', '2']);
-    expect(document.querySelector(`.react-flow__node[data-id="${SERVER}/${CENTER}"]`)?.classList.contains('react-flow__node-member')).toBe(true);
-    expect(document.querySelector(`.react-flow__node[data-id="${EXTERNAL}"] .architecture-topology__box`)?.getAttribute('data-kind')).toBe('external-system');
-    expect(notes()).toEqual(['topology.unplaced:deployment_undeclared']);
-    // The map opens at the module map's readable zoom on its first runtime box, not fitted to the whole map.
-    const first = layoutTopology(runtimeMap(), runtimePlacement(runtimeMap()), 'process', true).boxes.find(item => item.node.kind !== 'external-system')!;
-    expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).toBe(`translate(${-(first.x - 24) * 0.85}px,${-(first.y - 24) * 0.85}px) scale(0.85)`);
     expect(document.querySelector('[data-note="topology.unplaced"]')?.textContent).toContain(`calls Name ${CALLER} → Name ${CENTER}`);
     // Today the ledger changed: its capability and the process it runs in are lit; the CLI is not.
     expect([box(`${SERVER}/${CENTER}`).getAttribute('data-tone'), box(SERVER).hasAttribute('data-quiet'), box(CLI).hasAttribute('data-quiet')]).toEqual(['muted', false, true]);
