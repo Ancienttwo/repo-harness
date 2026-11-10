@@ -91,10 +91,13 @@ export interface BoardPullRequestReadV1 {
 /** The most sub-issue pages that one parent read follows: 1000 sub-issues. */
 export const BOARD_SUB_ISSUE_PAGES = 20;
 
-/** The most comment pages that one parent read follows: 1000 comments. */
-export const BOARD_PARENT_COMMENT_PAGES = 20;
+/**
+ * The most comment pages that one parent read follows: 10,000 comments. The
+ * bound stops a runaway cursor; a parent thread above it fails the read closed.
+ */
+export const BOARD_PARENT_COMMENT_PAGES = 100;
 
-export const BOARD_PAGE = { labels: 50, comments: 50, sub_issues: 50, blocked_by: 50, timeline: 100, files: 100, checks: 100, repairs: 50 } as const;
+export const BOARD_PAGE = { labels: 50, comments: 50, parent_comments: 100, sub_issues: 50, blocked_by: 50, timeline: 100, files: 100, checks: 100, repairs: 50 } as const;
 
 type Json = Record<string, unknown>;
 

@@ -10,7 +10,7 @@ import { decodeBoard, type BoardHostPortsV1, type BoardTerminalV1, type BoardV1 
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
-import { collectBoard, readGhJson, readLocalRepositoryId, type BoardCollectInput } from '../src/effects/board/collect';
+import { collectBoard, readGhJson, readParent, readLocalRepositoryId, type BoardCollectInput } from '../src/effects/board/collect';
 import { runBoardMerge } from '../src/effects/board/merge';
 import { boardMergeDecisions } from '../src/core/board/merge';
 import { provenMergeOnlySyncs } from '../src/effects/board/merge-only-sync';
@@ -23,6 +23,8 @@ import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herd
 import { ADVISOR_TRANSCRIPT_LINE_WITHHELD, AdvisorSeatError, advisorSeatSendFailure, advisorTranscriptLines, advisorTurnState, decodeAdvisorSeatTranscript, readAdvisorSeat, seatStatusMessage, SEAT_STATUS_MESSAGE_MAX_CHARS, sendToAdvisorSeat } from '../src/core/board/advisor-seat';
 import { decodeBoardParents, type BoardParentsV1 } from '../src/core/board/parents';
 import { BoardSourceError } from '../src/core/board/source';
+import { planDispatch } from '../src/core/board/dispatch';
+import { DEFAULT_SEATS_CONFIG } from '../src/core/board/seats-settings';
 import { HC_MIN_VERSION } from '../src/core/terminal/herdr-pin';
 import { BoardParentsError, collectBoardParents } from '../src/effects/board/parents';
 import { hcStatusClass, ISSUE_FLOW_WORKER_LIMIT } from '../src/core/board/desk';
@@ -719,10 +721,21 @@ test('board read: every sub-issue page of the parent reaches the board and the m
   expect([
     commentRefusal((pages) => { pages[0]!.data.repository.issue.comments.pageInfo.startCursor = null; }),
     commentRefusal((pages) => { pages[1]!.data.repository.issue.comments.pageInfo.startCursor = 'k1'; }),
+    commentRefusal((pages) => { delete pages[2]!.data; pages[2]!.errors = [{ message: 'timeout' }]; }),
   ]).toEqual([
     'board source invalid: comment page 0 issue.comments.pageInfo.startCursor is not a cursor',
     'board source invalid: issue.comments cursor k1 repeats',
+    'BoardCollectError: GitHub GraphQL refused the board read: [{"message":"timeout"}]',
   ]);
+  // A coordinator claim on an older page is active until its release on the newest page.
+  const claim = comment('repo-harness issue claim\nStatus: active\nRole: coordinator', '2026-11-01T09:00:00Z');
+  const release = comment(`repo-harness issue claim status\nClaim: ${claim.url}\nStatus: released`, '2026-11-02T22:30:00Z');
+  const coordinator = (released: boolean) => {
+    const { parent } = readParent(replayInput(mergeReplay({ parent: (data) => { if (released) data.repository.issue.comments.nodes.push(release); } }, { comments: { older: [[claim]] } })));
+    const quota = { claude: { state: 'normal', remaining: 80, mode: 'normal' }, chatgpt: { state: 'normal', remaining: 30, mode: 'normal' } } as const;
+    return planDispatch({ seats: DEFAULT_SEATS_CONFIG, quota, terminals: [], parent }).coordinator;
+  };
+  expect([coordinator(false), coordinator(true)]).toEqual([claim.url, null]);
 });
 
 test('board merge: every hold stays in force until a strictly newer release on its own thread; Issues: scopes only a parent hold', () => {

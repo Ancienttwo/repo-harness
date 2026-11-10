@@ -23,7 +23,7 @@ const COMMENT_NODES = 'nodes { url createdAt authorAssociation body }';
 const COMMENTS = `comments(last: ${BOARD_PAGE.comments}) { pageInfo { hasPreviousPage } ${COMMENT_NODES} }`;
 const ISSUE_FIELDS = `number title url state labels(first: ${BOARD_PAGE.labels}) { pageInfo { hasNextPage } nodes { name } } milestone { title }`;
 /** The parent thread holds the plan, the coordinator claim and the merge holds, so the read follows its comment cursor to the oldest page. */
-const parentComments = (before: string) => `comments(last: ${BOARD_PAGE.comments}${before}) { pageInfo { hasPreviousPage startCursor } ${COMMENT_NODES} }`;
+const parentComments = (before: string) => `comments(last: ${BOARD_PAGE.parent_comments}${before}) { pageInfo { hasPreviousPage startCursor } ${COMMENT_NODES} }`;
 
 /** One older comment page of the parent; `$before` is the start cursor of the newer page. */
 export const PARENT_COMMENTS_QUERY = `query($owner: String!, $name: String!, $number: Int!, $before: String!) {
@@ -245,7 +245,7 @@ export function readParent(input: Pick<BoardCollectInput, 'repo_root' | 'gh_bin'
   const pages = followCursor(first, parentReadNextCursor, after => graphql(input, PARENT_QUERY, { ...variables, after }),
     'issue.subIssues', BOARD_PAGE.sub_issues, BOARD_SUB_ISSUE_PAGES);
   const commentPages = followCursor(first, parentCommentsPreviousCursor, before => graphql(input, PARENT_COMMENTS_QUERY, { owner, name, number: input.parent, before }),
-    'issue.comments', BOARD_PAGE.comments, BOARD_PARENT_COMMENT_PAGES);
+    'issue.comments', BOARD_PAGE.parent_comments, BOARD_PARENT_COMMENT_PAGES);
   const parent = decodeParentRead(pages, commentPages, repository);
   return { parent, observed_at: observedAt };
 }
