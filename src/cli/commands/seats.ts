@@ -10,7 +10,7 @@ import { version as PACKAGE_VERSION } from '../../../package.json';
 import { readGlobalConfiguration } from '../../effects/configuration/global-configuration';
 import { resolveGitCommonDirectory } from '../../effects/git/common-directory';
 import { ClaudeAgentTypesError, claudeHostAgentTypes } from '../../effects/board/claude-agent-types';
-import { RepoHarnessRegistryStrictError, canonicalRepoPath, readRepoHarnessRegistryStrictSnapshot, repoCheckoutProbeEnv } from '../../effects/repo-registry';
+import { RepoHarnessRegistryStrictError, canonicalRepoPath, readRepoHarnessRegistryStrictSnapshot, repoCheckoutProbeEnv, setRepoHarnessPanePrefix } from '../../effects/repo-registry';
 import { HerdrCoreError, RH_LABEL, hcLabel, hcLabelPairs, type HcLabels } from '../../effects/terminal/herdr-core';
 import { PiFleetRolesError, writePiFleetRoles } from '../../effects/board/pi-fleet-roles';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
@@ -97,7 +97,7 @@ function panePrefix(cwd: string, env: NodeJS.ProcessEnv): string {
   }
   const registry = readRepoHarnessRegistryStrictSnapshot({ env });
   const prefix = registry.repos.find(repo => repo.path === root)?.panePrefix;
-  if (prefix === undefined) throw new SeatPaneNameError(`Pane name: set panePrefix for ${root} in ${registry.registryPath}.`);
+  if (prefix === undefined) throw new SeatPaneNameError(`Pane name: run repo-harness seats prefix --repo ${root} --pane-prefix <prefix>.`);
   return prefix;
 }
 
@@ -205,6 +205,21 @@ export function buildSeatsCommand(loadNotify?: () => Promise<SeatResetNotify>): 
         if (!(error instanceof SeatsCommandError || error instanceof HerdrCoreError)) throw error;
         const code = error instanceof SeatsCommandError ? error.code : 'label_failed';
         process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: `The seat did not start: ${error.message}` })}\n`);
+        process.exitCode = 1;
+      }
+    });
+  seats
+    .command('prefix')
+    .description('Set the pane prefix that labeled seat panes use for a repository')
+    .requiredOption('--repo <path>', 'Adopted repository')
+    .requiredOption('--pane-prefix <prefix>', 'Lowercase letter, then 1 to 5 lowercase letters or digits')
+    .action((options: { repo: string; panePrefix: string }) => {
+      try {
+        const result = setRepoHarnessPanePrefix(options.repo, options.panePrefix);
+        if (!result.registered) throw new Error(result.reason ?? 'repo is not adopted');
+        process.stdout.write(`${JSON.stringify({ ok: true, ...result }, null, 2)}\n`);
+      } catch (error) {
+        process.stderr.write(`${JSON.stringify({ ok: false, error: 'pane_prefix_failed', message: (error as Error).message })}\n`);
         process.exitCode = 1;
       }
     });

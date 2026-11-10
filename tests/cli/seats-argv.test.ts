@@ -658,6 +658,16 @@ describe("repo-harness seats argv", () => {
         const result = run(registryEnv(home), ["orchestrator", "--repository-id", "1", "--json"], repo);
         expect(result.status).toBe(1);
         expect(JSON.parse(result.stderr).error).toBe("pane_name_invalid");
+        expect(JSON.parse(result.stderr).message).toContain("seats prefix");
+
+        const prefix = (value: string) => spawnSync(process.execPath, [CLI, "seats", "prefix", "--repo", repo, "--pane-prefix", value], { env: { ...process.env, ...registryEnv(home) }, encoding: "utf8" });
+        expect(prefix("Bad").status).toBe(1);
+        const set = prefix("rhx");
+        expect(set.status).toBe(0);
+        expect(JSON.parse(set.stdout)).toEqual(expect.objectContaining({ ok: true, registered: true, changed: true, panePrefix: "rhx" }));
+        const registry = JSON.parse(readFileSync(join(home, ".repo-harness", "registered-repos.json"), "utf8"));
+        expect([registry.authorizationRevision, registry.repos[0].accessMode, registry.repos[0].panePrefix]).toEqual([0, "read_only", "rhx"]);
+        expect(JSON.parse(run(registryEnv(home), ["orchestrator", "--repository-id", "1", "--json"], repo).stdout).name).toContain("rhx");
       });
     });
   });

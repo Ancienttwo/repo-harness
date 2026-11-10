@@ -115,7 +115,7 @@ The pane name is `<prefix>-<role>[-<item>][-<qualifier>]`: at most 32 characters
 | `item` | worker: the issue number (`--issue`) or `rel<digits>` for release prep (`--release`); reviewer: the PR number. None for `orch` and `adv` | the dispatch |
 | `qualifier` | worker: a slice word when one issue has two live worker panes (`--qualifier`); reviewer: the review runtime id (`claude`, `codex`) | the dispatch |
 
-- Set `panePrefix` by hand in the entry of the repository in `registered-repos.json`. Every registry writer keeps it. The registry read refuses a malformed or duplicate prefix.
+- Set `panePrefix` with `repo-harness seats prefix --repo <path> --pane-prefix <p>`. Every registry writer keeps it. The registry read refuses a malformed or duplicate prefix.
 - `seats argv` reads the entry of the primary checkout of the current directory; a linked worktree resolves to its primary checkout. No entry, or an entry without `panePrefix`, fails with `pane_name_invalid`. A name over 32 characters fails the same way.
 - One pane serves one item. Do not reuse a pane for another issue: close it and start a new one. Only `hc run --name` sets an hc terminal name, and hc refuses a second live terminal with that name.
 - The name carries no state (round, status, PR state). The board reads those from GitHub and the labels.
