@@ -21,6 +21,14 @@ source:
   include:
     - src/effects/operator/**
     - assets/operator/**
+    - specs/tla/BossCommandSend.tla
+    - specs/tla/BossCommandSend.cfg
+    - specs/tla/BossCommandSend.unresolved-not-counted.cfg
+    - specs/tla/BossCommandSend.reconcile-not-counted.cfg
+    - specs/tla/BossCommandSend.no-request-lookup.cfg
+    - specs/tla/check.sh
+    - specs/tla/checks.tsv
+    - .claude/skills/verify-boss-command/SKILL.md
   exclude:
     - src/effects/operator/bot-access.ts
     - src/effects/operator/notify-collector.ts
@@ -81,3 +89,7 @@ source:
             - id: sink.operator.architecture-request
               path: src/core/operator/architecture.ts
               symbol: parseArchitectureRequest
+extensions:
+  behaviorSpecs:
+    - id: boss-command-send
+      path: specs/tla/BossCommandSend.tla
