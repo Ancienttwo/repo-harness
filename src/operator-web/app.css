@@ -344,7 +344,7 @@
   /* The canvas legend is hidden on a narrow screen; the state rows of the module map show below the canvas instead. */
   .architecture-modules__states { display: none; }
   @media (max-width: 47.5rem) {
-    .architecture-map__legend, .architecture-history__legend { display: none; }
+    .architecture-map__legend { display: none; }
     .architecture-modules__states { @apply m-0 flex flex-wrap gap-x-4 gap-y-1 rounded-lg border bg-kumo-base p-2 text-xs; border-color: var(--rh-diagram-line); }
     .architecture-modules__states div { @apply flex items-center gap-2; }
     .architecture-modules__states dd { @apply m-0; }

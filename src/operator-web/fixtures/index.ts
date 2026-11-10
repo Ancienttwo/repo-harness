@@ -27,8 +27,11 @@ import { busyQuota, degradedQuota } from './quota';
 import type { QuotaReader } from '../quota';
 import { decodeArchitectureMap } from '../../core/operator/architecture-map';
 import type { ArchitectureMapRead } from '../ArchitectureMap';
+import type { HistoryReader } from '../ArchitectureHistory';
 // A recorded `operator serve` map of this repository: the model, git line counts and archctx import counts.
 import architectureMap from './architecture-map.json';
+// Seven recorded `archctx history` milestones of this repository (the pages of tests/fixtures/architecture-history), oldest first, as one page.
+import architectureHistory from './architecture-history.json';
 // The board of #1474 projected from the recorded GitHub and hc reads in tests/fixtures/board.
 import board1474 from './board-1474.json';
 // The parent list projected from the recorded GitHub read and the same hc reads (tests/board.test.ts, parent list).
@@ -132,6 +135,9 @@ export function fixtureProps(name: string): OperatorAppProps {
         tests: { state: 'unavailable', reason: 'github_unavailable' },
       },
     }) };
+  // busy and degraded: one page of recorded milestones in repo-harness, with no ETag; empty and other repositories: the read fails.
+  const history: HistoryReader = path => fixture !== 'empty' && path.startsWith(`/api/v1/repositories/${HARNESS_ID}/architecture/history?`)
+    ? Promise.resolve({ body: architectureHistory, etag: null }) : Promise.reject(new Error('unavailable'));
   // empty: the first Bot access collection has not finished.
   const botAccess: BotAccessRead = fixture === 'empty' ? { state: 'unavailable', reason: 'bot_access_pending' }
     : { state: 'ok', snapshot: decodeBotAccessSnapshot(fixture === 'busy' ? busyBotAccess(now) : degradedBotAccess(now)) };
@@ -186,6 +192,7 @@ export function fixtureProps(name: string): OperatorAppProps {
     // Only the busy execution view has a verified task with a 64-hex id, so only busy reads an inbox.
     readTaskMessages: request => Promise.resolve(busyTaskMessages(request, now)),
     readArchitectureMap: repositoryId => Promise.resolve(map(repositoryId)),
+    readArchitectureHistory: history,
     readBotAccess: () => Promise.resolve(botAccess),
     readBotReviews: () => Promise.resolve(botReviews),
     readAgentsSettings: agentsSettings.read,
