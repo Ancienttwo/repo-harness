@@ -350,6 +350,12 @@ describe('archimap measure reports board geometry', () => {
     expect(geometry.findings.map((f) => f.kind)).toEqual(['line_through_box']);
   });
 
+  test('a short segment that crosses a node from border to border is reported', () => {
+    const narrow = '<div class="node" style="left:0px;top:0px;width:16px;height:100px"></div>';
+    const geometry = run([board('1 · Short crossing', `${narrow}${paths('M0 50 H16')}`)]);
+    expect(geometry.findings.map((f) => f.kind)).toEqual(['line_through_box']);
+  });
+
   test('each subpath of a path is checked for open ends', () => {
     const geometry = run([board('1 · Subpaths', `${box('node', 0, 0)}${box('node', -200, 0)}${paths('M0 20 H-100 M-300 20 H-400 M0 40 H-100')}`)]);
     expect(geometry.findings.map((f) => f.kind)).toEqual(['line_end_open', 'line_end_open']);

@@ -531,10 +531,16 @@ function boardFindings(caption: string, html: string): GeometryFinding[] {
       const startsAt = borderDistance(first, node) <= END_TOLERANCE;
       const endsAt = borderDistance(last, node) <= END_TOLERANCE;
       const hit = segmentsOf([subpath]).flatMap((segment, k, all) => {
-        let { a, b } = segment;
-        const long = Math.hypot(b.x - a.x, b.y - a.y) > END_TOLERANCE;
-        if (k === 0 && startsAt) a = long ? lerp(a, b, END_TOLERANCE) : b;
-        if (k === all.length - 1 && endsAt) b = long ? lerp(b, a, END_TOLERANCE) : a;
+        const { a: from, b: to } = segment;
+        let a = from;
+        let b = to;
+        // A segment that runs border to border is a crossing, so no attached end is trimmed on it.
+        const borderToBorder = borderDistance(from, node) <= END_TOLERANCE && borderDistance(to, node) <= END_TOLERANCE;
+        if (!borderToBorder) {
+          const long = Math.hypot(to.x - from.x, to.y - from.y) > END_TOLERANCE;
+          if (k === 0 && startsAt) a = long ? lerp(from, to, END_TOLERANCE) : to;
+          if (k === all.length - 1 && endsAt) b = long ? lerp(to, from, END_TOLERANCE) : from;
+        }
         const point = entersInterior({ a, b }, node);
         return point ? [{ point, segment }] : [];
       })[0];
