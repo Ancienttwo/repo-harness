@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The owner release steps (#2006). The life cycle stops at the merged release PR. npm publish needs the owner's
-# npm 2FA, so publish, the tag and the GitHub Release stay with the owner. This script only reads git, npm and
-# GitHub: `plan` prints the owner command list bound to one release commit, `guard` runs before each publish, and
-# `check` reads back each owner step.
+# The release steps (#2006, #2194). The life cycle stops at the merged release PR. This script only reads git, npm
+# and GitHub: `plan` prints the command list bound to one release commit, `guard` runs before each publish from the
+# release worktree, `workflow-guard` runs in .github/workflows/release.yml before its lane and its publishes, and
+# `check` reads back each step.
 
 CALLER_DIR="$(pwd -P)"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,7 +25,7 @@ export npm_config_userconfig="$NPM_SCRATCH/user-npmrc" npm_config_globalconfig="
 export npm_config_cache="$NPM_SCRATCH/cache" npm_config_logs_dir="$NPM_SCRATCH/logs"
 
 usage() {
-  echo "usage: $0 plan <version> | notes <version> | guard <version> <sha> | check published <version> | check tagged <version>" >&2
+  echo "usage: $0 plan <version> | notes <version> | guard <version> <sha> | workflow-guard <sha> | check published <version> | check tagged <version>" >&2
   exit 2
 }
 
@@ -101,10 +101,17 @@ release_worktree() {
 
 # Run right before each npm publish: the checkout must be the approved release commit, unchanged.
 guard() {
-  local version="$1" sha="$2" expected head status file got
+  local version="$1" sha="$2" expected
   expected="$(cd "$(release_worktree "$version")" 2>/dev/null && pwd -P)" || fail "$(release_worktree "$version") does not exist."
   # The publish that follows runs in the caller's directory, so the guard checks that directory and this script's checkout.
   [[ "$CALLER_DIR" == "$expected" && "$(pwd -P)" == "$expected" ]] || fail "the checkout is $CALLER_DIR, not $expected."
+  checkout_is_release "$version" "$sha"
+  echo "[release-owner] OK: guard. $expected is the release commit $sha at ${version}."
+}
+
+# The publish runs from this checkout, so it must be the release commit, unchanged, at the version.
+checkout_is_release() {
+  local version="$1" sha="$2" head status file got
   head="$(git rev-parse HEAD)" || fail "git rev-parse HEAD failed."
   [[ "$head" == "$sha" ]] || fail "HEAD is $head, not the release commit $sha."
   # No optional locks: git status must not refresh the index of the release checkout.
@@ -114,7 +121,20 @@ guard() {
     got="$(json_field version < "$file")"
     [[ "$got" == "$version" ]] || fail "$file has version $got, not ${version}."
   done
-  echo "[release-owner] OK: guard. $expected is the release commit $sha at ${version}."
+}
+
+# The release workflow names only a commit. The commit must be the release commit of its own package.json
+# version, that version must be unpublished and untagged, and the job checkout must be that commit. Prints the version.
+workflow_guard() {
+  local sha="$1" version release
+  [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || fail "$sha is not a full commit SHA."
+  version="$(git show "$sha:package.json" | json_field version)" || fail "git show $sha:package.json failed."
+  [[ -n "$version" ]] || fail "package.json at $sha has no version."
+  release="$(preflight "$version")"
+  [[ "$release" == "$sha" ]] || fail "$sha is not the release commit of ${version}; that is $release."
+  checkout_is_release "$version" "$sha"
+  echo "[release-owner] OK: workflow guard. $sha is the release commit of ${version}." >&2
+  echo "$version"
 }
 
 remote_tag_refs() {
@@ -127,10 +147,11 @@ repository_slug() {
   gh repo view --json nameWithOwner --jq .nameWithOwner || fail "gh repo view failed."
 }
 
-plan() {
-  local version="$1" sha slug repository_id console_name core_name upgrade worktree remote_tag local_tag
+# The release commit of the version, with its CHANGELOG section, both packages unpublished and no tag. Prints the commit.
+preflight() {
+  local version="$1" sha console_name core_name remote_tag local_tag
   sha="$(release_commit "$version")"
-  # The owner runs guard, notes and the readbacks from the release commit's own checkout.
+  # guard, notes and the readbacks run from the release commit's own checkout.
   git cat-file -e "$sha:scripts/release-owner-steps.sh" 2>/dev/null || fail "the release commit $sha has no scripts/release-owner-steps.sh; release a commit that has it."
   release_notes "$version" "$sha" >/dev/null
   { read -r console_name; read -r core_name; } < <(package_names "$sha")
@@ -139,12 +160,19 @@ plan() {
   require_unpublished "${core_name}@${version}"
   remote_tag="$(remote_tag_refs "$version")"
   [[ -z "$remote_tag" ]] || fail "tag v${version} already exists on $REMOTE."
-  # Worktrees share tags: a local tag would stop step 5 after both packages are on npm.
+  # Worktrees share tags: a local tag would stop the tag step after both packages are on npm.
   # rev-parse --verify exits 1 for a missing ref; any other failure proves nothing.
   local_tag=0
   git rev-parse -q --verify "refs/tags/v${version}" >/dev/null || local_tag=$?
   [[ "$local_tag" != 0 ]] || fail "tag v${version} already exists in this repository."
   [[ "$local_tag" == 1 ]] || fail "git rev-parse of tag v${version} failed."
+  echo "$sha"
+}
+
+plan() {
+  local version="$1" sha slug repository_id console_name core_name upgrade worktree
+  sha="$(preflight "$version")"
+  { read -r console_name; read -r core_name; } < <(package_names "$sha")
   slug="$(repository_slug)"
   repository_id="$(gh api "repos/$slug" --jq .id)" || fail "gh api repos/$slug failed."
   upgrade="$(release_notes "$version" "$sha" | awk '/^### Upgrade/ { found = 1; next } /^### / { found = 0 } found { print }')"
@@ -203,6 +231,7 @@ case "${1:-}" in
     release_notes "$2" "$sha"
     ;;
   guard) [[ $# -eq 3 ]] || usage; guard "$2" "$3" ;;
+  workflow-guard) [[ $# -eq 2 ]] || usage; workflow_guard "$2" ;;
   check)
     [[ $# -eq 3 ]] || usage
     case "$2" in

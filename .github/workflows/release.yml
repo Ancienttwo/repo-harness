@@ -1,0 +1,95 @@
+name: Release
+
+# One run publishes both packages, tags the release commit and creates its GitHub Release (#2194).
+# The `release` environment requires the owner's approval; that approval authorizes this deployment.
+# npm Trusted Publishing (OIDC) authenticates the publishes; no npm token exists.
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full SHA of the merged release commit on main
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish, tag and release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      SHA: ${{ inputs.sha }}
+      BUN_TEST_MAX_CONCURRENCY: '1'
+      BUN_TEST_TIMEOUT_MS: '60000'
+      BUN_TEST_ISOLATE_FILES: '1'
+      BUN_TEST_JOBS: '8'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # npm Trusted Publishing needs npm 11.5.1 or later.
+      - name: Require OIDC-capable npm
+        run: node -e 'const [a, b, c] = process.argv[1].split(".").map(Number); if (a < 11 || (a === 11 && (b < 5 || (b === 5 && c < 1)))) { console.error(`npm ${process.argv[1]} cannot publish with OIDC; 11.5.1 or later is required.`); process.exit(1); }' "$(npm --version)"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - run: sudo apt-get update && sudo apt-get install -y jq rsync
+      - run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - name: Install pinned herdr-core runtime
+        uses: ./.github/actions/install-pinned-herdr-core
+      - run: bun install --frozen-lockfile
+      - name: Refuse a commit that is not an unpublished release commit
+        id: guard
+        run: |
+          version="$(bash scripts/release-owner-steps.sh workflow-guard "$SHA")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Release check lane
+        run: bun run check:release
+      - name: Guard again before the publishes
+        run: bash scripts/release-owner-steps.sh workflow-guard "$SHA"
+      - name: Publish repo-harness-operator-web
+        working-directory: packages/operator-web
+        run: npm publish --provenance
+      - name: Publish repo-harness
+        run: npm publish --provenance
+      - name: Read back the published packages
+        env:
+          VERSION: ${{ steps.guard.outputs.version }}
+        run: bash scripts/release-owner-steps.sh check published "$VERSION"
+      # The API creates the annotated tag, so the checkout keeps no credentials.
+      - name: Create the annotated tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.guard.outputs.version }}
+        run: |
+          tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags" -f tag="v$VERSION" -f message="repo-harness $VERSION" -f object="$SHA" -f type=commit --jq .sha)"
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/v$VERSION" -f sha="$tag_object" >/dev/null
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.guard.outputs.version }}
+        run: |
+          bash scripts/release-owner-steps.sh notes "$VERSION" > "$RUNNER_TEMP/notes.md"
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --title "repo-harness $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+      - name: Read back the tag and the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.guard.outputs.version }}
+        run: bash scripts/release-owner-steps.sh check tagged "$VERSION"

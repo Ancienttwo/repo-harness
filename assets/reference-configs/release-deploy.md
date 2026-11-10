@@ -31,35 +31,43 @@ tags, the Git version tag, and the core runtime receipt.
 
 ## Owner Release GO
 
-The life cycle stops at the merged release PR. npm publish needs the owner's
-npm 2FA, so publish, the tag and the GitHub Release stay with the owner.
-After the release PR merges, run `git fetch origin` and then
-`bash scripts/release-owner-steps.sh plan <version>`. The script only reads.
-It finds the first-parent commit on `origin/main` that set both package
-versions, and it fails when `origin/main` is stale, either version is on
-npm, the tag exists or CHANGELOG has no section for the version. It prints
-one command list bound to that commit:
+The life cycle stops at the merged release PR. One run of
+`.github/workflows/release.yml` publishes, tags and releases the merged
+release commit. The orchestrator seat starts it:
+`gh workflow run release.yml -f sha=<merged release commit>`. The run waits
+in the `release` environment. The owner step is one action: approve that run.
+The approval is the explicit authorization for that production deployment.
 
-1. A detached worktree of the release commit and `bun install --frozen-lockfile`.
-2. `guard <version> <sha>`, then `npm publish --auth-type=web` for the console.
-3. `guard <version> <sha>`, then `npm publish --auth-type=web` for the core
-   package. `guard` refuses another directory, another HEAD, a changed tree
-   or another package version.
-4. `check published <version>`: `check:release-published --before-tag`
-   reads back version, `latest` dist-tag, integrity and the runtime receipt.
-5. The annotated tag at the release commit and its push.
-6. `notes <version>` writes the CHANGELOG section to a file, then
-   `gh release create --verify-tag` uses it as the notes.
-7. `check tagged <version>`: the remote tag is at the release commit, and
-   the GitHub Release is not a draft or a prerelease.
+The run uses the `GITHUB_TOKEN` with `contents: write` and `id-token: write`
+only. npm Trusted Publishing (OIDC) authenticates both publishes; no npm token
+exists. The job runs only from `main`. In order, it:
 
-At the first failure the owner stops and reports. Nothing is retried or
-published again. The owner gives one GO for the list:
-`Release GO: repo-harness <version> at <sha>`, the first line of the plan.
-After step 7 passes, the orchestrator and the advisor decide together on the
-post-release steps that the plan prints: `repo-harness update` on the owner
-host, the Upgrade steps of the release notes, and the relaunch of both seats
-from `repo-harness seats argv <seat> --repository-id <id>`.
+1. Runs `bash scripts/release-owner-steps.sh workflow-guard <sha>`. The guard
+   reads the version from `package.json` at the SHA. It refuses a SHA that is
+   not the first-parent commit on `main` that set both package versions, a
+   version with no CHANGELOG section, a version that is on npm, an existing
+   tag, and a checkout that is not that commit unchanged.
+2. Runs `bun run check:release`, the release lane, then the guard again.
+3. `npm publish --provenance` for `repo-harness-operator-web`, then for
+   `repo-harness`.
+4. `check published <version>` reads both packages back.
+5. Creates the annotated tag `v<version>` at the SHA through the GitHub API.
+6. `gh release create --verify-tag` with the CHANGELOG section of the version.
+7. `check tagged <version>`: the remote tag is at the release commit, and the
+   GitHub Release is not a draft or a prerelease.
+
+A failed step stops the run. A rerun of a published version stops at the
+guard; nothing is published again. The owner sets npm Trusted Publishing for
+both packages and the `release` environment with the owner as the required
+reviewer and `main` as the only deployment branch (#2194).
+
+`bash scripts/release-owner-steps.sh plan <version>` stays a read-only
+preflight: it runs the same checks as the guard for a version and prints the
+release commit, a manual command list and the post-release steps. After
+step 7 passes, the orchestrator and the advisor decide together on those
+post-release steps: `repo-harness update` on the owner host, the Upgrade
+steps of the release notes, and the relaunch of both seats from
+`repo-harness seats argv <seat> --repository-id <id>`.
 
 ## Webapp Release Shape
 

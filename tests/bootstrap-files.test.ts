@@ -341,6 +341,11 @@ describe("Bootstrap Script Contracts", () => {
         [{ NPM_VIEW: "error" }, `unable to prove repo-harness-operator-web@${planVersion} is unpublished`],
       ];
       for (const [env, message] of planRefusals) expect(runIn(repo, ["plan", planVersion], env).stderr).toContain(message);
+      // The release workflow names only a SHA: it gets the version back, and a copy of the release tree is refused.
+      expect(run("workflow-guard", third).stdout).toBe(`${planVersion}\n`);
+      const copy = git("commit-tree", `${third}^{tree}`, "-p", third, "-m", "not the release commit");
+      expect(run("workflow-guard", copy).stderr).toContain(`${copy} is not the release commit of ${planVersion}; that is ${third}`);
+      expect(runIn(repo, ["workflow-guard", third], { NPM_VIEW: "published" }).stderr).toContain(`repo-harness-operator-web@${planVersion} is already on npm`);
       git("tag", `v${planVersion}`, third);
       expect(run("plan", planVersion).stderr).toContain(`tag v${planVersion} already exists in this repository`);
       git("tag", "-d", `v${planVersion}`);
