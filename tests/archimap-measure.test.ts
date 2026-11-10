@@ -366,6 +366,44 @@ describe('archimap measure reports board geometry', () => {
     expect(geometry.findings).toEqual([]);
   });
 
+  test('short attached segments follow the border rule; a true pass-through is reported', () => {
+    type P = [number, number];
+    const near = ([x, y]: P) => {
+      const ay = Math.max(-y, 0, y - 100);
+      const ax = Math.max(-x, 0, x - 100);
+      const d = { l: Math.hypot(x, ay), r: Math.hypot(x - 100, ay), t: Math.hypot(y, ax), b: Math.hypot(y - 100, ax) };
+      return Object.entries(d).filter(([, v]) => v <= 8).map(([k]) => k);
+    };
+    const inside = (a: P, b: P) => {
+      const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) * 10);
+      return Array.from({ length: n + 1 }, (_, k) => [a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]).some(([x, y]) => x! > 0 && x! < 100 && y! > 0 && y! < 100);
+    };
+    const expected = (a: P, b: P) => {
+      const sa = near(a);
+      const sb = near(b);
+      const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (sa.length && sb.length) return !sa.some((s) => sb.includes(s)) && inside(a, b);
+      if (sa.length || sb.length) {
+        if (length <= 8) return false;
+        const u: P = [(b[0] - a[0]) / length, (b[1] - a[1]) / length];
+        return sa.length ? inside([a[0] + u[0] * 8, a[1] + u[1] * 8], b) : inside(a, [b[0] - u[0] * 8, b[1] - u[1] * 8]);
+      }
+      return inside(a, b);
+    };
+    const starts: P[] = [];
+    for (const d of [-3, 0, 3]) for (const along of [50, 2]) starts.push([d, along], [100 - d, along], [along, d], [along, 100 - d]);
+    const cases: { name: string; a: P; b: P }[] = [{ name: 'pass-through', a: [5, 50], b: [200, 50] }];
+    for (const a of starts) {
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as P[]) {
+        for (const length of [1, 5, 8, 10, 16, 20]) cases.push({ name: `${a} ${dx},${dy} ${length}`, a, b: [a[0] + dx * length, a[1] + dy * length] });
+      }
+    }
+    const boards = cases.map((c) => board(c.name, `${box('node', 0, 0)}${paths(`M${c.a[0]} ${c.a[1]} L${c.b[0]} ${c.b[1]}`)}`));
+    const through = new Set(run(boards).findings.filter((f) => f.kind === 'line_through_box').map((f) => f.board));
+    expect(cases.filter((c) => through.has(c.name)).map((c) => c.name)).toEqual(cases.filter((c) => expected(c.a, c.b)).map((c) => c.name));
+    expect(through.has('pass-through')).toBe(true);
+  });
+
   test('each subpath of a path is checked for open ends', () => {
     const geometry = run([board('1 · Subpaths', `${box('node', 0, 0)}${box('node', -200, 0)}${paths('M0 20 H-100 M-300 20 H-400 M0 40 H-100')}`)]);
     expect(geometry.findings.map((f) => f.kind)).toEqual(['line_end_open', 'line_end_open']);
