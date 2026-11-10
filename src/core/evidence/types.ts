@@ -85,11 +85,3 @@ export interface EvidenceEventRecord {
 }
 
 export type EvidenceLogRecord = GenesisRecord | EvidenceEventRecord;
-
-export function isGenesisRecord(record: EvidenceLogRecord): record is GenesisRecord {
-  return record.kind === "evidence_genesis";
-}
-
-export function isEvidenceEventRecord(record: EvidenceLogRecord): record is EvidenceEventRecord {
-  return record.kind === "evidence_event";
-}
