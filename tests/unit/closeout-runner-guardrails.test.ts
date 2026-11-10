@@ -230,6 +230,33 @@ describe('closeout runner guardrails', () => {
     expect(existsSync(sentinel)).toBe(false);
   }, 30_000);
 
+  test('supervisor parent probes preserve permission, absence and unexpected-error results', () => {
+    const root = temporaryRoot('repo-harness-parent-probe-');
+    for (const code of ['EPERM', 'ESRCH', 'EIO', 'EIO-watch']) {
+      const receipt = join(root, `${code}.json`);
+      const result = spawnSync(process.execPath, ['-e', `
+        const { runProcessSupervisorCli } = await import(process.argv[1]);
+        const code = process.argv[2];
+        const kill = process.kill;
+        let probes = 0;
+        process.kill = (pid, signal) => {
+          if (pid === process.ppid && signal === 0 && (++probes > 3 || code !== 'EIO-watch')) {
+            throw Object.assign(new Error(code), { code: code === 'EIO-watch' ? 'EIO' : code });
+          }
+          return kill(pid, signal);
+        };
+        process.exitCode = await runProcessSupervisorCli(process.argv.slice(3));
+      `, join(ROOT, 'src/effects/process-supervisor.ts'), code,
+        '--metadata', receipt, '--parent-pid', String(process.pid), '--timeout-ms', '2000',
+        '--capture-bytes', '1024', '--stdio', 'pipe', '--', process.execPath, '-e', code === 'EIO-watch' ? 'setInterval(() => {}, 1000)' : '',
+      ], { encoding: 'utf-8', timeout: 5_000 });
+      expect(result.status, result.stderr).toBe(code === 'EPERM' ? 0 : 1);
+      const recorded = JSON.parse(readFileSync(receipt, 'utf-8'));
+      expect(recorded.spawnError).toBe(code === 'EPERM' ? '' : code === 'ESRCH' ? 'helper caller exited before lock acquisition' : code);
+      expect(recorded.parentLost).toBe(false);
+    }
+  });
+
   test('supervised spawn failure returns a bounded error instead of hanging on pipe close', () => {
     const startedAt = Date.now();
     const result = runProcess('/repo-harness/definitely-missing-command', [], {
