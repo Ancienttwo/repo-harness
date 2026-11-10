@@ -401,9 +401,9 @@ function BoardDrawer({ view, place, readExecution, readTaskMessages, generation,
   );
 }
 
-/** The room of one repository: its seats, and the board and Task drawer of the active parent. */
-function OfficeRoomView({ repositoryId, list, view, place, parent, quota, setup, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
-  readonly repositoryId: string; readonly list: BoardParentsV1; readonly view: (BoardView & { readonly kind: 'ready' }) | null;
+/** The room of one repository: its seats, and the board and Task drawer of the active parent. `reading`: the board read is pending. */
+function OfficeRoomView({ repositoryId, list, view, reading, place, parent, quota, setup, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
+  readonly repositoryId: string; readonly list: BoardParentsV1; readonly view: (BoardView & { readonly kind: 'ready' }) | null; readonly reading: boolean;
   readonly place: BoardPlace | null; readonly parent: number | null; readonly quota: QuotaView; readonly setup: OfficeSetupReads; readonly writeBossCommand: BossCommandWriter;
   readonly readAdvisorTranscript: AdvisorTranscriptReader; readonly writeAdvisorMessage: AdvisorMessageWriter; readonly mode: ThemeMode;
   readonly readExecution: ExecutionReader; readonly readTaskMessages: TaskMessagesReader; readonly generation: number;
@@ -418,14 +418,14 @@ function OfficeRoomView({ repositoryId, list, view, place, parent, quota, setup,
     .flatMap(issue => board.items.find(item => item.number === issue) ?? []);
   return (
     <>
-      <BoardOfficeRoom key={`${repositoryId}:${parent}`} repository={list.repository} repositoryId={repositoryId} parent={parent} defaultBranch={board?.default_branch ?? null} room={room} place={place} writeBoss={writeBossCommand} readAdvisor={readAdvisorTranscript} writeAdvisor={writeAdvisorMessage} mode={mode} onOpen={onOpen} now={now} t={t}
+      <BoardOfficeRoom key={`${repositoryId}:${parent}`} repository={list.repository} repositoryId={repositoryId} parent={parent} defaultBranch={board?.default_branch ?? null} room={room} reading={reading} place={place} writeBoss={writeBossCommand} readAdvisor={readAdvisorTranscript} writeAdvisor={writeAdvisorMessage} mode={mode} onOpen={onOpen} now={now} t={t}
         banners={view === null ? null : (
           <>
             <SourceBanners board={view.board} refreshFailed={view.refreshFailed} unevaluated={view.attention.unevaluated.length} quota={quota} t={t} />
             {accounts.length > 0 && <AttentionSection count={accounts.length} t={t}>{accounts.map(account => <QuotaAttentionRow key={account.account} account={account} now={now} t={t} />)}</AttentionSection>}
           </>
         )}
-        setup={officeLit(room) ? null : <OfficeSetupChecklist rows={officeSetupRows(setup, { kind: 'room', repositoryId, parent, parents: { kind: 'ready', list }, plan: board?.plan ?? 'no_parent' }, t)} t={t} />} />
+        setup={officeLit(room) ? null : <OfficeSetupChecklist rows={officeSetupRows(setup, { kind: 'room', repositoryId, parent, parents: { kind: 'ready', list }, plan: reading ? 'unread' : board?.plan ?? 'no_parent' }, t)} t={t} />} />
       {view !== null && place !== null && (
         <BoardDrawer view={view} place={place} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} order={order} onOpen={onOpen} now={now} t={t} />
       )}
@@ -457,7 +457,8 @@ function OfficeRepository({ repositoryId, place, placeView, quota, setup, readBo
       </div>
     );
   }
-  if (parents.kind === 'loading' || view?.kind === 'loading') return <BoardState loading title={t('board.loading.title')} description={t('board.office.card.loading')} />;
+  // The room draws from the parent list at once; the board fills it in when its read settles.
+  if (parents.kind === 'loading') return <BoardState loading title={t('board.loading.title')} description={t('board.office.card.loading')} />;
   if (view?.kind === 'failed') {
     return (
       <div data-board-reason={view.reason}>
@@ -465,7 +466,7 @@ function OfficeRepository({ repositoryId, place, placeView, quota, setup, readBo
       </div>
     );
   }
-  return <OfficeRoomView repositoryId={repositoryId} list={parents.list} view={view} place={place} parent={parent} quota={quota} setup={setup} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={mode} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} onOpen={onOpen} now={now} t={t} />;
+  return <OfficeRoomView repositoryId={repositoryId} list={parents.list} view={view?.kind === 'ready' ? view : null} reading={view?.kind === 'loading'} place={place} parent={parent} quota={quota} setup={setup} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={mode} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} onOpen={onOpen} now={now} t={t} />;
 }
 
 export function BoardPage({ layout, place, room, view, parents, repositories, chosenRepository, onRepository, setup, quota, readBoard, readBoardParents, readBoardSummaries, writeBossCommand, readAdvisorTranscript, writeAdvisorMessage, mode, readExecution, readTaskMessages, generation, onOpen, now, t }: {
@@ -512,7 +513,6 @@ export function BoardPage({ layout, place, room, view, parents, repositories, ch
     if (layout === 'office') return <BoardOfficeOverview repositories={repositories} readParents={readBoardParents} readSummaries={readBoardSummaries} setup={setup} generation={generation} mode={mode} onOpen={onOpen} t={t} />;
     return <ParentList repositories={repositories} repository={boardListRepository(repositories, chosenRepository)} onRepository={onRepository} parents={parents} onOpen={onOpen} now={now} t={t} />;
   }
-  if (view.kind === 'loading') return <BoardState loading title={t('board.loading.title')} description={t('board.loading.parentBody', { number: place.parent })} />;
   if (view.kind === 'failed') {
     return (
       <div data-board-reason={view.reason}>
@@ -522,5 +522,6 @@ export function BoardPage({ layout, place, room, view, parents, repositories, ch
     );
   }
   if (place.layout === 'office') return <OfficeRepository repositoryId={place.repository_id} place={place} placeView={view} {...office} />;
+  if (view.kind === 'loading') return <BoardState loading title={t('board.loading.title')} description={t('board.loading.parentBody', { number: place.parent })} />;
   return <ReadyBoard view={view} place={place} quota={quota} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} onOpen={onOpen} now={now} t={t} />;
 }

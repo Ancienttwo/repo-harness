@@ -107,8 +107,10 @@ model's own docs. The archimap is the one hand-composed HTML view.
    the edge styles used. On each behavior board, compare every state name
    and transition label with the spec at its path: each one must be a spec
    state value or action name, and each red marker must have one legend
-   row. Run `measure.ts` once more against the written map and confirm
-   that the coverage lists are empty.
+   row. Run `measure.ts --map` once more against the written map and confirm
+   that the coverage lists are empty. Fix each `geometry.findings` entry, or
+   name it in the report with the reason. A board in `geometry.unchecked` has
+   no check except your look at it.
 8. **Ship with the change.** In a refresh triggered by a branch change,
    commit the map in the same PR as the model change. Say in the PR body
    which boards changed.

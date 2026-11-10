@@ -255,6 +255,63 @@
       "audience": "bot"
     },
     {
+      "name": "repo-harness-orchestrator",
+      "kind": "facade",
+      "source": "assets/skills/repo-harness-orchestrator",
+      "provider": null,
+      "hosts": [
+        "claude"
+      ],
+      "owner": "peer-runtime",
+      "explicitOnly": false,
+      "discoverability": "explicit-only",
+      "requires": [
+        "herdr"
+      ],
+      "mutatesRepoByDefault": false,
+      "summary": "Explicit-invoke start of the orchestrator seat of the cwd repository in a new tab of its Herdr space, from repo-harness seats argv; refuses a second live orchestrator of the repository.",
+      "retirementCandidate": null,
+      "audience": "bot"
+    },
+    {
+      "name": "repo-harness-advisor",
+      "kind": "facade",
+      "source": "assets/skills/repo-harness-advisor",
+      "provider": null,
+      "hosts": [
+        "claude"
+      ],
+      "owner": "peer-runtime",
+      "explicitOnly": false,
+      "discoverability": "explicit-only",
+      "requires": [
+        "herdr"
+      ],
+      "mutatesRepoByDefault": false,
+      "summary": "Explicit-invoke start of the advisor seat beside the live orchestrator of the cwd repository, from repo-harness seats argv; refuses without that orchestrator or with a live advisor.",
+      "retirementCandidate": null,
+      "audience": "bot"
+    },
+    {
+      "name": "repo-harness-seat-handoff",
+      "kind": "facade",
+      "source": "assets/skills/repo-harness-seat-handoff",
+      "provider": null,
+      "hosts": [
+        "claude"
+      ],
+      "owner": "peer-runtime",
+      "explicitOnly": false,
+      "discoverability": "explicit-only",
+      "requires": [
+        "herdr"
+      ],
+      "mutatesRepoByDefault": false,
+      "summary": "Explicit-invoke on-demand reset of the current orchestrator or advisor seat: runs repo-harness seats handoff and follows the Stop-hook handoff steps it prints.",
+      "retirementCandidate": null,
+      "audience": "bot"
+    },
+    {
       "name": "merge-gate",
       "kind": "judge",
       "source": null,
