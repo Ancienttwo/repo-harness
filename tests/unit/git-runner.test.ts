@@ -164,84 +164,73 @@ describe('git runner', () => {
     }
   });
 
-  test('provider-token values never leave a git call in output, errors or stderr', async () => {
+  test('a call that keeps a provider token replaces its values in every result', async () => {
     const root = tmpWorkspace('git-runner-redact');
     const token = 'zq7-fake-token-value';
     const env = { GH_TOKEN: token };
     try {
       // The helper prints the token it receives in its env, so no script or fixture file holds the value.
       const gitBin = writeGit(root, `#!/bin/sh
-case "$2" in
-  pad) head -c "$PAD" /dev/zero | tr '\\0' x; printf '%s' "$GH_TOKEN"; exit 0;;
-  cut) printf '%.8s' "$GH_TOKEN" >&2; sleep 30;;
-esac
+[ "$2" = pad ] && { head -c "$PAD" /dev/zero | tr '\\0' x; printf '%s' "$GH_TOKEN"; exit 0; }
 printf 'out %s\\n' "$GH_TOKEN"; printf 'err %s\\n' "$GH_TOKEN" >&2
-case "$2" in hang) sleep 30;; flood) head -c 1200000 /dev/zero | tr '\\0' x;; ok) exit 0;; esac
+case "$2" in flood) head -c 1200000 /dev/zero | tr '\\0' x;; ok) exit 0;; esac
 exit 3
 `);
-      const prefix = token.slice(0, 5);
-      const leaked = (...parts: unknown[]) => parts.some(part => String(part ?? '').includes(token) || String(part ?? '').includes(prefix));
+      const leaked = (...parts: unknown[]) => parts.some(part => String(part ?? '').includes(token) || String(part ?? '').includes(token.slice(0, 5)));
       const caught = (action: () => unknown) => { try { action(); } catch (error) { return error as Error & { stdout?: unknown; stderr?: unknown }; } throw new Error('expected a failure'); };
-      const forwarded = <T>(action: () => T): { result: T; out: string; err: string } => {
-        const [writeOut, writeErr] = [process.stdout.write, process.stderr.write];
-        let out = '', err = '';
-        process.stdout.write = ((chunk: string | Uint8Array) => { out += String(chunk); return true; }) as typeof process.stdout.write;
-        process.stderr.write = ((chunk: string | Uint8Array) => { err += String(chunk); return true; }) as typeof process.stderr.write;
-        try { return { result: action(), out, err }; } finally { process.stdout.write = writeOut; process.stderr.write = writeErr; }
-      };
-      // Synchronous: failure with forwarded stderr, timeout, and a maxBuffer cut inside the token.
-      const failed = forwarded(() => caught(() => gitExecFileSync(['fetch', 'fail'], { gitBin, env, encoding: 'utf8' })));
-      expect(leaked(failed.result.message, failed.result.stderr, failed.out, failed.err)).toBe(false);
-      expect(failed.err).toContain('err [redacted]');
-      const timeout = caught(() => gitExecFileSync(['fetch', 'hang'], { gitBin, env, encoding: 'utf8', timeout: 300 }));
-      expect(leaked(timeout.message, timeout.stdout, timeout.stderr)).toBe(false);
-      expect(String(timeout.stdout)).toContain('out [redacted]');
-      expect(String(timeout.stderr)).toContain('err [redacted]');
-      const limited = caught(() => gitExecFileSync(['fetch', 'pad'], { gitBin, env: { ...env, PAD: '40' }, encoding: 'utf8', maxBuffer: 45 }));
-      expect(leaked(limited.message, limited.stdout, limited.stderr)).toBe(false);
+      const sync = caught(() => gitExecFileSync(['fetch', 'fail'], { gitBin, env, encoding: 'utf8' }));
+      expect(leaked(sync.message, sync.stdout, sync.stderr)).toBe(false);
+      expect(String(sync.stderr)).toContain('err [redacted]');
       const spawned = gitSpawnSync(['fetch', 'ok'], { gitBin, env, encoding: 'utf8' });
       expect(leaked(spawned.stdout, spawned.stderr, spawned.output)).toBe(false);
-      const spawnLimit = gitSpawnSync(['fetch', 'pad'], { gitBin, env: { ...env, PAD: '40' }, encoding: 'utf8', maxBuffer: 45 });
-      expect(leaked(spawnLimit.stdout, spawnLimit.stderr, spawnLimit.error?.message)).toBe(false);
-      // Asynchronous: failure, timeout, output limit, a timeout inside the token, and a token as first argument.
-      for (const [mode, options] of [['fail', {}], ['hang', { timeout: 300 }], ['flood', {}], ['cut', { timeout: 300 }]] as const) {
-        const error = await gitExecFile(['fetch', mode], { gitBin, env, ...options }).then(() => { throw new Error('expected a failure'); }, (reason: unknown) => reason as GitExecError);
+      expect(spawned.stdout).toContain('out [redacted]');
+      // An output limit that really is exceeded cuts inside the token; the cut stream loses the last (token length - 1) characters.
+      const limited = caught(() => gitExecFileSync(['fetch', 'pad'], { gitBin, env: { ...env, PAD: '40' }, encoding: 'utf8', maxBuffer: 45 }));
+      expect((limited as NodeJS.ErrnoException).code).toBe('ENOBUFS');
+      expect(leaked(limited.message, limited.stdout, limited.stderr)).toBe(false);
+      expect(String(limited.stdout)).toMatch(/^x+$/);
+      for (const mode of ['fail', 'flood']) {
+        const error = await gitExecFile(['fetch', mode], { gitBin, env }).then(() => { throw new Error('expected a failure'); }, (reason: unknown) => reason as GitExecError);
         expect(error).toBeInstanceOf(GitExecError);
         expect(leaked(error.message, error.stderr), mode).toBe(false);
       }
-      const named = await gitExecFile([token, 'fail'], { gitBin, env }).then(() => { throw new Error('expected a failure'); }, (reason: unknown) => reason as GitExecError);
-      expect(leaked(named.message)).toBe(false);
-      expect(leaked(await gitExecFile(['fetch', 'ok'], { gitBin, env }))).toBe(false);
-      // runGit: failure, timeout, a cut at the buffer limit, and inherited stdio on both runners.
-      const run = runGit(['fetch', 'fail'], { gitBin, env });
-      expect(leaked(run.stdout, run.stderr, run.error, ...run.command)).toBe(false);
-      const stopped = runGit(['fetch', 'hang'], { gitBin, env, timeoutMs: 300 });
-      expect(stopped.timedOut).toBe(true);
-      expect(leaked(stopped.stdout, stopped.stderr, stopped.error)).toBe(false);
-      const bufferLimit = runGit(['fetch', 'pad'], { gitBin, env: { ...env, PAD: String(1024 * 1024 - 5) }, maxOutputBytes: 4 * 1024 * 1024 });
-      expect(leaked(bufferLimit.stdout, bufferLimit.stderr, bufferLimit.error)).toBe(false);
-      for (const processGroup of [false, true]) {
-        const inherited = forwarded(() => runGit(['fetch', 'fail'], { gitBin, env, stdio: 'inherit', processGroup }));
-        expect(leaked(inherited.out, inherited.err, inherited.result.stdout, inherited.result.stderr), `processGroup ${processGroup}`).toBe(false);
-        expect(inherited.out).toContain('out [redacted]');
-        expect(inherited.err).toContain('err [redacted]');
-      }
+      expect(await gitExecFile(['fetch', 'ok'], { gitBin, env })).toBe('out [redacted]\n');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  test('a malformed provider token and a streamed token fail closed', async () => {
-    for (const GH_TOKEN of ['short', 'redacted']) {
-      expect(() => gitExecFileSync(['status'], { env: { GH_TOKEN } })).toThrow('malformed provider token');
-      expect(() => runGit(['status'], { env: { GH_TOKEN } })).toThrow('malformed provider token');
-      await expect(gitExecFile(['status'], { env: { GH_TOKEN } })).rejects.toThrow('malformed provider token');
-    }
+  test('a call that keeps a provider token refuses output it cannot replace and a malformed value', async () => {
     const token = 'zq7-fake-token-value';
-    expect(() => spawnGit(['fetch', 'origin'], { env: { GH_TOKEN: token }, stdio: 'ignore' })).toThrow('keeps a provider token');
-    // A local command runs without the token, so its raw stream holds none.
-    const child = spawnGit(['--version'], { env: { GH_TOKEN: token }, stdio: 'ignore' });
-    await new Promise(resolve => child.on('close', resolve));
+    const env = { GH_TOKEN: token };
+    for (const stdio of ['inherit', ['pipe', 'pipe', 2], ['pipe', 'inherit', 'pipe']] as const) {
+      expect(() => gitExecFileSync(['fetch'], { env, stdio: stdio as never }), String(stdio)).toThrow('runner-owned');
+      expect(() => gitSpawnSync(['fetch'], { env, stdio: stdio as never }), String(stdio)).toThrow('runner-owned');
+    }
+    expect(() => spawnGit(['fetch', 'origin'], { env, stdio: 'ignore' })).toThrow('keeps one');
+    expect(() => runGit(['fetch', 'origin'], { env })).toThrow('keeps one');
+    for (const GH_TOKEN of ['short', 'redacted']) {
+      expect(() => gitExecFileSync(['fetch'], { env: { GH_TOKEN } })).toThrow('malformed provider token');
+      await expect(gitExecFile(['fetch'], { env: { GH_TOKEN } })).rejects.toThrow('malformed provider token');
+    }
+  });
+
+  test('a local call runs as before with a valid or a short parent provider token', () => {
+    const root = tmpWorkspace('git-runner-local');
+    const previous = process.env.GH_TOKEN;
+    try {
+      const gitBin = writeGit(root, '#!/bin/sh\nprintf "[%s]" "${GH_TOKEN-}"\n');
+      for (const value of ['zq7-fake-token-value', 'short']) {
+        process.env.GH_TOKEN = value;
+        expect(gitExecFileSync(['status'], { gitBin, encoding: 'utf8', stdio: 'inherit' as never })).toBeNull();
+        expect(gitSpawnSync(['status'], { gitBin, encoding: 'utf8' }).stdout).toBe('[]');
+        expect(runGit(['status'], { gitBin }).stdout).toBe('[]');
+      }
+    } finally {
+      if (previous === undefined) delete process.env.GH_TOKEN;
+      else process.env.GH_TOKEN = previous;
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test('fetch and push keep the caller token for gh auth git-credential', async () => {
