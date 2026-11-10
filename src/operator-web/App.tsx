@@ -7,7 +7,6 @@ import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
 import { BoardPage, boardListRepository } from './BoardPage';
-import { fetchBoardSummaries, type BoardSummariesReader } from './board-office';
 import { postBossCommand, type BossCommandWriter } from './office-boss';
 import { fetchAdvisorTranscript, postAdvisorMessage, type AdvisorMessageWriter, type AdvisorTranscriptReader } from './OfficeAdvisorDialog';
 import { fetchBoard, fetchBoardParents, fetchBoardSeats, useBoard, useBoardParents, type BoardSeatsReader, type BoardParentsReader, type BoardReader, type BoardView } from './board-view';
@@ -92,8 +91,6 @@ export interface OperatorAppProps {
   /** The parent list route of one repository, behind the Board page without a board. */
   readonly readBoardParents?: BoardParentsReader;
   readonly readBoardSeats?: BoardSeatsReader;
-  /** The stored board summaries of one repository, behind the office overview. */
-  readonly readBoardSummaries?: BoardSummariesReader;
   /** The boss command route of the office room (#1757). */
   readonly writeBossCommand?: BossCommandWriter;
   /** The advisor seat routes behind the dialog of the office room (#1809). */
@@ -299,7 +296,6 @@ export function OperatorApp({
   readBoard = fetchBoard,
   readBoardParents = fetchBoardParents,
   readBoardSeats = fetchBoardSeats,
-  readBoardSummaries = fetchBoardSummaries,
   writeBossCommand = postBossCommand,
   readAdvisorTranscript = fetchAdvisorTranscript,
   writeAdvisorMessage = postAdvisorMessage,
@@ -488,7 +484,7 @@ export function OperatorApp({
         </header>
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-1 pb-10 rail:px-6" data-workspace={workspace}>
           {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
-          {workspace === 'board' && <BoardPage layout={boardLayout(place.item)} place={boardSubject} room={repositoryRoom} view={board} readBoard={readBoard} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={theme.mode} readBoardParents={readBoardParents} readBoardSeats={readBoardSeats} readBoardSummaries={readBoardSummaries} parents={boardParents} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
+          {workspace === 'board' && <BoardPage layout={boardLayout(place.item)} place={boardSubject} room={repositoryRoom} view={board} readBoard={readBoard} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={theme.mode} readBoardParents={readBoardParents} readBoardSeats={readBoardSeats} parents={boardParents} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
             repositories={boardOptions} chosenRepository={boardRepository} onRepository={chooseBoardRepository} setup={{ repositories, devActivity, botAccess }} quota={quota.view} />}
           {workspace === 'repositories' && <RepositoriesPage view={repositories} activity={devActivity} now={now} onOpen={openRepositoryBoard} readLanguage={readDocumentationLanguage} writeLanguage={writeDocumentationLanguage} generation={refreshGeneration} t={t} />}
           {/* Kept mounted after the first visit so the open plan review and the plan selection survive a page change. */}

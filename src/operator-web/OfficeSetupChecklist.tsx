@@ -159,15 +159,15 @@ function seatsRow(scope: OfficeSetupScope, t: OperatorTranslate): OfficeSetupRow
 
 type RoomPlan = 'planned' | 'no_parent' | { readonly reason: string | null };
 
-/** The plan fact of one overview room. `batch.size` is also null for an unavailable plan, so it does not prove absence. */
+/** The plan fact of one overview room. A plan that is not observed can be unavailable, so it does not prove absence. */
 function roomPlan({ view, card }: Extract<OfficeSetupScope, { readonly kind: 'overview' }>['rooms'][number]): RoomPlan {
   if (card === null) return { reason: view.kind === 'failed' ? view.reason : null };
-  const { summary } = card;
-  if (summary.status === 'no_parent') return 'no_parent';
-  if (summary.status === 'loading') return { reason: null };
-  if (summary.status === 'not_read') return { reason: 'not_read' };
-  if (summary.status === 'unavailable') return { reason: summary.reason };
-  return summary.summary.batch.size === null ? { reason: 'plan_not_observed' } : 'planned';
+  const { board, room } = card;
+  if (board.status === 'no_parent') return 'no_parent';
+  if (board.status === 'loading') return { reason: null };
+  if (board.status === 'not_read') return { reason: 'not_read' };
+  if (board.status === 'unavailable') return { reason: board.reason };
+  return room.plan.status === 'none' ? { reason: 'plan_not_observed' } : 'planned';
 }
 
 function planRow(scope: OfficeSetupScope, t: OperatorTranslate): OfficeSetupRow {
