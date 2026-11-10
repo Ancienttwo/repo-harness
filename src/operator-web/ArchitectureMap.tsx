@@ -315,6 +315,7 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   const chooseBase = useCallback((base: TopologyBase) => { setTopologyBase(base); select({ view: 'topology', scope: '', id: null }); }, [select]);
   const chooseLegacy = useCallback((value: boolean) => { setLegacy(value); select({ view: 'topology', scope: '', id: null }); }, [select]);
   const onTopologySelect = useCallback((id: string | null) => select({ view: 'topology', scope: topologyScope, id }), [topologyScope, select]);
+  const onModulesSelect = useCallback((id: string | null) => select({ view: 'modules', scope: '', id }), [select]);
   useEffect(() => {
     onSummary(map === null ? null : {
       commit: map.commit, collectedAt: map.collected_at, headRef: map.head_ref, archctxVersion: map.archctx_version,
@@ -339,7 +340,7 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
           : view === 'topology' ? <TopologyLensTools map={map} base={topologyBase} onBase={chooseBase} legacy={legacy} onLegacy={chooseLegacy} t={t} />
           : <span className="architecture-lens__hint">{t('architecture.lens.hint')}</span>}
       </div>
-      {view === 'modules' && <ArchitectureModules key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} side={side} onModule={onModule} t={t} />}
+      {view === 'modules' && <ArchitectureModules key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} selectedId={selections.modules?.id ?? null} onSelect={onModulesSelect} side={side} onModule={onModule} t={t} />}
       {view === 'sequence' && <ArchitectureSequence key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} flowId={flow} onFlow={setFlow} side={side} onModule={onModule} t={t} />}
       {view === 'topology' && <ArchitectureTopology key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} base={topologyBase} legacy={legacy} selectedId={topologySelected} onSelect={onTopologySelect} side={side} onModule={onModule} t={t} />}
     </>}

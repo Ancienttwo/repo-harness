@@ -57,12 +57,12 @@ const handlesOf = (box: SceneBox): NodeHandle[] => [
   { type: 'source', position: Position.Bottom, x: box.width / 2, y: box.height, width: 1, height: 1 },
 ];
 
-/** How a view shows one scene box: its node type and data, and the model id that a selection of the box selects. */
+/** How a view shows one scene box: its node type and data, and the model id that a selection of the box selects; null for a box that a person cannot select. */
 export interface SceneNodeView {
   readonly type: string;
   readonly data: Record<string, unknown>;
   readonly ariaLabel: string;
-  readonly selection: string;
+  readonly selection: string | null;
 }
 
 /** One legend row: the swatch and its text. */
@@ -90,12 +90,19 @@ interface SceneCanvasProps {
   readonly view: (box: SceneBox) => SceneNodeView;
   /** The selected model id. */
   readonly selected: string | null;
+  /**
+   * The box whose routes a selection lights. Optional: a caller that passes none lights the routes of the selected id, as before.
+   * A view whose routes join the holders of its boxes names the holder.
+   */
+  readonly emphasis?: string | null;
+  /** The accessible name of a route. Optional: a caller that passes none gives its routes no accessible name, as before. */
+  readonly routeLabel?: (route: SceneRoute) => string;
   readonly onSelect: (id: string | null) => void;
   readonly legend: readonly SceneLegendEntry[];
   readonly t: OperatorTranslate;
 }
 
-function SceneFlow({ scene, nodeTypes, view, selected, onSelect, legend, t }: SceneCanvasProps) {
+function SceneFlow({ scene, nodeTypes, view, selected, emphasis = selected, routeLabel, onSelect, legend, t }: SceneCanvasProps) {
   const views = useMemo(() => new Map(scene.boxes.map(box => [box.id, view(box)])), [scene, view]);
   const content = useMemo(() => contentBox(scene.boxes), [scene]);
   const nodes = useMemo<Node[]>(() => {
@@ -107,24 +114,26 @@ function SceneFlow({ scene, nodeTypes, view, selected, onSelect, legend, t }: Sc
         id: box.id, type: shown.type, data: shown.data, ariaLabel: shown.ariaLabel,
         position: { x: box.x - (parent?.x ?? 0), y: box.y - (parent?.y ?? 0) }, width: box.width, height: box.height, handles: handlesOf(box),
         ...(parent ? { parentId: parent.id } : {}),
-        draggable: false, connectable: false, selected: shown.selection === selected,
+        draggable: false, connectable: false, selected: shown.selection !== null && shown.selection === selected,
+        ...(shown.selection === null ? { selectable: false, focusable: false } : {}),
       };
     });
   }, [scene, views, selected]);
   const edges = useMemo<RouteEdgeType[]>(() => {
     const labels = new Map(scene.labels.filter(label => label.route !== null).map(label => [label.route!, label]));
     return scene.routes.map(route => {
-      const touches = selected !== null && (route.source === selected || route.target === selected);
+      const touches = emphasis !== null && (route.source === emphasis || route.target === emphasis);
       const marker = { type: MarkerType.ArrowClosed, width: 14, height: 14, color: touches ? 'var(--rh-accent)' : 'var(--text-color-kumo-subtle)' };
       return {
         id: route.id, type: 'route', source: route.source, target: route.target,
-        className: `architecture-map__edge${touches ? ' is-active' : selected !== null ? ' is-dim' : ''}`,
+        className: `architecture-map__edge architecture-map__edge--${route.kind}${touches ? ' is-active' : selected !== null ? ' is-dim' : ''}`,
         style: { strokeWidth: route.width, ...(route.dashed ? { strokeDasharray: '6 4' } : {}) },
         ...(route.arrows.start ? { markerStart: marker } : {}), ...(route.arrows.end ? { markerEnd: marker } : {}),
         data: { route, label: labels.get(route.id) ?? null }, selectable: false, focusable: false, zIndex: touches ? 2 : 1,
+        ...(routeLabel ? { ariaLabel: routeLabel(route) } : {}),
       };
     });
-  }, [scene, selected]);
+  }, [scene, selected, emphasis, routeLabel]);
   // Selection is the only node change the read-only map applies; click and the keyboard both arrive here.
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     const chosen = changes.find(change => change.type === 'select' && change.selected);
