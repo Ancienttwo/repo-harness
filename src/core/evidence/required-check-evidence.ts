@@ -199,7 +199,7 @@ const SHA40 = /^[0-9a-f]{40}$/u;
 const GIT_OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
 const ACTIONS_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/actions\/runs\/\d+\/job\/\d+$/u;
 
-const ASSERTION_PATTERN = /(assertion(?:error)?|expected\b.*\b(?:to|deeply) equal|deeply equal|expected\b.*\breceived\b|toBe\(|toEqual\(|\bmismatch\b)/iu;
+const ASSERTION_PATTERN = /(assertion(?:error)?|expected\b.*\b(?:to|deeply) equal|deeply equal|expected\b.*\breceived\b|toBe\(|toEqual\(|\bmismatch)/iu;
 const DEPENDENCY_PATTERN = /\b(?:(?:re|pre|post)?install(?:ing)?|npm\s+ci)\b/iu;
 const DEPENDENCY_ERROR_PATTERN = /\b(?:(?:npm|pnpm|yarn)\s+(?:err!|error)|ERR_PNPM_[A-Z_]+|(?:lockfile|registry|package (?:fetch|resolution))\b[^\r\n]*\b(?:error|failed|failure|unavailable|timeout|timed out|5\d\d)|(?:error|failed|failure)\b[^\r\n]*\b(?:lockfile|registry|package (?:fetch|resolution)))/iu;
 const PLATFORM_PATTERN = /(runner (?:has |was )?(?:shutdown|shut down|received a shutdown|terminated|lost)|lost communication with the (?:runner|server)|the operation was canceled because|service unavailable|internal server error|bad gateway|gateway timeout|ECONN(?:RESET|REFUSED)|ETIMEDOUT|EAI_AGAIN|Could not resolve host)/iu;

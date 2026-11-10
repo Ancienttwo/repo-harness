@@ -374,6 +374,7 @@ describe('required-check failure evidence', () => {
   test.each([
     [`${nodeDeprecation}\nAssertionError: expected 1 to deeply equal 2`, 'assertion_mismatch'],
     ['AssertionError: expected "registry failed" to equal "ok"', 'assertion_mismatch'],
+    ['Snapshot `name 1` mismatched', 'assertion_mismatch'],
     ['lockfile registry dependency install setup', 'other'],
     ['registry documentation\nerror: test process exited', 'other'],
   ] as const)('excerpt assertions and non-install text keep their failure shape: %s', (excerpt, shape) => {
