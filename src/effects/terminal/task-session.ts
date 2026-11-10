@@ -27,10 +27,6 @@ function recheckTaskAdmission(repoRoot: string, binding: Pick<TaskPaneBinding, '
 export function beginSessionRound(dir: string, round: number, identity: unknown): void {
   writeSessionArtifact(join(dir, `started-${round}.json`), identity);
 }
-export function saveSessionRoundResult(dir: string, round: number, result: unknown): void {
-  if (!existsSync(join(dir, `started-${round}.json`))) throw new Error('task_agent_result_without_started_request');
-  writeSessionArtifact(join(dir, `result-${round}.json`), result);
-}
 
 function validateSpec(spec: HerdrTaskAgentSpec): void {
   validateHerdrCoreEndpoint(spec.endpoint); // Before directory, intent, terminal or lock creation.

@@ -88,12 +88,13 @@ Release; no seat publishes, tags or releases.
 2. Before the owner's run, read the environment without changing it:
 
    ```bash
-   gh api repos/aimpact-inc/repo-harness/environments/release -q '{can_admins_bypass, rules: [.protection_rules[].type]}'
+   gh api repos/aimpact-inc/repo-harness/environments/release -q '{can_admins_bypass, reviewers: [.protection_rules[] | select(.type == "required_reviewers") | .reviewers[].reviewer.login], rules: [.protection_rules[].type]}'
+   gh api repos/aimpact-inc/repo-harness/environments/release/deployment-branch-policies -q '[.branch_policies[].name]'
    ```
 
-   Expected: `can_admins_bypass: false`, with rules `required_reviewers` and
-   `branch_policy`. Check that the reviewer is the owner and the branch policy
-   allows only `main`. Stop if the setup differs. This read does not verify
+   Expected: `can_admins_bypass: false`, rules `required_reviewers` and
+   `branch_policy`, the reviewer list holds the owner, and the branch policy
+   names only `main`. Stop if the setup differs. This read does not verify
    the npm Trusted Publishing settings; the owner verifies those in npm.
 3. After the merge, the owner runs
    `gh workflow run release.yml -f sha=<merged release commit>` and approves

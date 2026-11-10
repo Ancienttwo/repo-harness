@@ -107,6 +107,24 @@ describe('seat quota routing', () => {
     expect(routes).toContain(`route important_deep: ${selected} (`);
     if (codexUsed >= 95) expect(routes).toContain('gatekeeper: none (chatgpt exhausted)');
   });
+
+  test('the credit grant admits an exhausted ChatGPT account only with spendCredits and credits', () => {
+    const codex = (credits: { hasCredits: boolean; unlimited: boolean; balance: string | null } | null, reached: string | null = null) => classifyQuotaReading(decodeCodexRateLimitsResult({ rateLimits: {
+      primary: { usedPercent: 95, windowDurationMins: 10080, resetsAt: (NOW + 84 * HOUR) / 1000 }, credits, rateLimitReachedType: reached,
+    } }, new Date(NOW).toISOString()), NOW);
+    const funded = { hasCredits: true, unlimited: false, balance: '34410.83' };
+    const routes = (account: ReturnType<typeof codex>, spendCredits: boolean) =>
+      formatSeatRoutes(DEFAULT_SEATS_CONFIG, seatAccountQuotas([account], DEFAULT_SEATS_CONFIG.routing, { spendCredits }));
+    expect(routes(codex(funded), false)).toContain('route important_deep: worker-important (claude opus medium; claude unknown)');
+    for (const line of [
+      'route important_deep: worker-deep (codex gpt-6.1-sol high; chatgpt tight, on credits); skipped worker-important: claude unknown',
+      'gatekeeper: gatekeeper (codex gpt-6.1-terra high; chatgpt tight, on credits)',
+    ]) expect(routes(codex(funded), true), line).toContain(line);
+    expect(routes(codex(funded, 'rate_limit_reached'), true)).toContain('gatekeeper: none (chatgpt exhausted)');
+    expect(routes(codex({ hasCredits: false, unlimited: false, balance: '0' }), true)).toContain('gatekeeper: none (chatgpt exhausted)');
+    expect(routes(codex({ hasCredits: false, unlimited: true, balance: null }), true)).toContain('gatekeeper: gatekeeper (codex gpt-6.1-terra high; chatgpt tight, on credits)');
+    expect(seatAccountQuotas([codex(funded, 'rate_limit_reached')], DEFAULT_SEATS_CONFIG.routing, { spendCredits: true }).chatgpt).toMatchObject({ state: 'exhausted' });
+  });
 });
 
 describe('quota classification', () => {
@@ -279,7 +297,7 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', li
   } else if (message.method === 'account/rateLimits/read') {
     if (mode === 'error') return out({ id: message.id, error: { code: -32603, message: 'not logged in' } });
     const resetsAt = Math.floor(Date.now() / 1000) + 167 * 3600;
-    out({ id: message.id, result: { rateLimits: { primary: { usedPercent: 50, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 2 * 3600 }, secondary: { usedPercent: 1, windowDurationMins: 10080, resetsAt }, credits: { hasCredits: true, unlimited: false, balance: '34410.83' }, planType: 'pro', rateLimitReachedType: null } } });
+    out({ id: message.id, result: { rateLimits: { primary: { usedPercent: 50, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 2 * 3600 }, secondary: { usedPercent: mode === 'exhausted' ? 95 : 1, windowDurationMins: 10080, resetsAt }, credits: { hasCredits: true, unlimited: false, balance: '34410.83' }, planType: 'pro', rateLimitReachedType: null } } });
   }
 });
 `;
@@ -328,6 +346,19 @@ describe('repo-harness quota', () => {
     expect(lines.slice(0, 2).map(line => line.split(' | ')[0])).toEqual(['claude: exhausted', 'chatgpt: normal']);
     expect(lines.slice(2, 4)).toEqual(['claude mode: saving (5% left < 20%)', 'codex mode: hyper (99% left >= 50%)']);
     expect(lines.slice(4).map(line => line.split(':')[0])).toEqual(['route important_deep', 'route important_fast', 'route simple_deep', 'route simple_fast', 'route frontend', 'explorer', 'gatekeeper', 'reviewer']);
+  });
+
+  test('--spend-credits admits an exhausted account that has credits and keeps the account line exhausted', () => {
+    const f = fixture('exhausted');
+    const lines = (...args: string[]) => quota(args, f.env).stdout.trim().split('\n');
+    const selected = (text: string[]) => text.filter(line => line.startsWith('gatekeeper:') || line.startsWith('route important_deep:'));
+    expect(selected(lines())).toEqual(['route important_deep: worker-important (claude opus medium; claude unknown)', 'gatekeeper: none (chatgpt exhausted)']);
+    const granted = lines('--spend-credits');
+    expect(selected(granted)).toEqual([
+      'route important_deep: worker-deep (codex gpt-6.1-sol high; chatgpt tight, on credits); skipped worker-important: claude unknown',
+      'gatekeeper: gatekeeper (codex gpt-6.1-terra high; chatgpt tight, on credits)',
+    ]);
+    expect(granted.find(line => line.startsWith('chatgpt:'))).toStartWith('chatgpt: exhausted');
   });
 
   test.each([
