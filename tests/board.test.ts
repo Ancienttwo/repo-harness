@@ -17,7 +17,7 @@ import { boardMergeDecisions } from '../src/core/board/merge';
 import { provenMergeOnlySyncs } from '../src/effects/board/merge-only-sync';
 import { runBoardCloseout, stopCodegraphServers } from '../src/effects/board/closeout';
 import type { RunArchctxProcess } from '../src/core/architecture/contracts';
-import { githubRemoteRepository, parseRefs } from '../src/core/board/source';
+import { githubRemoteRepository, parseRecordFindings, parseRefs } from '../src/core/board/source';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
 import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
 import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herdr-core';
@@ -1268,6 +1268,17 @@ test('acceptance disposition: a FAIL row is ignored only when every finding of i
   expect(status([disposition('R1-1, R1-2')], true)).toBe('not_accepted');
   expect(status([disposition('R1-1, R1-2', `${base}/pull/1499#issuecomment-7`)])).toBe('not_accepted');
   expect(status([disposition('R1-1, R1-2', failUrl, 'd'.repeat(40))])).toBe('not_accepted');
+});
+
+test('a rendered record with multiline finding values parses to its finding IDs', () => {
+  const receipt: ReviewPublishReceipt = {
+    protocol: 1, kind: 'repo-harness-review-publish-receipt', round: 1, subject_sha: 'a'.repeat(40), risk_tier: 'medium', reviewer: { harness: 'codex', actual_model: null }, verdict: 'FAIL', model_relation: 'different-family', summary: 'Reviewed.',
+    findings: [
+      { id: 'R1-1', severity: 'P2', path: 'a.ts', line: 1, evidence: 'first line\n  second line', fix: 'one\n\ntwo' },
+      { id: 'R1-2', severity: 'P3', message: 'nit\ntext' },
+    ],
+  };
+  expect(parseRecordFindings({ url: 'u', created_at: '2026-11-02T22:00:00Z', author_association: 'OWNER', body: renderAcceptanceRecord(receipt, 'x') })).toEqual(['R1-1', 'R1-2']);
 });
 
 test('A2 finds a batch behind an overlapping pull request, and a plan hold removes a PR from A1, A2 and R4', () => {
