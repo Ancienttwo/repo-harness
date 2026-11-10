@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from 'bun:test';
 import * as childProcess from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { closeSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -13,7 +13,6 @@ import { startOperatorServer } from '../../src/effects/operator/server';
 import { RH_LABEL, type HcStreamItem, type HcTerminal } from '../../src/effects/terminal/herdr-core';
 import { decodeBoardSeats } from '../../src/core/board/parents';
 import { decodeBoard } from '../../src/core/board/board';
-import { boardSummary, decodeBoardSummaries } from '../../src/core/board/summary';
 import board from '../../src/operator-web/fixtures/board-1474.json';
 import boardParents from '../../src/operator-web/fixtures/board-parents.json';
 
@@ -406,73 +405,6 @@ test('board facts: a low GitHub budget lengthens the gap between cycles', async 
     await f.tick(749_000); expect(cycles()).toBe(1);
     await f.tick(1_000); await until(() => cycles() === 2);
   } finally { await observer.close(); }
-});
-
-test('each board that the worker reads replaces its private summary, and the summary route reads one stored parent and starts no read', async () => {
-  const f = fixture();
-  const home = mkdtempSync(join(tmpdir(), 'board-summaries-'));
-  let current = decodeBoard(board);
-  f.worker.reply(request => request.kind === 'board' ? { ok: true, value: current } : request.kind === 'parents' ? { ok: true, value: boardParents }
-    : request.kind === 'retain' ? { ok: true, value: null } : { ok: false, code: 'rate_limit_unavailable' });
-  const server = await startOperatorServer({ port: 0, env: { REPO_HARNESS_HOME: home }, board_observer: { ports: f.ports, clock: f.clock } });
-  const requests = () => f.worker.spawned.flatMap(worker => worker.requests);
-  const reads = () => requests().filter(request => request.kind === 'board').length;
-  const cycles = () => requests().filter(request => request.kind === 'retain').length;
-  const cycle = async () => { const done = cycles(); await f.tick(30_000); await until(() => cycles() === done + 1); };
-  const path = `${server.url}/api/v1/repositories/repo-a/board/summaries`;
-  const target = join(home, 'board/summaries/repo-a-1474.json');
-  const get = async (parent = 1474) => {
-    const response = await fetch(`${path}?parent=${parent}`);
-    expect(response.status).toBe(200);
-    return decodeBoardSummaries(await response.json());
-  };
-  try {
-    expect((await get()).parents).toEqual([{ parent: 1474, status: 'not_read' }]);
-    await until(() => cycles() === 1);
-    await f.tick(0); f.emit('snapshot'); await f.tick(BOARD_SEATS_DEBOUNCE_MS);
-    expect(reads()).toBe(0);
-    await cycle();
-    const first = readFileSync(target, 'utf8'), inode = statSync(target).ino, fd = openSync(target, 'r');
-    try {
-      if (process.platform !== 'win32') expect(statSync(target).mode & 0o777).toBe(0o600);
-      expect(decodeBoardSummaries(JSON.parse(first)).parents).toEqual([{ parent: 1474, status: 'observed', observed_at: current.observed_at,
-        summary: { queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, current_batch: null, needs_you: 3, worker_limit: 8,
-          seats: { status: 'observed', stalled: 0, desks: [
-            { seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'blocked' }, { seat: 'worker', agent: 'claude-code', issue: 1475, pr: 1491, state: 'done' },
-          ] } } }]);
-      expect((await get()).parents).toEqual([JSON.parse(first).parents[0]]);
-      expect((await get(1651)).parents).toEqual([{ parent: 1651, status: 'not_read' }]);
-      current = { ...current, observed_at: new Date(Date.parse(current.observed_at) + 60_000).toISOString() };
-      await cycle();
-      expect(readFileSync(fd, 'utf8')).toBe(first);
-      expect(statSync(target).ino).not.toBe(inode);
-      expect((await get()).parents[0]).toMatchObject({ status: 'observed', observed_at: current.observed_at });
-      current = decodeBoard(board);
-      await cycle();
-      expect((await get()).parents[0]).toMatchObject({ observed_at: new Date(Date.parse(current.observed_at) + 60_000).toISOString() });
-    } finally { closeSync(fd); }
-    expect(readdirSync(join(home, 'board/summaries'))).toEqual(['repo-a-1474.json']);
-    writeFileSync(target, '{');
-    expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' });
-    // A snapshot of the old protocol is refused, not translated, and the next board read replaces it.
-    writeFileSync(target, JSON.stringify({ ...JSON.parse(first), protocol: 1 }));
-    expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' });
-    await cycle();
-    expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'observed', observed_at: current.observed_at, summary: boardSummary(current) });
-    writeFileSync(target, JSON.stringify({ ...JSON.parse(first), repository_id: 'repo-b' }));
-    expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_subject_invalid' });
-    rmSync(target); mkdirSync(target);
-    expect((await get()).parents[0]).toMatchObject({ parent: 1474, status: 'unavailable', reason: expect.stringContaining('snapshot_read_failed:') });
-    for (const query of ['', '?parent=0', '?parent=1474&parent=1651', '?all=1']) {
-      const refused = await fetch(`${path}${query}`);
-      expect([refused.status, ((await refused.json()) as { error: { code: string; message: string } }).error]).toEqual([400,
-        expect.objectContaining({ code: 'invalid_request', message: 'The board summaries route needs exactly one parent issue number.' })]);
-    }
-    expect((await fetch(`${path}?parent=1474`, { method: 'HEAD' })).status).toBe(405);
-    expect((await fetch(`${path}?parent=1474`, { headers: { Origin: 'http://foreign.invalid' } })).status).toBe(403);
-    expect((await fetch(`${path}?parent=1474`, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
-    expect(reads()).toBe(4);
-  } finally { await server.close(); rmSync(home, { recursive: true, force: true }); }
 });
 
 test('board facts: a worker that does not start leaves typed unavailable documents, the server keeps answering and the next cycle retries', async () => {
