@@ -9,8 +9,8 @@ import { readSessionArtifact, writeSessionArtifact } from '../src/effects/termin
 import { taskSessionDirectory as importedTaskDir, type HerdrCoreEndpoint, type TaskPaneBinding } from '../src/effects/terminal/task-session-record';
 import type { TaskRequest } from '../src/core/review/runner-port';
 import { taskReviewRunner } from '../src/effects/review-runner/task-review-runner';
-import { recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
-import { afterEach, describe, expect, test } from 'bun:test';
+import { fixtureTemplate, recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { darwinTest } from './helpers/darwin-test';
 import { existsSync, mkdtempSync, mkdirSync, realpathSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -605,17 +605,25 @@ describe('AcceptanceReceipt', () => {
 
 // Domain integration reuses this file's real acceptanceContext/Verification Plan fixture.
 // Only provider/task-agent effects are deterministic; this is a fixture opinion, not model evidence.
-function reviewFixture() {
+const reviewRepositoryTemplate = fixtureTemplate(() => {
   const fixture = makeFixture();
+  writeFileSync(join(fixture.root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/runs/\n.ai/harness/evidence/\n');
+  git(fixture.root, 'worktree', 'add', '-qb', 'fixture-reviewer', join(fixture.home, 'reviewer'));
+  writePassingChecks(fixture.root);
+  return { ...fixture, admissionFixture: admissions.get(fixture.root)! };
+}, fixture => [fixture.root, fixture.home]);
+afterAll(() => reviewRepositoryTemplate.dispose());
+
+function reviewFixture() {
+  const { admissionFixture, ...fixture } = reviewRepositoryTemplate.materialize();
+  tempDirs.push(fixture.root, fixture.home);
+  admissions.set(fixture.root, { ...admissionFixture, source: { ...admissionFixture.source } });
   const endpointHome = realpathSync(mkdtempSync('/tmp/as-')); tempDirs.push(endpointHome);
   mkdirSync(join(endpointHome, '.codex'));
   const payload = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now()/1000)+86400 })).toString('base64url');
   writeFileSync(join(endpointHome,'.codex','auth.json'),JSON.stringify({tokens:{access_token:`fixture.${payload}.fixture`}}),{mode:0o600});
-  writeFileSync(join(fixture.root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/runs/\n.ai/harness/evidence/\n');
 
   const reviewerRepo = join(fixture.home, 'reviewer');
-  git(fixture.root, 'worktree', 'add', '-qb', 'fixture-reviewer', reviewerRepo);
-  writePassingChecks(fixture.root);
   const calls: string[] = [];
   let request: TaskRequest; let domain: Record<string, unknown>; let sent = 0;
   let verdict: 'PASS' | 'FAIL' = 'FAIL'; let prior = false;

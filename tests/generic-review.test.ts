@@ -1,6 +1,6 @@
 import { readReviewAdmissionSource } from '../src/effects/admission/admission-source';
 import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
-import { afterEach, expect, test } from 'bun:test';
+import { afterAll, afterEach, expect, test } from 'bun:test';
 import { darwinTest } from './helpers/darwin-test';
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync, readdirSync } from 'fs';
 import { execFileSync, spawnSync } from 'child_process';
@@ -22,7 +22,7 @@ import { readSessionArtifact, writeSessionArtifact } from '../src/effects/termin
 import { ensureSessionDirectory, nextSessionRound } from '../src/effects/terminal/task-session-io';
 import type { ReviewHostSpec, TaskRequest } from '../src/core/review/runner-port';
 import type { TaskSessionAuthority } from '../src/effects/admission/admission-source';
-import { tmpWorkspace, tmpWorkspaceIn } from './helpers/repo-fixture';
+import { fixtureTemplate, tmpWorkspace, tmpWorkspaceIn } from './helpers/repo-fixture';
 import { randomUUID } from 'crypto';
 import { mockOfflineHerdr, offlineTerminalAddress, startOfflineTaskAgent } from './helpers/engineer-runtime-fixture';
 import { buildTaskMessageEvent } from '../src/core/fleet/admitted-task-message';
@@ -178,15 +178,22 @@ test('review packet enforces the existing 10 MiB limit in UTF-8 bytes without tr
   expect(() => composeReviewPacket({ ...input, source: source + 'x' })).toThrow('review_context_too_large');
 });
 
-function packetRoundFixture() {
+const packetRepositoryTemplate = fixtureTemplate(() => {
   const fixture = seedAcceptanceFixture('review-packet');
+  execFileSync('git', ['-C', fixture.root, 'worktree', 'add', '-qb', 'packet-reviewer', join(fixture.home, 'reviewer')]);
+  return fixture;
+}, fixture => [fixture.root, fixture.home]);
+afterAll(() => packetRepositoryTemplate.dispose());
+
+function packetRoundFixture() {
+  const seed = packetRepositoryTemplate.materialize();
+  const fixture = { ...seed, authority: { ...seed.authority } };
   roots.push(fixture.root, fixture.home);
   // Match the acceptance fixture's short, private endpoint HOME.
   const endpointHome = tmpWorkspaceIn('/tmp', 'rp');
   roots.push(endpointHome);
   const endpoint = { socket: join(endpointHome, 'hc.sock'), home: endpointHome };
   const reviewerRepo = join(fixture.home, 'reviewer');
-  execFileSync('git', ['-C', fixture.root, 'worktree', 'add', '-qb', 'packet-reviewer', reviewerRepo]);
   const location = reviewLocation(fixture.root, fixture.authority);
   const packetPath = (round = 1) => join(reviewerRepo, '.ai/harness/runs/generic-review-input', location.key, `packet-${round}.txt`);
   const calls: string[] = [];
