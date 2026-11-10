@@ -1,3 +1,4 @@
+import { isRecord } from '../evidence/is-record';
 import { decodeDocCitation, type DocCitationV1 } from './doc-citation';
 
 /**
@@ -28,21 +29,20 @@ const SESSION_ID = /^[0-9a-f]{32}$/u;
 const COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
 const TOKEN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 
-const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]): boolean => {
   const actual = Object.keys(value).sort();
   return actual.length === keys.length && actual.every((key, index) => key === keys[index]);
 };
 
 function decodeCitation(value: unknown): DocSessionRecordCitationV1 {
-  if (!isObject(value) || typeof value.relocated !== 'boolean') throw new Error('doc session record citation');
+  if (!isRecord(value) || typeof value.relocated !== 'boolean') throw new Error('doc session record citation');
   const { resolved, relocated, ...submitted } = value;
   return { ...decodeDocCitation(submitted), resolved: decodeDocCitation(resolved), relocated };
 }
 
 /** Closed decoder. The branch must be the one creation names for this session id. */
 export function decodeDocSessionRecord(value: unknown): DocSessionRecordV1 {
-  if (!isObject(value) || !exactKeys(value, RECORD_KEYS)) throw new Error('doc session record keys');
+  if (!isRecord(value) || !exactKeys(value, RECORD_KEYS)) throw new Error('doc session record keys');
   const { protocol, kind, session_id, state, created_at, repository_id, runtime, branch, worktree, base_commit, citations, instruction } = value;
   if (protocol !== 1 || kind !== 'docs_session' || state !== 'created') throw new Error('doc session record kind');
   if (typeof session_id !== 'string' || !SESSION_ID.test(session_id) || branch !== `docs/${session_id.slice(0, 12)}`) throw new Error('doc session record identity');
