@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -136,6 +136,27 @@ function registerFixture(root: string, site: string): { home: string; writer: Ch
 }
 
 describe('detached process group registry', () => {
+  test.each(['ESRCH', 'EPERM', 'EINVAL', undefined])('process liveness: owner probe %s controls reaping without hiding errors', code => {
+    if (process.platform === 'win32') return;
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'rh-owner-probe-')));
+    const env = { REPO_HARNESS_HOME: root }, directory = processGroupRegistryDirectory(env);
+    mkdirSync(directory, { recursive: true });
+    const record = join(directory, `${process.pid}-${process.pid}.json`);
+    writeFileSync(record, '{}');
+    const error = Object.assign(new Error('owner probe failed'), { code });
+    const probe = spyOn(process, 'kill').mockImplementation(() => { throw error; });
+    try {
+      if (code === 'ESRCH' || code === 'EPERM') {
+        expect(reapOrphanedProcessGroups(env)).toEqual([]);
+        expect(existsSync(record)).toBe(code === 'EPERM');
+      } else {
+        expect(() => reapOrphanedProcessGroups(env)).toThrow(error);
+        expect(existsSync(record)).toBe(true);
+      }
+      expect(probe.mock.calls).toEqual([[process.pid, 0]]);
+    } finally { probe.mockRestore(); rmSync(root, { recursive: true, force: true }); }
+  });
+
   for (const [site, restart, slowPs] of [
     ['setup', 'restart-operator', false],
     ['dev-activity', 'restart-operator', false],
