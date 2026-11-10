@@ -370,6 +370,198 @@ function workspacePackages(root: string, files: string[]): Map<string, Workspace
   return packages;
 }
 
+// Board geometry: the map is hand-placed HTML, so the check reads inline px values from the text.
+// A board that holds a `.node` is checked; every other board is listed as unchecked.
+interface Box { left: number; top: number; right: number; bottom: number }
+interface Point { x: number; y: number }
+interface Segment { a: Point; b: Point }
+interface GeometryFinding { board: string; kind: string; x: number; y: number; detail: string }
+
+const END_TOLERANCE = 8;
+const LABEL_CHAR_WIDTH = 7;
+const LABEL_HEIGHT = 16;
+
+function inlinePx(style: string, prop: string): number | null {
+  const match = new RegExp(`(?<![\\w-])${prop}\\s*:\\s*(-?\\d+(?:\\.\\d+)?)px`).exec(style);
+  return match ? Number(match[1]) : null;
+}
+
+function pathPoints(d: string, board: string): Point[][] {
+  const tokens = d.match(/[A-Za-z]|-?\d*\.?\d+/g) ?? [];
+  const subpaths: Point[][] = [];
+  let current: Point = { x: 0, y: 0 };
+  let command = "";
+  for (let i = 0; i < tokens.length;) {
+    if (/^[A-Za-z]$/.test(tokens[i]!)) {
+      command = tokens[i++]!;
+      if (!"MHVL".includes(command)) throw new UsageError(`geometry_path_unsupported:${board}`);
+    } else if (command === "") {
+      throw new UsageError(`geometry_path_unsupported:${board}`);
+    }
+    const arity = command === "H" || command === "V" ? 1 : 2;
+    const args = tokens.slice(i, i + arity).map(Number);
+    if (args.length < arity || args.some(Number.isNaN)) throw new UsageError(`geometry_path_unsupported:${board}`);
+    i += arity;
+    if (command === "H") current = { x: args[0]!, y: current.y };
+    else if (command === "V") current = { x: current.x, y: args[0]! };
+    else current = { x: args[0]!, y: args[1]! };
+    if (command === "M") {
+      subpaths.push([current]);
+      command = "L";
+    } else if (subpaths.length === 0) {
+      throw new UsageError(`geometry_path_unsupported:${board}`);
+    } else {
+      subpaths[subpaths.length - 1]!.push(current);
+    }
+  }
+  return subpaths;
+}
+
+function borderDistance(p: Point, b: Box): number {
+  const dx = Math.max(b.left - p.x, 0, p.x - b.right);
+  const dy = Math.max(b.top - p.y, 0, p.y - b.bottom);
+  if (dx > 0 || dy > 0) return Math.hypot(dx, dy);
+  return Math.min(p.x - b.left, b.right - p.x, p.y - b.top, b.bottom - p.y);
+}
+
+function overlapArea(a: Box, b: Box): Box | null {
+  const left = Math.max(a.left, b.left);
+  const top = Math.max(a.top, b.top);
+  const right = Math.min(a.right, b.right);
+  const bottom = Math.min(a.bottom, b.bottom);
+  return right > left && bottom > top ? { left, top, right, bottom } : null;
+}
+
+// The part of a segment inside a closed box (Liang-Barsky), or null when it misses the box.
+function clipSegment(s: Segment, b: Box): [Point, Point] | null {
+  const dx = s.b.x - s.a.x;
+  const dy = s.b.y - s.a.y;
+  let t0 = 0;
+  let t1 = 1;
+  const edges: [number, number][] = [[-dx, s.a.x - b.left], [dx, b.right - s.a.x], [-dy, s.a.y - b.top], [dy, b.bottom - s.a.y]];
+  for (const [p, q] of edges) {
+    if (p === 0) {
+      if (q < 0) return null;
+      continue;
+    }
+    const t = q / p;
+    if (p < 0) t0 = Math.max(t0, t);
+    else t1 = Math.min(t1, t);
+    if (t0 > t1) return null;
+  }
+  return [{ x: s.a.x + t0 * dx, y: s.a.y + t0 * dy }, { x: s.a.x + t1 * dx, y: s.a.y + t1 * dy }];
+}
+
+function boardBoxes(html: string, caption: string, classes: string[]): { box: Box; text: string }[] {
+  const found: { box: Box; text: string }[] = [];
+  for (const tag of html.matchAll(/<(?:a|div)\b([^>]*)>/g)) {
+    const attrs = tag[1] ?? "";
+    const tokens = (/\bclass\s*=\s*"([^"]*)"/.exec(attrs)?.[1] ?? "").split(/\s+/);
+    const cls = classes.find((c) => tokens.includes(c));
+    if (cls === undefined) continue;
+    const style = /\bstyle\s*=\s*"([^"]*)"/.exec(attrs)?.[1] ?? "";
+    const [left, top, width, height] = ["left", "top", "width", "height"].map((p) => inlinePx(style, p));
+    const labelBox = cls === "elabel";
+    if (left == null || top == null || (!labelBox && (width == null || height == null))) {
+      throw new UsageError(`geometry_box_unplaced:${caption}`);
+    }
+    const end = (tag.index ?? 0) + tag[0].length;
+    const text = labelBox
+      ? html.slice(end, html.indexOf("</div>", end)).replace(/<[^>]*>/g, "").replace(/&#?\w+;/g, "x").trim()
+      : "";
+    found.push({
+      text,
+      box: { left, top, right: left + (width ?? 0), bottom: top + (height ?? 0) },
+    });
+  }
+  return found;
+}
+
+function boardFindings(caption: string, html: string): GeometryFinding[] {
+  const nodes = boardBoxes(html, caption, ["node"]).map((n) => n.box);
+  const panels = boardBoxes(html, caption, ["panel"]).map((n) => n.box);
+  const labels = boardBoxes(html, caption, ["elabel"]).map((l) => ({
+    left: l.box.left, top: l.box.top, right: l.box.left + LABEL_CHAR_WIDTH * [...l.text].length, bottom: l.box.top + LABEL_HEIGHT,
+  }));
+  const findings: GeometryFinding[] = [];
+  const add = (kind: string, x: number, y: number, detail: string) =>
+    findings.push({ board: caption, kind, x: Math.round(x), y: Math.round(y), detail });
+  const at = (b: Box) => `(${b.left},${b.top})-(${b.right},${b.bottom})`;
+
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const hit = overlapArea(nodes[i]!, nodes[j]!);
+      if (hit) add("box_overlap", hit.left, hit.top, `node ${at(nodes[i]!)} overlaps node ${at(nodes[j]!)}`);
+    }
+  }
+
+  const lines: Point[][][] = [];
+  for (const tag of html.matchAll(/<path\b([^>]*)>/g)) {
+    const d = /\bd\s*=\s*"([^"]*)"/.exec(tag[1] ?? "")?.[1];
+    if (d !== undefined) lines.push(pathPoints(d, caption));
+  }
+  const borders = [...nodes, ...panels];
+  const segmentsOf = (subpaths: Point[][]): Segment[] =>
+    subpaths.flatMap((pts) => pts.slice(1).map((b, i) => ({ a: pts[i]!, b })));
+  const allSegments = lines.flatMap(segmentsOf);
+
+  for (const subpath of lines.flat()) {
+    if (subpath.length < 2) continue;
+    const first = subpath[0]!;
+    const last = subpath[subpath.length - 1]!;
+    for (const p of [first, last]) {
+      if (!borders.some((b) => borderDistance(p, b) <= END_TOLERANCE)) {
+        add("line_end_open", p.x, p.y, `path end (${p.x},${p.y}) is more than ${END_TOLERANCE} px from every node and panel border`);
+      }
+    }
+  }
+
+  for (const label of labels) {
+    const segment = allSegments.find((s) => clipSegment(s, label) !== null);
+    if (segment) add("label_on_line", label.left, label.top, `label ${at(label)} meets path segment (${segment.a.x},${segment.a.y})-(${segment.b.x},${segment.b.y})`);
+    const node = nodes.find((n) => overlapArea(label, n) !== null);
+    if (node) add("label_on_box", label.left, label.top, `label ${at(label)} overlaps node ${at(node)}`);
+  }
+  return findings;
+}
+
+// The content of the first `.board` element after a caption, or null when the next caption comes first.
+function boardContent(html: string, caption: string, from: number, captions: RegExpMatchArray[]): string | null {
+  const open = /<div\b[^>]*\bclass\s*=\s*"(?:[^"]*\s)?board(?:\s[^"]*)?"[^>]*>/g;
+  open.lastIndex = from;
+  const start = open.exec(html);
+  const limit = captions.find((c) => (c.index ?? 0) >= from)?.index ?? html.length;
+  if (start === null || start.index >= limit) return null;
+  const tags = /<(\/?)div\b[^>]*>/g;
+  tags.lastIndex = start.index + start[0].length;
+  let depth = 1;
+  for (let tag = tags.exec(html); tag !== null; tag = tags.exec(html)) {
+    depth += tag[1] ? -1 : 1;
+    if (depth === 0) return html.slice(start.index + start[0].length, tag.index);
+  }
+  throw new UsageError(`geometry_board_unclosed:${caption}`);
+}
+
+function geometryOf(mapPath: string): { checked: string[]; unchecked: string[]; findings: GeometryFinding[] } {
+  const html = readFileSync(mapPath, "utf8")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, "")
+    .replace(/<defs\b[\s\S]*?<\/defs>/gi, "");
+  const captions = [...html.matchAll(/<h2\b[^>]*\bclass\s*=\s*"[^"]*\bcaption\b[^"]*"[^>]*>([\s\S]*?)<\/h2>/g)];
+  const result = { checked: [] as string[], unchecked: [] as string[], findings: [] as GeometryFinding[] };
+  for (const match of captions) {
+    const caption = (match[1] ?? "").replace(/<[^>]*>/g, "").trim();
+    const body = boardContent(html, caption, (match.index ?? 0) + match[0].length, captions);
+    if (body === null || !/<(?:a|div)\b[^>]*\bclass\s*=\s*"(?:[^"]*\s)?node(?:\s[^"]*)?"/.test(body)) {
+      result.unchecked.push(caption);
+      continue;
+    }
+    result.checked.push(caption);
+    result.findings.push(...boardFindings(caption, body));
+  }
+  return result;
+}
+
 function main(): void {
   const { values } = parseArgs({
     options: {
@@ -532,6 +724,7 @@ function main(): void {
     // not build a path from its id.
     undocumentedNodes: modelNodes.filter((n) => n.kind === "capability" && !capabilityDocs.capabilities.has(n.id)).map((n) => n.id).sort(),
   };
+  if (values.map) output.geometry = geometryOf(values.map);
   process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
 }
 
