@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { initGitRepo, run, tmpWorkspace } from './helpers/repo-fixture';
@@ -1917,6 +1917,29 @@ describe('merge-only sync carry (#2074)', () => {
     };
     expect(failing(subject, base, [subject])).toEqual([]);
     expect(failing(initial, sync, [subject, initial])).toEqual([]);
+    // A reviewed head that git cannot read once the preflight passed ends its ancestry check with exit 128: no proof for any candidate. The wrapper closes it as the first candidate starts.
+    const loose = join(root, '.git/objects', conflicting.slice(0, 2), conflicting.slice(2));
+    const unreadable = (before: string, after: string, candidate = conflicting) => {
+      const wrapper = join(root, '.git-closes-object');
+      writeFileSync(wrapper, `#!/bin/sh\nif [ "$1 $2 $3 $4" = "merge-base --is-ancestor ${subject} ${sync}" ]; then ${before}; fi\nexec git "$@"\n`); chmodSync(wrapper, 0o755);
+      process.env.REPO_HARNESS_GIT_BIN = wrapper;
+      try { return provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: base, head_sha: sync }, [subject, candidate]); } finally {
+        delete process.env.REPO_HARNESS_GIT_BIN; run('sh', ['-c', after], root);
+      }
+    };
+    expect(unreadable(`mv "${loose}" "${loose}.gone"`, `[ ! -e "${loose}.gone" ] || mv "${loose}.gone" "${loose}"`)).toEqual([]);
+    expect(unreadable(`chmod 000 "${loose}"`, `chmod 644 "${loose}"`)).toEqual([]);
+    // Only the pack of the other candidate closes: the proven candidate, the head and the base stay readable.
+    git('repack', '-adq'); git('prune-packed');
+    git('checkout', '-B', 'lone', subject); write({ 'b.txt': 'lone\n' }); git('commit', '-am', 'lone');
+    const lone = git('rev-parse', 'HEAD');
+    const packs = join(root, '.git/objects/pack'), known = new Set(readdirSync(packs));
+    git('repack', '-dq');
+    const fresh = readdirSync(packs).filter((name: string) => !known.has(name));
+    for (const ext of ['pack', 'idx']) {
+      const target = fresh.find((name: string) => name.endsWith(`.${ext}`))!;
+      expect(unreadable(`chmod 000 "${join(packs, target)}"`, `chmod 644 "${join(packs, target)}"`, lone)).toEqual([]);
+    }
     // Without the error, the other candidate is just not a sync (the PR commit lies between it and the head).
     expect(provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: base, head_sha: sync }, [subject, initial])).toEqual([subject]);
   });

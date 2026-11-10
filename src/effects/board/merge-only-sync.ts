@@ -69,8 +69,6 @@ function cleanMergeOfBase(repoRoot: string, base: string, line: string): Verdict
 
 /** The head adds, outside the reviewed head and the base, only clean automatic merges of the base, and at least one. Both PR diffs are not empty. */
 function mergeOnlySync(repoRoot: string, base: string, head: string, reviewed: string): Verdict {
-  // After the fetch of the head, a reviewed head that is still missing is not in its history.
-  if (!hasCommit(repoRoot, reviewed)) return 'no';
   const steps: (() => Verdict)[] = [
     () => isAncestor(repoRoot, reviewed, head),
     // A reviewed change that the base already holds leaves no PR diff to carry an acceptance for.
