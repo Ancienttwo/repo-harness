@@ -58,9 +58,14 @@ that an earlier step of the same job ran. The run has six jobs:
 3. `publish` (`release` environment, `contents: read` and `id-token: write`):
    no checkout. It downloads the tarballs. Inline steps check that each
    tarball holds the package name and version and that npm does not have the
-   version. `npm publish <tarball> --provenance --ignore-scripts` publishes
-   `repo-harness-operator-web`, waits until npm shows it, then publishes
-   `repo-harness`. No package script runs.
+   version. One step then loops over `repo-harness-operator-web` and
+   `repo-harness`. For each package it runs the same
+   `npm publish <tarball> --provenance --ignore-scripts`, and then the same
+   wait: 30 polls of `npm view <name>@<version> version`, 10 s apart, so
+   5 minutes. npm must show the web package before the core publish starts,
+   and the core wait ends before the read-back. When npm does not show a
+   package after 5 minutes, the step fails and `published` does not run. No
+   package script runs.
 4. `published` (`contents: read`): checks out the SHA, runs `bun install` and
    `check published <version>`.
 5. `tag` (`contents: write`): no checkout. Inline git fetches the SHA and awk
@@ -91,10 +96,11 @@ PR merges, so that the two commits are the same or close.
 
 ### Partial publish recovery
 
-When the run stops after a publish, a rerun refuses. The owner completes the
-release by hand from the release commit. Read the state of each step before
-the step, and do only the steps that are not done. Stop at the first failure
-and report it.
+When the run stops after a publish, a rerun refuses. A core npm lag over
+5 minutes fails the `publish` job, so a rerun stops at `already on npm`.
+The release uses this recovery. The owner completes the release by hand from
+the release commit. Read the state of each step before the step, and do only
+the steps that are not done. Stop at the first failure and report it.
 
 1. Worktree: `git fetch origin && git worktree add --detach /tmp/repo-harness-wt-release-<version> <sha> && cd /tmp/repo-harness-wt-release-<version> && bun install --frozen-lockfile`
 2. Console package: when `npm view repo-harness-operator-web@<version> version`
