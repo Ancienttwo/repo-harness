@@ -8,7 +8,7 @@ import { OperatorApp } from '../../src/operator-web/App';
 import { ArchitectureWorkspace, reviewPromptCommand, type ArchitectureSource } from '../../src/operator-web/ArchitectureWorkspace';
 import { fetchArchitectureMap, type ArchitectureMapRead, type ArchitectureMapReader } from '../../src/operator-web/ArchitectureMap';
 import { layoutArchitectureMap, MAP_NODE_MIN_WIDTH, type MapLayoutNode } from '../../src/operator-web/architecture-map-layout';
-import { layoutModules, type ModulesBox } from '../../src/operator-web/architecture-modules-layout';
+import { layoutModules } from '../../src/operator-web/architecture-modules-layout';
 import { layersSvg, layoutLayers } from '../../src/operator-web/architecture-layers-layout';
 import {
   architectureViolationCommand, decodeArchitectureMap, projectArchitectureMap,
@@ -389,7 +389,8 @@ describe('architecture map', () => {
       relations: [mapRelation('relation.a-own', 'calls', CENTER, PART), mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL)], flows: [], flow_evidence: [],
       sizes: available ? { state: 'ok', lines: new Map([['src/ledger.ts', 900], ['src/router.ts', 100]]), owners: new Map([['src/ledger.ts', PART], ['src/router.ts', CALLER]]) }
         : { state: 'unavailable', reason: 'model_worktree_dirty' },
-      dependencies: available ? { state: 'ok', matrix: [{ from: CALLER, to: CENTER, imports: 7 }] } : { state: 'unavailable', reason: 'code_facts_other_commit' },
+      // archctx reports an undeclared import only for a `deps` edge, so the undeclared CENTER → CALLER import is in the matrix too.
+      dependencies: available ? { state: 'ok', matrix: [{ from: CALLER, to: CENTER, imports: 7 }, { from: CENTER, to: CALLER, imports: 3 }] } : { state: 'unavailable', reason: 'code_facts_other_commit' },
       layers,
     });
   }
@@ -509,30 +510,38 @@ describe('architecture map', () => {
     for (const [index, band] of real.bands.slice(1).entries()) expect(below(real.bands[index]!, band)).toBe(true);
   });
 
-  test('the map is the default view: capabilities in domain groups, external systems, one summed edge per domain pair; selecting a node lists its relations with import counts', async () => {
+  test('the map is the default view: capabilities in domain groups, external systems, one directed route per domain pair with imports; selecting a node lists its relations with import counts', async () => {
     const opened: (string | null)[] = [];
     const sources: unknown[] = [];
     await mount(workspace({ readMap: reader({ state: 'ok', map: mapFor() }), onModule: id => opened.push(id), onSource: source => sources.push(source) }));
     expect(document.querySelector('#architecture-tab-map')?.getAttribute('aria-selected')).toBe('true');
     expect(calls).toEqual([]);
     const canvas = document.querySelector('.architecture-map')!;
-    expect([canvas.getAttribute('data-node-count'), canvas.getAttribute('data-relation-count')]).toEqual(['4', '3']);
-    // The capabilities sit in their domain groups and the external system above them; a component is not on this map.
+    expect([canvas.getAttribute('data-node-count'), canvas.getAttribute('data-relation-count'), canvas.getAttribute('data-edge-count')]).toEqual(['4', '3', '2']);
+    // The capabilities sit in their domain groups beside the external system; a component is not on this map.
     expect([...document.querySelectorAll('.react-flow__node')].map(item => item.getAttribute('data-id')).sort())
       .toEqual([CALLER, CENTER, EXTERNAL, 'domain:public-surface', 'domain:workflow-engine'].sort());
     expect([...document.querySelectorAll('.architecture-modules__domain > b')].map(item => item.textContent)).toEqual(['public-surface', 'workflow-engine']);
     expect(document.querySelector(`.react-flow__node[data-id="${CENTER}"] .architecture-modules__size`)?.textContent).toBe('900 · 1');
-    // One edge per domain pair with the imports of both directions summed; every capability once, inside its domain; no two boxes overlap.
-    expect(layoutModules(mapFor()).edges.map(edge => [edge.source, edge.target, edge.imports])).toEqual([['public-surface', 'workflow-engine', 7]]);
+    // The canvas draws the placed routes: one domain route for each direction of the imports, and the route of the git read.
+    const small = layoutModules(mapFor());
+    expect(small.edges.map(edge => [edge.source, edge.target, edge.imports])).toEqual([['public-surface', 'workflow-engine', 7], ['workflow-engine', 'public-surface', 3]]);
+    expect([...document.querySelectorAll('.react-flow__edge-route .react-flow__edge-path')].map(path => path.getAttribute('d'))).toEqual(small.scene.routes.map(route => routePath(route.points)));
+    // The recorded map: one route with an arrow at its target for each of the 22 directed domain pairs with imports; more imports draw wider.
     const recorded = decodeArchitectureMap(recordedMap);
     const real = layoutModules(recorded);
-    const pair = (a: string, b: string) => real.edges.find(edge => [edge.source, edge.target].sort().join() === [a, b].sort().join())?.imports;
-    expect([real.edges.length, pair('runtime-harness', 'workflow-engine'), pair('runtime-harness', 'verification')]).toEqual([12, 342, 676]);
-    expect(real.capabilities.map(item => item.node.id).sort()).toEqual(recorded.nodes.filter(node => node.kind === 'capability').map(node => node.id).sort());
-    const inside = (a: ModulesBox, b: ModulesBox) => a.x >= b.x && a.y >= b.y && a.x + a.width <= b.x + b.width && a.y + a.height <= b.y + b.height;
-    const apart = (a: ModulesBox, b: ModulesBox) => a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
-    for (const item of real.capabilities) expect(inside(item, real.domains.find(domain => domain.domain === item.node.domain)!)).toBe(true);
-    for (const group of [[...real.externals, ...real.domains], real.capabilities]) for (const [index, a] of group.entries()) for (const b of group.slice(index + 1)) expect(apart(a, b)).toBe(true);
+    const routes = real.scene.routes.filter(route => route.kind === 'imports');
+    expect([real.edges.length, routes.length, routes.every(route => route.arrows.end && !route.arrows.start)]).toEqual([22, 22, true]);
+    const imports = new Map(real.edges.map(edge => [edge.id, edge.imports]));
+    for (const a of routes) for (const b of routes) if (imports.get(a.id)! > imports.get(b.id)!) expect(a.width).toBeGreaterThan(b.width);
+    expect(sceneFindings(real.scene)).toEqual([]);
+    // Every capability once, inside its domain box.
+    const boxes = new Map(real.scene.boxes.map(box => [box.id, box]));
+    expect(real.scene.boxes.filter(box => box.kind === 'box').map(box => box.id).sort()).toEqual(recorded.nodes.filter(node => node.kind === 'capability').map(node => node.id).sort());
+    for (const box of real.scene.boxes.filter(item => item.parent !== null)) {
+      const frame = boxes.get(box.parent!)!;
+      expect(box.x >= frame.x && box.y >= frame.y && box.x + box.width <= frame.x + frame.width && box.y + box.height <= frame.y + frame.height).toBe(true);
+    }
     // The header row gets the map's commit, collection time, branch and archctx version.
     expect(sources.at(-1)).toEqual({ commit: COMMIT, map: { collectedAt: '2026-10-27T09:00:00.000Z', headRef: 'main', archctxVersion: '0.11.2' } });
     // The base map has every source, so the side panel states no gap. The flow steps that archctx
@@ -544,14 +553,31 @@ describe('architecture map', () => {
     await settle();
     const inspector = document.querySelector('.architecture-map__inspector')!;
     expect(inspector.getAttribute('data-node-id')).toBe(CALLER);
-    expect([...inspector.querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toEqual([`calls Name ${CENTER} · 7 imports`]);
+    expect([...inspector.querySelectorAll('[data-relation]')].map(item => item.textContent)).toEqual([`out Name ${CENTER} · calls · 7 imports`]);
     expect(inspector.textContent).toContain('100 lines in 1 files');
     await act(async () => [...inspector.querySelectorAll('button')].find(item => item.textContent === 'Open module')!.click());
     expect(opened).toEqual([CALLER]);
-    // The group's relation to its own member has no line on the canvas, but the inspector lists it.
+    // A relation of a component counts for its capability; the relation to its own component is no relation between cards.
     await act(async () => document.querySelector(`.react-flow__node[data-id="${CENTER}"]`)!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
-    expect([...document.querySelectorAll('.architecture-map__inspector [data-relation-id]')].map(item => item.getAttribute('data-relation-id'))).toContain('relation.a-own');
+    expect([...document.querySelectorAll('.architecture-map__inspector [data-relation]')].map(item => item.getAttribute('data-relation'))).toEqual([`in:${CALLER}`, `out:${EXTERNAL}`]);
+  });
+
+  test('a selected card on the recorded map lights its in and out neighbours, dims the rest, adds no route, and lists each relation with direction and imports', async () => {
+    const OPERATOR = 'capability.runtime-harness.operator';
+    await mount(workspace({ readMap: reader({ state: 'ok', map: decodeArchitectureMap(recordedMap) }) }));
+    const edges = () => document.querySelectorAll('.react-flow__edge').length;
+    const before = edges();
+    expect(before).toBe(layoutModules(decodeArchitectureMap(recordedMap)).scene.routes.length);
+    await act(async () => document.querySelector(`.react-flow__node[data-id="${OPERATOR}"]`)!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await settle();
+    const card = (id: string) => document.querySelector(`.react-flow__node[data-id="${id}"] > div`)!;
+    expect([card('capability.organization.board').getAttribute('data-neighbour'), card('capability.verification.evals-checks').getAttribute('data-neighbour'),
+      card('capability.organization.board').hasAttribute('data-dimmed'), card('capability.public-surface.adoption').hasAttribute('data-dimmed')]).toEqual(['out', 'both', false, true]);
+    expect(edges()).toBe(before);
+    const row = (key: string) => document.querySelector(`.architecture-map__inspector [data-relation="${key}"]`)?.textContent;
+    expect([row('out:capability.organization.board'), row('out:capability.verification.evals-checks'), row('in:capability.verification.evals-checks')])
+      .toEqual(['out Board · depends-on · 12 imports', 'out Evals And Checks · depends-on · 7 imports', 'in Evals And Checks · depends-on · 291 imports']);
   });
 
   test('a missing line or import source is stated with its reason, and a failed read names its state and next step', async () => {
@@ -670,6 +696,9 @@ describe('architecture map', () => {
     expect(gaps()).toEqual(['violations.anchors:code_facts_unavailable']);
     expect(notes()).toEqual(['violations.layer_direction:model_layers_undeclared']);
     expect(document.querySelector('.architecture-map__legend')?.textContent).toContain('Undeclared import');
+    // The lens marks the domain route that carries the undeclared import, and the route keeps its arrow at the target.
+    const undeclared = [...document.querySelectorAll('.react-flow__edge.architecture-map__edge--undeclared')];
+    expect([undeclared.map(edge => edge.getAttribute('data-id')), undeclared[0]?.querySelector('.react-flow__edge-path')?.hasAttribute('marker-end')]).toEqual([['imports:workflow-engine->public-surface'], true]);
 
     await choose('tests');
     // A failing file shows ✕ and a file without a result shows ?; only the failure turns the card danger.
@@ -1211,7 +1240,7 @@ describe('sequence and topology base maps', () => {
     await click(`.react-flow__node[data-id="${CENTER}"]`);
     expect(inspector().getAttribute('data-node-id')).toBe(CENTER);
     expect([inspector().querySelector('[data-module-domain]')?.textContent, inspector().querySelector('[data-node-size]')?.textContent]).toEqual(['workflow-engine', '900 lines in 1 files']);
-    expect([...inspector().querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toContain(`calls Name ${CALLER} · 7 imports`);
+    expect(inspector().querySelector(`[data-relation="in:${CALLER}"]`)?.textContent).toBe(`in Name ${CALLER} · calls · 7 imports`);
     expect([...inspector().querySelectorAll('[data-layer-facts="violations"] > li')].map(item => item.textContent)).toEqual([
       'Flow proof cannot be proven (2 diagnostics)flows check',
       // The flow's steps joined to archctx's proof by selector: route is proven and the outcome steps have no proof, so only append is listed.

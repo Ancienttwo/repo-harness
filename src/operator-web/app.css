@@ -261,6 +261,7 @@
   .architecture-modules__box[data-alert="danger"] { @apply border-kumo-danger; }
   .architecture-modules__box[data-alert="info"] { @apply border-kumo-info; }
   .architecture-modules__box[data-dimmed], .architecture-modules__external[data-dimmed] { opacity: .38; }
+  .architecture-modules__box[data-neighbour], .architecture-modules__external[data-neighbour] { border-color: var(--rh-accent); }
   .architecture-modules__box[data-selected] { outline: 2px solid var(--text-color-kumo-strong); outline-offset: 2px; }
   .architecture-modules__key { @apply grid gap-0.5 text-center text-[10px] text-kumo-subtle; grid-template-columns: repeat(5, 2.25rem); }
   .architecture-modules__key > span { @apply rounded px-1; }
@@ -372,7 +373,6 @@
 .architecture-map__edge.is-dim .react-flow__edge-path { stroke-opacity: .08; }
 .architecture-map__edge.is-dim .react-flow__edge-textwrapper { opacity: .2; }
 .architecture-map__edge.is-active .react-flow__edge-path { stroke: var(--rh-accent); stroke-opacity: 1; }
-.architecture-modules__relation .react-flow__edge-path { stroke: var(--rh-accent); stroke-opacity: .7; stroke-width: 1.5px; }
 .architecture-map__edge--undeclared .react-flow__edge-path { stroke: var(--text-color-kumo-danger); stroke-opacity: .9; }
 .architecture-layermap__lane .react-flow__edge-path { stroke-opacity: .85; stroke-width: 1.5; }
 .architecture-layermap__lane .architecture-layermap__lane--dashed { stroke-dasharray: 6 4; }

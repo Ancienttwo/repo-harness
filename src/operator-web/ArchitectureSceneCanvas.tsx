@@ -57,12 +57,12 @@ const handlesOf = (box: SceneBox): NodeHandle[] => [
   { type: 'source', position: Position.Bottom, x: box.width / 2, y: box.height, width: 1, height: 1 },
 ];
 
-/** How a view shows one scene box: its node type and data, and the model id that a selection of the box selects. */
+/** How a view shows one scene box: its node type and data, and the model id that a selection of the box selects; null for a box that a person cannot select. */
 export interface SceneNodeView {
   readonly type: string;
   readonly data: Record<string, unknown>;
   readonly ariaLabel: string;
-  readonly selection: string;
+  readonly selection: string | null;
 }
 
 /** One legend row: the swatch and its text. */
@@ -107,7 +107,8 @@ function SceneFlow({ scene, nodeTypes, view, selected, onSelect, legend, t }: Sc
         id: box.id, type: shown.type, data: shown.data, ariaLabel: shown.ariaLabel,
         position: { x: box.x - (parent?.x ?? 0), y: box.y - (parent?.y ?? 0) }, width: box.width, height: box.height, handles: handlesOf(box),
         ...(parent ? { parentId: parent.id } : {}),
-        draggable: false, connectable: false, selected: shown.selection === selected,
+        draggable: false, connectable: false, selected: shown.selection !== null && shown.selection === selected,
+        ...(shown.selection === null ? { selectable: false, focusable: false } : {}),
       };
     });
   }, [scene, views, selected]);
@@ -118,7 +119,7 @@ function SceneFlow({ scene, nodeTypes, view, selected, onSelect, legend, t }: Sc
       const marker = { type: MarkerType.ArrowClosed, width: 14, height: 14, color: touches ? 'var(--rh-accent)' : 'var(--text-color-kumo-subtle)' };
       return {
         id: route.id, type: 'route', source: route.source, target: route.target,
-        className: `architecture-map__edge${touches ? ' is-active' : selected !== null ? ' is-dim' : ''}`,
+        className: `architecture-map__edge architecture-map__edge--${route.kind}${touches ? ' is-active' : selected !== null ? ' is-dim' : ''}`,
         style: { strokeWidth: route.width, ...(route.dashed ? { strokeDasharray: '6 4' } : {}) },
         ...(route.arrows.start ? { markerStart: marker } : {}), ...(route.arrows.end ? { markerEnd: marker } : {}),
         data: { route, label: labels.get(route.id) ?? null }, selectable: false, focusable: false, zIndex: touches ? 2 : 1,
