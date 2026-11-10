@@ -3,7 +3,7 @@ import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, 
 import { dirname } from 'path';
 import {
   SEAT_NO_RESET_MESSAGE, SEAT_RESET_RETRIES, handoffIdentity, missingHandoffSections, seatResetClaimPath, seatResetLogPath, seatResetRequestPath,
-  seatResetDirectory, seatResumePrompt, seatRewriteMessage, seatSessionPath, type SeatResetIdentity,
+  isSeatSessionSource, seatResetDirectory, seatResumePrompt, seatRewriteMessage, seatSessionPath, type SeatResetIdentity, type SeatSessionSource,
 } from '../../core/board/seat-reset';
 import { RH_LABEL, hcGet, hcKeys, hcList, hcSend, hcWait, type HerdrCoreOptions } from '../terminal/herdr-core';
 import { readNotifyConfig } from '../terminal/notify-read';
@@ -69,10 +69,30 @@ export function seatResetRequested(identity: SeatResetIdentity, transcriptPath: 
  * The SessionStart hook records each new session of a reset seat (`source` clear or startup): the reset command
  * sends the resume prompt only after this signal names a new transcript.
  */
-export function recordSeatSession(identity: SeatResetIdentity, session: { readonly sessionId: string | null; readonly transcriptPath: string; readonly source: string }, now: Date): void {
+export function recordSeatSession(identity: SeatResetIdentity, session: { readonly sessionId: string | null; readonly transcriptPath: string; readonly source: SeatSessionSource }, now: Date): void {
   const path = seatSessionPath(identity);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   writeFileSync(path, `${JSON.stringify({ session_id: session.sessionId, transcript_path: session.transcriptPath, source: session.source, started_at: now.toISOString() })}\n`);
+}
+
+/**
+ * The transcript of the seat session that the SessionStart hook recorded, or null when the record is missing or any
+ * field differs from what `recordSeatSession` writes.
+ */
+export function readSeatSessionTranscript(identity: SeatResetIdentity): string | null {
+  let value: unknown;
+  try { value = JSON.parse(readFileSync(seatSessionPath(identity), 'utf8')); } catch { return null; }
+  if (typeof value !== 'object' || value === null) return null;
+  const { session_id: sessionId, transcript_path: transcript, source, started_at: startedAt } = value as Record<string, unknown>;
+  const valid = (sessionId === null || typeof sessionId === 'string') && typeof transcript === 'string' && transcript !== ''
+    && isSeatSessionSource(source) && typeof startedAt === 'string' && isoInstant(startedAt);
+  return valid ? transcript : null;
+}
+
+/** True for the exact `Date.toISOString()` form that `recordSeatSession` writes. */
+function isoInstant(text: string): boolean {
+  const time = Date.parse(text);
+  return Number.isFinite(time) && new Date(time).toISOString() === text;
 }
 
 /** `nothing_sent`: no terminal got a message. `uncertain`: the requester may already be cleared, or got part of a message. */
