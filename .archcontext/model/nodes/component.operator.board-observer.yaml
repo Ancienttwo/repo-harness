@@ -10,7 +10,7 @@ responsibilities:
   - Hold one hc events stream per registered repository, debounce changes, replace observations from a snapshot and join agent values from hc ls by address.
   - Use the shared hc seat-terminal mapping, omit finished and service terminals, and read each changed terminal branch asynchronously in its working directory.
   - Refresh all seat branches on each facts cycle, reconnect after a stream loss and stop subscriptions when the server closes or a repository leaves the registry.
-  - Share the core parents and seats join with the browser for seat counts, ordering and active parent selection.
+  - Own every repository child, deadline and retry through an abort signal; drain children on removal or close, and retry failed reads with backoff capped at the facts interval.
 source:
   include:
     - src/effects/operator/board-observer.ts

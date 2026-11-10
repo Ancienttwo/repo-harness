@@ -11,7 +11,7 @@ import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectPullRequestMergeReadiness } from '../src/effects/publication/merge-readiness';
-import { collectBoard, readGhJson, readParent, readLocalRepositoryId, seatTerminalsWithBranches, type BoardCollectInput } from '../src/effects/board/collect';
+import { collectBoard, readGhJson, readParent, readLocalRepositoryId, readLocalRepositoryIdAsync, seatTerminalsWithBranches, type BoardCollectInput } from '../src/effects/board/collect';
 import { runBoardMerge } from '../src/effects/board/merge';
 import { boardMergeDecisions } from '../src/core/board/merge';
 import { provenMergeOnlySyncs } from '../src/effects/board/merge-only-sync';
@@ -989,6 +989,39 @@ function replayParents(gh: (args: readonly string[]) => GhAnswer, hc = true): Bo
   if (hc) { writeFileSync(join(root, 'bin/hc'), HC); chmodSync(join(root, 'bin/hc'), 0o755); }
   return collectBoardParents({ repo_root: root, now: () => REPLAY_NOW, gh_runner: gh, host: boardHostPorts({ env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES } }) });
 }
+
+test('parent counts retain nonempty seat labels with invalid issue or PR labels, and exclude an empty seat label', () => {
+  const { parent: _parent, seat_status: _status, seat: _seat, issue: _issue, pr: _pr, ...terminal } = boardSeatsFixture.seats[0]!;
+  const seats = projectBoardSeats('1186405141', REPLAY_NOW.toISOString(), [
+    { ...terminal, state: 'live', labels: { seat: 'worker', parent: '1474', issue: 'invalid' } },
+    { ...terminal, state: 'live', address: 't2', labels: { seat: 'worker', parent: '1474', pr: 'invalid' } },
+    { ...terminal, state: 'live', address: 't3', labels: { seat: '', parent: '1651' } },
+  ]);
+  expect(decodeBoardSeats(JSON.parse(JSON.stringify(seats))).seats.map(seat => [seat.seat, seat.seat_status])).toEqual([
+    ['worker', 'unavailable'], ['worker', 'unavailable'], ['', 'unavailable'],
+  ]);
+  const joined = joinBoardParents(decodeBoardParents(boardParentsFixture), seats);
+  expect(joined.parents.map(parent => [parent.number, parent.seats])).toEqual([[1474, 2], [1651, 0]]);
+  expect(joined.active_parent).toBe(1474);
+});
+
+test('async repository identity shares local admission and repository-id decoding; a checkout without a GitHub remote starts no gh', async () => {
+  const root = tmpWorkspace('board-async-identity'); roots.push(root); initGitRepo(root);
+  const log = join(root, 'gh.log'), gh = join(root, 'gh');
+  writeFileSync(gh, `#!${process.execPath}\nrequire('node:fs').appendFileSync(process.env.IDENTITY_LOG, JSON.stringify(process.argv.slice(2)) + '\\n');\nconsole.log(process.env.IDENTITY_REPLY);\n`, { mode: 0o755 });
+  const env = { ...process.env, IDENTITY_LOG: log, IDENTITY_REPLY: '{"id":1186405141}' };
+  const input = { repo_root: root, gh_bin: gh, env, signal: new AbortController().signal };
+  const isGitHubRemote = (url: string) => githubRemoteRepository(url) !== null;
+  expect(await readLocalRepositoryIdAsync(input, isGitHubRemote)).toBeNull();
+  expect(existsSync(log)).toBe(false);
+  expect(run('git', ['config', 'remote.origin.url', 'https://gitlab.com/local/repo.git'], root).status).toBe(0);
+  expect(await readLocalRepositoryIdAsync(input, isGitHubRemote)).toBeNull();
+  expect(existsSync(log)).toBe(false);
+  expect(run('git', ['config', 'remote.origin.url', 'https://github.com/aimpact-inc/repo-harness.git'], root).status).toBe(0);
+  expect(await readLocalRepositoryIdAsync(input, isGitHubRemote)).toBe(1186405141);
+  expect(JSON.parse(readFileSync(log, 'utf8'))).toEqual(['api', '--hostname', 'github.com', 'repos/{owner}/{repo}']);
+  await expect(readLocalRepositoryIdAsync({ ...input, env: { ...env, IDENTITY_REPLY: '{"id":0}' } }, isGitHubRemote)).rejects.toThrow('the local GitHub repository id is unknown');
+});
 
 test('parent list: one paginated issue read and one hc list give the open parents with progress and live seats, seats first', () => {
   // Recorded on 2026-11-04: `gh api graphql --paginate --slurp` with OPEN_ISSUES_QUERY on Ancienttwo/repo-harness, one page

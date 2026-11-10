@@ -239,7 +239,9 @@ export const officeRepositoryView = (views: ReadonlyMap<string, OfficeRepository
 export function useOfficeOverview(repositories: readonly string[], readParents: BoardParentsReader, readSummaries: BoardSummariesReader, generation: number, readSeats: BoardSeatsReader): ReadonlyMap<string, OfficeRepositoryView> {
   const [parents, setParents] = useState<ReadonlyMap<string, BoardParentsView>>(new Map());
   const [seats, setSeats] = useState<ReadonlyMap<string, BoardSeatsView>>(new Map());
-  const [summaries, setSummaries] = useState<ReadonlyMap<string, { readonly parent: number; readonly read: BoardSummariesRead }>>(new Map());
+  type SummaryRead = { readonly parent: number; readonly read: BoardSummariesRead; readonly generation: number; readonly read_at: number };
+  const [summaries, setSummaries] = useState<ReadonlyMap<string, SummaryRead>>(new Map());
+  const summaryReads = useRef(summaries);
   const key = JSON.stringify(repositories);
   const repositoryIds = useRef(repositories);
   repositoryIds.current = repositories;
@@ -258,8 +260,8 @@ export function useOfficeOverview(repositories: readonly string[], readParents: 
     for (const id of repositoryIds.current) {
       const result = await readSeats(id, signal);
       if (signal.aborted) return false;
-      setSeats(current => new Map(current).set(id, result.state === 'ok' ? { kind: 'ready', seats: result.seats } : { kind: 'failed', reason: result.reason }));
-      if (result.state !== 'ok' && result.reason === 'unreachable') complete = false;
+      setSeats(current => new Map(current).set(id, result.state === 'pending' ? { kind: 'loading' } : result.state === 'ok' ? { kind: 'ready', seats: result.seats } : { kind: 'failed', reason: result.reason }));
+      if (result.state === 'unavailable' && result.reason === 'unreachable') complete = false;
     }
     return complete;
   }, [readSeats, key]);
@@ -274,19 +276,23 @@ export function useOfficeOverview(repositories: readonly string[], readParents: 
   const observeSummaries = useCallback(async (signal: AbortSignal) => {
     let complete = true;
     for (const [id, parent] of activeParents.current) {
+      const previous = summaryReads.current.get(id);
+      if (previous?.parent === parent && previous.generation === generation && Date.now() - previous.read_at < 30_000) continue;
       const read = await readSummaries(id, parent, signal);
       if (signal.aborted) return false;
-      setSummaries(current => new Map(current).set(id, { parent, read }));
+      summaryReads.current = new Map(summaryReads.current).set(id, { parent, read, generation, read_at: Date.now() });
+      setSummaries(summaryReads.current);
       if (read.state !== 'ok' && read.reason === 'unreachable') complete = false;
     }
     return complete;
-  }, [readSummaries, active]);
+  }, [readSummaries, key, generation]);
   useObservationRefresh(observeParents, JSON.stringify(['office-parents', key, generation]), { enabled: repositories.length > 0, interval: 3000 });
   useObservationRefresh(observeSeats, JSON.stringify(['office-seats', key, generation]), { enabled: repositories.length > 0, interval: 3000 });
-  useObservationRefresh(observeSummaries, JSON.stringify(['office-summaries', active, generation]), { enabled: active !== '[]' });
+  const reloadSummaries = useObservationRefresh(observeSummaries, JSON.stringify(['office-summaries', key, generation]), { enabled: active !== '[]' });
+  useEffect(() => { reloadSummaries(); }, [active, reloadSummaries]);
   useEffect(() => {
     const forget = () => {
-      if (document.visibilityState === 'hidden') { setParents(new Map()); setSeats(new Map()); setSummaries(new Map()); }
+      if (document.visibilityState === 'hidden') { setParents(new Map()); setSeats(new Map()); summaryReads.current = new Map(); setSummaries(summaryReads.current); }
     };
     document.addEventListener('visibilitychange', forget);
     return () => document.removeEventListener('visibilitychange', forget);

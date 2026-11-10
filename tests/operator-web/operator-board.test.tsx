@@ -695,14 +695,15 @@ describe('board page', () => {
   test('seats decode their own document and parent protocol 4 is refused', async () => {
     const original = globalThis.fetch;
     const requests: string[] = [];
-    const answers = [Response.json(SEATS), Response.json({ ...SEATS, protocol: 2 }), Response.json({ ...PARENTS, protocol: 4 })];
+    const answers = [Response.json({ state: 'pending' }, { status: 202 }), Response.json(SEATS), Response.json({ ...SEATS, protocol: 2 }), Response.json({ ...PARENTS, protocol: 4 })];
     globalThis.fetch = (async (url: unknown) => { requests.push(String(url)); return answers.shift()!; }) as typeof fetch;
     try {
       const signal = new AbortController().signal;
+      expect(await fetchBoardSeats(HARNESS_ID, signal)).toEqual({ state: 'pending' });
       expect(await fetchBoardSeats(HARNESS_ID, signal)).toEqual({ state: 'ok', seats: SEATS });
       expect(await fetchBoardSeats(HARNESS_ID, signal)).toEqual({ state: 'unavailable', reason: 'parents_invalid' });
       expect(await fetchBoardParents(HARNESS_ID, signal)).toEqual({ state: 'unavailable', reason: 'parents_invalid' });
-      expect(requests).toEqual([`/api/v1/repositories/${HARNESS_ID}/board/seats`, `/api/v1/repositories/${HARNESS_ID}/board/seats`, `/api/v1/repositories/${HARNESS_ID}/board/parents`]);
+      expect(requests).toEqual([`/api/v1/repositories/${HARNESS_ID}/board/seats`, `/api/v1/repositories/${HARNESS_ID}/board/seats`, `/api/v1/repositories/${HARNESS_ID}/board/seats`, `/api/v1/repositories/${HARNESS_ID}/board/parents`]);
     } finally { globalThis.fetch = original; }
   });
 
@@ -871,7 +872,7 @@ const todayRow = (id: string) => document.querySelector(`[data-today="${id}"]`)!
 describe('board office (#1755)', () => {
   const rows = (selector: string) => Array.from(document.querySelectorAll<HTMLElement>(selector));
   type Terminal = BoardV1['execution'] extends infer E ? E extends { readonly terminals: readonly (infer T)[] } ? T : never : never;
-  const seat = (address: string, seatName: string, issue: number | null, pr: number | null, status: string | null, state: 'live' | 'finished' = 'live'): Terminal =>
+  const seat = (address: string, seatName: string, issue: number | null, pr: number | null, status: string | null, state: 'live' | 'finished' = 'live'): Extract<Terminal, { readonly seat_status: 'observed' }> =>
     ({ address, name: address, agent: null, state, status, status_kind: null, status_msg: null, status_ms:null, turn: 0, branch: null, seat_status: 'observed', seat: seatName, issue, pr });
   const observedClaim = { status_kind: 'observed', url: 'https://github.com/Ancienttwo/repo-harness/issues/1478#issuecomment-1', created_at: '2026-11-02T21:00:00Z', status: 'draft PR open; claim remains active', pr: null, head_sha: null } as const;
   /** The recorded board of #1474 with edited pull requests, items and terminals. */
@@ -892,7 +893,7 @@ describe('board office (#1755)', () => {
     block: { protocol: 1, kind: 'repo-harness.plan', merge_order: [1475, 1476, 1479], holds: [{ issue: 1477, reason: 'waits for #1476' }], batches: [[1475, 1476]], seat_limits: { worker: 3 } },
   };
   /** The parent list that carries the terminals of a board: the seats of the room. */
-  const seatsOf = (board: BoardV1): BoardSeatsV1 => ({ ...SEATS, seats: board.execution.status === 'observed' ? board.execution.terminals.map(terminal => ({ ...terminal, parent: '1474' })) : [] });
+  const seatsOf = (board: BoardV1): BoardSeatsV1 => ({ ...SEATS, seats: board.execution.status === 'observed' ? board.execution.terminals.map(terminal => ({ ...terminal, seat: terminal.seat_status === 'observed' ? terminal.seat : '', parent: '1474' })) : [] });
   const room = (board: BoardV1) => officeRoom(seatsOf(board), { board, attention: evaluateBoardAttention(board) });
   const officeAt = (path = '') => installDom(`http://127.0.0.1:4318/#board/office${path}`);
 
@@ -1124,8 +1125,8 @@ describe('board office (#1755)', () => {
     }
     await settle();
     expect(waiting).toEqual([]);
-    // Every summary names an active parent. Adding a parent can start a fresh summary cycle.
-    expect([...new Set(asked)]).toEqual([`${seated}:1474`, `${last}:1474`]);
+    // Each active parent is read exactly once as the first parent list arrives.
+    expect(asked).toEqual([`${seated}:1474`, `${last}:1474`]);
     expect(rows('[data-office-card="loading"]')).toHaveLength(0);
     const refused = rows(`[data-office-card="failed"][data-repository="${failed}"][data-board-parents-reason="parents_hc_failed"]`);
     expect(refused).toHaveLength(1);
@@ -1381,6 +1382,27 @@ describe('board office (#1755)', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
+  test('an empty room keeps the plan unknown until parent facts establish that no parent is active', async () => {
+    officeAt(`/${HARNESS_ID}`);
+    let finish!: (read: BoardParentsRead) => void;
+    let readParents = () => new Promise<BoardParentsRead>(resolve => { finish = resolve; });
+    await mount(<OperatorApp {...props(busy(), {
+      readBoardParents: () => readParents(),
+      readBoardSeats: async () => ({ state: 'ok', seats: { ...SEATS, seats: [] } }),
+    })} />);
+    await settle();
+    const state = () => document.querySelector('[data-setup-row="plan"]')?.getAttribute('data-setup-state');
+    expect(state()).toBe('unknown');
+    await act(async () => finish({ state: 'unavailable', reason: 'parents_github_failed' }));
+    await settle();
+    expect(state()).toBe('unknown');
+    expect(document.querySelector('[data-setup-row="plan"]')?.textContent).toContain('parents_github_failed');
+    readParents = async () => ({ state: 'ok', list: { ...PARENTS, parents: [] } });
+    await act(async () => rows('button').find(element => element.textContent?.includes('Refresh'))!.click());
+    await settle();
+    expect(state()).toBe('optional');
+  });
+
   test('a repository room shows seats while the parents read is pending', async () => {
     officeAt(`/${HARNESS_ID}`);
     let finish!: (read: BoardParentsRead) => void;
@@ -1602,7 +1624,7 @@ describe('board office (#1755)', () => {
         { ...seat('t2', 'advisor', null, null, 'idle'), agent: 'codex', parent: null },
         { ...seat('t3', 'worker', 9001, null, 'working'), agent: 'codex', parent: null },
         { ...seat('t4', 'worker', 1476, 1499, 'idle'), agent: 'pi', parent: '1474' },
-        { address: 't5', name: null, agent: null, state: 'live', status: null, status_kind: null, status_msg: null, status_ms:null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_invalid', parent: null },
+        { address: 't5', name: null, agent: null, state: 'live', status: null, status_kind: null, status_msg: null, status_ms:null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_invalid', seat: '', parent: null },
       ],
     };
     const boards: number[] = [];
@@ -2223,7 +2245,7 @@ describe('office setup checklist (#1788)', () => {
       return { view, card: officeCard(view) };
     };
     const overview = (...rooms: Extract<OfficeSetupScope, { kind: 'overview' }>['rooms']): OfficeSetupScope => ({ kind: 'overview', rooms });
-    const invalidLabel: BoardSeatsV1 = { ...SEATS, seats: [{ address: 't9', name: null, agent: null, state: 'live', status: null, status_kind: null, status_msg: null, status_ms:null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_invalid', parent: null }] };
+    const invalidLabel: BoardSeatsV1 = { ...SEATS, seats: [{ address: 't9', name: null, agent: null, state: 'live', status: null, status_kind: null, status_msg: null, status_ms:null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_invalid', seat: '', parent: null }] };
     const seatCases: readonly (readonly [OfficeSetupScope, string, string])[] = [
       [inRoom(), 'missing', 'No live terminal has a seat label.'],
       [inRoom({ seats: { kind: 'ready', seats: invalidLabel } }), 'failed', 'Terminal t9 has an invalid seat label.'],

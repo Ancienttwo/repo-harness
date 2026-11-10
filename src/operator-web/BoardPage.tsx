@@ -428,7 +428,7 @@ function OfficeRoomView({ repositoryId, list, seats, parents, view, reading, pla
             {accounts.length > 0 && <AttentionSection count={accounts.length} t={t}>{accounts.map(account => <QuotaAttentionRow key={account.account} account={account} now={now} t={t} />)}</AttentionSection>}
           </>
         )}
-        setup={officeLit(room) ? null : <OfficeSetupChecklist rows={officeSetupRows(setup, { kind: 'room', repositoryId, parent, parents, seats: { kind: 'ready', seats }, plan: reading ? 'unread' : board?.plan ?? 'no_parent' }, t)} t={t} />} />
+        setup={officeLit(room) ? null : <OfficeSetupChecklist rows={officeSetupRows(setup, { kind: 'room', repositoryId, parent, parents, seats: { kind: 'ready', seats }, plan: parents.kind !== 'ready' || reading ? 'unread' : board?.plan ?? (parent === null ? 'no_parent' : 'unread') }, t)} t={t} />} />
       {view !== null && place !== null && (
         <BoardDrawer view={view} place={place} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} order={order} onOpen={onOpen} now={now} t={t} />
       )}

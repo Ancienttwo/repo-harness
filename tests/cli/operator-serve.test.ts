@@ -1360,7 +1360,7 @@ test('architecture GET and HEAD match CLI digests and keep closed argv with zero
   const spawnSpy = spyOn(childProcess, 'spawn').mockImplementation(((command: string, args: string[], options: unknown) => {
     spawned.push([command, ...args]); return originalSpawn(command, args, options as never);
   }) as typeof childProcess.spawn);
-  const server = await startOperatorServer({ port: 0, env, timeout_ms: 10000 });
+  const server = await startOperatorServer({ port: 0, env, timeout_ms: 10000, read_board_seats: () => ({ state: 'pending' }) });
   const path = `/api/v1/repositories/${registry.ids[0]}/architecture/modules`;
   try {
     const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
@@ -1437,7 +1437,7 @@ test('architecture rejects F-01 query injections before any child and refuses cr
   const registry = registryHome([{ path: root, accessMode: 'read_only' }]), git = architectureGit(scratch);
   writeFileSync(join(scratch, 'index.html'), '<!doctype html><title>Static fixture</title>');
   const processSpy = spyOn(childProcess, 'spawn');
-  const server = await startOperatorServer({ port: 0, static_root: scratch, env: { ...process.env, ...registry.env, ...git.env } });
+  const server = await startOperatorServer({ port: 0, static_root: scratch, read_board_seats: () => ({ state: 'pending' }), env: { ...process.env, ...registry.env, ...git.env } });
   const path = `/api/v1/repositories/${registry.ids[0]}/architecture/modules/${MODULE_ID}/review-prompt`;
   try {
     for (const method of ['GET', 'HEAD']) {

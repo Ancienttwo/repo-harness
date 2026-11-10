@@ -38,7 +38,7 @@ function pullRequest(number: number, head_ref: string, required_check: BoardPull
   };
 }
 
-function worker(now: number, address: string, agent: string, status: string, issue: number | null, pr: number | null, branch: string | null): BoardTerminalV1 {
+function worker(now: number, address: string, agent: string, status: string, issue: number | null, pr: number | null, branch: string | null): Extract<BoardTerminalV1, { readonly seat_status: 'observed' }> {
   return { address, name: null, agent, state: 'live', status, status_kind: null, status_msg: null, status_ms:now, turn: 1, branch, seat_status: 'observed', seat: 'worker', issue, pr };
 }
 
@@ -88,7 +88,7 @@ export function officeBoard(now: number): BoardV1 {
   });
 }
 
-function officeWorkers(now: number): readonly BoardTerminalV1[] {
+function officeWorkers(now: number): readonly ReturnType<typeof worker>[] {
   return [
     worker(now, 't10', 'claude-code', 'working', 1299, null, 'feat/1299-dsh-companion'),
     worker(now, 't11', 'codex', 'working', null, 1323, 'feat/1323-board-refresh'),

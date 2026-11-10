@@ -2,8 +2,9 @@ import { expect, test } from 'bun:test';
 import { BOARD_SEATS_DEBOUNCE_MS, startBoardObserver, type BoardObserverOptions, type BoardObserverPorts } from '../../src/effects/operator/board-observer';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { RH_LABEL, type HcStreamItem, type HcTerminal } from '../../src/effects/terminal/herdr-core';
-import { decodeBoardParents, decodeBoardSeats } from '../../src/core/board/parents';
-import parents from '../../src/operator-web/fixtures/board-parents.json';
+import { decodeBoardSeats } from '../../src/core/board/parents';
+import { decodeBoard } from '../../src/core/board/board';
+import board from '../../src/operator-web/fixtures/board-1474.json';
 
 function fixture() {
   let now = Date.parse('2026-11-10T00:00:00Z'), id = 0;
@@ -57,11 +58,11 @@ function fixture() {
 test('seats observer debounces snapshots, events and missed snapshots, reconnects and serves cached documents within one poll', async () => {
   const f = fixture();
   const observer = startBoardObserver({ ports: f.ports, clock: f.clock });
-  const server = await startOperatorServer({ port: 0, read_board_seats: observer.read });
+  const server = await startOperatorServer({ port: 0, read_board_seats: observer.read, read_board: async () => decodeBoard(board) });
   const path = `${server.url}/api/v1/repositories/repo-a/board/seats`;
   const seats = async () => decodeBoardSeats(await (await fetch(path)).json());
   try {
-    expect((await fetch(path)).status).toBe(503);
+    expect((await fetch(path)).status).toBe(202);
     await f.tick(0); expect(f.streams).toHaveLength(1);
     f.rows([f.terminal('t1'), f.terminal('t2', { state: 'finished' }), f.terminal('t3', { labels: { [RH_LABEL.repository]: '1186405141', [RH_LABEL.service]: 'attention', [RH_LABEL.seat]: 'worker' } })]);
     f.emit('snapshot');
@@ -70,7 +71,6 @@ test('seats observer debounces snapshots, events and missed snapshots, reconnect
     const first = await seats();
     expect(first.seats.map(row => [row.address, row.agent, row.branch, row.status])).toEqual([['t1', 'hc-agent', 'feat/one', 'working']]);
     expect(first.observed_at).toBe(new Date(f.now()).toISOString());
-    expect(observer.parents('repo-a', decodeBoardParents(parents))?.active_parent).toBe(1474);
     const response = await fetch(path), tag = response.headers.get('etag')!;
     await response.text();
     expect((await fetch(path, { headers: { 'If-None-Match': tag } })).status).toBe(304);
@@ -87,20 +87,91 @@ test('seats observer debounces snapshots, events and missed snapshots, reconnect
     const branchReads = f.branches();
     f.emit('event'); await f.tick(BOARD_SEATS_DEBOUNCE_MS);
     expect(f.branches()).toBe(branchReads);
-    f.branch('feat/facts-cycle'); observer.refreshBranches('repo-a'); await f.tick(BOARD_SEATS_DEBOUNCE_MS);
+    f.branch('feat/facts-cycle');
+    const beforeFacts = f.reads();
+    for (let poll = 0; poll < 3; poll++) expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
+    await f.tick(3000); expect(f.reads()).toBe(beforeFacts);
+    await f.tick(30_000);
     expect((await seats()).seats[0]!.branch).toBe('feat/facts-cycle');
 
     f.rows([f.terminal('t4')]); f.emit('missed'); await f.tick(BOARD_SEATS_DEBOUNCE_MS);
     expect((await seats()).seats.map(row => row.address)).toEqual(['t4']);
     f.streams[0]!.end(); await f.tick(1000);
     expect(f.streams).toHaveLength(2);
-    expect((await fetch(path)).status).toBe(503);
+    expect((await fetch(path)).status).toBe(202);
     f.rows([]); f.emit('snapshot'); await f.tick(BOARD_SEATS_DEBOUNCE_MS);
     expect((await seats()).seats).toEqual([]);
     f.remove(); await f.tick(30_000);
     expect(f.streams[1]!.closed).toBe(true);
     expect((await fetch(path)).status).toBe(404);
   } finally { await observer.close(); await server.close(); }
+});
+
+test('failed snapshot and list reads recover on an owned retry without a stream event', async () => {
+  for (const failedPort of ['snapshot', 'list'] as const) {
+    const f = fixture();
+    const original = f.ports[failedPort];
+    let calls = 0;
+    if (failedPort === 'snapshot') f.ports.snapshot = async (...args) => { if (++calls < 3) throw new Error('transient'); return (original as BoardObserverPorts['snapshot'])(...args); };
+    else f.ports.list = async (...args) => { if (++calls < 3) throw new Error('transient'); return (original as BoardObserverPorts['list'])(...args); };
+    const observer = startBoardObserver({ ports: f.ports, clock: f.clock });
+    try {
+      await f.tick(0); f.emit('snapshot'); await f.tick(100);
+      expect(observer.read('repo-a').state).toBe('unavailable');
+      expect(calls).toBe(1);
+      await f.tick(1100); expect(calls).toBe(2);
+      await f.tick(2000); expect(calls).toBe(2);
+      await f.tick(100); expect(calls).toBe(3);
+      expect(observer.read('repo-a').state).toBe('ready');
+    } finally { await observer.close(); }
+    const ended = calls; await f.tick(60_000); expect(calls).toBe(ended);
+  }
+});
+
+test('identity failures back off to the facts interval and a missing remote is a typed unavailable result', async () => {
+  const f = fixture();
+  const calls: number[] = [];
+  f.ports.identify = async () => { calls.push(f.now()); throw new Error('offline'); };
+  const observer = startBoardObserver({ ports: f.ports, clock: f.clock });
+  await f.tick(120_000);
+  expect(calls.map(at => at - calls[0]!)).toEqual([0, 1000, 3000, 7000, 15000, 31000, 61000, 91000]);
+  await observer.close(); await f.tick(60_000); expect(calls).toHaveLength(8);
+  const missing = fixture(); missing.ports.identify = async () => null;
+  const noRemote = startBoardObserver({ ports: missing.ports, clock: missing.clock });
+  try {
+    await missing.tick(0);
+    expect(noRemote.read('repo-a')).toEqual({ state: 'unavailable', reason: 'parents_github_failed', cause: 'github_remote_missing' });
+    expect(missing.streams).toHaveLength(0);
+  } finally { await noRemote.close(); }
+});
+
+test('repository removal and close abort a pending list and wait until that child has ended', async () => {
+  for (const action of ['remove', 'close'] as const) {
+    const f = fixture();
+    let signal!: AbortSignal, release!: () => void, ended = false;
+    f.ports.list = async (_labels, abort) => {
+      signal = abort;
+      await new Promise<void>(resolve => { release = resolve; });
+      ended = true;
+      return [];
+    };
+    const observer = startBoardObserver({ ports: f.ports, clock: f.clock });
+    await f.tick(0);
+    if (action === 'remove') await f.tick(29_000);
+    f.emit('snapshot'); await f.tick(100);
+    expect(signal.aborted).toBe(false);
+    let closed = false;
+    let close: Promise<void> | null = null;
+    if (action === 'remove') { f.remove(); await f.tick(900); }
+    else { close = observer.close().then(() => { closed = true; }); await f.tick(0); }
+    expect(signal.aborted).toBe(true);
+    expect(ended).toBe(false); expect(closed).toBe(false);
+    release(); await f.tick(0);
+    await (close ?? observer.close());
+    expect(ended).toBe(true);
+    expect(f.streams[0]!.closed).toBe(true);
+    const reads = f.reads(); await f.tick(60_000); expect(f.reads()).toBe(reads);
+  }
 });
 
 test('a reconnect during a pending snapshot discards the old result, drains the new invalidation and closes with the server', async () => {

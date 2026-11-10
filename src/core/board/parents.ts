@@ -13,7 +13,7 @@ export interface BoardParentV1 {
   readonly sub_issues: { readonly total: number; readonly completed: number };
 }
 
-export type BoardParentsSeatV1 = BoardTerminalV1 & { readonly parent: string | null };
+export type BoardParentsSeatV1 = BoardTerminalV1 & { readonly parent: string | null; readonly seat: string };
 
 export interface BoardSeatsV1 {
   readonly protocol: 1;
@@ -36,7 +36,7 @@ export function projectBoardSeats(repositoryId: string, observedAt: string, term
   return Object.freeze({
     protocol: 1, kind: 'repo-harness.board-seats', observed_at: observedAt, repository_id: repositoryId,
     seats: Object.freeze(terminals.filter(terminal => terminal.state === 'live' && terminal.labels.seat !== undefined)
-      .map(terminal => Object.freeze({ ...seatTerminal(terminal), parent: terminal.labels.parent ?? null }))),
+      .map(terminal => Object.freeze({ ...seatTerminal(terminal), seat: terminal.labels.seat!, parent: terminal.labels.parent ?? null }))),
   });
 }
 
@@ -58,7 +58,7 @@ export interface BoardParentsWithSeats {
 export function joinBoardParents(parents: BoardParentsV1, seats: BoardSeatsV1): BoardParentsWithSeats {
   const counts = new Map<string, number>();
   for (const seat of seats.seats) {
-    if (seat.state !== 'live' || seat.parent === null || seat.seat_status !== 'observed') continue;
+    if (seat.state !== 'live' || seat.parent === null || seat.seat === '') continue;
     counts.set(seat.parent, (counts.get(seat.parent) ?? 0) + 1);
   }
   const joined = parents.parents.map(parent => ({ ...parent, seats: counts.get(String(parent.number)) ?? 0 }))
@@ -82,6 +82,6 @@ export function decodeBoardSeats(value: unknown): BoardSeatsV1 {
     || typeof document.repository_id !== 'string' || !/^[1-9][0-9]*$/u.test(document.repository_id)
     || typeof document.observed_at !== 'string' || !Number.isFinite(Date.parse(document.observed_at))) throw new Error('board seats invalid');
   checkSeatTerminals(document.seats);
-  if (document.seats!.some(seat => seat.state !== 'live' || !(seat.parent === null || typeof seat.parent === 'string'))) throw new Error('board seats invalid');
+  if (document.seats!.some(seat => seat.state !== 'live' || typeof seat.seat !== 'string' || !(seat.parent === null || typeof seat.parent === 'string'))) throw new Error('board seats invalid');
   return document as BoardSeatsV1;
 }

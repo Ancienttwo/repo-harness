@@ -37,6 +37,8 @@ export interface HerdrCoreOptions {
   /** The environment for the child; `HC_SESSION` / `HC_SOCKET` select the core. Defaults to `process.env`. The notify secret keys never reach the child. */
   readonly env?: NodeJS.ProcessEnv;
   readonly timeoutMs?: number;
+  /** Async reads and subscriptions stop and reap their child on abort. */
+  readonly signal?: AbortSignal;
 }
 
 export type HcLabels = Readonly<Record<string, string>>;
@@ -207,10 +209,15 @@ function invoke(program: HerdrCoreProgram, args: readonly string[], options: Her
 async function invokeAsync(program: HerdrCoreProgram, args: readonly string[], options: HerdrCoreOptions): Promise<Record<string, unknown>> {
   const env = environment(program, options);
   const timeout = timeoutOf(options);
+  if (options.signal?.aborted) throw new DOMException('hc read aborted', 'AbortError');
   const { error, stdout, stderr } = await new Promise<{ error: ExecFileException | null; stdout: string; stderr: string }>(resolve => {
-    execFile(program, [...args], { env, timeout, killSignal: 'SIGKILL', shell: false, maxBuffer: MAX_OUTPUT_BYTES, encoding: 'utf8' },
-      (error, stdout, stderr) => resolve({ error, stdout, stderr }));
+    let result: { error: ExecFileException | null; stdout: string; stderr: string };
+    const child = execFile(program, [...args], { env, timeout, signal: options.signal, killSignal: 'SIGKILL', shell: false, maxBuffer: MAX_OUTPUT_BYTES, encoding: 'utf8' },
+      (error, stdout, stderr) => { result = { error, stdout, stderr }; });
+    // execFile reports abort before exit; the owner must wait for the child to close.
+    child.once('close', () => resolve(result));
   });
+  if (options.signal?.aborted) throw new DOMException('hc read aborted', 'AbortError');
   if (!error) return settle(program, 0, null, stdout, stderr);
   // A string code is a spawn or buffer error; `killed` without one is the timeout's SIGKILL.
   if (typeof error.code === 'string') throw spawnError(program, error as NodeJS.ErrnoException);
@@ -465,7 +472,10 @@ export function hcEvents(labels: HcLabels, onItem: (item: HcStreamItem) => void,
   const env = environment('hc', options);
   const child = spawn('hc', ['events', '--json', ...labelArgs(labels)], { env, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
   let closed = false, failed: unknown, stderr = '';
-  const stop = (error?: unknown) => { failed ??= error; if (!closed) { closed = true; child.kill('SIGTERM'); } };
+  const stop = (error?: unknown) => { failed ??= error; if (!closed) { closed = true; child.kill('SIGKILL'); } };
+  const abort = () => stop();
+  options.signal?.addEventListener('abort', abort, { once: true });
+  if (options.signal?.aborted) abort();
   child.stderr.setEncoding('utf8').on('data', (chunk: string) => { if (stderr.length < MAX_OUTPUT_BYTES) stderr += chunk; });
   createInterface({ input: child.stdout }).on('line', line => {
     if (closed) return;
@@ -475,8 +485,9 @@ export function hcEvents(labels: HcLabels, onItem: (item: HcStreamItem) => void,
     } catch (error) { stop(error); }
   });
   const done = new Promise<void>((resolve, reject) => {
-    child.once('error', error => { closed = true; reject(spawnError('hc', error)); });
+    child.once('error', error => { failed ??= spawnError('hc', error); closed = true; });
     child.once('close', (code, signal) => {
+      options.signal?.removeEventListener('abort', abort);
       if (failed !== undefined) reject(failed);
       else if (closed || code === 0) resolve();
       else reject(code === null ? new HerdrCoreError('hc', 'failed', undefined, undefined, `ended by ${signal}`) : failure('hc', code, stderr));

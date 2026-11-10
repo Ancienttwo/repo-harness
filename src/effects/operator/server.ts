@@ -42,7 +42,7 @@ import { NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND } from '../../core/decisio
 import { decodeBoard } from '../../core/board/board';
 import { decodeQuotaReport, OPERATOR_QUOTA_PATH } from '../../core/board/quota';
 import { readQuotaReport } from '../board/quota';
-import { decodeBoardParents, decodeBoardSeats } from '../../core/board/parents';
+import { decodeBoardParents } from '../../core/board/parents';
 import { startBoardObserver, type BoardObserverOptions, type BoardSeatsCache } from './board-observer';
 import { decodeBoardSummaries } from '../../core/board/summary';
 import { readBoardSummaries, writeBoardSummary } from './board-summary';
@@ -1613,7 +1613,7 @@ export async function startOperatorServer(
       const read = options.read_board ?? readRepositoryBoard;
       handleBoardCliRead(request, response, headOnly, BOARD_UNAVAILABLE, { busy: 'board_busy', invalid: 'board_invalid', unavailable: 'board_unavailable' },
         signal => read({ repository_id: boardRoute[1]!, parent: Number(parent), env: boardEnvironment, signal }), decodeBoard,
-        board => { writeBoardSummary(boardEnvironment, boardRoute[1]!, board); boardObserver?.refreshBranches(boardRoute[1]!); });
+        board => writeBoardSummary(boardEnvironment, boardRoute[1]!, board));
       return;
     }
 
@@ -1662,15 +1662,14 @@ export async function startOperatorServer(
         return;
       }
       const cache = (options.read_board_seats ?? boardObserver!.read)(seatsRoute[1]!);
-      if (cache.state !== 'ready') {
-        const code = cache.state === 'pending' ? 'parents_unavailable' : cache.reason;
+      if (cache.state === 'pending') { sendJson(response, 202, { state: 'pending' }, headOnly); return; }
+      if (cache.state === 'unavailable') {
+        const code = cache.reason;
         const refusal = BOARD_PARENTS_UNAVAILABLE[code];
-        sendRefusal(request, response, refusal.status, errorBody(code, refusal.message, refusal.next_action), headOnly);
+        sendRefusal(request, response, refusal.status, errorBody(code, cache.cause === 'github_remote_missing' ? 'The repository has no GitHub remote.' : refusal.message, refusal.next_action), headOnly);
         return;
       }
-      let seats;
-      try { seats = decodeBoardSeats(cache.value); }
-      catch { sendRefusal(request, response, 503, errorBody('parents_invalid', 'The seats document failed validation.'), headOnly); return; }
+      const seats = cache.value;
       const etag = `"${createHash('sha256').update(JSON.stringify(seats)).digest('hex')}"`;
       if (request.headers['if-none-match'] === etag) { response.writeHead(304, { ...jsonHeaders(), ETag: etag }); response.end(); }
       else sendJson(response, 200, seats, headOnly, { ETag: etag });

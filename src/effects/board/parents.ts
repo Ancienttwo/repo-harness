@@ -16,9 +16,9 @@ export const OPEN_ISSUES_QUERY = `query($owner: String!, $name: String!, $endCur
   }
 }`;
 
-/** The two reads of the parent list; each failure is the whole result, and the operator shows its code. */
+/** A failed GitHub read refuses the parent facts document. */
 export class BoardParentsError extends Error {
-  constructor(readonly code: 'parents_github_failed' | 'parents_hc_failed', message: string) {
+  constructor(readonly code: 'parents_github_failed', message: string) {
     super(message);
     this.name = 'BoardParentsError';
   }
