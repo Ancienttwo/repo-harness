@@ -149,7 +149,7 @@ describe('git runner', () => {
       // Real git: `<cmd> --help` starts the man viewer with the env the runner chose.
       const viewer = ['-c', 'help.format=man', '-c', 'man.viewer=probe', '-c', 'man.probe.cmd=printf "viewer-saw:%s" "$GH_TOKEN"; true'];
       for (const command of ['fetch', 'pull', 'push', 'clone', 'ls-remote']) {
-        expect(gitSpawnSync([...viewer, command, '--help'], { encoding: 'utf8', env: { ...process.env, ...tokens } }).stdout, command).toBe('viewer-saw:');
+        expect(gitSpawnSync([...viewer, command, '--help'], { encoding: 'utf8', env: { ...process.env, HOME: root, GIT_CONFIG_NOSYSTEM: '1', ...tokens } }).stdout, command).toBe('viewer-saw:');
       }
       for (const args of [['-C', root, '-c', 'a=b', '--no-pager', '--git-dir=x', 'fetch'], ['--attr-source=HEAD', 'ls-remote']]) {
         expect(gitSpawnSync(args, { gitBin, encoding: 'utf8' }).stdout, args.join(' ')).toBe(Object.values(tokens).join(''));
