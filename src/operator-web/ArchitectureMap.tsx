@@ -317,6 +317,9 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   const onTopologySelect = useCallback((id: string | null) => select({ view: 'topology', scope: topologyScope, id }), [topologyScope, select]);
   const onModulesSelect = useCallback((id: string | null) => select({ view: 'modules', scope: '', id }), [select]);
   const onLayersSelect = useCallback((id: string | null) => select({ view: 'layers', scope: '', id }), [select]);
+  const onSequenceSelect = useCallback((flowId: string, id: string | null) => select({ view: 'sequence', scope: flowId, id }), [select]);
+  // A flow change drops the sequence selection where it happens, so going back to the flow does not bring it back.
+  const chooseFlow = useCallback((id: string) => { setFlow(id); select({ view: 'sequence', scope: '', id: null }); }, [select]);
   useEffect(() => {
     onSummary(map === null ? null : {
       commit: map.commit, collectedAt: map.collected_at, headRef: map.head_ref, archctxVersion: map.archctx_version,
@@ -342,7 +345,7 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
           : <span className="architecture-lens__hint">{t('architecture.lens.hint')}</span>}
       </div>
       {view === 'modules' && <ArchitectureModules key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} selectedId={selections.modules?.id ?? null} onSelect={onModulesSelect} side={side} onModule={onModule} t={t} />}
-      {view === 'sequence' && <ArchitectureSequence key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} flowId={flow} onFlow={setFlow} side={side} onModule={onModule} t={t} />}
+      {view === 'sequence' && <ArchitectureSequence key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} flowId={flow} onFlow={chooseFlow} selection={selections.sequence ?? null} onSelect={onSequenceSelect} side={side} onModule={onModule} t={t} />}
       {view === 'topology' && <ArchitectureTopology key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} base={topologyBase} legacy={legacy} selectedId={topologySelected} onSelect={onTopologySelect} side={side} onModule={onModule} t={t} />}
     </>}
   </div>;

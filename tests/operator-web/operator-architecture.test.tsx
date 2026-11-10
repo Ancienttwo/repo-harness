@@ -12,15 +12,14 @@ import { layoutArchitectureMap, MAP_NODE_MIN_WIDTH, type MapLayoutNode } from '.
 import { layoutModules } from '../../src/operator-web/architecture-modules-layout';
 import { layoutLayers } from '../../src/operator-web/architecture-layers-layout';
 import {
-  architectureViolationCommand, decodeArchitectureMap, projectArchitectureMap,
+  architectureViolationCommand, decodeArchitectureMap, flowSteps, projectArchitectureMap,
   type ArchitectureFlowSelectorV1, type ArchitectureLayerOrderV1, type ArchitectureMapFlowV1, type ArchitectureMapLayersInput, type ArchitectureMapNodeV1,
   type ArchitectureMapRelationV1, type ArchitectureMapV1,
 } from '../../src/core/operator/architecture-map';
 import { runtimePlacement } from '../../src/operator-web/architecture-runtime';
-import { layoutSequence, SEQUENCE_COLUMN } from '../../src/operator-web/architecture-sequence-layout';
-import { SEQUENCE_SVG_FONT, SEQUENCE_SVG_HEADER_WIDTH, SEQUENCE_SVG_TERMINAL_WIDTH, sequenceSvg, textWidth } from '../../src/operator-web/architecture-sequence-svg';
+import { layoutSequence } from '../../src/operator-web/architecture-sequence-layout';
 import { defaultTopologyBase, layoutTopology, type TopologyBase } from '../../src/operator-web/architecture-topology-layout';
-import { repairRoute, routePath, sceneFindings, sceneSvg } from '../../src/operator-web/architecture-scene';
+import { repairRoute, routePath, sceneBounds, sceneFindings, sceneSvg, textWidth, type PlacedScene, type SceneBox } from '../../src/operator-web/architecture-scene';
 import { contentBox, firstViewport } from '../../src/operator-web/architecture-map-parts';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import type { ArchitectureHistory as HistoryPage } from 'archctx-contracts';
@@ -996,32 +995,84 @@ describe('sequence and topology base maps', () => {
     });
   });
 
-  test('a participant runs in its nearest deployed process, and each process box is contiguous; rows follow the model with one fragment per outcome', () => {
+  test('a participant runs in its nearest deployed process, and each process box holds its headers in a row; rows follow the model with one fragment per outcome; the recorded flows pass the scene check with whole labels', () => {
     const map = runtimeMap();
     const place = runtimePlacement(map);
     expect([CALLER, CENTER, PART, EXTERNAL, SERVER].map(place)).toEqual([
       { kind: 'unknown', reason: 'deployment_undeclared' }, { kind: 'process', process: SERVER }, { kind: 'process', process: SERVER }, { kind: 'external' }, { kind: 'process', process: SERVER }]);
     const twice = runtimeMap({ relations: [...runtimeMap().relations, mapRelation('relation.h-deploy', 'deployed-on', CENTER, CLI)] });
     expect(runtimePlacement(twice)(PART)).toEqual({ kind: 'unknown', reason: 'deployment_ambiguous' });
+    const unmarked = { tone: () => null, status: () => null };
+    const named = (names: (node: string) => string) => ({ process: (where: { kind: string }) => `Process ${where.kind}`, participant: (participant: { node: string }) => names(participant.node) });
+    // Each text holder is as wide as its text at the shared estimate with a 12 px pad on each side, and the file holds every box and label.
+    const fits = (scene: PlacedScene, lines: (box: SceneBox) => readonly string[]) => {
+      const { width, height } = scene.extent;
+      const inside = (item: { x: number; y: number; width: number; height: number }) => item.x >= 0 && item.y >= 0 && item.x + item.width <= width && item.y + item.height <= height;
+      return [...scene.boxes.filter(box => !inside(box) || lines(box).some(line => textWidth(line, 'title') + 24 > box.width)).map(box => box.id),
+        ...scene.labels.filter(label => !inside(label) || label.width !== textWidth(label.text, 'label')).map(label => label.text)];
+    };
     // The ledger is listed after the router but shares the pipe's process, so it sits next to the pipe.
     const reordered = { ...flow, participants: [flow.participants[1]!, flow.participants[0]!, flow.participants[3]!, flow.participants[2]!] };
-    const layout = layoutSequence(reordered, place);
-    expect(layout.boxes.map(box => [box.key, box.participants])).toEqual([[`process:${SERVER}`, ['pipe', 'ledger']], ['unknown:deployment_undeclared', ['router']], ['external', ['git']]]);
-    expect(layout.columns.map(column => column.participant.id)).toEqual(['pipe', 'ledger', 'router', 'git']);
-    for (const [index, column] of layout.columns.entries()) {
-      const box = layout.boxes.find(entry => entry.key === column.box)!;
-      expect(column.x > box.x && column.x < box.x + box.width).toBe(true);
-      if (index > 0) expect(column.x > layout.columns[index - 1]!.x).toBe(true);
+    const { scene } = layoutSequence(reordered, place, unmarked, named(node => `Name ${node}`));
+    const box = new Map(scene.boxes.map(item => [item.id, item]));
+    const headers = scene.boxes.filter(item => item.id.startsWith('participant:'));
+    expect(scene.boxes.filter(item => item.parent === null && item.id.startsWith('box:')).map(item => [item.id, headers.filter(header => header.parent === item.id).map(header => header.id)])).toEqual([
+      [`box:process:${SERVER}`, ['participant:pipe', 'participant:ledger']], ['box:unknown:deployment_undeclared', ['participant:router']], ['box:external', ['participant:git']]]);
+    for (const [index, header] of headers.entries()) {
+      const holder = box.get(header.parent!)!;
+      expect(header.x > holder.x && header.x + header.width < holder.x + holder.width && header.y + header.height < holder.y + holder.height).toBe(true);
+      if (index > 0) expect(header.x > headers[index - 1]!.x + headers[index - 1]!.width).toBe(true);
     }
-    expect(layout.messages.map(message => `${message.outcome ?? ''}:${message.step.id}`)).toEqual([':route', ':append', 'kept:commit', 'refused:refuse']);
-    for (const [index, message] of layout.messages.slice(1).entries()) expect(message.y > layout.messages[index]!.y).toBe(true);
-    const kept = layout.fragments[0]!;
-    const commit = layout.messages[2]!;
-    expect([layout.fragments.map(fragment => fragment.outcome.kind), commit.y > kept.y && commit.y < kept.y + kept.height, layout.terminals.map(entry => entry.participant)])
-      .toEqual([['success', 'error'], true, ['pipe', 'router']]);
-    // A fragment spans the columns that its outcome names: the kept rows reach git, the refused rows end at the router.
-    const column = (id: string) => layout.columns.find(entry => entry.participant.id === id)!.x;
-    expect(layout.fragments.map(fragment => [fragment.index, fragment.x < column('pipe'), fragment.x + fragment.width > column('git')])).toEqual([[0, true, true], [1, true, false]]);
+    expect(scene.routes.map(route => route.id)).toEqual(['message::route', 'message::append', 'message:kept:commit', 'message:refused:refuse']);
+    for (const [index, route] of scene.routes.slice(1).entries()) expect(route.points[0]![1] > scene.routes[index]!.points[0]![1]).toBe(true);
+    // A fragment is a band above its rows that spans the columns its outcome names: the kept rows reach git, the refused rows end at the router.
+    const lifeline = (id: string) => box.get(`lifeline:${id}`)!.x;
+    const [kept, refused] = [box.get('fragment:kept')!, box.get('fragment:refused')!];
+    expect([kept.kind, refused.kind, kept.y + kept.height < box.get('terminal:kept')!.y, kept.y + kept.height < scene.routes[2]!.points[0]![1], box.get('terminal:kept')!.kind])
+      .toEqual(['fragment success', 'fragment error', true, true, 'terminal success']);
+    expect([kept, refused].map(band => [band.x < lifeline('pipe'), band.x + band.width > lifeline('git')])).toEqual([[true, true], [true, false]]);
+    expect(sceneFindings(scene)).toEqual([]);
+
+    // Wide text: a CJK message label, a self message on the last participant, a long participant name, and long band and terminal labels. Every box
+    // grows to its text, the scene check finds nothing, and the file keeps each whole text inside its view box.
+    const cjk = (text: string) => text.repeat(4);
+    const [route, append] = flow.steps;
+    const [keptOutcome, refusedOutcome] = flow.outcomes;
+    const wide = { ...flow,
+      steps: [{ ...route!, label: cjk('流水线先校验请求和账本状态') }, { ...append!, from: 'git', to: 'git', label: 'WRITE THE WHOLE MEMBER ROW BEFORE ANY OTHER WRITER MOVES' }],
+      outcomes: [
+        { ...keptOutcome!, label: cjk('账本行已保存并提交到 git'), terminal: { participant: 'git', label: 'WROTE THE COMMITTED LEDGER ROW AND RETURNED ITS SHA TO THE MAIN WINDOW' } },
+        { ...refusedOutcome!, label: 'Row refused because the ledger rejected the append for a known reason', terminal: { participant: 'router', label: '停止：返回拒绝原因和账本代码给路由器' } },
+      ] };
+    const wideNames = (node: string) => node === CENTER ? 'Pipeline Workflow Engine Capability With Many Many Words' : node === CALLER ? '路由器：根路由在流水线之前选择处理程序' : `Name ${node}`;
+    const wideLayout = layoutSequence(wide, place, unmarked, named(wideNames));
+    const wideSvg = sceneSvg(wideLayout.scene, wideLayout.lines);
+    const texts = [...wideLayout.scene.boxes.flatMap(box => wideLayout.lines(box)), ...wideLayout.scene.labels.map(label => label.text)];
+    expect([sceneFindings(wideLayout.scene), fits(wideLayout.scene, wideLayout.lines), texts.length, texts.filter(item => !wideSvg.includes(`>${item}</text>`))])
+      .toEqual([[], [], 3 + 4 + 2 + 2 + 4, []]);
+    // The self message's label lies right of every lifeline; the bounds that the extent, the first view and Fit read hold every box, label and route point.
+    const bounds = sceneBounds(wideLayout.scene);
+    const held = (x: number, y: number, width = 0, height = 0) => x >= bounds.x && y >= bounds.y && x + width <= bounds.x + bounds.width && y + height <= bounds.y + bounds.height;
+    const selfLabel = wideLayout.scene.labels.find(label => label.route === 'message::append')!;
+    expect([selfLabel.x > Math.max(...wideLayout.scene.boxes.filter(box => box.kind === 'lifeline').map(box => box.x + box.width)),
+      [...wideLayout.scene.boxes, ...wideLayout.scene.labels].every(item => held(item.x, item.y, item.width, item.height)),
+      wideLayout.scene.routes.every(route => route.points.every(([x, y]) => held(x, y))), wideLayout.scene.extent.width === bounds.x + bounds.width + 16]).toEqual([true, true, true, true]);
+
+    // The recorded map: every flow passes the scene check, labels included; each label is its step's whole label, each box fits its text, and the
+    // file draws one path for each message with the route's path. The other base maps write the same files as on main 2418cd6fc.
+    const recorded = decodeArchitectureMap(recordedMap);
+    const placed = runtimePlacement(recorded);
+    const flows = recorded.flows.flatMap(entry => entry.applicability === 'required' ? [entry] : []);
+    const results = flows.map(entry => {
+      const layout = layoutSequence(entry, placed, unmarked, named(node => recorded.nodes.find(item => item.id === node)!.name));
+      const paths = [...sceneSvg(layout.scene, () => []).matchAll(/<path class="route[^"]*" stroke-width="[^"]*" d="([^"]*)"/gu)].map(match => match[1]);
+      return { findings: sceneFindings(layout.scene), whole: layout.scene.labels.every(label => label.text === layout.messages.get(label.route!)!.step.label) && fits(layout.scene, layout.lines).length === 0,
+        paths: JSON.stringify(paths) === JSON.stringify(layout.scene.routes.map(route => routePath(route.points))) && paths.length === flowSteps(entry).length };
+    });
+    expect([flows.length, results.filter(result => result.findings.length > 0 || !result.whole || !result.paths)]).toEqual([31, []]);
+    const order = recorded.layer_order.state === 'ok' ? recorded.layer_order.layers : [];
+    const others = [layoutModules(recorded).scene, layoutLayers(recorded, order).scene('effects'), layoutTopology(recorded, placed, 'process', true).scene].map(item => sceneSvg(item, entry => [entry.id]));
+    expect(createHash('sha256').update(others.join('\n')).digest('hex')).toBe('fb0fe8f77b02a5c4351424b2b0166960e774a2c625c4ef36ccd1fda8bebe28ac');
   });
 
   test('topology segments: processes hold deployed code and draw lifted relations; namespaces frame their mounts in order with a reader or writer tone; mounters list mounts in order', () => {
@@ -1320,12 +1371,14 @@ describe('sequence and topology base maps', () => {
     expect([...document.querySelectorAll('.architecture-sequence__fragment')].map(item => [item.getAttribute('data-kind'), item.querySelector('.mono-value')?.textContent]))
       .toEqual([['success', 'alt'], ['error', 'else']]);
     expect([...document.querySelectorAll('.architecture-sequence__terminal')].map(item => [item.getAttribute('data-kind'), item.textContent])).toEqual([['success', 'Done'], ['error', 'Stop']]);
-    // Today's changes reach the append step.
-    const message = (id: string) => document.querySelector(`.react-flow__node[data-id="message:${id}"] .architecture-sequence__message`)!;
-    expect([message(':append').getAttribute('data-tone'), message(':route').hasAttribute('data-tone')]).toEqual(['change', false]);
+    // Each message is a route with its whole label; today's changes reach the append step.
+    const message = (id: string) => document.querySelector(`.react-flow__edge[data-id="message:${id}"]`)!;
+    expect([...document.querySelectorAll('.react-flow__edge')].map(item => [item.getAttribute('data-id'), item.getAttribute('aria-label')]))
+      .toEqual(flowSteps(flow).map(({ outcome, step }) => [`message:${outcome ?? ''}:${step.id}`, step.label]));
+    expect([message(':append').classList.contains('architecture-map__edge--message-change'), message(':route').classList.contains('architecture-map__edge--message')]).toEqual([true, true]);
 
-    await click('.react-flow__node[data-id="message::route"]');
-    expect(message(':route').hasAttribute('data-selected')).toBe(true);
+    await click('.react-flow__edge[data-id="message::route"]');
+    expect(message(':route').classList.contains('selected')).toBe(true);
     expect(inspector().getAttribute('data-step-id')).toBe(':route');
     expect(inspector().querySelector('[data-step-title]')?.textContent).toBe(`Name ${CALLER} → Name ${CENTER}`);
     expect(inspector().querySelector('[data-step-evidence]')?.textContent).toBe('src/router.ts route→ src/pipeline.ts route');
@@ -1335,20 +1388,24 @@ describe('sequence and topology base maps', () => {
     expect([...inspector().querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toEqual([`calls Name ${CALLER} → Name ${CENTER} · 7 imports`]);
     expect(inspector().querySelectorAll('[data-fix-command]')).toHaveLength(0);
 
-    await click('.react-flow__node[data-id="message::append"]');
+    await click('.react-flow__edge[data-id="message::append"]');
     expect(inspector().querySelector('[data-path-withheld]')?.textContent).toBe('path withheld (it fails the public-path check)');
     expect(inspector().querySelector('[data-step-proof]')?.textContent).toBe('Not proven: archctx reports no-direct-call.');
     expect(inspector().querySelector('[data-call-sites]')).toBeNull();
     expect(inspector().querySelector('[data-step-today]')).not.toBeNull();
     expect(inspector().querySelector('[data-fix-command="flows"]')?.textContent).toBe('archctx flows check --no-sync --json');
 
-    await click('.react-flow__node[data-id="message:kept:commit"]');
+    await click('.react-flow__edge[data-id="message:kept:commit"]');
     expect(inspector().querySelector('[data-gap="evidence"]')?.getAttribute('data-reason')).toBe('selector_undeclared');
     expect(inspector().querySelector('[data-step-proof]')?.getAttribute('data-step-proof')).toBe('missing');
     expect(inspector().querySelector('[data-related-prs]')?.textContent).toBe('#21 Ledger rows');
 
     await click('.react-flow__node[data-id="participant:router"]');
     expect([inspector().getAttribute('data-node-id'), inspector().querySelector('[data-runtime]')?.textContent]).toEqual([CALLER, `Runs in: ${t('architecture.runtime.deployment_undeclared')}`]);
+    // A header click after a message click selects the header: the message's deselect does not clear it. The header lights its messages.
+    expect([message('kept:commit').classList.contains('selected'), message(':route').classList.contains('is-active'), message(':append').classList.contains('is-dim')]).toEqual([false, true, true]);
+    await click('.react-flow__edge[data-id="message::route"]');
+    expect([inspector().getAttribute('data-step-id'), inspector().hasAttribute('data-node-id')]).toEqual([':route', false]);
     await click('.react-flow__node[data-id="participant:ledger"]');
     expect(inspector().querySelector('[data-runtime]')?.textContent).toBe(`Runs in: Name ${SERVER}`);
     // The side panel lists the flows in model order; today's changes reach a step of the first one.
@@ -1368,7 +1425,7 @@ describe('sequence and topology base maps', () => {
     await settle();
     await tab('sequence');
     await click(`[data-flow-id="${FLOW}"]`);
-    await click('.react-flow__node[data-id="message::route"]');
+    await click('.react-flow__edge[data-id="message::route"]');
     const list = document.querySelector<HTMLElement>('.architecture-sequence__flow-list')!;
     for (const [target, view] of [[second.id, 'diagram'], ['flow.router.none', 'note'], [FLOW, 'diagram']] as const) {
       const button = list.querySelector<HTMLButtonElement>(`[data-flow-id="${target}"]`)!;
@@ -1397,52 +1454,12 @@ describe('sequence and topology base maps', () => {
       expect(document.querySelector('[data-sequence-summary]')?.textContent).toBe('2 flows from the model; 2 of 4 steps have code evidence');
       await click('[data-sequence-export]');
       const svg = await files[0]!.blob.text();
-      expect([files.map(file => file.name), files[0]!.blob.type, (svg.match(/class="message"/gu) ?? []).length]).toEqual([[`${FLOW}.svg`], 'image/svg+xml', 4]);
-      expect([`<title>Name ${CALLER}</title>`, '>alt</tspan> Row kept', '>else</tspan> Row refused', '>Done</text>', '>Stop</text>'].filter(text => !svg.includes(text))).toEqual([]);
-
-      // Every label kind keeps its estimated text box inside its own shape and the file, with one long label per kind and CJK
-      // text. The kept terminal sits on git, the rightmost participant; the append step is a self message.
-      // The estimate never undercounts: widest glyphs per class, in em at weights 400 and 600, as Chrome draws system-ui (SF Pro) on macOS.
-      const measured = [['中', 0.944, 0.944], ['W', 0.924, 0.952], ['%', 0.808, 0.863], ['m', 0.803, 0.843], ['&', 0.669, 0.691], ['6', 0.617, 0.641]] as const;
-      expect(measured.filter(([glyph, regular, bold]) => textWidth(glyph, 100, false) < regular * 100 || textWidth(glyph, 100, true) < bold * 100)).toEqual([]);
-      const latin = (text: string) => `${text} `.repeat(4).trim();
-      const cjk = (text: string) => text.repeat(4);
-      const [route, append] = flow.steps;
-      const [kept, refused] = flow.outcomes;
-      const wide = { ...flow,
-        steps: [{ ...route!, label: latin('Route the request through the root router before the pipeline appends') }, { ...append!, to: 'pipe', label: cjk('流水线先校验请求和账本状态') }],
-        outcomes: [
-          { ...kept!, label: cjk('账本行已保存并提交到 git，再把提交结果返回给调用方'), steps: [{ ...kept!.steps[0]!, label: latin('Commit the WRITTEN LEDGER ROW to git') }],
-            terminal: { participant: 'git', label: 'WROTE THE COMMITTED LEDGER ROW AND RETURNED ITS SHA' } },
-          { ...refused!, label: latin('Row refused because the ledger rejected the append for a known reason'), steps: [{ ...refused!.steps[0]!, label: cjk('账本拒绝追加并给出原因') }],
-            terminal: { participant: 'router', label: '停止：返回拒绝原因和账本代码给路由器' } },
-        ] };
-      const names = ['路由器：根路由在流水线之前选择处理程序', 'Pipeline Workflow Engine Capability With Many Words', 'Ledger component that appends attested rows', '外部系统 git 与 archctx 子进程'];
-      const wideLayout = layoutSequence(wide, runtimePlacement(runtimeMap()));
-      const exported = sequenceSvg(wideLayout, {
-        box: box => latin(`${box.key} runs every hook event in its own Bun process`),
-        participant: nodeId => ({ name: names[flow.participants.findIndex(entry => entry.node === nodeId)]!, kind: 'capability' }),
-      });
-      const shapes: Record<keyof typeof SEQUENCE_SVG_FONT, readonly (readonly [number, number])[]> = {
-        title: wideLayout.boxes.map(box => [box.x, box.x + box.width]),
-        'fragment-label': wideLayout.fragments.map(fragment => [fragment.x, fragment.x + fragment.width]),
-        name: wideLayout.columns.map(column => [column.x - SEQUENCE_SVG_HEADER_WIDTH / 2, column.x + SEQUENCE_SVG_HEADER_WIDTH / 2]),
-        'message-label': wideLayout.messages.map(message => message.from === message.to ? [message.from, message.from + SEQUENCE_COLUMN / 2]
-          : [Math.min(message.from, message.to), Math.max(message.from, message.to)]),
-        terminal: wideLayout.terminals.map(terminal => [terminal.x - SEQUENCE_SVG_TERMINAL_WIDTH / 2, terminal.x + SEQUENCE_SVG_TERMINAL_WIDTH / 2]),
-      };
-      const shown = (markup: string) => markup.replace(/<[^>]+>/gu, '').replace(/&lt;/gu, '<').replace(/&gt;/gu, '>').replace(/&quot;/gu, '"').replace(/&amp;/gu, '&');
-      const labels = (Object.keys(shapes) as (keyof typeof SEQUENCE_SVG_FONT)[]).flatMap(kind => [...exported.matchAll(
-        new RegExp(`<text class="${kind}[^"]*" x="([\\d.]+)" y="[\\d.]+"( text-anchor="middle")?><title>[^<]*</title>(.*?)</text>`, 'gu'))].map((match, index) => {
-        const text = shown(match[3]!);
-        const width = textWidth(text, SEQUENCE_SVG_FONT[kind].size, SEQUENCE_SVG_FONT[kind].bold);
-        const left = Number(match[1]) - (match[2] === undefined ? 0 : width / 2);
-        const [low, high] = shapes[kind][index]!;
-        return { kind, text, inside: left >= Math.max(low, 0) && left + width <= Math.min(high, wideLayout.width), shortened: text.endsWith('…') };
-      }));
-      expect(Object.fromEntries(Object.entries(shapes).map(([kind, list]) => [kind, [list.length, labels.filter(entry => entry.kind === kind).length]])))
-        .toEqual({ title: [3, 3], 'fragment-label': [2, 2], name: [4, 4], 'message-label': [4, 4], terminal: [2, 2] });
-      expect(labels.filter(entry => !entry.inside || !entry.shortened)).toEqual([]);
+      // The file draws the scene on screen: one path for each message with the path of its route on the canvas, each whole label, the bands, terminals and boxes.
+      const drawn = [...document.querySelectorAll('.react-flow__edge-route .react-flow__edge-path')].map(path => path.getAttribute('d')!);
+      expect([files.map(file => file.name), files[0]!.blob.type, drawn.length, [...svg.matchAll(/<path class="route" stroke-width="1.5" d="([^"]*)"/gu)].map(match => match[1])])
+        .toEqual([[`${FLOW}.svg`], 'image/svg+xml', 4, drawn]);
+      expect([...flowSteps(flow).map(({ step }) => `>${step.label}</text>`), `>Name ${CALLER}</text>`, '>alt Row kept</text>', '>else Row refused</text>', '>Done</text>', '>Stop</text>',
+        '>Process unknown</text>', '<rect class="lifeline"', '<rect class="fragment success"', '<rect class="terminal error"', '.lifeline{', '.fragment.error{'].filter(text => !svg.includes(text))).toEqual([]);
     } finally {
       Object.assign(URL, { createObjectURL, revokeObjectURL });
       anchor.click = anchorClick;
@@ -1452,15 +1469,18 @@ describe('sequence and topology base maps', () => {
   test('each layer on the sequence map marks steps or participants from the collector, or says what it cannot mark', async () => {
     await mount(workspace({ readMap: reader(runtimeMap()) }));
     await tab('sequence');
-    const message = (id: string) => document.querySelector(`.react-flow__node[data-id="message:${id}"] .architecture-sequence__message`)!;
+    const message = (id: string) => document.querySelector(`.react-flow__edge[data-id="message:${id}"]`)!;
+    const tone = (id: string) => ['change', 'danger'].find(kind => message(id).classList.contains(`architecture-map__edge--message-${kind}`)) ?? null;
     const header = (id: string) => document.querySelector(`.react-flow__node[data-id="participant:${id}"] .architecture-sequence__header`)!;
     expect([header('ledger').getAttribute('data-tone'), header('pipe').getAttribute('data-tone'), header('router').hasAttribute('data-quiet')]).toEqual(['change', 'muted', true]);
     await chooseLayer('violations');
-    expect([message(':append').getAttribute('data-tone'), message(':append').querySelector('.architecture-map__mark')?.textContent, message(':route').hasAttribute('data-tone')]).toEqual(['danger', 'no-direct-call', false]);
+    // An unproven step names archctx's status in its label.
+    expect([tone(':append'), message(':append').querySelector('.react-flow__edge-text')?.textContent, tone(':route')])
+      .toEqual(['danger', `${flow.steps[1]!.label} · no-direct-call`, null]);
     // The layer summary keeps its own note; the sequence map adds why it draws no import edge.
     expect(notes()).toEqual(['violations.layer_direction:model_layers_undeclared', 'sequence.violations:imports_on_module_map']);
     await chooseLayer('pull_requests');
-    expect([message('kept:commit').getAttribute('data-tone'), message(':append').hasAttribute('data-tone')]).toEqual(['change', false]);
+    expect([tone('kept:commit'), tone(':append')]).toEqual(['change', null]);
     await chooseLayer('tests');
     expect([notes(), header('pipe').getAttribute('data-tone'), header('router').getAttribute('data-tone')]).toEqual([['sequence.tests:tests_by_capability'], 'danger', 'success']);
     await chooseLayer('decisions');
@@ -1470,7 +1490,7 @@ describe('sequence and topology base maps', () => {
     await act(async () => root?.render(workspace({ repositoryId: 'repo-proofless', readMap: reader(runtimeMap({ layers: { ...layers, violations: { ...layers.violations, flows: noCodeFacts } } })) })));
     await settle();
     await tab('sequence');
-    await click('.react-flow__node[data-id="message::route"]');
+    await click('.react-flow__edge[data-id="message::route"]');
     expect(inspector().querySelector('[data-gap="proof"]')?.getAttribute('data-reason')).toBe('code_facts_unavailable');
     expect(inspector().querySelector('[data-fix-command="flows"]')).not.toBeNull();
     // A model without flows has no sequence map, and says so.
