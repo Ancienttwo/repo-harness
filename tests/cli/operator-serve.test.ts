@@ -1749,6 +1749,46 @@ describe('architecture map', () => {
       rmSync(registry.home, { recursive: true, force: true });
     }
   });
+
+  test('a repository is served when its child returns, and a closed collector starts and publishes nothing', async () => {
+    const roots = [0, 1].map(() => realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-architecture-cycle-'))));
+    const registry = registryHome(roots.map(path => ({ path, accessMode: 'read_only' as const })));
+    const [first, second] = [...registry.ids].sort() as [string, string];
+    const pending = { state: 'unavailable', reason: 'architecture_map_pending' } as const;
+    const gates = new Map<string, () => void>();
+    const started: string[] = [];
+    const run_process = ((argv: readonly string[]) => {
+      const id = argv[1]!;
+      started.push(id);
+      return new Promise(resolve => gates.set(id, () => resolve({ ok: true, stdout: JSON.stringify({ id, ok: true, snapshot: { ...map, repository_id: id } }) })));
+    }) as never;
+    try {
+      const open = startArchitectureMapCollector({ env: registry.env, interval_ms: 60_000, run_process });
+      await waitFor(() => started.length === 1, 'the first child starts');
+      gates.get(first)!();
+      await waitFor(() => started.length === 2, 'the second child starts');
+      expect([open.read(first).state, open.read(second)]).toEqual(['ready', pending]);
+      gates.get(second)!();
+      await open.settled();
+      expect(open.read(second).state).toBe('ready');
+      expect(open.read('repo-unregistered')).toEqual({ state: 'unavailable', reason: 'repository_not_found' });
+      await open.close();
+
+      started.length = 0;
+      const closing = startArchitectureMapCollector({ env: registry.env, interval_ms: 10, run_process });
+      await waitFor(() => started.length === 1, 'the child starts');
+      const closed = closing.close();
+      gates.get(first)!();
+      await closed;
+      // A cycle that a timer started would read the registry and report it unavailable.
+      writeFileSync(join(registry.home, 'registered-repos.json'), '{"version":1}');
+      await Bun.sleep(50);
+      expect([started, closing.read(first)]).toEqual([[first], pending]);
+    } finally {
+      for (const root of roots) rmSync(root, { recursive: true, force: true });
+      rmSync(registry.home, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('worktree cleanup write route', () => {

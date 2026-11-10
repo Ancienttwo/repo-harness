@@ -131,13 +131,14 @@ export function startArchitectureMapCollector(options: ArchitectureMapCollectorO
       const next = new Map<string, ArchitectureMapRepositoryCache>();
       // One repository at a time: each child runs archctx and git over the whole tree.
       for (const repo of repos) {
-        if (closed) return;
         let cache: ArchitectureMapRepositoryCache;
         try { cache = await collect(repo.id); }
         catch { cache = { state: 'unavailable', reason: 'architecture_map_process_failed' }; }
+        if (closed) return;
         next.set(repo.id, cache);
+        // A repository is served when its child returns, not when the cycle ends.
+        states = new Map(states).set(repo.id, cache);
       }
-      if (closed) return;
       states = next;
       registryFailed = false;
       started = true;
@@ -155,8 +156,9 @@ export function startArchitectureMapCollector(options: ArchitectureMapCollectorO
   return Object.freeze({
     read: (repositoryId: string): ArchitectureMapRepositoryCache => {
       if (registryFailed) return { state: 'unavailable', reason: 'registry_unavailable' };
-      if (!started) return { state: 'unavailable', reason: 'architecture_map_pending' };
-      return states.get(repositoryId) ?? { state: 'unavailable', reason: 'repository_not_found' };
+      const published = states.get(repositoryId);
+      if (published !== undefined) return published;
+      return started ? { state: 'unavailable', reason: 'repository_not_found' } : { state: 'unavailable', reason: 'architecture_map_pending' };
     },
     settled: () => inflight ?? Promise.resolve(),
     close: async () => {
