@@ -90,9 +90,12 @@ interface SceneCanvasProps {
   readonly view: (box: SceneBox) => SceneNodeView;
   /** The selected model id. */
   readonly selected: string | null;
-  /** The box whose routes a selection lights; the selected id when absent. A view whose routes join the holders of its boxes names the holder. */
+  /**
+   * The box whose routes a selection lights. Optional: a caller that passes none lights the routes of the selected id, as before.
+   * A view whose routes join the holders of its boxes names the holder.
+   */
   readonly emphasis?: string | null;
-  /** The accessible name of a route; none when absent. */
+  /** The accessible name of a route. Optional: a caller that passes none gives its routes no accessible name, as before. */
   readonly routeLabel?: (route: SceneRoute) => string;
   readonly onSelect: (id: string | null) => void;
   readonly legend: readonly SceneLegendEntry[];

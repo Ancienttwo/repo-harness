@@ -147,13 +147,28 @@ const stateRows = (kind: 'neighbour' | 'undeclared', t: OperatorTranslate): Scen
   text: t(`architecture.modules.legend.${kind}.${state}`),
 }));
 
+/** The state rows on screen: the undeclared routes and the direction states of the neighbours and the undeclared cards. */
+function stateEntries(marks: { readonly routes: boolean; readonly cards: boolean; readonly selection: boolean }, t: OperatorTranslate): SceneLegendEntry[] {
+  return [
+    ...marks.routes ? [{ key: 'undeclared', swatch: <span className="architecture-map__swatch architecture-map__swatch--undeclared" />, text: t('architecture.layer.legend.undeclared') }] : [],
+    ...marks.selection ? stateRows('neighbour', t) : [],
+    ...marks.cards ? stateRows('undeclared', t) : [],
+  ];
+}
+
+/** The state rows below the canvas on a narrow screen, where the canvas legend is hidden. */
+function NarrowStates({ entries, t }: { readonly entries: readonly SceneLegendEntry[]; readonly t: OperatorTranslate }) {
+  if (entries.length === 0) return null;
+  return <dl className="architecture-modules__states" aria-label={t('architecture.map.legend')} data-narrow-legend>
+    {entries.map(entry => <div key={entry.key}><dt>{entry.swatch}</dt><dd>{entry.text}</dd></div>)}
+  </dl>;
+}
+
 /** The legend: the route widths, the undeclared routes, the direction states on screen, the external systems, the card size and the slots. */
 function legend(map: ArchitectureMapV1, layout: ModulesLayout, marks: { readonly routes: boolean; readonly cards: boolean; readonly selection: boolean }, layer: MapLayerId, t: OperatorTranslate): SceneLegendEntry[] {
   return [
     ...layout.edges.length > 0 ? [{ key: 'width', swatch: <span aria-hidden="true">→</span>, text: t('architecture.modules.legend.width') }] : [],
-    ...marks.routes ? [{ key: 'undeclared', swatch: <span className="architecture-map__swatch architecture-map__swatch--undeclared" />, text: t('architecture.layer.legend.undeclared') }] : [],
-    ...marks.selection ? stateRows('neighbour', t) : [],
-    ...marks.cards ? stateRows('undeclared', t) : [],
+    ...stateEntries(marks, t),
     ...layout.externals.length > 0 ? [{ key: 'external', swatch: <span className="architecture-map__swatch architecture-map__swatch--external" />, text: t('architecture.map.legend.external') }] : [],
     ...map.sizes.state === 'ok' ? [{ key: 'lines', swatch: <span className="mono-value" aria-hidden="true">1.2k · 4</span>, text: t('architecture.modules.legend.lines') }] : [],
     { key: 'slots', swatch: <span className="architecture-modules__key mono-value">{SLOT_LAYERS.map(item => <span key={item} data-active={item === layer || undefined}>{t(`architecture.modules.slot.${item}`)}</span>)}</span>, text: '' },
@@ -355,6 +370,7 @@ export function ArchitectureModules({ map, layer, pullRequest, selectedId, onSel
     };
   }, [nodes, neighbours, undeclared, selectedId, sizes, signals, layer, t]);
 
+  const marks = { routes: scene !== layout.scene, cards: undeclared.size > 0, selection: neighbours.size > 0 };
   // A route joins domains, so a selected card lights the routes of its domain; an external system lights its own.
   const emphasis = selected === null ? null : selected.kind === 'capability' ? domainId(selected.domain!) : selected.id;
   const routeLabel = useCallback((route: SceneRoute) => {
@@ -367,7 +383,8 @@ export function ArchitectureModules({ map, layer, pullRequest, selectedId, onSel
   return <div className="architecture-map" data-view="modules" data-node-count={map.nodes.length} data-relation-count={map.relations.length} data-edge-count={layout.edges.length} data-layer={layer}>
     <ArchitectureSceneCanvas label={t('architecture.map.label')} scene={scene} nodeTypes={NODE_TYPES} view={nodeView}
       selected={selectedId} emphasis={emphasis} routeLabel={routeLabel} onSelect={onSelect}
-      legend={legend(map, layout, { routes: scene !== layout.scene, cards: undeclared.size > 0, selection: neighbours.size > 0 }, layer, t)} t={t} />
+      legend={legend(map, layout, marks, layer, t)} t={t} />
+    <NarrowStates entries={stateEntries(marks, t)} t={t} />
     <aside className="architecture-map__inspector" aria-label={t('architecture.map.inspector')} data-node-id={selected?.id}>
       {side}
       {selected === null ? <>

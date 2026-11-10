@@ -355,7 +355,14 @@
   .architecture-topology__switch::after { @apply absolute top-0.5 left-0.5 size-3 rounded-full bg-kumo-contrast content-['']; }
   [aria-pressed="true"] > .architecture-topology__switch { background: var(--rh-accent); }
   [aria-pressed="true"] > .architecture-topology__switch::after { @apply left-3.5; }
-  @media (max-width: 47.5rem) { .architecture-map__legend, .architecture-history__legend { display: none; } }
+  /* The canvas legend is hidden on a narrow screen; the state rows of the module map show below the canvas instead. */
+  .architecture-modules__states { display: none; }
+  @media (max-width: 47.5rem) {
+    .architecture-map__legend, .architecture-history__legend { display: none; }
+    .architecture-modules__states { @apply m-0 flex flex-wrap gap-x-4 gap-y-1 rounded-lg border bg-kumo-base p-2 text-xs; border-color: var(--rh-diagram-line); }
+    .architecture-modules__states div { @apply flex items-center gap-2; }
+    .architecture-modules__states dd { @apply m-0; }
+  }
 }
 
 /*

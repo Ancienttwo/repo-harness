@@ -581,7 +581,9 @@ describe('architecture map', () => {
       [badge('capability.verification.evals-checks').textContent, badge('capability.verification.evals-checks').getAttribute('title')]])
       .toEqual([['→', 'Used by the selected module'], ['⇄', 'Uses the selected module and is used by it']]);
     const legendText = () => document.querySelector('.architecture-map__legend')?.textContent ?? '';
-    for (const words of ['Used by the selection', 'Uses the selection', 'Uses it and is used by it']) expect(legendText()).toContain(words);
+    // A narrow screen hides the canvas legend, so the same state rows also show below the canvas.
+    const narrowText = () => document.querySelector('[data-narrow-legend]')?.textContent ?? '';
+    for (const words of ['Used by the selection', 'Uses the selection', 'Uses it and is used by it']) expect([legendText(), narrowText()].every(text => text.includes(words))).toBe(true);
     // A route joins domains, so the selected card lights the routes of its domain; each route names its ends and imports.
     const route = (id: string) => document.querySelector(`.react-flow__edge[data-id="${id}"]`)!;
     expect([route('imports:verification->runtime-harness').classList.contains('is-active'), route('imports:verification->workflow-engine').classList.contains('is-dim'),
@@ -599,7 +601,7 @@ describe('architecture map', () => {
       'capability.workflow-engine.execution-primitives': 'out', 'capability.workflow-engine.workflow-state': 'in',
     });
     for (const [id, state] of Object.entries(marks as Record<string, string>)) expect(card(id).querySelector('[data-badge="undeclared"]')?.getAttribute('data-state')).toBe(state);
-    for (const words of ['Undeclared import: imports', 'Undeclared import: imported', 'Undeclared import: both ways']) expect(legendText()).toContain(words);
+    for (const words of ['Undeclared import: imports', 'Undeclared import: imported', 'Undeclared import: both ways']) expect([legendText(), narrowText()].every(text => text.includes(words))).toBe(true);
     expect(card('capability.runtime-harness.architecture').querySelector('[data-badge="undeclared"]')?.getAttribute('aria-label')).toBe('A module of its domain imports it with no declared relation');
     // With a card selected, a lens route keeps its class (CSS keeps it readable) and names the undeclared import.
     expect([route('imports:verification->runtime-harness').classList.contains('architecture-map__edge--undeclared'), route('imports:verification->runtime-harness').getAttribute('aria-label')])
