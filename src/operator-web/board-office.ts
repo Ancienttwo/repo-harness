@@ -204,13 +204,13 @@ export const officeLit = (room: Pick<OfficeRoom, 'orchestrator' | 'advisor' | 'd
 export type BoardSummariesRead =
   | { readonly state: 'ok'; readonly summaries: BoardSummariesV1 }
   | { readonly state: 'unavailable'; readonly reason: BoardParentsReason };
-export type BoardSummariesReader = (repositoryId: string, signal: AbortSignal) => Promise<BoardSummariesRead>;
+export type BoardSummariesReader = (repositoryId: string, parent: number, signal: AbortSignal) => Promise<BoardSummariesRead>;
 
-/** Browser side of `GET /api/v1/repositories/<id>/board/summaries`. The route runs a parents read, so it answers with the parents failures. */
-export async function fetchBoardSummaries(repositoryId: string, signal: AbortSignal): Promise<BoardSummariesRead> {
+/** Browser side of `GET /api/v1/repositories/<id>/board/summaries`. The route reads one stored parent summary and starts no board CLI run. */
+export async function fetchBoardSummaries(repositoryId: string, parent: number, signal: AbortSignal): Promise<BoardSummariesRead> {
   let response: Response;
   try {
-    response = await fetch(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/board/summaries`, {
+    response = await fetch(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/board/summaries?parent=${parent}`, {
       signal, cache: 'no-store', headers: { Accept: 'application/json' },
     });
   } catch (error) {
@@ -237,10 +237,9 @@ export const officeRepositoryView = (views: ReadonlyMap<string, OfficeRepository
 
 /**
  * The reads of the overview run one at a time: the repositories in order, and
- * in each repository its parents, then its summaries. The server keeps the
- * parents read and the summaries read in one slot and refuses a second one
- * with `parents_busy`, and that limit lives in effects, so the web keeps no
- * copy of it.
+ * in each repository its parents, then its summaries. The parents read takes a slot of the server's board read cap, and that limit
+ * lives in effects, so the web keeps no copy of it. The summaries read takes
+ * no slot and names the active parent of the list read in the same cycle.
  */
 export function useOfficeOverview(repositories: readonly string[], readParents: BoardParentsReader, readSummaries: BoardSummariesReader, generation: number): ReadonlyMap<string, OfficeRepositoryView> {
   const [views, setViews] = useState<ReadonlyMap<string, OfficeRepositoryView>>(new Map());
@@ -257,11 +256,11 @@ export function useOfficeOverview(repositories: readonly string[], readParents: 
         show(id, () => ({ kind: 'failed', reason: parents.reason }));
         continue;
       }
-      const active = activeParent(parents.list) !== null;
+      const active = activeParent(parents.list);
       // A refresh keeps the summaries of the last read on the card until its new read settles.
-      show(id, current => ({ kind: 'ready', list: parents.list, summaries: active && current.kind === 'ready' ? current.summaries : null }));
-      if (!active) continue;
-      const summaries = await readSummaries(id, signal);
+      show(id, current => ({ kind: 'ready', list: parents.list, summaries: active !== null && current.kind === 'ready' ? current.summaries : null }));
+      if (active === null) continue;
+      const summaries = await readSummaries(id, active, signal);
       if (signal.aborted) return false;
       if (summaries.state !== 'ok') complete = false;
       show(id, () => ({ kind: 'ready', list: parents.list, summaries }));

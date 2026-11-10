@@ -1592,7 +1592,7 @@ export async function startOperatorServer(
 
     const boardRoute = OPERATOR_BOARD_ROUTE.exec(pathname);
     if (boardRoute !== null) {
-      // A board read runs the board CLI and about ten GitHub reads; HEAD gets no read.
+      // A board read runs the board CLI, and the CLI reads GitHub for each source and each open pull request; HEAD gets no read.
       if (headOnly) {
         sendRefusal(request, response, 405, errorBody('method_not_allowed', 'The board route supports only GET.'), true, { Allow: 'GET' });
         return;
@@ -1639,14 +1639,13 @@ export async function startOperatorServer(
         sendRefusal(request, response, 405, errorBody('method_not_allowed', 'The board summaries route supports only GET.'), true, { Allow: 'GET' });
         return;
       }
-      if (url.search !== '') {
-        sendRefusal(request, response, 400, errorBody('invalid_request', 'The board summaries route accepts no query parameters.'), headOnly);
+      const keys = [...url.searchParams.keys()];
+      const parent = url.searchParams.get('parent');
+      if (keys.length !== 1 || parent === null || !/^[1-9][0-9]{0,9}$/u.test(parent)) {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'The board summaries route needs exactly one parent issue number.'), headOnly);
         return;
       }
-      const read = options.read_board_parents ?? readRepositoryBoardParents;
-      handleBoardCliRead(request, response, headOnly, BOARD_PARENTS_UNAVAILABLE, { busy: 'parents_busy', invalid: 'parents_invalid', unavailable: 'parents_unavailable' },
-        signal => read({ repository_id: summariesRoute[1]!, env: boardEnvironment, signal }), value =>
-          decodeBoardSummaries(readBoardSummaries(boardEnvironment, summariesRoute[1]!, decodeBoardParents(value))));
+      sendJson(response, 200, decodeBoardSummaries(readBoardSummaries(boardEnvironment, summariesRoute[1]!, Number(parent))), headOnly);
       return;
     }
 

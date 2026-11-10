@@ -10,7 +10,7 @@ import { decodeBoard, type BoardHostPortsV1, type BoardTerminalV1, type BoardV1 
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
-import { collectBoard, readGhJson, readLocalRepositoryId, type BoardCollectInput } from '../src/effects/board/collect';
+import { collectBoard, readGhJson, readParent, readLocalRepositoryId, type BoardCollectInput } from '../src/effects/board/collect';
 import { runBoardMerge } from '../src/effects/board/merge';
 import { boardMergeDecisions } from '../src/core/board/merge';
 import { provenMergeOnlySyncs } from '../src/effects/board/merge-only-sync';
@@ -23,6 +23,8 @@ import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herd
 import { ADVISOR_TRANSCRIPT_LINE_WITHHELD, AdvisorSeatError, advisorSeatSendFailure, advisorTranscriptLines, advisorTurnState, decodeAdvisorSeatTranscript, readAdvisorSeat, seatStatusMessage, SEAT_STATUS_MESSAGE_MAX_CHARS, sendToAdvisorSeat } from '../src/core/board/advisor-seat';
 import { decodeBoardParents, type BoardParentsV1 } from '../src/core/board/parents';
 import { BoardSourceError } from '../src/core/board/source';
+import { planDispatch } from '../src/core/board/dispatch';
+import { DEFAULT_SEATS_CONFIG } from '../src/core/board/seats-settings';
 import { HC_MIN_VERSION } from '../src/core/terminal/herdr-pin';
 import { BoardParentsError, collectBoardParents } from '../src/effects/board/parents';
 import { hcStatusClass, ISSUE_FLOW_WORKER_LIMIT } from '../src/core/board/desk';
@@ -64,6 +66,8 @@ interface Replay {
   readonly parent?: (data: Json) => void;
   /** Splits the edited parent read into sub-issue pages of this size, linked by cursors `c1`, `c2`...; then edits the pages. */
   readonly pages?: { readonly size: number; readonly edit?: (pages: Json[]) => void };
+  /** Older parent comment pages, newer page first, linked by cursors `k1`, `k2`...; `edit` gets the first parent page and then these pages. */
+  readonly comments?: { readonly older: Json[][]; readonly edit?: (pages: Json[]) => void };
   readonly pulls?: (data: Json) => void;
   /** Edits the recorded `archctx resolve` results of the open pull request files. */
   readonly owners?: (results: Json[]) => void;
@@ -114,6 +118,11 @@ function replayInput(options: Replay): BoardCollectInput {
   const parent = JSON.parse(fixture('parent-1474.graphql.json')); options.parent?.(parent.data);
   const parentPages = options.pages === undefined ? [parent] : subIssuePages(parent, options.pages.size);
   options.pages?.edit?.(parentPages);
+  const commentPages: Json[] = (options.comments?.older ?? []).map((nodes, at, older) => ({
+    data: { repository: { issue: { comments: { pageInfo: { hasPreviousPage: at < older.length - 1, startCursor: `k${at + 2}` }, nodes } } } },
+  }));
+  if (options.comments !== undefined) parentPages[0]!.data.repository.issue.comments.pageInfo = { hasPreviousPage: true, startCursor: 'k1' };
+  options.comments?.edit?.([parentPages[0]!, ...commentPages]);
   const pulls = JSON.parse(fixture('pull-requests-1474.graphql.json')); options.pulls?.(pulls.data);
   const resolved = JSON.parse(fixture('archctx-resolve-1474.json')); options.owners?.(resolved.data.results);
   const answer = (value: unknown) => ({ status: 0, stdout: typeof value === 'string' ? value : JSON.stringify(value) });
@@ -128,6 +137,8 @@ function replayInput(options: Replay): BoardCollectInput {
         const after = args.find(arg => arg.startsWith('after='));
         return answer(parentPages[after === undefined ? 0 : Number(after.slice('after=c'.length))]);
       }
+      const before = args.find(arg => arg.startsWith('before='));
+      if (args[1] === 'graphql' && before !== undefined) return answer(commentPages[Number(before.slice('before=k'.length)) - 1]);
       if (args[1] === 'graphql') return answer(pulls);
       if (args.some(arg => arg.includes('actions/workflows/ci.yml/runs'))) return answer(fixture('daily-run.json'));
       if (args.includes('repos/Ancienttwo/repo-harness/contents/.ai/harness/policy.json?ref=main')) return options.policy ?? POLICY_ABSENT;
@@ -607,11 +618,11 @@ test('decoders refuse a missing or invalid plan revision, merge policy or seat b
   expect(() => decodeBoard({ ...recorded, execution: { status: 'observed', terminals: message('a\nb').seats } })).toThrow('invalid board seat status message on t1');
 });
 
-test('plan revision: the ordinal of the newest plan comment among the write-access plan comments, and null on a truncated read', () => {
+test('plan revision: the ordinal of the newest plan comment among the write-access plan comments of every parent comment page', () => {
   const block = { protocol: 1, kind: 'repo-harness.plan', merge_order: [], holds: [], batches: [], seat_limits: { worker: 3 } };
   const plan = (at: string, body = `repo-harness plan\n\n\`\`\`json\n${JSON.stringify(block)}\n\`\`\`\n`) => comment(body, at);
-  const revision = (nodes: Json[], truncated = false) => {
-    const board = replay({ parent: (data) => { data.repository.issue.comments = { pageInfo: { hasPreviousPage: truncated }, nodes }; } });
+  const revision = (nodes: Json[], older?: Json[][]) => {
+    const board = replay({ parent: (data) => { data.repository.issue.comments = { pageInfo: { hasPreviousPage: false }, nodes }; }, comments: older && { older } });
     return board.plan.status === 'observed' ? board.plan.revision : board.plan.status;
   };
   const [first, second, third] = [plan('2026-11-01T00:00:00Z'), plan('2026-11-02T00:00:00Z'), plan('2026-11-03T00:00:00Z')];
@@ -619,8 +630,8 @@ test('plan revision: the ordinal of the newest plan comment among the write-acce
   const request = { ...plan('2026-11-04T00:00:00Z'), authorAssociation: 'NONE' };
   expect([
     revision([first]), revision([first, second, third]), revision([first, invalid, third]), revision([first, second, request]),
-    revision([first, second], true), revision([first, invalid]), revision([]),
-  ]).toEqual([1, 3, 3, 2, null, 'unavailable', 'absent']);
+    revision([third], [[second], [first]]), revision([], [[first]]), revision([first, invalid]), revision([]),
+  ]).toEqual([1, 3, 3, 2, 3, 1, 'unavailable', 'absent']);
 });
 
 const POLICY_ON = { status: 0, stdout: JSON.stringify({ type: 'file', path: '.ai/harness/policy.json', encoding: 'base64', content: Buffer.from('{"publication":{"acceptance_merge":"on"}}').toString('base64') }) };
@@ -673,7 +684,7 @@ test('board merge: an accepted, green, ready PR first in plan order is eligible,
   expect(boardMergeDecisions(replay(synced)).find(entry => entry.pr === 1491)).toEqual({ pr: 1491, eligible: true });
 });
 
-test('board read: every sub-issue page of the parent reaches the board and the merge_order gate; a truncated or repeating page, a repeated cursor and a stream above the page cap fail closed', () => {
+test('board read: every sub-issue page of the parent reaches the board and the merge_order gate; a truncated or repeating page, a repeated cursor and a stream above the page cap fail closed; so does a parent comment page without a cursor or with a repeated one', () => {
   const single = replay();
   const paged = replay({ pages: { size: 4 } });
   expect(paged.items.map(item => [item.number, item.pull_requests])).toEqual(single.items.map(item => [item.number, item.pull_requests]));
@@ -704,6 +715,27 @@ test('board read: every sub-issue page of the parent reaches the board and the m
     'board source invalid: issue.subIssues cursor c1 repeats',
     'board source invalid: issue.subIssues has more than 20 pages of 50',
   ]);
+  const commentRefusal = (edit: (pages: Json[]) => void) => {
+    try { replay({ comments: { older: [[], []], edit } }); return 'read'; } catch (error) { return error instanceof BoardSourceError ? error.message : String(error); }
+  };
+  expect([
+    commentRefusal((pages) => { pages[0]!.data.repository.issue.comments.pageInfo.startCursor = null; }),
+    commentRefusal((pages) => { pages[1]!.data.repository.issue.comments.pageInfo.startCursor = 'k1'; }),
+    commentRefusal((pages) => { delete pages[2]!.data; pages[2]!.errors = [{ message: 'timeout' }]; }),
+  ]).toEqual([
+    'board source invalid: comment page 0 issue.comments.pageInfo.startCursor is not a cursor',
+    'board source invalid: issue.comments cursor k1 repeats',
+    'BoardCollectError: GitHub GraphQL refused the board read: [{"message":"timeout"}]',
+  ]);
+  // A coordinator claim on an older page is active until its release on the newest page.
+  const claim = comment('repo-harness issue claim\nStatus: active\nRole: coordinator', '2026-11-01T09:00:00Z');
+  const release = comment(`repo-harness issue claim status\nClaim: ${claim.url}\nStatus: released`, '2026-11-02T22:30:00Z');
+  const coordinator = (released: boolean) => {
+    const { parent } = readParent(replayInput(mergeReplay({ parent: (data) => { if (released) data.repository.issue.comments.nodes.push(release); } }, { comments: { older: [[claim]] } })));
+    const quota = { claude: { state: 'normal', remaining: 80, mode: 'normal' }, chatgpt: { state: 'normal', remaining: 30, mode: 'normal' } } as const;
+    return planDispatch({ seats: DEFAULT_SEATS_CONFIG, quota, terminals: [], parent }).coordinator;
+  };
+  expect([coordinator(false), coordinator(true)]).toEqual([claim.url, null]);
 });
 
 test('board merge: every hold stays in force until a strictly newer release on its own thread; Issues: scopes only a parent hold', () => {
@@ -728,13 +760,16 @@ test('board merge: every hold stays in force until a strictly newer release on i
     mergeReason(on(['parent', `${HOLD}\nIssues: #1479`, '2026-11-02T21:00:00Z'])),
     mergeReason(on(['parent', HOLD, '2026-11-02T21:00:00Z'])),
     mergeReason(on(['parent', HOLD, '2026-11-02T21:00:00Z'], ['parent', `${HOLD}\nIssues: #1479`, '2026-11-02T21:10:00Z'])),
-    mergeReason({ parent: (data) => { data.repository.issue.comments.pageInfo.hasPreviousPage = true; } }),
-    // Truncated: the oldest parent comment read is 18:33:49Z. A release at that boundary can tie an omitted hold; a later one cannot.
-    ...['2026-11-02T18:33:49Z', '2026-11-02T21:00:00Z'].map(at => mergeReason({ parent: (data) => {
-      data.repository.issue.comments.nodes.push(comment(RELEASE, at));
-      data.repository.issue.comments.pageInfo.hasPreviousPage = true;
+    // The parent thread is read to its oldest page: a hold there stays in force until a newer release.
+    mergeReason({}, { comments: { older: [[comment(HOLD, '2026-11-01T10:00:00Z')]] } }),
+    mergeReason(on(['parent', RELEASE, '2026-11-02T21:00:00Z']), { comments: { older: [[comment(HOLD, '2026-11-01T10:00:00Z')]] } }),
+    mergeReason({ parent: (data) => { issueNode(data, 1475).comments.pageInfo.hasPreviousPage = true; } }),
+    // Truncated: the oldest #1475 comment read is 18:34:59Z. A release at that boundary can tie an omitted hold; a later one cannot.
+    ...['2026-11-02T18:34:59Z', '2026-11-02T21:00:00Z'].map(at => mergeReason({ parent: (data) => {
+      issueNode(data, 1475).comments.nodes.push(comment(RELEASE, at));
+      issueNode(data, 1475).comments.pageInfo.hasPreviousPage = true;
     } })),
-  ]).toEqual(['held', 'eligible', 'held', 'held', 'held', 'eligible', 'held', 'held', 'hold_unknown', 'hold_unknown', 'eligible']);
+  ]).toEqual(['held', 'eligible', 'held', 'held', 'held', 'eligible', 'held', 'held', 'held', 'eligible', 'hold_unknown', 'hold_unknown', 'eligible']);
 });
 
 test('board merge: no plan, a draft, plan holds, plan order for every linked item, the provisional Low path, a missing Claude review, a red Required / CI, readiness and the policy switch each refuse', () => {
