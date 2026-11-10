@@ -479,6 +479,7 @@ function recordedReadinessGh(failRepository: () => boolean): (args: readonly str
       return failRepository() ? { status: 1, stdout: '', stderr: 'gh: Bad Gateway (HTTP 502)' }
         : json({ id: 1186405141, node_id: node, full_name: repository, default_branch: 'main' });
     }
+    if (path === `repos/${repository}/branches/main/protection`) return json({ required_status_checks: { contexts: ['Required / CI'] } });
     if (path === `repos/${repository}/actions/runs/41`) {
       return json({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: pr(1491).headRefOid, status: 'completed', conclusion: 'success',
         pull_requests: [{ number: 1491, head: { sha: pr(1491).headRefOid }, base: { sha: base } }] });
@@ -513,8 +514,9 @@ test('board read: the readiness reads of one board share one answer for the repo
   };
   const count = (calls: readonly string[], prefix: string) => calls.filter(call => call.startsWith(prefix)).length;
   const { board, calls, readiness } = run(() => false);
-  // One page of parent comments (no older page): 5 board reads and 21 readiness reads.
-  expect(calls).toHaveLength(26);
+  // One page of parent comments (no older page): 5 board reads and 22 readiness reads.
+  expect(calls).toHaveLength(27);
+  expect(count(calls, 'api repos/Ancienttwo/repo-harness/branches/main/protection ')).toBe(1);
   expect(count(calls, 'repo view github.com/Ancienttwo/repo-harness --json id,nameWithOwner')).toBe(1);
   expect(count(calls, 'api repos/Ancienttwo/repo-harness --hostname')).toBe(1);
   for (const number of [1491, 1494, 1499]) expect(count(calls, `pr view ${number} `)).toBe(2);

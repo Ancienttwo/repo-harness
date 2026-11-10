@@ -43,6 +43,8 @@ export interface PublicationMergeScenario {
   readonly mergeQueueEnabled?: boolean | 'missing';
   /** null is an unprotected branch (404). */
   readonly protection?: { readonly strict: boolean; readonly enforce_admins: boolean } | null;
+  readonly requiredContexts?: readonly string[];
+  readonly requiredRun?: Readonly<Record<string, unknown>>;
   readonly rules?: readonly { readonly type: string; readonly parameters?: Record<string, unknown> }[];
   /** The repository default squash title and message; default PR_TITLE and PR_BODY. */
   readonly squashTitle?: string;
@@ -65,7 +67,7 @@ export interface PublicationMergeScenario {
   readonly head?: string;
   readonly base?: string;
   /** The required-check view; defaults to one Required / CI check with `checks`. */
-  readonly requiredChecks?: readonly { readonly name: string; readonly bucket: string; readonly link?: string }[];
+  readonly requiredChecks?: readonly { readonly name: string; readonly bucket: string; readonly link?: string; readonly workflow?: string }[];
   /** The unfiltered check view the coverage rule reads. */
   readonly allChecks?: readonly { readonly name: string; readonly bucket: string }[];
   /** The REST pull-request files view; `previous_filename` marks a rename source. */
@@ -253,7 +255,7 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
   }
   if (sub === `${root}/actions/runs/123`) {
     return ok({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: headSha, status: 'completed', conclusion: 'success',
-      pull_requests: [{ number: PR, head: { sha: headSha }, base: { sha: baseSha } }] });
+      pull_requests: [{ number: PR, head: { sha: headSha }, base: { sha: baseSha } }], ...scenario.requiredRun });
   }
   if (sub?.startsWith(`${root}/pulls/${PR}/files?`)) {
     return ok((scenario.changedFiles ?? []).map((file) => ({ filename: file.filename,
@@ -266,7 +268,7 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
   if (sub === `${root}/branches/main/protection`) {
     const protection = scenario.protection === undefined ? { strict: true, enforce_admins: true } : scenario.protection;
     if (protection === null) return notFound();
-    return ok({ required_status_checks: { strict: protection.strict, contexts: ['Required / CI'] }, enforce_admins: { enabled: protection.enforce_admins } });
+    return ok({ required_status_checks: { strict: protection.strict, contexts: scenario.requiredContexts ?? ['Required / CI'] }, enforce_admins: { enabled: protection.enforce_admins } });
   }
   if (sub === `${root}/rules/branches/main?per_page=100`) return ok(scenario.rules ?? []);
   if (sub === `${root}/pulls/${PR}`) {

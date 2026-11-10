@@ -112,6 +112,42 @@ function mergeCli(scenario: PublicationMergeScenario, extraArgs: readonly string
 const policy = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
 const QUEUE_ON = { policyBase: POLICY_QUEUE, policyHead: POLICY_QUEUE };
 
+describe('publication merge uses base protection contexts', () => {
+  const contexts = ['ubuntu-latest / Node 22.22.x', 'Governance Verify'];
+  const checks = [
+    { name: contexts[0]!, bucket: 'pass', link: `https://github.com/${REPOSITORY}/actions/runs/123/job/456` },
+    { name: contexts[1]!, bucket: 'pass', link: 'https://ci.example.com/build/42' },
+  ];
+
+  test('all protected contexts green allow a different workflow', () => {
+    const { result, mutations, calls } = mergeInProcess(passingScenario({ requiredContexts: contexts,
+      requiredChecks: checks, requiredRun: { path: '.github/workflows/verify.yml' } }));
+    expect(result.exit_code).toBe(0);
+    expect(mutations).toHaveLength(1);
+    expect(calls.filter(args => args[1]?.endsWith('/branches/main/protection'))).toHaveLength(1);
+  });
+
+  test.each([
+    ['missing', checks.slice(0, 1), contexts, {}, 'provider_data_incomplete'],
+    ['red', [checks[0]!, { ...checks[1]!, bucket: 'fail' }], contexts, {}, 'checks_failed'],
+    ['ruleset red', [...checks, { name: 'Ruleset Check', bucket: 'fail', link: 'https://ci.example.com/ruleset/42' }], contexts, {}, 'checks_failed'],
+    ['ruleset pending', [...checks, { name: 'Ruleset Check', bucket: 'pending', link: 'https://ci.example.com/ruleset/42' }], contexts, {}, 'checks_pending'],
+    ['ruleset Actions head mismatch', [...checks.map(check => ({ ...check, link: 'https://ci.example.com/build/42' })), { name: 'Ruleset Check', bucket: 'pass', link: checks[0]!.link }], contexts, { head_sha: 'f'.repeat(40) }, 'provider_data_incomplete'],
+    ['empty protection', checks, [], {}, 'provider_data_incomplete'],
+    ['another Actions head', checks, contexts, { head_sha: 'f'.repeat(40) }, 'provider_data_incomplete'],
+    ['second Actions context has another head', [{ ...checks[0]!, link: checks[1]!.link }, { ...checks[1]!, link: checks[0]!.link }], contexts, { head_sha: 'f'.repeat(40) }, 'provider_data_incomplete'],
+    ['Actions link missing', [{ ...checks[0]!, workflow: 'Verify', link: '' }, checks[1]!], contexts, {}, 'provider_data_incomplete'],
+    ['Actions from another repository', [{ ...checks[0]!, link: 'https://github.com/foreign/repo/actions/runs/123/job/456' }, checks[1]!], contexts, {}, 'provider_data_incomplete'],
+    ['another Actions PR', checks, contexts, { pull_requests: [{ number: 99, head: { sha: HEAD }, base: { sha: BASE } }] }, 'provider_data_incomplete'],
+    ['another Actions base', checks, contexts, { pull_requests: [{ number: PR, head: { sha: HEAD }, base: { sha: 'f'.repeat(40) } }] }, 'provider_data_incomplete'],
+  ] as const)('%s refuses the merge', (_label, requiredChecks, requiredContexts, requiredRun, blocker) => {
+    const { result, mutations } = mergeInProcess(passingScenario({ requiredChecks, requiredContexts, requiredRun }));
+    expect(result.document).toMatchObject({ ok: false, exit_code: 4, error: 'merge_readiness_blocked' });
+    expect(failureOf(result).blockers?.map(value => value.code)).toContain(blocker);
+    expect(mutations).toHaveLength(0);
+  });
+});
+
 describe('publication merge refusals send no mergePullRequest', () => {
   test.each([
     ['off', policy({ publication: { acceptance_merge: 'off' } })],

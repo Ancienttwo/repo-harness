@@ -1053,6 +1053,7 @@ test('review publish turns a P1 receipt into one unresolved thread that merge re
       if (args[0] !== 'api') return { status: 1, stdout: '', stderr: 'unexpected readiness call: ' + args.join(' ') };
       const path = args[1] ?? '';
       if (path === `repos/${SLUG}`) return { status: 0, stdout: JSON.stringify({ id: 1, node_id: 'R_publish', full_name: SLUG, default_branch: 'main' }) };
+      if (path === `repos/${SLUG}/branches/main/protection`) return { status: 0, stdout: JSON.stringify({ required_status_checks: { contexts: ['Required / CI'] } }) };
       if (path === `repos/${SLUG}/actions/runs/123`) {
         return { status: 0, stdout: JSON.stringify({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: PUBLISH_HEAD,
           status: 'completed', conclusion: 'success', pull_requests: [{ number: PR_NUMBER, head: { sha: PUBLISH_HEAD }, base: { sha: PUBLISH_BASE } }] }) };
