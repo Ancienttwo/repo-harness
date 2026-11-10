@@ -746,12 +746,12 @@ describe("repo-harness seats reset (#1972)", () => {
    */
   function withReset(fn: (f: { handoff: string; body: string; sha: (text: string) => string; state: (patch: Record<string, unknown>) => void;
     reset: (input?: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void; notify?: SeatResetNotify }) => Promise<unknown>;
-    home: string; sends: () => string[]; calls: () => string[]; log: () => { kind: string; detail: string; notice: string; requested_at: string }[] }) => Promise<void>) {
+    home: string; sends: () => string[]; calls: () => string[]; log: () => { kind: string; detail: string; notice: string; requested_at: string }[] }) => Promise<void>, seat: "advisor" | "orchestrator" = "advisor") {
     return async () => {
       const home = mkdtempSync(join(tmpdir(), "seats-reset-"));
       // The handoff path is fixed under /tmp; a repository id per run keeps the runs apart.
       const repository = String(9_000_000_000 + process.pid * 10 + (runs += 1));
-      const dir = join("/tmp/repo-harness-seats", repository, "advisor");
+      const dir = join("/tmp/repo-harness-seats", repository, seat);
       const handoff = join(dir, "handoff.md");
       try {
         mkdirSync(join(home, "bin"));
@@ -764,7 +764,7 @@ fs.appendFileSync("${home}/calls.log", [cmd, ...rest].join(" ") + "\\n");
 const out = value => process.stdout.write(JSON.stringify(value));
 const session = transcript => fs.writeFileSync("${dir}/session.json", JSON.stringify({ session_id: "s", transcript_path: transcript, source: "clear", started_at: new Date().toISOString() }));
 if (cmd === "ls") out({ terminals: st.terminals });
-if (cmd === "get") out({ address: "t5", state: "live", labels: { "repo-harness.seat": "advisor" }, turn: 3, foreground: { pid: 1, name: st.foreground, argv: [], cwd: "/" } });
+if (cmd === "get") out({ address: rest.at(-1), state: "live", labels: rest.at(-1) === "t2" ? st.callerLabels : { "repo-harness.seat": "${seat}", "repo-harness.repository": "${repository}" }, turn: 3, foreground: { pid: 1, name: st.foreground, argv: [], cwd: "/" } });
 if (cmd === "wait") out(st.wait);
 // As the real hc: keys arrive as typed input; send wraps its text in an envelope, so a sent slash command is chat text.
 if (cmd === "keys") {
@@ -792,7 +792,8 @@ if (cmd === "send") {
 fs.writeFileSync("${home}/state.json", JSON.stringify(st));
 `);
         chmodSync(join(home, "bin", "hc"), 0o755);
-        let current: Record<string, unknown> = { terminals: [{ address: "t5", state: "live" }], wait: ended, signal: true, exit: true, foreground: "claude", prompts: 0, evidenceFrom: 1, errorUntil: 0, answers: [] };
+        const callerLabels = { "repo-harness.seat": seat === "advisor" ? "orchestrator" : "advisor", "repo-harness.repository": repository };
+        let current: Record<string, unknown> = { callerLabels, terminals: [{ address: "t5", state: "live" }], wait: ended, signal: true, exit: true, foreground: "claude", prompts: 0, evidenceFrom: 1, errorUntil: 0, answers: [] };
         const state = (patch: Record<string, unknown>) => { current = { ...current, ...patch }; writeFileSync(join(home, "state.json"), JSON.stringify(current)); };
         state({});
         writeFileSync(join(home, "calls.log"), "");
@@ -850,6 +851,28 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
     // An invalid handoff path names no seat, so it has no log entry.
     expect(log().map(({ kind }) => kind)).toEqual(["request_missing", "caller_unknown", "requester_not_found", "requester_busy"]);
   }));
+
+  test.each([
+    ["advisor", "repository", "1"], ["advisor", "repository", undefined],
+    ["advisor", "seat", "advisor"], ["advisor", "seat", "worker"], ["advisor", "seat", undefined],
+    ["orchestrator", "seat", "orchestrator"], ["advisor", "labels", undefined],
+  ] as const)("caller mismatch: target %s, %s=%s sends no message or key", (seat, field, value) => withReset(async ({ handoff, reset, state, calls, log }) => {
+    const labels: Record<string, string> = { "repo-harness.repository": dirname(dirname(handoff)).split("/").at(-1)!, "repo-harness.seat": seat === "advisor" ? "orchestrator" : "advisor" };
+    if (value === undefined) delete labels[`repo-harness.${field}`];
+    else labels[`repo-harness.${field}`] = value;
+    state({ callerLabels: field === "labels" ? {} : labels });
+    // Refuse both /clear for a valid handoff and REWRITE for a missing handoff.
+    expect(await reset()).toEqual({ error: "caller_unknown", outcome: "nothing_sent" });
+    expect(await reset({ handoff: false })).toEqual({ error: "caller_unknown", outcome: "nothing_sent" });
+    expect(calls()).toEqual([]);
+    const required = field === "labels" ? Object.entries(labels).map(([key, value]) => `${key}=${value}`) : [`repo-harness.${field}`];
+    for (const label of required) expect(log().map(({ detail }) => detail)).toEqual(Array(2).fill(expect.stringContaining(label)));
+  }, seat)());
+
+  test("an advisor peer can reset the orchestrator in the same repository", withReset(async ({ reset, sends }) => {
+    expect(await reset()).toEqual({ requester: "t5", seat: "orchestrator", relaunched: false, logErrors: [] });
+    expect(sends()).toEqual(["/clear", expect.stringContaining("You are orchestrator.")]);
+  }, "orchestrator"));
 
   test("a failed handoff check asks for 3 rewrites of one request, then tells the requester to continue", withReset(async ({ reset, sha, body, state, sends, log }) => {
     state({ sendFail: true });

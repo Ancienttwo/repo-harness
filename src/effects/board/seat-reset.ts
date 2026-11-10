@@ -2,10 +2,10 @@ import { createHash } from 'crypto';
 import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
 import {
-  SEAT_NO_RESET_MESSAGE, SEAT_RESET_RETRIES, handoffIdentity, missingHandoffSections, seatResetClaimPath, seatResetLogPath, seatResetRequestPath,
+  RESET_SEATS, SEAT_NO_RESET_MESSAGE, SEAT_RESET_RETRIES, handoffIdentity, missingHandoffSections, seatResetClaimPath, seatResetLogPath, seatResetRequestPath,
   isSeatSessionSource, seatResetDirectory, seatResumePrompt, seatRewriteMessage, seatSessionPath, type SeatResetIdentity, type SeatSessionSource,
 } from '../../core/board/seat-reset';
-import { RH_LABEL, hcGet, hcKeys, hcList, hcSend, hcWait, type HerdrCoreOptions } from '../terminal/herdr-core';
+import { HerdrCoreError, RH_LABEL, hcGet, hcKeys, hcList, hcSend, hcWait, type HcLabels, type HerdrCoreOptions } from '../terminal/herdr-core';
 import { readNotifyConfig } from '../terminal/notify-read';
 
 const TAIL_BYTES = 1024 * 1024;
@@ -391,6 +391,19 @@ class SeatResetRun {
     }
     this.requester = terminals[0]!.address;
     if (this.requester === caller) throw this.refuse('caller_unknown', 'nothing_sent', `The ${this.identity.seat} seat cannot reset itself: run the reset from the peer seat.`);
+    const peer = RESET_SEATS.find(seat => seat !== this.identity.seat)!;
+    let labels: HcLabels;
+    try {
+      labels = hcGet(caller, this.options).labels;
+    } catch (error) {
+      if (!(error instanceof HerdrCoreError) || error.reason !== 'unowned') throw error;
+      throw this.refuse('caller_unknown', 'nothing_sent', `${caller} has no repo-harness label; the reset of ${this.identity.seat} requires ${RH_LABEL.repository}=${this.identity.repository} and ${RH_LABEL.seat}=${peer}.`);
+    }
+    for (const [key, expected] of [[RH_LABEL.repository, this.identity.repository], [RH_LABEL.seat, peer]] as const) {
+      if (labels[key] !== expected) {
+        throw this.refuse('caller_unknown', 'nothing_sent', `${caller} carries ${key}=${labels[key] ?? '(missing)'}; the reset of ${this.identity.seat} requires the caller to carry ${key}=${expected}.`);
+      }
+    }
     this.caller = caller;
     this.prompt = seatResumePrompt(this.identity, caller);
   }
