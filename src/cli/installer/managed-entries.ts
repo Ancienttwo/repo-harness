@@ -16,6 +16,7 @@
 
 import { accessSync, constants, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
+import { isRecord } from '../../core/evidence/is-record';
 import { bunGlobalPackageRoot } from './skill-projection';
 import { routesForHost, type AdapterHost, type Route } from '../hook/route-registry';
 import {
@@ -134,10 +135,6 @@ interface ActualManagedHook {
   readonly timeout: unknown;
   readonly route: { readonly event: string; readonly routeId: string } | null;
   readonly index: number;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 /**

@@ -1,6 +1,7 @@
 import type { ReviewAdmission, ReviewAuthorityContext } from './authority-context';
 import type { RequiredCheckFailureEvidenceV1 } from '../evidence/required-check-evidence';
 import type { RequiredCheckCoverageEvidenceV1 } from '../publication/required-check-coverage';
+import { isRecord } from '../evidence/is-record';
 import { sha256Prefixed } from '../evidence/sha256';
 import { modelFamily } from './model-family';
 import { isReviewRuntimeId, type ReviewRuntimeId } from './review-runtimes';
@@ -381,10 +382,6 @@ export function authorityFingerprint(content: string): string {
     .replace(/^> \*\*Status\*\*:[ \t]*.+$/m, '> **Status**: <lifecycle>')
     .replace(/^> \*\*Last Updated\*\*:[ \t]*.+$/m, '> **Last Updated**: <lifecycle>');
   return sha256(normalized);
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function parseAcceptancePolicy(contractText: string): AcceptancePolicy {

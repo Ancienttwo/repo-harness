@@ -7,6 +7,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { isRecord } from '../../core/evidence/is-record';
 import { buildManagedHooks, type HookEntry, type HookHost } from '../installer/managed-entries';
 import { gitExecFileSync } from '../../effects/git/runner';
 
@@ -141,10 +142,6 @@ function resolveRepoRoot(cwd: string): string {
 
 function readJson(filePath: string): unknown {
   return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function pushJsonFailure(findings: SecurityFinding[], filePath: string, err: unknown): void {

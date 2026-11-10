@@ -2,6 +2,7 @@ import { execFile, spawn, spawnSync, type ExecFileException, type SpawnSyncRetur
 import { createInterface } from 'readline';
 import type { AttentionHostFailureV1, AttentionHostPortsV1, AttentionWatcherV1 } from '../../core/board/attention-delivery';
 import type { BoardHostPortsV1, BoardSeatTerminalReadV1 } from '../../core/board/board';
+import { isRecord } from '../../core/evidence/is-record';
 import { NOTIFY_SECRET_KEYS } from '../../core/decision/notify-secret-keys';
 import { HC_LOCAL_ADDRESS, isRemoteHcAddress } from '../../core/terminal/hc-address';
 
@@ -147,10 +148,6 @@ function labelArgs(labels: HcLabels): string[] {
 function address(value: string): string {
   if (!isHcAddress(value)) throw new HerdrCoreError('hc', 'invalid_address', undefined, undefined, `${JSON.stringify(value)} is not a t<n> address`);
   return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function parseObject(program: HerdrCoreProgram, text: string): Record<string, unknown> {

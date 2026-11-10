@@ -6,6 +6,7 @@ import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { NATIVE_CONTEXT_PROFILE, decodeArchitectureHistory, type ArchContextError, type ArchitectureHistory, type NativeContextExportV1 } from 'archctx-contracts';
+import { isRecord } from '../../core/evidence/is-record';
 import { capabilityRegistryFromNativeContext, type ArchcontextPathOwner } from '../../core/capabilities/registry';
 import { ARCHCTX_REQUIRED_VERSION, ARCHCONTEXT_MANIFEST, ArchctxClientError, decodeArchitectureHandEdits, decodeNativeContextExport, type NativeContextSource } from '../../core/architecture/projection';
 import type { ArchctxProviderOptions } from '../../core/architecture/contracts';
@@ -25,10 +26,6 @@ function freezeNativeContext(value: unknown): void {
   if (value === null || typeof value !== 'object') return;
   for (const child of Object.values(value)) freezeNativeContext(child);
   Object.freeze(value);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 /** Worktree reads stay fresh. Immutable commit reads share a four-entry LRU. */

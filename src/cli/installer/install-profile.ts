@@ -5,6 +5,7 @@ import { configurationReceiptPath } from './configuration-ownership';
 import { globalContextBackupEligible, globalContextPath } from './global-context';
 import { acquireRuntimeTransactionLock, assertRuntimeTransactionContext, globalRuntimeScope, runtimeTransactionRoot, type RuntimeTransactionContext, type RuntimeTransactionLock } from '../../effects/locking/runtime-transaction-lock';
 import { randomUUID } from 'crypto';
+import { isRecord } from '../../core/evidence/is-record';
 import { sha256Prefixed } from '../../core/evidence/sha256';
 import {
   cpSync,
@@ -1046,10 +1047,6 @@ export function prepareInstallSelectionSwitch(
   const current = readInstallState(env);
   if (!current) return [];
   return removeRetiredOwnedSurfaces(plugins, current, env);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** The path allowlist, type and hash shape of a recorded ownership surface. */

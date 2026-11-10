@@ -31,7 +31,6 @@ import {
   authorityFingerprint,
   buildAcceptanceVerificationObservation,
   fail,
-  isRecord,
   modelRelation,
   renderAcceptanceProjection,
   sha256,
@@ -55,6 +54,7 @@ import {
   type ReviewSubject,
   type UserWaiverGrant,
 } from '../../core/review/acceptance-receipt';
+import { isRecord } from '../../core/evidence/is-record';
 import {
   validateRequiredCheckFailureEvidenceList,
   type RequiredCheckFailureEvidenceV1,

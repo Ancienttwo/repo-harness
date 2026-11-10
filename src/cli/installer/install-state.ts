@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { version as PACKAGE_VERSION } from '../../../package.json';
+import { isRecord } from '../../core/evidence/is-record';
 import { isPluginId, PLUGIN_IDS, type PluginId, type PluginSelection } from '../../core/skill-surface/plugin-manifest';
 
 /**
@@ -57,10 +58,6 @@ export function installProfileStatePath(env: NodeJS.ProcessEnv = process.env): s
 
 export function enabledPlugins(state: Pick<RecordedInstallState, 'plugins'>): readonly PluginId[] {
   return state.plugins.map(plugin => plugin.id);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function invalidInstallState(path: string, detail: string): InstallStateError {
