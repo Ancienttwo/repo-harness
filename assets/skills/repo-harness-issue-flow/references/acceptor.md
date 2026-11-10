@@ -90,8 +90,11 @@ The table rules govern how the row combines with the review.
    PR diffs (from the one merge base with main) must not be empty. The
    board reads the rows of the new head and of the newest proven
    reviewed head only, so reviews split across older heads do not add
-   up. A FAIL row on any proven head, or on the new head, stops the
-   carry, and a git error on any candidate proves none. The board then shows `via: sync` with
+   up. The newest proven reviewed head is the subject of the newest
+   record with a row on a proven head. A FAIL row on that head, in any
+   record, or on the new head, stops the carry. A FAIL row on an older
+   proven head that a newer record supersedes does not stop it. A git
+   error on any candidate proves none. The board then shows `via: sync` with
    `carried_from` (#2074), and the new head needs CI only. Any other sync
    head (a conflict, even one resolved to the PR side; an edit in the
    merge; a new commit; a failed git step) needs a sync check: a review

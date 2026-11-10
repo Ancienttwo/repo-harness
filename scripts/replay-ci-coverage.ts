@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync } from 'node
 import { tmpdir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { analyzeAffectedTests, isDocumentationPath } from './select-ci-coverage';
+import { isDocumentationPath } from '../src/core/ci/documentation-path';
+import { analyzeAffectedTests } from './select-ci-coverage';
 import { auditDroppedTests, type RemovedEdge, type DroppedWitness } from './ci-edge-audit';
 import { discoverDocumentationConsumers } from './ci-documentation-consumers';
 
