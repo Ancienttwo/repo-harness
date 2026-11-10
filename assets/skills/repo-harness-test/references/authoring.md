@@ -14,13 +14,13 @@ A new test file does not by itself require a full run.
 
 ## One owner per subject
 
-Find the existing tests for the boundary before adding another file.
-`tests/helper-scripts.test.ts` was split into script-owned suites in PR #420;
-distinct unit and composition tests can still cover the same subject when
+Find the existing tests for the boundary before adding another file. PR #420
+split the former helper-script suite into script-owned files, so each helper
+already has an owner (`tests/heartbeat-triage.test.ts`,
+`tests/contract-worktree.test.ts`, `tests/ship-worktrees.test.ts`).
+Distinct unit and composition tests can still cover the same subject when
 they protect different failures, as the canonical policy describes. Name files
 for their behavior or boundary; keep issue numbers in provenance.
-`tests/unit/issue-282-*` is five files (`-contention`, `-core`, `-e2e`,
-`-prd-drift`, `-store`) whose names say nothing about what each one proves.
 
 ## Use the shared repository fixture
 
