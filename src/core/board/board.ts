@@ -3,7 +3,7 @@ import { parseClosingReferences } from '../publication/closing-references';
 import type { AcceptanceMergeSwitch } from '../publication/acceptance-merge-policy';
 import type { PullRequestReadinessV2 } from '../publication/merge-readiness';
 import { isSeatStatusMessage, seatStatusMessage } from './advisor-seat';
-import { modelFamily } from '../review/acceptance-receipt';
+import { modelFamily } from '../review/model-family';
 import { readMergeHold, type BoardMergeHoldV1 } from './merge';
 import { decodePlanBlock, PlanBlockError, type PlanBlockV1 } from './plan-block';
 import {
