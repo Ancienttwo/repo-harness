@@ -30,6 +30,7 @@ import { useLocale, type OperatorLocale, type OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
 import { NavRail, RailMenuButton, switchOption, useRailCollapsed, type RepositorySwitchModel } from './NavRail';
 import type { ArchitectureMapReader } from './ArchitectureMap';
+import type { HistoryReader } from './ArchitectureHistory';
 import type { ArchitectureSource } from './ArchitectureWorkspace';
 import type { NotifyStatusReader } from './NotifyStatus';
 import { RepositoriesPage } from './RepositoriesPage';
@@ -122,6 +123,8 @@ export interface OperatorAppProps {
   readonly readTaskMessages?: TaskMessagesReader;
   /** The architecture map route; the Architecture workspace reads it from the server when absent. */
   readonly readArchitectureMap?: ArchitectureMapReader;
+  /** The architecture history route; the History view reads it from the server when absent. */
+  readonly readArchitectureHistory?: HistoryReader;
   /** The Bot access collector's cached snapshot behind the Bots page. */
   readonly readBotAccess?: BotAccessReader;
   /** The Slack review collector's cached Dot review threads, the Bots page's second read. */
@@ -315,6 +318,7 @@ export function OperatorApp({
   readExecution = fetchExecution,
   readTaskMessages = fetchTaskMessages,
   readArchitectureMap,
+  readArchitectureHistory,
   readBotAccess = fetchBotAccess,
   readBotReviews = fetchBotReviews,
   readAgentsSettings = fetchAgentsSettings,
@@ -504,7 +508,7 @@ export function OperatorApp({
           {workspace === 'tests' && <TestsPage repositoryId={activeRepository?.repository_id ?? null} readTests={readTests} generation={refreshGeneration} now={now} t={t} />}
           {workspace === 'architecture' && (!activeRepository ? <p role="status" className="text-sm text-kumo-subtle">{t('repository.select')}</p>
             : <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
-              <ArchitectureWorkspace repositoryId={activeRepository.repository_id} github={(devSnapshot && repositoryById(devSnapshot, activeRepository.repository_id)?.github) ?? null} moduleId={place.module} refreshGeneration={refreshGeneration} readMap={readArchitectureMap}
+              <ArchitectureWorkspace repositoryId={activeRepository.repository_id} github={(devSnapshot && repositoryById(devSnapshot, activeRepository.repository_id)?.github) ?? null} moduleId={place.module} refreshGeneration={refreshGeneration} readMap={readArchitectureMap} readHistory={readArchitectureHistory}
                 onModule={module => openPlace({ workspace: 'architecture', module, item: null })} onSource={setArchitectureSource} t={t} />
             </Suspense>)}
           {workspace === 'bots' && <BotsPage view={botAccess} reviews={botReviews} now={now} t={t} />}

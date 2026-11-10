@@ -48,7 +48,7 @@ describe('seat quota routing', () => {
       .toContain(`${!reserved && task === 'important_fast' ? 'worker-important-fast' : selected} (`);
     expect(lines.find(line => line.startsWith('route frontend:'))).toContain(reserved ? 'none (' : 'worker-important (');
     expect(lines).toContain(reserved ? `explorer: haiku high (claude ${account.state === 'exhausted' ? 'exhausted' : mode}; pass model haiku when you call the explorer)` : 'explorer: default');
-    expect(effectiveSeatConfig('advisor', DEFAULT_SEATS_CONFIG, quota).effort).toBe(reserved ? 'high' : 'max');
+    expect(effectiveSeatConfig('advisor', DEFAULT_SEATS_CONFIG, quota).effort).toBe('high');
     expect(effectiveSeatConfig('orchestrator', seats, quota)).toEqual(reserved
       ? { ...seats.orchestrator, model: 'opus', effort: 'high' } : seats.orchestrator);
     if (reserved) expect(lines).toContain(`reviewer: none (claude ${account.state}, reserved for advisor and orchestrator)`);

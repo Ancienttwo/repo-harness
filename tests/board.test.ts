@@ -17,7 +17,7 @@ import { boardMergeDecisions } from '../src/core/board/merge';
 import { provenMergeOnlySyncs } from '../src/effects/board/merge-only-sync';
 import { runBoardCloseout, stopCodegraphServers } from '../src/effects/board/closeout';
 import type { RunArchctxProcess } from '../src/core/architecture/contracts';
-import { githubRemoteRepository, parseRefs } from '../src/core/board/source';
+import { githubRemoteRepository, parseRecordFindings, parseRefs } from '../src/core/board/source';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
 import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
 import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herdr-core';
@@ -30,7 +30,7 @@ import { HC_MIN_VERSION } from '../src/core/terminal/herdr-pin';
 import { BoardParentsError, collectBoardParents } from '../src/effects/board/parents';
 import { hcStatusClass, ISSUE_FLOW_WORKER_LIMIT } from '../src/core/board/desk';
 import { boardSummary, decodeBoardSummaries } from '../src/core/board/summary';
-import { renderAcceptanceClaim, renderAcceptanceRecord, type ReviewPublishReceipt } from '../src/core/review/review-publish';
+import { renderAcceptanceClaim, renderAcceptanceRecord, reviewPayloadFromReceipt, type ReviewPublishReceipt } from '../src/core/review/review-publish';
 import type { ReviewObserver } from '../src/effects/board/review';
 import { BoardCollectError } from '../src/effects/board/collect';
 import type { ModelRelation } from '../src/core/review/acceptance-receipt';
@@ -1222,6 +1222,65 @@ test('R5 and the effective tier read the High list: board record-writing code is
   expect(view(['.github/workflows/ci.yml'])).toEqual(['high', 'not_accepted']);
   // An incomplete file list can hide a High path: High, and R5 lists it as unevaluated.
   expect(view([boardWriter], 'tier:medium', true)).toEqual(['high', 'not_accepted', 'files_incomplete: #1499']);
+});
+
+test('acceptance disposition: a FAIL row is ignored only when every finding of its record is resolved for that record and subject', () => {
+  const boardWriter = 'src/effects/board/review.ts';
+  const base = 'https://github.com/Ancienttwo/repo-harness';
+  const receipt = (subject_sha: string, verdict: 'PASS' | 'FAIL', round: number): ReviewPublishReceipt => ({
+    protocol: 1, kind: 'repo-harness-review-publish-receipt', round, subject_sha, risk_tier: 'medium', reviewer: { harness: 'codex', actual_model: null }, verdict, model_relation: 'different-family', summary: 'Reviewed.',
+    findings: verdict === 'PASS' ? [] : [
+      { id: 'R1-1', severity: 'P2', path: 'a.ts', line: 1, evidence: 'e', fix: 'f' },
+      { id: 'R1-2', severity: 'P2', path: 'b.ts', line: 2, evidence: 'e', fix: 'f' },
+    ],
+  });
+  const failAt = '2026-11-02T22:00:00Z';
+  const failUrl = `${base}/pull/1499#issuecomment-${Date.parse(failAt)}`;
+  const status = (dispositions: string[], mangleSecond = false) => {
+    const read = replay({
+      owners: (results) => { results.push({ path: boardWriter, matched: false, ambiguous: false, owningCapabilityId: null }); },
+      parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: 'tier:medium' }); },
+      pulls: (data) => {
+        const { pr1499 } = data.repository;
+        const head = pr1499.headRefOid;
+        pr1499.files = { totalCount: 1, nodes: [{ path: boardWriter }] };
+        const claimAt = '2026-11-02T21:01:00Z';
+        const claimUrl = `${base}/pull/1499#issuecomment-${Date.parse(claimAt)}`;
+        pr1499.comments.nodes.push(comment(renderAcceptanceClaim(receipt(head, 'PASS', 1)), claimAt));
+        const failRecord = renderAcceptanceRecord(receipt(head, 'FAIL', 1), claimUrl);
+        // A bullet marker outside the record shape makes the finding list unreadable.
+        pr1499.comments.nodes.push(comment(mangleSecond ? failRecord.replace('- P2 R1-2', '* P2 R1-2') : failRecord, failAt));
+        const passClaimAt = '2026-11-02T22:20:00Z';
+        pr1499.comments.nodes.push(comment(renderAcceptanceClaim(receipt(head, 'PASS', 2)), passClaimAt));
+        pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt(head, 'PASS', 2), `${base}/pull/1499#issuecomment-${Date.parse(passClaimAt)}`), '2026-11-02T22:30:00Z'));
+        dispositions.forEach((body, index) => pr1499.comments.nodes.push(comment(body, `2026-11-02T22:4${index}:00Z`)));
+      },
+    });
+    return read.pull_requests.find(entry => entry.number === 1499)!.acceptance.status;
+  };
+  const disposition = (findings: string, record = failUrl, subject = replay().pull_requests.find(entry => entry.number === 1499)!.head_sha) =>
+    `repo-harness acceptance disposition\nRecord: ${record}\nSubject: ${subject}\nFindings: ${findings}\nDecision: ${base}/issues/2202#issuecomment-1\n`;
+  expect(status([])).toBe('not_accepted');
+  expect(status([disposition('R1-1')])).toBe('not_accepted');
+  expect(status([disposition('R1-1'), disposition('R1-2')])).toBe('accepted');
+  expect(status([disposition('R1-1, R1-2')])).toBe('accepted');
+  expect(status([disposition('R1-1')], true)).toBe('not_accepted');
+  expect(status([disposition('R1-1, R1-2')], true)).toBe('not_accepted');
+  expect(status([disposition('R1-1, R1-2', `${base}/pull/1499#issuecomment-7`)])).toBe('not_accepted');
+  expect(status([disposition('R1-1, R1-2', failUrl, 'd'.repeat(40))])).toBe('not_accepted');
+});
+
+test('a rendered record with multiline finding values parses to its finding IDs', () => {
+  const receipt: ReviewPublishReceipt = {
+    protocol: 1, kind: 'repo-harness-review-publish-receipt', round: 1, subject_sha: 'a'.repeat(40), risk_tier: 'medium', reviewer: { harness: 'codex', actual_model: null }, verdict: 'FAIL', model_relation: 'different-family', summary: 'Reviewed.',
+    findings: [
+      { id: 'R1-1', severity: 'P2', path: 'a.ts', line: 1, evidence: 'first line\n  second line', fix: 'one\n\ntwo' },
+      { id: 'R1-2', severity: 'P3', message: 'nit\ntext' },
+    ],
+  };
+  expect(parseRecordFindings({ url: 'u', created_at: '2026-11-02T22:00:00Z', author_association: 'OWNER', body: renderAcceptanceRecord(receipt, 'x') })).toEqual(['R1-1', 'R1-2']);
+  // The GitHub review body is not the record: it keeps the line breaks of a finding outside the diff.
+  expect(reviewPayloadFromReceipt(receipt, new Map()).body).toContain('first line\n  second line');
 });
 
 test('A2 finds a batch behind an overlapping pull request, and a plan hold removes a PR from A1, A2 and R4', () => {

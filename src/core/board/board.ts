@@ -11,13 +11,16 @@ import {
   commentId,
   field,
   newestProtocolComment,
+  parseAcceptanceDisposition,
   parseAcceptanceRecord,
+  parseRecordFindings,
   parseClaimStatus,
   parseRefs,
   protocolComments,
   type BoardCommentV1,
   type BoardParentReadV1,
   type BoardPullRequestReadV1,
+  type AcceptanceDispositionV1,
   type AcceptanceRowV1,
   type BoardSubIssueReadV1,
   type ClaimStatusV1,
@@ -41,6 +44,7 @@ const PLAN_HEADER = 'repo-harness plan';
 const CLAIM_HEADER = 'repo-harness issue claim';
 const CLAIM_STATUS_HEADER = 'repo-harness issue claim status';
 export const ACCEPTANCE_RECORD_HEADER = 'repo-harness acceptance record';
+export const ACCEPTANCE_DISPOSITION_HEADER = 'repo-harness acceptance disposition';
 const ACCEPTANCE_CLAIM_HEADER = 'repo-harness acceptance claim';
 const REQUIRED_CHECK = 'Required / CI';
 
@@ -372,16 +376,28 @@ function reviewedSubjects(read: BoardPullRequestReadV1, owners: BoardPathOwnersV
   return new Set([read.head_sha, subject]);
 }
 
+/**
+ * A FAIL row that a disposition resolves: the disposition names the row's record and subject and every finding of the record. A PASS
+ * row, a record with an unreadable finding, or one unresolved finding keeps the row failing. No time or round supersedes a FAIL row.
+ */
+function resolvedFail(record: BoardCommentV1, row: AcceptanceRowV1, dispositions: readonly AcceptanceDispositionV1[]): boolean {
+  const findings = row.verdict === 'FAIL' ? parseRecordFindings(record) : null;
+  if (findings === null) return false;
+  const resolved = new Set(dispositions.filter(entry => entry.record === commentId(record.url) && entry.subject_sha === row.subject_sha).flatMap(entry => entry.findings));
+  return findings.every(id => resolved.has(id));
+}
+
 function acceptance(read: BoardPullRequestReadV1, subjects: ReadonlySet<string>, check: BoardRequiredCheckV1, closedTiers: readonly (BoardTier | null)[], rule: ReviewRule): BoardAcceptanceV1 {
   // One round is one subject SHA, and a High round has two reviews of it (`acceptor.md`, section 2): every record counts.
   const records = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER);
   const passes: { readonly record: BoardCommentV1; readonly subject: string }[] = [];
   const head: AcceptanceRowV1[] = [];
+  const dispositions = protocolComments(read.comments, ACCEPTANCE_DISPOSITION_HEADER).flatMap(comment => parseAcceptanceDisposition(comment) ?? []);
   let failed = false;
   for (const record of records) {
     const rows = parseAcceptanceRecord(record);
     if (rows === null) return { status: 'unknown', reason: 'acceptance_record_unparsed', evidence_url: record.url };
-    const own = rows.filter(row => subjects.has(row.subject_sha));
+    const own = rows.filter(row => subjects.has(row.subject_sha) && !resolvedFail(record, row, dispositions));
     head.push(...own);
     if (own.some(row => row.verdict === 'FAIL')) failed = true;
     else if (own.length > 0) passes.push({ record, subject: own.some(row => row.subject_sha === read.head_sha) ? read.head_sha : own[0]!.subject_sha });
