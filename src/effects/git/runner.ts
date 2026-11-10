@@ -96,6 +96,68 @@ export function gitChildEnv(args: readonly string[], env: NodeJS.ProcessEnv | un
   return withoutProviderTokens(env);
 }
 
+const REDACTED = '[redacted]';
+
+/** Provider-token values in the parent environment and in the caller env, longest first. */
+function providerTokenValues(env: NodeJS.ProcessEnv | undefined): string[] {
+  const values = new Set<string>();
+  for (const source of [process.env, env ?? {}]) {
+    for (const [key, value] of Object.entries(source)) {
+      if (PROVIDER_TOKEN_ENV.has(key.toUpperCase()) && value) values.add(value);
+    }
+  }
+  return [...values].sort((left, right) => right.length - left.length);
+}
+
+function redactText(text: string, values: readonly string[]): string {
+  return values.reduce((current, value) => current.split(value).join(REDACTED), text);
+}
+
+/** Buffers are matched byte for byte (latin1), so binary git output outside a token stays intact. */
+function redactOutput<T extends string | Buffer | null | undefined>(output: T, values: readonly string[]): T {
+  if (typeof output === 'string') return redactText(output, values) as T;
+  if (!Buffer.isBuffer(output)) return output;
+  const bytes = values.map(value => Buffer.from(value));
+  if (!bytes.some(value => output.includes(value))) return output;
+  return Buffer.from(redactText(output.toString('latin1'), values.map(value => Buffer.from(value).toString('latin1'))), 'latin1') as T;
+}
+
+function redactThrown(error: unknown, values: readonly string[]): unknown {
+  if (!(error instanceof Error)) return error;
+  const fields = error as Error & { stdout?: unknown; stderr?: unknown; output?: unknown };
+  error.message = redactText(error.message, values);
+  if (typeof error.stack === 'string') error.stack = redactText(error.stack, values);
+  fields.stdout = redactOutput(fields.stdout as string | Buffer | undefined, values);
+  fields.stderr = redactOutput(fields.stderr as string | Buffer | undefined, values);
+  if (Array.isArray(fields.output)) fields.output = fields.output.map(entry => redactOutput(entry as Buffer | null, values));
+  return error;
+}
+
+function redactSpawnResult<R extends SpawnSyncReturns<string | Buffer>>(result: R, values: readonly string[]): R {
+  result.stdout = redactOutput(result.stdout, values);
+  result.stderr = redactOutput(result.stderr, values);
+  if (Array.isArray(result.output)) result.output = result.output.map(entry => redactOutput(entry, values));
+  if (result.error) redactThrown(result.error, values);
+  return result;
+}
+
+type Stdio = ExecFileSyncOptions['stdio'];
+
+/**
+ * Stderr of a call that would reach the parent stderr unredacted: an explicit inherit, or the
+ * default of `execFileSync`. The call captures it instead, and the caller writes the redacted text.
+ */
+function captureInheritedStderr(stdio: Stdio, forwardsByDefault: boolean): Stdio | undefined {
+  if (stdio === undefined) return forwardsByDefault ? ['pipe', 'pipe', 'pipe'] : undefined;
+  if (stdio === 'inherit') return ['inherit', 'inherit', 'pipe'];
+  if (Array.isArray(stdio) && (stdio[2] === 'inherit' || stdio[2] === 2)) return [stdio[0], stdio[1], 'pipe'];
+  return undefined;
+}
+
+function forwardStderr(stderr: string | Buffer | null | undefined, values: readonly string[]): void {
+  if (stderr && stderr.length > 0) process.stderr.write(redactOutput(stderr, values));
+}
+
 const GENERIC_GIT_NAMES = new Set(['git', 'git.exe']);
 
 export function configuredGitBinary(env: NodeJS.ProcessEnv = process.env): string {
@@ -154,10 +216,22 @@ export function gitExecFileSync(args: readonly string[], options?: GitExecBuffer
 export function gitExecFileSync(args: readonly string[], options: GitExecOptions = {}): string | Buffer {
   const bound = bindGit(args, options);
   const argv = [...args];
-  if (currentReadonlyObservation() !== undefined && options.direct !== true) {
-    return observationExecFileSync(bound.bin, argv, bound.options) as string | Buffer;
+  const values = providerTokenValues(options.env);
+  const observing = currentReadonlyObservation() !== undefined && options.direct !== true;
+  try {
+    if (observing) return redactOutput(observationExecFileSync(bound.bin, argv, bound.options) as string | Buffer, values);
+    const captured = values.length > 0 ? captureInheritedStderr(bound.options.stdio, true) : undefined;
+    if (!captured) return redactOutput(execFileSyncRaw(bound.bin, argv, bound.options), values);
+    const result = spawnSyncRaw(bound.bin, argv, { ...bound.options, stdio: captured });
+    forwardStderr(result.stderr, values);
+    if (result.error) throw result.error;
+    if (result.status !== 0) {
+      throw Object.assign(new Error(`Command failed: ${[bound.bin, ...argv].join(' ')}\n${String(result.stderr ?? '')}`), { status: result.status, signal: result.signal, stdout: result.stdout, stderr: result.stderr });
+    }
+    return redactOutput(result.stdout, values);
+  } catch (error) {
+    throw redactThrown(error, values);
   }
-  return execFileSyncRaw(bound.bin, argv, bound.options);
 }
 
 type GitSpawnStringOptions = SpawnSyncOptionsWithStringEncoding & GitCallFields;
@@ -169,10 +243,18 @@ export function gitSpawnSync(args: readonly string[], options?: GitSpawnBufferOp
 export function gitSpawnSync(args: readonly string[], options: GitSpawnOptions = {}): SpawnSyncReturns<string | Buffer> {
   const bound = bindGit(args, options);
   const argv = [...args];
+  const values = providerTokenValues(options.env);
   if (currentReadonlyObservation() !== undefined && options.direct !== true) {
-    return observationSpawnSync(bound.bin, argv, bound.options) as SpawnSyncReturns<string | Buffer>;
+    try {
+      return redactSpawnResult(observationSpawnSync(bound.bin, argv, bound.options) as SpawnSyncReturns<string | Buffer>, values);
+    } catch (error) {
+      throw redactThrown(error, values);
+    }
   }
-  return spawnSyncRaw(bound.bin, argv, bound.options);
+  const captured = values.length > 0 ? captureInheritedStderr(bound.options.stdio, false) : undefined;
+  const result = redactSpawnResult(spawnSyncRaw(bound.bin, argv, captured ? { ...bound.options, stdio: captured } : bound.options), values);
+  if (captured) forwardStderr(result.stderr, values);
+  return result;
 }
 
 export function spawnGit(args: readonly string[], options: SpawnOptions & GitCallFields = {}): ChildProcess {
@@ -213,6 +295,7 @@ export interface GitExecAsyncOptions extends GitCallFields {
  */
 export function gitExecFile(args: readonly string[], options: GitExecAsyncOptions = {}): Promise<string> {
   const { gitBin, env, cwd, timeout } = options;
+  const values = providerTokenValues(env);
   return new Promise((resolveOutput, reject) => {
     const child = spawnRaw(resolveGitExecutable(gitBin, env), [...args], { cwd, env: gitChildEnv(args, env), stdio: ['ignore', 'pipe', 'pipe'] });
     const stdout: Buffer[] = [];
@@ -234,14 +317,14 @@ export function gitExecFile(args: readonly string[], options: GitExecAsyncOption
       clearTimeout(killTimer);
       child.stdout!.destroy();
       child.stderr!.destroy();
-      const errorText = Buffer.concat(stderr).toString('utf8');
+      const errorText = redactText(Buffer.concat(stderr).toString('utf8'), values);
       const status = exited?.code ?? null;
       const signal = exited?.signal ?? null;
-      if (spawnError) reject(new GitExecError(`git ${args[0] ?? ''} could not start: ${spawnError.message}`, null, null, false, ''));
+      if (spawnError) reject(new GitExecError(`git ${args[0] ?? ''} could not start: ${redactText(spawnError.message, values)}`, null, null, false, ''));
       else if (timedOut) reject(new GitExecError(`git ${args[0] ?? ''} timed out`, null, signal, true, errorText));
       else if (overflow) reject(new GitExecError(`git ${args[0] ?? ''} output exceeded ${GIT_OUTPUT_MAX_BYTES} bytes`, null, signal, false, errorText));
       else if (status !== 0) reject(new GitExecError(`git ${args[0] ?? ''} failed (${signal ?? `exit ${status}`})`, status, signal, false, errorText));
-      else resolveOutput(Buffer.concat(stdout).toString('utf8'));
+      else resolveOutput(redactText(Buffer.concat(stdout).toString('utf8'), values));
     };
     const collect = (into: Buffer[]) => (chunk: Buffer) => {
       bytes += chunk.length;
@@ -269,4 +352,9 @@ export function gitExecFile(args: readonly string[], options: GitExecAsyncOption
       finish();
     });
   });
+}
+
+/** Output redactions for the provider-token values that a git child can print. */
+export function providerTokenRedactions(env: NodeJS.ProcessEnv | undefined): { readonly pattern: RegExp; readonly replacement: string }[] {
+  return providerTokenValues(env).map(value => ({ pattern: new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), replacement: REDACTED }));
 }

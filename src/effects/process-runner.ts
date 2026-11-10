@@ -72,7 +72,7 @@ interface SupervisedProcessReceipt {
   readonly processGroupPid: number | null;
 }
 
-const DEFAULT_REDACTIONS: readonly ProcessOutputRedaction[] = [
+export const DEFAULT_REDACTIONS: readonly ProcessOutputRedaction[] = [
   {
     pattern: /(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi,
     replacement: "$1[redacted]",

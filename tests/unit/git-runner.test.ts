@@ -149,16 +149,54 @@ describe('git runner', () => {
       // Real git: `<cmd> --help` starts the man viewer with the env the runner chose.
       const viewer = ['-c', 'help.format=man', '-c', 'man.viewer=probe', '-c', 'man.probe.cmd=printf "viewer-saw:%s" "$GH_TOKEN"; true'];
       for (const command of ['fetch', 'pull', 'push', 'clone', 'ls-remote']) {
-        expect(gitSpawnSync([...viewer, command, '--help'], { encoding: 'utf8', env: { ...process.env, HOME: root, GIT_CONFIG_NOSYSTEM: '1', ...tokens } }).stdout, command).toBe('viewer-saw:');
+        expect(gitSpawnSync([...viewer, command, '--help'], { encoding: 'utf8', env: { ...process.env, HOME: root, XDG_CONFIG_HOME: join(root, 'xdg'), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', ...tokens } }).stdout, command).toBe('viewer-saw:');
       }
       for (const args of [['-C', root, '-c', 'a=b', '--no-pager', '--git-dir=x', 'fetch'], ['--attr-source=HEAD', 'ls-remote']]) {
-        expect(gitSpawnSync(args, { gitBin, encoding: 'utf8' }).stdout, args.join(' ')).toBe(Object.values(tokens).join(''));
+        expect(gitSpawnSync(args, { gitBin, encoding: 'utf8' }).stdout, args.join(' ')).toBe('[redacted]'.repeat(Object.keys(tokens).length));
       }
     } finally {
       for (const [key, value] of Object.entries(previous)) {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('provider-token values never leave a git call in output, errors or stderr', async () => {
+    const root = tmpWorkspace('git-runner-redact');
+    const token = 'fake-redact-token-value';
+    const env = { GH_TOKEN: token };
+    try {
+      const gitBin = writeGit(root, `#!/bin/sh
+printf 'out ${token}\\n'; printf 'err ${token}\\n' >&2
+case "$2" in hang) sleep 30;; flood) head -c 1200000 /dev/zero | tr '\\0' x;; ok) exit 0;; esac
+exit 3
+`);
+      const leaked = (...parts: unknown[]) => parts.some(part => String(part ?? '').includes(token));
+      const failure = (action: () => unknown) => { try { action(); } catch (error) { return error as Error & { stderr?: unknown }; } throw new Error('expected a failure'); };
+      const written: string[] = [];
+      const realWrite = process.stderr.write;
+      process.stderr.write = ((chunk: string | Uint8Array) => { written.push(String(chunk)); return true; }) as typeof process.stderr.write;
+      let sync: Error & { stderr?: unknown };
+      try {
+        sync = failure(() => gitExecFileSync(['fetch', 'fail'], { gitBin, env, encoding: 'utf8' }));
+      } finally {
+        process.stderr.write = realWrite;
+      }
+      expect(leaked(sync.message, sync.stderr, ...written)).toBe(false);
+      expect(written.join('')).toContain('err [redacted]');
+      const spawned = gitSpawnSync(['fetch', 'ok'], { gitBin, env, encoding: 'utf8' });
+      expect(leaked(spawned.stdout, spawned.stderr, spawned.output)).toBe(false);
+      for (const [mode, options] of [['fail', {}], ['hang', { timeout: 300 }], ['flood', {}]] as const) {
+        const error = await gitExecFile(['fetch', mode], { gitBin, env, ...options }).then(() => { throw new Error('expected a failure'); }, (reason: unknown) => reason as GitExecError);
+        expect(error).toBeInstanceOf(GitExecError);
+        expect(leaked(error.message, error.stderr), mode).toBe(false);
+      }
+      expect(leaked(await gitExecFile(['fetch', 'ok'], { gitBin, env }))).toBe(false);
+      const run = runGit(['fetch', 'fail'], { gitBin, env });
+      expect(leaked(run.stdout, run.stderr, run.error, ...run.command)).toBe(false);
+    } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
