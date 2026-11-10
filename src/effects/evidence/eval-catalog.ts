@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { realpathSync } from 'node:fs';
 import { isAbsolute, relative } from 'node:path';
 import { observationReadFileSync as readFileSync } from '../readonly-observation';
@@ -15,10 +15,7 @@ export interface EvalCatalogSource {
   readonly eval_sha256: string;
 }
 
-function digest(value: string | Buffer): string {
-  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
-}
-function entryDigest(entry: unknown): string { return digest(canonicalize(entry as JsonValue)); }
+function entryDigest(entry: unknown): string { return sha256Prefixed(canonicalize(entry as JsonValue)); }
 function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`invalid eval catalog ${label}`);
   return value as Record<string, unknown>;
@@ -44,7 +41,7 @@ export function captureEvalCatalogSource<T extends { readonly id: number }>(path
   const entry = entryFromBytes(bytes, eval_id);
   const eval_sha256 = entryDigest(entry);
   if (eval_sha256 !== entryDigest(selected)) throw new Error('eval catalog changed during selection');
-  return Object.freeze({ catalog_path, catalog_sha256: digest(bytes), eval_id, eval_sha256 });
+  return Object.freeze({ catalog_path, catalog_sha256: sha256Prefixed(bytes), eval_id, eval_sha256 });
 }
 
 function strings(value: unknown, label: string): string[] {
@@ -94,7 +91,7 @@ export function readEvalCatalogPlan(repoRoot: string, source: EvalCatalogSource)
   }
   if (path !== source.catalog_path) throw new Error('eval catalog location changed');
   const bytes = readFileSync(path);
-  if (digest(bytes) !== source.catalog_sha256) throw new Error('eval catalog changed');
+  if (sha256Prefixed(bytes) !== source.catalog_sha256) throw new Error('eval catalog changed');
   const entry = entryFromBytes(bytes, source.eval_id);
   if (entryDigest(entry) !== source.eval_sha256) throw new Error('eval catalog entry changed');
   return planForEntry(entry);

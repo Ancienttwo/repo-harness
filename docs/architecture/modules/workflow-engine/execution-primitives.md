@@ -1,6 +1,6 @@
 # workflow-engine/execution-primitives 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e3165ee7dc7ff7bc0f23a9ddf8cbd03ed0fb33ca417aab9018d540e42e4a8bf9" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a356e0c0dd99c963546731445d9921ce2f3f45488911bc1a1e9a000d182b6ab0" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.execution-primitives`(kind `capability`)
 > **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/process-group-termination.ts`、`src/effects/process-group-registry.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/readonly-observation.ts`、`src/effects/atomic-append.ts`、`src/effects/locking/**`、`src/effects/git/**`
@@ -152,7 +152,7 @@ flowchart LR
 | `component.execution-primitives.runtime-closeout` | Runtime Closeout | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.execution-primitives.secret-patterns` | Secret Patterns | `2–5` 個文件 / `50–100` 行 | 未宣告 |
 | `component.execution-primitives.session-artifact-io` | Immutable Session Artifact I/O | `1–2` 個文件 / `50–100` 行 | 未宣告 |
-| `component.execution-primitives.task-message-claim` | Task Message Claim Primitives | `2–5` 個文件 / `100–200` 行 | 未宣告 |
+| `component.execution-primitives.task-message-claim` | Task Message Claim Primitives | `2–5` 個文件 / `50–100` 行 | 未宣告 |
 | `component.execution-primitives.task-session-record` | Task Session Record | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.execution-primitives.terminal-core` | Terminal Pin and Pane Prefix | `2–5` 個文件 / `50–100` 行 | 未宣告 |
 

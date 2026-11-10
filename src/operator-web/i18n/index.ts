@@ -29,7 +29,6 @@ import * as bots from './bots';
  */
 export type OperatorLocale = 'en' | 'zh';
 
-export const OPERATOR_LOCALES: readonly OperatorLocale[] = ['en', 'zh'];
 export const DEFAULT_OPERATOR_LOCALE: OperatorLocale = 'en';
 export const OPERATOR_LOCALE_STORAGE_KEY = 'repo-harness:operator-locale';
 

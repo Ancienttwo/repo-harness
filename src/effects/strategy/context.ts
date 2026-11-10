@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { ObservationViolation, type ReadonlyObservationIO } from '../readonly-observation';
 import { resolveEffectiveStateReadOnly } from '../state/resolve-effective-state';
 import { osAccountHome } from '../runtime/os-account-home';
-import { createHash } from 'node:crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { spawnSync } from 'node:child_process';
 import { gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { existsSync, lstatSync, opendirSync, realpathSync, openSync, readSync, closeSync, fstatSync, constants } from 'node:fs';
@@ -15,7 +15,7 @@ export const REPOSITORY_PILOT_READ_LIMITS = Object.freeze({ profile: 'repository
 const FILE_LIMIT = 65536;
 const TOTAL_LIMIT = 1048576;
 const OUTPUT_LIMIT = 131072;
-export const strategyHash = (text: string | Buffer): string => createHash('sha256').update(text).digest('hex');
+export const strategyHash = (text: string | Buffer): string => sha256Hex(text);
 
 function requestReader(repo: string, limits?: StrategyReadLimits, clock?: () => number): StrategyReader {
   const reader = new StrategyReader(realpathSync(resolve(repo)), limits, clock);

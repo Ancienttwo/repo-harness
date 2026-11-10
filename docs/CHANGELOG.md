@@ -4,6 +4,14 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- feat(seats): `--spend-credits` lets `repo-harness quota` and `repo-harness seats argv` treat an exhausted ChatGPT account as `tight` (`chatgpt tight, on credits`) while an owner authorization for credits is recorded. `seatAccountQuotas` takes an optional `{ spendCredits: boolean }` that applies only when the account state is `exhausted`, `codex.rate_limit_reached_type` is null and `codex.credits.has_credits` or `unlimited` is true. Without the flag every output is unchanged, and board dispatch, the console and `seats reset` keep the default. (#2251)
+
+### Changed
+
+- The herdr-core floor is 0.1.20 (#2255). Run `hc update` to 0.1.20 before this release is installed: an hc 0.1.19 client fails the floor check.
+
 ## [0.30.0] - 2026-11-10
 
 ### Added

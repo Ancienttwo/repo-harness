@@ -1,6 +1,7 @@
 import { homedir, userInfo } from 'os';
 import { realpathSync } from 'fs';
 import { join } from 'path';
+import { processExists } from '../process-group-termination';
 import { acquireExclusiveDirectoryLock, readExclusiveDirectoryLockOwner, type ExclusiveDirectoryLockHandle } from './exclusive-directory-lock';
 
 /**
@@ -36,7 +37,7 @@ export function parentRuntimeTransactionContext(
   const root = realpathSync(scope.root);
   const assertOwned = () => {
     if (scope.kind !== 'global' || parent.pid !== process.ppid) throw new Error('candidate runtime context requires its parent owner');
-    process.kill(parent.pid, 0);
+    if (!processExists(parent.pid)) throw new Error('candidate parent no longer owns the global runtime lock');
     const owner = readExclusiveDirectoryLockOwner(root, runtimeTransactionLockRelativePath(scope));
     if (!owner || owner.pid !== parent.pid || owner.lockPath !== parent.lockPath || owner.token !== parent.ownerToken) {
       throw new Error('candidate parent no longer owns the global runtime lock');

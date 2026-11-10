@@ -10,7 +10,7 @@ import { globalConfigurationWriter, mutateGlobalConfiguration } from '../../effe
 import { DEFAULT_SEATS_CONFIG, ROUTING_CLASSES, SeatsConfigMigrationRequiredError, decodeSeatsConfig } from '../../core/board/seats-settings';
 import { checkSeatRoutingModels, seatsRanges } from '../../effects/board/seats-configuration';
 import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
-import { createHash } from "crypto";
+import { sha256Hex } from "../../core/evidence/sha256";
 import { homedir, tmpdir, userInfo } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
@@ -1701,7 +1701,7 @@ export function ensureHerdrCore(input: HerdrCoreInstallInput): HerdrCoreInstallR
     const archive = join(scratch, assetName === "windows-x86_64" ? "herdr-core.zip" : "herdr-core.tar.gz");
     const download = runBoundedProcess("curl", ["--fail", "--location", "--silent", "--show-error", "--output", archive, asset.url], { cwd, env, timeoutMs: 300_000 });
     if (!download.ok) return fail(`download of ${asset.url} failed: ${processFailure(download)}`);
-    const actual = createHash("sha256").update(readFileSync(archive)).digest("hex");
+    const actual = sha256Hex(readFileSync(archive));
     if (actual !== asset.sha256) return fail(`sha256 mismatch for ${asset.url}: expected ${asset.sha256}, got ${actual}; nothing installed`);
     const extract = join(scratch, "extract");
     mkdirSync(extract);

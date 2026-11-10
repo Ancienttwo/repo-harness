@@ -25,7 +25,7 @@
  * snapshot of one checkout, so a clone-scoped gates directory would let one
  * linked worktree overwrite the receipt of another.
  */
-import { createHash } from 'crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { realpathSync } from 'fs';
 import { configuredGitBinary, resolveGitCommonDirectory } from './common-directory';
 import { gitExecFileSync } from './runner';
@@ -52,10 +52,6 @@ export function resolveWorktreeId(cwd: string, gitBin = configuredGitBinary()): 
 
 export function resolveRepositoryIdentity(cwd: string, gitBin = configuredGitBinary()): RepositoryIdentity {
   return { repositoryId: resolveRepoIdentity(cwd, gitBin), worktreeId: resolveWorktreeId(cwd, gitBin) };
-}
-
-function sha256Hex(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
 }
 
 export function worktreeTrashPrefix(repositoryId: string): string {

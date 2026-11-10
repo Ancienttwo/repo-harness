@@ -22,7 +22,8 @@
  * Outcomes are a discriminated union in the `McpPathDecision` style; no
  * exception crosses this module boundary.
  */
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import {
   chmodSync,
   closeSync,
@@ -54,9 +55,6 @@ export type GuardedWriteOutcome =
   | { ok: false; code: GuardedWriteErrorCode; message: string; details?: Record<string, unknown> };
 
 /** Bare hex, byte-comparable with `read_workflow_file`'s `sha256`. One hash shape per surface. */
-function hashContent(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
 
 function writeAllSync(fd: number, data: Buffer): void {
   let offset = 0;
@@ -118,7 +116,7 @@ function guardedWriteFileUnderLock(
       };
     }
     try {
-      previousSha256 = hashContent(readFileSync(absolutePath, 'utf-8'));
+      previousSha256 = sha256Hex(readFileSync(absolutePath, 'utf-8'));
       previousMode = statSync(absolutePath).mode & 0o777;
     } catch (error) {
       return {
@@ -192,7 +190,7 @@ function guardedWriteFileUnderLock(
     }
   }
 
-  return { ok: true, sha256: hashContent(content), previousSha256 };
+  return { ok: true, sha256: sha256Hex(content), previousSha256 };
 }
 
 export function guardedWriteFile(

@@ -2,7 +2,6 @@ import { fileURLToPath } from 'node:url';
 import {
   BRIDGE_HOOK_INPUT_BYTES,
   BRIDGE_HOOK_OUTPUT_BYTES,
-  BRIDGE_HOOK_TIMEOUT_MS,
   HookBridge,
   bridgeHookEnvironment,
   type BridgeHookRequest,
@@ -13,7 +12,6 @@ import {
  * sources directly, so the hook entry resolves from `src/pi/` to `dist/`.
  */
 
-export const PI_HOOK_TIMEOUT_MS = BRIDGE_HOOK_TIMEOUT_MS;
 export const PI_HOOK_INPUT_BYTES = BRIDGE_HOOK_INPUT_BYTES;
 export const PI_HOOK_OUTPUT_BYTES = BRIDGE_HOOK_OUTPUT_BYTES;
 

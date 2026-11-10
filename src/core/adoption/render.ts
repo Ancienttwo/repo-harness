@@ -1,10 +1,6 @@
-import { createHash } from "crypto";
+import { sha256Prefixed } from "../evidence/sha256";
 import type { AdoptionOperation, AdoptionPlan } from "./operations";
 import { rollbackMetadataForOperation } from "./rollback";
-
-function contentHash(content: string): string {
-  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
-}
 
 function contentPreview(content: string): string {
   const firstLines = content.split("\n").slice(0, 3).join("\n").trimEnd();
@@ -18,7 +14,7 @@ function renderOperation(operation: AdoptionOperation): Record<string, unknown> 
     return {
       ...rest,
       rollback,
-      contentHash: contentHash(operation.content),
+      contentHash: sha256Prefixed(operation.content),
       contentPreview: contentPreview(operation.content),
     };
   }
@@ -27,7 +23,7 @@ function renderOperation(operation: AdoptionOperation): Record<string, unknown> 
     return {
       ...rest,
       rollback,
-      contentHash: contentHash(operation.content),
+      contentHash: sha256Prefixed(operation.content),
       contentPreview: contentPreview(operation.content),
     };
   }

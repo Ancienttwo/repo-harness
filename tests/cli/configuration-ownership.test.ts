@@ -131,6 +131,28 @@ test.skipIf(process.platform === 'win32')('issue 922 the account scope keeps glo
 }));
 
 
+test('candidate parent context accepts EPERM, rejects ESRCH and preserves unexpected probe errors', () => fixture((home) => {
+  const lock = acquireRuntimeTransactionLock({ kind: 'global', root: home });
+  try {
+    const modulePath = join(import.meta.dir, '../../src/effects/locking/runtime-transaction-lock.ts');
+    const result = Bun.spawnSync([process.execPath, '-e', `
+      import { strict as assert } from 'assert';
+      import { parentRuntimeTransactionContext } from ${JSON.stringify(modulePath)};
+      const scope = { kind: 'global', root: ${JSON.stringify(home)} };
+      const parent = ${JSON.stringify({ pid: process.pid, lockPath: lock.lockPath, ownerToken: lock.ownerToken })};
+      for (const code of ['EPERM', 'ESRCH', 'EIO']) {
+        const failure = Object.assign(new Error(code), { code });
+        process.kill = () => { throw failure; };
+        const create = () => parentRuntimeTransactionContext(scope, parent);
+        if (code === 'EPERM') create().assertOwned();
+        else if (code === 'ESRCH') assert.throws(create, /candidate parent no longer owns the global runtime lock/);
+        else assert.throws(create, error => error === failure);
+      }
+    `], { stdout: 'pipe', stderr: 'pipe' });
+    expect(result.exitCode, result.stderr.toString()).toBe(0);
+  } finally { lock.release(); }
+}));
+
 test('installer rollback refuses a competing configuration writer before it can report success', async () => {
   const home = mkdtempSync(join(tmpdir(), 'configuration-rollback-lock-'));
   const env = { ...process.env, HOME: home, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' };

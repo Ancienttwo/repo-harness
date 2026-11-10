@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'fs';
 import { homedir } from 'os';
 import { basename, isAbsolute, join, resolve } from 'path';
@@ -378,10 +378,6 @@ function targetRepoRoot(ctx: McpToolContext, args: Record<string, unknown>): { o
 
 function isProbablyBinary(bytes: Buffer): boolean {
   return bytes.subarray(0, Math.min(bytes.length, 8000)).includes(0);
-}
-
-function sha256(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
 }
 
 function fileSummary(path: string, repoRoot: string): { path: string; size: number; modifiedAt: string } | null {
@@ -792,7 +788,7 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         return textResult({
           path: decision.relativePath,
           size: fileStat.size,
-          sha256: sha256(raw),
+          sha256: sha256Hex(raw),
           redactions: redacted.redactions,
           content: redacted.text,
         });

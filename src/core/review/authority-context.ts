@@ -1,5 +1,5 @@
 import { globMatch } from '../state/artifact-parsers';
-import { createHash } from 'node:crypto';
+import { sha256Prefixed } from '../evidence/sha256';
 import { canonicalize } from '../evidence/canonical-json';
 import type { JsonValue } from '../evidence/types';
 import { normalizeDeclaredReviewOracles, type DeclaredReviewOracle } from './change-assessment';
@@ -53,7 +53,7 @@ function text(value: unknown, label: string): asserts value is string {
 }
 function hash(value: unknown, label: string): void { if (typeof value !== 'string' || !HASH.test(value)) fail(label); }
 function digest(value: unknown): string {
-  return `sha256:${createHash('sha256').update(canonicalize(value as JsonValue)).digest('hex')}`;
+  return sha256Prefixed(canonicalize(value as JsonValue));
 }
 function freeze<T>(value: T): Frozen<T> {
   if (value && typeof value === 'object') {
