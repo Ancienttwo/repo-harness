@@ -1,4 +1,5 @@
 import { canonicalize } from "./canonical-json";
+import { isRecord } from "./is-record";
 import { sha256Prefixed } from "./sha256";
 import type { JsonValue } from "./types";
 
@@ -58,10 +59,6 @@ function fail(message: string): never {
   throw new VerificationPlanValidationError(message);
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function assertKeys(value: Record<string, unknown>, allowed: readonly string[], context: string): void {
   const unexpected = Object.keys(value).filter((key) => !allowed.includes(key));
   if (unexpected.length > 0) fail(`${context} has unknown field(s): ${unexpected.join(", ")}`);
@@ -89,7 +86,7 @@ function stringArray(value: unknown, field: string, allowEmpty: boolean): readon
 }
 
 function validateInputs(value: unknown, context: string): VerificationCheckInputs {
-  if (!isObject(value)) fail(`${context}.inputs must be an object`);
+  if (!isRecord(value)) fail(`${context}.inputs must be an object`);
   assertKeys(value, ["env"], `${context}.inputs`);
   const env = stringArray(value.env, `${context}.inputs.env`, true);
   for (const name of env) {
@@ -108,7 +105,7 @@ function isForbiddenEvidenceProducerCommand(command: string): boolean {
 }
 
 function validateBaseline(value: unknown, context: string): VerificationBaselineReference {
-  if (!isObject(value)) fail(`${context}.baseline must be an object`);
+  if (!isRecord(value)) fail(`${context}.baseline must be an object`);
   assertKeys(value, ["run_file", "execution_id"], `${context}.baseline`);
   const runFile = nonEmptyString(value.run_file, `${context}.baseline.run_file`);
   if (!runFile.startsWith(".ai/harness/runs/") || runFile.split(/[\\/]+/).includes("..")) {
@@ -122,7 +119,7 @@ function validateBaseline(value: unknown, context: string): VerificationBaseline
 
 function validateCheck(value: unknown, index: number): VerificationCheck {
   const context = `checks[${index}]`;
-  if (!isObject(value)) fail(`${context} must be an object`);
+  if (!isRecord(value)) fail(`${context} must be an object`);
   assertKeys(value, [
     "id", "kind", "command", "path", "cwd", "phase", "cost", "evidence_policy", "necessity",
     "inputs", "baseline", "delta_checks",
@@ -173,7 +170,7 @@ function validateCheck(value: unknown, index: number): VerificationCheck {
 }
 
 export function validateVerificationPlan(value: unknown): VerificationPlan {
-  if (!isObject(value)) fail("Verification Plan must be a JSON object");
+  if (!isRecord(value)) fail("Verification Plan must be a JSON object");
   assertKeys(value, ["protocol", "checks"], "Verification Plan");
   if (value.protocol !== VERIFICATION_PLAN_PROTOCOL) fail(`Verification Plan protocol must be ${VERIFICATION_PLAN_PROTOCOL}`);
   if (!Array.isArray(value.checks)) fail("Verification Plan checks must be an array");
