@@ -7,7 +7,8 @@ import { evaluateBoardAttention, type BoardAttentionV1 } from '../../core/board/
 import type { AttentionHostPortsV1 } from '../../core/board/attention-delivery';
 import type { BoardHostPortsV1 } from '../../core/board/board';
 import { BoardSourceError } from '../../core/board/source';
-import { BoardCollectError, collectBoard, readRepositoryId } from '../../effects/board/collect';
+import { BoardCollectError, collectBoard, collectBoardThrough, readRepositoryId } from '../../effects/board/collect';
+import { createKeyedSources } from '../../effects/board/keyed-sources';
 import { renderDependencyMigrationPlan } from '../../core/board/dependency-migration';
 import { DependencyMigrationError, runDependencyMigration, type DependencyMigrationResultV1 } from '../../effects/board/dependency-migration';
 import { BoardParentsError, collectBoardParents } from '../../effects/board/parents';
@@ -294,9 +295,11 @@ async function watchAttention(options: AttentionOptions, host: BoardHostPortsV1,
     const parent = parentNumber(options);
     const repositoryId = serviceTerminalRepository(parent, attentionHost);
     const review = options.review === true ? reviewRunner(options, parent, host) : undefined;
+    // The watcher keeps one keyed source store for its process lifetime; its review run reads its own board through a fresh one.
+    const sources = createKeyedSources();
     const input = {
       parent, deliver: options.deliver === true, review, log_path: attentionLogPath(repositoryId, parent),
-      collect: () => collectBoard({ repo_root: process.cwd(), parent, host }), host: attentionHost,
+      collect: () => collectBoardThrough({ repo_root: process.cwd(), parent, host }, sources), host: attentionHost,
     };
     for (;;) await runAttentionWindow(input);
   } catch (error) {

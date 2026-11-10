@@ -671,7 +671,7 @@ describe('operator serve command and HTTP boundary', () => {
         const response = await get(`${path}?parent=1474`);
         expect([response.status, await code(response)]).toEqual([status, failure]);
       }
-      result = async () => ({ ...board, protocol: 5 });
+      result = async () => ({ ...board, protocol: 6 });
       const invalid = await get(`${path}?parent=1474`);
       expect([invalid.status, await code(invalid)]).toEqual([503, 'board_invalid']);
       const head = await get(`${path}?parent=1474`, { method: 'HEAD' });

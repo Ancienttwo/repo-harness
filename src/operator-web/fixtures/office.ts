@@ -34,7 +34,7 @@ function item(number: number, title: string, pull_requests: readonly number[], c
 function pullRequest(number: number, head_ref: string, required_check: BoardPullRequestV1['required_check'], acceptance: BoardPullRequestV1['acceptance'], at: string): BoardPullRequestV1 {
   return {
     number, url: url('pull', number), state: 'open', is_draft: false, base_ref: 'main', base_sha: 'a'.repeat(40), head_ref, head_sha: 'b'.repeat(40),
-    head_committed_at: at, merged_at: null, closes: [], refs: [OFFICE_PARENT], files: [], required_check, acceptance, merge_readiness: null, tier: 'medium', claude_review: 'not_required', writer_family: null, merge_hold: { status: 'none' },
+    head_committed_at: at, merged_at: null, closes: [], refs: [OFFICE_PARENT], files: [], required_check, acceptance, merge_readiness: null, merge_readiness_observed_at: null, tier: 'medium', claude_review: 'not_required', writer_family: null, merge_hold: { status: 'none' },
   };
 }
 
@@ -270,7 +270,7 @@ export function officeDoorBoard(board: BoardV1, policy: OfficeDoorPolicy): Board
     provider_repository_id: '1', repository: REPOSITORY, pr_number: pr.number, expected_head_sha: pr.head_sha, expected_base_sha: pr.base_sha,
     protocol: 2, kind: 'repo-harness-pull-request-readiness', ready: true, blockers: [],
   });
-  return decodeBoard({ ...board, acceptance_merge: policy, pull_requests: board.pull_requests.map(pr => (pr.number === 1311 ? { ...pr, merge_readiness: readiness(pr) } : pr)) });
+  return decodeBoard({ ...board, acceptance_merge: policy, pull_requests: board.pull_requests.map(pr => (pr.number === 1311 ? { ...pr, merge_readiness: readiness(pr), merge_readiness_observed_at: board.observed_at } : pr)) });
 }
 
 export function officeDoorProps(office: OperatorAppProps, policy: OfficeDoorPolicy): OperatorAppProps {
