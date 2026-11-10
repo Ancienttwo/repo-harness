@@ -115,6 +115,13 @@ On a board that holds a `.node`, the geometry check reads three facts:
 `line_end_open`: the first or last point of a path is more than 8 px from the
 border of every `.node` and `.panel`.
 
+`line_through_box`: a path segment has a point inside a `.node` that is more
+than 8 px from the nearest border of that node. A zero-length segment is tested
+as a point. Path ends have no special case: an end more than 8 px inside a node
+gives `line_end_open` and `line_through_box`. A node at most 16 px wide or high
+gets no `line_through_box`, and a line that stays within 8 px of a border gets
+none.
+
 ## Quality checks
 
 - No two boxes overlap unless one contains the other.
