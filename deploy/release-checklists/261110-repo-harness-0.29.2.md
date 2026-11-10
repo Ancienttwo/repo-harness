@@ -6,8 +6,8 @@
   `v0.29.1..995620bc0` (8 commits). A PR merged after the base goes to the next release.
 - Release date and record prefix: UTC 2026-11-10, from `date -u`.
 - The core package, Operator web package, skill and template stamps, and README move to 0.29.2.
-- Publish status: not published. The life cycle stops at the merged release PR.
-  The owner retains npm publication, the tag and the GitHub Release (#2008).
+- Publish status: published. The publish candidate is merge commit `f305e0755`
+  (PR #2117).
 
 ## Cause of the release
 
@@ -48,29 +48,33 @@ Restart the Operator server and reload the page.
 
 ## Acceptance environment
 
-Pending: record the release gate and CI results at publication time.
+`bun run check:release` passed on publish candidate `f305e0755` before
+publication. `check published 0.29.2` and `check tagged 0.29.2` passed after
+publication. [Publication record](https://github.com/aimpact-inc/repo-harness/issues/2000#issuecomment-6759691596).
 
 ## Publication
 
-Publish candidate merge SHA: pending.
+Publish candidate merge SHA: `f305e0755` (PR #2117).
 
 | Order | Name | Shasum | Integrity | File count |
 |---|---|---|---|---|
-| 1 | `repo-harness-operator-web@0.29.2` | pending | pending | pending |
-| 2 | `repo-harness@0.29.2` | pending | pending | pending |
+| 1 | `repo-harness-operator-web@0.29.2` | `b19cafbda5d7abca747b17112109dcb29bc72845` | `sha512-XDRcxFca+/v6EDZ8RqDYIamK+l9e6NrRqdYDyk4ADC3woMshMxoRTOmZ5n3q1FgNhpgSMTcHgQ1hGtQGr+fnaQ==` | 129 |
+| 2 | `repo-harness@0.29.2` | `bf364e3f9b91eb3ecd20e85f7f81bcf3541d024b` | `sha512-nm+HWbUcaJylIIyeolUF0F8bjacXOAuyP1fSPVhfBq5HXu9OOg9NeA+HC1NWsz/ffTUVZAsnaq6k/371PNwoiA==` | 721 |
 
-Record local tarball values and registry readback for each field before
-marking publication complete. Tag and GitHub Release: pending.
+The values are from the npm registry readback in the [publication record](https://github.com/aimpact-inc/repo-harness/issues/2000#issuecomment-6759691596).
+Annotated tag `v0.29.2`: object `d2644d47d`, peeled `f305e0755`.
+[GitHub Release](https://github.com/aimpact-inc/repo-harness/releases/tag/v0.29.2):
+2026-11-10T05:17:43Z.
 
 ## Post-publish checks
 
-- In a disposable HOME and BUN_INSTALL, run `bun x repo-harness@0.29.2
-  install --plugins operator`, start `repo-harness operator serve`, and verify
-  that `/healthz` reports 0.29.2 and its protocol, and `GET /` returns 200.
-  Result: pending.
-- Run `bash scripts/check-release-published.sh 0.29.2`. Result: pending.
-- On the owner machine, run the upgrade command and record the installed
-  version. Result: pending.
+- A clean install in a disposable HOME and BUN_INSTALL passed. `/healthz`
+  reported version 0.29.2 and protocol 3; `GET /` returned 200.
+  [Test record](https://github.com/aimpact-inc/repo-harness/issues/2000#issuecomment-6761452979).
+- `bash scripts/check-release-published.sh 0.29.2 --before-tag` passed as
+  step 4 inside `check published 0.29.2`.
+- The owner machine runs 0.29.2 after the step 8 upgrade.
+  [Upgrade record](https://github.com/aimpact-inc/repo-harness/issues/2000#issuecomment-6759692191).
 
 ## Rollback
 
