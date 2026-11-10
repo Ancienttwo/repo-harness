@@ -575,6 +575,17 @@ describe('architecture map', () => {
     expect([card('capability.organization.board').getAttribute('data-neighbour'), card('capability.verification.evals-checks').getAttribute('data-neighbour'),
       card('capability.organization.board').hasAttribute('data-dimmed'), card('capability.public-surface.adoption').hasAttribute('data-dimmed')]).toEqual(['out', 'both', false, true]);
     expect(edges()).toBe(before);
+    // Each state reads on screen: a glyph badge whose accessible name and hover give the direction, and a legend row for each state.
+    const badge = (id: string) => card(id).querySelector('[data-badge="neighbour"]')!;
+    expect([[badge('capability.organization.board').textContent, badge('capability.organization.board').getAttribute('aria-label')],
+      [badge('capability.verification.evals-checks').textContent, badge('capability.verification.evals-checks').getAttribute('title')]])
+      .toEqual([['→', 'Used by the selected module'], ['⇄', 'Uses the selected module and is used by it']]);
+    const legendText = () => document.querySelector('.architecture-map__legend')?.textContent ?? '';
+    for (const words of ['Used by the selection', 'Uses the selection', 'Uses it and is used by it']) expect(legendText()).toContain(words);
+    // A route joins domains, so the selected card lights the routes of its domain; each route names its ends and imports.
+    const route = (id: string) => document.querySelector(`.react-flow__edge[data-id="${id}"]`)!;
+    expect([route('imports:verification->runtime-harness').classList.contains('is-active'), route('imports:verification->workflow-engine').classList.contains('is-dim'),
+      route('imports:verification->runtime-harness').getAttribute('aria-label')]).toEqual([true, true, 'verification imports runtime-harness: 626 imports']);
     // One row for each model relation, with its direction, the other end (and the card that holds it), the kind and the imports between the two capabilities.
     const rows = [...document.querySelectorAll('.architecture-map__inspector [data-relation-id]')].map(item => item.textContent);
     for (const row of ['out Board · depends-on · 12 imports', 'out CI Report Core (Evals And Checks) · depends-on · 7 imports', 'in Evals And Checks · depends-on · 291 imports']) expect(rows).toContain(row);
@@ -587,6 +598,12 @@ describe('architecture map', () => {
       'capability.runtime-harness.task-agent-host': 'out', 'capability.runtime-harness.global-runtime-reconciliation': 'in',
       'capability.workflow-engine.execution-primitives': 'out', 'capability.workflow-engine.workflow-state': 'in',
     });
+    for (const [id, state] of Object.entries(marks as Record<string, string>)) expect(card(id).querySelector('[data-badge="undeclared"]')?.getAttribute('data-state')).toBe(state);
+    for (const words of ['Undeclared import: imports', 'Undeclared import: imported', 'Undeclared import: both ways']) expect(legendText()).toContain(words);
+    expect(card('capability.runtime-harness.architecture').querySelector('[data-badge="undeclared"]')?.getAttribute('aria-label')).toBe('A module of its domain imports it with no declared relation');
+    // With a card selected, a lens route keeps its class (CSS keeps it readable) and names the undeclared import.
+    expect([route('imports:verification->runtime-harness').classList.contains('architecture-map__edge--undeclared'), route('imports:verification->runtime-harness').getAttribute('aria-label')])
+      .toEqual([true, 'Undeclared import: verification imports runtime-harness']);
     expect(edges()).toBe(before);
   });
 

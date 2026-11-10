@@ -11,7 +11,7 @@ import { flowSteps, type ArchitectureMapNodeV1, type ArchitectureMapV1 } from '.
 import { archctxCode, capabilityOwners, impactPaths, impactTargets, modulesLayerView, type MapLayerId, type ModuleMark } from './architecture-map-layers';
 import { counted, FactList, FixCommand, NodeDetails, nodeSize, violationFacts } from './architecture-map-parts';
 import { domainId, layoutModules, markUndeclared, type ModulesLayout, type UndeclaredEnd } from './architecture-modules-layout';
-import type { SceneBox } from './architecture-scene';
+import type { SceneBox, SceneRoute } from './architecture-scene';
 import { ArchitectureSceneCanvas, SceneHandles, type SceneLegendEntry, type SceneNodeView } from './ArchitectureSceneCanvas';
 import type { OperatorTranslate } from './i18n';
 
@@ -21,6 +21,15 @@ const compactLines = (lines: number) => new Intl.NumberFormat('en', { notation: 
 /** How a card relates to the selected card: it imports or calls it (`in`), the selected card reaches it (`out`), or both. */
 type Direction = 'in' | 'out';
 type Neighbour = Direction | 'both';
+
+/** The glyph of a direction state on a card and in the legend; its text names the direction. */
+const GLYPH: Readonly<Record<Neighbour, string>> = { in: '←', out: '→', both: '⇄' };
+
+/** A direction state on a card: the glyph, with its words as the accessible name and the hover. */
+function StateBadge({ kind, state, t }: { readonly kind: 'neighbour' | 'undeclared'; readonly state: Neighbour; readonly t: OperatorTranslate }) {
+  const words = t(`architecture.modules.${kind}.${state}`);
+  return <span className="architecture-modules__badge mono-value" data-badge={kind} data-state={state} role="img" aria-label={words} title={words}>{GLYPH[state]}</span>;
+}
 
 interface DomainData extends Record<string, unknown> { readonly domain: string }
 interface ModuleData extends Record<string, unknown> {
@@ -33,7 +42,7 @@ interface ModuleData extends Record<string, unknown> {
   readonly dimmed: boolean;
   readonly t: OperatorTranslate;
 }
-interface ExternalData extends Record<string, unknown> { readonly node: ArchitectureMapNodeV1; readonly neighbour: Neighbour | null; readonly dimmed: boolean }
+interface ExternalData extends Record<string, unknown> { readonly node: ArchitectureMapNodeV1; readonly neighbour: Neighbour | null; readonly dimmed: boolean; readonly t: OperatorTranslate }
 
 const DomainNode = memo(function DomainNode({ data }: NodeProps<Node<DomainData, 'domain'>>) {
   return <div className="architecture-modules__domain" data-domain={data.domain}>
@@ -111,6 +120,8 @@ const ModuleNode = memo(function ModuleNode({ data, selected }: NodeProps<Node<M
     <span className="architecture-modules__name">
       <strong>{node.name}</strong>
       {node.status === 'deprecated' && <span className="architecture-modules__status">{t('architecture.modules.deprecated')}</span>}
+      {neighbour !== null && <StateBadge kind="neighbour" state={neighbour} t={t} />}
+      {undeclared !== null && <StateBadge kind="undeclared" state={undeclared} t={t} />}
     </span>
     <span className="architecture-modules__size mono-value">{size === null ? '' : `${compactLines(size.lines)} · ${compactLines(size.files)}`}</span>
     <span className="architecture-modules__slots">
@@ -124,15 +135,25 @@ const ExternalNode = memo(function ExternalNode({ data, selected }: NodeProps<No
   return <div className="architecture-modules__external" data-selected={selected || undefined} data-neighbour={data.neighbour ?? undefined} data-dimmed={data.dimmed || undefined}>
     <SceneHandles />
     {data.node.name}
+    {data.neighbour !== null && <StateBadge kind="neighbour" state={data.neighbour} t={data.t} />}
   </div>;
 });
 
 const NODE_TYPES = { domain: DomainNode, module: ModuleNode, external: ExternalNode };
 
-function legend(map: ArchitectureMapV1, layout: ModulesLayout, undeclared: boolean, layer: MapLayerId, t: OperatorTranslate): SceneLegendEntry[] {
+/** The legend rows of the three direction states of one marker kind. */
+const stateRows = (kind: 'neighbour' | 'undeclared', t: OperatorTranslate): SceneLegendEntry[] => (['out', 'in', 'both'] as const).map(state => ({
+  key: `${kind}-${state}`, swatch: <span className="architecture-modules__badge mono-value" data-badge={kind} data-state={state} aria-hidden="true">{GLYPH[state]}</span>,
+  text: t(`architecture.modules.legend.${kind}.${state}`),
+}));
+
+/** The legend: the route widths, the undeclared routes, the direction states on screen, the external systems, the card size and the slots. */
+function legend(map: ArchitectureMapV1, layout: ModulesLayout, marks: { readonly routes: boolean; readonly cards: boolean; readonly selection: boolean }, layer: MapLayerId, t: OperatorTranslate): SceneLegendEntry[] {
   return [
     ...layout.edges.length > 0 ? [{ key: 'width', swatch: <span aria-hidden="true">→</span>, text: t('architecture.modules.legend.width') }] : [],
-    ...undeclared ? [{ key: 'undeclared', swatch: <span className="architecture-map__swatch architecture-map__swatch--undeclared" />, text: t('architecture.layer.legend.undeclared') }] : [],
+    ...marks.routes ? [{ key: 'undeclared', swatch: <span className="architecture-map__swatch architecture-map__swatch--undeclared" />, text: t('architecture.layer.legend.undeclared') }] : [],
+    ...marks.selection ? stateRows('neighbour', t) : [],
+    ...marks.cards ? stateRows('undeclared', t) : [],
     ...layout.externals.length > 0 ? [{ key: 'external', swatch: <span className="architecture-map__swatch architecture-map__swatch--external" />, text: t('architecture.map.legend.external') }] : [],
     ...map.sizes.state === 'ok' ? [{ key: 'lines', swatch: <span className="mono-value" aria-hidden="true">1.2k · 4</span>, text: t('architecture.modules.legend.lines') }] : [],
     { key: 'slots', swatch: <span className="architecture-modules__key mono-value">{SLOT_LAYERS.map(item => <span key={item} data-active={item === layer || undefined}>{t(`architecture.modules.slot.${item}`)}</span>)}</span>, text: '' },
@@ -311,6 +332,7 @@ export function ArchitectureModules({ map, layer, pullRequest, selectedId, onSel
   const nodes = useMemo(() => new Map(map.nodes.map(node => [node.id, node])), [map]);
   const sizes = useMemo(() => new Map(map.sizes.state === 'ok' ? map.sizes.nodes.map(entry => [entry.id, { lines: entry.lines, files: entry.files }]) : []), [map]);
   const signals = useMemo(() => moduleSignals(map), [map]);
+  const imports = useMemo(() => new Map(layout.edges.map(edge => [edge.id, edge.imports])), [layout]);
   const selected = selectedId === null ? null : nodes.get(selectedId) ?? null;
   const relations = useMemo(() => selected === null ? [] : cardRelations(map, selected.id), [map, selected]);
   // Selection adds no route: it lights the in and out neighbours and dims every other card.
@@ -324,16 +346,28 @@ export function ArchitectureModules({ map, layer, pullRequest, selectedId, onSel
     const node = nodes.get(box.id)!;
     const neighbour = neighbours.get(node.id) ?? null;
     const dimmed = selectedId !== null && node.id !== selectedId && neighbour === null;
-    if (node.kind === 'external-system') return { type: 'external', ariaLabel: `${node.kind} ${node.name}`, selection: node.id, data: { node, neighbour, dimmed } satisfies ExternalData };
+    const mark = undeclared.get(node.id) ?? null;
+    const ariaLabel = [`${node.kind} ${node.name}`, ...neighbour === null ? [] : [t(`architecture.modules.neighbour.${neighbour}`)], ...mark === null ? [] : [t(`architecture.modules.undeclared.${mark}`)]].join(' · ');
+    if (node.kind === 'external-system') return { type: 'external', ariaLabel, selection: node.id, data: { node, neighbour, dimmed, t } satisfies ExternalData };
     return {
-      type: 'module', ariaLabel: `${node.kind} ${node.name}`, selection: node.id,
-      data: { node, size: sizes.get(node.id) ?? null, layer, slots: slotsOf(signals.get(node.id)!, t), neighbour, undeclared: undeclared.get(node.id) ?? null, dimmed, t } satisfies ModuleData,
+      type: 'module', ariaLabel, selection: node.id,
+      data: { node, size: sizes.get(node.id) ?? null, layer, slots: slotsOf(signals.get(node.id)!, t), neighbour, undeclared: mark, dimmed, t } satisfies ModuleData,
     };
   }, [nodes, neighbours, undeclared, selectedId, sizes, signals, layer, t]);
 
+  // A route joins domains, so a selected card lights the routes of its domain; an external system lights its own.
+  const emphasis = selected === null ? null : selected.kind === 'capability' ? domainId(selected.domain!) : selected.id;
+  const routeLabel = useCallback((route: SceneRoute) => {
+    const name = (id: string) => id.startsWith(domainId('')) ? id.slice(domainId('').length) : nodes.get(id)?.name ?? id;
+    const words = { source: name(route.source), target: name(route.target) };
+    if (route.kind === 'relation') return t('architecture.modules.route.relation', words);
+    return route.kind === 'undeclared' ? t('architecture.modules.route.undeclared', words) : t('architecture.modules.route.imports', { ...words, count: imports.get(route.id)! });
+  }, [nodes, imports, t]);
+
   return <div className="architecture-map" data-view="modules" data-node-count={map.nodes.length} data-relation-count={map.relations.length} data-edge-count={layout.edges.length} data-layer={layer}>
     <ArchitectureSceneCanvas label={t('architecture.map.label')} scene={scene} nodeTypes={NODE_TYPES} view={nodeView}
-      selected={selectedId} onSelect={onSelect} legend={legend(map, layout, scene !== layout.scene || undeclared.size > 0, layer, t)} t={t} />
+      selected={selectedId} emphasis={emphasis} routeLabel={routeLabel} onSelect={onSelect}
+      legend={legend(map, layout, { routes: scene !== layout.scene, cards: undeclared.size > 0, selection: neighbours.size > 0 }, layer, t)} t={t} />
     <aside className="architecture-map__inspector" aria-label={t('architecture.map.inspector')} data-node-id={selected?.id}>
       {side}
       {selected === null ? <>

@@ -90,12 +90,16 @@ interface SceneCanvasProps {
   readonly view: (box: SceneBox) => SceneNodeView;
   /** The selected model id. */
   readonly selected: string | null;
+  /** The box whose routes a selection lights; the selected id when absent. A view whose routes join the holders of its boxes names the holder. */
+  readonly emphasis?: string | null;
+  /** The accessible name of a route; none when absent. */
+  readonly routeLabel?: (route: SceneRoute) => string;
   readonly onSelect: (id: string | null) => void;
   readonly legend: readonly SceneLegendEntry[];
   readonly t: OperatorTranslate;
 }
 
-function SceneFlow({ scene, nodeTypes, view, selected, onSelect, legend, t }: SceneCanvasProps) {
+function SceneFlow({ scene, nodeTypes, view, selected, emphasis = selected, routeLabel, onSelect, legend, t }: SceneCanvasProps) {
   const views = useMemo(() => new Map(scene.boxes.map(box => [box.id, view(box)])), [scene, view]);
   const content = useMemo(() => contentBox(scene.boxes), [scene]);
   const nodes = useMemo<Node[]>(() => {
@@ -115,7 +119,7 @@ function SceneFlow({ scene, nodeTypes, view, selected, onSelect, legend, t }: Sc
   const edges = useMemo<RouteEdgeType[]>(() => {
     const labels = new Map(scene.labels.filter(label => label.route !== null).map(label => [label.route!, label]));
     return scene.routes.map(route => {
-      const touches = selected !== null && (route.source === selected || route.target === selected);
+      const touches = emphasis !== null && (route.source === emphasis || route.target === emphasis);
       const marker = { type: MarkerType.ArrowClosed, width: 14, height: 14, color: touches ? 'var(--rh-accent)' : 'var(--text-color-kumo-subtle)' };
       return {
         id: route.id, type: 'route', source: route.source, target: route.target,
@@ -123,9 +127,10 @@ function SceneFlow({ scene, nodeTypes, view, selected, onSelect, legend, t }: Sc
         style: { strokeWidth: route.width, ...(route.dashed ? { strokeDasharray: '6 4' } : {}) },
         ...(route.arrows.start ? { markerStart: marker } : {}), ...(route.arrows.end ? { markerEnd: marker } : {}),
         data: { route, label: labels.get(route.id) ?? null }, selectable: false, focusable: false, zIndex: touches ? 2 : 1,
+        ...(routeLabel ? { ariaLabel: routeLabel(route) } : {}),
       };
     });
-  }, [scene, selected]);
+  }, [scene, selected, emphasis, routeLabel]);
   // Selection is the only node change the read-only map applies; click and the keyboard both arrive here.
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     const chosen = changes.find(change => change.type === 'select' && change.selected);
