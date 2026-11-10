@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { evaluateBoardAttention, type BoardAttentionV1, type BoardFindingV1 } from '../core/board/attention';
 import { decodeBoard, type BoardItemV1, type BoardPullRequestV1, type BoardTerminalV1, type BoardV1 } from '../core/board/board';
-import { decodeBoardParents, type BoardParentsV1 } from '../core/board/parents';
+import { decodeBoardParents, decodeBoardSeats, type BoardParentsV1, type BoardSeatsV1 } from '../core/board/parents';
 import { primaryPullRequest } from '../core/board/pull-requests';
 import { BOARD_PARENTS_READ_FAILURES, BOARD_READ_FAILURES, type BoardParentsReadFailure, type BoardReadFailure } from '../core/operator/board-read';
 import { asApiError } from './operator-api-error';
@@ -132,6 +132,49 @@ export function useBoardParents(read: BoardParentsReader, repositoryId: string |
   useObservationRefresh(observe, JSON.stringify(['board-parents', repositoryId, generation]), { enabled: repositoryId !== null });
   if (repositoryId === null) return null;
   return state !== null && state.key === repositoryId ? state.view : { kind: 'loading' };
+}
+
+export type BoardSeatsRead =
+  | { readonly state: 'pending' }
+  | { readonly state: 'ok'; readonly seats: BoardSeatsV1 }
+  | { readonly state: 'unavailable'; readonly reason: BoardParentsReason };
+export type BoardSeatsReader = (repositoryId: string, signal: AbortSignal) => Promise<BoardSeatsRead>;
+export type BoardSeatsView =
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'failed'; readonly reason: BoardParentsReason }
+  | { readonly kind: 'ready'; readonly seats: BoardSeatsV1 };
+
+export async function fetchBoardSeats(repositoryId: string, signal: AbortSignal): Promise<BoardSeatsRead> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/board/seats`, {
+      signal, cache: 'no-store', headers: { Accept: 'application/json' },
+    });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return { state: 'unavailable', reason: 'unreachable' };
+  }
+  const body: unknown = await response.json().catch(() => null);
+  if (response.status === 202 && (body as { readonly state?: unknown } | null)?.state === 'pending') return { state: 'pending' };
+  if (!response.ok) {
+    const code = asApiError(body).code;
+    return { state: 'unavailable', reason: (BOARD_PARENTS_READ_FAILURES as readonly string[]).includes(code) ? code as BoardParentsReadFailure : 'unreachable' };
+  }
+  try { return { state: 'ok', seats: decodeBoardSeats(body) }; } catch { return { state: 'unavailable', reason: 'parents_invalid' }; }
+}
+
+export function useBoardSeats(read: BoardSeatsReader, repositoryId: string | null, generation: number): BoardSeatsView | null {
+  const [state, setState] = useState<{ readonly key: string; readonly view: BoardSeatsView } | null>(null);
+  const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
+    if (repositoryId === null) return false;
+    const result = await read(repositoryId, signal);
+    if (signal.aborted) return false;
+    setState({ key: repositoryId, view: result.state === 'pending' ? { kind: 'loading' } : result.state === 'ok' ? { kind: 'ready', seats: result.seats } : { kind: 'failed', reason: result.reason } });
+    return result.state !== 'unavailable' || result.reason !== 'unreachable';
+  }, [read, repositoryId]);
+  useObservationRefresh(observe, JSON.stringify(['board-seats', repositoryId, generation]), { enabled: repositoryId !== null, interval: 3000 });
+  if (repositoryId === null) return null;
+  return state?.key === repositoryId ? state.view : { kind: 'loading' };
 }
 
 export type BoardStage = 'building' | 'verifying' | 'ready' | 'closed';

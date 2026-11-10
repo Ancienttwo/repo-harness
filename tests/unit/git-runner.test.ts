@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, watch, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, relative } from 'node:path';
 import { tmpWorkspace } from '../helpers/repo-fixture';
@@ -325,6 +325,26 @@ exit 3
       server?.stop(true);
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  test('an async git abort waits until the child exits and an already aborted read starts no child', async () => {
+    const root = tmpWorkspace('git-runner-abort');
+    const ready = join(root, 'ready');
+    const controller = new AbortController();
+    const gitBin = writeGit(root, `#!${process.execPath}\nconst fs = require('node:fs');\nprocess.on('SIGTERM', () => {});\nfs.writeFileSync(${JSON.stringify(ready + '.tmp')}, String(process.pid));\nfs.renameSync(${JSON.stringify(ready + '.tmp')}, ${JSON.stringify(ready)});\nsetInterval(() => {}, 1000);\n`);
+    const watcher = watch(root);
+    const started = new Promise<void>(resolve => watcher.on('change', (_event, name) => { if (name === 'ready') resolve(); }));
+    try {
+      const result = gitExecFile(['status'], { gitBin, signal: controller.signal }).catch((error: unknown) => error);
+      await started;
+      const pid = Number(readFileSync(ready, 'utf8'));
+      controller.abort();
+      expect(await result).toMatchObject({ name: 'AbortError' });
+      expect(() => process.kill(pid, 0)).toThrow();
+      rmSync(ready);
+      await expect(gitExecFile(['status'], { gitBin, signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
+      expect(readdirSync(root)).toEqual(['git']);
+    } finally { controller.abort(); watcher.close(); rmSync(root, { recursive: true, force: true }); }
   });
 
   test('src starts git only through the runner', () => {

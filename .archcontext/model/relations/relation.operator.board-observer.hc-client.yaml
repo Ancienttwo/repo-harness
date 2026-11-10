@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.board-observer.hc-client
+kind: calls
+source: component.operator.board-observer
+target: component.execution-primitives.hc-client
+intent: Read repository hc streams and snapshots, read agent values from hc ls, and use the one seat-terminal mapping shared with closeout.
