@@ -13,9 +13,8 @@ repo-harness run heartbeat-triage run --source scheduled
 ```
 
 The command appends a run section to `.ai/harness/triage/inbox.md` and writes a
-JSON snapshot under `.ai/harness/runs/`. Each run records:
-
-- `workflow-check`: `repo-harness run check-task-workflow`
+JSON snapshot under `.ai/harness/runs/`. Each run records the run id, its
+source, the snapshot path and the adoption review date.
 
 ## cron
 

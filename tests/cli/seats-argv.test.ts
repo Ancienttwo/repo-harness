@@ -273,7 +273,7 @@ describe("repo-harness seats argv", () => {
       writeFileSync(join(home, 'codex-used'), '51');
       expect(bare(launch(home, "worker").argv).slice(0, 3)).toEqual(["codex", "-m", DEFAULT_SEATS_CONFIG.worker.model]);
       expect(bare(launch(home, "worker-important-fast").argv).slice(0, 5)).toEqual(["claude", "--model", "sonnet", "--effort", "medium"]);
-      expect(bare(launch(home, "advisor").argv).slice(0, 5)).toEqual(["claude", "--model", "opus", "--effort", "max"]);
+      expect(bare(launch(home, "advisor").argv).slice(0, 5)).toEqual(["claude", "--model", "fable", "--effort", "high"]);
       expect(bare(launch(home, "worker-light").argv).slice(0, 5)).toEqual(["pi", "--provider", "magpie", "--model", "cursor/deepseek-v41-flash-1017"]);
       mkdirSync(join(home, ".repo-harness", "quota"));
       for (const used of [81, 95]) {
@@ -302,7 +302,7 @@ describe("repo-harness seats argv", () => {
       const advisor = launch(home, "advisor");
       expect(advisor.source).toBe("defaults");
       expect(advisor.brief).toContain("Collect evidence through your sub-agents: `deep-reasoner`, `explorer`.");
-      expect(bare(advisor.argv).slice(0, 5)).toEqual(["claude", "--model", "opus", "--effort", "max"]);
+      expect(bare(advisor.argv).slice(0, 5)).toEqual(["claude", "--model", "fable", "--effort", "high"]);
       expect(advisor.argv.at(-1)).toBe(advisor.brief);
       // The allow list holds only the tools of the enabled groups; every other built-in tool, such as Workflow, is off.
       expect(tools(advisor.argv)).toEqual(["ToolSearch", "ListMcpResourcesTool", "ReadMcpResourceTool", "WebFetch", "WebSearch", "Read", "Glob", "Grep",
