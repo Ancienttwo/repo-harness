@@ -120,8 +120,9 @@ export async function runAttentionWindow(input: AttentionWindowInput): Promise<v
   let board: BoardV1;
   try { board = input.collect(); } catch (error) {
     if (!(error instanceof BoardCollectError && error.httpStatus !== null && error.httpStatus >= 500 && error.httpStatus <= 599)) throw error;
-    process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, message: error.message })}\n`);
-    log({ kind: 'error', message: error.message });
+    const message = error.message.slice(0, 300);
+    process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, message })}\n`);
+    log({ kind: 'error', message });
     return sleep(started.getTime() + WINDOW_WITH_WORKERS_MS - now().getTime());
   }
   const attention = evaluateBoardAttention(board);
