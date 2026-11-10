@@ -379,7 +379,7 @@ function protectedChecks(identity: ProviderIdentity, prNumber: number, input: Pu
       throw new MergeReadinessError('provider_data_incomplete', `protected check context is missing: ${name}`);
     }
   }
-  return checks.filter(check => names.has(check.name));
+  return checks;
 }
 
 interface RequiredCheckLink {

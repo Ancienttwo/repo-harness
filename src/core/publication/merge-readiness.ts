@@ -182,7 +182,7 @@ export interface ProviderMergeReadinessFactsV1 {
   readonly review_decision: string | null;
   readonly unresolved_thread_count: number | null;
   readonly rollback_boundary: MergeReadinessRollbackBoundary | null;
-  /** All base-protected contexts; the effect rejects a missing context before projection. */
+  /** All required checks; the effect verifies base-protected context presence before projection. */
   readonly checks: readonly {
     readonly name: string;
     readonly bucket: RequiredCheckBucketV1;

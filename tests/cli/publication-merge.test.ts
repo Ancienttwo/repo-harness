@@ -130,6 +130,9 @@ describe('publication merge uses base protection contexts', () => {
   test.each([
     ['missing', checks.slice(0, 1), contexts, {}, 'provider_data_incomplete'],
     ['red', [checks[0]!, { ...checks[1]!, bucket: 'fail' }], contexts, {}, 'checks_failed'],
+    ['ruleset red', [...checks, { name: 'Ruleset Check', bucket: 'fail', link: 'https://ci.example.com/ruleset/42' }], contexts, {}, 'checks_failed'],
+    ['ruleset pending', [...checks, { name: 'Ruleset Check', bucket: 'pending', link: 'https://ci.example.com/ruleset/42' }], contexts, {}, 'checks_pending'],
+    ['ruleset Actions head mismatch', [...checks.map(check => ({ ...check, link: 'https://ci.example.com/build/42' })), { name: 'Ruleset Check', bucket: 'pass', link: checks[0]!.link }], contexts, { head_sha: 'f'.repeat(40) }, 'provider_data_incomplete'],
     ['empty protection', checks, [], {}, 'provider_data_incomplete'],
     ['another Actions head', checks, contexts, { head_sha: 'f'.repeat(40) }, 'provider_data_incomplete'],
     ['second Actions context has another head', [{ ...checks[0]!, link: checks[1]!.link }, { ...checks[1]!, link: checks[0]!.link }], contexts, { head_sha: 'f'.repeat(40) }, 'provider_data_incomplete'],
