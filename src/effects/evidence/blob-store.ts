@@ -4,7 +4,7 @@
  * a symlink's own target string is hashed and returned as metadata; its
  * target's content is never read.
  */
-import { createHash } from "crypto";
+import { sha256Hex } from "../../core/evidence/sha256";
 import { existsSync, lstatSync, readFileSync, readlinkSync } from "fs";
 import { join } from "path";
 import { resolveInsideRepo } from "../path-safety";
@@ -16,10 +16,6 @@ export interface BlobWriteResult {
   readonly bytes: number;
   readonly wasNew: boolean;
   readonly path: string;
-}
-
-function sha256Hex(content: Buffer): string {
-  return createHash("sha256").update(content).digest("hex");
 }
 
 function mismatchError(digest: string): Error {

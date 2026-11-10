@@ -1,6 +1,5 @@
-import { createHash } from "crypto";
-
 import { canonicalize } from "./canonical-json";
+import { sha256Prefixed } from "./sha256";
 import type { JsonValue } from "./types";
 
 export const VERIFICATION_PLAN_PROTOCOL = 1 as const;
@@ -235,16 +234,12 @@ export function parseVerificationPlanFromContractText(contractText: string): Ver
   return validateVerificationPlan(parsed);
 }
 
-function sha256(value: string): string {
-  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
-}
-
 export function hashVerificationPlan(plan: VerificationPlan): string {
-  return sha256(canonicalize(plan as unknown as JsonValue));
+  return sha256Prefixed(canonicalize(plan as unknown as JsonValue));
 }
 
 export function fingerprintVerificationCheck(check: VerificationCheck): string {
-  return sha256(canonicalize(check as unknown as JsonValue));
+  return sha256Prefixed(canonicalize(check as unknown as JsonValue));
 }
 
 /** Identity of the executable itself, excluding evaluation policy and prose. */
@@ -252,5 +247,5 @@ export function fingerprintVerificationCheckExecution(check: VerificationCheck):
   const executable = check.kind === "command"
     ? { kind: check.kind, command: check.command, cwd: check.cwd, inputs: check.inputs }
     : { kind: check.kind, path: check.path, cwd: check.cwd, inputs: check.inputs };
-  return sha256(canonicalize(executable as unknown as JsonValue));
+  return sha256Prefixed(canonicalize(executable as unknown as JsonValue));
 }

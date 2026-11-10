@@ -12,7 +12,7 @@ import { appendSegmentedLog } from '../../effects/segmented-log';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import type { CodeGraphRefreshResult, CodeGraphRepoSnapshot, GeneralRepoCodeGraphAdapter } from '../tools/codegraph-reader';
 import { MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH } from './log-paths';
-import { isPathInside } from './paths';
+import { isPathInside, toPosixPath } from './paths';
 import {
   GeneralRepoAccessError,
   assertRepoWriteEnabled,
@@ -29,7 +29,6 @@ import {
   resolveWalkedRepoPath,
   sameIgnorePolicyRevision,
   sha256,
-  toPosixPath,
   uniqueRepoRecords,
   type IgnorePolicy,
   type RepoEntryType,

@@ -1,9 +1,10 @@
 import { validateControlApproval, type ValidatedControlApproval } from '../../core/review/control-delegation';
-import { randomUUID, createHash } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { constants, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { osAccountHome } from '../runtime/os-account-home';
 import { canonicalize } from '../../core/evidence/canonical-json';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import type { JsonValue } from '../../core/evidence/types';
 import { createReviewAdmission, validateReviewAdmission, reviewCampaignKey, bindReviewAdmission, type ReviewAdmission, type ReviewAdmissionInput, type ReviewAuthorityInput } from '../../core/review/authority-context';
 import { taskRepository } from '../git/task-repository';
@@ -23,7 +24,7 @@ interface ApprovalRecord {
 const HASH = /^sha256:[0-9a-f]{64}$/;
 function fail(reason: string): never { throw new Error(`review_admission_${reason}`); }
 function bytes(value: unknown): Buffer { return Buffer.from(canonicalize(value as JsonValue) + '\n'); }
-function digest(value: Buffer): string { return `sha256:${createHash('sha256').update(value).digest('hex')}`; }
+function digest(value: Buffer): string { return sha256Prefixed(value); }
 function inside(root: string, path: string): boolean { const r = relative(root, path); return r === '' || !isAbsolute(r) && r !== '..' && !r.startsWith(`..${sep}`); }
 function safeStat(path: string, directory: boolean): void {
   assertObservationPath(path);

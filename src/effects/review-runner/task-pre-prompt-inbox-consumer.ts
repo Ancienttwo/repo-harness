@@ -1,6 +1,6 @@
 import type { OarObservationSnapshot } from '../terminal/task-runtime-observation';
 /** Node-safe read-only companion validation; no owner preparation or profile loading. */
-import { createHash } from 'node:crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { canonicalize } from '../../core/evidence/canonical-json';
@@ -10,7 +10,7 @@ import { readTaskAgent, type NativeTaskSessionBinding } from '../terminal/task-s
 import { readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
 import type { TaskRequest } from '../../core/review/runner-port';
 export const canonical = (value: unknown) => canonicalize(JSON.parse(JSON.stringify(value)));
-export const digest = (value: unknown) => `sha256:${createHash('sha256').update(canonical(value)).digest('hex')}`;
+export const digest = (value: unknown) => sha256Prefixed(canonical(value));
 export const MAX_AGE_MS = 60_000;
 export interface Companion {
   protocol: 1;

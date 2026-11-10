@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { closeSync, constants, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, unlinkSync, writeSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
@@ -23,7 +23,7 @@ export function globalConfigurationPath(env: NodeJS.ProcessEnv = process.env): s
 
 /** The digest of the exact file bytes, or `absent` when there is no file. */
 export function globalConfigurationRevision(bytes: Buffer | null): string {
-  return bytes === null ? 'absent' : `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+  return bytes === null ? 'absent' : sha256Prefixed(bytes);
 }
 
 function assertWritableConfiguration(path: string): void {

@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { WorktreeLifecycle } from '../../core/public-projections/worktrees';
@@ -15,7 +16,7 @@ export function worktreeId(common: string, path: string): string {
     identity = [stat.dev, stat.ino, stat.birthtimeMs];
     path = realpathSync(path);
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-  return 'wt_' + createHash('sha256').update(JSON.stringify([common, resolve(path), identity])).digest('hex');
+  return 'wt_' + sha256Hex(JSON.stringify([common, resolve(path), identity]));
 }
 
 function recordFile(common: string, id: string): string { return join(common, 'repo-harness', 'worktree-records', id + '.json'); }

@@ -2,7 +2,8 @@ import { isManagedWorktreePath, managedWorktreeRoot } from '../git/managed-workt
 import type { WorktreeReason, WorktreeView } from '../../core/public-projections/worktrees';
 import { worktreeProcesses, type WorktreeProcess } from '../git/worktree-processes';
 import { readWorktreeRecord, readWorktreeRecordById, endWorktreeRecord } from '../git/worktree-record';
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { execFileSync } from 'child_process';
 import { gitExecFileSync, withoutProviderTokens, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, unlinkSync, mkdirSync, renameSync } from 'fs';
@@ -195,7 +196,7 @@ function retireWorktreeIdentity(common: string, worktree: string, limits: Limits
     try { saved = JSON.parse(readFileSync(path, 'utf8')); } catch { continue; }
     if (!saved || typeof saved !== 'object' || Array.isArray(saved)) continue;
     if (saved.worktree !== worktree || saved.uid !== worktreeUid() || typeof saved.admin !== 'string' || dirname(saved.admin) !== join(common, 'worktrees')) continue;
-    if (name !== createHash('sha256').update(saved.admin).digest('hex') + '.json') continue;
+    if (name !== sha256Hex(saved.admin) + '.json') continue;
     unlinkSync(path);
     syncDirectoryDurably(store);
   }
@@ -220,7 +221,7 @@ function recoveryIdentity(root: string, worktree: string) {
   const backpointer = lstatSync(join(admin, 'gitdir'));
   if (!adminStat.isDirectory() || adminStat.isSymbolicLink() || adminStat.uid !== uid || (adminStat.mode & 0o002) || !backpointer.isFile() || backpointer.isSymbolicLink() || backpointer.uid !== uid || (backpointer.mode & 0o002)) throw new Error('recovery Git admin ownership is unsafe');
   if (readFileSync(join(admin, 'gitdir'), 'utf8').trim() !== pointer) throw new Error('recovery Git backpointer changed');
-  const record = join(common, 'repo-harness/coordination/worktree-identities', createHash('sha256').update(admin).digest('hex') + '.json');
+  const record = join(common, 'repo-harness/coordination/worktree-identities', sha256Hex(admin) + '.json');
   return { record, value: JSON.stringify({ worktree, admin, uid, dev: directory.dev, ino: directory.ino, birthtime: directory.birthtimeMs }) };
 }
 
