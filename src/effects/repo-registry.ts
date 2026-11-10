@@ -703,6 +703,35 @@ export function registerRepoHarnessRepo(
   });
 }
 
+export interface RepoHarnessPanePrefixUpdateResult extends RepoHarnessRegisterResult {
+  readonly panePrefix: string;
+}
+
+/** Set the seat pane prefix. It is no authorization input, so the revision stays. */
+export function setRepoHarnessPanePrefix(
+  repoRoot: string,
+  panePrefix: string,
+  opts: { readonly env?: NodeJS.ProcessEnv; readonly requireAdopted?: boolean } = {},
+): RepoHarnessPanePrefixUpdateResult {
+  if (!PANE_PREFIX.test(panePrefix)) throw new Error(`pane prefix must match ${PANE_PREFIX.source}`);
+  const registration = registerRepoHarnessRepo(repoRoot, 'manual', opts);
+  if (!registration.registered) return { ...registration, panePrefix };
+  return withRegistryMutationLock(registration.registryPath, () => {
+    const registry = readRegistryFile(registration.registryPath);
+    const canonical = registration.path;
+    const previous = registry.repos.find((entry) => entry.path === canonical);
+    if (!previous) throw new Error(`registered repo disappeared before pane prefix update: ${canonical}`);
+    const holder = registry.repos.find((entry) => entry.panePrefix === panePrefix && entry.path !== canonical);
+    if (holder) throw new Error(`pane prefix ${panePrefix} is already set for ${holder.path}`);
+    const changed = previous.panePrefix !== panePrefix;
+    if (changed || registration.changed) {
+      const repos = registry.repos.map((entry) => entry.path === canonical ? { ...entry, panePrefix, lastSeenAt: new Date().toISOString() } : entry);
+      writeRegistryFile(registration.registryPath, repos, registry.authorizationRevision);
+    }
+    return { path: canonical, registryPath: registration.registryPath, registered: true, changed, panePrefix };
+  });
+}
+
 export function setRepoHarnessAccessMode(
   repoRoot: string,
   accessMode: RepoHarnessAccessMode,

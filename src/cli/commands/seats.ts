@@ -97,7 +97,7 @@ function panePrefix(cwd: string, env: NodeJS.ProcessEnv): string {
   }
   const registry = readRepoHarnessRegistryStrictSnapshot({ env });
   const prefix = registry.repos.find(repo => repo.path === root)?.panePrefix;
-  if (prefix === undefined) throw new SeatPaneNameError(`Pane name: set panePrefix for ${root} in ${registry.registryPath}.`);
+  if (prefix === undefined) throw new SeatPaneNameError(`Pane name: run repo-harness mcp access prefix --repo ${root} --pane-prefix <prefix>.`);
   return prefix;
 }
 

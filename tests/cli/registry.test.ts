@@ -20,6 +20,7 @@ import {
   repoHarnessCheckoutRejection,
   repoHarnessRepoIdFor,
   registerRepoHarnessRepo,
+  setRepoHarnessPanePrefix,
 } from '../../src/effects/repo-registry';
 import { spawnSync } from 'child_process';
 
@@ -199,6 +200,14 @@ describe('repo registration persistence', () => {
 
       writeFileSync(registryPath, JSON.stringify({ version: 1, authorizationRevision: 0, repos: [entry(first!, 'rh'), entry(second!, 'rh')] }));
       expect(() => readRepoHarnessRegistryStrictSnapshot({ env, adoptedOnly: false })).toThrow('duplicate pane prefix rh');
+
+      writeFileSync(registryPath, JSON.stringify({ version: 1, authorizationRevision: 0, repos: [entry(first!, 'rh')] }));
+      const set = setRepoHarnessPanePrefix(second!, 'sc', { env });
+      expect(set).toEqual(expect.objectContaining({ registered: true, panePrefix: 'sc' }));
+      expect(readRepoHarnessRegistryStrictSnapshot({ env, adoptedOnly: false }).repos.map((repo) => repo.panePrefix).sort()).toEqual(['rh', 'sc']);
+      expect(repoHarnessAuthorizationRevision(env)).toBe(0);
+      expect(() => setRepoHarnessPanePrefix(second!, 'rh', { env })).toThrow('already set');
+      expect(() => setRepoHarnessPanePrefix(second!, 'Bad', { env })).toThrow('pane prefix must match');
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
     }

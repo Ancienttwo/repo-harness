@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { setRepoHarnessAccessMode } from '../../effects/repo-registry';
+import { setRepoHarnessAccessMode, setRepoHarnessPanePrefix } from '../../effects/repo-registry';
 import type { McpServeOptions } from '../mcp/cli-actions';
 
 function collectOption(value: string, previous: string[] = []): string[] {
@@ -56,6 +56,19 @@ export function buildMcpCommand(): Command {
         const result = setRepoHarnessAccessMode(rawOpts.repo, rawOpts.mode);
         if (!result.registered) throw new Error(result.reason ?? 'repo is not adopted');
         console.log(rawOpts.json ? JSON.stringify(result, null, 2) : `[repo-harness mcp] ${result.path}: ${result.accessMode} (authorization revision ${result.authorizationRevision})`);
+      });
+    });
+  access
+    .command('prefix')
+    .description('Set the pane prefix that labeled seats use for a repository')
+    .requiredOption('--repo <path>', 'Adopted repository')
+    .requiredOption('--pane-prefix <prefix>', 'Pane prefix: a letter, then 1 to 5 letters or digits, lowercase')
+    .option('--json', 'Output JSON')
+    .action((rawOpts: { repo: string; panePrefix: string; json?: boolean }) => {
+      void runMcpAction(() => {
+        const result = setRepoHarnessPanePrefix(rawOpts.repo, rawOpts.panePrefix);
+        if (!result.registered) throw new Error(result.reason ?? 'repo is not adopted');
+        console.log(rawOpts.json ? JSON.stringify(result, null, 2) : `[repo-harness mcp] ${result.path}: pane prefix ${result.panePrefix}`);
       });
     });
   mcp.addCommand(access);
