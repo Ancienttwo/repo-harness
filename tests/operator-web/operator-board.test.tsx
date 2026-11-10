@@ -17,7 +17,7 @@ import { documentTitle, OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, OperatorApp, type
 import { evaluateBoardAttention } from '../../src/core/board/attention';
 import { ADVISOR_TRANSCRIPT_LINE_WITHHELD, decodeAdvisorSeatSend, decodeAdvisorSeatTranscript } from '../../src/core/board/advisor-seat';
 import { decodeBoard, type BoardV1 } from '../../src/core/board/board';
-import { fetchBoard, fetchBoardParents, type BoardParentsRead, type BoardParentsReason, type BoardSubject } from '../../src/operator-web/board-view';
+import { fetchBoard, fetchBoardParents, useBoard, useBoardParents, type BoardParentsRead, type BoardParentsReader, type BoardParentsReason, type BoardRead, type BoardReader, type BoardReason, type BoardSubject } from '../../src/operator-web/board-view';
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import boardParents from '../../src/operator-web/fixtures/board-parents.json';
 import { decodeBoardParents, type BoardParentsV1 } from '../../src/core/board/parents';
@@ -47,7 +47,7 @@ import { decodeOperatorRepositories, type OperatorRepositoriesV1 } from '../../s
 import { fetchRepositories } from '../../src/operator-web/repositories';
 import { boardLayout, boardPlace, boardRoom, DEFAULT_LOCATION, parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
 import { DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, type DeskState } from '../../src/core/board/desk';
-import { activeParent, officeCard, officeRoom, type BoardSummariesRead } from '../../src/operator-web/board-office';
+import { activeParent, officeCard, officeRoom, useOfficeOverview, type BoardSummariesRead, type BoardSummariesReader } from '../../src/operator-web/board-office';
 import { OFFICE_DOOR_POLICIES, OFFICE_PARENT, officeBoard, officeParents } from '../../src/operator-web/fixtures/office';
 import { busyBotAccess, degradedBotAccess } from '../../src/operator-web/fixtures/bots';
 import { officeSetupRows, type OfficeSetupReads, type OfficeSetupRowId, type OfficeSetupScope } from '../../src/operator-web/OfficeSetupChecklist';
@@ -689,6 +689,46 @@ describe('board page', () => {
     } finally { globalThis.fetch = original; }
   });
 
+  test('a typed refusal keeps the 30 s cycle of the board, the parent list and the overview; only unreachable backs the loop off', async () => {
+    const subject: BoardSubject = { repository_id: HARNESS_ID, parent: 1474 };
+    const repositories = [HARNESS_ID];
+    const noSummaries: BoardSummariesReader = async () => ({ state: 'unavailable', reason: 'unreachable' });
+    const probes = {
+      board: (reason: BoardReason) => {
+        const read: BoardReader = async () => ({ state: 'unavailable', reason });
+        return function Probe() { useBoard(read, subject, 0); return null; };
+      },
+      parents: (reason: BoardParentsReason) => {
+        const read: BoardParentsReader = async () => ({ state: 'unavailable', reason });
+        return function Probe() { useBoardParents(read, HARNESS_ID, 0); return null; };
+      },
+      overview: (reason: BoardParentsReason) => {
+        const read: BoardParentsReader = async () => ({ state: 'unavailable', reason });
+        return function Probe() { useOfficeOverview(repositories, read, noSummaries, 0); return null; };
+      },
+    };
+    const original = globalThis.setTimeout;
+    const delays: number[] = [];
+    // Only the loop timer is held; React and the test helpers keep their short timers.
+    globalThis.setTimeout = ((run: () => void, delay = 0) => {
+      if (delay < 30_000) return original(run, delay);
+      delays.push(delay);
+      return 0;
+    }) as typeof setTimeout;
+    try {
+      for (const [Probe, delay] of [
+        [probes.parents('parents_github_failed'), 30_000], [probes.board('board_collect_failed'), 30_000], [probes.overview('parents_hc_failed'), 30_000],
+        [probes.parents('unreachable'), 60_000], [probes.board('unreachable'), 60_000], [probes.overview('unreachable'), 60_000],
+      ] as const) {
+        delays.length = 0;
+        await mount(<Probe />);
+        await settle();
+        expect(delays).toEqual([delay]);
+        await act(async () => root?.unmount());
+      }
+    } finally { globalThis.setTimeout = original; }
+  });
+
   test('the registry reader decodes the list with the core decoder and refuses any other shape', async () => {
     const valid = { protocol: 1, kind: 'operator_repositories', repositories: [{ repository_id: HARNESS_ID, display_name: 'repo-harness', access_mode: 'read_write' }], stale_registrations: 3 };
     const answers: (() => Response)[] = [
@@ -956,6 +996,8 @@ describe('board office (#1755)', () => {
     const whiteboard = (revision: number | null) => composeRoom({ ...SCENE_ROOM, plan: { ...plan, revision } }, view).paths;
     expect(whiteboard(7)).not.toEqual(whiteboard(null));
     expect(whiteboard(7)).not.toEqual(whiteboard(8));
+    // A pending board read writes READING, not NO PLAN.
+    expect(composeRoom({ ...SCENE_ROOM, parent: 1, plan: 'reading' }, view).paths).not.toEqual(composeRoom({ ...SCENE_ROOM, parent: 1, plan: null }, view).paths);
     // Each policy has its own door, and no finding has no mark.
     const doors = ([null, 'on', 'off', 'unknown'] as const).map(mergeWait => JSON.stringify(composeRoom({ ...SCENE_ROOM, mergeWait }, view).paths));
     expect(new Set(doors).size).toBe(4);
@@ -1308,6 +1350,57 @@ describe('board office (#1755)', () => {
     expect(Array.from(legend.querySelectorAll('[data-legend-state]')).map(entry => entry.getAttribute('data-legend-state'))).toEqual([...DESK_STATES]);
     await key('Escape');
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  test('the room draws its seats from the parent list while the board read is pending, and the board fills in the same room; the list layout waits and a failed read draws no room', async () => {
+    const board = boardWith({
+      plan: PLAN,
+      prs: { 1499: { required_check: { status: 'failure', completed_at: '2026-11-02T21:00:00Z' } } },
+      terminals: [seat('t1', 'worker', 1475, null, 'working'), seat('t2', 'worker', 1476, 1499, 'working'), seat('t3', 'orchestrator', null, null, 'idle')],
+    });
+    const pending: ((read: BoardRead) => void)[] = [];
+    const readBoard: BoardReader = () => new Promise(resolve => { pending.push(resolve); });
+    for (const path of [`/${HARNESS_ID}/1474`, `/${HARNESS_ID}`]) {
+      officeAt(path);
+      pending.length = 0;
+      await mount(<OperatorApp {...props(busy(), { readBoard, readBoardParents: async () => ({ state: 'ok', list: seatsOf(board) }) })} />);
+      await settle();
+      expect(pending).toHaveLength(1);
+      expect(document.querySelector('[data-board-office="room"]')?.getAttribute('data-board-parent')).toBe('1474');
+      expect(rows('[data-desk]').map(desk => [desk.getAttribute('data-desk'), desk.getAttribute('aria-label')])).toEqual([['t1', '#1475 · Agent unknown: Coding'], ['t2', '#1476 · Agent unknown: Coding']]);
+      expect(document.querySelector('[data-plan]')?.getAttribute('data-plan')).toBe('reading');
+      expect(document.querySelector('[data-plan]')?.textContent).toBe('Reading the board');
+      expect(document.querySelector('[data-feed-empty]')?.textContent).toBe('Reading the board');
+      expect(document.querySelector('[data-board-office="room"] [role="img"]')?.getAttribute('aria-label')).toEndWith(', reading the board.');
+      await act(async () => rows('[data-desk="t2"]')[0]!.click());
+      await act(async () => pending[0]!({ state: 'ok', board }));
+      await settle();
+      expect(document.querySelector('[data-plan]')?.getAttribute('data-plan')).toBe('observed');
+      expect(rows('[data-desk="t2"]')[0]!.getAttribute('aria-label')).toBe('#1476 · Agent unknown: CI failed');
+      expect(rows('[data-desk="t2"]')[0]!.getAttribute('aria-pressed')).toBe('true');
+      await act(async () => root?.unmount());
+    }
+
+    // A selected parent with no live seat: the pending read wins over the empty-room line.
+    officeAt(`/${HARNESS_ID}/1474`);
+    await mount(<OperatorApp {...props(busy(), { readBoard, readBoardParents: async () => ({ state: 'ok', list: { ...PARENTS, seats: [] } }) })} />);
+    await settle();
+    expect(document.querySelector('[data-feed-empty]')?.textContent).toBe('Reading the board');
+    await act(async () => root?.unmount());
+
+    boardAt();
+    pending.length = 0;
+    await mount(<OperatorApp {...props(busy(), { readBoard })} />);
+    await settle();
+    expect(document.querySelector('[data-board-office="room"]')).toBeNull();
+    expect(document.body.textContent).toContain('Reading the board of #1474 from GitHub and hc.');
+    await act(async () => root?.unmount());
+
+    officeAt(`/${HARNESS_ID}/1474`);
+    await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'unavailable', reason: 'board_collect_failed' }) })} />);
+    await settle();
+    expect(document.querySelector('[data-board-reason]')?.getAttribute('data-board-reason')).toBe('board_collect_failed');
+    expect(document.querySelector('[data-board-office="room"]')).toBeNull();
   });
 
   test('with an observed plan the header has the plan chip and the seat meter, and each hit fills the side panel', async () => {

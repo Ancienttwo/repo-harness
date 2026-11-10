@@ -60,7 +60,10 @@ export type BoardView =
   | { readonly kind: 'failed'; readonly reason: BoardReason }
   | { readonly kind: 'ready'; readonly board: BoardV1; readonly attention: BoardAttentionV1; readonly refreshFailed: BoardReason | null };
 
-/** Null without a subject; otherwise loading until the first read of this subject settles. */
+/**
+ * Null without a subject; otherwise loading until the first read of this subject settles.
+ * A typed refusal is an answer; only a request with no answer backs the loop off.
+ */
 export function useBoard(read: BoardReader, subject: BoardSubject | null, generation: number): BoardView | null {
   const key = subject === null ? null : `${subject.repository_id}#${subject.parent}`;
   const [state, setState] = useState<{ readonly key: string; readonly view: BoardView } | null>(null);
@@ -75,7 +78,7 @@ export function useBoard(read: BoardReader, subject: BoardSubject | null, genera
     setState(current => current?.key === key && current.view.kind === 'ready' && STALE_BOARD_KEPT.has(result.reason)
       ? { key, view: { ...current.view, refreshFailed: result.reason } }
       : { key, view: { kind: 'failed', reason: result.reason } });
-    return false;
+    return result.reason !== 'unreachable';
     // `key` identifies `subject`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [read, key]);
@@ -116,7 +119,7 @@ export type BoardParentsView =
   | { readonly kind: 'failed'; readonly reason: BoardParentsReason }
   | { readonly kind: 'ready'; readonly list: BoardParentsV1 };
 
-/** Null without a repository; otherwise loading until the first read of this repository settles. */
+/** Null without a repository; otherwise loading until the first read of this repository settles. A typed refusal keeps the 30 s cycle, as for the board. */
 export function useBoardParents(read: BoardParentsReader, repositoryId: string | null, generation: number): BoardParentsView | null {
   const [state, setState] = useState<{ readonly key: string; readonly view: BoardParentsView } | null>(null);
   const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
@@ -124,7 +127,7 @@ export function useBoardParents(read: BoardParentsReader, repositoryId: string |
     const result = await read(repositoryId, signal);
     if (signal.aborted) return false;
     setState({ key: repositoryId, view: result.state === 'ok' ? { kind: 'ready', list: result.list } : { kind: 'failed', reason: result.reason } });
-    return result.state === 'ok';
+    return result.state === 'ok' || result.reason !== 'unreachable';
   }, [read, repositoryId]);
   useObservationRefresh(observe, JSON.stringify(['board-parents', repositoryId, generation]), { enabled: repositoryId !== null });
   if (repositoryId === null) return null;
