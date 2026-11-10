@@ -132,7 +132,10 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     return ok({ number: PR, url: `https://github.com/${REPOSITORY}/pull/${PR}`, state: 'OPEN', isDraft: false,
       headRefOid: head, headRefName: scenario.headRef ?? 'feat/executor', baseRefOid: baseSha, baseRefName: 'main', body: scenario.body ?? '',
       reviewDecision: '', changedFiles: scenario.changedFiles?.length ?? 0, mergeable: 'MERGEABLE',
-      closingIssuesReferences: (scenario.closing ?? []).map((reference) => ({ number: Number(reference.split('#')[1]) })) });
+      closingIssuesReferences: (scenario.closing ?? []).map((reference) => {
+        const [repository, number] = reference.split('#');
+        return { number: Number(number), url: `https://github.com/${repository}/issues/${number}` };
+      }) });
   }
   if (command === 'pr' && sub === 'checks') {
     const bucket = scenario.checks ?? 'pass';

@@ -267,6 +267,17 @@ test('a round above 5 accepts an owner record on an issue the PR closes and refu
   expect(other.gh.inputs().some((entry) => entry.input !== '')).toBe(false);
 });
 
+test('an owner record must match the closing issue repository and the path kind', async () => {
+  const refuse = async (closing: string, path: string) => {
+    const fixture = publishFixture(publishScenario({ closing: [closing] }));
+    const result = await runPublish(fixture, publishReceipt({ round: 6 }), ['--owner-record', ownerRecord(path)]);
+    expect(result.status).toBe(2);
+    expect(fixture.gh.inputs().some((entry) => entry.input !== '')).toBe(false);
+  };
+  await refuse('other/repo#2000', '/issues/2000');
+  await refuse('example/repo-harness#2000', '/pull/2000');
+});
+
 test('an owner record with a round up to 5 is refused', async () => {
   const fixture = publishFixture();
   const result = await runPublish(fixture, publishReceipt({ round: 5 }), ['--owner-record', ownerRecord('/pull/' + PUBLISH_PR)]);

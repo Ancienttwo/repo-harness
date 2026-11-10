@@ -68,7 +68,7 @@ const PAGE_SIZE = 100;
 const MAX_PAGES = 30;
 const PR_FIELDS = 'number,headRefOid,url,closingIssuesReferences';
 const HARD_STOP_ROUND = 5;
-const OWNER_RECORD_PATTERN = /^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/(?:pull|issues)\/([0-9]+)#issuecomment-[0-9]+$/;
+const OWNER_RECORD_PATTERN = /^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/(pull|issues)\/([0-9]+)#issuecomment-[0-9]+$/;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -180,7 +180,8 @@ function ghJson(
 interface PullRequestHead {
   readonly slug: string;
   readonly headSha: string;
-  readonly closingIssues: readonly number[];
+  /** `owner/repo#number` of every issue the PR closes; the repository can differ from the PR's. */
+  readonly closingIssues: readonly string[];
 }
 
 function prHead(run: ReviewPublishGhRunner, prNumber: number): PullRequestHead {
@@ -191,8 +192,13 @@ function prHead(run: ReviewPublishGhRunner, prNumber: number): PullRequestHead {
   const match = /^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/pull\/([0-9]+)$/.exec(value.url);
   if (!match || Number(match[2]) !== prNumber) throw new Error('gh pr view returned a URL that does not match the requested PR');
   const closing = value.closingIssuesReferences;
-  if (!Array.isArray(closing) || closing.some((entry) => typeof entry?.number !== 'number')) throw new Error('gh pr view returned invalid closing issue references');
-  return { slug: match[1]!, headSha: value.headRefOid, closingIssues: closing.map((entry) => entry.number as number) };
+  if (!Array.isArray(closing)) throw new Error('gh pr view returned invalid closing issue references');
+  const closingIssues = closing.map((entry) => {
+    const issue = /^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/issues\/([0-9]+)$/.exec(typeof entry?.url === 'string' ? entry.url : '');
+    if (issue === null) throw new Error('gh pr view returned a closing issue reference without a valid URL');
+    return issue[1] + '#' + issue[2];
+  });
+  return { slug: match[1]!, headSha: value.headRefOid, closingIssues };
 }
 
 /** Read every page of a list endpoint; a read that ends early or exceeds the page cap fails. */
@@ -301,8 +307,9 @@ function checkOwnerRecord(ownerRecord: string | undefined, round: number, pr: Pu
     throw new ReviewPublishError('review_receipt_invalid', 'round must be an integer from 1 to ' + HARD_STOP_ROUND + ' unless --owner-record names the owner decision comment', 2);
   }
   const match = OWNER_RECORD_PATTERN.exec(ownerRecord);
-  const number = match === null ? null : Number(match[2]);
-  if (match === null || match[1] !== pr.slug || number === null || (number !== prNumber && !pr.closingIssues.includes(number))) {
+  const onThisTarget = match !== null && match[1] === pr.slug
+    && (match[2] === 'pull' ? Number(match[3]) === prNumber : pr.closingIssues.includes(match[1] + '#' + match[3]));
+  if (!onThisTarget) {
     throw new ReviewPublishError('review_receipt_invalid', '--owner-record must be a comment URL on PR ' + prNumber + ' or an issue it closes in ' + pr.slug, 2);
   }
 }
