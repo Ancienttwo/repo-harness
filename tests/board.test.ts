@@ -10,6 +10,7 @@ import { decodeBoard, type BoardHostPortsV1, type BoardTerminalV1, type BoardV1 
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
+import { collectPullRequestMergeReadiness } from '../src/effects/publication/merge-readiness';
 import { collectBoard, readGhJson, readParent, readLocalRepositoryId, type BoardCollectInput } from '../src/effects/board/collect';
 import { runBoardMerge } from '../src/effects/board/merge';
 import { boardMergeDecisions } from '../src/core/board/merge';
@@ -444,6 +445,90 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
     ['R3', 'tier_label_missing', '#1499 #1476'],
     ['R4', 'plan_unavailable', null],
   ]);
+});
+
+/**
+ * The provider answers to the readiness reads of the three open recorded pull requests: #1491 on main and the
+ * stacked #1494 and #1499. The base of #1491 has the rollback reporter, so its read follows the rollback boundary.
+ */
+function recordedReadinessGh(failRepository: () => boolean): (args: readonly string[]) => { status: number; stdout: string; stderr?: string } {
+  const repository = 'Ancienttwo/repo-harness';
+  const node = 'R_kgDORepoHarness';
+  const pulls: Json[] = Object.values(JSON.parse(fixture('pull-requests-1474.graphql.json')).data.repository);
+  const pr = (number: number) => pulls.find(read => read.number === number)!;
+  const base = pr(1491).baseRefOid as string;
+  const before = 'e'.repeat(40);
+  const json = (value: unknown, status = 0) => ({ status, stdout: JSON.stringify(value) });
+  return (args) => {
+    const path = args[0] === 'api' ? args[1]! : '';
+    if (args[0] === 'repo' && args[1] === 'view') return json({ id: node, nameWithOwner: repository });
+    if (args[0] === 'pr' && args[1] === 'view') {
+      const read = pr(Number(args[2]));
+      return json({ number: read.number, url: read.url, state: read.state, isDraft: read.isDraft, headRefOid: read.headRefOid, headRefName: read.headRefName,
+        baseRefOid: read.baseRefOid, baseRefName: read.baseRefName, body: read.body, reviewDecision: '', changedFiles: 0, mergeable: 'MERGEABLE' });
+    }
+    if (args[0] === 'pr' && args[1] === 'list') {
+      const head = args[args.indexOf('--head') + 1];
+      return json(pulls.filter(read => read.headRefName === head).map(read => ({ number: read.number, state: read.state, headRefOid: read.headRefOid,
+        headRefName: read.headRefName, baseRefOid: read.baseRefOid, baseRefName: read.baseRefName, isCrossRepository: false })));
+    }
+    if (args[0] === 'pr' && args[1] === 'checks') return json([{ name: 'Required / CI', bucket: 'pass', link: `https://github.com/${repository}/actions/runs/41/job/42` }]);
+    if (path === `repos/${repository}`) {
+      return failRepository() ? { status: 1, stdout: '', stderr: 'gh: Bad Gateway (HTTP 502)' }
+        : json({ id: 1186405141, node_id: node, full_name: repository, default_branch: 'main' });
+    }
+    if (path === `repos/${repository}/actions/runs/41`) {
+      return json({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: pr(1491).headRefOid, status: 'completed', conclusion: 'success',
+        pull_requests: [{ number: 1491, head: { sha: pr(1491).headRefOid }, base: { sha: base } }] });
+    }
+    if (path === `repos/${repository}/contents/.ai/harness/policy.json?ref=${base}`) return POLICY_ABSENT;
+    if (path === `repos/${repository}/contents/.github/workflows/ci-report.yml?ref=${base}`) return json({ type: 'file', path: '.github/workflows/ci-report.yml', sha: 'c'.repeat(40) });
+    if (path === `repos/${repository}/commits/${base}/pulls?per_page=100`) return json([{ number: 1488, merged_at: '2026-11-02T10:00:00Z', merge_commit_sha: base, base: { ref: 'main' } }]);
+    if (path === `repos/${repository}/git/commits/${base}`) return json({ sha: base, parents: [{ sha: before }] });
+    if (path === `repos/${repository}/pulls/1488`) return json({ number: 1488, merged: true, merge_commit_sha: base, base: { ref: 'main' }, head: { ref: 'feat/1488', sha: 'd'.repeat(40) } });
+    if (path === `repos/${repository}/commits/${before}/pulls?per_page=100`) return json([{ number: 1487 }]);
+    if (path === 'graphql' && args.includes('-F')) {
+      const number = Number(args.find(arg => arg.startsWith('number='))!.slice('number='.length));
+      return json({ data: { node: { id: node, pullRequest: { number, headRefOid: pr(number).headRefOid, baseRefOid: pr(number).baseRefOid, reviewDecision: null,
+        latestOpinionatedReviews: { pageInfo: { hasNextPage: false }, nodes: [] }, reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] } } } } });
+    }
+    throw new Error(`unexpected readiness call: ${args.join(' ')}`);
+  };
+}
+
+test('board read: the readiness reads of one board share one answer for the repository identity and each base-commit fact; the identity and stack fences and a failed read run again', () => {
+  const run = (failRepository: () => boolean) => {
+    const input = replayInput({});
+    const board = input.gh_runner!;
+    const readiness = recordedReadinessGh(failRepository);
+    const calls: string[] = [];
+    // A readiness read names the repository or ends with the host; the board reads do neither.
+    const gh: BoardCollectInput['gh_runner'] = (args) => {
+      calls.push(args.join(' '));
+      return args.at(-1) === 'github.com' || args.includes('github.com/Ancienttwo/repo-harness') ? readiness(args) : board(args);
+    };
+    return { board: collectBoard({ ...input, readiness: undefined, gh_runner: gh }), calls, readiness };
+  };
+  const count = (calls: readonly string[], prefix: string) => calls.filter(call => call.startsWith(prefix)).length;
+  const { board, calls, readiness } = run(() => false);
+  // One page of parent comments (no older page): 5 board reads and 21 readiness reads.
+  expect(calls).toHaveLength(26);
+  expect(count(calls, 'repo view github.com/Ancienttwo/repo-harness --json id,nameWithOwner')).toBe(1);
+  expect(count(calls, 'api repos/Ancienttwo/repo-harness --hostname')).toBe(1);
+  for (const number of [1491, 1494, 1499]) expect(count(calls, `pr view ${number} `)).toBe(2);
+  expect(count(calls, 'pr list --head feat/1475-hc-transport ')).toBe(4);
+  for (const pr of board.pull_requests.filter(read => read.state === 'open')) {
+    const own = collectPullRequestMergeReadiness({ provider_repository_id: '1186405141', repository: 'Ancienttwo/repo-harness', pr_number: pr.number,
+      expected_head_sha: pr.head_sha, expected_base_sha: pr.base_sha, repo_root: '/nonexistent', gh_runner: readiness });
+    expect(pr.merge_readiness).toEqual(own);
+  }
+  expect(board.pull_requests.map(pr => [pr.number, pr.merge_readiness?.ready])).toEqual([[1491, true], [1494, false], [1499, false]]);
+
+  // The first REST repository read fails: it is not stored, and the next pull request reads it again.
+  let repositoryReads = 0;
+  const failed = run(() => repositoryReads++ === 0);
+  expect(failed.board.pull_requests[0]!.merge_readiness).toMatchObject({ ready: false, blockers: [{ code: 'provider_unavailable' }] });
+  expect(count(failed.calls, 'api repos/Ancienttwo/repo-harness --hostname')).toBe(2);
 });
 
 test('attention rules and delivery windows recognize all worker seat kinds', () => {

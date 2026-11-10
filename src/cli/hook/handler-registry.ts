@@ -10,7 +10,7 @@ import type { SessionContextSection } from './session-context-budget';
 import { collectArchitectureNotice } from './hook-protocol';
 import { resolveCapabilityOwnership } from '../../effects/state/resolve-effective-state';
 import { payloadString } from './hook-input';
-import { seatResetIdentity } from '../../core/board/seat-reset';
+import { isSeatSessionSource, seatResetIdentity } from '../../core/board/seat-reset';
 import { recordSeatSession } from '../../effects/board/seat-reset';
 
 /**
@@ -38,7 +38,7 @@ function seatSessionDiagnostic(context: HookHandlerContext): string {
   const identity = context.identity.host === 'claude' ? seatResetIdentity(context.env) : null;
   const source = payloadString(context.payload, 'source');
   const transcriptPath = payloadString(context.payload, 'transcript_path');
-  if (identity === null || (source !== 'clear' && source !== 'startup') || transcriptPath === '') return '';
+  if (identity === null || !isSeatSessionSource(source) || transcriptPath === '') return '';
   try {
     recordSeatSession(identity, { sessionId: context.identity.sessionId, transcriptPath, source }, context.now);
     return '';

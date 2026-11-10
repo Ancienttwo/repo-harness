@@ -14,12 +14,13 @@ import { RepoHarnessRegistryStrictError, canonicalRepoPath, readRepoHarnessRegis
 import { HerdrCoreError, RH_LABEL, hcLabel, hcLabelPairs, type HcLabels } from '../../effects/terminal/herdr-core';
 import { PiFleetRolesError, writePiFleetRoles } from '../../effects/board/pi-fleet-roles';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
-import { SeatResetError, runSeatReset, type SeatResetNotify } from '../../effects/board/seat-reset';
+import { SeatResetError, readSeatSessionTranscript, readTranscriptContextTokens, runSeatReset, writeSeatResetRequest, type SeatResetNotify } from '../../effects/board/seat-reset';
+import { seatResetIdentity, seatResetSteps } from '../../core/board/seat-reset';
 
 const CLI_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
 
 class SeatsCommandError extends Error {
-  constructor(readonly code: 'seat_unknown' | 'seat_not_configured' | 'seat_quota_exhausted' | 'seat_quota_reserved' | 'config_invalid' | 'label_value_invalid' | 'repository_id_required' | 'terminal_unknown', message: string) {
+  constructor(readonly code: 'seat_unknown' | 'seat_not_configured' | 'seat_quota_exhausted' | 'seat_quota_reserved' | 'config_invalid' | 'label_value_invalid' | 'repository_id_required' | 'terminal_unknown' | 'seat_identity_missing' | 'seat_session_unknown' | 'seat_context_unknown', message: string) {
     super(message);
   }
 }
@@ -148,6 +149,26 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
   };
 }
 
+/**
+ * `seats handoff`: an on-demand reset. It records a reset request for the current session, as the Stop hook does at
+ * the threshold, so the peer's `seats reset` accepts the handoff, and returns the steps that the hook prints.
+ */
+export function seatHandoff(env: NodeJS.ProcessEnv = process.env, now = new Date()): string {
+  const identity = seatResetIdentity(env);
+  if (identity === null) {
+    throw new SeatsCommandError('seat_identity_missing', 'REPO_HARNESS_SEAT and REPO_HARNESS_SEAT_REPOSITORY name no orchestrator or advisor seat: start the seat with repo-harness seats argv <seat> --repository-id <id>.');
+  }
+  const transcript = readSeatSessionTranscript(identity);
+  if (transcript === null) throw new SeatsCommandError('seat_session_unknown', `The SessionStart record of the ${identity.seat} seat is missing or not valid, so the session transcript is unknown.`);
+  let context: number | null;
+  try { context = readTranscriptContextTokens(transcript); } catch (error) {
+    throw new SeatsCommandError('seat_context_unknown', `The transcript ${transcript} cannot be read: ${(error as Error).message}`);
+  }
+  if (context === null) throw new SeatsCommandError('seat_context_unknown', `The transcript ${transcript} has no assistant entry with a context size.`);
+  writeSeatResetRequest(identity, now, context, transcript);
+  return seatResetSteps(identity);
+}
+
 /** `loadNotify` comes from the composition root, only when peer-runtime is selected. */
 export function buildSeatsCommand(loadNotify?: () => Promise<SeatResetNotify>): Command {
   const seats = new Command('seats').description('Seat launch commands for Herdr panes');
@@ -220,6 +241,18 @@ export function buildSeatsCommand(loadNotify?: () => Promise<SeatResetNotify>): 
         process.stdout.write(`${JSON.stringify({ ok: true, ...result }, null, 2)}\n`);
       } catch (error) {
         process.stderr.write(`${JSON.stringify({ ok: false, error: 'pane_prefix_failed', message: (error as Error).message })}\n`);
+        process.exitCode = 1;
+      }
+    });
+  seats
+    .command('handoff')
+    .description('In the orchestrator or advisor seat: record a reset request now and print the handoff steps of the Stop hook')
+    .action(() => {
+      try {
+        process.stdout.write(`${seatHandoff()}\n`);
+      } catch (error) {
+        if (!(error instanceof SeatsCommandError)) throw error;
+        process.stderr.write(`${JSON.stringify({ ok: false, error: error.code, message: error.message })}\n`);
         process.exitCode = 1;
       }
     });
