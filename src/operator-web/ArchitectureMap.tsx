@@ -316,6 +316,7 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   const chooseLegacy = useCallback((value: boolean) => { setLegacy(value); select({ view: 'topology', scope: '', id: null }); }, [select]);
   const onTopologySelect = useCallback((id: string | null) => select({ view: 'topology', scope: topologyScope, id }), [topologyScope, select]);
   const onModulesSelect = useCallback((id: string | null) => select({ view: 'modules', scope: '', id }), [select]);
+  const onLayersSelect = useCallback((id: string | null) => select({ view: 'layers', scope: '', id }), [select]);
   useEffect(() => {
     onSummary(map === null ? null : {
       commit: map.commit, collectedAt: map.collected_at, headRef: map.head_ref, archctxVersion: map.archctx_version,
@@ -331,7 +332,7 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   return <div className="architecture-map-view">
     {result === null && <p role="status">{t('architecture.map.loading')}</p>}
     {result?.state === 'unavailable' && <MapUnavailable read={result} kept={map !== null} t={t} />}
-    {map && view === 'layers' && <ArchitectureLayers key={`${repositoryId}:${map.commit}`} map={map} t={t} />}
+    {map && view === 'layers' && <ArchitectureLayers key={`${repositoryId}:${map.commit}`} map={map} selectedId={selections.layers?.id ?? null} onSelect={onLayersSelect} t={t} />}
     {map && view !== 'layers' && <>
       <div className="architecture-lens">
         <span id="architecture-layers-label" className="architecture-lens__label">{t('architecture.layers')}</span>

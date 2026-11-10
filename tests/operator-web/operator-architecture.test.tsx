@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { act, Profiler, type ReactElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
@@ -9,7 +10,7 @@ import { ArchitectureWorkspace, reviewPromptCommand, type ArchitectureSource } f
 import { fetchArchitectureMap, type ArchitectureMapRead, type ArchitectureMapReader } from '../../src/operator-web/ArchitectureMap';
 import { layoutArchitectureMap, MAP_NODE_MIN_WIDTH, type MapLayoutNode } from '../../src/operator-web/architecture-map-layout';
 import { layoutModules } from '../../src/operator-web/architecture-modules-layout';
-import { layersSvg, layoutLayers } from '../../src/operator-web/architecture-layers-layout';
+import { layoutLayers } from '../../src/operator-web/architecture-layers-layout';
 import {
   architectureViolationCommand, decodeArchitectureMap, projectArchitectureMap,
   type ArchitectureFlowSelectorV1, type ArchitectureLayerOrderV1, type ArchitectureMapFlowV1, type ArchitectureMapLayersInput, type ArchitectureMapNodeV1,
@@ -1209,8 +1210,8 @@ describe('sequence and topology base maps', () => {
     const bands = new Map(layout.bands.map(band => [band.layer, band]));
     const within = (layer: string, y: number) => y > bands.get(layer)!.y && y < bands.get(layer)!.y + bands.get(layer)!.height;
     const { x: left, width } = layout.bands[0]!;
-    expect(lanes.filter(lane => !within(lane.source, lane.points[0]![1]) || !within(lane.target, lane.points[3]![1])
-      || (lane.side === 'right' ? lane.points[1]![0] <= left + width : lane.points[1]![0] >= left))).toEqual([]);
+    expect(lanes.filter(({ source, target, side, route: { points } }) => !within(source, points[0]![1]) || !within(target, points[3]![1])
+      || (side === 'right' ? points[1]![0] <= left + width : points[1]![0] >= left))).toEqual([]);
     // The recorded map of this repository: every declared layer is a band, and the bands' own lines add up to the top-level nodes' totals.
     const recorded = decodeArchitectureMap(recordedMap);
     const order = recorded.layer_order.state === 'ok' ? recorded.layer_order.layers : [];
@@ -1219,6 +1220,13 @@ describe('sequence and topology base maps', () => {
     const totals = recorded.sizes.state === 'ok' ? recorded.sizes.nodes.filter(entry => tops.has(entry.id)).reduce((sum, entry) => sum + entry.lines, 0) : null;
     expect([real.bands.map(band => band.layer), real.lanes('effects').length]).toEqual([[...order], 19]);
     expect(real.bands.reduce((sum, band) => sum + band.lines!, 0)).toBe(totals!);
+    // The lane points of all 96 lanes, hashed from the lane layout on main 6b7e7af67 before the scene: the routes keep them.
+    const points = order.map(layer => real.scene(layer).routes.map(route => route.points));
+    expect([points.flat().length, createHash('sha256').update(JSON.stringify(points)).digest('hex')]).toEqual([96, '31381ae6fa137a76de6902bdccc585a0f6e6422eb6b3cb053d9b062206a7ab5f']);
+    // With each row selected, the scene check finds nothing, and the file draws one path for each lane with the route's path.
+    expect(order.flatMap(layer => sceneFindings(real.scene(layer)))).toEqual([]);
+    const effects = real.scene('effects');
+    expect([...sceneSvg(effects, () => []).matchAll(/<path class="route[^"]*" stroke-width="[^"]*" d="([^"]*)"/gu)].map(match => match[1])).toEqual(effects.routes.map(route => routePath(route.points)));
 
     const files: { name: string; blob: Blob }[] = [];
     const { createObjectURL, revokeObjectURL } = URL;
@@ -1243,11 +1251,14 @@ describe('sequence and topology base maps', () => {
       expect([...inspector().querySelectorAll('[data-size-row]')].map(item => item.getAttribute('data-size-row'))).toEqual([PART, CENTER]);
       expect([...inspector().querySelectorAll('[data-pair]')].map(item => item.textContent)).toEqual(['core → cli3Violation']);
       expect(inspector().querySelector('[data-layer-checked]')?.textContent).toBe('archctx checked 40 imports against the layer order.');
+      // The inspector lists each lane with its direction and protocol; the route names the protocol too, and the canvas draws no label.
+      expect([...inspector().querySelectorAll('[data-lane]')].map(item => `${item.getAttribute('data-direction')}:${item.textContent}`)).toEqual(['out: out external', 'in: in cli · http']);
+      expect([...document.querySelectorAll('.react-flow__edge')].map(item => item.getAttribute('aria-label'))).toEqual(['core → external', 'cli → core · http']);
       await click('[data-layers-export]');
       const svg = await files[0]!.blob.text();
-      expect([files.map(file => file.name), files[0]!.blob.type, (svg.match(/<path class="lane/gu) ?? []).length, svg.includes('<rect class="box selected"'), svg.includes('>http</text>')])
-        .toEqual([['layers-ccccccc.svg'], 'image/svg+xml', 2, true, true]);
-      expect(svg).toBe(layersSvg(layout, 'core', { band: band => `L${band.index} ${band.layer}`, members: band => band.members.map(member => member.node.name).join(' · ') }));
+      expect([files.map(file => file.name), files[0]!.blob.type, svg.includes('<rect class="box selected"'), svg.includes('>L2 core</text>'), svg.includes('>http<')])
+        .toEqual([['layers-ccccccc.svg'], 'image/svg+xml', true, true, false]);
+      expect([...svg.matchAll(/<path class="route[^"]*" stroke-width="[^"]*" d="([^"]*)"/gu)].map(match => match[1])).toEqual(layout.scene('core').routes.map(route => routePath(route.points)));
 
       // A model without the layer-direction constraint keeps the map and says why the check is missing; a model without ordered layers has no map.
       await act(async () => root?.render(workspace({ readMap: reader(layered({ state: 'unavailable', reason: 'layer_direction_undeclared' })) })));
