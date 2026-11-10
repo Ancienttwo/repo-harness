@@ -32,6 +32,17 @@ const isAncestor = (repoRoot: string, ancestor: string, of: string) => ask(repoR
 
 type Verdict = 'yes' | 'no' | 'error';
 
+/**
+ * `no` only for a proven absence: `rev-parse --verify --quiet <sha>^{commit}` exits 1 with an empty stderr for a missing object.
+ * An unreadable object also exits 1 but names the failure on stderr, and `cat-file -e` exits 128 for both, so neither is `no`.
+ */
+function commitPresence(repoRoot: string, sha: string): Verdict {
+  const run = git(repoRoot, ['rev-parse', '--verify', '--quiet', `${sha}^{commit}`]);
+  if (run.error !== undefined) return 'error';
+  if (run.status === 0) return 'yes';
+  return run.status === 1 && run.stderr.trim() === '' ? 'no' : 'error';
+}
+
 /** `yes` when the PR diff of one head, from its one merge base with the base, is not empty. */
 function hasPrDiff(repoRoot: string, base: string, head: string): Verdict {
   const bases = ok(repoRoot, ['merge-base', '--all', base, head]);
@@ -70,8 +81,7 @@ function cleanMergeOfBase(repoRoot: string, base: string, line: string): Verdict
 /** The head adds, outside the reviewed head and the base, only clean automatic merges of the base, and at least one. Both PR diffs are not empty. */
 function mergeOnlySync(repoRoot: string, base: string, head: string, reviewed: string): Verdict {
   // After the fetch of the head, a reviewed head that is still missing is not in its history.
-  // `rev-parse --verify --quiet` exits 1 for a missing object; `cat-file -e` gives 128 for it and for any other git fault.
-  const present = ask(repoRoot, ['rev-parse', '--verify', '--quiet', `${reviewed}^{commit}`]);
+  const present = commitPresence(repoRoot, reviewed);
   if (present !== 'yes') return present;
   const steps: (() => Verdict)[] = [
     () => isAncestor(repoRoot, reviewed, head),
