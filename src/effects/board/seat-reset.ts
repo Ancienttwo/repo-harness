@@ -2,7 +2,7 @@ import { createHash } from 'crypto';
 import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
 import {
-  SEAT_NO_RESET_MESSAGE, SEAT_RESET_RETRIES, handoffIdentity, missingHandoffSections, seatResetClaimPath, seatResetLogPath, seatResetRequestPath,
+  RESET_SEATS, SEAT_NO_RESET_MESSAGE, SEAT_RESET_RETRIES, handoffIdentity, missingHandoffSections, seatResetClaimPath, seatResetLogPath, seatResetRequestPath,
   isSeatSessionSource, seatResetDirectory, seatResumePrompt, seatRewriteMessage, seatSessionPath, type SeatResetIdentity, type SeatSessionSource,
 } from '../../core/board/seat-reset';
 import { RH_LABEL, hcGet, hcKeys, hcList, hcSend, hcWait, type HerdrCoreOptions } from '../terminal/herdr-core';
@@ -391,6 +391,13 @@ class SeatResetRun {
     }
     this.requester = terminals[0]!.address;
     if (this.requester === caller) throw this.refuse('caller_unknown', 'nothing_sent', `The ${this.identity.seat} seat cannot reset itself: run the reset from the peer seat.`);
+    const labels = hcGet(caller, this.options).labels;
+    const peer = RESET_SEATS.find(seat => seat !== this.identity.seat)!;
+    for (const [key, expected] of [[RH_LABEL.repository, this.identity.repository], [RH_LABEL.seat, peer]] as const) {
+      if (labels[key] !== expected) {
+        throw this.refuse('caller_unknown', 'nothing_sent', `${caller} carries ${key}=${labels[key] ?? '(missing)'}; the reset of ${this.identity.seat} requires the caller to carry ${key}=${expected}.`);
+      }
+    }
     this.caller = caller;
     this.prompt = seatResumePrompt(this.identity, caller);
   }
