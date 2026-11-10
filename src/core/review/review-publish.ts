@@ -183,12 +183,9 @@ function severityCounts(receipt: ReviewPublishReceipt): string {
   return counts.length ? counts.map(([severity, count]) => count + ' ' + severity).join(', ') : 'none';
 }
 
-// One finding is one bullet line: `parseRecordFindings` (board) reads exactly this shape, so every whitespace run collapses to one space.
 function findingSummary(finding: ReviewPublishFinding): string {
-  const line = finding.severity === 'P3'
-    ? 'P3 ' + finding.id + ': ' + finding.message
-    : finding.severity + ' ' + finding.id + ' at ' + finding.path + ':' + finding.line + ': ' + finding.evidence + ' -> ' + finding.fix;
-  return line.replace(/\s+/gu, ' ');
+  if (finding.severity === 'P3') return 'P3 ' + finding.id + ': ' + finding.message;
+  return finding.severity + ' ' + finding.id + ' at ' + finding.path + ':' + finding.line + ': ' + finding.evidence + ' -> ' + finding.fix;
 }
 
 export function renderAcceptanceClaim(receipt: ReviewPublishReceipt, ownerRecord?: string): string {
@@ -239,7 +236,8 @@ export function renderAcceptanceRecord(receipt: ReviewPublishReceipt, claimUrl: 
     '',
     'Findings:',
     '',
-    ...(receipt.findings.length ? receipt.findings.map((entry) => '- ' + findingSummary(entry)) : ['- none']),
+    // One finding is one bullet line: `parseRecordFindings` (board) reads exactly this shape.
+    ...(receipt.findings.length ? receipt.findings.map((entry) => '- ' + findingSummary(entry).replace(/\s+/gu, ' ')) : ['- none']),
     '',
   ].join('\n');
 }

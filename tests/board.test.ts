@@ -30,7 +30,7 @@ import { HC_MIN_VERSION } from '../src/core/terminal/herdr-pin';
 import { BoardParentsError, collectBoardParents } from '../src/effects/board/parents';
 import { hcStatusClass, ISSUE_FLOW_WORKER_LIMIT } from '../src/core/board/desk';
 import { boardSummary, decodeBoardSummaries } from '../src/core/board/summary';
-import { renderAcceptanceClaim, renderAcceptanceRecord, type ReviewPublishReceipt } from '../src/core/review/review-publish';
+import { renderAcceptanceClaim, renderAcceptanceRecord, reviewPayloadFromReceipt, type ReviewPublishReceipt } from '../src/core/review/review-publish';
 import type { ReviewObserver } from '../src/effects/board/review';
 import { BoardCollectError } from '../src/effects/board/collect';
 import type { ModelRelation } from '../src/core/review/acceptance-receipt';
@@ -1279,6 +1279,8 @@ test('a rendered record with multiline finding values parses to its finding IDs'
     ],
   };
   expect(parseRecordFindings({ url: 'u', created_at: '2026-11-02T22:00:00Z', author_association: 'OWNER', body: renderAcceptanceRecord(receipt, 'x') })).toEqual(['R1-1', 'R1-2']);
+  // The GitHub review body is not the record: it keeps the line breaks of a finding outside the diff.
+  expect(reviewPayloadFromReceipt(receipt, new Map()).body).toContain('first line\n  second line');
 });
 
 test('A2 finds a batch behind an overlapping pull request, and a plan hold removes a PR from A1, A2 and R4', () => {
