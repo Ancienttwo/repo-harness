@@ -1,32 +1,20 @@
 // The topology base map (the ArchTopology artboard) in three segments:
 // processes, namespaces and mounts. The lens row holds the segment choice,
 // the legacy switch and the SVG export. Every value is the model's; the
-// layout module places the boxes.
+// layout module places the boxes and the routes.
 
-import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
-import {
-  Background,
-  BackgroundVariant,
-  Handle,
-  MarkerType,
-  Panel,
-  Position,
-  ReactFlow,
-  ReactFlowProvider,
-  type Edge,
-  type Node,
-  type NodeChange,
-  type NodeProps,
-} from '@xyflow/react';
-import '@xyflow/react/dist/base.css';
+import { memo, useCallback, useMemo, type ReactNode } from 'react';
+import type { Node, NodeProps } from '@xyflow/react';
 import type { ArchitectureMapNodeV1, ArchitectureMapV1 } from '../core/operator/architecture-map';
 import { mapLayerView, type MapLayerId, type MapMark } from './architecture-map-layers';
-import { contentBox, FirstViewport, Mark, NodeDetails, Note, nodeSize, ZoomControls } from './architecture-map-parts';
+import { Mark, NodeDetails, Note, nodeSize } from './architecture-map-parts';
 import { runtimePlacement } from './architecture-runtime';
+import type { SceneBox } from './architecture-scene';
 import {
-  layoutTopology, processNamespace, TOPOLOGY_BASES, TOPOLOGY_BOX_HEADER, TOPOLOGY_KINDS, TOPOLOGY_MEMBER, topologySvg,
+  layoutTopology, memberId, processNamespace, TOPOLOGY_BASES, TOPOLOGY_KINDS,
   type MountTone, type TopologyBase, type TopologyBox, type TopologyLayout,
 } from './architecture-topology-layout';
+import { ArchitectureSceneCanvas, downloadSceneSvg, SceneHandles, type SceneLegendEntry, type SceneNodeView } from './ArchitectureSceneCanvas';
 import type { OperatorTranslate } from './i18n';
 
 interface BoxData extends Record<string, unknown> {
@@ -37,21 +25,12 @@ interface BoxData extends Record<string, unknown> {
   readonly tone: MountTone | null;
   readonly empty: string | null;
 }
-type TopologyNode = Node<BoxData, 'box' | 'namespace' | 'mount' | 'member'>;
-
-/** Handles exist for edge routing only; the map is read-only, so they accept no connection. */
-function Handles() {
-  return <>
-    <Handle type="target" position={Position.Top} isConnectable={false} />
-    <Handle type="source" position={Position.Bottom} isConnectable={false} />
-  </>;
-}
 
 const deprecated = (node: ArchitectureMapNodeV1) => node.status === 'deprecated' || undefined;
 
 const BoxNode = memo(function BoxNode({ data, selected }: NodeProps<Node<BoxData, 'box'>>) {
   return <div className="architecture-map__group architecture-topology__box" data-kind={data.node.kind} data-selected={selected || undefined} data-tone={data.mark?.tone} data-quiet={data.quiet || undefined} data-deprecated={deprecated(data.node)}>
-    <Handles />
+    <SceneHandles />
     <div className="architecture-map__group-title">
       <span className="architecture-map__title"><strong>{data.node.name}</strong><Mark mark={data.mark} /></span>
       <span className="architecture-map__meta">{data.detail}</span>
@@ -61,7 +40,7 @@ const BoxNode = memo(function BoxNode({ data, selected }: NodeProps<Node<BoxData
 
 const NamespaceNode = memo(function NamespaceNode({ data, selected }: NodeProps<Node<BoxData, 'namespace'>>) {
   return <div className="architecture-map__group architecture-topology__namespace" data-kind="namespace" data-selected={selected || undefined} data-tone={data.mark?.tone} data-quiet={data.quiet || undefined} data-deprecated={deprecated(data.node)}>
-    <Handles />
+    <SceneHandles />
     <div className="architecture-map__group-title">
       <span className="architecture-map__title"><strong>{data.node.name}</strong><Mark mark={data.mark} /></span>
       <span className="architecture-map__meta mono-value">{data.detail}</span>
@@ -72,7 +51,7 @@ const NamespaceNode = memo(function NamespaceNode({ data, selected }: NodeProps<
 
 const MountNode = memo(function MountNode({ data, selected }: NodeProps<Node<BoxData, 'mount'>>) {
   return <div className="architecture-map__box architecture-topology__mount" data-kind="mount" data-mount-tone={data.tone ?? undefined} data-selected={selected || undefined} data-tone={data.mark?.tone} data-quiet={data.quiet || undefined} data-deprecated={deprecated(data.node)}>
-    <Handles />
+    <SceneHandles />
     <span className="architecture-map__title"><strong>{data.node.name}</strong><Mark mark={data.mark} /></span>
     <span className="architecture-topology__summary" title={data.node.summary}>{data.node.summary}</span>
   </div>;
@@ -85,9 +64,6 @@ const MemberNode = memo(function MemberNode({ data, selected }: NodeProps<Node<B
 });
 
 const NODE_TYPES = { box: BoxNode, namespace: NamespaceNode, mount: MountNode, member: MemberNode };
-
-/** A code node deployed on two processes shows in both boxes, so its canvas id names the box. Model ids hold no `/`. */
-const memberId = (box: string, node: string) => `${box}/${node}`;
 
 /** A masked mount path: the prose guard would change it, so the map carries null. */
 const mountPath = (value: string | null, t: OperatorTranslate) => value ?? t('architecture.topology.masked');
@@ -105,27 +81,33 @@ function boxDetail(box: TopologyBox, t: OperatorTranslate): string {
 
 const memberText = (member: ArchitectureMapNodeV1, t: OperatorTranslate) => member.kind === 'mount' ? mountRow(member, t) : member.name;
 
-function Legend({ base, t }: { readonly base: TopologyBase; readonly t: OperatorTranslate }) {
-  return <dl className="architecture-map__legend" aria-label={t('architecture.map.legend')} data-topology-legend={base}>
-    {base === 'process' ? <>
-      <div><dt><span className="architecture-map__swatch" /></dt><dd>{t('architecture.map.legend.code')}</dd></div>
-      <div><dt><span className="architecture-map__swatch architecture-map__swatch--dashed" /></dt><dd>{t('architecture.topology.legend.runtime')}</dd></div>
-      <div><dt><span className="architecture-map__swatch architecture-map__swatch--external" /></dt><dd>{t('architecture.map.legend.external')}</dd></div>
-    </> : (base === 'namespace' ? ['writer', 'reader', 'point'] as const : ['point'] as const).map(tone => <div key={tone}>
-      <dt><span className="architecture-topology__swatch" data-mount-tone={tone} /></dt><dd>{t(`architecture.topology.legend.${tone}`)}</dd>
-    </div>)}
-  </dl>;
+/** The topology box or member row that a scene box draws. */
+type Row = { readonly box: TopologyBox; readonly member: ArchitectureMapNodeV1 | null };
+const rowsOf = (layout: TopologyLayout) => new Map<string, Row>(layout.boxes.flatMap(box => [
+  [box.node.id, { box, member: null }] as const,
+  ...box.members.map(member => [memberId(box.node.id, member.id), { box, member }] as const),
+]));
+
+/** The text lines of a scene box in the SVG file: a box shows its name and detail, a member row its text. */
+function sceneLines(layout: TopologyLayout, t: OperatorTranslate): (box: SceneBox) => readonly string[] {
+  const rows = rowsOf(layout);
+  return box => {
+    const { box: owner, member } = rows.get(box.id)!;
+    return member === null ? [owner.node.name, boxDetail(owner, t)] : [memberText(member, t)];
+  };
 }
 
-/** Starts the browser download of one file built on the page. */
-function download(name: string, content: string): void {
-  const url = URL.createObjectURL(new Blob([content], { type: 'image/svg+xml' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = name;
-  link.click();
-  // The click starts the download in this task; the URL can go after it.
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+function legend(base: TopologyBase, t: OperatorTranslate): SceneLegendEntry[] {
+  if (base === 'process') {
+    return [
+      { key: 'code', swatch: <span className="architecture-map__swatch" />, text: t('architecture.map.legend.code') },
+      { key: 'runtime', swatch: <span className="architecture-map__swatch architecture-map__swatch--dashed" />, text: t('architecture.topology.legend.runtime') },
+      { key: 'external', swatch: <span className="architecture-map__swatch architecture-map__swatch--external" />, text: t('architecture.map.legend.external') },
+    ];
+  }
+  return (base === 'namespace' ? ['writer', 'reader', 'point'] as const : ['point'] as const).map(tone => ({
+    key: tone, swatch: <span className="architecture-topology__swatch" data-mount-tone={tone} />, text: t(`architecture.topology.legend.${tone}`),
+  }));
 }
 
 const segmentLayout = (map: ArchitectureMapV1, base: TopologyBase, legacy: boolean) => layoutTopology(map, runtimePlacement(map), base, legacy);
@@ -141,8 +123,10 @@ export function TopologyLensTools({ map, base, onBase, legacy, onLegacy, t }: {
 }) {
   const full = useMemo(() => segmentLayout(map, base, true), [map, base]);
   const deprecatedCount = full.boxes.flatMap(box => [box.node, ...box.members]).filter(node => node.status === 'deprecated').length;
-  const exportSvg = () => download(`topology-${base}-${map.commit.slice(0, 7)}.svg`,
-    topologySvg(segmentLayout(map, base, legacy), { detail: box => boxDetail(box, t), member: (_, member) => memberText(member, t) }));
+  const exportSvg = () => {
+    const layout = segmentLayout(map, base, legacy);
+    downloadSceneSvg(`topology-${base}-${map.commit.slice(0, 7)}.svg`, layout.scene, sceneLines(layout, t));
+  };
   return <span className="architecture-lens__tools">
     <span className="architecture-topology__bases" role="group" aria-label={t('architecture.topology.base')}>
       {TOPOLOGY_BASES.map(item => <button key={item} type="button" data-topology-base={item} aria-pressed={item === base} onClick={() => onBase(item)}>{t(`architecture.topology.base.${item}`)}</button>)}
@@ -165,11 +149,13 @@ function Writers({ map, nodeId, names, t }: { readonly map: ArchitectureMapV1; r
   </>;
 }
 
-function TopologyCanvas({ map, layout, layer, pullRequest, side, onModule, t }: {
+function TopologyCanvas({ map, layout, layer, pullRequest, selectedId, onSelect, side, onModule, t }: {
   readonly map: ArchitectureMapV1;
   readonly layout: TopologyLayout;
   readonly layer: MapLayerId;
   readonly pullRequest: number | null;
+  readonly selectedId: string | null;
+  readonly onSelect: (id: string | null) => void;
   readonly side: ReactNode;
   readonly onModule: (id: string) => void;
   readonly t: OperatorTranslate;
@@ -177,14 +163,11 @@ function TopologyCanvas({ map, layout, layer, pullRequest, side, onModule, t }: 
   const placement = useMemo(() => runtimePlacement(map), [map]);
   const view = useMemo(() => mapLayerView(map, layer, pullRequest), [map, layer, pullRequest]);
   const names = useMemo(() => new Map(map.nodes.map(node => [node.id, node.name])), [map]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const boxes = useMemo(() => new Map(layout.boxes.map(box => [box.node.id, box])), [layout]);
-  // Canvas id to model node id; selection and the inspector use the model id.
-  const modelIds = useMemo(() => new Map(layout.boxes.flatMap(box => [[box.node.id, box.node.id] as const,
-    ...box.members.map(member => [memberId(box.node.id, member.id), member.id] as const)])), [layout]);
-  const content = useMemo(() => contentBox(layout.boxes), [layout]);
+  const rows = useMemo(() => rowsOf(layout), [layout]);
   // A box is lit when a node it shows, or a node that runs in it, holds a mark; a frame is lit through what it holds.
   const lit = useMemo(() => {
+    const parents = new Map(layout.scene.boxes.map(box => [box.id, box.parent]));
     const holder = new Map(layout.boxes.flatMap(box => box.members.map(member => [member.id, box.node.id] as const)));
     const home = (id: string): string | null => {
       if (boxes.has(id)) return id;
@@ -195,49 +178,27 @@ function TopologyCanvas({ map, layout, layer, pullRequest, side, onModule, t }: 
     };
     const result = new Set<string>();
     for (const id of view.lit) {
-      for (let cursor = home(id); cursor !== null && !result.has(cursor); cursor = boxes.get(cursor)?.parent ?? null) result.add(cursor);
+      for (let cursor = home(id); cursor !== null && !result.has(cursor); cursor = parents.get(cursor) ?? null) result.add(cursor);
     }
     return result;
   }, [layout, view, placement, boxes, map]);
 
-  const nodes = useMemo<TopologyNode[]>(() => layout.boxes.flatMap((box: TopologyBox): TopologyNode[] => {
-    const parent = box.parent === null ? null : boxes.get(box.parent)!;
-    const own: TopologyNode = {
-      id: box.node.id, type: layout.base !== 'namespace' ? 'box' : box.node.kind === 'namespace' ? 'namespace' : 'mount',
-      position: { x: box.x - (parent?.x ?? 0), y: box.y - (parent?.y ?? 0) }, width: box.width, height: box.height,
-      ...(parent ? { parentId: parent.node.id } : {}),
+  const nodeView = useCallback((sceneBox: SceneBox): SceneNodeView => {
+    const { box, member } = rows.get(sceneBox.id)!;
+    if (member !== null) {
+      return {
+        type: 'member', ariaLabel: `${member.kind} ${member.name}`, selection: member.id,
+        data: { node: member, mark: view.marks.get(member.id) ?? null, quiet: view.available && !view.lit.has(member.id), detail: memberText(member, t), tone: null, empty: null } satisfies BoxData,
+      };
+    }
+    return {
+      type: layout.base !== 'namespace' ? 'box' : box.node.kind === 'namespace' ? 'namespace' : 'mount', ariaLabel: `${box.node.kind} ${box.node.name}`, selection: box.node.id,
       data: {
         node: box.node, mark: view.marks.get(box.node.id) ?? null, quiet: view.available && !lit.has(box.node.id), detail: boxDetail(box, t), tone: box.tone,
         empty: layout.base === 'namespace' && box.node.kind === 'namespace' && !box.group ? t('architecture.topology.noMount') : null,
-      },
-      draggable: false, connectable: false, selected: box.node.id === selectedId, ariaLabel: `${box.node.kind} ${box.node.name}`,
+      } satisfies BoxData,
     };
-    return [own, ...box.members.map((member, index): TopologyNode => ({
-      id: memberId(box.node.id, member.id), type: 'member', parentId: box.node.id,
-      position: { x: 12, y: TOPOLOGY_BOX_HEADER + index * TOPOLOGY_MEMBER }, width: box.width - 24, height: TOPOLOGY_MEMBER - 4,
-      data: { node: member, mark: view.marks.get(member.id) ?? null, quiet: view.available && !view.lit.has(member.id), detail: memberText(member, t), tone: null, empty: null },
-      draggable: false, connectable: false, selected: member.id === selectedId, ariaLabel: `${member.kind} ${member.name}`,
-    }))];
-  }), [layout, boxes, view, lit, selectedId, t]);
-
-  const edges = useMemo<Edge[]>(() => layout.edges.map(edge => {
-    const touches = selectedId !== null && (edge.source === selectedId || edge.target === selectedId);
-    return {
-      id: edge.id, source: edge.source, target: edge.target,
-      className: `architecture-map__edge${touches ? ' is-active' : selectedId !== null ? ' is-dim' : ''}`,
-      style: edge.dashed ? { strokeDasharray: '6 4' } : {},
-      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: touches ? 'var(--rh-accent)' : 'var(--text-color-kumo-subtle)' },
-      ...(edge.protocols.length > 0 ? { label: edge.protocols.join(' · ') } : {}), data: { kind: edge.kind },
-      selectable: false, focusable: false, zIndex: touches ? 2 : 1,
-    };
-  }), [layout, selectedId]);
-
-  // Selection is the only node change the read-only map applies; click and the keyboard both arrive here.
-  const onNodesChange = useCallback((changes: NodeChange<TopologyNode>[]) => {
-    const chosen = changes.find(change => change.type === 'select' && change.selected);
-    if (chosen && 'id' in chosen) setSelectedId(modelIds.get(chosen.id)!);
-    else if (changes.some(change => change.type === 'select')) setSelectedId(null);
-  }, [modelIds]);
+  }, [rows, view, lit, layout, t]);
 
   const selected = selectedId === null ? null : map.nodes.find(node => node.id === selectedId)!;
   const selectedBox = selectedId === null ? null : boxes.get(selectedId) ?? null;
@@ -245,25 +206,8 @@ function TopologyCanvas({ map, layout, layer, pullRequest, side, onModule, t }: 
   const runsIn = selected?.kind === 'process' ? processNamespace(map, selected.id) : null;
   const mounter = selected?.kind === 'mount' ? map.relations.find(relation => relation.kind === 'mounts' && relation.target === selected.id)?.source ?? null : null;
   return <div className="architecture-map" data-view="topology" data-base={layout.base} data-node-count={layout.boxes.length} data-edge-count={layout.edges.length} data-layer={layer}>
-    <div className="architecture-map__canvas" aria-label={t('architecture.topology.label')} role="region">
-      <ReactFlow<TopologyNode, Edge>
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={NODE_TYPES}
-        onNodesChange={onNodesChange}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        edgesFocusable={false}
-        minZoom={0.05}
-        maxZoom={2}
-        attributionPosition="top-right"
-      >
-        <FirstViewport content={content} />
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--rh-diagram-dot)" />
-        <Panel position="bottom-left"><Legend base={layout.base} t={t} /></Panel>
-        <Panel position="bottom-right"><ZoomControls t={t} /></Panel>
-      </ReactFlow>
-    </div>
+    <ArchitectureSceneCanvas label={t('architecture.topology.label')} scene={layout.scene} nodeTypes={NODE_TYPES} view={nodeView}
+      selected={selectedId} onSelect={onSelect} legend={legend(layout.base, t)} t={t} />
     <aside className="architecture-map__inspector" aria-label={t('architecture.map.inspector')} data-node-id={selectedId ?? undefined}>
       {side}
       {selected === null ? <p className="detail-quiet">{t('architecture.map.pick')}</p>
@@ -297,13 +241,18 @@ const SEGMENT_EMPTY = {
   mount: { part: 'topology.mounts', reason: 'mount_undeclared' },
 } as const;
 
-/** The topology base map on one segment. `legacy` false leaves out the `deprecated` nodes. `side` leads the side panel. */
-export function ArchitectureTopology({ map, layer, pullRequest, base, legacy, side, onModule, t }: {
+/**
+ * The topology base map on one segment. `legacy` false leaves out the `deprecated` nodes. `side` leads the side panel.
+ * `selectedId` is the selected model node, which the map view holds.
+ */
+export function ArchitectureTopology({ map, layer, pullRequest, base, legacy, selectedId, onSelect, side, onModule, t }: {
   readonly map: ArchitectureMapV1;
   readonly layer: MapLayerId;
   readonly pullRequest: number | null;
   readonly base: TopologyBase;
   readonly legacy: boolean;
+  readonly selectedId: string | null;
+  readonly onSelect: (id: string | null) => void;
   readonly side: ReactNode;
   readonly onModule: (id: string) => void;
   readonly t: OperatorTranslate;
@@ -335,6 +284,6 @@ export function ArchitectureTopology({ map, layer, pullRequest, base, legacy, si
         })}</ul>
       </details>
     </Note>}
-    <ReactFlowProvider><TopologyCanvas key={`${map.commit}:${base}:${legacy}`} map={map} layout={layout} layer={layer} pullRequest={pullRequest} side={side} onModule={onModule} t={t} /></ReactFlowProvider>
+    <TopologyCanvas key={`${map.commit}:${base}:${legacy}`} map={map} layout={layout} layer={layer} pullRequest={pullRequest} selectedId={selectedId} onSelect={onSelect} side={side} onModule={onModule} t={t} />
   </div>;
 }

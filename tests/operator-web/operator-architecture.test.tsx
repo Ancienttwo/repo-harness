@@ -18,7 +18,8 @@ import {
 import { runtimePlacement } from '../../src/operator-web/architecture-runtime';
 import { layoutSequence, SEQUENCE_COLUMN } from '../../src/operator-web/architecture-sequence-layout';
 import { SEQUENCE_SVG_FONT, SEQUENCE_SVG_HEADER_WIDTH, SEQUENCE_SVG_TERMINAL_WIDTH, sequenceSvg, textWidth } from '../../src/operator-web/architecture-sequence-svg';
-import { defaultTopologyBase, layoutTopology, topologySvg, type TopologyBase } from '../../src/operator-web/architecture-topology-layout';
+import { defaultTopologyBase, layoutTopology, type TopologyBase } from '../../src/operator-web/architecture-topology-layout';
+import { repairRoute, routePath, sceneFindings, sceneSvg } from '../../src/operator-web/architecture-scene';
 import { contentBox, firstViewport } from '../../src/operator-web/architecture-map-parts';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import type { ArchitectureHistory as HistoryPage } from 'archctx-contracts';
@@ -968,9 +969,10 @@ describe('sequence and topology base maps', () => {
     const map = runtimeMap();
     const processes = layoutTopology(map, runtimePlacement(map), 'process', true);
     const box = new Map(processes.boxes.map(item => [item.node.id, item]));
+    const parent = (layout: { readonly scene: { readonly boxes: readonly { readonly id: string; readonly parent: string | null }[] } }, id: string) => layout.scene.boxes.find(item => item.id === id)!.parent;
     // Process boxes and external systems only; the namespace and its runs-in relations belong to the namespace segment.
     expect(processes.boxes.map(item => item.node.id).sort()).toEqual([CLI, EXTERNAL, SERVER].sort());
-    expect([box.get(SERVER)!.parent, box.get(SERVER)!.members.map(member => member.id)]).toEqual([null, [CENTER]]);
+    expect([parent(processes, SERVER), box.get(SERVER)!.members.map(member => member.id)]).toEqual([null, [CENTER]]);
     // The spawn joins two processes; the ledger's read of git is drawn from its process; the router runs in no process.
     expect(processes.edges.map(edge => [edge.source, edge.target, edge.kind, edge.dashed, edge.relations, edge.protocols])).toEqual([
       [SERVER, EXTERNAL, 'io', true, ['relation.c-git'], []], [CLI, SERVER, 'spawns', true, ['relation.g-spawns'], []]]);
@@ -1017,25 +1019,82 @@ describe('sequence and topology base maps', () => {
     for (const entry of cases) {
       const layout = layoutTopology(entry.map, runtimePlacement(entry.map), entry.base, entry.legacy);
       const actual: unknown = {
-        boxes: layout.boxes.map(item => [item.node.id, item.parent, item.group, item.tone]),
+        boxes: layout.boxes.map(item => [item.node.id, parent(layout, item.node.id), item.group, item.tone]),
         edges: layout.edges.map(edge => [edge.source, edge.target, edge.kind, edge.protocols]),
         members: layout.boxes.filter(item => item.members.length > 0).map(item => [item.node.id, item.members.map(member => member.id)]),
       };
       expect([entry.name, actual]).toEqual([entry.name, entry.expected]);
       // Each box of the SVG file clips its text with its own clip path.
-      const svg = topologySvg(layout, { detail: item => item.node.kind, member: (_, member) => member.name });
+      const svg = sceneSvg(layout.scene, item => [item.id]);
       expect([entry.name, [...svg.matchAll(/clip-path="url\(#(clip-\d+)\)"/gu)].map(match => match[1])])
         .toEqual([entry.name, [...svg.matchAll(/<clipPath id="(clip-\d+)"/gu)].map(match => match[1])]);
-      expect(new Set([...svg.matchAll(/<clipPath id="(clip-\d+)"/gu)].map(match => match[1])).size).toBe(layout.boxes.length);
+      expect(new Set([...svg.matchAll(/<clipPath id="(clip-\d+)"/gu)].map(match => match[1])).size).toBe(layout.scene.boxes.length);
     }
     expect(layoutTopology(hidden, runtimePlacement(hidden), 'process', false).unplaced).toEqual(['relation.b-router']);
     // A frame encloses its mounts, and the mounts stack in mount order.
-    const frames = new Map(layoutTopology(mounted, runtimePlacement(mounted), 'namespace', true).boxes.map(item => [item.node.id, item]));
+    const frames = new Map(layoutTopology(mounted, runtimePlacement(mounted), 'namespace', true).scene.boxes.map(item => [item.id, item]));
     const inside = (inner: string, outer: string) => {
       const a = frames.get(inner)!, b = frames.get(outer)!;
       return a.x >= b.x && a.y >= b.y && a.x + a.width <= b.x + b.width && a.y + a.height <= b.y + b.height;
     };
     expect([inside('mount.config', HOST), inside('mount.cache', HOST), inside('namespace.remote', HOST), frames.get('mount.config')!.y < frames.get('mount.cache')!.y]).toEqual([true, true, false, true]);
+  });
+
+  test('the process topology on the recorded map: dagre routes with the corner repair pass the scene check, the file draws each route path, and the check finds each defect kind', () => {
+    expect([routePath([[0, 0], [10, 0]]), routePath([[0, 0], [0, 10], [10, 10]])]).toEqual(['M0 0 L10 0', 'M0 0 L0 5 Q0 10 5 10 L10 10']);
+    const recorded = decodeArchitectureMap(recordedMap);
+    const scene = (repair: boolean) => layoutTopology(recorded, runtimePlacement(recorded), 'process', true, repair).scene;
+    const repaired = scene(true);
+    const canvas = { width: 1200, height: 760 };
+    expect(sceneFindings(repaired, { canvas, viewport: firstViewport(contentBox(repaired.boxes), canvas) })).toEqual([]);
+    // Without the repair, some dagre routes go through a third box.
+    expect(sceneFindings(scene(false)).filter(finding => finding.kind === 'route-through-box').length).toBeGreaterThan(0);
+    expect(repaired.routes.every(route => route.points.length >= 2)).toBe(true);
+    // The CLI spawns the supervisor and calls its code: two routes between the same two boxes.
+    const between = repaired.routes.filter(route => route.source === 'process.cli' && route.target === 'process.process-supervisor');
+    expect([between.length, JSON.stringify(between[0]!.points) !== JSON.stringify(between[1]!.points)]).toEqual([2, true]);
+    const svg = sceneSvg(repaired, box => [box.id]);
+    expect([...svg.matchAll(/<path class="route[^"]*" stroke-width="[^"]*" d="([^"]*)"/gu)].map(match => match[1])).toEqual(repaired.routes.map(route => routePath(route.points)));
+
+    // Overlapping siblings, a route through a third box, a route end off its border, a label on another route, and a first view below the first rank.
+    const box = (id: string, x: number, y: number) => ({ id, parent: null, x, y, width: 100, height: 40, kind: 'box' });
+    const route = (id: string, source: string, target: string, points: readonly (readonly [number, number])[]) => ({ id, source, target, points, arrows: { start: false, end: true }, kind: 'code', dashed: false, width: 1.5 });
+    const broken = {
+      boxes: [box('a', 0, 0), box('b', 50, 20), box('c', 0, 200), box('d', 0, 100)],
+      routes: [route('a-c', 'a', 'c', [[50, 40], [50, 200]]), route('c-d', 'c', 'd', [[300, 300], [50, 140]])],
+      labels: [{ text: 'http', x: 30, y: 150, width: 28, height: 16, route: 'c-d' }],
+      extent: { width: 400, height: 400 },
+    };
+    expect(sceneFindings(broken, { canvas: { width: 400, height: 400 }, viewport: { x: 0, y: -300, zoom: 1 } })).toEqual([
+      { kind: 'overlap', ids: ['a', 'b'] },
+      { kind: 'route-through-box', ids: ['a-c', 'd'] },
+      { kind: 'route-end', ids: ['c-d', 'c'] },
+      { kind: 'label', ids: ['http', 'a-c'] },
+      { kind: 'first-rank', ids: ['a', 'b'] },
+    ]);
+    // The check and the repair read the drawn curve: the straight segments clear the probe box, the curve through (12.5, 87.5) does not.
+    const curve = route('curve', 'a', 'c', [[0, 0], [0, 100], [100, 100]]);
+    const probe = { boxes: [box('a', -50, -40), box('c', 100, 80), { ...box('probe', 10, 85), width: 8, height: 8 }], routes: [curve], labels: [], extent: { width: 300, height: 300 } };
+    expect(sceneFindings(probe)).toEqual([{ kind: 'route-through-box', ids: ['curve', 'probe'] }]);
+    // The repair keeps the ends, repeats no point and clears every obstacle: the drawn curve here and a straight route between two boxes that one corner detour cannot clear.
+    const repairs = [
+      { name: 'curve', points: curve.points, ends: [box('a', -50, -40), box('c', 100, 80)], obstacles: [probe.boxes[2]!] },
+      { name: 'two boxes', points: [[20, 110], [500, 110]] as const, ends: [{ ...box('a', 0, 100), width: 20, height: 20 }, { ...box('c', 500, 100), width: 20, height: 20 }],
+        obstacles: [{ ...box('low', 62, 113), width: 35, height: 51 }, { ...box('high', 97, 30), width: 53, height: 106 }] },
+    ];
+    for (const entry of repairs) {
+      const points = repairRoute(entry.points, entry.obstacles);
+      const scene = { boxes: [...entry.ends, ...entry.obstacles], routes: [{ ...curve, points }], labels: [], extent: { width: 600, height: 300 } };
+      expect([entry.name, sceneFindings(scene), points[0], points.at(-1), new Set(points.map(point => point.join())).size])
+        .toEqual([entry.name, [], entry.points[0], entry.points.at(-1), points.length]);
+    }
+    // Three stacked mounts in one namespace: the route from the first to the third clears the middle one.
+    const stacked = runtimeMap({
+      nodes: [...runtimeMap().nodes, ...['a', 'b', 'c'].map((id, order) => ({ ...mapNode(`mount.${id}`, 'mount'), mount: { source: null, target: `mnt/${id}`, mode: 'rw', order } as const }))],
+      relations: [...runtimeMap().relations, ...['a', 'b', 'c'].map(id => mapRelation(`relation.m-${id}`, 'mounts', HOST, `mount.${id}`)), mapRelation('relation.a-c', 'calls', 'mount.a', 'mount.c')],
+    });
+    const namespaces = (repair: boolean) => sceneFindings(layoutTopology(stacked, runtimePlacement(stacked), 'namespace', true, repair).scene);
+    expect([namespaces(false), namespaces(true)]).toEqual([[{ kind: 'route-through-box', ids: ['topology:mount.a\nmount.c\ncalls', 'mount.b'] }], []]);
   });
 
   test('the first view centres content that fits and opens a wide map or an unsized canvas at 85% on its top-left corner; the topology opens on a segment with boxes', () => {
@@ -1364,9 +1423,12 @@ describe('sequence and topology base maps', () => {
     expect(document.querySelector(`.react-flow__node[data-id="${SERVER}/${CENTER}"]`)?.classList.contains('react-flow__node-member')).toBe(true);
     expect(document.querySelector(`.react-flow__node[data-id="${EXTERNAL}"] .architecture-topology__box`)?.getAttribute('data-kind')).toBe('external-system');
     expect(notes()).toEqual(['topology.unplaced:deployment_undeclared']);
+    // The canvas draws each route from its scene points, not between the node handles.
+    const routes = layoutTopology(runtimeMap(), runtimePlacement(runtimeMap()), 'process', true).scene.routes;
+    expect([...document.querySelectorAll('.react-flow__edge-route .react-flow__edge-path')].map(path => path.getAttribute('d'))).toEqual(routes.map(route => routePath(route.points)));
     // The first view comes from the bounding box of every box and the canvas size that React Flow reports.
     // happy-dom lays out no element, so React Flow reports its fallback size, 500 × 500.
-    const view = firstViewport(contentBox(layoutTopology(runtimeMap(), runtimePlacement(runtimeMap()), 'process', true).boxes), { width: 500, height: 500 });
+    const view = firstViewport(contentBox(layoutTopology(runtimeMap(), runtimePlacement(runtimeMap()), 'process', true).scene.boxes), { width: 500, height: 500 });
     expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).toBe(`translate(${view.x}px,${view.y}px) scale(${view.zoom})`);
     // The host frame holds no mount and is lit through the server that runs in it; no node is deprecated.
     await segment('namespace');
@@ -1386,6 +1448,25 @@ describe('sequence and topology base maps', () => {
     expect([...inspector().querySelectorAll('[data-fix-command]')].map(item => item.getAttribute('data-fix-command'))).toEqual(['flows', 'dependencies']);
     await click(`.react-flow__node[data-id="${SERVER}"]`);
     expect([inspector().querySelector('[data-runs-in]')?.textContent, inspector().querySelector('[data-deployed]')?.textContent]).toEqual([`In: Name ${HOST}`, `Name ${CENTER} · 900 lines in 1 files`]);
+    // The selection stays across every view tab and goes with a segment change, so going back does not bring it back.
+    for (const other of ['sequence', 'modules', 'history']) {
+      await tab(other);
+      await tab('topology');
+      expect([other, inspector().getAttribute('data-node-id')]).toEqual([other, SERVER]);
+    }
+    // Another repository and back while Sequence shows: the selection goes, whatever tab shows when the repository changes.
+    await tab('sequence');
+    for (const repositoryId of ['repo-other', REPO]) {
+      await act(async () => root?.render(workspace({ repositoryId, readMap: reader(runtimeMap()) })));
+      await settle();
+    }
+    await tab('topology');
+    expect(inspector().getAttribute('data-node-id')).toBeNull();
+    await click(`.react-flow__node[data-id="${SERVER}"]`);
+    await segment('namespace');
+    await segment('process');
+    expect(inspector().getAttribute('data-node-id')).toBeNull();
+    await click(`.react-flow__node[data-id="${SERVER}"]`);
 
     await chooseLayer('tests');
     expect(notes()).toEqual(['topology.unplaced_marks:deployment_undeclared', 'topology.unplaced:deployment_undeclared']);
@@ -1408,7 +1489,7 @@ describe('sequence and topology base maps', () => {
         mapRelation('relation.j-mount', 'mounts', HOST, 'mount.old'), mapRelation('relation.k-write', 'writes', PART, 'mount.cache')] });
     await mount(workspace({ readMap: reader(map) }));
     await tab('topology');
-    // In happy-dom React Flow draws no edge, so the handles that a namespace edge routes through stand for it.
+    // A namespace box carries the source and target handles that React Flow attaches a route to.
     expect([...document.querySelectorAll(`.react-flow__node[data-id="${HOST}"] .react-flow__handle`)].map(item => item.classList.contains('source') ? 'source' : 'target').sort()).toEqual(['source', 'target']);
     expect(['mount.cache', 'mount.old'].map(id => document.querySelector(`.react-flow__node[data-id="${id}"] [data-mount-tone]`)?.getAttribute('data-mount-tone'))).toEqual(['writer', 'point']);
     await click('.react-flow__node[data-id="mount.cache"]');
