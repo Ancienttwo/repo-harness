@@ -20,7 +20,7 @@ Generality: These are general working rules. Do not tailor behavior to any speci
 - Address status questions, cost concerns, and redirection before resuming prior work.
 - Before a step expected to exceed 10 minutes, state its expected cost and necessity. Reuse valid evidence after checking subject hash, fingerprint, and freshness; produce expensive final evidence once after freezing code and merging or pinning the target base.
 - Cap fail -> fix -> reverify loops at three rounds per issue; then stop and report findings.
-- Report out-of-scope faults without fixing them. At most one directly blocking out-of-scope fix is allowed per task. A second out-of-scope discovery is a hard stop: report and wait for instruction.
+- Report unrelated faults (defects outside the task) without fixing them. At most one directly blocking unrelated fix is allowed per task. A second unrelated discovery is a hard stop: report and wait for instruction. Refactoring follows Code Ownership.
 - Use the cheapest sufficient verification for trivial or mechanical tasks; preserve required checks and behavior-specific evidence.
 
 ## Progressive Due Diligence
@@ -38,6 +38,12 @@ Before non-trivial design or edits, complete P1/P2/P3:
 - Create shared components only for observed reuse or invariants. When independently meaningful consumers need a shared package, prefer an existing monorepo workspace; do not convert a single-package repository into a monorepo without a second independently released or deployed consumer.
 - Validate an unknown value once, at the boundary that owns it, and pass the typed value inward. Do not check again a value that a schema, constructor or internal type already guarantees.
 - Before you add complexity for a speculative or very unlikely race, security or failure case, or a test for it, tell the user the concrete failure mode, its likelihood and the complexity cost, and get their approval. Do not expand scope silently for theoretical robustness.
+
+## Code Ownership
+
+- By default, the repository is yours. You decide its shape, and you maintain it later. A repository's own rules or the user can say otherwise, for example for an upstream project that the user only contributes to.
+- Refactor when it makes the code better: remove duplication, replace a structure that blocks the change, and rewrite older model-written code instead of adding to it. Do not copy a duplicate or add a layer on top of messy code.
+- A refactor keeps behavior unless the task changes it, and the PR states what it refactored. In multi-seat work, a refactor that reaches files that another seat owns goes through the orchestrator first (one writer per file).
 
 ## No Compatibility Fallbacks in Product Code
 

@@ -20,7 +20,7 @@
 - Keep one source of truth for each datum; other representations are deterministic projections with drift checks.
 - Do not add steady-state compatibility code, dual authority, semantic fallbacks, aliases or shadow parsers; one-shot migrations fail closed and remove the retired path.
 - Share components only for observed reuse or a cross-module invariant. Use an existing workspace only for independently meaningful consumers; do not convert this single-package repo without that boundary.
-- Prefer platform/standard-library features, then installed dependencies, and the smallest direct implementation; shrink obsolete code before adding layers.
+- Prefer platform/standard-library features, then installed dependencies, and the smallest direct implementation; shrink obsolete code before adding layers. The repository is yours by default: refactor duplication, blocking structure and older model-written code instead of adding to it; keep behavior unless the task changes it, state the refactor in the PR, and route a refactor into another seat's files through the orchestrator.
 - Never satisfy a requirement with a substitute that only looks compliant (mocks, hard-coded values, images posing as the real thing); say what cannot be done and flag the deviation in the PR.
 - Self-review before committing: remove dead code, empty branches and debug leftovers, and split functions by responsibility instead of one large block.
 
