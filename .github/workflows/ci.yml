@@ -3,6 +3,9 @@ name: CI
 on:
   pull_request:
     types: [opened, synchronize]
+  # The merge queue tests each queued PR on its temporary branch; Required / CI is its required check.
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main]
   schedule:
@@ -270,7 +273,7 @@ jobs:
           bun-version: 1.4.3
       - name: Check the plugin-internals constraint and warn about architecture debt
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: bash scripts/check-ci.sh architecture-advisory --base "$BASE_SHA"
 
   governance:
@@ -446,7 +449,7 @@ jobs:
 
   required:
     name: Required / CI
-    if: always() && github.event_name == 'pull_request'
+    if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     needs: [selection, state-boundaries, verify, home-isolation, native-oar, architecture-advisory]
     runs-on: ubuntu-latest
     steps:

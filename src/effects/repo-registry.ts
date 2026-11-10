@@ -703,6 +703,33 @@ export function registerRepoHarnessRepo(
   });
 }
 
+export interface RepoHarnessPanePrefixUpdateResult extends RepoHarnessRegisterResult {
+  readonly panePrefix: string;
+}
+
+/** Set `panePrefix` on a registered repo. It changes no other field and no authorization input. */
+export function setRepoHarnessPanePrefix(
+  repoRoot: string,
+  panePrefix: string,
+  opts: { readonly env?: NodeJS.ProcessEnv } = {},
+): RepoHarnessPanePrefixUpdateResult {
+  if (!PANE_PREFIX.test(panePrefix)) throw new Error(`pane prefix must match ${PANE_PREFIX.source}`);
+  const canonical = canonicalRepoPath(repoRoot);
+  const registryPath = repoHarnessRegisteredReposPath(opts.env);
+  return withRegistryMutationLock(registryPath, () => {
+    const registry = readRegistryFile(registryPath);
+    const target = registry.repos.find((entry) => entry.path === canonical);
+    if (!target) throw new Error(`repo is not registered in ${registryPath}: ${canonical}`);
+    const holder = registry.repos.find((entry) => entry.panePrefix === panePrefix && entry.path !== canonical);
+    if (holder) throw new Error(`pane prefix ${panePrefix} is already set for ${holder.path}`);
+    const changed = target.panePrefix !== panePrefix;
+    if (changed) {
+      writeRegistryFile(registryPath, registry.repos.map((entry) => entry === target ? { ...entry, panePrefix } : entry), registry.authorizationRevision);
+    }
+    return { path: canonical, registryPath, registered: true, changed, panePrefix };
+  });
+}
+
 export function setRepoHarnessAccessMode(
   repoRoot: string,
   accessMode: RepoHarnessAccessMode,

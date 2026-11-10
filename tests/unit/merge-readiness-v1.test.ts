@@ -360,7 +360,7 @@ describe('required-check failure evidence', () => {
     ['Installing dependencies', null], ['Run npm run preinstall', null],
     ['Run npm run postinstall', null], ['Reinstall dependencies', null],
     ['Run tests', 'npm ERR! code ERESOLVE'], ['Run tests', 'pnpm error ERR_PNPM_OUTDATED_LOCKFILE'],
-    ['Run tests', 'ERR_PNPM_FETCH_404'],
+    ['Run tests', 'ERR_PNPM_FETCH_404'], ['Run tests', 'ERR_PNPM_LOCKFILE_CONFIG_MISMATCH Cannot proceed with the frozen installation'],
     ['Run tests', 'error: lockfile had changes, but lockfile is frozen'],
     ['Run tests', 'Registry request failed with status 503'],
     ['Run tests', 'Package resolution failed'],
@@ -374,6 +374,7 @@ describe('required-check failure evidence', () => {
   test.each([
     [`${nodeDeprecation}\nAssertionError: expected 1 to deeply equal 2`, 'assertion_mismatch'],
     ['AssertionError: expected "registry failed" to equal "ok"', 'assertion_mismatch'],
+    ['Snapshot `name 1` mismatched', 'assertion_mismatch'],
     ['lockfile registry dependency install setup', 'other'],
     ['registry documentation\nerror: test process exited', 'other'],
   ] as const)('excerpt assertions and non-install text keep their failure shape: %s', (excerpt, shape) => {
