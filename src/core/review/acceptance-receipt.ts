@@ -2,6 +2,7 @@ import type { ReviewAdmission, ReviewAuthorityContext } from './authority-contex
 import type { RequiredCheckFailureEvidenceV1 } from '../evidence/required-check-evidence';
 import type { RequiredCheckCoverageEvidenceV1 } from '../publication/required-check-coverage';
 import { createHash } from 'crypto';
+import { modelFamily } from './model-family';
 import { isReviewRuntimeId, type ReviewRuntimeId } from './review-runtimes';
 
 export type AcceptanceDisposition = 'external_pass' | 'user_waiver' | 'reject';
@@ -84,24 +85,6 @@ export type AcceptanceReceipt = {
   waiver_grant_sha256: string | null;
   issued_at: string;
 };
-
-/** Closed model-family table: the single family authority. A routing provider
- * prefix (`magpie/`, `cursor/`) is a gateway label, so only the last `/`
- * segment is matched. An unmatched model has no family. */
-const MODEL_FAMILY_PREFIXES: readonly (readonly [string, string])[] = [
-  ['claude-', 'anthropic'], ['opus', 'anthropic'], ['sonnet', 'anthropic'], ['haiku', 'anthropic'],
-  ['gpt-', 'openai'], ['o3', 'openai'], ['o4', 'openai'],
-  ['deepseek-', 'deepseek'],
-  ['gemini-', 'google'],
-  ['grok-', 'xai'],
-  ['kimi-', 'moonshot'],
-  ['qwen', 'alibaba'],
-];
-
-export function modelFamily(model: string): string | null {
-  const name = model.slice(model.lastIndexOf('/') + 1).toLowerCase();
-  return MODEL_FAMILY_PREFIXES.find(([prefix]) => name.startsWith(prefix))?.[1] ?? null;
-}
 
 /** One known shared family denies a cross-model claim. Only a complete set of
  * known author families that all differ from a known reviewer family grants it. */
