@@ -373,6 +373,11 @@ const STYLE = [
 const VIEW_STYLE: Readonly<Record<string, string>> = {
   band: '.band{fill:none;stroke:none}',
   selected: '.selected{stroke:#F08A3C;stroke-width:2}',
+  lifeline: '.lifeline{fill:#8C96A3;stroke:none}',
+  fragment: '.fragment{stroke-dasharray:5 4}',
+  terminal: '.terminal{fill:#FFFFFF}',
+  success: '.fragment.success{fill:#EDF7F0;stroke:#2C6A3D}.terminal.success{stroke:#2C6A3D}',
+  error: '.fragment.error{fill:#FBEFEF;stroke:#B42318}.terminal.error{stroke:#B42318}',
 };
 
 const escape = (value: string) => value.replace(/[&<>"]/gu, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]!);

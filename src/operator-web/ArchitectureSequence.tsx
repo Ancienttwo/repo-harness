@@ -1,5 +1,5 @@
-import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
-import { Background, BackgroundVariant, Panel, ReactFlow, ReactFlowProvider, type Node, type NodeChange, type NodeProps } from '@xyflow/react';
+import { memo, useCallback, useMemo, type ReactNode } from 'react';
+import type { Node, NodeProps } from '@xyflow/react';
 import '@xyflow/react/dist/base.css';
 import {
   flowSelectorKey,
@@ -10,14 +10,15 @@ import {
   type ArchitectureMapV1,
 } from '../core/operator/architecture-map';
 import { archctxCode, mapLayerView, type MapLayerId, type MapMark } from './architecture-map-layers';
-import { contentBox, FirstViewport, FixCommand, Mark, NodeDetails, Note, nodeSize, ZoomControls } from './architecture-map-parts';
+import { FixCommand, Mark, NodeDetails, Note, nodeSize } from './architecture-map-parts';
 import { runtimePlacement, type RuntimePlacement } from './architecture-runtime';
-import { layoutSequence, SEQUENCE_COLUMN, SEQUENCE_HEADER, type SequenceBox } from './architecture-sequence-layout';
-import { sequenceSvg } from './architecture-sequence-svg';
+import type { SceneBox, SceneRoute } from './architecture-scene';
+import { layoutSequence, type MessageTone, type SequenceLayout, type SequencePart } from './architecture-sequence-layout';
+import { ArchitectureSceneCanvas, downloadSceneSvg, SceneHandles, type SceneLegendEntry, type SceneNodeView } from './ArchitectureSceneCanvas';
+import type { ArchitectureSelections } from './ArchitectureMap';
 import type { OperatorTranslate } from './i18n';
 
 type RequiredFlow = Extract<ArchitectureMapFlowV1, { applicability: 'required' }>;
-type MessageTone = 'change' | 'danger';
 
 const stepKey = (flowId: string, outcome: string | null, step: string) => `${flowId}\0${outcome ?? ''}\0${step}`;
 
@@ -54,35 +55,29 @@ function firstFlow(map: ArchitectureMapV1, layer: MapLayerId, reached: ReadonlyS
   return (required.find(flow => lit.has(flow.id)) ?? required[0] ?? map.flows[0])?.id ?? null;
 }
 
-interface BoxData extends Record<string, unknown> { readonly box: SequenceBox; readonly title: string; readonly reason: string | null }
+interface BoxData extends Record<string, unknown> { readonly placement: RuntimePlacement; readonly title: string; readonly reason: string | null }
 interface FragmentData extends Record<string, unknown> { readonly kind: 'success' | 'error'; readonly index: number; readonly label: string }
 interface HeaderData extends Record<string, unknown> { readonly name: string; readonly kind: string; readonly mark: MapMark | null; readonly quiet: boolean }
-interface MessageData extends Record<string, unknown> { readonly label: string; readonly direction: 'right' | 'left' | 'self'; readonly tone: MessageTone | null; readonly status: string | null }
 interface TerminalData extends Record<string, unknown> { readonly kind: 'success' | 'error'; readonly label: string }
-type SequenceNode = Node<BoxData, 'box'> | Node<FragmentData, 'fragment'> | Node<HeaderData, 'header'> | Node<Record<string, never>, 'lifeline'> | Node<MessageData, 'message'> | Node<TerminalData, 'terminal'>;
 
 const BoxNode = memo(function BoxNode({ data }: NodeProps<Node<BoxData, 'box'>>) {
-  return <div className="architecture-sequence__box" data-placement={data.box.placement.kind} data-reason={data.reason ?? undefined} title={data.reason ?? undefined}><span>{data.title}</span></div>;
+  return <div className="architecture-sequence__box" data-placement={data.placement.kind} data-reason={data.reason ?? undefined} title={data.reason ?? undefined}><span>{data.title}</span></div>;
 });
 const FragmentNode = memo(function FragmentNode({ data }: NodeProps<Node<FragmentData, 'fragment'>>) {
-  return <div className="architecture-sequence__fragment" data-kind={data.kind}><span className="mono-value">{data.index === 0 ? 'alt' : 'else'}</span> {data.label}</div>;
+  return <div className="architecture-sequence__fragment" data-kind={data.kind} title={data.label}><span className="mono-value">{fragmentTag(data.index)}</span> {data.label}</div>;
 });
 const HeaderNode = memo(function HeaderNode({ data, selected }: NodeProps<Node<HeaderData, 'header'>>) {
   return <div className="architecture-map__box architecture-sequence__header" data-kind={data.kind} data-selected={selected || undefined} data-tone={data.mark?.tone} data-quiet={data.quiet || undefined}>
     <span className="architecture-map__title"><strong title={data.name}>{data.name}</strong><Mark mark={data.mark} /></span>
   </div>;
 });
-const LifelineNode = memo(function LifelineNode() { return <div className="architecture-sequence__lifeline" />; });
-const MessageNode = memo(function MessageNode({ data, selected }: NodeProps<Node<MessageData, 'message'>>) {
-  return <div className="architecture-sequence__message" data-direction={data.direction} data-tone={data.tone ?? undefined} data-selected={selected || undefined}>
-    <span className="architecture-sequence__label" title={data.label}>{data.label}{data.tone === 'danger' && data.status && <span className="architecture-map__mark mono-value" data-tone="danger">{data.status}</span>}</span>
-    <span className="architecture-sequence__arrow" aria-hidden="true" />
-  </div>;
-});
+const LifelineNode = memo(function LifelineNode() { return <div className="architecture-sequence__lifeline"><SceneHandles /></div>; });
 const TerminalNode = memo(function TerminalNode({ data }: NodeProps<Node<TerminalData, 'terminal'>>) {
   return <div className="architecture-sequence__terminal" data-kind={data.kind} title={data.label}>{data.label}</div>;
 });
-const NODE_TYPES = { box: BoxNode, fragment: FragmentNode, header: HeaderNode, lifeline: LifelineNode, message: MessageNode, terminal: TerminalNode };
+const NODE_TYPES = { box: BoxNode, fragment: FragmentNode, header: HeaderNode, lifeline: LifelineNode, terminal: TerminalNode };
+
+const fragmentTag = (index: number) => index === 0 ? 'alt' : 'else';
 
 function placementText(placement: RuntimePlacement, names: ReadonlyMap<string, string>, t: OperatorTranslate): string {
   return placement.kind === 'process' ? names.get(placement.process) ?? placement.process
@@ -160,125 +155,103 @@ function StepDetails({ map, flow, outcome, step, t }: {
   </>;
 }
 
-function Legend({ t }: { readonly t: OperatorTranslate }) {
-  return <dl className="architecture-map__legend" aria-label={t('architecture.map.legend')}>
-    <div><dt><span className="architecture-map__swatch architecture-map__swatch--box" /></dt><dd>{t('architecture.sequence.legend.process')}</dd></div>
-    <div><dt><span className="architecture-map__swatch architecture-map__swatch--external" /></dt><dd>{t('architecture.sequence.legend.external')}</dd></div>
-    <div><dt><span className="architecture-map__swatch architecture-map__swatch--success" /></dt><dd>{t('architecture.sequence.legend.success')}</dd></div>
-    <div><dt><span className="architecture-map__swatch architecture-map__swatch--danger" /></dt><dd>{t('architecture.sequence.legend.error')}</dd></div>
-  </dl>;
+function legend(t: OperatorTranslate): SceneLegendEntry[] {
+  return [
+    { key: 'process', swatch: <span className="architecture-map__swatch architecture-map__swatch--box" />, text: t('architecture.sequence.legend.process') },
+    { key: 'external', swatch: <span className="architecture-map__swatch architecture-map__swatch--external" />, text: t('architecture.sequence.legend.external') },
+    { key: 'success', swatch: <span className="architecture-map__swatch architecture-map__swatch--success" />, text: t('architecture.sequence.legend.success') },
+    { key: 'error', swatch: <span className="architecture-map__swatch architecture-map__swatch--danger" />, text: t('architecture.sequence.legend.error') },
+  ];
 }
 
-type Selection = { readonly kind: 'participant'; readonly id: string } | { readonly kind: 'message'; readonly outcome: string | null; readonly step: string } | null;
+/** The placed scene of one flow, with the messages that the active layer marks. The canvas and the SVG file both read it. */
+function flowLayout(map: ArchitectureMapV1, flow: RequiredFlow, layer: MapLayerId, pullRequest: number | null): SequenceLayout {
+  const reached = reachedSteps(map, layer, pullRequest);
+  const proven = proofs(map);
+  return layoutSequence(flow, runtimePlacement(map), {
+    tone: (outcome, step) => messageTone(layer, reached, proven, flow.id, outcome, step),
+    status: step => { const status = proven?.get(flowSelectorKey(step.evidence)); return status === undefined || status === 'proven' ? null : status; },
+  });
+}
 
-/** The diagram of one flow. It owns no state: the selection lives with the side panel, which stays mounted across flow changes. */
-function SequenceCanvas({ map, flow, layer, pullRequest, selection, onSelect, t }: {
+/** The title of a process box. */
+function boxTitle(placement: RuntimePlacement, names: ReadonlyMap<string, string>, t: OperatorTranslate): string {
+  return placement.kind === 'unknown' ? t('architecture.sequence.unknown') : placementText(placement, names, t);
+}
+
+/** The text lines of each box in the SVG file. */
+function sceneLines(layout: SequenceLayout, map: ArchitectureMapV1, t: OperatorTranslate): (box: SceneBox) => readonly string[] {
+  const names = new Map(map.nodes.map(node => [node.id, node.name]));
+  return box => {
+    const part = layout.parts.get(box.id)!;
+    if (part.kind === 'process') return [boxTitle(part.placement, names, t)];
+    if (part.kind === 'participant') return [names.get(part.participant.node) ?? part.participant.node];
+    if (part.kind === 'fragment') return [`${fragmentTag(part.index)} ${part.outcome.label}`];
+    if (part.kind === 'terminal') return [part.outcome.terminal.label];
+    return [];
+  };
+}
+
+/** The selected box or route of the flow on screen: a participant header id or a message route id. */
+type Selection = ArchitectureSelections['sequence'] | null;
+
+/** The diagram of one flow. It owns no state: the selection lives with the architecture workspace. */
+function SequenceCanvas({ map, layout, layer, pullRequest, selected, onSelect, t }: {
   readonly map: ArchitectureMapV1;
-  readonly flow: RequiredFlow;
+  readonly layout: SequenceLayout;
   readonly layer: MapLayerId;
   readonly pullRequest: number | null;
-  readonly selection: Selection;
-  readonly onSelect: (flowId: string, selection: Selection) => void;
+  readonly selected: string | null;
+  readonly onSelect: (id: string | null) => void;
   readonly t: OperatorTranslate;
 }) {
-  const placement = useMemo(() => runtimePlacement(map), [map]);
-  const layout = useMemo(() => layoutSequence(flow, placement), [flow, placement]);
-  const view = useMemo(() => mapLayerView(map, layer, pullRequest), [map, layer, pullRequest]);
-  const reached = useMemo(() => reachedSteps(map, layer, pullRequest), [map, layer, pullRequest]);
-  const proven = useMemo(() => proofs(map), [map]);
-  const names = useMemo(() => new Map(map.nodes.map(node => [node.id, node.name])), [map]);
-
-  const nodes = useMemo<SequenceNode[]>(() => {
-    const kinds = new Map(map.nodes.map(node => [node.id, node.kind]));
-    const fixed = { draggable: false, connectable: false, selectable: false, focusable: false } as const;
-    return [
-      ...layout.boxes.map((box): SequenceNode => ({
-        id: `box:${box.key}`, type: 'box', position: { x: box.x, y: box.y }, width: box.width, height: box.height, zIndex: 0, ...fixed,
-        data: { box, title: box.placement.kind === 'unknown' ? t('architecture.sequence.unknown') : placementText(box.placement, names, t),
-          reason: box.placement.kind === 'unknown' ? t(`architecture.runtime.${box.placement.reason}`) : null },
-      })),
-      ...layout.fragments.map((fragment): SequenceNode => ({
-        id: `fragment:${fragment.outcome.id}`, type: 'fragment', position: { x: fragment.x, y: fragment.y }, zIndex: 1, ...fixed,
-        width: fragment.width, height: fragment.height, data: { kind: fragment.outcome.kind, index: fragment.index, label: fragment.outcome.label },
-      })),
-      ...layout.columns.map((column): SequenceNode => ({
-        id: `lifeline:${column.participant.id}`, type: 'lifeline', position: { x: column.x - 1, y: layout.headerY + SEQUENCE_HEADER - 8 }, zIndex: 2, ...fixed,
-        width: 2, height: layout.bottom - layout.headerY - SEQUENCE_HEADER + 8, data: {},
-      })),
-      ...layout.columns.map((column): SequenceNode => ({
-        id: `participant:${column.participant.id}`, type: 'header', position: { x: column.x - (SEQUENCE_COLUMN - 24) / 2, y: layout.headerY },
-        width: SEQUENCE_COLUMN - 24, height: SEQUENCE_HEADER - 8, zIndex: 3, draggable: false, connectable: false,
-        selected: selection?.kind === 'participant' && selection.id === column.participant.id,
-        ariaLabel: `${kinds.get(column.participant.node)} ${names.get(column.participant.node)}`,
-        data: { name: names.get(column.participant.node) ?? column.participant.node, kind: kinds.get(column.participant.node) ?? '', mark: view.marks.get(column.participant.node) ?? null,
-          quiet: view.available && !view.lit.has(column.participant.node) },
-      })),
-      ...layout.messages.map((message): SequenceNode => {
-        const self = message.from === message.to;
-        const status = proven?.get(flowSelectorKey(message.step.evidence)) ?? null;
-        return {
-          id: `message:${message.outcome ?? ''}:${message.step.id}`, type: 'message', zIndex: 4, draggable: false, connectable: false,
-          position: { x: self ? message.from : Math.min(message.from, message.to), y: message.y - 26 }, width: self ? SEQUENCE_COLUMN / 2 : Math.abs(message.to - message.from), height: 36,
-          selected: selection?.kind === 'message' && selection.outcome === message.outcome && selection.step === message.step.id,
-          ariaLabel: message.step.label,
-          data: { label: message.step.label, direction: self ? 'self' : message.to > message.from ? 'right' : 'left', status,
-            tone: messageTone(layer, reached, proven, flow.id, message.outcome, message.step) },
-        };
-      }),
-      ...layout.terminals.map((terminal): SequenceNode => ({
-        id: `terminal:${terminal.outcome}`, type: 'terminal', position: { x: terminal.x - 90, y: terminal.y - 16 }, width: 180, height: 32, zIndex: 4, ...fixed,
-        data: { kind: layout.fragments.find(fragment => fragment.outcome.id === terminal.outcome)!.outcome.kind, label: terminal.label },
-      })),
-    ];
-  }, [map, flow, layout, view, reached, proven, names, selection, layer, t]);
-  // Every sequence node is top-level, so the nodes give the content box.
-  const content = useMemo(() => contentBox(nodes.map(node => ({ x: node.position.x, y: node.position.y, width: node.width!, height: node.height! }))), [nodes]);
-
-  // Selection is the only change the read-only canvas applies; click and the keyboard both arrive here.
-  const onNodesChange = useCallback((changes: NodeChange<SequenceNode>[]) => {
-    const chosen = changes.find(change => change.type === 'select' && change.selected);
-    if (chosen && 'id' in chosen) {
-      const [kind, ...rest] = chosen.id.split(':');
-      if (kind === 'participant') onSelect(flow.id, { kind: 'participant', id: rest.join(':') });
-      if (kind === 'message') onSelect(flow.id, { kind: 'message', outcome: rest[0] === '' ? null : rest[0]!, step: rest.slice(1).join(':') });
-    } else if (changes.some(change => change.type === 'select')) onSelect(flow.id, null);
-  }, [flow.id, onSelect]);
-
-  return <div className="architecture-map__canvas" aria-label={t('architecture.sequence.label')} role="region">
-      <ReactFlow<SequenceNode>
-        nodes={nodes}
-        edges={[]}
-        nodeTypes={NODE_TYPES}
-        onNodesChange={onNodesChange}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        minZoom={0.1}
-        maxZoom={2}
-        attributionPosition="top-right"
-      >
-        <FirstViewport content={content} />
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--rh-diagram-dot)" />
-        <Panel position="bottom-left"><Legend t={t} /></Panel>
-        <Panel position="bottom-right"><ZoomControls t={t} /></Panel>
-      </ReactFlow>
-  </div>;
+  const layerView = useMemo(() => mapLayerView(map, layer, pullRequest), [map, layer, pullRequest]);
+  const nodeView = useCallback((box: SceneBox): SceneNodeView => {
+    const names = new Map(map.nodes.map(node => [node.id, node.name]));
+    const part: SequencePart = layout.parts.get(box.id)!;
+    if (part.kind === 'participant') {
+      const node = map.nodes.find(entry => entry.id === part.participant.node);
+      const name = node?.name ?? part.participant.node;
+      return { type: 'header', ariaLabel: `${node?.kind} ${name}`, selection: box.id, data: {
+        name, kind: node?.kind ?? '', mark: layerView.marks.get(part.participant.node) ?? null, quiet: layerView.available && !layerView.lit.has(part.participant.node),
+      } satisfies HeaderData };
+    }
+    if (part.kind === 'process') {
+      const title = boxTitle(part.placement, names, t);
+      return { type: 'box', ariaLabel: title, selection: null, data: {
+        placement: part.placement, title, reason: part.placement.kind === 'unknown' ? t(`architecture.runtime.${part.placement.reason}`) : null,
+      } satisfies BoxData };
+    }
+    if (part.kind === 'fragment') {
+      return { type: 'fragment', ariaLabel: `${fragmentTag(part.index)} ${part.outcome.label}`, selection: null, data: { kind: part.outcome.kind, index: part.index, label: part.outcome.label } satisfies FragmentData };
+    }
+    if (part.kind === 'terminal') return { type: 'terminal', ariaLabel: part.outcome.terminal.label, selection: null, data: { kind: part.outcome.kind, label: part.outcome.terminal.label } satisfies TerminalData };
+    return { type: 'lifeline', ariaLabel: '', selection: null, data: {} };
+  }, [map, layout, layerView, t]);
+  const routeLabel = useCallback((route: SceneRoute) => layout.scene.labels.find(label => label.route === route.id)!.text, [layout]);
+  const routeSelection = useCallback((route: SceneRoute) => route.id, []);
+  // A selected header lights the messages at its lifeline.
+  const emphasis = selected !== null && layout.parts.get(selected)?.kind === 'participant' ? `lifeline:${selected.slice('participant:'.length)}` : null;
+  return <ArchitectureSceneCanvas label={t('architecture.sequence.label')} scene={layout.scene} nodeTypes={NODE_TYPES} view={nodeView} selected={selected} emphasis={emphasis}
+    routeLabel={routeLabel} routeSelection={routeSelection} onSelect={onSelect} legend={legend(t)} t={t} />;
 }
 
 /** The side panel: `lead` (the flow list and the layer facts), then the selected message or participant of the flow on screen. */
-function SequenceInspector({ map, flow, layer, pullRequest, selection, lead, onModule, t }: {
+function SequenceInspector({ map, flow, layout, layer, pullRequest, selected, lead, onModule, t }: {
   readonly map: ArchitectureMapV1;
   readonly flow: ArchitectureMapFlowV1;
+  readonly layout: SequenceLayout | null;
   readonly layer: MapLayerId;
   readonly pullRequest: number | null;
-  readonly selection: Selection;
+  readonly selected: string | null;
   readonly lead: ReactNode;
   readonly onModule: (id: string) => void;
   readonly t: OperatorTranslate;
 }) {
   const required = flow.applicability === 'required' ? flow : null;
-  const message = required !== null && selection?.kind === 'message'
-    ? flowSteps(required).find(entry => entry.outcome === selection.outcome && entry.step.id === selection.step) ?? null : null;
-  const node = required !== null && selection?.kind === 'participant' ? required.participants.find(entry => entry.id === selection.id)?.node ?? null : null;
+  const message = selected === null ? null : layout?.messages.get(selected) ?? null;
+  const part = selected === null ? null : layout?.parts.get(selected) ?? null;
+  const node = part?.kind === 'participant' ? part.participant.node : null;
   const participant = node === null ? null : { node, place: runtimePlacement(map)(node) };
   return <aside className="architecture-map__inspector" aria-label={t('architecture.sequence.inspector')}
     data-node-id={node ?? undefined} data-step-id={message ? `${message.outcome ?? ''}:${message.step.id}` : undefined}>
@@ -300,17 +273,6 @@ function shownFlow(map: ArchitectureMapV1, layer: MapLayerId, reached: ReadonlyS
   return map.flows.find(entry => entry.id === flowId)!;
 }
 
-/** Starts the browser download of one file built on the page. */
-function download(name: string, type: string, content: string): void {
-  const url = URL.createObjectURL(new Blob([content], { type }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = name;
-  link.click();
-  // The click starts the download in this task; the URL can go after it.
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
 /** The sequence map's part of the lens row: how much of the model the flows cover, and the SVG export of the flow on screen. */
 export function SequenceLensTools({ map, layer, pullRequest, flowId, t }: {
   readonly map: ArchitectureMapV1;
@@ -330,14 +292,8 @@ export function SequenceLensTools({ map, layer, pullRequest, flowId, t }: {
   const flow = shownFlow(map, layer, reached, proven, flowId);
   const exportSvg = () => {
     if (flow.applicability !== 'required') return;
-    const nodes = new Map(map.nodes.map(node => [node.id, node]));
-    const names = new Map(map.nodes.map(node => [node.id, node.name]));
-    const svg = sequenceSvg(layoutSequence(flow, runtimePlacement(map)), {
-      box: box => box.placement.kind === 'unknown' ? t('architecture.sequence.unknown') : placementText(box.placement, names, t),
-      // The decoder admits a flow only when each participant names a map node.
-      participant: nodeId => nodes.get(nodeId)!,
-    });
-    download(`${flow.id}.svg`, 'image/svg+xml', svg);
+    const layout = flowLayout(map, flow, layer, pullRequest);
+    downloadSceneSvg(`${flow.id}.svg`, layout.scene, sceneLines(layout, map, t));
   };
   return <div className="architecture-lens__tools">
     <span data-sequence-summary>{t('architecture.sequence.summary', coverage)}</span>
@@ -367,12 +323,15 @@ function FlowList({ map, flowId, lit, onFlow, t }: {
 }
 
 /** The sequence base map: one model flow per diagram, one light box per OS process. The side panel leads with the flow list, then `side`. */
-export function ArchitectureSequence({ map, layer, pullRequest, flowId, onFlow, side, onModule, t }: {
+export function ArchitectureSequence({ map, layer, pullRequest, flowId, onFlow, selection, onSelect, side, onModule, t }: {
   readonly map: ArchitectureMapV1;
   readonly layer: MapLayerId;
   readonly pullRequest: number | null;
   readonly flowId: string | null;
   readonly onFlow: (flowId: string) => void;
+  /** The selection of the architecture workspace; it shows only on the flow that it was made on. */
+  readonly selection: Selection;
+  readonly onSelect: (flowId: string, id: string | null) => void;
   readonly side: ReactNode;
   readonly onModule: (id: string) => void;
   readonly t: OperatorTranslate;
@@ -380,29 +339,28 @@ export function ArchitectureSequence({ map, layer, pullRequest, flowId, onFlow, 
   const reached = useMemo(() => reachedSteps(map, layer, pullRequest), [map, layer, pullRequest]);
   const proven = useMemo(() => proofs(map), [map]);
   const lit = useMemo(() => litFlows(map, layer, reached, proven), [map, layer, reached, proven]);
-  const [chosen, setChosen] = useState<{ readonly flow: string; readonly selection: Selection }>({ flow: '', selection: null });
-  const onSelect = useCallback((flow: string, selection: Selection) => setChosen({ flow, selection }), []);
-  if (map.flows.length === 0) {
+  const flow = map.flows.length === 0 ? null : shownFlow(map, layer, reached, proven, flowId);
+  const layout = useMemo(() => flow?.applicability === 'required' ? flowLayout(map, flow, layer, pullRequest) : null, [map, flow, layer, pullRequest]);
+  const flowKey = flow?.id ?? '';
+  const select = useCallback((id: string | null) => onSelect(flowKey, id), [flowKey, onSelect]);
+  if (flow === null) {
     return <div className="architecture-map"><Note part="sequence.flows" reason="flows_undeclared">{t('architecture.sequence.none')}</Note>
       <aside className="architecture-map__inspector" aria-label={t('architecture.sequence.inspector')}>{side}</aside></div>;
   }
-  const flow = shownFlow(map, layer, reached, proven, flowId);
   const note = LAYER_NOTES[layer];
   const lead = <>
     <FlowList map={map} flowId={flow.id} lit={lit} onFlow={onFlow} t={t} />
     {side}
     {note && <Note part={`sequence.${layer}`} reason={note}>{t(`architecture.sequence.note.${note}`)}</Note>}
   </>;
-  // A selection belongs to the flow it was made on: a change of flow clears it, also for a later return to that flow.
-  if (chosen.flow !== flow.id) setChosen({ flow: flow.id, selection: null });
-  const selection = chosen.flow === flow.id ? chosen.selection : null;
+  const selected = selection?.scope === flow.id ? selection.id : null;
   // The side panel is the second child in every case, so React keeps it, and the flow list in it, across flow changes.
   return <div className="architecture-sequence">
     <div className="architecture-map" data-view="sequence" data-flow={flow.id} data-layer={layer}>
       {flow.applicability === 'not-applicable'
         ? <Note part="sequence.not_applicable" reason="flow_not_applicable">{t('architecture.flow.notApplicable', { rationale: flow.rationale })}</Note>
-        : <ReactFlowProvider><SequenceCanvas key={flow.id} map={map} flow={flow} layer={layer} pullRequest={pullRequest} selection={selection} onSelect={onSelect} t={t} /></ReactFlowProvider>}
-      <SequenceInspector map={map} flow={flow} layer={layer} pullRequest={pullRequest} selection={selection} lead={lead} onModule={onModule} t={t} />
+        : <SequenceCanvas key={flow.id} map={map} layout={layout!} layer={layer} pullRequest={pullRequest} selected={selected} onSelect={select} t={t} />}
+      <SequenceInspector map={map} flow={flow} layout={layout} layer={layer} pullRequest={pullRequest} selected={selected} lead={lead} onModule={onModule} t={t} />
     </div>
   </div>;
 }

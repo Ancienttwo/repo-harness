@@ -3,7 +3,7 @@
 // is a React Flow node at its placed size; each route is a `RouteEdge` that
 // draws the placed points, so the screen and the SVG file draw one geometry.
 
-import { memo, useCallback, useMemo, type ReactNode } from 'react';
+import { memo, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import {
   Background,
   BackgroundVariant,
@@ -15,6 +15,7 @@ import {
   ReactFlow,
   ReactFlowProvider,
   type Edge,
+  type EdgeChange,
   type EdgeProps,
   type Node,
   type NodeChange,
@@ -97,12 +98,16 @@ interface SceneCanvasProps {
   readonly emphasis?: string | null;
   /** The accessible name of a route. Optional: a caller that passes none gives its routes no accessible name, as before. */
   readonly routeLabel?: (route: SceneRoute) => string;
+  /** The model id that a selection of a route selects; null for a route that a person cannot select. Optional: a caller that passes none has no selectable route. */
+  readonly routeSelection?: (route: SceneRoute) => string | null;
   readonly onSelect: (id: string | null) => void;
   readonly legend: readonly SceneLegendEntry[];
   readonly t: OperatorTranslate;
 }
 
-function SceneFlow({ scene, nodeTypes, view, selected, emphasis = selected, routeLabel, onSelect, legend, t }: SceneCanvasProps) {
+const noRouteSelection = () => null;
+
+function SceneFlow({ scene, nodeTypes, view, selected, emphasis = selected, routeLabel, routeSelection = noRouteSelection, onSelect, legend, t }: SceneCanvasProps) {
   const views = useMemo(() => new Map(scene.boxes.map(box => [box.id, view(box)])), [scene, view]);
   const content = useMemo(() => contentBox(scene.boxes), [scene]);
   const nodes = useMemo<Node[]>(() => {
@@ -122,30 +127,43 @@ function SceneFlow({ scene, nodeTypes, view, selected, emphasis = selected, rout
   const edges = useMemo<RouteEdgeType[]>(() => {
     const labels = new Map(scene.labels.filter(label => label.route !== null).map(label => [label.route!, label]));
     return scene.routes.map(route => {
-      const touches = emphasis !== null && (route.source === emphasis || route.target === emphasis);
+      const selection = routeSelection(route);
+      const chosen = selection !== null && selection === selected;
+      const touches = chosen || (emphasis !== null && (route.source === emphasis || route.target === emphasis));
       const marker = { type: MarkerType.ArrowClosed, width: 14, height: 14, color: touches ? 'var(--rh-accent)' : 'var(--text-color-kumo-subtle)' };
       return {
         id: route.id, type: 'route', source: route.source, target: route.target,
         className: `architecture-map__edge architecture-map__edge--${route.kind}${touches ? ' is-active' : selected !== null ? ' is-dim' : ''}`,
         style: { strokeWidth: route.width, ...(route.dashed ? { strokeDasharray: '6 4' } : {}) },
         ...(route.arrows.start ? { markerStart: marker } : {}), ...(route.arrows.end ? { markerEnd: marker } : {}),
-        data: { route, label: labels.get(route.id) ?? null }, selectable: false, focusable: false, zIndex: touches ? 2 : 1,
+        data: { route, label: labels.get(route.id) ?? null }, selectable: selection !== null, focusable: selection !== null, selected: chosen, zIndex: touches ? 2 : 1,
         ...(routeLabel ? { ariaLabel: routeLabel(route) } : {}),
       };
     });
-  }, [scene, selected, emphasis, routeLabel]);
-  // Selection is the only node change the read-only map applies; click and the keyboard both arrive here.
-  const onNodesChange = useCallback((changes: NodeChange[]) => {
-    const chosen = changes.find(change => change.type === 'select' && change.selected);
-    if (chosen && 'id' in chosen) onSelect(views.get(chosen.id)!.selection);
-    else if (changes.some(change => change.type === 'select')) onSelect(null);
-  }, [views, onSelect]);
+  }, [scene, selected, emphasis, routeLabel, routeSelection]);
+  // Selection is the only change the read-only map applies; click and the keyboard both arrive here. One click sends the
+  // select of one element and the deselect of the element selected before, nodes and edges in either order, so a
+  // deselect clears only the selection that it holds; the ref keeps the selection of this event for the second call.
+  const current = useRef(selected);
+  current.current = selected;
+  const routes = useMemo(() => new Map(scene.routes.map(route => [route.id, route])), [scene]);
+  const applySelect = useCallback((changes: readonly (NodeChange | EdgeChange)[], selectionOf: (id: string) => string | null) => {
+    const selects = changes.filter(change => change.type === 'select');
+    const chosen = selects.find(change => change.selected);
+    const next = chosen ? selectionOf(chosen.id) : selects.some(change => selectionOf(change.id) === current.current) ? null : undefined;
+    if (next === undefined) return;
+    current.current = next;
+    onSelect(next);
+  }, [onSelect]);
+  const onNodesChange = useCallback((changes: NodeChange[]) => applySelect(changes, id => views.get(id)!.selection), [applySelect, views]);
+  const onEdgesChange = useCallback((changes: EdgeChange[]) => applySelect(changes, id => routeSelection(routes.get(id)!)), [applySelect, routes, routeSelection]);
   return <ReactFlow
     nodes={nodes}
     edges={edges}
     nodeTypes={nodeTypes}
     edgeTypes={EDGE_TYPES}
     onNodesChange={onNodesChange}
+    onEdgesChange={onEdgesChange}
     nodesDraggable={false}
     nodesConnectable={false}
     edgesFocusable={false}

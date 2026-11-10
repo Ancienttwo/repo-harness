@@ -294,11 +294,11 @@
   .architecture-map__source { @apply block text-[11px] text-kumo-subtle; }
   .architecture-layers__count { @apply ml-1.5 text-[11px] font-normal opacity-70; }
   .architecture-sequence, .architecture-topology { @apply flex min-w-0 flex-col gap-2; }
-  .architecture-sequence__box { @apply flex h-full w-full flex-col justify-end rounded-xl border bg-kumo-recessed px-3 pb-1.5 text-[11px] text-kumo-subtle; border-color: var(--rh-diagram-line); }
+  .architecture-sequence__box { @apply flex h-full w-full flex-col justify-start rounded-xl border bg-kumo-recessed px-3 pt-1 text-[11px] text-kumo-subtle; border-color: var(--rh-diagram-line); }
   .architecture-sequence__box[data-placement="external"] { @apply border-dashed bg-transparent; }
   .architecture-sequence__box[data-placement="unknown"] { @apply border-dashed; }
   .architecture-sequence__box > span { @apply block truncate; }
-  .architecture-sequence__fragment { @apply h-full w-full rounded-lg border border-dashed px-2 pt-1 text-[11px] font-semibold; }
+  .architecture-sequence__fragment { @apply h-full w-full truncate rounded-lg border border-dashed px-2 pt-1 text-[11px] font-semibold; }
   .architecture-sequence__fragment[data-kind="success"] { @apply border-kumo-success bg-kumo-success-tint text-kumo-success; }
   .architecture-sequence__fragment[data-kind="error"] { @apply border-kumo-danger bg-kumo-danger-tint text-kumo-danger; }
   .architecture-sequence__fragment .mono-value { @apply mr-1; }
@@ -307,21 +307,6 @@
   .architecture-sequence__header[data-kind="capability"] { @apply bg-kumo-info-tint; }
   .architecture-sequence__header[data-kind="external-system"] { @apply bg-transparent; }
   .architecture-sequence__header strong { @apply text-xs; }
-  .architecture-sequence__message { @apply relative flex h-full w-full cursor-pointer flex-col justify-end text-xs text-kumo-default; }
-  .architecture-sequence__label { @apply line-clamp-2 min-w-0 px-2 pb-0.5 text-center text-[11px] leading-[14px]; }
-  .architecture-sequence__label .architecture-map__mark { @apply ml-1; }
-  .architecture-sequence__arrow { @apply relative block h-0 w-full border-t; border-color: var(--text-color-kumo-subtle); }
-  .architecture-sequence__arrow::after { content: ""; @apply absolute -top-[5px] h-0 w-0 border-y-[5px] border-y-transparent; }
-  .architecture-sequence__message[data-direction="right"] .architecture-sequence__arrow::after { right: 0; border-left: 7px solid var(--text-color-kumo-subtle); }
-  .architecture-sequence__message[data-direction="left"] .architecture-sequence__arrow::after { left: 0; border-right: 7px solid var(--text-color-kumo-subtle); }
-  .architecture-sequence__message[data-direction="self"] .architecture-sequence__label { @apply text-left; }
-  .architecture-sequence__message[data-direction="self"] .architecture-sequence__arrow { @apply h-3 rounded-r-md border border-l-0; }
-  .architecture-sequence__message[data-tone="change"] .architecture-sequence__label { color: var(--rh-accent); }
-  .architecture-sequence__message[data-tone="danger"] .architecture-sequence__arrow { @apply border-kumo-danger; }
-  .architecture-sequence__message[data-selected] .architecture-sequence__label { @apply font-bold; color: var(--rh-accent); }
-  .architecture-sequence__message[data-selected] .architecture-sequence__arrow { border-top-width: 2px; border-color: var(--rh-accent); }
-  .architecture-sequence__message[data-selected][data-direction="right"] .architecture-sequence__arrow::after { border-left-color: var(--rh-accent); }
-  .architecture-sequence__message[data-selected][data-direction="left"] .architecture-sequence__arrow::after { border-right-color: var(--rh-accent); }
   .architecture-sequence__terminal { @apply h-full w-full overflow-hidden rounded-md border bg-kumo-base px-2 py-1 text-center text-[11px] font-semibold leading-[12px]; }
   .architecture-sequence__terminal[data-kind="success"] { @apply border-kumo-success text-kumo-success; }
   .architecture-sequence__terminal[data-kind="error"] { @apply border-kumo-danger text-kumo-danger; }
@@ -395,3 +380,8 @@
 .architecture-map .react-flow__attribution { background: transparent; font-size: 11px; }
 .architecture-map .react-flow__attribution a { color: var(--text-color-kumo-subtle); }
 .architecture-map[data-view="topology"] .architecture-map__edge .react-flow__edge-path { stroke-opacity: .55; }
+.architecture-map[data-view="sequence"] .architecture-map__edge:not(.is-dim) .react-flow__edge-path { stroke-opacity: .85; }
+.architecture-map[data-view="sequence"] .architecture-map__edge.selected .react-flow__edge-path { stroke-width: 2.5; }
+.architecture-map[data-view="sequence"] .architecture-map__edge.selected .react-flow__edge-text { font-weight: 700; fill: var(--rh-accent); }
+.architecture-map__edge--message-change .react-flow__edge-text { fill: var(--rh-accent); }
+.architecture-map__edge--message-danger .react-flow__edge-path { stroke: var(--text-color-kumo-danger); }
