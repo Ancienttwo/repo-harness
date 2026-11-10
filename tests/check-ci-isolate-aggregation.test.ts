@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, delimiter, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
+import { buildDurationTable } from '../scripts/write-test-file-durations';
 import { discoverTestFiles, integrationFiles, scheduleTestFiles, selectTestSuite, serialFiles, shardTestFiles } from '../scripts/select-test-suite';
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
@@ -145,6 +146,34 @@ describe("ci isolate-mode test loop", () => {
     expect(() => selectTestSuite('unknown', files)).toThrow('Suite must be');
     expect(() => selectTestSuite('full', [files[0]!, files[0]!])).toThrow('Duplicate');
     expect(() => selectTestSuite('full', ['tests/../escape.test.ts'])).toThrow('Invalid');
+  });
+
+  test('the duration writer reads one measured run and drops deleted files', () => {
+    const log = [
+      '[ci] test tests/a.test.ts', 'Ran 2 tests across 1 file. [1.25s]',
+      '[ci] test tests/deleted.test.ts', 'Ran 1 test across 1 file. [20.00ms]',
+      '[ci] test tests/b.test.tsx', 'Ran 3 tests across 1 file. [7.25ms]',
+    ].join('\n');
+    const inventory = ['tests/b.test.tsx', 'tests/new.test.ts', 'tests/a.test.ts'];
+    const table = buildDurationTable(log, 'CI run 123, job 456', inventory);
+    expect(table.files).toEqual({ 'tests/a.test.ts': 1250, 'tests/b.test.tsx': 7.25 });
+    expect(table.source).toContain('CI run 123, job 456');
+    const ciLog = log.split('\n').map(line => `Daily full tests and package\tUNKNOWN STEP\t2026-11-10T02:06:58.9227750Z ${line}`).join('\n');
+    expect(buildDurationTable(ciLog, 'CI run 123, job 456', inventory)).toEqual(table);
+    for (const [input, error] of [
+      ['', 'No per-file durations'],
+      ['[ci] test tests/a.test.ts', 'Missing duration'],
+      ['[ci] test tests/a.test.ts\n[ci] test tests/b.test.tsx', 'Missing duration'],
+      [`${log}\n${log}`, 'Duplicate duration'],
+    ]) expect(() => buildDurationTable(input!, 'CI run 123', inventory)).toThrow(error!);
+    expect(() => buildDurationTable(log, '', inventory)).toThrow('source run');
+    expect(() => buildDurationTable(log, 'CI run 123', [])).toThrow('No measured test files exist');
+  });
+
+  test('the duration table names only existing test files', () => {
+    const { files } = JSON.parse(readFileSync(join(REPO_ROOT, 'scripts/test-file-durations.json'), 'utf8'));
+    const inventory = new Set(discoverTestFiles(REPO_ROOT));
+    expect(Object.keys(files).filter(file => !inventory.has(file))).toEqual([]);
   });
 
   test('recorded durations schedule the longest files first without losing new files', () => {
