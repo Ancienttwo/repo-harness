@@ -321,11 +321,15 @@ describe('operator web interactions', () => {
   test('the browser import graph from main.tsx reaches no Node built-in', async () => {
     const { builtinModules } = await import('node:module');
     const { posix } = await import('node:path');
+    const { stat } = await import('node:fs/promises');
     const builtins = new Set(builtinModules.map(name => name.replace(/^node:/u, '').split('/')[0]));
+    // Vite order: the exact file, then source extensions, then a directory index; `./x.js` also resolves to `./x.ts` or `./x.tsx`.
     const resolve = async (from: string, specifier: string): Promise<string | null> => {
       const base = posix.join(posix.dirname(from), specifier);
-      for (const candidate of [`${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`, base]) {
-        if (/\.tsx?$/u.test(candidate) && await Bun.file(candidate).exists()) return candidate;
+      const stem = base.replace(/\.(?:js|jsx)$/u, '');
+      const sourceStems = stem === base ? [] : [`${stem}.ts`, `${stem}.tsx`];
+      for (const candidate of [base, ...sourceStems, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`]) {
+        if (await Bun.file(candidate).exists() && !(await stat(candidate)).isDirectory()) return candidate;
       }
       return null;
     };
@@ -337,8 +341,11 @@ describe('operator web interactions', () => {
       const loader = file.endsWith('.tsx') ? 'tsx' : 'ts';
       for (const { path: specifier } of new Bun.Transpiler({ loader }).scanImports(await Bun.file(file).text())) {
         if (specifier.startsWith('.')) {
+          // Assets (.css, .svg, .json, ...) carry no imports; only a script specifier must resolve.
+          if (!['', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'].includes(posix.extname(specifier))) continue;
           const target = await resolve(file, specifier);
-          if (target !== null && !chains.has(target)) {
+          if (target === null) offenders.push(`${file} imports ${specifier}, which does not resolve, via ${chain.join(' -> ')}`);
+          else if (/\.tsx?$/u.test(target) && !chains.has(target)) {
             chains.set(target, [...chain, target]);
             queue.push(target);
           }
