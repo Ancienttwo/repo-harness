@@ -1,3 +1,4 @@
+import { PROJECTION_WRITER_DEFAULT_BRANCH } from 'archctx-contracts';
 import { parseClosingReferences } from '../publication/closing-references';
 import type { AcceptanceMergeSwitch } from '../publication/acceptance-merge-policy';
 import type { PullRequestReadinessV2 } from '../publication/merge-readiness';
@@ -21,6 +22,7 @@ import {
   type BoardSubIssueReadV1,
   type ClaimStatusV1,
 } from './source';
+import { documentationOnly } from '../ci/documentation-path';
 import { isCiRepairIssueBody } from '../ci/test-report';
 import { pathHazardHits, pathHighHits } from './hazards';
 
@@ -436,13 +438,12 @@ function reviewRule(read: BoardPullRequestReadV1, tier: BoardTier | null): Revie
   return tier === null || tier === 'high' ? 'high' : tier === 'medium' ? 'medium' : 'none';
 }
 
-/** The Low bound of a fix in added plus deleted lines, and the head branch of the generated projection pull request (`agentic-development-flow.md`, Review by risk). */
+/** The Low bound of a fix in added plus deleted lines (`agentic-development-flow.md`, Review by risk). */
 const LOW_FIX_MAX_LINES = 50;
-const PROJECTION_BRANCH = 'archctx/projection';
 
 /** Docs only, tests only and the projection pull request are Low at any size; every other change is a fix that the size bound applies to. */
 function sizeExempt(read: BoardPullRequestReadV1, files: readonly string[]): boolean {
-  return read.head_ref === PROJECTION_BRANCH || files.every(path => path.startsWith('docs/')) || files.every(path => path.startsWith('tests/'));
+  return read.head_ref === PROJECTION_WRITER_DEFAULT_BRANCH || documentationOnly(files) || files.every(path => path.startsWith('tests/'));
 }
 
 /**

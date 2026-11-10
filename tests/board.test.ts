@@ -270,9 +270,12 @@ test('Low labels give Low to a fix of at most 50 changed lines, and to docs only
     // A file without a deletion count makes the size unknown.
     tier([{ path: 'src/a.ts', additions: 1 }]),
     tier([file('docs/a.md', 300, 0)]),
+    tier([file('README.md', 300, 0)]),
+    // Documentation is what `isDocumentationPath` names: a non-Markdown file under docs/ is not.
+    tier([file('docs/architecture/archimap.html', 300, 0)]),
     tier([file('tests/a.test.ts', 300, 0)]),
     tier([file('src/a.ts', 300, 0)], 'archctx/projection'),
-  ]).toEqual(['low', 'medium', 'medium', 'low', 'low', 'low']);
+  ]).toEqual(['low', 'medium', 'medium', 'low', 'low', 'medium', 'low', 'low']);
 });
 
 test('High acceptance: PASS rows of the head from two distinct claims, one recorded different-family; claude_review and A10 project the same rule', () => {
