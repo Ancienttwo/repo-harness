@@ -316,8 +316,8 @@ describe('archimap measure reports board geometry', () => {
 
   test('each defect kind gives one finding; clean and node-free boards give none; exit stays 0', () => {
     const placed = board('1 · Placed',
-      `${box('node', 0, 0)}${box('node', 50, 50)}${box('node', 400, 0)}${box('node', 400, 150)}${box('node', 400, 300)}`
-      + paths('M450 100 V300', 'M500 50 H560')
+      `${box('node', 0, 0)}${box('node', 50, 50)}${box('node', 400, 0)}`
+      + paths('M500 50 H560')
       + '<div class="elabel" style="left:520px;top:42px">hi</div>');
     const clean = board('2 · Clean', `${box('node', 0, 0)}${box('node', 300, 0)}${paths('M100 50 H300')}<div class="elabel" style="left:150px;top:20px">ok</div>`);
     const sequence = board('3 · Sequence', `${box('panel', 0, 0)}<svg><path d="M0 0 C1 1 2 2 3 3"/></svg>`);
@@ -327,7 +327,6 @@ describe('archimap measure reports board geometry', () => {
     expect(output.geometry.unchecked).toEqual(['3 · Sequence']);
     expect(output.geometry.findings.map((f) => [f.board, f.kind])).toEqual([
       ['1 · Placed', 'box_overlap'],
-      ['1 · Placed', 'line_through_box'],
       ['1 · Placed', 'line_end_open'],
       ['1 · Placed', 'label_on_line'],
     ]);
@@ -344,52 +343,6 @@ describe('archimap measure reports board geometry', () => {
     const root = mapRoot(boards);
     return (JSON.parse(runMeasure(['--root', root, ...mapArgs(root)])) as { geometry: Geometry }).geometry;
   };
-
-  // The rule (references/visual-language.md): a segment is line_through_box when it has a point inside a
-  // node that is more than 8 px from that node's nearest border.
-  const narrow = box('node', 0, 0).replace('width:100px', 'width:16px');
-  const left = box('node', -200, 0);
-  test.each([
-    ['round 1 re-entry', box('node', 0, 0), 'M0 50 H150 V60 H50 H150', true],
-    ['round 2 node 16 px wide', narrow, 'M0 50 H16', false],
-    ['round 3 probe', box('node', 0, 0) + left, 'M5 50 H-5 H-100', false],
-    ['round 3 reverse', box('node', 0, 0) + left, 'M-100 50 H-5 H5', false],
-    ['round 4 probe', box('node', 0, 0), 'M1 40 V50', false],
-    ['round 4 reverse', box('node', 0, 0), 'M1 50 V40', false],
-    ['round 5 probe', box('node', 0, 0), 'M-100 50 H5 H-100', false],
-    ['straight through', box('node', 0, 0), 'M-50 50 H150', true],
-    ['attached from outside', box('node', 0, 0), 'M-80 50 H0', false],
-    ['end 8 px inside', box('node', 0, 0), 'M-80 50 H8', false],
-    ['end 9 px inside', box('node', 0, 0), 'M-80 50 H9', true],
-    ['corner clip', box('node', 0, 0), 'M-10 4 L4 -10', false],
-    ['corner cut 40 px', box('node', 0, 0), 'M-10 40 L40 -10', true],
-    ['along the top border 3 px inside', box('node', 0, 0), 'M-50 3 H150', false],
-  ])('line_through_box follows the stated rule: %s', (name, nodes, d, expected) => {
-    const found = run([board(name, `${nodes}${paths(d)}`)]).findings.some((f) => f.kind === 'line_through_box');
-    expect(found).toBe(expected);
-  });
-
-  test('short segments around a node follow the stated rule', () => {
-    type P = [number, number];
-    const deep = ([x, y]: P) => x > 8 && x < 92 && y > 8 && y < 92;
-    const reaches = (a: P, b: P) => {
-      const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) * 10);
-      return Array.from({ length: n + 1 }, (_, k): P => [a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]).some(deep);
-    };
-    const starts: P[] = [];
-    for (const d of [-3, 0, 3, 9]) for (const along of [50, 2]) starts.push([d, along], [100 - d, along], [along, d], [along, 100 - d]);
-    const cases: { name: string; a: P; b: P }[] = [];
-    for (const a of starts) {
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as P[]) {
-        for (const length of [1, 5, 8, 10, 16, 20]) cases.push({ name: `${a} ${dx},${dy} ${length}`, a, b: [a[0] + dx * length, a[1] + dy * length] });
-      }
-    }
-    const boards = cases.map((c) => board(c.name, `${box('node', 0, 0)}${paths(`M${c.a[0]} ${c.a[1]} L${c.b[0]} ${c.b[1]}`)}`));
-    const through = new Set(run(boards).findings.filter((f) => f.kind === 'line_through_box').map((f) => f.board));
-    const expected = cases.filter((c) => reaches(c.a, c.b)).map((c) => c.name);
-    expect(expected.length).toBeGreaterThan(0);
-    expect(cases.filter((c) => through.has(c.name)).map((c) => c.name)).toEqual(expected);
-  });
 
   test('each subpath of a path is checked for open ends', () => {
     const geometry = run([board('1 · Subpaths', `${box('node', 0, 0)}${box('node', -200, 0)}${paths('M0 20 H-100 M-300 20 H-400 M0 40 H-100')}`)]);

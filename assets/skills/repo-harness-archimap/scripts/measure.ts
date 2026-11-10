@@ -452,14 +452,6 @@ function clipSegment(s: Segment, b: Box): [Point, Point] | null {
   return [{ x: s.a.x + t0 * dx, y: s.a.y + t0 * dy }, { x: s.a.x + t1 * dx, y: s.a.y + t1 * dy }];
 }
 
-function entersInterior(s: Segment, b: Box): Point | null {
-  const clip = clipSegment(s, b);
-  if (clip === null) return null;
-  const mid = { x: (clip[0].x + clip[1].x) / 2, y: (clip[0].y + clip[1].y) / 2 };
-  const moves = Math.hypot(clip[1].x - clip[0].x, clip[1].y - clip[0].y) > 1e-9;
-  return moves && mid.x > b.left && mid.x < b.right && mid.y > b.top && mid.y < b.bottom ? mid : null;
-}
-
 function boardBoxes(html: string, caption: string, classes: string[]): { box: Box; text: string }[] {
   const found: { box: Box; text: string }[] = [];
   for (const tag of html.matchAll(/<(?:a|div)\b([^>]*)>/g)) {
@@ -520,18 +512,6 @@ function boardFindings(caption: string, html: string): GeometryFinding[] {
     for (const p of [first, last]) {
       if (!borders.some((b) => borderDistance(p, b) <= END_TOLERANCE)) {
         add("line_end_open", p.x, p.y, `path end (${p.x},${p.y}) is more than ${END_TOLERANCE} px from every node and panel border`);
-      }
-    }
-    // A node border has a tolerance of END_TOLERANCE: a segment must reach a point deeper than that inside the node.
-    for (const node of nodes) {
-      const inner = { left: node.left + END_TOLERANCE, top: node.top + END_TOLERANCE, right: node.right - END_TOLERANCE, bottom: node.bottom - END_TOLERANCE };
-      if (inner.left >= inner.right || inner.top >= inner.bottom) continue;
-      for (const segment of segmentsOf([subpath])) {
-        const hit = entersInterior(segment, inner);
-        if (hit) {
-          add("line_through_box", hit.x, hit.y, `path segment (${segment.a.x},${segment.a.y})-(${segment.b.x},${segment.b.y}) enters node ${at(node)}`);
-          break;
-        }
       }
     }
   }

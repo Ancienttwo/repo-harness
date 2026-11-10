@@ -112,12 +112,8 @@ On a board that holds a `.node`, the geometry check reads three facts:
 - Each `.elabel` carries inline `left` and `top`. Its box is 7 px per
   character wide and 16 px high.
 
-A node border has a tolerance of 8 px. `line_end_open`: the first or last
-point of a path is more than 8 px from the border of every `.node` and
-`.panel`. `line_through_box`: a path segment has a point inside a `.node`
-that is more than 8 px from the nearest border of that node. A node at most
-16 px wide or high never gets this finding, and a line that stays within 8 px
-of a border across a node gives no finding.
+`line_end_open`: the first or last point of a path is more than 8 px from the
+border of every `.node` and `.panel`.
 
 ## Quality checks
 
