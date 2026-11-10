@@ -1512,7 +1512,7 @@ exit 0
         hostAdapters: false,
         codegraph: false,
         env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
-      }, { authorityHome: () => home });
+      });
 
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === 'configure Waza skills')?.status).toBe('skipped');

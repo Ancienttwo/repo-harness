@@ -17,10 +17,7 @@ import { fileURLToPath } from "url";
 import { syncWazaSharedRules, wazaStagingRulesAbsent } from "../installer/waza-rules";
 import { applyGlobalContextRefresh, preflightGlobalContextRefresh, type ReportLanguageFlag } from "../installer/global-context";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
-import {
-  syncCrossReviewSkills,
-  type InitRuntimeDependencies,
-} from "./init";
+import { syncCrossReviewSkills } from "./init";
 import { runInstall, type InstallTargetSpec } from "./install";
 import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { DEFAULT_PROCESS_MAX_BUFFER_BYTES, redactProcessOutput, runProcess as runBoundedProcess } from "../../effects/process-runner";
@@ -1785,7 +1782,6 @@ export function migrateSeatsConfiguration(env: NodeJS.ProcessEnv, runtimeLock?: 
 
 export function runGlobalRuntimeSetup(
   opts: GlobalRuntimeOptions = {},
-  dependencies?: InitRuntimeDependencies,
 ): GlobalRuntimeResult {
   const sourceRoot = opts.sourceRoot ?? defaultSourceRoot();
   const cwd = opts.cwd ?? process.cwd();
