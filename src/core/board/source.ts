@@ -2,7 +2,7 @@
  * Decoders for the provider reads behind the board: the parent GraphQL read,
  * the pull request GraphQL read, and the protocol comments in them. Each
  * decoder refuses the first field it cannot read. The collector follows the
- * cursor of the parent's sub-issues to the last page; any other connection
+ * cursors of the parent's sub-issues and comments to the last page; any other connection
  * that has more pages than one read returns fails closed, because a missing
  * sub-issue, blocked-by edge or pull request would change the board without a
  * trace.
@@ -90,6 +90,9 @@ export interface BoardPullRequestReadV1 {
 
 /** The most sub-issue pages that one parent read follows: 1000 sub-issues. */
 export const BOARD_SUB_ISSUE_PAGES = 20;
+
+/** The most comment pages that one parent read follows: 1000 comments. */
+export const BOARD_PARENT_COMMENT_PAGES = 20;
 
 export const BOARD_PAGE = { labels: 50, comments: 50, sub_issues: 50, blocked_by: 50, timeline: 100, files: 100, checks: 100, repairs: 50 } as const;
 
@@ -206,13 +209,37 @@ export function parentReadNextCursor(data: unknown, at: number): string | null {
   return info.endCursor;
 }
 
+function parentComments(data: unknown, at: number): Json {
+  return obj(obj(obj(obj(data, `comment page ${at} data`).repository, `comment page ${at} repository`).issue, `comment page ${at} issue`).comments, `comment page ${at} issue.comments`);
+}
+
+/** The cursor of the next older comment page of the parent, or null on the oldest page. */
+export function parentCommentsPreviousCursor(data: unknown, at: number): string | null {
+  const info = obj(parentComments(data, at).pageInfo, `comment page ${at} issue.comments.pageInfo`);
+  if (info.hasPreviousPage === false) return null;
+  if (info.hasPreviousPage !== true) fail(`comment page ${at} issue.comments.pageInfo.hasPreviousPage is not a boolean`);
+  if (typeof info.startCursor !== 'string' || info.startCursor === '') fail(`comment page ${at} issue.comments.pageInfo.startCursor is not a cursor`);
+  return info.startCursor;
+}
+
+/** The whole comment thread of the parent from its pages, newest page first: oldest comment first, never truncated. */
+function parentThread(commentPages: readonly unknown[]): BoardCommentPageV1 {
+  const older = commentPages.map((page, at) => {
+    if ((parentCommentsPreviousCursor(page, at) !== null) !== (at < commentPages.length - 1)) fail(`comment page ${at} issue.comments.pageInfo.hasPreviousPage does not match the page count`);
+    return comments(parentComments(page, at), `comment page ${at} issue.comments`).comments;
+  });
+  return Object.freeze({ truncated: false, comments: Object.freeze(older.reverse().flat()) });
+}
+
 /**
  * The `data` of each sub-issue page of the parent read (`PARENT_QUERY` in the
  * board collector), in cursor order. Every page names the same repository and
  * parent, and only the last page has no next page. The repository, parent and
- * repairs come from the first page.
+ * repairs come from the first page. `commentPages` is the first page and then
+ * each older page of the parent comments (`PARENT_COMMENTS_QUERY`), in cursor
+ * order; only the last one has no previous page.
  */
-export function decodeParentRead(pages: readonly unknown[], repository: string): BoardParentReadV1 {
+export function decodeParentRead(pages: readonly unknown[], commentPages: readonly unknown[], repository: string): BoardParentReadV1 {
   if (pages.length === 0) fail('the parent read has no page');
   const root = obj(pages[0], 'data');
   const repo = obj(root.repository, 'repository');
@@ -240,7 +267,7 @@ export function decodeParentRead(pages: readonly unknown[], repository: string):
       name_with_owner: nameWithOwner,
       default_branch: str(obj(repo.defaultBranchRef, 'repository.defaultBranchRef').name, 'repository.defaultBranchRef.name'),
     }),
-    parent: Object.freeze(issue(parentNode, 'issue')),
+    parent: Object.freeze({ ...issue(parentNode, 'issue'), comments: parentThread(commentPages) }),
     sub_issues: Object.freeze(subIssues),
     repair_candidates: Object.freeze(nodes(search, 'repairs', null).map((entry, index) => {
       const node = obj(entry, `repairs[${index}]`);
