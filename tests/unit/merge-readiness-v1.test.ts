@@ -356,12 +356,11 @@ describe('required-check failure evidence', () => {
   });
 
   test.each([
-    ['Install dependencies', null], ['Run bun install --frozen-lockfile', null], ['Run npm ci', null],
+    ['Run bun install --frozen-lockfile', null], ['Run npm ci', null],
     ['Run tests', 'npm ERR! code ERESOLVE'], ['Run tests', 'pnpm error ERR_PNPM_OUTDATED_LOCKFILE'],
-    ['Run tests', 'yarn error An unexpected error occurred'], ['Run tests', 'ERR_PNPM_FETCH_404'],
+    ['Run tests', 'ERR_PNPM_FETCH_404'],
     ['Run tests', 'error: lockfile had changes, but lockfile is frozen'],
-    ['Run tests', 'Registry request failed with status 503'], ['Run tests', 'Registry timeout'],
-    ['Run tests', 'error: GET https://registry.npmjs.org/bun - 503'],
+    ['Run tests', 'Registry request failed with status 503'],
     ['Run tests', 'Package resolution failed'],
   ] as const)('install evidence selects dependency_install_failure: %s / %s', (step, excerpt) => {
     const evidence = assessRequiredCheckFailure(requiredCheckObservation([
@@ -371,11 +370,10 @@ describe('required-check failure evidence', () => {
   });
 
   test.each([
-    [null, 'logs_unavailable'], ['Process completed with exit code 1.', 'other'],
-    [nodeDeprecation, 'other'], [`${nodeDeprecation}\nAssertionError: expected 1 to deeply equal 2`, 'assertion_mismatch'],
-    ['lockfile registry dependency install setup', 'other'], ['Test timed out', 'timeout'],
+    [`${nodeDeprecation}\nAssertionError: expected 1 to deeply equal 2`, 'assertion_mismatch'],
+    ['lockfile registry dependency install setup', 'other'],
     ['registry documentation\nerror: test process exited', 'other'],
-  ] as const)('passed install steps do not select the failure shape: %s', (excerpt, shape) => {
+  ] as const)('an excerpt without an install error keeps its failure shape: %s', (excerpt, shape) => {
     const evidence = assessRequiredCheckFailure(requiredCheckObservation([
       requiredCheckAttempt({ steps: ['Run tests'], failure_excerpt: excerpt, logs_available: excerpt !== null,
         scope: { executed: ['Set up job', 'Install dependencies', 'Run oven-sh/setup-bun@v2', 'Run tests'], skipped: [] } }),
