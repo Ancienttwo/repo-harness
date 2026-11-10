@@ -142,8 +142,14 @@ describe('git runner', () => {
       expect(gitSpawnSync(['merge-tree', '--write-tree', 'a', 'b'], { gitBin, encoding: 'utf8' }).stdout).toBe('');
       // Help, version and unknown-option forms, and option values, do not run the remote command they name.
       for (const args of [['--help', 'fetch'], ['-h', 'push'], ['--version', 'push'], ['--unknown', 'clone'], ['--git-dirX', 'fetch'],
-        ['-c', 'x=fetch', 'status'], ['--attr-source', 'fetch', 'version'], ['-C']]) {
+        ['-c', 'x=fetch', 'status'], ['--attr-source', 'fetch', 'version'], ['-C'], ['fetch', '--help'], ['-C', 'x', 'push', '--help'],
+        ['push', 'origin', '--help']]) {
         expect(gitSpawnSync(args, { gitBin, encoding: 'utf8' }).stdout, args.join(' ')).toBe('');
+      }
+      // Real git: `<cmd> --help` starts the man viewer with the env the runner chose.
+      const viewer = ['-c', 'help.format=man', '-c', 'man.viewer=probe', '-c', 'man.probe.cmd=printf "viewer-saw:%s" "$GH_TOKEN"; true'];
+      for (const command of ['fetch', 'pull', 'push', 'clone', 'ls-remote']) {
+        expect(gitSpawnSync([...viewer, command, '--help'], { encoding: 'utf8', env: { ...process.env, ...tokens } }).stdout, command).toBe('viewer-saw:');
       }
       for (const args of [['-C', root, '-c', 'a=b', '--no-pager', '--git-dir=x', 'fetch'], ['--attr-source=HEAD', 'ls-remote']]) {
         expect(gitSpawnSync(args, { gitBin, encoding: 'utf8' }).stdout, args.join(' ')).toBe(Object.values(tokens).join(''));

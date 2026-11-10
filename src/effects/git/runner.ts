@@ -58,21 +58,26 @@ const GIT_GLOBAL_FLAGS = new Set([
 const VALUED_GIT_GLOBAL_OPTIONS = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--attr-source']);
 
 /**
- * The subcommand git runs, or undefined. Help, version and path modes, unknown
- * options and a valued option without its value give undefined.
+ * Index of the subcommand git runs, or -1. Help, version and path modes, unknown
+ * options and a valued option without its value give -1.
  */
-function gitSubcommand(args: readonly string[]): string | undefined {
+function gitSubcommandIndex(args: readonly string[]): number {
   for (let index = 0; index < args.length; index++) {
     const arg = args[index]!;
     if (GIT_GLOBAL_FLAGS.has(arg)) continue;
     if (VALUED_GIT_GLOBAL_OPTIONS.has(arg)) {
-      if (++index >= args.length) return undefined;
+      if (++index >= args.length) return -1;
       continue;
     }
     if (arg.startsWith('--') && arg.includes('=') && VALUED_GIT_GLOBAL_OPTIONS.has(arg.slice(0, arg.indexOf('=')))) continue;
-    return arg.startsWith('-') ? undefined : arg;
+    return arg.startsWith('-') ? -1 : index;
   }
-  return undefined;
+  return -1;
+}
+
+/** git turns `<cmd> --help` into `git help <cmd>`, which starts the configured man viewer or browser. */
+function isHelpArgument(arg: string): boolean {
+  return arg === '--help' || arg === '-h' || arg.startsWith('--help=');
 }
 
 /** A copy of env without provider tokens. Names match without case, as Windows reads them. */
@@ -86,8 +91,8 @@ export function withoutProviderTokens(env: NodeJS.ProcessEnv = process.env): Nod
  * and filters it starts, runs without them.
  */
 export function gitChildEnv(args: readonly string[], env: NodeJS.ProcessEnv | undefined): NodeJS.ProcessEnv | undefined {
-  const subcommand = gitSubcommand(args);
-  if (subcommand !== undefined && CREDENTIAL_GIT_COMMANDS.has(subcommand)) return env;
+  const at = gitSubcommandIndex(args);
+  if (at >= 0 && CREDENTIAL_GIT_COMMANDS.has(args[at]!) && !args.slice(at + 1).some(isHelpArgument)) return env;
   return withoutProviderTokens(env);
 }
 
