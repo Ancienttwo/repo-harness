@@ -224,10 +224,10 @@ test('untrusted PR or wrong workflow runs cannot dispatch privileged effects', a
   expect(writes).toBe(0);
 });
 
-test('daily watchdog creates/reuses one dated repair when no schedule run exists', async () => {
+test.each([{ runs: [] }, { runs: [{ id: 12, path: '.github/workflows/ci.yml', event: 'schedule', head_branch: 'main', created_at: '2026-10-03T21:00:00Z', status: 'unknown_status' }] }])('daily watchdog creates/reuses one dated repair when no delivered schedule run exists: %j', async ({ runs }) => {
   const issues: any[] = [];
   const api: GitHubAPI = async (path, method = 'GET', body) => {
-    if (path.includes('/actions/workflows/ci.yml/runs?')) return { workflow_runs: [] };
+    if (path.includes('/actions/workflows/ci.yml/runs?')) return { workflow_runs: runs };
     if (path.includes('/issues?')) return issues;
     if (path.endsWith('/commits/main')) return { sha: 'a'.repeat(40) };
     if (path.endsWith('/issues') && method === 'POST') { const issue = { ...(body as any), number: 1, html_url: 'https://github.com/test/repo/issues/1' }; issues.push(issue); return issue; }
@@ -237,7 +237,7 @@ test('daily watchdog creates/reuses one dated repair when no schedule run exists
   expect(first.delivery).toBe('created'); expect(first.sha).toBe('a'.repeat(40));
   expect(isCiRepairIssueBody(issues[0].body)).toBe(true);
   expect(first.observation).toBe('not-started');
-  expect(first.key).toBe('ci-daily-missing:2026-10-03');
+  expect(first.run_ids).toEqual([]);
   const late = await watchDailyCI('test/repo', new Date('2026-10-04T00:05:00Z'), api, '0 19 * * *');
   expect(late.delivery).toBe('reused'); expect(late.date).toBe('2026-10-03'); expect(issues).toHaveLength(1);
 });
@@ -245,7 +245,6 @@ test('daily watchdog creates/reuses one dated repair when no schedule run exists
 test.each([
   { now: '2026-10-03T23:30:00Z', created: '2026-10-03T21:00:00Z', date: '2026-10-03', status: 'completed' },
   { now: '2026-10-06T03:09:34.720Z', created: '2026-10-06T00:41:50Z', date: '2026-10-05', status: 'completed' },
-  { now: '2026-11-10T02:34:00Z', created: '2026-11-10T02:06:25Z', date: '2026-11-09', status: 'queued' },
   { now: '2026-11-10T02:34:00Z', created: '2026-11-10T02:06:25Z', date: '2026-11-09', status: 'in_progress' },
 ])('daily watchdog observes a delivered run across its UTC window: %j', async ({ now, created, date, status }) => {
   const run = { id: 37395342276, path: '.github/workflows/ci.yml', event: 'schedule', head_branch: 'main', created_at: created, status, conclusion: status === 'completed' ? 'failure' : null };

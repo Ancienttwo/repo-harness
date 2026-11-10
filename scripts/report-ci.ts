@@ -447,15 +447,16 @@ export async function watchDailyCI(repo: string, now: Date, api: GitHubAPI, sche
     const runs = await githubPages(api, `${root}/actions/workflows/ci.yml/runs?event=schedule&created=${date}..${now.toISOString().slice(0, 10)}`, 'workflow_runs');
     const matching = runs.filter(run => {
       if (!positive(run.id) || typeof run.created_at !== 'string' || !Number.isFinite(Date.parse(run.created_at)) || typeof run.status !== 'string') throw new Error('Daily run observation incomplete');
-      return run.path === '.github/workflows/ci.yml' && run.head_branch === 'main' && run.event === 'schedule'
+      return ['requested', 'queued', 'pending', 'waiting', 'in_progress', 'completed'].includes(run.status)
+        && run.path === '.github/workflows/ci.yml' && run.head_branch === 'main' && run.event === 'schedule'
         && Date.parse(run.created_at) >= expected && Date.parse(run.created_at) <= now.getTime();
     });
     if (matching.length) return { date, observation: 'run-observed', run_ids: matching.map(run => run.id) };
     const main = record(await api(`${root}/commits/main`), 'Observed main commit');
     if (!validSha(main.sha)) throw new Error('Missing-run main subject unavailable');
     const task = await ensureRepairIssue(api, root, key, `[CI repair] daily full run incomplete ${date}`,
-      `Observed main SHA: ${main.sha}. Expected daily CI: ${expectedAt.toISOString()}. No scheduled run was observed by ${now.toISOString()}. Observed run IDs: ${matching.map(run => run.id).join(', ') || 'none'}.\n\nRepair schedule/runtime delivery without manufacturing green verification or performing credential/production operations.`);
-    return { date, key, sha: main.sha, run_ids: matching.map(run => run.id), observation: 'not-started', ...task };
+      `Observed main SHA: ${main.sha}. Expected daily CI: ${expectedAt.toISOString()}. No scheduled run was observed by ${now.toISOString()}. Observed run IDs: none.\n\nRepair schedule/runtime delivery without manufacturing green verification or performing credential/production operations.`);
+    return { date, key, sha: main.sha, run_ids: [], observation: 'not-started', ...task };
   } catch (error) { return { date, key, observation: 'unknown', delivery: 'pending', error: message(error) }; }
 }
 
