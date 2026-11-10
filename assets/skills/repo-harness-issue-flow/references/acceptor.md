@@ -26,6 +26,8 @@ return the result schema can accept.
   rules in `docs/reference-configs/agentic-development-flow.md`, Review by
   risk. Code that writes comments, records, reviews or labels to GitHub is
   Medium unless it also hits the High list.
+- For the Medium tier, the one review comes from a model family different
+  from the writer's.
 - For the High tier, at least one of the two reviews of a head comes from
   a model family different from the writer's (§2.2).
 - The other High review can use a fresh context of the writer's family.
@@ -68,8 +70,10 @@ The table rules govern how the row combines with the review.
    The board accepts a High head, or a head of unknown tier, only when it
    has `PASS` rows that cite two distinct `acceptance claim` comments of
    the PR, each with the row's `Subject` and `Round`, at least one of them with `Model relation: different-family`,
-   and no `FAIL` row. A Medium head needs one `PASS` row and no `FAIL`
-   row.
+   and no `FAIL` row. A Medium head needs one `PASS` row that cites an
+   `acceptance claim` comment of the PR the same way and records
+   `Model relation: different-family`, and no `FAIL` row. A `same-family`
+   or `unknown` row does not count for Medium.
 
    The review brief requires each reviewer, in its first round, to group
    findings by bug family. For each family, list every sibling case and
@@ -86,13 +90,16 @@ The table rules govern how the row combines with the review.
    PR diffs (from the one merge base with main) must not be empty. The
    board reads the rows of the new head and of the newest proven
    reviewed head only, so reviews split across older heads do not add
-   up. A FAIL row on any proven head, or on the new head, stops the
-   carry, and a git error on any candidate proves none. The board then shows `via: sync` with
+   up. The newest proven reviewed head is the subject of the newest
+   record with a row on a proven head. A FAIL row on that head, in any
+   record, or on the new head, stops the carry. A FAIL row on an older
+   proven head that a newer record supersedes does not stop it. A git
+   error on any candidate proves none. The board then shows `via: sync` with
    `carried_from` (#2074), and the new head needs CI only. Any other sync
    head (a conflict, even one resolved to the PR side; an edit in the
    merge; a new commit; a failed git step) needs a sync check: a review
    of the sync delta that writes one record row for the new head. A
-   Medium sync head needs one sync check row. A High sync head needs the
+   Medium sync head needs one sync check row under the Medium rule above. A High sync head needs the
    round-1 rule: two sync check rows from distinct claims, at least one
    different-family. A PR that changes a hook path never carries: the
    owner approves each head of a hook diff again.

@@ -171,11 +171,14 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
   board.command('review')
     .description('Start the review seat of each ready, green pull request with no start marker for its head (takes --parent): marker comment and review tab in the writer worktree')
     .requiredOption('--space <id>', 'Herdr space that receives the review tabs')
+    .option('--pr <number>', 'Review this pull request only')
     .option('--dry-run', 'Print the decision for each pull request and start nothing')
-    .action(async (options: { space: string; dryRun?: boolean }, command: Command) => {
+    .action(async (options: { space: string; pr?: string; dryRun?: boolean }, command: Command) => {
       try {
+        if (options.pr !== undefined && !/^[1-9][0-9]*$/u.test(options.pr)) throw new BoardCollectError('--pr must be a pull request number');
         const result = await runReview({
           repo_root: process.cwd(), parent: parentNumber(command.optsWithGlobals<BoardOptions>()), space: options.space, host, dry_run: options.dryRun === true,
+          ...(options.pr === undefined ? {} : { pr: Number(options.pr) }),
           launch: (seat, labels, cwd) => seatLaunch(seat, labels, process.env, cwd),
         });
         process.stdout.write(reviewText(result));
@@ -285,7 +288,7 @@ function reviewRunner(options: AttentionOptions, parent: number, host: BoardHost
   return observe => runReview({ repo_root: process.cwd(), parent, space, host, dry_run: false, observe, launch: (seat, labels, cwd) => seatLaunch(seat, labels, process.env, cwd) });
 }
 
-/** The resident loop. A failed board read or hc check ends it with exit 1; doctor then reports the watcher stopped. */
+/** The resident loop. A provider 5xx skips one window; other board read or hc failures end it with exit 1. */
 async function watchAttention(options: AttentionOptions, host: BoardHostPortsV1, attentionHost: AttentionHostPortsV1): Promise<void> {
   try {
     const parent = parentNumber(options);

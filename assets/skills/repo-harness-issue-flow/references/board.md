@@ -57,9 +57,9 @@ Rules that keep the topology safe:
 
 One `issue claim` comment takes one claim role. `issue claim` is seat-only:
 only the active coordinator holder posts it (see "Seat-only comment
-kinds"). A valid claim carries `Status`, `Role`, `Agent`, `Branch`,
-`Scope` and `Not in scope`. A claim that takes over a role also carries
-`Prior claim`. Board rules 2, 3 and 8 apply: one identity, read back, and
+kinds"). A claim that takes over a role also carries `Prior claim`. The
+required fields are in `templates.md` § issue claim.
+Board rules 2, 3 and 8 apply: one identity, read back, and
 stop on an uncertain read or post.
 
 - **The coordinator posts every claim.** It claims its own coordinator
@@ -180,7 +180,9 @@ after each claim or status change.
   the plan block's merge order. A parent without a plan (two children or
   fewer) merges in blocked-by order, and the Order column of the parent
   table is only a view. After each merge, the next PR syncs with
-  main. A merge-only sync keeps the acceptance of the reviewed head; any
+  main. A merge-only sync keeps the acceptance of the newest proven
+  reviewed head, unless that head or the new head has a FAIL row; an
+  older superseded FAIL row does not count. Any
   other new head needs sync check rows by the tier rule (`acceptor.md`
   §2.2, Sync head). A changed subject needs a new round.
 - **Batch integration.** When two or more PRs are eligible at the same

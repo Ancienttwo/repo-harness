@@ -37,8 +37,7 @@ board. Comment shapes are in `templates.md`. Claim-role and board rules are in
 1. The coordinator claims the writer role for you before it dispatches
    you. Find the `issue claim` for your issue or slot. Its `Agent:` names you, and
    its `Branch:` matches the branch in your dispatch packet. Check the
-   fields: `Role`, `Agent`, `Branch`, `Scope`, `Not in scope` and the
-   `Coordinator:` link to the coordinator's own claim. Use the identity
+   required fields in `templates.md` § issue claim. Use the identity
    in that claim in all later comments. Do not post a claim of your own.
 2. Read the claim back. Confirm its URL and every field. A claim that
    misses a field is invalid: post `issue claim status` with
