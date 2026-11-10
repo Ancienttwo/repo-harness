@@ -224,7 +224,7 @@ test('untrusted PR or wrong workflow runs cannot dispatch privileged effects', a
   expect(writes).toBe(0);
 });
 
-test.each([{ runs: [] }, { runs: [{ id: 12, path: '.github/workflows/ci.yml', event: 'schedule', head_branch: 'main', created_at: '2026-10-03T19:00:00Z', status: 'in_progress' }] }])('daily watchdog creates/reuses one dated repair for no completion event: %j', async ({ runs }) => {
+test.each([{ runs: [] }, { runs: [{ id: 12, path: '.github/workflows/ci.yml', event: 'schedule', head_branch: 'main', created_at: '2026-10-03T21:00:00Z', status: 'unknown_status' }] }])('daily watchdog creates/reuses one dated repair when no delivered schedule run exists: %j', async ({ runs }) => {
   const issues: any[] = [];
   const api: GitHubAPI = async (path, method = 'GET', body) => {
     if (path.includes('/actions/workflows/ci.yml/runs?')) return { workflow_runs: runs };
@@ -236,16 +236,18 @@ test.each([{ runs: [] }, { runs: [{ id: 12, path: '.github/workflows/ci.yml', ev
   const first = await watchDailyCI('test/repo', new Date('2026-10-03T23:30:00Z'), api, '0 19 * * *');
   expect(first.delivery).toBe('created'); expect(first.sha).toBe('a'.repeat(40));
   expect(isCiRepairIssueBody(issues[0].body)).toBe(true);
-  expect(first.observation).toBe(runs.length ? 'deadline-exceeded' : 'not-started');
+  expect(first.observation).toBe('not-started');
+  expect(first.run_ids).toEqual([]);
   const late = await watchDailyCI('test/repo', new Date('2026-10-04T00:05:00Z'), api, '0 19 * * *');
   expect(late.delivery).toBe('reused'); expect(late.date).toBe('2026-10-03'); expect(issues).toHaveLength(1);
 });
 
 test.each([
-  { now: '2026-10-03T23:30:00Z', created: '2026-10-03T21:00:00Z', date: '2026-10-03' },
-  { now: '2026-10-06T03:09:34.720Z', created: '2026-10-06T00:41:50Z', date: '2026-10-05' },
-])('daily watchdog observes a completed run across its UTC window: %j', async ({ now, created, date }) => {
-  const run = { id: 37395342276, path: '.github/workflows/ci.yml', event: 'schedule', head_branch: 'main', created_at: created, status: 'completed', conclusion: 'failure' };
+  { now: '2026-10-03T23:30:00Z', created: '2026-10-03T21:00:00Z', date: '2026-10-03', status: 'completed' },
+  { now: '2026-10-06T03:09:34.720Z', created: '2026-10-06T00:41:50Z', date: '2026-10-05', status: 'completed' },
+  { now: '2026-11-10T02:34:00Z', created: '2026-11-10T02:06:25Z', date: '2026-11-09', status: 'in_progress' },
+])('daily watchdog observes a delivered run across its UTC window: %j', async ({ now, created, date, status }) => {
+  const run = { id: 37395342276, path: '.github/workflows/ci.yml', event: 'schedule', head_branch: 'main', created_at: created, status, conclusion: status === 'completed' ? 'failure' : null };
   let writes = 0;
   const api: GitHubAPI = async (path, method = 'GET', body) => {
     if (path.includes('/actions/workflows/ci.yml/runs?')) {
@@ -261,7 +263,7 @@ test.each([
     throw Error(`Unexpected API request ${path}`);
   };
   const observed = await watchDailyCI('test/repo', new Date(now), api, '0 19 * * *');
-  expect(observed).toEqual({ date, observation: 'completion-observed', run_ids: [run.id] });
+  expect(observed).toEqual({ date, observation: 'run-observed', run_ids: [run.id] });
   expect(writes).toBe(0);
 });
 
