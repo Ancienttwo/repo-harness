@@ -125,13 +125,13 @@ function providerTokenValues(env: NodeJS.ProcessEnv): string[] {
   return [...values].sort((left, right) => right.length - left.length);
 }
 
-/** `spawnGit` and `runGit` cannot replace values in their output, so they refuse a call that keeps a token. */
 /** The subcommand git runs, or an empty name. Runner messages name it and no argument value. */
 function subcommandOf(args: readonly string[]): string {
   const at = gitSubcommandIndex(args);
   return at >= 0 ? args[at]! : '';
 }
 
+/** `spawnGit` and `runGit` cannot replace values in their output, so they refuse a call that keeps a token. */
 export function refuseProviderToken(entry: string, args: readonly string[], childEnv: NodeJS.ProcessEnv | undefined): void {
   if (hasProviderToken(childEnv ?? process.env)) {
     throw new Error(`${entry} cannot replace provider-token values and the environment of git ${subcommandOf(args)} keeps one; use gitExecFileSync, gitSpawnSync or gitExecFile`);
@@ -143,16 +143,16 @@ const REMOTE_CALL_OPTION_KEYS = new Set(['cwd', 'env', 'gitBin', 'timeout', 'max
 
 /**
  * A call that keeps a token needs stdout and stderr pipes that the runner reads and replaces.
- * Returns the stdin mode; the runner sets stdout and stderr itself.
+ * Returns the caller's stdin setting unchanged; the runner sets stdout and stderr itself.
  */
-function remoteStdio(stdio: ExecFileSyncOptions['stdio']): 'pipe' | 'ignore' {
+function remoteStdio(stdio: ExecFileSyncOptions['stdio']): unknown {
   const streams = stdio === undefined || stdio === null || typeof stdio === 'string' ? [stdio, stdio, stdio] : stdio;
   for (const stream of [streams[1], streams[2]]) {
     if (stream !== undefined && stream !== null && stream !== 'pipe' && stream !== 'ignore') {
       throw new Error('a git call that keeps a provider token needs runner-owned stdout and stderr pipes; inherit, an fd number and a raw stream are refused');
     }
   }
-  return streams[0] === 'ignore' ? 'ignore' : 'pipe';
+  return streams[0];
 }
 
 function assertRemoteCallOptions(args: readonly string[], options: object): void {
@@ -199,6 +199,8 @@ function rebuildError(error: unknown, values: readonly string[], encoding: Encod
     return Array.isArray(value) ? value.map(entry => clean(entry, streamCut)) : value;
   };
   for (const [key, value] of Object.entries(error)) {
+    // Node sets `error.error = error`; an Error-valued field would carry the original with its unreplaced fields.
+    if (value instanceof Error) continue;
     (rebuilt as unknown as Record<string, unknown>)[key] = clean(value, cut && (key === 'stdout' || key === 'stderr' || key === 'output'));
   }
   return rebuilt;

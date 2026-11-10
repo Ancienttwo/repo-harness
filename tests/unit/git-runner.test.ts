@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, relative } from 'node:path';
 import { tmpWorkspace } from '../helpers/repo-fixture';
@@ -171,6 +171,7 @@ describe('git runner', () => {
     try {
       // The helper prints the token it receives in its env, so no script or fixture file holds the value.
       const gitBin = writeGit(root, `#!/bin/sh
+[ "$2" = stdin ] && { cat; exit 0; }
 [ "$2" = pad ] && { head -c "$PAD" /dev/zero | tr '\\0' x; printf '%s' "$GH_TOKEN"; exit 0; }
 printf 'out %s\\n' "$GH_TOKEN"; printf 'err %s\\n' "$GH_TOKEN" >&2
 case "$2" in flood) head -c 1200000 /dev/zero | tr '\\0' x;; ok) exit 0;; esac
@@ -211,6 +212,34 @@ exit 3
       const missing = caught(() => gitExecFileSync(['fetch', token], { gitBin: join(root, token), env, encoding: 'utf8' })) as Error & { path?: string; spawnargs?: string[] };
       expect(leaked(missing.message, missing.path, missing.spawnargs?.join(' '))).toBe(false);
       expect(missing.path).toContain('[redacted]');
+      // No field of any depth, a self-referencing error field included, holds the token.
+      const holdsToken = (value: unknown, seen = new Set<unknown>()): boolean => {
+        if (typeof value === 'string') return value.includes(token);
+        if (Buffer.isBuffer(value)) return value.includes(token);
+        if (typeof value !== 'object' || value === null || seen.has(value)) return false;
+        seen.add(value);
+        const fields = value instanceof Error ? [value.message, value.stack, ...Object.values(value)] : Object.values(value);
+        return fields.some(field => holdsToken(field, seen));
+      };
+      expect(holdsToken(missing)).toBe(false);
+      expect(holdsToken(sync)).toBe(false);
+      // Node sets `error.error = error` on a spawn failure; the rebuilt error must not keep that original.
+      const selfReferencing = Object.assign(new Error(`spawn ${token}`), { path: token, spawnargs: [token] });
+      Object.assign(selfReferencing, { error: selfReferencing });
+      const observed = caught(() => withReadonlyObservation({
+        readFile() { throw new Error('unexpected read'); },
+        readDirectory() { throw new Error('unexpected directory'); },
+        validatePath() {},
+        exec() { throw selfReferencing; },
+      }, () => gitExecFileSync(['fetch'], { gitBin: 'git', env, encoding: 'utf8' })));
+      expect(holdsToken(observed)).toBe(false);
+      // The caller's stdin setting reaches git: data on fd 0 is read in a token-keeping call.
+      const data = join(root, 'stdin.txt');
+      writeFileSync(data, 'from-fd-0');
+      const fd = openSync(data, 'r');
+      try {
+        expect(gitExecFileSync(['fetch', 'stdin'], { gitBin, env, encoding: 'utf8', stdio: [fd, 'pipe', 'pipe'] })).toBe('from-fd-0');
+      } finally { closeSync(fd); }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
