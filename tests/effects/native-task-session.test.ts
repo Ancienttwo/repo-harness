@@ -1,5 +1,5 @@
 import { afterEach, expect, spyOn, test } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { bindNativeTaskSession } from '../../src/effects/terminal/native-task-session';
 import { processProofAlive, type NativeTaskSessionBinding } from '../../src/effects/terminal/task-session-record';

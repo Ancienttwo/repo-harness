@@ -18,7 +18,7 @@ import { existsSync } from "fs";
 import { join } from "path";
 
 import { buildCheckpointProjection, renderCheckpointMarkdown } from "../src/core/evidence/checkpoint";
-import type { JsonValue, SubjectIdentity, TrustClass } from "../src/core/evidence/types";
+import type { SubjectIdentity, TrustClass } from "../src/core/evidence/types";
 import {
   CHECKPOINTS_DIR_RELATIVE,
   publishCheckpointFromLedger,

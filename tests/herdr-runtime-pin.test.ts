@@ -1,5 +1,5 @@
 import { renderHerdrSkill } from "../src/cli/commands/herdr-skill-render.mjs";
-import { describe, expect, test, spyOn } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { run, withTempRepo } from "./helpers/repo-fixture";

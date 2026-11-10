@@ -134,7 +134,7 @@ function counterLines(path: string): number {
 describe("verification lifecycle explicit adapters", () => {
   test("repeated direct verifiers share one execution fact and report immutable execution run refs", () => {
     const expensive = check("full", "printf full\\n >> \"$COUNTER_PATH\"", "verification", "expensive", ["COUNTER_PATH"]);
-    const { root, counter, contract: contractPath } = fixture("verification-adapter-reuse", [expensive]);
+    const { root, counter } = fixture("verification-adapter-reuse", [expensive]);
 
     const source = verify(root, "scripts/verification-plan.ts", ".ai/harness/checks/source.json", counter);
     expect(source.status, `${source.stdout}\n${source.stderr}`).toBe(0);
@@ -178,7 +178,7 @@ describe("verification lifecycle explicit adapters", () => {
   }, 30_000);
 
   test("a failed preflight leaves later expensive checks unstarted", () => {
-    const { root, counter, contract: contractPath } = fixture("verification-adapter-preflight", [
+    const { root, counter } = fixture("verification-adapter-preflight", [
       check("preflight", "exit 9", "preflight", "normal"),
       check("full", "printf full\\n >> \"$COUNTER_PATH\"", "verification", "expensive", ["COUNTER_PATH"]),
     ]);

@@ -9,7 +9,6 @@ import { controlledWorktreeProcessPreload, setControlledWorktreeProcesses } from
 import { afterAll, describe, expect, test } from 'bun:test';
 import { recordWorktree, readWorktreeRecordById } from '../src/effects/git/worktree-record';
 import * as fs from 'fs';
-import * as childProcess from 'child_process';
 import { execFileSync, spawn, spawnSync } from 'child_process';
 import {
   appendFileSync,

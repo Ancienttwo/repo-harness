@@ -26,7 +26,6 @@ import {
   runProcess,
 } from '../../src/effects/process-runner';
 import {
-  runBoundedProviderProcess,
   withHarnessBenchmarkExecutionLock,
 } from '../../scripts/run-harness-profile-benchmark';
 
