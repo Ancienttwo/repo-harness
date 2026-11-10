@@ -302,3 +302,41 @@ describe('archimap measure reads behavior specs', () => {
     expect(failure.stderr).toContain('behavior_spec_uncovered:component.alpha.protocol');
   });
 });
+
+describe('archimap measure reports board geometry', () => {
+  const box = (cls: string, left: number, top: number) =>
+    `<div class="${cls}" style="left:${left}px;top:${top}px;width:100px;height:100px"></div>`;
+  const board = (caption: string, body: string) => `<section><h2 class="caption">${caption}</h2><div class="board">${body}</div></section>`;
+  const paths = (...d: string[]) => `<svg><defs><marker id="m"><path d="M0 0 C1 1 2 2 3 3"/></marker></defs>${d.map((v) => `<path d="${v}"/>`).join('')}</svg>`;
+  const mapHtml = (boards: string[]) =>
+    `<script type="application/json" id="archimap-meta">${JSON.stringify({ modules: moduleDefs() })}</script>${boards.join('')}`;
+  const mapRoot = (boards: string[]) => fixture({ 'map.html': mapHtml(boards) });
+  const mapArgs = (root: string) => ['--map', join(root, 'map.html'), '--model', MODEL_DIR];
+  type Geometry = { checked: string[]; unchecked: string[]; findings: { board: string; kind: string }[] };
+
+  test('each defect kind gives one finding; clean and node-free boards give none; exit stays 0', () => {
+    const placed = board('1 · Placed',
+      `${box('node', 0, 0)}${box('node', 50, 50)}${box('node', 400, 0)}${box('node', 400, 150)}${box('node', 400, 300)}`
+      + paths('M450 100 V300', 'M500 50 H560')
+      + '<div class="elabel" style="left:520px;top:42px">hi</div>');
+    const clean = board('2 · Clean', `${box('node', 0, 0)}${box('node', 300, 0)}${paths('M100 50 H300')}<div class="elabel" style="left:150px;top:20px">ok</div>`);
+    const sequence = board('3 · Sequence', `${box('panel', 0, 0)}<svg><path d="M0 0 C1 1 2 2 3 3"/></svg>`);
+    const root = mapRoot([placed, clean, sequence]);
+    const output = JSON.parse(runMeasure(['--root', root, ...mapArgs(root)])) as { geometry: Geometry };
+    expect(output.geometry.checked).toEqual(['1 · Placed', '2 · Clean']);
+    expect(output.geometry.unchecked).toEqual(['3 · Sequence']);
+    expect(output.geometry.findings.map((f) => [f.board, f.kind])).toEqual([
+      ['1 · Placed', 'box_overlap'],
+      ['1 · Placed', 'line_through_box'],
+      ['1 · Placed', 'line_end_open'],
+      ['1 · Placed', 'label_on_line'],
+    ]);
+  });
+
+  test('a path command outside M, H, V, L on a checked board exits 2', () => {
+    const root = mapRoot([board('1 · Curve', `${box('node', 0, 0)}${paths('M100 50 C150 50 200 50 250 50')}`)]);
+    const failure = measureFailure(root, mapArgs(root));
+    expect(failure.status).toBe(2);
+    expect(failure.stderr).toContain('geometry_path_unsupported:1 · Curve');
+  });
+});
