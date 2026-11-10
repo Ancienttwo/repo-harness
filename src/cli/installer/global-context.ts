@@ -62,6 +62,7 @@ export const SHIPPED_GLOBAL_RULES_SECTIONS: readonly string[] = [
   'Sufficiency and Stop Boundaries',
   'Progressive Due Diligence',
   'Code Optimization Principles',
+  'Code Ownership',
   'No Compatibility Fallbacks in Product Code',
   'Test Budget',
   'Reporting',
