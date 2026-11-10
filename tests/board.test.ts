@@ -1194,7 +1194,9 @@ test('watch window skips a provider 5xx and resumes at the next window', async (
     await runAttentionWindow(input);
     expect(reads).toBe(2);
     expect(delays[0]).toBe(WINDOW_WITH_WORKERS_MS);
-    for (const [message, status] of [['gh: server says HTTP 503 (HTTP 403)', 403], ['HTTP 403: forbidden', 403], ['gh: server says HTTP 503', null], ['gh failed', null]] as const) {
+    await runAttentionWindow({ ...input, collect: () => readGhJson({ repo_root: hc.root, gh_runner: () => ({ status: 1, stdout: '', stderr: 'gh: HTTP 504' }) }, ['api', 'graphql']) as BoardV1 });
+    expect(JSON.parse(String(stderr.mock.calls[1]?.[0])).message).toContain('gh: HTTP 504');
+    for (const [message, status] of [['gh: HTTP 403', 403], ['gh: server says HTTP 503 (HTTP 403)', 403], ['HTTP 403: forbidden', 403], ['gh: server says HTTP 503', null], ['gh failed', null]] as const) {
       const collect = () => readGhJson({ repo_root: hc.root, gh_runner: () => ({ status: 1, stdout: '', stderr: message }) }, ['api', 'graphql']) as BoardV1;
       try { collect(); throw new Error('expected failure'); } catch (error) {
         expect(error).toBeInstanceOf(BoardCollectError);
@@ -1202,7 +1204,7 @@ test('watch window skips a provider 5xx and resumes at the next window', async (
       }
       await expect(runAttentionWindow({ ...input, collect })).rejects.toBeInstanceOf(BoardCollectError);
     }
-    expect(stderr).toHaveBeenCalledTimes(1);
+    expect(stderr).toHaveBeenCalledTimes(2);
   } finally { stderr.mockRestore(); }
 });
 
