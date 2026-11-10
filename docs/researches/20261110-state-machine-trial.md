@@ -4,6 +4,7 @@ Date: 2026-11-10. Base: main `c9af3b0`. Earlier note: `docs/researches/20261110-
 Method: the pstack skills `create-formal-verification-skill` and `statechart` (cursor/plugins `de8ee15`, read as text and followed by hand: this session cannot install a Cursor plugin).
 Tools: TLC of TLA+ 1.7.4 (the jar that `scripts/contract-closeout-tla.sh` pins), OpenJDK 21, the `statechart` script of pstack on Node 22.23.4, pele 1.9.0 for the SVG files.
 Host: Linux container. Each count is from a run in this container.
+Files of the trial: the models, their configs, the view modules, `check.sh`, `checks.tsv` and the three skills are at commit `6a927ae8b5285b77fbe6bd767208e04e2ba5b705`, in the history of the pull request that adds this note. They are not on main. Each `specs/tla` and `.claude/skills` path of this note is a path at that commit. #2177 and #2180 bring to main what stays.
 
 ## Verdict
 
@@ -399,7 +400,7 @@ What repo-harness reads from archctx today, and what a new debt check changes:
 
 ## Reproduce
 
-- Checks: `TLA2TOOLS_JAR=<tla2tools.jar of TLA+ v1.7.4> bash specs/tla/check.sh` (26 s; Java 11 or later).
+- Checks: at the commit of the trial files, `TLA2TOOLS_JAR=<tla2tools.jar of TLA+ v1.7.4> bash specs/tla/check.sh` (26 s; Java 11 or later).
 - Charts: the pstack `/statechart` skill on a spec of `specs/tla`, with its config and its view module.
 - Guard removals: remove the line of section 2, then `bun run test:files <test file> --timeout 60000 --max-concurrency 1`.
 - Skills: `.claude/skills/verify-office-sync`, `verify-architecture-map` and `verify-boss-command` hold the coverage record and the sync commit of each area.
