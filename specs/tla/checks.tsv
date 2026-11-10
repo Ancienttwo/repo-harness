@@ -1,0 +1,31 @@
+# spec	config	expect	invariants	note
+# expect: `holds` (TLC finds no error), `breaks` (a guard is off: TLC must report this invariant first),
+# `finding` (the code at the sync commit breaks these rules: TLC must report exactly this set).
+ObservationLoop	ObservationLoop.cfg	holds	-	the hook, with a reader that takes a typed refusal as an answer
+ObservationLoop	ObservationLoop.board-readers.cfg	finding	RefusalKeepsCadence	the board, parents, overview and architecture map readers return false for a typed refusal (#2149, #2151)
+ObservationLoop	ObservationLoop.no-active-guard.cfg	breaks	OneUnsettledRead	useObservationRefresh.ts line 36 without `|| active`
+ObservationLoop	ObservationLoop.no-requeue.cfg	breaks	NoLostRefresh	line 45 without the queued request
+ObservationLoop	ObservationLoop.no-reschedule.cfg	breaks	LoopAlive	line 46 without `schedule()`
+ObservationLoop	ObservationLoop.no-hide-abort.cfg	breaks	HiddenIsQuiet	line 51 without `latest?.abort()`
+ResidentCollector	ResidentCollector.cfg	holds	-	the guards of the architecture map collector
+ResidentCollector	ResidentCollector.publish-at-end.cfg	finding	CollectedResultIsServed	the result of one repository waits for the last repository of the cycle
+ResidentCollector	ResidentCollector.publish-each-child.cfg	holds	-	design variant: each child result is published when it returns
+ResidentCollector	ResidentCollector.interval-timer.cfg	breaks	NoOverlap	a timer that does not wait for the settle of the cycle
+ResidentCollector	ResidentCollector.no-loop-close-check.cfg	breaks	NoChildAfterClose	architecture-map-collector.ts line 134 off
+ResidentCollector	ResidentCollector.no-arm-close-check.cfg	breaks	ClosedIsQuiet	line 146 off
+ResidentCollector	ResidentCollector.no-publish-close-check.cfg	breaks	NoPublishAfterClose	line 140 off
+BossCommandSend	BossCommandSend.cfg	holds	-	the write run and the cooldown, with one crash
+BossCommandSend	BossCommandSend.unresolved-not-counted.cfg	breaks	CooldownHolds	maySend returns false for an intent with no result
+BossCommandSend	BossCommandSend.reconcile-not-counted.cfg	breaks	CooldownHolds	maySend returns false for reconcile_required
+BossCommandSend	BossCommandSend.no-request-lookup.cfg	breaks	OneSendPerRequest	write-run.ts lines 152-153 off
+OfficeRoomFlow	OfficeRoomFlow.cfg	finding	SeatsShowWithParentsList,SeatsStayOnScreen	the room waits for the board read (#2149); a failed read removes the seats
+OfficeRoomFlow	OfficeRoomFlow.issue-2149.cfg	finding	SeatsShowWithParentsList,SeatsStayOnScreen	the screen rule of #2149: the checklist and the board failure screen still remove the seats
+OfficeRoomFlow	OfficeRoomFlow.keep-seats.cfg	holds	-	design variant: a failed read keeps the seats, marked stale
+BossCommandFlow	BossCommandFlow.cfg	finding	OfferMatchesTheTurn,OfferMatchesTheCooldown	the room can offer a command that the server refuses
+ArchitectureFirstMapFlow	ArchitectureFirstMapFlow.cfg	finding	BuiltMapIsServed,PendingKeepsCadence	the first map waits for the cycle, and "not collected yet" slows the page (#2151)
+ArchitectureFirstMapFlow	ArchitectureFirstMapFlow.main-path.cfg	finding	BuiltMapIsServed,PendingKeepsCadence	the same rules with no failed child: the chart config
+ArchitectureFirstMapFlow	ArchitectureFirstMapFlow.issue-2151.cfg	finding	BuiltMapIsServed	the read rule of #2151
+ArchitectureFirstMapFlow	ArchitectureFirstMapFlow.publish-each-child.cfg	holds	-	design variant: the collector publishes each child result
+ArchitectureMapsFlow	ArchitectureMapsFlow.segment.cfg	finding	TopologyOpensOnBoxes,ChosenSegmentSurvivesHistory	the first segment is `namespace` (#2151); History drops the chosen segment
+ArchitectureMapsFlow	ArchitectureMapsFlow.segment.issue-2151.cfg	finding	ChosenSegmentSurvivesHistory	the first segment of #2151
+ArchitectureMapsFlow	ArchitectureMapsFlow.selection.cfg	finding	SelectionSurvivesATabChange,SelectionSurvivesANewCommit	a tab change and a new commit drop the selection
