@@ -396,9 +396,9 @@ function assertQueueMessage(settings: RepositorySettings): void {
  * D7: GitHub pins only the head. Without a queue, strict status checks turn a moved
  * base into a provider-side rejection. With a squash merge queue, the queue tests
  * the PR on the current base, so strict checks are not needed. Returns whether the
- * base requires the queue.
+ * base requires the queue and the status checks read from its protection.
  */
-function assertBaseProtection(input: PublicationMergeInput, branch: string, target: MergeTarget, mergeQueue: MergeQueueSwitch): boolean {
+function assertBaseProtection(input: PublicationMergeInput, branch: string, target: MergeTarget, mergeQueue: MergeQueueSwitch): { readonly queue: boolean; readonly required_status_checks: Record<string, unknown> } {
   const root = `repos/${input.repository}/branches/${encodeURIComponent(branch)}`;
   const value = read(input, ['api', `${root}/protection`], true);
   if (value === null) {
@@ -429,7 +429,7 @@ function assertBaseProtection(input: PublicationMergeInput, branch: string, targ
   }
   if (!queue) {
     if (checks.strict !== true) throw new Refusal('base_protection_insufficient', `${branch} protection must require strict status checks`);
-    return false;
+    return { queue: false, required_status_checks: checks };
   }
   const parameters = queueRules[0]!.parameters;
   if (!isObject(parameters) || parameters.merge_method !== 'SQUASH') {
@@ -442,7 +442,7 @@ function assertBaseProtection(input: PublicationMergeInput, branch: string, targ
   if (input.batch) {
     throw new Refusal('base_protection_insufficient', `--batch needs a two-parent merge commit; the ${branch} merge queue squashes`);
   }
-  return true;
+  return { queue: true, required_status_checks: checks };
 }
 
 interface BasePolicy {
@@ -795,10 +795,12 @@ function prepareMerge(input: PublicationMergeInput): PreparedMerge {
   const policy = readPolicy(input);
   const repository = readRepository(input);
   const defaultBranch = repository.default_branch;
-  const queue = assertBaseProtection(input, defaultBranch, initial, policy.policy.merge_queue);
+  const protection = assertBaseProtection(input, defaultBranch, initial, policy.policy.merge_queue);
+  const queue = protection.queue;
   if (queue) assertQueueMessage(repository);
-  // Readiness reuses the base policy file this executor already read.
-  const verdict = collectPullRequestMergeReadiness({ ...input, policy_file_at_base: policy.file });
+  // Reuse the base policy and protection reads.
+  const verdict = collectPullRequestMergeReadiness({ ...input, policy_file_at_base: policy.file,
+    required_status_checks_at_base: protection.required_status_checks });
   if (!verdict.ready) {
     throw new Refusal('merge_readiness_blocked', `readiness blockers: ${verdict.blockers.map((blocker) => blocker.code).join(', ')}`, verdict.blockers);
   }

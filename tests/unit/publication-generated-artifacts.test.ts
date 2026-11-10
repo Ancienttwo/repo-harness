@@ -424,6 +424,7 @@ function readinessGh(options: { head: string; base: string; policy: string | nul
     const [command, sub] = args;
     if (command === 'repo' && sub === 'view') return { status: 0, stdout: JSON.stringify({ id: repository.node_id, nameWithOwner: repository.full_name }) };
     if (command === 'api' && sub === 'repos/example/repo-harness') return { status: 0, stdout: JSON.stringify(repository) };
+    if (command === 'api' && sub === 'repos/example/repo-harness/branches/main/protection') return { status: 0, stdout: JSON.stringify({ required_status_checks: { contexts: ['Required / CI'] } }) };
     if (command === 'api' && sub?.startsWith('repos/example/repo-harness/contents/.ai/harness/policy.json')) {
       if (options.policy === null) return { status: 1, stdout: JSON.stringify({ status: '404' }) };
       return { status: 0, stdout: JSON.stringify({ type: 'file', path: '.ai/harness/policy.json', encoding: 'base64', content: Buffer.from(options.policy).toString('base64') }) };
