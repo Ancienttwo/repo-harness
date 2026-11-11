@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import {
   chmodSync,
   existsSync,
@@ -31,6 +31,11 @@ import {
 } from '../../src/effects/state/git-state-version-store';
 import { readWorkflowPolicy, resolveEffectiveState } from '../../src/effects/state/resolve-effective-state';
 import { contentRevision, sha256 } from '../../src/effects/state/collect-state-inputs';
+import { DEFAULT_RETENTION_DAYS, readRetentionConfig } from '../../src/effects/artifact-retention';
+import { mergeBackTarget } from '../../src/effects/state/coordination-worktree-topology';
+import { capabilitySource } from '../../src/effects/architecture/archctx-provider';
+import { planWorktreeTemplate } from '../../src/effects/upgrade/worktree-template-migration';
+import { assertArchitecturePolicySelection } from '../../src/cli/installer/install-profile';
 
 describe('Effective State content revision', () => {
   test('uses code-unit ordering when locale collation treats distinct keys as equal', () => {
@@ -378,6 +383,60 @@ describe('Effective State version read effects', () => {
       fixture.cleanup();
     }
   }, 30_000);
+});
+
+describe('policy loader: one reader of the file from disk', () => {
+  test('a policy key outside the tree loads and does not fail a reader', () => {
+    // `agentic_development` is not a tree key; the loader ignores it instead of rejecting the file.
+    expect(() => readWorkflowPolicy('/repo', () => JSON.stringify({
+      agentic_development: { routing: { design_plan: 'parent-agent:geju' } },
+      worktree_strategy: { base_branch: 'main', review_base: 'main', merge_back: { target: 'main' } },
+    }))).not.toThrow();
+  });
+
+  test('the loader keeps its two malformed-input messages and its absent-file null', () => {
+    expect(() => readWorkflowPolicy('/repo', () => '{"context": ')).toThrow(
+      'invalid workflow policy JSON: .ai/harness/policy.json',
+    );
+    expect(() => readWorkflowPolicy('/repo', () => '[]')).toThrow(
+      'invalid workflow policy object: .ai/harness/policy.json',
+    );
+    expect(readWorkflowPolicy('/repo', () => null)).toBeNull();
+  });
+});
+
+describe('each policy reader validates only the keys it reads', () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'policy-reader-')));
+  afterAll(() => { rmSync(root, { recursive: true, force: true }); });
+  const repoWith = (name: string, policy: unknown): string => {
+    const repo = join(root, name);
+    mkdirSync(join(repo, '.ai/harness'), { recursive: true });
+    writeFileSync(join(repo, '.ai/harness/policy.json'), `${JSON.stringify(policy)}\n`);
+    return repo;
+  };
+  const env = { HOME: root } as NodeJS.ProcessEnv;
+
+  test('a value that the state resolver rejects does not stop another reader', () => {
+    const repo = repoWith('other-key', { minimal_change: { mode: 'enforce' }, worktree_strategy: { base_branch: 123 } });
+    expect(readRetentionConfig(repo).days).toBe(DEFAULT_RETENTION_DAYS);
+    expect(capabilitySource(repo)).toBe('registry');
+    expect(() => assertArchitecturePolicySelection(repo, ['product'], env)).not.toThrow();
+  });
+
+  test('the merge-back reader keeps its own message for its own key', () => {
+    for (const target of [123, '']) {
+      const repo = repoWith(`merge-back-${String(target)}`, { worktree_strategy: { merge_back: { target } } });
+      expect(() => mergeBackTarget(repo)).toThrow('integration target is invalid');
+    }
+  });
+
+  test('a [] root gives each reader its own result', () => {
+    const repo = repoWith('array-root', []);
+    expect(readRetentionConfig(repo).days).toBe(DEFAULT_RETENTION_DAYS);
+    expect(capabilitySource(repo)).toBe('registry');
+    expect(planWorktreeTemplate(repo)).toEqual({});
+    expect(() => assertArchitecturePolicySelection(repo, ['product'], env)).not.toThrow();
+  });
 });
 
 describe('minimal_change.mode policy validation', () => {

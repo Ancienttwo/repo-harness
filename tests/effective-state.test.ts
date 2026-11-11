@@ -22,6 +22,7 @@ import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-st
 import { projectEffectiveStateSessionSection } from '../src/cli/hook/session-context';
 import type { EffectiveState } from '../src/core/state/types';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
+import { unknownPolicyKeys } from '../src/core/workflow/policy-schema';
 import {
   CONTRACT,
   PLAN,
@@ -864,6 +865,55 @@ describe('effective state resolver', () => {
     });
   });
 
+});
+
+describe('policy schema: one key tree and one decoder', () => {
+  test('a policy that holds only tree keys reports no unknown key', () => {
+    const policy = {
+      tasks: { research_dir: 'docs/researches' },
+      context: { map_file: '.ai/context/context-map.json', capability_source: 'registry' },
+      worktree_strategy: { base_branch: 'main', merge_back: { target: 'main' } },
+      publication: { acceptance_merge: 'on' },
+      planning: { pending_orchestration_file: '.ai/harness/planning/pending.json' },
+      external_tooling: { agent_fleet: { managed_agents: ['explorer'], install_mode: 'auto-install-on-init' } },
+    };
+    expect(unknownPolicyKeys(policy)).toEqual([]);
+  });
+
+  test('reports a dotted path for a key outside the tree', () => {
+    expect(unknownPolicyKeys({
+      agentic_development: { routing: { design_plan: 'parent-agent:geju' } },
+      tasks: { research_dir: 'docs/researches', lessons_file: 'tasks/lessons.md' },
+      legacy: { flag: true, list: [1], empty: {} },
+    })).toEqual([
+      'agentic_development.routing.design_plan',
+      'legacy.empty',
+      'legacy.flag',
+      'legacy.list',
+      'tasks.lessons_file',
+    ]);
+  });
+
+  test('an absent file has no keys, and a declared section keeps its own contract', () => {
+    expect(unknownPolicyKeys(null)).toEqual([]);
+    // `external_sources` is owned by readExternalSourcesPolicy and `guards` by the console projection.
+    expect(unknownPolicyKeys({ external_sources: { version: 1, mode: 'off' }, guards: { anything: true } })).toEqual([]);
+  });
+
+  test('the tree names the keys of the deferred readers and the language settings writer', () => {
+    // These readers stay off the loader in this PR; the tree still lists their keys so the adoption
+    // child keeps them, and `unknownPolicyKeys` does not report them.
+    const deferred = {
+      worktree_strategy: { review_base: 'main' },
+      context: { capability_source: 'archcontext' },
+      external_sources: {},
+      documentation: { language: 'en' },
+      publication: { acceptance_merge: 'on' },
+      security: { reviewed_findings: [] },
+    };
+    expect(unknownPolicyKeys(deferred)).toEqual([]);
+    expect(unknownPolicyKeys({ security: { reviewedFindings: [] } })).toEqual(['security.reviewedFindings']);
+  });
 });
 
 describe('effective state resolution cost (#770)', () => {

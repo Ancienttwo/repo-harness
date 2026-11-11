@@ -1,6 +1,6 @@
 import { sha256Prefixed } from '../../core/evidence/sha256';
-import { lstatSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { lstatSync } from 'fs';
+import { readWorkflowPolicyDocument } from '../../effects/state/resolve-effective-state';
 import { formatJson } from '../installer/shared';
 import { gitSpawnSync } from '../../effects/git/runner';
 import {
@@ -96,9 +96,11 @@ function gitFailure(result: ReturnType<typeof git>): string {
 
 /** The policy owns the default branch. A missing or invalid value is never guessed. */
 function policyDefaultBranch(path: string): { readonly branch: string } | { readonly error: string } {
-  let policy: unknown;
-  try { policy = JSON.parse(readFileSync(join(path, '.ai', 'harness', 'policy.json'), 'utf-8')); }
+  let document: ReturnType<typeof readWorkflowPolicyDocument>;
+  try { document = readWorkflowPolicyDocument(path); }
   catch (error) { return { error: `.ai/harness/policy.json is unreadable: ${error instanceof Error ? error.message : String(error)}` }; }
+  if (!document.present) return { error: '.ai/harness/policy.json is missing' };
+  const policy = document.root;
   const strategy = policy && typeof policy === 'object' ? (policy as { worktree_strategy?: unknown }).worktree_strategy : undefined;
   const branch = strategy && typeof strategy === 'object' ? (strategy as { base_branch?: unknown }).base_branch : undefined;
   if (typeof branch !== 'string' || branch.trim() === '') return { error: 'worktree_strategy.base_branch is missing or not a non-empty string' };
