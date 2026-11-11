@@ -111,7 +111,10 @@ function commandTargets(tokens: readonly Word[], heredoc: string): string[] {
 }
 
 interface CommandVisitor {
-  /** `cwd` is null once a command could have moved the shell to an unknown directory. */
+  /**
+   * `cwd` is null once a command could have moved the shell to an unknown directory. It stays null until the
+   * enclosing subshell ends, so every relative path read from it can name a protected directory.
+   */
   command?(segment: readonly Word[], body: string, cwd: string | null): void;
   redirect?(target: Word, cwd: string | null): void;
   /** The command is outside the parsed grammar; nothing of it was visited. */
@@ -191,6 +194,8 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
     const flush = (separator = '\n') => {
       visit.command?.(segment, body, commandCwd);
       if (segment[0]?.value === 'cd') {
+        // Only a plain literal cd that must succeed moves a known directory. An absolute operand does not restore an
+        // unknown one: origin/main kept it unknown too, and a reset would allow writes that main denies.
         const cd = cdOperand(segment);
         commandCwd = separator === '&&' && commandCwd && cd?.plain && cd.target.literal
           && globIndex(cd.target.pattern) < 0 && !cd.target.value.startsWith('-')
@@ -389,15 +394,12 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
       return null;
     }
   };
-  /** Set once a `cd` could have moved the shell into a protected directory. */
-  let cwdMayBeProtected = false;
   const addPath = (pattern: string, commandCwd: string | null) => {
     let candidate = unescapePattern(pattern);
     if (!candidate || /[$`]/.test(candidate) || ['/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty'].includes(candidate)
       || /^\/dev\/fd\/\d+$/.test(candidate)) return;
     if (!isAbsolute(candidate) && !commandCwd) {
-      // From an unknown directory, a relative target is safe only when it neither climbs out nor starts in a protected directory.
-      if (cwdMayBeProtected || candidate.split('/').includes('..')) unresolved.push(`${candidate} (working directory not known)`);
+      unresolved.push(`${candidate} (working directory not known)`);
       return;
     }
     const base = commandCwd ?? cwd;
@@ -453,15 +455,6 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
   };
   walkCommands(command, cwd, {
     command: (segment, body, commandCwd) => {
-      // After a `cd` with an option or an expanded operand the directory is not tracked. Its reachable targets
-      // decide whether a later relative write can land in a protected directory; the cd itself writes nothing.
-      const cd = cdOperand(segment);
-      if (cd && (!cd.plain || !cd.target.literal || globIndex(cd.target.pattern) >= 0)) {
-        const found = candidates.length, failed = unresolved.length;
-        add(cd.target.pattern, commandCwd);
-        if (candidates.length > found || unresolved.length > failed) cwdMayBeProtected = true;
-        candidates.length = found; unresolved.length = failed;
-      }
       for (const target of commandTargets(segment, body)) add(target, commandCwd);
     },
     redirect: (target, commandCwd) => add(target.pattern, commandCwd),
@@ -511,23 +504,19 @@ const WORKTREE_ADD_DENIAL = (target: string, root: string): Denial => ({
   fix: `Create the worktree under ${root} as <repo>-wt-<slug>, or run \`repo-harness run contract-worktree start --issue <number>\`.`,
 });
 
-/** Literal worktree targets, relative targets after a glob `cd` and unparsed commands that mention worktrees fail closed. */
+/** Literal worktree targets, relative targets from an unknown directory and unparsed commands that mention worktrees fail closed. */
 function worktreeAddDenial(command: string, cwd: string): Denial | null {
   if (!/\bworktree\b/.test(command)) return null;
   let denial: Denial | null = null;
-  /** Set once a plain literal `cd` takes a glob operand. The walk then has no directory for a relative target. */
-  let globCd = false;
   walkCommands(command, cwd, {
     command: (segment, _body, commandCwd) => {
       if (denial) return;
-      const cd = cdOperand(segment);
-      if (cd?.plain && cd.target.literal && globIndex(cd.target.pattern) >= 0) globCd = true;
       const target = worktreeAddTarget(segment, commandCwd);
       // The target is relative exactly when it resolves only from a known directory.
-      if (!target && globCd && !commandCwd && worktreeAddTarget(segment, '/')) {
+      if (!target && !commandCwd && worktreeAddTarget(segment, '/')) {
         denial = {
           guard: 'WorktreeCreateGuard',
-          reason: 'git worktree add has a relative target after a cd into a glob directory, so its destination is not known.',
+          reason: 'git worktree add has a relative target and the working directory is not known.',
           fix: 'Give git worktree add an absolute target, or run `repo-harness run contract-worktree start --issue <number>`.',
         };
       }

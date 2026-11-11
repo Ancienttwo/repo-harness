@@ -116,6 +116,10 @@ describe('Bash write tripwire host route', () => {
         'cat <<-EOF > report.txt\n\t$(echo x > _ops/x)\n\tEOF', "cat <<EOF > report.txt\n'$(echo x > _ops/x)'\nEOF",
         'cat <<EOF > report.txt\n\\$(date) $(echo x > _ops/x)\nEOF',
         'cat <<EOF > report.txt\n\\\\$(echo x > _ops/x)\nEOF', 'cat <<EOF > report.txt\n$\\\n(echo x > _ops/x)\nEOF',
+        // After a cd that is not a plain literal joined by &&, the directory stays unknown and a relative target can be protected.
+        'cd "$TARGET" && rm _ops/file', 'cd _ops | cat; echo value > report.txt',
+        'cd sr[c] && cd .. && rm -rf _ops', 'cd sr[c] && cd ../_ops && echo x > y', '(cd sr[c] && cd .. && rm -rf _ops)',
+        'cd src && cd ../sr[c] && cd .. && rm -rf _ops', `cd sr[c] && cd ${cwd} && rm -rf _ops`,
       ]) {
         const result = invokeBash(command);
         expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 2 });
@@ -127,8 +131,7 @@ describe('Bash write tripwire host route', () => {
         'echo value > src/file.txt', `echo value > '${cwd}/src/file.txt'`,
         'echo value > "$TARGET"', 'python3 generator.py', 'echo value > /dev/null',
         'echo value > /dev/fd/2', 'echo value > /dev/tty', 'cp _ops/input safe.txt "2">/dev/null',
-        'cd src && echo value > _ops/local.txt', 'cd "$TARGET" && rm _ops/file',
-        'cd _ops | cat; echo value > report.txt',
+        'cd src && echo value > _ops/local.txt',
         "printf '%s\\n' 'example:\nrm -rf /tmp/example\n'",
         "cat <<'EOF' > report.txt\nrm -rf _ops/cache\nEOF",
         "cat <<'EOF' > report.txt\n$(echo x > _ops/x)\nEOF", 'cat <<"EOF" > report.txt\n`echo x > _ref/x`\nEOF',
@@ -217,8 +220,9 @@ describe('Bash write tripwire host route', () => {
         'cd src && git worktree add ../x', 'git status && git worktree add ../x', "git worktree add '../x'",
         'git worktree add ../x\nf() { :; }', 'git worktree add /etc/wt[1]',
         ...WORKTREE_SUBSTITUTION_CASES,
-        // A glob cd leaves the directory unknown; origin/main resolved these targets literally and denied them.
-        'cd sr[c] && git worktree add ../x', 'cd _op[s] && git worktree add ../x', 'cd /tm[p] && git worktree add x',
+        // A glob cd, a non-literal cd or a cd not joined by && leaves the directory unknown, so a relative target fails closed.
+        'cd "$D" && git worktree add ../x', 'cd src; git worktree add ../x', 'cd src\ngit worktree add ../x',
+        'cd sr[c] && cd .. && git worktree add ../x', 'cd sr[c] && git worktree add ../x', 'cd _op[s] && git worktree add ../x', 'cd /tm[p] && git worktree add x',
         'cd src && cd ../sr[c] && git worktree add ../x', 'cd s[r]c && git -C . worktree add ../x',
         '(cd ./s[r]c && git worktree add --detach ../x HEAD)',
       ]) {
@@ -235,8 +239,7 @@ describe('Bash write tripwire host route', () => {
         'git worktree add "$DIR"', 'git worktree add $DIR/x', 'git worktree add ~/x',
         'git worktree add "$HOME/x"', 'git worktree add ../x*', 'git worktree add', 'git worktree add a b c',
         'git worktree add --orphan ../x', 'git worktree add -fq ../x', 'git -c core.x=1 worktree add ../x',
-        'git -C "$D" worktree add ../x', 'cd "$D" && git worktree add ../x', 'cd src; git worktree add ../x',
-        'cd src\ngit worktree add ../x', 'git worktree list', 'git worktree remove ../x',
+        'git -C "$D" worktree add ../x', 'git worktree list', 'git worktree remove ../x',
         'git worktree prune', 'echo "git worktree add ../x"', 'git log --grep "worktree add ../x"',
         'command git worktree add ../x', 'FOO=1 git worktree add ../x',
       ]) {
