@@ -33,7 +33,6 @@ import {
   fail,
   modelRelation,
   renderAcceptanceProjection,
-  sha256,
   stableJson,
   validateDisposition,
   validateDomainReview,
@@ -55,6 +54,7 @@ import {
   type UserWaiverGrant,
 } from '../../core/review/acceptance-receipt';
 import { isRecord } from '../../core/evidence/is-record';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import {
   validateRequiredCheckFailureEvidenceList,
   type RequiredCheckFailureEvidenceV1,
@@ -319,12 +319,12 @@ export function inspectAcceptanceEvidence(args: {
     const reportPath = readRegular(root, 'evals/harness/reports/profile-comparison.json', 'required benchmark report').path;
     const validated = validator.validateHarnessBenchmarkReport(join(root, reportPath), true);
     const binding = readRegular(root, relative(root, validator.reportByteBindingPath(join(root, reportPath))), 'benchmark byte binding');
-    benchmark = sha256(binding.content);
+    benchmark = sha256Prefixed(binding.content);
     if (!validated.authoritative) fail('required benchmark report is not authoritative');
   }
   const results = report.results.map(result => ({ ...result, execution: result.execution === 'reused' ? 'executed' : result.execution }));
   const target = { campaign_sha256: report.target.campaign_sha256, admission_sha256: report.target.admission_sha256, grant_sha256: report.target.grant_sha256, plan_hash: report.target.plan_hash, snapshot_hash: report.target.snapshot_hash, tree_hash: report.target.tree_hash };
-  return { fingerprint: sha256(stableJson({ execution: { ...report, target, results }, change_assessment: assessmentBasis, benchmark })), benchmark };
+  return { fingerprint: sha256Prefixed(stableJson({ execution: { ...report, target, results }, change_assessment: assessmentBasis, benchmark })), benchmark };
 }
 
 function normalizedVerificationEvidence(content: string, subject: ReviewSubject, root: string,
@@ -374,7 +374,7 @@ export function acceptanceReceiptRecordPath(root: string, authorityHome: string,
 }
 
 function persistAcceptanceReceiptRecord(root: string, authorityHome: string, bytes: Buffer): string {
-  const digest = sha256(bytes);
+  const digest = sha256Prefixed(bytes);
   const path = acceptanceReceiptRecordPath(root, authorityHome, digest, true);
   const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
   writeFileSync(temporary, bytes, { mode: 0o600, flag: 'wx' });
@@ -406,7 +406,7 @@ export function readAcceptanceReceiptRecord(
   } catch (error) {
     fail(`AcceptanceReceipt record is unavailable for ${receiptSha256}: ${(error as Error).message}`);
   }
-  if (sha256(bytes) !== receiptSha256) fail('AcceptanceReceipt record does not match its digest');
+  if (sha256Prefixed(bytes) !== receiptSha256) fail('AcceptanceReceipt record does not match its digest');
   return Object.freeze({ bytes, receipt: parseReceipt(bytes.toString('utf-8')) });
 }
 
@@ -1115,7 +1115,7 @@ export function inspectAcceptanceCurrentBinding(args: {
     waiverGrant: receipt.disposition === 'user_waiver' ? verifyUserWaiverGrant(args) : null });
   if (!verdict.ok) fail(verdict.reason);
   const observation = readAcceptanceVerificationObservation(root, args.authorityHome, receipt.campaign_sha256, receipt.admission_sha256);
-  if (!observation || observation.acceptance_receipt_sha256 !== sha256(readFileSync(acceptanceReceiptPath(root, args.authorityHome)))
+  if (!observation || observation.acceptance_receipt_sha256 !== sha256Prefixed(readFileSync(acceptanceReceiptPath(root, args.authorityHome)))
     || observation.grant_sha256 !== receipt.grant_sha256 || observation.goal_sha256 !== receipt.goal_sha256
     || observation.target_ref !== receipt.target_ref || observation.target_revision !== receipt.target_revision
     || observation.subject_sha256 !== receipt.subject_sha256 || observation.verification_evidence_sha256 !== receipt.verification_evidence_sha256

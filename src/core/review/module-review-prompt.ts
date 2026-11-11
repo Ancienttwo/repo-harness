@@ -7,7 +7,6 @@ import { REVIEW_FINDING_RULES } from './generic-review';
 import { containsSecret } from '../security/secret-patterns';
 
 export const MODULE_PROMPT_VERSION = `2.findings-${REVIEW_FINDING_RULES.prompt_version}`;
-export const sha256 = (bytes: string | Uint8Array): string => sha256Hex(bytes);
 export interface PromptSource {
   path: string; sha256: string; bytes: number; class: 'required' | 'optional'; disposition: 'included' | 'omitted' | 'chunked';
 }
@@ -121,9 +120,9 @@ export function buildModuleReviewPrompt(input: ModulePromptInput, shardIndex = 1
     prompt_version: MODULE_PROMPT_VERSION, package_version: input.package_version,
     ...identity, sources,
     budget: { input_cap_bytes: input.input_cap_bytes, used_bytes: used, incomplete: chunks.length > 1, omitted_sections: omitted },
-    full_prompt_sha256: sha256(chunks.join('')),
+    full_prompt_sha256: sha256Hex(chunks.join('')),
   };
-  const digest = sha256(canonicalize(metadata));
+  const digest = sha256Hex(canonicalize(metadata));
   const prompt = header(digest, detail.module.id, shardIndex, chunks.length) + chunks[shardIndex - 1];
   return { ...metadata, shard: { index: shardIndex, count: chunks.length, bytes: Buffer.byteLength(prompt) }, prompt, digest };
 }

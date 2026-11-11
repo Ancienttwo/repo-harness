@@ -30,7 +30,8 @@ import {
   type StateVersionWriteEffects,
 } from '../../src/effects/state/git-state-version-store';
 import { readWorkflowPolicy, resolveEffectiveState } from '../../src/effects/state/resolve-effective-state';
-import { contentRevision, sha256 } from '../../src/effects/state/collect-state-inputs';
+import { contentRevision } from '../../src/effects/state/collect-state-inputs';
+import { sha256Prefixed } from '../../src/core/evidence/sha256';
 import { DEFAULT_RETENTION_DAYS, readRetentionConfig } from '../../src/effects/artifact-retention';
 import { mergeBackTarget } from '../../src/effects/state/coordination-worktree-topology';
 import { capabilitySource } from '../../src/effects/architecture/archctx-provider';
@@ -46,7 +47,7 @@ describe('Effective State content revision', () => {
       [decomposed, 'sha256:decomposed'],
     ]);
     const reversed = Object.fromEntries(Object.entries(first).reverse());
-    const expected = sha256(JSON.stringify({
+    const expected = sha256Prefixed(JSON.stringify({
       [decomposed]: 'sha256:decomposed',
       [composed]: 'sha256:composed',
     }));

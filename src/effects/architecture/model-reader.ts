@@ -3,7 +3,8 @@ import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { DocsAnchorsReportV1, NativeContextExportV1 } from 'archctx-contracts';
 import { capabilityRegistryFromNativeContext, archcontextNodeId, type ArchcontextCapabilityOwners } from '../../core/capabilities/registry';
 import { generatedSummaryState, moduleDetail, ModuleReadError, type ModelNode, type ModelRelation, type ModelFlow, type ModuleIndexV1, type ModuleDetailV1, type LinkedModuleDoc } from '../../core/architecture/module-view';
-import { buildModuleReviewPrompt, moduleStaleCitations, sha256, type ModuleReviewPromptV1, type PromptSource } from '../../core/review/module-review-prompt';
+import { buildModuleReviewPrompt, moduleStaleCitations, type ModuleReviewPromptV1, type PromptSource } from '../../core/review/module-review-prompt';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { ARCHCONTEXT_MANIFEST, ArchctxClientError, type GeneratedSummaryFreshness } from '../../core/architecture/projection';
 import { architecturePort, isArchitectureUnavailable, type ArchctxProviderOptions } from '../../core/architecture/contracts';
 import { canonicalize } from '../../core/evidence/canonical-json';
@@ -331,9 +332,9 @@ export class ArchitectureModelReader {
       const absolute = this.safePath(path);
       if (!existsSync(absolute)) return { path, sha256: null };
       if (!lstatSync(absolute).isFile()) throw new ModuleReadError('dirty_path_invalid', path);
-      return { path, sha256: sha256(readFileSync(absolute)) };
+      return { path, sha256: sha256Hex(readFileSync(absolute)) };
     });
-    return { paths: sorted, digest: sorted.length ? sha256(canonicalize({ status: raw, files: records })) : null };
+    return { paths: sorted, digest: sorted.length ? sha256Hex(canonicalize({ status: raw, files: records })) : null };
   }
 
   /**
@@ -380,9 +381,9 @@ export class ArchitectureModelReader {
       { ...this.requiredInput(ARCHCONTEXT_MANIFEST), class: 'required' as const, disposition: 'included' as const },
       ...model.map(file => ({ ...this.requiredInput(file.path), class: file.path.includes('/flows/') ? 'optional' as const : 'required' as const, disposition: 'included' as const })),
       ...(doc ? [{ ...doc, class: 'optional' as const, disposition: 'included' as const }] : []),
-      ...linked.map(file => ({ path: file.path, bytes: file.bytes.length, sha256: sha256(file.bytes), class: 'optional' as const, disposition: 'included' as const })),
-      ...(diff === null ? [] : [{ path: 'diff', bytes: Buffer.byteLength(diff), sha256: sha256(diff), class: 'required' as const, disposition: 'included' as const }]),
-      ...(anchorsText === null ? [] : [{ path: 'anchors', bytes: Buffer.byteLength(anchorsText), sha256: sha256(anchorsText), class: 'optional' as const, disposition: 'included' as const }]),
+      ...linked.map(file => ({ path: file.path, bytes: file.bytes.length, sha256: sha256Hex(file.bytes), class: 'optional' as const, disposition: 'included' as const })),
+      ...(diff === null ? [] : [{ path: 'diff', bytes: Buffer.byteLength(diff), sha256: sha256Hex(diff), class: 'required' as const, disposition: 'included' as const }]),
+      ...(anchorsText === null ? [] : [{ path: 'anchors', bytes: Buffer.byteLength(anchorsText), sha256: sha256Hex(anchorsText), class: 'optional' as const, disposition: 'included' as const }]),
     ].sort((a, b) => a.path.localeCompare(b.path, 'en'));
     const sourceSections: Record<string, string[]> = { [ARCHCONTEXT_MANIFEST]: ['identity'], [docPath]: ['section3', 'backlog'], diff: ['diff'], anchors: ['stale_citations'] };
     for (const file of model) sourceSections[file.path] = file.path.includes('/flows/') ? ['flows'] : file.path.includes('/relations/') ? ['relations'] : ['model', 'relations'];
@@ -393,7 +394,7 @@ export class ArchitectureModelReader {
       const before = this.dirty(scope);
       const packet = buildModuleReviewPrompt({ detail, package_version: PACKAGE_VERSION, repository_id: repoHarnessRepoIdFor(this.root), input_cap_bytes: this.budget,
         worktree_dirty_paths: before.paths, dirty_content_sha256: before.digest,
-        model_sha256: sha256(canonicalize(model.map(file => ({ path: file.path, sha256: this.requiredInput(file.path).sha256 })))),
+        model_sha256: sha256Hex(canonicalize(model.map(file => ({ path: file.path, sha256: this.requiredInput(file.path).sha256 })))),
         doc_sha256: doc?.sha256 ?? null, sources, source_sections: sourceSections, module_doc_path: docPath, base, head, diff,
         backlog: this.section(docPath, 'backlog'), stale_citations: staleCitations }, options.shard);
       const after = this.dirty(scope);

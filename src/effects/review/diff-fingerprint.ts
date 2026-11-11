@@ -122,10 +122,6 @@ function gitRunBuffer(repoRoot: string, args: readonly string[], maxBuffer = PAT
   }
 }
 
-function hashText(text: string): string {
-  return sha256Prefixed(text);
-}
-
 function stableJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
@@ -137,7 +133,7 @@ function stableJson(value: unknown): string {
 }
 
 function hashJson(value: unknown): string {
-  return hashText(stableJson(value));
+  return sha256Prefixed(stableJson(value));
 }
 
 // Split a NUL-delimited git buffer into verbatim utf-8 tokens. When ctx is

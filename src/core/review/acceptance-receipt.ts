@@ -272,10 +272,6 @@ export function fail(message: string, code = 1): never {
   throw error;
 }
 
-export function sha256(value: string | Buffer): string {
-  return sha256Prefixed(value);
-}
-
 export function stableJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
@@ -366,7 +362,7 @@ function parseArchiveProjection(content: string): ParsedArchiveProjection | null
     entries,
     lifecycle,
     relatedPlan: envelope.groups?.relatedPlan ?? '',
-    manifestSha256: sha256(stableJson({ protocol: 1, entries: canonicalEntries })),
+    manifestSha256: sha256Prefixed(stableJson({ protocol: 1, entries: canonicalEntries })),
   };
 }
 
@@ -381,7 +377,7 @@ export function authorityFingerprint(content: string): string {
   const normalized = normalizeArchiveProjection(content)
     .replace(/^> \*\*Status\*\*:[ \t]*.+$/m, '> **Status**: <lifecycle>')
     .replace(/^> \*\*Last Updated\*\*:[ \t]*.+$/m, '> **Last Updated**: <lifecycle>');
-  return sha256(normalized);
+  return sha256Prefixed(normalized);
 }
 
 export function parseAcceptancePolicy(contractText: string): AcceptancePolicy {
@@ -490,11 +486,11 @@ type AcceptanceVerificationObservationBasis = Omit<AcceptanceVerificationObserva
  * and a changed contract lands under a different key.
  */
 export function acceptanceVerificationObservationSubjectKey(campaignSha256: string, admissionSha256: string): string {
-  return sha256(stableJson({ campaign_sha256: campaignSha256, admission_sha256: admissionSha256 }));
+  return sha256Prefixed(stableJson({ campaign_sha256: campaignSha256, admission_sha256: admissionSha256 }));
 }
 
 function acceptanceVerificationObservationId(basis: AcceptanceVerificationObservationBasis): string {
-  return sha256(stableJson([
+  return sha256Prefixed(stableJson([
     ACCEPTANCE_VERIFICATION_OBSERVATION_PROTOCOL,
     ACCEPTANCE_VERIFICATION_OBSERVATION_KIND,
     basis.repository_root,
@@ -527,7 +523,7 @@ export function contractCarriesArchiveProjection(content: string): boolean {
 }
 
 export function waiverGrantFingerprint(grant: UserWaiverGrant): string {
-  return sha256(stableJson(grant));
+  return sha256Prefixed(stableJson(grant));
 }
 
 export function validateFindings(value: unknown): AcceptanceFinding[] {
