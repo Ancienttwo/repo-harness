@@ -174,6 +174,16 @@ describe('navigation', () => {
     }
   });
 
+  test('Back after a repository switch restores the module page together with its repository', async () => {
+    const [first, second] = REGISTRY.repositories;
+    await mount('#architecture/capability.workflow-engine.pipeline', props(readySetup(NOW), { readArchitectureMap: () => new Promise(() => {}) }));
+    const switchButton = () => document.querySelector<HTMLButtonElement>('[data-repository-switch]')!;
+    await act(async () => switchButton().click());
+    await act(async () => document.querySelector<HTMLButtonElement>(`[data-switch-option="${second!.repository_id}"]`)!.click());
+    await act(async () => { window.history.back(); await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect([switchButton().getAttribute('data-selected'), window.location.hash]).toEqual([first!.repository_id, '#architecture/capability.workflow-engine.pipeline']);
+  });
+
   test('1-SHELL-N1 every page in the shell routes by its hash with one repository switch; later pages have no entry or route', async () => {
     const pages = [['home', 'home'], ['board', 'board'], ['repositories', 'repositories'], ['worktrees', 'worktrees'], ['docs', 'docs'], ['agents', 'agents'], ['skills', 'skills'],
       ['hooks', 'hooks'], ['cli', 'cli'], ['bots', 'bots'], ['architecture', 'architecture'], ['tests', 'tests'], ['system', 'system'], ['tools', 'tools']] as const;

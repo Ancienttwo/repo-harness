@@ -398,8 +398,17 @@ export function OperatorApp({
   // The parent list reads only on the list layout: the overview reads its own.
   const boardParents = useBoardParents(readBoardParents, workspace === 'board' && boardLayout(place.item) === 'list' && boardSubject === null ? boardListRepository(boardOptions, boardRepository) : null, refreshGeneration);
 
+  // Each history entry records the repository it shows, so Back and Forward restore a module id or docs path
+  // together with its repository. An entry without a record (a typed hash) keeps the current pin.
   useEffect(() => {
-    const restore = () => setPlace(parseWorkspaceLocation(window.location.hash));
+    if (repositoryId !== null) window.history.replaceState({ repositoryId }, '');
+  }, [repositoryId, place]);
+  useEffect(() => {
+    const restore = () => {
+      setPlace(parseWorkspaceLocation(window.location.hash));
+      const recorded: unknown = (window.history.state as { repositoryId?: unknown } | null)?.repositoryId;
+      if (typeof recorded === 'string') setRepositoryId(recorded);
+    };
     window.addEventListener('popstate', restore);
     window.addEventListener('hashchange', restore);
     return () => { window.removeEventListener('popstate', restore); window.removeEventListener('hashchange', restore); };
