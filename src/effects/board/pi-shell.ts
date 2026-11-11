@@ -3,7 +3,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 const PROBE_SCRIPT = [
   'x="$(cat <<\'EOF\'',
@@ -34,26 +34,30 @@ function settingsShellPath(file: string): string | undefined {
   try { value = (JSON.parse(text) as { shellPath?: unknown }).shellPath; } catch {
     throw new PiShellError('pi_shell_refused', `Pi settings ${file} is not valid JSON. ${FIX}`);
   }
-  return typeof value === 'string' ? value : undefined;
+  if (typeof value !== 'string') return undefined;
+  return value === '' ? value : absolute(value, `shellPath of ${file}`);
 }
 
-function expandTilde(path: string, home: string): string {
-  return path === '~' || path.startsWith('~/') ? join(home, path.slice(1)) : path;
+/** The check expands no `~`: a value that is not absolute is refused, so the check never differs from Pi on a path form. */
+function absolute(value: string, source: string): string {
+  if (!isAbsolute(value)) throw new PiShellError('pi_shell_refused', `${source} is "${value}", which is not an absolute path. Set an absolute path.`);
+  return value;
 }
 
 /** The shell that a Pi seat uses: `shellPath` of the project settings, else of the global settings, else `/bin/bash` on a non-Windows host. Any other case is a refusal. */
-function piShell(env: NodeJS.ProcessEnv, cwd: string): string {
-  const home = env.HOME ?? homedir();
-  const agentDirectory = env.PI_CODING_AGENT_DIR ? expandTilde(env.PI_CODING_AGENT_DIR, home) : join(home, '.pi', 'agent');
+function piShell(env: NodeJS.ProcessEnv, cwd: string, defaultShell: string): string {
+  // The default agent directory under the home directory is the only path that this check builds.
+  const agentDirectory = env.PI_CODING_AGENT_DIR ? absolute(env.PI_CODING_AGENT_DIR, 'PI_CODING_AGENT_DIR') : join(env.HOME ?? homedir(), '.pi', 'agent');
   const configured = settingsShellPath(join(cwd, '.pi', 'settings.json')) ?? settingsShellPath(join(agentDirectory, 'settings.json'));
-  if (configured) return expandTilde(configured, home);
-  if (process.platform !== 'win32' && existsSync('/bin/bash')) return '/bin/bash';
+  if (configured) return configured;
+  if (process.platform !== 'win32' && existsSync(defaultShell)) return defaultShell;
   throw new PiShellError('pi_shell_refused', `No shell is known for the Pi seat: shellPath is not set and /bin/bash is not available. ${FIX}`);
 }
 
 /** Refuses a Pi seat launch when the shell that Pi will use fails the heredoc probe. */
-export async function assertPiShell(env: NodeJS.ProcessEnv, cwd: string): Promise<void> {
-  const shell = piShell(env, cwd);
+/** `defaultShell` is Pi's own default on a non-Windows host; a test passes a stub. */
+export async function assertPiShell(env: NodeJS.ProcessEnv, cwd: string, defaultShell = '/bin/bash'): Promise<void> {
+  const shell = piShell(env, cwd, defaultShell);
   const output = await new Promise<string>((resolve, reject) => {
     execFile(shell, ['-c', PROBE_SCRIPT], { timeout: PROBE_TIMEOUT_MS, encoding: 'utf8' }, (error, stdout) => {
       if (error === null || typeof (error as NodeJS.ErrnoException).code === 'number') return resolve(stdout);

@@ -11,6 +11,7 @@ import { DEFAULT_SEATS_CONFIG, WORKER_SEAT_IDS } from "../../src/core/board/seat
 import { repoHarnessRepoIdFor } from "../../src/effects/repo-registry";
 import { classifyQuotaReading, decodeCodexRateLimitsResult } from "../../src/core/board/quota";
 import { formatSeatRoutes, seatAccountQuotas } from "../../src/core/board/seat-routing";
+import { assertPiShell } from "../../src/effects/board/pi-shell";
 import { readClaudeQuota } from "../../src/effects/board/quota";
 
 const CLI = join(import.meta.dir, "..", "..", "src/cli/index.ts");
@@ -147,17 +148,29 @@ describe("repo-harness seats argv", () => {
       chmodSync(slow, 0o755);
       writeFileSync(join(home, ".pi", "settings.json"), JSON.stringify({ shellPath: slow }));
       expect(JSON.parse(run({ HOME: home }, ["worker-light", "--json"], home).stderr).error).toBe("pi_shell_probe_failed");
-      // An empty project shellPath overrides the global value: Pi then uses its default shell, /bin/bash.
-      writeFileSync(join(home, ".pi", "settings.json"), JSON.stringify({ shellPath: "" }));
-      const defaulted = run({ HOME: home }, ["worker-light", "--json"], home);
-      const defaultShell = spawnSync("/bin/bash", ["-c", 'x="$(cat <<\'EOF\'\na smile :)\nthen a span `echo INJECTED-BY-BACKTICK`\nEOF\n)"\nprintf %s "$x"']);
-      expect(defaulted.status).toBe(defaultShell.stdout.toString().includes("`echo INJECTED-BY-BACKTICK`") ? 0 : 1);
-      if (defaulted.status === 1) expect(JSON.parse(defaulted.stderr).message).toContain("/bin/bash");
       rmSync(join(home, ".pi", "settings.json"));
       // A Claude seat does not probe: the same refusing settings leave it unchanged.
       writeFileSync(settings, JSON.stringify({ shellPath: stubShell(home, "bad-shell", BAD_PROBE_OUTPUT) }));
       expect(argv(home, "orchestrator", "--json").status).toBe(0);
     });
+  });
+
+  test("an empty project shellPath selects the default shell, and a path that is not absolute is refused", async () => {
+    const home = mkdtempSync(join(tmpdir(), "pi-shell-"));
+    try {
+      mkdirSync(join(home, ".pi", "agent"), { recursive: true });
+      writeFileSync(join(home, ".pi", "agent", "settings.json"), JSON.stringify({ shellPath: stubShell(home, "global-shell", BAD_PROBE_OUTPUT) }));
+      writeFileSync(join(home, ".pi", "settings.json"), JSON.stringify({ shellPath: "" }));
+      const env = { HOME: home };
+      await expect(assertPiShell(env, home, stubShell(home, "default-shell", GOOD_PROBE_OUTPUT))).resolves.toBeUndefined();
+      for (const bad of ["~/bin/bash", "bin/bash"]) {
+        writeFileSync(join(home, ".pi", "settings.json"), JSON.stringify({ shellPath: bad }));
+        await expect(assertPiShell(env, home)).rejects.toMatchObject({ code: "pi_shell_refused", message: expect.stringContaining(`"${bad}"`) });
+      }
+      await expect(assertPiShell({ ...env, PI_CODING_AGENT_DIR: "~/agent" }, home)).rejects.toMatchObject({ code: "pi_shell_refused" });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   test("an old seats section fails closed with the update action", () => {
