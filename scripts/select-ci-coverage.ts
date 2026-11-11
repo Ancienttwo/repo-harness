@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { discoverPathReferences, loadPathReferences, savePathReferences, sourceKey } from './ci-path-consumers';
 import { documentationOnly, isDocumentationPath } from '../src/core/ci/documentation-path';
+import { loadTestDurations, planShards } from './select-test-suite';
 
 export type CoverageInput = {
   eventName: string; event: unknown; headSha: string; actualHead: string; diffRaw: string | null;
@@ -344,8 +345,14 @@ if (import.meta.main) {
       if (coverage.uncovered.length) throw new Error(`Affected coverage is unknown for: ${coverage.uncovered.join(', ')}`);
       for (const path of coverage.dailyOnly) console.log(`daily-only=${path}; not verified by this PR`);
       const tests = coverage.tests;
-      writeFileSync('.ci-affected-tests.json', JSON.stringify(tests));
+      // The shard plan is the selection: each verify shard runs one array, and no shard computes a split.
+      const total = Number(process.env.CI_SHARD_TOTAL ?? '1');
+      const durations = loadTestDurations();
+      const plan = planShards(tests, durations, total);
+      writeFileSync('.ci-affected-tests.json', JSON.stringify(plan));
       console.log(`Selected ${tests.length} affected tests for ${selection.paths.length} changed paths`);
+      console.log(`Test durations: ${durations ? `${Object.keys(durations).length} recorded files` : 'no table; equal weights'}`);
+      for (const [index, files] of plan.entries()) console.log(`shard ${index}/${total}: ${files.length} files${files.length ? `: ${files.join(' ')}` : ''}`);
     }
     if (referenceCache) savePathReferences(referenceCache, analyzer, [...sources, ...previousSources]);
   }

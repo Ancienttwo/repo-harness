@@ -182,6 +182,11 @@ export function junitFiles(directory: string, files: TestReportFile[]): TestRepo
   return files;
 }
 
+/** Parses every JUnit report of a local run directory. The CI duration cache and the per-shard report check read it. */
+export function readJUnitRun(directory: string): TestFileResultV1[] {
+  return existsSync(directory) ? junitFiles(directory, []).map(file => parseJUnitReport(file.text)) : [];
+}
+
 /** Downloads one test report artifact with the GitHub CLI; the report workflow grants actions:read. */
 export function ghTestReportReader(repo: string, runId: number): TestReportReader {
   return async artifact => {
