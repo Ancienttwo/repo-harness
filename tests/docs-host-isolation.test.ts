@@ -1,9 +1,10 @@
 import { afterEach, expect, test } from 'bun:test';
 import { mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { isDocsHostRuntimeId } from '../src/core/operator/docs-host-runtimes';
 import { darwinTest } from './helpers/darwin-test';
 import { tmpWorkspace } from './helpers/repo-fixture';
-import { assertDocsHostPlatform, docsHostProtectedProjection } from '../src/effects/review/docs-host-isolation';
+import { assertDocsHostPlatform, DOCS_HOST_PROJECTION_MANIFEST, docsHostProtectedProjection } from '../src/effects/review/docs-host-isolation';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -19,6 +20,8 @@ test('docs host refuses Linux and Windows with platform_unsupported', () => {
   for (const platform of ['linux', 'win32'] as const) {
     expect(() => assertDocsHostPlatform(platform)).toThrow('platform_unsupported');
   }
+  // The launch allowlist is empty (#1234), so no runtime may start a docs host.
+  for (const runtime of ['codex', 'claude', 'pi']) expect(isDocsHostRuntimeId(runtime)).toBe(false);
 });
 
 darwinTest('docs host protected projection refuses a symlink on a protected path', () => {
@@ -38,4 +41,6 @@ darwinTest('docs host protected projection refuses a symlink on a protected path
   expect(() => docsHostProtectedProjection(worktree)).toThrow('docs_host_projection_symlink_unsupported');
   rmSync(manifest); renameSync(join(docs, 'manifest-source.json'), manifest);
   expect(() => docsHostProtectedProjection(worktree)).not.toThrow();
+  rmSync(manifest);
+  expect(docsHostProtectedProjection(worktree)).toContain(join(worktree, DOCS_HOST_PROJECTION_MANIFEST));
 });
