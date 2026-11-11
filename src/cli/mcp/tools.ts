@@ -14,6 +14,7 @@ import { currentGitBranch, isRepoHarnessAdopted, resolveMcpRepoRoot } from './re
 import { redactMcpText } from './redaction';
 import { buildStateToolDefinitions, callStateTool, isStateTool } from './state-tools';
 import { buildFleetToolDefinitions, callFleetTool, fleetToolArgumentError, isFleetTool } from './fleet-tools';
+import { numberArg } from './general-repo-access';
 import type { McpPolicy } from './types';
 import type { WorkspaceManager } from './workspaces';
 import type { GeneralRepoCodeGraphAdapter } from '../tools/codegraph-reader';
@@ -206,12 +207,6 @@ function discoverySortWeight(repoRoot: string, query = ''): string {
           ? '9'
           : '5';
   return `${queryWeight}:${locationWeight}:${repoRoot}`;
-}
-
-function numberArg(value: unknown, fallback: number, min: number, max: number): number {
-  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(Math.max(Math.trunc(parsed), min), max);
 }
 
 function stringArgList(value: unknown): string[] {
