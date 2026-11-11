@@ -260,7 +260,7 @@ function Detail({ board, attention, item, owner, inbox, now, t }: {
       )}
       <div className="flex flex-wrap items-center gap-2">
         <ExternalLink href={pr?.url ?? item.url} className="rounded-lg border border-kumo-line px-3 py-1.5 text-sm">{t('board.drawer.openGitHub')}</ExternalLink>
-        {pr?.state === 'open' && pr.merge_readiness?.ready === true && <CommandLine command={`gh pr merge ${pr.url} --squash`} t={t} />}
+        {pr?.state === 'open' && pr.merge_readiness?.ready === true && <CommandLine command={`gh pr merge ${pr.url} --match-head-commit ${pr.head_sha}`} t={t} />}
       </div>
       <div className="flex flex-col gap-4 border-t border-kumo-hairline pt-4">
         <Section id="task-owner" title={t('board.drawer.owner')}>

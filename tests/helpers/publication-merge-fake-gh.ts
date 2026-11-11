@@ -95,8 +95,6 @@ export interface PublicationMergeScenario {
   /** Per-readback PR answers; the last answer repeats. Defaults to `readback`. */
   readonly readbackSequence?: readonly ('merged' | 'open' | 'fail')[];
   readonly parents?: readonly string[];
-  /** The PR head ref; defaults to `feat/executor`. */
-  readonly headRef?: string;
   /** Fail one review publish write after any earlier write succeeded. */
   readonly failPost?: 'review' | 'record';
   /** The head SHA that each successive `pr view` reports; the last entry repeats. */
@@ -139,7 +137,6 @@ function policyFile(text: string | null): FakeGhResponse {
   return ok({ type: 'file', path: '.ai/harness/policy.json', encoding: 'base64', content: Buffer.from(text).toString('base64') });
 }
 
-
 function graphqlQuery(args: readonly string[]): string {
   return args.find((arg) => arg.startsWith('query='))?.slice('query='.length) ?? '';
 }
@@ -158,7 +155,7 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     const sequence = scenario.headSequence;
     const head = sequence?.length ? sequence[Math.min(prViewAttempt, sequence.length - 1)]! : headSha;
     return ok({ number: PR, url: `https://github.com/${REPOSITORY}/pull/${PR}`, state: 'OPEN', isDraft: false,
-      headRefOid: head, headRefName: scenario.headRef ?? 'feat/executor', baseRefOid: baseSha, baseRefName: 'main', body: scenario.body ?? '',
+      headRefOid: head, headRefName: 'feat/executor', baseRefOid: baseSha, baseRefName: 'main', body: scenario.body ?? '',
       reviewDecision: '', changedFiles: scenario.changedFiles?.length ?? 0, mergeable: 'MERGEABLE',
       closingIssuesReferences: (scenario.closing ?? []).map((reference) => {
         const [repository, number] = reference.split('#');
@@ -213,7 +210,7 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     if (query.includes('closingIssuesReferences')) {
       return ok({ data: { repository: { nameWithOwner: REPOSITORY, pullRequest: {
         id: PR_NODE, number: PR, title: scenario.title ?? '', body: scenario.body ?? '', state: 'OPEN',
-        isCrossRepository: scenario.isCrossRepository ?? false, headRefOid: headSha, headRefName: scenario.headRef ?? 'feat/executor', baseRefOid: baseSha, baseRefName: 'main',
+        isCrossRepository: scenario.isCrossRepository ?? false, headRefOid: headSha, headRefName: 'feat/executor', baseRefOid: baseSha, baseRefName: 'main',
         ...(scenario.mergeQueueEnabled === 'missing' ? {} : { isMergeQueueEnabled: scenario.mergeQueueEnabled ?? false }),
         mergeQueueEntry: scenario.queued ? { id: QUEUE_ENTRY } : null,
         autoMergeRequest: scenario.autoMerge ? { enabledAt: '2026-10-30T00:00:00Z' } : null,

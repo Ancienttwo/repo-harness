@@ -463,7 +463,7 @@ describe('board page', () => {
     expect(window.location.hash).toBe(`#board/${HARNESS_ID}/1474/1475`);
     expect(dialog()!.querySelector('[data-merge-ready]')).not.toBeNull();
     expect(dialog()!.querySelector('[data-stage-source]')?.getAttribute('data-stage-source')).toBe('ready');
-    expect(dialog()!.querySelector('[data-command] code')?.textContent).toBe('gh pr merge https://github.com/Ancienttwo/repo-harness/pull/1491 --squash');
+    expect(dialog()!.querySelector('[data-command] code')?.textContent).toBe('gh pr merge https://github.com/Ancienttwo/repo-harness/pull/1491 --match-head-commit 20e2cbd211ea41450e47dd3fb470c388b0238b62');
     await key('j');
     expect(window.location.hash).toBe(`#board/${HARNESS_ID}/1474/1476`);
     await key('Escape');

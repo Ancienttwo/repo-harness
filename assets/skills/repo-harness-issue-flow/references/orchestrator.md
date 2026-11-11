@@ -522,7 +522,9 @@ Act on the exit code. Post every result as `integration status` on the PR.
 
 Send each ready green PR to `repo-harness publication merge` in the plan
 block's merge order. The executor enqueues it when `publication.merge_queue`
-is `on`. A head behind main needs no sync for the queue.
+is `on`. A head behind main needs no sync for the queue. With
+`publication.merge_queue` `off`, after each direct merge the next ready PR
+syncs with main before its merge.
 
 A PR is eligible when all of these are true:
 

@@ -312,6 +312,9 @@ test.each([
   };
   const first = await reportCI('test/repo', 12, api);
   expect(first.merges).toEqual([]); expect(first.errors).toHaveLength(1);
+  if (scenario.name === 'multiple parents') {
+    expect(first.errors).toEqual(['Rollback boundary pending for PR #7: Automatic rollback requires a single-parent commit boundary']);
+  }
   expect(first.repairs).toEqual([{ key: 'ci-repair:merge-pr-7', issue_url: 'https://github.com/test/repo/issues/1', delivery: 'created' }]);
   const second = await reportCI('test/repo', 12, api);
   expect(second.repairs[0]?.delivery).toBe('reused'); expect(f.issues).toHaveLength(1);

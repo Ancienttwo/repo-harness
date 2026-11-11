@@ -181,7 +181,9 @@ after each claim or status change.
   parent without a plan (two children or fewer) uses blocked-by order.
   The Order column of the parent table is only a view. With
   `publication.merge_queue` `on`, the executor enqueues each PR. The queue
-  tests it on the current main, so a head behind main needs no sync.
+  tests it on the current main, so a head behind main needs no sync. With
+  `publication.merge_queue` `off`, after each direct merge the next ready
+  PR syncs with main before its merge.
 
 ## Comment protocol
 

@@ -675,8 +675,6 @@ describe('publication merge through a required merge queue', () => {
     expect(failureOf(result).message).toContain(`within ${90 * 60_000} ms; last queue entry ${QUEUE_ENTRY}: AWAITING_CHECKS`);
     expect(enqueues).toHaveLength(1);
   });
-
-
 });
 
 /**
