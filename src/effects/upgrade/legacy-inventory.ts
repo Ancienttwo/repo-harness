@@ -1,5 +1,5 @@
 import { isRecord } from '../../core/evidence/is-record';
-import { sha256Prefixed } from '../../core/evidence/sha256';
+import { SHA256_PREFIXED_PATTERN, sha256Prefixed } from '../../core/evidence/sha256';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync } from 'fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { hashManagedTree, installedCopyTreeOptions, OWNER_MARKER } from '../managed-tree';
@@ -150,7 +150,7 @@ function actionsOf(): readonly RetirementAction[] {
       throw new Error(`sole-entry guard requires an exact-fingerprint remove action: ${action.id ?? '<unnamed>'}`);
     }
     for (const digest of [...Object.values(action.fingerprints ?? {}), ...Object.values(action.historicalFingerprints ?? {}).flat()]) {
-      if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error(`invalid known-generated fingerprint in ${action.id ?? '<unnamed>'}`);
+      if (!SHA256_PREFIXED_PATTERN.test(digest)) throw new Error(`invalid known-generated fingerprint in ${action.id ?? '<unnamed>'}`);
     }
   }
   return actions.map((action) => {

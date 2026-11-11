@@ -1,5 +1,5 @@
 import { byteCompare } from '../evidence/byte-compare';
-import { sha256Prefixed } from '../evidence/sha256';
+import { SHA256_PREFIXED_PATTERN, sha256Prefixed } from '../evidence/sha256';
 
 import type { StrictRiskCategory, WorkflowProfile } from '../workflow/profile';
 
@@ -135,7 +135,7 @@ function sha256(value: unknown): string {
 
 function validSubject(subject: AssessmentSubject): boolean {
   return subject.status === 'ok'
-    && /^sha256:[0-9a-f]{64}$/.test(subject.review_subject_sha256)
+    && SHA256_PREFIXED_PATTERN.test(subject.review_subject_sha256)
     && subject.target_ref.trim() !== ''
     && /^[0-9a-f]{40,64}$/.test(subject.target_rev)
     && /^[0-9a-f]{40,64}$/.test(subject.head_rev);
@@ -380,7 +380,7 @@ export function validateChangeAssessment(value: unknown): ChangeAssessment {
   }
   if (assessment.status !== 'ready' && assessment.status !== 'blocked') throw new Error('change assessment status is invalid');
   for (const key of ['assessment_sha256', 'review_subject_sha256'] as const) {
-    if (typeof assessment[key] !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(assessment[key] as string)) {
+    if (typeof assessment[key] !== 'string' || !SHA256_PREFIXED_PATTERN.test(assessment[key] as string)) {
       throw new Error(`change assessment ${key} is invalid`);
     }
   }
@@ -484,7 +484,7 @@ export function validateReviewSelectionPacket(value: unknown): ReviewSelectionPa
   }
   if (packet.status !== 'ready' && packet.status !== 'blocked') throw new Error('review selection packet status is invalid');
   for (const key of ['assessment_sha256', 'review_subject_sha256', 'packet_sha256'] as const) {
-    if (typeof packet[key] !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(packet[key] as string)) {
+    if (typeof packet[key] !== 'string' || !SHA256_PREFIXED_PATTERN.test(packet[key] as string)) {
       throw new Error(`review selection packet ${key} is invalid`);
     }
   }

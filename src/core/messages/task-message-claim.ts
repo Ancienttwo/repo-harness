@@ -1,7 +1,7 @@
 import { assertMessageExactKeys, messageRequiredString } from './mechanics';
 import { TaskMessageError } from './task-message-error';
+import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256';
 
-const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/;
 function invalid(message: string): never { throw new TaskMessageError('task_message_invalid', message); }
 
 export interface TaskMessageClaim { readonly reference: string; readonly revision: string }
@@ -10,7 +10,7 @@ export function validateTaskMessageClaim(value: unknown): TaskMessageClaim {
   const record = value as Record<string, unknown>;
   assertMessageExactKeys(record, ['reference', 'revision'], 'claim reference', invalid);
   const reference = messageRequiredString(record.reference, 'claim reference', invalid), revision = messageRequiredString(record.revision, 'claim revision', invalid);
-  if (!reference.trim() || /[\x00-\x1f\x7f]/.test(reference) || !SHA256_PATTERN.test(revision)) invalid('claim reference is invalid');
+  if (!reference.trim() || /[\x00-\x1f\x7f]/.test(reference) || !SHA256_PREFIXED_PATTERN.test(revision)) invalid('claim reference is invalid');
   return Object.freeze({ reference, revision });
 }
 export function sameTaskMessageClaim(left: TaskMessageClaim | null, right: TaskMessageClaim | null): boolean {

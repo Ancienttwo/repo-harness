@@ -2,7 +2,7 @@ import type { ReviewAdmission, ReviewAuthorityContext } from './authority-contex
 import type { RequiredCheckFailureEvidenceV1 } from '../evidence/required-check-evidence';
 import type { RequiredCheckCoverageEvidenceV1 } from '../publication/required-check-coverage';
 import { isRecord } from '../evidence/is-record';
-import { sha256Prefixed } from '../evidence/sha256';
+import { SHA256_PREFIXED_PATTERN, sha256Prefixed } from '../evidence/sha256';
 import { modelFamily } from './model-family';
 import { isReviewRuntimeId, type ReviewRuntimeId } from './review-runtimes';
 
@@ -123,7 +123,7 @@ export function acceptanceReviewContextDigest(context: { authorityContext: Revie
 export function validateDomainReview(value: unknown): AcceptanceReviewResult {
   if (!isRecord(value) || Object.keys(value).sort().join(',') !== ['request_id','context_sha256','subject_sha256','actual_harness','actual_role','actual_model','verdict','summary','findings'].sort().join(',')) fail('generic-review result schema is invalid');
   if (typeof value.request_id !== 'string' || !value.request_id.trim()
-    || !/^sha256:[0-9a-f]{64}$/.test(String(value.context_sha256)) || !/^sha256:[0-9a-f]{64}$/.test(String(value.subject_sha256))
+    || !SHA256_PREFIXED_PATTERN.test(String(value.context_sha256)) || !SHA256_PREFIXED_PATTERN.test(String(value.subject_sha256))
     || typeof value.actual_harness !== 'string' || !isReviewRuntimeId(value.actual_harness) || value.actual_role !== GENERIC_REVIEW_ROLE
     || !optionalModel(value.actual_model)
     || !['PASS','FAIL'].includes(String(value.verdict)) || typeof value.summary !== 'string' || !value.summary.trim()) fail('generic-review result identity/verdict is invalid');
@@ -142,8 +142,8 @@ export function assertReviewFields(receipt: AcceptanceReceipt): void {
     return;
   }
   if (typeof receipt.request_id !== 'string' || !receipt.request_id.trim()) fail('AcceptanceReceipt generic-review request_id is invalid');
-  if (!/^sha256:[0-9a-f]{64}$/.test(String(receipt.context_sha256))) fail('AcceptanceReceipt generic-review context_sha256 is invalid');
-  if (!/^sha256:[0-9a-f]{64}$/.test(String(receipt.result_sha256))) fail('AcceptanceReceipt generic-review result_sha256 is invalid');
+  if (!SHA256_PREFIXED_PATTERN.test(String(receipt.context_sha256))) fail('AcceptanceReceipt generic-review context_sha256 is invalid');
+  if (!SHA256_PREFIXED_PATTERN.test(String(receipt.result_sha256))) fail('AcceptanceReceipt generic-review result_sha256 is invalid');
   if (receipt.actual_harness !== receipt.reviewer.toLowerCase()) fail('AcceptanceReceipt generic-review actual_harness mismatch');
   if (receipt.actual_role !== GENERIC_REVIEW_ROLE) fail('AcceptanceReceipt generic-review actual_role mismatch');
   if (!optionalModel(receipt.actual_model)) fail('AcceptanceReceipt generic-review actual_model is invalid');
@@ -152,7 +152,7 @@ export function assertReviewFields(receipt: AcceptanceReceipt): void {
 
 function assertModelRelationFields(receipt: AcceptanceReceipt): void {
   const binding = receipt.author_session_binding_sha256, models = receipt.author_actual_models;
-  if (binding !== null && !/^sha256:[0-9a-f]{64}$/.test(String(binding))) fail('AcceptanceReceipt author_session_binding_sha256 is invalid');
+  if (binding !== null && !SHA256_PREFIXED_PATTERN.test(String(binding))) fail('AcceptanceReceipt author_session_binding_sha256 is invalid');
   if (models !== null && (!Array.isArray(models) || models.length === 0
     || models.some((model, index) => typeof model !== 'string' || !model.trim() || index > 0 && models[index - 1]! >= model))) {
     fail('AcceptanceReceipt author_actual_models must be sorted unique model strings');
@@ -215,7 +215,7 @@ export function validateUserWaiverAuthorization(
     || typeof detached.expires_at !== 'number' || detached.expires_at <= now) invalid('is expired');
   if (detached.bot_id === expected.actor) invalid('Bot cannot be the execution actor');
   for (const field of ['campaign_sha256', 'admission_sha256', 'grant_sha256', 'goal_sha256']) {
-    if (!/^sha256:[0-9a-f]{64}$/.test(detached[field] as string)) invalid(`${field} is invalid`);
+    if (!SHA256_PREFIXED_PATTERN.test(detached[field] as string)) invalid(`${field} is invalid`);
   }
   for (const [field, expectedValue] of Object.entries(expected)) {
     if (detached[field] !== expectedValue) invalid(`${field} is stale`);
@@ -251,7 +251,7 @@ export function assertUserWaiverGrant(value: unknown): asserts value is UserWaiv
   }
   if (value.scope !== 'admission-authority') fail('UserWaiverGrant scope is invalid');
   for (const field of ['campaign_sha256', 'admission_sha256', 'grant_sha256', 'goal_sha256']) {
-    if (!/^sha256:[0-9a-f]{64}$/.test(value[field] as string)) fail(`UserWaiverGrant ${field} is invalid`);
+    if (!SHA256_PREFIXED_PATTERN.test(value[field] as string)) fail(`UserWaiverGrant ${field} is invalid`);
   }
 }
 

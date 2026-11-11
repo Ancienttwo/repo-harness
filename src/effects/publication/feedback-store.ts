@@ -12,6 +12,7 @@ import { createFileExclusiveDurably } from '../atomic-append';
 import { canonicalFeedbackDeliveryReceiptBytes, canonicalFeedbackEventBytes, transitionFeedbackDeliveryReceipt, validateFeedbackDeliveryReceipt, validateFeedbackEvent, validateReactionAttemptReceipt, type FeedbackDeliveryReceiptV1, type FeedbackEventV1, type ReactionAttemptReceiptV1 } from '../../core/publication/feedback';
 import { byteCompare } from '../../core/evidence/byte-compare';
 import { resolveGitCommonDirectory } from '../git/common-directory';
+import { SHA256_PREFIXED_PATTERN } from '../../core/evidence/sha256';
 
 export const FEEDBACK_ROOT_RELATIVE_PATH = 'repo-harness/feedback/v1';
 
@@ -42,7 +43,7 @@ function hash(value: string): string {
 }
 
 function publicationComponent(publicationId: string): string {
-  if (!/^sha256:[0-9a-f]{64}$/.test(publicationId)) throw unreadable('publication id is invalid');
+  if (!SHA256_PREFIXED_PATTERN.test(publicationId)) throw unreadable('publication id is invalid');
   return publicationId.slice('sha256:'.length);
 }
 

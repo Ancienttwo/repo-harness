@@ -13,3 +13,6 @@ export function sha256Hex(content: string | Uint8Array): string {
 export function sha256Prefixed(content: string | Uint8Array): string {
   return `sha256:${sha256Hex(content)}`;
 }
+
+/** Matches the `sha256:`-prefixed digest of `sha256Prefixed`. No `g` or `y` flag: `.test` keeps no state. */
+export const SHA256_PREFIXED_PATTERN = /^sha256:[0-9a-f]{64}$/u;

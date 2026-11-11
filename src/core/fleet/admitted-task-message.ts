@@ -2,8 +2,8 @@ import { retiredDeliveryChannel, TaskMessageError } from '../messages/task-messa
 import { validateTaskMessageClaim, type TaskMessageClaim } from '../messages/task-message-claim';
 /** Active admitted inbox wire. Legacy v1 is decoded only by explicit history readers. */
 import { canonicalize } from '../evidence/canonical-json';
+import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256';
 import {
-  MESSAGE_SHA256_PATTERN,
   assertMessageBoundedUtf8,
   assertTaskMessageDigest as assertTaskDigest,
   assertTaskMessageExactKeys as assertExactKeys,
@@ -104,7 +104,7 @@ export function validateTaskMessageIdentity(value: unknown): TaskMessageIdentity
   if (Object.values(result).some(value => !value.trim() || /[\x00-\x1f\x7f]/.test(value))) invalid('provider task identity is invalid');
   return Object.freeze(result);
 }
-function assertAdmission(value: string, field: string): void { if (!MESSAGE_SHA256_PATTERN.test(value)) invalid(`${field} is invalid`); }
+function assertAdmission(value: string, field: string): void { if (!SHA256_PREFIXED_PATTERN.test(value)) invalid(`${field} is invalid`); }
 
 function frozenEventFields(event: Omit<TaskMessageEventV2, 'event_digest'>): Omit<TaskMessageEventV2, 'event_digest'> {
   return Object.freeze({ ...event });

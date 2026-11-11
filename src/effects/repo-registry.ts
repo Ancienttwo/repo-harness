@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { sha256Prefixed } from "../core/evidence/sha256";
+import { SHA256_PREFIXED_PATTERN, sha256Prefixed } from "../core/evidence/sha256";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "path";
 import {
@@ -821,7 +821,7 @@ export function assertRegistryRevisionFence(
   opts: { readonly apply?: boolean; readonly expectedRevision?: string },
   snapshot?: RepoHarnessRegistryStrictSnapshot,
 ): void {
-  if (opts.apply && !/^sha256:[0-9a-f]{64}$/.test(opts.expectedRevision ?? '')) {
+  if (opts.apply && !SHA256_PREFIXED_PATTERN.test(opts.expectedRevision ?? '')) {
     throw new Error('--apply requires --expected-revision from the preview');
   }
   if (snapshot && opts.expectedRevision !== undefined && opts.expectedRevision !== snapshot.registryRevision) {
