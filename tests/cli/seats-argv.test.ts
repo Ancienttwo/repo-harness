@@ -72,7 +72,7 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', li
 }
 
 function run(env: Record<string, string>, args: string[], cwd?: string) {
-  const { CLAUDE_CONFIG_DIR: _inherited, ...base } = process.env;
+  const { CLAUDE_CONFIG_DIR: _inherited, PI_CODING_AGENT_DIR: _piDirectory, ...base } = process.env;
   const result = spawnSync(process.execPath, [CLI, "seats", "argv", ...args], { env: { ...base, ...env, PATH: `${join(env.HOME!, '.quota-bin')}${delimiter}${env.PATH ?? base.PATH ?? ''}` }, encoding: "utf8", cwd });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
@@ -141,6 +141,19 @@ describe("repo-harness seats argv", () => {
       mkdirSync(join(home, ".pi"), { recursive: true });
       writeFileSync(join(home, ".pi", "settings.json"), JSON.stringify({ shellPath: stubShell(home, "project-shell", GOOD_PROBE_OUTPUT) }));
       expect(run({ HOME: home }, ["worker-light", "--json"], home).status).toBe(0);
+      // A shell that does not finish is its own error.
+      const slow = join(home, "slow-shell");
+      writeFileSync(slow, "#!/bin/sh\nexec sleep 30\n");
+      chmodSync(slow, 0o755);
+      writeFileSync(join(home, ".pi", "settings.json"), JSON.stringify({ shellPath: slow }));
+      expect(JSON.parse(run({ HOME: home }, ["worker-light", "--json"], home).stderr).error).toBe("pi_shell_probe_failed");
+      // An empty project shellPath overrides the global value: Pi then uses its default shell, /bin/bash.
+      writeFileSync(join(home, ".pi", "settings.json"), JSON.stringify({ shellPath: "" }));
+      const defaulted = run({ HOME: home }, ["worker-light", "--json"], home);
+      const defaultShell = spawnSync("/bin/bash", ["-c", 'x="$(cat <<\'EOF\'\na smile :)\nthen a span `echo INJECTED-BY-BACKTICK`\nEOF\n)"\nprintf %s "$x"']);
+      expect(defaulted.status).toBe(defaultShell.stdout.toString().includes("`echo INJECTED-BY-BACKTICK`") ? 0 : 1);
+      if (defaulted.status === 1) expect(JSON.parse(defaulted.stderr).message).toContain("/bin/bash");
+      rmSync(join(home, ".pi", "settings.json"));
       // A Claude seat does not probe: the same refusing settings leave it unchanged.
       writeFileSync(settings, JSON.stringify({ shellPath: stubShell(home, "bad-shell", BAD_PROBE_OUTPUT) }));
       expect(argv(home, "orchestrator", "--json").status).toBe(0);

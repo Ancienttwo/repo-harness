@@ -23,7 +23,7 @@ export class PiShellError extends Error {
   }
 }
 
-/** `shellPath` of one Pi settings file: undefined when the file or the key is absent. Pi merges the project file over the global one. */
+/** `shellPath` of one Pi settings file: undefined when the file or the key is absent. An empty string is a value: Pi's merge keeps it over the global one. */
 function settingsShellPath(file: string): string | undefined {
   let text: string;
   try { text = readFileSync(file, 'utf8'); } catch (error) {
@@ -34,15 +34,19 @@ function settingsShellPath(file: string): string | undefined {
   try { value = (JSON.parse(text) as { shellPath?: unknown }).shellPath; } catch {
     throw new PiShellError('pi_shell_refused', `Pi settings ${file} is not valid JSON. ${FIX}`);
   }
-  return typeof value === 'string' && value !== '' ? value : undefined;
+  return typeof value === 'string' ? value : undefined;
+}
+
+function expandTilde(path: string, home: string): string {
+  return path === '~' || path.startsWith('~/') ? join(home, path.slice(1)) : path;
 }
 
 /** The shell that a Pi seat uses: `shellPath` of the project settings, else of the global settings, else `/bin/bash` on a non-Windows host. Any other case is a refusal. */
 function piShell(env: NodeJS.ProcessEnv, cwd: string): string {
   const home = env.HOME ?? homedir();
-  const agentDirectory = env.PI_CODING_AGENT_DIR || join(home, '.pi', 'agent');
+  const agentDirectory = env.PI_CODING_AGENT_DIR ? expandTilde(env.PI_CODING_AGENT_DIR, home) : join(home, '.pi', 'agent');
   const configured = settingsShellPath(join(cwd, '.pi', 'settings.json')) ?? settingsShellPath(join(agentDirectory, 'settings.json'));
-  if (configured !== undefined) return configured === '~' || configured.startsWith('~/') ? join(home, configured.slice(1)) : configured;
+  if (configured) return expandTilde(configured, home);
   if (process.platform !== 'win32' && existsSync('/bin/bash')) return '/bin/bash';
   throw new PiShellError('pi_shell_refused', `No shell is known for the Pi seat: shellPath is not set and /bin/bash is not available. ${FIX}`);
 }
