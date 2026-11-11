@@ -406,20 +406,23 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
     push(blockers, 'provider_data_incomplete', 'provider generated_artifacts status is missing or unknown');
   }
   const checkFailures = Array.isArray(input.provider?.check_failures) ? input.provider.check_failures : [];
-  checkFailures.forEach((failure, index) => {
+  // An indexed loop visits every slot: a hole in a sparse array is validated as undefined and fails closed.
+  for (let index = 0; index < checkFailures.length; index++) {
+    const failure = checkFailures[index]!;
     try {
       validateRequiredCheckFailureEvidence(failure);
-    } catch (error) {
-      push(blockers, 'provider_data_incomplete',
-        `provider check_failures[${index}] is invalid: ${error instanceof Error ? error.message : String(error)}`);
-      return;
+    } catch {
+      push(blockers, 'provider_data_incomplete', `provider check_failures[${index}] is invalid`);
+      continue;
     }
-    if (failure.head_sha !== input.expected_head_sha || failure.base_sha !== input.expected_base_sha) {
-      push(blockers, 'provider_data_incomplete',
-        `provider check_failures[${index}] (${failure.check_name}) binds head ${failure.head_sha} and base ${failure.base_sha}, `
-        + `not the expected head ${input.expected_head_sha} and base ${input.expected_base_sha}`);
+    const mismatched = [
+      ...(failure.head_sha === input.expected_head_sha ? [] : [`check_failures[${index}].head_sha`]),
+      ...(failure.base_sha === input.expected_base_sha ? [] : [`check_failures[${index}].base_sha`]),
+    ];
+    if (mismatched.length > 0) {
+      push(blockers, 'provider_data_incomplete', `provider ${mismatched.join(' and ')} does not match the expected value`);
     }
-  });
+  }
   if (!validSha(input.expected_head_sha) || !validSha(input.expected_base_sha)) {
     push(blockers, 'provider_data_incomplete', 'expected head or base SHA is invalid');
   }

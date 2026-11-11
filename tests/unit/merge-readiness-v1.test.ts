@@ -562,8 +562,7 @@ describe('required-check failure evidence', () => {
     expect(projectPullRequestMergeReadiness({ ...base,
       provider: { ...base.provider!, check_failures: [otherHead] } }).blockers)
       .toContainEqual({ code: 'provider_data_incomplete', attention_owner: 'external',
-        detail: `provider check_failures[0] (${otherHead.check_name}) binds head ${'9'.repeat(40)} and base ${BASE}, `
-          + `not the expected head ${HEAD} and base ${BASE}` });
+        detail: 'provider check_failures[0].head_sha does not match the expected value' });
     expect(projectPullRequestMergeReadiness({ ...base,
       provider: { ...base.provider!, check_failures: [{ check_name: 'incomplete' }] } as unknown as ProviderMergeReadinessFactsV1 })
       .blockers.map((blocker) => blocker.code)).toContain('provider_data_incomplete');
