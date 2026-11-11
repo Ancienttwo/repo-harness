@@ -132,10 +132,10 @@ A new pane goes into the first tab of its kind with fewer than 3 panes. When eve
 
 ### Test and Review Rules
 
-- The merge gate is typecheck plus affected tests. Run `bash scripts/check-ci.sh affected --base origin/main` locally.
-- Run the full suite for dependency manifests, shared test/runtime foundations, releases, the daily run, or a named integration invariant that focused checks cannot cover.
-- When full coverage is required, run `bun run test:full` once on the final rebased head.
-- `test:core` excludes the slow integration files. `test:integration` runs those files. `test:full` runs their complete union.
+- A writer runs `bun run check:type`, `bun run check:helpers` and at most 3 test files that own the change. `Required / CI` on the head is the affected-gate evidence.
+- `bash scripts/check-ci.sh <lane>` on the host only reproduces a CI failure.
+- A reviewer runs no test that CI passed.
+- The full suite runs in the daily run and for a release.
 - Test commands take the host test queue themselves: `bash scripts/check-ci.sh <lane>`, `bun run test:files` and the `test:*` suites wait their turn, run alone and release. Release checks go first, then FIFO. Do not wait for a coordinator message to start them. `bun scripts/host-test-queue.ts status` shows the holder and the waiters.
 - Full runs use eight isolated file workers. Run files with shared ports or shared HOME writes in the serial tail.
 - Tests with port 0 and an isolated HOME can run in parallel.
