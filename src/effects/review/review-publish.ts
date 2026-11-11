@@ -9,6 +9,7 @@ import {
   type ReviewDiffLines,
   type ReviewPublishReceipt,
 } from '../../core/review/review-publish';
+import { errorMessage } from '../../core/evidence/error-message';
 
 export type ReviewPublishErrorCode =
   | 'review_receipt_invalid'
@@ -69,10 +70,6 @@ const MAX_PAGES = 30;
 const PR_FIELDS = 'number,headRefOid,url,closingIssuesReferences';
 const HARD_STOP_ROUND = 5;
 const OWNER_RECORD_PATTERN = /^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/(pull|issues)\/([0-9]+)#issuecomment-[0-9]+$/;
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function readReceipt(path: string): ReviewPublishReceipt {
   let bytes: Buffer;

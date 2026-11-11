@@ -13,6 +13,7 @@ import {
   rmSync,
   writeSync,
 } from "fs";
+import { errorMessage } from "../core/evidence/error-message";
 import { sha256Prefixed } from "../core/evidence/sha256";
 import { basename, dirname, relative, resolve, sep } from "path";
 import type {
@@ -161,10 +162,6 @@ function ensureParent(repoRoot: string, path: string): string | null {
   if (!parent.ok || !parent.path) return parent.error ?? "failed to resolve parent directory";
   mkdirSync(parent.path, { recursive: true });
   return null;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function fsyncDirectory(path: string): void {

@@ -41,6 +41,7 @@ import {
   type GeneratedArtifactsMixedRuleV1,
   type GeneratedArtifactsPolicyV1,
 } from '../../core/publication/generated-artifacts';
+import { errorMessage } from '../../core/evidence/error-message';
 
 const GIT_TIMEOUT_MS = 60_000;
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
@@ -113,10 +114,6 @@ class CheckFailed extends Error {
 
 function fail(code: GeneratedArtifactsFailureCode, message: string): never {
   throw new CheckFailed(code, message);
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function excerpt(value: string, limit = MESSAGE_LIMIT): string {
