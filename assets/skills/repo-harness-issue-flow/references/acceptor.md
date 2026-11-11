@@ -82,8 +82,9 @@ The table rules govern how the row combines with the review.
    **New head.** The rows of a record count for their subject SHA only;
    the board reads the rows of the head. A PR whose base is behind main
    merges with no sync (`orchestrator.md` §9), so do not merge main into
-   a PR that has no conflict. The one exception is a stale-base CI failure (`orchestrator.md` §8, CI red): the worker then merges main into the head. A head that takes a merge of main,
-   for a conflict or a stale-base CI failure, is a new head. It needs its own CI run and a delta check: a
+   a PR that has no conflict. Merging main without a conflict has two cases only: a stale-base CI failure (`orchestrator.md` §8, CI red) and an `unblocked` stacked PR (`worker.md`, Main moved).
+   A head that takes a merge of main, for a conflict or one of these
+   cases, is a new head. It needs its own CI run and a delta check: a
    review of the delta from the reviewed head that writes one record row
    for the new head. A Medium head needs one delta check row under the
    Medium rule above. A High head needs the round-1 rule: two delta
