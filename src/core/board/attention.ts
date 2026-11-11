@@ -12,7 +12,7 @@ import { WORKER_SEAT_IDS } from './seats-settings';
  * to the advisor seat. A rule whose input is unavailable is listed as
  * unevaluated with the reason; it never fires on a guess.
  */
-export const BOARD_ATTENTION_PROTOCOL = 1 as const;
+export const BOARD_ATTENTION_PROTOCOL = 2 as const;
 export const BOARD_ATTENTION_KIND = 'repo-harness.board-attention' as const;
 
 const MINUTE = 60_000;
@@ -29,9 +29,24 @@ const RED_CONCLUSIONS = new Set(['failure', 'timed_out', 'startup_failure']);
 
 export type BoardRuleId = 'A1' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'A9' | 'A10' | 'A11' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5';
 export type BoardAttentionRoute = 'orchestrator' | 'advisor';
+/** P0: a seat cannot continue. P1: a worker or an issue waits for the coordinator, or a High change has a lower tier. P2: a pull request or the plan waits. P3: housekeeping. */
+export type BoardPriority = 'P0' | 'P1' | 'P2' | 'P3';
+/** Highest first. A delivery entry and a `board attention` line print the priority of their finding. */
+export const BOARD_PRIORITY_ORDER: readonly BoardPriority[] = Object.freeze(['P0', 'P1', 'P2', 'P3']);
+/**
+ * The priority of each rule, the only source of a finding's priority. The
+ * record names every rule, so a new rule without a priority fails the
+ * typecheck. The skill text reads the priority from the message; it keeps no
+ * copy of this table.
+ */
+export const BOARD_RULE_PRIORITY: Readonly<Record<BoardRuleId, BoardPriority>> = Object.freeze({
+  A1: 'P2', A3: 'P0', A4: 'P1', A5: 'P1', A6: 'P1', A7: 'P2', A8: 'P3', A9: 'P3', A10: 'P2', A11: 'P2',
+  R1: 'P2', R2: 'P2', R3: 'P1', R4: 'P2', R5: 'P1',
+});
 
 export interface BoardFindingV1 {
   readonly rule: BoardRuleId;
+  readonly priority: BoardPriority;
   readonly route: BoardAttentionRoute;
   readonly issues: readonly number[];
   readonly pull_requests: readonly number[];
@@ -64,6 +79,7 @@ interface Context {
 function find(context: Context, rule: BoardRuleId, subject: { issues?: number[]; pull_requests?: number[]; terminals?: string[] }, message: string): void {
   context.findings.push(Object.freeze({
     rule,
+    priority: BOARD_RULE_PRIORITY[rule],
     route: rule.startsWith('A') ? 'orchestrator' : 'advisor',
     issues: Object.freeze(subject.issues ?? []),
     pull_requests: Object.freeze(subject.pull_requests ?? []),
@@ -339,6 +355,19 @@ function r4(context: Context): void {
         `#${pr.number} in the merge order is accepted and unmerged for ${minutes(waited)} min`);
     }
   }
+}
+
+/** One finding line of `repo-harness board attention`: the priority first, so no line is without one. */
+export function attentionFindingLine(finding: BoardFindingV1): string {
+  return `${finding.priority} ${finding.rule} ${finding.route}: ${finding.message}`;
+}
+
+/** The text output of `repo-harness board attention`: one line for each finding, then one for each unevaluated rule. */
+export function renderAttentionText(attention: BoardAttentionV1): string {
+  const lines = attention.findings.map(attentionFindingLine);
+  if (lines.length === 0) lines.push(`no attention findings for #${attention.parent}`);
+  for (const entry of attention.unevaluated) lines.push(`${entry.rule} not evaluated: ${entry.reason}${entry.subject === null ? '' : ` (${entry.subject})`}`);
+  return `${lines.join('\n')}\n`;
 }
 
 export function evaluateBoardAttention(board: BoardV1): BoardAttentionV1 {

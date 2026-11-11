@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { AdvisorSeatError, advisorSeatSendFailure, readAdvisorSeat, sendToAdvisorSeat } from '../../core/board/advisor-seat';
 import { AttentionWatchError, attentionLogPath, runAttentionWindow, serviceTerminalRepository, startAttentionWatch } from '../../effects/board/attention-watch';
-import { evaluateBoardAttention, type BoardAttentionV1 } from '../../core/board/attention';
+import { evaluateBoardAttention, renderAttentionText } from '../../core/board/attention';
 import type { AttentionHostPortsV1 } from '../../core/board/attention-delivery';
 import type { BoardHostPortsV1 } from '../../core/board/board';
 import { BoardSourceError } from '../../core/board/source';
@@ -89,13 +89,6 @@ function mergeText(result: BoardMergeResultV1, requested: number | null, dryRun:
   return `${lines.join('\n')}\n`;
 }
 
-function attentionText(attention: BoardAttentionV1): string {
-  const lines = attention.findings.map(finding => `${finding.rule} ${finding.route}: ${finding.message}`);
-  if (lines.length === 0) lines.push(`no attention findings for #${attention.parent}`);
-  for (const entry of attention.unevaluated) lines.push(`${entry.rule} not evaluated: ${entry.reason}${entry.subject === null ? '' : ` (${entry.subject})`}`);
-  return `${lines.join('\n')}\n`;
-}
-
 /**
  * `--parent` and `--json` belong to `board`. The root program does not use
  * positional options, so Commander binds them to `board` wherever they
@@ -125,7 +118,7 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
         if (options.deliver === true) throw new AttentionWatchError('--deliver needs --watch');
         if (options.review === true) throw new AttentionWatchError('--review needs --watch');
         const attention = evaluateBoardAttention(collectBoard({ repo_root: process.cwd(), parent: parentNumber(options), host }));
-        process.stdout.write(options.json === true ? `${JSON.stringify(attention)}\n` : attentionText(attention));
+        process.stdout.write(options.json === true ? `${JSON.stringify(attention)}\n` : renderAttentionText(attention));
       })(options);
     });
   attention.command('start')

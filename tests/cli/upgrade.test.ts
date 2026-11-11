@@ -61,6 +61,29 @@ function sandbox(run: (opts: { cwd: string; home: string; packageRoot: string })
   finally { rmSync(root, { recursive: true, force: true }); }
 }
 function put(path: string, content: string): void { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); }
+/**
+ * The v0.10 installer selects facades with `profile_facades | grep -Fxq` under pipefail. Bash writes one line per
+ * write(), so a grep that exits on an early match can make the next write raise SIGPIPE and drop the facade (#2374).
+ * This grep reads all of stdin before the real grep runs. It changes only the pipe timing, not the selection.
+ */
+function drainingGrepDir(home: string): string {
+  const realGrep = Bun.which('grep');
+  if (!realGrep) throw new Error('grep is required to run the v0.10 installer');
+  const dir = join(dirname(home), 'draining-grep-bin');
+  put(join(dir, 'grep'), `#!/bin/sh
+operands=0
+for arg in "$@"; do case "$arg" in -*) ;; *) operands=$((operands + 1)) ;; esac; done
+[ "$operands" -gt 1 ] && exec '${realGrep}' "$@"
+input=$(mktemp) || exit 2
+cat >"$input"
+'${realGrep}' "$@" <"$input"
+status=$?
+rm -f "$input"
+exit "$status"
+`);
+  chmodSync(join(dir, 'grep'), 0o755);
+  return dir;
+}
 const projectHook = '.ai/hooks/prompt-guard.sh';
 const ownership = (opts: { home: string }) => installOwnershipReader({ ...process.env, HOME: opts.home });
 /** A protocol 3 state written by an older package: every plugin record carries that older version. */
@@ -591,7 +614,7 @@ describe('upgrade with real release bytes', () => {
     copyUpgradeFixture('upgrade-v0.10-home', 'release-source', installerRoot);
     const installerPath = join(installerRoot, 'scripts/sync-codex-installed-copies.sh');
     const installer = spawnSync('bash', [installerPath], {
-      env: { ...process.env, HOME: opts.home, AGENTIC_DEV_SOURCE_ROOT: source, CODEX_SKILLS_ROOT: join(opts.home, '.codex/skills'), CLAUDE_SKILLS_ROOT: '', REPO_HARNESS_INSTALL_PROFILE: 'strict', AGENTIC_DEV_LINK_INSTALLED_COPIES: '0', BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' }, encoding: 'utf8', timeout: 60000,
+      env: { ...process.env, PATH: `${drainingGrepDir(opts.home)}:${process.env.PATH}`, HOME: opts.home, AGENTIC_DEV_SOURCE_ROOT: source, CODEX_SKILLS_ROOT: join(opts.home, '.codex/skills'), CLAUDE_SKILLS_ROOT: '', REPO_HARNESS_INSTALL_PROFILE: 'strict', AGENTIC_DEV_LINK_INSTALLED_COPIES: '0', BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' }, encoding: 'utf8', timeout: 60000,
     });
     const installerOutput = JSON.stringify({
       status: installer.status, signal: installer.signal, error: installer.error?.message ?? null, stdout: installer.stdout, stderr: installer.stderr,

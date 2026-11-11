@@ -1,6 +1,6 @@
 # runtime-harness/evidence-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:bcec5f1669b1558119411fd0378e60440615333c29c48ca49cadb73c0547dd60" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b08b7c874cb81629e97ae9fff8b967746ec1b4816b2e69ad23d61f5c2aa949b7" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.evidence-ledger`(kind `capability`)
 > **Matched Prefixes**:`src/core/evidence/**`、`src/effects/evidence/**`
@@ -86,7 +86,7 @@ flowchart LR
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.evidence-ledger.primary` | Evidence Event Store | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
-| `component.evidence-ledger.primary-core` | Evidence Event Store (core) | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.evidence-ledger.primary-core` | Evidence Event Store (core) | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.evidence-ledger.primary-scripts` | Evidence Event Store (scripts) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.evidence-ledger.scripts-layer` | Evidence Ledger (scripts) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 

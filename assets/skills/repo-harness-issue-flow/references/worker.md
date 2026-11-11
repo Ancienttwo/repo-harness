@@ -222,7 +222,7 @@ You are the head owner. Only you push to this branch.
   does a self-check. The pre-check writes no record and does not replace
   the review.
 - **Main moved.** A PR whose base is behind main merges with no sync, so
-  do not merge main into a PR that has no conflict. When the coordinator
+  do not merge main into a PR that has no conflict. Merging main without a conflict has two cases only: a stale-base CI failure (`orchestrator.md` §8, CI red) and an `unblocked` stacked PR (`worker.md`, Main moved). When the coordinator
   posts `unblocked` for a stacked PR, or your PR conflicts with main,
   retarget a stacked PR to main, merge the current main into your
   branch (no force push), run the affected checks and post `integration
