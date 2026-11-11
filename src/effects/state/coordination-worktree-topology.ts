@@ -11,6 +11,7 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from 'path';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import { readPrunedWorktreeIntents, writePrunedWorktreeIntents, prunedIntentKey, type PrunedWorktreeIntent } from './pruned-worktree-intents';
 import { readWorkflowPolicyDocument } from './resolve-effective-state';
+import { POLICY_ABSENT, isPolicyObject, policyValue } from '../../core/workflow/policy-schema';
 import { configuredGitBinary, resolveGitCommonDirectory, resolveGitCommonDirectoryAsync } from '../git/common-directory';
 import { acquireExclusiveDirectoryLock, withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { taskWorktreeRuntimeClosed } from '../terminal/task-session-record';
@@ -574,9 +575,11 @@ function resumeSweepTrash(context: SweepContext, directory: string): 'resumed' |
 
 /** The policy merge-back target that every worktree merge proof binds. */
 export function mergeBackTarget(main: string, limits: Limits = {}): { readonly targetRef: string; readonly target: string } {
-  const { present, root } = readWorkflowPolicyDocument(main);
-  const policy = (present ? root : {}) as { worktree_strategy?: { merge_back?: { target?: unknown } } };
-  const configured = policy.worktree_strategy?.merge_back?.target ?? 'main';
+  const policy = readWorkflowPolicyDocument(main);
+  const strategy = policy.rootIsObject ? policyValue(policy, 'worktree_strategy') : POLICY_ABSENT;
+  const mergeBack = isPolicyObject(strategy) ? policyValue(policy, 'worktree_strategy.merge_back') : POLICY_ABSENT;
+  const target = isPolicyObject(mergeBack) ? policyValue(policy, 'worktree_strategy.merge_back.target') : POLICY_ABSENT;
+  const configured = target === POLICY_ABSENT || target === null ? 'main' : target;
   if (typeof configured !== 'string' || !configured || configured.startsWith('-')) throw new Error('integration target is invalid');
   const targetRef = configured.startsWith('refs/') || configured.includes('/') ? configured : `refs/remotes/origin/${configured}`;
   try { return { targetRef, target: git(main, ['rev-parse', '--verify', `${targetRef}^{commit}`], limits) }; }

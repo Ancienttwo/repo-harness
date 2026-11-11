@@ -34,7 +34,7 @@ import { FS_TRANSACTION_BACKUP_ROOT } from './fs-transaction';
 import { ensureRepoRelativePath, resolveInsideRepo } from './path-safety';
 import { gitExecFileSync, gitSpawnSync } from './git/runner';
 import { readWorkflowPolicyDocument } from './state/resolve-effective-state';
-import { POLICY_PATH } from '../core/workflow/policy-schema';
+import { POLICY_ABSENT, POLICY_PATH, isPolicyObject, policyValue } from '../core/workflow/policy-schema';
 
 export const DEFAULT_RETENTION_DAYS = 30;
 /** Default time an archived entry stays in the archive root before it is deleted. */
@@ -132,9 +132,10 @@ function overlaps(a: string, b: string): boolean {
  * optional; a present field with the wrong shape is an error, not a default.
  */
 export function readRetentionConfig(repoRoot: string): RetentionConfig {
-  const policy = readWorkflowPolicyDocument(repoRoot).root as { information_lifecycle?: { retention?: unknown } } | null | undefined;
-  const section = policy?.information_lifecycle?.retention;
-  if (section === undefined) {
+  const policy = readWorkflowPolicyDocument(repoRoot);
+  const lifecycle = policy.rootIsObject ? policyValue(policy, 'information_lifecycle') : POLICY_ABSENT;
+  const section = isPolicyObject(lifecycle) ? policyValue(policy, 'information_lifecycle.retention') : POLICY_ABSENT;
+  if (section === POLICY_ABSENT) {
     return { days: DEFAULT_RETENTION_DAYS, archiveDays: DEFAULT_ARCHIVE_DAYS, archiveRoot: DEFAULT_ARCHIVE_ROOT, keep: [] };
   }
   if (!section || typeof section !== 'object' || Array.isArray(section)) {

@@ -764,15 +764,8 @@ export class CapabilitySourceError extends Error {
   }
 }
 
-function plainRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-/** Read `context.capability_source` from an already loaded policy document. */
-export function capabilitySourceModeFromPolicy(policy: unknown): CapabilitySourceMode {
-  const value = plainRecord(plainRecord(policy)?.context)?.capability_source;
+/** The mode for a read `context.capability_source` value; `undefined` means the key is absent. */
+export function capabilitySourceModeFromValue(value: unknown): CapabilitySourceMode {
   if (value === undefined) return "registry";
   if (typeof value === "string" && (CAPABILITY_SOURCE_MODES as readonly string[]).includes(value)) {
     return value as CapabilitySourceMode;
@@ -1633,7 +1626,7 @@ export type PolicyKeyTree = {
   readonly [key: string]: true | PolicyKeyTree;
 };
 
-export const WORKFLOW_POLICY_KEYS: PolicyKeyTree = {
+export const WORKFLOW_POLICY_KEYS = {
   tasks: { research_dir: true },
   external_sources: {},
   operations: { agent_writable_private_dirs: true, deploy_sql: {} },
@@ -1661,21 +1654,37 @@ export const WORKFLOW_POLICY_KEYS: PolicyKeyTree = {
   external_tooling: { agent_fleet: { managed_agents: true, install_mode: true } },
   security: { reviewed_findings: {} },
   internal_pr_authors: {},
-};
+} as const satisfies PolicyKeyTree;
+
+type PolicyPathsOf<Tree, Prefix extends string> = {
+  [Key in keyof Tree & string]:
+    | `${Prefix}${Key}`
+    | (Tree[Key] extends true ? never : PolicyPathsOf<Tree[Key], `${Prefix}${Key}.`>);
+}[keyof Tree & string];
+
+/** The dotted path of every leaf and every section in the tree. A reader can take only these paths. */
+export type PolicyPath = PolicyPathsOf<typeof WORKFLOW_POLICY_KEYS, ''>;
 
 export const POLICY_PATH = '.ai/harness/policy.json';
 
 /** A decoded root that is a JSON object. */
 export type WorkflowPolicyObject = Readonly<Record<string, unknown>>;
 
+// Module-private: a reader takes a value only through `policyValue`.
+const POLICY_ROOT = Symbol('workflow-policy-root');
+
+/** The value of `policyValue` when the file or a key on the path is absent. */
+export const POLICY_ABSENT = Symbol('workflow-policy-absent');
+
 /**
- * The file as decoded. `present` is false when the file is absent. `root` is
- * the JSON value as written, also when it is not an object: each reader checks
- * the shape it reads, so a `[]` or `null` root gives each reader its own result.
+ * The file as decoded. `present` is false when the file is absent.
+ * `rootIsObject` is false also for a `[]` or `null` root: a reader with its own
+ * message for that root checks it; `policyValue` throws for it.
  */
 export interface DecodedWorkflowPolicy {
   readonly present: boolean;
-  readonly root: unknown;
+  readonly rootIsObject: boolean;
+  readonly [POLICY_ROOT]: unknown;
 }
 
 /**
@@ -1684,12 +1693,39 @@ export interface DecodedWorkflowPolicy {
  * keeps its own message for the keys it reads.
  */
 export function decodeWorkflowPolicy(text: string | null): DecodedWorkflowPolicy {
-  if (text === null) return { present: false, root: undefined };
+  if (text === null) return { present: false, rootIsObject: false, [POLICY_ROOT]: undefined };
+  let root: unknown;
   try {
-    return { present: true, root: JSON.parse(text) as unknown };
+    root = JSON.parse(text);
   } catch (cause) {
     throw new Error(`invalid workflow policy JSON: ${POLICY_PATH}`, { cause });
   }
+  return { present: true, rootIsObject: isPolicyObject(root), [POLICY_ROOT]: root };
+}
+
+/**
+ * The value at `path`, or `POLICY_ABSENT` when the file or a key is absent. A
+ * non-object parent on the path (the root included) throws. A reader that
+ * treats such a parent as absent reads the parent section first.
+ */
+export function policyValue(document: DecodedWorkflowPolicy, path: PolicyPath): unknown {
+  if (!document.present) return POLICY_ABSENT;
+  let current: unknown = document[POLICY_ROOT];
+  for (const segment of path.split('.')) {
+    if (!isPolicyObject(current)) throw new Error(`invalid workflow policy field .${path}: non-object parent`);
+    if (!Object.hasOwn(current, segment)) return POLICY_ABSENT;
+    current = current[segment];
+  }
+  return current;
+}
+
+/**
+ * True for a JSON object; false for an array, `null` and a scalar. The same
+ * shape as `core/evidence/is-record`; the standalone helper inlines this file
+ * and cannot import that module.
+ */
+export function isPolicyObject(value: unknown): value is WorkflowPolicyObject {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 /** Dotted paths of the keys that no reader uses, sorted. */
@@ -1719,26 +1755,54 @@ function keepKnownKeys(
     const node = Object.hasOwn(tree, key) ? tree[key]! : undefined;
     if (node === undefined) { collectLeafPaths(child, path, unknown); continue; }
     // A leaf needs no children; a declared section owns its own children.
-    if (node === true || Object.keys(node).length === 0 || child === null || typeof child !== 'object' || Array.isArray(child)) {
+    if (node === true || Object.keys(node).length === 0 || !isPolicyObject(child)) {
       kept[key] = child;
       continue;
     }
     // A schema-declared section stays, also when it held only unknown keys.
-    kept[key] = keepKnownKeys(child as WorkflowPolicyObject, node, path, unknown);
+    kept[key] = keepKnownKeys(child, node, path, unknown);
   }
   return kept;
 }
 
 /** Under an unknown key every leaf is unknown. An array, a scalar or an empty object is a leaf. */
 function collectLeafPaths(value: unknown, path: string, unknown: string[]): void {
-  if (value === null || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length === 0) {
+  if (!isPolicyObject(value) || Object.keys(value).length === 0) {
     unknown.push(path);
     return;
   }
   for (const [key, child] of Object.entries(value)) collectLeafPaths(child, `${path}.${key}`, unknown);
 }
+// Aliased: the standalone capability helper inlines this file beside other `fs` and `path` imports.
+import { readFileSync as readPolicyFileSync } from 'fs';
+import { join as joinPolicyPath } from 'path';
+
+
+/** The file text, or null when the file is absent. */
+function readPolicyText(repoRoot: string): string | null {
+  try {
+    return readPolicyFileSync(joinPolicyPath(repoRoot, POLICY_PATH), 'utf-8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+/**
+ * The one reader of `.ai/harness/policy.json` from disk. It validates no key:
+ * each reader takes its keys through `policyValue` and keeps its own message.
+ * The state resolver passes `readSource` to read through its contained-path
+ * check and to observe one read per state pass.
+ */
+export function readWorkflowPolicyFile(
+  repoRoot: string,
+  readSource: (path: string) => string | null = () => readPolicyText(repoRoot),
+): DecodedWorkflowPolicy {
+  return decodeWorkflowPolicy(readSource(POLICY_PATH));
+}
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { relative, resolve } from "path";
+
 
 
 
@@ -1767,18 +1831,23 @@ const ARCHCONTEXT_NODES_DIR = ".archcontext/model/nodes";
 
 
 export function capabilitySourceMode(repo: string): CapabilitySourceMode {
-  const policyPath = resolve(repo, HARNESS_POLICY);
-  if (!existsSync(policyPath)) return "registry";
-  let policy: unknown;
+  let policy: DecodedWorkflowPolicy;
   try {
-    policy = decodeWorkflowPolicy(readFileSync(policyPath, "utf-8")).root;
+    policy = readWorkflowPolicyFile(repo);
   } catch (error) {
     const cause = error instanceof Error && error.cause instanceof SyntaxError ? error.cause : error;
     throw new CapabilitySourceError(
       `malformed harness policy: ${HARNESS_POLICY}: ${(cause as Error).message}`
     );
   }
-  return capabilitySourceModeFromPolicy(policy);
+  return capabilitySourceModeOf(policy);
+}
+
+/** A non-object root or `context` section leaves the key absent. */
+export function capabilitySourceModeOf(policy: DecodedWorkflowPolicy): CapabilitySourceMode {
+  const context = policy.rootIsObject ? policyValue(policy, "context") : POLICY_ABSENT;
+  const value = isPolicyObject(context) ? policyValue(policy, "context.capability_source") : POLICY_ABSENT;
+  return capabilitySourceModeFromValue(value === POLICY_ABSENT ? undefined : value);
 }
 
 function usage(): never {

@@ -54,10 +54,10 @@ import { hostSkillRoot, providerSkillLock, stagedSkillRoot, syncSkillRoots, type
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 import { hashManagedTree, OWNER_MARKER } from '../../effects/managed-tree';
 import { readWorkflowPolicyDocument } from '../../effects/state/resolve-effective-state';
-import { POLICY_PATH } from '../../core/workflow/policy-schema';
+import { POLICY_ABSENT, POLICY_PATH, isPolicyObject, policyValue } from '../../core/workflow/policy-schema';
+import { capabilitySourceModeOf } from '../../effects/architecture/capability-resolver';
 import { piPackagePresent, planPiPackage, removePiPackage, type PiPackageStep } from './pi-package';
 import { piExecutable } from '../../effects/pi-executable';
-import { capabilitySourceModeFromPolicy } from '../../core/capabilities/resolver';
 import skillSurfaceManifest from '../../../assets/skill-commands/manifest.json';
 import { version as PACKAGE_VERSION } from '../../../package.json';
 import { pluginRepair } from './architecture-selection';
@@ -1346,12 +1346,15 @@ export function commandPluginRepairLines(selection: PluginSelection): string[] {
  */
 export function assertArchitecturePolicySelection(cwd: string, plugins: readonly PluginId[], env: NodeJS.ProcessEnv = process.env): void {
   if (plugins.includes('architecture')) return;
-  const { present, root } = readWorkflowPolicyDocument(cwd);
-  if (!present) return;
-  const policy = root as { tooling?: { codegraph?: { enabled?: unknown } } };
+  const policy = readWorkflowPolicyDocument(cwd);
+  if (!policy.present) return;
+  // A non-object section on the path leaves the key absent.
+  const tooling = policy.rootIsObject ? policyValue(policy, 'tooling') : POLICY_ABSENT;
+  const codegraph = isPolicyObject(tooling) ? policyValue(policy, 'tooling.codegraph') : POLICY_ABSENT;
+  const codegraphEnabled = isPolicyObject(codegraph) ? policyValue(policy, 'tooling.codegraph.enabled') : POLICY_ABSENT;
   const needs = [
-    ...(capabilitySourceModeFromPolicy(policy) === 'archcontext' ? ['context.capability_source: archcontext'] : []),
-    ...(policy.tooling?.codegraph?.enabled === true ? ['tooling.codegraph.enabled: true'] : []),
+    ...(capabilitySourceModeOf(policy) === 'archcontext' ? ['context.capability_source: archcontext'] : []),
+    ...(codegraphEnabled === true ? ['tooling.codegraph.enabled: true'] : []),
   ];
   if (needs.length === 0) return;
   throw new InstallStateError('install_plugin_unavailable', installProfileStatePath(env),

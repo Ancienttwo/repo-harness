@@ -49,15 +49,8 @@ export class CapabilitySourceError extends Error {
   }
 }
 
-function plainRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-/** Read `context.capability_source` from an already loaded policy document. */
-export function capabilitySourceModeFromPolicy(policy: unknown): CapabilitySourceMode {
-  const value = plainRecord(plainRecord(policy)?.context)?.capability_source;
+/** The mode for a read `context.capability_source` value; `undefined` means the key is absent. */
+export function capabilitySourceModeFromValue(value: unknown): CapabilitySourceMode {
   if (value === undefined) return "registry";
   if (typeof value === "string" && (CAPABILITY_SOURCE_MODES as readonly string[]).includes(value)) {
     return value as CapabilitySourceMode;

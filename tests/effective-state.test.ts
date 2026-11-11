@@ -22,7 +22,7 @@ import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-st
 import { projectEffectiveStateSessionSection } from '../src/cli/hook/session-context';
 import type { EffectiveState } from '../src/core/state/types';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
-import { unknownPolicyKeys } from '../src/core/workflow/policy-schema';
+import { POLICY_ABSENT, decodeWorkflowPolicy, policyValue, unknownPolicyKeys } from '../src/core/workflow/policy-schema';
 import {
   CONTRACT,
   PLAN,
@@ -912,6 +912,17 @@ describe('policy schema: one key tree and one decoder', () => {
     };
     expect(unknownPolicyKeys(deferred)).toEqual([]);
     expect(unknownPolicyKeys({ security: { reviewedFindings: [] } })).toEqual(['security.reviewedFindings']);
+  });
+
+  test('a reader takes only a schema path: value, absent key, absent file and non-object parent', () => {
+    const document = decodeWorkflowPolicy('{"context":{"capability_source":"archcontext"},"worktree_strategy":5}');
+    expect(policyValue(document, 'context.capability_source')).toBe('archcontext');
+    expect(policyValue(document, 'context.map_file')).toBe(POLICY_ABSENT);
+    expect(policyValue(decodeWorkflowPolicy(null), 'context.capability_source')).toBe(POLICY_ABSENT);
+    expect(() => policyValue(document, 'worktree_strategy.review_base'))
+      .toThrow('invalid workflow policy field .worktree_strategy.review_base: non-object parent');
+    // @ts-expect-error a path outside the schema does not compile, so init cannot prune a key that a reader uses.
+    policyValue(document, 'agentic_development.routing');
   });
 });
 

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, failureIssues, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
 import { isRecord } from '../../core/evidence/is-record';
 import { readWorkflowPolicyDocument } from '../state/resolve-effective-state';
+import { POLICY_ABSENT, isPolicyObject, policyValue } from '../../core/workflow/policy-schema';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { selectCompatibleNode } from '../runtime/node-runtime';
 import { runProcess } from '../process-runner';
@@ -630,10 +631,11 @@ function resolvePackageManifest(base: string, name: string, missingMessage: stri
 }
 
 export function capabilitySource(repoRoot: string): ArchitectureProjectionReadinessV1['modelAuthority']['source'] {
-  const { present, root } = readWorkflowPolicyDocument(repoRoot);
-  if (!present) return 'unadopted';
-  const policy = root as { context?: { capability_source?: unknown } };
-  return policy.context?.capability_source === 'archcontext' ? 'archcontext' : 'registry';
+  const policy = readWorkflowPolicyDocument(repoRoot);
+  if (!policy.present) return 'unadopted';
+  const context = policy.rootIsObject ? policyValue(policy, 'context') : POLICY_ABSENT;
+  const source = isPolicyObject(context) ? policyValue(policy, 'context.capability_source') : POLICY_ABSENT;
+  return source === 'archcontext' ? 'archcontext' : 'registry';
 }
 
 function parseJson(text: string, label: string): unknown {
