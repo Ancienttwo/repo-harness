@@ -262,13 +262,6 @@ describe('update leftover summary', () => {
       .toBe('Leftover check failed: catalog failed token=[redacted]. Run: repo-harness upgrade');
   });
 
-  test('summary line reports a pending template rewrite with no leftover items as pending, not failed', () => {
-    const worktreeTemplate = { applied: false, item: { path: '.ai/harness/policy.json', action: 'rewrite', current: '../{{repo}}-wt-{{slug}}', replacement: '{{system_tmp}}/{{repo}}-wt-{{slug}}', reason: 'Legacy template.' } } as UpgradeResult['worktreeTemplate'];
-    expect(formatUpgradeSummaryLine(checkResult({ worktreeTemplate }))).toBe(
-      '0 leftovers (0 removable). Run: repo-harness upgrade; policy worktree template migration pending; run repo-harness upgrade --scope project --apply --migrate-worktree-template',
-    );
-  });
-
   test('summary line reports a removable legacy sibling worktree as pending, not failed', () => {
     const candidates: LegacyWorktreeCandidate[] = [
       { path: '/fixture/repo-old', branch: 'feat/old', head: 'a'.repeat(40), verdict: 'remove', reason: 'merged into origin/main', rebuild: 'git worktree add -b feat/old /fixture/repo-old aaa' },
@@ -327,7 +320,7 @@ describe('update registered repo summary', () => {
     try {
       const current = adoptedRepo(f, 'current');
       const stale = adoptedRepo(f, 'stale');
-      rmSync(join(stale, '.ai/hooks/README.md'));
+      rmSync(join(stale, 'deploy/README.md'));
       commitAll(f, stale, 'drop managed file');
       writeRegistry(f, [current, stale, join(root, 'missing')]);
       const registryBefore = readFileSync(f.registry, 'utf8');

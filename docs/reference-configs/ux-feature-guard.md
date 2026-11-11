@@ -43,7 +43,9 @@ Do not pick the convenient wording or make the contract/test silently win.
 
 ## Guard Card
 
-The design-brief template owns the exact Guard Card field schema. This runtime
+The design-brief template owns the exact Guard Card field schema: the
+repository's own `.claude/templates/design-brief.template.md` when present,
+otherwise `repo-harness docs path design-brief.template`. This runtime
 doc owns the interpretation rules and hard stops. Fill every template field; do
 not restate the schema in a PRD, contract, sidecar, or local checklist, and do
 not create a parallel guard artifact.

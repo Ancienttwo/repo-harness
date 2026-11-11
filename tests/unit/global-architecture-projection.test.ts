@@ -98,7 +98,7 @@ test('update migrates retired automatic projection settings once and readers ref
   expect(JSON.parse(readFileSync(f.path, 'utf8')).architecture).toEqual({ projection_provider: 'disabled', projection_apply: 'disabled' });
 });
 
-test('adoption removes retired generated architecture settings while preserving user-authored keys', () => {
+test('adoption removes architecture settings and every other policy key outside the schema', () => {
   const policyFor = (policy: Record<string, unknown>) => {
     const f = globalFixture();
     mkdirSync(join(f.home, '.ai/harness'), { recursive: true });
@@ -119,9 +119,8 @@ test('adoption removes retired generated architecture settings while preserving 
     },
   });
   expect(retired.architecture).toBeUndefined();
-  expect(retired.harness.architecture_events_file).toBeUndefined();
-  expect(retired.harness.events_file).toBe('.ai/harness/events.jsonl');
+  expect(retired.harness).toEqual({});
 
   const custom = policyFor({ architecture: { freshness_gate: 'strict', rule: 'Team-specific architecture rule.', review_owner: 'platform' } });
-  expect(custom.architecture).toEqual({ rule: 'Team-specific architecture rule.', review_owner: 'platform' });
+  expect(custom.architecture).toBeUndefined();
 });

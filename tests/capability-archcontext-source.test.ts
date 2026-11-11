@@ -35,7 +35,6 @@ function writeFile(cwd: string, relPath: string, content: string): void {
 function writePolicy(cwd: string, capabilitySource: string | null): void {
   const context: Record<string, unknown> = {
     map_file: ".ai/context/context-map.json",
-    capability_registry_file: ".ai/context/capabilities.json",
   };
   if (capabilitySource !== null) context.capability_source = capabilitySource;
   writeFile(cwd, ".ai/harness/policy.json", `${JSON.stringify({ version: 1, context }, null, 2)}\n`);

@@ -369,7 +369,7 @@ describe('doctor command (Phase 1C)', () => {
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
-  test('capability-registry applies the hook rules for an empty registry and the declared path', () => {
+  test('capability-registry applies the hook rules for an empty registry and an explicit registry selector', () => {
     withTempRepo({ optIn: true }, (repoRoot) => {
       const registryCheck = () => runDoctor(CLI_PORTS.doctor, repoRoot).checks.find((c) => c.id === 'capability-registry')!;
       fs.mkdirSync(path.join(repoRoot, '.ai/context'), { recursive: true });
@@ -377,15 +377,10 @@ describe('doctor command (Phase 1C)', () => {
       // An empty file counts as missing; without a declaration that is not a fault.
       expect(registryCheck()).toMatchObject({ status: 'na', detail: 'no capability registry is declared' });
 
-      fs.writeFileSync(path.join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ context: { capability_registry_file: '.ai/context/capabilities.json' } })}\n`);
+      fs.writeFileSync(path.join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ context: { capability_source: 'registry' } })}\n`);
       const missing = registryCheck();
       expect(missing.status).toBe('fail');
       expect(missing.detail).toContain('registry authority does not load: capability registry is missing');
-
-      fs.writeFileSync(path.join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ context: { capability_registry_file: 'other.json' } })}\n`);
-      const nonCanonical = registryCheck();
-      expect(nonCanonical.status).toBe('fail');
-      expect(nonCanonical.detail).toContain('invalid workflow policy path .context.capability_registry_file');
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 

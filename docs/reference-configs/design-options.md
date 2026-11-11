@@ -171,7 +171,9 @@ not limited to the two named above.
 
 ## Design-Brief Hand-off
 
-The chosen direction feeds the existing `design-brief.template.md` /
+The chosen direction feeds the design-brief template (the repository's own
+`.claude/templates/design-brief.template.md` when present, otherwise
+`repo-harness docs path design-brief.template`) /
 frontend `task_profile` gate as its decided direction — this convention does
 not duplicate that checklist.
 

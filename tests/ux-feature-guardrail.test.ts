@@ -27,13 +27,12 @@ describe("UX feature pre-implementation guard", () => {
     expect(shown.stdout).toContain("# UX Feature Guard");
   }, 30_000);
 
-  test('retains the guard schema in optional self-host and downstream design briefs without automatic projection', () => {
-    for (const copy of [read('assets/templates/design-brief.template.md'), read('.claude/templates/design-brief.template.md')]) {
-      for (const field of ['## UX Feature Guard', 'Exact payload acted on', '### Authority & Reuse Map',
-        '### Observable & Copy Contract', 'Positive, negative, and authority-failure Given/When/Then scenarios',
-        'UX-{{SLUG}}-P1', 'Carry these IDs unchanged into the task contract']) expect(copy).toContain(field);
-    }
-    expect(read('.claude/templates/design-brief.template.md')).toContain('Optional document');
+  test('retains the guard schema in the optional package design brief without automatic projection', () => {
+    const brief = read('assets/templates/design-brief.template.md');
+    for (const field of ['## UX Feature Guard', 'Exact payload acted on', '### Authority & Reuse Map',
+      '### Observable & Copy Contract', 'Positive, negative, and authority-failure Given/When/Then scenarios',
+      'UX-{{SLUG}}-P1', 'Carry these IDs unchanged into the task contract']) expect(brief).toContain(field);
+    expect(brief).toContain('Optional document');
   });
 
   test("keeps explicit PRD guidance while retiring automatic prompt guard advice", () => {

@@ -129,8 +129,7 @@ spawn an LLM or a long-running worker.
 
 ## Host and Adoption Operations
 
-`repo-harness init` writes the workflow contract and package helper guidance
-in `.ai/hooks/README.md`. It does not install user-level adapters;
+`repo-harness init` writes the workflow contract. It does not install user-level adapters;
 `repo-harness install` and `repo-harness update` own them.
 It does not copy the operator library into consumer repositories.
 It removes retired generated hook entry scripts by exact manifest ownership and
