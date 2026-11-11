@@ -252,14 +252,14 @@ describe('docs repository in a new context', () => {
   const OTHER = 'repo-console';
   const STORED = 'repo-harness:operator-repository';
   /** A context with no history record: a new tab, or a pasted or saved link. */
-  async function openContext(url: string, storedPick: string): Promise<void> {
+  async function openContext(url: string, storedPick: string, appProps: OperatorAppProps = props()): Promise<void> {
     if (root) await act(async () => root?.unmount());
     root = null;
     await window.happyDOM.close();
     installDom(url);
     localStorage.setItem(STORED, storedPick);
     requests = [];
-    await mount(new URL(url).hash);
+    await mount(new URL(url).hash, appProps);
   }
 
   test('r4 a Ctrl/Cmd-click on a docs file after a switch and Back opens a new tab that reads the file of the shown repository', async () => {
@@ -276,10 +276,16 @@ describe('docs repository in a new context', () => {
     expect(requests.some(request => request.startsWith(`/api/v1/repositories/${OTHER}/`))).toBe(false);
   });
 
-  test('a pasted link opens the repository that it names, also when the stored pick differs', async () => {
-    await openContext(`http://127.0.0.1:4318/?repository=${OTHER}#docs/docs/README.md`, REPOSITORY);
+  test('a pasted link opens the repository that it names, also when the stored pick differs; a later unregistration replaces the recorded pin', async () => {
+    let registry = REGISTRY;
+    await openContext(`http://127.0.0.1:4318/?repository=${OTHER}#docs/docs/README.md`, REPOSITORY, { ...props(), readRepositories: async () => registry });
     expect([document.querySelector('[data-repository-switch]')?.getAttribute('data-selected'), localStorage.getItem(STORED)]).toEqual([OTHER, REPOSITORY]);
     expect(requests).toContain(fileRequest('docs/README.md', OTHER));
+    registry = registryOf([REPOSITORY]);
+    await act(async () => Array.from(document.querySelectorAll<HTMLButtonElement>('.operator-header button')).find(button => button.textContent === 'Refresh')!.click());
+    await settle();
+    expect([document.querySelector('[data-repository-switch]')?.getAttribute('data-selected'), window.location.hash, document.querySelector('[data-repository-link-unknown]')])
+      .toEqual([REPOSITORY, '#docs', null]);
   });
 
   test('a link that names an unregistered repository shows an error and reads no other repository', async () => {

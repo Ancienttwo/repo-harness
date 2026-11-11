@@ -352,7 +352,7 @@ export function OperatorApp({
   readDocsFile = fetchDocsFile,
 }: OperatorAppProps) {
   // The URL repository of a context with no record. It is not recorded, written or replaced until the registry names it.
-  const [linkRepository] = useState(() => recordedRepository() === null ? linkedRepository() : null);
+  const [linkRepository, setLinkRepository] = useState(() => recordedRepository() === null ? linkedRepository() : null);
   const [repositoryId, setRepositoryId] = useState<string | null>(() => recordedRepository() ?? linkRepository ?? readStorage(OPERATOR_REPOSITORY_STORAGE_KEY));
   const [place, setPlace] = useState<WorkspaceLocation>(() => initialPlace ?? parseWorkspaceLocation(typeof window === 'undefined' ? '' : window.location.hash));
   const [refreshGeneration, setRefreshGeneration] = useState(0);
@@ -374,6 +374,8 @@ export function OperatorApp({
   const firstRegistered = registered[0]?.repository_id ?? null;
   const activeRepository = registered.find(repo => repo.repository_id === repositoryId) ?? null;
   if (repositoryId === null && firstRegistered !== null) setRepositoryId(firstRegistered);
+  // Once the registry names the URL repository, the entry records it and the stale-pin rule below covers it.
+  if (linkRepository !== null && activeRepository?.repository_id === linkRepository) setLinkRepository(null);
   const linkUnverified = linkRepository !== null && repositoryId === linkRepository && activeRepository === null;
   // A link that names an unregistered repository fails closed: the page shows an error and no other repository.
   const rejectedLink = linkUnverified && repositories.kind === 'ready' ? linkRepository : null;
