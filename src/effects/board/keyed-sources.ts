@@ -9,8 +9,8 @@ export const KEYED_SOURCE_MAX_AGE_MS = 60 * 60_000;
 /** The readiness stack walk stops at this depth; a longer chain is not keyed. */
 const STACK_DEPTH_LIMIT = 20;
 
-/** These blockers mark a torn or failed read, not an observation of the pull request; such an answer is not stored. */
-const UNSTABLE_BLOCKERS: ReadonlySet<string> = new Set(['provider_unavailable', 'provider_data_incomplete', 'changed_during_read']);
+/** These blockers mark a torn, failed or still-computing read, not a stable observation of the pull request; such an answer is not stored. */
+const UNSTABLE_BLOCKERS: ReadonlySet<string> = new Set(['provider_unavailable', 'provider_data_incomplete', 'changed_during_read', 'mergeability_pending']);
 
 type GhAnswer = { readonly status: number; readonly stdout: string; readonly stderr?: string };
 export type GhRunner = (args: readonly string[]) => GhAnswer;

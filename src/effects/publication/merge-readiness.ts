@@ -242,9 +242,8 @@ function parseProviderPullRequestIdentity(prNumber: number, repoValue: unknown, 
     || !['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED'].includes(reviewDecision))) {
     throw new MergeReadinessError('provider_data_incomplete', 'provider PR reviewDecision is unknown');
   }
-  if (pr.mergeable !== 'MERGEABLE' && pr.mergeable !== 'CONFLICTING'
-    && !(pr.state === 'MERGED' && pr.mergeable === 'UNKNOWN')) {
-    throw new MergeReadinessError('provider_data_incomplete', 'provider PR mergeable is unknown');
+  if (pr.mergeable !== 'MERGEABLE' && pr.mergeable !== 'CONFLICTING' && pr.mergeable !== 'UNKNOWN') {
+    throw new MergeReadinessError('provider_data_incomplete', 'provider PR mergeable is invalid');
   }
   const identity: ProviderIdentity = Object.freeze({
     provider_repo_id: string(repo.id, 'provider repository id'),
@@ -1238,8 +1237,8 @@ export function collectPullRequestIntegration(input: PullRequestIntegrationInput
   const verdict = projectPullRequestMergeReadiness({ expected_head_sha: input.expected_head_sha,
     expected_base_sha: input.expected_base_sha, integration_mode: 'ancestor', observation: 'stable', provider: round.facts,
     stack: round.stack });
-  // These three blockers describe merge lifecycle, not CI/review acceptance of an already merged PR.
-  const blockers = verdict.blockers.filter(blocker => !['already_integrated', 'pr_not_open', 'not_mergeable'].includes(blocker.code));
+  // These blockers describe merge lifecycle, not CI/review acceptance of an already merged PR.
+  const blockers = verdict.blockers.filter(blocker => !['already_integrated', 'pr_not_open', 'not_mergeable', 'mergeability_pending'].includes(blocker.code));
   if (blockers.length) throw new MergeReadinessError('provider_data_incomplete', `integrated PR evidence refused: ${blockers.map(blocker => blocker.code).join(', ')}`);
   return Object.freeze({ merge_commit_sha: round.extra.merge_commit_sha, merge_tree_sha: round.extra.merge_tree_sha });
 }

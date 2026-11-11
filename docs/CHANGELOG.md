@@ -18,6 +18,7 @@ All notable changes to this skill are documented here.
 
 ### Fixed
 
+- `publication merge` and the readiness read no longer give `provider_data_incomplete` for an open PR when GitHub reports `mergeable` UNKNOWN (#2383). GitHub reports UNKNOWN while it recomputes mergeability, for example after the base moves. The read now gives the blocker `mergeability_pending` (attention owner `external`). It still blocks the merge. Run the command again when GitHub reports MERGEABLE. The board does not store this answer. Only CONFLICTING gives `not_mergeable`. A mergeable value outside MERGEABLE, CONFLICTING and UNKNOWN still gives `provider_data_incomplete` with the detail `provider PR mergeable is invalid`.
 - A merge-readiness read of the board no longer loses a gh stdout that reached the maxBuffer limit. The workflow definition read and the check-run annotations read are optional, so the transport loop swallowed every error of them. A read that the product cannot take in full now fails the readiness read with the limit message. Other errors of an optional read keep their result. (#2551)
 
 ### Changed
