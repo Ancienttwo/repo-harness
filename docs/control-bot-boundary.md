@@ -66,9 +66,12 @@ gets no acceptance pane and no acceptance record.
   grants and `acceptance record` comments. The executor merges only when
   `publication.acceptance_merge` is `on` in `.ai/harness/policy.json` on the
   PR base SHA. With `off`, it exits 3 and merges nothing.
-- The executor needs default-branch protection with strict required checks
-  and enforce_admins. Without them it refuses with
-  `base_protection_insufficient`.
+- The executor needs default-branch protection with required checks and
+  enforce_admins. Without them it refuses with
+  `base_protection_insufficient`. The checks do not need to be strict. The
+  executor merges by direct squash only; a base that requires a merge queue
+  is not supported. When main moved after the reviewed base, the merge proof
+  also needs a git checkout whose `origin` remote git can fetch.
 - The Bot owner manages the GitHub token permissions. In cloud-only mode the
   token needs Administration read permission, so that the executor can read
   branch protection. Without it the executor refuses with

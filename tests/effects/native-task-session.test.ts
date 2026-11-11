@@ -1,10 +1,25 @@
-import { afterEach, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { afterEach, expect, spyOn, test } from 'bun:test';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { bindNativeTaskSession } from '../../src/effects/terminal/native-task-session';
-import type { NativeTaskSessionBinding } from '../../src/effects/terminal/task-session-record';
+import { processProofAlive, type NativeTaskSessionBinding } from '../../src/effects/terminal/task-session-record';
+import { processIdentity } from '../../src/effects/terminal/task-session-io';
 import { bindTaskRuntimeFixture } from '../helpers/engineer-runtime-fixture';
 import { tmpWorkspace, initGitRepo, commitAll, run } from '../helpers/repo-fixture';
+test.each(['ESRCH', 'EPERM', 'EINVAL', undefined])('process liveness: provider probe %s retains identity checks', code => {
+  const proof = { pid: process.pid, identity: processIdentity(process.pid) };
+  const error = Object.assign(new Error('provider probe failed'), { code });
+  const probe = spyOn(process, 'kill').mockImplementation(() => { throw error; });
+  try {
+    if (code === 'EPERM') {
+      expect(processProofAlive(proof)).toBe(true);
+      expect(() => processProofAlive({ ...proof, identity: `${proof.identity}-changed` })).toThrow('task_agent_process_identity_lost');
+      expect(probe.mock.calls).toEqual([[proof.pid, 0], [proof.pid, 0], [proof.pid, 0]]);
+    } else if (code === 'ESRCH') expect(processProofAlive(proof)).toBe(false);
+    else expect(() => processProofAlive(proof)).toThrow(error);
+  } finally { probe.mockRestore(); }
+});
+
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 // Protocol fixtures only: the offline Herdr transport and ready file do not

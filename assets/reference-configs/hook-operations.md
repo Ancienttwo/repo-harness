@@ -129,8 +129,7 @@ spawn an LLM or a long-running worker.
 
 ## Host and Adoption Operations
 
-`repo-harness init` writes the workflow contract and package helper guidance
-in `.ai/hooks/README.md`. It does not install user-level adapters;
+`repo-harness init` writes the workflow contract. It does not install user-level adapters;
 `repo-harness install` and `repo-harness update` own them.
 It does not copy the operator library into consumer repositories.
 It removes retired generated hook entry scripts by exact manifest ownership and
@@ -316,7 +315,6 @@ or `repair`). The error names the one-shot cleanup. Run
 Hooks do not record architecture drift. They keep no queue and no drift cursor,
 and they run no projection or LLM work. Architecture updates are explicit:
 
-- `repo-harness run workstream-sync` maintains durable capability workstreams.
 - Agents read architecture documents on demand, fix debt, and update the model and human prose. The archctx rolling writer publishes generated regions and the manifest.
 
 `repo-harness state resolve --json` reports `capability_ownership`. It is a
@@ -393,8 +391,8 @@ Git-ignored` line and one human `systemMessage`. This line takes the place of
 the notice text, because no marker can deduplicate that text. Claude Stop and
 Codex UserPromptSubmit keep only the stderr diagnostic of a failed marker write.
 Without a marker, the line would repeat at each turn, and each Claude Stop line
-starts one more turn. Add `.ai/harness/state/` to `.gitignore`; the
-`repo-harness init` ignore block has it.
+starts one more turn. Run `repo-harness update`; it writes the runtime-state
+block to the user-level Git excludes file.
 
 | Point | Hosts | When |
 | --- | --- | --- |
@@ -484,7 +482,8 @@ After handler or workflow-contract changes, run:
 
 ```bash
 bun test
-repo-harness run check-task-sync
-repo-harness run check-task-workflow
-repo-harness init --repo . --dry-run
+bash scripts/check-ci.sh governance
 ```
+
+That lane also runs the state boundary check, the helper projection check and
+`repo-harness init --repo . --dry-run` (`scripts/check-ci.sh#governance`).

@@ -1,9 +1,9 @@
 import type { BoardPlanV1 } from '../core/board/board';
-import type { BoardParentsV1 } from '../core/board/parents';
+import type { BoardSeatsV1 } from '../core/board/parents';
 import { isTruncatedDevActivityReason, type DevActivitySourceHealth } from '../core/dev-activity/types';
 import { HC_MIN_VERSION } from '../core/terminal/herdr-pin';
 import type { OfficeCard, OfficeRepositoryView } from './board-office';
-import type { BoardParentsReason, BoardParentsView } from './board-view';
+import type { BoardParentsReason, BoardParentsView, BoardSeatsView } from './board-view';
 import type { BotAccessView } from './bots';
 import type { DevActivityView } from './dev-activity';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
@@ -25,7 +25,8 @@ export type OfficeSetupScope =
   | { readonly kind: 'overview'; readonly rooms: readonly { readonly view: OfficeRepositoryView; readonly card: OfficeCard | null }[] }
   | {
     readonly kind: 'room'; readonly repositoryId: string; readonly parent: number | null;
-    readonly parents: Exclude<BoardParentsView, { readonly kind: 'loading' }>;
+    readonly parents: BoardParentsView;
+    readonly seats: BoardSeatsView;
     /** `unread`: the parents read failed, so no read reached a plan. */
     readonly plan: BoardPlanV1 | 'no_parent' | 'unread';
   };
@@ -129,16 +130,17 @@ function repositoryRow({ repositories, devActivity }: OfficeSetupReads, scope: O
 }
 
 /** A live terminal with a seat label that fails validation: the room is dark, but the label exists. */
-const invalidSeat = (list: BoardParentsV1) => list.seats.find(seat => seat.seat_status === 'unavailable' && seat.state === 'live');
+const invalidSeat = (list: BoardSeatsV1) => list.seats.find(seat => seat.seat_status === 'unavailable' && seat.state === 'live');
 
 function seatsRow(scope: OfficeSetupScope, t: OperatorTranslate): OfficeSetupRow {
   const row = (state: OfficeSetupState, detail: string): OfficeSetupRow => ({ id: 'seats', state, detail, commands: [SEAT_ARGV_COMMAND, SEAT_LABEL_COMMAND] });
   const failed = (reason: BoardParentsReason) => row(reason === 'parents_hc_failed' ? 'failed' : 'unknown', t(`board.reason.${reason}` as OperatorMessageKey));
-  const invalid = (list: BoardParentsV1) => row('failed', t('board.office.setup.seats.invalid', { address: invalidSeat(list)!.address }));
+  const invalid = (list: BoardSeatsV1) => row('failed', t('board.office.setup.seats.invalid', { address: invalidSeat(list)!.address }));
   if (scope.kind === 'room') {
-    const { parents } = scope;
-    if (parents.kind === 'failed') return failed(parents.reason);
-    return invalidSeat(parents.list) === undefined ? row('missing', t('board.office.setup.seats.none')) : invalid(parents.list);
+    const { seats } = scope;
+    if (seats.kind === 'failed') return failed(seats.reason);
+    if (seats.kind === 'loading') return row('unknown', t('board.office.setup.pending'));
+    return invalidSeat(seats.seats) === undefined ? row('missing', t('board.office.setup.seats.none')) : invalid(seats.seats);
   }
   const { rooms } = scope;
   if (rooms.length === 0) return row('unknown', t('board.office.setup.seats.noRepository'));
@@ -149,7 +151,7 @@ function seatsRow(scope: OfficeSetupScope, t: OperatorTranslate): OfficeSetupRow
     return row('ok', unread === 0 ? t('board.office.setup.seats.rooms', { count: lit, total: rooms.length })
       : t('board.office.setup.seats.roomsPartial', { count: lit, unknown: unread, reason: reasons[0] ?? t('board.office.setup.notRead') }));
   }
-  const labelled = rooms.flatMap(room => (room.view.kind === 'ready' && invalidSeat(room.view.list) !== undefined ? [room.view.list] : []));
+  const labelled = rooms.flatMap(room => (room.view.kind === 'ready' && invalidSeat(room.view.seats) !== undefined ? [room.view.seats] : []));
   if (labelled[0] !== undefined) return invalid(labelled[0]);
   if (reasons[0] !== undefined) return failed(reasons[0]);
   return unread > 0 ? row('unknown', t('board.office.setup.pending')) : row('missing', t('board.office.setup.seats.none'));
@@ -157,15 +159,15 @@ function seatsRow(scope: OfficeSetupScope, t: OperatorTranslate): OfficeSetupRow
 
 type RoomPlan = 'planned' | 'no_parent' | { readonly reason: string | null };
 
-/** The plan fact of one overview room. `batch.size` is also null for an unavailable plan, so it does not prove absence. */
+/** The plan fact of one overview room. A plan that is not observed can be unavailable, so it does not prove absence. */
 function roomPlan({ view, card }: Extract<OfficeSetupScope, { readonly kind: 'overview' }>['rooms'][number]): RoomPlan {
   if (card === null) return { reason: view.kind === 'failed' ? view.reason : null };
-  const { summary } = card;
-  if (summary.status === 'no_parent') return 'no_parent';
-  if (summary.status === 'loading') return { reason: null };
-  if (summary.status === 'not_read') return { reason: 'not_read' };
-  if (summary.status === 'unavailable') return { reason: summary.reason };
-  return summary.summary.batch.size === null ? { reason: 'plan_not_observed' } : 'planned';
+  const { board, room } = card;
+  if (board.status === 'no_parent') return 'no_parent';
+  if (board.status === 'loading') return { reason: null };
+  if (board.status === 'not_read') return { reason: 'not_read' };
+  if (board.status === 'unavailable') return { reason: board.reason };
+  return room.plan.status === 'none' ? { reason: 'plan_not_observed' } : 'planned';
 }
 
 function planRow(scope: OfficeSetupScope, t: OperatorTranslate): OfficeSetupRow {

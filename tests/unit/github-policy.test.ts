@@ -1,8 +1,50 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdirSync, writeFileSync } from 'fs';
+import { join } from 'path';
+import { withTempRepo } from '../helpers/repo-fixture';
+import { resolvePolicyReviewBase } from '../../src/effects/review/diff-fingerprint';
 
-import { parseExternalSourcesPolicy, requireManualGithubPolicy } from '../../src/effects/github/policy';
+import { ExternalSourcePolicyError, readExternalSourcesPolicy, parseExternalSourcesPolicy, requireManualGithubPolicy } from '../../src/effects/github/policy';
 
 describe('GitHub external_sources policy', () => {
+  test('disk readers retain their own missing, malformed and section outcomes through the shared decoder', () => {
+    withTempRepo('workflow-policy-readers', (repo) => {
+      const policyPath = join(repo, '.ai/harness/policy.json');
+      const cases = [
+        { text: undefined, review: 'workflow policy is missing or unreadable', github: 'cannot be read:' },
+        { text: '{', review: 'workflow policy is missing or unreadable', github: 'cannot be read:' },
+        { text: 'null', review: 'workflow policy is malformed', github: 'must be an object' },
+        { text: '[]', review: 'workflow policy is malformed', github: 'must be an object' },
+        { text: '{}', review: 'worktree_strategy is missing' },
+        { text: '{"worktree_strategy":{"review_base":" "}}', review: 'worktree_strategy.review_base is missing' },
+        { text: '{"external_sources":{"version":2,"mode":"off"}}', review: 'worktree_strategy is missing', github: 'external_sources.version must be 1' },
+      ];
+      mkdirSync(join(repo, '.ai/harness'), { recursive: true });
+      for (const row of cases) {
+        if (row.text !== undefined) writeFileSync(policyPath, row.text);
+        expect(resolvePolicyReviewBase(repo)).toEqual({ ok: false, reason: row.review });
+        if (row.github) {
+          try {
+            readExternalSourcesPolicy(repo);
+            throw new Error('expected policy failure');
+          } catch (error) {
+            expect(error).toBeInstanceOf(ExternalSourcePolicyError);
+            expect((error as ExternalSourcePolicyError).code).toBe('external_source_policy_invalid');
+            expect((error as Error).message).toContain(row.github);
+            if (row.text === '{') {
+              let syntaxMessage = '';
+              try { JSON.parse(row.text); } catch (syntax) { syntaxMessage = (syntax as Error).message; }
+              expect((error as Error).message).toBe(`.ai/harness/policy.json cannot be read: ${syntaxMessage}`);
+            }
+          }
+        } else expect(readExternalSourcesPolicy(repo)).toEqual({ version: 1, mode: 'off' });
+      }
+      writeFileSync(policyPath, '{"worktree_strategy":{"review_base":" main "},"external_sources":{"version":1,"mode":"off"},"context":null}');
+      expect(resolvePolicyReviewBase(repo)).toEqual({ ok: true, targetRef: 'main' });
+      expect(readExternalSourcesPolicy(repo)).toEqual({ version: 1, mode: 'off' });
+    });
+  });
+
   test('only absent or exact off policy disables refresh', () => {
     expect(parseExternalSourcesPolicy(undefined).mode).toBe('off');
     expect(parseExternalSourcesPolicy({ version: 1, mode: 'off' }).mode).toBe('off');

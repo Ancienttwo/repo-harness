@@ -16,6 +16,7 @@
 import type { RefImpactV1 } from 'archctx-contracts';
 import { PULL_REQUEST_FILES_REASONS, type PullRequestFiles } from './pull-request-files';
 import { isPublicDevActivityText, isPublicRepoPath } from '../public-projections/public-text';
+import { isRecord } from '../evidence/is-record';
 import { TESTS_UNAVAILABLE_REASONS, type TestsSnapshotV1, type TestsUnavailableReason } from './tests';
 
 export const OPERATOR_ARCHITECTURE_MAP_SCHEMA = 'repo-harness.architecture-map.v7' as const;
@@ -117,8 +118,8 @@ export function architectureViolationCommand(part: keyof ArchitectureViolationsL
   return ['archctx', ...ARCHITECTURE_VIOLATION_READS[part]].join(' ');
 }
 
-/** The debt kinds that `archctx debt` reports itself; it defers dependency, flow and practice checks. A stale anchor may name no path. */
-export const ARCHITECTURE_DEBT_KINDS = ['unowned-path', 'ambiguous-owner', 'stale-anchor'] as const;
+/** The debt kinds that `archctx debt` reports itself; it defers dependency, flow and practice checks. A stale anchor or a machine rule may name no path. */
+export const ARCHITECTURE_DEBT_KINDS = ['unowned-path', 'ambiguous-owner', 'stale-anchor', 'state-machine-rule', 'state-machine-stale'] as const;
 export type ArchitectureDebtKind = typeof ARCHITECTURE_DEBT_KINDS[number];
 
 export interface ArchitectureMapNodeV1 {
@@ -207,7 +208,7 @@ export interface ArchitectureMapRefusalV1 {
 
 /** The unavailable state that a map route refusal names; null when the body is not such a refusal. */
 export function decodeArchitectureMapRefusal(body: unknown): ArchitectureMapUnavailableV1 | null {
-  const record = (value: unknown) => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  const record = (value: unknown) => isRecord(value) ? value : null;
   const code = record(record(body)?.error)?.code;
   if (code === 'archctx_error') {
     const archctx = record(record(body)?.archctx);
@@ -473,7 +474,7 @@ const one = (...values: unknown[]): Check => value => values.includes(value);
 const nullable = (check: Check): Check => value => value === null || check(value);
 const list = (check: Check): Check => value => Array.isArray(value) && value.every(check);
 const object = (fields: Record<string, Check>): Check => value => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (!isRecord(value)) return false;
   const record = value as Record<string, unknown>;
   return Object.keys(record).length === Object.keys(fields).length
     && Object.entries(fields).every(([key, check]) => Object.hasOwn(record, key) && check(record[key]));
@@ -635,7 +636,7 @@ function mapIndex(nodes: readonly ArchitectureMapNodeV1[], relations: readonly A
 }
 
 /**
- * Each required flow names nodes of the map; its steps and its outcome
+ * Each required flow has at least one participant and one main step, as the archctx flow schema requires, and names nodes of the map; its steps and its outcome
  * terminals name its own participants. Ids are unique where archctx keys by
  * them. Each declared selector and each proof names a selector that a step
  * names, once. Each proof also names declared evidence.
@@ -650,7 +651,7 @@ function flowsValid(map: ArchitectureMapV1, nodes: ReadonlyMap<string, Architect
     if (entry.applicability !== 'required') return true;
     const participants = new Set(entry.participants.map(participant => participant.id));
     const stepsValid = (steps: readonly ArchitectureMapFlowStepV1[]) => unique(steps.map(step => step.id)) && steps.every(step => participants.has(step.from) && participants.has(step.to));
-    return participants.size === entry.participants.length && entry.participants.every(participant => nodes.has(participant.node))
+    return entry.participants.length > 0 && entry.steps.length > 0 && participants.size === entry.participants.length && entry.participants.every(participant => nodes.has(participant.node))
       && stepsValid(entry.steps) && unique(entry.outcomes.map(outcome => outcome.id))
       && entry.outcomes.every(outcome => stepsValid(outcome.steps) && participants.has(outcome.terminal.participant));
   }) && named(map.flow_evidence) && map.flow_evidence.every(entry => nodes.has(entry.node))

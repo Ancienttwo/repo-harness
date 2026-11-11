@@ -8,6 +8,7 @@ import {
   type DraftPullRequestResult,
   type PublicationRepository,
 } from '../../core/publication/publication-writes';
+import { isRecord } from '../../core/evidence/is-record';
 import { runGithubCommand, type GithubCommandRunner } from '../github/issues';
 
 const DEADLINE_MS = 15_000;
@@ -16,8 +17,8 @@ const MAX_PAGES = 5;
 const REPOSITORY = /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/u;
 const fail = (): never => { throw new Error('GitHub publication observation unavailable or incompatible'); };
 const object = (value: unknown): Record<string, any> => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return fail();
-  return value as Record<string, any>;
+  if (!isRecord(value)) return fail();
+  return value;
 };
 function headCheck(head: DraftPullRequestHead): void {
   if (!REPOSITORY.test(head.repository) || !validPublicationBranchRef(`refs/heads/${head.base_branch}`)

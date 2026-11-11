@@ -71,6 +71,7 @@ function fakeGh(options: FakeGhOptions = {}): NonNullable<PublicationReadinessIn
   return (args) => {
     const command = `${args[0]} ${args[1]}`;
     if (args[0] === 'api' && args[1] === 'repos/example/repo-harness') return { status: 0, stdout: JSON.stringify({ id: 1001, node_id: receipt.provider_repo_id, full_name: 'example/repo-harness', default_branch: receipt.target_ref }) };
+    if (command === 'api repos/example/repo-harness/branches/main/protection') return { status: 0, stdout: JSON.stringify({ required_status_checks: { contexts: [REQUIRED_CI] } }) };
     if (command === 'repo view') return { status: 0, stdout: JSON.stringify({ id: receipt.provider_repo_id, nameWithOwner: 'example/repo-harness' }) };
     if (command === 'pr view') return { status: 0, stdout: JSON.stringify(pr) };
     if (command === 'pr checks') {
@@ -193,7 +194,7 @@ describe('explicit PR readiness effects', () => {
       expect(verdict.blockers[0]?.code).toBe(response.status ? 'provider_unavailable' : 'provider_data_incomplete');
     }
   });
-  test('pending exit 8 and mismatched CI base remain blocked', () => {
+  test('pending exit 8, mismatched CI base and unknown mergeability remain blocked and name the field', () => {
     expect(collectPullRequestMergeReadiness({ ...input, gh_runner: fakeGh() }).blockers.map(b => b.code)).toContain('checks_pending');
     const passing = passingGh();
     const wrongBase = collectPullRequestMergeReadiness({ ...input, gh_runner: args => {
@@ -204,7 +205,15 @@ describe('explicit PR readiness effects', () => {
       return { ...result, stdout: JSON.stringify(run) };
     } });
     expect(wrongBase.ready).toBe(false);
-    expect(wrongBase.blockers).toEqual([{ code: 'provider_data_incomplete', attention_owner: 'external' }]);
+    expect(wrongBase.blockers).toEqual([{ code: 'provider_data_incomplete', attention_owner: 'external',
+      detail: 'required check run does not bind this PR/head/base' }]);
+    const unknownMergeable = collectPullRequestMergeReadiness({ ...input, gh_runner: args => {
+      const result = passing(args);
+      if (args[0] !== 'pr' || args[1] !== 'view') return result;
+      return { ...result, stdout: JSON.stringify({ ...JSON.parse(result.stdout), mergeable: 'UNKNOWN' }) };
+    } });
+    expect(unknownMergeable.blockers).toEqual([{ code: 'provider_data_incomplete', attention_owner: 'external',
+      detail: 'provider PR mergeable is unknown' }]);
   });
 });
 
@@ -414,6 +423,26 @@ test.each([
   }
 });
 
+test.each([
+  [['Governance Verify'], true],
+  [[], false],
+  [['Governance Verify', 'missing'], false],
+] as const)('standalone readiness reads protected contexts %j', (contexts, ready) => {
+  const source = passingGh();
+  const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
+    if (args[1] === 'repos/example/repo-harness/branches/main/protection') {
+      return { status: 0, stdout: JSON.stringify({ required_status_checks: { contexts } }) };
+    }
+    if (args[0] === 'pr' && args[1] === 'checks') {
+      return { status: 0, stdout: JSON.stringify([{ name: 'Governance Verify', bucket: 'pass' }]) };
+    }
+    return source(args);
+  };
+  const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner });
+  expect(verdict.ready).toBe(ready);
+  expect(verdict.blockers.map(blocker => blocker.code)).toEqual(ready ? [] : ['provider_data_incomplete']);
+});
+
 test('ordinary PR consumer uses trusted CI head/base once and needs no local artifact or marker', () => {
   const source = fakeGh(); let ciCalls = 0;
   const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
@@ -496,7 +525,7 @@ test('ordinary provider collector blocks decision changes after normalized empty
 
 // Provider commit responses come from real Git objects, including root and merge commits.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -519,10 +548,9 @@ test('rollback boundary binds the current base to one merged main PR and one rea
     expect(git('rev-list', '--count', `${base}..${squashed}`)).toBe('1');
     const commitData = (sha: string) => ({ sha, parents: git('rev-list', '--parents', '-n', '1', sha).split(' ').slice(1).map(sha => ({ sha })) });
     const mergedPR = { number: 17, merged_at: '2026-10-03T00:00:00Z', merge_commit_sha: base, base: { ref: 'main' } };
-    const scenarios = ['ready', '404', 'forbidden', 'activation-malformed', 'activation-error', 'false-404', 'failed-file', 'missing-pr', 'wrong-main', 'wrong-merge-sha', 'unmerged-pr', 'ambiguous-pr', 'bad-number', 'unsafe-number', 'incomplete-pagination', 'malformed-associations', 'malformed-association', 'bad-merged-at', 'association-error', 'root', 'multiple-parents', 'batch-merge', 'batch-head-mismatch', 'zero-parent', 'same-parent', 'mismatched-commit', 'zero-base', 'commit-error', 'multi-commit-rebase', 'multi-commit-squash', 'parent-other-pr', 'parent-empty', 'parent-malformed', 'parent-malformed-entry', 'parent-missing-number', 'parent-unsafe-number', 'parent-full-page', 'parent-error', 'detail-error', 'wrong-detail-pr', 'wrong-detail-sha', 'unmerged-detail', 'wrong-detail-base', 'malformed-detail'];
+    const scenarios = ['ready', '404', 'forbidden', 'activation-malformed', 'activation-error', 'false-404', 'failed-file', 'missing-pr', 'wrong-main', 'wrong-merge-sha', 'unmerged-pr', 'ambiguous-pr', 'bad-number', 'unsafe-number', 'incomplete-pagination', 'malformed-associations', 'malformed-association', 'bad-merged-at', 'association-error', 'root', 'multiple-parents', 'zero-parent', 'same-parent', 'mismatched-commit', 'zero-base', 'commit-error', 'multi-commit-rebase', 'multi-commit-squash', 'parent-other-pr', 'parent-empty', 'parent-malformed', 'parent-malformed-entry', 'parent-missing-number', 'parent-unsafe-number', 'parent-full-page', 'parent-error', 'detail-error', 'wrong-detail-pr', 'wrong-detail-sha', 'unmerged-detail', 'wrong-detail-base', 'malformed-detail'];
     for (const scenario of scenarios) {
-      const batch = scenario.startsWith('batch-');
-      const observedBase = scenario === 'zero-base' ? '0'.repeat(40) : scenario === 'root' ? before : scenario === 'multiple-parents' || batch ? merge : scenario === 'multi-commit-rebase' ? rebased : scenario === 'multi-commit-squash' ? squashed : base;
+      const observedBase = scenario === 'zero-base' ? '0'.repeat(40) : scenario === 'root' ? before : scenario === 'multiple-parents' ? merge : scenario === 'multi-commit-rebase' ? rebased : scenario === 'multi-commit-squash' ? squashed : base;
       const observedParent = scenario === 'multi-commit-rebase' ? git('rev-parse', `${rebased}^`) : scenario === 'multi-commit-squash' ? base : before;
       const identity = { ...providerIdentity, base_sha: observedBase, changed_files: 0 };
       const requests: string[] = [];
@@ -530,6 +558,7 @@ test('rollback boundary binds the current base to one merged main PR and one rea
         const path = args[1] ?? ''; requests.push(args.join(' '));
         const json = (value: unknown, status = 0) => ({ status, stdout: JSON.stringify(value) });
         const error = () => ({ status: 2, stdout: '', stderr: 'provider unavailable' });
+        if (path === 'repos/example/repo-harness/branches/main/protection') return json({ required_status_checks: { contexts: [REQUIRED_CI] } });
         if (path === 'graphql') { const graph = reviewGraph(); graph.data.node.pullRequest.baseRefOid = observedBase; return json(graph); }
         if (args[0] === 'pr') return json([{ name: 'Required / CI', bucket: 'pass', link: 'https://github.com/example/repo-harness/actions/runs/123/job/456' }]);
         if (path.includes('/actions/runs/123')) return json({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD, status: 'completed', conclusion: 'success', pull_requests: [{ number: 42, head: { sha: HEAD }, base: { sha: observedBase } }] });
@@ -567,9 +596,7 @@ test('rollback boundary binds the current base to one merged main PR and one rea
         if (path === 'repos/example/repo-harness/pulls/17') {
           if (scenario === 'detail-error') return error();
           if (scenario === 'malformed-detail') return json(null);
-          // The batch PR head is the merge commit's second parent; `multiple-parents` is an ordinary feature PR.
           return json({ ...mergedPR, merged: true, merge_commit_sha: observedBase,
-            head: { ref: batch ? 'integration/1287-batch-3' : 'feat/boundary', sha: scenario === 'batch-head-mismatch' ? before : base },
             commits: ['multi-commit-rebase', 'multi-commit-squash'].includes(scenario) ? rebaseCount : Number(git('rev-list', '--count', `${before}..${base}`)),
             ...(scenario === 'wrong-detail-pr' ? { number: 18 } : {}),
             ...(scenario === 'wrong-detail-sha' ? { merge_commit_sha: before } : {}),
@@ -598,7 +625,7 @@ test('rollback boundary binds the current base to one merged main PR and one rea
         throw Error(`Unexpected provider call: ${args.join(' ')}`);
       };
       const syncRead = () => observeProviderReadinessFacts(identity, receipt, { ...input, repo_root: root, gh_runner });
-      if (['ready', '404', 'multi-commit-squash', 'parent-other-pr', 'parent-empty', 'batch-merge'].includes(scenario)) {
+      if (['ready', '404', 'multi-commit-squash', 'parent-other-pr', 'parent-empty'].includes(scenario)) {
         const expected = scenario === '404' ? { status: 'not_active' as const } : { status: 'ready' as const, pr_number: 17, before_sha: observedParent, after_sha: observedBase };
         const syncFacts = syncRead();
         expect(syncFacts.rollback_boundary).toEqual(expected);
@@ -617,8 +644,6 @@ test('rollback boundary binds the current base to one merged main PR and one rea
     }
     git('checkout', '-qb', 'squash-rollback', squashed); git('revert', '--no-edit', squashed);
     expect(git('rev-parse', 'HEAD^{tree}')).toBe(git('rev-parse', `${base}^{tree}`));
-    git('checkout', '-qb', 'batch-rollback', merge); git('revert', '--no-edit', '-m', '1', merge);
-    expect(git('rev-parse', 'HEAD^{tree}')).toBe(git('rev-parse', `${before}^{tree}`));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

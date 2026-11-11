@@ -140,8 +140,7 @@ repo-harness upgrade --registered --apply --expected-revision sha256:REPLACE_WIT
 
 A changed registry refuses the whole apply with exit 2. Apply checks each repo
 again just before its first write. It then runs the `init` refresh transaction,
-`upgrade --scope project --apply` (with `--migrate-worktree-template` only when
-given) and the managed worktree sweep. A failed repo does not stop or roll back
+`upgrade --scope project --apply` and the managed worktree sweep. A failed repo does not stop or roll back
 the other repos. The `init` refresh updates the repo's registry row, so preview
 again before the next apply. The command never commits, pushes or opens a PR.
 `--json` prints one object with `revision`, `apply`, `exitCode` and `repos`.
@@ -761,9 +760,7 @@ head SHA, full binary diff fingerprint, installed helper fingerprint, and PR
 number. The seal has no receipt field. It never owns provider credentials or
 starts a reviewer.
 
-The exact target base commit enables the local gate in
-`.ai/harness/policy.json#merge_gate`; the candidate cannot disable that base
-requirement. Runtime setup installs no merge-gate skill, agent, or provider
+Runtime setup installs no merge-gate skill, agent, or provider
 runtime. Caller `HOME`, helper-source, and runner environment overrides are ignored for
 the protected ship/gate helpers. The official runner pins Bash, Git, and Bun;
 where a fixed trusted host `gh` is present it pins that executable too, and it

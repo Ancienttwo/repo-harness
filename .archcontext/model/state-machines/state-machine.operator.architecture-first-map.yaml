@@ -1,0 +1,112 @@
+schemaVersion: "archcontext.state-machine/v1"
+id: "state-machine.operator.architecture-first-map"
+capabilityId: "capability.runtime-harness.operator"
+name: "Open the architecture page and get the first map of one repository"
+regions:
+  - id: "cycle"
+    label: "The collector cycle"
+    initial: "waiting"
+    states:
+      - { id: "waiting", label: "Waits for the pull request list" }
+      - { id: "this", label: "Builds the map of this repository" }
+      - { id: "others", label: "Builds the other repositories" }
+      - { id: "idle", label: "Idle for 5 minutes" }
+  - id: "result"
+    label: "The result of this repository in this cycle"
+    initial: "none"
+    states:
+      - { id: "none", label: "Not built yet" }
+      - { id: "ready", label: "A map" }
+      - { id: "unavailable", label: "A failure" }
+  - id: "served"
+    label: "The answer of a GET"
+    initial: "pending"
+    states:
+      - { id: "pending", label: "Not collected yet" }
+      - { id: "ready", label: "The map" }
+      - { id: "unavailable", label: "Unavailable" }
+  - id: "answer"
+    label: "The last answer of the page"
+    initial: "none"
+    states:
+      - { id: "none", label: "Loading" }
+      - { id: "pending", label: "Not collected yet" }
+      - { id: "ready", label: "The map" }
+      - { id: "unavailable", label: "Unavailable" }
+      - { id: "no-answer", label: "No answer" }
+  - id: "kept"
+    label: "The page holds a map"
+    initial: "no"
+    states:
+      - { id: "no", label: "No" }
+      - { id: "yes", label: "Yes" }
+  - id: "wait"
+    label: "The wait before the next read"
+    initial: "s30"
+    states:
+      - { id: "s30", label: "30 s" }
+      - { id: "s60", label: "60 s" }
+      - { id: "s120", label: "120 s" }
+events:
+  - id: "pull-requests-ready"
+    label: "the pull request list is ready"
+    source: { kind: "code", path: "src/effects/operator/architecture-map-collector.ts", symbol: "startArchitectureMapCollector", confirmedDigest: "sha256:542a43f4c290158d8a2def6e1a1f3903d34e32f478830770d889a64e71dfcc97" }
+    steps:
+      - when: { cycle: ["waiting"] }
+        then: { cycle: "this" }
+  - id: "map-built"
+    label: "the map of this repository is built"
+    source: { kind: "code", path: "src/effects/operator/architecture-map-collector.ts", symbol: "startArchitectureMapCollector", confirmedDigest: "sha256:542a43f4c290158d8a2def6e1a1f3903d34e32f478830770d889a64e71dfcc97" }
+    steps:
+      - when: { cycle: ["this"], result: ["none", "ready", "unavailable"], served: ["pending", "ready", "unavailable"] }
+        then: { cycle: "others", result: "ready", served: "ready" }
+  - id: "map-fails"
+    label: "the map of this repository fails"
+    source: { kind: "code", path: "src/effects/operator/architecture-map-collector.ts", symbol: "startArchitectureMapCollector", confirmedDigest: "sha256:542a43f4c290158d8a2def6e1a1f3903d34e32f478830770d889a64e71dfcc97" }
+    steps:
+      - when: { cycle: ["this"], result: ["none", "ready", "unavailable"], served: ["pending", "ready", "unavailable"] }
+        then: { cycle: "others", result: "unavailable", served: "unavailable" }
+  - id: "cycle-ends"
+    label: "the last repository of the cycle ends"
+    source: { kind: "code", path: "src/effects/operator/architecture-map-collector.ts", symbol: "startArchitectureMapCollector", confirmedDigest: "sha256:542a43f4c290158d8a2def6e1a1f3903d34e32f478830770d889a64e71dfcc97" }
+    steps:
+      - when: { cycle: ["others"] }
+        then: { cycle: "idle" }
+  - id: "next-cycle"
+    label: "5 minutes pass"
+    source: { kind: "code", path: "src/effects/observation-loop.ts", symbol: "startObservationLoop", confirmedDigest: "sha256:759fdd963e8635f5cd1593854820cb6e1bd69fd6b21e949abeb9502ebeca8c29" }
+    steps:
+      - when: { cycle: ["idle"], result: ["none", "ready", "unavailable"] }
+        then: { cycle: "this", result: "none" }
+  - id: "page-reads"
+    label: "the page reads and gets a typed answer"
+    source: { kind: "code", path: "src/operator-web/ArchitectureMap.tsx", symbol: "useArchitectureMap", confirmedDigest: "sha256:eaf9fafaeb774b4fc288031a1a4633780deb17b6f413c2d428e068170076f69f" }
+    steps:
+      - when: { served: ["pending"], answer: ["none", "pending", "ready", "unavailable", "no-answer"], kept: ["no"], wait: ["s30", "s60", "s120"] }
+        then: { answer: "pending", wait: "s30" }
+      - when: { served: ["ready"], answer: ["none", "pending", "ready", "unavailable", "no-answer"], kept: ["no"], wait: ["s30", "s60", "s120"] }
+        then: { answer: "ready", kept: "yes", wait: "s30" }
+      - when: { served: ["ready"], answer: ["none", "pending", "ready", "unavailable", "no-answer"], kept: ["yes"], wait: ["s30", "s60", "s120"] }
+        then: { answer: "ready", wait: "s30" }
+      - when: { served: ["unavailable"], answer: ["none", "pending", "ready", "unavailable", "no-answer"], wait: ["s30", "s60", "s120"] }
+        then: { answer: "unavailable", wait: "s30" }
+  - id: "page-read-unreachable"
+    label: "the page read gets no answer"
+    source: { kind: "code", path: "src/operator-web/ArchitectureMap.tsx", symbol: "useArchitectureMap", confirmedDigest: "sha256:eaf9fafaeb774b4fc288031a1a4633780deb17b6f413c2d428e068170076f69f" }
+    steps:
+      - when: { answer: ["none", "pending", "ready", "unavailable", "no-answer"], wait: ["s30"] }
+        then: { answer: "no-answer", wait: "s60" }
+      - when: { answer: ["none", "pending", "ready", "unavailable", "no-answer"], wait: ["s60"] }
+        then: { answer: "no-answer", wait: "s120" }
+      - when: { answer: ["none", "pending", "ready", "unavailable", "no-answer"], wait: ["s120"] }
+        then: { answer: "no-answer" }
+rules:
+  - id: "built-map-is-served-ready"
+    label: "BuiltMapIsServed. A GET serves the map that the collector built"
+    never: { result: ["ready"], served: ["pending", "unavailable"] }
+  - id: "built-map-is-served-unavailable"
+    label: "BuiltMapIsServed. A GET serves the failure that the collector holds"
+    never: { result: ["unavailable"], served: ["pending", "ready"] }
+  - id: "pending-keeps-cadence"
+    label: "PendingKeepsCadence. After not collected yet the next read comes after 30 s"
+    never: { answer: ["pending"], wait: ["s60", "s120"] }

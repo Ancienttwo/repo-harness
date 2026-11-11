@@ -10,10 +10,9 @@ import type { BoardCommentPageV1, BoardCommentV1 } from '../src/core/board/sourc
 
 const SHA = 'a'.repeat(40);
 const OLD = 'b'.repeat(40);
-type Tier = 'low' | 'medium' | 'high' | null;
 const pr = (number: number, extra: Partial<BoardPullRequestV1> = {}): BoardPullRequestV1 => ({
   number, url: '', state: 'open', is_draft: false, base_ref: 'main', base_sha: SHA, head_ref: `feat/${number}`, head_sha: SHA, head_committed_at: '', merged_at: null,
-  closes: [number * 10], refs: [], files: [], required_check: { status: 'success', completed_at: '' }, acceptance: { status: 'not_accepted' }, merge_readiness: null,
+  closes: [number * 10], refs: [], files: [], required_check: { status: 'success', completed_at: '' }, acceptance: { status: 'not_accepted' }, merge_readiness: null, merge_readiness_observed_at: null,
   tier: 'high', claude_review: 'not_required', writer_family: null, merge_hold: { status: 'none' }, ...extra,
 });
 const board = (prs: BoardPullRequestV1[], holds: { issue: number; reason: string }[] = []): BoardV1 =>

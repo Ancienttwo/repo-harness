@@ -46,6 +46,10 @@ const TARGET_FACADE_KIND_PACKAGES = [
   // Post-cutover addition: the testing router, sourced from
   // assets/skills/repo-harness-test, projected to both hosts by full only.
   "repo-harness-test",
+  // The explicit-invoke seat skills, projected to Claude only by the peer-runtime plugin.
+  "repo-harness-orchestrator",
+  "repo-harness-advisor",
+  "repo-harness-seat-handoff",
 ];
 
 function readCommand(name: string): string {

@@ -147,4 +147,16 @@ describe("capability-config helper", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test("refuses a Windows drive prefix as the registry reader does", () => {
+    const cwd = tmpWorkspace("capability-config-drive");
+    try {
+      const res = runCapabilityConfig(cwd, ["add", "--prefix", "C:/x", "--create-prefix"]);
+      expect(res.status).not.toBe(0);
+      expect(res.stderr).toContain("absolute path is outside repo");
+      expect(existsSync(join(cwd, ".ai/context/capabilities.json"))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

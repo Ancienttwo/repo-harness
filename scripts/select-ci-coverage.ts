@@ -4,7 +4,8 @@ import { dirname, join, posix } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { discoverPathReferences, loadPathReferences, savePathReferences, sourceKey } from './ci-path-consumers';
-import { documentationOnly, isDocumentationPath } from '../src/core/ci/documentation-path';
+import { isDocumentationPath, PROJECTION_DIRECTORY, PROJECTION_MANIFEST, projectionOutputs } from '../src/core/ci/documentation-path';
+import { loadTestDurations, planShards } from './select-test-suite';
 
 export type CoverageInput = {
   eventName: string; event: unknown; headSha: string; actualHead: string; diffRaw: string | null;
@@ -16,7 +17,10 @@ export function validSha(value: unknown): value is string {
 
 export function diffBase(eventName: string, event: unknown): unknown {
   const payload = event as any;
-  return eventName === 'pull_request' ? payload?.pull_request?.base?.sha : payload?.before;
+  if (eventName === 'pull_request') return payload?.pull_request?.base?.sha;
+  // The queue branch holds this PR on top of the entries ahead of it; base_sha is that parent.
+  if (eventName === 'merge_group') return payload?.merge_group?.base_sha;
+  return payload?.before;
 }
 function validPath(path: string): boolean {
   return !path.split('/').some(part => !part || part === '.' || part === '..') && !/[\r\n]/.test(path);
@@ -26,7 +30,7 @@ export function selectCoverage(input: CoverageInput): CoverageSelection {
   const { eventName, event, headSha, actualHead, diffRaw } = input;
   if (!validSha(headSha) || headSha !== actualHead) return result('invalid', 'checkout-mismatch');
   if (eventName === 'schedule' || eventName === 'workflow_dispatch') return result('daily', 'fixed-main-snapshot');
-  if (!['pull_request', 'push', 'local'].includes(eventName)) return result('invalid', 'unknown-event');
+  if (!['pull_request', 'merge_group', 'push', 'local'].includes(eventName)) return result('invalid', 'unknown-event');
   if (!validSha(diffBase(eventName, event))) return result('invalid', 'invalid-diff-endpoint');
   if (eventName === 'local' && diffRaw === '') return result('affected', 'complete-diff');
   if (diffRaw === null || !diffRaw || !diffRaw.endsWith('\0')) return result('invalid', 'diff-unavailable-or-empty');
@@ -65,7 +69,7 @@ export function configuredTestPreloads(sources: ReadonlyMap<string, string>): st
   return preload.map((path: string) => path.replace(/^\.\//, ''));
 }
 
-export async function analyzeAffectedTests(paths: readonly string[], sources: ReadonlyMap<string, string>, documentationConsumers: readonly string[], previousSources: ReadonlyMap<string, string> = new Map()) {
+export async function analyzeAffectedTests(paths: readonly string[], sources: ReadonlyMap<string, string>, documentationConsumers: readonly string[], previousSources: ReadonlyMap<string, string> = new Map(), outputs: ReadonlySet<string> = new Set()) {
   const files = [...sources.keys()];
   const allTests = files.filter(file => /^tests\/.*\.test\.tsx?$/.test(file)).sort();
   const globalInputs = platformImportClosure(configuredTestPreloads(sources), sources).add(CI_TEST_RUNNER);
@@ -125,6 +129,8 @@ export async function analyzeAffectedTests(paths: readonly string[], sources: Re
   const tests = new Set<string>();
   const uncovered: string[] = [], dailyOnly: string[] = [], retired: string[] = [];
   for (const path of paths) {
+    // A projection output selects no test by name, and it needs no coverage of its own.
+    if (outputs.has(path)) continue;
     if (isDocumentationPath(path)) { for (const test of documentationConsumers) if (sources.has(test)) tests.add(test); continue; }
     if (fullReasons.includes(path)) continue;
     // Eval fixtures are inputs to the eval suite; a rename or deletion must run it.
@@ -174,14 +180,27 @@ export function discoverDailyInputs(sources: ReadonlyMap<string, string>): Set<s
   return new Set();
 }
 export type PlatformInputs = { native: ReadonlySet<string>; home: ReadonlySet<string> };
-export function selectPlatformCoverage(paths: readonly string[], inputs: PlatformInputs): { native_oar: boolean; home_isolation: boolean } {
-  const shared = paths.some(path => path.startsWith('.github/')
-    || ['package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json', 'scripts/check-ci.sh'].includes(path)
-    || path.startsWith('scripts/lib/') || /^scripts\/select-[^/]+\.ts$/.test(path) || path === 'src/core/ci/documentation-path.ts');
-  return {
+/** CI machinery that every platform job runs. */
+function ciMachineryPath(path: string): boolean {
+  return ['package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json', 'scripts/check-ci.sh',
+    'scripts/ci-path-consumers.ts', 'scripts/ci-documentation-consumers.ts'].includes(path)
+    || path.startsWith('scripts/lib/') || /^scripts\/select-[^/]+\.ts$/.test(path) || path === 'src/core/ci/documentation-path.ts';
+}
+export type NativeTrigger = { cause: 'shared' | 'herdr-pin' | 'native-closure'; path: string };
+/**
+ * Each changed path that selects the native job, with its cause. Of `.github/`, only
+ * the CI workflow is shared; the local actions that the job uses are native inputs.
+ */
+export function nativeTriggers(paths: readonly string[], inputs: PlatformInputs): NativeTrigger[] {
+  return paths.flatMap((path): NativeTrigger[] => ciMachineryPath(path) || path === '.github/workflows/ci.yml' ? [{ cause: 'shared', path }]
     // The native job installs the hc version pinned in this package file (install-pinned-herdr-core action).
-    native_oar: shared || paths.some(path => path === 'src/core/terminal/herdr-core-pin.json' || inputs.native.has(path)),
-    home_isolation: shared || paths.some(path => inputs.home.has(path)),
+    : path === 'src/core/terminal/herdr-core-pin.json' ? [{ cause: 'herdr-pin', path }]
+      : inputs.native.has(path) ? [{ cause: 'native-closure', path }] : []);
+}
+export function selectPlatformCoverage(paths: readonly string[], inputs: PlatformInputs): { native_oar: boolean; home_isolation: boolean } {
+  return {
+    native_oar: nativeTriggers(paths, inputs).length > 0,
+    home_isolation: paths.some(path => path.startsWith('.github/') || ciMachineryPath(path) || inputs.home.has(path)),
   };
 }
 
@@ -222,7 +241,7 @@ export async function discoverPlatformInputs(sources: ReadonlyMap<string, string
   const testsFor = (job: string, name: string): string[] => {
     const steps = workflow?.jobs?.[job]?.steps?.filter((step: any) => step.name === name);
     if (steps?.length !== 1 || typeof steps[0].run !== 'string') throw new Error(`Platform coverage requires ${job}: ${name}`);
-    // A job with a `test` matrix runs one file per leg, so its legs are the inventory.
+    // A job with a `test` matrix names its files in its legs, so its legs are the inventory.
     const legs = workflow.jobs[job].strategy?.matrix?.test;
     const commands: unknown[] = Array.isArray(legs) ? legs : [steps[0].run];
     const found = commands.map(command => typeof command === 'string' ? command.match(/tests\/[\w/.-]+\.test\.tsx?/g) ?? [] : []);
@@ -233,6 +252,10 @@ export async function discoverPlatformInputs(sources: ReadonlyMap<string, string
   if (!preloads.length) throw new Error('Platform coverage requires test preloads');
   const native = platformImportClosure([...testsFor('native-oar', 'Run native OAR acceptance tests'), ...preloads], sources);
   const home = platformImportClosure([...testsFor('home-isolation', 'Run the isolation tests'), ...preloads], sources);
+  for (const step of workflow.jobs['native-oar'].steps) if (typeof step.uses === 'string' && step.uses.startsWith('./')) {
+    const action = `${step.uses.slice(2).replace(/\/$/, '')}/`;
+    for (const path of sources.keys()) if (path.startsWith(action)) native.add(path);
+  }
   // A native leg runs the shell scripts that its sources launch, so they are native inputs.
   const launchers = [...native].filter(path => /\.[cm]?[jt]sx?$/.test(path)).map(path => [path, sources.get(path)!] as const);
   const references = await discoverPathReferences(launchers);
@@ -282,6 +305,7 @@ if (import.meta.main) {
   if (selection.mode === 'invalid') throw new Error(selection.reason);
   if (selection.mode === 'daily' && process.env.GITHUB_REF !== 'refs/heads/main') throw new Error('Daily validation requires the fixed main snapshot');
   let platforms = { native_oar: selection.mode === 'daily', home_isolation: selection.mode === 'daily' };
+  let nativeReason = selection.mode === 'daily' ? 'daily' : 'none';
   if (selection.mode === 'affected' && local) {
     const untracked = git(['ls-files', '--others', '--exclude-standard', '--exclude=.ci-affected-tests.json', '-z']).split('\0').filter(Boolean);
     if (untracked.some(path => !validPath(path))) throw new Error('invalid-diff');
@@ -291,13 +315,18 @@ if (import.meta.main) {
   // name a changed document; with none, it runs no build or test job. A test that only may read
   // any document (a child process in the checkout root) runs in the daily suite.
   let documentationConsumers: string[] = [];
-  if (selection.mode === 'affected' && selection.paths.some(isDocumentationPath)) {
+  // A projection output counts as documentation only when no code path joins it, and no test is
+  // selected for it by name. A missing or invalid manifest stops the selection.
+  const outputs = selection.mode === 'affected' && selection.paths.some(path => path.startsWith(PROJECTION_DIRECTORY))
+    ? projectionOutputs(readFileSync(PROJECTION_MANIFEST, 'utf8')) : new Set<string>();
+  const documentsOnly = selection.paths.length > 0 && selection.paths.every(path => isDocumentationPath(path) || outputs.has(path));
+  if (selection.mode === 'affected' && (documentsOnly || selection.paths.some(path => isDocumentationPath(path) && !outputs.has(path)))) {
     const { discoverDocumentationReaders, namedDocumentReaders } = await import('./ci-documentation-consumers');
     // Changed paths add the base-tree documents that the head no longer has, so a deletion keeps its readers.
     const tracked = git(['ls-files', '-z']).split('\0').filter(isDocumentationPath);
     const readers = await discoverDocumentationReaders(process.cwd(), new Set([...tracked, ...selection.paths.filter(isDocumentationPath)]));
-    documentationConsumers = documentationOnly(selection.paths) ? namedDocumentReaders(readers, selection.paths) : [...readers.keys()];
-    if (!documentationConsumers.length && documentationOnly(selection.paths)) selection.mode = 'documentation';
+    documentationConsumers = documentsOnly ? namedDocumentReaders(readers, selection.paths.filter(path => !outputs.has(path))) : [...readers.keys()];
+    if (!documentationConsumers.length && documentsOnly) selection.mode = 'documentation';
   }
   // The push-to-main run fills the cache that PR runs restore; it runs no test.
   const referenceCache = process.env.CI_PATH_REFERENCE_CACHE;
@@ -315,16 +344,25 @@ if (import.meta.main) {
         const old = spawnSync('git', ['show', `${base}:${file}`], { encoding: 'utf8' });
         if (old.status === 0) previousSources.set(file, old.stdout);
       }
-      platforms = selectPlatformCoverage(selection.paths, await discoverPlatformInputs(sources));
-      const coverage = await analyzeAffectedTests(selection.paths, sources, documentationConsumers, previousSources);
+      const platformInputs = await discoverPlatformInputs(sources);
+      platforms = selectPlatformCoverage(selection.paths, platformInputs);
+      const triggers = nativeTriggers(selection.paths, platformInputs);
+      if (triggers.length) nativeReason = triggers.map(({ cause, path }) => `${cause}:${path}`).join(',');
+      const coverage = await analyzeAffectedTests(selection.paths, sources, documentationConsumers, previousSources, outputs);
       if (coverage.uncovered.length) throw new Error(`Affected coverage is unknown for: ${coverage.uncovered.join(', ')}`);
       for (const path of coverage.dailyOnly) console.log(`daily-only=${path}; not verified by this PR`);
       const tests = coverage.tests;
-      writeFileSync('.ci-affected-tests.json', JSON.stringify(tests));
+      // The shard plan is the selection: each verify shard runs one array, and no shard computes a split.
+      const total = Number(process.env.CI_SHARD_TOTAL ?? '1');
+      const durations = loadTestDurations();
+      const plan = planShards(tests, durations, total);
+      writeFileSync('.ci-affected-tests.json', JSON.stringify(plan));
       console.log(`Selected ${tests.length} affected tests for ${selection.paths.length} changed paths`);
+      console.log(`Test durations: ${durations ? `${Object.keys(durations).length} recorded files` : 'no table; equal weights'}`);
+      for (const [index, files] of plan.entries()) console.log(`shard ${index}/${total}: ${files.length} files${files.length ? `: ${files.join(' ')}` : ''}`);
     }
     if (referenceCache) savePathReferences(referenceCache, analyzer, [...sources, ...previousSources]);
   }
-  console.log(`mode=${selection.mode}\nreason=${selection.reason}\nhead=${headSha}\nbase=${base ?? headSha}\nnative_oar=${platforms.native_oar}\nhome_isolation=${platforms.home_isolation}`);
+  console.log(`mode=${selection.mode}\nreason=${selection.reason}\nhead=${headSha}\nbase=${base ?? headSha}\nnative_oar=${platforms.native_oar}\nnative_oar_reason=${nativeReason}\nhome_isolation=${platforms.home_isolation}`);
   if (!local) appendFileSync(process.env.GITHUB_OUTPUT!, `mode=${selection.mode}\nsha=${headSha}\nnative_oar=${platforms.native_oar}\nhome_isolation=${platforms.home_isolation}\n`);
 }

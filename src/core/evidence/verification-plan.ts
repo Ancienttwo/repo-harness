@@ -1,11 +1,10 @@
-import { createHash } from "crypto";
-
 import { canonicalize } from "./canonical-json";
+import { isRecord } from "./is-record";
+import { sha256Prefixed } from "./sha256";
 import type { JsonValue } from "./types";
 
 export const VERIFICATION_PLAN_PROTOCOL = 1 as const;
 
-export type VerificationCheckKind = "command" | "package_test";
 export type VerificationCheckPhase = "preflight" | "verification";
 export type VerificationCheckCost = "normal" | "expensive";
 export type VerificationEvidencePolicy = "current_exact" | "baseline_with_delta";
@@ -59,10 +58,6 @@ function fail(message: string): never {
   throw new VerificationPlanValidationError(message);
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function assertKeys(value: Record<string, unknown>, allowed: readonly string[], context: string): void {
   const unexpected = Object.keys(value).filter((key) => !allowed.includes(key));
   if (unexpected.length > 0) fail(`${context} has unknown field(s): ${unexpected.join(", ")}`);
@@ -90,7 +85,7 @@ function stringArray(value: unknown, field: string, allowEmpty: boolean): readon
 }
 
 function validateInputs(value: unknown, context: string): VerificationCheckInputs {
-  if (!isObject(value)) fail(`${context}.inputs must be an object`);
+  if (!isRecord(value)) fail(`${context}.inputs must be an object`);
   assertKeys(value, ["env"], `${context}.inputs`);
   const env = stringArray(value.env, `${context}.inputs.env`, true);
   for (const name of env) {
@@ -109,7 +104,7 @@ function isForbiddenEvidenceProducerCommand(command: string): boolean {
 }
 
 function validateBaseline(value: unknown, context: string): VerificationBaselineReference {
-  if (!isObject(value)) fail(`${context}.baseline must be an object`);
+  if (!isRecord(value)) fail(`${context}.baseline must be an object`);
   assertKeys(value, ["run_file", "execution_id"], `${context}.baseline`);
   const runFile = nonEmptyString(value.run_file, `${context}.baseline.run_file`);
   if (!runFile.startsWith(".ai/harness/runs/") || runFile.split(/[\\/]+/).includes("..")) {
@@ -123,7 +118,7 @@ function validateBaseline(value: unknown, context: string): VerificationBaseline
 
 function validateCheck(value: unknown, index: number): VerificationCheck {
   const context = `checks[${index}]`;
-  if (!isObject(value)) fail(`${context} must be an object`);
+  if (!isRecord(value)) fail(`${context} must be an object`);
   assertKeys(value, [
     "id", "kind", "command", "path", "cwd", "phase", "cost", "evidence_policy", "necessity",
     "inputs", "baseline", "delta_checks",
@@ -174,7 +169,7 @@ function validateCheck(value: unknown, index: number): VerificationCheck {
 }
 
 export function validateVerificationPlan(value: unknown): VerificationPlan {
-  if (!isObject(value)) fail("Verification Plan must be a JSON object");
+  if (!isRecord(value)) fail("Verification Plan must be a JSON object");
   assertKeys(value, ["protocol", "checks"], "Verification Plan");
   if (value.protocol !== VERIFICATION_PLAN_PROTOCOL) fail(`Verification Plan protocol must be ${VERIFICATION_PLAN_PROTOCOL}`);
   if (!Array.isArray(value.checks)) fail("Verification Plan checks must be an array");
@@ -235,16 +230,12 @@ export function parseVerificationPlanFromContractText(contractText: string): Ver
   return validateVerificationPlan(parsed);
 }
 
-function sha256(value: string): string {
-  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
-}
-
 export function hashVerificationPlan(plan: VerificationPlan): string {
-  return sha256(canonicalize(plan as unknown as JsonValue));
+  return sha256Prefixed(canonicalize(plan as unknown as JsonValue));
 }
 
 export function fingerprintVerificationCheck(check: VerificationCheck): string {
-  return sha256(canonicalize(check as unknown as JsonValue));
+  return sha256Prefixed(canonicalize(check as unknown as JsonValue));
 }
 
 /** Identity of the executable itself, excluding evaluation policy and prose. */
@@ -252,5 +243,5 @@ export function fingerprintVerificationCheckExecution(check: VerificationCheck):
   const executable = check.kind === "command"
     ? { kind: check.kind, command: check.command, cwd: check.cwd, inputs: check.inputs }
     : { kind: check.kind, path: check.path, cwd: check.cwd, inputs: check.inputs };
-  return sha256(canonicalize(executable as unknown as JsonValue));
+  return sha256Prefixed(canonicalize(executable as unknown as JsonValue));
 }

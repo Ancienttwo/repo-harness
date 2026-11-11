@@ -46,6 +46,12 @@ describe('docs command', () => {
     expect(showResult.stdout).toBe(readFileSync(docPath, 'utf-8').trimEnd() + '\n');
   }, 30_000);
 
+  test('resolves a workflow template id to the package template', () => {
+    const result = runDocs(['path', 'prd.template']);
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe(join(ROOT, 'assets/templates/prd.template.md'));
+  }, 30_000);
+
   test('returns exit code 2 for unknown docs', () => {
     const result = runDocs(['path', 'missing-doc']);
     expect(result.status).toBe(2);

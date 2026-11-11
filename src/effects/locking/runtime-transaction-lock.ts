@@ -1,14 +1,15 @@
 import { homedir, userInfo } from 'os';
 import { realpathSync } from 'fs';
 import { join } from 'path';
+import { processExists } from '../process-group-termination';
 import { acquireExclusiveDirectoryLock, readExclusiveDirectoryLockOwner, type ExclusiveDirectoryLockHandle } from './exclusive-directory-lock';
 
 /**
  * The state one runtime transaction protects. `global` is the account home,
- * where installer state lives; `project` is one repository root.
+ * where installer state lives.
  */
 export interface RuntimeTransactionScope {
-  readonly kind: 'global' | 'project';
+  readonly kind: 'global';
   readonly root: string;
 }
 
@@ -35,8 +36,8 @@ export function parentRuntimeTransactionContext(
 ): RuntimeTransactionContext {
   const root = realpathSync(scope.root);
   const assertOwned = () => {
-    if (scope.kind !== 'global' || parent.pid !== process.ppid) throw new Error('candidate runtime context requires its parent owner');
-    process.kill(parent.pid, 0);
+    if (parent.pid !== process.ppid) throw new Error('candidate runtime context requires its parent owner');
+    if (!processExists(parent.pid)) throw new Error('candidate parent no longer owns the global runtime lock');
     const owner = readExclusiveDirectoryLockOwner(root, runtimeTransactionLockRelativePath(scope));
     if (!owner || owner.pid !== parent.pid || owner.lockPath !== parent.lockPath || owner.token !== parent.ownerToken) {
       throw new Error('candidate parent no longer owns the global runtime lock');
@@ -59,13 +60,6 @@ export function globalRuntimeScope(env?: NodeJS.ProcessEnv): RuntimeTransactionS
     ? userInfo().homedir
     : env?.HOME ?? process.env.HOME ?? homedir();
   return { kind: 'global', root };
-}
-
-/** A repository at the account home protects the account files, so it takes the global lock. */
-export function projectRuntimeScope(repoRoot: string, env?: NodeJS.ProcessEnv): RuntimeTransactionScope {
-  const global = globalRuntimeScope(env);
-  if (realpathSync(repoRoot) === realpathOrNull(global.root)) return global;
-  return { kind: 'project', root: repoRoot };
 }
 
 export function runtimeTransactionRoot(scope: RuntimeTransactionScope): string {
@@ -113,11 +107,4 @@ export function withRuntimeTransactionContext<T>(
     return run(context);
   }
   return withRuntimeTransactionLock(scope, run, options);
-}
-
-function realpathOrNull(path: string): string | null {
-  try { return realpathSync(path); } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw error;
-  }
 }

@@ -1,3 +1,4 @@
+import { isRecord } from '../evidence/is-record';
 import { hasUnredactedSecret, replaceSecrets } from '../security/secret-patterns';
 import { isPublicDevActivityText, publicDevActivityText } from '../public-projections/public-text';
 
@@ -107,7 +108,6 @@ export function isRepositoryRelativePath(value: unknown): value is string {
   return segments[0] !== '~' && segments.every(segment => segment !== '' && segment !== '.' && segment !== '..');
 }
 
-const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const counter = (value: unknown, min: number): value is number => Number.isSafeInteger(value) && (value as number) >= min;
 const oneOf = <T>(value: unknown, values: readonly T[]): value is T => values.includes(value as T);
 // A date parser skips text it does not read, such as `(token) 2020`; only the exact UTC form passes.
@@ -121,7 +121,7 @@ function publicText(value: unknown): value is string {
 
 /** Closed decoder for one stored event. Every text must already be redacted. */
 export function decodeDocSessionEvent(value: unknown): DocSessionEventV1 {
-  if (!isObject(value) || !oneOf(value.type, Object.keys(TYPE_KEYS) as DocSessionEventV1['type'][])) throw new Error('doc session event type');
+  if (!isRecord(value) || !oneOf(value.type, Object.keys(TYPE_KEYS) as DocSessionEventV1['type'][])) throw new Error('doc session event type');
   const keys = Object.keys(value).sort();
   const expected = [...COMMON_KEYS, ...TYPE_KEYS[value.type]].sort();
   if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) throw new Error('doc session event keys');
@@ -177,7 +177,7 @@ const PAGE_KEYS = ['activity', 'after', 'complete', 'events', 'kind', 'next_curs
 
 /** Closed decoder for the events read response, for the server before it sends and for the page. */
 export function decodeOperatorDocSessionEvents(value: unknown, sessionId: string, after: string | null): OperatorDocSessionEventsV1 {
-  if (!isObject(value)) throw new Error('doc session events page');
+  if (!isRecord(value)) throw new Error('doc session events page');
   const keys = Object.keys(value).sort();
   if (keys.length !== PAGE_KEYS.length || keys.some((key, index) => key !== PAGE_KEYS[index])) throw new Error('doc session events page keys');
   if (value.protocol !== 1 || value.kind !== 'operator_docs_session_events' || value.session_id !== sessionId || value.after !== after

@@ -28,18 +28,19 @@
  * still be rolled back by manifest. After the window the operator restores an
  * archived backup by hand.
  */
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, type Stats } from 'fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, type Stats } from 'fs';
 import { dirname, join } from 'path';
 import { FS_TRANSACTION_BACKUP_ROOT } from './fs-transaction';
 import { ensureRepoRelativePath, resolveInsideRepo } from './path-safety';
 import { gitExecFileSync, gitSpawnSync } from './git/runner';
+import { readWorkflowPolicyDocument } from './state/resolve-effective-state';
+import { POLICY_ABSENT, POLICY_PATH, isPolicyObject, policyValue } from '../core/workflow/policy-schema';
 
 export const DEFAULT_RETENTION_DAYS = 30;
 /** Default time an archived entry stays in the archive root before it is deleted. */
 const ARCHIVE_GRACE_DAYS = 60;
 export const DEFAULT_ARCHIVE_DAYS = DEFAULT_RETENTION_DAYS + ARCHIVE_GRACE_DAYS;
 export const DEFAULT_ARCHIVE_ROOT = '.ai/harness/archive/retention';
-const POLICY_FILE = '.ai/harness/policy.json';
 const CONFIG_KEYS = new Set(['days', 'archive_days', 'archive_root', 'keep']);
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -113,11 +114,11 @@ export interface RetentionPurgeEntry {
 
 /** One canonical spelling per path, so string overlap equals filesystem overlap. */
 function repoRelative(value: unknown, field: string): string {
-  if (typeof value !== 'string') throw new Error(`${POLICY_FILE}: information_lifecycle.retention.${field} must be a string`);
+  if (typeof value !== 'string') throw new Error(`${POLICY_PATH}: information_lifecycle.retention.${field} must be a string`);
   const result = ensureRepoRelativePath(value.replace(/\/+$/, ''));
-  if (!result.ok || !result.path) throw new Error(`${POLICY_FILE}: information_lifecycle.retention.${field}: ${result.error}`);
+  if (!result.ok || !result.path) throw new Error(`${POLICY_PATH}: information_lifecycle.retention.${field}: ${result.error}`);
   if (result.path.split('/').some((segment) => segment === '' || segment === '.')) {
-    throw new Error(`${POLICY_FILE}: information_lifecycle.retention.${field} must be a canonical path: ${value}`);
+    throw new Error(`${POLICY_PATH}: information_lifecycle.retention.${field} must be a canonical path: ${value}`);
   }
   return result.path;
 }
@@ -131,39 +132,36 @@ function overlaps(a: string, b: string): boolean {
  * optional; a present field with the wrong shape is an error, not a default.
  */
 export function readRetentionConfig(repoRoot: string): RetentionConfig {
-  const policyPath = join(repoRoot, POLICY_FILE);
-  let section: unknown;
-  if (existsSync(policyPath)) {
-    const policy = JSON.parse(readFileSync(policyPath, 'utf8')) as { information_lifecycle?: { retention?: unknown } };
-    section = policy?.information_lifecycle?.retention;
-  }
-  if (section === undefined) {
+  const policy = readWorkflowPolicyDocument(repoRoot);
+  const lifecycle = policy.rootIsObject ? policyValue(policy, 'information_lifecycle') : POLICY_ABSENT;
+  const section = isPolicyObject(lifecycle) ? policyValue(policy, 'information_lifecycle.retention') : POLICY_ABSENT;
+  if (section === POLICY_ABSENT) {
     return { days: DEFAULT_RETENTION_DAYS, archiveDays: DEFAULT_ARCHIVE_DAYS, archiveRoot: DEFAULT_ARCHIVE_ROOT, keep: [] };
   }
   if (!section || typeof section !== 'object' || Array.isArray(section)) {
-    throw new Error(`${POLICY_FILE}: information_lifecycle.retention must be an object`);
+    throw new Error(`${POLICY_PATH}: information_lifecycle.retention must be an object`);
   }
   const record = section as Record<string, unknown>;
   for (const key of Object.keys(record)) {
-    if (!CONFIG_KEYS.has(key)) throw new Error(`${POLICY_FILE}: unknown information_lifecycle.retention key: ${key}`);
+    if (!CONFIG_KEYS.has(key)) throw new Error(`${POLICY_PATH}: unknown information_lifecycle.retention key: ${key}`);
   }
 
   const days = record.days === undefined ? DEFAULT_RETENTION_DAYS : record.days;
   if (typeof days !== 'number' || !Number.isInteger(days) || days < 1) {
-    throw new Error(`${POLICY_FILE}: information_lifecycle.retention.days must be a positive integer`);
+    throw new Error(`${POLICY_PATH}: information_lifecycle.retention.days must be a positive integer`);
   }
   const archiveDays = record.archive_days === undefined ? days + ARCHIVE_GRACE_DAYS : record.archive_days;
   if (typeof archiveDays !== 'number' || !Number.isInteger(archiveDays) || archiveDays <= days) {
-    throw new Error(`${POLICY_FILE}: information_lifecycle.retention.archive_days must be an integer greater than days`);
+    throw new Error(`${POLICY_PATH}: information_lifecycle.retention.archive_days must be an integer greater than days`);
   }
   const archiveRoot = record.archive_root === undefined ? DEFAULT_ARCHIVE_ROOT : repoRelative(record.archive_root, 'archive_root');
   for (const retentionClass of RETENTION_CLASSES) {
     if (overlaps(archiveRoot, retentionClass.dir)) {
-      throw new Error(`${POLICY_FILE}: information_lifecycle.retention.archive_root overlaps scanned directory ${retentionClass.dir}`);
+      throw new Error(`${POLICY_PATH}: information_lifecycle.retention.archive_root overlaps scanned directory ${retentionClass.dir}`);
     }
   }
   const keepValue = record.keep === undefined ? [] : record.keep;
-  if (!Array.isArray(keepValue)) throw new Error(`${POLICY_FILE}: information_lifecycle.retention.keep must be an array`);
+  if (!Array.isArray(keepValue)) throw new Error(`${POLICY_PATH}: information_lifecycle.retention.keep must be an array`);
   const keep = keepValue.map((value, index) => repoRelative(value, `keep[${index}]`));
   return { days, archiveDays, archiveRoot, keep };
 }

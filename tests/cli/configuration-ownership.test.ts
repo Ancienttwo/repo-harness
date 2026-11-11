@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { configurationReceiptPath, readConfigurationReceipt, writeOwnedConfiguration, recordConfigurationChange, readConfigurationFragment, replaceConfigurationFragment } from '../../src/cli/installer/configuration-ownership';
-import { acquireRuntimeTransactionLock, globalRuntimeScope, projectRuntimeScope, runtimeTransactionRoot, withRuntimeTransactionLock } from '../../src/effects/locking/runtime-transaction-lock';
+import { acquireRuntimeTransactionLock, globalRuntimeScope, runtimeTransactionRoot, withRuntimeTransactionLock } from '../../src/effects/locking/runtime-transaction-lock';
 
 function fixture(run: (home: string, env: NodeJS.ProcessEnv) => void) {
   const home = mkdtempSync(join(tmpdir(), 'configuration-ownership-'));
@@ -113,23 +113,37 @@ test('shared host lock serializes concurrent writers and retains both host recei
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
-test.skipIf(process.platform === 'win32')('issue 922 the account scope keeps global-runtime.lock and a repository gets a project lock', () => fixture((home, env) => {
-  const repo = join(home, 'repo');
-  mkdirSync(repo);
+test.skipIf(process.platform === 'win32')('issue 922 the account scope keeps global-runtime.lock', () => fixture((home, env) => {
   const global = globalRuntimeScope(env);
   expect(global).toEqual({ kind: 'global', root: home });
   expect(runtimeTransactionRoot(global)).toBe(join(home, '.repo-harness', 'transactions'));
   withRuntimeTransactionLock(global, (lock) => {
     expect(lock.lockPath).toBe(join(realpathSync(home), '.repo-harness/transactions/global-runtime.lock'));
-    // A held account lock does not block a repository transaction.
-    withRuntimeTransactionLock(projectRuntimeScope(repo, env), (project) => {
-      expect(project.lockPath).toBe(join(realpathSync(repo), '.repo-harness/transactions/project-runtime.lock'));
-    });
   });
-  // A repository at the account home shares the account files, so it shares the account lock.
-  expect(projectRuntimeScope(home, env)).toEqual(global);
 }));
 
+
+test('candidate parent context accepts EPERM, rejects ESRCH and preserves unexpected probe errors', () => fixture((home) => {
+  const lock = acquireRuntimeTransactionLock({ kind: 'global', root: home });
+  try {
+    const modulePath = join(import.meta.dir, '../../src/effects/locking/runtime-transaction-lock.ts');
+    const result = Bun.spawnSync([process.execPath, '-e', `
+      import { strict as assert } from 'assert';
+      import { parentRuntimeTransactionContext } from ${JSON.stringify(modulePath)};
+      const scope = { kind: 'global', root: ${JSON.stringify(home)} };
+      const parent = ${JSON.stringify({ pid: process.pid, lockPath: lock.lockPath, ownerToken: lock.ownerToken })};
+      for (const code of ['EPERM', 'ESRCH', 'EIO']) {
+        const failure = Object.assign(new Error(code), { code });
+        process.kill = () => { throw failure; };
+        const create = () => parentRuntimeTransactionContext(scope, parent);
+        if (code === 'EPERM') create().assertOwned();
+        else if (code === 'ESRCH') assert.throws(create, /candidate parent no longer owns the global runtime lock/);
+        else assert.throws(create, error => error === failure);
+      }
+    `], { stdout: 'pipe', stderr: 'pipe' });
+    expect(result.exitCode, result.stderr.toString()).toBe(0);
+  } finally { lock.release(); }
+}));
 
 test('installer rollback refuses a competing configuration writer before it can report success', async () => {
   const home = mkdtempSync(join(tmpdir(), 'configuration-rollback-lock-'));

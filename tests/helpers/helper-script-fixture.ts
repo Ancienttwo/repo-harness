@@ -1,7 +1,6 @@
 import { expect } from "bun:test";
 import { listHelperFiles } from "../../src/effects/runtime/helper-runner";
 import { buildReviewSubject } from "../../src/effects/review/diff-fingerprint";
-import { spawnSync } from "child_process";
 import {
   chmodSync,
   copyFileSync,

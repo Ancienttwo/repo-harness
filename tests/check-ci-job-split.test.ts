@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { analyzeAffectedTests, bundleInputPaths, discoverDailyInputs, discoverPlatformInputs, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
+import { analyzeAffectedTests, bundleInputPaths, discoverDailyInputs, discoverPlatformInputs, nativeTriggers, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
 import { auditDroppedTests } from '../scripts/ci-edge-audit';
 import { replayNeedsSource } from '../scripts/replay-ci-coverage';
 import { ARCHITECTURE_JOB, ARCHITECTURE_SUMMARY_PATH } from '../scripts/report-ci';
@@ -524,6 +524,7 @@ describe('single affected verification and daily fallback', () => {
     expect(selectCoverage({ ...input, actualHead: '2'.repeat(40), diffRaw: record }).mode).toBe('invalid');
     expect(selectCoverage({ ...input, eventName: 'schedule', diffRaw: null }).mode).toBe('daily');
     expect(selectCoverage({ ...input, eventName: 'push', event: { before: sha }, diffRaw: record }).mode).toBe('report');
+    expect(selectCoverage({ ...input, eventName: 'merge_group', event: { merge_group: { base_sha: sha } }, diffRaw: record }).mode).toBe('affected');
   });
 
   test('real dependency and runtime consumers expand transitively; unknown coverage fails instead of full-suite', async () => {
@@ -587,10 +588,11 @@ describe('single affected verification and daily fallback', () => {
     expect(workflow.on.schedule).toEqual([{ cron: '17 19 * * *' }]);
     expect(jobs.required.name).toBe('Required / CI');
     expect(jobs.required.needs).toEqual(['selection', 'state-boundaries', 'verify', 'home-isolation', 'native-oar', 'architecture-advisory']);
-    // State boundaries run beside selection on every event except a push to main, and Required / CI requires them.
-    expect(jobs['state-boundaries'].needs).toBeUndefined();
-    expect(jobs['state-boundaries'].if).toBe("github.event_name != 'push'");
-    expect(jobs.required.if).toBe("always() && github.event_name == 'pull_request'");
+    // State boundaries run on every event except a push to main and a documentation-only diff, and Required / CI requires them.
+    expect(jobs['state-boundaries'].needs).toBe('selection');
+    expect(jobs['state-boundaries'].if).toBe("github.event_name != 'push' && needs.selection.outputs.mode != 'documentation'");
+    expect(workflow.on.merge_group).toEqual({ types: ['checks_requested'] });
+    expect(jobs.required.if).toBe("always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')");
     const pushJobs = Object.entries(jobs).filter(([, job]: [string, any]) => !job.needs && job.if !== "github.event_name != 'push'").map(([id]) => id);
     expect(pushJobs).toEqual(['selection']);
     expect(jobs.selection.steps.some((step: any) => step.run === 'bun run check:state-boundaries')).toBe(false);
@@ -611,6 +613,16 @@ describe('single affected verification and daily fallback', () => {
     const total = Number(/^\$\{\{ matrix\.shard \}\}\/(\d+)$/.exec(affected.env.CI_SHARD)![1]);
     expect(jobs.verify.strategy).toEqual({ 'fail-fast': false, matrix: { shard: Array.from({ length: total }, (_, index) => index) } });
     expect(total).toBeGreaterThan(1);
+    // The selection job writes one plan array per verify shard from the durations that only the daily run on main saves.
+    expect(select.env.CI_SHARD_TOTAL).toBe(total);
+    const durationRestore = jobs.selection.steps.find((step: any) => step.uses === 'actions/cache/restore@v4');
+    expect(durationRestore.with).toEqual({ path: select.env.TEST_DURATIONS_FILE, key: 'test-durations-${{ github.run_id }}', 'restore-keys': 'test-durations-' });
+    expect(jobs.selection.steps.indexOf(durationRestore)).toBeLessThan(jobs.selection.steps.indexOf(select));
+    const durationSaves = Object.values(jobs).flatMap((job: any) => job.steps ?? []).filter((step: any) => /^actions\/cache(\/save)?@/.test(step.uses ?? '') && String(step.with?.key).startsWith('test-durations-'));
+    expect(durationSaves).toEqual([jobs.test.steps.find((step: any) => step.uses === 'actions/cache/save@v4')]);
+    expect(durationSaves[0].if).toBe("${{ !cancelled() && github.ref == 'refs/heads/main' && steps.durations.outcome == 'success' }}");
+    expect(durationSaves[0].with).toEqual({ path: '${{ runner.temp }}/test-durations.json', key: 'test-durations-${{ github.run_id }}-${{ github.run_attempt }}' });
+    expect(jobs.test.steps.find((step: any) => step.id === 'durations').if).toBe("${{ !cancelled() && github.ref == 'refs/heads/main' }}");
     const upload = jobs.selection.steps.find((step: any) => step.uses === 'actions/upload-artifact@v4');
     expect(upload.with.path).toBe('.ci-affected-tests.json');
     expect(upload.with['include-hidden-files']).toBe(true);
@@ -676,12 +688,12 @@ describe('single affected verification and daily fallback', () => {
     }
     for (const boundaries of ['success', 'failure', 'cancelled', 'skipped', '']) {
       expect(run('success', 'success', 'affected', 'success', 'success', 'true', 'true', boundaries) === 0).toBe(boundaries === 'success');
-      expect(run('success', 'skipped', 'documentation', 'skipped', 'skipped', 'false', 'false', boundaries) === 0).toBe(boundaries === 'success');
+      expect(run('success', 'skipped', 'documentation', 'skipped', 'skipped', 'false', 'false', boundaries) === 0).toBe(boundaries === 'success' || boundaries === 'skipped');
     }
-    // The PR architecture job runs in both PR modes, so only its success passes.
+    // Mode affected needs both check jobs to succeed; mode documentation also passes with them skipped.
     for (const architecture of ['success', 'failure', 'cancelled', 'skipped', '']) {
       expect(run('success', 'success', 'affected', 'success', 'success', 'true', 'true', 'success', architecture) === 0).toBe(architecture === 'success');
-      expect(run('success', 'skipped', 'documentation', 'skipped', 'skipped', 'false', 'false', 'success', architecture) === 0).toBe(architecture === 'success');
+      expect(run('success', 'skipped', 'documentation', 'skipped', 'skipped', 'false', 'false', 'success', architecture) === 0).toBe(architecture === 'success' || architecture === 'skipped');
     }
     for (const home of ['success', 'failure', 'cancelled', 'skipped', '']) {
       for (const native of ['success', 'failure', 'cancelled', 'skipped', '']) {
@@ -709,13 +721,21 @@ describe('single affected verification and daily fallback', () => {
     for (const path of bundleInputPaths({ inputs: { 'src/host.ts': {}, './src/host-dependency.ts': {} } })) native.add(path);
     const home = platformImportClosure(['tests/home.test.ts', 'tests/preload.ts'], sources);
     const inputs = { native, home };
-    for (const path of ['.github/actions/install/action.yml', 'package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json', 'scripts/check-ci.sh', 'scripts/lib/test-home-isolation.mjs', 'scripts/select-ci-coverage.ts', 'src/core/ci/documentation-path.ts']) {
+    for (const path of ['.github/workflows/ci.yml', 'package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json', 'scripts/check-ci.sh', 'scripts/lib/test-home-isolation.mjs', 'scripts/select-ci-coverage.ts', 'src/core/ci/documentation-path.ts',
+      'scripts/ci-path-consumers.ts', 'scripts/ci-documentation-consumers.ts']) {
       expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: true });
     }
     for (const path of ['src/host.ts', 'src/host-dependency.ts', 'tests/native.test.ts', 'tests/helpers/nested.ts']) {
       expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: false });
     }
     expect(selectPlatformCoverage(['src/core/terminal/herdr-core-pin.json'], inputs)).toEqual({ native_oar: true, home_isolation: false });
+    // Other workflows and actions that the native job does not use leave the native lane off.
+    for (const path of ['.github/workflows/release.yml', '.github/actions/install/action.yml']) {
+      expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: false, home_isolation: true });
+    }
+    expect(nativeTriggers(['docs/guide.md', 'package.json', 'src/core/terminal/herdr-core-pin.json', 'src/deep.ts', '.github/workflows/release.yml'], inputs)).toEqual([
+      { cause: 'shared', path: 'package.json' }, { cause: 'herdr-pin', path: 'src/core/terminal/herdr-core-pin.json' }, { cause: 'native-closure', path: 'src/deep.ts' },
+    ]);
     // A src module imported only by a native test root, directly or transitively, triggers the native lane.
     for (const path of ['src/other.ts', 'src/deep.ts', 'assets/schema.json']) {
       expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: false });
@@ -739,11 +759,12 @@ describe('single affected verification and daily fallback', () => {
     const sources = new Map(files.filter(file => existsSync(join(ROOT, file))).map(file => [file, readFileSync(join(ROOT, file), 'utf8')]));
     const inputs = await discoverPlatformInputs(sources, ROOT);
     const job = workflow.jobs['native-oar'];
-    const named = [job.steps.find((step: any) => step.name === 'Run native OAR acceptance tests').run, ...job.strategy.matrix.test.map((leg: string) => sources.get(leg)!)]
+    const named = [job.steps.find((step: any) => step.name === 'Run native OAR acceptance tests').run, ...job.strategy.matrix.test.flatMap((leg: string) => leg.split(' ').map(file => sources.get(file)!))]
       .flatMap(text => text.match(/[\w./-]+\.sh\b/g) ?? []).filter(path => sources.has(path));
     expect(named).toContain('scripts/contract-worktree.sh');
     for (const path of named) expect([path, inputs.native.has(path)]).toEqual([path, true]);
     expect(selectPlatformCoverage(['scripts/contract-worktree.sh'], inputs).native_oar).toBe(true);
+    expect(selectPlatformCoverage(['.github/actions/install-pinned-herdr-core/action.yml'], inputs).native_oar).toBe(true);
   }, 120000);
 
   test('separate platform jobs run on their trigger flags and keep exact candidate checks', () => {
@@ -764,7 +785,7 @@ describe('single affected verification and daily fallback', () => {
     expect(job['runs-on']).toBe('macos-latest');
     expect(job['timeout-minutes']).toBe(10);
     expect(job.strategy).toEqual({ 'fail-fast': false, matrix: { test: [
-      'tests/generic-review.test.ts', 'tests/acceptance-receipt.test.ts', 'tests/herdr-task-lifecycle.test.ts', 'tests/docs-host-isolation.test.ts',
+      'tests/generic-review.test.ts', 'tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts tests/docs-host-isolation.test.ts',
     ] } });
     expect(job['continue-on-error']).toBeUndefined();
     expect(job.steps.every((step: any) => step['continue-on-error'] === undefined)).toBe(true);
@@ -782,7 +803,7 @@ describe('single affected verification and daily fallback', () => {
     expect(native).toHaveLength(1);
     expect(native[0].if).toBeUndefined();
     expect(native[0].shell).toBe('bash');
-    expect(native[0].env).toEqual({ EXPECTED_SHA: '${{ needs.selection.outputs.sha }}', MODE: '${{ needs.selection.outputs.mode }}', TEST_FILE: '${{ matrix.test }}' });
+    expect(native[0].env).toEqual({ EXPECTED_SHA: '${{ needs.selection.outputs.sha }}', MODE: '${{ needs.selection.outputs.mode }}', TEST_FILES: '${{ matrix.test }}' });
     expect(native[0].run.trim().split('\n')).toEqual([
       'set -euo pipefail',
       'test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"',
@@ -798,7 +819,8 @@ describe('single affected verification and daily fallback', () => {
       '  daily) set -- ;;',
       '  *) echo "Unknown coverage mode: $MODE" >&2; exit 1 ;;',
       'esac',
-      'bun run test:files "$TEST_FILE" "$@" --timeout 60000 --max-concurrency 1',
+      'read -r -a files <<< "$TEST_FILES"',
+      'bun run test:files "${files[@]}" "$@" --timeout 60000 --max-concurrency 1',
     ]);
     // A PR runs only the darwin cases; the daily run keeps every native case. The filesystem probe step is gone.
     expect(job.steps.map((step: any) => step.name ?? step.uses)).toEqual([
@@ -822,7 +844,7 @@ describe('single affected verification and daily fallback', () => {
       writeFileSync(event, JSON.stringify({ pull_request: { draft: true, base: { sha: base } } })); writeFileSync(output, '');
       const result = spawnSync(process.execPath, [join(ROOT, 'scripts/select-ci-coverage.ts')], { cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output, GITHUB_SHA: head } });
       expect(result.status).toBe(0);
-      expect(JSON.parse(readFileSync(join(repo, '.ci-affected-tests.json'), 'utf8'))).toEqual(['tests/feature.test.ts']);
+      expect(JSON.parse(readFileSync(join(repo, '.ci-affected-tests.json'), 'utf8'))).toEqual([['tests/feature.test.ts']]);
       expect(readFileSync(output, 'utf8')).toBe(`mode=affected\nsha=${head}\nnative_oar=false\nhome_isolation=false\n`);
     } finally { rmSync(repo, { recursive: true, force: true }); }
   });
@@ -836,7 +858,13 @@ describe('single affected verification and daily fallback', () => {
       git('init', '-q'); git('config', 'user.name', 'CI fixture'); git('config', 'user.email', 'ci@example.invalid'); git('config', 'commit.gpgsign', 'false');
       write('tsconfig.json', JSON.stringify({ compilerOptions: { noEmit: true }, include: ['src/**/*.ts', 'tests/**/*.ts'] }));
       for (const document of ['docs/guide.md', 'docs/helper.md', 'docs/unread.md', 'docs/named.md', 'docs/area/page.md', 'docs/glob/one.md', 'tasks/lessons.md']) write(document, '# Document');
-      write('docs/architecture/.projection-manifest.json', '{}');
+      // Targets: a module document, and a code path outside docs/architecture/ that the manifest must not turn into documentation.
+      const manifest = (extra = {}) => JSON.stringify({ targets: { module: { path: 'docs/architecture/modules/x.md' }, outside: { path: 'src/manifest.ts' }, generated: { path: 'docs/architecture/generated.svg' } }, ...extra });
+      write('docs/architecture/.projection-manifest.json', manifest());
+      write('docs/architecture/modules/x.md', '# Module');
+      write('docs/architecture/generated.svg', '<svg/>');
+      write('docs/architecture/diagrams/not-a-target.mmd', 'graph TD');
+      write('tests/modules.test.ts', "import { join } from 'node:path'; import { readdirSync } from 'node:fs'; const ROOT = join(import.meta.dir, '..'); readdirSync(join(ROOT, 'docs/architecture/modules'));");
       write('src/feature.ts', "export const targetDirectories = ['docs', 'plans'];");
       write('src/manifest.ts', "import { readFileSync } from 'node:fs'; import { join } from 'node:path'; export const manifest = () => readFileSync(join(import.meta.dir, '../docs/architecture/.projection-manifest.json'));");
       write('tests/feature.test.ts', "import { targetDirectories } from '../src/feature';");
@@ -852,7 +880,7 @@ describe('single affected verification and daily fallback', () => {
       git('add', '.'); git('commit', '-qm', 'base'); const base = git('rev-parse', 'HEAD');
       const event = join(repo, '.git/event.json'); const output = join(repo, '.git/output'); const selected = join(repo, '.ci-affected-tests.json');
       writeFileSync(event, JSON.stringify({ pull_request: { base: { sha: base } } }));
-      const rows: [string, string[], string, string[] | null][] = [
+      const rows: [string, string[], string, string[] | null, string?, string?][] = [
         ['named read', ['docs/guide.md', 'tasks/lessons.md'], 'affected', ['tests/guide.test.ts']],
         ['helper import', ['docs/helper.md'], 'affected', ['tests/helper.test.ts']],
         ['root-process consumer runs daily only', ['docs/unread.md'], 'documentation', null],
@@ -860,35 +888,57 @@ describe('single affected verification and daily fallback', () => {
         ['glob', ['docs/glob/one.md'], 'affected', ['tests/glob.test.ts']],
         // Deleted documents are matched as well: the base tree still names them.
         ['deleted document keeps its named reader', ['-docs/named.md'], 'affected', ['tests/named.test.ts']],
-        ['mixed diff keeps every documentation consumer', ['docs/unread.md', 'src/feature.ts'], 'affected', ['tests/directory.test.ts', 'tests/feature.test.ts', 'tests/glob.test.ts', 'tests/guide.test.ts', 'tests/helper.test.ts', 'tests/named.test.ts', 'tests/root.test.ts']],
-        ['manifest reader', ['docs/architecture/.projection-manifest.json'], 'affected', ['tests/manifest.test.ts']],
+        ['mixed diff keeps every documentation consumer', ['docs/unread.md', 'src/feature.ts'], 'affected', ['tests/directory.test.ts', 'tests/feature.test.ts', 'tests/glob.test.ts', 'tests/guide.test.ts', 'tests/helper.test.ts', 'tests/modules.test.ts', 'tests/named.test.ts', 'tests/root.test.ts']],
+        ['projection output is documentation', ['docs/architecture/.projection-manifest.json'], 'documentation', null],
+        ['projection output skips the reader of its directory', ['docs/architecture/.projection-manifest.json', 'docs/architecture/modules/x.md'], 'documentation', null],
+        // A projection output adds no document reader to a mixed diff; src/feature.ts selects its own tests.
+        ['manifest with a code path stays affected', ['docs/architecture/.projection-manifest.json', 'src/feature.ts'], 'affected', ['tests/feature.test.ts', 'tests/named.test.ts']],
+        ['code path that a target names stays affected without the manifest', ['src/manifest.ts'], 'affected', ['tests/manifest.test.ts']],
+        // The manifest lists src/manifest.ts as a target; the docs/architecture/ bound keeps it out of the output set.
+        ['target outside docs/architecture stays affected', ['docs/architecture/.projection-manifest.json', 'src/manifest.ts'], 'affected', ['tests/manifest.test.ts']],
+        ['unlisted diagram is not documentation', ['docs/architecture/diagrams/not-a-target.mmd'], 'error', null, undefined, 'coverage is unknown'],
+        ['generated target with a code path selects without an uncovered path', ['docs/architecture/generated.svg', 'src/feature.ts'], 'affected', ['tests/feature.test.ts', 'tests/named.test.ts']],
+        ['manifest without targets stops the selection', ['docs/architecture/.projection-manifest.json'], 'error', null, '{}', 'has no targets object'],
+        ...['', 'docs/architecture/../other.svg', 'docs/architecture//file.svg'].map((path): [string, string[], string, string[] | null, string, string] =>
+          [`target path ${JSON.stringify(path)} stops the selection`, ['docs/architecture/.projection-manifest.json'], 'error', null, JSON.stringify({ targets: { bad: { path } } }), 'has a target with an invalid path']),
         ['no reader', ['tasks/lessons.md'], 'documentation', null],
       ];
-      for (const [name, changed, mode, tests] of rows) {
+      for (const [name, changed, mode, tests, manifestText, message] of rows) {
         rmSync(selected, { force: true }); git('checkout', '-q', '-B', 'candidate', base);
         for (const path of changed) {
           if (path.startsWith('-')) rmSync(join(repo, path.slice(1)));
-          else write(path, path.endsWith('.json') ? '{"changed":true}' : `${readFileSync(join(repo, path), 'utf8')}\nchanged\n`);
+          else write(path, path.endsWith('.json') ? (manifestText ?? manifest({ changed: true })) : `${readFileSync(join(repo, path), 'utf8')}\nchanged\n`);
         }
         git('add', '.'); git('commit', '-qm', name); const head = git('rev-parse', 'HEAD');
         writeFileSync(output, '');
         const result = spawnSync(process.execPath, [join(ROOT, 'scripts/select-ci-coverage.ts')], { cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output, GITHUB_SHA: head } });
+        if (mode === 'error') { expect({ name, failed: result.status !== 0, stderr: result.stderr.includes(message!) }).toEqual({ name, failed: true, stderr: true }); continue; }
         expect({ name, status: result.status }, result.stderr).toEqual({ name, status: 0 });
         expect({ name, output: readFileSync(output, 'utf8') }).toEqual({ name, output: `mode=${mode}\nsha=${head}\nnative_oar=false\nhome_isolation=false\n` });
-        expect({ name, tests: existsSync(selected) ? JSON.parse(readFileSync(selected, 'utf8')) : null }).toEqual({ name, tests });
+        expect({ name, plan: existsSync(selected) ? JSON.parse(readFileSync(selected, 'utf8')) : null }).toEqual({ name, plan: tests && [tests] });
       }
       // The local affected lane stops after a documentation selection; an affected selection goes on to typecheck.
-      for (const file of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh', 'scripts/lib/architecture-plugin.sh']) write(file, readFileSync(join(ROOT, file), 'utf8'));
-      write('bin/bun', '#!/bin/bash\necho "bun $*" >> "$BUN_LOG"\nif [ "$1" = scripts/select-ci-coverage.ts ]; then echo "mode=$SELECTED_MODE"; fi\n');
+      for (const file of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh', 'scripts/lib/architecture-plugin.sh', 'scripts/select-test-suite.ts']) write(file, readFileSync(join(ROOT, file), 'utf8'));
+      // The shard plan reader is real; every other bun command is logged only.
+      write('bin/bun', '#!/bin/bash\necho "bun $*" >> "$BUN_LOG"\nif [ "$1" = scripts/select-test-suite.ts ]; then exec "$REAL_BUN" "$@"; fi\nif [ "$1" = scripts/select-ci-coverage.ts ]; then echo "mode=$SELECTED_MODE"; fi\n');
       spawnSync('chmod', ['+x', join(repo, 'bin/bun')]);
+      writeFileSync(selected, '[[]]');
       for (const [mode, typecheck] of [['documentation', false], ['affected', true]] as const) {
         const log = join(repo, `.git/bun-${mode}.log`);
         const lane = spawnSync('/bin/bash', [join(repo, 'scripts/check-ci.sh'), 'affected', '--base', base], { cwd: repo, encoding: 'utf8',
-          env: { PATH: `${join(repo, 'bin')}:/usr/bin:/bin`, HOME: repo, BUN_LOG: log, SELECTED_MODE: mode } });
+          env: { PATH: `${join(repo, 'bin')}:/usr/bin:/bin`, HOME: repo, BUN_LOG: log, SELECTED_MODE: mode, REAL_BUN: process.execPath } });
         expect({ mode, status: lane.status }, lane.stderr).toEqual({ mode, status: 0 });
         expect({ mode, exit: lane.stdout.includes('[ci] Documentation-only diff: no build or test job.') }).toEqual({ mode, exit: !typecheck });
         expect({ mode, typecheck: readFileSync(log, 'utf8').includes('bun run check:type') }).toEqual({ mode, typecheck });
       }
+      // A shard whose plan does not hold one array per shard starts no test.
+      writeFileSync(selected, JSON.stringify([['tests/feature.test.ts']]));
+      const shardLog = join(repo, '.git/bun-shard.log');
+      const shard = spawnSync('/bin/bash', [join(repo, 'scripts/check-ci.sh'), 'affected'], { cwd: repo, encoding: 'utf8',
+        env: { PATH: `${join(repo, 'bin')}:/usr/bin:/bin`, HOME: repo, BUN_LOG: shardLog, CI_SHARD: '1/3', REAL_BUN: process.execPath } });
+      expect(shard.status).not.toBe(0);
+      expect(shard.stderr).toContain('Invalid shard plan');
+      expect(readFileSync(shardLog, 'utf8')).not.toContain('build:hook-bundle');
     } finally { rmSync(repo, { recursive: true, force: true }); }
   }, 120_000);
 
@@ -918,7 +968,7 @@ describe('single affected verification and daily fallback', () => {
       git('add', '.'); git('commit', '-qm', 'base');
       git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'HEAD'));
       expect(select('--base', 'origin/main').status).toBe(0);
-      expect(selected()).toEqual([]);
+      expect(selected()).toEqual([[]]);
       write('src/committed.ts', 'export const value=2;'); git('add', 'src/committed.ts'); git('commit', '-qm', 'candidate');
       write('src/staged.ts', 'export const value=2;'); git('add', 'src/staged.ts');
       write('src/unstaged.ts', 'export const value=2;');
@@ -928,7 +978,7 @@ describe('single affected verification and daily fallback', () => {
       const result = select('--base', 'origin/main');
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('mode=affected');
-      expect(selected()).toEqual(['tests/committed.test.ts', 'tests/deleted.test.ts', 'tests/staged.test.ts', 'tests/unstaged.test.ts', 'tests/untracked.test.ts']);
+      expect(selected()).toEqual([['tests/committed.test.ts', 'tests/deleted.test.ts', 'tests/staged.test.ts', 'tests/unstaged.test.ts', 'tests/untracked.test.ts']]);
       expect(select('--base', 'origin/main').status).toBe(0);
       write('unknown/product.conf', 'unknown');
       const unknown = select('--base', 'origin/main');
@@ -973,11 +1023,11 @@ describe('single affected verification and daily fallback', () => {
     expect(reporter.jobs.report.permissions).toEqual({ actions: 'read', contents: 'read', issues: 'write' });
 
     const advisory = jobs['architecture-advisory'];
-    expect(advisory.if).toBe("needs.selection.outputs.mode == 'affected' || needs.selection.outputs.mode == 'documentation'");
+    expect(advisory.if).toBe("needs.selection.outputs.mode == 'affected'");
     expect(advisory.permissions).toBeUndefined();
     expect(jobs.required.steps[0].env.ARCHITECTURE_RESULT).toBe('${{ needs.architecture-advisory.result }}');
     const warn = advisory.steps.find((step: any) => step.name === 'Check the plugin-internals constraint and warn about architecture debt');
-    expect(warn.env).toEqual({ BASE_SHA: '${{ github.event.pull_request.base.sha }}' });
+    expect(warn.env).toEqual({ BASE_SHA: '${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}' });
     expect(warn.run).toBe('bash scripts/check-ci.sh architecture-advisory --base "$BASE_SHA"');
     expect(advisory.steps.find((step: any) => step.uses === 'actions/checkout@v4').with['fetch-depth']).toBe(0);
   });

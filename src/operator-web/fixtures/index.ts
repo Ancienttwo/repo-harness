@@ -27,16 +27,18 @@ import { busyQuota, degradedQuota } from './quota';
 import type { QuotaReader } from '../quota';
 import { decodeArchitectureMap } from '../../core/operator/architecture-map';
 import type { ArchitectureMapRead } from '../ArchitectureMap';
+import type { HistoryReader } from '../ArchitectureHistory';
 // A recorded `operator serve` map of this repository: the model, git line counts and archctx import counts.
 import architectureMap from './architecture-map.json';
+// Seven recorded `archctx history` milestones of this repository (the pages of tests/fixtures/architecture-history), oldest first, as one page.
+import architectureHistory from './architecture-history.json';
 // The board of #1474 projected from the recorded GitHub and hc reads in tests/fixtures/board.
 import board1474 from './board-1474.json';
 // The parent list projected from the recorded GitHub read and the same hc reads (tests/board.test.ts, parent list).
 import boardParents from './board-parents.json';
+import boardSeats from './board-seats.json';
 import { decodeBoard } from '../../core/board/board';
-import { decodeBoardParents } from '../../core/board/parents';
-import { BOARD_SUMMARIES_PROTOCOL, boardSummary } from '../../core/board/summary';
-import type { BoardSummariesRead } from '../board-office';
+import { decodeBoardParents, decodeBoardSeats } from '../../core/board/parents';
 import type { BoardParentsRead, BoardRead } from '../board-view';
 
 export const FIXTURE_NAMES = ['busy', 'empty', 'degraded'] as const;
@@ -94,7 +96,7 @@ export function fixtureProps(name: string): OperatorAppProps {
     fixture === 'busy' ? busyDevActivity(now) : fixture === 'empty' ? emptyDevActivity(now) : degradedDevActivity(now));
   // degraded: the hc core is below the pin, as in the Bots fixture.
   const runtime: RuntimeOverlay = fixture === 'busy' ? busyRuntimeOverlay(now) : fixture === 'empty' ? unavailableRuntimeOverlay()
-    : unavailableRuntimeOverlay(0, { code: 'hc_version_mismatch', expected: { min_version: '0.1.19' }, actual: { version: '0.1.15' } });
+    : unavailableRuntimeOverlay(0, { code: 'hc_version_mismatch', expected: { min_version: '0.1.20' }, actual: { version: '0.1.15' } });
   const repositories = registry(fixture);
   const notifyStatus = notify(now, fixture !== 'degraded');
   // busy: a ready setup check; empty: the first run has not finished; degraded: a timed-out run over drifted data.
@@ -131,6 +133,9 @@ export function fixtureProps(name: string): OperatorAppProps {
         tests: { state: 'unavailable', reason: 'github_unavailable' },
       },
     }) };
+  // busy and degraded: one page of recorded milestones in repo-harness, with no ETag; empty and other repositories: the read fails.
+  const history: HistoryReader = path => fixture !== 'empty' && path.startsWith(`/api/v1/repositories/${HARNESS_ID}/architecture/history?`)
+    ? Promise.resolve({ body: architectureHistory, etag: null }) : Promise.reject(new Error('unavailable'));
   // empty: the first Bot access collection has not finished.
   const botAccess: BotAccessRead = fixture === 'empty' ? { state: 'unavailable', reason: 'bot_access_pending' }
     : { state: 'ok', snapshot: decodeBotAccessSnapshot(fixture === 'busy' ? busyBotAccess(now) : degradedBotAccess(now)) };
@@ -151,17 +156,12 @@ export function fixtureProps(name: string): OperatorAppProps {
   // busy: the recorded parents of repo-harness, none elsewhere; empty: no open parent issue; degraded: hc could not list the seats.
   const recordedParents = decodeBoardParents(boardParents);
   const parents = (repositoryId: string): BoardParentsRead => fixture === 'degraded' ? { state: 'unavailable', reason: 'parents_hc_failed' }
-    : { state: 'ok', list: fixture === 'busy' && repositoryId === HARNESS_ID ? recordedParents : { ...recordedParents, parents: [], seats: [] } };
-  // busy: the board route has read #1474 and no other parent.
-  const summaries = (repositoryId: string): BoardSummariesRead => ({ state: 'ok', summaries: {
-    protocol: BOARD_SUMMARIES_PROTOCOL, kind: 'repo-harness.board-summaries', repository_id: repositoryId,
-    parents: recordedParents.parents.map(({ number }) => (number === recorded.parent.number
-      ? { parent: number, status: 'observed', observed_at: recorded.observed_at, summary: boardSummary(recorded) } : { parent: number, status: 'not_read' })),
-  } });
+    : { state: 'ok', list: fixture === 'busy' && repositoryId === HARNESS_ID ? recordedParents : { ...recordedParents, parents: [] } };
   return {
     readBoard: subject => Promise.resolve(board(subject.repository_id, subject.parent)),
+    readBoardSeats: async repositoryId => fixture === 'degraded' ? { state: 'unavailable', reason: 'parents_hc_failed' }
+      : { state: 'ok', seats: decodeBoardSeats({ ...boardSeats, seats: fixture === 'busy' && repositoryId === HARNESS_ID ? boardSeats.seats : [] }) },
     readBoardParents: repositoryId => Promise.resolve(parents(repositoryId)),
-    readBoardSummaries: repositoryId => Promise.resolve(summaries(repositoryId)),
     fetchDevActivity: () => Promise.resolve(activity),
     initialDevActivity: activity,
     readRuntimeStatus: fixture === 'degraded' ? unavailable('runtime') : () => Promise.resolve(runtime),
@@ -183,6 +183,7 @@ export function fixtureProps(name: string): OperatorAppProps {
     // Only the busy execution view has a verified task with a 64-hex id, so only busy reads an inbox.
     readTaskMessages: request => Promise.resolve(busyTaskMessages(request, now)),
     readArchitectureMap: repositoryId => Promise.resolve(map(repositoryId)),
+    readArchitectureHistory: history,
     readBotAccess: () => Promise.resolve(botAccess),
     readBotReviews: () => Promise.resolve(botReviews),
     readAgentsSettings: agentsSettings.read,

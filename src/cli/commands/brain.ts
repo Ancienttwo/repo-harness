@@ -10,7 +10,9 @@ import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
 import { configuredBrainRoot } from './brain-root';
-import { gitExecFileSync } from '../../effects/git/runner';
+import { gitToplevel } from '../../effects/git/runner';
+import { readWorkflowPolicyDocument } from '../../effects/state/resolve-effective-state';
+import { POLICY_ABSENT, POLICY_PATH, isPolicyObject, policyValue } from '../../core/workflow/policy-schema';
 
 export type BrainLifecycle = 'always-sync' | 'archive-only' | 'never-sync';
 
@@ -89,7 +91,6 @@ export interface BrainSyncResult {
 
 const VALID_SCOPES = new Set(['reference-configs', 'architecture', 'project-docs', 'knowledge', 'workstreams', 'all']);
 const DEFAULT_MANIFEST = '.ai/harness/brain-manifest.json';
-const POLICY_FILE = '.ai/harness/policy.json';
 const VALID_ROLES = new Set(['externalized', 'partial', 'repo-authored']);
 const SYNC_COMMAND = 'repo-harness brain sync';
 
@@ -103,15 +104,7 @@ function stripWildcard(value: string): string {
 
 function resolveRepoRoot(input?: string): string {
   const cwd = path.resolve(input ?? process.cwd());
-  try {
-    const out = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    return out || cwd;
-  } catch {
-    return cwd;
-  }
+  return gitToplevel(cwd) ?? cwd;
 }
 
 function readManifest(repoRoot: string, manifest?: string): { manifest: BrainManifest; manifestPath: string } {
@@ -295,15 +288,19 @@ function countLines(content: string): number {
 }
 
 function readPolicyExternalKnowledge(repoRoot: string, issues: BrainIssue[]): Record<string, unknown> {
-  const policyPath = path.resolve(repoRoot, POLICY_FILE);
-  if (!fs.existsSync(policyPath)) return {};
   try {
-    const policy = JSON.parse(fs.readFileSync(policyPath, 'utf-8')) as {
-      information_lifecycle?: { external_knowledge?: Record<string, unknown> };
+    const policy = readWorkflowPolicyDocument(repoRoot);
+    const lifecycle = policy.rootIsObject ? policyValue(policy, 'information_lifecycle') : POLICY_ABSENT;
+    const knowledge = isPolicyObject(lifecycle) ? policyValue(policy, 'information_lifecycle.external_knowledge') : POLICY_ABSENT;
+    if (!isPolicyObject(knowledge)) return {};
+    // Each consumer accepts only a string, so the absent marker reads as unset.
+    return {
+      manifest_file: policyValue(policy, 'information_lifecycle.external_knowledge.manifest_file'),
+      project_path: policyValue(policy, 'information_lifecycle.external_knowledge.project_path'),
+      sync_script: policyValue(policy, 'information_lifecycle.external_knowledge.sync_script'),
     };
-    return policy?.information_lifecycle?.external_knowledge ?? {};
   } catch {
-    issue(issues, 'error', `Cannot read harness policy: ${POLICY_FILE}`);
+    issue(issues, 'error', `Cannot read harness policy: ${POLICY_PATH}`);
     return {};
   }
 }

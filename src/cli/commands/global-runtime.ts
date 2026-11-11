@@ -9,21 +9,22 @@ import { architecturePort, isArchitectureUnavailable } from '../../core/architec
 import { globalConfigurationWriter, mutateGlobalConfiguration } from '../../effects/configuration/global-configuration';
 import { DEFAULT_SEATS_CONFIG, ROUTING_CLASSES, SeatsConfigMigrationRequiredError, decodeSeatsConfig } from '../../core/board/seats-settings';
 import { checkSeatRoutingModels, seatsRanges } from '../../effects/board/seats-configuration';
-import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
-import { createHash } from "crypto";
+import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { upsertManagedBlock } from "../../core/adoption/managed-block";
+import { assertConfigurationPath } from "../installer/configuration-ownership";
+import { runtimeStateIgnoreOperation, userExcludesFilePath } from "../../effects/adoption/gitignore-plan";
+import { sha256Hex } from "../../core/evidence/sha256";
 import { homedir, tmpdir, userInfo } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { syncWazaSharedRules, wazaStagingRulesAbsent } from "../installer/waza-rules";
 import { applyGlobalContextRefresh, preflightGlobalContextRefresh, type ReportLanguageFlag } from "../installer/global-context";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
-import {
-  syncCrossReviewSkills,
-  type InitRuntimeDependencies,
-} from "./init";
+import { syncCrossReviewSkills } from "./init";
 import { runInstall, type InstallTargetSpec } from "./install";
 import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { DEFAULT_PROCESS_MAX_BUFFER_BYTES, redactProcessOutput, runProcess as runBoundedProcess } from "../../effects/process-runner";
+import { gitChildEnv } from "../../effects/git/runner";
 import { leftoverCheckWarning } from "./upgrade";
 import { commitVerifiedSkillTree, skillTreeSha256 } from "../../effects/skill-tree-integrity";
 import {
@@ -939,6 +940,33 @@ export function updateRegisteredUpgradeSummary(cwd: string, installedCli: boolea
 const AGENT_FLEET_STEP = 'install agent fleet';
 export const GLOBAL_RULES_REFRESH_STEP = 'refresh global working rules';
 
+export const RUNTIME_IGNORE_RULES_STEP = 'write runtime ignore rules';
+
+/** Writes the runtime-state ignore block into the user-level Git excludes file; `core.excludesFile` is never set. */
+function writeRuntimeIgnoreRules(env: NodeJS.ProcessEnv): GlobalRuntimeStep {
+  const step = RUNTIME_IGNORE_RULES_STEP;
+  const target = userExcludesFilePath(env);
+  if (!target.ok) return { step, status: 'failed', detail: target.error };
+  try {
+    // Uninstall refuses a symlinked excludes file, so update must not write a block through one.
+    assertConfigurationPath(target.path, dirname(target.path));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return { step, status: 'failed', detail: `${target.path}: ${reason}; set core.excludesFile to the real file, then run repo-harness update again` };
+  }
+  try {
+    const existing = existsSync(target.path) ? readFileSync(target.path, 'utf-8') : '';
+    const update = upsertManagedBlock(existing, runtimeStateIgnoreOperation(target.path));
+    if (!update.ok) return { step, status: 'failed', detail: `${target.path}: ${update.error}` };
+    if (!update.changed) return { step, status: 'ok', detail: `${target.path}: current` };
+    mkdirSync(dirname(target.path), { recursive: true });
+    writeFileSync(target.path, update.content!);
+    return { step, status: 'ok', detail: `${target.path}: written` };
+  } catch (error) {
+    return { step, status: 'failed', detail: `${target.path}: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
 function installAgentFleet(sourceRoot: string, bunExecutable: string, env: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const script = join(sourceRoot, 'scripts', 'install-agent-fleet.sh');
   if (!existsSync(script)) {
@@ -1438,7 +1466,7 @@ export function configureProtectedHelperPlatform(
       TEMP: runtime.tempDir,
       TMP: runtime.tempDir,
     };
-    const git = runProcess(contract.git_bin, ['--version'], cwd, probeEnv, false);
+    const git = runProcess(contract.git_bin, ['--version'], cwd, gitChildEnv(['--version'], probeEnv), false);
     if (git.status !== 'ok') {
       return { ...git, step: 'configure protected helper platform', detail: 'Git for Windows probe failed' };
     }
@@ -1700,7 +1728,7 @@ export function ensureHerdrCore(input: HerdrCoreInstallInput): HerdrCoreInstallR
     const archive = join(scratch, assetName === "windows-x86_64" ? "herdr-core.zip" : "herdr-core.tar.gz");
     const download = runBoundedProcess("curl", ["--fail", "--location", "--silent", "--show-error", "--output", archive, asset.url], { cwd, env, timeoutMs: 300_000 });
     if (!download.ok) return fail(`download of ${asset.url} failed: ${processFailure(download)}`);
-    const actual = createHash("sha256").update(readFileSync(archive)).digest("hex");
+    const actual = sha256Hex(readFileSync(archive));
     if (actual !== asset.sha256) return fail(`sha256 mismatch for ${asset.url}: expected ${asset.sha256}, got ${actual}; nothing installed`);
     const extract = join(scratch, "extract");
     mkdirSync(extract);
@@ -1784,7 +1812,6 @@ export function migrateSeatsConfiguration(env: NodeJS.ProcessEnv, runtimeLock?: 
 
 export function runGlobalRuntimeSetup(
   opts: GlobalRuntimeOptions = {},
-  dependencies?: InitRuntimeDependencies,
 ): GlobalRuntimeResult {
   const sourceRoot = opts.sourceRoot ?? defaultSourceRoot();
   const cwd = opts.cwd ?? process.cwd();
@@ -1984,5 +2011,6 @@ export function runGlobalRuntimeSetup(
     const pi = installPiPackage(bunGlobalPackageRoot(env)!, plugins.includes('pi') && target === 'both' && opts.hostAdapters !== false, env);
     steps.push({ ...pi, ...(pi.created ? { owned_surface: piPackageSurface(pi.source) } : {}) });
   }
+  steps.push(writeRuntimeIgnoreRules(env));
   return finalizeRuntimeResult(steps);
 }

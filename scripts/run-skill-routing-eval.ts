@@ -234,7 +234,6 @@ import {
 import { parsePluginList, PLUGIN_IDS, type PluginId } from "../src/core/skill-surface/plugin-manifest";
 import {
   parseClaudeStructuredOutput,
-  parseCodexStructuredOutput,
   type ProviderStructuredEvidence,
 } from "./run-skill-evals";
 
@@ -855,7 +854,7 @@ export function evaluateThresholds(
  * was actually reachable), but it is ADVISORY evidence, not a merge gate
  * (see AGGREGATE_ADVISORY_REASON).
  */
-export type EvidenceScope = "single_run_partial" | "aggregate_package_acceptance";
+type EvidenceScope = "single_run_partial" | "aggregate_package_acceptance";
 
 export const SINGLE_RUN_EVIDENCE_NOTE =
   "PARTIAL evidence only: no single profile/host run discovers all 10 " +
@@ -880,7 +879,7 @@ export interface RunOptions {
 
 export interface RoutingRunReport {
   readonly protocol: 1;
-  readonly evidence_scope: "single_run_partial";
+  readonly evidence_scope: EvidenceScope;
   readonly evidence_note: string;
   readonly generated_at: string;
   readonly plugins: readonly PluginId[];
@@ -941,7 +940,7 @@ export const AGGREGATE_EVIDENCE_NOTE =
 
 export interface AggregateRunReport {
   readonly protocol: 1;
-  readonly evidence_scope: "aggregate_package_acceptance";
+  readonly evidence_scope: EvidenceScope;
   readonly advisory: true;
   readonly advisory_reason: string;
   readonly evidence_note: string;

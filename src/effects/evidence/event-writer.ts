@@ -4,7 +4,7 @@
  * run unconditionally here -- there is no other way to produce a record, so
  * there is no skippable "sanitize" step a caller could bypass.
  */
-import { createHash } from "crypto";
+import { sha256Hex } from "../../core/evidence/sha256";
 import type { EvidenceEventRecord, JsonValue, SubjectIdentity, TrustClass } from "../../core/evidence/types";
 import { canonicalize } from "../../core/evidence/canonical-json";
 import { generateEventId } from "../../core/evidence/ulid";
@@ -47,10 +47,6 @@ function assertPayloadPathFieldsAreSafe(value: JsonValue): void {
       );
     }
   }
-}
-
-function sha256Hex(content: Buffer | string): string {
-  return createHash("sha256").update(content).digest("hex");
 }
 
 interface ConstructedPayload {

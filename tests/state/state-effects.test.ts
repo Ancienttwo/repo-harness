@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import {
   chmodSync,
   existsSync,
@@ -30,7 +30,13 @@ import {
   type StateVersionWriteEffects,
 } from '../../src/effects/state/git-state-version-store';
 import { readWorkflowPolicy, resolveEffectiveState } from '../../src/effects/state/resolve-effective-state';
-import { contentRevision, sha256 } from '../../src/effects/state/collect-state-inputs';
+import { contentRevision } from '../../src/effects/state/collect-state-inputs';
+import { sha256Prefixed } from '../../src/core/evidence/sha256';
+import { DEFAULT_RETENTION_DAYS, readRetentionConfig } from '../../src/effects/artifact-retention';
+import { mergeBackTarget } from '../../src/effects/state/coordination-worktree-topology';
+import { publishFileByRename } from '../../src/effects/atomic-append';
+import { capabilitySource } from '../../src/effects/architecture/archctx-provider';
+import { assertArchitecturePolicySelection } from '../../src/cli/installer/install-profile';
 
 describe('Effective State content revision', () => {
   test('uses code-unit ordering when locale collation treats distinct keys as equal', () => {
@@ -41,7 +47,7 @@ describe('Effective State content revision', () => {
       [decomposed, 'sha256:decomposed'],
     ]);
     const reversed = Object.fromEntries(Object.entries(first).reverse());
-    const expected = sha256(JSON.stringify({
+    const expected = sha256Prefixed(JSON.stringify({
       [decomposed]: 'sha256:decomposed',
       [composed]: 'sha256:composed',
     }));
@@ -380,26 +386,83 @@ describe('Effective State version read effects', () => {
   }, 30_000);
 });
 
-describe('minimal_change.mode policy validation', () => {
-  const readPolicy = (policy: unknown) =>
-    readWorkflowPolicy('/repo', () => JSON.stringify(policy));
-
-  test('accepts off, advice, an absent mode and an absent block', () => {
-    expect(() => readPolicy({ minimal_change: { mode: 'off' } })).not.toThrow();
-    expect(() => readPolicy({ minimal_change: { mode: 'advice' } })).not.toThrow();
-    expect(() => readPolicy({ minimal_change: {} })).not.toThrow();
-    expect(() => readPolicy({})).not.toThrow();
+describe('policy loader: one reader of the file from disk', () => {
+  test('a policy key outside the tree loads and does not fail a reader', () => {
+    // `agentic_development` is not a tree key; the loader ignores it instead of rejecting the file.
+    expect(() => readWorkflowPolicy('/repo', () => JSON.stringify({
+      agentic_development: { routing: { design_plan: 'parent-agent:geju' } },
+      worktree_strategy: { base_branch: 'main', review_base: 'main', merge_back: { target: 'main' } },
+    }))).not.toThrow();
   });
 
-  test('rejects enforce and any other value', () => {
-    expect(() => readPolicy({ minimal_change: { mode: 'enforce' } })).toThrow(
-      'invalid workflow policy value .minimal_change.mode: enforce',
+  test('the loader keeps its two malformed-input messages and its absent-file null', () => {
+    expect(() => readWorkflowPolicy('/repo', () => '{"context": ')).toThrow(
+      'invalid workflow policy JSON: .ai/harness/policy.json',
     );
-    expect(() => readPolicy({ minimal_change: { mode: 'strict-ish' } })).toThrow(
-      'invalid workflow policy value .minimal_change.mode: strict-ish',
+    expect(() => readWorkflowPolicy('/repo', () => '[]')).toThrow(
+      'invalid workflow policy object: .ai/harness/policy.json',
     );
-    expect(() => readPolicy({ minimal_change: { mode: 1 } })).toThrow(
-      'invalid workflow policy value .minimal_change.mode: 1',
-    );
+    expect(readWorkflowPolicy('/repo', () => null)).toBeNull();
+  });
+});
+
+describe('each policy reader validates only the keys it reads', () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'policy-reader-')));
+  afterAll(() => { rmSync(root, { recursive: true, force: true }); });
+  const repoWith = (name: string, policy: unknown): string => {
+    const repo = join(root, name);
+    mkdirSync(join(repo, '.ai/harness'), { recursive: true });
+    writeFileSync(join(repo, '.ai/harness/policy.json'), `${JSON.stringify(policy)}\n`);
+    return repo;
+  };
+  const env = { HOME: root } as NodeJS.ProcessEnv;
+
+  test('a value that the state resolver rejects does not stop another reader', () => {
+    const repo = repoWith('other-key', { worktree_strategy: { base_branch: 123 } });
+    expect(readRetentionConfig(repo).days).toBe(DEFAULT_RETENTION_DAYS);
+    expect(capabilitySource(repo)).toBe('registry');
+    expect(() => assertArchitecturePolicySelection(repo, ['product'], env)).not.toThrow();
+  });
+
+  test('the merge-back reader keeps its own message for its own key', () => {
+    for (const target of [123, '']) {
+      const repo = repoWith(`merge-back-${String(target)}`, { worktree_strategy: { merge_back: { target } } });
+      expect(() => mergeBackTarget(repo)).toThrow('integration target is invalid');
+    }
+  });
+
+  test('a [] or null root, or a non-object section, gives each lenient reader its absent result', () => {
+    const policies: Array<[string, unknown]> = [
+      ['array-root', []],
+      // A null root crashed these readers with a raw TypeError before #2398.
+      ['null-root', null],
+      ['scalar-sections', { worktree_strategy: 5, context: 5, information_lifecycle: 5, tooling: { codegraph: 5 } }],
+    ];
+    for (const [name, policy] of policies) {
+      const repo = repoWith(name, policy);
+      expect(readRetentionConfig(repo).days).toBe(DEFAULT_RETENTION_DAYS);
+      expect(capabilitySource(repo)).toBe('registry');
+      expect(() => assertArchitecturePolicySelection(repo, ['product'], env)).not.toThrow();
+      // The default target `main` reaches the Git probe; the fixture has no Git.
+      expect(() => mergeBackTarget(repo)).toThrow('local integration target is unavailable: refs/remotes/origin/main');
+    }
+  });
+
+  test('the state resolver keeps its non-object parent message', () => {
+    expect(() => readWorkflowPolicy('/repo', () => '{"worktree_strategy":5}'))
+      .toThrow('invalid workflow policy field .worktree_strategy.review_base: non-object parent');
+  });
+});
+
+describe('publish by rename', () => {
+  test('a rename that throws removes the temporary file and rethrows', () => {
+    const root = mkdtempSync(join(tmpdir(), 'publish-by-rename-'));
+    try {
+      const target = join(root, 'record.json');
+      mkdirSync(join(target, 'occupied'), { recursive: true });
+      const temporary = `${target}.tmp`;
+      expect(() => publishFileByRename(target, Buffer.from('{}'), temporary)).toThrow();
+      expect(existsSync(temporary)).toBe(false);
+    } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });

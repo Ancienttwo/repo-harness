@@ -42,9 +42,16 @@ export type MergeReadinessErrorCode =
   | 'provider_data_incomplete';
 
 export class MergeReadinessError extends Error {
-  constructor(readonly code: MergeReadinessErrorCode, message: string, readonly cause?: unknown) {
+  /**
+   * The local field name that a readiness blocker may show. It never holds
+   * provider text or gh arguments; a message that embeds them passes its own detail.
+   */
+  readonly detail: string;
+
+  constructor(readonly code: MergeReadinessErrorCode, message: string, readonly cause?: unknown, detail?: string) {
     super(message);
     this.name = 'MergeReadinessError';
+    this.detail = detail ?? message;
   }
 }
 
@@ -91,6 +98,8 @@ export interface PublicationReadinessInput {
    * of a second contents read. The ref must be the expected base.
    */
   readonly policy_file_at_base?: PolicyFileAtRef;
+  /** Internal effect seam: status checks from the executor's base protection read. */
+  readonly required_status_checks_at_base?: unknown;
 }
 
 export interface ProviderIdentity {
@@ -167,7 +176,8 @@ function ghObserve(input: PublicationReadinessInput, args: readonly string[], ac
   try {
     return { status: result.status, value: JSON.parse(result.stdout) };
   } catch (error) {
-    throw new MergeReadinessError('provider_data_incomplete', `provider returned invalid JSON: gh ${args.join(' ')}`, error);
+    throw new MergeReadinessError('provider_data_incomplete', `provider returned invalid JSON: gh ${args.join(' ')}`, error,
+      'provider response is not valid JSON');
   }
 }
 
@@ -337,6 +347,7 @@ interface ProviderCheck {
   readonly name: string;
   readonly bucket: ProviderCheckBucket;
   readonly link: string;
+  readonly workflow: string;
 }
 
 function providerCheck(value: unknown): ProviderCheck {
@@ -348,9 +359,9 @@ function providerCheck(value: unknown): ProviderCheck {
   return Object.freeze({
     name: string(check.name, 'provider required check name'),
     bucket: check.bucket as ProviderCheckBucket,
-    // A required check can be external and have no Actions link; only
-    // Required / CI is required to link one.
+    // External status checks need no Actions link.
     link: typeof check.link === 'string' ? check.link : '',
+    workflow: typeof check.workflow === 'string' ? check.workflow : '',
   });
 }
 
@@ -359,10 +370,25 @@ function checkArray(value: unknown): ProviderCheck[] {
   return value.map(providerCheck);
 }
 
-function requiredCIRunPath(identity: ProviderIdentity, checks: readonly ProviderCheck[]): string {
-  const required = checks.filter(check => check.name === 'Required / CI');
-  if (required.length !== 1) throw new MergeReadinessError('provider_data_incomplete', 'exactly one Required / CI check is required');
-  return checkLink(identity, required[0]!).run_api_path;
+function protectedChecks(identity: ProviderIdentity, prNumber: number, input: PublicationReadinessInput): ProviderCheck[] {
+  const required = input.required_status_checks_at_base === undefined
+    ? object(gh(input, ['api', `repos/${identity.repo_name_with_owner}/branches/${encodeURIComponent(identity.base_ref)}/protection`]), 'base protection').required_status_checks
+    : input.required_status_checks_at_base;
+  const contexts = object(required, 'base required status checks').contexts;
+  if (!Array.isArray(contexts) || contexts.length === 0) {
+    throw new MergeReadinessError('provider_data_incomplete', 'base protection must require at least one status check context');
+  }
+  const names = new Set(contexts.map(context => string(context, 'protected check context')));
+  const checks = checkArray(gh(input, [
+    'pr', 'checks', String(prNumber), '--required', '--json', 'name,bucket,link,workflow',
+  ], [0, 1, 8]));
+  for (const name of names) {
+    if (!checks.some(check => check.name === name)) {
+      throw new MergeReadinessError('provider_data_incomplete', `protected check context is missing: ${name}`, undefined,
+        'a base protection required_status_checks context is missing from the required checks');
+    }
+  }
+  return checks;
 }
 
 interface RequiredCheckLink {
@@ -374,13 +400,13 @@ interface RequiredCheckLink {
 
 function checkLink(identity: ProviderIdentity, check: ProviderCheck): RequiredCheckLink {
   let url: URL;
-  try { url = new URL(check.link); } catch { throw new MergeReadinessError('provider_data_incomplete', 'required CI check URL unavailable'); }
+  try { url = new URL(check.link); } catch { throw new MergeReadinessError('provider_data_incomplete', 'required Actions check URL unavailable'); }
   const segments = url.pathname.split('/').filter(Boolean);
   const [owner, repo] = identity.repo_name_with_owner.split('/');
   if (url.protocol !== 'https:' || url.hostname !== 'github.com' || segments.length !== 7
     || segments[0] !== owner || segments[1] !== repo || segments[2] !== 'actions'
     || segments[3] !== 'runs' || segments[5] !== 'job' || !/^\d+$/.test(segments[4]!) || !/^\d+$/.test(segments[6]!)) {
-    throw new MergeReadinessError('provider_data_incomplete', 'required CI is not a repository Actions check');
+    throw new MergeReadinessError('provider_data_incomplete', 'required check is not a repository Actions check');
   }
   return Object.freeze({
     run_id: Number(segments[4]),
@@ -415,19 +441,6 @@ function requiredCheckRunFacts(identity: ProviderIdentity, value: unknown, label
     run_attempt: Number(attempt),
     workflow_id: Number.isSafeInteger(run.workflow_id) && Number(run.workflow_id) > 0 ? Number(run.workflow_id) : null,
   });
-}
-
-function validateRequiredCIRun(identity: ProviderIdentity, value: unknown, checks: readonly ProviderCheck[]): RequiredCheckRunFacts {
-  const run = object(value, 'required CI run');
-  if (run.path !== '.github/workflows/ci.yml' || run.event !== 'pull_request') {
-    throw new MergeReadinessError('provider_data_incomplete', 'required CI does not bind this PR/head/base');
-  }
-  const facts = requiredCheckRunFacts(identity, value, 'required CI run');
-  const required = checks.find(check => check.name === 'Required / CI')!;
-  if (required.bucket === 'pass' && (run.status !== 'completed' || run.conclusion !== 'success')) {
-    throw new MergeReadinessError('provider_data_incomplete', 'green required check has no successful trusted CI run');
-  }
-  return facts;
 }
 
 type AttemptConclusion = 'success' | 'failure' | 'timed_out' | 'cancelled' | 'skipped' | 'unknown';
@@ -686,21 +699,17 @@ function* checkEvidence(
 function* requiredCheckFailures(
   identity: ProviderIdentity,
   checks: readonly ProviderCheck[],
-  firstRun: RequiredCheckRunFacts,
 ): Generator<ProviderRequest, RequiredCheckFailureEvidenceV1[], unknown> {
   const evidence: RequiredCheckFailureEvidenceV1[] = [];
+  const runs = new Map<string, RequiredCheckRunFacts>();
   for (const check of checks) {
-    let link: RequiredCheckLink;
-    try {
-      link = checkLink(identity, check);
-    } catch (error) {
-      // Only Required / CI must be a repository Actions check. Other required
-      // checks keep their bucket and blocker without invented evidence.
-      if (check.name === 'Required / CI') throw error;
-      continue;
+    if (check.workflow === '' && !/^https?:\/\/github\.com\/[^/]+\/[^/]+\/actions\//u.test(check.link)) continue;
+    const link = checkLink(identity, check);
+    let run = runs.get(link.run_api_path);
+    if (run === undefined) {
+      run = requiredCheckRunFacts(identity, yield { args: ['api', link.run_api_path] }, 'required check run');
+      runs.set(link.run_api_path, run);
     }
-    const run = check.name === 'Required / CI' ? firstRun
-      : requiredCheckRunFacts(identity, yield { args: ['api', link.run_api_path] }, 'required check run');
     const failure = yield* checkEvidence(identity, check, run, link);
     if (failure) evidence.push(failure);
   }
@@ -779,7 +788,8 @@ function changedFilePage(value: unknown): ChangedFilePage {
 function* changedPaths(identity: ProviderIdentity): Generator<ProviderRequest, string[], unknown> {
   if (identity.changed_files > CHANGED_FILE_LIMIT) {
     throw new MergeReadinessError('provider_data_incomplete',
-      `the PR reports ${identity.changed_files} changed files; the provider lists at most ${CHANGED_FILE_LIMIT}`);
+      `the PR reports ${identity.changed_files} changed files; the provider lists at most ${CHANGED_FILE_LIMIT}`, undefined,
+      'provider PR changedFiles exceeds the file list limit');
   }
   const pages = Math.ceil(identity.changed_files / CHANGED_FILE_PAGE_SIZE);
   const files: { readonly filename: string; readonly previous_filename?: string }[] = [];
@@ -791,7 +801,8 @@ function* changedPaths(identity: ProviderIdentity): Generator<ProviderRequest, s
   }
   if (files.length !== identity.changed_files) {
     throw new MergeReadinessError('provider_data_incomplete',
-      `the PR reported ${identity.changed_files} changed files but the provider listed ${files.length}`);
+      `the PR reported ${identity.changed_files} changed files but the provider listed ${files.length}`, undefined,
+      'provider PR file list does not match changedFiles');
   }
   const paths = files.flatMap((file) => file.previous_filename === undefined ? [file.filename] : [file.filename, file.previous_filename]);
   return [...new Set(paths)].sort();
@@ -799,7 +810,8 @@ function* changedPaths(identity: ProviderIdentity): Generator<ProviderRequest, s
 
 function policyAtRef(contents: unknown, ref: string): PolicyFileAtRef {
   const file = policyFileFromContents(contents);
-  if (file === null) throw new MergeReadinessError('provider_data_incomplete', `${PUBLICATION_POLICY_PATH} at ${ref} is not a readable file`);
+  if (file === null) throw new MergeReadinessError('provider_data_incomplete', `${PUBLICATION_POLICY_PATH} at ${ref} is not a readable file`, undefined,
+    `${PUBLICATION_POLICY_PATH} at the base is not a readable file`);
   return file;
 }
 
@@ -909,11 +921,11 @@ function* rollbackBoundary(identity: ProviderIdentity): Generator<string, Provid
     || object(detail.base, 'merged parent PR detail base').ref !== identity.base_ref) {
     throw new MergeReadinessError('provider_data_incomplete', 'merged parent PR detail does not match the rollback boundary');
   }
-  const parent = rollbackParent(identity.base_sha, commit.parents, detail.head);
-  if (!parent) {
-    throw new MergeReadinessError('provider_data_incomplete', 'rollback parent is not a single commit or batch merge boundary');
+  const before = rollbackParent(identity.base_sha, commit.parents);
+  if (before === null) {
+    throw new MergeReadinessError('provider_data_incomplete', 'rollback parent is not a single commit');
   }
-  const parentAssociations = yield `${root}/commits/${parent.before_sha}/pulls?per_page=100`;
+  const parentAssociations = yield `${root}/commits/${before}/pulls?per_page=100`;
   if (!Array.isArray(parentAssociations) || parentAssociations.length >= 100) {
     throw new MergeReadinessError('provider_data_incomplete', 'rollback parent PR associations incomplete');
   }
@@ -925,18 +937,15 @@ function* rollbackBoundary(identity: ProviderIdentity): Generator<string, Provid
     return pr.number;
   });
   if (parentPRs.includes(prNumber)) {
-    throw new MergeReadinessError('provider_data_incomplete', `Automatic rollback cannot revert only the last commit of multi-commit rebase PR #${prNumber}`);
+    throw new MergeReadinessError('provider_data_incomplete', `Automatic rollback cannot revert only the last commit of multi-commit rebase PR #${prNumber}`,
+      undefined, 'rollback parent PR is a multi-commit rebase PR');
   }
-  return Object.freeze({ status: 'ready', pr_number: prNumber, before_sha: parent.before_sha, after_sha: identity.base_sha });
+  return Object.freeze({ status: 'ready', pr_number: prNumber, before_sha: before, after_sha: identity.base_sha });
 }
 
 export function observeProviderReadinessFacts(identity: ProviderIdentity, receipt: Pick<PullRequestSelectionV2, 'pr_number'>, input: PublicationReadinessInput): ProviderMergeReadinessFactsV1 {
-  const checks = gh(input, [
-    'pr', 'checks', String(receipt.pr_number), '--required', '--json', 'name,bucket,link',
-  ], [0, 1, 8]);
-  const providers = checkArray(checks);
-  const firstRun = validateRequiredCIRun(identity, gh(input, ['api', requiredCIRunPath(identity, providers)]), providers);
-  const checkFailures = driveRequestsSync(requiredCheckFailures(identity, providers, firstRun), input);
+  const checks = protectedChecks(identity, receipt.pr_number, input);
+  const checkFailures = driveRequestsSync(requiredCheckFailures(identity, checks), input);
   const policy = publicationPolicy(input, identity.base_sha);
   const coverage = coverageFacts(identity, input, policy);
   const generated = generatedArtifactsFacts(identity, input, policy);
@@ -1088,7 +1097,8 @@ function* stackProtocol(
     const open = matching.filter(pr => pr.state === 'OPEN');
     if (open.length === 0) return stackFailure(matching.length === 0 ? 'base_pr_missing' : 'base_pr_not_open', chain);
     if (open.length > 1) {
-      throw new MergeReadinessError('provider_data_incomplete', `provider returned ${open.length} open pull requests for stack base ${baseRef}`);
+      throw new MergeReadinessError('provider_data_incomplete', `provider returned ${open.length} open pull requests for stack base ${baseRef}`,
+        undefined, 'stack base has more than one open pull request');
     }
     const base = open[0]!;
     if (base.cross_repository) return stackFailure('foreign_pr', chain);
@@ -1114,10 +1124,11 @@ function observeStack(target: ProviderReadinessTarget, input: PublicationReadine
   return request.value;
 }
 
-function readinessProjection(input: PullRequestReadinessInput, provider: ProviderMergeReadinessFactsV1 | null, observation: MergeReadinessObservation, stack: MergeReadinessStackDetailV1): PullRequestReadinessV2 {
+function readinessProjection(input: PullRequestReadinessInput, provider: ProviderMergeReadinessFactsV1 | null, observation: MergeReadinessObservation, stack: MergeReadinessStackDetailV1, observationDetail?: string): PullRequestReadinessV2 {
   return Object.freeze({ protocol: 2, kind: 'repo-harness-pull-request-readiness', ...selectionOf(input),
     ...projectPullRequestMergeReadiness({ expected_head_sha: input.expected_head_sha, expected_base_sha: input.expected_base_sha,
-      integration_mode: provider?.state === 'MERGED' ? 'ancestor' : 'unmerged', observation, provider, stack }) });
+      integration_mode: provider?.state === 'MERGED' ? 'ancestor' : 'unmerged', observation,
+      ...(observationDetail === undefined ? {} : { observation_detail: observationDetail }), provider, stack }) });
 }
 
 /** One observation loop for exact merged-PR evidence. The stack is fenced with the identity. */
@@ -1178,7 +1189,9 @@ export function collectPullRequestMergeReadiness(input: PullRequestReadinessInpu
       : readinessProjection(input, null, 'changed_during_read', unobservedStackDetail());
   } catch (error) {
     if (!(error instanceof MergeReadinessError)) throw error;
-    return readinessProjection(input, null, error.code, unobservedStackDetail());
+    // Each provider field check names its field; the blocker keeps that local name so a refusal shows it.
+    return readinessProjection(input, null, error.code, unobservedStackDetail(),
+      error.code === 'provider_data_incomplete' ? error.detail : undefined);
   }
 }
 

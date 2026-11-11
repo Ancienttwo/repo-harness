@@ -5,7 +5,6 @@ import { join } from "path";
 import { spawnSync } from "child_process";
 import { listHelpers, protectedChildEnv, resolveHelper, runHelper } from "../../src/effects/runtime/helper-runner";
 import { RUN_HELP_GROUPS, RUN_HELP_MAX_HELPERS, RUN_HELP_MAX_LINES } from "../../src/cli/commands/run";
-import { fixtureTaskId } from '../helpers/sprint-fixture';
 
 const ROOT = join(import.meta.dir, "..", "..");
 const CLI = join(ROOT, "src/cli/index.ts");
@@ -26,30 +25,6 @@ function writeSourceHelper(tmp: string, fileName: string, content: string): stri
   writeFileSync(helperPath, content);
   chmodSync(helperPath, 0o755);
   return sourceRoot;
-}
-
-function writeActiveSprintFixture(cwd: string) {
-  const sprintRelPath = "plans/sprints/20991231-2359-run-helper-root.sprint.md";
-  mkdirSync(join(cwd, "plans/sprints"), { recursive: true });
-  mkdirSync(join(cwd, ".ai/harness/sprint"), { recursive: true });
-  writeFileSync(
-    join(cwd, sprintRelPath),
-    [
-      "# Sprint: Run Helper Root",
-      "",
-      "> **Status**: Approved",
-      "> **Backlog Schema**: 2",
-      "",
-      "## Backlog",
-      "",
-      "| # | ID | Status | Task | Mode | Acceptance | Plan |",
-      "|---|----|--------|------|------|------------|------|",
-      `| 1 | ${fixtureTaskId('root-task')} | [ ] | root-task | inline | package run reads target repo | (pending) |`,
-      "",
-    ].join("\n")
-  );
-  writeFileSync(join(cwd, ".ai/harness/sprint/active-sprint"), sprintRelPath);
-  return sprintRelPath;
 }
 
 describe("run command", () => {

@@ -1,0 +1,145 @@
+schemaVersion: "archcontext.state-machine/v1"
+id: "state-machine.operator.boss-command-room"
+capabilityId: "capability.runtime-harness.operator"
+name: "Send a boss command to the advisor seat, as the room shows it"
+regions:
+  - id: "ui"
+    label: "The boss controls"
+    initial: "buttons"
+    states:
+      - { id: "buttons", label: "Buttons" }
+      - { id: "confirm", label: "Confirm dialog" }
+      - { id: "sending", label: "Sending" }
+  - id: "turn-shown"
+    label: "The advisor turn that the room shows"
+    initial: "over"
+    states:
+      - { id: "over", label: "Over" }
+      - { id: "running", label: "Running" }
+  - id: "turn-real"
+    label: "The turn of the advisor terminal"
+    initial: "over"
+    states:
+      - { id: "over", label: "Over" }
+      - { id: "running", label: "Running" }
+  - id: "cool-shown"
+    label: "The cooldown in page memory"
+    initial: "off"
+    states:
+      - { id: "off", label: "None" }
+      - { id: "on", label: "Runs" }
+  - id: "cool-server"
+    label: "The cooldown that the audit log proves"
+    initial: "off"
+    states:
+      - { id: "off", label: "None" }
+      - { id: "on", label: "Runs" }
+  - id: "notice"
+    label: "The notice of the last answer"
+    initial: "none"
+    states:
+      - { id: "none", label: "None" }
+      - { id: "cooldown", label: "Refused for the cooldown" }
+      - { id: "turn", label: "Refused for the advisor turn" }
+      - { id: "unknown", label: "No usable answer" }
+  - id: "server-saw"
+    label: "The server cooldown at the last server decision"
+    initial: "none"
+    states:
+      - { id: "none", label: "No decision yet" }
+      - { id: "off", label: "No cooldown" }
+      - { id: "on", label: "The cooldown runs" }
+  - id: "server-did"
+    label: "The last server decision"
+    initial: "none"
+    states:
+      - { id: "none", label: "No decision yet" }
+      - { id: "sent", label: "The command reached the seat" }
+      - { id: "refused", label: "Refused" }
+events:
+  - id: "you-pick"
+    label: "you pick the command"
+    source: { kind: "code", path: "src/operator-web/BoardOffice.tsx", symbol: "BossButtons", confirmedDigest: "sha256:af517c7c5a6fc207f24c533ad7e0b8e6076128e2cf96775fbb8e885b63bc6040" }
+    steps:
+      - when: { ui: ["buttons"], turn-shown: ["over"], cool-shown: ["off"] }
+        then: { ui: "confirm" }
+  - id: "you-cancel"
+    label: "you cancel"
+    source: { kind: "code", path: "src/operator-web/BoardOffice.tsx", symbol: "BossConfirm", confirmedDigest: "sha256:55b954e04a773bfbfc2e6547ebf85143d2bd6ce11528547028f370cbb2c5cad6" }
+    steps:
+      - when: { ui: ["confirm"] }
+        then: { ui: "buttons" }
+  - id: "you-confirm"
+    label: "you confirm"
+    source: { kind: "code", path: "src/operator-web/office-boss.ts", symbol: "useBossCommands", confirmedDigest: "sha256:63f3200e3c144853c94012a55261a5d63d2810b612240ffb8f6a0a8cab695177" }
+    steps:
+      - when: { ui: ["confirm"], notice: ["none", "cooldown", "turn", "unknown"] }
+        then: { ui: "sending", notice: "none" }
+  - id: "server-sends"
+    label: "the command reaches the seat"
+    source: { kind: "code", path: "src/effects/operator/advisor-seat-route.ts", symbol: "advisorBossCommandWriteRoute", confirmedDigest: "sha256:f760b990288f314df2a1e2dae43779b0b1d78a5141e40b8588b79245616d3588" }
+    steps:
+      - when: { ui: ["sending"], turn-real: ["over"], cool-shown: ["off", "on"], cool-server: ["off"], server-saw: ["none", "off", "on"], server-did: ["none", "sent", "refused"] }
+        then: { ui: "buttons", turn-real: "running", cool-shown: "on", cool-server: "on", server-saw: "off", server-did: "sent" }
+  - id: "server-refuses-cooldown"
+    label: "the server refuses for the cooldown"
+    source: { kind: "code", path: "src/effects/operator/advisor-seat-route.ts", symbol: "advisorBossCommandWriteRoute", confirmedDigest: "sha256:f760b990288f314df2a1e2dae43779b0b1d78a5141e40b8588b79245616d3588" }
+    steps:
+      - when: { ui: ["sending"], cool-shown: ["off", "on"], cool-server: ["on"], notice: ["none", "cooldown", "turn", "unknown"], server-saw: ["none", "off", "on"], server-did: ["none", "sent", "refused"] }
+        then: { ui: "buttons", cool-shown: "on", notice: "cooldown", server-saw: "on", server-did: "refused" }
+  - id: "server-refuses-turn"
+    label: "the server refuses for the advisor turn"
+    source: { kind: "code", path: "src/effects/operator/advisor-seat-route.ts", symbol: "advisorBossCommandWriteRoute", confirmedDigest: "sha256:f760b990288f314df2a1e2dae43779b0b1d78a5141e40b8588b79245616d3588" }
+    steps:
+      - when: { ui: ["sending"], turn-real: ["running"], cool-server: ["off"], notice: ["none", "cooldown", "turn", "unknown"], server-saw: ["none", "off", "on"], server-did: ["none", "sent", "refused"] }
+        then: { ui: "buttons", notice: "turn", server-saw: "off", server-did: "refused" }
+  - id: "answer-lost-after-send"
+    label: "the command reaches the seat, the answer is lost"
+    source: { kind: "code", path: "src/operator-web/office-boss.ts", symbol: "useBossCommands", confirmedDigest: "sha256:63f3200e3c144853c94012a55261a5d63d2810b612240ffb8f6a0a8cab695177" }
+    steps:
+      - when: { ui: ["sending"], turn-real: ["over"], cool-server: ["off"], notice: ["none", "cooldown", "turn", "unknown"], server-saw: ["none", "off", "on"], server-did: ["none", "sent", "refused"] }
+        then: { ui: "buttons", turn-real: "running", cool-server: "on", notice: "unknown", server-saw: "off", server-did: "sent" }
+  - id: "answer-lost-before-send"
+    label: "the request fails before the send"
+    source: { kind: "code", path: "src/operator-web/office-boss.ts", symbol: "useBossCommands", confirmedDigest: "sha256:63f3200e3c144853c94012a55261a5d63d2810b612240ffb8f6a0a8cab695177" }
+    steps:
+      - when: { ui: ["sending"], notice: ["none", "cooldown", "turn", "unknown"] }
+        then: { ui: "buttons", notice: "unknown" }
+  - id: "room-reads-seat"
+    label: "the room reads the seat status"
+    source: { kind: "code", path: "src/operator-web/BoardOffice.tsx", symbol: "BossButtons", confirmedDigest: "sha256:af517c7c5a6fc207f24c533ad7e0b8e6076128e2cf96775fbb8e885b63bc6040" }
+    steps:
+      - when: { turn-shown: ["over"], turn-real: ["running"] }
+        then: { turn-shown: "running" }
+      - when: { turn-shown: ["running"], turn-real: ["over"] }
+        then: { turn-shown: "over" }
+  - id: "advisor-ends-turn"
+    label: "the advisor ends its turn"
+    source: { kind: "environment" }
+    steps:
+      - when: { turn-real: ["running"] }
+        then: { turn-real: "over" }
+  - id: "advisor-starts-turn"
+    label: "the advisor starts a turn"
+    source: { kind: "environment" }
+    steps:
+      - when: { turn-real: ["over"] }
+        then: { turn-real: "running" }
+  - id: "cooldown-ends"
+    label: "the cooldown ends"
+    source: { kind: "environment" }
+    steps:
+      - when: { cool-shown: ["off", "on"], cool-server: ["on"] }
+        then: { cool-shown: "off", cool-server: "off" }
+  - id: "you-reload"
+    label: "you reload the page"
+    source: { kind: "environment" }
+    steps:
+      - when: { ui: ["buttons"], cool-shown: ["on"], notice: ["none", "cooldown", "turn", "unknown"] }
+        then: { cool-shown: "off", notice: "none" }
+      - when: { ui: ["buttons"], cool-shown: ["off"], notice: ["cooldown", "turn", "unknown"] }
+        then: { notice: "none" }
+rules:
+  - id: "one-command-in-a-cooldown"
+    label: "OneCommandInACooldown. No command reaches the seat while the cooldown runs"
+    never: { server-saw: ["on"], server-did: ["sent"] }

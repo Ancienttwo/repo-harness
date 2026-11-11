@@ -5,7 +5,7 @@ import { join } from 'path';
 import { Writable } from 'stream';
 import { acquireExpensiveRunLock, type ExpensiveRunLockHandle } from './expensive-run-lock';
 import { PROCESS_GROUP_LAUNCHER_FLAG } from './process-group-launcher';
-import { processGroupExists, terminateProcessGroup } from './process-group-termination';
+import { processExists, processGroupExists, terminateProcessGroup } from './process-group-termination';
 
 export const PROCESS_SUPERVISOR_TERMINATION_GRACE_MS = 500;
 export const PROCESS_SUPERVISOR_FLAG = '--process-supervisor';
@@ -154,12 +154,7 @@ function parseArgs(argv: readonly string[]): SupervisorOptions {
 
 function parentIsAlive(parentPid: number): boolean {
   if (process.ppid !== parentPid) return false;
-  try {
-    process.kill(parentPid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
+  return processExists(parentPid);
 }
 
 function childProcessGroupExists(child: ChildProcess): boolean {
@@ -302,11 +297,17 @@ async function superviseTarget(options: SupervisorOptions, expensiveLock: Expens
   }
 
   let parentLostResolve: (() => void) | undefined;
-  const parentLost = new Promise<'parent-lost'>((resolve) => {
+  let parentProbeReject: ((error: unknown) => void) | undefined;
+  const parentLost = new Promise<'parent-lost'>((resolve, reject) => {
     parentLostResolve = () => resolve('parent-lost');
+    parentProbeReject = reject;
   });
   const parentWatch = setInterval(() => {
-    if (!parentIsAlive(options.parentPid)) parentLostResolve?.();
+    try {
+      if (!parentIsAlive(options.parentPid)) parentLostResolve?.();
+    } catch (error) {
+      parentProbeReject?.(error);
+    }
   }, 25);
 
   const timedOut = new Promise<'timeout'>((resolve) => {
@@ -363,13 +364,14 @@ async function superviseTarget(options: SupervisorOptions, expensiveLock: Expens
     }
     if (!confirmedAbsent) preserveExpensiveRunLock = true;
     throw error;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    clearInterval(parentWatch);
+    for (const [signal, handler] of handlers) process.removeListener(signal, handler);
   }
 
   const completed = await completion;
   if (outcome === 'completed') cleanupComplete = true;
-  if (timeoutId) clearTimeout(timeoutId);
-  clearInterval(parentWatch);
-  for (const [signal, handler] of handlers) process.removeListener(signal, handler);
   const [capturedStdout, capturedStderr] = await output;
   if (options.stdio === 'pipe') {
     if (capturedStdout.length > 0) process.stdout.write(capturedStdout);

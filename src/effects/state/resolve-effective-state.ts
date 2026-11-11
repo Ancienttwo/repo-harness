@@ -1,4 +1,5 @@
 import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReaddirSync as readdirSync } from '../readonly-observation';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { statSync, existsSync } from 'fs';
 import { posix, win32, join } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath, type ReviewSubject } from '../review/diff-fingerprint';
@@ -51,62 +52,58 @@ import {
   readTrimmed,
   repoPath,
   safeRealpath,
-  sha256,
   sourceHash,
 } from './collect-state-inputs';
 import { gitExecFileSync } from '../git/runner';
+import { POLICY_ABSENT, POLICY_PATH, policyValue, type DecodedWorkflowPolicy, type PolicyPath } from '../../core/workflow/policy-schema';
+import { readWorkflowPolicyFile } from './policy-file';
 
 const ACTIVE_WORKTREE_MARKER = '.ai/harness/active-worktree';
 const CAPABILITY_REGISTRY_PATH = '.ai/context/capabilities.json';
 const CAPABILITY_NODES_DIR = '.archcontext/model/nodes';
 const CAPABILITY_NODE_FILE = /\.ya?ml$/;
-const POLICY_PATH = '.ai/harness/policy.json';
 // profile_reasons names at most this many unowned paths; the count reason carries the total.
 const UNOWNED_PATH_REASON_LIMIT = 20;
 
-export type WorkflowPolicy = Readonly<Record<string, unknown>> | null;
-const POLICY_FIELD_ABSENT = Symbol('policy-field-absent');
+/** A decoded policy with an object root, or null when the file is absent. */
+export type WorkflowPolicy = DecodedWorkflowPolicy | null;
 
 export interface EffectiveStatePublicationEffects {
   readonly version?: StateVersionWriteEffects;
 }
 
+/**
+ * The policy file read through the contained-path check of the state inputs.
+ * `readWorkflowPolicyFile` owns the read and the decode; `readSource` lets a
+ * state pass observe one read of the file.
+ */
+export function readWorkflowPolicyDocument(
+  cwd: string,
+  readSource = (path: string) => readText(cwd, path),
+): DecodedWorkflowPolicy {
+  return readWorkflowPolicyFile(cwd, readSource);
+}
+
+/** The state resolver's reader: it needs an object root and validates the fields it owns. */
 export function readWorkflowPolicy(cwd: string, readSource = (path: string) => readText(cwd, path)): WorkflowPolicy {
-  const text = readSource(POLICY_PATH);
-  if (text === null) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text) as unknown;
-  } catch {
-    throw new Error(`invalid workflow policy JSON: ${POLICY_PATH}`);
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+  const policy = readWorkflowPolicyDocument(cwd, readSource);
+  if (!policy.present) return null;
+  if (!policy.rootIsObject) {
     throw new Error(`invalid workflow policy object: ${POLICY_PATH}`);
   }
-  const policy = parsed as Readonly<Record<string, unknown>>;
   validateWorkflowPolicy(policy);
   return policy;
 }
 
-function policyValue(
-  policy: WorkflowPolicy,
-  jqPath: string,
-): unknown | typeof POLICY_FIELD_ABSENT {
-  if (policy === null) return POLICY_FIELD_ABSENT;
-  let current: unknown = policy;
-  for (const segment of jqPath.split('.').filter(Boolean)) {
-    if (!current || typeof current !== 'object' || Array.isArray(current)) {
-      throw new Error(`invalid workflow policy field ${jqPath}: non-object parent`);
-    }
-    if (!Object.hasOwn(current, segment)) return POLICY_FIELD_ABSENT;
-    current = (current as Record<string, unknown>)[segment];
-  }
-  return current;
+/** The resolver's field read: an absent file gives every field absent. */
+function resolverValue(policy: WorkflowPolicy, path: PolicyPath): unknown {
+  return policy === null ? POLICY_ABSENT : policyValue(policy, path);
 }
 
-function policyPath(policy: WorkflowPolicy, jqPath: string, fallback: string, root = '.ai/harness'): string {
-  const value = policyValue(policy, jqPath);
-  if (value === POLICY_FIELD_ABSENT) return fallback;
+function policyPath(policy: WorkflowPolicy, path: PolicyPath, fallback: string, root = '.ai/harness'): string {
+  const jqPath = `.${path}`;
+  const value = resolverValue(policy, path);
+  if (value === POLICY_ABSENT) return fallback;
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`invalid workflow policy path ${jqPath}`);
   }
@@ -146,9 +143,9 @@ export interface HarnessPaths {
 export function resolveHarnessPaths(cwd: string): HarnessPaths {
   const policy = readWorkflowPolicy(cwd);
   return {
-    runsDir: policyPath(policy, '.harness.runs_dir', '.ai/harness/runs'),
-    contextMap: policyPath(policy, '.context.map_file', '.ai/context/context-map.json', '.ai/context'),
-    researchDir: policyString(policy, '.tasks.research_dir', 'docs/researches'),
+    runsDir: policyPath(policy, 'harness.runs_dir', '.ai/harness/runs'),
+    contextMap: policyPath(policy, 'context.map_file', '.ai/context/context-map.json', '.ai/context'),
+    researchDir: policyString(policy, 'tasks.research_dir', 'docs/researches'),
   };
 }
 
@@ -159,8 +156,8 @@ export function resolveHarnessPaths(cwd: string): HarnessPaths {
  */
 export function agentWritablePrivateDirs(policy: WorkflowPolicy): readonly string[] {
   const jqPath = '.operations.agent_writable_private_dirs';
-  const value = policyValue(policy, jqPath);
-  if (value === POLICY_FIELD_ABSENT) return [];
+  const value = resolverValue(policy, 'operations.agent_writable_private_dirs');
+  if (value === POLICY_ABSENT) return [];
   if (!Array.isArray(value)) throw new Error(`invalid workflow policy value ${jqPath}: not an array`);
   return value.map((entry: unknown) => {
     const segments = typeof entry === 'string' ? entry.split('/') : [];
@@ -172,9 +169,10 @@ export function agentWritablePrivateDirs(policy: WorkflowPolicy): readonly strin
   });
 }
 
-function policyString(policy: WorkflowPolicy, jqPath: string, fallback: string): string {
-  const value = policyValue(policy, jqPath);
-  if (value === POLICY_FIELD_ABSENT) return fallback;
+function policyString(policy: WorkflowPolicy, path: PolicyPath, fallback: string): string {
+  const jqPath = `.${path}`;
+  const value = resolverValue(policy, path);
+  if (value === POLICY_ABSENT) return fallback;
   if (typeof value !== 'string' || !value.trim()) {
     throw new Error(`invalid workflow policy string ${jqPath}`);
   }
@@ -185,34 +183,15 @@ function validateWorkflowPolicy(policy: WorkflowPolicy): void {
   // Validate every policy field owned by this resolver eagerly. Otherwise a
   // malformed capability or planning field can evade validation on an
   // inspect/no-target call and still publish cache/version authority.
-  policyString(policy, '.worktree_strategy.review_base', 'main');
-  policyString(policy, '.worktree_strategy.merge_back.target', 'main');
-  policyString(policy, '.worktree_strategy.base_branch', 'main');
+  policyString(policy, 'worktree_strategy.review_base', 'main');
+  policyString(policy, 'worktree_strategy.merge_back.target', 'main');
+  policyString(policy, 'worktree_strategy.base_branch', 'main');
   policyPath(
     policy,
-    '.planning.pending_orchestration_file',
+    'planning.pending_orchestration_file',
     '.ai/harness/planning/pending.json',
   );
-  const registryPath = policyValue(policy, '.context.capability_registry_file');
-  if (registryPath !== POLICY_FIELD_ABSENT && registryPath !== CAPABILITY_REGISTRY_PATH) {
-    throw new Error(
-      `invalid workflow policy path .context.capability_registry_file: ${String(registryPath)}`,
-    );
-  }
   capabilitySourceMode(policy);
-  minimalChangeMode(policy);
-}
-
-const MINIMAL_CHANGE_MODES: readonly string[] = ['off', 'advice'];
-
-// No code reads the minimal_change policy. The mode check only rejects the
-// retired `enforce` value (and any other unknown value) so an operator
-// does not rely on a gate that no longer exists.
-function minimalChangeMode(policy: WorkflowPolicy): void {
-  const value = policyValue(policy, '.minimal_change.mode');
-  if (value === POLICY_FIELD_ABSENT) return;
-  if (typeof value === 'string' && MINIMAL_CHANGE_MODES.includes(value)) return;
-  throw new Error(`invalid workflow policy value .minimal_change.mode: ${String(value)}`);
 }
 
 /**
@@ -220,14 +199,10 @@ function minimalChangeMode(policy: WorkflowPolicy): void {
  * scripts/capability-resolver.ts. `registry` reads the JSON registry,
  * `archcontext` reads archcontext capability nodes; there is no dual-read and
  * no fallback in either direction, and an unknown value fails closed.
- *
- * `.context.capability_registry_file` only names where the JSON registry lives
- * and is therefore inert under `archcontext` -- the adoption seeders keep
- * writing it as a default for registry-mode repos.
  */
 export function capabilitySourceMode(policy: WorkflowPolicy): CapabilitySourceMode {
-  const value = policyValue(policy, '.context.capability_source');
-  if (value === POLICY_FIELD_ABSENT) return 'registry';
+  const value = resolverValue(policy, 'context.capability_source');
+  if (value === POLICY_ABSENT) return 'registry';
   if (typeof value === 'string' && (CAPABILITY_SOURCE_MODES as readonly string[]).includes(value)) {
     return value as CapabilitySourceMode;
   }
@@ -259,7 +234,7 @@ function archcontextNodePaths(cwd: string): string[] {
 function capabilityAuthorityHash(cwd: string, mode: CapabilitySourceMode, hashSource = (path: string) => sourceHash(cwd, path)): string {
   if (mode === 'registry') return hashSource(CAPABILITY_REGISTRY_PATH);
   const paths = archcontextNodePaths(cwd);
-  if (paths.length === 0) return sha256(`missing:${CAPABILITY_NODES_DIR}`);
+  if (paths.length === 0) return sha256Prefixed(`missing:${CAPABILITY_NODES_DIR}`);
   return contentRevision(Object.fromEntries(paths.map((path) => [path, hashSource(path)])));
 }
 
@@ -273,7 +248,7 @@ function capabilityAuthoritySourcePaths(cwd: string, mode: CapabilitySourceMode)
 function pendingState(cwd: string, nowMs: number, policy: WorkflowPolicy): 'none' | 'fresh' | 'stale' {
   const pendingPath = policyPath(
     policy,
-    '.planning.pending_orchestration_file',
+    'planning.pending_orchestration_file',
     '.ai/harness/planning/pending.json',
   );
   if (!fileExists(cwd, pendingPath)) return 'none';
@@ -330,18 +305,13 @@ export interface CapabilityResolution {
   readonly blocker: CapabilityOwnershipBlocker | null;
 }
 
-// Policy declares capability registry authority. Adoption and init, plus the
-// explicit capability commands, write the registry and its policy reference.
-// A declared missing or invalid registry fails closed. Restore the declared
-// registry through those writers, or repair its JSON explicitly. Workflow
-// diagnostics do not repair registry contents.
+// An explicit `capability_source: "registry"` declares the registry: init
+// writes that key with the registry at the constant path. A declared missing
+// or invalid registry fails closed. Restore it through init or the capability
+// commands, or repair its JSON explicitly. Workflow diagnostics do not repair
+// registry contents. An absent selector means registry mode, undeclared.
 function policyDeclaresCapabilityRegistry(policy: WorkflowPolicy): boolean {
-  const declared = policyValue(policy, '.context.capability_registry_file');
-  if (declared === POLICY_FIELD_ABSENT) return false;
-  if (declared !== CAPABILITY_REGISTRY_PATH) {
-    throw new Error('invalid workflow policy path .context.capability_registry_file');
-  }
-  return true;
+  return resolverValue(policy, 'context.capability_source') === 'registry';
 }
 
 export function loadRegistryAuthority(cwd: string, policy: WorkflowPolicy, readSource: (path: string) => string | null): CapabilityRegistryResolution {
@@ -372,7 +342,7 @@ function resolveArchcontextPaths(
   }
   const nodes = archcontextNodePaths(cwd).map((path) => [path, readSource(path)]);
   // The queries carry each path's directory state, which changes what archctx answers.
-  const key = sha256(JSON.stringify([safeRealpath(cwd), nodes, paths, ownership.resolveQueries(cwd, paths)]));
+  const key = sha256Prefixed(JSON.stringify([safeRealpath(cwd), nodes, paths, ownership.resolveQueries(cwd, paths)]));
   // Scoped transport options can select another environment or deadline.
   // Only ordinary state passes share the default transport's memo.
   if (!options && archcontextResolutionMemo?.key === key) return archcontextResolutionMemo.resolution;
@@ -602,11 +572,11 @@ export function capabilityOwnersForPaths(
 function policyReviewBase(policy: WorkflowPolicy): string {
   return policyString(
     policy,
-    '.worktree_strategy.review_base',
+    'worktree_strategy.review_base',
     policyString(
       policy,
-      '.worktree_strategy.merge_back.target',
-      policyString(policy, '.worktree_strategy.base_branch', 'main'),
+      'worktree_strategy.merge_back.target',
+      policyString(policy, 'worktree_strategy.base_branch', 'main'),
     ),
   );
 }
@@ -667,7 +637,7 @@ function resolveEffectiveStateUnlocked(
   };
   const hashSource = (path: string): string => {
     const text = readSource(path);
-    return text === null ? sha256(`missing:${path}`) : sha256(text);
+    return text === null ? sha256Prefixed(`missing:${path}`) : sha256Prefixed(text);
   };
   const policy = readWorkflowPolicy(cwd, readSource);
   const capabilitySource = capabilitySourceMode(policy);
@@ -789,8 +759,8 @@ function resolveEffectiveStateUnlocked(
     capability_registry: capabilityAuthorityHash(cwd, capabilitySource, captured ? hashSource : undefined),
   });
   const subjectRevision = contentRevision({
-    review_subject: reviewSubjectSha256 ?? sha256('unavailable:review-subject'),
-    target_rev: reviewSubject.status === 'ok' ? sha256(reviewSubject.target_rev) : sha256('unavailable:target-rev'),
+    review_subject: reviewSubjectSha256 ?? sha256Prefixed('unavailable:review-subject'),
+    target_rev: reviewSubject.status === 'ok' ? sha256Prefixed(reviewSubject.target_rev) : sha256Prefixed('unavailable:target-rev'),
   });
   // Every display projection (handoff, resume, task snapshot) is retired, so
   // the projection set is empty and its revision is the empty-set digest.

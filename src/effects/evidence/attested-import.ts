@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { sha256Hex } from "../../core/evidence/sha256";
 import { readFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
@@ -76,10 +76,6 @@ export interface AttestedImportInput {
   /** Exact protected admission selected and validated by the recording command. */
   readonly authority: ReviewAdmissionSource;
   readonly correlationRunId?: string;
-}
-
-function sha256Hex(content: Buffer | string): string {
-  return createHash("sha256").update(content).digest("hex");
 }
 
 function gitOutput(repoRoot: string, args: readonly string[]): { readonly ok: boolean; readonly text: string } {

@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { ArchitectureModelReader } from '../../src/effects/architecture/model-reader';
 import { decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt } from '../../src/core/operator/architecture';
 import { isArchitectureRequest, parseArchitectureRequest } from '../../src/core/operator/architecture';
-import { MODULE_ID, MODULE_NODE, MODULE_FLOW, moduleRepository, fixtureWrite, fixtureCommit, fixtureGit, fixtureYaml } from '../helpers/module-repository';
+import { MODULE_ID, MODULE_NODE, MODULE_FLOW, moduleRepository, fixtureWrite, fixtureCommit, fixtureGit, fixtureYaml, writeStateMachine } from '../helpers/module-repository';
+import { readArchitectureView } from '../../src/effects/architecture/architecture-read';
 import { readFileSync, realpathSync, rmSync } from 'node:fs';
 import {
   archctxRefusal,
@@ -23,8 +24,8 @@ import {
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
 import { architecturePullRequestsSource } from '../../src/core/dev-activity/architecture';
 import type { TestsSnapshotV1 } from '../../src/core/operator/tests';
-import { anchorsSection, collectArchitectureMap, flowProofSection, layerDirectionSection, localMidnight, readCommitLineCounts, recheckCheckout, recheckLayers } from '../../src/effects/operator/architecture-map-worker';
-import { ARCHCTX_REQUIRED_VERSION, decodeConstraintEvaluation, decodeDocsAnchorsReport, decodeFlowSelectorCheck } from '../../src/core/architecture/projection';
+import { anchorsSection, collectArchitectureMap, debtSection, flowProofSection, layerDirectionSection, localMidnight, readCommitLineCounts, recheckCheckout, recheckLayers } from '../../src/effects/operator/architecture-map-worker';
+import { ARCHCTX_REQUIRED_VERSION, decodeArchitectureDebtReport, decodeConstraintEvaluation, decodeDocsAnchorsReport, decodeFlowSelectorCheck } from '../../src/core/architecture/projection';
 import { join } from 'node:path';
 
 const reader = new ArchitectureModelReader(import.meta.dir + '/../..');
@@ -500,6 +501,24 @@ describe('architecture map', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
+  test('a stale state machine anchor marks its capability in the debt part, and a kind outside the map list makes the part unavailable', () => {
+    const root = realpathSync(moduleRepository());
+    try {
+      writeStateMachine(root);
+      fixtureCommit(root);
+      const result = collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending);
+      if (!result.ok) throw new Error('worker failed');
+      // The broken rule carries a finding mark, so archctx reports no rule item for it.
+      expect(result.snapshot.layers.violations.debt).toEqual({ state: 'ok', items: [{ kind: 'state-machine-stale', nodes: [MODULE_ID], paths: ['src/module/read.ts'] }] });
+      const read = readArchitectureView(root, ['debt', '--json']);
+      if (!read.ok) throw new Error('debt failed');
+      const report = decodeArchitectureDebtReport(read.data);
+      const known = new Set(result.snapshot.nodes.map(node => node.id));
+      expect(debtSection({ ...report, items: report.items.map(item => ({ ...item, kind: 'practice-regression' as const })) }, known))
+        .toEqual({ state: 'unavailable', reason: 'archctx_failed' });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
   test('today\'s changes carry archctx\'s impact as given, and an answer that names a node the map lacks drops only that layer', () => {
     const map = projected();
     // No local roll-up, owner choice or model diff: the layer is archctx's answer.
@@ -726,6 +745,9 @@ describe('architecture map', () => {
     refused(value => { value.flows[0].capability = PART; });
     refused(value => { value.flows[1].id = FLOW; });
     refused(value => { value.flows[1].participants = []; });
+    // archctx's flow schema requires a participant and a main step in each required flow.
+    refused(value => { Object.assign(value.flows[0], { participants: [], steps: [], outcomes: [] }); });
+    refused(value => { value.flows[0].steps = []; });
     refused(value => { value.flows[0].steps[0].label = 'Write /Users/someone/ledger.db'; });
     refused(value => { value.flows[0].steps[0].evidence.extra = 'x'; });
     // Declared code: once per selector, for a selector a step names, from a node of the map, at a public path or null.

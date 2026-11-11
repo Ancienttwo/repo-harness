@@ -1,5 +1,5 @@
-import { createHash } from 'crypto';
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'fs';
+import { sha256Hex } from '../../core/evidence/sha256';
+import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import { homedir } from 'os';
 import { basename, isAbsolute, join, resolve } from 'path';
 import { projectCheckRecords, type CheckRecordsV1 } from '../../core/review/check-records';
@@ -8,12 +8,15 @@ import { isRegisteredRepoHarnessRoot, readRegisteredRepoHarnessRepos } from '../
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { loadMcpLocalConfig } from './auth';
 import { guardedWriteFile } from './guarded-write';
-import { isPathInside, resolveMcpPath } from './paths';
+import { isPathInside } from '../../effects/path-containment';
+import { canonicalDirectory, resolveMcpPath } from './paths';
 import { buildReaderToolDefinitions, callReaderTool, createReaderToolContext, isReaderTool } from './reader-tools';
 import { currentGitBranch, isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { redactMcpText } from './redaction';
+import { errorResult, textResult, type McpToolResult } from './result';
 import { buildStateToolDefinitions, callStateTool, isStateTool } from './state-tools';
 import { buildFleetToolDefinitions, callFleetTool, fleetToolArgumentError, isFleetTool } from './fleet-tools';
+import { numberArg } from './general-repo-access';
 import type { McpPolicy } from './types';
 import type { WorkspaceManager } from './workspaces';
 import type { GeneralRepoCodeGraphAdapter } from '../tools/codegraph-reader';
@@ -36,12 +39,6 @@ export interface McpToolDefinition {
   description: string;
   inputSchema: Record<string, unknown>;
   annotations?: Record<string, unknown>;
-}
-
-interface CallToolResult {
-  content: Array<{ type: 'text'; text: string }>;
-  structuredContent?: unknown;
-  isError?: boolean;
 }
 
 const DEFAULT_DISCOVERY_DEPTH = 7;
@@ -78,17 +75,6 @@ const DISCOVERY_SKIP_DIRS = new Set([
   'sbin',
   'usr',
 ]);
-
-function textResult(value: unknown): CallToolResult {
-  return {
-    content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }],
-    structuredContent: typeof value === 'string' ? undefined : value,
-  };
-}
-
-function errorResult(code: string, message: string, details?: unknown): CallToolResult {
-  return textResult({ error: { code, message: redactMcpText(message).text, details } });
-}
 
 function audit(ctx: McpToolContext, tool: string, status: 'ok' | 'blocked' | 'failed', input: unknown, targetPath?: string, error?: string): void {
   tryWriteMcpAuditEntry(ctx.repoRoot, {
@@ -208,25 +194,9 @@ function discoverySortWeight(repoRoot: string, query = ''): string {
   return `${queryWeight}:${locationWeight}:${repoRoot}`;
 }
 
-function numberArg(value: unknown, fallback: number, min: number, max: number): number {
-  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(Math.max(Math.trunc(parsed), min), max);
-}
-
 function stringArgList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((entry) => String(entry).trim()).filter(Boolean);
-}
-
-function canonicalDirectory(path: string): string | null {
-  const absolute = resolve(path);
-  try {
-    if (!statSync(absolute).isDirectory()) return null;
-    return realpathSync(absolute);
-  } catch (_error) {
-    return null;
-  }
 }
 
 function authorizedDiscoveryRoots(ctx: McpToolContext): string[] {
@@ -312,7 +282,7 @@ function discoverHarnessRepos(ctx: McpToolContext, args: Record<string, unknown>
   };
 }
 
-function resolveAuthorizedRepoAlias(ctx: McpToolContext, raw: string): { ok: true; repoRoot: string } | { ok: false; result: CallToolResult } | null {
+function resolveAuthorizedRepoAlias(ctx: McpToolContext, raw: string): { ok: true; repoRoot: string } | { ok: false; result: McpToolResult } | null {
   const rawSegments = raw.replace(/\\/g, '/').split('/').filter(Boolean);
   if (isAbsolute(raw) || rawSegments.includes('.') || rawSegments.includes('..')) return null;
   const candidate = resolve(ctx.repoRoot, raw);
@@ -331,14 +301,14 @@ function resolveAuthorizedRepoAlias(ctx: McpToolContext, raw: string): { ok: tru
       result: errorResult(
         'REPO_ALIAS_AMBIGUOUS',
         'repo_path matched multiple adopted repositories; call discover_harness_repos with query and pass an exact repo_path.',
-        { repo_path: raw, matches: candidates.map((repo) => repo.repoRoot) },
+        { details: { repo_path: raw, matches: candidates.map((repo) => repo.repoRoot) } },
       ),
     };
   }
   return null;
 }
 
-function targetRepoRoot(ctx: McpToolContext, args: Record<string, unknown>): { ok: true; repoRoot: string } | { ok: false; result: CallToolResult } {
+function targetRepoRoot(ctx: McpToolContext, args: Record<string, unknown>): { ok: true; repoRoot: string } | { ok: false; result: McpToolResult } {
   const raw = typeof args.repo_path === 'string' ? args.repo_path.trim() : '';
   if (!raw) {
     return { ok: true, repoRoot: ctx.repoRoot };
@@ -360,12 +330,12 @@ function targetRepoRoot(ctx: McpToolContext, args: Record<string, unknown>): { o
       result: errorResult(
         'POLICY_DENIED',
         'repo_path must target a repo-harness adopted repo registered in ~/.repo-harness/registered-repos.json, or an adopted repo under an explicit allowed discovery root.',
-        { repo_path: raw },
+        { details: { repo_path: raw } },
       ),
     };
   }
   if (!isRepoHarnessAdopted(repoRoot)) {
-    return { ok: false, result: errorResult('REPO_NOT_ADOPTED', 'repo_path is not a repo-harness adopted repository.', { repo_path: raw }) };
+    return { ok: false, result: errorResult('REPO_NOT_ADOPTED', 'repo_path is not a repo-harness adopted repository.', { details: { repo_path: raw } }) };
   }
   try {
     ctx.workspaceManager?.ensureAllowedRoot(repoRoot);
@@ -378,10 +348,6 @@ function targetRepoRoot(ctx: McpToolContext, args: Record<string, unknown>): { o
 
 function isProbablyBinary(bytes: Buffer): boolean {
   return bytes.subarray(0, Math.min(bytes.length, 8000)).includes(0);
-}
-
-function sha256(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
 }
 
 function fileSummary(path: string, repoRoot: string): { path: string; size: number; modifiedAt: string } | null {
@@ -501,7 +467,7 @@ function expectedSha256Arg(args: Record<string, unknown>): string | undefined {
   return typeof args.expected_sha256 === 'string' ? args.expected_sha256 : undefined;
 }
 
-function checkWriteToolParameters(ctx: McpToolContext, tool: string, args: Record<string, unknown>): CallToolResult | null {
+function checkWriteToolParameters(ctx: McpToolContext, tool: string, args: Record<string, unknown>): McpToolResult | null {
   const definition = buildMcpToolDefinitions(ctx.policy).find((entry) => entry.name === tool);
   const properties = (definition?.inputSchema as { properties?: Record<string, unknown> } | undefined)?.properties;
   if (!properties) return null;
@@ -515,14 +481,14 @@ function checkWriteToolParameters(ctx: McpToolContext, tool: string, args: Recor
     return errorResult(
       'RETIRED_PARAMETER',
       `${retired} was removed from the repo-harness MCP workflow write tools in 0.16.1; pass ${replacement} instead. Read the target with read_workflow_file and send its sha256 as ${replacement} to replace an existing file, or omit ${replacement} to create a new one.`,
-      { retired, replacement, version: '0.16.1' },
+      { details: { retired, replacement, version: '0.16.1' } },
     );
   }
 
   const unknown = supplied.filter((key) => !allowed.includes(key));
   if (unknown.length > 0) {
     audit(ctx, tool, 'blocked', args, undefined, `unknown parameters: ${unknown.join(', ')}`);
-    return errorResult('UNKNOWN_PARAMETER', `unknown parameter for ${tool}: ${unknown.join(', ')}`, { unknown, allowed });
+    return errorResult('UNKNOWN_PARAMETER', `unknown parameter for ${tool}: ${unknown.join(', ')}`, { details: { unknown, allowed } });
   }
   return null;
 }
@@ -538,16 +504,16 @@ function writeMarkdownArtifact(
   expectedSha256: string | undefined,
   input: unknown,
   extra?: Record<string, unknown>,
-): CallToolResult {
+): McpToolResult {
   const decision = resolveMcpPath(repoRoot, relativePath, ctx.policy, 'write');
   if (!decision.ok || !decision.absolutePath) {
     audit(ctx, tool, 'blocked', input, relativePath, decision.reason);
-    return errorResult('POLICY_DENIED', decision.reason ?? 'path denied', { path: relativePath });
+    return errorResult('POLICY_DENIED', decision.reason ?? 'path denied', { details: { path: relativePath } });
   }
   const outcome = guardedWriteFile(decision.absolutePath, relativePath, bodyWithFrontmatter(title, kind, body), expectedSha256);
   if (!outcome.ok) {
     audit(ctx, tool, outcome.code === 'WRITE_FAILED' ? 'failed' : 'blocked', input, relativePath, outcome.code);
-    return errorResult(outcome.code, outcome.message, outcome.details);
+    return errorResult(outcome.code, outcome.message, { details: outcome.details });
   }
   audit(ctx, tool, 'ok', input, relativePath);
   return textResult({
@@ -691,7 +657,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy): McpToolDefinition[] 
   return tools;
 }
 
-export async function callMcpTool(ctx: McpToolContext, name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
+export async function callMcpTool(ctx: McpToolContext, name: string, args: Record<string, unknown> = {}): Promise<McpToolResult> {
   try {
     if (isReaderTool(name, ctx.policy)) {
       if (!ctx.policy.capabilities.workspaceReader) {
@@ -779,7 +745,7 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         const decision = resolveMcpPath(target.repoRoot, path, ctx.policy, 'read');
         if (!decision.ok || !decision.absolutePath || !decision.relativePath) {
           audit(ctx, name, 'blocked', args, path, decision.reason);
-          return errorResult('POLICY_DENIED', decision.reason ?? 'path denied', { path });
+          return errorResult('POLICY_DENIED', decision.reason ?? 'path denied', { details: { path } });
         }
         const fileStat = statSync(decision.absolutePath);
         if (!fileStat.isFile()) return errorResult('NOT_A_FILE', `path is not a file: ${decision.relativePath}`);
@@ -792,7 +758,7 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         return textResult({
           path: decision.relativePath,
           size: fileStat.size,
-          sha256: sha256(raw),
+          sha256: sha256Hex(raw),
           redactions: redacted.redactions,
           content: redacted.text,
         });

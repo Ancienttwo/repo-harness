@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { closeSync, fsyncSync, fstatSync, readSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { canonicalize } from '../../core/evidence/canonical-json';
@@ -18,7 +19,6 @@ export class CleanupArchiveError extends Error {
   constructor(readonly code: 'changed' | 'unsafe_git_content' | 'unsupported' | 'archive_conflict' | 'unavailable') { super(`cleanup_archive_${code}`); }
 }
 function fail(code: CleanupArchiveError['code']): never { throw new CleanupArchiveError(code); }
-const hex = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
 type Original = { kind: 'file' | 'symlink'; mode: number } | { kind: 'index'; mode: string; stage: number; oid: string }
   | { kind: 'commit'; oid: string; parents: readonly string[] } | { kind: 'manifest' };
 interface Artifact {
@@ -121,7 +121,7 @@ function fileBytes(root: number, file: CleanupFileEvidence, deadline: number): B
   try {
     const bytes = Buffer.alloc(file.size); let offset = 0;
     while (offset < bytes.length) { checkDeadline(deadline); const count = readSync(source.fd, bytes, offset, bytes.length - offset, offset); if (!count) fail('changed'); offset += count; }
-    if (fstatSync(source.fd).size !== file.size || hex(bytes) !== file.sha256) fail('changed');
+    if (fstatSync(source.fd).size !== file.size || sha256Hex(bytes) !== file.sha256) fail('changed');
     return bytes;
   } finally { source.close(); }
 }
@@ -131,13 +131,13 @@ export function stageCleanupArchive(sessionId: string, target: CleanupObservatio
   let source = -1, staging = -1, privateRoot = -1;
   try {
     decodeCleanupPlan({ protocol: 1, kind: 'operator_worktree_cleanup_plan', session_id: sessionId, items: [item] });
-    if (hex(cleanupPlanDigestInput(sessionId, item)) !== item.plan_sha256 || target.id !== item.worktree.id
+    if (sha256Hex(cleanupPlanDigestInput(sessionId, item)) !== item.plan_sha256 || target.id !== item.worktree.id
       || item.advice.recommendation !== 'archive_then_delete' || item.worktree.repository_id === null) fail('changed');
     if (item.advice.archive.private && item.advice.archive.private.directory !== item.worktree.repository_id) fail('changed');
     if (options.staging_root === target.worktree || options.staging_root.startsWith(target.worktree + '/')) fail('unsupported');
     const loss = observeCleanupLoss(target, options);
     if (cleanupLossSha256({ worktree: item.worktree, loss }) !== item.loss_sha256) fail('changed');
-    const key = `${sessionId}:${target.id}:${item.plan_sha256}`, operation = hex(key);
+    const key = `${sessionId}:${target.id}:${item.plan_sha256}`, operation = sha256Hex(key);
     source = openCleanupDirectory(target.worktree);
     if (fstatSync(source).dev !== loss.identity.dev || fstatSync(source).ino !== loss.identity.ino) fail('changed');
     const layout = item.advice.archive;
@@ -150,7 +150,7 @@ export function stageCleanupArchive(sessionId: string, target: CleanupObservatio
     const save = (storage: Artifact['storage'], path: string, origin: string, bytes: Buffer, original: Original) => {
       checkDeadline(options.deadline);
       if (storage === 'git') gitSafe(origin, bytes);
-      const record = { storage, path, source: origin, sha256: hex(bytes), size: bytes.length, original };
+      const record = { storage, path, source: origin, sha256: sha256Hex(bytes), size: bytes.length, original };
       artifact(storage === 'git' ? staging : privateRoot, path, record, fd => writeBytes(fd, bytes), options.deadline);
       artifacts.push(record); options.after_artifact?.(record);
     };
@@ -190,9 +190,9 @@ export function stageCleanupArchive(sessionId: string, target: CleanupObservatio
     const manifestBytes = Buffer.from(canonicalize(manifest as unknown as JsonValue) + '\n');
     const sourceText = Buffer.from(`# Cleanup archive\n\nRepository: ${item.worktree.repository_id}\nWorktree: ${item.worktree.directory}\nBranch: ${loss.branch ?? 'orphan'}\nHEAD: ${loss.head_commit ?? 'none'}\nSession: ${sessionId}\n\nCommit artifacts record their parent commits. Apply each patch on its first parent; a root commit has no parent. Files record original modes and index stages.\n\nOriginal paths and content hashes:\n\n\`\`\`json\n${manifestBytes.toString()}\`\`\`\n`);
     if (staging >= 0) save('git', 'SOURCE.md', 'SOURCE.md', sourceText, { kind: 'manifest' });
-    if (privateRoot >= 0) artifact(privateRoot, 'SOURCE.md', { sha256: hex(sourceText), size: sourceText.length }, fd => writeBytes(fd, sourceText), options.deadline);
+    if (privateRoot >= 0) artifact(privateRoot, 'SOURCE.md', { sha256: sha256Hex(sourceText), size: sourceText.length }, fd => writeBytes(fd, sourceText), options.deadline);
     if (cleanupLossSha256({ worktree: item.worktree, loss: observeCleanupLoss(target, options) }) !== item.loss_sha256) fail('changed');
-    return { protocol: 1, kind: 'operator_cleanup_archive', key, manifest_sha256: hex(manifestBytes),
+    return { protocol: 1, kind: 'operator_cleanup_archive', key, manifest_sha256: sha256Hex(manifestBytes),
       git_directory: layout.git ? join(options.staging_root, operation) : null,
       private_directory: layout.private ? join(repoHarnessHome(options.env), 'archive', item.worktree.repository_id, operation) : null, artifacts };
   } catch (error) { if (error instanceof CleanupArchiveError) throw error; throw new CleanupArchiveError('unavailable'); }

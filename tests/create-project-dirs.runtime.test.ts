@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
@@ -8,7 +8,6 @@ import { planAdoption } from "../src/effects/adoption/plan";
 import { adoptionTemplateFile } from "../src/effects/adoption/manifest-templates";
 import { parseExternalSourcesPolicy } from "../src/effects/github/policy";
 import { ARCHCTX_REQUIRED_VERSION, readArchitectureProjectionPolicy } from "../src/core/architecture/projection";
-import { MANAGED_AGENTS } from "../src/effects/terminal/task-role-profiles";
 
 const ROOT = join(import.meta.dir, "..");
 const REFERENCE_STUB_MARKER = "<!-- repo-harness: reference-config-stub v1 -->";
@@ -94,9 +93,12 @@ describe("create-project-dirs runtime smoke", () => {
       expect(gitignore).not.toContain("tasks/.current.md.tmp.*");
       expect(gitignore).not.toContain("tasks/current.md");
       expect(gitignore).not.toContain(".claude/.plan-state/");
-      expect(gitignore).toContain(".ai/harness/checks/*.latest.json");
-      expect(gitignore).toContain(".ai/harness/checks/*.latest.md");
-      expect(gitignore).toContain(".ai/harness/state/");
+      // These runtime rules live in the user-level runtime-state block, not the tracked block.
+      const runtimeState = readFileSync(join(ROOT, "assets/templates/runtime-state.gitignore"), "utf-8");
+      expect(runtimeState).toContain(".ai/harness/checks/*.latest.json");
+      expect(runtimeState).toContain(".ai/harness/checks/*.latest.md");
+      expect(runtimeState).toContain(".ai/harness/state/");
+      expect(gitignore).not.toContain(".ai/harness/state/");
       expect(gitignore).toContain(".archcontext/");
       expect(gitignore).not.toContain(".ai/harness/chatgpt/bridge-extension/");
       expect(gitignore).toContain(".repo-harness/");
@@ -301,62 +303,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(contextMap.lsp_profiles.default).toBe("typescript-lsp");
       expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).not.toContain("apps/*/AGENTS.md");
       expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).not.toContain("tasks/workstreams/**/*.md");
-      const tsDefaultPolicy = defaultPolicy("minimal-agentic", "en") as Record<string, any>;
-      expect(tsDefaultPolicy.harness.helper_source).toBe("package");
-      expect(tsDefaultPolicy.harness.helper_runtime_dir).toBe("package:scripts");
-      expect(tsDefaultPolicy.harness.helper_compat_dir).toBeUndefined();
-      expect(tsDefaultPolicy.external_tooling.routing).toEqual({
-        simple: "waza",
-      });
-      expect(tsDefaultPolicy.external_tooling).not.toHaveProperty("gbrain");
-      // archctx is an external optional CLI, never a runtime dependency: the entry
-      // must stay advisory and identical across every seeder that emits it.
-      const archctxEntry = {
-        cli_package: "archctx",
-        contracts_package: "archctx-contracts",
-        contracts_scope: "release-gated-packed-schema-authority",
-        install_mode: "release-gated-runtime-dependency-when-projection-enabled",
-        readiness: "advisory",
-        hook_policy: "do-not-block-hooks",
-        vendoring_policy: "do-not-vendor",
-        model_dir: ".archcontext/model",
-        nodes_dir: ".archcontext/model/nodes",
-        capability_source_key: ".ai/harness/policy.json#context.capability_source",
-      };
-      expect(
-        JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf-8")).external_tooling.archctx
-      ).toEqual(archctxEntry);
-      expect(tsDefaultPolicy.external_tooling.fable_agents).toBeUndefined();
-      expect(tsDefaultPolicy.tasks.contracts_dir).toBeUndefined();
-      expect(tsDefaultPolicy.active_plan).toBeUndefined();
-      expect(tsDefaultPolicy.sprints).toBeUndefined();
-      expect(tsDefaultPolicy.tasks.current_status_file).toBeUndefined();
-      expect(tsDefaultPolicy.tasks.workstreams_dir).toBeUndefined();
-      expect(tsDefaultPolicy.workstreams).toBeUndefined();
-      expect(tsDefaultPolicy.operations.dir).toBe("deploy");
-      expect(tsDefaultPolicy.operations.private_dir).toBe("_ops");
-      expect(tsDefaultPolicy.operations.deploy_sql).toBeUndefined();
-      expect(tsDefaultPolicy.tasks.todo_file).toBeUndefined();
-      expect(tsDefaultPolicy.agentic_development.routing).toEqual({
-        product_discovery: "parent-agent:geju",
-        complex_engineering_plan: "parent-agent:geju",
-        design_plan: "parent-agent:geju",
-        design_options_choice: "convention:design-options",
-        small_or_medium_plan: "waza:think",
-        bug_or_regression: "waza:hunt",
-        post_implementation_review: "waza:check",
-      });
-      expect(tsDefaultPolicy.agentic_development.due_diligence.levels).toEqual([
-        "P1_GLOBAL_ARCHITECTURE",
-        "P2_DATA_FLOW_TRACE",
-        "P3_DESIGN_DECISION",
-      ]);
-      expect(tsDefaultPolicy.agentic_development.due_diligence.explicit_report_required_for).toContain(
-        "complex_engineering_plan",
-      );
-      expect(tsDefaultPolicy.context.capability_registry_file).toBe(".ai/context/capabilities.json");
-      // A new policy uses the JSON capability registry by default.
-      // ensure-task-workflow only prepares runtime directories; it does not seed policy.
+      const tsDefaultPolicy = defaultPolicy("en") as Record<string, any>;
       const repoPolicy = JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf-8"));
       expect(tsDefaultPolicy.context.capability_source).toBe("registry");
       // External source intake is disabled by absence in every policy
@@ -365,28 +312,10 @@ describe("create-project-dirs runtime smoke", () => {
       expect(parseExternalSourcesPolicy(tsDefaultPolicy.external_sources).mode).toBe("off");
       expect(parseExternalSourcesPolicy(repoPolicy.external_sources).mode).toBe("off");
       // This repo cut its own authority over to archcontext nodes (Stage 2); the
-      // seeded default above is what a newly generated repo gets, not what this repo
-      // runs on. Both shapes share the one selector and the one rule string.
+      // seeded default above is what a newly generated repo gets, not what this repo runs on.
       expect(repoPolicy.context.capability_source).toBe("archcontext");
       expect(existsSync(join(ROOT, ".archcontext/model/nodes"))).toBe(true);
       expect(existsSync(join(ROOT, ".ai/context/capabilities.json"))).toBe(false);
-      for (const seeded of [tsDefaultPolicy, repoPolicy]) {
-        expect(seeded.context.capability_source_rule).toBe(tsDefaultPolicy.context.capability_source_rule);
-        expect(seeded.context.capability_source_rule).toContain("no dual-read and no fallback");
-      }
-      // standard-plan.ts does not carry capability_config.
-      expect(repoPolicy.context.capability_config).toBe("repo-harness run capability-config");
-      expect(tsDefaultPolicy.documentation.profile).toBe("minimal-agentic");
-      expect(tsDefaultPolicy.documentation.reference_source).toBe("user-level-runtime-docs");
-      expect(tsDefaultPolicy.documentation.reference_stub_marker).toBe(REFERENCE_STUB_MARKER);
-      expect(tsDefaultPolicy.documentation.reference_resolver).toBe("repo-harness docs path <doc-id>");
-      expect(tsDefaultPolicy.architecture).toBeUndefined();
-      expect(tsDefaultPolicy.harness.architecture_events_file).toBeUndefined();
-      expect(tsDefaultPolicy.harness.workstream_events_file).toBeUndefined();
-      expect(tsDefaultPolicy.worktree_strategy.worktree_dir_template).toBe('{{system_tmp}}/{{repo}}-wt-{{slug}}');
-      expect(tsDefaultPolicy.context_budget).toBeUndefined();
-      expect(tsDefaultPolicy.handoff_resume).toBeUndefined();
-      expect(tsDefaultPolicy.upgrade.strategy_version).toBe(1);
 
       const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf-8"));
       expect(pkg.scripts["check:context-files"]).toBe("repo-harness run check-context-files");
@@ -695,7 +624,7 @@ describe("create-project-dirs runtime smoke", () => {
    */
   test("policy seeders author no repository archctx execution or refactor settings", () => {
     const seeders: Array<[string, Record<string, any>]> = [
-      ["src/effects/adoption/standard-plan.ts", defaultPolicy("minimal-agentic", "en")],
+      ["src/effects/adoption/standard-plan.ts", defaultPolicy("en")],
       [".ai/harness/policy.json", JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf-8"))],
     ];
 

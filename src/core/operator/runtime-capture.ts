@@ -3,7 +3,6 @@ export const RUNTIME_CAPTURE_PROTOCOL = 'repo-harness.runtime-capture.v1' as con
 export const RUNTIME_CAPTURE_MAX_BYTES = 256 * 1024;
 export const RUNTIME_CAPTURE_MAX_FRAME_BYTES = 256 * 1024;
 export const RUNTIME_CAPTURE_MAX_OBSERVATIONS = 64;
-export const RUNTIME_CAPTURE_MAX_ID_LENGTH = 160;
 export type NativeRuntimeProvider = 'codex' | 'claude' | 'pi';
 export type NativeRuntimeState = 'unknown' | 'idle' | 'working' | 'blocked' | 'settled' | 'error' | 'cancelled';
 export type NativeRuntimeReason = 'permission' | 'question' | 'auth' | 'unknown';

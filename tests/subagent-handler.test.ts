@@ -707,7 +707,7 @@ describe('typed subagent hook handlers', () => {
       const repoRoot = tempRepo();
       const home = tempDir();
       try {
-        const contract = seedActiveContract(repoRoot);
+        seedActiveContract(repoRoot);
         const stack = composedChildStack(repoRoot, 'fast-worker', 'gpt-6.1-sol', codexEnv({ HOME: home }));
         expect(stack.startContext).toContain('[repo-harness:native-role-routing] verified');
         expect(occurrences(stack.composed, BOUNDARY_MARKER)).toBe(1);
@@ -726,7 +726,7 @@ describe('typed subagent hook handlers', () => {
       const repoRoot = tempRepo();
       const home = tempDir();
       try {
-        const contract = seedActiveContract(repoRoot);
+        seedActiveContract(repoRoot);
         const stack = composedChildStack(repoRoot, 'explorer', 'gpt-6-luna', codexEnv({ HOME: home }));
         expect(stack.startContext).toContain('[repo-harness:native-role-routing] verified');
         expect(occurrences(stack.composed, BOUNDARY_MARKER)).toBe(0);

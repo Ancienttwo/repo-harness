@@ -1,10 +1,5 @@
-import { isOperatorMessageKey, relativeAge, type OperatorTranslate } from './i18n';
+import { relativeAge, type OperatorTranslate } from './i18n';
 import type { VerifiedTask } from './repository-reads';
-
-/** A server enum outside the dictionary renders as its own text, never as an invented label. */
-export function enumLabel(key: string, fallback: string, t: OperatorTranslate): string {
-  return isOperatorMessageKey(key) ? t(key) : fallback;
-}
 
 /** The agent of the first verified session, and how many more share the item's branch. */
 export function ownerAgents(tasks: readonly VerifiedTask[], t: OperatorTranslate): string {

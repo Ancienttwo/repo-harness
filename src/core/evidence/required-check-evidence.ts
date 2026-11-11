@@ -22,6 +22,8 @@
  * buckets; this module never clears a blocker.
  */
 
+import { isRecord } from './is-record';
+import { exactKeys, fail, oneOf, requiredString } from './record-validators';
 import type { RequiredCheckTestExecutionV1 } from './test-execution-evidence';
 import { testIdentifierPresent } from './test-execution-evidence';
 
@@ -209,29 +211,6 @@ const FAILED_CONCLUSIONS: ReadonlySet<RequiredCheckAttemptConclusion> = new Set(
   'failure', 'timed_out', 'cancelled',
 ]);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function fail(message: string): never {
-  throw new Error(message);
-}
-
-function exactKeys(value: Record<string, unknown>, label: string, keys: readonly string[]): void {
-  const actual = Object.keys(value).sort();
-  const expected = [...keys].sort();
-  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
-    fail(`${label} fields are invalid`);
-  }
-}
-
-function requiredString(value: unknown, label: string, pattern?: RegExp): string {
-  if (typeof value !== 'string' || value.trim() === '' || (pattern && !pattern.test(value))) {
-    fail(`${label} is invalid`);
-  }
-  return value;
-}
-
 function nullableString(value: unknown, label: string): string | null {
   if (value === null) return null;
   if (typeof value !== 'string') fail(`${label} is invalid`);
@@ -255,12 +234,6 @@ function scope(value: unknown, label: string): RequiredCheckScopeV1 {
     executed: Object.freeze(stringArray(value.executed, `${label}.executed`)),
     skipped: Object.freeze(stringArray(value.skipped, `${label}.skipped`)),
   });
-}
-
-function oneOf<T extends string>(value: unknown, choices: readonly T[], label: string): T {
-  // A JSON array such as ["timeout"] must not pass through String() coercion.
-  if (typeof value !== 'string' || !(choices as readonly string[]).includes(value)) fail(`${label} is invalid`);
-  return value as T;
 }
 
 function attemptConclusion(value: unknown, label: string): RequiredCheckAttemptConclusion {

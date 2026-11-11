@@ -12,6 +12,7 @@
 
 import { accessSync, constants, lstatSync, mkdirSync, readFileSync, writeFileSync, type Stats } from 'fs';
 import { basename, dirname, join } from 'path';
+import { shellQuote } from '../../core/shell-quote';
 import { assertConfigurationPath } from './configuration-ownership';
 
 export const GLOBAL_RULES_BEGIN = '<!-- BEGIN: repo-harness global-working-rules -->';
@@ -62,6 +63,7 @@ export const SHIPPED_GLOBAL_RULES_SECTIONS: readonly string[] = [
   'Sufficiency and Stop Boundaries',
   'Progressive Due Diligence',
   'Code Optimization Principles',
+  'Code Ownership',
   'No Compatibility Fallbacks in Product Code',
   'Test Budget',
   'Reporting',
@@ -523,10 +525,6 @@ export function setReportingLanguage(
 export interface GlobalContextRefresh {
   readonly status: 'ok' | 'skipped' | 'failed';
   readonly detail: string;
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 /**

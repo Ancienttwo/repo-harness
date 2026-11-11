@@ -28,6 +28,7 @@ import {
 } from '../../core/dev-activity/projection';
 import type { RuntimeOverlay } from '../../core/operator/runtime-status';
 import { parseWorktreeTopology } from '../git/worktree-topology';
+import { startObservationLoop } from '../observation-loop';
 import {
   readRepoHarnessRegistryStrictSnapshot,
   registeredRootReadable,
@@ -424,35 +425,26 @@ export interface DevActivityCollectorHandle {
 
 /** Collect at startup, then every interval after the previous cycle settles. Cycles never overlap. */
 export function startDevActivityCollector(options: DevActivityCollectorOptions = {}): DevActivityCollectorHandle {
-  const controller = new AbortController();
-  let cache: DevActivitySnapshotV2 = unavailableDevActivitySnapshot();
-  let closed = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let inflight: Promise<void> | null = null;
-  const cycle = (): Promise<void> => {
-    inflight = collectDevActivity({ ...options, signal: controller.signal })
-      .then(next => { if (!closed) cache = next; }, () => {
-        // Keep the last cache; its collected_at shows its age. A failed first cycle still ends the pending state.
-        if (!closed && cache.collected_at === null) cache = { ...unavailableDevActivitySnapshot(), collected_at: new Date((options.now ?? Date.now)()).toISOString() };
-      })
-      .finally(() => {
-        inflight = null;
-        if (closed) return;
-        timer = setTimeout(cycle, options.interval_ms ?? DEV_ACTIVITY_INTERVAL_MS);
-        timer.unref?.();
-      });
-    return inflight;
-  };
-  void cycle();
-  return Object.freeze({
-    read: () => cache,
-    settled: () => inflight ?? Promise.resolve(),
-    close: async () => {
-      closed = true;
-      clearTimeout(timer);
-      controller.abort();
-      await inflight;
+  // Keep rule: a failed cycle keeps the older snapshot at its observation time, and a failed first cycle
+  // publishes the unavailable snapshot at the time of the attempt, so the pending state always ends.
+  const loop = startObservationLoop<DevActivitySnapshotV2, 'dev_activity_failed'>({
+    cycle: async ({ signal }) => {
+      try { return { state: 'observed', value: await collectDevActivity({ ...options, signal }) }; }
+      catch { return { state: 'unavailable', reason: 'dev_activity_failed' }; }
     },
+    keep: (previous) => previous.state === 'observed'
+      ? previous
+      : { state: 'observed', value: { ...unavailableDevActivitySnapshot(), collected_at: new Date((options.now ?? Date.now)()).toISOString() } },
+    failure: 'dev_activity_failed',
+    interval_ms: options.interval_ms ?? DEV_ACTIVITY_INTERVAL_MS,
+  });
+  return Object.freeze({
+    read: (): DevActivitySnapshotV2 => {
+      const state = loop.read();
+      return state.state === 'observed' ? state.value : unavailableDevActivitySnapshot();
+    },
+    settled: loop.settled,
+    close: loop.close,
   });
 }
 

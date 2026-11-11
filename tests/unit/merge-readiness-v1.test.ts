@@ -216,7 +216,7 @@ test('ordinary PR readiness needs no receipt, lease or acceptance artifact', () 
     expected_head_sha: HEAD, expected_base_sha: BASE };
   expect(projectPullRequestMergeReadiness(input).ready).toBe(true);
   expect(projectPullRequestMergeReadiness({ ...input, provider: { ...input.provider, checks: [] } }).ready).toBe(false);
-  expect(projectPullRequestMergeReadiness({ ...input, provider: { ...input.provider, checks: [{ name: 'fake-green', bucket: 'pass' }] } }).ready).toBe(false);
+  expect(projectPullRequestMergeReadiness({ ...input, provider: { ...input.provider, checks: [{ name: 'Governance Verify', bucket: 'pass' }] } }).ready).toBe(true);
 });
 
 test.each([null, -1, 0.5, Number.NaN])('missing or invalid thread count %s fails closed', count => {
@@ -560,8 +560,9 @@ describe('required-check failure evidence', () => {
     const base = readyInput();
     const otherHead = { ...assertionThenPassedEvidence(), head_sha: '9'.repeat(40) };
     expect(projectPullRequestMergeReadiness({ ...base,
-      provider: { ...base.provider!, check_failures: [otherHead] } }).blockers.map((blocker) => blocker.code))
-      .toContain('provider_data_incomplete');
+      provider: { ...base.provider!, check_failures: [otherHead] } }).blockers)
+      .toContainEqual({ code: 'provider_data_incomplete', attention_owner: 'external',
+        detail: 'provider check_failures[0].head_sha does not match the expected value' });
     expect(projectPullRequestMergeReadiness({ ...base,
       provider: { ...base.provider!, check_failures: [{ check_name: 'incomplete' }] } as unknown as ProviderMergeReadinessFactsV1 })
       .blockers.map((blocker) => blocker.code)).toContain('provider_data_incomplete');

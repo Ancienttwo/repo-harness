@@ -28,7 +28,7 @@
  * checkpoint contains event metadata and decision payloads that the event
  * writer already redacted. Blob payloads pass an integrity check before use.
  */
-import { createHash, randomBytes } from "crypto";
+import { randomBytes } from "crypto";
 import {
   closeSync,
   constants,
@@ -48,13 +48,15 @@ import {
   writeFileSync,
 } from "fs";
 import { dirname, join } from "path";
+import { syncDirectoryDurably } from "../atomic-append";
 import { resolveInsideRepo } from "../path-safety";
 import { readAcceptedEvents } from "./event-log";
 import { resolveBlobsDir, resolveLogPath } from "./paths";
 import type { EvidenceEventRecord } from "../../core/evidence/types";
+import { isRecord } from "../../core/evidence/is-record";
 import { readCheckpointSnapshot } from "./checkpoint-snapshot";
 import { acquireExclusiveDirectoryLock } from "../locking/exclusive-directory-lock";
-import { canonicalize } from "../../core/evidence/canonical-json";
+import { sha256Hex } from "../../core/evidence/sha256";
 import {
   buildCheckpointProjection,
   checkpointBodyHashHex,
@@ -130,8 +132,7 @@ function syncCheckpointFile(path: string): void {
 
 function syncCheckpointDirectory(path: string): void {
   if (!CHECKPOINT_SYNC.syncDirectories) return;
-  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try { fsyncSync(fd); } finally { closeSync(fd); }
+  syncDirectoryDurably(path);
 }
 
 function persistCheckpointDirectory(repoRoot: string, checkpointId: string): void {
@@ -217,10 +218,6 @@ export class CheckpointResolutionError extends Error {
     super(message);
     this.name = "CheckpointResolutionError";
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readTextOrNull(path: string): string | null {
@@ -467,7 +464,7 @@ export function readDecisionPayload(repoRoot: string, event: EvidenceEventRecord
     throw new Error(`invalid decision blob reference: ${event.event_id}`);
   }
   const bytes = readFileSync(join(resolveBlobsDir(repoRoot), digest));
-  if (createHash("sha256").update(bytes).digest("hex") !== digest
+  if (sha256Hex(bytes) !== digest
     || event.payload_hash !== `sha256:${digest}` || event.blob_bytes !== bytes.length) {
     throw new Error(`decision blob integrity check failed: ${event.event_id}`);
   }

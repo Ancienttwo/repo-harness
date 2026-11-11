@@ -1,5 +1,5 @@
 {
-  "protocol": 4,
+  "protocol": 7,
   "kind": "repo-harness.board",
   "observed_at": "2026-11-02T23:29:42.936Z",
   "repository": "Ancienttwo/repo-harness",
@@ -252,6 +252,7 @@
         "accepted_at": "2026-11-02T21:12:35Z",
         "evidence_url": "https://github.com/Ancienttwo/repo-harness/pull/1491#issuecomment-6588586440"
       },
+      "merge_readiness_observed_at": "2026-11-02T23:29:42.936Z",
       "merge_readiness": {
         "provider_repository_id": "1186405141",
         "repository": "Ancienttwo/repo-harness",
@@ -351,6 +352,7 @@
       "acceptance": {
         "status": "not_accepted"
       },
+      "merge_readiness_observed_at": "2026-11-02T23:29:42.936Z",
       "merge_readiness": {
         "provider_repository_id": "1186405141",
         "repository": "Ancienttwo/repo-harness",
@@ -434,6 +436,7 @@
       "acceptance": {
         "status": "not_accepted"
       },
+      "merge_readiness_observed_at": "2026-11-02T23:29:42.936Z",
       "merge_readiness": {
         "provider_repository_id": "1186405141",
         "repository": "Ancienttwo/repo-harness",

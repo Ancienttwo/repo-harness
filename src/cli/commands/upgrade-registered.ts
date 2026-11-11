@@ -1,6 +1,7 @@
-import { createHash } from 'crypto';
-import { lstatSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { sha256Prefixed } from '../../core/evidence/sha256';
+import { lstatSync } from 'fs';
+import { readWorkflowPolicyDocument } from '../../effects/state/resolve-effective-state';
+import { POLICY_ABSENT, isPolicyObject, policyValue } from '../../core/workflow/policy-schema';
 import { formatJson } from '../installer/shared';
 import { gitSpawnSync } from '../../effects/git/runner';
 import {
@@ -72,7 +73,6 @@ export interface RegisteredUpgradeResult {
 export interface RegisteredUpgradeOptions {
   readonly apply?: boolean;
   readonly expectedRevision?: string;
-  readonly migrateWorktreeTemplate?: boolean;
   readonly env?: NodeJS.ProcessEnv;
   /** The real process cwd. The sweep and the legacy worktree cleanup never remove it or anything below it. */
   readonly callerCwd?: string;
@@ -96,11 +96,12 @@ function gitFailure(result: ReturnType<typeof git>): string {
 
 /** The policy owns the default branch. A missing or invalid value is never guessed. */
 function policyDefaultBranch(path: string): { readonly branch: string } | { readonly error: string } {
-  let policy: unknown;
-  try { policy = JSON.parse(readFileSync(join(path, '.ai', 'harness', 'policy.json'), 'utf-8')); }
+  let document: ReturnType<typeof readWorkflowPolicyDocument>;
+  try { document = readWorkflowPolicyDocument(path); }
   catch (error) { return { error: `.ai/harness/policy.json is unreadable: ${error instanceof Error ? error.message : String(error)}` }; }
-  const strategy = policy && typeof policy === 'object' ? (policy as { worktree_strategy?: unknown }).worktree_strategy : undefined;
-  const branch = strategy && typeof strategy === 'object' ? (strategy as { base_branch?: unknown }).base_branch : undefined;
+  if (!document.present) return { error: '.ai/harness/policy.json is missing' };
+  const strategy = document.rootIsObject ? policyValue(document, 'worktree_strategy') : POLICY_ABSENT;
+  const branch = isPolicyObject(strategy) ? policyValue(document, 'worktree_strategy.base_branch') : POLICY_ABSENT;
   if (typeof branch !== 'string' || branch.trim() === '') return { error: 'worktree_strategy.base_branch is missing or not a non-empty string' };
   return { branch: branch.trim() };
 }
@@ -157,7 +158,7 @@ function approvedSweep(plan: RepoPlan): WorktreeSweepPlan {
 /** Repo classification is checked again before each write, so the revision binds only the registry and the sweep steps. */
 function planRevision(registryRevision: string, repos: readonly { readonly path: string }[], plans: readonly RepoPlan[]): string {
   const sweeps = plans.map((plan, index) => ({ path: repos[index]!.path, sweep: boundSweepSteps(approvedSweep(plan)) }));
-  return `sha256:${createHash('sha256').update(JSON.stringify({ registry: registryRevision, repos: sweeps })).digest('hex')}`;
+  return sha256Prefixed(JSON.stringify({ registry: registryRevision, repos: sweeps }));
 }
 
 function skipped(path: string, classification: Exclude<Classification, { ready: true }>): RegisteredRepoResult {
@@ -174,7 +175,7 @@ function previewRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.P
     operations: planned.plan.operations.filter((operation) => operation.status === 'planned')
       .map((operation) => ({ kind: operation.kind, ...(operation.path === undefined ? {} : { path: operation.path }) })),
   };
-  const upgrade = runUpgrade({ cwd: path, callerCwd, scope: 'project', apply: false, migrateWorktreeTemplate: opts.migrateWorktreeTemplate, env });
+  const upgrade = runUpgrade({ cwd: path, callerCwd, scope: 'project', apply: false, env });
   const errors = [
     ...(planned.error ? [`init plan failed: ${planned.error.code} - ${planned.error.message}`] : []),
     ...(upgrade.error ? [`project upgrade check failed: ${upgrade.error}`] : []),
@@ -217,7 +218,7 @@ function applyRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.Pro
   if (!adoption.ok) return { path, status: 'failed', init, error: `init refresh failed: ${errors.join('; ') || 'not ok'}` };
 
   // The upgrade also removes provable legacy sibling worktrees; the sweep then handles the managed root.
-  const upgrade = runUpgrade({ cwd: path, callerCwd, scope: 'project', apply: true, migrateWorktreeTemplate: opts.migrateWorktreeTemplate, env });
+  const upgrade = runUpgrade({ cwd: path, callerCwd, scope: 'project', apply: true, env });
   if (upgrade.error) return { path, status: 'failed', init, upgrade, error: `project upgrade failed: ${upgrade.error}` };
 
   const sweep: RegisteredSweep = { ran: true, report: sweepManagedWorktrees(path, callerCwd, env, { deadlineMs: SWEEP_DEADLINE_MS, approved }) };

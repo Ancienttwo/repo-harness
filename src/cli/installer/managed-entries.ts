@@ -16,6 +16,8 @@
 
 import { accessSync, constants, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
+import { isRecord } from '../../core/evidence/is-record';
+import { shellQuote } from '../../core/shell-quote';
 import { bunGlobalPackageRoot } from './skill-projection';
 import { routesForHost, type AdapterHost, type Route } from '../hook/route-registry';
 import {
@@ -78,7 +80,7 @@ function resolvedHookPath(path: string, label: string, mode: number): string {
     const resolved = realpathSync(path);
     if (!statSync(resolved).isFile()) throw new Error('expected a file');
     accessSync(resolved, mode);
-    return `'${resolved.replaceAll("'", "'\\''")}'`;
+    return shellQuote(resolved);
   } catch (error) {
     throw new Error(`Cannot resolve managed hook ${label} at ${path}: ${(error as Error).message}. Run bun add -g repo-harness, then repo-harness install --location global.`);
   }
@@ -134,10 +136,6 @@ interface ActualManagedHook {
   readonly timeout: unknown;
   readonly route: { readonly event: string; readonly routeId: string } | null;
   readonly index: number;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 /**

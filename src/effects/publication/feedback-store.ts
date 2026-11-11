@@ -5,11 +5,14 @@
  * evidence live in distinct files so neither can change an event digest.
  */
 import { createHash, randomUUID } from 'crypto';
-import { closeSync, constants, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync, writeSync } from 'fs';
+import { closeSync, constants, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync } from 'fs';
 import { join } from 'path';
 
+import { createFileExclusiveDurably } from '../atomic-append';
 import { canonicalFeedbackDeliveryReceiptBytes, canonicalFeedbackEventBytes, transitionFeedbackDeliveryReceipt, validateFeedbackDeliveryReceipt, validateFeedbackEvent, validateReactionAttemptReceipt, type FeedbackDeliveryReceiptV1, type FeedbackEventV1, type ReactionAttemptReceiptV1 } from '../../core/publication/feedback';
+import { byteCompare } from '../../core/evidence/byte-compare';
 import { resolveGitCommonDirectory } from '../git/common-directory';
+import { SHA256_PREFIXED_PATTERN } from '../../core/evidence/sha256-pattern';
 
 export const FEEDBACK_ROOT_RELATIVE_PATH = 'repo-harness/feedback/v1';
 
@@ -40,7 +43,7 @@ function hash(value: string): string {
 }
 
 function publicationComponent(publicationId: string): string {
-  if (!/^sha256:[0-9a-f]{64}$/.test(publicationId)) throw unreadable('publication id is invalid');
+  if (!SHA256_PREFIXED_PATTERN.test(publicationId)) throw unreadable('publication id is invalid');
   return publicationId.slice('sha256:'.length);
 }
 
@@ -96,15 +99,6 @@ export function feedbackEventPath(
   gitBin = 'git',
 ): string {
   return eventPathIn(publicationLayout(repoRoot, publicationId, gitBin), providerEventId);
-}
-
-export function feedbackDeliveryReceiptPath(
-  repoRoot: string,
-  publicationId: string,
-  providerEventId: string,
-  gitBin = 'git',
-): string {
-  return deliveryPathIn(publicationLayout(repoRoot, publicationId, gitBin), providerEventId);
 }
 
 export function feedbackReactionLedgerPath(repoRoot: string, publicationId: string, gitBin = 'git'): string {
@@ -168,11 +162,6 @@ function fsyncDirectory(path: string): void {
   }
 }
 
-function writeAll(fd: number, bytes: Buffer): void {
-  let offset = 0;
-  while (offset < bytes.length) offset += writeSync(fd, bytes, offset, bytes.length - offset);
-}
-
 function readRegular(path: string, label: string): Buffer {
   let stat;
   try {
@@ -230,16 +219,7 @@ function publishImmutable(path: string, bytes: Buffer, equivalent: () => boolean
   }
   const parent = join(path, '..');
   const temporary = join(parent, `.${hash(path)}.${process.pid}.${randomUUID()}.tmp`);
-  let fd: number | null = null;
-  try {
-    fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-    writeAll(fd, bytes);
-    fsyncSync(fd);
-  } catch (error) {
-    throw incomplete(`cannot write immutable feedback event: ${path}`, error);
-  } finally {
-    if (fd !== null) closeSync(fd);
-  }
+  createFileExclusiveDurably(temporary, bytes, 0o600, (error) => incomplete(`cannot write immutable feedback event: ${path}`, error));
   try {
     linkSync(temporary, path);
     fsyncDirectory(parent);
@@ -311,16 +291,7 @@ export function writeFeedbackDeliveryReceipt(
   const bytes = Buffer.from(`${canonicalFeedbackDeliveryReceiptBytes(valid)}\n`, 'utf-8');
   const parent = layout.deliveries;
   const temporary = join(parent, `.${hash(path)}.${process.pid}.${randomUUID()}.tmp`);
-  let fd: number | null = null;
-  try {
-    fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-    writeAll(fd, bytes);
-    fsyncSync(fd);
-  } catch (error) {
-    throw incomplete(`cannot write feedback delivery receipt: ${path}`, error);
-  } finally {
-    if (fd !== null) closeSync(fd);
-  }
+  createFileExclusiveDurably(temporary, bytes, 0o600, (error) => incomplete(`cannot write feedback delivery receipt: ${path}`, error));
   try {
     renameSync(temporary, path);
     fsyncDirectory(parent);
@@ -378,7 +349,7 @@ export function readFeedbackDeliveryReceipt(
 function listedFiles(directory: string, optional: boolean): readonly string[] {
   if (!requireDirectory(directory, optional)) return [];
   try {
-    return readdirSync(directory).sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)));
+    return readdirSync(directory).sort(byteCompare);
   } catch (error) {
     throw unreadable(`feedback directory cannot be listed: ${directory}`, error);
   }

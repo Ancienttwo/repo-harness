@@ -2,14 +2,25 @@ import { useCallback, useEffect, useRef } from 'react';
 
 const OBSERVATION_INTERVAL_MS = 30_000;
 
+/**
+ * The one failure rule of the loop: only a request with no typed answer
+ * (`unreachable`) backs the loop off. A typed refusal is an answer: the reader
+ * shows the datum as unavailable and the loop keeps its interval.
+ */
+export function answered(read: { readonly state: string; readonly reason?: string }): boolean {
+  return !(read.state === 'unavailable' && read.reason === 'unreachable');
+}
+
 /** Owns only request lifetime. Readers retain decoding, source state and errors.
+ * `read` resolves to whether the request got a typed answer (`answered`). A typed refusal is an answer;
+ * a read that rejects got no typed answer.
  * A promise must retire before the same loop can start its queued request.
  * A loop that resumes after `enabled` was false reads at once, like a page that
  * becomes visible again, so work deferred while paused is not lost. */
 export function useObservationRefresh(
   read: (signal: AbortSignal) => Promise<boolean>,
   identity: string,
-  { enabled = true, immediate = true }: { readonly enabled?: boolean; readonly immediate?: boolean } = {},
+  { enabled = true, immediate = true, interval = OBSERVATION_INTERVAL_MS }: { readonly enabled?: boolean; readonly immediate?: boolean; readonly interval?: number } = {},
 ): () => void {
   const requestRef = useRef<() => void>(() => {});
   const pausedRef = useRef(false);
@@ -28,7 +39,7 @@ export function useObservationRefresh(
     const schedule = () => {
       if (disposed || active || !visible()) return;
       clearTimer();
-      timer = setTimeout(request, OBSERVATION_INTERVAL_MS * 2 ** failures);
+      timer = setTimeout(request, interval * 2 ** failures);
     };
     const request = () => {
       if (disposed) return;
@@ -59,6 +70,6 @@ export function useObservationRefresh(
       document.removeEventListener('visibilitychange', visibilityChanged);
       if (requestRef.current === request) requestRef.current = () => {};
     };
-  }, [read, identity, enabled, immediate]);
+  }, [read, identity, enabled, immediate, interval]);
   return useCallback(() => requestRef.current(), []);
 }

@@ -48,7 +48,10 @@ export type MergeReadinessBlockerCode =
 export interface MergeReadinessBlockerV1 {
   readonly code: MergeReadinessBlockerCode;
   readonly attention_owner: MergeReadinessAttentionOwner;
-  /** Action text for a coverage blocker: the protected path, the check and the fix. Absent for every other code. */
+  /**
+   * Action text for a coverage or generated-artifact blocker, or the provider
+   * field or entry that failed for `provider_data_incomplete`. Absent for every other code.
+   */
   readonly detail?: string;
 }
 
@@ -59,62 +62,14 @@ export type MergeReadinessRollbackBoundary =
   | { readonly status: 'not_active' }
   | { readonly status: 'ready'; readonly pr_number: number; readonly before_sha: string; readonly after_sha: string };
 
-/** The head refs that `publication merge --batch` accepts. */
-export const BATCH_REF = /^integration\/[1-9][0-9]*-batch-[1-9][0-9]*$/u;
-/** The most commits in base..head that `publication merge --batch` proves: one provider compare page. The builder refuses more. */
-export const BATCH_COMMIT_LIMIT = 100;
-
-export interface RollbackParentV1 {
-  readonly before_sha: string;
-  /** `1` when the revert is `git revert -m 1`; null for a single-parent commit. */
-  readonly mainline: 1 | null;
-}
-
 /**
- * The one decoder for the commit that a revert of a merged main PR restores. A squash commit has one parent.
- * A `publication merge --batch` commit has the base as its first parent and the batch PR head as its second.
+ * The one decoder for the commit that a revert of a merged main PR restores: the single parent of its squash commit.
  * Every other parent list returns null, and the caller fails closed.
  */
-export function rollbackParent(afterSha: string, parents: readonly unknown[], prHead: unknown): RollbackParentV1 | null {
-  const shas = parents.map(parent => parent !== null && typeof parent === 'object' ? (parent as Record<string, unknown>).sha : undefined);
-  if (!shas.every((sha): sha is string => validSha(sha) && sha !== afterSha) || new Set(shas).size !== shas.length) return null;
-  if (shas.length === 1) return Object.freeze({ before_sha: shas[0]!, mainline: null });
-  if (shas.length !== 2 || prHead === null || typeof prHead !== 'object') return null;
-  const head = prHead as Record<string, unknown>;
-  return typeof head.ref === 'string' && BATCH_REF.test(head.ref) && head.sha === shas[1]
-    ? Object.freeze({ before_sha: shas[0]!, mainline: 1 })
-    : null;
-}
-
-export interface BatchMemberMergeV1 {
-  readonly merge_sha: string;
-  /** The second parent of the member merge: the merged member PR head. */
-  readonly member_head_sha: string;
-}
-
-export type BatchMemberChainV1 =
-  | { readonly status: 'complete'; readonly members: readonly BatchMemberMergeV1[] }
-  | { readonly status: 'leaves_range'; readonly sha: string }
-  | { readonly status: 'not_member_merge'; readonly sha: string; readonly parent_count: number }
-  | { readonly status: 'cycle' };
-
-/**
- * The one decoder of a batch commit chain. The first-parent chain from the batch head must reach the base through
- * two-parent member merges only. A member head is the second parent of such a merge, never the first, so every
- * non-merge commit in base..head is then reachable from a member head. `commitParents` holds every commit in
- * base..head. This proves the commit graph only; the merge trees stay the integrator's check.
- */
-export function batchMemberMerges(baseSha: string, headSha: string, commitParents: ReadonlyMap<string, readonly string[]>): BatchMemberChainV1 {
-  const members: BatchMemberMergeV1[] = [];
-  let sha = headSha;
-  for (let step = 0; step <= commitParents.size && sha !== baseSha; step++) {
-    const parents = commitParents.get(sha);
-    if (parents === undefined) return Object.freeze({ status: 'leaves_range', sha });
-    if (parents.length !== 2) return Object.freeze({ status: 'not_member_merge', sha, parent_count: parents.length });
-    members.push(Object.freeze({ merge_sha: sha, member_head_sha: parents[1]! }));
-    sha = parents[0]!;
-  }
-  return sha === baseSha ? Object.freeze({ status: 'complete', members: Object.freeze(members) }) : Object.freeze({ status: 'cycle' });
+export function rollbackParent(afterSha: string, parents: readonly unknown[]): string | null {
+  const parent = parents.length === 1 ? parents[0] : null;
+  const sha = parent !== null && typeof parent === 'object' ? (parent as Record<string, unknown>).sha : undefined;
+  return validSha(sha) && sha !== afterSha ? sha : null;
 }
 
 /**
@@ -182,6 +137,7 @@ export interface ProviderMergeReadinessFactsV1 {
   readonly review_decision: string | null;
   readonly unresolved_thread_count: number | null;
   readonly rollback_boundary: MergeReadinessRollbackBoundary | null;
+  /** All required checks; the effect verifies base-protected context presence before projection. */
   readonly checks: readonly {
     readonly name: string;
     readonly bucket: RequiredCheckBucketV1;
@@ -200,6 +156,8 @@ export interface PullRequestMergeReadinessInput {
   readonly expected_base_sha: string;
   readonly integration_mode: MergeReadinessIntegrationMode;
   readonly observation: MergeReadinessObservation;
+  /** The provider field that failed when `observation` is `provider_data_incomplete`. */
+  readonly observation_detail?: string;
   readonly provider: ProviderMergeReadinessFactsV1 | null;
   /**
    * Observed chain evidence. The effect supplies it; it is not part of the
@@ -386,34 +344,44 @@ function observedStack(
 export function projectPullRequestMergeReadiness(input: PullRequestMergeReadinessInput): MergeReadinessVerdict {
   const blockers: MergeReadinessBlockerV1[] = [];
   let requiredCheckCoverage: RequiredCheckCoverageEvidenceV1 | null = null;
-  if (input.provider !== null && !Array.isArray(input.provider.check_failures)) push(blockers, 'provider_data_incomplete');
+  if (input.provider !== null && !Array.isArray(input.provider.check_failures)) {
+    push(blockers, 'provider_data_incomplete', 'provider check_failures is not an array');
+  }
   const coverage = input.provider === null ? null : input.provider.required_check_coverage;
   if (input.provider !== null && (!coverage || typeof coverage !== 'object' || Array.isArray(coverage)
     || !['absent', 'invalid', 'active'].includes(String(coverage.status)))) {
-    push(blockers, 'provider_data_incomplete');
+    push(blockers, 'provider_data_incomplete', 'provider required_check_coverage status is missing or unknown');
   }
   const generated = input.provider === null ? null : input.provider.generated_artifacts;
   if (input.provider !== null && (!generated || typeof generated !== 'object' || Array.isArray(generated)
     || !['absent', 'invalid', 'active'].includes(String(generated.status)))) {
-    push(blockers, 'provider_data_incomplete');
+    push(blockers, 'provider_data_incomplete', 'provider generated_artifacts status is missing or unknown');
   }
   const checkFailures = Array.isArray(input.provider?.check_failures) ? input.provider.check_failures : [];
-  for (const failure of checkFailures) {
+  // An indexed loop visits every slot: a hole in a sparse array is validated as undefined and fails closed.
+  for (let index = 0; index < checkFailures.length; index++) {
+    const failure = checkFailures[index]!;
     try {
       validateRequiredCheckFailureEvidence(failure);
     } catch {
-      push(blockers, 'provider_data_incomplete');
+      push(blockers, 'provider_data_incomplete', `provider check_failures[${index}] is invalid`);
       continue;
     }
-    if (failure.head_sha !== input.expected_head_sha || failure.base_sha !== input.expected_base_sha) {
-      push(blockers, 'provider_data_incomplete');
+    const mismatched = [
+      ...(failure.head_sha === input.expected_head_sha ? [] : [`check_failures[${index}].head_sha`]),
+      ...(failure.base_sha === input.expected_base_sha ? [] : [`check_failures[${index}].base_sha`]),
+    ];
+    if (mismatched.length > 0) {
+      push(blockers, 'provider_data_incomplete', `provider ${mismatched.join(' and ')} does not match the expected value`);
     }
   }
-  if (!validSha(input.expected_head_sha) || !validSha(input.expected_base_sha)) push(blockers, 'provider_data_incomplete');
+  if (!validSha(input.expected_head_sha) || !validSha(input.expected_base_sha)) {
+    push(blockers, 'provider_data_incomplete', 'expected head or base SHA is invalid');
+  }
   let stack = unobservedStackDetail();
   if (input.observation === 'stable') {
     const observed = observedStack(input.stack, input.expected_head_sha, input.expected_base_sha);
-    if (observed === null) push(blockers, 'provider_data_incomplete');
+    if (observed === null) push(blockers, 'provider_data_incomplete', 'observed stack chain is invalid');
     else stack = observed;
   }
   if (stack.member) {
@@ -424,9 +392,9 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
     if (failure !== undefined) push(blockers, failure);
   }
   if (input.integration_mode === 'ancestor' || input.integration_mode === 'absorbed') push(blockers, 'already_integrated');
-  if (input.integration_mode === 'unavailable') push(blockers, 'provider_data_incomplete');
+  if (input.integration_mode === 'unavailable') push(blockers, 'provider_data_incomplete', 'integration mode is unavailable');
   if (input.observation === 'provider_unavailable') push(blockers, 'provider_unavailable');
-  else if (input.observation === 'provider_data_incomplete') push(blockers, 'provider_data_incomplete');
+  else if (input.observation === 'provider_data_incomplete') push(blockers, 'provider_data_incomplete', input.observation_detail);
   else if (input.observation === 'changed_during_read') push(blockers, 'changed_during_read');
   else if (input.provider === null && !stack.member) push(blockers, 'provider_unavailable');
   else if (input.provider !== null) {
@@ -442,13 +410,15 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
         || !validSha(boundary.before_sha) || !validSha(boundary.after_sha)
         || boundary.before_sha === boundary.after_sha
         || boundary.after_sha !== provider.base_sha || boundary.after_sha !== input.expected_base_sha))) {
-      push(blockers, 'provider_data_incomplete');
+      push(blockers, 'provider_data_incomplete', 'provider rollback_boundary is invalid or does not bind the expected base');
     }
     // GitHub owns review state; local review, lease and acceptance artifacts do not grant merge permission.
     if (provider.review_decision === 'CHANGES_REQUESTED') push(blockers, 'changes_requested');
-    if (!Number.isSafeInteger(provider.unresolved_thread_count) || provider.unresolved_thread_count! < 0) push(blockers, 'provider_data_incomplete');
+    if (!Number.isSafeInteger(provider.unresolved_thread_count) || provider.unresolved_thread_count! < 0) {
+      push(blockers, 'provider_data_incomplete', 'provider unresolved_thread_count is invalid');
+    }
     else if (provider.unresolved_thread_count! > 0) push(blockers, 'unresolved_threads');
-    if (!provider.checks.some(check => check.name === 'Required / CI')) push(blockers, 'provider_data_incomplete');
+    if (provider.checks.length === 0) push(blockers, 'provider_data_incomplete', 'provider reported no required checks');
     if (provider.checks.some(check => check.bucket === 'pending')) push(blockers, 'checks_pending');
     if (provider.checks.some(check => check.bucket !== 'pass' && check.bucket !== 'pending')) push(blockers, 'checks_failed');
     if (provider.mergeable !== 'MERGEABLE') push(blockers, 'not_mergeable');
@@ -476,12 +446,12 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
       if (!check || typeof check !== 'object' || Array.isArray(check)
         || check.head_sha !== provider.head_sha || check.base_sha !== provider.base_sha
         || check.head_sha !== input.expected_head_sha || check.base_sha !== input.expected_base_sha) {
-        push(blockers, 'provider_data_incomplete');
+        push(blockers, 'provider_data_incomplete', 'generated-artifact check does not bind the expected head and base');
       } else if (check.failure !== null) {
         const failure = check.failure;
         if (!GENERATED_ARTIFACTS_FAILURE_CODES.includes(failure?.code as GeneratedArtifactsFailureCode)
           || typeof failure.message !== 'string' || failure.message.trim() === '') {
-          push(blockers, 'provider_data_incomplete');
+          push(blockers, 'provider_data_incomplete', 'generated-artifact check failure is malformed');
         } else {
           push(blockers, failure.code, failure.message);
         }

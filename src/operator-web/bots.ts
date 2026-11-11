@@ -1,8 +1,9 @@
 import { useCallback, useState } from 'react';
 import { decodeBotAccessSnapshot, type BotAccessSnapshotV1, type BotAttribution } from '../core/operator/bot-access';
 import { decodeSlackReviews, type SlackReviewsSnapshotV1 } from '../core/operator/slack-review';
+import { readJson } from './json-read';
 import { asApiError } from './operator-api-error';
-import { useObservationRefresh } from './useObservationRefresh';
+import { answered, useObservationRefresh } from './useObservationRefresh';
 
 /**
  * Browser side of `GET /api/v1/bot-access`. The server collects MCP, the
@@ -21,15 +22,10 @@ const BOT_ACCESS_REASONS: Readonly<Record<Exclude<BotAccessReason, 'unreachable'
 };
 
 export async function fetchBotAccess(signal: AbortSignal): Promise<BotAccessRead> {
-  let response: Response;
-  try {
-    response = await fetch('/api/v1/bot-access', { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
-  } catch (error) {
-    if (signal.aborted) throw error;
-    return { state: 'unavailable', reason: 'unreachable' };
-  }
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
+  const answer = await readJson('/api/v1/bot-access', signal);
+  if (answer.state === 'unreachable') return { state: 'unavailable', reason: 'unreachable' };
+  const { body } = answer;
+  if (!answer.ok) {
     const { code } = asApiError(body);
     return { state: 'unavailable', reason: Object.hasOwn(BOT_ACCESS_REASONS, code) ? code as BotAccessReason : 'unreachable' };
   }
@@ -56,7 +52,7 @@ function useBotsRead<S, R extends string>(read: (signal: AbortSignal) => Promise
       return true;
     }
     setView(current => current.kind === 'ready' ? { ...current, refreshFailed: true } : { kind: 'unavailable', reason: result.reason });
-    return result.reason !== 'unreachable';
+    return answered(result);
   }, [read]);
   useObservationRefresh(observe, identity, { enabled });
   return view;
@@ -79,16 +75,11 @@ export type BotReviewsReader = (signal: AbortSignal) => Promise<BotReviewsRead>;
 export type BotReviewsView = BotsReadView<SlackReviewsSnapshotV1, BotReviewsReason>;
 
 export async function fetchBotReviews(signal: AbortSignal): Promise<BotReviewsRead> {
-  let response: Response;
-  try {
-    response = await fetch('/api/v1/bot-reviews', { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
-  } catch (error) {
-    if (signal.aborted) throw error;
-    return { state: 'unavailable', reason: 'unreachable' };
-  }
-  const body: unknown = await response.json().catch(() => null);
+  const answer = await readJson('/api/v1/bot-reviews', signal);
+  if (answer.state === 'unreachable') return { state: 'unavailable', reason: 'unreachable' };
+  const { body } = answer;
   // The route refuses only a snapshot that failed its own decode.
-  if (!response.ok) return { state: 'unavailable', reason: asApiError(body).code === 'bot_reviews_invalid' ? 'bot_reviews_invalid' : 'unreachable' };
+  if (!answer.ok) return { state: 'unavailable', reason: asApiError(body).code === 'bot_reviews_invalid' ? 'bot_reviews_invalid' : 'unreachable' };
   try { return { state: 'ok', snapshot: decodeSlackReviews(body) }; } catch { return { state: 'unavailable', reason: 'bot_reviews_invalid' }; }
 }
 

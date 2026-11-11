@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { fileURLToPath } from 'node:url';
 
 import type { JsonValue } from '../../core/evidence/types';
@@ -52,7 +52,7 @@ const REFUSALS: Readonly<Record<RefusalCode, { readonly status: number; readonly
 const refusal = (code: RefusalCode) => new OperatorWriteRefusal(REFUSALS[code].status, code, REFUSALS[code].message, REFUSALS[code].next_action);
 
 export function selectionDigest(rows: readonly WorktreeDigestRow[]): string {
-  return createHash('sha256').update(selectionDigestInput(rows)).digest('hex');
+  return sha256Hex(selectionDigestInput(rows));
 }
 
 export type WorktreeProcessProbe = (deadline: number) => WorktreeProcess[] | null;

@@ -4,6 +4,8 @@
  * its window `unknown` with a named reason. No decoder fills a default or reads
  * a second source for the same field.
  */
+import { isRecord } from '../evidence/is-record';
+
 export const QUOTA_PROTOCOL = 'repo-harness.quota.v1' as const;
 export const OPERATOR_QUOTA_PATH = '/api/v1/quota' as const;
 /** The Claude capture file, relative to HOME. Q1 reads it; the Q2 status line route writes it with mode 0600. */
@@ -90,7 +92,7 @@ export function weeklyRemainingPercent(account: QuotaAccountReport | undefined):
 }
 
 function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  return isRecord(value) ? value : null;
 }
 
 /** Validates the wire report without changing the provider read model. */

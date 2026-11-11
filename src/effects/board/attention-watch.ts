@@ -4,7 +4,7 @@ import { evaluateBoardAttention } from '../../core/board/attention';
 import { ADVISOR_CAP_SPAN_MS, WINDOW_WITH_WORKERS_MS, deliveryTiming, liveSeatTerminals, planAttentionDeliveries, type AttentionDeliveryV1, type AttentionHostPortsV1 } from '../../core/board/attention-delivery';
 import type { BoardV1 } from '../../core/board/board';
 import { repoHarnessHome } from '../repo-harness-home';
-import { BoardCollectError } from './collect';
+import { BoardCollectError, boardAvailabilityFailure } from './collect';
 import type { ReviewObserver } from './review';
 
 /**
@@ -12,8 +12,9 @@ import type { ReviewObserver } from './review';
  * carries the service label and the repository and parent labels of its
  * board. Each window it reads the board once, runs the attention rules, sends
  * the findings to the seat terminals and appends every finding and every send
- * attempt to its log. A provider 5xx skips one window; other board read failures
- * end the watcher, and doctor then reports it stopped.
+ * attempt to its log. A provider 5xx or a gh call that ends with no exit status
+ * skips one window; other board read failures end the watcher, and doctor then
+ * reports it stopped.
  */
 export class AttentionWatchError extends Error {
   constructor(message: string) {
@@ -119,7 +120,7 @@ export async function runAttentionWindow(input: AttentionWindowInput): Promise<v
   const log = (record: Record<string, unknown>) => append(input.log_path, { at: now().toISOString(), window, parent: input.parent, ...record } as AttentionLogRecordV1);
   let board: BoardV1;
   try { board = input.collect(); } catch (error) {
-    if (!(error instanceof BoardCollectError && error.httpStatus !== null && error.httpStatus >= 500 && error.httpStatus <= 599)) throw error;
+    if (!boardAvailabilityFailure(error)) throw error;
     const message = error.message.slice(0, 300);
     process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, message })}\n`);
     log({ kind: 'error', message });

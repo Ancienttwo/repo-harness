@@ -1,4 +1,6 @@
-import { isRecord, sha256, stableJson } from './acceptance-receipt';
+import { isRecord } from '../evidence/is-record';
+import { sha256Prefixed } from '../evidence/sha256';
+import { stableJson } from './acceptance-receipt';
 import {
   validateChangeAssessment,
   validateReviewSelectionPacketAgainstAssessment,
@@ -75,7 +77,7 @@ export function decodeChangeAssessmentEvidence(content: string): ChangeAssessmen
   try { value = JSON.parse(content); } catch { invalid('is invalid JSON'); }
   if (!isRecord(value) || value.schema !== CHANGE_ASSESSMENT_EVIDENCE_SCHEMA) invalid('schema is unsupported');
   const { evidence_sha256: evidenceSha256, ...basis } = value;
-  if (typeof evidenceSha256 !== 'string' || evidenceSha256 !== sha256(stableJson(basis))) invalid('fingerprint is stale');
+  if (typeof evidenceSha256 !== 'string' || evidenceSha256 !== sha256Prefixed(stableJson(basis))) invalid('fingerprint is stale');
   const keys = stableJson(Object.keys(value).sort());
   if (value.status === 'pass') {
     if (keys !== PASS_KEYS) invalid('pass record fields are invalid');

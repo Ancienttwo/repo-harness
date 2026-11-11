@@ -1,7 +1,8 @@
 import { spawnSync } from 'child_process';
-import { createHash } from 'crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { existsSync, realpathSync } from 'fs';
 import { delimiter, isAbsolute, join, relative, resolve } from 'path';
+import { isPathInside } from '../../effects/path-containment';
 
 export interface CodeGraphIndexedFile {
   path: string;
@@ -62,10 +63,6 @@ export interface GeneralRepoCodeGraphAdapter {
 const DEFAULT_TIMEOUT_MS = 5_000;
 const MAX_STDOUT_BYTES = 10 * 1024 * 1024;
 
-function sha256(value: string | Buffer): string {
-  return createHash('sha256').update(value).digest('hex');
-}
-
 function unavailable(message: string, latencyMs = 0, retryable = true): CodeGraphRepoSnapshot {
   return {
     available: false,
@@ -76,11 +73,6 @@ function unavailable(message: string, latencyMs = 0, retryable = true): CodeGrap
     latencyMs,
     error: { code: 'INDEX_UNAVAILABLE', message, retryable },
   };
-}
-
-function isPathInside(root: string, candidate: string): boolean {
-  const relationship = relative(root, candidate);
-  return relationship === '' || (!isAbsolute(relationship) && relationship !== '..' && !relationship.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`));
 }
 
 function canonicalIfPresent(path: string): string {
@@ -140,7 +132,7 @@ function revisionFor(files: CodeGraphIndexedFile[]): string {
       size: file.size ?? 0,
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
-  return `index_${sha256(JSON.stringify(stable)).slice(0, 16)}`;
+  return `index_${sha256Hex(JSON.stringify(stable)).slice(0, 16)}`;
 }
 
 function discoverCodeGraphRepo(repoRoot: string, env: NodeJS.ProcessEnv, timeoutMs: number): CodeGraphRepoSnapshot {

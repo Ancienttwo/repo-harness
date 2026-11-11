@@ -1,7 +1,6 @@
-import { spawnSync } from 'child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { collectBoard, type BoardCollectInput, BoardCollectError, readRepositoryId } from './collect';
+import { collectBoard, type BoardCollectInput, BoardCollectError, readRepositoryId, runGhText } from './collect';
 import { planReview, REVIEW_START_HEADER, REVIEW_START_STATUS_HEADER, type ReviewDecisionV1, type ReviewSeatStartV1 } from '../../core/board/review';
 import type { BoardCommentPageV1 } from '../../core/board/source';
 import type { SeatConfigV1, SeatId } from '../../core/board/seats-settings';
@@ -9,8 +8,6 @@ import { gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { HerdrCoreError, herdrAppDo } from '../terminal/herdr-core';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
 import { repoHarnessHome } from '../repo-harness-home';
-
-const GH_TIMEOUT_MS = 30_000;
 
 type StartDecision = Extract<ReviewDecisionV1, { action: 'start' }>;
 
@@ -48,17 +45,9 @@ export interface ReviewResultV1 {
   readonly refused: readonly { readonly pr: number; readonly reason: string }[];
 }
 
-function gh(input: Pick<ReviewInput, 'repo_root'>, args: readonly string[], stdin?: string): string {
-  const run = spawnSync(process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
-    cwd: input.repo_root, env: { ...process.env, GH_HOST: 'github.com' }, encoding: 'utf-8', input: stdin, timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL',
-  });
-  if (run.error !== undefined || run.status !== 0) throw new BoardCollectError(`gh ${args.slice(0, 2).join(' ')} failed: ${(run.stderr || run.error?.message || '').trim().slice(0, 300)}`);
-  return run.stdout.trim();
-}
-
 /** Every comment of one pull request: `--paginate` returns the whole thread, so the page is never truncated. */
 function readComments(input: Pick<ReviewInput, 'repo_root'>, pr: number): BoardCommentPageV1 {
-  const pages = JSON.parse(gh(input, ['api', '--hostname', 'github.com', '--paginate', '--slurp', `repos/{owner}/{repo}/issues/${pr}/comments?per_page=100`])) as
+  const pages = JSON.parse(runGhText(input, ['api', '--hostname', 'github.com', '--paginate', '--slurp', `repos/{owner}/{repo}/issues/${pr}/comments?per_page=100`])) as
     { html_url: string; created_at: string; author_association: string; body: string }[][];
   return { truncated: false, comments: pages.flat().map(({ html_url, created_at, author_association, body }) => ({ url: html_url, created_at, author_association, body })) };
 }
@@ -166,7 +155,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResultV1> {
     const decisions = planReview({ board, comments }).filter(decision => input.pr === undefined || decision.pr === input.pr);
     return { decisions, ...await executeReview(decisions, { repositoryId, parent: input.parent, space: input.space, dry_run: input.dry_run, observe: input.observe }, {
       worktree: (ref, sha) => worktreeAt(input, ref, sha),
-      comment: (pr, body) => gh(input, ['pr', 'comment', String(pr), '--body-file', '-'], body),
+      comment: (pr, body) => runGhText(input, ['pr', 'comment', String(pr), '--body-file', '-'], body),
       openTab: args => { herdrAppDo('tab.new', args); },
       launch: input.launch,
     }) };

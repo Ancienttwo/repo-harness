@@ -1,4 +1,7 @@
-import { createHash } from 'crypto';
+import { byteCompare } from '../evidence/byte-compare';
+import { canonicalize } from '../evidence/canonical-json';
+import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256-pattern';
+import { sha256Prefixed } from '../evidence/sha256';
 
 import type { StrictRiskCategory, WorkflowProfile } from '../workflow/profile';
 
@@ -113,10 +116,6 @@ const STRICT_RISK_CATEGORIES = new Set<StrictRiskCategory>([
   'auth', 'payment', 'security', 'schema', 'migration', 'deploy', 'release', 'public-api', 'destructive',
 ]);
 
-function byteCompare(left: string, right: string): number {
-  return Buffer.compare(Buffer.from(left), Buffer.from(right));
-}
-
 function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort(byteCompare);
 }
@@ -125,20 +124,13 @@ function isStringArray(value: readonly unknown[]): value is readonly string[] {
   return value.every((entry) => typeof entry === 'string');
 }
 
-function stableJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record).sort(byteCompare).map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
-}
-
 function sha256(value: unknown): string {
-  return `sha256:${createHash('sha256').update(stableJson(value)).digest('hex')}`;
+  return sha256Prefixed(canonicalize(value));
 }
 
 function validSubject(subject: AssessmentSubject): boolean {
   return subject.status === 'ok'
-    && /^sha256:[0-9a-f]{64}$/.test(subject.review_subject_sha256)
+    && SHA256_PREFIXED_PATTERN.test(subject.review_subject_sha256)
     && subject.target_ref.trim() !== ''
     && /^[0-9a-f]{40,64}$/.test(subject.target_rev)
     && /^[0-9a-f]{40,64}$/.test(subject.head_rev);
@@ -357,7 +349,7 @@ function parseReasons(value: unknown, subject: readonly string[], label: string)
     return reason(record.code as ChangeAssessmentReasonCode, paths, kinds, record.evidence);
   });
   const ordered = orderReasons(reasons);
-  if (stableJson(ordered) !== stableJson(reasons)) throw new Error(`${label} reasons are not closed-order canonical`);
+  if (canonicalize(ordered) !== canonicalize(reasons)) throw new Error(`${label} reasons are not closed-order canonical`);
   return ordered;
 }
 
@@ -375,7 +367,7 @@ export function validateChangeAssessment(value: unknown): ChangeAssessment {
     'review_subject_sha256', 'selected_paths', 'status', 'strict_categories', 'subject_paths',
     'target_ref', 'target_revision', 'workflow_profile',
   ];
-  if (stableJson(Object.keys(assessment).sort(byteCompare)) !== stableJson(expectedKeys)) {
+  if (canonicalize(Object.keys(assessment).sort(byteCompare)) !== canonicalize(expectedKeys)) {
     throw new Error('change assessment contains unknown fields');
   }
   if (assessment.protocol !== CHANGE_ASSESSMENT_PROTOCOL || assessment.kind !== 'repo-harness-change-assessment') {
@@ -383,7 +375,7 @@ export function validateChangeAssessment(value: unknown): ChangeAssessment {
   }
   if (assessment.status !== 'ready' && assessment.status !== 'blocked') throw new Error('change assessment status is invalid');
   for (const key of ['assessment_sha256', 'review_subject_sha256'] as const) {
-    if (typeof assessment[key] !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(assessment[key] as string)) {
+    if (typeof assessment[key] !== 'string' || !SHA256_PREFIXED_PATTERN.test(assessment[key] as string)) {
       throw new Error(`change assessment ${key} is invalid`);
     }
   }
@@ -400,28 +392,28 @@ export function validateChangeAssessment(value: unknown): ChangeAssessment {
     throw new Error('change assessment paths are invalid');
   }
   const paths = subjectPaths(assessment.subject_paths);
-  if (!paths || stableJson(paths) !== stableJson(assessment.subject_paths)) throw new Error('change assessment subject paths are not canonical');
+  if (!paths || canonicalize(paths) !== canonicalize(assessment.subject_paths)) throw new Error('change assessment subject paths are not canonical');
   const selected = uniqueSorted(assessment.selected_paths);
-  if (stableJson(selected) !== stableJson(assessment.selected_paths) || selected.some((path) => !paths.includes(path))) {
+  if (canonicalize(selected) !== canonicalize(assessment.selected_paths) || selected.some((path) => !paths.includes(path))) {
     throw new Error('change assessment selected paths are invalid');
   }
   if (!Array.isArray(assessment.strict_categories) || !isStringArray(assessment.strict_categories)) {
     throw new Error('change assessment strict categories are invalid');
   }
   const categories = [...new Set(assessment.strict_categories as StrictRiskCategory[])].sort(byteCompare);
-  if (categories.some((category) => !STRICT_RISK_CATEGORIES.has(category)) || stableJson(categories) !== stableJson(assessment.strict_categories)) {
+  if (categories.some((category) => !STRICT_RISK_CATEGORIES.has(category)) || canonicalize(categories) !== canonicalize(assessment.strict_categories)) {
     throw new Error('change assessment strict categories are not canonical');
   }
   if (!Array.isArray(assessment.required_oracles)) throw new Error('change assessment required oracles are invalid');
   const oracles = normalizeDeclaredReviewOracles(assessment.required_oracles);
-  if (!oracles || stableJson(oracles) !== stableJson(assessment.required_oracles)) {
+  if (!oracles || canonicalize(oracles) !== canonicalize(assessment.required_oracles)) {
     throw new Error('change assessment required oracles are not canonical');
   }
   const reasons = parseReasons(assessment.reasons, paths, 'change assessment');
   if (reasons.some((entry) => entry.code === 'reviewer_disagreement')) {
     throw new Error('change assessment may not contain reviewer disagreement');
   }
-  if (stableJson(selectedPaths(reasons)) !== stableJson(selected)) {
+  if (canonicalize(selectedPaths(reasons)) !== canonicalize(selected)) {
     throw new Error('change assessment selected paths do not match reasons');
   }
   const basis: Omit<ChangeAssessment, 'assessment_sha256'> = {
@@ -487,7 +479,7 @@ export function validateReviewSelectionPacket(value: unknown): ReviewSelectionPa
   }
   if (packet.status !== 'ready' && packet.status !== 'blocked') throw new Error('review selection packet status is invalid');
   for (const key of ['assessment_sha256', 'review_subject_sha256', 'packet_sha256'] as const) {
-    if (typeof packet[key] !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(packet[key] as string)) {
+    if (typeof packet[key] !== 'string' || !SHA256_PREFIXED_PATTERN.test(packet[key] as string)) {
       throw new Error(`review selection packet ${key} is invalid`);
     }
   }
@@ -539,19 +531,19 @@ export function validateReviewSelectionPacketAgainstAssessment(value: unknown, a
     || packet.review_subject_sha256 !== base.review_subject_sha256
     || packet.target_ref !== base.target_ref
     || packet.target_revision !== base.target_revision
-    || stableJson(packet.subject_paths) !== stableJson(base.subject_paths)
-    || stableJson(packet.required_oracles) !== stableJson(base.required_oracles)
+    || canonicalize(packet.subject_paths) !== canonicalize(base.subject_paths)
+    || canonicalize(packet.required_oracles) !== canonicalize(base.required_oracles)
   ) {
     throw new Error('review selection packet does not bind the base assessment');
   }
   const baseReasons = base.reasons;
   const disagreement = packet.reasons.find((entry) => entry.code === 'reviewer_disagreement');
   const nonDisagreement = packet.reasons.filter((entry) => entry.code !== 'reviewer_disagreement');
-  if (stableJson(nonDisagreement) !== stableJson(baseReasons)) {
+  if (canonicalize(nonDisagreement) !== canonicalize(baseReasons)) {
     throw new Error('review selection packet alters base assessment reasons');
   }
   if (!disagreement) {
-    if (stableJson(packet.selected_paths) !== stableJson(base.selected_paths) || stableJson(packet.reasons) !== stableJson(base.reasons)) {
+    if (canonicalize(packet.selected_paths) !== canonicalize(base.selected_paths) || canonicalize(packet.reasons) !== canonicalize(base.reasons)) {
       throw new Error('review selection packet alters the base assessment');
     }
     return packet;
@@ -560,7 +552,7 @@ export function validateReviewSelectionPacketAgainstAssessment(value: unknown, a
     throw new Error('reviewer disagreement overlay is invalid');
   }
   const expectedSelected = uniqueSorted([...base.selected_paths, ...disagreement.paths]);
-  if (stableJson(packet.selected_paths) !== stableJson(expectedSelected)) {
+  if (canonicalize(packet.selected_paths) !== canonicalize(expectedSelected)) {
     throw new Error('reviewer disagreement overlay is not monotonic');
   }
   return packet;

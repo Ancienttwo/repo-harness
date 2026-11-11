@@ -608,3 +608,11 @@ test('CLI is dry by default and requires exclusive mutation flags and quiescence
   const apply = run('--apply', '--confirm-quiescent', '--expected-source-sha256', f.plan.manifest.source_sha256);
   expect(apply.status, apply.stderr).toBe(0); expect(JSON.parse(apply.stdout).state).toBe('committed');
 });
+
+test('CLI reports the code of an invalid v1 record', () => {
+  const f = fixture(false);
+  writeFileSync(join(f.paths.legacy, TASK, 'events', `${ID}.json`), '{}\n');
+  const dry = spawnSync(process.execPath, [CLI, 'fleet', 'inbox', 'migrate-layout', '--json'], { cwd: f.root, encoding: 'utf8' });
+  expect(dry.status).toBe(1);
+  expect(JSON.parse(dry.stderr).error).toBe('task_message_invalid');
+});

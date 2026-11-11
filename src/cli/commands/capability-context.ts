@@ -7,10 +7,11 @@ import {
   findMatch,
   readRegistry as readCapabilityRegistry,
 } from '../../effects/architecture/capability-resolver';
+import { normalizeCapabilityPath } from '../../core/capabilities/registry';
 import type { Capability, CapabilityRegistry, ContractFiles } from '../../core/capabilities/registry';
 import type { ArchcontextCapabilityOwners } from '../../core/capabilities/registry';
 import { architecturePort, isArchitectureUnavailable, type ArchitectureOwnershipPort } from '../../core/architecture/contracts';
-import { gitExecFileSync } from '../../effects/git/runner';
+import { gitToplevel } from '../../effects/git/runner';
 
 export type { Capability, ContractFiles };
 
@@ -79,38 +80,15 @@ const END = '<!-- END CAPABILITY CONTEXT -->';
 
 function repoRoot(input = '.'): string {
   const cwd = path.resolve(input);
-  try {
-    const out = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    return out ? path.resolve(out) : cwd;
-  } catch {
-    return cwd;
-  }
+  const top = gitToplevel(cwd);
+  return top ? path.resolve(top) : cwd;
 }
 
-function normalizeRepoPath(value: string, repo: string, allowRoot = false): string {
-  let next = value.trim().replace(/^file:\/\//, '').replaceAll('\\', '/');
-  const normalizedRepo = repo.replaceAll('\\', '/');
-
-  if (next.startsWith(`${normalizedRepo}/`)) {
-    next = next.slice(normalizedRepo.length + 1);
-  } else if (next === normalizedRepo && allowRoot) {
-    next = '.';
-  } else if (next.startsWith('/')) {
-    throw new Error(`absolute path is outside repo: ${value}`);
-  }
-
-  next = next.replace(/^\.\//, '').replace(/\/+$/, '');
-  if (next === '') next = '.';
-  if (next === '.' && allowRoot) return '.';
-  const parts = next.split('/').filter(Boolean);
-  if (parts.length === 0) throw new Error('path must not be empty');
-  if (parts.some((part) => part === '.' || part === '..')) {
-    throw new Error(`path must not contain traversal: ${value}`);
-  }
-  return parts.join('/');
+// The repository root is the one value the core normalizer refuses; a primary prefix may be it.
+function primaryPrefix(value: string, repo: string): string {
+  const next = value.trim().replace(/^file:\/\//, '').replaceAll('\\', '/').replace(/\/+$/, '');
+  if (next === repo.replaceAll('\\', '/') || next === '' || next === '.') return '.';
+  return normalizeCapabilityPath(value, repo);
 }
 
 function readJsonFile<T>(file: string, fallback: T): T {
@@ -177,7 +155,7 @@ function isLikelyFile(repo: string, relPath: string): boolean {
 }
 
 function derivedContractFiles(repo: string, capability: Capability): ContractFiles {
-  const primary = normalizeRepoPath(capability.prefixes[0] || '.', repo, true);
+  const primary = primaryPrefix(capability.prefixes[0] || '.', repo);
   const dir = primary === '.'
     ? '.'
     : isLikelyFile(repo, primary)
@@ -444,7 +422,6 @@ export function buildCapabilityContextCommand(): Command {
     .option('--capability <id>', 'Capability ID to sync')
     .option('--path <path>', 'Changed file path to resolve')
     .option('--apply', 'Write files')
-    .option('--dry-run', 'Preview without writing')
     .option('--auto-fill-positioning', 'Write a deterministic manifest fallback for missing entries')
     .option('--source-map-manifest <path>', 'Capability source-map manifest path', DEFAULT_MANIFEST_PATH)
     .option('--json', 'Output JSON')

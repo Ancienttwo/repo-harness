@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { installStateFixturePath, seedGlobalPackageFixture } from '../helpers/install-ownership';
+import { installStateFixturePath, withTempHome } from '../helpers/install-ownership';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { spawnSync } from 'child_process';
 import { runInstall, runUninstall } from '../../src/cli/commands/install';
 import { CLAUDE_STATUS_LINE_PIPE, claudeTarget } from '../../src/cli/installer/targets/claude';
@@ -14,28 +13,10 @@ import { buildManagedHooks, compareManagedHookProjection } from '../../src/cli/i
 const ROOT = path.join(import.meta.dir, '..', '..');
 const CLI = path.join(ROOT, 'src/cli/index.ts');
 
-function withTempHome(fn: (home: string) => void): void {
-  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-install-')));
-  const prev = process.env.HOME;
-  const prevBunInstall = process.env.BUN_INSTALL;
-  process.env.HOME = tmp;
-  process.env.BUN_INSTALL = path.join(tmp, '.bun');
-  seedGlobalPackageFixture();
-  try {
-    fn(tmp);
-  } finally {
-    if (prev === undefined) delete process.env.HOME;
-    else process.env.HOME = prev;
-    if (prevBunInstall === undefined) delete process.env.BUN_INSTALL;
-    else process.env.BUN_INSTALL = prevBunInstall;
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
-}
-
 describe('issue 698 host configuration ownership', () => {
   for (const topLevel of ['', 'default_mode_request_user_input = false\n']) {
     test(`issue 698 installs and restores only the top-level TOML key (${topLevel ? 'replace' : 'add'})`, () => {
-      withTempHome((home) => {
+      withTempHome('repo-harness-install', (home) => {
         const filePath = path.join(home, '.codex/config.toml');
         const original = `${topLevel}model = "user"\n[profiles.work]\ndefault_mode_request_user_input = false\n`;
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -68,7 +49,7 @@ describe('issue 698 host configuration ownership', () => {
   }
 
   test('issue 698 leaves a true top-level TOML key and false profile key unchanged', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const filePath = path.join(home, '.codex/config.toml');
       const original = 'default_mode_request_user_input = true # user setting\n[profiles.work]\ndefault_mode_request_user_input = false\n';
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -86,7 +67,7 @@ describe('issue 698 host configuration ownership', () => {
     'text = """\ndefault_mode_request_user_input = false\n"""\ndefault_mode_request_user_input = false\n',
   ]) {
     test(`issue 698 refuses unsupported TOML before any config write: ${JSON.stringify(raw)}`, () => {
-      withTempHome((home) => {
+      withTempHome('repo-harness-install', (home) => {
         const filePath = path.join(home, '.codex/config.toml');
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         fs.writeFileSync(filePath, raw);
@@ -101,7 +82,7 @@ describe('issue 698 host configuration ownership', () => {
   for (const host of ['codex', 'claude'] as const) {
     for (const shape of ['file', 'directory', 'dangling'] as const) {
       test(`issue 698 ${host} install refuses a ${shape} symlink before writes`, () => {
-        withTempHome((home) => {
+        withTempHome('repo-harness-install', (home) => {
           const name = host === 'codex' ? 'hooks.json' : 'settings.json';
           const root = path.join(home, `.${host}`);
           const filePath = path.join(root, name);
@@ -134,7 +115,7 @@ describe('issue 698 host configuration ownership', () => {
   }
 
   test('issue 698 rejects local commands and Claude target calls without touching settings', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const repo = path.join(home, 'project');
       fs.mkdirSync(path.join(repo, '.claude'), { recursive: true });
       const victim = path.join(home, 'dotfile.json');
@@ -165,7 +146,7 @@ describe('issue 698 host configuration ownership', () => {
   });
 
   test('issue 698 preserves user commands that mention retired paths or command prefixes', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const filePath = path.join(home, '.claude/settings.json');
       const commands = [
         'echo user-guard # see .ai/hooks/run-hook.sh docs',
@@ -225,7 +206,7 @@ function writeReadyOfficialCodexPluginCli(home: string): string {
 
 describe('install command (Phase 1B)', () => {
   test('dry-run reports owned dangling links without changing host files', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const ownedTarget = path.join(ROOT, 'assets/skill-commands/retired-symlink-test');
       expect(fs.existsSync(ownedTarget)).toBe(false);
       const foreignTarget = path.join(home, 'Waza', 'think');
@@ -261,7 +242,7 @@ describe('install command (Phase 1B)', () => {
   }, 30_000);
 
   test('adapter-only install rejects protocol-1 state before mutating host config', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const statePath = installStateFixturePath({ HOME: home });
       const hooksPath = path.join(home, '.codex', 'hooks.json');
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
@@ -315,7 +296,7 @@ describe('install command (Phase 1B)', () => {
   for (const command of ['install', 'uninstall']) {
     for (const target of ['codex', 'claude', 'both']) {
       test(`CLI ${command} --target ${target} rejects local before any configuration read or write`, () => {
-        withTempHome((home) => {
+        withTempHome('repo-harness-install', (home) => {
           const repo = path.join(home, 'project');
           fs.mkdirSync(repo);
           const files = {
@@ -348,7 +329,7 @@ describe('install command (Phase 1B)', () => {
 
   for (const target of ['codex', 'claude', 'both']) {
     test(`CLI install --target ${target} --location global --dry-run refuses before any host write`, () => {
-      withTempHome((home) => {
+      withTempHome('repo-harness-install', (home) => {
         const before = fs.readdirSync(home, { recursive: true }).sort();
         const result = spawnSync(process.execPath, [CLI, 'install', '--target', target, '--location', 'global', '--dry-run'], {
           cwd: ROOT,
@@ -363,7 +344,7 @@ describe('install command (Phase 1B)', () => {
   }
 
   test('codex --location global creates ~/.codex/hooks.json with 5 matcher-grouped entries', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const result = runInstall({ target: 'codex', location: 'global' });
       expect(result.exitCode).toBe(0);
       const filePath = path.join(home, '.codex/hooks.json');
@@ -391,7 +372,7 @@ describe('install command (Phase 1B)', () => {
   });
 
   test.each(['codex', 'claude'] as const)('%s: every adapter command binds Bun and the installed bundle behind the opt-in check', (host) => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       expect(runInstall({ target: host, location: 'global' }).exitCode).toBe(0);
       const data = JSON.parse(
         fs.readFileSync(path.join(home, host === 'codex' ? '.codex/hooks.json' : '.claude/settings.json'), 'utf-8'),
@@ -422,7 +403,7 @@ describe('install command (Phase 1B)', () => {
   });
 
   test('install refuses an unresolved Bun runtime before writing host configuration', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const before = fs.readdirSync(home, { recursive: true }).sort();
       const runtime = process.execPath;
       try {
@@ -436,7 +417,7 @@ describe('install command (Phase 1B)', () => {
   });
 
   test('install refuses a missing global bundle before writing host configuration and names the repair', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       process.env.BUN_INSTALL = path.join(home, 'missing-bun');
       const globalRoot = path.join(process.env.BUN_INSTALL, 'install/global/node_modules/repo-harness');
       fs.mkdirSync(globalRoot, { recursive: true });
@@ -450,7 +431,7 @@ describe('install command (Phase 1B)', () => {
   });
 
   test('codex install is idempotent — second run returns unchanged', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-install', () => {
       const first = runInstall({ target: 'codex', location: 'global' });
       expect(first.lines.some((l) => l.includes('created'))).toBe(true);
 
@@ -461,7 +442,7 @@ describe('install command (Phase 1B)', () => {
   });
 
   test('codex install updates existing config.toml to enable request-user-input popups', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const tomlPath = path.join(home, '.codex/config.toml');
       fs.mkdirSync(path.dirname(tomlPath), { recursive: true });
       fs.writeFileSync(
@@ -486,7 +467,7 @@ describe('install command (Phase 1B)', () => {
   });
 
   test('claude --location global creates ~/.claude/settings.json with 6 hooks including the Bash tripwire', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const result = runInstall({ target: 'claude', location: 'global' });
       expect(result.exitCode).toBe(0);
       const data = JSON.parse(
@@ -498,7 +479,7 @@ describe('install command (Phase 1B)', () => {
       expect(data.hooks.UserPromptSubmit.length).toBe(1);
       expect(data.hooks.SubagentStart).toBeUndefined();
       expect(data.hooks.SubagentStop).toBeUndefined();
-      for (const [event, entries] of Object.entries(data.hooks) as [string, { hooks: { command: string; timeout?: number }[] }[]][]) {
+      for (const [, entries] of Object.entries(data.hooks) as [string, { hooks: { command: string; timeout?: number }[] }[]][]) {
         for (const entry of entries) {
           expect(entry.hooks[0].command).toContain('HOOK_HOST=claude');
           expect(entry.hooks[0].timeout).toBe(30);
@@ -514,7 +495,7 @@ describe('install command (Phase 1B)', () => {
     ['a user status line exists', { type: 'command', command: 'my-line' }, undefined, { type: 'command', command: 'my-line' }],
     ['the user edits the installed one', undefined, { type: 'command', command: 'my-line' }, { type: 'command', command: 'my-line' }],
   ] as const)('claude statusLine when %s: install writes the tagged entry only into an empty or tagged slot, uninstall removes only a tagged one', (_name, existing, edit, remaining) => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const filePath = path.join(home, '.claude/settings.json');
       const userLine = existing !== undefined && !existing.command.startsWith(': repo-harness-managed-hook-v1; ');
       if (existing) {
@@ -552,7 +533,7 @@ describe('install command (Phase 1B)', () => {
   });
 
   test('claude install self-heals legacy Codex-only managed entries back to 6 hooks', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const filePath = path.join(home, '.claude/settings.json');
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
       fs.writeFileSync(
@@ -584,7 +565,7 @@ describe('install command (Phase 1B)', () => {
   });
 
   test('install preserves sibling non-managed hooks (Phase 0 rtk hook claude case)', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const filePath = path.join(home, '.claude/settings.json');
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
       fs.writeFileSync(
@@ -610,7 +591,7 @@ describe('install command (Phase 1B)', () => {
   });
 
   test('uninstall removes only managed Claude entries and leaves sibling entries intact', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const filePath = path.join(home, '.claude/settings.json');
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
       fs.writeFileSync(
@@ -639,7 +620,7 @@ describe('install command (Phase 1B)', () => {
   });
 
   test('install and uninstall keep private host config modes under a 0022 umask', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const claudePath = path.join(home, '.claude/settings.json');
       const codexPath = path.join(home, '.codex/hooks.json');
       const sibling = { hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'rtk hook claude' }] }] } };
@@ -667,7 +648,7 @@ describe('install command (Phase 1B)', () => {
   });
 
   test('uninstall removes managed Codex entries and reverses installer TOML', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const result = runInstall({ target: 'codex', location: 'global' });
       expect(result.exitCode).toBe(0);
       const hooksPath = path.join(home, '.codex/hooks.json');
@@ -686,7 +667,7 @@ describe('install command (Phase 1B)', () => {
   });
 
   test('uninstall is idempotent when no managed entries exist', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-install', () => {
       runInstall({ target: 'both', location: 'global' });
       const first = runUninstall({ target: 'both', location: 'global' });
       expect(first.exitCode).toBe(0);
@@ -699,7 +680,7 @@ describe('install command (Phase 1B)', () => {
   });
 
   test('both --location global installs to both targets', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const result = runInstall({ target: 'both', location: 'global' });
       expect(result.exitCode).toBe(0);
       expect(fs.existsSync(path.join(home, '.codex/hooks.json'))).toBe(true);
@@ -711,7 +692,7 @@ describe('install command (Phase 1B)', () => {
   });
 
   test('CLI global install and uninstall work for both hosts', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const install = spawnSync('bun', [CLI, 'install', '--target', 'both', '--location', 'global'], {
         cwd: ROOT,
         env: { ...process.env, HOME: home },
@@ -737,7 +718,7 @@ describe('install command (Phase 1B)', () => {
   }, 30_000);
 
   test('CLI install without required core surfaces fails closed and compensates adapters', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const claude = writeReadyOfficialCodexPluginCli(home);
       const install = spawnSync(
         'bun',
@@ -769,7 +750,7 @@ describe('install command (Phase 1B)', () => {
 
 describe('install native Codex delegation authority', () => {
   test('adapter-only install exposes no delegation-mode compatibility option or config write', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-install', (home) => {
       const help = spawnSync('bun', [CLI, 'install', '--help'], {
         cwd: ROOT,
         env: { ...process.env, HOME: home },
@@ -794,7 +775,7 @@ describe('managed-first hook order', () => {
   for (const host of ['codex', 'claude'] as const) {
     const relative = host === 'codex' ? '.codex/hooks.json' : '.claude/settings.json';
     test(`${host}: put managed blocks first, preserve duplicate, empty and mixed user blocks, then rerun without writes or notice`, () => {
-      withTempHome(home => {
+      withTempHome('repo-harness-install', home => {
         const file = path.join(home, relative);
         const managed = buildManagedHooks(host);
         const user = { matcher: 'custom', metadata: { keep: true }, hooks: [
@@ -834,7 +815,7 @@ describe('managed-first hook order', () => {
 
     for (const withUsers of [false, true]) {
       test(`${host}: fresh install ${withUsers ? 'with existing user hooks' : 'without user hooks'} puts managed blocks first`, () => {
-        withTempHome(home => {
+        withTempHome('repo-harness-install', home => {
           const file = path.join(home, relative);
           const user = { matcher: 'custom', hooks: [{ type: 'command', command: 'echo fresh user', timeout: 3 }] };
           if (withUsers) {

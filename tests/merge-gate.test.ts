@@ -42,12 +42,14 @@ function providerFixture(root: string, mode = 'ready', script = SCRIPT) {
   writeFileSync(cli, `#!${process.execPath}
 import {appendFileSync} from 'fs';
 const args = process.argv.slice(2);
+const requiredContext = 'Required / CI';
 appendFileSync(${JSON.stringify(log)}, JSON.stringify({args, ghRepo: process.env.GH_REPO ?? null}) + '\\n');
 let value, status = 0;
 if (${JSON.stringify(mode)} === 'failed') { console.error('fixture provider failed'); process.exit(73); }
 if (args[0] === 'repo') value = {id:'R_fixture', nameWithOwner:'example/repo'};
 else if (args[0] === 'pr' && args[1] === 'view') value = ${JSON.stringify(mode === 'malformed' ? { number: 'not-a-number' } : pr)};
-else if (args[0] === 'pr' && args[1] === 'checks') value = [{name:'Required / CI',bucket:${JSON.stringify(mode === 'pending' ? 'pending' : 'pass')},link:'https://github.com/example/repo/actions/runs/1/job/2'}];
+else if (args[0] === 'pr' && args[1] === 'checks') value = [{name:requiredContext,bucket:${JSON.stringify(mode === 'pending' ? 'pending' : 'pass')},link:'https://github.com/example/repo/actions/runs/1/job/2'}];
+else if (args[0] === 'api' && args[1] === 'repos/example/repo/branches/main/protection') value = {required_status_checks:{contexts:[requiredContext]}};
 else if (args[0] === 'api' && args[1] === 'repos/example/repo') value = {id:1001,node_id:'R_fixture',full_name:'example/repo',default_branch:'main'};
 else if (args[0] === 'api' && args[1] === 'graphql') value = ${JSON.stringify(graph)};
 else if (args[0] === 'api' && args[1].includes('/actions/runs/')) value = ${JSON.stringify(run)};

@@ -1,5 +1,5 @@
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { POLICY_ABSENT, policyValue, type DecodedWorkflowPolicy } from '../../core/workflow/policy-schema';
+import { readWorkflowPolicyFile } from '../state/policy-file';
 
 export interface ExternalSourceFetchLimitsV1 {
   readonly max_pages: number;
@@ -153,15 +153,17 @@ export function parseExternalSourcesPolicy(value: unknown): ExternalSourcesPolic
 }
 
 export function readExternalSourcesPolicy(repoRoot: string): ExternalSourcesPolicyV1 {
-  const path = join(repoRoot, '.ai', 'harness', 'policy.json');
-  let topLevel: Record<string, unknown>;
+  let policy: DecodedWorkflowPolicy;
   try {
-    topLevel = object(JSON.parse(readFileSync(path, 'utf8')), '.ai/harness/policy.json');
+    policy = readWorkflowPolicyFile(repoRoot);
   } catch (error) {
-    if (error instanceof ExternalSourcePolicyError) throw error;
-    throw new ExternalSourcePolicyError('external_source_policy_invalid', `.ai/harness/policy.json cannot be read: ${error instanceof Error ? error.message : String(error)}`);
+    const cause = error instanceof Error && error.cause instanceof SyntaxError ? error.cause : error;
+    throw new ExternalSourcePolicyError('external_source_policy_invalid', `.ai/harness/policy.json cannot be read: ${cause instanceof Error ? cause.message : String(cause)}`);
   }
-  return parseExternalSourcesPolicy(topLevel.external_sources);
+  if (!policy.present) fail('.ai/harness/policy.json cannot be read: the file is missing');
+  if (!policy.rootIsObject) fail('.ai/harness/policy.json must be an object');
+  const section = policyValue(policy, 'external_sources');
+  return parseExternalSourcesPolicy(section === POLICY_ABSENT ? undefined : section);
 }
 
 export function requireManualGithubPolicy(policy: ExternalSourcesPolicyV1): ExternalSourcesManualGithubPolicyV1 {

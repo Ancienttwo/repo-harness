@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.board-observer.board-effects
+kind: calls
+source: component.operator.board-observer
+target: component.board.effects
+intent: In the resident worker, collect each observed board through one keyed source store per board and the parent list of each registered repository; acts keep their own fresh reads.

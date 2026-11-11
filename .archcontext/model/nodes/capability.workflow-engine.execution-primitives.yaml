@@ -22,6 +22,8 @@ source:
     - "src/effects/process-group-registry.ts"
     - "src/effects/expensive-run-lock.ts"
     - "src/effects/readonly-observation.ts"
+    - "src/core/shell-quote.ts"
+    - "src/effects/path-containment.ts"
     - "src/effects/atomic-append.ts"
     - "src/effects/locking/**"
     - "src/effects/git/**"

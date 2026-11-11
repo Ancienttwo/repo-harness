@@ -31,7 +31,8 @@ const singleLine = (text: string) => text.replace(/[\r\n\t]+/g, ' ');
 const clip = (text: string, bytes: number) => Buffer.from(text).subarray(0, bytes).toString('utf8').replace(/\uFFFD$/u, '');
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const errorText = (error: unknown) => singleLine(error instanceof Error ? error.message : String(error));
-const noticeItems = (report: ArchitectureDebtReportV1) => report.items.filter(item => ['unowned-path', 'ambiguous-owner', 'stale-anchor'].includes(item.kind));
+const NOTICE_KINDS: readonly string[] = ['unowned-path', 'ambiguous-owner', 'stale-anchor', 'state-machine-rule', 'state-machine-stale'];
+const noticeItems = (report: ArchitectureDebtReportV1) => report.items.filter(item => NOTICE_KINDS.includes(item.kind));
 
 export interface NoticeBlock {
   readonly content: string;
@@ -73,7 +74,21 @@ function boundedBlock(header: string, rows: readonly string[], total: number, ov
   return content;
 }
 
-/** The checkpoint fallback has no severity or base classification. Only scoped ownership and citation debt reaches this renderer. */
+/** What the row points at: the model field or citation, or the machine and its rule, break or anchor symbol. */
+function itemSubject(item: ArchitectureDebtReportV1['items'][number]): string {
+  const { details } = item;
+  if (item.kind === 'state-machine-rule' || item.kind === 'state-machine-stale') {
+    const target = item.kind === 'state-machine-stale' ? details.symbol ?? item.paths[0]
+      : details.ruleId ?? (details.region === undefined ? details.event === undefined ? undefined : `${details.event} step ${details.step}` : `${details.region}.${details.state}`);
+    return [details.stateMachineId, target, item.reasonCode].filter(part => part !== undefined).join(' ');
+  }
+  return typeof details.modelField === 'string' ? details.modelField
+    : details.origin === 'node-summary' ? 'summary'
+    : details.origin === 'node-responsibility' ? `responsibilities[${details.responsibilityIndex}]`
+    : 'human citations';
+}
+
+/** The checkpoint fallback has no severity or base classification. Only scoped ownership, citation and state machine debt reaches this renderer. */
 export function renderAgentNotice(report: ArchitectureDebtReportV1): NoticeBlock | null {
   const items = noticeItems(report);
   if (items.length === 0) return null;
@@ -81,13 +96,8 @@ export function renderAgentNotice(report: ArchitectureDebtReportV1): NoticeBlock
   const capabilities = [...new Set(itemCapabilities.flat())];
   const rest = capabilities.length > 1 ? ` (+${capabilities.length - 1} capabilities)` : '';
   const capability = `${singleLine(capabilities[0]!)}${rest}`;
-  const rows = items.slice(0, 3).map(item => {
-    const field = typeof item.details.modelField === 'string' ? item.details.modelField
-      : item.details.origin === 'node-summary' ? 'summary'
-      : item.details.origin === 'node-responsibility' ? `responsibilities[${item.details.responsibilityIndex}]`
-      : 'human citations';
-    return `- ${item.kind} ${singleLine(item.capabilityIds[0] ?? report.scope.capabilityIds[0] ?? 'unowned')}; ${singleLine(field)}. Run: ${managedArchctxAction(item.action)}`;
-  });
+  const rows = items.slice(0, 3).map(item =>
+    `- ${item.kind} ${singleLine(item.capabilityIds[0] ?? report.scope.capabilityIds[0] ?? 'unowned')}; ${singleLine(itemSubject(item))}. Run: ${managedArchctxAction(item.action)}`);
   return {
     content: boundedBlock(`[ArchitectureDebt] ${items.length} new in ${capability}`, rows, items.length, count => `(+${count} more: ${ARCHITECTURE_DEBT_COMMAND})`),
     systemMessage: `Architecture: ${items.length} debt ${items.length === 1 ? 'item' : 'items'} in ${capability}; run ${ARCHITECTURE_DEBT_COMMAND}.`,
@@ -154,8 +164,8 @@ function archimapBlock(paths: readonly string[]): NoticeBlock {
 
 function unignoredBlock(): NoticeBlock {
   return {
-    content: `[Architecture] notice unavailable: ${STATE_DIR} is not Git-ignored. Fix: add ${STATE_DIR} to .gitignore`,
-    systemMessage: `Architecture: notice unavailable (${STATE_DIR} is not Git-ignored); add it to .gitignore.`,
+    content: `[Architecture] notice unavailable: ${STATE_DIR} is not Git-ignored. Fix: run repo-harness update to write the runtime-state block to the user-level Git excludes file.`,
+    systemMessage: `Architecture: notice unavailable (${STATE_DIR} is not Git-ignored); run repo-harness update.`,
   };
 }
 

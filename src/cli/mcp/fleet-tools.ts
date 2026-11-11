@@ -13,7 +13,7 @@ import { resolve } from 'path';
 import { MergeReadinessError, assertLocalPullRequestRepository, collectPullRequestMergeReadiness } from '../../effects/publication/merge-readiness';
 import { readRepoHarnessRegistrySnapshot, type RepoHarnessRegisteredRepo, type RepoHarnessRegistrySnapshot } from '../../effects/repo-registry';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
-import { redactMcpText } from './redaction';
+import { errorResult, textResult, type McpToolResult } from './result';
 import type { McpPolicy } from './types';
 
 export const FLEET_MCP_TOOL_NAMES = [
@@ -38,12 +38,6 @@ export interface FleetMcpToolDefinition {
 export interface FleetMcpToolContext {
   readonly repoRoot: string;
   readonly policy: McpPolicy;
-}
-
-export interface FleetMcpToolResult {
-  readonly content: Array<{ readonly type: 'text'; readonly text: string }>;
-  readonly structuredContent?: unknown;
-  readonly isError?: boolean;
 }
 
 interface FleetTarget {
@@ -76,28 +70,6 @@ const optionalRepoProperties = {
   repo_id: { type: 'string' },
   repo_path: { type: 'string' },
 };
-
-function textResult(value: unknown): FleetMcpToolResult {
-  return {
-    content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
-    structuredContent: value,
-  };
-}
-
-function errorResult(code: string, message: string, details?: unknown): FleetMcpToolResult {
-  const value = {
-    error: {
-      code,
-      message: redactMcpText(message).text,
-      ...(details === undefined ? {} : { details }),
-    },
-  };
-  return {
-    content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
-    structuredContent: value,
-    isError: true,
-  };
-}
 
 function audit(
   ctx: FleetMcpToolContext,
@@ -205,7 +177,7 @@ function publicationEnvironment(): {
   };
 }
 
-function callPublicationReadiness(ctx: FleetMcpToolContext, args: Record<string, unknown>): FleetMcpToolResult {
+function callPublicationReadiness(ctx: FleetMcpToolContext, args: Record<string, unknown>): McpToolResult {
   const target = targetFromArgs(ctx, args);
   const repository = requiredString(args, 'repository');
   try { assertLocalPullRequestRepository(target.repoRoot, repository); }
@@ -226,8 +198,8 @@ function pullRequestSelection(args: Record<string, unknown>) {
   };
 }
 
-function errorFromUnknown(error: unknown): FleetMcpToolResult {
-  if (error instanceof FleetMcpError) return errorResult(error.code, error.message, error.details);
+function errorFromUnknown(error: unknown): McpToolResult {
+  if (error instanceof FleetMcpError) return errorResult(error.code, error.message, { details: error.details });
   if (error instanceof MergeReadinessError) return errorResult(error.code, error.message);
   if (error instanceof Error) return errorResult('TOOL_FAILED', error.message);
   return errorResult('TOOL_FAILED', String(error));
@@ -277,7 +249,7 @@ export function callFleetTool(
   ctx: FleetMcpToolContext,
   name: FleetMcpToolName,
   args: Record<string, unknown> = {},
-): FleetMcpToolResult {
+): McpToolResult {
   try {
     const argumentError = fleetToolArgumentError(name, args);
     if (argumentError !== undefined) throw new FleetMcpError('INVALID_ARGUMENT', argumentError);

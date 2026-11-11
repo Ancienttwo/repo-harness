@@ -4,7 +4,9 @@
  * read from disk and performs the quarantine write; everything here is a
  * deterministic function of its inputs so replay is provably reproducible.
  */
+import { isRecord } from "./is-record";
 import type { EvidenceEventRecord, EvidenceLogRecord, GenesisRecord, SubjectIdentity, TrustClass } from "./types";
+import { SHA256_PREFIXED_PATTERN } from './sha256-pattern';
 
 export type ParsedLogLine =
   | { readonly ok: true; readonly record: EvidenceLogRecord }
@@ -19,10 +21,6 @@ const TRUST_CLASSES: ReadonlySet<string> = new Set<TrustClass>([
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isValidGenesis(value: unknown): value is GenesisRecord {
@@ -44,7 +42,7 @@ function isValidSubjectIdentity(value: unknown): value is SubjectIdentity {
     if (!hashes) return false;
     const fields = [...common, ...hashes, ...(value.authority_kind === 'eval-catalog' ? ['eval_id'] : [])];
     if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(fields.sort())
-      || !hashes.every(key => typeof value[key] === 'string' && /^sha256:[0-9a-f]{64}$/.test(value[key] as string))
+      || !hashes.every(key => typeof value[key] === 'string' && SHA256_PREFIXED_PATTERN.test(value[key] as string))
       || value.authority_kind === 'eval-catalog' && !isNonEmptyString(value.eval_id)) return false;
   } else if (!isNonEmptyString(value.contract_hash)) return false;
   return isNonEmptyString(value.authority_commit)

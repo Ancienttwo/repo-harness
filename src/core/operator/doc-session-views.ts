@@ -1,3 +1,4 @@
+import { isRecord } from '../evidence/is-record';
 import { compareDocSessionCursor, isRepositoryRelativePath, parseDocSessionCursor, storedDocSessionText } from './doc-session-events';
 
 /** Public session metadata. Private agent records, prompts and control paths never cross this boundary. */
@@ -43,7 +44,6 @@ const SID = /^[0-9a-f]{32}$/u;
 const TOKEN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
 const STATES = new Set(['created', 'starting', 'running', 'idle', 'stopped', 'failed']);
-const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const keys = (v: Record<string, unknown>, expected: readonly string[]): boolean => Object.keys(v).length === expected.length && expected.every(key => Object.hasOwn(v, key));
 const cursor = (v: unknown): v is string => typeof v === 'string' && parseDocSessionCursor(v) !== null;
 const timestamp = (v: unknown): v is string => typeof v === 'string' && Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v;
@@ -51,15 +51,15 @@ const publicText = (v: unknown, max: number): v is string => typeof v === 'strin
   && !/[\u0000-\u001f\u007f]/u.test(v) && storedDocSessionText(v).text === v;
 
 export function isDocSessionListRequest(v: unknown): v is DocSessionListRequest {
-  return object(v) && keys(v, ['seen']) && object(v.seen) && Object.keys(v.seen).length <= DOC_SESSION_LIST_MAX
+  return isRecord(v) && keys(v, ['seen']) && isRecord(v.seen) && Object.keys(v.seen).length <= DOC_SESSION_LIST_MAX
     && Object.entries(v.seen).every(([sid, value]) => SID.test(sid) && cursor(value));
 }
 export function isDocSessionDetailRequest(v: unknown): v is DocSessionDetailRequest {
-  return object(v) && keys(v, ['session_id', 'seen']) && typeof v.session_id === 'string' && SID.test(v.session_id)
+  return isRecord(v) && keys(v, ['session_id', 'seen']) && typeof v.session_id === 'string' && SID.test(v.session_id)
     && (v.seen === null || cursor(v.seen));
 }
 export function isDocSessionEventsRequest(v: unknown): v is DocSessionEventsRequest {
-  return object(v) && keys(v, ['session_id', 'after']) && typeof v.session_id === 'string' && SID.test(v.session_id)
+  return isRecord(v) && keys(v, ['session_id', 'after']) && typeof v.session_id === 'string' && SID.test(v.session_id)
     && (v.after === null || cursor(v.after));
 }
 
@@ -69,7 +69,7 @@ export function docSessionUnread(last: string | null, seen: string | null): bool
 }
 
 function summary(v: unknown, seen: string | null): DocSessionSummary {
-  if (!object(v) || !keys(v, ['session_id', 'title', 'repository_id', 'repository_name', 'runtime', 'state', 'created_at', 'last_activity_at', 'last_cursor', 'unread'])
+  if (!isRecord(v) || !keys(v, ['session_id', 'title', 'repository_id', 'repository_name', 'runtime', 'state', 'created_at', 'last_activity_at', 'last_cursor', 'unread'])
     || typeof v.session_id !== 'string' || !SID.test(v.session_id) || !publicText(v.title, 160)
     || typeof v.repository_id !== 'string' || !TOKEN.test(v.repository_id) || !publicText(v.repository_id, 128)
     || !publicText(v.repository_name, 160) || typeof v.runtime !== 'string' || !TOKEN.test(v.runtime) || !publicText(v.runtime, 128)
@@ -79,15 +79,15 @@ function summary(v: unknown, seen: string | null): DocSessionSummary {
 }
 
 export function decodeOperatorDocSessionList(v: unknown, request: DocSessionListRequest): OperatorDocSessionList {
-  if (!isDocSessionListRequest(request) || !object(v) || !keys(v, ['protocol', 'kind', 'sessions']) || v.protocol !== 1
+  if (!isDocSessionListRequest(request) || !isRecord(v) || !keys(v, ['protocol', 'kind', 'sessions']) || v.protocol !== 1
     || v.kind !== 'operator_docs_sessions' || !Array.isArray(v.sessions) || v.sessions.length > DOC_SESSION_LIST_MAX) throw new Error('doc session list');
-  const sessions = v.sessions.map(item => summary(item, object(item) && typeof item.session_id === 'string' ? request.seen[item.session_id] ?? null : null));
+  const sessions = v.sessions.map(item => summary(item, isRecord(item) && typeof item.session_id === 'string' ? request.seen[item.session_id] ?? null : null));
   if (new Set(sessions.map(item => item.session_id)).size !== sessions.length) throw new Error('duplicate session');
   return { protocol: 1, kind: 'operator_docs_sessions', sessions };
 }
 
 export function decodeOperatorDocSessionDetail(v: unknown, request: DocSessionDetailRequest): OperatorDocSessionDetail {
-  if (!isDocSessionDetailRequest(request) || !object(v) || !keys(v, ['protocol', 'kind', 'session', 'branch', 'worktree', 'head_commit', 'base_commit', 'epoch', 'turn'])
+  if (!isDocSessionDetailRequest(request) || !isRecord(v) || !keys(v, ['protocol', 'kind', 'session', 'branch', 'worktree', 'head_commit', 'base_commit', 'epoch', 'turn'])
     || v.protocol !== 1 || v.kind !== 'operator_docs_session' || v.branch !== `docs/${request.session_id.slice(0, 12)}`
     || !publicText(v.worktree, 512) || !isRepositoryRelativePath(v.worktree) || v.worktree.includes('/')
     || typeof v.head_commit !== 'string' || !OID.test(v.head_commit) || typeof v.base_commit !== 'string' || !OID.test(v.base_commit)

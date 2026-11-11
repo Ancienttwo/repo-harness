@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from 'crypto';
 import { closeSync, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeSync, type Dirent } from 'fs';
-import { dirname, join, relative, resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 import { dlopen } from 'bun:ffi';
 import { repoHarnessRegisteredReposPath, type RepoHarnessAccessMode } from '../../effects/repo-registry';
+import { sha256Hex } from '../../core/evidence/sha256';
 import {
   acquireExclusiveDirectoryLock,
   ExclusiveLockContentionError,
@@ -10,9 +11,12 @@ import {
 } from '../../effects/locking/exclusive-directory-lock';
 import { appendSegmentedLog } from '../../effects/segmented-log';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
+import { errorResult, textResult, type McpToolResult } from './result';
 import type { CodeGraphRefreshResult, CodeGraphRepoSnapshot, GeneralRepoCodeGraphAdapter } from '../tools/codegraph-reader';
 import { MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH } from './log-paths';
-import { isPathInside } from './paths';
+import { isPathInside } from '../../effects/path-containment';
+import { toPosixPath } from './paths';
+import { isRecord } from '../../core/evidence/is-record';
 import {
   GeneralRepoAccessError,
   assertRepoWriteEnabled,
@@ -28,8 +32,6 @@ import {
   resolveRepoWritePath,
   resolveWalkedRepoPath,
   sameIgnorePolicyRevision,
-  sha256,
-  toPosixPath,
   uniqueRepoRecords,
   type IgnorePolicy,
   type RepoEntryType,
@@ -57,12 +59,6 @@ export interface GeneralRepoToolContext {
     beforeMutationCommit?: (event: { repoRoot: string; tool: string; paths: string[] }) => void;
     beforeNativeMoveCommit?: (event: { repoRoot: string; fromPath: string; toPath: string }) => void;
   };
-}
-
-export interface GeneralRepoToolResult {
-  content: Array<{ type: 'text'; text: string }>;
-  structuredContent?: unknown;
-  isError?: boolean;
 }
 
 type SnapshotState = 'ready' | 'index_lagging' | 'stale' | 'failed';
@@ -205,22 +201,6 @@ export type GeneralRepoToolName = typeof GENERAL_REPO_TOOLS[number];
 
 export { GeneralRepoAccessError };
 
-function textResult(value: unknown): GeneralRepoToolResult {
-  return {
-    content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }],
-    structuredContent: typeof value === 'string' ? undefined : value,
-  };
-}
-
-function errorResult(code: string, message: string, details?: unknown, retryable = false): GeneralRepoToolResult {
-  const value = { error: { code, message: redactMcpText(message).text, retryable, details } };
-  return {
-    content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
-    structuredContent: value,
-    isError: true,
-  };
-}
-
 function audit(ctx: GeneralRepoToolContext, tool: string, status: 'ok' | 'blocked' | 'failed', input: unknown, targetPath?: string, error?: string, details: Partial<McpAuditEntry> = {}): void {
   tryWriteMcpAuditEntry(ctx.repoRoot, {
     timestamp: new Date().toISOString(),
@@ -255,8 +235,8 @@ function auditPaths(input: Record<string, unknown>): string[] {
 }
 
 function recordObject(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
+  if (!isRecord(value)) return null;
+  return value;
 }
 
 function recordArray(value: unknown): Record<string, unknown>[] {
@@ -280,7 +260,7 @@ function numberField(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-function auditDetailsFromResult(result: GeneralRepoToolResult, input: Record<string, unknown>, durationMs: number, tool: string): Partial<McpAuditEntry> {
+function auditDetailsFromResult(result: McpToolResult, input: Record<string, unknown>, durationMs: number, tool: string): Partial<McpAuditEntry> {
   const payload = recordObject(result.structuredContent);
   if (!payload) {
     return {
@@ -322,13 +302,13 @@ function auditDetailsFromError(error: GeneralRepoAccessError, input: Record<stri
   };
 }
 
-function numberArg(value: unknown, fallback: number, min: number, max: number): number {
+export function numberArg(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(Math.trunc(parsed), min), max);
 }
 
-function booleanArg(value: unknown, fallback = false): boolean {
+export function booleanArg(value: unknown, fallback = false): boolean {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase();
@@ -357,11 +337,11 @@ function mcpTracePath(repoRoot: string): string {
 }
 
 function correlationId(tool: string): string {
-  return `mcpcorr_${sha256(`${tool}\0${Date.now()}\0${randomBytes(8).toString('hex')}`).slice(0, 16)}`;
+  return `mcpcorr_${sha256Hex(`${tool}\0${Date.now()}\0${randomBytes(8).toString('hex')}`).slice(0, 16)}`;
 }
 
 function indexEventId(repo: RepoRecord, eventType: string, seed: string): string {
-  return `idxevt_${sha256(`${repo.repoId}\0${eventType}\0${seed}\0${Date.now()}\0${randomBytes(4).toString('hex')}`).slice(0, 16)}`;
+  return `idxevt_${sha256Hex(`${repo.repoId}\0${eventType}\0${seed}\0${Date.now()}\0${randomBytes(4).toString('hex')}`).slice(0, 16)}`;
 }
 
 function safeEventError(error: CodeGraphRefreshResult['error'] | undefined): Record<string, unknown> | undefined {
@@ -450,7 +430,7 @@ function tryAppendJsonLine(repoRoot: string, path: string, entry: Record<string,
   }
 }
 
-function withCorrelationId(result: GeneralRepoToolResult, id: string): GeneralRepoToolResult {
+function withCorrelationId(result: McpToolResult, id: string): McpToolResult {
   const payload = recordObject(result.structuredContent);
   if (!payload) return result;
   const nextPayload = { ...payload, correlation_id: id };
@@ -481,7 +461,7 @@ function payloadPathDigest(payload: Record<string, unknown> | null, input: Recor
   const snapshotCache = recordObject(payload?.snapshot_cache);
   const digest = stringField(snapshotCache?.path_digest);
   if (digest) return digest;
-  return `sha256:${sha256(JSON.stringify(cachePaths(auditPaths(input))))}`;
+  return `sha256:${sha256Hex(JSON.stringify(cachePaths(auditPaths(input))))}`;
 }
 
 function payloadPathCount(payload: Record<string, unknown> | null, input: Record<string, unknown>): number {
@@ -529,7 +509,7 @@ function traceBackend(payload: Record<string, unknown> | null): string {
   return 'codegraph-or-filesystem';
 }
 
-function writeToolObservability(ctx: GeneralRepoToolContext, tool: string, status: 'ok' | 'blocked' | 'failed', input: Record<string, unknown>, result: GeneralRepoToolResult | null, durationMs: number, id: string, errorCode?: string): void {
+function writeToolObservability(ctx: GeneralRepoToolContext, tool: string, status: 'ok' | 'blocked' | 'failed', input: Record<string, unknown>, result: McpToolResult | null, durationMs: number, id: string, errorCode?: string): void {
   const payload = recordObject(result?.structuredContent);
   const codeGraph = payloadCodeGraph(payload);
   const index = payloadIndex(payload);
@@ -606,8 +586,8 @@ function injectMutationFault(point: string): void {
 
 function responseCacheKey(repo: RepoRecord, ignore: IgnorePolicy, snapshot: VisibleEntrySnapshot, scope: { tool: string; paths?: string[] }): { key: string; paths: string[]; pathDigest: string } {
   const paths = cachePaths(scope.paths);
-  const pathDigest = `sha256:${sha256(JSON.stringify(paths))}`;
-  const key = `cache_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${snapshot.id}\0${scope.tool}\0${pathDigest}`).slice(0, 16)}`;
+  const pathDigest = `sha256:${sha256Hex(JSON.stringify(paths))}`;
+  const key = `cache_${sha256Hex(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${snapshot.id}\0${scope.tool}\0${pathDigest}`).slice(0, 16)}`;
   return { key, paths, pathDigest };
 }
 
@@ -639,7 +619,7 @@ function mutationLockRoot(repo: RepoRecord): string {
 }
 
 function mutationLockName(relativePath: string): string {
-  return `${sha256(relativePath).slice(0, 32)}.lock`;
+  return `${sha256Hex(relativePath).slice(0, 32)}.lock`;
 }
 
 function acquireMutationLocks(repo: RepoRecord, paths: string[]): ExclusiveDirectoryLockHandle[] {
@@ -722,7 +702,7 @@ function commonFields(repo: RepoRecord, ignore: IgnorePolicy, snapshot: VisibleE
 }
 
 function entryMetadataCacheKey(resolved: ResolvedRepoPath, ignore: IgnorePolicy, contentHash = true): string {
-  return `entry_${sha256(`${resolved.repo.repoId}\0${resolved.repo.registryRevision}\0${ignore.digest}\0${resolved.relativePath}\0${resolved.metadataSignature}\0${contentHash ? 'content-hash' : 'metadata-only'}`).slice(0, 16)}`;
+  return `entry_${sha256Hex(`${resolved.repo.repoId}\0${resolved.repo.registryRevision}\0${ignore.digest}\0${resolved.relativePath}\0${resolved.metadataSignature}\0${contentHash ? 'content-hash' : 'metadata-only'}`).slice(0, 16)}`;
 }
 
 function rememberEntryMetadata(key: string, entry: ManifestEntry): void {
@@ -753,7 +733,7 @@ function metadataForResolved(resolved: ResolvedRepoPath, ignore: IgnorePolicy, s
   if (contentHash && resolved.readable && resolved.contentFile) {
     const raw = readStableResolvedFile(resolved, { digest: '', fileIdentity: null, rules: [] });
     binary = raw.subarray(0, BINARY_PROBE_BYTES).includes(0);
-    fileHash = sha256(raw);
+    fileHash = sha256Hex(raw);
   }
   const entry: ManifestEntry = {
     [ENTRY_REVISION]: resolved.metadataSignature,
@@ -915,12 +895,6 @@ function addManifestCount(counts: ManifestCounts, entry: ManifestEntry): void {
   if (entry.type === 'file' && entry.binary === undefined) counts.content_deferred += 1;
 }
 
-function countsForEntries(entries: ManifestEntry[]): ManifestCounts {
-  const counts = emptyManifestCounts();
-  for (const entry of entries) addManifestCount(counts, entry);
-  return counts;
-}
-
 function codeGraphMetadataIndex(repo: RepoRecord, ignore: IgnorePolicy, codeGraph: CodeGraphRepoSnapshot): { byPath: Map<string, CodeGraphEntryMetadata>; filteredPaths: number; laggingPaths: Set<string> } {
   const byPath = new Map<string, CodeGraphEntryMetadata>();
   let filteredPaths = 0;
@@ -1046,11 +1020,11 @@ function buildManifestPageSnapshot(ctx: GeneralRepoToolContext, repo: RepoRecord
   if (validation.stale && attempt + 1 < MAX_SNAPSHOT_BUILD_ATTEMPTS) {
     return buildManifestPageSnapshot(ctx, repo, validation.ignore, args, attempt + 1);
   }
-  const id = `snap_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${codeGraph.indexRevision}\0${manifestDigest}`).slice(0, 16)}`;
+  const id = `snap_${sha256Hex(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${codeGraph.indexRevision}\0${manifestDigest}`).slice(0, 16)}`;
   const coverage: VisibleEntrySnapshot['coverage'] = offset === 0 && pageEntries.length === counts.entries ? 'complete' : 'page';
   const cacheKey = coverage === 'complete'
-    ? `cache_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}`).slice(0, 16)}`
-    : `cache_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}\0repo_manifest\0${offset}\0${pageSize}`).slice(0, 16)}`;
+    ? `cache_${sha256Hex(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}`).slice(0, 16)}`
+    : `cache_${sha256Hex(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}\0repo_manifest\0${offset}\0${pageSize}`).slice(0, 16)}`;
   const state = snapshotState(codeGraph, indexed.laggingPaths.size, validation.stale);
   const expiresAtMs = createdAtMs + SNAPSHOT_TTL_MS;
   const snapshot: VisibleEntrySnapshot = {
@@ -1095,10 +1069,10 @@ function buildVisibleEntrySnapshot(ctx: GeneralRepoToolContext, repo: RepoRecord
   if (validation.stale && attempt + 1 < MAX_SNAPSHOT_BUILD_ATTEMPTS) {
     return buildVisibleEntrySnapshot(ctx, repo, validation.ignore, opts, attempt + 1);
   }
-  const id = `snap_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${codeGraph.indexRevision}\0${manifestDigest}`).slice(0, 16)}`;
+  const id = `snap_${sha256Hex(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${codeGraph.indexRevision}\0${manifestDigest}`).slice(0, 16)}`;
   const cacheKey = contentHash
-    ? `cache_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}`).slice(0, 16)}`
-    : `cache_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}\0metadata-only`).slice(0, 16)}`;
+    ? `cache_${sha256Hex(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}`).slice(0, 16)}`
+    : `cache_${sha256Hex(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}\0metadata-only`).slice(0, 16)}`;
   const state = snapshotState(codeGraph, merged.laggingPaths.length, validation.stale);
   const expiresAtMs = createdAtMs + SNAPSHOT_TTL_MS;
   const snapshot: VisibleEntrySnapshot = {
@@ -1348,8 +1322,8 @@ function applyStructuredPatchEdits(beforeText: string, edits: unknown): { text: 
       edit_index: editIndex,
       mode: 'old_text',
       occurrence,
-      old_sha256: sha256(raw.old_text),
-      new_sha256: sha256(raw.new_text),
+      old_sha256: sha256Hex(raw.old_text),
+      new_sha256: sha256Hex(raw.new_text),
       bytes_before: Buffer.byteLength(raw.old_text, 'utf-8'),
       bytes_after: Buffer.byteLength(raw.new_text, 'utf-8'),
     });
@@ -1434,8 +1408,8 @@ function applyUnifiedDiffPatch(beforeText: string, diff: unknown): { text: strin
       old_start: oldStart,
       old_lines: oldLines.length,
       new_lines: newLines.length,
-      old_sha256: sha256(oldBlock),
-      new_sha256: sha256(newBlock),
+      old_sha256: sha256Hex(oldBlock),
+      new_sha256: sha256Hex(newBlock),
     });
   }
   if (applied.length === 0) {
@@ -1515,7 +1489,7 @@ function readMutationFile(resolved: ResolvedRepoPath, ignore: IgnorePolicy): { r
   const raw = readStableResolvedFile(resolved, ignore);
   return {
     raw,
-    sha256: sha256(raw),
+    sha256: sha256Hex(raw),
     mode: statSync(resolved.canonicalPath).mode & 0o777,
   };
 }
@@ -1687,10 +1661,10 @@ function mutationResult(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: I
   responsePath?: string;
   changedPaths?: string[];
   extra?: Record<string, unknown>;
-}): GeneralRepoToolResult {
+}): McpToolResult {
   const after = resolveRepoPath(repo, target.relativePath, ignore, { requireFile: true });
   const afterRaw = readFileSync(after.canonicalPath);
-  const afterHash = sha256(afterRaw);
+  const afterHash = sha256Hex(afterRaw);
   const afterEntry = metadataForResolved(after, ignore);
   const built = buildVisibleEntrySnapshot(ctx, repo, ignore, { contentHash: false });
   const { snapshot, ignore: snapshotIgnore } = built;
@@ -1699,8 +1673,8 @@ function mutationResult(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: I
   const changedPaths = cachePaths(opts.changedPaths ?? [target.relativePath]);
   const responsePath = opts.responsePath ?? target.relativePath;
   const mutationTool = opts.tool ?? (opts.operation === 'patch' ? 'apply_patch' : 'write_file');
-  const mutationId = `mut_${sha256(`${repo.repoId}\0${changedPaths.join('\0')}\0${opts.beforeHash ?? 'new'}\0${afterHash}\0${Date.now()}`).slice(0, 16)}`;
-  const invalidationId = `idxinv_${sha256(`${mutationId}\0${snapshot.codeGraph.indexRevision}\0${target.relativePath}`).slice(0, 16)}`;
+  const mutationId = `mut_${sha256Hex(`${repo.repoId}\0${changedPaths.join('\0')}\0${opts.beforeHash ?? 'new'}\0${afterHash}\0${Date.now()}`).slice(0, 16)}`;
+  const invalidationId = `idxinv_${sha256Hex(`${mutationId}\0${snapshot.codeGraph.indexRevision}\0${target.relativePath}`).slice(0, 16)}`;
   const indexEventId = tryWriteIndexEvent(ctx, repo, {
     event_type: 'index_invalidation',
     status: 'pending',
@@ -1760,12 +1734,12 @@ function mutationResult(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: I
   });
 }
 
-function deleteMutationResult(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: IgnorePolicy, deleted: ManifestEntry, beforeHash: string, beforeSize: number): GeneralRepoToolResult {
+function deleteMutationResult(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: IgnorePolicy, deleted: ManifestEntry, beforeHash: string, beforeSize: number): McpToolResult {
   const built = buildVisibleEntrySnapshot(ctx, repo, ignore, { contentHash: false });
   const { snapshot, ignore: snapshotIgnore } = built;
   const indexState = mutationIndexState(snapshot);
-  const mutationId = `mut_${sha256(`${repo.repoId}\0${deleted.path}\0${beforeHash}\0deleted\0${Date.now()}`).slice(0, 16)}`;
-  const invalidationId = `idxinv_${sha256(`${mutationId}\0${snapshot.codeGraph.indexRevision}\0${deleted.path}`).slice(0, 16)}`;
+  const mutationId = `mut_${sha256Hex(`${repo.repoId}\0${deleted.path}\0${beforeHash}\0deleted\0${Date.now()}`).slice(0, 16)}`;
+  const invalidationId = `idxinv_${sha256Hex(`${mutationId}\0${snapshot.codeGraph.indexRevision}\0${deleted.path}`).slice(0, 16)}`;
   const indexEventId = tryWriteIndexEvent(ctx, repo, {
     event_type: 'index_invalidation',
     status: 'pending',
@@ -1841,7 +1815,7 @@ function readFilePayload(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: 
   const indexed = snapshotEntry?.indexed ?? false;
   const fields = commonFields(repo, ignore, snapshot, { tool, paths: [target.relativePath] });
   const raw = readStableResolvedFile(target, ignore);
-  const fullHash = sha256(raw);
+  const fullHash = sha256Hex(raw);
   if (verifySnapshotEntry) assertSnapshotEntryCurrent(snapshot, target.relativePath, fullHash);
   const binary = raw.subarray(0, BINARY_PROBE_BYTES).includes(0);
 
@@ -1914,7 +1888,7 @@ function readFilePayload(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: 
   };
 }
 
-function getRepoCapabilities(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function getRepoCapabilities(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
   const built = buildVisibleEntrySnapshot(ctx, repo, ignore, { contentHash: false });
@@ -1944,7 +1918,7 @@ function getRepoCapabilities(ctx: GeneralRepoToolContext, args: Record<string, u
   });
 }
 
-function writeFileTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function writeFileTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   assertRepoWriteEnabled(repo);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
@@ -2009,7 +1983,7 @@ function writeFileTool(ctx: GeneralRepoToolContext, args: Record<string, unknown
   });
 }
 
-function applyPatchTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function applyPatchTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   assertRepoWriteEnabled(repo);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
@@ -2053,7 +2027,7 @@ function applyPatchTool(ctx: GeneralRepoToolContext, args: Record<string, unknow
   });
 }
 
-function movePathTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function movePathTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   assertRepoWriteEnabled(repo);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
@@ -2119,7 +2093,7 @@ function movePathTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>
   });
 }
 
-function deletePathTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function deletePathTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   assertRepoWriteEnabled(repo);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
@@ -2168,7 +2142,7 @@ function deletePathTool(ctx: GeneralRepoToolContext, args: Record<string, unknow
   });
 }
 
-function refreshRepoIndex(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function refreshRepoIndex(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   assertRepoWriteEnabled(repo);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
@@ -2307,7 +2281,7 @@ function refreshRepoIndex(ctx: GeneralRepoToolContext, args: Record<string, unkn
   });
 }
 
-function repoManifest(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function repoManifest(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
   const streamed = buildManifestPageSnapshot(ctx, repo, ignore, args);
@@ -2328,7 +2302,7 @@ function repoManifest(ctx: GeneralRepoToolContext, args: Record<string, unknown>
   });
 }
 
-function listTree(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function listTree(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
   resolveRepoPath(repo, args.path ?? '.', ignore, { allowRoot: true, requireDirectory: true });
@@ -2356,7 +2330,7 @@ function listTree(ctx: GeneralRepoToolContext, args: Record<string, unknown>): G
   });
 }
 
-function statFile(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function statFile(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
   const resolved = resolveRepoPath(repo, args.path, ignore);
@@ -2396,7 +2370,7 @@ function statFile(ctx: GeneralRepoToolContext, args: Record<string, unknown>): G
   });
 }
 
-function readFileTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function readFileTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
   const requestedPath = typeof args.snapshot_id === 'string' && args.snapshot_id.trim()
@@ -2418,7 +2392,7 @@ function readFileTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>
   });
 }
 
-function readFiles(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function readFiles(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
   const cachedSnapshot = cachedSnapshotById(repo, args.snapshot_id, undefined, { requireHashes: true });
@@ -2475,9 +2449,9 @@ function readFiles(ctx: GeneralRepoToolContext, args: Record<string, unknown>): 
   });
 }
 
-function searchText(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function searchText(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const query = String(args.query ?? '');
-  if (!query) return errorResult('INVALID_RANGE', 'query is required');
+  if (!query) return errorResult('INVALID_RANGE', 'query is required', { retryable: false });
   const mode = args.mode === 'regex' ? 'regex' : 'literal';
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
@@ -2520,7 +2494,7 @@ function searchText(ctx: GeneralRepoToolContext, args: Record<string, unknown>):
     const resolved = resolveRepoPath(repo, entry.path, snapshotIgnore, { requireFile: true });
     const raw = readStableResolvedFile(resolved, snapshotIgnore);
     const text = raw.toString('utf-8');
-    const fileHash = entry.sha256 ?? sha256(raw);
+    const fileHash = entry.sha256 ?? sha256Hex(raw);
     const lines = text.split(/\r?\n/);
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index] ?? '';
@@ -2748,11 +2722,11 @@ export function buildGeneralRepoToolDefinitions(): GeneralRepoToolDefinition[] {
   ];
 }
 
-export async function callGeneralRepoTool(ctx: GeneralRepoToolContext, name: string, args: Record<string, unknown> = {}): Promise<GeneralRepoToolResult> {
+export async function callGeneralRepoTool(ctx: GeneralRepoToolContext, name: string, args: Record<string, unknown> = {}): Promise<McpToolResult> {
   const startedAtMs = Date.now();
   const callCorrelationId = correlationId(name);
   try {
-    let result: GeneralRepoToolResult;
+    let result: McpToolResult;
     switch (name) {
       case 'get_repo_capabilities':
         result = getRepoCapabilities(ctx, args);
@@ -2791,7 +2765,7 @@ export async function callGeneralRepoTool(ctx: GeneralRepoToolContext, name: str
         result = refreshRepoIndex(ctx, args);
         break;
       default:
-        return errorResult('INTERNAL_ADAPTER_ERROR', `tool is not a general repo reader tool: ${name}`);
+        return errorResult('INTERNAL_ADAPTER_ERROR', `tool is not a general repo reader tool: ${name}`, { retryable: false });
     }
     const durationMs = Date.now() - startedAtMs;
     const correlated = withCorrelationId(result, callCorrelationId);
@@ -2805,7 +2779,7 @@ export async function callGeneralRepoTool(ctx: GeneralRepoToolContext, name: str
     const durationMs = Date.now() - startedAtMs;
     if (error instanceof GeneralRepoAccessError) {
       const message = redactMcpText(error.message).text;
-      const result = withCorrelationId(errorResult(error.code, message, error.details, error.retryable), callCorrelationId);
+      const result = withCorrelationId(errorResult(error.code, message, { details: error.details, retryable: error.retryable }), callCorrelationId);
       audit(ctx, name, 'blocked', args, auditTargetPath(args), message, {
         ...auditDetailsFromError(error, args, durationMs, name),
         correlationId: callCorrelationId,
@@ -2814,7 +2788,7 @@ export async function callGeneralRepoTool(ctx: GeneralRepoToolContext, name: str
       return result;
     }
     const message = redactMcpText(error instanceof Error ? error.message : String(error)).text;
-    const result = withCorrelationId(errorResult('INTERNAL_ADAPTER_ERROR', message), callCorrelationId);
+    const result = withCorrelationId(errorResult('INTERNAL_ADAPTER_ERROR', message, { retryable: false }), callCorrelationId);
     audit(ctx, name, 'failed', args, auditTargetPath(args), message, {
       repoId: stringField(args.repo_id),
       operation: name,

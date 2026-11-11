@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import { taskInboxRecipientStorageKey } from '../../src/core/fleet/task-inbox-layout';
 import {
   TASK_MESSAGE_BODY_MAX_BYTES,
-  TaskMessageError,
   buildTaskMessageDeliveryReceipt,
   buildTaskMessageEvent,
   canonicalTaskMessageDeliveryReceiptBytes,
@@ -12,6 +11,7 @@ import {
   validateTaskMessageDeliveryReceipt,
   validateTaskMessageEvent,
 } from '../../src/core/fleet/task-message';
+import { TaskMessageError } from '../../src/core/messages/task-message-error';
 
 const TASK_ID = '1'.repeat(64);
 const REVISION = '2'.repeat(64);

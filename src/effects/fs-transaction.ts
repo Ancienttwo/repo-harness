@@ -13,7 +13,8 @@ import {
   rmSync,
   writeSync,
 } from "fs";
-import { createHash } from "crypto";
+import { errorMessage } from "../core/evidence/error-message";
+import { sha256Prefixed } from "../core/evidence/sha256";
 import { basename, dirname, relative, resolve, sep } from "path";
 import type {
   AdoptionOperation,
@@ -163,10 +164,6 @@ function ensureParent(repoRoot: string, path: string): string | null {
   return null;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function fsyncDirectory(path: string): void {
   let fd: number | null = null;
   try {
@@ -200,7 +197,7 @@ function sanitizeBackupStem(path: string): string {
 }
 
 function contentHash(content: string | Buffer): string {
-  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+  return sha256Prefixed(content);
 }
 
 function checkExpectedFileState(repoRoot: string, operation: AdoptionOperation): string | null {

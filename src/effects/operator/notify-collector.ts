@@ -4,6 +4,7 @@
 // and the Bot access collector read its cache and run no probe of their own.
 
 import type { NotifyUnavailableReason } from '../../core/operator/notify-status';
+import { startObservationLoop, replaceObservation } from '../observation-loop';
 import { NotifyStatusUnavailableError, readNotifyChannelStatus, type NotifyChannelDeliveryStatus, type NotifyStatusReadInput } from './notify-status';
 
 export const NOTIFY_COLLECT_INTERVAL_MS = 60_000;
@@ -30,33 +31,26 @@ export interface NotifyCollectorHandle {
 /**
  * Collect at start, then every interval after the previous cycle settles. Cycles never overlap.
  * Each cycle reads the install record first, so a new install takes effect without a restart.
+ * Keep rule: a failed probe replaces the older status, so no stale status is served as current.
  */
 export function startNotifyCollector(options: NotifyCollectorOptions = {}): NotifyCollectorHandle {
-  let cache: NotifyCacheV1 = { state: 'pending' };
-  let closed = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let inflight: Promise<void> | null = null;
-  const cycle = (): Promise<void> => {
-    inflight = (options.read ?? readNotifyChannelStatus)({ env: options.env })
-      .then(value => { if (!closed) cache = { state: 'ok', value }; }, (error: unknown) => {
-        if (!closed) cache = { state: 'unavailable', reason: error instanceof NotifyStatusUnavailableError ? error.code : 'hc_unavailable' };
-      })
-      .finally(() => {
-        inflight = null;
-        if (closed) return;
-        timer = setTimeout(() => { void cycle(); }, options.interval_ms ?? NOTIFY_COLLECT_INTERVAL_MS);
-        timer.unref?.();
-      });
-    return inflight;
-  };
-  void cycle();
-  return Object.freeze({
-    read: () => cache,
-    settled: () => inflight ?? Promise.resolve(),
-    close: async () => {
-      closed = true;
-      clearTimeout(timer);
-      await inflight;
+  const loop = startObservationLoop<NotifyChannelDeliveryStatus, NotifyUnavailableReason>({
+    cycle: async () => {
+      try { return { state: 'observed', value: await (options.read ?? readNotifyChannelStatus)({ env: options.env }) }; }
+      catch (error) { return { state: 'unavailable', reason: error instanceof NotifyStatusUnavailableError ? error.code : 'hc_unavailable' }; }
     },
+    keep: replaceObservation,
+    failure: 'hc_unavailable',
+    interval_ms: options.interval_ms ?? NOTIFY_COLLECT_INTERVAL_MS,
+  });
+  return Object.freeze({
+    read: (): NotifyCacheV1 => {
+      const state = loop.read();
+      if (state.state === 'pending') return { state: 'pending' };
+      if (state.state === 'unavailable') return { state: 'unavailable', reason: state.reason };
+      return { state: 'ok', value: state.value };
+    },
+    settled: loop.settled,
+    close: loop.close,
   });
 }

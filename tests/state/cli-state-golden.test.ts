@@ -8,7 +8,6 @@ import {
 } from '../../src/effects/state/resolve-effective-state';
 import type { EffectiveState, StateSnapshot } from '../../src/core/state/types';
 import {
-  CONTRACT,
   EFFECTIVE_STATE_SCENARIOS,
   HOOK_ENTRY,
   createEffectiveStateFixture,

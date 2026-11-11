@@ -2,14 +2,15 @@ import { startOfflineTaskAgent } from './helpers/engineer-runtime-fixture';
 import { canonicalize } from '../src/core/evidence/canonical-json';
 import { observeActiveReviewAdmission } from '../src/effects/admission/issue-goal';
 import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
-import { parseAcceptancePolicy, acceptanceBenchmarkRequirement, modelFamily, modelRelation } from '../src/core/review/acceptance-receipt';
+import { parseAcceptancePolicy, acceptanceBenchmarkRequirement, modelRelation } from '../src/core/review/acceptance-receipt';
+import { modelFamily } from '../src/core/review/model-family';
 import { runReviewRound, closeReview, reviewLocation, type ReviewEffects } from '../src/effects/review/generic-review';
 import { readSessionArtifact, writeSessionArtifact } from '../src/effects/terminal/task-session-io';
 import { taskSessionDirectory as importedTaskDir, type HerdrCoreEndpoint, type TaskPaneBinding } from '../src/effects/terminal/task-session-record';
 import type { TaskRequest } from '../src/core/review/runner-port';
 import { taskReviewRunner } from '../src/effects/review-runner/task-review-runner';
-import { recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
-import { afterEach, describe, expect, test } from 'bun:test';
+import { fixtureTemplate, recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { darwinTest } from './helpers/darwin-test';
 import { existsSync, mkdtempSync, mkdirSync, realpathSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -79,8 +80,8 @@ test('provider expected-context fence rejects each stale identity without overwr
 });
 
 test('model family ignores routing providers and the relation fails closed', () => {
-  expect(['magpie/anthropic/claude-opus-5-5', 'cursor/deepseek-v41-flash-1017', 'deepseek-v41-flash-1017', 'GPT-6.1-Sol', 'o3-mini', 'fixture/unlisted']
-    .map(modelFamily)).toEqual(['anthropic', 'deepseek', 'deepseek', 'openai', 'openai', null]);
+  expect(['magpie/anthropic/claude-opus-5-5', 'cursor/deepseek-v41-flash-1017', 'deepseek-v41-flash-1017', 'GPT-6.1-Sol', 'o3-mini', 'fable', 'fixture/unlisted']
+    .map(modelFamily)).toEqual(['anthropic', 'deepseek', 'deepseek', 'openai', 'openai', 'anthropic', null]);
   expect(modelRelation(['gpt-6.1-sol'], 'gpt-6-astra')).toBe('same-family');
   expect(modelRelation(['magpie/anthropic/claude-opus-5-5'], 'claude-sonnet-5')).toBe('same-family');
   expect(modelRelation(['gpt-6.1-sol', 'deepseek-v41'], 'anthropic/claude-opus-5-5')).toBe('different-family');
@@ -284,6 +285,14 @@ describe('AcceptanceReceipt', () => {
       '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
       '{"protocol":2,"reviewer":"Codex","source":"codex-plugin","user_waiver":"allowed"}',
     ))).toThrow('source must be generic-review');
+  });
+
+  test('canonical JSON sorts keys by Unicode code point', () => {
+    // UTF-16 puts the surrogate pair (0xD800) first; code point order puts U+E000 before U+10000.
+    expect(canonicalize({ '\u{10000}': 2, '\uE000': 1 })).toBe('{"\uE000":1,"\u{10000}":2}');
+    // Lone surrogates sort by value; a UTF-8 encoder would make both U+FFFD and tie them.
+    expect(canonicalize({ '\uE000': 3, '\uDFFF': 2, '\uD800': 1 })).toBe(canonicalize({ '\uD800': 1, '\uDFFF': 2, '\uE000': 3 }));
+    expect(Object.keys(JSON.parse(canonicalize({ '\uE000': 3, '\uDFFF': 2, '\uD800': 1 })))).toEqual(['\uD800', '\uDFFF', '\uE000']);
   });
 
   test('protocol 2 binds Codex review to generic domain source and rejects retired labels', async () => {
@@ -604,17 +613,25 @@ describe('AcceptanceReceipt', () => {
 
 // Domain integration reuses this file's real acceptanceContext/Verification Plan fixture.
 // Only provider/task-agent effects are deterministic; this is a fixture opinion, not model evidence.
-function reviewFixture() {
+const reviewRepositoryTemplate = fixtureTemplate(() => {
   const fixture = makeFixture();
+  writeFileSync(join(fixture.root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/runs/\n.ai/harness/evidence/\n');
+  git(fixture.root, 'worktree', 'add', '-qb', 'fixture-reviewer', join(fixture.home, 'reviewer'));
+  writePassingChecks(fixture.root);
+  return { ...fixture, admissionFixture: admissions.get(fixture.root)! };
+}, fixture => [fixture.root, fixture.home]);
+afterAll(() => reviewRepositoryTemplate.dispose());
+
+function reviewFixture() {
+  const { admissionFixture, ...fixture } = reviewRepositoryTemplate.materialize();
+  tempDirs.push(fixture.root, fixture.home);
+  admissions.set(fixture.root, { ...admissionFixture, source: { ...admissionFixture.source } });
   const endpointHome = realpathSync(mkdtempSync('/tmp/as-')); tempDirs.push(endpointHome);
   mkdirSync(join(endpointHome, '.codex'));
   const payload = Buffer.from(JSON.stringify({ exp: Math.floor(Date.now()/1000)+86400 })).toString('base64url');
   writeFileSync(join(endpointHome,'.codex','auth.json'),JSON.stringify({tokens:{access_token:`fixture.${payload}.fixture`}}),{mode:0o600});
-  writeFileSync(join(fixture.root, '.gitignore'), '.ai/harness/checks/\n.ai/harness/runs/\n.ai/harness/evidence/\n');
 
   const reviewerRepo = join(fixture.home, 'reviewer');
-  git(fixture.root, 'worktree', 'add', '-qb', 'fixture-reviewer', reviewerRepo);
-  writePassingChecks(fixture.root);
   const calls: string[] = [];
   let request: TaskRequest; let domain: Record<string, unknown>; let sent = 0;
   let verdict: 'PASS' | 'FAIL' = 'FAIL'; let prior = false;
@@ -993,9 +1010,9 @@ test('review publish turns a P1 receipt into one unresolved thread that merge re
   expect(() => validateReviewPublishReceipt({ ...receipt, findings: receipt.findings.slice(1) })).toThrow('FAIL requires');
   expect(() => validateReviewPublishReceipt({ ...receipt, subject_sha: 'not-a-sha' })).toThrow('subject_sha');
   expect(() => validateReviewPublishReceipt({ ...receipt, findings: [{ ...receipt.findings[0], path: '../outside.ts' }] })).toThrow('repository-relative');
-  // Round 5 is the hard stop of the fix loop (acceptor.md section 2.2), so the publisher takes rounds 1 to 5.
-  expect(validateReviewPublishReceipt({ ...receipt, round: 5 }).round).toBe(5);
-  expect(() => validateReviewPublishReceipt({ ...receipt, round: 6 })).toThrow('round must be an integer from 1 to 5');
+  // The round-5 hard stop (acceptor.md section 2.2) lives in publishReview, which sees --owner-record; tests/cli/review.test.ts covers it.
+  expect(validateReviewPublishReceipt({ ...receipt, round: 6 }).round).toBe(6);
+  expect(() => validateReviewPublishReceipt({ ...receipt, round: 0 })).toThrow('round must be a positive integer');
 
   const writes: Array<{ readonly args: string[]; readonly input: string }> = [];
   const result = publishReview({
@@ -1003,7 +1020,7 @@ test('review publish turns a P1 receipt into one unresolved thread that merge re
     ghRunner: (args, input = '') => {
       writes.push({ args: [...args], input });
       if (args[0] === 'pr' && args[1] === 'view') {
-        return { status: 0, stdout: JSON.stringify({ number: PR_NUMBER, headRefOid: PUBLISH_HEAD, url: `https://github.com/${SLUG}/pull/${PR_NUMBER}` }), stderr: '' };
+        return { status: 0, stdout: JSON.stringify({ number: PR_NUMBER, headRefOid: PUBLISH_HEAD, url: `https://github.com/${SLUG}/pull/${PR_NUMBER}`, closingIssuesReferences: [] }), stderr: '' };
       }
       // Read side of the publisher: no earlier claim, and a diff that shows lines 10-14 of src/example.ts.
       if (args[0] === 'api' && args[1]?.startsWith(`repos/${SLUG}/issues/${PR_NUMBER}/comments?`)) return { status: 0, stdout: '[]', stderr: '' };
@@ -1044,6 +1061,7 @@ test('review publish turns a P1 receipt into one unresolved thread that merge re
       if (args[0] !== 'api') return { status: 1, stdout: '', stderr: 'unexpected readiness call: ' + args.join(' ') };
       const path = args[1] ?? '';
       if (path === `repos/${SLUG}`) return { status: 0, stdout: JSON.stringify({ id: 1, node_id: 'R_publish', full_name: SLUG, default_branch: 'main' }) };
+      if (path === `repos/${SLUG}/branches/main/protection`) return { status: 0, stdout: JSON.stringify({ required_status_checks: { contexts: ['Required / CI'] } }) };
       if (path === `repos/${SLUG}/actions/runs/123`) {
         return { status: 0, stdout: JSON.stringify({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: PUBLISH_HEAD,
           status: 'completed', conclusion: 'success', pull_requests: [{ number: PR_NUMBER, head: { sha: PUBLISH_HEAD }, base: { sha: PUBLISH_BASE } }] }) };

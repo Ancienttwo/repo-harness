@@ -1,6 +1,6 @@
 {
   "name": "repo-harness",
-  "version": "0.29.2",
+  "version": "0.30.0",
   "description": "Installs, migrates, audits, and repairs repo-local agentic development harnesses",
   "license": "MIT",
   "repository": {
@@ -87,7 +87,6 @@
     "@dagrejs/dagre": "3.1.3",
     "@phosphor-icons/react": "^2.1.10",
     "@tailwindcss/vite": "^4.3.5",
-    "@types/cors": "^2.8.19",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.2.1",
@@ -106,8 +105,8 @@
   "dependencies": {
     "@botiverse/oar": "0.95.0",
     "@modelcontextprotocol/sdk": "^1.32.2",
-    "archctx": "0.12.0",
-    "archctx-contracts": "0.12.0",
+    "archctx": "0.13.0",
+    "archctx-contracts": "0.13.0",
     "commander": "^15.1.0",
     "mdast-util-from-markdown": "2.1.0"
   }

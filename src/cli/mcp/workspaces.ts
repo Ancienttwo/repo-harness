@@ -1,7 +1,9 @@
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'fs';
-import { basename, isAbsolute, relative, resolve, sep } from 'path';
-import { globMatches, isPathInside } from './paths';
+import { basename, isAbsolute, relative, resolve } from 'path';
+import { isPathInside } from '../../effects/path-containment';
+import { globMatches, isWindowsAbsoluteLike, toPosixPath } from './paths';
 import { sensitiveAllowedRootReason } from './policy';
 import type { McpPolicy } from './types';
 
@@ -59,12 +61,8 @@ export class WorkspaceError extends Error {
 
 const DEFAULT_MAX_WORKSPACES = 16;
 
-function toPosixPath(value: string): string {
-  return value.split(sep).join('/').replace(/\\+/g, '/');
-}
-
 function rootIdFor(canonicalPath: string): string {
-  return `root_${createHash('sha256').update(canonicalPath).digest('hex').slice(0, 16)}`;
+  return `root_${sha256Hex(canonicalPath).slice(0, 16)}`;
 }
 
 function stableDisplayName(canonicalPath: string): string {
@@ -86,10 +84,6 @@ function denyGlobMatches(pattern: string, relativePath: string): boolean {
 
 function anyDenyGlobMatches(patterns: string[], relativePath: string): boolean {
   return patterns.some((pattern) => denyGlobMatches(pattern, relativePath));
-}
-
-function isWindowsAbsoluteLike(value: string): boolean {
-  return /^[a-zA-Z]:[\\/]/.test(value) || /^[a-zA-Z]:/.test(value) || value.startsWith('\\\\');
 }
 
 export function normalizeWorkspaceRelativePath(value: unknown, fallback = '.'): string {

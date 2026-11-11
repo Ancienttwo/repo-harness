@@ -15,6 +15,11 @@ you dispatch. Only you post `issue claim` comments: the claim for each
 worker is yours, and it names the worker. Every later instruction to a
 worker is a comment on its issue or PR.
 
+Contents: §1 Preflight · §2 Split · §3 Write the boundaries · §4 Parent
+issue (§4.1 Release set, §4.2 Intake) · §5 Gap review · §6 Publish ·
+§7 Dispatch (§7.1 Quota check) · §8 Follow up (§8.1 Triage queue) ·
+§9 Merge and integrate (§9.3 Board merge) · §10 Close out.
+
 ## 1. Preflight
 
 1. Read the goal source: the user's request, a PRD, a design document or
@@ -58,6 +63,13 @@ Make one child issue for each pair of module and observable outcome.
   wins over size: do not mix a High-list path (hook, seat permissions,
   release, merge/push) with Medium or Low work. Split before acceptance,
   not after.
+- **Seat fit.** Size an issue by its files too. A light seat (a small model
+  with no sub-agents) converges on an issue that lists about 10 files or
+  fewer; a wider issue on such a seat runs for hours and opens no PR. Give a
+  wider change to a deep seat. A wide mechanical change (one helper, one
+  rename, across many modules) conflicts with every open PR on its files:
+  give it a plan position where no other open PR writes those files, first
+  or last in the set, never beside them.
 - **Order.** Contract and types → core logic → effects and adapters →
   CLI or server → UI → docs and map. Deletion of the old path goes with
   the change that replaces it, never as "cleanup later".
@@ -110,10 +122,16 @@ The role/status column uses only `unclaimed`, `unclaimed · waits for
 The claim comment wins over the table.
 
 A parent with more than two children gets a `plan` comment before
-dispatch. Its plan block holds the merge order, the holds, the batches and
+dispatch. Its plan block holds the merge order, the holds and
 the seat limit (`templates.md`, plan). A plan change is a new `plan` with
 `Supersedes:`; never edit the old comment. A parent with two children or
 fewer needs no plan.
+
+The merge order follows the dependencies, not the order of filing.
+`board merge` stops at the first open entry of the merge order, so one held
+entry blocks each ready PR behind it. Put a held issue, and an issue that
+waits for an owner answer or an external release, at the tail. Move it
+forward again when its blocker goes.
 
 Put the rest of the plan in GitHub fields (`templates.md`, Plan data):
 link each child as a sub-issue of the parent, add one blocked-by link for
@@ -139,6 +157,50 @@ A refused or unparsed line stops every write. A body with a code or HTML
 marker refuses all of its declarations, and only the template forms parse.
 Delete the refused line from the body (add the link by hand if it is
 needed), then run again.
+
+### 4.1 Release set
+
+A release costs the owner an approval and each user an update. Plan its
+content before the work, not after the merges.
+
+- **Train.** A train is a blocked-by chain of issues that delivers one
+  result, for example one contract issue and its consumers. Read the trains
+  from the blocked-by links and the file overlaps of the open issues, across
+  every batch parent.
+- **Set.** The release set is the list of trains that the next release
+  ships. Each issue of the set carries the milestone of that release; an
+  issue without the milestone is not in the set. A train with an external
+  blocker or an owner hold is in no set until the blocker goes, so that it
+  cannot hold the release.
+- **Critical path.** Name the longest serial chain of the set. Dispatch its
+  head first and give it the scarce seats: the release date is its end.
+- **Record.** The advisor proposes the set (`advisor.md` §4). After the
+  joint decision, post one `decision` comment on each batch parent with the
+  train table: train, result, order, state. Update it when a train changes.
+- **Release run.** Propose the release when every issue of the set is closed
+  and the daily full run is green. A fix that users need before that is the
+  one reason for an earlier patch release. A change that the seats
+  themselves need ships with the set: the seats run the installed release,
+  so a merged change does not change the host before a release, and an
+  unreleased build is not installed as the host CLI.
+
+### 4.2 Intake
+
+Each new issue costs a dispatch, a review and a merge slot, and it moves
+the end of the batch. Before you file one during a batch:
+
+1. Search the open issues and PRs for the same design. Fold a duplicate:
+   keep the older issue, copy the missing text into it, and close the newer
+   one with a link.
+2. Check that the issue is needed: it blocks an issue of the release set,
+   it records a defect that a user meets, or the owner asked for it. Other
+   findings wait in the advisor's proposal for the next set.
+3. Give it its parent, its `tier:` and `route:` labels, its blocked-by links
+   and its milestone at once. An issue without a parent is in no plan and no
+   seat takes it.
+4. Read an owner instruction at the scope of its words before it becomes an
+   issue. A one-time authorization is an operation for now, not a product
+   change; ask for the standing rule when the product needs one.
 
 ## 5. Gap review
 
@@ -192,12 +254,16 @@ module is in the title so that a list view shows the write scopes.
   `released` (`board.md` Claim roles). Hold further
   dispatches until a seat ends. Each active worker adds notices to your
   queue (§8.1), and more than 8 makes the owner wait.
-- Default model preference (D3): no role is bound to one vendor. The old
-  fixed split, Claude for frontend and Codex for backend, is retired. At
-  dispatch, prefer the deepest available model for architecture and
-  contract issues, and the execution model for bounded single-module
-  issues. With one model available, it takes both. The preference never
-  becomes a requirement (D7).
+- Default model preference: no role is bound to one vendor. At dispatch,
+  prefer the deepest available model for architecture and contract issues,
+  and the execution model for bounded single-module issues. With one model
+  available, it takes both. The preference never becomes a requirement.
+- Keep a ready queue. While a writer seat is free, the plan holds at least
+  two ready issues that wait for no owner answer. When every open item
+  waits for the owner or for a held PR, ask the advisor for the next issues
+  in the same turn and dispatch them by joint decision. Seats that idle
+  through a night because every item waited for one answer are the most
+  expensive failure of this flow.
 - Match the model to the issue. Give a weaker or over-defensive model the
   issues with the tightest boundaries and the clearest acceptance checks.
   Keep contract-design issues for a strong model.
@@ -229,7 +295,14 @@ states, one mode line per account and one route line per task class. For
 example: `claude mode: saving (5% left < 20%)` and
 `codex mode: hyper (68% left >= 50%)`. Launch each task on the seat its
 route line names with `repo-harness seats argv <seat>`; state the boundary
-in the task. A `none` route waits.
+in the task. A `none` route waits, or it changes through the seats
+configuration: the owner sets the seat order and each fallback there, and
+the route line then names the first eligible seat. When a review route is
+`none` and the plan cannot wait for the reset, a joint decision may change
+the review seat's model in the configuration, through the Seats page or its
+range-checked write, to a family that differs from the writer's; record the
+revert time in the decision. Never start a seat with an argv that
+`repo-harness seats argv` did not print.
 `repo-harness board dispatch --parent <n> --space <id>` applies this step to every ready issue of the plan: it reads the `route:<class>` label of each issue (and `touches:credentials`), starts the worktree, posts the claim and opens the worker tab. `--dry-run` prints the decisions only. An issue without one `route:<class>` label is reported and not dispatched.
 `repo-harness board review --parent <n> --space <id>` starts the gatekeeper seat for each ready, green High pull request that has no gatekeeper start marker for its head. When the board shows `claude_review: pending` (an open High or unknown-tier head that does not meet the High acceptance rule and has no Claude reviewer row), it also starts the reviewer seat; each seat has its own marker, so a seat that was not sent retries alone. A Medium head gets one seat of the other family than the board's `writer_family` (the `modelFamily` of the `Model:` line of the writer claim of the head branch): a non-Claude gatekeeper for a Claude writer, the Claude reviewer for any other known family. An unknown writer family (no such claim, no `Model:` line, an unmatched model, or linked issues that disagree) starts no seat and is skipped as `writer_family_unknown`; the orchestrator then starts by hand one reviewer seat of a model family known to differ from the writer's, and that review records its own `Model relation:`. `--pr <n>` reviews that pull request only. A pull request that links a plan-held issue is skipped as `plan_hold`. `--dry-run` prints the decisions only. A High head is not accepted until it has `PASS` rows from two distinct claims, one of them different-family to the writer; a Medium head needs one claimed `PASS` row recorded different-family (`acceptor.md` §2.2).
 Apply the explorer line through the Claude Agent tool's `model` parameter when you call the explorer.
@@ -246,6 +319,9 @@ orchestrator; both use `opus` high. Important non-frontend work then uses a
 configured Pi `worker-light`; a null or non-Pi seat gives a `none` route.
 Frontend waits for Claude; it has no non-Claude fallback.
 An exhausted account takes no new dispatch, review seats included.
+Only while an owner authorization for credits is recorded on the batch
+parent, pass `--spend-credits` to both commands and name the flag in the
+dispatch note.
 `tight` is a display state only; it does not reserve Claude or change routing.
 
 Claude seats use the Claude account, Codex seats and Pi seats on `magpie/codex/` use ChatGPT, and the DeepSeek Pi seat
@@ -288,8 +364,11 @@ host's PR events or check when the worker reports.
   for a known flake. A second identical failure is not a flake. Classify
   it once, as the diff, the infrastructure or a stale base, and act on
   that class: the worker fixes the diff, the owner gets the infrastructure
-  failure, and a stale base gets a sync with main. Do not rerun the job
-  again.
+  failure, and for a stale base the worker merges main into the head,
+  which makes a new head (`acceptor.md` §2.2). Do not rerun the job
+  again. A job that was cancelled or timed out with no failed assertion is
+  infrastructure: it starts no fix round. Rerun the failed job once on the
+  same head. A second identical cancel goes to the owner.
 - **Uncovered path.** A CI selection failure `Affected coverage is unknown
   for: <paths>` is a map bug. The worker fixes the consumer edge
   (`scripts/ci-path-consumers.ts`) or the test import. Never widen to the
@@ -301,8 +380,8 @@ host's PR events or check when the worker reports.
 - **Review.** Select the review depth by the diff's risk tier. A Low PR
   that meets the Low accept-seat skip gets no Codex, Herdr or OAR accept
   seat (`docs/reference-configs/agentic-development-flow.md`, Review by
-  risk). Give each ready PR that needs review its own review seat at once
-  (#2078 watcher). A High PR keeps two reviewer seats in parallel. Send
+  risk). Give each ready PR that needs review its own review seat at once.
+  A High PR keeps two reviewer seats in parallel. Send
   each reviewer the review packet of `acceptor.md` §2.1. Each reviewer
   posts an `acceptance claim` before it reads. Who reviews each
   round, and how many claims a round has, follow `acceptor.md` §2.2.
@@ -313,7 +392,12 @@ host's PR events or check when the worker reports.
   acceptance records and review threads on its PR and runs its own fix
   rounds (`worker.md` §7). A Codex worker is the exception: you push its
   fix rounds (`board.md`). You make the second-finding choice of the class rule
-  (`worker.md` §7). Record the result in one acceptance record comment on
+  (`worker.md` §7). For the design change, post a `scope change` with one
+  mechanism rule that covers the class, and require the fix to show the rule
+  on each case that the reviews found (one table-driven test or a replay of
+  those inputs). The next round reviews the rule. A loop that fixes one
+  instance for each round reaches the hard stop with the class still open.
+  Record the result in one acceptance record comment on
   the PR, in the row shape of `templates.md`: round, role, subject,
   verdict and model relation.
   The review brief lets a reviewer with the `net` tool group publish only
@@ -323,8 +407,13 @@ host's PR events or check when the worker reports.
   speculative guards that the issue did not ask for, even when the tests
   pass. Quote the boundary line. This is the most common reason to send a
   PR back.
-- **Stalled worker.** Read its last status comment and branch before you
-  reassign. A handoff needs a claim comment that cites the prior claim.
+- **Stalled worker.** A writer with no PR and no `issue claim status` two
+  hours after its dispatch is stalled. Read its pane, its branch
+  (`git log origin/main..HEAD`, `git status --short`) and its last status
+  comment. Ask one time for a status. When the answer shows no convergence
+  (a growing file list, the same compile error, no commit), re-route the
+  issue to a deeper seat. A handoff needs a claim comment that cites the
+  prior claim; the new seat starts from the pushed branch.
 
 ### 8.1 Triage queue
 
@@ -391,10 +480,20 @@ repo-harness publication merge --repository <owner/name> --repository-id <id> --
 
 `--head` and `--base` are the SHAs you reviewed.
 `publication.acceptance_merge` in `.ai/harness/policy.json` on the PR base
-decides whether the executor merges. The default branch needs strict
-required checks and enforce_admins, and no merge queue (classic protection
-or rulesets). If it does not, the executor refuses with
-`base_protection_insufficient`.
+decides whether the executor merges. The default branch needs required
+checks and enforce_admins. There is one lane: a direct squash. The checks
+need not be strict, and a base that requires a GitHub merge queue is not
+supported (the provider rejects the squash, exit 6).
+
+`Required / CI` runs one time for each PR head. A PR whose base is behind
+main needs no sync: the squash lands on the current main. The executor
+proves that the one parent of the merge commit is the `--base` you
+reviewed or a descendant of it. For a descendant it also proves that the
+tree of the merge commit is a clean `git merge-tree` of that parent and
+`--head`; it fetches the commits from the checkout's `origin` with your
+own git setup, so run it in a checkout of the repository. No run tests
+the merge result before the merge. The daily full run finds two PRs that
+pass alone and fail together.
 
 Act on the exit code. Post every result as `integration status` on the PR.
 
@@ -413,14 +512,12 @@ Act on the exit code. Post every result as `integration status` on the PR.
   refuses with `closing_references_mismatch`, also for a closing keyword
   that targets a pull-request URL.
 
-### 9.1 Choose the mode
+### 9.1 Eligible PRs
 
-Collect ready green PRs once per merge window. Use
-`repo-harness publication batch build` and then
-`repo-harness publication merge --batch` (§9.3), including when only one
-PR is eligible. Do not sync and re-review each PR for publication. Select
-members in the plan block's merge order. A batch has at most 6 members;
-when the window has more, build successive batches in that order.
+Merge each eligible PR on its own, in the order of §9.2. Do not sync a
+PR with main for publication. A sync makes a new head, and each new head
+needs its own CI run and its own review rows (`acceptor.md` §2.2). Only a
+conflict with main needs a merge of main; the head owner makes it.
 
 A PR is eligible when all of these are true:
 
@@ -430,19 +527,8 @@ A PR is eligible when all of these are true:
   `acceptor.md` §2.2 still needs that `PASS`. A Low PR needs no review, but
   its PR body must hold the author verification evidence
   (`docs/reference-configs/agentic-development-flow.md`, Review by risk).
-- Its head equals the reviewed subject, or is a merge-only sync of it
-  with the conditions of `acceptor.md` §2.2 (Sync head): the subject is
-  an ancestor of the head,
-  `git rev-list --no-merges <subject>..<head> ^origin/main` prints
-  nothing, each merge commit in that range is the clean automatic merge
-  of a main commit (`git merge-tree --write-tree <parent1> <parent2>`
-  exits 0 with the tree of the merge commit, one merge base), both PR
-  diffs are not empty, and no record row of the head or of any earlier
-  head proven the same way is a FAIL. Only the subject of the newest
-  proven record carries its rows. The board applies this rule and shows the acceptance as
-  `via: sync` with `carried_from: <subject>` (#2074). A PR that changes
-  a hook path never carries: the owner approves each head of a hook diff
-  again.
+- Its head equals the reviewed subject. Rows of an earlier head do not
+  count for a later head.
 - It has no unresolved review thread that a person started. A review bot
   thread is advisory input and does not block. For a rule-4 deferral, you
   resolve the deferred P2 threads first (`acceptor.md` §6).
@@ -456,82 +542,9 @@ gh pr view <p> --json state,isDraft,headRefOid,statusCheckRollup,closingIssuesRe
 
 Use the plan block's merge order. A parent without a plan (two children
 or fewer) uses blocked-by order: a blocker lands before the issue it
-blocks. The Order column of the parent table is only a view. Apply this
-order to the batch members; do not sync and re-review members one by one.
+blocks. The Order column of the parent table is only a view.
 
-### 9.3 Batch integration
-
-The batch branch holds the member merge commits and nothing else. Never
-resolve a conflict, push a fix or add a commit of your own in it. Never
-merge it by any path other than `repo-harness publication merge`.
-
-1. **Build.** Record each member's eligible head SHA. Run the builder
-   once for the window, with one `--pr` per member in merge order:
-
-   ```bash
-   repo-harness publication batch build --repository-id <id> --parent <parent> --pr <a> --pr <b> --json
-   ```
-
-   The builder pins the member heads, merges them onto the current main,
-   pushes the batch branch and opens the batch PR. Read its result:
-   `merged`, `dropped`, `pr`, `head_sha` and `base_sha`. Confirm that each
-   merged member head matches its recorded eligible SHA before reusing
-   its review evidence.
-2. **Conflict.** The builder aborts a conflicting member merge, drops that
-   member and continues with the next. For each `merge_conflict` in
-   `dropped`, post the batch-drop `integration status` on its PR to its
-   head owner: sync with main, then join a later batch.
-3. **Local check.** In a worktree at the returned batch head, run the
-   repository's typecheck and the test files that two or more merged
-   members change. In repo-harness:
-
-   ```bash
-   for p in <member PRs>; do gh pr diff "$p" --name-only; done | grep '^tests/' | sort | uniq -d
-   bun run check:type
-   bun run test:files <shared test files> --timeout 60000 --max-concurrency 1
-   ```
-
-   CI on the batch head is the authority.
-4. **Check the batch PR.** Read the PR that the builder opened:
-
-   ```bash
-   gh pr view <batch> --json closingIssuesReferences
-   ```
-
-   The closing references must name each issue that a member closes, and
-   nothing else.
-5. **Review.** Every member merged without conflict, and the batch adds no
-   commit of its own. The batch reuses the member acceptance records and
-   needs no new review round. A Low member has no acceptance record to
-   reuse (`docs/reference-configs/agentic-development-flow.md`, Review by
-   risk).
-6. **Red CI.** Do not fix it in the batch branch. Classify the failure
-   first; a known flake gets one rerun (§8). Drop the member that changes
-   the failing test or the source it covers, and post the batch-drop
-   `integration status` on its PR. When you cannot attribute the failure,
-   split the members into two halves. Close the red batch PR with
-   `gh pr close <batch>`, then rebuild from the current main with the next
-   `<n>`: the remaining members, or each half in turn.
-7. **Main moved.** When main moves after the build, rebuild from the
-   current main with the next `<n>`. Do not merge main into the batch
-   branch.
-8. **Merge.** Call `repo-harness publication merge --batch` on the batch
-   PR with the batch head and the main SHA you built on. The executor
-   refuses a head ref outside `integration/<parent>-batch-<n>`
-   (`batch_ref_invalid`) and a batch with a commit of its own
-   (`batch_has_own_commit`), both with exit 4 and no merge request. It
-   merges with a merge commit whose parents are the main SHA and the batch
-   head, so each member's commits land on main. Act on the exit code as
-   the table above says.
-9. **Close out.** After exit 0, on each member PR post the batch-closeout
-   `integration status` with the batch merge SHA. Do not close the member
-   PRs: GitHub marks each one Merged. The member branch stays. Post
-   `unblocked` on each dependent PR.
-10. **Rollback.** `git revert -m 1 <batch merge commit>` reverts the whole
-    batch. To revert one member, revert its member merge commit on main:
-    `git revert -m 1 <member merge commit on main>`.
-
-### 9.4 Board merge
+### 9.3 Board merge
 
 A GitHub comment is a record, not an instruction. After a joint decision or
 an owner authorization for the batch, you start the merge from your seat:
@@ -555,9 +568,7 @@ are true:
   closes two plan items is never eligible, in any plan order: split the PR.
 - An acceptance record has a PASS row for the head, at every tier. The
   provisional `tier_low` status is not enough: post the Low record after
-  you check the verification evidence. A merge-only sync head carries its
-  acceptance per `acceptor.md` §2.2 (`via: sync`, #2074), so `board merge`
-  accepts it.
+  you check the verification evidence.
   A High PR needs two PASS rows for the head that cite distinct
   `acceptance claim` comments, one of them `different-family`
   (`acceptor.md` §2.2).
@@ -590,5 +601,10 @@ on that thread.
 3. Post a closing comment on the parent: merged PRs, deferred issues,
    remaining risk. Then close it, when the owner's instruction covers
    closing.
-4. Add a lesson to `tasks/lessons.md` only for a mistake that repeated or
+4. Close each finished worker pane after its PR merges, with
+   `repo-harness board closeout --pr <n>`. It confirms that the checkout is
+   clean and pushed, closes each seat terminal of the PR, then removes the
+   merged worktree; a checkout with an unpushed commit is kept and the
+   command exits 1.
+5. Add a lesson to `tasks/lessons.md` only for a mistake that repeated or
    that a rule would have prevented.

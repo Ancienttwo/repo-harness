@@ -4,7 +4,8 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { registerRepoHarnessRepo, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
-import { sha256, stableJson } from '../../src/core/review/acceptance-receipt';
+import { sha256Prefixed } from '../../src/core/evidence/sha256';
+import { stableJson } from '../../src/core/review/acceptance-receipt';
 import { assessChange, buildReviewSelectionPacket, type ChangeAssessment } from '../../src/core/review/change-assessment';
 import { buildMcpToolDefinitions, callMcpTool, type McpToolContext } from '../../src/cli/mcp/tools';
 import { WorkspaceManager } from '../../src/cli/mcp/workspaces';
@@ -494,6 +495,7 @@ describe('mcp tools', () => {
 
       const result = await callMcpTool(ctx, 'read_workflow_file', { path: '.ai/context/link.md' });
       expect(JSON.parse(result.content[0].text).error.code).toBe('POLICY_DENIED');
+      expect(result.isError).toBe(true);
       expect(JSON.stringify(result)).not.toContain('handoff-secret');
       const listed = await jsonTool(ctx, 'list_workflow_files');
       expect(listed.files.map((entry: { path: string }) => entry.path)).not.toContain('.ai/context/link.md');
@@ -537,7 +539,7 @@ describe('mcp tools', () => {
   test('latest_checks projects the Change Assessment record as absent, invalid or present', async () => {
     await withRepo(async (repoRoot, ctx) => {
       const recordPath = join(repoRoot, '.ai/harness/checks/change-assessment.latest.json');
-      const write = (basis: Record<string, unknown>) => writeFileSync(recordPath, `${JSON.stringify({ ...basis, evidence_sha256: sha256(stableJson(basis)) })}\n`);
+      const write = (basis: Record<string, unknown>) => writeFileSync(recordPath, `${JSON.stringify({ ...basis, evidence_sha256: sha256Prefixed(stableJson(basis)) })}\n`);
       const location = { id: 'change-assessment', path: '.ai/harness/checks/change-assessment.latest.json' };
       const records = async () => {
         const result = await jsonTool(ctx, 'latest_checks');
@@ -565,7 +567,7 @@ describe('mcp tools', () => {
         ...location,
         state: 'present',
         status: 'pass',
-        evidence_sha256: sha256(stableJson(pass)),
+        evidence_sha256: sha256Prefixed(stableJson(pass)),
         target_ref: 'main',
         target_revision: 'a'.repeat(40),
         review_subject_sha256: `sha256:${'c'.repeat(64)}`,
@@ -573,7 +575,7 @@ describe('mcp tools', () => {
 
       const failed = { schema, status: 'fail', message: 'packet is missing: API_KEY=example-secret' };
       write(failed);
-      expect(await records()).toEqual([{ ...location, state: 'present', status: 'fail', evidence_sha256: sha256(stableJson(failed)), message: 'packet is missing: API_KEY=[REDACTED]' }]);
+      expect(await records()).toEqual([{ ...location, state: 'present', status: 'fail', evidence_sha256: sha256Prefixed(stableJson(failed)), message: 'packet is missing: API_KEY=[REDACTED]' }]);
       expect(JSON.stringify(await callMcpTool(ctx, 'latest_checks', {}))).not.toContain('example-secret');
 
       const outside = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-outside-'));

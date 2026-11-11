@@ -1,4 +1,3 @@
-import { spawnSync } from 'child_process';
 import { DispatchError, planDispatch, type DispatchDecisionV1, type DispatchPlanV1 } from '../../core/board/dispatch';
 import type { BoardHostPortsV1 } from '../../core/board/board';
 import { effectiveSeatConfig, seatAccountQuotas } from '../../core/board/seat-routing';
@@ -8,9 +7,7 @@ import { HerdrCoreError, herdrAppDo } from '../terminal/herdr-core';
 import { runHelper } from '../runtime/helper-runner';
 import { readQuotaReport } from './quota';
 import { readSeatsConfiguration } from './seats-configuration';
-import { BoardCollectError, readParent, readRepositoryId } from './collect';
-
-const GH_TIMEOUT_MS = 30_000;
+import { BoardCollectError, readParent, readRepositoryId, runGhText } from './collect';
 
 type DispatchedV1 = Extract<DispatchDecisionV1, { action: 'dispatch' }>;
 
@@ -42,14 +39,6 @@ export interface DispatchPorts {
 export interface DispatchResultV1 {
   readonly plan: DispatchPlanV1;
   readonly started: readonly { readonly issue: number; readonly seat: SeatId; readonly worktree: string; readonly claim_url: string }[];
-}
-
-function gh(input: DispatchInput, args: readonly string[], stdin?: string): string {
-  const run = spawnSync(process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
-    cwd: input.repo_root, env: { ...process.env, GH_HOST: 'github.com' }, encoding: 'utf-8', input: stdin, timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL',
-  });
-  if (run.error !== undefined || run.status !== 0) throw new BoardCollectError(`gh ${args.slice(0, 2).join(' ')} failed: ${(run.stderr || run.error?.message || '').trim().slice(0, 300)}`);
-  return run.stdout.trim();
 }
 
 function startWorktree(input: DispatchInput, issue: number): { readonly path: string; readonly branch: string } {
@@ -138,7 +127,7 @@ export async function runDispatch(input: DispatchInput): Promise<DispatchResultV
     model: seat => effectiveSeatConfig(seat, seats, quota)?.model ?? null,
   }, {
     startWorktree: issue => startWorktree(input, issue),
-    comment: (issue, body) => gh(input, ['issue', 'comment', String(issue), '--body-file', '-'], withSeatLine(body)),
+    comment: (issue, body) => runGhText(input, ['issue', 'comment', String(issue), '--body-file', '-'], withSeatLine(body)),
     openTab: args => { herdrAppDo('tab.new', args); },
     launch: input.launch,
   });

@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { relative, resolve } from "path";
 import { gitSpawnSync } from "../git/runner";
+import { POLICY_ABSENT, isPolicyObject, policyValue, type DecodedWorkflowPolicy } from "../../core/workflow/policy-schema";
+import { readWorkflowPolicyFile } from "../state/policy-file";
 import {
   archcontextNodeId,
   normalizeCapabilityPath,
@@ -16,7 +18,7 @@ import {
 import {
   CapabilitySourceError,
   HARNESS_POLICY,
-  capabilitySourceModeFromPolicy,
+  capabilitySourceModeFromValue,
   findMatch,
   matchRecord,
   toArchContextNodeV2,
@@ -47,17 +49,26 @@ const ARCHCONTEXT_NODES_DIR = ".archcontext/model/nodes";
 
 
 export function capabilitySourceMode(repo: string): CapabilitySourceMode {
-  const policyPath = resolve(repo, HARNESS_POLICY);
-  if (!existsSync(policyPath)) return "registry";
-  let policy: unknown;
+  let policy: DecodedWorkflowPolicy;
   try {
-    policy = JSON.parse(readFileSync(policyPath, "utf-8"));
+    policy = readWorkflowPolicyFile(repo);
   } catch (error) {
+    // A file ancestor reads as an absent policy: this reader selected the
+    // registry by an existence probe. Other policy-file readers keep the throw.
+    if ((error as NodeJS.ErrnoException).code === "ENOTDIR") return "registry";
+    const cause = error instanceof Error && error.cause instanceof SyntaxError ? error.cause : error;
     throw new CapabilitySourceError(
-      `malformed harness policy: ${HARNESS_POLICY}: ${(error as Error).message}`
+      `malformed harness policy: ${HARNESS_POLICY}: ${(cause as Error).message}`
     );
   }
-  return capabilitySourceModeFromPolicy(policy);
+  return capabilitySourceModeOf(policy);
+}
+
+/** A non-object root or `context` section leaves the key absent. */
+export function capabilitySourceModeOf(policy: DecodedWorkflowPolicy): CapabilitySourceMode {
+  const context = policy.rootIsObject ? policyValue(policy, "context") : POLICY_ABSENT;
+  const value = isPolicyObject(context) ? policyValue(policy, "context.capability_source") : POLICY_ABSENT;
+  return capabilitySourceModeFromValue(value === POLICY_ABSENT ? undefined : value);
 }
 
 function usage(): never {

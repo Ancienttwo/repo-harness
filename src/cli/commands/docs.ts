@@ -13,6 +13,7 @@ export interface RuntimeDocEntry {
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SOURCE_ROOT = resolve(SCRIPT_DIR, '..', '..', '..');
 const DOCS_ROOT = join(SOURCE_ROOT, 'assets', 'reference-configs');
+const TEMPLATES_ROOT = join(SOURCE_ROOT, 'assets', 'templates');
 
 function normalizeDocId(value: string): string {
   return value.endsWith('.md') ? value.slice(0, -3) : value;
@@ -29,14 +30,14 @@ function titleFromContent(path: string, fallback: string): string {
   }
 }
 
-export function listRuntimeDocs(docsRoot = DOCS_ROOT): RuntimeDocEntry[] {
-  if (!existsSync(docsRoot)) return [];
-  return readdirSync(docsRoot)
-    .filter((fileName) => fileName.endsWith('.md'))
+function docEntries(root: string, suffix: string): RuntimeDocEntry[] {
+  if (!existsSync(root)) return [];
+  return readdirSync(root)
+    .filter((fileName) => fileName.endsWith(suffix))
     .sort()
     .map((fileName) => {
       const id = normalizeDocId(fileName);
-      const path = join(docsRoot, fileName);
+      const path = join(root, fileName);
       return {
         id,
         fileName,
@@ -46,9 +47,14 @@ export function listRuntimeDocs(docsRoot = DOCS_ROOT): RuntimeDocEntry[] {
     });
 }
 
-export function resolveRuntimeDoc(docId: string, docsRoot = DOCS_ROOT): RuntimeDocEntry | null {
+/** Reference documents and the workflow templates. A skill reads a template from the package, not a repository copy. */
+export function listRuntimeDocs(): RuntimeDocEntry[] {
+  return [...docEntries(DOCS_ROOT, '.md'), ...docEntries(TEMPLATES_ROOT, '.template.md')];
+}
+
+export function resolveRuntimeDoc(docId: string): RuntimeDocEntry | null {
   const normalized = normalizeDocId(docId);
-  return listRuntimeDocs(docsRoot).find((entry) => entry.id === normalized || entry.fileName === docId) ?? null;
+  return listRuntimeDocs().find((entry) => entry.id === normalized || entry.fileName === docId) ?? null;
 }
 
 function formatList(entries: RuntimeDocEntry[], asJson = false): string {

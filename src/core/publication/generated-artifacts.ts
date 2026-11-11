@@ -20,6 +20,8 @@
  * JSON-pointer resolution and the check result shape. It performs no I/O.
  */
 
+import { isRecord } from '../evidence/is-record';
+import { fail, repoRelativePath } from '../evidence/record-validators';
 import { PUBLICATION_POLICY_PATH } from './policy-path';
 import { protectedPathMatches } from './required-check-coverage';
 
@@ -97,19 +99,6 @@ export type GeneratedArtifactsParseResult =
 export type GeneratedArtifactsResolveResult =
   | { readonly ok: true; readonly text: string }
   | { readonly ok: false; readonly message: string };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function fail(message: string): never {
-  throw new Error(message);
-}
-
-function repoRelativePath(value: string): boolean {
-  return value.length > 0 && !value.startsWith('/') && !value.includes('\\')
-    && !value.includes('\0') && value.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
-}
 
 function glob(value: unknown, label: string): string {
   if (typeof value !== 'string' || !repoRelativePath(value)) fail(`${label} must be a repository-relative glob`);

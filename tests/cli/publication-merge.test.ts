@@ -1,8 +1,8 @@
 import { spawnSync } from 'child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import {
   executePublicationMerge,
@@ -14,6 +14,7 @@ import {
   HEAD,
   MERGE_COMMIT,
   PR,
+  POLICY_ON,
   REPOSITORY,
   REPOSITORY_ID,
   fakeGhResponse,
@@ -27,19 +28,6 @@ import {
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
 const OTHER_COMMIT = 'd'.repeat(40);
-const BATCH_REF = 'integration/1309-batch-2';
-const MEMBER_1 = 'e'.repeat(40);
-const MEMBER_1_MERGE = 'f'.repeat(40);
-const MEMBER_2 = '1'.repeat(40);
-/** Built as orchestrator §9.3 builds a batch: `git merge --no-ff` of each member onto the base. */
-const BATCH_COMMITS = [
-  { sha: MEMBER_1, parents: [BASE] },
-  { sha: MEMBER_1_MERGE, parents: [BASE, MEMBER_1] },
-  { sha: MEMBER_2, parents: [BASE] },
-  { sha: HEAD, parents: [MEMBER_1_MERGE, MEMBER_2] },
-];
-const batchScenario = (overrides: Partial<PublicationMergeScenario> = {}) =>
-  passingScenario({ headRef: BATCH_REF, compareCommits: BATCH_COMMITS, parents: [BASE, HEAD], ...overrides });
 const scratch = mkdtempSync(join(tmpdir(), 'repo-harness-publication-merge-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -52,15 +40,21 @@ interface MergeInProcessOptions {
   readonly beforeCall?: (args: readonly string[]) => void;
   /** Internal seam: observe the timeout passed to each readback call. */
   readonly readbackTimeout?: (milliseconds: number) => void;
-  readonly batch?: boolean;
+  /** The reviewed head and base; default HEAD and BASE. */
+  readonly head?: string;
+  readonly base?: string;
 }
 
 function mergeInProcess(scenario: PublicationMergeScenario, options: MergeInProcessOptions = {}) {
+  return mergeInProcessAt(scratch, scenario, options);
+}
+
+function mergeInProcessAt(root: string, scenario: PublicationMergeScenario, options: MergeInProcessOptions = {}) {
   const calls: string[][] = [];
   let readbacks = 0;
   const result = executePublicationMerge({
-    repo_root: scratch, repository: REPOSITORY, provider_repository_id: REPOSITORY_ID, pr_number: PR,
-    expected_head_sha: HEAD, expected_base_sha: BASE, batch: options.batch,
+    repo_root: root, repository: REPOSITORY, provider_repository_id: REPOSITORY_ID, pr_number: PR,
+    expected_head_sha: options.head ?? HEAD, expected_base_sha: options.base ?? BASE,
     gh_runner: (args) => {
       options.beforeCall?.(args);
       calls.push([...args]);
@@ -81,19 +75,55 @@ function failureOf(result: PublicationMergeResult): PublicationMergeFailure {
 }
 
 let cliRun = 0;
-function mergeCli(scenario: PublicationMergeScenario, extraArgs: readonly string[] = []) {
+function mergeCli(scenario: PublicationMergeScenario) {
   const dir = join(scratch, `cli-${cliRun++}`);
   mkdirSync(dir);
   const gh = installFakeGh(dir, scenario);
   const result = spawnSync('bun', [CLI, 'publication', 'merge', '--repository', REPOSITORY, '--repository-id', REPOSITORY_ID,
-    '--pr', String(PR), '--head', HEAD, '--base', BASE, '--json', ...extraArgs], {
+    '--pr', String(PR), '--head', HEAD, '--base', BASE, '--json'], {
     cwd: dir, encoding: 'utf-8', env: { ...process.env, REPO_HARNESS_GH_BIN: gh.bin }, timeout: 120_000,
   });
   const calls = gh.calls();
-  return { status: result.status, document: JSON.parse(result.stdout) as Record<string, any>, stderr: result.stderr, calls, mutations: calls.filter(isMergeMutation) };
+  return { status: result.status, document: JSON.parse(result.stdout) as Record<string, any>, calls, mutations: calls.filter(isMergeMutation) };
 }
 
 const policy = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
+
+describe('publication merge uses base protection contexts', () => {
+  const contexts = ['ubuntu-latest / Node 22.22.x', 'Governance Verify'];
+  const checks = [
+    { name: contexts[0]!, bucket: 'pass', link: `https://github.com/${REPOSITORY}/actions/runs/123/job/456` },
+    { name: contexts[1]!, bucket: 'pass', link: 'https://ci.example.com/build/42' },
+  ];
+
+  test('all protected contexts green allow a different workflow', () => {
+    const { result, mutations, calls } = mergeInProcess(passingScenario({ requiredContexts: contexts,
+      requiredChecks: checks, requiredRun: { path: '.github/workflows/verify.yml' } }));
+    expect(result.exit_code).toBe(0);
+    expect(mutations).toHaveLength(1);
+    expect(calls.filter(args => args[1]?.endsWith('/branches/main/protection'))).toHaveLength(1);
+  });
+
+  test.each([
+    ['missing', checks.slice(0, 1), contexts, {}, 'provider_data_incomplete'],
+    ['red', [checks[0]!, { ...checks[1]!, bucket: 'fail' }], contexts, {}, 'checks_failed'],
+    ['ruleset red', [...checks, { name: 'Ruleset Check', bucket: 'fail', link: 'https://ci.example.com/ruleset/42' }], contexts, {}, 'checks_failed'],
+    ['ruleset pending', [...checks, { name: 'Ruleset Check', bucket: 'pending', link: 'https://ci.example.com/ruleset/42' }], contexts, {}, 'checks_pending'],
+    ['ruleset Actions head mismatch', [...checks.map(check => ({ ...check, link: 'https://ci.example.com/build/42' })), { name: 'Ruleset Check', bucket: 'pass', link: checks[0]!.link }], contexts, { head_sha: 'f'.repeat(40) }, 'provider_data_incomplete'],
+    ['empty protection', checks, [], {}, 'provider_data_incomplete'],
+    ['another Actions head', checks, contexts, { head_sha: 'f'.repeat(40) }, 'provider_data_incomplete'],
+    ['second Actions context has another head', [{ ...checks[0]!, link: checks[1]!.link }, { ...checks[1]!, link: checks[0]!.link }], contexts, { head_sha: 'f'.repeat(40) }, 'provider_data_incomplete'],
+    ['Actions link missing', [{ ...checks[0]!, workflow: 'Verify', link: '' }, checks[1]!], contexts, {}, 'provider_data_incomplete'],
+    ['Actions from another repository', [{ ...checks[0]!, link: 'https://github.com/foreign/repo/actions/runs/123/job/456' }, checks[1]!], contexts, {}, 'provider_data_incomplete'],
+    ['another Actions PR', checks, contexts, { pull_requests: [{ number: 99, head: { sha: HEAD }, base: { sha: BASE } }] }, 'provider_data_incomplete'],
+    ['another Actions base', checks, contexts, { pull_requests: [{ number: PR, head: { sha: HEAD }, base: { sha: 'f'.repeat(40) } }] }, 'provider_data_incomplete'],
+  ] as const)('%s refuses the merge', (_label, requiredChecks, requiredContexts, requiredRun, blocker) => {
+    const { result, mutations } = mergeInProcess(passingScenario({ requiredChecks, requiredContexts, requiredRun }));
+    expect(result.document).toMatchObject({ ok: false, exit_code: 4, error: 'merge_readiness_blocked' });
+    expect(failureOf(result).blockers?.map(value => value.code)).toContain(blocker);
+    expect(mutations).toHaveLength(0);
+  });
+});
 
 describe('publication merge refusals send no mergePullRequest', () => {
   test.each([
@@ -105,6 +135,15 @@ describe('publication merge refusals send no mergePullRequest', () => {
     const { result, mutations } = mergeInProcess(passingScenario({ policyBase }));
     expect(result.exit_code).toBe(3);
     expect(result.document).toMatchObject({ ok: false, exit_code: 3, error: 'acceptance_merge_off' });
+    expect(mutations).toHaveLength(0);
+  });
+
+  test('a switch turned off at the live tip of main refuses a PR whose recorded base predates it', () => {
+    const { result, calls, mutations } = mergeInProcess(passingScenario({ liveTip: OTHER_COMMIT,
+      policyAt: { [OTHER_COMMIT]: policy({ publication: { acceptance_merge: 'off' } }) } }));
+    expect(result.document).toMatchObject({ ok: false, exit_code: 3, error: 'acceptance_merge_off' });
+    expect(failureOf(result).message).toContain(`live tip ${OTHER_COMMIT}`);
+    expect(calls.some((args) => args[1] === `repos/${REPOSITORY}/contents/.ai/harness/policy.json?ref=${BASE}`)).toBe(false);
     expect(mutations).toHaveLength(0);
   });
 
@@ -134,12 +173,8 @@ describe('publication merge refusals send no mergePullRequest', () => {
   test.each([
     ['fork PR', { isCrossRepository: true }, 'cross_repository_pr'],
     ['auto-merge request', { autoMerge: true }, 'auto_merge_enabled'],
-    ['strict=false', { protection: { strict: false, enforce_admins: true } }, 'base_protection_insufficient'],
     ['enforce_admins=false', { protection: { strict: true, enforce_admins: false } }, 'base_protection_insufficient'],
     ['unprotected branch', { protection: null }, 'base_protection_insufficient'],
-    ['merge queue rule', { rules: [{ type: 'pull_request' }, { type: 'merge_queue' }] }, 'base_protection_insufficient'],
-    ['merge queue from classic protection', { rules: [], mergeQueueEnabled: true }, 'base_protection_insufficient'],
-    ['unreported merge queue state', { mergeQueueEnabled: 'missing' }, 'base_protection_insufficient'],
   ] as const)('%s is refused', (_label, overrides, error) => {
     const { result, mutations } = mergeInProcess(passingScenario(overrides));
     expect(result.document).toMatchObject({ ok: false, exit_code: 4, error });
@@ -331,9 +366,10 @@ describe('publication merge execution', () => {
     expect(run.mutations).toHaveLength(1);
   }, 120_000);
 
-  test('a merge commit whose single parent is not the expected base exits 5', () => {
-    const { result, mutations } = mergeInProcess(passingScenario({ parents: [OTHER_COMMIT] }));
+  test('a merge commit whose single parent does not descend from the expected base exits 5', () => {
+    const { result, mutations } = mergeInProcess(passingScenario({ parents: [OTHER_COMMIT], squashParent: OTHER_COMMIT, squashParentStatus: 'diverged' }));
     expect(result.document).toMatchObject({ ok: false, exit_code: 5, error: 'merge_outcome_unknown' });
+    expect(failureOf(result).message).toContain('does not descend from the expected base');
     expect(mutations).toHaveLength(1);
   });
 
@@ -394,50 +430,174 @@ describe('publication merge execution', () => {
   });
 });
 
-describe('publication merge --batch', () => {
-  test('the CLI merges a batch once with a merge commit and proves both parents', () => {
-    const run = mergeCli(batchScenario(), ['--batch']);
-    expect(run.status).toBe(0);
-    expect(run.document).toMatchObject({
-      merge_commit_sha: MERGE_COMMIT,
-      parent_sha: BASE,
-      parent_shas: [BASE, HEAD],
-      revert: `git revert -m 1 ${MERGE_COMMIT}`,
-    });
-    expect(run.mutations).toHaveLength(1);
-    expect(graphqlVariable(run.mutations[0]!, 'query')).toContain('mergeMethod:MERGE');
-    expect(graphqlVariable(run.mutations[0]!, 'commitHeadline')).toBe(`Ship the executor (#${PR})`);
-  }, 120_000);
+/**
+ * A real repository for the squash content proof. Each run gets a new checkout
+ * whose `origin` is a bare repository with `refs/pull/42/head` and a `main` that
+ * holds the scenario's merge commit, so the production fetch runs unchanged.
+ */
+interface MovedMainRepo {
+  readonly remote: string;
+  readonly base: string;
+  readonly head: string;
+  /** main after another PR merged: a child of base. */
+  readonly parent: string;
+  /** The squash of head onto parent. */
+  readonly merge: string;
+  /** A commit on parent whose tree is not the merge of head. */
+  readonly wrongMerge: string;
+  /** main after a change to the file that head adds: head does not merge onto it. */
+  readonly conflictParent: string;
+  /** A commit on conflictParent that stands for the provider's merge. */
+  readonly conflictMerge: string;
+}
 
-  test('the CLI proves a batch whose compare response carries more patch text than the default spawn buffer', () => {
-    const run = mergeCli(batchScenario({ comparePatchBytes: 2 * 1024 * 1024 }), ['--batch']);
-    expect(run.document).toMatchObject({ merge_commit_sha: MERGE_COMMIT, parent_shas: [BASE, HEAD] });
-    expect(run.mutations).toHaveLength(1);
-  }, 120_000);
+function git(cwd: string, ...args: string[]): string {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf-8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid',
+    GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid' } });
+  if (result.status !== 0) throw new Error(`git ${args.join(' ')}: ${result.stderr}`);
+  return result.stdout.trim();
+}
 
-  test('the CLI refuses --batch on a head ref outside integration/ without a request', () => {
-    const run = mergeCli(batchScenario({ headRef: 'feat/executor' }), ['--batch']);
-    expect(run.status).toBe(4);
-    expect(run.document).toMatchObject({ ok: false, exit_code: 4, error: 'batch_ref_invalid' });
-    expect(run.mutations).toHaveLength(0);
-  }, 120_000);
+function buildMovedMainRepo(): MovedMainRepo {
+  const work = join(scratch, 'moved-work');
+  const remote = join(scratch, 'moved-remote.git');
+  mkdirSync(work);
+  git(work, 'init', '-q', '-b', 'main');
+  const commit = (file: string, text: string, message: string) => {
+    writeFileSync(join(work, file), text);
+    git(work, 'add', file);
+    git(work, 'commit', '-q', '-m', message);
+    return git(work, 'rev-parse', 'HEAD');
+  };
+  const base = commit('a.txt', 'a\n', 'base');
+  git(work, 'checkout', '-q', '-b', 'feat');
+  const head = commit('b.txt', 'b\n', 'head');
+  git(work, 'checkout', '-q', 'main');
+  const conflictParent = commit('b.txt', 'other\n', 'main adds b');
+  git(work, 'reset', '-q', '--hard', base);
+  const parent = commit('c.txt', 'c\n', 'main moved');
+  const merge = git(work, 'commit-tree', git(work, 'merge-tree', '--write-tree', parent, head), '-p', parent, '-m', 'squash');
+  const wrongMerge = git(work, 'commit-tree', `${parent}^{tree}`, '-p', parent, '-m', 'wrong');
+  const conflictMerge = git(work, 'commit-tree', `${parent}^{tree}`, '-p', conflictParent, '-m', 'provider merge');
+  for (const [name, sha] of [['merge', merge], ['wrong', wrongMerge], ['conflict', conflictMerge]]) git(work, 'branch', name!, sha!);
+  git(scratch, 'clone', '-q', '--bare', work, remote);
+  git(remote, 'update-ref', `refs/pull/${PR}/head`, head);
+  return { remote, base, head, parent, merge, wrongMerge, conflictParent, conflictMerge };
+}
 
-  test('a batch commit of its own on the first-parent chain is refused without a request', () => {
-    const own = OTHER_COMMIT;
-    const { result, mutations } = mergeInProcess(batchScenario({ compareCommits: [
-      { sha: own, parents: [BASE] },
-      { sha: MEMBER_1, parents: [BASE] },
-      { sha: HEAD, parents: [own, MEMBER_1] },
-    ] }), { batch: true });
-    expect(failureOf(result)).toMatchObject({ exit_code: 4, error: 'batch_has_own_commit' });
-    expect(failureOf(result).message).toContain(`commit ${own} on the batch first-parent chain is not a two-parent member merge`);
-    expect(mutations).toHaveLength(0);
+let checkoutRoots = 0;
+/** A new checkout with an empty object store; origin's main is `mainTip`. */
+function movedMainCheckout(repo: MovedMainRepo, mainTip: string, origin = repo.remote): string {
+  git(repo.remote, 'update-ref', 'refs/heads/main', mainTip);
+  const root = join(scratch, `moved-root-${checkoutRoots++}`);
+  mkdirSync(root);
+  git(root, 'init', '-q');
+  git(root, 'remote', 'add', 'origin', origin);
+  return root;
+}
+
+describe('publication merge squashes a head whose base moved', () => {
+  let repo: MovedMainRepo;
+  beforeAll(() => { repo = buildMovedMainRepo(); });
+  const run = (overrides: Partial<PublicationMergeScenario> = {}, origin?: string) => {
+    const scenario = passingScenario({ protection: { strict: false, enforce_admins: true }, head: repo.head, base: repo.base,
+      mergeCommit: repo.merge, squashParent: repo.parent, parents: [repo.parent], ...overrides });
+    return mergeInProcessAt(movedMainCheckout(repo, scenario.mergeCommit ?? repo.merge, origin), scenario,
+      { readbackWait: () => {}, readbackNow: () => 0, head: repo.head, base: repo.base });
+  };
+
+  test('without strict checks the executor merges once and proves the squash onto the moved main by tree', () => {
+    const { result, mutations } = run();
+    expect(mutations).toHaveLength(1);
+    expect(result).toMatchObject({ exit_code: 0, document: { merge_commit_sha: repo.merge, base_sha: repo.base, parent_sha: repo.parent,
+      revert: `git revert ${repo.merge}` } });
   });
 
-  test('a provider merge with one parent under --batch is a contradiction, not a merge', () => {
-    const { result, mutations } = mergeInProcess(batchScenario({ parents: [BASE] }), { batch: true, readbackWait: () => {} });
-    expect(failureOf(result)).toMatchObject({ exit_code: 5, error: 'merge_outcome_unknown' });
-    expect(failureOf(result).message).toContain(`expected exactly [${BASE}, ${HEAD}]`);
+  test.each([
+    ['with another tree', () => ({ mergeCommit: repo.wrongMerge }), 'a merge of'],
+    ['whose head conflicts with the parent', () => ({ mergeCommit: repo.conflictMerge, squashParent: repo.conflictParent, parents: [repo.conflictParent] }), 'does not merge cleanly'],
+  ] as const)('a squash onto the moved main %s exits 5', (_label, overrides, message) => {
+    const { result, mutations } = run(overrides());
+    expect(result.document).toMatchObject({ ok: false, exit_code: 5, error: 'merge_outcome_unknown' });
+    expect(failureOf(result).message).toContain(message);
     expect(mutations).toHaveLength(1);
+  });
+
+  test('a squash whose parent has the switch off exits 5 with the revert command', () => {
+    const { result, mutations } = run({ policyAt: { [repo.parent]: policy({ publication: { acceptance_merge: 'off' } }) } });
+    expect(result.document).toMatchObject({ ok: false, exit_code: 5, error: 'merge_outcome_unknown' });
+    expect(failureOf(result).message).toContain(`not on at its parent ${repo.parent}; the owner decides on git revert ${repo.merge}`);
+    expect(mutations).toHaveLength(1);
+  });
+
+  test('a failed fetch from origin exits 5 and keeps git stderr out of the result', () => {
+    const missing = join(scratch, 'no-such-remote.git');
+    const { result } = run({}, missing);
+    expect(result.document).toMatchObject({ ok: false, exit_code: 5, error: 'merge_outcome_unknown' });
+    expect(failureOf(result).message).toContain('git fetch from origin failed (exit 128)');
+    expect(failureOf(result).message).not.toContain(missing);
+  });
+});
+
+/**
+ * A head that is behind the live tip of main: the merge result comes from a
+ * real `git merge-tree` of the tip and the head, fetched from a bare `origin`.
+ */
+describe('publication merge checks the policy in the merge result of a head behind main', () => {
+  // Two valid subtrees that differ from the base and from each other; an empty coverage block declares no rule.
+  const POLICY_TIP = policy({ merge_gate: { enabled: true }, publication: { acceptance_merge: 'on', required_check_coverage: {} } });
+  const POLICY_PR = policy({ merge_gate: { enabled: true }, publication: { acceptance_merge: 'on', required_check_coverage: { protected_paths: [] } } });
+  let remote: string;
+  let base: string;
+  const shas: Record<'unrelatedTip' | 'policyTip' | 'cleanHead' | 'policyHead', string> = { unrelatedTip: '', policyTip: '', cleanHead: '', policyHead: '' };
+  beforeAll(() => {
+    const work = join(scratch, 'behind-work');
+    remote = join(scratch, 'behind-remote.git');
+    mkdirSync(join(work, '.ai/harness'), { recursive: true });
+    git(work, 'init', '-q', '-b', 'main');
+    const commit = (file: string, text: string) => {
+      writeFileSync(join(work, file), text);
+      git(work, 'add', file);
+      git(work, 'commit', '-q', '-m', file);
+      return git(work, 'rev-parse', 'HEAD');
+    };
+    commit('a.txt', 'a\n');
+    base = commit('.ai/harness/policy.json', POLICY_ON);
+    shas.unrelatedTip = commit('c.txt', 'c\n');
+    git(work, 'reset', '-q', '--hard', base);
+    shas.policyTip = commit('.ai/harness/policy.json', POLICY_TIP);
+    git(work, 'reset', '-q', '--hard', base);
+    shas.cleanHead = commit('a.txt', 'changed\n');
+    git(work, 'reset', '-q', '--hard', base);
+    shas.policyHead = commit('.ai/harness/policy.json', POLICY_PR);
+    for (const [name, sha] of Object.entries(shas)) git(work, 'branch', name, sha);
+    git(scratch, 'clone', '-q', '--bare', work, remote);
+  });
+  const run = (tip: 'unrelatedTip' | 'policyTip', head: 'cleanHead' | 'policyHead') => {
+    git(remote, 'update-ref', 'refs/heads/main', shas[tip]);
+    git(remote, 'update-ref', `refs/pull/${PR}/head`, shas[head]);
+    const root = join(scratch, `behind-root-${checkoutRoots++}`);
+    mkdirSync(root);
+    git(root, 'init', '-q');
+    git(root, 'remote', 'add', 'origin', remote);
+    const scenario = passingScenario({ head: shas[head], base, liveTip: shas[tip], headBehindTip: true, parents: [base],
+      policyAt: { [shas[tip]]: tip === 'policyTip' ? POLICY_TIP : POLICY_ON } });
+    return mergeInProcessAt(root, scenario, { readbackWait: () => {}, readbackNow: () => 0, head: shas[head], base });
+  };
+
+  test('a head that does not touch the policy merges after main changed the publication subtree', () => {
+    const { result, mutations } = run('policyTip', 'cleanHead');
+    expect(result).toMatchObject({ exit_code: 0, document: { policy_ref: shas.policyTip, base_sha: base } });
+    expect(mutations).toHaveLength(1);
+  });
+
+  test.each([
+    ['changes the publication subtree', 'unrelatedTip', 'changes the publication policy subtree'],
+    ['conflicts with main in the policy file', 'policyTip', 'conflicts in .ai/harness/policy.json'],
+  ] as const)('a head that %s is refused', (_label, tip, message) => {
+    const { result, mutations } = run(tip, 'policyHead');
+    expect(result.document).toMatchObject({ ok: false, exit_code: 4, error: 'publication_policy_changed_in_pr' });
+    expect(failureOf(result).message).toContain(message);
+    expect(mutations).toHaveLength(0);
   });
 });

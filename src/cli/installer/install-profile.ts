@@ -4,7 +4,9 @@ import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches } from
 import { configurationReceiptPath } from './configuration-ownership';
 import { globalContextBackupEligible, globalContextPath } from './global-context';
 import { acquireRuntimeTransactionLock, assertRuntimeTransactionContext, globalRuntimeScope, runtimeTransactionRoot, type RuntimeTransactionContext, type RuntimeTransactionLock } from '../../effects/locking/runtime-transaction-lock';
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
+import { isRecord } from '../../core/evidence/is-record';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import {
   cpSync,
   existsSync,
@@ -51,9 +53,11 @@ import {
 import { hostSkillRoot, providerSkillLock, stagedSkillRoot, syncSkillRoots, type SkillHost } from '../../effects/host-skill-roots';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 import { hashManagedTree, OWNER_MARKER } from '../../effects/managed-tree';
+import { readWorkflowPolicyDocument } from '../../effects/state/resolve-effective-state';
+import { POLICY_ABSENT, POLICY_PATH, isPolicyObject, policyValue } from '../../core/workflow/policy-schema';
+import { capabilitySourceModeOf } from '../../effects/architecture/capability-resolver';
 import { piPackagePresent, planPiPackage, removePiPackage, type PiPackageStep } from './pi-package';
 import { piExecutable } from '../../effects/pi-executable';
-import { capabilitySourceModeFromPolicy } from '../../core/capabilities/resolver';
 import skillSurfaceManifest from '../../../assets/skill-commands/manifest.json';
 import { version as PACKAGE_VERSION } from '../../../package.json';
 import { pluginRepair } from './architecture-selection';
@@ -199,7 +203,7 @@ function managedAdapterHash(path: string): string | null {
     };
     const projection = canonicalManagedHookProjection(parsed.hooks);
     if (Object.keys(projection).length === 0) return null;
-    return `sha256:${createHash('sha256').update(JSON.stringify(projection)).digest('hex')}`;
+    return sha256Prefixed(JSON.stringify(projection));
   } catch {
     return null;
   }
@@ -214,7 +218,7 @@ export function codegraphProjection(configPath: string, readPath = configPath): 
       if (start < 0) return null;
       let end = start + 1;
       while (end < lines.length && !/^\s*\[/.test(lines[end])) end += 1;
-      return `sha256:${createHash('sha256').update(lines.slice(start, end).join('\n').trim()).digest('hex')}`;
+      return sha256Prefixed(lines.slice(start, end).join('\n').trim());
     }
     const parsed = JSON.parse(raw) as {
       mcpServers?: Record<string, unknown>;
@@ -225,7 +229,7 @@ export function codegraphProjection(configPath: string, readPath = configPath): 
       ? parsed.allowedTools.filter((entry) => typeof entry === 'string' && entry.toLowerCase().includes('codegraph'))
       : [];
     if (server === undefined && allowedTools.length === 0) return null;
-    return `sha256:${createHash('sha256').update(JSON.stringify({ server, allowedTools })).digest('hex')}`;
+    return sha256Prefixed(JSON.stringify({ server, allowedTools }));
   } catch {
     return null;
   }
@@ -342,7 +346,7 @@ function captureOwnedPath(path: string, owner: SurfaceOwner): ManagedInstallSurf
   return {
     ...base,
     type: 'managed-file',
-    content_hash: `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`,
+    content_hash: sha256Prefixed(readFileSync(path)),
     managed_marker: 'transaction-created-file',
     symlink_target: null,
   };
@@ -481,7 +485,7 @@ function surfaceIsCurrent(surface: ManagedInstallSurface, env: NodeJS.ProcessEnv
         return codegraphProjection(surface.path) === surface.content_hash;
       }
       return surface.managed_marker === 'transaction-created-file'
-        && `sha256:${createHash('sha256').update(readFileSync(surface.path)).digest('hex')}` === surface.content_hash;
+        && sha256Prefixed(readFileSync(surface.path)) === surface.content_hash;
     }
     if (!stat.isDirectory() || surface.content_hash === null || surface.managed_marker === null) return false;
     if (surface.managed_marker === 'transaction-created-directory') {
@@ -560,7 +564,7 @@ function verifiedAgentFleetSurfaces(env: NodeJS.ProcessEnv): readonly ManagedIns
   if (!receipt.ok) return [];
   return agentFleetTargetPaths(env).flatMap((path) => {
     if (!lstatExists(path) || !lstatSync(path).isFile()) return [];
-    const hash = `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
+    const hash = sha256Prefixed(readFileSync(path));
     if (receipt.hashes.get(path) === hash) return [];
     const surface = captureOwnedPath(path, 'core');
     return surface ? [surface] : [];
@@ -1047,10 +1051,6 @@ export function prepareInstallSelectionSwitch(
   return removeRetiredOwnedSurfaces(plugins, current, env);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /** The path allowlist, type and hash shape of a recorded ownership surface. */
 function validSurfaceShape(raw: Record<string, unknown>, env: NodeJS.ProcessEnv): boolean {
   if (raw.type === 'pi-package') {
@@ -1346,22 +1346,19 @@ export function commandPluginRepairLines(selection: PluginSelection): string[] {
  */
 export function assertArchitecturePolicySelection(cwd: string, plugins: readonly PluginId[], env: NodeJS.ProcessEnv = process.env): void {
   if (plugins.includes('architecture')) return;
-  const policyPath = join(cwd, '.ai/harness/policy.json');
-  let raw: string;
-  try {
-    raw = readFileSync(policyPath, 'utf-8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
-    throw error;
-  }
-  const policy = JSON.parse(raw) as { tooling?: { codegraph?: { enabled?: unknown } } };
+  const policy = readWorkflowPolicyDocument(cwd);
+  if (!policy.present) return;
+  // A non-object section on the path leaves the key absent.
+  const tooling = policy.rootIsObject ? policyValue(policy, 'tooling') : POLICY_ABSENT;
+  const codegraph = isPolicyObject(tooling) ? policyValue(policy, 'tooling.codegraph') : POLICY_ABSENT;
+  const codegraphEnabled = isPolicyObject(codegraph) ? policyValue(policy, 'tooling.codegraph.enabled') : POLICY_ABSENT;
   const needs = [
-    ...(capabilitySourceModeFromPolicy(policy) === 'archcontext' ? ['context.capability_source: archcontext'] : []),
-    ...(policy.tooling?.codegraph?.enabled === true ? ['tooling.codegraph.enabled: true'] : []),
+    ...(capabilitySourceModeOf(policy) === 'archcontext' ? ['context.capability_source: archcontext'] : []),
+    ...(codegraphEnabled === true ? ['tooling.codegraph.enabled: true'] : []),
   ];
   if (needs.length === 0) return;
   throw new InstallStateError('install_plugin_unavailable', installProfileStatePath(env),
-    `${policyPath} sets ${needs.join(' and ')}, which needs the architecture plugin; run: ${pluginRepair('architecture', plugins)}`);
+    `${join(cwd, POLICY_PATH)} sets ${needs.join(' and ')}, which needs the architecture plugin; run: ${pluginRepair('architecture', plugins)}`);
 }
 
 /** `run` drives the Pi package and skill projections; `record` is the plugin set that the plan installs, keeps and removes. */

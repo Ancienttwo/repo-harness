@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
@@ -292,7 +293,7 @@ export async function runCleanupInvestigation(sessionId: string, jobId: string, 
   const context = cleanupInvestigationInstructions();
   const request: TaskRequest = { protocol: 2, task: `worktree-cleanup-${sessionId}`, role: 'worktree-cleanup-advisor', round: 1, request_id: randomUUID(),
     context_ref: join(run.output, 'context-1.txt'), source_ref: join(run.output, CLEANUP_INVESTIGATION_MANIFEST),
-    context_sha256: `sha256:${createHash('sha256').update(context).digest('hex')}`, result_ref: join(run.output, 'result-1.json'),
+    context_sha256: sha256Prefixed(context), result_ref: join(run.output, 'result-1.json'),
     result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename' } };
   await options.investigate(run, request, context, options.deadline);
   const ids = session.plan.items.map(item => item.worktree.id);

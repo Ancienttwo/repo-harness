@@ -1,8 +1,9 @@
-import { existsSync, lstatSync, realpathSync } from 'fs';
+import { existsSync, lstatSync, realpathSync, statSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
+import { isPathInside } from '../../effects/path-containment';
 import type { McpPathDecision, McpPathIntent, McpPolicy } from './types';
 
-function toPosixPath(value: string): string {
+export function toPosixPath(value: string): string {
   return value.split(sep).join('/').replace(/\\+/g, '/');
 }
 
@@ -63,13 +64,20 @@ function anyDenyGlobMatches(patterns: string[], relativePath: string): boolean {
   return patterns.some((pattern) => denyGlobMatches(pattern, relativePath));
 }
 
-export function isPathInside(parent: string, child: string): boolean {
-  const relation = relative(parent, child);
-  return relation === '' || (
-    relation !== '..' &&
-    !relation.startsWith(`..${sep}`) &&
-    !isAbsolute(relation)
-  );
+export function isWindowsAbsoluteLike(value: string): boolean {
+  return /^[a-zA-Z]:[\\/]/.test(value) || /^[a-zA-Z]:/.test(value) || value.startsWith('\\\\');
+}
+
+// A canonical directory is the real path of an existing directory. A missing
+// path, a file or a link loop gives null.
+export function canonicalDirectory(path: string): string | null {
+  const absolute = resolve(path);
+  try {
+    if (!statSync(absolute).isDirectory()) return null;
+    return realpathSync(absolute);
+  } catch {
+    return null;
+  }
 }
 
 function hasEntry(path: string): boolean {

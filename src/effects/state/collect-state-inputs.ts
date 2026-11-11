@@ -1,5 +1,5 @@
 import { assertObservationPath, observationReadFileSync as readFileSync } from '../readonly-observation';
-import { createHash } from 'crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { lstatSync, realpathSync, statSync } from 'fs';
 import { basename, dirname, isAbsolute, posix, relative, resolve, sep, win32 } from 'path';
 import { stripWrappingQuotes } from '../../core/state/artifact-parsers';
@@ -145,13 +145,9 @@ export function safeRealpath(path: string): string {
   }
 }
 
-export function sha256(content: string | Buffer): string {
-  return `sha256:${createHash('sha256').update(content).digest('hex')}`;
-}
-
 export function sourceHash(cwd: string, relPath: string): string {
   const content = readText(cwd, relPath);
-  return content === null ? sha256(`missing:${relPath}`) : sha256(content);
+  return content === null ? sha256Prefixed(`missing:${relPath}`) : sha256Prefixed(content);
 }
 
 export function contentRevision(sourceHashes: Readonly<Record<string, string>>): string {
@@ -160,7 +156,7 @@ export function contentRevision(sourceHashes: Readonly<Record<string, string>>):
       left < right ? -1 : left > right ? 1 : 0
     )),
   );
-  return sha256(JSON.stringify(sorted));
+  return sha256Prefixed(JSON.stringify(sorted));
 }
 
 /** Collect the versioned source-hash input bundle consumed by the pure projector. */

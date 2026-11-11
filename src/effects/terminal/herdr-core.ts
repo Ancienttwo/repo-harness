@@ -1,7 +1,8 @@
 import { execFile, spawn, spawnSync, type ExecFileException, type SpawnSyncReturns } from 'child_process';
 import { createInterface } from 'readline';
 import type { AttentionHostFailureV1, AttentionHostPortsV1, AttentionWatcherV1 } from '../../core/board/attention-delivery';
-import type { BoardHostPortsV1 } from '../../core/board/board';
+import type { BoardHostPortsV1, BoardSeatTerminalReadV1 } from '../../core/board/board';
+import { isRecord } from '../../core/evidence/is-record';
 import { NOTIFY_SECRET_KEYS } from '../../core/decision/notify-secret-keys';
 import { HC_LOCAL_ADDRESS, isRemoteHcAddress } from '../../core/terminal/hc-address';
 
@@ -9,7 +10,7 @@ import { HC_LOCAL_ADDRESS, isRemoteHcAddress } from '../../core/terminal/hc-addr
  * herdr-core transport: typed `hc` CLI calls with `--json`, its event stream, and `herdr-app do` for pane
  * placement. Every call is scoped to repo-harness terminals: lists and streams need a repo-harness label
  * filter, and calls on one terminal need its `t<n>` address and a repo-harness label on it.
- * hc (floor 0.1.19) reports no API generation in its CLI output; the shape validation below is the only guard.
+ * hc (floor 0.1.20) reports no API generation in its CLI output; the shape validation below is the only guard.
  */
 export const HERDR_CORE_TIMEOUT_MS = 10_000;
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
@@ -37,6 +38,8 @@ export interface HerdrCoreOptions {
   /** The environment for the child; `HC_SESSION` / `HC_SOCKET` select the core. Defaults to `process.env`. The notify secret keys never reach the child. */
   readonly env?: NodeJS.ProcessEnv;
   readonly timeoutMs?: number;
+  /** Async reads and subscriptions stop and reap their child on abort. */
+  readonly signal?: AbortSignal;
 }
 
 export type HcLabels = Readonly<Record<string, string>>;
@@ -147,10 +150,6 @@ function address(value: string): string {
   return value;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function parseObject(program: HerdrCoreProgram, text: string): Record<string, unknown> {
   let value: unknown;
   try { value = JSON.parse(text); } catch { throw new HerdrCoreError(program, 'invalid_response', undefined, undefined, 'output is not JSON'); }
@@ -207,10 +206,15 @@ function invoke(program: HerdrCoreProgram, args: readonly string[], options: Her
 async function invokeAsync(program: HerdrCoreProgram, args: readonly string[], options: HerdrCoreOptions): Promise<Record<string, unknown>> {
   const env = environment(program, options);
   const timeout = timeoutOf(options);
+  if (options.signal?.aborted) throw new DOMException('hc read aborted', 'AbortError');
   const { error, stdout, stderr } = await new Promise<{ error: ExecFileException | null; stdout: string; stderr: string }>(resolve => {
-    execFile(program, [...args], { env, timeout, killSignal: 'SIGKILL', shell: false, maxBuffer: MAX_OUTPUT_BYTES, encoding: 'utf8' },
-      (error, stdout, stderr) => resolve({ error, stdout, stderr }));
+    let result: { error: ExecFileException | null; stdout: string; stderr: string };
+    const child = execFile(program, [...args], { env, timeout, signal: options.signal, killSignal: 'SIGKILL', shell: false, maxBuffer: MAX_OUTPUT_BYTES, encoding: 'utf8' },
+      (error, stdout, stderr) => { result = { error, stdout, stderr }; });
+    // execFile reports abort before exit; the owner must wait for the child to close.
+    child.once('close', () => resolve(result));
   });
+  if (options.signal?.aborted) throw new DOMException('hc read aborted', 'AbortError');
   if (!error) return settle(program, 0, null, stdout, stderr);
   // A string code is a spawn or buffer error; `killed` without one is the timeout's SIGKILL.
   if (typeof error.code === 'string') throw spawnError(program, error as NodeJS.ErrnoException);
@@ -285,7 +289,7 @@ function ownedTerminal(value: unknown): HcTerminal {
   return result;
 }
 
-/** `hc --version`: the installed client version (`hc 0.1.19`). It reads no core and no terminal. */
+/** `hc --version`: the installed client version (`hc 0.1.20`). It reads no core and no terminal. */
 export function hcVersion(options: HerdrCoreOptions = {}): string {
   const result = run('hc', ['--version'], options);
   if (result.signal || result.status !== 0) throw new HerdrCoreError('hc', 'failed', result.status ?? undefined);
@@ -465,7 +469,10 @@ export function hcEvents(labels: HcLabels, onItem: (item: HcStreamItem) => void,
   const env = environment('hc', options);
   const child = spawn('hc', ['events', '--json', ...labelArgs(labels)], { env, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
   let closed = false, failed: unknown, stderr = '';
-  const stop = (error?: unknown) => { failed ??= error; if (!closed) { closed = true; child.kill('SIGTERM'); } };
+  const stop = (error?: unknown) => { failed ??= error; if (!closed) { closed = true; child.kill('SIGKILL'); } };
+  const abort = () => stop();
+  options.signal?.addEventListener('abort', abort, { once: true });
+  if (options.signal?.aborted) abort();
   child.stderr.setEncoding('utf8').on('data', (chunk: string) => { if (stderr.length < MAX_OUTPUT_BYTES) stderr += chunk; });
   createInterface({ input: child.stdout }).on('line', line => {
     if (closed) return;
@@ -475,8 +482,9 @@ export function hcEvents(labels: HcLabels, onItem: (item: HcStreamItem) => void,
     } catch (error) { stop(error); }
   });
   const done = new Promise<void>((resolve, reject) => {
-    child.once('error', error => { closed = true; reject(spawnError('hc', error)); });
+    child.once('error', error => { failed ??= spawnError('hc', error); closed = true; });
     child.once('close', (code, signal) => {
+      options.signal?.removeEventListener('abort', abort);
       if (failed !== undefined) reject(failed);
       else if (closed || code === 0) resolve();
       else reject(code === null ? new HerdrCoreError('hc', 'failed', undefined, undefined, `ended by ${signal}`) : failure('hc', code, stderr));
@@ -496,6 +504,16 @@ export function herdrAppDo(command: HerdrAppPlacement, args: Readonly<Record<str
   return invoke(program, rest, options);
 }
 
+/** The single seat-terminal mapping for board reads, closeout selection and the observer. */
+export function boardSeatTerminals(terminals: readonly (HcTerminal & { readonly agent: string | null })[]): BoardSeatTerminalReadV1[] {
+  return terminals.filter(terminal => terminal.labels[RH_LABEL.service] === undefined).map(terminal => ({
+    address: terminal.address, name: terminal.name, agent: terminal.agent, state: terminal.state, status: terminal.status?.state ?? null,
+    status_kind: terminal.status?.kind ?? null, status_msg: terminal.status?.msg ?? null, status_ms: terminal.status_ms ?? null,
+    turn: terminal.turn, cwd: terminal.cwd ?? null,
+    labels: { seat: terminal.labels[RH_LABEL.seat], issue: terminal.labels[RH_LABEL.issue], pr: terminal.labels[RH_LABEL.pr], parent: terminal.labels[RH_LABEL.parent] },
+  }));
+}
+
 /** The board host port (#1505): the seat terminals of one repository with their parent labels (#1780), the hc version, and the advisor seat send and read (#1756). */
 export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1 {
   const unavailable = (error: unknown) => {
@@ -505,17 +523,8 @@ export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1
   const readSeatTerminals = (repositoryId: string, all: boolean): ReturnType<BoardHostPortsV1['seatTerminals']> => {
     try {
       // A watcher terminal (#1509) carries the repository and parent labels too, but it is a program, not a seat.
-      const terminals = hcList({ [RH_LABEL.repository]: repositoryId }, { ...options, all })
-        .map(({ address, agent }) => ({ ...hcGet(address, options), agent }))
-        .filter(terminal => terminal.labels[RH_LABEL.service] === undefined)
-        .map((terminal) => {
-          const label = (key: string) => terminal.labels[key];
-          return {
-            address: terminal.address, name: terminal.name, agent: terminal.agent, state: terminal.state, status: terminal.status?.state ?? null,
-            status_kind: terminal.status?.kind ?? null, status_msg: terminal.status?.msg ?? null, status_ms: terminal.status_ms ?? null, turn: terminal.turn, cwd: terminal.cwd ?? null,
-            labels: { seat: label(RH_LABEL.seat), issue: label(RH_LABEL.issue), pr: label(RH_LABEL.pr), parent: label(RH_LABEL.parent) },
-          };
-        });
+      const terminals = boardSeatTerminals(hcList({ [RH_LABEL.repository]: repositoryId }, { ...options, all })
+        .map(({ address, agent }) => ({ ...hcGet(address, options), agent })));
       return { status: 'observed', terminals };
     } catch (error) {
       return unavailable(error);

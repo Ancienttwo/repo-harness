@@ -152,7 +152,7 @@ describe('Effective State stability contract: authority-only partition (hook-gua
       expect(captureCount()).toBe(0);
 
       writeFileSync(trace, '');
-      const readonly = resolveEffectiveStateReadOnly(fixture.cwd, nowMs, risk);
+      resolveEffectiveStateReadOnly(fixture.cwd, nowMs, risk);
       expect(captureCount()).toBe(0);
 
       const report = JSON.parse(readFileSync(join(fixture.cwd, '.ai/harness/runs/state-fixture-report.json'), 'utf8'));

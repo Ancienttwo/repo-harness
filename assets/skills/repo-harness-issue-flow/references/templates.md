@@ -30,7 +30,7 @@ a comment.
 | Plan tier | One label `tier:low`, `tier:medium` or `tier:high` | `gh issue edit <n> --add-label tier:<tier>` |
 | PR stack | The PR base branch | `gh pr create --base <producer branch>`, later `gh pr edit <p> --base main` |
 | PR to issue | `Closes #<issue>` or `Refs #<issue>` in the PR body | the PR body template |
-| Merge order, holds, batches, seat limit | The plan block in the newest `plan` comment | the `plan` template |
+| Merge order, holds, seat limit | The plan block in the newest `plan` comment | the `plan` template |
 
 `gh issue view <n> --json number,id` gives the node id. A body line such
 as `Depends on #<n>` is not a dependency. Nothing reads it.
@@ -186,51 +186,6 @@ keyword in a code span can close an issue there even when the PR link list
 ignores it. `repo-harness publication merge` refuses the mismatch
 (`closing_references_mismatch`).
 
-## Batch PR body
-
-Title: `chore(integration): merge accepted PRs #<a> #<b> as one batch (#<parent>)`.
-Procedure: `orchestrator.md` §9.3.
-
-````markdown
-Closes #<issue>            <!-- one line per issue that a member closes -->
-Refs #<issue>              <!-- one line per other issue: non-final members, the parent -->
-
-## Goal
-Merge <N> accepted PRs with one CI run instead of <N> serial up-to-date syncs.
-
-## Scope
-One `--no-ff` merge of each member head onto main@<sha>, in this order. Each member keeps its own commits and review history. This PR adds no change of its own.
-
-| PR | Issue | Reviewed subject | Merged head | Acceptance |
-|---|---|---|---|---|
-| #<p> | #<issue> | `<sha>` (round <n> PASS, <tier>) | `<sha>` (<"adds main only" when it differs>) | <acceptance record URL> |
-| #<p> | #<issue> | not required (Low: <reason>) | `<sha>` | — |
-
-Not in this PR: <eligible or open PRs left out, and why; "none">.
-
-## Changes
-- <N> merge commits. All merged without conflicts.
-- Deleted: nothing beyond what each member deletes.
-
-## Architecture slice
-Architecture slice unchanged by the batch, see each member PR.
-
-## Verification
-Run on `<batch head sha>` (<os>, <runtime version>):
-- `<typecheck command>` — pass
-- `<test command with the files that two or more members change>` — <N pass, 0 fail>
-- PR CI is the authority for the combined head.
-
-## Test changes
-None in this PR. Each member PR lists its own test changes.
-
-## Risk and rollback
-Risk: an interaction between the members that no single PR's CI saw; the batch CI run covers it. Rollback: `git revert -m 1 <batch merge commit>` reverts the whole batch; `git revert -m 1 <member merge commit on main>` reverts one member.
-````
-
-Name a member PR only in the table, never after a closing keyword. The
-executor refuses a closing keyword that names a pull request.
-
 ## Comments
 
 Every protocol comment starts with its header line. Fields come next, then
@@ -337,7 +292,7 @@ Supersedes: <previous plan URL>   # omit on the first plan
 
 After the fields comes exactly one fenced `json` block: the plan block.
 `decodePlanBlock` in `src/core/board/plan-block.ts` of repo-harness defines
-its protocol and fields (merge order, holds, batches, seat limit).
+its protocol and fields (merge order, holds, seat limit).
 `repo-harness board --parent <n>` decodes the newest plan and fails on an
 invalid block. The block holds no dependency, membership or tier: those are
 GitHub fields (Plan data, above).
@@ -397,6 +352,21 @@ Every review writes this record, one row per review. The fields are `Round`,
 1 to 5 (`acceptor.md` §4). The board reads only this shape. A record that it cannot
 read makes the PR state unknown, not accepted.
 
+### acceptance disposition (on the PR, coordinator only)
+
+```text
+repo-harness acceptance disposition
+Record: <FAIL acceptance record comment URL>
+Subject: <40-hex subject sha of the FAIL row>
+Findings: <finding ids, comma separated>
+Decision: <comment URL of the decision that resolves them, for example a boundary answer>
+```
+
+The board ignores a FAIL row only when the disposition names its record and
+subject and lists every finding ID of that record. One unresolved finding, or a
+record whose `Findings:` bullets do not follow the record shape, keeps the row
+failing. A later PASS record never clears a FAIL row by itself.
+
 ### review reply (in the PR review thread)
 
 ```text
@@ -442,7 +412,7 @@ Reason: <the stop decision, and who made it>
 ```
 
 `Issues:` is for the parent only; without it, the hold covers every item
-of the batch. A hold on an issue or a PR covers that issue or PR. `repo-harness board merge` reads it (`orchestrator.md` §9.4).
+of the batch. A hold on an issue or a PR covers that issue or PR. `repo-harness board merge` reads it (`orchestrator.md` §9.3).
 
 ```text
 repo-harness merge hold released
@@ -455,9 +425,9 @@ Reason: <the release decision, and who made it>
 repo-harness integration status
 Re: <unblocked or request URL>
 Head: <new sha>, parents <accepted sha> + main <sha>
-Delta: <files changed by the sync; "none beyond main">
+Delta: <files changed by the merge of main; "none beyond main">
 Checks: <commands and results>; CI <state>
-Acceptance reuse: <valid, delta does not touch reviewed source | new round needed because ...>
+Review: <delta check rows needed for the new head (`acceptor.md` §2.2)>
 ```
 
 Merge result (integrator, after `repo-harness publication merge`):
@@ -474,26 +444,6 @@ Detail: <exit 3: "PR ready, owner merges" | exit 4: the blockers | exit 5, 6: th
 
 Write `Merge SHA` and `Revert` only for exit 0. For exit 4, `<error>` is the
 error code in the executor JSON.
-
-Batch drop (integrator, on the member PR, after a conflict or a red check):
-
-```text
-repo-harness integration status
-Re: <batch PR URL, or the build log comment>
-To: head owner #<p>
-Batch: dropped from integration/<parent>-batch-<n>: <merge conflict in <files> | owns failing check <job>, run <URL>>
-Next: merge main into your branch (no force push), run affected checks, post integration status; the PR joins a later batch
-```
-
-Batch closeout (integrator, on each member PR, after exit 0):
-
-```text
-repo-harness integration status
-Re: <batch PR URL>
-To: head owner #<p>
-Batch: merged in #<batch> as <merge_commit_sha>; member head <sha>
-Next: GitHub marks this PR Merged; do not close it; the branch stays
-```
 
 ## Dispatch packet
 

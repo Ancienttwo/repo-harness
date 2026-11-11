@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "crypto";
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { withTempRepo } from "./helpers/repo-fixture";
 
-import { ingestFileAsBlob, writeBlob } from "../src/effects/evidence/blob-store";
+import { writeBlob } from "../src/effects/evidence/blob-store";
 
 function sha256hex(content: Buffer | string): string {
   return createHash("sha256").update(content).digest("hex");
@@ -46,62 +46,6 @@ describe("content-addressed blob store", () => {
       writeFileSync(join(blobsDir, digest), "corrupted bytes, not the real content");
 
       expect(() => writeBlob(repoRoot, legitimate)).toThrow(/mismatch|different|corrupt/i);
-    });
-  });
-
-  test("ingestFileAsBlob hashes and stores a regular file's content", () => {
-    withTempRepo("evidence-blob-ingest-file", (repoRoot) => {
-      mkdirSync(join(repoRoot, "artifacts"), { recursive: true });
-      const relativePath = "artifacts/report.txt";
-      const content = "report body content\n";
-      writeFileSync(join(repoRoot, relativePath), content);
-
-      const result = ingestFileAsBlob(repoRoot, relativePath);
-      expect(result.kind).toBe("file");
-      if (result.kind !== "file") throw new Error("expected file result");
-      expect(result.sha256).toBe(sha256hex(content));
-      expect(result.wasNew).toBe(true);
-
-      const second = ingestFileAsBlob(repoRoot, relativePath);
-      if (second.kind !== "file") throw new Error("expected file result");
-      expect(second.wasNew).toBe(false);
-      expect(second.sha256).toBe(result.sha256);
-    });
-  });
-
-  test("ingestFileAsBlob never dereferences a symlink to hash or store its target content", () => {
-    withTempRepo("evidence-blob-symlink-safety", (repoRoot) => {
-      mkdirSync(join(repoRoot, "artifacts"), { recursive: true });
-      const targetContent = "TARGET-CONTENT-that-must-never-be-read";
-      const targetRelative = "artifacts/real-target.txt";
-      const linkRelative = "artifacts/link-to-target.txt";
-      writeFileSync(join(repoRoot, targetRelative), targetContent);
-      symlinkSync(join(repoRoot, targetRelative), join(repoRoot, linkRelative));
-
-      const result = ingestFileAsBlob(repoRoot, linkRelative);
-      expect(result.kind).toBe("symlink");
-      if (result.kind !== "symlink") throw new Error("expected symlink result");
-      expect(result.linkTarget).toBe(join(repoRoot, targetRelative));
-      // The symlink's own hash must be over the link target string, not the
-      // dereferenced file content.
-      expect(result.sha256).toBe(sha256hex(result.linkTarget));
-      expect(result.sha256).not.toBe(sha256hex(targetContent));
-
-      // The blob store must never have ingested the target file's actual bytes
-      // as a side effect of resolving the symlink.
-      const targetContentBlobPath = join(
-        repoRoot,
-        ".ai/harness/evidence/blobs",
-        sha256hex(targetContent),
-      );
-      expect(existsSync(targetContentBlobPath)).toBe(false);
-    });
-  });
-
-  test("ingestFileAsBlob rejects absolute and escaping paths fail-closed", () => {
-    withTempRepo("evidence-blob-ingest-path-safety", (repoRoot) => {
-      expect(() => ingestFileAsBlob(repoRoot, "/etc/passwd")).toThrow(/absolute|repo-relative/i);
-      expect(() => ingestFileAsBlob(repoRoot, "../outside.txt")).toThrow(/traversal|escap/i);
     });
   });
 });

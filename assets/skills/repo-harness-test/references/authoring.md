@@ -14,13 +14,13 @@ A new test file does not by itself require a full run.
 
 ## One owner per subject
 
-Find the existing tests for the boundary before adding another file.
-`tests/helper-scripts.test.ts` was split into script-owned suites in PR #420;
-distinct unit and composition tests can still cover the same subject when
+Find the existing tests for the boundary before adding another file. PR #420
+split the former helper-script suite into script-owned files, so each helper
+already has an owner (`tests/heartbeat-triage.test.ts`,
+`tests/contract-worktree.test.ts`, `tests/ship-worktrees.test.ts`).
+Distinct unit and composition tests can still cover the same subject when
 they protect different failures, as the canonical policy describes. Name files
 for their behavior or boundary; keep issue numbers in provenance.
-`tests/unit/issue-282-*` is five files (`-contention`, `-core`, `-e2e`,
-`-prd-drift`, `-store`) whose names say nothing about what each one proves.
 
 ## Use the shared repository fixture
 
@@ -42,12 +42,12 @@ wrapper; specialized domain builders remain with their owning tests.
 ## Expensive fixtures: template, restore in place
 
 For a fixture whose construction dominates the file's runtime, build it once
-per distinct argument list with `fixtureTemplate` (repo-fixture.ts:72-120) and
+per distinct argument list with `fixtureTemplate` (`tests/helpers/repo-fixture.ts#fixtureTemplate`) and
 let every later case materialize a pristine copy.
 
 `fixtureTemplate` restores the snapshot into the directories the fixture
 already owns; it never copies to a fresh path. That is a hard requirement, not
-a style choice: `repoHarnessRepoIdFor` (`src/effects/repo-registry.ts:105-107`)
+a style choice: `repoHarnessRepoIdFor` (`src/effects/repo-registry.ts#repoHarnessRepoIdFor`)
 hashes the repository root path verbatim, so a sealed authorization, registry
 entry, task intent, or publication recorded inside a fixture is bound to
 that exact path and is invalid anywhere else. Build the template once per file
@@ -57,7 +57,7 @@ Worked example: PR #423 (collaboration delegation fixture).
 
 ## In-process CLI cases with a proven completion signal
 
-`runCliInProcess(args, cwd, env)` (`tests/helpers/cli-in-process.ts:57`) drives
+`runCliInProcess(args, cwd, env)` (`tests/helpers/cli-in-process.ts#runCliInProcess`) drives
 `buildProgram()` and captures `status`/`stdout`/`stderr`. It temporarily replaces
 process-global environment, cwd, output and exit handlers, then restores them.
 Its completion barrier fits only commands whose first stdout write or
@@ -81,7 +81,7 @@ naming authority -- the `all`, `functional` (daily CI) and `release` lanes expor
 name back out of that script so a rename cannot strand a gated file. Declared
 in `tests/harness-benchmark-matrix.test.ts`; generic review domain/lifecycle fixtures
 in `tests/generic-review.test.ts` and `tests/acceptance-receipt.test.ts` are zero-model. Release contract in
-`docs/reference-configs/release-deploy.md:16`.
+`docs/reference-configs/release-deploy.md#REPO_HARNESS_TEST_EXPENSIVE`.
 
 `REPO_HARNESS_WINDOWS_PROTECTED_HELPER_SMOKE` gates the Windows helper smoke.
 The suites report skipped coverage when a required variable is absent.
@@ -109,6 +109,6 @@ the applicable existing mechanism for the selected test.
 
 CI runs every selected file in its own process (`BUN_TEST_ISOLATE_FILES=1`)
 through a bounded pool (`BUN_TEST_JOBS=8`) with `BUN_TEST_MAX_CONCURRENCY=1`
-(`.github/workflows/ci.yml:137-141`). Process memory is isolated between files;
+(`.github/workflows/ci.yml#BUN_TEST_MAX_CONCURRENCY`). Process memory is isolated between files;
 `--max-concurrency=1` bounds in-file concurrent tests to one. External filesystem
 and HOME state still need fixture isolation.

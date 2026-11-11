@@ -1,12 +1,12 @@
 /** Server-private cleanup sessions: one plan per session id, with the observations it was built from. */
 import { randomUUID } from 'node:crypto';
-import { closeSync, constants, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync } from 'node:fs';
+import { closeSync, constants, lstatSync, mkdirSync, openSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CleanupLossEvidence } from '../../core/operator/worktree-cleanup-observation';
 import {
   decodeCleanupInvestigationJob, decodeCleanupPlan, type CleanupInvestigationJob, type CleanupPlan, type CleanupPlanItem,
 } from '../../core/operator/worktree-cleanup-plan';
-import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
+import { createFileExclusiveDurably, publishFileByRename, syncDirectoryDurably } from '../atomic-append';
 import type { CleanupObservationTarget } from './worktree-cleanup-observation';
 import { cleanupLossSha256 } from './worktree-cleanup-plan';
 import { operatorStateDir, prepareOperatorStateDir } from './write-audit';
@@ -74,9 +74,7 @@ export function cleanupStagingDirectory(env: NodeJS.ProcessEnv, sessionId: strin
 /** Replace one private session file atomically. */
 function replacePrivate(env: NodeJS.ProcessEnv, sessionId: string, name: string, value: unknown): void {
   const directory = cleanupSessionDirectory(env, sessionId), temporary = join(directory, `.${name}-${randomUUID()}`);
-  createFileExclusiveDurably(temporary, Buffer.from(JSON.stringify(value)));
-  try { renameSync(temporary, join(directory, name)); } catch (error) { unlinkSync(temporary); throw error; }
-  syncDirectoryDurably(directory);
+  publishFileByRename(join(directory, name), Buffer.from(JSON.stringify(value)), temporary);
 }
 
 /** Replace the session plan atomically. The private items must be exactly the plan items, bound by their loss digests. */

@@ -1,4 +1,6 @@
 import { createHash } from "crypto";
+import { SHA256_PREFIXED_PATTERN } from "../core/evidence/sha256-pattern";
+import { sha256Prefixed } from "../core/evidence/sha256";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "path";
 import {
@@ -38,7 +40,6 @@ interface RepoHarnessRegistryFile {
   readonly repos: readonly RepoHarnessRegisteredRepo[];
 }
 
-const REGISTRY_LOCK_RETRY_MS = 10;
 const REGISTRY_LOCK_TIMEOUT_MS = 10_000;
 
 export interface RepoHarnessAccessUpdateResult extends RepoHarnessRegisterResult {
@@ -479,7 +480,7 @@ export function readRepoHarnessRegistryStrictSnapshot(opts: {
       return Object.freeze({
         registryPath,
         authorizationRevision: 0,
-        registryRevision: `sha256:${createHash('sha256').update('repo-harness-registry-v1:empty', 'utf-8').digest('hex')}`,
+        registryRevision: sha256Prefixed('repo-harness-registry-v1:empty'),
         repos: Object.freeze([]),
       });
     }
@@ -531,7 +532,7 @@ export function readRepoHarnessRegistryStrictSnapshot(opts: {
   return Object.freeze({
     registryPath,
     authorizationRevision: record.authorizationRevision as number,
-    registryRevision: `sha256:${createHash('sha256').update(raw, 'utf-8').digest('hex')}`,
+    registryRevision: sha256Prefixed(raw),
     repos: Object.freeze([...repos].sort((left, right) => left.id.localeCompare(right.id))),
   });
 }
@@ -552,24 +553,6 @@ export function withRepoHarnessRegistryAuthorizationLock<T>(
   return withRegistryMutationLock(registryPath, () => (
     action(readRepoHarnessRegistryStrictSnapshot({ env: opts.env, adoptedOnly: false }))
   ));
-}
-
-/** Hold the existing authorization lock until a bounded launch or delivery settles. */
-export async function withRepoHarnessRegistryAuthorizationLockAsync<T>(
-  opts: { readonly env?: NodeJS.ProcessEnv } = {},
-  action: (snapshot: RepoHarnessRegistryStrictSnapshot) => Promise<T>,
-): Promise<T> {
-  const deadline = Date.now() + REGISTRY_LOCK_TIMEOUT_MS;
-  let release: () => void;
-  for (;;) {
-    try { release = acquireRegistryMutationLock(repoHarnessRegisteredReposPath(opts.env), 1); break; }
-    catch (error) {
-      if (!(error instanceof RegistryMutationLockTimeoutError) || Date.now() >= deadline) throw error;
-      await new Promise(resolve => setTimeout(resolve, REGISTRY_LOCK_RETRY_MS));
-    }
-  }
-  try { return await action(readRepoHarnessRegistryStrictSnapshot({ env: opts.env, adoptedOnly: false })); }
-  finally { release(); }
 }
 
 export function repoHarnessAuthorizationRevision(env: NodeJS.ProcessEnv = process.env): number {
@@ -766,35 +749,6 @@ export function setRepoHarnessAccessMode(
   });
 }
 
-/** Restore only proven setup-owned rows while holding the registry's mutation lock. */
-export function restoreRepoHarnessRegistryEntries(
-  changes: readonly { before: RepoHarnessRegisteredRepo | null; installed: RepoHarnessRegisteredRepo }[],
-  opts: { env?: NodeJS.ProcessEnv; dryRun?: boolean } = {},
-): { restored: string[]; conflicts: string[] } {
-  const apply = () => {
-    const snapshot = readRepoHarnessRegistryStrictSnapshot({ env: opts.env });
-    let repos = [...snapshot.repos];
-    const restored: string[] = [], conflicts: string[] = [];
-    for (const entry of changes) {
-      strictRegistryEntry(entry.installed, 0);
-      if (entry.before) strictRegistryEntry(entry.before, 0);
-      if (entry.before && entry.before.path !== entry.installed.path) throw new Error('registry restore identity mismatch');
-      const current = repos.find((row) => row.path === entry.installed.path) ?? null;
-      const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-      if (equal(current, entry.before)) { restored.push(entry.installed.path); continue; }
-      if (!equal(current, entry.installed)) { conflicts.push(entry.installed.path); continue; }
-      repos = repos.filter((row) => row.path !== entry.installed.path);
-      if (entry.before) repos.push(entry.before);
-      restored.push(entry.installed.path);
-    }
-    if (!opts.dryRun && JSON.stringify(repos) !== JSON.stringify(snapshot.repos)) {
-      writeRegistryFile(snapshot.registryPath, repos, snapshot.authorizationRevision + 1);
-    }
-    return { restored, conflicts };
-  };
-  return opts.dryRun ? apply() : withRegistryMutationLock(repoHarnessRegisteredReposPath(opts.env), apply);
-}
-
 export type RepoHarnessBackfillRejectionReason = "missing" | "unreadable" | "not_adopted" | RepoHarnessCheckoutRejectionReason;
 
 export interface RepoHarnessBackfillResult {
@@ -868,7 +822,7 @@ export function assertRegistryRevisionFence(
   opts: { readonly apply?: boolean; readonly expectedRevision?: string },
   snapshot?: RepoHarnessRegistryStrictSnapshot,
 ): void {
-  if (opts.apply && !/^sha256:[0-9a-f]{64}$/.test(opts.expectedRevision ?? '')) {
+  if (opts.apply && !SHA256_PREFIXED_PATTERN.test(opts.expectedRevision ?? '')) {
     throw new Error('--apply requires --expected-revision from the preview');
   }
   if (snapshot && opts.expectedRevision !== undefined && opts.expectedRevision !== snapshot.registryRevision) {

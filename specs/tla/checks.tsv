@@ -1,0 +1,7 @@
+# spec	config	expect	invariants	note
+# expect: `holds` (TLC finds no error), `breaks` (a guard is off: TLC must report this invariant first),
+# `finding` (the code at the sync commit breaks these rules: TLC must report exactly this set).
+BossCommandSend	BossCommandSend.cfg	holds	-	the write run and the cooldown, with one crash
+BossCommandSend	BossCommandSend.unresolved-not-counted.cfg	breaks	CooldownHolds	maySend returns false for an intent with no result
+BossCommandSend	BossCommandSend.reconcile-not-counted.cfg	breaks	CooldownHolds	maySend returns false for reconcile_required
+BossCommandSend	BossCommandSend.no-request-lookup.cfg	breaks	OneSendPerRequest	write-run.ts lines 152-153 off

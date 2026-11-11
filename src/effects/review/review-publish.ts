@@ -9,6 +9,7 @@ import {
   type ReviewDiffLines,
   type ReviewPublishReceipt,
 } from '../../core/review/review-publish';
+import { errorMessage } from '../../core/evidence/error-message';
 
 export type ReviewPublishErrorCode =
   | 'review_receipt_invalid'
@@ -54,6 +55,8 @@ export interface ReviewPublishInput {
   readonly repoRoot: string;
   readonly prNumber: number;
   readonly receiptPath: string;
+  /** Rule 1 stops a review at round 5; a later round needs this owner decision comment. */
+  readonly ownerRecord?: string;
   readonly ghBin?: string;
   /** Test seam. Production runs the configured gh binary. */
   readonly ghRunner?: ReviewPublishGhRunner;
@@ -64,11 +67,9 @@ const GH_TIMEOUT_MS = 30_000;
 const GH_MAX_BUFFER = 4 * 1024 * 1024;
 const PAGE_SIZE = 100;
 const MAX_PAGES = 30;
-const PR_FIELDS = 'number,headRefOid,url';
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+const PR_FIELDS = 'number,headRefOid,url,closingIssuesReferences';
+const HARD_STOP_ROUND = 5;
+const OWNER_RECORD_PATTERN = /^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/(pull|issues)\/([0-9]+)#issuecomment-[0-9]+$/;
 
 function readReceipt(path: string): ReviewPublishReceipt {
   let bytes: Buffer;
@@ -176,6 +177,8 @@ function ghJson(
 interface PullRequestHead {
   readonly slug: string;
   readonly headSha: string;
+  /** `owner/repo#number` of every issue the PR closes; the repository can differ from the PR's. */
+  readonly closingIssues: readonly string[];
 }
 
 function prHead(run: ReviewPublishGhRunner, prNumber: number): PullRequestHead {
@@ -185,7 +188,14 @@ function prHead(run: ReviewPublishGhRunner, prNumber: number): PullRequestHead {
   if (typeof value.url !== 'string') throw new Error('gh pr view returned no URL');
   const match = /^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/pull\/([0-9]+)$/.exec(value.url);
   if (!match || Number(match[2]) !== prNumber) throw new Error('gh pr view returned a URL that does not match the requested PR');
-  return { slug: match[1]!, headSha: value.headRefOid };
+  const closing = value.closingIssuesReferences;
+  if (!Array.isArray(closing)) throw new Error('gh pr view returned invalid closing issue references');
+  const closingIssues = closing.map((entry) => {
+    const issue = /^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/issues\/([0-9]+)$/.exec(typeof entry?.url === 'string' ? entry.url : '');
+    if (issue === null) throw new Error('gh pr view returned a closing issue reference without a valid URL');
+    return issue[1] + '#' + issue[2];
+  });
+  return { slug: match[1]!, headSha: value.headRefOid, closingIssues };
 }
 
 /** Read every page of a list endpoint; a read that ends early or exceeds the page cap fails. */
@@ -281,6 +291,26 @@ function postReview(run: ReviewPublishGhRunner, slug: string, prNumber: number, 
   return { url: reviewUrl, threads: rendered.comments.length };
 }
 
+/**
+ * Round above the hard stop needs the owner's decision comment on this PR or
+ * on an issue the PR closes. The round cap itself stays the receipt's rule.
+ */
+function checkOwnerRecord(ownerRecord: string | undefined, round: number, pr: PullRequestHead, prNumber: number): void {
+  if (round <= HARD_STOP_ROUND) {
+    if (ownerRecord !== undefined) throw new ReviewPublishError('review_receipt_invalid', '--owner-record applies only to a round above ' + HARD_STOP_ROUND, 2);
+    return;
+  }
+  if (ownerRecord === undefined) {
+    throw new ReviewPublishError('review_receipt_invalid', 'round must be an integer from 1 to ' + HARD_STOP_ROUND + ' unless --owner-record names the owner decision comment', 2);
+  }
+  const match = OWNER_RECORD_PATTERN.exec(ownerRecord);
+  const onThisTarget = match !== null && match[1] === pr.slug
+    && (match[2] === 'pull' ? Number(match[3]) === prNumber : pr.closingIssues.includes(match[1] + '#' + match[3]));
+  if (!onThisTarget) {
+    throw new ReviewPublishError('review_receipt_invalid', '--owner-record must be a comment URL on PR ' + prNumber + ' or an issue it closes in ' + pr.slug, 2);
+  }
+}
+
 function partial(message: string, posted: readonly string[], cause?: unknown): ReviewPublishError {
   return new ReviewPublishError('review_publish_partial', message, 5, [...posted], cause === undefined ? undefined : { cause: errorMessage(cause) });
 }
@@ -309,7 +339,8 @@ export function publishReview(input: ReviewPublishInput): ReviewPublishResult {
     throw new ReviewPublishError('review_subject_stale',
       'review receipt subject ' + receipt.subject_sha + ' is not the PR head ' + pr.headSha + '; nothing was posted', 2);
   }
-  const claimBody = renderAcceptanceClaim(receipt);
+  checkOwnerRecord(input.ownerRecord, receipt.round, pr, input.prNumber);
+  const claimBody = renderAcceptanceClaim(receipt, input.ownerRecord);
   let diffLines: ReviewDiffLines;
   let existingClaim: string | null;
   try {
@@ -359,7 +390,7 @@ export function publishReview(input: ReviewPublishInput): ReviewPublishResult {
   confirmHead('record');
   let recordUrl: string;
   try {
-    recordUrl = postComment(run, pr.slug, input.prNumber, renderAcceptanceRecord(receipt, claimUrl));
+    recordUrl = postComment(run, pr.slug, input.prNumber, renderAcceptanceRecord(receipt, claimUrl, input.ownerRecord));
   } catch (error) {
     if (error instanceof GhMutationUnknownError) {
       if (error.confirmedUrl !== undefined) posted.push(error.confirmedUrl);

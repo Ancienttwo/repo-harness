@@ -34,29 +34,74 @@ function planWith(repo: string, operations: readonly AdoptionOperation[]): Adopt
   return { ...planAdoption({ repoRoot: repo, mode: "minimal" }), apply: true, operations };
 }
 
+const COPIED_TEMPLATE_PATHS = [
+  "docs/prds/prd.template.md",
+  ".claude/templates/research.template.md",
+  ".claude/templates/spec.template.md",
+  ".claude/templates/design-brief.template.md",
+  ".ai/hooks/README.md",
+];
+
 function writeOperation(path: string, content: string): AdoptionOperation {
   return { id: `writeFile:${path}`, kind: "writeFile", path, content, reason: "test", risk: "low", status: "planned" };
 }
 
 describe("canonical adoption plan", () => {
-  test("adoption deletes and reports the retired herdr-core policy key and seeds no hc pin", () => {
+  test("init removes every policy key outside the schema, keeps schema values byte-equal and converges", () => {
     const repo = tempRepo();
     try {
       mkdirSync(join(repo, ".ai/harness"), { recursive: true });
-      writeFileSync(join(repo, ".ai/harness/policy.json"), JSON.stringify({ external_tooling: { routing: { custom: "kept" }, herdr_core: { min_version: "0.1.16" } } }));
+      const owner = `{
+  "publication": { "acceptance_merge": "on", "generated_artifacts": {"x": 1} },
+  "operations": { "agent_writable_private_dirs": ["_ops/notes"], "dir": "deploy" },
+  "external_tooling": { "herdr": { "url": "u" }, "agent_fleet": { "managed_agents": ["explorer", "orchestrator"] } },
+  "sidecar_research": { "default": true },
+  "guards": { "edit_plan_gate": "off" },
+  "enforcement": { "worktree_guard": "advisory" },
+  "merge_gate": { "enabled": true },
+  "agentic_development": { "routing": { "simple": "waza" } },
+  "context": { "capability_source": "archcontext", "capability_match_rule": "old" },
+  "worktree_strategy": { "base_branch": "trunk", "worktree_dir_template": "../{{repo}}-wt-{{slug}}" }
+}
+`;
+      writeFileSync(join(repo, ".ai/harness/policy.json"), owner);
       const plan = planAdoption({ repoRoot: repo, mode: "standard", apply: true });
-      const operation = plan.operations.find(op => op.path === ".ai/harness/policy.json");
-      if (!operation || operation.kind !== "writeFile") throw new Error("policy operation missing");
-      expect(JSON.parse(operation.content).external_tooling).not.toHaveProperty("herdr_core");
-      expect(JSON.parse(operation.content).external_tooling.routing.custom).toBe("kept");
-      expect(plan.warnings).toContainEqual(expect.objectContaining({ code: "retired-policy-keys", message: "Removed retired harness policy keys: external_tooling.herdr_core" }));
+      expect(plan.warnings).toContainEqual({
+        code: "unknown-policy-keys",
+        message: "Removed policy keys that no reader uses: agentic_development.routing.simple, context.capability_match_rule, enforcement.worktree_guard, external_tooling.herdr.url, guards.edit_plan_gate, merge_gate.enabled, operations.dir, sidecar_research.default, worktree_strategy.worktree_dir_template",
+        risk: "medium",
+      });
       expect(applyAdoptionPlan(plan).ok).toBe(true);
-      // A keyless policy stays keyless and reports nothing.
+      const text = readFileSync(join(repo, ".ai/harness/policy.json"), "utf8");
+      expect(text).toContain(`"publication": { "acceptance_merge": "on", "generated_artifacts": {"x": 1} }`);
+      expect(text).toContain(`"agent_writable_private_dirs": ["_ops/notes"]`);
+      expect(JSON.parse(text)).toEqual({
+        publication: { acceptance_merge: "on", generated_artifacts: { x: 1 } },
+        operations: { agent_writable_private_dirs: ["_ops/notes"] },
+        external_tooling: { agent_fleet: { managed_agents: ["explorer", "orchestrator"] } },
+        context: { capability_source: "archcontext" },
+        worktree_strategy: { base_branch: "trunk" },
+        documentation: { language: "en" },
+        internal_pr_authors: [],
+      });
       const next = planAdoption({ repoRoot: repo, mode: "standard" });
-      const nextPolicy = next.operations.find(op => op.path === ".ai/harness/policy.json");
-      if (!nextPolicy || nextPolicy.kind !== "writeFile") throw new Error("policy operation missing");
-      expect(JSON.parse(nextPolicy.content).external_tooling).not.toHaveProperty("herdr_core");
-      expect(next.warnings.map(warning => warning.code)).not.toContain("retired-policy-keys");
+      expect(next.summary.plannedTotal).toBe(0);
+      expect(next.warnings.map(warning => warning.code)).not.toContain("unknown-policy-keys");
+      // Minimal mode runs the same removal on an existing policy and creates none.
+      writeFileSync(join(repo, ".ai/harness/policy.json"), JSON.stringify({ version: 1, internal_pr_authors: [] }));
+      const minimal = planAdoption({ repoRoot: repo, mode: "minimal" });
+      const minimalPolicy = minimal.operations.find(op => op.path === ".ai/harness/policy.json");
+      if (!minimalPolicy || minimalPolicy.kind !== "writeFile") throw new Error("policy operation missing");
+      expect(JSON.parse(minimalPolicy.content)).not.toHaveProperty("version");
+      expect(minimal.warnings.map(warning => warning.message)).toContain("Removed policy keys that no reader uses: version");
+      // A schema section stays when the removal empties it.
+      writeFileSync(join(repo, ".ai/harness/policy.json"), JSON.stringify({ worktree_strategy: { merge_back: { requires_clean_check: true } }, publication: { obsolete: true } }));
+      const emptied = planAdoption({ repoRoot: repo, mode: "minimal" });
+      const emptiedPolicy = emptied.operations.find(op => op.path === ".ai/harness/policy.json");
+      if (!emptiedPolicy || emptiedPolicy.kind !== "writeFile") throw new Error("policy operation missing");
+      expect(JSON.parse(emptiedPolicy.content)).toMatchObject({ worktree_strategy: { merge_back: {} }, publication: {} });
+      expect(JSON.parse(emptiedPolicy.content).publication).toEqual({});
+      expect(emptied.warnings.map(warning => warning.message)).toContain("Removed policy keys that no reader uses: publication.obsolete, worktree_strategy.merge_back.requires_clean_check");
     } finally { cleanup(repo); }
   });
 
@@ -70,14 +115,39 @@ describe("canonical adoption plan", () => {
         throw new Error("expected a writeFile operation for .ai/harness/policy.json");
       }
       const generatedPolicy = JSON.parse(policyOperation.content);
-      expect(generatedPolicy.agent_runtime).toBeUndefined();
-      expect(generatedPolicy.agentic_development.routing.design_options_choice).toBe("convention:design-options");
+      expect(Object.keys(generatedPolicy)).toEqual(["context", "worktree_strategy", "documentation", "internal_pr_authors"]);
+      expect(generatedPolicy.context).toEqual({ capability_source: "registry" });
+      expect(Object.keys(generatedPolicy.worktree_strategy)).toEqual(["base_branch", "review_base", "merge_back"]);
       expect(plan.operations.some((operation) => operation.path === ".ai/context/capabilities.json")).toBe(true);
       expect(plan.operations.some((operation) => operation.path === "deploy/README.md")).toBe(true);
-      expect(plan.operations.some((operation) => operation.path === ".ai/hooks/README.md")).toBe(true);
+      for (const path of COPIED_TEMPLATE_PATHS) expect(plan.operations.some((operation) => operation.path === path)).toBe(false);
       expect(plan.operations.some((operation) => operation.path?.startsWith("scripts/"))).toBe(false);
       expect(plan.operations.every((operation) => operation.rollback)).toBe(true);
       expect(plan.summary.requiresVerification).toBe(true);
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("init removes byte-equal copies of released templates and keeps an edited one", () => {
+    const repo = tempRepo();
+    try {
+      const sources: Record<string, string> = {
+        "docs/prds/prd.template.md": readFileSync(join(ROOT, "assets/templates/prd.template.md"), "utf8"),
+        ".claude/templates/research.template.md": readFileSync(join(ROOT, "assets/templates/research.template.md"), "utf8"),
+        ".claude/templates/spec.template.md": readFileSync(join(ROOT, "assets/templates/spec.template.md"), "utf8"),
+        ".claude/templates/design-brief.template.md": readFileSync(join(ROOT, "assets/templates/design-brief.template.md"), "utf8"),
+        ".ai/hooks/README.md": "# Workflow Helpers\n\nHost events use the user-level `repo-harness-hook` typed runtime. Operator helpers run from the installed package: use `repo-harness run <helper>`. Init preserves legacy files under `.ai/hooks/lib/`. Run `repo-harness doctor` for migration guidance.\n",
+      };
+      for (const [path, content] of Object.entries(sources)) {
+        mkdirSync(dirname(join(repo, path)), { recursive: true });
+        writeFileSync(join(repo, path), content);
+      }
+      const removes = (plan: AdoptionPlan) => plan.operations.filter((op) => op.kind === "remove").map((op) => op.path);
+      expect(removes(planAdoption({ repoRoot: repo, mode: "standard" })).sort()).toEqual([...COPIED_TEMPLATE_PATHS].sort());
+      writeFileSync(join(repo, "docs/prds/prd.template.md"), `${sources["docs/prds/prd.template.md"]}\nTeam section\n`);
+      const edited = planAdoption({ repoRoot: repo, mode: "standard" });
+      expect(edited.operations.filter((op) => op.path === "docs/prds/prd.template.md")).toEqual([]);
     } finally {
       cleanup(repo);
     }
@@ -141,7 +211,9 @@ describe("canonical adoption plan", () => {
       expect(existsSync(join(repo, "docs", "architecture", "snapshots"))).toBe(false);
       expect(existsSync(join(repo, "docs", "architecture", "domains"))).toBe(false);
       expect(readFileSync(join(repo, "docs", "architecture", "index.md"), "utf-8")).not.toContain("Latest snapshot");
-      expect(readFileSync(join(repo, ".gitignore"), "utf-8")).toContain(".ai/harness/evidence/");
+      // The evidence rule lives in the user-level runtime-state block, not the tracked block.
+      expect(readFileSync(join(ROOT, "assets/templates/runtime-state.gitignore"), "utf-8")).toContain(".ai/harness/evidence/");
+      expect(readFileSync(join(repo, ".gitignore"), "utf-8")).not.toContain(".ai/harness/evidence/");
       expect(readFileSync(join(repo, apply.transactionManifestPath!), "utf-8")).toContain('"command": "adopt"');
     } finally {
       cleanup(repo);
@@ -363,138 +435,6 @@ describe("canonical adoption plan", () => {
     }
   }, 30_000);
 
-  test("standard adoption drops retired policy keys and reports each one", () => {
-    const repo = tempRepo();
-    try {
-      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
-      writeFileSync(join(repo, ".ai", "harness", "policy.json"), JSON.stringify({
-        active_plan: { directory: "plans" },
-        tasks: {
-          current_status_file: "tasks/current.md",
-          workstreams_dir: "tasks/workstreams",
-          lessons_file: "custom/lessons.md",
-        },
-        agent_runtime: { mode: "off", adapters: { "herdr-cli-agent": { enabled: false } } },
-        circuit_breakers: { guard_repeat: 2, review: { lite: 1 } },
-        external_tooling: { agent_fleet: { managed_agents: ["explorer", "orchestrator"] } },
-        custom_key: { keep: true },
-      }, null, 2));
-      const plan = planAdoption({ repoRoot: repo, mode: "standard", apply: true });
-      expect(plan.warnings).toContainEqual(expect.objectContaining({
-        code: "retired-policy-keys",
-        message: "Removed retired harness policy keys: active_plan, tasks.current_status_file, tasks.workstreams_dir, agent_runtime, circuit_breakers, external_tooling.agent_fleet.managed_agents[orchestrator]",
-      }));
-      expect(applyAdoptionPlan(plan).ok).toBe(true);
-      const policy = JSON.parse(readFileSync(join(repo, ".ai", "harness", "policy.json"), "utf-8"));
-      expect(policy.active_plan).toBeUndefined();
-      expect(policy.tasks.current_status_file).toBeUndefined();
-      expect(policy.tasks.workstreams_dir).toBeUndefined();
-      expect(policy.tasks.lessons_file).toBe("custom/lessons.md");
-      expect(policy.agent_runtime).toBeUndefined();
-      expect(policy.external_tooling.agent_fleet.managed_agents).toEqual(["explorer"]);
-      expect(policy.custom_key).toEqual({ keep: true });
-    } finally {
-      cleanup(repo);
-    }
-  });
-
-  test("standard adoption directly replaces managed planning routes", () => {
-    const repo = tempRepo();
-    try {
-      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
-      writeFileSync(
-        join(repo, ".ai", "harness", "policy.json"),
-        JSON.stringify(
-          {
-            external_tooling: {
-              gbrain: { mcp: "candidate-disabled" },
-              routing: {
-                complex: "gstack",
-                simple: "waza",
-                knowledge: "gbrain",
-              },
-            },
-            agentic_development: {
-              routing: {
-                product_discovery: "gstack:office-hours",
-                complex_engineering_plan: "gstack:plan-eng-review",
-                design_plan: "gstack:plan-design-review",
-              },
-              due_diligence: {
-                explicit_report_required_for: ["plan-eng-review", "shared_contract"],
-              },
-            },
-          },
-          null,
-          2,
-        ),
-      );
-
-      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
-      expect(apply.ok).toBe(true);
-      const policy = JSON.parse(readFileSync(join(repo, ".ai", "harness", "policy.json"), "utf-8"));
-      expect(policy.external_tooling.routing).toEqual({ simple: "waza" });
-      expect(policy.external_tooling).not.toHaveProperty("gbrain");
-      expect(policy.agentic_development.routing).toMatchObject({
-        product_discovery: "parent-agent:geju",
-        complex_engineering_plan: "parent-agent:geju",
-        design_plan: "parent-agent:geju",
-      });
-      expect(policy.agentic_development.due_diligence.explicit_report_required_for).toEqual([
-        "complex_engineering_plan",
-        "shared_contract",
-      ]);
-    } finally {
-      cleanup(repo);
-    }
-  });
-
-  test("standard adoption preserves mixed custom routes while cutting the declared legacy provider", () => {
-    const repo = tempRepo();
-    try {
-      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
-      writeFileSync(
-        join(repo, ".ai", "harness", "policy.json"),
-        JSON.stringify(
-          {
-            external_tooling: {
-              routing: { complex: "retired-provider", simple: "waza", knowledge: "gbrain" },
-            },
-            agentic_development: {
-              routing: {
-                product_discovery: "custom:product-discovery",
-                complex_engineering_plan: "retired-provider:architecture-review",
-                design_plan: "custom:design-review",
-              },
-              due_diligence: {
-                explicit_report_required_for: ["architecture-review", "shared_contract", "database_migration"],
-              },
-            },
-          },
-          null,
-          2,
-        ),
-      );
-
-      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
-      expect(apply.ok).toBe(true);
-      const policy = JSON.parse(readFileSync(join(repo, ".ai", "harness", "policy.json"), "utf-8"));
-      expect(policy.external_tooling.routing).toEqual({ simple: "waza" });
-      expect(policy.agentic_development.routing).toMatchObject({
-        product_discovery: "custom:product-discovery",
-        complex_engineering_plan: "parent-agent:geju",
-        design_plan: "custom:design-review",
-      });
-      expect(policy.agentic_development.due_diligence.explicit_report_required_for).toEqual([
-        "complex_engineering_plan",
-        "shared_contract",
-        "database_migration",
-      ]);
-    } finally {
-      cleanup(repo);
-    }
-  });
-
   test("planner leaves user-authored plans, legacy workflow documents and PRDs untouched", () => {
     const repo = tempRepo();
     try {
@@ -573,11 +513,7 @@ describe("canonical adoption plan", () => {
         if (mode === "standard") {
           const policy = JSON.parse(readFileSync(join(repo, ".ai", "harness", "policy.json"), "utf-8"));
           expect(policy.active_plan).toBeUndefined();
-          expect(policy.tasks.current_status_file).toBeUndefined();
-          expect(policy.tasks.workstreams_dir).toBeUndefined();
-          expect(readFileSync(join(repo, "docs", "prds", "prd.template.md"), "utf-8")).toBe(
-            readFileSync(join(ROOT, "assets", "templates", "prd.template.md"), "utf-8"),
-          );
+          expect(policy.tasks).toBeUndefined();
           const contextMap = JSON.parse(readFileSync(join(repo, ".ai", "context", "context-map.json"), "utf-8"));
           expect(contextMap.root_context_files).not.toContain("tasks/current.md");
         }
@@ -1207,8 +1143,8 @@ describe("review_base authority", () => {
     ["existing keys can differ from each other", (repo: string) => {
       committedOnMaster(repo);
       writePolicy(repo, { base_branch: "develop", review_base: "release", merge_back: { target: "main", requires_clean_check: true } });
-    }, { base_branch: "develop", review_base: "release", merge_back: { target: "main", requires_clean_check: true } }],
-    ["merge_back keeps a missing target", (repo: string) => { committedOnMaster(repo); writePolicy(repo, { merge_back: { requires_clean_check: true } }); }, { merge_back: { requires_clean_check: true } }],
+    }, { base_branch: "develop", review_base: "release", merge_back: { target: "main" } }],
+    ["merge_back keeps a missing target", (repo: string) => { committedOnMaster(repo); writePolicy(repo, { merge_back: {} }); }, { merge_back: {} }],
   ] as const)("%s", (_name, setup, branchKeys) => {
     const repo = tempRepo();
     try {
@@ -1449,7 +1385,6 @@ describe("documentation language policy datum", () => {
       expect(apply.status).toBe(0);
       const policy = JSON.parse(readFileSync(join(repo, ".ai/harness/policy.json"), "utf-8"));
       expect(policy.documentation.language).toBe("zh-CN");
-      expect(policy.documentation.profile).toBe("full");
       expect(readdirSync(join(repo, "docs", "reference-configs")).filter((name) => name.endsWith(".md")).length).toBe(referenceCount);
     } finally {
       cleanup(repo);

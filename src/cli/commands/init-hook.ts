@@ -13,6 +13,7 @@ import * as os from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { Command } from 'commander';
+import { shellQuote } from '../../core/shell-quote';
 import { runDoctor, type CheckStatus, type DoctorPorts, type DoctorReport, type DoctorTarget } from './doctor';
 import {
   formatManagedHookProjectionMismatch,
@@ -163,10 +164,6 @@ function homeDir(env?: NodeJS.ProcessEnv): string {
 
 function verificationCommand(target: InitHookTarget, checkUpdates: boolean): string {
   return `repo-harness setup check --target ${target}${checkUpdates ? ' --check-updates' : ''} --json`;
-}
-
-function shellQuoteArg(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 /** Agent actions in creation order, plus the action each check produced. */
@@ -350,7 +347,7 @@ function adoptionRefreshCheck(
     };
   }
 
-  const command = `repo-harness init --repo ${shellQuoteArg(report.repo.repoRoot)}`;
+  const command = `repo-harness init --repo ${shellQuote(report.repo.repoRoot)}`;
   addAction(actions, {
     id: 'repo.init-refresh',
     status: 'needs_agent',

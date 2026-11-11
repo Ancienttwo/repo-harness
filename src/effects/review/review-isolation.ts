@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { isAbsolute, relative, sep, join, dirname } from 'node:path';
 import { piAgentDir } from '../pi-agent-dir';
 import { OPERATOR_DEFAULT_PORT } from '../../core/review/operator-console-port';
+import { shellQuote } from '../../core/shell-quote';
 import type { ReviewIsolationAdmission, ReviewIsolationPaths } from '../../core/review/runner-port';
 
 
@@ -286,8 +287,7 @@ export function prepareReviewLauncher(directory: string, policyFile: string, exe
   if (!isAbsolute(directory) || owner !== directory || !lstatSync(owner).isDirectory()
     || lstatSync(policyFile).isSymbolicLink() || !lstatSync(policy).isFile()
     || !lstatSync(vendor).isFile()) throw new Error('OAR_REVIEW_LAUNCHER_UNSAFE');
-  const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
-  const content = `#!/bin/sh\nexec /usr/bin/sandbox-exec -f ${quote(policy)} ${quote(vendor)} "$@"\n`;
+  const content = `#!/bin/sh\nexec /usr/bin/sandbox-exec -f ${shellQuote(policy)} ${shellQuote(vendor)} "$@"\n`;
   const launcher = join(owner, 'reviewer-launcher');
   if (!existsSync(launcher)) writeFileSync(launcher, content, { flag: 'wx', mode: 0o700 });
   const stat = lstatSync(launcher);

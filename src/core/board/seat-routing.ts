@@ -5,19 +5,34 @@ export const CODEX_HYPER_MODEL = Object.freeze({ model: 'gpt-6-astra', effort: '
 interface AccountQuota { readonly state: QuotaState; readonly remaining: number | null }
 export interface SeatAccountQuotas {
   readonly claude: AccountQuota & { readonly mode: 'normal' | 'saving' | 'unknown' };
-  readonly chatgpt: AccountQuota & { readonly mode: 'normal' | 'hyper' | 'unknown' };
+  /** `on_credits` marks the owner-authorized credit grant; the state is then `tight` (#2251). */
+  readonly chatgpt: AccountQuota & { readonly mode: 'normal' | 'hyper' | 'unknown'; readonly on_credits?: boolean };
+}
+
+/** The owner-authorized credit grant of one launch (#2251). Every other caller takes the default. */
+export interface SeatAccountOptions { readonly spendCredits?: boolean }
+
+/** The provider reports credits. The rate limit that makes the account `exhausted` is the state the credit grant exists for, so it does not block. */
+function codexCredits(account: QuotaAccountReport | undefined): boolean {
+  const codex = account?.codex;
+  return codex !== undefined
+    && (codex.credits?.has_credits === true || codex.credits?.unlimited === true);
 }
 
 /** Modes depend on weekly remaining quota, never on pace or elapsed week time. */
-export function seatAccountQuotas(accounts: readonly QuotaAccountReport[], routing: SeatRoutingV1): SeatAccountQuotas {
+export function seatAccountQuotas(accounts: readonly QuotaAccountReport[], routing: SeatRoutingV1, options: SeatAccountOptions = {}): SeatAccountQuotas {
   const quota = (id: QuotaAccount): AccountQuota => {
     const account = accounts.find(account => account.account === id);
     return { state: account?.state ?? 'unknown', remaining: weeklyRemainingPercent(account) };
   };
   const claude = quota('claude'), chatgpt = quota('chatgpt');
+  // An exhausted account that still has credits takes the display state `tight`, so routing and the launch check admit it.
+  const onCredits = options.spendCredits === true && chatgpt.state === 'exhausted'
+    && codexCredits(accounts.find(account => account.account === 'chatgpt'));
   return {
     claude: { ...claude, mode: claude.remaining === null ? 'unknown' : claude.remaining < routing.claude_saving_below_remaining ? 'saving' : 'normal' },
-    chatgpt: { ...chatgpt, mode: chatgpt.remaining === null ? 'unknown' : chatgpt.remaining >= routing.codex_hyper_at_or_above_remaining ? 'hyper' : 'normal' },
+    chatgpt: { ...chatgpt, ...(onCredits ? { state: 'tight' as const, on_credits: true } : {}),
+      mode: chatgpt.remaining === null ? 'unknown' : chatgpt.remaining >= routing.codex_hyper_at_or_above_remaining ? 'hyper' : 'normal' },
   };
 }
 
@@ -46,7 +61,8 @@ const launchText = (seat: SeatConfigV1): string => `${seat.runtime} ${modelText(
 
 function accountText(seat: SeatConfigV1, quota: SeatAccountQuotas): string | null {
   const account = seatAccount(seat);
-  return account === null ? null : `${account} ${quota[account].state}${account === 'claude' && claudeReserved(quota) ? ', reserved for advisor and orchestrator' : ''}`;
+  const credits = account === 'chatgpt' && quota.chatgpt.on_credits === true ? ', on credits' : '';
+  return account === null ? null : `${account} ${quota[account].state}${credits}${account === 'claude' && claudeReserved(quota) ? ', reserved for advisor and orchestrator' : ''}`;
 }
 
 export function formatSeatModes(seats: SeatsConfigV1, quota: SeatAccountQuotas): string {

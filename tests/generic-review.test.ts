@@ -1,6 +1,6 @@
 import { readReviewAdmissionSource } from '../src/effects/admission/admission-source';
 import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
-import { afterEach, expect, test } from 'bun:test';
+import { afterAll, afterEach, expect, test } from 'bun:test';
 import { darwinTest } from './helpers/darwin-test';
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync, readdirSync } from 'fs';
 import { execFileSync, spawnSync } from 'child_process';
@@ -22,7 +22,7 @@ import { readSessionArtifact, writeSessionArtifact } from '../src/effects/termin
 import { ensureSessionDirectory, nextSessionRound } from '../src/effects/terminal/task-session-io';
 import type { ReviewHostSpec, TaskRequest } from '../src/core/review/runner-port';
 import type { TaskSessionAuthority } from '../src/effects/admission/admission-source';
-import { tmpWorkspace, tmpWorkspaceIn } from './helpers/repo-fixture';
+import { fixtureTemplate, tmpWorkspace, tmpWorkspaceIn } from './helpers/repo-fixture';
 import { randomUUID } from 'crypto';
 import { mockOfflineHerdr, offlineTerminalAddress, startOfflineTaskAgent } from './helpers/engineer-runtime-fixture';
 import { buildTaskMessageEvent } from '../src/core/fleet/admitted-task-message';
@@ -178,15 +178,22 @@ test('review packet enforces the existing 10 MiB limit in UTF-8 bytes without tr
   expect(() => composeReviewPacket({ ...input, source: source + 'x' })).toThrow('review_context_too_large');
 });
 
-function packetRoundFixture() {
+const packetRepositoryTemplate = fixtureTemplate(() => {
   const fixture = seedAcceptanceFixture('review-packet');
+  execFileSync('git', ['-C', fixture.root, 'worktree', 'add', '-qb', 'packet-reviewer', join(fixture.home, 'reviewer')]);
+  return fixture;
+}, fixture => [fixture.root, fixture.home]);
+afterAll(() => packetRepositoryTemplate.dispose());
+
+function packetRoundFixture() {
+  const seed = packetRepositoryTemplate.materialize();
+  const fixture = { ...seed, authority: { ...seed.authority } };
   roots.push(fixture.root, fixture.home);
   // Match the acceptance fixture's short, private endpoint HOME.
   const endpointHome = tmpWorkspaceIn('/tmp', 'rp');
   roots.push(endpointHome);
   const endpoint = { socket: join(endpointHome, 'hc.sock'), home: endpointHome };
   const reviewerRepo = join(fixture.home, 'reviewer');
-  execFileSync('git', ['-C', fixture.root, 'worktree', 'add', '-qb', 'packet-reviewer', reviewerRepo]);
   const location = reviewLocation(fixture.root, fixture.authority);
   const packetPath = (round = 1) => join(reviewerRepo, '.ai/harness/runs/generic-review-input', location.key, `packet-${round}.txt`);
   const calls: string[] = [];
@@ -961,9 +968,9 @@ for (const harness of ['codex', 'claude', 'pi'] as const) darwinTest(`zero-model
 
 // Mandatory B first proof. Dummy Node processes only; no OAR/vendor Session.
 darwinTest('OAR isolation: Seatbelt denies paired host and descendant writes with output-only allowance', async () => {
-  const { mkdirSync, writeFileSync, symlinkSync, realpathSync } = await import('node:fs');
+  const { mkdirSync, writeFileSync, symlinkSync } = await import('node:fs');
   const { spawnSync } = await import('node:child_process');
-  const { reviewIsolationPolicy, reviewHostTemporaryDirectory, prepareCodexHome } = await import('../src/effects/review/review-isolation');
+  const { reviewIsolationPolicy, reviewHostTemporaryDirectory } = await import('../src/effects/review/review-isolation');
   const root = tmpWorkspace('oar-isolation'); roots.push(root);
   const subject = join(root, 'subject'), primary = join(root, 'primary'), owner = join(root, 'owner-record'), journal = join(root, 'journal'), git = join(root, 'git-common'), output = join(root, 'output');
   for (const dir of [subject, primary, owner, journal, git, output]) mkdirSync(dir);
@@ -1201,7 +1208,7 @@ let calls=0;await assert.rejects(openScriptedReviewHost({cwd:output},()=>{},asyn
 });
 
 darwinTest('OAR installation is probed by the fixed Node host, never the Bun controller', async () => {
-  const { mkdirSync, writeFileSync, realpathSync, chmodSync } = await import('node:fs');
+  const { writeFileSync, chmodSync } = await import('node:fs');
   const probeReviewInstallation = (await import('../src/effects/review-runner/task-review-runner')).taskReviewRunner.installation;
   const root = tmpWorkspace('oar-node-installation'); roots.push(root);
   const trace = join(root, 'parent.txt'), executable = join(root, 'fake-codex');

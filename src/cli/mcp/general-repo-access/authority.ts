@@ -1,12 +1,12 @@
-import { createHash } from 'crypto';
+import { sha256Hex } from '../../../core/evidence/sha256';
 import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readFileSync, realpathSync, statSync } from 'fs';
-import { basename, dirname, isAbsolute, relative, resolve, sep } from 'path';
+import { basename, dirname, isAbsolute, relative, resolve } from 'path';
 import {
   readRegisteredRepoHarnessRepos,
-  repoHarnessRepoIdFor,
   type RepoHarnessAccessMode,
 } from '../../../effects/repo-registry';
-import { globMatches, isPathInside } from '../paths';
+import { isPathInside } from '../../../effects/path-containment';
+import { canonicalDirectory, globMatches, isWindowsAbsoluteLike, toPosixPath } from '../paths';
 import type { McpPolicy } from '../types';
 
 export interface RepoRecord {
@@ -80,10 +80,6 @@ export class GeneralRepoAccessError extends Error {
 
 const REPO_ROOT_IDENTITIES = new Map<string, string>();
 
-export function sha256(value: string | Buffer): string {
-  return createHash('sha256').update(value).digest('hex');
-}
-
 export function statIdentity(stat: { dev: number | bigint; ino: number | bigint }): string {
   return `${stat.dev}:${stat.ino}`;
 }
@@ -91,24 +87,6 @@ export function statIdentity(stat: { dev: number | bigint; ino: number | bigint 
 export function openNoFollow(path: string): number {
   const noFollow = typeof constants.O_NOFOLLOW === 'number' ? constants.O_NOFOLLOW : 0;
   return openSync(path, constants.O_RDONLY | noFollow);
-}
-
-export function toPosixPath(value: string): string {
-  return value.split(sep).join('/').replace(/\\+/g, '/');
-}
-
-function isWindowsAbsoluteLike(value: string): boolean {
-  return /^[a-zA-Z]:[\\/]/.test(value) || /^[a-zA-Z]:/.test(value) || value.startsWith('\\\\');
-}
-
-function canonicalDirectory(path: string): string | null {
-  const absolute = resolve(path);
-  try {
-    if (!statSync(absolute).isDirectory()) return null;
-    return realpathSync(absolute);
-  } catch {
-    return null;
-  }
 }
 
 function directoryIdentity(path: string): string | null {
@@ -131,7 +109,7 @@ function expectedRootIdentity(canonicalRoot: string): string | null {
 }
 
 function registryRevision(records: Array<{ id: string; path: string; accessMode: RepoHarnessAccessMode }>): string {
-  return `registry_${sha256(JSON.stringify(records.map((entry) => ({
+  return `registry_${sha256Hex(JSON.stringify(records.map((entry) => ({
     id: entry.id,
     path: entry.path,
     accessMode: entry.accessMode,
@@ -221,7 +199,7 @@ function parseIgnoreLine(line: string): IgnoreRule | null {
 
 export function readIgnorePolicy(repoRoot: string): IgnorePolicy {
   const ignorePath = resolve(repoRoot, '.ignore');
-  if (!existsSync(ignorePath)) return { digest: `sha256:${sha256('')}`, fileIdentity: null, rules: [] };
+  if (!existsSync(ignorePath)) return { digest: `sha256:${sha256Hex('')}`, fileIdentity: null, rules: [] };
   const before = lstatSync(ignorePath);
   if (before.isSymbolicLink()) {
     throw new GeneralRepoAccessError('SYMLINK_ESCAPE', '.ignore must be a regular repo-local file', { path: '.ignore' });
@@ -242,7 +220,7 @@ export function readIgnorePolicy(repoRoot: string): IgnorePolicy {
   }
   const text = buffer.toString('utf-8');
   return {
-    digest: `sha256:${sha256(text)}`,
+    digest: `sha256:${sha256Hex(text)}`,
     fileIdentity: statIdentity(before),
     rules: text.split(/\r?\n/).map(parseIgnoreLine).filter((rule): rule is IgnoreRule => rule !== null),
   };

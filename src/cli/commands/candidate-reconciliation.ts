@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
+import { isPathInside } from '../../effects/path-containment';
 import {
   closeSync,
   constants,
@@ -109,10 +111,6 @@ export interface CandidateReceiptExpectation {
   readonly require_adapter_projection?: boolean;
 }
 
-export function sha256(value: string | Buffer): string {
-  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
-}
-
 function fileIdentity(stat: { readonly dev: number; readonly ino: number }): FileIdentity {
   return { dev: stat.dev, ino: stat.ino };
 }
@@ -126,15 +124,6 @@ function canonicalDirectory(path: string, label: string): string {
   const stat = lstatSync(resolved);
   if (!stat.isDirectory()) throw new Error(`${label} is not a directory: ${resolved}`);
   return realpathSync(resolved);
-}
-
-function pathWithin(path: string, root: string): boolean {
-  const normalized = relative(root, path);
-  return normalized === '' || (
-    normalized !== '..'
-    && !normalized.startsWith(`..${sep}`)
-    && !isAbsolute(normalized)
-  );
 }
 
 function candidateCapabilityPath(transactionBackupRoot: string): string {
@@ -236,7 +225,7 @@ export function consumeCandidateReconciliationCapability(
   request: CandidateReconciliationRequest,
   scope: RuntimeTransactionScope,
 ): CandidateReconciliationCapability {
-  if (request.transaction_id !== sha256(request.transaction_backup_root)) {
+  if (request.transaction_id !== sha256Prefixed(request.transaction_backup_root)) {
     throw new Error('candidate reconciliation transaction identifier is not bound to its backup root');
   }
   if (scope.kind !== 'global') throw new Error('candidate reconciliation requires the global runtime scope');
@@ -245,7 +234,7 @@ export function consumeCandidateReconciliationCapability(
   const lockRelativePath = runtimeTransactionLockRelativePath(canonicalScope);
   const transactionRoot = canonicalDirectory(runtimeTransactionRoot(canonicalScope), 'candidate reconciliation transaction root');
   const backupRoot = canonicalDirectory(request.transaction_backup_root, 'candidate reconciliation transaction backup');
-  if (!pathWithin(backupRoot, transactionRoot) || backupRoot === transactionRoot) {
+  if (!isPathInside(transactionRoot, backupRoot) || backupRoot === transactionRoot) {
     throw new Error(`candidate reconciliation transaction backup is outside the active transaction root: ${backupRoot}`);
   }
   const path = candidateCapabilityPath(backupRoot);
@@ -331,11 +320,11 @@ export function candidatePackageIdentity(packageRoot: string): CandidatePackageI
 }
 
 export function routeRegistryDigest(): string {
-  return sha256(JSON.stringify(ROUTES));
+  return sha256Prefixed(JSON.stringify(ROUTES));
 }
 
 export function managedProjectionDigest(hooks: HooksByEvent | unknown): string {
-  return sha256(JSON.stringify(canonicalManagedHookProjection(hooks)));
+  return sha256Prefixed(JSON.stringify(canonicalManagedHookProjection(hooks)));
 }
 
 export function hostsForTarget(target: InstallTargetSpec): readonly HookHost[] {

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { createHash } from 'node:crypto';
 import { act, Profiler, type ReactElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
@@ -7,21 +8,22 @@ import { buildModuleReviewPrompt, type ModuleReviewPromptV1 } from '../../src/co
 import { OperatorApp } from '../../src/operator-web/App';
 import { ArchitectureWorkspace, reviewPromptCommand, type ArchitectureSource } from '../../src/operator-web/ArchitectureWorkspace';
 import { fetchArchitectureMap, type ArchitectureMapRead, type ArchitectureMapReader } from '../../src/operator-web/ArchitectureMap';
-import { layoutArchitectureMap, MAP_NODE_MIN_WIDTH, type MapLayoutNode } from '../../src/operator-web/architecture-map-layout';
-import { layoutModules, type ModulesBox } from '../../src/operator-web/architecture-modules-layout';
-import { layersSvg, layoutLayers } from '../../src/operator-web/architecture-layers-layout';
+import { layoutArchitectureMap } from '../../src/operator-web/architecture-map-layout';
+import { layoutModules } from '../../src/operator-web/architecture-modules-layout';
+import { layoutLayers } from '../../src/operator-web/architecture-layers-layout';
 import {
-  architectureViolationCommand, decodeArchitectureMap, projectArchitectureMap,
+  architectureViolationCommand, decodeArchitectureMap, flowSteps, projectArchitectureMap,
   type ArchitectureFlowSelectorV1, type ArchitectureLayerOrderV1, type ArchitectureMapFlowV1, type ArchitectureMapLayersInput, type ArchitectureMapNodeV1,
   type ArchitectureMapRelationV1, type ArchitectureMapV1,
 } from '../../src/core/operator/architecture-map';
 import { runtimePlacement } from '../../src/operator-web/architecture-runtime';
-import { layoutSequence, SEQUENCE_COLUMN } from '../../src/operator-web/architecture-sequence-layout';
-import { SEQUENCE_SVG_FONT, SEQUENCE_SVG_HEADER_WIDTH, SEQUENCE_SVG_TERMINAL_WIDTH, sequenceSvg, textWidth } from '../../src/operator-web/architecture-sequence-svg';
-import { layoutTopology, topologySvg, type TopologyBase } from '../../src/operator-web/architecture-topology-layout';
+import { layoutSequence } from '../../src/operator-web/architecture-sequence-layout';
+import { defaultTopologyBase, layoutTopology, type TopologyBase } from '../../src/operator-web/architecture-topology-layout';
+import { repairRoute, routePath, sceneBounds, sceneFindings, sceneSvg, textWidth, type PlacedScene, type SceneBox } from '../../src/operator-web/architecture-scene';
+import { contentBox, firstViewport } from '../../src/operator-web/architecture-map-parts';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import type { ArchitectureHistory as HistoryPage } from 'archctx-contracts';
-import { historyShape, skippedMilestones, type ValidMilestone } from '../../src/operator-web/ArchitectureHistory';
+import { historyLayoutInput, historyShape, skippedMilestones, type ValidMilestone } from '../../src/operator-web/ArchitectureHistory';
 // Three real `archctx history --ref dd9ccef3 --offset N --limit M --json` pages of this repository.
 import historyPages from '../fixtures/architecture-history/repo-harness-pages.json';
 import { ModuleGraph } from '../../src/operator-web/ModuleGraph';
@@ -221,6 +223,36 @@ describe('architecture module list', () => {
     expect(calls.at(-1)).toEqual({ path: `/api/v1/repositories/${REPO}/architecture/modules`, ifNoneMatch: null });
     expect(document.querySelectorAll('.module-row')).toHaveLength(3);
   });
+
+  test('a typed refusal of the module list or the history keeps the 30 s interval; no typed answer backs off', async () => {
+    const gap = historyPages.gap as unknown as HistoryPage;
+    const busy = () => json({ code: 'busy' }, 503);
+    const untyped = () => new Response('bad gateway', { status: 502 });
+    const newestRefuses = (path: string) => new URL(path, 'http://127.0.0.1').searchParams.get('limit') === '1' ? json(gap) : busy();
+    const original = globalThis.setTimeout;
+    const delays: number[] = [];
+    // Only the observation timer is held; React and settle() keep their short timers.
+    globalThis.setTimeout = ((run: () => void, delay = 0) => {
+      if (delay < 30_000) return original(run, delay);
+      delays.push(delay);
+      return 0;
+    }) as typeof setTimeout;
+    try {
+      for (const [tab, answer, code, delay] of [
+        ['modules', busy, 'busy', 30_000], ['modules', untyped, 'unavailable', 60_000],
+        ['history', busy, 'busy', 30_000], ['history', newestRefuses, 'busy', 30_000], ['history', untyped, 'unavailable', 60_000],
+      ] as const) {
+        respond = answer;
+        await mount(workspace());
+        delays.length = 0;
+        await act(async () => document.querySelector<HTMLButtonElement>(`#architecture-tab-${tab}`)!.click());
+        await settle();
+        expect([tab, document.querySelector('[role="alert"]')?.getAttribute('data-error-code'), delays]).toEqual([tab, code, [delay]]);
+        await act(async () => root?.unmount());
+        root = null;
+      }
+    } finally { globalThis.setTimeout = original; }
+  });
 });
 
 describe('architecture module page', () => {
@@ -387,7 +419,8 @@ describe('architecture map', () => {
       relations: [mapRelation('relation.a-own', 'calls', CENTER, PART), mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL)], flows: [], flow_evidence: [],
       sizes: available ? { state: 'ok', lines: new Map([['src/ledger.ts', 900], ['src/router.ts', 100]]), owners: new Map([['src/ledger.ts', PART], ['src/router.ts', CALLER]]) }
         : { state: 'unavailable', reason: 'model_worktree_dirty' },
-      dependencies: available ? { state: 'ok', matrix: [{ from: CALLER, to: CENTER, imports: 7 }] } : { state: 'unavailable', reason: 'code_facts_other_commit' },
+      // archctx reports an undeclared import only for a `deps` edge, so the undeclared CENTER → CALLER import is in the matrix too.
+      dependencies: available ? { state: 'ok', matrix: [{ from: CALLER, to: CENTER, imports: 7 }, { from: CENTER, to: CALLER, imports: 3 }] } : { state: 'unavailable', reason: 'code_facts_other_commit' },
       layers,
     });
   }
@@ -401,136 +434,38 @@ describe('architecture map', () => {
     });
   });
 
-  test('every model node is placed once, members inside their group, siblings apart, nested groups and the recorded map included; no relation crosses its own group box', () => {
-    const overlaps = (a: MapLayoutNode, b: MapLayoutNode) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-    // Three namespace levels, with a relation that ends on the deepest one.
-    const nested = projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z',
-      nodes: [mapNode('namespace.a', 'namespace'), mapNode('namespace.a-b', 'namespace', 'namespace.a'), mapNode('namespace.a-b-c', 'namespace', 'namespace.a-b'),
-        mapNode('namespace.a-d', 'namespace', 'namespace.a'), mapNode('process.p', 'process')],
-      // A group to a member two levels down, and a member back to its own group: both lines would cross the group box.
-      relations: [mapRelation('relation.p-runs', 'runs-in', 'process.p', 'namespace.a-b-c'), mapRelation('relation.a-holds', 'calls', 'namespace.a', 'namespace.a-b-c'),
-        mapRelation('relation.c-up', 'calls', 'namespace.a-b-c', 'namespace.a-b')], flows: [], flow_evidence: [],
-      sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers,
-      layer_order: undeclaredLayers,
-    });
-    const recorded = decodeArchitectureMap(recordedMap);
-    const cases: [ArchitectureMapV1, string[] | null][] = [[mapFor(), ['relation.a-own']], [nested, ['relation.a-holds', 'relation.c-up']], [recorded, null]];
-    for (const [map, undrawn] of cases) {
-      const layout = layoutArchitectureMap(map);
-      expect(layout.nodes.map(item => item.node.id).sort()).toEqual(map.nodes.map(node => node.id).sort());
-      const placed = new Map(layout.nodes.map(item => [item.node.id, item]));
-      for (const item of layout.nodes) {
-        if (item.node.parent === null) continue;
-        const group = placed.get(item.node.parent)!;
-        expect(group.group).toBe(true);
-        expect(item.x >= group.x && item.y >= group.y && item.x + item.width <= group.x + group.width && item.y + item.height <= group.y + group.height).toBe(true);
-      }
-      const siblings = new Map<string | null, MapLayoutNode[]>();
-      for (const item of layout.nodes) siblings.set(item.node.parent, [...(siblings.get(item.node.parent) ?? []), item]);
-      for (const group of siblings.values()) for (const [index, a] of group.entries()) for (const b of group.slice(index + 1)) expect(overlaps(a, b)).toBe(false);
-      // React Flow places a member relative to a parent that comes earlier in the list.
-      for (const [index, item] of layout.nodes.entries()) {
-        if (item.node.parent !== null) expect(layout.nodes.findIndex(other => other.node.id === item.node.parent)).toBeLessThan(index);
-      }
-      // The canvas draws every relation except one between a group and a node inside it; the map count keeps them all.
-      const ancestors = (id: string): string[] => { const out: string[] = []; for (let cursor = placed.get(id)!.node.parent; cursor !== null; cursor = placed.get(cursor)!.node.parent) out.push(cursor); return out; };
-      const inside = map.relations.filter(relation => ancestors(relation.target).includes(relation.source) || ancestors(relation.source).includes(relation.target)).map(relation => relation.id);
-      expect(inside).toEqual(undrawn ?? inside);
-      expect(inside.length).toBeGreaterThan(0);
-      expect(layout.edges.map(edge => edge.relation.id)).toEqual(map.relations.map(relation => relation.id).filter(id => !inside.includes(id)));
-    }
-  });
-
-  test('without bands, top-level nodes that no relation links to another top-level node sit on a near-square grid; with bands they keep one row', () => {
-    const overlaps = (a: MapLayoutNode, b: MapLayoutNode) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-    // Nine capabilities like an unlayered model whose relations stay inside each capability.
-    const loose = (layerOrder: ArchitectureLayerOrderV1) => projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z', layer_order: layerOrder,
-      nodes: Array.from({ length: 9 }, (_, index) => mapNode(`capability.loose.c${index}`, 'capability')), relations: [], flows: [], flow_evidence: [],
-      sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers,
-    });
-    const rows = (map: ArchitectureMapV1) => new Set(layoutArchitectureMap(map).nodes.map(item => item.y)).size;
-    expect([rows(loose(undeclaredLayers)), rows(loose(coreOnly))]).toEqual([3, 1]);
-    const grid = layoutArchitectureMap(loose(undeclaredLayers));
-    for (const [index, a] of grid.nodes.entries()) for (const b of grid.nodes.slice(index + 1)) expect(overlaps(a, b)).toBe(false);
-    // A linked pair keeps its dagre ranks, and the unlinked node sits below them.
-    const linked = layoutArchitectureMap(mapFor(true, mapLayers, undeclaredLayers));
-    const box = new Map(linked.nodes.map(item => [item.node.id, item]));
-    expect(box.get(CALLER)!.y + box.get(CALLER)!.height).toBeLessThan(box.get(CENTER)!.y);
-    expect(box.get(EXTERNAL)!.y).toBeGreaterThan(box.get(CENTER)!.y);
-  });
-
-  test('box width follows lines, I/O relations are dashed, and only a capability pair with imports is weighted', () => {
-    const layout = layoutArchitectureMap(mapFor());
-    const width = (id: string) => layout.nodes.find(item => item.node.id === id)!.width;
-    expect(width(PART)).toBeGreaterThan(width(CALLER));
-    expect(width(EXTERNAL)).toBe(MAP_NODE_MIN_WIDTH);
-    const edges = new Map(layout.edges.map(edge => [edge.relation.id, edge]));
-    expect(edges.get('relation.c-git')!.dashed).toBe(true);
-    expect(edges.get('relation.b-router')!.dashed).toBe(false);
-    expect(edges.get('relation.b-router')).toMatchObject({ imports: 7, strokeWidth: 6 });
-    expect(edges.get('relation.c-git')).toMatchObject({ imports: null, strokeWidth: 1 });
-    const bare = layoutArchitectureMap(mapFor(false));
-    expect(bare.nodes.every(item => item.size === null && (item.group || item.width === MAP_NODE_MIN_WIDTH))).toBe(true);
-    expect(bare.edges.every(edge => edge.imports === null)).toBe(true);
-  });
-
-  test('with a layer order each layer is one band, top to bottom, and a relation against the order keeps the bands; without one there is no band', () => {
-    const below = (upper: { y: number; height: number }, lower: { y: number }) => upper.y + upper.height < lower.y;
-    // CALLER (cli) calls CENTER (core); the git read points from core to external; the extra relation points up, against the order.
-    const ordered = projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z',
-      nodes: [{ ...mapNode(CENTER, 'capability'), layer: 'core' }, { ...mapNode(PART, 'component', CENTER), layer: 'core' }, { ...mapNode(CALLER, 'capability'), layer: 'cli' },
-        { ...mapNode(EXTERNAL, 'external-system'), layer: 'external' }, { ...mapNode('process.loose', 'process'), layer: null }],
-      relations: [mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL), mapRelation('relation.d-up', 'calls', EXTERNAL, CALLER)], flows: [], flow_evidence: [],
-      sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers,
-      layer_order: { state: 'ok', layers: ['cli', 'web', 'core', 'external'] },
-    });
-    const layout = layoutArchitectureMap(ordered);
-    // A declared layer with no node has no band; the model's unlayered nodes take the last band.
-    expect(layout.bands.map(band => band.layer)).toEqual(['cli', 'core', 'external', null]);
-    for (const [index, band] of layout.bands.slice(1).entries()) expect(below(layout.bands[index]!, band)).toBe(true);
-    const box = new Map(layout.nodes.map(item => [item.node.id, item]));
-    for (const item of layout.nodes.filter(entry => entry.node.parent === null)) {
-      const band = layout.bands.find(entry => entry.layer === item.node.layer)!;
-      expect(item.y >= band.y && item.y + item.height <= band.y + band.height).toBe(true);
-    }
-    expect(below(box.get(CALLER)!, box.get(CENTER)!) && below(box.get(CENTER)!, box.get(EXTERNAL)!) && below(box.get(EXTERNAL)!, box.get('process.loose')!)).toBe(true);
-    expect(layoutArchitectureMap(mapFor(true, mapLayers, undeclaredLayers)).bands).toEqual([]);
-
-    // The recorded map of this repository: its bands follow the model's order, and top-level boxes do not overlap.
-    const recorded = decodeArchitectureMap(recordedMap);
-    const real = layoutArchitectureMap(recorded);
-    const used = new Set(recorded.nodes.filter(node => node.parent === null).map(node => node.layer));
-    expect(recorded.layer_order.state === 'ok' && real.bands.map(band => band.layer)).toEqual(recorded.layer_order.state === 'ok' ? recorded.layer_order.layers.filter(layer => used.has(layer)) : []);
-    for (const [index, band] of real.bands.slice(1).entries()) expect(below(real.bands[index]!, band)).toBe(true);
-  });
-
-  test('the map is the default view: capabilities in domain groups, external systems, one summed edge per domain pair; selecting a node lists its relations with import counts', async () => {
+  test('the map is the default view: capabilities in domain groups, external systems, one directed route per domain pair with imports; selecting a node lists its relations with import counts', async () => {
     const opened: (string | null)[] = [];
     const sources: unknown[] = [];
     await mount(workspace({ readMap: reader({ state: 'ok', map: mapFor() }), onModule: id => opened.push(id), onSource: source => sources.push(source) }));
     expect(document.querySelector('#architecture-tab-map')?.getAttribute('aria-selected')).toBe('true');
     expect(calls).toEqual([]);
     const canvas = document.querySelector('.architecture-map')!;
-    expect([canvas.getAttribute('data-node-count'), canvas.getAttribute('data-relation-count')]).toEqual(['4', '3']);
-    // The capabilities sit in their domain groups and the external system above them; a component is not on this map.
+    expect([canvas.getAttribute('data-node-count'), canvas.getAttribute('data-relation-count'), canvas.getAttribute('data-edge-count')]).toEqual(['4', '3', '2']);
+    // The capabilities sit in their domain groups beside the external system; a component is not on this map.
     expect([...document.querySelectorAll('.react-flow__node')].map(item => item.getAttribute('data-id')).sort())
       .toEqual([CALLER, CENTER, EXTERNAL, 'domain:public-surface', 'domain:workflow-engine'].sort());
     expect([...document.querySelectorAll('.architecture-modules__domain > b')].map(item => item.textContent)).toEqual(['public-surface', 'workflow-engine']);
     expect(document.querySelector(`.react-flow__node[data-id="${CENTER}"] .architecture-modules__size`)?.textContent).toBe('900 · 1');
-    // One edge per domain pair with the imports of both directions summed; every capability once, inside its domain; no two boxes overlap.
-    expect(layoutModules(mapFor()).edges.map(edge => [edge.source, edge.target, edge.imports])).toEqual([['public-surface', 'workflow-engine', 7]]);
+    // The canvas draws the placed routes: one domain route for each direction of the imports, and the route of the git read.
+    const small = layoutModules(mapFor());
+    expect(small.edges.map(edge => [edge.source, edge.target, edge.imports])).toEqual([['public-surface', 'workflow-engine', 7], ['workflow-engine', 'public-surface', 3]]);
+    expect([...document.querySelectorAll('.react-flow__edge-route .react-flow__edge-path')].map(path => path.getAttribute('d'))).toEqual(small.scene.routes.map(route => routePath(route.points)));
+    // The recorded map: one route with an arrow at its target for each of the 22 directed domain pairs with imports; more imports draw wider.
     const recorded = decodeArchitectureMap(recordedMap);
     const real = layoutModules(recorded);
-    const pair = (a: string, b: string) => real.edges.find(edge => [edge.source, edge.target].sort().join() === [a, b].sort().join())?.imports;
-    expect([real.edges.length, pair('runtime-harness', 'workflow-engine'), pair('runtime-harness', 'verification')]).toEqual([12, 342, 676]);
-    expect(real.capabilities.map(item => item.node.id).sort()).toEqual(recorded.nodes.filter(node => node.kind === 'capability').map(node => node.id).sort());
-    const inside = (a: ModulesBox, b: ModulesBox) => a.x >= b.x && a.y >= b.y && a.x + a.width <= b.x + b.width && a.y + a.height <= b.y + b.height;
-    const apart = (a: ModulesBox, b: ModulesBox) => a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
-    for (const item of real.capabilities) expect(inside(item, real.domains.find(domain => domain.domain === item.node.domain)!)).toBe(true);
-    for (const group of [[...real.externals, ...real.domains], real.capabilities]) for (const [index, a] of group.entries()) for (const b of group.slice(index + 1)) expect(apart(a, b)).toBe(true);
+    const routes = real.scene.routes.filter(route => route.kind === 'imports');
+    expect([real.edges.length, routes.length, routes.every(route => route.arrows.end && !route.arrows.start)]).toEqual([22, 22, true]);
+    const imports = new Map(real.edges.map(edge => [edge.id, edge.imports]));
+    for (const a of routes) for (const b of routes) if (imports.get(a.id)! > imports.get(b.id)!) expect(a.width).toBeGreaterThan(b.width);
+    expect(sceneFindings(real.scene)).toEqual([]);
+    // Every capability once, inside its domain box.
+    const boxes = new Map(real.scene.boxes.map(box => [box.id, box]));
+    expect(real.scene.boxes.filter(box => box.kind === 'box').map(box => box.id).sort()).toEqual(recorded.nodes.filter(node => node.kind === 'capability').map(node => node.id).sort());
+    for (const box of real.scene.boxes.filter(item => item.parent !== null)) {
+      const frame = boxes.get(box.parent!)!;
+      expect(box.x >= frame.x && box.y >= frame.y && box.x + box.width <= frame.x + frame.width && box.y + box.height <= frame.y + frame.height).toBe(true);
+    }
     // The header row gets the map's commit, collection time, branch and archctx version.
     expect(sources.at(-1)).toEqual({ commit: COMMIT, map: { collectedAt: '2026-10-27T09:00:00.000Z', headRef: 'main', archctxVersion: '0.11.2' } });
     // The base map has every source, so the side panel states no gap. The flow steps that archctx
@@ -542,7 +477,7 @@ describe('architecture map', () => {
     await settle();
     const inspector = document.querySelector('.architecture-map__inspector')!;
     expect(inspector.getAttribute('data-node-id')).toBe(CALLER);
-    expect([...inspector.querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toEqual([`calls Name ${CENTER} · 7 imports`]);
+    expect([...inspector.querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toEqual([`out Name ${CENTER} · calls · 7 imports`]);
     expect(inspector.textContent).toContain('100 lines in 1 files');
     await act(async () => [...inspector.querySelectorAll('button')].find(item => item.textContent === 'Open module')!.click());
     expect(opened).toEqual([CALLER]);
@@ -550,6 +485,52 @@ describe('architecture map', () => {
     await act(async () => document.querySelector(`.react-flow__node[data-id="${CENTER}"]`)!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
     expect([...document.querySelectorAll('.architecture-map__inspector [data-relation-id]')].map(item => item.getAttribute('data-relation-id'))).toContain('relation.a-own');
+  });
+
+  test('a selected card on the recorded map lights its in and out neighbours, dims the rest, adds no route, and lists each relation with direction and imports', async () => {
+    const OPERATOR = 'capability.runtime-harness.operator';
+    await mount(workspace({ readMap: reader({ state: 'ok', map: decodeArchitectureMap(recordedMap) }) }));
+    const edges = () => document.querySelectorAll('.react-flow__edge').length;
+    const before = edges();
+    expect(before).toBe(layoutModules(decodeArchitectureMap(recordedMap)).scene.routes.length);
+    await act(async () => document.querySelector(`.react-flow__node[data-id="${OPERATOR}"]`)!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await settle();
+    const card = (id: string) => document.querySelector(`.react-flow__node[data-id="${id}"] > div`)!;
+    expect([card('capability.organization.board').getAttribute('data-neighbour'), card('capability.verification.evals-checks').getAttribute('data-neighbour'),
+      card('capability.organization.board').hasAttribute('data-dimmed'), card('capability.public-surface.adoption').hasAttribute('data-dimmed')]).toEqual(['out', 'both', false, true]);
+    expect(edges()).toBe(before);
+    // Each state reads on screen: a glyph badge whose accessible name and hover give the direction, and a legend row for each state.
+    const badge = (id: string) => card(id).querySelector('[data-badge="neighbour"]')!;
+    expect([[badge('capability.organization.board').textContent, badge('capability.organization.board').getAttribute('aria-label')],
+      [badge('capability.verification.evals-checks').textContent, badge('capability.verification.evals-checks').getAttribute('title')]])
+      .toEqual([['→', 'Used by the selected module'], ['⇄', 'Uses the selected module and is used by it']]);
+    const legendText = () => document.querySelector('.architecture-map__legend')?.textContent ?? '';
+    // A narrow screen hides the canvas legend, so the same state rows also show below the canvas.
+    const narrowText = () => document.querySelector('[data-narrow-legend]')?.textContent ?? '';
+    for (const words of ['Used by the selection', 'Uses the selection', 'Uses it and is used by it']) expect([legendText(), narrowText()].every(text => text.includes(words))).toBe(true);
+    // A route joins domains, so the selected card lights the routes of its domain; each route names its ends and imports.
+    const route = (id: string) => document.querySelector(`.react-flow__edge[data-id="${id}"]`)!;
+    expect([route('imports:verification->runtime-harness').classList.contains('is-active'), route('imports:verification->workflow-engine').classList.contains('is-dim'),
+      route('imports:verification->runtime-harness').getAttribute('aria-label')]).toEqual([true, true, 'verification imports runtime-harness: 626 imports']);
+    // One row for each model relation, with its direction, the other end (and the card that holds it), the kind and the imports between the two capabilities.
+    const rows = [...document.querySelectorAll('.architecture-map__inspector [data-relation-id]')].map(item => item.textContent);
+    for (const row of ['out Board · depends-on · 12 imports', 'out CI Report Core (Evals And Checks) · depends-on · 7 imports', 'in Evals And Checks · depends-on · 291 imports']) expect(rows).toContain(row);
+    // The violations lens: an undeclared import inside one domain has no route, so it marks its two cards with the direction.
+    await act(async () => document.querySelector<HTMLButtonElement>('.architecture-layers [data-layer="violations"]')!.click());
+    await settle();
+    const marks = Object.fromEntries([...document.querySelectorAll('.architecture-modules__box[data-undeclared]')].map(item => [item.closest('.react-flow__node')!.getAttribute('data-id'), item.getAttribute('data-undeclared')]));
+    expect(marks).toEqual({
+      'capability.runtime-harness.operator': 'both', 'capability.runtime-harness.architecture': 'in', 'capability.runtime-harness.refactor-program': 'out',
+      'capability.runtime-harness.task-agent-host': 'out', 'capability.runtime-harness.global-runtime-reconciliation': 'in',
+      'capability.workflow-engine.execution-primitives': 'out', 'capability.workflow-engine.workflow-state': 'in',
+    });
+    for (const [id, state] of Object.entries(marks as Record<string, string>)) expect(card(id).querySelector('[data-badge="undeclared"]')?.getAttribute('data-state')).toBe(state);
+    for (const words of ['Undeclared import: imports', 'Undeclared import: imported', 'Undeclared import: both ways']) expect([legendText(), narrowText()].every(text => text.includes(words))).toBe(true);
+    expect(card('capability.runtime-harness.architecture').querySelector('[data-badge="undeclared"]')?.getAttribute('aria-label')).toBe('A module of its domain imports it with no declared relation');
+    // With a card selected, a lens route keeps its class (CSS keeps it readable) and names the undeclared import.
+    expect([route('imports:verification->runtime-harness').classList.contains('architecture-map__edge--undeclared'), route('imports:verification->runtime-harness').getAttribute('aria-label')])
+      .toEqual([true, 'Undeclared import: verification imports runtime-harness']);
+    expect(edges()).toBe(before);
   });
 
   test('a missing line or import source is stated with its reason, and a failed read names its state and next step', async () => {
@@ -603,6 +584,26 @@ describe('architecture map', () => {
       .toEqual({ state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-document-marker-invalid' });
   });
 
+  test('a pending map is read again 30 s later; only an unreachable route backs off to 60 s', async () => {
+    const originalSet = globalThis.setTimeout;
+    const delays: number[] = [];
+    globalThis.setTimeout = ((run: () => void, delay = 0) => {
+      if (delay < 30_000) return originalSet(run, delay);
+      delays.push(delay);
+      return 0;
+    }) as unknown as typeof setTimeout;
+    try {
+      for (const [read, delay] of [[{ state: 'unavailable', reason: 'architecture_map_pending' }, 30_000], [{ state: 'unavailable', reason: 'unreachable' }, 60_000]] as const) {
+        delays.length = 0;
+        await act(async () => root?.unmount());
+        await mount(workspace({ repositoryId: `repo-${read.reason}`, readMap: reader(read) }));
+        expect(delays).toEqual([delay]);
+      }
+    } finally {
+      globalThis.setTimeout = originalSet;
+    }
+  });
+
   test('the map opens on today\'s changes, and each layer marks nodes from the collector\'s facts or states its reason', async () => {
     await mount(workspace({ readMap: reader({ state: 'ok', map: mapFor() }) }));
     const box = (id: string) => document.querySelector(`.react-flow__node[data-id="${id}"] > div`)!;
@@ -648,6 +649,9 @@ describe('architecture map', () => {
     expect(gaps()).toEqual(['violations.anchors:code_facts_unavailable']);
     expect(notes()).toEqual(['violations.layer_direction:model_layers_undeclared']);
     expect(document.querySelector('.architecture-map__legend')?.textContent).toContain('Undeclared import');
+    // The lens marks the domain route that carries the undeclared import, and the route keeps its arrow at the target.
+    const undeclared = [...document.querySelectorAll('.react-flow__edge.architecture-map__edge--undeclared')];
+    expect([undeclared.map(edge => edge.getAttribute('data-id')), undeclared[0]?.querySelector('.react-flow__edge-path')?.hasAttribute('marker-end')]).toEqual([['imports:workflow-engine->public-surface'], true]);
 
     await choose('tests');
     // A failing file shows ✕ and a file without a result shows ?; only the failure turns the card danger.
@@ -915,41 +919,94 @@ describe('sequence and topology base maps', () => {
     });
   });
 
-  test('a participant runs in its nearest deployed process, and each process box is contiguous; rows follow the model with one fragment per outcome', () => {
+  test('a participant runs in its nearest deployed process, and each process box holds its headers in a row; rows follow the model with one fragment per outcome; the recorded flows pass the scene check with whole labels', () => {
     const map = runtimeMap();
     const place = runtimePlacement(map);
     expect([CALLER, CENTER, PART, EXTERNAL, SERVER].map(place)).toEqual([
       { kind: 'unknown', reason: 'deployment_undeclared' }, { kind: 'process', process: SERVER }, { kind: 'process', process: SERVER }, { kind: 'external' }, { kind: 'process', process: SERVER }]);
     const twice = runtimeMap({ relations: [...runtimeMap().relations, mapRelation('relation.h-deploy', 'deployed-on', CENTER, CLI)] });
     expect(runtimePlacement(twice)(PART)).toEqual({ kind: 'unknown', reason: 'deployment_ambiguous' });
+    const unmarked = { tone: () => null, status: () => null };
+    const named = (names: (node: string) => string) => ({ process: (where: { kind: string }) => `Process ${where.kind}`, participant: (participant: { node: string }) => names(participant.node) });
+    // Each text holder is as wide as its text at the shared estimate with a 12 px pad on each side, and the file holds every box and label.
+    const fits = (scene: PlacedScene, lines: (box: SceneBox) => readonly string[]) => {
+      const { width, height } = scene.extent;
+      const inside = (item: { x: number; y: number; width: number; height: number }) => item.x >= 0 && item.y >= 0 && item.x + item.width <= width && item.y + item.height <= height;
+      return [...scene.boxes.filter(box => !inside(box) || lines(box).some(line => textWidth(line, 'title') + 24 > box.width)).map(box => box.id),
+        ...scene.labels.filter(label => !inside(label) || label.width !== textWidth(label.text, 'label')).map(label => label.text)];
+    };
     // The ledger is listed after the router but shares the pipe's process, so it sits next to the pipe.
     const reordered = { ...flow, participants: [flow.participants[1]!, flow.participants[0]!, flow.participants[3]!, flow.participants[2]!] };
-    const layout = layoutSequence(reordered, place);
-    expect(layout.boxes.map(box => [box.key, box.participants])).toEqual([[`process:${SERVER}`, ['pipe', 'ledger']], ['unknown:deployment_undeclared', ['router']], ['external', ['git']]]);
-    expect(layout.columns.map(column => column.participant.id)).toEqual(['pipe', 'ledger', 'router', 'git']);
-    for (const [index, column] of layout.columns.entries()) {
-      const box = layout.boxes.find(entry => entry.key === column.box)!;
-      expect(column.x > box.x && column.x < box.x + box.width).toBe(true);
-      if (index > 0) expect(column.x > layout.columns[index - 1]!.x).toBe(true);
+    const { scene } = layoutSequence(reordered, place, unmarked, named(node => `Name ${node}`));
+    const box = new Map(scene.boxes.map(item => [item.id, item]));
+    const headers = scene.boxes.filter(item => item.id.startsWith('participant:'));
+    expect(scene.boxes.filter(item => item.parent === null && item.id.startsWith('box:')).map(item => [item.id, headers.filter(header => header.parent === item.id).map(header => header.id)])).toEqual([
+      [`box:process:${SERVER}`, ['participant:pipe', 'participant:ledger']], ['box:unknown:deployment_undeclared', ['participant:router']], ['box:external', ['participant:git']]]);
+    for (const [index, header] of headers.entries()) {
+      const holder = box.get(header.parent!)!;
+      expect(header.x > holder.x && header.x + header.width < holder.x + holder.width && header.y + header.height < holder.y + holder.height).toBe(true);
+      if (index > 0) expect(header.x > headers[index - 1]!.x + headers[index - 1]!.width).toBe(true);
     }
-    expect(layout.messages.map(message => `${message.outcome ?? ''}:${message.step.id}`)).toEqual([':route', ':append', 'kept:commit', 'refused:refuse']);
-    for (const [index, message] of layout.messages.slice(1).entries()) expect(message.y > layout.messages[index]!.y).toBe(true);
-    const kept = layout.fragments[0]!;
-    const commit = layout.messages[2]!;
-    expect([layout.fragments.map(fragment => fragment.outcome.kind), commit.y > kept.y && commit.y < kept.y + kept.height, layout.terminals.map(entry => entry.participant)])
-      .toEqual([['success', 'error'], true, ['pipe', 'router']]);
-    // A fragment spans the columns that its outcome names: the kept rows reach git, the refused rows end at the router.
-    const column = (id: string) => layout.columns.find(entry => entry.participant.id === id)!.x;
-    expect(layout.fragments.map(fragment => [fragment.index, fragment.x < column('pipe'), fragment.x + fragment.width > column('git')])).toEqual([[0, true, true], [1, true, false]]);
+    expect(scene.routes.map(route => route.id)).toEqual(['message::route', 'message::append', 'message:kept:commit', 'message:refused:refuse']);
+    for (const [index, route] of scene.routes.slice(1).entries()) expect(route.points[0]![1] > scene.routes[index]!.points[0]![1]).toBe(true);
+    // A fragment is a band above its rows that spans the columns its outcome names: the kept rows reach git, the refused rows end at the router.
+    const lifeline = (id: string) => box.get(`lifeline:${id}`)!.x;
+    const [kept, refused] = [box.get('fragment:kept')!, box.get('fragment:refused')!];
+    expect([kept.kind, refused.kind, kept.y + kept.height < box.get('terminal:kept')!.y, kept.y + kept.height < scene.routes[2]!.points[0]![1], box.get('terminal:kept')!.kind])
+      .toEqual(['fragment success', 'fragment error', true, true, 'terminal success']);
+    expect([kept, refused].map(band => [band.x < lifeline('pipe'), band.x + band.width > lifeline('git')])).toEqual([[true, true], [true, false]]);
+    expect(sceneFindings(scene)).toEqual([]);
+
+    // Wide text: a CJK message label, a self message on the last participant, a long participant name, and long band and terminal labels. Every box
+    // grows to its text, the scene check finds nothing, and the file keeps each whole text inside its view box.
+    const cjk = (text: string) => text.repeat(4);
+    const [route, append] = flow.steps;
+    const [keptOutcome, refusedOutcome] = flow.outcomes;
+    const wide = { ...flow,
+      steps: [{ ...route!, label: cjk('流水线先校验请求和账本状态') }, { ...append!, from: 'git', to: 'git', label: 'WRITE THE WHOLE MEMBER ROW BEFORE ANY OTHER WRITER MOVES' }],
+      outcomes: [
+        { ...keptOutcome!, label: cjk('账本行已保存并提交到 git'), terminal: { participant: 'git', label: 'WROTE THE COMMITTED LEDGER ROW AND RETURNED ITS SHA TO THE MAIN WINDOW' } },
+        { ...refusedOutcome!, label: 'Row refused because the ledger rejected the append for a known reason', terminal: { participant: 'router', label: '停止：返回拒绝原因和账本代码给路由器' } },
+      ] };
+    const wideNames = (node: string) => node === CENTER ? 'Pipeline Workflow Engine Capability With Many Many Words' : node === CALLER ? '路由器：根路由在流水线之前选择处理程序' : `Name ${node}`;
+    const wideLayout = layoutSequence(wide, place, unmarked, named(wideNames));
+    const wideSvg = sceneSvg(wideLayout.scene, wideLayout.lines);
+    const texts = [...wideLayout.scene.boxes.flatMap(box => wideLayout.lines(box)), ...wideLayout.scene.labels.map(label => label.text)];
+    expect([sceneFindings(wideLayout.scene), fits(wideLayout.scene, wideLayout.lines), texts.length, texts.filter(item => !wideSvg.includes(`>${item}</text>`))])
+      .toEqual([[], [], 3 + 4 + 2 + 2 + 4, []]);
+    // The self message's label lies right of every lifeline; the bounds that the extent, the first view and Fit read hold every box, label and route point.
+    const bounds = sceneBounds(wideLayout.scene);
+    const held = (x: number, y: number, width = 0, height = 0) => x >= bounds.x && y >= bounds.y && x + width <= bounds.x + bounds.width && y + height <= bounds.y + bounds.height;
+    const selfLabel = wideLayout.scene.labels.find(label => label.route === 'message::append')!;
+    expect([selfLabel.x > Math.max(...wideLayout.scene.boxes.filter(box => box.kind === 'lifeline').map(box => box.x + box.width)),
+      [...wideLayout.scene.boxes, ...wideLayout.scene.labels].every(item => held(item.x, item.y, item.width, item.height)),
+      wideLayout.scene.routes.every(route => route.points.every(([x, y]) => held(x, y))), wideLayout.scene.extent.width === bounds.x + bounds.width + 16]).toEqual([true, true, true, true]);
+
+    // The recorded map: every flow passes the scene check, labels included; each label is its step's whole label, each box fits its text, and the
+    // file draws one path for each message with the route's path. The other base maps write the same files as on main 2418cd6fc.
+    const recorded = decodeArchitectureMap(recordedMap);
+    const placed = runtimePlacement(recorded);
+    const flows = recorded.flows.flatMap(entry => entry.applicability === 'required' ? [entry] : []);
+    const results = flows.map(entry => {
+      const layout = layoutSequence(entry, placed, unmarked, named(node => recorded.nodes.find(item => item.id === node)!.name));
+      const paths = [...sceneSvg(layout.scene, () => []).matchAll(/<path class="route[^"]*" stroke-width="[^"]*" d="([^"]*)"/gu)].map(match => match[1]);
+      return { findings: sceneFindings(layout.scene), whole: layout.scene.labels.every(label => label.text === layout.messages.get(label.route!)!.step.label) && fits(layout.scene, layout.lines).length === 0,
+        paths: JSON.stringify(paths) === JSON.stringify(layout.scene.routes.map(route => routePath(route.points))) && paths.length === flowSteps(entry).length };
+    });
+    expect([flows.length, results.filter(result => result.findings.length > 0 || !result.whole || !result.paths)]).toEqual([31, []]);
+    const order = recorded.layer_order.state === 'ok' ? recorded.layer_order.layers : [];
+    const others = [layoutModules(recorded).scene, layoutLayers(recorded, order).scene('effects'), layoutTopology(recorded, placed, 'process', true).scene].map(item => sceneSvg(item, entry => [entry.id]));
+    expect(createHash('sha256').update(others.join('\n')).digest('hex')).toBe('fb0fe8f77b02a5c4351424b2b0166960e774a2c625c4ef36ccd1fda8bebe28ac');
   });
 
   test('topology segments: processes hold deployed code and draw lifted relations; namespaces frame their mounts in order with a reader or writer tone; mounters list mounts in order', () => {
     const map = runtimeMap();
     const processes = layoutTopology(map, runtimePlacement(map), 'process', true);
     const box = new Map(processes.boxes.map(item => [item.node.id, item]));
+    const parent = (layout: { readonly scene: { readonly boxes: readonly { readonly id: string; readonly parent: string | null }[] } }, id: string) => layout.scene.boxes.find(item => item.id === id)!.parent;
     // Process boxes and external systems only; the namespace and its runs-in relations belong to the namespace segment.
     expect(processes.boxes.map(item => item.node.id).sort()).toEqual([CLI, EXTERNAL, SERVER].sort());
-    expect([box.get(SERVER)!.parent, box.get(SERVER)!.members.map(member => member.id)]).toEqual([null, [CENTER]]);
+    expect([parent(processes, SERVER), box.get(SERVER)!.members.map(member => member.id)]).toEqual([null, [CENTER]]);
     // The spawn joins two processes; the ledger's read of git is drawn from its process; the router runs in no process.
     expect(processes.edges.map(edge => [edge.source, edge.target, edge.kind, edge.dashed, edge.relations, edge.protocols])).toEqual([
       [SERVER, EXTERNAL, 'io', true, ['relation.c-git'], []], [CLI, SERVER, 'spawns', true, ['relation.g-spawns'], []]]);
@@ -996,25 +1053,93 @@ describe('sequence and topology base maps', () => {
     for (const entry of cases) {
       const layout = layoutTopology(entry.map, runtimePlacement(entry.map), entry.base, entry.legacy);
       const actual: unknown = {
-        boxes: layout.boxes.map(item => [item.node.id, item.parent, item.group, item.tone]),
+        boxes: layout.boxes.map(item => [item.node.id, parent(layout, item.node.id), item.group, item.tone]),
         edges: layout.edges.map(edge => [edge.source, edge.target, edge.kind, edge.protocols]),
         members: layout.boxes.filter(item => item.members.length > 0).map(item => [item.node.id, item.members.map(member => member.id)]),
       };
       expect([entry.name, actual]).toEqual([entry.name, entry.expected]);
       // Each box of the SVG file clips its text with its own clip path.
-      const svg = topologySvg(layout, { detail: item => item.node.kind, member: (_, member) => member.name });
+      const svg = sceneSvg(layout.scene, item => [item.id]);
       expect([entry.name, [...svg.matchAll(/clip-path="url\(#(clip-\d+)\)"/gu)].map(match => match[1])])
         .toEqual([entry.name, [...svg.matchAll(/<clipPath id="(clip-\d+)"/gu)].map(match => match[1])]);
-      expect(new Set([...svg.matchAll(/<clipPath id="(clip-\d+)"/gu)].map(match => match[1])).size).toBe(layout.boxes.length);
+      expect(new Set([...svg.matchAll(/<clipPath id="(clip-\d+)"/gu)].map(match => match[1])).size).toBe(layout.scene.boxes.length);
     }
     expect(layoutTopology(hidden, runtimePlacement(hidden), 'process', false).unplaced).toEqual(['relation.b-router']);
     // A frame encloses its mounts, and the mounts stack in mount order.
-    const frames = new Map(layoutTopology(mounted, runtimePlacement(mounted), 'namespace', true).boxes.map(item => [item.node.id, item]));
+    const frames = new Map(layoutTopology(mounted, runtimePlacement(mounted), 'namespace', true).scene.boxes.map(item => [item.id, item]));
     const inside = (inner: string, outer: string) => {
       const a = frames.get(inner)!, b = frames.get(outer)!;
       return a.x >= b.x && a.y >= b.y && a.x + a.width <= b.x + b.width && a.y + a.height <= b.y + b.height;
     };
     expect([inside('mount.config', HOST), inside('mount.cache', HOST), inside('namespace.remote', HOST), frames.get('mount.config')!.y < frames.get('mount.cache')!.y]).toEqual([true, true, false, true]);
+  });
+
+  test('the process topology on the recorded map: dagre routes with the corner repair pass the scene check, the file draws each route path, and the check finds each defect kind', () => {
+    expect([routePath([[0, 0], [10, 0]]), routePath([[0, 0], [0, 10], [10, 10]])]).toEqual(['M0 0 L10 0', 'M0 0 L0 5 Q0 10 5 10 L10 10']);
+    const recorded = decodeArchitectureMap(recordedMap);
+    const scene = (repair: boolean) => layoutTopology(recorded, runtimePlacement(recorded), 'process', true, repair).scene;
+    const repaired = scene(true);
+    const canvas = { width: 1200, height: 760 };
+    expect(sceneFindings(repaired, { canvas, viewport: firstViewport(contentBox(repaired.boxes), canvas) })).toEqual([]);
+    // Without the repair, some dagre routes go through a third box.
+    expect(sceneFindings(scene(false)).filter(finding => finding.kind === 'route-through-box').length).toBeGreaterThan(0);
+    expect(repaired.routes.every(route => route.points.length >= 2)).toBe(true);
+    // The CLI spawns the supervisor and calls its code: two routes between the same two boxes.
+    const between = repaired.routes.filter(route => route.source === 'process.cli' && route.target === 'process.process-supervisor');
+    expect([between.length, JSON.stringify(between[0]!.points) !== JSON.stringify(between[1]!.points)]).toEqual([2, true]);
+    const svg = sceneSvg(repaired, box => [box.id]);
+    expect([...svg.matchAll(/<path class="route[^"]*" stroke-width="[^"]*" d="([^"]*)"/gu)].map(match => match[1])).toEqual(repaired.routes.map(route => routePath(route.points)));
+
+    // Overlapping siblings, a route through a third box, a route end off its border, a label on another route, and a first view below the first rank.
+    const box = (id: string, x: number, y: number) => ({ id, parent: null, x, y, width: 100, height: 40, kind: 'box' });
+    const route = (id: string, source: string, target: string, points: readonly (readonly [number, number])[]) => ({ id, source, target, points, arrows: { start: false, end: true }, kind: 'code', dashed: false, width: 1.5 });
+    const broken = {
+      boxes: [box('a', 0, 0), box('b', 50, 20), box('c', 0, 200), box('d', 0, 100)],
+      routes: [route('a-c', 'a', 'c', [[50, 40], [50, 200]]), route('c-d', 'c', 'd', [[300, 300], [50, 140]])],
+      labels: [{ text: 'http', x: 30, y: 150, width: 28, height: 16, route: 'c-d' }],
+      extent: { width: 400, height: 400 },
+    };
+    expect(sceneFindings(broken, { canvas: { width: 400, height: 400 }, viewport: { x: 0, y: -300, zoom: 1 } })).toEqual([
+      { kind: 'overlap', ids: ['a', 'b'] },
+      { kind: 'route-through-box', ids: ['a-c', 'd'] },
+      { kind: 'route-end', ids: ['c-d', 'c'] },
+      { kind: 'label', ids: ['http', 'a-c'] },
+      { kind: 'first-rank', ids: ['a', 'b'] },
+    ]);
+    // The check and the repair read the drawn curve: the straight segments clear the probe box, the curve through (12.5, 87.5) does not.
+    const curve = route('curve', 'a', 'c', [[0, 0], [0, 100], [100, 100]]);
+    const probe = { boxes: [box('a', -50, -40), box('c', 100, 80), { ...box('probe', 10, 85), width: 8, height: 8 }], routes: [curve], labels: [], extent: { width: 300, height: 300 } };
+    expect(sceneFindings(probe)).toEqual([{ kind: 'route-through-box', ids: ['curve', 'probe'] }]);
+    // The repair keeps the ends, repeats no point and clears every obstacle: the drawn curve here and a straight route between two boxes that one corner detour cannot clear.
+    const repairs = [
+      { name: 'curve', points: curve.points, ends: [box('a', -50, -40), box('c', 100, 80)], obstacles: [probe.boxes[2]!] },
+      { name: 'two boxes', points: [[20, 110], [500, 110]] as const, ends: [{ ...box('a', 0, 100), width: 20, height: 20 }, { ...box('c', 500, 100), width: 20, height: 20 }],
+        obstacles: [{ ...box('low', 62, 113), width: 35, height: 51 }, { ...box('high', 97, 30), width: 53, height: 106 }] },
+    ];
+    for (const entry of repairs) {
+      const points = repairRoute(entry.points, entry.obstacles);
+      const scene = { boxes: [...entry.ends, ...entry.obstacles], routes: [{ ...curve, points }], labels: [], extent: { width: 600, height: 300 } };
+      expect([entry.name, sceneFindings(scene), points[0], points.at(-1), new Set(points.map(point => point.join())).size])
+        .toEqual([entry.name, [], entry.points[0], entry.points.at(-1), points.length]);
+    }
+    // Three stacked mounts in one namespace: the route from the first to the third clears the middle one.
+    const stacked = runtimeMap({
+      nodes: [...runtimeMap().nodes, ...['a', 'b', 'c'].map((id, order) => ({ ...mapNode(`mount.${id}`, 'mount'), mount: { source: null, target: `mnt/${id}`, mode: 'rw', order } as const }))],
+      relations: [...runtimeMap().relations, ...['a', 'b', 'c'].map(id => mapRelation(`relation.m-${id}`, 'mounts', HOST, `mount.${id}`)), mapRelation('relation.a-c', 'calls', 'mount.a', 'mount.c')],
+    });
+    const namespaces = (repair: boolean) => sceneFindings(layoutTopology(stacked, runtimePlacement(stacked), 'namespace', true, repair).scene);
+    expect([namespaces(false), namespaces(true)]).toEqual([[{ kind: 'route-through-box', ids: ['topology:mount.a\nmount.c\ncalls', 'mount.b'] }], []]);
+  });
+
+  test('the first view centres content that fits and opens a wide map or an unsized canvas at 85% on its top-left corner; the topology opens on a segment with boxes', () => {
+    const close = (view: { x: number; y: number; zoom: number }) => [view.x, view.y, view.zoom].map(value => Math.round(value * 1000) / 1000);
+    expect(close(firstViewport({ x: 0, y: 0, width: 1000, height: 500 }, { width: 1200, height: 800 }))).toEqual([100, 102, 1]);
+    expect(close(firstViewport({ x: 40, y: 16, width: 3000, height: 900 }, { width: 1200, height: 800 }))).toEqual([-10, 10.4, 0.85]);
+    expect(close(firstViewport({ x: 24, y: 24, width: 800, height: 600 }, { width: 0, height: 0 }))).toEqual([3.6, 3.6, 0.85]);
+    // The recorded map has one namespace and fourteen processes; two namespaces win; a map without runtime nodes keeps the namespace segment.
+    const flat = runtimeMap({ nodes: runtimeMap().nodes.filter(node => !['process', 'namespace'].includes(node.kind)), relations: runtimeMap().relations.filter(relation => !['runs-in', 'deployed-on', 'spawns'].includes(relation.kind)) });
+    expect([decodeArchitectureMap(recordedMap), runtimeMap({ nodes: [...runtimeMap().nodes, mapNode('namespace.remote', 'namespace')] }), flat].map(defaultTopologyBase))
+      .toEqual(['process', 'namespace', 'namespace']);
   });
 
   test('the tabs follow the design order and the layer stays when the base map changes', async () => {
@@ -1060,8 +1185,8 @@ describe('sequence and topology base maps', () => {
     const bands = new Map(layout.bands.map(band => [band.layer, band]));
     const within = (layer: string, y: number) => y > bands.get(layer)!.y && y < bands.get(layer)!.y + bands.get(layer)!.height;
     const { x: left, width } = layout.bands[0]!;
-    expect(lanes.filter(lane => !within(lane.source, lane.points[0]![1]) || !within(lane.target, lane.points[3]![1])
-      || (lane.side === 'right' ? lane.points[1]![0] <= left + width : lane.points[1]![0] >= left))).toEqual([]);
+    expect(lanes.filter(({ source, target, side, route: { points } }) => !within(source, points[0]![1]) || !within(target, points[3]![1])
+      || (side === 'right' ? points[1]![0] <= left + width : points[1]![0] >= left))).toEqual([]);
     // The recorded map of this repository: every declared layer is a band, and the bands' own lines add up to the top-level nodes' totals.
     const recorded = decodeArchitectureMap(recordedMap);
     const order = recorded.layer_order.state === 'ok' ? recorded.layer_order.layers : [];
@@ -1070,6 +1195,13 @@ describe('sequence and topology base maps', () => {
     const totals = recorded.sizes.state === 'ok' ? recorded.sizes.nodes.filter(entry => tops.has(entry.id)).reduce((sum, entry) => sum + entry.lines, 0) : null;
     expect([real.bands.map(band => band.layer), real.lanes('effects').length]).toEqual([[...order], 19]);
     expect(real.bands.reduce((sum, band) => sum + band.lines!, 0)).toBe(totals!);
+    // The lane points of all 96 lanes, hashed from the lane layout on main 6b7e7af67 before the scene: the routes keep them.
+    const points = order.map(layer => real.scene(layer).routes.map(route => route.points));
+    expect([points.flat().length, createHash('sha256').update(JSON.stringify(points)).digest('hex')]).toEqual([96, '31381ae6fa137a76de6902bdccc585a0f6e6422eb6b3cb053d9b062206a7ab5f']);
+    // With each row selected, the scene check finds nothing, and the file draws one path for each lane with the route's path.
+    expect(order.flatMap(layer => sceneFindings(real.scene(layer)))).toEqual([]);
+    const effects = real.scene('effects');
+    expect([...sceneSvg(effects, () => []).matchAll(/<path class="route[^"]*" stroke-width="[^"]*" d="([^"]*)"/gu)].map(match => match[1])).toEqual(effects.routes.map(route => routePath(route.points)));
 
     const files: { name: string; blob: Blob }[] = [];
     const { createObjectURL, revokeObjectURL } = URL;
@@ -1094,11 +1226,14 @@ describe('sequence and topology base maps', () => {
       expect([...inspector().querySelectorAll('[data-size-row]')].map(item => item.getAttribute('data-size-row'))).toEqual([PART, CENTER]);
       expect([...inspector().querySelectorAll('[data-pair]')].map(item => item.textContent)).toEqual(['core → cli3Violation']);
       expect(inspector().querySelector('[data-layer-checked]')?.textContent).toBe('archctx checked 40 imports against the layer order.');
+      // The inspector lists each lane with its direction and protocol; the route names the protocol too, and the canvas draws no label.
+      expect([...inspector().querySelectorAll('[data-lane]')].map(item => `${item.getAttribute('data-direction')}:${item.textContent}`)).toEqual(['out: out external', 'in: in cli · http']);
+      expect([...document.querySelectorAll('.react-flow__edge')].map(item => item.getAttribute('aria-label'))).toEqual(['core → external', 'cli → core · http']);
       await click('[data-layers-export]');
       const svg = await files[0]!.blob.text();
-      expect([files.map(file => file.name), files[0]!.blob.type, (svg.match(/<path class="lane/gu) ?? []).length, svg.includes('<rect class="box selected"'), svg.includes('>http</text>')])
-        .toEqual([['layers-ccccccc.svg'], 'image/svg+xml', 2, true, true]);
-      expect(svg).toBe(layersSvg(layout, 'core', { band: band => `L${band.index} ${band.layer}`, members: band => band.members.map(member => member.node.name).join(' · ') }));
+      expect([files.map(file => file.name), files[0]!.blob.type, svg.includes('<rect class="box selected"'), svg.includes('>L2 core</text>'), svg.includes('>http<')])
+        .toEqual([['layers-ccccccc.svg'], 'image/svg+xml', true, true, false]);
+      expect([...svg.matchAll(/<path class="route[^"]*" stroke-width="[^"]*" d="([^"]*)"/gu)].map(match => match[1])).toEqual(layout.scene('core').routes.map(route => routePath(route.points)));
 
       // A model without the layer-direction constraint keeps the map and says why the check is missing; a model without ordered layers has no map.
       await act(async () => root?.render(workspace({ readMap: reader(layered({ state: 'unavailable', reason: 'layer_direction_undeclared' })) })));
@@ -1120,7 +1255,7 @@ describe('sequence and topology base maps', () => {
     await click(`.react-flow__node[data-id="${CENTER}"]`);
     expect(inspector().getAttribute('data-node-id')).toBe(CENTER);
     expect([inspector().querySelector('[data-module-domain]')?.textContent, inspector().querySelector('[data-node-size]')?.textContent]).toEqual(['workflow-engine', '900 lines in 1 files']);
-    expect([...inspector().querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toContain(`calls Name ${CALLER} · 7 imports`);
+    expect([...inspector().querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toContain(`in Name ${CALLER} · calls · 7 imports`);
     expect([...inspector().querySelectorAll('[data-layer-facts="violations"] > li')].map(item => item.textContent)).toEqual([
       'Flow proof cannot be proven (2 diagnostics)flows check',
       // The flow's steps joined to archctx's proof by selector: route is proven and the outcome steps have no proof, so only append is listed.
@@ -1160,12 +1295,14 @@ describe('sequence and topology base maps', () => {
     expect([...document.querySelectorAll('.architecture-sequence__fragment')].map(item => [item.getAttribute('data-kind'), item.querySelector('.mono-value')?.textContent]))
       .toEqual([['success', 'alt'], ['error', 'else']]);
     expect([...document.querySelectorAll('.architecture-sequence__terminal')].map(item => [item.getAttribute('data-kind'), item.textContent])).toEqual([['success', 'Done'], ['error', 'Stop']]);
-    // Today's changes reach the append step.
-    const message = (id: string) => document.querySelector(`.react-flow__node[data-id="message:${id}"] .architecture-sequence__message`)!;
-    expect([message(':append').getAttribute('data-tone'), message(':route').hasAttribute('data-tone')]).toEqual(['change', false]);
+    // Each message is a route with its whole label; today's changes reach the append step.
+    const message = (id: string) => document.querySelector(`.react-flow__edge[data-id="message:${id}"]`)!;
+    expect([...document.querySelectorAll('.react-flow__edge')].map(item => [item.getAttribute('data-id'), item.getAttribute('aria-label')]))
+      .toEqual(flowSteps(flow).map(({ outcome, step }) => [`message:${outcome ?? ''}:${step.id}`, step.label]));
+    expect([message(':append').classList.contains('architecture-map__edge--message-change'), message(':route').classList.contains('architecture-map__edge--message')]).toEqual([true, true]);
 
-    await click('.react-flow__node[data-id="message::route"]');
-    expect(message(':route').hasAttribute('data-selected')).toBe(true);
+    await click('.react-flow__edge[data-id="message::route"]');
+    expect(message(':route').classList.contains('selected')).toBe(true);
     expect(inspector().getAttribute('data-step-id')).toBe(':route');
     expect(inspector().querySelector('[data-step-title]')?.textContent).toBe(`Name ${CALLER} → Name ${CENTER}`);
     expect(inspector().querySelector('[data-step-evidence]')?.textContent).toBe('src/router.ts route→ src/pipeline.ts route');
@@ -1175,20 +1312,24 @@ describe('sequence and topology base maps', () => {
     expect([...inspector().querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toEqual([`calls Name ${CALLER} → Name ${CENTER} · 7 imports`]);
     expect(inspector().querySelectorAll('[data-fix-command]')).toHaveLength(0);
 
-    await click('.react-flow__node[data-id="message::append"]');
+    await click('.react-flow__edge[data-id="message::append"]');
     expect(inspector().querySelector('[data-path-withheld]')?.textContent).toBe('path withheld (it fails the public-path check)');
     expect(inspector().querySelector('[data-step-proof]')?.textContent).toBe('Not proven: archctx reports no-direct-call.');
     expect(inspector().querySelector('[data-call-sites]')).toBeNull();
     expect(inspector().querySelector('[data-step-today]')).not.toBeNull();
     expect(inspector().querySelector('[data-fix-command="flows"]')?.textContent).toBe('archctx flows check --no-sync --json');
 
-    await click('.react-flow__node[data-id="message:kept:commit"]');
+    await click('.react-flow__edge[data-id="message:kept:commit"]');
     expect(inspector().querySelector('[data-gap="evidence"]')?.getAttribute('data-reason')).toBe('selector_undeclared');
     expect(inspector().querySelector('[data-step-proof]')?.getAttribute('data-step-proof')).toBe('missing');
     expect(inspector().querySelector('[data-related-prs]')?.textContent).toBe('#21 Ledger rows');
 
     await click('.react-flow__node[data-id="participant:router"]');
     expect([inspector().getAttribute('data-node-id'), inspector().querySelector('[data-runtime]')?.textContent]).toEqual([CALLER, `Runs in: ${t('architecture.runtime.deployment_undeclared')}`]);
+    // A header click after a message click selects the header: the message's deselect does not clear it. The header lights its messages.
+    expect([message('kept:commit').classList.contains('selected'), message(':route').classList.contains('is-active'), message(':append').classList.contains('is-dim')]).toEqual([false, true, true]);
+    await click('.react-flow__edge[data-id="message::route"]');
+    expect([inspector().getAttribute('data-step-id'), inspector().hasAttribute('data-node-id')]).toEqual([':route', false]);
     await click('.react-flow__node[data-id="participant:ledger"]');
     expect(inspector().querySelector('[data-runtime]')?.textContent).toBe(`Runs in: Name ${SERVER}`);
     // The side panel lists the flows in model order; today's changes reach a step of the first one.
@@ -1208,7 +1349,7 @@ describe('sequence and topology base maps', () => {
     await settle();
     await tab('sequence');
     await click(`[data-flow-id="${FLOW}"]`);
-    await click('.react-flow__node[data-id="message::route"]');
+    await click('.react-flow__edge[data-id="message::route"]');
     const list = document.querySelector<HTMLElement>('.architecture-sequence__flow-list')!;
     for (const [target, view] of [[second.id, 'diagram'], ['flow.router.none', 'note'], [FLOW, 'diagram']] as const) {
       const button = list.querySelector<HTMLButtonElement>(`[data-flow-id="${target}"]`)!;
@@ -1237,52 +1378,12 @@ describe('sequence and topology base maps', () => {
       expect(document.querySelector('[data-sequence-summary]')?.textContent).toBe('2 flows from the model; 2 of 4 steps have code evidence');
       await click('[data-sequence-export]');
       const svg = await files[0]!.blob.text();
-      expect([files.map(file => file.name), files[0]!.blob.type, (svg.match(/class="message"/gu) ?? []).length]).toEqual([[`${FLOW}.svg`], 'image/svg+xml', 4]);
-      expect([`<title>Name ${CALLER}</title>`, '>alt</tspan> Row kept', '>else</tspan> Row refused', '>Done</text>', '>Stop</text>'].filter(text => !svg.includes(text))).toEqual([]);
-
-      // Every label kind keeps its estimated text box inside its own shape and the file, with one long label per kind and CJK
-      // text. The kept terminal sits on git, the rightmost participant; the append step is a self message.
-      // The estimate never undercounts: widest glyphs per class, in em at weights 400 and 600, as Chrome draws system-ui (SF Pro) on macOS.
-      const measured = [['中', 0.944, 0.944], ['W', 0.924, 0.952], ['%', 0.808, 0.863], ['m', 0.803, 0.843], ['&', 0.669, 0.691], ['6', 0.617, 0.641]] as const;
-      expect(measured.filter(([glyph, regular, bold]) => textWidth(glyph, 100, false) < regular * 100 || textWidth(glyph, 100, true) < bold * 100)).toEqual([]);
-      const latin = (text: string) => `${text} `.repeat(4).trim();
-      const cjk = (text: string) => text.repeat(4);
-      const [route, append] = flow.steps;
-      const [kept, refused] = flow.outcomes;
-      const wide = { ...flow,
-        steps: [{ ...route!, label: latin('Route the request through the root router before the pipeline appends') }, { ...append!, to: 'pipe', label: cjk('流水线先校验请求和账本状态') }],
-        outcomes: [
-          { ...kept!, label: cjk('账本行已保存并提交到 git，再把提交结果返回给调用方'), steps: [{ ...kept!.steps[0]!, label: latin('Commit the WRITTEN LEDGER ROW to git') }],
-            terminal: { participant: 'git', label: 'WROTE THE COMMITTED LEDGER ROW AND RETURNED ITS SHA' } },
-          { ...refused!, label: latin('Row refused because the ledger rejected the append for a known reason'), steps: [{ ...refused!.steps[0]!, label: cjk('账本拒绝追加并给出原因') }],
-            terminal: { participant: 'router', label: '停止：返回拒绝原因和账本代码给路由器' } },
-        ] };
-      const names = ['路由器：根路由在流水线之前选择处理程序', 'Pipeline Workflow Engine Capability With Many Words', 'Ledger component that appends attested rows', '外部系统 git 与 archctx 子进程'];
-      const wideLayout = layoutSequence(wide, runtimePlacement(runtimeMap()));
-      const exported = sequenceSvg(wideLayout, {
-        box: box => latin(`${box.key} runs every hook event in its own Bun process`),
-        participant: nodeId => ({ name: names[flow.participants.findIndex(entry => entry.node === nodeId)]!, kind: 'capability' }),
-      });
-      const shapes: Record<keyof typeof SEQUENCE_SVG_FONT, readonly (readonly [number, number])[]> = {
-        title: wideLayout.boxes.map(box => [box.x, box.x + box.width]),
-        'fragment-label': wideLayout.fragments.map(fragment => [fragment.x, fragment.x + fragment.width]),
-        name: wideLayout.columns.map(column => [column.x - SEQUENCE_SVG_HEADER_WIDTH / 2, column.x + SEQUENCE_SVG_HEADER_WIDTH / 2]),
-        'message-label': wideLayout.messages.map(message => message.from === message.to ? [message.from, message.from + SEQUENCE_COLUMN / 2]
-          : [Math.min(message.from, message.to), Math.max(message.from, message.to)]),
-        terminal: wideLayout.terminals.map(terminal => [terminal.x - SEQUENCE_SVG_TERMINAL_WIDTH / 2, terminal.x + SEQUENCE_SVG_TERMINAL_WIDTH / 2]),
-      };
-      const shown = (markup: string) => markup.replace(/<[^>]+>/gu, '').replace(/&lt;/gu, '<').replace(/&gt;/gu, '>').replace(/&quot;/gu, '"').replace(/&amp;/gu, '&');
-      const labels = (Object.keys(shapes) as (keyof typeof SEQUENCE_SVG_FONT)[]).flatMap(kind => [...exported.matchAll(
-        new RegExp(`<text class="${kind}[^"]*" x="([\\d.]+)" y="[\\d.]+"( text-anchor="middle")?><title>[^<]*</title>(.*?)</text>`, 'gu'))].map((match, index) => {
-        const text = shown(match[3]!);
-        const width = textWidth(text, SEQUENCE_SVG_FONT[kind].size, SEQUENCE_SVG_FONT[kind].bold);
-        const left = Number(match[1]) - (match[2] === undefined ? 0 : width / 2);
-        const [low, high] = shapes[kind][index]!;
-        return { kind, text, inside: left >= Math.max(low, 0) && left + width <= Math.min(high, wideLayout.width), shortened: text.endsWith('…') };
-      }));
-      expect(Object.fromEntries(Object.entries(shapes).map(([kind, list]) => [kind, [list.length, labels.filter(entry => entry.kind === kind).length]])))
-        .toEqual({ title: [3, 3], 'fragment-label': [2, 2], name: [4, 4], 'message-label': [4, 4], terminal: [2, 2] });
-      expect(labels.filter(entry => !entry.inside || !entry.shortened)).toEqual([]);
+      // The file draws the scene on screen: one path for each message with the path of its route on the canvas, each whole label, the bands, terminals and boxes.
+      const drawn = [...document.querySelectorAll('.react-flow__edge-route .react-flow__edge-path')].map(path => path.getAttribute('d')!);
+      expect([files.map(file => file.name), files[0]!.blob.type, drawn.length, [...svg.matchAll(/<path class="route" stroke-width="1.5" d="([^"]*)"/gu)].map(match => match[1])])
+        .toEqual([[`${FLOW}.svg`], 'image/svg+xml', 4, drawn]);
+      expect([...flowSteps(flow).map(({ step }) => `>${step.label}</text>`), `>Name ${CALLER}</text>`, '>alt Row kept</text>', '>else Row refused</text>', '>Done</text>', '>Stop</text>',
+        '>Process unknown</text>', '<rect class="lifeline"', '<rect class="fragment success"', '<rect class="terminal error"', '.lifeline{', '.fragment.error{'].filter(text => !svg.includes(text))).toEqual([]);
     } finally {
       Object.assign(URL, { createObjectURL, revokeObjectURL });
       anchor.click = anchorClick;
@@ -1292,15 +1393,18 @@ describe('sequence and topology base maps', () => {
   test('each layer on the sequence map marks steps or participants from the collector, or says what it cannot mark', async () => {
     await mount(workspace({ readMap: reader(runtimeMap()) }));
     await tab('sequence');
-    const message = (id: string) => document.querySelector(`.react-flow__node[data-id="message:${id}"] .architecture-sequence__message`)!;
+    const message = (id: string) => document.querySelector(`.react-flow__edge[data-id="message:${id}"]`)!;
+    const tone = (id: string) => ['change', 'danger'].find(kind => message(id).classList.contains(`architecture-map__edge--message-${kind}`)) ?? null;
     const header = (id: string) => document.querySelector(`.react-flow__node[data-id="participant:${id}"] .architecture-sequence__header`)!;
     expect([header('ledger').getAttribute('data-tone'), header('pipe').getAttribute('data-tone'), header('router').hasAttribute('data-quiet')]).toEqual(['change', 'muted', true]);
     await chooseLayer('violations');
-    expect([message(':append').getAttribute('data-tone'), message(':append').querySelector('.architecture-map__mark')?.textContent, message(':route').hasAttribute('data-tone')]).toEqual(['danger', 'no-direct-call', false]);
+    // An unproven step names archctx's status in its label.
+    expect([tone(':append'), message(':append').querySelector('.react-flow__edge-text')?.textContent, tone(':route')])
+      .toEqual(['danger', `${flow.steps[1]!.label} · no-direct-call`, null]);
     // The layer summary keeps its own note; the sequence map adds why it draws no import edge.
     expect(notes()).toEqual(['violations.layer_direction:model_layers_undeclared', 'sequence.violations:imports_on_module_map']);
     await chooseLayer('pull_requests');
-    expect([message('kept:commit').getAttribute('data-tone'), message(':append').hasAttribute('data-tone')]).toEqual(['change', false]);
+    expect([tone('kept:commit'), tone(':append')]).toEqual(['change', null]);
     await chooseLayer('tests');
     expect([notes(), header('pipe').getAttribute('data-tone'), header('router').getAttribute('data-tone')]).toEqual([['sequence.tests:tests_by_capability'], 'danger', 'success']);
     await chooseLayer('decisions');
@@ -1310,7 +1414,7 @@ describe('sequence and topology base maps', () => {
     await act(async () => root?.render(workspace({ repositoryId: 'repo-proofless', readMap: reader(runtimeMap({ layers: { ...layers, violations: { ...layers.violations, flows: noCodeFacts } } })) })));
     await settle();
     await tab('sequence');
-    await click('.react-flow__node[data-id="message::route"]');
+    await click('.react-flow__edge[data-id="message::route"]');
     expect(inspector().querySelector('[data-gap="proof"]')?.getAttribute('data-reason')).toBe('code_facts_unavailable');
     expect(inspector().querySelector('[data-fix-command="flows"]')).not.toBeNull();
     // A model without flows has no sequence map, and says so.
@@ -1325,20 +1429,26 @@ describe('sequence and topology base maps', () => {
     await mount(workspace({ readMap: reader(runtimeMap()) }));
     await tab('topology');
     const box = (id: string) => document.querySelector(`.react-flow__node[data-id="${id}"] > div`)!;
-    // The artboard opens on the namespace segment. The host frame holds no mount and is lit through the server that runs in it; no node is deprecated.
-    expect(document.querySelector('[data-topology-base][aria-pressed="true"]')?.getAttribute('data-topology-base')).toBe('namespace');
+    // The model has two processes and one namespace, so the artboard opens on the process segment.
+    expect(document.querySelector('[data-topology-base][aria-pressed="true"]')?.getAttribute('data-topology-base')).toBe('process');
+    const canvas = () => document.querySelector('[data-view="topology"]')!;
+    expect([canvas().getAttribute('data-base'), canvas().getAttribute('data-node-count'), canvas().getAttribute('data-edge-count')]).toEqual(['process', '3', '2']);
+    expect(document.querySelector(`.react-flow__node[data-id="${SERVER}/${CENTER}"]`)?.classList.contains('react-flow__node-member')).toBe(true);
+    expect(document.querySelector(`.react-flow__node[data-id="${EXTERNAL}"] .architecture-topology__box`)?.getAttribute('data-kind')).toBe('external-system');
+    expect(notes()).toEqual(['topology.unplaced:deployment_undeclared']);
+    // The canvas draws each route from its scene points, not between the node handles.
+    const routes = layoutTopology(runtimeMap(), runtimePlacement(runtimeMap()), 'process', true).scene.routes;
+    expect([...document.querySelectorAll('.react-flow__edge-route .react-flow__edge-path')].map(path => path.getAttribute('d'))).toEqual(routes.map(route => routePath(route.points)));
+    // The first view comes from the bounding box of every box and the canvas size that React Flow reports.
+    // happy-dom lays out no element, so React Flow reports its fallback size, 500 × 500.
+    const view = firstViewport(contentBox(layoutTopology(runtimeMap(), runtimePlacement(runtimeMap()), 'process', true).scene.boxes), { width: 500, height: 500 });
+    expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).toBe(`translate(${view.x}px,${view.y}px) scale(${view.zoom})`);
+    // The host frame holds no mount and is lit through the server that runs in it; no node is deprecated.
+    await segment('namespace');
     expect([box(HOST).querySelector('[data-namespace-empty]')?.textContent, box(HOST).hasAttribute('data-quiet')]).toEqual(['No mount', false]);
     const legacy = document.querySelector<HTMLButtonElement>('[data-topology-legacy]')!;
     expect([legacy.disabled, legacy.getAttribute('aria-pressed'), legacy.textContent]).toEqual([true, 'true', 'Legacy stores0']);
     await segment('process');
-    const canvas = document.querySelector('[data-view="topology"]')!;
-    expect([canvas.getAttribute('data-base'), canvas.getAttribute('data-node-count'), canvas.getAttribute('data-edge-count')]).toEqual(['process', '3', '2']);
-    expect(document.querySelector(`.react-flow__node[data-id="${SERVER}/${CENTER}"]`)?.classList.contains('react-flow__node-member')).toBe(true);
-    expect(document.querySelector(`.react-flow__node[data-id="${EXTERNAL}"] .architecture-topology__box`)?.getAttribute('data-kind')).toBe('external-system');
-    expect(notes()).toEqual(['topology.unplaced:deployment_undeclared']);
-    // The map opens at the module map's readable zoom on its first runtime box, not fitted to the whole map.
-    const first = layoutTopology(runtimeMap(), runtimePlacement(runtimeMap()), 'process', true).boxes.find(item => item.node.kind !== 'external-system')!;
-    expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).toBe(`translate(${-(first.x - 24) * 0.85}px,${-(first.y - 24) * 0.85}px) scale(0.85)`);
     expect(document.querySelector('[data-note="topology.unplaced"]')?.textContent).toContain(`calls Name ${CALLER} → Name ${CENTER}`);
     // Today the ledger changed: its capability and the process it runs in are lit; the CLI is not.
     expect([box(`${SERVER}/${CENTER}`).getAttribute('data-tone'), box(SERVER).hasAttribute('data-quiet'), box(CLI).hasAttribute('data-quiet')]).toEqual(['muted', false, true]);
@@ -1351,6 +1461,25 @@ describe('sequence and topology base maps', () => {
     expect([...inspector().querySelectorAll('[data-fix-command]')].map(item => item.getAttribute('data-fix-command'))).toEqual(['flows', 'dependencies']);
     await click(`.react-flow__node[data-id="${SERVER}"]`);
     expect([inspector().querySelector('[data-runs-in]')?.textContent, inspector().querySelector('[data-deployed]')?.textContent]).toEqual([`In: Name ${HOST}`, `Name ${CENTER} · 900 lines in 1 files`]);
+    // The selection stays across every view tab and goes with a segment change, so going back does not bring it back.
+    for (const other of ['sequence', 'modules', 'history']) {
+      await tab(other);
+      await tab('topology');
+      expect([other, inspector().getAttribute('data-node-id')]).toEqual([other, SERVER]);
+    }
+    // Another repository and back while Sequence shows: the selection goes, whatever tab shows when the repository changes.
+    await tab('sequence');
+    for (const repositoryId of ['repo-other', REPO]) {
+      await act(async () => root?.render(workspace({ repositoryId, readMap: reader(runtimeMap()) })));
+      await settle();
+    }
+    await tab('topology');
+    expect(inspector().getAttribute('data-node-id')).toBeNull();
+    await click(`.react-flow__node[data-id="${SERVER}"]`);
+    await segment('namespace');
+    await segment('process');
+    expect(inspector().getAttribute('data-node-id')).toBeNull();
+    await click(`.react-flow__node[data-id="${SERVER}"]`);
 
     await chooseLayer('tests');
     expect(notes()).toEqual(['topology.unplaced_marks:deployment_undeclared', 'topology.unplaced:deployment_undeclared']);
@@ -1373,7 +1502,7 @@ describe('sequence and topology base maps', () => {
         mapRelation('relation.j-mount', 'mounts', HOST, 'mount.old'), mapRelation('relation.k-write', 'writes', PART, 'mount.cache')] });
     await mount(workspace({ readMap: reader(map) }));
     await tab('topology');
-    // In happy-dom React Flow draws no edge, so the handles that a namespace edge routes through stand for it.
+    // A namespace box carries the source and target handles that React Flow attaches a route to.
     expect([...document.querySelectorAll(`.react-flow__node[data-id="${HOST}"] .react-flow__handle`)].map(item => item.classList.contains('source') ? 'source' : 'target').sort()).toEqual(['source', 'target']);
     expect(['mount.cache', 'mount.old'].map(id => document.querySelector(`.react-flow__node[data-id="${id}"] [data-mount-tone]`)?.getAttribute('data-mount-tone'))).toEqual(['writer', 'point']);
     await click('.react-flow__node[data-id="mount.cache"]');
@@ -1416,6 +1545,29 @@ describe('architecture history', () => {
     expect(shape.edges.size).toBe(0);
   });
 
+  test('each recorded milestone is one placed scene with no finding; routes run between top-level owners, one per owner pair and change', () => {
+    for (const name of Object.keys(historyPages) as (keyof typeof historyPages)[]) {
+      const history = page(name);
+      for (const item of history.milestones) {
+        if (item.error) continue;
+        const shape = historyShape(history.milestones, item);
+        const input = historyLayoutInput(shape, shape.edges);
+        const { scene, relations } = layoutArchitectureMap(input);
+        expect([item.rev, sceneFindings(scene)]).toEqual([item.rev, []]);
+        expect(scene.boxes.map(box => box.id).sort()).toEqual(input.nodes.map(node => node.id).sort());
+        const parents = new Map(input.nodes.map(node => [node.id, node.parent]));
+        const owner = (id: string): string => parents.get(id) ?? id;
+        const top = new Set(scene.boxes.filter(box => box.parent === null).map(box => box.id));
+        expect(scene.routes.every(route => top.has(route.source) && top.has(route.target) && route.source !== route.target)).toBe(true);
+        // Every relation between two owners is behind exactly the route of its owner pair and change; a relation inside one owner has none.
+        const expected = input.relations.filter(relation => owner(relation.source) !== owner(relation.target))
+          .map(relation => `${relation.kind}:${owner(relation.source)}->${owner(relation.target)} ${relation.id}`).sort();
+        expect([...relations].flatMap(([id, ids]) => ids.map(relation => `${id} ${relation}`)).sort()).toEqual(expected);
+        expect(scene.routes.map(route => [route.kind, route.dashed])).toEqual([...relations.keys()].map(id => [id.split(':')[0], id.startsWith('removed:')]));
+      }
+    }
+  });
+
   test('the newest page shows first, an error milestone shows only its code, the base across it is named, and an older page pins the first head', async () => {
     // archctx pages run oldest first: a one-milestone read gives the head and the total (50), then the newest page.
     const gap = page('gap');
@@ -1441,6 +1593,20 @@ describe('architecture history', () => {
       await act(async () => document.querySelector<HTMLElement>(`li[data-milestone-rev^="${prefix}"]`)!.click());
       await settle();
     };
+    // The workspace store keeps a History selection of the shown milestone across a tab change; another milestone drops it.
+    const inspected = () => document.querySelector('.architecture-history__inspector')?.getAttribute('data-node-id');
+    const opened = inspected();
+    const other = [...document.querySelectorAll('.architecture-history__node')].map(item => item.getAttribute('data-node-id')!).find(id => id !== opened)!;
+    await act(async () => document.querySelector(`.react-flow__node[data-id="${other}"]`)!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await settle();
+    for (const tab of ['#architecture-tab-modules', '#architecture-tab-history']) {
+      await act(async () => document.querySelector<HTMLButtonElement>(tab)!.click());
+      await settle();
+    }
+    expect(inspected()).toBe(other);
+    await pick('06a42cf1');
+    await pick('c17d3b51');
+    expect(inspected()).toBe(opened);
     // The oldest milestone read compares with a base that is not read yet: no gap count is made up.
     await pick('06a42cf1');
     expect(document.querySelector('.architecture-history__caption')?.textContent).toBe('c4a2cd0 → 06a42cf · the base is not read yet');
@@ -1470,6 +1636,14 @@ describe('architecture history', () => {
     expect(inspector.querySelectorAll('li[data-diff="removed"]')).toHaveLength(5);
     // Four removed components: two belong to the removed capabilities, so only engineer-scheduling and task-fleet count as changed inside.
     expect(document.querySelector('li[data-milestone-rev^="d02a082f"] [data-tone="inside"]')?.textContent).toBe('•2');
+    // The canvas draws each route of the placed scene; the removed relations between owners keep the removed class.
+    const shape = historyShape([...removal.milestones, ...gap.milestones], milestone(removal, 'd02a082f'));
+    const { scene } = layoutArchitectureMap(historyLayoutInput(shape, shape.edges));
+    const edges = [...document.querySelectorAll('.architecture-history__stage .react-flow__edge')];
+    expect(edges.map(edge => [edge.getAttribute('data-id'), edge.querySelector('.react-flow__edge-path')?.getAttribute('d')])).toEqual(scene.routes.map(route => [route.id, routePath(route.points)]));
+    expect(edges.filter(edge => edge.classList.contains('architecture-map__edge--removed')).map(edge => edge.getAttribute('data-id')))
+      .toEqual(['removed:domain:organization->domain:workflow-engine', 'removed:domain:runtime-harness->domain:organization', 'removed:domain:runtime-harness->domain:workflow-engine']);
+
   });
 
   // cx1735-r1-inspector-drops-removed-relations: the relation list comes from the delta, not from the drawn shape.

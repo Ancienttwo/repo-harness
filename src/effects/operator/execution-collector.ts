@@ -18,6 +18,7 @@ import {
 import { withoutRepositorySelectingGitEnv } from '../git/runner';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { runSetupProcess, type SetupProcessRunner } from '../setup/collector';
+import { readRepository, startObservationLoop, type RepositoryObservation } from '../observation-loop';
 import { hcServerStatusAsync, herdrAppCommand } from '../terminal/herdr-core';
 import type { ExecutionStateWorkerResult } from './execution-state-worker';
 
@@ -63,24 +64,21 @@ export interface ExecutionCollectorHandle {
   readonly close: () => Promise<void>;
 }
 
-/** Collect at start, then every interval after the previous cycle settles. Cycles never overlap. */
+/**
+ * Collect at start, then every interval after the previous cycle settles. Cycles never overlap.
+ * Keep rule: a failed cycle makes every repository `execution_state_unavailable`, so no stale verified
+ * session is shown.
+ */
 export function startExecutionCollector(options: ExecutionCollectorOptions = {}): ExecutionCollectorHandle {
   const env = { ...process.env, ...options.env };
   const run = options.run_process ?? runSetupProcess;
-  const abort = new AbortController();
-  let states = new Map<string, ExecutionRepositoryCache>();
-  let registryFailed = false;
-  let started = false;
-  let closed = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let inflight: Promise<void> | null = null;
 
-  const collect = async (repos: readonly { readonly id: string }[]): Promise<Map<string, ExecutionRepositoryCache>> => {
+  const collect = async (repos: readonly { readonly id: string }[], signal: AbortSignal): Promise<Map<string, ExecutionRepositoryCache>> => {
     // Without an answering core, no hc terminal location is shown.
     const hcCore = await hcServerStatusAsync({ env }).then(status => status.core.id, () => null);
     const result = await run(EXECUTION_CHILD_ARGV, {
       cwd: process.cwd(), env: executionChildEnvironment(env), service: 'execution-collector',
-      timeout_ms: options.timeout_ms ?? EXECUTION_WORKER_TIMEOUT_MS, signal: abort.signal,
+      timeout_ms: options.timeout_ms ?? EXECUTION_WORKER_TIMEOUT_MS, signal,
     });
     const results = result.ok ? childResults(result.stdout) : new Map<string, ExecutionStateWorkerResult>();
     const next = new Map<string, ExecutionRepositoryCache>();
@@ -96,41 +94,25 @@ export function startExecutionCollector(options: ExecutionCollectorOptions = {})
     return next;
   };
 
-  const cycle = (): Promise<void> => {
-    inflight = (async () => {
-      let repos;
+  const loop = startObservationLoop<RepositoryObservation<ExecutionRepositoryCache>, ExecutionStateUnavailableReason>({
+    cycle: async ({ signal }) => {
+      let repos: readonly { readonly id: string }[];
       try { repos = readRepoHarnessRegistryStrictSnapshot({ env }).repos; }
-      catch { registryFailed = true; return; }
-      let next: Map<string, ExecutionRepositoryCache>;
-      try { next = await collect(repos); }
-      catch { next = new Map(repos.map(repo => [repo.id, UNAVAILABLE])); }
-      if (closed) return;
-      states = next;
-      registryFailed = false;
-      started = true;
-    })().finally(() => {
-      inflight = null;
-      if (closed) return;
-      timer = setTimeout(() => { void cycle(); }, options.interval_ms ?? EXECUTION_COLLECT_INTERVAL_MS);
-      timer.unref?.();
-    });
-    return inflight;
-  };
-  void cycle();
-
+      catch { return { state: 'observed', value: { registry: 'failed' } }; }
+      const next = await collect(repos, signal)
+        .catch(() => new Map<string, ExecutionRepositoryCache>(repos.map(repo => [repo.id, UNAVAILABLE])));
+      return { state: 'observed', value: { registry: 'ok', repositories: next, complete: true } };
+    },
+    keep: (_previous, reason) => ({ state: 'unavailable', reason }),
+    failure: 'execution_state_unavailable',
+    interval_ms: options.interval_ms ?? EXECUTION_COLLECT_INTERVAL_MS,
+  });
   return Object.freeze({
     read: (repositoryId: string): ExecutionRepositoryCache => {
-      if (registryFailed) return { state: 'unavailable', reason: 'registry_unavailable' };
-      if (!started) return { state: 'unavailable', reason: 'execution_state_pending' };
-      return states.get(repositoryId) ?? { state: 'unavailable', reason: 'repository_not_found' };
+      const read = readRepository(loop.read(), repositoryId, 'execution_state_pending');
+      return 'value' in read ? read.value : { state: 'unavailable', reason: read.reason };
     },
-    settled: () => inflight ?? Promise.resolve(),
-    close: async () => {
-      closed = true;
-      clearTimeout(timer);
-      // Aborting kills the child's process group, so a blocked `ps` or git does not hold shutdown.
-      abort.abort();
-      await inflight;
-    },
+    settled: loop.settled,
+    close: loop.close,
   });
 }

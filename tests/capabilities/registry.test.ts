@@ -5,7 +5,6 @@ import { tmpdir } from "os";
 import { execFileSync } from "child_process";
 import { readArchcontextCapabilityAuthority } from "../../src/effects/architecture/archcontext-owners";
 import {
-  archcontextNodeId,
   architectureModulePathFor,
   capabilityPathResolutionFromArchcontextOwners,
   capabilityRegistryFromNativeContext,

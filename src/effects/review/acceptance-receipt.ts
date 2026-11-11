@@ -5,7 +5,7 @@ import { readReviewAdmissionSource, type ReviewAdmissionSource } from '../admiss
 import { gitSpawnSync } from '../git/runner';
 import { gatesDirectoryName } from '../git/repository-identity';
 import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync } from '../readonly-observation';
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 import {
   chmodSync,
   existsSync,
@@ -22,24 +22,17 @@ import { createRequire } from 'module';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import {
-  ACCEPTANCE_VALIDATOR_RULE_IDS,
   ACCEPTANCE_VERIFICATION_OBSERVATION_KIND,
   ACCEPTANCE_VERIFICATION_OBSERVATION_PROTOCOL,
-  CONSUMED_RECEIPT_KEYS,
-  GENERIC_REVIEW_ROLE,
-  acceptancePolicySource,
   acceptanceReviewContextDigest,
   acceptanceVerificationObservationSubjectKey,
   assertReviewFields,
   assertUserWaiverGrant,
   authorityFingerprint,
   buildAcceptanceVerificationObservation,
-  contractCarriesArchiveProjection,
   fail,
-  isRecord,
   modelRelation,
   renderAcceptanceProjection,
-  sha256,
   stableJson,
   validateDisposition,
   validateDomainReview,
@@ -60,6 +53,9 @@ import {
   type ReviewSubject,
   type UserWaiverGrant,
 } from '../../core/review/acceptance-receipt';
+import { isRecord } from '../../core/evidence/is-record';
+import { SHA256_PREFIXED_PATTERN } from '../../core/evidence/sha256-pattern';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import {
   validateRequiredCheckFailureEvidenceList,
   type RequiredCheckFailureEvidenceV1,
@@ -255,7 +251,7 @@ function currentSubject(root: string, targetRef?: string, targetRevision?: strin
   if (!reviewBase.ok) fail('policy review base is unavailable: ' + reviewBase.reason);
   if (targetRef !== undefined && targetRef !== reviewBase.targetRef) fail('AcceptanceReceipt target ref is stale against workflow policy');
   const subject = module.buildReviewSubject(root, { targetRef: targetRef ?? reviewBase.targetRef, targetRevision });
-  if (subject.status !== 'ok' || !/^sha256:[0-9a-f]{64}$/.test(subject.review_subject_sha256)) fail('current normalized review subject is unavailable');
+  if (subject.status !== 'ok' || !SHA256_PREFIXED_PATTERN.test(subject.review_subject_sha256)) fail('current normalized review subject is unavailable');
   return subject;
 }
 
@@ -324,12 +320,12 @@ export function inspectAcceptanceEvidence(args: {
     const reportPath = readRegular(root, 'evals/harness/reports/profile-comparison.json', 'required benchmark report').path;
     const validated = validator.validateHarnessBenchmarkReport(join(root, reportPath), true);
     const binding = readRegular(root, relative(root, validator.reportByteBindingPath(join(root, reportPath))), 'benchmark byte binding');
-    benchmark = sha256(binding.content);
+    benchmark = sha256Prefixed(binding.content);
     if (!validated.authoritative) fail('required benchmark report is not authoritative');
   }
   const results = report.results.map(result => ({ ...result, execution: result.execution === 'reused' ? 'executed' : result.execution }));
   const target = { campaign_sha256: report.target.campaign_sha256, admission_sha256: report.target.admission_sha256, grant_sha256: report.target.grant_sha256, plan_hash: report.target.plan_hash, snapshot_hash: report.target.snapshot_hash, tree_hash: report.target.tree_hash };
-  return { fingerprint: sha256(stableJson({ execution: { ...report, target, results }, change_assessment: assessmentBasis, benchmark })), benchmark };
+  return { fingerprint: sha256Prefixed(stableJson({ execution: { ...report, target, results }, change_assessment: assessmentBasis, benchmark })), benchmark };
 }
 
 function normalizedVerificationEvidence(content: string, subject: ReviewSubject, root: string,
@@ -369,7 +365,7 @@ export function acceptanceReceiptPath(root: string, authorityHome: string, creat
  * exact receipt it was built from.
  */
 export function acceptanceReceiptRecordPath(root: string, authorityHome: string, receiptSha256: string, createParent = false): string {
-  if (!/^sha256:[0-9a-f]{64}$/.test(receiptSha256)) fail('AcceptanceReceipt record digest is invalid');
+  if (!SHA256_PREFIXED_PATTERN.test(receiptSha256)) fail('AcceptanceReceipt record digest is invalid');
   const parent = join(stateRoot(authorityHome), 'gates', gatesDirectoryName(realpathSync(root)), 'acceptance-receipts');
   if (createParent) {
     mkdirSync(parent, { recursive: true, mode: 0o700 });
@@ -379,7 +375,7 @@ export function acceptanceReceiptRecordPath(root: string, authorityHome: string,
 }
 
 function persistAcceptanceReceiptRecord(root: string, authorityHome: string, bytes: Buffer): string {
-  const digest = sha256(bytes);
+  const digest = sha256Prefixed(bytes);
   const path = acceptanceReceiptRecordPath(root, authorityHome, digest, true);
   const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
   writeFileSync(temporary, bytes, { mode: 0o600, flag: 'wx' });
@@ -411,7 +407,7 @@ export function readAcceptanceReceiptRecord(
   } catch (error) {
     fail(`AcceptanceReceipt record is unavailable for ${receiptSha256}: ${(error as Error).message}`);
   }
-  if (sha256(bytes) !== receiptSha256) fail('AcceptanceReceipt record does not match its digest');
+  if (sha256Prefixed(bytes) !== receiptSha256) fail('AcceptanceReceipt record does not match its digest');
   return Object.freeze({ bytes, receipt: parseReceipt(bytes.toString('utf-8')) });
 }
 
@@ -504,7 +500,7 @@ export function readAcceptanceVerificationObservation(
   if (record.campaign_sha256 !== campaignSha256 || record.admission_sha256 !== admissionSha256) {
     fail('AcceptanceVerificationObservation subject is stale');
   }
-  if (!/^sha256:[0-9a-f]{64}$/.test(record.grant_sha256)) fail('AcceptanceVerificationObservation grant_sha256 is invalid');
+  if (!SHA256_PREFIXED_PATTERN.test(record.grant_sha256)) fail('AcceptanceVerificationObservation grant_sha256 is invalid');
   if (!['external_pass', 'user_waiver', 'reject'].includes(String(record.disposition))) {
     fail('AcceptanceVerificationObservation disposition is invalid');
   }
@@ -534,7 +530,6 @@ export function readAcceptanceVerificationObservation(
 
 
 
-const SHA256_FIELD = /^sha256:[0-9a-f]{64}$/;
 const GIT_OID_FIELD = /^[0-9a-f]{40,64}$/;
 
 function unsafeRepoRelativePath(value: string): boolean {
@@ -574,14 +569,14 @@ export function validateAcceptanceReceiptAgainstPolicy(
     if (receipt.repository_root !== input.repositoryRoot) return no('repository_root', 'AcceptanceReceipt repository root is stale');
     if (receipt.campaign_sha256 !== input.admission.campaign_sha256) return no('campaign_identity', 'AcceptanceReceipt campaign is stale');
     if (receipt.admission_sha256 !== input.admission.admission_sha256 || receipt.grant_sha256 !== input.grantSha256) return no('admission_binding', 'AcceptanceReceipt admission is stale');
-    if (!SHA256_FIELD.test(receipt.grant_sha256)) return no('grant_digest_shape', 'AcceptanceReceipt grant digest is invalid');
+    if (!SHA256_PREFIXED_PATTERN.test(receipt.grant_sha256)) return no('grant_digest_shape', 'AcceptanceReceipt grant digest is invalid');
     const policy: AcceptancePolicy = { protocol: 1, ...input.admission.policy };
     if (policy.reviewer !== receipt.expected_reviewer) return no('reviewer_policy', 'AcceptanceReceipt reviewer policy is stale');
     if (input.admission.goal.revision !== receipt.goal_sha256) return no('goal_fingerprint', 'AcceptanceReceipt goal is stale');
     if (unsafeRepoRelativePath(receipt.verification_file)) return no('verification_file_shape', 'AcceptanceReceipt verification_file is unsafe');
-    if (!SHA256_FIELD.test(receipt.verification_evidence_sha256)) return no('verification_evidence_shape', 'AcceptanceReceipt verification_evidence_sha256 is invalid');
+    if (!SHA256_PREFIXED_PATTERN.test(receipt.verification_evidence_sha256)) return no('verification_evidence_shape', 'AcceptanceReceipt verification_evidence_sha256 is invalid');
     if (receipt.benchmark_evidence_sha256.trim() === '') return no('benchmark_evidence_present', 'AcceptanceReceipt benchmark_evidence_sha256 is required');
-    if (!SHA256_FIELD.test(receipt.subject_sha256)) return no('subject_sha256_shape', 'AcceptanceReceipt subject_sha256 is invalid');
+    if (!SHA256_PREFIXED_PATTERN.test(receipt.subject_sha256)) return no('subject_sha256_shape', 'AcceptanceReceipt subject_sha256 is invalid');
     if (receipt.subject_scope !== 'normalized-final-content') return no('subject_scope', 'AcceptanceReceipt subject scope is invalid');
     if (receipt.target_ref.trim() === '') return no('target_ref_present', 'AcceptanceReceipt target_ref is required');
     if (!GIT_OID_FIELD.test(receipt.target_revision)) return no('target_revision_shape', 'AcceptanceReceipt target_revision is invalid');
@@ -657,11 +652,11 @@ function parseReceipt(text: string): AcceptanceReceipt {
   if (!['Claude', 'Codex', 'Pi', 'User'].includes(String(value.reviewer))) fail('AcceptanceReceipt reviewer is invalid');
   if (!['generic-review', 'user-waiver'].includes(String(value.source))) fail('AcceptanceReceipt source is invalid');
   if (value.actor !== null && (typeof value.actor !== 'string' || value.actor.trim() === '')) fail('AcceptanceReceipt actor is invalid');
-  if (value.waiver_grant_sha256 !== null && !/^sha256:[0-9a-f]{64}$/.test(String(value.waiver_grant_sha256))) {
+  if (value.waiver_grant_sha256 !== null && !SHA256_PREFIXED_PATTERN.test(String(value.waiver_grant_sha256))) {
     fail('AcceptanceReceipt waiver_grant_sha256 is invalid');
   }
   for (const field of ['campaign_sha256', 'admission_sha256', 'grant_sha256', 'goal_sha256', 'verification_evidence_sha256', 'subject_sha256']) {
-    if (!/^sha256:[0-9a-f]{64}$/.test(String(value[field]))) fail(`AcceptanceReceipt ${field} is invalid`);
+    if (!SHA256_PREFIXED_PATTERN.test(String(value[field]))) fail(`AcceptanceReceipt ${field} is invalid`);
   }
   if (!Array.isArray(value.reviewed_paths) || value.reviewed_paths.some((entry) => typeof entry !== 'string')) {
     fail('AcceptanceReceipt reviewed_paths must be strings');
@@ -1120,7 +1115,7 @@ export function inspectAcceptanceCurrentBinding(args: {
     waiverGrant: receipt.disposition === 'user_waiver' ? verifyUserWaiverGrant(args) : null });
   if (!verdict.ok) fail(verdict.reason);
   const observation = readAcceptanceVerificationObservation(root, args.authorityHome, receipt.campaign_sha256, receipt.admission_sha256);
-  if (!observation || observation.acceptance_receipt_sha256 !== sha256(readFileSync(acceptanceReceiptPath(root, args.authorityHome)))
+  if (!observation || observation.acceptance_receipt_sha256 !== sha256Prefixed(readFileSync(acceptanceReceiptPath(root, args.authorityHome)))
     || observation.grant_sha256 !== receipt.grant_sha256 || observation.goal_sha256 !== receipt.goal_sha256
     || observation.target_ref !== receipt.target_ref || observation.target_revision !== receipt.target_revision
     || observation.subject_sha256 !== receipt.subject_sha256 || observation.verification_evidence_sha256 !== receipt.verification_evidence_sha256

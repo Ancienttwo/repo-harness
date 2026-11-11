@@ -9,6 +9,7 @@ import { piPackagePresent, removePiPackage } from './pi-package';
 import { piExecutable } from '../../effects/pi-executable';
 import { deepEqual } from './shared';
 import { globalContextPath, removeManagedBlock } from './global-context';
+import { removeRuntimeStateIgnoreBlock, userExcludesFilePath } from '../../effects/adoption/gitignore-plan';
 import { managedInstallSurfaceIsCurrent, readInstallState, type ManagedInstallSurface } from './install-profile';
 import { installProfileStatePath } from './install-state';
 import { assertConfigurationPath, configurationPaths, configurationReceiptPath, hostConfigurationRoot, readConfigurationFragment, readConfigurationReceipt, replaceConfigurationFragment, writePrivateConfiguration } from './configuration-ownership';
@@ -77,7 +78,9 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
   const piRemovals: string[] = [];
   const piSkills = hostSkillRoot(home, 'pi', env);
   let lock: ProviderSkillLock;
-  const surfaceRoot = (path: string) => path === lock.path ? lock.root : path.startsWith(piSkills + '/') ? dirname(piSkills) : home;
+  // The user-level Git excludes file can sit outside HOME (core.excludesFile); its directory is its root.
+  let excludesPath: string | null = null;
+  const surfaceRoot = (path: string) => path === lock.path ? lock.root : path === excludesPath ? dirname(path) : path.startsWith(piSkills + '/') ? dirname(piSkills) : home;
   const removedSurfaces = new Set<ManagedInstallSurface>();
   const remember = (path: string): void => { if (!originals.has(path)) originals.set(path, fingerprint(path)); };
   const read = (path: string): string => writes.has(path) ? writes.get(path) ?? '' : existsSync(path) ? readFileSync(path, 'utf8') : '';
@@ -233,6 +236,18 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
         }
       }
     } catch (error) { unresolved(path, String((error as Error).message)); }
+    const excludes = userExcludesFilePath(env);
+    if (!excludes.ok) unresolved('user-level Git excludes file', excludes.error);
+    else if (fileExists(excludes.path)) {
+      excludesPath = excludes.path;
+      try {
+        // Preview refuses a symlinked excludes file, so dry run and apply report the same item.
+        assertConfigurationPath(excludes.path, dirname(excludes.path));
+        const removal = removeRuntimeStateIgnoreBlock(read(excludes.path));
+        if (removal.status === 'unbalanced') unresolved(excludes.path, 'unbalanced runtime-state ignore block; preserved');
+        else if (removal.status === 'removed') change(excludes.path, removal.content.trim() ? removal.content : null, 'runtime-state ignore block');
+      } catch (error) { unresolved(excludes.path, String((error as Error).message)); }
+    }
     for (const name of ['agent-fleet-user-managed.json']) {
       const path = join(home, '.repo-harness', name);
       try { assertConfigurationPath(path, home); if (existsSync(path)) change(path, null, 'product configuration'); }

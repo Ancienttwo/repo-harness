@@ -28,8 +28,8 @@ describe('single executable helper authority', () => {
   test('check rejects byte and mode drift; write repairs only the disposable projection', () => {
     const root = mkdtempSync(join(tmpdir(), 'helper-projection-'));
     try {
-      for (const dir of ['scripts', 'src/core/capabilities', 'src/core/architecture', 'src/effects/architecture', 'src/effects/git', 'src/effects/state', 'assets/templates/helpers']) mkdirSync(join(root, dir), { recursive: true });
-      for (const path of ['scripts/sync-helper-sources.ts', 'scripts/capability-resolver.ts', 'src/effects/source-projection.ts', 'src/core/capabilities/registry.ts', 'src/core/capabilities/resolver.ts', 'src/core/architecture/contracts.ts', 'src/effects/architecture/capability-resolver.ts', 'src/effects/git/runner.ts', 'src/effects/readonly-observation.ts']) {
+      for (const dir of ['scripts', 'src/core/capabilities', 'src/core/architecture', 'src/core/workflow', 'src/effects/architecture', 'src/effects/git', 'src/effects/state', 'assets/templates/helpers']) mkdirSync(join(root, dir), { recursive: true });
+      for (const path of ['scripts/sync-helper-sources.ts', 'scripts/capability-resolver.ts', 'src/effects/source-projection.ts', 'src/core/capabilities/registry.ts', 'src/core/capabilities/resolver.ts', 'src/core/architecture/contracts.ts', 'src/core/workflow/policy-schema.ts', 'src/effects/state/policy-file.ts', 'src/effects/architecture/capability-resolver.ts', 'src/effects/git/runner.ts', 'src/effects/readonly-observation.ts']) {
         copyFileSync(join(ROOT, path), join(root, path));
       }
       const target = join(root, 'assets/templates/helpers/capability-resolver.ts');

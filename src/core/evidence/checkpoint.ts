@@ -30,7 +30,7 @@
  * store independently recomputes it from staged bytes as a corruption gate
  * (see `checkpoint-store.ts`), not merely trusting the in-memory value.
  */
-import { createHash } from "crypto";
+import { sha256Hex } from "./sha256";
 import type { EvidenceEventRecord, JsonValue, TrustClass } from "./types";
 import { canonicalize } from "./canonical-json";
 
@@ -197,10 +197,6 @@ export interface BuildCheckpointInput {
   readonly now?: () => Date;
   /** The effects layer resolves redacted JSON blobs before projection. */
   readonly decisionPayloadOf?: (event: EvidenceEventRecord) => unknown;
-}
-
-function sha256Hex(text: string): string {
-  return createHash("sha256").update(text, "utf-8").digest("hex");
 }
 
 function coveredEventsOf(accepted: readonly EvidenceEventRecord[]): readonly CheckpointCoveredEvent[] {

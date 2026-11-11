@@ -65,10 +65,11 @@ export function buildReviewCommand<Session, Endpoint>(loadRunner: () => Promise<
   command.command('publish').description('Publish one gatekeeper receipt as an acceptance claim, one COMMENT PR review, and an acceptance record')
     .requiredOption('--pr <number>', 'Pull request number')
     .requiredOption('--receipt <path>', 'Review publish receipt JSON; the gatekeeper owns its content')
+    .option('--owner-record <url>', 'Owner decision comment URL on the PR or an issue it closes; required for a round above 5')
     .option('--repo <path>', 'Owner repository worktree', process.cwd()).option('--json', 'Print compact JSON')
     .action(opts => {
       try {
-        const result = publishReview({ repoRoot: opts.repo, prNumber: Number(opts.pr), receiptPath: opts.receipt });
+        const result = publishReview({ repoRoot: opts.repo, prNumber: Number(opts.pr), receiptPath: opts.receipt, ownerRecord: opts.ownerRecord });
         console.log(JSON.stringify(result, null, opts.json ? undefined : 2));
       } catch (error) {
         if (error instanceof ReviewPublishError) {

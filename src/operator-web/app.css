@@ -261,6 +261,11 @@
   .architecture-modules__box[data-alert="danger"] { @apply border-kumo-danger; }
   .architecture-modules__box[data-alert="info"] { @apply border-kumo-info; }
   .architecture-modules__box[data-dimmed], .architecture-modules__external[data-dimmed] { opacity: .38; }
+  .architecture-modules__box[data-neighbour], .architecture-modules__external[data-neighbour] { border-color: var(--rh-accent); }
+  .architecture-modules__box[data-undeclared] { @apply border-dashed border-kumo-danger; }
+  .architecture-modules__badge { @apply shrink-0 rounded px-1 text-[12px] leading-[14px]; }
+  .architecture-modules__badge[data-badge="neighbour"] { color: var(--rh-accent); background: color-mix(in srgb, var(--rh-accent) 16%, transparent); }
+  .architecture-modules__badge[data-badge="undeclared"] { @apply bg-kumo-danger-tint text-kumo-danger; }
   .architecture-modules__box[data-selected] { outline: 2px solid var(--text-color-kumo-strong); outline-offset: 2px; }
   .architecture-modules__key { @apply grid gap-0.5 text-center text-[10px] text-kumo-subtle; grid-template-columns: repeat(5, 2.25rem); }
   .architecture-modules__key > span { @apply rounded px-1; }
@@ -289,11 +294,11 @@
   .architecture-map__source { @apply block text-[11px] text-kumo-subtle; }
   .architecture-layers__count { @apply ml-1.5 text-[11px] font-normal opacity-70; }
   .architecture-sequence, .architecture-topology { @apply flex min-w-0 flex-col gap-2; }
-  .architecture-sequence__box { @apply flex h-full w-full flex-col justify-end rounded-xl border bg-kumo-recessed px-3 pb-1.5 text-[11px] text-kumo-subtle; border-color: var(--rh-diagram-line); }
+  .architecture-sequence__box { @apply flex h-full w-full flex-col justify-start rounded-xl border bg-kumo-recessed px-3 pt-1 text-[11px] text-kumo-subtle; border-color: var(--rh-diagram-line); }
   .architecture-sequence__box[data-placement="external"] { @apply border-dashed bg-transparent; }
   .architecture-sequence__box[data-placement="unknown"] { @apply border-dashed; }
   .architecture-sequence__box > span { @apply block truncate; }
-  .architecture-sequence__fragment { @apply h-full w-full rounded-lg border border-dashed px-2 pt-1 text-[11px] font-semibold; }
+  .architecture-sequence__fragment { @apply h-full w-full truncate rounded-lg border border-dashed px-2 pt-1 text-[11px] font-semibold; }
   .architecture-sequence__fragment[data-kind="success"] { @apply border-kumo-success bg-kumo-success-tint text-kumo-success; }
   .architecture-sequence__fragment[data-kind="error"] { @apply border-kumo-danger bg-kumo-danger-tint text-kumo-danger; }
   .architecture-sequence__fragment .mono-value { @apply mr-1; }
@@ -302,21 +307,7 @@
   .architecture-sequence__header[data-kind="capability"] { @apply bg-kumo-info-tint; }
   .architecture-sequence__header[data-kind="external-system"] { @apply bg-transparent; }
   .architecture-sequence__header strong { @apply text-xs; }
-  .architecture-sequence__message { @apply relative flex h-full w-full cursor-pointer flex-col justify-end text-xs text-kumo-default; }
-  .architecture-sequence__label { @apply line-clamp-2 min-w-0 px-2 pb-0.5 text-center text-[11px] leading-[14px]; }
-  .architecture-sequence__label .architecture-map__mark { @apply ml-1; }
-  .architecture-sequence__arrow { @apply relative block h-0 w-full border-t; border-color: var(--text-color-kumo-subtle); }
-  .architecture-sequence__arrow::after { content: ""; @apply absolute -top-[5px] h-0 w-0 border-y-[5px] border-y-transparent; }
-  .architecture-sequence__message[data-direction="right"] .architecture-sequence__arrow::after { right: 0; border-left: 7px solid var(--text-color-kumo-subtle); }
-  .architecture-sequence__message[data-direction="left"] .architecture-sequence__arrow::after { left: 0; border-right: 7px solid var(--text-color-kumo-subtle); }
-  .architecture-sequence__message[data-direction="self"] .architecture-sequence__label { @apply text-left; }
-  .architecture-sequence__message[data-direction="self"] .architecture-sequence__arrow { @apply h-3 rounded-r-md border border-l-0; }
-  .architecture-sequence__message[data-tone="change"] .architecture-sequence__label { color: var(--rh-accent); }
-  .architecture-sequence__message[data-tone="danger"] .architecture-sequence__arrow { @apply border-kumo-danger; }
-  .architecture-sequence__message[data-selected] .architecture-sequence__label { @apply font-bold; color: var(--rh-accent); }
-  .architecture-sequence__message[data-selected] .architecture-sequence__arrow { border-top-width: 2px; border-color: var(--rh-accent); }
-  .architecture-sequence__message[data-selected][data-direction="right"] .architecture-sequence__arrow::after { border-left-color: var(--rh-accent); }
-  .architecture-sequence__message[data-selected][data-direction="left"] .architecture-sequence__arrow::after { border-right-color: var(--rh-accent); }
+  .architecture-sequence__name { @apply block whitespace-nowrap; }
   .architecture-sequence__terminal { @apply h-full w-full overflow-hidden rounded-md border bg-kumo-base px-2 py-1 text-center text-[11px] font-semibold leading-[12px]; }
   .architecture-sequence__terminal[data-kind="success"] { @apply border-kumo-success text-kumo-success; }
   .architecture-sequence__terminal[data-kind="error"] { @apply border-kumo-danger text-kumo-danger; }
@@ -350,7 +341,14 @@
   .architecture-topology__switch::after { @apply absolute top-0.5 left-0.5 size-3 rounded-full bg-kumo-contrast content-['']; }
   [aria-pressed="true"] > .architecture-topology__switch { background: var(--rh-accent); }
   [aria-pressed="true"] > .architecture-topology__switch::after { @apply left-3.5; }
-  @media (max-width: 47.5rem) { .architecture-map__legend, .architecture-history__legend { display: none; } }
+  /* The canvas legend is hidden on a narrow screen; the state rows of the module map show below the canvas instead. */
+  .architecture-modules__states { display: none; }
+  @media (max-width: 47.5rem) {
+    .architecture-map__legend { display: none; }
+    .architecture-modules__states { @apply m-0 flex flex-wrap gap-x-4 gap-y-1 rounded-lg border bg-kumo-base p-2 text-xs; border-color: var(--rh-diagram-line); }
+    .architecture-modules__states div { @apply flex items-center gap-2; }
+    .architecture-modules__states dd { @apply m-0; }
+  }
 }
 
 /*
@@ -372,8 +370,10 @@
 .architecture-map__edge.is-dim .react-flow__edge-path { stroke-opacity: .08; }
 .architecture-map__edge.is-dim .react-flow__edge-textwrapper { opacity: .2; }
 .architecture-map__edge.is-active .react-flow__edge-path { stroke: var(--rh-accent); stroke-opacity: 1; }
-.architecture-modules__relation .react-flow__edge-path { stroke: var(--rh-accent); stroke-opacity: .7; stroke-width: 1.5px; }
 .architecture-map__edge--undeclared .react-flow__edge-path { stroke: var(--text-color-kumo-danger); stroke-opacity: .9; }
+/* A lens route stays readable while a selection dims the other routes. */
+.architecture-map__edge--undeclared.is-dim .react-flow__edge-path { stroke-opacity: .6; }
+.architecture-map__edge--undeclared.is-active .react-flow__edge-path { stroke: var(--text-color-kumo-danger); stroke-opacity: 1; }
 .architecture-layermap__lane .react-flow__edge-path { stroke-opacity: .85; stroke-width: 1.5; }
 .architecture-layermap__lane .architecture-layermap__lane--dashed { stroke-dasharray: 6 4; }
 .architecture-map__edge .react-flow__edge-text { font-family: var(--font-mono); font-size: 11px; fill: var(--text-color-kumo-default); }
@@ -381,3 +381,8 @@
 .architecture-map .react-flow__attribution { background: transparent; font-size: 11px; }
 .architecture-map .react-flow__attribution a { color: var(--text-color-kumo-subtle); }
 .architecture-map[data-view="topology"] .architecture-map__edge .react-flow__edge-path { stroke-opacity: .55; }
+.architecture-map[data-view="sequence"] .architecture-map__edge:not(.is-dim) .react-flow__edge-path { stroke-opacity: .85; }
+.architecture-map[data-view="sequence"] .architecture-map__edge.selected .react-flow__edge-path { stroke-width: 2.5; }
+.architecture-map[data-view="sequence"] .architecture-map__edge.selected .react-flow__edge-text { font-weight: 700; fill: var(--rh-accent); }
+.architecture-map__edge--message-change .react-flow__edge-text { fill: var(--rh-accent); }
+.architecture-map__edge--message-danger .react-flow__edge-path { stroke: var(--text-color-kumo-danger); }

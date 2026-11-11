@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { installStateFixturePath, seedGlobalPackageFixture } from '../helpers/install-ownership';
+import { installStateFixturePath, withTempHome } from '../helpers/install-ownership';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -13,24 +13,6 @@ import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
 const FULL_PLUGINS: readonly PluginId[] = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory'];
 
 const ROOT = path.join(import.meta.dir, '..', '..');
-
-function withTempHome(fn: (home: string) => void): void {
-  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-status-')));
-  const prev = process.env.HOME;
-  const prevBunInstall = process.env.BUN_INSTALL;
-  process.env.HOME = tmp;
-  process.env.BUN_INSTALL = path.join(tmp, '.bun');
-  seedGlobalPackageFixture();
-  try {
-    fn(tmp);
-  } finally {
-    if (prev === undefined) delete process.env.HOME;
-    else process.env.HOME = prev;
-    if (prevBunInstall === undefined) delete process.env.BUN_INSTALL;
-    else process.env.BUN_INSTALL = prevBunInstall;
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
-}
 
 function writeInstallStateFixture(plugins: readonly PluginId[]): void {
   const statePath = installStateFixturePath(process.env);
@@ -48,7 +30,7 @@ function writeInstallStateFixture(plugins: readonly PluginId[]): void {
 
 describe('status command (Phase 1C)', () => {
   test('reports CLI version + 7 routes with correct per-event breakdown', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       const r = runStatus();
       expect(r.cli.version).toBeTruthy();
       expect(r.routes.total).toBe(7);
@@ -63,7 +45,7 @@ describe('status command (Phase 1C)', () => {
   });
 
   test('before install: every host reports alreadyConfigured=false', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-status', (home) => {
       process.env.BUN_INSTALL = path.join(home, 'missing-bun');
       const r = runStatus();
       expect(r.targets.length).toBeGreaterThan(0);
@@ -77,7 +59,7 @@ describe('status command (Phase 1C)', () => {
   });
 
   test('after install: managedEntryCount equals expectedEntryCount per host', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       runInstall({ target: 'both', location: 'global' });
       const r = runStatus();
       const codex = r.targets.find((t) => t.id === 'codex')!;
@@ -91,7 +73,7 @@ describe('status command (Phase 1C)', () => {
   });
 
   test('reports exact projection drift when Stop timeout changes without changing managed count', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       runInstall({ target: 'codex', location: 'global' });
       const configPath = path.join(process.env.HOME!, '.codex', 'hooks.json');
       const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
@@ -119,7 +101,7 @@ describe('status command (Phase 1C)', () => {
   });
 
   test('reports matcher, type, and command field drift by route', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       runInstall({ target: 'codex', location: 'global' });
       const configPath = path.join(process.env.HOME!, '.codex', 'hooks.json');
       const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
@@ -144,7 +126,7 @@ describe('status command (Phase 1C)', () => {
   });
 
   test('reports missing, duplicate, and unexpected managed routes', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       runInstall({ target: 'codex', location: 'global' });
       const configPath = path.join(process.env.HOME!, '.codex', 'hooks.json');
       const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
@@ -176,7 +158,7 @@ describe('status command (Phase 1C)', () => {
   });
 
   test('ignores unmanaged sibling commands while checking the managed projection', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       runInstall({ target: 'codex', location: 'global' });
       const configPath = path.join(process.env.HOME!, '.codex', 'hooks.json');
       const config = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
@@ -195,7 +177,7 @@ describe('status command (Phase 1C)', () => {
 
   test('every hook route is core: the expected managed entry count does not depend on the plugin selection', () => {
     for (const plugins of [[], FULL_PLUGINS] as const) {
-      withTempHome(() => {
+      withTempHome('repo-harness-status', () => {
         runInstall({ target: 'codex', location: 'global' });
         writeInstallStateFixture(plugins);
 
@@ -209,7 +191,7 @@ describe('status command (Phase 1C)', () => {
   });
 
   test('detects opt-in repo via .ai/harness/workflow-contract.json marker', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       const repo = fs.realpathSync(
         fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-status-repo-')),
       );
@@ -229,7 +211,7 @@ describe('status command (Phase 1C)', () => {
 
   test('reports model authority, projection provider, code facts, and apply independently', () => {
     registerArchitecturePlugin();
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       const repo = fs.realpathSync(
         fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-status-architecture-')),
       );
@@ -298,7 +280,7 @@ describe('status command (Phase 1C)', () => {
   });
 
   test('non-git-repo cwd reports inGitRepo=false and optIn=false', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'no-git-')));
       try {
         const r = runStatus(tmp);
@@ -311,7 +293,7 @@ describe('status command (Phase 1C)', () => {
   });
 
   test('formatStatus produces human-readable text', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       const text = formatStatus(runStatus(), false);
       expect(text).toContain('repo-harness');
       expect(text).toContain('Hosts:');
@@ -321,7 +303,7 @@ describe('status command (Phase 1C)', () => {
   });
 
   test('formatStatus --json produces parseable JSON', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       const json = formatStatus(runStatus(), true);
       expect(() => JSON.parse(json)).not.toThrow();
       const parsed = JSON.parse(json);
@@ -331,7 +313,7 @@ describe('status command (Phase 1C)', () => {
   });
 
   test('installState reports not recorded when install-state.json is absent', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       const r = runStatus();
       expect(r.installState).toEqual({ recorded: false });
       expect(r.targets.find((target) => target.id === 'codex')?.expectedEntryCount).toBe(5);
@@ -342,7 +324,7 @@ describe('status command (Phase 1C)', () => {
   });
 
   test('installState reads back the core version and plugins from install-state.json', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       writeInstallStateFixture(['architecture', 'product']);
       const { core } = versions([]);
 
@@ -369,7 +351,7 @@ describe('status command (Phase 1C)', () => {
     // "never installed" -- conflating them (as this test used to assert)
     // hides a broken host install behind text that reads as "just run
     // install", when actually something needs repairing.
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       const statePath = installStateFixturePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.writeFileSync(statePath, '{not valid json');
@@ -386,7 +368,7 @@ describe('status command (Phase 1C)', () => {
   });
 
   test('installState reports invalid when a plugin entry fails readInstallState validation', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       const statePath = installStateFixturePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       const { core } = versions([]);
@@ -408,7 +390,7 @@ describe('status command (Phase 1C)', () => {
   });
 
   test('installState names the next step for protocol 1 and protocol 2 states', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       const statePath = installStateFixturePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.writeFileSync(statePath, JSON.stringify({
@@ -456,7 +438,7 @@ describe('status command (Phase 1C)', () => {
   test('installState reports invalid instead of crashing when a syntactically valid install-state.json is missing plugins', () => {
     // A syntactically valid state with missing plugins must remain
     // diagnosable instead of reaching formatStatus's `.plugins.join()`.
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       const statePath = installStateFixturePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.writeFileSync(statePath, JSON.stringify({
@@ -479,7 +461,7 @@ describe('status command (Phase 1C)', () => {
   });
 
   test('installState reports invalid instead of crashing when plugins is a non-array value', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-status', () => {
       const statePath = installStateFixturePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.writeFileSync(statePath, JSON.stringify({

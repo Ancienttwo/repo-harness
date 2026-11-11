@@ -13,6 +13,8 @@
  * evidence shape and its validator. The provider read and the blocker
  * projection live elsewhere; nothing here performs I/O.
  */
+import { isRecord } from '../evidence/is-record';
+import { exactKeys, fail, oneOf, repoRelativePath, requiredString } from '../evidence/record-validators';
 
 export const REQUIRED_CHECK_COVERAGE_PROTOCOL = 1 as const;
 export const REQUIRED_CHECK_COVERAGE_KIND = 'repo-harness-required-check-coverage' as const;
@@ -69,22 +71,6 @@ export interface RequiredCheckCoverageFailureV1 {
 
 const SHA40 = /^[0-9a-f]{40}$/u;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function fail(message: string): never {
-  throw new Error(message);
-}
-
-function exactKeys(value: Record<string, unknown>, label: string, keys: readonly string[]): void {
-  const actual = Object.keys(value).sort();
-  const expected = [...keys].sort();
-  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
-    fail(`${label} fields are invalid`);
-  }
-}
-
 function uniqueStrings(value: unknown, label: string): string[] {
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || entry.trim() === '')) {
     fail(`${label} must be non-empty strings`);
@@ -92,11 +78,6 @@ function uniqueStrings(value: unknown, label: string): string[] {
   const strings = value as string[];
   if (new Set(strings).size !== strings.length) fail(`${label} must not repeat a value`);
   return [...strings];
-}
-
-function repoRelativePath(value: string): boolean {
-  return value.length > 0 && !value.startsWith('/') && !value.includes('\\')
-    && !value.includes('\0') && value.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
 }
 
 function protectedPathPattern(value: unknown, label: string): string {
@@ -243,16 +224,6 @@ export function requiredCheckCoverageFailures(
 
 const BUCKETS: readonly RequiredCheckCoverageBucket[] = ['pass', 'fail', 'pending', 'skipping', 'cancel', 'missing'];
 const REQUIREMENTS = ['not_required', 'required', 'waived'] as const;
-
-function oneOf<T extends string>(value: unknown, choices: readonly T[], label: string): T {
-  if (typeof value !== 'string' || !(choices as readonly string[]).includes(value)) fail(`${label} is invalid`);
-  return value as T;
-}
-
-function requiredString(value: unknown, label: string, pattern?: RegExp): string {
-  if (typeof value !== 'string' || value.trim() === '' || (pattern && !pattern.test(value))) fail(`${label} is invalid`);
-  return value;
-}
 
 function sortedUniqueStrings(value: unknown, label: string): string[] {
   const strings = uniqueStrings(value, label);

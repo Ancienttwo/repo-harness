@@ -108,7 +108,7 @@ function refusal(board: BoardV1, pr: BoardPullRequestV1): { readonly reason: Boa
   if (own !== undefined) return { reason: 'merge_order', detail: `earlier plan item #${own} is closed only by this PR; split the PR` };
   if (earlier.length > 0) return { reason: 'merge_order', detail: `earlier in merge_order and not closed: ${earlier.map(number => `#${number}`).join(' ')}` };
   // The provisional `tier_low` path needs an evidence check by a seat, so an unattended merge takes a record at every tier.
-  // A record acceptance of a High head already needs two PASS rows, one cross-family; `sync` carries the record rows of the reviewed head to a proven merge-only sync (`acceptance` in board.ts).
+  // A record acceptance of a High head already needs two PASS rows, one cross-family (`acceptance` in board.ts).
   if (pr.acceptance.status !== 'accepted' || pr.acceptance.via === 'tier_low') {
     return { reason: 'not_accepted', detail: `#${pr.number} has no PASS acceptance record for ${pr.head_sha.slice(0, 9)} (${pr.acceptance.status === 'accepted' ? pr.acceptance.via : pr.acceptance.status})` };
   }

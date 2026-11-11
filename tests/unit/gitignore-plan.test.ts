@@ -7,6 +7,10 @@ import { join } from "path";
 import {
   GITIGNORE_MANAGED_BLOCK_CONTENT,
   gitignoreManagedBlockOperation,
+  RUNTIME_STATE_IGNORE_CONTENT,
+  RUNTIME_STATE_IGNORE_MARKER,
+  removeRuntimeStateIgnoreBlock,
+  userExcludesFilePath,
 } from "../../src/effects/adoption/gitignore-plan";
 
 // A repository root without files: no retired runtime rule is kept.
@@ -81,11 +85,11 @@ describe("gitignore managed block .repo-harness rule", () => {
     }
   });
 
-  test("managed block ignores every repo-local runtime path the CLI writes", () => {
+  test("tracked and runtime-state blocks together ignore every repo-local runtime path the CLI writes", () => {
     const cwd = mkdtempSync(join(tmpdir(), "gitignore-runtime-paths-"));
     try {
       expect(spawnSync("git", ["init", "-q"], { cwd }).status).toBe(0);
-      writeFileSync(join(cwd, ".gitignore"), `${GITIGNORE_MANAGED_BLOCK_CONTENT}\n`);
+      writeFileSync(join(cwd, ".gitignore"), `${GITIGNORE_MANAGED_BLOCK_CONTENT}\n${RUNTIME_STATE_IGNORE_CONTENT}\n`);
       const runtimePaths = [
         ".ai/harness/chatgpt/oracle-home/Default/Cookies", // oracle-provider.ts resolveOracleHomeDir
         ".ai/harness/chatgpt/delegations/stamp-slug/bundle/brief.md", // repo-harness-chatgpt delegate skill
@@ -127,6 +131,18 @@ describe("gitignore managed block .repo-harness rule", () => {
     expect(GITIGNORE_MANAGED_BLOCK_CONTENT).not.toContain(".repo-harness/chatgpt-browser.tokens.json");
   });
 
+  test("the planned tracked block holds no rule of the runtime-state set", () => {
+    const tracked = new Set(gitignoreManagedBlockOperation(ABSENT_REPO, "planned").content.split("\n"));
+    const moved = RUNTIME_STATE_IGNORE_CONTENT.split("\n").filter((line) => line && !line.startsWith("#"));
+    expect(moved).toContain(".ai/harness/events.jsonl");
+    expect(moved.filter((rule) => tracked.has(rule))).toEqual([]);
+  });
+
+  test("removing a block between user lines leaves one blank line", () => {
+    const block = `# BEGIN: ${RUNTIME_STATE_IGNORE_MARKER}\nrule/\n# END: ${RUNTIME_STATE_IGNORE_MARKER}\n`;
+    expect(removeRuntimeStateIgnoreBlock(`# user\n*.orig\n\n${block}\nuser-tail/\n`)).toEqual({ status: "removed", content: "# user\n*.orig\n\nuser-tail/\n" });
+  });
+
   test("the emitted operation carries the directory-level rule", () => {
     const operation = gitignoreManagedBlockOperation(ABSENT_REPO, "planned");
     expect(operation.path).toBe(".gitignore");
@@ -138,5 +154,15 @@ describe("gitignore managed block .repo-harness rule", () => {
     const operation = gitignoreManagedBlockOperation(ABSENT_REPO, "planned", "custom-local/\n");
     expect(operation.content.split("\n")).toContain(".repo-harness/");
     expect(operation.content).toContain("custom-local/");
+  });
+
+  test("the user-level excludes lookup follows an include section of the global Git config", () => {
+    const home = mkdtempSync(join(tmpdir(), "gitignore-include-"));
+    const shared = join(home, "shared-ignore");
+    try {
+      writeFileSync(join(home, ".gitconfig"), "[include]\n\tpath = extra.cfg\n");
+      writeFileSync(join(home, "extra.cfg"), `[core]\n\texcludesFile = ${shared}\n`);
+      expect(userExcludesFilePath({ HOME: home, XDG_CONFIG_HOME: join(home, "xdg"), GIT_CONFIG_NOSYSTEM: "1" })).toEqual({ ok: true, path: shared });
+    } finally { rmSync(home, { recursive: true, force: true }); }
   });
 });

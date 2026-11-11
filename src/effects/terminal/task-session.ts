@@ -4,9 +4,10 @@ import { assertSessionDirectory, classicRecordRetired, taskSessionDirectory, sam
 import { observeTaskSessionAdmission, taskBindingSha256 } from './task-session-admission';
 import { ensureSessionDirectory, nextSessionRound, processIdentity, readSessionArtifact, writeSessionArtifact, writeSessionBytes } from './task-session-io';
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'fs';
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 import { isAbsolute, join, relative } from 'path';
 import type { TaskSessionAuthority } from '../admission/admission-source';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import type { ProcessProof, TaskPrePromptInbox, TaskRequest, TaskResult, TaskSessionAdmission, TerminalHostSpec } from '../../core/review/runner-port';
 import { recordWorktree } from '../git/worktree-record';
 import { taskRepository } from '../git/task-repository';
@@ -26,10 +27,6 @@ function recheckTaskAdmission(repoRoot: string, binding: Pick<TaskPaneBinding, '
 
 export function beginSessionRound(dir: string, round: number, identity: unknown): void {
   writeSessionArtifact(join(dir, `started-${round}.json`), identity);
-}
-export function saveSessionRoundResult(dir: string, round: number, result: unknown): void {
-  if (!existsSync(join(dir, `started-${round}.json`))) throw new Error('task_agent_result_without_started_request');
-  writeSessionArtifact(join(dir, `result-${round}.json`), result);
 }
 
 function validateSpec(spec: HerdrTaskAgentSpec): void {
@@ -277,7 +274,7 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
     const bytes = readFileSync(contextPath);
     if (bytes.length > 10 * 1024 * 1024) throw new Error('task_agent_context_too_large');
     const content = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    const digest = sha256Prefixed(bytes);
     const round = nextSessionRound<TaskRequest>(dir, binding.max_requests, digest, prior => {
       if (!readTaskRequestResult(root, dir, prior)) throw new Error('task_agent_ambiguous_round');
       return contextPolicy === 'changed_only' ? prior.context_sha256 : '';

@@ -279,8 +279,7 @@ export function makeFreshEvidence(cwd: string, nowMs: number): void {
     `> **Reviewed Target Revision**: ${target}`,
     '',
   ].join('\n'));
-  const reviewed = resolveEffectiveState(cwd, nowMs, risk);
-  const authorityRevision = reviewed.source_hashes.authority_revision;
+  resolveEffectiveState(cwd, nowMs, risk);
   const reportPath = seedNativeVerification(cwd, CONTRACT);
   const fixture = fixtureAuthorities.get(cwd)!;
   const waiverSummary = 'Fixture owner accepts the current change.';

@@ -1,6 +1,6 @@
 /**
  * `publication.acceptance_merge` in `.ai/harness/policy.json` is the only
- * switch for the publication merge executor. A missing `publication` object or
+ * on/off switch for the publication merge executor. A missing `publication` object or
  * a missing field means "off"; every other shape is invalid.
  *
  * `publication.required_check_coverage` declares protected paths and the

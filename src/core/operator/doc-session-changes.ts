@@ -1,4 +1,5 @@
 import { canonicalize } from '../evidence/canonical-json';
+import { isRecord } from '../evidence/is-record';
 import type { JsonValue } from '../evidence/types';
 import { SESSION_OBSERVATION_MAX_BYTES } from '../sessions/session-selector';
 import { isRepositoryRelativePath } from './doc-session-events';
@@ -125,9 +126,8 @@ export const isDocSessionLossPath = (value: unknown): value is string =>
   typeof value === 'string' && isRepositoryRelativePath(value.endsWith('/') ? value.slice(0, -1) : value);
 
 const fail = (what: string): never => { throw new Error(`doc session ${what}`); };
-const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 function exact(value: unknown, keys: readonly string[], what: string): Record<string, unknown> {
-  if (!isObject(value)) return fail(what);
+  if (!isRecord(value)) return fail(what);
   const actual = Object.keys(value).sort();
   const expected = [...keys].sort();
   if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) return fail(what);

@@ -1,11 +1,12 @@
 import { version as PACKAGE_VERSION } from '../../package.json';
 import { installStateFixturePath, pluginSelectionEnv, recordPluginSelection } from '../helpers/install-ownership';
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync, readdirSync, readFileSync, statSync, openSync, closeSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
+import { createInterface } from 'node:readline';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { taskReviewRunner } from '../../src/effects/review-runner/task-review-runner';
 import { OPERATOR_WEB_PACKAGE_NAME, type PluginId } from '../../src/core/skill-surface/plugin-manifest';
@@ -35,11 +36,13 @@ import type { DocsTreeV1 } from '../../src/core/operator/docs';
 import type { TestsSnapshotV1 } from '../../src/core/operator/tests';
 import type { TestsRepositoryCache } from '../../src/effects/operator/tests-collector';
 import { decodeBoard } from '../../src/core/board/board';
-import { BoardReadError, readRepositoryAdvisorTranscript, readRepositoryBoard, readRepositoryBoardParents, sendRepositoryAdvisor, type BoardParentsReadInput, type BoardReadInput } from '../../src/effects/operator/board-read';
+import { BoardReadError, readRepositoryAdvisorTranscript, sendRepositoryAdvisor, type BoardReadInput } from '../../src/effects/operator/board-read';
+import { spawnBoardWorker, type BoardDocumentCache, type BoardObserverReads, type BoardParentsCache } from '../../src/effects/operator/board-observer';
+import type { BoardWorkerRequest } from '../../src/effects/operator/board-observer-worker';
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import boardParents from '../../src/operator-web/fixtures/board-parents.json';
-import { decodeBoardParents } from '../../src/core/board/parents';
-import { boardSummary, decodeBoardSummaries } from '../../src/core/board/summary';
+import boardSeats from '../../src/operator-web/fixtures/board-seats.json';
+import { decodeBoardParents, decodeBoardSeats } from '../../src/core/board/parents';
 
 import {
   architectureStatus,
@@ -65,6 +68,8 @@ import { fakeHc } from '../helpers/fake-hc';
 import { collectRepositoryWorktrees } from '../../src/effects/operator/worktree-collector-worker';
 
 const TASK_ID = 'a'.repeat(64);
+/** Board GETs read only memory; this cache answers pending to every board read. */
+const PENDING_BOARD_CACHE: BoardObserverReads = { seats: () => ({ state: 'pending' }), board: () => ({ state: 'pending' }), parents: () => ({ state: 'pending' }) };
 function registryHome(entries: readonly { readonly path: string; readonly accessMode: 'read_only' | 'read_write' }[]): {
   readonly env: NodeJS.ProcessEnv;
   readonly home: string;
@@ -647,11 +652,11 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
-  test('board route needs one parent, decodes the board CLI JSON once and maps each refusal', async () => {
+  test('board route needs one parent, answers the cached board with its ETag and maps each cached refusal and board_pending', async () => {
     const board = decodeBoard(board1474);
-    let result: () => Promise<unknown> = async () => board;
-    const inputs: BoardReadInput[] = [];
-    const server = await startOperatorServer({ port: 0, read_board: input => { inputs.push(input); return result(); } });
+    let cache: BoardDocumentCache = { state: 'ready', value: board, etag: '"v1"' };
+    const reads: (readonly [string, number])[] = [];
+    const server = await startOperatorServer({ port: 0, board_cache: { ...PENDING_BOARD_CACHE, board: (id, parent) => { reads.push([id, parent]); return cache; } } });
     const get = (path: string, init: RequestInit = {}) => fetch(`${server.url}${path}`, init);
     const code = async (response: Response) => ((await response.json()) as { error: { code: string } }).error.code;
     const path = '/api/v1/repositories/repo-a/board';
@@ -660,130 +665,66 @@ describe('operator serve command and HTTP boundary', () => {
         const response = await get(`${path}${query}`);
         expect([response.status, await code(response)]).toEqual([400, 'board_parent_invalid']);
       }
-      expect(inputs).toHaveLength(0);
+      expect(reads).toHaveLength(0);
       const ready = await get(`${path}?parent=1474`);
-      expect(ready.status).toBe(200);
-      expect(await ready.json()).toEqual(board);
-      expect(inputs[0]).toMatchObject({ repository_id: 'repo-a', parent: 1474, env: { GH_PROMPT_DISABLED: '1' } });
-      for (const [failure, status] of [['repository_not_found', 404], ['board_collect_failed', 503], ['board_timeout', 504]] as const) {
-        result = async () => { throw new BoardReadError(failure); };
+      expect([ready.status, ready.headers.get('etag'), await ready.json()]).toEqual([200, '"v1"', board]);
+      expect(reads[0]).toEqual(['repo-a', 1474]);
+      expect((await get(`${path}?parent=1474`, { headers: { 'If-None-Match': '"v1"' } })).status).toBe(304);
+      for (const [failure, status] of [['repository_not_found', 404], ['registry_unavailable', 503], ['board_collect_failed', 503], ['board_timeout', 504], ['board_invalid', 503]] as const) {
+        cache = { state: 'unavailable', reason: failure };
         const response = await get(`${path}?parent=1474`);
         expect([response.status, await code(response)]).toEqual([status, failure]);
       }
-      result = async () => ({ ...board, protocol: 5 });
-      const invalid = await get(`${path}?parent=1474`);
-      expect([invalid.status, await code(invalid)]).toEqual([503, 'board_invalid']);
+      cache = { state: 'pending' };
+      const pending = await get(`${path}?parent=1474`);
+      expect([pending.status, await code(pending)]).toEqual([503, 'board_pending']);
       const head = await get(`${path}?parent=1474`, { method: 'HEAD' });
       expect([head.status, head.headers.get('allow')]).toEqual([405, 'GET']);
       expect((await get(`${path}?parent=1474`, { headers: { Host: 'foreign.invalid' } })).status).toBe(421);
       expect((await get(`${path}?parent=1474`, { headers: { Origin: 'http://foreign.invalid' } })).status).toBe(403);
       expect((await get(`${path}?parent=1474`, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
-      // One read per admitted GET; HEAD, the Host and Origin refusals and POST start none.
-      expect(inputs).toHaveLength(5);
+      // One cache read per admitted GET; HEAD, the Host and Origin refusals and POST read none.
+      expect(reads).toHaveLength(8);
     } finally {
       await server.close();
     }
   });
 
-  test('board reads replace private summaries and the summary route reads only the listed parents', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'board-summaries-'));
-    let board = decodeBoard(board1474), reads = 0;
+  test('board parents route takes no query, answers the cached list with its ETag and maps each cached refusal and parents_pending', async () => {
     const list = decodeBoardParents(boardParents);
-    const server = await startOperatorServer({ port: 0, env: { REPO_HARNESS_HOME: home },
-      read_board: async () => { reads++; return board; }, read_board_parents: async () => list });
-    const path = `${server.url}/api/v1/repositories/repo-a/board/summaries`;
-    const target = join(home, 'board/summaries/repo-a-1474.json');
-    const get = async () => {
-      const response = await fetch(path);
-      expect(response.status).toBe(200);
-      return decodeBoardSummaries(await response.json());
-    };
-    try {
-      expect((await get()).parents).toEqual(list.parents.map(parent => ({ parent: parent.number, status: 'not_read' })));
-      expect(reads).toBe(0);
-      expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
-      const first = readFileSync(target, 'utf8'), inode = statSync(target).ino, fd = openSync(target, 'r');
-      try {
-        if (process.platform !== 'win32') expect(statSync(target).mode & 0o777).toBe(0o600);
-        expect(decodeBoardSummaries(JSON.parse(first)).parents).toEqual([{ parent: 1474, status: 'observed', observed_at: board.observed_at,
-          summary: { queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, current_batch: null, needs_you: 3, worker_limit: 8,
-            seats: { status: 'observed', stalled: 0, desks: [
-              { seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'blocked' }, { seat: 'worker', agent: 'claude-code', issue: 1475, pr: 1491, state: 'done' },
-            ] } } }]);
-        expect((await get()).parents).toEqual([JSON.parse(first).parents[0], { parent: 1651, status: 'not_read' }]);
-        board = { ...board, observed_at: new Date(Date.parse(board.observed_at) + 60_000).toISOString() };
-        expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
-        expect(readFileSync(fd, 'utf8')).toBe(first);
-        expect(statSync(target).ino).not.toBe(inode);
-        expect((await get()).parents[0]).toMatchObject({ status: 'observed', observed_at: board.observed_at });
-        board = decodeBoard(board1474);
-        expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
-        expect((await get()).parents[0]).toMatchObject({ observed_at: new Date(Date.parse(board.observed_at) + 60_000).toISOString() });
-      } finally { closeSync(fd); }
-      expect(readdirSync(join(home, 'board/summaries'))).toEqual(['repo-a-1474.json']);
-      writeFileSync(target, '{');
-      expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' });
-      // A snapshot of the old protocol is refused, not translated, and the next board read replaces it.
-      writeFileSync(target, JSON.stringify({ ...JSON.parse(first), protocol: 1 }));
-      expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' });
-      expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
-      expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'observed', observed_at: board.observed_at, summary: boardSummary(board) });
-      writeFileSync(target, JSON.stringify({ ...JSON.parse(first), repository_id: 'repo-b' }));
-      expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_subject_invalid' });
-      rmSync(target); mkdirSync(target);
-      expect((await get()).parents[0]).toMatchObject({ parent: 1474, status: 'unavailable', reason: expect.stringContaining('snapshot_read_failed:') });
-      expect((await fetch(`${path}?all=1`)).status).toBe(400);
-      expect((await fetch(path, { method: 'HEAD' })).status).toBe(405);
-      expect((await fetch(path, { headers: { Origin: 'http://foreign.invalid' } })).status).toBe(403);
-      expect((await fetch(path, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
-      expect(reads).toBe(4);
-    } finally { await server.close(); rmSync(home, { recursive: true, force: true }); }
-  });
-
-  test('board parents route takes no query, decodes the board parents CLI JSON once, maps each refusal and shares the board read cap', async () => {
-    const list = decodeBoardParents(boardParents);
-    let result: () => Promise<unknown> = async () => list;
-    const inputs: BoardParentsReadInput[] = [];
-    let hold: () => void = () => {};
-    let started: () => void = () => {};
-    const boardStarted = new Promise<void>(resolve => { started = resolve; });
-    const server = await startOperatorServer({ port: 0, max_concurrency: 1, read_board_parents: input => { inputs.push(input); return result(); },
-      read_board: () => new Promise(resolve => { hold = () => resolve(decodeBoard(board1474)); started(); }) });
+    let cache: BoardParentsCache = { state: 'ready', value: list, etag: '"p1"' };
+    const reads: string[] = [];
+    const server = await startOperatorServer({ port: 0, board_cache: { ...PENDING_BOARD_CACHE, seats: () => ({ state: 'ready', value: decodeBoardSeats(boardSeats) }),
+      parents: (id) => { reads.push(id); return cache; } } });
     const get = (path: string, init: RequestInit = {}) => fetch(`${server.url}${path}`, init);
     const code = async (response: Response) => ((await response.json()) as { error: { code: string } }).error.code;
     const path = '/api/v1/repositories/repo-a/board/parents';
     try {
-      expect([(await get(`${path}?all=1`)).status, inputs]).toEqual([400, []]);
+      expect([(await get(`${path}?all=1`)).status, reads]).toEqual([400, []]);
       const ready = await get(path);
-      expect([ready.status, await ready.json()]).toEqual([200, list]);
-      expect(inputs[0]).toMatchObject({ repository_id: 'repo-a', env: { GH_PROMPT_DISABLED: '1' } });
-      for (const [failure, status] of [['repository_not_found', 404], ['parents_github_failed', 503], ['parents_hc_failed', 503], ['parents_timeout', 504]] as const) {
-        result = async () => { throw new BoardReadError(failure); };
+      expect([ready.status, ready.headers.get('etag'), await ready.json()]).toEqual([200, '"p1"', list]);
+      expect(reads[0]).toBe('repo-a');
+      expect((await get(path, { headers: { 'If-None-Match': '"p1"' } })).status).toBe(304);
+      for (const [failure, status] of [['repository_not_found', 404], ['parents_github_failed', 503], ['parents_timeout', 504], ['parents_invalid', 503]] as const) {
+        cache = { state: 'unavailable', reason: failure };
         const response = await get(path);
         expect([response.status, await code(response)]).toEqual([status, failure]);
       }
-      // Protocol 1 is the retired parent list without the seats list (#1785).
-      result = async () => ({ ...list, protocol: 1 });
-      const invalid = await get(path);
-      expect([invalid.status, await code(invalid)]).toEqual([503, 'parents_invalid']);
+      cache = { state: 'pending' };
+      const pending = await get(path);
+      expect([pending.status, await code(pending)]).toEqual([503, 'parents_pending']);
       const head = await get(path, { method: 'HEAD' });
       expect([head.status, head.headers.get('allow')]).toEqual([405, 'GET']);
-      // A board read in flight holds the one slot of the shared cap.
-      const board = get('/api/v1/repositories/repo-a/board?parent=1474');
-      await boardStarted;
-      const summariesBusy = await get('/api/v1/repositories/repo-a/board/summaries');
-      expect([summariesBusy.status, await code(summariesBusy)]).toEqual([503, 'parents_busy']);
-      const busy = await get(path);
-      expect([busy.status, await code(busy)]).toEqual([503, 'parents_busy']);
-      hold();
-      expect((await board).status).toBe(200);
-      expect(inputs).toHaveLength(6);
+      const seats = await get('/api/v1/repositories/repo-a/board/seats');
+      expect([seats.status, await seats.json()]).toEqual([200, boardSeats]);
+      expect((await get('/api/v1/repositories/repo-a/board/seats?parent=1474')).status).toBe(400);
+      expect(reads).toHaveLength(7);
     } finally {
       await server.close();
     }
   });
 
-  test('board reader runs the board CLI in the registered repository, without its bunfig, .env or a GH_REPO override', async () => {
+  test('board worker runs gh in the registered repository, without its bunfig, .env or a GH_REPO override', async () => {
     const repository = mkdtempSync(join(tmpdir(), 'repo-harness-board-'));
     const scratch = mkdtempSync(join(tmpdir(), 'repo-harness-board-gh-'));
     expect(spawnSync('git', ['init', '-q'], { cwd: repository }).status).toBe(0);
@@ -798,23 +739,29 @@ describe('operator serve command and HTTP boundary', () => {
     writeFileSync(operatorGh, `#!/bin/sh\necho "operator-gh GH_REPO=$GH_REPO GIT_DIR=$GIT_DIR" >> ${JSON.stringify(join(scratch, 'calls'))}\nexit 1\n`);
     chmodSync(repositoryGh, 0o755);
     chmodSync(operatorGh, 0o755);
-    const registry = registryHome([{ path: repository, accessMode: 'read_only' }]);
-    const env = { ...process.env, ...registry.env, REPO_HARNESS_GH_BIN: operatorGh, GH_REPO: 'other/repo', GIT_DIR: join(scratch, 'other.git') };
-    const signal = new AbortController().signal;
+    const env = { ...process.env, REPO_HARNESS_GH_BIN: operatorGh, GH_REPO: 'other/repo', GIT_DIR: join(scratch, 'other.git') };
+    const worker = spawnBoardWorker(env);
+    const exited = new Promise(resolve => worker.once('close', resolve));
+    const lines = createInterface({ input: worker.stdout! });
+    const ask = (request: BoardWorkerRequest) => {
+      const answer = new Promise(resolve => lines.once('line', line => resolve(JSON.parse(line))));
+      worker.stdin!.write(`${JSON.stringify(request)}\n`);
+      return answer;
+    };
     try {
-      // `gh repo view` fails, so the CLI exits with BoardCollectError on stderr.
-      await expect(readRepositoryBoard({ repository_id: registry.ids[0]!, parent: 1474, env, signal })).rejects.toMatchObject({ code: 'board_collect_failed' });
+      // `gh repo view` fails, so the board read ends in BoardCollectError.
+      expect(await ask({ id: 1, kind: 'board', repo_root: repository, parent: 1474, key: 'repo-a#1474' })).toEqual({ id: 1, ok: false, code: 'board_collect_failed' });
       expect(existsSync(marker)).toBe(false);
       expect(readFileSync(join(scratch, 'calls'), 'utf8')).toBe('operator-gh GH_REPO= GIT_DIR=\n');
-      await expect(readRepositoryBoard({ repository_id: 'repo-missing', parent: 1474, env, signal })).rejects.toMatchObject({ code: 'repository_not_found' });
-      // The parent list mode runs the same way; its failed GitHub read keeps its own code.
-      await expect(readRepositoryBoardParents({ repository_id: registry.ids[0]!, env, signal })).rejects.toMatchObject({ code: 'parents_github_failed' });
+      // The parent list read runs the same way; its failed GitHub read keeps its own code.
+      expect(await ask({ id: 2, kind: 'parents', repo_root: repository })).toEqual({ id: 2, ok: false, code: 'parents_github_failed' });
       expect(existsSync(marker)).toBe(false);
       expect(readFileSync(join(scratch, 'calls'), 'utf8')).toBe('operator-gh GH_REPO= GIT_DIR=\n'.repeat(2));
     } finally {
+      worker.stdin!.end();
+      await exited;
       rmSync(repository, { recursive: true, force: true });
       rmSync(scratch, { recursive: true, force: true });
-      rmSync(registry.home, { recursive: true, force: true });
     }
   }, 60_000);
 
@@ -830,12 +777,8 @@ describe('operator serve command and HTTP boundary', () => {
     let read: () => Promise<unknown> = async () => transcript;
     const sends: (BoardReadInput & { text: string })[] = [];
     const reads: BoardReadInput[] = [];
-    let hold: () => void = () => {};
-    let started: () => void = () => {};
-    const boardStarted = new Promise<void>(resolve => { started = resolve; });
     const server = await startOperatorServer({ port: 0, max_concurrency: 1, static_root: ui, env: { REPO_HARNESS_HOME: home },
-      send_advisor: input => { sends.push(input); return send(); }, read_advisor_transcript: input => { reads.push(input); return read(); },
-      read_board: () => new Promise(resolve => { hold = () => resolve(decodeBoard(board1474)); started(); }) });
+      send_advisor: input => { sends.push(input); return send(); }, read_advisor_transcript: input => { reads.push(input); return read(); } });
     const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
     let next = 0;
     const post = (body: Record<string, unknown>, route = 'messages') => fetch(`${server.url}/api/v1/seats/advisor/${route}`, { method: 'POST',
@@ -914,14 +857,16 @@ describe('operator serve command and HTTP boundary', () => {
       expect(audit().filter(record => record.phase === 'intent').at(-1)).toMatchObject({ operation: 'advisor_boss_rage', target: 'advisor_seat:repo-a' });
       expect(await answer(await post(boss, 'boss-commands'))).toEqual([409, 'boss_cooldown']);
 
-      // A board read in flight holds the one slot of the shared cap.
-      const board = fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`);
-      await boardStarted;
+      // A read-back in flight holds the one slot of the shared cap.
+      let hold: () => void = () => {};
+      const started = new Promise<void>((resolve) => { read = () => new Promise((settle) => { hold = () => settle(transcript); resolve(); }); });
+      const held = get('?repository_id=repo-a&parent=1503');
+      await started;
       expect(await answer(await post(message))).toEqual([503, 'advisor_busy']);
       expect(await answer(await post({ ...boss, command: 'mine' }, 'boss-commands'))).toEqual([503, 'advisor_busy']);
       expect(await answer(await get('?repository_id=repo-a&parent=1503'))).toEqual([503, 'advisor_busy']);
       hold();
-      expect((await board).status).toBe(200);
+      expect((await held).status).toBe(200);
     } finally {
       await server.close();
       rmSync(home, { recursive: true, force: true });
@@ -1352,7 +1297,7 @@ test('architecture GET and HEAD match CLI digests and keep closed argv with zero
   const spawnSpy = spyOn(childProcess, 'spawn').mockImplementation(((command: string, args: string[], options: unknown) => {
     spawned.push([command, ...args]); return originalSpawn(command, args, options as never);
   }) as typeof childProcess.spawn);
-  const server = await startOperatorServer({ port: 0, env, timeout_ms: 10000 });
+  const server = await startOperatorServer({ port: 0, env, timeout_ms: 10000, board_cache: PENDING_BOARD_CACHE });
   const path = `/api/v1/repositories/${registry.ids[0]}/architecture/modules`;
   try {
     const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
@@ -1429,7 +1374,7 @@ test('architecture rejects F-01 query injections before any child and refuses cr
   const registry = registryHome([{ path: root, accessMode: 'read_only' }]), git = architectureGit(scratch);
   writeFileSync(join(scratch, 'index.html'), '<!doctype html><title>Static fixture</title>');
   const processSpy = spyOn(childProcess, 'spawn');
-  const server = await startOperatorServer({ port: 0, static_root: scratch, env: { ...process.env, ...registry.env, ...git.env } });
+  const server = await startOperatorServer({ port: 0, static_root: scratch, board_cache: PENDING_BOARD_CACHE, env: { ...process.env, ...registry.env, ...git.env } });
   const path = `/api/v1/repositories/${registry.ids[0]}/architecture/modules/${MODULE_ID}/review-prompt`;
   try {
     for (const method of ['GET', 'HEAD']) {
@@ -1742,6 +1687,79 @@ describe('architecture map', () => {
     } finally {
       await broken.close();
       rmSync(root, { recursive: true, force: true });
+      rmSync(registry.home, { recursive: true, force: true });
+    }
+  });
+
+  test('a repository is served when its child returns, and a closed collector starts and publishes nothing', async () => {
+    const roots = [0, 1].map(() => realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-architecture-cycle-'))));
+    const registry = registryHome(roots.map(path => ({ path, accessMode: 'read_only' as const })));
+    const [first, second] = [...registry.ids].sort() as [string, string];
+    const pending = { state: 'unavailable', reason: 'architecture_map_pending' } as const;
+    const gates = new Map<string, () => void>();
+    const started: string[] = [];
+    const run_process = ((argv: readonly string[]) => {
+      const id = argv[1]!;
+      started.push(id);
+      return new Promise(resolve => gates.set(id, () => resolve({ ok: true, stdout: JSON.stringify({ id, ok: true, snapshot: { ...map, repository_id: id } }) })));
+    }) as never;
+    try {
+      const open = startArchitectureMapCollector({ env: registry.env, interval_ms: 60_000, run_process });
+      await waitFor(() => started.length === 1, 'the first child starts');
+      gates.get(first)!();
+      await waitFor(() => started.length === 2, 'the second child starts');
+      expect([open.read(first).state, open.read(second)]).toEqual(['ready', pending]);
+      gates.get(second)!();
+      await open.settled();
+      expect(open.read(second).state).toBe('ready');
+      expect(open.read('repo-unregistered')).toEqual({ state: 'unavailable', reason: 'repository_not_found' });
+      await open.close();
+
+      // Cycle 2 starts from the previous cycle's repositories, so a repository that cycle 2 has not
+      // reached yet keeps its older map. Main published `new Map(states).set(id, cache)`; the first
+      // version of this collector published an empty map, so the unreached repository fell to pending.
+      const ids: string[] = [];
+      const cycleGates: (() => void)[] = [];
+      const twice = startArchitectureMapCollector({ env: registry.env, interval_ms: 1, run_process: ((argv: readonly string[]) => {
+        const id = argv[1]!;
+        ids.push(id);
+        // Cycle 2's first child refuses its model, so its publish is visible in the read below.
+        const answer = ids.length === 3
+          ? { ok: true, stdout: JSON.stringify({ id, ok: false, reason: 'model_unavailable' }) }
+          : { ok: true, stdout: JSON.stringify({ id, ok: true, snapshot: { ...map, repository_id: id } }) };
+        return new Promise(resolve => cycleGates.push(() => resolve(answer)));
+      }) as never });
+      try {
+        await waitFor(() => ids.length === 1, 'cycle 1 child 1');
+        cycleGates.shift()!();
+        await waitFor(() => ids.length === 2, 'cycle 1 child 2');
+        cycleGates.shift()!();
+        await waitFor(() => twice.read(first).state === 'ready' && twice.read(second).state === 'ready', 'cycle 1 serves both maps');
+        await waitFor(() => ids.length === 3, 'cycle 2 child 1');
+        const reRead = ids[2]!, notReRead = reRead === first ? second : first;
+        cycleGates.shift()!();
+        await waitFor(() => ids.length === 4, 'cycle 2 child 2 starts after the first result is published');
+        expect(twice.read(reRead)).toEqual({ state: 'unavailable', reason: 'model_unavailable' });
+        // The repository that cycle 2 has not reached keeps its cycle 1 map, not pending.
+        expect(twice.read(notReRead).state).toBe('ready');
+      } finally {
+        // The test doubles are not signal-aware, so every gated child answers before close waits on it.
+        for (const release of cycleGates.splice(0)) release();
+        await twice.close();
+      }
+
+      started.length = 0;
+      const closing = startArchitectureMapCollector({ env: registry.env, interval_ms: 10, run_process });
+      await waitFor(() => started.length === 1, 'the child starts');
+      const closed = closing.close();
+      gates.get(first)!();
+      await closed;
+      // A cycle that a timer started would read the registry and report it unavailable.
+      writeFileSync(join(registry.home, 'registered-repos.json'), '{"version":1}');
+      await Bun.sleep(50);
+      expect([started, closing.read(first)]).toEqual([[first], pending]);
+    } finally {
+      for (const root of roots) rmSync(root, { recursive: true, force: true });
       rmSync(registry.home, { recursive: true, force: true });
     }
   });

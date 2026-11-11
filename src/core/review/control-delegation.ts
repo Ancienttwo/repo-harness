@@ -1,6 +1,7 @@
 import { canonicalize } from '../evidence/canonical-json';
 import type { JsonValue } from '../evidence/types';
-import { validateReviewAdmission, type ReviewAdmission } from './authority-context';
+import { freeze, validateReviewAdmission, type Frozen, type ReviewAdmission } from './authority-context';
+import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256-pattern';
 
 /** An already-authorized upstream request. These fields provide binding and
  * traceability, not authentication. The calling Bot owns human authentication,
@@ -30,7 +31,6 @@ export interface ControlApproval {
   expected_revision: number;
   expires_at: number;
 }
-type Frozen<T> = T extends object ? { readonly [K in keyof T]: Frozen<T[K]> } : T;
 export type ValidatedControlApproval = Frozen<ControlApproval>;
 function fail(reason: string): never { throw new Error(`control_approval_invalid: ${reason}`); }
 
@@ -74,20 +74,12 @@ function integer(value: unknown): asserts value is number {
   if (!Number.isSafeInteger(value) || (value as number) < 0) fail('integer');
 }
 function hash(value: JsonValue | undefined): asserts value is string {
-  if (typeof value !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value)) fail('digest');
+  if (typeof value !== 'string' || !SHA256_PREFIXED_PATTERN.test(value)) fail('digest');
 }
 function strings(value: JsonValue | undefined): asserts value is string[] {
   if (!Array.isArray(value) || !value.length) fail('list');
   for (const item of value) text(item);
   if (new Set(value).size !== value.length) fail('duplicate');
-}
-
-function freeze<T>(value: T): Frozen<T> {
-  if (value && typeof value === 'object') {
-    for (const child of Object.values(value)) freeze(child);
-    Object.freeze(value);
-  }
-  return value as Frozen<T>;
 }
 
 /** Validate an upstream-authorized request against the exact local transition.

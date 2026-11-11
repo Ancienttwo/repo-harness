@@ -3,6 +3,9 @@ name: CI
 on:
   pull_request:
     types: [opened, synchronize]
+  # The merge queue tests each queued PR on its temporary branch; Required / CI is its required check.
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main]
   schedule:
@@ -51,9 +54,18 @@ jobs:
           path: ${{ runner.temp }}/ci-path-references.json
           key: ci-path-references-${{ github.sha }}
           restore-keys: ci-path-references-
+      # The daily run on main saves the newest test durations; they set only the shard balance and order.
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/test-durations.json
+          key: test-durations-${{ github.run_id }}
+          restore-keys: test-durations-
       - id: select
         env:
           CI_PATH_REFERENCE_CACHE: ${{ runner.temp }}/ci-path-references.json
+          TEST_DURATIONS_FILE: ${{ runner.temp }}/test-durations.json
+          # The verify matrix runs one shard per plan array.
+          CI_SHARD_TOTAL: 3
         run: bun scripts/select-ci-coverage.ts
       - uses: actions/upload-artifact@v4
         if: steps.select.outputs.mode == 'affected'
@@ -63,11 +75,12 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
-  # Runs beside selection, so it does not delay the selected jobs. A push to
-  # main runs only selection; pull requests, daily and manual runs keep this check.
+  # A push to main runs only selection; a documentation-only diff runs no check
+  # job. Pull requests, daily and manual runs keep this check.
   state-boundaries:
     name: State boundaries
-    if: github.event_name != 'push'
+    needs: selection
+    if: github.event_name != 'push' && needs.selection.outputs.mode != 'documentation'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -121,17 +134,17 @@ jobs:
     needs: selection
     if: needs.selection.outputs.mode == 'daily' || (needs.selection.outputs.mode == 'affected' && needs.selection.outputs.native_oar != 'false')
     runs-on: macos-latest
-    # One file per leg: each leg gets its own 10-minute budget, and one leg's
-    # failure does not cancel the other legs' evidence (#1296).
+    # Two legs: the wait for a macOS runner, not the test time, set the wall
+    # time (#2242). generic-review alone is about as long as the other three
+    # files together. Each leg gets its own 10-minute budget, and one leg's
+    # failure does not cancel the other leg's evidence (#1296).
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         test:
           - tests/generic-review.test.ts
-          - tests/acceptance-receipt.test.ts
-          - tests/herdr-task-lifecycle.test.ts
-          - tests/docs-host-isolation.test.ts
+          - tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts tests/docs-host-isolation.test.ts
     steps:
       - uses: actions/checkout@v4
         with:
@@ -150,7 +163,7 @@ jobs:
         env:
           EXPECTED_SHA: ${{ needs.selection.outputs.sha }}
           MODE: ${{ needs.selection.outputs.mode }}
-          TEST_FILE: ${{ matrix.test }}
+          TEST_FILES: ${{ matrix.test }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
@@ -166,7 +179,8 @@ jobs:
             daily) set -- ;;
             *) echo "Unknown coverage mode: $MODE" >&2; exit 1 ;;
           esac
-          bun run test:files "$TEST_FILE" "$@" --timeout 60000 --max-concurrency 1
+          read -r -a files <<< "$TEST_FILES"
+          bun run test:files "${files[@]}" "$@" --timeout 60000 --max-concurrency 1
 
   verify:
     name: Affected tests (shard ${{ matrix.shard }}/3)
@@ -253,7 +267,7 @@ jobs:
   architecture-advisory:
     name: PR architecture constraint and freshness
     needs: selection
-    if: needs.selection.outputs.mode == 'affected' || needs.selection.outputs.mode == 'documentation'
+    if: needs.selection.outputs.mode == 'affected'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -270,7 +284,7 @@ jobs:
           bun-version: 1.4.3
       - name: Check the plugin-internals constraint and warn about architecture debt
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: bash scripts/check-ci.sh architecture-advisory --base "$BASE_SHA"
 
   governance:
@@ -357,6 +371,15 @@ jobs:
       - name: Install pinned herdr-core runtime
         uses: ./.github/actions/install-pinned-herdr-core
       - run: bash scripts/check-ci.sh functional
+      # Only the daily run on main writes the durations cache; pull request runs restore it.
+      - id: durations
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+        run: bun scripts/select-test-suite.ts durations .ai/harness/runs/junit "$RUNNER_TEMP/test-durations.json"
+      - uses: actions/cache/save@v4
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' && steps.durations.outcome == 'success' }}
+        with:
+          path: ${{ runner.temp }}/test-durations.json
+          key: test-durations-${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
@@ -446,7 +469,7 @@ jobs:
 
   required:
     name: Required / CI
-    if: always() && github.event_name == 'pull_request'
+    if: always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
     needs: [selection, state-boundaries, verify, home-isolation, native-oar, architecture-advisory]
     runs-on: ubuntu-latest
     steps:
@@ -462,9 +485,10 @@ jobs:
           NATIVE_OAR: ${{ needs.selection.outputs.native_oar }}
           ARCHITECTURE_RESULT: ${{ needs.architecture-advisory.result }}
         run: |
-          # A documentation-only diff selects no build or test job.
-          [ "$SELECTION_RESULT" = success ] && [ "$STATE_BOUNDARIES_RESULT" = success ] \
+          # A documentation-only diff selects no build, test or check job.
+          [ "$SELECTION_RESULT" = success ] \
+            && { [ "$STATE_BOUNDARIES_RESULT" = success ] || { [ "$COVERAGE_MODE" = documentation ] && [ "$STATE_BOUNDARIES_RESULT" = skipped ]; }; } \
             && { { [ "$COVERAGE_MODE" = affected ] && [ "$VERIFY_RESULT" = success ]; } || { [ "$COVERAGE_MODE" = documentation ] && [ "$VERIFY_RESULT" = skipped ]; }; } \
             && { [ "$HOME_ISOLATION_RESULT" = success ] || { [ "$HOME_ISOLATION" = false ] && [ "$HOME_ISOLATION_RESULT" = skipped ]; }; } \
             && { [ "$NATIVE_OAR_RESULT" = success ] || { [ "$NATIVE_OAR" = false ] && [ "$NATIVE_OAR_RESULT" = skipped ]; }; } \
-            && [ "$ARCHITECTURE_RESULT" = success ]
+            && { [ "$ARCHITECTURE_RESULT" = success ] || { [ "$COVERAGE_MODE" = documentation ] && [ "$ARCHITECTURE_RESULT" = skipped ]; }; }

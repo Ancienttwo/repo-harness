@@ -9,7 +9,7 @@ files link it and do not restate it.
 The advisor is the long-lived hc terminal in the pane beside the orchestrator
 ([Issue-flow topology](https://github.com/aimpact-inc/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#issue-flow-topology)).
 It holds no claim role. It does not commit, write to GitHub or
-decide.
+decide. Its other duties are in `advisor.md`.
 
 ## 1. Triggers
 
@@ -31,8 +31,7 @@ idle session runs no tool, so a hook in that session never fires. The
 detection is a scheduled check outside the session. The check sends an
 `[rh-notice] replan #<parent>` message to the orchestrator, and the notice
 enters the triage queue (`orchestrator.md` §8.1) as P1, like a stalled
-worker. repo-harness ships no such check now. Open an issue for one only
-after a stall happens again without detection.
+worker. The advisor's scheduled review (`advisor.md` §2) is this check.
 
 ## 2. Request (orchestrator → advisor)
 
@@ -71,9 +70,8 @@ The file has these sections, in this order:
 2. **Edges.** The blocked-by edges and the file-overlap
    edges between open items. Two items that write one file cannot run in
    parallel.
-3. **Lanes and merge batches.** The proposed parallel lanes, the merge
-   order, and the batches that can merge together (`orchestrator.md`
-   §9.3).
+3. **Lanes and merge order.** The proposed parallel lanes and the merge
+   order (`orchestrator.md` §9.2).
 4. **Claim changes.** Each claim to reassign or release, with the evidence
    of a stall: the last `issue claim status` URL and the branch head.
 5. **Owner questions.** The decisions that only the owner can make.

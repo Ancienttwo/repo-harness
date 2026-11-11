@@ -17,8 +17,7 @@ import { homedir } from 'os';
 import { dirname, join } from 'path';
 import { createInterface } from 'readline/promises';
 import { fileURLToPath } from 'url';
-import { askConfirm } from './tty-prompt';
-import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
+import { runInstall, runUninstall } from './commands/install';
 import { planPiPackage, removePiPackage } from './installer/pi-package';
 import { newPiPackagesSinceTransaction, recordPiInstallOwnership, recordUnresolvedPiOwnership, type ManagedInstallSurface } from './installer/install-profile';
 import { parsePluginList, PLUGIN_IDS, selectionLabel, type PluginId, type PluginSelection } from '../core/skill-surface/plugin-manifest';
@@ -85,9 +84,9 @@ import {
   parseCandidateRequest,
   publishCandidateReconciliationCapability,
   routeRegistryDigest,
-  sha256,
   type CandidateReconciliationReceipt,
 } from './commands/candidate-reconciliation';
+import { sha256Prefixed } from '../core/evidence/sha256';
 import { windowsProtectedHelperConfigPath } from '../effects/runtime/protected-helper-platform';
 import { removeOwnedDanglingSkillLinks } from '../effects/skill-tree-integrity';
 import { providerSkillLock } from '../effects/host-skill-roots';
@@ -127,7 +126,6 @@ import {
   assertLocation,
   assertAdoptionMode,
 } from './commands/validators';
-import type { Location } from './installer/types';
 
 // The recorded selection, read once per process. Core reaches the architecture code only through the ports.
 const recordedSelection = readRecordedSelection();
@@ -479,7 +477,7 @@ export function runCandidateRuntimeReconciliation(
       const applied = applyInstallSelection(state.selection, resolved.record, env, new Date(), piSkillRoot, {
         additionalSurfaces: newPiSurfaces(runtime), kept: resolved.kept.map(entry => entry.id),
       });
-      ownershipManifestDigest = sha256(JSON.stringify(applied.state.ownership_manifest));
+      ownershipManifestDigest = sha256Prefixed(JSON.stringify(applied.state.ownership_manifest));
     } else if (request.target === 'both') {
       recordPiInstallOwnership(newPiSurfaces(runtime), env, piSkillRoot);
     }
@@ -523,7 +521,7 @@ function candidateHandoffContext(
   lock: ExclusiveDirectoryLockHandle,
 ): NonNullable<GlobalRuntimeOptions['candidateHandoff']> {
   const context = {
-    transactionId: sha256(transaction.backup_root),
+    transactionId: sha256Prefixed(transaction.backup_root),
     transactionBackupRoot: transaction.backup_root,
     parentToken: randomBytes(32).toString('hex'),
   };

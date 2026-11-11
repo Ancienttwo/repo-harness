@@ -1,0 +1,104 @@
+schemaVersion: "archcontext.state-machine/v1"
+id: "state-machine.operator.architecture-tabs-segment"
+capabilityId: "capability.runtime-harness.operator"
+name: "The tabs, the topology segment and the selection of the architecture page"
+regions:
+  - id: "tab"
+    label: "The tab"
+    initial: "other-map"
+    states:
+      - { id: "other-map", label: "The module map, Layers or Sequence" }
+      - { id: "topology", label: "Topology" }
+      - { id: "modules", label: "Modules" }
+      - { id: "history", label: "History" }
+  - id: "segment"
+    label: "The topology segment of the map view"
+    initial: "namespace"
+    states:
+      - { id: "namespace", label: "Namespaces, 1 box" }
+      - { id: "process", label: "Processes, 14 boxes" }
+      - { id: "mount", label: "Mounts, no box" }
+  - id: "chosen"
+    label: "The person chose the segment"
+    initial: "no"
+    states:
+      - { id: "no", label: "No" }
+      - { id: "yes", label: "Yes" }
+  - id: "selected"
+    label: "The topology selection of the workspace"
+    initial: "none"
+    states:
+      - { id: "none", label: "No box is selected" }
+      - { id: "namespace", label: "A box of the namespace segment" }
+      - { id: "process", label: "A box of the process segment" }
+events:
+  - id: "open-other-map"
+    label: "you open the module map, Layers or Sequence"
+    source: { kind: "code", path: "src/operator-web/ArchitectureWorkspace.tsx", symbol: "ArchitectureWorkspace", confirmedDigest: "sha256:6654562e0f8ac4e9062ca7347d7b9c34051f06ecfe2fb3ccce07491753ca97ee" }
+    steps:
+      - when: { tab: ["topology"], segment: ["process"], chosen: ["no"] }
+        then: { tab: "other-map", segment: "namespace" }
+      - when: { tab: ["topology"], chosen: ["yes"] }
+        then: { tab: "other-map" }
+      - when: { tab: ["modules", "history"], segment: ["namespace"], chosen: ["no"] }
+        then: { tab: "other-map" }
+  - id: "open-topology"
+    label: "you open Topology"
+    source: { kind: "code", path: "src/operator-web/ArchitectureWorkspace.tsx", symbol: "ArchitectureWorkspace", confirmedDigest: "sha256:6654562e0f8ac4e9062ca7347d7b9c34051f06ecfe2fb3ccce07491753ca97ee" }
+    steps:
+      - when: { tab: ["other-map", "modules", "history"], segment: ["namespace"], chosen: ["no"] }
+        then: { tab: "topology", segment: "process" }
+      - when: { tab: ["other-map"], chosen: ["yes"] }
+        then: { tab: "topology" }
+  - id: "open-modules"
+    label: "you open Modules"
+    source: { kind: "code", path: "src/operator-web/ArchitectureWorkspace.tsx", symbol: "ArchitectureWorkspace", confirmedDigest: "sha256:6654562e0f8ac4e9062ca7347d7b9c34051f06ecfe2fb3ccce07491753ca97ee" }
+    steps:
+      - when: { tab: ["other-map", "history"], segment: ["namespace"], chosen: ["no"] }
+        then: { tab: "modules" }
+      - when: { tab: ["other-map", "topology"], segment: ["namespace"], chosen: ["yes"] }
+        then: { tab: "modules", chosen: "no" }
+      - when: { tab: ["other-map", "topology"], segment: ["process", "mount"], chosen: ["yes"] }
+        then: { tab: "modules", segment: "namespace", chosen: "no" }
+      - when: { tab: ["topology"], segment: ["process"], chosen: ["no"] }
+        then: { tab: "modules", segment: "namespace" }
+  - id: "open-history"
+    label: "you open History"
+    source: { kind: "code", path: "src/operator-web/ArchitectureWorkspace.tsx", symbol: "ArchitectureWorkspace", confirmedDigest: "sha256:6654562e0f8ac4e9062ca7347d7b9c34051f06ecfe2fb3ccce07491753ca97ee" }
+    steps:
+      - when: { tab: ["other-map", "modules"], segment: ["namespace"], chosen: ["no"] }
+        then: { tab: "history" }
+      - when: { tab: ["other-map", "topology"], segment: ["namespace"], chosen: ["yes"] }
+        then: { tab: "history", chosen: "no" }
+      - when: { tab: ["other-map", "topology"], segment: ["process", "mount"], chosen: ["yes"] }
+        then: { tab: "history", segment: "namespace", chosen: "no" }
+      - when: { tab: ["topology"], segment: ["process"], chosen: ["no"] }
+        then: { tab: "history", segment: "namespace" }
+  - id: "choose-segment"
+    label: "you choose a segment"
+    source: { kind: "code", path: "src/operator-web/ArchitectureMap.tsx", symbol: "ArchitectureMap", confirmedDigest: "sha256:21763261be8984d1acdc5480539801f0a42d58acceb2197ba81cdeda854c3241" }
+    steps:
+      - when: { tab: ["topology"], segment: ["namespace", "process", "mount"], chosen: ["no", "yes"], selected: ["none", "namespace", "process"] }
+        then: { segment: "namespace", chosen: "yes", selected: "none" }
+      - when: { tab: ["topology"], segment: ["namespace", "process", "mount"], chosen: ["no", "yes"], selected: ["none", "namespace", "process"] }
+        then: { segment: "process", chosen: "yes", selected: "none" }
+      - when: { tab: ["topology"], segment: ["namespace", "process", "mount"], chosen: ["no", "yes"], selected: ["none", "namespace", "process"] }
+        then: { segment: "mount", chosen: "yes", selected: "none" }
+  - id: "select-box"
+    label: "you select a box"
+    source: { kind: "code", path: "src/operator-web/ArchitectureMap.tsx", symbol: "ArchitectureMap", confirmedDigest: "sha256:21763261be8984d1acdc5480539801f0a42d58acceb2197ba81cdeda854c3241" }
+    steps:
+      - when: { tab: ["topology"], segment: ["namespace"], selected: ["none", "namespace", "process"] }
+        then: { selected: "namespace" }
+      - when: { tab: ["topology"], segment: ["process"], selected: ["none", "namespace", "process"] }
+        then: { selected: "process" }
+  - id: "new-commit"
+    label: "the collector reads a new commit"
+    source: { kind: "code", path: "src/operator-web/ArchitectureWorkspace.tsx", symbol: "ArchitectureWorkspace", confirmedDigest: "sha256:6654562e0f8ac4e9062ca7347d7b9c34051f06ecfe2fb3ccce07491753ca97ee" }
+    steps:
+      - when: { tab: ["other-map", "topology"], selected: ["namespace", "process"] }
+        then: { selected: "none" }
+rules:
+  - id: "topology-opens-on-boxes"
+    label: "TopologyOpensOnBoxes. Topology opens on a segment with more than one box"
+    never: { tab: ["topology"], chosen: ["no"], segment: ["namespace", "mount"] }

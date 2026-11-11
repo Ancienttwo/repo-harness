@@ -118,11 +118,6 @@ export interface InitCommandResult {
 /** The CodeGraph index step; this name also labels its skipped row. */
 const CODEGRAPH_INDEX_STEP = "ensure codegraph index";
 
-/** Internal dependency seam for filesystem-isolated tests. CLI callers use the OS account resolver. */
-export interface InitRuntimeDependencies {
-  authorityHome: () => string | null;
-}
-
 function runProcess(command: string, args: string[], cwd: string, env?: NodeJS.ProcessEnv): InitStep {
   const result = runBoundedProcess(command, args, { cwd, env });
 
@@ -199,8 +194,6 @@ export function resolveOsAccountHome(): string | null {
   }
   return userInfo().homedir || null;
 }
-
-const DEFAULT_INIT_RUNTIME_DEPENDENCIES: InitRuntimeDependencies = { authorityHome: resolveOsAccountHome };
 
 export { validateRepoAdoptionTarget } from "../repo-adoption/target";
 
@@ -318,7 +311,6 @@ function architectureReadinessStep(repoRoot: string, selected: boolean, env: Nod
 
 export function runInit(
   opts: InitCommandOptions,
-  dependencies: InitRuntimeDependencies = DEFAULT_INIT_RUNTIME_DEPENDENCIES,
 ): InitCommandResult {
   const sourceRoot = resolve(opts.sourceRoot ?? REPO_ROOT);
   const repoRoot = resolve(opts.repo ?? process.cwd());

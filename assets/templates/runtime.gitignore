@@ -35,43 +35,7 @@ _ops/
 # OS metadata
 .DS_Store
 
-# Runtime evidence and local agent state
-.claude/settings.local.json
-.claude/.atomic_pending
-.claude/.session-handoff.md
-.claude/.task-state.json
-.claude/.task-handoff.md
-.claude/*.tmp
-.claude/*.bak
-.claude/*.bak.*
-.claude/*.backup-*
-.ai/harness/checks/
-.ai/harness/checks/*.latest.json
-.ai/harness/checks/*.latest.md
-.ai/harness/events.jsonl
-.ai/harness/archive/
-.ai/harness/backups/
-.ai/harness/failures/latest.jsonl
-.ai/harness/standing-orders.md
-.ai/harness/capability-context/
-.ai/harness/journal/
-.ai/harness/architecture-projection/
-.ai/harness/security/*
-!.ai/harness/security/.gitkeep
-.ai/harness/planning/*
-!.ai/harness/planning/.gitkeep
-.ai/harness/delegation/*
-.ai/harness/architecture/events.jsonl
-.ai/harness/active-worktree
-.ai/harness/worktrees/
-.ai/harness/evidence/
-.ai/harness/runs/
-.ai/harness/state/
-.ai/harness/chatgpt/
-.ai/harness/handoff/gptpro/
-.ai/harness/mcp/
-.ai/harness/triage/*
-!.ai/harness/triage/.gitkeep
+# Host and tool directories
 .repo-harness/
 .codex/*
 .claude/worktrees/

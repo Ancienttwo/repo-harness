@@ -7,8 +7,11 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { isRecord } from '../../core/evidence/is-record';
+import { POLICY_ABSENT, isPolicyObject, policyValue } from '../../core/workflow/policy-schema';
+import { readWorkflowPolicyFile } from '../../effects/state/policy-file';
 import { buildManagedHooks, type HookEntry, type HookHost } from '../installer/managed-entries';
-import { gitExecFileSync } from '../../effects/git/runner';
+import { gitToplevel } from '../../effects/git/runner';
 
 export type SecurityStatus = 'ok' | 'warn' | 'fail';
 export type SecuritySeverity = 'warn' | 'high' | 'fail';
@@ -128,23 +131,11 @@ function homeDir(): string {
 }
 
 function resolveRepoRoot(cwd: string): string {
-  try {
-    const out = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return out.trim() || cwd;
-  } catch {
-    return cwd;
-  }
+  return gitToplevel(cwd) ?? cwd;
 }
 
 function readJson(filePath: string): unknown {
   return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function pushJsonFailure(findings: SecurityFinding[], filePath: string, err: unknown): void {
@@ -186,25 +177,32 @@ function reviewedExceptionEntries(raw: unknown): unknown[] {
   if (!isRecord(raw)) return [];
   const security = isRecord(raw.security) ? raw.security : undefined;
   if (!security) return [];
-  const entries = security.reviewed_findings ?? security.reviewedFindings;
+  const entries = security.reviewed_findings;
+  return Array.isArray(entries) ? entries : [];
+}
+
+function repoPolicyReviewedEntries(repoRoot: string): unknown[] {
+  const policy = readWorkflowPolicyFile(repoRoot);
+  const security = policy.rootIsObject ? policyValue(policy, 'security') : POLICY_ABSENT;
+  const entries = isPolicyObject(security) ? policyValue(policy, 'security.reviewed_findings') : POLICY_ABSENT;
   return Array.isArray(entries) ? entries : [];
 }
 
 function loadReviewedExceptions(repoRoot: string, home: string): LoadedSecurityReviewedException[] {
-  const sources: Array<{ filePath: string; source: SecurityReviewedExceptionSource }> = [
-    { filePath: path.join(repoRoot, '.ai', 'harness', 'policy.json'), source: 'repo-policy' },
-    { filePath: path.join(home, '.repo-harness', 'config.json'), source: 'user-config' },
+  const userConfig = path.join(home, '.repo-harness', 'config.json');
+  const sources: Array<{ read: () => unknown[]; source: SecurityReviewedExceptionSource }> = [
+    { read: () => repoPolicyReviewedEntries(repoRoot), source: 'repo-policy' },
+    { read: () => fs.existsSync(userConfig) ? reviewedExceptionEntries(readJson(userConfig)) : [], source: 'user-config' },
   ];
   const exceptions: LoadedSecurityReviewedException[] = [];
   for (const source of sources) {
-    if (!fs.existsSync(source.filePath)) continue;
-    let parsed: unknown;
+    let entries: unknown[];
     try {
-      parsed = readJson(source.filePath);
+      entries = source.read();
     } catch {
       continue;
     }
-    for (const entry of reviewedExceptionEntries(parsed)) {
+    for (const entry of entries) {
       if (!isRecord(entry)) continue;
       const filePath = asString(entry.filePath);
       const ruleId = asString(entry.ruleId);

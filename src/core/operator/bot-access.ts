@@ -3,9 +3,11 @@
 // absolute path, stderr or environment value can pass through. A field that
 // does not match its grammar becomes null or drops the row; it is never echoed.
 
+import { decodeReaders } from '../evidence/decode-readers';
 import { HC_VERSION_TEXT, type HcVersionCheck } from '../terminal/herdr-pin';
 import { NOTIFY_CHANNELS } from '../decision/notify-relay-record';
 import { NOTIFY_STATUS_KEYS, NOTIFY_UNAVAILABLE_REASONS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifyStatusV1, type NotifyUnavailableReason } from './notify-status';
+import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256-pattern';
 
 export type BotAccessUnavailable<Reason extends string> = { readonly state: 'unavailable'; readonly reason: Reason };
 
@@ -177,7 +179,6 @@ const ISO_TIME = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/u;
 const SLACK_BOT_ID_TEXT = /^[A-Z][A-Z0-9]{2,31}$/u;
 const BOT_HOST_TEXT = /^[A-Za-z][A-Za-z0-9._-]{0,31}$/u;
 const REPO_ID_TEXT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
-const REVISION_DIGEST = /^sha256:[0-9a-f]{64}$/u;
 const DELIVERY_STATES: readonly NotifyDeliveryState[] = ['succeeded', 'failed', 'unavailable', 'missing'];
 
 /**
@@ -192,11 +193,10 @@ export function decodeBotAccessSnapshot(value: unknown): BotAccessSnapshotV1 {
     if (!record || Object.keys(record).sort().join(',') !== [...keys].sort().join(',')) return fail(what);
     return record;
   };
-  const array = (v: unknown, what: string): unknown[] => (Array.isArray(v) ? v : fail(what));
-  const match = (v: unknown, grammar: RegExp, what: string): string => (typeof v === 'string' && grammar.test(v) ? v : fail(what));
-  const nullable = <T>(v: unknown, read: (x: unknown) => T): T | null => (v === null ? null : read(v));
+  // `obj` returns `Json` and fails with a bare `what`; `oneOf` has no string
+  // check, so both stay local.
+  const { array, match, nullable, bool } = decodeReaders(fail);
   const oneOf = <T extends string>(v: unknown, values: readonly T[], what: string): T => (values.includes(v as T) ? v as T : fail(what));
-  const bool = (v: unknown, what: string): boolean => (typeof v === 'boolean' ? v : fail(what));
   const whole = (v: unknown, what: string): number => (integer(v) ?? fail(what));
   /** A section is `{state:'ok', ...fields}`, one of `others`, or `{state:'unavailable', reason}` with an allowed reason. */
   const section = (v: unknown, what: string, fields: readonly string[], reasons: readonly string[], others: readonly string[] = []): Json => {
@@ -243,7 +243,7 @@ export function decodeBotAccessSnapshot(value: unknown): BotAccessSnapshotV1 {
   const registry = section(v.registry, 'registry', ['authorization_revision', 'registry_revision', 'repos'], ['registry_unavailable', 'registry_invalid']);
   if (registry.repos !== undefined) {
     whole(registry.authorization_revision, 'registry authorization_revision');
-    match(registry.registry_revision, REVISION_DIGEST, 'registry_revision');
+    match(registry.registry_revision, SHA256_PREFIXED_PATTERN, 'registry_revision');
     for (const raw of array(registry.repos, 'registry repos')) {
       const repo = obj(raw, ['repo_id', 'label', 'access_mode', 'last_audit'], 'registry repo');
       match(repo.repo_id, REPO_ID_TEXT, 'repo_id');

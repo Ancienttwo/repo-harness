@@ -39,20 +39,17 @@ import { ARCHITECTURE_HISTORY_TIMEOUT_MS, decodeArchitectureHistoryPage } from '
 export { OPERATOR_ARCHITECTURE_HISTORY_ROUTE, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
 import { decodeNotifyStatus, type NotifyUnavailableReason } from '../../core/operator/notify-status';
 import { NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND } from '../../core/decision/notify-relay-record';
-import { decodeBoard } from '../../core/board/board';
 import { decodeQuotaReport, OPERATOR_QUOTA_PATH } from '../../core/board/quota';
 import { readQuotaReport } from '../board/quota';
-import { decodeBoardParents } from '../../core/board/parents';
-import { decodeBoardSummaries } from '../../core/board/summary';
-import { readBoardSummaries, writeBoardSummary } from './board-summary';
-import { BoardReadError, readRepositoryAdvisorTranscript, readRepositoryBoard, readRepositoryBoardParents, type BoardParentsReadInput, type BoardReadInput } from './board-read';
+import { startBoardObserver, type BoardFactsCache, type BoardObserverOptions, type BoardObserverReads } from './board-observer';
+import { BoardReadError, readRepositoryAdvisorTranscript, type BoardReadInput } from './board-read';
 import { ADVISOR_SEAT_REFUSALS, OPERATOR_ADVISOR_BOSS_COMMANDS_ROUTE, OPERATOR_ADVISOR_MESSAGES_ROUTE, OPERATOR_ADVISOR_TRANSCRIPT_PATH, advisorBossCommandWriteRoute, advisorSeatWriteRoute } from './advisor-seat-route';
 import { decodeAdvisorSeatRequest, decodeAdvisorSeatTranscript } from '../../core/board/advisor-seat';
 import type { BoardParentsReadFailure, BoardReadFailure } from '../../core/operator/board-read';
 import { startNotifyCollector, type NotifyCacheV1 } from './notify-collector';
 import { readOperatorRepositories } from './repositories';
 import type { OperatorRepositoriesV1 } from '../../core/operator/repositories';
-import { createHash } from 'node:crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { decodeOperatorDocSessionDiff, decodeOperatorDocSessionLoss, DOC_SESSION_READ_FAILURES, type DocSessionReadFailure } from '../../core/operator/doc-session-changes';
 import { OPERATOR_SESSION_DIFF_ROUTE, OPERATOR_SESSION_LOSS_ROUTE } from './doc-session-changes';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -103,7 +100,7 @@ export const OPERATOR_TESTS_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za
 export const OPERATOR_BOARD_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/board$/u;
 /** The open parent issues of one registered repository: the entry of the Board page. */
 export const OPERATOR_BOARD_PARENTS_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/board\/parents$/u;
-export const OPERATOR_BOARD_SUMMARIES_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/board\/summaries$/u;
+export const OPERATOR_BOARD_SEATS_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/board\/seats$/u;
 export const OPERATOR_EXECUTION_STATE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/execution$/u;
 /** The stored task inbox of one task that the execution view of the same repository lists as verified. */
 export const OPERATOR_TASK_MESSAGES_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/tasks\/([0-9a-f]{64})\/messages$/u;
@@ -153,8 +150,8 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'cli_inventory', method: 'GET', pattern: OPERATOR_CLI_INVENTORY_PATH, write: false }),
   Object.freeze({ id: 'tests', method: 'GET', pattern: OPERATOR_TESTS_ROUTE.source, write: false }),
   Object.freeze({ id: 'board', method: 'GET', pattern: OPERATOR_BOARD_ROUTE.source, write: false }),
+  Object.freeze({ id: 'board_seats', method: 'GET', pattern: OPERATOR_BOARD_SEATS_ROUTE.source, write: false }),
   Object.freeze({ id: 'board_parents', method: 'GET', pattern: OPERATOR_BOARD_PARENTS_ROUTE.source, write: false }),
-  Object.freeze({ id: 'board_summaries', method: 'GET', pattern: OPERATOR_BOARD_SUMMARIES_ROUTE.source, write: false }),
   // The only console write into an agent terminal (#1756, D11): plain text to the one advisor seat of a board, in a board CLI child.
   Object.freeze({ id: 'advisor_seat_messages', method: 'POST', pattern: OPERATOR_ADVISOR_MESSAGES_ROUTE.source, write: true }),
   // The four boss commands (#1757): a command id, sent as its server-side text through the same advisor seat send.
@@ -257,11 +254,10 @@ export interface OperatorServerOptions {
   readonly read_architecture_map?: (repositoryId: string) => ArchitectureMapRepositoryCache;
   /** Start the in-process architecture map collector (operator serve). Ignored when a cache reader is injected. */
   readonly architecture_map_collector?: boolean;
-  /** The board read: the board CLI's JSON for one repository and parent. Production runs the CLI; only tests inject another. */
-  readonly read_board?: (input: BoardReadInput) => Promise<unknown>;
   readonly read_quota?: () => Promise<unknown>;
-  /** The parent list read: the `board parents` CLI's JSON for one repository. Production runs the CLI; only tests inject another. */
-  readonly read_board_parents?: (input: BoardParentsReadInput) => Promise<unknown>;
+  /** The board, parents and seats GETs read only memory. Tests inject the cache reads or the observer ports; production starts the observer. */
+  readonly board_cache?: BoardObserverReads;
+  readonly board_observer?: BoardObserverOptions;
   /** The advisor seat send: the `board advisor send` CLI's JSON. Production runs the CLI; only tests inject another. */
   readonly send_advisor?: (input: BoardReadInput & { readonly text: string }) => Promise<unknown>;
   /** The advisor seat read-back: the `board advisor transcript` CLI's JSON. Production runs the CLI; only tests inject another. */
@@ -494,11 +490,11 @@ const BOARD_UNAVAILABLE: Readonly<Record<BoardReadFailure, { readonly status: nu
   repository_not_found: { status: 404, message: 'No registered repository has this id.', next_action: OPERATOR_ADOPT_ACTION },
   board_collect_failed: { status: 503, message: 'The board read failed: GitHub, the local repository or the parent issue could not be read.', next_action: 'Run `repo-harness board --parent <n> --json` in the repository for the error.' },
   board_source_invalid: { status: 503, message: 'GitHub returned a board source that failed validation.', next_action: 'Run `repo-harness board --parent <n> --json` in the repository for the error.' },
-  board_unavailable: { status: 503, message: 'The board command did not return a board.', next_action: 'Run `repo-harness board --parent <n> --json` in the repository for the error.' },
+  board_unavailable: { status: 503, message: 'The board worker did not return a board.', next_action: 'Run `repo-harness board --parent <n> --json` in the repository for the error.' },
   board_timeout: { status: 504, message: 'The board read did not finish in time.', next_action: 'Refresh the board and retry.' },
   board_parent_invalid: { status: 400, message: 'The board needs exactly one parent issue number.', next_action: 'Request the board with ?parent=<issue number>.' },
   board_invalid: { status: 503, message: 'The board failed validation.', next_action: 'Update repo-harness so that the operator and the board command use the same board protocol.' },
-  board_busy: { status: 503, message: 'Too many board reads are in progress.', next_action: 'Retry in a few seconds.' },
+  board_pending: { status: 503, message: 'The board of this parent has no read yet. The next board observer cycle reads it.', next_action: 'Retry in a few seconds.' },
 };
 
 const BOARD_PARENTS_UNAVAILABLE: Readonly<Record<BoardParentsReadFailure, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
@@ -507,10 +503,10 @@ const BOARD_PARENTS_UNAVAILABLE: Readonly<Record<BoardParentsReadFailure, { read
   parents_github_failed: { status: 503, message: 'GitHub could not list the open issues of this repository.', next_action: 'Run `repo-harness board parents --json` in the repository for the error.' },
   parents_source_invalid: { status: 503, message: 'GitHub returned an open issue list that failed validation.', next_action: 'Run `repo-harness board parents --json` in the repository for the error.' },
   parents_hc_failed: { status: 503, message: 'hc could not list the seat terminals of this repository.', next_action: 'Run `repo-harness board parents --json` in the repository for the error.' },
-  parents_unavailable: { status: 503, message: 'The board parents command did not return a parent list.', next_action: 'Run `repo-harness board parents --json` in the repository for the error.' },
+  parents_unavailable: { status: 503, message: 'The board worker did not return a parent list.', next_action: 'Run `repo-harness board parents --json` in the repository for the error.' },
   parents_timeout: { status: 504, message: 'The parent list read did not finish in time.', next_action: 'Refresh and retry.' },
   parents_invalid: { status: 503, message: 'The parent list failed validation.', next_action: 'Update repo-harness so that the operator and the board command use the same parent list protocol.' },
-  parents_busy: BOARD_UNAVAILABLE.board_busy,
+  parents_pending: { status: 503, message: 'The parent list of this repository has no read yet.', next_action: 'Retry in a few seconds.' },
 };
 
 const DOCS_UNAVAILABLE: Readonly<Record<DocsUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
@@ -998,7 +994,7 @@ export async function startOperatorServer(
       if (response.destroyed) return;
       if (failure) sendJson(response, failureStatus(failure),{code:failure},headOnly);
       else if (cacheRequest) {
-        const etag = `"${createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')}"`;
+        const etag = `"${sha256Hex(JSON.stringify(snapshot))}"`;
         if (cacheRequest.headers['if-none-match'] === etag) {
           response.writeHead(304, { ...jsonHeaders(), ETag: etag }); response.end();
         } else sendJson(response, 200, snapshot, headOnly, { ETag: etag });
@@ -1041,9 +1037,23 @@ export async function startOperatorServer(
     void completion.finally(()=>activeTaskReadCompletions.delete(completion));
   };
 
+  /** A facts document from memory with the ETag of its version; a missing document answers its pending code. */
+  const sendFactsCache = <F extends string, P extends string>(
+    request: IncomingMessage, response: ServerResponse, headOnly: boolean, cache: BoardFactsCache<unknown, F>,
+    refusals: Readonly<Record<F | P, { readonly status: number; readonly message: string; readonly next_action: string }>>, pending: P,
+  ): void => {
+    if (cache.state !== 'ready') {
+      const code: F | P = cache.state === 'pending' ? pending : cache.reason;
+      const refusal = refusals[code];
+      sendRefusal(request, response, refusal.status, errorBody(code, refusal.message, refusal.next_action), headOnly);
+    } else if (request.headers['if-none-match'] === cache.etag) {
+      response.writeHead(304, { ...jsonHeaders(), ETag: cache.etag }); response.end();
+    } else sendJson(response, 200, cache.value, headOnly, { ETag: cache.etag });
+  };
+
   /**
-   * One board CLI run under the cap that the board, the parent list and the
-   * advisor seat routes share. The server close aborts it and waits for it.
+   * One board CLI run under the cap that the advisor seat routes share. The
+   * server close aborts it and waits for it.
    */
   const admitBoardCli = <T>(run: (signal: AbortSignal) => Promise<T>): { readonly result: Promise<T>; readonly abort: () => void } | null => {
     if (closed || activeBoardReads.size >= maxConcurrency) return null;
@@ -1067,7 +1077,6 @@ export async function startOperatorServer(
     refusals: Readonly<Record<F, { readonly status: number; readonly message: string; readonly next_action: string }>>,
     codes: { readonly busy: F; readonly invalid: F; readonly unavailable: F },
     read: (signal: AbortSignal) => Promise<unknown>, decode: (value: unknown) => T,
-    completed?: (value: T) => void,
   ): void => {
     const refuse = (code: F) => {
       const refusal = refusals[code];
@@ -1081,7 +1090,6 @@ export async function startOperatorServer(
       .then((value) => {
         let decoded;
         try { decoded = decode(value); } catch { if (!response.destroyed) refuse(codes.invalid); return; }
-        try { completed?.(decoded); } catch { if (!response.destroyed) refuse(codes.unavailable); return; }
         if (response.destroyed) return;
         sendJson(response, 200, decoded, headOnly);
       }, (error: unknown) => {
@@ -1592,7 +1600,7 @@ export async function startOperatorServer(
 
     const boardRoute = OPERATOR_BOARD_ROUTE.exec(pathname);
     if (boardRoute !== null) {
-      // A board read runs the board CLI and about ten GitHub reads; HEAD gets no read.
+      // The board answers from the observer's memory. HEAD would renew the lease, so only GET is served.
       if (headOnly) {
         sendRefusal(request, response, 405, errorBody('method_not_allowed', 'The board route supports only GET.'), true, { Allow: 'GET' });
         return;
@@ -1604,10 +1612,7 @@ export async function startOperatorServer(
         sendRefusal(request, response, refusal.status, errorBody('board_parent_invalid', refusal.message, refusal.next_action), headOnly);
         return;
       }
-      const read = options.read_board ?? readRepositoryBoard;
-      handleBoardCliRead(request, response, headOnly, BOARD_UNAVAILABLE, { busy: 'board_busy', invalid: 'board_invalid', unavailable: 'board_unavailable' },
-        signal => read({ repository_id: boardRoute[1]!, parent: Number(parent), env: boardEnvironment, signal }), decodeBoard,
-        board => writeBoardSummary(boardEnvironment, boardRoute[1]!, board));
+      sendFactsCache(request, response, headOnly, boardReads.board(boardRoute[1]!, Number(parent)), BOARD_UNAVAILABLE, 'board_pending');
       return;
     }
 
@@ -1633,26 +1638,29 @@ export async function startOperatorServer(
       return;
     }
 
-    const summariesRoute = OPERATOR_BOARD_SUMMARIES_ROUTE.exec(pathname);
-    if (summariesRoute !== null) {
-      if (headOnly) {
-        sendRefusal(request, response, 405, errorBody('method_not_allowed', 'The board summaries route supports only GET.'), true, { Allow: 'GET' });
-        return;
-      }
+    const seatsRoute = OPERATOR_BOARD_SEATS_ROUTE.exec(pathname);
+    if (seatsRoute !== null) {
       if (url.search !== '') {
-        sendRefusal(request, response, 400, errorBody('invalid_request', 'The board summaries route accepts no query parameters.'), headOnly);
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'The board seats route accepts no query parameters.'), headOnly);
         return;
       }
-      const read = options.read_board_parents ?? readRepositoryBoardParents;
-      handleBoardCliRead(request, response, headOnly, BOARD_PARENTS_UNAVAILABLE, { busy: 'parents_busy', invalid: 'parents_invalid', unavailable: 'parents_unavailable' },
-        signal => read({ repository_id: summariesRoute[1]!, env: boardEnvironment, signal }), value =>
-          decodeBoardSummaries(readBoardSummaries(boardEnvironment, summariesRoute[1]!, decodeBoardParents(value))));
+      const cache = boardReads.seats(seatsRoute[1]!);
+      if (cache.state === 'pending') { sendJson(response, 202, { state: 'pending' }, headOnly); return; }
+      if (cache.state === 'unavailable') {
+        const code = cache.reason;
+        const refusal = BOARD_PARENTS_UNAVAILABLE[code];
+        sendRefusal(request, response, refusal.status, errorBody(code, cache.cause === 'github_remote_missing' ? 'The repository has no GitHub remote.' : refusal.message, refusal.next_action), headOnly);
+        return;
+      }
+      const seats = cache.value;
+      const etag = `"${sha256Hex(JSON.stringify(seats))}"`;
+      if (request.headers['if-none-match'] === etag) { response.writeHead(304, { ...jsonHeaders(), ETag: etag }); response.end(); }
+      else sendJson(response, 200, seats, headOnly, { ETag: etag });
       return;
     }
 
     const parentsRoute = OPERATOR_BOARD_PARENTS_ROUTE.exec(pathname);
     if (parentsRoute !== null) {
-      // A parent list read runs the board CLI, a paginated GitHub read and one hc list; HEAD gets no read.
       if (headOnly) {
         sendRefusal(request, response, 405, errorBody('method_not_allowed', 'The board parents route supports only GET.'), true, { Allow: 'GET' });
         return;
@@ -1661,9 +1669,7 @@ export async function startOperatorServer(
         sendRefusal(request, response, 400, errorBody('invalid_request', 'The board parents route accepts no query parameters.'), headOnly);
         return;
       }
-      const read = options.read_board_parents ?? readRepositoryBoardParents;
-      handleBoardCliRead(request, response, headOnly, BOARD_PARENTS_UNAVAILABLE, { busy: 'parents_busy', invalid: 'parents_invalid', unavailable: 'parents_unavailable' },
-        signal => read({ repository_id: parentsRoute[1]!, env: boardEnvironment, signal }), decodeBoardParents);
+      sendFactsCache(request, response, headOnly, boardReads.parents(parentsRoute[1]!), BOARD_PARENTS_UNAVAILABLE, 'parents_pending');
       return;
     }
 
@@ -1870,6 +1876,8 @@ export async function startOperatorServer(
       first_cycle_after: devActivity?.settled(),
     })
     : null;
+  const boardObserver = options.board_cache ? null : startBoardObserver({ env: options.env, ...options.board_observer });
+  const boardReads: BoardObserverReads = options.board_cache ?? boardObserver!;
   const cliInventory = options.cli_inventory_collector && !options.read_cli_inventory
     ? startCliInventoryCollector({ env: options.env, usage_sources: options.cli_inventory_collector.usage_sources })
     : null;
@@ -1898,6 +1906,7 @@ export async function startOperatorServer(
       void execution?.close();
       void worktrees?.close();
       void architectureMap?.close();
+      void boardObserver?.close();
       rejectListen(error);
     };
     const onListening = () => {
@@ -1923,7 +1932,7 @@ export async function startOperatorServer(
     closed = true;
     runtimeService?.close();
     closeCompletion = Promise.resolve().then(async () => {
-      await Promise.all([devActivity?.close(), setup?.close(), botAccess?.close(), botReviews?.close(), notify?.close(), cliInventory?.close(), docs?.close(), tests?.close(), execution?.close(), worktrees?.close(), architectureMap?.close()]);
+      await Promise.all([boardObserver?.close(), devActivity?.close(), setup?.close(), botAccess?.close(), botReviews?.close(), notify?.close(), cliInventory?.close(), docs?.close(), tests?.close(), execution?.close(), worktrees?.close(), architectureMap?.close()]);
       // Close admission and cancel every owner before waiting for any one of
       // them: a retiring read must not leave other queues launching work.
       for (const cancel of activeTaskReadCancellers) cancel();
