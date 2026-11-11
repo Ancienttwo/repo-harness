@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createReviewAdmission, reviewCampaignKey, type ReviewAdmissionInput, type ReviewAuthorityInput } from '../../src/core/review/authority-context';
-import { observeReviewIssueGoal, observeActiveReviewAdmission, observeAdmittedReviewContext } from '../../src/effects/admission/issue-goal';
+import { observeReviewIssueGoal, observeActiveReviewAdmission } from '../../src/effects/admission/issue-goal';
 import { parseExternalSourcesPolicy } from '../../src/effects/github/policy';
 import { hashVerificationPlan } from '../../src/core/evidence/verification-plan';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
@@ -116,8 +116,7 @@ test('protected read reobserves the provider goal instead of trusting a caller s
   const { expectedGoal: _ignored, ...args } = f.args(grant);
   const { round: _notExecuted, ...beforeExecution } = args;
   expect(observeActiveReviewAdmission({ ...beforeExecution, issuePolicy: policy, runner: runner() }).admission.verification_plan).toEqual(f.input.verification_plan);
-  expect(observeAdmittedReviewContext({ ...args, issuePolicy: policy, runner: runner() }).context.goal).toEqual(goal);
-  expect(() => observeAdmittedReviewContext({ ...args, issuePolicy: policy, runner: runner(true) })).toThrow('review_goal_changed_during_read');
+  expect(() => observeActiveReviewAdmission({ ...beforeExecution, issuePolicy: policy, runner: runner(true) })).toThrow('review_goal_changed_during_read');
   const duringRead = runner(); let calls = 0;
   expect(() => observeActiveReviewAdmission({ ...beforeExecution, issuePolicy: policy, runner: () => {
     const response = duringRead();

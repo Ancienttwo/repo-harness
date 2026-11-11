@@ -1,5 +1,4 @@
 import { readActiveReviewAdmission, readReviewAdmissionForObservation, assertReviewAdmissionGoal } from './admission-store';
-import { bindReviewAdmission, type ReviewAuthorityInput } from '../../core/review/authority-context';
 import { sha256Prefixed } from '../../core/evidence/sha256';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { fetchGithubIssues, type GithubCommandRunner } from '../github/issues';
@@ -59,13 +58,4 @@ export function observeActiveReviewAdmission(input: Omit<Parameters<typeof readA
   const current = readActiveReviewAdmission({ ...input, expectedGoal: after });
   if (current.revision !== selected.revision) throw new Error('review_admission_changed_during_read');
   return current;
-}
-
-export function observeAdmittedReviewContext(input: Parameters<typeof observeActiveReviewAdmission>[0] & {
-  round: Pick<ReviewAuthorityInput, 'subject' | 'verification'>;
-}) {
-  const { round, ...source } = input;
-  const active = observeActiveReviewAdmission(source);
-  return { admission: active.admission, revision: active.revision,
-    context: bindReviewAdmission(active.admission, round, active.grant_sha256) };
 }
