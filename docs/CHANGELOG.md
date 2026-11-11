@@ -7,6 +7,7 @@ All notable changes to this skill are documented here.
 ### Breaking
 
 - `~/.repo-harness/mcp.local.json` must have `"version": 3`, and the workspace reader key is `capabilities.workspaceReader`. A file with no version, version 1 or 2, or `capabilities.reader` now fails closed. Fix: set `"version": 3` and rename `capabilities.reader` to `capabilities.workspaceReader`. No command rewrites the file. (#2443)
+- The operator server no longer serves the doc session routes: the six GET routes `session_list`, `session_detail`, `session_events`, `session_finalization`, `session_diff` and `session_loss`, and the POST route `sessions_create` (`/api/v1/sessions`). The command `repo-harness operator doc-sessions` is removed. The docs host was closed, so no session could exist and these entries could only answer empty, 404 or 501. Old `docs_session_create` lines in `audit.jsonl` stay readable. (#2456)
 
 ### Added
 

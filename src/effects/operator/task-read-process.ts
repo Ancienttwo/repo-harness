@@ -1,12 +1,6 @@
-import { isDocSessionListRequest, isDocSessionDetailRequest, isDocSessionEventsRequest } from '../../core/operator/doc-session-views';
-import { readDocSessionFinalizationView } from './doc-session-finalization-view';
-import { readDocSessionList, readDocSessionDetail } from './doc-session-views';
-import { DocSessionEventsError, readDocSessionEvents } from './doc-session-events';
 import { Worker } from 'node:worker_threads';
 import { isArchitectureRequest } from '../../core/operator/architecture';
 import { createInterface } from 'node:readline';
-import { isDocSessionReadRequest } from '../../core/operator/doc-session-changes';
-import { DocSessionReadError, readDocSessionDiff, readDocSessionLoss } from './doc-session-changes';
 import { isTaskMessagesRequest } from '../../core/operator/task-messages';
 import { readOperatorTaskMessages, TaskMessagesReadError } from './task-messages';
 
@@ -43,23 +37,11 @@ function run(): void {
         worker.once('message', finish);
         worker.once('error', () => finish({ ok: false, code: 'unavailable' }));
         worker.once('exit', () => { if (!settled) finish({ ok: false, code: 'unavailable' }); });
-      } else if (message.kind === 'doc_session_list' && isDocSessionListRequest(message.request)) {
-        finish({ok:true,snapshot:readDocSessionList(env ?? process.env,message.request)});
-      } else if (message.kind === 'doc_session_detail' && isDocSessionDetailRequest(message.request)) {
-        finish({ok:true,snapshot:readDocSessionDetail(env ?? process.env,message.request)});
-      } else if (message.kind === 'doc_session_events' && isDocSessionEventsRequest(message.request)) {
-        finish({ok:true,snapshot:readDocSessionEvents(env ?? process.env,message.request.session_id,message.request.after)});
-      } else if (message.kind === 'doc_session_diff' && isDocSessionReadRequest(message.request)) {
-        finish({ok:true,snapshot:readDocSessionDiff(env ?? process.env,message.request.session_id)});
-      } else if (message.kind === 'doc_session_finalization' && isDocSessionReadRequest(message.request)) {
-        finish({ok:true,snapshot:readDocSessionFinalizationView(env ?? process.env,message.request)});
-      } else if (message.kind === 'doc_session_loss' && isDocSessionReadRequest(message.request)) {
-        finish({ok:true,snapshot:readDocSessionLoss(env ?? process.env,message.request.session_id)});
       } else if (message.kind === 'task_messages' && isTaskMessagesRequest(message.request)) {
         finish({ok:true,snapshot:readOperatorTaskMessages(message.request,env ?? process.env)});
       } else throw new Error('invalid reader');
     } catch (error) {
-      finish({ok:false,code:error instanceof DocSessionReadError || error instanceof DocSessionEventsError || error instanceof TaskMessagesReadError ? error.code : 'unavailable'});
+      finish({ok:false,code:error instanceof TaskMessagesReadError ? error.code : 'unavailable'});
     }
   });
 }
