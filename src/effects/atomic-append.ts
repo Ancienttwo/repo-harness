@@ -73,22 +73,21 @@ export function publishFileByRename(target: string, content: Buffer, temporary: 
   try {
     createFileExclusiveDurably(temporary, content);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") removeIfPresent(temporary);
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") removeBestEffort(temporary);
     throw error;
   }
   try {
     renameSync(temporary, target);
   } catch (error) {
-    removeIfPresent(temporary);
+    removeBestEffort(temporary);
     throw error;
   }
   syncDirectoryDurably(dirname(target));
 }
 
-function removeIfPresent(path: string): void {
-  try { unlinkSync(path); } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
+/** A cleanup error on a failure path must not replace the original create or rename error. */
+function removeBestEffort(path: string): void {
+  try { unlinkSync(path); } catch { /* dropped */ }
 }
 
 /** Create or fully replace a file's content (used for quarantine dumps); fsync before returning. */
