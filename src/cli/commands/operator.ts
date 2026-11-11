@@ -1,7 +1,6 @@
 import { Command } from 'commander';
 import { OPERATOR_DEFAULT_HOST, OPERATOR_DEFAULT_MAX_CONCURRENCY, OPERATOR_DEFAULT_PORT, OPERATOR_DEFAULT_TIMEOUT_MS } from '../../core/review/operator-console-port';
 import type { CleanupReviewHost } from '../../effects/operator/worktree-cleanup-investigation';
-import { buildDocSessionsCommand } from './doc-sessions';
 import type { OperatorCaptureRawOptions, OperatorServeRawOptions } from './operator-actions';
 
 const actions = () => import('./operator-actions');
@@ -34,6 +33,5 @@ export function buildOperatorCommand(loadReviewHost: () => Promise<CleanupReview
     .argument('<job-id>')
     .argument('<deadline-ms>')
     .action(async (sessionId: string, jobId: string, deadlineMs: string) => (await actions()).cleanupInvestigationJob(sessionId, jobId, deadlineMs, await loadReviewHost()));
-  operator.addCommand(buildDocSessionsCommand());
   return operator;
 }

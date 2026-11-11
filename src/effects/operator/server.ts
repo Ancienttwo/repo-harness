@@ -1,7 +1,4 @@
 import { version as PACKAGE_VERSION } from '../../../package.json';
-import { decodeOperatorDocSessionList, decodeOperatorDocSessionDetail, DOC_SESSION_VIEW_FAILURES, isDocSessionListRequest, isDocSessionDetailRequest, isDocSessionEventsRequest, OPERATOR_SESSION_LIST_PATH, OPERATOR_SESSION_DETAIL_ROUTE } from '../../core/operator/doc-session-views';
-import { decodeOperatorDocSessionEvents } from '../../core/operator/doc-session-events';
-import { decodeDocSessionFinalizationView, DOC_SESSION_FINALIZATION_FAILURES, OPERATOR_SESSION_FINALIZATION_ROUTE, type DocSessionFinalizationView } from '../../core/operator/doc-session-finalization-view';
 import { startRuntimeService } from './runtime-service';
 import { startDevActivityCollector } from '../dev-activity/collector';
 import { startWorktreeCollector } from './worktree-collector';
@@ -50,8 +47,6 @@ import { startNotifyCollector, type NotifyCacheV1 } from './notify-collector';
 import { readOperatorRepositories } from './repositories';
 import type { OperatorRepositoriesV1 } from '../../core/operator/repositories';
 import { sha256Hex } from '../../core/evidence/sha256';
-import { decodeOperatorDocSessionDiff, decodeOperatorDocSessionLoss, DOC_SESSION_READ_FAILURES, type DocSessionReadFailure } from '../../core/operator/doc-session-changes';
-import { OPERATOR_SESSION_DIFF_ROUTE, OPERATOR_SESSION_LOSS_ROUTE } from './doc-session-changes';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -67,8 +62,6 @@ import { OPERATOR_SETTINGS_SEATS_PATH, OPERATOR_SETTINGS_SEATS_ROUTE, SEATS_CONF
 import { SeatsConfigurationError } from '../board/seats-configuration';
 import { AgentsConfigurationError } from '../configuration/agents-configuration';
 import type { AgentRuntimesCacheV1 } from '../../core/board/agents-settings';
-import { OPERATOR_SESSION_EVENTS_ROUTE } from './doc-session-events';
-import { OPERATOR_SESSIONS_ROUTE, docSessionCreateRoute } from './doc-session';
 import { OPERATOR_DEFAULT_HOST, OPERATOR_DEFAULT_MAX_CONCURRENCY, OPERATOR_DEFAULT_PORT, OPERATOR_DEFAULT_TIMEOUT_MS } from '../../core/review/operator-console-port';
 
 export const OPERATOR_SERVER_PROTOCOL = 3 as const;
@@ -161,13 +154,6 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'task_messages', method: 'GET', pattern: OPERATOR_TASK_MESSAGES_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_tree', method: 'GET', pattern: OPERATOR_DOCS_TREE_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_file', method: 'GET', pattern: OPERATOR_DOCS_FILE_ROUTE.source, write: false }),
-  Object.freeze({ id: 'session_list', method: 'GET', pattern: OPERATOR_SESSION_LIST_PATH, write: false }),
-  Object.freeze({ id: 'session_detail', method: 'GET', pattern: OPERATOR_SESSION_DETAIL_ROUTE.source, write: false }),
-  Object.freeze({ id: 'session_events', method: 'GET', pattern: OPERATOR_SESSION_EVENTS_ROUTE.source, write: false }),
-  Object.freeze({ id: 'session_finalization', method: 'GET', pattern: OPERATOR_SESSION_FINALIZATION_ROUTE.source, write: false }),
-  // The doc session diff and discard loss list, with the digests that commit and discard (#1023) check.
-  Object.freeze({ id: 'session_diff', method: 'GET', pattern: OPERATOR_SESSION_DIFF_ROUTE.source, write: false }),
-  Object.freeze({ id: 'session_loss', method: 'GET', pattern: OPERATOR_SESSION_LOSS_ROUTE.source, write: false }),
   Object.freeze({ id: 'settings_agents', method: 'GET', pattern: OPERATOR_SETTINGS_AGENTS_PATH, write: false }),
   Object.freeze({ id: 'settings_report_language', method: 'GET', pattern: OPERATOR_REPORT_LANGUAGE_PATH, write: false }),
   Object.freeze({ id: 'settings_report_language_write', method: 'POST', pattern: OPERATOR_REPORT_LANGUAGE_ROUTE.source, write: true }),
@@ -179,8 +165,6 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'quota', method: 'GET', pattern: OPERATOR_QUOTA_PATH, write: false }),
   // It changes only the host config's `seats` section; running panes keep their launch arguments.
   Object.freeze({ id: 'settings_seats_write', method: 'POST', pattern: OPERATOR_SETTINGS_SEATS_ROUTE.source, write: true }),
-  // The second write route: it verifies citations, then creates the doc session's worktree in the managed root.
-  Object.freeze({ id: 'sessions_create', method: 'POST', pattern: OPERATOR_SESSIONS_ROUTE.source, write: true }),
   Object.freeze({ id: 'architecture_modules', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULES_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_module', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULE_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_review_prompt', method: 'GET', pattern: OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source, write: false }),
@@ -188,12 +172,6 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'architecture_map', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MAP_ROUTE.source, write: false }),
   Object.freeze({ id: 'static_asset', method: 'GET', pattern: OPERATOR_STATIC_ASSET_PATTERN, write: false }),
 ] as const);
-
-/** HTTP status of each doc session read failure; the body is `{code}` only. */
-const DOC_SESSION_READ_STATUS: Readonly<Record<DocSessionReadFailure, number>> = Object.freeze({
-  session_not_found: 404, worktree_missing: 409, worktree_changed: 409, stale: 409, too_large: 413,
-  filters_unsupported: 422, index_unsupported: 422, path_unsupported: 422, encoding_unsupported: 422, unavailable: 503, busy: 503, timeout: 504,
-});
 
 export type OperatorServerHost = '127.0.0.1' | '::1';
 
@@ -240,8 +218,6 @@ export interface OperatorServerOptions {
   readonly read_docs?: (repositoryId: string) => DocsRepositoryCache;
   /** Start the in-process docs collector (operator serve). Ignored when a cache reader is injected. */
   readonly docs_collector?: boolean;
-  /** The platform the docs session route checks. Production uses the host platform; only tests pass another. */
-  readonly docs_session_platform?: NodeJS.Platform;
   /** Tests cache reader by repository id. GET serves only this cache; it never calls GitHub. */
   readonly read_tests?: (repositoryId: string) => TestsRepositoryCache;
   /** Start the in-process tests collector (operator serve). Ignored when a cache reader is injected. */
@@ -614,28 +590,6 @@ export class OperatorTaskReadError extends Error {
   constructor(readonly code: string) { super(code); }
 }
 
-/** CLI uses the same supervised reader and closed schema as the HTTP route. */
-export function readBoundedDocSessionFinalization(env: NodeJS.ProcessEnv, sessionId: string): Promise<DocSessionFinalizationView> {
-  const request = { session_id: sessionId };
-  return readSupervisedOperatorProcess({
-    process_path: fileURLToPath(new URL('./task-read-process.ts', import.meta.url)), env,
-    signal: AbortSignal.timeout(OPERATOR_DEFAULT_TIMEOUT_MS),
-    start: { type: 'start', protocol: 1, kind: 'doc_session_finalization', request, env: repositoryWorkerEnvironment(env) },
-    response: value => {
-      if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-      const response = value as Record<string, unknown>;
-      if (Object.keys(response).length !== 2) return null;
-      if (response.ok === true && 'snapshot' in response) {
-        try { return { ok: true, snapshot: decodeDocSessionFinalizationView(response.snapshot, request) }; } catch { return null; }
-      }
-      if (response.ok === false && typeof response.code === 'string' && DOC_SESSION_FINALIZATION_FAILURES.some(code => code === response.code)) return { ok: false, code: response.code };
-      if (response.ok === false && response.cancelled === true) return { ok: false, cancelled: true };
-      return null;
-    },
-    failure: code => new OperatorTaskReadError(code),
-  });
-}
-
 type SupervisedReadResponse<T> =
   | { readonly ok: true; readonly snapshot: T }
   | { readonly ok: false; readonly code: string }
@@ -972,7 +926,7 @@ export async function startOperatorServer(
   const handleBoundedTaskRead = <TRequest extends object, TSnapshot>(
     response: ServerResponse, headOnly: boolean, input: TRequest,
     decode: (value: unknown, request: TRequest) => TSnapshot,
-    failures: readonly string[], kind: 'architecture' | 'doc_session_diff' | 'doc_session_loss' | 'doc_session_list' | 'doc_session_detail' | 'doc_session_events' | 'doc_session_finalization' | 'task_messages',
+    failures: readonly string[], kind: 'architecture' | 'task_messages',
     injected?: (request: TRequest & { readonly signal: AbortSignal }) => Promise<TSnapshot>,
     failureStatus: (failure: string) => number = failure => failure === 'history_unavailable' || failure === 'task_not_found' ? 404 : failure === 'stale' ? 409 : failure === 'too_large' ? 413 : 503,
     cacheRequest?: IncomingMessage,
@@ -1152,15 +1106,6 @@ export async function startOperatorServer(
     reportingLanguageWriteRoute(options.language_settings),
     documentationLanguageWriteRoute(options.env, options.language_settings),
     seatsSettingsWriteRoute(options.env),
-    docSessionCreateRoute({
-      env: options.env ?? process.env,
-      platform: options.docs_session_platform,
-      // The same docs cache the docs GET routes serve; citations verify against it.
-      docs_reader: repositoryId => {
-        const cache = (options.read_docs ?? docs?.read)?.(repositoryId);
-        return cache?.state === 'ready' ? cache.reader : null;
-      },
-    }),
     worktreeCleanupWriteRoute(options.env),
     worktreeCleanupPlanWriteRoute({ env: options.env }),
     worktreeCleanupExecuteWriteRoute({ env: options.env }),
@@ -1186,9 +1131,6 @@ export async function startOperatorServer(
       throw new OperatorServerError('invalid_argument', `route inventory entry ${JSON.stringify(entry.id)} has no write route`, 400);
     }
   }
-  // Doc session events are served only when the inventory declares them; production OPERATOR_ROUTES does not yet.
-  const sessionEventsRead = routeInventory.some(entry => entry.id === 'session_events' && entry.method === 'GET' && !entry.write
-    && entry.pattern === OPERATOR_SESSION_EVENTS_ROUTE.source);
   const matchWriteRoute = (pathname: string): { readonly route: OperatorWriteRoute; readonly params: readonly string[] } | null => {
     for (const route of writeRoutes) {
       const match = route.path.exec(pathname);
@@ -1297,60 +1239,6 @@ export async function startOperatorServer(
           : 'capability_id' in result && result.capability_id !== request.capability_id)) throw new Error('identity');
         return result;
       }, ARCHITECTURE_FAILURES, 'architecture', undefined, architectureStatus, request);
-      return;
-    }
-
-    const finalization = OPERATOR_SESSION_FINALIZATION_ROUTE.exec(pathname);
-    if (finalization !== null) {
-      if (url.search !== '') { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }
-      handleBoundedTaskRead(response, headOnly, { session_id: finalization[1]! }, decodeDocSessionFinalizationView,
-        DOC_SESSION_FINALIZATION_FAILURES, 'doc_session_finalization', undefined,
-        code => code === 'session_not_found' ? 404 : code === 'too_large' ? 413 : code === 'timeout' ? 504 : 503);
-      return;
-    }
-
-    const sessionDetail = OPERATOR_SESSION_DETAIL_ROUTE.exec(pathname);
-    if (pathname === OPERATOR_SESSION_LIST_PATH || sessionDetail !== null) {
-      const keys = [...url.searchParams.keys()];
-      if (keys.some(key => key !== 'seen') || keys.length > 1) { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }
-      const status = (code: string) => code === 'session_not_found' ? 404 : code === 'too_large' ? 413
-        : code === 'worktree_missing' || code === 'worktree_changed' ? 409 : code === 'timeout' ? 504 : 503;
-      if (sessionDetail !== null) {
-        const input = { session_id: sessionDetail[1]!, seen: url.searchParams.get('seen') };
-        if (!isDocSessionDetailRequest(input)) { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }
-        handleBoundedTaskRead(response, headOnly, input, decodeOperatorDocSessionDetail, DOC_SESSION_VIEW_FAILURES, 'doc_session_detail', undefined, status);
-      } else {
-        let seen: unknown;
-        try { seen = JSON.parse(url.searchParams.get('seen') ?? '{}'); }
-        catch { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }
-        const input = { seen };
-        if (!isDocSessionListRequest(input)) { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }
-        handleBoundedTaskRead(response, headOnly, input, decodeOperatorDocSessionList, DOC_SESSION_VIEW_FAILURES, 'doc_session_list', undefined, status);
-      }
-      return;
-    }
-
-    const sessionEvents = sessionEventsRead ? OPERATOR_SESSION_EVENTS_ROUTE.exec(pathname) : null;
-    if (sessionEvents !== null) {
-      const keys = [...url.searchParams.keys()];
-      const input = { session_id: sessionEvents[1]!, after: url.searchParams.get('after') };
-      if (keys.some(key => key !== 'after') || keys.length > 1 || !isDocSessionEventsRequest(input)) {
-        sendJson(response, 400, { code: 'invalid_cursor' }, headOnly); return;
-      }
-      handleBoundedTaskRead(response, headOnly, input, (value, request) => decodeOperatorDocSessionEvents(value, request.session_id, request.after),
-        ['session_not_found', 'events_unavailable', 'invalid_cursor'], 'doc_session_events', undefined,
-        code => code === 'session_not_found' ? 404 : code === 'invalid_cursor' ? 400 : code === 'timeout' ? 504 : 503);
-      return;
-    }
-
-    const sessionDiff = OPERATOR_SESSION_DIFF_ROUTE.exec(pathname);
-    const sessionLoss = sessionDiff === null ? OPERATOR_SESSION_LOSS_ROUTE.exec(pathname) : null;
-    if (sessionDiff !== null || sessionLoss !== null) {
-      if (url.search !== '') { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }
-      const input = { session_id: (sessionDiff ?? sessionLoss)![1]! };
-      const status = (failure: string) => DOC_SESSION_READ_STATUS[failure as DocSessionReadFailure] ?? 503;
-      if (sessionDiff !== null) handleBoundedTaskRead(response, headOnly, input, decodeOperatorDocSessionDiff, DOC_SESSION_READ_FAILURES, 'doc_session_diff', undefined, status);
-      else handleBoundedTaskRead(response, headOnly, input, decodeOperatorDocSessionLoss, DOC_SESSION_READ_FAILURES, 'doc_session_loss', undefined, status);
       return;
     }
 
