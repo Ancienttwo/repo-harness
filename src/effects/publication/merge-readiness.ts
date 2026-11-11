@@ -42,9 +42,16 @@ export type MergeReadinessErrorCode =
   | 'provider_data_incomplete';
 
 export class MergeReadinessError extends Error {
-  constructor(readonly code: MergeReadinessErrorCode, message: string, readonly cause?: unknown) {
+  /**
+   * The local field name that a readiness blocker may show. It never holds
+   * provider text or gh arguments; a message that embeds them passes its own detail.
+   */
+  readonly detail: string;
+
+  constructor(readonly code: MergeReadinessErrorCode, message: string, readonly cause?: unknown, detail?: string) {
     super(message);
     this.name = 'MergeReadinessError';
+    this.detail = detail ?? message;
   }
 }
 
@@ -169,7 +176,8 @@ function ghObserve(input: PublicationReadinessInput, args: readonly string[], ac
   try {
     return { status: result.status, value: JSON.parse(result.stdout) };
   } catch (error) {
-    throw new MergeReadinessError('provider_data_incomplete', `provider returned invalid JSON: gh ${args.join(' ')}`, error);
+    throw new MergeReadinessError('provider_data_incomplete', `provider returned invalid JSON: gh ${args.join(' ')}`, error,
+      'provider response is not valid JSON');
   }
 }
 
@@ -376,7 +384,8 @@ function protectedChecks(identity: ProviderIdentity, prNumber: number, input: Pu
   ], [0, 1, 8]));
   for (const name of names) {
     if (!checks.some(check => check.name === name)) {
-      throw new MergeReadinessError('provider_data_incomplete', `protected check context is missing: ${name}`);
+      throw new MergeReadinessError('provider_data_incomplete', `protected check context is missing: ${name}`, undefined,
+        'a base protection required_status_checks context is missing from the required checks');
     }
   }
   return checks;
@@ -779,7 +788,8 @@ function changedFilePage(value: unknown): ChangedFilePage {
 function* changedPaths(identity: ProviderIdentity): Generator<ProviderRequest, string[], unknown> {
   if (identity.changed_files > CHANGED_FILE_LIMIT) {
     throw new MergeReadinessError('provider_data_incomplete',
-      `the PR reports ${identity.changed_files} changed files; the provider lists at most ${CHANGED_FILE_LIMIT}`);
+      `the PR reports ${identity.changed_files} changed files; the provider lists at most ${CHANGED_FILE_LIMIT}`, undefined,
+      'provider PR changedFiles exceeds the file list limit');
   }
   const pages = Math.ceil(identity.changed_files / CHANGED_FILE_PAGE_SIZE);
   const files: { readonly filename: string; readonly previous_filename?: string }[] = [];
@@ -791,7 +801,8 @@ function* changedPaths(identity: ProviderIdentity): Generator<ProviderRequest, s
   }
   if (files.length !== identity.changed_files) {
     throw new MergeReadinessError('provider_data_incomplete',
-      `the PR reported ${identity.changed_files} changed files but the provider listed ${files.length}`);
+      `the PR reported ${identity.changed_files} changed files but the provider listed ${files.length}`, undefined,
+      'provider PR file list does not match changedFiles');
   }
   const paths = files.flatMap((file) => file.previous_filename === undefined ? [file.filename] : [file.filename, file.previous_filename]);
   return [...new Set(paths)].sort();
@@ -799,7 +810,8 @@ function* changedPaths(identity: ProviderIdentity): Generator<ProviderRequest, s
 
 function policyAtRef(contents: unknown, ref: string): PolicyFileAtRef {
   const file = policyFileFromContents(contents);
-  if (file === null) throw new MergeReadinessError('provider_data_incomplete', `${PUBLICATION_POLICY_PATH} at ${ref} is not a readable file`);
+  if (file === null) throw new MergeReadinessError('provider_data_incomplete', `${PUBLICATION_POLICY_PATH} at ${ref} is not a readable file`, undefined,
+    `${PUBLICATION_POLICY_PATH} at the base is not a readable file`);
   return file;
 }
 
@@ -925,7 +937,8 @@ function* rollbackBoundary(identity: ProviderIdentity): Generator<string, Provid
     return pr.number;
   });
   if (parentPRs.includes(prNumber)) {
-    throw new MergeReadinessError('provider_data_incomplete', `Automatic rollback cannot revert only the last commit of multi-commit rebase PR #${prNumber}`);
+    throw new MergeReadinessError('provider_data_incomplete', `Automatic rollback cannot revert only the last commit of multi-commit rebase PR #${prNumber}`,
+      undefined, 'rollback parent PR is a multi-commit rebase PR');
   }
   return Object.freeze({ status: 'ready', pr_number: prNumber, before_sha: parent.before_sha, after_sha: identity.base_sha });
 }
@@ -1084,7 +1097,8 @@ function* stackProtocol(
     const open = matching.filter(pr => pr.state === 'OPEN');
     if (open.length === 0) return stackFailure(matching.length === 0 ? 'base_pr_missing' : 'base_pr_not_open', chain);
     if (open.length > 1) {
-      throw new MergeReadinessError('provider_data_incomplete', `provider returned ${open.length} open pull requests for stack base ${baseRef}`);
+      throw new MergeReadinessError('provider_data_incomplete', `provider returned ${open.length} open pull requests for stack base ${baseRef}`,
+        undefined, 'stack base has more than one open pull request');
     }
     const base = open[0]!;
     if (base.cross_repository) return stackFailure('foreign_pr', chain);
@@ -1110,10 +1124,11 @@ function observeStack(target: ProviderReadinessTarget, input: PublicationReadine
   return request.value;
 }
 
-function readinessProjection(input: PullRequestReadinessInput, provider: ProviderMergeReadinessFactsV1 | null, observation: MergeReadinessObservation, stack: MergeReadinessStackDetailV1): PullRequestReadinessV2 {
+function readinessProjection(input: PullRequestReadinessInput, provider: ProviderMergeReadinessFactsV1 | null, observation: MergeReadinessObservation, stack: MergeReadinessStackDetailV1, observationDetail?: string): PullRequestReadinessV2 {
   return Object.freeze({ protocol: 2, kind: 'repo-harness-pull-request-readiness', ...selectionOf(input),
     ...projectPullRequestMergeReadiness({ expected_head_sha: input.expected_head_sha, expected_base_sha: input.expected_base_sha,
-      integration_mode: provider?.state === 'MERGED' ? 'ancestor' : 'unmerged', observation, provider, stack }) });
+      integration_mode: provider?.state === 'MERGED' ? 'ancestor' : 'unmerged', observation,
+      ...(observationDetail === undefined ? {} : { observation_detail: observationDetail }), provider, stack }) });
 }
 
 /** One observation loop for exact merged-PR evidence. The stack is fenced with the identity. */
@@ -1174,7 +1189,9 @@ export function collectPullRequestMergeReadiness(input: PullRequestReadinessInpu
       : readinessProjection(input, null, 'changed_during_read', unobservedStackDetail());
   } catch (error) {
     if (!(error instanceof MergeReadinessError)) throw error;
-    return readinessProjection(input, null, error.code, unobservedStackDetail());
+    // Each provider field check names its field; the blocker keeps that local name so a refusal shows it.
+    return readinessProjection(input, null, error.code, unobservedStackDetail(),
+      error.code === 'provider_data_incomplete' ? error.detail : undefined);
   }
 }
 
