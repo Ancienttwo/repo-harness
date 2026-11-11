@@ -10,6 +10,7 @@
 
 import type { Nodes } from 'mdast';
 import { fromMarkdown } from 'mdast-util-from-markdown';
+import { isRecord } from '../evidence/is-record';
 
 export class BoardSourceError extends Error {
   constructor(message: string) {
@@ -130,8 +131,8 @@ function fail(message: string): never {
 }
 
 function obj(value: unknown, label: string): Json {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) fail(`${label} is not an object`);
-  return value as Json;
+  if (!isRecord(value)) fail(`${label} is not an object`);
+  return value;
 }
 
 function str(value: unknown, label: string): string {

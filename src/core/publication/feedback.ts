@@ -1,4 +1,5 @@
 import { byteCompare } from '../evidence/byte-compare';
+import { isRecord } from '../evidence/is-record';
 import { validateTaskMessageClaim, type TaskMessageClaim } from '../messages/task-message-claim';
 import { evaluateNoProgress } from '../state/no-progress';
 import {
@@ -290,8 +291,8 @@ function requireExactKeys(record: Record<string, unknown>, expected: readonly st
 }
 
 function object(value: unknown, label: string): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) fail('feedback_unreadable', `${label} must be an object`);
-  return value as Record<string, unknown>;
+  if (!isRecord(value)) fail('feedback_unreadable', `${label} must be an object`);
+  return value;
 }
 
 function normalizeEventInput(input: FeedbackEventInput): FeedbackEventInput {
