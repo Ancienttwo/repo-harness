@@ -1,6 +1,6 @@
 /** #1023 independent effects. HTTP/CLI and host coordination are separate owners. */
 import { randomUUID } from 'node:crypto';
-import { closeSync, constants, fstatSync, openSync, readFileSync, renameSync, unlinkSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { JsonValue } from '../../core/evidence/types';
 import type { DocSessionChange } from '../../core/operator/doc-session-changes';
@@ -11,7 +11,7 @@ import {
   type DocSessionCommitInput, type DocSessionDiscardInput, type DocSessionDraftPr,
   type DocSessionPublicationTarget, type DocSessionPrCreateResult,
 } from '../../core/operator/doc-session-finalize';
-import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
+import { publishFileByRename } from '../atomic-append';
 import { gitExecFileSync, configuredGitBinary, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { acquireExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { observeRemoteRef, pushCommitToNewRemoteRef } from '../publication/new-remote-ref-push';
@@ -118,9 +118,7 @@ function readState(directory: string): State | null {
 function saveState(directory: string, state: State): void {
   const bytes = encodeState(state);
   const temporary = join(directory, `finalize-${randomUUID()}.tmp`);
-  createFileExclusiveDurably(temporary, bytes);
-  renameSync(temporary, join(directory, 'finalize.json'));
-  syncDirectoryDurably(directory);
+  publishFileByRename(join(directory, 'finalize.json'), bytes, temporary);
 }
 function encodeState(state: State): Buffer {
   const bytes = Buffer.from(JSON.stringify(state) + '\n');

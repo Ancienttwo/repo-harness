@@ -1,6 +1,6 @@
 import { validateControlApproval, type ValidatedControlApproval } from '../../core/review/control-delegation';
 import { randomUUID } from 'node:crypto';
-import { constants, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync } from 'node:fs';
+import { constants, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { osAccountHome } from '../runtime/os-account-home';
 import { canonicalize } from '../../core/evidence/canonical-json';
@@ -10,7 +10,7 @@ import { createReviewAdmission, validateReviewAdmission, reviewCampaignKey, bind
 import { taskRepository } from '../git/task-repository';
 import { gatesDirectoryName, resolveRepositoryIdentity } from '../git/repository-identity';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
-import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
+import { createFileExclusiveDurably, publishFileByRename, syncDirectoryDurably } from '../atomic-append';
 import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync } from '../readonly-observation';
 
 interface StoreInput { repoRoot: string; authorityHome?: string }
@@ -77,9 +77,7 @@ function active(path: string): ActiveGrant {
 }
 function publishActive(path: string, next: ActiveGrant): void {
   const temporary = join(dirname(path), `activation-${randomUUID()}.tmp`);
-  createFileExclusiveDurably(temporary, bytes(next));
-  renameSync(temporary, path);
-  syncDirectoryDurably(dirname(path));
+  publishFileByRename(path, bytes(next), temporary);
 }
 
 /** Consume a trusted upstream approval and bind its exact transition with CAS.
