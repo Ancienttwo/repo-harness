@@ -11,6 +11,7 @@ import { DEFAULT_SEATS_CONFIG, ROUTING_CLASSES, SeatsConfigMigrationRequiredErro
 import { checkSeatRoutingModels, seatsRanges } from '../../effects/board/seats-configuration';
 import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { upsertManagedBlock } from "../../core/adoption/managed-block";
+import { assertConfigurationPath } from "../installer/configuration-ownership";
 import { runtimeStateIgnoreOperation, userExcludesFilePath } from "../../effects/adoption/gitignore-plan";
 import { sha256Hex } from "../../core/evidence/sha256";
 import { homedir, tmpdir, userInfo } from "os";
@@ -946,6 +947,13 @@ function writeRuntimeIgnoreRules(env: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const step = RUNTIME_IGNORE_RULES_STEP;
   const target = userExcludesFilePath(env);
   if (!target.ok) return { step, status: 'failed', detail: target.error };
+  try {
+    // Uninstall refuses a symlinked excludes file, so update must not write a block through one.
+    assertConfigurationPath(target.path, dirname(target.path));
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return { step, status: 'failed', detail: `${target.path}: ${reason}; set core.excludesFile to the real file, then run repo-harness update again` };
+  }
   try {
     const existing = existsSync(target.path) ? readFileSync(target.path, 'utf-8') : '';
     const update = upsertManagedBlock(existing, runtimeStateIgnoreOperation(target.path));
