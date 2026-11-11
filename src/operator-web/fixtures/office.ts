@@ -50,7 +50,7 @@ export function officeBoard(now: number): BoardV1 {
   const done = { status: 'success', completed_at: ago(9) } as const;
   const terminals = officeWorkers(now);
   return decodeBoard({
-    protocol: BOARD_PROTOCOL, kind: 'repo-harness.board', observed_at: ago(0), repository: REPOSITORY, default_branch: 'main', acceptance_merge: 'on',
+    protocol: BOARD_PROTOCOL, kind: 'repo-harness.board', observed_at: ago(0), repository: REPOSITORY, default_branch: 'main', acceptance_merge: 'on', merge_queue: 'off',
     parent: { number: OFFICE_PARENT, title: 'Operator console', url: url('issues', OFFICE_PARENT), state: 'open', labels: [], milestone: null },
     plan: {
       status: 'observed', comment_url: `${url('issues', OFFICE_PARENT)}#issuecomment-3`, created_at: ago(8), revision: 7,
@@ -146,7 +146,7 @@ function sampleBoard(room: SampleRoom, repository: string, now: number): BoardV1
   const accepted = Array.from({ length: room.plan?.accepted ?? 0 }, (_, index) => 200 + index);
   const members = room.plan === null ? [] : [...accepted, ...desks.slice(0, room.plan.size - accepted.length).map(entry => entry.number)];
   return decodeBoard({
-    protocol: BOARD_PROTOCOL, kind: 'repo-harness.board', observed_at: new Date(now).toISOString(), repository, default_branch: 'main', acceptance_merge: 'on',
+    protocol: BOARD_PROTOCOL, kind: 'repo-harness.board', observed_at: new Date(now).toISOString(), repository, default_branch: 'main', acceptance_merge: 'on', merge_queue: 'off',
     parent: { number: room.parent, title: room.name, url: link('issues', room.parent), state: 'open', labels: [], milestone: null },
     plan: room.plan === null ? { status: 'none' } : {
       status: 'observed', comment_url: `${link('issues', room.parent)}#issuecomment-1`, created_at: at, revision: 1,

@@ -722,7 +722,7 @@ test('decoders refuse an unknown protocol or kind', () => {
   expect(() => decodeBoard({ protocol: 1, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 1');
   // A protocol-3 board has no merge_hold fields.
   expect(() => decodeBoard({ protocol: 3, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 3');
-  expect(() => decodeBoard({ protocol: 5, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
+  expect(() => decodeBoard({ protocol: 6, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
   const block = (value: Json) => `repo-harness plan\n\n\`\`\`json\n${JSON.stringify(value)}\n\`\`\`\n`;
   const valid = { protocol: 1, kind: 'repo-harness.plan', merge_order: [1475], holds: [], batches: [], seat_limits: { worker: 3 } } as const;
   expect(decodePlanBlock(block(valid))).toEqual(valid);
@@ -738,10 +738,11 @@ test('decoders refuse a missing or invalid plan revision, merge policy or seat b
   const board = (branch: unknown) => ({ ...recorded, execution: { status: 'observed', terminals: seat(branch) } });
   const parents = (branch: unknown) => ({ ...boardSeatsFixture, seats: seat(branch).map(row => ({ ...row, parent: '1474' })) });
   const { acceptance_merge: _dropped, ...noPolicy } = recorded;
-  for (const invalid of [plan(undefined), plan(0), plan(1.5), plan('1'), noPolicy, { ...recorded, acceptance_merge: 'maybe' }, board(undefined), board('')]) {
+  const { merge_queue: _droppedQueue, ...noQueue } = recorded;
+  for (const invalid of [plan(undefined), plan(0), plan(1.5), plan('1'), noPolicy, { ...recorded, acceptance_merge: 'maybe' }, noQueue, { ...recorded, merge_queue: 'maybe' }, board(undefined), board('')]) {
     expect(() => decodeBoard(invalid)).toThrow('invalid board');
   }
-  for (const valid of [plan(null), plan(7), { ...recorded, acceptance_merge: 'unknown' }, board(null), board('main')]) expect(decodeBoard(valid)).toEqual(valid);
+  for (const valid of [plan(null), plan(7), { ...recorded, acceptance_merge: 'unknown' }, { ...recorded, merge_queue: 'unknown' }, board(null), board('main')]) expect(decodeBoard(valid)).toEqual(valid);
   for (const invalid of [parents(undefined), parents(''), { ...parents(null), seats: undefined }]) expect(() => decodeBoardSeats(invalid)).toThrow('board seat');
   expect(decodeBoardSeats(parents('main')).seats[0]!.branch).toBe('main');
   // A status message that leaves the server is one redacted line within the limit, and null is no message.
@@ -958,6 +959,7 @@ test('merge policy: the policy file of the default branch through the one parser
     [{ status: 137, stdout: '{"status":"404"}' }, 'unknown'],
   ];
   expect(cases.map(([policy]) => replay({ policy }).acceptance_merge)).toEqual(cases.map(([, expected]) => expected) as BoardV1['acceptance_merge'][]);
+  expect([file('{"publication":{"merge_queue":"on"}}'), file('{}'), file('{')].map(policy => replay({ policy }).merge_queue)).toEqual(['on', 'off', 'unknown']);
 });
 
 test('seat branch: git in the terminal directory on both reads; each unreadable directory gives null and no path reaches the payload', () => {
@@ -1332,7 +1334,9 @@ test('a rendered record with multiline finding values parses to its finding IDs'
 
 test('A2 finds a batch behind an overlapping pull request, and a plan hold removes a PR from A1, A2 and R4', () => {
   const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null };
-  const findings = (holds: number[]) => evaluateBoardAttention(replay({
+  const queue = (value: string) => ({ status: 0, stdout: JSON.stringify({ type: 'file', path: '.ai/harness/policy.json', encoding: 'base64', content: Buffer.from(`{"publication":{"merge_queue":"${value}"}}`).toString('base64') }) });
+  const findings = (holds: number[], policy?: GhAnswer) => evaluateBoardAttention(replay({
+    policy,
     now: new Date('2026-11-03T02:00:00Z'),
     owners: (results) => { results.push(...['a', 'b'].map(path => ({ path, matched: false, ambiguous: false, owningCapabilityId: null }))); },
     parent: (data) => {
@@ -1351,6 +1355,9 @@ test('A2 finds a batch behind an overlapping pull request, and a plan hold remov
     },
   })).findings.filter(finding => ['A1', 'A2', 'R4'].includes(finding.rule)).map(finding => [finding.rule, finding.pull_requests]);
   expect(findings([])).toEqual([['A2', [1494, 1499]], ['R4', [1494]], ['R4', [1499]]]);
+  expect(findings([], queue('off'))).toEqual(findings([]));
+  // The merge executor refuses --batch under a merge queue, so A2 gives no hint there.
+  expect(findings([], queue('on'))).toEqual([['R4', [1494]], ['R4', [1499]]]);
   expect(findings([1475, 1479])).toEqual([['R4', [1499]]]);
 });
 

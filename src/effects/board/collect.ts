@@ -1,7 +1,7 @@
 import { execFile, spawnSync, type ExecFileException } from 'child_process';
 import { architecturePort, isArchitectureUnavailable, type ArchctxProviderOptions } from '../../core/architecture/contracts';
 import {
-  linkedPullRequests, projectBoard, seatTerminal, syncCarryCandidates, type BoardAcceptanceMergeV1, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1,
+  linkedPullRequests, projectBoard, seatTerminal, syncCarryCandidates, type BoardAcceptanceMergeV1, type BoardMergeQueueV1, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1,
   type BoardPathOwnerV1, type BoardPathOwnersV1, type BoardSeatTerminalInputV1, type BoardSeatTerminalReadV1, type BoardToolingV1, type BoardV1,
 } from '../../core/board/board';
 import { ADVISOR_SEAT } from '../../core/board/advisor-seat';
@@ -182,24 +182,32 @@ function dailyRun(input: BoardCollectInput, repository: string, branch: string):
   return { status: 'observed', run_url: run.html_url, conclusion: run.conclusion as string | null, created_at: run.created_at };
 }
 
+interface PublicationSwitches {
+  readonly acceptance_merge: BoardAcceptanceMergeV1;
+  readonly merge_queue: BoardMergeQueueV1;
+}
+
+const UNKNOWN_SWITCHES: PublicationSwitches = { acceptance_merge: 'unknown', merge_queue: 'unknown' };
+
 /**
- * `publication.acceptance_merge` on the default branch, decoded only by the
- * publication policy parser. GitHub answers an absent file with exit 1 and a
- * JSON body of status 404; every other failure leaves the value unknown.
+ * `publication.acceptance_merge` and `publication.merge_queue` on the default
+ * branch, from one read decoded only by the publication policy parser. GitHub
+ * answers an absent file with exit 1 and a JSON body of status 404; every other
+ * failure leaves both values unknown.
  */
-function acceptanceMerge(input: BoardCollectInput, repository: string, branch: string): BoardAcceptanceMergeV1 {
+function publicationSwitches(input: BoardCollectInput, repository: string, branch: string): PublicationSwitches {
   const result = runGh(input, ['api', '--hostname', 'github.com', `repos/${repository}/contents/${PUBLICATION_POLICY_PATH}?ref=${encodeURIComponent(branch)}`]);
   let body: unknown;
   try {
     body = JSON.parse(result.stdout);
   } catch {
-    return 'unknown';
+    return UNKNOWN_SWITCHES;
   }
   const absent = result.status === 1 && (body as { status?: unknown } | null)?.status === '404';
   const file: PolicyFileAtRef | null = absent ? { status: 'missing' } : result.status === 0 ? policyFileFromContents(body) : null;
-  if (file === null) return 'unknown';
+  if (file === null) return UNKNOWN_SWITCHES;
   const policy = parsePublicationPolicy(file);
-  return policy.ok ? policy.acceptance_merge : 'unknown';
+  return policy.ok ? { acceptance_merge: policy.acceptance_merge, merge_queue: policy.merge_queue } : UNKNOWN_SWITCHES;
 }
 
 function tooling(input: BoardCollectInput): BoardToolingV1 {
@@ -407,7 +415,7 @@ export function collectBoardThrough(input: BoardCollectInput, sources: KeyedSour
   return projectBoard({
     observed_at: observedAt,
     parent,
-    acceptance_merge: acceptanceMerge(input, repository, parent.repository.default_branch),
+    ...publicationSwitches(input, repository, parent.repository.default_branch),
     pull_requests: reads,
     readiness,
     merge_only_syncs: mergeOnlySyncs,

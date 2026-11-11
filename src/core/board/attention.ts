@@ -129,9 +129,16 @@ function a1(context: Context): void {
 /**
  * A2 fires when any two candidates can batch. The scan seeds the batch with
  * the first such pair, so an earlier pull request that overlaps both cannot
- * hide it, then adds each later candidate that fits.
+ * hide it, then adds each later candidate that fits. A merge queue takes no
+ * batch (the merge executor refuses `--batch` under it), so A2 runs only when
+ * `merge_queue` is off.
  */
 function a2(context: Context): void {
+  if (context.board.merge_queue === 'on') return;
+  if (context.board.merge_queue === 'unknown') {
+    skip(context, 'A2', 'merge_queue_unknown');
+    return;
+  }
   const candidates = accepted(context, 'A2').filter(pr => !pr.is_draft).filter((pr) => {
     if (pr.files === null) skip(context, 'A2', 'files_incomplete', `#${pr.number}`);
     return pr.files !== null;
