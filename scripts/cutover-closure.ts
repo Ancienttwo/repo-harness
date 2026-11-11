@@ -4,7 +4,6 @@ import { closeSync, constants, existsSync, lstatSync, openSync, readFileSync, re
 import { isAbsolute, relative, resolve } from "path";
 import { spawnSync } from "child_process";
 
-export const CUTOVER_CLOSURE_PROTOCOL = 1 as const;
 export const CUTOVER_CLOSURE_KIND = "repo-harness-cutover-closure" as const;
 export const CUTOVER_CLOSURE_CATEGORIES = ["old_implementation", "callers", "fallback", "tests", "docs_and_projections", "compatibility_expiry"] as const;
 export const CUTOVER_CLOSURE_DISPOSITIONS = ["removed", "migrated", "retained_with_reason", "not_applicable"] as const;
