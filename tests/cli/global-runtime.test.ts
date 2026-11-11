@@ -377,7 +377,8 @@ describe('runtime ignore rules step', () => {
       expect(written).toStartWith(`${before}${begin}`);
       expect(written).toEndWith(`# END: repo-harness runtime-state\n${after}`);
       expect(written).not.toContain('stale-rule/');
-      expect(update().steps.at(-1)).toMatchObject({ status: 'ok', detail: `${custom}: current` });
+      const currentRun = update();
+      expect(currentRun.steps.at(-1)).toMatchObject({ status: 'ok', detail: `${custom}: current` });
       expect(readFileSync(custom, 'utf8')).toBe(written);
 
       const removal = runUserUninstall({ target: 'both', env });
@@ -387,13 +388,20 @@ describe('runtime ignore rules step', () => {
       Bun.spawnSync(['git', 'config', '--global', '--unset', 'core.excludesFile'], { env });
       mkdirSync(join(xdg, 'git'), { recursive: true });
       symlinkSync(custom, defaultFile);
-      expect(update().steps.at(-1)).toMatchObject({ status: 'ok', detail: `${defaultFile}: written` });
       const linked = readFileSync(custom, 'utf8');
+      const refusedRun = update();
+      expect(refusedRun.steps.at(-1)).toEqual({ step: 'write runtime ignore rules', status: 'failed',
+        detail: `${defaultFile}: refusing symlink configuration path: ${defaultFile}; set core.excludesFile to the real file, then run repo-harness update again` });
+      expect(readFileSync(custom, 'utf8')).toBe(linked);
+      expect(refusedRun.steps.slice(0, -1)).toEqual(currentRun.steps.slice(0, -1));
       for (const dryRun of [true, false]) {
         const refused = runUserUninstall({ target: 'both', env, dryRun });
         expect(refused.items).toContainEqual({ path: defaultFile, action: 'unresolved', reason: expect.stringContaining('refusing symlink') });
         expect(readFileSync(custom, 'utf8')).toBe(linked);
       }
+      Bun.spawnSync(['git', 'config', '--global', 'core.excludesFile', custom], { env });
+      expect(update().steps.at(-1)).toMatchObject({ status: 'ok', detail: `${custom}: written` });
+      expect(readFileSync(custom, 'utf8')).toStartWith(`${linked}\n${begin}`);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
