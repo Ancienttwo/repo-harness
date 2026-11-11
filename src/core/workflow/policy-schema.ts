@@ -72,8 +72,8 @@ export function decodeWorkflowPolicy(text: string | null): DecodedWorkflowPolicy
   if (text === null) return { present: false, root: undefined };
   try {
     return { present: true, root: JSON.parse(text) as unknown };
-  } catch {
-    throw new Error(`invalid workflow policy JSON: ${POLICY_PATH}`);
+  } catch (cause) {
+    throw new Error(`invalid workflow policy JSON: ${POLICY_PATH}`, { cause });
   }
 }
 
