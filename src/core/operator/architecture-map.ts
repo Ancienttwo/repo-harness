@@ -117,8 +117,8 @@ export function architectureViolationCommand(part: keyof ArchitectureViolationsL
   return ['archctx', ...ARCHITECTURE_VIOLATION_READS[part]].join(' ');
 }
 
-/** The debt kinds that `archctx debt` reports itself; it defers dependency, flow and practice checks. A stale anchor may name no path. */
-export const ARCHITECTURE_DEBT_KINDS = ['unowned-path', 'ambiguous-owner', 'stale-anchor'] as const;
+/** The debt kinds that `archctx debt` reports itself; it defers dependency, flow and practice checks. A stale anchor or a machine rule may name no path. */
+export const ARCHITECTURE_DEBT_KINDS = ['unowned-path', 'ambiguous-owner', 'stale-anchor', 'state-machine-rule', 'state-machine-stale'] as const;
 export type ArchitectureDebtKind = typeof ARCHITECTURE_DEBT_KINDS[number];
 
 export interface ArchitectureMapNodeV1 {

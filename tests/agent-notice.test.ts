@@ -8,7 +8,8 @@ import { checkpointArchitectureDebt } from '../src/effects/architecture/archctx-
 import type { ArchctxProviderOptions } from '../src/core/architecture/contracts';
 import { resolveCapabilityOwnership } from '../src/effects/state/resolve-effective-state';
 import { agentNoticeFixture, noticeOwnership, noticeEnv, registryNoticeFixture, registryProjectedFixture, unignoreNoticeState, writeNoticeRegistry, NOTICE_CAPABILITY } from './helpers/agent-notice';
-import { fixtureCommit, fixtureGit, fixtureWrite } from './helpers/module-repository';
+import { fixtureCommit, fixtureGit, fixtureWrite, writeStateMachine, STATE_MACHINE_ID } from './helpers/module-repository';
+import { readArchitectureView } from '../src/effects/architecture/architecture-read';
 
 const roots: string[] = [];
 function fixture() { const root = agentNoticeFixture(); roots.push(root); return root; }
@@ -128,6 +129,24 @@ describe('AgentNotice', () => {
     expect(collectAgentNotice(root, () => ownership, options).content).toContain('[ArchitectureDebt]');
     fixtureGit(root, ['checkout', '-qb', 'other']);
     expect(collectAgentNotice(root, () => ownership, options).content).toContain('[ArchitectureDebt]');
+  });
+
+  test('a changed state machine anchor prints one row with the machine; a broken rule with a finding mark prints none', () => {
+    const root = fixture();
+    const ownership = noticeOwnership(root);
+    const options = { env: noticeEnv(root) };
+    writeStateMachine(root);
+    const check = readArchitectureView(root, ['state-machines', 'check', '--json']);
+    if (!check.ok) throw new Error('state-machines check failed');
+    const [anchor] = (check.data as { machines: { anchors: { digest: string }[] }[] }).machines[0]!.anchors;
+    writeStateMachine(root, anchor!.digest);
+    expect(collectAgentNotice(root, () => ownership, options).content).not.toContain('state-machine');
+    fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 3;\n');
+    const stale = collectAgentNotice(root, () => ownership, options).content!;
+    expect(stale.split('\n').filter(line => line.startsWith('- state-machine'))).toEqual([
+      `- state-machine-stale ${NOTICE_CAPABILITY}; ${STATE_MACHINE_ID} src/module/read.ts anchor-changed. Run: repo-harness architecture-debt --json`]);
+    fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\n');
+    expect(collectAgentNotice(root, () => ownership, options).content).not.toContain('state-machine');
   });
 
   test('clean main and unowned-only changes never call checkpoint', () => {
