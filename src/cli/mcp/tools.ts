@@ -1,5 +1,5 @@
 import { sha256Hex } from '../../core/evidence/sha256';
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'fs';
 import { homedir } from 'os';
 import { basename, isAbsolute, join, resolve } from 'path';
 import { projectCheckRecords, type CheckRecordsV1 } from '../../core/review/check-records';
@@ -8,7 +8,7 @@ import { isRegisteredRepoHarnessRoot, readRegisteredRepoHarnessRepos } from '../
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { loadMcpLocalConfig } from './auth';
 import { guardedWriteFile } from './guarded-write';
-import { isPathInside, resolveMcpPath } from './paths';
+import { canonicalDirectory, isPathInside, resolveMcpPath } from './paths';
 import { buildReaderToolDefinitions, callReaderTool, createReaderToolContext, isReaderTool } from './reader-tools';
 import { currentGitBranch, isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { redactMcpText } from './redaction';
@@ -212,16 +212,6 @@ function discoverySortWeight(repoRoot: string, query = ''): string {
 function stringArgList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((entry) => String(entry).trim()).filter(Boolean);
-}
-
-function canonicalDirectory(path: string): string | null {
-  const absolute = resolve(path);
-  try {
-    if (!statSync(absolute).isDirectory()) return null;
-    return realpathSync(absolute);
-  } catch (_error) {
-    return null;
-  }
 }
 
 function authorizedDiscoveryRoots(ctx: McpToolContext): string[] {
