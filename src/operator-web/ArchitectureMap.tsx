@@ -25,7 +25,7 @@ import { ArchitectureSequence, SequenceLensTools } from './ArchitectureSequence'
 import { ArchitectureTopology, TopologyLensTools } from './ArchitectureTopology';
 import { defaultTopologyBase, type TopologyBase } from './architecture-topology-layout';
 import type { OperatorTranslate } from './i18n';
-import { useObservationRefresh } from './useObservationRefresh';
+import { answered, useObservationRefresh } from './useObservationRefresh';
 
 /** The route's refusal, or `unreachable` when the route gave no typed refusal. */
 export type ArchitectureMapRead =
@@ -58,8 +58,7 @@ function useArchitectureMap(read: ArchitectureMapReader, repositoryId: string, g
       if (next.state === 'ok' && shown !== null && JSON.stringify(shown) === JSON.stringify({ ...next.map, collected_at: shown.collected_at })) return current;
       return { repositoryId, read: next };
     });
-    // Only a read that reached no route backs off; a refusal such as a pending map is a typed answer, read again at the normal interval.
-    return !(next.state === 'unavailable' && next.reason === 'unreachable');
+    return answered(next);
   }, [read, repositoryId]);
   useObservationRefresh(request, JSON.stringify([repositoryId, generation]));
   return result?.repositoryId === repositoryId ? result.read : null;

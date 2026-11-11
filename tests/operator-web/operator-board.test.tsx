@@ -749,6 +749,12 @@ describe('board page', () => {
         const readSeats = () => new Promise<never>(() => {});
         return function Probe() { useOfficeOverview(repositories, read, noBoard, 0, readSeats); return null; };
       },
+      // One repository refuses each cycle; the other answers. The refusal is an answer, so the overview keeps its 3 s cycle.
+      overviewOneRefuses: () => {
+        const read: BoardParentsReader = async id => id === HARNESS_ID ? { state: 'unavailable', reason: 'parents_github_failed' } : { state: 'ok', list: PARENTS };
+        const readSeats = () => new Promise<never>(() => {});
+        return function Probe() { useOfficeOverview([HARNESS_ID, 'repo_second'], read, noBoard, 0, readSeats); return null; };
+      },
       overviewBoard: (reason: BoardReason) => {
         const read: BoardReader = async () => ({ state: 'unavailable', reason });
         const readParents: BoardParentsReader = async () => ({ state: 'ok', list: PARENTS });
@@ -767,7 +773,7 @@ describe('board page', () => {
     try {
       for (const [Probe, delay] of [
         [probes.seats('parents_hc_failed'), 3000], [probes.seats('unreachable'), 6000],
-        [probes.parents('parents_github_failed'), 3000], [probes.board('board_collect_failed'), 3000], [probes.overview('parents_hc_failed'), 3000],
+        [probes.parents('parents_github_failed'), 3000], [probes.board('board_collect_failed'), 3000], [probes.overview('parents_hc_failed'), 3000], [probes.overviewOneRefuses(), 3000],
         [probes.parents('unreachable'), 6000], [probes.board('unreachable'), 6000], [probes.overview('unreachable'), 6000],
       ] as const) {
         delays.length = 0;

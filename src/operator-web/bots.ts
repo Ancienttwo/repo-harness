@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { decodeBotAccessSnapshot, type BotAccessSnapshotV1, type BotAttribution } from '../core/operator/bot-access';
 import { decodeSlackReviews, type SlackReviewsSnapshotV1 } from '../core/operator/slack-review';
 import { asApiError } from './operator-api-error';
-import { useObservationRefresh } from './useObservationRefresh';
+import { answered, useObservationRefresh } from './useObservationRefresh';
 
 /**
  * Browser side of `GET /api/v1/bot-access`. The server collects MCP, the
@@ -56,7 +56,7 @@ function useBotsRead<S, R extends string>(read: (signal: AbortSignal) => Promise
       return true;
     }
     setView(current => current.kind === 'ready' ? { ...current, refreshFailed: true } : { kind: 'unavailable', reason: result.reason });
-    return result.reason !== 'unreachable';
+    return answered(result);
   }, [read]);
   useObservationRefresh(observe, identity, { enabled });
   return view;
