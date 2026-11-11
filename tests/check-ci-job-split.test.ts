@@ -7,6 +7,7 @@ import { analyzeAffectedTests, bundleInputPaths, discoverDailyInputs, discoverPl
 import { auditDroppedTests } from '../scripts/ci-edge-audit';
 import { replayNeedsSource } from '../scripts/replay-ci-coverage';
 import { ARCHITECTURE_JOB, ARCHITECTURE_SUMMARY_PATH } from '../scripts/report-ci';
+import { isDocumentationPath } from '../src/core/ci/documentation-path';
 
 const ROOT = resolve(import.meta.dir, '..');
 const workflow = Bun.YAML.parse(readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8')) as any;
@@ -588,12 +589,12 @@ describe('single affected verification and daily fallback', () => {
     expect(workflow.on.schedule).toEqual([{ cron: '17 19 * * *' }]);
     expect(jobs.required.name).toBe('Required / CI');
     expect(jobs.required.needs).toEqual(['selection', 'state-boundaries', 'verify', 'home-isolation', 'native-oar', 'architecture-advisory']);
-    // State boundaries run beside selection on every event except a push to main, and Required / CI requires them.
-    expect(jobs['state-boundaries'].needs).toBeUndefined();
-    expect(jobs['state-boundaries'].if).toBe("github.event_name != 'push'");
+    // State boundaries run on every event except a push to main and a documentation-only diff, and Required / CI requires them.
+    expect(jobs['state-boundaries'].needs).toBe('selection');
+    expect(jobs['state-boundaries'].if).toBe("github.event_name != 'push' && needs.selection.outputs.mode != 'documentation'");
     expect(workflow.on.merge_group).toEqual({ types: ['checks_requested'] });
     expect(jobs.required.if).toBe("always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')");
-    const pushJobs = Object.entries(jobs).filter(([, job]: [string, any]) => !job.needs && job.if !== "github.event_name != 'push'").map(([id]) => id);
+    const pushJobs = Object.entries(jobs).filter(([, job]: [string, any]) => !job.needs && !String(job.if ?? '').startsWith("github.event_name != 'push'")).map(([id]) => id);
     expect(pushJobs).toEqual(['selection']);
     expect(jobs.selection.steps.some((step: any) => step.run === 'bun run check:state-boundaries')).toBe(false);
     const boundarySteps = jobs['state-boundaries'].steps.filter((step: any) => step.run === 'bun run check:state-boundaries');
@@ -688,12 +689,13 @@ describe('single affected verification and daily fallback', () => {
     }
     for (const boundaries of ['success', 'failure', 'cancelled', 'skipped', '']) {
       expect(run('success', 'success', 'affected', 'success', 'success', 'true', 'true', boundaries) === 0).toBe(boundaries === 'success');
-      expect(run('success', 'skipped', 'documentation', 'skipped', 'skipped', 'false', 'false', boundaries) === 0).toBe(boundaries === 'success');
+      expect(run('success', 'skipped', 'documentation', 'skipped', 'skipped', 'false', 'false', boundaries) === 0).toBe(boundaries === 'success' || boundaries === 'skipped');
     }
-    // The PR architecture job runs in both PR modes, so only its success passes.
+    // Mode affected needs both check jobs to succeed; mode documentation also passes with them skipped.
+    expect(run('success', 'success', 'affected', 'success', 'success', 'true', 'true', 'skipped') === 0).toBe(false);
     for (const architecture of ['success', 'failure', 'cancelled', 'skipped', '']) {
       expect(run('success', 'success', 'affected', 'success', 'success', 'true', 'true', 'success', architecture) === 0).toBe(architecture === 'success');
-      expect(run('success', 'skipped', 'documentation', 'skipped', 'skipped', 'false', 'false', 'success', architecture) === 0).toBe(architecture === 'success');
+      expect(run('success', 'skipped', 'documentation', 'skipped', 'skipped', 'false', 'false', 'success', architecture) === 0).toBe(architecture === 'success' || architecture === 'skipped');
     }
     for (const home of ['success', 'failure', 'cancelled', 'skipped', '']) {
       for (const native of ['success', 'failure', 'cancelled', 'skipped', '']) {
@@ -883,7 +885,7 @@ describe('single affected verification and daily fallback', () => {
         // Deleted documents are matched as well: the base tree still names them.
         ['deleted document keeps its named reader', ['-docs/named.md'], 'affected', ['tests/named.test.ts']],
         ['mixed diff keeps every documentation consumer', ['docs/unread.md', 'src/feature.ts'], 'affected', ['tests/directory.test.ts', 'tests/feature.test.ts', 'tests/glob.test.ts', 'tests/guide.test.ts', 'tests/helper.test.ts', 'tests/named.test.ts', 'tests/root.test.ts']],
-        ['manifest reader', ['docs/architecture/.projection-manifest.json'], 'affected', ['tests/manifest.test.ts']],
+        ['projection output is documentation', ['docs/architecture/.projection-manifest.json'], 'documentation', null],
         ['no reader', ['tasks/lessons.md'], 'documentation', null],
       ];
       for (const [name, changed, mode, tests] of rows) {
@@ -1005,7 +1007,10 @@ describe('single affected verification and daily fallback', () => {
     expect(reporter.jobs.report.permissions).toEqual({ actions: 'read', contents: 'read', issues: 'write' });
 
     const advisory = jobs['architecture-advisory'];
-    expect(advisory.if).toBe("needs.selection.outputs.mode == 'affected' || needs.selection.outputs.mode == 'documentation'");
+    expect(advisory.if).toBe("needs.selection.outputs.mode == 'affected'");
+    for (const [path, documentation] of [['docs/architecture/.projection-manifest.json', true], ['docs/architecture/diagrams/a.mmd', true], ['docs/architecture/other.json', false], ['docs/reference-configs/x.md', false], ['docs/guide.md', true]] as const) {
+      expect(isDocumentationPath(path)).toBe(documentation);
+    }
     expect(advisory.permissions).toBeUndefined();
     expect(jobs.required.steps[0].env.ARCHITECTURE_RESULT).toBe('${{ needs.architecture-advisory.result }}');
     const warn = advisory.steps.find((step: any) => step.name === 'Check the plugin-internals constraint and warn about architecture debt');

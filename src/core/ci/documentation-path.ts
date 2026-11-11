@@ -1,7 +1,10 @@
 export function isDocumentationPath(path: string): boolean {
   if (path.split('/').some(part => !part || part === '.' || part === '..')) return false;
   if (path.startsWith('docs/reference-configs/')) return false;
-  return path === 'README.md' || path === 'DEBUG.md'
+  // Generated projection outputs are documentation.
+  return path === 'README.md'
+    || path === 'docs/architecture/.projection-manifest.json'
+    || (path.startsWith('docs/architecture/diagrams/') && path.endsWith('.mmd')) || path === 'DEBUG.md'
     || (path.startsWith('examples/') && path.endsWith('.md'))
     || path === 'tasks/lessons.md'
     || (path.startsWith('docs/') && path.endsWith('.md'));

@@ -75,11 +75,12 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
-  # Runs beside selection, so it does not delay the selected jobs. A push to
-  # main runs only selection; pull requests, daily and manual runs keep this check.
+  # A push to main runs only selection; a documentation-only diff runs no check
+  # job. Pull requests, daily and manual runs keep this check.
   state-boundaries:
     name: State boundaries
-    if: github.event_name != 'push'
+    needs: selection
+    if: github.event_name != 'push' && needs.selection.outputs.mode != 'documentation'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -266,7 +267,7 @@ jobs:
   architecture-advisory:
     name: PR architecture constraint and freshness
     needs: selection
-    if: needs.selection.outputs.mode == 'affected' || needs.selection.outputs.mode == 'documentation'
+    if: needs.selection.outputs.mode == 'affected'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -484,9 +485,10 @@ jobs:
           NATIVE_OAR: ${{ needs.selection.outputs.native_oar }}
           ARCHITECTURE_RESULT: ${{ needs.architecture-advisory.result }}
         run: |
-          # A documentation-only diff selects no build or test job.
-          [ "$SELECTION_RESULT" = success ] && [ "$STATE_BOUNDARIES_RESULT" = success ] \
+          # A documentation-only diff selects no build, test or check job.
+          [ "$SELECTION_RESULT" = success ] \
+            && { [ "$STATE_BOUNDARIES_RESULT" = success ] || { [ "$COVERAGE_MODE" = documentation ] && [ "$STATE_BOUNDARIES_RESULT" = skipped ]; }; } \
             && { { [ "$COVERAGE_MODE" = affected ] && [ "$VERIFY_RESULT" = success ]; } || { [ "$COVERAGE_MODE" = documentation ] && [ "$VERIFY_RESULT" = skipped ]; }; } \
             && { [ "$HOME_ISOLATION_RESULT" = success ] || { [ "$HOME_ISOLATION" = false ] && [ "$HOME_ISOLATION_RESULT" = skipped ]; }; } \
             && { [ "$NATIVE_OAR_RESULT" = success ] || { [ "$NATIVE_OAR" = false ] && [ "$NATIVE_OAR_RESULT" = skipped ]; }; } \
-            && [ "$ARCHITECTURE_RESULT" = success ]
+            && { [ "$ARCHITECTURE_RESULT" = success ] || { [ "$COVERAGE_MODE" = documentation ] && [ "$ARCHITECTURE_RESULT" = skipped ]; }; }
