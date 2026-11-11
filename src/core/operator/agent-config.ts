@@ -3,6 +3,7 @@
  * complete Agent-config feature. Callers supply text and parsed policy values.
  * This module has no filesystem, process, registry, collector, or UI integration.
  */
+import { isRecord } from '../evidence/is-record';
 import { KEY_BEGIN } from '../security/secret-patterns';
 
 export const AGENT_CONFIG_CORE_MAX_BYTES = 256 * 1024;
@@ -24,8 +25,7 @@ const CREDENTIAL_CARRIERS = [
   /https?:\/\/[^\s"'<>]*[?&](?:token|key|secret|auth|signature|sig|code)=/iu,
   /\b(?:sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{30,}|AKIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9-]+|\d{6,}:[A-Za-z0-9_-]{25,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/u,
 ];
-const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-const exact = (v: unknown, keys: readonly string[]): v is Record<string, unknown> => object(v)
+const exact = (v: unknown, keys: readonly string[]): v is Record<string, unknown> => isRecord(v)
   && Object.keys(v).length === keys.length && Object.keys(v).every(k => keys.includes(k));
 const bytes = (text: string): number => new TextEncoder().encode(text).length;
 const invalid = (): never => { throw new Error('agent_config_core_invalid'); };
@@ -60,7 +60,7 @@ export function projectAgentConfigPolicy(value: unknown): AgentConfigPolicyProje
       remaining -= bytes(item);
       return remaining < 0 ? UNAVAILABLE : publicAgentConfigText(item);
     }
-    if (!object(item) && !Array.isArray(item)) return null;
+    if (!isRecord(item) && !Array.isArray(item)) return null;
     if (ancestors.has(item)) return UNAVAILABLE;
     const entries = Object.entries(item);
     if (entries.length > MAX_ITEMS) return UNAVAILABLE;
@@ -90,7 +90,7 @@ export function projectAgentConfigPolicy(value: unknown): AgentConfigPolicyProje
       return result;
     } finally { ancestors.delete(item); }
   };
-  const input = object(value) ? value : {};
+  const input = isRecord(value) ? value : {};
   return { guards: visit(input.guards, 0), enforcement: visit(input.enforcement, 0), merge_gate: visit(input.merge_gate, 0) };
 }
 
@@ -190,7 +190,7 @@ function detachedJsonData(input: unknown): unknown {
     if (--nodes < 0 || depth > MAX_DEPTH + 4) return invalid();
     if (item === null || typeof item === 'boolean' || (typeof item === 'number' && Number.isFinite(item))) return item;
     if (typeof item === 'string') { budget -= bytes(item); if (budget < 0) return invalid(); return item; }
-    if (!object(item) && !Array.isArray(item)) return invalid();
+    if (!isRecord(item) && !Array.isArray(item)) return invalid();
     if (ancestors.has(item)) return invalid();
     const prototype = Object.getPrototypeOf(item);
     if (Array.isArray(item) ? prototype !== Array.prototype : prototype !== null && prototype !== Object.prototype) return invalid();
@@ -257,7 +257,7 @@ export function decodeAgentConfigCoreProjection(value: unknown): AgentConfigCore
     if (depth > MAX_DEPTH + 1 || --remainingNodes < 0) return false;
     if (item === null || typeof item === 'boolean' || (typeof item === 'number' && Number.isFinite(item))) return true;
     if (typeof item === 'string') return safeText(item);
-    if (!object(item) && !Array.isArray(item)) return false;
+    if (!isRecord(item) && !Array.isArray(item)) return false;
     if (ancestors.has(item) || Object.keys(item).length > MAX_ITEMS || (Array.isArray(item) && item.length > MAX_ITEMS)) return false;
     ancestors.add(item);
     try {
@@ -272,7 +272,7 @@ export function decodeAgentConfigCoreProjection(value: unknown): AgentConfigCore
 export function projectAgentConfigCore(input: { readonly agents: string | null; readonly claude: string | null; readonly policy: unknown }): AgentConfigCoreProjection {
   let fields: PropertyDescriptorMap;
   try {
-    if (!object(input) || ![Object.prototype, null].includes(Object.getPrototypeOf(input))) return invalid();
+    if (!isRecord(input) || ![Object.prototype, null].includes(Object.getPrototypeOf(input))) return invalid();
     fields = Object.getOwnPropertyDescriptors(input);
     if (Reflect.ownKeys(fields).length !== 3 || !['agents', 'claude', 'policy'].every(key => {
       const field = fields[key]; return field && 'value' in field && field.enumerable;
