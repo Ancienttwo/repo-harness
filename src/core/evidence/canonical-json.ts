@@ -1,26 +1,14 @@
 /**
- * Deterministic JSON serialization: object keys are sorted recursively so
- * the same logical value always serializes to the same bytes regardless of
- * construction order. Arrays keep their given order (order is significant).
- * Used by the idempotency key (D5) and payload-size measurement (D6).
+ * Deterministic JSON serialization: object keys are sorted recursively by
+ * UTF-8 bytes, so the same logical value always serializes to the same bytes
+ * regardless of construction order. Arrays keep their given order (order is
+ * significant). This is the one byte contract for every digest input.
  */
-import type { JsonValue } from "./types";
+import { byteCompare } from "./byte-compare";
 
-function canonicalizeValue(value: JsonValue): string {
-  if (value === null || typeof value === "number" || typeof value === "boolean") {
-    return JSON.stringify(value);
-  }
-  if (typeof value === "string") {
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((entry) => canonicalizeValue(entry)).join(",")}]`;
-  }
-  const keys = Object.keys(value).sort();
-  const entries = keys.map((key) => `${JSON.stringify(key)}:${canonicalizeValue((value as Record<string, JsonValue>)[key]!)}`);
-  return `{${entries.join(",")}}`;
-}
-
-export function canonicalize(value: JsonValue): string {
-  return canonicalizeValue(value);
+export function canonicalize(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).sort(byteCompare).map((key) => `${JSON.stringify(key)}:${canonicalize(record[key])}`).join(",")}}`;
 }

@@ -1,6 +1,7 @@
 import { assertObservationPath, observationReadFileSync as readFileSync } from '../readonly-observation';
 import { byteCompare } from '../../core/evidence/byte-compare';
 import { createHash } from 'crypto';
+import { canonicalize } from '../../core/evidence/canonical-json';
 import { sha256Prefixed } from '../../core/evidence/sha256';
 import { lstatSync, readlinkSync } from 'fs';
 import { join } from 'path';
@@ -124,18 +125,8 @@ function gitRunBuffer(repoRoot: string, args: readonly string[], maxBuffer = PAT
   }
 }
 
-function stableJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort(byteCompare)
-    .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
-    .join(',')}}`;
-}
-
 function hashJson(value: unknown): string {
-  return sha256Prefixed(stableJson(value));
+  return sha256Prefixed(canonicalize(value));
 }
 
 // Split a NUL-delimited git buffer into verbatim utf-8 tokens. When ctx is

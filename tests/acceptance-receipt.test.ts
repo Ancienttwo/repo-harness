@@ -287,6 +287,11 @@ describe('AcceptanceReceipt', () => {
     ))).toThrow('source must be generic-review');
   });
 
+  test('canonical JSON sorts keys by UTF-8 bytes, not UTF-16 code units', () => {
+    // UTF-16 puts the surrogate pair (0xD800) first; UTF-8 puts U+E000 (0xEE) before U+10000 (0xF0).
+    expect(canonicalize({ '\u{10000}': 2, '\uE000': 1 })).toBe('{"\uE000":1,"\u{10000}":2}');
+  });
+
   test('protocol 2 binds Codex review to generic domain source and rejects retired labels', async () => {
     const { root, home } = makeFixture();
     const contractPath = join(root, 'tasks', 'contracts', 'demo.contract.md');
