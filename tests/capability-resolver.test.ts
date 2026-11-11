@@ -96,12 +96,19 @@ describe("capability resolver", () => {
       const match = JSON.parse(standalone.stdout);
       expect(match.capability_id).toBe("apps-web-account");
       expect(match.matched_prefix).toBe("apps/web/src/routes/account");
-      for (const text of [undefined, '{}', 'null', '[]', '{', '{"context":{"capability_source":"unknown"}}']) {
+      for (const { text, status } of [
+        { text: undefined, status: 0 },
+        { text: '{}', status: 0 },
+        { text: 'null', status: 0 },
+        { text: '[]', status: 0 },
+        { text: '{', status: 2 },
+        { text: '{"context":{"capability_source":"unknown"}}', status: 2 },
+      ]) {
         if (text === undefined) rmSync(policyPath);
         else writeFileSync(policyPath, text);
         const canonical = runResolver(cwd, ["list", "--format", "json"]);
         const projected = runStandaloneResolver(cwd, ["list", "--format", "json"]);
-        expect(projected.status).toBe(text === '{' || text?.includes('unknown') ? 2 : 0);
+        expect(projected.status).toBe(status);
         expect(projected.stdout).toBe(canonical.stdout);
         expect(projected.stderr).toBe(canonical.stderr);
         if (text === '{') {

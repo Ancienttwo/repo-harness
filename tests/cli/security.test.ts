@@ -151,14 +151,21 @@ describe('security scan command', () => {
       const entries = [{ filePath: '.vscode/tasks.json', ruleId: 'vscode-folder-open-task', command: 'echo ok', reason: 'Reviewed task' }];
       const policyPath = path.join(repo, '.ai/harness/policy.json');
       fs.mkdirSync(path.dirname(policyPath), { recursive: true });
-      for (const text of [undefined, '{', 'null', '[]', '{}', JSON.stringify({ security: { reviewedFindings: entries } }), JSON.stringify({ security: { reviewed_findings: entries } })]) {
+      for (const { text, reviewed } of [
+        { text: undefined, reviewed: false },
+        { text: '{', reviewed: false },
+        { text: 'null', reviewed: false },
+        { text: '[]', reviewed: false },
+        { text: '{}', reviewed: false },
+        { text: JSON.stringify({ security: { reviewedFindings: entries } }), reviewed: false },
+        { text: JSON.stringify({ security: { reviewed_findings: entries } }), reviewed: true },
+      ]) {
         if (text !== undefined) fs.writeFileSync(policyPath, text);
         const report = runSecurityScan({ cwd: repo, home });
-        const canonical = text?.includes('reviewed_findings') === true;
-        expect(report.status).toBe(canonical ? 'ok' : 'warn');
-        expect(report.reviewedFindings).toHaveLength(canonical ? 1 : 0);
-        expect(report.findings.map(finding => finding.ruleId)).toEqual(canonical ? [] : ['vscode-folder-open-task']);
-        if (canonical) expect(report.reviewedFindings[0].reviewed.source).toBe('repo-policy');
+        expect(report.status).toBe(reviewed ? 'ok' : 'warn');
+        expect(report.reviewedFindings).toHaveLength(reviewed ? 1 : 0);
+        expect(report.findings.map(finding => finding.ruleId)).toEqual(reviewed ? [] : ['vscode-folder-open-task']);
+        if (reviewed) expect(report.reviewedFindings[0].reviewed.source).toBe('repo-policy');
       }
       fs.rmSync(policyPath);
       const userPath = path.join(home, '.repo-harness/config.json');
