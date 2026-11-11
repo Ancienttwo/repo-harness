@@ -507,7 +507,7 @@ export interface AcceptanceRowV1 {
   readonly round: number;
   readonly subject_sha: string;
   readonly verdict: 'PASS' | 'FAIL';
-  /** The review runtime that the Role cell starts with (`review publish` writes `<harness> (<model>), read-only`); null for a subject line. */
+  /** The review runtime that the Role cell starts with (`review publish` writes `<harness> (<model>), read-only`); null when the cell names no known runtime. */
   readonly harness: 'claude' | 'codex' | 'pi' | null;
   /** The issue comment id of the record's `Claim:` URL, which identifies one review; null when the line is missing or is not a comment URL. */
   readonly claim: string | null;
@@ -517,8 +517,6 @@ export interface AcceptanceRowV1 {
 
 // The subject cell holds the SHA bare or in paired backticks (the receipt tool and the round-4 records differ).
 const RECORD_TABLE_ROW = /^\|\s*([1-9][0-9]*)\b[^|]*\|([^|]*)\|\s*(`?)([0-9a-f]{40})\3\s*\|\s*(PASS|FAIL)\b/u;
-// Older records of rounds above 3 were posted by hand as one `Subject: <sha>. Round <n> (...): PASS|FAIL` line; they name no claim.
-const RECORD_SUBJECT_LINE = /^Subject: ([0-9a-f]{40})\. Round ([1-9][0-9]*) .*?: (PASS|FAIL)\b/u;
 
 const COMMENT_URL = /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/(?:pull|issues)\/[1-9][0-9]*#issuecomment-([1-9][0-9]*)$/u;
 
@@ -529,9 +527,8 @@ export function commentId(url: string): string | null {
 
 /**
  * The rows of an `acceptance record` comment: the table rows that `review
- * publish` writes, or the one subject line of a later round. Null when the
- * record has neither shape; the caller reports `acceptance_record_unparsed`
- * and does not guess a verdict.
+ * publish` writes. Null when the record has no table row; the caller reports
+ * `acceptance_record_unparsed` and does not guess a verdict.
  */
 export function parseAcceptanceRecord(comment: BoardCommentV1): readonly AcceptanceRowV1[] | null {
   const rows: AcceptanceRowV1[] = [];
@@ -539,8 +536,6 @@ export function parseAcceptanceRecord(comment: BoardCommentV1): readonly Accepta
   for (const line of comment.body.replace(/\r\n/gu, '\n').split('\n')) {
     const table = RECORD_TABLE_ROW.exec(line);
     if (table) rows.push(Object.freeze({ round: Number(table[1]), subject_sha: table[4]!, verdict: table[5] as 'PASS' | 'FAIL', harness: /^\s*(claude|codex|pi)\b/u.exec(table[2]!)?.[1] as AcceptanceRowV1['harness'] ?? null, ...record }));
-    const subject = RECORD_SUBJECT_LINE.exec(line);
-    if (subject) rows.push(Object.freeze({ round: Number(subject[2]), subject_sha: subject[1]!, verdict: subject[3] as 'PASS' | 'FAIL', harness: null, ...record }));
   }
   return rows.length === 0 ? null : Object.freeze(rows);
 }
