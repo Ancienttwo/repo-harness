@@ -384,9 +384,11 @@ function walkCommands(command: string, cwd: string | null, visit: CommandVisitor
       const args = commandWords(segment);
       if (args[0]?.value === 'cd') {
         // Only a plain literal cd that must succeed moves a known directory. An absolute operand does not restore an
-        // unknown one: origin/main kept it unknown too, and a reset would allow writes that main denies.
+        // unknown one: origin/main kept it unknown too, and a reset would allow writes that main denies. A leading
+        // assignment such as CDPATH can change where the cd lands.
         const cd = cdOperand(args);
-        commandCwd = separator === '&&' && commandCwd && cd?.plain && cd.target.literal
+        const assigned = args.length < segment.filter(word => !word.operator).length;
+        commandCwd = separator === '&&' && commandCwd && !assigned && cd?.plain && cd.target.literal
           && globIndex(cd.target.pattern) < 0 && !cd.target.value.startsWith('-')
           ? resolve(commandCwd, cd.target.value) : null;
       } else if (['source', '.', 'eval', 'pushd', 'popd', 'command', 'builtin'].includes(args[0]?.value ?? '')) {
@@ -403,7 +405,8 @@ function walkCommands(command: string, cwd: string | null, visit: CommandVisitor
         if (token.value.startsWith('<<')) nested(bodySubs);
         const target = tokens[++i];
         if (target?.operator && target.value === '&' && (token.value === '>' || token.value === '<')) {
-          i++; // Descriptor duplication/closure, such as 2>&1, has no file operand.
+          // Descriptor duplication/closure, such as 2>&1, has no file operand, but the shell still expands its word.
+          nested(tokens[++i]?.subs);
           continue;
         }
         nested(target?.subs);

@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { seedGlobalPackageFixture } from './helpers/install-ownership';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { basename, join } from 'path';
 import { execFileSync, spawnSync } from 'child_process';
 import { runMutationGuard } from '../src/cli/hook/mutation-guard';
 import { getRoute } from '../src/cli/hook/route-registry';
@@ -110,6 +110,9 @@ describe('Bash write tripwire host route', () => {
         'echo "`echo x > _ops/x`" > report.txt', 'rm -rf $(true) _ops',
         'echo pre$(echo x > _ops/x)post > report.txt', 'echo "$(rm -rf _ops)"', 'x=$(cd _ops && rm -rf env)',
         'cd src && echo "$(rm -rf ../_ops)"', 'X=1 rm -rf _ops',
+        // The shell expands the word of a descriptor redirect; a leading assignment such as CDPATH can move a cd.
+        'echo x >&$(rm -rf _ops)', 'echo x >& $(rm -rf _ops)', 'echo x 2>&$(rm -rf _ops)', 'cat <&$(rm -rf _ops)',
+        `CDPATH=.. cd ${basename(cwd)} && rm -rf _ops`, 'CDPATH=_ops cd env && echo x > ../payload',
         'cd $(printf src)\necho value > _ops/local.txt',
         'diff <(ls) x; rm -rf _ops', 'tee >(cat) _ops/y', 'diff <(echo x > _ops/x) x',
         "echo v > '_ops/a\nb'", 'rm ~/_ops/x', 'rm ~root/_ops/x',
