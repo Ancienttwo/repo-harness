@@ -5,7 +5,7 @@ import {
   RESET_SEATS, SEAT_NO_RESET_MESSAGE, SEAT_RESET_RETRIES, handoffIdentity, missingHandoffSections, seatResetClaimPath, seatResetLogPath, seatResetRequestPath,
   isSeatSessionSource, seatResetDirectory, seatResumePrompt, seatRewriteMessage, seatSessionPath, type SeatResetIdentity, type SeatSessionSource,
 } from '../../core/board/seat-reset';
-import { HerdrCoreError, RH_LABEL, hcGet, hcKeys, hcList, hcSend, hcWait, type HcLabels, type HerdrCoreOptions } from '../terminal/herdr-core';
+import { HerdrCoreError, RH_LABEL, hcGet, hcKeys, hcList, hcSend, hcWait, type HcLabels, type HcWaitResult, type HerdrCoreOptions } from '../terminal/herdr-core';
 import { readNotifyConfig } from '../terminal/notify-read';
 
 const TAIL_BYTES = 1024 * 1024;
@@ -425,8 +425,11 @@ class SeatResetRun {
     throw new SeatResetError(problem.code, outcome, `${problem.message} ${result}`);
   }
 
-  /** A message to the caller also ends the wait (#2305), so the wait goes on for the rest of the budget; only then is the requester busy. */
-  private wait(): void {
+  /**
+   * A message to the waiting seat also ends its wait (#2305), so the wait goes on for the rest of the WAIT_SECONDS
+   * budget; the remaining budget shrinks with the time that passed. Returns the last result, started or not.
+   */
+  private waitForTurn(): HcWaitResult {
     const deadline = Date.now() + WAIT_SECONDS * 1000;
     let result = hcWait(this.requester, WAIT_SECONDS, this.options);
     while (!result.ended && result.reason === 'message') {
@@ -434,6 +437,12 @@ class SeatResetRun {
       if (seconds < 1) break;
       result = hcWait(this.requester, seconds, this.options);
     }
+    return result;
+  }
+
+  /** Only a requester that still works after the whole budget is busy. */
+  private wait(): void {
+    const result = this.waitForTurn();
     if (!result.ended) throw this.refuse('requester_busy', 'nothing_sent', `${this.requester} did not end its turn in ${WAIT_SECONDS} s (${result.reason}).`);
   }
 
@@ -495,7 +504,7 @@ class SeatResetRun {
     } catch (error) {
       throw stop(`relaunch_argv_failed: ${sentence(error)}`, true);
     }
-    const turn = hcWait(this.requester, WAIT_SECONDS, this.options);
+    const turn = this.waitForTurn();
     if (!turn.ended) throw stop('requester_busy', true);
     typeLine(this.requester, '/exit', this.options);
     if (await this.poll(() => (hcGet(this.requester, this.options).foreground?.name === 'claude' ? null : true), this.timeouts.exitMs) === null) {
