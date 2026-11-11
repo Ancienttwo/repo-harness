@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import {
   CapabilitySourceError,
   capabilitySourceMode,
+  normalizeCapabilityPath,
   readRegistry as readCapabilityRegistry,
   type Capability,
   type CapabilityRegistry,
@@ -158,25 +159,6 @@ function repoRoot(input: string): string {
   return cwd;
 }
 
-function normalizeRepoPath(value: string, repo: string): string {
-  let next = value.trim().replace(/^file:\/\//, "").replaceAll("\\", "/");
-  const normalizedRepo = repo.replaceAll("\\", "/");
-
-  if (next.startsWith(`${normalizedRepo}/`)) {
-    next = next.slice(normalizedRepo.length + 1);
-  } else if (next.startsWith("/")) {
-    throw new Error(`absolute path is outside repo: ${value}`);
-  }
-
-  next = next.replace(/^\.\//, "").replace(/\/+$/, "");
-  const parts = next.split("/").filter(Boolean);
-  if (parts.length === 0) throw new Error("path must not be empty");
-  if (parts.some((part) => part === "." || part === "..")) {
-    throw new Error(`path must not contain traversal: ${value}`);
-  }
-  return parts.join("/");
-}
-
 function safeToken(value: string, fallback = "capability"): string {
   const token = value
     .toLowerCase()
@@ -196,7 +178,7 @@ function defaultParts(prefix: string) {
 }
 
 function buildCapability(args: Args, repo: string): Capability {
-  const prefix = normalizeRepoPath(args.prefix, repo);
+  const prefix = normalizeCapabilityPath(args.prefix, repo);
   const defaults = defaultParts(prefix);
   const domain = safeToken(args.domain || defaults.domain);
   const name = safeToken(args.name || defaults.name);
@@ -208,10 +190,10 @@ function buildCapability(args: Args, repo: string): Capability {
     name,
     prefixes: [prefix],
     contract_files: {
-      agents: normalizeRepoPath(args.agents || `${prefix}/AGENTS.md`, repo),
-      claude: normalizeRepoPath(args.claude || `${prefix}/CLAUDE.md`, repo),
+      agents: normalizeCapabilityPath(args.agents || `${prefix}/AGENTS.md`, repo),
+      claude: normalizeCapabilityPath(args.claude || `${prefix}/CLAUDE.md`, repo),
     },
-    architecture_module: normalizeRepoPath(
+    architecture_module: normalizeCapabilityPath(
       args.architectureModule || `docs/architecture/modules/${domain}/${name}.md`,
       repo
     ),
