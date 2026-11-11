@@ -23,11 +23,6 @@ export interface TestExecutionFileV1 {
   readonly text: string;
 }
 
-export interface TestExecutionArtifactV1 {
-  readonly name: string;
-  readonly files: readonly TestExecutionFileV1[];
-}
-
 const ATTEMPT_SUFFIX = /-(\d+)$/u;
 /** CI uploads Bun JUnit reports under this name prefix and the attempt suffix. */
 export const TEST_EXECUTION_ARTIFACT_PREFIX = 'junit-';

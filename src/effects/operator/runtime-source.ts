@@ -4,10 +4,6 @@ import { observeHcTerminal, type RuntimeInvalidation, type RuntimeSource } from 
 /** Normalized adapter contract, not a claim about Herdr's socket envelope. */
 export const RUNTIME_SOURCE_PROTOCOL = 'repo-harness.runtime-source.v1';
 export const RUNTIME_SOURCE_EVENTS = ['terminal.changed','reconnect','events_lost','disconnected'] as const;
-export interface RuntimeSourceCapabilities {
-  /** `hc_core` is the answering core's `core.id` (hc `server.status`). */
-  protocol: typeof RUNTIME_SOURCE_PROTOCOL; source_host: string; hc_core: string; agent_status: true;
-}
 export interface StructuredRuntimeTransport {
   capabilities(signal: AbortSignal): Promise<unknown>;
   /** Transport failures stay internal; only the observer selects public failure facts. */
@@ -48,6 +44,7 @@ export async function configureRuntimeSource(config: ConfiguredRuntimeSource): P
   const raw = await deadline(config.deadline_ms, signal => config.transport.capabilities(signal));
   bounded(raw);
   const capabilities = object(raw, ['protocol','source_host','hc_core','agent_status']);
+  // `hc_core` is the answering core's `core.id` (hc `server.status`).
   // The core names itself; every later frame and binding must name the same core.
   const hc_core = runtimeId(capabilities.hc_core);
   matches(capabilities, config.source_host, hc_core);

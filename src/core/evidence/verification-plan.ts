@@ -5,7 +5,6 @@ import type { JsonValue } from "./types";
 
 export const VERIFICATION_PLAN_PROTOCOL = 1 as const;
 
-export type VerificationCheckKind = "command" | "package_test";
 export type VerificationCheckPhase = "preflight" | "verification";
 export type VerificationCheckCost = "normal" | "expensive";
 export type VerificationEvidencePolicy = "current_exact" | "baseline_with_delta";
