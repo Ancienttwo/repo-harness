@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
 import { closeSync, fstatSync, lstatSync, readSync, realpathSync, type Stats } from 'node:fs';
 import { resolve } from 'node:path';
-import { cleanupContentsDigestInput, type CleanupFileEvidence, type CleanupIndexEntry, type CleanupLossEvidence } from '../../core/operator/worktree-cleanup-observation';
-import { isRepositoryRelativePath } from '../../core/operator/doc-session-events';
+import {
+  CLEANUP_GIT_OUTPUT_MAX_BYTES, cleanupContentsDigestInput, isRepositoryRelativePath,
+  type CleanupFileEvidence, type CleanupIndexEntry, type CleanupLossEvidence,
+} from '../../core/operator/worktree-cleanup-observation';
 import { CLEANUP_PLAN_MAX_PATHS } from '../../core/operator/worktree-cleanup-plan';
-import { docSessionGitRunner, type DocSessionGitRunner } from './doc-session-changes';
+import { configuredGitBinary, gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { worktreeId } from '../git/worktree-record';
 import { cleanupDirectoryNames, openCleanupChild, openCleanupDirectory, UnsupportedCleanupPath, CleanupDirectoryTooLarge } from './cleanup-file-access';
 
@@ -12,6 +14,51 @@ export class CleanupObservationError extends Error {
   constructor(readonly code: 'changed' | 'unavailable' | 'unsupported' | 'too_large') { super(`cleanup_observation_${code}`); }
 }
 function fail(code: CleanupObservationError['code']): never { throw new CleanupObservationError(code); }
+
+const GIT_TIMEOUT_MS = 5_000;
+// `ls-files --stage -z`: mode(6), spaces(2), SHA-256 oid(64), stage(1), tab(1).
+const INDEX_ENTRY_HEADER_MAX_BYTES = 74;
+// Each nonempty path needs at least one byte plus NUL in the existing name cap.
+const INDEX_OUTPUT_MAX_BYTES = CLEANUP_GIT_OUTPUT_MAX_BYTES * (1 + INDEX_ENTRY_HEADER_MAX_BYTES / 2);
+
+export class CleanupGitError extends Error {
+  constructor(readonly code: 'too_large' | 'unavailable' | 'path_unsupported') { super(code); }
+}
+const gitFail = (code: CleanupGitError['code']): never => { throw new CleanupGitError(code); };
+
+type Git = (cwd: string, args: string[], allowNoMatch?: boolean) => string;
+
+export interface CleanupGitRunner {
+  /** UTF-8 stdout; a path that is not UTF-8 is refused. Exit 1 is empty output when `allowNoMatch`. */
+  readonly text: Git;
+  /** Raw stdout. A larger derived limit is allowed only for staged index metadata. */
+  readonly bytes: (cwd: string, args: string[], statuses?: readonly number[], input?: Buffer, maxOutputBytes?: number) => Buffer;
+}
+
+/**
+ * Git without repository-selecting variables, optional locks, fsmonitor or a
+ * pager, so a read neither moves to another repository nor writes the index.
+ */
+export function cleanupGitRunner(env: NodeJS.ProcessEnv): CleanupGitRunner {
+  const gitEnv = withoutRepositorySelectingGitEnv({ ...env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1' });
+  const bytes: CleanupGitRunner['bytes'] = (cwd, args, statuses = [0], input, maxOutputBytes = CLEANUP_GIT_OUTPUT_MAX_BYTES) => {
+    const indexMetadata = args.length === 3 && args[0] === 'ls-files' && args[1] === '--stage' && args[2] === '-z';
+    const ceiling = indexMetadata ? INDEX_OUTPUT_MAX_BYTES : CLEANUP_GIT_OUTPUT_MAX_BYTES;
+    if (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes < 0 || maxOutputBytes > ceiling) return gitFail('too_large');
+    const result = gitSpawnSync(['--no-pager', '-c', 'core.fsmonitor=false', ...args], {
+      cwd, env: gitEnv, gitBin: configuredGitBinary(env), timeout: GIT_TIMEOUT_MS, maxBuffer: maxOutputBytes,
+      stdio: ['pipe', 'pipe', 'pipe'], ...(input === undefined ? {} : { input }),
+    });
+    if ((result.error as NodeJS.ErrnoException | undefined)?.code === 'ENOBUFS') return gitFail('too_large');
+    if (result.error !== undefined || result.status === null || !statuses.includes(result.status)) return gitFail('unavailable');
+    return result.stdout;
+  };
+  const text: Git = (cwd, args, allowNoMatch = false) => {
+    const out = bytes(cwd, args, allowNoMatch ? [0, 1] : [0]);
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(out); } catch { return gitFail('path_unsupported'); }
+  };
+  return { text, bytes };
+}
 /** Server-resolved inventory target, never decoded from a request body. */
 export interface CleanupObservationTarget {
   readonly repository: string;
@@ -37,7 +84,7 @@ const canonicalDirectory = (path: string) => {
   return stat;
 };
 
-function repositoryIdentity(target: CleanupObservationTarget, runner: DocSessionGitRunner): string {
+function repositoryIdentity(target: CleanupObservationTarget, runner: CleanupGitRunner): string {
   canonicalDirectory(target.repository);
   const common = realpathSync(resolve(target.repository, runner.text(target.repository, ['rev-parse', '--git-common-dir']).trim()));
   if (worktreeId(common, target.worktree) !== target.id) fail('changed');
@@ -60,7 +107,7 @@ function indexEntries(text: string): Omit<CleanupIndexEntry, 'size'>[] {
   }).sort((a, b) => a.path.localeCompare(b.path, 'en') || a.stage - b.stage);
 }
 /** One batch read of the blob sizes, in index order. At most 21 bytes a line keeps the output below the runner limit. */
-function withSizes(runner: DocSessionGitRunner, worktree: string, entries: Omit<CleanupIndexEntry, 'size'>[], maxEntries: number): CleanupIndexEntry[] {
+function withSizes(runner: CleanupGitRunner, worktree: string, entries: Omit<CleanupIndexEntry, 'size'>[], maxEntries: number): CleanupIndexEntry[] {
   if (entries.length === 0) return [];
   if (entries.length > maxEntries) fail('too_large');
   const output = runner.bytes(worktree, ['cat-file', '--batch-check=%(objectsize)', '--buffer'], [0], Buffer.from(entries.map(entry => `${entry.oid}\n`).join('')));
@@ -68,7 +115,7 @@ function withSizes(runner: DocSessionGitRunner, worktree: string, entries: Omit<
   if (sizes.length !== entries.length + 1 || sizes.pop() !== '' || !sizes.every(size => /^(?:0|[1-9][0-9]*)$/u.test(size))) fail('unavailable');
   return entries.map((entry, position) => ({ ...entry, size: Number(sizes[position]) }));
 }
-function headEntries(runner: DocSessionGitRunner, path: string, head: string): Map<string, { mode: string; oid: string }> {
+function headEntries(runner: CleanupGitRunner, path: string, head: string): Map<string, { mode: string; oid: string }> {
   const result = new Map<string, { mode: string; oid: string }>();
   for (const field of nul(runner.text(path, ['ls-tree', '-r', '-z', '--full-tree', head]))) {
     const match = /^(\d{6}) blob ([a-f0-9]{40}|[a-f0-9]{64})\t([\s\S]+)$/u.exec(field);
@@ -129,7 +176,7 @@ function scanFiles(root: string, format: 'sha1' | 'sha256', options: CleanupObse
   return files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 }
 
-function once(target: CleanupObservationTarget, options: CleanupObservationOptions, runner: DocSessionGitRunner): CleanupLossEvidence {
+function once(target: CleanupObservationTarget, options: CleanupObservationOptions, runner: CleanupGitRunner): CleanupLossEvidence {
   const stat = canonicalDirectory(target.worktree);
   repositoryIdentity(target, runner);
   let head: string | null = null, branch: string | null = null, format: 'sha1' | 'sha256' = 'sha1';
@@ -191,8 +238,8 @@ function once(target: CleanupObservationTarget, options: CleanupObservationOptio
 export function observeCleanupLoss(target: CleanupObservationTarget, options: CleanupObservationOptions): CleanupLossEvidence {
   try {
     if (!Number.isFinite(options.deadline) || options.deadline <= Date.now()) fail('unavailable');
-    const base = docSessionGitRunner({ ...options.env, GIT_NO_REPLACE_OBJECTS: '1' });
-    const runner: DocSessionGitRunner = {
+    const base = cleanupGitRunner({ ...options.env, GIT_NO_REPLACE_OBJECTS: '1' });
+    const runner: CleanupGitRunner = {
       text: (cwd, args, allowNoMatch = false) => {
         if (Date.now() >= options.deadline) fail('unavailable');
         const bytes = base.bytes(cwd, args, allowNoMatch ? [0, 1] : [0]);

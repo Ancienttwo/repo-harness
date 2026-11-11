@@ -1,5 +1,21 @@
 import { canonicalize } from '../evidence/canonical-json';
 import type { JsonValue } from '../evidence/types';
+import { SESSION_OBSERVATION_MAX_BYTES } from '../sessions/session-selector';
+
+/** The Git output cap of the cleanup Git runner; archive staging refuses an index version above it. */
+export const CLEANUP_GIT_OUTPUT_MAX_BYTES = SESSION_OBSERVATION_MAX_BYTES;
+const PATH_MAX_BYTES = 512;
+const ENCODER = new TextEncoder();
+const utf8Bytes = (text: string): number => ENCODER.encode(text).length;
+
+/** A path inside the repository, relative to its root, in `/` form. */
+export function isRepositoryRelativePath(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length === 0 || utf8Bytes(value) > PATH_MAX_BYTES) return false;
+  if (value.startsWith('/') || value.includes('\\') || /[\u0000-\u001f\u007f]/u.test(value) || /^[A-Za-z]:/u.test(value)) return false;
+  const segments = value.split('/');
+  // `~` as the first segment names a home directory, not a path inside the repository.
+  return segments[0] !== '~' && segments.every(segment => segment !== '' && segment !== '.' && segment !== '..');
+}
 
 /** Private evidence; only the plan's loss summary crosses the public boundary. */
 export interface CleanupFileEvidence {

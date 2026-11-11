@@ -633,7 +633,7 @@ JS_EOF
 # The selection gates the Operator code in the installed package. The owner
 # paths are the model nodes of capability.runtime-harness.operator; the command
 # shells are in the CLI root. The state is selection [] from the MCP step.
-OPERATOR_OWNED='[\\/]src[\\/](?:effects[\\/](?:operator|setup|dev-activity)[\\/]|core[\\/](?:operator|setup|dev-activity)[\\/]|effects[\\/]configuration[\\/]agents-configuration\.ts|effects[\\/]review[\\/]docs-host-isolation\.ts|cli[\\/]commands[\\/](?:(?:operator|worktrees|catch-up|doc-sessions)-actions|architecture-thread|setup-[a-z-]+)\.ts)'
+OPERATOR_OWNED='[\\/]src[\\/](?:effects[\\/](?:operator|setup|dev-activity)[\\/]|core[\\/](?:operator|setup|dev-activity)[\\/]|effects[\\/]configuration[\\/]agents-configuration\.ts|cli[\\/]commands[\\/](?:(?:operator|worktrees|catch-up)-actions|architecture-thread|setup-[a-z-]+)\.ts)'
 OPERATOR_LOAD_PROBE="$TMP_DIR/operator-load-probe.ts"
 cat >"$OPERATOR_LOAD_PROBE" <<JS_EOF
 process.on("exit", () => process.stderr.write(\`operator-modules:\${Object.keys(require.cache).filter((path) => /$OPERATOR_OWNED/.test(path)).length}\n\`));

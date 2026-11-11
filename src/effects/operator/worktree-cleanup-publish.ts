@@ -2,16 +2,78 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, constants, fstatSync, openSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { githubRemoteRepository } from '../../core/board/source';
 import type { CleanupPlanItem } from '../../core/operator/worktree-cleanup-plan';
+import type { DraftPullRequest, DraftPullRequestHead, DraftPullRequestResult, PublicationRepository } from '../../core/publication/publication-writes';
 import { configuredGitBinary, gitExecFileSync, withoutRepositorySelectingGitEnv } from '../git/runner';
+import type { GithubCommandRunner } from '../github/issues';
+import { findDraftPullRequest, findOrCreateDraftPullRequest, readPublicationRepository } from '../publication/draft-pull-request';
 import { observeRemoteRef, pushCommitToNewRemoteRef } from '../publication/new-remote-ref-push';
-import type { GithubDraftPrPublisher } from './doc-session-finalize-github';
 import { stageCleanupArchive, type StagedCleanupArchive } from './worktree-cleanup-archive';
-import type { CleanupObservationTarget } from './worktree-cleanup-observation';
+import { cleanupGitRunner, type CleanupObservationTarget } from './worktree-cleanup-observation';
 import type { CleanupExecutionPorts } from './worktree-cleanup-plan';
 
 /** The branch shape that the plan decoder accepts. Production passes it to createGithubDraftPrPublisher. */
 export const CLEANUP_ARCHIVE_BRANCH = /^docs\/archive-[a-z0-9][a-z0-9-]{0,79}$/u;
+
+export interface CleanupPublicationTarget extends PublicationRepository {
+  /** Server-selected remote and GitHub base, never request fields. */
+  readonly remote: string;
+}
+/** Branch-parameterized Draft PR publication. Each caller owns its branch pattern. */
+export interface GithubDraftPrPublisher {
+  readonly publication_target: (checkout: string) => Promise<CleanupPublicationTarget>;
+  /** Lookup all PR states by exact repository/head/base. Verify draft and head SHA.
+   * Throw on unavailable/ambiguous results; null means a successful absence lookup. */
+  readonly find_draft_pr: (target: CleanupPublicationTarget, branch: string, commit: string) => Promise<DraftPullRequest | null>;
+  /** `not_created` requires proof no PR was created. Network/timeout/parse failures
+   * are `unknown`. Never retry an uncertain create without provider reconciliation. */
+  readonly create_draft_pr: (target: CleanupPublicationTarget, branch: string, commit: string, message: string) => Promise<DraftPullRequestResult>;
+}
+const fail = (): never => { throw new Error('doc session GitHub observation unavailable or incompatible'); };
+function targetCheck(target: CleanupPublicationTarget, pattern: RegExp, branch: string): void {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(target.remote) || !pattern.test(branch)) fail();
+}
+const draftHead = (target: CleanupPublicationTarget, branch: string, commit: string): DraftPullRequestHead => ({
+  repository: target.repository, base_branch: target.base_branch, head_branch: branch, commit,
+});
+
+export function createGithubDraftPrPublisher(
+  env: NodeJS.ProcessEnv,
+  branchPattern: RegExp,
+  runner?: GithubCommandRunner,
+  now?: () => number,
+): GithubDraftPrPublisher {
+  return {
+    publication_target: async (checkout: string) => {
+      const git = cleanupGitRunner(env).text;
+      const names = git(checkout, ['remote']).trim().split('\n').filter(Boolean);
+      if (names.length > 32) return fail();
+      const candidates: Array<{ remote: string; repository: string }> = [];
+      for (const remote of names) {
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(remote)) return fail();
+        const fetchUrls = git(checkout, ['remote', 'get-url', '--all', remote]).trim().split('\n');
+        const pushUrls = git(checkout, ['remote', 'get-url', '--push', '--all', remote]).trim().split('\n');
+        const githubs = [...fetchUrls, ...pushUrls].map(githubRemoteRepository);
+        if (githubs.every(name => name === null)) continue;
+        if (fetchUrls.length !== 1 || pushUrls.length !== 1 || githubs[0] === null || githubs[0] !== githubs[1]) return fail();
+        candidates.push({ remote, repository: githubs[0]! });
+      }
+      if (candidates.length !== 1) return fail();
+      const selected = candidates[0]!;
+      return { remote: selected.remote, ...readPublicationRepository(selected.repository, runner, now) };
+    },
+    find_draft_pr: async (target, branch, commit) => {
+      targetCheck(target, branchPattern, branch);
+      return findDraftPullRequest(draftHead(target, branch, commit), runner, now);
+    },
+    create_draft_pr: async (target, branch, commit, message): Promise<DraftPullRequestResult> => {
+      targetCheck(target, branchPattern, branch);
+      const title = message.split(/\r?\n/u)[0]!.trim().slice(0, 256) || 'Doc session changes';
+      return findOrCreateDraftPullRequest({ ...draftHead(target, branch, commit), title, body: message }, runner, now);
+    },
+  };
+}
 
 export interface CleanupArchivePublisherOptions {
   readonly env: NodeJS.ProcessEnv;

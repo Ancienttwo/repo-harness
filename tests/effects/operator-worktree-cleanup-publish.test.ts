@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -8,10 +8,10 @@ import type { WorktreeView } from '../../src/core/public-projections/worktrees';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { worktreeId } from '../../src/effects/git/worktree-record';
 import type { GithubCommandRunner } from '../../src/effects/github/issues';
-import { createGithubDraftPrPublisher } from '../../src/effects/operator/doc-session-finalize-github';
 import { observeCleanupLoss } from '../../src/effects/operator/worktree-cleanup-observation';
 import { cleanupPlanSelectionDigest, createCleanupPlan, executeCleanupPlan, type CleanupExecutionPorts } from '../../src/effects/operator/worktree-cleanup-plan';
-import { CLEANUP_ARCHIVE_BRANCH, createCleanupArchivePorts } from '../../src/effects/operator/worktree-cleanup-publish';
+import { CLEANUP_ARCHIVE_BRANCH, createCleanupArchivePorts, createGithubDraftPrPublisher } from '../../src/effects/operator/worktree-cleanup-publish';
+import { findOrCreateDraftPullRequest } from '../../src/effects/publication/draft-pull-request';
 import { pushCommitToNewRemoteRef } from '../../src/effects/publication/new-remote-ref-push';
 import { inspectWorktree } from '../../src/effects/state/coordination-worktree-topology';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
@@ -173,3 +173,125 @@ for (const owner of ['local', 'remote'] as const) {
     expect(f.calls.some(call => call.startsWith('remove'))).toBe(false); expect(f.state().pulls).toEqual([]);
   });
 }
+
+describe('createGithubDraftPrPublisher', () => {
+  const roots: string[] = [];
+  afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+  const target = { remote: 'origin', repository: 'Fixture/Docs', base_branch: 'main' };
+  const branch = 'docs/0123456789ab', commit = 'a'.repeat(40);
+  const publisher = (runner: GithubCommandRunner, now?: () => number) => createGithubDraftPrPublisher(process.env, /^docs\/[0-9a-f]{12}$/u, runner, now);
+  const repo = () => ({ id: 42, full_name: 'Fixture/Docs', html_url: 'https://github.com/Fixture/Docs', archived: false, disabled: false, default_branch: 'main', permissions: { push: true } });
+  const pr = () => ({ number: 7, html_url: 'https://github.com/Fixture/Docs/pull/7', state: 'open', draft: true, merged_at: null,
+    head: { ref: branch, sha: commit, repo: { id: 42, full_name: 'Fixture/Docs' } },
+    base: { ref: 'main', repo: { id: 42, full_name: 'Fixture/Docs' } } });
+  function transport(replies: unknown[]) {
+    const calls: string[][] = [];
+    const runner: GithubCommandRunner = (args, options) => {
+      calls.push([...args]); expect(options.timeout_ms).toBeGreaterThan(0); expect(options.max_buffer).toBeLessThanOrEqual(2 * 1024 * 1024);
+      const next = replies.shift();
+      if (next instanceof Error) throw next;
+      if (next === undefined) throw new Error('unexpected provider call');
+      return { stdout: typeof next === 'string' ? next : JSON.stringify(next) };
+    };
+    return { runner, calls };
+  }
+  function fixture() {
+    const root = tmpWorkspace('finalize-adapters'); roots.push(root); initGitRepo(root);
+    mkdirSync(join(root, 'docs'));
+    const git = (...args: string[]) => { const result = run('git', args, root); expect(result.status).toBe(0); return result.stdout; };
+    git('remote', 'add', 'origin', 'https://github.com/fixture/docs.git');
+    return { root, git };
+  }
+
+  test('target selection uses real Git remote configuration and provider identity/default branch/permission', async () => {
+    const f = fixture(); const t = transport([repo()]);
+    const adapters = publisher(t.runner);
+    expect(await adapters.publication_target(f.root)).toEqual(target);
+    expect(t.calls).toHaveLength(1); expect(t.calls[0]).toContain('repos/fixture/docs');
+    expect(t.calls[0]).toContain('github.com'); expect(t.calls[0]).toContain('GET');
+    f.git('remote', 'add', 'second', 'git@github.com:Fixture/Docs.git');
+    await expect(adapters.publication_target(f.root)).rejects.toThrow();
+    expect(t.calls).toHaveLength(1);
+  });
+
+  test('split push identity and multiple push URLs are refused before any provider call', async () => {
+    const f = fixture(); const t = transport([]); const adapters = publisher(t.runner);
+    f.git('remote', 'set-url', '--push', 'origin', 'https://github.com/other/repo.git');
+    await expect(adapters.publication_target(f.root)).rejects.toThrow();
+    f.git('remote', 'set-url', '--push', 'origin', 'https://github.com/fixture/docs.git');
+    f.git('remote', 'set-url', '--add', '--push', 'origin', 'https://github.com/fixture/docs.git');
+    await expect(adapters.publication_target(f.root)).rejects.toThrow(); expect(t.calls).toHaveLength(0);
+  });
+
+  test('repository redirects, removed permission and changed default base fail closed', async () => {
+    for (const row of [{ ...repo(), full_name: 'Other/Docs' }, { ...repo(), permissions: { push: false } }, { ...repo(), default_branch: 'next' }]) {
+      const t = transport([row]); const a = publisher(t.runner);
+      await expect(a.find_draft_pr(target, branch, commit)).rejects.toThrow(); expect(t.calls).toHaveLength(1);
+    }
+  });
+
+  test('lookup uses all states and all bases and only accepts an exact Draft head', async () => {
+    const t = transport([repo(), [pr()]]); const a = publisher(t.runner);
+    expect(await a.find_draft_pr(target, branch, commit)).toEqual({ number: 7, url: pr().html_url });
+    const endpoint = t.calls[1]!.find(arg => arg.startsWith('repos/'))!;
+    expect(endpoint).toContain('state=all'); expect(endpoint).toContain('head=Fixture%3Adocs%2F0123456789ab'); expect(endpoint).not.toContain('&base=');
+    for (const row of [{ ...pr(), state: 'closed' }, { ...pr(), draft: false }, { ...pr(), merged_at: '2026-10-29' },
+      { ...pr(), head: { ...pr().head, sha: 'b'.repeat(40) } }, { ...pr(), base: { ...pr().base, ref: 'other' } },
+      { ...pr(), head: { ...pr().head, repo: { id: 44, full_name: 'Other/Docs' } } }]) {
+      const bad = transport([repo(), [row]]);
+      await expect(publisher(bad.runner).find_draft_pr(target, branch, commit)).rejects.toThrow();
+    }
+  });
+
+  test('ambiguous, malformed and oversized provider replies never mean absent', async () => {
+    for (const response of [[pr(), pr()], {}, 'not JSON', ' '.repeat(2 * 1024 * 1024 + 1), new Error('provider unavailable')]) {
+      const t = transport([repo(), response]);
+      await expect(publisher(t.runner).find_draft_pr(target, branch, commit)).rejects.toThrow();
+    }
+  });
+
+  test('create reuses exact PR and sends no mutation when preflight is unavailable', async () => {
+    const existing = transport([repo(), [pr()]]);
+    expect((await publisher(existing.runner).create_draft_pr(target, branch, commit, 'Title')).state).toBe('created');
+    expect(existing.calls.some(args => args.includes('POST'))).toBe(false);
+    const unavailable = transport([new Error('denied')]);
+    expect((await publisher(unavailable.runner).create_draft_pr(target, branch, commit, 'Title')).state).toBe('not_created');
+    expect(unavailable.calls.some(args => args.includes('POST'))).toBe(false);
+  });
+
+  test('creation keeps user text literal, sets draft true, and validates the response', async () => {
+    const t = transport([repo(), [], pr()]); const a = publisher(t.runner);
+    const message = '@file $(never-execute)\n\n{owner} and "quoted" text';
+    expect(await a.create_draft_pr(target, branch, commit, message)).toEqual({ state: 'created', pr: { number: 7, url: pr().html_url } });
+    expect(t.calls).toHaveLength(3);
+    const post = t.calls[2]!;
+    expect(post).toContain('POST'); expect(post).toContain('github.com'); expect(post).toContain('draft=true');
+    expect(post).toContain(`body=${message}`); expect(post[post.indexOf(`body=${message}`) - 1]).toBe('--raw-field');
+    expect(post).toContain(`head=${branch}`); expect(post).toContain('base=main');
+  });
+
+  test('all failures after the single POST remain unknown and are never retried in the adapter', async () => {
+    for (const response of [new Error('timeout'), 'bad JSON', { ...pr(), draft: false }, { ...pr(), number: 0 }]) {
+      const t = transport([repo(), [], response]);
+      expect((await publisher(t.runner).create_draft_pr(target, branch, commit, 'Title')).state).toBe('unknown');
+      expect(t.calls.filter(args => args.includes('POST'))).toHaveLength(1);
+    }
+  });
+
+  test('the Draft PR operation creates one exact head and keeps a lost response unknown', () => {
+    const draft = { repository: 'Fixture/Docs', base_branch: 'main', head_branch: branch, commit, title: 'Title', body: 'Body' };
+    const made = transport([repo(), [], pr()]);
+    expect(findOrCreateDraftPullRequest(draft, made.runner)).toEqual({ state: 'created', pr: { number: 7, url: pr().html_url } });
+    const lost = transport([repo(), [], new Error('connection reset')]);
+    expect(findOrCreateDraftPullRequest(draft, lost.runner)).toEqual({ state: 'unknown' });
+    expect(lost.calls.filter(args => args.includes('POST'))).toHaveLength(1);
+  });
+
+  test('a spent deadline prevents further requests', async () => {
+    let clock = 0; const t = transport([repo(), []]);
+    const runner: GithubCommandRunner = (args, options) => { const result = t.runner(args, options); clock += 16000; return result; };
+    await expect(publisher(runner, () => clock).find_draft_pr(target, branch, commit)).rejects.toThrow();
+    expect(t.calls).toHaveLength(1);
+  });
+
+});

@@ -19,11 +19,10 @@ import { worktreeProcesses, type WorktreeProcess } from '../git/worktree-process
 import { readRepoHarnessRegistryStrictSnapshot, type RepoHarnessRegisteredRepo } from '../repo-registry';
 import { runSetupProcess, type SetupProcessRunner } from '../setup/collector';
 import { entries } from '../state/coordination-worktree-topology';
-import { createGithubDraftPrPublisher, type GithubDraftPrPublisher } from './doc-session-finalize-github';
 import { stageCleanupArchive, type StagedCleanupArchive } from './worktree-cleanup-archive';
 import { CleanupObservationError, observeCleanupLoss, type CleanupObservationTarget } from './worktree-cleanup-observation';
 import { cleanupPlanSelectionDigest, createCleanupPlan, executeCleanupPlan, type CleanupExecutionPorts, type CleanupObservation } from './worktree-cleanup-plan';
-import { CLEANUP_ARCHIVE_BRANCH, createCleanupArchivePorts } from './worktree-cleanup-publish';
+import { CLEANUP_ARCHIVE_BRANCH, createCleanupArchivePorts, createGithubDraftPrPublisher, type GithubDraftPrPublisher } from './worktree-cleanup-publish';
 import { reconcileCleanupWorktree, removeCleanupWorktree, type CleanupRemovalInput } from './worktree-cleanup-removal';
 import {
   CleanupSessionMissing, cleanupStagingDirectory, loadCleanupSession, readCleanupArchiveRecord, saveCleanupSession, writeCleanupArchiveRecord,

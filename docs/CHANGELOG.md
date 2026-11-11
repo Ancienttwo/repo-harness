@@ -17,6 +17,7 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- The doc session modules, `src/effects/review/docs-host-isolation.ts` and their two reference documents are removed (#2457). The worktree cleanup now owns the four helpers that it used: `cleanupGitRunner`, `createGithubDraftPrPublisher`, `isRepositoryRelativePath` and `CLEANUP_GIT_OUTPUT_MAX_BYTES`. The cleanup behavior does not change.
 - The herdr-core floor is 0.1.20 (#2255). Run `hc update` to 0.1.20 before this release is installed: an hc 0.1.19 client fails the floor check.
 - `publication merge` no longer needs strict status checks on the base (#2462). The merge proof accepts a squash whose one parent is the expected base or a descendant of it, and it proves the content of the squash with `git merge-tree` when the parent moved. `Required / CI` runs one time for each PR head.
 - A review row counts only for the head SHA that it names (#2462). A head that takes a merge of main is a new head: it needs its own `Required / CI` run and delta-check rows.
