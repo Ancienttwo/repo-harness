@@ -80,6 +80,9 @@ describe("capability resolver", () => {
     try {
       mkdirSync(join(cwd, "apps/web/src/routes/account"), { recursive: true });
       writeRegistry(cwd, [webCapability, accountCapability]);
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      const policyPath = join(cwd, ".ai/harness/policy.json");
+      writeFileSync(policyPath, '{"context":{"capability_source":"registry"},"worktree_strategy":null}');
 
       const source = runResolver(cwd, [
         "match", "--path", "apps/web/src/routes/account/page.tsx", "--format", "json",
@@ -93,6 +96,27 @@ describe("capability resolver", () => {
       const match = JSON.parse(standalone.stdout);
       expect(match.capability_id).toBe("apps-web-account");
       expect(match.matched_prefix).toBe("apps/web/src/routes/account");
+      for (const { text, status } of [
+        { text: undefined, status: 0 },
+        { text: '{}', status: 0 },
+        { text: 'null', status: 0 },
+        { text: '[]', status: 0 },
+        { text: '{', status: 2 },
+        { text: '{"context":{"capability_source":"unknown"}}', status: 2 },
+      ]) {
+        if (text === undefined) rmSync(policyPath);
+        else writeFileSync(policyPath, text);
+        const canonical = runResolver(cwd, ["list", "--format", "json"]);
+        const projected = runStandaloneResolver(cwd, ["list", "--format", "json"]);
+        expect(projected.status).toBe(status);
+        expect(projected.stdout).toBe(canonical.stdout);
+        expect(projected.stderr).toBe(canonical.stderr);
+        if (text === '{') {
+          let syntaxMessage = '';
+          try { JSON.parse(text); } catch (error) { syntaxMessage = (error as Error).message; }
+          expect(projected.stderr).toContain(`malformed harness policy: .ai/harness/policy.json: ${syntaxMessage}`);
+        }
+      }
 
       const core = readFileSync(join(ROOT, "src/core/capabilities/registry.ts"), "utf-8");
       const expectedHash = sha256(core);

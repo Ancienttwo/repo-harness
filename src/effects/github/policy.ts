@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { decodeWorkflowPolicy } from '../../core/workflow/policy-schema';
 
 export interface ExternalSourceFetchLimitsV1 {
   readonly max_pages: number;
@@ -156,10 +157,11 @@ export function readExternalSourcesPolicy(repoRoot: string): ExternalSourcesPoli
   const path = join(repoRoot, '.ai', 'harness', 'policy.json');
   let topLevel: Record<string, unknown>;
   try {
-    topLevel = object(JSON.parse(readFileSync(path, 'utf8')), '.ai/harness/policy.json');
+    topLevel = object(decodeWorkflowPolicy(readFileSync(path, 'utf8')).root, '.ai/harness/policy.json');
   } catch (error) {
     if (error instanceof ExternalSourcePolicyError) throw error;
-    throw new ExternalSourcePolicyError('external_source_policy_invalid', `.ai/harness/policy.json cannot be read: ${error instanceof Error ? error.message : String(error)}`);
+    const cause = error instanceof Error && error.cause instanceof SyntaxError ? error.cause : error;
+    throw new ExternalSourcePolicyError('external_source_policy_invalid', `.ai/harness/policy.json cannot be read: ${cause instanceof Error ? cause.message : String(cause)}`);
   }
   return parseExternalSourcesPolicy(topLevel.external_sources);
 }

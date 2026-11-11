@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { isRecord } from '../../core/evidence/is-record';
+import { decodeWorkflowPolicy } from '../../core/workflow/policy-schema';
 import { buildManagedHooks, type HookEntry, type HookHost } from '../installer/managed-entries';
 import { gitExecFileSync } from '../../effects/git/runner';
 
@@ -183,7 +184,7 @@ function reviewedExceptionEntries(raw: unknown): unknown[] {
   if (!isRecord(raw)) return [];
   const security = isRecord(raw.security) ? raw.security : undefined;
   if (!security) return [];
-  const entries = security.reviewed_findings ?? security.reviewedFindings;
+  const entries = security.reviewed_findings;
   return Array.isArray(entries) ? entries : [];
 }
 
@@ -197,7 +198,9 @@ function loadReviewedExceptions(repoRoot: string, home: string): LoadedSecurityR
     if (!fs.existsSync(source.filePath)) continue;
     let parsed: unknown;
     try {
-      parsed = readJson(source.filePath);
+      parsed = source.source === 'repo-policy'
+        ? decodeWorkflowPolicy(fs.readFileSync(source.filePath, 'utf-8')).root
+        : readJson(source.filePath);
     } catch {
       continue;
     }

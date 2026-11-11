@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { relative, resolve } from "path";
 import { gitSpawnSync } from "../git/runner";
+import { decodeWorkflowPolicy } from "../../core/workflow/policy-schema";
 import {
   archcontextNodeId,
   normalizeCapabilityPath,
@@ -51,10 +52,11 @@ export function capabilitySourceMode(repo: string): CapabilitySourceMode {
   if (!existsSync(policyPath)) return "registry";
   let policy: unknown;
   try {
-    policy = JSON.parse(readFileSync(policyPath, "utf-8"));
+    policy = decodeWorkflowPolicy(readFileSync(policyPath, "utf-8")).root;
   } catch (error) {
+    const cause = error instanceof Error && error.cause instanceof SyntaxError ? error.cause : error;
     throw new CapabilitySourceError(
-      `malformed harness policy: ${HARNESS_POLICY}: ${(error as Error).message}`
+      `malformed harness policy: ${HARNESS_POLICY}: ${(cause as Error).message}`
     );
   }
   return capabilitySourceModeFromPolicy(policy);

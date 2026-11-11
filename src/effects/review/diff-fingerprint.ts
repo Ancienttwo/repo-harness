@@ -5,6 +5,7 @@ import { sha256Prefixed } from '../../core/evidence/sha256';
 import { lstatSync, readlinkSync } from 'fs';
 import { join } from 'path';
 import { gitExecFileSync, gitSpawnSync } from '../git/runner';
+import { decodeWorkflowPolicy } from '../../core/workflow/policy-schema';
 
 // Raised from 4 MiB: a diff that overflows this cap can no longer be observed,
 // so instead of collapsing distinct contents to one fixed hash we mark the
@@ -46,7 +47,7 @@ export type PolicyReviewBaseResolution =
 
 export function resolvePolicyReviewBase(repoRoot: string): PolicyReviewBaseResolution {
   try {
-    const policy = JSON.parse(readFileSync(join(repoRoot, '.ai', 'harness', 'policy.json'), 'utf-8')) as unknown;
+    const { root: policy } = decodeWorkflowPolicy(readFileSync(join(repoRoot, '.ai', 'harness', 'policy.json'), 'utf-8'));
     if (!policy || typeof policy !== 'object' || Array.isArray(policy)) {
       return { ok: false, reason: 'workflow policy is malformed' };
     }
