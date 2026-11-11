@@ -586,7 +586,7 @@ class OperatorReadCancelledError extends Error {
   constructor() { super('operator read cancelled'); }
 }
 
-export class OperatorTaskReadError extends Error {
+class OperatorTaskReadError extends Error {
   constructor(readonly code: string) { super(code); }
 }
 

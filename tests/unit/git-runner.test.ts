@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, closeSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, watch, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync, watch, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, relative } from 'node:path';
-import { tmpWorkspace } from '../helpers/repo-fixture';
+import { initGitRepo, tmpWorkspace } from '../helpers/repo-fixture';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { runGit } from '../../src/effects/git/run-git';
 import {
   DEFAULT_GIT_TIMEOUT_MS,
+  GIT_KILL_GRACE_MS,
   GitExecError,
   gitExecFile,
   gitExecFileSync,
@@ -17,6 +18,7 @@ import {
 } from '../../src/effects/git/runner';
 
 import { withReadonlyObservation, ObservationViolation } from '../../src/effects/readonly-observation';
+import { withWorktreeTopologyLockAsync } from '../../src/effects/state/coordination-worktree-topology';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const SRC = join(ROOT, 'src');
@@ -345,6 +347,46 @@ exit 3
       await expect(gitExecFile(['status'], { gitBin, signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
       expect(readdirSync(root)).toEqual(['git']);
     } finally { controller.abort(); watcher.close(); rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('a git call that ignores SIGTERM is killed after the grace period, the call rejects after the child is gone, and the topology lock is released', async () => {
+    const realGit = Bun.which('git');
+    expect(realGit).not.toBeNull();
+    const gate = tmpWorkspace('operator-doc-session-git-hang');
+    const wrapper = join(gate, 'git');
+    writeFileSync(wrapper, ['#!/bin/sh',
+      'if [ "$1" = hang ]; then',
+      "  trap '' TERM",
+      `  echo $$ > '${gate}/pid'`,
+      '  exec sleep 30',
+      'fi',
+      `exec '${realGit}' "$@"`, ''].join('\n'), { mode: 0o755 });
+    const repo = tmpWorkspace('operator-doc-session-hang-repo');
+    try {
+      initGitRepo(repo);
+      const topologyLock = join(repo, '.git', 'repo-harness', 'coordination', 'locks', 'worktree-topology.lock');
+      const timeout = 200;
+      let lockHeld = false;
+      const began = Date.now();
+      const failure = await withWorktreeTopologyLockAsync(repo, () => {
+        lockHeld = existsSync(topologyLock);
+        return gitExecFile(['hang'], { cwd: repo, gitBin: wrapper, timeout });
+      }, { gitBin: wrapper }).then(() => null, (error: unknown) => error);
+      const elapsed = Date.now() - began;
+
+      expect(lockHeld).toBe(true);
+      expect(failure).toBeInstanceOf(GitExecError);
+      expect((failure as GitExecError).timedOut).toBe(true);
+      // SIGTERM is ignored, so only the SIGKILL after the grace period ends the child.
+      expect(elapsed).toBeGreaterThanOrEqual(timeout + GIT_KILL_GRACE_MS);
+      expect(elapsed).toBeLessThan(timeout + GIT_KILL_GRACE_MS + 5_000);
+      const pid = Number(readFileSync(join(gate, 'pid'), 'utf8'));
+      expect(() => process.kill(pid, 0)).toThrow();
+      expect(existsSync(topologyLock)).toBe(false);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(gate, { recursive: true, force: true });
+    }
   });
 
   test('src starts git only through the runner', () => {
