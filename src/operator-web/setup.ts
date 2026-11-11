@@ -1,4 +1,3 @@
-import { useCallback, useState } from 'react';
 import { decodeSetupSnapshot } from '../core/setup/decode';
 import type {
   SetupCheck,
@@ -8,7 +7,7 @@ import type {
   SetupSkillHostRow,
   SetupSnapshotV2,
 } from '../core/setup/types';
-import { useObservationRefresh } from './useObservationRefresh';
+import { useSnapshotView, type SnapshotView } from './useSnapshotView';
 
 /**
  * Browser side of `GET /api/v1/setup`. The server runs `repo-harness setup
@@ -26,29 +25,11 @@ export async function fetchSetup(signal: AbortSignal): Promise<SetupSnapshotV2> 
   return decodeSetupSnapshot(await response.json());
 }
 
-/** A failed refresh keeps the last good snapshot and says so. */
-export type SetupView =
-  | { readonly kind: 'loading' }
-  | { readonly kind: 'unreachable' }
-  | { readonly kind: 'ready'; readonly snapshot: SetupSnapshotV2; readonly refreshFailed: boolean };
+export type SetupView = SnapshotView<SetupSnapshotV2>;
 
 /** Reads only while a setup page is shown; a return to the page reads at once. */
 export function useSetup(read: SetupReader, initial: SetupSnapshotV2 | undefined, generation: number, enabled: boolean): SetupView {
-  const [view, setView] = useState<SetupView>(() => initial ? { kind: 'ready', snapshot: initial, refreshFailed: false } : { kind: 'loading' });
-  const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
-    try {
-      const snapshot = await read(signal);
-      if (signal.aborted) return false;
-      setView({ kind: 'ready', snapshot, refreshFailed: false });
-      return true;
-    } catch {
-      if (signal.aborted) return false;
-      setView(current => current.kind === 'ready' ? { ...current, refreshFailed: true } : { kind: 'unreachable' });
-      return false;
-    }
-  }, [read]);
-  useObservationRefresh(observe, JSON.stringify(['setup', generation]), { enabled, immediate: initial === undefined || generation > 0 });
-  return view;
+  return useSnapshotView('setup', read, initial, generation, enabled).view;
 }
 
 /** What a setup page can show: a wait, a failure, or data (possibly old). */
