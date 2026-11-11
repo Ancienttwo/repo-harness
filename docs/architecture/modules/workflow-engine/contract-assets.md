@@ -244,7 +244,7 @@ regressions verify these separate boundaries.
 | I1 | `assets/workflow-contract.v1.json` 是唯一契约主体；`.ai/harness/workflow-contract.json` 只是 opt-in marker（`kind` 与 `protocol` 两个字段） | `tests/workflow-contract.test.ts` “self-hosted opt-in marker matches the renderer and the protocol” |
 | I2 | `helpers.scripts` 与 `helpers.descriptions` 一一对应，描述非空 | `src/effects/runtime/helper-runner.ts:246-268` + `tests/workflow-contract.test.ts` |
 | I3 | `helpers.scripts` 是“有哪些 helper”的唯一 id 列表；descriptions 只挂显示数据 | 契约结构 + 上述双向校验 |
-| I4 | `context.capability_source` 选择唯一 capability 权威。本仓库是 `archcontext`，读 `.archcontext/model/nodes/*.yaml`；不双读，不回退 | `.ai/harness/policy.json:101-102`；`src/core/capabilities/registry.ts:514` |
+| I4 | `context.capability_source` 选择唯一 capability 权威。本仓库是 `archcontext`，读 `.archcontext/model/nodes/*.yaml`；不双读，不回退 | `.ai/harness/policy.json:12`；`src/core/capabilities/registry.ts:514` |
 | I5 | archcontext 模式下，路径归属只由 `archctx resolve` 决定。注册表不检查 include 形状，也接受 `source.exclude`。歧义归属与 archctx 失败都 fail closed。registry 模式仍按最长前缀匹配，同长度歧义 fail closed | `registry.ts` 的 `capabilityPathResolutionFromArchcontextOwners`、`src/effects/architecture/archcontext-owners.ts`、`registry.ts` 的 `matchCapabilityPath` |
 | I6 | 受保护 helper 的 source、helper、HOME、PATH 与解释器解析不受调用者影响 | `protectedChildEnv()`（`helper-runner.ts:73`）、`resolveHelperRuntime(env, !protectedHelper)`（`:367`） |
 | I7 | merge gate 对每个候选都必需。它没有启用位，所以候选不能自我豁免。推送前，`fingerprint` 按目标 base 扫描候选 diff | `scripts/merge-gate.ts` 的 `runMergeGateCli`（`:284`，`const required = true`）；`scripts/ship-worktrees.sh:1076`（`merge-gate.ts fingerprint --base`） |
@@ -298,7 +298,7 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 | 2026-07-16 Closeout Runner Guardrails | 900 秒档只含 `contract-worktree`/`ship-worktrees` | 还包含 `merge-gate`；`PROTECTED_HELPERS` 另含 `acceptance-receipt` | `helper-runner.ts:20`、`:22` |
 | 2026-07-14 Helper Descriptions | 46 → 48 条描述 | 51 条（scripts 与 descriptions 均为 51） | `assets/workflow-contract.v1.json` 的 `helpers` |
 | 旧 §3.2 I1 | asset 契约与自宿主 runtime 副本 byte-identical | 自宿主文件是 opt-in marker（2026-10-05） | `.ai/harness/workflow-contract.json` |
-| 旧 §3.2 I4 | [archived capabilities.json](https://github.com/Ancienttwo/repo-harness/blob/1eaf63019aadd2129376987957170d8310b35c3f/.ai/context/capabilities.json) 是唯一 runtime 权威 | 该文件不存在；权威是 `.archcontext/model/nodes` | `.ai/harness/policy.json:101-102` |
+| 旧 §3.2 I4 | [archived capabilities.json](https://github.com/Ancienttwo/repo-harness/blob/1eaf63019aadd2129376987957170d8310b35c3f/.ai/context/capabilities.json) 是唯一 runtime 权威 | 该文件不存在；权威是 `.archcontext/model/nodes` | `.ai/harness/policy.json:12` |
 | 旧 §3.2 I8 | 51/52 helper 一致，唯一例外带 `@generated-from` 头 | 52/55 一致，3 个声明的例外 | `scripts/sync-helper-sources.ts` |
 | 旧 §3.4 | capability 11 个，policy 29 个顶层域，templates 27k 行 | 29 个节点，32 个顶层域，21,876 行 | 本节 §3.4 |
 | 2026-08-21 Windows Protected Helper Platform Contract | [archived protected-helper-platform.ts](https://github.com/Ancienttwo/repo-harness/blob/3982ebf5b4857b47b7655ce206ecbeb890ffb4c0/src/cli/runtime/protected-helper-platform.ts) 拥有平台解析 | 文件在 `src/effects/runtime/protected-helper-platform.ts` | `helper-runner.ts` 导入路径 |
