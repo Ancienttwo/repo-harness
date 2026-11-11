@@ -1512,15 +1512,45 @@ test('watch window skips a provider 5xx and resumes at the next window', async (
     expect(delays[0]).toBe(WINDOW_WITH_WORKERS_MS);
     await runAttentionWindow({ ...input, collect: () => readGhJson({ repo_root: hc.root, gh_runner: () => ({ status: 1, stdout: '', stderr: 'gh: HTTP 504' }) }, ['api', 'graphql']) as BoardV1 });
     expect(JSON.parse(String(stderr.mock.calls[1]?.[0])).message).toContain('gh: HTTP 504');
+    // A gh call that a signal or the call timeout ended has no exit status: it is short availability and skips the window.
+    const endedWith = (extra: { readonly signal?: NodeJS.Signals; readonly error?: Error }) => () =>
+      readGhJson({ repo_root: hc.root, gh_runner: () => ({ status: null, stdout: '', stderr: '', ...extra }) }, ['api', 'graphql']) as BoardV1;
+    const timedOut = Object.assign(new Error('ETIMEDOUT'), { code: 'ETIMEDOUT' });
+    for (const extra of [{ signal: 'SIGKILL' as const }, { error: timedOut }]) {
+      try { endedWith(extra)(); throw new Error('expected failure'); } catch (error) {
+        expect(error).toBeInstanceOf(BoardCollectError);
+        expect((error as BoardCollectError).httpStatus).toBeNull();
+        expect((error as BoardCollectError).endedWithoutExit).toBe(true);
+      }
+    }
+    const ended = endedWith({ signal: 'SIGKILL' });
+    await runAttentionWindow({ ...input, collect: ended });
+    expect(stderr).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(String(stderr.mock.calls[2]?.[0])).message).toContain('exit null');
+    const errors = readFileSync(logPath, 'utf8').trimEnd().split('\n').map(line => JSON.parse(line)).filter(record => record.kind === 'error');
+    expect(errors).toHaveLength(3);
+    expect(errors[2]!.message).toContain('exit null');
+    expect(delays.at(-1)).toBe(WINDOW_WITH_WORKERS_MS);
+    // gh that never started (a launch error such as ENOENT) has no exit status and no signal: the loop still ends with exit 1.
+    const launch = endedWith({ error: Object.assign(new Error('spawnSync /nonexistent/gh ENOENT'), { code: 'ENOENT' }) });
+    try { launch(); throw new Error('expected failure'); } catch (error) {
+      expect(error).toBeInstanceOf(BoardCollectError);
+      expect((error as BoardCollectError).endedWithoutExit).toBe(false);
+    }
+    const skips = delays.length;
+    await expect(runAttentionWindow({ ...input, collect: launch })).rejects.toBeInstanceOf(BoardCollectError);
+    expect(delays).toHaveLength(skips);
+    expect(stderr).toHaveBeenCalledTimes(3);
     for (const [message, status] of [['gh: HTTP 403', 403], ['gh: server says HTTP 503 (HTTP 403)', 403], ['HTTP 403: forbidden', 403], ['gh: server says HTTP 503', null], ['gh failed', null]] as const) {
       const collect = () => readGhJson({ repo_root: hc.root, gh_runner: () => ({ status: 1, stdout: '', stderr: message }) }, ['api', 'graphql']) as BoardV1;
       try { collect(); throw new Error('expected failure'); } catch (error) {
         expect(error).toBeInstanceOf(BoardCollectError);
         expect((error as BoardCollectError).httpStatus).toBe(status);
+        expect((error as BoardCollectError).endedWithoutExit).toBe(false);
       }
       await expect(runAttentionWindow({ ...input, collect })).rejects.toBeInstanceOf(BoardCollectError);
     }
-    expect(stderr).toHaveBeenCalledTimes(2);
+    expect(stderr).toHaveBeenCalledTimes(3);
   } finally { stderr.mockRestore(); }
 });
 

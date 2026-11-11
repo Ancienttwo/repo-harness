@@ -289,7 +289,7 @@ function reviewRunner(options: AttentionOptions, parent: number, host: BoardHost
   return observe => runReview({ repo_root: process.cwd(), parent, space, host, dry_run: false, observe, launch: (seat, labels, cwd) => seatLaunch(seat, labels, process.env, cwd) });
 }
 
-/** The resident loop. A provider 5xx skips one window; other board read or hc failures end it with exit 1. */
+/** The resident loop. A provider 5xx or a gh call with no exit status skips one window; other board read or hc failures end it with exit 1. */
 async function watchAttention(options: AttentionOptions, host: BoardHostPortsV1, attentionHost: AttentionHostPortsV1): Promise<void> {
   try {
     const parent = parentNumber(options);

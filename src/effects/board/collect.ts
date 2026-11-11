@@ -14,7 +14,7 @@ import { parsePublicationPolicy, policyFileFromContents, PUBLICATION_POLICY_PATH
 import type { PullRequestReadinessV2, PullRequestSelectionV2 } from '../../core/publication/merge-readiness';
 import { GitExecError, gitExecFile, gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { collectPullRequestMergeReadiness } from '../publication/merge-readiness';
-import { createKeyedSources, readinessKey, type KeyedSources } from './keyed-sources';
+import { createKeyedSources, readinessKey, type GhRunner, type KeyedSources } from './keyed-sources';
 import { provenMergeOnlySyncs, type MergeOnlySyncInput } from './merge-only-sync';
 
 const GH_TIMEOUT_MS = 30_000;
@@ -68,19 +68,38 @@ export function pullRequestsQuery(numbers: readonly number[]): string {
     numbers.map(number => `  pr${number}: pullRequest(number: ${number}) { ${PULL_REQUEST_FIELDS} }`).join('\n')}\n} }`;
 }
 
+/**
+ * A failed board read. `httpStatus` is the provider status of the failed gh
+ * call, and `endedWithoutExit` marks a gh call that a signal or the call
+ * timeout ended. Both are short availability, not a broken board. A gh call
+ * that never started (a launch error such as ENOENT) also has no exit status,
+ * but it is a real failure, so it leaves `endedWithoutExit` false.
+ */
 export class BoardCollectError extends Error {
-  constructor(message: string, readonly httpStatus: number | null = null) {
+  constructor(message: string, readonly httpStatus: number | null = null, readonly endedWithoutExit = false) {
     super(message);
     this.name = 'BoardCollectError';
   }
+}
+
+/** Whether one failed board read is short provider availability: a provider 5xx, or a gh call that ended with no exit status. */
+export function boardAvailabilityFailure(error: unknown): error is BoardCollectError {
+  return error instanceof BoardCollectError
+    && (error.endedWithoutExit || (error.httpStatus !== null && error.httpStatus >= 500 && error.httpStatus <= 599));
+}
+
+/** One finished gh call, as spawnSync reports it. `signal`, the timeout error and a launch error explain a null status. */
+interface GhCallResult {
+  readonly status: number | null; readonly stdout: string; readonly stderr?: string;
+  readonly signal?: NodeJS.Signals | null; readonly error?: Error;
 }
 
 export interface BoardCollectInput {
   readonly repo_root: string;
   readonly parent: number;
   readonly gh_bin?: string;
-  /** Effect seam for tests: answers each gh argument list. */
-  readonly gh_runner?: (args: readonly string[]) => { readonly status: number; readonly stdout: string; readonly stderr?: string };
+  /** Effect seam for tests: answers each gh argument list, as spawnSync reports one: no exit status with the signal, the timeout error or the launch error. */
+  readonly gh_runner?: (args: readonly string[]) => GhCallResult;
   /** Effect seam for tests: the single-PR readiness projection. */
   readonly readiness?: (selection: PullRequestSelectionV2) => PullRequestReadinessV2;
   /** Effect seam for tests: the reviewed heads of which git proves the head a merge-only sync. */
@@ -93,9 +112,7 @@ export interface BoardCollectInput {
 
 export type GhInput = Pick<BoardCollectInput, 'repo_root' | 'gh_bin' | 'gh_runner'>;
 
-type GhRunner = NonNullable<BoardCollectInput['gh_runner']>;
-
-function runGh(input: GhInput, args: readonly string[]): { readonly status: number | null; readonly stdout: string; readonly stderr?: string; readonly error?: Error } {
+function runGh(input: GhInput, args: readonly string[]): GhCallResult {
   return input.gh_runner?.(args) ?? spawnSync(input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
     cwd: input.repo_root, env: { ...process.env, GH_HOST: 'github.com' }, encoding: 'utf-8', timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL',
   });
@@ -106,11 +123,17 @@ export function readGhJson(input: GhInput, args: readonly string[]): unknown {
   return ghJson(args, runGh(input, args));
 }
 
-function ghJson(args: readonly string[], result: { readonly status: number | null; readonly stdout: string; readonly stderr?: string }): unknown {
+/** A gh call that a signal or the call timeout ended; a launch error has neither a signal nor the timeout code. */
+function endedWithoutExitStatus(result: GhCallResult): boolean {
+  return result.status === null && (result.signal != null || (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT');
+}
+
+function ghJson(args: readonly string[], result: GhCallResult): unknown {
   if (result.status !== 0) {
     const stderr = (result.stderr ?? '').trim();
     const status = /\(HTTP (\d{3})\)$/u.exec(stderr) ?? /^gh: HTTP (\d{3})$/mu.exec(stderr) ?? /^HTTP (\d{3}):/mu.exec(stderr);
-    throw new BoardCollectError(`gh ${args.slice(0, 2).join(' ')} failed: ${stderr || `exit ${result.status}`}`, status === null ? null : Number(status[1]));
+    throw new BoardCollectError(`gh ${args.slice(0, 2).join(' ')} failed: ${stderr || `exit ${result.status}`}`, status === null ? null : Number(status[1]),
+      endedWithoutExitStatus(result));
   }
   try {
     return JSON.parse(result.stdout);
