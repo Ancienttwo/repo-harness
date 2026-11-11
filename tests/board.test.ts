@@ -412,8 +412,11 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
   expect(board.pull_requests.map(pr => [pr.number, pr.base_ref, pr.required_check.status])).toEqual([
     [1491, 'main', 'success'], [1494, 'feat/1475-hc-transport', 'missing'], [1499, 'feat/1475-hc-transport', 'missing'],
   ]);
-  // The round-6 record is a subject line, not a table row (rounds above 3 have no receipt). It names no Claude reviewer, and #1491 has no Claude writer claim, so the head waits for the Claude review.
+  // The round-6 row names a gatekeeper, not a Claude reviewer, and #1491 has no Claude writer claim, so the head waits for the Claude review.
   expect(board.pull_requests[0]!.acceptance).toMatchObject({ status: 'not_accepted' });
+  // A hand-written subject line is not the table row that `review publish` writes: the record is unparsed, and no verdict is guessed.
+  const subjectLine = replay({ pulls: data => data.repository.pr1491.comments.nodes.push(comment(`repo-harness acceptance record\nSubject: ${data.repository.pr1491.headRefOid}. Round 7 (gatekeeper, fresh Claude context, read-only): PASS.\n`, '2026-11-02T22:00:00Z')) });
+  expect(subjectLine.pull_requests[0]!.acceptance).toMatchObject({ status: 'unknown', reason: 'acceptance_record_unparsed' });
   expect(board.plan).toMatchObject({ status: 'unavailable', reason: 'plan block invalid: the plan comment has 0 fenced json blocks, expected 1' });
   expect(board.daily_run).toMatchObject({ status: 'observed', conclusion: 'failure', open_repair_issues: [] });
   expect(board.tooling).toEqual({ hc: { status: 'observed', version: HC_MIN_VERSION, min_version: HC_MIN_VERSION }, herdr_app: { status: 'not_pinned' } });
