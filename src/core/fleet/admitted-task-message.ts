@@ -2,13 +2,14 @@ import { retiredDeliveryChannel, TaskMessageError } from '../messages/task-messa
 import { validateTaskMessageClaim, type TaskMessageClaim } from '../messages/task-message-claim';
 /** Active admitted inbox wire. Legacy v1 is decoded only by explicit history readers. */
 import { canonicalize } from '../evidence/canonical-json';
-import { TASK_DIGEST_PATTERN } from '../state/coordination-identity';
 import {
   MESSAGE_SHA256_PATTERN,
   assertMessageBoundedUtf8,
-  assertMessageExactKeys,
-  assertMessageTimestamp,
-  assertMessageUuid,
+  assertTaskMessageDigest as assertTaskDigest,
+  assertTaskMessageExactKeys as assertExactKeys,
+  assertTaskMessageTimestamp as assertTimestamp,
+  assertTaskMessageUuid as assertUuid,
+  invalidTaskMessage as invalid,
   messageNullableString,
   messageRequiredString,
   messageSha256,
@@ -91,26 +92,6 @@ export interface TaskMessageEventInput {
   readonly body: string;
   readonly created_at: string;
   readonly in_reply_to: string | null;
-}
-
-function invalid(message: string): never {
-  throw new TaskMessageError('task_message_invalid', message);
-}
-
-function assertExactKeys(value: Record<string, unknown>, fields: readonly string[], subject: string): void {
-  assertMessageExactKeys(value, fields, subject, invalid);
-}
-
-function assertUuid(value: string, field: string): void {
-  assertMessageUuid(value, field, invalid);
-}
-
-function assertTaskDigest(value: string, field: string): void {
-  if (!TASK_DIGEST_PATTERN.test(value)) invalid(`${field} is invalid`);
-}
-
-function assertTimestamp(value: string, field: string): void {
-  assertMessageTimestamp(value, field, invalid);
 }
 
 
