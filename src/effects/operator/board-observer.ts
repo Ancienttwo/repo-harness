@@ -70,8 +70,6 @@ export interface BoardObserverOptions {
     setTimeout(callback: () => void, ms: number): ReturnType<typeof setTimeout>;
     clearTimeout(timer: ReturnType<typeof setTimeout>): void;
   };
-  /** A board that the worker read and that passed the decoder. A throw makes the cache entry `board_unavailable`. */
-  readonly on_board?: (repositoryId: string, board: BoardV1) => void;
 }
 
 function observerPorts(env: NodeJS.ProcessEnv): BoardObserverPorts {
@@ -385,14 +383,13 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
     try { const value = decodeBoardParents(answer.value); return { state: 'ready', value, etag: etagOf(value) }; }
     catch { return { state: 'unavailable', reason: 'parents_invalid' }; }
   }
-  function readBoard(repositoryId: string, parent: number, answer: BoardWorkerAnswer | 'timeout' | null): BoardDocumentCache {
+  function readBoard(parent: number, answer: BoardWorkerAnswer | 'timeout' | null): BoardDocumentCache {
     if (answer === 'timeout') return { state: 'unavailable', reason: 'board_timeout' };
     if (answer === null) return { state: 'unavailable', reason: 'board_unavailable' };
     if (!answer.ok) return { state: 'unavailable', reason: answer.code as Extract<BoardDocumentCache, { state: 'unavailable' }>['reason'] };
     let value: BoardV1;
     try { value = decodeBoard(answer.value); if (value.parent.number !== parent) throw new Error('board of another parent'); }
     catch { return { state: 'unavailable', reason: 'board_invalid' }; }
-    try { options.on_board?.(repositoryId, value); } catch { return { state: 'unavailable', reason: 'board_unavailable' }; }
     return { state: 'ready', value, etag: etagOf(value) };
   }
   /** Each open parent with a live seat, then each leased parent; parents with no answer yet come first. */
@@ -441,7 +438,7 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
       const key = boardKey(repository.id, parent);
       const answer = await ask({ kind: 'board', repo_root: repository.path, parent, key });
       if (observer.signal.aborted) return FACTS_INTERVAL_MS;
-      boards.set(key, readBoard(repository.id, parent, answer));
+      boards.set(key, readBoard(parent, answer));
       used.add(key);
     }
     for (const key of boards.keys()) if (!used.has(key)) boards.delete(key);

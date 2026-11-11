@@ -42,8 +42,6 @@ import { NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND } from '../../core/decisio
 import { decodeQuotaReport, OPERATOR_QUOTA_PATH } from '../../core/board/quota';
 import { readQuotaReport } from '../board/quota';
 import { startBoardObserver, type BoardFactsCache, type BoardObserverOptions, type BoardObserverReads } from './board-observer';
-import { decodeBoardSummaries } from '../../core/board/summary';
-import { readBoardSummaries, writeBoardSummary } from './board-summary';
 import { BoardReadError, readRepositoryAdvisorTranscript, type BoardReadInput } from './board-read';
 import { ADVISOR_SEAT_REFUSALS, OPERATOR_ADVISOR_BOSS_COMMANDS_ROUTE, OPERATOR_ADVISOR_MESSAGES_ROUTE, OPERATOR_ADVISOR_TRANSCRIPT_PATH, advisorBossCommandWriteRoute, advisorSeatWriteRoute } from './advisor-seat-route';
 import { decodeAdvisorSeatRequest, decodeAdvisorSeatTranscript } from '../../core/board/advisor-seat';
@@ -103,7 +101,6 @@ export const OPERATOR_BOARD_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za
 /** The open parent issues of one registered repository: the entry of the Board page. */
 export const OPERATOR_BOARD_PARENTS_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/board\/parents$/u;
 export const OPERATOR_BOARD_SEATS_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/board\/seats$/u;
-export const OPERATOR_BOARD_SUMMARIES_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/board\/summaries$/u;
 export const OPERATOR_EXECUTION_STATE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/execution$/u;
 /** The stored task inbox of one task that the execution view of the same repository lists as verified. */
 export const OPERATOR_TASK_MESSAGES_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/tasks\/([0-9a-f]{64})\/messages$/u;
@@ -155,7 +152,6 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'board', method: 'GET', pattern: OPERATOR_BOARD_ROUTE.source, write: false }),
   Object.freeze({ id: 'board_seats', method: 'GET', pattern: OPERATOR_BOARD_SEATS_ROUTE.source, write: false }),
   Object.freeze({ id: 'board_parents', method: 'GET', pattern: OPERATOR_BOARD_PARENTS_ROUTE.source, write: false }),
-  Object.freeze({ id: 'board_summaries', method: 'GET', pattern: OPERATOR_BOARD_SUMMARIES_ROUTE.source, write: false }),
   // The only console write into an agent terminal (#1756, D11): plain text to the one advisor seat of a board, in a board CLI child.
   Object.freeze({ id: 'advisor_seat_messages', method: 'POST', pattern: OPERATOR_ADVISOR_MESSAGES_ROUTE.source, write: true }),
   // The four boss commands (#1757): a command id, sent as its server-side text through the same advisor seat send.
@@ -1642,22 +1638,6 @@ export async function startOperatorServer(
       return;
     }
 
-    const summariesRoute = OPERATOR_BOARD_SUMMARIES_ROUTE.exec(pathname);
-    if (summariesRoute !== null) {
-      if (headOnly) {
-        sendRefusal(request, response, 405, errorBody('method_not_allowed', 'The board summaries route supports only GET.'), true, { Allow: 'GET' });
-        return;
-      }
-      const keys = [...url.searchParams.keys()];
-      const parent = url.searchParams.get('parent');
-      if (keys.length !== 1 || parent === null || !/^[1-9][0-9]{0,9}$/u.test(parent)) {
-        sendRefusal(request, response, 400, errorBody('invalid_request', 'The board summaries route needs exactly one parent issue number.'), headOnly);
-        return;
-      }
-      sendJson(response, 200, decodeBoardSummaries(readBoardSummaries(boardEnvironment, summariesRoute[1]!, Number(parent))), headOnly);
-      return;
-    }
-
     const seatsRoute = OPERATOR_BOARD_SEATS_ROUTE.exec(pathname);
     if (seatsRoute !== null) {
       if (url.search !== '') {
@@ -1896,9 +1876,7 @@ export async function startOperatorServer(
       first_cycle_after: devActivity?.settled(),
     })
     : null;
-  const boardObserver = options.board_cache ? null : startBoardObserver({
-    env: options.env, on_board: (repositoryId, board) => writeBoardSummary(boardEnvironment, repositoryId, board), ...options.board_observer,
-  });
+  const boardObserver = options.board_cache ? null : startBoardObserver({ env: options.env, ...options.board_observer });
   const boardReads: BoardObserverReads = options.board_cache ?? boardObserver!;
   const cliInventory = options.cli_inventory_collector && !options.read_cli_inventory
     ? startCliInventoryCollector({ env: options.env, usage_sources: options.cli_inventory_collector.usage_sources })
