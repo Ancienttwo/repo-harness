@@ -88,7 +88,7 @@ function itemSubject(item: ArchitectureDebtReportV1['items'][number]): string {
     : 'human citations';
 }
 
-/** The checkpoint fallback has no severity or base classification. Only scoped ownership and citation debt reaches this renderer. */
+/** The checkpoint fallback has no severity or base classification. Only scoped ownership, citation and state machine debt reaches this renderer. */
 export function renderAgentNotice(report: ArchitectureDebtReportV1): NoticeBlock | null {
   const items = noticeItems(report);
   if (items.length === 0) return null;

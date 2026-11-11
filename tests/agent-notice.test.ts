@@ -4,12 +4,12 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { ERROR_CATALOG } from 'archctx-contracts';
 import { collectAgentNotice, renderAgentNotice } from '../src/cli/hook/agent-notice';
-import { checkpointArchitectureDebt } from '../src/effects/architecture/archctx-provider';
+import { ArchctxClient, checkpointArchitectureDebt } from '../src/effects/architecture/archctx-provider';
+import { ARCHCTX_REQUIRED_VERSION } from '../src/core/architecture/projection';
 import type { ArchctxProviderOptions } from '../src/core/architecture/contracts';
 import { resolveCapabilityOwnership } from '../src/effects/state/resolve-effective-state';
 import { agentNoticeFixture, noticeOwnership, noticeEnv, registryNoticeFixture, registryProjectedFixture, unignoreNoticeState, writeNoticeRegistry, NOTICE_CAPABILITY } from './helpers/agent-notice';
 import { fixtureCommit, fixtureGit, fixtureWrite, writeStateMachine, STATE_MACHINE_ID } from './helpers/module-repository';
-import { readArchitectureView } from '../src/effects/architecture/architecture-read';
 
 const roots: string[] = [];
 function fixture() { const root = agentNoticeFixture(); roots.push(root); return root; }
@@ -136,9 +136,8 @@ describe('AgentNotice', () => {
     const ownership = noticeOwnership(root);
     const options = { env: noticeEnv(root) };
     writeStateMachine(root);
-    const check = readArchitectureView(root, ['state-machines', 'check', '--json']);
-    if (!check.ok) throw new Error('state-machines check failed');
-    const [anchor] = (check.data as { machines: { anchors: { digest: string }[] }[] }).machines[0]!.anchors;
+    const check = new ArchctxClient(root, ARCHCTX_REQUIRED_VERSION, options).data(['state-machines', 'check', '--json'], 60_000);
+    const [anchor] = (check as { machines: { anchors: { digest: string }[] }[] }).machines[0]!.anchors;
     writeStateMachine(root, anchor!.digest);
     expect(collectAgentNotice(root, () => ownership, options).content).not.toContain('state-machine');
     fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 3;\n');
