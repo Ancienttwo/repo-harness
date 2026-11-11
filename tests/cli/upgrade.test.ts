@@ -593,9 +593,12 @@ describe('upgrade with real release bytes', () => {
     const installer = spawnSync('bash', [installerPath], {
       env: { ...process.env, HOME: opts.home, AGENTIC_DEV_SOURCE_ROOT: source, CODEX_SKILLS_ROOT: join(opts.home, '.codex/skills'), CLAUDE_SKILLS_ROOT: '', REPO_HARNESS_INSTALL_PROFILE: 'strict', AGENTIC_DEV_LINK_INSTALLED_COPIES: '0', BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' }, encoding: 'utf8', timeout: 60000,
     });
-    expect(installer.status).toBe(0);
+    const installerOutput = JSON.stringify({
+      status: installer.status, signal: installer.signal, error: installer.error?.message ?? null, stdout: installer.stdout, stderr: installer.stderr,
+    });
+    expect(installer.status, installerOutput).toBe(0);
     const installed = join(opts.home, '.codex/skills/repo-harness-check');
-    expect(existsSync(join(installed, '.repo-harness-owner.json'))).toBe(true);
+    expect(existsSync(join(installed, '.repo-harness-owner.json')), installerOutput).toBe(true);
     const item = runUpgrade({ ...opts, scope: 'global' }).items.find((item) => item.path === installed);
     expect(item?.proof).toBe('owner-marker'); expect(item?.action).toBe('refresh');
     const result = runUpgrade({ ...opts, scope: 'global', apply: true });
