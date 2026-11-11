@@ -7,9 +7,9 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const packageRoot = basename(scriptDir) === 'helpers' ? resolve(scriptDir, '../../..') : resolve(scriptDir, '..');
 const [action, ...args] = process.argv.slice(2);
-if (action === 'default-template' || action === 'resolve-template') {
-  const { defaultWorktreeTemplate, resolveWorktreeTemplate } = await import(pathToFileURL(join(packageRoot, 'src/core/worktree-location.mjs')).href);
-  console.log(action === 'default-template' ? defaultWorktreeTemplate(process.platform, tmpdir()) : resolveWorktreeTemplate(args[args.indexOf('--template') + 1], process.platform, tmpdir()));
+if (action === 'default-template') {
+  const { defaultWorktreeTemplate } = await import(pathToFileURL(join(packageRoot, 'src/core/worktree-location.mjs')).href);
+  console.log(defaultWorktreeTemplate(process.platform, tmpdir()));
   process.exit(0);
 }
 const { configuredGitBinary } = await import(pathToFileURL(join(packageRoot, 'src/effects/git/common-directory.ts')).href) as typeof import('../src/effects/git/common-directory');

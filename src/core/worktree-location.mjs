@@ -6,7 +6,7 @@ export function systemWorktreeRoot(platform, nativeTemporaryRoot) {
   return platform === 'win32' ? nativeTemporaryRoot : '/tmp';
 }
 
-export function resolveWorktreeTemplate(template, platform, nativeTemporaryRoot) {
+function resolveWorktreeTemplate(template, platform, nativeTemporaryRoot) {
   return template.replaceAll('{{system_tmp}}', systemWorktreeRoot(platform, nativeTemporaryRoot).replaceAll('\\', '/').replace(/\/$/, ''));
 }
 
