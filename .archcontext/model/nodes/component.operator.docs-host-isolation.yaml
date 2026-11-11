@@ -5,9 +5,10 @@ name: Docs Host Isolation
 status: active
 parent: capability.runtime-harness.operator
 layer: effects
-summary: Builds the Seatbelt isolation for the docs host that operator doc sessions start, and checks its platform and writable paths.
+summary: Keeps the docs host platform check and the protected projection paths that operator doc sessions use while the docs host is closed (#1149).
 responsibilities:
-  - Expose the docs host lexical writable-path predicate from the same file and directory deny patterns used in its Seatbelt profile; callers still apply generated-target and hand-edit authorities.
+  - Refuse a docs host on any platform other than darwin.
+  - List the projection manifest path, its generated targets and their docs/ parent directories as protected paths, and refuse a symlink on any of them.
 source:
   include:
     - src/effects/review/docs-host-isolation.ts
