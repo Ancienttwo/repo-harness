@@ -21,13 +21,6 @@
       "sync_script": "repo-harness brain sync"
     }
   },
-  "guards": {
-    "edit_plan_gate": "off",
-    "edit_plan_gate_modes": [
-      "off"
-    ],
-    "rule": "Ordinary editing has no plan/contract approval permit. Path and permission safety remain runtime invariants."
-  },
   "documentation": {
     "language": "en"
   },
@@ -38,10 +31,6 @@
     "merge_back": {
       "target": "main"
     }
-  },
-  "merge_gate": {
-    "enabled": true,
-    "rule": "The installed helper consumes exact GitHub PR head/base and current trusted Required / CI results, refuses outstanding GitHub change requests or unresolved review threads, scans credential/private paths and seals the immutable candidate. The publication merge executor merges only when publication.acceptance_merge is \"on\" in the policy at the PR base SHA and default-branch protection meets its preconditions (strict required status checks, enforce_admins, no merge queue); its threshold is the readiness verdict plus the closing-reference check. No external review, waiver, plan or AcceptanceReceipt is a merge permit."
   },
   "publication": {
     "acceptance_merge": "on",
@@ -65,11 +54,6 @@
       ],
       "install_mode": "auto-install-on-init"
     }
-  },
-  "enforcement": {
-    "worktree_guard": "advisory",
-    "verification_gate": "main-automatic-checks",
-    "completion_requires_checks": false
   },
   "internal_pr_authors": []
 }
