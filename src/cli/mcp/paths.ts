@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, realpathSync, statSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
+import { isPathInside } from '../../effects/path-containment';
 import type { McpPathDecision, McpPathIntent, McpPolicy } from './types';
 
 export function toPosixPath(value: string): string {
@@ -77,15 +78,6 @@ export function canonicalDirectory(path: string): string | null {
   } catch {
     return null;
   }
-}
-
-export function isPathInside(parent: string, child: string): boolean {
-  const relation = relative(parent, child);
-  return relation === '' || (
-    relation !== '..' &&
-    !relation.startsWith(`..${sep}`) &&
-    !isAbsolute(relation)
-  );
 }
 
 function hasEntry(path: string): boolean {

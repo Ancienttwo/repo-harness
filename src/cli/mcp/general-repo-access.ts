@@ -13,7 +13,8 @@ import { appendSegmentedLog } from '../../effects/segmented-log';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import type { CodeGraphRefreshResult, CodeGraphRepoSnapshot, GeneralRepoCodeGraphAdapter } from '../tools/codegraph-reader';
 import { MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH } from './log-paths';
-import { isPathInside, toPosixPath } from './paths';
+import { isPathInside } from '../../effects/path-containment';
+import { toPosixPath } from './paths';
 import { isRecord } from '../../core/evidence/is-record';
 import {
   GeneralRepoAccessError,

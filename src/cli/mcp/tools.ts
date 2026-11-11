@@ -8,7 +8,8 @@ import { isRegisteredRepoHarnessRoot, readRegisteredRepoHarnessRepos } from '../
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { loadMcpLocalConfig } from './auth';
 import { guardedWriteFile } from './guarded-write';
-import { canonicalDirectory, isPathInside, resolveMcpPath } from './paths';
+import { isPathInside } from '../../effects/path-containment';
+import { canonicalDirectory, resolveMcpPath } from './paths';
 import { buildReaderToolDefinitions, callReaderTool, createReaderToolContext, isReaderTool } from './reader-tools';
 import { currentGitBranch, isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { redactMcpText } from './redaction';

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'crypto';
 import { sha256Prefixed } from '../../core/evidence/sha256';
+import { isPathInside } from '../../effects/path-containment';
 import {
   closeSync,
   constants,
@@ -125,15 +126,6 @@ function canonicalDirectory(path: string, label: string): string {
   return realpathSync(resolved);
 }
 
-function pathWithin(path: string, root: string): boolean {
-  const normalized = relative(root, path);
-  return normalized === '' || (
-    normalized !== '..'
-    && !normalized.startsWith(`..${sep}`)
-    && !isAbsolute(normalized)
-  );
-}
-
 function candidateCapabilityPath(transactionBackupRoot: string): string {
   return join(transactionBackupRoot, CANDIDATE_CAPABILITY_NAME);
 }
@@ -242,7 +234,7 @@ export function consumeCandidateReconciliationCapability(
   const lockRelativePath = runtimeTransactionLockRelativePath(canonicalScope);
   const transactionRoot = canonicalDirectory(runtimeTransactionRoot(canonicalScope), 'candidate reconciliation transaction root');
   const backupRoot = canonicalDirectory(request.transaction_backup_root, 'candidate reconciliation transaction backup');
-  if (!pathWithin(backupRoot, transactionRoot) || backupRoot === transactionRoot) {
+  if (!isPathInside(transactionRoot, backupRoot) || backupRoot === transactionRoot) {
     throw new Error(`candidate reconciliation transaction backup is outside the active transaction root: ${backupRoot}`);
   }
   const path = candidateCapabilityPath(backupRoot);

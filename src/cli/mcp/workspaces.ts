@@ -2,7 +2,8 @@ import { randomUUID } from 'crypto';
 import { sha256Hex } from '../../core/evidence/sha256';
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'fs';
 import { basename, isAbsolute, relative, resolve } from 'path';
-import { globMatches, isPathInside, isWindowsAbsoluteLike, toPosixPath } from './paths';
+import { isPathInside } from '../../effects/path-containment';
+import { globMatches, isWindowsAbsoluteLike, toPosixPath } from './paths';
 import { sensitiveAllowedRootReason } from './policy';
 import type { McpPolicy } from './types';
 
