@@ -13,6 +13,7 @@ import { ClaudeAgentTypesError, claudeHostAgentTypes } from '../../effects/board
 import { RepoHarnessRegistryStrictError, canonicalRepoPath, readRepoHarnessRegistryStrictSnapshot, repoCheckoutProbeEnv, setRepoHarnessPanePrefix } from '../../effects/repo-registry';
 import { HerdrCoreError, RH_LABEL, hcLabel, hcLabelPairs, type HcLabels } from '../../effects/terminal/herdr-core';
 import { PiFleetRolesError, writePiFleetRoles } from '../../effects/board/pi-fleet-roles';
+import { PiShellError, assertPiShell } from '../../effects/board/pi-shell';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 import { SeatResetError, readSeatSessionTranscript, readTranscriptContextTokens, runSeatReset, writeSeatResetRequest, type SeatResetNotify } from '../../effects/board/seat-reset';
 import { seatResetIdentity, seatResetSteps } from '../../core/board/seat-reset';
@@ -155,6 +156,7 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
   // The board review passes the gatekeeper route that its plan checked: the launched seat is the planned one, with no second quota read.
   // The config is still read for the source of the brief and for the migration error.
   const effective = id === 'gatekeeper' && planned !== undefined ? plannedGatekeeper(planned) : await quotaCheckedSeat(id, seats, configured, env, accountOptions);
+  if (effective.runtime === 'pi') await assertPiShell(env, cwd);
   const labelSet = seatLabels(id, labels);
   // The pane name needs the registry prefix, so it comes only with the seat labels.
   const name = labels.repositoryId === undefined ? null : seatPaneName({
@@ -216,7 +218,7 @@ export function buildSeatsCommand(loadNotify?: () => Promise<SeatResetNotify>): 
           repositoryId: options.repositoryId, issue: options.issue, pr: options.pr, parent: options.parent, release: options.release, qualifier: options.qualifier,
         }, process.env, process.cwd(), { spendCredits: options.spendCredits === true });
       } catch (error) {
-        const code = error instanceof SeatsCommandError || error instanceof ClaudeAgentTypesError || error instanceof PiFleetRolesError || error instanceof SeatPaneNameError
+        const code = error instanceof SeatsCommandError || error instanceof ClaudeAgentTypesError || error instanceof PiFleetRolesError || error instanceof PiShellError || error instanceof SeatPaneNameError
           || error instanceof RepoHarnessRegistryStrictError || error instanceof SeatsConfigMigrationRequiredError ? error.code : 'seat_launch_failed';
         process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: (error as Error).message,
           ...(error instanceof SeatsConfigMigrationRequiredError ? { next_action: error.next_action } : {}) })}\n`);
