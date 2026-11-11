@@ -1,11 +1,14 @@
 import type { ReviewAdmission, ReviewAuthorityContext } from './authority-context';
 import type { RequiredCheckFailureEvidenceV1 } from '../evidence/required-check-evidence';
 import type { RequiredCheckCoverageEvidenceV1 } from '../publication/required-check-coverage';
+import { canonicalize } from '../evidence/canonical-json';
 import { isRecord } from '../evidence/is-record';
 import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256-pattern';
 import { sha256Prefixed } from '../evidence/sha256';
 import { modelFamily } from './model-family';
 import { isReviewRuntimeId, type ReviewRuntimeId } from './review-runtimes';
+
+export { canonicalize as stableJson } from '../evidence/canonical-json';
 
 export type AcceptanceDisposition = 'external_pass' | 'user_waiver' | 'reject';
 /** The bound author task session and the models its OAR host observed. */
@@ -273,13 +276,6 @@ export function fail(message: string, code = 1): never {
   throw error;
 }
 
-export function stableJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
-}
-
 type ArchiveProjectionKind = 'plan' | 'contract' | 'review' | 'notes';
 
 type ArchiveProjectionEntry = {
@@ -363,7 +359,7 @@ function parseArchiveProjection(content: string): ParsedArchiveProjection | null
     entries,
     lifecycle,
     relatedPlan: envelope.groups?.relatedPlan ?? '',
-    manifestSha256: sha256Prefixed(stableJson({ protocol: 1, entries: canonicalEntries })),
+    manifestSha256: sha256Prefixed(canonicalize({ protocol: 1, entries: canonicalEntries })),
   };
 }
 
@@ -487,11 +483,11 @@ type AcceptanceVerificationObservationBasis = Omit<AcceptanceVerificationObserva
  * and a changed contract lands under a different key.
  */
 export function acceptanceVerificationObservationSubjectKey(campaignSha256: string, admissionSha256: string): string {
-  return sha256Prefixed(stableJson({ campaign_sha256: campaignSha256, admission_sha256: admissionSha256 }));
+  return sha256Prefixed(canonicalize({ campaign_sha256: campaignSha256, admission_sha256: admissionSha256 }));
 }
 
 function acceptanceVerificationObservationId(basis: AcceptanceVerificationObservationBasis): string {
-  return sha256Prefixed(stableJson([
+  return sha256Prefixed(canonicalize([
     ACCEPTANCE_VERIFICATION_OBSERVATION_PROTOCOL,
     ACCEPTANCE_VERIFICATION_OBSERVATION_KIND,
     basis.repository_root,
@@ -524,7 +520,7 @@ export function contractCarriesArchiveProjection(content: string): boolean {
 }
 
 export function waiverGrantFingerprint(grant: UserWaiverGrant): string {
-  return sha256Prefixed(stableJson(grant));
+  return sha256Prefixed(canonicalize(grant));
 }
 
 export function validateFindings(value: unknown): AcceptanceFinding[] {

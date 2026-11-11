@@ -287,6 +287,14 @@ describe('AcceptanceReceipt', () => {
     ))).toThrow('source must be generic-review');
   });
 
+  test('canonical JSON sorts keys by Unicode code point', () => {
+    // UTF-16 puts the surrogate pair (0xD800) first; code point order puts U+E000 before U+10000.
+    expect(canonicalize({ '\u{10000}': 2, '\uE000': 1 })).toBe('{"\uE000":1,"\u{10000}":2}');
+    // Lone surrogates sort by value; a UTF-8 encoder would make both U+FFFD and tie them.
+    expect(canonicalize({ '\uE000': 3, '\uDFFF': 2, '\uD800': 1 })).toBe(canonicalize({ '\uD800': 1, '\uDFFF': 2, '\uE000': 3 }));
+    expect(Object.keys(JSON.parse(canonicalize({ '\uE000': 3, '\uDFFF': 2, '\uD800': 1 })))).toEqual(['\uD800', '\uDFFF', '\uE000']);
+  });
+
   test('protocol 2 binds Codex review to generic domain source and rejects retired labels', async () => {
     const { root, home } = makeFixture();
     const contractPath = join(root, 'tasks', 'contracts', 'demo.contract.md');
