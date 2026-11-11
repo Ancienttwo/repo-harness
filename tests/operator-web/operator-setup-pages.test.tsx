@@ -168,6 +168,8 @@ describe('navigation', () => {
     const pending = { readArchitectureMap: () => new Promise<never>(() => {}), readDocsTree: () => new Promise<never>(() => {}) };
     for (const [hash, rootHash] of [['#architecture/capability.workflow-engine.pipeline', '#architecture'], ['#docs/docs/design/old.md', '#docs']]) {
       localStorage.setItem('repo-harness:operator-repository', 'repo_0000000000000000');
+      // A browser gives a hash navigation an entry without a record; happy-dom keeps the previous one.
+      window.history.replaceState(null, '');
       await mount(hash!, props(readySetup(NOW), pending));
       expect([document.querySelector('[data-repository-switch]')?.getAttribute('data-selected'), window.location.hash]).toEqual([REGISTRY.repositories[0]!.repository_id, rootHash]);
       await act(async () => root?.unmount());
@@ -182,6 +184,17 @@ describe('navigation', () => {
     await act(async () => document.querySelector<HTMLButtonElement>(`[data-switch-option="${second!.repository_id}"]`)!.click());
     await act(async () => { window.history.back(); await new Promise(resolve => setTimeout(resolve, 0)); });
     expect([switchButton().getAttribute('data-selected'), window.location.hash]).toEqual([first!.repository_id, '#architecture/capability.workflow-engine.pipeline']);
+  });
+
+  test('a reload keeps the repository that its history entry records when another tab stored a different pick', async () => {
+    const [first, second] = REGISTRY.repositories;
+    const architecture = props(readySetup(NOW), { readArchitectureMap: () => new Promise(() => {}) });
+    await mount('#architecture/capability.workflow-engine.pipeline', architecture);
+    await act(async () => root?.unmount());
+    localStorage.setItem('repo-harness:operator-repository', second!.repository_id);
+    await mount('#architecture/capability.workflow-engine.pipeline', architecture);
+    expect([document.querySelector('[data-repository-switch]')?.getAttribute('data-selected'), window.location.hash, (window.history.state as { repositoryId?: string } | null)?.repositoryId, localStorage.getItem('repo-harness:operator-repository')])
+      .toEqual([first!.repository_id, '#architecture/capability.workflow-engine.pipeline', first!.repository_id, second!.repository_id]);
   });
 
   test('1-SHELL-N1 every page in the shell routes by its hash with one repository switch; later pages have no entry or route', async () => {
