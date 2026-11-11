@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Breaking
+
+- `~/.repo-harness/mcp.local.json` must have `"version": 3`, and the workspace reader key is `capabilities.workspaceReader`. A file with no version, version 1 or 2, or `capabilities.reader` now fails closed. Fix: set `"version": 3` and rename `capabilities.reader` to `capabilities.workspaceReader`. No command rewrites the file. (#2443)
+
 ### Added
 
 - feat(seats): `--spend-credits` lets `repo-harness quota` and `repo-harness seats argv` treat an exhausted ChatGPT account as `tight` (`chatgpt tight, on credits`) while an owner authorization for credits is recorded. `seatAccountQuotas` takes an optional `{ spendCredits: boolean }` that applies only when the account state is `exhausted` and `codex.credits.has_credits` or `unlimited` is true. Without the flag every output is unchanged, and board dispatch, the console and `seats reset` keep the default. (#2251)
