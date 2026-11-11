@@ -9,6 +9,7 @@ import {
   type AgentsSettingsRequestV1,
   type AgentsSettingsV1,
 } from '../core/board/agents-settings';
+import { readJson } from './json-read';
 import { asApiError } from './operator-api-error';
 import type { OperatorApiErrorV1 } from './operator-api-error';
 import { postOperatorWrite, type OperatorWriteFailure } from './operator-write';
@@ -30,15 +31,10 @@ export type AgentsSettingsRead = SettingsRead<AgentsSettingsV1>;
 export type AgentsSettingsReader = SettingsReader<AgentsSettingsV1>;
 
 export async function fetchSettings<S>(path: string, decode: (value: unknown) => S, signal: AbortSignal): Promise<SettingsRead<S>> {
-  let response: Response;
-  try {
-    response = await fetch(path, { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
-  } catch (error) {
-    if (signal.aborted) throw error;
-    return { state: 'unavailable', reason: 'unreachable' };
-  }
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) return { state: 'unavailable', reason: asApiError(body).code === 'config_invalid' ? 'config_invalid' : 'unreachable' };
+  const answer = await readJson(path, signal);
+  if (answer.state === 'unreachable') return { state: 'unavailable', reason: 'unreachable' };
+  const { body } = answer;
+  if (!answer.ok) return { state: 'unavailable', reason: asApiError(body).code === 'config_invalid' ? 'config_invalid' : 'unreachable' };
   try { return { state: 'ok', settings: decode(body) }; } catch { return { state: 'unavailable', reason: 'settings_invalid' }; }
 }
 

@@ -25,6 +25,7 @@ import { ArchitectureSequence, SequenceLensTools } from './ArchitectureSequence'
 import { ArchitectureTopology, TopologyLensTools } from './ArchitectureTopology';
 import { defaultTopologyBase, type TopologyBase } from './architecture-topology-layout';
 import type { OperatorTranslate } from './i18n';
+import { readJson } from './json-read';
 import { answered, useObservationRefresh } from './useObservationRefresh';
 
 /** The route's refusal, or `unreachable` when the route gave no typed refusal. */
@@ -35,15 +36,10 @@ export type ArchitectureMapRead =
 export type ArchitectureMapReader = (repositoryId: string, signal: AbortSignal) => Promise<ArchitectureMapRead>;
 
 export async function fetchArchitectureMap(repositoryId: string, signal: AbortSignal): Promise<ArchitectureMapRead> {
-  let response: Response;
-  try {
-    response = await fetch(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/architecture/map`, { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
-  } catch (error) {
-    if (signal.aborted) throw error;
-    return { state: 'unavailable', reason: 'unreachable' };
-  }
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) return decodeArchitectureMapRefusal(body) ?? { state: 'unavailable', reason: 'unreachable' };
+  const answer = await readJson(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/architecture/map`, signal);
+  if (answer.state === 'unreachable') return { state: 'unavailable', reason: 'unreachable' };
+  const { body } = answer;
+  if (!answer.ok) return decodeArchitectureMapRefusal(body) ?? { state: 'unavailable', reason: 'unreachable' };
   try { return { state: 'ok', map: decodeArchitectureMap(body) }; } catch { return { state: 'unavailable', reason: 'architecture_map_invalid' }; }
 }
 

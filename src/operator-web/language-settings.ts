@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { readJson } from './json-read';
 import { asApiError, type OperatorApiErrorV1 } from './operator-api-error';
 import { postOperatorWrite, type OperatorWriteAnswer } from './operator-write';
 
@@ -49,14 +50,10 @@ function decodeDocumentationLanguage(value: unknown): DocumentationLanguage | nu
 }
 
 async function fetchLanguage<R>(path: string, decode: (value: unknown) => R, signal: AbortSignal): Promise<LanguageRead<R>> {
-  let response: Response;
-  try { response = await fetch(path, { signal, cache: 'no-store', headers: { Accept: 'application/json' } }); }
-  catch (error) {
-    if (signal.aborted) throw error;
-    return { state: 'unreachable' };
-  }
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
+  const answer = await readJson(path, signal);
+  if (answer.state === 'unreachable') return answer;
+  const { body } = answer;
+  if (!answer.ok) {
     const error = asApiError(body, UNTYPED);
     return error === UNTYPED ? { state: 'unreachable' } : { state: 'refused', error };
   }

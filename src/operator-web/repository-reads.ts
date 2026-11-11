@@ -20,6 +20,7 @@ import {
   type TestsSnapshotV1,
   type TestsUnavailableReason,
 } from '../core/operator/tests';
+import { jsonAnswer, readJson, type JsonAnswer } from './json-read';
 import { asApiError } from './operator-api-error';
 import { answered, useObservationRefresh } from './useObservationRefresh';
 
@@ -70,15 +71,10 @@ function testsReason(code: string): TestsUnavailableReason | 'unreachable' {
 }
 
 export async function fetchCiRepairs(repositoryId: string, signal: AbortSignal): Promise<CiRepairsRead> {
-  let response: Response;
-  try {
-    response = await fetch(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/tests`, { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
-  } catch (error) {
-    if (signal.aborted) throw error;
-    return { state: 'unavailable', reason: 'unreachable' };
-  }
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) return { state: 'unavailable', reason: testsReason(asApiError(body).code) };
+  const answer = await readJson(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/tests`, signal);
+  if (answer.state === 'unreachable') return { state: 'unavailable', reason: 'unreachable' };
+  const { body } = answer;
+  if (!answer.ok) return { state: 'unavailable', reason: testsReason(asApiError(body).code) };
   let repairs;
   try { repairs = decodeTestsSnapshot(body).repairs; } catch { return { state: 'unavailable', reason: 'tests_invalid' }; }
   return repairs.state === 'ok' ? { state: 'ok', issues: repairs.issues } : { state: 'unavailable', reason: repairs.reason };
@@ -124,15 +120,10 @@ const EXECUTION_REASONS: Readonly<Record<Exclude<ExecutionReason, 'unreachable'>
 };
 
 export async function fetchExecution(repositoryId: string, signal: AbortSignal): Promise<ExecutionRead> {
-  let response: Response;
-  try {
-    response = await fetch(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/execution`, { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
-  } catch (error) {
-    if (signal.aborted) throw error;
-    return { state: 'unavailable', reason: 'unreachable' };
-  }
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
+  const answer = await readJson(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/execution`, signal);
+  if (answer.state === 'unreachable') return { state: 'unavailable', reason: 'unreachable' };
+  const { body } = answer;
+  if (!answer.ok) {
     const { code } = asApiError(body);
     return { state: 'unavailable', reason: Object.hasOwn(EXECUTION_REASONS, code) ? code as ExecutionReason : 'unreachable' };
   }
@@ -177,16 +168,10 @@ const TASK_MESSAGES_REASONS: Readonly<Record<Exclude<TaskMessagesReason, 'unreac
 };
 
 export async function fetchTaskMessages(request: TaskMessagesRequest, signal: AbortSignal): Promise<TaskMessagesRead> {
-  let response: Response;
-  try {
-    response = await fetch(`/api/v1/repositories/${encodeURIComponent(request.repository_id)}/tasks/${encodeURIComponent(request.task_id)}/messages`,
-      { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
-  } catch (error) {
-    if (signal.aborted) throw error;
-    return { state: 'unavailable', reason: 'unreachable' };
-  }
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
+  const answer = await readJson(`/api/v1/repositories/${encodeURIComponent(request.repository_id)}/tasks/${encodeURIComponent(request.task_id)}/messages`, signal);
+  if (answer.state === 'unreachable') return { state: 'unavailable', reason: 'unreachable' };
+  const { body } = answer;
+  if (!answer.ok) {
     // A refusal before the read is `{error}`; a failure of the read itself is `{code}`.
     const bare = (body as { readonly code?: unknown } | null)?.code;
     const code = typeof bare === 'string' ? bare : asApiError(body).code;
@@ -219,15 +204,10 @@ export type TestsReader = (repositoryId: string, signal: AbortSignal) => Promise
 
 /** One repository's tests read: a decoded snapshot, or a refusal whose code the browser knows; anything else is `unreachable`. */
 export async function fetchTestsSnapshot(repositoryId: string, signal: AbortSignal): Promise<TestsRead> {
-  let response: Response;
-  try {
-    response = await fetch(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/tests`, { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
-  } catch (error) {
-    if (signal.aborted) throw error;
-    return { state: 'unavailable', reason: 'unreachable' };
-  }
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) return { state: 'unavailable', reason: testsReason(asApiError(body).code) };
+  const answer = await readJson(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/tests`, signal);
+  if (answer.state === 'unreachable') return { state: 'unavailable', reason: 'unreachable' };
+  const { body } = answer;
+  if (!answer.ok) return { state: 'unavailable', reason: testsReason(asApiError(body).code) };
   try { return { state: 'ok', snapshot: decodeTestsSnapshot(body) }; } catch { return { state: 'unavailable', reason: 'tests_invalid' }; }
 }
 
@@ -266,20 +246,17 @@ export type DocsTreeReader = (repositoryId: string, signal: AbortSignal) => Prom
 export type DocsFileReader = (repositoryId: string, path: string, signal: AbortSignal) => Promise<DocsRead<DocsFileV1>>;
 
 async function readDocs<T>(url: string, decode: (value: unknown) => T, signal: AbortSignal): Promise<DocsRead<T>> {
-  let response: Response;
-  try {
-    response = await fetch(url, { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
-  } catch (error) {
-    if (signal.aborted) throw error;
-    return { state: 'unavailable', reason: 'unreachable' };
-  }
-  return docsAnswer(response, decode);
+  const answer = await readJson(url, signal);
+  return answer.state === 'unreachable' ? { state: 'unavailable', reason: 'unreachable' } : docsRead(answer, decode);
 }
 
 /** One docs route answer: the decoded body, or the refusal code when the browser knows it. */
 export async function docsAnswer<T>(response: Response, decode: (value: unknown) => T): Promise<DocsRead<T>> {
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
+  return docsRead(await jsonAnswer(response), decode);
+}
+
+function docsRead<T>({ ok, body }: JsonAnswer, decode: (value: unknown) => T): DocsRead<T> {
+  if (!ok) {
     const { code } = asApiError(body);
     return { state: 'unavailable', reason: Object.hasOwn(DOCS_REASONS, code) ? code as DocsReason : 'unreachable' };
   }
