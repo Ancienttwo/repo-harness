@@ -1,8 +1,6 @@
 import { createHash } from 'crypto';
 
-function byteCompare(left: string, right: string): number {
-  return Buffer.compare(Buffer.from(left), Buffer.from(right));
-}
+import { byteCompare } from '../evidence/byte-compare';
 
 /** Stable JSON is the single byte contract for publication-domain digests. */
 export function stablePublicationJson(value: unknown): string {

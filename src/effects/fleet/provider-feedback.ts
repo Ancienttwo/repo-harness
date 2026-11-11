@@ -4,6 +4,7 @@ import { spawnSync } from 'child_process';
 import { gitSpawnSync } from '../git/runner';
 
 import { buildFeedbackDeliveryReceipt, buildFeedbackEvent, deriveFeedbackRevision, deriveReactionToken, projectRepairOffer, transitionFeedbackDeliveryReceipt, type FeedbackDeliveryTransitionInput, type FeedbackCheckConclusion, type FeedbackEventV1, type FeedbackFailingCheckV1, type FeedbackMergeability, type RepairOfferProjection } from '../../core/publication/feedback';
+import { byteCompare } from '../../core/evidence/byte-compare';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { withTaskLock } from '../locking/task-lock';
@@ -921,8 +922,8 @@ function actionableFeedbackFacts(events: readonly FeedbackEventV1[]): {
   return Object.freeze({
     failing_checks: Object.freeze(failingChecks),
     failing_check_ids: Object.freeze(failingCheckIds),
-    unresolved_review_thread_ids: Object.freeze([...unresolved].sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)))),
-    changes_requested_review_ids: Object.freeze([...changesRequested].sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)))),
+    unresolved_review_thread_ids: Object.freeze([...unresolved].sort(byteCompare)),
+    changes_requested_review_ids: Object.freeze([...changesRequested].sort(byteCompare)),
     mergeability: [...mergeabilities][0]!,
   });
 }

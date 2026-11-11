@@ -1,4 +1,5 @@
 import { assertObservationPath, observationReadFileSync as readFileSync } from '../readonly-observation';
+import { byteCompare } from '../../core/evidence/byte-compare';
 import { createHash } from 'crypto';
 import { lstatSync, readlinkSync } from 'fs';
 import { join } from 'path';
@@ -77,10 +78,6 @@ interface GitTextResult {
 interface GitBufferResult {
   readonly ok: boolean;
   readonly buf: Buffer;
-}
-
-export function byteCompare(a: string, b: string): number {
-  return Buffer.compare(Buffer.from(a), Buffer.from(b));
 }
 
 export function uniqueSorted(values: readonly string[]): string[] {
