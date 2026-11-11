@@ -58,7 +58,7 @@ const WORKTREE_SUBSTITUTION_CASES = [
   'echo $(date) && git "worktree" "add" ../x', 'echo $(date) && git worktree ad\\\nd ../x',
   'git worktree add --detach ../x $(printf HEAD)', 'git worktree add --detach ../x HEAD && echo "$(date)"',
   'diff <(ls) x; git worktree add ../x', 'cat <<A <<B\nx\nA\ny\nB\ngit worktree add ../x',
-  'git worktree add "$(mktemp -d)"', 'git worktree add ../x $(date)\n(',
+  'git worktree add ../x $(date)\n(',
 ] as const;
 beforeAll(() => { seedGlobalPackageFixture(); });
 
@@ -108,7 +108,8 @@ describe('Bash write tripwire host route', () => {
         'cat <<A > a.txt; cat <<B > b.txt\nx\nA\nrm -rf /tmp/example\nB',
         'echo "$(echo x > _ops/x)" > report.txt', 'echo `echo x > _ops/x` > report.txt',
         'echo "`echo x > _ops/x`" > report.txt', 'rm -rf $(true) _ops',
-        'echo pre$(echo x > _ops/x)post > report.txt', 'echo $(date) > report.txt',
+        'echo pre$(echo x > _ops/x)post > report.txt', 'echo "$(rm -rf _ops)"', 'x=$(cd _ops && rm -rf env)',
+        'cd src && echo "$(rm -rf ../_ops)"', 'X=1 rm -rf _ops',
         'cd $(printf src)\necho value > _ops/local.txt',
         'diff <(ls) x; rm -rf _ops', 'tee >(cat) _ops/y', 'diff <(echo x > _ops/x) x',
         "echo v > '_ops/a\nb'", 'rm ~/_ops/x', 'rm ~root/_ops/x',
@@ -139,6 +140,10 @@ describe('Bash write tripwire host route', () => {
         'cat <<EOF > report.txt\n\\$(echo x > _ops/x)\nEOF', 'cat <<EOF > report.txt\n\\`echo x > _ref/x\\`\nEOF',
         `echo value > '${root}/outside.txt'`, 'echo value > /tmp/repo-harness-bash-guard-scratch.json',
         `cp safe.txt '${root}/ok.txt' && rm -rf '${root}/scratch'`,
+        // A substitution body is a nested command; `>` and write words in quoted text are not write forms.
+        "git commit -m \"$(cat <<'EOF'\nfix(hook): map a -> b\nEOF\n)\"",
+        "gh pr create --title x --body \"$(cat <<'EOF'\n## Summary\n- run node scripts, don't rm\nEOF\n)\"",
+        'git commit -m "use `node` for the cp step"', 'ls $(pwd) | grep x > /tmp/out.txt', 'echo $(date) > report.txt',
       ]) {
         const result = invokeBash(command);
         expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 0 });
@@ -222,7 +227,7 @@ describe('Bash write tripwire host route', () => {
         ...WORKTREE_SUBSTITUTION_CASES,
         // A glob cd, a non-literal cd or a cd not joined by && leaves the directory unknown, so a relative target fails closed.
         'cd "$D" && git worktree add ../x', 'cd src; git worktree add ../x', 'cd src\ngit worktree add ../x',
-        'cd sr[c] && cd .. && git worktree add ../x', 'cd sr[c] && git worktree add ../x', 'cd _op[s] && git worktree add ../x', 'cd /tm[p] && git worktree add x',
+        'cd sr[c] && cd .. && git worktree add ../x', 'cd sr[c] && git worktree add ../x', 'FOO=1 git worktree add ../x', 'cd _op[s] && git worktree add ../x', 'cd /tm[p] && git worktree add x',
         'cd src && cd ../sr[c] && git worktree add ../x', 'cd s[r]c && git -C . worktree add ../x',
         '(cd ./s[r]c && git worktree add --detach ../x HEAD)',
       ]) {
@@ -236,12 +241,12 @@ describe('Bash write tripwire host route', () => {
         `git -C ${cwd} worktree add ${managed}/repo-wt-x`, `git -C src worktree add ../../managed/repo-wt-x`,
         `git worktree add "${managed}/repo-wt-x"`, `cd ${managed} && git worktree add repo-wt-x`,
         // The target or its directory is not certain, so the guard does not guess.
-        'git worktree add "$DIR"', 'git worktree add $DIR/x', 'git worktree add ~/x',
+        'git worktree add "$DIR"', 'git worktree add $DIR/x', 'git worktree add ~/x', 'git worktree add "$(mktemp -d)"',
         'git worktree add "$HOME/x"', 'git worktree add ../x*', 'git worktree add', 'git worktree add a b c',
         'git worktree add --orphan ../x', 'git worktree add -fq ../x', 'git -c core.x=1 worktree add ../x',
         'git -C "$D" worktree add ../x', 'git worktree list', 'git worktree remove ../x',
         'git worktree prune', 'echo "git worktree add ../x"', 'git log --grep "worktree add ../x"',
-        'command git worktree add ../x', 'FOO=1 git worktree add ../x',
+        'command git worktree add ../x',
       ]) {
         const result = invokeBash(command);
         expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 0 });

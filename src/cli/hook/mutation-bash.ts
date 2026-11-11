@@ -6,8 +6,11 @@ import { payloadString } from './hook-input';
 import { runMutationDenial, runMutationPathGuard, type Denial, type MutationGuardInput, type MutationGuardResult } from './mutation-guard';
 import { PROTECTED_REPO_DIRS } from './mutation-protected-dirs';
 
-/** `pattern` is `value` with each quoted or escaped glob, brace or tilde character escaped by a backslash. */
-interface Word { value: string; pattern: string; literal: boolean; operator?: true; quoted?: boolean }
+/**
+ * `pattern` is `value` with each quoted or escaped glob, brace or tilde character escaped by a backslash.
+ * `subs` holds the shell text of each command substitution in the word; the walk visits it as a nested command.
+ */
+interface Word { value: string; pattern: string; literal: boolean; operator?: true; quoted?: boolean; subs?: string[] }
 
 /** A glob, brace or tilde form is expanded or bounded later; a parameter or command substitution is not. */
 const pathOperand = (word: Word) => word.literal || !/[$`]/.test(word.value);
@@ -16,15 +19,158 @@ const unescapePattern = (pattern: string) => pattern.replace(/\\(.)/gs, '$1');
 
 interface WordScan { tokens: Word[]; complete: boolean }
 
-/** Quotes are removed only to locate literal operands. Expansions stay unresolved. */
-function words(line: string, final = false): WordScan | null {
+/** Substitutions nest at most this deep; deeper text is outside the grammar. */
+const MAX_NESTING = 8;
+/** An index in the scanned text, 'incomplete' when the text ends first, or null when the form is outside the grammar. */
+type Scan = number | 'incomplete' | null;
+
+/** Index of the closing backtick. */
+function backtickClose(text: string, i: number): Scan {
+  for (; i < text.length; i++) {
+    if (text[i] === '\\') { if (++i === text.length) return 'incomplete'; } else if (text[i] === '`') return i;
+  }
+  return 'incomplete';
+}
+
+/** Index of the `}` of the `${` at `i`. Only a plain parameter body is in the grammar. */
+function braceClose(text: string, i: number): Scan {
+  const close = text.indexOf('}', i + 2);
+  if (close < 0) return 'incomplete';
+  return /[(){}'"`$\\\n]/.test(text.slice(i + 2, close)) ? null : close;
+}
+
+/** Index of the closing `"` of a double-quoted string whose text starts at `i`. */
+function doubleQuoteClose(text: string, i: number, nest: number): Scan {
+  for (; i < text.length; i++) {
+    const ch = text[i]!;
+    if (ch === '\\') { if (++i === text.length) return 'incomplete'; continue; }
+    if (ch === '"') return i;
+    if (ch === '$' && text[i + 1] === '{') {
+      const close = braceClose(text, i);
+      if (typeof close !== 'number') return close;
+      i = close;
+    } else if (ch === '`' || (ch === '$' && text[i + 1] === '(')) {
+      const sub = substitution(text, i, true, nest);
+      if (typeof sub !== 'object' || !sub) return sub;
+      i = sub.end - 1;
+    }
+  }
+  return 'incomplete';
+}
+
+/** The heredoc delimiter that starts at `i`, after `<<` or `<<-` and blanks. */
+function heredocDelimiter(text: string, i: number): { delimiter: string; end: number } | null {
+  let delimiter = '';
+  for (; i < text.length && !/[\s;&|()<>]/.test(text[i]!); i++) {
+    const ch = text[i]!;
+    if (ch === '$' || ch === '`') return null;
+    if (ch === '\\') delimiter += text[++i] ?? '';
+    else if (ch === "'" || ch === '"') {
+      const close = text.indexOf(ch, i + 1);
+      if (close < 0) return null;
+      delimiter += text.slice(i + 1, close);
+      i = close;
+    } else delimiter += ch;
+  }
+  return delimiter ? { delimiter, end: i } : null;
+}
+
+/**
+ * Index of the `)` that closes the `$(` body starting at `start`. Quotes, nested substitutions, comments and heredoc
+ * bodies are skipped. `case` patterns contain an unmatched `)`, so `case` is outside the grammar.
+ */
+function substitutionClose(text: string, start: number, nest: number): Scan {
+  let depth = 0, wordStart = true;
+  const heredocs: { delimiter: string; strip: boolean }[] = [];
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]!;
+    if (ch === '\n') {
+      // Heredoc bodies start after the line that opened them.
+      for (const { delimiter, strip } of heredocs.splice(0)) {
+        for (;;) {
+          if (i === text.length) return 'incomplete';
+          const next = text.indexOf('\n', i + 1);
+          const end = next < 0 ? text.length : next;
+          const line = text.slice(i + 1, end);
+          i = end;
+          if ((strip ? line.replace(/^\t+/, '') : line) === delimiter) break;
+        }
+      }
+      wordStart = true;
+      continue;
+    }
+    const atWord = wordStart;
+    wordStart = /[\s;&|()]/.test(ch);
+    if (ch === '\\') { if (++i === text.length) return 'incomplete'; continue; }
+    if (ch === "'") { i = text.indexOf("'", i + 1); if (i < 0) return 'incomplete'; continue; }
+    if (ch === '"' || ch === '`') {
+      const close = ch === '"' ? doubleQuoteClose(text, i + 1, nest) : backtickClose(text, i + 1);
+      if (typeof close !== 'number') return close;
+      i = close;
+      continue;
+    }
+    if (ch === '$') {
+      if (text[i + 1] === "'") return null;
+      if (text[i + 1] === '{') {
+        const close = braceClose(text, i);
+        if (typeof close !== 'number') return close;
+        i = close;
+      } else if (text[i + 1] === '(') {
+        const sub = substitution(text, i, false, nest);
+        if (typeof sub !== 'object' || !sub) return sub;
+        i = sub.end - 1;
+      }
+      continue;
+    }
+    if (atWord && ch === '#') {
+      const next = text.indexOf('\n', i);
+      if (next < 0) return 'incomplete';
+      i = next - 1;
+      continue;
+    }
+    if (atWord && /^case(?:[\s;&|()<>]|$)/.test(text.slice(i, i + 5))) return null;
+    if (ch === '<' && text[i + 1] === '<' && text[i + 2] !== '<') {
+      const strip = text[i + 2] === '-';
+      let at = i + (strip ? 3 : 2);
+      while (text[at] === ' ' || text[at] === '\t') at++;
+      const found = heredocDelimiter(text, at);
+      if (!found) return null;
+      heredocs.push({ delimiter: found.delimiter, strip });
+      i = found.end - 1;
+      continue;
+    }
+    if (ch === '(') depth++;
+    else if (ch === ')' && depth-- === 0) return i;
+  }
+  return 'incomplete';
+}
+
+/** The body and end of the `$(` or backtick substitution at `at`. Arithmetic `$((` is outside the grammar. */
+function substitution(text: string, at: number, inDouble: boolean, nest: number): { body: string; end: number } | 'incomplete' | null {
+  if (nest >= MAX_NESTING) return null;
+  if (text[at] === '`') {
+    const close = backtickClose(text, at + 1);
+    if (typeof close !== 'number') return close;
+    // Inside backticks a backslash quotes only `$`, a backtick, a backslash and, within double quotes, `"`.
+    const body = text.slice(at + 1, close).replace(inDouble ? /\\([$`\\"])/g : /\\([$`\\])/g, '$1');
+    return { body, end: close + 1 };
+  }
+  if (text[at + 2] === '(') return null;
+  const close = substitutionClose(text, at + 2, nest + 1);
+  if (typeof close !== 'number') return close;
+  return { body: text.slice(at + 2, close), end: close + 1 };
+}
+
+/** Quotes are removed only to locate literal operands. Parameters stay unresolved; command substitutions are kept as nested text. */
+function words(line: string, final = false, nest = 0): WordScan | null {
   const result: Word[] = [];
   let boundary = 0;
   const unparsed = (): WordScan => ({ tokens: result.slice(0, boundary), complete: false });
   let value = '', pattern = '', literal = true, plain = true, active = false, quote = '';
+  let subs: string[] | undefined;
   const flush = () => {
-    if (active) result.push({ value, pattern, literal, quoted: !plain });
-    value = ''; pattern = ''; literal = true; plain = true; active = false;
+    if (active) result.push({ value, pattern, literal, quoted: !plain, ...(subs ? { subs } : {}) });
+    value = ''; pattern = ''; literal = true; plain = true; active = false; subs = undefined;
   };
   const quoted = (ch: string) => { value += ch; pattern += escapePattern(ch); };
   for (let i = 0; i < line.length; i++) {
@@ -36,9 +182,18 @@ function words(line: string, final = false): WordScan | null {
       if (line[i + 1] === '\n') { i++; continue; }
       quoted(line[++i]!); active = true; plain = false; continue;
     }
-    // Substitutions execute nested shell text. Refuse them rather than split the enclosing command.
-    if (quote !== "'" && (ch === '`' || (ch === '$' && line[i + 1] === '(')
-      || (!quote && (ch === '<' || ch === '>') && line[i + 1] === '('))) return unparsed();
+    // A command substitution stays one part of its word; the walk visits its body with the same rules.
+    if (quote !== "'" && (ch === '`' || (ch === '$' && line[i + 1] === '('))) {
+      const sub = substitution(line, i, quote === '"', nest);
+      if (sub === 'incomplete') return final ? unparsed() : null;
+      if (!sub) return unparsed();
+      (subs ??= []).push(sub.body);
+      value += line.slice(i, sub.end); pattern += line.slice(i, sub.end); literal = false; active = true;
+      i = sub.end - 1;
+      continue;
+    }
+    // Process substitution is outside the grammar.
+    if (!quote && (ch === '<' || ch === '>') && line[i + 1] === '(') return unparsed();
     if (quote) {
       if (ch === quote) quote = '';
       else { quoted(ch); if (quote === '"' && /[$`]/.test(ch)) literal = false; }
@@ -87,9 +242,16 @@ function scriptTargets(program: string, source: string): string[] {
   return targets;
 }
 
+/** The words after the leading variable assignments, which only set the environment of the command. */
+function commandWords(segment: readonly Word[]): readonly Word[] {
+  const args = segment.filter(word => !word.operator);
+  const first = args.findIndex(word => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(word.value));
+  return first < 0 ? [] : args.slice(first);
+}
+
 /** Patterns of the write targets of one command. */
 function commandTargets(tokens: readonly Word[], heredoc: string): string[] {
-  const args = tokens.filter(token => !token.operator);
+  const args = commandWords(tokens);
   const program = args[0]?.literal ? args[0].value : '';
   const operands = args.slice(1);
   if (/^python(?:3(?:\.\d+)?)?$/.test(program) || program === 'node') {
@@ -131,31 +293,49 @@ function cdOperand(segment: readonly Word[]): { target: Word; plain: boolean } |
   return i === segment.length - 1 ? { target: segment[i]!, plain } : null;
 }
 
-/** Quotes in an unquoted heredoc body are data. Backslashes can quote substitution markers or join lines. */
-function heredocSubstitution(body: string): boolean {
+/**
+ * The command substitutions of an unquoted heredoc body. Quotes there are data; a backslash quotes `$`, a backtick or
+ * a backslash, and a backslash-newline joins lines. Null when a substitution is outside the grammar.
+ */
+function heredocSubstitutions(body: string, nest: number): string[] | null {
+  let text = '';
   for (let i = 0; i < body.length; i++) {
-    if (body[i] === '\\') { i++; continue; }
-    if (body[i] === '`') return true;
-    if (body[i] !== '$') continue;
-    let next = i + 1;
-    while (body[next] === '\\' && body[next + 1] === '\n') next += 2;
-    if (body[next] === '(') return true;
+    if (body[i] !== '\\') text += body[i];
+    else if (body[i + 1] !== '\n') text += body[i] + (body[++i] ?? '');
+    else i++;
   }
-  return false;
+  const subs: string[] = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\\') i++;
+    else if (text[i] === '$' && text[i + 1] === '{') {
+      const close = braceClose(text, i);
+      if (typeof close !== 'number') return null;
+      i = close;
+    } else if (text[i] === '`' || (text[i] === '$' && text[i + 1] === '(')) {
+      const sub = substitution(text, i, true, nest);
+      if (typeof sub !== 'object' || !sub) return null;
+      subs.push(sub.body);
+      i = sub.end - 1;
+    }
+  }
+  return subs;
 }
 
-/** Visits each literal command segment and output redirect, tracking the working directory the same way for every caller. */
-function walkCommands(command: string, cwd: string, visit: CommandVisitor): void {
+/**
+ * Visits each literal command segment and output redirect, tracking the working directory the same way for every caller.
+ * A command substitution runs as a subshell from the directory of its command, so its body is walked from that state.
+ */
+function walkCommands(command: string, cwd: string | null, visit: CommandVisitor, nest = 0): void {
   if (command.length > 65_536) return;
-  const parsed: { tokens: Word[]; body: string }[] = [];
+  const parsed: { tokens: Word[]; body: string; bodySubs: string[] }[] = [];
   let depth = 0, unparsed = false;
   const lines = command.split('\n');
   for (let line = 0; line < lines.length; line++) {
     let text = lines[line]!;
-    let scan = words(text);
-    // A quoted argument or a backslash-newline continues on the next physical line.
-    while (!scan && line + 1 < lines.length) scan = words(text += `\n${lines[++line]}`);
-    scan ??= words(text, true)!;
+    let scan = words(text, false, nest);
+    // A quoted argument, a substitution or a backslash-newline continues on the next physical line.
+    while (!scan && line + 1 < lines.length) scan = words(text += `\n${lines[++line]}`, false, nest);
+    scan ??= words(text, true, nest)!;
     const tokens = scan.tokens;
     unparsed = !scan.complete;
     // Keep complete commands before unsupported syntax on the same line.
@@ -164,10 +344,12 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
       break;
     }
     let body = '';
+    let bodySubs: string[] = [];
     const here = tokens.findIndex(token => token.operator && token.value.startsWith('<<'));
     if (here >= 0) {
       const delimiter = tokens[here + 1];
-      if (!delimiter?.literal || delimiter.operator
+      // A heredoc on a command that spans lines would take its body from inside that command.
+      if (!delimiter?.literal || delimiter.operator || text.includes('\n')
         || tokens.filter(token => token.operator && token.value.startsWith('<<')).length !== 1) {
         unparsed = true;
         break;
@@ -179,9 +361,12 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
         content.push(lines[line]!);
       }
       body = content.join('\n');
-      if (!delimiter.quoted && heredocSubstitution(body)) unparsed = true;
+      if (!delimiter.quoted) {
+        const found = heredocSubstitutions(body, nest);
+        if (found) bodySubs = found; else unparsed = true;
+      }
     }
-    parsed.push({ tokens, body });
+    parsed.push({ tokens, body, bodySubs });
     if (unparsed) break;
   }
   // The shell rejects an input that ends inside `(`; only the Bash route denies it, as unparsed.
@@ -189,18 +374,22 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
   let commandCwd: string | null = cwd;
   // A subshell does not move the shell that started it.
   const outer: (string | null)[] = [];
-  for (const { tokens, body } of parsed) {
+  const nested = (subs: readonly string[] | undefined) => {
+    for (const sub of subs ?? []) walkCommands(sub, commandCwd, visit, nest + 1);
+  };
+  for (const { tokens, body, bodySubs } of parsed) {
     let segment: Word[] = [];
     const flush = (separator = '\n') => {
       visit.command?.(segment, body, commandCwd);
-      if (segment[0]?.value === 'cd') {
+      const args = commandWords(segment);
+      if (args[0]?.value === 'cd') {
         // Only a plain literal cd that must succeed moves a known directory. An absolute operand does not restore an
         // unknown one: origin/main kept it unknown too, and a reset would allow writes that main denies.
-        const cd = cdOperand(segment);
+        const cd = cdOperand(args);
         commandCwd = separator === '&&' && commandCwd && cd?.plain && cd.target.literal
           && globIndex(cd.target.pattern) < 0 && !cd.target.value.startsWith('-')
           ? resolve(commandCwd, cd.target.value) : null;
-      } else if (['source', '.', 'eval', 'pushd', 'popd', 'command', 'builtin'].includes(segment[0]?.value ?? '')) {
+      } else if (['source', '.', 'eval', 'pushd', 'popd', 'command', 'builtin'].includes(args[0]?.value ?? '')) {
         commandCwd = null;
       }
       segment = [];
@@ -211,14 +400,17 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
       if (token.operator && token.value === '(') { flush('('); outer.push(commandCwd); continue; }
       if (token.operator && token.value === ')') { flush(')'); commandCwd = outer.pop() ?? null; continue; }
       if (token.operator && ['>', '>>', '<', '<<', '<<-'].includes(token.value)) {
+        if (token.value.startsWith('<<')) nested(bodySubs);
         const target = tokens[++i];
         if (target?.operator && target.value === '&' && (token.value === '>' || token.value === '<')) {
           i++; // Descriptor duplication/closure, such as 2>&1, has no file operand.
           continue;
         }
+        nested(target?.subs);
         if ((token.value === '>' || token.value === '>>') && target && !target.operator && pathOperand(target)) visit.redirect?.(target, commandCwd);
         continue;
       }
+      nested(token.subs);
       segment.push(token);
     }
     flush();
@@ -470,7 +662,7 @@ const WORKTREE_ADD_VALUE_OPTIONS = new Set(['-b', '-B', '--reason']);
 
 /** The literal target of `git [-C <dir>] worktree add ...`, or null when any part is not certain. */
 function worktreeAddTarget(segment: readonly Word[], cwd: string | null): string | null {
-  const args = segment.filter(word => !word.operator);
+  const args = commandWords(segment);
   if (args[0]?.value !== 'git' || !args[0].literal) return null;
   let dir = cwd;
   let i = 1;
