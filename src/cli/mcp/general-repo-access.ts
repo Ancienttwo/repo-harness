@@ -13,6 +13,7 @@ import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import type { CodeGraphRefreshResult, CodeGraphRepoSnapshot, GeneralRepoCodeGraphAdapter } from '../tools/codegraph-reader';
 import { MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH } from './log-paths';
 import { isPathInside, toPosixPath } from './paths';
+import { isRecord } from '../../core/evidence/is-record';
 import {
   GeneralRepoAccessError,
   assertRepoWriteEnabled,
@@ -254,8 +255,8 @@ function auditPaths(input: Record<string, unknown>): string[] {
 }
 
 function recordObject(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
+  if (!isRecord(value)) return null;
+  return value;
 }
 
 function recordArray(value: unknown): Record<string, unknown>[] {

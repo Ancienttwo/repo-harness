@@ -16,6 +16,7 @@
 import type { RefImpactV1 } from 'archctx-contracts';
 import { PULL_REQUEST_FILES_REASONS, type PullRequestFiles } from './pull-request-files';
 import { isPublicDevActivityText, isPublicRepoPath } from '../public-projections/public-text';
+import { isRecord } from '../evidence/is-record';
 import { TESTS_UNAVAILABLE_REASONS, type TestsSnapshotV1, type TestsUnavailableReason } from './tests';
 
 export const OPERATOR_ARCHITECTURE_MAP_SCHEMA = 'repo-harness.architecture-map.v7' as const;
@@ -207,7 +208,7 @@ export interface ArchitectureMapRefusalV1 {
 
 /** The unavailable state that a map route refusal names; null when the body is not such a refusal. */
 export function decodeArchitectureMapRefusal(body: unknown): ArchitectureMapUnavailableV1 | null {
-  const record = (value: unknown) => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  const record = (value: unknown) => isRecord(value) ? value : null;
   const code = record(record(body)?.error)?.code;
   if (code === 'archctx_error') {
     const archctx = record(record(body)?.archctx);
@@ -473,7 +474,7 @@ const one = (...values: unknown[]): Check => value => values.includes(value);
 const nullable = (check: Check): Check => value => value === null || check(value);
 const list = (check: Check): Check => value => Array.isArray(value) && value.every(check);
 const object = (fields: Record<string, Check>): Check => value => {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (!isRecord(value)) return false;
   const record = value as Record<string, unknown>;
   return Object.keys(record).length === Object.keys(fields).length
     && Object.entries(fields).every(([key, check]) => Object.hasOwn(record, key) && check(record[key]));
