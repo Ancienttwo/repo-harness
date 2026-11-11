@@ -11,6 +11,7 @@ import {
 } from '../../effects/locking/exclusive-directory-lock';
 import { appendSegmentedLog } from '../../effects/segmented-log';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
+import { errorResult, textResult, type McpToolResult } from './result';
 import type { CodeGraphRefreshResult, CodeGraphRepoSnapshot, GeneralRepoCodeGraphAdapter } from '../tools/codegraph-reader';
 import { MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH } from './log-paths';
 import { isPathInside } from '../../effects/path-containment';
@@ -58,12 +59,6 @@ export interface GeneralRepoToolContext {
     beforeMutationCommit?: (event: { repoRoot: string; tool: string; paths: string[] }) => void;
     beforeNativeMoveCommit?: (event: { repoRoot: string; fromPath: string; toPath: string }) => void;
   };
-}
-
-export interface GeneralRepoToolResult {
-  content: Array<{ type: 'text'; text: string }>;
-  structuredContent?: unknown;
-  isError?: boolean;
 }
 
 type SnapshotState = 'ready' | 'index_lagging' | 'stale' | 'failed';
@@ -206,22 +201,6 @@ export type GeneralRepoToolName = typeof GENERAL_REPO_TOOLS[number];
 
 export { GeneralRepoAccessError };
 
-function textResult(value: unknown): GeneralRepoToolResult {
-  return {
-    content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }],
-    structuredContent: typeof value === 'string' ? undefined : value,
-  };
-}
-
-function errorResult(code: string, message: string, details?: unknown, retryable = false): GeneralRepoToolResult {
-  const value = { error: { code, message: redactMcpText(message).text, retryable, details } };
-  return {
-    content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
-    structuredContent: value,
-    isError: true,
-  };
-}
-
 function audit(ctx: GeneralRepoToolContext, tool: string, status: 'ok' | 'blocked' | 'failed', input: unknown, targetPath?: string, error?: string, details: Partial<McpAuditEntry> = {}): void {
   tryWriteMcpAuditEntry(ctx.repoRoot, {
     timestamp: new Date().toISOString(),
@@ -281,7 +260,7 @@ function numberField(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-function auditDetailsFromResult(result: GeneralRepoToolResult, input: Record<string, unknown>, durationMs: number, tool: string): Partial<McpAuditEntry> {
+function auditDetailsFromResult(result: McpToolResult, input: Record<string, unknown>, durationMs: number, tool: string): Partial<McpAuditEntry> {
   const payload = recordObject(result.structuredContent);
   if (!payload) {
     return {
@@ -451,7 +430,7 @@ function tryAppendJsonLine(repoRoot: string, path: string, entry: Record<string,
   }
 }
 
-function withCorrelationId(result: GeneralRepoToolResult, id: string): GeneralRepoToolResult {
+function withCorrelationId(result: McpToolResult, id: string): McpToolResult {
   const payload = recordObject(result.structuredContent);
   if (!payload) return result;
   const nextPayload = { ...payload, correlation_id: id };
@@ -530,7 +509,7 @@ function traceBackend(payload: Record<string, unknown> | null): string {
   return 'codegraph-or-filesystem';
 }
 
-function writeToolObservability(ctx: GeneralRepoToolContext, tool: string, status: 'ok' | 'blocked' | 'failed', input: Record<string, unknown>, result: GeneralRepoToolResult | null, durationMs: number, id: string, errorCode?: string): void {
+function writeToolObservability(ctx: GeneralRepoToolContext, tool: string, status: 'ok' | 'blocked' | 'failed', input: Record<string, unknown>, result: McpToolResult | null, durationMs: number, id: string, errorCode?: string): void {
   const payload = recordObject(result?.structuredContent);
   const codeGraph = payloadCodeGraph(payload);
   const index = payloadIndex(payload);
@@ -1682,7 +1661,7 @@ function mutationResult(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: I
   responsePath?: string;
   changedPaths?: string[];
   extra?: Record<string, unknown>;
-}): GeneralRepoToolResult {
+}): McpToolResult {
   const after = resolveRepoPath(repo, target.relativePath, ignore, { requireFile: true });
   const afterRaw = readFileSync(after.canonicalPath);
   const afterHash = sha256Hex(afterRaw);
@@ -1755,7 +1734,7 @@ function mutationResult(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: I
   });
 }
 
-function deleteMutationResult(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: IgnorePolicy, deleted: ManifestEntry, beforeHash: string, beforeSize: number): GeneralRepoToolResult {
+function deleteMutationResult(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: IgnorePolicy, deleted: ManifestEntry, beforeHash: string, beforeSize: number): McpToolResult {
   const built = buildVisibleEntrySnapshot(ctx, repo, ignore, { contentHash: false });
   const { snapshot, ignore: snapshotIgnore } = built;
   const indexState = mutationIndexState(snapshot);
@@ -1909,7 +1888,7 @@ function readFilePayload(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: 
   };
 }
 
-function getRepoCapabilities(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function getRepoCapabilities(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
   const built = buildVisibleEntrySnapshot(ctx, repo, ignore, { contentHash: false });
@@ -1939,7 +1918,7 @@ function getRepoCapabilities(ctx: GeneralRepoToolContext, args: Record<string, u
   });
 }
 
-function writeFileTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function writeFileTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   assertRepoWriteEnabled(repo);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
@@ -2004,7 +1983,7 @@ function writeFileTool(ctx: GeneralRepoToolContext, args: Record<string, unknown
   });
 }
 
-function applyPatchTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function applyPatchTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   assertRepoWriteEnabled(repo);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
@@ -2048,7 +2027,7 @@ function applyPatchTool(ctx: GeneralRepoToolContext, args: Record<string, unknow
   });
 }
 
-function movePathTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function movePathTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   assertRepoWriteEnabled(repo);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
@@ -2114,7 +2093,7 @@ function movePathTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>
   });
 }
 
-function deletePathTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function deletePathTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   assertRepoWriteEnabled(repo);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
@@ -2163,7 +2142,7 @@ function deletePathTool(ctx: GeneralRepoToolContext, args: Record<string, unknow
   });
 }
 
-function refreshRepoIndex(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function refreshRepoIndex(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   assertRepoWriteEnabled(repo);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
@@ -2302,7 +2281,7 @@ function refreshRepoIndex(ctx: GeneralRepoToolContext, args: Record<string, unkn
   });
 }
 
-function repoManifest(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function repoManifest(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
   const streamed = buildManifestPageSnapshot(ctx, repo, ignore, args);
@@ -2323,7 +2302,7 @@ function repoManifest(ctx: GeneralRepoToolContext, args: Record<string, unknown>
   });
 }
 
-function listTree(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function listTree(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
   resolveRepoPath(repo, args.path ?? '.', ignore, { allowRoot: true, requireDirectory: true });
@@ -2351,7 +2330,7 @@ function listTree(ctx: GeneralRepoToolContext, args: Record<string, unknown>): G
   });
 }
 
-function statFile(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function statFile(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
   const resolved = resolveRepoPath(repo, args.path, ignore);
@@ -2391,7 +2370,7 @@ function statFile(ctx: GeneralRepoToolContext, args: Record<string, unknown>): G
   });
 }
 
-function readFileTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function readFileTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
   const requestedPath = typeof args.snapshot_id === 'string' && args.snapshot_id.trim()
@@ -2413,7 +2392,7 @@ function readFileTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>
   });
 }
 
-function readFiles(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function readFiles(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
   const cachedSnapshot = cachedSnapshotById(repo, args.snapshot_id, undefined, { requireHashes: true });
@@ -2470,9 +2449,9 @@ function readFiles(ctx: GeneralRepoToolContext, args: Record<string, unknown>): 
   });
 }
 
-function searchText(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+function searchText(ctx: GeneralRepoToolContext, args: Record<string, unknown>): McpToolResult {
   const query = String(args.query ?? '');
-  if (!query) return errorResult('INVALID_RANGE', 'query is required');
+  if (!query) return errorResult('INVALID_RANGE', 'query is required', { retryable: false });
   const mode = args.mode === 'regex' ? 'regex' : 'literal';
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
@@ -2743,11 +2722,11 @@ export function buildGeneralRepoToolDefinitions(): GeneralRepoToolDefinition[] {
   ];
 }
 
-export async function callGeneralRepoTool(ctx: GeneralRepoToolContext, name: string, args: Record<string, unknown> = {}): Promise<GeneralRepoToolResult> {
+export async function callGeneralRepoTool(ctx: GeneralRepoToolContext, name: string, args: Record<string, unknown> = {}): Promise<McpToolResult> {
   const startedAtMs = Date.now();
   const callCorrelationId = correlationId(name);
   try {
-    let result: GeneralRepoToolResult;
+    let result: McpToolResult;
     switch (name) {
       case 'get_repo_capabilities':
         result = getRepoCapabilities(ctx, args);
@@ -2786,7 +2765,7 @@ export async function callGeneralRepoTool(ctx: GeneralRepoToolContext, name: str
         result = refreshRepoIndex(ctx, args);
         break;
       default:
-        return errorResult('INTERNAL_ADAPTER_ERROR', `tool is not a general repo reader tool: ${name}`);
+        return errorResult('INTERNAL_ADAPTER_ERROR', `tool is not a general repo reader tool: ${name}`, { retryable: false });
     }
     const durationMs = Date.now() - startedAtMs;
     const correlated = withCorrelationId(result, callCorrelationId);
@@ -2800,7 +2779,7 @@ export async function callGeneralRepoTool(ctx: GeneralRepoToolContext, name: str
     const durationMs = Date.now() - startedAtMs;
     if (error instanceof GeneralRepoAccessError) {
       const message = redactMcpText(error.message).text;
-      const result = withCorrelationId(errorResult(error.code, message, error.details, error.retryable), callCorrelationId);
+      const result = withCorrelationId(errorResult(error.code, message, { details: error.details, retryable: error.retryable }), callCorrelationId);
       audit(ctx, name, 'blocked', args, auditTargetPath(args), message, {
         ...auditDetailsFromError(error, args, durationMs, name),
         correlationId: callCorrelationId,
@@ -2809,7 +2788,7 @@ export async function callGeneralRepoTool(ctx: GeneralRepoToolContext, name: str
       return result;
     }
     const message = redactMcpText(error instanceof Error ? error.message : String(error)).text;
-    const result = withCorrelationId(errorResult('INTERNAL_ADAPTER_ERROR', message), callCorrelationId);
+    const result = withCorrelationId(errorResult('INTERNAL_ADAPTER_ERROR', message, { retryable: false }), callCorrelationId);
     audit(ctx, name, 'failed', args, auditTargetPath(args), message, {
       repoId: stringField(args.repo_id),
       operation: name,

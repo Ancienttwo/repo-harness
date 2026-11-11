@@ -495,6 +495,7 @@ describe('mcp tools', () => {
 
       const result = await callMcpTool(ctx, 'read_workflow_file', { path: '.ai/context/link.md' });
       expect(JSON.parse(result.content[0].text).error.code).toBe('POLICY_DENIED');
+      expect(result.isError).toBe(true);
       expect(JSON.stringify(result)).not.toContain('handoff-secret');
       const listed = await jsonTool(ctx, 'list_workflow_files');
       expect(listed.files.map((entry: { path: string }) => entry.path)).not.toContain('.ai/context/link.md');

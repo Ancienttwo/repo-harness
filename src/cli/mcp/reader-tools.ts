@@ -3,6 +3,7 @@ import { closeSync, lstatSync, openSync, readFileSync, readSync, statSync } from
 import { opendir } from 'fs/promises';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { redactMcpText } from './redaction';
+import { errorResult, textResult, type McpToolResult } from './result';
 import { repoHarnessPackageVersion } from './version';
 import { WorkspaceError, WorkspaceManager, type McpWorkspace, type WorkspaceResolvedPath } from './workspaces';
 import { booleanArg, buildGeneralRepoToolDefinitions, callGeneralRepoTool, isGeneralRepoTool, listGeneralRepoRecords, numberArg, type GeneralRepoToolContext } from './general-repo-access';
@@ -25,12 +26,6 @@ export interface ReaderToolContext {
   testHooks?: GeneralRepoToolContext['testHooks'];
 }
 
-export interface ReaderToolResult {
-  content: Array<{ type: 'text'; text: string }>;
-  structuredContent?: unknown;
-  isError?: boolean;
-}
-
 const EMPTY_SCHEMA = { type: 'object', additionalProperties: false };
 const DEFAULT_TREE_DEPTH = 3;
 const HARD_TREE_DEPTH = 6;
@@ -42,25 +37,9 @@ const MAX_READ_LINES = 2_000;
 const BINARY_PROBE_BYTES = 8 * 1024;
 const HARD_RESPONSE_BYTES = 262_144;
 
-function textResult(value: unknown): ReaderToolResult {
-  return {
-    content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }],
-    structuredContent: typeof value === 'string' ? undefined : value,
-  };
-}
-
-function errorResult(code: string, message: string, details?: unknown): ReaderToolResult {
-  const value = { error: { code, message: redactMcpText(message).text, details } };
-  return {
-    content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
-    structuredContent: value,
-    isError: true,
-  };
-}
-
-function errorFromWorkspace(error: unknown): ReaderToolResult {
+function errorFromWorkspace(error: unknown): McpToolResult {
   if (error instanceof WorkspaceError) {
-    return errorResult(error.code, error.message, error.details);
+    return errorResult(error.code, error.message, { details: error.details });
   }
   return errorResult('TOOL_FAILED', error instanceof Error ? error.message : String(error));
 }
@@ -192,7 +171,7 @@ export function isReaderTool(name: string, policy?: McpPolicy): boolean {
   return buildReaderToolDefinitions(policy).some((tool) => tool.name === name);
 }
 
-function readerStatus(ctx: ReaderToolContext): ReaderToolResult {
+function readerStatus(ctx: ReaderToolContext): McpToolResult {
   return textResult({
     status: 'ok',
     server: 'repo-harness-mcp',
@@ -212,7 +191,7 @@ function readerStatus(ctx: ReaderToolContext): ReaderToolResult {
   });
 }
 
-function listAllowedRoots(ctx: ReaderToolContext): ReaderToolResult {
+function listAllowedRoots(ctx: ReaderToolContext): McpToolResult {
   const generalRepos = new Map(listGeneralRepoRecords(ctx).map((repo) => [repo.repo_id, repo]));
   return textResult({
     roots: ctx.workspaceManager.listAllowedRoots().map((root) => {
@@ -228,7 +207,7 @@ function listAllowedRoots(ctx: ReaderToolContext): ReaderToolResult {
   });
 }
 
-function openWorkspace(ctx: ReaderToolContext, args: Record<string, unknown>): ReaderToolResult {
+function openWorkspace(ctx: ReaderToolContext, args: Record<string, unknown>): McpToolResult {
   const rootId = String(args.root_id ?? '').trim();
   if (!rootId) return errorResult('MISSING_ROOT_ID', 'open_workspace requires root_id');
   try {
@@ -247,7 +226,7 @@ function pushBoundedEntry(entries: Record<string, unknown>[], entry: Record<stri
   return true;
 }
 
-async function tree(ctx: ReaderToolContext, args: Record<string, unknown>): Promise<ReaderToolResult> {
+async function tree(ctx: ReaderToolContext, args: Record<string, unknown>): Promise<McpToolResult> {
   let start: WorkspaceResolvedPath;
   try {
     start = ctx.workspaceManager.resolve(String(args.workspace_id ?? ''), args.path ?? '.', { requireDirectory: false });
@@ -340,7 +319,7 @@ async function tree(ctx: ReaderToolContext, args: Record<string, unknown>): Prom
   });
 }
 
-async function readText(ctx: ReaderToolContext, args: Record<string, unknown>): Promise<ReaderToolResult> {
+async function readText(ctx: ReaderToolContext, args: Record<string, unknown>): Promise<McpToolResult> {
   let target: WorkspaceResolvedPath;
   try {
     target = ctx.workspaceManager.resolve(String(args.workspace_id ?? ''), args.path, { requireFile: true });
@@ -357,7 +336,7 @@ async function readText(ctx: ReaderToolContext, args: Record<string, unknown>): 
   const scanLimit = ctx.policy.maxFileBytes;
   const size = statSync(target.absolutePath).size;
   if (size > scanLimit) {
-    return errorResult('FILE_TOO_LARGE', `file exceeds the ${scanLimit} byte redaction scan limit; read_text serves only a whole file within the limit, and a smaller line range or max_bytes does not change that`, { size, scan_limit_bytes: scanLimit });
+    return errorResult('FILE_TOO_LARGE', `file exceeds the ${scanLimit} byte redaction scan limit; read_text serves only a whole file within the limit, and a smaller line range or max_bytes does not change that`, { details: { size, scan_limit_bytes: scanLimit } });
   }
   // Redact the whole file before the range cut: a rule such as private_key
   // needs both markers in one string. Redaction keeps line breaks, so the
@@ -411,7 +390,7 @@ async function readText(ctx: ReaderToolContext, args: Record<string, unknown>): 
   });
 }
 
-export async function callReaderTool(ctx: ReaderToolContext, name: string, args: Record<string, unknown> = {}): Promise<ReaderToolResult> {
+export async function callReaderTool(ctx: ReaderToolContext, name: string, args: Record<string, unknown> = {}): Promise<McpToolResult> {
   try {
     if (isGeneralRepoTool(name)) {
       return callGeneralRepoTool(ctx, name, args);
