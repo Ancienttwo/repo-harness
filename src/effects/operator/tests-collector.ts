@@ -287,7 +287,8 @@ export function startTestsCollector(options: TestsCollectorOptions): TestsCollec
     },
     // Keep rule: a cycle that throws keeps the last cache; each snapshot keeps its own collection time.
     keep: keepObservation,
-    failure: 'artifact_download_failed',
+    // A cycle that throws before its first success reads as pending, as it did on main.
+    failure: 'tests_pending',
     interval_ms: () => (activityPending ? Math.min(options.interval_ms ?? TESTS_COLLECT_INTERVAL_MS, TESTS_PENDING_RETRY_MS) : options.interval_ms ?? TESTS_COLLECT_INTERVAL_MS),
   });
   return Object.freeze({

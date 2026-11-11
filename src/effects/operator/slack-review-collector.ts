@@ -19,7 +19,7 @@ import {
   type SlackReviewThreadV1,
 } from '../../core/operator/slack-review';
 import { BotRegistryError, readBotRegistry } from '../bot-registry';
-import { keepMarkedObservation, startObservationLoop } from '../observation-loop';
+import { startObservationLoop } from '../observation-loop';
 import { repoHarnessHome } from '../repo-harness-home';
 
 export const SLACK_REVIEW_INTERVAL_MS = 60_000;
@@ -228,8 +228,11 @@ export function startSlackReviewCollector(options: SlackReviewCollectorOptions =
         return { state: 'unavailable', reason: error instanceof SlackReviewError ? error.reason : 'slack_unavailable' };
       }
     },
-    keep: keepMarkedObservation<SlackReviewsSnapshotV1, SlackReviewReason>((value, reason) =>
-      (reason === 'slack_rate_limited' && value.collected_at !== null ? { ...value, reason, stale: true } : slackReviewsUnavailable(reason))),
+    // Keep rule: a rate limit keeps the previous threads at their collection time, marked stale;
+    // every other failure is unavailable, so the loop state itself is unavailable.
+    keep: (previous, reason) => reason === 'slack_rate_limited' && previous.state === 'observed' && previous.value.collected_at !== null
+      ? { state: 'observed', value: { ...previous.value, reason, stale: true }, observed_at: previous.observed_at }
+      : { state: 'unavailable', reason },
     failure: 'slack_unavailable',
     interval_ms: options.interval_ms ?? SLACK_REVIEW_INTERVAL_MS,
   });

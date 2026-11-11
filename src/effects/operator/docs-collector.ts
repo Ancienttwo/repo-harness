@@ -147,7 +147,8 @@ export function startDocsCollector(options: DocsCollectorOptions): DocsCollector
     },
     // Keep rule: a cycle that throws keeps the last cache; its trees keep their own collection time.
     keep: keepObservation,
-    failure: 'docs_reader_unavailable',
+    // A cycle that throws before its first success reads as pending, as it did on main.
+    failure: 'docs_pending',
     interval_ms: () => (activityPending ? Math.min(options.interval_ms ?? DOCS_COLLECT_INTERVAL_MS, DOCS_PENDING_RETRY_MS) : options.interval_ms ?? DOCS_COLLECT_INTERVAL_MS),
   });
   return Object.freeze({

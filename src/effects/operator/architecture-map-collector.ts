@@ -125,11 +125,15 @@ export function startArchitectureMapCollector(options: ArchitectureMapCollectorO
   };
 
   const loop = startObservationLoop<RepositoryObservation<ArchitectureMapRepositoryCache>, ArchitectureMapUnavailableReason>({
-    cycle: async ({ signal, publish }) => {
+    cycle: async ({ signal, previous, publish }) => {
       let repos: readonly { readonly id: string }[];
       try { repos = readRepoHarnessRegistryStrictSnapshot({ env }).repos; }
       catch { return { state: 'observed', value: { registry: 'failed' } }; }
-      const next = new Map<string, ArchitectureMapRepositoryCache>();
+      // A repository is published when its child returns, not when the cycle ends. Each cycle starts
+      // from the previous cycle's repositories, so a repository not reached yet keeps its older map,
+      // as `states = new Map(states).set(id, cache)` did on main.
+      const next = new Map<string, ArchitectureMapRepositoryCache>(
+        previous.state === 'observed' && previous.value.registry === 'ok' ? previous.value.repositories : []);
       // One repository at a time: each child runs archctx and git over the whole tree.
       for (const repo of repos) {
         if (signal.aborted) return { state: 'unavailable', reason: 'architecture_map_process_failed' };
@@ -137,9 +141,10 @@ export function startArchitectureMapCollector(options: ArchitectureMapCollectorO
           .catch((): ArchitectureMapRepositoryCache => ({ state: 'unavailable', reason: 'architecture_map_process_failed' }));
         if (signal.aborted) return { state: 'unavailable', reason: 'architecture_map_process_failed' };
         next.set(repo.id, cache);
-        // A repository is served when its child returns, not when the cycle ends.
         publish({ registry: 'ok', repositories: new Map(next), complete: false });
       }
+      // A repository that left the registry keeps no map.
+      for (const id of [...next.keys()]) if (!repos.some(repo => repo.id === id)) next.delete(id);
       return { state: 'observed', value: { registry: 'ok', repositories: next, complete: true } };
     },
     keep: keepObservation,

@@ -26,14 +26,18 @@ describe('observation loop', () => {
   });
 
   test('the keep rule is the parameter: one loop replaces a failed value, another keeps it at its own time', async () => {
+    // A moving clock: a kept value must show the time of its own read, not the time of the failed cycle.
+    let tick = 0;
+    const movingClock = { now: () => new Date(Date.parse('2026-11-10T00:00:00.000Z') + 60_000 * tick++) };
     for (const [keep, expected] of [
       [replaceObservation, { state: 'unavailable', reason: 'cycle_failed' }],
       [keepObservation, { state: 'observed', value: 1, observed_at: '2026-11-10T00:00:00.000Z' }],
     ] as const) {
+      tick = 0;
       let attempt = 0;
       const loop = startObservationLoop<number, Reason>({
         cycle: async () => (++attempt === 1 ? { state: 'observed', value: 1 } : { state: 'unavailable', reason: 'cycle_failed' }),
-        keep, failure: 'cycle_failed', interval_ms: 1, clock: { now: () => new Date('2026-11-10T00:00:00.000Z') },
+        keep, failure: 'cycle_failed', interval_ms: 1, clock: movingClock,
       });
       try {
         await loop.settled();
@@ -41,7 +45,9 @@ describe('observation loop', () => {
         for (let tries = 0; tries < 200 && attempt < 2; tries++) { await Bun.sleep(5); await loop.settled(); }
         expect(attempt).toBeGreaterThan(1);
         await loop.settled();
+        // The kept value keeps its first observation time while the loop clock has moved on.
         expect(loop.read()).toEqual(expected);
+        expect(movingClock.now().toISOString()).not.toBe('2026-11-10T00:00:00.000Z');
       } finally { await loop.close(); }
     }
   });
@@ -79,20 +85,26 @@ describe('observation loop', () => {
   });
 
   test('the first cycle waits for first_cycle_after; a publish mid-cycle serves one entry before the cycle ends', async () => {
-    const gated = () => {
-      let release!: () => void;
-      const gate = new Promise<void>((resolve) => { release = resolve; });
-      return { gate, release };
-    };
-    const { gate, release } = gated();
+    let releaseCycle!: () => void;
+    const cycleGate = new Promise<void>((resolve) => { releaseCycle = resolve; });
+    let releaseFirst!: () => void;
+    const firstCycle = new Promise<void>((resolve) => { releaseFirst = resolve; });
     const loop = startObservationLoop<string, Reason>({
-      cycle: async ({ publish }) => { publish('first'); return { state: 'observed', value: 'second' }; },
-      keep: replaceObservation, failure: 'cycle_failed', interval_ms: 60_000, first_cycle_after: gate,
+      cycle: async ({ publish }) => {
+        publish('first');
+        // The cycle still runs here, so a reader sees the mid-cycle value, not the result.
+        await cycleGate;
+        return { state: 'observed', value: 'second' };
+      },
+      keep: replaceObservation, failure: 'cycle_failed', interval_ms: 60_000, first_cycle_after: firstCycle,
     });
     try {
       await Bun.sleep(20);
       expect(loop.read()).toEqual({ state: 'pending' });
-      release();
+      releaseFirst();
+      for (let tries = 0; tries < 200 && loop.read().state !== 'observed'; tries++) await Bun.sleep(5);
+      expect(loop.read()).toMatchObject({ state: 'observed', value: 'first' });
+      releaseCycle();
       await loop.settled();
       expect(loop.read()).toMatchObject({ state: 'observed', value: 'second' });
     } finally { await loop.close(); }

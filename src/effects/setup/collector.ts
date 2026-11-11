@@ -195,9 +195,12 @@ export function startSetupCollector(options: SetupCollectorOptions = {}): SetupC
     }
   };
   const loop = startObservationLoop<SetupSnapshotV2, SetupReason>({
-    cycle: async ({ signal }) => {
+    cycle: async ({ signal, publish, publishFailure }) => {
       const outcome = await collectSetupSnapshot({ ...options, signal })
         .catch(() => ({ ok: false as const, reason: 'setup_check_failed' as const }));
+      // Main published the setup result, then ran the probe, so a slow probe never delays the snapshot.
+      if (outcome.ok) publish(outcome.snapshot);
+      else publishFailure(outcome.reason ?? 'setup_check_failed');
       // A failed probe keeps the last probe cache, and the setup snapshot of this cycle decides on its own.
       await probe(signal).catch(() => {});
       return outcome.ok ? { state: 'observed', value: outcome.snapshot } : { state: 'unavailable', reason: outcome.reason ?? 'setup_check_failed' };

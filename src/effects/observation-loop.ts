@@ -35,13 +35,6 @@ export const replaceObservation = <T, F extends string>(_previous: ObservationSt
 export const keepObservation = <T, F extends string>(previous: ObservationState<T, F>, reason: F): ObservationKeepResult<T, F> =>
   (previous.state === 'observed' ? { state: 'observed', value: previous.value, observed_at: previous.observed_at } : { state: 'unavailable', reason });
 
-/** A failed cycle keeps the older value at its observation time, restated by `mark`; with no older value it publishes the reason. */
-export const keepMarkedObservation = <T, F extends string>(mark: (value: T, reason: F) => T) =>
-  (previous: ObservationState<T, F>, reason: F): ObservationKeepResult<T, F> =>
-    (previous.state === 'observed'
-      ? { state: 'observed', value: mark(previous.value, reason), observed_at: previous.observed_at }
-      : { state: 'unavailable', reason });
-
 /** What one cycle found: a value, or the reason it found none. */
 export type ObservationCycleResult<T, F extends string> =
   | { readonly state: 'observed'; readonly value: T }
@@ -54,6 +47,8 @@ export interface ObservationCycleContext<T, F extends string> {
   readonly previous: ObservationState<T, F>;
   /** Publishes a value before the cycle settles, so a repository is served when its read returns. */
   publish(value: T): void;
+  /** Publishes what a failed read does to the older value, so a slow later step does not delay it. */
+  publishFailure(reason: F): void;
 }
 
 /** The clock of a loop: the observation time of a published value. */
@@ -101,20 +96,22 @@ export function startObservationLoop<T, F extends string>(options: ObservationLo
   const cycle = (): Promise<void> => {
     const mine = ++generation;
     const previous = state;
+    const current = () => !closed && mine === generation;
     const context: ObservationCycleContext<T, F> = {
       signal: control.signal,
       previous,
-      publish: (value: T) => { if (!closed && mine === generation) state = observed(value); },
+      publish: (value: T) => { if (current()) state = observed(value); },
+      publishFailure: (reason: F) => { if (current()) state = settle(options.keep(previous, reason)); },
     };
     const work = (async () => {
       try {
         const result = await options.cycle(context);
-        if (closed || mine !== generation) return;
+        if (!current()) return;
         // A cycle that found no value applies the same keep rule as a cycle that threw.
         state = settle(result.state === 'observed' ? result : options.keep(previous, result.reason));
       } catch {
         // A cycle that throws applies its keep rule; the server stays up and the next cycle retries.
-        if (!closed && mine === generation) state = settle(options.keep(previous, options.failure));
+        if (current()) state = settle(options.keep(previous, options.failure));
       }
     })().then(() => {
       inflight = null;
