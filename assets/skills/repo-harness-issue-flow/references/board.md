@@ -187,8 +187,9 @@ after each claim or status change.
   not count. Any
   other new head needs sync check rows by the tier rule (`acceptor.md`
   §2.2, Sync head). A changed subject needs a new round.
-- **Batch integration.** When two or more PRs are eligible at the same
-  time, the integrator may merge them through one batch PR with one CI run.
+- **Batch integration.** This applies only when `publication.merge_queue`
+  is `off`; with `on`, the executor refuses `--batch`. When two or more PRs
+  are eligible at the same time, the integrator may merge them through one batch PR with one CI run.
   The integrator picks the members (at most 6) and their order. The batch
   branch holds only `--no-ff` merges of the member heads: no conflict
   resolution, no fix and no commit of its own. A member that conflicts or
