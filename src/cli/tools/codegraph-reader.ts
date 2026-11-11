@@ -2,6 +2,7 @@ import { spawnSync } from 'child_process';
 import { sha256Hex } from '../../core/evidence/sha256';
 import { existsSync, realpathSync } from 'fs';
 import { delimiter, isAbsolute, join, relative, resolve } from 'path';
+import { isPathInside } from '../../effects/path-containment';
 
 export interface CodeGraphIndexedFile {
   path: string;
@@ -72,11 +73,6 @@ function unavailable(message: string, latencyMs = 0, retryable = true): CodeGrap
     latencyMs,
     error: { code: 'INDEX_UNAVAILABLE', message, retryable },
   };
-}
-
-function isPathInside(root: string, candidate: string): boolean {
-  const relationship = relative(root, candidate);
-  return relationship === '' || (!isAbsolute(relationship) && relationship !== '..' && !relationship.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`));
 }
 
 function canonicalIfPresent(path: string): string {

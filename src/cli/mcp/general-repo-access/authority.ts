@@ -5,7 +5,8 @@ import {
   readRegisteredRepoHarnessRepos,
   type RepoHarnessAccessMode,
 } from '../../../effects/repo-registry';
-import { canonicalDirectory, globMatches, isPathInside, isWindowsAbsoluteLike, toPosixPath } from '../paths';
+import { isPathInside } from '../../../effects/path-containment';
+import { canonicalDirectory, globMatches, isWindowsAbsoluteLike, toPosixPath } from '../paths';
 import type { McpPolicy } from '../types';
 
 export interface RepoRecord {
