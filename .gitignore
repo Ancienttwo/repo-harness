@@ -64,6 +64,7 @@ _ops/
 
 # Repository-owned: this checkout runs the harness on itself, so it ignores its own runtime state without host state
 !.archcontext/model/constraints/
+!.archcontext/model/state-machines/
 .claude/.session-id
 .claude/.trace.jsonl
 .ai/harness/checks/post-bash-latest.json
