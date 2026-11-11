@@ -53,6 +53,9 @@ export function capabilitySourceMode(repo: string): CapabilitySourceMode {
   try {
     policy = readWorkflowPolicyFile(repo);
   } catch (error) {
+    // A file ancestor reads as an absent policy: this reader selected the
+    // registry by an existence probe. Other policy-file readers keep the throw.
+    if ((error as NodeJS.ErrnoException).code === "ENOTDIR") return "registry";
     const cause = error instanceof Error && error.cause instanceof SyntaxError ? error.cause : error;
     throw new CapabilitySourceError(
       `malformed harness policy: ${HARNESS_POLICY}: ${(cause as Error).message}`
