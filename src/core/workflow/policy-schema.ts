@@ -31,7 +31,6 @@ export const WORKFLOW_POLICY_KEYS: PolicyKeyTree = {
     base_branch: true,
     review_base: true,
     merge_back: { target: true },
-    worktree_dir_template: true,
     branch_prefix: true,
   },
   publication: {

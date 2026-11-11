@@ -34,7 +34,6 @@
     "branch_prefix": "codex/",
     "base_branch": "main",
     "review_base": "origin/main",
-    "worktree_dir_template": "{{system_tmp}}/{{repo}}-wt-{{slug}}",
     "merge_back": {
       "target": "main"
     }

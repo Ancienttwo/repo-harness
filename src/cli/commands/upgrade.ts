@@ -15,11 +15,6 @@ import {
   type LeftoverItem,
 } from '../../effects/upgrade/legacy-inventory';
 import {
-  formatWorktreeTemplateOutcome,
-  runWorktreeTemplateMigration,
-  type WorktreeTemplateOutcome,
-} from '../../effects/upgrade/worktree-template-migration';
-import {
   applyUpgradeDecisions,
   decisionSnapshot,
   isRepoRelativeDecisionPath,
@@ -69,8 +64,6 @@ export interface UpgradeOptions {
   readonly scope?: 'project' | 'global' | 'all';
   readonly apply?: boolean;
   readonly includeStateArtifacts?: boolean;
-  /** With `apply`, rewrite a legacy policy worktree template. Without it the item is reported only. */
-  readonly migrateWorktreeTemplate?: boolean;
   readonly env?: NodeJS.ProcessEnv;
 }
 
@@ -79,8 +72,6 @@ export interface UpgradeDependencies {
   readonly beforeRemove?: (item: LeftoverItem) => void;
   /** Runs after the real copy, before staging and source fences. */
   readonly afterStage?: (item: LeftoverItem, staging: string) => void;
-  /** Runs after the policy template is planned and before it is written. */
-  readonly beforeTemplateWrite?: () => void;
   /** Runs before each legacy worktree removal. */
   readonly beforeLegacyWorktreeRemove?: (candidate: LegacyWorktreeCandidate) => void;
 }
@@ -97,7 +88,6 @@ export interface UpgradeResult {
   readonly transactionId?: string;
   readonly backupPath?: string;
   readonly projectBackupPath?: string;
-  readonly worktreeTemplate?: WorktreeTemplateOutcome;
   readonly legacyWorktrees?: LegacyWorktreeOutcome;
   readonly error?: string;
 }
@@ -436,13 +426,6 @@ function applyLocked(
     projectBackupPath: projectBackup?.manifestPath, ...(error ? { error } : {}) };
 }
 
-function withWorktreeTemplate(result: UpgradeResult, outcome: WorktreeTemplateOutcome | undefined): UpgradeResult {
-  if (!outcome?.item && !outcome?.error) return result;
-  const pending = !result.apply && outcome.item?.action === 'rewrite';
-  const error = result.error ?? outcome.error;
-  return { ...result, worktreeTemplate: outcome, exitCode: result.exitCode === 1 || pending || outcome.error ? 1 : 0, ...(error ? { error } : {}) };
-}
-
 function withLegacyWorktrees(result: UpgradeResult, outcome: LegacyWorktreeOutcome | undefined): UpgradeResult {
   if (!outcome || (outcome.candidates.length === 0 && !outcome.error)) return result;
   const pending = !result.apply && outcome.candidates.some((candidate) => candidate.verdict === 'remove' || candidate.verdict === 'deferred');
@@ -473,10 +456,8 @@ export function runUpgrade(opts: UpgradeOptions = {}, dependencies: UpgradeDepen
     const emptyResult: UpgradeResult = { items, apply, exitCode: apply ? 0 : items.length > 0 ? 1 : 0,
       removedPaths: [], refreshedPaths: [], keptPaths: [...new Set(items.filter((item) => !removable(item)).map((item) => item.path))], operatorKept };
     const callerCwd = resolve(opts.callerCwd ?? process.cwd());
-    // A failed leftover apply leaves the policy untouched and the legacy worktrees in place; both are reported.
-    const finish = (result: UpgradeResult) => withLegacyWorktrees(withWorktreeTemplate(result,
-      scope === 'global' ? undefined : runWorktreeTemplateMigration(cwd, apply && opts.migrateWorktreeTemplate === true && !result.error,
-        dependencies.beforeTemplateWrite)),
+    // A failed leftover apply leaves the legacy worktrees in place and reports them.
+    const finish = (result: UpgradeResult) => withLegacyWorktrees(result,
       scope === 'global' ? undefined : runLegacyWorktreeCleanup(cwd, callerCwd, env, apply && !result.error, { beforeRemove: dependencies.beforeLegacyWorktreeRemove }));
     if (!apply || !items.some(removable)) return finish(emptyResult);
     return finish(withRuntimeTransactionLock(globalRuntimeScope(env), (lock) => {
@@ -502,7 +483,6 @@ export function formatUpgradeResult(result: UpgradeResult, asJson = false): stri
     for (const item of items) lines.push(`  ${item.path}: ${item.ownership}; proof=${item.proof ?? 'none'}; ${item.action}${item.reason ? `; ${item.reason}` : ''}`);
   }
   if (result.items.length === 0) lines.push('No leftovers.');
-  if (result.worktreeTemplate) lines.push(...formatWorktreeTemplateOutcome(result.worktreeTemplate, result.apply));
   if (result.operatorKept.length > 0) {
     lines.push(`Operator kept (${UPGRADE_DECISIONS_PATH}):`);
     for (const item of result.operatorKept) lines.push(`  ${item.path}`);
@@ -527,9 +507,6 @@ export function leftoverCheckWarning(reason: string): string {
 export function formatUpgradeSummaryLine(result: UpgradeResult): string {
   if (result.error) return leftoverCheckWarning(redactProcessOutput(result.error.trim()));
   const parts = [formatLegacyLeftoverSummary(result.items)];
-  if (result.worktreeTemplate?.item?.action === 'rewrite') {
-    parts.push('policy worktree template migration pending; run repo-harness upgrade --scope project --apply --migrate-worktree-template');
-  }
   const candidates = result.legacyWorktrees?.candidates ?? [];
   const deferred = candidates.filter((candidate) => candidate.verdict === 'deferred').length;
   const total = candidates.filter((candidate) => candidate.verdict === 'remove').length + deferred;
@@ -640,8 +617,7 @@ function runRegisteredUpgradeCommand(opts: UpgradeCommandOptions, command: Comma
     process.exitCode = 2;
     return;
   }
-  const result = runRegisteredUpgrade({ apply: opts.apply, expectedRevision: opts.expectedRevision,
-    migrateWorktreeTemplate: opts.migrateWorktreeTemplate, callerCwd: process.cwd() });
+  const result = runRegisteredUpgrade({ apply: opts.apply, expectedRevision: opts.expectedRevision, callerCwd: process.cwd() });
   process.stdout.write(formatRegisteredUpgradeResult(result, opts.json));
   if (result.error && opts.json) process.stderr.write(`${result.error}\n`);
   process.exitCode = result.exitCode;
@@ -653,7 +629,6 @@ export function buildUpgradeCommand(): Command {
     .option('--scope <scope>', 'project|global|all', 'all')
     .option('--apply', 'Back up and remove verified owned leftovers')
     .option('--include-state-artifacts', 'Include proven owned obsolete state artifacts with --apply')
-    .option('--migrate-worktree-template', 'With --apply, rewrite a legacy policy worktree template to {{system_tmp}}')
     .option('--registered', 'Preview init refresh and project upgrade for every registered repo; never commits')
     .option('--expected-revision <digest>', 'With --registered --apply: exact plan revision from the preview')
     .option('--json', 'Print JSON')

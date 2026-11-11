@@ -50,14 +50,14 @@ describe("canonical adoption plan", () => {
   "sidecar_research": { "default": true },
   "agentic_development": { "routing": { "simple": "waza" } },
   "context": { "capability_source": "archcontext", "capability_match_rule": "old" },
-  "worktree_strategy": { "base_branch": "trunk" }
+  "worktree_strategy": { "base_branch": "trunk", "worktree_dir_template": "../{{repo}}-wt-{{slug}}" }
 }
 `;
       writeFileSync(join(repo, ".ai/harness/policy.json"), owner);
       const plan = planAdoption({ repoRoot: repo, mode: "standard", apply: true });
       expect(plan.warnings).toContainEqual({
         code: "unknown-policy-keys",
-        message: "Removed policy keys that no reader uses: agentic_development.routing.simple, context.capability_match_rule, external_tooling.herdr.url, operations.dir, sidecar_research.default",
+        message: "Removed policy keys that no reader uses: agentic_development.routing.simple, context.capability_match_rule, external_tooling.herdr.url, operations.dir, sidecar_research.default, worktree_strategy.worktree_dir_template",
         risk: "medium",
       });
       expect(applyAdoptionPlan(plan).ok).toBe(true);
@@ -69,7 +69,7 @@ describe("canonical adoption plan", () => {
         operations: { agent_writable_private_dirs: ["_ops/notes"] },
         external_tooling: { agent_fleet: { managed_agents: ["explorer", "orchestrator"] } },
         context: { capability_source: "archcontext" },
-        worktree_strategy: { base_branch: "trunk", worktree_dir_template: "{{system_tmp}}/{{repo}}-wt-{{slug}}" },
+        worktree_strategy: { base_branch: "trunk" },
         documentation: { language: "en" },
         internal_pr_authors: [],
       });
@@ -98,7 +98,7 @@ describe("canonical adoption plan", () => {
       const generatedPolicy = JSON.parse(policyOperation.content);
       expect(Object.keys(generatedPolicy)).toEqual(["context", "worktree_strategy", "documentation", "internal_pr_authors"]);
       expect(generatedPolicy.context).toEqual({ capability_source: "registry" });
-      expect(Object.keys(generatedPolicy.worktree_strategy)).toEqual(["worktree_dir_template", "base_branch", "review_base", "merge_back"]);
+      expect(Object.keys(generatedPolicy.worktree_strategy)).toEqual(["base_branch", "review_base", "merge_back"]);
       expect(plan.operations.some((operation) => operation.path === ".ai/context/capabilities.json")).toBe(true);
       expect(plan.operations.some((operation) => operation.path === "deploy/README.md")).toBe(true);
       expect(plan.operations.some((operation) => operation.path === ".ai/hooks/README.md")).toBe(true);

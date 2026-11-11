@@ -72,7 +72,6 @@ export interface RegisteredUpgradeResult {
 export interface RegisteredUpgradeOptions {
   readonly apply?: boolean;
   readonly expectedRevision?: string;
-  readonly migrateWorktreeTemplate?: boolean;
   readonly env?: NodeJS.ProcessEnv;
   /** The real process cwd. The sweep and the legacy worktree cleanup never remove it or anything below it. */
   readonly callerCwd?: string;
@@ -176,7 +175,7 @@ function previewRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.P
     operations: planned.plan.operations.filter((operation) => operation.status === 'planned')
       .map((operation) => ({ kind: operation.kind, ...(operation.path === undefined ? {} : { path: operation.path }) })),
   };
-  const upgrade = runUpgrade({ cwd: path, callerCwd, scope: 'project', apply: false, migrateWorktreeTemplate: opts.migrateWorktreeTemplate, env });
+  const upgrade = runUpgrade({ cwd: path, callerCwd, scope: 'project', apply: false, env });
   const errors = [
     ...(planned.error ? [`init plan failed: ${planned.error.code} - ${planned.error.message}`] : []),
     ...(upgrade.error ? [`project upgrade check failed: ${upgrade.error}`] : []),
@@ -219,7 +218,7 @@ function applyRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.Pro
   if (!adoption.ok) return { path, status: 'failed', init, error: `init refresh failed: ${errors.join('; ') || 'not ok'}` };
 
   // The upgrade also removes provable legacy sibling worktrees; the sweep then handles the managed root.
-  const upgrade = runUpgrade({ cwd: path, callerCwd, scope: 'project', apply: true, migrateWorktreeTemplate: opts.migrateWorktreeTemplate, env });
+  const upgrade = runUpgrade({ cwd: path, callerCwd, scope: 'project', apply: true, env });
   if (upgrade.error) return { path, status: 'failed', init, upgrade, error: `project upgrade failed: ${upgrade.error}` };
 
   const sweep: RegisteredSweep = { ran: true, report: sweepManagedWorktrees(path, callerCwd, env, { deadlineMs: SWEEP_DEADLINE_MS, approved }) };

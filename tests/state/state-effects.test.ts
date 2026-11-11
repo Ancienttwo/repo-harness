@@ -34,7 +34,6 @@ import { contentRevision, sha256 } from '../../src/effects/state/collect-state-i
 import { DEFAULT_RETENTION_DAYS, readRetentionConfig } from '../../src/effects/artifact-retention';
 import { mergeBackTarget } from '../../src/effects/state/coordination-worktree-topology';
 import { capabilitySource } from '../../src/effects/architecture/archctx-provider';
-import { planWorktreeTemplate } from '../../src/effects/upgrade/worktree-template-migration';
 import { assertArchitecturePolicySelection } from '../../src/cli/installer/install-profile';
 
 describe('Effective State content revision', () => {
@@ -434,7 +433,6 @@ describe('each policy reader validates only the keys it reads', () => {
     const repo = repoWith('array-root', []);
     expect(readRetentionConfig(repo).days).toBe(DEFAULT_RETENTION_DAYS);
     expect(capabilitySource(repo)).toBe('registry');
-    expect(planWorktreeTemplate(repo)).toEqual({});
     expect(() => assertArchitecturePolicySelection(repo, ['product'], env)).not.toThrow();
   });
 });

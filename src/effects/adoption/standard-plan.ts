@@ -1,4 +1,3 @@
-import { DEFAULT_WORKTREE_TEMPLATE } from "../../core/worktree-location.mjs";
 import { sha256Prefixed } from "../../core/evidence/sha256";
 import { existsSync, lstatSync, readdirSync, readFileSync } from "fs";
 import { basename, join, relative, resolve, sep } from "path";
@@ -289,10 +288,7 @@ function branchKeysFor(opts: StandardPlanOptions, policyCurrent: JsonObject | un
 export function defaultPolicy(documentationLanguage: string, branchKeys: JsonObject = {}): JsonObject {
   return {
     context: { capability_source: "registry" },
-    worktree_strategy: {
-      worktree_dir_template: DEFAULT_WORKTREE_TEMPLATE,
-      ...branchKeys,
-    },
+    ...(Object.keys(branchKeys).length > 0 ? { worktree_strategy: branchKeys } : {}),
     documentation: { language: requireDocumentationLanguage(documentationLanguage) },
     internal_pr_authors: [],
   };

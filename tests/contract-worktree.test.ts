@@ -14,9 +14,8 @@ import {
 } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { DEFAULT_WORKTREE_TEMPLATE, defaultWorktreeTemplate } from "../src/core/worktree-location.mjs";
+import { defaultWorktreeTemplate } from "../src/core/worktree-location.mjs";
 
-import { runUpgrade } from '../src/cli/commands/upgrade';
 import { sweepManagedWorktrees } from '../src/effects/state/coordination-worktree-topology';
 import { defaultPolicy } from "../src/effects/adoption/standard-plan";
 import { copyHelpers, ROOT } from "./helpers/helper-script-fixture";
@@ -512,7 +511,7 @@ describe("contract-worktree helper integration", () => {
 });
 
 describe('task worktree location', () => {
-  test('the policy default and helper default agree, and start uses the managed test root', () => {
+  test('a policy without a location key uses the package default, and start uses the managed test root', () => {
     const expectedTemplate = defaultWorktreeTemplate(process.platform, tmpdir());
     const parent = tmpWorkspace('worktree-default');
     const cwd = join(parent, 'repo');
@@ -522,7 +521,7 @@ describe('task worktree location', () => {
       copyHelpers(cwd); initGitRepo(cwd);
       mkdirSync(join(cwd, '.ai/harness'), { recursive: true });
       writeFileSync(join(cwd, '.ai/harness/policy.json'), JSON.stringify(defaultPolicy('en')));
-      expect(JSON.parse(readFileSync(join(cwd, '.ai/harness/policy.json'), 'utf8')).worktree_strategy.worktree_dir_template).toBe(DEFAULT_WORKTREE_TEMPLATE);
+      expect(defaultPolicy('en')).not.toHaveProperty('worktree_strategy');
       const helperTemplate = run(process.execPath, ['scripts/contract-worktree-runtime.ts', 'default-template'], cwd);
       expect(helperTemplate.status, helperTemplate.stderr).toBe(0); expect(helperTemplate.stdout.trim()).toBe(expectedTemplate);
       commitAll(cwd, 'location fixture');
@@ -540,42 +539,17 @@ describe('task worktree location', () => {
     } finally { rmSync(parent, { recursive: true, force: true }); }
   }, 15000);
 
-  test('start keeps a stored downstream location template', () => {
-    const parent = tmpWorkspace('worktree-stored'); const cwd = join(parent, 'repo'); mkdirSync(cwd);
+  test('start ignores a location template in the policy', () => {
+    const parent = tmpWorkspace('worktree-stored'); const cwd = join(parent, 'repo'); const managed = join(parent, 'managed');
+    mkdirSync(cwd); mkdirSync(managed);
     try {
       copyHelpers(cwd); initGitRepo(cwd);
-      writeFileSync(join(cwd, '.ai/harness/policy.json'), JSON.stringify({ worktree_strategy: { worktree_dir_template: '../stored-{{repo}}-{{slug}}' } }));
+      writeFileSync(join(cwd, '.ai/harness/policy.json'), JSON.stringify({ worktree_strategy: { worktree_dir_template: '/custom/{{slug}}' } }));
       commitAll(cwd, 'stored location fixture');
-      const result = start(['--issue', '123', '--json'], cwd);
-      expect(result.status).toBe(0); expect(JSON.parse(result.stdout).worktree_path).toBe(join(parent, 'stored-repo-123-location'));
-      expect(JSON.parse(readFileSync(join(cwd, '.ai/harness/policy.json'), 'utf8')).worktree_strategy.worktree_dir_template).toBe('../stored-{{repo}}-{{slug}}');
+      const result = start(['--issue', '123', '--json'], cwd, { REPO_HARNESS_WORKTREE_ROOT: managed });
+      expect(result.status, result.stderr).toBe(0); expect(JSON.parse(result.stdout).worktree_path).toBe(join(managed, 'repo-wt-123-location'));
     } finally { rmSync(parent, { recursive: true, force: true }); }
   }, 15000);
-
-  test.each(['../{{repo}}-wt-{{slug}}', '/tmp/{{repo}}-wt-{{slug}}'])('after the upgrade migration of %s, start uses the managed root and the sweep keeps the worktree', legacy => {
-    const parent = tmpWorkspace('worktree-migrated');
-    const cwd = join(parent, 'repo'); const managed = join(parent, 'managed'); const home = join(parent, 'home');
-    mkdirSync(cwd); mkdirSync(managed); mkdirSync(home);
-    try {
-      copyHelpers(cwd); initGitRepo(cwd);
-      writeFileSync(join(cwd, '.ai/harness/policy.json'), `${JSON.stringify({ worktree_strategy: { worktree_dir_template: legacy } }, null, 2)}\n`);
-      commitAll(cwd, 'legacy location fixture');
-      const migrated = runUpgrade({ cwd, home, packageRoot: ROOT, scope: 'project', apply: true, migrateWorktreeTemplate: true });
-      expect(migrated.exitCode, migrated.error).toBe(0);
-      expect(JSON.parse(readFileSync(join(cwd, '.ai/harness/policy.json'), 'utf8')).worktree_strategy.worktree_dir_template).toBe(DEFAULT_WORKTREE_TEMPLATE);
-      // Upgrade apply removes the owned helper copies; restore the fixture the start command runs from.
-      copyHelpers(cwd);
-      commitAll(cwd, 'migrated location');
-      run('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], cwd);
-      const env = { REPO_HARNESS_WORKTREE_ROOT: managed };
-      const result = start(['--issue', '123', '--json'], cwd, env);
-      expect(result.status, result.stderr).toBe(0);
-      const path = join(managed, 'repo-wt-123-location');
-      expect(JSON.parse(result.stdout).worktree_path).toBe(path);
-      expect(sweepManagedWorktrees(cwd, cwd, { ...process.env, ...env }, { deadlineMs: 60_000 })).toContain('marker reference');
-      expect(existsSync(path)).toBe(true);
-    } finally { rmSync(parent, { recursive: true, force: true }); }
-  }, 30000);
 
   test.each(['directory', 'file', 'symlink'])('start refuses an existing %s at the default target', kind => {
     const parent = tmpWorkspace('worktree-existing');
