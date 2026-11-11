@@ -6,7 +6,7 @@ All notable changes to this skill are documented here.
 
 ### Added
 
-- feat(seats): `--spend-credits` lets `repo-harness quota` and `repo-harness seats argv` treat an exhausted ChatGPT account as `tight` (`chatgpt tight, on credits`) while an owner authorization for credits is recorded. `seatAccountQuotas` takes an optional `{ spendCredits: boolean }` that applies only when the account state is `exhausted`, `codex.rate_limit_reached_type` is null and `codex.credits.has_credits` or `unlimited` is true. Without the flag every output is unchanged, and board dispatch, the console and `seats reset` keep the default. (#2251)
+- feat(seats): `--spend-credits` lets `repo-harness quota` and `repo-harness seats argv` treat an exhausted ChatGPT account as `tight` (`chatgpt tight, on credits`) while an owner authorization for credits is recorded. `seatAccountQuotas` takes an optional `{ spendCredits: boolean }` that applies only when the account state is `exhausted` and `codex.credits.has_credits` or `unlimited` is true. Without the flag every output is unchanged, and board dispatch, the console and `seats reset` keep the default. (#2251)
 
 ### Changed
 
