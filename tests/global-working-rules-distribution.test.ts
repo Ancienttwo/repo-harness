@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, lstatSync, readFileSync } from "fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import {
   formatGlobalContextWrite,
@@ -342,5 +342,29 @@ describe("root rule invariants", () => {
     expect(spec).not.toContain("docs/issue-flow.md");
     expect(onboarding).toContain("(../assets/skills/repo-harness-issue-flow/SKILL.md)");
     expect(onboarding).not.toContain("(issue-flow.md)");
+  });
+
+  test("shipped text anchors name a symbol that the cited file holds, never a line number", () => {
+    const shipped = (dir: string): string[] =>
+      readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((entry) => {
+        const path = `${dir}/${entry.name}`;
+        if (entry.isDirectory()) return shipped(path);
+        return entry.name.endsWith(".md") ? [path] : [];
+      });
+    const target = "[A-Za-z0-9_./-]+\\.(?:ts|tsx|sh|yml|md)";
+    const symbolAnchor = new RegExp(`(${target})#([A-Za-z_][A-Za-z0-9_]*)(?![\\w-])`, "g");
+    const lineAnchor = new RegExp(`${target}:\\d+`, "g");
+    const problems: string[] = [];
+    for (const file of shipped("assets")) {
+      const text = readFileSync(join(ROOT, file), "utf-8");
+      for (const line of text.match(lineAnchor) ?? []) problems.push(`${file}: line anchor ${line}`);
+      for (const [, path, name] of text.matchAll(symbolAnchor)) {
+        const cited = join(ROOT, path!);
+        const holdsName = existsSync(cited)
+          && new RegExp(`(?<![A-Za-z0-9_])${name}(?![A-Za-z0-9_])`).test(readFileSync(cited, "utf-8"));
+        if (!holdsName) problems.push(`${file}: ${path}#${name} is not in the cited file`);
+      }
+    }
+    expect(problems).toEqual([]);
   });
 });
