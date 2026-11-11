@@ -161,11 +161,24 @@ function readStorage(key: string): string | null {
 }
 
 // The current history entry's record gives its repository. An entry without a record takes the repository
-// that the app already shows; only a new app with neither falls back to the latest pick in localStorage.
+// that the app already shows; a new app with neither reads the URL repository, then the latest pick in localStorage.
 function recordedRepository(): string | null {
   if (typeof window === 'undefined') return null;
   const recorded: unknown = (window.history.state as { repositoryId?: unknown } | null)?.repositoryId;
   return typeof recorded === 'string' ? recorded : null;
+}
+
+// The page URL names the repository, so a context with no record (a new tab, a pasted or saved link) opens it.
+const REPOSITORY_QUERY_KEY = 'repository';
+
+function linkedRepository(): string | null {
+  return typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get(REPOSITORY_QUERY_KEY);
+}
+
+function repositoryUrl(repositoryId: string): string {
+  const params = new URLSearchParams(window.location.search);
+  params.set(REPOSITORY_QUERY_KEY, repositoryId);
+  return `${window.location.pathname}?${params}${window.location.hash}`;
 }
 
 function writeStorage(key: string, value: string | null): void {
@@ -338,7 +351,9 @@ export function OperatorApp({
   readDocsTree = fetchDocsTree,
   readDocsFile = fetchDocsFile,
 }: OperatorAppProps) {
-  const [repositoryId, setRepositoryId] = useState<string | null>(() => recordedRepository() ?? readStorage(OPERATOR_REPOSITORY_STORAGE_KEY));
+  // The URL repository of a context with no record. It is not recorded, written or replaced until the registry names it.
+  const [linkRepository] = useState(() => recordedRepository() === null ? linkedRepository() : null);
+  const [repositoryId, setRepositoryId] = useState<string | null>(() => recordedRepository() ?? linkRepository ?? readStorage(OPERATOR_REPOSITORY_STORAGE_KEY));
   const [place, setPlace] = useState<WorkspaceLocation>(() => initialPlace ?? parseWorkspaceLocation(typeof window === 'undefined' ? '' : window.location.hash));
   const [refreshGeneration, setRefreshGeneration] = useState(0);
   const { locale, setLocale, t } = useLocale(initialLocale);
@@ -359,9 +374,12 @@ export function OperatorApp({
   const firstRegistered = registered[0]?.repository_id ?? null;
   const activeRepository = registered.find(repo => repo.repository_id === repositoryId) ?? null;
   if (repositoryId === null && firstRegistered !== null) setRepositoryId(firstRegistered);
-  // A pin that the loaded list does not name (an unregistered repository) is replaced in an effect,
+  const linkUnverified = linkRepository !== null && repositoryId === linkRepository && activeRepository === null;
+  // A link that names an unregistered repository fails closed: the page shows an error and no other repository.
+  const rejectedLink = linkUnverified && repositories.kind === 'ready' ? linkRepository : null;
+  // Another pin that the loaded list does not name (an unregistered repository) is replaced in an effect,
   // because the replacement can also rewrite the URL.
-  const stalePin = repositoryId !== null && repositories.kind === 'ready' && activeRepository === null;
+  const stalePin = repositoryId !== null && repositories.kind === 'ready' && activeRepository === null && rejectedLink === null;
   // localStorage keeps the latest pick. A restored entry does not overwrite it; a seed replaces only a stored id
   // that is missing or no longer registered.
   const storedPick = readStorage(OPERATOR_REPOSITORY_STORAGE_KEY);
@@ -411,10 +429,10 @@ export function OperatorApp({
   const boardParents = useBoardParents(readBoardParents, workspace === 'board' && boardLayout(place.item) === 'list' && boardSubject === null ? boardListRepository(boardOptions, boardRepository) : null, refreshGeneration);
 
   // Each history entry records the repository it shows, so Back and Forward restore a module id or docs path
-  // together with its repository.
+  // together with its repository. Its URL names the same repository, so a link that opens a new context keeps it.
   useEffect(() => {
-    if (repositoryId !== null) window.history.replaceState({ repositoryId }, '');
-  }, [repositoryId, place]);
+    if (repositoryId !== null && !linkUnverified) window.history.replaceState({ repositoryId }, '', repositoryUrl(repositoryId));
+  }, [repositoryId, place, linkUnverified]);
   useEffect(() => {
     const restore = () => {
       setPlace(parseWorkspaceLocation(window.location.hash));
@@ -523,6 +541,9 @@ export function OperatorApp({
           </Button>
         </header>
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-1 pb-10 rail:px-6" data-workspace={workspace}>
+          {rejectedLink !== null && <p role="alert" className="rounded-xl border border-kumo-line bg-kumo-base p-4 text-sm text-kumo-default" data-repository-link-unknown={rejectedLink}>
+            {t('repository.linkUnknown', { id: rejectedLink })}
+          </p>}
           {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
           {workspace === 'board' && <BoardPage layout={boardLayout(place.item)} place={boardSubject} room={repositoryRoom} view={board} readBoard={readBoard} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={theme.mode} readBoardParents={readBoardParents} readBoardSeats={readBoardSeats} parents={boardParents} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
             repositories={boardOptions} chosenRepository={boardRepository} onRepository={chooseBoardRepository} setup={{ repositories, devActivity, botAccess }} quota={quota.view} />}

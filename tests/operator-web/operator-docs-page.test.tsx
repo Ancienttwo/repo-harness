@@ -36,15 +36,17 @@ let requests: string[] = [];
 let answerFor: (url: URL) => DocsWireAnswer;
 const realFetch = globalThis.fetch;
 
-/** The docs routes as the server answers them, from the wire-format fixtures. */
+/** The docs routes of each registered repository as the server answers them, from the wire-format fixtures. */
 function serveDocs(url: URL): DocsWireAnswer {
-  if (url.pathname === `/api/v1/repositories/${REPOSITORY}/docs/tree`) return docsTreeAnswer(REPOSITORY, NOW);
-  if (url.pathname === `/api/v1/repositories/${REPOSITORY}/docs/file`) return docsFileAnswer(REPOSITORY, url.searchParams.get('path') ?? '');
+  const [, repository, route] = /^\/api\/v1\/repositories\/([^/]+)\/docs\/(tree|file)$/u.exec(url.pathname) ?? [];
+  if (repository !== undefined && REGISTRY.repositories.some(row => row.repository_id === repository)) {
+    return route === 'tree' ? docsTreeAnswer(repository, NOW) : docsFileAnswer(repository, url.searchParams.get('path') ?? '');
+  }
   return { status: 404, body: { error: { code: 'not_found', message: 'No route.', next_action: 'None.' } } };
 }
 
-beforeEach(() => {
-  window = new Window({ url: 'http://127.0.0.1:4318/' });
+function installDom(url = 'http://127.0.0.1:4318/'): void {
+  window = new Window({ url });
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
     value: (media: string) => ({ matches: false, media, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }),
@@ -54,6 +56,10 @@ beforeEach(() => {
     HTMLElement: window.HTMLElement, Element: window.Element, Node: window.Node, Event: window.Event,
     MouseEvent: window.MouseEvent, KeyboardEvent: window.KeyboardEvent, IS_REACT_ACT_ENVIRONMENT: true,
   });
+}
+
+beforeEach(() => {
+  installDom();
   requests = [];
   mermaidCalls.length = 0;
   answerFor = serveDocs;
@@ -96,7 +102,7 @@ async function mount(hash: string, appProps: OperatorAppProps = props()): Promis
 
 const page = () => document.querySelector<HTMLElement>('[data-docs-page]')!;
 const body = () => document.querySelector<HTMLElement>('[data-docs-body]')!;
-const fileRequest = (path: string) => `/api/v1/repositories/${REPOSITORY}/docs/file?${new URLSearchParams({ path })}`;
+const fileRequest = (path: string, repository = REPOSITORY) => `/api/v1/repositories/${repository}/docs/file?${new URLSearchParams({ path })}`;
 
 describe('docs route', () => {
   test('#docs/<path> names one repository-relative file; each segment is encoded on its own', () => {
@@ -239,5 +245,47 @@ describe('docs page', () => {
     // Blank lines, one alone and two in a row, stay rows of their own.
     expect([4, 7, 8].map(index => lines[index]?.textContent)).toEqual(['', '', '']);
     expect(lines[9]?.textContent).toBe('notify: off');
+  });
+});
+
+describe('docs repository in a new context', () => {
+  const OTHER = 'repo-console';
+  const STORED = 'repo-harness:operator-repository';
+  /** A context with no history record: a new tab, or a pasted or saved link. */
+  async function openContext(url: string, storedPick: string): Promise<void> {
+    if (root) await act(async () => root?.unmount());
+    root = null;
+    await window.happyDOM.close();
+    installDom(url);
+    localStorage.setItem(STORED, storedPick);
+    requests = [];
+    await mount(new URL(url).hash);
+  }
+
+  test('r4 a Ctrl/Cmd-click on a docs file after a switch and Back opens a new tab that reads the file of the shown repository', async () => {
+    await mount('#docs/docs/design/console.md');
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-repository-switch]')!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>(`[data-switch-option="${OTHER}"]`)!.click());
+    await act(async () => { window.history.back(); await new Promise(resolve => setTimeout(resolve, 0)); });
+    await settle();
+    expect([document.querySelector('[data-repository-switch]')?.getAttribute('data-selected'), localStorage.getItem(STORED)]).toEqual([REPOSITORY, OTHER]);
+    const href = document.querySelector<HTMLAnchorElement>('[data-docs-file="docs/README.md"]')!.href;
+    expect(href).toBe(`http://127.0.0.1:4318/?repository=${REPOSITORY}#docs/docs/README.md`);
+    await openContext(href, OTHER);
+    expect(requests).toContain(fileRequest('docs/README.md'));
+    expect(requests.some(request => request.startsWith(`/api/v1/repositories/${OTHER}/`))).toBe(false);
+  });
+
+  test('a pasted link opens the repository that it names, also when the stored pick differs', async () => {
+    await openContext(`http://127.0.0.1:4318/?repository=${OTHER}#docs/docs/README.md`, REPOSITORY);
+    expect([document.querySelector('[data-repository-switch]')?.getAttribute('data-selected'), localStorage.getItem(STORED)]).toEqual([OTHER, REPOSITORY]);
+    expect(requests).toContain(fileRequest('docs/README.md', OTHER));
+  });
+
+  test('a link that names an unregistered repository shows an error and reads no other repository', async () => {
+    await openContext('http://127.0.0.1:4318/?repository=repo-gone#docs/docs/README.md', REPOSITORY);
+    expect(document.querySelector('[role="alert"][data-repository-link-unknown]')?.textContent).toContain('repo-gone');
+    expect(document.querySelector('[data-repository-switch]')?.getAttribute('data-selected')).toBe('');
+    expect([requests.filter(request => request.includes('/docs/')), window.history.state, window.location.hash]).toEqual([[], null, '#docs/docs/README.md']);
   });
 });

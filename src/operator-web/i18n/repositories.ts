@@ -1,5 +1,6 @@
 export const en = {
   'repository.select': 'Select repository',
+  'repository.linkUnknown': 'The link names repository {id}, which is not registered. Select a repository.',
 
   'repo.accessMode.read_only': 'read only',
   'repo.accessMode.read_write': 'read write',
@@ -32,6 +33,7 @@ export const en = {
 
 export const zh: Readonly<Record<keyof typeof en, string>> = {
   'repository.select': '选择仓库',
+  'repository.linkUnknown': '链接里的仓库 {id} 没有登记。请选择一个仓库。',
 
   'repo.accessMode.read_only': '只读',
   'repo.accessMode.read_write': '读写',
