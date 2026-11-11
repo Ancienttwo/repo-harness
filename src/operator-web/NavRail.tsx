@@ -105,27 +105,56 @@ function isActive(current: Workspace, workspace: NavWorkspace): boolean {
 
 const REPOSITORIES: WorkspaceLocation = { workspace: 'repositories', module: null, item: null };
 
+/** How recently a repository was worked on, from Dev Activity. */
+interface SwitchActivity {
+  /** The latest PR update or column entry; null when GitHub gave none. */
+  readonly latest: string | null;
+  /** Local worktrees; the git source still counts them while GitHub is unavailable. */
+  readonly worktrees: number;
+}
+
 export interface SwitchOption {
   readonly id: string;
   readonly label: string;
   readonly tone: DotTone;
   readonly status: string;
+  readonly activity: SwitchActivity;
+}
+
+function switchActivity(snapshot: DevActivitySnapshotV2, id: string): SwitchActivity {
+  let latest: string | null = null;
+  let worktrees = 0;
+  for (const item of snapshot.items) {
+    if (item.repository_id !== id) continue;
+    worktrees += item.worktrees.length;
+    for (const at of [item.pull_request?.updated_at, item.column_since]) {
+      if (at && (latest === null || at > latest)) latest = at;
+    }
+  }
+  return { latest, worktrees };
+}
+
+/** Newer work first, then more worktrees; equal activity keeps the given order. */
+function compareActivity(left: SwitchActivity, right: SwitchActivity): number {
+  if (left.latest !== right.latest) return left.latest === null ? 1 : right.latest === null ? -1 : right.latest.localeCompare(left.latest);
+  return right.worktrees - left.worktrees;
 }
 
 /** One line about a repository from Dev Activity: a failed source first, then work waiting on you, then open PRs. */
 export function switchOption(snapshot: DevActivitySnapshotV2 | null, id: string, label: string, t: OperatorTranslate): SwitchOption {
   const repository = snapshot ? repositoryById(snapshot, id) : null;
-  if (snapshot === null || repository === null) return { id, label, tone: 'unknown', status: t('switch.status.unknown') };
+  if (snapshot === null || repository === null) return { id, label, tone: 'unknown', status: t('switch.status.unknown'), activity: { latest: null, worktrees: 0 } };
+  const activity = switchActivity(snapshot, id);
   const failed = failedSources(repository)[0];
   if (failed) {
     const source = t(`source.kind.${failed.kind}`);
     return failed.status === 'stale'
-      ? { id, label, tone: 'warn', status: t('switch.status.stale', { source }) }
-      : { id, label, tone: 'danger', status: t('switch.status.unavailable', { source }) };
+      ? { id, label, tone: 'warn', status: t('switch.status.stale', { source }), activity }
+      : { id, label, tone: 'danger', status: t('switch.status.unavailable', { source }), activity };
   }
   const waiting = snapshot.attention.filter(row => row.repository_id === id).length;
-  if (waiting > 0) return { id, label, tone: 'accent', status: t('switch.status.waiting', { count: waiting }) };
-  return { id, label, tone: 'ok', status: t('switch.status.open', { count: openPullRequests(snapshot.items, id) }) };
+  if (waiting > 0) return { id, label, tone: 'accent', status: t('switch.status.waiting', { count: waiting }), activity };
+  return { id, label, tone: 'ok', status: t('switch.status.open', { count: openPullRequests(snapshot.items, id) }), activity };
 }
 
 export interface RepositorySwitchModel {
@@ -169,13 +198,13 @@ function RepositorySwitch({ model, collapsed, locale, onManage, t }: {
   };
   const needle = query.trim().toLowerCase();
   const rank = (id: string) => { const index = recent.indexOf(id); return index === -1 ? RECENT_LIMIT : index; };
-  const matches = model.options
+  // Every match is listed: recent picks first, then the most active repositories, then name order.
+  const shown = model.options
     .filter(option => needle === '' || option.label.toLowerCase().includes(needle))
     .map((option, index) => ({ option, index }))
-    .sort((left, right) => rank(left.option.id) - rank(right.option.id) || left.index - right.index)
+    .sort((left, right) => rank(left.option.id) - rank(right.option.id)
+      || compareActivity(left.option.activity, right.option.activity) || left.index - right.index)
     .map(({ option }) => option);
-  const shown = matches.slice(0, RECENT_LIMIT);
-  const rest = matches.length - shown.length;
   const selectedId = model.selected?.id ?? null;
   const name = model.selected?.label ?? (model.mode === 'current' ? t('repository.select') : t('filter.allRepositories'));
   const tile = model.selected ? Array.from(model.selected.label)[0]?.toUpperCase() ?? '·' : String(model.options.length);
@@ -209,7 +238,7 @@ function RepositorySwitch({ model, collapsed, locale, onManage, t }: {
             collapsed && 'rail:top-0 rail:left-full rail:mt-0 rail:ml-2')}>
           <input ref={inputRef} type="search" value={query} onChange={event => setQuery(event.target.value)} aria-label={t('switch.search')} placeholder={t('switch.search')}
             className="h-8 rounded-md border border-kumo-line bg-kumo-base px-2.5 text-sm text-kumo-default placeholder:text-kumo-placeholder focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kumo-brand" />
-          <ul className="flex flex-col gap-0.5">
+          <ul className="flex max-h-[min(420px,60dvh)] flex-col gap-0.5 overflow-y-auto">
             {model.allowAll && needle === '' && (
               <li>
                 <button type="button" data-switch-option="" aria-current={selectedId === null ? 'true' : undefined} className={optionClass(selectedId === null)} onClick={() => choose(null)}>
@@ -232,7 +261,7 @@ function RepositorySwitch({ model, collapsed, locale, onManage, t }: {
             {shown.length === 0 && <li className="px-2.5 py-2 text-sm text-kumo-subtle">{t('switch.none')}</li>}
           </ul>
           <PageLink to={REPOSITORIES} onOpen={() => { close(); onManage(); }} data-switch-manage className="rounded-md px-2.5 py-2 text-sm text-kumo-link hover:bg-kumo-tint">
-            {rest > 0 ? t('switch.more', { count: rest }) : t('switch.manage')} ›
+            {t('switch.manage')} ›
           </PageLink>
         </div>
       )}

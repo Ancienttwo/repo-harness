@@ -26,7 +26,7 @@ async function developmentProps(): Promise<OperatorAppProps> {
     if (name !== null) {
       params.delete('fixture');
       const query = params.toString();
-      window.history.replaceState(null, '', window.location.pathname + (query ? `?${query}` : '') + window.location.hash);
+      window.history.replaceState(window.history.state, '', window.location.pathname + (query ? `?${query}` : '') + window.location.hash);
       const { fixtureProps } = await import('./fixtures');
       return fixtureProps(name);
     }

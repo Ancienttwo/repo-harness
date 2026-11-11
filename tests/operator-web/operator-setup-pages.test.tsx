@@ -141,6 +141,78 @@ describe('navigation', () => {
     expect(rail().getAttribute('data-drawer')).toBe('closed');
   });
 
+  test('the repository switch lists every repository, recent pick first, then by activity, then by name', async () => {
+    const switchLabels = () => all('[data-switch-option] [data-switch-label]').map(label => label.textContent);
+    const openSwitch = () => act(async () => document.querySelector<HTMLButtonElement>('[data-repository-switch]')!.click());
+    await mount('#architecture', fixtureProps('busy'));
+    await openSwitch();
+    // repo-harness and operator-site have Dev Activity work; the other five sort by name.
+    expect(switchLabels()).toEqual(['repo-harness', 'operator-site', 'docs-site', 'field-notes', 'infra', 'service-api', 'web-app']);
+    await act(async () => all('[data-switch-option]').find(option => option.textContent?.includes('web-app'))!.click());
+    await openSwitch();
+    expect(switchLabels().slice(0, 3)).toEqual(['web-app', 'repo-harness', 'operator-site']);
+  });
+
+  test('a stored repository that is no longer registered pins the first one, and a switch on a module page opens the new map', async () => {
+    const [first, second] = REGISTRY.repositories;
+    localStorage.setItem('repo-harness:operator-repository', 'repo_0000000000000000');
+    await mount('#architecture/capability.workflow-engine.pipeline', props(readySetup(NOW), { readArchitectureMap: () => new Promise(() => {}) }));
+    const switchButton = () => document.querySelector<HTMLButtonElement>('[data-repository-switch]')!;
+    expect(switchButton().getAttribute('data-selected')).toBe(first!.repository_id);
+    await act(async () => switchButton().click());
+    await act(async () => document.querySelector<HTMLButtonElement>(`[data-switch-option="${second!.repository_id}"]`)!.click());
+    expect([switchButton().getAttribute('data-selected'), window.location.hash]).toEqual([second!.repository_id, '#architecture']);
+  });
+
+  test('a replaced stale pin opens the root of a single-repository page and passes no old module or docs path', async () => {
+    const pending = { readArchitectureMap: () => new Promise<never>(() => {}), readDocsTree: () => new Promise<never>(() => {}) };
+    for (const [hash, rootHash] of [['#architecture/capability.workflow-engine.pipeline', '#architecture'], ['#docs/docs/design/old.md', '#docs']]) {
+      localStorage.setItem('repo-harness:operator-repository', 'repo_0000000000000000');
+      // A browser gives a hash navigation an entry without a record; happy-dom keeps the previous one.
+      window.history.replaceState(null, '');
+      await mount(hash!, props(readySetup(NOW), pending));
+      expect([document.querySelector('[data-repository-switch]')?.getAttribute('data-selected'), window.location.hash]).toEqual([REGISTRY.repositories[0]!.repository_id, rootHash]);
+      await act(async () => root?.unmount());
+    }
+  });
+
+  test('r1 Back after a repository switch restores the module page together with its repository', async () => {
+    const [first, second] = REGISTRY.repositories;
+    await mount('#architecture/capability.workflow-engine.pipeline', props(readySetup(NOW), { readArchitectureMap: () => new Promise(() => {}) }));
+    const switchButton = () => document.querySelector<HTMLButtonElement>('[data-repository-switch]')!;
+    await act(async () => switchButton().click());
+    await act(async () => document.querySelector<HTMLButtonElement>(`[data-switch-option="${second!.repository_id}"]`)!.click());
+    await act(async () => { window.history.back(); await new Promise(resolve => setTimeout(resolve, 0)); });
+    expect([switchButton().getAttribute('data-selected'), window.location.hash]).toEqual([first!.repository_id, '#architecture/capability.workflow-engine.pipeline']);
+  });
+
+  test('r2 a reload keeps the repository that its history entry records when another tab stored a different pick', async () => {
+    const [first, second] = REGISTRY.repositories;
+    const architecture = props(readySetup(NOW), { readArchitectureMap: () => new Promise(() => {}) });
+    await mount('#architecture/capability.workflow-engine.pipeline', architecture);
+    await act(async () => root?.unmount());
+    localStorage.setItem('repo-harness:operator-repository', second!.repository_id);
+    await mount('#architecture/capability.workflow-engine.pipeline', architecture);
+    expect([document.querySelector('[data-repository-switch]')?.getAttribute('data-selected'), window.location.hash, (window.history.state as { repositoryId?: string } | null)?.repositoryId, localStorage.getItem('repo-harness:operator-repository')])
+      .toEqual([first!.repository_id, '#architecture/capability.workflow-engine.pipeline', first!.repository_id, second!.repository_id]);
+  });
+
+  test('r3 a typed hash after a switch and Back keeps the repository that the app shows', async () => {
+    const [first, second] = REGISTRY.repositories;
+    await mount('#architecture/capability.workflow-engine.pipeline', props(readySetup(NOW), { readArchitectureMap: () => new Promise(() => {}) }));
+    const switchButton = () => document.querySelector<HTMLButtonElement>('[data-repository-switch]')!;
+    await act(async () => switchButton().click());
+    await act(async () => document.querySelector<HTMLButtonElement>(`[data-switch-option="${second!.repository_id}"]`)!.click());
+    await act(async () => { window.history.back(); await new Promise(resolve => setTimeout(resolve, 0)); });
+    // A typed hash is a new entry without a record, then a hashchange event (happy-dom would copy the previous record).
+    await act(async () => {
+      window.history.pushState(null, '', '#architecture/capability.workflow-engine.state');
+      window.dispatchEvent(new window.Event('hashchange'));
+    });
+    expect([switchButton().getAttribute('data-selected'), window.location.hash, localStorage.getItem('repo-harness:operator-repository')])
+      .toEqual([first!.repository_id, '#architecture/capability.workflow-engine.state', second!.repository_id]);
+  });
+
   test('1-SHELL-N1 every page in the shell routes by its hash with one repository switch; later pages have no entry or route', async () => {
     const pages = [['home', 'home'], ['board', 'board'], ['repositories', 'repositories'], ['worktrees', 'worktrees'], ['docs', 'docs'], ['agents', 'agents'], ['skills', 'skills'],
       ['hooks', 'hooks'], ['cli', 'cli'], ['bots', 'bots'], ['architecture', 'architecture'], ['tests', 'tests'], ['system', 'system'], ['tools', 'tools']] as const;
