@@ -425,8 +425,15 @@ class SeatResetRun {
     throw new SeatResetError(problem.code, outcome, `${problem.message} ${result}`);
   }
 
+  /** A message to the caller also ends the wait (#2305), so the wait goes on for the rest of the budget; only then is the requester busy. */
   private wait(): void {
-    const result = hcWait(this.requester, WAIT_SECONDS, this.options);
+    const deadline = Date.now() + WAIT_SECONDS * 1000;
+    let result = hcWait(this.requester, WAIT_SECONDS, this.options);
+    while (!result.ended && result.reason === 'message') {
+      const seconds = Math.ceil((deadline - Date.now()) / 1000);
+      if (seconds < 1) break;
+      result = hcWait(this.requester, seconds, this.options);
+    }
     if (!result.ended) throw this.refuse('requester_busy', 'nothing_sent', `${this.requester} did not end its turn in ${WAIT_SECONDS} s (${result.reason}).`);
   }
 

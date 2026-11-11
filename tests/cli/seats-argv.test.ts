@@ -779,7 +779,8 @@ const out = value => process.stdout.write(JSON.stringify(value));
 const session = transcript => fs.writeFileSync("${dir}/session.json", JSON.stringify({ session_id: "s", transcript_path: transcript, source: "clear", started_at: new Date().toISOString() }));
 if (cmd === "ls") out({ terminals: st.terminals });
 if (cmd === "get") out({ address: rest.at(-1), state: "live", labels: rest.at(-1) === "t2" ? st.callerLabels : { "repo-harness.seat": "${seat}", "repo-harness.repository": "${repository}" }, turn: 3, foreground: { pid: 1, name: st.foreground, argv: [], cwd: "/" } });
-if (cmd === "wait") out(st.wait);
+// wait is one result, or a sequence: the last result answers every later call.
+if (cmd === "wait") out(Array.isArray(st.wait) ? (st.wait.length > 1 ? st.wait.shift() : st.wait[0]) : st.wait);
 // As the real hc: keys arrive as typed input; send wraps its text in an envelope, so a sent slash command is chat text.
 if (cmd === "keys") {
   const line = rest.slice(2).filter(key => key !== "enter").map(key => (key === "space" ? " " : key)).join("");
@@ -855,6 +856,7 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
       [{ caller: "t5" }, "caller_unknown"],
       [{}, "requester_not_found", { terminals: [] }],
       [{}, "requester_busy", { wait: { ...ended, ended: false, reason: "timeout" } }],
+      [{}, "requester_busy", { wait: [{ ...ended, ended: false, reason: "message" }, { ...ended, ended: false, reason: "timeout" }] }],
     ] as const;
     const results = [];
     for (const [input, , patch] of rows) {
@@ -863,7 +865,14 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
     }
     expect([results, sends()]).toEqual([rows.map(([, error]) => ({ error, outcome: "nothing_sent" })), []]);
     // An invalid handoff path names no seat, so it has no log entry.
-    expect(log().map(({ kind }) => kind)).toEqual(["request_missing", "caller_unknown", "requester_not_found", "requester_busy"]);
+    expect(log().map(({ kind }) => kind)).toEqual(["request_missing", "caller_unknown", "requester_not_found", "requester_busy", "requester_busy"]);
+    expect(log().at(-1)?.detail).toMatch(/in 600 s \(timeout\)\.$/u);
+  }));
+
+  test("a message to the caller ends hc wait, so the reset waits out the rest of the budget and resets (#2305)", withReset(async ({ handoff, reset, state, calls }) => {
+    state({ wait: [{ ...ended, ended: false, reason: "message" }, ended] });
+    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: false, logErrors: [] });
+    expect(calls()).toEqual(["wait --timeout 600 -- t5", "wait --timeout 600 -- t5", "keys -- t5 / c l e a r enter", `send -- t5 ${prompt(handoff)}`]);
   }));
 
   test.each([
