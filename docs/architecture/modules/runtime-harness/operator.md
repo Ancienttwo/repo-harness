@@ -1094,10 +1094,8 @@ The host installer, shared skill roots and catalog retain those responsibilities
 
 ### 提交范围的宿主策略交接
 
-`isDocsHostWritablePath(path)` 从 `docs-host-isolation.ts` 导出宿主的词法写入范围。
-Seatbelt 配置和这个函数共用同一组文件、目录拒绝模式；配置输出保持不变。
-#1023 的范围适配器可把它作为 `is_writable_path`，再组合既有 `docsHostProtectedProjection` 和 `readArchitectureHandEdits`。
-这个函数不证明文件系统目标、安全退出或生成区域可写，不能单独授权提交或丢弃。
+docs host 已关闭（#1149），`docs-host-isolation.ts` 不导出宿主写入范围谓词，也没有 Seatbelt 配置。
+#1023 的范围适配器仍要求调用方提供 `is_writable_path`，并组合 `docsHostProtectedProjection` 和 `readArchitectureHandEdits`。
 
 
 ### 文档会话读接口

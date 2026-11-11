@@ -45,11 +45,9 @@ return 503 `scope_validation_unavailable`.
 ## Remaining host policy handoff
 
 The scope factory **requires** `authority.is_writable_path`. It has no permissive
-default. In this base, the host's instruction/config directory and file patterns
-are private `FORBIDDEN_WRITE_FILES` / `FORBIDDEN_WRITE_DIRECTORIES` constants in
-`src/effects/review/docs-host-isolation.ts`. This slice does not copy their regexes
-or edit that shared file. The host owner must expose the canonical predicate and
-use the same authority in the OS profile before production composition.
+default. No host writable-path predicate exists while the docs host is closed
+(#1149). A future host owner must add the canonical predicate and use the same
+authority in the OS profile before production composition.
 
 Pass the existing architecture provider options, including the operator env,
 through `authority.architecture`. The factory never skips a failed hand-edits
