@@ -14,6 +14,7 @@ import {
   HEAD,
   MERGE_COMMIT,
   PR,
+  POLICY_ON,
   POLICY_QUEUE,
   QUEUE_ENTRY,
   QUEUE_RULES,
@@ -157,6 +158,15 @@ describe('publication merge refusals send no mergePullRequest', () => {
     const { result, mutations } = mergeInProcess(passingScenario({ policyBase }));
     expect(result.exit_code).toBe(3);
     expect(result.document).toMatchObject({ ok: false, exit_code: 3, error: 'acceptance_merge_off' });
+    expect(mutations).toHaveLength(0);
+  });
+
+  test('a switch turned off at the live tip of main refuses a PR whose recorded base predates it', () => {
+    const { result, calls, mutations } = mergeInProcess(passingScenario({ liveTip: OTHER_COMMIT,
+      policyAt: { [OTHER_COMMIT]: policy({ publication: { acceptance_merge: 'off' } }) } }));
+    expect(result.document).toMatchObject({ ok: false, exit_code: 3, error: 'acceptance_merge_off' });
+    expect(failureOf(result).message).toContain(`live tip ${OTHER_COMMIT}`);
+    expect(calls.some((args) => args[1] === `repos/${REPOSITORY}/contents/.ai/harness/policy.json?ref=${BASE}`)).toBe(false);
     expect(mutations).toHaveLength(0);
   });
 
@@ -601,6 +611,14 @@ describe('publication merge through a required merge queue', () => {
     expect(result).toMatchObject({ exit_code: 0, document: { merge_commit_sha: repo.merge, provider_errors: expect.stringContaining('Pull request is not mergeable.') } });
   });
 
+  test('a merge whose queue parent has the switch off exits 5 with the revert command', () => {
+    const { result, enqueues } = run(queueScenario({ queueSequence: ['merged'],
+      policyAt: { [repo.parent]: policy({ publication: { acceptance_merge: 'off', merge_queue: 'on' } }) } }));
+    expect(result.document).toMatchObject({ ok: false, exit_code: 5, error: 'merge_outcome_unknown' });
+    expect(failureOf(result).message).toContain(`not on at its parent ${repo.parent}; the owner decides on git revert ${repo.merge}`);
+    expect(enqueues).toHaveLength(1);
+  });
+
   test('a failed fetch from origin exits 5 and keeps git stderr out of the result', () => {
     const missing = join(scratch, 'no-such-remote.git');
     const { result } = run(queueScenario(), {}, missing);
@@ -643,6 +661,68 @@ describe('publication merge through a required merge queue', () => {
     const { result, enqueues } = mergeInProcess(passingScenario({ ...QUEUE_ON, rules: QUEUE_RULES, mergeQueueEnabled: true, headRef: BATCH_REF, compareCommits: BATCH_COMMITS }), { batch: true });
     expect(failureOf(result)).toMatchObject({ exit_code: 4, error: 'base_protection_insufficient' });
     expect(enqueues).toHaveLength(0);
+  });
+});
+
+/**
+ * A head that is behind the live tip of main: the merge result comes from a
+ * real `git merge-tree` of the tip and the head, fetched from a bare `origin`.
+ */
+describe('publication merge checks the policy in the merge result of a head behind main', () => {
+  const POLICY_TIP = policy({ merge_gate: { enabled: true }, publication: { acceptance_merge: 'on', merge_queue: 'off' } });
+  const POLICY_PR = policy({ merge_gate: { enabled: true }, publication: { acceptance_merge: 'on', merge_queue: 'on' } });
+  let remote: string;
+  let base: string;
+  const shas: Record<'unrelatedTip' | 'policyTip' | 'cleanHead' | 'policyHead', string> = { unrelatedTip: '', policyTip: '', cleanHead: '', policyHead: '' };
+  beforeAll(() => {
+    const work = join(scratch, 'behind-work');
+    remote = join(scratch, 'behind-remote.git');
+    mkdirSync(join(work, '.ai/harness'), { recursive: true });
+    git(work, 'init', '-q', '-b', 'main');
+    const commit = (file: string, text: string) => {
+      writeFileSync(join(work, file), text);
+      git(work, 'add', file);
+      git(work, 'commit', '-q', '-m', file);
+      return git(work, 'rev-parse', 'HEAD');
+    };
+    commit('a.txt', 'a\n');
+    base = commit('.ai/harness/policy.json', POLICY_ON);
+    shas.unrelatedTip = commit('c.txt', 'c\n');
+    git(work, 'reset', '-q', '--hard', base);
+    shas.policyTip = commit('.ai/harness/policy.json', POLICY_TIP);
+    git(work, 'reset', '-q', '--hard', base);
+    shas.cleanHead = commit('a.txt', 'changed\n');
+    git(work, 'reset', '-q', '--hard', base);
+    shas.policyHead = commit('.ai/harness/policy.json', POLICY_PR);
+    for (const [name, sha] of Object.entries(shas)) git(work, 'branch', name, sha);
+    git(scratch, 'clone', '-q', '--bare', work, remote);
+  });
+  const run = (tip: 'unrelatedTip' | 'policyTip', head: 'cleanHead' | 'policyHead') => {
+    git(remote, 'update-ref', 'refs/heads/main', shas[tip]);
+    git(remote, 'update-ref', `refs/pull/${PR}/head`, shas[head]);
+    const root = join(scratch, `behind-root-${queueRoots++}`);
+    mkdirSync(root);
+    git(root, 'init', '-q');
+    git(root, 'remote', 'add', 'origin', remote);
+    const scenario = passingScenario({ head: shas[head], base, liveTip: shas[tip], headBehindTip: true, parents: [base],
+      policyAt: { [shas[tip]]: tip === 'policyTip' ? POLICY_TIP : POLICY_ON } });
+    return mergeInProcessAt(root, scenario, { readbackWait: () => {}, readbackNow: () => 0, head: shas[head], base });
+  };
+
+  test('a head that does not touch the policy merges after main changed the publication subtree', () => {
+    const { result, mutations } = run('policyTip', 'cleanHead');
+    expect(result).toMatchObject({ exit_code: 0, document: { policy_ref: shas.policyTip, base_sha: base } });
+    expect(mutations).toHaveLength(1);
+  });
+
+  test.each([
+    ['changes the publication subtree', 'unrelatedTip', 'changes the publication policy subtree'],
+    ['conflicts with main in the policy file', 'policyTip', 'conflicts in .ai/harness/policy.json'],
+  ] as const)('a head that %s is refused', (_label, tip, message) => {
+    const { result, mutations } = run(tip, 'policyHead');
+    expect(result.document).toMatchObject({ ok: false, exit_code: 4, error: 'publication_policy_changed_in_pr' });
+    expect(failureOf(result).message).toContain(message);
+    expect(mutations).toHaveLength(0);
   });
 });
 
