@@ -34,6 +34,14 @@ function planWith(repo: string, operations: readonly AdoptionOperation[]): Adopt
   return { ...planAdoption({ repoRoot: repo, mode: "minimal" }), apply: true, operations };
 }
 
+const COPIED_TEMPLATE_PATHS = [
+  "docs/prds/prd.template.md",
+  ".claude/templates/research.template.md",
+  ".claude/templates/spec.template.md",
+  ".claude/templates/design-brief.template.md",
+  ".ai/hooks/README.md",
+];
+
 function writeOperation(path: string, content: string): AdoptionOperation {
   return { id: `writeFile:${path}`, kind: "writeFile", path, content, reason: "test", risk: "low", status: "planned" };
 }
@@ -101,10 +109,34 @@ describe("canonical adoption plan", () => {
       expect(Object.keys(generatedPolicy.worktree_strategy)).toEqual(["base_branch", "review_base", "merge_back"]);
       expect(plan.operations.some((operation) => operation.path === ".ai/context/capabilities.json")).toBe(true);
       expect(plan.operations.some((operation) => operation.path === "deploy/README.md")).toBe(true);
-      expect(plan.operations.some((operation) => operation.path === ".ai/hooks/README.md")).toBe(true);
+      for (const path of COPIED_TEMPLATE_PATHS) expect(plan.operations.some((operation) => operation.path === path)).toBe(false);
       expect(plan.operations.some((operation) => operation.path?.startsWith("scripts/"))).toBe(false);
       expect(plan.operations.every((operation) => operation.rollback)).toBe(true);
       expect(plan.summary.requiresVerification).toBe(true);
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("init removes byte-equal copies of released templates and keeps an edited one", () => {
+    const repo = tempRepo();
+    try {
+      const sources: Record<string, string> = {
+        "docs/prds/prd.template.md": readFileSync(join(ROOT, "assets/templates/prd.template.md"), "utf8"),
+        ".claude/templates/research.template.md": readFileSync(join(ROOT, "assets/templates/research.template.md"), "utf8"),
+        ".claude/templates/spec.template.md": readFileSync(join(ROOT, "assets/templates/spec.template.md"), "utf8"),
+        ".claude/templates/design-brief.template.md": readFileSync(join(ROOT, "assets/templates/design-brief.template.md"), "utf8"),
+        ".ai/hooks/README.md": "# Workflow Helpers\n\nHost events use the user-level `repo-harness-hook` typed runtime. Operator helpers run from the installed package: use `repo-harness run <helper>`. Init preserves legacy files under `.ai/hooks/lib/`. Run `repo-harness doctor` for migration guidance.\n",
+      };
+      for (const [path, content] of Object.entries(sources)) {
+        mkdirSync(dirname(join(repo, path)), { recursive: true });
+        writeFileSync(join(repo, path), content);
+      }
+      const removes = (plan: AdoptionPlan) => plan.operations.filter((op) => op.kind === "remove").map((op) => op.path);
+      expect(removes(planAdoption({ repoRoot: repo, mode: "standard" })).sort()).toEqual([...COPIED_TEMPLATE_PATHS].sort());
+      writeFileSync(join(repo, "docs/prds/prd.template.md"), `${sources["docs/prds/prd.template.md"]}\nTeam section\n`);
+      const edited = planAdoption({ repoRoot: repo, mode: "standard" });
+      expect(edited.operations.filter((op) => op.path === "docs/prds/prd.template.md")).toEqual([]);
     } finally {
       cleanup(repo);
     }
@@ -471,9 +503,6 @@ describe("canonical adoption plan", () => {
           const policy = JSON.parse(readFileSync(join(repo, ".ai", "harness", "policy.json"), "utf-8"));
           expect(policy.active_plan).toBeUndefined();
           expect(policy.tasks).toBeUndefined();
-          expect(readFileSync(join(repo, "docs", "prds", "prd.template.md"), "utf-8")).toBe(
-            readFileSync(join(ROOT, "assets", "templates", "prd.template.md"), "utf-8"),
-          );
           const contextMap = JSON.parse(readFileSync(join(repo, ".ai", "context", "context-map.json"), "utf-8"));
           expect(contextMap.root_context_files).not.toContain("tasks/current.md");
         }

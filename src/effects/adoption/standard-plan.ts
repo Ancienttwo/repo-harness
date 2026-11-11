@@ -391,31 +391,6 @@ function addLegacyCleanup(repoRoot: string, operations: AdoptionOperation[]): Ad
   return warnings;
 }
 
-function addTemplateOperations(repoRoot: string, operations: AdoptionOperation[]): void {
-  const names = [
-    "research.template.md",
-    "spec.template.md",
-    "prd.template.md",
-    "design-brief.template.md",
-  ];
-  for (const name of names) {
-    const source = join(TEMPLATE_ROOT, name);
-    if (!existsSync(source)) continue;
-    const target = name === "prd.template.md" ? `docs/prds/${name}` : `.claude/templates/${name}`;
-    operations.push(writeOperation(repoRoot, target, readFileSync(source, "utf-8"), "Install canonical repo-harness workflow template", { risk: "medium" }));
-  }
-}
-
-function addHookOperations(repoRoot: string, operations: AdoptionOperation[]): void {
-  operations.push(writeOperation(
-    repoRoot,
-    ".ai/hooks/README.md",
-    "# Workflow Helpers\n\nHost events use the user-level `repo-harness-hook` typed runtime. Operator helpers run from the installed package: use `repo-harness run <helper>`. Init preserves legacy files under `.ai/hooks/lib/`. Run `repo-harness doctor` for migration guidance.\n",
-    "Document typed hook authority and operator-only helper boundary",
-    { risk: "medium" },
-  ));
-}
-
 function addReferenceOperations(repoRoot: string, documentationProfile: string, operations: AdoptionOperation[]): void {
   const minimal = new Set([
     "harness-overview.md",
@@ -632,8 +607,6 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
     { path: "AGENTS.md", content: rootContextContent() },
   ]) operations.push(writeOperation(opts.repoRoot, file.path, file.content, "Install canonical root workflow context when absent", { ifMissing: true, risk: "medium" }));
 
-  addTemplateOperations(opts.repoRoot, operations);
-  addHookOperations(opts.repoRoot, operations);
   addReferenceOperations(opts.repoRoot, documentationProfile, operations);
   addPackageOperation(opts.repoRoot, operations);
   const cleanupWarnings = addLegacyCleanup(opts.repoRoot, operations);

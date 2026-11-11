@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PACKAGE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 if [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]]; then
   cd "$REPO_HARNESS_TARGET_REPO_ROOT"
 elif REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
@@ -10,33 +11,12 @@ else
   cd "$SCRIPT_DIR/.."
 fi
 
-mkdir -p docs .claude/templates
+mkdir -p docs
 
+# A repository template at the old copy path is the repository's own; otherwise use the package template.
 template_file=".claude/templates/spec.template.md"
 if [[ ! -f "$template_file" ]]; then
-  cat > "$template_file" <<'SPEC_TEMPLATE_EOF'
-# Product Spec: {{PROJECT_NAME}}
-
-> **Status**: Draft
-> **Last Updated**: {{TIMESTAMP}}
-> **Owner**: Planner
-
-## Product Outcome
-
-Describe the stable user or operator outcome this repo should deliver.
-
-## Success Criteria
-
-- Primary workflow:
-- Quality bar:
-- Out of scope:
-
-## Constraints
-
-- Technical:
-- Compliance:
-- Delivery:
-SPEC_TEMPLATE_EOF
+  template_file="$PACKAGE_ROOT/assets/templates/spec.template.md"
 fi
 
 project_name="$(basename "$PWD")"

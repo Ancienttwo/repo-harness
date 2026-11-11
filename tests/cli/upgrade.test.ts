@@ -1608,7 +1608,7 @@ describe('upgrade --registered', () => {
   /** Adopted and committed, then one managed file is deleted and the deletion committed. */
   function staleRepo(f: RegisteredReposFixture, name: string): string {
     const repo = adoptedRepo(f, name);
-    rmSync(join(repo, '.ai/hooks/README.md'));
+    rmSync(join(repo, 'deploy/README.md'));
     commitAll(f, repo, 'drop managed file');
     return repo;
   }
@@ -1656,7 +1656,7 @@ describe('upgrade --registered', () => {
     const staleResult = byPath(result.repos, stale);
     expect(staleResult).toMatchObject({ status: 'ready', pending: true });
     expect((staleResult.init as { planned: number }).planned).toBeGreaterThan(0);
-    expect((staleResult.init as { operations: readonly unknown[] }).operations).toContainEqual(expect.objectContaining({ path: '.ai/hooks/README.md' }));
+    expect((staleResult.init as { operations: readonly unknown[] }).operations).toContainEqual(expect.objectContaining({ path: 'deploy/README.md' }));
     expect(staleResult.upgrade).toMatchObject({ apply: false, operatorKept: [] });
     const reasons = Object.fromEntries(result.repos.filter((repo) => repo.status === 'skipped').map((repo) => [repo.path, repo.reason]));
     expect(reasons).toEqual({
@@ -1760,7 +1760,7 @@ describe('upgrade --registered', () => {
     const staleResult = byPath(result.repos, stale);
     expect(staleResult).toMatchObject({ status: 'applied', init: { ok: true, failed: 0 }, upgrade: { apply: true }, sweep: { ran: true } });
     expect((staleResult.init as { applied: number }).applied).toBeGreaterThan(0);
-    expect(existsSync(join(stale, '.ai/hooks/README.md'))).toBe(true);
+    expect(existsSync(join(stale, 'deploy/README.md'))).toBe(true);
     const templateResult = byPath(result.repos, template);
     expect(templateResult).toMatchObject({ status: 'applied', init: { ok: true }, sweep: { ran: true } });
     expect(JSON.parse(readFileSync(policyPath(template), 'utf8')).worktree_strategy ?? {}).not.toHaveProperty('worktree_dir_template');
@@ -1785,7 +1785,7 @@ describe('upgrade --registered', () => {
     expect(byPath(preview.repos, repo).status).toBe('ready');
 
     // The init refresh would write this path; the file is the operator's.
-    const target = join(repo, '.ai/hooks/README.md');
+    const target = join(repo, 'deploy/README.md');
     writeFileSync(target, 'operator notes\n');
     expect(git(f, repo, 'status', '--porcelain')).toBe('');
     const dirty = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });

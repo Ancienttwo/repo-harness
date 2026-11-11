@@ -320,7 +320,7 @@ describe('update registered repo summary', () => {
     try {
       const current = adoptedRepo(f, 'current');
       const stale = adoptedRepo(f, 'stale');
-      rmSync(join(stale, '.ai/hooks/README.md'));
+      rmSync(join(stale, 'deploy/README.md'));
       commitAll(f, stale, 'drop managed file');
       writeRegistry(f, [current, stale, join(root, 'missing')]);
       const registryBefore = readFileSync(f.registry, 'utf8');

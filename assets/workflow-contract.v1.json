@@ -1635,6 +1635,56 @@
           }
         },
         {
+          "id": "retired-copied-workflow-templates",
+          "action": "remove",
+          "risk": "medium",
+          "ownership": "known_generated",
+          "cleanupMode": "exact_fingerprint",
+          "paths": [
+            "docs/prds/prd.template.md",
+            ".claude/templates/research.template.md",
+            ".claude/templates/spec.template.md",
+            ".claude/templates/design-brief.template.md",
+            ".ai/hooks/README.md"
+          ],
+          "fingerprints": {
+            "docs/prds/prd.template.md": "sha256:1460df81590380727a3f519e2f489f24dc810889c70d788c642b08204cf0bbbb",
+            ".claude/templates/research.template.md": "sha256:997bd0765dd4b2f96f9054903955da4ec476b0aebf24975bc7b3822c257136b7",
+            ".claude/templates/spec.template.md": "sha256:981c79adb895cb67ae7688eedb2aa5bd63c5a1884994669767a590199cfea36a",
+            ".claude/templates/design-brief.template.md": "sha256:1516596cfde879c59d0923eb080e97b1e5f6749de1cdb615af41deb8a295d760",
+            ".ai/hooks/README.md": "sha256:48c5882d1c5c2c55f087940400d80f213765328fcffe4bac83abe1058f7bd3fe"
+          },
+          "summary": "Remove the workflow templates and the hooks README that init copied; skills read the templates from the package through repo-harness docs path. Keep edited copies as the repository's own templates.",
+          "retiredBy": "2319",
+          "historicalFingerprints": {
+            "docs/prds/prd.template.md": [
+              "sha256:1460df81590380727a3f519e2f489f24dc810889c70d788c642b08204cf0bbbb",
+              "sha256:1fc0de8b0dd93c99cc7745e3342b1f5d54427ab2dbeb6f801af7964264288415",
+              "sha256:49585f353d434628ad8d9b92e38eaa8bc8ff7fa58bc6c357a20feceb606a1df5",
+              "sha256:89f822ed58240dd81100a276c1b6ab2c46a04c9d81607f178ce8024dfb1ca352"
+            ],
+            ".claude/templates/research.template.md": [
+              "sha256:997bd0765dd4b2f96f9054903955da4ec476b0aebf24975bc7b3822c257136b7"
+            ],
+            ".claude/templates/spec.template.md": [
+              "sha256:981c79adb895cb67ae7688eedb2aa5bd63c5a1884994669767a590199cfea36a"
+            ],
+            ".claude/templates/design-brief.template.md": [
+              "sha256:1516596cfde879c59d0923eb080e97b1e5f6749de1cdb615af41deb8a295d760",
+              "sha256:24593177d2434c27abfab26c88a97a96d81e4b87a8296ec26bd79c40ecc43f6d",
+              "sha256:326af892ad388d4fca3d96958317f2c6ef3dfc4ce66b76ec19a77a60a30b5ca3",
+              "sha256:b5b6b33447159124de36690bb1ef54796fba9fa6d745b0a7852c20fd154c741e",
+              "sha256:c69d5b1ba03617f2008a41365de19ebdcd17e2e3fbf4e3661909824defae8714"
+            ],
+            ".ai/hooks/README.md": [
+              "sha256:3ac33e156f0cd407d559f52509ee15638f23c5c47c3107aa610b5ddc9d1f6078",
+              "sha256:48c5882d1c5c2c55f087940400d80f213765328fcffe4bac83abe1058f7bd3fe",
+              "sha256:c0f63cd9bc1704bbd6933189fe6fec885cca608d7ea85a0b5bbeb74e898f8c31",
+              "sha256:f1b34ab584bfdf085234966523124da22ebfea2ef2ce6367fc8ce26f8d1e20a7"
+            ]
+          }
+        },
+        {
           "id": "retired-flow-reference-configs",
           "signal": "retired-flow-reference-configs",
           "action": "remove",

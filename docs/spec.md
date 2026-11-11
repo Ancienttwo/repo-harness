@@ -97,7 +97,7 @@ workflow-scoped and have no shell tool; repo writes need an explicit
 | `docs/prds/DESIGN-*.md` | Designer | Optional design brief and UX guard, used only when the task requests it |
 | `.ai/harness/evidence/events/log.jsonl` | Verification Plan executor | Accepted execution events bind immutable runs |
 | `.ai/harness/runs/*.json` | Verifier | Immutable run/trace snapshots |
-| `docs/reference-configs/ux-feature-guard.md`, `docs/reference-configs/design-options.md`, `.claude/templates/design-brief.template.md` | Conventions | Frontend behavior discipline: freeze rules and non-goals before implementation, product boundary before imagegen variants, taste-class refinement ceiling, role-aware visible-concept declaration; a frontend task cites the design brief when the task requests one, and the runtime `[UXFeatureGuard]` advisory fires only on frontend-scoped feature intent |
+| `docs/reference-configs/ux-feature-guard.md`, `docs/reference-configs/design-options.md`, `assets/templates/design-brief.template.md` | Conventions | Frontend behavior discipline: freeze rules and non-goals before implementation, product boundary before imagegen variants, taste-class refinement ceiling, role-aware visible-concept declaration; a frontend task cites the design brief when the task requests one, and the runtime `[UXFeatureGuard]` advisory fires only on frontend-scoped feature intent |
 
 ## Safety Boundaries
 
