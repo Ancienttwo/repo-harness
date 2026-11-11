@@ -4,25 +4,20 @@ import { TASK_INBOX_V2_RELATIVE_PATH, admittedTaskInboxRecipientStorageKey as ta
 import {
   inspectTaskInboxLayout,
   assertTaskInboxLayoutUnchanged,
-  syncInboxDirectory,
   TaskInboxLayoutError,
 } from './task-inbox-layout';
+import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import {
-  closeSync,
-  constants,
   existsSync,
-  fsyncSync,
   linkSync,
   lstatSync,
   mkdirSync,
-  openSync,
   opendirSync,
   readFileSync,
   readdirSync,
   realpathSync,
   renameSync,
   unlinkSync,
-  writeSync,
 } from 'fs';
 import { dirname, isAbsolute, join, relative } from 'path';
 import { randomUUID } from 'crypto';
@@ -428,13 +423,6 @@ function assertInboxRecipient(input: TaskInboxListInput, admission: TaskSessionA
   return admission.approval.admission_sha256;
 }
 
-function writeAll(fd: number, bytes: Buffer): void {
-  let offset = 0;
-  while (offset < bytes.length) offset += writeSync(fd, bytes, offset, bytes.length - offset);
-}
-
-function fsyncDirectory(path: string): void { syncInboxDirectory(path); }
-
 function ensureInboxDirectories(repoRoot: string, taskId: string, messageId?: string): void {
   const commonDirectory = resolveGitCommonDirectory(repoRoot);
   const root = taskInboxRoot(repoRoot);
@@ -467,21 +455,12 @@ function writeImmutableEvent(repoRoot: string, event: TaskMessageEventV2): TaskI
     `.${event.message_id}.${process.pid}.${randomUUID()}.tmp`,
   );
   const bytes = Buffer.from(`${canonical}\n`, 'utf-8');
-  let fd: number | null = null;
-  try {
-    fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-    writeAll(fd, bytes);
-    fsyncSync(fd);
-  } catch (error) {
-    throw asInboxError(error, 'task_message_unreadable', `cannot persist task message event: ${target}`);
-  } finally {
-    if (fd !== null) closeSync(fd);
-  }
+  createFileExclusiveDurably(temporary, bytes, 0o600, (error) => asInboxError(error, 'task_message_unreadable', `cannot persist task message event: ${target}`));
   try {
     inspectTaskInboxLayout(resolveGitCommonDirectory(repoRoot));
     try {
       linkSync(temporary, target);
-      fsyncDirectory(directory);
+      syncDirectoryDurably(directory);
       return { event, event_path: target, created: true };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
@@ -538,26 +517,20 @@ function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeli
     `.${receipt.message_id}.${taskInboxRecipientStorageKey(recipient)}.${process.pid}.${randomUUID()}.tmp`,
   );
   const bytes = Buffer.from(`${canonical}\n`, 'utf-8');
-  let fd: number | null = null;
   try {
     try {
-      fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-      writeAll(fd, bytes);
-      fsyncSync(fd);
-      closeSync(fd);
-      fd = null;
+      createFileExclusiveDurably(temporary, bytes);
     } catch (error) {
       throw asInboxError(error, 'task_message_unreadable', `cannot stage task message delivery receipt: ${target}`);
     }
     inspectTaskInboxLayout(resolveGitCommonDirectory(repoRoot));
     try {
       renameSync(temporary, target);
-      fsyncDirectory(directory);
+      syncDirectoryDurably(directory);
     } catch (error) {
       throw asInboxError(error, 'task_message_unreadable', `cannot persist task message delivery receipt: ${target}`);
     }
   } finally {
-    if (fd !== null) closeSync(fd);
     try {
       unlinkSync(temporary);
     } catch (error) {

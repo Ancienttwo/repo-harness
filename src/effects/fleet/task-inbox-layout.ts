@@ -1,4 +1,4 @@
-import { closeSync, constants, fsyncSync, lstatSync, openSync, readFileSync } from 'node:fs';
+import { lstatSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TASK_INBOX_RETIREMENT_MARKER } from '../../core/fleet/task-inbox-layout';
 
@@ -58,11 +58,4 @@ export function inspectTaskInboxLayout(common: string): string {
 
 export function assertTaskInboxLayoutUnchanged(common: string, identity: string): void {
   if (inspectTaskInboxLayout(common) !== identity) throw new TaskInboxLayoutError('task_inbox_migration_incomplete', 'Task Inbox layout changed during observation');
-}
-
-/** Windows flushes writable file handles; directory fsync is a POSIX operation. */
-export function syncInboxDirectory(path: string): void {
-  if (process.platform === 'win32') return;
-  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try { fsyncSync(fd); } finally { closeSync(fd); }
 }

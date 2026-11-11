@@ -8,7 +8,7 @@
 import { closeSync, constants, fsyncSync, mkdirSync, openSync, writeSync } from "fs";
 import { dirname } from "path";
 
-function writeAllSync(fd: number, data: Buffer): void {
+export function writeAllSync(fd: number, data: Buffer): void {
   let offset = 0;
   while (offset < data.length) {
     offset += writeSync(fd, data, offset, data.length - offset);
@@ -39,14 +39,25 @@ export function appendLineDurably(path: string, line: string, mode = 0o600): voi
   }
 }
 
-/** Create a brand-new file exclusively; throws with code EEXIST if it already exists (write-once). */
-export function createFileExclusiveDurably(path: string, content: Buffer, mode = 0o600): void {
-  ensureParentDir(path);
+/**
+ * Create a brand-new file exclusively; throws with code EEXIST if it already exists (write-once).
+ * `wrapError` maps a directory, open, write or fsync failure. A close failure escapes unmapped and
+ * replaces an earlier failure, so callers that report close errors as raw filesystem errors keep that.
+ */
+export function createFileExclusiveDurably(
+  path: string,
+  content: Buffer,
+  mode = 0o600,
+  wrapError: (error: unknown) => unknown = (error) => error,
+): void {
   let fd: number | null = null;
   try {
+    ensureParentDir(path);
     fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, mode);
     writeAllSync(fd, content);
     fsyncSync(fd);
+  } catch (error) {
+    throw wrapError(error);
   } finally {
     if (fd !== null) closeSync(fd);
   }

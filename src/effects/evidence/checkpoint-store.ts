@@ -48,6 +48,7 @@ import {
   writeFileSync,
 } from "fs";
 import { dirname, join } from "path";
+import { syncDirectoryDurably } from "../atomic-append";
 import { resolveInsideRepo } from "../path-safety";
 import { readAcceptedEvents } from "./event-log";
 import { resolveBlobsDir, resolveLogPath } from "./paths";
@@ -131,8 +132,7 @@ function syncCheckpointFile(path: string): void {
 
 function syncCheckpointDirectory(path: string): void {
   if (!CHECKPOINT_SYNC.syncDirectories) return;
-  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try { fsyncSync(fd); } finally { closeSync(fd); }
+  syncDirectoryDurably(path);
 }
 
 function persistCheckpointDirectory(repoRoot: string, checkpointId: string): void {
