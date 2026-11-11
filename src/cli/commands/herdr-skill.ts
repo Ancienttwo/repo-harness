@@ -13,15 +13,11 @@ const MARKER = ".repo-harness-owner.json";
 type Step = { step: string; status: "ok" | "failed"; detail: string };
 type BackupCleanup = (path: string) => void;
 
-function digest(content: string): string {
-  return sha256Prefixed(content);
-}
-
 function ownedSkillIsIntact(directory: string): boolean {
   try {
     const marker = JSON.parse(readFileSync(join(directory, MARKER), "utf8"));
     return marker.owner === "repo-harness"
-      && marker.sha256 === digest(readFileSync(join(directory, "SKILL.md"), "utf8"))
+      && marker.sha256 === sha256Prefixed(readFileSync(join(directory, "SKILL.md"), "utf8"))
       && readdirSync(directory).sort().join(",") === `${MARKER},SKILL.md`;
   } catch {
     return false;
@@ -152,7 +148,7 @@ export function configureRequiredHerdrSkill(
       mkdirSync(root, { recursive: true });
       plan.staged = mkdtempSync(join(root, ".herdr-stage-"));
       writeFileSync(join(plan.staged, "SKILL.md"), content);
-      writeFileSync(join(plan.staged, MARKER), `${JSON.stringify({ owner: "repo-harness", sha256: digest(content) })}\n`);
+      writeFileSync(join(plan.staged, MARKER), `${JSON.stringify({ owner: "repo-harness", sha256: sha256Prefixed(content) })}\n`);
     }
     for (const plan of plans) {
       if (plan.current) continue;
@@ -188,7 +184,7 @@ export function configureRequiredHerdrSkill(
   return {
     step: STEP,
     status: "ok",
-    detail: `installed for ${hosts.join(", ")}; ${digest(content)}`
+    detail: `installed for ${hosts.join(", ")}; ${sha256Prefixed(content)}`
       + (cleanupFailures.length ? `; backup cleanup pending: ${cleanupFailures.join("; ")}` : "")
       + (stageCleanup.length ? `; ${stageCleanup.join("; ")}` : ""),
   };

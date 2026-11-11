@@ -2,7 +2,7 @@ import { afterAll, afterEach, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { sha256 } from '../../src/core/review/module-review-prompt';
+import { sha256Hex } from '../../src/core/evidence/sha256';
 import { MODULE_DOC, MODULE_ID, fixtureCommit, fixtureGit, fixtureWrite, isNativeExportGitRead, moduleRepository, projectionCheckResult } from '../helpers/module-repository';
 import { pluginSelectionEnv } from '../helpers/install-ownership';
 
@@ -21,7 +21,7 @@ function snapshot(root: string, path = ''): Record<string, string> {
   for (const name of readdirSync(join(root, path))) {
     const file = path ? `${path}/${name}` : name;
     if (statSync(join(root, file)).isDirectory()) Object.assign(result, snapshot(root, file));
-    else result[file] = sha256(readFileSync(join(root, file)));
+    else result[file] = sha256Hex(readFileSync(join(root, file)));
   }
   return result;
 }

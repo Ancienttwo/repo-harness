@@ -6,7 +6,7 @@ import { ArchitectureModelReader } from '../../src/effects/architecture/model-re
 import { generatedSummaryState, moduleGraph, type ModelNode } from '../../src/core/architecture/module-view';
 import { decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt } from '../../src/core/operator/architecture';
 import { projectionResultReceiptDigest } from 'archctx-contracts';
-import { sha256 } from '../../src/core/review/module-review-prompt';
+import { sha256Hex } from '../../src/core/evidence/sha256';
 import type { JsonValue } from '../../src/core/evidence/types';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
 import { redactMcpText } from '../../src/cli/mcp/redaction';
@@ -30,7 +30,7 @@ describe('committed module review prompt', () => {
     expect(new ArchitectureModelReader(root).list().modules[0].state).toEqual({ model_valid: 'valid', generated_summary: 'unknown', section3: 'present' });
     const { shard, prompt, digest, ...metadata } = first;
     // JSON round trip gives the canonicalizer its JSON-value input contract.
-    expect(digest).toBe(sha256(canonicalize(JSON.parse(JSON.stringify(metadata)) as JsonValue)));
+    expect(digest).toBe(sha256Hex(canonicalize(JSON.parse(JSON.stringify(metadata)) as JsonValue)));
     expect(shard.bytes).toBe(Buffer.byteLength(prompt));
   });
   test.each([
@@ -56,10 +56,10 @@ describe('committed module review prompt', () => {
     const model = packet.sources.filter(source => source.path.startsWith('.archcontext/model/'));
     for (const source of packet.sources.filter(source => source.path.startsWith('.archcontext/') || source.path === MODULE_DOC)) {
       const bytes = readFileSync(join(root, source.path));
-      expect(source).toMatchObject({ bytes: bytes.length, sha256: sha256(bytes) });
+      expect(source).toMatchObject({ bytes: bytes.length, sha256: sha256Hex(bytes) });
     }
-    expect(packet.model_sha256).toBe(sha256(canonicalize(model.map(({ path, sha256 }) => ({ path, sha256 })))));
-    expect(packet.doc_sha256).toBe(sha256(readFileSync(join(root, MODULE_DOC))));
+    expect(packet.model_sha256).toBe(sha256Hex(canonicalize(model.map(({ path, sha256 }) => ({ path, sha256 })))));
+    expect(packet.doc_sha256).toBe(sha256Hex(readFileSync(join(root, MODULE_DOC))));
     expect(reader.detail(MODULE_ID).state.model_valid).toBe('valid');
   });
   test('fails on a missing capability; missing module doc and empty section 3 are pending', () => {
@@ -159,7 +159,7 @@ describe('committed module review prompt', () => {
       const body = packet.prompt.slice(packet.prompt.indexOf('\n\n') + 2); full += body;
       if (packet.shard.index !== packets.length) expect(body).not.toContain('REVIEW INSTRUCTIONS');
     }
-    expect(sha256(full)).toBe(first.full_prompt_sha256); expect(full).toContain('决策🙂'.repeat(5000));
+    expect(sha256Hex(full)).toBe(first.full_prompt_sha256); expect(full).toContain('决策🙂'.repeat(5000));
     expect(first.budget.used_bytes).toBe(packets.reduce((bytes, packet) => bytes + packet.shard.bytes, 0));
     expect(() => reader.reviewPrompt(MODULE_ID, { shard: packets.length + 1 })).toThrow('shard_out_of_range');
   });

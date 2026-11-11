@@ -79,10 +79,6 @@ export class GeneralRepoAccessError extends Error {
 
 const REPO_ROOT_IDENTITIES = new Map<string, string>();
 
-export function sha256(value: string | Buffer): string {
-  return sha256Hex(value);
-}
-
 export function statIdentity(stat: { dev: number | bigint; ino: number | bigint }): string {
   return `${stat.dev}:${stat.ino}`;
 }
@@ -126,7 +122,7 @@ function expectedRootIdentity(canonicalRoot: string): string | null {
 }
 
 function registryRevision(records: Array<{ id: string; path: string; accessMode: RepoHarnessAccessMode }>): string {
-  return `registry_${sha256(JSON.stringify(records.map((entry) => ({
+  return `registry_${sha256Hex(JSON.stringify(records.map((entry) => ({
     id: entry.id,
     path: entry.path,
     accessMode: entry.accessMode,
@@ -216,7 +212,7 @@ function parseIgnoreLine(line: string): IgnoreRule | null {
 
 export function readIgnorePolicy(repoRoot: string): IgnorePolicy {
   const ignorePath = resolve(repoRoot, '.ignore');
-  if (!existsSync(ignorePath)) return { digest: `sha256:${sha256('')}`, fileIdentity: null, rules: [] };
+  if (!existsSync(ignorePath)) return { digest: `sha256:${sha256Hex('')}`, fileIdentity: null, rules: [] };
   const before = lstatSync(ignorePath);
   if (before.isSymbolicLink()) {
     throw new GeneralRepoAccessError('SYMLINK_ESCAPE', '.ignore must be a regular repo-local file', { path: '.ignore' });
@@ -237,7 +233,7 @@ export function readIgnorePolicy(repoRoot: string): IgnorePolicy {
   }
   const text = buffer.toString('utf-8');
   return {
-    digest: `sha256:${sha256(text)}`,
+    digest: `sha256:${sha256Hex(text)}`,
     fileIdentity: statIdentity(before),
     rules: text.split(/\r?\n/).map(parseIgnoreLine).filter((rule): rule is IgnoreRule => rule !== null),
   };

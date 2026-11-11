@@ -70,9 +70,6 @@ export interface ManifestSurface {
   readonly symlink_target?: string | null;
 }
 
-function hash(bytes: string | Buffer): string {
-  return sha256Prefixed(bytes);
-}
 function stat(path: string): ReturnType<typeof lstatSync> | null {
   try { return lstatSync(path); } catch (error) {
     if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return null;
@@ -109,7 +106,7 @@ export function legacyPathSnapshot(path: string): LegacyPathSnapshot | null {
   const entry = stat(path);
   if (!entry) return null;
   if (entry.isSymbolicLink()) return { kind: 'symlink', symlinkTarget: readlinkSync(path) };
-  if (entry.isFile()) return { kind: 'file', contentHash: hash(readFileSync(path)) };
+  if (entry.isFile()) return { kind: 'file', contentHash: sha256Prefixed(readFileSync(path)) };
   if (entry.isDirectory()) return { kind: 'directory', contentHash: hashManagedTree(path) };
   return null;
 }
@@ -182,7 +179,7 @@ function actionsOf(): readonly RetirementAction[] {
         if (!isLegacyPathSafe(packageRoot, source, false) || !stat(source)?.isFile()) {
           throw new Error(`declared helper source is missing or unsafe: ${name}`);
         }
-        const digest = hash(readFileSync(source));
+        const digest = sha256Prefixed(readFileSync(source));
         if (fingerprints[path] !== undefined && fingerprints[path] !== digest) {
           throw new Error(`declared helper fingerprint differs from its package source: ${path}`);
         }
@@ -294,7 +291,7 @@ export function hashUpgradeSource(
   const path = resolve(sourcePath);
   if (path === root ? !stat(root)?.isDirectory() : !isLegacyPathSafe(root, path, false)) return null;
   const entry = stat(path);
-  if (entry?.isFile()) return hash(readFileSync(path));
+  if (entry?.isFile()) return sha256Prefixed(readFileSync(path));
   if (entry?.isDirectory()) {
     if (sourceSurface !== 'canonical-skill' && sourceSurface !== 'command-facade') {
       throw new Error('Directory refresh source surface is missing or invalid.');
@@ -642,7 +639,7 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
         continue;
       }
       const stripped = stripLegacyHookEntries(value, location === 'global' ? { location, home: options.home, repoHarnessHome: options.repoHarnessHome } : { location });
-      for (const entry of stripped.removed) add({ location, surface: 'hook-entry', path, retiredBy: hookRetirement, ownership: 'owned-clean', proof: 'managed-hook', action: 'strip-entry', expectedContentHash: hash(readFileSync(path)), hookEvent: entry.event, hookCommand: entry.command });
+      for (const entry of stripped.removed) add({ location, surface: 'hook-entry', path, retiredBy: hookRetirement, ownership: 'owned-clean', proof: 'managed-hook', action: 'strip-entry', expectedContentHash: sha256Prefixed(readFileSync(path)), hookEvent: entry.event, hookCommand: entry.command });
     }
   }
   if (options.scope !== 'project') {
