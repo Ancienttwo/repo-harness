@@ -1485,6 +1485,20 @@ export function gitExecFileSync(args: readonly string[], options: GitExecOptions
   }
 }
 
+/** Repository top level of `cwd`, or null when git fails or prints nothing. Each caller owns its fallback. */
+export function gitToplevel(cwd: string, timeoutMs?: number): string | null {
+  try {
+    const out = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: timeoutMs,
+    }).trim();
+    return out || null;
+  } catch {
+    return null;
+  }
+}
+
 type GitSpawnStringOptions = SpawnSyncOptionsWithStringEncoding & GitCallFields;
 type GitSpawnBufferOptions = SpawnSyncOptionsWithBufferEncoding & GitCallFields;
 type GitSpawnOptions = SpawnSyncOptions & GitCallFields;
