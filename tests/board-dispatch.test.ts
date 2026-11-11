@@ -15,8 +15,8 @@ const comment = (body: string, created_at = '2026-11-09T10:00:00Z'): BoardCommen
   ({ url: `https://example.test/${created_at}`, created_at, author_association: 'OWNER', body });
 const coordinator = comment('repo-harness issue claim\nStatus: active\nRole: coordinator', '2026-11-09T09:00:00Z');
 const planBody = (limit: number) => `repo-harness plan\n\n\`\`\`json\n${JSON.stringify({
-  protocol: 1, kind: 'repo-harness.plan', merge_order: [1, 2, 3, 4, 5, 6, 7, 8], holds: [{ issue: 2, reason: 'owner first' }],
-  batches: [], seat_limits: { worker: limit },
+  protocol: 2, kind: 'repo-harness.plan', merge_order: [1, 2, 3, 4, 5, 6, 7, 8], holds: [{ issue: 2, reason: 'owner first' }],
+  seat_limits: { worker: limit },
 })}\n\`\`\``;
 
 function issue(number: number, extra: Partial<BoardSubIssueReadV1> = {}): BoardSubIssueReadV1 {

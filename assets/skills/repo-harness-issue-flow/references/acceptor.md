@@ -79,36 +79,21 @@ The table rules govern how the row combines with the review.
    findings by bug family. For each family, list every sibling case and
    every missing test branch in one finding.
 
-   **Sync head.** A sync with main makes a new head. The board counts
-   the rows of an earlier reviewed head as rows of the new head when git
-   proves the new head a merge-only sync of it: the reviewed head is an
-   ancestor of the new head, `git rev-list --no-merges <reviewed>..<head>
-   ^origin/main` prints nothing, and each merge commit in that range is
-   the clean automatic merge of a main commit:
-   `git merge-tree --write-tree <parent1> <parent2>` exits 0 with the
-   tree of the merge commit, and the parents have one merge base. Both
-   PR diffs (from the one merge base with main) must not be empty. The
-   board reads the rows of the new head and of the newest proven
-   reviewed head only, so reviews split across older heads do not add
-   up. The newest proven reviewed head is the subject of the newest
-   record with a row on a proven head. A FAIL row on that head, in any
-   record, or on the new head, stops the carry. A FAIL row on an older
-   proven head that a newer record supersedes does not stop it. A git
-   error on any candidate proves none. The board then shows `via: sync` with
-   `carried_from`, and the new head needs CI only. Any other sync
-   head (a conflict, even one resolved to the PR side; an edit in the
-   merge; a new commit; a failed git step) needs a sync check: a review
-   of the sync delta that writes one record row for the new head. A
-   Medium sync head needs one sync check row under the Medium rule above. A High sync head needs the
-   round-1 rule: two sync check rows from distinct claims, at least one
-   different-family. A PR that changes a hook path never carries: the
-   owner approves each head of a hook diff again.
+   **New head.** The rows of a record count for their subject SHA only;
+   the board reads the rows of the head. A PR whose base is behind main
+   merges with no sync (`orchestrator.md` §9), so do not merge main into
+   a PR that has no conflict. A head that takes a merge of main, for a
+   conflict, is a new head. It needs its own CI run and a delta check: a
+   review of the delta from the reviewed head that writes one record row
+   for the new head. A Medium head needs one delta check row under the
+   Medium rule above. A High head needs the round-1 rule: two delta
+   check rows from distinct claims, at least one different-family.
 2. **Round 2.** The reviewer or reviewers that raised a blocking finding
    read the fix delta (the hunks that changed after round 1) and the
    sibling cases of each of its findings. On a High or unknown-tier PR,
    the fix head needs the round-1 rule too: a reviewer of round 1 that
-   raised no blocking finding takes a delta check of the fix head, with
-   the same scope as a sync check, and records its own row. Together the
+   raised no blocking finding takes a delta check of the fix head and
+   records its own row. Together the
    rows of the fix head come from two distinct claims, at least one
    different-family.
 3. **Round 3** runs with no owner question when the round-2 findings are in
@@ -125,7 +110,7 @@ The table rules govern how the row combines with the review.
    and the advisor) may move that family to one follow-up issue after round
    3 or round 4. The coordinator then resolves each remaining P2 thread with
    a reply that links the follow-up issue (§6). The deferral takes effect at
-   the next head: a fix, a sync with main, or the commit that adds the
+   the next head: a fix, a merge of main, or the commit that adds the
    follow-up link. A `FAIL` row stays on its head, so the next round reviews
    that new head with those threads deferred. It must return `PASS` for that
    head before the PR merges, and its record names the follow-up issue. A

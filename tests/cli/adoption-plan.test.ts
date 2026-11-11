@@ -52,7 +52,7 @@ describe("canonical adoption plan", () => {
     try {
       mkdirSync(join(repo, ".ai/harness"), { recursive: true });
       const owner = `{
-  "publication": { "acceptance_merge": "on", "merge_queue": {"x": 1} },
+  "publication": { "acceptance_merge": "on", "generated_artifacts": {"x": 1} },
   "operations": { "agent_writable_private_dirs": ["_ops/notes"], "dir": "deploy" },
   "external_tooling": { "herdr": { "url": "u" }, "agent_fleet": { "managed_agents": ["explorer", "orchestrator"] } },
   "sidecar_research": { "default": true },
@@ -73,10 +73,10 @@ describe("canonical adoption plan", () => {
       });
       expect(applyAdoptionPlan(plan).ok).toBe(true);
       const text = readFileSync(join(repo, ".ai/harness/policy.json"), "utf8");
-      expect(text).toContain(`"publication": { "acceptance_merge": "on", "merge_queue": {"x": 1} }`);
+      expect(text).toContain(`"publication": { "acceptance_merge": "on", "generated_artifacts": {"x": 1} }`);
       expect(text).toContain(`"agent_writable_private_dirs": ["_ops/notes"]`);
       expect(JSON.parse(text)).toEqual({
-        publication: { acceptance_merge: "on", merge_queue: { x: 1 } },
+        publication: { acceptance_merge: "on", generated_artifacts: { x: 1 } },
         operations: { agent_writable_private_dirs: ["_ops/notes"] },
         external_tooling: { agent_fleet: { managed_agents: ["explorer", "orchestrator"] } },
         context: { capability_source: "archcontext" },

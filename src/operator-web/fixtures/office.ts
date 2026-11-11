@@ -1,6 +1,7 @@
 import { ADVISOR_SEAT_SEND_KIND, ADVISOR_SEAT_TRANSCRIPT_KIND, ADVISOR_TRANSCRIPT_LINE_WITHHELD, decodeAdvisorSeatSend, decodeAdvisorSeatTranscript } from '../../core/board/advisor-seat';
 import { BOARD_PROTOCOL, decodeBoard, type BoardItemV1, type BoardPullRequestV1, type BoardTerminalV1, type BoardV1 } from '../../core/board/board';
 import { BOARD_PARENTS_PROTOCOL, decodeBoardParents, decodeBoardSeats, type BoardParentsSeatV1, type BoardParentsV1, type BoardSeatsV1 } from '../../core/board/parents';
+import { PLAN_BLOCK_PROTOCOL } from '../../core/board/plan-block';
 import { decodeDevActivitySnapshot } from '../../core/dev-activity/decode';
 import { decodeOperatorRepositories } from '../../core/operator/repositories';
 import type { OperatorAppProps } from '../App';
@@ -11,8 +12,8 @@ import { HARNESS_ID } from './dev-activity';
 
 /**
  * The sample state of the approved S0 mockup page 一间房 (#1790 M82): the
- * #1309 board of repo-harness with six workers, two in the queue, three in the
- * cart and three in the tray. The overview page has eight rooms: this board,
+ * #1309 board of repo-harness with six workers, two in the queue, three
+ * accepted and three in the tray. The overview page has eight rooms: this board,
  * three other lit rooms and four idle rooms.
  */
 export const OFFICE_PARENT = 1309;
@@ -50,11 +51,11 @@ export function officeBoard(now: number): BoardV1 {
   const done = { status: 'success', completed_at: ago(9) } as const;
   const terminals = officeWorkers(now);
   return decodeBoard({
-    protocol: BOARD_PROTOCOL, kind: 'repo-harness.board', observed_at: ago(0), repository: REPOSITORY, default_branch: 'main', acceptance_merge: 'on', merge_queue: 'off',
+    protocol: BOARD_PROTOCOL, kind: 'repo-harness.board', observed_at: ago(0), repository: REPOSITORY, default_branch: 'main', acceptance_merge: 'on',
     parent: { number: OFFICE_PARENT, title: 'Operator console', url: url('issues', OFFICE_PARENT), state: 'open', labels: [], milestone: null },
     plan: {
       status: 'observed', comment_url: `${url('issues', OFFICE_PARENT)}#issuecomment-3`, created_at: ago(8), revision: 7,
-      block: { protocol: 1, kind: 'repo-harness.plan', merge_order: [1315, 1320, 1311, 1324, 1321, 1323, 1295], holds: [{ issue: 1316, reason: '等 DSH 通道' }], batches: [[1315, 1320, 1311, 1324, 1321]], seat_limits: { worker: 6 } },
+      block: { protocol: PLAN_BLOCK_PROTOCOL, kind: 'repo-harness.plan', merge_order: [1315, 1320, 1311, 1324, 1321, 1323, 1295], holds: [{ issue: 1316, reason: '等 DSH 通道' }], seat_limits: { worker: 6 } },
     },
     merge_hold: { status: 'none' },
     items: [
@@ -62,9 +63,9 @@ export function officeBoard(now: number): BoardV1 {
       item(1305, 'init 刷新后 package.json 仍调用已退役 helper', [], 'none', ago(7)),
       item(1300, 'Architecture History 视觉稿', [1324], 'observed', ago(2)),
       item(1321, 'Worktree labels', [1321], 'observed', ago(5)),
-      item(1315, 'Batch member', [1315], 'observed', ago(6)),
-      item(1320, 'Batch member', [1320], 'observed', ago(6)),
-      item(1311, 'Batch member', [1311], 'observed', ago(5)),
+      item(1315, 'Board read', [1315], 'observed', ago(6)),
+      item(1320, 'Task drawer', [1320], 'observed', ago(6)),
+      item(1311, 'Seat labels', [1311], 'observed', ago(5)),
       item(1316, 'DSH 状态标记', [], 'none', ago(30)),
       item(1302, '刷新 CLAUDE.md 前先备份', [], 'none', ago(30)),
       item(1304, '预览列出会删的 worktree', [], 'none', ago(30)),
@@ -110,20 +111,20 @@ interface SampleRoom {
   readonly advisor: SampleLead;
   /** Agent, hc status and desk of each worker. Worker `i` holds issue `100 + i`. */
   readonly workers: readonly (readonly [string | null, string, SampleDesk])[];
-  /** The plan worker limit and its one batch; null without a plan. */
-  readonly plan: { readonly limit: number; readonly size: number; readonly accepted: number } | null;
+  /** The plan worker limit and the count of accepted pull requests; null without a plan. */
+  readonly plan: { readonly limit: number; readonly accepted: number } | null;
 }
 
 const SAMPLE_ROOMS: Readonly<Record<string, SampleRoom>> = {
   repo_a1a1a1a1a1a1a1a1: {
     name: 'aiphabee', parent: 212, orchestrator: { agent: 'claude-code' }, advisor: { agent: 'codex' },
     workers: [['claude-code', 'working', 'coding'], ['codex', 'working', 'coding'], ['codex', 'working', 'ci_failed']],
-    plan: { limit: 4, size: 4, accepted: 2 },
+    plan: { limit: 4, accepted: 2 },
   },
   repo_a2a2a2a2a2a2a2a2: {
     name: 'AstroZi', parent: 87, orchestrator: { agent: 'codex' }, advisor: { agent: 'claude-code' },
     workers: [['claude-code', 'idle', 'ci_pending'], ['codex', 'idle', 'no_claim_status'], ['claude-code', 'idle', 'acceptance_queue']],
-    plan: { limit: 3, size: 3, accepted: 0 },
+    plan: { limit: 3, accepted: 0 },
   },
   repo_a3a3a3a3a3a3a3a3: {
     name: 'arch-context', parent: 438, orchestrator: { agent: null }, advisor: null,
@@ -134,7 +135,7 @@ const SAMPLE_ROOMS: Readonly<Record<string, SampleRoom>> = {
 
 const SAMPLE_CHECK: Readonly<Partial<Record<SampleDesk, BoardPullRequestV1['required_check']['status']>>> = { ci_failed: 'failure', ci_pending: 'pending', acceptance_queue: 'success' };
 
-/** The board of a sample room: one item per worker, a pull request where the desk needs one, and the accepted batch members. */
+/** The board of a sample room: one item per worker, a pull request where the desk needs one, and the accepted pull requests. */
 function sampleBoard(room: SampleRoom, repository: string, now: number): BoardV1 {
   const at = new Date(now - HOUR).toISOString();
   const link = (kind: string, number: number) => `https://github.com/${repository}/${kind}/${number}`;
@@ -144,13 +145,13 @@ function sampleBoard(room: SampleRoom, repository: string, now: number): BoardV1
   const issue = (number: number, pulls: readonly number[], claim: 'observed' | 'none'): BoardItemV1 => ({ ...item(number, `${room.name} #${number}`, pulls, claim, at), url: link('issues', number) });
   const desks = room.workers.map(([, , desk], index) => ({ number: 100 + index, desk, status: SAMPLE_CHECK[desk] }));
   const accepted = Array.from({ length: room.plan?.accepted ?? 0 }, (_, index) => 200 + index);
-  const members = room.plan === null ? [] : [...accepted, ...desks.slice(0, room.plan.size - accepted.length).map(entry => entry.number)];
+  const members = [...accepted, ...desks.map(entry => entry.number)];
   return decodeBoard({
-    protocol: BOARD_PROTOCOL, kind: 'repo-harness.board', observed_at: new Date(now).toISOString(), repository, default_branch: 'main', acceptance_merge: 'on', merge_queue: 'off',
+    protocol: BOARD_PROTOCOL, kind: 'repo-harness.board', observed_at: new Date(now).toISOString(), repository, default_branch: 'main', acceptance_merge: 'on',
     parent: { number: room.parent, title: room.name, url: link('issues', room.parent), state: 'open', labels: [], milestone: null },
     plan: room.plan === null ? { status: 'none' } : {
       status: 'observed', comment_url: `${link('issues', room.parent)}#issuecomment-1`, created_at: at, revision: 1,
-      block: { protocol: 1, kind: 'repo-harness.plan', merge_order: members, holds: [], batches: [members], seat_limits: { worker: room.plan.limit } },
+      block: { protocol: PLAN_BLOCK_PROTOCOL, kind: 'repo-harness.plan', merge_order: members, holds: [], seat_limits: { worker: room.plan.limit } },
     },
     merge_hold: { status: 'none' },
     items: [

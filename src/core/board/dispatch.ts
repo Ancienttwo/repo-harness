@@ -1,4 +1,4 @@
-import { PlanBlockError, decodePlanBlock, type PlanBlockV1 } from './plan-block';
+import { PlanBlockError, decodePlanBlock, type PlanBlockV2 } from './plan-block';
 import { selectSeatRoute, type SeatAccountQuotas } from './seat-routing';
 import { ROUTING_CLASSES, isWorkerSeat, type RoutingClass, type SeatId, type SeatsConfigV1 } from './seats-settings';
 import { claimStatusTarget, commentId, field, newestProtocolComment, parseClaimStatus, protocolComments, type BoardCommentPageV1, type BoardCommentV1, type BoardParentReadV1, type BoardSubIssueReadV1 } from './source';
@@ -43,7 +43,7 @@ export interface DispatchInputV1 {
 }
 
 export interface DispatchPlanV1 {
-  readonly plan: PlanBlockV1;
+  readonly plan: PlanBlockV2;
   /** Live worker seats that carry this parent's label before this dispatch. */
   readonly live_workers: number;
   readonly coordinator: string | null;
@@ -51,7 +51,7 @@ export interface DispatchPlanV1 {
   readonly decisions: readonly DispatchDecisionV1[];
 }
 
-function planOf(parent: BoardParentReadV1): PlanBlockV1 {
+function planOf(parent: BoardParentReadV1): PlanBlockV2 {
   const comment = newestProtocolComment(parent.parent.comments, PLAN_HEADER);
   if (comment === null) throw new DispatchError(`#${parent.parent.number} has no plan comment${parent.parent.comments.truncated ? ' in the comments that were read' : ''}`);
   try {

@@ -3,7 +3,7 @@ import { primaryPullRequest } from './pull-requests';
 
 /**
  * The room rules of one board: which seats have a desk, the state of a desk,
- * the worker limit and the current batch. The Office room and the stored
+ * and the worker limit. The Office room and the stored
  * board summary read these rules, so the two cannot differ.
  */
 
@@ -25,12 +25,6 @@ export type HcStatusClass = typeof HC_STATUS_WORDS[number] | 'unreported' | 'oth
 export function hcStatusClass(status: string | null): HcStatusClass {
   if (status === null) return 'unreported';
   return (HC_STATUS_WORDS as readonly string[]).includes(status) ? status as HcStatusClass : 'other';
-}
-
-/** The first plan batch with an unmerged member. */
-export interface BoardCurrentBatch {
-  readonly size: number;
-  readonly accepted: readonly number[];
 }
 
 export function liveSeats(terminals: readonly BoardTerminalV1[]): readonly BoardSeatTerminal[] {
@@ -72,16 +66,4 @@ export function deskState(terminal: BoardSeatTerminal, item: BoardItemV1 | null,
 /** The plan worker limit, else the issue-flow limit. */
 export function workerLimit(board: BoardV1 | null): number {
   return board?.plan.status === 'observed' ? board.plan.block.seat_limits.worker : ISSUE_FLOW_WORKER_LIMIT;
-}
-
-/** Null without an observed plan, or when every member is merged. */
-export function currentBatch(board: BoardV1): BoardCurrentBatch | null {
-  if (board.plan.status !== 'observed') return null;
-  const primary = (issue: number) => {
-    const item = board.items.find(entry => entry.number === issue);
-    return item === undefined ? null : primaryPullRequest(board, item);
-  };
-  const batch = board.plan.block.batches.find(members => members.some(issue => primary(issue)?.state !== 'merged'));
-  if (batch === undefined) return null;
-  return { size: batch.length, accepted: batch.filter(issue => primary(issue)?.acceptance.status === 'accepted' && primary(issue)?.state === 'open') };
 }

@@ -18,7 +18,7 @@ worker is a comment on its issue or PR.
 Contents: §1 Preflight · §2 Split · §3 Write the boundaries · §4 Parent
 issue (§4.1 Release set, §4.2 Intake) · §5 Gap review · §6 Publish ·
 §7 Dispatch (§7.1 Quota check) · §8 Follow up (§8.1 Triage queue) ·
-§9 Merge and integrate (§9.4 Board merge) · §10 Close out.
+§9 Merge and integrate (§9.3 Board merge) · §10 Close out.
 
 ## 1. Preflight
 
@@ -122,7 +122,7 @@ The role/status column uses only `unclaimed`, `unclaimed · waits for
 The claim comment wins over the table.
 
 A parent with more than two children gets a `plan` comment before
-dispatch. Its plan block holds the merge order, the holds, the batches and
+dispatch. Its plan block holds the merge order, the holds and
 the seat limit (`templates.md`, plan). A plan change is a new `plan` with
 `Supersedes:`; never edit the old comment. A parent with two children or
 fewer needs no plan.
@@ -480,25 +480,19 @@ repo-harness publication merge --repository <owner/name> --repository-id <id> --
 `--head` and `--base` are the SHAs you reviewed.
 `publication.acceptance_merge` in `.ai/harness/policy.json` on the PR base
 decides whether the executor merges. The default branch needs required
-checks and enforce_admins. `publication.merge_queue` (default `off`)
-selects the path: `off` merges directly, `on` enqueues. When the switch and
-the base's merge queue disagree, the executor refuses with
-`merge_queue_policy_mismatch` and does not use the other path.
-Without a merge queue the checks must be strict.
-With a merge queue (a ruleset), the queue must squash with the `ALLGREEN`
-grouping strategy and the repository default squash message must be
-`PR_TITLE` and `PR_BODY`; `--batch` is refused. If it does not, the executor refuses with
-`base_protection_insufficient`.
+checks and enforce_admins. There is one lane: a direct squash. The checks
+need not be strict, and a base that requires a GitHub merge queue is not
+supported (the provider rejects the squash, exit 6).
 
-With `publication.merge_queue` `on`, the executor enqueues the PR, writes `{"queued": ...}`
-to stderr and waits up to 90 minutes for the queue to merge or remove it.
-Run it as a background command in a checkout of the repository. A BEHIND
-PR needs no sync: the queue tests it on the current base. The executor
-proves that the merge commit's parent descends from the `--base` you
-reviewed, that its tree is a clean `git merge-tree` of that parent and
-`--head` (it fetches the commits from the checkout's `origin` with your
-own git setup), and
-that its own `merge_group` CI run succeeded.
+`Required / CI` runs one time for each PR head. A PR whose base is behind
+main needs no sync: the squash lands on the current main. The executor
+proves that the one parent of the merge commit is the `--base` you
+reviewed or a descendant of it. For a descendant it also proves that the
+tree of the merge commit is a clean `git merge-tree` of that parent and
+`--head`; it fetches the commits from the checkout's `origin` with your
+own git setup, so run it in a checkout of the repository. No run tests
+the merge result before the merge. The daily full run finds two PRs that
+pass alone and fail together.
 
 Act on the exit code. Post every result as `integration status` on the PR.
 
@@ -506,10 +500,9 @@ Act on the exit code. Post every result as `integration status` on the PR.
 |---|---|---|
 | 0 | Merged | Post the merge SHA, the parent SHA and the revert command. Post `unblocked` on each dependent PR |
 | 3 | Switch is off (`acceptance_merge_off`) | Post `To: owner`: the PR is ready, the owner merges. Do not merge another way |
-| 4 | Refused before any merge request | For `base_protection_insufficient`, `merge_queue_policy_mismatch`, `publication_policy_invalid` (base policy) and `provider_unavailable`, hand it to the owner. For any other blocker, hand the PR to its head owner with the `blockers` |
+| 4 | Refused before any merge request | For `base_protection_insufficient`, `publication_policy_invalid` (base policy) and `provider_unavailable`, hand it to the owner. For any other blocker, hand the PR to its head owner with the `blockers` |
 | 5 | `merge_outcome_unknown` | Stop. Report to the owner. Never retry |
 | 6 | `provider_rejected` | Post the GitHub error as it is. Hand it to the owner |
-| 6 | `merge_queue_removed` | The queue removed the PR (a failed queue check or a conflict), or another entry replaced the executor's entry. Hand it to its head owner with the queue run |
 
 - Use `Closes #N` only in the PR that finishes the issue. Earlier PRs of a
   multi-PR issue use `Refs #N`. Before merge, check
@@ -518,22 +511,12 @@ Act on the exit code. Post every result as `integration status` on the PR.
   refuses with `closing_references_mismatch`, also for a closing keyword
   that targets a pull-request URL.
 
-### 9.1 Choose the mode
+### 9.1 Eligible PRs
 
-Collect ready green PRs once per merge window. The lane follows
-`publication.merge_queue` on the base:
-
-| `publication.merge_queue` | One eligible PR | Several eligible PRs |
-|---|---|---|
-| `on` | `repo-harness publication merge` enqueues it | The same command for each PR, in the plan block's merge order. The queue gives each PR its own CI run on the current main |
-| `off` | `repo-harness publication merge` squashes it directly | One integration batch with one CI run: `repo-harness publication batch build`, then `repo-harness publication merge --batch` (§9.3) |
-
-With `on`, the executor refuses `--batch`. With `off` and one PR, a
-BEHIND head first takes a merge-only sync (`board.md`, Serial
-integration). Do not sync and re-review each batch member for
-publication. Select batch members in the plan block's merge order. A
-batch has at most 6 members; when the window has more, build successive
-batches in that order.
+Merge each eligible PR on its own, in the order of §9.2. Do not sync a
+PR with main for publication. A sync makes a new head, and each new head
+needs its own CI run and its own review rows (`acceptor.md` §2.2). Only a
+conflict with main needs a merge of main; the head owner makes it.
 
 A PR is eligible when all of these are true:
 
@@ -543,19 +526,8 @@ A PR is eligible when all of these are true:
   `acceptor.md` §2.2 still needs that `PASS`. A Low PR needs no review, but
   its PR body must hold the author verification evidence
   (`docs/reference-configs/agentic-development-flow.md`, Review by risk).
-- Its head equals the reviewed subject, or is a merge-only sync of it
-  with the conditions of `acceptor.md` §2.2 (Sync head): the subject is
-  an ancestor of the head,
-  `git rev-list --no-merges <subject>..<head> ^origin/main` prints
-  nothing, each merge commit in that range is the clean automatic merge
-  of a main commit (`git merge-tree --write-tree <parent1> <parent2>`
-  exits 0 with the tree of the merge commit, one merge base), both PR
-  diffs are not empty, and no record row of the head or of any earlier
-  head proven the same way is a FAIL. Only the subject of the newest
-  proven record carries its rows. The board applies this rule and shows the acceptance as
-  `via: sync` with `carried_from: <subject>`. A PR that changes
-  a hook path never carries: the owner approves each head of a hook diff
-  again.
+- Its head equals the reviewed subject. Rows of an earlier head do not
+  count for a later head.
 - It has no unresolved review thread that a person started. A review bot
   thread is advisory input and does not block. For a rule-4 deferral, you
   resolve the deferred P2 threads first (`acceptor.md` §6).
@@ -569,83 +541,9 @@ gh pr view <p> --json state,isDraft,headRefOid,statusCheckRollup,closingIssuesRe
 
 Use the plan block's merge order. A parent without a plan (two children
 or fewer) uses blocked-by order: a blocker lands before the issue it
-blocks. The Order column of the parent table is only a view. Apply this
-order to the batch members; do not sync and re-review members one by one.
+blocks. The Order column of the parent table is only a view.
 
-### 9.3 Batch integration
-
-Batch integration applies only when `publication.merge_queue` is `off`;
-with `on`, the executor refuses `--batch`. The batch branch holds the member merge commits and nothing else. Never
-resolve a conflict, push a fix or add a commit of your own in it. Never
-merge it by any path other than `repo-harness publication merge`.
-
-1. **Build.** Record each member's eligible head SHA. Run the builder
-   once for the window, with one `--pr` per member in merge order:
-
-   ```bash
-   repo-harness publication batch build --repository-id <id> --parent <parent> --pr <a> --pr <b> --json
-   ```
-
-   The builder pins the member heads, merges them onto the current main,
-   pushes the batch branch and opens the batch PR. Read its result:
-   `merged`, `dropped`, `pr`, `head_sha` and `base_sha`. Confirm that each
-   merged member head matches its recorded eligible SHA before reusing
-   its review evidence.
-2. **Conflict.** The builder aborts a conflicting member merge, drops that
-   member and continues with the next. For each `merge_conflict` in
-   `dropped`, post the batch-drop `integration status` on its PR to its
-   head owner: sync with main, then join a later batch.
-3. **Local check.** In a worktree at the returned batch head, run the
-   repository's typecheck and the test files that two or more merged
-   members change. In repo-harness:
-
-   ```bash
-   for p in <member PRs>; do gh pr diff "$p" --name-only; done | grep '^tests/' | sort | uniq -d
-   bun run check:type
-   bun run test:files <shared test files> --timeout 60000 --max-concurrency 1
-   ```
-
-   CI on the batch head is the authority.
-4. **Check the batch PR.** Read the PR that the builder opened:
-
-   ```bash
-   gh pr view <batch> --json closingIssuesReferences
-   ```
-
-   The closing references must name each issue that a member closes, and
-   nothing else.
-5. **Review.** Every member merged without conflict, and the batch adds no
-   commit of its own. The batch reuses the member acceptance records and
-   needs no new review round. A Low member has no acceptance record to
-   reuse (`docs/reference-configs/agentic-development-flow.md`, Review by
-   risk).
-6. **Red CI.** Do not fix it in the batch branch. Classify the failure
-   first; a known flake gets one rerun (§8). Drop the member that changes
-   the failing test or the source it covers, and post the batch-drop
-   `integration status` on its PR. When you cannot attribute the failure,
-   split the members into two halves. Close the red batch PR with
-   `gh pr close <batch>`, then rebuild from the current main with the next
-   `<n>`: the remaining members, or each half in turn.
-7. **Main moved.** When main moves after the build, rebuild from the
-   current main with the next `<n>`. Do not merge main into the batch
-   branch.
-8. **Merge.** Call `repo-harness publication merge --batch` on the batch
-   PR with the batch head and the main SHA you built on. The executor
-   refuses a head ref outside `integration/<parent>-batch-<n>`
-   (`batch_ref_invalid`) and a batch with a commit of its own
-   (`batch_has_own_commit`), both with exit 4 and no merge request. It
-   merges with a merge commit whose parents are the main SHA and the batch
-   head, so each member's commits land on main. Act on the exit code as
-   the table above says.
-9. **Close out.** After exit 0, on each member PR post the batch-closeout
-   `integration status` with the batch merge SHA. Do not close the member
-   PRs: GitHub marks each one Merged. The member branch stays. Post
-   `unblocked` on each dependent PR.
-10. **Rollback.** `git revert -m 1 <batch merge commit>` reverts the whole
-    batch. To revert one member, revert its member merge commit on main:
-    `git revert -m 1 <member merge commit on main>`.
-
-### 9.4 Board merge
+### 9.3 Board merge
 
 A GitHub comment is a record, not an instruction. After a joint decision or
 an owner authorization for the batch, you start the merge from your seat:
@@ -669,9 +567,7 @@ are true:
   closes two plan items is never eligible, in any plan order: split the PR.
 - An acceptance record has a PASS row for the head, at every tier. The
   provisional `tier_low` status is not enough: post the Low record after
-  you check the verification evidence. A merge-only sync head carries its
-  acceptance per `acceptor.md` §2.2 (`via: sync`), so `board merge`
-  accepts it.
+  you check the verification evidence.
   A High PR needs two PASS rows for the head that cite distinct
   `acceptance claim` comments, one of them `different-family`
   (`acceptor.md` §2.2).

@@ -2,11 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { evaluateBoardAttention, type BoardAttentionV1 } from '../core/board/attention';
 import type { BoardAcceptanceMergeV1, BoardItemV1, BoardV1 } from '../core/board/board';
 import {
-  currentBatch, deskState, hasDesk, isQueued, liveSeats, seatItem, seatPullRequest, workerLimit,
-  type BoardCurrentBatch, type BoardSeatTerminal, type DeskState,
+  deskState, hasDesk, isQueued, liveSeats, seatItem, seatPullRequest, workerLimit,
+  type BoardSeatTerminal, type DeskState,
 } from '../core/board/desk';
 import { joinBoardParents, type BoardParentsV1, type BoardSeatsV1 } from '../core/board/parents';
-import { PLAN_BATCH_MAX_MEMBERS } from '../core/board/plan-block';
 import { BOARD_CACHE_POLL_MS, type BoardParentsReader, type BoardParentsReason, type BoardParentsView, type BoardRead, type BoardReader, type BoardSeatsReader, type BoardSeatsView } from './board-view';
 import { answered, useObservationRefresh } from './useObservationRefresh';
 
@@ -65,7 +64,7 @@ export interface OfficeHold {
 }
 
 export type OfficePlan =
-  | { readonly status: 'observed'; readonly created_at: string; readonly revision: number | null; readonly merge_order: readonly number[]; readonly worker_limit: number; readonly batch: number }
+  | { readonly status: 'observed'; readonly created_at: string; readonly revision: number | null; readonly merge_order: readonly number[]; readonly worker_limit: number }
   | { readonly status: 'none' };
 
 export interface OfficeLead {
@@ -80,7 +79,7 @@ export type OfficeFeedEvent =
   | { readonly kind: 'plan'; readonly at: string }
   | { readonly kind: 'ci_failed'; readonly at: string; readonly pr: number }
   | { readonly kind: 'queued'; readonly at: string; readonly pr: number }
-  | { readonly kind: 'accepted'; readonly at: string; readonly pr: number; readonly carted: boolean };
+  | { readonly kind: 'accepted'; readonly at: string; readonly pr: number };
 
 export interface OfficeRoom {
   readonly plan: OfficePlan;
@@ -91,8 +90,6 @@ export interface OfficeRoom {
   /** The plan worker limit, else the issue-flow limit. */
   readonly limit: number;
   readonly queue: readonly OfficeQueueEntry[];
-  readonly cart: BoardCurrentBatch | null;
-  readonly cart_sockets: number;
   readonly backlog: readonly OfficeBacklogEntry[];
   readonly holds: readonly OfficeHold[];
   /** A1 findings: accepted, ready pull requests that wait for a merge. */
@@ -124,15 +121,12 @@ function desk(board: BoardV1 | null, terminal: BoardSeatTerminal): OfficeDesk {
   };
 }
 
-function feed(board: BoardV1, cart: BoardCurrentBatch | null): readonly OfficeFeedEvent[] {
+function feed(board: BoardV1): readonly OfficeFeedEvent[] {
   const events: OfficeFeedEvent[] = board.plan.status === 'observed' ? [{ kind: 'plan', at: board.plan.created_at }] : [];
   for (const pr of board.pull_requests) {
     if (pr.required_check.status === 'failure' && pr.state === 'open') events.push({ kind: 'ci_failed', at: pr.required_check.completed_at, pr: pr.number });
     if (pr.required_check.status === 'success' && isQueued(pr)) events.push({ kind: 'queued', at: pr.required_check.completed_at, pr: pr.number });
-    if (pr.acceptance.status === 'accepted') {
-      const item = board.items.find(entry => entry.pull_requests.includes(pr.number));
-      events.push({ kind: 'accepted', at: pr.acceptance.accepted_at, pr: pr.number, carted: item !== undefined && cart?.accepted.includes(item.number) === true });
-    }
+    if (pr.acceptance.status === 'accepted') events.push({ kind: 'accepted', at: pr.acceptance.accepted_at, pr: pr.number });
   }
   return events.sort((left, right) => Date.parse(right.at) - Date.parse(left.at)).slice(0, FEED_MAX);
 }
@@ -157,14 +151,13 @@ export function officeRoom(document: BoardSeatsV1, active: { readonly board: Boa
   const desks = seats.filter(hasDesk).map(seat => desk(board, seat));
   const plan = board?.plan.status === 'observed' ? board.plan : null;
   const open = board?.items.filter(item => item.state === 'open') ?? [];
-  const planned = new Set([...(plan?.block.merge_order ?? []), ...(plan?.block.batches.flat() ?? [])]);
+  const planned = new Set(plan?.block.merge_order ?? []);
   const held = new Map((plan?.block.holds ?? []).map(hold => [hold.issue, hold.reason]));
-  const cart = board === null ? null : currentBatch(board);
   const seated = (item: BoardItemV1) => seats.some(seat => seat.issue === item.number || (seat.pr !== null && item.pull_requests.includes(seat.pr)));
   return {
     plan: plan === null ? { status: 'none' } : {
       status: 'observed', created_at: plan.created_at, revision: plan.revision, merge_order: plan.block.merge_order,
-      worker_limit: plan.block.seat_limits.worker, batch: cart?.size ?? 0,
+      worker_limit: plan.block.seat_limits.worker,
     },
     orchestrator: lead(seats, 'orchestrator'),
     advisor: lead(seats, 'advisor'),
@@ -179,14 +172,12 @@ export function officeRoom(document: BoardSeatsV1, active: { readonly board: Boa
         messages: owners.flatMap(seat => (seat.status_msg === null ? [] : [{ address: seat.address, text: seat.status_msg }])),
       };
     }),
-    cart,
-    cart_sockets: PLAN_BATCH_MAX_MEMBERS,
     backlog: open.filter(item => !planned.has(item.number) && !held.has(item.number) && item.pull_requests.length === 0 && !seated(item)).map(item => ({ issue: item.number, title: item.title })),
     holds: [...held].map(([issue, reason]) => ({ issue, title: board!.items.find(item => item.number === issue)?.title ?? null, reason })),
     merge_waits: active?.attention.findings.filter(finding => finding.rule === 'A1').length ?? 0,
     merge_policy: board?.acceptance_merge ?? null,
     mines: active === null ? new Map() : mines(active.attention, desks),
-    feed: board === null ? [] : feed(board, cart),
+    feed: board === null ? [] : feed(board),
   };
 }
 

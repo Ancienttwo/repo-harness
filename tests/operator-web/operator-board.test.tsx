@@ -134,8 +134,8 @@ const PARENTS = decodeBoardParents(boardParents);
 const SEATS = decodeBoardSeats(boardSeats);
 /**
  * The board of #1474 with exact card counts: `queue` queued and `ci` failing
- * pull requests, a plan with `limit` workers whose batch has `accepted`
- * accepted members, and a failed daily run (one A7 finding) for `needsYou`.
+ * pull requests, a plan with `limit` workers, `accepted` accepted pull
+ * requests, and a failed daily run (one A7 finding) for `needsYou`.
  */
 function countedBoard({ queue = 0, ci = 0, accepted = 0, limit = null, needsYou = false }: { readonly queue?: number; readonly ci?: number; readonly accepted?: number; readonly limit?: number | null; readonly needsYou?: boolean }): BoardV1 {
   const template = BOARD.pull_requests.find(pr => pr.number === 1494)!;
@@ -145,7 +145,7 @@ function countedBoard({ queue = 0, ci = 0, accepted = 0, limit = null, needsYou 
     ...BOARD, execution: { status: 'observed', terminals: [] },
     daily_run: { ...BOARD.daily_run, conclusion: needsYou ? 'failure' : 'success' },
     plan: limit === null ? { status: 'absent', truncated: false } : { status: 'observed', comment_url: 'https://github.com/plan', created_at: BOARD.observed_at, revision: 1,
-      block: { protocol: 1, kind: 'repo-harness.plan', merge_order: [], holds: [], batches: [[...members, 1490]], seat_limits: { worker: limit } } },
+      block: { protocol: 2, kind: 'repo-harness.plan', merge_order: [], holds: [], seat_limits: { worker: limit } } },
     items: BOARD.items.filter(item => members.includes(item.number)).map(item => ({ ...item, pull_requests: [item.number + 1000] })),
     pull_requests: [
       ...members.map(number => ({ ...template, number: number + 1000, required_check: done, acceptance: { status: 'accepted', via: 'record', accepted_at: BOARD.observed_at, evidence_url: 'https://github.com/plan#accepted' } })),
@@ -473,14 +473,6 @@ describe('board page', () => {
     await act(async () => root?.unmount());
     root = null;
     // #1477 has no pull request: closed without merged work is not shipped.
-    // Under a merge queue the command enqueues the PR: GitHub refuses --squash on a queued branch.
-    boardAt(1475);
-    await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board: { ...BOARD, merge_queue: 'on' } }) })} />);
-    await settle();
-    expect(dialog()!.querySelector('[data-command] code')?.textContent).toBe('gh pr merge https://github.com/Ancienttwo/repo-harness/pull/1491');
-    await act(async () => root?.unmount());
-    root = null;
-
     boardAt(1477);
     const closed: BoardV1 = { ...BOARD, items: BOARD.items.map(item => item.number === 1477 ? { ...item, state: 'closed' } : item) };
     await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board: closed }) })} />);
@@ -673,7 +665,7 @@ describe('board page', () => {
     const refusal = (code: string, status: number) => () => Response.json({ error: { code, message: 'refused', next_action: 'retry' } }, { status });
     const answers: (() => Response)[] = [
       () => Response.json(BOARD),
-      () => Response.json({ ...BOARD, protocol: 7 }),
+      () => Response.json({ ...BOARD, protocol: 8 }),
       refusal('board_parent_invalid', 400),
       refusal('repository_not_found', 404),
       refusal('board_collect_failed', 503),
@@ -946,7 +938,7 @@ describe('board office (#1755)', () => {
   });
   const PLAN: BoardV1['plan'] = {
     status: 'observed', comment_url: 'https://github.com/Ancienttwo/repo-harness/issues/1474#issuecomment-1', created_at: '2026-11-02T20:00:00Z', revision: 1,
-    block: { protocol: 1, kind: 'repo-harness.plan', merge_order: [1475, 1476, 1479], holds: [{ issue: 1477, reason: 'waits for #1476' }], batches: [[1475, 1476]], seat_limits: { worker: 3 } },
+    block: { protocol: 2, kind: 'repo-harness.plan', merge_order: [1475, 1476, 1479], holds: [{ issue: 1477, reason: 'waits for #1476' }], seat_limits: { worker: 3 } },
   };
   /** The parent list that carries the terminals of a board: the seats of the room. */
   const seatsOf = (board: BoardV1): BoardSeatsV1 => ({ ...SEATS, seats: board.execution.status === 'observed' ? board.execution.terminals.map(terminal => ({ ...terminal, seat: terminal.seat_status === 'observed' ? terminal.seat : '', parent: '1474' })) : [] });
@@ -1000,10 +992,10 @@ describe('board office (#1755)', () => {
     expect(branches.map(desk => desk.branch)).toEqual(['feat/1299-dsh-companion', null]);
   });
 
-  test('without an observed plan: the issue-flow limit and no cart; with a plan the limit, the current batch and the holds come from the block; the tray holds what nobody works on', () => {
+  test('without an observed plan: the issue-flow limit; with a plan the limit and the holds come from the block; the tray holds what nobody works on', () => {
     const recorded = room(BOARD);
     expect(BOARD.plan.status).toBe('unavailable');
-    expect([recorded.plan, recorded.limit, recorded.cart]).toEqual([{ status: 'none' }, ISSUE_FLOW_WORKER_LIMIT, null]);
+    expect([recorded.plan, recorded.limit]).toEqual([{ status: 'none' }, ISSUE_FLOW_WORKER_LIMIT]);
     const worked = new Set(BOARD.items.filter(item => item.pull_requests.length > 0).map(item => item.number));
     expect(recorded.backlog.map(entry => entry.issue)).toEqual(BOARD.items.filter(item => item.state === 'open' && !worked.has(item.number) && ![1476, 1475].includes(item.number)).map(item => item.number));
     expect(recorded.desks.map(desk => [desk.address, desk.state])).toEqual([['t1', 'blocked'], ['t2', 'done']]);
@@ -1017,17 +1009,12 @@ describe('board office (#1755)', () => {
     expect(officeRoom(seatsOf(BOARD), { board: BOARD, attention: { ...attention, findings: [a1, a1] } }).merge_waits).toBe(2);
 
     const planned = room(boardWith({ plan: PLAN }));
-    expect(planned.plan).toEqual({ status: 'observed', created_at: '2026-11-02T20:00:00Z', revision: 1, merge_order: [1475, 1476, 1479], worker_limit: 3, batch: 2 });
+    expect(planned.plan).toEqual({ status: 'observed', created_at: '2026-11-02T20:00:00Z', revision: 1, merge_order: [1475, 1476, 1479], worker_limit: 3 });
     expect(planned.limit).toBe(3);
-    // #1475's PR is accepted, #1476's is not: the cart has two places and one member.
-    expect(planned.cart).toEqual({ size: 2, accepted: [1475] });
     expect(planned.holds).toEqual([{ issue: 1477, title: BOARD.items.find(item => item.number === 1477)!.title, reason: 'waits for #1476' }]);
-    // A merged batch leaves the cart: the next batch with an unmerged member takes it.
-    const merged = boardWith({ prs: Object.fromEntries(BOARD.pull_requests.map(pr => [pr.number, { state: 'merged' as const }])), plan: PLAN });
-    expect(room(merged).cart).toBeNull();
   });
 
-  test('the sample state equals the S0 mockup page: six workers, two away, two in the queue, three in the cart, three in the tray and the feed from server times', () => {
+  test('the sample state equals the S0 mockup page: six workers, two away, two in the queue, three in the tray and the feed from server times', () => {
     const board = officeBoard(NOW);
     const sample = officeRoom(officeSeats(HARNESS_ID, NOW), { board, attention: evaluateBoardAttention(board) });
     expect(sample.desks.map(desk => [desk.state, desk.issue, desk.pr, desk.agent])).toEqual([
@@ -1036,17 +1023,16 @@ describe('board office (#1755)', () => {
     ]);
     expect([sample.orchestrator?.agent, sample.advisor?.agent, sample.limit]).toEqual(['claude-code', 'codex', 6]);
     expect(sample.queue.map(entry => [entry.pr, entry.agent])).toEqual([[1324, 'claude-code'], [1321, 'codex']]);
-    expect(sample.cart).toEqual({ size: 5, accepted: [1315, 1320, 1311] });
     expect([...sample.holds.map(hold => hold.issue), ...sample.backlog.map(entry => entry.issue)]).toEqual([1316, 1302, 1304]);
     expect(sample.feed.map(event => event.kind)).toEqual(['queued', 'accepted', 'ci_failed', 'plan', 'queued']);
-    expect(sample.feed[1]).toMatchObject({ pr: 1311, carted: true });
+    expect(sample.feed[1]).toMatchObject({ pr: 1311 });
     expect(activeParent(officeParents(HARNESS_ID, NOW), officeSeats(HARNESS_ID, NOW))).toBe(OFFICE_PARENT);
     expect(activeParent(officeParents('repo_1f2e3d4c5b6a7980', NOW), officeSeats('repo_1f2e3d4c5b6a7980', NOW))).toBeNull();
   });
 
   const SCENE_ROOM: SceneRoom = {
-    name: 'repo-harness', parent: 1, lit: true, orchestrator: null, advisor: null, plan: null, limit: 8, desks: [], queue: [], cart: 0, tray: 0, mergeWait: null, mines: new Map(),
-    text: { noParent: 'no parent', orchestrator: '', advisor: '', tray: '', cart: '', queue: '', seat: index => `Seat ${index + 1}`, free: 'free', roped: 'roped', mine: rule => rule, say: () => '' },
+    name: 'repo-harness', parent: 1, lit: true, orchestrator: null, advisor: null, plan: null, limit: 8, desks: [], queue: [], tray: 0, mergeWait: null, mines: new Map(),
+    text: { noParent: 'no parent', orchestrator: '', advisor: '', tray: '', queue: '', seat: index => `Seat ${index + 1}`, free: 'free', roped: 'roped', mine: rule => rule, say: () => '' },
   };
 
   test('the avatar follows the hc agent word, and the scene keeps a desk for every seat: free to the limit, roped to 8, a new row past 8', () => {
@@ -1068,7 +1054,7 @@ describe('board office (#1755)', () => {
 
   test('the scene reads the parent, the plan and the queue from their own fields, and reduced motion stands the boss still', () => {
     const view = { frame: 0, night: false, advisorBusy: false, effect: null };
-    const plan = { revision: null, order: [1], limit: 1, batch: 1 };
+    const plan = { revision: null, order: [1], limit: 1 };
     for (const [parent, roomPlan, lit, label] of [
       [null, null, false, true], [null, null, true, true], [1, null, false, false], [1, plan, false, false], [1, null, true, false],
     ] as const) expect(composeRoom({ ...SCENE_ROOM, parent, plan: roomPlan, lit }, view).labels.some(entry => entry.text === 'no parent')).toBe(label);
@@ -1229,7 +1215,7 @@ describe('board office (#1755)', () => {
     const cases: readonly { readonly id: string; readonly list: BoardParentsRead; readonly read: () => BoardRead; readonly chips: readonly string[]; readonly name?: string }[] = [
       { id: 'repo_1000000000000001', list: { state: 'ok', list: PARENTS }, read: () => ok(countedBoard({ limit: 8 })), chips: ['2/8'], name: 'parent #1474' },
       { id: 'repo_1000000000000002', list: { state: 'ok', list: PARENTS }, read: () => ok(countedBoard({ queue: 2, ci: 1 })), chips: ['worker 2 · no plan', 'queue 2', 'CI ✗ 1'] },
-      { id: 'repo_1000000000000003', list: { state: 'ok', list: PARENTS }, read: () => ok(countedBoard({ queue: 1, ci: 1, accepted: 2, limit: 8, needsYou: true })), chips: ['needs you 1', '2/8', 'queue 1', 'CI ✗ 1', 'batch 2/6'] },
+      { id: 'repo_1000000000000003', list: { state: 'ok', list: PARENTS }, read: () => ok(countedBoard({ queue: 1, ci: 1, accepted: 2, limit: 8, needsYou: true })), chips: ['needs you 1', '2/8', 'queue 1', 'CI ✗ 1'] },
       { id: 'repo_1000000000000004', list: { state: 'ok', list: PARENTS }, read: () => ({ state: 'unavailable', reason: 'board_pending' }), chips: ['worker 2', 'board not read'] },
       { id: 'repo_1000000000000005', list: { state: 'ok', list: PARENTS }, read: () => ({ state: 'unavailable', reason: 'board_collect_failed' }), chips: ['worker 2', 'board: board_collect_failed'] },
       { id: 'repo_1000000000000006', list: { state: 'ok', list: PARENTS }, read: () => ({ state: 'unavailable', reason: 'unreachable' }), chips: ['worker 2', 'board: unreachable'] },
@@ -1257,18 +1243,17 @@ describe('board office (#1755)', () => {
     expect(rows('[data-office-card]').map(card => card.getAttribute('data-repository')!.at(-1))).toEqual(['3', '2', '1', '4', '5', '6', '7', '8']);
     expect(rows('[data-repository$="3"]')[0]!.hasAttribute('data-waiting')).toBe(true);
     expect(rows('[data-office-total]').map(chip => chip.textContent)).toEqual(['rooms: 8', 'on seat: 14', 'queued for acceptance: 3', 'CI failed: 2', 'waiting for you: 1', 'rooms not read: 3']);
-    expect(rows('[data-repository$="3"]')[0]!.getAttribute('aria-label')).toBe('service-3: needs you 1, 2/8, queue 1, CI ✗ 1, batch 2/6. Open the office.');
+    expect(rows('[data-repository$="3"]')[0]!.getAttribute('aria-label')).toBe('service-3: needs you 1, 2/8, queue 1, CI ✗ 1. Open the office.');
     expect(document.querySelector('.board-office__mascot')?.getAttribute('aria-label')).toBe('Boss (you): calm');
   });
 
-  test('the sample cards equal their rooms: the limit, the stalled count and the current batch from each sample board', async () => {
+  test('the sample cards equal their rooms: the limit and the stalled count from each sample board', async () => {
     officeAt();
     await mount(<OperatorApp {...fixtureProps(OFFICE_FIXTURE)} />);
     await settle();
     const chips = (name: string) => Array.from(rows('[data-office-card]').find(card => card.querySelector('strong')?.textContent === name)!.querySelectorAll<HTMLElement>('[data-office-chip]')).map(chip => [chip.textContent, chip.getAttribute('data-tone')]);
-    // The sample board of repo-harness has an A2 finding, and its room shows it too.
-    expect(chips('repo-harness')).toEqual([['needs you 1', 'accent'], ['6/6 full', 'warn'], ['queue 2', 'warn'], ['CI ✗ 1', 'danger'], ['no status 1', 'warn'], ['batch 3/6', 'ok']]);
-    expect(chips('aiphabee')).toEqual([['needs you 1', 'accent'], ['3/4', 'subtle'], ['CI ✗ 1', 'danger'], ['batch 2/6', 'ok']]);
+    expect(chips('repo-harness')).toEqual([['6/6 full', 'warn'], ['queue 2', 'warn'], ['CI ✗ 1', 'danger'], ['no status 1', 'warn']]);
+    expect(chips('aiphabee')).toEqual([['3/4', 'subtle'], ['CI ✗ 1', 'danger']]);
     expect(chips('AstroZi')).toEqual([['3/3 full', 'warn'], ['queue 1', 'warn'], ['no status 1', 'warn']]);
     expect(chips('arch-context')).toEqual([['worker 1 · no plan', 'subtle']]);
   });
@@ -1292,7 +1277,7 @@ describe('board office (#1755)', () => {
     })} />);
     await settle();
     const office = rows(`[data-office-card="room"][data-repository="${HARNESS_ID}"]`)[0]!;
-    expect(Array.from(office.querySelectorAll('[data-office-chip]')).map(chip => chip.textContent)).toEqual(['needs you 1', '2/2 full', 'queue 1', 'CI ✗ 1', 'batch 2/6']);
+    expect(Array.from(office.querySelectorAll('[data-office-chip]')).map(chip => chip.textContent)).toEqual(['needs you 1', '2/2 full', 'queue 1', 'CI ✗ 1']);
     await act(async () => office.click());
     await settle();
     expect(document.querySelector('[data-seat-meter]')?.getAttribute('data-seat-meter')).toBe('2/2');
@@ -1357,20 +1342,20 @@ describe('board office (#1755)', () => {
     const { room } = officeCard({ kind: 'ready', parents: { kind: 'ready', list: officeParents(repository, NOW) }, seats: officeSeats(repository, NOW), board: null });
     expect([room.orchestrator?.agent, room.advisor]).toEqual([null, null]);
     expect(room.orchestrator).not.toBeNull();
-    const lead = (orchestrator: SceneMiniRoom['orchestrator']) => composeMiniRoom({ orchestrator, advisor: null, plan: false, needsYou: false, desks: [], limit: null, queue: 0, cart: 0, idle: false }, { frame: 0, night: false });
+    const lead = (orchestrator: SceneMiniRoom['orchestrator']) => composeMiniRoom({ orchestrator, advisor: null, plan: false, needsYou: false, desks: [], limit: null, queue: 0, idle: false }, { frame: 0, night: false });
     expect(lead(sceneAgent(null))).not.toEqual(lead(null));
   });
 
   test('a mini room draws the seats and the summary it gets: lit screens, the door, the whiteboard and the grey idle room', () => {
     // The other-agent palette uses none of the three colours under test.
     const agent = sceneAgent('hermes');
-    const base: SceneMiniRoom = { orchestrator: agent, advisor: agent, plan: true, needsYou: false, desks: [{ agent, state: 'coding' }], limit: null, queue: 0, cart: 0, idle: false };
+    const base: SceneMiniRoom = { orchestrator: agent, advisor: agent, plan: true, needsYou: false, desks: [{ agent, state: 'coding' }], limit: null, queue: 0, idle: false };
     const colors = (room: SceneMiniRoom) => composeMiniRoom(room, { frame: 0, night: false }).map(path => path.color);
     expect(colors(base)).toContain('screen');
     expect(colors({ ...base, desks: [{ agent, state: 'idle' }] })).not.toContain('screen');
     expect(colors(base)).not.toContain('accent');
     expect(colors({ ...base, needsYou: true })).toContain('accent');
-    // Each desk state of the mockup has its own desk, the worker limit ropes the empty desks, and the cart fills from the current batch.
+    // Each desk state of the mockup has its own desk, and the worker limit ropes the empty desks.
     const looks = DESK_STATES.filter(state => state !== 'idle' && state !== 'unknown').map(state => JSON.stringify(composeMiniRoom({ ...base, desks: [{ agent, state }] }, { frame: 1, night: false })));
     expect(new Set([...looks, JSON.stringify(composeMiniRoom({ ...base, desks: [{ agent, state: 'idle' }] }, { frame: 1, night: false }))]).size).toBe(looks.length + 1);
     expect(colors({ ...base, desks: [{ agent, state: 'ci_failed' }] })).toContain('danger');
@@ -1378,9 +1363,6 @@ describe('board office (#1755)', () => {
     expect(colors(base)).not.toContain('dangerDk');
     expect(colors({ ...base, limit: 8 })).not.toContain('dangerDk');
     expect(colors({ ...base, limit: 2 })).toContain('dangerDk');
-    expect(colors(base)).not.toContain('ok');
-    expect(colors({ ...base, cart: 3 })).toContain('ok');
-    expect(composeMiniRoom({ ...base, cart: 6 }, { frame: 0, night: false })).not.toEqual(composeMiniRoom({ ...base, cart: 5 }, { frame: 0, night: false }));
     const paper = (room: SceneMiniRoom) => composeMiniRoom(room, { frame: 0, night: false }).find(path => path.color === 'paper')!.d;
     expect(paper({ ...base, plan: false })).not.toBe(paper(base));
     expect(colors({ ...base, orchestrator: null, advisor: null, desks: [], idle: true })).not.toContain('wall');
@@ -1420,7 +1402,7 @@ describe('board office (#1755)', () => {
     expect(document.querySelector('[data-seat-meter]')?.getAttribute('data-seat-meter')).toBe('none');
     expect(rows('[data-desk]').map(desk => [desk.getAttribute('data-desk'), desk.getAttribute('aria-label')])).toEqual([['t1', '#1476 · Codex: Blocked'], ['t2', '#1475 · Claude Code: Done']]);
     expect(rows('[data-queue-pr]')).toHaveLength(0);
-    expect(rows('[data-office-hit]').map(hit => hit.getAttribute('data-office-hit')).sort()).toEqual(['board', 'cart', 'door', 'orchestrator', 'tray']);
+    expect(rows('[data-office-hit]').map(hit => hit.getAttribute('data-office-hit')).sort()).toEqual(['board', 'door', 'orchestrator', 'tray']);
     expect(rows('[data-board-banner]').map(banner => banner.getAttribute('data-board-banner'))).toEqual(['plan', 'unevaluated']);
     // No advisor seat: no boss button.
     expect(rows('[data-boss]')).toHaveLength(0);
@@ -1553,9 +1535,8 @@ describe('board office (#1755)', () => {
       rows(`[data-office-hit="${hit}"]`)[0]!.click();
     };
     for (const [hit, eyebrow, text, command] of [
-      ['cart', 'BATCH', 'Batch cart 1/6', 'repo-harness board --parent 1474'],
       ['tray', 'BACKLOG', '#1477Held: waits for #1476', 'repo-harness board --parent 1474'],
-      ['door', 'MAIN', 'Next batch#1475', 'gh pr list --base main --state merged --limit 5'],
+      ['door', 'MAIN', 'Merge modeacceptance_merge off', 'gh pr list --base main --state merged --limit 5'],
       ['board', 'ORCHESTRATOR', 'coordinator · integrator', 'repo-harness board --parent 1474'],
       ['board', 'ORCHESTRATOR', 'Planplan r1', 'repo-harness board --parent 1474'],
     ] as const) {
@@ -1591,7 +1572,7 @@ describe('board office (#1755)', () => {
       expect(door.getAttribute('aria-label')).toBe(`${waits > 0 ? 'Main door: 1 accepted pull requests wait for a merge' : 'Main door: no pull request waits for a merge'}. ${state}`);
       await act(async () => door.click());
       const shown = document.querySelector('[data-office-panel]')!;
-      expect(Array.from(shown.querySelectorAll('dl > div')).map(entry => entry.textContent)).toEqual([`State${state}`, `Merge modeacceptance_merge ${mode}`, `Waiting for a merge${waits}`, 'Next batch#1315 #1320 #1311']);
+      expect(Array.from(shown.querySelectorAll('dl > div')).map(entry => entry.textContent)).toEqual([`State${state}`, `Merge modeacceptance_merge ${mode}`, `Waiting for a merge${waits}`]);
       seen.set(fixture, document.querySelector('[data-board-office="room"] [role="img"]')!.innerHTML);
       await act(async () => root?.unmount());
     }

@@ -65,7 +65,7 @@ every other decision by the rules below and the root life-cycle rules
 | Product intent | PRD or source document named in the parent issue |
 | Requirement, scope, boundaries, acceptance | Child issue body |
 | Parent membership, dependencies, release window, plan tier | GitHub sub-issue, blocked-by link, milestone, `tier:` label (`references/templates.md`, Plan data) |
-| Merge order, holds, batches, seat limit | The plan block in the parent's newest `plan` comment |
+| Merge order, holds, seat limit | The plan block in the parent's newest `plan` comment |
 | Release set: the issues that the next release ships | The milestone of each issue. A train is a blocked-by chain inside the set (`references/orchestrator.md` §4.1) |
 | Claim, status, handoff, scope changes, decisions | Issue comments |
 | Change, verification, risk, rollback | PR body |
@@ -125,9 +125,7 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   "seen again" comment; the reporter appends evidence through `report-ci`
   only.
 - One child issue has one write scope. It has one PR, or PR slots that the
-  issue names in advance. The one exception is a batch integration PR
-  (`references/orchestrator.md` §9.3): it merges several accepted PRs and
-  adds no change of its own. Parallel workers never share a file.
+  issue names in advance. Parallel workers never share a file.
 - One head owner per PR. Any other agent asks on the board, or takes the
   head-owner role through a handoff comment before it pushes.
 - The worker follows the issue boundary. A needed change outside it is a
@@ -206,4 +204,4 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   after a joint decision or an owner authorization for the batch; board rule
   A11 only wakes it. A hold record (`repo-harness merge hold`) only narrows:
   a seat that decides a stop locally posts it in the same turn
-  (`references/orchestrator.md` §9.4).
+  (`references/orchestrator.md` §9.3).

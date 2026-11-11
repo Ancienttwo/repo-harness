@@ -67,16 +67,11 @@ gets no acceptance pane and no acceptance record.
   `publication.acceptance_merge` is `on` in `.ai/harness/policy.json` on the
   PR base SHA. With `off`, it exits 3 and merges nothing.
 - The executor needs default-branch protection with required checks and
-  enforce_admins. `publication.merge_queue` (default `off`) selects the
-  path: `off` merges directly and refuses a base that requires a merge
-  queue; `on` enqueues and refuses a base without one
-  (`merge_queue_policy_mismatch`, no fallback to the other path). Without
-  a merge queue the checks must be strict. With a
-  merge queue the queue rule must squash with the `ALLGREEN` grouping
-  strategy, and the repository default squash message must be `PR_TITLE`
-  and `PR_BODY`. Without them it refuses with
-  `base_protection_insufficient`. A queue merge also needs a git checkout
-  whose `origin` remote git can fetch.
+  enforce_admins. Without them it refuses with
+  `base_protection_insufficient`. The checks do not need to be strict. The
+  executor merges by direct squash only; a base that requires a merge queue
+  is not supported. When main moved after the reviewed base, the merge proof
+  also needs a git checkout whose `origin` remote git can fetch.
 - The Bot owner manages the GitHub token permissions. In cloud-only mode the
   token needs Administration read permission, so that the executor can read
   branch protection. Without it the executor refuses with
