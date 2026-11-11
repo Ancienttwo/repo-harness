@@ -105,14 +105,16 @@ function ports(overrides: Partial<ReviewPorts> = {}): ReviewPorts & { comments: 
   };
 }
 const high = plan([pr(1)]);
-const context = { repositoryId: '1', parent: 100, space: 's', dry_run: false };
+const context = { repositoryId: '1', parent: 100, space: 's', dry_run: false, gatekeeper: GATEKEEPER };
 
-test('each required seat opens its tab with its launch argv in the writer worktree, after its own marker', async () => {
+test('each required seat opens its tab with its launch argv in the writer worktree, after its own marker; the launch gets the planned gatekeeper', async () => {
   const seats: string[] = [];
-  const p = ports({ launch: async seat => { seats.push(seat); return { argv: [seat], tab: seat, runtime: seat === 'reviewer' ? 'claude' : 'codex' }; } });
+  const routes: SeatRouteV1[] = [];
+  const p = ports({ launch: async (seat, _labels, _cwd, gatekeeper) => { seats.push(seat); routes.push(gatekeeper); return { argv: [seat], tab: seat, runtime: seat === 'reviewer' ? 'claude' : 'codex' }; } });
   const result = await executeReview(plan([pr(1, { claude_review: 'pending' })]), context, p);
   expect(result.started).toMatchObject([{ pr: 1, seat: 'gatekeeper' }, { pr: 1, seat: 'reviewer' }]);
   expect(seats).toEqual(['gatekeeper', 'reviewer']);
+  expect(routes[0]).toBe(GATEKEEPER);
   expect(p.comments[0]).toContain(`Subject: ${SHA}\nSeat: gatekeeper`);
   expect(p.comments[1]).toContain('Seat: reviewer');
   expect(p.tabs[1]).toMatchObject({ argv: ['reviewer'], folder: '/tmp/w', name: 'reviewer', space: 's' });
@@ -153,6 +155,8 @@ test('the gatekeeper starts only when the effective gatekeeper is of another kno
   expect(plan([medium], page(), [], claude)[0]).toMatchObject({ action: 'skip', reason: 'review_family_unavailable', detail: 'the gatekeeper family anthropic is the writer family; gatekeeper: gatekeeper-fallback' });
   // A High head with a pending Claude review needs a non-Claude gatekeeper; one with no second review takes a Claude gatekeeper.
   expect(label(plan([pr(1, { claude_review: 'pending' }), pr(2)], page(), [], claude))).toEqual(['1:review_family_unavailable', '2:start']);
+  // There the Claude reviewer gives the different-family row, so a gatekeeper of the writer family still starts.
+  expect(label(plan([pr(1, { writer_family: 'openai', claude_review: 'pending' })]))).toEqual(['1:start']);
   expect(label(plan([pr(1, { tier: 'high', writer_family: 'openai' })], page(), [], route({ ...DEFAULT_SEATS_CONFIG.gatekeeper, model: null })))).toEqual(['1:review_family_unavailable']);
   expect(plan([pr(1)], page(), [], route(DEFAULT_SEATS_CONFIG.gatekeeper, null))[0]).toMatchObject({ reason: 'review_family_unavailable', detail: 'no gatekeeper seat can launch; gatekeeper: none (chatgpt exhausted)' });
   // A Medium head of another writer family starts the Claude reviewer, which the gatekeeper check does not touch.

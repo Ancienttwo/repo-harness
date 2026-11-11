@@ -4,6 +4,7 @@ import { collectBoard, type BoardCollectInput, BoardCollectError, readRepository
 import { planReview, REVIEW_START_HEADER, REVIEW_START_STATUS_HEADER, type ReviewDecisionV1, type ReviewSeatStartV1 } from '../../core/board/review';
 import type { BoardCommentPageV1 } from '../../core/board/source';
 import type { SeatConfigV1, SeatId } from '../../core/board/seats-settings';
+import type { SeatRouteV1 } from '../../core/board/seat-routing';
 import { gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { HerdrCoreError, herdrAppDo } from '../terminal/herdr-core';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
@@ -14,8 +15,11 @@ import { readQuotaReport } from './quota';
 
 type StartDecision = Extract<ReviewDecisionV1, { action: 'start' }>;
 
-/** What `seatLaunch` (the `seats argv` command) answers for one review seat; the command layer owns it, so the caller passes it in. */
-export type ReviewLaunch = (seat: SeatId, labels: { readonly repositoryId: string; readonly pr: string; readonly parent: string }, cwd: string) =>
+/**
+ * What `seatLaunch` (the `seats argv` command) answers for one review seat; the command layer owns it, so the caller passes it in.
+ * `gatekeeper` is the effective gatekeeper that the plan checked: the launch uses it and reads no second config or quota snapshot.
+ */
+export type ReviewLaunch = (seat: SeatId, labels: { readonly repositoryId: string; readonly pr: string; readonly parent: string }, cwd: string, gatekeeper: SeatRouteV1) =>
   Promise<{ readonly argv: readonly string[]; readonly tab: string | null; readonly runtime: SeatConfigV1['runtime'] }>;
 
 export interface ReviewInput extends Pick<BoardCollectInput, 'repo_root' | 'parent' | 'host'> {
@@ -87,7 +91,7 @@ const NOT_SENT: ReadonlySet<string> = new Set(['missing', 'nested', 'invalid_lab
  * without a second one of the other. A launch that may have created the tab keeps its marker and stops, because a retry could
  * start a second seat of that role for the head.
  */
-export async function executeReview(decisions: readonly ReviewDecisionV1[], context: { readonly repositoryId: string; readonly parent: number; readonly space: string; readonly dry_run: boolean; readonly observe?: ReviewObserver }, ports: ReviewPorts): Promise<Omit<ReviewResultV1, 'decisions'>> {
+export async function executeReview(decisions: readonly ReviewDecisionV1[], context: { readonly repositoryId: string; readonly parent: number; readonly space: string; readonly dry_run: boolean; readonly gatekeeper: SeatRouteV1; readonly observe?: ReviewObserver }, ports: ReviewPorts): Promise<Omit<ReviewResultV1, 'decisions'>> {
   const started: Array<ReviewResultV1['started'][number]> = [];
   const refused: Array<ReviewResultV1['refused'][number]> = [];
   if (context.dry_run) return { started, refused };
@@ -101,7 +105,7 @@ export async function executeReview(decisions: readonly ReviewDecisionV1[], cont
     }
     for (const start of decision.seats) {
       // The launch is read before the marker: a configuration error then leaves no marker, so a retry works once it is fixed.
-      const launch = await ports.launch(start.seat, { repositoryId: context.repositoryId, pr: String(decision.pr), parent: String(context.parent) }, worktree.path);
+      const launch = await ports.launch(start.seat, { repositoryId: context.repositoryId, pr: String(decision.pr), parent: String(context.parent) }, worktree.path, context.gatekeeper);
       // Only a Claude review records the verdict that the board waits for, so another runtime would leave the head pending behind its own marker.
       if (start.seat === 'reviewer' && launch.runtime !== 'claude') {
         refuse(decision.pr, `reviewer_not_claude: the reviewer seat launches ${launch.runtime}; set its runtime to claude`);
@@ -155,7 +159,7 @@ export async function runReview(input: ReviewInput): Promise<ReviewResultV1> {
     // The same projection that `seatLaunch` uses for `seats argv gatekeeper`, so the family check names the seat that launches.
     const gatekeeper = effectiveGatekeeper(seats, seatAccountQuotas((await readQuotaReport(process.env)).accounts, seats.routing));
     const decisions = planReview({ board, comments, gatekeeper }).filter(decision => input.pr === undefined || decision.pr === input.pr);
-    return { decisions, ...await executeReview(decisions, { repositoryId, parent: input.parent, space: input.space, dry_run: input.dry_run, observe: input.observe }, {
+    return { decisions, ...await executeReview(decisions, { repositoryId, parent: input.parent, space: input.space, dry_run: input.dry_run, gatekeeper, observe: input.observe }, {
       worktree: (ref, sha) => worktreeAt(input, ref, sha),
       comment: (pr, body) => runGhText(input, ['pr', 'comment', String(pr), '--body-file', '-'], body),
       openTab: args => { herdrAppDo('tab.new', args); },

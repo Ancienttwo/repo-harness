@@ -2,8 +2,8 @@ import { Command } from 'commander';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { CLAUDE_BUILTIN_AGENT_TYPES, SeatPaneNameError, buildSeatLaunch, seatPaneName, seatTabName, type SeatLaunchV1 } from '../../core/board/seat-launch';
-import { LAUNCH_SEAT_IDS, SeatsConfigMigrationRequiredError, decodeSeatsConfig, isWorkerSeat, type LaunchSeatId } from '../../core/board/seats-settings';
-import { claudeReserved, effectiveGatekeeper, effectiveSeatConfig, seatAccount, seatAccountQuotas, type SeatAccountOptions } from '../../core/board/seat-routing';
+import { LAUNCH_SEAT_IDS, SeatsConfigMigrationRequiredError, decodeSeatsConfig, isWorkerSeat, type LaunchSeatId, type SeatConfigV1, type SeatsConfigV1 } from '../../core/board/seats-settings';
+import { claudeReserved, effectiveGatekeeper, effectiveSeatConfig, seatAccount, seatAccountQuotas, type SeatAccountOptions, type SeatRouteV1 } from '../../core/board/seat-routing';
 import { classifyQuotaReading, type QuotaAccount, type QuotaReading } from '../../core/board/quota';
 import { readClaudeQuota, readCodexQuota } from '../../effects/board/quota';
 import { version as PACKAGE_VERSION } from '../../../package.json';
@@ -103,19 +103,13 @@ function panePrefix(cwd: string, env: NodeJS.ProcessEnv): string {
   return prefix;
 }
 
-export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd(), accountOptions: SeatAccountOptions = {}): Promise<SeatLaunchV1 & {
-  readonly labels: readonly string[]; readonly name: string | null; readonly tab: string | null;
-}> {
-  const id = seatId(seat);
-  let config: Record<string, unknown>;
-  try { config = readGlobalConfiguration(env).config; } catch (error) { throw new SeatsCommandError('config_invalid', (error as Error).message); }
-  let seats;
-  try { seats = decodeSeatsConfig(config.seats); } catch (error) {
-    if (error instanceof SeatsConfigMigrationRequiredError) throw error;
-    throw new SeatsCommandError('config_invalid', 'The seats section of the repo-harness configuration is not valid.');
-  }
-  const configured = seats[id];
-  if (configured === null) throw new SeatsCommandError('seat_not_configured', `The ${id} seat is not configured. Configure it in the seats section before launch.`);
+function plannedGatekeeper(route: SeatRouteV1): SeatConfigV1 {
+  if (route.id === null) throw new SeatsCommandError('seat_quota_exhausted', `No gatekeeper seat can launch. Route ${route.line}`);
+  return route.seat;
+}
+
+/** The seat config that launches for `id` under the current quota, or the quota refusal. */
+async function quotaCheckedSeat(id: LaunchSeatId, seats: SeatsConfigV1, configured: SeatConfigV1, env: NodeJS.ProcessEnv, accountOptions: SeatAccountOptions): Promise<SeatConfigV1> {
   const readings: QuotaReading[] = [];
   const read = async (account: QuotaAccount | null) => {
     if (account === 'claude') readings.push(readClaudeQuota(env));
@@ -142,7 +136,24 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
   if (account === 'claude' && id !== 'advisor' && id !== 'orchestrator' && claudeReserved(quota)) {
     throw new SeatsCommandError('seat_quota_reserved', 'Claude is reserved for the advisor and the orchestrator. Use the quota routes.');
   }
-  const effective = gatekeeper?.id === 'gatekeeper-fallback' ? gatekeeper.seat : effectiveSeatConfig(id, seats, quota)!;
+  return gatekeeper?.id === 'gatekeeper-fallback' ? gatekeeper.seat : effectiveSeatConfig(id, seats, quota)!;
+}
+
+export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd(), accountOptions: SeatAccountOptions = {}, planned?: SeatRouteV1): Promise<SeatLaunchV1 & {
+  readonly labels: readonly string[]; readonly name: string | null; readonly tab: string | null;
+}> {
+  const id = seatId(seat);
+  let config: Record<string, unknown>;
+  try { config = readGlobalConfiguration(env).config; } catch (error) { throw new SeatsCommandError('config_invalid', (error as Error).message); }
+  let seats;
+  try { seats = decodeSeatsConfig(config.seats); } catch (error) {
+    if (error instanceof SeatsConfigMigrationRequiredError) throw error;
+    throw new SeatsCommandError('config_invalid', 'The seats section of the repo-harness configuration is not valid.');
+  }
+  const configured = seats[id];
+  if (configured === null) throw new SeatsCommandError('seat_not_configured', `The ${id} seat is not configured. Configure it in the seats section before launch.`);
+  // The board review passes the gatekeeper route that its plan checked, so the plan and the launch use one config and quota snapshot.
+  const effective = id === 'gatekeeper' && planned !== undefined ? plannedGatekeeper(planned) : await quotaCheckedSeat(id, seats, configured, env, accountOptions);
   const labelSet = seatLabels(id, labels);
   // The pane name needs the registry prefix, so it comes only with the seat labels.
   const name = labels.repositoryId === undefined ? null : seatPaneName({

@@ -15,7 +15,8 @@ import { claimStatusTarget, newestProtocolComment, parseAcceptanceRecord, parseC
  * Claude reviewer too while the board reports `claude_review: pending`. A Medium head starts the one seat of the other family than
  * the writer's: a non-Claude gatekeeper for a Claude writer, the Claude reviewer for any other known family. An unknown writer family
  * starts no seat, because no seat is sure to record `different-family`. A gatekeeper starts only when the effective gatekeeper (#2253)
- * has a known model family that is not the writer's, and is not Claude when the head needs a non-Claude gatekeeper.
+ * has a known model family, is not of the writer's family where it gives the different-family row (a Medium head, or a High head
+ * that takes no Claude review), and is not Claude where the head needs a non-Claude gatekeeper.
  */
 export const REVIEW_START_HEADER = 'repo-harness review start';
 export const REVIEW_START_STATUS_HEADER = 'repo-harness review start status';
@@ -43,11 +44,11 @@ export interface ReviewInputV1 {
 }
 
 /** Why the effective gatekeeper cannot give this head its different-family review, or null when it can. */
-function gatekeeperFamilyGap(gatekeeper: SeatRouteV1, writer: string | null, needsNonClaude: boolean): string | null {
+function gatekeeperFamilyGap(gatekeeper: SeatRouteV1, writer: string | null, givesDifferentFamily: boolean, needsNonClaude: boolean): string | null {
   if (gatekeeper.id === null) return 'no gatekeeper seat can launch';
   const family = gatekeeper.seat.model === null ? null : modelFamily(gatekeeper.seat.model);
   if (family === null) return `the model ${gatekeeper.seat.model ?? 'default'} has no known family`;
-  if (family === writer) return `the gatekeeper family ${family} is the writer family`;
+  if (givesDifferentFamily && family === writer) return `the gatekeeper family ${family} is the writer family`;
   return needsNonClaude && family === 'anthropic' ? 'this head needs a non-Claude gatekeeper' : null;
 }
 
@@ -102,7 +103,9 @@ export function planReview(input: ReviewInputV1): readonly ReviewDecisionV1[] {
     if (seats.length === 0) return skip('started', `a start marker of every required seat covers ${pr.head_sha}`);
     // The Claude reviewer supplies one of the two High reviews, or the writer of a Medium head is Claude, so the gatekeeper must not run Claude.
     const needsNonClaude = tier === 'medium' ? pr.writer_family === 'anthropic' : pr.claude_review !== 'not_required';
-    const gap = seats.some(entry => entry.seat === 'gatekeeper') ? gatekeeperFamilyGap(input.gatekeeper, pr.writer_family, needsNonClaude) : null;
+    // Where the Claude reviewer takes part in a High head, it can give the different-family row, so the gatekeeper may share the writer family.
+    const givesDifferentFamily = tier === 'medium' || pr.claude_review === 'not_required';
+    const gap = seats.some(entry => entry.seat === 'gatekeeper') ? gatekeeperFamilyGap(input.gatekeeper, pr.writer_family, givesDifferentFamily, needsNonClaude) : null;
     if (gap !== null) return skip('review_family_unavailable', `${gap}; ${input.gatekeeper.line}`);
     return { pr: pr.number, action: 'start', head_ref: pr.head_ref, head_sha: pr.head_sha, tier, seats };
   });
