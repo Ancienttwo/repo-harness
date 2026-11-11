@@ -76,6 +76,7 @@ export interface PublicationMergeDocument {
   readonly parent_sha: string;
   /** Batch only: both proven parents, `[expected base, expected head]`. */
   readonly parent_shas?: readonly [string, string];
+  /** The live tip of the base branch where the gating policy was read. */
   readonly policy_ref: string;
   readonly revert: string;
   /** GraphQL errors that came with a merge the readback proved. */
@@ -445,23 +446,92 @@ function assertBaseProtection(input: PublicationMergeInput, branch: string, targ
   return { queue: true, required_status_checks: checks };
 }
 
-interface BasePolicy {
+interface GatingPolicy {
+  /** The live tip of the base branch: the gating policy is read there, not at the PR's recorded base. */
+  readonly ref: string;
   readonly policy: PublicationPolicy & { readonly ok: true };
-  /** The base file itself, so readiness reuses this read instead of a second one. */
+  /** The file itself, so readiness reuses this read when the live tip is the expected base. */
   readonly file: PolicyFileAtRef;
 }
 
-function readPolicy(input: PullRequestReadinessInput): BasePolicy {
-  const file = readPolicyAt(input, input.expected_base_sha);
-  const base = parsePublicationPolicy(file);
-  if (!base.ok) throw new Refusal('publication_policy_invalid', `${PUBLICATION_POLICY_PATH} at ${input.expected_base_sha}: ${base.message}`);
-  if (base.acceptance_merge === 'off') {
-    throw new Refusal('acceptance_merge_off', `publication.acceptance_merge is off at base ${input.expected_base_sha}`);
+function readLiveTip(input: PullRequestReadinessInput, branch: string): string {
+  const value = field(read(input, ['api', `repos/${input.repository}/branches/${encodeURIComponent(branch)}`]), 'base branch');
+  const sha = isObject(value.commit) ? value.commit.sha : undefined;
+  if (value.name !== branch || typeof sha !== 'string' || !SHA.test(sha)) {
+    throw new Refusal('provider_data_incomplete', `the live tip of ${branch} is unreadable`);
   }
-  if (publicationPolicyChanged(base, readPolicyAt(input, input.expected_head_sha))) {
-    throw new Refusal('publication_policy_changed_in_pr', 'the PR changes the publication policy subtree');
+  return sha;
+}
+
+/**
+ * With a merge queue the PR's recorded base can be older than the branch, so a
+ * switch turned off on the branch after the PR's last push must still stop it.
+ */
+function readGatingPolicy(input: PullRequestReadinessInput, branch: string): GatingPolicy {
+  const ref = readLiveTip(input, branch);
+  const file = readPolicyAt(input, ref);
+  const policy = parsePublicationPolicy(file);
+  if (!policy.ok) throw new Refusal('publication_policy_invalid', `${PUBLICATION_POLICY_PATH} at ${ref}: ${policy.message}`);
+  if (policy.acceptance_merge === 'off') {
+    throw new Refusal('acceptance_merge_off', `publication.acceptance_merge is off at the live tip ${ref} of ${branch}`);
   }
-  return { policy: base, file };
+  return { ref, policy, file };
+}
+
+/** The head holds the live tip: `compare` reports it ahead of or identical to the tip. */
+function headContains(input: PullRequestReadinessInput, tip: string): boolean {
+  const compare = field(read(input, ['api', `repos/${input.repository}/compare/${tip}...${input.expected_head_sha}`,
+    '--jq', '{status, behind_by}']), 'provider compare');
+  if ((compare.status === 'ahead' || compare.status === 'identical') && compare.behind_by === 0) return true;
+  if ((compare.status === 'behind' || compare.status === 'diverged') && Number.isSafeInteger(compare.behind_by) && Number(compare.behind_by) > 0) return false;
+  throw new Refusal('provider_data_incomplete', `provider compare of ${tip}...${input.expected_head_sha} is incomplete`);
+}
+
+/** The policy file in a clean or conflicted `git merge-tree` of the live tip and the head. */
+function mergedPolicyFile(input: PublicationMergeInput, tip: string, baseRef: string): PolicyFileAtRef {
+  const missing = missingCommits(input, baseRef, [tip, input.expected_head_sha], 'the live tip and the reviewed head');
+  if (missing !== null) throw new Refusal('provider_unavailable', `${missing}; the merge result policy is not proven`);
+  // Exit 1 is a conflicted merge: the tree line, then one conflicted path per line.
+  const merged = runGit(input, ['-c', 'core.quotePath=false', 'merge-tree', '--write-tree', '--name-only', '--no-messages',
+    tip, input.expected_head_sha], [0, 1]);
+  const [tree = '', ...conflicts] = merged.ok ? merged.stdout.split('\n').filter((line) => line !== '') : [];
+  if (!merged.ok || !SHA.test(tree)) {
+    throw new Refusal('provider_unavailable', `git merge-tree of ${tip} and ${input.expected_head_sha} failed (${merged.ok ? 'printed no tree' : merged.reason})`);
+  }
+  if (conflicts.includes(PUBLICATION_POLICY_PATH)) {
+    throw new Refusal('publication_policy_changed_in_pr', `the merge of the PR head into the live tip ${tip} conflicts in ${PUBLICATION_POLICY_PATH}`);
+  }
+  const entry = runGit(input, ['ls-tree', tree, '--', PUBLICATION_POLICY_PATH]);
+  if (!entry.ok) throw new Refusal('provider_unavailable', `git ls-tree of the merge tree failed (${entry.reason})`);
+  if (entry.stdout.trim() === '') return { status: 'missing' };
+  const blob = /^100(?:644|755) blob ([0-9a-f]{40})\t/u.exec(entry.stdout)?.[1];
+  if (blob === undefined) throw new Refusal('publication_policy_invalid', `${PUBLICATION_POLICY_PATH} in the merge result is not a readable file`);
+  const text = runGit(input, ['cat-file', 'blob', blob]);
+  if (!text.ok) throw new Refusal('provider_unavailable', `git cat-file of the merged ${PUBLICATION_POLICY_PATH} failed (${text.reason})`);
+  return { status: 'present', text: text.stdout };
+}
+
+/**
+ * The merge result must keep the publication subtree of the live tip. When the
+ * head holds the tip, the three-way merge takes every path from the head, so
+ * the head file is the merge result. Otherwise git computes the merge.
+ */
+function assertMergeKeepsPolicy(input: PublicationMergeInput, gating: GatingPolicy, baseRef: string): void {
+  const merged = headContains(input, gating.ref)
+    ? readPolicyAt(input, input.expected_head_sha)
+    : mergedPolicyFile(input, gating.ref, baseRef);
+  if (publicationPolicyChanged(gating.policy, merged)) {
+    throw new Refusal('publication_policy_changed_in_pr', `the merge of the PR head into the live tip ${gating.ref} changes the publication policy subtree`);
+  }
+}
+
+/** The tip can move between the read and the enqueue, so the parent the merge landed on must also allow it. */
+function assertParentAllowedMerge(input: PublicationMergeInput, gating: GatingPolicy, parentSha: string, mergeCommitSha: string): void {
+  if (parentSha === gating.ref) return;
+  const parent = parsePublicationPolicy(readPolicyAt(input, parentSha));
+  if (parent.ok && parent.acceptance_merge === 'on') return;
+  throw new UnknownOutcome(`the PR merged at ${mergeCommitSha}, but publication.acceptance_merge is not on at its parent ${parentSha}`
+    + `${parent.ok ? '' : ` (${parent.message})`}; the owner decides on git revert ${mergeCommitSha}`);
 }
 
 const mergeMutation = (method: 'SQUASH' | 'MERGE') => `mutation($pullRequestId:ID!,$expectedHeadOid:GitObjectID!,$commitHeadline:String!,$commitBody:String!){mergePullRequest(input:{pullRequestId:$pullRequestId,expectedHeadOid:$expectedHeadOid,mergeMethod:${method},commitHeadline:$commitHeadline,commitBody:$commitBody}){pullRequest{number state mergeCommit{oid}}}}`;
@@ -687,33 +757,40 @@ const GIT_TIMEOUT_MS = 120_000;
 /** Exit status only: git stderr can carry transport and credential diagnostics, and the result document is printed. */
 type GitRun = { readonly ok: true; readonly stdout: string } | { readonly ok: false; readonly reason: string };
 
-function runGit(input: PublicationMergeInput, args: readonly string[]): GitRun {
+function runGit(input: PublicationMergeInput, args: readonly string[], okStatuses: readonly number[] = [0]): GitRun {
   // Like the merge-only sync proof: the checkout is the cwd, and GIT_DIR-style variables cannot select another repository.
   const result = gitSpawnSync(args, {
     cwd: input.repo_root, env: { ...withoutRepositorySelectingGitEnv(), GIT_TERMINAL_PROMPT: '0' }, encoding: 'utf-8', timeout: GIT_TIMEOUT_MS, killSignal: 'SIGKILL',
   });
   if (result.error || result.signal) return { ok: false, reason: result.signal ? `terminated by ${result.signal}` : 'did not start' };
-  return result.status === 0 ? { ok: true, stdout: result.stdout ?? '' } : { ok: false, reason: `exit ${result.status}` };
+  return result.status !== null && okStatuses.includes(result.status) ? { ok: true, stdout: result.stdout ?? '' } : { ok: false, reason: `exit ${result.status}` };
+}
+
+/**
+ * Like the merge-only sync proof, the executor fetches from the checkout's
+ * `origin` with the operator's own git setup and sets no credential helper.
+ * Commits fetched from any remote match the expected SHAs or fail. Returns
+ * null when every commit is present, otherwise the reason.
+ */
+function missingCommits(input: PublicationMergeInput, baseRef: string, commits: readonly string[], label: string): string | null {
+  const present = () => commits.every((sha) => runGit(input, ['cat-file', '-e', `${sha}^{commit}`]).ok);
+  if (present()) return null;
+  // `--refmap=` drops the configured `remote.origin.fetch` mapping and the refspecs name no destination, so the fetch writes objects only.
+  const fetched = runGit(input, ['fetch', '--no-tags', '--quiet', '--refmap=', '--no-write-fetch-head', 'origin',
+    `refs/pull/${input.pr_number}/head`, `refs/heads/${baseRef}`]);
+  if (!fetched.ok) return `git fetch from origin failed (${fetched.reason})`;
+  return present() ? null : `origin does not have ${label}`;
 }
 
 /**
  * The queue squash must hold exactly the reviewed head merged onto its parent.
- * Like the merge-only sync proof, the executor fetches from the checkout's
- * `origin` with the operator's own git setup and sets no credential helper.
- * The proof is content-addressed: commits fetched from any remote match the
- * expected SHAs or fail. It compares the merge commit's tree with a clean
- * `git merge-tree` of the parent and the expected head.
+ * It compares the merge commit's tree with a clean `git merge-tree` of the
+ * parent and the expected head.
  */
 function proveQueueContent(input: PublicationMergeInput, mergeCommitSha: string, parentSha: string, baseRef: string): void {
-  const commits = [parentSha, input.expected_head_sha, mergeCommitSha];
-  const present = () => commits.every((sha) => runGit(input, ['cat-file', '-e', `${sha}^{commit}`]).ok);
-  if (!present()) {
-    // `--refmap=` drops the configured `remote.origin.fetch` mapping and the refspecs name no destination, so the fetch writes objects only.
-    const fetched = runGit(input, ['fetch', '--no-tags', '--quiet', '--refmap=', '--no-write-fetch-head', 'origin',
-      `refs/pull/${input.pr_number}/head`, `refs/heads/${baseRef}`]);
-    if (!fetched.ok) throw new UnknownOutcome(`git fetch from origin failed (${fetched.reason}); the queue merge content is not proven`);
-    if (!present()) throw new UnknownOutcome('origin does not have the queue parent, the reviewed head and the merge commit; the queue merge content is not proven');
-  }
+  const missing = missingCommits(input, baseRef, [parentSha, input.expected_head_sha, mergeCommitSha],
+    'the queue parent, the reviewed head and the merge commit');
+  if (missing !== null) throw new UnknownOutcome(`${missing}; the queue merge content is not proven`);
   const merged = runGit(input, ['merge-tree', '--write-tree', '--no-messages', parentSha, input.expected_head_sha]);
   const tree = merged.ok ? merged.stdout.trim().split('\n')[0] ?? '' : '';
   if (!SHA.test(tree)) {
@@ -776,6 +853,7 @@ interface PreparedMerge {
   readonly base_ref: string;
   /** The base requires a merge queue: the executor enqueues instead of merging. */
   readonly queue: boolean;
+  readonly gating: GatingPolicy;
 }
 
 /** Steps 1-6. Each refusal throws before any mutation. */
@@ -792,14 +870,16 @@ function prepareMerge(input: PublicationMergeInput): PreparedMerge {
     assertBatchRef(initial);
     assertBatchHasNoOwnCommit(input);
   }
-  const policy = readPolicy(input);
   const repository = readRepository(input);
   const defaultBranch = repository.default_branch;
-  const protection = assertBaseProtection(input, defaultBranch, initial, policy.policy.merge_queue);
+  const gating = readGatingPolicy(input, defaultBranch);
+  assertMergeKeepsPolicy(input, gating, defaultBranch);
+  const protection = assertBaseProtection(input, defaultBranch, initial, gating.policy.merge_queue);
   const queue = protection.queue;
   if (queue) assertQueueMessage(repository);
-  // Reuse the base policy and protection reads.
-  const verdict = collectPullRequestMergeReadiness({ ...input, policy_file_at_base: policy.file,
+  // Reuse the protection read, and the policy read when the live tip is the base that readiness reads.
+  const verdict = collectPullRequestMergeReadiness({ ...input,
+    ...(gating.ref === input.expected_base_sha ? { policy_file_at_base: gating.file } : {}),
     required_status_checks_at_base: protection.required_status_checks });
   if (!verdict.ready) {
     throw new Refusal('merge_readiness_blocked', `readiness blockers: ${verdict.blockers.map((blocker) => blocker.code).join(', ')}`, verdict.blockers);
@@ -816,7 +896,7 @@ function prepareMerge(input: PublicationMergeInput): PreparedMerge {
   const closing = checkClosingReferences({ repository: input.repository, commit_headline: headline, commit_body: target.body,
     linked: { references: target.closing_references, has_next_page: target.closing_has_next_page } });
   if (!closing.ok) throw new Refusal(closing.code, closing.message);
-  return { target, headline, base_ref: defaultBranch, queue };
+  return { target, headline, base_ref: defaultBranch, queue, gating };
 }
 
 /** Direct merge: the response or the error readback names the merge commit. Returns null for a proven rejection. */
@@ -871,6 +951,7 @@ export function executePublicationMerge(input: PublicationMergeInput): Publicati
     }
     mergeCommitSha = merged;
     parentSha = proveMerge(input, mergeCommitSha, prepared.base_ref, prepared.queue);
+    assertParentAllowedMerge(input, prepared.gating, parentSha, mergeCommitSha);
     if (prepared.queue) {
       proveQueueContent(input, mergeCommitSha, parentSha, prepared.base_ref);
       proveQueueRun(input, mergeCommitSha);
@@ -896,7 +977,7 @@ export function executePublicationMerge(input: PublicationMergeInput): Publicati
       merge_commit_sha: mergeCommitSha,
       parent_sha: parentSha,
       ...(input.batch ? { parent_shas: [input.expected_base_sha, input.expected_head_sha] as const } : {}),
-      policy_ref: input.expected_base_sha,
+      policy_ref: prepared.gating.ref,
       revert: input.batch ? `git revert -m 1 ${mergeCommitSha}` : `git revert ${mergeCommitSha}`,
       ...(providerErrors ? { provider_errors: providerErrors } : {}),
       ...(entry.value ? { merge_queue_entry: entry.value.id } : {}),

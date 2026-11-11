@@ -37,6 +37,12 @@ export interface PublicationMergeScenario {
   /** Policy text at the base and head SHAs; null is a 404. */
   readonly policyBase: string | null;
   readonly policyHead: string | null;
+  /** The live tip of main; default the base. */
+  readonly liveTip?: string;
+  /** Policy text at other SHAs, such as a moved live tip or the queue parent; null is a 404. */
+  readonly policyAt?: Readonly<Record<string, string | null>>;
+  /** `compare/<live tip>...<head>` reports the head behind the tip; default ahead. */
+  readonly headBehindTip?: boolean;
   readonly isCrossRepository?: boolean;
   readonly autoMerge?: boolean;
   /** `missing` omits the field from the PR read. */
@@ -151,6 +157,7 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
   const baseSha = scenario.base ?? BASE;
   const mergeSha = scenario.mergeCommit ?? MERGE_COMMIT;
   const queueParent = scenario.queueParent ?? QUEUE_PARENT;
+  const liveTip = scenario.liveTip ?? baseSha;
   if (command === 'repo' && sub === 'view') return ok({ id: REPOSITORY_NODE, nameWithOwner: REPOSITORY });
   if (command === 'pr' && sub === 'view') {
     const sequence = scenario.headSequence;
@@ -263,8 +270,16 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
       ...(file.patch === undefined ? {} : { patch: file.patch }) })));
   }
   if (sub?.startsWith(`${root}/contents/.github/workflows/ci-report.yml`)) return notFound();
+  const policyRef = sub?.startsWith(`${root}/contents/.ai/harness/policy.json?ref=`) ? sub.slice(sub.indexOf('?ref=') + 5) : undefined;
+  if (policyRef !== undefined && scenario.policyAt && policyRef in scenario.policyAt) return policyFile(scenario.policyAt[policyRef]!);
   if (sub === `${root}/contents/.ai/harness/policy.json?ref=${baseSha}`) return policyFile(scenario.policyBase);
   if (sub === `${root}/contents/.ai/harness/policy.json?ref=${headSha}`) return policyFile(scenario.policyHead);
+  // The queue parent keeps the base policy unless `policyAt` names it.
+  if (sub === `${root}/contents/.ai/harness/policy.json?ref=${queueParent}`) return policyFile(scenario.policyBase);
+  if (sub === `${root}/branches/main`) return ok({ name: 'main', commit: { sha: liveTip } });
+  if (sub === `${root}/compare/${liveTip}...${headSha}` && args[args.indexOf('--jq') + 1] === '{status, behind_by}') {
+    return ok(scenario.headBehindTip ? { status: 'diverged', behind_by: 1 } : { status: 'ahead', behind_by: 0 });
+  }
   if (sub === `${root}/branches/main/protection`) {
     const protection = scenario.protection === undefined ? { strict: true, enforce_admins: true } : scenario.protection;
     if (protection === null) return notFound();
