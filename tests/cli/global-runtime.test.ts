@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { runGlobalRuntimeSetup, updateLeftoverSummary, updateRegisteredUpgradeSummary } from '../../src/cli/commands/global-runtime';
+import { runUserUninstall } from '../../src/cli/installer/uninstall';
 import { formatUpgradeSummaryLine, type UpgradeResult } from '../../src/cli/commands/upgrade';
 import type { LeftoverItem } from '../../src/effects/upgrade/legacy-inventory';
 import type { LegacyWorktreeCandidate } from '../../src/effects/upgrade/legacy-worktree-cleanup';
@@ -348,4 +349,60 @@ describe('update registered repo summary', () => {
       rmSync(root, { recursive: true, force: true });
     }
   }, 120_000);
+});
+
+describe('runtime ignore rules step', () => {
+  test('writes the runtime-state block into the user-level excludes file and uninstall removes only that block', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'runtime-ignore-')));
+    const home = join(root, 'home');
+    const xdg = join(root, 'xdg');
+    const env = { ...process.env, HOME: home, XDG_CONFIG_HOME: xdg, BUN_INSTALL: join(root, 'bun'), GIT_CONFIG_NOSYSTEM: '1' };
+    const update = () => runGlobalRuntimeSetup({ cwd: root, env, plugins: [], updateMode: true, installCli: false, syncSkill: false,
+      hostAdapters: false, externalSkills: false, codegraph: false });
+    const begin = '# BEGIN: repo-harness runtime-state\n';
+    try {
+      mkdirSync(home, { recursive: true });
+      expect(update().steps.at(-1)).toMatchObject({ step: 'write runtime ignore rules', status: 'ok' });
+      const defaultFile = join(xdg, 'git', 'ignore');
+      expect(readFileSync(defaultFile, 'utf8')).toStartWith(begin);
+      const repo = join(root, 'repo');
+      mkdirSync(repo);
+      expect(Bun.spawnSync(['git', 'init', '-q'], { cwd: repo, env }).exitCode).toBe(0);
+      writeFileSync(join(repo, '.gitignore'), '');
+      expect(Bun.spawnSync(['git', 'check-ignore', '-q', '.ai/harness/events.jsonl'], { cwd: repo, env }).exitCode).toBe(0);
+
+      const custom = join(root, 'custom', 'excludes');
+      mkdirSync(join(root, 'custom'));
+      const before = '# user rules\n*.swp\n';
+      const after = '*.orig\n';
+      writeFileSync(custom, `${before}${begin}stale-rule/\n# END: repo-harness runtime-state\n${after}`);
+      Bun.spawnSync(['git', 'config', '--global', 'core.excludesFile', custom], { env });
+      rmSync(defaultFile);
+      expect(update().steps.at(-1)).toMatchObject({ status: 'ok', detail: `${custom}: written` });
+      expect(existsSync(defaultFile)).toBe(false);
+      const written = readFileSync(custom, 'utf8');
+      expect(written).toStartWith(`${before}${begin}`);
+      expect(written).toEndWith(`# END: repo-harness runtime-state\n${after}`);
+      expect(written).not.toContain('stale-rule/');
+      expect(update().steps.at(-1)).toMatchObject({ status: 'ok', detail: `${custom}: current` });
+      expect(readFileSync(custom, 'utf8')).toBe(written);
+
+      const removal = runUserUninstall({ target: 'both', env });
+      expect(removal.items).toContainEqual({ path: custom, action: 'remove', reason: 'runtime-state ignore block' });
+      expect(readFileSync(custom, 'utf8')).toBe(`${before}${after}`);
+
+      Bun.spawnSync(['git', 'config', '--global', '--unset', 'core.excludesFile'], { env });
+      mkdirSync(join(xdg, 'git'), { recursive: true });
+      symlinkSync(custom, defaultFile);
+      expect(update().steps.at(-1)).toMatchObject({ status: 'ok', detail: `${defaultFile}: written` });
+      const linked = readFileSync(custom, 'utf8');
+      for (const dryRun of [true, false]) {
+        const refused = runUserUninstall({ target: 'both', env, dryRun });
+        expect(refused.items).toContainEqual({ path: defaultFile, action: 'unresolved', reason: expect.stringContaining('refusing symlink') });
+        expect(readFileSync(custom, 'utf8')).toBe(linked);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

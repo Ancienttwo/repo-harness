@@ -1,7 +1,10 @@
 import { readFileSync } from "fs";
-import { join } from "path";
+import { homedir } from "os";
+import { isAbsolute, join } from "path";
 import type { AppendManagedBlockOperation, ManagedBlockMarker } from "../../core/adoption/operations";
+import { managedBlockMarker } from "../../core/adoption/managed-block";
 import { makeOperationId } from "../../core/adoption/operations";
+import { gitSpawnSync } from "../git/runner";
 import { RETIRED_RUNTIME_IGNORE_RULES, retiredRuntimeRuleFiles } from "../upgrade/legacy-inventory";
 
 export const GITIGNORE_MANAGED_BLOCK_MARKER = "repo-harness generated-runtime";
@@ -41,4 +44,64 @@ export function gitignoreManagedBlockOperation(
     risk: "low",
     status,
   };
+}
+
+export const RUNTIME_STATE_IGNORE_MARKER = "repo-harness runtime-state";
+
+// Runtime-state rules live in the user-level Git excludes file, so a rule change needs no commit in any repository.
+export const RUNTIME_STATE_IGNORE_CONTENT = readFileSync(
+  join(import.meta.dir, "../../../assets/templates/runtime-state.gitignore"), "utf8",
+).trimEnd();
+
+export function runtimeStateIgnoreOperation(path: string): AppendManagedBlockOperation {
+  return {
+    id: makeOperationId("appendManagedBlock", path, RUNTIME_STATE_IGNORE_MARKER),
+    kind: "appendManagedBlock",
+    path,
+    marker: RUNTIME_STATE_IGNORE_MARKER,
+    content: RUNTIME_STATE_IGNORE_CONTENT,
+    reason: "Ensure the repo-harness runtime-state ignore block in the user-level Git excludes file is current",
+    risk: "low",
+    status: "planned",
+  };
+}
+
+export type UserExcludesFile = { readonly ok: true; readonly path: string } | { readonly ok: false; readonly error: string };
+
+/** `core.excludesFile` from the global Git config when set, otherwise Git's default user-level excludes file. */
+export function userExcludesFilePath(callerEnv: NodeJS.ProcessEnv = {}): UserExcludesFile {
+  // Git and the default path read the same HOME and XDG_CONFIG_HOME.
+  const env = { ...process.env, ...callerEnv };
+  const result = gitSpawnSync(["config", "--global", "--type=path", "--get", "core.excludesFile"], { env, encoding: "utf8" });
+  if (result.status === 0) {
+    const configured = result.stdout.trim();
+    if (!isAbsolute(configured)) return { ok: false, error: `core.excludesFile is not an absolute path: ${configured}` };
+    return { ok: true, path: configured };
+  }
+  if (result.status === 1) {
+    const configHome = env.XDG_CONFIG_HOME || join(env.HOME ?? homedir(), ".config");
+    return { ok: true, path: join(configHome, "git", "ignore") };
+  }
+  const cause = (result.stderr || result.error?.message || `signal ${result.signal}`).trim();
+  return { ok: false, error: `no user-level excludes file resolved: git config --global --get core.excludesFile exited ${result.status}: ${cause}` };
+}
+
+export type RuntimeStateIgnoreRemoval =
+  | { readonly status: "none" | "unbalanced" }
+  | { readonly status: "removed"; readonly content: string };
+
+/** Removes the marked block and at most one blank line before it, so a write and removal cycle adds no blank lines; other lines stay byte-equal. */
+export function removeRuntimeStateIgnoreBlock(content: string): RuntimeStateIgnoreRemoval {
+  const { begin, end } = managedBlockMarker(RUNTIME_STATE_IGNORE_MARKER);
+  const lines = content.split(/(?<=\n)/);
+  const bare = lines.map((line) => line.replace(/\r?\n$/, ""));
+  const start = bare.indexOf(begin);
+  const stop = bare.indexOf(end);
+  if (start === -1 && stop === -1) return { status: "none" };
+  if (start === -1 || stop < start || bare.indexOf(begin, start + 1) !== -1) return { status: "unbalanced" };
+  // One blank line before the block is the write step's separator; drop it, unless it separates user lines.
+  const blankBefore = start > 0 && bare[start - 1] === "";
+  const blankAfter = stop + 1 < lines.length && bare[stop + 1] === "";
+  const separator = blankBefore && (stop === lines.length - 1 || blankAfter) ? 1 : 0;
+  return { status: "removed", content: [...lines.slice(0, start - separator), ...lines.slice(stop + 1)].join("") };
 }

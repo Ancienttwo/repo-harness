@@ -93,9 +93,12 @@ describe("create-project-dirs runtime smoke", () => {
       expect(gitignore).not.toContain("tasks/.current.md.tmp.*");
       expect(gitignore).not.toContain("tasks/current.md");
       expect(gitignore).not.toContain(".claude/.plan-state/");
-      expect(gitignore).toContain(".ai/harness/checks/*.latest.json");
-      expect(gitignore).toContain(".ai/harness/checks/*.latest.md");
-      expect(gitignore).toContain(".ai/harness/state/");
+      // These runtime rules live in the user-level runtime-state block, not the tracked block.
+      const runtimeState = readFileSync(join(ROOT, "assets/templates/runtime-state.gitignore"), "utf-8");
+      expect(runtimeState).toContain(".ai/harness/checks/*.latest.json");
+      expect(runtimeState).toContain(".ai/harness/checks/*.latest.md");
+      expect(runtimeState).toContain(".ai/harness/state/");
+      expect(gitignore).not.toContain(".ai/harness/state/");
       expect(gitignore).toContain(".archcontext/");
       expect(gitignore).not.toContain(".ai/harness/chatgpt/bridge-extension/");
       expect(gitignore).toContain(".repo-harness/");
