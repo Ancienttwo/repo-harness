@@ -11,9 +11,20 @@ import { DEFAULT_SEATS_CONFIG, WORKER_SEAT_IDS } from "../../src/core/board/seat
 import { repoHarnessRepoIdFor } from "../../src/effects/repo-registry";
 import { classifyQuotaReading, decodeCodexRateLimitsResult } from "../../src/core/board/quota";
 import { formatSeatRoutes, seatAccountQuotas } from "../../src/core/board/seat-routing";
+import { assertPiShell } from "../../src/effects/board/pi-shell";
 import { readClaudeQuota } from "../../src/effects/board/quota";
 
 const CLI = join(import.meta.dir, "..", "..", "src/cli/index.ts");
+
+/** A Pi seat launch probes its shell (#2370); a stub shell prints what the probe script prints on a good or a bash 3.2 shell. */
+const GOOD_PROBE_OUTPUT = "RESULT[a smile :)\nthen a span `echo INJECTED-BY-BACKTICK`]";
+const BAD_PROBE_OUTPUT = "RESULT[a smile :)\nthen a span INJECTED-BY-BACKTICK]";
+function stubShell(home: string, name: string, output: string): string {
+  const path = join(home, name);
+  writeFileSync(path, `#!/bin/sh\nprintf '%s\\n' '${output}'\n`);
+  chmodSync(path, 0o755);
+  return path;
+}
 
 /**
  * A HOME with an optional seats section, a nested user agent `nested-auditor`, and one enabled plugin
@@ -37,6 +48,8 @@ function withHome(seats: unknown, fn: (home: string) => void) {
     mkdirSync(join(home, ".claude", "plugins"), { recursive: true });
     writeFileSync(join(home, ".claude", "settings.json"), JSON.stringify({ enabledPlugins: { "demo@market": true } }));
     writeFileSync(join(home, ".claude", "plugins", "installed_plugins.json"), JSON.stringify({ version: 2, plugins: { "demo@market": [{ scope: "user", installPath: plugin }] } }));
+    mkdirSync(join(home, ".pi", "agent"), { recursive: true });
+    writeFileSync(join(home, ".pi", "agent", "settings.json"), JSON.stringify({ shellPath: stubShell(home, "good-shell", GOOD_PROBE_OUTPUT) }));
     mkdirSync(join(home, '.quota-bin'));
     writeFileSync(join(home, 'codex-used'), '51');
     writeFileSync(join(home, 'codex-credits'), 'false');
@@ -60,7 +73,7 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', li
 }
 
 function run(env: Record<string, string>, args: string[], cwd?: string) {
-  const { CLAUDE_CONFIG_DIR: _inherited, ...base } = process.env;
+  const { CLAUDE_CONFIG_DIR: _inherited, PI_CODING_AGENT_DIR: _piDirectory, ...base } = process.env;
   const result = spawnSync(process.execPath, [CLI, "seats", "argv", ...args], { env: { ...base, ...env, PATH: `${join(env.HOME!, '.quota-bin')}${delimiter}${env.PATH ?? base.PATH ?? ''}` }, encoding: "utf8", cwd });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
@@ -115,6 +128,51 @@ function bare(args: string[]): unknown[] {
 }
 
 describe("repo-harness seats argv", () => {
+  test("a Pi seat launch refuses a shell that fails the heredoc probe, passes a good one and reports a shell that cannot start", () => {
+    const seats = { ...DEFAULT_SEATS_CONFIG, "worker-light": { runtime: "pi", model: null, effort: null, tools: DEFAULT_SEATS_CONFIG.worker.tools, fleet: [] } };
+    withHome(seats, home => {
+      const settings = join(home, ".pi", "agent", "settings.json");
+      writeFileSync(settings, JSON.stringify({ shellPath: stubShell(home, "bad-shell", BAD_PROBE_OUTPUT) }));
+      const refused = argv(home, "worker-light", "--json");
+      expect([refused.status, refused.stdout, JSON.parse(refused.stderr).error]).toEqual([1, "", "pi_shell_refused"]);
+      expect(JSON.parse(refused.stderr).message).toContain("shellPath");
+      writeFileSync(settings, JSON.stringify({ shellPath: join(home, "missing-shell") }));
+      expect(JSON.parse(argv(home, "worker-light", "--json").stderr).error).toBe("pi_shell_probe_failed");
+      // The project settings file overrides the global one for shellPath, as Pi merges them.
+      mkdirSync(join(home, ".pi"), { recursive: true });
+      writeFileSync(join(home, ".pi", "settings.json"), JSON.stringify({ shellPath: stubShell(home, "project-shell", GOOD_PROBE_OUTPUT) }));
+      expect(run({ HOME: home }, ["worker-light", "--json"], home).status).toBe(0);
+      // A shell that does not finish is its own error.
+      const slow = join(home, "slow-shell");
+      writeFileSync(slow, "#!/bin/sh\nexec sleep 30\n");
+      chmodSync(slow, 0o755);
+      writeFileSync(join(home, ".pi", "settings.json"), JSON.stringify({ shellPath: slow }));
+      expect(JSON.parse(run({ HOME: home }, ["worker-light", "--json"], home).stderr).error).toBe("pi_shell_probe_failed");
+      rmSync(join(home, ".pi", "settings.json"));
+      // A Claude seat does not probe: the same refusing settings leave it unchanged.
+      writeFileSync(settings, JSON.stringify({ shellPath: stubShell(home, "bad-shell", BAD_PROBE_OUTPUT) }));
+      expect(argv(home, "orchestrator", "--json").status).toBe(0);
+    });
+  });
+
+  test("an empty project shellPath selects the default shell, and a path that is not absolute is refused", async () => {
+    const home = mkdtempSync(join(tmpdir(), "pi-shell-"));
+    try {
+      mkdirSync(join(home, ".pi", "agent"), { recursive: true });
+      writeFileSync(join(home, ".pi", "agent", "settings.json"), JSON.stringify({ shellPath: stubShell(home, "global-shell", BAD_PROBE_OUTPUT) }));
+      writeFileSync(join(home, ".pi", "settings.json"), JSON.stringify({ shellPath: "" }));
+      const env = { HOME: home };
+      await expect(assertPiShell(env, home, stubShell(home, "default-shell", GOOD_PROBE_OUTPUT))).resolves.toBeUndefined();
+      for (const bad of ["~/bin/bash", "bin/bash"]) {
+        writeFileSync(join(home, ".pi", "settings.json"), JSON.stringify({ shellPath: bad }));
+        await expect(assertPiShell(env, home)).rejects.toMatchObject({ code: "pi_shell_refused", message: expect.stringContaining(`"${bad}"`) });
+      }
+      await expect(assertPiShell({ ...env, PI_CODING_AGENT_DIR: "~/agent" }, home)).rejects.toMatchObject({ code: "pi_shell_refused" });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   test("an old seats section fails closed with the update action", () => {
     const seats = { orchestrator: DEFAULT_SEATS_CONFIG.orchestrator, advisor: DEFAULT_SEATS_CONFIG.advisor, worker: DEFAULT_SEATS_CONFIG.worker };
     withHome(seats, home => {
