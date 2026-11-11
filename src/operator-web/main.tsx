@@ -16,8 +16,8 @@ if (!root) throw new Error('operator web root element is missing');
 /**
  * `?fixture=<name>` exists only in the Vite dev server. The production build
  * replaces `import.meta.env.DEV` with `false`, so the fixture chunk is never
- * emitted. The parameter is removed from the URL because Task links accept no
- * other query keys.
+ * emitted. The parameter is removed from the URL so that a copied link keeps
+ * only the repository key.
  */
 async function developmentProps(): Promise<OperatorAppProps> {
   if (import.meta.env.DEV) {

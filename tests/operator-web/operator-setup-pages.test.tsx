@@ -169,7 +169,8 @@ describe('navigation', () => {
     for (const [hash, rootHash] of [['#architecture/capability.workflow-engine.pipeline', '#architecture'], ['#docs/docs/design/old.md', '#docs']]) {
       localStorage.setItem('repo-harness:operator-repository', 'repo_0000000000000000');
       // A browser gives a hash navigation an entry without a record; happy-dom keeps the previous one.
-      window.history.replaceState(null, '');
+      // The URL of the previous mount names a repository, so the entry also drops it.
+      window.history.replaceState(null, '', '/');
       await mount(hash!, props(readySetup(NOW), pending));
       expect([document.querySelector('[data-repository-switch]')?.getAttribute('data-selected'), window.location.hash]).toEqual([REGISTRY.repositories[0]!.repository_id, rootHash]);
       await act(async () => root?.unmount());
