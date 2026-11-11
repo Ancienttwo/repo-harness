@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, delimiter, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
-import { discoverTestFiles, integrationFiles, scheduleTestFiles, selectTestSuite, serialFiles, shardTestFiles } from '../scripts/select-test-suite';
+import { assertShardPlan, discoverTestFiles, integrationFiles, loadTestDurations, planShards, selectTestSuite, serialFiles } from '../scripts/select-test-suite';
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
 
@@ -147,27 +147,51 @@ describe("ci isolate-mode test loop", () => {
     expect(() => selectTestSuite('full', ['tests/../escape.test.ts'])).toThrow('Invalid');
   });
 
-  test('recorded durations schedule the longest files first without losing new files', () => {
-    const files = ['tests/a.test.ts', 'tests/b.test.ts', 'tests/c.test.ts', 'tests/new.test.ts'];
-    expect(scheduleTestFiles(files, { [files[0]!]: 20, [files[1]!]: 90, [files[2]!]: 20 }))
-      .toEqual(['tests/b.test.ts', 'tests/a.test.ts', 'tests/c.test.ts', 'tests/new.test.ts']);
-    expect(() => scheduleTestFiles(files, { [files[0]!]: -1 })).toThrow('Invalid recorded duration');
+  test('the shard plan is disjoint and complete, balanced by recorded durations, with the median for a new file', () => {
+    const durations = { 'tests/a.test.ts': 90, 'tests/b.test.ts': 60, 'tests/c.test.ts': 40, 'tests/d.test.ts': 30, 'tests/e.test.ts': 20 };
+    const files = [...Object.keys(durations), 'tests/new-1.test.ts', 'tests/new-2.test.ts'];
+    const plan = planShards(files, durations, 3);
+    expect(plan.flat().sort()).toEqual([...files].sort());
+    expect(new Set(plan.flat()).size).toBe(files.length);
+    expect(planShards([...files].reverse(), durations, 3)).toEqual(plan);
+    // New files weigh the median (40) and each array is in run order, longest first.
+    expect(plan).toEqual([['tests/a.test.ts', 'tests/e.test.ts'], ['tests/b.test.ts', 'tests/new-2.test.ts'], ['tests/c.test.ts', 'tests/new-1.test.ts', 'tests/d.test.ts']]);
+    const load = (shard: string[]) => shard.reduce((sum, file) => sum + (durations[file as keyof typeof durations] ?? 40), 0);
+    expect(Math.max(...plan.map(load)) - Math.min(...plan.map(load))).toBeLessThanOrEqual(90);
+    // With no table every file weighs the same: sizes differ by at most one, in path order.
+    const equal = planShards(files, null, 3);
+    expect(equal).toEqual([['tests/a.test.ts', 'tests/d.test.ts', 'tests/new-2.test.ts'], ['tests/b.test.ts', 'tests/e.test.ts'], ['tests/c.test.ts', 'tests/new-1.test.ts']]);
+    expect(planShards(files, null, 1)).toEqual([[...files].sort()]);
+    expect(planShards(['tests/a.test.ts'], durations, 3)).toEqual([['tests/a.test.ts'], [], []]);
+    expect(() => planShards(files, durations, 0)).toThrow('Invalid shard total');
+    // A wrong array count, an overlap, an incomplete plan and the old list shape fail.
+    expect(() => assertShardPlan([['tests/a.test.ts']], ['tests/a.test.ts'], 3)).toThrow('Invalid shard plan');
+    expect(() => assertShardPlan([['tests/a.test.ts'], ['tests/a.test.ts']], ['tests/a.test.ts'], 2)).toThrow('Invalid shard plan');
+    expect(() => assertShardPlan([['tests/a.test.ts'], []], ['tests/a.test.ts', 'tests/b.test.ts'], 2)).toThrow('Invalid shard plan');
+    expect(() => assertShardPlan(['tests/a.test.ts'], ['tests/a.test.ts'], 1)).toThrow('Invalid shard plan');
   });
 
-  test('shards split files disjointly and completely with balanced recorded durations', () => {
-    const durations = { 'tests/a.test.ts': 90, 'tests/b.test.ts': 60, 'tests/c.test.ts': 40, 'tests/d.test.ts': 30, 'tests/e.test.ts': 20 };
-    const files = [...Object.keys(durations), 'tests/new-1.test.ts', 'tests/new-2.test.ts', 'tests/new-3.test.ts'];
-    const shards = [0, 1, 2].map(index => shardTestFiles(files, durations, index, 3));
-    expect(shards.flat().sort()).toEqual([...files].sort());
-    expect(new Set(shards.flat()).size).toBe(files.length);
-    expect(shards).toEqual([0, 1, 2].map(index => shardTestFiles([...files].reverse(), durations, index, 3)));
-    const load = (shard: string[]) => shard.reduce((sum, file) => sum + (durations[file as keyof typeof durations] ?? 0), 0);
-    expect(shards.map(load)).toEqual([90, 80, 70]);
-    // Files with no record spread round-robin by path.
-    expect(shards.map(shard => shard.filter(file => file.includes('new-')).length)).toEqual([1, 1, 1]);
-    expect(shardTestFiles(files, durations, 0, 1)).toEqual([...files].sort());
-    expect(shardTestFiles(['tests/a.test.ts'], durations, 2, 3)).toEqual([]);
-    for (const [index, total] of [[3, 3], [-1, 3], [0, 0], [0.5, 2]]) expect(() => shardTestFiles(files, durations, index!, total!)).toThrow('Invalid shard');
+  test('the duration cache keeps passing files, and the report check names each file with no report', () => {
+    const dir = mkdtempSync(join(tmpdir(), "rh-ci-durations-"));
+    try {
+      const report = (file: string, failed: boolean) => `<?xml version="1.0" encoding="UTF-8"?>\n<testsuites name="bun test"><testsuite name="${file}" file="${file}" time="1.5"><testcase name="case" time="1.5">${failed ? '<failure type="AssertionError" />' : ''}</testcase></testsuite></testsuites>\n`;
+      writeFileSync(join(dir, "tests__a.test.ts.xml"), report("tests/a.test.ts", false));
+      writeFileSync(join(dir, "tests__b.test.ts.xml"), report("tests/b.test.ts", true));
+      const output = join(dir, "durations.json");
+      const run = (...args: string[]) => spawnSync(process.execPath, [join(REPO_ROOT, "scripts/select-test-suite.ts"), ...args], { encoding: "utf8", env: { ...process.env, GITHUB_RUN_ID: "7", GITHUB_RUN_ATTEMPT: "1", GITHUB_SHA: "a".repeat(40) } });
+      expect(run("durations", dir, output).status).toBe(0);
+      const table = JSON.parse(readFileSync(output, "utf8"));
+      expect(table).toEqual({ source: { run_id: "7", run_attempt: "1", sha: "a".repeat(40) }, files: { "tests/a.test.ts": 1500 } });
+      expect(loadTestDurations(output)).toEqual({ "tests/a.test.ts": 1500 });
+      expect(loadTestDurations(join(dir, "absent.json"))).toBeNull();
+      expect(run("reports", dir, "tests/a.test.ts", "tests/b.test.ts").status).toBe(0);
+      const missing = run("reports", dir, "tests/a.test.ts", "tests/c.test.ts");
+      expect(missing.status).not.toBe(0);
+      expect(missing.stderr).toContain("[ci] missing test report: tests/c.test.ts");
+      expect(missing.stderr).not.toContain("tests/a.test.ts");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test("runs every selected file and reports each failing file once", () => {
