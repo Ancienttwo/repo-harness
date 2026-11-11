@@ -5,6 +5,7 @@ import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from
 import { join, relative, resolve } from 'path';
 import { userInfo } from 'os';
 import { canonicalize } from '../../core/evidence/canonical-json';
+import { shellQuote } from '../../core/shell-quote';
 import { REVIEW_MAX_ROUNDS, REVIEW_TIMEOUT_MS, validateReviewOutput, type ReviewOutput } from '../../core/review/generic-review';
 import { composeReviewPacket } from '../../core/review/review-packet';
 import type { ReviewHostSpec, HostRoundObservation } from '../../core/review/runner-port';
@@ -72,7 +73,6 @@ function completedModel(session: Pick<ReviewSession<unknown>, 'control_directory
   if (observation.request_id !== request.request_id || observation.kind !== 'ended' || observation.outcome !== 'completed') throw new Error('review_host_turn_unverified');
   return observation.actual_model;
 }
-const shellQuote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 /** Review-owned effects. A fixture may replace each one. */
 const reviewEffects = { model: completedModel, piExecutable, piReviewLaunchBlocker };
 /** The reviewer runner and optional replacements of the review-owned effects. */

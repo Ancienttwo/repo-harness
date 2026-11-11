@@ -1,4 +1,5 @@
 import { join, resolve } from "path";
+import { shellQuote } from "../../core/shell-quote";
 import type { AdoptionMode } from "../../core/adoption/modes";
 import type { AdoptionPlan } from "../../core/adoption/operations";
 import { planAdoption } from "../../effects/adoption/plan";
@@ -99,10 +100,6 @@ export function runAdoptionPlan(opts: RunAdoptionPlanOptions): RunAdoptionPlanRe
     exitCode: 0,
     output: opts.json === true ? renderAdoptionPlanJson(plan) : renderAdoptionPlanText(plan),
   };
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 export function renderApplyReport(report: AdoptionApplyReport, json = false): string {
