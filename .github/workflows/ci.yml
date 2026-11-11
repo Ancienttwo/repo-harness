@@ -54,9 +54,18 @@ jobs:
           path: ${{ runner.temp }}/ci-path-references.json
           key: ci-path-references-${{ github.sha }}
           restore-keys: ci-path-references-
+      # The daily run on main saves the newest test durations; they set only the shard balance and order.
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/test-durations.json
+          key: test-durations-${{ github.run_id }}
+          restore-keys: test-durations-
       - id: select
         env:
           CI_PATH_REFERENCE_CACHE: ${{ runner.temp }}/ci-path-references.json
+          TEST_DURATIONS_FILE: ${{ runner.temp }}/test-durations.json
+          # The verify matrix runs one shard per plan array.
+          CI_SHARD_TOTAL: 3
         run: bun scripts/select-ci-coverage.ts
       - uses: actions/upload-artifact@v4
         if: steps.select.outputs.mode == 'affected'
@@ -361,6 +370,15 @@ jobs:
       - name: Install pinned herdr-core runtime
         uses: ./.github/actions/install-pinned-herdr-core
       - run: bash scripts/check-ci.sh functional
+      # Only the daily run on main writes the durations cache; pull request runs restore it.
+      - id: durations
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+        run: bun scripts/select-test-suite.ts durations .ai/harness/runs/junit "$RUNNER_TEMP/test-durations.json"
+      - uses: actions/cache/save@v4
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' && steps.durations.outcome == 'success' }}
+        with:
+          path: ${{ runner.temp }}/test-durations.json
+          key: test-durations-${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:

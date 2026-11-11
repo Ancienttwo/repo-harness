@@ -613,6 +613,16 @@ describe('single affected verification and daily fallback', () => {
     const total = Number(/^\$\{\{ matrix\.shard \}\}\/(\d+)$/.exec(affected.env.CI_SHARD)![1]);
     expect(jobs.verify.strategy).toEqual({ 'fail-fast': false, matrix: { shard: Array.from({ length: total }, (_, index) => index) } });
     expect(total).toBeGreaterThan(1);
+    // The selection job writes one plan array per verify shard from the durations that only the daily run on main saves.
+    expect(select.env.CI_SHARD_TOTAL).toBe(total);
+    const durationRestore = jobs.selection.steps.find((step: any) => step.uses === 'actions/cache/restore@v4');
+    expect(durationRestore.with).toEqual({ path: select.env.TEST_DURATIONS_FILE, key: 'test-durations-${{ github.run_id }}', 'restore-keys': 'test-durations-' });
+    expect(jobs.selection.steps.indexOf(durationRestore)).toBeLessThan(jobs.selection.steps.indexOf(select));
+    const durationSaves = Object.values(jobs).flatMap((job: any) => job.steps ?? []).filter((step: any) => /^actions\/cache(\/save)?@/.test(step.uses ?? '') && String(step.with?.key).startsWith('test-durations-'));
+    expect(durationSaves).toEqual([jobs.test.steps.find((step: any) => step.uses === 'actions/cache/save@v4')]);
+    expect(durationSaves[0].if).toBe("${{ !cancelled() && github.ref == 'refs/heads/main' && steps.durations.outcome == 'success' }}");
+    expect(durationSaves[0].with).toEqual({ path: '${{ runner.temp }}/test-durations.json', key: 'test-durations-${{ github.run_id }}-${{ github.run_attempt }}' });
+    expect(jobs.test.steps.find((step: any) => step.id === 'durations').if).toBe("${{ !cancelled() && github.ref == 'refs/heads/main' }}");
     const upload = jobs.selection.steps.find((step: any) => step.uses === 'actions/upload-artifact@v4');
     expect(upload.with.path).toBe('.ci-affected-tests.json');
     expect(upload.with['include-hidden-files']).toBe(true);
@@ -834,7 +844,7 @@ describe('single affected verification and daily fallback', () => {
       writeFileSync(event, JSON.stringify({ pull_request: { draft: true, base: { sha: base } } })); writeFileSync(output, '');
       const result = spawnSync(process.execPath, [join(ROOT, 'scripts/select-ci-coverage.ts')], { cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output, GITHUB_SHA: head } });
       expect(result.status).toBe(0);
-      expect(JSON.parse(readFileSync(join(repo, '.ci-affected-tests.json'), 'utf8'))).toEqual(['tests/feature.test.ts']);
+      expect(JSON.parse(readFileSync(join(repo, '.ci-affected-tests.json'), 'utf8'))).toEqual([['tests/feature.test.ts']]);
       expect(readFileSync(output, 'utf8')).toBe(`mode=affected\nsha=${head}\nnative_oar=false\nhome_isolation=false\n`);
     } finally { rmSync(repo, { recursive: true, force: true }); }
   });
@@ -887,20 +897,30 @@ describe('single affected verification and daily fallback', () => {
         const result = spawnSync(process.execPath, [join(ROOT, 'scripts/select-ci-coverage.ts')], { cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output, GITHUB_SHA: head } });
         expect({ name, status: result.status }, result.stderr).toEqual({ name, status: 0 });
         expect({ name, output: readFileSync(output, 'utf8') }).toEqual({ name, output: `mode=${mode}\nsha=${head}\nnative_oar=false\nhome_isolation=false\n` });
-        expect({ name, tests: existsSync(selected) ? JSON.parse(readFileSync(selected, 'utf8')) : null }).toEqual({ name, tests });
+        expect({ name, plan: existsSync(selected) ? JSON.parse(readFileSync(selected, 'utf8')) : null }).toEqual({ name, plan: tests && [tests] });
       }
       // The local affected lane stops after a documentation selection; an affected selection goes on to typecheck.
-      for (const file of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh', 'scripts/lib/architecture-plugin.sh']) write(file, readFileSync(join(ROOT, file), 'utf8'));
-      write('bin/bun', '#!/bin/bash\necho "bun $*" >> "$BUN_LOG"\nif [ "$1" = scripts/select-ci-coverage.ts ]; then echo "mode=$SELECTED_MODE"; fi\n');
+      for (const file of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh', 'scripts/lib/architecture-plugin.sh', 'scripts/select-test-suite.ts']) write(file, readFileSync(join(ROOT, file), 'utf8'));
+      // The shard plan reader is real; every other bun command is logged only.
+      write('bin/bun', '#!/bin/bash\necho "bun $*" >> "$BUN_LOG"\nif [ "$1" = scripts/select-test-suite.ts ]; then exec "$REAL_BUN" "$@"; fi\nif [ "$1" = scripts/select-ci-coverage.ts ]; then echo "mode=$SELECTED_MODE"; fi\n');
       spawnSync('chmod', ['+x', join(repo, 'bin/bun')]);
+      writeFileSync(selected, '[[]]');
       for (const [mode, typecheck] of [['documentation', false], ['affected', true]] as const) {
         const log = join(repo, `.git/bun-${mode}.log`);
         const lane = spawnSync('/bin/bash', [join(repo, 'scripts/check-ci.sh'), 'affected', '--base', base], { cwd: repo, encoding: 'utf8',
-          env: { PATH: `${join(repo, 'bin')}:/usr/bin:/bin`, HOME: repo, BUN_LOG: log, SELECTED_MODE: mode } });
+          env: { PATH: `${join(repo, 'bin')}:/usr/bin:/bin`, HOME: repo, BUN_LOG: log, SELECTED_MODE: mode, REAL_BUN: process.execPath } });
         expect({ mode, status: lane.status }, lane.stderr).toEqual({ mode, status: 0 });
         expect({ mode, exit: lane.stdout.includes('[ci] Documentation-only diff: no build or test job.') }).toEqual({ mode, exit: !typecheck });
         expect({ mode, typecheck: readFileSync(log, 'utf8').includes('bun run check:type') }).toEqual({ mode, typecheck });
       }
+      // A shard whose plan does not hold one array per shard starts no test.
+      writeFileSync(selected, JSON.stringify([['tests/feature.test.ts']]));
+      const shardLog = join(repo, '.git/bun-shard.log');
+      const shard = spawnSync('/bin/bash', [join(repo, 'scripts/check-ci.sh'), 'affected'], { cwd: repo, encoding: 'utf8',
+        env: { PATH: `${join(repo, 'bin')}:/usr/bin:/bin`, HOME: repo, BUN_LOG: shardLog, CI_SHARD: '1/3', REAL_BUN: process.execPath } });
+      expect(shard.status).not.toBe(0);
+      expect(shard.stderr).toContain('Invalid shard plan');
+      expect(readFileSync(shardLog, 'utf8')).not.toContain('build:hook-bundle');
     } finally { rmSync(repo, { recursive: true, force: true }); }
   }, 120_000);
 
@@ -930,7 +950,7 @@ describe('single affected verification and daily fallback', () => {
       git('add', '.'); git('commit', '-qm', 'base');
       git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'HEAD'));
       expect(select('--base', 'origin/main').status).toBe(0);
-      expect(selected()).toEqual([]);
+      expect(selected()).toEqual([[]]);
       write('src/committed.ts', 'export const value=2;'); git('add', 'src/committed.ts'); git('commit', '-qm', 'candidate');
       write('src/staged.ts', 'export const value=2;'); git('add', 'src/staged.ts');
       write('src/unstaged.ts', 'export const value=2;');
@@ -940,7 +960,7 @@ describe('single affected verification and daily fallback', () => {
       const result = select('--base', 'origin/main');
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('mode=affected');
-      expect(selected()).toEqual(['tests/committed.test.ts', 'tests/deleted.test.ts', 'tests/staged.test.ts', 'tests/unstaged.test.ts', 'tests/untracked.test.ts']);
+      expect(selected()).toEqual([['tests/committed.test.ts', 'tests/deleted.test.ts', 'tests/staged.test.ts', 'tests/unstaged.test.ts', 'tests/untracked.test.ts']]);
       expect(select('--base', 'origin/main').status).toBe(0);
       write('unknown/product.conf', 'unknown');
       const unknown = select('--base', 'origin/main');

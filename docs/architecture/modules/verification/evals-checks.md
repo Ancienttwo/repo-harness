@@ -142,7 +142,7 @@ sequenceDiagram
 
 1. **PR 只跑 typecheck 和受影响测试，main 每天跑全量。** `ci.yml` 的 `affected` 模式运行 `bash scripts/check-ci.sh affected`（`.github/workflows/ci.yml:154`）。`schedule` 每天触发一次（`ci.yml:8`）。来源：PR #483、PR #625。文档路径只选 `scripts/ci-documentation-consumers.ts` 扫出的测试。平台任务分别按 `home_isolation` 和 `native_oar` 触发。HOME 读取测试 import 与 bunfig preload；原生 OAR 读取 host bundle 输入、原生测试的完整本地 import 闭包、preload、闭包源码启动的 shell 脚本和 `.ai/harness/policy.json`。闭包外的 shell 脚本不触发原生 OAR（#1393）。被启动脚本 source 或运行的文件（例如 `scripts/contract-worktree.sh` 的 `scripts/worktree-merge-lib.sh` 和 `scripts/contract-worktree-runtime.ts`）不在原生输入内，只由 daily 覆盖。CI 实现变更触发两项。只有标志为 `false` 时 Required / CI 才接受对应 job 的 skip。daily 仍然覆盖这两项。
 2. **覆盖选择不确定时失败。** `selectCoverage` 是纯函数（`scripts/select-ci-coverage.ts`）。缺少端点、diff 不可用和 checkout 不匹配时，selection 失败。没有消费者的未知路径也失败（`selectAffectedTests`）。selection 不用全量覆盖代替未知覆盖。
-3. **一个测试清单和一个调度。** `scripts/select-test-suite.ts` 拥有本地和 CI 的测试清单与调度（PR #504）。调度输入是实测时长 `scripts/test-file-durations.json`（`select-test-suite.ts:61`）。PR 的 `verify` 是三个 matrix shard：`shardTestFiles` 按实测时长把受影响文件分成互不重叠的三份，shard 0 另跑 typecheck（`CI_SHARD`，`scripts/check-ci.sh`）。
+3. **一个测试清单和一个分片计划。** `scripts/select-test-suite.ts` 拥有本地和 CI 的测试清单与分片计划（PR #504、#2242）。selection job 只计算一次计划：`scripts/select-ci-coverage.ts` 把 `.ci-affected-tests.json` 写成 `CI_SHARD_TOTAL` 个数组，各数组互不重叠，并集等于选中的测试，否则以 `Invalid shard plan` 失败。权重来自 daily `functional` job 存入 `actions/cache` 的实测时长（`test-durations-<run_id>-<run_attempt>`，只在 `refs/heads/main` 保存），selection 用 `TEST_DURATIONS_FILE` 读取；没有记录的文件取中位数，没有表时权重相等。时长只改变平衡和运行顺序，不改变运行的文件。PR 的 `verify` 是三个 matrix shard，每个 shard 只跑计划里自己的数组，shard 0 另跑 typecheck（`CI_SHARD`，`scripts/check-ci.sh`）；测试后每个 shard 用 JUnit 报告证明自己的文件都已运行，缺报告时以 `[ci] missing test report: <file>` 失败。
 4. **每个测试文件都在隔离的 HOME 和 TMPDIR 里运行。** `bunfig.toml` 预加载 `tests/preload-home-isolation.ts`。HOME 或 TMPDIR 不在临时目录时，预加载拒绝运行（`preload-home-isolation.ts:37`）。来源：PR #518。
 5. **本地显式验证只做两件事。** `verify-sprint.sh` 先运行 typecheck，再运行调用方给出的测试文件。测试路径必须在 `tests/` 下，不能逃出仓库（`scripts/verify-sprint.sh:28`）。`--base` 交给 `merge-gate.ts` 消费可信 PR 检查，不重跑命令（`verify-sprint.sh:22`）。
 6. **protected path 检查是只读门禁。** `scripts/check-protected-paths.ts` 读取受保护目录的暂存或跟踪路径，报告冲突；它不改文件，也不运行测试。
@@ -451,7 +451,7 @@ not runtime evidence.
 ## 2026-10-11 组件拆分
 
 - 本 capability 拆成 5 个组件：primary（Verification Check Execution）、test-suite、evals-and-benchmarks、ci-selection 和 workflow-gates。
-- capability include 增加了此前无归属的 `.github/**`、`bunfig.toml`、`scripts/test-file-durations.json`、Verification Plan 脚本、CI 选择与报告脚本和 `harness-trace-grade.sh`。
+- capability include 增加了此前无归属的 `.github/**`、`bunfig.toml`、实测时长表（#2242 已删除）、Verification Plan 脚本、CI 选择与报告脚本和 `harness-trace-grade.sh`。
 - `src/*/evidence/**` 中的两个 verification-plan 文件没有加入。按 brief 规则 6，整个 evidence 目录先归 evidence-ledger。
 - 新关系：ci-selection 到 test-suite、workflow-gates 和 inspection-migration；evals-and-benchmarks 到 hook-adapters；primary 到 contract-assets（merge gate）。
 
