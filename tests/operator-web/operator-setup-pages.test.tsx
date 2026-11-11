@@ -164,6 +164,16 @@ describe('navigation', () => {
     expect([switchButton().getAttribute('data-selected'), window.location.hash]).toEqual([second!.repository_id, '#architecture']);
   });
 
+  test('a replaced stale pin opens the root of a single-repository page and passes no old module or docs path', async () => {
+    const pending = { readArchitectureMap: () => new Promise<never>(() => {}), readDocsTree: () => new Promise<never>(() => {}) };
+    for (const [hash, rootHash] of [['#architecture/capability.workflow-engine.pipeline', '#architecture'], ['#docs/docs/design/old.md', '#docs']]) {
+      localStorage.setItem('repo-harness:operator-repository', 'repo_0000000000000000');
+      await mount(hash!, props(readySetup(NOW), pending));
+      expect([document.querySelector('[data-repository-switch]')?.getAttribute('data-selected'), window.location.hash]).toEqual([REGISTRY.repositories[0]!.repository_id, rootHash]);
+      await act(async () => root?.unmount());
+    }
+  });
+
   test('1-SHELL-N1 every page in the shell routes by its hash with one repository switch; later pages have no entry or route', async () => {
     const pages = [['home', 'home'], ['board', 'board'], ['repositories', 'repositories'], ['worktrees', 'worktrees'], ['docs', 'docs'], ['agents', 'agents'], ['skills', 'skills'],
       ['hooks', 'hooks'], ['cli', 'cli'], ['bots', 'bots'], ['architecture', 'architecture'], ['tests', 'tests'], ['system', 'system'], ['tools', 'tools']] as const;

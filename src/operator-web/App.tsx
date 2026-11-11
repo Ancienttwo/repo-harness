@@ -348,11 +348,12 @@ export function OperatorApp({
   const registered = repositoriesOf(repositories);
   // Pin the first registered repository once it is known. The server sorts by name, so a later
   // registration that sorts first must not move the single-repository pages; only the switcher changes the pin.
-  // A stored pin that the loaded list does not name (an unregistered repository) is re-pinned too.
   const firstRegistered = registered[0]?.repository_id ?? null;
   const activeRepository = registered.find(repo => repo.repository_id === repositoryId) ?? null;
-  const pinValid = repositoryId !== null && (repositories.kind !== 'ready' || activeRepository !== null);
-  if (!pinValid && firstRegistered !== null) setRepositoryId(firstRegistered);
+  if (repositoryId === null && firstRegistered !== null) setRepositoryId(firstRegistered);
+  // A stored pin that the loaded list does not name (an unregistered repository) is replaced in an effect,
+  // because the replacement can also rewrite the URL.
+  const stalePin = repositoryId !== null && repositories.kind === 'ready' && activeRepository === null;
   useEffect(() => {
     if (repositoryId !== null) writeStorage(OPERATOR_REPOSITORY_STORAGE_KEY, repositoryId);
   }, [repositoryId]);
@@ -408,6 +409,16 @@ export function OperatorApp({
     setPlace(next);
   }, []);
   const switchRepository = (id: string) => setRepositoryId(id);
+  // A module id or a docs path names a place in the old repository, so a single-repository page opens at its root.
+  const repositoryRoot: WorkspaceLocation | null = singleRepository && (place.module !== null || place.item !== null) ? { workspace, module: null, item: null } : null;
+  useEffect(() => {
+    if (!stalePin || firstRegistered === null) return;
+    setRepositoryId(firstRegistered);
+    if (repositoryRoot === null) return;
+    // The operator did not navigate, so the corrected place replaces the history entry.
+    window.history.replaceState(null, '', window.location.pathname + window.location.search + workspaceHash(repositoryRoot));
+    setPlace(repositoryRoot);
+  }, [stalePin, firstRegistered, repositoryRoot]);
   const boardHome: WorkspaceLocation = { workspace: 'board', module: null, item: null };
   // A Repositories row opens the board parent list of that repository.
   const openRepositoryBoard = (id: string) => {
@@ -431,11 +442,10 @@ export function OperatorApp({
     } : null,
     options,
     allowAll: false,
-    // A module id or a docs path names a place in the old repository, so the page opens at its root.
     onSelect: id => {
       if (id === null) return;
       switchRepository(id);
-      if (place.module !== null || place.item !== null) openPlace({ workspace, module: null, item: null });
+      if (repositoryRoot !== null) openPlace(repositoryRoot);
     },
   } : workspace === 'board' ? {
     // A board names one repository; another repository needs its own parent issue.
