@@ -4,7 +4,7 @@ import { dirname, join, posix } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { discoverPathReferences, loadPathReferences, savePathReferences, sourceKey } from './ci-path-consumers';
-import { documentationOnly, isDocumentationPath } from '../src/core/ci/documentation-path';
+import { isDocumentationPath, PROJECTION_DIRECTORY, PROJECTION_MANIFEST, projectionOutputs } from '../src/core/ci/documentation-path';
 import { loadTestDurations, planShards } from './select-test-suite';
 
 export type CoverageInput = {
@@ -313,13 +313,18 @@ if (import.meta.main) {
   // name a changed document; with none, it runs no build or test job. A test that only may read
   // any document (a child process in the checkout root) runs in the daily suite.
   let documentationConsumers: string[] = [];
-  if (selection.mode === 'affected' && selection.paths.some(isDocumentationPath)) {
+  // A projection output counts as documentation only when no code path joins it, and no test is
+  // selected for it by name. A missing or invalid manifest stops the selection.
+  const outputs = selection.mode === 'affected' && selection.paths.some(path => path.startsWith(PROJECTION_DIRECTORY))
+    ? projectionOutputs(readFileSync(PROJECTION_MANIFEST, 'utf8')) : new Set<string>();
+  const documentsOnly = selection.paths.length > 0 && selection.paths.every(path => isDocumentationPath(path) || outputs.has(path));
+  if (selection.mode === 'affected' && (documentsOnly || selection.paths.some(isDocumentationPath))) {
     const { discoverDocumentationReaders, namedDocumentReaders } = await import('./ci-documentation-consumers');
     // Changed paths add the base-tree documents that the head no longer has, so a deletion keeps its readers.
     const tracked = git(['ls-files', '-z']).split('\0').filter(isDocumentationPath);
     const readers = await discoverDocumentationReaders(process.cwd(), new Set([...tracked, ...selection.paths.filter(isDocumentationPath)]));
-    documentationConsumers = documentationOnly(selection.paths) ? namedDocumentReaders(readers, selection.paths) : [...readers.keys()];
-    if (!documentationConsumers.length && documentationOnly(selection.paths)) selection.mode = 'documentation';
+    documentationConsumers = documentsOnly ? namedDocumentReaders(readers, selection.paths.filter(path => !outputs.has(path))) : [...readers.keys()];
+    if (!documentationConsumers.length && documentsOnly) selection.mode = 'documentation';
   }
   // The push-to-main run fills the cache that PR runs restore; it runs no test.
   const referenceCache = process.env.CI_PATH_REFERENCE_CACHE;
