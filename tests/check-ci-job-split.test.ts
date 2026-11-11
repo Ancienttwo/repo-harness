@@ -880,7 +880,7 @@ describe('single affected verification and daily fallback', () => {
       git('add', '.'); git('commit', '-qm', 'base'); const base = git('rev-parse', 'HEAD');
       const event = join(repo, '.git/event.json'); const output = join(repo, '.git/output'); const selected = join(repo, '.ci-affected-tests.json');
       writeFileSync(event, JSON.stringify({ pull_request: { base: { sha: base } } }));
-      const rows: [string, string[], string, string[] | null, string?][] = [
+      const rows: [string, string[], string, string[] | null, string?, string?][] = [
         ['named read', ['docs/guide.md', 'tasks/lessons.md'], 'affected', ['tests/guide.test.ts']],
         ['helper import', ['docs/helper.md'], 'affected', ['tests/helper.test.ts']],
         ['root-process consumer runs daily only', ['docs/unread.md'], 'documentation', null],
@@ -893,15 +893,17 @@ describe('single affected verification and daily fallback', () => {
         ['projection output skips the reader of its directory', ['docs/architecture/.projection-manifest.json', 'docs/architecture/modules/x.md'], 'documentation', null],
         // A projection output adds no document reader to a mixed diff; src/feature.ts selects its own tests.
         ['manifest with a code path stays affected', ['docs/architecture/.projection-manifest.json', 'src/feature.ts'], 'affected', ['tests/feature.test.ts', 'tests/named.test.ts']],
-        ['target outside docs/architecture stays affected', ['src/manifest.ts'], 'affected', ['tests/manifest.test.ts']],
-        ['unlisted diagram is not documentation', ['docs/architecture/diagrams/not-a-target.mmd'], 'error', null],
+        ['code path that a target names stays affected without the manifest', ['src/manifest.ts'], 'affected', ['tests/manifest.test.ts']],
+        // The manifest lists src/manifest.ts as a target; the docs/architecture/ bound keeps it out of the output set.
+        ['target outside docs/architecture stays affected', ['docs/architecture/.projection-manifest.json', 'src/manifest.ts'], 'affected', ['tests/manifest.test.ts']],
+        ['unlisted diagram is not documentation', ['docs/architecture/diagrams/not-a-target.mmd'], 'error', null, undefined, 'coverage is unknown'],
         ['generated target with a code path selects without an uncovered path', ['docs/architecture/generated.svg', 'src/feature.ts'], 'affected', ['tests/feature.test.ts', 'tests/named.test.ts']],
-        ['manifest without targets stops the selection', ['docs/architecture/.projection-manifest.json'], 'error', null, '{}'],
-        ...['', 'docs/architecture/../other.svg', 'docs/architecture//file.svg'].map((path): [string, string[], string, string[] | null, string] =>
-          [`target path ${JSON.stringify(path)} stops the selection`, ['docs/architecture/.projection-manifest.json'], 'error', null, JSON.stringify({ targets: { bad: { path } } })]),
+        ['manifest without targets stops the selection', ['docs/architecture/.projection-manifest.json'], 'error', null, '{}', 'has no targets object'],
+        ...['', 'docs/architecture/../other.svg', 'docs/architecture//file.svg'].map((path): [string, string[], string, string[] | null, string, string] =>
+          [`target path ${JSON.stringify(path)} stops the selection`, ['docs/architecture/.projection-manifest.json'], 'error', null, JSON.stringify({ targets: { bad: { path } } }), 'has a target with an invalid path']),
         ['no reader', ['tasks/lessons.md'], 'documentation', null],
       ];
-      for (const [name, changed, mode, tests, manifestText] of rows) {
+      for (const [name, changed, mode, tests, manifestText, message] of rows) {
         rmSync(selected, { force: true }); git('checkout', '-q', '-B', 'candidate', base);
         for (const path of changed) {
           if (path.startsWith('-')) rmSync(join(repo, path.slice(1)));
@@ -910,7 +912,7 @@ describe('single affected verification and daily fallback', () => {
         git('add', '.'); git('commit', '-qm', name); const head = git('rev-parse', 'HEAD');
         writeFileSync(output, '');
         const result = spawnSync(process.execPath, [join(ROOT, 'scripts/select-ci-coverage.ts')], { cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output, GITHUB_SHA: head } });
-        if (mode === 'error') { expect({ name, failed: result.status !== 0, stderr: result.stderr.length > 0 }).toEqual({ name, failed: true, stderr: true }); continue; }
+        if (mode === 'error') { expect({ name, failed: result.status !== 0, stderr: result.stderr.includes(message!) }).toEqual({ name, failed: true, stderr: true }); continue; }
         expect({ name, status: result.status }, result.stderr).toEqual({ name, status: 0 });
         expect({ name, output: readFileSync(output, 'utf8') }).toEqual({ name, output: `mode=${mode}\nsha=${head}\nnative_oar=false\nhome_isolation=false\n` });
         expect({ name, plan: existsSync(selected) ? JSON.parse(readFileSync(selected, 'utf8')) : null }).toEqual({ name, plan: tests && [tests] });
