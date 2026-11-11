@@ -32,7 +32,7 @@ export interface ReviewAuthorityInput {
     target_rev: string; head_rev: string; review_subject_sha256: string;
   };
 }
-type Frozen<T> = T extends object ? { readonly [K in keyof T]: Frozen<T[K]> } : T;
+export type Frozen<T> = T extends object ? { readonly [K in keyof T]: Frozen<T[K]> } : T;
 export type ReviewAuthorityContext = Frozen<ReviewAuthorityInput & {
   protocol: 1;
   kind: 'repo-harness-review-authority-context';
@@ -55,7 +55,7 @@ function hash(value: unknown, label: string): void { if (typeof value !== 'strin
 function digest(value: unknown): string {
   return sha256Prefixed(canonicalize(value as JsonValue));
 }
-function freeze<T>(value: T): Frozen<T> {
+export function freeze<T>(value: T): Frozen<T> {
   if (value && typeof value === 'object') {
     for (const child of Object.values(value)) freeze(child);
     Object.freeze(value);
