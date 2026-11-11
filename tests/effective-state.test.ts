@@ -884,7 +884,14 @@ describe('policy schema: one key tree and one decoder', () => {
     expect(unknownPolicyKeys({
       agentic_development: { routing: { design_plan: 'parent-agent:geju' } },
       tasks: { research_dir: 'docs/researches', lessons_file: 'tasks/lessons.md' },
-    })).toEqual(['agentic_development', 'tasks.lessons_file']);
+      legacy: { flag: true, list: [1], empty: {} },
+    })).toEqual([
+      'agentic_development.routing.design_plan',
+      'legacy.empty',
+      'legacy.flag',
+      'legacy.list',
+      'tasks.lessons_file',
+    ]);
   });
 
   test('an absent file has no keys, and a declared section keeps its own contract', () => {

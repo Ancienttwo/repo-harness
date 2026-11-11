@@ -97,11 +97,20 @@ function collectUnknownKeys(
   for (const [key, child] of Object.entries(value)) {
     const path = prefix === '' ? key : `${prefix}.${key}`;
     const node = Object.hasOwn(tree, key) ? tree[key]! : undefined;
-    if (node === undefined) { unknown.push(path); continue; }
+    if (node === undefined) { collectLeafPaths(child, path, unknown); continue; }
     // A leaf needs no children; a declared section owns its own children.
     if (node === true || Object.keys(node).length === 0) continue;
     if (child !== null && typeof child === 'object' && !Array.isArray(child)) {
       collectUnknownKeys(child as WorkflowPolicyObject, node, path, unknown);
     }
   }
+}
+
+/** Under an unknown key every leaf is unknown. An array, a scalar or an empty object is a leaf. */
+function collectLeafPaths(value: unknown, path: string, unknown: string[]): void {
+  if (value === null || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).length === 0) {
+    unknown.push(path);
+    return;
+  }
+  for (const [key, child] of Object.entries(value)) collectLeafPaths(child, `${path}.${key}`, unknown);
 }
