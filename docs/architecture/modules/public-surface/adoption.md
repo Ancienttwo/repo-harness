@@ -1,5 +1,5 @@
 # public-surface/adoption 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8d20e469635ee5181a692e97e478663708538d8e48f0902a0068314fc8e7c806" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:084b5cb6741d34d83689202d689c33d89fb82c783f559c7e1829edb56fefe921" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.adoption`(kind `capability`)
 > **Matched Prefixes**:`src/core/adoption/**`
@@ -83,7 +83,7 @@ flowchart LR
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.adoption.cli-layer` | Adoption (cli) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
-| `component.adoption.effects-layer` | Adoption (effects) | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.adoption.effects-layer` | Adoption (effects) | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.adoption.primary` | Adoption Transaction | 未宣告 `source.include` | 未宣告 |
 | `component.adoption.tests-layer` | Adoption (tests) | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
 
