@@ -454,6 +454,39 @@ test('board facts: each cycle removes the board documents and worker stores that
   expect([...stores.keys()]).toEqual(['repo-a#1474']);
 });
 
+test('board facts: a removal answers the routes before the retired child has drained', async () => {
+  const f = fixture();
+  const home = mkdtempSync(join(tmpdir(), 'board-drain-'));
+  const server = await startOperatorServer({ port: 0, env: { REPO_HARNESS_HOME: home }, board_observer: { ports: f.ports, clock: f.clock } });
+  const path = `${server.url}/api/v1/repositories/repo-a/board?parent=1474`, parents = `${server.url}/api/v1/repositories/repo-a/board/parents`;
+  const code = async (response: Response) => [response.status, ((await response.json()) as { error: { code: string } }).error.code];
+  const retains = () => f.worker.spawned[0]!.requests.filter(request => request.kind === 'retain').length;
+  // The gate releases the held read also when an assertion throws, so a red run still ends.
+  let release!: () => void, ended = false, released = false;
+  const open = () => { if (!released) { released = true; release?.(); } };
+  try {
+    await until(() => f.worker.spawned.length === 1 && retains() === 1);
+    await f.tick(0); f.emit('snapshot'); await f.tick(BOARD_SEATS_DEBOUNCE_MS);
+    // One lease starts a facts cycle, which reads the parent list and the board of 1474.
+    f.worker.reply(request => request.kind === 'board' ? { ok: true, value: board }
+      : { ok: true, value: request.kind === 'parents' ? boardParents : null });
+    await fetch(path); await until(() => retains() === 2);
+    expect([(await fetch(path)).status, (await fetch(parents)).status]).toEqual([200, 200]);
+    // The child holds a list read, so its stop cannot drain until the read returns.
+    const original = f.ports.list;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    f.ports.list = async (...args) => { await held; ended = true; return original(...args); };
+    f.emit('snapshot'); await f.tick(BOARD_SEATS_DEBOUNCE_MS);
+    f.remove(); await f.tick(30_000);
+    // The registry read completed: both routes answer the removal while the retired child still runs.
+    expect(ended).toBe(false);
+    expect(await code(await fetch(path))).toEqual([404, 'repository_not_found']);
+    expect(await code(await fetch(parents))).toEqual([404, 'repository_not_found']);
+    open(); await f.tick(0);
+    expect(ended).toBe(true);
+  } finally { open(); await server.close(); rmSync(home, { recursive: true, force: true }); }
+});
+
 test('board facts: a failed registry read drops the documents of a repository that returns inside the long gap', async () => {
   const f = fixture();
   const home = mkdtempSync(join(tmpdir(), 'board-registry-failed-'));

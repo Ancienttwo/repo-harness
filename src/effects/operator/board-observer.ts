@@ -341,10 +341,11 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
    * A failed read stops every child, because no child can serve a repository that
    * the registry cannot name. The cycle waits for each stopped child, so the state
    * map never names a child that still runs. A removal and a failed read also drop
-   * the facts documents of the affected ids at once, as the two maps did on main.
+   * the facts documents of the affected ids and answer the routes at once, before
+   * the cycle waits for those children, as the two maps did on main.
    */
   const registry = startObservationLoop<readonly Repository[], typeof REGISTRY_FAILURE>({
-    cycle: async () => {
+    cycle: async ({ publish, publishFailure }) => {
       let repositories: readonly Repository[];
       try { repositories = ports.repositories(); }
       catch {
@@ -352,6 +353,8 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
         // A document exists only for a repository that had a child, so these ids cover every document to drop.
         for (const state of retired) dropped.add(state.repository.id);
         states.clear();
+        // The routes answer `registry_unavailable` while the children drain, not only after it.
+        publishFailure(REGISTRY_FAILURE);
         await drain(retired);
         return { state: 'unavailable', reason: REGISTRY_FAILURE };
       }
@@ -363,6 +366,8 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
         if (!byId.has(id)) dropped.add(id);
         states.delete(id); retired.push(state);
       }
+      // The routes read the new registry while the retired children drain, so a removed id is absent at once.
+      publish(repositories);
       await drain(retired);
       // A close starts no child, so no child timer outlives the observer.
       if (lifecycle.signal.aborted) return { state: 'observed', value: repositories };
