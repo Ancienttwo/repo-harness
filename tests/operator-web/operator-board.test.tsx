@@ -44,7 +44,7 @@ import { CLEANUP_INVESTIGATION_POLL_MS, type AuthorizedCleanupPost, type Cleanup
 import { cleanupPlanPorts } from '../../src/operator-web/worktrees';
 import { OPERATOR_THEME_STORAGE_KEY, resolveThemeMode } from '../../src/operator-web/theme';
 import { decodeOperatorRepositories, type OperatorRepositoriesV1 } from '../../src/core/operator/repositories';
-import { fetchRepositories } from '../../src/operator-web/repositories';
+import { fetchRepositories, useRepositories, type RepositoriesReader } from '../../src/operator-web/repositories';
 import { boardLayout, boardPlace, boardRoom, DEFAULT_LOCATION, parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
 import { DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, type DeskState } from '../../src/core/board/desk';
 import { activeParent, officeCard, officeRoom, useOfficeOverview } from '../../src/operator-web/board-office';
@@ -755,6 +755,7 @@ describe('board page', () => {
         const readSeats = () => new Promise<never>(() => {});
         return function Probe() { useOfficeOverview([HARNESS_ID, 'repo_second'], read, noBoard, 0, readSeats); return null; };
       },
+      repositories: (read: RepositoriesReader) => function Probe() { useRepositories(read, undefined, 0); return null; },
       overviewBoard: (reason: BoardReason) => {
         const read: BoardReader = async () => ({ state: 'unavailable', reason });
         const readParents: BoardParentsReader = async () => ({ state: 'ok', list: PARENTS });
@@ -775,6 +776,9 @@ describe('board page', () => {
         [probes.seats('parents_hc_failed'), 3000], [probes.seats('unreachable'), 6000],
         [probes.parents('parents_github_failed'), 3000], [probes.board('board_collect_failed'), 3000], [probes.overview('parents_hc_failed'), 3000], [probes.overviewOneRefuses(), 3000],
         [probes.parents('unreachable'), 6000], [probes.board('unreachable'), 6000], [probes.overview('unreachable'), 6000],
+        // The registry list keeps its own 30 s interval.
+        [probes.repositories(async () => ({ state: 'unavailable', reason: 'registry_unavailable' })), 30_000],
+        [probes.repositories(async () => { throw new Error('operator_api_unavailable'); }), 60_000],
       ] as const) {
         delays.length = 0;
         await mount(<Probe />);
@@ -801,6 +805,7 @@ describe('board page', () => {
       () => Response.json({ ...valid, repositories: [{ ...valid.repositories[0], repo_root: '/Users/me/repo-harness' }] }),
       () => Response.json({ ...valid, repositories: [valid.repositories[0], valid.repositories[0]] }),
       () => Response.json({ error: { code: 'registry_unavailable', message: 'unreadable', next_action: 'retry' } }, { status: 503 }),
+      () => new Response('bad gateway', { status: 502 }),
     ];
     const original = globalThis.fetch;
     const requests: string[] = [];
@@ -808,10 +813,13 @@ describe('board page', () => {
     try {
       const results: string[] = [];
       for (const _ of answers) {
-        try { results.push(`ok ${(await fetchRepositories(new AbortController().signal)).stale_registrations}`); }
+        try {
+          const read = await fetchRepositories(new AbortController().signal);
+          results.push('state' in read ? `refused ${read.reason}` : `ok ${read.stale_registrations}`);
+        }
         catch (error) { results.push((error as Error).message); }
       }
-      expect(results).toEqual(['ok 3', 'repositories response is invalid', 'repositories response is invalid', 'repositories response is invalid', 'registry_unavailable']);
+      expect(results).toEqual(['ok 3', 'repositories response is invalid', 'repositories response is invalid', 'repositories response is invalid', 'refused registry_unavailable', 'operator_api_unavailable']);
       expect(new Set(requests)).toEqual(new Set(['/api/v1/repositories']));
     } finally { globalThis.fetch = original; }
   });
