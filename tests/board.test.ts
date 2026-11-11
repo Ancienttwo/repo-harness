@@ -4,7 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { initGitRepo, run, tmpWorkspace } from './helpers/repo-fixture';
 import { BOARD_PRIORITY_ORDER, BOARD_RULE_PRIORITY, evaluateBoardAttention, renderAttentionText, type BoardPriority, type BoardRuleId } from '../src/core/board/attention';
-import { WINDOW_WITH_WORKERS_MS, WINDOW_WITHOUT_WORKERS_MS, planAttentionDeliveries } from '../src/core/board/attention-delivery';
+import { WINDOW_WITH_WORKERS_MS, WINDOW_WITHOUT_WORKERS_MS, planAttentionDeliveries, type AttentionSentV1 } from '../src/core/board/attention-delivery';
 import { attentionLogPath, attentionWatchDoctorCheck, runAttentionWindow, serviceTerminalRepository, startAttentionWatch } from '../src/effects/board/attention-watch';
 import { decodeBoard, type BoardHostPortsV1, type BoardTerminalV1, type BoardV1 } from '../src/core/board/board';
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
@@ -1498,6 +1498,49 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
   // Without observed seat terminals, the skip names the board's execution reason.
   expect(planAttentionDeliveries({ ...board, execution: { status: 'unavailable', reason: 'no_seat_terminals' } }, evaluateBoardAttention(watched), 0).skipped)
     .toEqual([{ route: 'orchestrator', reason: 'no_seat_terminals' }, { route: 'advisor', reason: 'no_seat_terminals' }]);
+});
+
+test('watch window sends a finding once to each seat terminal until its subject changes, and again when a send failed or it came back', async () => {
+  const board = replay();
+  const seat = (address: string, seatName: string) =>
+    ({ address, name: null, agent: null, state: 'live', status: 'idle', status_kind: null, status_msg: null, status_ms: null, turn: 1, branch: null, seat_status: 'observed', seat: seatName, issue: null, pr: null }) as BoardTerminalV1;
+  const watched = { ...board, execution: { status: 'observed', terminals: [seat('t3', 'orchestrator'), seat('t4', 'orchestrator'), seat('t9', 'advisor')] } } as BoardV1;
+  const hc = watchHc({ FAKE_TERMINALS: { t3: {}, t4: {}, t9: {} } });
+  const logPath = attentionLogPath(1186405141, 1474, { REPO_HARNESS_HOME: hc.root });
+  let failT4 = true;
+  const host = { ...hc.host, send: (terminal: string, text: string) =>
+    failT4 && terminal === 't4' ? { status: 'failed' as const, reason: 'send_failed', detail: 'blocked' } : hc.host.send(terminal, text) };
+  let sent: AttentionSentV1 = new Map();
+  const window = async (collected: BoardV1) => {
+    sent = await runAttentionWindow({ parent: 1474, deliver: true, log_path: logPath, sent, collect: () => collected, host, now: () => REPLAY_NOW, sleep: async () => {} });
+    const sends = hc.calls().filter(args => args[0] === 'send').map(args => args.at(-2));
+    writeFileSync(join(hc.root, 'hc.log'), '');
+    const logged = records().filter(record => record.kind === 'send').slice(logIndex);
+    logIndex += logged.length;
+    expect(logged.filter(record => record.outcome === 'sent').map(record => record.terminal)).toEqual(sends);
+    return logged.map(record => [record.terminal, record.outcome, record.rules]);
+  };
+  const records = () => readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
+  const findings = () => records().filter(record => record.kind === 'finding');
+  let logIndex = 0;
+
+  // Window 1: the send to t4 fails, so only t3 and t9 hold their findings.
+  expect(await window(watched)).toEqual([['t3', 'sent', ['A7', 'A10']], ['t4', 'send_failed', ['A7', 'A10']], ['t9', 'sent', ['R2']]]);
+  failT4 = false;
+  expect(await window(watched)).toEqual([['t4', 'sent', ['A7', 'A10']]]);
+  // Window 3: no new finding, so no send and no skip; the log still holds each finding of each window.
+  expect(await window(watched)).toEqual([]);
+  expect(findings().map(record => record.rule)).toEqual(['A7', 'A10', 'R2', 'A7', 'A10', 'R2', 'A7', 'A10', 'R2']);
+  expect(records().filter(record => record.kind === 'skip')).toEqual([]);
+  // An open finding that the advisor holds uses no advisor wake and makes no cap skip.
+  expect(planAttentionDeliveries(watched, evaluateBoardAttention(watched), 8, sent).skipped).toEqual([]);
+  // A finding with a new subject is new; the finding that stays is not in its message.
+  const attention = evaluateBoardAttention(watched);
+  const moved = { ...attention, findings: attention.findings.map(finding => finding.rule === 'A10' ? { ...finding, pull_requests: [...finding.pull_requests, 1500] } : finding) };
+  expect(planAttentionDeliveries(watched, moved, 0, sent).deliveries.map(delivery => [delivery.terminal, delivery.rules])).toEqual([['t3', ['A10']], ['t4', ['A10']]]);
+  // A7 is gone in window 4 and back in window 5: it is new again.
+  expect(await window({ ...watched, daily_run: { ...watched.daily_run, conclusion: 'success' } } as BoardV1)).toEqual([]);
+  expect(await window(watched)).toEqual([['t3', 'sent', ['A7']], ['t4', 'sent', ['A7']]]);
 });
 
 test('watch window skips a provider 5xx and resumes at the next window', async () => {
