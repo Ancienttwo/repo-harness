@@ -1,5 +1,7 @@
 import { ACCEPTANCE_RECORD_HEADER, type BoardV1 } from './board';
 import { planRefusal } from './merge';
+import type { SeatRouteV1 } from './seat-routing';
+import { modelFamily } from '../review/model-family';
 import { claimStatusTarget, newestProtocolComment, parseAcceptanceRecord, parseClaimStatus, protocolComments, type BoardCommentPageV1, type BoardCommentV1 } from './source';
 
 /**
@@ -12,12 +14,14 @@ import { claimStatusTarget, newestProtocolComment, parseAcceptanceRecord, parseC
  * of the same role, and a seat that was not sent retries without restarting the other. A High head starts the gatekeeper, and the
  * Claude reviewer too while the board reports `claude_review: pending`. A Medium head starts the one seat of the other family than
  * the writer's: a non-Claude gatekeeper for a Claude writer, the Claude reviewer for any other known family. An unknown writer family
- * starts no seat, because no seat is sure to record `different-family`.
+ * starts no seat, because no seat is sure to record `different-family`. A gatekeeper starts only when the effective gatekeeper (#2253)
+ * has a known model family, is not of the writer's family where it gives the different-family row (a Medium head, or a High head
+ * that takes no Claude review), and is not Claude where the head needs a non-Claude gatekeeper.
  */
 export const REVIEW_START_HEADER = 'repo-harness review start';
 export const REVIEW_START_STATUS_HEADER = 'repo-harness review start status';
 
-export type ReviewSkipReason = 'not_open' | 'draft' | 'ci_not_green' | 'accepted' | 'acceptance_unknown' | 'started' | 'writer_family_unknown' | 'plan_hold' | 'plan_unavailable';
+export type ReviewSkipReason = 'not_open' | 'draft' | 'ci_not_green' | 'accepted' | 'acceptance_unknown' | 'started' | 'writer_family_unknown' | 'review_family_unavailable' | 'plan_hold' | 'plan_unavailable';
 
 export type ReviewSeat = 'gatekeeper' | 'reviewer';
 
@@ -28,15 +32,24 @@ export interface ReviewSeatStartV1 {
 }
 
 export type ReviewDecisionV1 =
-  | { readonly pr: number; readonly action: 'start'; readonly head_ref: string; readonly head_sha: string; readonly tier: 'medium' | 'high'; readonly seats: readonly ReviewSeatStartV1[];
-      /** The Claude reviewer seat supplies one of the two High reviews, or the writer of a Medium head is Claude, so the gatekeeper must not run Claude. */
-      readonly needs_non_claude_gatekeeper: boolean }
+  | { readonly pr: number; readonly action: 'start'; readonly head_ref: string; readonly head_sha: string; readonly tier: 'medium' | 'high'; readonly seats: readonly ReviewSeatStartV1[] }
   | { readonly pr: number; readonly action: 'skip'; readonly reason: ReviewSkipReason; readonly detail: string };
 
 export interface ReviewInputV1 {
   readonly board: BoardV1;
   /** The comments of each open pull request of the board. */
   readonly comments: ReadonlyMap<number, BoardCommentPageV1>;
+  /** `effectiveGatekeeper`: the seat that `seats argv gatekeeper` launches now, and its route line. */
+  readonly gatekeeper: SeatRouteV1;
+}
+
+/** Why the effective gatekeeper cannot give this head its different-family review, or null when it can. */
+function gatekeeperFamilyGap(gatekeeper: SeatRouteV1, writer: string | null, givesDifferentFamily: boolean, needsNonClaude: boolean): string | null {
+  if (gatekeeper.id === null) return 'no gatekeeper seat can launch';
+  const family = gatekeeper.seat.model === null ? null : modelFamily(gatekeeper.seat.model);
+  if (family === null) return `the model ${gatekeeper.seat.model ?? 'default'} has no known family`;
+  if (givesDifferentFamily && family === writer) return `the gatekeeper family ${family} is the writer family`;
+  return needsNonClaude && family === 'anthropic' ? 'this head needs a non-Claude gatekeeper' : null;
 }
 
 const field = (comment: BoardCommentV1, name: string): string | null => {
@@ -88,6 +101,12 @@ export function planReview(input: ReviewInputV1): readonly ReviewDecisionV1[] {
     const seats = required.filter(seat => !liveMarkers(page, seat).some(marker => field(marker, 'Subject') === pr.head_sha))
       .map((seat): ReviewSeatStartV1 => ({ seat, delta_from: deltaBase(page, pr.head_sha, seat) }));
     if (seats.length === 0) return skip('started', `a start marker of every required seat covers ${pr.head_sha}`);
-    return { pr: pr.number, action: 'start', head_ref: pr.head_ref, head_sha: pr.head_sha, tier, seats, needs_non_claude_gatekeeper: tier === 'medium' ? pr.writer_family === 'anthropic' : pr.claude_review !== 'not_required' };
+    // The Claude reviewer supplies one of the two High reviews, or the writer of a Medium head is Claude, so the gatekeeper must not run Claude.
+    const needsNonClaude = tier === 'medium' ? pr.writer_family === 'anthropic' : pr.claude_review !== 'not_required';
+    // Where the Claude reviewer takes part in a High head, it can give the different-family row, so the gatekeeper may share the writer family.
+    const givesDifferentFamily = tier === 'medium' || pr.claude_review === 'not_required';
+    const gap = seats.some(entry => entry.seat === 'gatekeeper') ? gatekeeperFamilyGap(input.gatekeeper, pr.writer_family, givesDifferentFamily, needsNonClaude) : null;
+    if (gap !== null) return skip('review_family_unavailable', `${gap}; ${input.gatekeeper.line}`);
+    return { pr: pr.number, action: 'start', head_ref: pr.head_ref, head_sha: pr.head_sha, tier, seats };
   });
 }

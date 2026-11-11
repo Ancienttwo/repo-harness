@@ -207,6 +207,21 @@ describe("repo-harness seats argv", () => {
     }
   });
 
+  test("an exhausted gatekeeper account launches the fallback seat as the gatekeeper; gatekeeper-fallback is no launch target", () => {
+    const fallback = { ...DEFAULT_SEATS_CONFIG.gatekeeper, runtime: "pi" as const, model: "magpie/cursor/deepseek-v41-flash-1017", effort: null };
+    withHome({ ...DEFAULT_SEATS_CONFIG, "gatekeeper-fallback": fallback }, home => {
+      const gatekeeper = () => JSON.parse(argv(home, "gatekeeper", "--pr", "2253", "--json").stdout);
+      writeFileSync(join(home, "codex-used"), "60");
+      expect(bare(gatekeeper().argv).slice(0, 3)).toEqual(["codex", "-m", DEFAULT_SEATS_CONFIG.gatekeeper.model]);
+      writeFileSync(join(home, "codex-used"), "97");
+      const value = gatekeeper();
+      expect([value.seat, value.runtime, bare(value.argv).slice(0, 5)]).toEqual(["gatekeeper", "pi", ["pi", "--provider", "magpie", "--model", "cursor/deepseek-v41-flash-1017"]]);
+      expect(value.brief).toContain("You are the gatekeeper seat.");
+      const refused = argv(home, "gatekeeper-fallback", "--pr", "2253", "--json");
+      expect([refused.status, JSON.parse(refused.stderr).error]).toEqual([1, "seat_unknown"]);
+    });
+  });
+
   test("Pi worker and review seats pass the configured provider and model", () => {
     for (const seat of ["worker", "reviewer"] as const) {
       const config = { ...DEFAULT_SEATS_CONFIG[seat], runtime: "pi", model: "magpie/cursor/deepseek-v41-flash-1017", effort: null, fleet: [] };

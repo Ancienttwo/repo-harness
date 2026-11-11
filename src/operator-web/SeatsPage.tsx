@@ -2,12 +2,12 @@ import { useState, type ReactNode } from 'react';
 import { Banner, Button, Empty, Loader, Switch, cn } from '@cloudflare/kumo';
 import { seatAccountQuotas } from '../core/board/seat-routing';
 import { buildSeatLaunch, type SeatLimitLevel } from '../core/board/seat-launch';
-import { SEAT_IDS, SEAT_TOOLS, decodeSeatsSettingsRequest, seatTakesFleet, type RoutingClass, type SeatId, type SeatRuntime, type SeatsConfigV1, type SeatsSettingsV1 } from '../core/board/seats-settings';
+import { SEAT_IDS, SEAT_TOOLS, decodeSeatsSettingsRequest, seatTakesFleet, type OptionalSeatId, type RoutingClass, type SeatId, type SeatRuntime, type SeatsConfigV1, type SeatsSettingsV1 } from '../core/board/seats-settings';
 import type { SetupSnapshotV2 } from '../core/setup/types';
 import type { OperatorTranslate } from './i18n';
 import type { QuotaSection } from './quota';
 import {
-  seatChanges, setExplorer, setRoute, setSeatEffort, setSeatModel, setSeatRole, setSeatRuntime, setSeatTool, setThreshold, setWorkerLight, type SeatsSettingsForm,
+  GATEKEEPER_FALLBACK_STARTER, seatChanges, setExplorer, setOptionalSeat, setRoute, setSeatEffort, setSeatModel, setSeatRole, setSeatRuntime, setSeatTool, setThreshold, type SeatsSettingsForm,
 } from './seats';
 import { EnableSwitch, formLocked, runtimeRowOf, SaveResult } from './SettingsPage';
 import type { AgentsSettingsForm } from './settings';
@@ -31,8 +31,9 @@ export const ARGV: Readonly<Record<FormSeatId, string>> = {
 function launchOf(seat: SeatId): string {
   if (seat === 'orchestrator') return `herdr-app do tab.new --name "$(${ARGV.orchestrator} --json | jq -r .tab)" --space <id> --folder <repo> --argv "$(${ARGV.orchestrator})"`;
   if (seat === 'advisor') return `herdr-app do pane.split --direction right --pane <orchestrator-pane> --argv "$(${ARGV.advisor})"`;
-  const argv = seat === 'gatekeeper' || seat === 'reviewer'
-    ? `repo-harness seats argv ${seat} --repository-id <repository-id> --pr <n>`
+  // The fallback launches as the effective gatekeeper, so its card shows the gatekeeper command.
+  const argv = seat === 'gatekeeper' || seat === 'gatekeeper-fallback' || seat === 'reviewer'
+    ? `repo-harness seats argv ${seat === 'reviewer' ? seat : 'gatekeeper'} --repository-id <repository-id> --pr <n>`
     : ARGV.worker.replace('argv worker', `argv ${seat}`);
   return `herdr-app do tab.new --name "$(${argv} --json | jq -r .tab)" --space <id> --folder <worktree> --argv "$(${argv})" --task <packet>`;
 }
@@ -126,16 +127,18 @@ function SeatHeader({ seat, runtime, t }: { readonly seat: SeatId; readonly runt
   );
 }
 
-/** worker-light is the one seat that may be null; on restores the recommended seat. */
-function WorkerLightSwitch({ form, settings, locked, t }: {
-  readonly form: SeatsSettingsForm; readonly settings: SeatsSettingsV1; readonly locked: boolean; readonly t: OperatorTranslate;
+const isOptionalSeat = (seat: SeatId): seat is OptionalSeatId => seat === 'worker-light' || seat === 'gatekeeper-fallback';
+
+/** The switch of a seat that may be null: on restores the recommended worker-light, or the gatekeeper-fallback starter. */
+function OptionalSeatSwitch({ seat, form, settings, locked, t }: {
+  readonly seat: OptionalSeatId; readonly form: SeatsSettingsForm; readonly settings: SeatsSettingsV1; readonly locked: boolean; readonly t: OperatorTranslate;
 }) {
-  const on = form.draft!['worker-light'] !== null;
-  const recommended = settings.defaults['worker-light'];
+  const on = form.draft![seat] !== null;
+  const recommended = seat === 'worker-light' ? settings.defaults['worker-light'] : GATEKEEPER_FALLBACK_STARTER;
   return (
     <Field label={t('seats.field.configured')}>
       <Switch checked={on} disabled={locked || (!on && recommended === null)} aria-label={t('seats.field.configured')}
-        onCheckedChange={next => form.edit(current => setWorkerLight(current, next ? recommended : null))} />
+        onCheckedChange={next => form.edit(current => setOptionalSeat(current, seat, next ? recommended : null))} />
     </Field>
   );
 }
@@ -149,7 +152,7 @@ function SeatCard({ seat, form, agents, settings, setup, locked, t }: {
     return (
       <section aria-labelledby={`seat-${seat}-title`} data-seat-card={seat} className="flex flex-col overflow-hidden rounded-xl border border-kumo-line bg-kumo-base">
         <SeatHeader seat={seat} runtime={null} t={t} />
-        <WorkerLightSwitch form={form} settings={settings} locked={locked} t={t} />
+        {isOptionalSeat(seat) && <OptionalSeatSwitch seat={seat} form={form} settings={settings} locked={locked} t={t} />}
       </section>
     );
   }
@@ -158,7 +161,7 @@ function SeatCard({ seat, form, agents, settings, setup, locked, t }: {
   const runtime = ranges.runtimes.find(entry => entry.id === draft.runtime)!;
   const range = ranges.seats[seat];
   const recommended = seat !== 'worker' && defaults[seat]?.runtime === draft.runtime ? defaults[seat] : null;
-  const review = seat === 'gatekeeper' || seat === 'reviewer';
+  const review = seat === 'gatekeeper' || seat === 'gatekeeper-fallback' || seat === 'reviewer';
   const check = (on: boolean) => (on ? ' ✓' : '');
   const models = [
     { value: null, label: t('seats.model.hostDefault') },
@@ -168,7 +171,7 @@ function SeatCard({ seat, form, agents, settings, setup, locked, t }: {
   ];
   const efforts = [{ value: null, label: t('seats.effort.default') }, ...ranges.efforts.map(effort => ({ value: effort as string | null, label: effort, off: !runtime.effort }))];
   // The host agent types change only the argv; the limit levels do not depend on them, so the page passes none.
-  const limits = buildSeatLaunch(seat, draft, 'seats', []).limits;
+  const limits = buildSeatLaunch(seat === 'gatekeeper-fallback' ? 'gatekeeper' : seat, draft, 'seats', []).limits;
   const levelOf = (subject: string) => limits.find(limit => limit.subject === subject)?.level ?? null;
   const fleetLevel = levelOf('fleet');
   // A stored role the server no longer lists stays visible, as a stored model does, so it can be switched off.
@@ -179,7 +182,7 @@ function SeatCard({ seat, form, agents, settings, setup, locked, t }: {
   return (
     <section aria-labelledby={`seat-${seat}-title`} data-seat-card={seat} className="flex flex-col overflow-hidden rounded-xl border border-kumo-line bg-kumo-base">
       <SeatHeader seat={seat} runtime={draft.runtime} t={t} />
-      {seat === 'worker-light' && <WorkerLightSwitch form={form} settings={settings} locked={locked} t={t} />}
+      {isOptionalSeat(seat) && <OptionalSeatSwitch seat={seat} form={form} settings={settings} locked={locked} t={t} />}
 
       <Field label={t('seats.field.runtime')}>
         {/* Only saved runtimes are choices, so a save cannot meet seat_runtime_not_enabled; each other runtime shows its Hosts switch. */}
@@ -428,7 +431,7 @@ function SeatsBody({ form, agents, setup, quota, t }: {
             {t('seats.savebar.notEnabled', { seat: id, runtime: t(`seats.runtime.${runtime}`) })}
             <InPlaceEnable runtime={runtime} agents={agents} t={t} />
             {id === 'worker-light' && (
-              <Button variant="secondary" size="sm" disabled={locked} onClick={() => form.edit(current => setWorkerLight(current, null))} data-worker-light-off>
+              <Button variant="secondary" size="sm" disabled={locked} onClick={() => form.edit(current => setOptionalSeat(current, 'worker-light', null))} data-worker-light-off>
                 {t('seats.savebar.workerLightOff')}
               </Button>
             )}

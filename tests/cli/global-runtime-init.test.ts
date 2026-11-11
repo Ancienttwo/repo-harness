@@ -31,7 +31,7 @@ const CLI = join(ROOT, 'src/cli/index.ts');
 const OBSIDIAN_PROVIDER = 'kepano/obsidian-skills#a1dc48e68138490d522c04cbf5822214c6eb1202';
 const FULL_PLUGINS = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const;
 
-test('update removes stored routing mode and hyper values once and keeps a null worker-light', () => {
+test('update removes stored routing mode and hyper values once, keeps a null worker-light and fills a null gatekeeper-fallback', () => {
   const home = mkdtempSync(join(tmpdir(), 'quota-mode-migration-'));
   try {
     mkdirSync(join(home, '.repo-harness'));
@@ -55,6 +55,11 @@ test('update removes stored routing mode and hyper values once and keeps a null 
       expect(() => migrateSeatsConfiguration({ HOME: home })).toThrow('seats_config_invalid');
       expect(readFileSync(path, 'utf8')).toBe(invalid);
     }
+    const { 'gatekeeper-fallback': _fallback, ...withoutFallback } = DEFAULT_SEATS_CONFIG;
+    expect(() => decodeSeatsConfig(withoutFallback)).toThrow(expect.objectContaining({ code: 'seats_config_migration_required' }));
+    writeFileSync(path, JSON.stringify({ seats: withoutFallback }));
+    expect(migrateSeatsConfiguration({ HOME: home })).toBe(true);
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ seats: DEFAULT_SEATS_CONFIG });
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 

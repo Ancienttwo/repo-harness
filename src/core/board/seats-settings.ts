@@ -9,8 +9,15 @@ export type WorkerSeatId = typeof WORKER_SEAT_IDS[number];
 export const FRONTEND_SEAT_IDS = ['worker-important', 'worker-important-fast'] as const;
 export const ROUTING_CLASSES = ['important_deep', 'important_fast', 'simple_deep', 'simple_fast', 'frontend'] as const;
 export type RoutingClass = typeof ROUTING_CLASSES[number];
-export const SEAT_IDS = ['orchestrator', 'advisor', ...WORKER_SEAT_IDS, 'gatekeeper', 'reviewer'] as const;
+export const SEAT_IDS = ['orchestrator', 'advisor', ...WORKER_SEAT_IDS, 'gatekeeper', 'gatekeeper-fallback', 'reviewer'] as const;
 export type SeatId = typeof SEAT_IDS[number];
+/** The gatekeeper-fallback seat launches only as the effective gatekeeper (#2253), under the gatekeeper label and brief. */
+export type LaunchSeatId = Exclude<SeatId, 'gatekeeper-fallback'>;
+export const LAUNCH_SEAT_IDS = SEAT_IDS.filter((id): id is LaunchSeatId => id !== 'gatekeeper-fallback');
+/** The seats that may be null in the section. */
+export type OptionalSeatId = 'worker-light' | 'gatekeeper-fallback';
+const isOptionalSeat = (id: SeatId): id is OptionalSeatId => id === 'worker-light' || id === 'gatekeeper-fallback';
+const isReviewSeat = (id: SeatId): boolean => id === 'gatekeeper' || id === 'gatekeeper-fallback' || id === 'reviewer';
 export const isWorkerSeat = (seat: SeatId): seat is WorkerSeatId => WORKER_SEAT_IDS.includes(seat as WorkerSeatId);
 
 /** The runtimes that run in a Herdr pane. */
@@ -52,8 +59,9 @@ export type SeatRoutingV1 = { readonly [task in RoutingClass]: readonly WorkerSe
   readonly codex_hyper_at_or_above_remaining: number;
   readonly low_quota_explorer: SeatModelV1;
 };
-export type SeatsConfigV1 = { readonly [seat in Exclude<SeatId, 'worker-light'>]: SeatConfigV1 } & {
-  readonly 'worker-light': SeatConfigV1 | null;
+export type SeatsConfigV1 = { readonly [seat in Exclude<SeatId, OptionalSeatId>]: SeatConfigV1 } & {
+  readonly [seat in OptionalSeatId]: SeatConfigV1 | null;
+} & {
   readonly routing: SeatRoutingV1;
 };
 
@@ -77,6 +85,7 @@ export const DEFAULT_SEATS_CONFIG: SeatsConfigV1 = Object.freeze({
   'worker-important-fast': Object.freeze({ runtime: 'claude', model: 'sonnet', effort: 'medium', tools: WORKER_TOOLS, fleet: WORKER_FLEET }),
   'worker-light': Object.freeze({ runtime: 'pi', model: 'magpie/cursor/deepseek-v41-flash-1017', effort: null, tools: WORKER_TOOLS, fleet: Object.freeze([]) }),
   gatekeeper: Object.freeze({ runtime: 'codex', model: 'gpt-6.1-terra', effort: 'high', tools: REVIEW_TOOLS, fleet: Object.freeze([]) }),
+  'gatekeeper-fallback': null,
   reviewer: Object.freeze({ runtime: 'claude', model: 'opus', effort: 'high', tools: REVIEW_TOOLS, fleet: Object.freeze([]) }),
   routing: Object.freeze({
     claude_saving_below_remaining: 20,
@@ -192,7 +201,7 @@ function decodeSeat(id: SeatId, value: unknown, code: string): SeatConfigV1 {
   const tools = ascending(record.tools, isTool, code);
   if (!tools.includes('read')) invalid(code);
   const fleet = ascending(record.fleet, isRole, code);
-  if ((id === 'gatekeeper' || id === 'reviewer') && (tools.some(tool => !REVIEW_TOOLS.includes(tool)) || fleet.length > 0)) invalid(code);
+  if (isReviewSeat(id) && (tools.some(tool => !REVIEW_TOOLS.includes(tool)) || fleet.length > 0)) invalid(code);
   const model = record.runtime === 'pi' && record.model !== null
     ? (typeof record.model === 'string' && /^[^/]+\/.+$/u.test(record.model) ? record.model : invalid(code))
     : nullableToken(record.model, code);
@@ -230,7 +239,7 @@ function decodeRouting(value: unknown, code: string): SeatRoutingV1 {
 
 function decodeSeatsRecord(record: Record<string, unknown>, code: string, requireExplorerModel = true): SeatsConfigV1 {
   const seats = Object.fromEntries(SEAT_IDS.filter(id => id in record)
-    .map(id => [id, id === 'worker-light' && record[id] === null ? null : decodeSeat(id, record[id], code)])) as Partial<Omit<SeatsConfigV1, 'routing'>>;
+    .map(id => [id, isOptionalSeat(id) && record[id] === null ? null : decodeSeat(id, record[id], code)])) as Partial<Omit<SeatsConfigV1, 'routing'>>;
   const routing = 'routing' in record ? decodeRouting(record.routing, code) : undefined;
   if (routing !== undefined) {
     if (requireExplorerModel && routing.low_quota_explorer.model === null) invalid(code);

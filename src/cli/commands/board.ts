@@ -173,7 +173,7 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
         const result = await runReview({
           repo_root: process.cwd(), parent: parentNumber(command.optsWithGlobals<BoardOptions>()), space: options.space, host, dry_run: options.dryRun === true,
           ...(options.pr === undefined ? {} : { pr: Number(options.pr) }),
-          launch: (seat, labels, cwd) => seatLaunch(seat, labels, process.env, cwd),
+          launch: (seat, labels, cwd, gatekeeper) => seatLaunch(seat, labels, process.env, cwd, {}, gatekeeper),
         });
         process.stdout.write(reviewText(result));
       } catch (error) {
@@ -279,7 +279,7 @@ function reviewRunner(options: AttentionOptions, parent: number, host: BoardHost
   if (options.deliver !== true) throw new AttentionWatchError('--review needs --deliver');
   const space = options.space;
   if (space === undefined) throw new AttentionWatchError('--review needs --space');
-  return observe => runReview({ repo_root: process.cwd(), parent, space, host, dry_run: false, observe, launch: (seat, labels, cwd) => seatLaunch(seat, labels, process.env, cwd) });
+  return observe => runReview({ repo_root: process.cwd(), parent, space, host, dry_run: false, observe, launch: (seat, labels, cwd, gatekeeper) => seatLaunch(seat, labels, process.env, cwd, {}, gatekeeper) });
 }
 
 /** The resident loop. A provider 5xx or a gh call with no exit status skips one window; other board read or hc failures end it with exit 1. */

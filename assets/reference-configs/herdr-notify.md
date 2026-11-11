@@ -66,9 +66,12 @@ Before each dispatch wave, run `repo-harness quota`. Launch each task with `repo
 | `worker-important-fast` | Claude, `sonnet`, medium |
 | `worker-light` | Pi, `magpie/cursor/deepseek-v41-flash-1017`, no effort and no account; worker tool groups; no fleet. A Pi seat on `magpie/codex/<model>` ("pi-gpt") is a user-selected alternative to a Codex seat: it runs the same GPT models, takes an effort (`--thinking`) and counts against the `chatgpt` account |
 | `gatekeeper` | Codex, `gpt-6.1-terra`, high; read, shell and network |
+| `gatekeeper-fallback` | `null` (not configured); when configured, the gatekeeper ranges: read, shell and network, no fleet |
 | `reviewer` | Claude, `opus`, high; read, shell and network |
 
 All worker seats use worker briefs, labels and pane names. `gatekeeper` and `reviewer` need `--pr <n>`; their pane names are `<prefix>-gk-<pr>` and `<prefix>-rv-<pr>`. They report a read-only verdict first and do not edit, commit, push or write to GitHub.
+
+`gatekeeper-fallback` is optional and is no launch target: `seats argv gatekeeper-fallback` returns `seat_unknown`. While the gatekeeper account is exhausted and the fallback account is not, the route line names the fallback, for example `gatekeeper: gatekeeper-fallback (pi magpie/cursor/deepseek-v41-flash-1017; gatekeeper: chatgpt exhausted)`, and `seats argv gatekeeper --pr <n>` prints the fallback argv with the gatekeeper label, pane name and brief. A tight, unknown or reserved gatekeeper keeps its own rule; with no usable fallback the line stays `gatekeeper: none (...)`. `repo-harness board review` starts a gatekeeper only when this effective gatekeeper has a known model family, and not `anthropic` when the head needs a non-Claude gatekeeper. Its family must differ from the writer's only where it gives the different-family row: a Medium head, or a High head that needs no Claude review. A High head with a Claude review may use a gatekeeper of the writer's family; else it skips the PR with `review_family_unavailable` and the route line. A stored section without the key needs `repo-harness update`, which sets it to `null`.
 
 On Pi, review seats pass `--exclude-tools edit,write`. Direct edit/write tools are off. The edit limit is `common_commands` because the shell stays available; shell writes remain prohibited by the brief. Codex review seats use the read-only sandbox.
 

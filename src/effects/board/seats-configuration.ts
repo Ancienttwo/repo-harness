@@ -68,6 +68,7 @@ const SEAT_RANGES: SeatsRangesV1['seats'] = {
   'worker-important-fast': { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
   'worker-light': { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
   gatekeeper: { fleet: [], tools: ['net', 'read', 'shell'] },
+  'gatekeeper-fallback': { fleet: [], tools: ['net', 'read', 'shell'] },
   reviewer: { fleet: [], tools: ['net', 'read', 'shell'] },
 };
 

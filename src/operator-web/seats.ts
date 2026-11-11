@@ -1,4 +1,5 @@
 import {
+  DEFAULT_SEATS_CONFIG,
   ROUTING_CLASSES,
   SEAT_IDS,
   seatTakesFleet,
@@ -6,6 +7,7 @@ import {
   decodeSeatsSettingsResult,
   type SeatConfigV1,
   type RoutingClass,
+  type OptionalSeatId,
   type SeatId,
   type SeatModelV1,
   type SeatRuntime,
@@ -75,7 +77,7 @@ export function useSeatsSettingsForm(read: SeatsSettingsReader, write: SeatsSett
 const toggled = <T extends string>(items: readonly T[], item: T, on: boolean): readonly T[] =>
   on ? (items.includes(item) ? items : [...items, item].sort()) : items.filter(value => value !== item);
 
-// The page edits the fields of a configured seat only; a worker-light set to null shows no seat controls.
+// The page edits the fields of a configured seat only; an optional seat set to null shows no seat controls.
 const patch = (draft: SeatsConfigV1, seat: SeatId, change: Partial<SeatConfigV1>): SeatsConfigV1 => ({ ...draft, [seat]: { ...draft[seat]!, ...change } });
 
 /**
@@ -107,11 +109,19 @@ export const setSeatTool = (draft: SeatsConfigV1, seat: SeatId, tool: SeatTool, 
 export const setSeatRole = (draft: SeatsConfigV1, seat: SeatId, role: string, on: boolean): SeatsConfigV1 =>
   patch(draft, seat, { fleet: toggled(draft[seat]!.fleet, role, on) });
 
-/** A worker-light set to null leaves the routes, since the section refuses a route that names an unconfigured seat. */
-export function setWorkerLight(draft: SeatsConfigV1, seat: SeatConfigV1 | null): SeatsConfigV1 {
-  if (seat !== null) return { ...draft, 'worker-light': seat };
-  const routes = Object.fromEntries(ROUTING_CLASSES.map(task => [task, draft.routing[task].filter(id => id !== 'worker-light')]));
-  return { ...draft, 'worker-light': null, routing: { ...draft.routing, ...routes } };
+/**
+ * Switching the gatekeeper-fallback seat on starts from a Pi seat on the DeepSeek model, outside the model family
+ * and the account of the default gatekeeper; the seat has no default of its own.
+ */
+export const GATEKEEPER_FALLBACK_STARTER: SeatConfigV1 = Object.freeze({
+  runtime: 'pi', model: DEFAULT_SEATS_CONFIG['worker-light']!.model, effort: null, tools: DEFAULT_SEATS_CONFIG.gatekeeper.tools, fleet: [],
+});
+
+/** An optional seat set to null leaves the routes, since the section refuses a route that names an unconfigured seat. */
+export function setOptionalSeat(draft: SeatsConfigV1, id: OptionalSeatId, seat: SeatConfigV1 | null): SeatsConfigV1 {
+  if (seat !== null) return { ...draft, [id]: seat };
+  const routes = Object.fromEntries(ROUTING_CLASSES.map(task => [task, draft.routing[task].filter(route => route !== id)]));
+  return { ...draft, [id]: null, routing: { ...draft.routing, ...routes } };
 }
 
 export const setRoute = (draft: SeatsConfigV1, task: RoutingClass, seats: readonly WorkerSeatId[]): SeatsConfigV1 =>
