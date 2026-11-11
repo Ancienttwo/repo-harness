@@ -329,11 +329,19 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
     return Promise.all(stops).then(() => {});
   };
   /**
+   * The repository ids whose facts documents a registry removal or a failed registry
+   * read dropped. Their older document is not served again when the repository
+   * returns inside a long facts gap; the facts cycle clears the id when it publishes
+   * a new read, so a returned repository is pending, as the deleted maps were on main.
+   */
+  const dropped = new Set<string>();
+  /**
    * The registry cycle of the observer: each registered repository gains one child,
    * and a child leaves when its repository leaves the registry or changes its path.
    * A failed read stops every child, because no child can serve a repository that
    * the registry cannot name. The cycle waits for each stopped child, so the state
-   * map never names a child that still runs.
+   * map never names a child that still runs. A removal and a failed read also drop
+   * the facts documents of the affected ids at once, as the two maps did on main.
    */
   const registry = startObservationLoop<readonly Repository[], typeof REGISTRY_FAILURE>({
     cycle: async () => {
@@ -341,13 +349,20 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
       try { repositories = ports.repositories(); }
       catch {
         const retired = [...states.values()];
+        // A document exists only for a repository that had a child, so these ids cover every document to drop.
+        for (const state of retired) dropped.add(state.repository.id);
         states.clear();
         await drain(retired);
         return { state: 'unavailable', reason: REGISTRY_FAILURE };
       }
       const byId = new Map(repositories.map(repository => [repository.id, repository]));
       const retired: RepositoryState[] = [];
-      for (const [id, state] of states) if (byId.get(id)?.path !== state.repository.path) { states.delete(id); retired.push(state); }
+      for (const [id, state] of states) {
+        if (byId.get(id)?.path === state.repository.path) continue;
+        // Only a repository that left the registry drops its documents; a new path keeps the same id and document.
+        if (!byId.has(id)) dropped.add(id);
+        states.delete(id); retired.push(state);
+      }
       await drain(retired);
       // A close starts no child, so no child timer outlives the observer.
       if (lifecycle.signal.aborted) return { state: 'observed', value: repositories };
@@ -477,7 +492,8 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
       const repositories = read.value;
       // With no registered repository the worker does not start.
       if (repositories.length === 0) { factsGapMs = FACTS_INTERVAL_MS; return { state: 'observed', value: NO_BOARD_DOCUMENTS }; }
-      const registered = new Set(repositories.map(repository => repository.id));
+      // A dropped id stays out of the served set until this cycle publishes a new read for it.
+      const registered = new Set(repositories.map(repository => repository.id).filter(id => !dropped.has(id)));
       // Each cycle starts from the previous documents, so a repository that this cycle has not reached keeps its older documents.
       const before = previous.state === 'observed' ? applyFactsRegistry(previous.value, registered) : NO_BOARD_DOCUMENTS;
       const parents = new Map(before.parents);
@@ -490,6 +506,8 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
           // A close ends the cycle here, and the documents that it published stay served.
           if (signal.aborted) return published();
           parents.set(repository.id, readParents(answer));
+          // The new read replaces the dropped document of the id.
+          dropped.delete(repository.id);
           // A parent list is served when its read returns, not when the cycle ends.
           publish({ parents: new Map(parents), boards: new Map(boards) });
         }
@@ -510,7 +528,9 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
         factsGapMs = cycleGap(rate !== null && rate !== 'timeout' && rate.ok ? rate.value as GitHubRateLimit : null);
         return published();
       } catch {
-        // The server stays up and the next cycle retries; the documents that this cycle published stay served.
+        // The server stays up and the next cycle retries; the documents that this cycle published stay served,
+        // and a cycle that threw goes back to the base gap, as `catch(() => FACTS_INTERVAL_MS)` did on main.
+        factsGapMs = FACTS_INTERVAL_MS;
         return published();
       }
     },
@@ -527,12 +547,14 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
   /**
    * The published documents. The registry loop is the one authority for the
    * registered set, so a document whose repository left the registry is not served
-   * after the removal, even while a low budget holds the next facts cycle back.
+   * after the removal, even while a low budget holds the next facts cycle back. A
+   * dropped id is not served either, so a repository that returned before the next
+   * facts cycle stays pending instead of showing a document from before the removal.
    */
   const documents = (): BoardFactsDocuments => {
     const state = facts.read(), read = registry.read();
     if (state.state !== 'observed' || read.state !== 'observed') return NO_BOARD_DOCUMENTS;
-    return applyFactsRegistry(state.value, new Set(read.value.map(repository => repository.id)));
+    return applyFactsRegistry(state.value, new Set(read.value.map(repository => repository.id).filter(id => !dropped.has(id))));
   };
   /** A new lease starts the next cycle at once unless a low GitHub budget set the gap. */
   function lease(repositoryId: string, parent: number) {
