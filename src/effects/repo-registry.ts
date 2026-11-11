@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { sha256Prefixed } from "../core/evidence/sha256";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "path";
 import {
@@ -478,7 +479,7 @@ export function readRepoHarnessRegistryStrictSnapshot(opts: {
       return Object.freeze({
         registryPath,
         authorizationRevision: 0,
-        registryRevision: `sha256:${createHash('sha256').update('repo-harness-registry-v1:empty', 'utf-8').digest('hex')}`,
+        registryRevision: sha256Prefixed('repo-harness-registry-v1:empty'),
         repos: Object.freeze([]),
       });
     }
@@ -530,7 +531,7 @@ export function readRepoHarnessRegistryStrictSnapshot(opts: {
   return Object.freeze({
     registryPath,
     authorizationRevision: record.authorizationRevision as number,
-    registryRevision: `sha256:${createHash('sha256').update(raw, 'utf-8').digest('hex')}`,
+    registryRevision: sha256Prefixed(raw),
     repos: Object.freeze([...repos].sort((left, right) => left.id.localeCompare(right.id))),
   });
 }
