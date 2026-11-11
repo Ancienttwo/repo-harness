@@ -256,8 +256,14 @@ Board rules:
    `[rh-notice] <kind> #<issue>`, so that the coordinator can tell it from
    an owner message. A simple fact or question goes in the message only. A
    state change or a decision request goes in a comment first, and the
-   message carries its URL. Evidence goes in an `issue claim status` or
-   the PR body (`worker.md` §7, `orchestrator.md` §8.1).
+   message carries its URL. Messages carry pointers, not content: a message
+   that restates what GitHub holds names the issue, the PR, the comment URL
+   or the sha instead. Evidence goes in an `issue claim status` or the PR
+   body (`worker.md` §7, `orchestrator.md` §8.1). An owner decision reaches
+   the board the same way: the receiving seat posts it on the issue or PR.
+   A message still wakes a seat; it never replaces the board record. The
+   advisor sends the orchestrator only a mismatch between a seat report and
+   the GitHub state, not a confirmation.
 7. **Decisions live on the board.** A decision that changes scope goes into
    the issue body through a `scope change`. Any other one-time decision goes
    into a `decision` comment on the issue. Do not keep decision notes in local
