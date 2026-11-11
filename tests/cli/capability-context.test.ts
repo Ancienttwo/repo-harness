@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { execFileSync, spawnSync } from 'child_process';
 import {
@@ -9,10 +8,7 @@ import {
 } from '../../src/cli/commands/capability-context';
 import type { Capability } from '../../src/core/capabilities/registry';
 import { pluginSelectionEnv } from '../helpers/install-ownership';
-
-function tmpWorkspace(prefix: string): string {
-  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `${prefix}-`)));
-}
+import { tmpWorkspace } from '../helpers/repo-fixture';
 
 function commitArchcontextFixture(cwd: string): void {
   fs.copyFileSync(path.join(import.meta.dir, '../../.archcontext/manifest.yaml'), path.join(cwd, '.archcontext/manifest.yaml'));

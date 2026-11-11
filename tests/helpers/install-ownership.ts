@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync } from 'fs';
+import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, isAbsolute, join, relative, resolve } from 'path';
 import { versions } from '../../src/cli/installer/install-profile';
@@ -41,6 +41,28 @@ export function seedGlobalPackageFixture(env: NodeJS.ProcessEnv = process.env, o
     throw new Error(`Global package fixture already belongs to another source: ${root}`);
   }
   return root;
+}
+
+/**
+ * Run `fn` under a temporary HOME with the global package fixture seeded. The directory is
+ * `<tmpdir>/<prefix>-<random>`; HOME and BUN_INSTALL are restored and the directory removed after `fn`.
+ */
+export function withTempHome(prefix: string, fn: (home: string) => void): void {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
+  const previousHome = process.env.HOME;
+  const previousBunInstall = process.env.BUN_INSTALL;
+  process.env.HOME = home;
+  process.env.BUN_INSTALL = join(home, '.bun');
+  seedGlobalPackageFixture();
+  try {
+    fn(home);
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousBunInstall === undefined) delete process.env.BUN_INSTALL;
+    else process.env.BUN_INSTALL = previousBunInstall;
+    rmSync(home, { recursive: true, force: true });
+  }
 }
 
 /** Seed the persisted protocol, independently of unrelated owner probes. */

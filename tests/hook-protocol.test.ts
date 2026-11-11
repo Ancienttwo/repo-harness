@@ -12,6 +12,7 @@ import { join } from "path";
 import { spawnSync } from "child_process";
 import { runMutationGuard } from "../src/cli/hook/mutation-guard";
 import { hookIdentity } from "./helpers/hook-identity";
+import { tmpWorkspace } from "./helpers/repo-fixture";
 
 // Some fixtures resolve full effective state and can exceed the default under
 // parallel session load.
@@ -25,10 +26,6 @@ function runEditHandler(
 ): { status: number; stdout: string; stderr: string } {
   const result = runMutationGuard({ repoRoot: cwd, payload, identity: hookIdentity() });
   return { status: result.exitCode, stdout: result.stdout, stderr: result.stderr };
-}
-
-function tmpWorkspace(prefix: string): string {
-  return realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
 }
 
 function initGitRepo(cwd: string) {
