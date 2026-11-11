@@ -1,7 +1,7 @@
 // What each architecture map layer lights on the base map. The values are the
 // collector's own facts; this module only decides which node each one marks.
 
-import type { ArchctxRefusalV1, ArchitectureImpactTruncationV1, ArchitectureImpactV1, ArchitectureMapImportV1, ArchitectureMapV1 } from '../core/operator/architecture-map';
+import type { ArchctxRefusalV1, ArchitectureImpactTruncationV1, ArchitectureImpactV1, ArchitectureMapImportV1, ArchitectureMapV1, ArchitectureTestCoverageV1 } from '../core/operator/architecture-map';
 
 export const MAP_LAYERS = ['changes', 'violations', 'pull_requests', 'tests', 'decisions'] as const;
 export type MapLayerId = typeof MAP_LAYERS[number];
@@ -105,6 +105,11 @@ function impactMarks(impact: ArchitectureImpactV1, label: (entry: ArchitectureIm
   return marks;
 }
 
+/** A capability's test tone: any failure is danger; every file passed or skipped, with one pass at least, is success. */
+function testTone(entry: ArchitectureTestCoverageV1): MapMarkTone {
+  return entry.failed > 0 ? 'danger' : entry.passed > 0 && entry.passed + entry.skipped === entry.files ? 'success' : 'muted';
+}
+
 /** Each node inside a capability, the capability included, mapped to that capability. Other nodes have no entry. */
 export function capabilityOwners(map: ArchitectureMapV1): Map<string, string> {
   const nodes = new Map(map.nodes.map(node => [node.id, node]));
@@ -182,7 +187,7 @@ export function modulesLayerView(map: ArchitectureMapV1, layer: MapLayerId, pull
     const { tests } = map.layers;
     if (tests.state !== 'ok') return NO_MODULES;
     return view(new Map(tests.capabilities.map(entry => [entry.id, {
-      tone: entry.failed > 0 ? 'danger' : entry.passed > 0 && entry.passed + entry.skipped === entry.files ? 'success' : 'muted', count: null, atLeast: false,
+      tone: testTone(entry), count: null, atLeast: false,
     }])));
   }
   if (layer === 'pull_requests') {
@@ -223,7 +228,7 @@ export function mapLayerView(map: ArchitectureMapV1, layer: MapLayerId, pullRequ
     const { tests } = map.layers;
     if (tests.state !== 'ok') return EMPTY;
     return view(new Map(tests.capabilities.map(entry => [entry.id, {
-      tone: entry.failed > 0 ? 'danger' : entry.passed > 0 && entry.passed + entry.skipped === entry.files ? 'success' : 'muted',
+      tone: testTone(entry),
       label: `${entry.passed}/${entry.files}`,
     }])));
   }

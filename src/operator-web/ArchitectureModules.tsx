@@ -8,15 +8,13 @@
 import { memo, useCallback, useMemo, type ReactNode } from 'react';
 import type { Node, NodeProps } from '@xyflow/react';
 import { flowSteps, type ArchitectureMapNodeV1, type ArchitectureMapV1 } from '../core/operator/architecture-map';
+import { compactLines } from './architecture-layers-layout';
 import { archctxCode, capabilityOwners, impactPaths, impactTargets, modulesLayerView, type MapLayerId, type ModuleMark } from './architecture-map-layers';
 import { counted, FactList, FixCommand, NodeDetails, nodeSize, violationFacts } from './architecture-map-parts';
 import { domainId, layoutModules, markUndeclared, type ModulesLayout, type UndeclaredEnd } from './architecture-modules-layout';
 import type { SceneBox, SceneRoute } from './architecture-scene';
 import { ArchitectureSceneCanvas, SceneHandles, type SceneLegendEntry, type SceneNodeView } from './ArchitectureSceneCanvas';
 import type { OperatorTranslate } from './i18n';
-
-/** "14.2k" for 14 200 lines. */
-const compactLines = (lines: number) => new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(lines).toLowerCase();
 
 /** How a card relates to the selected card: it imports or calls it (`in`), the selected card reaches it (`out`), or both. */
 type Direction = 'in' | 'out';
