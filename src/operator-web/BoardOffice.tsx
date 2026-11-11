@@ -5,9 +5,9 @@ import { ADVISOR_BOSS_COMMAND_TABLE, ADVISOR_BOSS_COMMANDS, advisorBossCommandTe
 import { DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, type DeskState } from '../core/board/desk';
 import {
   officeCard, officeCardRank, officeLit, officeRepositoryView, officeTotals, useOfficeOverview,
-  type BoardSummariesReader, type OfficeCard, type OfficeDesk, type OfficeFeedEvent, type OfficeLead, type OfficeRepositoryView, type OfficeRoom, type OfficeTotals,
+  type OfficeCard, type OfficeDesk, type OfficeFeedEvent, type OfficeLead, type OfficeRepositoryView, type OfficeRoom, type OfficeTotals,
 } from './board-office';
-import type { BoardParentsReader, BoardSeatsReader } from './board-view';
+import type { BoardParentsReader, BoardReader, BoardSeatsReader } from './board-view';
 import type { BoardRepositoryOption } from './BoardPage';
 import { useModalFocus } from './Drawer';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
@@ -112,25 +112,24 @@ function OfficeStats({ totals, t }: { readonly totals: OfficeTotals; readonly t:
 }
 
 /** The chips of one room; a value the server did not send has no chip. */
-function cardChips({ room, lit, summary }: OfficeCard, t: OperatorTranslate): readonly (readonly [string, StatTone | 'ok', string])[] {
+function cardChips({ room, lit, board }: OfficeCard, t: OperatorTranslate): readonly (readonly [string, StatTone | 'ok', string])[] {
   if (!lit) return [['idle', 'subtle', t('board.office.idle')]];
   const workers = room.desks.length;
   const seats = ['workers', 'subtle', t('board.office.card.workers', { count: workers })] as const;
-  if (summary.status === 'not_read') return [seats, ['not-read', 'subtle', t('board.office.card.notRead')]];
-  if (summary.status === 'unavailable') return [seats, ['unavailable', 'warn', t('board.office.card.summaryUnavailable')]];
-  if (summary.status !== 'observed') return [seats];
-  const { needs_you: needsYou, queue, ci_failures: failures, batch, current_batch: current, worker_limit: limit, seats: read } = summary.summary;
-  const full = workers >= limit;
-  const stalled = read.status === 'observed' ? read.stalled : 0;
+  if (board.status === 'not_read') return [seats, ['not-read', 'subtle', t('board.office.card.notRead')]];
+  if (board.status === 'unavailable') return [seats, ['unavailable', 'warn', t('board.office.card.boardUnavailable', { reason: board.reason })]];
+  if (board.status !== 'observed') return [seats];
+  const full = workers >= room.limit;
+  const queue = room.queue.length, accepted = room.cart?.accepted.length ?? 0;
+  const stalled = room.desks.filter(desk => desk.state === 'no_claim_status').length;
   return [
-    ...(needsYou > 0 ? [['needs-you', 'accent', t('board.office.card.needsYou', { count: needsYou })] as const] : []),
-    read.status === 'unavailable' ? ['seats-unavailable', 'warn', t('board.office.card.seatsUnavailable', { reason: read.reason })] as const
-      : batch.size === null ? ['workers', 'subtle', t('board.office.meter.noPlan', { count: workers })] as const
-        : ['workers', full ? 'warn' : 'subtle', t(full ? 'board.office.card.full' : 'board.office.card.limit', { count: workers, limit })] as const,
+    ...(board.needs_you > 0 ? [['needs-you', 'accent', t('board.office.card.needsYou', { count: board.needs_you })] as const] : []),
+    room.plan.status === 'none' ? ['workers', 'subtle', t('board.office.meter.noPlan', { count: workers })] as const
+      : ['workers', full ? 'warn' : 'subtle', t(full ? 'board.office.card.full' : 'board.office.card.limit', { count: workers, limit: room.limit })] as const,
     ...(queue > 0 ? [['queue', 'warn', t('board.office.card.queue', { count: queue })] as const] : []),
-    ...(failures > 0 ? [['ci', 'danger', t('board.office.card.ci', { count: failures })] as const] : []),
+    ...(board.ci_failures > 0 ? [['ci', 'danger', t('board.office.card.ci', { count: board.ci_failures })] as const] : []),
     ...(stalled > 0 ? [['stalled', 'warn', t('board.office.card.stalled', { count: stalled })] as const] : []),
-    ...(current !== null && current.accepted > 0 ? [['batch', 'ok', t('board.office.card.batch', { accepted: current.accepted, sockets: room.cart_sockets })] as const] : []),
+    ...(accepted > 0 ? [['batch', 'ok', t('board.office.card.batch', { accepted, sockets: room.cart_sockets })] as const] : []),
   ];
 }
 
@@ -139,17 +138,17 @@ function MiniRoom({ card, frame, mode }: { readonly card: OfficeCard; readonly f
   const night = mode === 'dark' || idle;
   const shown = idle ? 0 : frame;
   const paths = useMemo(() => {
-    const { room, summary } = card;
-    const observed = summary.status === 'observed' ? summary.summary : null;
+    const { room, board } = card;
+    const observed = board.status === 'observed';
     return composeMiniRoom({
       orchestrator: room.orchestrator === null ? null : sceneAgent(room.orchestrator.agent),
       advisor: room.advisor === null ? null : sceneAgent(room.advisor.agent),
-      plan: observed !== null && observed.batch.size !== null,
-      needsYou: observed !== null && observed.needs_you > 0,
+      plan: room.plan.status === 'observed',
+      needsYou: observed && board.needs_you > 0,
       desks: room.desks.map(desk => ({ agent: sceneAgent(desk.agent), state: desk.state })),
-      limit: observed?.worker_limit ?? null,
-      queue: observed?.queue ?? 0,
-      cart: observed?.current_batch?.accepted ?? 0,
+      limit: observed ? room.limit : null,
+      queue: room.queue.length,
+      cart: room.cart?.accepted.length ?? 0,
       idle,
     }, { frame: shown, night });
   }, [card, idle, night, shown]);
@@ -175,11 +174,11 @@ function RepositoryCard({ repository, view, card, frame, now, mode, onOpen, t }:
   }
   const room = card!;
   const chips = cardChips(room, t);
-  const { summary, parent, parents, lit } = room;
+  const { board, parent, parents, lit } = room;
   const parentLabel = parents.kind === 'loading' ? t('board.parents.loading.title')
     : parents.kind === 'failed' ? t('board.parents.failed.title')
     : !lit ? t('board.office.noParent') : parent === null ? t('board.office.parent.none') : t('board.office.parent', { number: parent });
-  const waiting = summary.status === 'observed' && summary.summary.needs_you > 0;
+  const waiting = board.status === 'observed' && board.needs_you > 0;
   const label = lit || parents.kind !== 'ready' ? t('board.office.card.open', { repository: repository.label,
     chips: [...(parents.kind === 'ready' ? [] : [parentLabel]), ...chips.map(([, , text]) => text)].join(t('board.office.boss.separator')) })
     : t('board.office.card.idleLabel', { repository: repository.label });
@@ -187,7 +186,7 @@ function RepositoryCard({ repository, view, card, frame, now, mode, onOpen, t }:
     <button type="button" className="board-office__card" aria-label={label} data-office-card={lit ? 'room' : 'idle'} data-repository={repository.id} data-parent={parent ?? undefined} data-board-parents-reason={parents.kind === 'failed' ? parents.reason : undefined} data-waiting={waiting ? '' : undefined}
       onClick={() => onOpen(boardRoomLocation(repository.id))}>
       <MiniRoom card={room} frame={frame} mode={mode} />
-      <span className="board-office__card-name">{name}<span>{parentLabel}</span>{summary.status === 'observed' && <span data-office-observed={summary.observed_at}><Age at={summary.observed_at} now={now} t={t} /></span>}</span>
+      <span className="board-office__card-name">{name}<span>{parentLabel}</span>{board.status === 'observed' && <span data-office-observed={board.observed_at}><Age at={board.observed_at} now={now} t={t} /></span>}</span>
       {parents.kind === 'failed' && <span className="board-office__card-reason">{t(`board.reason.${parents.reason}` as OperatorMessageKey)}</span>}
       <span className="board-office__card-chips">{chips.map(([key, tone, text]) => <span key={key} className="board-office__card-chip" data-office-chip={key} data-tone={tone}>{text}</span>)}</span>
     </button>
@@ -199,14 +198,14 @@ const OVERVIEW_FRAME_MS = 400;
 
 /**
  * No board selected: one mini room per registered repository, from its seats
- * and the stored summary of its active parent. The overview reads no board.
+ * and the board of its active parent: the documents that the room reads.
  */
-export function BoardOfficeOverview({ repositories, readParents, readSeats, readSummaries, setup, generation, mode, onOpen, t }: {
-  readonly repositories: readonly BoardRepositoryOption[]; readonly readParents: BoardParentsReader; readonly readSeats: BoardSeatsReader; readonly readSummaries: BoardSummariesReader; readonly setup: OfficeSetupReads; readonly generation: number;
+export function BoardOfficeOverview({ repositories, readParents, readSeats, readBoard, setup, generation, mode, onOpen, t }: {
+  readonly repositories: readonly BoardRepositoryOption[]; readonly readParents: BoardParentsReader; readonly readSeats: BoardSeatsReader; readonly readBoard: BoardReader; readonly setup: OfficeSetupReads; readonly generation: number;
   readonly mode: ThemeMode; readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate;
 }) {
   const ids = useMemo(() => repositories.map(repository => repository.id), [repositories]);
-  const views = useOfficeOverview(ids, readParents, readSummaries, generation, readSeats);
+  const views = useOfficeOverview(ids, readParents, readBoard, generation, readSeats);
   const { frame, now } = useClock(OVERVIEW_FRAME_MS);
   const rooms = useMemo(() => repositories.map((repository) => {
     const view = officeRepositoryView(views, repository.id);
