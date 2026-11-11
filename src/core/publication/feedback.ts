@@ -1,3 +1,4 @@
+import { byteCompare } from '../evidence/byte-compare';
 import { validateTaskMessageClaim, type TaskMessageClaim } from '../messages/task-message-claim';
 import { evaluateNoProgress } from '../state/no-progress';
 import {
@@ -178,10 +179,6 @@ export type RepairOfferProjection =
 
 function fail(code: FeedbackProtocolErrorCode, message: string): never {
   throw new FeedbackProtocolError(code, message);
-}
-
-function byteCompare(left: string, right: string): number {
-  return Buffer.compare(Buffer.from(left), Buffer.from(right));
 }
 
 function requiredString(value: unknown, label: string, code: FeedbackProtocolErrorCode = 'feedback_provider_shape_invalid'): string {

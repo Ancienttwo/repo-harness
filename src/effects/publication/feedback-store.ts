@@ -9,6 +9,7 @@ import { closeSync, constants, existsSync, fsyncSync, linkSync, lstatSync, mkdir
 import { join } from 'path';
 
 import { canonicalFeedbackDeliveryReceiptBytes, canonicalFeedbackEventBytes, transitionFeedbackDeliveryReceipt, validateFeedbackDeliveryReceipt, validateFeedbackEvent, validateReactionAttemptReceipt, type FeedbackDeliveryReceiptV1, type FeedbackEventV1, type ReactionAttemptReceiptV1 } from '../../core/publication/feedback';
+import { byteCompare } from '../../core/evidence/byte-compare';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 
 export const FEEDBACK_ROOT_RELATIVE_PATH = 'repo-harness/feedback/v1';
@@ -378,7 +379,7 @@ export function readFeedbackDeliveryReceipt(
 function listedFiles(directory: string, optional: boolean): readonly string[] {
   if (!requireDirectory(directory, optional)) return [];
   try {
-    return readdirSync(directory).sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)));
+    return readdirSync(directory).sort(byteCompare);
   } catch (error) {
     throw unreadable(`feedback directory cannot be listed: ${directory}`, error);
   }

@@ -1,3 +1,4 @@
+import { byteCompare } from '../evidence/byte-compare';
 import { sha256Prefixed } from '../evidence/sha256';
 
 import type { StrictRiskCategory, WorkflowProfile } from '../workflow/profile';
@@ -112,10 +113,6 @@ const IRREVERSIBLE_CATEGORIES = new Set<StrictRiskCategory>([
 const STRICT_RISK_CATEGORIES = new Set<StrictRiskCategory>([
   'auth', 'payment', 'security', 'schema', 'migration', 'deploy', 'release', 'public-api', 'destructive',
 ]);
-
-function byteCompare(left: string, right: string): number {
-  return Buffer.compare(Buffer.from(left), Buffer.from(right));
-}
 
 function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort(byteCompare);
