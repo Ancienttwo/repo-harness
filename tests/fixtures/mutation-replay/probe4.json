@@ -1,0 +1,1 @@
+["echo x >&`rm -rf _ops`","echo x >&\"$(echo y > _ops/x)\"","echo $(sh <<EOF\nrm -rf _ops\nEOF\n)","X=1 cd src && rm -rf build"]

@@ -1,0 +1,1 @@
+["echo \"${x:-$(date)}\" > y","diff <(ls a) <(ls b) > d.txt","echo \"$(case x in a) echo;; esac)\" > y","cat <<EOF > notes.md\nDate: $(date)\nEOF","echo \"$(date)\" > notes.md","v=$(date) && echo $v > notes.md","echo x > _ops/x; cat <<A <<B\nA\nB","cat <<EOF > report.txt\n$\\\n(echo x > _ops/x)\nEOF","cd src && echo \"$(cd .. && rm -rf _ops)\"","cd sr[c] && echo \"$(rm -rf x)\""]
