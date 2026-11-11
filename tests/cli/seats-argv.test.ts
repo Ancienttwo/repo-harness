@@ -780,7 +780,12 @@ const session = transcript => fs.writeFileSync("${dir}/session.json", JSON.strin
 if (cmd === "ls") out({ terminals: st.terminals });
 if (cmd === "get") out({ address: rest.at(-1), state: "live", labels: rest.at(-1) === "t2" ? st.callerLabels : { "repo-harness.seat": "${seat}", "repo-harness.repository": "${repository}" }, turn: 3, foreground: { pid: 1, name: st.foreground, argv: [], cwd: "/" } });
 // wait is one result, or a sequence: the last result answers every later call.
-if (cmd === "wait") out(Array.isArray(st.wait) ? (st.wait.length > 1 ? st.wait.shift() : st.wait[0]) : st.wait);
+// Wait number waitDelayAt (from 1) answers after waitDelayMs, as a message that arrives late does.
+if (cmd === "wait") {
+  st.waits = (st.waits ?? 0) + 1;
+  if (st.waitDelayAt === st.waits) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, st.waitDelayMs);
+  out(Array.isArray(st.wait) ? (st.wait.length > 1 ? st.wait.shift() : st.wait[0]) : st.wait);
+}
 // As the real hc: keys arrive as typed input; send wraps its text in an envelope, so a sent slash command is chat text.
 if (cmd === "keys") {
   const line = rest.slice(2).filter(key => key !== "enter").map(key => (key === "space" ? " " : key)).join("");
@@ -873,6 +878,17 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
     state({ wait: [{ ...ended, ended: false, reason: "message" }, ended] });
     expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: false, logErrors: [] });
     expect(calls()).toEqual(["wait --timeout 600 -- t5", "wait --timeout 600 -- t5", "keys -- t5 / c l e a r enter", `send -- t5 ${prompt(handoff)}`]);
+  }));
+
+  test("a message to the caller during the relaunch wait gets the rest of the budget and the relaunch goes on (#2326)", withReset(async ({ handoff, reset, state, calls, sends }) => {
+    state({ signal: false, waitDelayAt: 2, waitDelayMs: 1200, wait: [ended, { ...ended, ended: false, reason: "message" }, ended] });
+    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: true, logErrors: [] });
+    const waits = calls().filter(line => line.startsWith("wait "));
+    // The first wait of the relaunch ends on a message to the caller; the second gets the rest of the 600 s budget.
+    const rest = Number(waits[2]?.split(" ")[2]);
+    expect([waits.length, waits[1], rest !== undefined && rest > 590 && rest < 600]).toEqual([3, "wait --timeout 600 -- t5", true]);
+    const script = join(dirname(handoff), "relaunch.sh");
+    expect(sends()).toEqual([...Array(4).fill("/clear"), "/exit", `sh ${script}`, prompt(handoff)]);
   }));
 
   test.each([
