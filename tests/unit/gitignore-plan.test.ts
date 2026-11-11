@@ -10,6 +10,7 @@ import {
   RUNTIME_STATE_IGNORE_CONTENT,
   RUNTIME_STATE_IGNORE_MARKER,
   removeRuntimeStateIgnoreBlock,
+  userExcludesFilePath,
 } from "../../src/effects/adoption/gitignore-plan";
 
 // A repository root without files: no retired runtime rule is kept.
@@ -153,5 +154,15 @@ describe("gitignore managed block .repo-harness rule", () => {
     const operation = gitignoreManagedBlockOperation(ABSENT_REPO, "planned", "custom-local/\n");
     expect(operation.content.split("\n")).toContain(".repo-harness/");
     expect(operation.content).toContain("custom-local/");
+  });
+
+  test("the user-level excludes lookup follows an include section of the global Git config", () => {
+    const home = mkdtempSync(join(tmpdir(), "gitignore-include-"));
+    const shared = join(home, "shared-ignore");
+    try {
+      writeFileSync(join(home, ".gitconfig"), "[include]\n\tpath = extra.cfg\n");
+      writeFileSync(join(home, "extra.cfg"), `[core]\n\texcludesFile = ${shared}\n`);
+      expect(userExcludesFilePath({ HOME: home, XDG_CONFIG_HOME: join(home, "xdg"), GIT_CONFIG_NOSYSTEM: "1" })).toEqual({ ok: true, path: shared });
+    } finally { rmSync(home, { recursive: true, force: true }); }
   });
 });
