@@ -16,7 +16,10 @@ import { architectureDebtReport, architectureDebtSummary } from '../src/cli/comm
 const recorded = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures', 'architecture-debt', 'complete-envelope.archctx-0.8.0.json'), 'utf8')) as {
   data: { snapshot: { headSha: string }; debt: ArchitectureDebtReportV1 } & Record<string, unknown>;
 } & Record<string, unknown>;
-const recordedDebt = recorded.data.debt;
+// archctx 0.13.0 reports a sixth check, `state-machines`, after `flows`; the 0.8.0 record has none.
+const flowsAt = recorded.data.debt.checks.findIndex((entry) => entry.check === 'flows');
+const recordedDebt = redigest({ ...recorded.data.debt, checks: [...recorded.data.debt.checks.slice(0, flowsAt + 1), { check: 'state-machines', coverage: 'complete', reasonCodes: [] }, ...recorded.data.debt.checks.slice(flowsAt + 1)] });
+recorded.data.debt = recordedDebt;
 const policy: ArchitectureProjectionPolicy = { provider: 'archctx', applyMode: 'manual', requiredVersion: ARCHCTX_REQUIRED_VERSION, timeoutMs: 120_000 };
 const roots: string[] = [];
 
