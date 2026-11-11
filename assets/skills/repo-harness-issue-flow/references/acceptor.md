@@ -87,7 +87,9 @@ The table rules govern how the row combines with the review.
    review of the delta from the reviewed head that writes one record row
    for the new head. A Medium head needs one delta check row under the
    Medium rule above. A High head needs the round-1 rule: two delta
-   check rows from distinct claims, at least one different-family.
+   check rows from distinct claims, at least one different-family. For a
+   PR that changes a hook path, the owner approves each head of the hook
+   diff again.
 2. **Round 2.** The reviewer or reviewers that raised a blocking finding
    read the fix delta (the hunks that changed after round 1) and the
    sibling cases of each of its findings. On a High or unknown-tier PR,

@@ -364,7 +364,8 @@ host's PR events or check when the worker reports.
   for a known flake. A second identical failure is not a flake. Classify
   it once, as the diff, the infrastructure or a stale base, and act on
   that class: the worker fixes the diff, the owner gets the infrastructure
-  failure, and a stale base gets a sync with main. Do not rerun the job
+  failure, and for a stale base the worker merges main into the head,
+  which makes a new head (`acceptor.md` §2.2). Do not rerun the job
   again. A job that was cancelled or timed out with no failed assertion is
   infrastructure: it starts no fix round. Rerun the failed job once on the
   same head. A second identical cancel goes to the owner.

@@ -124,7 +124,7 @@ Parent issue ── coordinator role
  │    ├─ PR-B1 ── writer B1 (slot claim by coordinator)
  │    └─ PR-B2 ── writer B2, base branch = PR-B1's branch
  └─ Child C (module Z) ── blocked by #A ── PR-C draft until PR-A merges
-Integrator (coordinator) merges in the plan block's merge order, one PR or one batch at a time.
+Integrator (coordinator) merges in the plan block's merge order, one PR at a time.
 ```
 
 **Parent table status.** The role/status column of the parent child table

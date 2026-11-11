@@ -35,7 +35,7 @@
       "id": "merge-push",
       "text": "Changes a merge or push path: the publication executor, branch protection or force push.",
       "path_visible": true,
-      "paths": ["src/core/publication/acceptance-merge-policy.ts", "src/core/publication/merge-readiness.ts", "src/effects/publication/batch-build.ts", "src/effects/publication/merge-executor.ts", "src/effects/publication/merge-readiness.ts", "src/effects/publication/new-remote-ref-push.ts", "scripts/merge-gate.ts"]
+      "paths": ["src/core/publication/acceptance-merge-policy.ts", "src/core/publication/merge-readiness.ts", "src/effects/publication/merge-executor.ts", "src/effects/publication/merge-readiness.ts", "src/effects/publication/new-remote-ref-push.ts", "scripts/merge-gate.ts"]
     }
   ]
 }
