@@ -31,6 +31,7 @@ import {
 } from '../../core/ci/test-report';
 import { runDevActivityProcess, type DevActivityProcessRunner } from '../dev-activity/collector';
 import { readRepoHarnessRegistryStrictSnapshot, type RepoHarnessRegisteredRepo } from '../repo-registry';
+import { keepObservation, readRepository, startObservationLoop, type RepositoryObservation } from '../observation-loop';
 import { repoHarnessHome } from '../repo-harness-home';
 
 export const TESTS_COLLECT_INTERVAL_MS = 15 * 60_000;
@@ -116,20 +117,15 @@ async function readCapped(path: string, max: number): Promise<string> {
 export function startTestsCollector(options: TestsCollectorOptions): TestsCollectorHandle {
   const env = ghEnv(options.env ?? process.env);
   const run = options.run_process ?? runDevActivityProcess;
-  const abort = new AbortController();
   const now = () => (options.now ?? (() => new Date()))();
   /** Parsed artifacts of the newest run per repository, kept across cycles. */
   const downloads = new Map<string, { readonly key: string; readonly run: Run; readonly parsed: Parsed }>();
-  let states = new Map<string, TestsRepositoryCache>();
-  let registryFailed = false;
-  let started = false;
   let activityPending = false;
-  let closed = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let inflight: Promise<void> | null = null;
+  // The cycle in flight owns the abort signal; close() aborts it, so a running gh ends with the loop.
+  let signal: AbortSignal = new AbortController().signal;
 
   const gh = async (argv: readonly string[], cwd: string, timeout_ms = GH_TIMEOUT_MS): Promise<string> => {
-    const result = await run('gh', argv, { cwd, env, timeout_ms, signal: abort.signal });
+    const result = await run('gh', argv, { cwd, env, timeout_ms, signal });
     if (!result.ok) throw new Unavailable('github_unavailable');
     return result.stdout;
   };
@@ -267,17 +263,18 @@ export function startTestsCollector(options: TestsCollectorOptions): TestsCollec
     }
   };
 
-  const cycle = (): Promise<void> => {
-    inflight = (async () => {
+  const loop = startObservationLoop<RepositoryObservation<TestsRepositoryCache>, TestsUnavailableReason>({
+    cycle: async ({ signal: cycleSignal }) => {
+      signal = cycleSignal;
       let repos: readonly RepoHarnessRegisteredRepo[];
       try { repos = readRepoHarnessRegistryStrictSnapshot({ env }).repos; }
-      catch { registryFailed = true; return; }
+      catch { return { state: 'observed', value: { registry: 'failed' } }; }
       const activity = options.read_dev_activity();
       activityPending = activity.collected_at === null;
       const next = new Map<string, TestsRepositoryCache>();
       // One repository at a time: a daily artifact changes once a day, and each download can be large.
       for (const repo of repos) {
-        if (closed) return;
+        if (cycleSignal.aborted) return { state: 'unavailable', reason: 'github_unavailable' };
         next.set(repo.id, await collectRepository(repo, activity));
       }
       // A repository that left the registry keeps no parsed result and no download.
@@ -286,34 +283,20 @@ export function startTestsCollector(options: TestsCollectorOptions): TestsCollec
         downloads.delete(id);
         await rm(testsArtifactRoot(env, id), { recursive: true, force: true });
       }
-      if (closed) return;
-      states = next;
-      registryFailed = false;
-      started = true;
-    })().catch(() => { /* every repository failure is a state; keep the last cache */ }).finally(() => {
-      inflight = null;
-      if (closed) return;
-      const interval = options.interval_ms ?? TESTS_COLLECT_INTERVAL_MS;
-      timer = setTimeout(() => { void cycle(); }, activityPending ? Math.min(interval, TESTS_PENDING_RETRY_MS) : interval);
-      timer.unref?.();
-    });
-    return inflight;
-  };
-  void cycle();
-
+      return { state: 'observed', value: { registry: 'ok', repositories: next, complete: true } };
+    },
+    // Keep rule: a cycle that throws keeps the last cache; each snapshot keeps its own collection time.
+    keep: keepObservation,
+    // A cycle that throws before its first success reads as pending, as it did on main.
+    failure: 'tests_pending',
+    interval_ms: () => (activityPending ? Math.min(options.interval_ms ?? TESTS_COLLECT_INTERVAL_MS, TESTS_PENDING_RETRY_MS) : options.interval_ms ?? TESTS_COLLECT_INTERVAL_MS),
+  });
   return Object.freeze({
     read: (repositoryId: string): TestsRepositoryCache => {
-      if (registryFailed) return { state: 'unavailable', reason: 'registry_unavailable' };
-      if (!started) return { state: 'unavailable', reason: 'tests_pending' };
-      return states.get(repositoryId) ?? { state: 'unavailable', reason: 'repository_not_found' };
+      const read = readRepository(loop.read(), repositoryId, 'tests_pending');
+      return 'value' in read ? read.value : { state: 'unavailable', reason: read.reason };
     },
-    settled: () => inflight ?? Promise.resolve(),
-    close: async () => {
-      closed = true;
-      clearTimeout(timer);
-      // Aborting kills a running gh, so a long download does not hold shutdown.
-      abort.abort();
-      await inflight;
-    },
+    settled: loop.settled,
+    close: loop.close,
   });
 }

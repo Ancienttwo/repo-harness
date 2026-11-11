@@ -22,12 +22,14 @@ import {
   projectCliInventory,
   unavailableCliInventory,
   type CliGithubFacts,
+  type CliInventoryReason,
   type CliInventorySnapshotV1,
   type CliPackageRecord,
   type CliPathExecutable,
   type CliSeedCatalog,
 } from '../../core/setup/cli-inventory';
 import { readSegmentedLog } from '../segmented-log';
+import { startObservationLoop } from '../observation-loop';
 
 export const CLI_INVENTORY_INTERVAL_MS = 6 * 3_600_000;
 export const CLI_LOOKUP_TTL_MS = 24 * 3_600_000;
@@ -412,45 +414,30 @@ export interface CliInventoryCollectorHandle {
 
 /**
  * Collect at start, then every interval after the previous cycle settles.
- * A failed cycle keeps the last good data as `stale`.
+ * Keep rule: a failed cycle keeps the last good inventory, marked `stale` with `collection_failed`; with no good
+ * inventory it publishes the unavailable one.
  */
 export function startCliInventoryCollector(options: CliInventoryOptions & { readonly interval_ms?: number } = {}): CliInventoryCollectorHandle {
   const cache = options.cache ?? createCliInventoryCache();
-  // Closing aborts the probes, so a server shutdown does not wait for a cycle of network lookups.
-  const abort = new AbortController();
-  const probe = options.probe ?? createCliProbe(options.env ?? process.env, abort.signal);
-  let current = unavailableCliInventory('collection_pending');
-  let lastGood: CliInventorySnapshotV1 | null = null;
-  let closed = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let inflight: Promise<void> | null = null;
-  const cycle = (): Promise<void> => {
-    inflight = collectCliInventory({ ...options, cache, probe })
-      .then((snapshot) => {
-        if (closed) return;
-        lastGood = snapshot;
-        current = snapshot;
-      }, () => {
-        if (closed) return;
-        current = lastGood === null ? unavailableCliInventory('collection_failed') : { ...lastGood, status: 'stale', reason: 'collection_failed' };
-      })
-      .finally(() => {
-        inflight = null;
-        if (closed) return;
-        timer = setTimeout(cycle, options.interval_ms ?? CLI_INVENTORY_INTERVAL_MS);
-        timer.unref?.();
-      });
-    return inflight;
-  };
-  void cycle();
-  return Object.freeze({
-    read: () => current,
-    settled: () => inflight ?? Promise.resolve(),
-    close: async () => {
-      closed = true;
-      clearTimeout(timer);
-      abort.abort();
-      await inflight;
+  const loop = startObservationLoop<CliInventorySnapshotV1, CliInventoryReason>({
+    // Closing aborts the probe, so a shutdown does not wait for a cycle of network lookups.
+    cycle: async ({ signal }) => {
+      const probe = options.probe ?? createCliProbe(options.env ?? process.env, signal);
+      try { return { state: 'observed', value: await collectCliInventory({ ...options, cache, probe }) }; }
+      catch { return { state: 'unavailable', reason: 'collection_failed' }; }
     },
+    keep: (previous, reason) => previous.state === 'observed'
+      ? { state: 'observed', value: { ...previous.value, status: 'stale', reason }, observed_at: previous.observed_at }
+      : { state: 'unavailable', reason },
+    failure: 'collection_failed',
+    interval_ms: options.interval_ms ?? CLI_INVENTORY_INTERVAL_MS,
+  });
+  return Object.freeze({
+    read: (): CliInventorySnapshotV1 => {
+      const state = loop.read();
+      return state.state === 'observed' ? state.value : unavailableCliInventory(state.state === 'unavailable' ? state.reason : 'collection_pending');
+    },
+    settled: loop.settled,
+    close: loop.close,
   });
 }
