@@ -142,7 +142,8 @@ export async function runAttentionWindow(input: AttentionWindowInput): Promise<v
     else record(delivery, 'send_failed', sent.detail);
   };
   // The review message takes the delivery path of a finding: a blocked orchestrator gets `hc wait`, a working one the window end.
-  const reviewText = `[rh-attention] #${input.parent} review: ${reviewLines.join('; ')}`;
+  // A review start or refusal is housekeeping: the entry carries P3, the priority of the A8 and A9 rules.
+  const reviewText = `[rh-attention] #${input.parent} P3 review: ${reviewLines.join('; ')}`;
   const deliveries = [...plan.deliveries, ...(reviewLines.length === 0 ? [] : liveSeatTerminals(board, 'orchestrator').map((terminal): AttentionDeliveryV1 =>
     ({ route: 'orchestrator', terminal: terminal.address, timing: deliveryTiming(terminal.status), rules: ['review'], text: reviewText })))];
   for (const delivery of deliveries.filter(entry => entry.timing === 'now')) send(delivery);
