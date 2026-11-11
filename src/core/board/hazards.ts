@@ -8,6 +8,7 @@
 
 import hazardsJson from '../../../assets/review-hazards.v1.json';
 import highListJson from '../../../assets/review-high-list.v1.json';
+import { decodeReaders } from '../evidence/decode-readers';
 
 export const REVIEW_HAZARDS_VERSION = 'repo-harness.review-hazards.v1';
 export const REVIEW_HIGH_LIST_VERSION = 'repo-harness.review-high-list.v1';
@@ -41,11 +42,7 @@ interface PathListShape {
 
 function decodePathList(value: unknown, shape: PathListShape): ReviewPathEntry[] {
   const fail = (what: string): never => { throw new Error(`${shape.label} invalid: ${what}`); };
-  const obj = (v: unknown, keys: readonly string[], what: string): Record<string, unknown> => {
-    if (!v || typeof v !== 'object' || Array.isArray(v)) return fail(what);
-    if (Object.keys(v).sort().join(',') !== [...keys].sort().join(',')) return fail(`${what} fields`);
-    return v as Record<string, unknown>;
-  };
+  const { obj } = decodeReaders(fail);
   // Text lands in a markdown table cell: one line, no pipe.
   const cell = (v: unknown, what: string): string =>
     (typeof v === 'string' && v.length > 0 && v.length <= 280 && v.trim() === v && !/[\x00-\x1f\x7f|]/u.test(v) ? v : fail(what));
