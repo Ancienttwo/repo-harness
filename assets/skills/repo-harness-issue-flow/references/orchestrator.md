@@ -297,11 +297,10 @@ example: `claude mode: saving (5% left < 20%)` and
 route line names with `repo-harness seats argv <seat>`; state the boundary
 in the task. A `none` route waits, or it changes through the seats
 configuration: the owner sets the seat order and each fallback there, and
-the route line then names the first eligible seat. When a review route is
-`none` and the plan cannot wait for the reset, a joint decision may change
-the review seat's model in the configuration, through the Seats page or its
-range-checked write, to a family that differs from the writer's; record the
-revert time in the decision. Never start a seat with an argv that
+the route line then names the first eligible seat. When the gatekeeper
+account is exhausted and a `gatekeeper-fallback` seat is configured, the
+route line names the fallback seat, and `repo-harness seats argv gatekeeper`
+launches it. Never start a seat with an argv that
 `repo-harness seats argv` did not print.
 `repo-harness board dispatch --parent <n> --space <id>` applies this step to every ready issue of the plan: it reads the `route:<class>` label of each issue (and `touches:credentials`), starts the worktree, posts the claim and opens the worker tab. `--dry-run` prints the decisions only. An issue without one `route:<class>` label is reported and not dispatched.
 `repo-harness board review --parent <n> --space <id>` starts the gatekeeper seat for each ready, green High pull request that has no gatekeeper start marker for its head. When the board shows `claude_review: pending` (an open High or unknown-tier head that does not meet the High acceptance rule and has no Claude reviewer row), it also starts the reviewer seat; each seat has its own marker, so a seat that was not sent retries alone. A Medium head gets one seat of the other family than the board's `writer_family` (the `modelFamily` of the `Model:` line of the writer claim of the head branch): a non-Claude gatekeeper for a Claude writer, the Claude reviewer for any other known family. An unknown writer family (no such claim, no `Model:` line, an unmatched model, or linked issues that disagree) starts no seat and is skipped as `writer_family_unknown`; the orchestrator then starts by hand one reviewer seat of a model family known to differ from the writer's, and that review records its own `Model relation:`. `--pr <n>` reviews that pull request only. A pull request that links a plan-held issue is skipped as `plan_hold`. `--dry-run` prints the decisions only. A High head is not accepted until it has `PASS` rows from two distinct claims, one of them different-family to the writer; a Medium head needs one claimed `PASS` row recorded different-family (`acceptor.md` §2.2).
