@@ -54,6 +54,19 @@ export function moduleRepository(options: { section3?: string; budget?: number; 
   fixtureCommit(root); return root;
 }
 
+export const STATE_MACHINE_ID = 'state-machine.module.read';
+/** One machine of the module capability: a path anchor on `src/module/read.ts` and a broken rule that carries a finding mark. */
+export function writeStateMachine(root: string, confirmedDigest?: string): void {
+  fixtureWrite(root, `.archcontext/model/state-machines/${STATE_MACHINE_ID}.yaml`, fixtureYaml({
+    schemaVersion: 'archcontext.state-machine/v1', id: STATE_MACHINE_ID, capabilityId: MODULE_ID, name: 'Read',
+    regions: [{ id: 'read', label: 'Read', initial: 'idle', states: [{ id: 'idle', label: 'Idle' }, { id: 'done', label: 'Done', terminal: true }] },
+      { id: 'gate', label: 'Gate', initial: 'open', states: [{ id: 'open', label: 'Open', terminal: true }] }],
+    events: [{ id: 'finish', label: 'Finish', source: { kind: 'code', path: 'src/module/read.ts', ...(confirmedDigest ? { confirmedDigest } : {}) },
+      steps: [{ when: { read: ['idle'] }, then: { read: 'done' } }] }],
+    rules: [{ id: 'never-done', label: 'Never done', never: { read: ['done'], gate: ['open'] }, finding: { tracking: 'https://github.com/example/repo/issues/1' } }],
+  }));
+}
+
 /** A schema-valid `architecture-projection check` result for one commit. */
 export function projectionCheckResult(commit: string, staleNodeIds: string[],
   reasonCodes: ProjectionFreshnessReasonCode[] = staleNodeIds.length ? ['projection-source-changed-since-stamp'] : []): ProjectionResultV2 {
