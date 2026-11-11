@@ -48,7 +48,10 @@ export type MergeReadinessBlockerCode =
 export interface MergeReadinessBlockerV1 {
   readonly code: MergeReadinessBlockerCode;
   readonly attention_owner: MergeReadinessAttentionOwner;
-  /** Action text for a coverage blocker: the protected path, the check and the fix. Absent for every other code. */
+  /**
+   * Action text for a coverage or generated-artifact blocker, or the provider
+   * field or entry that failed for `provider_data_incomplete`. Absent for every other code.
+   */
   readonly detail?: string;
 }
 
@@ -201,6 +204,8 @@ export interface PullRequestMergeReadinessInput {
   readonly expected_base_sha: string;
   readonly integration_mode: MergeReadinessIntegrationMode;
   readonly observation: MergeReadinessObservation;
+  /** The provider field that failed when `observation` is `provider_data_incomplete`. */
+  readonly observation_detail?: string;
   readonly provider: ProviderMergeReadinessFactsV1 | null;
   /**
    * Observed chain evidence. The effect supplies it; it is not part of the
@@ -387,34 +392,41 @@ function observedStack(
 export function projectPullRequestMergeReadiness(input: PullRequestMergeReadinessInput): MergeReadinessVerdict {
   const blockers: MergeReadinessBlockerV1[] = [];
   let requiredCheckCoverage: RequiredCheckCoverageEvidenceV1 | null = null;
-  if (input.provider !== null && !Array.isArray(input.provider.check_failures)) push(blockers, 'provider_data_incomplete');
+  if (input.provider !== null && !Array.isArray(input.provider.check_failures)) {
+    push(blockers, 'provider_data_incomplete', 'provider check_failures is not an array');
+  }
   const coverage = input.provider === null ? null : input.provider.required_check_coverage;
   if (input.provider !== null && (!coverage || typeof coverage !== 'object' || Array.isArray(coverage)
     || !['absent', 'invalid', 'active'].includes(String(coverage.status)))) {
-    push(blockers, 'provider_data_incomplete');
+    push(blockers, 'provider_data_incomplete', 'provider required_check_coverage status is missing or unknown');
   }
   const generated = input.provider === null ? null : input.provider.generated_artifacts;
   if (input.provider !== null && (!generated || typeof generated !== 'object' || Array.isArray(generated)
     || !['absent', 'invalid', 'active'].includes(String(generated.status)))) {
-    push(blockers, 'provider_data_incomplete');
+    push(blockers, 'provider_data_incomplete', 'provider generated_artifacts status is missing or unknown');
   }
   const checkFailures = Array.isArray(input.provider?.check_failures) ? input.provider.check_failures : [];
-  for (const failure of checkFailures) {
+  checkFailures.forEach((failure, index) => {
     try {
       validateRequiredCheckFailureEvidence(failure);
-    } catch {
-      push(blockers, 'provider_data_incomplete');
-      continue;
+    } catch (error) {
+      push(blockers, 'provider_data_incomplete',
+        `provider check_failures[${index}] is invalid: ${error instanceof Error ? error.message : String(error)}`);
+      return;
     }
     if (failure.head_sha !== input.expected_head_sha || failure.base_sha !== input.expected_base_sha) {
-      push(blockers, 'provider_data_incomplete');
+      push(blockers, 'provider_data_incomplete',
+        `provider check_failures[${index}] (${failure.check_name}) binds head ${failure.head_sha} and base ${failure.base_sha}, `
+        + `not the expected head ${input.expected_head_sha} and base ${input.expected_base_sha}`);
     }
+  });
+  if (!validSha(input.expected_head_sha) || !validSha(input.expected_base_sha)) {
+    push(blockers, 'provider_data_incomplete', 'expected head or base SHA is invalid');
   }
-  if (!validSha(input.expected_head_sha) || !validSha(input.expected_base_sha)) push(blockers, 'provider_data_incomplete');
   let stack = unobservedStackDetail();
   if (input.observation === 'stable') {
     const observed = observedStack(input.stack, input.expected_head_sha, input.expected_base_sha);
-    if (observed === null) push(blockers, 'provider_data_incomplete');
+    if (observed === null) push(blockers, 'provider_data_incomplete', 'observed stack chain is invalid');
     else stack = observed;
   }
   if (stack.member) {
@@ -425,9 +437,9 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
     if (failure !== undefined) push(blockers, failure);
   }
   if (input.integration_mode === 'ancestor' || input.integration_mode === 'absorbed') push(blockers, 'already_integrated');
-  if (input.integration_mode === 'unavailable') push(blockers, 'provider_data_incomplete');
+  if (input.integration_mode === 'unavailable') push(blockers, 'provider_data_incomplete', 'integration mode is unavailable');
   if (input.observation === 'provider_unavailable') push(blockers, 'provider_unavailable');
-  else if (input.observation === 'provider_data_incomplete') push(blockers, 'provider_data_incomplete');
+  else if (input.observation === 'provider_data_incomplete') push(blockers, 'provider_data_incomplete', input.observation_detail);
   else if (input.observation === 'changed_during_read') push(blockers, 'changed_during_read');
   else if (input.provider === null && !stack.member) push(blockers, 'provider_unavailable');
   else if (input.provider !== null) {
@@ -443,13 +455,15 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
         || !validSha(boundary.before_sha) || !validSha(boundary.after_sha)
         || boundary.before_sha === boundary.after_sha
         || boundary.after_sha !== provider.base_sha || boundary.after_sha !== input.expected_base_sha))) {
-      push(blockers, 'provider_data_incomplete');
+      push(blockers, 'provider_data_incomplete', 'provider rollback_boundary is invalid or does not bind the expected base');
     }
     // GitHub owns review state; local review, lease and acceptance artifacts do not grant merge permission.
     if (provider.review_decision === 'CHANGES_REQUESTED') push(blockers, 'changes_requested');
-    if (!Number.isSafeInteger(provider.unresolved_thread_count) || provider.unresolved_thread_count! < 0) push(blockers, 'provider_data_incomplete');
+    if (!Number.isSafeInteger(provider.unresolved_thread_count) || provider.unresolved_thread_count! < 0) {
+      push(blockers, 'provider_data_incomplete', 'provider unresolved_thread_count is invalid');
+    }
     else if (provider.unresolved_thread_count! > 0) push(blockers, 'unresolved_threads');
-    if (provider.checks.length === 0) push(blockers, 'provider_data_incomplete');
+    if (provider.checks.length === 0) push(blockers, 'provider_data_incomplete', 'provider reported no required checks');
     if (provider.checks.some(check => check.bucket === 'pending')) push(blockers, 'checks_pending');
     if (provider.checks.some(check => check.bucket !== 'pass' && check.bucket !== 'pending')) push(blockers, 'checks_failed');
     if (provider.mergeable !== 'MERGEABLE') push(blockers, 'not_mergeable');
@@ -477,12 +491,12 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
       if (!check || typeof check !== 'object' || Array.isArray(check)
         || check.head_sha !== provider.head_sha || check.base_sha !== provider.base_sha
         || check.head_sha !== input.expected_head_sha || check.base_sha !== input.expected_base_sha) {
-        push(blockers, 'provider_data_incomplete');
+        push(blockers, 'provider_data_incomplete', 'generated-artifact check does not bind the expected head and base');
       } else if (check.failure !== null) {
         const failure = check.failure;
         if (!GENERATED_ARTIFACTS_FAILURE_CODES.includes(failure?.code as GeneratedArtifactsFailureCode)
           || typeof failure.message !== 'string' || failure.message.trim() === '') {
-          push(blockers, 'provider_data_incomplete');
+          push(blockers, 'provider_data_incomplete', 'generated-artifact check failure is malformed');
         } else {
           push(blockers, failure.code, failure.message);
         }

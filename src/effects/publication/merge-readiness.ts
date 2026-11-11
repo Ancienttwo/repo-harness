@@ -1110,10 +1110,11 @@ function observeStack(target: ProviderReadinessTarget, input: PublicationReadine
   return request.value;
 }
 
-function readinessProjection(input: PullRequestReadinessInput, provider: ProviderMergeReadinessFactsV1 | null, observation: MergeReadinessObservation, stack: MergeReadinessStackDetailV1): PullRequestReadinessV2 {
+function readinessProjection(input: PullRequestReadinessInput, provider: ProviderMergeReadinessFactsV1 | null, observation: MergeReadinessObservation, stack: MergeReadinessStackDetailV1, observationDetail?: string): PullRequestReadinessV2 {
   return Object.freeze({ protocol: 2, kind: 'repo-harness-pull-request-readiness', ...selectionOf(input),
     ...projectPullRequestMergeReadiness({ expected_head_sha: input.expected_head_sha, expected_base_sha: input.expected_base_sha,
-      integration_mode: provider?.state === 'MERGED' ? 'ancestor' : 'unmerged', observation, provider, stack }) });
+      integration_mode: provider?.state === 'MERGED' ? 'ancestor' : 'unmerged', observation,
+      ...(observationDetail === undefined ? {} : { observation_detail: observationDetail }), provider, stack }) });
 }
 
 /** One observation loop for exact merged-PR evidence. The stack is fenced with the identity. */
@@ -1174,7 +1175,9 @@ export function collectPullRequestMergeReadiness(input: PullRequestReadinessInpu
       : readinessProjection(input, null, 'changed_during_read', unobservedStackDetail());
   } catch (error) {
     if (!(error instanceof MergeReadinessError)) throw error;
-    return readinessProjection(input, null, error.code, unobservedStackDetail());
+    // Each provider field check throws its own message; the blocker keeps it so a refusal names the failed field.
+    return readinessProjection(input, null, error.code, unobservedStackDetail(),
+      error.code === 'provider_data_incomplete' ? error.message : undefined);
   }
 }
 
