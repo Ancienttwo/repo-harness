@@ -12,7 +12,8 @@ export function answered(read: { readonly state: string; readonly reason?: strin
 }
 
 /** Owns only request lifetime. Readers retain decoding, source state and errors.
- * `read` resolves to whether the request got a typed answer (`answered`); a rejected read got none.
+ * `read` resolves to whether the request got a typed answer (`answered`). A typed refusal is an answer;
+ * a read that rejects got no typed answer.
  * A promise must retire before the same loop can start its queued request.
  * A loop that resumes after `enabled` was false reads at once, like a page that
  * becomes visible again, so work deferred while paused is not lost. */

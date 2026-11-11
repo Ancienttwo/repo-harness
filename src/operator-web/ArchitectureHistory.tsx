@@ -12,7 +12,7 @@ import { ArchitectureSceneCanvas, SceneHandles, type SceneLegendEntry, type Scen
 import type { ArchitectureSelect, ArchitectureSelections } from './ArchitectureMap';
 import type { OperatorTranslate } from './i18n';
 import { CommandLine } from './ui';
-import { useObservationRefresh } from './useObservationRefresh';
+import { answered, useObservationRefresh } from './useObservationRefresh';
 import './architecture-history.css';
 
 /** About 16 KB per milestone of this repository; 25 keeps one page near 400 KB. */
@@ -23,8 +23,10 @@ type MilestoneDelta = ValidMilestone['delta'];
 export type HistoryDiff = 'added' | 'removed' | 'renamed' | 'inside';
 export type HistoryEdgeDiff = 'added' | 'removed';
 
-/** The conditional read of the architecture routes: `null` is a 304. */
-export type HistoryReader = (path: string, etag: string | null, signal: AbortSignal) => Promise<{ body: unknown; etag: string | null } | null>;
+/** The route's typed refusal. */
+export interface ArchitectureRefusal { readonly state: 'unavailable'; readonly reason: string }
+/** The conditional read of the architecture routes: `null` is a 304. A request with no typed answer rejects. */
+export type HistoryReader = (path: string, etag: string | null, signal: AbortSignal) => Promise<{ body: unknown; etag: string | null } | ArchitectureRefusal | null>;
 
 /** What the page header and the tab badge show: the pinned head, the milestones read and archctx's total. */
 export interface HistorySummary { readonly head: string; readonly read: number; readonly total: number }
@@ -123,6 +125,10 @@ function useHistory(path: string, read: HistoryReader, generation: number) {
   const [state, setState] = useState<HistoryState>(initial);
   const etag = useRef<{ path: string; etag: string } | null>(null);
   const request = useCallback(async (signal: AbortSignal): Promise<boolean> => {
+    const fail = (code: string) => {
+      if (etag.current?.path !== path) etag.current = null;
+      setState(current => current.path === path ? { ...current, error: code } : { ...initial, error: code });
+    };
     try {
       const probe = await read(`${path}?offset=0&limit=1`, etag.current?.path === path ? etag.current.etag : null, signal);
       if (signal.aborted) return false;
@@ -130,20 +136,24 @@ function useHistory(path: string, read: HistoryReader, generation: number) {
         setState(current => current.error === null ? current : { ...current, error: null });
         return true;
       }
+      if ('state' in probe) { fail(probe.reason); return answered(probe); }
       // The route decodes each page with the archctx decoder; the browser does not decode it again.
       const first = probe.body as HistoryPage;
       const start = Math.max(0, first.total - HISTORY_PAGE);
-      // No ETag: the reader returns null only for a 304.
-      const page = first.total <= 1 ? first
-        : (await read(`${path}?offset=${start}&limit=${HISTORY_PAGE}&ref=${first.head}`, null, signal))!.body as HistoryPage;
-      if (signal.aborted) return false;
+      let page = first;
+      if (first.total > 1) {
+        // No ETag: the reader returns null only for a 304.
+        const newest = (await read(`${path}?offset=${start}&limit=${HISTORY_PAGE}&ref=${first.head}`, null, signal))!;
+        if (signal.aborted) return false;
+        if ('state' in newest) { fail(newest.reason); return answered(newest); }
+        page = newest.body as HistoryPage;
+      }
       etag.current = probe.etag === null ? null : { path, etag: probe.etag };
       setState({ path, timeline: { head: first.head, total: first.total, start, milestones: page.milestones }, error: null, more: { loading: false, error: null } });
       return true;
     } catch (error) {
       if (signal.aborted) return false;
-      if (etag.current?.path !== path) etag.current = null;
-      setState(current => current.path === path ? { ...current, error: errorCode(error) } : { ...initial, error: errorCode(error) });
+      fail(errorCode(error));
       return false;
     }
   }, [path, read]);
@@ -155,15 +165,15 @@ function useHistory(path: string, read: HistoryReader, generation: number) {
     if (timeline === null || shown.more.loading || timeline.start === 0) return;
     const offset = Math.max(0, timeline.start - HISTORY_PAGE);
     const same = (current: HistoryState) => current.path === path && current.timeline?.head === timeline.head && current.timeline.start === timeline.start;
+    const moreFailed = (code: string) => setState(current => same(current) ? { ...current, more: { loading: false, error: code } } : current);
     setState(current => same(current) ? { ...current, more: { loading: true, error: null } } : current);
     read(`${path}?offset=${offset}&limit=${timeline.start - offset}&ref=${timeline.head}`, null, new AbortController().signal).then(result => {
+      if (result !== null && 'state' in result) { moreFailed(result.reason); return; }
       const page = result!.body as HistoryPage;
       setState(current => same(current)
         ? { ...current, timeline: { ...timeline, start: offset, milestones: [...page.milestones, ...timeline.milestones] }, more: { loading: false, error: null } }
         : current);
-    }, (error: unknown) => {
-      setState(current => same(current) ? { ...current, more: { loading: false, error: errorCode(error) } } : current);
-    });
+    }, (error: unknown) => moreFailed(errorCode(error)));
   }, [path, read, shown]);
   return { ...shown, loadMore, retry };
 }
