@@ -1,0 +1,171 @@
+schemaVersion: "archcontext.state-machine/v1"
+id: "state-machine.operator.read-loop"
+capabilityId: "capability.runtime-harness.operator"
+name: "One read loop of a console page"
+regions:
+  - id: "effect"
+    label: "The effect instance of the hook"
+    initial: "starting"
+    states:
+      - { id: "starting", label: "The effect body has not run" }
+      - { id: "running", label: "Running" }
+      - { id: "disposed", label: "Disposed by the effect cleanup", terminal: true }
+  - id: "visible"
+    label: "The tab"
+    initial: "shown"
+    states:
+      - { id: "shown", label: "Visible" }
+      - { id: "hidden", label: "Hidden" }
+  - id: "active"
+    label: "The active controller"
+    initial: "no"
+    states:
+      - { id: "no", label: "No read holds the loop" }
+      - { id: "yes", label: "A read holds the loop" }
+  - id: "live"
+    label: "Unsettled reads that are not aborted"
+    initial: "none"
+    states:
+      - { id: "none", label: "None" }
+      - { id: "one", label: "One" }
+  - id: "dead"
+    label: "Unsettled reads that are aborted"
+    initial: "none"
+    states:
+      - { id: "none", label: "None" }
+      - { id: "one", label: "One" }
+  - id: "timer"
+    label: "The timer of the next read"
+    initial: "off"
+    states:
+      - { id: "off", label: "No timer" }
+      - { id: "on", label: "Armed" }
+  - id: "interval"
+    label: "The wait of the armed timer"
+    initial: "s30"
+    states:
+      - { id: "s30", label: "30 s" }
+      - { id: "s60", label: "60 s" }
+      - { id: "s120", label: "120 s" }
+  - id: "queued"
+    label: "A refresh waits"
+    initial: "no"
+    states:
+      - { id: "no", label: "No" }
+      - { id: "yes", label: "Yes" }
+  - id: "failures"
+    label: "Reads in a row with no answer"
+    initial: "zero"
+    states:
+      - { id: "zero", label: "0" }
+      - { id: "one", label: "1" }
+      - { id: "two", label: "2 or more" }
+events:
+  - id: "mount"
+    label: "the page opens"
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "useObservationRefresh", confirmedDigest: "sha256:78c8d14f80921216161a92615aabce5d14b90ffca1cfffdbe1037f0d91fa0efa" }
+    steps:
+      - when: { effect: ["starting"], active: ["no", "yes"], live: ["none", "one"] }
+        then: { effect: "running", active: "yes", live: "one" }
+      - when: { effect: ["starting"], visible: ["shown", "hidden"], queued: ["no", "yes"] }
+        then: { effect: "running", visible: "hidden", queued: "yes" }
+      - when: { effect: ["starting"], timer: ["off", "on"] }
+        then: { effect: "running", timer: "on" }
+      - when: { effect: ["starting"], visible: ["shown", "hidden"] }
+        then: { effect: "running", visible: "hidden" }
+  - id: "read-answers"
+    label: "the read gets an answer or a typed refusal"
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "request", confirmedDigest: "sha256:35190e2db0fe9bf26acd7ceb37c8bba59405579cebd6616f366b567584144144" }
+    steps:
+      - when: { visible: ["shown"], active: ["no", "yes"], live: ["one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["yes"], failures: ["zero", "one", "two"] }
+        then: { active: "yes", live: "one", timer: "off", interval: "s30", queued: "no", failures: "zero" }
+      - when: { visible: ["shown"], active: ["no", "yes"], live: ["one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["no"], failures: ["zero", "one", "two"] }
+        then: { active: "no", live: "none", timer: "on", interval: "s30", failures: "zero" }
+  - id: "read-unreachable"
+    label: "the read gets no answer"
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "request", confirmedDigest: "sha256:35190e2db0fe9bf26acd7ceb37c8bba59405579cebd6616f366b567584144144" }
+    steps:
+      - when: { visible: ["shown"], active: ["no", "yes"], live: ["one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["yes"], failures: ["zero"] }
+        then: { active: "yes", live: "one", timer: "off", interval: "s30", queued: "no", failures: "one" }
+      - when: { visible: ["shown"], active: ["no", "yes"], live: ["one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["yes"], failures: ["one"] }
+        then: { active: "yes", live: "one", timer: "off", interval: "s30", queued: "no", failures: "two" }
+      - when: { visible: ["shown"], active: ["no", "yes"], live: ["one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["yes"], failures: ["two"] }
+        then: { active: "yes", live: "one", timer: "off", interval: "s30", queued: "no", failures: "two" }
+      - when: { visible: ["shown"], active: ["no", "yes"], live: ["one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["no"], failures: ["zero"] }
+        then: { active: "no", live: "none", timer: "on", interval: "s60", failures: "one" }
+      - when: { visible: ["shown"], active: ["no", "yes"], live: ["one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["no"], failures: ["one"] }
+        then: { active: "no", live: "none", timer: "on", interval: "s120", failures: "two" }
+      - when: { visible: ["shown"], active: ["no", "yes"], live: ["one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["no"], failures: ["two"] }
+        then: { active: "no", live: "none", timer: "on", interval: "s120", failures: "two" }
+  - id: "aborted-read-ends"
+    label: "the aborted read ends"
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "request", confirmedDigest: "sha256:35190e2db0fe9bf26acd7ceb37c8bba59405579cebd6616f366b567584144144" }
+    steps:
+      - when: { effect: ["disposed"], active: ["no", "yes"], dead: ["one"] }
+        then: { active: "no", dead: "none" }
+      - when: { effect: ["running"], visible: ["shown"], active: ["no", "yes"], live: ["none", "one"], dead: ["one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["yes"] }
+        then: { active: "yes", live: "one", dead: "none", timer: "off", interval: "s30", queued: "no" }
+      - when: { effect: ["running"], visible: ["hidden"], active: ["no", "yes"], dead: ["one"] }
+        then: { active: "no", dead: "none" }
+  - id: "wait-ends"
+    label: "the wait ends"
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "request", confirmedDigest: "sha256:35190e2db0fe9bf26acd7ceb37c8bba59405579cebd6616f366b567584144144" }
+    steps:
+      - when: { effect: ["running"], visible: ["shown"], active: ["no"], live: ["none", "one"], timer: ["on"], interval: ["s30", "s60", "s120"], queued: ["no", "yes"] }
+        then: { active: "yes", live: "one", timer: "off", interval: "s30", queued: "no" }
+  - id: "refresh"
+    label: "you refresh"
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "useObservationRefresh", confirmedDigest: "sha256:78c8d14f80921216161a92615aabce5d14b90ffca1cfffdbe1037f0d91fa0efa" }
+    steps:
+      - when: { effect: ["running"], visible: ["hidden"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["no", "yes"] }
+        then: { timer: "off", interval: "s30", queued: "yes" }
+      - when: { effect: ["running"], visible: ["shown"], active: ["yes"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["no", "yes"] }
+        then: { timer: "off", interval: "s30", queued: "yes" }
+      - when: { effect: ["running"], visible: ["shown"], active: ["no"], live: ["none", "one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["no", "yes"] }
+        then: { active: "yes", live: "one", timer: "off", interval: "s30", queued: "no" }
+  - id: "hide"
+    label: "you hide the tab"
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "visibilityChanged", confirmedDigest: "sha256:ec9a4cc43beb72afc65187f3b27c2b6383a3d3855ea60d5884575b607a3410f8" }
+    steps:
+      - when: { effect: ["running"], visible: ["shown"], live: ["one"], dead: ["none", "one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["no", "yes"] }
+        then: { visible: "hidden", live: "none", dead: "one", timer: "off", interval: "s30", queued: "no" }
+      - when: { effect: ["running"], visible: ["shown"], live: ["none"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["no", "yes"] }
+        then: { visible: "hidden", timer: "off", interval: "s30", queued: "no" }
+  - id: "show"
+    label: "you show the tab"
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "visibilityChanged", confirmedDigest: "sha256:ec9a4cc43beb72afc65187f3b27c2b6383a3d3855ea60d5884575b607a3410f8" }
+    steps:
+      - when: { effect: ["running"], visible: ["hidden"], active: ["yes"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["no", "yes"] }
+        then: { visible: "shown", timer: "off", interval: "s30", queued: "yes" }
+      - when: { effect: ["running"], visible: ["hidden"], active: ["no"], live: ["none", "one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["no", "yes"] }
+        then: { visible: "shown", active: "yes", live: "one", timer: "off", interval: "s30", queued: "no" }
+  - id: "unmount"
+    label: "you leave the page"
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "useObservationRefresh", confirmedDigest: "sha256:78c8d14f80921216161a92615aabce5d14b90ffca1cfffdbe1037f0d91fa0efa" }
+    steps:
+      - when: { effect: ["running"], live: ["one"], dead: ["none", "one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"] }
+        then: { effect: "disposed", live: "none", dead: "one", timer: "off", interval: "s30" }
+      - when: { effect: ["running"], live: ["none"], timer: ["off", "on"], interval: ["s30", "s60", "s120"] }
+        then: { effect: "disposed", timer: "off", interval: "s30" }
+rules:
+  - id: "one-unsettled-read"
+    label: "OneUnsettledRead. A read retires before the loop starts the next one"
+    never: { live: ["one"], dead: ["one"] }
+  - id: "loop-alive"
+    label: "LoopAlive. A visible page with no read in flight has a timer"
+    never: { effect: ["running"], visible: ["shown"], live: ["none"], dead: ["none"], timer: ["off"] }
+  - id: "no-lost-refresh"
+    label: "NoLostRefresh. A refresh during a read runs when the read settles"
+    never: { effect: ["running"], visible: ["shown"], live: ["none"], dead: ["none"], queued: ["yes"] }
+  - id: "hidden-is-quiet-read"
+    label: "HiddenIsQuiet. A hidden page has no read whose answer it uses"
+    never: { visible: ["hidden"], live: ["one"] }
+  - id: "hidden-is-quiet-timer"
+    label: "HiddenIsQuiet. A hidden page has no timer"
+    never: { visible: ["hidden"], timer: ["on"] }
+  - id: "disposed-is-quiet-read"
+    label: "DisposedIsQuiet. After the cleanup no read is live"
+    never: { effect: ["disposed"], live: ["one"] }
+  - id: "disposed-is-quiet-timer"
+    label: "DisposedIsQuiet. After the cleanup no timer is armed"
+    never: { effect: ["disposed"], timer: ["on"] }
