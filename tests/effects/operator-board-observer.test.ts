@@ -92,7 +92,8 @@ function fixture() {
     streams.at(-1)!.emit(type === 'event' ? { type, seq, terminal: 't1', event: 'status', data: {} } : { type, seq, terminals: rows });
   };
   return { ports, clock, worker, terminal, tick, emit, streams, now: () => now, reads: () => reads, branches: () => branches, timers: () => timers.size,
-    rows(value: readonly HcTerminal[]) { rows = value; }, branch(value: string) { branch = value; }, remove() { registered = false; }, gate(value: Promise<void> | null) { snapshotGate = value; } };
+    rows(value: readonly HcTerminal[]) { rows = value; }, branch(value: string) { branch = value; },
+    remove() { registered = false; }, register() { registered = true; }, gate(value: Promise<void> | null) { snapshotGate = value; } };
 }
 
 test('seats observer debounces snapshots, events and missed snapshots, reconnects and serves cached documents within one poll', async () => {
@@ -453,6 +454,91 @@ test('board facts: each cycle removes the board documents and worker stores that
   expect([...stores.keys()]).toEqual(['repo-a#1474']);
 });
 
+test('board facts: a removal answers the routes before the retired child has drained', async () => {
+  const f = fixture();
+  const home = mkdtempSync(join(tmpdir(), 'board-drain-'));
+  const server = await startOperatorServer({ port: 0, env: { REPO_HARNESS_HOME: home }, board_observer: { ports: f.ports, clock: f.clock } });
+  const path = `${server.url}/api/v1/repositories/repo-a/board?parent=1474`, parents = `${server.url}/api/v1/repositories/repo-a/board/parents`;
+  const code = async (response: Response) => [response.status, ((await response.json()) as { error: { code: string } }).error.code];
+  const retains = () => f.worker.spawned[0]!.requests.filter(request => request.kind === 'retain').length;
+  // The gate releases the held read also when an assertion throws, so a red run still ends.
+  let release!: () => void, ended = false, released = false;
+  const open = () => { if (!released) { released = true; release?.(); } };
+  try {
+    await until(() => f.worker.spawned.length === 1 && retains() === 1);
+    await f.tick(0); f.emit('snapshot'); await f.tick(BOARD_SEATS_DEBOUNCE_MS);
+    // One lease starts a facts cycle, which reads the parent list and the board of 1474.
+    f.worker.reply(request => request.kind === 'board' ? { ok: true, value: board }
+      : { ok: true, value: request.kind === 'parents' ? boardParents : null });
+    await fetch(path); await until(() => retains() === 2);
+    expect([(await fetch(path)).status, (await fetch(parents)).status]).toEqual([200, 200]);
+    // The child holds a list read, so its stop cannot drain until the read returns.
+    const original = f.ports.list;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    f.ports.list = async (...args) => { await held; ended = true; return original(...args); };
+    f.emit('snapshot'); await f.tick(BOARD_SEATS_DEBOUNCE_MS);
+    f.remove(); await f.tick(30_000);
+    // The registry read completed: both routes answer the removal while the retired child still runs.
+    expect(ended).toBe(false);
+    expect(await code(await fetch(path))).toEqual([404, 'repository_not_found']);
+    expect(await code(await fetch(parents))).toEqual([404, 'repository_not_found']);
+    open(); await f.tick(0);
+    expect(ended).toBe(true);
+  } finally { open(); await server.close(); rmSync(home, { recursive: true, force: true }); }
+});
+
+test('board facts: a failed registry read drops the documents of a repository that returns inside the long gap', async () => {
+  const f = fixture();
+  const home = mkdtempSync(join(tmpdir(), 'board-registry-failed-'));
+  const server = await startOperatorServer({ port: 0, env: { REPO_HARNESS_HOME: home }, board_observer: { ports: f.ports, clock: f.clock } });
+  const parents = `${server.url}/api/v1/repositories/repo-a/board/parents`;
+  const code = async (response: Response) => [response.status, ((await response.json()) as { error: { code: string } }).error.code];
+  const retains = () => f.worker.spawned[0]!.requests.filter(request => request.kind === 'retain').length;
+  const repositories = f.ports.repositories;
+  try {
+    await until(() => f.worker.spawned.length === 1 && retains() === 1);
+    // 1 % of the GitHub budget remains, so the facts cycle that serves repo-a is followed by a 750 s gap.
+    f.worker.reply(request => request.kind === 'rate_limit' ? { ok: true, value: { remaining: 50, limit: 5000 } }
+      : { ok: true, value: request.kind === 'parents' ? boardParents : null });
+    await f.tick(30_000); await until(() => retains() === 2);
+    expect((await fetch(parents)).status).toBe(200);
+    // The registry read fails: the documents are dropped at once, as the cleared maps did on main.
+    f.ports.repositories = () => { throw new Error('registry unreadable'); };
+    await f.tick(30_000);
+    expect(await code(await fetch(parents))).toEqual([503, 'registry_unavailable']);
+    // The registry reads again inside the same gap: the id stays dropped, so its old document is not served again.
+    f.ports.repositories = repositories;
+    await f.tick(30_000);
+    expect(retains()).toBe(2);
+    expect(await code(await fetch(parents))).toEqual([503, 'parents_pending']);
+  } finally { await server.close(); rmSync(home, { recursive: true, force: true }); }
+});
+
+test('board facts: a blocked board read mid-cycle serves the earlier document, and a parent no cycle read is pending', async () => {
+  const f = fixture();
+  const home = mkdtempSync(join(tmpdir(), 'board-midcycle-'));
+  const server = await startOperatorServer({ port: 0, env: { REPO_HARNESS_HOME: home }, board_observer: { ports: f.ports, clock: f.clock } });
+  const path = (parent: number) => `${server.url}/api/v1/repositories/repo-a/board?parent=${parent}`;
+  const code = async (response: Response) => [response.status, ((await response.json()) as { error: { code: string } }).error.code];
+  const cycles = () => f.worker.spawned.flatMap(worker => worker.requests).filter(request => request.kind === 'retain').length;
+  const boardReads = () => f.worker.spawned[0]!.requests.filter(request => request.kind === 'board').length;
+  try {
+    await until(() => cycles() === 1);
+    await f.tick(0); f.emit('snapshot'); await f.tick(BOARD_SEATS_DEBOUNCE_MS);
+    await f.tick(30_000); await until(() => cycles() === 2);
+    expect((await fetch(path(1474))).status).toBe(200);
+    // The next cycle blocks on its board read, so the document of the earlier cycle is the one served.
+    f.worker.reply(request => request.kind === 'board' ? null : { ok: true, value: request.kind === 'parents' ? boardParents : null });
+    // Two settled cycles, then a cycle whose board read the worker never answers.
+    await f.tick(30_000); await f.tick(30_000); await f.tick(30_000);
+    await until(() => boardReads() === 3);
+    const during = await fetch(path(1474));
+    expect([during.status, decodeBoard(await during.json()).parent.number]).toEqual([200, 1474]);
+    // A parent that no cycle has read is pending, not a document with no value.
+    expect(await code(await fetch(path(9999)))).toEqual([503, 'board_pending']);
+  } finally { await server.close(); rmSync(home, { recursive: true, force: true }); }
+});
+
 test('board facts: a repository that the registry cycle removes during a long gap stops serving its documents before the next facts cycle', async () => {
   const f = fixture();
   const home = mkdtempSync(join(tmpdir(), 'board-removal-'));
@@ -474,5 +560,19 @@ test('board facts: a repository that the registry cycle removes during a long ga
     expect(retains()).toBe(2);
     expect(await code(await fetch(path))).toEqual([404, 'repository_not_found']);
     expect(await code(await fetch(parents))).toEqual([404, 'repository_not_found']);
+    // The repository returns inside the same 750 s gap: no facts cycle has read it again, so its documents stay dropped
+    // and each route answers its pending code, as the deleted maps did on main, instead of the document from before.
+    f.register();
+    await f.tick(30_000);
+    expect(retains()).toBe(2);
+    expect(await code(await fetch(path))).toEqual([503, 'board_pending']);
+    expect(await code(await fetch(parents))).toEqual([503, 'parents_pending']);
+    // The next facts cycle reads the parent list again, so the dropped id leaves the dropped set.
+    await f.tick(750_000); await until(() => retains() === 3);
+    expect((await fetch(parents)).status).toBe(200);
+    // A board is read only for a parent with a live seat, so the restarted child reads its snapshot first.
+    f.emit('snapshot'); await f.tick(BOARD_SEATS_DEBOUNCE_MS);
+    await f.tick(750_000); await until(() => retains() === 4);
+    expect((await fetch(path)).status).toBe(200);
   } finally { await server.close(); rmSync(home, { recursive: true, force: true }); }
 });
