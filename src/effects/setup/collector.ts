@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 import { spawnRegisteredProcessGroup } from '../process-group-registry';
 import { terminateProcessGroup } from '../process-group-termination';
+import { startObservationLoop } from '../observation-loop';
 
 import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../core/setup/decode';
 import type { SetupReason, SetupSnapshotV2 } from '../../core/setup/types';
@@ -174,23 +175,18 @@ export async function collectAgentRuntimeProbe(options: {
 
 /**
  * Collect at startup, then every interval after the previous cycle settles.
- * Cycles never overlap. A failed cycle keeps the last good data as `stale`.
+ * Cycles never overlap. Keep rule: a failed cycle keeps the last good setup snapshot, marked `stale` with the
+ * failure reason; with no good snapshot it publishes the unavailable one at that reason. The agent runtime probe
+ * keeps its own value in the same cycle: a failed probe keeps the last good probe as `stale`.
  */
 export function startSetupCollector(options: SetupCollectorOptions = {}): SetupCollectorHandle {
-  const controller = new AbortController();
-  let cache: SetupSnapshotV2 = unavailableSetupSnapshot('collection_pending');
-  let lastGood: SetupSnapshotV2 | null = null;
-  let closed = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let inflight: Promise<void> | null = null;
   let runtimes: AgentRuntimesCacheV1 = { status: 'unavailable', reason: 'collection_pending' };
-  const probe = async (): Promise<void> => {
-    if (options.agent_runtimes === undefined || closed) return;
+  const probe = async (signal: AbortSignal): Promise<void> => {
+    if (options.agent_runtimes === undefined) return;
     const outcome = await collectAgentRuntimeProbe({
       env: options.env, cwd: options.cwd, run_process: options.agent_runtimes.run_process,
-      timeout_ms: options.agent_runtimes.timeout_ms, signal: controller.signal,
+      timeout_ms: options.agent_runtimes.timeout_ms, signal,
     });
-    if (closed) return;
     if (outcome.ok) runtimes = { status: 'ready', probe: outcome.probe };
     else if (outcome.reason !== null) {
       runtimes = runtimes.status === 'unavailable'
@@ -198,40 +194,30 @@ export function startSetupCollector(options: SetupCollectorOptions = {}): SetupC
         : { status: 'stale', reason: outcome.reason, probe: runtimes.probe };
     }
   };
-  const cycle = (): Promise<void> => {
-    const failed = (reason: SetupReason) => {
-      cache = lastGood === null ? unavailableSetupSnapshot(reason) : { ...lastGood, status: 'stale', reason };
-    };
-    inflight = collectSetupSnapshot({ ...options, signal: controller.signal })
-      .then((outcome) => {
-        if (closed) return;
-        if (outcome.ok) {
-          lastGood = outcome.snapshot;
-          cache = outcome.snapshot;
-        } else if (outcome.reason !== null) {
-          failed(outcome.reason);
-        }
-      }, () => { if (!closed) failed('setup_check_failed'); })
-      .then(probe)
-      .catch(() => { /* A failed probe keeps the last probe cache. */ })
-      .finally(() => {
-        inflight = null;
-        if (closed) return;
-        timer = setTimeout(cycle, options.interval_ms ?? SETUP_INTERVAL_MS);
-        timer.unref?.();
-      });
-    return inflight;
-  };
-  void cycle();
-  return Object.freeze({
-    read: () => cache,
-    read_agent_runtimes: () => runtimes,
-    settled: () => inflight ?? Promise.resolve(),
-    close: async () => {
-      closed = true;
-      clearTimeout(timer);
-      controller.abort();
-      await inflight;
+  const loop = startObservationLoop<SetupSnapshotV2, SetupReason>({
+    cycle: async ({ signal, publish, publishFailure }) => {
+      const outcome = await collectSetupSnapshot({ ...options, signal })
+        .catch(() => ({ ok: false as const, reason: 'setup_check_failed' as const }));
+      // Main published the setup result, then ran the probe, so a slow probe never delays the snapshot.
+      if (outcome.ok) publish(outcome.snapshot);
+      else publishFailure(outcome.reason ?? 'setup_check_failed');
+      // A failed probe keeps the last probe cache, and the setup snapshot of this cycle decides on its own.
+      await probe(signal).catch(() => {});
+      return outcome.ok ? { state: 'observed', value: outcome.snapshot } : { state: 'unavailable', reason: outcome.reason ?? 'setup_check_failed' };
     },
+    keep: (previous, reason) => previous.state === 'observed'
+      ? { state: 'observed', value: { ...previous.value, status: 'stale', reason }, observed_at: previous.observed_at }
+      : { state: 'unavailable', reason },
+    failure: 'setup_check_failed',
+    interval_ms: options.interval_ms ?? SETUP_INTERVAL_MS,
+  });
+  return Object.freeze({
+    read: (): SetupSnapshotV2 => {
+      const state = loop.read();
+      return state.state === 'observed' ? state.value : unavailableSetupSnapshot(state.state === 'unavailable' ? state.reason : 'collection_pending');
+    },
+    read_agent_runtimes: () => runtimes,
+    settled: loop.settled,
+    close: loop.close,
   });
 }

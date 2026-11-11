@@ -23,6 +23,7 @@ import {
   decodeArchitectureMap,
   withTestCoverage,
   type ArchitectureMapUnavailableV1,
+  type ArchitectureMapUnavailableReason,
   type ArchitectureMapV1,
   type ArchitectureMapWorkerReason,
   type ArchitecturePullRequestsSource,
@@ -32,6 +33,7 @@ import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { PROCESS_GROUP_CALL_TIMEOUT_OVERHEAD_MS } from '../process-runner';
 import { runSetupProcess, type SetupProcessRunner } from '../setup/collector';
 import { executionChildEnvironment } from './execution-collector';
+import { keepObservation, readRepository, startObservationLoop, type RepositoryObservation } from '../observation-loop';
 import { ARCHITECTURE_MAP_PR_BUDGET_MS } from './architecture-map-worker';
 
 /** The model changes with commits; a cycle costs about 5 s of archctx and git per repository. */
@@ -93,19 +95,18 @@ function childResult(stdout: string, repositoryId: string, tests: (repositoryId:
   }
 }
 
-/** Collect at start, or once `first_cycle_after` settles, then every interval after the previous cycle settles. Cycles never overlap. */
+/**
+ * Collect at start, or once `first_cycle_after` settles, then every interval after the previous cycle settles.
+ * Cycles never overlap. A repository is published when its child returns, not when the cycle ends.
+ * Keep rule: a repository whose child fails keeps no older map, because the map always names the commit it
+ * describes. A cycle that throws keeps the last cache.
+ */
 export function startArchitectureMapCollector(options: ArchitectureMapCollectorOptions = {}): ArchitectureMapCollectorHandle {
   const env = { ...process.env, ...options.env };
   const run = options.run_process ?? runSetupProcess;
-  const abort = new AbortController();
-  let states = new Map<string, ArchitectureMapRepositoryCache>();
-  let registryFailed = false;
-  let started = false;
-  let closed = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let inflight: Promise<void> | null = null;
+  const tests = options.read_tests ?? (() => ({ state: 'unavailable', reason: 'tests_pending' } as const));
 
-  const collect = async (repositoryId: string): Promise<ArchitectureMapRepositoryCache> => {
+  const collect = async (repositoryId: string, signal: AbortSignal): Promise<ArchitectureMapRepositoryCache> => {
     const pullRequests = options.read_pull_requests?.(repositoryId) ?? { state: 'unavailable', reason: 'dev_activity_pending' };
     const dir = mkdtempSync(join(tmpdir(), 'repo-harness-architecture-prs-'));
     const file = join(dir, 'pull-requests.json');
@@ -114,59 +115,50 @@ export function startArchitectureMapCollector(options: ArchitectureMapCollectorO
       writeFileSync(file, JSON.stringify(pullRequests), { mode: 0o600 });
       result = await run([ARCHITECTURE_MAP_CHILD_ENTRY, repositoryId, file], {
         cwd: process.cwd(), env: executionChildEnvironment(env), service: 'architecture-map-collector',
-        timeout_ms: options.timeout_ms ?? ARCHITECTURE_MAP_WORKER_TIMEOUT_MS, signal: abort.signal,
+        timeout_ms: options.timeout_ms ?? ARCHITECTURE_MAP_WORKER_TIMEOUT_MS, signal,
       });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
     if (!result.ok) return { state: 'unavailable', reason: result.code === 'timeout' ? 'architecture_map_timeout' : 'architecture_map_process_failed' };
-    return childResult(result.stdout, repositoryId, options.read_tests ?? (() => ({ state: 'unavailable', reason: 'tests_pending' })));
+    return childResult(result.stdout, repositoryId, tests);
   };
 
-  const cycle = (): Promise<void> => {
-    inflight = (async () => {
-      let repos;
+  const loop = startObservationLoop<RepositoryObservation<ArchitectureMapRepositoryCache>, ArchitectureMapUnavailableReason>({
+    cycle: async ({ signal, previous, publish }) => {
+      let repos: readonly { readonly id: string }[];
       try { repos = readRepoHarnessRegistryStrictSnapshot({ env }).repos; }
-      catch { registryFailed = true; return; }
-      const next = new Map<string, ArchitectureMapRepositoryCache>();
+      catch { return { state: 'observed', value: { registry: 'failed' } }; }
+      // A repository is published when its child returns, not when the cycle ends. Each cycle starts
+      // from the previous cycle's repositories, so a repository not reached yet keeps its older map,
+      // as `states = new Map(states).set(id, cache)` did on main.
+      const next = new Map<string, ArchitectureMapRepositoryCache>(
+        previous.state === 'observed' && previous.value.registry === 'ok' ? previous.value.repositories : []);
       // One repository at a time: each child runs archctx and git over the whole tree.
       for (const repo of repos) {
-        let cache: ArchitectureMapRepositoryCache;
-        try { cache = await collect(repo.id); }
-        catch { cache = { state: 'unavailable', reason: 'architecture_map_process_failed' }; }
-        if (closed) return;
+        if (signal.aborted) return { state: 'unavailable', reason: 'architecture_map_process_failed' };
+        const cache = await collect(repo.id, signal)
+          .catch((): ArchitectureMapRepositoryCache => ({ state: 'unavailable', reason: 'architecture_map_process_failed' }));
+        if (signal.aborted) return { state: 'unavailable', reason: 'architecture_map_process_failed' };
         next.set(repo.id, cache);
-        // A repository is served when its child returns, not when the cycle ends.
-        states = new Map(states).set(repo.id, cache);
+        publish({ registry: 'ok', repositories: new Map(next), complete: false });
       }
-      states = next;
-      registryFailed = false;
-      started = true;
-    })().finally(() => {
-      inflight = null;
-      if (closed) return;
-      timer = setTimeout(() => { void cycle(); }, options.interval_ms ?? ARCHITECTURE_MAP_COLLECT_INTERVAL_MS);
-      timer.unref?.();
-    });
-    return inflight;
-  };
-  if (options.first_cycle_after === undefined) void cycle();
-  else inflight = options.first_cycle_after.then(() => (closed ? undefined : cycle()));
-
+      // A repository that left the registry keeps no map.
+      for (const id of [...next.keys()]) if (!repos.some(repo => repo.id === id)) next.delete(id);
+      return { state: 'observed', value: { registry: 'ok', repositories: next, complete: true } };
+    },
+    keep: keepObservation,
+    failure: 'architecture_map_process_failed',
+    interval_ms: options.interval_ms ?? ARCHITECTURE_MAP_COLLECT_INTERVAL_MS,
+    first_cycle_after: options.first_cycle_after,
+  });
   return Object.freeze({
     read: (repositoryId: string): ArchitectureMapRepositoryCache => {
-      if (registryFailed) return { state: 'unavailable', reason: 'registry_unavailable' };
-      const published = states.get(repositoryId);
-      if (published !== undefined) return published;
-      return started ? { state: 'unavailable', reason: 'repository_not_found' } : { state: 'unavailable', reason: 'architecture_map_pending' };
+      const read = readRepository(loop.read(), repositoryId, 'architecture_map_pending');
+      return 'value' in read ? read.value : { state: 'unavailable', reason: read.reason };
     },
-    settled: () => inflight ?? Promise.resolve(),
-    close: async () => {
-      closed = true;
-      clearTimeout(timer);
-      // Aborting kills the running child's process group, so a blocked archctx or git does not hold shutdown.
-      abort.abort();
-      await inflight;
-    },
+    settled: loop.settled,
+    // Aborting kills the running child's process group, so a blocked archctx or git does not hold shutdown.
+    close: loop.close,
   });
 }

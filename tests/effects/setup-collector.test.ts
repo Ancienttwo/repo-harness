@@ -140,6 +140,38 @@ setInterval(() => {}, 1000);
     } finally { await plain.close(); }
   });
 
+  test('serves the setup snapshot while the agent runtime probe is still running', async () => {
+    // Main published the setup result, then ran the probe, so a probe of up to 60 s never held the snapshot.
+    const good = snapshot('2026-10-10T00:00:00.000Z');
+    let releaseProbe!: () => void;
+    const probeGate = new Promise<void>((resolve) => { releaseProbe = resolve; });
+    let probeStarted!: () => void;
+    const probeStart = new Promise<void>((resolve) => { probeStarted = resolve; });
+    const collector = startSetupCollector({
+      run_process: async (argv) => (argv === SETUP_CHILD_ARGV ? ok(good) : { ok: false, code: 'failed' }),
+      interval_ms: 60_000,
+      agent_runtimes: { run_process: async (argv) => {
+        if (argv === AGENT_RUNTIME_PROBE_ARGV) { probeStarted(); await probeGate; }
+        return { ok: false, code: 'failed' };
+      } },
+    });
+    try {
+      // The setup child has settled and the probe is running: take the read the server would serve now.
+      await probeStart;
+      const duringProbe = collector.read();
+      const runtimesDuringProbe = collector.read_agent_runtimes();
+      releaseProbe();
+      await collector.settled();
+      expect(duringProbe).toEqual(good);
+      expect(runtimesDuringProbe).toEqual({ status: 'unavailable', reason: 'collection_pending' });
+      expect(collector.read()).toEqual(good);
+      expect(collector.read_agent_runtimes()).toEqual({ status: 'unavailable', reason: 'probe_failed' });
+    } finally {
+      releaseProbe();
+      await collector.close();
+    }
+  });
+
   test('keeps the last good snapshot with its age and a fixed reason code', async () => {
     const good = snapshot('2026-10-10T00:00:00.000Z');
     const queue: SetupProcessResult[] = [

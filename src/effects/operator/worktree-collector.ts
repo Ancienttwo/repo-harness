@@ -5,6 +5,7 @@ import { decodeWorktrees, unavailableWorktrees, type WorktreesSnapshot } from '.
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { runSetupProcess, type SetupProcessRunner } from '../setup/collector';
 import { executionChildEnvironment } from './execution-collector';
+import { replaceObservation, startObservationLoop } from '../observation-loop';
 import type { WorktreeSizes } from './worktree-collector-worker';
 
 export const WORKTREE_COLLECT_INTERVAL_MS = 60_000;
@@ -58,24 +59,28 @@ export async function collectWorktreesOnce(options: { env: NodeJS.ProcessEnv; ru
 
 export function startWorktreeCollector(options: { env?: NodeJS.ProcessEnv; interval_ms?: number; run_process?: SetupProcessRunner } = {}) {
   const env = executionChildEnvironment({ ...process.env, ...options.env });
-  const abort = new AbortController();
   const run = options.run_process ?? runSetupProcess;
-  let snapshot = unavailableWorktrees(), closed = false;
   let sizes = emptyWorktreeSizeCache();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let inflight: Promise<void> | null = null;
-  const cycle = (): Promise<void> => {
-    inflight = (async () => {
+  // Keep rule: a failed cycle replaces the snapshot, so no row or size of an older cycle is served as current.
+  const loop = startObservationLoop<WorktreesSnapshot, 'worktree_collect_failed'>({
+    cycle: async ({ signal }) => {
       try {
-        const next = await collectWorktreesOnce({ env, run_process: run, signal: abort.signal, sizes, closed: () => closed });
-        if (next && !closed) { snapshot = next.snapshot; sizes = next.sizes; }
-      } catch { if (!closed) snapshot = unavailableWorktrees(); }
-    })().finally(() => {
-      inflight = null;
-      if (!closed) { timer = setTimeout(() => { void cycle(); }, options.interval_ms ?? WORKTREE_COLLECT_INTERVAL_MS); timer.unref?.(); }
-    });
-    return inflight;
+        const next = await collectWorktreesOnce({ env, run_process: run, signal, sizes, closed: () => signal.aborted });
+        if (next === null) return { state: 'unavailable', reason: 'worktree_collect_failed' };
+        sizes = next.sizes;
+        return { state: 'observed', value: next.snapshot };
+      } catch { return { state: 'unavailable', reason: 'worktree_collect_failed' }; }
+    },
+    keep: replaceObservation,
+    failure: 'worktree_collect_failed',
+    interval_ms: options.interval_ms ?? WORKTREE_COLLECT_INTERVAL_MS,
+  });
+  return {
+    read: (): WorktreesSnapshot => {
+      const state = loop.read();
+      return state.state === 'observed' ? state.value : unavailableWorktrees();
+    },
+    settled: loop.settled,
+    close: loop.close,
   };
-  void cycle();
-  return { read: () => snapshot, settled: () => inflight ?? Promise.resolve(), close: async () => { closed = true; clearTimeout(timer); abort.abort(); await inflight; } };
 }

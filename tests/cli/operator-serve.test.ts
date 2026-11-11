@@ -1715,6 +1715,39 @@ describe('architecture map', () => {
       expect(open.read('repo-unregistered')).toEqual({ state: 'unavailable', reason: 'repository_not_found' });
       await open.close();
 
+      // Cycle 2 starts from the previous cycle's repositories, so a repository that cycle 2 has not
+      // reached yet keeps its older map. Main published `new Map(states).set(id, cache)`; the first
+      // version of this collector published an empty map, so the unreached repository fell to pending.
+      const ids: string[] = [];
+      const cycleGates: (() => void)[] = [];
+      const twice = startArchitectureMapCollector({ env: registry.env, interval_ms: 1, run_process: ((argv: readonly string[]) => {
+        const id = argv[1]!;
+        ids.push(id);
+        // Cycle 2's first child refuses its model, so its publish is visible in the read below.
+        const answer = ids.length === 3
+          ? { ok: true, stdout: JSON.stringify({ id, ok: false, reason: 'model_unavailable' }) }
+          : { ok: true, stdout: JSON.stringify({ id, ok: true, snapshot: { ...map, repository_id: id } }) };
+        return new Promise(resolve => cycleGates.push(() => resolve(answer)));
+      }) as never });
+      try {
+        await waitFor(() => ids.length === 1, 'cycle 1 child 1');
+        cycleGates.shift()!();
+        await waitFor(() => ids.length === 2, 'cycle 1 child 2');
+        cycleGates.shift()!();
+        await waitFor(() => twice.read(first).state === 'ready' && twice.read(second).state === 'ready', 'cycle 1 serves both maps');
+        await waitFor(() => ids.length === 3, 'cycle 2 child 1');
+        const reRead = ids[2]!, notReRead = reRead === first ? second : first;
+        cycleGates.shift()!();
+        await waitFor(() => ids.length === 4, 'cycle 2 child 2 starts after the first result is published');
+        expect(twice.read(reRead)).toEqual({ state: 'unavailable', reason: 'model_unavailable' });
+        // The repository that cycle 2 has not reached keeps its cycle 1 map, not pending.
+        expect(twice.read(notReRead).state).toBe('ready');
+      } finally {
+        // The test doubles are not signal-aware, so every gated child answers before close waits on it.
+        for (const release of cycleGates.splice(0)) release();
+        await twice.close();
+      }
+
       started.length = 0;
       const closing = startArchitectureMapCollector({ env: registry.env, interval_ms: 10, run_process });
       await waitFor(() => started.length === 1, 'the child starts');
