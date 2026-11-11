@@ -55,7 +55,7 @@ import {
   sourceHash,
 } from './collect-state-inputs';
 import { gitExecFileSync } from '../git/runner';
-import { POLICY_PATH, decodeWorkflowPolicy, type WorkflowPolicyDocument } from '../../core/workflow/policy-schema';
+import { POLICY_PATH, decodeWorkflowPolicy, type DecodedWorkflowPolicy, type WorkflowPolicyObject } from '../../core/workflow/policy-schema';
 
 const ACTIVE_WORKTREE_MARKER = '.ai/harness/active-worktree';
 const CAPABILITY_REGISTRY_PATH = '.ai/context/capabilities.json';
@@ -64,7 +64,7 @@ const CAPABILITY_NODE_FILE = /\.ya?ml$/;
 // profile_reasons names at most this many unowned paths; the count reason carries the total.
 const UNOWNED_PATH_REASON_LIMIT = 20;
 
-export type WorkflowPolicy = WorkflowPolicyDocument;
+export type WorkflowPolicy = WorkflowPolicyObject | null;
 const POLICY_FIELD_ABSENT = Symbol('policy-field-absent');
 
 export interface EffectiveStatePublicationEffects {
@@ -72,13 +72,27 @@ export interface EffectiveStatePublicationEffects {
 }
 
 /**
- * The only reader of `.ai/harness/policy.json` from disk. It decodes the bytes
- * through `decodeWorkflowPolicy` and validates the fields this resolver owns.
- * `readSource` lets a state pass observe one read of the file.
+ * The only reader of `.ai/harness/policy.json` from disk. It owns the file read
+ * and the decode of the root. It validates no key: each reader validates the
+ * keys it reads, with its own message. `readSource` lets a state pass observe
+ * one read of the file.
  */
+export function readWorkflowPolicyDocument(
+  cwd: string,
+  readSource = (path: string) => readText(cwd, path),
+): DecodedWorkflowPolicy {
+  return decodeWorkflowPolicy(readSource(POLICY_PATH));
+}
+
+/** The state resolver's reader: it needs an object root and validates the fields it owns. */
 export function readWorkflowPolicy(cwd: string, readSource = (path: string) => readText(cwd, path)): WorkflowPolicy {
-  const policy = decodeWorkflowPolicy(readSource(POLICY_PATH));
-  if (policy !== null) validateWorkflowPolicy(policy);
+  const { present, root } = readWorkflowPolicyDocument(cwd, readSource);
+  if (!present) return null;
+  if (!root || typeof root !== 'object' || Array.isArray(root)) {
+    throw new Error(`invalid workflow policy object: ${POLICY_PATH}`);
+  }
+  const policy = root as WorkflowPolicyObject;
+  validateWorkflowPolicy(policy);
   return policy;
 }
 

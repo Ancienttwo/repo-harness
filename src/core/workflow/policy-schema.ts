@@ -53,31 +53,35 @@ export const WORKFLOW_POLICY_KEYS: PolicyKeyTree = {
 
 export const POLICY_PATH = '.ai/harness/policy.json';
 
-/** A policy that a reader found on disk; null when the file is absent. */
-export type WorkflowPolicyDocument = Readonly<Record<string, unknown>> | null;
+/** A decoded root that is a JSON object. */
+export type WorkflowPolicyObject = Readonly<Record<string, unknown>>;
 
 /**
- * Decode the policy text into the object that the field readers consume. A key
- * outside the tree stays in the object; the tree only classifies the keys.
- * `null` text means the file is absent. The two errors are the loader's own
- * messages; callers keep them unchanged.
+ * The file as decoded. `present` is false when the file is absent. `root` is
+ * the JSON value as written, also when it is not an object: each reader checks
+ * the shape it reads, so a `[]` or `null` root gives each reader its own result.
  */
-export function decodeWorkflowPolicy(text: string | null): WorkflowPolicyDocument {
-  if (text === null) return null;
-  let parsed: unknown;
+export interface DecodedWorkflowPolicy {
+  readonly present: boolean;
+  readonly root: unknown;
+}
+
+/**
+ * Decode the policy text. The decoder owns the JSON syntax only. It rejects
+ * neither a key outside the tree nor a value of a key, because each reader
+ * keeps its own message for the keys it reads.
+ */
+export function decodeWorkflowPolicy(text: string | null): DecodedWorkflowPolicy {
+  if (text === null) return { present: false, root: undefined };
   try {
-    parsed = JSON.parse(text) as unknown;
+    return { present: true, root: JSON.parse(text) as unknown };
   } catch {
     throw new Error(`invalid workflow policy JSON: ${POLICY_PATH}`);
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`invalid workflow policy object: ${POLICY_PATH}`);
-  }
-  return parsed as Readonly<Record<string, unknown>>;
 }
 
 /** Dotted paths of the keys that no reader uses, sorted. */
-export function unknownPolicyKeys(policy: WorkflowPolicyDocument): readonly string[] {
+export function unknownPolicyKeys(policy: WorkflowPolicyObject | null): readonly string[] {
   if (policy === null) return [];
   const unknown: string[] = [];
   collectUnknownKeys(policy, WORKFLOW_POLICY_KEYS, '', unknown);
@@ -85,7 +89,7 @@ export function unknownPolicyKeys(policy: WorkflowPolicyDocument): readonly stri
 }
 
 function collectUnknownKeys(
-  value: Readonly<Record<string, unknown>>,
+  value: WorkflowPolicyObject,
   tree: PolicyKeyTree,
   prefix: string,
   unknown: string[],
@@ -97,7 +101,7 @@ function collectUnknownKeys(
     // A leaf needs no children; a declared section owns its own children.
     if (node === true || Object.keys(node).length === 0) continue;
     if (child !== null && typeof child === 'object' && !Array.isArray(child)) {
-      collectUnknownKeys(child as Readonly<Record<string, unknown>>, node, path, unknown);
+      collectUnknownKeys(child as WorkflowPolicyObject, node, path, unknown);
     }
   }
 }

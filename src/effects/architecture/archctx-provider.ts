@@ -6,7 +6,7 @@ import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, failureIssues, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
 import { isRecord } from '../../core/evidence/is-record';
-import { readWorkflowPolicy } from '../state/resolve-effective-state';
+import { readWorkflowPolicyDocument } from '../state/resolve-effective-state';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { selectCompatibleNode } from '../runtime/node-runtime';
 import { runProcess } from '../process-runner';
@@ -630,8 +630,9 @@ function resolvePackageManifest(base: string, name: string, missingMessage: stri
 }
 
 export function capabilitySource(repoRoot: string): ArchitectureProjectionReadinessV1['modelAuthority']['source'] {
-  const policy = readWorkflowPolicy(repoRoot) as { context?: { capability_source?: unknown } } | null;
-  if (policy === null) return 'unadopted';
+  const { present, root } = readWorkflowPolicyDocument(repoRoot);
+  if (!present) return 'unadopted';
+  const policy = root as { context?: { capability_source?: unknown } };
   return policy.context?.capability_source === 'archcontext' ? 'archcontext' : 'registry';
 }
 

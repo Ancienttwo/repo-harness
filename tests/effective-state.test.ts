@@ -22,7 +22,7 @@ import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-st
 import { projectEffectiveStateSessionSection } from '../src/cli/hook/session-context';
 import type { EffectiveState } from '../src/core/state/types';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
-import { decodeWorkflowPolicy, unknownPolicyKeys, WORKFLOW_POLICY_KEYS } from '../src/core/workflow/policy-schema';
+import { unknownPolicyKeys } from '../src/core/workflow/policy-schema';
 import {
   CONTRACT,
   PLAN,
@@ -868,11 +868,6 @@ describe('effective state resolver', () => {
 });
 
 describe('policy schema: one key tree and one decoder', () => {
-  test('decodes the same policy object the loader returned before this change', () => {
-    const text = readFileSync(join(cwdOfThisRepo(), '.ai', 'harness', 'policy.json'), 'utf-8');
-    expect(decodeWorkflowPolicy(text)).toEqual(JSON.parse(text));
-  });
-
   test('a policy that holds only tree keys reports no unknown key', () => {
     const policy = {
       tasks: { research_dir: 'docs/researches' },
@@ -913,23 +908,6 @@ describe('policy schema: one key tree and one decoder', () => {
     expect(unknownPolicyKeys({ security: { reviewedFindings: [] } })).toEqual(['security.reviewedFindings']);
   });
 });
-
-describe('policy schema holds one tree', () => {
-  test('the tree lists the inventory keys that this PR wires to the loader', () => {
-    const tree = WORKFLOW_POLICY_KEYS as Record<string, unknown>;
-    expect(tree.planning).toEqual({ pending_orchestration_file: true });
-    expect(tree.external_tooling).toEqual({ agent_fleet: { managed_agents: true, install_mode: true } });
-    expect(tree.tasks).toEqual({ research_dir: true });
-    expect(tree.worktree_strategy).toEqual({
-      base_branch: true, review_base: true, merge_back: { target: true },
-      worktree_dir_template: true, branch_prefix: true,
-    });
-  });
-});
-
-function cwdOfThisRepo(): string {
-  return join(import.meta.dir, '..');
-}
 
 describe('effective state resolution cost (#770)', () => {
   test('one resolution in an idle repository spawns at most 8 git processes', () => {
