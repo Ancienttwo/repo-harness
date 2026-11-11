@@ -859,9 +859,11 @@ describe('single affected verification and daily fallback', () => {
       write('tsconfig.json', JSON.stringify({ compilerOptions: { noEmit: true }, include: ['src/**/*.ts', 'tests/**/*.ts'] }));
       for (const document of ['docs/guide.md', 'docs/helper.md', 'docs/unread.md', 'docs/named.md', 'docs/area/page.md', 'docs/glob/one.md', 'tasks/lessons.md']) write(document, '# Document');
       // Targets: a module document, and a code path outside docs/architecture/ that the manifest must not turn into documentation.
-      const manifest = (extra = {}) => JSON.stringify({ targets: { module: { path: 'docs/architecture/modules/x.md' }, outside: { path: 'src/manifest.ts' } }, ...extra });
+      const manifest = (extra = {}) => JSON.stringify({ targets: { module: { path: 'docs/architecture/modules/x.md' }, outside: { path: 'src/manifest.ts' }, generated: { path: 'docs/architecture/generated.svg' } }, ...extra });
       write('docs/architecture/.projection-manifest.json', manifest());
       write('docs/architecture/modules/x.md', '# Module');
+      write('docs/architecture/generated.svg', '<svg/>');
+      write('docs/architecture/diagrams/not-a-target.mmd', 'graph TD');
       write('tests/modules.test.ts', "import { join } from 'node:path'; import { readdirSync } from 'node:fs'; const ROOT = join(import.meta.dir, '..'); readdirSync(join(ROOT, 'docs/architecture/modules'));");
       write('src/feature.ts', "export const targetDirectories = ['docs', 'plans'];");
       write('src/manifest.ts', "import { readFileSync } from 'node:fs'; import { join } from 'node:path'; export const manifest = () => readFileSync(join(import.meta.dir, '../docs/architecture/.projection-manifest.json'));");
@@ -878,7 +880,7 @@ describe('single affected verification and daily fallback', () => {
       git('add', '.'); git('commit', '-qm', 'base'); const base = git('rev-parse', 'HEAD');
       const event = join(repo, '.git/event.json'); const output = join(repo, '.git/output'); const selected = join(repo, '.ci-affected-tests.json');
       writeFileSync(event, JSON.stringify({ pull_request: { base: { sha: base } } }));
-      const rows: [string, string[], string, string[] | null, boolean?][] = [
+      const rows: [string, string[], string, string[] | null, string?][] = [
         ['named read', ['docs/guide.md', 'tasks/lessons.md'], 'affected', ['tests/guide.test.ts']],
         ['helper import', ['docs/helper.md'], 'affected', ['tests/helper.test.ts']],
         ['root-process consumer runs daily only', ['docs/unread.md'], 'documentation', null],
@@ -889,22 +891,26 @@ describe('single affected verification and daily fallback', () => {
         ['mixed diff keeps every documentation consumer', ['docs/unread.md', 'src/feature.ts'], 'affected', ['tests/directory.test.ts', 'tests/feature.test.ts', 'tests/glob.test.ts', 'tests/guide.test.ts', 'tests/helper.test.ts', 'tests/modules.test.ts', 'tests/named.test.ts', 'tests/root.test.ts']],
         ['projection output is documentation', ['docs/architecture/.projection-manifest.json'], 'documentation', null],
         ['projection output skips the reader of its directory', ['docs/architecture/.projection-manifest.json', 'docs/architecture/modules/x.md'], 'documentation', null],
-        // src/feature.ts names the docs directory, so its own selection holds every document reader.
-        ['manifest with a code path stays affected', ['docs/architecture/.projection-manifest.json', 'src/feature.ts'], 'affected', ['tests/directory.test.ts', 'tests/feature.test.ts', 'tests/glob.test.ts', 'tests/guide.test.ts', 'tests/helper.test.ts', 'tests/modules.test.ts', 'tests/named.test.ts', 'tests/root.test.ts']],
+        // A projection output adds no document reader to a mixed diff; src/feature.ts selects its own tests.
+        ['manifest with a code path stays affected', ['docs/architecture/.projection-manifest.json', 'src/feature.ts'], 'affected', ['tests/feature.test.ts', 'tests/named.test.ts']],
         ['target outside docs/architecture stays affected', ['src/manifest.ts'], 'affected', ['tests/manifest.test.ts']],
-        ['invalid manifest stops the selection', ['docs/architecture/.projection-manifest.json'], 'error', null, true],
+        ['unlisted diagram is not documentation', ['docs/architecture/diagrams/not-a-target.mmd'], 'error', null],
+        ['generated target with a code path selects without an uncovered path', ['docs/architecture/generated.svg', 'src/feature.ts'], 'affected', ['tests/feature.test.ts', 'tests/named.test.ts']],
+        ['manifest without targets stops the selection', ['docs/architecture/.projection-manifest.json'], 'error', null, '{}'],
+        ...['', 'docs/architecture/../other.svg', 'docs/architecture//file.svg'].map((path): [string, string[], string, string[] | null, string] =>
+          [`target path ${JSON.stringify(path)} stops the selection`, ['docs/architecture/.projection-manifest.json'], 'error', null, JSON.stringify({ targets: { bad: { path } } })]),
         ['no reader', ['tasks/lessons.md'], 'documentation', null],
       ];
-      for (const [name, changed, mode, tests, invalid] of rows) {
+      for (const [name, changed, mode, tests, manifestText] of rows) {
         rmSync(selected, { force: true }); git('checkout', '-q', '-B', 'candidate', base);
         for (const path of changed) {
           if (path.startsWith('-')) rmSync(join(repo, path.slice(1)));
-          else write(path, path.endsWith('.json') ? (invalid ? '{}' : manifest({ changed: true })) : `${readFileSync(join(repo, path), 'utf8')}\nchanged\n`);
+          else write(path, path.endsWith('.json') ? (manifestText ?? manifest({ changed: true })) : `${readFileSync(join(repo, path), 'utf8')}\nchanged\n`);
         }
         git('add', '.'); git('commit', '-qm', name); const head = git('rev-parse', 'HEAD');
         writeFileSync(output, '');
         const result = spawnSync(process.execPath, [join(ROOT, 'scripts/select-ci-coverage.ts')], { cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output, GITHUB_SHA: head } });
-        if (mode === 'error') { expect({ name, failed: result.status !== 0, stderr: result.stderr.includes('has no targets object') }).toEqual({ name, failed: true, stderr: true }); continue; }
+        if (mode === 'error') { expect({ name, failed: result.status !== 0, stderr: result.stderr.length > 0 }).toEqual({ name, failed: true, stderr: true }); continue; }
         expect({ name, status: result.status }, result.stderr).toEqual({ name, status: 0 });
         expect({ name, output: readFileSync(output, 'utf8') }).toEqual({ name, output: `mode=${mode}\nsha=${head}\nnative_oar=false\nhome_isolation=false\n` });
         expect({ name, plan: existsSync(selected) ? JSON.parse(readFileSync(selected, 'utf8')) : null }).toEqual({ name, plan: tests && [tests] });

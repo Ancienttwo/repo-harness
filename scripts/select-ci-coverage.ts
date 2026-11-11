@@ -69,7 +69,7 @@ export function configuredTestPreloads(sources: ReadonlyMap<string, string>): st
   return preload.map((path: string) => path.replace(/^\.\//, ''));
 }
 
-export async function analyzeAffectedTests(paths: readonly string[], sources: ReadonlyMap<string, string>, documentationConsumers: readonly string[], previousSources: ReadonlyMap<string, string> = new Map()) {
+export async function analyzeAffectedTests(paths: readonly string[], sources: ReadonlyMap<string, string>, documentationConsumers: readonly string[], previousSources: ReadonlyMap<string, string> = new Map(), outputs: ReadonlySet<string> = new Set()) {
   const files = [...sources.keys()];
   const allTests = files.filter(file => /^tests\/.*\.test\.tsx?$/.test(file)).sort();
   const globalInputs = platformImportClosure(configuredTestPreloads(sources), sources).add(CI_TEST_RUNNER);
@@ -129,6 +129,8 @@ export async function analyzeAffectedTests(paths: readonly string[], sources: Re
   const tests = new Set<string>();
   const uncovered: string[] = [], dailyOnly: string[] = [], retired: string[] = [];
   for (const path of paths) {
+    // A projection output selects no test by name, and it needs no coverage of its own.
+    if (outputs.has(path)) continue;
     if (isDocumentationPath(path)) { for (const test of documentationConsumers) if (sources.has(test)) tests.add(test); continue; }
     if (fullReasons.includes(path)) continue;
     // Eval fixtures are inputs to the eval suite; a rename or deletion must run it.
@@ -318,7 +320,7 @@ if (import.meta.main) {
   const outputs = selection.mode === 'affected' && selection.paths.some(path => path.startsWith(PROJECTION_DIRECTORY))
     ? projectionOutputs(readFileSync(PROJECTION_MANIFEST, 'utf8')) : new Set<string>();
   const documentsOnly = selection.paths.length > 0 && selection.paths.every(path => isDocumentationPath(path) || outputs.has(path));
-  if (selection.mode === 'affected' && (documentsOnly || selection.paths.some(isDocumentationPath))) {
+  if (selection.mode === 'affected' && (documentsOnly || selection.paths.some(path => isDocumentationPath(path) && !outputs.has(path)))) {
     const { discoverDocumentationReaders, namedDocumentReaders } = await import('./ci-documentation-consumers');
     // Changed paths add the base-tree documents that the head no longer has, so a deletion keeps its readers.
     const tracked = git(['ls-files', '-z']).split('\0').filter(isDocumentationPath);
@@ -346,7 +348,7 @@ if (import.meta.main) {
       platforms = selectPlatformCoverage(selection.paths, platformInputs);
       const triggers = nativeTriggers(selection.paths, platformInputs);
       if (triggers.length) nativeReason = triggers.map(({ cause, path }) => `${cause}:${path}`).join(',');
-      const coverage = await analyzeAffectedTests(selection.paths, sources, documentationConsumers, previousSources);
+      const coverage = await analyzeAffectedTests(selection.paths, sources, documentationConsumers, previousSources, outputs);
       if (coverage.uncovered.length) throw new Error(`Affected coverage is unknown for: ${coverage.uncovered.join(', ')}`);
       for (const path of coverage.dailyOnly) console.log(`daily-only=${path}; not verified by this PR`);
       const tests = coverage.tests;
