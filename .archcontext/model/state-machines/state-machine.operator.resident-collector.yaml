@@ -1,0 +1,169 @@
+schemaVersion: "archcontext.state-machine/v1"
+id: "state-machine.operator.resident-collector"
+capabilityId: "capability.runtime-harness.operator"
+name: "The cycle of a resident collector over two repositories"
+regions:
+  - id: "boot"
+    label: "The first cycle"
+    initial: "pending"
+    states:
+      - { id: "pending", label: "Waits for the first Dev Activity cycle" }
+      - { id: "done", label: "Started or skipped" }
+  - id: "closed"
+    label: "The collector"
+    initial: "open"
+    states:
+      - { id: "open", label: "Open" }
+      - { id: "closed", label: "Closed by operator serve", terminal: true }
+  - id: "timer"
+    label: "The gap timer"
+    initial: "off"
+    states:
+      - { id: "off", label: "No timer" }
+      - { id: "armed", label: "Armed" }
+  - id: "inflight"
+    label: "The cycle"
+    initial: "no"
+    states:
+      - { id: "no", label: "No cycle runs" }
+      - { id: "yes", label: "A cycle runs" }
+  - id: "running"
+    label: "The child process"
+    initial: "none"
+    states:
+      - { id: "none", label: "No child runs" }
+      - { id: "r1", label: "The child of the first repository" }
+      - { id: "r2", label: "The child of the second repository" }
+  - id: "result-r1"
+    label: "The result of the first repository in this cycle"
+    initial: "none"
+    states:
+      - { id: "none", label: "No child returned in this cycle" }
+      - { id: "ready", label: "A map" }
+      - { id: "unavailable", label: "A failure" }
+  - id: "result-r2"
+    label: "The result of the second repository in this cycle"
+    initial: "none"
+    states:
+      - { id: "none", label: "No child returned in this cycle" }
+      - { id: "ready", label: "A map" }
+      - { id: "unavailable", label: "A failure" }
+  - id: "published"
+    label: "The published state"
+    initial: "pending"
+    states:
+      - { id: "pending", label: "Nothing published, a GET gets pending" }
+      - { id: "registry-failed", label: "The registry read failed, a GET gets registry unavailable" }
+      - { id: "map", label: "A repository map" }
+  - id: "pub-r1"
+    label: "The first repository in the published map"
+    initial: "none"
+    states:
+      - { id: "none", label: "Not in the published map" }
+      - { id: "ready", label: "A map" }
+      - { id: "unavailable", label: "A failure" }
+  - id: "pub-r2"
+    label: "The second repository in the published map"
+    initial: "none"
+    states:
+      - { id: "none", label: "Not in the published map" }
+      - { id: "ready", label: "A map" }
+      - { id: "unavailable", label: "A failure" }
+  - id: "child-since-close"
+    label: "A child started after the last close"
+    initial: "none"
+    states:
+      - { id: "none", label: "No" }
+      - { id: "started", label: "Yes" }
+  - id: "publish-since-close"
+    label: "The published state changed after the last close"
+    initial: "none"
+    states:
+      - { id: "none", label: "No" }
+      - { id: "changed", label: "Yes" }
+events:
+  - id: "boot"
+    label: "the first Dev Activity cycle settles"
+    source: { kind: "code", path: "src/effects/observation-loop.ts", symbol: "startObservationLoop", confirmedDigest: "sha256:759fdd963e8635f5cd1593854820cb6e1bd69fd6b21e949abeb9502ebeca8c29" }
+    steps:
+      - when: { boot: ["pending"], closed: ["closed"] }
+        then: { boot: "done" }
+      - when: { boot: ["pending"], closed: ["open"], inflight: ["no", "yes"], published: ["pending"], pub-r1: ["none", "ready", "unavailable"], pub-r2: ["none", "ready", "unavailable"], publish-since-close: ["none", "changed"] }
+        then: { boot: "done", inflight: "yes", published: "registry-failed", pub-r1: "none", pub-r2: "none", publish-since-close: "changed" }
+      - when: { boot: ["pending"], closed: ["open"], inflight: ["no", "yes"], running: ["none", "r1", "r2"], child-since-close: ["none", "started"] }
+        then: { boot: "done", inflight: "yes", running: "r1", child-since-close: "started" }
+  - id: "timer-fires"
+    label: "the gap ends"
+    source: { kind: "code", path: "src/effects/observation-loop.ts", symbol: "startObservationLoop.cycle", confirmedDigest: "sha256:b69db92f5bbd27c9fba67d19ba7aef2dbb328bed4fdda13bd6c873c1e5f8da04" }
+    steps:
+      - when: { timer: ["armed"], inflight: ["no", "yes"], published: ["pending", "map"], pub-r1: ["none", "ready", "unavailable"], pub-r2: ["none", "ready", "unavailable"], publish-since-close: ["none", "changed"] }
+        then: { timer: "off", inflight: "yes", published: "registry-failed", pub-r1: "none", pub-r2: "none", publish-since-close: "changed" }
+      - when: { timer: ["armed"], inflight: ["no", "yes"], published: ["registry-failed"] }
+        then: { timer: "off", inflight: "yes" }
+      - when: { timer: ["armed"], inflight: ["no", "yes"], running: ["none", "r1", "r2"], child-since-close: ["none", "started"] }
+        then: { timer: "off", inflight: "yes", running: "r1", child-since-close: "started" }
+  - id: "child-returns"
+    label: "the child of a repository returns"
+    source: { kind: "code", path: "src/effects/operator/architecture-map-collector.ts", symbol: "startArchitectureMapCollector", confirmedDigest: "sha256:542a43f4c290158d8a2def6e1a1f3903d34e32f478830770d889a64e71dfcc97" }
+    steps:
+      - when: { closed: ["closed"], running: ["r1", "r2"] }
+        then: { running: "none" }
+      - when: { closed: ["open"], running: ["r1"], result-r1: ["none", "ready", "unavailable"], published: ["pending", "registry-failed"], pub-r1: ["none", "ready", "unavailable"], child-since-close: ["none", "started"], publish-since-close: ["none", "changed"] }
+        then: { running: "r2", result-r1: "ready", published: "map", pub-r1: "ready", child-since-close: "started", publish-since-close: "changed" }
+      - when: { closed: ["open"], running: ["r1"], result-r1: ["none", "ready", "unavailable"], published: ["map"], pub-r1: ["none", "unavailable"], child-since-close: ["none", "started"], publish-since-close: ["none", "changed"] }
+        then: { running: "r2", result-r1: "ready", published: "map", pub-r1: "ready", child-since-close: "started", publish-since-close: "changed" }
+      - when: { closed: ["open"], running: ["r1"], result-r1: ["none", "ready", "unavailable"], published: ["map"], pub-r1: ["ready"], child-since-close: ["none", "started"] }
+        then: { running: "r2", result-r1: "ready", published: "map", pub-r1: "ready", child-since-close: "started" }
+      - when: { closed: ["open"], running: ["r1"], result-r1: ["none", "ready", "unavailable"], published: ["pending", "registry-failed"], pub-r1: ["none", "ready", "unavailable"], child-since-close: ["none", "started"], publish-since-close: ["none", "changed"] }
+        then: { running: "r2", result-r1: "unavailable", published: "map", pub-r1: "unavailable", child-since-close: "started", publish-since-close: "changed" }
+      - when: { closed: ["open"], running: ["r1"], result-r1: ["none", "ready", "unavailable"], published: ["map"], pub-r1: ["none", "ready"], child-since-close: ["none", "started"], publish-since-close: ["none", "changed"] }
+        then: { running: "r2", result-r1: "unavailable", published: "map", pub-r1: "unavailable", child-since-close: "started", publish-since-close: "changed" }
+      - when: { closed: ["open"], running: ["r1"], result-r1: ["none", "ready", "unavailable"], published: ["map"], pub-r1: ["unavailable"], child-since-close: ["none", "started"] }
+        then: { running: "r2", result-r1: "unavailable", published: "map", pub-r1: "unavailable", child-since-close: "started" }
+      - when: { closed: ["open"], running: ["r2"], result-r2: ["none", "ready", "unavailable"], published: ["map"], pub-r2: ["none", "unavailable"], publish-since-close: ["none", "changed"] }
+        then: { running: "none", result-r2: "ready", published: "map", pub-r2: "ready", publish-since-close: "changed" }
+      - when: { closed: ["open"], running: ["r2"], result-r2: ["none", "ready", "unavailable"], published: ["map"], pub-r2: ["ready"] }
+        then: { running: "none", result-r2: "ready", published: "map", pub-r2: "ready" }
+      - when: { closed: ["open"], running: ["r2"], result-r2: ["none", "ready", "unavailable"], published: ["map"], pub-r2: ["none", "ready"], publish-since-close: ["none", "changed"] }
+        then: { running: "none", result-r2: "unavailable", published: "map", pub-r2: "unavailable", publish-since-close: "changed" }
+      - when: { closed: ["open"], running: ["r2"], result-r2: ["none", "ready", "unavailable"], published: ["map"], pub-r2: ["unavailable"] }
+        then: { running: "none", result-r2: "unavailable", published: "map", pub-r2: "unavailable" }
+  - id: "cycle-settles"
+    label: "the cycle settles"
+    source: { kind: "code", path: "src/effects/observation-loop.ts", symbol: "startObservationLoop.cycle", confirmedDigest: "sha256:b69db92f5bbd27c9fba67d19ba7aef2dbb328bed4fdda13bd6c873c1e5f8da04" }
+    steps:
+      - when: { closed: ["open"], timer: ["off", "armed"], inflight: ["yes"], running: ["none"], result-r1: ["none", "ready", "unavailable"], result-r2: ["none", "ready", "unavailable"] }
+        then: { timer: "armed", inflight: "no", result-r1: "none", result-r2: "none" }
+      - when: { closed: ["closed"], inflight: ["yes"], running: ["none"], result-r1: ["none", "ready", "unavailable"], result-r2: ["none", "ready", "unavailable"] }
+        then: { inflight: "no", result-r1: "none", result-r2: "none" }
+  - id: "close"
+    label: "operator serve closes the collector"
+    source: { kind: "code", path: "src/effects/observation-loop.ts", symbol: "startObservationLoop", confirmedDigest: "sha256:759fdd963e8635f5cd1593854820cb6e1bd69fd6b21e949abeb9502ebeca8c29" }
+    steps:
+      - when: { closed: ["open"], timer: ["off", "armed"], child-since-close: ["none", "started"], publish-since-close: ["none", "changed"] }
+        then: { closed: "closed", timer: "off", child-since-close: "none", publish-since-close: "none" }
+rules:
+  - id: "no-overlap"
+    label: "NoOverlap. The gap timer is armed only while no cycle runs"
+    never: { timer: ["armed"], inflight: ["yes"] }
+  - id: "no-child-after-close"
+    label: "NoChildAfterClose. A closed collector starts no child"
+    never: { closed: ["closed"], child-since-close: ["started"] }
+  - id: "no-publish-after-close"
+    label: "NoPublishAfterClose. A closed collector publishes nothing"
+    never: { closed: ["closed"], publish-since-close: ["changed"] }
+  - id: "closed-is-quiet"
+    label: "ClosedIsQuiet. A closed collector with no cycle has no timer"
+    never: { closed: ["closed"], inflight: ["no"], timer: ["armed"] }
+  - id: "collected-result-is-served-r1-ready"
+    label: "CollectedResultIsServed. A GET serves the map that the first child returned"
+    never: { closed: ["open"], result-r1: ["ready"], pub-r1: ["none", "unavailable"] }
+  - id: "collected-result-is-served-r1-unavailable"
+    label: "CollectedResultIsServed. A GET serves the failure that the first child returned"
+    never: { closed: ["open"], result-r1: ["unavailable"], pub-r1: ["none", "ready"] }
+  - id: "collected-result-is-served-r2-ready"
+    label: "CollectedResultIsServed. A GET serves the map that the second child returned"
+    never: { closed: ["open"], result-r2: ["ready"], pub-r2: ["none", "unavailable"] }
+  - id: "collected-result-is-served-r2-unavailable"
+    label: "CollectedResultIsServed. A GET serves the failure that the second child returned"
+    never: { closed: ["open"], result-r2: ["unavailable"], pub-r2: ["none", "ready"] }

@@ -1,0 +1,203 @@
+schemaVersion: "archcontext.state-machine/v1"
+id: "state-machine.operator.office-room"
+capabilityId: "capability.runtime-harness.operator"
+name: "Watch one room of the Office"
+regions:
+  - id: "parents"
+    label: "The parents view"
+    initial: "loading"
+    states:
+      - { id: "loading", label: "Loading" }
+      - { id: "ready", label: "The parents list" }
+      - { id: "failed", label: "Failed" }
+  - id: "parents-read"
+    label: "The parents read"
+    initial: "reading"
+    states:
+      - { id: "reading", label: "In flight" }
+      - { id: "waiting", label: "Waits for the next read" }
+  - id: "seats"
+    label: "The seats view"
+    initial: "loading"
+    states:
+      - { id: "loading", label: "Loading or pending" }
+      - { id: "ready", label: "The seats" }
+      - { id: "failed", label: "Failed" }
+  - id: "seats-read"
+    label: "The seats read"
+    initial: "reading"
+    states:
+      - { id: "reading", label: "In flight" }
+      - { id: "waiting", label: "Waits for the next read" }
+  - id: "stored"
+    label: "The board view of the active parent"
+    initial: "none"
+    states:
+      - { id: "none", label: "No board read settled" }
+      - { id: "ready", label: "Board facts" }
+      - { id: "stale", label: "Board facts marked stale" }
+      - { id: "failed", label: "Failed" }
+  - id: "b-read"
+    label: "The board read"
+    initial: "paused"
+    states:
+      - { id: "paused", label: "Paused with no active parent" }
+      - { id: "reading", label: "In flight" }
+      - { id: "waiting", label: "Waits for the next read" }
+  - id: "screen"
+    label: "The screen of the room"
+    initial: "loading"
+    source: { kind: "code", path: "src/operator-web/BoardPage.tsx", symbol: "OfficeRepository", confirmedDigest: "sha256:5d29fb9a95c11e979cf20e3e84db2e1eddaea0f09faa81ff57e1e41559b31905" }
+    states:
+      - { id: "loading", label: "Loading" }
+      - { id: "checklist", label: "Setup checklist" }
+      - { id: "board-failure", label: "Board failure screen" }
+      - { id: "room", label: "Room with the seats" }
+events:
+  - id: "parents-read-ends"
+    label: "the parents read ends"
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardParents", confirmedDigest: "sha256:ca486dcc7846b0c1004d90eeb4b2a96014e860134fc90a9e114b91aca7b2046e" }
+    steps:
+      - when: { parents: ["loading", "failed"], parents-read: ["reading"], seats: ["loading"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents: "ready", parents-read: "waiting", screen: "loading" }
+      - when: { parents: ["loading", "failed"], parents-read: ["reading"], seats: ["ready"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents: "ready", parents-read: "waiting", b-read: "reading", screen: "room" }
+      - when: { parents: ["loading", "failed"], parents-read: ["reading"], seats: ["failed"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents: "ready", parents-read: "waiting", screen: "checklist" }
+      - when: { parents: ["ready"], parents-read: ["reading"], seats: ["loading"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents-read: "waiting", screen: "loading" }
+      - when: { parents: ["ready"], parents-read: ["reading"], seats: ["ready"], stored: ["none", "ready", "stale"], b-read: ["reading"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents-read: "waiting", screen: "room" }
+      - when: { parents: ["ready"], parents-read: ["reading"], seats: ["ready"], stored: ["ready", "stale"], b-read: ["waiting"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents-read: "waiting", screen: "room" }
+      - when: { parents: ["ready"], parents-read: ["reading"], seats: ["ready"], stored: ["failed"], b-read: ["reading", "waiting"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents-read: "waiting", screen: "board-failure" }
+      - when: { parents: ["ready"], parents-read: ["reading"], seats: ["failed"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents-read: "waiting", screen: "checklist" }
+      - when: { parents: ["failed"], parents-read: ["reading"], seats: ["ready"], stored: ["ready", "stale"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents: "ready", parents-read: "waiting", b-read: "reading", screen: "room" }
+      - when: { parents: ["failed"], parents-read: ["reading"], seats: ["ready"], stored: ["failed"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents: "ready", parents-read: "waiting", b-read: "reading", screen: "board-failure" }
+      - when: { parents: ["failed"], parents-read: ["reading"], seats: ["failed"], stored: ["ready", "stale", "failed"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents: "ready", parents-read: "waiting", screen: "checklist" }
+  - id: "parents-read-fails"
+    label: "the parents read fails"
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardParents", confirmedDigest: "sha256:ca486dcc7846b0c1004d90eeb4b2a96014e860134fc90a9e114b91aca7b2046e" }
+    steps:
+      - when: { parents: ["loading", "ready"], parents-read: ["reading"], seats: ["loading"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents: "failed", parents-read: "waiting", screen: "loading" }
+      - when: { parents: ["loading"], parents-read: ["reading"], seats: ["ready"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents: "failed", parents-read: "waiting", screen: "room" }
+      - when: { parents: ["loading", "ready"], parents-read: ["reading"], seats: ["failed"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents: "failed", parents-read: "waiting", screen: "checklist" }
+      - when: { parents: ["ready"], parents-read: ["reading"], seats: ["ready"], b-read: ["reading"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents: "failed", parents-read: "waiting", b-read: "paused", screen: "room" }
+      - when: { parents: ["ready"], parents-read: ["reading"], seats: ["ready"], stored: ["ready", "stale", "failed"], b-read: ["waiting"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents: "failed", parents-read: "waiting", b-read: "paused", screen: "room" }
+      - when: { parents: ["ready"], parents-read: ["reading"], seats: ["failed"], stored: ["ready", "stale", "failed"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents: "failed", parents-read: "waiting", screen: "checklist" }
+      - when: { parents: ["failed"], parents-read: ["reading"], seats: ["loading"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents-read: "waiting", screen: "loading" }
+      - when: { parents: ["failed"], parents-read: ["reading"], seats: ["ready"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents-read: "waiting", screen: "room" }
+      - when: { parents: ["failed"], parents-read: ["reading"], seats: ["failed"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { parents-read: "waiting", screen: "checklist" }
+  - id: "parents-timer"
+    label: "the next parents read starts"
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardParents", confirmedDigest: "sha256:ca486dcc7846b0c1004d90eeb4b2a96014e860134fc90a9e114b91aca7b2046e" }
+    steps:
+      - when: { parents-read: ["waiting"] }
+        then: { parents-read: "reading" }
+  - id: "seats-read-ends"
+    label: "the seats read ends"
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardSeats", confirmedDigest: "sha256:a6736b17cb8fe431695c4b9f7868bc40571612ebbbbb541b375704936f25ca55" }
+    steps:
+      - when: { parents: ["loading", "failed"], seats: ["loading", "failed"], seats-read: ["reading"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats: "ready", seats-read: "waiting", screen: "room" }
+      - when: { parents: ["loading", "failed"], seats: ["ready"], seats-read: ["reading"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats-read: "waiting", screen: "room" }
+      - when: { parents: ["ready"], seats: ["loading", "failed"], seats-read: ["reading"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats: "ready", seats-read: "waiting", b-read: "reading", screen: "room" }
+      - when: { parents: ["ready"], seats: ["ready"], seats-read: ["reading"], stored: ["none", "ready", "stale"], b-read: ["reading"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats-read: "waiting", screen: "room" }
+      - when: { parents: ["ready"], seats: ["ready"], seats-read: ["reading"], stored: ["ready", "stale"], b-read: ["waiting"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats-read: "waiting", screen: "room" }
+      - when: { parents: ["ready"], seats: ["ready"], seats-read: ["reading"], stored: ["failed"], b-read: ["reading", "waiting"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats-read: "waiting", screen: "board-failure" }
+      - when: { parents: ["ready"], seats: ["failed"], seats-read: ["reading"], stored: ["ready", "stale"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats: "ready", seats-read: "waiting", b-read: "reading", screen: "room" }
+      - when: { parents: ["ready"], seats: ["failed"], seats-read: ["reading"], stored: ["failed"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats: "ready", seats-read: "waiting", b-read: "reading", screen: "board-failure" }
+      - when: { parents: ["failed"], seats: ["ready"], seats-read: ["reading"], stored: ["ready", "stale", "failed"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats-read: "waiting", screen: "room" }
+      - when: { parents: ["failed"], seats: ["failed"], seats-read: ["reading"], stored: ["ready", "stale", "failed"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats: "ready", seats-read: "waiting", screen: "room" }
+  - id: "seats-read-pending"
+    label: "the seats read gets pending before the first observation"
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardSeats", confirmedDigest: "sha256:a6736b17cb8fe431695c4b9f7868bc40571612ebbbbb541b375704936f25ca55" }
+    steps:
+      - when: { seats: ["loading"], seats-read: ["reading"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats-read: "waiting", screen: "loading" }
+  - id: "seats-read-fails"
+    label: "the seats read fails"
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardSeats", confirmedDigest: "sha256:a6736b17cb8fe431695c4b9f7868bc40571612ebbbbb541b375704936f25ca55" }
+    steps:
+      - when: { parents: ["loading"], seats: ["loading", "ready"], seats-read: ["reading"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats: "failed", seats-read: "waiting", screen: "checklist" }
+      - when: { seats: ["failed"], seats-read: ["reading"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats-read: "waiting", screen: "checklist" }
+      - when: { parents: ["ready", "failed"], seats: ["loading"], seats-read: ["reading"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats: "failed", seats-read: "waiting", screen: "checklist" }
+      - when: { parents: ["ready"], seats: ["ready"], seats-read: ["reading"], b-read: ["reading"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats: "failed", seats-read: "waiting", b-read: "paused", screen: "checklist" }
+      - when: { parents: ["ready"], seats: ["ready"], seats-read: ["reading"], stored: ["ready", "stale", "failed"], b-read: ["waiting"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats: "failed", seats-read: "waiting", b-read: "paused", screen: "checklist" }
+      - when: { parents: ["ready", "failed"], seats: ["failed"], seats-read: ["reading"], stored: ["ready", "stale", "failed"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats-read: "waiting", screen: "checklist" }
+      - when: { parents: ["failed"], seats: ["ready"], seats-read: ["reading"], b-read: ["paused"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { seats: "failed", seats-read: "waiting", screen: "checklist" }
+  - id: "seats-timer"
+    label: "the next seats read starts"
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardSeats", confirmedDigest: "sha256:a6736b17cb8fe431695c4b9f7868bc40571612ebbbbb541b375704936f25ca55" }
+    steps:
+      - when: { seats-read: ["waiting"] }
+        then: { seats-read: "reading" }
+  - id: "board-read-ends"
+    label: "the board read ends"
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoard", confirmedDigest: "sha256:453e688b0661212c92a1fedadd0895634fa2f3f1a531d7d3b79ce902c7d0f1ac" }
+    steps:
+      - when: { parents: ["ready"], seats: ["ready"], stored: ["none", "stale", "failed"], b-read: ["reading"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { stored: "ready", b-read: "waiting", screen: "room" }
+      - when: { parents: ["ready"], seats: ["ready"], stored: ["ready"], b-read: ["reading"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { b-read: "waiting", screen: "room" }
+  - id: "board-read-fails-kept"
+    label: "the board read fails [busy, timeout or no answer]"
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoard", confirmedDigest: "sha256:453e688b0661212c92a1fedadd0895634fa2f3f1a531d7d3b79ce902c7d0f1ac" }
+    steps:
+      - when: { parents: ["ready"], seats: ["ready"], stored: ["none"], b-read: ["reading"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { stored: "failed", b-read: "waiting", screen: "board-failure" }
+      - when: { parents: ["ready"], seats: ["ready"], stored: ["ready"], b-read: ["reading"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { stored: "stale", b-read: "waiting", screen: "room" }
+      - when: { parents: ["ready"], seats: ["ready"], stored: ["stale"], b-read: ["reading"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { b-read: "waiting", screen: "room" }
+      - when: { parents: ["ready"], seats: ["ready"], stored: ["failed"], b-read: ["reading"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { b-read: "waiting", screen: "board-failure" }
+  - id: "board-read-fails-dropped"
+    label: "the board read fails [invalid answer]"
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoard", confirmedDigest: "sha256:453e688b0661212c92a1fedadd0895634fa2f3f1a531d7d3b79ce902c7d0f1ac" }
+    steps:
+      - when: { parents: ["ready"], seats: ["ready"], stored: ["none", "ready", "stale"], b-read: ["reading"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { stored: "failed", b-read: "waiting", screen: "board-failure" }
+      - when: { parents: ["ready"], seats: ["ready"], stored: ["failed"], b-read: ["reading"], screen: ["loading", "checklist", "board-failure", "room"] }
+        then: { b-read: "waiting", screen: "board-failure" }
+  - id: "board-timer"
+    label: "the next board read starts"
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoard", confirmedDigest: "sha256:453e688b0661212c92a1fedadd0895634fa2f3f1a531d7d3b79ce902c7d0f1ac" }
+    steps:
+      - when: { b-read: ["waiting"] }
+        then: { b-read: "reading" }
+rules:
+  - id: "seats-show-with-parents-list"
+    label: "SeatsShowWithParentsList. When the page has the seats, they are on screen"
+    never: { seats: ["ready"], screen: ["board-failure"] }
+    finding: { tracking: "https://github.com/aimpact-inc/repo-harness/issues/2371" }
