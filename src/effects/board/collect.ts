@@ -93,6 +93,9 @@ export class BoardCollectError extends Error {
   }
 }
 
+/** A gh stdout that reached `GH_MAX_BUFFER_BYTES`: the product cannot take the answer in full, so no read reports it as an unavailable provider. */
+class GhOutputLimitError extends BoardCollectError {}
+
 /** Whether one failed board read is short provider availability: a provider 5xx, or a gh call that ended with no exit status. */
 export function boardAvailabilityFailure(error: unknown): error is BoardCollectError {
   return error instanceof BoardCollectError
@@ -121,8 +124,8 @@ export interface BoardCollectInput {
 
 export type GhInput = Pick<BoardCollectInput, 'repo_root' | 'gh_bin' | 'gh_runner'>;
 
-function bufferLimitError(args: readonly string[]): BoardCollectError {
-  return new BoardCollectError(`gh ${args.slice(0, 2).join(' ')} printed more than the ${GH_MAX_BUFFER_BYTES}-byte maxBuffer limit`);
+function bufferLimitError(args: readonly string[]): GhOutputLimitError {
+  return new GhOutputLimitError(`gh ${args.slice(0, 2).join(' ')} printed more than the ${GH_MAX_BUFFER_BYTES}-byte maxBuffer limit`);
 }
 
 /** A gh call killed at `GH_MAX_BUFFER_BYTES` is a `BoardCollectError` that names the limit: its signal is no short availability. */
@@ -184,7 +187,7 @@ function dailyRun(input: BoardCollectInput, repository: string, branch: string):
     body = readGhJson(input, ['api', '--hostname', 'github.com',
       `repos/${repository}/actions/workflows/ci.yml/runs?event=schedule&status=completed&per_page=1&branch=${encodeURIComponent(branch)}`]);
   } catch (error) {
-    if (error instanceof BoardCollectError) return { status: 'unavailable', reason: 'github_unavailable' };
+    if (error instanceof BoardCollectError && !(error instanceof GhOutputLimitError)) return { status: 'unavailable', reason: 'github_unavailable' };
     throw error;
   }
   const runs = (body as { workflow_runs?: unknown } | null)?.workflow_runs;

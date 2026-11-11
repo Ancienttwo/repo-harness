@@ -829,6 +829,10 @@ test('board read: the pull request read asks in groups, so a parent whose pull r
     expect((error as BoardCollectError).message).toBe(`gh api graphql printed more than the ${GH_MAX_BUFFER_BYTES}-byte maxBuffer limit`);
     expect((error as BoardCollectError).endedWithoutExit).toBe(false);
   }
+  // The daily run read over the limit fails the board read; it is no unavailable daily run.
+  const enobufs = { status: null, stdout: '', signal: 'SIGKILL' as const, error: Object.assign(new Error('spawnSync gh ENOBUFS'), { code: 'ENOBUFS' }) };
+  expect(() => collectBoard({ ...input, gh_runner: args => args.some(arg => arg.includes('actions/workflows/ci.yml/runs')) ? enobufs : gh(args) }))
+    .toThrow(`gh api --hostname printed more than the ${GH_MAX_BUFFER_BYTES}-byte maxBuffer limit`);
 });
 
 test('board read: every sub-issue page of the parent reaches the board and the merge_order gate; a truncated or repeating page, a repeated cursor and a stream above the page cap fail closed; so does a parent comment page without a cursor or with a repeated one', () => {
