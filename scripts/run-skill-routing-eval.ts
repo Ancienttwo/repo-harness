@@ -234,7 +234,6 @@ import {
 import { parsePluginList, PLUGIN_IDS, type PluginId } from "../src/core/skill-surface/plugin-manifest";
 import {
   parseClaudeStructuredOutput,
-  parseCodexStructuredOutput,
   type ProviderStructuredEvidence,
 } from "./run-skill-evals";
 
