@@ -177,13 +177,17 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   their dependencies. The release run starts when every train of the set is
   merged. Do not propose a release for a few merged issues or to put one
   change on the host (`references/orchestrator.md` §4.1).
-- Joint decision. The orchestrator and the advisor make a decision that
-  otherwise goes to the owner when both agree, unless it touches security.
-  Before the action, the orchestrator posts it on the owning issue or PR as
-  `Joint decision (orchestrator + advisor)` with the reason. A joint decision
-  never replaces the High-tier cross-model review, and it does not reverse
-  an explicit owner decision. When the two seats do not agree, nothing
-  changes; the item goes to the owner only when it is the owner's to decide.
+- Joint decision. The flow aims at full automation outside security and
+  deployment. The seats decide and act on every other item, by rule or by
+  joint decision. An owner message applies to the item it names and stops
+  or reorders no other work. The orchestrator and the advisor make a
+  decision that otherwise goes to the owner when both agree, unless it
+  touches security. Before the action, the orchestrator posts it on the
+  owning issue or PR as `Joint decision (orchestrator + advisor)` with the
+  reason. A joint decision never replaces the High-tier cross-model review,
+  and it does not reverse an explicit owner decision. When the two seats do
+  not agree, nothing changes; the item goes to the owner only when it is
+  the owner's to decide.
 - Command refusals. A refusal of a repo-harness command (seat launch, seats
   configuration range, merge gate, required check) is the rule in force.
   Change the input that the command reads, through its own configuration
