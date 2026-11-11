@@ -4,6 +4,7 @@
 // channel ID, local path or request text. Reply text that matches a secret rule
 // is withheld, never echoed.
 
+import { decodeReaders } from '../evidence/decode-readers';
 import { containsSecret } from '../security/secret-patterns';
 import { isPublicDevActivityText, publicDevActivityText } from '../public-projections/public-text';
 
@@ -224,14 +225,8 @@ export function isTopLevel(message: SlackMessage): boolean {
 /** Strict decode of a snapshot before it leaves the server. */
 export function decodeSlackReviews(value: unknown): SlackReviewsSnapshotV1 {
   const fail = (what: string): never => { throw new Error(`bot_reviews_invalid: ${what}`); };
-  const obj = (v: unknown, keys: readonly string[], what: string): Record<string, unknown> => {
-    if (!v || typeof v !== 'object' || Array.isArray(v)) return fail(what);
-    if (Object.keys(v).sort().join(',') !== [...keys].sort().join(',')) return fail(`${what} fields`);
-    return v as Record<string, unknown>;
-  };
+  const { obj, oneOf } = decodeReaders(fail);
   const time = (v: unknown, what: string): string => (typeof v === 'string' && Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v ? v : fail(what));
-  const oneOf = <T extends string>(v: unknown, values: readonly T[], what: string): T =>
-    (typeof v === 'string' && (values as readonly string[]).includes(v) ? v as T : fail(what));
   const root = obj(value, ['protocol', 'kind', 'reason', 'stale', 'truncated', 'collected_at', 'threads'], 'snapshot');
   if (root.protocol !== 1 || root.kind !== 'operator_bot_reviews') fail('protocol');
   const reason = root.reason === null ? null : oneOf(root.reason, SLACK_REVIEW_REASONS, 'reason');

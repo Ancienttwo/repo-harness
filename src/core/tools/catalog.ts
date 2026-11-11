@@ -6,6 +6,7 @@
 // check-agent-tooling detector, named here only by its `tools.<key>`.
 
 import catalogJson from '../../../assets/tool-catalog.v1.json';
+import { decodeReaders } from '../evidence/decode-readers';
 import { SURFACE_OWNERS, type SurfaceOwner } from '../skill-surface/plugin-manifest';
 
 export const TOOL_CATALOG_VERSION = 'repo-harness.tool-catalog.v1';
@@ -52,16 +53,7 @@ export interface ToolCatalogV1 {
 
 export function decodeToolCatalog(value: unknown): ToolCatalogV1 {
   const fail = (what: string): never => { throw new Error(`tool catalog invalid: ${what}`); };
-  const obj = (v: unknown, keys: readonly string[], what: string): Record<string, unknown> => {
-    if (!v || typeof v !== 'object' || Array.isArray(v)) return fail(what);
-    if (Object.keys(v).sort().join(',') !== [...keys].sort().join(',')) return fail(`${what} fields`);
-    return v as Record<string, unknown>;
-  };
-  const oneOf = <T extends string>(v: unknown, values: readonly T[], what: string): T =>
-    (typeof v === 'string' && (values as readonly string[]).includes(v) ? v as T : fail(what));
-  const match = (v: unknown, pattern: RegExp, what: string): string =>
-    (typeof v === 'string' && pattern.test(v) ? v : fail(what));
-  const nullable = <T>(v: unknown, read: (x: unknown) => T): T | null => (v === null ? null : read(v));
+  const { obj, oneOf, match, nullable } = decodeReaders(fail);
   // Text lands in a markdown table cell: one line, no pipe, no backtick.
   const cell = (v: unknown, limit: number, what: string): string =>
     (typeof v === 'string' && v.length > 0 && v.length <= limit && v.trim() === v && !/[\x00-\x1f\x7f|`]/u.test(v) ? v : fail(what));

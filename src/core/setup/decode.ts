@@ -5,6 +5,7 @@
 // frontmatter) is public: it is a bounded plain string with no control
 // characters and no absolute-path-looking token.
 
+import { decodeReaders } from '../evidence/decode-readers';
 import { publicAgentConfigText } from '../operator/agent-config';
 import {
   SETUP_CHECK_STATUSES,
@@ -31,11 +32,7 @@ export function unavailableSetupSnapshot(reason: SetupReason = 'collection_pendi
 
 export function decodeSetupSnapshot(value: unknown): SetupSnapshotV2 {
   const fail = (what: string): never => { throw new Error(`setup projection invalid: ${what}`); };
-  const obj = (v: unknown, keys: readonly string[], what: string): Record<string, unknown> => {
-    if (!v || typeof v !== 'object' || Array.isArray(v)) return fail(what);
-    if (Object.keys(v).sort().join(',') !== [...keys].sort().join(',')) return fail(`${what} fields`);
-    return v as Record<string, unknown>;
-  };
+  const { obj, nullable, oneOf, bool, count, array } = decodeReaders(fail);
   // Public text must already be redacted: redaction is idempotent on safe text.
   const text = (v: unknown, what: string): string =>
     (typeof v === 'string' && publicAgentConfigText(v) === v ? v : fail(what));
@@ -44,13 +41,6 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV2 {
       && !/(?:^|[\s("'=:])\/\S+|[A-Za-z]:[\\/]/u.test(v) ? v : fail(what));
   const packageScalar = (v: unknown, what: string): string =>
     (typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/u.test(v) ? v : fail(what));
-  const nullable = <T>(v: unknown, read: (x: unknown) => T): T | null => (v === null ? null : read(v));
-  const oneOf = <T extends string>(v: unknown, values: readonly T[], what: string): T =>
-    (typeof v === 'string' && (values as readonly string[]).includes(v) ? v as T : fail(what));
-  const bool = (v: unknown, what: string): boolean => (typeof v === 'boolean' ? v : fail(what));
-  const count = (v: unknown, what: string): number =>
-    (typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : fail(what));
-  const array = (v: unknown, what: string): unknown[] => (Array.isArray(v) ? v : fail(what));
   const id = (v: unknown, what: string): string =>
     (typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(v) ? v : fail(what));
   const time = (v: unknown, what: string): string =>

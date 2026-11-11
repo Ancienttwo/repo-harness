@@ -6,6 +6,7 @@
 // failure message, stack trace or CI path. The strict decoder serves the server
 // before it sends and the browser before it renders.
 
+import { decodeReaders } from '../evidence/decode-readers';
 import { CAPABILITY_ID, TEST_FILE, testRunCommand, TEXT_LIMIT, type TestFileResultV1, type TestProjectionFileV1 } from '../ci/test-report';
 import { isPublicDevActivityText } from '../public-projections/public-text';
 
@@ -64,14 +65,15 @@ const ISSUE_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]
 
 export function decodeTestsSnapshot(value: unknown): TestsSnapshotV1 {
   const fail = (what: string): never => { throw new Error(`tests snapshot invalid: ${what}`); };
+  // The key-set mismatch here fails with `what`, not `${what} fields`, so this
+  // decoder keeps its own `obj`.
+  const { match, array } = decodeReaders(fail);
   const obj = (v: unknown, keys: readonly string[], what: string): Record<string, unknown> => {
     if (typeof v !== 'object' || v === null || Array.isArray(v) || Object.keys(v).sort().join(',') !== [...keys].sort().join(',')) return fail(what);
     return v as Record<string, unknown>;
   };
-  const match = (v: unknown, grammar: RegExp, what: string): string => (typeof v === 'string' && grammar.test(v) ? v : fail(what));
   const whole = (v: unknown, what: string, min = 0): number => (typeof v === 'number' && Number.isSafeInteger(v) && v >= min ? v : fail(what));
   const text = (v: unknown, what: string): string => (typeof v === 'string' && v.length > 0 && v.length <= TEXT_LIMIT && isPublicDevActivityText(v) && !/[\x00-\x1f\x7f]/u.test(v) ? v : fail(what));
-  const array = (v: unknown, what: string): unknown[] => (Array.isArray(v) ? v : fail(what));
   const section = (v: unknown, what: string, fields: readonly string[], reasons: readonly string[]): Record<string, unknown> | null => {
     const state = (v as { state?: unknown } | null)?.state;
     if (state === 'unavailable') {

@@ -1,6 +1,7 @@
 // Strict, browser-safe decoder for GET /api/v1/dev-activity. Exact keys, closed
 // vocabularies, and no absolute-path-looking text outside `url`.
 
+import { decodeReaders } from '../evidence/decode-readers';
 import { isPublicDevActivityText, isPublicRepoPath } from '../public-projections/public-text';
 import { PULL_REQUEST_FILES_REASONS } from '../operator/pull-request-files';
 import {
@@ -27,11 +28,7 @@ export function unavailableDevActivitySnapshot(): DevActivitySnapshotV2 {
 
 export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV2 {
   const fail = (what: string): never => { throw new Error(`dev activity projection invalid: ${what}`); };
-  const obj = (v: unknown, keys: readonly string[], what: string): Record<string, unknown> => {
-    if (!v || typeof v !== 'object' || Array.isArray(v)) return fail(what);
-    if (Object.keys(v).sort().join(',') !== [...keys].sort().join(',')) return fail(`${what} fields`);
-    return v as Record<string, unknown>;
-  };
+  const { obj, nullable, bool, count, array } = decodeReaders(fail);
   const text = (v: unknown, what: string): string => {
     if (typeof v !== 'string' || !isPublicDevActivityText(v)) return fail(what);
     return v;
@@ -43,17 +40,12 @@ export function decodeDevActivitySnapshot(value: unknown): DevActivitySnapshotV2
     const s = text(v, what);
     return s.length > 0 ? s : fail(what);
   };
-  const nullable = <T>(v: unknown, read: (x: unknown) => T): T | null => (v === null ? null : read(v));
   const time = (v: unknown, what: string): string => {
     const s = text(v, what);
     return Number.isFinite(Date.parse(s)) ? s : fail(what);
   };
   const oneOf = (v: unknown, values: readonly string[], what: string): string =>
     (typeof v === 'string' && values.includes(v) ? v : fail(what));
-  const bool = (v: unknown, what: string): boolean => (typeof v === 'boolean' ? v : fail(what));
-  const count = (v: unknown, what: string): number =>
-    (typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : fail(what));
-  const array = (v: unknown, what: string): unknown[] => (Array.isArray(v) ? v : fail(what));
   const githubUrl = (v: unknown, what: string): string =>
     (typeof v === 'string' && /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/[^\s]*$/u.test(v) ? v : fail(what));
   const repositoryId = (v: unknown): string =>

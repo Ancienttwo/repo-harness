@@ -3,6 +3,7 @@
 // absolute path, stderr or environment value can pass through. A field that
 // does not match its grammar becomes null or drops the row; it is never echoed.
 
+import { decodeReaders } from '../evidence/decode-readers';
 import { HC_VERSION_TEXT, type HcVersionCheck } from '../terminal/herdr-pin';
 import { NOTIFY_CHANNELS } from '../decision/notify-relay-record';
 import { NOTIFY_STATUS_KEYS, NOTIFY_UNAVAILABLE_REASONS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifyStatusV1, type NotifyUnavailableReason } from './notify-status';
@@ -192,11 +193,10 @@ export function decodeBotAccessSnapshot(value: unknown): BotAccessSnapshotV1 {
     if (!record || Object.keys(record).sort().join(',') !== [...keys].sort().join(',')) return fail(what);
     return record;
   };
-  const array = (v: unknown, what: string): unknown[] => (Array.isArray(v) ? v : fail(what));
-  const match = (v: unknown, grammar: RegExp, what: string): string => (typeof v === 'string' && grammar.test(v) ? v : fail(what));
-  const nullable = <T>(v: unknown, read: (x: unknown) => T): T | null => (v === null ? null : read(v));
+  // `obj` returns `Json` and fails with a bare `what`; `oneOf` has no string
+  // check, so both stay local.
+  const { array, match, nullable, bool } = decodeReaders(fail);
   const oneOf = <T extends string>(v: unknown, values: readonly T[], what: string): T => (values.includes(v as T) ? v as T : fail(what));
-  const bool = (v: unknown, what: string): boolean => (typeof v === 'boolean' ? v : fail(what));
   const whole = (v: unknown, what: string): number => (integer(v) ?? fail(what));
   /** A section is `{state:'ok', ...fields}`, one of `others`, or `{state:'unavailable', reason}` with an allowed reason. */
   const section = (v: unknown, what: string, fields: readonly string[], reasons: readonly string[], others: readonly string[] = []): Json => {
