@@ -407,8 +407,9 @@ host's PR events or check when the worker reports.
   speculative guards that the issue did not ask for, even when the tests
   pass. Quote the boundary line. This is the most common reason to send a
   PR back.
-- **Stalled worker.** A writer with no PR and no `issue claim status` two
-  hours after its dispatch is stalled. Read its pane, its branch
+- **Stalled worker.** Rule A12 of `repo-harness board attention` finds a
+  stalled writer: a writer claim two hours old with no PR and no
+  `issue claim status` after the claim. Read its pane, its branch
   (`git log origin/main..HEAD`, `git status --short`) and its last status
   comment. Ask one time for a status. When the answer shows no convergence
   (a growing file list, the same compile error, no commit), re-route the
@@ -463,11 +464,12 @@ the board. It holds no state of its own, so it cannot drift from the board.
   an open point, post it as a `scope change` or `decision` comment and
   send the URL.
 - **Rebuild.** At session start, and when the queue is empty after a
-  context compaction, rebuild the queue from the board: `To: coordinator`
-  comments without a `Re:` answer, open PRs with a red required check,
-  claims with `Status: blocked` or `Status: ready for review`, acceptance
-  records with open findings, and `integration status` comments with a
-  conflict.
+  context compaction, run two commands for each open batch parent:
+  - `repo-harness board attention --parent <n>`: queue each finding with
+    its priority. Read by hand each thread that a rule lists as not
+    evaluated.
+  - `repo-harness board review --parent <n> --space <id> --dry-run`: the
+    PRs that are ready for review.
 - **Changes without a notice.** A claim release, an owner comment, an
   acceptance record or a CI result can change the board without a
   worker notice. The `repo-harness.bot-event/v1` GitHub events

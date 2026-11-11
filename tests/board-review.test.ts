@@ -15,7 +15,7 @@ const OLD = 'b'.repeat(40);
 const pr = (number: number, extra: Partial<BoardPullRequestV1> = {}): BoardPullRequestV1 => ({
   number, url: '', state: 'open', is_draft: false, base_ref: 'main', base_sha: SHA, head_ref: `feat/${number}`, head_sha: SHA, head_committed_at: '', merged_at: null,
   closes: [number * 10], refs: [], files: [], required_check: { status: 'success', completed_at: '' }, acceptance: { status: 'not_accepted' }, merge_readiness: null, merge_readiness_observed_at: null,
-  tier: 'high', claude_review: 'not_required', writer_family: null, merge_hold: { status: 'none' }, ...extra,
+  tier: 'high', claude_review: 'not_required', writer_family: null, merge_hold: { status: 'none' }, review_fail: null, open_questions: { status: 'observed', questions: [] }, ...extra,
 });
 const board = (prs: BoardPullRequestV1[], holds: { issue: number; reason: string }[] = []): BoardV1 =>
   ({ pull_requests: prs, parent: { number: 1 }, plan: { status: 'observed', block: { holds } } }) as unknown as BoardV1;

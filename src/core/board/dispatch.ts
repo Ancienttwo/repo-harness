@@ -1,7 +1,7 @@
 import { PlanBlockError, decodePlanBlock, type PlanBlockV2 } from './plan-block';
 import { selectSeatRoute, type SeatAccountQuotas } from './seat-routing';
 import { ROUTING_CLASSES, isWorkerSeat, type RoutingClass, type SeatId, type SeatsConfigV1 } from './seats-settings';
-import { claimStatusTarget, commentId, field, newestProtocolComment, parseClaimStatus, protocolComments, type BoardCommentPageV1, type BoardCommentV1, type BoardParentReadV1, type BoardSubIssueReadV1 } from './source';
+import { closedClaimUrls, commentId, field, issueClaim, newestProtocolComment, protocolComments, type BoardCommentV1, type BoardParentReadV1, type IssueClaimV1 } from './source';
 
 /**
  * Dispatch (#2004): which sub-issues of a parent are ready, and which seat each one gets. It is a pure
@@ -9,7 +9,6 @@ import { claimStatusTarget, commentId, field, newestProtocolComment, parseClaimS
  */
 const PLAN_HEADER = 'repo-harness plan';
 const CLAIM_HEADER = 'repo-harness issue claim';
-const CLAIM_STATUS_HEADER = 'repo-harness issue claim status';
 
 /** An issue states its task class by one `route:<class>` label. */
 export const ROUTE_LABEL_PREFIX = 'route:';
@@ -62,13 +61,6 @@ function planOf(parent: BoardParentReadV1): PlanBlockV2 {
   }
 }
 
-function closedClaims(comments: BoardCommentPageV1): Set<string | null> {
-  return new Set(protocolComments(comments, CLAIM_STATUS_HEADER).filter(comment => {
-    const status = parseClaimStatus(comment)?.status;
-    return status === 'done' || status?.startsWith('released');
-  }).map(claimStatusTarget));
-}
-
 function claimOrder(a: BoardCommentV1, b: BoardCommentV1): number {
   const time = a.created_at.localeCompare(b.created_at);
   if (time !== 0) return time;
@@ -77,12 +69,10 @@ function claimOrder(a: BoardCommentV1, b: BoardCommentV1): number {
   return aId.length - bId.length || aId.localeCompare(bId);
 }
 
-/** Claimed: the newest claim is not released or done, or the comments are cut and the claim state cannot be known. */
-function claimDetail(issue: BoardSubIssueReadV1): string | null {
-  const claim = newestProtocolComment(issue.comments, CLAIM_HEADER);
-  if (claim === null) return issue.comments.truncated ? 'older comments were not read, so a claim cannot be ruled out' : null;
-  // A status closes only the claim it names, even if it arrives late.
-  return closedClaims(issue.comments).has(claim.url) ? null : `active claim ${claim.url}`;
+/** Claimed: the newest claim is active, or the comments are cut and a claim cannot be ruled out. */
+function claimHolder(claim: IssueClaimV1): string | null {
+  if (claim.status === 'unknown') return 'older comments were not read, so a claim cannot be ruled out';
+  return claim.status === 'active' ? `active claim ${claim.url}` : null;
 }
 
 /** The one route class that the labels name, or the reason that they do not. */
@@ -97,7 +87,7 @@ export function planDispatch(input: DispatchInputV1): DispatchPlanV1 {
   const { parent, seats, quota } = input;
   const plan = planOf(parent);
   const comments = parent.parent.comments;
-  const closed = closedClaims(comments);
+  const closed = closedClaimUrls(comments);
   const claims = protocolComments(comments, CLAIM_HEADER)
     .filter(comment => field(comment.body, 'Role') === 'coordinator' && field(comment.body, 'Status') === 'active');
   const coordinator = claims.filter(claim => !closed.has(claim.url) && !claims.some(next =>
@@ -120,7 +110,7 @@ export function planDispatch(input: DispatchInputV1): DispatchPlanV1 {
     if (hold !== undefined) return skip('held', hold);
     const open = issue.blocked_by.filter(blocker => blocker.state === 'open').map(blocker => `#${blocker.number}`);
     if (open.length > 0) return skip('blocked', `blocked by ${open.join(', ')}`);
-    const claim = claimDetail(issue) ?? (liveIssues.has(String(number)) ? 'a live worker seat carries the issue label' : null);
+    const claim = claimHolder(issueClaim(issue.comments)) ?? (liveIssues.has(String(number)) ? 'a live worker seat carries the issue label' : null);
     if (claim !== null) return skip('claimed', claim);
     const kind = routeClass(issue.labels);
     if ('error' in kind) return skip('kind_label_invalid', kind.error);

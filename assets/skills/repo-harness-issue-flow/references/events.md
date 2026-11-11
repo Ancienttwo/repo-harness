@@ -108,7 +108,11 @@ after 5 s counts as failed. Both can repeat an event.
 
 A queued event that fails all retries is lost without a GitHub record. This
 includes every `pr.pushed`, which GitHub shows as 202. The board read at
-orchestrator start finds what was lost.
+orchestrator start finds what was lost. Rules A12 to A18 of
+`repo-harness board attention` read a stalled writer, an idle worker with no
+PR, a red required check, a FAIL record with no fix, an open question to the
+coordinator, a blocked claim and a PR that does not merge. For these states,
+the attention watcher reports the state within one window.
 
 A command failure prints `GitHub events: <reason>`. A failure before the
 three steps changes nothing. A `wrangler` failure stops before the App

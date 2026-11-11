@@ -480,6 +480,53 @@ export function claimStatusTarget(comment: BoardCommentV1): string | null {
   return value === null || value === '' ? null : value;
 }
 
+const CLAIM_HEADER = 'repo-harness issue claim';
+const CLAIM_STATUS_HEADER = 'repo-harness issue claim status';
+const BOUNDARY_QUESTION_HEADER = 'repo-harness boundary question';
+
+/** The claim URLs that an `issue claim status` with `done` or `released` closes. A status closes only the claim it names, even if it arrives late. */
+export function closedClaimUrls(page: BoardCommentPageV1): Set<string | null> {
+  return new Set(protocolComments(page, CLAIM_STATUS_HEADER).filter((comment) => {
+    const status = parseClaimStatus(comment)?.status;
+    return status === 'done' || status?.startsWith('released');
+  }).map(claimStatusTarget));
+}
+
+export type IssueClaimV1 =
+  | { readonly status: 'active'; readonly url: string; readonly created_at: string; readonly role: string | null }
+  | { readonly status: 'none' }
+  /** Older comments exist that the read did not return, and the newest ones hold no claim. */
+  | { readonly status: 'unknown' };
+
+/** The one decision of an active claim, for dispatch and for the board: the newest `issue claim` that no `done` or `released` status closes. */
+export function issueClaim(page: BoardCommentPageV1): IssueClaimV1 {
+  const claim = newestProtocolComment(page, CLAIM_HEADER);
+  if (claim === null) return page.truncated ? { status: 'unknown' } : { status: 'none' };
+  if (closedClaimUrls(page).has(claim.url)) return { status: 'none' };
+  return { status: 'active', url: claim.url, created_at: claim.created_at, role: field(claim.body, 'Role') };
+}
+
+export type OpenQuestionsV1 =
+  | { readonly status: 'observed'; readonly questions: readonly { readonly url: string; readonly created_at: string }[] }
+  /** Older comments exist that the read did not return. */
+  | { readonly status: 'unknown' };
+
+/**
+ * The `boundary question` comments to the coordinator (`templates.md`) with no answer: no later comment of the thread has a `Re:`
+ * line that names the question. One `Re:` line can answer several questions. URLs compare by comment id, so a `pull` and an `issues`
+ * path of one comment match.
+ */
+export function openQuestions(page: BoardCommentPageV1): OpenQuestionsV1 {
+  if (page.truncated) return { status: 'unknown' };
+  const questions = protocolComments(page, BOUNDARY_QUESTION_HEADER).filter(comment => field(comment.body, 'To') === 'coordinator');
+  const open = questions.filter((question) => {
+    const id = commentId(question.url);
+    return id === null || !page.comments.some(comment => comment !== question && comment.created_at >= question.created_at
+      && (field(comment.body, 'Re') ?? '').split(/\s+/u).some(word => commentId(word) === id));
+  });
+  return { status: 'observed', questions: Object.freeze(open.map(question => Object.freeze({ url: question.url, created_at: question.created_at }))) };
+}
+
 export interface ClaimStatusV1 {
   readonly url: string;
   readonly created_at: string;

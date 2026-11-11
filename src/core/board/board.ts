@@ -10,6 +10,8 @@ import {
   BoardSourceError,
   commentId,
   field,
+  issueClaim,
+  openQuestions,
   newestProtocolComment,
   parseAcceptanceDisposition,
   parseAcceptanceRecord,
@@ -24,6 +26,8 @@ import {
   type AcceptanceRowV1,
   type BoardSubIssueReadV1,
   type ClaimStatusV1,
+  type IssueClaimV1,
+  type OpenQuestionsV1,
 } from './source';
 import { documentationOnly } from '../ci/documentation-path';
 import { isCiRepairIssueBody } from '../ci/test-report';
@@ -35,7 +39,7 @@ import { pathHazardHits, pathHighHits } from './hazards';
  * It is a read model. GitHub and hc stay the authorities; the board keeps
  * their observation time and never writes back.
  */
-export const BOARD_PROTOCOL = 7 as const;
+export const BOARD_PROTOCOL = 8 as const;
 export const BOARD_KIND = 'repo-harness.board' as const;
 
 export type BoardTier = 'low' | 'medium' | 'high';
@@ -69,7 +73,9 @@ export interface BoardItemV1 {
   readonly tier: BoardTier | null;
   readonly milestone: string | null;
   readonly blocked_by: readonly { readonly number: number; readonly state: 'open' | 'closed' }[];
+  readonly claim: IssueClaimV1;
   readonly claim_status: BoardClaimStatusV1;
+  readonly open_questions: OpenQuestionsV1;
   /** Pull requests whose body closes or refs this issue. */
   readonly pull_requests: readonly number[];
   readonly merge_hold: BoardMergeHoldV1;
@@ -108,6 +114,9 @@ export interface BoardPullRequestV1 {
   readonly files: readonly string[] | null;
   readonly required_check: BoardRequiredCheckV1;
   readonly acceptance: BoardAcceptanceV1;
+  /** The newest acceptance record with a FAIL row for the head that no disposition resolves; `recorded_at` is the record's comment time. */
+  readonly review_fail: { readonly url: string; readonly recorded_at: string } | null;
+  readonly open_questions: OpenQuestionsV1;
   /** The single-PR readiness projection, for open pull requests only. */
   readonly merge_readiness: PullRequestReadinessV2 | null;
   /** The read time of `merge_readiness`: a stored answer keeps the time of its read. Null when `merge_readiness` is null. */
@@ -295,6 +304,22 @@ export function checkSeatTerminals(terminals: unknown): void {
   }
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+const isTime = (value: unknown): boolean => typeof value === 'string' && !Number.isNaN(Date.parse(value));
+
+function isIssueClaim(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.status === 'none' || value.status === 'unknown') return true;
+  return value.status === 'active' && typeof value.url === 'string' && isTime(value.created_at) && (value.role === null || typeof value.role === 'string');
+}
+
+function isOpenQuestions(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.status === 'unknown') return true;
+  return value.status === 'observed' && Array.isArray(value.questions)
+    && value.questions.every((question: unknown) => isRecord(question) && typeof question.url === 'string' && isTime(question.created_at));
+}
+
 /** Refuse a board of another protocol or kind, or a board without a valid new value, at a process boundary (Surface contract, docs/adr/ADR-0002). */
 export function decodeBoard(value: unknown): BoardV1 {
   const board = value as Partial<BoardV1> | null;
@@ -306,7 +331,14 @@ export function decodeBoard(value: unknown): BoardV1 {
     if (revision !== null && (!Number.isSafeInteger(revision) || revision < 1)) throw new Error(`invalid board plan revision: ${String(revision)}`);
   }
   if (board.execution?.status === 'observed') checkSeatTerminals(board.execution.terminals);
+  for (const item of board.items ?? []) {
+    if (!isIssueClaim(item.claim)) throw new Error(`invalid board claim on #${item.number}`);
+    if (!isOpenQuestions(item.open_questions)) throw new Error(`invalid board open_questions on #${item.number}`);
+  }
   for (const pr of board.pull_requests ?? []) {
+    if (!isOpenQuestions(pr.open_questions)) throw new Error(`invalid board open_questions on PR #${pr.number}`);
+    const fail: unknown = pr.review_fail;
+    if (fail !== null && !(isRecord(fail) && typeof fail.url === 'string' && isTime(fail.recorded_at))) throw new Error(`invalid board review_fail on PR #${pr.number}`);
     const observedAt: unknown = pr.merge_readiness_observed_at;
     if (pr.merge_readiness === null ? observedAt !== null : typeof observedAt !== 'string' || Number.isNaN(Date.parse(observedAt))) {
       throw new Error(`invalid board merge_readiness_observed_at on PR #${pr.number}: ${String(observedAt)}`);
@@ -351,6 +383,15 @@ function resolvedFail(record: BoardCommentV1, row: AcceptanceRowV1, dispositions
   if (findings === null) return false;
   const resolved = new Set(dispositions.filter(entry => entry.record === commentId(record.url) && entry.subject_sha === row.subject_sha).flatMap(entry => entry.findings));
   return findings.every(id => resolved.has(id));
+}
+
+/** The newest acceptance record with a FAIL row for the head that no disposition resolves, by the test of `acceptance`. An unparsed record has no row. */
+function reviewFail(read: BoardPullRequestReadV1): BoardPullRequestV1['review_fail'] {
+  const dispositions = protocolComments(read.comments, ACCEPTANCE_DISPOSITION_HEADER).flatMap(comment => parseAcceptanceDisposition(comment) ?? []);
+  const failing = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER).filter(record => (parseAcceptanceRecord(record) ?? [])
+    .some(row => row.subject_sha === read.head_sha && row.verdict === 'FAIL' && !resolvedFail(record, row, dispositions)));
+  const newest = failing.reduce<BoardCommentV1 | null>((latest, record) => (latest === null || record.created_at >= latest.created_at ? record : latest), null);
+  return newest === null ? null : Object.freeze({ url: newest.url, recorded_at: newest.created_at });
 }
 
 function acceptance(read: BoardPullRequestReadV1, check: BoardRequiredCheckV1, closedTiers: readonly (BoardTier | null)[], rule: ReviewRule): BoardAcceptanceV1 {
@@ -513,6 +554,8 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
       required_check: check,
       // An issue outside this board has no observed tier, so it withholds the Low path; so does any non-Low linked issue.
       acceptance: acceptance(read, check, [tier], reviewRule(read, tier)),
+      review_fail: reviewFail(read),
+      open_questions: openQuestions(read.comments),
       merge_readiness: readiness?.readiness ?? null,
       merge_readiness_observed_at: readiness?.observed_at ?? null,
       tier,
@@ -535,7 +578,9 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
     tier: tiers.get(issue.number) ?? null,
     milestone: issue.milestone,
     blocked_by: issue.blocked_by,
+    claim: issueClaim(issue.comments),
     claim_status: claimStatus(issue),
+    open_questions: openQuestions(issue.comments),
     pull_requests: Object.freeze(pullRequests.filter(pr => pr.closes.includes(issue.number) || pr.refs.includes(issue.number)).map(pr => pr.number)),
     merge_hold: readMergeHold(issue.comments, false),
   })).sort((left, right) => left.number - right.number);
