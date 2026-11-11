@@ -116,7 +116,7 @@ function worktrees(repoRoot: string): string[] {
 }
 
 describe('architecture debt report decoder', () => {
-  test('accepts the recorded archctx@0.8.0 report unchanged', () => {
+  test('accepts the recorded archctx@0.8.0 report with the 0.13.0 state-machines check row', () => {
     expect(decodeArchitectureDebtReport(clone(recordedDebt))).toEqual(recordedDebt);
     expect(recordedDebt.items.map((item) => item.kind)).toEqual(['flow-proof-failed', 'unowned-path']);
   });
