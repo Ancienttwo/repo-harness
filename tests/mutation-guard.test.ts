@@ -177,7 +177,7 @@ describe('Bash write tripwire host route', () => {
           ['rm -rf x{999999999999999999999..999999999999999999999}'], ['rm -rf s*/../_ops'], ['cd -P _ops && rm -rf env'],
           ['rm -rf _op[!S]'], ['cd -P /etc && rm passwd'],
           ['cd src/* && rm _ops/x'], ['rm -rf l*/env'], ['rm -rf s*/l/y.env'],
-          ['cd _op[s] && rm -rf env'], [`cd ${outside}/ops-alias/e* && rm secret`],
+          ['cd _op[s] && rm -rf env'], [`cd ${outside}/ops-alias/e* && rm secret`], ['(cd _op*); cd src; echo x > safe.txt'],
           ['cd /et[c] && rm passwd'], ['cd -P /et[c] && rm passwd'],
           [`cd ${outside}/x* && rm -rf build`], [`cd -P ${outside}/x* && rm -rf build`],
         ] as [string, string?][]) {
@@ -186,7 +186,7 @@ describe('Bash write tripwire host route', () => {
         }
         for (const command of ['rm src/*.tmp', 'echo value > _o/*', 'rm -rf *.log', 'rm -rf _ops_old*', 'rm -rf src/{a,b}.tmp',
           'rm -rf .??*', `rm -rf '${root}'/scratch*`, "rm -rf _op'{s,x}'*", "rm -rf '~+'/*", 'cd _ref* && rg x > /tmp/out',
-          '(cd _op*); cd src; echo x > safe.txt', '(cd _op*); echo x > safe.txt',
+          '(cd _op*); echo x > safe.txt',
           "echo '$(echo x > _ops/x)' > report.txt", 'echo "\\$(echo x > _ops/x)" > report.txt',
           "echo x > 'src/a\nb'", "cd '_op[s]' && echo x > safe.txt", 'echo "<(ls)" > report.txt']) {
           expect({ command, status: invokeBash(command).status }).toEqual({ command, status: 0 });
@@ -217,6 +217,10 @@ describe('Bash write tripwire host route', () => {
         'cd src && git worktree add ../x', 'git status && git worktree add ../x', "git worktree add '../x'",
         'git worktree add ../x\nf() { :; }', 'git worktree add /etc/wt[1]',
         ...WORKTREE_SUBSTITUTION_CASES,
+        // A glob cd leaves the directory unknown; origin/main resolved these targets literally and denied them.
+        'cd sr[c] && git worktree add ../x', 'cd _op[s] && git worktree add ../x', 'cd /tm[p] && git worktree add x',
+        'cd src && cd ../sr[c] && git worktree add ../x', 'cd s[r]c && git -C . worktree add ../x',
+        '(cd ./s[r]c && git worktree add --detach ../x HEAD)',
       ]) {
         const result = invokeBash(command);
         expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 2 });

@@ -116,8 +116,6 @@ interface CommandVisitor {
   redirect?(target: Word, cwd: string | null): void;
   /** The command is outside the parsed grammar; nothing of it was visited. */
   unparsed?(): void;
-  /** Save and restore caller state at subshell boundaries. */
-  scope?(enter: boolean): void;
 }
 
 /** The directory operand of `cd`; `plain` is false when an option comes before it. Null for any other form. */
@@ -205,8 +203,8 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
     for (let i = 0; i < tokens.length; i++) {
       const token = tokens[i]!;
       if (token.operator && [';', '|', '||', '&', '&&'].includes(token.value)) { flush(token.value); continue; }
-      if (token.operator && token.value === '(') { flush('('); outer.push(commandCwd); visit.scope?.(true); continue; }
-      if (token.operator && token.value === ')') { flush(')'); commandCwd = outer.pop() ?? null; visit.scope?.(false); continue; }
+      if (token.operator && token.value === '(') { flush('('); outer.push(commandCwd); continue; }
+      if (token.operator && token.value === ')') { flush(')'); commandCwd = outer.pop() ?? null; continue; }
       if (token.operator && ['>', '>>', '<', '<<', '<<-'].includes(token.value)) {
         const target = tokens[++i];
         if (target?.operator && target.value === '&' && (token.value === '>' || token.value === '<')) {
@@ -393,7 +391,6 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
   };
   /** Set once a `cd` could have moved the shell into a protected directory. */
   let cwdMayBeProtected = false;
-  const outerProtected: boolean[] = [];
   const addPath = (pattern: string, commandCwd: string | null) => {
     let candidate = unescapePattern(pattern);
     if (!candidate || /[$`]/.test(candidate) || ['/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty'].includes(candidate)
@@ -468,10 +465,6 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
       for (const target of commandTargets(segment, body)) add(target, commandCwd);
     },
     redirect: (target, commandCwd) => add(target.pattern, commandCwd),
-    scope: enter => {
-      if (enter) outerProtected.push(cwdMayBeProtected);
-      else cwdMayBeProtected = outerProtected.pop() ?? false;
-    },
     unparsed: () => { unresolved.push('the command (unsupported heredoc, substitution, parentheses or quoting)'); },
   });
   return { paths: [...new Set(candidates)], unresolved };
@@ -518,13 +511,26 @@ const WORKTREE_ADD_DENIAL = (target: string, root: string): Denial => ({
   fix: `Create the worktree under ${root} as <repo>-wt-<slug>, or run \`repo-harness run contract-worktree start --issue <number>\`.`,
 });
 
-/** Literal worktree targets and unparsed commands that mention worktrees fail closed. */
+/** Literal worktree targets, relative targets after a glob `cd` and unparsed commands that mention worktrees fail closed. */
 function worktreeAddDenial(command: string, cwd: string): Denial | null {
   if (!/\bworktree\b/.test(command)) return null;
   let denial: Denial | null = null;
+  /** Set once a plain literal `cd` takes a glob operand. The walk then has no directory for a relative target. */
+  let globCd = false;
   walkCommands(command, cwd, {
     command: (segment, _body, commandCwd) => {
-      const target = denial ? null : worktreeAddTarget(segment, commandCwd);
+      if (denial) return;
+      const cd = cdOperand(segment);
+      if (cd?.plain && cd.target.literal && globIndex(cd.target.pattern) >= 0) globCd = true;
+      const target = worktreeAddTarget(segment, commandCwd);
+      // The target is relative exactly when it resolves only from a known directory.
+      if (!target && globCd && !commandCwd && worktreeAddTarget(segment, '/')) {
+        denial = {
+          guard: 'WorktreeCreateGuard',
+          reason: 'git worktree add has a relative target after a cd into a glob directory, so its destination is not known.',
+          fix: 'Give git worktree add an absolute target, or run `repo-harness run contract-worktree start --issue <number>`.',
+        };
+      }
       if (!target) return;
       let root: string;
       // The leaf does not exist yet. Its parent resolves symlinks such as macOS /tmp.
