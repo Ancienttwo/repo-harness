@@ -5,7 +5,7 @@ import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { redactMcpText } from './redaction';
 import { repoHarnessPackageVersion } from './version';
 import { WorkspaceError, WorkspaceManager, type McpWorkspace, type WorkspaceResolvedPath } from './workspaces';
-import { buildGeneralRepoToolDefinitions, callGeneralRepoTool, isGeneralRepoTool, listGeneralRepoRecords, type GeneralRepoToolContext } from './general-repo-access';
+import { booleanArg, buildGeneralRepoToolDefinitions, callGeneralRepoTool, isGeneralRepoTool, listGeneralRepoRecords, numberArg, type GeneralRepoToolContext } from './general-repo-access';
 import type { GeneralRepoCodeGraphAdapter } from '../tools/codegraph-reader';
 import { repoHarnessRepoIdFor } from '../../effects/repo-registry';
 import type { McpPolicy } from './types';
@@ -74,22 +74,6 @@ function audit(ctx: ReaderToolContext, tool: string, status: 'ok' | 'blocked' | 
     inputHash: hashMcpInput(input),
     error,
   });
-}
-
-function numberArg(value: unknown, fallback: number, min: number, max: number): number {
-  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(Math.max(Math.trunc(parsed), min), max);
-}
-
-function booleanArg(value: unknown, fallback = false): boolean {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
-    if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
-  }
-  return fallback;
 }
 
 function sha256(value: string | Buffer): string {
