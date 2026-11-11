@@ -6,6 +6,7 @@
     "version": 1,
     "mode": "off"
   },
+  "operations": {},
   "context": {
     "map_file": ".ai/context/context-map.json",
     "capability_source": "archcontext"

@@ -11,12 +11,9 @@ that used it (#692, #695):
 
 ## Policy Status
 
-The only key of the block is `mode`. Policy validation accepts `off` and
-`advice`. Any other value, such as the retired `enforce`, fails policy
-validation. State resolution then fails until the operator sets `advice` or
-`off`. Stop never blocks on a minimal-change finding. This repository sets
-`mode: "advice"`. `repo-harness init` writes `{ "mode": "advice" }`. No code
-reads the value after validation.
+No code reads or validates `minimal_change`. The key is outside the policy
+schema, so `repo-harness init` removes it and names it in the
+`unknown-policy-keys` warning. Stop never blocks on a minimal-change finding.
 
 `.ai/harness/checks/minimal-change.latest.json` and
 `.ai/harness/checks/minimal-change-audit.latest.json` have no writer and no

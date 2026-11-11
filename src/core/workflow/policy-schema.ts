@@ -82,7 +82,7 @@ export function unknownPolicyKeys(policy: WorkflowPolicyObject | null): readonly
   return policy === null ? [] : pruneUnknownPolicyKeys(policy).removed;
 }
 
-/** The policy without the keys that no reader uses, and their dotted leaf paths, sorted. */
+/** The policy without the keys that no reader uses, and their dotted leaf paths, sorted. Schema sections stay. */
 export function pruneUnknownPolicyKeys(policy: WorkflowPolicyObject): {
   readonly policy: Record<string, unknown>;
   readonly removed: readonly string[];
@@ -108,10 +108,8 @@ function keepKnownKeys(
       kept[key] = child;
       continue;
     }
-    const inner = keepKnownKeys(child as WorkflowPolicyObject, node, path, unknown);
-    // A section that held only unknown keys leaves with them.
-    if (Object.keys(inner).length === 0 && Object.keys(child).length > 0) continue;
-    kept[key] = inner;
+    // A schema-declared section stays, also when it held only unknown keys.
+    kept[key] = keepKnownKeys(child as WorkflowPolicyObject, node, path, unknown);
   }
   return kept;
 }

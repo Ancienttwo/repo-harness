@@ -91,6 +91,14 @@ describe("canonical adoption plan", () => {
       if (!minimalPolicy || minimalPolicy.kind !== "writeFile") throw new Error("policy operation missing");
       expect(JSON.parse(minimalPolicy.content)).not.toHaveProperty("version");
       expect(minimal.warnings.map(warning => warning.message)).toContain("Removed policy keys that no reader uses: version");
+      // A schema section stays when the removal empties it.
+      writeFileSync(join(repo, ".ai/harness/policy.json"), JSON.stringify({ worktree_strategy: { merge_back: { requires_clean_check: true } }, publication: { obsolete: true } }));
+      const emptied = planAdoption({ repoRoot: repo, mode: "minimal" });
+      const emptiedPolicy = emptied.operations.find(op => op.path === ".ai/harness/policy.json");
+      if (!emptiedPolicy || emptiedPolicy.kind !== "writeFile") throw new Error("policy operation missing");
+      expect(JSON.parse(emptiedPolicy.content)).toMatchObject({ worktree_strategy: { merge_back: {} }, publication: {} });
+      expect(JSON.parse(emptiedPolicy.content).publication).toEqual({});
+      expect(emptied.warnings.map(warning => warning.message)).toContain("Removed policy keys that no reader uses: publication.obsolete, worktree_strategy.merge_back.requires_clean_check");
     } finally { cleanup(repo); }
   });
 

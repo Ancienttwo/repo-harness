@@ -119,7 +119,7 @@ test('adoption removes architecture settings and every other policy key outside 
     },
   });
   expect(retired.architecture).toBeUndefined();
-  expect(retired.harness).toBeUndefined();
+  expect(retired.harness).toEqual({});
 
   const custom = policyFor({ architecture: { freshness_gate: 'strict', rule: 'Team-specific architecture rule.', review_owner: 'platform' } });
   expect(custom.architecture).toBeUndefined();

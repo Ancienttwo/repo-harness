@@ -218,8 +218,6 @@
     ],
     "requiredFiles": [
       "docs/spec.md",
-      ".claude/templates/spec.template.md",
-      ".claude/templates/research.template.md",
       "tasks/lessons.md",
       "docs/architecture/index.md",
       ".ai/context/context-map.json",

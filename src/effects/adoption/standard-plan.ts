@@ -528,6 +528,8 @@ function editJsonObject(text: string, open: number, next: JsonObject, indent: st
   for (const [key, value] of Object.entries(next)) {
     if (!present.has(key)) parts.push(`${space}${JSON.stringify(key)}${separator}${render(value, lineIndent(space))}`);
   }
+  // An object whose members all left renders as `{}`.
+  if (last && parts.length === 0) return "{}";
   const trailing = last ? text.slice(last.valueEnd, close) : parts.length > 0 && unit ? `${eol}${indent}` : text.slice(open + 1, close);
   return `{${parts.join(",")}${trailing}}`;
 }
