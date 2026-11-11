@@ -2,7 +2,8 @@ import type { ReviewAdmission, ReviewAuthorityContext } from './authority-contex
 import type { RequiredCheckFailureEvidenceV1 } from '../evidence/required-check-evidence';
 import type { RequiredCheckCoverageEvidenceV1 } from '../publication/required-check-coverage';
 import { isRecord } from '../evidence/is-record';
-import { SHA256_PREFIXED_PATTERN, sha256Prefixed } from '../evidence/sha256';
+import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256-pattern';
+import { sha256Prefixed } from '../evidence/sha256';
 import { modelFamily } from './model-family';
 import { isReviewRuntimeId, type ReviewRuntimeId } from './review-runtimes';
 

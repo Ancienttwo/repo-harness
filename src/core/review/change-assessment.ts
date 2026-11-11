@@ -1,5 +1,6 @@
 import { byteCompare } from '../evidence/byte-compare';
-import { SHA256_PREFIXED_PATTERN, sha256Prefixed } from '../evidence/sha256';
+import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256-pattern';
+import { sha256Prefixed } from '../evidence/sha256';
 
 import type { StrictRiskCategory, WorkflowProfile } from '../workflow/profile';
 

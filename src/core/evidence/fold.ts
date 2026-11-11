@@ -6,7 +6,7 @@
  */
 import { isRecord } from "./is-record";
 import type { EvidenceEventRecord, EvidenceLogRecord, GenesisRecord, SubjectIdentity, TrustClass } from "./types";
-import { SHA256_PREFIXED_PATTERN } from './sha256';
+import { SHA256_PREFIXED_PATTERN } from './sha256-pattern';
 
 export type ParsedLogLine =
   | { readonly ok: true; readonly record: EvidenceLogRecord }

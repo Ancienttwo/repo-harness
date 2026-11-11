@@ -2,7 +2,7 @@ import { retiredDeliveryChannel, TaskMessageError } from '../messages/task-messa
 import { validateTaskMessageClaim, type TaskMessageClaim } from '../messages/task-message-claim';
 /** Active admitted inbox wire. Legacy v1 is decoded only by explicit history readers. */
 import { canonicalize } from '../evidence/canonical-json';
-import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256';
+import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256-pattern';
 import {
   assertMessageBoundedUtf8,
   assertTaskMessageDigest as assertTaskDigest,

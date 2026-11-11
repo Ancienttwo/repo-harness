@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs';
 import { join, relative, sep } from 'path';
 import { isLegacyPathSafe, legacyPathSnapshot, type LeftoverItem, type LegacyPathSnapshot } from './legacy-inventory';
-import { SHA256_PREFIXED_PATTERN } from '../../core/evidence/sha256';
+import { SHA256_PREFIXED_PATTERN } from '../../core/evidence/sha256-pattern';
 
 /** Tracked operator decisions for project upgrade items that have no ownership proof. */
 export const UPGRADE_DECISIONS_PATH = '.ai/harness/upgrade-decisions.json';

@@ -1,5 +1,6 @@
 import { globMatch } from '../state/artifact-parsers';
-import { SHA256_PREFIXED_PATTERN, sha256Prefixed } from '../evidence/sha256';
+import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256-pattern';
+import { sha256Prefixed } from '../evidence/sha256';
 import { canonicalize } from '../evidence/canonical-json';
 import type { JsonValue } from '../evidence/types';
 import { normalizeDeclaredReviewOracles, type DeclaredReviewOracle } from './change-assessment';

@@ -6,7 +6,7 @@
 // source path exists on disk.
 import { isRecord } from "../evidence/is-record";
 import { HOST_PROGRAM_PLUGINS, isSurfaceOwner, ownerEnabled, SURFACE_OWNERS, type PluginId, type SurfaceOwner } from "./plugin-manifest";
-import { SHA256_PREFIXED_PATTERN } from "../evidence/sha256";
+import { SHA256_PREFIXED_PATTERN } from "../evidence/sha256-pattern";
 
 export const SKILL_SURFACE_CATALOG_VERSION = 4 as const;
 

@@ -7,7 +7,7 @@ import { decodeReaders } from '../evidence/decode-readers';
 import { HC_VERSION_TEXT, type HcVersionCheck } from '../terminal/herdr-pin';
 import { NOTIFY_CHANNELS } from '../decision/notify-relay-record';
 import { NOTIFY_STATUS_KEYS, NOTIFY_UNAVAILABLE_REASONS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifyStatusV1, type NotifyUnavailableReason } from './notify-status';
-import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256';
+import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256-pattern';
 
 export type BotAccessUnavailable<Reason extends string> = { readonly state: 'unavailable'; readonly reason: Reason };
 

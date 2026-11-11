@@ -1,6 +1,6 @@
 import { assertMessageExactKeys, messageRequiredString } from './mechanics';
 import { TaskMessageError } from './task-message-error';
-import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256';
+import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256-pattern';
 
 function invalid(message: string): never { throw new TaskMessageError('task_message_invalid', message); }
 

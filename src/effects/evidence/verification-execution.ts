@@ -6,7 +6,8 @@ import { tmpdir } from "os";
 import { delimiter, isAbsolute, join, relative, resolve } from "path";
 
 import { canonicalize } from "../../core/evidence/canonical-json";
-import { SHA256_PREFIXED_PATTERN, sha256Prefixed } from "../../core/evidence/sha256";
+import { SHA256_PREFIXED_PATTERN } from "../../core/evidence/sha256-pattern";
+import { sha256Prefixed } from "../../core/evidence/sha256";
 import type { EvidenceEventRecord, GenesisRecord, JsonValue, AdmittedReviewSubjectIdentity, EvalCatalogSubjectIdentity } from "../../core/evidence/types";
 import { redactPayloadStrings, SECRET_DENYLIST_ENV_KEYS } from "../../core/evidence/redaction";
 import {

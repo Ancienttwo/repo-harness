@@ -1,7 +1,7 @@
 import { canonicalize } from '../evidence/canonical-json';
 import type { JsonValue } from '../evidence/types';
 import { freeze, validateReviewAdmission, type Frozen, type ReviewAdmission } from './authority-context';
-import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256';
+import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256-pattern';
 
 /** An already-authorized upstream request. These fields provide binding and
  * traceability, not authentication. The calling Bot owns human authentication,

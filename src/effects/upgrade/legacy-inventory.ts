@@ -1,5 +1,6 @@
 import { isRecord } from '../../core/evidence/is-record';
-import { SHA256_PREFIXED_PATTERN, sha256Prefixed } from '../../core/evidence/sha256';
+import { SHA256_PREFIXED_PATTERN } from '../../core/evidence/sha256-pattern';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync } from 'fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { hashManagedTree, installedCopyTreeOptions, OWNER_MARKER } from '../managed-tree';

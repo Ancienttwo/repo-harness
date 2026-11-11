@@ -54,7 +54,8 @@ import {
   type UserWaiverGrant,
 } from '../../core/review/acceptance-receipt';
 import { isRecord } from '../../core/evidence/is-record';
-import { SHA256_PREFIXED_PATTERN, sha256Prefixed } from '../../core/evidence/sha256';
+import { SHA256_PREFIXED_PATTERN } from '../../core/evidence/sha256-pattern';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import {
   validateRequiredCheckFailureEvidenceList,
   type RequiredCheckFailureEvidenceV1,

@@ -12,7 +12,7 @@ import { createFileExclusiveDurably } from '../atomic-append';
 import { canonicalFeedbackDeliveryReceiptBytes, canonicalFeedbackEventBytes, transitionFeedbackDeliveryReceipt, validateFeedbackDeliveryReceipt, validateFeedbackEvent, validateReactionAttemptReceipt, type FeedbackDeliveryReceiptV1, type FeedbackEventV1, type ReactionAttemptReceiptV1 } from '../../core/publication/feedback';
 import { byteCompare } from '../../core/evidence/byte-compare';
 import { resolveGitCommonDirectory } from '../git/common-directory';
-import { SHA256_PREFIXED_PATTERN } from '../../core/evidence/sha256';
+import { SHA256_PREFIXED_PATTERN } from '../../core/evidence/sha256-pattern';
 
 export const FEEDBACK_ROOT_RELATIVE_PATH = 'repo-harness/feedback/v1';
 

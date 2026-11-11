@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
-import { SHA256_PREFIXED_PATTERN, sha256Prefixed } from "../core/evidence/sha256";
+import { SHA256_PREFIXED_PATTERN } from "../core/evidence/sha256-pattern";
+import { sha256Prefixed } from "../core/evidence/sha256";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "path";
 import {

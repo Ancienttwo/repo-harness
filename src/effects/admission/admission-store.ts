@@ -4,7 +4,8 @@ import { constants, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, open
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { osAccountHome } from '../runtime/os-account-home';
 import { canonicalize } from '../../core/evidence/canonical-json';
-import { SHA256_PREFIXED_PATTERN, sha256Prefixed } from '../../core/evidence/sha256';
+import { SHA256_PREFIXED_PATTERN } from '../../core/evidence/sha256-pattern';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import type { JsonValue } from '../../core/evidence/types';
 import { createReviewAdmission, validateReviewAdmission, reviewCampaignKey, bindReviewAdmission, type ReviewAdmission, type ReviewAdmissionInput, type ReviewAuthorityInput } from '../../core/review/authority-context';
 import { taskRepository } from '../git/task-repository';

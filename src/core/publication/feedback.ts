@@ -2,7 +2,7 @@ import { byteCompare } from '../evidence/byte-compare';
 import { isRecord } from '../evidence/is-record';
 import { validateTaskMessageClaim, type TaskMessageClaim } from '../messages/task-message-claim';
 import { evaluateNoProgress } from '../state/no-progress';
-import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256';
+import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256-pattern';
 import {
   publicationSha256,
   stablePublicationJson,
