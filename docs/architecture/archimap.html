@@ -186,7 +186,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
       <tr><td>verification</td><td>1</td><td>—</td></tr>
       <tr><td>architecture-model</td><td>1</td><td>—</td></tr>
     </table>
-    <p class="foot" style="margin:12px 0 0">Capabilities by <span class="mono">extensions.harnessTier</span>: 14 core, 9 plugin. The composition components own only the process entries that load a plugin for a recorded selection: <span class="mono">src/cli/index.ts</span> (with the <span class="mono">mcp</span>, <span class="mono">operator</span>, <span class="mono">worktrees</span>, <span class="mono">catch-up</span>, <span class="mono">doc-sessions</span>, <span class="mono">herdr</span> and <span class="mono">events</span> command files), <span class="mono">src/cli/hook-entry.ts</span>, <span class="mono">commands/architecture-thread.ts</span>, <span class="mono">scripts/capability-resolver.ts</span> (with <span class="mono">capability-config.ts</span> and <span class="mono">check-context-map.ts</span>), <span class="mono">contract-worktree-runtime.ts</span> and <span class="mono">check-managed-runtime.ts</span>. <span class="mono">check:state-boundaries</span> fails a core file that imports a plugin or composition file.</p>
+    <p class="foot" style="margin:12px 0 0">Capabilities by <span class="mono">extensions.harnessTier</span>: 14 core, 9 plugin. The composition components own only the process entries that load a plugin for a recorded selection: <span class="mono">src/cli/index.ts</span> (with the <span class="mono">mcp</span>, <span class="mono">operator</span>, <span class="mono">worktrees</span>, <span class="mono">catch-up</span>, <span class="mono">herdr</span> and <span class="mono">events</span> command files), <span class="mono">src/cli/hook-entry.ts</span>, <span class="mono">commands/architecture-thread.ts</span>, <span class="mono">scripts/capability-resolver.ts</span> (with <span class="mono">capability-config.ts</span> and <span class="mono">check-context-map.ts</span>), <span class="mono">contract-worktree-runtime.ts</span> and <span class="mono">check-managed-runtime.ts</span>. <span class="mono">check:state-boundaries</span> fails a core file that imports a plugin or composition file.</p>
   </div>
 
   <svg class="edges" width="1680" height="1640">
@@ -213,7 +213,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
     <h3 style="margin:0 0 8px;font-size:17px">Ownership moves since 7716f464</h3>
     <table class="tiers moves">
       <tr><th>PR</th><th>files that moved or were gated</th><th>owner in the model</th></tr>
-      <tr><td>#1856 · #1864</td><td>mcp serve/doctor gated by mcp · operator, worktrees, catch-up, doc-sessions bodies in src/cli/commands/*-actions.ts</td><td>cli-root · operator.primary-cli · operator.cli-layer</td></tr>
+      <tr><td>#1856 · #1864</td><td>mcp serve/doctor gated by mcp · operator, worktrees, catch-up bodies in src/cli/commands/*-actions.ts</td><td>cli-root · operator.primary-cli · operator.cli-layer</td></tr>
       <tr><td>#1898</td><td>App hook config: src/effects/publication/app-hook-config.ts · checkAppHookConfig in core publication-writes.ts</td><td>publication · events-cli → publication</td></tr>
       <tr><td>#1903</td><td>src/effects/terminal/runtime-closeout.ts · commands/herdr-skill*.ts · agents/fleet/** · scripts/install-agent-fleet.sh</td><td>runtime-closeout · global-runtime cli-layer · agent-fleet-*</td></tr>
       <tr><td>#1904</td><td>herdr, events, review round/status/close/cancel gated by peer-runtime · src/cli/commands/{herdr,events}-actions.ts</td><td>cli-root · task-agent-host.primary-cli · events-cli</td></tr>
@@ -298,7 +298,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
   <div class="node k-external" style="left:400px;top:864px;width:220px;height:80px"><span><b>archctx daemon</b></span><small>loopback HTTP</small></div>
   <div class="node k-external" style="left:680px;top:864px;width:220px;height:80px"><span><b>npm registry</b></span><small>HTTPS</small></div>
   <div class="node k-external" style="left:928px;top:864px;width:152px;height:80px"><span><b>Herdr.app</b></span><small>tabs · panes</small></div>
-  <div class="note" style="left:400px;top:984px;width:500px">The operator server reads cached collector results. Nine POST routes write: four worktree cleanup routes, two advisor seat routes, agent settings, seat settings and doc session create. It serves pages only from an installed console package of its own version; otherwise pages return 503 and <span class="mono">/healthz</span> (protocol 2) and the API stay up.</div>
+  <div class="note" style="left:400px;top:984px;width:500px">The operator server reads cached collector results. Ten POST routes write: four worktree cleanup routes, two advisor seat routes, report language, documentation language, agent settings and seat settings. It serves pages only from an installed console package of its own version; otherwise pages return 503 and <span class="mono">/healthz</span> (protocol 2) and the API stay up.</div>
 
   <svg class="edges" width="1680" height="1200">
     <defs>
@@ -400,8 +400,8 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 
   <div class="panel" style="left:856px;top:184px;width:760px;height:752px">
     <h3 style="margin:0 0 16px;font-size:18px">HTTP routes and mounts</h3>
-    <p class="foot" style="margin:0 0 12px">Loopback only. 35 GET routes and 9 POST write routes; selected paths below. Pages need the installed console package of the same version.</p>
-    <p class="mono" style="font-size:12.5px;line-height:24px;margin:0">GET /healthz · protocol 2 + version<br>GET /api/v1/quota<br>GET /api/v1/repositories<br>GET /api/v1/repositories/:repo/architecture/{map,history,modules}<br>GET /api/v1/repositories/:repo/{tests,execution,docs/tree}<br>GET /api/v1/repositories/:repo/board/{parents,seats}<br>GET /api/v1/sessions/:id/{events,diff,finalization}<br>POST /api/v1/worktrees/cleanup<br>POST /api/v1/worktrees/cleanup/{plan,execute,investigation}<br>POST /api/v1/seats/advisor/{messages,boss-commands}<br>POST /api/v1/settings/agents<br>POST /api/v1/settings/seats<br>POST /api/v1/sessions</p>
+    <p class="foot" style="margin:0 0 12px">Loopback only. 31 GET routes and 10 POST write routes; selected paths below. Pages need the installed console package of the same version.</p>
+    <p class="mono" style="font-size:12.5px;line-height:24px;margin:0">GET /healthz · protocol 2 + version<br>GET /api/v1/quota<br>GET /api/v1/repositories<br>GET /api/v1/repositories/:repo/architecture/{map,history,modules}<br>GET /api/v1/repositories/:repo/{tests,execution,docs/tree}<br>GET /api/v1/repositories/:repo/board/{parents,seats}<br>POST /api/v1/worktrees/cleanup<br>POST /api/v1/worktrees/cleanup/{plan,execute,investigation}<br>POST /api/v1/seats/advisor/{messages,boss-commands}<br>POST /api/v1/settings/agents<br>POST /api/v1/settings/seats</p>
     <h3 style="margin:24px 0 12px;font-size:18px">Mounts</h3>
     <table class="matrix" style="border-spacing:2px">
       <tr><th></th><th>shell</th><th>host session</th><th>browser</th><th>hc terminal</th></tr>
@@ -411,7 +411,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
       <tr><th class="row">operator</th><td class="h2">loopback</td><td>—</td><td class="h2">loopback</td><td>—</td></tr>
     </table>
   </div>
-  <div class="foot" style="left:64px;top:952px;width:1552px">The CLI root, hook and MCP server are the three entry processes. The console reads cached collector output; its nine POST routes are the only HTTP writes.</div>
+  <div class="foot" style="left:64px;top:952px;width:1552px">The CLI root, hook and MCP server are the three entry processes. The console reads cached collector output; its ten POST routes are the only HTTP writes.</div>
 </div>
 </section>
 
@@ -443,8 +443,8 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
     </div>
     <div class="remark medium">
       <div class="meta">R-A6 · medium · write surface</div>
-      <h3>The console has nine write routes</h3>
-      <p>The operator server declares nine POST routes with <span class="mono">write: true</span>: four worktree cleanup routes, two advisor seat routes, agent settings, seat settings and doc session create. The <span class="mono">component.operator.primary</span> summary still says three. Each write route must match the route inventory, or the server does not start. Keep new console reads on the GET reader and cached collectors.</p>
+      <h3>The console has ten write routes</h3>
+      <p>The operator server declares ten POST routes with <span class="mono">write: true</span>: four worktree cleanup routes, two advisor seat routes, report language, documentation language, agent settings and seat settings. The <span class="mono">component.operator.primary</span> summary still says three. Each write route must match the route inventory, or the server does not start. Keep new console reads on the GET reader and cached collectors.</p>
       <div class="ref">src/effects/operator/server.ts:139</div>
     </div>
     <div class="remark">

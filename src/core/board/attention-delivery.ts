@@ -1,4 +1,4 @@
-import type { BoardAttentionRoute, BoardAttentionV1 } from './attention';
+import { BOARD_PRIORITY_ORDER, type BoardAttentionRoute, type BoardAttentionV1 } from './attention';
 import type { BoardV1 } from './board';
 import { WORKER_SEAT_IDS } from './seats-settings';
 
@@ -25,8 +25,29 @@ export interface AttentionDeliveryV1 {
   readonly terminal: string;
   readonly timing: AttentionDeliveryTiming;
   readonly rules: readonly string[];
+  /** The finding keys that the text carries (`attentionFindingKey`). */
+  readonly keys: readonly string[];
   readonly text: string;
 }
+
+type BoardFinding = BoardAttentionV1['findings'][number];
+
+/**
+ * A finding is the same finding while its rule and its subjects stay. The
+ * message is not in the key: it holds the minutes, which change each window.
+ */
+export function attentionFindingKey(finding: BoardFinding): string {
+  return JSON.stringify([finding.rule, finding.issues, finding.pull_requests, finding.terminals]);
+}
+
+/**
+ * The finding keys that each seat terminal of a route got in a `sent` delivery,
+ * by `attentionSentSlot`. The watcher keeps it in its process between windows:
+ * a new watcher sends each open finding once.
+ */
+export type AttentionSentV1 = ReadonlyMap<string, ReadonlySet<string>>;
+
+export const attentionSentSlot = (route: BoardAttentionRoute, terminal: string): string => `${route} ${terminal}`;
 
 /** A route with findings that gets no send in this window, and why: the cap, no live seat terminal, or the board's execution reason. */
 export interface AttentionSkipV1 {
@@ -55,22 +76,39 @@ export function deliveryTiming(status: string | null): AttentionDeliveryTiming {
   return 'window_end';
 }
 
-/** One line: `hc send` pastes the text and presses Enter once. */
-function deliveryText(parent: number, findings: BoardAttentionV1['findings']): string {
-  return `[rh-attention] #${parent} ${findings.map(finding => `${finding.rule}: ${finding.message}`).join('; ')}`;
+/**
+ * One line: `hc send` pastes the text and presses Enter once. Each entry
+ * reads `<priority> <rule>: <message>`, highest priority first; entries of one
+ * priority keep the order of `evaluateBoardAttention`. The seat reads the
+ * priority of the entry, so the skill text needs no copy of the rule table.
+ */
+function deliveryText(parent: number, findings: readonly BoardFinding[]): string {
+  const rank = (finding: BoardFinding): number => BOARD_PRIORITY_ORDER.indexOf(finding.priority);
+  const ordered = [...findings].sort((left, right) => rank(left) - rank(right));
+  return `[rh-attention] #${parent} ${ordered.map(finding => `${finding.priority} ${finding.rule}: ${finding.message}`).join('; ')}`;
 }
 
 /**
  * One message per live seat terminal of each route that has findings. A route
  * names its seat: A findings go to the orchestrator seat, R findings to the
- * advisor seat.
+ * advisor seat. A terminal gets only the findings that are not in its `sent`
+ * slot. A route with no such finding gets no delivery and no skip; with no
+ * live seat terminal, a finding is new when no terminal of the route got it.
  */
-export function planAttentionDeliveries(board: BoardV1, attention: BoardAttentionV1, advisorWakesLastDay: number): AttentionDeliveryPlanV1 {
+export function planAttentionDeliveries(board: BoardV1, attention: BoardAttentionV1, advisorWakesLastDay: number, sent: AttentionSentV1 = new Map()): AttentionDeliveryPlanV1 {
   const deliveries: AttentionDeliveryV1[] = [];
   const skipped: AttentionSkipV1[] = [];
   for (const route of ['orchestrator', 'advisor'] as const) {
     const findings = attention.findings.filter(finding => finding.route === route);
-    if (findings.length === 0) continue;
+    const got = (terminal: string, finding: BoardFinding) => sent.get(attentionSentSlot(route, terminal))?.has(attentionFindingKey(finding)) ?? false;
+    const terminals = liveSeatTerminals(board, route);
+    const pending = terminals.map(terminal => ({ terminal, findings: findings.filter(finding => !got(terminal.address, finding)) }))
+      .filter(entry => entry.findings.length > 0);
+    const slots = [...sent.keys()].filter(slot => slot.startsWith(attentionSentSlot(route, '')));
+    const fresh = terminals.length === 0
+      ? findings.some(finding => !slots.some(slot => sent.get(slot)!.has(attentionFindingKey(finding))))
+      : pending.length > 0;
+    if (!fresh) continue;
     if (route === 'advisor' && advisorWakesLastDay >= ADVISOR_WAKES_PER_DAY) {
       skipped.push({ route, reason: 'advisor_daily_cap' });
       continue;
@@ -79,11 +117,13 @@ export function planAttentionDeliveries(board: BoardV1, attention: BoardAttentio
       skipped.push({ route, reason: board.execution.reason });
       continue;
     }
-    const terminals = liveSeatTerminals(board, route);
     if (terminals.length === 0) skipped.push({ route, reason: 'no_seat_terminal' });
-    const text = deliveryText(attention.parent, findings);
-    const rules = findings.map(finding => finding.rule);
-    for (const terminal of terminals) deliveries.push({ route, terminal: terminal.address, timing: deliveryTiming(terminal.status), rules, text });
+    for (const entry of pending) {
+      deliveries.push({
+        route, terminal: entry.terminal.address, timing: deliveryTiming(entry.terminal.status),
+        rules: entry.findings.map(finding => finding.rule), keys: entry.findings.map(attentionFindingKey), text: deliveryText(attention.parent, entry.findings),
+      });
+    }
   }
   return { window_ms: attentionWindowMs(board), deliveries, skipped };
 }

@@ -3,8 +3,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { initGitRepo, run, tmpWorkspace } from './helpers/repo-fixture';
-import { evaluateBoardAttention, type BoardRuleId } from '../src/core/board/attention';
-import { WINDOW_WITH_WORKERS_MS, WINDOW_WITHOUT_WORKERS_MS, planAttentionDeliveries } from '../src/core/board/attention-delivery';
+import { BOARD_PRIORITY_ORDER, BOARD_RULE_PRIORITY, evaluateBoardAttention, renderAttentionText, type BoardPriority, type BoardRuleId } from '../src/core/board/attention';
+import { WINDOW_WITH_WORKERS_MS, WINDOW_WITHOUT_WORKERS_MS, planAttentionDeliveries, type AttentionSentV1 } from '../src/core/board/attention-delivery';
 import { attentionLogPath, attentionWatchDoctorCheck, runAttentionWindow, serviceTerminalRepository, startAttentionWatch } from '../src/effects/board/attention-watch';
 import { decodeBoard, type BoardHostPortsV1, type BoardTerminalV1, type BoardV1 } from '../src/core/board/board';
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
@@ -835,6 +835,37 @@ test('board read: the pull request read asks in groups, so a parent whose pull r
     .toThrow(`gh api --hostname printed more than the ${GH_MAX_BUFFER_BYTES}-byte maxBuffer limit`);
 });
 
+test('each attention finding names its priority, and a delivery sorts the entries by it', () => {
+  // The merge fixture: #1491 is accepted, ready and unmerged (A1, P2), t1 is blocked for 11 min (A3, P0) and #1491 is eligible (A11, P2).
+  const board = replay(mergeReplay());
+  const attention = evaluateBoardAttention(board);
+  expect(attention.protocol).toBe(2);
+  // The priority has one source, and the record names every rule of the protocol.
+  expect(BOARD_RULE_PRIORITY).toEqual({
+    A1: 'P2', A3: 'P0', A4: 'P1', A5: 'P1', A6: 'P1', A7: 'P2', A8: 'P3', A9: 'P3', A10: 'P2', A11: 'P2',
+    R1: 'P2', R2: 'P2', R3: 'P1', R4: 'P2', R5: 'P1',
+  });
+  expect(attention.findings.map(finding => [finding.rule, finding.priority])).toContainEqual(['A3', 'P0']);
+  expect(attention.findings.map(finding => [finding.rule, finding.priority])).toContainEqual(['A11', 'P2']);
+  expect(attention.findings.map(finding => finding.priority)).toEqual(attention.findings.map(finding => BOARD_RULE_PRIORITY[finding.rule]));
+
+  const delivery = planAttentionDeliveries(board, attention, 0).deliveries.find(entry => entry.route === 'orchestrator')!;
+  const entries = delivery.text.slice('[rh-attention] #1474 '.length).split('; ');
+  // `evaluateBoardAttention` lists A1 before A3: the delivery puts P0 first.
+  expect(entries[0]).toBe('P0 A3: worker t1 is blocked for 11 min');
+  expect(entries.some(entry => entry.startsWith('P2 A1: #1491 is accepted and ready, unmerged for'))).toBe(true);
+  expect(entries.some(entry => entry.startsWith('P2 A11: eligible: run repo-harness board merge --parent 1474 --pr 1491'))).toBe(true);
+  const ranks = entries.map(entry => BOARD_PRIORITY_ORDER.indexOf(entry.slice(0, 2) as BoardPriority));
+  expect(ranks).toEqual([...ranks].sort((left, right) => left - right));
+
+  // No entry and no `board attention` finding line is without a priority.
+  expect(delivery.text).toMatch(/^\[rh-attention\] #1474 (P[0-3] [AR][0-9]+: .+)(; P[0-3] [AR][0-9]+: .+)*$/u);
+  const lines = renderAttentionText(attention).split('\n').filter(Boolean);
+  for (const line of lines.slice(0, attention.findings.length)) expect(line).toMatch(/^P[0-3] [AR][0-9]+ (orchestrator|advisor): /u);
+  // The unevaluated rules keep their own line: an unread rule has no priority.
+  for (const line of lines.slice(attention.findings.length)) expect(line).toMatch(/^[AR][0-9]+ not evaluated: /u);
+});
+
 test('board read: every sub-issue page of the parent reaches the board and the merge_order gate; a truncated or repeating page, a repeated cursor and a stream above the page cap fail closed; so does a parent comment page without a cursor or with a repeated one', () => {
   const single = replay();
   const paged = replay({ pages: { size: 4 } });
@@ -1464,10 +1495,11 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
   await window();
   expect(slept).toEqual([WINDOW_WITH_WORKERS_MS]);
   // One line per seat terminal: all findings of its route in this window.
-  const orchestrator = '[rh-attention] #1474 A7: the daily full run is failure (https://github.com/Ancienttwo/repo-harness/actions/runs/41358255043) and no CI repair issue is open; A10: #1491 is of unknown tier (counted as High) and has no Claude review of 20e2cbd21; start the Claude reviewer seat';
+  // Each entry carries the priority of its finding: A7 and A10 are P2, so they keep the rule order of `evaluateBoardAttention`.
+  const orchestrator = '[rh-attention] #1474 P2 A7: the daily full run is failure (https://github.com/Ancienttwo/repo-harness/actions/runs/41358255043) and no CI repair issue is open; P2 A10: #1491 is of unknown tier (counted as High) and has no Claude review of 20e2cbd21; start the Claude reviewer seat';
   expect(hc.calls().filter(args => args[0] !== 'get')).toEqual([
     ['send', '--json', '--', 't3', orchestrator],
-    ['send', '--json', '--', 't9', expect.stringMatching(/^\[rh-attention\] #1474 R2: #1494 and #1499 both change .+ with no dependency edge$/u)],
+    ['send', '--json', '--', 't9', expect.stringMatching(/^\[rh-attention\] #1474 P2 R2: #1494 and #1499 both change .+ with no dependency edge$/u)],
     ['wait', '--json', '--timeout', '900', '--', 't6'],
     ['wait', '--json', '--timeout', '900', '--', 't7'],
     ['send', '--json', '--', 't7', orchestrator],
@@ -1502,6 +1534,49 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
   // Without observed seat terminals, the skip names the board's execution reason.
   expect(planAttentionDeliveries({ ...board, execution: { status: 'unavailable', reason: 'no_seat_terminals' } }, evaluateBoardAttention(watched), 0).skipped)
     .toEqual([{ route: 'orchestrator', reason: 'no_seat_terminals' }, { route: 'advisor', reason: 'no_seat_terminals' }]);
+});
+
+test('watch window sends a finding once to each seat terminal until its subject changes, and again when a send failed or it came back', async () => {
+  const board = replay();
+  const seat = (address: string, seatName: string) =>
+    ({ address, name: null, agent: null, state: 'live', status: 'idle', status_kind: null, status_msg: null, status_ms: null, turn: 1, branch: null, seat_status: 'observed', seat: seatName, issue: null, pr: null }) as BoardTerminalV1;
+  const watched = { ...board, execution: { status: 'observed', terminals: [seat('t3', 'orchestrator'), seat('t4', 'orchestrator'), seat('t9', 'advisor')] } } as BoardV1;
+  const hc = watchHc({ FAKE_TERMINALS: { t3: {}, t4: {}, t9: {} } });
+  const logPath = attentionLogPath(1186405141, 1474, { REPO_HARNESS_HOME: hc.root });
+  let failT4 = true;
+  const host = { ...hc.host, send: (terminal: string, text: string) =>
+    failT4 && terminal === 't4' ? { status: 'failed' as const, reason: 'send_failed', detail: 'blocked' } : hc.host.send(terminal, text) };
+  let sent: AttentionSentV1 = new Map();
+  const window = async (collected: BoardV1) => {
+    sent = await runAttentionWindow({ parent: 1474, deliver: true, log_path: logPath, sent, collect: () => collected, host, now: () => REPLAY_NOW, sleep: async () => {} });
+    const sends = hc.calls().filter(args => args[0] === 'send').map(args => args.at(-2));
+    writeFileSync(join(hc.root, 'hc.log'), '');
+    const logged = records().filter(record => record.kind === 'send').slice(logIndex);
+    logIndex += logged.length;
+    expect(logged.filter(record => record.outcome === 'sent').map(record => record.terminal)).toEqual(sends);
+    return logged.map(record => [record.terminal, record.outcome, record.rules]);
+  };
+  const records = () => readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
+  const findings = () => records().filter(record => record.kind === 'finding');
+  let logIndex = 0;
+
+  // Window 1: the send to t4 fails, so only t3 and t9 hold their findings.
+  expect(await window(watched)).toEqual([['t3', 'sent', ['A7', 'A10']], ['t4', 'send_failed', ['A7', 'A10']], ['t9', 'sent', ['R2']]]);
+  failT4 = false;
+  expect(await window(watched)).toEqual([['t4', 'sent', ['A7', 'A10']]]);
+  // Window 3: no new finding, so no send and no skip; the log still holds each finding of each window.
+  expect(await window(watched)).toEqual([]);
+  expect(findings().map(record => record.rule)).toEqual(['A7', 'A10', 'R2', 'A7', 'A10', 'R2', 'A7', 'A10', 'R2']);
+  expect(records().filter(record => record.kind === 'skip')).toEqual([]);
+  // An open finding that the advisor holds uses no advisor wake and makes no cap skip.
+  expect(planAttentionDeliveries(watched, evaluateBoardAttention(watched), 8, sent).skipped).toEqual([]);
+  // A finding with a new subject is new; the finding that stays is not in its message.
+  const attention = evaluateBoardAttention(watched);
+  const moved = { ...attention, findings: attention.findings.map(finding => finding.rule === 'A10' ? { ...finding, pull_requests: [...finding.pull_requests, 1500] } : finding) };
+  expect(planAttentionDeliveries(watched, moved, 0, sent).deliveries.map(delivery => [delivery.terminal, delivery.rules])).toEqual([['t3', ['A10']], ['t4', ['A10']]]);
+  // A7 is gone in window 4 and back in window 5: it is new again.
+  expect(await window({ ...watched, daily_run: { ...watched.daily_run, conclusion: 'success' } } as BoardV1)).toEqual([]);
+  expect(await window(watched)).toEqual([['t3', 'sent', ['A7']], ['t4', 'sent', ['A7']]]);
 });
 
 test('watch window skips a provider 5xx and resumes at the next window', async () => {
@@ -2109,10 +2184,10 @@ test('watch window --review: each start or refusal is a log line and an orchestr
   const records = readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
   expect(records.filter(record => record.kind === 'review').map(record => [record.pr, record.seat, record.outcome])).toEqual([[7, 'reviewer', 'started'], [8, null, 'refused'], [null, null, 'refused'], [null, null, 'refused'], [9, 'gatekeeper', 'started'], [null, null, 'refused']]);
   expect(hc.calls().filter(args => args[0] === 'send' && args.at(-1)?.includes(' review: ')).map(args => args.at(-1))).toEqual([
-    '[rh-attention] #1474 review: PR #7 started on reviewer: https://example.test/m; PR #8 refused: no worktree',
-    '[rh-attention] #1474 review: refused: another board review run holds the lock',
-    '[rh-attention] #1474 review: refused: seat_not_configured: the reviewer seat has no runtime',
-    '[rh-attention] #1474 review: PR #9 started on gatekeeper: https://example.test/g; refused: launch_unknown for the reviewer of PR #9',
+    '[rh-attention] #1474 P3 review: PR #7 started on reviewer: https://example.test/m; PR #8 refused: no worktree',
+    '[rh-attention] #1474 P3 review: refused: another board review run holds the lock',
+    '[rh-attention] #1474 P3 review: refused: seat_not_configured: the reviewer seat has no runtime',
+    '[rh-attention] #1474 P3 review: PR #9 started on gatekeeper: https://example.test/g; refused: launch_unknown for the reviewer of PR #9',
   ]);
 });
 

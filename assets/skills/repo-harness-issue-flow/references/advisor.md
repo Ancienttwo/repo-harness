@@ -55,6 +55,13 @@ the change, so the check must come from outside its session.
 5. **Tell the owner** the owner items and a status of three lines. When
    nothing changed, one line.
 
+An `[rh-attention]` message is a finding of the attention watcher, not the
+owner's words. Its entries carry the priority of the finding (`orchestrator.md`
+§8.1). A P0 or P1 entry starts steps 1 to 4 of this section for that parent in
+the same turn. A P2 or P3 entry is a lead for the next scheduled review. The
+watcher sends a finding once, until its rule or its subjects change;
+`repo-harness board attention --parent <n>` gives all open findings.
+
 ## 3. Proposals and joint decisions
 
 A proposal that changes twice costs the orchestrator three turns and the

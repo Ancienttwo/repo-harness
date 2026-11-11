@@ -3,14 +3,12 @@ import { join } from 'path';
 import { repoHarnessHome } from '../../effects/repo-harness-home';
 
 export interface McpLocalConfig {
-  version: 1 | 2 | 3;
+  version: 3;
   repo?: string;
   capabilities?: {
     workspaceReader?: boolean;
     workflowPlanner?: boolean;
     workflowExecutor?: boolean;
-    /** @deprecated v2 uses workspaceReader; accepted only for older local configs. */
-    reader?: boolean;
   };
   permissions?: {
     fullDiskRead?: boolean;
@@ -64,9 +62,12 @@ export function parseMcpLocalConfig(value: unknown): McpLocalConfig {
     throw new Error('MCP local config must be a JSON object');
   }
   const raw = value as Record<string, unknown>;
-  const version = raw.version === undefined ? 1 : raw.version;
-  if (version !== 1 && version !== 2 && version !== 3) {
-    throw new Error(`unsupported MCP local config version: ${String(version)}`);
+  if (raw.version !== 3) {
+    throw new Error(`unsupported MCP local config version: ${String(raw.version)}; set "version": 3.`);
+  }
+  // Refused, not ignored: an old `"reader": false` that nothing reads would turn the planner's default reader on.
+  if (typeof raw.capabilities === 'object' && raw.capabilities !== null && Object.hasOwn(raw.capabilities, 'reader')) {
+    throw new Error('MCP local config capabilities.reader is retired; use capabilities.workspaceReader.');
   }
   const retired = retiredConfigKeys(raw);
   if (retired.length > 0) {
@@ -79,10 +80,7 @@ export function parseMcpLocalConfig(value: unknown): McpLocalConfig {
   if (config.permissions?.discoveryRoots !== undefined && !Array.isArray(config.permissions.discoveryRoots)) {
     throw new Error('MCP local config permissions.discoveryRoots must be an array');
   }
-  return {
-    ...config,
-    version,
-  };
+  return config;
 }
 
 function readMcpLocalConfigFile(path: string): McpLocalConfig | null {

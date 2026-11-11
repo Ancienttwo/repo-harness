@@ -1,7 +1,10 @@
 import { appendFileSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { evaluateBoardAttention } from '../../core/board/attention';
-import { ADVISOR_CAP_SPAN_MS, WINDOW_WITH_WORKERS_MS, deliveryTiming, liveSeatTerminals, planAttentionDeliveries, type AttentionDeliveryV1, type AttentionHostPortsV1 } from '../../core/board/attention-delivery';
+import {
+  ADVISOR_CAP_SPAN_MS, WINDOW_WITH_WORKERS_MS, attentionFindingKey, attentionSentSlot, deliveryTiming, liveSeatTerminals, planAttentionDeliveries,
+  type AttentionDeliveryV1, type AttentionHostPortsV1, type AttentionSentV1,
+} from '../../core/board/attention-delivery';
 import type { BoardV1 } from '../../core/board/board';
 import { repoHarnessHome } from '../repo-harness-home';
 import { BoardCollectError, boardAvailabilityFailure } from './collect';
@@ -76,6 +79,8 @@ export interface AttentionWindowInput {
   /** The same code path as `board review --parent <n>`; set only when the watcher starts with `--review`, which needs `deliver`. */
   readonly review?: (observe: ReviewObserver) => Promise<unknown>;
   readonly log_path: string;
+  /** The `sent` slots that the window before returned; empty for the first window. */
+  readonly sent?: AttentionSentV1;
   readonly collect: () => BoardV1;
   readonly host: AttentionHostPortsV1;
   readonly now?: () => Date;
@@ -111,10 +116,17 @@ async function reviewWindow(review: (observe: ReviewObserver) => Promise<unknown
  * again at the window end: still blocked is `skipped_blocked` (hc refuses to
  * send to it), any other status gets the send then. So the skip never comes
  * before the window end, whatever `hc wait` returns for a blocked terminal.
+ *
+ * Returns the `sent` slots for the next window: of each slot, the keys of this
+ * window's findings that it held before or that a `sent` delivery carried. A
+ * failed, skipped or ended send adds no key, so the next window sends that
+ * finding again; a finding that is gone leaves every slot. A window that could
+ * not read the board returns the slots it got.
  */
-export async function runAttentionWindow(input: AttentionWindowInput): Promise<void> {
+export async function runAttentionWindow(input: AttentionWindowInput): Promise<AttentionSentV1> {
   const now = input.now ?? (() => new Date());
   const sleep = input.sleep ?? sleepFor;
+  const prior = input.sent ?? new Map<string, ReadonlySet<string>>();
   const started = now();
   const window = started.toISOString();
   const log = (record: Record<string, unknown>) => append(input.log_path, { at: now().toISOString(), window, parent: input.parent, ...record } as AttentionLogRecordV1);
@@ -124,27 +136,37 @@ export async function runAttentionWindow(input: AttentionWindowInput): Promise<v
     const message = error.message.slice(0, 300);
     process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, message })}\n`);
     log({ kind: 'error', message });
-    return sleep(started.getTime() + WINDOW_WITH_WORKERS_MS - now().getTime());
+    await sleep(started.getTime() + WINDOW_WITH_WORKERS_MS - now().getTime());
+    return prior;
   }
   const attention = evaluateBoardAttention(board);
+  const open = new Set(attention.findings.map(attentionFindingKey));
+  const next = new Map([...prior].map(([slot, keys]) => [slot, new Set([...keys].filter(key => open.has(key)))]));
   for (const finding of attention.findings) log({ kind: 'finding', rule: finding.rule, route: finding.route, message: finding.message });
   const reviewLines = input.review === undefined ? [] : await reviewWindow(input.review, log);
-  const plan = planAttentionDeliveries(board, attention, advisorWakes(input.log_path, started));
+  const plan = planAttentionDeliveries(board, attention, advisorWakes(input.log_path, started), prior);
   const end = started.getTime() + plan.window_ms;
-  if (!input.deliver) return sleep(end - now().getTime());
+  if (!input.deliver) {
+    await sleep(end - now().getTime());
+    return next;
+  }
   for (const skip of plan.skipped) log({ kind: 'skip', route: skip.route, reason: skip.reason });
   const record = (delivery: AttentionDeliveryV1, outcome: AttentionSendOutcome, detail: string | null = null) =>
     log({ kind: 'send', route: delivery.route, terminal: delivery.terminal, rules: delivery.rules, outcome, detail });
   // A failed host call is one failed send: the log keeps the host's message, and the other seats still get theirs.
   const send = (delivery: AttentionDeliveryV1) => {
     const sent = input.host.send(delivery.terminal, delivery.text);
-    if (sent.status === 'sent') record(delivery, 'sent');
-    else record(delivery, 'send_failed', sent.detail);
+    if (sent.status === 'sent') {
+      record(delivery, 'sent');
+      const slot = attentionSentSlot(delivery.route, delivery.terminal);
+      next.set(slot, new Set([...next.get(slot) ?? [], ...delivery.keys]));
+    } else record(delivery, 'send_failed', sent.detail);
   };
   // The review message takes the delivery path of a finding: a blocked orchestrator gets `hc wait`, a working one the window end.
-  const reviewText = `[rh-attention] #${input.parent} review: ${reviewLines.join('; ')}`;
+  // A review start or refusal is housekeeping: the entry carries P3, the priority of the A8 and A9 rules.
+  const reviewText = `[rh-attention] #${input.parent} P3 review: ${reviewLines.join('; ')}`;
   const deliveries = [...plan.deliveries, ...(reviewLines.length === 0 ? [] : liveSeatTerminals(board, 'orchestrator').map((terminal): AttentionDeliveryV1 =>
-    ({ route: 'orchestrator', terminal: terminal.address, timing: deliveryTiming(terminal.status), rules: ['review'], text: reviewText })))];
+    ({ route: 'orchestrator', terminal: terminal.address, timing: deliveryTiming(terminal.status), rules: ['review'], keys: [], text: reviewText })))];
   for (const delivery of deliveries.filter(entry => entry.timing === 'now')) send(delivery);
   const stillBlocked: AttentionDeliveryV1[] = [];
   for (const delivery of deliveries.filter(entry => entry.timing === 'after_wait')) {
@@ -164,6 +186,7 @@ export async function runAttentionWindow(input: AttentionWindowInput): Promise<v
     else send(delivery);
   }
   for (const delivery of deliveries.filter(entry => entry.timing === 'window_end')) send(delivery);
+  return next;
 }
 
 /** The repository id of the watcher terminal that runs this process. `--watch` runs only there, so doctor sees every watcher. */

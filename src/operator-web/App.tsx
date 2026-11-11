@@ -160,6 +160,14 @@ function readStorage(key: string): string | null {
   try { return typeof window === 'undefined' ? null : localStorage.getItem(key); } catch { return null; }
 }
 
+// The current history entry's record gives its repository. An entry without a record takes the repository
+// that the app already shows; only a new app with neither falls back to the latest pick in localStorage.
+function recordedRepository(): string | null {
+  if (typeof window === 'undefined') return null;
+  const recorded: unknown = (window.history.state as { repositoryId?: unknown } | null)?.repositoryId;
+  return typeof recorded === 'string' ? recorded : null;
+}
+
 function writeStorage(key: string, value: string | null): void {
   try {
     if (value === null) localStorage.removeItem(key);
@@ -330,7 +338,7 @@ export function OperatorApp({
   readDocsTree = fetchDocsTree,
   readDocsFile = fetchDocsFile,
 }: OperatorAppProps) {
-  const [repositoryId, setRepositoryId] = useState<string | null>(() => readStorage(OPERATOR_REPOSITORY_STORAGE_KEY));
+  const [repositoryId, setRepositoryId] = useState<string | null>(() => recordedRepository() ?? readStorage(OPERATOR_REPOSITORY_STORAGE_KEY));
   const [place, setPlace] = useState<WorkspaceLocation>(() => initialPlace ?? parseWorkspaceLocation(typeof window === 'undefined' ? '' : window.location.hash));
   const [refreshGeneration, setRefreshGeneration] = useState(0);
   const { locale, setLocale, t } = useLocale(initialLocale);
@@ -349,11 +357,18 @@ export function OperatorApp({
   // Pin the first registered repository once it is known. The server sorts by name, so a later
   // registration that sorts first must not move the single-repository pages; only the switcher changes the pin.
   const firstRegistered = registered[0]?.repository_id ?? null;
-  if (repositoryId === null && firstRegistered !== null) setRepositoryId(firstRegistered);
-  useEffect(() => {
-    if (repositoryId !== null) writeStorage(OPERATOR_REPOSITORY_STORAGE_KEY, repositoryId);
-  }, [repositoryId]);
   const activeRepository = registered.find(repo => repo.repository_id === repositoryId) ?? null;
+  if (repositoryId === null && firstRegistered !== null) setRepositoryId(firstRegistered);
+  // A pin that the loaded list does not name (an unregistered repository) is replaced in an effect,
+  // because the replacement can also rewrite the URL.
+  const stalePin = repositoryId !== null && repositories.kind === 'ready' && activeRepository === null;
+  // localStorage keeps the latest pick. A restored entry does not overwrite it; a seed replaces only a stored id
+  // that is missing or no longer registered.
+  const storedPick = readStorage(OPERATOR_REPOSITORY_STORAGE_KEY);
+  const storedPickValid = storedPick !== null && (repositories.kind !== 'ready' || registered.some(repo => repo.repository_id === storedPick));
+  useEffect(() => {
+    if (activeRepository !== null && !storedPickValid) writeStorage(OPERATOR_REPOSITORY_STORAGE_KEY, activeRepository.repository_id);
+  }, [activeRepository, storedPickValid]);
 
   const devActivity = useDevActivity(readDevActivity, initialDevActivity, refreshGeneration);
   const devSnapshot = snapshotOf(devActivity);
@@ -395,8 +410,16 @@ export function OperatorApp({
   // The parent list reads only on the list layout: the overview reads its own.
   const boardParents = useBoardParents(readBoardParents, workspace === 'board' && boardLayout(place.item) === 'list' && boardSubject === null ? boardListRepository(boardOptions, boardRepository) : null, refreshGeneration);
 
+  // Each history entry records the repository it shows, so Back and Forward restore a module id or docs path
+  // together with its repository.
   useEffect(() => {
-    const restore = () => setPlace(parseWorkspaceLocation(window.location.hash));
+    if (repositoryId !== null) window.history.replaceState({ repositoryId }, '');
+  }, [repositoryId, place]);
+  useEffect(() => {
+    const restore = () => {
+      setPlace(parseWorkspaceLocation(window.location.hash));
+      setRepositoryId(current => recordedRepository() ?? current);
+    };
     window.addEventListener('popstate', restore);
     window.addEventListener('hashchange', restore);
     return () => { window.removeEventListener('popstate', restore); window.removeEventListener('hashchange', restore); };
@@ -405,7 +428,20 @@ export function OperatorApp({
     window.history.pushState(null, '', window.location.pathname + window.location.search + workspaceHash(next));
     setPlace(next);
   }, []);
-  const switchRepository = (id: string) => setRepositoryId(id);
+  const switchRepository = (id: string) => {
+    writeStorage(OPERATOR_REPOSITORY_STORAGE_KEY, id);
+    setRepositoryId(id);
+  };
+  // A module id or a docs path names a place in the old repository, so a single-repository page opens at its root.
+  const repositoryRoot: WorkspaceLocation | null = singleRepository && (place.module !== null || place.item !== null) ? { workspace, module: null, item: null } : null;
+  useEffect(() => {
+    if (!stalePin || firstRegistered === null) return;
+    setRepositoryId(firstRegistered);
+    if (repositoryRoot === null) return;
+    // The operator did not navigate, so the corrected place replaces the history entry.
+    window.history.replaceState({ repositoryId: firstRegistered }, '', window.location.pathname + window.location.search + workspaceHash(repositoryRoot));
+    setPlace(repositoryRoot);
+  }, [stalePin, firstRegistered, repositoryRoot]);
   const boardHome: WorkspaceLocation = { workspace: 'board', module: null, item: null };
   // A Repositories row opens the board parent list of that repository.
   const openRepositoryBoard = (id: string) => {
@@ -429,7 +465,11 @@ export function OperatorApp({
     } : null,
     options,
     allowAll: false,
-    onSelect: id => { if (id !== null) switchRepository(id); },
+    onSelect: id => {
+      if (id === null) return;
+      switchRepository(id);
+      if (repositoryRoot !== null) openPlace(repositoryRoot);
+    },
   } : workspace === 'board' ? {
     // A board names one repository; another repository needs its own parent issue.
     mode: 'current',

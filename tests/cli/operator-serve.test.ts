@@ -124,7 +124,7 @@ describe('operator serve command and HTTP boundary', () => {
     const homes: string[] = [root];
     try {
       const probe = join(root, 'load-probe.ts');
-      writeFileSync(probe, `process.on('exit', () => process.stderr.write(\`operator-modules:\${Object.keys(require.cache).filter(path => /[\\\\/]src[\\\\/](?:effects[\\\\/](?:operator|setup|dev-activity)[\\\\/]|core[\\\\/](?:operator|setup|dev-activity)[\\\\/]|effects[\\\\/]configuration[\\\\/]agents-configuration\\.ts|effects[\\\\/]review[\\\\/]docs-host-isolation\\.ts|cli[\\\\/]commands[\\\\/](?:(?:operator|worktrees|catch-up|doc-sessions)-actions|architecture-thread|setup-[a-z-]+)\\.ts)/.test(path)).length}\n\`));\n`);
+      writeFileSync(probe, `process.on('exit', () => process.stderr.write(\`operator-modules:\${Object.keys(require.cache).filter(path => /[\\\\/]src[\\\\/](?:effects[\\\\/](?:operator|setup|dev-activity)[\\\\/]|core[\\\\/](?:operator|setup|dev-activity)[\\\\/]|effects[\\\\/]configuration[\\\\/]agents-configuration\\.ts|effects[\\\\/]review[\\\\/]docs-host-isolation\\.ts|cli[\\\\/]commands[\\\\/](?:(?:operator|worktrees|catch-up)-actions|architecture-thread|setup-[a-z-]+)\\.ts)/.test(path)).length}\n\`));\n`);
       const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
       const selected = (plugins: readonly PluginId[]) => { const env = pluginSelectionEnv(plugins); homes.push(env.HOME!); return env; };
       const call = (env: NodeJS.ProcessEnv, ...args: string[]) => {
@@ -152,7 +152,6 @@ describe('operator serve command and HTTP boundary', () => {
         ['operator', ['operator', 'serve', '--port', '0']],
         ['operator', ['operator', 'capture', '--provider', 'codex', '--source-id', 'gate', '--snapshot', join(root, 'capture.json'), '--', 'true']],
         ['operator', ['operator', 'cleanup-investigation-job', 'a', 'b', '1']],
-        ['operator', ['operator', 'doc-sessions', 'list']],
         ['worktrees', ['worktrees', 'list']],
         ['catch-up', ['catch-up', '--json']],
       ];

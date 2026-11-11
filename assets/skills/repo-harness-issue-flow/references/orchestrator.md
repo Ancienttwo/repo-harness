@@ -364,8 +364,9 @@ host's PR events or check when the worker reports.
   for a known flake. A second identical failure is not a flake. Classify
   it once, as the diff, the infrastructure or a stale base, and act on
   that class: the worker fixes the diff, the owner gets the infrastructure
-  failure, and for a stale base the worker merges main into the head,
-  which makes a new head (`acceptor.md` §2.2). Do not rerun the job
+  failure, and for a stale base the worker merges main into the head. This is one of
+  the two cases that merge main without a conflict (`acceptor.md` §2.2,
+  New head). The merge makes a new head. Do not rerun the job
   again. A job that was cancelled or timed out with no failed assertion is
   infrastructure: it starts no fix round. Rerun the failed job once on the
   same head. A second identical cancel goes to the owner.
@@ -424,14 +425,25 @@ Keep the notices in the host's task list tool (on Claude: `TaskCreate`,
 the board. It holds no state of its own, so it cannot drift from the board.
 
 - **Classify the source.** A message whose first line starts with
-  `[rh-notice]`, or a `repo-harness.bot-event/v1` event, is a notice. Any
-  other message is from the owner.
+  `[rh-notice]` or `[rh-attention]`, or a `repo-harness.bot-event/v1`
+  event, is a notice. Any other message is from the owner.
 - **Queue each notice.** A notice does not take over an open owner
   request. When no owner request is open, work the queue in the same
-  turn (Work the queue). Keep one item for each issue or PR. The subject is
+  turn (Work the queue). Keep one item for each issue or PR of a
+  `[rh-notice]` or a bot event. The subject is
   `[P<n>] #<number> <kind>`. The description is the comment or event URL,
   or the message text of a simple notice (`worker.md` §7). When the issue
   or PR has an open item, update that item and keep the higher priority.
+  An `[rh-attention]` notice comes from the attention watcher, not from
+  the owner. It holds one entry for each finding, in the form
+  `<priority> <rule>: <message>`. Queue one item for each entry, also
+  when two entries name the same issue or PR. The
+  priority of the item is the one in its entry: the entry is the
+  authority, so read no row of the table below for a finding. The subject
+  is `[P<n>] #<number> <rule>`. `<number>` is the first issue or pull
+  request that the entry names, else the parent issue. The watcher sends
+  a finding once, until its rule or its subjects change;
+  `repo-harness board attention --parent <n>` gives all open findings.
 - **Priority.**
 
   | Priority | Notice |

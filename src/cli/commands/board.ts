@@ -3,8 +3,8 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { AdvisorSeatError, advisorSeatSendFailure, readAdvisorSeat, sendToAdvisorSeat } from '../../core/board/advisor-seat';
 import { AttentionWatchError, attentionLogPath, runAttentionWindow, serviceTerminalRepository, startAttentionWatch } from '../../effects/board/attention-watch';
-import { evaluateBoardAttention, type BoardAttentionV1 } from '../../core/board/attention';
-import type { AttentionHostPortsV1 } from '../../core/board/attention-delivery';
+import { evaluateBoardAttention, renderAttentionText } from '../../core/board/attention';
+import type { AttentionHostPortsV1, AttentionSentV1 } from '../../core/board/attention-delivery';
 import type { BoardHostPortsV1 } from '../../core/board/board';
 import { BoardSourceError } from '../../core/board/source';
 import { BoardCollectError, collectBoard, collectBoardThrough, readRepositoryId } from '../../effects/board/collect';
@@ -89,13 +89,6 @@ function mergeText(result: BoardMergeResultV1, requested: number | null, dryRun:
   return `${lines.join('\n')}\n`;
 }
 
-function attentionText(attention: BoardAttentionV1): string {
-  const lines = attention.findings.map(finding => `${finding.rule} ${finding.route}: ${finding.message}`);
-  if (lines.length === 0) lines.push(`no attention findings for #${attention.parent}`);
-  for (const entry of attention.unevaluated) lines.push(`${entry.rule} not evaluated: ${entry.reason}${entry.subject === null ? '' : ` (${entry.subject})`}`);
-  return `${lines.join('\n')}\n`;
-}
-
 /**
  * `--parent` and `--json` belong to `board`. The root program does not use
  * positional options, so Commander binds them to `board` wherever they
@@ -125,7 +118,7 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
         if (options.deliver === true) throw new AttentionWatchError('--deliver needs --watch');
         if (options.review === true) throw new AttentionWatchError('--review needs --watch');
         const attention = evaluateBoardAttention(collectBoard({ repo_root: process.cwd(), parent: parentNumber(options), host }));
-        process.stdout.write(options.json === true ? `${JSON.stringify(attention)}\n` : attentionText(attention));
+        process.stdout.write(options.json === true ? `${JSON.stringify(attention)}\n` : renderAttentionText(attention));
       })(options);
     });
   attention.command('start')
@@ -301,7 +294,9 @@ async function watchAttention(options: AttentionOptions, host: BoardHostPortsV1,
       parent, deliver: options.deliver === true, review, log_path: attentionLogPath(repositoryId, parent),
       collect: () => collectBoardThrough({ repo_root: process.cwd(), parent, host }, sources), host: attentionHost,
     };
-    for (;;) await runAttentionWindow(input);
+    // The sent slots live in this process only: a new watcher sends each open finding once.
+    let sent: AttentionSentV1 = new Map();
+    for (;;) sent = await runAttentionWindow({ ...input, sent });
   } catch (error) {
     if (!(error instanceof BoardCollectError || error instanceof BoardSourceError || error instanceof AttentionWatchError)) throw error;
     process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, message: error.message })}\n`);
