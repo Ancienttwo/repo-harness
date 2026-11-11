@@ -147,6 +147,8 @@ describe('Bash write tripwire host route', () => {
         "git commit -m \"$(cat <<'EOF'\nfix(hook): map a -> b\nEOF\n)\"",
         "gh pr create --title x --body \"$(cat <<'EOF'\n## Summary\n- run node scripts, don't rm\nEOF\n)\"",
         'git commit -m "use `node` for the cp step"', 'ls $(pwd) | grep x > /tmp/out.txt', 'echo $(date) > report.txt',
+        // origin/main split these substitutions wrongly and denied them; bash runs no protected write (owner record 6790006777).
+        'echo "$(echo " ; rm -rf _ops ; echo ")"', 'echo $(true) cd _ops && rm -rf env',
       ]) {
         const result = invokeBash(command);
         expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 0 });
