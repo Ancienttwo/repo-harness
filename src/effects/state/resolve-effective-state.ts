@@ -1,4 +1,5 @@
 import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReaddirSync as readdirSync } from '../readonly-observation';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { statSync, existsSync } from 'fs';
 import { posix, win32, join } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath, type ReviewSubject } from '../review/diff-fingerprint';
@@ -51,7 +52,6 @@ import {
   readTrimmed,
   repoPath,
   safeRealpath,
-  sha256,
   sourceHash,
 } from './collect-state-inputs';
 import { gitExecFileSync } from '../git/runner';
@@ -267,7 +267,7 @@ function archcontextNodePaths(cwd: string): string[] {
 function capabilityAuthorityHash(cwd: string, mode: CapabilitySourceMode, hashSource = (path: string) => sourceHash(cwd, path)): string {
   if (mode === 'registry') return hashSource(CAPABILITY_REGISTRY_PATH);
   const paths = archcontextNodePaths(cwd);
-  if (paths.length === 0) return sha256(`missing:${CAPABILITY_NODES_DIR}`);
+  if (paths.length === 0) return sha256Prefixed(`missing:${CAPABILITY_NODES_DIR}`);
   return contentRevision(Object.fromEntries(paths.map((path) => [path, hashSource(path)])));
 }
 
@@ -380,7 +380,7 @@ function resolveArchcontextPaths(
   }
   const nodes = archcontextNodePaths(cwd).map((path) => [path, readSource(path)]);
   // The queries carry each path's directory state, which changes what archctx answers.
-  const key = sha256(JSON.stringify([safeRealpath(cwd), nodes, paths, ownership.resolveQueries(cwd, paths)]));
+  const key = sha256Prefixed(JSON.stringify([safeRealpath(cwd), nodes, paths, ownership.resolveQueries(cwd, paths)]));
   // Scoped transport options can select another environment or deadline.
   // Only ordinary state passes share the default transport's memo.
   if (!options && archcontextResolutionMemo?.key === key) return archcontextResolutionMemo.resolution;
@@ -675,7 +675,7 @@ function resolveEffectiveStateUnlocked(
   };
   const hashSource = (path: string): string => {
     const text = readSource(path);
-    return text === null ? sha256(`missing:${path}`) : sha256(text);
+    return text === null ? sha256Prefixed(`missing:${path}`) : sha256Prefixed(text);
   };
   const policy = readWorkflowPolicy(cwd, readSource);
   const capabilitySource = capabilitySourceMode(policy);
@@ -797,8 +797,8 @@ function resolveEffectiveStateUnlocked(
     capability_registry: capabilityAuthorityHash(cwd, capabilitySource, captured ? hashSource : undefined),
   });
   const subjectRevision = contentRevision({
-    review_subject: reviewSubjectSha256 ?? sha256('unavailable:review-subject'),
-    target_rev: reviewSubject.status === 'ok' ? sha256(reviewSubject.target_rev) : sha256('unavailable:target-rev'),
+    review_subject: reviewSubjectSha256 ?? sha256Prefixed('unavailable:review-subject'),
+    target_rev: reviewSubject.status === 'ok' ? sha256Prefixed(reviewSubject.target_rev) : sha256Prefixed('unavailable:target-rev'),
   });
   // Every display projection (handoff, resume, task snapshot) is retired, so
   // the projection set is empty and its revision is the empty-set digest.

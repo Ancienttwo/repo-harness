@@ -173,10 +173,6 @@ interface PreparedContext extends EvidenceContext {
   readonly envProviderId: string;
 }
 
-function sha256(content: string | Buffer): string {
-  return sha256Prefixed(content);
-}
-
 function git(repoRoot: string, args: readonly string[], env?: NodeJS.ProcessEnv): string {
   return gitExecFileSync(["-C", repoRoot, ...args], {
     encoding: "utf8",
@@ -229,7 +225,7 @@ export function captureGitVirtualTreeSnapshot(repoRoot: string): GitVirtualTreeS
     // An empty commit changes provenance but not the source inputs consumed by
     // a check. Keep HEAD in the snapshot record while keying input identity to
     // the complete virtual tree itself.
-    snapshot_hash: sha256(canonicalize({ tree_hash: firstTree })),
+    snapshot_hash: sha256Prefixed(canonicalize({ tree_hash: firstTree })),
   };
 }
 
@@ -334,7 +330,7 @@ function resolveToolchain(env: NodeJS.ProcessEnv): { readonly hash: string; read
   ] as const;
   const sourceHashes = Object.fromEntries(runnerSources.map(([name, path]) => {
     try {
-      return [name, sha256(readFileSync(path))];
+      return [name, sha256Prefixed(readFileSync(path))];
     } catch (error) {
       throw new Error(`verification runner source is unavailable (${name}): ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -353,7 +349,7 @@ function resolveToolchain(env: NodeJS.ProcessEnv): { readonly hash: string; read
       bun: { path: bun, version: versionOf(bun, () => execFileSync(bun, ["--version"], probe)) },
     },
   };
-  const hash = sha256(canonicalize(toolchain));
+  const hash = sha256Prefixed(canonicalize(toolchain));
   return { hash, providerId: `verification-execution/${hash}` };
 }
 
@@ -383,12 +379,12 @@ export function validateAdmittedVerification(
 function declaredEnvironment(check: VerificationCheck, env: NodeJS.ProcessEnv): JsonValue {
   return Object.fromEntries(check.inputs.env.map((name) => [
     name,
-    env[name] === undefined ? { present: false } : { present: true, value_hash: sha256(env[name]!) },
+    env[name] === undefined ? { present: false } : { present: true, value_hash: sha256Prefixed(env[name]!) },
   ])) as JsonValue;
 }
 
 function declaredEnvironmentHash(check: VerificationCheck, env: NodeJS.ProcessEnv): string {
-  return sha256(canonicalize(declaredEnvironment(check, env)));
+  return sha256Prefixed(canonicalize(declaredEnvironment(check, env)));
 }
 
 function cacheKeyFromIdentity(input: {
@@ -397,7 +393,7 @@ function cacheKeyFromIdentity(input: {
   readonly toolchainHash: string;
   readonly inputsHash: string;
 }): string {
-  return sha256(canonicalize({
+  return sha256Prefixed(canonicalize({
     protocol: 1,
     execution_spec_hash: fingerprintVerificationCheckExecution(input.check),
     snapshot_hash: input.snapshotHash,
@@ -520,7 +516,7 @@ function redactKnownEnvironmentValues(value: string, env: NodeJS.ProcessEnv): st
     .map((key) => env[key])
     .filter((secret): secret is string => typeof secret === "string" && secret.length > 0)
     .sort((left, right) => right.length - left.length);
-  for (const secret of secrets) redacted = redacted.split(secret).join(sha256(secret));
+  for (const secret of secrets) redacted = redacted.split(secret).join(sha256Prefixed(secret));
   return redacted;
 }
 
@@ -567,7 +563,7 @@ function executionEvents(context: EvidenceContext): readonly { event: EvidenceEv
       || identity.command_hash !== payload.check_fingerprint
       || identity.env_provider_id !== `verification-execution/${payload.toolchain_hash}`
       || identity.authority_commit !== identity.base_commit
-      || sha256(canonicalize({ tree_hash: identity.target_commit })) !== payload.snapshot_hash) return [];
+      || sha256Prefixed(canonicalize({ tree_hash: identity.target_commit })) !== payload.snapshot_hash) return [];
     return [{ event, payload }];
   });
 }
@@ -596,7 +592,7 @@ function readValidRunResult(context: EvidenceContext, payload: ExecutionPayload)
   if (!resolved.ok || !resolved.path || !existsSync(resolved.path)) return null;
   try {
     const bytes = readFileSync(resolved.path);
-    if (sha256(bytes) !== payload.run_record_hash) return null;
+    if (sha256Prefixed(bytes) !== payload.run_record_hash) return null;
     const record = JSON.parse(bytes.toString("utf8")) as Record<string, unknown>;
     if (!(record.protocol === 1
       && record.kind === "verification_execution_record"
@@ -641,7 +637,7 @@ function baselineResult(
   current: ReadonlyMap<string, VerificationExecutionResult>,
   ledger: LedgerView,
 ): VerificationExecutionResult {
-  const key = sha256(canonicalize({
+  const key = sha256Prefixed(canonicalize({
     policy: "baseline_with_delta",
     plan_hash: context.planHash,
     snapshot_hash: context.snapshot.snapshot_hash,
@@ -890,7 +886,7 @@ function validateMaterializedOutcome(input: MaterializedVerificationInput, requi
   const target = objectValue(reportObject.target, "verification report target");
   const treeHash = stringValue(target.tree_hash, "verification report target.tree_hash");
   const snapshotHash = stringValue(target.snapshot_hash, "verification report target.snapshot_hash");
-  if (snapshotHash !== sha256(canonicalize({ tree_hash: treeHash }))) throw new Error("verification report snapshot hash is invalid");
+  if (snapshotHash !== sha256Prefixed(canonicalize({ tree_hash: treeHash }))) throw new Error("verification report snapshot hash is invalid");
 
   const repoRoot = resolve(input.repoRoot);
   const admission = readAdmission(input);
@@ -1010,7 +1006,7 @@ export function verificationOutcomeProvenance(input: MaterializedVerificationInp
     admission_identity: payload.admission_sha256,
     grant_identity: payload.grant_sha256,
     campaign_identity: payload.campaign_sha256,
-    check_set_identity: sha256(canonicalize(plan.checks.map(check => check.id))),
+    check_set_identity: sha256Prefixed(canonicalize(plan.checks.map(check => check.id))),
   };
 }
 
@@ -1030,7 +1026,7 @@ function subjectIdentity(context: PreparedContext, check: VerificationCheck): Ad
 
 function ensureGenesis(context: PreparedContext): void {
   if (readGenesisRecord(context.repoRoot)) return;
-  const worktreeId = `verification-${sha256(canonicalize(context.binding)).slice(7, 27)}`;
+  const worktreeId = `verification-${sha256Prefixed(canonicalize(context.binding)).slice(7, 27)}`;
   appendGenesisRecord(context.repoRoot, LEDGER_EPOCH_START_SHA, { worktreeId });
 }
 
@@ -1162,7 +1158,7 @@ function executeCheck(
       cache_key: key,
       execution_id: executionId,
       run_file: runFile,
-      run_record_hash: sha256(durableBytes),
+      run_record_hash: sha256Prefixed(durableBytes),
       passed: result.passed,
     };
     requestLock.assertOwned();

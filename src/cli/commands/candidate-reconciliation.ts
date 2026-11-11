@@ -110,10 +110,6 @@ export interface CandidateReceiptExpectation {
   readonly require_adapter_projection?: boolean;
 }
 
-export function sha256(value: string | Buffer): string {
-  return sha256Prefixed(value);
-}
-
 function fileIdentity(stat: { readonly dev: number; readonly ino: number }): FileIdentity {
   return { dev: stat.dev, ino: stat.ino };
 }
@@ -237,7 +233,7 @@ export function consumeCandidateReconciliationCapability(
   request: CandidateReconciliationRequest,
   scope: RuntimeTransactionScope,
 ): CandidateReconciliationCapability {
-  if (request.transaction_id !== sha256(request.transaction_backup_root)) {
+  if (request.transaction_id !== sha256Prefixed(request.transaction_backup_root)) {
     throw new Error('candidate reconciliation transaction identifier is not bound to its backup root');
   }
   if (scope.kind !== 'global') throw new Error('candidate reconciliation requires the global runtime scope');
@@ -332,11 +328,11 @@ export function candidatePackageIdentity(packageRoot: string): CandidatePackageI
 }
 
 export function routeRegistryDigest(): string {
-  return sha256(JSON.stringify(ROUTES));
+  return sha256Prefixed(JSON.stringify(ROUTES));
 }
 
 export function managedProjectionDigest(hooks: HooksByEvent | unknown): string {
-  return sha256(JSON.stringify(canonicalManagedHookProjection(hooks)));
+  return sha256Prefixed(JSON.stringify(canonicalManagedHookProjection(hooks)));
 }
 
 export function hostsForTarget(target: InstallTargetSpec): readonly HookHost[] {

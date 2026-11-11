@@ -15,11 +15,9 @@ export interface CleanupObservation {
   /** Null means incomplete evidence, including an unsupported orphan or path. */
   readonly loss: CleanupLossEvidence | null;
 }
-const sha256 = (input: string) => sha256Hex(input);
-
 /** Bind complete raw contents, directory incarnation, index and all unpublished commits. */
 export function cleanupLossSha256(observed: CleanupObservation): string | null {
-  return observed.loss === null ? null : sha256(canonicalize({ version: 1,
+  return observed.loss === null ? null : sha256Hex(canonicalize({ version: 1,
     selection: selectionDigestInput([worktreeDigestRow(observed.worktree)]),
     loss: cleanupContentsDigestInput(observed.loss),
   }));
@@ -66,7 +64,7 @@ export function createCleanupPlan(sessionId: string, inputs: readonly { observat
       worktree: observation.worktree, advice, loss: summary,
       loss_sha256: cleanupLossSha256(observation),
     };
-    return { ...item, plan_sha256: sha256(cleanupPlanDigestInput(sessionId, item)) };
+    return { ...item, plan_sha256: sha256Hex(cleanupPlanDigestInput(sessionId, item)) };
   });
   return structuredClone(decodeCleanupPlan({ protocol: 1, kind: 'operator_worktree_cleanup_plan', session_id: sessionId, items }));
 }
@@ -75,7 +73,7 @@ export function createCleanupPlan(sessionId: string, inputs: readonly { observat
 export function cleanupPlanSelectionDigest(plan: CleanupPlan, ids: readonly string[]): string {
   const selected = plan.items.filter(item => ids.includes(item.worktree.id));
   if (selected.length !== ids.length || new Set(ids).size !== ids.length) throw new Error('worktree_cleanup_selection_invalid');
-  return sha256(selectionDigestInput(selected.map(item => worktreeDigestRow(item.worktree))));
+  return sha256Hex(selectionDigestInput(selected.map(item => worktreeDigestRow(item.worktree))));
 }
 
 /** A readback result, not a receipt supplied by the caller. The adapter verifies the durable receipt. */
@@ -198,7 +196,7 @@ export async function executeCleanupPlan(input: unknown, ports: CleanupExecution
   if (plan.session_id !== request.session_id) throw new Error('worktree_cleanup_session_changed');
   // A persisted plan fingerprint is checked again; a hash is freshness, not authority.
   for (const item of plan.items) {
-    if (sha256(cleanupPlanDigestInput(plan.session_id, item)) !== item.plan_sha256) throw new Error('worktree_cleanup_plan_changed');
+    if (sha256Hex(cleanupPlanDigestInput(plan.session_id, item)) !== item.plan_sha256) throw new Error('worktree_cleanup_plan_changed');
   }
   if (cleanupPlanSelectionDigest(plan, request.ids) !== request.expected_digest) throw new Error('worktree_cleanup_digest_changed');
   const items: CleanupExecutionItem[] = [];

@@ -20,11 +20,11 @@ import {
   managedProjectionDigest,
   publishCandidateReconciliationCapability,
   routeRegistryDigest,
-  sha256,
   type CandidatePackageIdentity,
   type CandidateReconciliationRequest,
   type CandidateReconciliationReceipt,
 } from '../../src/cli/commands/candidate-reconciliation';
+import { sha256Prefixed } from '../../src/core/evidence/sha256';
 import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
 
 const ROOT = join(import.meta.dir, '..', '..');
@@ -319,7 +319,7 @@ describe('candidate-bound global runtime reconciliation', () => {
 
       const request: CandidateReconciliationRequest = {
         protocol: 3,
-        transaction_id: sha256(transaction.backup_root),
+        transaction_id: sha256Prefixed(transaction.backup_root),
         transaction_backup_root: transaction.backup_root,
         parent_token: token,
         candidate,
@@ -383,7 +383,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       mkdirSync(forgedBackup);
       const forged: CandidateReconciliationRequest = {
         ...requestBase,
-        transaction_id: sha256(forgedBackup),
+        transaction_id: sha256Prefixed(forgedBackup),
         transaction_backup_root: forgedBackup,
       };
       expect(invokeCandidateChild(forged, env).status).toBe(1);
@@ -391,7 +391,7 @@ describe('candidate-bound global runtime reconciliation', () => {
 
       const invalidLockRequest: CandidateReconciliationRequest = {
         ...requestBase,
-        transaction_id: sha256(transaction.backup_root),
+        transaction_id: sha256Prefixed(transaction.backup_root),
         transaction_backup_root: transaction.backup_root,
       };
       const lock = acquireExclusiveDirectoryLock(realpathSync(home), '.repo-harness/transactions/global-runtime.lock');
@@ -414,7 +414,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       const activeTransaction = beginInstallHostTransaction([], env);
       const request: CandidateReconciliationRequest = {
         ...requestBase,
-        transaction_id: sha256(activeTransaction.backup_root),
+        transaction_id: sha256Prefixed(activeTransaction.backup_root),
         transaction_backup_root: activeTransaction.backup_root,
       };
       expect(runCandidateChild(request, env).status).toBe(0);
@@ -446,7 +446,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       const requestFor = (backupRoot: string): CandidateReconciliationRequest => ({
         protocol: 3,
         parent_token: token,
-        transaction_id: sha256(backupRoot),
+        transaction_id: sha256Prefixed(backupRoot),
         transaction_backup_root: backupRoot,
         candidate,
         cwd,
@@ -521,7 +521,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       const transaction = beginInstallHostTransaction([], env);
       const request: CandidateReconciliationRequest = {
         protocol: 3,
-        transaction_id: sha256(transaction.backup_root),
+        transaction_id: sha256Prefixed(transaction.backup_root),
         transaction_backup_root: transaction.backup_root,
         parent_token: token,
         candidate,
