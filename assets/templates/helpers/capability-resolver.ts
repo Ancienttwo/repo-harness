@@ -1660,7 +1660,6 @@ export const WORKFLOW_POLICY_KEYS = {
   },
   publication: {
     acceptance_merge: true,
-    merge_queue: {},
     required_check_coverage: {},
     generated_artifacts: {},
   },

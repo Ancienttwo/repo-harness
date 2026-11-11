@@ -1,7 +1,7 @@
 import { execFile, spawnSync, type ExecFileException } from 'child_process';
 import { architecturePort, isArchitectureUnavailable, type ArchctxProviderOptions } from '../../core/architecture/contracts';
 import {
-  linkedPullRequests, projectBoard, seatTerminal, syncCarryCandidates, type BoardAcceptanceMergeV1, type BoardMergeQueueV1, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1,
+  linkedPullRequests, projectBoard, seatTerminal, type BoardAcceptanceMergeV1, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1,
   type BoardPathOwnerV1, type BoardPathOwnersV1, type BoardSeatTerminalInputV1, type BoardSeatTerminalReadV1, type BoardToolingV1, type BoardV1,
 } from '../../core/board/board';
 import { ADVISOR_SEAT } from '../../core/board/advisor-seat';
@@ -15,7 +15,6 @@ import type { PullRequestReadinessV2, PullRequestSelectionV2 } from '../../core/
 import { GitExecError, gitExecFile, gitSpawnSync, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { collectPullRequestMergeReadiness } from '../publication/merge-readiness';
 import { createKeyedSources, readinessKey, type GhRunner, type KeyedSources } from './keyed-sources';
-import { provenMergeOnlySyncs, type MergeOnlySyncInput } from './merge-only-sync';
 
 const GH_TIMEOUT_MS = 30_000;
 const SEAT_GIT_TIMEOUT_MS = 10_000;
@@ -102,8 +101,6 @@ export interface BoardCollectInput {
   readonly gh_runner?: (args: readonly string[]) => GhCallResult;
   /** Effect seam for tests: the single-PR readiness projection. */
   readonly readiness?: (selection: PullRequestSelectionV2) => PullRequestReadinessV2;
-  /** Effect seam for tests: the reviewed heads of which git proves the head a merge-only sync. */
-  readonly merge_only_syncs?: typeof provenMergeOnlySyncs;
   /** Effect seam for tests: the archctx process of the path owner read. */
   readonly archctx?: ArchctxProviderOptions;
   readonly host: BoardHostPortsV1;
@@ -182,32 +179,24 @@ function dailyRun(input: BoardCollectInput, repository: string, branch: string):
   return { status: 'observed', run_url: run.html_url, conclusion: run.conclusion as string | null, created_at: run.created_at };
 }
 
-interface PublicationSwitches {
-  readonly acceptance_merge: BoardAcceptanceMergeV1;
-  readonly merge_queue: BoardMergeQueueV1;
-}
-
-const UNKNOWN_SWITCHES: PublicationSwitches = { acceptance_merge: 'unknown', merge_queue: 'unknown' };
-
 /**
- * `publication.acceptance_merge` and `publication.merge_queue` on the default
- * branch, from one read decoded only by the publication policy parser. GitHub
- * answers an absent file with exit 1 and a JSON body of status 404; every other
- * failure leaves both values unknown.
+ * `publication.acceptance_merge` on the default branch, decoded only by the
+ * publication policy parser. GitHub answers an absent file with exit 1 and a
+ * JSON body of status 404; every other failure leaves the value unknown.
  */
-function publicationSwitches(input: BoardCollectInput, repository: string, branch: string): PublicationSwitches {
+function acceptanceMerge(input: BoardCollectInput, repository: string, branch: string): BoardAcceptanceMergeV1 {
   const result = runGh(input, ['api', '--hostname', 'github.com', `repos/${repository}/contents/${PUBLICATION_POLICY_PATH}?ref=${encodeURIComponent(branch)}`]);
   let body: unknown;
   try {
     body = JSON.parse(result.stdout);
   } catch {
-    return UNKNOWN_SWITCHES;
+    return 'unknown';
   }
   const absent = result.status === 1 && (body as { status?: unknown } | null)?.status === '404';
   const file: PolicyFileAtRef | null = absent ? { status: 'missing' } : result.status === 0 ? policyFileFromContents(body) : null;
-  if (file === null) return UNKNOWN_SWITCHES;
+  if (file === null) return 'unknown';
   const policy = parsePublicationPolicy(file);
-  return policy.ok ? { acceptance_merge: policy.acceptance_merge, merge_queue: policy.merge_queue } : UNKNOWN_SWITCHES;
+  return policy.ok ? policy.acceptance_merge : 'unknown';
 }
 
 function tooling(input: BoardCollectInput): BoardToolingV1 {
@@ -406,20 +395,13 @@ export function collectBoardThrough(input: BoardCollectInput, sources: KeyedSour
       ...selection, repo_root: input.repo_root, gh_bin: input.gh_bin, gh_runner: sources.transport(read, now, readinessTransport),
     }));
   });
-  const owners = pathOwners(input, linked);
-  const proveSyncs = input.merge_only_syncs ?? provenMergeOnlySyncs;
-  const mergeOnlySyncs = new Map(linked.map((read) => {
-    const sync: MergeOnlySyncInput = { repo_root: input.repo_root, pr: read.number, base_ref: read.base_ref, base_sha: read.base_sha, head_sha: read.head_sha };
-    return [read.number, proveSyncs(sync, syncCarryCandidates(read, owners))] as const;
-  }));
   return projectBoard({
     observed_at: observedAt,
     parent,
-    ...publicationSwitches(input, repository, parent.repository.default_branch),
+    acceptance_merge: acceptanceMerge(input, repository, parent.repository.default_branch),
     pull_requests: reads,
     readiness,
-    merge_only_syncs: mergeOnlySyncs,
-    path_owners: owners,
+    path_owners: pathOwners(input, linked),
     execution: execution(input, parent.repository.database_id),
     daily_run: dailyRun(input, repository, parent.repository.default_branch),
     tooling: tooling(input),

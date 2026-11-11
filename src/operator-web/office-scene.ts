@@ -314,24 +314,6 @@ function door(fb: FrameBuffer, x: number, y: number, wait: BoardAcceptanceMergeV
   fb.rect(x + 24, y + 27, 2, 2, 'warn');
 }
 
-function cart(fb: FrameBuffer, x: number, y: number, filled: number): void {
-  shadow(fb, x, y - 1, 62, 18);
-  fb.vl(x + 62, y - 9, 10, 'ink');
-  fb.hl(x + 60, y - 9, 4, 'ink');
-  fb.box(x, y, 63, 15, 'cloud');
-  fb.hl(x + 1, y + 1, 61, 'paper');
-  fb.hl(x + 1, y + 13, 61, 'mist');
-  for (let slot = 0; slot < 6; slot += 1) {
-    const sx = x + 3 + slot * 10;
-    if (slot < filled) {
-      fb.box(sx, y + 3, 8, 8, 'ok');
-      fb.px(sx + 1, y + 4, 'paper'); fb.hl(sx + 1, y + 9, 6, 'okDk'); fb.vl(sx + 3, y + 4, 5, 'okDk');
-    } else fb.dashed(sx, y + 3, 8, 8, 'slate', 0);
-  }
-  fb.box(x + 5, y + 15, 6, 6, 'ink2');
-  fb.box(x + 52, y + 15, 6, 6, 'ink2');
-}
-
 function queuer(fb: FrameBuffer, x: number, y: number, agent: SceneAgent, ticket: string, f: number, dx: number, bob: number, outfit: Outfit, pose: FrontPose | null): void {
   fb.shade(x + 2, y + 23, 13, 2, SHADE_DARK);
   const body = agentBody(agent.kind, outfit);
@@ -452,12 +434,11 @@ export interface SceneRoom {
   readonly orchestrator: SceneAgent | null;
   readonly advisor: SceneAgent | null;
   /** `reading` while the board read of the room is pending; null when the board has no plan. */
-  readonly plan: { readonly revision: number | null; readonly order: readonly number[]; readonly limit: number; readonly batch: number } | 'reading' | null;
+  readonly plan: { readonly revision: number | null; readonly order: readonly number[]; readonly limit: number } | 'reading' | null;
   /** The worker limit that sets the free and the roped desks. */
   readonly limit: number;
   readonly desks: readonly SceneDesk[];
   readonly queue: readonly SceneQueueEntry[];
-  readonly cart: number;
   readonly tray: number;
   /** The merge policy of the door while a pull request waits; null when none waits. */
   readonly mergeWait: BoardAcceptanceMergeV1 | null;
@@ -468,7 +449,6 @@ export interface SceneRoom {
     readonly orchestrator: string;
     readonly advisor: string;
     readonly tray: string;
-    readonly cart: string;
     readonly queue: string;
     readonly seat: (index: number) => string;
     readonly free: string;
@@ -628,7 +608,7 @@ function wall(fb: FrameBuffer, room: SceneRoom, night: boolean, f: number, heigh
   const plan = room.plan;
   const lines = plan === 'reading' ? ['READING', '', '', '']
     : plan !== null
-    ? [plan.revision === null ? 'PLAN' : `PLAN R${plan.revision}`, plan.order.slice(0, BOARD_LINE).join(' '), plan.order.slice(BOARD_LINE, BOARD_LINE * 2).join(' '), valve ? 'SEATS ?' : `SEATS ${plan.limit} · BATCH ${plan.batch}`]
+    ? [plan.revision === null ? 'PLAN' : `PLAN R${plan.revision}`, plan.order.slice(0, BOARD_LINE).join(' '), plan.order.slice(BOARD_LINE, BOARD_LINE * 2).join(' '), valve ? 'SEATS ?' : `SEATS ${plan.limit}`]
     : [room.parent === null ? '' : 'NO PLAN', '', '', ''];
   fb.box(160, 3, 92, 34, 'paper');
   fb.frame(161, 4, 90, 32, 'mist');
@@ -765,10 +745,6 @@ export function composeRoom(room: SceneRoom, view: SceneView): ComposedScene {
 
   stage(fb, room, view, labels, hits);
 
-  cart(fb, 244, 63, room.cart);
-  labels.push({ x: 244, y: 86, text: room.text.cart, kind: 'plain' });
-  hits.push({ key: 'cart', x: 242, y: 52, width: 68, height: 33 });
-
   ambient(fb, room, night);
 
   fb.dashed(56, 102, 128, 32, 'warn', 0);
@@ -841,8 +817,6 @@ export interface SceneMiniRoom {
   readonly limit: number | null;
   /** The queue count; the summary names no agent, so each figure is an unknown agent. */
   readonly queue: number;
-  /** The accepted members of the current batch. */
-  readonly cart: number;
   readonly idle: boolean;
 }
 
@@ -852,7 +826,6 @@ const MINI_DESK_X = [2, 30, 58, 86] as const;
 const MINI_DESK_Y = [42, 57] as const;
 const MINI_DESKS = MINI_DESK_X.length * MINI_DESK_Y.length;
 const MINI_QUEUE = 4;
-const MINI_SOCKETS = 6;
 const MINI_SCREEN: Partial<Readonly<Record<DeskState, PxColor>>> = { coding: 'screen', ci_failed: 'danger', error: 'danger', done: 'ok' };
 const MINI_LAMP: Partial<Readonly<Record<DeskState, PxColor>>> = { ci_pending: 'screen', ci_failed: 'danger', blocked: 'warn' };
 const MINI_MARK: Partial<Readonly<Record<DeskState, readonly [string, PxColor]>>> = { no_claim_status: ['Z', 'warnDk'], blocked: ['!', 'warnDk'], error: ['!', 'danger'] };
@@ -927,12 +900,6 @@ export function composeMiniRoom(room: SceneMiniRoom, { frame: f, night }: Pick<S
   miniLead(fb, room.advisor, 63, f + 3);
   fb.dashed(20, 29, 44, 12, 'warn', 0);
   for (let index = 0; index < Math.min(room.queue, MINI_QUEUE); index += 1) fb.sprite(miniAgent('unknown', 'front'), 52 - index * 10, 31 + ((f + index) % 2 !== 0 ? -1 : 0), agentPalette('unknown', 'plain'));
-  fb.box(78, 31, 30, 8, 'cloud');
-  for (let socket = 0; socket < MINI_SOCKETS; socket += 1) {
-    if (socket < room.cart) fb.box(80 + socket * 4, 33, 4, 4, 'ok');
-    else fb.px(81 + socket * 4, 34, 'slate');
-  }
-  fb.px(81, 39, 'ink'); fb.px(104, 39, 'ink');
   fb.box(102, 40, 7, 4, night ? 'warn' : 'paper');
   fb.vl(105, 44, 6, 'ink');
   for (let index = 0; index < MINI_DESKS; index += 1) miniDesk(fb, room.desks[index], index, room.limit, f);

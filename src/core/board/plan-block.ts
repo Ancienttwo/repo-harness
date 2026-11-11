@@ -4,24 +4,20 @@
  * membership (sub-issues), dependencies (blocked-by) and tier (labels); the
  * block holds only what GitHub has no field for.
  */
-export const PLAN_BLOCK_PROTOCOL = 1 as const;
+export const PLAN_BLOCK_PROTOCOL = 2 as const;
 export const PLAN_BLOCK_KIND = 'repo-harness.plan' as const;
-/** The member cap of an integration batch (`orchestrator.md` §9.1). */
-export const PLAN_BATCH_MAX_MEMBERS = 6;
 
 export interface PlanHoldV1 {
   readonly issue: number;
   readonly reason: string;
 }
 
-export interface PlanBlockV1 {
+export interface PlanBlockV2 {
   readonly protocol: typeof PLAN_BLOCK_PROTOCOL;
   readonly kind: typeof PLAN_BLOCK_KIND;
   /** Issue numbers in merge order. */
   readonly merge_order: readonly number[];
   readonly holds: readonly PlanHoldV1[];
-  /** Issue numbers that merge as one integration batch. */
-  readonly batches: readonly (readonly number[])[];
   /** The most worker seats that run at the same time. */
   readonly seat_limits: { readonly worker: number };
 }
@@ -59,11 +55,11 @@ function issueList(value: unknown, label: string): number[] {
 }
 
 /** Protocol and kind are checked first, so an unknown block is refused before any field is read. */
-export function decodePlanBlockValue(value: unknown): PlanBlockV1 {
+export function decodePlanBlockValue(value: unknown): PlanBlockV2 {
   const head = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
   if (head.protocol !== PLAN_BLOCK_PROTOCOL) fail(`unsupported protocol ${JSON.stringify(head.protocol)}`);
   if (head.kind !== PLAN_BLOCK_KIND) fail(`unsupported kind ${JSON.stringify(head.kind)}`);
-  const block = record(value, ['protocol', 'kind', 'merge_order', 'holds', 'batches', 'seat_limits'], 'plan block');
+  const block = record(value, ['protocol', 'kind', 'merge_order', 'holds', 'seat_limits'], 'plan block');
   const mergeOrder = issueList(block.merge_order, 'merge_order');
   if (!Array.isArray(block.holds)) fail('holds is not an array');
   const holds = block.holds.map((entry, index) => {
@@ -72,27 +68,18 @@ export function decodePlanBlockValue(value: unknown): PlanBlockV1 {
     return Object.freeze({ issue: issueNumber(hold.issue, `holds[${index}].issue`), reason: hold.reason });
   });
   if (new Set(holds.map(hold => hold.issue)).size !== holds.length) fail('holds repeats an issue');
-  if (!Array.isArray(block.batches)) fail('batches is not an array');
-  const batches = block.batches.map((entry, index) => {
-    const members = issueList(entry, `batches[${index}]`);
-    if (members.length < 2 || members.length > PLAN_BATCH_MAX_MEMBERS) fail(`batches[${index}] has ${members.length} members, expected 2-${PLAN_BATCH_MAX_MEMBERS}`);
-    return Object.freeze(members);
-  });
-  const batched = batches.flat();
-  if (new Set(batched).size !== batched.length) fail('an issue is in more than one batch');
   const limits = record(block.seat_limits, ['worker'], 'seat_limits');
   return Object.freeze({
     protocol: PLAN_BLOCK_PROTOCOL,
     kind: PLAN_BLOCK_KIND,
     merge_order: Object.freeze(mergeOrder),
     holds: Object.freeze(holds),
-    batches: Object.freeze(batches),
     seat_limits: Object.freeze({ worker: issueNumber(limits.worker, 'seat_limits.worker') }),
   });
 }
 
 /** The comment must hold exactly one fenced `json` block. */
-export function decodePlanBlock(commentBody: string): PlanBlockV1 {
+export function decodePlanBlock(commentBody: string): PlanBlockV2 {
   const blocks = [...commentBody.replace(/\r\n/gu, '\n').matchAll(FENCE)];
   if (blocks.length !== 1) fail(`the plan comment has ${blocks.length} fenced json blocks, expected 1`);
   let value: unknown;
@@ -105,6 +92,6 @@ export function decodePlanBlock(commentBody: string): PlanBlockV1 {
 }
 
 /** Every issue that the block names. */
-export function planIssues(block: PlanBlockV1): ReadonlySet<number> {
-  return new Set([...block.merge_order, ...block.holds.map(hold => hold.issue), ...block.batches.flat()]);
+export function planIssues(block: PlanBlockV2): ReadonlySet<number> {
+  return new Set([...block.merge_order, ...block.holds.map(hold => hold.issue)]);
 }

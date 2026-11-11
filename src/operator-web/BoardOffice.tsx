@@ -120,7 +120,7 @@ function cardChips({ room, lit, board }: OfficeCard, t: OperatorTranslate): read
   if (board.status === 'unavailable') return [seats, ['unavailable', 'warn', t('board.office.card.boardUnavailable', { reason: board.reason })]];
   if (board.status !== 'observed') return [seats];
   const full = workers >= room.limit;
-  const queue = room.queue.length, accepted = room.cart?.accepted.length ?? 0;
+  const queue = room.queue.length;
   const stalled = room.desks.filter(desk => desk.state === 'no_claim_status').length;
   return [
     ...(board.needs_you > 0 ? [['needs-you', 'accent', t('board.office.card.needsYou', { count: board.needs_you })] as const] : []),
@@ -128,9 +128,7 @@ function cardChips({ room, lit, board }: OfficeCard, t: OperatorTranslate): read
       : ['workers', full ? 'warn' : 'subtle', t(full ? 'board.office.card.full' : 'board.office.card.limit', { count: workers, limit: room.limit })] as const,
     ...(queue > 0 ? [['queue', 'warn', t('board.office.card.queue', { count: queue })] as const] : []),
     ...(board.ci_failures > 0 ? [['ci', 'danger', t('board.office.card.ci', { count: board.ci_failures })] as const] : []),
-    ...(stalled > 0 ? [['stalled', 'warn', t('board.office.card.stalled', { count: stalled })] as const] : []),
-    ...(accepted > 0 ? [['batch', 'ok', t('board.office.card.batch', { accepted, sockets: room.cart_sockets })] as const] : []),
-  ];
+    ...(stalled > 0 ? [['stalled', 'warn', t('board.office.card.stalled', { count: stalled })] as const] : []),  ];
 }
 
 function MiniRoom({ card, frame, mode }: { readonly card: OfficeCard; readonly frame: number; readonly mode: ThemeMode }) {
@@ -148,7 +146,6 @@ function MiniRoom({ card, frame, mode }: { readonly card: OfficeCard; readonly f
       desks: room.desks.map(desk => ({ agent: sceneAgent(desk.agent), state: desk.state })),
       limit: observed ? room.limit : null,
       queue: room.queue.length,
-      cart: room.cart?.accepted.length ?? 0,
       idle,
     }, { frame: shown, night });
   }, [card, idle, night, shown]);
@@ -428,14 +425,6 @@ function panelView(key: string, room: OfficeRoom, parent: number | null, default
       rows: room.queue.map(entry => [`PR #${entry.pr}`, entry.title, `queue:${entry.pr}`] as const), command: 'gh pr list --state open', portrait: null, issue: null,
     };
   }
-  const accepted = room.cart?.accepted ?? [];
-  if (key === 'cart') {
-    return {
-      eyebrow: 'BATCH', title: t('board.office.panel.cart', { accepted: accepted.length, sockets: room.cart_sockets }), sub: t('board.office.panel.cart.sub'),
-      rows: [...accepted.map(issue => [`#${issue}`, t('board.office.panel.accepted')] as const), [t('board.office.panel.cart.max'), t('board.office.panel.cart.prs', { count: room.cart_sockets })]],
-      command: board, portrait: null, issue: null,
-    };
-  }
   if (key === 'door') {
     return {
       eyebrow: 'MAIN', title: t('board.office.panel.door'), sub: t('board.office.panel.door.sub'),
@@ -443,7 +432,6 @@ function panelView(key: string, room: OfficeRoom, parent: number | null, default
         [t('board.office.panel.state'), doorState(room, t) ?? none],
         [t('board.office.panel.door.mode'), room.merge_policy === null ? none : `acceptance_merge ${room.merge_policy}`],
         [t('board.office.panel.door.waits'), String(room.merge_waits)],
-        [t('board.office.panel.door.next'), accepted.length === 0 ? none : accepted.map(issue => `#${issue}`).join(' ')],
       ],
       command: defaultBranch === null ? null : `gh pr list --base ${defaultBranch} --state merged --limit 5`, portrait: null, issue: null,
     };
@@ -495,11 +483,11 @@ function OfficePanel({ view, onIssue, onPick, onChat, t }: { readonly view: Pane
 
 const FEED_TONE: Readonly<Record<OfficeFeedEvent['kind'], 'info' | 'warn' | 'ok' | 'danger' | 'subtle'>> = { plan: 'subtle', ci_failed: 'danger', queued: 'warn', accepted: 'ok' };
 
-function feedText(event: OfficeFeedEvent, room: OfficeRoom, t: OperatorTranslate): string {
+function feedText(event: OfficeFeedEvent, t: OperatorTranslate): string {
   if (event.kind === 'plan') return t('board.office.feed.plan');
   if (event.kind === 'ci_failed') return t('board.office.feed.ci_failed', { number: event.pr });
   if (event.kind === 'queued') return t('board.office.feed.queued', { number: event.pr });
-  return event.carted ? t('board.office.feed.carted', { number: event.pr, accepted: room.cart?.accepted.length ?? 0, sockets: room.cart_sockets }) : t('board.office.feed.accepted', { number: event.pr });
+  return t('board.office.feed.accepted', { number: event.pr });
 }
 
 function OfficeFeed({ room, lit, parent, reading, t }: { readonly room: OfficeRoom; readonly lit: boolean; readonly parent: number | null; readonly reading: boolean; readonly t: OperatorTranslate }) {
@@ -509,7 +497,7 @@ function OfficeFeed({ room, lit, parent, reading, t }: { readonly room: OfficeRo
       <h3 id="board-office-feed">{t('board.office.feed')}</h3>
       {room.feed.length === 0
         ? <p data-feed-empty><span data-tone="subtle" />{empty}</p>
-        : room.feed.map(event => <p key={`${event.kind}:${event.at}:${event.kind === 'plan' ? '' : event.pr}`} data-feed={event.kind}><span data-tone={FEED_TONE[event.kind]} />{feedText(event, room, t)}</p>)}
+        : room.feed.map(event => <p key={`${event.kind}:${event.at}:${event.kind === 'plan' ? '' : event.pr}`} data-feed={event.kind}><span data-tone={FEED_TONE[event.kind]} />{feedText(event, t)}</p>)}
     </section>
   );
 }
@@ -540,10 +528,10 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
   const name = repository.split('/').at(-1)!;
   const planText = reading ? t('board.office.board.reading') : plan.status !== 'observed' ? t('board.office.plan.none')
     : plan.revision === null ? t('board.office.plan.observed') : t('board.office.plan.revision', { revision: plan.revision });
-  const scenePlan: SceneRoom['plan'] = reading ? 'reading' : plan.status === 'observed' ? { revision: plan.revision, order: plan.merge_order, limit: plan.worker_limit, batch: plan.batch } : null;
+  const scenePlan: SceneRoom['plan'] = reading ? 'reading' : plan.status === 'observed' ? { revision: plan.revision, order: plan.merge_order, limit: plan.worker_limit } : null;
   const effect = sceneEffect(boss.effect, clock.now, clock.still);
   const queueEntries = new Set(room.queue.map(entry => `queue:${entry.pr}`));
-  const keys = new Set([...room.desks.map(deskKey), ...queueEntries, 'queue', 'door', 'tray', 'cart', ...(room.orchestrator === null ? [] : ['orchestrator']), ...(room.advisor === null ? [] : ['advisor'])]);
+  const keys = new Set([...room.desks.map(deskKey), ...queueEntries, 'queue', 'door', 'tray', ...(room.orchestrator === null ? [] : ['orchestrator']), ...(room.advisor === null ? [] : ['advisor'])]);
   const first = room.desks[0];
   const selected = picked !== null && keys.has(picked) ? picked : first !== undefined ? deskKey(first) : 'orchestrator';
 
@@ -555,7 +543,6 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
     limit: room.limit,
     desks: room.desks.map(desk => ({ key: deskKey(desk), agent: sceneAgent(desk.agent), state: desk.state, number: deskNumber(desk, t), label: deskStateName(desk, t) })),
     queue: room.queue.map(entry => ({ key: `queue:${entry.pr}`, agent: sceneAgent(entry.agent), pr: entry.pr })),
-    cart: room.cart?.accepted.length ?? 0,
     tray: room.backlog.length + room.holds.length,
     mergeWait: room.merge_waits > 0 ? room.merge_policy : null,
     mines: new Map(room.desks.flatMap((desk) => {
@@ -567,7 +554,6 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
       orchestrator: t('board.office.lead.orchestrator'),
       advisor: room.advisor === null ? t('board.office.lead.notConnected') : t('board.office.lead.advisor'),
       tray: t('board.office.backlog', { count: room.backlog.length + room.holds.length }),
-      cart: t('board.office.cart', { accepted: room.cart?.accepted.length ?? 0, sockets: room.cart_sockets }),
       queue: t('board.office.queue', { count: room.queue.length }),
       seat: index => t('board.office.desk.number', { number: index + 1 }),
       free: t('board.office.desk.free'),
@@ -590,7 +576,6 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
       return state === null ? door : t('board.office.door.label', { door, state });
     }
     if (key === 'tray') return t('board.office.backlog', { count: room.backlog.length + room.holds.length });
-    if (key === 'cart') return t('board.office.cart', { accepted: room.cart?.accepted.length ?? 0, sockets: room.cart_sockets });
     if (key === 'orchestrator' || key === 'advisor') return `${t(`board.office.lead.${key}`)} · ${agentName(room[key]!.agent, t)}`;
     const entry = room.queue.find(candidate => `queue:${candidate.pr}` === key);
     if (entry !== undefined) return t('board.office.queue.entry', { number: entry.pr, agent: agentName(entry.agent, t) });

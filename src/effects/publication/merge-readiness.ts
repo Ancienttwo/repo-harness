@@ -921,11 +921,11 @@ function* rollbackBoundary(identity: ProviderIdentity): Generator<string, Provid
     || object(detail.base, 'merged parent PR detail base').ref !== identity.base_ref) {
     throw new MergeReadinessError('provider_data_incomplete', 'merged parent PR detail does not match the rollback boundary');
   }
-  const parent = rollbackParent(identity.base_sha, commit.parents, detail.head);
-  if (!parent) {
-    throw new MergeReadinessError('provider_data_incomplete', 'rollback parent is not a single commit or batch merge boundary');
+  const before = rollbackParent(identity.base_sha, commit.parents);
+  if (before === null) {
+    throw new MergeReadinessError('provider_data_incomplete', 'rollback parent is not a single commit');
   }
-  const parentAssociations = yield `${root}/commits/${parent.before_sha}/pulls?per_page=100`;
+  const parentAssociations = yield `${root}/commits/${before}/pulls?per_page=100`;
   if (!Array.isArray(parentAssociations) || parentAssociations.length >= 100) {
     throw new MergeReadinessError('provider_data_incomplete', 'rollback parent PR associations incomplete');
   }
@@ -940,7 +940,7 @@ function* rollbackBoundary(identity: ProviderIdentity): Generator<string, Provid
     throw new MergeReadinessError('provider_data_incomplete', `Automatic rollback cannot revert only the last commit of multi-commit rebase PR #${prNumber}`,
       undefined, 'rollback parent PR is a multi-commit rebase PR');
   }
-  return Object.freeze({ status: 'ready', pr_number: prNumber, before_sha: parent.before_sha, after_sha: identity.base_sha });
+  return Object.freeze({ status: 'ready', pr_number: prNumber, before_sha: before, after_sha: identity.base_sha });
 }
 
 export function observeProviderReadinessFacts(identity: ProviderIdentity, receipt: Pick<PullRequestSelectionV2, 'pr_number'>, input: PublicationReadinessInput): ProviderMergeReadinessFactsV1 {

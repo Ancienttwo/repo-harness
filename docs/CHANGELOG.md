@@ -11,6 +11,13 @@ All notable changes to this skill are documented here.
 ### Changed
 
 - The herdr-core floor is 0.1.20 (#2255). Run `hc update` to 0.1.20 before this release is installed: an hc 0.1.19 client fails the floor check.
+- `publication merge` no longer needs strict status checks on the base (#2462). The merge proof accepts a squash whose one parent is the expected base or a descendant of it, and it proves the content of the squash with `git merge-tree` when the parent moved. `Required / CI` runs one time for each PR head.
+- A review row counts only for the head SHA that it names (#2462). A head that takes a merge of main is a new head: it needs its own `Required / CI` run and delta-check rows.
+
+### Removed
+
+- The merge queue lane, the integration batch lane and the merge-only sync carry (#2462). `publication merge` has one lane, the direct squash. Removed: the `publication.merge_queue` policy key (a policy that keeps it is refused with `publication_policy_invalid`; `repo-harness init` removes the key), `publication merge --batch`, `report-ci --batch`, the `merge_queue_policy_mismatch` and `merge_queue_removed` refusals, the `batches` key of the plan block, attention rule A2 and the Office batch cart. A base that requires a merge queue is not supported.
+- Board protocol 7 has no `merge_queue` field and no `sync` acceptance. Plan block protocol 2 has no `batches` key: post each open parent's plan comment again with `"protocol": 2`.
 
 ## [0.30.0] - 2026-11-10
 

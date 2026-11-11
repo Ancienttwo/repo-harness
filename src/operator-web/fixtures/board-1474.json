@@ -1,11 +1,10 @@
 {
-  "protocol": 6,
+  "protocol": 7,
   "kind": "repo-harness.board",
   "observed_at": "2026-11-02T23:29:42.936Z",
   "repository": "Ancienttwo/repo-harness",
   "default_branch": "main",
   "acceptance_merge": "off",
-  "merge_queue": "off",
   "parent": {
     "number": 1474,
     "title": "herdr-core \u8fc1\u79fb\uff1a\u9000\u5f79 classic herdr CLI\uff08G37\uff09",

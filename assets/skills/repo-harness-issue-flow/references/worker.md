@@ -221,10 +221,13 @@ You are the head owner. Only you push to this branch.
   read-only sub-agent for this check. A Pi writer has no sub-agents and
   does a self-check. The pre-check writes no record and does not replace
   the review.
-- **Main moved.** When the coordinator posts `unblocked` or asks for a
-  sync, retarget a stacked PR to main, merge the current main into your
+- **Main moved.** A PR whose base is behind main merges with no sync, so
+  do not merge main into a PR that has no conflict. When the coordinator
+  posts `unblocked` for a stacked PR, or your PR conflicts with main,
+  retarget a stacked PR to main, merge the current main into your
   branch (no force push), run the affected checks and post `integration
-  status` with the new head, the delta and CI.
+  status` with the new head, the delta and CI. The new head needs its own
+  review rows (`acceptor.md` §2.2, New head).
 - **Never rewrite pushed history.** Other PRs may be stacked on yours.
   Fix review findings with new commits.
 - **Someone else must push.** When a repair or integration must come from

@@ -24,12 +24,10 @@ export const A3_STUCK_MS = 10 * MINUTE;
 export const R1_UNPLANNED_ITEMS = 3;
 /** R4: an accepted pull request in the merge order waits this long unmerged. */
 export const R4_STALLED_MS = 4 * 60 * MINUTE;
-/** The member cap of an integration batch (`orchestrator.md` §9.1). */
-const A2_BATCH_MAX = 6;
 const WORKER_SEATS = new Set<string>(WORKER_SEAT_IDS);
 const RED_CONCLUSIONS = new Set(['failure', 'timed_out', 'startup_failure']);
 
-export type BoardRuleId = 'A1' | 'A2' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'A9' | 'A10' | 'A11' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5';
+export type BoardRuleId = 'A1' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'A9' | 'A10' | 'A11' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5';
 export type BoardAttentionRoute = 'orchestrator' | 'advisor';
 
 export interface BoardFindingV1 {
@@ -124,36 +122,6 @@ function a1(context: Context): void {
         `#${pr.number} is accepted and ready, unmerged for ${minutes(waited)} min`);
     }
   }
-}
-
-/**
- * A2 fires when any two candidates can batch. The scan seeds the batch with
- * the first such pair, so an earlier pull request that overlaps both cannot
- * hide it, then adds each later candidate that fits. A merge queue takes no
- * batch (the merge executor refuses `--batch` under it), so A2 runs only when
- * `merge_queue` is off.
- */
-function a2(context: Context): void {
-  if (context.board.merge_queue === 'on') return;
-  if (context.board.merge_queue === 'unknown') {
-    skip(context, 'A2', 'merge_queue_unknown');
-    return;
-  }
-  const candidates = accepted(context, 'A2').filter(pr => !pr.is_draft).filter((pr) => {
-    if (pr.files === null) skip(context, 'A2', 'files_incomplete', `#${pr.number}`);
-    return pr.files !== null;
-  });
-  const fits = (left: BoardPullRequestV1, right: BoardPullRequestV1): boolean =>
-    !hasEdge(context.board, left, right) && !left.files!.some(path => right.files!.includes(path));
-  const seed = candidates.flatMap((left, index) => candidates.slice(index + 1).filter(right => fits(left, right)).map(right => [left, right])).at(0);
-  if (seed === undefined) return;
-  const members = [...seed];
-  for (const pr of candidates) {
-    if (members.length < A2_BATCH_MAX && !members.includes(pr) && members.every(member => fits(member, pr))) members.push(pr);
-  }
-  members.sort((left, right) => left.number - right.number);
-  find(context, 'A2', { issues: members.flatMap(pr => itemsOf(context.board, pr)), pull_requests: members.map(pr => pr.number) },
-    `${members.length} accepted PRs change disjoint files and have no dependency edge: batch ${members.map(pr => `#${pr.number}`).join(' ')}`);
 }
 
 type SeatTerminal = BoardTerminalV1 & { readonly seat_status: 'observed' };
@@ -375,7 +343,7 @@ function r4(context: Context): void {
 
 export function evaluateBoardAttention(board: BoardV1): BoardAttentionV1 {
   const context: Context = { board, now: Date.parse(board.observed_at), findings: [], unevaluated: [] };
-  for (const rule of [a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, r1, r2, r3, r4, r5]) rule(context);
+  for (const rule of [a1, a3, a4, a5, a6, a7, a8, a9, a10, a11, r1, r2, r3, r4, r5]) rule(context);
   return Object.freeze({
     protocol: BOARD_ATTENTION_PROTOCOL,
     kind: BOARD_ATTENTION_KIND,

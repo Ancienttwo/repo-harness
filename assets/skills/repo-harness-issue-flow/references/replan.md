@@ -70,9 +70,8 @@ The file has these sections, in this order:
 2. **Edges.** The blocked-by edges and the file-overlap
    edges between open items. Two items that write one file cannot run in
    parallel.
-3. **Lanes and merge batches.** The proposed parallel lanes, the merge
-   order, and the batches that can merge together (`orchestrator.md`
-   §9.3).
+3. **Lanes and merge order.** The proposed parallel lanes and the merge
+   order (`orchestrator.md` §9.2).
 4. **Claim changes.** Each claim to reassign or release, with the evidence
    of a stall: the last `issue claim status` URL and the branch head.
 5. **Owner questions.** The decisions that only the owner can make.

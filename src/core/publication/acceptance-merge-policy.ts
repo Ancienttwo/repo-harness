@@ -2,8 +2,6 @@
  * `publication.acceptance_merge` in `.ai/harness/policy.json` is the only
  * on/off switch for the publication merge executor. A missing `publication` object or
  * a missing field means "off"; every other shape is invalid.
- * `publication.merge_queue` selects the merge path: "off" (the default) merges
- * directly, "on" enqueues the PR. It has the same shape rules.
  *
  * `publication.required_check_coverage` declares protected paths and the
  * required checks that must have run for them (issue #1205).
@@ -27,7 +25,6 @@ import {
 export { PUBLICATION_POLICY_PATH };
 
 export type AcceptanceMergeSwitch = 'off' | 'on';
-export type MergeQueueSwitch = 'off' | 'on';
 
 /** The policy file at one commit: absent, or its exact text. */
 export type PolicyFileAtRef =
@@ -38,7 +35,6 @@ export type PublicationPolicy =
   | {
     readonly ok: true;
     readonly acceptance_merge: AcceptanceMergeSwitch;
-    readonly merge_queue: MergeQueueSwitch;
     /** The declared coverage block, or null when the block is absent or empty. */
     readonly coverage: RequiredCheckCoveragePolicyV1 | null;
     /** The declared generated-artifact block, or null when the block is absent or empty. */
@@ -95,21 +91,17 @@ export function policyFileFromContents(value: unknown): PolicyFileAtRef | null {
 
 export function parsePublicationPolicy(file: PolicyFileAtRef): PublicationPolicy {
   const parsed = policyRoot(file);
-  if (parsed.status === 'absent') return { ok: true, acceptance_merge: 'off', merge_queue: 'off', coverage: null, generated_artifacts: null, subtree: canonicalJson(undefined) };
+  if (parsed.status === 'absent') return { ok: true, acceptance_merge: 'off', coverage: null, generated_artifacts: null, subtree: canonicalJson(undefined) };
   if (parsed.status === 'invalid') return { ok: false, message: parsed.message };
   const publication = parsed.root.publication;
-  if (publication === undefined) return { ok: true, acceptance_merge: 'off', merge_queue: 'off', coverage: null, generated_artifacts: null, subtree: canonicalJson(undefined) };
+  if (publication === undefined) return { ok: true, acceptance_merge: 'off', coverage: null, generated_artifacts: null, subtree: canonicalJson(undefined) };
   if (!isObject(publication)) return { ok: false, message: 'publication must be an object' };
-  const unknown = Object.keys(publication).filter((key) => key !== 'acceptance_merge' && key !== 'merge_queue'
+  const unknown = Object.keys(publication).filter((key) => key !== 'acceptance_merge'
     && key !== 'required_check_coverage' && key !== 'generated_artifacts');
   if (unknown.length > 0) return { ok: false, message: `publication has unknown fields: ${unknown.sort().join(', ')}` };
   const value = publication.acceptance_merge;
   if (value !== undefined && value !== 'off' && value !== 'on') {
     return { ok: false, message: 'publication.acceptance_merge must be "off" or "on"' };
-  }
-  const queue = publication.merge_queue;
-  if (queue !== undefined && queue !== 'off' && queue !== 'on') {
-    return { ok: false, message: 'publication.merge_queue must be "off" or "on"' };
   }
   const coverage = parseRequiredCheckCoveragePolicy(publication.required_check_coverage);
   if (!coverage.ok) return { ok: false, message: coverage.message };
@@ -118,7 +110,6 @@ export function parsePublicationPolicy(file: PolicyFileAtRef): PublicationPolicy
   return {
     ok: true,
     acceptance_merge: value ?? 'off',
-    merge_queue: queue ?? 'off',
     coverage: coverage.policy,
     generated_artifacts: generated.policy,
     subtree: canonicalJson(publication),
