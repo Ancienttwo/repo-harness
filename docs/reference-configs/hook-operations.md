@@ -486,5 +486,4 @@ bash scripts/check-ci.sh governance
 ```
 
 That lane also runs the state boundary check, the helper projection check and
-`repo-harness init --repo . --dry-run` (`scripts/check-ci.sh:232`,
-`scripts/check-ci.sh:238`, `scripts/check-ci.sh:252`).
+`repo-harness init --repo . --dry-run` (`scripts/check-ci.sh#governance`).

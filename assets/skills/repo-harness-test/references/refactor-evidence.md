@@ -42,7 +42,7 @@ BUN_TEST_ISOLATE_FILES=1 BUN_TEST_JOBS=4 BUN_TEST_FILES="<files>" \
 bun test --timeout 180000 <files> > /tmp/shared.log 2>&1
 ```
 
-CI uses the isolated shape (`.github/workflows/ci.yml:92-95`). A difference
+CI uses the isolated shape (`.github/workflows/ci.yml#BUN_TEST_ISOLATE_FILES`). A difference
 between these runs is a diagnostic lead: investigate shared state, ordering,
 or contention before assigning a cause. Select this comparison when that
 boundary is relevant; do not add two runs solely to fill an evidence template.

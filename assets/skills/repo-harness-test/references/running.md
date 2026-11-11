@@ -29,13 +29,13 @@ echo "EXIT=$?"
 workflow use. With `BUN_TEST_ISOLATE_FILES=1` it runs one `bun test` per file
 and keeps going after a failure, then prints `[ci] failed test files (N):`.
 
-- `BUN_TEST_FILES` is a space-separated explicit list (lines 165-173); no path
+- `BUN_TEST_FILES` is a space-separated explicit list (`scripts/lib/ci-run-tests.sh#BUN_TEST_FILES`); no path
   may contain a space. Unset, it discovers sorted `*.test.ts` and `*.test.tsx` files under `tests/`.
-- `BUN_TEST_JOBS` sets the bounded worker pool (151, 191). Each worker's log is
+- `BUN_TEST_JOBS` sets the bounded worker pool (`scripts/lib/ci-run-tests.sh#BUN_TEST_JOBS`). Each worker's log is
   replayed whole by the parent, so a file's `[ci] test <path>` header and its
   bun output stay contiguous.
 - `BUN_TEST_TIMEOUT_MS` and `BUN_TEST_MAX_CONCURRENCY` feed the per-file
-  `bun test` invocation (line 8).
+  `bun test` invocation (`scripts/lib/ci-run-tests.sh#run_bun_test_file`).
 
 ## The gate lanes
 
