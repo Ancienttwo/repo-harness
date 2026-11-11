@@ -463,7 +463,7 @@ describe('board page', () => {
     expect(window.location.hash).toBe(`#board/${HARNESS_ID}/1474/1475`);
     expect(dialog()!.querySelector('[data-merge-ready]')).not.toBeNull();
     expect(dialog()!.querySelector('[data-stage-source]')?.getAttribute('data-stage-source')).toBe('ready');
-    expect(dialog()!.querySelector('[data-command] code')?.textContent).toBe('gh pr merge https://github.com/Ancienttwo/repo-harness/pull/1491 --squash');
+    expect(dialog()!.querySelector('[data-command] code')?.textContent).toBe('gh pr merge https://github.com/Ancienttwo/repo-harness/pull/1491 --squash --match-head-commit 20e2cbd211ea41450e47dd3fb470c388b0238b62');
     await key('j');
     expect(window.location.hash).toBe(`#board/${HARNESS_ID}/1474/1476`);
     await key('Escape');
@@ -473,6 +473,14 @@ describe('board page', () => {
     await act(async () => root?.unmount());
     root = null;
     // #1477 has no pull request: closed without merged work is not shipped.
+    // Under a merge queue the command enqueues the PR: GitHub refuses --squash on a queued branch.
+    boardAt(1475);
+    await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board: { ...BOARD, merge_queue: 'on' } }) })} />);
+    await settle();
+    expect(dialog()!.querySelector('[data-command] code')?.textContent).toBe('gh pr merge https://github.com/Ancienttwo/repo-harness/pull/1491');
+    await act(async () => root?.unmount());
+    root = null;
+
     boardAt(1477);
     const closed: BoardV1 = { ...BOARD, items: BOARD.items.map(item => item.number === 1477 ? { ...item, state: 'closed' } : item) };
     await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board: closed }) })} />);
@@ -665,7 +673,7 @@ describe('board page', () => {
     const refusal = (code: string, status: number) => () => Response.json({ error: { code, message: 'refused', next_action: 'retry' } }, { status });
     const answers: (() => Response)[] = [
       () => Response.json(BOARD),
-      () => Response.json({ ...BOARD, protocol: 6 }),
+      () => Response.json({ ...BOARD, protocol: 7 }),
       refusal('board_parent_invalid', 400),
       refusal('repository_not_found', 404),
       refusal('board_collect_failed', 503),

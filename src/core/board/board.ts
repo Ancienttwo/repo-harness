@@ -1,6 +1,6 @@
 import { PROJECTION_WRITER_DEFAULT_BRANCH } from 'archctx-contracts';
 import { parseClosingReferences } from '../publication/closing-references';
-import type { AcceptanceMergeSwitch } from '../publication/acceptance-merge-policy';
+import type { AcceptanceMergeSwitch, MergeQueueSwitch } from '../publication/acceptance-merge-policy';
 import type { PullRequestReadinessV2 } from '../publication/merge-readiness';
 import { isSeatStatusMessage, seatStatusMessage } from './advisor-seat';
 import { modelFamily } from '../review/model-family';
@@ -35,7 +35,7 @@ import { pathHazardHits, pathHighHits } from './hazards';
  * It is a read model. GitHub and hc stay the authorities; the board keeps
  * their observation time and never writes back.
  */
-export const BOARD_PROTOCOL = 5 as const;
+export const BOARD_PROTOCOL = 6 as const;
 export const BOARD_KIND = 'repo-harness.board' as const;
 
 export type BoardTier = 'low' | 'medium' | 'high';
@@ -240,6 +240,9 @@ export type BoardPathOwnersV1 =
 /** `publication.acceptance_merge` on the default branch; `unknown` when the policy file could not be read or decoded. */
 export type BoardAcceptanceMergeV1 = AcceptanceMergeSwitch | 'unknown';
 
+/** `publication.merge_queue` from the same policy read as `acceptance_merge`, with the same `unknown`. */
+export type BoardMergeQueueV1 = MergeQueueSwitch | 'unknown';
+
 export interface BoardToolingV1 {
   readonly hc: { readonly status: 'observed'; readonly version: string; readonly min_version: string } | { readonly status: 'unavailable'; readonly reason: string };
   /** No policy pin exists for Herdr.app yet. */
@@ -253,6 +256,7 @@ export interface BoardV1 {
   readonly repository: string;
   readonly default_branch: string;
   readonly acceptance_merge: BoardAcceptanceMergeV1;
+  readonly merge_queue: BoardMergeQueueV1;
   readonly parent: { readonly number: number; readonly title: string; readonly url: string; readonly state: 'open' | 'closed'; readonly labels: readonly string[]; readonly milestone: string | null };
   readonly plan: BoardPlanV1;
   /** The hold record on the parent: it holds the whole batch, or the issues of its `Issues:` line. */
@@ -279,6 +283,7 @@ export interface BoardInputV1 {
   readonly observed_at: string;
   readonly parent: BoardParentReadV1;
   readonly acceptance_merge: BoardAcceptanceMergeV1;
+  readonly merge_queue: BoardMergeQueueV1;
   readonly pull_requests: readonly BoardPullRequestReadV1[];
   readonly readiness: readonly BoardReadinessV1[];
   /** For each open pull request, the candidates of `syncCarryCandidates` that git proved to be merge-only syncs of the head (`provenMergeOnlySyncs`). */
@@ -289,7 +294,7 @@ export interface BoardInputV1 {
   readonly tooling: BoardToolingV1;
 }
 
-const ACCEPTANCE_MERGE_VALUES: ReadonlySet<unknown> = new Set<BoardAcceptanceMergeV1>(['off', 'on', 'unknown']);
+const SWITCH_VALUES: ReadonlySet<unknown> = new Set<BoardAcceptanceMergeV1 | BoardMergeQueueV1>(['off', 'on', 'unknown']);
 
 /** The `branch` and `status_msg` checks of the board and the parent list decoders: an absent value is a refusal, and null is the explicit none. The error never repeats a refused message. */
 export function checkSeatTerminals(terminals: unknown): void {
@@ -305,7 +310,8 @@ export function decodeBoard(value: unknown): BoardV1 {
   const board = value as Partial<BoardV1> | null;
   if (board?.protocol !== BOARD_PROTOCOL) throw new Error(`unsupported board protocol: ${String(board?.protocol)}`);
   if (board.kind !== BOARD_KIND) throw new Error(`unsupported board kind: ${String(board.kind)}`);
-  if (!ACCEPTANCE_MERGE_VALUES.has(board.acceptance_merge)) throw new Error(`invalid board acceptance_merge: ${String(board.acceptance_merge)}`);
+  if (!SWITCH_VALUES.has(board.acceptance_merge)) throw new Error(`invalid board acceptance_merge: ${String(board.acceptance_merge)}`);
+  if (!SWITCH_VALUES.has(board.merge_queue)) throw new Error(`invalid board merge_queue: ${String(board.merge_queue)}`);
   if (board.plan?.status === 'observed') {
     const { revision } = board.plan;
     if (revision !== null && (!Number.isSafeInteger(revision) || revision < 1)) throw new Error(`invalid board plan revision: ${String(revision)}`);
@@ -602,6 +608,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
     repository,
     default_branch: input.parent.repository.default_branch,
     acceptance_merge: input.acceptance_merge,
+    merge_queue: input.merge_queue,
     parent: Object.freeze({ number: parent.number, title: parent.title, url: parent.url, state: parent.state, labels: parent.labels, milestone: parent.milestone }),
     plan: projectPlan(parent),
     merge_hold: readMergeHold(parent.comments, true),
