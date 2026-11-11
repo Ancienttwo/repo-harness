@@ -55,8 +55,10 @@ function windowsStartTime(pid: number): string | null {
   const systemRoot = process.env.SystemRoot;
   if (!systemRoot || !win32.isAbsolute(systemRoot)) throw unreadable(pid, 'SystemRoot is not an absolute path');
   const powershell = win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-  const script = `$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; `
-    + 'if ($null -eq $p) { exit 3 }; '
+  // The .NET call needs no cmdlet discovery. Get-Process auto-loads its module,
+  // which in an isolated profile can take longer than the timeout (#2479).
+  // GetProcessById throws ArgumentException when no process has the PID.
+  const script = `try { $p = [System.Diagnostics.Process]::GetProcessById(${pid}) } catch [System.ArgumentException] { exit 3 }; `
     + '[Console]::Out.Write($p.StartTime.ToFileTimeUtc())';
   const result = spawnSync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
     encoding: 'utf-8',
@@ -66,7 +68,7 @@ function windowsStartTime(pid: number): string | null {
   if (result.error) throw result.error;
   const text = result.stdout.trim();
   if (result.status === 3 && text === '') return null;
-  if (result.status !== 0 || !/^\d+$/.test(text)) throw unreadable(pid, `Get-Process exited with status ${result.status}`);
+  if (result.status !== 0 || !/^\d+$/.test(text)) throw unreadable(pid, `PowerShell exited with status ${result.status}`);
   return `win32:${text}`;
 }
 
@@ -84,7 +86,8 @@ function windowsStartTime(pid: number): string | null {
  * - darwin: `ps -o lstart`, from the kernel's p_starttime. The resolution is one
  *   second. Darwin gives PIDs in sequence, so a reuse in the same second needs
  *   the full PID range to wrap in that second.
- * - win32: the process creation time from Get-Process, in 100 ns units.
+ * - win32: Process.StartTime from System.Diagnostics.Process, as a UTC
+ *   FileTime in 100 ns units.
  *
  * Returns null when no process has this PID. Throws when the table cannot be read.
  */

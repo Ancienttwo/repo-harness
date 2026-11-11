@@ -153,7 +153,7 @@ describe("test HOME and TMPDIR isolation", () => {
       const result = entrypoint === "ci-file"
         ? spawnSync("bash", ["-c", 'source "$1"; run_bun_test_file "$2"', "test-home", join(ROOT, "scripts/lib/ci-run-tests.sh"), probe], { cwd: ROOT, env: f.env, encoding: "utf8" })
         : spawnSync(process.execPath, ["run", "test:coverage", probe], { cwd: ROOT, env: f.env, encoding: "utf8" });
-      expect(result.status).toBe(0);
+      expect(result.status, "stdout:\n" + result.stdout + "\nstderr:\n" + result.stderr).toBe(0);
       const value = JSON.parse(readFileSync(marker, "utf8")) as { home: string; osHome: string; tmp: string };
       // The entrypoint has already removed these directories after Bun exits.
       for (const path of [value.home, value.osHome, value.tmp]) {
