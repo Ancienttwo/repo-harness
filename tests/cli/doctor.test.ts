@@ -19,7 +19,7 @@ import {
   runDoctor,
 } from '../../src/cli/commands/doctor';
 import { writeShellExecutableFixture } from '../helpers/repo-fixture';
-import { installStateFixturePath, recordPluginSelection, seedGlobalPackageFixture } from '../helpers/install-ownership';
+import { installStateFixturePath, recordPluginSelection, withTempHome } from '../helpers/install-ownership';
 import { expectedSkillProjections, type SkillProjection } from '../../src/cli/installer/skill-projection';
 import { buildManagedHooks, MANAGED_TAG } from '../../src/cli/installer/managed-entries';
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
@@ -32,24 +32,6 @@ const FULL_PLUGINS: readonly PluginId[] = ['architecture', 'cross-review', 'mcp'
 // No ledger: the doctor judges the install default `all`, so the repair is a bare install.
 const DEFAULT_FIX = installSelectionCommand('all');
 const DEFAULT_FIX_LINE = /run: repo-harness install(?:;|$)/m;
-
-function withTempHome(fn: (home: string) => void): void {
-  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-doctor-')));
-  const prev = process.env.HOME;
-  const prevBunInstall = process.env.BUN_INSTALL;
-  process.env.HOME = tmp;
-  process.env.BUN_INSTALL = path.join(tmp, '.bun');
-  seedGlobalPackageFixture();
-  try {
-    fn(tmp);
-  } finally {
-    if (prev === undefined) delete process.env.HOME;
-    else process.env.HOME = prev;
-    if (prevBunInstall === undefined) delete process.env.BUN_INSTALL;
-    else process.env.BUN_INSTALL = prevBunInstall;
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
-}
 
 function withEnv(values: Record<string, string | undefined>, fn: () => void): void {
   const previous = new Map<string, string | undefined>();
@@ -168,7 +150,7 @@ describe('doctor command (Phase 1C)', () => {
 
   test('runDoctor emits the built-in checks (path/version/hosts/trust)', () => {
     registerArchitecturePlugin();
-    withTempHome((home) => {
+    withTempHome('repo-harness-doctor', (home) => {
       const r = runDoctor(CLI_PORTS.doctor);
       const ids = r.checks.map((c) => c.id);
       expect(r.checks.find((c) => c.id === 'herdr-notify-relay')).toMatchObject({ status: 'na', detail: 'Herdr notify is not installed.' });
@@ -213,7 +195,7 @@ describe('doctor command (Phase 1C)', () => {
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
   test('cli-on-path resolves repo-harness from PATH without requiring Unix which', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-doctor', () => {
       const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-doctor-path-')));
       try {
         const fakeBin = path.join(tmp, 'bin');
@@ -236,7 +218,7 @@ describe('doctor command (Phase 1C)', () => {
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
   test('an old adapter reports projection mismatch and a missing hook bin', () => {
-    withTempHome(home => {
+    withTempHome('repo-harness-doctor', home => {
       const bin = path.join(home, 'bin');
       fs.mkdirSync(bin);
       writeExecutable(path.join(bin, 'repo-harness'), '#!/bin/sh\nexit 0\n');
@@ -385,7 +367,7 @@ describe('doctor command (Phase 1C)', () => {
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
   test('codex-trust-state reports n/a when ~/.codex/config.toml is missing', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-doctor', () => {
       const r = runDoctor(CLI_PORTS.doctor);
       const trust = r.checks.find((c) => c.id === 'codex-trust-state')!;
       expect(trust.status).toBe('na');
@@ -393,7 +375,7 @@ describe('doctor command (Phase 1C)', () => {
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
   test('cli-update is agent-triggered and does not check npm by default', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-doctor', () => {
       withEnv({ REPO_HARNESS_CHECK_UPDATES: undefined, REPO_HARNESS_LATEST_VERSION: undefined }, () => {
         const r = runDoctor(CLI_PORTS.doctor);
         const update = r.checks.find((c) => c.id === 'cli-update')!;
@@ -404,7 +386,7 @@ describe('doctor command (Phase 1C)', () => {
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
   test('cli-update warns with an Agent action when the package is stale', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-doctor', () => {
       withEnv({ REPO_HARNESS_CHECK_UPDATES: '1', REPO_HARNESS_LATEST_VERSION: '99.0.0' }, () => {
         const r = runDoctor(CLI_PORTS.doctor);
         const update = r.checks.find((c) => c.id === 'cli-update')!;
@@ -425,7 +407,7 @@ describe('doctor command (Phase 1C)', () => {
   });
 
   test('cli-update scopes the recommended runtime refresh to the requested target', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-doctor', () => {
       withEnv({ REPO_HARNESS_CHECK_UPDATES: '1', REPO_HARNESS_LATEST_VERSION: '99.0.0' }, () => {
         for (const target of ['codex', 'claude'] as const) {
           const r = runDoctor(CLI_PORTS.doctor, process.cwd(), target);
@@ -485,7 +467,7 @@ describe('doctor command (Phase 1C)', () => {
   });
 
   test('codex-trust-state counts user-level [hooks.state] lines when present', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-doctor', (home) => {
       const configPath = path.join(home, '.codex/config.toml');
       fs.mkdirSync(path.dirname(configPath), { recursive: true });
       const content = `[features]\nhooks = true\n\n[hooks.state."${home}/.codex/hooks.json:pre_tool_use:0:0"]\ntrusted_hash = "sha256:a"\n\n[hooks.state."${home}/.codex/hooks.json:post_tool_use:0:0"]\ntrusted_hash = "sha256:b"\n\n[hooks.state."${home}/.codex/hooks.json:session_start:0:0"]\ntrusted_hash = "sha256:c"\n`;
@@ -498,7 +480,7 @@ describe('doctor command (Phase 1C)', () => {
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
   test('registerCheck still supports additional plugin entries', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-doctor', () => {
       registerCheck({
         id: 'codegraph-test',
         describe: 'placeholder for Phase 2 wiring',
@@ -513,7 +495,7 @@ describe('doctor command (Phase 1C)', () => {
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
   test('summary tallies each status correctly', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-doctor', () => {
       registerCheck({ id: 'ok-a', describe: '', run: () => ({ status: 'ok', detail: '' }) });
       registerCheck({ id: 'fail-b', describe: '', run: () => ({ status: 'fail', detail: '' }) });
       registerCheck({ id: 'na-c', describe: '', run: () => ({ status: 'na', detail: '' }) });
@@ -526,14 +508,14 @@ describe('doctor command (Phase 1C)', () => {
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
   test('formatDoctor includes a Summary line', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-doctor', () => {
       const text = formatDoctor(runDoctor(CLI_PORTS.doctor), false);
       expect(text).toContain('Summary:');
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
   test('formatDoctor --json produces parseable JSON', () => {
-    withTempHome(() => {
+    withTempHome('repo-harness-doctor', () => {
       const json = formatDoctor(runDoctor(CLI_PORTS.doctor), true);
       expect(() => JSON.parse(json)).not.toThrow();
       const parsed = JSON.parse(json);
@@ -543,7 +525,7 @@ describe('doctor command (Phase 1C)', () => {
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
   test('security-config reports fail when hook JSON is invalid', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-doctor', (home) => {
       const hooksPath = path.join(home, '.codex/hooks.json');
       fs.mkdirSync(path.dirname(hooksPath), { recursive: true });
       fs.writeFileSync(hooksPath, '{ not json');
@@ -555,7 +537,7 @@ describe('doctor command (Phase 1C)', () => {
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
   test('security-config treats reviewed user-level warning as ok', () => {
-    withTempHome((home) => {
+    withTempHome('repo-harness-doctor', (home) => {
       const settingsPath = path.join(home, '.claude/settings.json');
       const configPath = path.join(home, '.repo-harness/config.json');
       fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
@@ -687,7 +669,7 @@ describe('doctor skill projection', () => {
   }
 
   for (const state of ['ok link', 'stale copy', 'missing', 'dangling link', 'wrong link', 'ok copy'] as const) {
-    test(`reports ${state} with the affected path and repair command`, () => withTempHome(home => {
+    test(`reports ${state} with the affected path and repair command`, () => withTempHome('repo-harness-doctor', home => {
       const f = seed(home);
       if (state === 'ok link') fs.symlinkSync(f.source, f.destination);
       if (state === 'dangling link') fs.symlinkSync(path.join(home, 'missing'), f.destination);
@@ -707,7 +689,7 @@ describe('doctor skill projection', () => {
     }));
   }
 
-  test('per-skill rows and the CLI text are two projections of the same judgments', () => withTempHome(home => {
+  test('per-skill rows and the CLI text are two projections of the same judgments', () => withTempHome('repo-harness-doctor', home => {
     const f = seed(home);
     const packageRoot = path.join(home, '.bun/install/global/node_modules/repo-harness');
     const catalog = parseSkillSurfaceCatalog(fs.readFileSync(path.join(packageRoot, 'assets/skill-commands/manifest.json'), 'utf8'),
@@ -792,7 +774,7 @@ describe('doctor skill projection', () => {
     }
   }));
 
-  test('a claude-only ledger judges the claude rows and gives na for the hosts it never touched', () => withTempHome(home => {
+  test('a claude-only ledger judges the claude rows and gives na for the hosts it never touched', () => withTempHome('repo-harness-doctor', home => {
     const f = seed(home);
     const packageRoot = path.join(home, '.bun/install/global/node_modules/repo-harness');
     const catalog = parseSkillSurfaceCatalog(fs.readFileSync(path.join(packageRoot, 'assets/skill-commands/manifest.json'), 'utf8'),
@@ -834,7 +816,7 @@ describe('doctor skill projection', () => {
     expect(afterDelete.status).toBe('warn');
   }));
 
-  test('review regression: old global contract is an actionable warning', () => withTempHome(home => {
+  test('review regression: old global contract is an actionable warning', () => withTempHome('repo-harness-doctor', home => {
     const f = seed(home);
     const packageRoot = path.join(home, '.bun/install/global/node_modules/repo-harness');
     const contractPath = path.join(packageRoot, 'assets/workflow-contract.v1.json');
@@ -850,7 +832,7 @@ describe('doctor skill projection', () => {
     expect(fs.readFileSync(contractPath, 'utf8')).toBe(before);
   }));
 
-  test('an old global contract without the canonical include set gives an actionable warning', () => withTempHome(home => {
+  test('an old global contract without the canonical include set gives an actionable warning', () => withTempHome('repo-harness-doctor', home => {
     const f = seed(home);
     const contractPath = path.join(home, '.bun/install/global/node_modules/repo-harness/assets/workflow-contract.v1.json');
     const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
@@ -864,7 +846,7 @@ describe('doctor skill projection', () => {
     expect(fs.readFileSync(contractPath, 'utf8')).toBe(before);
   }));
 
-  test('reports invalid path type without replacing the file', () => withTempHome(home => {
+  test('reports invalid path type without replacing the file', () => withTempHome('repo-harness-doctor', home => {
     const f = seed(home);
     fs.writeFileSync(f.destination, 'user file\n');
     const result = checkSkillProjection('codex', f.env);
@@ -874,7 +856,7 @@ describe('doctor skill projection', () => {
     expect(fs.readFileSync(f.destination, 'utf8')).toBe('user file\n');
   }));
 
-  test('reports source missing and preserves the installed copy', () => withTempHome(home => {
+  test('reports source missing and preserves the installed copy', () => withTempHome('repo-harness-doctor', home => {
     const f = seed(home);
     fs.cpSync(f.source, f.destination, { recursive: true });
     const before = hashManagedTree(f.destination);
@@ -886,7 +868,7 @@ describe('doctor skill projection', () => {
     expect(hashManagedTree(f.destination)).toBe(before);
   }));
 
-  test('fails closed on a malformed projection contract', () => withTempHome(home => {
+  test('fails closed on a malformed projection contract', () => withTempHome('repo-harness-doctor', home => {
     const f = seed(home);
     const contractPath = path.join(home, '.bun/install/global/node_modules/repo-harness/assets/workflow-contract.v1.json');
     const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
@@ -898,7 +880,7 @@ describe('doctor skill projection', () => {
     expect(result.detail).toContain('repo-harness install --state');
   }));
 
-  test('reports ledger type drift and installStateStatus drift without changing the ledger', () => withTempHome(home => {
+  test('reports ledger type drift and installStateStatus drift without changing the ledger', () => withTempHome('repo-harness-doctor', home => {
     const f = seed(home);
     fs.symlinkSync(f.source, f.destination);
     const ledger = installStateFixturePath({ HOME: home });
@@ -922,7 +904,7 @@ describe('doctor skill projection', () => {
     expect(checkSkillProjection('codex', f.env).detail).toContain(`${f.destination}: ok link -> ${f.source}; ledger drift`);
   }));
 
-  test('reports changed owned links and unknown Waza directories; accepts relative staging links', () => withTempHome(home => {
+  test('reports changed owned links and unknown Waza directories; accepts relative staging links', () => withTempHome('repo-harness-doctor', home => {
     const f = seed(home);
     const staging = path.join(home, '.agents/skills/think');
     fs.mkdirSync(staging, { recursive: true });
@@ -941,7 +923,7 @@ describe('doctor skill projection', () => {
     expect(fs.readFileSync(path.join(dest, 'SKILL.md'), 'utf8')).toBe('private instructions\n');
   }));
 
-  test('runDoctor includes the check and filters projection hosts by target', () => withTempHome(home => {
+  test('runDoctor includes the check and filters projection hosts by target', () => withTempHome('repo-harness-doctor', home => {
     seed(home);
     withEnv({ BUN_INSTALL: path.join(home, '.bun') }, () => {
       const result = runDoctor(CLI_PORTS.doctor, root, 'codex').checks.find(check => check.id === 'skill-projection');
@@ -959,7 +941,7 @@ test('each skill-projection repair command keeps the recorded selection and pass
     { selection: [], plugins: [], repair: 'repo-harness install --no-plugins' },
     { selection: ['pi', 'product'], plugins: ['pi', 'product'], pi: true, repair: 'repo-harness install --plugins pi,product' },
   ];
-  for (const row of rows) withTempHome(home => {
+  for (const row of rows) withTempHome('repo-harness-doctor', home => {
     const tools = path.join(home, 'tool-bin');
     fs.mkdirSync(tools, { recursive: true });
     if (row.pi) writeExecutable(path.join(tools, 'pi'), '#!/bin/sh\ncase "$1" in --version) echo 1.5.0 ;; list) echo "No packages installed." ;; esac\n');
@@ -988,7 +970,7 @@ test('each skill-projection repair command keeps the recorded selection and pass
 
 describe('legacy workflow-state diagnostic', () => {
   test('reports a legacy copy from a nested cwd without changing its bytes', () => {
-    withTempHome(() => withTempRepo({ optIn: true }, (repo) => {
+    withTempHome('repo-harness-doctor', () => withTempRepo({ optIn: true }, (repo) => {
       const legacy = path.join(repo, '.ai/hooks/lib/workflow-state.sh');
       fs.mkdirSync(path.dirname(legacy), { recursive: true });
       const content = '# Local operator changes\n';
