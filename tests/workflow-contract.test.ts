@@ -313,7 +313,8 @@ describe("workflow contract manifest", () => {
       mkdirSync(join(source, ".ai/harness/checks"), { recursive: true });
       mkdirSync(destination);
       mkdirSync(home);
-      writeFileSync(join(source, ".gitignore"), readFileSync(join(ROOT, "assets/templates/runtime.gitignore")));
+      // The tracked block and the user-level runtime-state block together form the effective rules.
+      writeFileSync(join(source, ".gitignore"), ["runtime.gitignore", "runtime-state.gitignore"].map((name) => readFileSync(join(ROOT, "assets/templates", name), "utf8")).join("\n"));
       expect(spawnSync("git", ["init", "-q"], { cwd: source }).status).toBe(0);
       for (const cache of caches) {
         writeFileSync(join(source, cache), "private runtime cache fixture\n");
@@ -399,22 +400,26 @@ describe("workflow contract manifest", () => {
     expect(gitignore).not.toContain("tasks/current.md");
     expect(gitignore).not.toContain(".claude/.plan-state/");
     expect(gitignore).not.toContain(".ai/harness/checks/latest.json");
-    expect(gitignore).toContain(".ai/harness/evidence/");
-    expect(gitignore).toContain(".ai/harness/state/");
-    expect(gitignore).toContain(".ai/harness/checks/*.latest.json");
-    expect(gitignore).toContain(".ai/harness/checks/*.latest.md");
-    expect(gitignore).toContain(".ai/harness/archive/");
     expect(gitignore).not.toContain(".ai/harness/handoff/current.md");
-    expect(gitignore).toContain(".ai/harness/handoff/");
-    expect(gitignore).toContain(".ai/harness/planning/");
-    expect(gitignore).toContain("!.ai/harness/planning/.gitkeep");
-    expect(gitignore).toContain(".ai/harness/worktrees/");
-    expect(gitignore).not.toContain(".ai/harness/chatgpt/bridge-extension/");
     expect(gitignore).toContain(".repo-harness/");
     expect(gitignore).not.toContain(".repo-harness/chatgpt-browser.local.json");
-    expect(gitignore).toContain(".ai/harness/triage/*");
-    expect(gitignore).toContain("!.ai/harness/triage/.gitkeep");
     expect(gitignore).toContain(".archcontext/");
+    // The .ai/harness runtime rules live in the user-level Git excludes block.
+    const runtimeState = readFileSync(join(ROOT, "assets/templates/runtime-state.gitignore"), "utf-8");
+    expect(runtimeState).not.toContain(".ai/harness/checks/latest.json");
+    expect(runtimeState).toContain(".ai/harness/evidence/");
+    expect(runtimeState).toContain(".ai/harness/state/");
+    expect(runtimeState).toContain(".ai/harness/checks/*.latest.json");
+    expect(runtimeState).toContain(".ai/harness/checks/*.latest.md");
+    expect(runtimeState).toContain(".ai/harness/archive/");
+    expect(runtimeState).not.toContain(".ai/harness/handoff/current.md");
+    expect(runtimeState).toContain(".ai/harness/handoff/");
+    expect(runtimeState).toContain(".ai/harness/planning/");
+    expect(runtimeState).toContain("!.ai/harness/planning/.gitkeep");
+    expect(runtimeState).toContain(".ai/harness/worktrees/");
+    expect(runtimeState).not.toContain(".ai/harness/chatgpt/bridge-extension/");
+    expect(runtimeState).toContain(".ai/harness/triage/*");
+    expect(runtimeState).toContain("!.ai/harness/triage/.gitkeep");
   }, 30_000);
 });
 
