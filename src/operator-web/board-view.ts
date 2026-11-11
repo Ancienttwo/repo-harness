@@ -5,7 +5,7 @@ import { decodeBoardParents, decodeBoardSeats, type BoardParentsV1, type BoardSe
 import { primaryPullRequest } from '../core/board/pull-requests';
 import { BOARD_PARENTS_READ_FAILURES, BOARD_READ_FAILURES, type BoardParentsReadFailure, type BoardReadFailure } from '../core/operator/board-read';
 import { asApiError } from './operator-api-error';
-import { useObservationRefresh } from './useObservationRefresh';
+import { answered, useObservationRefresh } from './useObservationRefresh';
 
 /**
  * Browser side of `GET /api/v1/repositories/<id>/board?parent=<n>`. The board
@@ -81,7 +81,7 @@ export function useBoard(read: BoardReader, subject: BoardSubject | null, genera
     setState(current => current?.key === key && current.view.kind === 'ready' && STALE_BOARD_KEPT.has(result.reason)
       ? { key, view: { ...current.view, refreshFailed: result.reason } }
       : { key, view: { kind: 'failed', reason: result.reason } });
-    return result.reason !== 'unreachable';
+    return answered(result);
     // `key` identifies `subject`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [read, key]);
@@ -130,7 +130,7 @@ export function useBoardParents(read: BoardParentsReader, repositoryId: string |
     const result = await read(repositoryId, signal);
     if (signal.aborted) return false;
     setState({ key: repositoryId, view: result.state === 'ok' ? { kind: 'ready', list: result.list } : { kind: 'failed', reason: result.reason } });
-    return result.state === 'ok' || result.reason !== 'unreachable';
+    return answered(result);
   }, [read, repositoryId]);
   useObservationRefresh(observe, JSON.stringify(['board-parents', repositoryId, generation]), { enabled: repositoryId !== null, interval: BOARD_CACHE_POLL_MS });
   if (repositoryId === null) return null;
@@ -173,7 +173,7 @@ export function useBoardSeats(read: BoardSeatsReader, repositoryId: string | nul
     const result = await read(repositoryId, signal);
     if (signal.aborted) return false;
     setState({ key: repositoryId, view: result.state === 'pending' ? { kind: 'loading' } : result.state === 'ok' ? { kind: 'ready', seats: result.seats } : { kind: 'failed', reason: result.reason } });
-    return result.state !== 'unavailable' || result.reason !== 'unreachable';
+    return answered(result);
   }, [read, repositoryId]);
   useObservationRefresh(observe, JSON.stringify(['board-seats', repositoryId, generation]), { enabled: repositoryId !== null, interval: BOARD_CACHE_POLL_MS });
   if (repositoryId === null) return null;

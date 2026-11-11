@@ -2,7 +2,17 @@ import { useCallback, useEffect, useRef } from 'react';
 
 const OBSERVATION_INTERVAL_MS = 30_000;
 
+/**
+ * The one failure rule of the loop: only a request with no typed answer
+ * (`unreachable`) backs the loop off. A typed refusal is an answer: the reader
+ * shows the datum as unavailable and the loop keeps its interval.
+ */
+export function answered(read: { readonly state: string; readonly reason?: string }): boolean {
+  return !(read.state === 'unavailable' && read.reason === 'unreachable');
+}
+
 /** Owns only request lifetime. Readers retain decoding, source state and errors.
+ * `read` resolves to whether the request got a typed answer (`answered`); a rejected read got none.
  * A promise must retire before the same loop can start its queued request.
  * A loop that resumes after `enabled` was false reads at once, like a page that
  * becomes visible again, so work deferred while paused is not lost. */

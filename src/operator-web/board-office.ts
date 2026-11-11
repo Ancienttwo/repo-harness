@@ -8,7 +8,7 @@ import {
 import { joinBoardParents, type BoardParentsV1, type BoardSeatsV1 } from '../core/board/parents';
 import { PLAN_BATCH_MAX_MEMBERS } from '../core/board/plan-block';
 import { BOARD_CACHE_POLL_MS, type BoardParentsReader, type BoardParentsReason, type BoardParentsView, type BoardRead, type BoardReader, type BoardSeatsReader, type BoardSeatsView } from './board-view';
-import { useObservationRefresh } from './useObservationRefresh';
+import { answered, useObservationRefresh } from './useObservationRefresh';
 
 /**
  * The data map of the Board office view (#1755, #1787): the live seats of one
@@ -222,7 +222,7 @@ export function useOfficeOverview(repositories: readonly string[], readParents: 
       const result = await readParents(id, signal);
       if (signal.aborted) return false;
       setParents(current => new Map(current).set(id, result.state === 'ok' ? { kind: 'ready', list: result.list } : { kind: 'failed', reason: result.reason }));
-      if (result.state !== 'ok' && result.reason === 'unreachable') complete = false;
+      if (!answered(result)) complete = false;
     }
     return complete;
   }, [readParents, key]);
@@ -232,7 +232,7 @@ export function useOfficeOverview(repositories: readonly string[], readParents: 
       const result = await readSeats(id, signal);
       if (signal.aborted) return false;
       setSeats(current => new Map(current).set(id, result.state === 'pending' ? { kind: 'loading' } : result.state === 'ok' ? { kind: 'ready', seats: result.seats } : { kind: 'failed', reason: result.reason }));
-      if (result.state === 'unavailable' && result.reason === 'unreachable') complete = false;
+      if (!answered(result)) complete = false;
     }
     return complete;
   }, [readSeats, key]);
@@ -250,7 +250,7 @@ export function useOfficeOverview(repositories: readonly string[], readParents: 
       const read = await readBoard({ repository_id: id, parent }, signal);
       if (signal.aborted) return false;
       setBoards(current => new Map(current).set(id, { parent, read }));
-      if (read.state !== 'ok' && read.reason === 'unreachable') complete = false;
+      if (!answered(read)) complete = false;
     }
     return complete;
   }, [readBoard, key]);
