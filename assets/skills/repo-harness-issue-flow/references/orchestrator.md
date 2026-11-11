@@ -520,12 +520,20 @@ Act on the exit code. Post every result as `integration status` on the PR.
 
 ### 9.1 Choose the mode
 
-Collect ready green PRs once per merge window. Use
-`repo-harness publication batch build` and then
-`repo-harness publication merge --batch` (§9.3), including when only one
-PR is eligible. Do not sync and re-review each PR for publication. Select
-members in the plan block's merge order. A batch has at most 6 members;
-when the window has more, build successive batches in that order.
+Collect ready green PRs once per merge window. The lane follows
+`publication.merge_queue` on the base:
+
+| `publication.merge_queue` | One eligible PR | Several eligible PRs |
+|---|---|---|
+| `on` | `repo-harness publication merge` enqueues it | The same command for each PR, in the plan block's merge order. The queue gives each PR its own CI run on the current main |
+| `off` | `repo-harness publication merge` squashes it directly | One integration batch with one CI run: `repo-harness publication batch build`, then `repo-harness publication merge --batch` (§9.3) |
+
+With `on`, the executor refuses `--batch`. With `off` and one PR, a
+BEHIND head first takes a merge-only sync (`board.md`, Serial
+integration). Do not sync and re-review each batch member for
+publication. Select batch members in the plan block's merge order. A
+batch has at most 6 members; when the window has more, build successive
+batches in that order.
 
 A PR is eligible when all of these are true:
 
@@ -566,7 +574,8 @@ order to the batch members; do not sync and re-review members one by one.
 
 ### 9.3 Batch integration
 
-The batch branch holds the member merge commits and nothing else. Never
+Batch integration applies only when `publication.merge_queue` is `off`;
+with `on`, the executor refuses `--batch`. The batch branch holds the member merge commits and nothing else. Never
 resolve a conflict, push a fix or add a commit of your own in it. Never
 merge it by any path other than `repo-harness publication merge`.
 

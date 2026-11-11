@@ -78,8 +78,10 @@ An internal PR uses the normal merge flow and does not use this reference.
 ## Merge
 
 Merge only after the repository owner gives an explicit GO for the reviewed
-head SHA. Route the merge to `repo-harness-ship`. It runs
-`gh pr merge <pr> --squash --match-head-commit <reviewed-sha>`. A new head SHA
+head SHA. Route the merge to `repo-harness-ship`. With
+`publication.merge_queue` `off`, it runs
+`gh pr merge <pr> --squash --match-head-commit <reviewed-sha>`. With `on`, it
+enqueues with `gh pr merge <pr> --match-head-commit <reviewed-sha>`. A new head SHA
 makes the bundle stale; verify again. Do not merge without that GO in the
 round that opened or reviewed the PR.
 
