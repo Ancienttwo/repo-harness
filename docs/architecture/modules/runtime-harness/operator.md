@@ -1,6 +1,6 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:60839ad06ed5aaa6ea68e32204b4e03e00216af889e699464e244af80eb4d87a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:9a2690a224de71dd890876a9d39d5ab7baaac2d45877023fd98805becb7d5c60" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`docs/kanban-runtime-status.md`、`src/effects/operator/**`、`src/operator-web/**`、`packages/operator-web/**`、`src/effects/setup/**`、`src/effects/dev-activity/**`、`vite.operator.config.ts`
@@ -42,7 +42,7 @@ flowchart LR
   p1_component_operator_primary_d8da79ba -->|"Read the committed architecture model through the shared ArchitectureModelReader"| p1_component_architecture_model_reader_a34f9503
   p1_component_operator_primary_d8da79ba -->|"Parse closed route requests and project or re-decode each observation before it leaves the server"| p1_component_operator_view_projections_ca31e3bc
   p1_capability_runtime_harness_operator_00133dd3 -->|"Return a read-only HTTP observation."| p1_component_operator_primary_d8da79ba
-  p1_component_operator_primary_d8da79ba -->|"Start one repository seats observer per server#44; serve its seats document from memory with an ETag and close its streams with the server."| p1_component_operator_board_observer_af875547
+  p1_component_operator_primary_d8da79ba -->|"Start one board observer per server#44; serve its seats#44; parents and board documents from memory with an ETag for each document version and close its streams and worker with the server."| p1_component_operator_board_observer_af875547
   p1_component_operator_web_console_452bb61f -->|"Decode the development activity and setup snapshots with the decoders the server uses"| p1_component_operator_activity_feeds_00325b96
   p1_component_operator_web_console_452bb61f -->|"Fetch public JSON observations through GET and HEAD routes only"| p1_component_operator_primary_d8da79ba
   p1_component_operator_web_console_452bb61f -->|"Decode each observation body with the shared strict core decoder before render"| p1_component_operator_view_projections_ca31e3bc
@@ -52,7 +52,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:a6fc83b2aecb1295b04c694d70300e81ac482fb889fe3c94258263f9b1060f13`).
+- Proof: `proven` (`sha256:ebaabc092bec0a84c69dda49c6df6862eadf53e3d735c78f408f9b5417d30a74`).
 - Semantic nodes: `18`; declared relations: `13`.
 
 ### 1.2 模組職責表
@@ -83,7 +83,7 @@ flowchart LR
 - `deployed-on` → `process.operator-server` — The operator board runs in the operator server process.
 - `reads` → `external.github` — Collect pull request and CI activity, the newest daily CI run with its JUnit and test projection artifacts, the open CI repair issues, and the CLI inventory repository lookups through gh in background collectors.
 - `depends-on` → `capability.public-surface.action-commands` — Read the skill catalog for the setup snapshot.
-- `depends-on` → `capability.organization.board` — Serve and show the board of one parent issue: decode the board CLI output and evaluate the attention rules in the browser. Read the seat, quota and agent settings contracts, read quota through the core readers, and save seats through the core writer.
+- `depends-on` → `capability.organization.board` — Serve and show the board of one parent issue: decode the board and parent documents that the board observer worker reads, and evaluate the attention rules in the browser. Read the seat, quota and agent settings contracts, read quota through the core readers, and save seats through the core writer.
 - `depends-on` → `component.evals-checks.ci-report-core` — Read the test result types, the test projection parser and the run command for the tests board and its snapshot decoder.
 - `depends-on` → `capability.runtime-harness.evidence-ledger` — Plugin → core: canonicalize digests and use the JSON value types for doc session finalization, worktree cleanup and the operator write audit
 - `depends-on` → `capability.workflow-engine.execution-primitives` — Read Git topology for task diffs and development activity. Read the task session records, the native session record and the process proof for task execution state. Use the hc client for hc server status, hc ls, hc events, the terminal labels, the herdr-app command and its error type. Read the notify install record, the notify config and the relay delivery record through the notify read contract, and use its relay channel names and record types in the notify status and the Bots page.
@@ -115,6 +115,7 @@ flowchart LR
 - `component.operator.assets-layer`:
   - 無。
 - `component.operator.board-observer`:
+  - `calls` → `component.board.effects` — In the resident worker, collect each observed board through one keyed source store per board and the parent list of each registered repository; acts keep their own fresh reads.
   - `calls` → `component.execution-primitives.hc-client` — Read repository hc streams and snapshots, read agent values from hc ls, and use the one seat-terminal mapping shared with closeout.
 - `component.operator.cli-layer`:
   - 無。
@@ -147,7 +148,7 @@ flowchart LR
   - `reads` → `component.execution-primitives.repository-registry` — Resolve a registered repository root from the strict repo-harness registry snapshot
   - `calls` → `component.operator.view-projections` — Parse closed route requests and project or re-decode each observation before it leaves the server
   - `reads` → `component.acceptance-review.primary` — Read the docs host platform and runtimes that a doc session may use.
-  - `calls` → `component.operator.board-observer` — Start one repository seats observer per server, serve its seats document from memory with an ETag and close its streams with the server.
+  - `calls` → `component.operator.board-observer` — Start one board observer per server, serve its seats, parents and board documents from memory with an ETag for each document version and close its streams and worker with the server.
   - `calls` → `component.workflow-state.coordination-plane` — Create a doc session worktree under the worktree topology lock of its clone.
   - `reads` → `component.execution-primitives.primary` — Read the managed worktree root and its naming rule for a doc session worktree.
   - `reads` → `external.herdr-core` — Run hc server status and read the task-session hc events snapshot for the hc runtime transport, and follow the task-session hc events stream for runtime capture.
@@ -174,7 +175,7 @@ flowchart LR
 | `component.operator.agents-configuration` | Agents Configuration | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 | `component.operator.architecture-thread-root` | Operator Architecture Read Thread Root | `1–2` 個文件 / `20–50` 行 | 未宣告 |
 | `component.operator.assets-layer` | Operator Board (assets) | `0` 個文件 / `0` 行 | 未宣告 |
-| `component.operator.board-observer` | Board Observer | `1–2` 個文件 / `200–500` 行 | 未宣告 |
+| `component.operator.board-observer` | Board Observer | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.operator.cli-layer` | Operator Board (cli) | `1–2` 個文件 / `20–50` 行 | 未宣告 |
 | `component.operator.console-collectors` | Console Collectors | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.operator.core-layer` | Operator Board (core) | `2–5` 個文件 / `100–200` 行 | 未宣告 |
@@ -187,7 +188,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:a6fc83b2aecb1295b04c694d70300e81ac482fb889fe3c94258263f9b1060f13`); selectors `7/7`.
+> **Proof**: `proven` (`sha256:ebaabc092bec0a84c69dda49c6df6862eadf53e3d735c78f408f9b5417d30a74`); selectors `7/7`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
