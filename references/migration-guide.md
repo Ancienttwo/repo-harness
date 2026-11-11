@@ -49,8 +49,7 @@ repo-harness init --repo /path/to/project
 
 ## What the Transaction Does
 
-1. Writes the workflow contract and package helper guidance in
-   `<repo>/.ai/hooks/README.md`. It does not copy the operator library.
+1. Writes the workflow contract. It does not copy the operator library.
 2. Removes retired generated hook entry files by exact manifest ownership while
    preserving user-owned files outside that manifest.
 3. Preserves project-level host adapter configuration for explicit manual review;

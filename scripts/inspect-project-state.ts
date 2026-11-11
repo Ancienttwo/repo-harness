@@ -46,20 +46,6 @@ function parseArgs(argv: string[]) {
   return { repo, format };
 }
 
-function jsonPathExists(path: string, keys: string[]): boolean {
-  if (!existsSync(path)) return false;
-  try {
-    let value: unknown = JSON.parse(readFileSync(path, "utf-8"));
-    for (const key of keys) {
-      if (!value || typeof value !== "object" || !(key in value)) return false;
-      value = (value as Record<string, unknown>)[key];
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function hasAnyPath(repo: string, relPaths: string[]): boolean {
   return relPaths.some((relPath) => existsSync(join(repo, relPath)));
 }
@@ -109,7 +95,6 @@ export function inspectRepo(repo: string): InspectionResult {
   ];
 
   const runtimeManifest = join(repo, contract.artifacts.runtimeManifest);
-  const policyFile = join(repo, ".ai", "harness", "policy.json");
   const generatedClaudeHookPaths = [
     ".claude/hooks/run-hook.sh",
     ".claude/hooks/finalize-handoff.sh",
@@ -125,9 +110,6 @@ export function inspectRepo(repo: string): InspectionResult {
 
   if (!existsSync(runtimeManifest)) {
     driftSignals.push("missing-runtime-contract-manifest");
-  }
-  if (existsSync(policyFile) && !jsonPathExists(policyFile, ["upgrade", "strategy_version"])) {
-    driftSignals.push("policy-missing-upgrade-strategy");
   }
   if (existsSync(join(repo, "docs", "plan.md"))) {
     driftSignals.push("legacy-docs-plan");
@@ -162,9 +144,6 @@ export function inspectRepo(repo: string): InspectionResult {
 
   if (driftSignals.includes("missing-runtime-contract-manifest")) {
     requiredDecisions.push("Install the repo-harness opt-in marker");
-  }
-  if (driftSignals.includes("policy-missing-upgrade-strategy")) {
-    requiredDecisions.push("Merge versioned upgrade strategy into harness policy");
   }
   if (driftSignals.includes("legacy-docs-plan") || driftSignals.includes("legacy-docs-todo")) {
     requiredDecisions.push("Run legacy document migration before template refresh");

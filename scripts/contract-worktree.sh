@@ -181,14 +181,13 @@ worktree_status_for_cleanup() {
   return 1
 }
 
+# The location is the package constant; no repository file holds it.
 default_worktree_path() {
   local slug="$1"
-  local repo_name template default_template
-  default_template="$(run_contract_runtime default-template)" || return $?
+  local repo_name template
+  template="$(run_contract_runtime default-template)" || return $?
   repo_name="$(basename "$REPO_ROOT")"
-  template="$(policy_get '.worktree_strategy.worktree_dir_template' "$default_template")"
-  template="$(run_contract_runtime resolve-template --template "$template")" || return $?
-  if [[ -n "${REPO_HARNESS_WORKTREE_ROOT:-}" && "$template" == "$default_template" ]]; then
+  if [[ -n "${REPO_HARNESS_WORKTREE_ROOT:-}" ]]; then
     template="${REPO_HARNESS_WORKTREE_ROOT}/{{repo}}-wt-{{slug}}"
   fi
   template="${template//\{\{repo\}\}/$repo_name}"

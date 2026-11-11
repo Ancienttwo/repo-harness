@@ -253,7 +253,7 @@ describe('effective state resolver', () => {
     test('a declared-but-missing registry fails closed with a structured blocker', () => {
       withRepo((cwd) => {
         write(cwd, '.ai/harness/policy.json', JSON.stringify({
-          context: { capability_registry_file: '.ai/context/capabilities.json' },
+          context: { capability_source: 'registry' },
         }));
         const state = resolveFixtureState(cwd);
         expect(state.blockers).toContain('capability_registry:invalid');
@@ -459,11 +459,6 @@ describe('effective state resolver', () => {
 
     for (const malformed of [
       {
-        name: 'non-string capability registry declaration',
-        policy: { context: { capability_registry_file: 42 } },
-        resolve: resolveFixtureState,
-      },
-      {
         name: 'non-string review base',
         policy: { worktree_strategy: { review_base: 42 } },
         resolve: resolveFixtureState,
@@ -495,7 +490,6 @@ describe('effective state resolver', () => {
 
     for (const malformed of [
       { context: 42 },
-      { context: { capability_registry_file: '../../outside' } },
     ] as const) {
       test(`clean inspect validates all policy authority eagerly: ${JSON.stringify(malformed)}`, () => {
         withRepo((cwd) => {
