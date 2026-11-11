@@ -16,7 +16,6 @@ export const en = {
   "runtimeNative.freshness.disconnected": "Source disconnected",
   "runtimeNative.freshness.unavailable": "Source unavailable",
 
-  "runtimeObservation.heading": "Runtime",
   "runtimeObservation.readOnly": "Runtime observations \u00b7 read only",
   "runtimeObservation.unavailable": "Runtime observations unavailable",
   "runtimeObservation.refreshFailed": "Runtime refresh failed \u00b7 last observation retained",
@@ -32,9 +31,6 @@ export const en = {
   "runtimeObservation.reason.question": "Answer needed",
   "runtimeObservation.reason.auth": "Sign-in needed",
   "runtimeObservation.reason.unknown": "Reason unknown",
-  "runtimeObservation.freshness.fresh": "Current observation",
-  "runtimeObservation.freshness.stale": "Stale observation",
-  "runtimeObservation.freshness.disconnected": "Source disconnected",
 } as const;
 
 export const zh: Readonly<Record<keyof typeof en, string>> = {
@@ -55,7 +51,6 @@ export const zh: Readonly<Record<keyof typeof en, string>> = {
   "runtimeNative.freshness.disconnected": "来源已断开",
   "runtimeNative.freshness.unavailable": "来源不可用",
 
-  "runtimeObservation.heading": "运行状态",
   "runtimeObservation.readOnly": "运行状态观测 · 只读",
   "runtimeObservation.unavailable": "运行状态观测不可用",
   "runtimeObservation.refreshFailed": "运行状态刷新失败 · 保留上次观测",
@@ -71,7 +66,4 @@ export const zh: Readonly<Record<keyof typeof en, string>> = {
   "runtimeObservation.reason.question": "需要回答",
   "runtimeObservation.reason.auth": "需要登录",
   "runtimeObservation.reason.unknown": "原因未知",
-  "runtimeObservation.freshness.fresh": "当前观测",
-  "runtimeObservation.freshness.stale": "过期观测",
-  "runtimeObservation.freshness.disconnected": "来源已断开",
 };
