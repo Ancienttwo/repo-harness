@@ -152,7 +152,8 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
   }
   const configured = seats[id];
   if (configured === null) throw new SeatsCommandError('seat_not_configured', `The ${id} seat is not configured. Configure it in the seats section before launch.`);
-  // The board review passes the gatekeeper route that its plan checked, so the plan and the launch use one config and quota snapshot.
+  // The board review passes the gatekeeper route that its plan checked: the launched seat is the planned one, with no second quota read.
+  // The config is still read for the source of the brief and for the migration error.
   const effective = id === 'gatekeeper' && planned !== undefined ? plannedGatekeeper(planned) : await quotaCheckedSeat(id, seats, configured, env, accountOptions);
   const labelSet = seatLabels(id, labels);
   // The pane name needs the registry prefix, so it comes only with the seat labels.

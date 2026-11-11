@@ -17,7 +17,7 @@ type StartDecision = Extract<ReviewDecisionV1, { action: 'start' }>;
 
 /**
  * What `seatLaunch` (the `seats argv` command) answers for one review seat; the command layer owns it, so the caller passes it in.
- * `gatekeeper` is the effective gatekeeper that the plan checked: the launch uses it and reads no second config or quota snapshot.
+ * `gatekeeper` is the effective gatekeeper that the plan checked: the launch starts that seat and reads quota no second time.
  */
 export type ReviewLaunch = (seat: SeatId, labels: { readonly repositoryId: string; readonly pr: string; readonly parent: string }, cwd: string, gatekeeper: SeatRouteV1) =>
   Promise<{ readonly argv: readonly string[]; readonly tab: string | null; readonly runtime: SeatConfigV1['runtime'] }>;
