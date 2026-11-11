@@ -237,10 +237,12 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
       }
     } catch (error) { unresolved(path, String((error as Error).message)); }
     const excludes = userExcludesFilePath(env);
-    if (!excludes.ok) unresolved('core.excludesFile', excludes.error);
-    else if (existsSync(excludes.path)) {
+    if (!excludes.ok) unresolved('user-level Git excludes file', excludes.error);
+    else if (fileExists(excludes.path)) {
       excludesPath = excludes.path;
       try {
+        // Preview refuses a symlinked excludes file, so dry run and apply report the same item.
+        assertConfigurationPath(excludes.path, dirname(excludes.path));
         const removal = removeRuntimeStateIgnoreBlock(read(excludes.path));
         if (removal.status === 'unbalanced') unresolved(excludes.path, 'unbalanced runtime-state ignore block; preserved');
         else if (removal.status === 'removed') change(excludes.path, removal.content.trim() ? removal.content : null, 'runtime-state ignore block');

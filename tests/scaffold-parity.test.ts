@@ -84,8 +84,11 @@ describe("create-project-dirs scaffold parity", () => {
       const gitignore = readFileSync(join(cwd, ".gitignore"), "utf-8");
       expect(gitignore).toContain("# BEGIN: repo-harness generated-runtime");
       expect(gitignore).toContain(".claude/.codegraph-state/");
-      expect(gitignore).toContain(".ai/harness/checks/*.latest.json");
-      expect(gitignore).toContain(".ai/harness/checks/*.latest.md");
+      // The checks cache rules live in the user-level runtime-state block, not the tracked block.
+      const runtimeState = readFileSync(join(ROOT, "assets/templates/runtime-state.gitignore"), "utf-8");
+      expect(runtimeState).toContain(".ai/harness/checks/*.latest.json");
+      expect(runtimeState).toContain(".ai/harness/checks/*.latest.md");
+      expect(gitignore).not.toContain(".ai/harness/checks/*.latest.json");
       expect(gitignore).not.toContain(".ai/harness/chatgpt/bridge-extension/");
       expect(gitignore).toContain(".repo-harness/");
       expect(gitignore).not.toContain(".repo-harness/chatgpt-browser.local.json");

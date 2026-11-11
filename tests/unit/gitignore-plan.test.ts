@@ -8,6 +8,8 @@ import {
   GITIGNORE_MANAGED_BLOCK_CONTENT,
   gitignoreManagedBlockOperation,
   RUNTIME_STATE_IGNORE_CONTENT,
+  RUNTIME_STATE_IGNORE_MARKER,
+  removeRuntimeStateIgnoreBlock,
 } from "../../src/effects/adoption/gitignore-plan";
 
 // A repository root without files: no retired runtime rule is kept.
@@ -133,6 +135,11 @@ describe("gitignore managed block .repo-harness rule", () => {
     const moved = RUNTIME_STATE_IGNORE_CONTENT.split("\n").filter((line) => line && !line.startsWith("#"));
     expect(moved).toContain(".ai/harness/events.jsonl");
     expect(moved.filter((rule) => tracked.has(rule))).toEqual([]);
+  });
+
+  test("removing a block between user lines leaves one blank line", () => {
+    const block = `# BEGIN: ${RUNTIME_STATE_IGNORE_MARKER}\nrule/\n# END: ${RUNTIME_STATE_IGNORE_MARKER}\n`;
+    expect(removeRuntimeStateIgnoreBlock(`# user\n*.orig\n\n${block}\nuser-tail/\n`)).toEqual({ status: "removed", content: "# user\n*.orig\n\nuser-tail/\n" });
   });
 
   test("the emitted operation carries the directory-level rule", () => {

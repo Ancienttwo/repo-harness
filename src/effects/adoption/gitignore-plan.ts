@@ -4,7 +4,7 @@ import { isAbsolute, join } from "path";
 import type { AppendManagedBlockOperation, ManagedBlockMarker } from "../../core/adoption/operations";
 import { managedBlockMarker } from "../../core/adoption/managed-block";
 import { makeOperationId } from "../../core/adoption/operations";
-import { runProcess } from "../process-runner";
+import { gitSpawnSync } from "../git/runner";
 import { RETIRED_RUNTIME_IGNORE_RULES, retiredRuntimeRuleFiles } from "../upgrade/legacy-inventory";
 
 export const GITIGNORE_MANAGED_BLOCK_MARKER = "repo-harness generated-runtime";
@@ -72,24 +72,25 @@ export type UserExcludesFile = { readonly ok: true; readonly path: string } | { 
 export function userExcludesFilePath(callerEnv: NodeJS.ProcessEnv = {}): UserExcludesFile {
   // Git and the default path read the same HOME and XDG_CONFIG_HOME.
   const env = { ...process.env, ...callerEnv };
-  const result = runProcess("git", ["config", "--global", "--type=path", "--get", "core.excludesFile"], { env, inheritEnv: false });
+  const result = gitSpawnSync(["config", "--global", "--type=path", "--get", "core.excludesFile"], { env, encoding: "utf8" });
   if (result.status === 0) {
     const configured = result.stdout.trim();
     if (!isAbsolute(configured)) return { ok: false, error: `core.excludesFile is not an absolute path: ${configured}` };
     return { ok: true, path: configured };
   }
-  if (result.status === 1 && !result.timedOut) {
+  if (result.status === 1) {
     const configHome = env.XDG_CONFIG_HOME || join(env.HOME ?? homedir(), ".config");
     return { ok: true, path: join(configHome, "git", "ignore") };
   }
-  return { ok: false, error: `git config --global --get core.excludesFile exited ${result.status}: ${(result.stderr || result.error).trim()}` };
+  const cause = (result.stderr || result.error?.message || `signal ${result.signal}`).trim();
+  return { ok: false, error: `no user-level excludes file resolved: git config --global --get core.excludesFile exited ${result.status}: ${cause}` };
 }
 
 export type RuntimeStateIgnoreRemoval =
   | { readonly status: "none" | "unbalanced" }
   | { readonly status: "removed"; readonly content: string };
 
-/** Removes the marked block, and the blank line that the write step put before an appended block; other lines stay byte-equal. */
+/** Removes the marked block and at most one blank line before it, so a write and removal cycle adds no blank lines; other lines stay byte-equal. */
 export function removeRuntimeStateIgnoreBlock(content: string): RuntimeStateIgnoreRemoval {
   const { begin, end } = managedBlockMarker(RUNTIME_STATE_IGNORE_MARKER);
   const lines = content.split(/(?<=\n)/);
@@ -98,7 +99,9 @@ export function removeRuntimeStateIgnoreBlock(content: string): RuntimeStateIgno
   const stop = bare.indexOf(end);
   if (start === -1 && stop === -1) return { status: "none" };
   if (start === -1 || stop < start || bare.indexOf(begin, start + 1) !== -1) return { status: "unbalanced" };
-  const atEnd = stop === lines.length - 1;
-  const separator = atEnd && start > 0 && bare[start - 1] === "" ? 1 : 0;
+  // One blank line before the block is the write step's separator; drop it, unless it separates user lines.
+  const blankBefore = start > 0 && bare[start - 1] === "";
+  const blankAfter = stop + 1 < lines.length && bare[stop + 1] === "";
+  const separator = blankBefore && (stop === lines.length - 1 || blankAfter) ? 1 : 0;
   return { status: "removed", content: [...lines.slice(0, start - separator), ...lines.slice(stop + 1)].join("") };
 }

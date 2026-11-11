@@ -390,6 +390,17 @@ describe('runtime ignore rules step', () => {
       const removal = runUserUninstall({ target: 'both', env });
       expect(removal.items).toContainEqual({ path: custom, action: 'remove', reason: 'runtime-state ignore block' });
       expect(readFileSync(custom, 'utf8')).toBe(`${before}${after}`);
+
+      Bun.spawnSync(['git', 'config', '--global', '--unset', 'core.excludesFile'], { env });
+      mkdirSync(join(xdg, 'git'), { recursive: true });
+      symlinkSync(custom, defaultFile);
+      expect(update().steps.at(-1)).toMatchObject({ status: 'ok', detail: `${defaultFile}: written` });
+      const linked = readFileSync(custom, 'utf8');
+      for (const dryRun of [true, false]) {
+        const refused = runUserUninstall({ target: 'both', env, dryRun });
+        expect(refused.items).toContainEqual({ path: defaultFile, action: 'unresolved', reason: expect.stringContaining('refusing symlink') });
+        expect(readFileSync(custom, 'utf8')).toBe(linked);
+      }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
