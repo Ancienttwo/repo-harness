@@ -1,14 +1,4 @@
 export const en = {
-  'group.needs_you': 'Needs you',
-  'group.ready_to_merge': 'Ready to merge',
-  'group.unreadable': 'Unreadable repos',
-  'group.unclassified': 'Unclassified',
-  'group.claimed': 'Claimed / under review',
-  'group.available': 'Available to acquire',
-  'group.preparation': 'Preparation and other workflows',
-  'group.external': 'External',
-  'group.done': 'Done',
-
   'attention.title': 'Needs you',
   'attention.empty': 'Nothing is waiting on you.',
   'attention.waiting': 'waiting {age}',
@@ -434,16 +424,6 @@ export const en = {
 } as const;
 
 export const zh: Readonly<Record<keyof typeof en, string>> = {
-  'group.needs_you': '需要你',
-  'group.ready_to_merge': '可以合并',
-  'group.unreadable': '读不到的仓库',
-  'group.unclassified': '未分类',
-  'group.claimed': '已领取 / 审阅阶段',
-  'group.available': '可领取',
-  'group.preparation': '准备与其他流程',
-  'group.external': '等外部',
-  'group.done': '已完成',
-
   'attention.title': '等你处理',
   'attention.empty': '现在没有等你处理的事。',
   'attention.waiting': '已等 {age}',
