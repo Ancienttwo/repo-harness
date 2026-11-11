@@ -9,7 +9,7 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { ArchitectureFlowSelectorCheckV1, DependencyConstraintEvaluationV1, DocsAnchorsReportV1, NativeContextExportV1, RefImpactV1 } from 'archctx-contracts';
+import type { ArchitectureDebtReportV1, ArchitectureFlowSelectorCheckV1, DependencyConstraintEvaluationV1, DocsAnchorsReportV1, NativeContextExportV1, RefImpactV1 } from 'archctx-contracts';
 import {
   ARCHCTX_REQUIRED_VERSION,
   ArchctxClientError,
@@ -349,12 +349,20 @@ function readPullRequests(root: string, commit: string, checkout: CheckoutState,
   }
 }
 
-/** `archctx debt` items. Its ownership and anchor checks must both be complete; it defers the others. */
+/** `archctx debt`. */
 function readDebt(root: string, known: ReadonlySet<string>): ArchitectureViolationsLayerV1['debt'] {
   const data = archctxData(root, ARCHITECTURE_VIOLATION_READS.debt);
   if (typeof data === 'string') return { state: 'unavailable', reason: data };
   const report = decoded(decodeArchitectureDebtReport, data);
-  if (report === null) return { state: 'unavailable', reason: 'archctx_failed' };
+  return report === null ? { state: 'unavailable', reason: 'archctx_failed' } : debtSection(report, known);
+}
+
+/**
+ * The map's form of a debt report. Its ownership and anchor checks must both be complete; it defers the others.
+ * The state-machines check is not gated: archctx emits no item for an anchor it could not measure,
+ * so an incomplete check draws fewer machine marks and never refuses the part.
+ */
+export function debtSection(report: ArchitectureDebtReportV1, known: ReadonlySet<string>): ArchitectureViolationsLayerV1['debt'] {
   for (const name of ['ownership', 'anchors'] as const) {
     const check = report.checks.find(entry => entry.check === name);
     if (check === undefined) return { state: 'unavailable', reason: 'archctx_failed' };
@@ -364,7 +372,7 @@ function readDebt(root: string, known: ReadonlySet<string>): ArchitectureViolati
   }
   const items: ArchitectureDebtItemV1[] = [];
   for (const item of report.items) {
-    // The map shows only the kinds of the two complete checks; the map decoder also needs known ids and unique repository paths.
+    // The map shows only the kinds of the two complete checks and the machine kinds; the map decoder also needs known ids and unique repository paths.
     const kind = ARCHITECTURE_DEBT_KINDS.find(entry => entry === item.kind);
     if (kind === undefined || !item.nodeIds.every(id => known.has(id)) || !item.paths.every(isPublicRepoPath)
       || new Set(item.nodeIds).size !== item.nodeIds.length || new Set(item.paths).size !== item.paths.length) {
