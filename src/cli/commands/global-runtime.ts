@@ -9,7 +9,9 @@ import { architecturePort, isArchitectureUnavailable } from '../../core/architec
 import { globalConfigurationWriter, mutateGlobalConfiguration } from '../../effects/configuration/global-configuration';
 import { DEFAULT_SEATS_CONFIG, ROUTING_CLASSES, SeatsConfigMigrationRequiredError, decodeSeatsConfig } from '../../core/board/seats-settings';
 import { checkSeatRoutingModels, seatsRanges } from '../../effects/board/seats-configuration';
-import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
+import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { upsertManagedBlock } from "../../core/adoption/managed-block";
+import { runtimeStateIgnoreOperation, userExcludesFilePath } from "../../effects/adoption/gitignore-plan";
 import { sha256Hex } from "../../core/evidence/sha256";
 import { homedir, tmpdir, userInfo } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
@@ -936,6 +938,26 @@ export function updateRegisteredUpgradeSummary(cwd: string, installedCli: boolea
 
 const AGENT_FLEET_STEP = 'install agent fleet';
 export const GLOBAL_RULES_REFRESH_STEP = 'refresh global working rules';
+
+export const RUNTIME_IGNORE_RULES_STEP = 'write runtime ignore rules';
+
+/** Writes the runtime-state ignore block into the user-level Git excludes file; `core.excludesFile` is never set. */
+function writeRuntimeIgnoreRules(env: NodeJS.ProcessEnv): GlobalRuntimeStep {
+  const step = RUNTIME_IGNORE_RULES_STEP;
+  const target = userExcludesFilePath(env);
+  if (!target.ok) return { step, status: 'failed', detail: target.error };
+  try {
+    const existing = existsSync(target.path) ? readFileSync(target.path, 'utf-8') : '';
+    const update = upsertManagedBlock(existing, runtimeStateIgnoreOperation(target.path));
+    if (!update.ok) return { step, status: 'failed', detail: `${target.path}: ${update.error}` };
+    if (!update.changed) return { step, status: 'ok', detail: `${target.path}: current` };
+    mkdirSync(dirname(target.path), { recursive: true });
+    writeFileSync(target.path, update.content!);
+    return { step, status: 'ok', detail: `${target.path}: written` };
+  } catch (error) {
+    return { step, status: 'failed', detail: `${target.path}: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
 
 function installAgentFleet(sourceRoot: string, bunExecutable: string, env: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const script = join(sourceRoot, 'scripts', 'install-agent-fleet.sh');
@@ -1981,5 +2003,6 @@ export function runGlobalRuntimeSetup(
     const pi = installPiPackage(bunGlobalPackageRoot(env)!, plugins.includes('pi') && target === 'both' && opts.hostAdapters !== false, env);
     steps.push({ ...pi, ...(pi.created ? { owned_surface: piPackageSurface(pi.source) } : {}) });
   }
+  steps.push(writeRuntimeIgnoreRules(env));
   return finalizeRuntimeResult(steps);
 }

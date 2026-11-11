@@ -7,6 +7,9 @@ import { join } from "path";
 import {
   GITIGNORE_MANAGED_BLOCK_CONTENT,
   gitignoreManagedBlockOperation,
+  RUNTIME_STATE_IGNORE_CONTENT,
+  RUNTIME_STATE_IGNORE_MARKER,
+  removeRuntimeStateIgnoreBlock,
 } from "../../src/effects/adoption/gitignore-plan";
 
 // A repository root without files: no retired runtime rule is kept.
@@ -81,11 +84,11 @@ describe("gitignore managed block .repo-harness rule", () => {
     }
   });
 
-  test("managed block ignores every repo-local runtime path the CLI writes", () => {
+  test("tracked and runtime-state blocks together ignore every repo-local runtime path the CLI writes", () => {
     const cwd = mkdtempSync(join(tmpdir(), "gitignore-runtime-paths-"));
     try {
       expect(spawnSync("git", ["init", "-q"], { cwd }).status).toBe(0);
-      writeFileSync(join(cwd, ".gitignore"), `${GITIGNORE_MANAGED_BLOCK_CONTENT}\n`);
+      writeFileSync(join(cwd, ".gitignore"), `${GITIGNORE_MANAGED_BLOCK_CONTENT}\n${RUNTIME_STATE_IGNORE_CONTENT}\n`);
       const runtimePaths = [
         ".ai/harness/chatgpt/oracle-home/Default/Cookies", // oracle-provider.ts resolveOracleHomeDir
         ".ai/harness/chatgpt/delegations/stamp-slug/bundle/brief.md", // repo-harness-chatgpt delegate skill
@@ -125,6 +128,18 @@ describe("gitignore managed block .repo-harness rule", () => {
     expect(perFile).toEqual([]);
     expect(GITIGNORE_MANAGED_BLOCK_CONTENT).not.toContain(".repo-harness/chatgpt-browser.local.json");
     expect(GITIGNORE_MANAGED_BLOCK_CONTENT).not.toContain(".repo-harness/chatgpt-browser.tokens.json");
+  });
+
+  test("the planned tracked block holds no rule of the runtime-state set", () => {
+    const tracked = new Set(gitignoreManagedBlockOperation(ABSENT_REPO, "planned").content.split("\n"));
+    const moved = RUNTIME_STATE_IGNORE_CONTENT.split("\n").filter((line) => line && !line.startsWith("#"));
+    expect(moved).toContain(".ai/harness/events.jsonl");
+    expect(moved.filter((rule) => tracked.has(rule))).toEqual([]);
+  });
+
+  test("removing a block between user lines leaves one blank line", () => {
+    const block = `# BEGIN: ${RUNTIME_STATE_IGNORE_MARKER}\nrule/\n# END: ${RUNTIME_STATE_IGNORE_MARKER}\n`;
+    expect(removeRuntimeStateIgnoreBlock(`# user\n*.orig\n\n${block}\nuser-tail/\n`)).toEqual({ status: "removed", content: "# user\n*.orig\n\nuser-tail/\n" });
   });
 
   test("the emitted operation carries the directory-level rule", () => {

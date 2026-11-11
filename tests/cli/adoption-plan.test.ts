@@ -141,7 +141,9 @@ describe("canonical adoption plan", () => {
       expect(existsSync(join(repo, "docs", "architecture", "snapshots"))).toBe(false);
       expect(existsSync(join(repo, "docs", "architecture", "domains"))).toBe(false);
       expect(readFileSync(join(repo, "docs", "architecture", "index.md"), "utf-8")).not.toContain("Latest snapshot");
-      expect(readFileSync(join(repo, ".gitignore"), "utf-8")).toContain(".ai/harness/evidence/");
+      // The evidence rule lives in the user-level runtime-state block, not the tracked block.
+      expect(readFileSync(join(ROOT, "assets/templates/runtime-state.gitignore"), "utf-8")).toContain(".ai/harness/evidence/");
+      expect(readFileSync(join(repo, ".gitignore"), "utf-8")).not.toContain(".ai/harness/evidence/");
       expect(readFileSync(join(repo, apply.transactionManifestPath!), "utf-8")).toContain('"command": "adopt"');
     } finally {
       cleanup(repo);

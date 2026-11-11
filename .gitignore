@@ -38,12 +38,12 @@ _ref/
 !.archcontext/model/nodes/
 !.archcontext/model/relations/
 !.archcontext/model/flows/
-!.archcontext/model/constraints/
 !.archcontext/decisions/
 !.archcontext/policies/
 !.archcontext/practices/
 !.archcontext/projections/
 .codegraph/
+.claude/.codegraph-state/
 
 # Local operations state
 _ops/
@@ -56,15 +56,22 @@ _ops/
 # OS metadata
 .DS_Store
 
-# Runtime evidence and local agent state
-.claude/settings.local.json
-.claude/.atomic_pending
+# Host and tool directories
+.repo-harness/
+.codex/*
+.claude/worktrees/
+# END: repo-harness generated-runtime
+
+# Repository-owned: this checkout runs the harness on itself, so it ignores its own runtime state without host state
+!.archcontext/model/constraints/
 .claude/.session-id
 .claude/.trace.jsonl
+.ai/harness/checks/post-bash-latest.json
+.claude/settings.local.json
+.claude/.atomic_pending
 .claude/.session-handoff.md
 .claude/.task-state.json
 .claude/.task-handoff.md
-.claude/.codegraph-state/
 .claude/*.tmp
 .claude/*.bak
 .claude/*.bak.*
@@ -72,7 +79,6 @@ _ops/
 .ai/harness/checks/
 .ai/harness/checks/*.latest.json
 .ai/harness/checks/*.latest.md
-.ai/harness/checks/post-bash-latest.json
 .ai/harness/events.jsonl
 .ai/harness/archive/
 .ai/harness/backups/
@@ -97,10 +103,6 @@ _ops/
 .ai/harness/mcp/
 .ai/harness/triage/*
 !.ai/harness/triage/.gitkeep
-.repo-harness/
-.codex/*
-.claude/worktrees/
-# END: repo-harness generated-runtime
 
 # Project-specific: track the Codex fleet agent definitions under the managed .codex/* rule
 !.codex/
