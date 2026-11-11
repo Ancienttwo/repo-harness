@@ -5,7 +5,7 @@ import {
   readRegisteredRepoHarnessRepos,
   type RepoHarnessAccessMode,
 } from '../../../effects/repo-registry';
-import { globMatches, isPathInside, toPosixPath } from '../paths';
+import { canonicalDirectory, globMatches, isPathInside, isWindowsAbsoluteLike, toPosixPath } from '../paths';
 import type { McpPolicy } from '../types';
 
 export interface RepoRecord {
@@ -86,20 +86,6 @@ export function statIdentity(stat: { dev: number | bigint; ino: number | bigint 
 export function openNoFollow(path: string): number {
   const noFollow = typeof constants.O_NOFOLLOW === 'number' ? constants.O_NOFOLLOW : 0;
   return openSync(path, constants.O_RDONLY | noFollow);
-}
-
-function isWindowsAbsoluteLike(value: string): boolean {
-  return /^[a-zA-Z]:[\\/]/.test(value) || /^[a-zA-Z]:/.test(value) || value.startsWith('\\\\');
-}
-
-function canonicalDirectory(path: string): string | null {
-  const absolute = resolve(path);
-  try {
-    if (!statSync(absolute).isDirectory()) return null;
-    return realpathSync(absolute);
-  } catch {
-    return null;
-  }
 }
 
 function directoryIdentity(path: string): string | null {

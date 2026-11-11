@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { sha256Hex } from '../../core/evidence/sha256';
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'fs';
 import { basename, isAbsolute, relative, resolve } from 'path';
-import { globMatches, isPathInside, toPosixPath } from './paths';
+import { globMatches, isPathInside, isWindowsAbsoluteLike, toPosixPath } from './paths';
 import { sensitiveAllowedRootReason } from './policy';
 import type { McpPolicy } from './types';
 
@@ -83,10 +83,6 @@ function denyGlobMatches(pattern: string, relativePath: string): boolean {
 
 function anyDenyGlobMatches(patterns: string[], relativePath: string): boolean {
   return patterns.some((pattern) => denyGlobMatches(pattern, relativePath));
-}
-
-function isWindowsAbsoluteLike(value: string): boolean {
-  return /^[a-zA-Z]:[\\/]/.test(value) || /^[a-zA-Z]:/.test(value) || value.startsWith('\\\\');
 }
 
 export function normalizeWorkspaceRelativePath(value: unknown, fallback = '.'): string {
