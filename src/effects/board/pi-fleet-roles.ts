@@ -1,6 +1,6 @@
 // The fleet roles of one Pi seat as pi-subagents role files (#1977). pi-subagents 0.87.0 reads the PATH-style
 // `PI_SUBAGENT_EXTRA_AGENT_DIRS` per process, so only the seat that `repo-harness seats argv` launches sees them.
-import { createHash } from 'node:crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -48,7 +48,7 @@ function roleFile(role: string): string {
  */
 export function writePiFleetRoles(fleet: readonly string[], env: NodeJS.ProcessEnv = process.env): string {
   const files = fleet.map(role => [`${piRoleName(role)}.md`, roleFile(role)] as const);
-  const digest = createHash('sha256').update(JSON.stringify(files)).digest('hex').slice(0, 16);
+  const digest = sha256Hex(JSON.stringify(files)).slice(0, 16);
   const directory = join(dirname(globalConfigurationPath(env)), 'seats', 'pi-fleet', digest);
   mkdirSync(directory, { recursive: true });
   for (const [name, text] of files) {

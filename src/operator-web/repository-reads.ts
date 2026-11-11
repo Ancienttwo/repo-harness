@@ -21,7 +21,7 @@ import {
   type TestsUnavailableReason,
 } from '../core/operator/tests';
 import { asApiError } from './operator-api-error';
-import { useObservationRefresh } from './useObservationRefresh';
+import { answered, useObservationRefresh } from './useObservationRefresh';
 
 /**
  * Per-repository GET reads outside the Fleet and Dev Activity snapshots: the
@@ -98,8 +98,7 @@ function useRepositoryReads<R extends RepositoryRead>(
     const rows = await Promise.all(ids.map(async (repository_id): Promise<PerRepository<R>> => ({ repository_id, ...await read(repository_id, signal) })));
     if (signal.aborted) return false;
     setResults({ key, rows });
-    // A typed refusal is an answer; only a request with no answer backs the loop off.
-    return rows.every((row: RepositoryRead) => row.state === 'ok' || row.reason !== 'unreachable');
+    return rows.every(answered);
   }, [read, key]);
   useObservationRefresh(observe, JSON.stringify([name, key, generation]), { enabled });
   return results !== null && results.key === key ? results.rows : null;
@@ -205,7 +204,7 @@ export function useTaskMessages(read: TaskMessagesReader, repositoryId: string, 
     const rows = await Promise.all(ids.map(async (task_id): Promise<TaskMessagesResult> => ({ task_id, ...await read({ repository_id, task_id }, signal) })));
     if (signal.aborted) return false;
     setResults({ key, rows });
-    return rows.every(row => row.state === 'ok' || row.reason !== 'unreachable');
+    return rows.every(answered);
   }, [read, key]);
   useObservationRefresh(observe, JSON.stringify(['task-messages', key, generation]), { enabled: enabled && taskIds.length > 0 });
   return results !== null && results.key === key ? results.rows : null;
@@ -240,8 +239,7 @@ export function useTestsSnapshot(read: TestsReader, repositoryId: string | null,
     const result = await read(repositoryId, signal);
     if (signal.aborted) return false;
     setState({ id: repositoryId, read: result });
-    // A typed refusal is an answer; only a request with no answer backs the loop off.
-    return result.state === 'ok' || result.reason !== 'unreachable';
+    return answered(result);
   }, [read, repositoryId]);
   useObservationRefresh(observe, JSON.stringify(['tests-snapshot', repositoryId, generation]), { enabled });
   return state !== null && state.id === repositoryId ? state.read : null;
@@ -309,8 +307,7 @@ function useDocsRead<T>(name: string, read: (signal: AbortSignal) => Promise<Doc
     const result = await read(signal);
     if (signal.aborted) return false;
     setState(current => current !== null && current.subject === subject && sameDocsRead(current.read, result, key) ? current : { subject, read: result });
-    // A typed refusal is an answer; only a request with no answer backs the loop off.
-    return result.state === 'ok' || result.reason !== 'unreachable';
+    return answered(result);
   }, [read, subject, key]);
   useObservationRefresh(observe, JSON.stringify([name, subject, refresh]), { enabled: subject !== null });
   return state !== null && state.subject === subject ? state.read : null;

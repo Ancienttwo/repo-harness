@@ -1,8 +1,8 @@
 import { spawnSync } from 'child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
 import {
   executePublicationMerge,
@@ -14,12 +14,17 @@ import {
   HEAD,
   MERGE_COMMIT,
   PR,
+  POLICY_QUEUE,
+  QUEUE_ENTRY,
+  QUEUE_RULES,
   REPOSITORY,
   REPOSITORY_ID,
   fakeGhResponse,
   graphqlVariable,
   installFakeGh,
+  isEnqueueMutation,
   isMergeMutation,
+  isQueueReadback,
   passingScenario,
   type PublicationMergeScenario,
 } from '../helpers/publication-merge-fake-gh';
@@ -53,26 +58,36 @@ interface MergeInProcessOptions {
   /** Internal seam: observe the timeout passed to each readback call. */
   readonly readbackTimeout?: (milliseconds: number) => void;
   readonly batch?: boolean;
+  /** The reviewed head and base; default HEAD and BASE. */
+  readonly head?: string;
+  readonly base?: string;
 }
 
 function mergeInProcess(scenario: PublicationMergeScenario, options: MergeInProcessOptions = {}) {
+  return mergeInProcessAt(scratch, scenario, options);
+}
+
+function mergeInProcessAt(root: string, scenario: PublicationMergeScenario, options: MergeInProcessOptions = {}) {
   const calls: string[][] = [];
+  const queued: unknown[] = [];
   let readbacks = 0;
+  let queueReadbacks = 0;
   const result = executePublicationMerge({
-    repo_root: scratch, repository: REPOSITORY, provider_repository_id: REPOSITORY_ID, pr_number: PR,
-    expected_head_sha: HEAD, expected_base_sha: BASE, batch: options.batch,
+    repo_root: root, repository: REPOSITORY, provider_repository_id: REPOSITORY_ID, pr_number: PR,
+    expected_head_sha: options.head ?? HEAD, expected_base_sha: options.base ?? BASE, batch: options.batch,
     gh_runner: (args) => {
       options.beforeCall?.(args);
       calls.push([...args]);
       const prReadback = args[0] === 'api' && args[1] === `repos/${REPOSITORY}/pulls/${PR}`;
-      const response = fakeGhResponse(args, scenario, prReadback ? readbacks++ : 0);
+      const response = fakeGhResponse(args, scenario, prReadback ? readbacks++ : isQueueReadback(args) ? queueReadbacks++ : 0);
       return { status: response.status as number, stdout: response.stdout, stderr: response.stderr };
     },
     ...(options.readbackWait ? { readback_wait: options.readbackWait } : {}),
     ...(options.readbackNow ? { readback_now: options.readbackNow } : {}),
     ...(options.readbackTimeout ? { readback_timeout: options.readbackTimeout } : {}),
+    on_queued: (entry) => queued.push(entry),
   });
-  return { result, calls, mutations: calls.filter(isMergeMutation) };
+  return { result, calls, queued, mutations: calls.filter(isMergeMutation), enqueues: calls.filter(isEnqueueMutation) };
 }
 
 function failureOf(result: PublicationMergeResult): PublicationMergeFailure {
@@ -81,19 +96,56 @@ function failureOf(result: PublicationMergeResult): PublicationMergeFailure {
 }
 
 let cliRun = 0;
-function mergeCli(scenario: PublicationMergeScenario, extraArgs: readonly string[] = []) {
+function mergeCli(scenario: PublicationMergeScenario, extraArgs: readonly string[] = [], head = HEAD, base = BASE, cwd?: string) {
   const dir = join(scratch, `cli-${cliRun++}`);
   mkdirSync(dir);
   const gh = installFakeGh(dir, scenario);
   const result = spawnSync('bun', [CLI, 'publication', 'merge', '--repository', REPOSITORY, '--repository-id', REPOSITORY_ID,
-    '--pr', String(PR), '--head', HEAD, '--base', BASE, '--json', ...extraArgs], {
-    cwd: dir, encoding: 'utf-8', env: { ...process.env, REPO_HARNESS_GH_BIN: gh.bin }, timeout: 120_000,
+    '--pr', String(PR), '--head', head, '--base', base, '--json', ...extraArgs], {
+    cwd: cwd ?? dir, encoding: 'utf-8', env: { ...process.env, REPO_HARNESS_GH_BIN: gh.bin }, timeout: 120_000,
   });
   const calls = gh.calls();
   return { status: result.status, document: JSON.parse(result.stdout) as Record<string, any>, stderr: result.stderr, calls, mutations: calls.filter(isMergeMutation) };
 }
 
 const policy = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
+const QUEUE_ON = { policyBase: POLICY_QUEUE, policyHead: POLICY_QUEUE };
+
+describe('publication merge uses base protection contexts', () => {
+  const contexts = ['ubuntu-latest / Node 22.22.x', 'Governance Verify'];
+  const checks = [
+    { name: contexts[0]!, bucket: 'pass', link: `https://github.com/${REPOSITORY}/actions/runs/123/job/456` },
+    { name: contexts[1]!, bucket: 'pass', link: 'https://ci.example.com/build/42' },
+  ];
+
+  test('all protected contexts green allow a different workflow', () => {
+    const { result, mutations, calls } = mergeInProcess(passingScenario({ requiredContexts: contexts,
+      requiredChecks: checks, requiredRun: { path: '.github/workflows/verify.yml' } }));
+    expect(result.exit_code).toBe(0);
+    expect(mutations).toHaveLength(1);
+    expect(calls.filter(args => args[1]?.endsWith('/branches/main/protection'))).toHaveLength(1);
+  });
+
+  test.each([
+    ['missing', checks.slice(0, 1), contexts, {}, 'provider_data_incomplete'],
+    ['red', [checks[0]!, { ...checks[1]!, bucket: 'fail' }], contexts, {}, 'checks_failed'],
+    ['ruleset red', [...checks, { name: 'Ruleset Check', bucket: 'fail', link: 'https://ci.example.com/ruleset/42' }], contexts, {}, 'checks_failed'],
+    ['ruleset pending', [...checks, { name: 'Ruleset Check', bucket: 'pending', link: 'https://ci.example.com/ruleset/42' }], contexts, {}, 'checks_pending'],
+    ['ruleset Actions head mismatch', [...checks.map(check => ({ ...check, link: 'https://ci.example.com/build/42' })), { name: 'Ruleset Check', bucket: 'pass', link: checks[0]!.link }], contexts, { head_sha: 'f'.repeat(40) }, 'provider_data_incomplete'],
+    ['empty protection', checks, [], {}, 'provider_data_incomplete'],
+    ['another Actions head', checks, contexts, { head_sha: 'f'.repeat(40) }, 'provider_data_incomplete'],
+    ['second Actions context has another head', [{ ...checks[0]!, link: checks[1]!.link }, { ...checks[1]!, link: checks[0]!.link }], contexts, { head_sha: 'f'.repeat(40) }, 'provider_data_incomplete'],
+    ['Actions link missing', [{ ...checks[0]!, workflow: 'Verify', link: '' }, checks[1]!], contexts, {}, 'provider_data_incomplete'],
+    ['Actions from another repository', [{ ...checks[0]!, link: 'https://github.com/foreign/repo/actions/runs/123/job/456' }, checks[1]!], contexts, {}, 'provider_data_incomplete'],
+    ['another Actions PR', checks, contexts, { pull_requests: [{ number: 99, head: { sha: HEAD }, base: { sha: BASE } }] }, 'provider_data_incomplete'],
+    ['another Actions base', checks, contexts, { pull_requests: [{ number: PR, head: { sha: HEAD }, base: { sha: 'f'.repeat(40) } }] }, 'provider_data_incomplete'],
+  ] as const)('%s refuses the merge', (_label, requiredChecks, requiredContexts, requiredRun, blocker) => {
+    const { result, mutations } = mergeInProcess(passingScenario({ requiredChecks, requiredContexts, requiredRun }));
+    expect(result.document).toMatchObject({ ok: false, exit_code: 4, error: 'merge_readiness_blocked' });
+    expect(failureOf(result).blockers?.map(value => value.code)).toContain(blocker);
+    expect(mutations).toHaveLength(0);
+  });
+});
 
 describe('publication merge refusals send no mergePullRequest', () => {
   test.each([
@@ -114,6 +166,7 @@ describe('publication merge refusals send no mergePullRequest', () => {
     ['non-object publication', policy({ publication: 'on' })],
     ['unknown publication field', policy({ publication: { acceptance_merge: 'on', bypass: true } })],
     ['invalid JSON', '{ "publication": { "acceptance_merge": "on" '],
+    ['merge_queue "yes"', policy({ publication: { acceptance_merge: 'on', merge_queue: 'yes' } })],
   ] as const)('base switch %s fails closed as publication_policy_invalid', (_label, policyBase) => {
     const { result, mutations } = mergeInProcess(passingScenario({ policyBase }));
     expect(result.document).toMatchObject({ ok: false, exit_code: 4, error: 'publication_policy_invalid' });
@@ -140,6 +193,12 @@ describe('publication merge refusals send no mergePullRequest', () => {
     ['merge queue rule', { rules: [{ type: 'pull_request' }, { type: 'merge_queue' }] }, 'base_protection_insufficient'],
     ['merge queue from classic protection', { rules: [], mergeQueueEnabled: true }, 'base_protection_insufficient'],
     ['unreported merge queue state', { mergeQueueEnabled: 'missing' }, 'base_protection_insufficient'],
+    ['merge queue switch on without a merge queue', QUEUE_ON, 'merge_queue_policy_mismatch'],
+    ['required merge queue with the switch off', { rules: QUEUE_RULES, mergeQueueEnabled: true }, 'merge_queue_policy_mismatch'],
+    ['merge queue with the MERGE method', { ...QUEUE_ON, rules: [{ type: 'merge_queue', parameters: { merge_method: 'MERGE' } }], mergeQueueEnabled: true }, 'base_protection_insufficient'],
+    ['merge queue with HEADGREEN grouping', { ...QUEUE_ON, rules: [{ type: 'merge_queue', parameters: { merge_method: 'SQUASH', grouping_strategy: 'HEADGREEN' } }], mergeQueueEnabled: true }, 'base_protection_insufficient'],
+    ['merge queue with a commit-list squash message', { ...QUEUE_ON, rules: QUEUE_RULES, mergeQueueEnabled: true, squashMessage: 'COMMIT_MESSAGES' }, 'base_protection_insufficient'],
+    ['PR already in the merge queue', { ...QUEUE_ON, rules: QUEUE_RULES, mergeQueueEnabled: true, queued: true }, 'merge_queue_entry_exists'],
   ] as const)('%s is refused', (_label, overrides, error) => {
     const { result, mutations } = mergeInProcess(passingScenario(overrides));
     expect(result.document).toMatchObject({ ok: false, exit_code: 4, error });
@@ -391,6 +450,199 @@ describe('publication merge execution', () => {
     expect(failureOf(result).message).toContain(`merged at ${OTHER_COMMIT}`);
     expect(failureOf(result).message).toContain(`merge response reported ${MERGE_COMMIT}`);
     expect(calls.filter((args) => args[0] === 'api' && args[1] === `repos/${REPOSITORY}/pulls/${PR}`)).toHaveLength(1);
+  });
+});
+
+/**
+ * A real repository for the queue content proof. Each run gets a new checkout
+ * whose `origin` is a bare repository with `refs/pull/42/head` and a `main` that
+ * holds the scenario's merge commit, so the production fetch runs unchanged.
+ */
+interface QueueRepo {
+  readonly remote: string;
+  readonly base: string;
+  readonly head: string;
+  /** main after another PR merged: a child of base. */
+  readonly parent: string;
+  /** The queue squash of head onto parent, and the squash of head onto base. */
+  readonly merge: string;
+  readonly mergeOnBase: string;
+  /** A commit on parent whose tree is not the merge of head. */
+  readonly wrongMerge: string;
+  /** main after a change to the file that head adds: head does not merge onto it. */
+  readonly conflictParent: string;
+  /** A commit on conflictParent that stands for the provider's merge. */
+  readonly conflictMerge: string;
+}
+
+function git(cwd: string, ...args: string[]): string {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf-8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid',
+    GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid' } });
+  if (result.status !== 0) throw new Error(`git ${args.join(' ')}: ${result.stderr}`);
+  return result.stdout.trim();
+}
+
+function buildQueueRepo(): QueueRepo {
+  const work = join(scratch, 'queue-work');
+  const remote = join(scratch, 'queue-remote.git');
+  mkdirSync(work);
+  git(work, 'init', '-q', '-b', 'main');
+  const commit = (file: string, text: string, message: string) => {
+    writeFileSync(join(work, file), text);
+    git(work, 'add', file);
+    git(work, 'commit', '-q', '-m', message);
+    return git(work, 'rev-parse', 'HEAD');
+  };
+  const base = commit('a.txt', 'a\n', 'base');
+  git(work, 'checkout', '-q', '-b', 'feat');
+  const head = commit('b.txt', 'b\n', 'head');
+  git(work, 'checkout', '-q', 'main');
+  const conflictParent = commit('b.txt', 'other\n', 'main adds b');
+  git(work, 'reset', '-q', '--hard', base);
+  const parent = commit('c.txt', 'c\n', 'main moved');
+  const squash = (onto: string) => git(work, 'commit-tree', git(work, 'merge-tree', '--write-tree', onto, head), '-p', onto, '-m', 'squash');
+  const merge = squash(parent);
+  const mergeOnBase = squash(base);
+  const wrongMerge = git(work, 'commit-tree', `${parent}^{tree}`, '-p', parent, '-m', 'wrong');
+  const conflictMerge = git(work, 'commit-tree', `${parent}^{tree}`, '-p', conflictParent, '-m', 'provider merge');
+  for (const [name, sha] of [['merge', merge], ['merge-on-base', mergeOnBase], ['wrong', wrongMerge], ['conflict', conflictMerge]]) git(work, 'branch', name!, sha!);
+  git(scratch, 'clone', '-q', '--bare', work, remote);
+  git(remote, 'update-ref', `refs/pull/${PR}/head`, head);
+  return { remote, base, head, parent, merge, mergeOnBase, wrongMerge, conflictParent, conflictMerge };
+}
+
+let queueRoots = 0;
+/** A new checkout with an empty object store; origin's main is `mainTip`. */
+function queueCheckout(repo: QueueRepo, mainTip: string, origin = repo.remote): string {
+  git(repo.remote, 'update-ref', 'refs/heads/main', mainTip);
+  const root = join(scratch, `queue-root-${queueRoots++}`);
+  mkdirSync(root);
+  git(root, 'init', '-q');
+  git(root, 'remote', 'add', 'origin', origin);
+  return root;
+}
+
+describe('publication merge through a required merge queue', () => {
+  let repo: QueueRepo;
+  beforeAll(() => { repo = buildQueueRepo(); });
+  const queueScenario = (overrides: Partial<PublicationMergeScenario> = {}) => passingScenario({ ...QUEUE_ON, rules: QUEUE_RULES, mergeQueueEnabled: true,
+    protection: { strict: false, enforce_admins: true }, head: repo.head, base: repo.base, mergeCommit: repo.merge, queueParent: repo.parent,
+    parents: [repo.parent], ...overrides });
+  const run = (scenario: PublicationMergeScenario, options: MergeInProcessOptions = {}, origin?: string) =>
+    mergeInProcessAt(queueCheckout(repo, scenario.mergeCommit ?? repo.merge, origin), scenario,
+      { readbackWait: () => {}, readbackNow: () => 0, head: repo.head, base: repo.base, ...options });
+
+  test.each([
+    ['onto a moved main', () => ({}), () => repo.parent, true],
+    ['onto the reviewed base', () => ({ mergeCommit: repo.mergeOnBase, queueParent: repo.base, parents: [repo.base] }), () => repo.base, false],
+  ] as const)('the executor enqueues once and proves a queue squash %s by tree and merge_group CI', (_label, overrides, parent, compares) => {
+    const waits: number[] = [];
+    const { result, calls, queued, mutations, enqueues } = run(queueScenario({ queueSequence: ['queued', 'queued', 'merged'], ...overrides() }),
+      { readbackWait: (ms) => waits.push(ms) });
+    expect(mutations).toHaveLength(0);
+    expect(enqueues).toHaveLength(1);
+    expect(graphqlVariable(enqueues[0]!, 'expectedHeadOid')).toBe(repo.head);
+    expect(queued).toEqual([{ id: QUEUE_ENTRY, state: 'QUEUED', position: 1 }]);
+    expect(waits).toEqual([30_000, 30_000]);
+    expect(calls.some((args) => args[1] === `repos/${REPOSITORY}/compare/${repo.base}...${parent()}`)).toBe(compares);
+    const merge = (overrides() as { mergeCommit?: string }).mergeCommit ?? repo.merge;
+    expect(result).toMatchObject({ exit_code: 0, document: { merge_commit_sha: merge, base_sha: repo.base, parent_sha: parent(),
+      merge_queue_entry: QUEUE_ENTRY, revert: `git revert ${merge}` } });
+  });
+
+  test('the CLI reports the queue entry on stderr and the merge on stdout', () => {
+    const cli = mergeCli(queueScenario(), [], repo.head, repo.base, queueCheckout(repo, repo.merge));
+    expect(cli.status).toBe(0);
+    expect(JSON.parse(cli.stderr.trim().split('\n').at(-1)!)).toEqual({ queued: { id: QUEUE_ENTRY, state: 'QUEUED', position: 1 } });
+    expect(cli.document).toMatchObject({ merge_commit_sha: repo.merge, parent_sha: repo.parent, merge_queue_entry: QUEUE_ENTRY });
+    expect(cli.mutations).toHaveLength(0);
+  });
+
+  test('one removal read followed by the merge is a merge', () => {
+    const waits: number[] = [];
+    const { result } = run(queueScenario({ queueSequence: ['queued', 'removed', 'merged'] }), { readbackWait: (ms) => waits.push(ms) });
+    expect(result).toMatchObject({ exit_code: 0, document: { merge_commit_sha: repo.merge } });
+    expect(waits).toEqual([30_000, 5_000]);
+  });
+
+  test.each([
+    ['a confirmed removal', { queueSequence: ['queued', 'removed', 'removed'] }, 6, 'merge_queue_removed', 'was removed without a merge'],
+    ['a removal around an unreadable read', { queueSequence: ['queued', 'removed', 'unreadable', 'removed'] }, 6, 'merge_queue_removed', 'was removed without a merge'],
+    ['a removal after the entry came back', { queueSequence: ['queued', 'removed', 'queued', 'removed', 'removed'] }, 6, 'merge_queue_removed', 'was removed without a merge'],
+    ['a replacement entry', { queueSequence: ['queued', 'replaced', 'merged'] }, 6, 'merge_queue_removed', `${QUEUE_ENTRY}_2 replaced queue entry ${QUEUE_ENTRY}`],
+    ['a moved head', { queueSequence: ['queued', 'moved'] }, 5, 'merge_outcome_unknown', 'left the queue without a merge'],
+    ['a closed PR', { queueSequence: ['closed'] }, 5, 'merge_outcome_unknown', 'state=CLOSED'],
+    ['a merge commit with another tree', () => ({ mergeCommit: repo.wrongMerge }), 5, 'merge_outcome_unknown', 'a merge of'],
+    ['a head that conflicts with the queue parent', () => ({ mergeCommit: repo.conflictMerge, queueParent: repo.conflictParent, parents: [repo.conflictParent] }), 5, 'merge_outcome_unknown', 'does not merge cleanly'],
+    ['an unreadable merge_group run list', { queueRun: 'unreadable' }, 5, 'merge_outcome_unknown', 'merge_group CI readback failed'],
+    ['a failed merge_group run', { queueRun: 'failure' }, 5, 'merge_outcome_unknown', 'no successful merge_group CI run'],
+    ['no merge_group run', { queueRun: 'missing' }, 5, 'merge_outcome_unknown', 'no successful merge_group CI run'],
+    ['a parent that does not descend from the reviewed base', { queueParentStatus: 'diverged' }, 5, 'merge_outcome_unknown', 'does not descend from the expected base'],
+    ['an enqueue that never completes', { enqueue: 'kill' }, 5, 'merge_outcome_unknown', 'enqueue request did not complete'],
+    ['an incomplete enqueue response', { enqueue: 'incomplete' }, 5, 'merge_outcome_unknown', 'enqueue response is incomplete'],
+    ['an enqueue entry with a malformed position', { enqueue: 'bad_entry' }, 5, 'merge_outcome_unknown', 'enqueue response is incomplete'],
+    ['an enqueue response that is not JSON', { enqueue: 'malformed_json' }, 5, 'merge_outcome_unknown', 'enqueue response is not a JSON object'],
+    ['a failed enqueue call without GraphQL errors', { enqueue: 'nonzero' }, 5, 'merge_outcome_unknown', 'enqueue request failed'],
+    ['an enqueue error, a removal read, then an unreadable read', { enqueue: 'graphql_error', queueSequence: ['removed', 'unreadable'] }, 5, 'merge_outcome_unknown', 'Pull request is not mergeable.'],
+    ['an enqueue error with the PR not queued on two reads', { enqueue: 'graphql_error', queueSequence: ['removed', 'removed'] }, 6, 'provider_rejected', 'Pull request is not mergeable.'],
+    ['an enqueue error with an unreadable PR', { enqueue: 'graphql_error', queueSequence: ['unreadable'] }, 5, 'merge_outcome_unknown', 'Pull request is not mergeable.'],
+  ] as const)('%s fails without a second enqueue', (_label, overrides, exitCode, error, message) => {
+    const extra = typeof overrides === 'function' ? overrides() : overrides;
+    const { result, mutations, enqueues } = run(queueScenario(extra as Partial<PublicationMergeScenario>));
+    expect(result.document).toMatchObject({ ok: false, exit_code: exitCode, error });
+    expect(failureOf(result).message).toContain(message);
+    expect(enqueues).toHaveLength(1);
+    expect(mutations).toHaveLength(0);
+  });
+
+  test('an enqueue error followed by a queued entry waits for the merge and keeps the provider error', () => {
+    const { result, queued } = run(queueScenario({ enqueue: 'graphql_error', queueSequence: ['removed', 'queued', 'merged'] }));
+    expect(queued).toEqual([{ id: QUEUE_ENTRY, state: 'AWAITING_CHECKS', position: 1 }]);
+    expect(result).toMatchObject({ exit_code: 0, document: { merge_commit_sha: repo.merge, provider_errors: expect.stringContaining('Pull request is not mergeable.') } });
+  });
+
+  test('a failed fetch from origin exits 5 and keeps git stderr out of the result', () => {
+    const missing = join(scratch, 'no-such-remote.git');
+    const { result } = run(queueScenario(), {}, missing);
+    expect(result.document).toMatchObject({ ok: false, exit_code: 5, error: 'merge_outcome_unknown' });
+    expect(failureOf(result).message).toContain('git fetch from origin failed (exit 128)');
+    expect(failureOf(result).message).not.toContain(missing);
+  });
+
+  test.each([
+    ['an enqueue error with the PR already merged', { enqueue: 'graphql_error', queueSequence: ['merged'] }, 0],
+    ['an enqueue error, a removal read, then the merge', { enqueue: 'graphql_error', queueSequence: ['removed', 'merged'] }, 1],
+  ] as const)('%s proves the merge and keeps the provider error', (_label, overrides, waits) => {
+    const calls: number[] = [];
+    const { result, enqueues } = run(queueScenario(overrides), { readbackWait: (ms) => calls.push(ms) });
+    expect(result).toMatchObject({ exit_code: 0, document: { merge_commit_sha: repo.merge, provider_errors: expect.stringContaining('Pull request is not mergeable.') } });
+    expect(calls).toHaveLength(waits);
+    expect(enqueues).toHaveLength(1);
+  });
+
+  test.each([
+    ['unreadable', 'readback failed'],
+    ['wrong_pr', 'queue readback has no PR'],
+    ['bad_oid', 'state=MERGED'],
+  ] as const)('a queue readback that stays %s until the window ends exits 5 with its evidence', (state, evidence) => {
+    let clock = 0;
+    const { result } = run(queueScenario({ queueSequence: ['queued', state] }), { readbackNow: () => clock, readbackWait: (ms) => { clock += ms; } });
+    expect(result.document).toMatchObject({ ok: false, exit_code: 5, error: 'merge_outcome_unknown' });
+    expect(failureOf(result).message).toContain(evidence);
+  });
+
+  test('a queue that neither merges nor removes the PR within 90 minutes exits 5', () => {
+    let clock = 0;
+    const { result, enqueues } = run(queueScenario({ queueSequence: ['queued'] }), { readbackNow: () => clock, readbackWait: (ms) => { clock += ms; } });
+    expect(result.document).toMatchObject({ ok: false, exit_code: 5, error: 'merge_outcome_unknown' });
+    expect(failureOf(result).message).toContain(`within ${90 * 60_000} ms; last queue entry ${QUEUE_ENTRY}: AWAITING_CHECKS`);
+    expect(enqueues).toHaveLength(1);
+  });
+
+  test('--batch is refused when the base requires a merge queue', () => {
+    const { result, enqueues } = mergeInProcess(passingScenario({ ...QUEUE_ON, rules: QUEUE_RULES, mergeQueueEnabled: true, headRef: BATCH_REF, compareCommits: BATCH_COMMITS }), { batch: true });
+    expect(failureOf(result)).toMatchObject({ exit_code: 4, error: 'base_protection_insufficient' });
+    expect(enqueues).toHaveLength(0);
   });
 });
 

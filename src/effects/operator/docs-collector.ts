@@ -18,6 +18,7 @@ import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
 import { withoutRepositorySelectingGitEnv, spawnGit } from '../git/runner';
 import { readRepoHarnessRegistryStrictSnapshot, type RepoHarnessRegisteredRepo } from '../repo-registry';
 import { DocsReadError, DocsReader, validDocsRef } from './docs-reader';
+import { keepObservation, readRepository, startObservationLoop, type RepositoryObservation } from '../observation-loop';
 
 export const DOCS_COLLECT_INTERVAL_MS = 60_000;
 /** Retry delay while Dev Activity has no first cycle, so the docs do not wait a full interval for it. */
@@ -92,16 +93,11 @@ function readFailure(error: unknown): DocsUnavailableReason {
 export function startDocsCollector(options: DocsCollectorOptions): DocsCollectorHandle {
   const env = options.env ?? process.env;
   const readers = new Map<string, DocsReader>();
-  let states = new Map<string, DocsRepositoryCache>();
-  let registryFailed = false;
-  let started = false;
-  let closed = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let inflight: Promise<void> | null = null;
+  let activityPending = false;
 
   const retire = (id: string) => { readers.get(id)?.close(); readers.delete(id); };
 
-  const collectRepository = async (repo: RepoHarnessRegisteredRepo, activity: DevActivitySnapshotV2): Promise<DocsRepositoryCache> => {
+  const collectRepository = async (repo: RepoHarnessRegisteredRepo, activity: DevActivitySnapshotV2, signal: AbortSignal): Promise<DocsRepositoryCache> => {
     const unavailable = (reason: DocsUnavailableReason): DocsRepositoryCache => { retire(repo.id); return { state: 'unavailable', reason }; };
     // Dev Activity has not finished its first cycle: the branch is not known yet.
     if (activity.collected_at === null) return unavailable('docs_pending');
@@ -110,7 +106,7 @@ export function startDocsCollector(options: DocsCollectorOptions): DocsCollector
     if (!source?.github || !source.default_branch) return unavailable('default_branch_unknown');
     const urls = await remoteUrls(repo.path, env, options.git_bin);
     // close() ran during the await: start no process and no scan. No later await comes before reader.start().
-    if (closed || urls === null) return unavailable('docs_reader_unavailable');
+    if (signal.aborted || urls === null) return unavailable('docs_reader_unavailable');
     const github = source.github.toLowerCase();
     const remotes = [...urls].filter(([, url]) => githubRemoteRepository(url) === github).map(([name]) => name);
     if (remotes.length === 0) return unavailable('github_remote_missing');
@@ -135,45 +131,36 @@ export function startDocsCollector(options: DocsCollectorOptions): DocsCollector
     }
   };
 
-  let activityPending = false;
-  const cycle = (): Promise<void> => {
-    inflight = (async () => {
+  const loop = startObservationLoop<RepositoryObservation<DocsRepositoryCache>, DocsUnavailableReason>({
+    cycle: async ({ signal }) => {
       let repos: readonly RepoHarnessRegisteredRepo[];
       try { repos = readRepoHarnessRegistryStrictSnapshot({ env }).repos; }
-      catch { registryFailed = true; return; }
+      catch { return { state: 'observed', value: { registry: 'failed' } }; }
       const activity = options.read_dev_activity();
       activityPending = activity.collected_at === null;
       const next = new Map<string, DocsRepositoryCache>();
-      await Promise.all(repos.map(async repo => { next.set(repo.id, await collectRepository(repo, activity)); }));
-      for (const id of [...readers.keys()]) if (closed || !next.has(id)) retire(id);
-      if (closed) return;
-      states = next;
-      registryFailed = false;
-      started = true;
-    })().catch(() => { /* every repository failure is a state; keep the last cache */ }).finally(() => {
-      inflight = null;
-      if (closed) return;
-      const interval = options.interval_ms ?? DOCS_COLLECT_INTERVAL_MS;
-      timer = setTimeout(() => { void cycle(); }, activityPending ? Math.min(interval, DOCS_PENDING_RETRY_MS) : interval);
-      timer.unref?.();
-    });
-    return inflight;
-  };
-  void cycle();
-
+      const collected = await Promise.all(repos.map(async (repo) => ({ id: repo.id, cache: await collectRepository(repo, activity, signal) })));
+      for (const entry of collected) next.set(entry.id, entry.cache);
+      // A repository that left the registry keeps no reader.
+      for (const id of [...readers.keys()]) if (signal.aborted || !next.has(id)) retire(id);
+      return { state: 'observed', value: { registry: 'ok', repositories: next, complete: true } };
+    },
+    // Keep rule: a cycle that throws keeps the last cache; its trees keep their own collection time.
+    keep: keepObservation,
+    // A cycle that throws before its first success reads as pending, as it did on main.
+    failure: 'docs_pending',
+    interval_ms: () => (activityPending ? Math.min(options.interval_ms ?? DOCS_COLLECT_INTERVAL_MS, DOCS_PENDING_RETRY_MS) : options.interval_ms ?? DOCS_COLLECT_INTERVAL_MS),
+  });
   return Object.freeze({
     read: (repositoryId: string): DocsRepositoryCache => {
-      if (registryFailed) return { state: 'unavailable', reason: 'registry_unavailable' };
-      if (!started) return { state: 'unavailable', reason: 'docs_pending' };
-      return states.get(repositoryId) ?? { state: 'unavailable', reason: 'repository_not_found' };
+      const read = readRepository(loop.read(), repositoryId, 'docs_pending');
+      return 'value' in read ? read.value : { state: 'unavailable', reason: read.reason };
     },
-    settled: () => inflight ?? Promise.resolve(),
+    settled: loop.settled,
     close: async () => {
-      closed = true;
-      clearTimeout(timer);
       // Closing the readers fails their pending requests, so a long first listing does not hold shutdown.
       for (const id of [...readers.keys()]) retire(id);
-      await inflight;
+      await loop.close();
     },
   });
 }

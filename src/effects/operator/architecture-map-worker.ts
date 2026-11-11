@@ -57,6 +57,7 @@ import {
   type ArchitectureViolationReason,
   type ArchitectureViolationsLayerV1,
 } from '../../core/operator/architecture-map';
+import { isRecord } from '../../core/evidence/is-record';
 import { isPublicDevActivityText, isPublicRepoPath, publicDevActivityText } from '../../core/public-projections/public-text';
 import { readCommittedNativeContext } from '../architecture/model-reader';
 import { ARCHITECTURE_VIEW_TIMEOUT_MS, readArchitectureView, resolveArchitecturePaths, type ArchitectureViewArgs } from '../architecture/architecture-read';
@@ -79,7 +80,6 @@ export const ARCHITECTURE_MAP_PR_BUDGET_MS = 20_000;
 const GIT_TIMEOUT_MS = 30_000;
 
 type Record_ = Record<string, unknown>;
-const isRecord = (value: unknown): value is Record_ => value !== null && typeof value === 'object' && !Array.isArray(value);
 const string = (value: unknown): string | null => (typeof value === 'string' ? value : null);
 const whole = (value: unknown): number | null => (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null);
 

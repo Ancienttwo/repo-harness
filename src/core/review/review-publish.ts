@@ -1,3 +1,4 @@
+import { isRecord } from '../evidence/is-record';
 import { isReviewRuntimeId, type ReviewRuntimeId } from './review-runtimes';
 import type { ModelRelation } from './acceptance-receipt';
 
@@ -70,10 +71,6 @@ function invalid(message: string): never {
   throw new Error('review publish receipt is invalid: ' + message);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function exactFields(value: Record<string, unknown>, fields: readonly string[], label: string): void {
   const keys = Object.keys(value).sort();
   const expected = [...fields].sort();
@@ -133,7 +130,7 @@ export function validateReviewPublishReceipt(value: unknown): ReviewPublishRecei
   exactFields(value, TOP_FIELDS, 'receipt');
   if (value.protocol !== 1) invalid('protocol must be 1');
   if (value.kind !== 'repo-harness-review-publish-receipt') invalid('kind is invalid');
-  if (typeof value.round !== 'number' || !Number.isSafeInteger(value.round) || value.round < 1 || value.round > 5) invalid('round must be an integer from 1 to 5');
+  if (typeof value.round !== 'number' || !Number.isSafeInteger(value.round) || value.round < 1) invalid('round must be a positive integer');
   if (!['low', 'medium', 'high'].includes(String(value.risk_tier))) invalid('risk_tier is invalid');
   if (!['PASS', 'FAIL'].includes(String(value.verdict))) invalid('verdict is invalid');
   if (!['different-family', 'same-family', 'unknown'].includes(String(value.model_relation))) invalid('model_relation is invalid');
@@ -188,7 +185,7 @@ function findingSummary(finding: ReviewPublishFinding): string {
   return finding.severity + ' ' + finding.id + ' at ' + finding.path + ':' + finding.line + ': ' + finding.evidence + ' -> ' + finding.fix;
 }
 
-export function renderAcceptanceClaim(receipt: ReviewPublishReceipt): string {
+export function renderAcceptanceClaim(receipt: ReviewPublishReceipt, ownerRecord?: string): string {
   return [
     'repo-harness acceptance claim',
     'Role: acceptor',
@@ -196,6 +193,7 @@ export function renderAcceptanceClaim(receipt: ReviewPublishReceipt): string {
     'Subject: ' + receipt.subject_sha,
     'Tier: ' + receipt.risk_tier,
     'Agent: ' + reviewerIdentity(receipt) + ', read-only',
+    ...(ownerRecord === undefined ? [] : ['Owner record: ' + ownerRecord]),
     '',
   ].join('\n');
 }
@@ -220,7 +218,7 @@ export function renderAcceptanceReview(receipt: ReviewPublishReceipt): string {
   ].join('\n');
 }
 
-export function renderAcceptanceRecord(receipt: ReviewPublishReceipt, claimUrl: string): string {
+export function renderAcceptanceRecord(receipt: ReviewPublishReceipt, claimUrl: string, ownerRecord?: string): string {
   const verdict = receipt.verdict + ': ' + severityCounts(receipt);
   return [
     'repo-harness acceptance record',
@@ -231,10 +229,12 @@ export function renderAcceptanceRecord(receipt: ReviewPublishReceipt, claimUrl: 
     '| ' + receipt.round + ' | ' + reviewerIdentity(receipt) + ', read-only | `' + receipt.subject_sha + '` | ' + verdict + ' |',
     '',
     'Model relation: ' + receipt.model_relation,
+    ...(ownerRecord === undefined ? [] : ['Owner record: ' + ownerRecord]),
     '',
     'Findings:',
     '',
-    ...(receipt.findings.length ? receipt.findings.map((entry) => '- ' + findingSummary(entry)) : ['- none']),
+    // One finding is one bullet line: `parseRecordFindings` (board) reads exactly this shape.
+    ...(receipt.findings.length ? receipt.findings.map((entry) => '- ' + findingSummary(entry).replace(/\s+/gu, ' ')) : ['- none']),
     '',
   ].join('\n');
 }

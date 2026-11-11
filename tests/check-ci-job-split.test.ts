@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { analyzeAffectedTests, bundleInputPaths, discoverDailyInputs, discoverPlatformInputs, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
+import { analyzeAffectedTests, bundleInputPaths, discoverDailyInputs, discoverPlatformInputs, nativeTriggers, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
 import { auditDroppedTests } from '../scripts/ci-edge-audit';
 import { replayNeedsSource } from '../scripts/replay-ci-coverage';
 import { ARCHITECTURE_JOB, ARCHITECTURE_SUMMARY_PATH } from '../scripts/report-ci';
@@ -524,6 +524,7 @@ describe('single affected verification and daily fallback', () => {
     expect(selectCoverage({ ...input, actualHead: '2'.repeat(40), diffRaw: record }).mode).toBe('invalid');
     expect(selectCoverage({ ...input, eventName: 'schedule', diffRaw: null }).mode).toBe('daily');
     expect(selectCoverage({ ...input, eventName: 'push', event: { before: sha }, diffRaw: record }).mode).toBe('report');
+    expect(selectCoverage({ ...input, eventName: 'merge_group', event: { merge_group: { base_sha: sha } }, diffRaw: record }).mode).toBe('affected');
   });
 
   test('real dependency and runtime consumers expand transitively; unknown coverage fails instead of full-suite', async () => {
@@ -590,7 +591,8 @@ describe('single affected verification and daily fallback', () => {
     // State boundaries run beside selection on every event except a push to main, and Required / CI requires them.
     expect(jobs['state-boundaries'].needs).toBeUndefined();
     expect(jobs['state-boundaries'].if).toBe("github.event_name != 'push'");
-    expect(jobs.required.if).toBe("always() && github.event_name == 'pull_request'");
+    expect(workflow.on.merge_group).toEqual({ types: ['checks_requested'] });
+    expect(jobs.required.if).toBe("always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')");
     const pushJobs = Object.entries(jobs).filter(([, job]: [string, any]) => !job.needs && job.if !== "github.event_name != 'push'").map(([id]) => id);
     expect(pushJobs).toEqual(['selection']);
     expect(jobs.selection.steps.some((step: any) => step.run === 'bun run check:state-boundaries')).toBe(false);
@@ -709,13 +711,21 @@ describe('single affected verification and daily fallback', () => {
     for (const path of bundleInputPaths({ inputs: { 'src/host.ts': {}, './src/host-dependency.ts': {} } })) native.add(path);
     const home = platformImportClosure(['tests/home.test.ts', 'tests/preload.ts'], sources);
     const inputs = { native, home };
-    for (const path of ['.github/actions/install/action.yml', 'package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json', 'scripts/check-ci.sh', 'scripts/lib/test-home-isolation.mjs', 'scripts/select-ci-coverage.ts']) {
+    for (const path of ['.github/workflows/ci.yml', 'package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json', 'scripts/check-ci.sh', 'scripts/lib/test-home-isolation.mjs', 'scripts/select-ci-coverage.ts', 'src/core/ci/documentation-path.ts',
+      'scripts/ci-path-consumers.ts', 'scripts/ci-documentation-consumers.ts']) {
       expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: true });
     }
     for (const path of ['src/host.ts', 'src/host-dependency.ts', 'tests/native.test.ts', 'tests/helpers/nested.ts']) {
       expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: false });
     }
     expect(selectPlatformCoverage(['src/core/terminal/herdr-core-pin.json'], inputs)).toEqual({ native_oar: true, home_isolation: false });
+    // Other workflows and actions that the native job does not use leave the native lane off.
+    for (const path of ['.github/workflows/release.yml', '.github/actions/install/action.yml']) {
+      expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: false, home_isolation: true });
+    }
+    expect(nativeTriggers(['docs/guide.md', 'package.json', 'src/core/terminal/herdr-core-pin.json', 'src/deep.ts', '.github/workflows/release.yml'], inputs)).toEqual([
+      { cause: 'shared', path: 'package.json' }, { cause: 'herdr-pin', path: 'src/core/terminal/herdr-core-pin.json' }, { cause: 'native-closure', path: 'src/deep.ts' },
+    ]);
     // A src module imported only by a native test root, directly or transitively, triggers the native lane.
     for (const path of ['src/other.ts', 'src/deep.ts', 'assets/schema.json']) {
       expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: false });
@@ -739,11 +749,12 @@ describe('single affected verification and daily fallback', () => {
     const sources = new Map(files.filter(file => existsSync(join(ROOT, file))).map(file => [file, readFileSync(join(ROOT, file), 'utf8')]));
     const inputs = await discoverPlatformInputs(sources, ROOT);
     const job = workflow.jobs['native-oar'];
-    const named = [job.steps.find((step: any) => step.name === 'Run native OAR acceptance tests').run, ...job.strategy.matrix.test.map((leg: string) => sources.get(leg)!)]
+    const named = [job.steps.find((step: any) => step.name === 'Run native OAR acceptance tests').run, ...job.strategy.matrix.test.flatMap((leg: string) => leg.split(' ').map(file => sources.get(file)!))]
       .flatMap(text => text.match(/[\w./-]+\.sh\b/g) ?? []).filter(path => sources.has(path));
     expect(named).toContain('scripts/contract-worktree.sh');
     for (const path of named) expect([path, inputs.native.has(path)]).toEqual([path, true]);
     expect(selectPlatformCoverage(['scripts/contract-worktree.sh'], inputs).native_oar).toBe(true);
+    expect(selectPlatformCoverage(['.github/actions/install-pinned-herdr-core/action.yml'], inputs).native_oar).toBe(true);
   }, 120000);
 
   test('separate platform jobs run on their trigger flags and keep exact candidate checks', () => {
@@ -764,7 +775,7 @@ describe('single affected verification and daily fallback', () => {
     expect(job['runs-on']).toBe('macos-latest');
     expect(job['timeout-minutes']).toBe(10);
     expect(job.strategy).toEqual({ 'fail-fast': false, matrix: { test: [
-      'tests/generic-review.test.ts', 'tests/acceptance-receipt.test.ts', 'tests/herdr-task-lifecycle.test.ts', 'tests/docs-host-isolation.test.ts',
+      'tests/generic-review.test.ts', 'tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts tests/docs-host-isolation.test.ts',
     ] } });
     expect(job['continue-on-error']).toBeUndefined();
     expect(job.steps.every((step: any) => step['continue-on-error'] === undefined)).toBe(true);
@@ -782,7 +793,7 @@ describe('single affected verification and daily fallback', () => {
     expect(native).toHaveLength(1);
     expect(native[0].if).toBeUndefined();
     expect(native[0].shell).toBe('bash');
-    expect(native[0].env).toEqual({ EXPECTED_SHA: '${{ needs.selection.outputs.sha }}', MODE: '${{ needs.selection.outputs.mode }}', TEST_FILE: '${{ matrix.test }}' });
+    expect(native[0].env).toEqual({ EXPECTED_SHA: '${{ needs.selection.outputs.sha }}', MODE: '${{ needs.selection.outputs.mode }}', TEST_FILES: '${{ matrix.test }}' });
     expect(native[0].run.trim().split('\n')).toEqual([
       'set -euo pipefail',
       'test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"',
@@ -798,7 +809,8 @@ describe('single affected verification and daily fallback', () => {
       '  daily) set -- ;;',
       '  *) echo "Unknown coverage mode: $MODE" >&2; exit 1 ;;',
       'esac',
-      'bun run test:files "$TEST_FILE" "$@" --timeout 60000 --max-concurrency 1',
+      'read -r -a files <<< "$TEST_FILES"',
+      'bun run test:files "${files[@]}" "$@" --timeout 60000 --max-concurrency 1',
     ]);
     // A PR runs only the darwin cases; the daily run keeps every native case. The filesystem probe step is gone.
     expect(job.steps.map((step: any) => step.name ?? step.uses)).toEqual([
@@ -977,7 +989,7 @@ describe('single affected verification and daily fallback', () => {
     expect(advisory.permissions).toBeUndefined();
     expect(jobs.required.steps[0].env.ARCHITECTURE_RESULT).toBe('${{ needs.architecture-advisory.result }}');
     const warn = advisory.steps.find((step: any) => step.name === 'Check the plugin-internals constraint and warn about architecture debt');
-    expect(warn.env).toEqual({ BASE_SHA: '${{ github.event.pull_request.base.sha }}' });
+    expect(warn.env).toEqual({ BASE_SHA: '${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}' });
     expect(warn.run).toBe('bash scripts/check-ci.sh architecture-advisory --base "$BASE_SHA"');
     expect(advisory.steps.find((step: any) => step.uses === 'actions/checkout@v4').with['fetch-depth']).toBe(0);
   });

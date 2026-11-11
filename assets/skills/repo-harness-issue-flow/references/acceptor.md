@@ -14,11 +14,11 @@ Review by risk). The board marks such a PR `accepted` via `tier_low` from
 provisional: the merging seat confirms the verification evidence in the PR
 body before the merge.
 
-The gatekeeper is the default acceptor (D6). It reviews the diff and
+The gatekeeper is the default acceptor. It reviews the diff and
 returns a verdict and findings. A seat without the `net` tool group has no
 network, so the session that runs the round publishes the result.
 
-No host and no model is mandatory (D7). Any host that can read the PR and
+No host and no model is mandatory. Any host that can read the PR and
 return the result schema can accept.
 
 - The acceptor did not write the subject SHA.
@@ -26,6 +26,8 @@ return the result schema can accept.
   rules in `docs/reference-configs/agentic-development-flow.md`, Review by
   risk. Code that writes comments, records, reviews or labels to GitHub is
   Medium unless it also hits the High list.
+- For the Medium tier, the one review comes from a model family different
+  from the writer's.
 - For the High tier, at least one of the two reviews of a head comes from
   a model family different from the writer's (§2.2).
 - The other High review can use a fresh context of the writer's family.
@@ -68,8 +70,10 @@ The table rules govern how the row combines with the review.
    The board accepts a High head, or a head of unknown tier, only when it
    has `PASS` rows that cite two distinct `acceptance claim` comments of
    the PR, each with the row's `Subject` and `Round`, at least one of them with `Model relation: different-family`,
-   and no `FAIL` row. A Medium head needs one `PASS` row and no `FAIL`
-   row.
+   and no `FAIL` row. A Medium head needs one `PASS` row that cites an
+   `acceptance claim` comment of the PR the same way and records
+   `Model relation: different-family`, and no `FAIL` row. A `same-family`
+   or `unknown` row does not count for Medium.
 
    The review brief requires each reviewer, in its first round, to group
    findings by bug family. For each family, list every sibling case and
@@ -86,13 +90,16 @@ The table rules govern how the row combines with the review.
    PR diffs (from the one merge base with main) must not be empty. The
    board reads the rows of the new head and of the newest proven
    reviewed head only, so reviews split across older heads do not add
-   up. A FAIL row on any proven head, or on the new head, stops the
-   carry, and a git error on any candidate proves none. The board then shows `via: sync` with
-   `carried_from` (#2074), and the new head needs CI only. Any other sync
+   up. The newest proven reviewed head is the subject of the newest
+   record with a row on a proven head. A FAIL row on that head, in any
+   record, or on the new head, stops the carry. A FAIL row on an older
+   proven head that a newer record supersedes does not stop it. A git
+   error on any candidate proves none. The board then shows `via: sync` with
+   `carried_from`, and the new head needs CI only. Any other sync
    head (a conflict, even one resolved to the PR side; an edit in the
    merge; a new commit; a failed git step) needs a sync check: a review
    of the sync delta that writes one record row for the new head. A
-   Medium sync head needs one sync check row. A High sync head needs the
+   Medium sync head needs one sync check row under the Medium rule above. A High sync head needs the
    round-1 rule: two sync check rows from distinct claims, at least one
    different-family. A PR that changes a hook path never carries: the
    owner approves each head of a hook diff again.
@@ -202,8 +209,8 @@ defect in code that the PR does not change is a note, not a finding.
 ## 4. Publish
 
 The session that runs the round writes one publish receipt and runs
-`repo-harness review publish --pr <n> --receipt <path> [--json]`
-(#1224). The command reads the PR head, refuses a stale subject, then
+`repo-harness review publish --pr <n> --receipt <path> [--json]`.
+The command reads the PR head, refuses a stale subject, then
 posts in this order:
 
 - the `acceptance claim`;
@@ -234,7 +241,7 @@ Act on the exit code:
 | 5 | `review_publish_partial`, `review_publish_unknown` | Stop and inspect the PR. Never retry before you confirm which comments exist. |
 | 1 | `review_publish_provider_unavailable`, `review_publish_failed` | Report the error and the posted URLs. |
 
-The merge executor refuses a PR with an unresolved review thread (D6).
+The merge executor refuses a PR with an unresolved review thread.
 A bot thread is a reference input (§2.3): the coordinator answers and
 resolves it, and the bot never adds or removes a gate by itself.
 A PR with a rule-4 deferral (§2.2) passes this check only after the
@@ -279,7 +286,7 @@ blocking finding names one path, one line, the evidence and the smallest
 fix. A P3 finding carries no location. `model_relation` comes from the
 closed family table in `acceptance-receipt.ts`. A Claude turn has an
 unobserved model, so its value is `unknown`. This does not block the
-merge (D7).
+merge.
 
 ## 6. Resolve threads
 

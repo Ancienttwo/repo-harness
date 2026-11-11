@@ -21,7 +21,6 @@ const PUBLICATION_ID = `sha256:${'a'.repeat(64)}`;
 const TOKEN = `sha256:${'b'.repeat(64)}`;
 const TASK_ID = 'c'.repeat(64);
 const HEAD = 'd'.repeat(40);
-const RECEIPT = `sha256:${'e'.repeat(64)}`;
 const COMPLETION_PUBLICATION = `sha256:${'f'.repeat(64)}`;
 const COMPLETION_RECEIPT = `sha256:${'0'.repeat(64)}`;
 const COMPLETION_HEAD = '1'.repeat(40);

@@ -1,11 +1,12 @@
 import { captureReadonlyGitTree } from '../git/readonly-virtual-tree';
 import { currentReadonlyObservation, observationReadFileSync as readFileSync, observationExecFileSync as execFileSync } from '../readonly-observation';
-import { createHash, randomUUID } from "crypto";
+import { randomUUID } from "crypto";
 import { accessSync, constants, existsSync, lstatSync, mkdtempSync, realpathSync, rmSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { delimiter, isAbsolute, join, relative, resolve } from "path";
 
 import { canonicalize } from "../../core/evidence/canonical-json";
+import { sha256Prefixed } from "../../core/evidence/sha256";
 import type { EvidenceEventRecord, GenesisRecord, JsonValue, AdmittedReviewSubjectIdentity, EvalCatalogSubjectIdentity } from "../../core/evidence/types";
 import { redactPayloadStrings, SECRET_DENYLIST_ENV_KEYS } from "../../core/evidence/redaction";
 import {
@@ -29,7 +30,7 @@ import { resolveBlobsDir } from "./paths";
 import { LEDGER_EPOCH_START_SHA } from "./epoch";
 import { appendEvidenceEvent, appendGenesisRecord, readAcceptedEvents, readGenesisRecord } from "./event-log";
 import { collectDenylistSecretValues } from "./secret-env";
-import { gitExecFileSync, isGitExecutableName } from '../git/runner';
+import { gitExecFileSync } from '../git/runner';
 
 const EVENT_TYPE = "verification_execution.result";
 const PRODUCER = "verification-execution";
@@ -173,7 +174,7 @@ interface PreparedContext extends EvidenceContext {
 }
 
 function sha256(content: string | Buffer): string {
-  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+  return sha256Prefixed(content);
 }
 
 function git(repoRoot: string, args: readonly string[], env?: NodeJS.ProcessEnv): string {
@@ -289,23 +290,9 @@ function resolveExecutablePath(command: string, env: NodeJS.ProcessEnv): string 
   throw new Error(`verification toolchain executable is unavailable: ${command}`);
 }
 
-function versionOf(command: string, args: readonly string[], env: NodeJS.ProcessEnv): string {
+function versionOf(command: string, read: () => string): string {
   try {
-    // File workers share CPU and process startup. Keep discovery bounded under load.
-    const version = (isGitExecutableName(command)
-      ? gitExecFileSync([...args], {
-        gitBin: command,
-        encoding: "utf8",
-        env,
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: 15_000,
-      })
-      : execFileSync(command, [...args], {
-        encoding: "utf8",
-        env,
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: 15_000,
-      })).trim();
+    const version = read().trim();
     if (!version) throw new Error("empty version output");
     return version;
   } catch (error) {
@@ -352,6 +339,8 @@ function resolveToolchain(env: NodeJS.ProcessEnv): { readonly hash: string; read
       throw new Error(`verification runner source is unavailable (${name}): ${error instanceof Error ? error.message : String(error)}`);
     }
   }));
+  // File workers share CPU and process startup. Keep discovery bounded under load.
+  const probe = { encoding: "utf8" as const, env, stdio: ["ignore", "pipe", "pipe"] as ["ignore", "pipe", "pipe"], timeout: 15_000 };
   const toolchain = {
     protocol: 1,
     package_version: packageVersion,
@@ -359,9 +348,9 @@ function resolveToolchain(env: NodeJS.ProcessEnv): { readonly hash: string; read
     platform: { os: process.platform, arch: process.arch },
     path: env.PATH ?? null,
     tools: {
-      git: { path: git, version: versionOf(git, ["--version"], env) },
-      bash: { path: bash, version: versionOf(bash, ["--version"], env) },
-      bun: { path: bun, version: versionOf(bun, ["--version"], env) },
+      git: { path: git, version: versionOf(git, () => gitExecFileSync(["--version"], { ...probe, gitBin: git })) },
+      bash: { path: bash, version: versionOf(bash, () => execFileSync(bash, ["--version"], probe)) },
+      bun: { path: bun, version: versionOf(bun, () => execFileSync(bun, ["--version"], probe)) },
     },
   };
   const hash = sha256(canonicalize(toolchain));
@@ -1023,15 +1012,6 @@ export function verificationOutcomeProvenance(input: MaterializedVerificationInp
     campaign_identity: payload.campaign_sha256,
     check_set_identity: sha256(canonicalize(plan.checks.map(check => check.id))),
   };
-}
-
-export function admittedVerificationProvenance(input: VerificationInput) {
-  const active = readAdmission(input);
-  const plan = active.admission.verification_plan;
-  return { admission_identity: active.admission.admission_sha256, grant_identity: active.grant_sha256,
-    campaign_identity: active.admission.campaign_sha256,
-    check_set_identity: sha256(canonicalize(plan.checks.map(check => check.id))),
-    environment: resolveToolchain(input.env ?? process.env).providerId, check_ids: plan.checks.map(check => check.id) };
 }
 
 function subjectIdentity(context: PreparedContext, check: VerificationCheck): AdmittedReviewSubjectIdentity | EvalCatalogSubjectIdentity {

@@ -36,6 +36,14 @@ export const seatHandoffPath = (identity: SeatResetIdentity): string => `${seatR
 /** The hook writes this file when it blocks the stop; a handoff older than it is stale. */
 export const seatResetRequestPath = (identity: SeatResetIdentity): string => `${seatResetDirectory(identity)}/request.json`;
 
+/** The SessionStart sources that record a new session of the seat. */
+export const SEAT_SESSION_SOURCES = ['startup', 'clear'] as const;
+export type SeatSessionSource = typeof SEAT_SESSION_SOURCES[number];
+
+export function isSeatSessionSource(value: unknown): value is SeatSessionSource {
+  return SEAT_SESSION_SOURCES.includes(value as SeatSessionSource);
+}
+
 /** The SessionStart hook writes this file for a new session of the seat: the new-session signal of the reset. */
 export const seatSessionPath = (identity: SeatResetIdentity): string => `${seatResetDirectory(identity)}/session.json`;
 /** One JSON line per reset failure. It is the only record of the rewrite and resend counts. */
@@ -79,11 +87,10 @@ export function missingHandoffSections(text: string): string[] {
 
 const PEER: Readonly<Record<ResetSeat, ResetSeat>> = { orchestrator: 'advisor', advisor: 'orchestrator' };
 
-/** The block reason of the Stop hook: the model writes the handoff, then asks its peer seat for the reset. */
-export function seatResetReason(identity: SeatResetIdentity, contextTokens: number): string {
+/** The handoff steps: the model writes the handoff, then asks its peer seat for the reset. The Stop hook and `seats handoff` print them. */
+export function seatResetSteps(identity: SeatResetIdentity): string {
   const path = seatHandoffPath(identity);
   return [
-    `repo-harness: the ${identity.seat} seat context is ${contextTokens} tokens, at or above ${SEAT_RESET_CONTEXT_TOKENS}. Reset before auto-compaction.`,
     `1. Write the handoff to ${path} with exactly these sections:`,
     '',
     seatHandoffTemplate(),
@@ -92,6 +99,11 @@ export function seatResetReason(identity: SeatResetIdentity, contextTokens: numb
     `On REWRITE, write the handoff again and send RESET-REQUEST again. On NO-RESET, continue.`,
     `When the ${PEER[identity.seat]} seat is missing or does not answer, continue without a reset: Claude Code auto-compaction handles the context.`,
   ].join('\n');
+}
+
+/** The block reason of the Stop hook: the token reason, then the handoff steps. */
+export function seatResetReason(identity: SeatResetIdentity, contextTokens: number): string {
+  return `repo-harness: the ${identity.seat} seat context is ${contextTokens} tokens, at or above ${SEAT_RESET_CONTEXT_TOKENS}. Reset before auto-compaction.\n${seatResetSteps(identity)}`;
 }
 
 /** The prompt that the peer sends after `/clear`. RESUMED comes first, so its hc send is the resume evidence. */

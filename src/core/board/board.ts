@@ -1,7 +1,9 @@
+import { PROJECTION_WRITER_DEFAULT_BRANCH } from 'archctx-contracts';
 import { parseClosingReferences } from '../publication/closing-references';
 import type { AcceptanceMergeSwitch } from '../publication/acceptance-merge-policy';
 import type { PullRequestReadinessV2 } from '../publication/merge-readiness';
 import { isSeatStatusMessage, seatStatusMessage } from './advisor-seat';
+import { modelFamily } from '../review/model-family';
 import { readMergeHold, type BoardMergeHoldV1 } from './merge';
 import { decodePlanBlock, PlanBlockError, type PlanBlockV1 } from './plan-block';
 import {
@@ -9,17 +11,21 @@ import {
   commentId,
   field,
   newestProtocolComment,
+  parseAcceptanceDisposition,
   parseAcceptanceRecord,
+  parseRecordFindings,
   parseClaimStatus,
   parseRefs,
   protocolComments,
   type BoardCommentV1,
   type BoardParentReadV1,
   type BoardPullRequestReadV1,
+  type AcceptanceDispositionV1,
   type AcceptanceRowV1,
   type BoardSubIssueReadV1,
   type ClaimStatusV1,
 } from './source';
+import { documentationOnly } from '../ci/documentation-path';
 import { isCiRepairIssueBody } from '../ci/test-report';
 import { pathHazardHits, pathHighHits } from './hazards';
 
@@ -29,14 +35,16 @@ import { pathHazardHits, pathHighHits } from './hazards';
  * It is a read model. GitHub and hc stay the authorities; the board keeps
  * their observation time and never writes back.
  */
-export const BOARD_PROTOCOL = 4 as const;
+export const BOARD_PROTOCOL = 5 as const;
 export const BOARD_KIND = 'repo-harness.board' as const;
 
 export type BoardTier = 'low' | 'medium' | 'high';
 const TIER_LABELS: Readonly<Record<string, BoardTier>> = { 'tier:low': 'low', 'tier:medium': 'medium', 'tier:high': 'high' };
 const PLAN_HEADER = 'repo-harness plan';
+const CLAIM_HEADER = 'repo-harness issue claim';
 const CLAIM_STATUS_HEADER = 'repo-harness issue claim status';
 export const ACCEPTANCE_RECORD_HEADER = 'repo-harness acceptance record';
+export const ACCEPTANCE_DISPOSITION_HEADER = 'repo-harness acceptance disposition';
 const ACCEPTANCE_CLAIM_HEADER = 'repo-harness acceptance claim';
 const REQUIRED_CHECK = 'Required / CI';
 
@@ -74,7 +82,7 @@ export type BoardRequiredCheckV1 =
 export type BoardAcceptanceV1 =
   /**
    * `record`: an acceptance record has a PASS row for the head and no record has a FAIL row for it; an open High or unknown-tier pull request
-   * also needs PASS rows of two distinct claims, one recorded `different-family` (`acceptor.md` section 2.2). `tier_low`: every closed issue is `tier:low` and `Required / CI` passed. */
+   * also needs PASS rows of two distinct claims, one recorded `different-family`; an open Medium one needs one claimed PASS row recorded `different-family` (`acceptor.md` section 2.2). `tier_low`: every closed issue is `tier:low` and `Required / CI` passed. */
   | { readonly status: 'accepted'; readonly via: 'record' | 'tier_low'; readonly accepted_at: string; readonly evidence_url: string }
   /** `record` on the rows of `carried_from`, an earlier reviewed head of which the head is a merge-only sync (#2074). */
   | { readonly status: 'accepted'; readonly via: 'sync'; readonly carried_from: string; readonly accepted_at: string; readonly evidence_url: string }
@@ -82,6 +90,9 @@ export type BoardAcceptanceV1 =
   | { readonly status: 'unknown'; readonly reason: 'acceptance_record_unparsed' | 'comments_truncated'; readonly evidence_url: string | null };
 
 export type BoardClaudeReviewV1 = 'not_required' | 'pending' | 'recorded';
+
+/** The model family of a writer, from `modelFamily` on the `Model:` line of its claim. */
+export type BoardWriterFamily = string;
 
 export interface BoardPullRequestV1 {
   readonly number: number;
@@ -101,7 +112,9 @@ export interface BoardPullRequestV1 {
   readonly acceptance: BoardAcceptanceV1;
   /** The single-PR readiness projection, for open pull requests only. */
   readonly merge_readiness: PullRequestReadinessV2 | null;
-  /** `high` when a changed path is on the High list or the change hazard list, or the file list is incomplete; otherwise the highest review tier of the linked issues (the parent excluded), null when the pull request links none, or one is outside the board or has no tier label. */
+  /** The read time of `merge_readiness`: a stored answer keeps the time of its read. Null when `merge_readiness` is null. */
+  readonly merge_readiness_observed_at: string | null;
+  /** `high` when a changed path is on the High list or the change hazard list, or the file list is incomplete; otherwise the highest review tier of the linked issues (the parent excluded), null when the pull request links none, or one is outside the board or has no tier label; `medium` for Low labels on a fix of more than 50 changed lines or of unknown size. */
   readonly tier: BoardTier | null;
   /**
    * An unknown tier counts as High here (fail closed). `pending`: an open High pull request whose head does not meet the High acceptance rule and has no acceptance row
@@ -109,6 +122,12 @@ export interface BoardPullRequestV1 {
    * The rows of an earlier head of which the head is a proven merge-only sync count as rows of the head (#2074).
    */
   readonly claude_review: BoardClaudeReviewV1;
+  /**
+   * The family of the `Runtime:` that the newest writer claim bound to the head branch names, the same on every linked issue (the parent
+   * excluded); null when a linked issue has no such claim, a runtime names no family, or the issues disagree. It selects the Medium review
+   * seat only: the record's `Model relation:` line stays the authority of acceptance.
+   */
+  readonly writer_family: BoardWriterFamily | null;
   readonly merge_hold: BoardMergeHoldV1;
 }
 
@@ -250,12 +269,18 @@ export type BoardDailyRunInputV1 =
   | { readonly status: 'observed'; readonly run_url: string; readonly conclusion: string | null; readonly created_at: string }
   | { readonly status: 'unavailable'; readonly reason: string };
 
+/** One readiness answer and the time of the read that produced it. */
+export interface BoardReadinessV1 {
+  readonly readiness: PullRequestReadinessV2;
+  readonly observed_at: string;
+}
+
 export interface BoardInputV1 {
   readonly observed_at: string;
   readonly parent: BoardParentReadV1;
   readonly acceptance_merge: BoardAcceptanceMergeV1;
   readonly pull_requests: readonly BoardPullRequestReadV1[];
-  readonly readiness: readonly PullRequestReadinessV2[];
+  readonly readiness: readonly BoardReadinessV1[];
   /** For each open pull request, the candidates of `syncCarryCandidates` that git proved to be merge-only syncs of the head (`provenMergeOnlySyncs`). */
   readonly merge_only_syncs: ReadonlyMap<number, readonly string[]>;
   readonly path_owners: BoardPathOwnersV1;
@@ -290,6 +315,10 @@ export function decodeBoard(value: unknown): BoardV1 {
     const { acceptance } = pr;
     if (acceptance?.status === 'accepted' && acceptance.via === 'sync' && !/^[0-9a-f]{40}$/u.test(String(acceptance.carried_from))) {
       throw new Error(`invalid board carried_from on PR #${pr.number}: ${String(acceptance.carried_from)}`);
+    }
+    const observedAt: unknown = pr.merge_readiness_observed_at;
+    if (pr.merge_readiness === null ? observedAt !== null : typeof observedAt !== 'string' || Number.isNaN(Date.parse(observedAt))) {
+      throw new Error(`invalid board merge_readiness_observed_at on PR #${pr.number}: ${String(observedAt)}`);
     }
   }
   return board as BoardV1;
@@ -345,29 +374,42 @@ export function syncCarryCandidates(read: BoardPullRequestReadV1, owners: BoardP
 
 /**
  * The head, and the newest proven reviewed head when it can carry: the subject of the newest record with a row of a proven head. Only
- * its rows count with the rows of the head, so reviews split across older heads never add up. A FAIL row on any proven head, earlier or
- * later than a PASS, stops the carry.
+ * its rows count with the rows of the head, so reviews split across older heads never add up. A FAIL row on that subject, in any record,
+ * stops the carry; a FAIL row on an older proven subject that the newer record supersedes does not (#2107).
  */
 function reviewedSubjects(read: BoardPullRequestReadV1, owners: BoardPathOwnersV1, proven: readonly string[]): ReadonlySet<string> {
   const syncs = new Set(syncCarryCandidates(read, owners).filter(sha => proven.includes(sha)));
   const records = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER)
     .map(record => ({ created_at: record.created_at, rows: (parseAcceptanceRecord(record) ?? []).filter(row => syncs.has(row.subject_sha)) }))
     .filter(record => record.rows.length > 0);
-  if (records.length === 0 || records.some(record => record.rows.some(row => row.verdict === 'FAIL'))) return new Set([read.head_sha]);
-  const newest = records.reduce((latest, record) => (record.created_at >= latest.created_at ? record : latest));
-  return new Set([read.head_sha, newest.rows.at(-1)!.subject_sha]);
+  if (records.length === 0) return new Set([read.head_sha]);
+  const subject = records.reduce((latest, record) => (record.created_at >= latest.created_at ? record : latest)).rows.at(-1)!.subject_sha;
+  if (records.some(record => record.rows.some(row => row.subject_sha === subject && row.verdict === 'FAIL'))) return new Set([read.head_sha]);
+  return new Set([read.head_sha, subject]);
 }
 
-function acceptance(read: BoardPullRequestReadV1, subjects: ReadonlySet<string>, check: BoardRequiredCheckV1, closedTiers: readonly (BoardTier | null)[], strict: boolean): BoardAcceptanceV1 {
+/**
+ * A FAIL row that a disposition resolves: the disposition names the row's record and subject and every finding of the record. A PASS
+ * row, a record with an unreadable finding, or one unresolved finding keeps the row failing. No time or round supersedes a FAIL row.
+ */
+function resolvedFail(record: BoardCommentV1, row: AcceptanceRowV1, dispositions: readonly AcceptanceDispositionV1[]): boolean {
+  const findings = row.verdict === 'FAIL' ? parseRecordFindings(record) : null;
+  if (findings === null) return false;
+  const resolved = new Set(dispositions.filter(entry => entry.record === commentId(record.url) && entry.subject_sha === row.subject_sha).flatMap(entry => entry.findings));
+  return findings.every(id => resolved.has(id));
+}
+
+function acceptance(read: BoardPullRequestReadV1, subjects: ReadonlySet<string>, check: BoardRequiredCheckV1, closedTiers: readonly (BoardTier | null)[], rule: ReviewRule): BoardAcceptanceV1 {
   // One round is one subject SHA, and a High round has two reviews of it (`acceptor.md`, section 2): every record counts.
   const records = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER);
   const passes: { readonly record: BoardCommentV1; readonly subject: string }[] = [];
   const head: AcceptanceRowV1[] = [];
+  const dispositions = protocolComments(read.comments, ACCEPTANCE_DISPOSITION_HEADER).flatMap(comment => parseAcceptanceDisposition(comment) ?? []);
   let failed = false;
   for (const record of records) {
     const rows = parseAcceptanceRecord(record);
     if (rows === null) return { status: 'unknown', reason: 'acceptance_record_unparsed', evidence_url: record.url };
-    const own = rows.filter(row => subjects.has(row.subject_sha));
+    const own = rows.filter(row => subjects.has(row.subject_sha) && !resolvedFail(record, row, dispositions));
     head.push(...own);
     if (own.some(row => row.verdict === 'FAIL')) failed = true;
     else if (own.length > 0) passes.push({ record, subject: own.some(row => row.subject_sha === read.head_sha) ? read.head_sha : own[0]!.subject_sha });
@@ -375,7 +417,7 @@ function acceptance(read: BoardPullRequestReadV1, subjects: ReadonlySet<string>,
   if (!failed && passes.length > 0) {
     // An older comment outside the read can hold a FAIL on the head.
     if (read.comments.truncated) return { status: 'unknown', reason: 'comments_truncated', evidence_url: null };
-    if (!strict || highRuleMet(read, head)) {
+    if (rule === 'none' || (rule === 'medium' ? mediumRuleMet(read, head) : highRuleMet(read, head))) {
       // A head that has its own PASS row is accepted on its newest own record; otherwise the newest carried record names its reviewed head.
       const own = passes.filter(pass => pass.subject === read.head_sha);
       const newest = (own.length > 0 ? own : passes).reduce((latest, pass) => (pass.record.created_at >= latest.record.created_at ? pass : latest));
@@ -393,34 +435,60 @@ function acceptance(read: BoardPullRequestReadV1, subjects: ReadonlySet<string>,
 }
 
 /**
- * The High rule (`acceptor.md` section 2.2), for High and unknown tiers: PASS rows of the head from two distinct review claims,
+ * The rows of the head whose `Claim:` cites an `acceptance claim` comment of the pull request with the row's `Subject:` and `Round:`
+ * (`review publish` writes both); the comment id is the claim identity.
+ */
+function claimedRows(read: BoardPullRequestReadV1, head: readonly AcceptanceRowV1[]): AcceptanceRowV1[] {
+  const claims = new Map(protocolComments(read.comments, ACCEPTANCE_CLAIM_HEADER).map(claim => [commentId(claim.url), `${field(claim.body, 'Round')} ${field(claim.body, 'Subject')}`] as const));
+  return head.filter(row => row.claim !== null && claims.get(row.claim) === `${row.round} ${row.subject_sha}`);
+}
+
+/**
+ * The High rule (`acceptor.md` section 2.2), for High and unknown tiers: claimed PASS rows of the head from two distinct review claims,
  * and at least one of them recorded `Model relation: different-family` to the writer. An unknown writer family records `unknown`,
- * so it fails closed. A row counts only when its `Claim:` cites an `acceptance claim` comment of the pull request with the row's
- * `Subject:` and `Round:` (`review publish` writes both); the comment id is the claim identity. A head with a `FAIL` row does not meet the rule.
+ * so it fails closed. A head with a `FAIL` row does not meet the rule.
  */
 function highRuleMet(read: BoardPullRequestReadV1, head: readonly AcceptanceRowV1[]): boolean {
   if (head.some(row => row.verdict === 'FAIL')) return false;
-  const claims = new Map(protocolComments(read.comments, ACCEPTANCE_CLAIM_HEADER).map(claim => [commentId(claim.url), `${field(claim.body, 'Round')} ${field(claim.body, 'Subject')}`] as const));
-  const passes = head.filter(row => row.claim !== null && claims.get(row.claim) === `${row.round} ${row.subject_sha}`);
+  const passes = claimedRows(read, head);
   return new Set(passes.map(row => row.claim)).size >= 2 && passes.some(row => row.different_family);
 }
 
-/** The High rule applies to an open pull request of High or unknown tier. */
-function strictReview(read: BoardPullRequestReadV1, tier: BoardTier | null): boolean {
-  return read.state === 'open' && (tier === null || tier === 'high');
+/** The Medium rule (`acceptor.md` section 2.2): one claimed PASS row of the head recorded `different-family`; `unknown` never counts. `acceptance` has ruled out a `FAIL` row. */
+function mediumRuleMet(read: BoardPullRequestReadV1, head: readonly AcceptanceRowV1[]): boolean {
+  return claimedRows(read, head).some(row => row.different_family);
+}
+
+/** The review rule of a pull request: `high` for an open pull request of High or unknown tier, `medium` for an open Medium one, `none` otherwise. */
+type ReviewRule = 'high' | 'medium' | 'none';
+function reviewRule(read: BoardPullRequestReadV1, tier: BoardTier | null): ReviewRule {
+  if (read.state !== 'open') return 'none';
+  return tier === null || tier === 'high' ? 'high' : tier === 'medium' ? 'medium' : 'none';
+}
+
+/** The Low bound of a fix in added plus deleted lines (`agentic-development-flow.md`, Review by risk). */
+const LOW_FIX_MAX_LINES = 50;
+
+/** Docs only, tests only and the projection pull request are Low at any size; every other change is a fix that the size bound applies to. */
+function sizeExempt(read: BoardPullRequestReadV1, files: readonly string[]): boolean {
+  return read.head_ref === PROJECTION_WRITER_DEFAULT_BRANCH || documentationOnly(files) || files.every(path => path.startsWith('tests/'));
 }
 
 /**
  * The one effective tier of a pull request, for the Low acceptance path and the review planner alike. A changed path on the High
  * list or the change hazard list sets High whatever the labels say (`agentic-development-flow.md`, Review by risk); R3 and R5 name
  * the labels to fix. An incomplete file list can hide such a path, so it sets High too. Otherwise null unless every linked issue
- * (the parent excluded) is on the board with a tier label.
+ * (the parent excluded) is on the board with a tier label. Low labels on a fix of more than 50 changed lines, or of unknown size, give Medium.
  */
-function effectiveTier(closes: readonly number[], refs: readonly number[], files: readonly string[] | null, parent: BoardParentReadV1, tiers: ReadonlyMap<number, BoardTier | null>): BoardTier | null {
+function effectiveTier(read: BoardPullRequestReadV1, closes: readonly number[], refs: readonly number[], parent: BoardParentReadV1, tiers: ReadonlyMap<number, BoardTier | null>): BoardTier | null {
+  const files = read.files;
   if (files === null || pathHighHits(files).length > 0 || pathHazardHits(files).length > 0) return 'high';
   const linked = [...new Set([...closes, ...refs])].filter(number => number !== parent.parent.number);
   const known = linked.map(number => tiers.get(number) ?? null);
-  return linked.length === 0 || known.includes(null) ? null : known.includes('high') ? 'high' : known.includes('medium') ? 'medium' : 'low';
+  if (linked.length === 0 || known.includes(null)) return null;
+  if (known.includes('high')) return 'high';
+  if (known.includes('medium')) return 'medium';
+  return sizeExempt(read, files) || (read.changed_lines !== null && read.changed_lines <= LOW_FIX_MAX_LINES) ? 'low' : 'medium';
 }
 
 /**
@@ -429,10 +497,26 @@ function effectiveTier(closes: readonly number[], refs: readonly number[], files
  * missing review (the second review for a Claude writer, the different-family review for any other writer).
  */
 function claudeReview(read: BoardPullRequestReadV1, subjects: ReadonlySet<string>, tier: BoardTier | null): BoardClaudeReviewV1 {
-  if (!strictReview(read, tier)) return 'not_required';
+  if (reviewRule(read, tier) !== 'high') return 'not_required';
   const head = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER).flatMap(record => parseAcceptanceRecord(record) ?? []).filter(row => subjects.has(row.subject_sha));
   if (head.some(row => row.harness === 'claude')) return 'recorded';
   return highRuleMet(read, head) ? 'not_required' : 'pending';
+}
+
+/** The writer family of a pull request (`BoardPullRequestV1.writer_family`). */
+function writerFamily(read: BoardPullRequestReadV1, closes: readonly number[], refs: readonly number[], parent: BoardParentReadV1): BoardWriterFamily | null {
+  const issues = new Map(parent.sub_issues.map(issue => [issue.number, issue]));
+  const linked = [...new Set([...closes, ...refs])].filter(number => number !== parent.parent.number);
+  const families = new Set(linked.map((number) => {
+    const issue = issues.get(number);
+    if (issue === undefined) return null;
+    const claims = protocolComments(issue.comments, CLAIM_HEADER).filter(claim => field(claim.body, 'Role') === 'writer' && field(claim.body, 'Branch') === read.head_ref);
+    const newest = claims.length === 0 ? null : newestProtocolComment({ ...issue.comments, comments: claims }, CLAIM_HEADER);
+    const model = newest === null ? null : field(newest.body, 'Model');
+    return model === null ? null : modelFamily(model);
+  }));
+  const [family] = families;
+  return families.size === 1 && family !== undefined ? family : null;
 }
 
 function bodyLinks(repository: string, body: string): { readonly closes: number[]; readonly refs: number[] } {
@@ -458,10 +542,10 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
   const pullRequests = linkedPullRequests(input.parent, input.pull_requests).map((read): BoardPullRequestV1 => {
     const { closes, refs } = bodyLinks(repository, read.body);
     const check = requiredCheck(read);
-    const tier = effectiveTier(closes, refs, read.files, input.parent, tiers);
+    const tier = effectiveTier(read, closes, refs, input.parent, tiers);
     const subjects = reviewedSubjects(read, input.path_owners, input.merge_only_syncs.get(read.number) ?? []);
     const claude = claudeReview(read, subjects, tier);
-    const readiness = read.state === 'open' ? input.readiness.find(entry => entry.pr_number === read.number) : undefined;
+    const readiness = read.state === 'open' ? input.readiness.find(entry => entry.readiness.pr_number === read.number) : undefined;
     if (read.state === 'open' && readiness === undefined) throw new Error(`board input has no merge readiness for open PR #${read.number}`);
     return Object.freeze({
       number: read.number,
@@ -479,10 +563,12 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
       files: read.files,
       required_check: check,
       // An issue outside this board has no observed tier, so it withholds the Low path; so does any non-Low linked issue.
-      acceptance: acceptance(read, subjects, check, [tier], strictReview(read, tier)),
-      merge_readiness: readiness ?? null,
+      acceptance: acceptance(read, subjects, check, [tier], reviewRule(read, tier)),
+      merge_readiness: readiness?.readiness ?? null,
+      merge_readiness_observed_at: readiness?.observed_at ?? null,
       tier,
       claude_review: claude,
+      writer_family: writerFamily(read, closes, refs, input.parent),
       merge_hold: readMergeHold(read.comments, false),
     });
   }).sort((left, right) => left.number - right.number);

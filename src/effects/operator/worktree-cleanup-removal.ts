@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { cleanupPlanDigestInput, cleanupSelection, decodeCleanupPlan, type CleanupPlanItem } from '../../core/operator/worktree-cleanup-plan';
 import type { CleanupLossEvidence } from '../../core/operator/worktree-cleanup-observation';
 import { cleanupExactWorktree, inspectWorktree, readAuthorizedCleanupState, type AuthorizedCleanupOptions } from '../state/coordination-worktree-topology';
@@ -22,7 +22,7 @@ export interface CleanupRemovalOptions extends Omit<AuthorizedCleanupOptions, 'v
 function identity(input: CleanupRemovalInput): AuthorizedWorktreeCleanup {
   const { session_id: session, target, item, loss, archive } = input;
   decodeCleanupPlan({ protocol: 1, kind: 'operator_worktree_cleanup_plan', session_id: session, items: [item] });
-  if (createHash('sha256').update(cleanupPlanDigestInput(session, item)).digest('hex') !== item.plan_sha256
+  if (sha256Hex(cleanupPlanDigestInput(session, item)) !== item.plan_sha256
     || target.id !== item.worktree.id || target.kind !== loss.kind || !cleanupSelection(item).selectable
     || cleanupLossSha256({ worktree: item.worktree, loss }) !== item.loss_sha256 || item.loss_sha256 === null) throw new Error('cleanup removal identity changed');
   if (item.advice.recommendation === 'archive_then_delete') {

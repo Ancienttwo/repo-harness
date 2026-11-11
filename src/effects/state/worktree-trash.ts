@@ -1,4 +1,5 @@
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { lstatSync, mkdirSync, opendirSync, readFileSync, readdirSync, renameSync, rmdirSync, unlinkSync, type Stats } from 'fs';
 import { basename, dirname, join } from 'path';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
@@ -231,7 +232,7 @@ export interface AuthorizedWorktreeTrashReceipt {
   readonly worktree_record_id: string | null;
 }
 function authorizedTrashDirectory(common: string, parent: string, key: string): string {
-  return join(parent, worktreeTrashPrefix(common) + 'authorized-' + createHash('sha256').update(key).digest('hex'));
+  return join(parent, worktreeTrashPrefix(common) + 'authorized-' + sha256Hex(key));
 }
 function assertAuthorizedTrashParent(parent: string): void {
   const stat = lstatSync(parent), uid = worktreeUid();
@@ -305,7 +306,7 @@ export function readAuthorizedWorktreeTrash(common: string, expected: Authorized
 }
 function completion(receipt: AuthorizedWorktreeTrashReceipt): string {
   return JSON.stringify({ protocol: 1, kind: 'authorized_cleanup_completed', key: receipt.expected.key,
-    receipt_sha256: createHash('sha256').update(JSON.stringify(receipt)).digest('hex') }) + '\n';
+    receipt_sha256: sha256Hex(JSON.stringify(receipt)) }) + '\n';
 }
 export function authorizedWorktreeTrashWasRenamed(receipt: AuthorizedWorktreeTrashReceipt): boolean {
   const path = join(receipt.directory, 'renamed.json'), file = present(path);

@@ -10,20 +10,20 @@ import type { BoardCommentPageV1, BoardCommentV1 } from '../src/core/board/sourc
 
 const SHA = 'a'.repeat(40);
 const OLD = 'b'.repeat(40);
-type Tier = 'low' | 'medium' | 'high' | null;
 const pr = (number: number, extra: Partial<BoardPullRequestV1> = {}): BoardPullRequestV1 => ({
   number, url: '', state: 'open', is_draft: false, base_ref: 'main', base_sha: SHA, head_ref: `feat/${number}`, head_sha: SHA, head_committed_at: '', merged_at: null,
-  closes: [number * 10], refs: [], files: [], required_check: { status: 'success', completed_at: '' }, acceptance: { status: 'not_accepted' }, merge_readiness: null,
-  tier: 'medium', claude_review: 'not_required', merge_hold: { status: 'none' }, ...extra,
+  closes: [number * 10], refs: [], files: [], required_check: { status: 'success', completed_at: '' }, acceptance: { status: 'not_accepted' }, merge_readiness: null, merge_readiness_observed_at: null,
+  tier: 'high', claude_review: 'not_required', writer_family: null, merge_hold: { status: 'none' }, ...extra,
 });
-const board = (prs: BoardPullRequestV1[]): BoardV1 => ({ pull_requests: prs }) as unknown as BoardV1;
+const board = (prs: BoardPullRequestV1[], holds: { issue: number; reason: string }[] = []): BoardV1 =>
+  ({ pull_requests: prs, parent: { number: 1 }, plan: { status: 'observed', block: { holds } } }) as unknown as BoardV1;
 const comment = (body: string, url = 'https://example.test/c'): BoardCommentV1 => ({ url, created_at: '2026-11-09T10:00:00Z', author_association: 'OWNER', body });
 const marker = (head: string, url = 'https://example.test/m1', seat = 'gatekeeper') => comment(`repo-harness review start\nSubject: ${head}\nSeat: ${seat}`, url);
 const record = (head: string, role = 'pi') => comment(`repo-harness acceptance record\n\n| Round | Role | Subject | Verdict |\n|---|---|---|---|\n| 1 | ${role} | \`${head}\` | FAIL: 1 P1 |`);
 const page = (...comments: BoardCommentV1[]): BoardCommentPageV1 => ({ truncated: false, comments });
 
-function plan(prs: BoardPullRequestV1[], comments: BoardCommentPageV1 = page()): readonly ReviewDecisionV1[] {
-  return planReview({ board: board(prs), comments: new Map(prs.map(entry => [entry.number, comments])) });
+function plan(prs: BoardPullRequestV1[], comments: BoardCommentPageV1 = page(), holds: { issue: number; reason: string }[] = []): readonly ReviewDecisionV1[] {
+  return planReview({ board: board(prs, holds), comments: new Map(prs.map(entry => [entry.number, comments])) });
 }
 const label = (decisions: readonly ReviewDecisionV1[]) => decisions.map(decision => decision.action === 'skip' ? `${decision.pr}:${decision.reason}` : `${decision.pr}:start`);
 
@@ -42,6 +42,23 @@ test('an unknown tier is reviewed as High; a pending Claude review adds the revi
   expect(start).toMatchObject({ action: 'start', tier: 'high' });
   expect(seatsOf(start)).toEqual(['gatekeeper', 'reviewer']);
   expect(seatsOf(plan([pr(1, { tier: 'high', claude_review: 'recorded' })])[0])).toEqual(['gatekeeper']);
+});
+
+test('a Medium head starts the one seat of the other family than the writer; an unknown writer family starts none', () => {
+  const medium = (writer_family: BoardPullRequestV1['writer_family']) => plan([pr(1, { tier: 'medium', writer_family })]);
+  expect(medium('anthropic')[0]).toMatchObject({ action: 'start', seats: [{ seat: 'gatekeeper' }], needs_non_claude_gatekeeper: true });
+  expect(medium('openai')[0]).toMatchObject({ action: 'start', seats: [{ seat: 'reviewer' }], needs_non_claude_gatekeeper: false });
+  expect(label(medium(null))).toEqual(['1:writer_family_unknown']);
+});
+
+test('a pull request that links a plan-held issue is skipped; the others still start', () => {
+  expect(label(plan([pr(1), pr(2)], page(), [{ issue: 10, reason: 'owner decision' }]))).toEqual(['1:plan_hold', '2:start']);
+});
+
+test('an unobserved plan skips every pull request', () => {
+  const unplanned = { ...board([pr(1), pr(2)]), plan: { status: 'absent', truncated: false } } as unknown as BoardV1;
+  const comments = new Map([[1, page()], [2, page()]]);
+  expect(label(planReview({ board: unplanned, comments }))).toEqual(['1:plan_unavailable', '2:plan_unavailable']);
 });
 
 test('a marker covers one seat: a started gatekeeper leaves the reviewer to start, and a marker without a seat covers none', () => {
@@ -129,10 +146,10 @@ test('a Claude gatekeeper for a head that needs both reviews posts no marker and
   const result = await executeReview(plan([pr(1, { claude_review: 'pending' })]), context, p);
   expect(result).toMatchObject({ started: [], refused: [{ pr: 1, reason: expect.stringContaining('gatekeeper_is_claude') }] });
   expect([p.comments.length, p.tabs.length]).toEqual([0, 0]);
-  // A Medium head, and a High head from a Claude writer, need no second review, so a Claude gatekeeper stays allowed.
+  // A Medium head of a Claude writer refuses a Claude gatekeeper too; a High head that needs no second review allows one.
   const allowed = ports({ launch: async seat => ({ argv: [seat], tab: seat, runtime: 'claude' }) });
-  const ok = await executeReview(plan([pr(1), pr(2, { tier: 'high', claude_review: 'not_required' })]), context, allowed);
-  expect(ok).toMatchObject({ started: [{ pr: 1, seat: 'gatekeeper' }, { pr: 2, seat: 'gatekeeper' }], refused: [] });
+  const ok = await executeReview(plan([pr(1, { tier: 'medium', writer_family: 'anthropic' }), pr(2)]), context, allowed);
+  expect(ok).toMatchObject({ started: [{ pr: 2, seat: 'gatekeeper' }], refused: [{ pr: 1, reason: expect.stringContaining('gatekeeper_is_claude') }] });
 });
 
 test('a reviewer that sent nothing releases its own marker and leaves the started gatekeeper alone', async () => {

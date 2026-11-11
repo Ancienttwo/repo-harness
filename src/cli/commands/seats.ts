@@ -3,23 +3,24 @@ import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { CLAUDE_BUILTIN_AGENT_TYPES, SeatPaneNameError, buildSeatLaunch, seatPaneName, seatTabName, type SeatLaunchV1 } from '../../core/board/seat-launch';
 import { SeatsConfigMigrationRequiredError, SEAT_IDS, decodeSeatsConfig, isWorkerSeat, type SeatId } from '../../core/board/seats-settings';
-import { claudeReserved, effectiveSeatConfig, seatAccount, seatAccountQuotas } from '../../core/board/seat-routing';
+import { claudeReserved, effectiveSeatConfig, seatAccount, seatAccountQuotas, type SeatAccountOptions } from '../../core/board/seat-routing';
 import { classifyQuotaReading } from '../../core/board/quota';
 import { readClaudeQuota, readCodexQuota } from '../../effects/board/quota';
 import { version as PACKAGE_VERSION } from '../../../package.json';
 import { readGlobalConfiguration } from '../../effects/configuration/global-configuration';
 import { resolveGitCommonDirectory } from '../../effects/git/common-directory';
 import { ClaudeAgentTypesError, claudeHostAgentTypes } from '../../effects/board/claude-agent-types';
-import { RepoHarnessRegistryStrictError, canonicalRepoPath, readRepoHarnessRegistryStrictSnapshot, repoCheckoutProbeEnv } from '../../effects/repo-registry';
+import { RepoHarnessRegistryStrictError, canonicalRepoPath, readRepoHarnessRegistryStrictSnapshot, repoCheckoutProbeEnv, setRepoHarnessPanePrefix } from '../../effects/repo-registry';
 import { HerdrCoreError, RH_LABEL, hcLabel, hcLabelPairs, type HcLabels } from '../../effects/terminal/herdr-core';
 import { PiFleetRolesError, writePiFleetRoles } from '../../effects/board/pi-fleet-roles';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
-import { SeatResetError, runSeatReset, type SeatResetNotify } from '../../effects/board/seat-reset';
+import { SeatResetError, readSeatSessionTranscript, readTranscriptContextTokens, runSeatReset, writeSeatResetRequest, type SeatResetNotify } from '../../effects/board/seat-reset';
+import { seatResetIdentity, seatResetSteps } from '../../core/board/seat-reset';
 
 const CLI_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
 
 class SeatsCommandError extends Error {
-  constructor(readonly code: 'seat_unknown' | 'seat_not_configured' | 'seat_quota_exhausted' | 'seat_quota_reserved' | 'config_invalid' | 'label_value_invalid' | 'repository_id_required' | 'terminal_unknown', message: string) {
+  constructor(readonly code: 'seat_unknown' | 'seat_not_configured' | 'seat_quota_exhausted' | 'seat_quota_reserved' | 'config_invalid' | 'label_value_invalid' | 'repository_id_required' | 'terminal_unknown' | 'seat_identity_missing' | 'seat_session_unknown' | 'seat_context_unknown', message: string) {
     super(message);
   }
 }
@@ -97,11 +98,11 @@ function panePrefix(cwd: string, env: NodeJS.ProcessEnv): string {
   }
   const registry = readRepoHarnessRegistryStrictSnapshot({ env });
   const prefix = registry.repos.find(repo => repo.path === root)?.panePrefix;
-  if (prefix === undefined) throw new SeatPaneNameError(`Pane name: set panePrefix for ${root} in ${registry.registryPath}.`);
+  if (prefix === undefined) throw new SeatPaneNameError(`Pane name: run repo-harness seats prefix --repo ${root} --pane-prefix <prefix>.`);
   return prefix;
 }
 
-export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): Promise<SeatLaunchV1 & {
+export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd(), accountOptions: SeatAccountOptions = {}): Promise<SeatLaunchV1 & {
   readonly labels: readonly string[]; readonly name: string | null; readonly tab: string | null;
 }> {
   const id = seatId(seat);
@@ -118,7 +119,7 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
   const reading = account === 'claude' ? readClaudeQuota(env) : account === 'chatgpt' ? await readCodexQuota(env, PACKAGE_VERSION) : null;
   const readings = reading === null ? [] : [reading];
   if (id === 'worker-light' && account === 'chatgpt') readings.push(readClaudeQuota(env));
-  const quota = seatAccountQuotas(readings.map(reading => classifyQuotaReading(reading, Date.now())), seats.routing);
+  const quota = seatAccountQuotas(readings.map(reading => classifyQuotaReading(reading, Date.now())), seats.routing, accountOptions);
   if (id === 'worker-light' && configured.runtime !== 'pi' && claudeReserved(quota)) {
     throw new SeatsCommandError('seat_quota_reserved', 'The worker-light seat must use Pi while Claude is reserved. Use the quota routes.');
   }
@@ -148,6 +149,26 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
   };
 }
 
+/**
+ * `seats handoff`: an on-demand reset. It records a reset request for the current session, as the Stop hook does at
+ * the threshold, so the peer's `seats reset` accepts the handoff, and returns the steps that the hook prints.
+ */
+export function seatHandoff(env: NodeJS.ProcessEnv = process.env, now = new Date()): string {
+  const identity = seatResetIdentity(env);
+  if (identity === null) {
+    throw new SeatsCommandError('seat_identity_missing', 'REPO_HARNESS_SEAT and REPO_HARNESS_SEAT_REPOSITORY name no orchestrator or advisor seat: start the seat with repo-harness seats argv <seat> --repository-id <id>.');
+  }
+  const transcript = readSeatSessionTranscript(identity);
+  if (transcript === null) throw new SeatsCommandError('seat_session_unknown', `The SessionStart record of the ${identity.seat} seat is missing or not valid, so the session transcript is unknown.`);
+  let context: number | null;
+  try { context = readTranscriptContextTokens(transcript); } catch (error) {
+    throw new SeatsCommandError('seat_context_unknown', `The transcript ${transcript} cannot be read: ${(error as Error).message}`);
+  }
+  if (context === null) throw new SeatsCommandError('seat_context_unknown', `The transcript ${transcript} has no assistant entry with a context size.`);
+  writeSeatResetRequest(identity, now, context, transcript);
+  return seatResetSteps(identity);
+}
+
 /** `loadNotify` comes from the composition root, only when peer-runtime is selected. */
 export function buildSeatsCommand(loadNotify?: () => Promise<SeatResetNotify>): Command {
   const seats = new Command('seats').description('Seat launch commands for Herdr panes');
@@ -162,12 +183,13 @@ export function buildSeatsCommand(loadNotify?: () => Promise<SeatResetNotify>): 
     .option('--release <digits>', 'Release item of a worker pane name, for example 0252 for rh-w-rel0252')
     .option('--qualifier <word>', 'Slice word of a worker pane name when one issue has two live worker panes')
     .option('--json', 'Print the argv, the seat brief, the source, the limits, the labels, the pane name and the tab name as JSON')
-    .action(async (seat: string, options: SeatLabelInput & { json?: boolean }) => {
+    .option('--spend-credits', 'Owner-authorized: launch on an exhausted ChatGPT account that still has credits')
+    .action(async (seat: string, options: SeatLabelInput & { json?: boolean; spendCredits?: boolean }) => {
       let launch: Awaited<ReturnType<typeof seatLaunch>>;
       try {
         launch = await seatLaunch(seat, {
           repositoryId: options.repositoryId, issue: options.issue, pr: options.pr, parent: options.parent, release: options.release, qualifier: options.qualifier,
-        });
+        }, process.env, process.cwd(), { spendCredits: options.spendCredits === true });
       } catch (error) {
         const code = error instanceof SeatsCommandError || error instanceof ClaudeAgentTypesError || error instanceof PiFleetRolesError || error instanceof SeatPaneNameError
           || error instanceof RepoHarnessRegistryStrictError || error instanceof SeatsConfigMigrationRequiredError ? error.code : 'seat_launch_failed';
@@ -205,6 +227,33 @@ export function buildSeatsCommand(loadNotify?: () => Promise<SeatResetNotify>): 
         if (!(error instanceof SeatsCommandError || error instanceof HerdrCoreError)) throw error;
         const code = error instanceof SeatsCommandError ? error.code : 'label_failed';
         process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: `The seat did not start: ${error.message}` })}\n`);
+        process.exitCode = 1;
+      }
+    });
+  seats
+    .command('prefix')
+    .description('Set the pane prefix that labeled seat panes use for a repository')
+    .requiredOption('--repo <path>', 'Adopted repository')
+    .requiredOption('--pane-prefix <prefix>', 'Lowercase letter, then 1 to 5 lowercase letters or digits')
+    .action((options: { repo: string; panePrefix: string }) => {
+      try {
+        const result = setRepoHarnessPanePrefix(options.repo, options.panePrefix);
+        if (!result.registered) throw new Error(result.reason ?? 'repo is not adopted');
+        process.stdout.write(`${JSON.stringify({ ok: true, ...result }, null, 2)}\n`);
+      } catch (error) {
+        process.stderr.write(`${JSON.stringify({ ok: false, error: 'pane_prefix_failed', message: (error as Error).message })}\n`);
+        process.exitCode = 1;
+      }
+    });
+  seats
+    .command('handoff')
+    .description('In the orchestrator or advisor seat: record a reset request now and print the handoff steps of the Stop hook')
+    .action(() => {
+      try {
+        process.stdout.write(`${seatHandoff()}\n`);
+      } catch (error) {
+        if (!(error instanceof SeatsCommandError)) throw error;
+        process.stderr.write(`${JSON.stringify({ ok: false, error: error.code, message: error.message })}\n`);
         process.exitCode = 1;
       }
     });

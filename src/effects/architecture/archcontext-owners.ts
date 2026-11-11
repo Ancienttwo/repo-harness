@@ -20,6 +20,7 @@ import {
   type CapabilityRegistryDiagnostic,
 } from '../../core/capabilities/registry';
 import { CapabilitySourceError } from '../../core/capabilities/resolver';
+import { isRecord } from '../../core/evidence/is-record';
 import { readArchitectureNativeContext, resolveArchitecturePaths } from './architecture-read';
 import { currentReadonlyObservation } from '../readonly-observation';
 
@@ -74,10 +75,6 @@ export function readArchcontextCapabilityContext(repoRoot: string): ArchcontextC
 
 // Notice callers can supply a shorter deadline through ArchctxProviderOptions.
 const RESOLVE_TIMEOUT_MS = 10_000;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
 
 function isDirectory(repoRoot: string, path: string): boolean {
   try { return statSync(resolve(repoRoot, path)).isDirectory(); } catch { return false; }

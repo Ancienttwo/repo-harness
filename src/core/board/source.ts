@@ -1,9 +1,11 @@
 /**
  * Decoders for the provider reads behind the board: the parent GraphQL read,
  * the pull request GraphQL read, and the protocol comments in them. Each
- * decoder refuses the first field it cannot read, and a connection that has
- * more pages than one read returns fails closed, because a missing sub-issue,
- * blocked-by edge or pull request would change the board without a trace.
+ * decoder refuses the first field it cannot read. The collector follows the
+ * cursors of the parent's sub-issues and comments to the last page; any other connection
+ * that has more pages than one read returns fails closed, because a missing
+ * sub-issue, blocked-by edge or pull request would change the board without a
+ * trace.
  */
 
 import type { Nodes } from 'mdast';
@@ -80,11 +82,46 @@ export interface BoardPullRequestReadV1 {
   readonly merged_at: string | null;
   /** Null when the pull request changes more files than one read returns. */
   readonly files: readonly string[] | null;
+  /** The added plus deleted lines of `files`, from the same read; null when `files` is null or a file has no count. */
+  readonly changed_lines: number | null;
   readonly checks: readonly BoardCheckRunReadV1[];
   readonly comments: BoardCommentPageV1;
+  readonly readiness_inputs: BoardReadinessInputsV1;
 }
 
-export const BOARD_PAGE = { labels: 50, comments: 50, sub_issues: 50, blocked_by: 50, timeline: 100, files: 100, checks: 100, repairs: 50 } as const;
+/** One check run or commit status of the head commit, as the readiness key reads it. */
+export interface BoardRollupContextV1 {
+  readonly type: 'CheckRun' | 'StatusContext';
+  readonly name: string;
+  readonly status: string;
+  readonly conclusion: string | null;
+  readonly completed_at: string | null;
+  readonly details_url: string | null;
+}
+
+/** The fields of the pull request read that merge readiness also reads; the keyed source store digests them. */
+export interface BoardReadinessInputsV1 {
+  readonly changed_files: number;
+  readonly mergeable: string;
+  readonly review_decision: string | null;
+  readonly cross_repository: boolean;
+  /** The states of the latest opinionated reviews; null when the read did not return all of them. */
+  readonly review_states: readonly string[] | null;
+  /** `isResolved` of each review thread and the thread count; null when the read did not return all threads. */
+  readonly threads: { readonly total: number; readonly resolved: readonly boolean[] } | null;
+  readonly rollup: readonly BoardRollupContextV1[];
+}
+
+/** The most sub-issue pages that one parent read follows: 1000 sub-issues. */
+export const BOARD_SUB_ISSUE_PAGES = 20;
+
+/**
+ * The most comment pages that one parent read follows: 10,000 comments. The
+ * bound stops a runaway cursor; a parent thread above it fails the read closed.
+ */
+export const BOARD_PARENT_COMMENT_PAGES = 100;
+
+export const BOARD_PAGE = { labels: 50, comments: 50, parent_comments: 100, sub_issues: 50, blocked_by: 50, timeline: 100, files: 100, checks: 100, repairs: 50, reviews: 20, threads: 50 } as const;
 
 type Json = Record<string, unknown>;
 
@@ -167,30 +204,86 @@ function issue(value: unknown, label: string): BoardIssueReadV1 {
   };
 }
 
-/** `data` of the parent read (`PARENT_QUERY` in the board collector). */
-export function decodeParentRead(data: unknown, repository: string): BoardParentReadV1 {
-  const root = obj(data, 'data');
+function subIssueRead(entry: unknown, label: string, repository: string): BoardSubIssueReadV1 {
+  const node = obj(entry, label);
+  const candidates = nodes(node.timelineItems, `${label}.timelineItems`, 'hasPreviousPage').flatMap((item) => {
+    const source = (item as Json | null)?.source as Json | undefined;
+    // A cross-reference from an issue has no PR fields; one from another repository is not ours.
+    if (source === undefined || source.number === undefined) return [];
+    const sourceRepo = str(obj(source.repository, `${label} source repository`).nameWithOwner, `${label} source repository`);
+    return sourceRepo.toLowerCase() === repository.toLowerCase() ? [int(source.number, `${label} source number`)] : [];
+  });
+  return Object.freeze({
+    ...issue(node, label),
+    blocked_by: Object.freeze(nodes(node.blockedBy, `${label}.blockedBy`, 'hasNextPage').map((edge, edgeIndex) => {
+      const blocker = obj(edge, `${label}.blockedBy[${edgeIndex}]`);
+      return Object.freeze({ number: int(blocker.number, `${label}.blockedBy number`), state: issueState(blocker.state, `${label}.blockedBy state`) });
+    })),
+    pull_request_candidates: Object.freeze([...new Set(candidates)].sort((left, right) => left - right)),
+  });
+}
+
+function parentSubIssues(data: unknown, at: number): Json {
+  return obj(obj(obj(obj(data, `page ${at} data`).repository, `page ${at} repository`).issue, `page ${at} issue`).subIssues, `page ${at} issue.subIssues`);
+}
+
+/** The cursor of the next sub-issue page of one parent read, or null on the last page. */
+export function parentReadNextCursor(data: unknown, at: number): string | null {
+  const info = obj(parentSubIssues(data, at).pageInfo, `page ${at} issue.subIssues.pageInfo`);
+  if (info.hasNextPage === false) return null;
+  if (info.hasNextPage !== true) fail(`page ${at} issue.subIssues.pageInfo.hasNextPage is not a boolean`);
+  if (typeof info.endCursor !== 'string' || info.endCursor === '') fail(`page ${at} issue.subIssues.pageInfo.endCursor is not a cursor`);
+  return info.endCursor;
+}
+
+function parentComments(data: unknown, at: number): Json {
+  return obj(obj(obj(obj(data, `comment page ${at} data`).repository, `comment page ${at} repository`).issue, `comment page ${at} issue`).comments, `comment page ${at} issue.comments`);
+}
+
+/** The cursor of the next older comment page of the parent, or null on the oldest page. */
+export function parentCommentsPreviousCursor(data: unknown, at: number): string | null {
+  const info = obj(parentComments(data, at).pageInfo, `comment page ${at} issue.comments.pageInfo`);
+  if (info.hasPreviousPage === false) return null;
+  if (info.hasPreviousPage !== true) fail(`comment page ${at} issue.comments.pageInfo.hasPreviousPage is not a boolean`);
+  if (typeof info.startCursor !== 'string' || info.startCursor === '') fail(`comment page ${at} issue.comments.pageInfo.startCursor is not a cursor`);
+  return info.startCursor;
+}
+
+/** The whole comment thread of the parent from its pages, newest page first: oldest comment first, never truncated. */
+function parentThread(commentPages: readonly unknown[]): BoardCommentPageV1 {
+  const older = commentPages.map((page, at) => {
+    if ((parentCommentsPreviousCursor(page, at) !== null) !== (at < commentPages.length - 1)) fail(`comment page ${at} issue.comments.pageInfo.hasPreviousPage does not match the page count`);
+    return comments(parentComments(page, at), `comment page ${at} issue.comments`).comments;
+  });
+  return Object.freeze({ truncated: false, comments: Object.freeze(older.reverse().flat()) });
+}
+
+/**
+ * The `data` of each sub-issue page of the parent read (`PARENT_QUERY` in the
+ * board collector), in cursor order. Every page names the same repository and
+ * parent, and only the last page has no next page. The repository, parent and
+ * repairs come from the first page. `commentPages` is the first page and then
+ * each older page of the parent comments (`PARENT_COMMENTS_QUERY`), in cursor
+ * order; only the last one has no previous page.
+ */
+export function decodeParentRead(pages: readonly unknown[], commentPages: readonly unknown[], repository: string): BoardParentReadV1 {
+  if (pages.length === 0) fail('the parent read has no page');
+  const root = obj(pages[0], 'data');
   const repo = obj(root.repository, 'repository');
   const nameWithOwner = str(repo.nameWithOwner, 'repository.nameWithOwner');
   if (nameWithOwner.toLowerCase() !== repository.toLowerCase()) fail(`repository is ${nameWithOwner}, expected ${repository}`);
   const parentNode = obj(repo.issue, 'issue');
-  const subIssues = nodes(parentNode.subIssues, 'issue.subIssues', 'hasNextPage').map((entry, index) => {
-    const label = `subIssues[${index}]`;
-    const node = obj(entry, label);
-    const candidates = nodes(node.timelineItems, `${label}.timelineItems`, 'hasPreviousPage').flatMap((item) => {
-      const source = (item as Json | null)?.source as Json | undefined;
-      // A cross-reference from an issue has no PR fields; one from another repository is not ours.
-      if (source === undefined || source.number === undefined) return [];
-      const sourceRepo = str(obj(source.repository, `${label} source repository`).nameWithOwner, `${label} source repository`);
-      return sourceRepo.toLowerCase() === repository.toLowerCase() ? [int(source.number, `${label} source number`)] : [];
-    });
-    return Object.freeze({
-      ...issue(node, label),
-      blocked_by: Object.freeze(nodes(node.blockedBy, `${label}.blockedBy`, 'hasNextPage').map((edge, edgeIndex) => {
-        const blocker = obj(edge, `${label}.blockedBy[${edgeIndex}]`);
-        return Object.freeze({ number: int(blocker.number, `${label}.blockedBy number`), state: issueState(blocker.state, `${label}.blockedBy state`) });
-      })),
-      pull_request_candidates: Object.freeze([...new Set(candidates)].sort((left, right) => left - right)),
+  const seen = new Set<number>();
+  const subIssues = pages.flatMap((page, at) => {
+    const pageRepo = obj(obj(page, `page ${at} data`).repository, `page ${at} repository`);
+    if (pageRepo.nameWithOwner !== nameWithOwner || obj(pageRepo.issue, `page ${at} issue`).number !== parentNode.number) fail(`page ${at} names another repository or parent`);
+    if ((parentReadNextCursor(page, at) !== null) !== (at < pages.length - 1)) fail(`page ${at} issue.subIssues.pageInfo.hasNextPage does not match the page count`);
+    return nodes(parentSubIssues(page, at), `page ${at} issue.subIssues`, null).map((entry, index) => {
+      const subIssue = subIssueRead(entry, `page ${at} subIssues[${index}]`, repository);
+      // A sub-issue list that changed between two page reads can repeat an entry.
+      if (seen.has(subIssue.number)) fail(`sub-issue #${subIssue.number} is on more than one page`);
+      seen.add(subIssue.number);
+      return subIssue;
     });
   });
   const search = obj(root.repairs, 'repairs');
@@ -201,7 +294,7 @@ export function decodeParentRead(data: unknown, repository: string): BoardParent
       name_with_owner: nameWithOwner,
       default_branch: str(obj(repo.defaultBranchRef, 'repository.defaultBranchRef').name, 'repository.defaultBranchRef.name'),
     }),
-    parent: Object.freeze(issue(parentNode, 'issue')),
+    parent: Object.freeze({ ...issue(parentNode, 'issue'), comments: parentThread(commentPages) }),
     sub_issues: Object.freeze(subIssues),
     repair_candidates: Object.freeze(nodes(search, 'repairs', null).map((entry, index) => {
       const node = obj(entry, `repairs[${index}]`);
@@ -228,19 +321,13 @@ export function decodePullRequestsRead(data: unknown, numbers: readonly number[]
     const headSha = sha(node.headRefOid, `${label}.headRefOid`);
     if (commit.oid !== headSha) fail(`${label} last commit is not the head`);
     const files = obj(node.files, `${label}.files`);
-    const filePaths = nodes(files, `${label}.files`, null).map((entry, index) => str(obj(entry, `${label}.files[${index}]`).path, `${label}.files[${index}].path`));
-    const rollup = commit.statusCheckRollup === null ? null : obj(commit.statusCheckRollup, `${label}.statusCheckRollup`);
-    const checks = rollup === null ? [] : nodes(rollup.contexts, `${label}.contexts`, 'hasNextPage').flatMap((entry, index) => {
-      const context = obj(entry, `${label}.contexts[${index}]`);
-      // A commit status (StatusContext) has no `name`; the board reads check runs only.
-      if (context.name === undefined) return [];
-      return [Object.freeze({
-        name: str(context.name, `${label}.contexts[${index}].name`),
-        status: str(context.status, `${label}.contexts[${index}].status`),
-        conclusion: nullableStr(context.conclusion, `${label}.contexts[${index}].conclusion`),
-        completed_at: context.completedAt === null ? null : time(context.completedAt, `${label}.contexts[${index}].completedAt`),
-      })];
-    });
+    const fileNodes = nodes(files, `${label}.files`, null).map((entry, index) => obj(entry, `${label}.files[${index}]`));
+    const filePaths = fileNodes.map((node, index) => str(node.path, `${label}.files[${index}].path`));
+    const complete = files.totalCount === filePaths.length;
+    const counted = complete && fileNodes.every(node => [node.additions, node.deletions].every(count => Number.isSafeInteger(count) && (count as number) >= 0));
+    const rollup = commit.statusCheckRollup === null ? [] : rollupContexts(obj(commit.statusCheckRollup, `${label}.statusCheckRollup`), label);
+    // The board rules read check runs only.
+    const checks = rollup.filter(context => context.type === 'CheckRun').map(({ name, status, conclusion, completed_at }) => Object.freeze({ name, status, conclusion, completed_at }));
     return Object.freeze({
       number,
       url: str(node.url, `${label}.url`),
@@ -253,10 +340,66 @@ export function decodePullRequestsRead(data: unknown, numbers: readonly number[]
       head_sha: headSha,
       head_committed_at: time(commit.committedDate, `${label} head committedDate`),
       merged_at: node.mergedAt === null ? null : time(node.mergedAt, `${label}.mergedAt`),
-      files: files.totalCount === filePaths.length ? Object.freeze(filePaths) : null,
+      files: complete ? Object.freeze(filePaths) : null,
+      changed_lines: counted ? fileNodes.reduce((sum, node) => sum + (node.additions as number) + (node.deletions as number), 0) : null,
       checks: Object.freeze(checks),
       comments: comments(node.comments, `${label}.comments`),
+      readiness_inputs: readinessInputs(node, rollup, label),
     });
+  });
+}
+
+function rollupContexts(rollup: Json, label: string): BoardRollupContextV1[] {
+  return nodes(rollup.contexts, `${label}.contexts`, 'hasNextPage').map((entry, index) => {
+    const context = obj(entry, `${label}.contexts[${index}]`);
+    const at = `${label}.contexts[${index}]`;
+    if (context.name !== undefined) {
+      return Object.freeze({
+        type: 'CheckRun', name: str(context.name, `${at}.name`), status: str(context.status, `${at}.status`),
+        conclusion: nullableStr(context.conclusion, `${at}.conclusion`),
+        completed_at: context.completedAt === null ? null : time(context.completedAt, `${at}.completedAt`),
+        details_url: nullableStr(context.detailsUrl, `${at}.detailsUrl`),
+      } as const);
+    }
+    if (context.context !== undefined) {
+      return Object.freeze({
+        type: 'StatusContext', name: str(context.context, `${at}.context`), status: str(context.state, `${at}.state`), conclusion: null,
+        completed_at: time(context.createdAt, `${at}.createdAt`), details_url: nullableStr(context.targetUrl, `${at}.targetUrl`),
+      } as const);
+    }
+    return fail(`${at} is neither a check run nor a commit status`);
+  });
+}
+
+function complete(connection: unknown, label: string): unknown[] | null {
+  const value = obj(connection, label);
+  const more = obj(value.pageInfo, `${label}.pageInfo`).hasNextPage;
+  if (typeof more !== 'boolean') fail(`${label}.pageInfo.hasNextPage is not a boolean`);
+  return more ? null : nodes(value, label, null);
+}
+
+function readinessInputs(node: Json, rollup: readonly BoardRollupContextV1[], label: string): BoardReadinessInputsV1 {
+  if (!Number.isSafeInteger(node.changedFiles) || (node.changedFiles as number) < 0) fail(`${label}.changedFiles is not a count`);
+  if (typeof node.isCrossRepository !== 'boolean') fail(`${label}.isCrossRepository is not a boolean`);
+  const reviews = complete(node.latestOpinionatedReviews, `${label}.latestOpinionatedReviews`);
+  const threads = obj(node.reviewThreads, `${label}.reviewThreads`);
+  const threadNodes = complete(threads, `${label}.reviewThreads`);
+  if (!Number.isSafeInteger(threads.totalCount) || (threads.totalCount as number) < 0) fail(`${label}.reviewThreads.totalCount is not a count`);
+  return Object.freeze({
+    changed_files: node.changedFiles as number,
+    mergeable: str(node.mergeable, `${label}.mergeable`),
+    review_decision: nullableStr(node.reviewDecision, `${label}.reviewDecision`),
+    cross_repository: node.isCrossRepository,
+    review_states: reviews === null ? null : Object.freeze(reviews.map((entry, index) => str(obj(entry, `${label}.latestOpinionatedReviews[${index}]`).state, `${label}.latestOpinionatedReviews[${index}].state`))),
+    threads: threadNodes === null ? null : Object.freeze({
+      total: threads.totalCount as number,
+      resolved: Object.freeze(threadNodes.map((entry, index) => {
+        const resolved = obj(entry, `${label}.reviewThreads[${index}]`).isResolved;
+        if (typeof resolved !== 'boolean') fail(`${label}.reviewThreads[${index}].isResolved is not a boolean`);
+        return resolved;
+      })),
+    }),
+    rollup: Object.freeze([...rollup]),
   });
 }
 
@@ -399,6 +542,42 @@ export function parseAcceptanceRecord(comment: BoardCommentV1): readonly Accepta
     if (subject) rows.push(Object.freeze({ round: Number(subject[2]), subject_sha: subject[1]!, verdict: subject[3] as 'PASS' | 'FAIL', harness: null, ...record }));
   }
   return rows.length === 0 ? null : Object.freeze(rows);
+}
+
+// A finding bullet of `review publish`: `- <severity> <id> at <path>:<line>: ...`, or `- P3 <id>: ...` for a NIT.
+const RECORD_FINDING = /^- P[0-3] ([^\s:]+)(?: at |: )/u;
+
+/**
+ * The finding IDs of an `acceptance record`, from the lines after its `Findings:` line. Every non-empty line must be a finding bullet
+ * of the `review publish` shape. A missing section, no line, or any other line (another bullet marker, indentation, a continuation)
+ * returns null: a finding that cannot be read cannot be named by a disposition, so the record stays unresolvable.
+ */
+export function parseRecordFindings(comment: BoardCommentV1): readonly string[] | null {
+  const lines = comment.body.replace(/\r\n/gu, '\n').split('\n');
+  const start = lines.findIndex(line => line.trim() === 'Findings:');
+  if (start < 0) return null;
+  const ids = lines.slice(start + 1).filter(line => line.trim() !== '').map(line => RECORD_FINDING.exec(line)?.[1]);
+  return ids.length === 0 || ids.some(id => id === undefined) ? null : Object.freeze(ids as string[]);
+}
+
+export interface AcceptanceDispositionV1 {
+  /** The comment id of the FAIL record that the disposition names. */
+  readonly record: string;
+  readonly subject_sha: string;
+  readonly findings: readonly string[];
+}
+
+/**
+ * An `acceptance disposition` comment (`templates.md`): the coordinator resolves named findings of one FAIL record at one subject
+ * with a recorded decision. Null unless `Record:` and `Decision:` are comment URLs, `Subject:` is a full SHA and `Findings:` lists IDs.
+ */
+export function parseAcceptanceDisposition(comment: BoardCommentV1): AcceptanceDispositionV1 | null {
+  const record = commentId(field(comment.body, 'Record') ?? '');
+  const decision = commentId(field(comment.body, 'Decision') ?? '');
+  const subject = /^[0-9a-f]{40}$/u.exec(field(comment.body, 'Subject') ?? '')?.[0];
+  const findings = (field(comment.body, 'Findings') ?? '').split(',').map(id => id.trim()).filter(id => id !== '');
+  if (record === null || decision === null || subject === undefined || findings.length === 0) return null;
+  return Object.freeze({ record, subject_sha: subject, findings: Object.freeze(findings) });
 }
 
 const REFS = /(?<![A-Za-z0-9_])refs?\s*:?\s*#([1-9][0-9]*)/giu;

@@ -3,30 +3,163 @@
 All notable changes to this skill are documented here.
 
 ## [Unreleased]
+
+### Added
+
+- feat(seats): `--spend-credits` lets `repo-harness quota` and `repo-harness seats argv` treat an exhausted ChatGPT account as `tight` (`chatgpt tight, on credits`) while an owner authorization for credits is recorded. `seatAccountQuotas` takes an optional `{ spendCredits: boolean }` that applies only when the account state is `exhausted`, `codex.rate_limit_reached_type` is null and `codex.credits.has_credits` or `unlimited` is true. Without the flag every output is unchanged, and board dispatch, the console and `seats reset` keep the default. (#2251)
+
+### Changed
+
+- The herdr-core floor is 0.1.20 (#2255). Run `hc update` to 0.1.20 before this release is installed: an hc 0.1.19 client fails the floor check.
+
+## [0.30.0] - 2026-11-10
+
+### Added
+
+- [feat(release): one workflow run publishes, tags and releases a merged release commit (#2194)](https://github.com/aimpact-inc/repo-harness/pull/2198). One run of `.github/workflows/release.yml` publishes, tags and releases a merged release commit after the owner approves the run in the GitHub `release` environment.
+- [feat(review): publish a round above 5 only with an owner-record URL](https://github.com/aimpact-inc/repo-harness/pull/2138)
+- [feat(publication): enqueue through a required merge queue; CI runs on merge_group (#2076)](https://github.com/aimpact-inc/repo-harness/pull/2089). The direct merge stays the default.
+- [feat(seats): seats prefix sets panePrefix in the registry (#2058)](https://github.com/aimpact-inc/repo-harness/pull/2129). `repo-harness seats prefix --repo <path> --pane-prefix <p>` sets the prefix and prints JSON (`ok`, `path`, `registryPath`, `registered`, `changed`, `panePrefix`).
+- [feat(seats): explicit orchestrator, advisor and seat-handoff skills (#2175)](https://github.com/aimpact-inc/repo-harness/pull/2182). Each launch skill is one Bash script: `gh api`, `herdr-app ls`, `hc ls` and `seats argv --json` run as separate checked steps; a failed or unparsable probe stops the script and never reads as "no seat" or "no space".
+- [feat(archimap): measure.ts reports geometry findings of the boards that hold nodes](https://github.com/aimpact-inc/repo-harness/pull/2168). Findings do not change the exit code.
+- [feat(archimap): measure.ts reports line_through_box by the 8 px inset rule (#2185)](https://github.com/aimpact-inc/repo-harness/pull/2189). `measure.ts --map` reports `line_through_box` by one stated rule with no path-end case.
+- [feat(operator-web): the module map draws directed domain routes and lists a selected card's relations (#2153)](https://github.com/aimpact-inc/repo-harness/pull/2200). A selected card shows its relations in the right panel (PRD 2-ARCH-P2).
+- [feat(specs): check the boss command send with TLC (#2180)](https://github.com/aimpact-inc/repo-harness/pull/2191). Keep a checked TLA+ model of the boss command send on main, with one command to run it and an architecture entry that names it.
+- [feat(operator): observe repository seats from hc events (#2163)](https://github.com/aimpact-inc/repo-harness/pull/2201). Serve seats from memory so a seats GET starts no CLI read.
+
+### Changed
+
+- [feat(operator-web): one first-viewport rule for the architecture maps (#2151)](https://github.com/aimpact-inc/repo-harness/pull/2167). Each architecture map opens with its first row and its left edge on screen, at a readable size.
+- [feat(operator-web): topology routes follow the dagre route on screen and in the SVG file (#2152)](https://github.com/aimpact-inc/repo-harness/pull/2192)
+- [feat(operator-web): Layers draws its lanes on the placed scene and the shared shell (#2160)](https://github.com/aimpact-inc/repo-harness/pull/2203). Layers uses the shared scene, shell and exporter.
+- [feat(operator-web): Sequence returns a placed scene, and message labels fit their columns (#2161)](https://github.com/aimpact-inc/repo-harness/pull/2205). Its SVG file draws the picture on the screen.
+- [feat(operator-web): the Office room shows the seats before the board read ends (#2149)](https://github.com/aimpact-inc/repo-harness/pull/2174)
+- [feat(operator): the board summaries route reads one parent and starts no board CLI run](https://github.com/aimpact-inc/repo-harness/pull/2159). A missing, repeated or other key gets 400 `invalid_request` with `The board summaries route needs exactly one parent issue number.`
+- [perf(board): one board read asks GitHub once for the repository identity and each base-commit fact (#2150)](https://github.com/aimpact-inc/repo-harness/pull/2184). It stores an answer only for exit 0, or exit 1 with a JSON object body of `"status": "404"`.
+- [fix(board): Low labels give Medium to a fix above 50 changed lines or of unknown size (#2113)](https://github.com/aimpact-inc/repo-harness/pull/2118). The High-list, hazard and incomplete-file-list checks still run first and are unchanged.
+- [refactor(review): remove the unused v1 diff fingerprint (#2211)](https://github.com/aimpact-inc/repo-harness/pull/2226). The unused v1 path and one unused provenance copy are gone.
+
+### Fixed
+
+- [fix(board): read every comment page of the batch parent (#2157)](https://github.com/aimpact-inc/repo-harness/pull/2158). A parent thread above 10,000 comments fails the board read and dispatch closed with `board source invalid: issue.comments has more than 100 pages of 100`; it never reads a partial thread.
+- [fix(board): read every sub-issue page of the batch parent (#2123)](https://github.com/aimpact-inc/repo-harness/pull/2130). `readParent` runs the same query again with each cursor until the last page. A repeated cursor and more than `BOARD_SUB_ISSUE_PAGES` (20) pages fail closed in the `readParent` loop.
+- [fix(board): an unreadable reviewed head gives no merge-only sync proof (#2091)](https://github.com/aimpact-inc/repo-harness/pull/2136). A reviewed head that git cannot read must not drop a FAIL candidate from the merge-only sync proof.
+- [fix(seats): restrict resets to the same repository peer (#2196)](https://github.com/aimpact-inc/repo-harness/pull/2199). Check that the reset caller is the opposite peer seat in the same repository as the handoff.
+- [fix(git): replace provider-token values in git output and errors (#2131)](https://github.com/aimpact-inc/repo-harness/pull/2169). `spawnGit` and `runGit` throw for a call that keeps a token.
+- [fix(git): keep provider tokens away from local git child processes (#2102)](https://github.com/aimpact-inc/repo-harness/pull/2103). Git child processes do not get provider tokens, except the remote operations that need them for `gh auth git-credential`.
+- [fix(review): move modelFamily to its own module so the browser graph imports no Node built-in (#2146)](https://github.com/aimpact-inc/repo-harness/pull/2170). `modelFamily` now lives in `src/core/review/model-family.ts`, which has no import.
+- [fix(operator): the architecture map collector publishes a repository when its child returns](https://github.com/aimpact-inc/repo-harness/pull/2186). A failed child publishes `unavailable` at once.
+- [fix(board): read gh status and cap watcher errors (#2120)](https://github.com/aimpact-inc/repo-harness/pull/2124). Read a whole `gh: HTTP NNN` line, a trailing `(HTTP NNN)`, or an `HTTP NNN:` line.
+- [fix(ci): count late scheduled runs as delivered (#2121)](https://github.com/aimpact-inc/repo-harness/pull/2126). Count a matching scheduled `ci.yml` run on `main` as delivered when its status is `requested`, `queued`, `pending`, `waiting`, `in_progress` or `completed`.
+- [fix(ci): select shared platform lanes for consumer scripts (#2132)](https://github.com/aimpact-inc/repo-harness/pull/2144). Add `scripts/ci-path-consumers.ts` and `scripts/ci-documentation-consumers.ts` to the existing shared-input predicate.
+- [fix(evidence): classify package manager mismatch codes (#2122)](https://github.com/aimpact-inc/repo-harness/pull/2125). Existing assertions retain precedence over excerpt install errors.
+- [fix(evidence): recognize install verbs and prioritize excerpt assertions (#2114)](https://github.com/aimpact-inc/repo-harness/pull/2116). Recognize failed install steps with install verb forms and give excerpt assertions priority over excerpt install errors.
+
+### Documentation
+
+- [docs(rules): code ownership default in the global working rules (#2187)](https://github.com/aimpact-inc/repo-harness/pull/2188). The sync treats an unlisted section as a user section, so the `SHIPPED_GLOBAL_RULES_SECTIONS` entry is required.
+- [docs(rules): clarify owner decisions for hooks (#2195)](https://github.com/aimpact-inc/repo-harness/pull/2197). Changes to hook behavior or configuration remain owner decisions.
+- [docs(issue-flow): clarify model-free writer claims (#2127)](https://github.com/aimpact-inc/repo-harness/pull/2128). Keep a dispatched writer claim valid when the seat has no configured model.
+- [docs(herdr-notify): set pane prefix with seats command (#2137)](https://github.com/aimpact-inc/repo-harness/pull/2139). Replace the manual registry edit in both herdr-notify reference copies with `repo-harness seats prefix --repo <path> --pane-prefix <p>`.
+- [docs(release): record 0.29.2 publication (#2143)](https://github.com/aimpact-inc/repo-harness/pull/2147). Update the 0.29.2 checklist with the registry readback, release tag, GitHub Release and post-publish checks.
+- [chore(projection): refresh generated architecture outputs for main@edf140e8e63f](https://github.com/aimpact-inc/repo-harness/pull/2119)
+- [chore(projection): refresh generated architecture outputs for main@f39523789188](https://github.com/aimpact-inc/repo-harness/pull/2141)
+- [chore(projection): refresh generated architecture outputs for main@67fefda5110f](https://github.com/aimpact-inc/repo-harness/pull/2171)
+- [chore(projection): refresh generated architecture outputs for main@e8c717a26ae6](https://github.com/aimpact-inc/repo-harness/pull/2183)
+- [skills: verify-boss-command names src/effects/operator/server.ts in its change list (#2209)](https://github.com/aimpact-inc/repo-harness/pull/2210). The verify-boss-command skill tells a person to run the TLA+ check when `src/effects/operator/server.ts` changes.
+- [chore(projection): refresh generated architecture outputs for main@176afd079d9a](https://github.com/aimpact-inc/repo-harness/pull/2217)
+- [docs(rules): the publish gate is the owner's release environment approval](https://github.com/aimpact-inc/repo-harness/pull/2224). Since #2194 (PR #2198), `release.yml` publishes after the owner approves its run in the GitHub `release` environment.
+
+### Tests
+
+- [test(release): one drift check binds the two CHANGELOG section extractions (#2204)](https://github.com/aimpact-inc/repo-harness/pull/2206). A check now fails when the two inline `awk` copies drift.
+- [test(herdr-task): synchronize late child before leader exit (#2140)](https://github.com/aimpact-inc/repo-harness/pull/2142). The child now sends an IPC readiness message after it installs its TERM and HUP handlers.
+
+### Upgrade
+
+- Upgrade with `bun add -g repo-harness@0.30.0 --no-cache && repo-harness update --version 0.30.0`; restart the Operator server and reload the page. Version sources: `package.json`, `packages/operator-web/package.json` and `assets/skill-version.json`.
+- Before the first owner run of `.github/workflows/release.yml`, create and verify npm Trusted Publishing for both packages (repository `aimpact-inc/repo-harness`, workflow `release.yml`, environment `release`) and the GitHub `release` environment (owner required reviewer, `main` only, admin bypass disabled). Use the read-only environment check in `deploy/release-checklists/261110-repo-harness-0.30.0.md` before dispatch. ([PR #2198](https://github.com/aimpact-inc/repo-harness/pull/2198))
+- `src/cli/installer/global-context.ts` adds `Code Ownership` to the shipped titles. Sync replaces the managed block and legacy sections with shipped titles outside the markers; personal sections with other titles outside the markers stay. ([PR #2188](https://github.com/aimpact-inc/repo-harness/pull/2188))
+- The two launch skills are `assets/skills/repo-harness-orchestrator/SKILL.md` and `assets/skills/repo-harness-advisor/SKILL.md`; they use `seats argv`. The handoff skill, `assets/skills/repo-harness-seat-handoff/SKILL.md`, invokes `seats handoff` and follows its printed steps. `assets/skill-commands/manifest.json` declares all three for Claude with owner `peer-runtime`; the selected plugins must include `peer-runtime`. ([PR #2182](https://github.com/aimpact-inc/repo-harness/pull/2182))
+- `src/effects/operator/server.ts` changes the board summaries route: 0.29.2 accepted a request with no query string and rejected query parameters; 0.30.0 requires exactly one `parent` query parameter and returns 400 `invalid_request` without it. ([PR #2159](https://github.com/aimpact-inc/repo-harness/pull/2159))
+- `src/core/board/parents.ts` changes the parents document to protocol 5 and refuses protocol 4; `src/effects/operator/server.ts` serves seats separately. Update custom parents-route clients with the CLI and web console. ([PR #2201](https://github.com/aimpact-inc/repo-harness/pull/2201))
+- `src/core/publication/acceptance-merge-policy.ts` defaults `publication.merge_queue` to `off`. A repository that enables it needs the `merge_group` trigger and matching `Required / CI` jobs, as shipped in `.github/workflows/ci.yml`. ([PR #2089](https://github.com/aimpact-inc/repo-harness/pull/2089))
+
+### Rollback
+
+- Run `bun add -g repo-harness@0.29.2 --no-cache && repo-harness update --version 0.29.2`. Restart the Operator server and reload the page. Version sources: `package.json` and `packages/operator-web/package.json` at `v0.29.2`.
+
+## [0.29.2] - 2026-11-10
+
+### Changed
+
+- Medium acceptance requires a claimed different-family PASS row. `board review` selects a reviewer of a different family. A FAIL row blocks acceptance. (#2084, PR #2098)
+- Dispatch binds each writer claim to the active parent coordinator. It refuses dispatch when no active coordinator claim is available. (#2100, PR #2104)
+- Dispatch writes the writer model in the claim. The board derives the writer family from `Model:`, skips plan-held PRs in review, and accepts `board review --pr <n>`. Claims without a model have an unknown family. (#2101, PR #2105)
+- The newest proven reviewed subject decides merge-only sync carry. A FAIL on that subject or the head blocks carry; a FAIL on an older proven subject does not. (#2107, PR #2110)
+
+### Fixed
+
+- The attention watcher records provider HTTP 5xx failures and retries in the next 15-minute window. Other board read errors still stop it. (#2109, PR #2111)
+- Required check evidence classifies install failures from failed install steps or matching install error text. Setup warnings alone no longer mask assertion or timeout failures. (#2108, PR #2112)
+
+### Documentation
+
+- The issue-flow worker pushes its branch, opens its PR and handles its own fix rounds. The orchestrator retains dispatch, review starts and merge. (#2066, PR #2097)
+- Current reference configs, skill links and localized install instructions use the transferred repository address `aimpact-inc/repo-harness`. (#2095, PR #2099)
+
+### Upgrade
+
+- Run `bun add -g repo-harness@0.29.2 --no-cache && repo-harness update --version 0.29.2`. Restart the Operator server and reload the page.
+- Installed 0.29.1 does not write the `Coordinator:` and `Model:` claim lines, apply the newest-subject carry rule, or keep the attention watcher running after a provider 5xx. Claims without `Model:` have an unknown writer family; start a different-family review by hand when needed.
+
+### Rollback
+
+- Run `bun add -g repo-harness@0.29.1 --no-cache && repo-harness update --version 0.29.1`. Restart the Operator server and reload the page.
+
+## [0.29.1] - 2026-11-09
+
+This release lets the board merge one eligible batch PR (`board merge`), makes
+High-tier acceptance need two PASS reviews, and moves the review tier to a
+High list. It also carries the merge-only sync rule for acceptance, a wider
+Bash tripwire and a Markdown-aware reference parser.
+
+### Added
+
 - `repo-harness board merge --parent <n> [--pr <p>] [--dry-run]` merges one eligible PR of a batch through `publication merge`. It requires a PASS acceptance record for the head at every tier, for High the two PASS rows of the board acceptance rule (#2061), `Required / CI`, a ready readiness verdict, plan merge order and no hold. `repo-harness merge hold` and `merge hold released` records on the parent, an issue or a PR narrow it, and the GitHub events Worker filter passes both headers. Board rule A11 wakes the orchestrator when a PR is eligible; the watcher never merges. The board document is protocol 4; a protocol-3 board fails decode. (#2003)
-- Review by risk follows the owner ABD decision (#2079). High is only permissions, sandbox and tool grants; hooks and the mutation guard; credentials and secrets; deletion; release, publish and deploy; merge and push paths; and the change hazard list. Code that writes GitHub comments, records, reviews or labels is Medium. Low is docs-only, tests-only, the projection PR, or a fix of at most 50 changed lines outside the High list. `assets/review-high-list.v1.json` holds the path-visible High list; `agentic-development-flow.md` renders it. Board rule R5 reads it instead of the capability count. A changed path on the High list or the hazard list, or an incomplete file list, sets the effective tier of a pull request to High, so `board review` and acceptance use the same tier.
 - `board attention --watch --deliver --review --space <id>` runs the `board review` path once per window, after the board read and before delivery, and starts only the read-only review seats. Each start or refusal is one `review` line in the attention jsonl and one hc message to the orchestrator; a failed run is a refusal line and does not end the watcher. `board attention start --review --space <id>` starts the watcher with the flag. The flag is off by default. (#2078)
+- `bash scripts/release-owner-steps.sh plan <version>` prints the owner's release command list, bound to the release commit on `origin/main`: publish both packages, read them back, tag that commit, create the GitHub Release, then the post-release steps. `check published` and `check tagged` read back each owner step and stop at the first failure; `notes` prints the CHANGELOG section. The script only reads git, npm and GitHub. `check:release-published --before-tag` skips only the tag check. (#2006)
+
+### Changed
+
+- Review by risk follows the owner ABD decision (#2079). High is only permissions, sandbox and tool grants; hooks and the mutation guard; credentials and secrets; deletion; release, publish and deploy; merge and push paths; and the change hazard list. Code that writes GitHub comments, records, reviews or labels is Medium. Low is docs-only, tests-only, the projection PR, or a fix of at most 50 changed lines outside the High list. `assets/review-high-list.v1.json` holds the path-visible High list; `agentic-development-flow.md` renders it. Board rule R5 reads it instead of the capability count. A changed path on the High list or the hazard list, or an incomplete file list, sets the effective tier of a pull request to High, so `board review` and acceptance use the same tier.
 - Board acceptance of an open High or unknown-tier pull request needs `PASS` rows of the head that cite two distinct `acceptance claim` comments of the pull request with the row's subject and round (the comment id is the identity), at least one with `Model relation: different-family`, and no `FAIL` row. One review no longer accepts a High head. A missing, blank or malformed `Claim:`, or one that names no claim comment, proves no claim, and `Model relation: unknown` (an unknown writer family) never counts as the different-family review. `claude_review` is now a projection of that rule: `pending` for every open High head that does not meet it and has no Claude row, a Claude writer included, so `board review` starts the Claude reviewer seat and A10 reports the head until the second review exists. The writer claim's `Runtime:` no longer decides it. A sync head is a new head: High needs two sync check rows by the same rule, Medium one (`acceptor.md` §2.2). `repo-harness review publish` accepts rounds 1 to 5 (round 5 is the hard stop), so a High head that converges in round 4 or 5 also gets two claimed rows; the hand-posted record of a round above 3 is retired. Medium and Low are unchanged. (#2061)
+- Board acceptance carries the acceptance rows of an earlier reviewed head to a later head that is a merge-only sync of it. Git must prove two facts: the reviewed head is an ancestor of the head, and each commit that the head adds outside the reviewed head and the base is the clean automatic merge of a base commit (`git merge-tree --write-tree` of its parents exits 0 with the tree of the merge commit, one merge base). The board reads the rows of the head and of the newest proven reviewed subject. A FAIL row on that subject or the head stops the carry; a FAIL on an older proven subject does not. (#2107) An empty PR diff, or a git error on any candidate, gives no proof. The board then reports `via: sync` with `carried_from: <reviewed head>`, so a sync after a merge needs CI only. A conflict (even one resolved to the PR side), an edit in a merge, a new commit, a failed git step or fetch, an incomplete file list or a hook path keeps the head unaccepted until its own review. (#2074)
+- The repository moved to `aimpact-inc/repo-harness` (same repository id; old URLs redirect). The package `repository.url`, the external tooling doc URL in the tool catalog, and the install and clone lines in README and `docs/usage.md` use the new owner. Localized READMEs and the rest follow in #2095.
 
 ### Fixed
 
 - The Bash write tripwire denies more forms that reach `_ops` or `_ref`. A case variant such as `_OPS/x` counts as `_ops/x`, because macOS and Windows filesystems ignore case by default. Unquoted brace words (`_op{s,x}`, `_op{r..t}`) are expanded and `~+` reads as the working directory; quoted characters stay literal. Subshells and `$(...)` between commands are parsed, and a backslash-newline or a quoted newline joins lines; heredoc forms outside the grammar, quoted or mid-argument command substitution, process substitution, glob matches that are symlinks, a bracket-only `cd` glob (`cd _op[s]`), a target with a quoted newline, `~` and `~user` stay unmodeled (#2082). After a `cd` with an option or an expanded operand that can reach a protected or external directory, a relative write is denied. Denied as targets with no known destination: a glob that can reach `..` (bash 3.2 expands `.*` to `..`), a relative `..` target from an unknown directory, `~-`, a brace expansion above 1024 words or outside safe integers, and a command with unbalanced parentheses, an unclosed quote or a `(` glued to a word. (#2060)
-
-### Added
-
-- `bash scripts/release-owner-steps.sh plan <version>` prints the owner's release command list, bound to the release commit on `origin/main`: publish both packages, read them back, tag that commit, create the GitHub Release, then the post-release steps. `check published` and `check tagged` read back each owner step and stop at the first failure; `notes` prints the CHANGELOG section. The script only reads git, npm and GitHub. `check:release-published --before-tag` skips only the tag check. (#2006)
+- `board closeout` also closes the seat terminals that work in the PR head worktree, so a PR that only says `Refs #<issue>` closes its seats and removes its worktree in one run. Such a seat needs an issue label that the PR closes or that `parseRefs` reads after `Refs` in the PR body. (#2071)
+- The board reference parser reads the PR and issue body as Markdown. A reference example in a code span, code block, blockquote or HTML comment no longer links an issue, and a real reference after a line break or after HTML still does. Board selection, effective tiers and closeout share this one parser. It adds the runtime dependency `mdast-util-from-markdown@2.1.0`, already in the lockfile. (#2085)
 
 ### Documentation
 
+- The issue-flow skill and the root agent rules use one module + tier work package per PR (150-500 product lines), publish ready green PRs once per window with `publication batch build` and `publication merge --batch`, count only blocking findings (P0-P2) in the fix-loop rule, and add the writer pre-check before round 2 and later. (#2086)
 - Record the 0.29.0 publication in its release checklist. (#2065)
+- Refresh generated architecture outputs. (#2070, #2075)
 
-### Changed
+### Upgrade
 
-- Board acceptance carries the acceptance rows of an earlier reviewed head to a later head that is a merge-only sync of it. Git must prove two facts: the reviewed head is an ancestor of the head, and each commit that the head adds outside the reviewed head and the base is the clean automatic merge of a base commit (`git merge-tree --write-tree` of its parents exits 0 with the tree of the merge commit, one merge base). The board reads the rows of the head and of the newest proven reviewed head, and a FAIL row on any proven head or on the head stops the carry. An empty PR diff, or a git error on any candidate, gives no proof. The board then reports `via: sync` with `carried_from: <reviewed head>`, so a sync after a merge needs CI only. A conflict (even one resolved to the PR side), an edit in a merge, a new commit, a failed git step or fetch, an incomplete file list or a hook path keeps the head unaccepted until its own review. (#2074)
+- Run `bun add -g repo-harness@0.29.1 --no-cache && repo-harness update --version 0.29.1`.
+  Restart the Operator server and reload the page.
+- Installed 0.29.0 lacks the two-row High check (#2061), the Medium/High lists of #2083 and the merge-only sync carry of #2081. The board document is protocol 4 (#2003), so update the Operator server and any board reader together.
+- `repo-harness update` installs the Bash tripwire hook from #2069. The tripwire is still a literal-write check, not a shell parser; the forms it leaves unmodeled are listed in #2082.
 
-### Fixed
+### Rollback
 
-- `board closeout` also closes the seat terminals that work in the PR head worktree, so a PR that only says `Refs #<issue>` closes its seats and removes its worktree in one run. Such a seat needs an issue label that the PR closes or that `parseRefs` reads after `Refs` in the PR body. (#2071)
+- Run `bun add -g repo-harness@0.29.0 --no-cache && repo-harness update --version 0.29.0`.
+  The 0.29.0 CLI has no `board merge` and decodes only protocol-3 board documents. The 0.29.0 hook returns to the narrower tripwire. (#2003, #2060)
 
 ## [0.29.0] - 2026-11-09
 

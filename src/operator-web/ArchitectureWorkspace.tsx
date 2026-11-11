@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { Json } from 'archctx-contracts';
 import type { ModuleDetailV1, ModuleIndexV1, ModuleState } from '../core/architecture/module-view';
 import type { ModuleReviewPromptV1 } from '../core/review/module-review-prompt';
 import { decodeArchitectureModuleDetail, decodeArchitectureModuleIndex, decodeArchitectureReviewPrompt } from '../core/operator/architecture';
-import { ArchitectureHistory, type HistorySummary } from './ArchitectureHistory';
-import { ArchitectureMap, type ArchitectureBaseMap, type ArchitectureMapReader, type ArchitectureMapSummary } from './ArchitectureMap';
+import { ArchitectureHistory, type HistoryReader, type HistorySummary } from './ArchitectureHistory';
+import { ArchitectureMap, type ArchitectureSelect, type ArchitectureSelections, type ArchitectureBaseMap, type ArchitectureMapReader, type ArchitectureMapSummary } from './ArchitectureMap';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { ModuleGraph } from './ModuleGraph';
 import { useObservationRefresh } from './useObservationRefresh';
@@ -278,7 +278,15 @@ function ViewTabs({ view, counts, onChange, t }: {
   </div>;
 }
 
-export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule, onSource, refreshGeneration, readMap, t }: {
+/** The base-map selections of one repository and one shown map commit; another repository or commit empties them. */
+interface SelectionStore { readonly repositoryId: string; readonly commit: string | null; readonly selections: ArchitectureSelections }
+type StoreAction = { readonly type: 'select'; readonly select: ArchitectureSelect } | { readonly type: 'shown'; readonly repositoryId: string; readonly commit: string | null };
+function selectionStore(state: SelectionStore, action: StoreAction): SelectionStore {
+  if (action.type === 'select') return { ...state, selections: { ...state.selections, [action.select.view]: { scope: action.select.scope, id: action.select.id } } };
+  return action.repositoryId === state.repositoryId && action.commit === state.commit ? state : { repositoryId: action.repositoryId, commit: action.commit, selections: {} };
+}
+
+export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule, onSource, refreshGeneration, readMap, readHistory = fetchArchitecture, t }: {
   readonly repositoryId: string;
   /** `owner/name` on GitHub, for commit links in the history. */
   readonly github: string | null;
@@ -289,9 +297,16 @@ export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule
   readonly refreshGeneration: number;
   /** The map route's reader; fixtures inject one. */
   readonly readMap?: ArchitectureMapReader;
+  /** The history route's reader; fixtures inject one. */
+  readonly readHistory?: HistoryReader;
   readonly t: OperatorTranslate;
 }) {
   const [view, setView] = useState<ArchitectureView>('map');
+  const [store, dispatchSelection] = useReducer(selectionStore, { repositoryId, commit: null, selections: {} });
+  // A new repository empties the selections during this render, whatever tab shows.
+  if (store.repositoryId !== repositoryId) dispatchSelection({ type: 'shown', repositoryId, commit: null });
+  const selections = store.repositoryId === repositoryId ? store.selections : {};
+  const select = useCallback((action: ArchitectureSelect) => dispatchSelection({ type: 'select', select: action }), []);
   const root = repositoryPath(repositoryId);
   const modulePath = moduleId === null ? null : `${root}/${moduleId}`;
   const index = useArchitectureRead(moduleId === null && view === 'modules' ? root : null, decodeArchitectureModuleIndex, refreshGeneration);
@@ -306,8 +321,10 @@ export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule
   }, [repositoryId]);
   const onSummary = useCallback((summary: ArchitectureMapSummary | null) => {
     setMapSource(summary === null ? null : { commit: summary.commit, collectedAt: summary.collectedAt, headRef: summary.headRef, archctxVersion: summary.archctxVersion });
+    // A new shown commit empties the selections; a closed map (null) keeps them.
+    if (summary !== null) dispatchSelection({ type: 'shown', repositoryId, commit: summary.commit });
     if (summary !== null) count({ map: summary.modules, sequence: summary.flows });
-  }, [count]);
+  }, [count, repositoryId]);
   const onHistory = useCallback((summary: HistorySummary | null) => {
     setHistorySource(summary);
     if (summary !== null) count({ history: summary.total });
@@ -325,8 +342,8 @@ export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule
     {moduleId === null ? <>
       <ViewTabs view={view} counts={counts?.repositoryId === repositoryId ? counts.value : {}} onChange={setView} t={t} />
       <div id="architecture-view" className="architecture-view" role="tabpanel" aria-labelledby={`architecture-tab-${view}`}>
-        {view === 'history' ? <ArchitectureHistory path={historyPath(repositoryId)} github={github} read={fetchArchitecture} refreshGeneration={refreshGeneration} onSummary={onHistory} t={t} />
-          : view !== 'modules' ? <ArchitectureMap repositoryId={repositoryId} view={BASE_MAPS[view]} read={readMap} refreshGeneration={refreshGeneration} onModule={onModule} onSummary={onSummary} t={t} /> : <>
+        {view === 'history' ? <ArchitectureHistory path={historyPath(repositoryId)} github={github} read={readHistory} refreshGeneration={refreshGeneration} selection={selections.history ?? null} select={select} onSummary={onHistory} t={t} />
+          : view !== 'modules' ? <ArchitectureMap repositoryId={repositoryId} view={BASE_MAPS[view]} read={readMap} refreshGeneration={refreshGeneration} selections={selections} select={select} onModule={onModule} onSummary={onSummary} t={t} /> : <>
             <ReadStatus read={index} loading="architecture.loading" t={t} />
             {index.value && <ModuleList index={index.value} onModule={onModule} t={t} />}
           </>}

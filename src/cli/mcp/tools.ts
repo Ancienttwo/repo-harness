@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'fs';
 import { homedir } from 'os';
 import { basename, isAbsolute, join, resolve } from 'path';
@@ -14,6 +14,7 @@ import { currentGitBranch, isRepoHarnessAdopted, resolveMcpRepoRoot } from './re
 import { redactMcpText } from './redaction';
 import { buildStateToolDefinitions, callStateTool, isStateTool } from './state-tools';
 import { buildFleetToolDefinitions, callFleetTool, fleetToolArgumentError, isFleetTool } from './fleet-tools';
+import { numberArg } from './general-repo-access';
 import type { McpPolicy } from './types';
 import type { WorkspaceManager } from './workspaces';
 import type { GeneralRepoCodeGraphAdapter } from '../tools/codegraph-reader';
@@ -208,12 +209,6 @@ function discoverySortWeight(repoRoot: string, query = ''): string {
   return `${queryWeight}:${locationWeight}:${repoRoot}`;
 }
 
-function numberArg(value: unknown, fallback: number, min: number, max: number): number {
-  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(Math.max(Math.trunc(parsed), min), max);
-}
-
 function stringArgList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((entry) => String(entry).trim()).filter(Boolean);
@@ -378,10 +373,6 @@ function targetRepoRoot(ctx: McpToolContext, args: Record<string, unknown>): { o
 
 function isProbablyBinary(bytes: Buffer): boolean {
   return bytes.subarray(0, Math.min(bytes.length, 8000)).includes(0);
-}
-
-function sha256(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
 }
 
 function fileSummary(path: string, repoRoot: string): { path: string; size: number; modifiedAt: string } | null {
@@ -792,7 +783,7 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         return textResult({
           path: decision.relativePath,
           size: fileStat.size,
-          sha256: sha256(raw),
+          sha256: sha256Hex(raw),
           redactions: redacted.redactions,
           content: redacted.text,
         });

@@ -22,7 +22,9 @@ added. Do not turn this result into an automatic third stage.
   byte counts, and copy status. The four source modules and two test files plus
   their helper are byte-exact. `vendor/LICENSE` retains the full MIT notice.
 - `results.json` is the detailed machine-readable result. `comparison.test.ts`
-  produces the comparison fields as a single JSON log line.
+  produces the comparison fields as a single JSON log line. The #2190 fixture
+  repair replays base protection reads and refreshes the recorded logical read
+  counts. The readiness verdicts and experiment decision stay the same.
 - The parent plan is
   the retired document-handoff design in git history.
   It is a separate change and can be absent on this branch.
@@ -102,8 +104,9 @@ are not a production efficiency comparison.
 1. Three unchanged pending polls:
    - Simple watcher: three WAITING messages, two duplicates.
    - Minimal baseline: one message, zero duplicates.
-   - Logical reads: watcher 12, collector 24. The collector performs identity,
-     check-run, rollback activation, and review binding checks the observer lacks.
+   - Logical reads: watcher 12, collector 36. The collector performs identity,
+     base protection, check-run, rollback activation, and review binding checks
+     the observer lacks.
 2. Service becomes available at second 120:
    - Upstream exponential retry: attempts at 0, 60, and 180. Three attempts.
    - Fixed baseline poller: thirteen attempts. It recovers at 120.
@@ -152,7 +155,7 @@ proposed production adapter.
 
 ## Verification and limits
 
-Current private test run: 64 passed, zero failed, 234 assertions across three files.
+Current private test run: 64 passed, zero failed, 245 assertions across three files.
 There are 29 selected upstream tests and 35 comparison/integrity tests.
 The private TypeScript project passes. The unchanged repository root typecheck
 also passes. Source hashes and license checks pass inside the test suite.

@@ -825,10 +825,6 @@ function checkStateSnapshotAdapter(
   });
 }
 
-function compactProcessOutput(value: string | null | undefined): string {
-  return (value ?? '').trim().replace(/\s+/g, ' ').slice(0, 500);
-}
-
 function checkGeneratedCapabilityProjection(
   repoRoot: string,
   violations: StateBoundaryViolation[],

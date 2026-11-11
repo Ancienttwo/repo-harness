@@ -30,18 +30,11 @@ export function taskkillAttemptSucceeded(result: { readonly status: number | nul
 
 /** POSIX process-group probe. Permission errors cannot prove absence. */
 export function processGroupExists(pgid: number): boolean {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ESRCH') return false;
-    if (code === 'EPERM') return true;
-    throw error;
-  }
+  return processExists(-pgid);
 }
 
-function processExists(pid: number): boolean {
+/** Probe a PID, or a negative POSIX PGID: ESRCH means absent, EPERM means present; other errors throw. */
+export function processExists(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;

@@ -1,4 +1,5 @@
-import { createHash } from 'crypto';
+import { isRecord } from '../../core/evidence/is-record';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync } from 'fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { hashManagedTree, installedCopyTreeOptions, OWNER_MARKER } from '../managed-tree';
@@ -69,11 +70,8 @@ export interface ManifestSurface {
   readonly symlink_target?: string | null;
 }
 
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 function hash(bytes: string | Buffer): string {
-  return `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+  return sha256Prefixed(bytes);
 }
 function stat(path: string): ReturnType<typeof lstatSync> | null {
   try { return lstatSync(path); } catch (error) {
@@ -220,9 +218,9 @@ export function stripLegacyHookEntries(
   value: unknown,
   options: { readonly location?: 'project' } | { readonly location: 'global'; readonly home: string; readonly repoHarnessHome?: string } = {},
 ): { config: Record<string, unknown>; removed: readonly { event: string; command: string }[] } {
-  if (!record(value)) throw new Error('hook settings must be a JSON object');
+  if (!isRecord(value)) throw new Error('hook settings must be a JSON object');
   if (value.hooks === undefined) return { config: { ...value }, removed: [] };
-  if (!record(value.hooks)) throw new Error('managed hook config must be an object keyed by event');
+  if (!isRecord(value.hooks)) throw new Error('managed hook config must be an object keyed by event');
   const location = options.location ?? 'project';
   const shimPaths = options.location === 'global' ? [
     join(resolve(options.home), '.repo-harness/hook-shim.sh'),
@@ -238,9 +236,9 @@ export function stripLegacyHookEntries(
     if (!Array.isArray(blocks)) { hooks[event] = blocks; continue; }
     const kept: unknown[] = [];
     for (const block of blocks) {
-      if (!record(block) || !Array.isArray(block.hooks)) { kept.push(block); continue; }
+      if (!isRecord(block) || !Array.isArray(block.hooks)) { kept.push(block); continue; }
       const entries = block.hooks.filter((entry: unknown) => {
-        const command = record(entry) ? entry.command : undefined;
+        const command = isRecord(entry) ? entry.command : undefined;
         // Global ownership needs a full historical command, never a path substring.
         if (typeof command !== 'string' || (!commands.has(command)
           && !(location === 'global' && isRepoHarnessLegacyTypedHookCommand(command)))) return true;
@@ -276,7 +274,7 @@ function classify(
     const markerPath = join(path, OWNER_MARKER);
     const markerEntry = stat(markerPath);
     const marker = markerEntry?.isFile() ? readJson(markerPath) : undefined;
-    if (record(marker) && marker.owner === 'repo-harness' && ['canonical-skill', 'command-facade'].includes(String(marker.surface)) && typeof marker.content_hash === 'string') {
+    if (isRecord(marker) && marker.owner === 'repo-harness' && ['canonical-skill', 'command-facade'].includes(String(marker.surface)) && typeof marker.content_hash === 'string') {
       const matches = marker.content_hash === snapshot.contentHash;
       return { ownership: matches ? 'owned-clean' : 'owned-modified', proof: 'owner-marker', reason: matches ? undefined : 'Owner marker does not match current tree.' };
     }
@@ -402,9 +400,9 @@ function scanCodexPlugin(options: LegacyInventoryOptions, add: AddItem): void {
   const registryPath = join(options.home, '.claude/plugins/installed_plugins.json');
   if (isLegacyPathSafe(options.home, registryPath, false) && stat(registryPath)?.isFile()) {
     const registry = readJson(registryPath);
-    const registrations = record(registry) && record(registry.plugins) ? registry.plugins[id] : undefined;
+    const registrations = isRecord(registry) && isRecord(registry.plugins) ? registry.plugins[id] : undefined;
     if (Array.isArray(registrations)) for (const entry of registrations) {
-      if (!record(entry) || typeof entry.installPath !== 'string') continue;
+      if (!isRecord(entry) || typeof entry.installPath !== 'string') continue;
       const path = resolve(entry.installPath);
       report(path, 'Third-party Codex plugin registration. Disable or remove it with the plugin manager.');
     }
@@ -419,7 +417,7 @@ function scanCodexPlugin(options: LegacyInventoryOptions, add: AddItem): void {
   const settings = join(options.home, '.claude/settings.json');
   if (isLegacyPathSafe(options.home, settings, false) && stat(settings)?.isFile()) {
     const value = readJson(settings);
-    if (record(value) && record(value.enabledPlugins) && Object.hasOwn(value.enabledPlugins, id)) add({ location: 'global', surface: 'file', path: settings,
+    if (isRecord(value) && isRecord(value.enabledPlugins) && Object.hasOwn(value.enabledPlugins, id)) add({ location: 'global', surface: 'file', path: settings,
       retiredBy: id, ownership: 'unowned', proof: null, action: 'report', reason: 'Third-party Codex plugin has a settings registration. Review it with the plugin manager.' });
   }
 }
@@ -438,7 +436,7 @@ function scanStateArtifacts(options: LegacyInventoryOptions, manifest: readonly 
   const stateRoot = join(options.home, '.repo-harness');
   const packagePath = join(options.packageRoot, 'package.json');
   const pkg = isLegacyPathSafe(options.packageRoot, packagePath, false) ? readJson(packagePath) : undefined;
-  const currentVersion = record(pkg) && typeof pkg.version === 'string' ? pkg.version : '';
+  const currentVersion = isRecord(pkg) && typeof pkg.version === 'string' ? pkg.version : '';
   // Only repo-harness writes a retired path, and the path predates the install manifest, so its location proves ownership.
   const report = (path: string, removableByVersion: boolean, reason: string, retiredPath = false): void => {
     if (!isLegacyPathSafe(options.home, path)) return;
@@ -470,7 +468,7 @@ function scanStateArtifacts(options: LegacyInventoryOptions, manifest: readonly 
       if (isLegacyPathSafe(options.home, versionPath, false) && stat(versionPath)?.isFile()) version = readFileSync(versionPath, 'utf8').trim();
       const manifestPath = join(path, 'package.json');
       const value = isLegacyPathSafe(options.home, manifestPath, false) && stat(manifestPath)?.isFile() ? readJson(manifestPath) : undefined;
-      if (!version && record(value) && typeof value.version === 'string') version = value.version;
+      if (!version && isRecord(value) && typeof value.version === 'string') version = value.version;
     }
     if (!version || versionBefore(version, currentVersion)) report(path, Boolean(version), version ? 'Backup belongs to an older package version. Preserve it without verified ownership.' : 'Backup package version is unknown. Preserve it.');
   }
@@ -505,7 +503,7 @@ function scanPackageScripts(root: string, add: AddItem): void {
   const path = join(root, 'package.json');
   if (!isLegacyPathSafe(root, path, false) || !stat(path)?.isFile()) return;
   const value = readJson(path);
-  if (!record(value) || !record(value.scripts)) return;
+  if (!isRecord(value) || !isRecord(value.scripts)) return;
   const scripts = value.scripts;
   const helpers = loadWorkflowContractAsset<Contract>().helpers?.scripts;
   if (!helpers) throw new Error('package script inventory requires the helper registry');
@@ -639,7 +637,7 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
       }
       if (!stat(path)) continue;
       const value = readJson(path);
-      if (!record(value) || (value.hooks !== undefined && !record(value.hooks))) {
+      if (!isRecord(value) || (value.hooks !== undefined && !isRecord(value.hooks))) {
         add({ location, surface: 'hook-entry', path, retiredBy: hookRetirement, ownership: 'unowned', proof: null, action: 'report', reason: 'Invalid hook settings; preserve current bytes.' });
         continue;
       }

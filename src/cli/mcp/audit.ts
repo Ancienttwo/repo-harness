@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { sha256Hex } from '../../core/evidence/sha256';
 import { join } from 'path';
 import { MCP_AUDIT_LOG_RELATIVE_PATH } from '../../core/public-projections/mcp-audit-log';
 import { appendSegmentedLog } from '../../effects/segmented-log';
@@ -6,7 +6,7 @@ import { redactMcpText } from './redaction';
 import type { McpAuditEntry } from './types';
 
 export function hashMcpInput(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  return sha256Hex(JSON.stringify(value));
 }
 
 export function mcpAuditLogPath(repoRoot: string): string {

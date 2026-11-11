@@ -8,13 +8,14 @@
 //   it, mounts, in `mount.order`. archctx guarantees one namespace per process
 //   and one mounter per mount.
 // - mounts: one box for each mounter that lists its mounts in `mount.order`.
-// dagre places the process boxes; the other segments are columns. This module
-// adds no fact to the map.
+// The layout gives one placed scene for each segment: dagre places the process
+// boxes and the top-level namespace frames, and their edges follow the dagre
+// routes; mounters are columns. This module adds no fact to the map.
 
-import * as dagre from '@dagrejs/dagre';
 import type { ArchitectureMapNodeV1, ArchitectureMapV1 } from '../core/operator/architecture-map';
 import { DASHED_KINDS } from './architecture-map-layout';
-import type { RuntimePlacement } from './architecture-runtime';
+import { runtimePlacement, type RuntimePlacement } from './architecture-runtime';
+import { borderPoint, labelAt, placeLayered, repairRoute, routeMiddle, sceneExtent, type PlacedScene, type Point, type SceneBox, type SceneRoute } from './architecture-scene';
 
 export type TopologyBase = 'process' | 'namespace' | 'mount';
 export const TOPOLOGY_BASES: readonly TopologyBase[] = ['process', 'namespace', 'mount'];
@@ -31,27 +32,22 @@ const COLUMN_GAP = 72;
 const MOUNTER_WIDTH = 320;
 const MOUNTER_GAP = 32;
 const MARGIN = 24;
+const ROUTE_WIDTH = 1.5;
 /** Relations that the boxes themselves show: containment, deployment and mounting. */
 const CONTAINMENT: ReadonlySet<string> = new Set(['runs-in', 'deployed-on', 'mounts']);
 
 /** `writer`: a `writes` relation goes into the mount; `reader`: only `reads` relations do; `point`: neither. */
 export type MountTone = 'writer' | 'reader' | 'point';
 
+/** One box of a segment; its place is the scene box with the same id. */
 export interface TopologyBox {
   readonly node: ArchitectureMapNodeV1;
-  /** The namespace that holds this box; null at the top level. */
-  readonly parent: string | null;
   /** Process segment: the code nodes deployed on the process. Mount segment: the mounter's mounts in `mount.order`. */
   readonly members: readonly ArchitectureMapNodeV1[];
   /** A namespace frame that holds other boxes. */
   readonly group: boolean;
   /** Namespace segment: the tone of a mount box; null for other boxes. */
   readonly tone: MountTone | null;
-  /** Top-left corner on the canvas. */
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
 }
 
 export interface TopologyEdge {
@@ -73,26 +69,42 @@ export interface TopologyLayout {
   readonly edges: readonly TopologyEdge[];
   /** Process segment: relations with one end on a code node that no process runs. */
   readonly unplaced: readonly string[];
-  readonly width: number;
-  readonly height: number;
+  /**
+   * The boxes, the member rows of each box (scene id `memberId(box, member)`, parent the box), the edge routes
+   * with the edge ids and a protocol label at the middle of a route.
+   */
+  readonly scene: PlacedScene;
 }
 
-interface Box { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+/** A code node deployed on two processes shows in both boxes, so its scene id names the box. Model ids hold no `/`. */
+export const memberId = (box: string, node: string) => `${box}/${node}`;
 
 /** Which nodes a segment may draw: `legacy` false leaves out the `deprecated` nodes and the relations that touch them. */
 type Visible = (nodeId: string) => boolean;
 const touches = (visible: Visible, relation: { readonly source: string; readonly target: string }) => visible(relation.source) && visible(relation.target);
 
 /**
- * One segment of the topology map. The layout reads the whole map and leaves the hidden nodes out itself, so a
+ * One segment of the topology map. `repair` false keeps the dagre routes that go through a box, for the check. The layout reads the whole map and leaves the hidden nodes out itself, so a
  * kept node never names a removed parent: a box whose namespace is hidden goes into the nearest shown namespace.
  */
-export function layoutTopology(map: ArchitectureMapV1, placement: (nodeId: string) => RuntimePlacement, base: TopologyBase, legacy: boolean): TopologyLayout {
+export function layoutTopology(map: ArchitectureMapV1, placement: (nodeId: string) => RuntimePlacement, base: TopologyBase, legacy: boolean, repair = true): TopologyLayout {
   const deprecated = new Set(legacy ? [] : map.nodes.filter(node => node.status === 'deprecated').map(node => node.id));
   const visible: Visible = id => !deprecated.has(id);
-  if (base === 'process') return layoutProcesses(map, placement, visible);
-  if (base === 'namespace') return layoutNamespaces(map, visible);
+  if (base === 'process') return layoutProcesses(map, placement, visible, repair);
+  if (base === 'namespace') return layoutNamespaces(map, visible, repair);
   return layoutMounters(map, visible);
+}
+
+/**
+ * The segment that the map opens on: the first of namespace, process and mount whose layout, legacy stores shown,
+ * has two or more boxes that are not external systems; else the first with one; else namespace.
+ */
+export function defaultTopologyBase(map: ArchitectureMapV1): TopologyBase {
+  const placement = runtimePlacement(map);
+  const order: readonly TopologyBase[] = ['namespace', 'process', 'mount'];
+  const counts = order.map(base => layoutTopology(map, placement, base, true).boxes.filter(box => box.node.kind !== 'external-system').length);
+  const index = [2, 1].map(least => counts.findIndex(count => count >= least)).find(found => found >= 0);
+  return index === undefined ? 'namespace' : order[index]!;
 }
 
 /** The namespace that a process runs in, or null when the model names none. */
@@ -112,7 +124,7 @@ function addRelation(edge: TopologyEdge, relation: ArchitectureMapV1['relations'
   };
 }
 
-function layoutProcesses(map: ArchitectureMapV1, placement: (nodeId: string) => RuntimePlacement, visible: Visible): TopologyLayout {
+function layoutProcesses(map: ArchitectureMapV1, placement: (nodeId: string) => RuntimePlacement, visible: Visible, repair: boolean): TopologyLayout {
   const byId = new Map(map.nodes.map(node => [node.id, node]));
   const boxes = map.nodes.filter(node => (node.kind === 'process' || node.kind === 'external-system') && visible(node.id));
   const isBox = (id: string) => { const kind = byId.get(id)?.kind; return kind === 'process' || kind === 'external-system'; };
@@ -150,26 +162,42 @@ function layoutProcesses(map: ArchitectureMapV1, placement: (nodeId: string) => 
     edges.set(key, addRelation(edges.get(key) ?? edgeOf(`topology:${key}`, source, target, kind, dashed), relation));
   }
 
-  const graph = new dagre.graphlib.Graph();
-  graph.setGraph({ rankdir: 'TB', nodesep: 32, ranksep: 72, marginx: MARGIN, marginy: MARGIN });
-  graph.setDefaultEdgeLabel(() => ({}));
-  for (const node of boxes) {
-    const count = members.get(node.id)?.length ?? 0;
-    graph.setNode(node.id, { width: TOPOLOGY_BOX_WIDTH, height: TOPOLOGY_BOX_HEADER + count * TOPOLOGY_MEMBER + (count > 0 ? 8 : 0) });
-  }
-  for (const edge of edges.values()) graph.setEdge(edge.source, edge.target, { weight: edge.relations.length });
-  dagre.layout(graph);
-  const placed = boxes.map((node): TopologyBox => {
-    const center = graph.node(node.id) as { x: number; y: number; width: number; height: number };
-    return { node, parent: null, members: members.get(node.id) ?? [], group: false, tone: null, x: center.x - center.width / 2, y: center.y - center.height / 2, width: center.width, height: center.height };
+  const height = (node: ArchitectureMapNodeV1) => { const count = members.get(node.id)?.length ?? 0; return TOPOLOGY_BOX_HEADER + count * TOPOLOGY_MEMBER + (count > 0 ? 8 : 0); };
+  const placed = placeLayered({
+    nodes: boxes.map(node => ({ id: node.id, width: TOPOLOGY_BOX_WIDTH, height: height(node), kind: boxKind(node, null) })),
+    edges: [...edges.values()].map(edge => ({ ...routeOf(edge), weight: edge.relations.length })),
+    nodesep: 32, ranksep: 72, margin: MARGIN,
+  }, repair);
+  const topology = boxes.map((node): TopologyBox => ({ node, members: members.get(node.id) ?? [], group: false, tone: null }));
+  return { base: 'process', boxes: topology, edges: [...edges.values()], unplaced, scene: sceneOf(topology, placed.boxes, placed.routes, [...edges.values()]) };
+}
+
+/** The drawing class of a box in the SVG file. */
+const boxKind = (node: ArchitectureMapNodeV1, tone: MountTone | null) => tone ?? (node.kind === 'namespace' ? 'frame' : node.kind === 'external-system' ? 'external' : 'box');
+
+const routeOf = (edge: TopologyEdge): Omit<SceneRoute, 'points'> => ({
+  id: edge.id, source: edge.source, target: edge.target, arrows: { start: false, end: true }, kind: edge.kind, dashed: edge.dashed, width: ROUTE_WIDTH,
+});
+
+/** The scene of a segment: each box followed by its member rows, the routes, and a protocol label at the middle of each route that has one. */
+function sceneOf(boxes: readonly TopologyBox[], placed: readonly SceneBox[], routes: readonly SceneRoute[], edges: readonly TopologyEdge[]): PlacedScene {
+  const where = new Map(placed.map(box => [box.id, box]));
+  const all = boxes.flatMap(box => {
+    const own = where.get(box.node.id)!;
+    return [own, ...box.members.map((member, index): SceneBox => ({
+      id: memberId(box.node.id, member.id), parent: own.id, x: own.x + 12, y: own.y + TOPOLOGY_BOX_HEADER + index * TOPOLOGY_MEMBER,
+      width: own.width - 24, height: TOPOLOGY_MEMBER - 4, kind: 'member',
+    }))];
   });
-  return { base: 'process', boxes: placed, edges: [...edges.values()], unplaced, ...extent(placed) };
+  const points = new Map(routes.map(route => [route.id, route.points]));
+  const labels = edges.filter(edge => edge.protocols.length > 0).map(edge => labelAt(edge.protocols.join(' · '), routeMiddle(points.get(edge.id)!), edge.id));
+  return { boxes: all, routes, labels, extent: sceneExtent(all, routes, MARGIN) };
 }
 
 /** Mounts in `mount.order`; the decoder sets `mount` on every mount node. */
 const byOrder = (a: ArchitectureMapNodeV1, b: ArchitectureMapNodeV1) => a.mount!.order - b.mount!.order;
 
-function layoutNamespaces(map: ArchitectureMapV1, visible: Visible): TopologyLayout {
+function layoutNamespaces(map: ArchitectureMapV1, visible: Visible, repair: boolean): TopologyLayout {
   const byId = new Map(map.nodes.map(node => [node.id, node]));
   const kind = (id: string) => byId.get(id)!.kind;
   const shown = map.nodes.filter(node => (node.kind === 'namespace' || node.kind === 'mount') && visible(node.id));
@@ -203,17 +231,21 @@ function layoutNamespaces(map: ArchitectureMapV1, visible: Visible): TopologyLay
     edges.set(key, addRelation(edges.get(key) ?? edgeOf(`topology:${key}`, relation.source, relation.target, relation.kind, DASHED_KINDS.has(relation.kind)), relation));
   }
 
-  // A frame stacks its mounts in `mount.order`, then its sub-namespaces; top-level frames and loose mounts are columns.
+  // A frame stacks its mounts in `mount.order`, then its sub-namespaces, at places relative to its top-level frame.
   const children = (id: string | undefined) => [
     ...shown.filter(node => node.kind === 'mount' && container.get(node.id) === id).sort(byOrder),
     ...shown.filter(node => node.kind === 'namespace' && container.get(node.id) === id),
   ];
   const boxes: TopologyBox[] = [];
-  const place = (node: ArchitectureMapNodeV1, x: number, y: number): Box => {
+  const local: SceneBox[] = [];
+  const place = (node: ArchitectureMapNodeV1, x: number, y: number): SceneBox => {
     const parent = container.get(node.id) ?? null;
     if (node.kind === 'mount') {
-      boxes.push({ node, parent, members: [], group: false, tone: tone.get(node.id) ?? 'point', x, y, width: TOPOLOGY_BOX_WIDTH, height: TOPOLOGY_MOUNT_HEIGHT });
-      return { x, y, width: TOPOLOGY_BOX_WIDTH, height: TOPOLOGY_MOUNT_HEIGHT };
+      const box: TopologyBox = { node, members: [], group: false, tone: tone.get(node.id) ?? 'point' };
+      const rect: SceneBox = { id: node.id, parent, x, y, width: TOPOLOGY_BOX_WIDTH, height: TOPOLOGY_MOUNT_HEIGHT, kind: boxKind(node, box.tone) };
+      boxes.push(box);
+      local.push(rect);
+      return rect;
     }
     const index = boxes.length;
     const inner = children(node.id);
@@ -226,12 +258,40 @@ function layoutNamespaces(map: ArchitectureMapV1, visible: Visible): TopologyLay
     }
     // An empty frame keeps one row for its empty-state line.
     const height = inner.length === 0 ? NAMESPACE_TITLE + TOPOLOGY_MEMBER + NAMESPACE_PADDING : bottom - NAMESPACE_GAP + NAMESPACE_PADDING - y;
-    boxes.splice(index, 0, { node, parent, members: [], group: inner.length > 0, tone: null, x, y, width: width + 2 * NAMESPACE_PADDING, height });
-    return { x, y, width: width + 2 * NAMESPACE_PADDING, height };
+    const rect: SceneBox = { id: node.id, parent, x, y, width: width + 2 * NAMESPACE_PADDING, height, kind: 'frame' };
+    boxes.splice(index, 0, { node, members: [], group: inner.length > 0, tone: null });
+    local.splice(index, 0, rect);
+    return rect;
   };
-  let x = MARGIN;
-  for (const node of children(undefined)) x += place(node, x, MARGIN).width + COLUMN_GAP;
-  return { base: 'namespace', boxes, edges: [...edges.values()], unplaced: [], ...extent(boxes) };
+  const tops = children(undefined).map(node => place(node, 0, 0));
+  // dagre places the top-level frames and loose mounts; an edge runs between the top-level boxes that hold its ends.
+  const top = (id: string): string => { let cursor = id; while (container.has(cursor)) cursor = container.get(cursor)!; return cursor; };
+  const crossing = [...edges.values()].filter(edge => top(edge.source) !== top(edge.target));
+  const placed = placeLayered({
+    nodes: tops.map(rect => ({ id: rect.id, width: rect.width, height: rect.height, kind: rect.kind })),
+    edges: crossing.map(edge => ({ ...routeOf(edge), source: top(edge.source), target: top(edge.target), weight: edge.relations.length })),
+    nodesep: COLUMN_GAP, ranksep: 72, margin: MARGIN,
+  }, repair);
+  const origin = new Map(placed.boxes.map(box => [box.id, box]));
+  const rects = new Map(local.map(rect => {
+    const at = origin.get(top(rect.id))!;
+    return [rect.id, { ...rect, x: rect.x + at.x, y: rect.y + at.y }] as const;
+  }));
+  const centre = (rect: SceneBox): Point => [rect.x + rect.width / 2, rect.y + rect.height / 2];
+  // A nested end continues the route from its top-level frame's border to its own border; ends in one top-level frame join
+  // directly. The repair then clears every box that is not an end or a frame around an end, nested boxes included.
+  const lifted = new Map(placed.routes.map(route => [route.id, route]));
+  const lineage = (id: string) => { const ids = [id]; while (container.has(ids[ids.length - 1]!)) ids.push(container.get(ids[ids.length - 1]!)!); return ids; };
+  const routes = [...edges.values()].map((edge): SceneRoute => {
+    const [source, target] = [rects.get(edge.source)!, rects.get(edge.target)!];
+    const route = lifted.get(edge.id);
+    const points: Point[] = route === undefined ? [borderPoint(source, centre(target)), borderPoint(target, centre(source))] : [...route.points];
+    if (route !== undefined && route.source !== edge.source) points.unshift(borderPoint(source, points[0]!));
+    if (route !== undefined && route.target !== edge.target) points.push(borderPoint(target, points[points.length - 1]!));
+    const allowed = new Set([...lineage(edge.source), ...lineage(edge.target)]);
+    return { ...routeOf(edge), points: repair ? repairRoute(points, [...rects.values()].filter(rect => !allowed.has(rect.id))) : points };
+  });
+  return { base: 'namespace', boxes, edges: [...edges.values()], unplaced: [], scene: sceneOf(boxes, [...rects.values()], routes, [...edges.values()]) };
 }
 
 /** A hidden mounter takes its mounts out of this segment; the namespace segment still shows them. */
@@ -241,63 +301,10 @@ function layoutMounters(map: ArchitectureMapV1, visible: Visible): TopologyLayou
   for (const relation of map.relations) {
     if (relation.kind === 'mounts' && touches(visible, relation) && byId.get(relation.target)?.kind === 'mount') mounts.set(relation.source, [...(mounts.get(relation.source) ?? []), byId.get(relation.target)!]);
   }
-  let x = MARGIN;
-  const boxes = map.nodes.filter(node => mounts.has(node.id)).map((node): TopologyBox => {
-    const members = [...mounts.get(node.id)!].sort(byOrder);
-    const box: TopologyBox = { node, parent: null, members, group: false, tone: null, x, y: MARGIN, width: MOUNTER_WIDTH, height: TOPOLOGY_BOX_HEADER + members.length * TOPOLOGY_MEMBER + 8 };
-    x += MOUNTER_WIDTH + MOUNTER_GAP;
-    return box;
-  });
-  return { base: 'mount', boxes, edges: [], unplaced: [], ...extent(boxes) };
-}
-
-function extent(boxes: readonly TopologyBox[]): { width: number; height: number } {
-  return { width: Math.max(0, ...boxes.map(box => box.x + box.width)) + MARGIN, height: Math.max(0, ...boxes.map(box => box.y + box.height)) + MARGIN };
-}
-
-export interface TopologySvgText {
-  /** The second line of a box: its kind, namespace type or deployed count. */
-  readonly detail: (box: TopologyBox) => string;
-  /** One member row: a deployed code node or a mount. */
-  readonly member: (box: TopologyBox, member: ArchitectureMapNodeV1) => string;
-}
-
-const STYLE = [
-  'text{font-family:system-ui,sans-serif;font-size:12px;fill:#1F2328}',
-  '.box{fill:#F2F4F7;stroke:#D3D9E0}.frame{fill:#FFFFFF;stroke:#D3D9E0}.external{fill:#FFFFFF;stroke:#D3D9E0;stroke-dasharray:6 4}',
-  '.writer{fill:#E4F2EA;stroke:#1F8A5B}.reader{fill:#FFFFFF;stroke:#8C96A3;stroke-dasharray:4 3}.point{fill:#E8EFFB;stroke:#2D5BB8}',
-  '.title{font-size:13px;font-weight:600}.detail{fill:#5B6573}',
-  '.edge{fill:none;stroke:#5B6573;stroke-width:1.5}.edge.dashed{stroke-dasharray:6 4}.protocol{font-size:11px;fill:#5B6573}',
-].join('');
-
-const escape = (value: string) => value.replace(/[&<>"]/gu, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]!);
-
-/** One segment of the topology map as a standalone SVG file. An edge is a straight line between its box centres. */
-export function topologySvg(layout: TopologyLayout, text: TopologySvgText): string {
-  const parts: string[] = [];
-  const centre = new Map(layout.boxes.map(box => [box.node.id, [box.x + box.width / 2, box.y + box.height / 2] as const]));
-  for (const [index, box] of layout.boxes.entries()) {
-    const style = box.tone ?? (box.node.kind === 'namespace' ? 'frame' : box.node.kind === 'external-system' ? 'external' : 'box');
-    parts.push(
-      `<clipPath id="clip-${index}"><rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="10"/></clipPath>`,
-      `<rect class="${style}" x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="10"/>`,
-      `<g clip-path="url(#clip-${index})"><text class="title" x="${box.x + 12}" y="${box.y + 20}">${escape(box.node.name)}</text>`
-        + `<text class="detail" x="${box.x + 12}" y="${box.y + 36}">${escape(text.detail(box))}</text>`
-        + box.members.map((member, index) => `<text x="${box.x + 12}" y="${box.y + TOPOLOGY_BOX_HEADER + 16 + index * TOPOLOGY_MEMBER}">${escape(text.member(box, member))}</text>`).join('')
-        + '</g>',
-    );
-  }
-  for (const edge of layout.edges) {
-    const [x1, y1] = centre.get(edge.source)!, [x2, y2] = centre.get(edge.target)!;
-    parts.push(`<path class="edge${edge.dashed ? ' dashed' : ''}" d="M${x1} ${y1} L${x2} ${y2}" marker-end="url(#arrow)"/>`);
-    if (edge.protocols.length > 0) parts.push(`<text class="protocol" x="${(x1 + x2) / 2 + 4}" y="${(y1 + y2) / 2 - 4}">${escape(edge.protocols.join(' · '))}</text>`);
-  }
-  return [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${layout.width}" height="${layout.height}" viewBox="0 0 ${layout.width} ${layout.height}">`,
-    `<style>${STYLE}</style>`,
-    '<defs><marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L8 4L0 8z" fill="#5B6573"/></marker></defs>',
-    `<rect width="${layout.width}" height="${layout.height}" fill="#FFFFFF"/>`,
-    ...parts,
-    '</svg>',
-  ].join('\n');
+  const boxes = map.nodes.filter(node => mounts.has(node.id)).map((node): TopologyBox => ({ node, members: [...mounts.get(node.id)!].sort(byOrder), group: false, tone: null }));
+  const placed = boxes.map((box, index): SceneBox => ({
+    id: box.node.id, parent: null, x: MARGIN + index * (MOUNTER_WIDTH + MOUNTER_GAP), y: MARGIN,
+    width: MOUNTER_WIDTH, height: TOPOLOGY_BOX_HEADER + box.members.length * TOPOLOGY_MEMBER + 8, kind: boxKind(box.node, null),
+  }));
+  return { base: 'mount', boxes, edges: [], unplaced: [], scene: sceneOf(boxes, placed, [], []) };
 }

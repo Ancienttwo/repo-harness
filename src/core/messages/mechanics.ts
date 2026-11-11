@@ -1,6 +1,5 @@
-import { createHash } from 'crypto';
-
 import { canonicalize } from '../evidence/canonical-json';
+import { sha256Prefixed } from '../evidence/sha256';
 import type { JsonValue } from '../evidence/types';
 
 export const MESSAGE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -35,10 +34,6 @@ export function assertMessageUuid(value: string, field: string, invalid: Message
   if (!MESSAGE_UUID_PATTERN.test(value)) invalid(`${field} is invalid`);
 }
 
-export function assertMessageSha256(value: string, field: string, invalid: MessageInvalid): void {
-  if (!MESSAGE_SHA256_PATTERN.test(value)) invalid(`${field} is invalid`);
-}
-
 export function assertMessageTimestamp(value: string, field: string, invalid: MessageInvalid): void {
   if (!MESSAGE_TIMESTAMP_PATTERN.test(value) || Number.isNaN(Date.parse(value))) invalid(`${field} is invalid`);
 }
@@ -53,13 +48,9 @@ export function assertMessageBoundedUtf8(value: unknown, field: string, maximum:
 }
 
 export function messageSha256(value: string | Buffer): string {
-  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+  return sha256Prefixed(value);
 }
 
 export function canonicalMessageBytes(value: Readonly<Record<string, unknown>>): string {
   return canonicalize(value as JsonValue);
-}
-
-export function canonicalMessageDigest(value: Readonly<Record<string, unknown>>): string {
-  return messageSha256(canonicalMessageBytes(value));
 }

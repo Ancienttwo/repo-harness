@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readFileSync, realpathSync } from 'fs';
+import { existsSync, lstatSync, readFileSync } from 'fs';
 import { dirname, extname, isAbsolute, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { runProcess as runBoundedProcess } from '../process-runner';

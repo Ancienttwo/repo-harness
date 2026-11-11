@@ -1,12 +1,11 @@
-import { createHash } from 'crypto';
+import { sha256Hex } from '../../../core/evidence/sha256';
 import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readFileSync, realpathSync, statSync } from 'fs';
-import { basename, dirname, isAbsolute, relative, resolve, sep } from 'path';
+import { basename, dirname, isAbsolute, relative, resolve } from 'path';
 import {
   readRegisteredRepoHarnessRepos,
-  repoHarnessRepoIdFor,
   type RepoHarnessAccessMode,
 } from '../../../effects/repo-registry';
-import { globMatches, isPathInside } from '../paths';
+import { globMatches, isPathInside, toPosixPath } from '../paths';
 import type { McpPolicy } from '../types';
 
 export interface RepoRecord {
@@ -81,7 +80,7 @@ export class GeneralRepoAccessError extends Error {
 const REPO_ROOT_IDENTITIES = new Map<string, string>();
 
 export function sha256(value: string | Buffer): string {
-  return createHash('sha256').update(value).digest('hex');
+  return sha256Hex(value);
 }
 
 export function statIdentity(stat: { dev: number | bigint; ino: number | bigint }): string {
@@ -91,10 +90,6 @@ export function statIdentity(stat: { dev: number | bigint; ino: number | bigint 
 export function openNoFollow(path: string): number {
   const noFollow = typeof constants.O_NOFOLLOW === 'number' ? constants.O_NOFOLLOW : 0;
   return openSync(path, constants.O_RDONLY | noFollow);
-}
-
-export function toPosixPath(value: string): string {
-  return value.split(sep).join('/').replace(/\\+/g, '/');
 }
 
 function isWindowsAbsoluteLike(value: string): boolean {

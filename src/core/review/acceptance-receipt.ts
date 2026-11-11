@@ -1,7 +1,9 @@
 import type { ReviewAdmission, ReviewAuthorityContext } from './authority-context';
 import type { RequiredCheckFailureEvidenceV1 } from '../evidence/required-check-evidence';
 import type { RequiredCheckCoverageEvidenceV1 } from '../publication/required-check-coverage';
-import { createHash } from 'crypto';
+import { isRecord } from '../evidence/is-record';
+import { sha256Prefixed } from '../evidence/sha256';
+import { modelFamily } from './model-family';
 import { isReviewRuntimeId, type ReviewRuntimeId } from './review-runtimes';
 
 export type AcceptanceDisposition = 'external_pass' | 'user_waiver' | 'reject';
@@ -84,24 +86,6 @@ export type AcceptanceReceipt = {
   waiver_grant_sha256: string | null;
   issued_at: string;
 };
-
-/** Closed model-family table: the single family authority. A routing provider
- * prefix (`magpie/`, `cursor/`) is a gateway label, so only the last `/`
- * segment is matched. An unmatched model has no family. */
-const MODEL_FAMILY_PREFIXES: readonly (readonly [string, string])[] = [
-  ['claude-', 'anthropic'], ['opus', 'anthropic'], ['sonnet', 'anthropic'], ['haiku', 'anthropic'],
-  ['gpt-', 'openai'], ['o3', 'openai'], ['o4', 'openai'],
-  ['deepseek-', 'deepseek'],
-  ['gemini-', 'google'],
-  ['grok-', 'xai'],
-  ['kimi-', 'moonshot'],
-  ['qwen', 'alibaba'],
-];
-
-export function modelFamily(model: string): string | null {
-  const name = model.slice(model.lastIndexOf('/') + 1).toLowerCase();
-  return MODEL_FAMILY_PREFIXES.find(([prefix]) => name.startsWith(prefix))?.[1] ?? null;
-}
 
 /** One known shared family denies a cross-model claim. Only a complete set of
  * known author families that all differ from a known reviewer family grants it. */
@@ -289,7 +273,7 @@ export function fail(message: string, code = 1): never {
 }
 
 export function sha256(value: string | Buffer): string {
-  return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+  return sha256Prefixed(value);
 }
 
 export function stableJson(value: unknown): string {
@@ -398,16 +382,6 @@ export function authorityFingerprint(content: string): string {
     .replace(/^> \*\*Status\*\*:[ \t]*.+$/m, '> **Status**: <lifecycle>')
     .replace(/^> \*\*Last Updated\*\*:[ \t]*.+$/m, '> **Last Updated**: <lifecycle>');
   return sha256(normalized);
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-export function acceptanceContractField(markdown: string, label: string): string {
-  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = markdown.match(new RegExp(`^> \\*\\*${escaped}\\*\\*:[ \\t]*(.+?)[ \\t]*$`, 'm'));
-  return match?.[1]?.replace(/^`|`$/g, '').trim() ?? '';
 }
 
 export function parseAcceptancePolicy(contractText: string): AcceptancePolicy {

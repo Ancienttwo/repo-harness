@@ -5,7 +5,7 @@ import { readReviewAdmissionSource, type ReviewAdmissionSource } from '../admiss
 import { gitSpawnSync } from '../git/runner';
 import { gatesDirectoryName } from '../git/repository-identity';
 import { assertObservationPath, currentReadonlyObservation, rejectObservation, observationReadFileSync as readFileSync } from '../readonly-observation';
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 import {
   chmodSync,
   existsSync,
@@ -22,21 +22,15 @@ import { createRequire } from 'module';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import {
-  ACCEPTANCE_VALIDATOR_RULE_IDS,
   ACCEPTANCE_VERIFICATION_OBSERVATION_KIND,
   ACCEPTANCE_VERIFICATION_OBSERVATION_PROTOCOL,
-  CONSUMED_RECEIPT_KEYS,
-  GENERIC_REVIEW_ROLE,
-  acceptancePolicySource,
   acceptanceReviewContextDigest,
   acceptanceVerificationObservationSubjectKey,
   assertReviewFields,
   assertUserWaiverGrant,
   authorityFingerprint,
   buildAcceptanceVerificationObservation,
-  contractCarriesArchiveProjection,
   fail,
-  isRecord,
   modelRelation,
   renderAcceptanceProjection,
   sha256,
@@ -60,6 +54,7 @@ import {
   type ReviewSubject,
   type UserWaiverGrant,
 } from '../../core/review/acceptance-receipt';
+import { isRecord } from '../../core/evidence/is-record';
 import {
   validateRequiredCheckFailureEvidenceList,
   type RequiredCheckFailureEvidenceV1,

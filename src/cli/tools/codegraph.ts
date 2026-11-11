@@ -199,10 +199,6 @@ export function checkCodegraph(opts: CodegraphResolveOptions): CodegraphCheckRes
   return normalize(readToolingReport(opts.repoRoot, opts.env, opts.host));
 }
 
-export function resolveCodegraph(opts: CodegraphResolveOptions): CodegraphResolution {
-  return checkCodegraph(opts).resolution;
-}
-
 export function ensureCodegraph(opts: CodegraphEnsureOptions): CodegraphEnsureResult {
   const actions: CodegraphAction[] = [];
 

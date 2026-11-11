@@ -17,11 +17,11 @@ import { documentTitle, OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, OperatorApp, type
 import { evaluateBoardAttention } from '../../src/core/board/attention';
 import { ADVISOR_TRANSCRIPT_LINE_WITHHELD, decodeAdvisorSeatSend, decodeAdvisorSeatTranscript } from '../../src/core/board/advisor-seat';
 import { decodeBoard, type BoardV1 } from '../../src/core/board/board';
-import { fetchBoard, fetchBoardParents, type BoardParentsRead, type BoardParentsReason, type BoardSubject } from '../../src/operator-web/board-view';
+import { fetchBoard, fetchBoardParents, fetchBoardSeats, useBoard, useBoardParents, useBoardSeats, type BoardSeatsReader, type BoardParentsRead, type BoardParentsReader, type BoardParentsReason, type BoardRead, type BoardReader, type BoardReason, type BoardSubject } from '../../src/operator-web/board-view';
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import boardParents from '../../src/operator-web/fixtures/board-parents.json';
-import { decodeBoardParents, type BoardParentsV1 } from '../../src/core/board/parents';
-import { decodeBoardSummaries, type BoardSummarySeatsV1, type BoardSummaryV1 } from '../../src/core/board/summary';
+import boardSeats from '../../src/operator-web/fixtures/board-seats.json';
+import { decodeBoardParents, decodeBoardSeats, joinBoardParents, type BoardParentsV1, type BoardSeatsV1 } from '../../src/core/board/parents';
 import { designTokenStylesheet } from '../../src/operator-web/design-tokens';
 import { OPERATOR_RAIL_STORAGE_KEY } from '../../src/operator-web/NavRail';
 import { fetchExecution, fetchTaskMessages, itemOwner, type CiRepairsReader, type ExecutionReader, type TaskMessagesReader } from '../../src/operator-web/repository-reads';
@@ -47,8 +47,8 @@ import { decodeOperatorRepositories, type OperatorRepositoriesV1 } from '../../s
 import { fetchRepositories } from '../../src/operator-web/repositories';
 import { boardLayout, boardPlace, boardRoom, DEFAULT_LOCATION, parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
 import { DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, type DeskState } from '../../src/core/board/desk';
-import { activeParent, officeCard, officeRoom, type BoardSummariesRead } from '../../src/operator-web/board-office';
-import { OFFICE_DOOR_POLICIES, OFFICE_PARENT, officeBoard, officeParents } from '../../src/operator-web/fixtures/office';
+import { activeParent, officeCard, officeRoom, useOfficeOverview } from '../../src/operator-web/board-office';
+import { OFFICE_DOOR_POLICIES, OFFICE_PARENT, officeBoard, officeParents, officeSeats } from '../../src/operator-web/fixtures/office';
 import { busyBotAccess, degradedBotAccess } from '../../src/operator-web/fixtures/bots';
 import { officeSetupRows, type OfficeSetupReads, type OfficeSetupRowId, type OfficeSetupScope } from '../../src/operator-web/OfficeSetupChecklist';
 import { translate, type OperatorTranslate } from '../../src/operator-web/i18n';
@@ -106,7 +106,7 @@ function props(activity: DevActivitySnapshotV2, overrides: Partial<OperatorAppPr
     readTaskMessages: async request => busyTaskMessages(request, NOW),
     readBoard: async () => ({ state: 'ok', board: BOARD }),
     readBoardParents: async () => ({ state: 'ok', list: PARENTS }),
-    readBoardSummaries: async id => ({ state: 'ok', summaries: { protocol: 3, kind: 'repo-harness.board-summaries', repository_id: id, parents: [] } }),
+    readBoardSeats: async () => ({ state: 'ok', seats: SEATS }),
     readBotAccess: async () => ({ state: 'unavailable', reason: 'bot_access_pending' }),
     readQuota: () => new Promise(() => {}),
     ...overrides,
@@ -131,6 +131,29 @@ const sessionsOn = (from: string, to: string): ExecutionReader => async id => JS
 const BOARD = decodeBoard(board1474);
 /** The parent list projected from the recorded GitHub and hc reads (tests/board.test.ts). */
 const PARENTS = decodeBoardParents(boardParents);
+const SEATS = decodeBoardSeats(boardSeats);
+/**
+ * The board of #1474 with exact card counts: `queue` queued and `ci` failing
+ * pull requests, a plan with `limit` workers whose batch has `accepted`
+ * accepted members, and a failed daily run (one A7 finding) for `needsYou`.
+ */
+function countedBoard({ queue = 0, ci = 0, accepted = 0, limit = null, needsYou = false }: { readonly queue?: number; readonly ci?: number; readonly accepted?: number; readonly limit?: number | null; readonly needsYou?: boolean }): BoardV1 {
+  const template = BOARD.pull_requests.find(pr => pr.number === 1494)!;
+  const done = { status: 'success', completed_at: BOARD.observed_at } as const;
+  const members = Array.from({ length: accepted }, (_, index) => 1475 + index);
+  return decodeBoard({
+    ...BOARD, execution: { status: 'observed', terminals: [] },
+    daily_run: { ...BOARD.daily_run, conclusion: needsYou ? 'failure' : 'success' },
+    plan: limit === null ? { status: 'absent', truncated: false } : { status: 'observed', comment_url: 'https://github.com/plan', created_at: BOARD.observed_at, revision: 1,
+      block: { protocol: 1, kind: 'repo-harness.plan', merge_order: [], holds: [], batches: [[...members, 1490]], seat_limits: { worker: limit } } },
+    items: BOARD.items.filter(item => members.includes(item.number)).map(item => ({ ...item, pull_requests: [item.number + 1000] })),
+    pull_requests: [
+      ...members.map(number => ({ ...template, number: number + 1000, required_check: done, acceptance: { status: 'accepted', via: 'record', accepted_at: BOARD.observed_at, evidence_url: 'https://github.com/plan#accepted' } })),
+      ...Array.from({ length: queue }, (_, index) => ({ ...template, number: 3000 + index, required_check: done })),
+      ...Array.from({ length: ci }, (_, index) => ({ ...template, number: 4000 + index, required_check: { status: 'failure', completed_at: BOARD.observed_at } })),
+    ],
+  });
+}
 const boardAt = (issue?: number) => installDom(`http://127.0.0.1:4318/#board/${HARNESS_ID}/1474${issue === undefined ? '' : `/${issue}`}`);
 const followUp = () => document.querySelector<HTMLElement>('[role="dialog"] section[aria-labelledby="drawer-follow-up"]')!;
 
@@ -642,7 +665,7 @@ describe('board page', () => {
     const refusal = (code: string, status: number) => () => Response.json({ error: { code, message: 'refused', next_action: 'retry' } }, { status });
     const answers: (() => Response)[] = [
       () => Response.json(BOARD),
-      () => Response.json({ ...BOARD, protocol: 5 }),
+      () => Response.json({ ...BOARD, protocol: 6 }),
       refusal('board_parent_invalid', 400),
       refusal('repository_not_found', 404),
       refusal('board_collect_failed', 503),
@@ -687,6 +710,87 @@ describe('board page', () => {
       ]);
       expect(new Set(requests)).toEqual(new Set([`/api/v1/repositories/${HARNESS_ID}/board/parents`]));
     } finally { globalThis.fetch = original; }
+  });
+
+  test('seats decode their own document and parent protocol 4 is refused', async () => {
+    const original = globalThis.fetch;
+    const requests: string[] = [];
+    const answers = [Response.json({ state: 'pending' }, { status: 202 }), Response.json(SEATS), Response.json({ ...SEATS, protocol: 2 }), Response.json({ ...PARENTS, protocol: 4 })];
+    globalThis.fetch = (async (url: unknown) => { requests.push(String(url)); return answers.shift()!; }) as typeof fetch;
+    try {
+      const signal = new AbortController().signal;
+      expect(await fetchBoardSeats(HARNESS_ID, signal)).toEqual({ state: 'pending' });
+      expect(await fetchBoardSeats(HARNESS_ID, signal)).toEqual({ state: 'ok', seats: SEATS });
+      expect(await fetchBoardSeats(HARNESS_ID, signal)).toEqual({ state: 'unavailable', reason: 'parents_invalid' });
+      expect(await fetchBoardParents(HARNESS_ID, signal)).toEqual({ state: 'unavailable', reason: 'parents_invalid' });
+      expect(requests).toEqual([`/api/v1/repositories/${HARNESS_ID}/board/seats`, `/api/v1/repositories/${HARNESS_ID}/board/seats`, `/api/v1/repositories/${HARNESS_ID}/board/seats`, `/api/v1/repositories/${HARNESS_ID}/board/parents`]);
+    } finally { globalThis.fetch = original; }
+  });
+
+  test('seats, board and parent facts poll each 3 s from the cached routes; only unreachable backs off', async () => {
+    const subject: BoardSubject = { repository_id: HARNESS_ID, parent: 1474 };
+    const repositories = [HARNESS_ID];
+    const noBoard: BoardReader = async () => ({ state: 'unavailable', reason: 'unreachable' });
+    const probes = {
+      board: (reason: BoardReason) => {
+        const read: BoardReader = async () => ({ state: 'unavailable', reason });
+        return function Probe() { useBoard(read, subject, 0); return null; };
+      },
+      parents: (reason: BoardParentsReason) => {
+        const read: BoardParentsReader = async () => ({ state: 'unavailable', reason });
+        return function Probe() { useBoardParents(read, HARNESS_ID, 0); return null; };
+      },
+      seats: (reason: BoardParentsReason) => {
+        const read: BoardSeatsReader = async () => ({ state: 'unavailable', reason });
+        return function Probe() { useBoardSeats(read, HARNESS_ID, 0); return null; };
+      },
+      overview: (reason: BoardParentsReason) => {
+        const read: BoardParentsReader = async () => ({ state: 'unavailable', reason });
+        const readSeats = () => new Promise<never>(() => {});
+        return function Probe() { useOfficeOverview(repositories, read, noBoard, 0, readSeats); return null; };
+      },
+      // One repository refuses each cycle; the other answers. The refusal is an answer, so the overview keeps its 3 s cycle.
+      overviewOneRefuses: () => {
+        const read: BoardParentsReader = async id => id === HARNESS_ID ? { state: 'unavailable', reason: 'parents_github_failed' } : { state: 'ok', list: PARENTS };
+        const readSeats = () => new Promise<never>(() => {});
+        return function Probe() { useOfficeOverview([HARNESS_ID, 'repo_second'], read, noBoard, 0, readSeats); return null; };
+      },
+      overviewBoard: (reason: BoardReason) => {
+        const read: BoardReader = async () => ({ state: 'unavailable', reason });
+        const readParents: BoardParentsReader = async () => ({ state: 'ok', list: PARENTS });
+        const readSeats: BoardSeatsReader = async () => ({ state: 'ok', seats: SEATS });
+        return function Probe() { useOfficeOverview(repositories, readParents, read, 0, readSeats); return null; };
+      },
+    };
+    const original = globalThis.setTimeout;
+    const delays: number[] = [];
+    // Only the loop timer is held; React and the test helpers keep their short timers.
+    globalThis.setTimeout = ((run: () => void, delay = 0) => {
+      if (delay < 3000) return original(run, delay);
+      delays.push(delay);
+      return 0;
+    }) as typeof setTimeout;
+    try {
+      for (const [Probe, delay] of [
+        [probes.seats('parents_hc_failed'), 3000], [probes.seats('unreachable'), 6000],
+        [probes.parents('parents_github_failed'), 3000], [probes.board('board_collect_failed'), 3000], [probes.overview('parents_hc_failed'), 3000], [probes.overviewOneRefuses(), 3000],
+        [probes.parents('unreachable'), 6000], [probes.board('unreachable'), 6000], [probes.overview('unreachable'), 6000],
+      ] as const) {
+        delays.length = 0;
+        await mount(<Probe />);
+        await settle();
+        expect(delays).toEqual([delay]);
+        await act(async () => root?.unmount());
+      }
+      // The overview reads the board of each active parent on the same 3 s loop as its parents and seats.
+      for (const [Probe, board] of [[probes.overviewBoard('board_pending'), 3000], [probes.overviewBoard('unreachable'), 6000]] as const) {
+        delays.length = 0;
+        await mount(<Probe />);
+        await settle();
+        expect([...delays].sort((left, right) => left - right)).toEqual([3000, 3000, board]);
+        await act(async () => root?.unmount());
+      }
+    } finally { globalThis.setTimeout = original; }
   });
 
   test('the registry reader decodes the list with the core decoder and refuses any other shape', async () => {
@@ -808,7 +912,7 @@ const todayRow = (id: string) => document.querySelector(`[data-today="${id}"]`)!
 describe('board office (#1755)', () => {
   const rows = (selector: string) => Array.from(document.querySelectorAll<HTMLElement>(selector));
   type Terminal = BoardV1['execution'] extends infer E ? E extends { readonly terminals: readonly (infer T)[] } ? T : never : never;
-  const seat = (address: string, seatName: string, issue: number | null, pr: number | null, status: string | null, state: 'live' | 'finished' = 'live'): Terminal =>
+  const seat = (address: string, seatName: string, issue: number | null, pr: number | null, status: string | null, state: 'live' | 'finished' = 'live'): Extract<Terminal, { readonly seat_status: 'observed' }> =>
     ({ address, name: address, agent: null, state, status, status_kind: null, status_msg: null, status_ms:null, turn: 0, branch: null, seat_status: 'observed', seat: seatName, issue, pr });
   const observedClaim = { status_kind: 'observed', url: 'https://github.com/Ancienttwo/repo-harness/issues/1478#issuecomment-1', created_at: '2026-11-02T21:00:00Z', status: 'draft PR open; claim remains active', pr: null, head_sha: null } as const;
   /** The recorded board of #1474 with edited pull requests, items and terminals. */
@@ -829,7 +933,7 @@ describe('board office (#1755)', () => {
     block: { protocol: 1, kind: 'repo-harness.plan', merge_order: [1475, 1476, 1479], holds: [{ issue: 1477, reason: 'waits for #1476' }], batches: [[1475, 1476]], seat_limits: { worker: 3 } },
   };
   /** The parent list that carries the terminals of a board: the seats of the room. */
-  const seatsOf = (board: BoardV1): BoardParentsV1 => ({ ...PARENTS, seats: board.execution.status === 'observed' ? board.execution.terminals.map(terminal => ({ ...terminal, parent: '1474' })) : [] });
+  const seatsOf = (board: BoardV1): BoardSeatsV1 => ({ ...SEATS, seats: board.execution.status === 'observed' ? board.execution.terminals.map(terminal => ({ ...terminal, seat: terminal.seat_status === 'observed' ? terminal.seat : '', parent: '1474' })) : [] });
   const room = (board: BoardV1) => officeRoom(seatsOf(board), { board, attention: evaluateBoardAttention(board) });
   const officeAt = (path = '') => installDom(`http://127.0.0.1:4318/#board/office${path}`);
 
@@ -909,7 +1013,7 @@ describe('board office (#1755)', () => {
 
   test('the sample state equals the S0 mockup page: six workers, two away, two in the queue, three in the cart, three in the tray and the feed from server times', () => {
     const board = officeBoard(NOW);
-    const sample = officeRoom(officeParents(HARNESS_ID, NOW), { board, attention: evaluateBoardAttention(board) });
+    const sample = officeRoom(officeSeats(HARNESS_ID, NOW), { board, attention: evaluateBoardAttention(board) });
     expect(sample.desks.map(desk => [desk.state, desk.issue, desk.pr, desk.agent])).toEqual([
       ['coding', 1299, null, 'claude-code'], ['ci_pending', null, 1323, 'codex'], ['ci_failed', null, 1295, 'codex'],
       ['no_claim_status', 1305, null, 'claude-code'], ['acceptance_queue', 1300, 1324, 'claude-code'], ['acceptance_queue', 1321, 1321, 'codex'],
@@ -920,8 +1024,8 @@ describe('board office (#1755)', () => {
     expect([...sample.holds.map(hold => hold.issue), ...sample.backlog.map(entry => entry.issue)]).toEqual([1316, 1302, 1304]);
     expect(sample.feed.map(event => event.kind)).toEqual(['queued', 'accepted', 'ci_failed', 'plan', 'queued']);
     expect(sample.feed[1]).toMatchObject({ pr: 1311, carted: true });
-    expect(activeParent(officeParents(HARNESS_ID, NOW))).toBe(OFFICE_PARENT);
-    expect(activeParent(officeParents('repo_1f2e3d4c5b6a7980', NOW))).toBeNull();
+    expect(activeParent(officeParents(HARNESS_ID, NOW), officeSeats(HARNESS_ID, NOW))).toBe(OFFICE_PARENT);
+    expect(activeParent(officeParents('repo_1f2e3d4c5b6a7980', NOW), officeSeats('repo_1f2e3d4c5b6a7980', NOW))).toBeNull();
   });
 
   const SCENE_ROOM: SceneRoom = {
@@ -956,6 +1060,8 @@ describe('board office (#1755)', () => {
     const whiteboard = (revision: number | null) => composeRoom({ ...SCENE_ROOM, plan: { ...plan, revision } }, view).paths;
     expect(whiteboard(7)).not.toEqual(whiteboard(null));
     expect(whiteboard(7)).not.toEqual(whiteboard(8));
+    // A pending board read writes READING, not NO PLAN.
+    expect(composeRoom({ ...SCENE_ROOM, parent: 1, plan: 'reading' }, view).paths).not.toEqual(composeRoom({ ...SCENE_ROOM, parent: 1, plan: null }, view).paths);
     // Each policy has its own door, and no finding has no mark.
     const doors = ([null, 'on', 'off', 'unknown'] as const).map(mergeWait => JSON.stringify(composeRoom({ ...SCENE_ROOM, mergeWait }, view).paths));
     expect(new Set(doors).size).toBe(4);
@@ -1029,31 +1135,34 @@ describe('board office (#1755)', () => {
   });
 
   const fiveRegistered = (ids: readonly string[]) => decodeOperatorRepositories({ protocol: 1, kind: 'operator_repositories', stale_registrations: 0, repositories: ids.map((id, index) => ({ repository_id: id, display_name: `service-${index + 1}`, access_mode: 'read_write' })) });
-  const summaryRead = (id: string, row: Parameters<typeof decodeBoardSummaries>[0]): BoardSummariesRead => ({ state: 'ok', summaries: decodeBoardSummaries({ protocol: 3, kind: 'repo-harness.board-summaries', repository_id: id, parents: [row] }) });
-  const observed = (summary: { readonly queue: number; readonly ci_failures: number; readonly batch: { readonly accepted: number | null; readonly size: number | null }; readonly needs_you: number } & Partial<Pick<BoardSummaryV1, 'current_batch' | 'worker_limit' | 'seats'>>) => ({ parent: 1474, status: 'observed', observed_at: '2026-11-04T20:00:00.000Z',
-    summary: { current_batch: null, worker_limit: ISSUE_FLOW_WORKER_LIMIT, seats: { status: 'observed', desks: [], stalled: 0 }, ...summary } });
-
-  test('the overview sends one read at a time: the parents, then the summaries of a repository with an active parent, repository after repository', async () => {
+  test('the overview reads seats while parent facts wait; each facts loop is serial and boards name only active parents', async () => {
     officeAt();
     const ids = [HARNESS_ID, 'repo_2b3c4d5e6f708192', 'repo_3c4d5e6f70819203', 'repo_4d5e6f7081920314'];
     const [seated, idle, failed, last] = ids as [string, string, string, string];
     const five = fiveRegistered(ids);
     const parents = (id: string): BoardParentsRead => id === failed ? { state: 'unavailable', reason: 'parents_hc_failed' }
-      : { state: 'ok', list: id === idle ? { ...PARENTS, parents: [], seats: [] } : PARENTS };
+      : { state: 'ok', list: id === idle ? { ...PARENTS, parents: [] } : PARENTS };
     const waiting: { readonly read: string; readonly finish: () => void }[] = [];
     const delayed = <T,>(read: string, answer: T) => new Promise<T>(resolve => waiting.push({ read, finish: () => resolve(answer) }));
+    const asked: string[] = [];
     await mount(<OperatorApp {...props(busy(), {
       initialRepositories: five, readRepositories: async () => five,
+      readBoardSeats: async id => id === failed ? { state: 'unavailable', reason: 'parents_hc_failed' }
+        : { state: 'ok', seats: { ...SEATS, seats: id === idle ? [] : SEATS.seats } },
       readBoardParents: id => delayed(`parents:${id}`, parents(id)),
-      readBoardSummaries: id => delayed(`summaries:${id}`, summaryRead(id, { parent: 1474, status: 'not_read' })),
+      readBoard: async (subject) => { asked.push(`${subject.repository_id}:${subject.parent}`); return { state: 'unavailable', reason: 'board_pending' }; },
     })} />);
-    for (const read of [`parents:${seated}`, `summaries:${seated}`, `parents:${idle}`, `parents:${failed}`, `parents:${last}`, `summaries:${last}`]) {
+    await settle();
+    expect(rows('[data-office-card="room"]')).toHaveLength(2);
+    for (const read of [`parents:${seated}`, `parents:${idle}`, `parents:${failed}`, `parents:${last}`]) {
       await settle();
       expect(waiting.map(entry => entry.read)).toEqual([read]);
       await act(async () => waiting.shift()!.finish());
     }
     await settle();
     expect(waiting).toEqual([]);
+    // Only the active parent of each repository with one is read.
+    expect([...new Set(asked)]).toEqual([`${seated}:1474`, `${last}:1474`]);
     expect(rows('[data-office-card="loading"]')).toHaveLength(0);
     const refused = rows(`[data-office-card="failed"][data-repository="${failed}"][data-board-parents-reason="parents_hc_failed"]`);
     expect(refused).toHaveLength(1);
@@ -1065,28 +1174,58 @@ describe('board office (#1755)', () => {
     expect(window.location.hash).toBe(`#board/office/${idle}`);
   });
 
-  test('the card and the office chips show only what the server sent: the row of the active parent, with no chip for a missing value', async () => {
+  test('the overview keeps parent loading and failure distinct from a confirmed absent parent', async () => {
+    for (const occupied of [true, false]) {
+      officeAt();
+      const one = fiveRegistered([HARNESS_ID]);
+      let finish!: (read: BoardParentsRead) => void;
+      let readParents = () => new Promise<BoardParentsRead>(resolve => { finish = resolve; });
+      await mount(<OperatorApp {...props(busy(), {
+        initialRepositories: one, readRepositories: async () => one,
+        readBoardParents: () => readParents(),
+        readBoardSeats: async () => ({ state: 'ok', seats: { ...SEATS, seats: occupied ? SEATS.seats : [] } }),
+      })} />);
+      await settle();
+      const card = () => document.querySelector<HTMLElement>(`[data-office-card][data-repository="${HARNESS_ID}"]`)!;
+      expect(card().textContent).toContain(translate('en', 'board.parents.loading.title'));
+      expect(card().textContent).not.toMatch(/no parent/iu);
+      expect(card().getAttribute('aria-label')).not.toMatch(/no parent/iu);
+      await act(async () => finish({ state: 'unavailable', reason: 'parents_github_failed' }));
+      await settle();
+      expect(card().textContent).toContain(translate('en', 'board.reason.parents_github_failed'));
+      expect(card().getAttribute('data-board-parents-reason')).toBe('parents_github_failed');
+      expect(card().textContent).not.toMatch(/no parent/iu);
+      expect(card().getAttribute('aria-label')).not.toMatch(/no parent/iu);
+      readParents = async () => ({ state: 'ok', list: { ...PARENTS, parents: [] } });
+      await act(async () => rows('button').find(element => element.textContent?.includes('Refresh'))!.click());
+      await settle();
+      expect(card().textContent).toMatch(/no parent/iu);
+      expect(card().getAttribute('data-board-parents-reason')).toBeNull();
+      await act(async () => root?.unmount()); root = null;
+    }
+  });
+
+  test('the card and the office chips show only what the board of the active parent gives, with no chip for a missing value', async () => {
     officeAt();
     const parentless = { ...PARENTS, parents: [] };
-    const idle = { ...PARENTS, parents: [], seats: [] };
-    const zero = { queue: 0, ci_failures: 0, batch: { accepted: 0, size: 0 }, needs_you: 0 };
-    const cases: readonly { readonly id: string; readonly list: BoardParentsRead; readonly read: (id: string) => BoardSummariesRead; readonly chips: readonly string[]; readonly name?: string }[] = [
-      { id: 'repo_1000000000000001', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed(zero)), chips: ['2/8'], name: 'parent #1474' },
-      { id: 'repo_1000000000000002', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed({ queue: 2, ci_failures: 1, batch: { accepted: null, size: null }, needs_you: 0 })), chips: ['worker 2 · no plan', 'queue 2', 'CI ✗ 1'] },
-      { id: 'repo_1000000000000003', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, observed({ queue: 1, ci_failures: 1, batch: { accepted: 3, size: 8 }, current_batch: { accepted: 2, size: 5 }, needs_you: 2 })), chips: ['needs you 2', '2/8', 'queue 1', 'CI ✗ 1', 'batch 2/6'] },
-      { id: 'repo_1000000000000004', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, { parent: 1474, status: 'not_read' }), chips: ['worker 2', 'board not read'] },
-      { id: 'repo_1000000000000005', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, { parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' }), chips: ['worker 2', 'no summary'] },
-      { id: 'repo_1000000000000006', list: { state: 'ok', list: PARENTS }, read: () => ({ state: 'unavailable', reason: 'parents_busy' }), chips: ['worker 2', 'no summary'] },
-      // Another parent's row is never this card's row.
-      { id: 'repo_1000000000000007', list: { state: 'ok', list: PARENTS }, read: id => summaryRead(id, { ...observed({ ...zero, queue: 9 }), parent: 1651 }), chips: ['worker 2', 'board not read'] },
-      { id: 'repo_1000000000000008', list: { state: 'ok', list: parentless }, read: () => { throw new Error('a repository with no active parent reads no summaries'); }, chips: ['worker 2'], name: 'no parent' },
-      { id: 'repo_1000000000000009', list: { state: 'ok', list: idle }, read: () => { throw new Error('an idle repository reads no summaries'); }, chips: ['Idle'], name: 'No parent in progress' },
+    const idle = { ...PARENTS, parents: [] };
+    const ok = (board: BoardV1): BoardRead => ({ state: 'ok', board });
+    const cases: readonly { readonly id: string; readonly list: BoardParentsRead; readonly read: () => BoardRead; readonly chips: readonly string[]; readonly name?: string }[] = [
+      { id: 'repo_1000000000000001', list: { state: 'ok', list: PARENTS }, read: () => ok(countedBoard({ limit: 8 })), chips: ['2/8'], name: 'parent #1474' },
+      { id: 'repo_1000000000000002', list: { state: 'ok', list: PARENTS }, read: () => ok(countedBoard({ queue: 2, ci: 1 })), chips: ['worker 2 · no plan', 'queue 2', 'CI ✗ 1'] },
+      { id: 'repo_1000000000000003', list: { state: 'ok', list: PARENTS }, read: () => ok(countedBoard({ queue: 1, ci: 1, accepted: 2, limit: 8, needsYou: true })), chips: ['needs you 1', '2/8', 'queue 1', 'CI ✗ 1', 'batch 2/6'] },
+      { id: 'repo_1000000000000004', list: { state: 'ok', list: PARENTS }, read: () => ({ state: 'unavailable', reason: 'board_pending' }), chips: ['worker 2', 'board not read'] },
+      { id: 'repo_1000000000000005', list: { state: 'ok', list: PARENTS }, read: () => ({ state: 'unavailable', reason: 'board_collect_failed' }), chips: ['worker 2', 'board: board_collect_failed'] },
+      { id: 'repo_1000000000000006', list: { state: 'ok', list: PARENTS }, read: () => ({ state: 'unavailable', reason: 'unreachable' }), chips: ['worker 2', 'board: unreachable'] },
+      { id: 'repo_1000000000000007', list: { state: 'ok', list: parentless }, read: () => { throw new Error('a repository with no active parent reads no board'); }, chips: ['worker 2'], name: 'no parent' },
+      { id: 'repo_1000000000000008', list: { state: 'ok', list: idle }, read: () => { throw new Error('an idle repository reads no board'); }, chips: ['Idle'], name: 'No parent in progress' },
     ];
     const registry = fiveRegistered(cases.map(entry => entry.id));
     await mount(<OperatorApp {...props(busy(), {
       initialRepositories: registry, readRepositories: async () => registry,
+      readBoardSeats: async id => ({ state: 'ok', seats: { ...SEATS, seats: id.endsWith('8') ? [] : SEATS.seats } }),
       readBoardParents: async id => cases.find(entry => entry.id === id)!.list,
-      readBoardSummaries: async id => cases.find(entry => entry.id === id)!.read(id),
+      readBoard: async subject => cases.find(entry => entry.id === subject.repository_id)!.read(),
     })} />);
     await settle();
     for (const { id, chips, name } of cases) {
@@ -1095,90 +1234,73 @@ describe('board office (#1755)', () => {
       if (name !== undefined) expect(card.querySelector('.board-office__card-name')?.textContent).toContain(name);
       expect(card.tagName).toBe('BUTTON');
     }
-    // The card shows the observation time of its snapshot; a parent with no snapshot row shows none.
-    expect(rows('[data-repository$="1"] [data-office-observed] time')[0]!.getAttribute('datetime')).toBe('2026-11-04T20:00:00.000Z');
+    // The card shows the observation time of its board; a parent with no board read shows none.
+    expect(rows('[data-repository$="1"] [data-office-observed] time')[0]!.getAttribute('datetime')).toBe(BOARD.observed_at);
     expect(rows('[data-repository$="4"] [data-office-observed]')).toHaveLength(0);
     // Waiting for you first, then CI failed, then the lit rooms, then the idle rooms, each in registry order.
-    expect(rows('[data-office-card]').map(card => card.getAttribute('data-repository')!.at(-1))).toEqual(['3', '2', '1', '4', '5', '6', '7', '8', '9']);
+    expect(rows('[data-office-card]').map(card => card.getAttribute('data-repository')!.at(-1))).toEqual(['3', '2', '1', '4', '5', '6', '7', '8']);
     expect(rows('[data-repository$="3"]')[0]!.hasAttribute('data-waiting')).toBe(true);
-    expect(rows('[data-office-total]').map(chip => chip.textContent)).toEqual(['rooms: 9', 'on seat: 16', 'queued for acceptance: 3', 'CI failed: 2', 'waiting for you: 2', 'rooms not read: 4']);
-    expect(rows('[data-repository$="3"]')[0]!.getAttribute('aria-label')).toBe('service-3: needs you 2, 2/8, queue 1, CI ✗ 1, batch 2/6. Open the office.');
+    expect(rows('[data-office-total]').map(chip => chip.textContent)).toEqual(['rooms: 8', 'on seat: 14', 'queued for acceptance: 3', 'CI failed: 2', 'waiting for you: 1', 'rooms not read: 3']);
+    expect(rows('[data-repository$="3"]')[0]!.getAttribute('aria-label')).toBe('service-3: needs you 1, 2/8, queue 1, CI ✗ 1, batch 2/6. Open the office.');
     expect(document.querySelector('.board-office__mascot')?.getAttribute('aria-label')).toBe('Boss (you): calm');
   });
 
-  test('the sample cards equal the S0 mockup: the limit, the stalled count and the current batch from each summary row', async () => {
+  test('the sample cards equal their rooms: the limit, the stalled count and the current batch from each sample board', async () => {
     officeAt();
     await mount(<OperatorApp {...fixtureProps(OFFICE_FIXTURE)} />);
     await settle();
     const chips = (name: string) => Array.from(rows('[data-office-card]').find(card => card.querySelector('strong')?.textContent === name)!.querySelectorAll<HTMLElement>('[data-office-chip]')).map(chip => [chip.textContent, chip.getAttribute('data-tone')]);
-    expect(chips('repo-harness')).toEqual([['6/6 full', 'warn'], ['queue 2', 'warn'], ['CI ✗ 1', 'danger'], ['no status 1', 'warn'], ['batch 3/6', 'ok']]);
+    // The sample board of repo-harness has an A2 finding, and its room shows it too.
+    expect(chips('repo-harness')).toEqual([['needs you 1', 'accent'], ['6/6 full', 'warn'], ['queue 2', 'warn'], ['CI ✗ 1', 'danger'], ['no status 1', 'warn'], ['batch 3/6', 'ok']]);
     expect(chips('aiphabee')).toEqual([['needs you 1', 'accent'], ['3/4', 'subtle'], ['CI ✗ 1', 'danger'], ['batch 2/6', 'ok']]);
     expect(chips('AstroZi')).toEqual([['3/3 full', 'warn'], ['queue 1', 'warn'], ['no status 1', 'warn']]);
     expect(chips('arch-context')).toEqual([['worker 1 · no plan', 'subtle']]);
   });
 
-  test('a card joins each desk row to one seat on its labels; a seat with no row keeps its seat-only state; a summary with no seats gives no desk and no count', async () => {
-    type ListedSeat = BoardParentsV1['seats'][number];
-    const row = (issue: number | null, pr: number | null, state: DeskState) => ({ seat: 'worker', agent: null, issue, pr, state });
-    const desks = (seats: BoardSummarySeatsV1, ...listed: readonly ListedSeat[]) => officeCard({
-      kind: 'ready', list: { ...PARENTS, seats: listed }, summaries: summaryRead('repo_1000000000000001', observed({ queue: 0, ci_failures: 0, batch: { accepted: 0, size: 1 }, needs_you: 0, seats })),
-    }).room.desks.map(desk => desk.state);
-    const same = { ...seat('t1', 'worker', 7, null, 'working'), parent: '1474' };
-    const twin = { ...same, address: 't2' };
-    const unowned = { ...same, address: 't3', parent: null };
-    const other = { ...same, address: 't4', parent: '1651' };
-    for (const [seats, terminals, states] of [
-      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [same], ['ci_failed']],
-      // Only a seat of the active parent takes its row: a seat with no parent or of another parent comes first in the list and keeps its state.
-      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [unowned, same], ['coding', 'ci_failed']],
-      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [other, same], ['coding', 'ci_failed']],
-      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [unowned, other, same], ['coding', 'coding', 'ci_failed']],
-      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [unowned, other], ['coding', 'coding']],
-      // A row of another seat is not its row.
-      [{ status: 'observed', desks: [row(8, null, 'ci_failed')], stalled: 0 }, [same], ['coding']],
-      [{ status: 'observed', desks: [{ ...row(7, null, 'ci_failed'), agent: 'codex' }], stalled: 0 }, [same], ['coding']],
-      [{ status: 'observed', desks: [row(7, 9, 'ci_failed')], stalled: 0 }, [same], ['coding']],
-      // Two seats with the same labels take one row each.
-      [{ status: 'observed', desks: [row(7, null, 'ci_failed'), row(7, null, 'ci_pending')], stalled: 0 }, [same, twin], ['ci_failed', 'ci_pending']],
-      [{ status: 'observed', desks: [row(7, null, 'ci_failed')], stalled: 0 }, [same, twin], ['ci_failed', 'coding']],
-      [{ status: 'unavailable', reason: 'no_seat_terminals' }, [same, twin], []],
-    ] as const) expect(desks(seats, ...terminals)).toEqual([...states]);
+  test('the card is the room of its active parent: the same seats and board give the same desks and counts, in the card and in the room it opens', async () => {
+    const planned = countedBoard({ queue: 1, ci: 1, accepted: 2, limit: 2, needsYou: true });
+    const view = { kind: 'ready', parents: { kind: 'ready', list: PARENTS }, seats: SEATS, board: { state: 'ok', board: planned } } as const;
+    const card = officeCard(view);
+    expect(card.room).toEqual(officeRoom(SEATS, { board: planned, attention: evaluateBoardAttention(planned) }));
+    expect(card.board).toEqual({ status: 'observed', observed_at: planned.observed_at, needs_you: 1, ci_failures: 1 });
+    // With no board read, the card keeps the seat-only room.
+    expect(officeCard({ ...view, board: { state: 'unavailable', reason: 'board_pending' } })).toMatchObject({ room: officeRoom(SEATS, null), board: { status: 'not_read' } });
 
     officeAt();
-    const ids = ['repo_1000000000000001', 'repo_1000000000000002'];
-    const two = fiveRegistered(ids);
-    const counts = { queue: 1, ci_failures: 0, batch: { accepted: 0, size: 2 }, needs_you: 0 };
+    const one = fiveRegistered([HARNESS_ID]);
     await mount(<OperatorApp {...props(busy(), {
-      initialRepositories: two, readRepositories: async () => two,
+      initialRepositories: one, readRepositories: async () => one,
       readBoardParents: async () => ({ state: 'ok', list: PARENTS }),
-      readBoardSummaries: async id => summaryRead(id, observed({ ...counts, worker_limit: 2, seats: id === ids[0] ? { status: 'unavailable', reason: 'no_seat_terminals' } : { status: 'observed', desks: [{ seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'no_claim_status' }], stalled: 1 } })),
+      readBoardSeats: async () => ({ state: 'ok', seats: SEATS }),
+      readBoard: async () => ({ state: 'ok', board: planned }),
     })} />);
     await settle();
-    const chips = (id: string) => Array.from(rows(`[data-repository="${id}"]`)[0]!.querySelectorAll('[data-office-chip]')).map(chip => chip.textContent);
-    expect(chips(ids[0]!)).toEqual(['seats: no_seat_terminals', 'queue 1']);
-    expect(chips(ids[1]!)).toEqual(['2/2 full', 'queue 1', 'no status 1']);
-    expect(rows('[data-office-total]').map(chip => chip.textContent)).toEqual(['rooms: 2', 'on seat: 2', 'queued for acceptance: 2', 'CI failed: 0', 'waiting for you: 0', 'rooms not read: 1']);
+    const office = rows(`[data-office-card="room"][data-repository="${HARNESS_ID}"]`)[0]!;
+    expect(Array.from(office.querySelectorAll('[data-office-chip]')).map(chip => chip.textContent)).toEqual(['needs you 1', '2/2 full', 'queue 1', 'CI ✗ 1', 'batch 2/6']);
+    await act(async () => office.click());
+    await settle();
+    expect(document.querySelector('[data-seat-meter]')?.getAttribute('data-seat-meter')).toBe('2/2');
+    expect(document.querySelector('.board-office__scene svg')?.getAttribute('aria-label')).toContain('2 worker desks, 1 pull requests in the acceptance queue');
   });
 
-  test('a hidden tab drops every kept observation: with a parents read, a summaries read or no read in flight, the resumed cycle shows nothing old', async () => {
-    const counts = (queue: number) => ({ queue, ci_failures: 0, batch: { accepted: null, size: null }, needs_you: 0 });
+  test('a hidden tab drops every kept observation: with a parents read, a board read or no read in flight, the resumed cycle shows nothing old', async () => {
     const stale = 3;
     const fresh = 5;
     const totals = () => rows('[data-office-total]').map(chip => chip.textContent);
-    for (const inFlight of ['parents', 'summaries', 'none'] as const) {
+    for (const inFlight of ['parents', 'board', 'none'] as const) {
       officeAt();
       let visibility = 'visible';
       Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
       const visible = async (value: string) => { visibility = value; await act(async () => document.dispatchEvent(new window.Event('visibilitychange') as unknown as Event)); };
       const one = fiveRegistered([HARNESS_ID]);
-      let hold: 'parents' | 'summaries' | null = null;
+      let hold: 'parents' | 'board' | null = null;
       let queue = stale;
       const held: (() => void)[] = [];
-      const gate = <T,>(read: 'parents' | 'summaries', answer: T) => (hold === read ? new Promise<T>(resolve => held.push(() => resolve(answer))) : Promise.resolve(answer));
+      const gate = <T,>(read: 'parents' | 'board', answer: T) => (hold === read ? new Promise<T>(resolve => held.push(() => resolve(answer))) : Promise.resolve(answer));
       await mount(<OperatorApp {...props(busy(), {
         initialRepositories: one, readRepositories: async () => one,
         readBoardParents: () => gate('parents', { state: 'ok', list: PARENTS }),
-        readBoardSummaries: id => gate('summaries', summaryRead(id, observed(counts(queue)))),
+        readBoard: () => gate('board', { state: 'ok', board: countedBoard({ queue }) } as const),
       })} />);
       await settle();
       expect(rows('[data-office-chip="queue"]').map(chip => chip.textContent)).toEqual([`queue ${stale}`]);
@@ -1201,8 +1323,8 @@ describe('board office (#1755)', () => {
       await visible('visible');
       await settle();
       expect(held).toHaveLength(1);
-      expect(rows('[data-office-card="loading"]')).toHaveLength(1);
-      expect(totals()).toEqual(unconfirmed);
+      expect(rows('[data-office-card="room"]')).toHaveLength(1);
+      expect(totals()).toEqual(['rooms: 1', 'on seat: 2', 'queued for acceptance: 0', 'CI failed: 0', 'waiting for you: 0', 'rooms not read: 1']);
       hold = null;
       await act(async () => held.shift()!());
       await settle();
@@ -1216,7 +1338,7 @@ describe('board office (#1755)', () => {
 
   test('the sample leads equal the mockup: an empty seat stays empty, and an occupied seat with an unknown agent stays occupied', () => {
     const repository = fixtureProps(OFFICE_FIXTURE).initialRepositories!.repositories.find(row => row.display_name === 'arch-context')!.repository_id;
-    const { room } = officeCard({ kind: 'ready', list: officeParents(repository, NOW), summaries: null });
+    const { room } = officeCard({ kind: 'ready', parents: { kind: 'ready', list: officeParents(repository, NOW) }, seats: officeSeats(repository, NOW), board: null });
     expect([room.orchestrator?.agent, room.advisor]).toEqual([null, null]);
     expect(room.orchestrator).not.toBeNull();
     const lead = (orchestrator: SceneMiniRoom['orchestrator']) => composeMiniRoom({ orchestrator, advisor: null, plan: false, needsYou: false, desks: [], limit: null, queue: 0, cart: 0, idle: false }, { frame: 0, night: false });
@@ -1307,6 +1429,95 @@ describe('board office (#1755)', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
+  test('an empty room keeps the plan unknown until parent facts establish that no parent is active', async () => {
+    officeAt(`/${HARNESS_ID}`);
+    let finish!: (read: BoardParentsRead) => void;
+    let readParents = () => new Promise<BoardParentsRead>(resolve => { finish = resolve; });
+    await mount(<OperatorApp {...props(busy(), {
+      readBoardParents: () => readParents(),
+      readBoardSeats: async () => ({ state: 'ok', seats: { ...SEATS, seats: [] } }),
+    })} />);
+    await settle();
+    const state = () => document.querySelector('[data-setup-row="plan"]')?.getAttribute('data-setup-state');
+    expect(state()).toBe('unknown');
+    await act(async () => finish({ state: 'unavailable', reason: 'parents_github_failed' }));
+    await settle();
+    expect(state()).toBe('unknown');
+    expect(document.querySelector('[data-setup-row="plan"]')?.textContent).toContain('parents_github_failed');
+    readParents = async () => ({ state: 'ok', list: { ...PARENTS, parents: [] } });
+    await act(async () => rows('button').find(element => element.textContent?.includes('Refresh'))!.click());
+    await settle();
+    expect(state()).toBe('optional');
+  });
+
+  test('a repository room shows seats while the parents read is pending', async () => {
+    officeAt(`/${HARNESS_ID}`);
+    let finish!: (read: BoardParentsRead) => void;
+    const boards: number[] = [];
+    await mount(<OperatorApp {...props(busy(), {
+      readBoardParents: () => new Promise(resolve => { finish = resolve; }),
+      readBoard: async subject => { boards.push(subject.parent); return { state: 'ok', board: BOARD }; },
+    })} />);
+    await settle();
+    expect(rows('[data-desk]').map(desk => desk.getAttribute('data-desk'))).toEqual(['t1', 't2']);
+    expect(boards).toEqual([]);
+    await act(async () => finish({ state: 'ok', list: PARENTS }));
+    await settle();
+    expect(boards).toEqual([1474]);
+    expect(rows('[data-desk]').map(desk => desk.getAttribute('data-desk'))).toEqual(['t1', 't2']);
+  });
+
+  test('the room draws its seats from the seats document while the board read is pending, and the board fills in the same room; the list layout waits and a failed read draws no room', async () => {
+    const board = boardWith({
+      plan: PLAN,
+      prs: { 1499: { required_check: { status: 'failure', completed_at: '2026-11-02T21:00:00Z' } } },
+      terminals: [seat('t1', 'worker', 1475, null, 'working'), seat('t2', 'worker', 1476, 1499, 'working'), seat('t3', 'orchestrator', null, null, 'idle')],
+    });
+    const pending: ((read: BoardRead) => void)[] = [];
+    const readBoard: BoardReader = () => new Promise(resolve => { pending.push(resolve); });
+    for (const path of [`/${HARNESS_ID}/1474`, `/${HARNESS_ID}`]) {
+      officeAt(path);
+      pending.length = 0;
+      await mount(<OperatorApp {...props(busy(), { readBoard, readBoardSeats: async () => ({ state: 'ok', seats: seatsOf(board) }) })} />);
+      await settle();
+      expect(pending).toHaveLength(1);
+      expect(document.querySelector('[data-board-office="room"]')?.getAttribute('data-board-parent')).toBe('1474');
+      expect(rows('[data-desk]').map(desk => [desk.getAttribute('data-desk'), desk.getAttribute('aria-label')])).toEqual([['t1', '#1475 · Agent unknown: Coding'], ['t2', '#1476 · Agent unknown: Coding']]);
+      expect(document.querySelector('[data-plan]')?.getAttribute('data-plan')).toBe('reading');
+      expect(document.querySelector('[data-plan]')?.textContent).toBe('Reading the board');
+      expect(document.querySelector('[data-feed-empty]')?.textContent).toBe('Reading the board');
+      expect(document.querySelector('[data-board-office="room"] [role="img"]')?.getAttribute('aria-label')).toEndWith(', reading the board.');
+      await act(async () => rows('[data-desk="t2"]')[0]!.click());
+      await act(async () => pending[0]!({ state: 'ok', board }));
+      await settle();
+      expect(document.querySelector('[data-plan]')?.getAttribute('data-plan')).toBe('observed');
+      expect(rows('[data-desk="t2"]')[0]!.getAttribute('aria-label')).toBe('#1476 · Agent unknown: CI failed');
+      expect(rows('[data-desk="t2"]')[0]!.getAttribute('aria-pressed')).toBe('true');
+      await act(async () => root?.unmount());
+    }
+
+    // A selected parent with no live seat: the pending read wins over the empty-room line.
+    officeAt(`/${HARNESS_ID}/1474`);
+    await mount(<OperatorApp {...props(busy(), { readBoard, readBoardSeats: async () => ({ state: 'ok', seats: { ...SEATS, seats: [] } }) })} />);
+    await settle();
+    expect(document.querySelector('[data-feed-empty]')?.textContent).toBe('Reading the board');
+    await act(async () => root?.unmount());
+
+    boardAt();
+    pending.length = 0;
+    await mount(<OperatorApp {...props(busy(), { readBoard })} />);
+    await settle();
+    expect(document.querySelector('[data-board-office="room"]')).toBeNull();
+    expect(document.body.textContent).toContain('Reading the board of #1474 from GitHub and hc.');
+    await act(async () => root?.unmount());
+
+    officeAt(`/${HARNESS_ID}/1474`);
+    await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'unavailable', reason: 'board_collect_failed' }) })} />);
+    await settle();
+    expect(document.querySelector('[data-board-reason]')?.getAttribute('data-board-reason')).toBe('board_collect_failed');
+    expect(document.querySelector('[data-board-office="room"]')).toBeNull();
+  });
+
   test('with an observed plan the header has the plan chip and the seat meter, and each hit fills the side panel', async () => {
     officeAt(`/${HARNESS_ID}/1474`);
     await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board: boardWith({ plan: PLAN }) }) })} />);
@@ -1384,7 +1595,7 @@ describe('board office (#1755)', () => {
     for (const color of ['danger', 'ok']) expect(colors('idle', 0)).not.toContain(color);
     expect(new Set(DESK_STATES.map(state => JSON.stringify(deskVignette(state, agent, 0).paths))).size).toBe(DESK_STATES.length);
 
-    const list: BoardParentsV1 = { ...PARENTS, seats: [
+    const list: BoardSeatsV1 = { ...SEATS, seats: [
       { ...seat('t1', 'worker', 9001, null, 'blocked'), status_msg: 'waits for a review', parent: null },
       { ...seat('t2', 'worker', 9002, null, 'error'), status_msg: 'push refused', parent: null },
       { ...seat('t3', 'worker', 9003, null, 'done'), parent: null },
@@ -1392,7 +1603,7 @@ describe('board office (#1755)', () => {
       { ...seat('t5', 'worker', 9005, null, null), parent: null },
     ] };
     officeAt(`/${HARNESS_ID}`);
-    await mount(<OperatorApp {...props(busy(), { readBoardParents: async () => ({ state: 'ok', list }) })} />);
+    await mount(<OperatorApp {...props(busy(), { readBoardSeats: async () => ({ state: 'ok', seats: list }) })} />);
     await settle();
     expect(rows('[data-desk]').map(desk => desk.getAttribute('aria-label'))).toEqual(['#9001 · Agent unknown: Blocked', '#9002 · Agent unknown: Error', '#9003 · Agent unknown: Done', '#9004 · Agent unknown: Idle', '#9005 · Agent unknown: Idle']);
     for (const [address, source, message] of [
@@ -1442,7 +1653,7 @@ describe('board office (#1755)', () => {
       [silent, ['[data-office-hit="orchestrator"]'], 'ORCHESTRATOR', [], ['Message']],
     ] as const) {
       officeAt(`/${HARNESS_ID}/1474`);
-      await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board }), readBoardParents: async () => ({ state: 'ok', list: seatsOf(board) }) })} />);
+      await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board }), readBoardSeats: async () => ({ state: 'ok', seats: seatsOf(board) }) })} />);
       await settle();
       for (const click of clicks) await act(async () => rows(click)[0]!.click());
       const view = document.querySelector('[data-office-panel]')!;
@@ -1454,23 +1665,23 @@ describe('board office (#1755)', () => {
   });
 
   test('a repository room with no selected parent seats every live seat: the active parent gives the plan, an idle repository keeps its furnished desks', async () => {
-    const seated: BoardParentsV1 = {
-      ...PARENTS, seats: [
+    const seated: BoardSeatsV1 = {
+      ...SEATS, seats: [
         { ...seat('t1', 'orchestrator', null, null, 'working'), agent: 'claude-code', parent: null },
         { ...seat('t2', 'advisor', null, null, 'idle'), agent: 'codex', parent: null },
         { ...seat('t3', 'worker', 9001, null, 'working'), agent: 'codex', parent: null },
         { ...seat('t4', 'worker', 1476, 1499, 'idle'), agent: 'pi', parent: '1474' },
-        { address: 't5', name: null, agent: null, state: 'live', status: null, status_kind: null, status_msg: null, status_ms:null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_invalid', parent: null },
+        { address: 't5', name: null, agent: null, state: 'live', status: null, status_kind: null, status_msg: null, status_ms:null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_invalid', seat: '', parent: null },
       ],
     };
     const boards: number[] = [];
     officeAt(`/${HARNESS_ID}`);
     await mount(<OperatorApp {...props(busy(), {
       readBoard: async (subject) => { boards.push(subject.parent); return { state: 'ok', board: boardWith({ plan: PLAN }) }; },
-      readBoardParents: async () => ({ state: 'ok', list: seated }),
+      readBoardSeats: async () => ({ state: 'ok', seats: seated }),
     })} />);
     await settle();
-    expect(boards).toEqual([PARENTS.parents.find(parent => parent.seats > 0)!.number]);
+    expect(boards).toEqual([joinBoardParents(PARENTS, SEATS).active_parent!]);
     expect(document.querySelector('[data-board-office="room"]')?.getAttribute('data-board-parent')).toBe('1474');
     expect(rows('[data-desk]').map(desk => desk.getAttribute('aria-label'))).toEqual(['#9001 · Codex: Coding', '#1476 · pi: Idle']);
     expect(rows('[data-boss]').map(button => button.getAttribute('data-boss'))).toEqual(['rage', 'carrot', 'mine', 'valve']);
@@ -1482,10 +1693,10 @@ describe('board office (#1755)', () => {
     }
     await act(async () => root?.unmount());
 
-    const idle: BoardParentsV1 = { ...PARENTS, parents: PARENTS.parents.map(parent => ({ ...parent, seats: 0 })), seats: [] };
+    const idle: BoardSeatsV1 = { ...SEATS, seats: [] };
     boards.length = 0;
     officeAt(`/${HARNESS_ID}`);
-    await mount(<OperatorApp {...props(busy(), { readBoardParents: async () => ({ state: 'ok', list: idle }) })} />);
+    await mount(<OperatorApp {...props(busy(), { readBoardSeats: async () => ({ state: 'ok', seats: idle }) })} />);
     await settle();
     expect(boards).toEqual([]);
     const empty = document.querySelector('[data-board-office="room"]')!;
@@ -1504,7 +1715,7 @@ describe('board office (#1755)', () => {
   });
 
   test('occupancy sets only the light: the parent sets the no-parent label and the plan sets the chip and the meter', async () => {
-    const noSeat = { ...PARENTS, parents: PARENTS.parents.map(parent => ({ ...parent, seats: 0 })), seats: [] };
+    const noSeat: BoardSeatsV1 = { ...SEATS, seats: [] };
     const loose = { ...noSeat, seats: [{ ...seat('t1', 'worker', 9001, null, 'working'), parent: null }] };
     for (const [path, list, plan, chip, tone, meter, label] of [
       [`/${HARNESS_ID}/1474`, noSeat, PLAN, 'observed', null, 'worker 0/3', false],
@@ -1515,7 +1726,7 @@ describe('board office (#1755)', () => {
       officeAt(path);
       await mount(<OperatorApp {...props(busy(), {
         readBoard: async () => ({ state: 'ok', board: boardWith({ plan }) }),
-        readBoardParents: async () => ({ state: 'ok', list }),
+        readBoardSeats: async () => ({ state: 'ok', seats: list }),
       })} />);
       await settle();
       const shown = document.querySelector('[data-plan]')!;
@@ -1554,7 +1765,7 @@ describe('board office (#1755)', () => {
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(title);
   });
 
-  const advisorList = (status: string | null): BoardParentsV1 => ({ ...PARENTS, seats: [...PARENTS.seats, { ...seat('t9', 'advisor', null, null, status), parent: null }] });
+  const advisorList = (status: string | null): BoardSeatsV1 => ({ ...SEATS, seats: [...SEATS.seats, { ...seat('t9', 'advisor', null, null, status), parent: null }] });
 
   test('the boss buttons confirm, send only the command id and take the cooldown, the lock and the refusals from the server answers', async () => {
     const posts: BossCommandPost[] = [];
@@ -1572,7 +1783,7 @@ describe('board office (#1755)', () => {
     ] as const) {
       officeAt(`/${HARNESS_ID}/1474`);
       await mount(<OperatorApp {...props(busy(), {
-        readBoardParents: async () => ({ state: 'ok', list: advisorList('idle') }),
+        readBoardSeats: async () => ({ state: 'ok', seats: advisorList('idle') }),
         writeBossCommand: async (body) => { posts.push(body); return answer; },
       })} />);
       await settle();
@@ -1598,7 +1809,7 @@ describe('board office (#1755)', () => {
     officeAt(`/${HARNESS_ID}/1474`);
     await mount(<OperatorApp {...props(busy(), {
       readBoard: async () => ({ state: 'ok', board: BOARD }),
-      readBoardParents: async () => ({ state: 'ok', list: advisorList('idle') }),
+      readBoardSeats: async () => ({ state: 'ok', seats: advisorList('idle') }),
       writeBossCommand: async body => (body.command === 'carrot' ? { state: 'sent' } : { state: 'refused', status: 409, retry_after_seconds: 90, error: { code: 'boss_cooldown', message: '', next_action: '' } }),
     })} />);
     await settle();
@@ -1621,7 +1832,7 @@ describe('board office (#1755)', () => {
     for (const reduce of [true, false]) {
       officeAt(`/${HARNESS_ID}/1474`);
       Object.defineProperty(window, 'matchMedia', { configurable: true, value: (media: string) => ({ matches: media.includes('reduced-motion') && reduce, media, addEventListener() {}, removeEventListener() {} }) });
-      await mount(<OperatorApp {...props(busy(), { readBoardParents: async () => ({ state: 'ok', list: advisorList('idle') }), writeBossCommand: async () => ({ state: 'sent' }) })} />);
+      await mount(<OperatorApp {...props(busy(), { readBoardSeats: async () => ({ state: 'ok', seats: advisorList('idle') }), writeBossCommand: async () => ({ state: 'sent' }) })} />);
       await settle();
       await act(async () => rows('[data-boss="rage"]')[0]!.click());
       await act(async () => rows('[data-boss-confirm-send]')[0]!.click());
@@ -1644,7 +1855,7 @@ describe('board office (#1755)', () => {
       const posts: BossCommandPost[] = [];
       officeAt(`/${HARNESS_ID}/1474`);
       await mount(<OperatorApp {...props(busy(), {
-        readBoardParents: async () => ({ state: 'ok', list: advisorList(status) }),
+        readBoardSeats: async () => ({ state: 'ok', seats: advisorList(status) }),
         writeBossCommand: async (body) => { posts.push(body); return { state: 'sent' }; },
       })} />);
       await settle();
@@ -1685,9 +1896,9 @@ describe('board office (#1755)', () => {
     transcript: decodeAdvisorSeatTranscript({ protocol: 1, kind: 'repo-harness.advisor-seat-transcript', github_repository_id: 1, parent: 1474, terminal: 't9', status, status_kind: null, turn: 4, complete: true, why: null, lines: ['first', 'ghp_[REDACTED]'], ...fields }),
   });
   const delivered = (turn: number): AdvisorMessageWrite => ({ state: 'ok', value: decodeAdvisorSeatSend({ protocol: 1, kind: 'repo-harness.advisor-seat-send', github_repository_id: 1, parent: 1474, terminal: 't9', started: true, turn }) });
-  const advisorRoom = async (overrides: Partial<OperatorAppProps>, list: BoardParentsV1 = advisorList('idle')) => {
+  const advisorRoom = async (overrides: Partial<OperatorAppProps>, list: BoardSeatsV1 = advisorList('idle')) => {
     officeAt(`/${HARNESS_ID}/1474`);
-    await mount(<OperatorApp {...props(busy(), { readBoardParents: async () => ({ state: 'ok', list }), ...overrides })} />);
+    await mount(<OperatorApp {...props(busy(), { readBoardSeats: async () => ({ state: 'ok', seats: list }), ...overrides })} />);
     await settle();
   };
   const openAdvisor = async () => {
@@ -1842,7 +2053,7 @@ describe('board office (#1755)', () => {
   test('the dialog needs an advisor and a parent, the white board does not open it, and a close waits for the answer of a send', async () => {
     const noParent = { ...advisorList('idle'), parents: [] };
     officeAt(`/${HARNESS_ID}`);
-    await mount(<OperatorApp {...props(busy(), { readBoardParents: async () => ({ state: 'ok', list: noParent }) })} />);
+    await mount(<OperatorApp {...props(busy(), { readBoardParents: async () => ({ state: 'ok', list: { ...PARENTS, parents: [] } }), readBoardSeats: async () => ({ state: 'ok', seats: noParent }) })} />);
     await settle();
     await openAdvisor();
     expect(document.querySelector('[data-office-panel]')?.getAttribute('data-office-panel')).toBe('ADVISOR');
@@ -1983,8 +2194,8 @@ describe('office setup checklist (#1788)', () => {
   const THIS = 'repo_1a1a1a1a1a1a1a1a';
   const OTHER = 'repo_2b2b2b2b2b2b2b2b';
   const OVERVIEW: OfficeSetupScope = { kind: 'overview', rooms: [] };
-  const EMPTY: BoardParentsV1 = { ...PARENTS, parents: [], seats: [] };
-  const inRoom = (scope: Partial<Extract<OfficeSetupScope, { kind: 'room' }>> = {}): OfficeSetupScope => ({ kind: 'room', repositoryId: THIS, parent: null, parents: { kind: 'ready', list: EMPTY }, plan: 'no_parent', ...scope });
+  const EMPTY: BoardParentsV1 = { ...PARENTS, parents: [] };
+  const inRoom = (scope: Partial<Extract<OfficeSetupScope, { kind: 'room' }>> = {}): OfficeSetupScope => ({ kind: 'room', repositoryId: THIS, parent: null, parents: { kind: 'ready', list: EMPTY }, seats: { kind: 'ready', seats: { ...SEATS, seats: [] } }, plan: 'no_parent', ...scope });
   const bots = (snapshot: BotAccessSnapshotV1): OfficeSetupReads['botAccess'] => ({ kind: 'ready', snapshot, refreshFailed: false });
   const READY = decodeBotAccessSnapshot(busyBotAccess(NOW));
   const github = (status: string, reason: string | null, name: string | null = null, id = THIS) =>
@@ -2073,23 +2284,23 @@ describe('office setup checklist (#1788)', () => {
   });
 
   test('rows 4 and 5 use the reads of the page, with the seat commands of the issue and the label keys of RH_LABEL', () => {
-    const SEATS = ['repo-harness seats argv <seat> --repository-id <id>', `hc label <t> ${RH_LABEL.repository}=<id> ${RH_LABEL.seat}=<seat>`];
+    const SEAT_COMMANDS = ['repo-harness seats argv <seat> --repository-id <id>', `hc label <t> ${RH_LABEL.repository}=<id> ${RH_LABEL.seat}=<seat>`];
     const failedRoom = (reason: BoardParentsReason) => ({ view: { kind: 'failed', reason }, card: null }) as const;
     const loadingRoom = { view: { kind: 'loading' }, card: null } as const;
-    const readyRoom = (list: BoardParentsV1, summaries: BoardSummariesRead | null = null) => {
-      const view = { kind: 'ready', list, summaries } as const;
+    const readyRoom = (list: BoardParentsV1, board: BoardRead | null = null, seats: BoardSeatsV1 = list === EMPTY ? { ...SEATS, seats: [] } : SEATS) => {
+      const view = { kind: 'ready', parents: { kind: 'ready', list }, seats, board } as const;
       return { view, card: officeCard(view) };
     };
     const overview = (...rooms: Extract<OfficeSetupScope, { kind: 'overview' }>['rooms']): OfficeSetupScope => ({ kind: 'overview', rooms });
-    const invalidLabel: BoardParentsV1 = { ...EMPTY, seats: [{ address: 't9', name: null, agent: null, state: 'live', status: null, status_kind: null, status_msg: null, status_ms:null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_invalid', parent: null }] };
+    const invalidLabel: BoardSeatsV1 = { ...SEATS, seats: [{ address: 't9', name: null, agent: null, state: 'live', status: null, status_kind: null, status_msg: null, status_ms:null, turn: 0, branch: null, seat_status: 'unavailable', reason: 'seat_label_invalid', seat: '', parent: null }] };
     const seatCases: readonly (readonly [OfficeSetupScope, string, string])[] = [
       [inRoom(), 'missing', 'No live terminal has a seat label.'],
-      [inRoom({ parents: { kind: 'ready', list: invalidLabel } }), 'failed', 'Terminal t9 has an invalid seat label.'],
-      [inRoom({ parents: { kind: 'failed', reason: 'parents_hc_failed' } }), 'failed', t('board.reason.parents_hc_failed')],
-      [inRoom({ parents: { kind: 'failed', reason: 'parents_github_failed' } }), 'unknown', t('board.reason.parents_github_failed')],
+      [inRoom({ seats: { kind: 'ready', seats: invalidLabel } }), 'failed', 'Terminal t9 has an invalid seat label.'],
+      [inRoom({ seats: { kind: 'failed', reason: 'parents_hc_failed' } }), 'failed', t('board.reason.parents_hc_failed')],
+      [inRoom({ seats: { kind: 'failed', reason: 'parents_github_failed' } }), 'unknown', t('board.reason.parents_github_failed')],
       [overview(), 'unknown', 'No repository was read, so no seat read ran.'],
       [overview(readyRoom(EMPTY)), 'missing', 'No live terminal has a seat label.'],
-      [overview(readyRoom(invalidLabel)), 'failed', 'Terminal t9 has an invalid seat label.'],
+      [overview(readyRoom(EMPTY, null, invalidLabel)), 'failed', 'Terminal t9 has an invalid seat label.'],
       [overview(failedRoom('parents_hc_failed')), 'failed', t('board.reason.parents_hc_failed')],
       [overview(failedRoom('parents_invalid'), readyRoom(EMPTY)), 'unknown', t('board.reason.parents_invalid')],
       [overview(loadingRoom), 'unknown', 'The first read has not finished.'],
@@ -2098,7 +2309,7 @@ describe('office setup checklist (#1788)', () => {
       [overview(readyRoom(PARENTS), loadingRoom), 'ok', 'Rooms with a live seat: 1. Not known: 1 (no read yet).'],
     ];
     for (const [scope, state, detail] of seatCases) {
-      expect(stateAndCommands('seats', reads(), scope)).toEqual([state, SEATS]);
+      expect(stateAndCommands('seats', reads(), scope)).toEqual([state, SEAT_COMMANDS]);
       expect(row('seats', reads(), scope).detail).toBe(detail);
     }
     const write = 'gh issue comment 7 --body-file <plan-file>';
@@ -2117,12 +2328,7 @@ describe('office setup checklist (#1788)', () => {
     expect(row('plan', reads(), inRoom({ parent: 7, plan: 'unread', parents: { kind: 'failed', reason: 'parents_invalid' } })).detail).toContain('parents_invalid');
     const anyRead = 'repo-harness board --parent <n>';
     const anyWrite = 'gh issue comment <n> --body-file <plan-file>';
-    const summaryRead = (row: Parameters<typeof decodeBoardSummaries>[0]): BoardSummariesRead => ({ state: 'ok', summaries: decodeBoardSummaries({ protocol: 3, kind: 'repo-harness.board-summaries', repository_id: HARNESS_ID, parents: [row] }) });
-    const summary = (batch: { readonly accepted: number | null; readonly size: number | null }) => summaryRead({
-      parent: 1474, status: 'observed', observed_at: '2026-11-04T20:00:00.000Z',
-      summary: { queue: 0, ci_failures: 0, batch, current_batch: null, needs_you: 0, worker_limit: ISSUE_FLOW_WORKER_LIMIT, seats: { status: 'observed', desks: [], stalled: 0 } },
-    });
-    const planned = readyRoom(PARENTS, summary({ accepted: 0, size: 3 }));
+    const planned = readyRoom(PARENTS, { state: 'ok', board: countedBoard({ limit: 3 }) });
     const planWords = (unknown: number, reason: string, count = 0) => `Plans confirmed: ${count}. Not known: ${unknown} (${reason}).`;
     const overviewPlans: readonly (readonly [OfficeSetupScope, string, string, string])[] = [
       [overview(), 'unknown', 'No repository was read, so no plan read ran.', anyRead],
@@ -2131,10 +2337,10 @@ describe('office setup checklist (#1788)', () => {
       [overview(failedRoom('parents_invalid')), 'unknown', planWords(1, 'parents_invalid'), anyRead],
       [overview(loadingRoom), 'unknown', planWords(1, 'no read yet'), anyRead],
       [overview(readyRoom(PARENTS)), 'unknown', planWords(1, 'no read yet'), anyRead],
-      [overview(readyRoom(PARENTS, { state: 'unavailable', reason: 'parents_busy' })), 'unknown', planWords(1, 'parents_busy'), anyRead],
-      [overview(readyRoom(PARENTS, summaryRead({ parent: 1474, status: 'not_read' }))), 'unknown', planWords(1, 'not_read'), anyRead],
-      [overview(readyRoom(PARENTS, summaryRead({ parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' }))), 'unknown', planWords(1, 'snapshot_invalid'), anyRead],
-      [overview(readyRoom(PARENTS, summary({ accepted: null, size: null }))), 'unknown', planWords(1, 'plan_not_observed'), anyRead],
+      [overview(readyRoom(PARENTS, { state: 'unavailable', reason: 'unreachable' })), 'unknown', planWords(1, 'unreachable'), anyRead],
+      [overview(readyRoom(PARENTS, { state: 'unavailable', reason: 'board_pending' })), 'unknown', planWords(1, 'not_read'), anyRead],
+      [overview(readyRoom(PARENTS, { state: 'unavailable', reason: 'board_collect_failed' })), 'unknown', planWords(1, 'board_collect_failed'), anyRead],
+      [overview(readyRoom(PARENTS, { state: 'ok', board: countedBoard({}) })), 'unknown', planWords(1, 'plan_not_observed'), anyRead],
       [overview(planned, failedRoom('parents_invalid')), 'unknown', planWords(1, 'parents_invalid', 1), anyRead],
     ];
     for (const [scope, state, detail, command] of overviewPlans) {
@@ -2189,7 +2395,7 @@ describe('office setup checklist (#1788)', () => {
     expect(rows('[data-setup-row="plan"] code')[0]!.textContent).toBe(`gh issue comment ${OFFICE_PARENT} --body-file <plan-file>`);
     expect(rows('[data-office-setup] button').every(button => button.classList.contains('copy-value__button'))).toBe(true);
     await act(async () => root?.unmount());
-    await openFixture('office', `#board/office/${HARNESS_ID}`, { readBoardParents: async () => ({ state: 'unavailable', reason: 'parents_hc_failed' }) });
+    await openFixture('office', `#board/office/${HARNESS_ID}`, { readBoardSeats: async () => ({ state: 'unavailable', reason: 'parents_hc_failed' }) });
     expect(rows('[data-board-parents-reason="parents_hc_failed"] [data-office-setup]')).toHaveLength(1);
     expect(rows('[data-setup-row="seats"]')[0]!.getAttribute('data-setup-state')).toBe('failed');
     expect(rows('[data-setup-row="seats"]')[0]!.textContent).toContain('hc could not list the seat terminals');

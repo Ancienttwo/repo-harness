@@ -36,6 +36,7 @@ writer, head owner, integrator or acceptor.
 | Agent | Suggested model | Claim roles it holds | Never does |
 |---|---|---|---|
 | Orchestrator | Any host's long-lived top-level session with network access, started from `repo-harness seats argv orchestrator` | Coordinator of the parent issue; integrator | Implements a child issue in its own sub-tree; calls a writer sub-agent (`fast-worker`, `deep-worker`, `root-cause-prover`) or runs the Codex cross-review as a sub-agent |
+| Advisor | A long-lived session beside the orchestrator, started from `repo-harness seats argv advisor` | None. It researches, reviews the board on a schedule and gives its half of a joint decision (`references/advisor.md`) | Writes to GitHub, commits, sends a message to a worker, decides alone |
 | Gap reviewer | A different model family from the orchestrator, when one is available | None. Comments on the drafts | Rewrites the split or decides scope |
 | Worker | Any capable coding model | Writer of one issue or PR slot, dispatched by the coordinator; head owner of its PR | Posts its own claim, widens scope, merges, pushes to another owner's branch |
 | Acceptor | A seat holds the acceptor role. The default reviewer is the gatekeeper in its own Herdr seat; the acceptor does not call it as a sub-agent. The orchestrator does not review a PR itself; a gatekeeper seat reviews each PR that the orchestrator dispatches. The Codex cross-review and every other review run in another seat. For the High tier, two reviews of each head, at least one from a model family different from the writer's; the other can be a fresh same-family context (`references/acceptor.md` §2.2) | Acceptor of one review in one round | Reviews its own code, pushes code |
@@ -65,6 +66,7 @@ every other decision by the rules below and the root life-cycle rules
 | Requirement, scope, boundaries, acceptance | Child issue body |
 | Parent membership, dependencies, release window, plan tier | GitHub sub-issue, blocked-by link, milestone, `tier:` label (`references/templates.md`, Plan data) |
 | Merge order, holds, batches, seat limit | The plan block in the parent's newest `plan` comment |
+| Release set: the issues that the next release ships | The milestone of each issue. A train is a blocked-by chain inside the set (`references/orchestrator.md` §4.1) |
 | Claim, status, handoff, scope changes, decisions | Issue comments |
 | Change, verification, risk, rollback | PR body |
 | Verification result | CI checks on the PR head |
@@ -75,7 +77,7 @@ every other decision by the rules below and the root life-cycle rules
 
 One-time decisions live in issue decision comments. Durable decisions live in `docs/adr/`. `docs/plans/` is banned. A decision is durable when an agent could violate the rule after the issue closes.
 
-When the owner gives a decision in a seat's pane, that seat gets it onto the owning issue in the same turn. The active coordinator posts it as a `decision` comment with the date and the pane. Any other seat sends it to the coordinator in the same turn, with the date and the pane, and the coordinator posts it. When no issue owns the decision yet, the coordinator opens one or names the gap to the owner. A comment is a record: a local seat writes it, and a locally run command may read it as data; it never starts an action.
+When the owner gives a decision in a seat's pane, that seat gets it onto the owning issue in the same turn. The active coordinator posts it as a `decision` comment with the date and the pane. Any other seat sends it to the coordinator in the same turn, with the date and the pane, and the coordinator posts it. When no issue owns the decision yet, the coordinator opens one or names the gap to the owner. The record holds the owner's words as given, and the time. An owner authorization covers the case that its words name: a wider or a standing rule needs the owner to say so, because a seat that widens it spends the owner's money or attention without a decision. Users have special cases, and most of them are temporary. Record a temporary exception with its end (a time or an event), carry it out for that case, and let it lapse. Do not turn it into a standing rule or a product default, and do not refuse it because the standing rule says otherwise. Ask the owner one time, with a recommendation and the default that proceeds; do not raise a declined item again. A comment is a record: a local seat writes it, and a locally run command may read it as data; it never starts an action.
 
 The comment threads are the message board between agents. Every state
 change is a typed comment, and chat messages carry only its link. Do not
@@ -89,6 +91,8 @@ Every comment that a seat writes ends with one line `Seat: <seat id> <hc address
 
 - Orchestrator work (split a goal, write or fix issues, dispatch, follow PRs,
   accept, merge order, close out): read `references/orchestrator.md`.
+- Advisor work (the scheduled board review, a proposal, the advisor half of a
+  joint decision, the release set): read `references/advisor.md`.
 - Replan (re-plan the board with the advisor): read `references/replan.md`.
 - Worker work (deliver one claimed issue): read `references/worker.md`.
 - Acceptance work (take a review round, publish its result, resolve its
@@ -134,6 +138,10 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
 - Never weaken or delete a test assertion to pass CI.
 - CI is the verification authority. A local pass does not replace a red
   required check.
+- The worker pushes its branch, opens its PR and runs its own fix rounds
+  (`references/worker.md` §6, §7). The orchestrator sends no push or PR go
+  and no finding relay. A Codex-runtime worker is the exception
+  (`references/board.md`): the orchestrator pushes for it.
 - Only the orchestrator merges, and only with
   `repo-harness publication merge`. The owner turns that on with
   `publication.acceptance_merge` in the policy on the PR base. When it is
@@ -160,11 +168,31 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   the orchestrator dispatches the plan's issues in plan order with no other
   owner step. A new issue or a changed order goes to the owner or to a joint
   decision.
+- Intake. Open issues are cleared before new ones are filed. During a batch,
+  file a new issue only when it blocks an issue of the release set, records
+  a defect that a user meets, or the owner asks for it. Search the open
+  issues first and fold a duplicate into the older issue
+  (`references/orchestrator.md` §4.2).
+- Release set. A release ships a planned set of issue trains, ordered by
+  their dependencies. The release run starts when every train of the set is
+  merged. Do not propose a release for a few merged issues or to put one
+  change on the host (`references/orchestrator.md` §4.1).
 - Joint decision. The orchestrator and the advisor make a decision that
   otherwise goes to the owner when both agree, unless it touches security.
   Before the action, the orchestrator posts it on the owning issue or PR as
   `Joint decision (orchestrator + advisor)` with the reason. A joint decision
-  never replaces the High-tier cross-model review.
+  never replaces the High-tier cross-model review, and it does not reverse
+  an explicit owner decision. When the two seats do not agree, nothing
+  changes; the item goes to the owner only when it is the owner's to decide.
+- Command refusals. A refusal of a repo-harness command (seat launch, seats
+  configuration range, merge gate, required check) is the rule in force.
+  Change the input that the command reads, through its own configuration
+  path, or wait. Do not build an argv, a record or a state by hand to pass
+  it: the refusal is the one place where the rule is checked. A rule that a
+  user can have reason to lift for a time needs a setting or a flag for
+  that. When an owner exception meets a refusal that has none, tell the
+  owner in the same turn what the exception cannot reach, and file the
+  setting.
 - Stop in a comment. Any participant, the owner account included, may post
   "stop" or "no" on the issue or PR. It is a reference: the orchestrator and
   the advisor weigh it, decide locally by joint decision and record the

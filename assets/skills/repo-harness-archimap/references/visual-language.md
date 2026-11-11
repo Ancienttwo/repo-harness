@@ -101,6 +101,27 @@ vertical one.
 (51+, white text). Forbidden and satisfied: `forbid` tint `#FBEDEA` with
 `#9A3412` text. Attention: `attn`, amber.
 
+## Facts that `measure.ts --map` reads
+
+On a board that holds a `.node`, the geometry check reads three facts:
+
+- `.node` and `.panel` carry inline `left`, `top`, `width` and `height` in px.
+- Each edge is a `<path>` of `M`, `H`, `V` and `L` commands in board
+  coordinates. Any other command is a usage error. A path inside `<defs>` is
+  a marker.
+- Each `.elabel` carries inline `left` and `top`. Its box is 7 px per
+  character wide and 16 px high.
+
+`line_end_open`: the first or last point of a path is more than 8 px from the
+border of every `.node` and `.panel`.
+
+`line_through_box`: a path segment has a point inside a `.node` that is more
+than 8 px from the nearest border of that node. A zero-length segment is tested
+as a point. Path ends have no special case: an end more than 8 px inside a node
+gives `line_end_open` and `line_through_box`. A node at most 16 px wide or high
+gets no `line_through_box`, and a line that stays within 8 px of a border gets
+none.
+
 ## Quality checks
 
 - No two boxes overlap unless one contains the other.

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { join } from 'path';
+import { processGroupExists } from '../process-group-termination.ts';
 import { repoHarnessHome } from '../repo-harness-home.ts';
 import {
   acquireExclusiveDirectoryLock,
@@ -175,19 +176,10 @@ function readTickets(root: string): Ticket[] {
   return tickets;
 }
 
-function groupHasMember(pgid: number): boolean {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
-  }
-}
-
 /** A run is live while its wrapper runs or a member of its command group runs. */
 function withGroup(wrapper: ExclusiveDirectoryLockOwnerLiveness, entry: HostTestQueueEntry | undefined): ExclusiveDirectoryLockOwnerLiveness {
   if (wrapper !== 'dead') return wrapper;
-  return entry?.pgid != null && groupHasMember(entry.pgid) ? 'live' : 'dead';
+  return entry?.pgid != null && processGroupExists(entry.pgid) ? 'live' : 'dead';
 }
 
 function liveness(entry: HostTestQueueEntry): ExclusiveDirectoryLockOwnerLiveness {
@@ -289,7 +281,7 @@ export async function enterHostTestQueue(
             // A dead wrapper's lock stays held while its command group runs.
             canReclaimStaleOwner: (owner) => {
               const entry = holderTicket(readTickets(root), owner.token)?.entry;
-              return entry?.pgid == null || !groupHasMember(entry.pgid);
+              return entry?.pgid == null || !processGroupExists(entry.pgid);
             },
             onStaleReclaim: options.onStaleReclaim,
           });

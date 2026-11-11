@@ -216,7 +216,7 @@ test('ordinary PR readiness needs no receipt, lease or acceptance artifact', () 
     expected_head_sha: HEAD, expected_base_sha: BASE };
   expect(projectPullRequestMergeReadiness(input).ready).toBe(true);
   expect(projectPullRequestMergeReadiness({ ...input, provider: { ...input.provider, checks: [] } }).ready).toBe(false);
-  expect(projectPullRequestMergeReadiness({ ...input, provider: { ...input.provider, checks: [{ name: 'fake-green', bucket: 'pass' }] } }).ready).toBe(false);
+  expect(projectPullRequestMergeReadiness({ ...input, provider: { ...input.provider, checks: [{ name: 'Governance Verify', bucket: 'pass' }] } }).ready).toBe(true);
 });
 
 test.each([null, -1, 0.5, Number.NaN])('missing or invalid thread count %s fails closed', count => {
@@ -339,6 +339,60 @@ describe('acceptance merge policy switch', () => {
 
 
 describe('required-check failure evidence', () => {
+  const nodeDeprecation = 'Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/';
+
+  test('daily run 42532383463 does not turn a setup-node warning into an install failure', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ run_id: 42532383463, job_id: 128889272043, job_name: 'Daily full tests and package',
+        run_url: 'https://github.com/aimpact-inc/repo-harness/actions/runs/42532383463',
+        job_url: 'https://github.com/aimpact-inc/repo-harness/actions/runs/42532383463/job/128889272043',
+        steps: ['Run bash scripts/check-ci.sh functional'], logs_available: false,
+        failure_excerpt: `${nodeDeprecation}\nProcess completed with exit code 1.\n"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"`,
+        scope: { executed: ['Set up job', 'Run actions/setup-node@v4', 'Run oven-sh/setup-bun@v2',
+          'Run sudo apt-get update && sudo apt-get install -y jq rsync', 'Install pinned herdr-core runtime',
+          'Run bash scripts/check-ci.sh functional'], skipped: [] } }),
+    ]));
+    expect(evidence.failed.shape).toBe('logs_unavailable');
+  });
+
+  test.each([
+    ['Run bun install --frozen-lockfile', null], ['Run npm ci', null],
+    ['Installing dependencies', null], ['Run npm run preinstall', null],
+    ['Run npm run postinstall', null], ['Reinstall dependencies', null],
+    ['Run tests', 'npm ERR! code ERESOLVE'], ['Run tests', 'pnpm error ERR_PNPM_OUTDATED_LOCKFILE'],
+    ['Run tests', 'ERR_PNPM_FETCH_404'], ['Run tests', 'ERR_PNPM_LOCKFILE_CONFIG_MISMATCH Cannot proceed with the frozen installation'],
+    ['Run tests', 'error: lockfile had changes, but lockfile is frozen'],
+    ['Run tests', 'Registry request failed with status 503'],
+    ['Run tests', 'Package resolution failed'],
+  ] as const)('install evidence selects dependency_install_failure: %s / %s', (step, excerpt) => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ steps: [step], failure_excerpt: excerpt }),
+    ]));
+    expect(evidence.failed.shape).toBe('dependency_install_failure');
+  });
+
+  test.each([
+    [`${nodeDeprecation}\nAssertionError: expected 1 to deeply equal 2`, 'assertion_mismatch'],
+    ['AssertionError: expected "registry failed" to equal "ok"', 'assertion_mismatch'],
+    ['Snapshot `name 1` mismatched', 'assertion_mismatch'],
+    ['lockfile registry dependency install setup', 'other'],
+    ['registry documentation\nerror: test process exited', 'other'],
+  ] as const)('excerpt assertions and non-install text keep their failure shape: %s', (excerpt, shape) => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ steps: ['Run tests'], failure_excerpt: excerpt, logs_available: excerpt !== null,
+        scope: { executed: ['Set up job', 'Install dependencies', 'Installing dependencies', 'Run npm run preinstall',
+          'Run npm run postinstall', 'Reinstall dependencies', 'Run oven-sh/setup-bun@v2', 'Run tests'], skipped: [] } }),
+    ]));
+    expect(evidence.failed.shape).toBe(shape);
+  });
+
+  test('a generic failed setup step is not a dependency install', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ steps: ['Setup test fixtures'], failure_excerpt: null }),
+    ]));
+    expect(evidence.failed.shape).toBe('other');
+  });
+
   test('a same-SHA assertion failure then pass is failed_then_passed and is never infrastructure', () => {
     const evidence = assertionThenPassedEvidence();
     expect(evidence.observed_result).toBe('failed_then_passed');

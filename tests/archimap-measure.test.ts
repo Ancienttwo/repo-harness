@@ -302,3 +302,83 @@ describe('archimap measure reads behavior specs', () => {
     expect(failure.stderr).toContain('behavior_spec_uncovered:component.alpha.protocol');
   });
 });
+
+describe('archimap measure reports board geometry', () => {
+  const box = (cls: string, left: number, top: number) =>
+    `<div class="${cls}" style="left:${left}px;top:${top}px;width:100px;height:100px"></div>`;
+  const board = (caption: string, body: string) => `<section><h2 class="caption">${caption}</h2><div class="board">${body}</div></section>`;
+  const paths = (...d: string[]) => `<svg><defs><marker id="m"><path d="M0 0 C1 1 2 2 3 3"/></marker></defs>${d.map((v) => `<path d="${v}"/>`).join('')}</svg>`;
+  const mapHtml = (boards: string[]) =>
+    `<script type="application/json" id="archimap-meta">${JSON.stringify({ modules: moduleDefs() })}</script>${boards.join('')}`;
+  const mapRoot = (boards: string[]) => fixture({ 'map.html': mapHtml(boards) });
+  const mapArgs = (root: string) => ['--map', join(root, 'map.html'), '--model', MODEL_DIR];
+  type Geometry = { checked: string[]; unchecked: string[]; findings: { board: string; kind: string }[] };
+
+  test('each defect kind gives one finding; clean and node-free boards give none; exit stays 0', () => {
+    const placed = board('1 · Placed',
+      `${box('node', 0, 0)}${box('node', 50, 50)}${box('node', 400, 0)}`
+      + paths('M500 50 H560')
+      + '<div class="elabel" style="left:520px;top:42px">hi</div>');
+    const clean = board('2 · Clean', `${box('node', 0, 0)}${box('node', 300, 0)}${paths('M100 50 H300')}<div class="elabel" style="left:150px;top:20px">ok</div>`);
+    const sequence = board('3 · Sequence', `${box('panel', 0, 0)}<svg><path d="M0 0 C1 1 2 2 3 3"/></svg>`);
+    const root = mapRoot([placed, clean, sequence]);
+    const output = JSON.parse(runMeasure(['--root', root, ...mapArgs(root)])) as { geometry: Geometry };
+    expect(output.geometry.checked).toEqual(['1 · Placed', '2 · Clean']);
+    expect(output.geometry.unchecked).toEqual(['3 · Sequence']);
+    expect(output.geometry.findings.map((f) => [f.board, f.kind])).toEqual([
+      ['1 · Placed', 'box_overlap'],
+      ['1 · Placed', 'line_end_open'],
+      ['1 · Placed', 'label_on_line'],
+    ]);
+  });
+
+  test('a path command outside M, H, V, L on a checked board exits 2', () => {
+    const root = mapRoot([board('1 · Curve', `${box('node', 0, 0)}${paths('M100 50 C150 50 200 50 250 50')}`)]);
+    const failure = measureFailure(root, mapArgs(root));
+    expect(failure.status).toBe(2);
+    expect(failure.stderr).toContain('geometry_path_unsupported:1 · Curve');
+  });
+
+  const run = (boards: string[]) => {
+    const root = mapRoot(boards);
+    return (JSON.parse(runMeasure(['--root', root, ...mapArgs(root)])) as { geometry: Geometry }).geometry;
+  };
+
+  test('each subpath of a path is checked for open ends', () => {
+    const geometry = run([board('1 · Subpaths', `${box('node', 0, 0)}${box('node', -200, 0)}${paths('M0 20 H-100 M-300 20 H-400 M0 40 H-100')}`)]);
+    expect(geometry.findings.map((f) => f.kind)).toEqual(['line_end_open', 'line_end_open']);
+  });
+
+  // Probes of PR #2168 rounds 1-6 and the owner-approved design table. The node is (0,0)-(100,100) unless `node` is set.
+  const throughBox: { d: string; node?: [number, number]; found: boolean }[] = [
+    { d: 'M0 50 H150 V60 H50 H150', found: true },
+    { d: 'M0 50 H16', node: [16, 100], found: false },
+    { d: 'M5 50 H-5 H-100', found: false },
+    { d: 'M-100 50 H-5 H5', found: false },
+    { d: 'M1 40 V50', found: false },
+    { d: 'M1 50 V40', found: false },
+    { d: 'M-100 50 H5 H-100', found: false },
+    { d: 'M50 50 H50', found: true },
+    { d: 'M-50 50 H150', found: true },
+    { d: 'M-80 50 H0', found: false },
+    { d: 'M-80 50 H8', found: false },
+    { d: 'M-80 50 H9', found: true },
+    { d: 'M-10 4 L4 -10', found: false },
+    { d: 'M-10 40 L40 -10', found: true },
+    { d: 'M-50 3 H150', found: false },
+    { d: 'M-50 8 H150', found: false },
+  ];
+  test.each(throughBox)('line_through_box by the 8 px inset rule: $d', ({ d, node, found }) => {
+    const [width, height] = node ?? [100, 100];
+    const body = `<div class="node" style="left:0px;top:0px;width:${width}px;height:${height}px"></div>${paths(d)}`;
+    const kinds = run([board('1 · Probe', body)]).findings.map((f) => f.kind);
+    expect(kinds.includes('line_through_box')).toBe(found);
+  });
+
+  test('markup outside a board does not make a node-free board checked', () => {
+    const unplaced = `${board('A', '<div class="panel"></div>')}${box('node', 0, 0)}`;
+    const geometry = run([unplaced]);
+    expect(geometry.unchecked).toEqual(['A']);
+    expect(geometry.findings).toEqual([]);
+  });
+});

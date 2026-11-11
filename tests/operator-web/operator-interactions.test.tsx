@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { extname, relative, resolve } from 'node:path';
+import { createServer, type ViteDevServer } from 'vite';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
@@ -229,6 +231,9 @@ describe('bounded observation lifecycle',()=>{
 });
 
 describe('operator web interactions', () => {
+  let server: ViteDevServer | undefined;
+  afterAll(async () => { await server?.close(); });
+
   test('the page Refresh action also re-requests the Notify panel', async () => {
     let notify = 0;
     window.location.hash = '#system';
@@ -316,6 +321,41 @@ describe('operator web interactions', () => {
     }
     expect(config.server.host).toBe('127.0.0.1');
     expect(config.server.proxy['/api']).toBe(process.env.OPERATOR_API_ORIGIN ?? 'http://127.0.0.1:4318');
+  });
+
+  test('the browser import graph from main.tsx reaches no Node built-in', async () => {
+    // Vite is the browser resolver: a built-in resolves to `__vite-browser-external`, and an unresolved import is null.
+    server = await createServer({
+      configFile: resolve('vite.operator.config.ts'),
+      server: { middlewareMode: true, hmr: false, ws: false },
+      optimizeDeps: { noDiscovery: true, entries: [] },
+      logLevel: 'silent',
+    });
+    const loaders: Record<string, 'ts' | 'tsx' | 'js' | 'jsx'> = {
+      '.ts': 'ts', '.mts': 'ts', '.cts': 'ts', '.tsx': 'tsx', '.js': 'js', '.mjs': 'js', '.cjs': 'js', '.jsx': 'jsx',
+    };
+    const entry = resolve('src/operator-web/main.tsx');
+    const chains = new Map<string, string[]>([[entry, ['src/operator-web/main.tsx']]]);
+    const queue = [entry];
+    const offenders: string[] = [];
+    for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
+      const chain = chains.get(file)!;
+      const loader = loaders[extname(file)]!;
+      for (const { path: specifier } of new Bun.Transpiler({ loader }).scanImports(await Bun.file(file).text())) {
+        const resolved = (await server.pluginContainer.resolveId(specifier, file))?.id;
+        const via = `${chain.join(' -> ')} -> ${specifier}`;
+        if (resolved === undefined || resolved.startsWith('__vite-browser-external')) {
+          offenders.push(`${file} imports ${specifier}, which ${resolved === undefined ? 'does not resolve' : 'is a Node built-in'}, via ${via}`);
+          continue;
+        }
+        const target = resolved.split('?')[0];
+        // Dependencies, assets and virtual ids are leaves.
+        if (target.startsWith('\0') || target.includes('/node_modules/') || loaders[extname(target)] === undefined || chains.has(target)) continue;
+        chains.set(target, [...chain, relative(process.cwd(), target)]);
+        queue.push(target);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 
   test('holds the Kumo import order, motion and type-size floor in one stylesheet', async () => {

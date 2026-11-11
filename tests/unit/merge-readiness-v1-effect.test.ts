@@ -71,6 +71,7 @@ function fakeGh(options: FakeGhOptions = {}): NonNullable<PublicationReadinessIn
   return (args) => {
     const command = `${args[0]} ${args[1]}`;
     if (args[0] === 'api' && args[1] === 'repos/example/repo-harness') return { status: 0, stdout: JSON.stringify({ id: 1001, node_id: receipt.provider_repo_id, full_name: 'example/repo-harness', default_branch: receipt.target_ref }) };
+    if (command === 'api repos/example/repo-harness/branches/main/protection') return { status: 0, stdout: JSON.stringify({ required_status_checks: { contexts: [REQUIRED_CI] } }) };
     if (command === 'repo view') return { status: 0, stdout: JSON.stringify({ id: receipt.provider_repo_id, nameWithOwner: 'example/repo-harness' }) };
     if (command === 'pr view') return { status: 0, stdout: JSON.stringify(pr) };
     if (command === 'pr checks') {
@@ -414,6 +415,26 @@ test.each([
   }
 });
 
+test.each([
+  [['Governance Verify'], true],
+  [[], false],
+  [['Governance Verify', 'missing'], false],
+] as const)('standalone readiness reads protected contexts %j', (contexts, ready) => {
+  const source = passingGh();
+  const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
+    if (args[1] === 'repos/example/repo-harness/branches/main/protection') {
+      return { status: 0, stdout: JSON.stringify({ required_status_checks: { contexts } }) };
+    }
+    if (args[0] === 'pr' && args[1] === 'checks') {
+      return { status: 0, stdout: JSON.stringify([{ name: 'Governance Verify', bucket: 'pass' }]) };
+    }
+    return source(args);
+  };
+  const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner });
+  expect(verdict.ready).toBe(ready);
+  expect(verdict.blockers.map(blocker => blocker.code)).toEqual(ready ? [] : ['provider_data_incomplete']);
+});
+
 test('ordinary PR consumer uses trusted CI head/base once and needs no local artifact or marker', () => {
   const source = fakeGh(); let ciCalls = 0;
   const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
@@ -496,7 +517,7 @@ test('ordinary provider collector blocks decision changes after normalized empty
 
 // Provider commit responses come from real Git objects, including root and merge commits.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -530,6 +551,7 @@ test('rollback boundary binds the current base to one merged main PR and one rea
         const path = args[1] ?? ''; requests.push(args.join(' '));
         const json = (value: unknown, status = 0) => ({ status, stdout: JSON.stringify(value) });
         const error = () => ({ status: 2, stdout: '', stderr: 'provider unavailable' });
+        if (path === 'repos/example/repo-harness/branches/main/protection') return json({ required_status_checks: { contexts: [REQUIRED_CI] } });
         if (path === 'graphql') { const graph = reviewGraph(); graph.data.node.pullRequest.baseRefOid = observedBase; return json(graph); }
         if (args[0] === 'pr') return json([{ name: 'Required / CI', bucket: 'pass', link: 'https://github.com/example/repo-harness/actions/runs/123/job/456' }]);
         if (path.includes('/actions/runs/123')) return json({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD, status: 'completed', conclusion: 'success', pull_requests: [{ number: 42, head: { sha: HEAD }, base: { sha: observedBase } }] });

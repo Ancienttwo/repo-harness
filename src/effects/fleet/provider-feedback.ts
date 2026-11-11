@@ -1,8 +1,10 @@
 import { type TaskMessageClaim } from '../../core/messages/task-message-claim';
 /** Manual GitHub feedback observation and durable intake. */
 import { spawnSync } from 'child_process';
+import { gitSpawnSync } from '../git/runner';
 
 import { buildFeedbackDeliveryReceipt, buildFeedbackEvent, deriveFeedbackRevision, deriveReactionToken, projectRepairOffer, transitionFeedbackDeliveryReceipt, type FeedbackDeliveryTransitionInput, type FeedbackCheckConclusion, type FeedbackEventV1, type FeedbackFailingCheckV1, type FeedbackMergeability, type RepairOfferProjection } from '../../core/publication/feedback';
+import { byteCompare } from '../../core/evidence/byte-compare';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { withTaskLock } from '../locking/task-lock';
@@ -650,7 +652,7 @@ export function prepareFeedbackSubject(input: Omit<FeedbackIntakeInput, 'publica
 }
 
 function executionHead(input: FeedbackIntakeInput, executionRoot: string): string | null {
-  const head = spawnSync(input.git_bin ?? 'git', ['rev-parse', 'HEAD'], { cwd: executionRoot, encoding: 'utf8' });
+  const head = gitSpawnSync(['rev-parse', 'HEAD'], { cwd: executionRoot, encoding: 'utf8', gitBin: input.git_bin });
   return head.status === 0 ? head.stdout.trim() : null;
 }
 
@@ -920,8 +922,8 @@ function actionableFeedbackFacts(events: readonly FeedbackEventV1[]): {
   return Object.freeze({
     failing_checks: Object.freeze(failingChecks),
     failing_check_ids: Object.freeze(failingCheckIds),
-    unresolved_review_thread_ids: Object.freeze([...unresolved].sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)))),
-    changes_requested_review_ids: Object.freeze([...changesRequested].sort((left, right) => Buffer.compare(Buffer.from(left), Buffer.from(right)))),
+    unresolved_review_thread_ids: Object.freeze([...unresolved].sort(byteCompare)),
+    changes_requested_review_ids: Object.freeze([...changesRequested].sort(byteCompare)),
     mergeability: [...mergeabilities][0]!,
   });
 }

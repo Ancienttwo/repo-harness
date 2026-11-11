@@ -20,7 +20,7 @@ import {
 } from '../src/cli/hook/session-context';
 import { resolveEffectiveState, StateResolutionUnstableError } from '../src/effects/state/resolve-effective-state';
 import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
-import { PLAN, createEffectiveStateFixture } from './state/effective-state-fixture';
+import { createEffectiveStateFixture } from './state/effective-state-fixture';
 
 
 type StateResolver = (

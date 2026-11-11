@@ -1,5 +1,5 @@
 import { assertObservationPath, observationReadFileSync as readFileSync } from '../readonly-observation';
-import { createHash } from 'crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { lstatSync, realpathSync, statSync } from 'fs';
 import { basename, dirname, isAbsolute, posix, relative, resolve, sep, win32 } from 'path';
 import { stripWrappingQuotes } from '../../core/state/artifact-parsers';
@@ -146,7 +146,7 @@ export function safeRealpath(path: string): string {
 }
 
 export function sha256(content: string | Buffer): string {
-  return `sha256:${createHash('sha256').update(content).digest('hex')}`;
+  return sha256Prefixed(content);
 }
 
 export function sourceHash(cwd: string, relPath: string): string {

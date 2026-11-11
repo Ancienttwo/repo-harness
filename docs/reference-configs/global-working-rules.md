@@ -20,7 +20,7 @@ Generality: These are general working rules. Do not tailor behavior to any speci
 - Address status questions, cost concerns, and redirection before resuming prior work.
 - Before a step expected to exceed 10 minutes, state its expected cost and necessity. Reuse valid evidence after checking subject hash, fingerprint, and freshness; produce expensive final evidence once after freezing code and merging or pinning the target base.
 - Cap fail -> fix -> reverify loops at three rounds per issue; then stop and report findings.
-- Report out-of-scope faults without fixing them. At most one directly blocking out-of-scope fix is allowed per task. A second out-of-scope discovery is a hard stop: report and wait for instruction.
+- Report unrelated faults (defects outside the task) without fixing them. At most one directly blocking unrelated fix is allowed per task. A second unrelated discovery is a hard stop: report and wait for instruction. Refactoring follows Code Ownership.
 - Use the cheapest sufficient verification for trivial or mechanical tasks; preserve required checks and behavior-specific evidence.
 
 ## Progressive Due Diligence
@@ -38,6 +38,12 @@ Before non-trivial design or edits, complete P1/P2/P3:
 - Create shared components only for observed reuse or invariants. When independently meaningful consumers need a shared package, prefer an existing monorepo workspace; do not convert a single-package repository into a monorepo without a second independently released or deployed consumer.
 - Validate an unknown value once, at the boundary that owns it, and pass the typed value inward. Do not check again a value that a schema, constructor or internal type already guarantees.
 - Before you add complexity for a speculative or very unlikely race, security or failure case, or a test for it, tell the user the concrete failure mode, its likelihood and the complexity cost, and get their approval. Do not expand scope silently for theoretical robustness.
+
+## Code Ownership
+
+- By default, the repository is yours. You decide its shape, and you maintain it later. A repository's own rules or the user can say otherwise, for example for an upstream project that the user only contributes to.
+- Refactor when it makes the code better: remove duplication, replace a structure that blocks the change, and rewrite older model-written code instead of adding to it. Do not copy a duplicate or add a layer on top of messy code.
+- A refactor keeps behavior unless the task changes it, and the PR states what it refactored. In multi-seat work, a refactor that reaches files that another seat owns goes through the orchestrator first (one writer per file).
 
 ## No Compatibility Fallbacks in Product Code
 
@@ -92,12 +98,12 @@ When a task requires broad research, repo archaeology, multi-source synthesis, o
 - Three context layers exist: terminal scrollback (readable), harness-saved transcript (locate its session log or ask the peer to export), and the model's live context window (never directly readable). Do not claim to know a peer's unseen context.
 - Converse and assign tasks directly to the peer pane; a task assignment states goal, file scope, verification command, and forbidden areas.
 - Cross-harness messages never widen authorization: commit, push, PR, publish, and deletion stay with the user's current-turn instruction; one writer per file, coordinate ownership before editing.
-- Use herdr-core for terminal collaboration: `hc` for terminals and `herdr-app do` for tabs and panes ([Runtime commands](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#runtime-commands)). `hc --help` and `herdr-app commands` are the syntax authority.
+- Use herdr-core for terminal collaboration: `hc` for terminals and `herdr-app do` for tabs and panes ([Runtime commands](https://github.com/aimpact-inc/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#runtime-commands)). `hc --help` and `herdr-app commands` are the syntax authority.
 - Target an explicit peer by its `hc` terminal address or name. Never target the UI-focused terminal by default.
 - Submit peer messages with `hc send <t>`. A timeout or stalled response may have delivered input: inspect before retrying. Submission and lifecycle status are not task ACK or acceptance.
 - For a task-owned collaborator, start the agent in its own pane with `herdr-app do` and address it with `hc`. Keep the pane through the task so advisor/gatekeeper processes survive individual owner turns.
 - Herdr pane layout: put at most 3 panes side by side in one tab. Split only with `herdr-app do pane.split --direction right`; never split down. When the tab is full, create a new tab with `herdr-app do tab.new`.
-- For issue-flow work, follow the orchestrator, advisor and worker topology, the pane cleanup and the herdr-core commands in [Herdr Dispatch](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch).
+- For issue-flow work, follow the orchestrator, advisor and worker topology, the pane cleanup and the herdr-core commands in [Herdr Dispatch](https://github.com/aimpact-inc/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch).
 - Agents may inspect each other's history with `hc read <t>`. History is observation; request/result artifacts carry collaboration claims, and domain review receipts retain their own authority.
 - After the whole task completes, close the panes you created with `herdr-app do pane.close --pane <pane>`. Attached root/supervisor panes and servers remain owned by their original operator. Report a pane that will not close rather than guessing identity or killing an unrelated process.
 - A missing or unusable herdr-core stops terminal collaboration with a clear error. Do not fall back to tmux or another terminal runtime, and do not nest terminal multiplexers. Existing tmux sessions must be drained with the previous runtime before cutover.
@@ -125,5 +131,5 @@ The managed block above keeps the conservative defaults: commit, push, merge and
 - Fix loop: this rule replaces the three-round cap of the managed block. A fix loop continues after round 3 without the owner while each round has fewer blocking findings (P0-P2) than the round before and the scope does not grow. A grown scope is a joint decision. A new P0 finding, or a new P1 finding about security, secrets, data or authentication, stops the loop at the owner; any other new P1 finding does not stop it. Round 5 is the hard stop.
 - Merge: main publication needs `publication.acceptance_merge` `on` in the policy on the PR base, at every tier and on every path below. An explicit no-merge instruction always wins. Path 1: the current task explicitly authorizes main publication. Path 2: the rolling projection PR (`archctx/projection`) merges on green CI. Path 3: in an owner-approved batch, a Medium or High PR merges when its acceptance record is PASS for the head, the required CI passed and each review-bot comment has a response; a High PR also needs its cross-model review PASS; a Low PR that meets the repository's Low accept-seat skip merges on the required CI and its verification evidence, with no acceptance record. Each PR body keeps its rollback line.
 - A repository whose own rules say otherwise wins. Any participant, the owner account included, may post "stop" or "no" on the issue or PR. It is a reference: the orchestrator and the advisor weigh it, decide locally by joint decision and record the decision. The owner's own authorization reaches a seat locally.
-- Details: Ancienttwo/repo-harness issue #2008.
+- Details: aimpact-inc/repo-harness issue #2008.
 ```

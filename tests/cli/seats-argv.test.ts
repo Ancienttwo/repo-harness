@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from "os";
 import { delimiter, dirname, join } from "path";
 import { seatPaneName } from "../../src/core/board/seat-launch";
-import { HANDOFF_SECTIONS } from "../../src/core/board/seat-reset";
+import { HANDOFF_SECTIONS, seatResetReason, seatResetSteps } from "../../src/core/board/seat-reset";
 import { SeatResetError, runSeatReset, type SeatResetNotify } from "../../src/effects/board/seat-reset";
 import { DEFAULT_SEATS_CONFIG, WORKER_SEAT_IDS } from "../../src/core/board/seats-settings";
 import { repoHarnessRepoIdFor } from "../../src/effects/repo-registry";
@@ -39,13 +39,16 @@ function withHome(seats: unknown, fn: (home: string) => void) {
     writeFileSync(join(home, ".claude", "plugins", "installed_plugins.json"), JSON.stringify({ version: 2, plugins: { "demo@market": [{ scope: "user", installPath: plugin }] } }));
     mkdirSync(join(home, '.quota-bin'));
     writeFileSync(join(home, 'codex-used'), '51');
+    writeFileSync(join(home, 'codex-credits'), 'false');
     writeFileSync(join(home, '.quota-bin', 'codex'), `#!${process.execPath}
 require('node:readline').createInterface({ input: process.stdin }).on('line', line => {
   const message = JSON.parse(line);
   if (message.method === 'initialize') process.stdout.write(JSON.stringify({ id: message.id, result: {} }) + '\\n');
   if (message.method === 'account/rateLimits/read') process.stdout.write(JSON.stringify({ id: message.id, result: { rateLimits: {
     primary: { usedPercent: Number(require('node:fs').readFileSync(require('node:path').join(process.env.HOME, 'codex-used'), 'utf8')),
-      windowDurationMins: 10080, resetsAt: Math.floor(Date.now() / 1000) + 84 * 3600 }
+      windowDurationMins: 10080, resetsAt: Math.floor(Date.now() / 1000) + 84 * 3600 },
+    credits: { hasCredits: require('node:fs').readFileSync(require('node:path').join(process.env.HOME, 'codex-credits'), 'utf8').trim() === 'true',
+      unlimited: false, balance: require('node:fs').readFileSync(require('node:path').join(process.env.HOME, 'codex-credits'), 'utf8').trim() === 'true' ? '34410.83' : '0' }
   } } }) + '\\n');
 });
 `);
@@ -273,7 +276,7 @@ describe("repo-harness seats argv", () => {
       writeFileSync(join(home, 'codex-used'), '51');
       expect(bare(launch(home, "worker").argv).slice(0, 3)).toEqual(["codex", "-m", DEFAULT_SEATS_CONFIG.worker.model]);
       expect(bare(launch(home, "worker-important-fast").argv).slice(0, 5)).toEqual(["claude", "--model", "sonnet", "--effort", "medium"]);
-      expect(bare(launch(home, "advisor").argv).slice(0, 5)).toEqual(["claude", "--model", "opus", "--effort", "max"]);
+      expect(bare(launch(home, "advisor").argv).slice(0, 5)).toEqual(["claude", "--model", "fable", "--effort", "high"]);
       expect(bare(launch(home, "worker-light").argv).slice(0, 5)).toEqual(["pi", "--provider", "magpie", "--model", "cursor/deepseek-v41-flash-1017"]);
       mkdirSync(join(home, ".repo-harness", "quota"));
       for (const used of [81, 95]) {
@@ -292,8 +295,19 @@ describe("repo-harness seats argv", () => {
         }
       }
       writeFileSync(join(home, 'codex-used'), '95');
+      writeFileSync(join(home, 'codex-credits'), 'false');
       const exhausted = argv(home, 'worker', '--json');
       expect([exhausted.status, JSON.parse(exhausted.stderr).error]).toEqual([1, 'seat_quota_exhausted']);
+      // #2251: the flag admits the seat only when the account still has credits. Without the flag nothing changes.
+      for (const credits of ['false', 'true']) {
+        writeFileSync(join(home, 'codex-credits'), credits);
+        const granted = argv(home, 'worker', '--json', '--spend-credits');
+        expect([credits, granted.status, granted.stderr ? JSON.parse(granted.stderr).error : null])
+          .toEqual([credits, credits === 'true' ? 0 : 1, credits === 'true' ? null : 'seat_quota_exhausted']);
+        expect(argv(home, 'worker', '--json').status).toBe(1);
+      }
+      expect(bare(JSON.parse(argv(home, 'worker', '--json', '--spend-credits').stdout).argv).slice(0, 3))
+        .toEqual(['codex', '-m', DEFAULT_SEATS_CONFIG.worker.model]);
     });
   });
 
@@ -302,7 +316,7 @@ describe("repo-harness seats argv", () => {
       const advisor = launch(home, "advisor");
       expect(advisor.source).toBe("defaults");
       expect(advisor.brief).toContain("Collect evidence through your sub-agents: `deep-reasoner`, `explorer`.");
-      expect(bare(advisor.argv).slice(0, 5)).toEqual(["claude", "--model", "opus", "--effort", "max"]);
+      expect(bare(advisor.argv).slice(0, 5)).toEqual(["claude", "--model", "fable", "--effort", "high"]);
       expect(advisor.argv.at(-1)).toBe(advisor.brief);
       // The allow list holds only the tools of the enabled groups; every other built-in tool, such as Workflow, is off.
       expect(tools(advisor.argv)).toEqual(["ToolSearch", "ListMcpResourcesTool", "ReadMcpResourceTool", "WebFetch", "WebSearch", "Read", "Glob", "Grep",
@@ -387,7 +401,7 @@ describe("repo-harness seats argv", () => {
     ] as const) {
       withHome({ ...DEFAULT_SEATS_CONFIG, orchestrator: { ...DEFAULT_SEATS_CONFIG.orchestrator, fleet } }, (home) => {
         const orchestrator = launch(home, "orchestrator");
-        expect(orchestrator.brief).toContain("You push only the branch of a Codex worker seat handoff: commit its worktree diff with its message and explicit paths only, push the branch, open the PR, and push each fix round. You do not tag, release, delete, or change credentials or permissions.");
+        expect(orchestrator.brief).toContain("You push only the branch of a Codex worker seat handoff: commit its worktree diff with its message and explicit paths only, push the branch, open the PR, and push each fix round. You may start the release of a merged release commit with `gh workflow run release.yml -f sha=<merged release commit>`; the owner approves that run in the `release` environment. You do not tag, publish, delete, or change credentials or permissions yourself.");
         expect(orchestrator.brief).not.toContain("You do not push, tag, release, delete, or change credentials or permissions.");
         // Each row also refuses the conflicting sentences: the other review path, and the Herdr-only rule with a fleet.
         const other = review === seatReview ? gatekeeperReview : seatReview;
@@ -658,6 +672,16 @@ describe("repo-harness seats argv", () => {
         const result = run(registryEnv(home), ["orchestrator", "--repository-id", "1", "--json"], repo);
         expect(result.status).toBe(1);
         expect(JSON.parse(result.stderr).error).toBe("pane_name_invalid");
+        expect(JSON.parse(result.stderr).message).toContain("seats prefix");
+
+        const prefix = (value: string) => spawnSync(process.execPath, [CLI, "seats", "prefix", "--repo", repo, "--pane-prefix", value], { env: { ...process.env, ...registryEnv(home) }, encoding: "utf8" });
+        expect(prefix("Bad").status).toBe(1);
+        const set = prefix("rhx");
+        expect(set.status).toBe(0);
+        expect(JSON.parse(set.stdout)).toEqual(expect.objectContaining({ ok: true, registered: true, changed: true, panePrefix: "rhx" }));
+        const registry = JSON.parse(readFileSync(join(home, ".repo-harness", "registered-repos.json"), "utf8"));
+        expect([registry.authorizationRevision, registry.repos[0].accessMode, registry.repos[0].panePrefix]).toEqual([0, "read_only", "rhx"]);
+        expect(JSON.parse(run(registryEnv(home), ["orchestrator", "--repository-id", "1", "--json"], repo).stdout).name).toContain("rhx");
       });
     });
   });
@@ -669,6 +693,56 @@ describe("repo-harness seats argv", () => {
       expect(result.stdout).toBe("");
       expect(JSON.parse(result.stderr).error).toBe("config_invalid");
     });
+  });
+});
+
+describe("repo-harness seats handoff (#2175)", () => {
+  test("it fails closed without a seat identity, a session record or a context, else records the request and prints the hook steps", () => {
+    const home = mkdtempSync(join(tmpdir(), "seats-handoff-"));
+    // The seat directory is fixed under /tmp; a repository id per run keeps the runs apart.
+    const repository = String(8_000_000_000 + process.pid);
+    const dir = join("/tmp/repo-harness-seats", repository, "orchestrator");
+    const transcript = join(home, "transcript.jsonl");
+    const handoff = (seat: Record<string, string>) => {
+      const { REPO_HARNESS_SEAT: _seat, REPO_HARNESS_SEAT_REPOSITORY: _repository, ...base } = process.env;
+      const result = spawnSync(process.execPath, [CLI, "seats", "handoff"], { env: { ...base, HOME: home, ...seat }, encoding: "utf8" });
+      return { status: result.status, stdout: result.stdout, error: result.stderr === "" ? null : JSON.parse(result.stderr).error };
+    };
+    const seat = { REPO_HARNESS_SEAT: "orchestrator", REPO_HARNESS_SEAT_REPOSITORY: repository };
+    try {
+      const failures = [handoff({}), handoff({ REPO_HARNESS_SEAT: "worker", REPO_HARNESS_SEAT_REPOSITORY: repository }), handoff(seat)];
+      mkdirSync(dir, { recursive: true });
+      // A record with a readable transcript but any field unlike recordSeatSession writes it is not the SessionStart record.
+      writeFileSync(transcript, `${JSON.stringify({ type: "assistant", message: { usage: { input_tokens: 10 } } })}\n`);
+      const record = { session_id: "s", transcript_path: transcript, source: "startup", started_at: new Date().toISOString() };
+      const { session_id: _missing, ...noSessionId } = record;
+      const malformed = [{ transcript_path: transcript }, noSessionId, { ...record, source: "bogus" }, { ...record, started_at: "2024" }];
+      for (const bad of malformed) {
+        writeFileSync(join(dir, "session.json"), JSON.stringify(bad));
+        failures.push(handoff(seat));
+      }
+      writeFileSync(join(dir, "session.json"), JSON.stringify(record));
+      writeFileSync(transcript, `${JSON.stringify({ type: "user", message: { role: "user", content: "hi" } })}\n`);
+      failures.push(handoff(seat));
+      expect(failures).toEqual([
+        { status: 1, stdout: "", error: "seat_identity_missing" }, { status: 1, stdout: "", error: "seat_identity_missing" },
+        { status: 1, stdout: "", error: "seat_session_unknown" },
+        ...malformed.map(() => ({ status: 1, stdout: "", error: "seat_session_unknown" })),
+        { status: 1, stdout: "", error: "seat_context_unknown" },
+      ]);
+      expect(existsSync(join(dir, "request.json"))).toBe(false);
+
+      writeFileSync(transcript, `${JSON.stringify({ type: "assistant", message: { usage: { input_tokens: 10, cache_read_input_tokens: 200_000, cache_creation_input_tokens: 5 } } })}\n`, { flag: "a" });
+      const identity = { seat: "orchestrator", repository } as const;
+      expect(handoff(seat)).toEqual({ status: 0, stdout: `${seatResetSteps(identity)}\n`, error: null });
+      // The Stop hook prints the same steps after its token line.
+      expect(seatResetReason(identity, 1).split("\n").slice(1).join("\n")).toBe(seatResetSteps(identity));
+      const request = JSON.parse(readFileSync(join(dir, "request.json"), "utf8"));
+      expect([request.context_tokens, request.transcript_path, Number.isFinite(Date.parse(request.requested_at))]).toEqual([200_015, transcript, true]);
+    } finally {
+      rmSync(join("/tmp/repo-harness-seats", repository), { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });
 
@@ -686,12 +760,12 @@ describe("repo-harness seats reset (#1972)", () => {
    */
   function withReset(fn: (f: { handoff: string; body: string; sha: (text: string) => string; state: (patch: Record<string, unknown>) => void;
     reset: (input?: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void; notify?: SeatResetNotify }) => Promise<unknown>;
-    home: string; sends: () => string[]; calls: () => string[]; log: () => { kind: string; detail: string; notice: string; requested_at: string }[] }) => Promise<void>) {
+    home: string; sends: () => string[]; calls: () => string[]; log: () => { kind: string; detail: string; notice: string; requested_at: string }[] }) => Promise<void>, seat: "advisor" | "orchestrator" = "advisor") {
     return async () => {
       const home = mkdtempSync(join(tmpdir(), "seats-reset-"));
       // The handoff path is fixed under /tmp; a repository id per run keeps the runs apart.
       const repository = String(9_000_000_000 + process.pid * 10 + (runs += 1));
-      const dir = join("/tmp/repo-harness-seats", repository, "advisor");
+      const dir = join("/tmp/repo-harness-seats", repository, seat);
       const handoff = join(dir, "handoff.md");
       try {
         mkdirSync(join(home, "bin"));
@@ -704,8 +778,14 @@ fs.appendFileSync("${home}/calls.log", [cmd, ...rest].join(" ") + "\\n");
 const out = value => process.stdout.write(JSON.stringify(value));
 const session = transcript => fs.writeFileSync("${dir}/session.json", JSON.stringify({ session_id: "s", transcript_path: transcript, source: "clear", started_at: new Date().toISOString() }));
 if (cmd === "ls") out({ terminals: st.terminals });
-if (cmd === "get") out({ address: "t5", state: "live", labels: { "repo-harness.seat": "advisor" }, turn: 3, foreground: { pid: 1, name: st.foreground, argv: [], cwd: "/" } });
-if (cmd === "wait") out(st.wait);
+if (cmd === "get") out({ address: rest.at(-1), state: "live", labels: rest.at(-1) === "t2" ? st.callerLabels : { "repo-harness.seat": "${seat}", "repo-harness.repository": "${repository}" }, turn: 3, foreground: { pid: 1, name: st.foreground, argv: [], cwd: "/" } });
+// wait is one result, or a sequence: the last result answers every later call.
+// Wait number waitDelayAt (from 1) answers after waitDelayMs, as a message that arrives late does.
+if (cmd === "wait") {
+  st.waits = (st.waits ?? 0) + 1;
+  if (st.waitDelayAt === st.waits) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, st.waitDelayMs);
+  out(Array.isArray(st.wait) ? (st.wait.length > 1 ? st.wait.shift() : st.wait[0]) : st.wait);
+}
 // As the real hc: keys arrive as typed input; send wraps its text in an envelope, so a sent slash command is chat text.
 if (cmd === "keys") {
   const line = rest.slice(2).filter(key => key !== "enter").map(key => (key === "space" ? " " : key)).join("");
@@ -732,7 +812,8 @@ if (cmd === "send") {
 fs.writeFileSync("${home}/state.json", JSON.stringify(st));
 `);
         chmodSync(join(home, "bin", "hc"), 0o755);
-        let current: Record<string, unknown> = { terminals: [{ address: "t5", state: "live" }], wait: ended, signal: true, exit: true, foreground: "claude", prompts: 0, evidenceFrom: 1, errorUntil: 0, answers: [] };
+        const callerLabels = { "repo-harness.seat": seat === "advisor" ? "orchestrator" : "advisor", "repo-harness.repository": repository };
+        let current: Record<string, unknown> = { callerLabels, terminals: [{ address: "t5", state: "live" }], wait: ended, signal: true, exit: true, foreground: "claude", prompts: 0, evidenceFrom: 1, errorUntil: 0, answers: [] };
         const state = (patch: Record<string, unknown>) => { current = { ...current, ...patch }; writeFileSync(join(home, "state.json"), JSON.stringify(current)); };
         state({});
         writeFileSync(join(home, "calls.log"), "");
@@ -780,6 +861,7 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
       [{ caller: "t5" }, "caller_unknown"],
       [{}, "requester_not_found", { terminals: [] }],
       [{}, "requester_busy", { wait: { ...ended, ended: false, reason: "timeout" } }],
+      [{}, "requester_busy", { wait: [{ ...ended, ended: false, reason: "message" }, { ...ended, ended: false, reason: "timeout" }] }],
     ] as const;
     const results = [];
     for (const [input, , patch] of rows) {
@@ -788,8 +870,48 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
     }
     expect([results, sends()]).toEqual([rows.map(([, error]) => ({ error, outcome: "nothing_sent" })), []]);
     // An invalid handoff path names no seat, so it has no log entry.
-    expect(log().map(({ kind }) => kind)).toEqual(["request_missing", "caller_unknown", "requester_not_found", "requester_busy"]);
+    expect(log().map(({ kind }) => kind)).toEqual(["request_missing", "caller_unknown", "requester_not_found", "requester_busy", "requester_busy"]);
+    expect(log().at(-1)?.detail).toMatch(/in 600 s \(timeout\)\.$/u);
   }));
+
+  test("a message to the caller ends hc wait, so the reset waits out the rest of the budget and resets (#2305)", withReset(async ({ handoff, reset, state, calls }) => {
+    state({ wait: [{ ...ended, ended: false, reason: "message" }, ended] });
+    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: false, logErrors: [] });
+    expect(calls()).toEqual(["wait --timeout 600 -- t5", "wait --timeout 600 -- t5", "keys -- t5 / c l e a r enter", `send -- t5 ${prompt(handoff)}`]);
+  }));
+
+  test("a message to the caller during the relaunch wait gets the rest of the budget and the relaunch goes on (#2326)", withReset(async ({ handoff, reset, state, calls, sends }) => {
+    state({ signal: false, waitDelayAt: 2, waitDelayMs: 1200, wait: [ended, { ...ended, ended: false, reason: "message" }, ended] });
+    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: true, logErrors: [] });
+    const waits = calls().filter(line => line.startsWith("wait "));
+    // The first wait of the relaunch ends on a message to the caller; the second gets the rest of the 600 s budget.
+    const rest = Number(waits[2]?.split(" ")[2]);
+    expect([waits.length, waits[1], rest !== undefined && rest > 590 && rest < 600]).toEqual([3, "wait --timeout 600 -- t5", true]);
+    const script = join(dirname(handoff), "relaunch.sh");
+    expect(sends()).toEqual([...Array(4).fill("/clear"), "/exit", `sh ${script}`, prompt(handoff)]);
+  }));
+
+  test.each([
+    ["advisor", "repository", "1"], ["advisor", "repository", undefined],
+    ["advisor", "seat", "advisor"], ["advisor", "seat", "worker"], ["advisor", "seat", undefined],
+    ["orchestrator", "seat", "orchestrator"], ["advisor", "labels", undefined],
+  ] as const)("caller mismatch: target %s, %s=%s sends no message or key", (seat, field, value) => withReset(async ({ handoff, reset, state, calls, log }) => {
+    const labels: Record<string, string> = { "repo-harness.repository": dirname(dirname(handoff)).split("/").at(-1)!, "repo-harness.seat": seat === "advisor" ? "orchestrator" : "advisor" };
+    if (value === undefined) delete labels[`repo-harness.${field}`];
+    else labels[`repo-harness.${field}`] = value;
+    state({ callerLabels: field === "labels" ? {} : labels });
+    // Refuse both /clear for a valid handoff and REWRITE for a missing handoff.
+    expect(await reset()).toEqual({ error: "caller_unknown", outcome: "nothing_sent" });
+    expect(await reset({ handoff: false })).toEqual({ error: "caller_unknown", outcome: "nothing_sent" });
+    expect(calls()).toEqual([]);
+    const required = field === "labels" ? Object.entries(labels).map(([key, value]) => `${key}=${value}`) : [`repo-harness.${field}`];
+    for (const label of required) expect(log().map(({ detail }) => detail)).toEqual(Array(2).fill(expect.stringContaining(label)));
+  }, seat)());
+
+  test("an advisor peer can reset the orchestrator in the same repository", withReset(async ({ reset, sends }) => {
+    expect(await reset()).toEqual({ requester: "t5", seat: "orchestrator", relaunched: false, logErrors: [] });
+    expect(sends()).toEqual(["/clear", expect.stringContaining("You are orchestrator.")]);
+  }, "orchestrator"));
 
   test("a failed handoff check asks for 3 rewrites of one request, then tells the requester to continue", withReset(async ({ reset, sha, body, state, sends, log }) => {
     state({ sendFail: true });

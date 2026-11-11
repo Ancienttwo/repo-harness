@@ -244,17 +244,27 @@ Status: active                  # required: active
 Role: writer                    # required: coordinator | writer | integrator
 Slot: PR-1b                     # only for a named PR slot
 Agent: <kind>, session <id>     # required
+Runtime: <claude|codex|pi>      # required on a writer claim
+Model: <model id>               # on a dispatched writer claim when the seat config names a model
 Branch: <type>/<issue>-<slug>   # required
 Scope: <what this claim covers> # required
 Not in scope: <what it leaves>  # required
-Coordinator: <parent claim URL> # the coordinator's own claim
+Coordinator: <parent claim URL> # required on a dispatched writer claim
 Dispatch reading: <per account> # on a dispatch: orchestrator.md §7.1
 Prior claim: <comment URL>      # required on a handoff
 ```
 
 `Status`, `Role`, `Agent`, `Branch`, `Scope` and `Not in scope` are
-required. A handoff claim also requires `Prior claim`. A claim without
-any of them is invalid. The coordinator reads its claim back; when a
+required. A writer claim, a handoff claim included, also requires
+`Runtime:`, the runtime of the writer seat. A dispatched writer claim also
+requires `Coordinator`, the coordinator's own claim URL. When the seat config
+names a model, dispatch adds `Model:`, the writer seat's model id. When the
+seat has no model, dispatch omits `Model:` and the claim is still valid. The
+board reads the family of `Model:` (`modelFamily`) as the writer's model
+family for the Medium review seat (`orchestrator.md`, `board review`). With
+no `Model:` line, the writer family is unknown and the board selects no
+Medium review seat. A handoff claim also requires `Prior claim`. A claim
+without any required field is invalid. The coordinator reads its claim back; when a
 field is missing it posts `issue claim status` with `Status: released`,
 then one complete claim. It names the missing fields in a `To: <agent>`
 comment and does not dispatch until the corrected claim is on the board.
@@ -387,6 +397,21 @@ Every review writes this record, one row per review. The fields are `Round`,
 1 to 5 (`acceptor.md` §4). The board reads only this shape. A record that it cannot
 read makes the PR state unknown, not accepted.
 
+### acceptance disposition (on the PR, coordinator only)
+
+```text
+repo-harness acceptance disposition
+Record: <FAIL acceptance record comment URL>
+Subject: <40-hex subject sha of the FAIL row>
+Findings: <finding ids, comma separated>
+Decision: <comment URL of the decision that resolves them, for example a boundary answer>
+```
+
+The board ignores a FAIL row only when the disposition names its record and
+subject and lists every finding ID of that record. One unresolved finding, or a
+record whose `Findings:` bullets do not follow the record shape, keeps the row
+failing. A later PASS record never clears a FAIL row by itself.
+
 ### review reply (in the PR review thread)
 
 ```text
@@ -495,8 +520,8 @@ Issue: <URL>
 Slot: <PR slot or "whole issue">
 Worktree: /tmp/<repo>-wt-<issue>-<slug> on <type>/<issue>-<slug> from origin/main
 Model: <model>
-Report: status comments on the issue; nudge <coordinator channel> with the comment URL
-Authority: implement, push the PR branch, open the PR. No merge, no deletion outside the issue, no credentials.
+Report: status comments on the issue; nudge <coordinator channel> only on PASS, a boundary question or a fix-loop stop
+Authority: implement, push the PR branch as soon as checks pass, open the PR, run your own fix rounds. No merge, no deletion outside the issue, no credentials.
 ```
 
 Paste this checklist under the packet when the issue does not already

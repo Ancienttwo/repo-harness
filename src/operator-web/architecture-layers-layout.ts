@@ -1,13 +1,14 @@
 // Layout of the layer map (the ArchLayers artboard): one band for each layer of
 // the model's declared order, top layer first, with one box for the layer's
-// nodes. The selected layer's model relations to other layers run in lanes:
-// outgoing in the right gutter, incoming in the left one, one lane for each
-// layer pair and edge class. Line counts are the nodes' own lines (a node's
-// total minus its children's totals) summed by layer. This module computes
-// positions and sums only and adds no fact to the map.
+// nodes and its label box on the left. The selected layer's model relations to
+// other layers run in lanes: outgoing in the right gutter, incoming in the left
+// one, one lane for each layer pair and edge class. Line counts are the nodes'
+// own lines (a node's total minus its children's totals) summed by layer. The
+// layout returns the shared placed scene and adds no fact to the map.
 
 import type { ArchitectureMapNodeV1, ArchitectureMapV1 } from '../core/operator/architecture-map';
 import { DASHED_KINDS } from './architecture-map-layout';
+import type { PlacedScene, SceneBox, SceneRoute } from './architecture-scene';
 
 export const LAYER_BOX_WIDTH = 656;
 export const LAYER_BOX_HEIGHT = 56;
@@ -44,19 +45,20 @@ export interface LayerLane {
   readonly protocols: readonly string[];
   /** The selected layer's outgoing lanes run right of the boxes, its incoming lanes left. */
   readonly side: 'right' | 'left';
-  /** Box side, lane, lane, box side; the last point is the arrow head. */
-  readonly points: readonly (readonly [number, number])[];
+  /** Its points: box side, lane, lane, box side; the arrow is at the last point. */
+  readonly route: SceneRoute;
 }
 
 export interface LayersLayout {
   readonly bands: readonly LayerBand[];
-  /** The x of the band labels. */
-  readonly labelX: number;
-  readonly width: number;
-  readonly height: number;
   /** The lanes of one layer; empty for `null`. */
   readonly lanes: (layer: string | null) => readonly LayerLane[];
+  /** The bands with the lanes of one layer. The size does not change with the layer, so the boxes never move. */
+  readonly scene: (layer: string | null) => PlacedScene;
 }
+
+/** The box id of a band's label; a band's own box has the layer as its id. */
+export const bandLabelId = (layer: string) => `label:${layer}`;
 
 const byLines = (a: LayerMember, b: LayerMember) => (b.lines ?? 0) - (a.lines ?? 0) || a.node.name.localeCompare(b.node.name);
 
@@ -112,62 +114,27 @@ export function layoutLayers(map: Pick<ArchitectureMapV1, 'nodes' | 'relations' 
         const theirs = at(band.get(other)!, others.slice(0, slot).filter(item => item === other).length, others.filter(item => item === other).length);
         const x = edge + step * (slot + 1);
         const [from, to] = side === 'right' ? [mine, theirs] : [theirs, mine];
-        return { ...group, side, points: [[edge, from], [x, from], [x, to], [edge, to]] };
+        const route: SceneRoute = {
+          id: `lane:${group.source}->${group.target}:${group.dashed ? 'runtime' : 'code'}`, source: group.source, target: group.target,
+          points: [[edge, from], [x, from], [x, to], [edge, to]], arrows: { start: false, end: true }, kind: 'lane', dashed: group.dashed, width: 1.5,
+        };
+        return { ...group, side, route };
       });
     });
   };
 
-  return { bands, labelX: MARGIN, width: right + gutter('right') + MARGIN, height: MARGIN * 2 + order.length * LAYER_BOX_HEIGHT + Math.max(0, order.length - 1) * LAYER_GAP, lanes };
+  // A label box ends where the left gutter starts, so the incoming lanes pass no label.
+  const boxes = bands.flatMap((item): SceneBox[] => [
+    { id: bandLabelId(item.layer), parent: null, x: MARGIN, y: item.y, width: LABEL_WIDTH, height: item.height, kind: 'band' },
+    { id: item.layer, parent: null, x: item.x, y: item.y, width: item.width, height: item.height, kind: item.members.length === 0 ? 'external' : 'box' },
+  ]);
+  const extent = { width: right + gutter('right') + MARGIN, height: MARGIN * 2 + order.length * LAYER_BOX_HEIGHT + Math.max(0, order.length - 1) * LAYER_GAP };
+  const scene = (layer: string | null): PlacedScene => ({
+    boxes: boxes.map(box => box.id === layer ? { ...box, kind: `${box.kind} selected` } : box),
+    routes: lanes(layer).map(lane => lane.route), labels: [], extent,
+  });
+  return { bands, lanes, scene };
 }
-
-/** The SVG path of a lane. */
-export const lanePath = (points: LayerLane['points']) => points.map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${x} ${y}`).join(' ');
 
 /** "14.2k" for 14 200 lines. */
 export const compactLines = (lines: number) => new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(lines).toLowerCase();
-
-export interface LayersSvgText {
-  /** The band label: `L3 effects`. */
-  readonly band: (band: LayerBand) => string;
-  /** The member names of a band's box. */
-  readonly members: (band: LayerBand) => string;
-}
-
-const STYLE = [
-  'text{font-family:system-ui,sans-serif;font-size:12px;fill:#1F2328}',
-  '.label{fill:#5B6573}.box{fill:#F2F4F7;stroke:#D3D9E0}.box.selected{stroke:#F08A3C;stroke-width:2}',
-  '.title{font-size:13px;font-weight:600}.lines{font-family:ui-monospace,monospace;fill:#5B6573}',
-  '.lane{fill:none;stroke:#5B6573;stroke-width:1.5}.lane.dashed{stroke-dasharray:6 4}.protocol{font-size:11px;fill:#5B6573}',
-].join('');
-
-const escape = (value: string) => value.replace(/[&<>"]/gu, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]!);
-
-/** The layer map with the selected layer's lanes as a standalone SVG file. Member names that do not fit are clipped at the box. */
-export function layersSvg(layout: LayersLayout, selected: string | null, text: LayersSvgText): string {
-  const parts: string[] = [];
-  for (const band of layout.bands) {
-    const middle = band.y + band.height / 2;
-    parts.push(
-      `<text class="label" x="${layout.labelX}" y="${middle + 4}">${escape(text.band(band))}</text>`,
-      `<clipPath id="clip-${band.index}"><rect x="${band.x}" y="${band.y}" width="${band.width}" height="${band.height}" rx="10"/></clipPath>`,
-      `<rect class="box${band.layer === selected ? ' selected' : ''}" x="${band.x}" y="${band.y}" width="${band.width}" height="${band.height}" rx="10"/>`,
-      `<g clip-path="url(#clip-${band.index})"><text x="${band.x + 12}" y="${middle + 4}"><tspan class="title">${escape(band.layer)}</tspan>`
-        + `${band.lines === null ? '' : `<tspan class="lines" dx="8">${compactLines(band.lines)}</tspan>`}<tspan dx="12">${escape(text.members(band))}</tspan></text></g>`,
-    );
-  }
-  for (const lane of layout.lanes(selected)) {
-    parts.push(`<path class="lane${lane.dashed ? ' dashed' : ''}" d="${lanePath(lane.points)}" marker-end="url(#arrow)"/>`);
-    const [x, top] = lane.points[1]!, bottom = lane.points[2]![1];
-    if (lane.protocols.length > 0) {
-      parts.push(`<text class="protocol" x="${x + (lane.side === 'right' ? 4 : -4)}" y="${(top + bottom) / 2}"${lane.side === 'left' ? ' text-anchor="end"' : ''}>${escape(lane.protocols.join(' · '))}</text>`);
-    }
-  }
-  return [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${layout.width}" height="${layout.height}" viewBox="0 0 ${layout.width} ${layout.height}">`,
-    `<style>${STYLE}</style>`,
-    '<defs><marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L8 4L0 8z" fill="#5B6573"/></marker></defs>',
-    `<rect width="${layout.width}" height="${layout.height}" fill="#FFFFFF"/>`,
-    ...parts,
-    '</svg>',
-  ].join('\n');
-}

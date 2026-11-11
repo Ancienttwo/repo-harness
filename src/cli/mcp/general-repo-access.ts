@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'crypto';
 import { closeSync, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeSync, type Dirent } from 'fs';
-import { dirname, join, relative, resolve } from 'path';
+import { dirname, join, resolve } from 'path';
 import { dlopen } from 'bun:ffi';
 import { repoHarnessRegisteredReposPath, type RepoHarnessAccessMode } from '../../effects/repo-registry';
 import {
@@ -12,7 +12,7 @@ import { appendSegmentedLog } from '../../effects/segmented-log';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import type { CodeGraphRefreshResult, CodeGraphRepoSnapshot, GeneralRepoCodeGraphAdapter } from '../tools/codegraph-reader';
 import { MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH } from './log-paths';
-import { isPathInside } from './paths';
+import { isPathInside, toPosixPath } from './paths';
 import {
   GeneralRepoAccessError,
   assertRepoWriteEnabled,
@@ -29,7 +29,6 @@ import {
   resolveWalkedRepoPath,
   sameIgnorePolicyRevision,
   sha256,
-  toPosixPath,
   uniqueRepoRecords,
   type IgnorePolicy,
   type RepoEntryType,
@@ -322,13 +321,13 @@ function auditDetailsFromError(error: GeneralRepoAccessError, input: Record<stri
   };
 }
 
-function numberArg(value: unknown, fallback: number, min: number, max: number): number {
+export function numberArg(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(Math.trunc(parsed), min), max);
 }
 
-function booleanArg(value: unknown, fallback = false): boolean {
+export function booleanArg(value: unknown, fallback = false): boolean {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase();
@@ -913,12 +912,6 @@ function addManifestCount(counts: ManifestCounts, entry: ManifestEntry): void {
   if (entry.type === 'file' && entry.binary === false) counts.text += 1;
   if (entry.type === 'file' && entry.binary === true) counts.binary += 1;
   if (entry.type === 'file' && entry.binary === undefined) counts.content_deferred += 1;
-}
-
-function countsForEntries(entries: ManifestEntry[]): ManifestCounts {
-  const counts = emptyManifestCounts();
-  for (const entry of entries) addManifestCount(counts, entry);
-  return counts;
 }
 
 function codeGraphMetadataIndex(repo: RepoRecord, ignore: IgnorePolicy, codeGraph: CodeGraphRepoSnapshot): { byPath: Map<string, CodeGraphEntryMetadata>; filteredPaths: number; laggingPaths: Set<string> } {

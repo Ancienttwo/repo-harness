@@ -12,7 +12,7 @@ import {
 import { asApiError } from './operator-api-error';
 import type { OperatorApiErrorV1 } from './operator-api-error';
 import { postOperatorWrite, type OperatorWriteFailure } from './operator-write';
-import { useObservationRefresh } from './useObservationRefresh';
+import { answered, useObservationRefresh } from './useObservationRefresh';
 
 /**
  * Browser side of `GET` and `POST /api/v1/settings/<section>`. A page edits a
@@ -212,7 +212,7 @@ export function useSettingsForm<S, C extends { readonly revision: string }, D, R
     if (started <= staleReadsThrough.current) return true;
     if (result.state !== 'ok') {
       setState(current => ({ ...current, view: current.view.kind === 'ready' ? { ...current.view, refreshFailed: true } : { kind: 'unavailable', reason: result.reason } }));
-      return result.reason !== 'unreachable';
+      return answered(result);
     }
     const forced = adoptNextRead.current;
     adoptNextRead.current = false;

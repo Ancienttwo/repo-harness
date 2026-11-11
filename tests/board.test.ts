@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { initGitRepo, run, tmpWorkspace } from './helpers/repo-fixture';
@@ -10,28 +10,32 @@ import { decodeBoard, type BoardHostPortsV1, type BoardTerminalV1, type BoardV1 
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
-import { collectBoard, readLocalRepositoryId, type BoardCollectInput } from '../src/effects/board/collect';
+import { collectPullRequestMergeReadiness } from '../src/effects/publication/merge-readiness';
+import { collectBoard, collectBoardThrough, readGhJson, readParent, readLocalRepositoryId, readLocalRepositoryIdAsync, seatTerminalsWithBranches, type BoardCollectInput } from '../src/effects/board/collect';
+import { createKeyedSources, KEYED_SOURCE_MAX_AGE_MS } from '../src/effects/board/keyed-sources';
 import { runBoardMerge } from '../src/effects/board/merge';
 import { boardMergeDecisions } from '../src/core/board/merge';
 import { provenMergeOnlySyncs } from '../src/effects/board/merge-only-sync';
 import { runBoardCloseout, stopCodegraphServers } from '../src/effects/board/closeout';
 import type { RunArchctxProcess } from '../src/core/architecture/contracts';
-import { githubRemoteRepository, parseRefs } from '../src/core/board/source';
+import { githubRemoteRepository, parseRecordFindings, parseRefs } from '../src/core/board/source';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
 import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
 import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herdr-core';
 import { ADVISOR_TRANSCRIPT_LINE_WITHHELD, AdvisorSeatError, advisorSeatSendFailure, advisorTranscriptLines, advisorTurnState, decodeAdvisorSeatTranscript, readAdvisorSeat, seatStatusMessage, SEAT_STATUS_MESSAGE_MAX_CHARS, sendToAdvisorSeat } from '../src/core/board/advisor-seat';
-import { decodeBoardParents, type BoardParentsV1 } from '../src/core/board/parents';
+import { decodeBoardParents, decodeBoardSeats, projectBoardSeats, joinBoardParents, type BoardParentsV1 } from '../src/core/board/parents';
 import { BoardSourceError } from '../src/core/board/source';
+import { planDispatch } from '../src/core/board/dispatch';
+import { DEFAULT_SEATS_CONFIG } from '../src/core/board/seats-settings';
 import { HC_MIN_VERSION } from '../src/core/terminal/herdr-pin';
 import { BoardParentsError, collectBoardParents } from '../src/effects/board/parents';
-import { hcStatusClass, ISSUE_FLOW_WORKER_LIMIT } from '../src/core/board/desk';
-import { boardSummary, decodeBoardSummaries } from '../src/core/board/summary';
-import { renderAcceptanceClaim, renderAcceptanceRecord, type ReviewPublishReceipt } from '../src/core/review/review-publish';
+import { currentBatch, deskState, hasDesk, hcStatusClass, isQueued, ISSUE_FLOW_WORKER_LIMIT, liveSeats, seatItem, seatPullRequest, workerLimit } from '../src/core/board/desk';
+import { renderAcceptanceClaim, renderAcceptanceRecord, reviewPayloadFromReceipt, type ReviewPublishReceipt } from '../src/core/review/review-publish';
 import type { ReviewObserver } from '../src/effects/board/review';
 import { BoardCollectError } from '../src/effects/board/collect';
 import type { ModelRelation } from '../src/core/review/acceptance-receipt';
 import boardParentsFixture from '../src/operator-web/fixtures/board-parents.json';
+import boardSeatsFixture from '../src/operator-web/fixtures/board-seats.json';
 
 // Recorded on 2026-11-03: the two GraphQL reads of parent #1474 with the collector's own queries, the newest
 // scheduled ci.yml run (cut to the fields the collector reads), and `hc ls --json` / `hc get --json` of five seat
@@ -62,6 +66,10 @@ else process.exit(2);
 
 interface Replay {
   readonly parent?: (data: Json) => void;
+  /** Splits the edited parent read into sub-issue pages of this size, linked by cursors `c1`, `c2`...; then edits the pages. */
+  readonly pages?: { readonly size: number; readonly edit?: (pages: Json[]) => void };
+  /** Older parent comment pages, newer page first, linked by cursors `k1`, `k2`...; `edit` gets the first parent page and then these pages. */
+  readonly comments?: { readonly older: Json[][]; readonly edit?: (pages: Json[]) => void };
   readonly pulls?: (data: Json) => void;
   /** Edits the recorded `archctx resolve` results of the open pull request files. */
   readonly owners?: (results: Json[]) => void;
@@ -84,6 +92,16 @@ function issueNode(data: Json, number: number): Json {
   return data.repository.issue.subIssues.nodes.find((node: Json) => node.number === number);
 }
 
+function subIssuePages(read: Json, size: number): Json[] {
+  const { nodes } = read.data.repository.issue.subIssues;
+  const count = Math.ceil(nodes.length / size);
+  return Array.from({ length: count }, (_, at) => {
+    const page = structuredClone(read);
+    page.data.repository.issue.subIssues = { pageInfo: { hasNextPage: at < count - 1, endCursor: `c${at + 1}` }, nodes: nodes.slice(at * size, (at + 1) * size) };
+    return page;
+  });
+}
+
 function comment(body: string, createdAt: string): Json {
   return { url: `https://github.com/Ancienttwo/repo-harness/issues/1#issuecomment-${Date.parse(createdAt)}`, createdAt, authorAssociation: 'OWNER', body };
 }
@@ -100,6 +118,13 @@ function replayInput(options: Replay): BoardCollectInput {
   mkdirSync(join(root, 'bin'));
   writeFileSync(join(root, 'bin/hc'), HC); chmodSync(join(root, 'bin/hc'), 0o755);
   const parent = JSON.parse(fixture('parent-1474.graphql.json')); options.parent?.(parent.data);
+  const parentPages = options.pages === undefined ? [parent] : subIssuePages(parent, options.pages.size);
+  options.pages?.edit?.(parentPages);
+  const commentPages: Json[] = (options.comments?.older ?? []).map((nodes, at, older) => ({
+    data: { repository: { issue: { comments: { pageInfo: { hasPreviousPage: at < older.length - 1, startCursor: `k${at + 2}` }, nodes } } } },
+  }));
+  if (options.comments !== undefined) parentPages[0]!.data.repository.issue.comments.pageInfo = { hasPreviousPage: true, startCursor: 'k1' };
+  options.comments?.edit?.([parentPages[0]!, ...commentPages]);
   const pulls = JSON.parse(fixture('pull-requests-1474.graphql.json')); options.pulls?.(pulls.data);
   const resolved = JSON.parse(fixture('archctx-resolve-1474.json')); options.owners?.(resolved.data.results);
   const answer = (value: unknown) => ({ status: 0, stdout: typeof value === 'string' ? value : JSON.stringify(value) });
@@ -107,10 +132,16 @@ function replayInput(options: Replay): BoardCollectInput {
     repo_root: root,
     parent: 1474,
     now: () => options.now ?? REPLAY_NOW,
-    host: options.host ?? boardHostPorts({ env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES, HC_VERSION: options.hcVersion ?? '0.1.19' } }),
+    host: options.host ?? boardHostPorts({ env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES, HC_VERSION: options.hcVersion ?? HC_MIN_VERSION } }),
     gh_runner: (args) => {
       if (args[0] === 'repo') return answer({ nameWithOwner: 'Ancienttwo/repo-harness' });
-      if (args[1] === 'graphql') return answer(args.some(arg => arg.includes('subIssues')) ? parent : pulls);
+      if (args[1] === 'graphql' && args.some(arg => arg.includes('subIssues'))) {
+        const after = args.find(arg => arg.startsWith('after='));
+        return answer(parentPages[after === undefined ? 0 : Number(after.slice('after=c'.length))]);
+      }
+      const before = args.find(arg => arg.startsWith('before='));
+      if (args[1] === 'graphql' && before !== undefined) return answer(commentPages[Number(before.slice('before=k'.length)) - 1]);
+      if (args[1] === 'graphql') return answer(pulls);
       if (args.some(arg => arg.includes('actions/workflows/ci.yml/runs'))) return answer(fixture('daily-run.json'));
       if (args.includes('repos/Ancienttwo/repo-harness/contents/.ai/harness/policy.json?ref=main')) return options.policy ?? POLICY_ABSENT;
       if (args.includes('repos/{owner}/{repo}')) return answer({ id: 1_000_001 });
@@ -236,13 +267,19 @@ function withoutHazards(pr: Json): void {
   pr.files.totalCount = pr.files.nodes.length;
 }
 
+/** Keeps the first three recorded files of #1494 (20 changed lines, no hazard path), so its Low label holds for a fix within the Low bound. */
+function asSmallFix(pr: Json): void {
+  pr.files.nodes = pr.files.nodes.slice(0, 3);
+  pr.files.totalCount = 3;
+}
+
 test('Low acceptance uses the effective tier of every linked issue: a Low closing issue with a High or unobserved ref is not accepted by tier', () => {
-  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' };
+  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null };
   const via = (refs: string) => replay({
     parent: (data) => { issueNode(data, 1479).labels.nodes.push({ name: 'tier:low' }); issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
     pulls: (data) => {
       const { pr1494 } = data.repository;
-      withoutHazards(pr1494);
+      asSmallFix(pr1494);
       pr1494.body += refs;
       pr1494.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push(green);
     },
@@ -250,8 +287,30 @@ test('Low acceptance uses the effective tier of every linked issue: a Low closin
   expect([via(''), via('\nRefs #1476\n'), via('\nRefs #1460\n')]).toEqual(['accepted', 'not_accepted', 'not_accepted']);
 });
 
+test('Low labels give Low to a fix of at most 50 changed lines, and to docs only, tests only or the projection PR at any size', () => {
+  // #1494 closes only #1479, which is tier:low.
+  const tier = (files: Json[], head = 'feat/1479-notify-relay') => replay({
+    owners: (results) => { results.push(...files.map(file => ({ path: file.path, matched: false, ambiguous: false, owningCapabilityId: null }))); },
+    parent: (data) => { issueNode(data, 1479).labels.nodes.push({ name: 'tier:low' }); },
+    pulls: (data) => { Object.assign(data.repository.pr1494, { headRefName: head, files: { totalCount: files.length, nodes: files } }); },
+  }).pull_requests.find(pr => pr.number === 1494)!.tier;
+  const file = (path: string, additions: number, deletions: number) => ({ path, additions, deletions });
+  expect([
+    tier([file('src/a.ts', 30, 20)]),
+    tier([file('src/a.ts', 30, 21)]),
+    // A file without a deletion count makes the size unknown.
+    tier([{ path: 'src/a.ts', additions: 1 }]),
+    tier([file('docs/a.md', 300, 0)]),
+    tier([file('README.md', 300, 0)]),
+    // Documentation is what `isDocumentationPath` names: a non-Markdown file under docs/ is not.
+    tier([file('docs/architecture/archimap.html', 300, 0)]),
+    tier([file('tests/a.test.ts', 300, 0)]),
+    tier([file('src/a.ts', 300, 0)], 'archctx/projection'),
+  ]).toEqual(['low', 'medium', 'medium', 'low', 'low', 'medium', 'low', 'low']);
+});
+
 test('High acceptance: PASS rows of the head from two distinct claims, one recorded different-family; claude_review and A10 project the same rule', () => {
-  const claim = (runtime: string, branch: string) => comment(`repo-harness issue claim\nStatus: active\nRole: writer\nBranch: ${branch}\nRuntime: ${runtime}`, '2026-11-02T10:00:00Z');
+  const claim = (model: string, branch: string) => comment(`repo-harness issue claim\nStatus: active\nRole: writer\nBranch: ${branch}\nRuntime: pi${model === '' ? '' : `\nModel: ${model}`}`, '2026-11-02T10:00:00Z');
   // The claim and the record are the `review publish` wire format. Claim n is an `acceptance claim` comment whose id comes from its time.
   const receipt = (harness: 'claude' | 'codex' | 'pi', subject_sha: string, model_relation: ModelRelation = 'different-family', verdict: 'PASS' | 'FAIL' = 'PASS', round = 1): ReviewPublishReceipt => ({
     protocol: 1, kind: 'repo-harness-review-publish-receipt', round, subject_sha, risk_tier: 'high', reviewer: { harness, actual_model: null }, verdict, model_relation, summary: 'Reviewed.', findings: [],
@@ -259,7 +318,7 @@ test('High acceptance: PASS rows of the head from two distinct claims, one recor
   const claimAt = (n: number) => `2026-11-02T21:0${n}:00Z`;
   const claimUrl = (n: number, path = 'pull/1491') => `https://github.com/Ancienttwo/repo-harness/${path}#issuecomment-${Date.parse(claimAt(n))}`;
   const parent = (data: Json) => {
-    for (const [number, runtime, branch] of [[1475, 'claude', 'feat/1475-hc-transport'], [1479, 'claude', 'feat/1479-notify-relay'], [1476, 'codex', 'feat/1476-sessions-herdr-core']] as const) {
+    for (const [number, runtime, branch] of [[1475, 'claude-sonnet-5-5', 'feat/1475-hc-transport'], [1479, 'claude-sonnet-5-5', 'feat/1479-notify-relay'], [1476, 'gpt-5.5', 'feat/1476-sessions-herdr-core']] as const) {
       const node = issueNode(data, number);
       node.labels.nodes.push({ name: 'tier:high' });
       node.comments.nodes.push(claim(runtime, branch));
@@ -327,8 +386,20 @@ test('High acceptance: PASS rows of the head from two distinct claims, one recor
   const pr1491 = (projection: BoardV1) => projection.pull_requests.find(pr => pr.number === 1491)!;
   expect(projected.map(pr1491).map(pr => [pr.acceptance.status, pr.claude_review] as string[])).toEqual(cases.map(([, status, claude]) => [status, claude]));
   expect(evaluateBoardAttention(projected[1]!).findings.filter(finding => finding.rule === 'A10')).toEqual([]);
-  // Medium keeps one PASS row, with no claim or relation check.
-  expect(pr1491(head([['pi', '', null]], 'tier:medium'))).toMatchObject({ acceptance: { status: 'accepted', via: 'record' }, claude_review: 'not_required' });
+  // Medium needs one claimed PASS row recorded different-family; a same-family PASS alone, or an unclaimed one, does not accept (#2084).
+  expect(([[gatekeeper], [['claude', claimUrl(1), 'same-family']], [['pi', '']]] as const).map(rows => pr1491(head(rows, 'tier:medium')).acceptance.status)).toEqual(['accepted', 'not_accepted', 'not_accepted']);
+  // The writer claim bound to the head branch gives the family that the Medium review seat differs from; #1494 links an issue outside the board.
+  expect(board.pull_requests.map(pr => pr.writer_family)).toEqual(['anthropic', null, 'openai']);
+  // A claim without a Model line names no family (Runtime is not read), a Pi writer takes the family of its model, and linked issues whose claims of the branch disagree give none; agreeing issues keep it.
+  const family = (edit: (data: Json) => void, pulls?: (data: Json) => void) => pr1491(replay({ parent: (data) => { parent(data); edit(data); }, pulls })).writer_family;
+  const refs1479 = (data: Json) => { data.repository.pr1491.body += '\nRefs #1479\n'; };
+  const second = (runtime: string) => (data: Json) => { issueNode(data, 1479).comments.nodes.push(claim(runtime, 'feat/1475-hc-transport')); };
+  expect([
+    family((data) => { const node = issueNode(data, 1475).comments.nodes.find((entry: Json) => entry.body.includes('Model: claude')); node.body = node.body.replace(/\nModel: .*/u, ''); }),
+    family((data) => { const node = issueNode(data, 1475).comments.nodes.find((entry: Json) => entry.body.includes('Model: claude')); node.body = node.body.replace(/Model: .*/u, 'Model: magpie/deepseek-v4'); }),
+    family(second('gpt-5.5'), refs1479),
+    family(second('claude-opus-5-5'), refs1479),
+  ]).toEqual([null, 'deepseek', null, 'anthropic']);
 });
 
 test('replay: the recorded #1474 reads project to a board, and its findings come from the recorded state', () => {
@@ -345,7 +416,7 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
   expect(board.pull_requests[0]!.acceptance).toMatchObject({ status: 'not_accepted' });
   expect(board.plan).toMatchObject({ status: 'unavailable', reason: 'plan block invalid: the plan comment has 0 fenced json blocks, expected 1' });
   expect(board.daily_run).toMatchObject({ status: 'observed', conclusion: 'failure', open_repair_issues: [] });
-  expect(board.tooling).toEqual({ hc: { status: 'observed', version: '0.1.19', min_version: HC_MIN_VERSION }, herdr_app: { status: 'not_pinned' } });
+  expect(board.tooling).toEqual({ hc: { status: 'observed', version: HC_MIN_VERSION, min_version: HC_MIN_VERSION }, herdr_app: { status: 'not_pinned' } });
   expect(board.execution.status === 'observed' && board.execution.terminals.map(terminal => terminal.seat_status === 'observed'
     ? [terminal.address, terminal.seat, terminal.issue, terminal.status, terminal.agent] : [terminal.address, terminal.reason, terminal.agent])).toEqual([
     ['t1', 'worker', 1476, 'blocked', 'codex'], ['t2', 'worker', 1475, 'done', 'claude-code'],
@@ -377,6 +448,161 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
   ]);
 });
 
+/**
+ * The provider answers to the readiness reads of the three open recorded pull requests: #1491 on main and the
+ * stacked #1494 and #1499. The base of #1491 has the rollback reporter, so its read follows the rollback boundary.
+ */
+function recordedReadinessGh(failRepository: () => boolean): (args: readonly string[]) => { status: number; stdout: string; stderr?: string } {
+  const repository = 'Ancienttwo/repo-harness';
+  const node = 'R_kgDORepoHarness';
+  const pulls: Json[] = Object.values(JSON.parse(fixture('pull-requests-1474.graphql.json')).data.repository);
+  const pr = (number: number) => pulls.find(read => read.number === number)!;
+  const base = pr(1491).baseRefOid as string;
+  const before = 'e'.repeat(40);
+  const json = (value: unknown, status = 0) => ({ status, stdout: JSON.stringify(value) });
+  return (args) => {
+    const path = args[0] === 'api' ? args[1]! : '';
+    if (args[0] === 'repo' && args[1] === 'view') return json({ id: node, nameWithOwner: repository });
+    if (args[0] === 'pr' && args[1] === 'view') {
+      const read = pr(Number(args[2]));
+      return json({ number: read.number, url: read.url, state: read.state, isDraft: read.isDraft, headRefOid: read.headRefOid, headRefName: read.headRefName,
+        baseRefOid: read.baseRefOid, baseRefName: read.baseRefName, body: read.body, reviewDecision: '', changedFiles: 0, mergeable: 'MERGEABLE' });
+    }
+    if (args[0] === 'pr' && args[1] === 'list') {
+      const head = args[args.indexOf('--head') + 1];
+      return json(pulls.filter(read => read.headRefName === head).map(read => ({ number: read.number, state: read.state, headRefOid: read.headRefOid,
+        headRefName: read.headRefName, baseRefOid: read.baseRefOid, baseRefName: read.baseRefName, isCrossRepository: false })));
+    }
+    if (args[0] === 'pr' && args[1] === 'checks') return json([{ name: 'Required / CI', bucket: 'pass', link: `https://github.com/${repository}/actions/runs/41/job/42` }]);
+    if (path === `repos/${repository}`) {
+      return failRepository() ? { status: 1, stdout: '', stderr: 'gh: Bad Gateway (HTTP 502)' }
+        : json({ id: 1186405141, node_id: node, full_name: repository, default_branch: 'main' });
+    }
+    if (path === `repos/${repository}/branches/main/protection`) return json({ required_status_checks: { contexts: ['Required / CI'] } });
+    if (path === `repos/${repository}/actions/runs/41`) {
+      return json({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: pr(1491).headRefOid, status: 'completed', conclusion: 'success',
+        pull_requests: [{ number: 1491, head: { sha: pr(1491).headRefOid }, base: { sha: base } }] });
+    }
+    if (path === `repos/${repository}/contents/.ai/harness/policy.json?ref=${base}`) return POLICY_ABSENT;
+    if (path === `repos/${repository}/contents/.github/workflows/ci-report.yml?ref=${base}`) return json({ type: 'file', path: '.github/workflows/ci-report.yml', sha: 'c'.repeat(40) });
+    if (path === `repos/${repository}/commits/${base}/pulls?per_page=100`) return json([{ number: 1488, merged_at: '2026-11-02T10:00:00Z', merge_commit_sha: base, base: { ref: 'main' } }]);
+    if (path === `repos/${repository}/git/commits/${base}`) return json({ sha: base, parents: [{ sha: before }] });
+    if (path === `repos/${repository}/pulls/1488`) return json({ number: 1488, merged: true, merge_commit_sha: base, base: { ref: 'main' }, head: { ref: 'feat/1488', sha: 'd'.repeat(40) } });
+    if (path === `repos/${repository}/commits/${before}/pulls?per_page=100`) return json([{ number: 1487 }]);
+    if (path === 'graphql' && args.includes('-F')) {
+      const number = Number(args.find(arg => arg.startsWith('number='))!.slice('number='.length));
+      return json({ data: { node: { id: node, pullRequest: { number, headRefOid: pr(number).headRefOid, baseRefOid: pr(number).baseRefOid, reviewDecision: null,
+        latestOpinionatedReviews: { pageInfo: { hasNextPage: false }, nodes: [] }, reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] } } } } });
+    }
+    throw new Error(`unexpected readiness call: ${args.join(' ')}`);
+  };
+}
+
+test('board read: the readiness reads of one board share one answer for the repository identity and each base-commit fact; the identity and stack fences and a failed read run again', () => {
+  const run = (failRepository: () => boolean) => {
+    const input = replayInput({});
+    const board = input.gh_runner!;
+    const readiness = recordedReadinessGh(failRepository);
+    const calls: string[] = [];
+    // A readiness read names the repository or ends with the host; the board reads do neither.
+    const gh: BoardCollectInput['gh_runner'] = (args) => {
+      calls.push(args.join(' '));
+      return args.at(-1) === 'github.com' || args.includes('github.com/Ancienttwo/repo-harness') ? readiness(args) : board(args);
+    };
+    return { board: collectBoard({ ...input, readiness: undefined, gh_runner: gh }), calls, readiness };
+  };
+  const count = (calls: readonly string[], prefix: string) => calls.filter(call => call.startsWith(prefix)).length;
+  const { board, calls, readiness } = run(() => false);
+  // One page of parent comments (no older page): 5 board reads and 22 readiness reads.
+  expect(calls).toHaveLength(27);
+  expect(count(calls, 'api repos/Ancienttwo/repo-harness/branches/main/protection ')).toBe(1);
+  expect(count(calls, 'repo view github.com/Ancienttwo/repo-harness --json id,nameWithOwner')).toBe(1);
+  expect(count(calls, 'api repos/Ancienttwo/repo-harness --hostname')).toBe(1);
+  for (const number of [1491, 1494, 1499]) expect(count(calls, `pr view ${number} `)).toBe(2);
+  expect(count(calls, 'pr list --head feat/1475-hc-transport ')).toBe(4);
+  for (const pr of board.pull_requests.filter(read => read.state === 'open')) {
+    const own = collectPullRequestMergeReadiness({ provider_repository_id: '1186405141', repository: 'Ancienttwo/repo-harness', pr_number: pr.number,
+      expected_head_sha: pr.head_sha, expected_base_sha: pr.base_sha, repo_root: '/nonexistent', gh_runner: readiness });
+    expect(pr.merge_readiness).toEqual(own);
+  }
+  expect(board.pull_requests.map(pr => [pr.number, pr.merge_readiness?.ready])).toEqual([[1491, true], [1494, false], [1499, false]]);
+
+  // The first REST repository read fails: it is not stored, and the next pull request reads it again.
+  let repositoryReads = 0;
+  const failed = run(() => repositoryReads++ === 0);
+  expect(failed.board.pull_requests[0]!.merge_readiness).toMatchObject({ ready: false, blockers: [{ code: 'provider_unavailable' }] });
+  expect(count(failed.calls, 'api repos/Ancienttwo/repo-harness --hostname')).toBe(2);
+});
+
+test('keyed sources: an unchanged board makes no readiness call, a changed key input or the maximum age reads that pull request again, and a stored answer equals a fresh read', () => {
+  const input = replayInput({});
+  const boardGh = input.gh_runner!;
+  const readiness = recordedReadinessGh(() => false);
+  let calls: string[] = [];
+  let edit: ((data: Json) => void) | null = null;
+  let now = REPLAY_NOW;
+  const gh: BoardCollectInput['gh_runner'] = (args) => {
+    if (args.at(-1) === 'github.com' || args.includes('github.com/Ancienttwo/repo-harness')) {
+      calls.push(args.join(' '));
+      return readiness(args);
+    }
+    const answer = boardGh(args);
+    if (edit === null || !args.some(arg => arg.includes('pr1499: pullRequest'))) return answer;
+    const pulls = JSON.parse(answer.stdout);
+    edit(pulls.data);
+    return { ...answer, stdout: JSON.stringify(pulls) };
+  };
+  const sources = createKeyedSources();
+  const read = () => collectBoardThrough({ ...input, readiness: undefined, gh_runner: gh, now: () => now }, sources);
+  const first = read();
+  const open = first.pull_requests.filter(pr => pr.state === 'open');
+  expect(open.map(pr => [pr.number, pr.merge_readiness_observed_at])).toEqual([1491, 1494, 1499].map(number => [number, REPLAY_NOW.toISOString()]));
+  for (const pr of open) {
+    expect(pr.merge_readiness).toEqual(collectPullRequestMergeReadiness({ provider_repository_id: '1186405141', repository: 'Ancienttwo/repo-harness', pr_number: pr.number,
+      expected_head_sha: pr.head_sha, expected_base_sha: pr.base_sha, repo_root: '/nonexistent', gh_runner: readiness }));
+  }
+
+  calls = [];
+  now = new Date(REPLAY_NOW.getTime() + 60_000);
+  const second = read();
+  expect(calls).toEqual([]);
+  expect(second.pull_requests).toEqual(first.pull_requests);
+
+  // One resolved review thread on #1499 changes only its key.
+  edit = (data) => { data.repository.pr1499.reviewThreads = { totalCount: 1, pageInfo: { hasNextPage: false }, nodes: [{ isResolved: true }] }; };
+  const third = read();
+  expect(calls.length).toBeGreaterThan(0);
+  expect(calls.filter(call => /^pr (view|list) /u.test(call) && !call.startsWith('pr view 1499 ') && !call.startsWith('pr list --head feat/1475-hc-transport '))).toEqual([]);
+  expect(third.pull_requests.map(pr => [pr.number, pr.merge_readiness_observed_at])).toEqual([[1491, REPLAY_NOW.toISOString()], [1494, REPLAY_NOW.toISOString()], [1499, now.toISOString()]]);
+
+  calls = [];
+  now = new Date(REPLAY_NOW.getTime() + KEYED_SOURCE_MAX_AGE_MS);
+  read();
+  for (const number of [1491, 1494]) expect(calls.filter(call => call.startsWith(`pr view ${number} `))).toHaveLength(2);
+});
+
+test('acts read through a fresh keyed source store: each collectBoard and board merge call on the default path reads readiness again', () => {
+  let reads = 0;
+  const input = replayInput(mergeReplay());
+  const counted: BoardCollectInput = { ...input, readiness: (selection) => { reads++; return input.readiness!(selection); } };
+  collectBoard(counted);
+  collectBoard(counted);
+  expect(reads).toBe(6);
+  const merge = () => ({ exit_code: 0, document: { ok: true } }) as never;
+  expect(runBoardMerge({ ...counted, pr: null, dry_run: false, merge }).target).toBe(1491);
+  expect(runBoardMerge({ ...counted, pr: null, dry_run: false, merge }).target).toBe(1491);
+  expect(reads).toBe(12);
+});
+
+test('the board decoder refuses protocol 4 and a readiness read time that does not match the readiness', () => {
+  const recorded = JSON.parse(JSON.stringify(replay()));
+  expect(() => decodeBoard({ ...recorded, protocol: 4 })).toThrow('unsupported board protocol: 4');
+  const withTime = (at: unknown, readiness = true) => ({ ...recorded, pull_requests: recorded.pull_requests.map((pr: Json) => pr.number === 1491
+    ? { ...pr, merge_readiness: readiness ? pr.merge_readiness : null, merge_readiness_observed_at: at } : pr) });
+  expect(decodeBoard(withTime(REPLAY_NOW.toISOString())).pull_requests.find(pr => pr.number === 1491)!.merge_readiness_observed_at).toBe(REPLAY_NOW.toISOString());
+  for (const invalid of [withTime(null), withTime('not a time'), withTime(REPLAY_NOW.toISOString(), false)]) expect(() => decodeBoard(invalid)).toThrow('invalid board merge_readiness_observed_at on PR #1491');
+});
+
 test('attention rules and delivery windows recognize all worker seat kinds', () => {
   const board = replay();
   if (board.execution.status !== 'observed') throw new Error('the replay observes the seats');
@@ -391,55 +617,59 @@ test('attention rules and delivery windows recognize all worker seat kinds', () 
   }
 });
 
-test('board summary counts the recorded PRs, planned issue members and orchestrator findings', () => {
+test('the room counts follow the recorded PRs and the plan: queue, current batch and worker limit', () => {
   const board = replay();
-  expect(boardSummary(board)).toEqual({ queue: 1, ci_failures: 0, batch: { accepted: null, size: null }, current_batch: null, needs_you: 3,  worker_limit: ISSUE_FLOW_WORKER_LIMIT,
-    seats: { status: 'observed', stalled: 0, desks: [
-      { seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'blocked' }, { seat: 'worker', agent: 'claude-code', issue: 1475, pr: 1491, state: 'acceptance_queue' },
-    ] } });
+  const counts = (value: BoardV1) => {
+    const current = currentBatch(value);
+    return { queue: value.pull_requests.filter(isQueued).length, current_batch: current === null ? null : { accepted: current.accepted.length, size: current.size }, worker_limit: workerLimit(value) };
+  };
+  expect(counts(board)).toEqual({ queue: 1, current_batch: null, worker_limit: ISSUE_FLOW_WORKER_LIMIT });
   const block = { protocol: 1, kind: 'repo-harness.plan', merge_order: [], holds: [], batches: [[1475, 1476], [1477, 1479]], seat_limits: { worker: 4 } } as const;
   const planned: BoardV1 = { ...board, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at, revision: 1,
     block },
     pull_requests: board.pull_requests.map(pr => pr.number === 1494 ? { ...pr, required_check: { status: 'failure', completed_at: board.observed_at } }
       : pr.number === 1499 ? { ...pr, state: 'closed' } : pr) };
-  expect(boardSummary(planned)).toMatchObject({ queue: 1, ci_failures: 1, batch: { accepted: 0, size: 4 }, current_batch: { accepted: 0, size: 2 }, worker_limit: 4 });
+  expect(counts(planned)).toEqual({ queue: 1, current_batch: { accepted: 0, size: 2 }, worker_limit: 4 });
   const accepted = planned.pull_requests.find(pr => pr.number === 1491)!;
   const reopened: BoardV1 = { ...planned,
     items: planned.items.map(item => item.number === 1475 ? { ...item, pull_requests: [1491, 1500] } : item),
     pull_requests: [...planned.pull_requests.map(pr => pr.number === 1491 ? { ...pr, state: 'closed' as const } : pr),
       { ...accepted, number: 1500, state: 'open', acceptance: { status: 'not_accepted' } }],
   };
-  expect(boardSummary(reopened)).toMatchObject({ queue: 1, batch: { accepted: 0, size: 4 } });
-  expect(boardSummary({ ...reopened, pull_requests: reopened.pull_requests.map(pr => pr.number === 1500
+  expect(counts(reopened).queue).toBe(1);
+  expect(counts({ ...reopened, pull_requests: reopened.pull_requests.map(pr => pr.number === 1500
     ? { ...pr, required_check: { status: 'pending' } } : pr) }).queue).toBe(0);
   const observedPlan = (batches: readonly (readonly number[])[]): BoardV1['plan'] => ({ status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at, revision: 1, block: { ...block, batches } });
   // One exact row per plan state.
-  for (const [plan, batch, current_batch, worker_limit] of [
-    [observedPlan(block.batches), { accepted: 0, size: 4 }, { accepted: 0, size: 2 }, 4],
-    [observedPlan([]), { accepted: 0, size: 0 }, null, 4],
-    [{ status: 'absent', truncated: false }, { accepted: null, size: null }, null, ISSUE_FLOW_WORKER_LIMIT],
-    [{ status: 'unavailable', comment_url: 'https://github.com/plan', reason: 'plan block invalid' }, { accepted: null, size: null }, null, ISSUE_FLOW_WORKER_LIMIT],
+  for (const [plan, current_batch, worker_limit] of [
+    [observedPlan(block.batches), { accepted: 0, size: 2 }, 4],
+    [observedPlan([]), null, 4],
+    [{ status: 'absent', truncated: false }, null, ISSUE_FLOW_WORKER_LIMIT],
+    [{ status: 'unavailable', comment_url: 'https://github.com/plan', reason: 'plan block invalid' }, null, ISSUE_FLOW_WORKER_LIMIT],
   ] as const) {
-    const summary = boardSummary({ ...planned, plan });
-    expect(summary.batch).toEqual(batch);
-    expect(summary.current_batch).toEqual(current_batch);
-    expect(summary.worker_limit).toBe(worker_limit);
+    const row = counts({ ...planned, plan });
+    expect(row.current_batch).toEqual(current_batch);
+    expect(row.worker_limit).toBe(worker_limit);
   }
   // The current batch is the first with an unmerged member, and a merged member no longer counts as accepted.
   const merged = (issues: readonly number[]): BoardV1 => { const numbers = planned.items.filter(item => issues.includes(item.number)).flatMap(item => item.pull_requests);
     return { ...planned, pull_requests: planned.pull_requests.map(pr => numbers.includes(pr.number) ? { ...pr, state: 'merged' as const } : pr) }; };
-  expect(boardSummary(merged([1475])).current_batch).toEqual({ accepted: 0, size: 2 });
-  expect(boardSummary(merged([1475, 1476])).current_batch).toEqual({ accepted: 0, size: 2 });
-  expect(boardSummary({ ...merged([1475, 1476]), plan: observedPlan([[1475, 1476]]) }).current_batch).toBeNull();
+  expect(counts(merged([1475])).current_batch).toEqual({ accepted: 0, size: 2 });
+  expect(counts(merged([1475, 1476])).current_batch).toEqual({ accepted: 0, size: 2 });
+  expect(counts({ ...merged([1475, 1476]), plan: observedPlan([[1475, 1476]]) }).current_batch).toBeNull();
 });
 
-test('board summary gives each live seat outside the stage the desk state of the room rules', () => {
+test('each live seat outside the stage takes the desk state of the room rules', () => {
   const board = replay();
   if (board.execution.status !== 'observed') throw new Error('the replay observes the seats');
   const seat = board.execution.terminals[0]!, pr = board.pull_requests.find(entry => entry.number === 1499)!, item = board.items.find(entry => entry.number === 1476)!;
   const check = (required_check: BoardV1['pull_requests'][number]['required_check']) => ({ ...pr, state: 'open' as const, acceptance: { status: 'not_accepted' as const }, required_check });
   const completed = { completed_at: board.observed_at };
   const known = { status_kind: 'unknown' } as const, none = { status_kind: 'none' } as const;
+  const desks = (value: BoardV1, terminals: readonly BoardTerminalV1[]) => liveSeats(terminals).filter(hasDesk).map((entry) => {
+    const owned = seatItem(value, entry);
+    return { seat: entry.seat, agent: entry.agent, issue: entry.issue, pr: entry.pr, state: deskState(entry, owned, seatPullRequest(value, entry, owned)) };
+  });
   for (const [state, labels, status, source, claim_status] of [
     ['blocked', { issue: null, pr: null }, 'blocked', check({ status: 'failure', ...completed }), none],
     ['error', {}, 'error', check({ status: 'failure', ...completed }), none],
@@ -457,13 +687,11 @@ test('board summary gives each live seat outside the stage the desk state of the
     ['idle', {}, 'thinking', check({ status: 'missing' }), known],
   ] as const) {
     const terminal = { ...seat, ...labels, status } as BoardTerminalV1;
-    const one: BoardV1 = { ...board, pull_requests: [source], items: [{ ...item, claim_status }], execution: { status: 'observed', terminals: [terminal] } };
-    expect(boardSummary(one).seats).toEqual({ status: 'observed', stalled: state === 'no_claim_status' ? 1 : 0,
-      desks: [{ seat: 'worker', agent: 'codex', issue: 'issue' in labels ? null : 1476, pr: 'pr' in labels ? null : 1499, state }] });
+    const one: BoardV1 = { ...board, pull_requests: [source], items: [{ ...item, claim_status }] };
+    expect(desks(one, [terminal])).toEqual([{ seat: 'worker', agent: 'codex', issue: 'issue' in labels ? null : 1476, pr: 'pr' in labels ? null : 1499, state }]);
   }
   const finished = { ...seat, state: 'finished' } as BoardTerminalV1, advisor = { ...seat, seat: 'advisor' } as BoardTerminalV1;
-  expect(boardSummary({ ...board, execution: { status: 'observed', terminals: [finished, advisor] } }).seats).toEqual({ status: 'observed', desks: [], stalled: 0 });
-  expect(boardSummary({ ...board, execution: { status: 'unavailable', reason: 'no_seat_terminals' } }).seats).toEqual({ status: 'unavailable', reason: 'no_seat_terminals' });
+  expect(desks(board, [finished, advisor])).toEqual([]);
 });
 
 test('one classifier reads the hc status word for the desk rules and the advisor turn', () => {
@@ -489,38 +717,12 @@ test('the seat status message is one redacted line of at most 200 characters', (
   ] as const) expect(seatStatusMessage(message)).toBe(line);
 });
 
-test('one strict summary decoder checks snapshots and route rows', () => {
-  const row = { parent: 1474, status: 'observed', observed_at: REPLAY_NOW.toISOString(),
-    summary: { queue: 2, ci_failures: 0, batch: { accepted: 1, size: 2 }, current_batch: { accepted: 1, size: 2 }, needs_you: 3, worker_limit: 6,
-      seats: { status: 'observed', stalled: 1, desks: [{ seat: 'worker', agent: null, issue: 1475, pr: null, state: 'no_claim_status' }, { seat: 'worker', agent: 'codex', issue: null, pr: 1499, state: 'coding' }] } } } as const;
-  const response = { protocol: 3, kind: 'repo-harness.board-summaries', repository_id: 'repo-a', parents: [row] } as const;
-  expect(decodeBoardSummaries(response)).toEqual(response);
-  expect(decodeBoardSummaries({ ...response, parents: [{ parent: 1474, status: 'not_read' }, { parent: 1651, status: 'unavailable', reason: 'snapshot_invalid' }] }).parents).toHaveLength(2);
-  const summary = (fields: Record<string, unknown>) => ({ ...row, summary: { ...row.summary, ...fields } });
-  const desk = row.summary.seats.desks[0];
-  const desks = (...rows: readonly unknown[]) => summary({ seats: { status: 'observed', stalled: 0, desks: rows } });
-  expect(decodeBoardSummaries({ ...response, parents: [summary({ current_batch: null, seats: { status: 'unavailable', reason: 'no_seat_terminals' } })] }).parents).toHaveLength(1);
-  for (const invalid of [{ ...response, protocol: 1 }, { ...response, kind: 'other' }, { ...response, repository_id: '../a' },
-    { ...response, extra: 1 }, { ...response, parents: [row, row] }, ...[
-      { ...row, observed_at: 'yesterday' }, { ...row, observed_at: '2026-02-31T00:00:00Z' }, { ...row, parent: 0 }, { ...row, extra: 1 },
-      { ...row, summary: { ...row.summary, queue: -1 } }, { ...row, summary: { ...row.summary, needs_you: 0.5 } },
-      { ...row, summary: { ...row.summary, batch: { accepted: 3, size: 2 } } },
-      { ...row, summary: { ...row.summary, batch: { accepted: null, size: 2 } } },
-      summary({ current_batch: { accepted: 3, size: 2 } }), summary({ current_batch: { accepted: null, size: null } }), summary({ current_batch: undefined }),
-      summary({ worker_limit: 0 }), summary({ worker_limit: null }), summary({ seats: null }), summary({ seats: { status: 'other' } }),
-      summary({ seats: { status: 'unavailable', reason: '' } }), summary({ seats: { status: 'observed', desks: [desk], stalled: 0 } }),
-      summary({ seats: { status: 'observed', desks: {}, stalled: 0 } }), desks({ ...desk, address: 't1' }), desks({ ...desk, seat: '' }), desks({ ...desk, state: 'away' }),
-      desks({ ...desk, issue: 0 }), desks({ ...desk, pr: '1499' }), desks({ ...desk, agent: 1 }),
-      { parent: 1474, status: 'unavailable', reason: '' }, { parent: 1474, status: 'not_read', summary: row.summary },
-    ].map(parent => ({ ...response, parents: [parent] }))]) expect(() => decodeBoardSummaries(invalid)).toThrow('board summaries invalid');
-});
-
 test('decoders refuse an unknown protocol or kind', () => {
   expect(() => decodeBoard({ protocol: 2, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 2');
   expect(() => decodeBoard({ protocol: 1, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 1');
   // A protocol-3 board has no merge_hold fields.
   expect(() => decodeBoard({ protocol: 3, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 3');
-  expect(() => decodeBoard({ protocol: 4, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
+  expect(() => decodeBoard({ protocol: 5, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
   const block = (value: Json) => `repo-harness plan\n\n\`\`\`json\n${JSON.stringify(value)}\n\`\`\`\n`;
   const valid = { protocol: 1, kind: 'repo-harness.plan', merge_order: [1475], holds: [], batches: [], seat_limits: { worker: 3 } } as const;
   expect(decodePlanBlock(block(valid))).toEqual(valid);
@@ -534,26 +736,26 @@ test('decoders refuse a missing or invalid plan revision, merge policy or seat b
   const plan = (revision: unknown) => ({ ...recorded, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: recorded.observed_at, revision, block: {} } });
   const seat = (branch: unknown) => [{ ...recorded.execution.terminals[0], branch }];
   const board = (branch: unknown) => ({ ...recorded, execution: { status: 'observed', terminals: seat(branch) } });
-  const parents = (branch: unknown) => ({ ...boardParentsFixture, seats: seat(branch) });
+  const parents = (branch: unknown) => ({ ...boardSeatsFixture, seats: seat(branch).map(row => ({ ...row, parent: '1474' })) });
   const { acceptance_merge: _dropped, ...noPolicy } = recorded;
   for (const invalid of [plan(undefined), plan(0), plan(1.5), plan('1'), noPolicy, { ...recorded, acceptance_merge: 'maybe' }, board(undefined), board('')]) {
     expect(() => decodeBoard(invalid)).toThrow('invalid board');
   }
   for (const valid of [plan(null), plan(7), { ...recorded, acceptance_merge: 'unknown' }, board(null), board('main')]) expect(decodeBoard(valid)).toEqual(valid);
-  for (const invalid of [parents(undefined), parents(''), { ...parents(null), seats: undefined }]) expect(() => decodeBoardParents(invalid)).toThrow('board seat');
-  expect(decodeBoardParents(parents('main')).seats[0]!.branch).toBe('main');
+  for (const invalid of [parents(undefined), parents(''), { ...parents(null), seats: undefined }]) expect(() => decodeBoardSeats(invalid)).toThrow('board seat');
+  expect(decodeBoardSeats(parents('main')).seats[0]!.branch).toBe('main');
   // A status message that leaves the server is one redacted line within the limit, and null is no message.
-  const message = (status_msg: unknown) => ({ ...boardParentsFixture, seats: [{ ...recorded.execution.terminals[0], status_msg }] });
-  for (const invalid of [undefined, 7, 'a\nb', 'c'.repeat(SEAT_STATUS_MESSAGE_MAX_CHARS + 1), `ghp_${'a'.repeat(30)}`]) expect(() => decodeBoardParents(message(invalid))).toThrow('invalid board seat status message on t1');
-  for (const valid of [null, 'c'.repeat(SEAT_STATUS_MESSAGE_MAX_CHARS)]) expect(decodeBoardParents(message(valid)).seats[0]!.status_msg).toBe(valid);
+  const message = (status_msg: unknown) => ({ ...boardSeatsFixture, seats: [{ ...recorded.execution.terminals[0], status_msg, parent: '1474' }] });
+  for (const invalid of [undefined, 7, 'a\nb', 'c'.repeat(SEAT_STATUS_MESSAGE_MAX_CHARS + 1), `ghp_${'a'.repeat(30)}`]) expect(() => decodeBoardSeats(message(invalid))).toThrow('invalid board seat status message on t1');
+  for (const valid of [null, 'c'.repeat(SEAT_STATUS_MESSAGE_MAX_CHARS)]) expect(decodeBoardSeats(message(valid)).seats[0]!.status_msg).toBe(valid);
   expect(() => decodeBoard({ ...recorded, execution: { status: 'observed', terminals: message('a\nb').seats } })).toThrow('invalid board seat status message on t1');
 });
 
-test('plan revision: the ordinal of the newest plan comment among the write-access plan comments, and null on a truncated read', () => {
+test('plan revision: the ordinal of the newest plan comment among the write-access plan comments of every parent comment page', () => {
   const block = { protocol: 1, kind: 'repo-harness.plan', merge_order: [], holds: [], batches: [], seat_limits: { worker: 3 } };
   const plan = (at: string, body = `repo-harness plan\n\n\`\`\`json\n${JSON.stringify(block)}\n\`\`\`\n`) => comment(body, at);
-  const revision = (nodes: Json[], truncated = false) => {
-    const board = replay({ parent: (data) => { data.repository.issue.comments = { pageInfo: { hasPreviousPage: truncated }, nodes }; } });
+  const revision = (nodes: Json[], older?: Json[][]) => {
+    const board = replay({ parent: (data) => { data.repository.issue.comments = { pageInfo: { hasPreviousPage: false }, nodes }; }, comments: older && { older } });
     return board.plan.status === 'observed' ? board.plan.revision : board.plan.status;
   };
   const [first, second, third] = [plan('2026-11-01T00:00:00Z'), plan('2026-11-02T00:00:00Z'), plan('2026-11-03T00:00:00Z')];
@@ -561,8 +763,8 @@ test('plan revision: the ordinal of the newest plan comment among the write-acce
   const request = { ...plan('2026-11-04T00:00:00Z'), authorAssociation: 'NONE' };
   expect([
     revision([first]), revision([first, second, third]), revision([first, invalid, third]), revision([first, second, request]),
-    revision([first, second], true), revision([first, invalid]), revision([]),
-  ]).toEqual([1, 3, 3, 2, null, 'unavailable', 'absent']);
+    revision([third], [[second], [first]]), revision([], [[first]]), revision([first, invalid]), revision([]),
+  ]).toEqual([1, 3, 3, 2, 3, 1, 'unavailable', 'absent']);
 });
 
 const POLICY_ON = { status: 0, stdout: JSON.stringify({ type: 'file', path: '.ai/harness/policy.json', encoding: 'base64', content: Buffer.from('{"publication":{"acceptance_merge":"on"}}').toString('base64') }) };
@@ -578,7 +780,15 @@ function mergeReplay(edit: { parent?: (data: Json) => void; pulls?: (data: Json)
       issueNode(data, 1475).labels.nodes.push({ name: 'tier:medium' });
       edit.parent?.(data);
     },
-    pulls: edit.pulls,
+    pulls: (data) => {
+      // The Medium rule needs a claimed different-family PASS row of the head; the recorded #1491 record has no claim.
+      const { pr1491 } = data.repository;
+      const receipt: ReviewPublishReceipt = { protocol: 1, kind: 'repo-harness-review-publish-receipt', round: 1, subject_sha: pr1491.headRefOid, risk_tier: 'medium', reviewer: { harness: 'codex', actual_model: null }, verdict: 'PASS', model_relation: 'different-family', summary: 'Reviewed.', findings: [] };
+      const claimAt = '2026-11-02T21:01:00Z';
+      pr1491.comments.nodes.push(comment(renderAcceptanceClaim(receipt), claimAt));
+      pr1491.comments.nodes.push(comment(renderAcceptanceRecord(receipt, `https://github.com/Ancienttwo/repo-harness/pull/1491#issuecomment-${Date.parse(claimAt)}`), '2026-11-02T21:02:00Z'));
+      edit.pulls?.(data);
+    },
   };
 }
 
@@ -607,6 +817,60 @@ test('board merge: an accepted, green, ready PR first in plan order is eligible,
   expect(boardMergeDecisions(replay(synced)).find(entry => entry.pr === 1491)).toEqual({ pr: 1491, eligible: true });
 });
 
+test('board read: every sub-issue page of the parent reaches the board and the merge_order gate; a truncated or repeating page, a repeated cursor and a stream above the page cap fail closed; so does a parent comment page without a cursor or with a repeated one', () => {
+  const single = replay();
+  const paged = replay({ pages: { size: 4 } });
+  expect(paged.items.map(item => [item.number, item.pull_requests])).toEqual(single.items.map(item => [item.number, item.pull_requests]));
+  // #1482 is on the third page: the gate sees it closed, as it sees a closed sub-issue on the first page.
+  const closedOnLastPage = mergeReplay({ order: [1482, 1475], parent: (data) => { issueNode(data, 1482).state = 'CLOSED'; } }, { pages: { size: 4 } });
+  expect(boardMergeDecisions(replay(closedOnLastPage)).find(entry => entry.pr === 1491)).toEqual({ pr: 1491, eligible: true });
+  const refusal = (edit: (pages: Json[]) => void) => {
+    try { replay({ pages: { size: 4, edit } }); return 'read'; } catch (error) { return error instanceof BoardSourceError ? error.message : String(error); }
+  };
+  expect([
+    refusal((pages) => { pages[1]!.data.repository.issue.subIssues.pageInfo.endCursor = null; }),
+    refusal((pages) => { pages[2]!.data.repository.issue.subIssues.nodes.push(pages[0]!.data.repository.issue.subIssues.nodes[0]); }),
+    refusal((pages) => { pages[1]!.data.repository.issue.subIssues.pageInfo.endCursor = 'c1'; }),
+    refusal((pages) => { pages[2]!.data.repository.issue.subIssues.pageInfo = { hasNextPage: true, endCursor: 'c1' }; }),
+    // An advancing stream of empty pages: page n names cursor c(n+1).
+    refusal((pages) => {
+      pages[2]!.data.repository.issue.subIssues.pageInfo.hasNextPage = true;
+      for (let at = 3; at <= 25; at += 1) {
+        const page = structuredClone(pages[2]!);
+        page.data.repository.issue.subIssues = { pageInfo: { hasNextPage: true, endCursor: `c${at + 1}` }, nodes: [] };
+        pages.push(page);
+      }
+    }),
+  ]).toEqual([
+    'board source invalid: page 1 issue.subIssues.pageInfo.endCursor is not a cursor',
+    'board source invalid: sub-issue #1475 is on more than one page',
+    'board source invalid: issue.subIssues cursor c1 repeats',
+    'board source invalid: issue.subIssues cursor c1 repeats',
+    'board source invalid: issue.subIssues has more than 20 pages of 50',
+  ]);
+  const commentRefusal = (edit: (pages: Json[]) => void) => {
+    try { replay({ comments: { older: [[], []], edit } }); return 'read'; } catch (error) { return error instanceof BoardSourceError ? error.message : String(error); }
+  };
+  expect([
+    commentRefusal((pages) => { pages[0]!.data.repository.issue.comments.pageInfo.startCursor = null; }),
+    commentRefusal((pages) => { pages[1]!.data.repository.issue.comments.pageInfo.startCursor = 'k1'; }),
+    commentRefusal((pages) => { delete pages[2]!.data; pages[2]!.errors = [{ message: 'timeout' }]; }),
+  ]).toEqual([
+    'board source invalid: comment page 0 issue.comments.pageInfo.startCursor is not a cursor',
+    'board source invalid: issue.comments cursor k1 repeats',
+    'BoardCollectError: GitHub GraphQL refused the board read: [{"message":"timeout"}]',
+  ]);
+  // A coordinator claim on an older page is active until its release on the newest page.
+  const claim = comment('repo-harness issue claim\nStatus: active\nRole: coordinator', '2026-11-01T09:00:00Z');
+  const release = comment(`repo-harness issue claim status\nClaim: ${claim.url}\nStatus: released`, '2026-11-02T22:30:00Z');
+  const coordinator = (released: boolean) => {
+    const { parent } = readParent(replayInput(mergeReplay({ parent: (data) => { if (released) data.repository.issue.comments.nodes.push(release); } }, { comments: { older: [[claim]] } })));
+    const quota = { claude: { state: 'normal', remaining: 80, mode: 'normal' }, chatgpt: { state: 'normal', remaining: 30, mode: 'normal' } } as const;
+    return planDispatch({ seats: DEFAULT_SEATS_CONFIG, quota, terminals: [], parent }).coordinator;
+  };
+  expect([coordinator(false), coordinator(true)]).toEqual([claim.url, null]);
+});
+
 test('board merge: every hold stays in force until a strictly newer release on its own thread; Issues: scopes only a parent hold', () => {
   const HOLD = 'repo-harness merge hold\nReason: owner said stop';
   const RELEASE = 'repo-harness merge hold released';
@@ -629,13 +893,16 @@ test('board merge: every hold stays in force until a strictly newer release on i
     mergeReason(on(['parent', `${HOLD}\nIssues: #1479`, '2026-11-02T21:00:00Z'])),
     mergeReason(on(['parent', HOLD, '2026-11-02T21:00:00Z'])),
     mergeReason(on(['parent', HOLD, '2026-11-02T21:00:00Z'], ['parent', `${HOLD}\nIssues: #1479`, '2026-11-02T21:10:00Z'])),
-    mergeReason({ parent: (data) => { data.repository.issue.comments.pageInfo.hasPreviousPage = true; } }),
-    // Truncated: the oldest parent comment read is 18:33:49Z. A release at that boundary can tie an omitted hold; a later one cannot.
-    ...['2026-11-02T18:33:49Z', '2026-11-02T21:00:00Z'].map(at => mergeReason({ parent: (data) => {
-      data.repository.issue.comments.nodes.push(comment(RELEASE, at));
-      data.repository.issue.comments.pageInfo.hasPreviousPage = true;
+    // The parent thread is read to its oldest page: a hold there stays in force until a newer release.
+    mergeReason({}, { comments: { older: [[comment(HOLD, '2026-11-01T10:00:00Z')]] } }),
+    mergeReason(on(['parent', RELEASE, '2026-11-02T21:00:00Z']), { comments: { older: [[comment(HOLD, '2026-11-01T10:00:00Z')]] } }),
+    mergeReason({ parent: (data) => { issueNode(data, 1475).comments.pageInfo.hasPreviousPage = true; } }),
+    // Truncated: the oldest #1475 comment read is 18:34:59Z. A release at that boundary can tie an omitted hold; a later one cannot.
+    ...['2026-11-02T18:34:59Z', '2026-11-02T21:00:00Z'].map(at => mergeReason({ parent: (data) => {
+      issueNode(data, 1475).comments.nodes.push(comment(RELEASE, at));
+      issueNode(data, 1475).comments.pageInfo.hasPreviousPage = true;
     } })),
-  ]).toEqual(['held', 'eligible', 'held', 'held', 'held', 'eligible', 'held', 'held', 'hold_unknown', 'hold_unknown', 'eligible']);
+  ]).toEqual(['held', 'eligible', 'held', 'held', 'held', 'eligible', 'held', 'held', 'held', 'eligible', 'hold_unknown', 'hold_unknown', 'eligible']);
 });
 
 test('board merge: no plan, a draft, plan holds, plan order for every linked item, the provisional Low path, a missing Claude review, a red Required / CI, readiness and the policy switch each refuse', () => {
@@ -644,8 +911,8 @@ test('board merge: no plan, a draft, plan holds, plan order for every linked ite
     pulls: (data: Json) => {
       const { pr1494 } = data.repository;
       pr1494.isDraft = false;
-      withoutHazards(pr1494);
-      pr1494.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' });
+      asSmallFix(pr1494);
+      pr1494.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null });
     },
   };
   expect([
@@ -709,7 +976,9 @@ test('seat branch: git in the terminal directory on both reads; each unreadable 
   const expected = [['t1', 'feat/1806-seat'], ['t2', null], ['t3', null], ['t4', null], ['t5', null]];
   const execution = replay({ host: boardHostPorts(hc.options) }).execution;
   expect(execution.status === 'observed' && execution.terminals.map(seat => [seat.address, seat.branch])).toEqual(expected);
-  const list = collectBoardParents({ repo_root: hc.root, now: () => REPLAY_NOW, host: boardHostPorts(hc.options), gh_runner: () => ({ status: 0, stdout: fixture('open-issues.graphql.json') }) });
+  const read = boardHostPorts(hc.options).seatTerminals('1186405141');
+  if (read.status !== 'observed') throw new Error(read.reason);
+  const list = projectBoardSeats('1186405141', REPLAY_NOW.toISOString(), seatTerminalsWithBranches(read.terminals));
   expect(list.seats.map(seat => [seat.address, seat.branch])).toEqual(expected);
   expect(JSON.stringify([execution, list])).not.toContain(plain);
   expect(JSON.stringify([execution, list])).not.toContain(branched);
@@ -768,6 +1037,39 @@ function replayParents(gh: (args: readonly string[]) => GhAnswer, hc = true): Bo
   return collectBoardParents({ repo_root: root, now: () => REPLAY_NOW, gh_runner: gh, host: boardHostPorts({ env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES } }) });
 }
 
+test('parent counts retain nonempty seat labels with invalid issue or PR labels, and exclude an empty seat label', () => {
+  const { parent: _parent, seat_status: _status, seat: _seat, issue: _issue, pr: _pr, ...terminal } = boardSeatsFixture.seats[0]!;
+  const seats = projectBoardSeats('1186405141', REPLAY_NOW.toISOString(), [
+    { ...terminal, state: 'live', labels: { seat: 'worker', parent: '1474', issue: 'invalid' } },
+    { ...terminal, state: 'live', address: 't2', labels: { seat: 'worker', parent: '1474', pr: 'invalid' } },
+    { ...terminal, state: 'live', address: 't3', labels: { seat: '', parent: '1651' } },
+  ]);
+  expect(decodeBoardSeats(JSON.parse(JSON.stringify(seats))).seats.map(seat => [seat.seat, seat.seat_status])).toEqual([
+    ['worker', 'unavailable'], ['worker', 'unavailable'], ['', 'unavailable'],
+  ]);
+  const joined = joinBoardParents(decodeBoardParents(boardParentsFixture), seats);
+  expect(joined.parents.map(parent => [parent.number, parent.seats])).toEqual([[1474, 2], [1651, 0]]);
+  expect(joined.active_parent).toBe(1474);
+});
+
+test('async repository identity shares local admission and repository-id decoding; a checkout without a GitHub remote starts no gh', async () => {
+  const root = tmpWorkspace('board-async-identity'); roots.push(root); initGitRepo(root);
+  const log = join(root, 'gh.log'), gh = join(root, 'gh');
+  writeFileSync(gh, `#!${process.execPath}\nrequire('node:fs').appendFileSync(process.env.IDENTITY_LOG, JSON.stringify(process.argv.slice(2)) + '\\n');\nconsole.log(process.env.IDENTITY_REPLY);\n`, { mode: 0o755 });
+  const env = { ...process.env, IDENTITY_LOG: log, IDENTITY_REPLY: '{"id":1186405141}' };
+  const input = { repo_root: root, gh_bin: gh, env, signal: new AbortController().signal };
+  const isGitHubRemote = (url: string) => githubRemoteRepository(url) !== null;
+  expect(await readLocalRepositoryIdAsync(input, isGitHubRemote)).toBeNull();
+  expect(existsSync(log)).toBe(false);
+  expect(run('git', ['config', 'remote.origin.url', 'https://gitlab.com/local/repo.git'], root).status).toBe(0);
+  expect(await readLocalRepositoryIdAsync(input, isGitHubRemote)).toBeNull();
+  expect(existsSync(log)).toBe(false);
+  expect(run('git', ['config', 'remote.origin.url', 'https://github.com/aimpact-inc/repo-harness.git'], root).status).toBe(0);
+  expect(await readLocalRepositoryIdAsync(input, isGitHubRemote)).toBe(1186405141);
+  expect(JSON.parse(readFileSync(log, 'utf8'))).toEqual(['api', '--hostname', 'github.com', 'repos/{owner}/{repo}']);
+  await expect(readLocalRepositoryIdAsync({ ...input, env: { ...env, IDENTITY_REPLY: '{"id":0}' } }, isGitHubRemote)).rejects.toThrow('the local GitHub repository id is unknown');
+});
+
 test('parent list: one paginated issue read and one hc list give the open parents with progress and live seats, seats first', () => {
   // Recorded on 2026-11-04: `gh api graphql --paginate --slurp` with OPEN_ISSUES_QUERY on Ancienttwo/repo-harness, one page
   // of twelve open issues; #1651 is the only one with sub-issues. #1474 is closed now, so the replay adds it as an older
@@ -783,9 +1085,9 @@ test('parent list: one paginated issue read and one hc list give the open parent
   expect(list).toEqual(decodeBoardParents(boardParentsFixture));
   expect(list.repository).toBe('Ancienttwo/repo-harness');
   // t1-t3 have a seat label; t4 has none, and t5 is a seat of another repository with the same parent.
-  expect(list.parents.map(parent => [parent.number, `${parent.sub_issues.completed}/${parent.sub_issues.total}`, parent.seats])).toEqual([[1474, '2/9', 3], [1651, '3/9', 0]]);
+  expect(joinBoardParents(list, decodeBoardSeats(boardSeatsFixture)).parents.map(parent => [parent.number, `${parent.sub_issues.completed}/${parent.sub_issues.total}`, parent.seats])).toEqual([[1474, '2/9', 3], [1651, '3/9', 0]]);
   // The seats list keeps every seat terminal of the repository with its hc agent kind, status word and raw parent label.
-  expect(list.seats.map(seat => [seat.address, seat.seat_status === 'observed' && [seat.seat, seat.issue, seat.pr], seat.parent, seat.agent, seat.status]))
+  expect(decodeBoardSeats(boardSeatsFixture).seats.map(seat => [seat.address, seat.seat_status === 'observed' && [seat.seat, seat.issue, seat.pr], seat.parent, seat.agent, seat.status]))
     .toEqual([['t1', ['worker', 1476, 1499], '1474', 'codex', 'blocked'], ['t2', ['worker', 1475, 1491], '1474', 'claude-code', 'done'], ['t3', ['orchestrator', null, null], '1474', null, 'idle']]);
   expect(calls).toHaveLength(1);
   expect(calls[0]!.filter(arg => !arg.startsWith('query='))).toEqual(['api', 'graphql', '--hostname', 'github.com', '--paginate', '--slurp', '-f', '-F', 'owner={owner}', '-F', 'name={repo}']);
@@ -799,8 +1101,11 @@ test('parent list: one paginated issue read and one hc list give the open parent
   expect([
     failure(() => replayParents(() => ({ status: 1, stdout: '', stderr: 'HTTP 502' }))),
     failure(() => replayParents(answer([split[0]]))),
-    failure(() => replayParents(answer(pages), false)),
-  ]).toEqual(['parents_github_failed', new BoardSourceError('').name, 'parents_hc_failed']);
+  ]).toEqual(['parents_github_failed', new BoardSourceError('').name]);
+  expect(replayParents(answer(pages), false)).toEqual(list);
+  expect(() => decodeBoardParents({ ...list, protocol: 4 })).toThrow('unsupported board parents protocol: 4');
+  expect('seats' in list).toBe(false);
+  expect(list.parents.every(parent => !('seats' in parent))).toBe(true);
 });
 
 // The round-4 records of #1499 (PASS) and #1494 (FAIL) as posted: bare SHAs in the subject cell.
@@ -808,7 +1113,7 @@ const ROUND_4_PASS_1499 = "repo-harness acceptance record\nAgent: Claude Code (c
 const ROUND_4_FAIL_1494 = "repo-harness acceptance record\nAgent: Claude Code (claude-opus-5-5) coordinator, session d2630775\n\n| Round | Seat | Subject | Verdict |\n|---|---|---|---|\n| 4 | acceptor (gatekeeper, fresh Claude context, read-only) | 5c5139981b0bc5a620e3b2cd0605d61e4c76991d | FAIL: 1 P2, 1 P3 |\n\nModel relation: same-family\nThe receipt tool takes rounds 1-3 only, so this comment holds round 4.\n\nDelta 5c5139981 and merge aa8b6c3cc (remerge-diff empty). The round 3 fix is correct: the doctor relay check passes `hcOptions()`, and the doctor test fails without it. check:type pass; check:state-boundaries pass (533 files); `tests/cli/doctor.test.ts` 48/48 in 3 runs (the worker's earlier 2 failures did not reproduce); the 13 other affected files pass with the PR body counts; CI green.\n\nFindings (sibling sweep of hc calls in the changed files):\n- rv1494-r4-status-forwards-notify-secrets, P2, `src/effects/operator/notify-status.ts:80`: `readNotifyChannelStatus` passes `{ ...process.env, ...input.env }` unscrubbed to `hcListAsync`. A probe with a fake hc showed `WEBHOOK_URL` and `TELEGRAM_BOT_TOKEN` in the child env. The PR Risk section says this read starts a stopped core, so that core keeps the values and later terminals inherit them. Fix: move the `NOTIFY_SECRET_KEYS` scrub into one exported helper beside `NOTIFY_SECRET_KEYS` in `notify-relay.ts`; use it in `hcOptions()` and for the hc env here; extend one case in `tests/effects/operator-notify-status.test.ts` with an env-dumping fake hc.\n- rv1494-r4-relay-events-env-unscrubbed, P3, `src/cli/commands/herdr.ts:197` and `notify-relay.ts:254`: the relay passes `process.env` to `hcEvents`. A hand run from a shell that exports the values can start a core that keeps them. Use the same helper.\n\nDecision: not accepted at 5c5139981. The writer fixes both items with the one helper. Round 5 needs the owner's approval: rounds 1-4 all failed, which reaches the fix-and-review cap.\n";
 
 test('acceptance: round-4 records with bare SHAs, an unparsed record, and a Low closing issue outside the board', () => {
-  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' };
+  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null };
   const board = replay({
     parent: (data) => { for (const number of [1476, 1479]) issueNode(data, number).labels.nodes.push({ name: 'tier:low' }); },
     pulls: (data) => {
@@ -875,8 +1180,8 @@ test('one hit for each rule that the recorded state does not trigger', () => {
       const pr1499 = data.repository.pr1499;
       pr1499.baseRefName = 'main';
       pr1499.isDraft = false;
-      pr1499.files = { totalCount: 1, nodes: [{ path: 'src/effects/terminal/task-session.ts' }] };
-      pr1499.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' });
+      pr1499.files = { totalCount: 1, nodes: [{ path: 'src/effects/terminal/task-session.ts', additions: 10, deletions: 2 }] };
+      pr1499.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null });
       // #1494 (tier:medium #1479) changes a hook: R5.
       data.repository.pr1494.files.nodes.push({ path: hook });
       data.repository.pr1494.files.totalCount += 1;
@@ -966,8 +1271,67 @@ test('R5 and the effective tier read the High list: board record-writing code is
   expect(view([boardWriter], 'tier:medium', true)).toEqual(['high', 'not_accepted', 'files_incomplete: #1499']);
 });
 
+test('acceptance disposition: a FAIL row is ignored only when every finding of its record is resolved for that record and subject', () => {
+  const boardWriter = 'src/effects/board/review.ts';
+  const base = 'https://github.com/Ancienttwo/repo-harness';
+  const receipt = (subject_sha: string, verdict: 'PASS' | 'FAIL', round: number): ReviewPublishReceipt => ({
+    protocol: 1, kind: 'repo-harness-review-publish-receipt', round, subject_sha, risk_tier: 'medium', reviewer: { harness: 'codex', actual_model: null }, verdict, model_relation: 'different-family', summary: 'Reviewed.',
+    findings: verdict === 'PASS' ? [] : [
+      { id: 'R1-1', severity: 'P2', path: 'a.ts', line: 1, evidence: 'e', fix: 'f' },
+      { id: 'R1-2', severity: 'P2', path: 'b.ts', line: 2, evidence: 'e', fix: 'f' },
+    ],
+  });
+  const failAt = '2026-11-02T22:00:00Z';
+  const failUrl = `${base}/pull/1499#issuecomment-${Date.parse(failAt)}`;
+  const status = (dispositions: string[], mangleSecond = false) => {
+    const read = replay({
+      owners: (results) => { results.push({ path: boardWriter, matched: false, ambiguous: false, owningCapabilityId: null }); },
+      parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: 'tier:medium' }); },
+      pulls: (data) => {
+        const { pr1499 } = data.repository;
+        const head = pr1499.headRefOid;
+        pr1499.files = { totalCount: 1, nodes: [{ path: boardWriter }] };
+        const claimAt = '2026-11-02T21:01:00Z';
+        const claimUrl = `${base}/pull/1499#issuecomment-${Date.parse(claimAt)}`;
+        pr1499.comments.nodes.push(comment(renderAcceptanceClaim(receipt(head, 'PASS', 1)), claimAt));
+        const failRecord = renderAcceptanceRecord(receipt(head, 'FAIL', 1), claimUrl);
+        // A bullet marker outside the record shape makes the finding list unreadable.
+        pr1499.comments.nodes.push(comment(mangleSecond ? failRecord.replace('- P2 R1-2', '* P2 R1-2') : failRecord, failAt));
+        const passClaimAt = '2026-11-02T22:20:00Z';
+        pr1499.comments.nodes.push(comment(renderAcceptanceClaim(receipt(head, 'PASS', 2)), passClaimAt));
+        pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt(head, 'PASS', 2), `${base}/pull/1499#issuecomment-${Date.parse(passClaimAt)}`), '2026-11-02T22:30:00Z'));
+        dispositions.forEach((body, index) => pr1499.comments.nodes.push(comment(body, `2026-11-02T22:4${index}:00Z`)));
+      },
+    });
+    return read.pull_requests.find(entry => entry.number === 1499)!.acceptance.status;
+  };
+  const disposition = (findings: string, record = failUrl, subject = replay().pull_requests.find(entry => entry.number === 1499)!.head_sha) =>
+    `repo-harness acceptance disposition\nRecord: ${record}\nSubject: ${subject}\nFindings: ${findings}\nDecision: ${base}/issues/2202#issuecomment-1\n`;
+  expect(status([])).toBe('not_accepted');
+  expect(status([disposition('R1-1')])).toBe('not_accepted');
+  expect(status([disposition('R1-1'), disposition('R1-2')])).toBe('accepted');
+  expect(status([disposition('R1-1, R1-2')])).toBe('accepted');
+  expect(status([disposition('R1-1')], true)).toBe('not_accepted');
+  expect(status([disposition('R1-1, R1-2')], true)).toBe('not_accepted');
+  expect(status([disposition('R1-1, R1-2', `${base}/pull/1499#issuecomment-7`)])).toBe('not_accepted');
+  expect(status([disposition('R1-1, R1-2', failUrl, 'd'.repeat(40))])).toBe('not_accepted');
+});
+
+test('a rendered record with multiline finding values parses to its finding IDs', () => {
+  const receipt: ReviewPublishReceipt = {
+    protocol: 1, kind: 'repo-harness-review-publish-receipt', round: 1, subject_sha: 'a'.repeat(40), risk_tier: 'medium', reviewer: { harness: 'codex', actual_model: null }, verdict: 'FAIL', model_relation: 'different-family', summary: 'Reviewed.',
+    findings: [
+      { id: 'R1-1', severity: 'P2', path: 'a.ts', line: 1, evidence: 'first line\n  second line', fix: 'one\n\ntwo' },
+      { id: 'R1-2', severity: 'P3', message: 'nit\ntext' },
+    ],
+  };
+  expect(parseRecordFindings({ url: 'u', created_at: '2026-11-02T22:00:00Z', author_association: 'OWNER', body: renderAcceptanceRecord(receipt, 'x') })).toEqual(['R1-1', 'R1-2']);
+  // The GitHub review body is not the record: it keeps the line breaks of a finding outside the diff.
+  expect(reviewPayloadFromReceipt(receipt, new Map()).body).toContain('first line\n  second line');
+});
+
 test('A2 finds a batch behind an overlapping pull request, and a plan hold removes a PR from A1, A2 and R4', () => {
-  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' };
+  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null };
   const findings = (holds: number[]) => evaluateBoardAttention(replay({
     now: new Date('2026-11-03T02:00:00Z'),
     owners: (results) => { results.push(...['a', 'b'].map(path => ({ path, matched: false, ambiguous: false, owningCapabilityId: null }))); },
@@ -979,7 +1343,7 @@ test('A2 finds a batch behind an overlapping pull request, and a plan hold remov
     pulls: (data) => {
       // #1491 changes a and b, #1494 a, #1499 b: only #1494 and #1499 can batch.
       for (const [pr, paths] of [[data.repository.pr1491, ['a', 'b']], [data.repository.pr1494, ['a']], [data.repository.pr1499, ['b']]] as const) {
-        pr.files = { totalCount: paths.length, nodes: paths.map(path => ({ path })) };
+        pr.files = { totalCount: paths.length, nodes: paths.map(path => ({ path, additions: 1, deletions: 0 })) };
         if (pr.number === 1491) continue;
         Object.assign(pr, { baseRefName: 'main', isDraft: false });
         pr.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push(green);
@@ -1123,6 +1487,43 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
     .toEqual([{ route: 'orchestrator', reason: 'no_seat_terminals' }, { route: 'advisor', reason: 'no_seat_terminals' }]);
 });
 
+test('watch window skips a provider 5xx and resumes at the next window', async () => {
+  const hc = watchHc({});
+  const logPath = attentionLogPath(1186405141, 1474, { REPO_HARNESS_HOME: hc.root });
+  const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+  const delays: number[] = [];
+  let reads = 0;
+  const longMessage = `gh: ${'x'.repeat(350)} (HTTP 504)`;
+  const input = { parent: 1474, deliver: false, log_path: logPath, host: hc.host, now: () => REPLAY_NOW,
+    sleep: async (ms: number) => { delays.push(ms); }, collect: () => {
+      if (reads++ === 0) readGhJson({ repo_root: hc.root, gh_runner: () => ({ status: 1, stdout: '', stderr: longMessage }) }, ['api', 'graphql']);
+      return replay();
+    } };
+  try {
+    await runAttentionWindow(input);
+    expect(stderr).toHaveBeenCalledTimes(1);
+    const expectedMessage = `gh api graphql failed: ${longMessage}`.slice(0, 300);
+    expect(JSON.parse(String(stderr.mock.calls[0]?.[0])).message).toBe(expectedMessage);
+    const logLines = readFileSync(logPath, 'utf8').trim().split('\n');
+    expect(logLines).toHaveLength(1);
+    expect(JSON.parse(logLines[0]!).message).toBe(expectedMessage);
+    await runAttentionWindow(input);
+    expect(reads).toBe(2);
+    expect(delays[0]).toBe(WINDOW_WITH_WORKERS_MS);
+    await runAttentionWindow({ ...input, collect: () => readGhJson({ repo_root: hc.root, gh_runner: () => ({ status: 1, stdout: '', stderr: 'gh: HTTP 504' }) }, ['api', 'graphql']) as BoardV1 });
+    expect(JSON.parse(String(stderr.mock.calls[1]?.[0])).message).toContain('gh: HTTP 504');
+    for (const [message, status] of [['gh: HTTP 403', 403], ['gh: server says HTTP 503 (HTTP 403)', 403], ['HTTP 403: forbidden', 403], ['gh: server says HTTP 503', null], ['gh failed', null]] as const) {
+      const collect = () => readGhJson({ repo_root: hc.root, gh_runner: () => ({ status: 1, stdout: '', stderr: message }) }, ['api', 'graphql']) as BoardV1;
+      try { collect(); throw new Error('expected failure'); } catch (error) {
+        expect(error).toBeInstanceOf(BoardCollectError);
+        expect((error as BoardCollectError).httpStatus).toBe(status);
+      }
+      await expect(runAttentionWindow({ ...input, collect })).rejects.toBeInstanceOf(BoardCollectError);
+    }
+    expect(stderr).toHaveBeenCalledTimes(2);
+  } finally { stderr.mockRestore(); }
+});
+
 test('watch service: --watch refuses a terminal without the service labels; start runs one watcher; doctor reads the labels', () => {
   const labels = { 'repo-harness.service': 'attention', 'repo-harness.repository': '1186405141', 'repo-harness.parent': '1503' };
   const inside = watchHc({ HC_TERMINAL_ID: 't5', FAKE_TERMINALS: { t5: { labels } } });
@@ -1187,8 +1588,9 @@ test('watch service: --watch refuses a terminal without the service labels; star
   expect(office.status === 'observed' && office.terminals.slice(0, 2).map(terminal => terminal.status_msg)).toEqual(['push failed: ghp_[REDACTED]', null]);
   // The parent list of the repository keeps every seat, with or without a parent label (#1785); the watcher and the
   // other repository never show, and an invalid label shows as such.
-  const officeSeats = collectBoardParents({ repo_root: repositoryTerminals.root, now: () => REPLAY_NOW, host: boardHostPorts(repositoryTerminals.options),
-    gh_runner: () => ({ status: 0, stdout: fixture('open-issues.graphql.json') }) }).seats;
+  const seatRead = boardHostPorts(repositoryTerminals.options).seatTerminals('1186405141');
+  if (seatRead.status !== 'observed') throw new Error(seatRead.reason);
+  const officeSeats = projectBoardSeats('1186405141', REPLAY_NOW.toISOString(), seatTerminalsWithBranches(seatRead.terminals)).seats;
   expect(officeSeats.map(seat => [seat.address, seat.seat_status === 'observed' ? [seat.seat, seat.issue] : seat.reason, seat.parent, seat.agent])).toEqual([
     ['t7', ['orchestrator', null], null, 'claude'], ['t11', ['advisor', null], null, 'codex'], ['t12', ['orchestrator', null], '1503', 'claude'],
     ['t16', ['worker', 1721], '1474', 'claude'], ['t17', ['worker', 1773], '1503', 'codex'], ['t18', ['worker', 1774], null, 'claude'],
@@ -1650,7 +2052,7 @@ describe('merge-only sync carry (#2074)', () => {
 
   test('the rows of a reviewed head accept a later High head only when git proves a merge-only sync and no hook path changes', () => {
     const calls: (readonly string[])[] = [];
-    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly syncFailAt?: string; readonly split?: boolean; readonly headPass?: boolean; readonly hookFile?: boolean } = {}) => replay({
+    const carry = (options: { readonly proven?: boolean; readonly headFail?: boolean; readonly syncFailAt?: string; readonly failSubject?: string; readonly split?: boolean; readonly headPass?: boolean; readonly hookFile?: boolean } = {}) => replay({
       parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
       pulls: (data) => {
         const { pr1499 } = data.repository;
@@ -1660,8 +2062,8 @@ describe('merge-only sync carry (#2074)', () => {
           const claim = comment(renderAcceptanceClaim(receipt(harness, subject, relation)), `2026-11-03T${at}:00Z`);
           pr1499.comments.nodes.push(claim, comment(renderAcceptanceRecord(receipt(harness, subject, relation), claim.url), `2026-11-03T${at}:30Z`));
         }
-        // Another proven sync head B of the same patch failed its sync check, after both PASS rows or between them: no PASS skips it.
-        if (options.syncFailAt !== undefined) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', 'b'.repeat(40), 'different-family', 'FAIL'), ''), `2026-11-03T${options.syncFailAt}Z`));
+        // A FAIL record on proven sync head B (or on `failSubject`) of the same patch, at `syncFailAt`.
+        if (options.syncFailAt !== undefined) pr1499.comments.nodes.push(comment(renderAcceptanceRecord(receipt('pi', options.failSubject ?? 'b'.repeat(40), 'different-family', 'FAIL'), ''), `2026-11-03T${options.syncFailAt}Z`));
         // `headPass`: the head has both reviews of its own.
         if (options.headPass) {
           for (const [at, harness, relation] of [['00:40', 'pi', 'different-family'], ['00:41', 'claude', 'same-family']] as const) {
@@ -1684,7 +2086,11 @@ describe('merge-only sync carry (#2074)', () => {
     expect(carry()).toMatchObject({ tier: 'high', claude_review: 'recorded', acceptance: { status: 'accepted', via: 'sync', carried_from: reviewed, accepted_at: '2026-11-03T00:11:30Z', evidence_url: comment('', '2026-11-03T00:11:30Z').url } });
     expect(calls[0]).toContain(reviewed);
     expect(carry({ proven: false }).acceptance).toEqual({ status: 'not_accepted' });
-    for (const at of ['00:20:00', '00:10:45']) expect(carry({ syncFailAt: at }).acceptance).toEqual({ status: 'not_accepted' });
+    // The newest proven reviewed subject decides (#2107): a FAIL on B after both PASS rows makes B the source and stops the carry;
+    // a FAIL on B that the newer PASS record on the reviewed head supersedes does not; a FAIL on the source itself stops it even when older.
+    expect(carry({ syncFailAt: '00:20:00' }).acceptance).toEqual({ status: 'not_accepted' });
+    expect(carry({ syncFailAt: '00:10:45' }).acceptance).toMatchObject({ status: 'accepted', via: 'sync', carried_from: reviewed, accepted_at: '2026-11-03T00:11:30Z' });
+    expect(carry({ syncFailAt: '00:05:00', failSubject: reviewed }).acceptance).toEqual({ status: 'not_accepted' });
     expect(carry({ split: true }).acceptance).toEqual({ status: 'not_accepted' });
     // A FAIL on a proven earlier head stops only the carry: the head's own two reviews still accept it.
     expect(carry({ syncFailAt: '00:20:00', headPass: true }).acceptance).toMatchObject({ status: 'accepted', via: 'record', accepted_at: '2026-11-03T00:41:30Z' });
@@ -1777,6 +2183,29 @@ describe('merge-only sync carry (#2074)', () => {
     };
     expect(failing(subject, base, [subject])).toEqual([]);
     expect(failing(initial, sync, [subject, initial])).toEqual([]);
+    // A reviewed head that git cannot read once the preflight passed ends its ancestry check with exit 128: no proof for any candidate. The wrapper closes it as the first candidate starts.
+    const loose = join(root, '.git/objects', conflicting.slice(0, 2), conflicting.slice(2));
+    const unreadable = (before: string, after: string, candidate = conflicting) => {
+      const wrapper = join(root, '.git-closes-object');
+      writeFileSync(wrapper, `#!/bin/sh\nif [ "$1 $2 $3 $4" = "merge-base --is-ancestor ${subject} ${sync}" ]; then ${before}; fi\nexec git "$@"\n`); chmodSync(wrapper, 0o755);
+      process.env.REPO_HARNESS_GIT_BIN = wrapper;
+      try { return provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: base, head_sha: sync }, [subject, candidate]); } finally {
+        delete process.env.REPO_HARNESS_GIT_BIN; run('sh', ['-c', after], root);
+      }
+    };
+    expect(unreadable(`mv "${loose}" "${loose}.gone"`, `[ ! -e "${loose}.gone" ] || mv "${loose}.gone" "${loose}"`)).toEqual([]);
+    expect(unreadable(`chmod 000 "${loose}"`, `chmod 644 "${loose}"`)).toEqual([]);
+    // Only the pack of the other candidate closes: the proven candidate, the head and the base stay readable.
+    git('repack', '-adq'); git('prune-packed');
+    git('checkout', '-B', 'lone', subject); write({ 'b.txt': 'lone\n' }); git('commit', '-am', 'lone');
+    const lone = git('rev-parse', 'HEAD');
+    const packs = join(root, '.git/objects/pack'), known = new Set(readdirSync(packs));
+    git('repack', '-dq');
+    const fresh = readdirSync(packs).filter((name: string) => !known.has(name));
+    for (const ext of ['pack', 'idx']) {
+      const target = fresh.find((name: string) => name.endsWith(`.${ext}`))!;
+      expect(unreadable(`chmod 000 "${join(packs, target)}"`, `chmod 644 "${join(packs, target)}"`, lone)).toEqual([]);
+    }
     // Without the error, the other candidate is just not a sync (the PR commit lies between it and the head).
     expect(provenMergeOnlySyncs({ repo_root: root, pr: 1, base_ref: 'main', base_sha: base, head_sha: sync }, [subject, initial])).toEqual([subject]);
   });

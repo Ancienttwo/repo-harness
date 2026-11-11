@@ -4,7 +4,9 @@ import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches } from
 import { configurationReceiptPath } from './configuration-ownership';
 import { globalContextBackupEligible, globalContextPath } from './global-context';
 import { acquireRuntimeTransactionLock, assertRuntimeTransactionContext, globalRuntimeScope, runtimeTransactionRoot, type RuntimeTransactionContext, type RuntimeTransactionLock } from '../../effects/locking/runtime-transaction-lock';
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
+import { isRecord } from '../../core/evidence/is-record';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import {
   cpSync,
   existsSync,
@@ -199,7 +201,7 @@ function managedAdapterHash(path: string): string | null {
     };
     const projection = canonicalManagedHookProjection(parsed.hooks);
     if (Object.keys(projection).length === 0) return null;
-    return `sha256:${createHash('sha256').update(JSON.stringify(projection)).digest('hex')}`;
+    return sha256Prefixed(JSON.stringify(projection));
   } catch {
     return null;
   }
@@ -214,7 +216,7 @@ export function codegraphProjection(configPath: string, readPath = configPath): 
       if (start < 0) return null;
       let end = start + 1;
       while (end < lines.length && !/^\s*\[/.test(lines[end])) end += 1;
-      return `sha256:${createHash('sha256').update(lines.slice(start, end).join('\n').trim()).digest('hex')}`;
+      return sha256Prefixed(lines.slice(start, end).join('\n').trim());
     }
     const parsed = JSON.parse(raw) as {
       mcpServers?: Record<string, unknown>;
@@ -225,7 +227,7 @@ export function codegraphProjection(configPath: string, readPath = configPath): 
       ? parsed.allowedTools.filter((entry) => typeof entry === 'string' && entry.toLowerCase().includes('codegraph'))
       : [];
     if (server === undefined && allowedTools.length === 0) return null;
-    return `sha256:${createHash('sha256').update(JSON.stringify({ server, allowedTools })).digest('hex')}`;
+    return sha256Prefixed(JSON.stringify({ server, allowedTools }));
   } catch {
     return null;
   }
@@ -342,7 +344,7 @@ function captureOwnedPath(path: string, owner: SurfaceOwner): ManagedInstallSurf
   return {
     ...base,
     type: 'managed-file',
-    content_hash: `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`,
+    content_hash: sha256Prefixed(readFileSync(path)),
     managed_marker: 'transaction-created-file',
     symlink_target: null,
   };
@@ -481,7 +483,7 @@ function surfaceIsCurrent(surface: ManagedInstallSurface, env: NodeJS.ProcessEnv
         return codegraphProjection(surface.path) === surface.content_hash;
       }
       return surface.managed_marker === 'transaction-created-file'
-        && `sha256:${createHash('sha256').update(readFileSync(surface.path)).digest('hex')}` === surface.content_hash;
+        && sha256Prefixed(readFileSync(surface.path)) === surface.content_hash;
     }
     if (!stat.isDirectory() || surface.content_hash === null || surface.managed_marker === null) return false;
     if (surface.managed_marker === 'transaction-created-directory') {
@@ -560,7 +562,7 @@ function verifiedAgentFleetSurfaces(env: NodeJS.ProcessEnv): readonly ManagedIns
   if (!receipt.ok) return [];
   return agentFleetTargetPaths(env).flatMap((path) => {
     if (!lstatExists(path) || !lstatSync(path).isFile()) return [];
-    const hash = `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
+    const hash = sha256Prefixed(readFileSync(path));
     if (receipt.hashes.get(path) === hash) return [];
     const surface = captureOwnedPath(path, 'core');
     return surface ? [surface] : [];
@@ -1045,10 +1047,6 @@ export function prepareInstallSelectionSwitch(
   const current = readInstallState(env);
   if (!current) return [];
   return removeRetiredOwnedSurfaces(plugins, current, env);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** The path allowlist, type and hash shape of a recorded ownership surface. */
