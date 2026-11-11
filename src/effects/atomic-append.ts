@@ -5,7 +5,7 @@
  * equivalent is implemented locally here rather than modifying it -- see
  * tasks/notes/20260722-1151-epc-01-evidence-event-store.notes.md).
  */
-import { closeSync, constants, fsyncSync, mkdirSync, openSync, writeSync } from "fs";
+import { closeSync, constants, fsyncSync, mkdirSync, openSync, renameSync, unlinkSync, writeSync } from "fs";
 import { dirname } from "path";
 
 export function writeAllSync(fd: number, data: Buffer): void {
@@ -60,6 +60,34 @@ export function createFileExclusiveDurably(
     throw wrapError(error);
   } finally {
     if (fd !== null) closeSync(fd);
+  }
+}
+
+/**
+ * Publish `content` at `target` by an exclusive durable create of `temporary`, a rename and a
+ * directory fsync. The caller names `temporary` because some stores sweep orphans by that name.
+ * A create or rename failure removes `temporary` and rethrows, except a create EEXIST: that file
+ * belongs to someone else. A directory fsync failure reaches the caller unchanged.
+ */
+export function publishFileByRename(target: string, content: Buffer, temporary: string): void {
+  try {
+    createFileExclusiveDurably(temporary, content);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") removeIfPresent(temporary);
+    throw error;
+  }
+  try {
+    renameSync(temporary, target);
+  } catch (error) {
+    removeIfPresent(temporary);
+    throw error;
+  }
+  syncDirectoryDurably(dirname(target));
+}
+
+function removeIfPresent(path: string): void {
+  try { unlinkSync(path); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 }
 

@@ -6,9 +6,9 @@ import { randomUUID } from 'crypto';
 import { sha256Hex } from '../../core/evidence/sha256';
 import { execFileSync } from 'child_process';
 import { gitExecFileSync, withoutProviderTokens, withoutRepositorySelectingGitEnv } from '../git/runner';
-import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, unlinkSync, mkdirSync, renameSync } from 'fs';
+import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, unlinkSync, mkdirSync } from 'fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'path';
-import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
+import { publishFileByRename, syncDirectoryDurably } from '../atomic-append';
 import { readPrunedWorktreeIntents, writePrunedWorktreeIntents, prunedIntentKey, type PrunedWorktreeIntent } from './pruned-worktree-intents';
 import { readWorkflowPolicyDocument } from './resolve-effective-state';
 import { configuredGitBinary, resolveGitCommonDirectory, resolveGitCommonDirectoryAsync } from '../git/common-directory';
@@ -240,9 +240,7 @@ export function recordCreatedWorktree(root: string, worktree: string): void {
   }
   // Git can reuse an admin name after an explicit removal. Only the create route replaces this record.
   const temporary = identity.record + '.' + randomUUID();
-  createFileExclusiveDurably(temporary, Buffer.from(identity.value));
-  renameSync(temporary, identity.record);
-  syncDirectoryDurably(dirname(identity.record));
+  publishFileByRename(identity.record, Buffer.from(identity.value), temporary);
 }
 
 /** The caller holds the topology lock while it validates and re-marks recovery. */

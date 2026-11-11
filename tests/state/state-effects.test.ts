@@ -34,6 +34,7 @@ import { contentRevision } from '../../src/effects/state/collect-state-inputs';
 import { sha256Prefixed } from '../../src/core/evidence/sha256';
 import { DEFAULT_RETENTION_DAYS, readRetentionConfig } from '../../src/effects/artifact-retention';
 import { mergeBackTarget } from '../../src/effects/state/coordination-worktree-topology';
+import { publishFileByRename } from '../../src/effects/atomic-append';
 import { capabilitySource } from '../../src/effects/architecture/archctx-provider';
 import { assertArchitecturePolicySelection } from '../../src/cli/installer/install-profile';
 
@@ -435,5 +436,18 @@ describe('each policy reader validates only the keys it reads', () => {
     expect(readRetentionConfig(repo).days).toBe(DEFAULT_RETENTION_DAYS);
     expect(capabilitySource(repo)).toBe('registry');
     expect(() => assertArchitecturePolicySelection(repo, ['product'], env)).not.toThrow();
+  });
+});
+
+describe('publish by rename', () => {
+  test('a rename that throws removes the temporary file and rethrows', () => {
+    const root = mkdtempSync(join(tmpdir(), 'publish-by-rename-'));
+    try {
+      const target = join(root, 'record.json');
+      mkdirSync(join(target, 'occupied'), { recursive: true });
+      const temporary = `${target}.tmp`;
+      expect(() => publishFileByRename(target, Buffer.from('{}'), temporary)).toThrow();
+      expect(existsSync(temporary)).toBe(false);
+    } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });

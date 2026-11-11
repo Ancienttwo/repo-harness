@@ -1,8 +1,8 @@
 import { worktreeUid } from './worktree-trash';
 import { randomUUID } from 'crypto';
-import { existsSync, lstatSync, readFileSync, readdirSync, renameSync, unlinkSync } from 'fs';
+import { existsSync, lstatSync, readFileSync, readdirSync, unlinkSync } from 'fs';
 import { dirname, isAbsolute, join, resolve } from 'path';
-import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
+import { publishFileByRename, syncDirectoryDurably } from '../atomic-append';
 
 export interface PrunedWorktreeIntent {
   readonly worktree: string;
@@ -62,9 +62,5 @@ export function writePrunedWorktreeIntents(common: string, entries: readonly Pru
   if (existsSync(path)) assertFile(path);
   if (!entries.length) { if (existsSync(path)) unlinkSync(path); syncDirectoryDurably(dirname(path)); return; }
   const temporary = `${path}.${randomUUID()}.tmp`;
-  try {
-    createFileExclusiveDurably(temporary, Buffer.from(JSON.stringify({ protocol: 1, common, entries })));
-    renameSync(temporary, path);
-    syncDirectoryDurably(dirname(path));
-  } finally { try { unlinkSync(temporary); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; } }
+  publishFileByRename(path, Buffer.from(JSON.stringify({ protocol: 1, common, entries })), temporary);
 }
