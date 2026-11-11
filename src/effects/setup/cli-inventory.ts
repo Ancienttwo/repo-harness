@@ -28,6 +28,7 @@ import {
   type CliPathExecutable,
   type CliSeedCatalog,
 } from '../../core/setup/cli-inventory';
+import { isRecord } from '../../core/evidence/is-record';
 import { readSegmentedLog } from '../segmented-log';
 import { startObservationLoop } from '../observation-loop';
 
@@ -65,8 +66,7 @@ const json = (text: string | null): unknown => {
   if (text === null) return null;
   try { return JSON.parse(text); } catch { return null; }
 };
-const record = (value: unknown): Record<string, unknown> =>
-  (value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {});
+const record = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 const str = (value: unknown): string | null => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
 const strings = (...values: unknown[]): string[] => values.map(str).filter((value): value is string => value !== null);
 
@@ -121,7 +121,7 @@ async function listing<T>(context: ProbeContext, manager: string, argv: readonly
 }
 const jsonObject = (text: string): Record<string, unknown> | null => {
   const value = json(text);
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  return isRecord(value) ? value : null;
 };
 
 /** Formulae and casks. A formula not installed on request is a dependency: it claims its files and is not listed. */
