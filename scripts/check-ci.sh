@@ -98,8 +98,11 @@ echo "[ci] install"
 bun install --frozen-lockfile
 
 if [[ "$lane" == affected ]]; then
+  # CI_SHARD=<index>/<total> runs array <index> of the selection job's shard plan; shard 0 also owns typecheck.
   if [[ -n "$base" ]]; then
-    selection="$(bun scripts/select-ci-coverage.ts --base "$base")"
+    shard_total=1
+    if [[ -n "${CI_SHARD:-}" ]]; then shard_total="${CI_SHARD#*/}"; fi
+    selection="$(CI_SHARD_TOTAL="$shard_total" bun scripts/select-ci-coverage.ts --base "$base")"
     printf '%s\n' "$selection"
     if grep -qx 'mode=documentation' <<< "$selection"; then
       echo "[ci] Documentation-only diff: no build or test job."
@@ -107,8 +110,7 @@ if [[ "$lane" == affected ]]; then
       exit 0
     fi
   fi
-  # CI_SHARD=<index>/<total> runs one duration-balanced part; shard 0 also owns typecheck.
-  BUN_TEST_FILES="$(bun -e 'const files = JSON.parse(await Bun.file(".ci-affected-tests.json").text()); if (!Array.isArray(files) || new Set(files).size !== files.length || files.some(f => typeof f !== "string" || !/^tests\/[\w/.-]+\.test\.tsx?$/.test(f) || f.split("/").includes(".."))) throw Error("Invalid affected tests"); const shard = process.env.CI_SHARD ?? ""; let selected = files; if (shard) { const match = /^(0|[1-9]\d*)\/([1-9]\d*)$/.exec(shard); if (!match) throw Error("Invalid CI_SHARD"); const { shardTestFiles } = await import("./scripts/select-test-suite.ts"); const durations = JSON.parse(await Bun.file("scripts/test-file-durations.json").text()).files; selected = shardTestFiles(files, durations, Number(match[1]), Number(match[2])); } console.log(selected.join("\n"));')"
+  BUN_TEST_FILES="$(bun scripts/select-test-suite.ts shard ${CI_SHARD:+"$CI_SHARD"})"
   if [[ -z "${CI_SHARD:-}" || "${CI_SHARD%%/*}" == 0 ]]; then
     echo "[ci] typecheck"
     bun run check:type
@@ -122,6 +124,9 @@ if [[ "$lane" == affected ]]; then
     bun run build:hook-bundle
     bun run build:oar-review-host
     run_bun_tests
+    # Each file of the run list proves with its own report that it ran in this shard.
+    # shellcheck disable=SC2086 # The run list holds validated test paths, one per line.
+    bun scripts/select-test-suite.ts reports "$BUN_TEST_JUNIT_DIR" $BUN_TEST_FILES
   else
     echo "[ci] No affected tests${CI_SHARD:+ in shard $CI_SHARD}."
   fi

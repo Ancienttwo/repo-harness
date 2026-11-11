@@ -20,7 +20,6 @@ source:
     - scripts/check-agent-tooling.sh
     - bunfig.toml
     - .github/**
-    - scripts/test-file-durations.json
     - scripts/verification-plan.ts
     - scripts/check-ci.sh
     - scripts/host-test-queue.ts
