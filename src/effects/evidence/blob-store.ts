@@ -1,13 +1,7 @@
-/**
- * Content-addressed, write-once blob store (D6). Name = sha256 hex.
- * Symlinks are never dereferenced when ingesting a path into the store --
- * a symlink's own target string is hashed and returned as metadata; its
- * target's content is never read.
- */
+/** Content-addressed, write-once blob store (D6). Name = sha256 hex. */
 import { sha256Hex } from "../../core/evidence/sha256";
-import { existsSync, lstatSync, readFileSync, readlinkSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { resolveInsideRepo } from "../path-safety";
 import { resolveBlobsDir } from "./paths";
 import { createFileExclusiveDurably } from "../atomic-append";
 
@@ -47,24 +41,4 @@ export function writeBlob(repoRoot: string, content: Buffer): BlobWriteResult {
     throw error;
   }
   return { sha256: digest, bytes: content.length, wasNew: true, path: blobPath };
-}
-
-export type FileBlobIngestResult =
-  | { readonly kind: "file"; readonly sha256: string; readonly bytes: number; readonly wasNew: boolean; readonly path: string }
-  | { readonly kind: "symlink"; readonly linkTarget: string; readonly sha256: string };
-
-/** Ingest a repo-relative path. A symlink is recorded as metadata (D6); its target is never dereferenced. */
-export function ingestFileAsBlob(repoRoot: string, relativePath: string): FileBlobIngestResult {
-  const target = resolveInsideRepo(repoRoot, relativePath);
-  if (!target.ok || !target.path) throw new Error(target.error ?? "invalid path");
-
-  const stat = lstatSync(target.path);
-  if (stat.isSymbolicLink()) {
-    const linkTarget = readlinkSync(target.path);
-    return { kind: "symlink", linkTarget, sha256: sha256Hex(Buffer.from(linkTarget, "utf-8")) };
-  }
-
-  const content = readFileSync(target.path);
-  const write = writeBlob(repoRoot, content);
-  return { kind: "file", sha256: write.sha256, bytes: write.bytes, wasNew: write.wasNew, path: write.path };
 }
