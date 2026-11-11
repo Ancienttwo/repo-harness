@@ -1,6 +1,6 @@
 import { sha256Prefixed } from '../../core/evidence/sha256';
-import { lstatSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { lstatSync } from 'fs';
+import { readWorkflowPolicy } from '../../effects/state/resolve-effective-state';
 import { formatJson } from '../installer/shared';
 import { gitSpawnSync } from '../../effects/git/runner';
 import {
@@ -97,7 +97,7 @@ function gitFailure(result: ReturnType<typeof git>): string {
 /** The policy owns the default branch. A missing or invalid value is never guessed. */
 function policyDefaultBranch(path: string): { readonly branch: string } | { readonly error: string } {
   let policy: unknown;
-  try { policy = JSON.parse(readFileSync(join(path, '.ai', 'harness', 'policy.json'), 'utf-8')); }
+  try { policy = readWorkflowPolicy(path); }
   catch (error) { return { error: `.ai/harness/policy.json is unreadable: ${error instanceof Error ? error.message : String(error)}` }; }
   const strategy = policy && typeof policy === 'object' ? (policy as { worktree_strategy?: unknown }).worktree_strategy : undefined;
   const branch = strategy && typeof strategy === 'object' ? (strategy as { base_branch?: unknown }).base_branch : undefined;

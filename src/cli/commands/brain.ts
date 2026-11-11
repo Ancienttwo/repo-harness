@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { configuredBrainRoot } from './brain-root';
 import { gitExecFileSync } from '../../effects/git/runner';
+import { readWorkflowPolicy } from '../../effects/state/resolve-effective-state';
 
 export type BrainLifecycle = 'always-sync' | 'archive-only' | 'never-sync';
 
@@ -295,12 +296,10 @@ function countLines(content: string): number {
 }
 
 function readPolicyExternalKnowledge(repoRoot: string, issues: BrainIssue[]): Record<string, unknown> {
-  const policyPath = path.resolve(repoRoot, POLICY_FILE);
-  if (!fs.existsSync(policyPath)) return {};
   try {
-    const policy = JSON.parse(fs.readFileSync(policyPath, 'utf-8')) as {
+    const policy = readWorkflowPolicy(repoRoot) as {
       information_lifecycle?: { external_knowledge?: Record<string, unknown> };
-    };
+    } | null;
     return policy?.information_lifecycle?.external_knowledge ?? {};
   } catch {
     issue(issues, 'error', `Cannot read harness policy: ${POLICY_FILE}`);

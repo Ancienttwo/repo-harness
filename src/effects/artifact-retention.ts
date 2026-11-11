@@ -28,11 +28,12 @@
  * still be rolled back by manifest. After the window the operator restores an
  * archived backup by hand.
  */
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, type Stats } from 'fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, type Stats } from 'fs';
 import { dirname, join } from 'path';
 import { FS_TRANSACTION_BACKUP_ROOT } from './fs-transaction';
 import { ensureRepoRelativePath, resolveInsideRepo } from './path-safety';
 import { gitExecFileSync, gitSpawnSync } from './git/runner';
+import { readWorkflowPolicy } from './state/resolve-effective-state';
 
 export const DEFAULT_RETENTION_DAYS = 30;
 /** Default time an archived entry stays in the archive root before it is deleted. */
@@ -131,12 +132,8 @@ function overlaps(a: string, b: string): boolean {
  * optional; a present field with the wrong shape is an error, not a default.
  */
 export function readRetentionConfig(repoRoot: string): RetentionConfig {
-  const policyPath = join(repoRoot, POLICY_FILE);
-  let section: unknown;
-  if (existsSync(policyPath)) {
-    const policy = JSON.parse(readFileSync(policyPath, 'utf8')) as { information_lifecycle?: { retention?: unknown } };
-    section = policy?.information_lifecycle?.retention;
-  }
+  const policy = readWorkflowPolicy(repoRoot) as { information_lifecycle?: { retention?: unknown } } | null;
+  const section = policy?.information_lifecycle?.retention;
   if (section === undefined) {
     return { days: DEFAULT_RETENTION_DAYS, archiveDays: DEFAULT_ARCHIVE_DAYS, archiveRoot: DEFAULT_ARCHIVE_ROOT, keep: [] };
   }

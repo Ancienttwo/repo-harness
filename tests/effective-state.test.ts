@@ -22,6 +22,7 @@ import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-st
 import { projectEffectiveStateSessionSection } from '../src/cli/hook/session-context';
 import type { EffectiveState } from '../src/core/state/types';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
+import { decodeWorkflowPolicy, unknownPolicyKeys, WORKFLOW_POLICY_KEYS } from '../src/core/workflow/policy-schema';
 import {
   CONTRACT,
   PLAN,
@@ -865,6 +866,70 @@ describe('effective state resolver', () => {
   });
 
 });
+
+describe('policy schema: one key tree and one decoder', () => {
+  test('decodes the same policy object the loader returned before this change', () => {
+    const text = readFileSync(join(cwdOfThisRepo(), '.ai', 'harness', 'policy.json'), 'utf-8');
+    expect(decodeWorkflowPolicy(text)).toEqual(JSON.parse(text));
+  });
+
+  test('a policy that holds only tree keys reports no unknown key', () => {
+    const policy = {
+      tasks: { research_dir: 'docs/researches' },
+      context: { map_file: '.ai/context/context-map.json', capability_source: 'registry' },
+      worktree_strategy: { base_branch: 'main', merge_back: { target: 'main' } },
+      publication: { acceptance_merge: 'on' },
+      planning: { pending_orchestration_file: '.ai/harness/planning/pending.json' },
+      external_tooling: { agent_fleet: { managed_agents: ['explorer'], install_mode: 'auto-install-on-init' } },
+    };
+    expect(unknownPolicyKeys(policy)).toEqual([]);
+  });
+
+  test('reports a dotted path for a key outside the tree', () => {
+    expect(unknownPolicyKeys({
+      agentic_development: { routing: { design_plan: 'parent-agent:geju' } },
+      tasks: { research_dir: 'docs/researches', lessons_file: 'tasks/lessons.md' },
+    })).toEqual(['agentic_development', 'tasks.lessons_file']);
+  });
+
+  test('an absent file has no keys, and a declared section keeps its own contract', () => {
+    expect(unknownPolicyKeys(null)).toEqual([]);
+    // `external_sources` is owned by readExternalSourcesPolicy and `guards` by the console projection.
+    expect(unknownPolicyKeys({ external_sources: { version: 1, mode: 'off' }, guards: { anything: true } })).toEqual([]);
+  });
+
+  test('the tree names the keys of the deferred readers and the language settings writer', () => {
+    // These readers stay off the loader in this PR; the tree still lists their keys so the adoption
+    // child keeps them, and `unknownPolicyKeys` does not report them.
+    const deferred = {
+      worktree_strategy: { review_base: 'main' },
+      context: { capability_source: 'archcontext' },
+      external_sources: {},
+      documentation: { language: 'en' },
+      publication: { acceptance_merge: 'on' },
+      security: { reviewed_findings: [] },
+    };
+    expect(unknownPolicyKeys(deferred)).toEqual([]);
+    expect(unknownPolicyKeys({ security: { reviewedFindings: [] } })).toEqual(['security.reviewedFindings']);
+  });
+});
+
+describe('policy schema holds one tree', () => {
+  test('the tree lists the inventory keys that this PR wires to the loader', () => {
+    const tree = WORKFLOW_POLICY_KEYS as Record<string, unknown>;
+    expect(tree.planning).toEqual({ pending_orchestration_file: true });
+    expect(tree.external_tooling).toEqual({ agent_fleet: { managed_agents: true, install_mode: true } });
+    expect(tree.tasks).toEqual({ research_dir: true });
+    expect(tree.worktree_strategy).toEqual({
+      base_branch: true, review_base: true, merge_back: { target: true },
+      worktree_dir_template: true, branch_prefix: true,
+    });
+  });
+});
+
+function cwdOfThisRepo(): string {
+  return join(import.meta.dir, '..');
+}
 
 describe('effective state resolution cost (#770)', () => {
   test('one resolution in an idle repository spawns at most 8 git processes', () => {

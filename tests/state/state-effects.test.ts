@@ -380,6 +380,26 @@ describe('Effective State version read effects', () => {
   }, 30_000);
 });
 
+describe('policy loader: one reader of the file from disk', () => {
+  test('a policy key outside the tree loads and does not fail a reader', () => {
+    // `agentic_development` is not a tree key; the loader ignores it instead of rejecting the file.
+    expect(() => readWorkflowPolicy('/repo', () => JSON.stringify({
+      agentic_development: { routing: { design_plan: 'parent-agent:geju' } },
+      worktree_strategy: { base_branch: 'main', review_base: 'main', merge_back: { target: 'main' } },
+    }))).not.toThrow();
+  });
+
+  test('the loader keeps its two malformed-input messages and its absent-file null', () => {
+    expect(() => readWorkflowPolicy('/repo', () => '{"context": ')).toThrow(
+      'invalid workflow policy JSON: .ai/harness/policy.json',
+    );
+    expect(() => readWorkflowPolicy('/repo', () => '[]')).toThrow(
+      'invalid workflow policy object: .ai/harness/policy.json',
+    );
+    expect(readWorkflowPolicy('/repo', () => null)).toBeNull();
+  });
+});
+
 describe('minimal_change.mode policy validation', () => {
   const readPolicy = (policy: unknown) =>
     readWorkflowPolicy('/repo', () => JSON.stringify(policy));

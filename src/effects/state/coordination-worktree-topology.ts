@@ -10,6 +10,7 @@ import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, unlinkS
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'path';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import { readPrunedWorktreeIntents, writePrunedWorktreeIntents, prunedIntentKey, type PrunedWorktreeIntent } from './pruned-worktree-intents';
+import { readWorkflowPolicy } from './resolve-effective-state';
 import { configuredGitBinary, resolveGitCommonDirectory, resolveGitCommonDirectoryAsync } from '../git/common-directory';
 import { acquireExclusiveDirectoryLock, withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 import { taskWorktreeRuntimeClosed } from '../terminal/task-session-record';
@@ -573,10 +574,8 @@ function resumeSweepTrash(context: SweepContext, directory: string): 'resumed' |
 
 /** The policy merge-back target that every worktree merge proof binds. */
 export function mergeBackTarget(main: string, limits: Limits = {}): { readonly targetRef: string; readonly target: string } {
-  let policy: { worktree_strategy?: { merge_back?: { target?: unknown } } } = {};
-  const policyPath = join(main, '.ai/harness/policy.json');
-  if (existsSync(policyPath)) policy = JSON.parse(readFileSync(policyPath, 'utf8'));
-  const configured = policy.worktree_strategy?.merge_back?.target ?? 'main';
+  const policy = readWorkflowPolicy(main) as { worktree_strategy?: { merge_back?: { target?: unknown } } } | null;
+  const configured = policy?.worktree_strategy?.merge_back?.target ?? 'main';
   if (typeof configured !== 'string' || !configured || configured.startsWith('-')) throw new Error('integration target is invalid');
   const targetRef = configured.startsWith('refs/') || configured.includes('/') ? configured : `refs/remotes/origin/${configured}`;
   try { return { targetRef, target: git(main, ['rev-parse', '--verify', `${targetRef}^{commit}`], limits) }; }
