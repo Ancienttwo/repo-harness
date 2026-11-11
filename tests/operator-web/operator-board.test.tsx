@@ -1475,7 +1475,7 @@ describe('board office (#1755)', () => {
     expect(rows('[data-desk]').map(desk => desk.getAttribute('data-desk'))).toEqual(['t1', 't2']);
   });
 
-  test('the room draws its seats from the seats document while the board read is pending, and the board fills in the same room; the list layout waits and a failed read draws no room', async () => {
+  test('the room draws its seats from the seats document while the board read is pending, and the board fills in the same room; the list layout waits and a failed read keeps the room', async () => {
     const board = boardWith({
       plan: PLAN,
       prs: { 1499: { required_check: { status: 'failure', completed_at: '2026-11-02T21:00:00Z' } } },
@@ -1519,11 +1519,18 @@ describe('board office (#1755)', () => {
     expect(document.body.textContent).toContain('Reading the board of #1474 from GitHub and hc.');
     await act(async () => root?.unmount());
 
-    officeAt(`/${HARNESS_ID}/1474`);
-    await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'unavailable', reason: 'board_collect_failed' }) })} />);
-    await settle();
-    expect(document.querySelector('[data-board-reason]')?.getAttribute('data-board-reason')).toBe('board_collect_failed');
-    expect(document.querySelector('[data-board-office="room"]')).toBeNull();
+    // A failed board read keeps the seats and the parent list; the failure shows in the board region of the room (#2371).
+    for (const path of [`/${HARNESS_ID}/1474`, `/${HARNESS_ID}`]) {
+      officeAt(path);
+      await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'unavailable', reason: 'board_collect_failed' }), readBoardSeats: async () => ({ state: 'ok', seats: seatsOf(board) }) })} />);
+      await settle();
+      expect(document.querySelector('[data-board-office="room"] h1')?.textContent).toBe(PARENTS.repository.split('/').at(-1)!);
+      expect(rows('[data-desk]').map(desk => desk.getAttribute('data-desk'))).toEqual(['t1', 't2']);
+      const failure = document.querySelector('[data-board-office="room"] [data-board-reason]');
+      expect(failure?.getAttribute('data-board-reason')).toBe('board_collect_failed');
+      expect(failure?.textContent).toContain('repo-harness board --parent 1474 --json');
+      await act(async () => root?.unmount());
+    }
   });
 
   test('with an observed plan the header has the plan chip and the seat meter, and each hit fills the side panel', async () => {
