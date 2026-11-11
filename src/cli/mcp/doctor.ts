@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'fs';
 import { homedir } from 'os';
 import { join, resolve } from 'path';
+import { shellQuote } from '../../core/shell-quote';
 import { hostSkillRoot } from '../../effects/host-skill-roots';
 import { readRegisteredRepoHarnessRepos } from '../../effects/repo-registry';
 import { assertNoLegacyRepoScopeMcpConfig, loadMcpLocalConfig, mcpLocalConfigPath, mcpStorageDir } from './auth';
@@ -23,11 +24,6 @@ function displayMcpPath(path: string): string {
   if (home && path === home) return '~';
   if (home && path.startsWith(`${home}/`)) return `~/${path.slice(home.length + 1)}`;
   return path;
-}
-
-/** One POSIX shell word, so a copied command cannot split a path with spaces or quotes. */
-function shellQuote(path: string): string {
-  return `'${path.replaceAll("'", `'\\''`)}'`;
 }
 
 /**
