@@ -1687,7 +1687,8 @@ test('watch service: --watch refuses a terminal without the service labels; star
     ['kill', '--json', '--', 't3'], ['rm', '--json', '--', 't3'], ['ls', '--json', '--label', 'repo-harness.repository=1186405141', '--all'], ['rm', '--json', '--', 't3']]);
 
   // One orchestrator and one advisor serve the repository (#1780): the room of every parent shows them, with or
-  // without a parent label. A worker shows only in the room of its parent label; a terminal of another repository never.
+  // without a parent label. A worker shows only in the room whose items hold its issue label (#2492), so t16 with
+  // issue 1721 and parent label 1474 is not in room 1474; a terminal of another repository never.
   const room = (repository: string, labels: Json) => ({ labels: { 'repo-harness.repository': repository, ...labels } });
   const agents: Json = { t5: 'bun', t7: 'claude', t11: 'codex', t12: 'claude', t16: 'claude', t17: 'codex', t18: 'claude', t19: 'claude', t21: 'codex' };
   const repositoryTerminals = watchHc({
@@ -1705,7 +1706,7 @@ test('watch service: --watch refuses a terminal without the service labels; star
   });
   const office = replay({ host: boardHostPorts(repositoryTerminals.options) }).execution;
   expect(office.status === 'observed' && office.terminals.map(terminal => [terminal.address, terminal.seat_status === 'observed' && terminal.seat]))
-    .toEqual([['t7', 'orchestrator'], ['t11', 'advisor'], ['t12', 'orchestrator'], ['t16', 'worker']]);
+    .toEqual([['t7', 'orchestrator'], ['t11', 'advisor'], ['t12', 'orchestrator']]);
   // hc `status.msg` reaches the board as one redacted line, and a status without one gives null.
   expect(office.status === 'observed' && office.terminals.slice(0, 2).map(terminal => terminal.status_msg)).toEqual(['push failed: ghp_[REDACTED]', null]);
   // The parent list of the repository keeps every seat, with or without a parent label (#1785); the watcher and the
@@ -1739,6 +1740,26 @@ test('watch service: --watch refuses a terminal without the service labels; star
   expect(local()).toMatchObject({ status: 'na', detail: 'This checkout has no GitHub remote, so it has no attention watcher.' });
   expect(run('git', ['remote', 'add', 'origin', 'git@github.com:Ancienttwo/repo-harness.git'], checkout).status).toBe(0);
   expect(local()).toMatchObject({ status: 'ok' });
+});
+
+// #2492: a seat started with no parent label belongs to the board whose items hold its issue label or whose pull
+// requests hold its pr label. The parent label decides only for a terminal with neither label.
+test('board seats: the issue or pr label of a board item selects a seat with no parent label', () => {
+  const room = (labels: Json) => ({ labels: { 'repo-harness.repository': '1186405141', ...labels } });
+  const hc = watchHc({
+    FAKE_LS: ['t1', 't2', 't3', 't4', 't5'].map(address => ({ address, state: 'live' })),
+    FAKE_TERMINALS: {
+      t1: room({ 'repo-harness.seat': 'worker-important', 'repo-harness.issue': '1477' }),
+      t2: room({ 'repo-harness.seat': 'gatekeeper', 'repo-harness.pr': '1491' }),
+      t3: room({ 'repo-harness.seat': 'worker', 'repo-harness.issue': '1721', 'repo-harness.parent': '1474' }),
+      t4: room({ 'repo-harness.seat': 'reviewer', 'repo-harness.pr': '1462' }),
+      t5: room({ 'repo-harness.seat': 'worker', 'repo-harness.parent': '1474' }),
+    },
+  });
+  const board = replay({ host: boardHostPorts(hc.options) });
+  expect(board.pull_requests.map(pr => pr.number)).not.toContain(1462);
+  expect(board.execution.status === 'observed' && board.execution.terminals.map(terminal => terminal.address)).toEqual(['t1', 't2', 't5']);
+  expect(planAttentionDeliveries(board, evaluateBoardAttention(board), 0).window_ms).toBe(WINDOW_WITH_WORKERS_MS);
 });
 
 // One-shot dependency migration (#1504): a stateful gh stub answers the reads and records every write.

@@ -20,6 +20,7 @@ All notable changes to this skill are documented here.
 - The herdr-core floor is 0.1.20 (#2255). Run `hc update` to 0.1.20 before this release is installed: an hc 0.1.19 client fails the floor check.
 - `publication merge` no longer needs strict status checks on the base (#2462). The merge proof accepts a squash whose one parent is the expected base or a descendant of it, and it proves the content of the squash with `git merge-tree` when the parent moved. `Required / CI` runs one time for each PR head.
 - A review row counts only for the head SHA that it names (#2462). A head that takes a merge of main is a new head: it needs its own `Required / CI` run and delta-check rows.
+- The board of a parent selects a seat terminal by its `issue` label (an item of the parent) or its `pr` label (a pull request of the board), so a worker, gatekeeper or reviewer seat started without `--parent` is on the board, and the attention watcher uses the 15-minute window while it is live (#2492). The parent label decides only for a terminal with neither label. A seat with a parent label and the issue of another parent leaves that board.
 
 ### Removed
 

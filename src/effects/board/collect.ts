@@ -245,15 +245,24 @@ export function seatTerminalsWithBranches(terminals: readonly BoardSeatTerminalR
 
 /**
  * The seat terminals of this repository and parent: the orchestrator and the
- * advisor by their seat label with any parent label or none, and every other
- * terminal by this parent label. No such terminal means the seat labels are
- * not written, which the board does not read as "no stuck seats".
+ * advisor by their seat label with any parent label or none; a terminal with
+ * an issue or pr label when that issue is an item of this board or that pull
+ * request is a pull request of this board, because the sub-issue list owns
+ * "this seat belongs to this parent" and a seat can start with no parent
+ * label; and a terminal with neither label by this parent label. No such
+ * terminal means the seat labels are not written, which the board does not
+ * read as "no stuck seats".
  */
-function execution(input: BoardCollectInput, repositoryId: number): BoardExecutionV1 {
+function execution(input: BoardCollectInput, repositoryId: number, items: ReadonlySet<string>, pullRequests: ReadonlySet<string>): BoardExecutionV1 {
   const read = input.host.seatTerminals(String(repositoryId));
   if (read.status === 'unavailable') return read;
   const parent = String(input.parent);
-  const terminals = read.terminals.filter(({ labels }) => (labels.seat !== undefined && REPOSITORY_SEATS.has(labels.seat)) || labels.parent === parent);
+  const ofBoard = ({ seat, issue, pr, parent: label }: BoardSeatTerminalReadV1['labels']): boolean => {
+    if (seat !== undefined && REPOSITORY_SEATS.has(seat)) return true;
+    if (issue === undefined && pr === undefined) return label === parent;
+    return (issue !== undefined && items.has(issue)) || (pr !== undefined && pullRequests.has(pr));
+  };
+  const terminals = read.terminals.filter(({ labels }) => ofBoard(labels));
   if (terminals.length === 0) return { status: 'unavailable', reason: 'no_seat_terminals' };
   return { status: 'observed', terminals: Object.freeze(seatTerminalsWithBranches(terminals).map(seatTerminal)) };
 }
@@ -440,7 +449,8 @@ export function collectBoardThrough(input: BoardCollectInput, sources: KeyedSour
     pull_requests: reads,
     readiness,
     path_owners: pathOwners(input, linked),
-    execution: execution(input, parent.repository.database_id),
+    execution: execution(input, parent.repository.database_id, new Set(parent.sub_issues.map(issue => String(issue.number))),
+      new Set(linked.map(read => String(read.number)))),
     daily_run: dailyRun(input, repository, parent.repository.default_branch),
     tooling: tooling(input),
   });
