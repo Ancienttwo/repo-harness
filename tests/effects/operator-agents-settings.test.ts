@@ -529,9 +529,11 @@ describe('seat settings contract without transport', () => {
 
   test('review seats reject write tools and every fleet role at the decoder boundary', () => {
     const route = seatsSettingsWriteRoute();
-    for (const id of ['gatekeeper', 'reviewer'] as const) {
+    for (const id of ['gatekeeper', 'gatekeeper-fallback', 'reviewer'] as const) {
+      const seat = DEFAULT_SEATS_CONFIG[id] ?? { ...DEFAULT_SEATS_CONFIG.gatekeeper, runtime: 'pi', model: 'magpie/cursor/deepseek-v41-flash-1017', effort: null };
+      expect(decodeSeatsConfig({ ...DEFAULT_SEATS_CONFIG, [id]: seat })[id]).toEqual(seat);
       for (const patch of [...['edit', 'gh', 'mcp', 'tasks'].map(tool => ({ tools: ['read', tool].sort() })), { fleet: ['explorer'] }]) {
-        const seats = { ...DEFAULT_SEATS_CONFIG, [id]: { ...DEFAULT_SEATS_CONFIG[id], ...patch } };
+        const seats = { ...DEFAULT_SEATS_CONFIG, [id]: { ...seat, ...patch } };
         expect(() => decodeSeatsConfig(seats), `${id} ${JSON.stringify(patch)}`).toThrow('seats_config_invalid');
         expect(() => route.decode({ expected_revision: 'absent', seats }, [])).toThrow('seats_settings_request_invalid');
       }
@@ -559,8 +561,9 @@ describe('seat settings contract without transport', () => {
     expect(Object.keys(settings.defaults)).toEqual([...SEAT_IDS, 'routing']);
     expect(settings.ranges.routing).toEqual({ classes: ROUTING_CLASSES, worker_seats: ['worker', 'worker-deep', 'worker-important', 'worker-important-fast', 'worker-light'],
       frontend_seats: ['worker-important', 'worker-important-fast'] });
-    for (const id of ['gatekeeper', 'reviewer'] as const) expect(settings.ranges.seats[id]).toEqual({ tools: ['net', 'read', 'shell'], fleet: [] });
-    for (const id of SEAT_IDS) expect(settings.defaults[id]?.tools).toEqual(expect.arrayContaining(['net']));
+    for (const id of ['gatekeeper', 'gatekeeper-fallback', 'reviewer'] as const) expect(settings.ranges.seats[id]).toEqual({ tools: ['net', 'read', 'shell'], fleet: [] });
+    expect(settings.defaults['gatekeeper-fallback']).toBeNull();
+    for (const id of SEAT_IDS.filter(id => id !== 'gatekeeper-fallback')) expect(settings.defaults[id]?.tools).toEqual(expect.arrayContaining(['net']));
   });
 
   test('the write route stores the full section and round-trips routing with Pi disabled', async () => {

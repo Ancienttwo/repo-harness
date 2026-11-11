@@ -13,7 +13,7 @@ import {
   type QuotaReport,
 } from '../../src/core/board/quota';
 import { effectiveSeatConfig, formatSeatModes, formatSeatRoutes, seatAccountQuotas } from '../../src/core/board/seat-routing';
-import { DEFAULT_SEATS_CONFIG } from '../../src/core/board/seats-settings';
+import { DEFAULT_SEATS_CONFIG, type SeatConfigV1 } from '../../src/core/board/seats-settings';
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -106,6 +106,22 @@ describe('seat quota routing', () => {
     const routes = formatSeatRoutes(DEFAULT_SEATS_CONFIG, seatAccountQuotas(accounts, DEFAULT_SEATS_CONFIG.routing));
     expect(routes).toContain(`route important_deep: ${selected} (`);
     if (codexUsed >= 95) expect(routes).toContain('gatekeeper: none (chatgpt exhausted)');
+  });
+
+  test('an exhausted gatekeeper account routes the gatekeeper to a configured fallback; a normal account keeps the gatekeeper', () => {
+    const codex = (used: number) => classifyQuotaReading(decodeCodexRateLimitsResult({ rateLimits: {
+      primary: { usedPercent: used, windowDurationMins: 10080, resetsAt: (NOW + 84 * HOUR) / 1000 },
+    } }, new Date(NOW).toISOString()), NOW);
+    const pi: SeatConfigV1 = { ...DEFAULT_SEATS_CONFIG.gatekeeper, runtime: 'pi', model: 'magpie/cursor/deepseek-v41-flash-1017', effort: null };
+    const line = (fallback: SeatConfigV1 | null, codexUsed: number, claudeUsed = 10) => {
+      const seats = { ...DEFAULT_SEATS_CONFIG, 'gatekeeper-fallback': fallback };
+      const quota = seatAccountQuotas([codex(codexUsed), claude({ seven_day: week(claudeUsed, 84) })], seats.routing);
+      return formatSeatRoutes(seats, quota).split('\n').find(entry => entry.startsWith('gatekeeper:'));
+    };
+    expect(line(pi, 97)).toBe('gatekeeper: gatekeeper-fallback (pi magpie/cursor/deepseek-v41-flash-1017; gatekeeper: chatgpt exhausted)');
+    expect(line(null, 97)).toBe('gatekeeper: none (chatgpt exhausted)');
+    expect(line(DEFAULT_SEATS_CONFIG.reviewer, 97, 97)).toBe('gatekeeper: none (chatgpt exhausted; gatekeeper-fallback: claude exhausted, reserved for advisor and orchestrator)');
+    expect(line(pi, 40)).toBe(line(null, 40));
   });
 
   test('the credit grant admits an exhausted ChatGPT account only with spendCredits and credits', () => {

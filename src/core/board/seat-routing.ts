@@ -110,6 +110,31 @@ export function selectSeatRoute(task: RoutingClass, seats: SeatsConfigV1, quota:
   return { id: selected.id, seat: selected.seat, line: `route ${task}: ${selected.id} (${launchText(selected.seat)}${warning})${skipped}` };
 }
 
+/** A review seat waits while its account is exhausted, or while Claude is reserved for a Claude seat. */
+function reviewSeatBlocked(seat: SeatConfigV1, quota: SeatAccountQuotas): boolean {
+  const account = seatAccount(seat);
+  return account !== null && (quota[account].state === 'exhausted' || account === 'claude' && claudeReserved(quota));
+}
+
+const accountSuffix = (seat: SeatConfigV1, quota: SeatAccountQuotas): string => seatAccount(seat) === null ? '' : `; ${accountText(seat, quota)}`;
+
+/**
+ * The effective gatekeeper (#2253): the one source of the gatekeeper route line, of `seats argv gatekeeper` and of the review plan.
+ * The gatekeeper-fallback seat takes over only while the gatekeeper account is exhausted; a tight, unknown or reserved gatekeeper keeps its own rule.
+ */
+export function effectiveGatekeeper(seats: SeatsConfigV1, quota: SeatAccountQuotas): SeatRouteV1 {
+  const gatekeeper = effectiveSeatConfig('gatekeeper', seats, quota);
+  if (!reviewSeatBlocked(gatekeeper, quota)) {
+    return { id: 'gatekeeper', seat: gatekeeper, line: `gatekeeper: gatekeeper (${launchText(gatekeeper)}${accountSuffix(gatekeeper, quota)})` };
+  }
+  const cause = accountText(gatekeeper, quota);
+  const fallback = effectiveSeatConfig('gatekeeper-fallback', seats, quota);
+  if (fallback === null || quota[seatAccount(gatekeeper)!].state !== 'exhausted') return { id: null, line: `gatekeeper: none (${cause})` };
+  if (reviewSeatBlocked(fallback, quota)) return { id: null, line: `gatekeeper: none (${cause}; gatekeeper-fallback: ${accountText(fallback, quota)})` };
+  return { id: 'gatekeeper-fallback', seat: fallback,
+    line: `gatekeeper: gatekeeper-fallback (${launchText(fallback)}${accountSuffix(fallback, quota)}; gatekeeper: ${cause})` };
+}
+
 /** The saving threshold reserves Claude; pace-based tight is only a display state. */
 export function formatSeatRoutes(seats: SeatsConfigV1, quota: SeatAccountQuotas): string {
   const reserved = claudeReserved(quota);
@@ -117,11 +142,8 @@ export function formatSeatRoutes(seats: SeatsConfigV1, quota: SeatAccountQuotas)
   lines.push(reserved
     ? `explorer: ${modelText(seats.routing.low_quota_explorer)} (claude ${quota.claude.state === 'exhausted' ? 'exhausted' : quota.claude.mode}; pass model ${seats.routing.low_quota_explorer.model} when you call the explorer)`
     : 'explorer: default');
-  for (const id of ['gatekeeper', 'reviewer'] as const) {
-    const seat = effectiveSeatConfig(id, seats, quota);
-    const account = seatAccount(seat);
-    const blocked = account !== null && (quota[account].state === 'exhausted' || account === 'claude' && reserved);
-    lines.push(blocked ? `${id}: none (${accountText(seat, quota)})` : `${id}: ${id} (${launchText(seat)}${account === null ? '' : `; ${accountText(seat, quota)}`})`);
-  }
+  lines.push(effectiveGatekeeper(seats, quota).line);
+  const reviewer = effectiveSeatConfig('reviewer', seats, quota);
+  lines.push(reviewSeatBlocked(reviewer, quota) ? `reviewer: none (${accountText(reviewer, quota)})` : `reviewer: reviewer (${launchText(reviewer)}${accountSuffix(reviewer, quota)})`);
   return lines.join('\n');
 }

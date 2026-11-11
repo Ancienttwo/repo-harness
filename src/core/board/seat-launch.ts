@@ -2,7 +2,7 @@
 // the seat brief. Each limit names what the host does with it, so the output
 // never claims a limit that the host cannot apply.
 import { PANE_PREFIX } from '../terminal/pane-prefix';
-import { isWorkerSeat, seatTakesFleet, type SeatConfigV1, type SeatId, type SeatTool } from './seats-settings';
+import { isWorkerSeat, seatTakesFleet, type LaunchSeatId, type SeatConfigV1, type SeatTool } from './seats-settings';
 import { SEAT_ENV, SEAT_REPOSITORY_ENV, isResetSeat } from './seat-reset';
 
 /** `seats`: the stored section. `defaults`: no section, so `DEFAULT_SEATS_CONFIG`. */
@@ -27,7 +27,7 @@ export interface SeatLimitV1 {
 export interface SeatLaunchV1 {
   readonly protocol: 1;
   readonly kind: 'seat_launch';
-  readonly seat: SeatId;
+  readonly seat: LaunchSeatId;
   readonly runtime: SeatConfigV1['runtime'];
   readonly source: SeatLaunchSource;
   readonly argv: readonly string[];
@@ -105,7 +105,7 @@ export const piRoleName = (role: string): string => `rh-${role}`;
 type RoleName = (role: string) => string;
 const roleList = (fleet: readonly string[], name: RoleName) => fleet.map(role => `\`${name(role)}\``).join(', ');
 
-function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly string[], name: RoleName): string[] {
+function roleParagraphs(seat: LaunchSeatId, config: SeatConfigV1, fleet: readonly string[], name: RoleName): string[] {
   if (seat === 'orchestrator') {
     const queue = config.tools.includes('tasks')
       ? ['Keep worker notices in a triage queue with TaskCreate, TaskUpdate, TaskList and TaskGet, as `references/orchestrator.md` §8.1 of repo-harness-issue-flow says: answer the owner first, then take one queue item at a time by priority.']
@@ -164,7 +164,7 @@ const KEEP_YOURSELF = {
  * `fleet` is the list that the brief names.
  * Each tool group that the host does not fully enforce goes into a keep-yourself paragraph.
  */
-function brief(seat: SeatId, config: SeatConfigV1, fleet: readonly string[], limits: readonly SeatLimitV1[], name: RoleName = role => role): string {
+function brief(seat: LaunchSeatId, config: SeatConfigV1, fleet: readonly string[], limits: readonly SeatLimitV1[], name: RoleName = role => role): string {
   const kept = (Object.keys(KEEP_YOURSELF) as (keyof typeof KEEP_YOURSELF)[]).flatMap((level) => {
     const publishes = (seat === 'gatekeeper' || seat === 'reviewer') && config.tools.includes('net');
     const groups = limits.flatMap(limit => (limit.level === level && limit.subject !== 'fleet'
@@ -182,7 +182,7 @@ function seatEnv(assignments: readonly string[]): string[] {
   return ['env', '-u', SEAT_ENV, '-u', SEAT_REPOSITORY_ENV, '-u', PI_EXTRA_AGENT_DIRS_ENV, ...assignments];
 }
 
-function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly string[], name: string | undefined, repositoryId: string | undefined): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
+function claudeLaunch(seat: LaunchSeatId, config: SeatConfigV1, agentTypes: readonly string[], name: string | undefined, repositoryId: string | undefined): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
   const on = (group: SeatTool) => config.tools.includes(group);
   // `--tools` cannot name agent types (`Agent(<type>)` there removes the Agent tool), so a fleet keeps the Agent
   // tool and denies every other known type by name.
@@ -222,7 +222,7 @@ function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly s
   };
 }
 
-function codexLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
+function codexLaunch(seat: LaunchSeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
   const off = OFF_GROUPS(config);
   const writable = config.tools.includes('edit');
   const network = config.tools.includes('net');
@@ -252,7 +252,7 @@ function codexLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'pr
   };
 }
 
-function piLaunch(seat: SeatId, config: SeatConfigV1, roleDirectory: string | undefined): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
+function piLaunch(seat: LaunchSeatId, config: SeatConfigV1, roleDirectory: string | undefined): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
   const review = seat === 'gatekeeper' || seat === 'reviewer';
   // Pi's denylist blocks the edit/write tools; shell paths stay open. pi-subagents does not refuse a role outside the fleet.
   const limits: SeatLimitV1[] = [
@@ -279,7 +279,7 @@ function piLaunch(seat: SeatId, config: SeatConfigV1, roleDirectory: string | un
  * `paneName` (`seatPaneName`) becomes the Claude session name `-n`. `repositoryId` is the checked label value.
  * `piRoleDirectory` holds the role files of a Pi seat with a fleet; it goes on that seat's argv only.
  */
-export function buildSeatLaunch(seat: SeatId, config: SeatConfigV1, source: SeatLaunchSource, claudeAgentTypes: readonly string[], paneName?: string, repositoryId?: string, piRoleDirectory?: string): SeatLaunchV1 {
+export function buildSeatLaunch(seat: LaunchSeatId, config: SeatConfigV1, source: SeatLaunchSource, claudeAgentTypes: readonly string[], paneName?: string, repositoryId?: string, piRoleDirectory?: string): SeatLaunchV1 {
   const launch = config.runtime === 'claude'
     ? claudeLaunch(seat, config, claudeAgentTypes, paneName, repositoryId)
     : config.runtime === 'codex' ? codexLaunch(seat, config) : piLaunch(seat, config, piRoleDirectory);
@@ -298,7 +298,7 @@ export class SeatPaneNameError extends Error {
 export interface SeatPaneNameInput {
   /** The `panePrefix` of the repository's registry entry (#1544). */
   readonly prefix: string;
-  readonly seat: SeatId;
+  readonly seat: LaunchSeatId;
   readonly issue?: string;
   readonly pr?: string;
   /** The digits of a release item, for example `0252`. */
@@ -340,7 +340,7 @@ export function seatPaneName(input: SeatPaneNameInput): string {
  * The Herdr.app tab of a new seat pane, before the fullness suffix: the orchestrator tab, the worker tab of its parent
  * issue (`other` without one), or the review tab. A full tab gets the next number, for example `#1000 2`.
  */
-export function seatTabName(seat: SeatId, parent?: string): string {
+export function seatTabName(seat: LaunchSeatId, parent?: string): string {
   if (parent !== undefined && !POSITIVE.test(parent)) throw new SeatPaneNameError('Tab name: the parent must be a positive decimal integer.');
   if (seat === 'reviewer' || seat === 'gatekeeper') return 'review';
   if (isWorkerSeat(seat)) return parent === undefined ? 'other' : `#${parent}`;

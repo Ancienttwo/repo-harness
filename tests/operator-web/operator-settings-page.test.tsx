@@ -12,7 +12,7 @@ import type { OperatorLocale } from '../../src/operator-web/i18n';
 import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
 import { agentsSettingsFixture, settingsStores } from '../../src/operator-web/fixtures/settings';
-import { DEFAULT_SEATS_CONFIG, type SeatsSettingsRequestV1 } from '../../src/core/board/seats-settings';
+import { DEFAULT_SEATS_CONFIG, type SeatConfigV1, type SeatsSettingsRequestV1 } from '../../src/core/board/seats-settings';
 import { registryOf } from '../../src/operator-web/fixtures';
 
 const REGISTRY = registryOf(['repo-harness', 'repo-console']);
@@ -164,7 +164,7 @@ describe('agents page seats section', () => {
     expect(request_id).toMatch(UUID);
     expect(expected_revision).toMatch(/^sha256:/u);
     expect(seats.advisor.fleet).toEqual(['deep-reasoner', 'explorer', 'gatekeeper']);
-    expect(Object.keys(seats)).toEqual(['orchestrator', 'advisor', 'worker', 'worker-deep', 'worker-important', 'worker-important-fast', 'worker-light', 'gatekeeper', 'reviewer', 'routing']);
+    expect(Object.keys(seats)).toEqual(['orchestrator', 'advisor', 'worker', 'worker-deep', 'worker-important', 'worker-important-fast', 'worker-light', 'gatekeeper', 'gatekeeper-fallback', 'reviewer', 'routing']);
     expect(document.querySelector('[data-seats-saved]')?.textContent).toContain('Running panes do not change');
 
     await click(pane('orchestrator'));
@@ -213,7 +213,7 @@ describe('agents page seats section', () => {
     expect(posts[0]!.seats['worker-light']).toBeNull();
   });
 
-  const pick = (seat: string) => buttonWithText(({ 'worker-light': 'Light worker', gatekeeper: 'Gatekeeper', reviewer: 'Reviewer' } as Record<string, string>)[seat] ?? seat);
+  const pick = (seat: string) => buttonWithText(({ 'worker-light': 'Light worker', gatekeeper: 'Gatekeeper', 'gatekeeper-fallback': 'Gatekeeper fallback', reviewer: 'Reviewer' } as Record<string, string>)[seat] ?? seat);
   const routeSeats = (task: string) => all(`[data-route="${task}"] [data-route-seat]`).map(item => item.getAttribute('data-route-seat'));
   const mode = (account: string) => document.querySelector(`[data-account-mode="${account}"]`)!;
   async function setThreshold(field: string, value: string) {
@@ -229,7 +229,7 @@ describe('agents page seats section', () => {
 
   test('every seat has a card; a review seat shows only its read, shell and network groups and no fleet; modes stay unknown while quota is not read', async () => {
     await mount(seatsProps([]));
-    expect(all('[role="group"][aria-label="Seat"] button')).toHaveLength(9);
+    expect(all('[role="group"][aria-label="Seat"] button')).toHaveLength(10);
     await click(pick('gatekeeper'));
     expect(document.querySelector('[data-seat-card]')?.getAttribute('data-seat-card')).toBe('gatekeeper');
     expect(all('[data-seat-tools] [role="switch"]').map(node => node.getAttribute('aria-label'))).toEqual(['Allow Read code', 'Allow Shell', 'Allow Network']);
@@ -243,6 +243,38 @@ describe('agents page seats section', () => {
     await click(pick('Important worker'));
     await click(buttonWithText('Codex'));
     expect([document.querySelector('[data-save-refused]')?.textContent, seatsSave().disabled]).toEqual(['The section is not valid: seats_settings_request_invalid', true]);
+  });
+
+  const configured = () => document.querySelector<HTMLButtonElement>('[aria-label="Configured"]')!;
+  const CODEX_FALLBACK: SeatConfigV1 = { runtime: 'codex', model: null, effort: null, tools: ['net', 'read', 'shell'], fleet: [] };
+
+  test('the gatekeeper-fallback card is off by default; switched on, it saves a review seat in the gatekeeper range', async () => {
+    const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
+    await mount(seatsProps(posts));
+    await click(pick('gatekeeper-fallback'));
+    expect([configured().getAttribute('aria-checked'), document.querySelector('[data-seat-tools]')]).toEqual(['false', null]);
+    await click(configured());
+    // The Pi starter waits for the Pi host; the Codex runtime saves.
+    expect(document.querySelector('[data-save-blocked="gatekeeper-fallback"]')).not.toBeNull();
+    await click(buttonWithText('Codex'));
+    expect(all('[data-seat-tools] [role="switch"]').map(node => node.getAttribute('aria-label'))).toEqual(['Allow Read code', 'Allow Shell', 'Allow Network']);
+    expect(document.querySelector('[data-seat-fleet]')).toBeNull();
+    expect(document.querySelector('[data-seat-launch]')?.textContent).toContain('seats argv gatekeeper --repository-id <repository-id> --pr <n>');
+    await click(seatsSave());
+    expect(posts[0]!.seats['gatekeeper-fallback']).toEqual(CODEX_FALLBACK);
+  });
+
+  test('a stored gatekeeper-fallback switched off saves null', async () => {
+    const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
+    const read = await settingsStores(NOW, 'busy').seats.read();
+    if (read.state !== 'ok') throw new Error('fixture read failed');
+    const stored = { ...read.settings, config: { ...read.settings.config, 'gatekeeper-fallback': CODEX_FALLBACK } };
+    await mount({ ...seatsProps(posts), readSeatsSettings: async () => ({ state: 'ok', settings: stored }) });
+    await click(pick('gatekeeper-fallback'));
+    expect(configured().getAttribute('aria-checked')).toBe('true');
+    await click(configured());
+    await click(seatsSave());
+    expect(posts[0]!.seats['gatekeeper-fallback']).toBeNull();
   });
 
   test('the routing lists reorder, add and remove; frontend offers only the Claude worker seats; save sends the routes and thresholds', async () => {

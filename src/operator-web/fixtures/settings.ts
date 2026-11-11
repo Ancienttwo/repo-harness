@@ -70,6 +70,7 @@ function seatsRanges(enabled: readonly string[]) {
       'worker-important-fast': { fleet: SUB_AGENTS.map(role => role.name), tools: all },
       'worker-light': { fleet: SUB_AGENTS.map(role => role.name), tools: all },
       gatekeeper: { fleet: [], tools: ['net', 'read', 'shell'] },
+      'gatekeeper-fallback': { fleet: [], tools: ['net', 'read', 'shell'] },
       reviewer: { fleet: [], tools: ['net', 'read', 'shell'] },
     },
     routing: { classes: ROUTING_CLASSES, worker_seats: WORKER_SEAT_IDS, frontend_seats: FRONTEND_SEAT_IDS },

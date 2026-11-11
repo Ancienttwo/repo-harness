@@ -2,9 +2,9 @@ import { Command } from 'commander';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { CLAUDE_BUILTIN_AGENT_TYPES, SeatPaneNameError, buildSeatLaunch, seatPaneName, seatTabName, type SeatLaunchV1 } from '../../core/board/seat-launch';
-import { SeatsConfigMigrationRequiredError, SEAT_IDS, decodeSeatsConfig, isWorkerSeat, type SeatId } from '../../core/board/seats-settings';
-import { claudeReserved, effectiveSeatConfig, seatAccount, seatAccountQuotas, type SeatAccountOptions } from '../../core/board/seat-routing';
-import { classifyQuotaReading } from '../../core/board/quota';
+import { LAUNCH_SEAT_IDS, SeatsConfigMigrationRequiredError, decodeSeatsConfig, isWorkerSeat, type LaunchSeatId } from '../../core/board/seats-settings';
+import { claudeReserved, effectiveGatekeeper, effectiveSeatConfig, seatAccount, seatAccountQuotas, type SeatAccountOptions } from '../../core/board/seat-routing';
+import { classifyQuotaReading, type QuotaAccount, type QuotaReading } from '../../core/board/quota';
 import { readClaudeQuota, readCodexQuota } from '../../effects/board/quota';
 import { version as PACKAGE_VERSION } from '../../../package.json';
 import { readGlobalConfiguration } from '../../effects/configuration/global-configuration';
@@ -39,7 +39,7 @@ export interface SeatLabelInput {
 const POSITIVE = /^[1-9][0-9]*$/u;
 
 /** The seat labels that the board reads (#1505), or none without `--repository-id`. The GitHub numeric repository id identifies the repository. */
-function seatLabels(seat: SeatId, input: SeatLabelInput): HcLabels | undefined {
+function seatLabels(seat: LaunchSeatId, input: SeatLabelInput): HcLabels | undefined {
   const { repositoryId, release, qualifier, ...dispatch } = input;
   for (const [name, value] of Object.entries({ repositoryId, ...dispatch })) {
     if (value !== undefined && !POSITIVE.test(value)) throw new SeatsCommandError('label_value_invalid', `--${name === 'repositoryId' ? 'repository-id' : name} must be a positive decimal integer.`);
@@ -63,9 +63,10 @@ function seatLabels(seat: SeatId, input: SeatLabelInput): HcLabels | undefined {
   };
 }
 
-function seatId(seat: string): SeatId {
-  if (!SEAT_IDS.includes(seat as SeatId)) throw new SeatsCommandError('seat_unknown', `Unknown seat ${seat}. Use one of: ${SEAT_IDS.join(', ')}.`);
-  return seat as SeatId;
+/** The gatekeeper-fallback seat is no launch target: `seats argv gatekeeper` launches it when it is the effective gatekeeper. */
+function seatId(seat: string): LaunchSeatId {
+  if (!LAUNCH_SEAT_IDS.includes(seat as LaunchSeatId)) throw new SeatsCommandError('seat_unknown', `Unknown seat ${seat}. Use one of: ${LAUNCH_SEAT_IDS.join(', ')}.`);
+  return seat as LaunchSeatId;
 }
 
 /**
@@ -73,7 +74,7 @@ function seatId(seat: string): SeatId {
  * terminal, so `seats label` labels `HC_TERMINAL_ID`, then `exec` replaces the shell with the agent. When the label
  * fails, the shell stops before the agent starts. Each token in the script is a seat id or a checked positive integer.
  */
-function selfLabelingArgv(seat: SeatId, input: SeatLabelInput, agent: readonly string[]): string[] {
+function selfLabelingArgv(seat: LaunchSeatId, input: SeatLabelInput, agent: readonly string[]): string[] {
   const flags = ([['--repository-id', input.repositoryId], ['--issue', input.issue], ['--pr', input.pr], ['--parent', input.parent]] as const)
     .flatMap(([flag, value]) => value === undefined ? [] : [flag, value]);
   return ['/bin/sh', '-c', `"$0" "$1" seats label ${[seat, ...flags].join(' ')} && shift && exec "$@"`, process.execPath, CLI_ENTRY, ...agent];
@@ -115,21 +116,33 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
   }
   const configured = seats[id];
   if (configured === null) throw new SeatsCommandError('seat_not_configured', `The ${id} seat is not configured. Configure it in the seats section before launch.`);
-  const account = seatAccount(configured);
-  const reading = account === 'claude' ? readClaudeQuota(env) : account === 'chatgpt' ? await readCodexQuota(env, PACKAGE_VERSION) : null;
-  const readings = reading === null ? [] : [reading];
-  if (id === 'worker-light' && account === 'chatgpt') readings.push(readClaudeQuota(env));
-  const quota = seatAccountQuotas(readings.map(reading => classifyQuotaReading(reading, Date.now())), seats.routing, accountOptions);
+  const readings: QuotaReading[] = [];
+  const read = async (account: QuotaAccount | null) => {
+    if (account === 'claude') readings.push(readClaudeQuota(env));
+    if (account === 'chatgpt') readings.push(await readCodexQuota(env, PACKAGE_VERSION));
+    return seatAccountQuotas(readings.map(reading => classifyQuotaReading(reading, Date.now())), seats.routing, accountOptions);
+  };
+  const own = seatAccount(configured);
+  let quota = await read(own);
+  if (id === 'worker-light' && own === 'chatgpt') quota = await read('claude');
+  // The fallback account is read only when the gatekeeper account is exhausted, the one state in which the fallback can launch.
+  const fallback = seats['gatekeeper-fallback'];
+  if (id === 'gatekeeper' && fallback !== null && own !== null && quota[own].state === 'exhausted' && seatAccount(fallback) !== own) {
+    quota = await read(seatAccount(fallback));
+  }
+  const gatekeeper = id === 'gatekeeper' ? effectiveGatekeeper(seats, quota) : null;
+  const launched = gatekeeper?.id === 'gatekeeper-fallback' ? fallback! : configured;
+  const account = seatAccount(launched);
   if (id === 'worker-light' && configured.runtime !== 'pi' && claudeReserved(quota)) {
     throw new SeatsCommandError('seat_quota_reserved', 'The worker-light seat must use Pi while Claude is reserved. Use the quota routes.');
   }
   if (account !== null && quota[account].state === 'exhausted') {
-    throw new SeatsCommandError('seat_quota_exhausted', `The ${account} account is exhausted. Wait for quota before launching ${id}.`);
+    throw new SeatsCommandError('seat_quota_exhausted', `The ${account} account is exhausted. Wait for quota before launching ${id}.${gatekeeper === null ? '' : ` Route ${gatekeeper.line}`}`);
   }
   if (account === 'claude' && id !== 'advisor' && id !== 'orchestrator' && claudeReserved(quota)) {
     throw new SeatsCommandError('seat_quota_reserved', 'Claude is reserved for the advisor and the orchestrator. Use the quota routes.');
   }
-  const effective = effectiveSeatConfig(id, seats, quota)!;
+  const effective = gatekeeper?.id === 'gatekeeper-fallback' ? gatekeeper.seat : effectiveSeatConfig(id, seats, quota)!;
   const labelSet = seatLabels(id, labels);
   // The pane name needs the registry prefix, so it comes only with the seat labels.
   const name = labels.repositoryId === undefined ? null : seatPaneName({
@@ -175,7 +188,7 @@ export function buildSeatsCommand(loadNotify?: () => Promise<SeatResetNotify>): 
   seats
     .command('argv')
     .description('Print the argv that starts a seat, from the seats section of ~/.repo-harness/config.json')
-    .argument('<seat>', SEAT_IDS.join('|'))
+    .argument('<seat>', LAUNCH_SEAT_IDS.join('|'))
     .option('--repository-id <id>', 'GitHub numeric repository id; the argv then labels its own terminal before the agent starts')
     .option('--issue <n>', 'Issue number for the seat labels')
     .option('--pr <n>', 'PR number for the seat labels')
@@ -215,7 +228,7 @@ export function buildSeatsCommand(loadNotify?: () => Promise<SeatResetNotify>): 
   seats
     .command('label')
     .description('Set the seat labels on the calling hc terminal; the seat argv runs it before the agent starts')
-    .argument('<seat>', SEAT_IDS.join('|'))
+    .argument('<seat>', LAUNCH_SEAT_IDS.join('|'))
     .option('--repository-id <id>', 'GitHub numeric repository id')
     .option('--issue <n>', 'Issue number')
     .option('--pr <n>', 'PR number')
