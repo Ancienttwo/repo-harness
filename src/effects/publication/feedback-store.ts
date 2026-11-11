@@ -218,11 +218,7 @@ function publishImmutable(path: string, bytes: Buffer, equivalent: () => boolean
   }
   const parent = join(path, '..');
   const temporary = join(parent, `.${hash(path)}.${process.pid}.${randomUUID()}.tmp`);
-  try {
-    createFileExclusiveDurably(temporary, bytes);
-  } catch (error) {
-    throw incomplete(`cannot write immutable feedback event: ${path}`, error);
-  }
+  createFileExclusiveDurably(temporary, bytes, 0o600, (error) => incomplete(`cannot write immutable feedback event: ${path}`, error));
   try {
     linkSync(temporary, path);
     fsyncDirectory(parent);
@@ -294,11 +290,7 @@ export function writeFeedbackDeliveryReceipt(
   const bytes = Buffer.from(`${canonicalFeedbackDeliveryReceiptBytes(valid)}\n`, 'utf-8');
   const parent = layout.deliveries;
   const temporary = join(parent, `.${hash(path)}.${process.pid}.${randomUUID()}.tmp`);
-  try {
-    createFileExclusiveDurably(temporary, bytes);
-  } catch (error) {
-    throw incomplete(`cannot write feedback delivery receipt: ${path}`, error);
-  }
+  createFileExclusiveDurably(temporary, bytes, 0o600, (error) => incomplete(`cannot write feedback delivery receipt: ${path}`, error));
   try {
     renameSync(temporary, path);
     fsyncDirectory(parent);

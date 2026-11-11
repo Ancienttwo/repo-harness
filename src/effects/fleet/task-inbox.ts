@@ -455,11 +455,7 @@ function writeImmutableEvent(repoRoot: string, event: TaskMessageEventV2): TaskI
     `.${event.message_id}.${process.pid}.${randomUUID()}.tmp`,
   );
   const bytes = Buffer.from(`${canonical}\n`, 'utf-8');
-  try {
-    createFileExclusiveDurably(temporary, bytes);
-  } catch (error) {
-    throw asInboxError(error, 'task_message_unreadable', `cannot persist task message event: ${target}`);
-  }
+  createFileExclusiveDurably(temporary, bytes, 0o600, (error) => asInboxError(error, 'task_message_unreadable', `cannot persist task message event: ${target}`));
   try {
     inspectTaskInboxLayout(resolveGitCommonDirectory(repoRoot));
     try {
