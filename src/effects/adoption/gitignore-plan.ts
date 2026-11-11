@@ -68,11 +68,14 @@ export function runtimeStateIgnoreOperation(path: string): AppendManagedBlockOpe
 
 export type UserExcludesFile = { readonly ok: true; readonly path: string } | { readonly ok: false; readonly error: string };
 
-/** `core.excludesFile` from the global Git config when set, otherwise Git's default user-level excludes file. */
+/**
+ * `core.excludesFile` from the global Git config when set, otherwise Git's default user-level excludes file.
+ * `--includes` reads the `[include]` and `[includeIf]` sections of that config, as Git does when it applies ignore rules.
+ */
 export function userExcludesFilePath(callerEnv: NodeJS.ProcessEnv = {}): UserExcludesFile {
   // Git and the default path read the same HOME and XDG_CONFIG_HOME.
   const env = { ...process.env, ...callerEnv };
-  const result = gitSpawnSync(["config", "--global", "--type=path", "--get", "core.excludesFile"], { env, encoding: "utf8" });
+  const result = gitSpawnSync(["config", "--global", "--includes", "--type=path", "--get", "core.excludesFile"], { env, encoding: "utf8" });
   if (result.status === 0) {
     const configured = result.stdout.trim();
     if (!isAbsolute(configured)) return { ok: false, error: `core.excludesFile is not an absolute path: ${configured}` };
@@ -83,7 +86,7 @@ export function userExcludesFilePath(callerEnv: NodeJS.ProcessEnv = {}): UserExc
     return { ok: true, path: join(configHome, "git", "ignore") };
   }
   const cause = (result.stderr || result.error?.message || `signal ${result.signal}`).trim();
-  return { ok: false, error: `no user-level excludes file resolved: git config --global --get core.excludesFile exited ${result.status}: ${cause}` };
+  return { ok: false, error: `no user-level excludes file resolved: git config --global --includes --get core.excludesFile exited ${result.status}: ${cause}` };
 }
 
 export type RuntimeStateIgnoreRemoval =
