@@ -223,6 +223,36 @@ describe('architecture module list', () => {
     expect(calls.at(-1)).toEqual({ path: `/api/v1/repositories/${REPO}/architecture/modules`, ifNoneMatch: null });
     expect(document.querySelectorAll('.module-row')).toHaveLength(3);
   });
+
+  test('a typed refusal of the module list or the history keeps the 30 s interval; no typed answer backs off', async () => {
+    const gap = historyPages.gap as unknown as HistoryPage;
+    const busy = () => json({ code: 'busy' }, 503);
+    const untyped = () => new Response('bad gateway', { status: 502 });
+    const newestRefuses = (path: string) => new URL(path, 'http://127.0.0.1').searchParams.get('limit') === '1' ? json(gap) : busy();
+    const original = globalThis.setTimeout;
+    const delays: number[] = [];
+    // Only the observation timer is held; React and settle() keep their short timers.
+    globalThis.setTimeout = ((run: () => void, delay = 0) => {
+      if (delay < 30_000) return original(run, delay);
+      delays.push(delay);
+      return 0;
+    }) as typeof setTimeout;
+    try {
+      for (const [tab, answer, code, delay] of [
+        ['modules', busy, 'busy', 30_000], ['modules', untyped, 'unavailable', 60_000],
+        ['history', busy, 'busy', 30_000], ['history', newestRefuses, 'busy', 30_000], ['history', untyped, 'unavailable', 60_000],
+      ] as const) {
+        respond = answer;
+        await mount(workspace());
+        delays.length = 0;
+        await act(async () => document.querySelector<HTMLButtonElement>(`#architecture-tab-${tab}`)!.click());
+        await settle();
+        expect([tab, document.querySelector('[role="alert"]')?.getAttribute('data-error-code'), delays]).toEqual([tab, code, [delay]]);
+        await act(async () => root?.unmount());
+        root = null;
+      }
+    } finally { globalThis.setTimeout = original; }
+  });
 });
 
 describe('architecture module page', () => {
