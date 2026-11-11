@@ -1,4 +1,4 @@
-import type { BoardAttentionRoute, BoardAttentionV1 } from './attention';
+import { BOARD_PRIORITY_ORDER, type BoardAttentionRoute, type BoardAttentionV1 } from './attention';
 import type { BoardV1 } from './board';
 import { WORKER_SEAT_IDS } from './seats-settings';
 
@@ -55,9 +55,16 @@ export function deliveryTiming(status: string | null): AttentionDeliveryTiming {
   return 'window_end';
 }
 
-/** One line: `hc send` pastes the text and presses Enter once. */
+/**
+ * One line: `hc send` pastes the text and presses Enter once. Each entry
+ * reads `<priority> <rule>: <message>`, highest priority first; entries of one
+ * priority keep the order of `evaluateBoardAttention`. The seat reads the
+ * priority of the entry, so the skill text needs no copy of the rule table.
+ */
 function deliveryText(parent: number, findings: BoardAttentionV1['findings']): string {
-  return `[rh-attention] #${parent} ${findings.map(finding => `${finding.rule}: ${finding.message}`).join('; ')}`;
+  const rank = (finding: BoardAttentionV1['findings'][number]): number => BOARD_PRIORITY_ORDER.indexOf(finding.priority);
+  const ordered = [...findings].sort((left, right) => rank(left) - rank(right));
+  return `[rh-attention] #${parent} ${ordered.map(finding => `${finding.priority} ${finding.rule}: ${finding.message}`).join('; ')}`;
 }
 
 /**
