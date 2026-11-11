@@ -453,6 +453,31 @@ test('board facts: each cycle removes the board documents and worker stores that
   expect([...stores.keys()]).toEqual(['repo-a#1474']);
 });
 
+test('board facts: a blocked board read mid-cycle serves the earlier document, and a parent no cycle read is pending', async () => {
+  const f = fixture();
+  const home = mkdtempSync(join(tmpdir(), 'board-midcycle-'));
+  const server = await startOperatorServer({ port: 0, env: { REPO_HARNESS_HOME: home }, board_observer: { ports: f.ports, clock: f.clock } });
+  const path = (parent: number) => `${server.url}/api/v1/repositories/repo-a/board?parent=${parent}`;
+  const code = async (response: Response) => [response.status, ((await response.json()) as { error: { code: string } }).error.code];
+  const cycles = () => f.worker.spawned.flatMap(worker => worker.requests).filter(request => request.kind === 'retain').length;
+  const boardReads = () => f.worker.spawned[0]!.requests.filter(request => request.kind === 'board').length;
+  try {
+    await until(() => cycles() === 1);
+    await f.tick(0); f.emit('snapshot'); await f.tick(BOARD_SEATS_DEBOUNCE_MS);
+    await f.tick(30_000); await until(() => cycles() === 2);
+    expect((await fetch(path(1474))).status).toBe(200);
+    // The next cycle blocks on its board read, so the document of the earlier cycle is the one served.
+    f.worker.reply(request => request.kind === 'board' ? null : { ok: true, value: request.kind === 'parents' ? boardParents : null });
+    // Two settled cycles, then a cycle whose board read the worker never answers.
+    await f.tick(30_000); await f.tick(30_000); await f.tick(30_000);
+    await until(() => boardReads() === 3);
+    const during = await fetch(path(1474));
+    expect([during.status, decodeBoard(await during.json()).parent.number]).toEqual([200, 1474]);
+    // A parent that no cycle has read is pending, not a document with no value.
+    expect(await code(await fetch(path(9999)))).toEqual([503, 'board_pending']);
+  } finally { await server.close(); rmSync(home, { recursive: true, force: true }); }
+});
+
 test('board facts: a repository that the registry cycle removes during a long gap stops serving its documents before the next facts cycle', async () => {
   const f = fixture();
   const home = mkdtempSync(join(tmpdir(), 'board-removal-'));

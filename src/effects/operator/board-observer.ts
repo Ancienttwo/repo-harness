@@ -15,6 +15,7 @@ import { executionChildEnvironment } from './execution-collector';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { boardSeatTerminals, hcEvents, hcListAsync, RH_LABEL, type HcEventStream, type HcLabels, type HcListTerminal, type HcStreamItem } from '../terminal/herdr-core';
 import { readHcSnapshot, type HcSnapshot } from './herdr-runtime-transport';
+import { replaceObservation, startObservationLoop, type ObservationCycleResult } from '../observation-loop';
 
 export const BOARD_SEATS_DEBOUNCE_MS = 100;
 const RETRY_MIN_MS = 1000;
@@ -42,6 +43,22 @@ export type BoardFactsCache<T, F extends string> =
   | { readonly state: 'ready'; readonly value: T; readonly etag: string };
 export type BoardDocumentCache = BoardFactsCache<BoardV1, Exclude<BoardReadFailure, 'board_parent_invalid' | 'board_pending'>>;
 export type BoardParentsCache = BoardFactsCache<BoardParentsV1, Exclude<BoardParentsReadFailure, 'parents_pending' | 'parents_hc_failed'>>;
+/**
+ * The documents that the facts loop publishes: the last read of each parent list,
+ * keyed by repository id, and of each board, keyed by `<repository id>#<parent>`.
+ * A cycle publishes this value when each read settles, so a reader sees a document
+ * before the cycle ends.
+ */
+interface BoardFactsDocuments {
+  readonly parents: ReadonlyMap<string, BoardParentsCache>;
+  readonly boards: ReadonlyMap<string, BoardDocumentCache>;
+}
+/** The reason that a failed registry or facts read gives the board and parents routes. */
+const REGISTRY_FAILURE = 'registry_unavailable';
+/** The reason that a facts cycle which threw names; the cycle keeps the documents that it published. */
+const FACTS_FAILURE = 'board_facts_cycle_failed';
+type FactsFailure = typeof REGISTRY_FAILURE | typeof FACTS_FAILURE;
+const NO_BOARD_DOCUMENTS: BoardFactsDocuments = Object.freeze({ parents: new Map<string, BoardParentsCache>(), boards: new Map<string, BoardDocumentCache>() });
 
 /** The memory reads of the board routes. No read starts a process. */
 export interface BoardObserverReads {
@@ -115,6 +132,15 @@ function cycleGap(rate: GitHubRateLimit | null): number {
 
 const etagOf = (value: unknown) => `"${sha256Hex(JSON.stringify(value))}"`;
 const boardKey = (repositoryId: string, parent: number) => `${repositoryId}#${parent}`;
+const boardRepository = (key: string) => key.slice(0, key.lastIndexOf('#'));
+/**
+ * The registry applied to the published documents: a removed repository loses its parent
+ * list and each of its boards at once, so a low GitHub budget cannot keep it served.
+ */
+const applyFactsRegistry = (documents: BoardFactsDocuments, registered: ReadonlySet<string>): BoardFactsDocuments => ({
+  parents: new Map([...documents.parents].filter(([id]) => registered.has(id))),
+  boards: new Map([...documents.boards].filter(([key]) => registered.has(boardRepository(key)))),
+});
 
 interface Worker {
   readonly child: ChildProcess;
@@ -158,10 +184,9 @@ async function ownedReads<T extends readonly Promise<unknown>[]>(reads: T, abort
 export function startBoardObserver(options: BoardObserverOptions = {}) {
   const ports = options.ports ?? observerPorts({ ...process.env, ...options.env });
   const clock: NonNullable<BoardObserverOptions['clock']> = options.clock ?? { now: () => new Date(), setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: handle => clearTimeout(handle) };
-  const observer = new AbortController();
+  // Owns the repository children: their streams, timers and reads. The two observation loops own the cycles.
+  const lifecycle = new AbortController();
   const states = new Map<string, RepositoryState>();
-  let registryFailed = false;
-  let registryWork: Promise<void> | null = null;
   let closeWork: Promise<void> | null = null;
 
   function timer(signal: AbortSignal, callback: () => void, ms: number): CancelTimer {
@@ -176,7 +201,7 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
   const track = (state: RepositoryState, work: Promise<void>) => {
     state.work.add(work); void work.finally(() => state.work.delete(work));
   };
-  const active = (state: RepositoryState) => !observer.signal.aborted && !state.abort.signal.aborted;
+  const active = (state: RepositoryState) => !lifecycle.signal.aborted && !state.abort.signal.aborted;
   const current = (state: RepositoryState, generation: number) => active(state) && generation === state.generation;
   function retry(state: RepositoryState, slot: RetryState, run: () => void) {
     if (!active(state) || slot.timer !== null) return;
@@ -280,14 +305,15 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
       refreshRetry: { timer: null, delay: RETRY_MIN_MS }, connectRetry: { timer: null, delay: RETRY_MIN_MS }, debounce: null,
       pending: null, request: null, identifying: false, stopping: null, dirty: false, branchesRequested: 0, branchesObserved: 0, terminals: new Map() };
     states.set(repository.id, state);
-    const facts = () => {
+    // The 30 s force-refresh of one child, which reads the branches again even when no signature changed.
+    const forceRefresh = () => {
       timer(state.abort.signal, () => {
         if (state.labels === null && state.connectRetry.timer === null) identify(state);
         else if (state.connected) schedule(state, true);
-        facts();
+        forceRefresh();
       }, FACTS_INTERVAL_MS);
     };
-    facts(); identify(state);
+    forceRefresh(); identify(state);
   }
   function stop(state: RepositoryState): Promise<void> {
     if (state.stopping !== null) return state.stopping;
@@ -295,38 +321,53 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
     state.stopping = Promise.allSettled([...state.work]).then(() => {});
     return state.stopping;
   }
-  function cycle() {
-    registryWork = (async () => {
-      try {
-        const repositories = ports.repositories(); registryFailed = false;
-        applyFactsRegistry(repositories);
-        const byId = new Map(repositories.map(repository => [repository.id, repository]));
-        const retired: Promise<void>[] = [];
-        for (const [id, state] of states) if (byId.get(id)?.path !== state.repository.path) { states.delete(id); retired.push(stop(state)); }
-        await Promise.all(retired);
-        if (observer.signal.aborted) return;
-        for (const repository of repositories) if (!states.has(repository.id)) start(repository);
-      } catch {
-        registryFailed = true;
-        applyFactsRegistry(null);
-        const retired = [...states.values()]; states.clear();
-        await Promise.all(retired.map(stop));
+  /** Each child that a registry cycle removed, so close waits for its drain as well. */
+  const draining = new Set<Promise<void>>();
+  const drain = (retired: readonly RepositoryState[]): Promise<void> => {
+    const stops = retired.map(stop);
+    for (const work of stops) { draining.add(work); void work.finally(() => draining.delete(work)); }
+    return Promise.all(stops).then(() => {});
+  };
+  /**
+   * The registry cycle of the observer: each registered repository gains one child,
+   * and a child leaves when its repository leaves the registry or changes its path.
+   * A failed read stops every child, because no child can serve a repository that
+   * the registry cannot name. The cycle waits for each stopped child, so the state
+   * map never names a child that still runs.
+   */
+  const registry = startObservationLoop<readonly Repository[], typeof REGISTRY_FAILURE>({
+    cycle: async () => {
+      let repositories: readonly Repository[];
+      try { repositories = ports.repositories(); }
+      catch {
+        const retired = [...states.values()];
+        states.clear();
+        await drain(retired);
+        return { state: 'unavailable', reason: REGISTRY_FAILURE };
       }
-      if (!observer.signal.aborted) timer(observer.signal, cycle, FACTS_INTERVAL_MS);
-    })();
-  }
+      const byId = new Map(repositories.map(repository => [repository.id, repository]));
+      const retired: RepositoryState[] = [];
+      for (const [id, state] of states) if (byId.get(id)?.path !== state.repository.path) { states.delete(id); retired.push(state); }
+      await drain(retired);
+      // A close starts no child, so no child timer outlives the observer.
+      if (lifecycle.signal.aborted) return { state: 'observed', value: repositories };
+      // A child starts in this cycle, so a GET that follows the cycle already finds its state.
+      for (const repository of repositories) if (!states.has(repository.id)) start(repository);
+      return { state: 'observed', value: repositories };
+    },
+    keep: replaceObservation,
+    failure: REGISTRY_FAILURE,
+    interval_ms: FACTS_INTERVAL_MS,
+    clock,
+  });
 
   // Board facts: one resident worker reads one document at a time. The routes
-  // read only these maps; a cycle replaces each entry when its read settles.
-  const boards = new Map<string, BoardDocumentCache>();
-  const parentsDocuments = new Map<string, BoardParentsCache>();
+  // read only the published documents; a cycle publishes each entry when its read settles.
   const leases = new Map<string, { readonly repository_id: string; readonly parent: number; until: number }>();
-  let factsRepositories: ReadonlySet<string> | null = null;
-  let factsRegistryFailed = false;
   let worker: Worker | null = null;
   let nextRequest = 0;
-  let factsWork: Promise<void> | null = null;
-  let gap: { readonly cancel: CancelTimer; readonly wakeable: boolean } | null = null;
+  /** The gap after the last settled facts cycle: 30 s, longer below a low GitHub budget. */
+  let factsGapMs = FACTS_INTERVAL_MS;
 
   function startWorker(): Worker {
     const child = ports.spawnWorker();
@@ -359,14 +400,14 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
     await retired.exited;
   }
   /** One request under the deadline. Null: the worker did not start, crashed, wrote an invalid answer or the observer closed. */
-  async function ask(request: BoardWorkerQuery): Promise<BoardWorkerAnswer | 'timeout' | null> {
-    if (observer.signal.aborted) return null;
+  async function ask(request: BoardWorkerQuery, signal: AbortSignal): Promise<BoardWorkerAnswer | 'timeout' | null> {
+    if (signal.aborted) return null;
     let current: Worker;
     // A failed spawn becomes the unavailable answer of each document; the next request tries a new worker.
     try { current = worker ??= startWorker(); } catch { return null; }
     const id = ++nextRequest;
     const line = await new Promise<string | null | 'timeout'>((resolve) => {
-      const deadline = timer(observer.signal, () => resolve('timeout'), BOARD_FACTS_DEADLINE_MS);
+      const deadline = timer(signal, () => resolve('timeout'), BOARD_FACTS_DEADLINE_MS);
       current.waiting = value => { deadline(); resolve(value); };
       current.child.stdin!.write(`${JSON.stringify({ ...request, id })}\n`);
     });
@@ -393,14 +434,14 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
     return { state: 'ready', value, etag: etagOf(value) };
   }
   /** Each open parent with a live seat, then each leased parent; parents with no answer yet come first. */
-  function observedBoards(repositories: readonly Repository[]): { readonly repository: Repository; readonly parent: number }[] {
+  function observedBoards(repositories: readonly Repository[], parents: ReadonlyMap<string, BoardParentsCache>, boards: ReadonlyMap<string, BoardDocumentCache>): { readonly repository: Repository; readonly parent: number }[] {
     const now = clock.now().getTime();
     for (const [key, lease] of leases) if (lease.until <= now) leases.delete(key);
     const observed = new Map<string, { readonly repository: Repository; readonly parent: number }>();
     for (const repository of repositories) {
-      const parents = parentsDocuments.get(repository.id), seats = states.get(repository.id)?.cache;
-      if (parents?.state === 'ready' && seats?.state === 'ready') {
-        for (const parent of joinBoardParents(parents.value, seats.value).parents) {
+      const parentsRead = parents.get(repository.id), seats = states.get(repository.id)?.cache;
+      if (parentsRead?.state === 'ready' && seats?.state === 'ready') {
+        for (const parent of joinBoardParents(parentsRead.value, seats.value).parents) {
           if (parent.seats > 0) observed.set(boardKey(repository.id, parent.number), { repository, parent: parent.number });
         }
       }
@@ -409,84 +450,126 @@ export function startBoardObserver(options: BoardObserverOptions = {}) {
     return [...observed].sort(([left], [right]) => Number(boards.has(left)) - Number(boards.has(right))).map(([, board]) => board);
   }
   /**
-   * Each registry read, by the seats cycle or a facts cycle, applies at once:
-   * a removed repository loses its documents, and a failed read empties them,
-   * even while a low GitHub budget holds the next facts cycle back.
+   * The registry answer for one repository id. The registry loop is the one reader
+   * of the registry, so a removal and a failed read apply here at once, even while
+   * a low GitHub budget holds the next facts cycle back.
    */
-  function applyFactsRegistry(repositories: readonly Repository[] | null) {
-    if (repositories === null) { factsRegistryFailed = true; boards.clear(); parentsDocuments.clear(); return; }
-    factsRegistryFailed = false;
-    const registered = factsRepositories = new Set(repositories.map(repository => repository.id));
-    for (const id of parentsDocuments.keys()) if (!registered.has(id)) parentsDocuments.delete(id);
-    for (const key of boards.keys()) if (!registered.has(key.slice(0, key.lastIndexOf('#')))) boards.delete(key);
+  function registrationOf(repositoryId: string): 'registered' | 'absent' | 'registry_unavailable' | 'unknown' {
+    const state = registry.read();
+    if (state.state === 'pending') return 'unknown';
+    if (state.state === 'unavailable') return 'registry_unavailable';
+    return state.value.some(repository => repository.id === repositoryId) ? 'registered' : 'absent';
   }
-  async function factsCycle(): Promise<number> {
-    let repositories: readonly Repository[];
-    try { repositories = ports.repositories(); }
-    catch { applyFactsRegistry(null); return FACTS_INTERVAL_MS; }
-    applyFactsRegistry(repositories);
-    // With no registered repository the worker does not start.
-    if (repositories.length === 0) return FACTS_INTERVAL_MS;
-    const rate = await ask({ kind: 'rate_limit' });
-    for (const repository of repositories) {
-      const answer = await ask({ kind: 'parents', repo_root: repository.path });
-      if (observer.signal.aborted) return FACTS_INTERVAL_MS;
-      parentsDocuments.set(repository.id, readParents(answer));
-    }
-    const used = new Set<string>();
-    for (const { repository, parent } of observedBoards(repositories)) {
-      const key = boardKey(repository.id, parent);
-      const answer = await ask({ kind: 'board', repo_root: repository.path, parent, key });
-      if (observer.signal.aborted) return FACTS_INTERVAL_MS;
-      boards.set(key, readBoard(parent, answer));
-      used.add(key);
-    }
-    for (const key of boards.keys()) if (!used.has(key)) boards.delete(key);
-    await ask({ kind: 'retain', keys: [...used] });
-    return cycleGap(rate !== null && rate !== 'timeout' && rate.ok ? rate.value as GitHubRateLimit : null);
-  }
-  function runFacts() {
-    gap = null;
-    // A cycle that throws keeps the documents it published; the server stays up and the next cycle retries.
-    factsWork = factsCycle().catch(() => FACTS_INTERVAL_MS).then((ms) => {
-      factsWork = null;
-      if (observer.signal.aborted) return;
-      gap = { cancel: timer(observer.signal, runFacts, ms), wakeable: ms <= FACTS_INTERVAL_MS };
-    });
-  }
+  /**
+   * One resident worker reads one document at a time. The cycle publishes its
+   * documents as each read settles, so a reader sees a document before the cycle
+   * ends, and it returns the documents that it published, also when it stops or
+   * throws, as the shared maps did on main; only a registry that a cycle cannot
+   * read empties them. The gap after a cycle is 30 s; below 25 % of the lower
+   * GitHub REST or GraphQL budget it grows in proportion, up to 15 min, and a
+   * lease then does not shorten it.
+   */
+  const facts = startObservationLoop<BoardFactsDocuments, FactsFailure>({
+    cycle: async ({ signal, previous, publish }) => {
+      const read = registry.read();
+      // The registry loop starts the children; a facts cycle reads a registry that a cycle has read.
+      if (read.state !== 'observed') { factsGapMs = FACTS_INTERVAL_MS; return { state: 'unavailable', reason: REGISTRY_FAILURE }; }
+      const repositories = read.value;
+      // With no registered repository the worker does not start.
+      if (repositories.length === 0) { factsGapMs = FACTS_INTERVAL_MS; return { state: 'observed', value: NO_BOARD_DOCUMENTS }; }
+      const registered = new Set(repositories.map(repository => repository.id));
+      // Each cycle starts from the previous documents, so a repository that this cycle has not reached keeps its older documents.
+      const before = previous.state === 'observed' ? applyFactsRegistry(previous.value, registered) : NO_BOARD_DOCUMENTS;
+      const parents = new Map(before.parents);
+      const boards = new Map(before.boards);
+      const published = (): ObservationCycleResult<BoardFactsDocuments, FactsFailure> => ({ state: 'observed', value: { parents: new Map(parents), boards: new Map(boards) } });
+      try {
+        const rate = await ask({ kind: 'rate_limit' }, signal);
+        for (const repository of repositories) {
+          const answer = await ask({ kind: 'parents', repo_root: repository.path }, signal);
+          // A close ends the cycle here, and the documents that it published stay served.
+          if (signal.aborted) return published();
+          parents.set(repository.id, readParents(answer));
+          // A parent list is served when its read returns, not when the cycle ends.
+          publish({ parents: new Map(parents), boards: new Map(boards) });
+        }
+        const used = new Set<string>();
+        for (const { repository, parent } of observedBoards(repositories, parents, boards)) {
+          const key = boardKey(repository.id, parent);
+          const answer = await ask({ kind: 'board', repo_root: repository.path, parent, key }, signal);
+          if (signal.aborted) return published();
+          boards.set(key, readBoard(parent, answer));
+          used.add(key);
+          // A board is served when its read returns, not when the cycle ends.
+          publish({ parents: new Map(parents), boards: new Map(boards) });
+        }
+        for (const key of [...boards.keys()]) if (!used.has(key)) boards.delete(key);
+        // A board that this cycle did not read leaves the served set, instead of waiting for the next cycle.
+        publish({ parents: new Map(parents), boards: new Map(boards) });
+        await ask({ kind: 'retain', keys: [...used] }, signal);
+        factsGapMs = cycleGap(rate !== null && rate !== 'timeout' && rate.ok ? rate.value as GitHubRateLimit : null);
+        return published();
+      } catch {
+        // The server stays up and the next cycle retries; the documents that this cycle published stay served.
+        return published();
+      }
+    },
+    // The cycle returns its own result above, so the only unavailable result is a registry that a cycle cannot
+    // read: that read empties the documents, as the caches did on main.
+    keep: replaceObservation,
+    failure: FACTS_FAILURE,
+    interval_ms: () => factsGapMs,
+    wakeable_gap: ms => ms <= FACTS_INTERVAL_MS,
+    // The first facts cycle reads the registry that the first registry cycle published.
+    first_cycle_after: registry.settled(),
+    clock,
+  });
+  /**
+   * The published documents. The registry loop is the one authority for the
+   * registered set, so a document whose repository left the registry is not served
+   * after the removal, even while a low budget holds the next facts cycle back.
+   */
+  const documents = (): BoardFactsDocuments => {
+    const state = facts.read(), read = registry.read();
+    if (state.state !== 'observed' || read.state !== 'observed') return NO_BOARD_DOCUMENTS;
+    return applyFactsRegistry(state.value, new Set(read.value.map(repository => repository.id)));
+  };
   /** A new lease starts the next cycle at once unless a low GitHub budget set the gap. */
   function lease(repositoryId: string, parent: number) {
-    if (factsRegistryFailed || (factsRepositories !== null && !factsRepositories.has(repositoryId))) return;
+    const answer = registrationOf(repositoryId);
+    if (answer === 'absent' || answer === 'registry_unavailable') return;
     const key = boardKey(repositoryId, parent), until = clock.now().getTime() + BOARD_LEASE_MS;
     const held = leases.get(key);
     if (held !== undefined) { held.until = until; return; }
     leases.set(key, { repository_id: repositoryId, parent, until });
-    if (gap?.wakeable) { gap.cancel(); runFacts(); }
+    facts.wake();
   }
 
-  cycle();
-  runFacts();
   return {
     seats(repositoryId: string): BoardSeatsCache {
-      return registryFailed ? { state: 'unavailable', reason: 'registry_unavailable' }
+      return registrationOf(repositoryId) === 'registry_unavailable' ? { state: 'unavailable', reason: 'registry_unavailable' }
         : states.get(repositoryId)?.cache ?? { state: 'unavailable', reason: 'repository_not_found' };
     },
     board(repositoryId: string, parent: number): BoardDocumentCache {
       lease(repositoryId, parent);
-      if (factsRegistryFailed) return { state: 'unavailable', reason: 'registry_unavailable' };
-      if (factsRepositories !== null && !factsRepositories.has(repositoryId)) return { state: 'unavailable', reason: 'repository_not_found' };
-      return boards.get(boardKey(repositoryId, parent)) ?? { state: 'pending' };
+      const registration = registrationOf(repositoryId);
+      if (registration === 'registry_unavailable') return { state: 'unavailable', reason: 'registry_unavailable' };
+      if (registration === 'absent') return { state: 'unavailable', reason: 'repository_not_found' };
+      return documents().boards.get(boardKey(repositoryId, parent)) ?? { state: 'pending' };
     },
     parents(repositoryId: string): BoardParentsCache {
-      if (factsRegistryFailed) return { state: 'unavailable', reason: 'registry_unavailable' };
-      if (factsRepositories !== null && !factsRepositories.has(repositoryId)) return { state: 'unavailable', reason: 'repository_not_found' };
-      return parentsDocuments.get(repositoryId) ?? { state: 'pending' };
+      const registration = registrationOf(repositoryId);
+      if (registration === 'registry_unavailable') return { state: 'unavailable', reason: 'registry_unavailable' };
+      if (registration === 'absent') return { state: 'unavailable', reason: 'repository_not_found' };
+      return documents().parents.get(repositoryId) ?? { state: 'pending' };
     },
     close(): Promise<void> {
       if (closeWork !== null) return closeWork;
-      observer.abort();
-      const facts = (worker === null ? Promise.resolve() : retire(worker)).then(async () => { await factsWork; });
-      closeWork = Promise.all([...states.values()].map(stop).concat(registryWork ?? [], facts)).then(() => {});
+      lifecycle.abort();
+      const factsClosed = facts.close();
+      // The worker answers the request in flight with null, so the facts cycle settles without its deadline.
+      const workerClosed = (worker === null ? Promise.resolve() : retire(worker)).then(() => factsClosed);
+      closeWork = Promise.all([registry.close(), factsClosed, workerClosed, ...[...states.values()].map(stop), ...[...draining]]).then(() => {});
       return closeWork;
     },
   };

@@ -3,7 +3,10 @@
 // and a GET reads that state, so a read starts no work. The loop copies the
 // shape the board observer proved (#2165): one cycle in flight, the next one
 // only after the previous one settles, and a close that aborts the running read
-// and waits for it.
+// and waits for it. The loop owns the gap timer, so a consumer that injects a
+// clock also injects the timers of its retries and tests. A consumer with a
+// demand inside the gap starts the next cycle at once through `wake`, unless a
+// `wakeable_gap` rule refuses a gap that the last cycle lengthened on purpose.
 //
 // The states are `pending` (no cycle has published a value), `observed` (a value
 // and the time the loop published it) and `unavailable` (why the last cycle
@@ -51,9 +54,12 @@ export interface ObservationCycleContext<T, F extends string> {
   publishFailure(reason: F): void;
 }
 
-/** The clock of a loop: the observation time of a published value. */
+/** The clock of a loop: the observation time of a published value and the gap timer after a settled cycle. */
 export interface ObservationClock {
   now(): Date;
+  /** The gap timer. The default is the global timer. */
+  setTimeout?(callback: () => void, ms: number): ReturnType<typeof setTimeout>;
+  clearTimeout?(handle: ReturnType<typeof setTimeout>): void;
 }
 
 export interface ObservationLoopOptions<T, F extends string> {
@@ -66,6 +72,11 @@ export interface ObservationLoopOptions<T, F extends string> {
   readonly interval_ms: number | (() => number);
   /** The first cycle starts when this settles. */
   readonly first_cycle_after?: Promise<void>;
+  /**
+   * A demand inside the gap may start the next cycle at once. It cannot shorten a
+   * gap that the last cycle lengthened on purpose, such as a low upstream budget.
+   */
+  readonly wakeable_gap?: (gap_ms: number) => boolean;
   readonly clock?: ObservationClock;
 }
 
@@ -74,12 +85,16 @@ export interface ObservationLoop<T, F extends string> {
   readonly read: () => ObservationState<T, F>;
   /** Resolves when the cycle in flight, if any, has settled. */
   readonly settled: () => Promise<void>;
+  /** Starts the cycle of the pending gap at once, unless `wakeable_gap` refuses that gap. */
+  readonly wake: () => void;
   readonly close: () => Promise<void>;
 }
 
 /** Collect at start, or once `first_cycle_after` settles, then after each settled cycle. Cycles never overlap. */
 export function startObservationLoop<T, F extends string>(options: ObservationLoopOptions<T, F>): ObservationLoop<T, F> {
   const clock: ObservationClock = options.clock ?? { now: () => new Date() };
+  const setTimer = clock.setTimeout ?? ((callback: () => void, ms: number) => setTimeout(callback, ms));
+  const clearTimer = clock.clearTimeout ?? ((handle: ReturnType<typeof setTimeout>) => clearTimeout(handle));
   const control = new AbortController();
   const gap = () => (typeof options.interval_ms === 'function' ? options.interval_ms() : options.interval_ms);
   let state: ObservationState<T, F> = { state: 'pending' };
@@ -87,6 +102,7 @@ export function startObservationLoop<T, F extends string>(options: ObservationLo
   let closed = false;
   let closing: Promise<void> | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let timer_gap_ms = 0;
   let inflight: Promise<void> | null = null;
 
   const observed = (value: T, at?: string): ObservationState<T, F> => ({ state: 'observed', value, observed_at: at ?? clock.now().toISOString() });
@@ -116,7 +132,8 @@ export function startObservationLoop<T, F extends string>(options: ObservationLo
     })().then(() => {
       inflight = null;
       if (closed) return;
-      timer = setTimeout(() => { void cycle(); }, gap());
+      timer_gap_ms = gap();
+      timer = setTimer(() => { timer = undefined; void cycle(); }, timer_gap_ms);
       timer.unref?.();
     });
     inflight = work;
@@ -129,10 +146,18 @@ export function startObservationLoop<T, F extends string>(options: ObservationLo
   return Object.freeze({
     read: () => state,
     settled: () => inflight ?? Promise.resolve(),
+    wake: () => {
+      // A cycle in flight starts the next one after it settles; a lengthened gap stays.
+      if (closed || timer === undefined) return;
+      if (options.wakeable_gap !== undefined && !options.wakeable_gap(timer_gap_ms)) return;
+      clearTimer(timer);
+      timer = undefined;
+      void cycle();
+    },
     close: () => {
       if (closing !== null) return closing;
       closed = true;
-      if (timer !== undefined) clearTimeout(timer);
+      if (timer !== undefined) { clearTimer(timer); timer = undefined; }
       control.abort();
       closing = (async () => { await inflight; })();
       return closing;
