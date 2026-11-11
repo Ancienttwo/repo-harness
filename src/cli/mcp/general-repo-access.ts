@@ -3,6 +3,7 @@ import { closeSync, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openS
 import { dirname, join, resolve } from 'path';
 import { dlopen } from 'bun:ffi';
 import { repoHarnessRegisteredReposPath, type RepoHarnessAccessMode } from '../../effects/repo-registry';
+import { sha256Hex } from '../../core/evidence/sha256';
 import {
   acquireExclusiveDirectoryLock,
   ExclusiveLockContentionError,
@@ -29,7 +30,6 @@ import {
   resolveRepoWritePath,
   resolveWalkedRepoPath,
   sameIgnorePolicyRevision,
-  sha256,
   uniqueRepoRecords,
   type IgnorePolicy,
   type RepoEntryType,
@@ -357,11 +357,11 @@ function mcpTracePath(repoRoot: string): string {
 }
 
 function correlationId(tool: string): string {
-  return `mcpcorr_${sha256(`${tool}\0${Date.now()}\0${randomBytes(8).toString('hex')}`).slice(0, 16)}`;
+  return `mcpcorr_${sha256Hex(`${tool}\0${Date.now()}\0${randomBytes(8).toString('hex')}`).slice(0, 16)}`;
 }
 
 function indexEventId(repo: RepoRecord, eventType: string, seed: string): string {
-  return `idxevt_${sha256(`${repo.repoId}\0${eventType}\0${seed}\0${Date.now()}\0${randomBytes(4).toString('hex')}`).slice(0, 16)}`;
+  return `idxevt_${sha256Hex(`${repo.repoId}\0${eventType}\0${seed}\0${Date.now()}\0${randomBytes(4).toString('hex')}`).slice(0, 16)}`;
 }
 
 function safeEventError(error: CodeGraphRefreshResult['error'] | undefined): Record<string, unknown> | undefined {
@@ -481,7 +481,7 @@ function payloadPathDigest(payload: Record<string, unknown> | null, input: Recor
   const snapshotCache = recordObject(payload?.snapshot_cache);
   const digest = stringField(snapshotCache?.path_digest);
   if (digest) return digest;
-  return `sha256:${sha256(JSON.stringify(cachePaths(auditPaths(input))))}`;
+  return `sha256:${sha256Hex(JSON.stringify(cachePaths(auditPaths(input))))}`;
 }
 
 function payloadPathCount(payload: Record<string, unknown> | null, input: Record<string, unknown>): number {
@@ -606,8 +606,8 @@ function injectMutationFault(point: string): void {
 
 function responseCacheKey(repo: RepoRecord, ignore: IgnorePolicy, snapshot: VisibleEntrySnapshot, scope: { tool: string; paths?: string[] }): { key: string; paths: string[]; pathDigest: string } {
   const paths = cachePaths(scope.paths);
-  const pathDigest = `sha256:${sha256(JSON.stringify(paths))}`;
-  const key = `cache_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${snapshot.id}\0${scope.tool}\0${pathDigest}`).slice(0, 16)}`;
+  const pathDigest = `sha256:${sha256Hex(JSON.stringify(paths))}`;
+  const key = `cache_${sha256Hex(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${snapshot.id}\0${scope.tool}\0${pathDigest}`).slice(0, 16)}`;
   return { key, paths, pathDigest };
 }
 
@@ -639,7 +639,7 @@ function mutationLockRoot(repo: RepoRecord): string {
 }
 
 function mutationLockName(relativePath: string): string {
-  return `${sha256(relativePath).slice(0, 32)}.lock`;
+  return `${sha256Hex(relativePath).slice(0, 32)}.lock`;
 }
 
 function acquireMutationLocks(repo: RepoRecord, paths: string[]): ExclusiveDirectoryLockHandle[] {
@@ -722,7 +722,7 @@ function commonFields(repo: RepoRecord, ignore: IgnorePolicy, snapshot: VisibleE
 }
 
 function entryMetadataCacheKey(resolved: ResolvedRepoPath, ignore: IgnorePolicy, contentHash = true): string {
-  return `entry_${sha256(`${resolved.repo.repoId}\0${resolved.repo.registryRevision}\0${ignore.digest}\0${resolved.relativePath}\0${resolved.metadataSignature}\0${contentHash ? 'content-hash' : 'metadata-only'}`).slice(0, 16)}`;
+  return `entry_${sha256Hex(`${resolved.repo.repoId}\0${resolved.repo.registryRevision}\0${ignore.digest}\0${resolved.relativePath}\0${resolved.metadataSignature}\0${contentHash ? 'content-hash' : 'metadata-only'}`).slice(0, 16)}`;
 }
 
 function rememberEntryMetadata(key: string, entry: ManifestEntry): void {
@@ -753,7 +753,7 @@ function metadataForResolved(resolved: ResolvedRepoPath, ignore: IgnorePolicy, s
   if (contentHash && resolved.readable && resolved.contentFile) {
     const raw = readStableResolvedFile(resolved, { digest: '', fileIdentity: null, rules: [] });
     binary = raw.subarray(0, BINARY_PROBE_BYTES).includes(0);
-    fileHash = sha256(raw);
+    fileHash = sha256Hex(raw);
   }
   const entry: ManifestEntry = {
     [ENTRY_REVISION]: resolved.metadataSignature,
@@ -1040,11 +1040,11 @@ function buildManifestPageSnapshot(ctx: GeneralRepoToolContext, repo: RepoRecord
   if (validation.stale && attempt + 1 < MAX_SNAPSHOT_BUILD_ATTEMPTS) {
     return buildManifestPageSnapshot(ctx, repo, validation.ignore, args, attempt + 1);
   }
-  const id = `snap_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${codeGraph.indexRevision}\0${manifestDigest}`).slice(0, 16)}`;
+  const id = `snap_${sha256Hex(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${codeGraph.indexRevision}\0${manifestDigest}`).slice(0, 16)}`;
   const coverage: VisibleEntrySnapshot['coverage'] = offset === 0 && pageEntries.length === counts.entries ? 'complete' : 'page';
   const cacheKey = coverage === 'complete'
-    ? `cache_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}`).slice(0, 16)}`
-    : `cache_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}\0repo_manifest\0${offset}\0${pageSize}`).slice(0, 16)}`;
+    ? `cache_${sha256Hex(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}`).slice(0, 16)}`
+    : `cache_${sha256Hex(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}\0repo_manifest\0${offset}\0${pageSize}`).slice(0, 16)}`;
   const state = snapshotState(codeGraph, indexed.laggingPaths.size, validation.stale);
   const expiresAtMs = createdAtMs + SNAPSHOT_TTL_MS;
   const snapshot: VisibleEntrySnapshot = {
@@ -1089,10 +1089,10 @@ function buildVisibleEntrySnapshot(ctx: GeneralRepoToolContext, repo: RepoRecord
   if (validation.stale && attempt + 1 < MAX_SNAPSHOT_BUILD_ATTEMPTS) {
     return buildVisibleEntrySnapshot(ctx, repo, validation.ignore, opts, attempt + 1);
   }
-  const id = `snap_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${codeGraph.indexRevision}\0${manifestDigest}`).slice(0, 16)}`;
+  const id = `snap_${sha256Hex(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${codeGraph.indexRevision}\0${manifestDigest}`).slice(0, 16)}`;
   const cacheKey = contentHash
-    ? `cache_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}`).slice(0, 16)}`
-    : `cache_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}\0metadata-only`).slice(0, 16)}`;
+    ? `cache_${sha256Hex(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}`).slice(0, 16)}`
+    : `cache_${sha256Hex(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}\0metadata-only`).slice(0, 16)}`;
   const state = snapshotState(codeGraph, merged.laggingPaths.length, validation.stale);
   const expiresAtMs = createdAtMs + SNAPSHOT_TTL_MS;
   const snapshot: VisibleEntrySnapshot = {
@@ -1342,8 +1342,8 @@ function applyStructuredPatchEdits(beforeText: string, edits: unknown): { text: 
       edit_index: editIndex,
       mode: 'old_text',
       occurrence,
-      old_sha256: sha256(raw.old_text),
-      new_sha256: sha256(raw.new_text),
+      old_sha256: sha256Hex(raw.old_text),
+      new_sha256: sha256Hex(raw.new_text),
       bytes_before: Buffer.byteLength(raw.old_text, 'utf-8'),
       bytes_after: Buffer.byteLength(raw.new_text, 'utf-8'),
     });
@@ -1428,8 +1428,8 @@ function applyUnifiedDiffPatch(beforeText: string, diff: unknown): { text: strin
       old_start: oldStart,
       old_lines: oldLines.length,
       new_lines: newLines.length,
-      old_sha256: sha256(oldBlock),
-      new_sha256: sha256(newBlock),
+      old_sha256: sha256Hex(oldBlock),
+      new_sha256: sha256Hex(newBlock),
     });
   }
   if (applied.length === 0) {
@@ -1509,7 +1509,7 @@ function readMutationFile(resolved: ResolvedRepoPath, ignore: IgnorePolicy): { r
   const raw = readStableResolvedFile(resolved, ignore);
   return {
     raw,
-    sha256: sha256(raw),
+    sha256: sha256Hex(raw),
     mode: statSync(resolved.canonicalPath).mode & 0o777,
   };
 }
@@ -1684,7 +1684,7 @@ function mutationResult(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: I
 }): GeneralRepoToolResult {
   const after = resolveRepoPath(repo, target.relativePath, ignore, { requireFile: true });
   const afterRaw = readFileSync(after.canonicalPath);
-  const afterHash = sha256(afterRaw);
+  const afterHash = sha256Hex(afterRaw);
   const afterEntry = metadataForResolved(after, ignore);
   const built = buildVisibleEntrySnapshot(ctx, repo, ignore, { contentHash: false });
   const { snapshot, ignore: snapshotIgnore } = built;
@@ -1693,8 +1693,8 @@ function mutationResult(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: I
   const changedPaths = cachePaths(opts.changedPaths ?? [target.relativePath]);
   const responsePath = opts.responsePath ?? target.relativePath;
   const mutationTool = opts.tool ?? (opts.operation === 'patch' ? 'apply_patch' : 'write_file');
-  const mutationId = `mut_${sha256(`${repo.repoId}\0${changedPaths.join('\0')}\0${opts.beforeHash ?? 'new'}\0${afterHash}\0${Date.now()}`).slice(0, 16)}`;
-  const invalidationId = `idxinv_${sha256(`${mutationId}\0${snapshot.codeGraph.indexRevision}\0${target.relativePath}`).slice(0, 16)}`;
+  const mutationId = `mut_${sha256Hex(`${repo.repoId}\0${changedPaths.join('\0')}\0${opts.beforeHash ?? 'new'}\0${afterHash}\0${Date.now()}`).slice(0, 16)}`;
+  const invalidationId = `idxinv_${sha256Hex(`${mutationId}\0${snapshot.codeGraph.indexRevision}\0${target.relativePath}`).slice(0, 16)}`;
   const indexEventId = tryWriteIndexEvent(ctx, repo, {
     event_type: 'index_invalidation',
     status: 'pending',
@@ -1758,8 +1758,8 @@ function deleteMutationResult(ctx: GeneralRepoToolContext, repo: RepoRecord, ign
   const built = buildVisibleEntrySnapshot(ctx, repo, ignore, { contentHash: false });
   const { snapshot, ignore: snapshotIgnore } = built;
   const indexState = mutationIndexState(snapshot);
-  const mutationId = `mut_${sha256(`${repo.repoId}\0${deleted.path}\0${beforeHash}\0deleted\0${Date.now()}`).slice(0, 16)}`;
-  const invalidationId = `idxinv_${sha256(`${mutationId}\0${snapshot.codeGraph.indexRevision}\0${deleted.path}`).slice(0, 16)}`;
+  const mutationId = `mut_${sha256Hex(`${repo.repoId}\0${deleted.path}\0${beforeHash}\0deleted\0${Date.now()}`).slice(0, 16)}`;
+  const invalidationId = `idxinv_${sha256Hex(`${mutationId}\0${snapshot.codeGraph.indexRevision}\0${deleted.path}`).slice(0, 16)}`;
   const indexEventId = tryWriteIndexEvent(ctx, repo, {
     event_type: 'index_invalidation',
     status: 'pending',
@@ -1835,7 +1835,7 @@ function readFilePayload(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: 
   const indexed = snapshotEntry?.indexed ?? false;
   const fields = commonFields(repo, ignore, snapshot, { tool, paths: [target.relativePath] });
   const raw = readStableResolvedFile(target, ignore);
-  const fullHash = sha256(raw);
+  const fullHash = sha256Hex(raw);
   if (verifySnapshotEntry) assertSnapshotEntryCurrent(snapshot, target.relativePath, fullHash);
   const binary = raw.subarray(0, BINARY_PROBE_BYTES).includes(0);
 
@@ -2514,7 +2514,7 @@ function searchText(ctx: GeneralRepoToolContext, args: Record<string, unknown>):
     const resolved = resolveRepoPath(repo, entry.path, snapshotIgnore, { requireFile: true });
     const raw = readStableResolvedFile(resolved, snapshotIgnore);
     const text = raw.toString('utf-8');
-    const fileHash = entry.sha256 ?? sha256(raw);
+    const fileHash = entry.sha256 ?? sha256Hex(raw);
     const lines = text.split(/\r?\n/);
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index] ?? '';
