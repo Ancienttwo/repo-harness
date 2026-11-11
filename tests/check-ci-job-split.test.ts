@@ -588,9 +588,9 @@ describe('single affected verification and daily fallback', () => {
     expect(workflow.on.schedule).toEqual([{ cron: '17 19 * * *' }]);
     expect(jobs.required.name).toBe('Required / CI');
     expect(jobs.required.needs).toEqual(['selection', 'state-boundaries', 'verify', 'home-isolation', 'native-oar', 'architecture-advisory']);
-    // State boundaries run beside selection on every event except a push to main, and Required / CI requires them.
-    expect(jobs['state-boundaries'].needs).toBeUndefined();
-    expect(jobs['state-boundaries'].if).toBe("github.event_name != 'push'");
+    // State boundaries run on every event except a push to main and a documentation-only diff, and Required / CI requires them.
+    expect(jobs['state-boundaries'].needs).toBe('selection');
+    expect(jobs['state-boundaries'].if).toBe("github.event_name != 'push' && needs.selection.outputs.mode != 'documentation'");
     expect(workflow.on.merge_group).toEqual({ types: ['checks_requested'] });
     expect(jobs.required.if).toBe("always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group')");
     const pushJobs = Object.entries(jobs).filter(([, job]: [string, any]) => !job.needs && job.if !== "github.event_name != 'push'").map(([id]) => id);
@@ -688,12 +688,12 @@ describe('single affected verification and daily fallback', () => {
     }
     for (const boundaries of ['success', 'failure', 'cancelled', 'skipped', '']) {
       expect(run('success', 'success', 'affected', 'success', 'success', 'true', 'true', boundaries) === 0).toBe(boundaries === 'success');
-      expect(run('success', 'skipped', 'documentation', 'skipped', 'skipped', 'false', 'false', boundaries) === 0).toBe(boundaries === 'success');
+      expect(run('success', 'skipped', 'documentation', 'skipped', 'skipped', 'false', 'false', boundaries) === 0).toBe(boundaries === 'success' || boundaries === 'skipped');
     }
-    // The PR architecture job runs in both PR modes, so only its success passes.
+    // Mode affected needs both check jobs to succeed; mode documentation also passes with them skipped.
     for (const architecture of ['success', 'failure', 'cancelled', 'skipped', '']) {
       expect(run('success', 'success', 'affected', 'success', 'success', 'true', 'true', 'success', architecture) === 0).toBe(architecture === 'success');
-      expect(run('success', 'skipped', 'documentation', 'skipped', 'skipped', 'false', 'false', 'success', architecture) === 0).toBe(architecture === 'success');
+      expect(run('success', 'skipped', 'documentation', 'skipped', 'skipped', 'false', 'false', 'success', architecture) === 0).toBe(architecture === 'success' || architecture === 'skipped');
     }
     for (const home of ['success', 'failure', 'cancelled', 'skipped', '']) {
       for (const native of ['success', 'failure', 'cancelled', 'skipped', '']) {
@@ -858,7 +858,13 @@ describe('single affected verification and daily fallback', () => {
       git('init', '-q'); git('config', 'user.name', 'CI fixture'); git('config', 'user.email', 'ci@example.invalid'); git('config', 'commit.gpgsign', 'false');
       write('tsconfig.json', JSON.stringify({ compilerOptions: { noEmit: true }, include: ['src/**/*.ts', 'tests/**/*.ts'] }));
       for (const document of ['docs/guide.md', 'docs/helper.md', 'docs/unread.md', 'docs/named.md', 'docs/area/page.md', 'docs/glob/one.md', 'tasks/lessons.md']) write(document, '# Document');
-      write('docs/architecture/.projection-manifest.json', '{}');
+      // Targets: a module document, and a code path outside docs/architecture/ that the manifest must not turn into documentation.
+      const manifest = (extra = {}) => JSON.stringify({ targets: { module: { path: 'docs/architecture/modules/x.md' }, outside: { path: 'src/manifest.ts' }, generated: { path: 'docs/architecture/generated.svg' } }, ...extra });
+      write('docs/architecture/.projection-manifest.json', manifest());
+      write('docs/architecture/modules/x.md', '# Module');
+      write('docs/architecture/generated.svg', '<svg/>');
+      write('docs/architecture/diagrams/not-a-target.mmd', 'graph TD');
+      write('tests/modules.test.ts', "import { join } from 'node:path'; import { readdirSync } from 'node:fs'; const ROOT = join(import.meta.dir, '..'); readdirSync(join(ROOT, 'docs/architecture/modules'));");
       write('src/feature.ts', "export const targetDirectories = ['docs', 'plans'];");
       write('src/manifest.ts', "import { readFileSync } from 'node:fs'; import { join } from 'node:path'; export const manifest = () => readFileSync(join(import.meta.dir, '../docs/architecture/.projection-manifest.json'));");
       write('tests/feature.test.ts', "import { targetDirectories } from '../src/feature';");
@@ -874,7 +880,7 @@ describe('single affected verification and daily fallback', () => {
       git('add', '.'); git('commit', '-qm', 'base'); const base = git('rev-parse', 'HEAD');
       const event = join(repo, '.git/event.json'); const output = join(repo, '.git/output'); const selected = join(repo, '.ci-affected-tests.json');
       writeFileSync(event, JSON.stringify({ pull_request: { base: { sha: base } } }));
-      const rows: [string, string[], string, string[] | null][] = [
+      const rows: [string, string[], string, string[] | null, string?, string?][] = [
         ['named read', ['docs/guide.md', 'tasks/lessons.md'], 'affected', ['tests/guide.test.ts']],
         ['helper import', ['docs/helper.md'], 'affected', ['tests/helper.test.ts']],
         ['root-process consumer runs daily only', ['docs/unread.md'], 'documentation', null],
@@ -882,19 +888,31 @@ describe('single affected verification and daily fallback', () => {
         ['glob', ['docs/glob/one.md'], 'affected', ['tests/glob.test.ts']],
         // Deleted documents are matched as well: the base tree still names them.
         ['deleted document keeps its named reader', ['-docs/named.md'], 'affected', ['tests/named.test.ts']],
-        ['mixed diff keeps every documentation consumer', ['docs/unread.md', 'src/feature.ts'], 'affected', ['tests/directory.test.ts', 'tests/feature.test.ts', 'tests/glob.test.ts', 'tests/guide.test.ts', 'tests/helper.test.ts', 'tests/named.test.ts', 'tests/root.test.ts']],
-        ['manifest reader', ['docs/architecture/.projection-manifest.json'], 'affected', ['tests/manifest.test.ts']],
+        ['mixed diff keeps every documentation consumer', ['docs/unread.md', 'src/feature.ts'], 'affected', ['tests/directory.test.ts', 'tests/feature.test.ts', 'tests/glob.test.ts', 'tests/guide.test.ts', 'tests/helper.test.ts', 'tests/modules.test.ts', 'tests/named.test.ts', 'tests/root.test.ts']],
+        ['projection output is documentation', ['docs/architecture/.projection-manifest.json'], 'documentation', null],
+        ['projection output skips the reader of its directory', ['docs/architecture/.projection-manifest.json', 'docs/architecture/modules/x.md'], 'documentation', null],
+        // A projection output adds no document reader to a mixed diff; src/feature.ts selects its own tests.
+        ['manifest with a code path stays affected', ['docs/architecture/.projection-manifest.json', 'src/feature.ts'], 'affected', ['tests/feature.test.ts', 'tests/named.test.ts']],
+        ['code path that a target names stays affected without the manifest', ['src/manifest.ts'], 'affected', ['tests/manifest.test.ts']],
+        // The manifest lists src/manifest.ts as a target; the docs/architecture/ bound keeps it out of the output set.
+        ['target outside docs/architecture stays affected', ['docs/architecture/.projection-manifest.json', 'src/manifest.ts'], 'affected', ['tests/manifest.test.ts']],
+        ['unlisted diagram is not documentation', ['docs/architecture/diagrams/not-a-target.mmd'], 'error', null, undefined, 'coverage is unknown'],
+        ['generated target with a code path selects without an uncovered path', ['docs/architecture/generated.svg', 'src/feature.ts'], 'affected', ['tests/feature.test.ts', 'tests/named.test.ts']],
+        ['manifest without targets stops the selection', ['docs/architecture/.projection-manifest.json'], 'error', null, '{}', 'has no targets object'],
+        ...['', 'docs/architecture/../other.svg', 'docs/architecture//file.svg'].map((path): [string, string[], string, string[] | null, string, string] =>
+          [`target path ${JSON.stringify(path)} stops the selection`, ['docs/architecture/.projection-manifest.json'], 'error', null, JSON.stringify({ targets: { bad: { path } } }), 'has a target with an invalid path']),
         ['no reader', ['tasks/lessons.md'], 'documentation', null],
       ];
-      for (const [name, changed, mode, tests] of rows) {
+      for (const [name, changed, mode, tests, manifestText, message] of rows) {
         rmSync(selected, { force: true }); git('checkout', '-q', '-B', 'candidate', base);
         for (const path of changed) {
           if (path.startsWith('-')) rmSync(join(repo, path.slice(1)));
-          else write(path, path.endsWith('.json') ? '{"changed":true}' : `${readFileSync(join(repo, path), 'utf8')}\nchanged\n`);
+          else write(path, path.endsWith('.json') ? (manifestText ?? manifest({ changed: true })) : `${readFileSync(join(repo, path), 'utf8')}\nchanged\n`);
         }
         git('add', '.'); git('commit', '-qm', name); const head = git('rev-parse', 'HEAD');
         writeFileSync(output, '');
         const result = spawnSync(process.execPath, [join(ROOT, 'scripts/select-ci-coverage.ts')], { cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output, GITHUB_SHA: head } });
+        if (mode === 'error') { expect({ name, failed: result.status !== 0, stderr: result.stderr.includes(message!) }).toEqual({ name, failed: true, stderr: true }); continue; }
         expect({ name, status: result.status }, result.stderr).toEqual({ name, status: 0 });
         expect({ name, output: readFileSync(output, 'utf8') }).toEqual({ name, output: `mode=${mode}\nsha=${head}\nnative_oar=false\nhome_isolation=false\n` });
         expect({ name, plan: existsSync(selected) ? JSON.parse(readFileSync(selected, 'utf8')) : null }).toEqual({ name, plan: tests && [tests] });
@@ -1005,7 +1023,7 @@ describe('single affected verification and daily fallback', () => {
     expect(reporter.jobs.report.permissions).toEqual({ actions: 'read', contents: 'read', issues: 'write' });
 
     const advisory = jobs['architecture-advisory'];
-    expect(advisory.if).toBe("needs.selection.outputs.mode == 'affected' || needs.selection.outputs.mode == 'documentation'");
+    expect(advisory.if).toBe("needs.selection.outputs.mode == 'affected'");
     expect(advisory.permissions).toBeUndefined();
     expect(jobs.required.steps[0].env.ARCHITECTURE_RESULT).toBe('${{ needs.architecture-advisory.result }}');
     const warn = advisory.steps.find((step: any) => step.name === 'Check the plugin-internals constraint and warn about architecture debt');
