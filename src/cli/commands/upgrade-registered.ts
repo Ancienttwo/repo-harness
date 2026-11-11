@@ -1,6 +1,7 @@
 import { sha256Prefixed } from '../../core/evidence/sha256';
 import { lstatSync } from 'fs';
 import { readWorkflowPolicyDocument } from '../../effects/state/resolve-effective-state';
+import { POLICY_ABSENT, isPolicyObject, policyValue } from '../../core/workflow/policy-schema';
 import { formatJson } from '../installer/shared';
 import { gitSpawnSync } from '../../effects/git/runner';
 import {
@@ -99,9 +100,8 @@ function policyDefaultBranch(path: string): { readonly branch: string } | { read
   try { document = readWorkflowPolicyDocument(path); }
   catch (error) { return { error: `.ai/harness/policy.json is unreadable: ${error instanceof Error ? error.message : String(error)}` }; }
   if (!document.present) return { error: '.ai/harness/policy.json is missing' };
-  const policy = document.root;
-  const strategy = policy && typeof policy === 'object' ? (policy as { worktree_strategy?: unknown }).worktree_strategy : undefined;
-  const branch = strategy && typeof strategy === 'object' ? (strategy as { base_branch?: unknown }).base_branch : undefined;
+  const strategy = document.rootIsObject ? policyValue(document, 'worktree_strategy') : POLICY_ABSENT;
+  const branch = isPolicyObject(strategy) ? policyValue(document, 'worktree_strategy.base_branch') : POLICY_ABSENT;
   if (typeof branch !== 'string' || branch.trim() === '') return { error: 'worktree_strategy.base_branch is missing or not a non-empty string' };
   return { branch: branch.trim() };
 }

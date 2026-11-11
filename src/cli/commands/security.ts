@@ -8,7 +8,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { isRecord } from '../../core/evidence/is-record';
-import { decodeWorkflowPolicy } from '../../core/workflow/policy-schema';
+import { POLICY_ABSENT, isPolicyObject, policyValue } from '../../core/workflow/policy-schema';
+import { readWorkflowPolicyFile } from '../../effects/state/policy-file';
 import { buildManagedHooks, type HookEntry, type HookHost } from '../installer/managed-entries';
 import { gitToplevel } from '../../effects/git/runner';
 
@@ -180,23 +181,28 @@ function reviewedExceptionEntries(raw: unknown): unknown[] {
   return Array.isArray(entries) ? entries : [];
 }
 
+function repoPolicyReviewedEntries(repoRoot: string): unknown[] {
+  const policy = readWorkflowPolicyFile(repoRoot);
+  const security = policy.rootIsObject ? policyValue(policy, 'security') : POLICY_ABSENT;
+  const entries = isPolicyObject(security) ? policyValue(policy, 'security.reviewed_findings') : POLICY_ABSENT;
+  return Array.isArray(entries) ? entries : [];
+}
+
 function loadReviewedExceptions(repoRoot: string, home: string): LoadedSecurityReviewedException[] {
-  const sources: Array<{ filePath: string; source: SecurityReviewedExceptionSource }> = [
-    { filePath: path.join(repoRoot, '.ai', 'harness', 'policy.json'), source: 'repo-policy' },
-    { filePath: path.join(home, '.repo-harness', 'config.json'), source: 'user-config' },
+  const userConfig = path.join(home, '.repo-harness', 'config.json');
+  const sources: Array<{ read: () => unknown[]; source: SecurityReviewedExceptionSource }> = [
+    { read: () => repoPolicyReviewedEntries(repoRoot), source: 'repo-policy' },
+    { read: () => fs.existsSync(userConfig) ? reviewedExceptionEntries(readJson(userConfig)) : [], source: 'user-config' },
   ];
   const exceptions: LoadedSecurityReviewedException[] = [];
   for (const source of sources) {
-    if (!fs.existsSync(source.filePath)) continue;
-    let parsed: unknown;
+    let entries: unknown[];
     try {
-      parsed = source.source === 'repo-policy'
-        ? decodeWorkflowPolicy(fs.readFileSync(source.filePath, 'utf-8')).root
-        : readJson(source.filePath);
+      entries = source.read();
     } catch {
       continue;
     }
-    for (const entry of reviewedExceptionEntries(parsed)) {
+    for (const entry of entries) {
       if (!isRecord(entry)) continue;
       const filePath = asString(entry.filePath);
       const ruleId = asString(entry.ruleId);

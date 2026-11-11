@@ -12,7 +12,7 @@ import * as path from 'path';
 import { configuredBrainRoot } from './brain-root';
 import { gitToplevel } from '../../effects/git/runner';
 import { readWorkflowPolicyDocument } from '../../effects/state/resolve-effective-state';
-import { POLICY_PATH } from '../../core/workflow/policy-schema';
+import { POLICY_ABSENT, POLICY_PATH, isPolicyObject, policyValue } from '../../core/workflow/policy-schema';
 
 export type BrainLifecycle = 'always-sync' | 'archive-only' | 'never-sync';
 
@@ -289,10 +289,16 @@ function countLines(content: string): number {
 
 function readPolicyExternalKnowledge(repoRoot: string, issues: BrainIssue[]): Record<string, unknown> {
   try {
-    const policy = readWorkflowPolicyDocument(repoRoot).root as {
-      information_lifecycle?: { external_knowledge?: Record<string, unknown> };
-    } | null;
-    return policy?.information_lifecycle?.external_knowledge ?? {};
+    const policy = readWorkflowPolicyDocument(repoRoot);
+    const lifecycle = policy.rootIsObject ? policyValue(policy, 'information_lifecycle') : POLICY_ABSENT;
+    const knowledge = isPolicyObject(lifecycle) ? policyValue(policy, 'information_lifecycle.external_knowledge') : POLICY_ABSENT;
+    if (!isPolicyObject(knowledge)) return {};
+    // Each consumer accepts only a string, so the absent marker reads as unset.
+    return {
+      manifest_file: policyValue(policy, 'information_lifecycle.external_knowledge.manifest_file'),
+      project_path: policyValue(policy, 'information_lifecycle.external_knowledge.project_path'),
+      sync_script: policyValue(policy, 'information_lifecycle.external_knowledge.sync_script'),
+    };
   } catch {
     issue(issues, 'error', `Cannot read harness policy: ${POLICY_PATH}`);
     return {};

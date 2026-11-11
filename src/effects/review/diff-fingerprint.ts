@@ -5,7 +5,7 @@ import { sha256Prefixed } from '../../core/evidence/sha256';
 import { lstatSync, readlinkSync } from 'fs';
 import { join } from 'path';
 import { gitExecFileSync, gitSpawnSync } from '../git/runner';
-import { decodeWorkflowPolicy } from '../../core/workflow/policy-schema';
+import { POLICY_PATH, decodeWorkflowPolicy, isPolicyObject, policyValue } from '../../core/workflow/policy-schema';
 
 // Raised from 4 MiB: a diff that overflows this cap can no longer be observed,
 // so instead of collapsing distinct contents to one fixed hash we mark the
@@ -47,15 +47,16 @@ export type PolicyReviewBaseResolution =
 
 export function resolvePolicyReviewBase(repoRoot: string): PolicyReviewBaseResolution {
   try {
-    const { root: policy } = decodeWorkflowPolicy(readFileSync(join(repoRoot, '.ai', 'harness', 'policy.json'), 'utf-8'));
-    if (!policy || typeof policy !== 'object' || Array.isArray(policy)) {
+    // The read stays on the observation layer, which policy-file cannot import
+    // (effects/review <-> effects/state cycle, #2398). A missing file throws into the catch below.
+    const policy = decodeWorkflowPolicy(readFileSync(join(repoRoot, POLICY_PATH), 'utf-8'));
+    if (!policy.rootIsObject) {
       return { ok: false, reason: 'workflow policy is malformed' };
     }
-    const strategy = (policy as Record<string, unknown>).worktree_strategy;
-    if (!strategy || typeof strategy !== 'object' || Array.isArray(strategy)) {
+    if (!isPolicyObject(policyValue(policy, 'worktree_strategy'))) {
       return { ok: false, reason: 'worktree_strategy is missing' };
     }
-    const reviewBase = (strategy as Record<string, unknown>).review_base;
+    const reviewBase = policyValue(policy, 'worktree_strategy.review_base');
     if (typeof reviewBase !== 'string' || reviewBase.trim() === '') {
       return { ok: false, reason: 'worktree_strategy.review_base is missing' };
     }

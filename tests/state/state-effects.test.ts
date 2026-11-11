@@ -430,10 +430,25 @@ describe('each policy reader validates only the keys it reads', () => {
     }
   });
 
-  test('a [] root gives each reader its own result', () => {
-    const repo = repoWith('array-root', []);
-    expect(readRetentionConfig(repo).days).toBe(DEFAULT_RETENTION_DAYS);
-    expect(capabilitySource(repo)).toBe('registry');
-    expect(() => assertArchitecturePolicySelection(repo, ['product'], env)).not.toThrow();
+  test('a [] or null root, or a non-object section, gives each lenient reader its absent result', () => {
+    const policies: Array<[string, unknown]> = [
+      ['array-root', []],
+      // A null root crashed these readers with a raw TypeError before #2398.
+      ['null-root', null],
+      ['scalar-sections', { worktree_strategy: 5, context: 5, information_lifecycle: 5, tooling: { codegraph: 5 } }],
+    ];
+    for (const [name, policy] of policies) {
+      const repo = repoWith(name, policy);
+      expect(readRetentionConfig(repo).days).toBe(DEFAULT_RETENTION_DAYS);
+      expect(capabilitySource(repo)).toBe('registry');
+      expect(() => assertArchitecturePolicySelection(repo, ['product'], env)).not.toThrow();
+      // The default target `main` reaches the Git probe; the fixture has no Git.
+      expect(() => mergeBackTarget(repo)).toThrow('local integration target is unavailable: refs/remotes/origin/main');
+    }
+  });
+
+  test('the state resolver keeps its non-object parent message', () => {
+    expect(() => readWorkflowPolicy('/repo', () => '{"worktree_strategy":5}'))
+      .toThrow('invalid workflow policy field .worktree_strategy.review_base: non-object parent');
   });
 });

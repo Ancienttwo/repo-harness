@@ -26,6 +26,7 @@ const READONLY_OBSERVATION = join(REPO_ROOT, "src/effects/readonly-observation.t
 const CAPABILITY_EFFECTS = join(REPO_ROOT, "src", "effects", "architecture", "capability-resolver.ts");
 const ARCHITECTURE_CONTRACTS = join(REPO_ROOT, "src", "core", "architecture", "contracts.ts");
 const WORKFLOW_POLICY_SCHEMA = join(REPO_ROOT, "src", "core", "workflow", "policy-schema.ts");
+const WORKFLOW_POLICY_FILE = join(REPO_ROOT, "src", "effects", "state", "policy-file.ts");
 
 function usage(): never {
   process.stderr.write("Usage: bun scripts/sync-helper-sources.ts [--check|--write]\n");
@@ -91,8 +92,10 @@ function buildCapabilityProjection(): ProjectionFileRecord {
   const observation = readFileSync(READONLY_OBSERVATION, "utf-8");
   const gitRunner = stripInlinedImports(readFileSync(GIT_RUNNER, "utf-8"), ["../readonly-observation"]);
   const policySchema = readFileSync(WORKFLOW_POLICY_SCHEMA, "utf-8");
+  const policyFile = stripInlinedImports(readFileSync(WORKFLOW_POLICY_FILE, "utf-8"), ["../../core/workflow/policy-schema"]);
   const effects = stripInlinedImports(readFileSync(CAPABILITY_EFFECTS, "utf-8"), [
     "../../core/workflow/policy-schema",
+    "../state/policy-file",
     "../../core/capabilities/registry",
     "../../core/capabilities/resolver",
     "../../core/architecture/contracts",
@@ -109,6 +112,7 @@ function buildCapabilityProjection(): ProjectionFileRecord {
     observation.trim(),
     gitRunner.trim(),
     policySchema.trim(),
+    policyFile.trim(),
     effects.trim(),
   ].join("\n") + "\n";
   return {

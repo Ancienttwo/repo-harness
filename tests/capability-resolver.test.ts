@@ -103,9 +103,14 @@ describe("capability resolver", () => {
         { text: '[]', status: 0 },
         { text: '{', status: 2 },
         { text: '{"context":{"capability_source":"unknown"}}', status: 2 },
+        // Last: a file ancestor (ENOTDIR) reads as an absent policy, as the existsSync probe did before #2398.
+        { text: 'harness-is-a-file', status: 0 },
       ]) {
         if (text === undefined) rmSync(policyPath);
-        else writeFileSync(policyPath, text);
+        else if (text === 'harness-is-a-file') {
+          rmSync(join(cwd, ".ai/harness"), { recursive: true });
+          writeFileSync(join(cwd, ".ai/harness"), "");
+        } else writeFileSync(policyPath, text);
         const canonical = runResolver(cwd, ["list", "--format", "json"]);
         const projected = runStandaloneResolver(cwd, ["list", "--format", "json"]);
         expect(projected.status).toBe(status);
