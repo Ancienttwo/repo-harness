@@ -1,6 +1,6 @@
 # organization/board 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-board" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:415eaebed26eaed9391953afb6a736110db12606d673586f21ade403c35c4468" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-board" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:055e815fb9ebe4f1a2d93dd69189604171750d29dd6ee2f47f71e7ad2523bde1" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.board`(kind `capability`)
 > **Matched Prefixes**:`src/core/board/**`、`src/effects/board/**`、`src/cli/commands/board.ts`、`src/cli/commands/quota.ts`、`src/cli/commands/seats.ts`
@@ -66,7 +66,7 @@ flowchart LR
 - `depends-on` ← `capability.verification.evals-checks` — Test Board behavior through its source modules
 - `depends-on` ← `component.execution-primitives.hc-client` — Implement the board host port (seat terminals by parent label and the hc version) and the attention host port (start watcher terminals with hc run, read watcher terminals, and send to and wait on seat terminals)
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the board, seats and quota commands
-- `depends-on` ← `capability.runtime-harness.operator` — Serve and show the board of one parent issue: decode the board CLI output and evaluate the attention rules in the browser. Read the seat, quota and agent settings contracts, read quota through the core readers, and save seats through the core writer.
+- `depends-on` ← `capability.runtime-harness.operator` — Serve and show the board of one parent issue: decode the board and parent documents that the board observer worker reads, and evaluate the attention rules in the browser. Read the seat, quota and agent settings contracts, read quota through the core readers, and save seats through the core writer.
 
 組件出向關係:
 
