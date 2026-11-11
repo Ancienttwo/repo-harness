@@ -1526,6 +1526,7 @@ describe('board office (#1755)', () => {
       await settle();
       expect(document.querySelector('[data-board-office="room"] h1')?.textContent).toBe(PARENTS.repository.split('/').at(-1)!);
       expect(rows('[data-desk]').map(desk => desk.getAttribute('data-desk'))).toEqual(['t1', 't2']);
+      expect(rows('[data-board-office="room"] [data-board-parent-row]').map(row => Number(row.getAttribute('data-board-parent-row')))).toEqual(joinBoardParents(PARENTS, seatsOf(board)).parents.map(parent => parent.number));
       const failure = document.querySelector('[data-board-office="room"] [data-board-reason]');
       expect(failure?.getAttribute('data-board-reason')).toBe('board_collect_failed');
       expect(failure?.textContent).toContain('repo-harness board --parent 1474 --json');

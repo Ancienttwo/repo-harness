@@ -48,14 +48,14 @@ function parentMatches(parent: BoardParentV1, query: string): boolean {
   return (/^[0-9]+$/u.test(number) && String(parent.number).startsWith(number)) || parent.title.toLowerCase().includes(words);
 }
 
-function ParentRow({ repository, parent, onOpen, now, t }: {
-  readonly repository: string; readonly parent: BoardParentV1 & { readonly seats: number };
+function ParentRow({ repository, parent, layout, onOpen, now, t }: {
+  readonly repository: string; readonly parent: BoardParentV1 & { readonly seats: number }; readonly layout: BoardLayout;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
 }) {
   const { total, completed } = parent.sub_issues;
   return (
     <li className="border-b border-kumo-hairline last:border-b-0" data-board-parent-row={parent.number} data-seats={parent.seats}>
-      <PageLink to={boardLocation({ repository_id: repository, parent: parent.number, issue: null, layout: 'list' })} onOpen={onOpen}
+      <PageLink to={boardLocation({ repository_id: repository, parent: parent.number, issue: null, layout })} onOpen={onOpen}
         className="flex flex-col gap-2 px-4 py-3 hover:bg-kumo-tint focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:outline-none active:bg-kumo-recessed md:flex-row md:items-center md:gap-4">
         <StatusDot tone={parent.seats > 0 ? 'active' : 'neutral'} className="hidden md:inline-flex" />
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
@@ -74,6 +74,18 @@ function ParentRow({ repository, parent, onOpen, now, t }: {
         </span>
       </PageLink>
     </li>
+  );
+}
+
+/** The rows of the open parents of `repository`; a row opens that parent's board in `layout`. */
+function ParentRows({ repository, parents, layout, onOpen, now, t }: {
+  readonly repository: string; readonly parents: readonly (BoardParentV1 & { readonly seats: number })[]; readonly layout: BoardLayout;
+  readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
+}) {
+  return (
+    <ul className="overflow-hidden rounded-xl border border-kumo-line bg-kumo-base" data-board-parents>
+      {parents.map(parent => <ParentRow key={parent.number} repository={repository} parent={parent} layout={layout} onOpen={onOpen} now={now} t={t} />)}
+    </ul>
   );
 }
 
@@ -119,11 +131,7 @@ function ParentList({ repositories, repository, onRepository, parents, seats, on
         : seats?.kind === 'failed' ? <BoardState title={t('board.parents.failed.title')} description={t(`board.reason.${seats.reason}` as OperatorMessageKey)} command="repo-harness board seats --json" />
         : parents.list.parents.length === 0 ? <BoardState title={t('board.parents.empty.title')} description={t('board.parents.empty.body')} />
         : shown.length === 0 ? <BoardState title={t('board.parents.noMatch.title')} description={t('board.parents.noMatch.body', { query: query.trim() })} />
-        : (
-          <ul className="overflow-hidden rounded-xl border border-kumo-line bg-kumo-base" data-board-parents>
-            {shown.map(parent => <ParentRow key={parent.number} repository={repository!} parent={parent} onOpen={onOpen} now={now} t={t} />)}
-          </ul>
-        )}
+        : <ParentRows repository={repository!} parents={shown} layout="list" onOpen={onOpen} now={now} t={t} />}
     </section>
   );
 }
@@ -474,7 +482,13 @@ function OfficeRepository({ repositoryId, place, placeView, quota, setup, readBo
     );
   }
   if (seats.kind === 'loading') return <BoardState loading title={t('board.loading.title')} description={t('board.office.card.loading')} />;
-  const failure = view?.kind === 'failed' && <BoardFailure reason={view.reason} parent={parent!} t={t} />;
+  // A failed board read keeps the parent list that was read, so the operator can open another parent from the room.
+  const failure = view?.kind === 'failed' && (
+    <>
+      <BoardFailure reason={view.reason} parent={parent!} t={t} />
+      {parents.kind === 'ready' && <ParentRows repository={repositoryId} parents={joinBoardParents(parents.list, seats.seats).parents} layout="office" onOpen={onOpen} now={now} t={t} />}
+    </>
+  );
   return <OfficeRoomView repositoryId={repositoryId} list={parents.kind === 'ready' ? parents.list : null} seats={seats.seats} parents={parents} view={view?.kind === 'ready' ? view : null} failure={failure} reading={view?.kind === 'loading'} place={place} parent={parent} quota={quota} setup={setup} writeBossCommand={writeBossCommand} readAdvisorTranscript={readAdvisorTranscript} writeAdvisorMessage={writeAdvisorMessage} mode={mode} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} onOpen={onOpen} now={now} t={t} />;
 }
 
