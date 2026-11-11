@@ -120,10 +120,10 @@ describe('seat quota routing', () => {
       'route important_deep: worker-deep (codex gpt-6.1-sol high; chatgpt tight, on credits); skipped worker-important: claude unknown',
       'gatekeeper: gatekeeper (codex gpt-6.1-terra high; chatgpt tight, on credits)',
     ]) expect(routes(codex(funded), true), line).toContain(line);
-    expect(routes(codex(funded, 'rate_limit_reached'), true)).toContain('gatekeeper: none (chatgpt exhausted)');
+    expect(routes(codex(funded, 'rate_limit_reached'), true)).toContain('gatekeeper: gatekeeper (codex gpt-6.1-terra high; chatgpt tight, on credits)');
     expect(routes(codex({ hasCredits: false, unlimited: false, balance: '0' }), true)).toContain('gatekeeper: none (chatgpt exhausted)');
     expect(routes(codex({ hasCredits: false, unlimited: true, balance: null }), true)).toContain('gatekeeper: gatekeeper (codex gpt-6.1-terra high; chatgpt tight, on credits)');
-    expect(seatAccountQuotas([codex(funded, 'rate_limit_reached')], DEFAULT_SEATS_CONFIG.routing, { spendCredits: true }).chatgpt).toMatchObject({ state: 'exhausted' });
+    expect(seatAccountQuotas([codex(funded, 'rate_limit_reached')], DEFAULT_SEATS_CONFIG.routing, { spendCredits: true }).chatgpt).toMatchObject({ state: 'tight', on_credits: true });
   });
 });
 

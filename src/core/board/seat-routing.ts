@@ -12,10 +12,10 @@ export interface SeatAccountQuotas {
 /** The owner-authorized credit grant of one launch (#2251). Every other caller takes the default. */
 export interface SeatAccountOptions { readonly spendCredits?: boolean }
 
-/** Codex spends credits when the provider reports them and no rate limit stopped the account. */
+/** The provider reports credits. The rate limit that makes the account `exhausted` is the state the credit grant exists for, so it does not block. */
 function codexCredits(account: QuotaAccountReport | undefined): boolean {
   const codex = account?.codex;
-  return codex !== undefined && codex.rate_limit_reached_type === null
+  return codex !== undefined
     && (codex.credits?.has_credits === true || codex.credits?.unlimited === true);
 }
 
