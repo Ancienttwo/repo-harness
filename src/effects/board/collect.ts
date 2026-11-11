@@ -123,6 +123,15 @@ export function readGhJson(input: GhInput, args: readonly string[]): unknown {
   return ghJson(args, runGh(input, args));
 }
 
+/** One gh call that prints text; the board review and the board dispatch post their comments with it. A failed call is a `BoardCollectError`. */
+export function runGhText(input: { readonly repo_root: string }, args: readonly string[], stdin?: string): string {
+  const run = spawnSync(process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
+    cwd: input.repo_root, env: { ...process.env, GH_HOST: 'github.com' }, encoding: 'utf-8', input: stdin, timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL',
+  });
+  if (run.error !== undefined || run.status !== 0) throw new BoardCollectError(`gh ${args.slice(0, 2).join(' ')} failed: ${(run.stderr || run.error?.message || '').trim().slice(0, 300)}`);
+  return run.stdout.trim();
+}
+
 /** A gh call that a signal or the call timeout ended; a launch error has neither a signal nor the timeout code. */
 function endedWithoutExitStatus(result: GhCallResult): boolean {
   return result.status === null && (result.signal != null || (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT');
