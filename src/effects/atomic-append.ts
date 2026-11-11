@@ -8,7 +8,7 @@
 import { closeSync, constants, fsyncSync, mkdirSync, openSync, writeSync } from "fs";
 import { dirname } from "path";
 
-function writeAllSync(fd: number, data: Buffer): void {
+export function writeAllSync(fd: number, data: Buffer): void {
   let offset = 0;
   while (offset < data.length) {
     offset += writeSync(fd, data, offset, data.length - offset);

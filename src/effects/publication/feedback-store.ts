@@ -5,9 +5,10 @@
  * evidence live in distinct files so neither can change an event digest.
  */
 import { createHash, randomUUID } from 'crypto';
-import { closeSync, constants, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync, writeSync } from 'fs';
+import { closeSync, constants, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync } from 'fs';
 import { join } from 'path';
 
+import { createFileExclusiveDurably } from '../atomic-append';
 import { canonicalFeedbackDeliveryReceiptBytes, canonicalFeedbackEventBytes, transitionFeedbackDeliveryReceipt, validateFeedbackDeliveryReceipt, validateFeedbackEvent, validateReactionAttemptReceipt, type FeedbackDeliveryReceiptV1, type FeedbackEventV1, type ReactionAttemptReceiptV1 } from '../../core/publication/feedback';
 import { byteCompare } from '../../core/evidence/byte-compare';
 import { resolveGitCommonDirectory } from '../git/common-directory';
@@ -99,15 +100,6 @@ export function feedbackEventPath(
   return eventPathIn(publicationLayout(repoRoot, publicationId, gitBin), providerEventId);
 }
 
-export function feedbackDeliveryReceiptPath(
-  repoRoot: string,
-  publicationId: string,
-  providerEventId: string,
-  gitBin = 'git',
-): string {
-  return deliveryPathIn(publicationLayout(repoRoot, publicationId, gitBin), providerEventId);
-}
-
 export function feedbackReactionLedgerPath(repoRoot: string, publicationId: string, gitBin = 'git'): string {
   return publicationLayout(repoRoot, publicationId, gitBin).reactions;
 }
@@ -169,11 +161,6 @@ function fsyncDirectory(path: string): void {
   }
 }
 
-function writeAll(fd: number, bytes: Buffer): void {
-  let offset = 0;
-  while (offset < bytes.length) offset += writeSync(fd, bytes, offset, bytes.length - offset);
-}
-
 function readRegular(path: string, label: string): Buffer {
   let stat;
   try {
@@ -231,15 +218,10 @@ function publishImmutable(path: string, bytes: Buffer, equivalent: () => boolean
   }
   const parent = join(path, '..');
   const temporary = join(parent, `.${hash(path)}.${process.pid}.${randomUUID()}.tmp`);
-  let fd: number | null = null;
   try {
-    fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-    writeAll(fd, bytes);
-    fsyncSync(fd);
+    createFileExclusiveDurably(temporary, bytes);
   } catch (error) {
     throw incomplete(`cannot write immutable feedback event: ${path}`, error);
-  } finally {
-    if (fd !== null) closeSync(fd);
   }
   try {
     linkSync(temporary, path);
@@ -312,15 +294,10 @@ export function writeFeedbackDeliveryReceipt(
   const bytes = Buffer.from(`${canonicalFeedbackDeliveryReceiptBytes(valid)}\n`, 'utf-8');
   const parent = layout.deliveries;
   const temporary = join(parent, `.${hash(path)}.${process.pid}.${randomUUID()}.tmp`);
-  let fd: number | null = null;
   try {
-    fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-    writeAll(fd, bytes);
-    fsyncSync(fd);
+    createFileExclusiveDurably(temporary, bytes);
   } catch (error) {
     throw incomplete(`cannot write feedback delivery receipt: ${path}`, error);
-  } finally {
-    if (fd !== null) closeSync(fd);
   }
   try {
     renameSync(temporary, path);

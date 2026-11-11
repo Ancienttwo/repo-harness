@@ -6,11 +6,11 @@ import { TASK_INBOX_RETIREMENT_MARKER, taskInboxRecipientStorageKey } from '../.
 import { canonicalTaskMessageEventBytes, canonicalTaskMessageDeliveryReceiptBytes, deriveTaskMessageRecipientKey,
   validateTaskMessageEvent, validateTaskMessageDeliveryReceipt, recipientFromTaskMessageReceipt, type TaskMessageRecipient } from '../../core/fleet/task-message';
 import { retiredDeliveryChannelRecord, TaskMessageError } from '../../core/messages/task-message-error';
-import { createFileExclusiveDurably } from '../atomic-append';
+import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { acquireExclusiveDirectoryLock, withExclusiveDirectoryLock, type ExclusiveDirectoryLockHandle } from '../locking/exclusive-directory-lock';
 import { taskLockRelativePath } from '../locking/task-lock';
-import { assertInboxDirectory, inboxLayoutPaths, inboxPathStat, syncInboxDirectory } from './task-inbox-layout';
+import { assertInboxDirectory, inboxLayoutPaths, inboxPathStat } from './task-inbox-layout';
 
 type Entry = { path: string; kind: 'directory' } | { path: string; kind: 'file'; size: number; sha256: string };
 interface Manifest {
@@ -215,7 +215,7 @@ function archiveRollback(common: string, input: InboxMigrationInput): void {
   const receipt = checkedRollbackHistory(common);
   const directory = join(p.root, 'migration-history');
   assertInboxDirectory(directory);
-  if (!inboxPathStat(directory)) { mkdirSync(directory, { mode: 0o700 }); syncInboxDirectory(p.root); }
+  if (!inboxPathStat(directory)) { mkdirSync(directory, { mode: 0o700 }); syncDirectoryDurably(p.root); }
   publishMetadata(join(directory, `${receipt.receipt_sha256.slice('sha256:'.length)}.json`), receipt);
   input.on_boundary?.('rollback-archived');
   removeMetadata(p.rolledBack);
@@ -255,7 +255,7 @@ function writeOwned(path: string, bytes: Buffer): void {
   }
   assertInboxDirectory(dirname(path));
   createFileExclusiveDurably(path, bytes);
-  syncInboxDirectory(dirname(path));
+  syncDirectoryDurably(dirname(path));
 }
 /** A published path is replaced atomically through its pending sibling, so the authority never disappears. */
 function publishMetadata(path: string, value: unknown, beforePublish?: () => void): void {
@@ -265,9 +265,9 @@ function publishMetadata(path: string, value: unknown, beforePublish?: () => voi
   writeOwned(pending, bytes);
   beforePublish?.();
   renameSync(pending, path);
-  syncInboxDirectory(dirname(path));
+  syncDirectoryDurably(dirname(path));
 }
-function removeMetadata(path: string): void { if (inboxPathStat(path)) { unlinkSync(path); syncInboxDirectory(dirname(path)); } }
+function removeMetadata(path: string): void { if (inboxPathStat(path)) { unlinkSync(path); syncDirectoryDurably(dirname(path)); } }
 function marker(common: string): void {
   const path = inboxLayoutPaths(common).legacy;
   const bytes = Buffer.from(TASK_INBOX_RETIREMENT_MARKER);
@@ -280,7 +280,7 @@ function finishForward(common: string, manifest: Manifest, input: InboxMigration
     marker(common); assertTree(p.current, manifest.target);
     // Only a receipt proves a run rewrote this tree onto fresh inodes. Without one, retract the unobserved
     // publication (runtime stays closed on the journal) and replay staging rather than re-flush old inodes.
-    if (!inboxPathStat(p.receipt)) { renameSync(p.current, p.stage); syncInboxDirectory(p.root); }
+    if (!inboxPathStat(p.receipt)) { renameSync(p.current, p.stage); syncDirectoryDurably(p.root); }
   }
   if (!inboxPathStat(p.current)) {
     const original = sourceRoot(common);
@@ -300,12 +300,12 @@ function finishForward(common: string, manifest: Manifest, input: InboxMigration
       else { writeOwned(path, readFile(join(original, entry.path))); input.on_boundary?.('staged-file'); }
     }
     assertTree(p.stage, manifest.target);
-    for (const entry of [...manifest.target].reverse()) if (entry.kind === 'directory') syncInboxDirectory(join(p.stage, entry.path));
-    syncInboxDirectory(p.stage); input.on_boundary?.('staged');
+    for (const entry of [...manifest.target].reverse()) if (entry.kind === 'directory') syncDirectoryDurably(join(p.stage, entry.path));
+    syncDirectoryDurably(p.stage); input.on_boundary?.('staged');
     checkedManifest(common, manifest);
-    if (original === p.legacy) { renameSync(p.legacy, p.backup); syncInboxDirectory(p.root); input.on_boundary?.('retired'); }
+    if (original === p.legacy) { renameSync(p.legacy, p.backup); syncDirectoryDurably(p.root); input.on_boundary?.('retired'); }
     writeOwned(p.legacy, Buffer.from(TASK_INBOX_RETIREMENT_MARKER)); input.on_boundary?.('fenced');
-    renameSync(p.stage, p.current); syncInboxDirectory(p.root); input.on_boundary?.('published');
+    renameSync(p.stage, p.current); syncDirectoryDurably(p.root); input.on_boundary?.('published');
   }
   marker(common); assertTree(p.current, manifest.target);
   const receipt = receiptFor(manifest);
@@ -329,11 +329,11 @@ function finishRollback(common: string, manifest: Manifest, input: InboxMigratio
   if (inboxPathStat(p.current)) {
     if (inboxPathStat(p.stage)) refuse('both serving and staged trees exist');
     assertTree(p.current, manifest.target); marker(common);
-    renameSync(p.current, p.stage); syncInboxDirectory(p.root); input.on_boundary?.('rollback-staged');
+    renameSync(p.current, p.stage); syncDirectoryDurably(p.root); input.on_boundary?.('rollback-staged');
   }
   if (inboxPathStat(p.backup)) {
     if (inboxPathStat(p.legacy)) { marker(common); unlinkSync(p.legacy); }
-    renameSync(p.backup, p.legacy); syncInboxDirectory(p.root); input.on_boundary?.('rollback-restored');
+    renameSync(p.backup, p.legacy); syncDirectoryDurably(p.root); input.on_boundary?.('rollback-restored');
   }
   assertTree(p.legacy, manifest.source);
   publishMetadata(p.rolledBack, receipt);
@@ -351,7 +351,7 @@ function finishRollback(common: string, manifest: Manifest, input: InboxMigratio
         if (!bytes.subarray(0, staged.length).equals(staged)) refuse('conflicting staged rollback bytes');
       }
     }
-    rmSync(p.stage, { recursive: true }); syncInboxDirectory(p.root);
+    rmSync(p.stage, { recursive: true }); syncDirectoryDurably(p.root);
   }
   if (inboxPathStat(p.receipt)) checkedReceipt(common, p.receipt);
   removeMetadata(p.receipt); removeMetadata(p.journal); removeMetadata(p.rollback);
