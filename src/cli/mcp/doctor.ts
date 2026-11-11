@@ -110,7 +110,7 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpDoctor
         legacyFullDiskReadDetected: localConfig?.permissions?.fullDiskRead === true || localConfig?.permissions?.legacyFullDiskReadDetected === true,
       },
       capabilities: {
-        workspaceReader: localConfig?.capabilities?.workspaceReader === true || localConfig?.capabilities?.reader === true,
+        workspaceReader: localConfig?.capabilities?.workspaceReader === true,
         workflowPlanner: localConfig?.capabilities?.workflowPlanner !== false,
         workflowExecutor: localConfig?.capabilities?.workflowExecutor === true,
       },

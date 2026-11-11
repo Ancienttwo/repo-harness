@@ -85,6 +85,22 @@ describe('mcp doctor and local config', () => {
     });
   });
 
+  test('refuses a local config version other than 3', () => {
+    withTmpRepo((repoRoot, userHome) => {
+      writeUserConfig(userHome, { version: 2 });
+      expect(() => runMcpDoctor({ repo: repoRoot, json: true })).toThrow('unsupported MCP local config version: 2; set "version": 3.');
+    });
+  });
+
+  test('refuses capabilities.reader instead of ignoring it', () => {
+    withTmpRepo((repoRoot, userHome) => {
+      writeUserConfig(userHome, { capabilities: { reader: false } });
+      expect(() => createMcpToolContext({ repo: repoRoot, profile: 'planner', codeGraphAdapter: createCodeGraphCliAdapter() })).toThrow(
+        'capabilities.reader is retired; use capabilities.workspaceReader.',
+      );
+    });
+  });
+
   test('MCP command entrypoints fail closed on legacy repo-scope config', () => {
     withTmpRepo((repoRoot, userHome) => {
       const legacyConfig = join(repoRoot, '.repo-harness', 'mcp.local.json');

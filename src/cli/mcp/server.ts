@@ -74,11 +74,9 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
     ...(opts.allowedRoots ?? []),
   ].map((entry) => String(entry).trim()).filter(Boolean)));
   const explicitReaderEnable = opts.enableReader === true || requestedProfile === 'reader' || (opts.allowedRoots?.length ?? 0) > 0;
-  const configDisablesReader = config?.capabilities?.workspaceReader === false ||
-    (config?.capabilities?.workspaceReader === undefined && config?.capabilities?.reader === false);
+  const configDisablesReader = config?.capabilities?.workspaceReader === false;
   const configuredReaderEnable = !configDisablesReader && (
     config?.capabilities?.workspaceReader === true ||
-    config?.capabilities?.reader === true ||
     configuredAllowedRoots.length > 0
   );
   const defaultRepoReader = profile === 'planner' && (explicitReaderEnable || !configDisablesReader);
