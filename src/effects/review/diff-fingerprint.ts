@@ -1,6 +1,7 @@
 import { assertObservationPath, observationReadFileSync as readFileSync } from '../readonly-observation';
 import { byteCompare } from '../../core/evidence/byte-compare';
 import { createHash } from 'crypto';
+import { sha256Prefixed } from '../../core/evidence/sha256';
 import { lstatSync, readlinkSync } from 'fs';
 import { join } from 'path';
 import { gitExecFileSync, gitSpawnSync } from '../git/runner';
@@ -122,7 +123,7 @@ function gitRunBuffer(repoRoot: string, args: readonly string[], maxBuffer = PAT
 }
 
 function hashText(text: string): string {
-  return `sha256:${createHash('sha256').update(text).digest('hex')}`;
+  return sha256Prefixed(text);
 }
 
 function stableJson(value: unknown): string {

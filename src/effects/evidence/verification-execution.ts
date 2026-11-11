@@ -1,11 +1,12 @@
 import { captureReadonlyGitTree } from '../git/readonly-virtual-tree';
 import { currentReadonlyObservation, observationReadFileSync as readFileSync, observationExecFileSync as execFileSync } from '../readonly-observation';
-import { createHash, randomUUID } from "crypto";
+import { randomUUID } from "crypto";
 import { accessSync, constants, existsSync, lstatSync, mkdtempSync, realpathSync, rmSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { delimiter, isAbsolute, join, relative, resolve } from "path";
 
 import { canonicalize } from "../../core/evidence/canonical-json";
+import { sha256Prefixed } from "../../core/evidence/sha256";
 import type { EvidenceEventRecord, GenesisRecord, JsonValue, AdmittedReviewSubjectIdentity, EvalCatalogSubjectIdentity } from "../../core/evidence/types";
 import { redactPayloadStrings, SECRET_DENYLIST_ENV_KEYS } from "../../core/evidence/redaction";
 import {
@@ -173,7 +174,7 @@ interface PreparedContext extends EvidenceContext {
 }
 
 function sha256(content: string | Buffer): string {
-  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+  return sha256Prefixed(content);
 }
 
 function git(repoRoot: string, args: readonly string[], env?: NodeJS.ProcessEnv): string {
