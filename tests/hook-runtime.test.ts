@@ -573,8 +573,8 @@ process.exit(child.status ?? 1);
 
   test('a consumer whose state directory is not Git-ignored sees one SessionStart line and no turn text (#852)', () => {
     const root = registryNoticeFixture();
-    const UNIGNORED = '[Architecture] notice unavailable: .ai/harness/state/ is not Git-ignored. Fix: add .ai/harness/state/ to .gitignore';
-    const HUMAN_UNIGNORED = 'Architecture: notice unavailable (.ai/harness/state/ is not Git-ignored); add it to .gitignore.';
+    const UNIGNORED = '[Architecture] notice unavailable: .ai/harness/state/ is not Git-ignored. Fix: run repo-harness update to write the runtime-state block to the user-level Git excludes file.';
+    const HUMAN_UNIGNORED = 'Architecture: notice unavailable (.ai/harness/state/ is not Git-ignored); run repo-harness update.';
     try {
       unignoreNoticeState(root);
       for (const sessionId of ['unignored-one', 'unignored-two']) {

@@ -164,8 +164,8 @@ function archimapBlock(paths: readonly string[]): NoticeBlock {
 
 function unignoredBlock(): NoticeBlock {
   return {
-    content: `[Architecture] notice unavailable: ${STATE_DIR} is not Git-ignored. Fix: add ${STATE_DIR} to .gitignore`,
-    systemMessage: `Architecture: notice unavailable (${STATE_DIR} is not Git-ignored); add it to .gitignore.`,
+    content: `[Architecture] notice unavailable: ${STATE_DIR} is not Git-ignored. Fix: run repo-harness update to write the runtime-state block to the user-level Git excludes file.`,
+    systemMessage: `Architecture: notice unavailable (${STATE_DIR} is not Git-ignored); run repo-harness update.`,
   };
 }
 
