@@ -100,6 +100,11 @@ export interface PublicationReadinessInput {
   readonly policy_file_at_base?: PolicyFileAtRef;
   /** Internal effect seam: status checks from the executor's base protection read. */
   readonly required_status_checks_at_base?: unknown;
+  /**
+   * A read error that an optional request must not swallow; the caller that
+   * owns the transport decides.
+   */
+  readonly fatal_read_error?: (error: unknown) => boolean;
 }
 
 export interface ProviderIdentity {
@@ -742,7 +747,7 @@ function driveRequestsSync<T>(protocol: Generator<ProviderRequest, T, unknown>, 
         ? readTestExecutionSync(input, request.value.test_execution)
         : gh(input, request.value.args!);
     } catch (error) {
-      if (!request.value.optional) throw error;
+      if (!request.value.optional || input.fatal_read_error?.(error)) throw error;
     }
     request = protocol.next(value);
   }

@@ -431,6 +431,7 @@ export function collectBoardThrough(input: BoardCollectInput, sources: KeyedSour
     const now = input.now?.() ?? new Date();
     return sources.readiness(key, now, () => input.readiness?.(selection) ?? collectPullRequestMergeReadiness({
       ...selection, repo_root: input.repo_root, gh_bin: input.gh_bin, gh_runner: sources.transport(read, now, readinessTransport),
+      fatal_read_error: error => error instanceof GhOutputLimitError,
     }));
   });
   return projectBoard({

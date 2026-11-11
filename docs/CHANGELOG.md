@@ -15,6 +15,10 @@ All notable changes to this skill are documented here.
 - feat(board): each attention finding names its priority, and an `[rh-attention]` message is a notice (#2488). `BoardFindingV1` carries `priority` and `BOARD_RULE_PRIORITY` is its only source; `board attention` prints the priority first on each line, the watcher writes `<priority> <rule>: <message>` in each delivery entry, highest priority first, and the review message reads `[rh-attention] #<parent> P3 review: ...`. Board attention protocol 2 replaces protocol 1. The orchestrator queues one item for each entry, at the priority in the entry, and the advisor treats a P0 or P1 entry as a same-turn review.
 - feat(seats): `--spend-credits` lets `repo-harness quota` and `repo-harness seats argv` treat an exhausted ChatGPT account as `tight` (`chatgpt tight, on credits`) while an owner authorization for credits is recorded. `seatAccountQuotas` takes an optional `{ spendCredits: boolean }` that applies only when the account state is `exhausted` and `codex.credits.has_credits` or `unlimited` is true. Without the flag every output is unchanged, and board dispatch, the console and `seats reset` keep the default. (#2251)
 
+### Fixed
+
+- A merge-readiness read of the board no longer loses a gh stdout that reached the maxBuffer limit. The workflow definition read and the check-run annotations read are optional, so the transport loop swallowed every error of them. A read that the product cannot take in full now fails the readiness read with the limit message. Other errors of an optional read keep their result. (#2551)
+
 ### Changed
 
 - The herdr-core floor is 0.1.20 (#2255). Run `hc update` to 0.1.20 before this release is installed: an hc 0.1.19 client fails the floor check.
