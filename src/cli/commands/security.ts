@@ -10,7 +10,7 @@ import * as path from 'path';
 import { isRecord } from '../../core/evidence/is-record';
 import { decodeWorkflowPolicy } from '../../core/workflow/policy-schema';
 import { buildManagedHooks, type HookEntry, type HookHost } from '../installer/managed-entries';
-import { gitExecFileSync } from '../../effects/git/runner';
+import { gitToplevel } from '../../effects/git/runner';
 
 export type SecurityStatus = 'ok' | 'warn' | 'fail';
 export type SecuritySeverity = 'warn' | 'high' | 'fail';
@@ -130,15 +130,7 @@ function homeDir(): string {
 }
 
 function resolveRepoRoot(cwd: string): string {
-  try {
-    const out = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return out.trim() || cwd;
-  } catch {
-    return cwd;
-  }
+  return gitToplevel(cwd) ?? cwd;
 }
 
 function readJson(filePath: string): unknown {

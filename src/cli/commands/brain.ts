@@ -10,7 +10,7 @@ import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
 import { configuredBrainRoot } from './brain-root';
-import { gitExecFileSync } from '../../effects/git/runner';
+import { gitToplevel } from '../../effects/git/runner';
 import { readWorkflowPolicyDocument } from '../../effects/state/resolve-effective-state';
 import { POLICY_PATH } from '../../core/workflow/policy-schema';
 
@@ -104,15 +104,7 @@ function stripWildcard(value: string): string {
 
 function resolveRepoRoot(input?: string): string {
   const cwd = path.resolve(input ?? process.cwd());
-  try {
-    const out = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    return out || cwd;
-  } catch {
-    return cwd;
-  }
+  return gitToplevel(cwd) ?? cwd;
 }
 
 function readManifest(repoRoot: string, manifest?: string): { manifest: BrainManifest; manifestPath: string } {

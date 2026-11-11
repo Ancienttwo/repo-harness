@@ -31,7 +31,7 @@ import { selectionLabel, type PluginId, type PluginSelection } from '../../core/
 import { architecturePort, isArchitectureUnavailable, type ArchitectureProjectionReadinessV1 } from '../../core/architecture/contracts';
 import { globalArchitectureSectionPresent } from '../../effects/configuration/global-configuration';
 import { WORKFLOW_CONTRACT_MARKER_PATH } from '../../core/adoption/minimum-harness-version';
-import { gitExecFileSync } from '../../effects/git/runner';
+import { gitToplevel } from '../../effects/git/runner';
 import { isOptIn } from '../hook/runtime';
 
 export const CLI_VERSION: string = PACKAGE_VERSION;
@@ -73,15 +73,7 @@ export interface StatusReport {
 }
 
 function resolveRepoRoot(cwd: string): string | null {
-  try {
-    const out = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return out.trim() || null;
-  } catch {
-    return null;
-  }
+  return gitToplevel(cwd);
 }
 
 function countManagedEntries(filePath: string): number {

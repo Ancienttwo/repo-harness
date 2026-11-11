@@ -10,7 +10,7 @@ import {
 import type { Capability, CapabilityRegistry, ContractFiles } from '../../core/capabilities/registry';
 import type { ArchcontextCapabilityOwners } from '../../core/capabilities/registry';
 import { architecturePort, isArchitectureUnavailable, type ArchitectureOwnershipPort } from '../../core/architecture/contracts';
-import { gitExecFileSync } from '../../effects/git/runner';
+import { gitToplevel } from '../../effects/git/runner';
 
 export type { Capability, ContractFiles };
 
@@ -79,15 +79,8 @@ const END = '<!-- END CAPABILITY CONTEXT -->';
 
 function repoRoot(input = '.'): string {
   const cwd = path.resolve(input);
-  try {
-    const out = gitExecFileSync(['-C', cwd, 'rev-parse', '--show-toplevel'], {
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    return out ? path.resolve(out) : cwd;
-  } catch {
-    return cwd;
-  }
+  const top = gitToplevel(cwd);
+  return top ? path.resolve(top) : cwd;
 }
 
 function normalizeRepoPath(value: string, repo: string, allowRoot = false): string {
