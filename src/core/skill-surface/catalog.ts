@@ -6,6 +6,7 @@
 // source path exists on disk.
 import { isRecord } from "../evidence/is-record";
 import { HOST_PROGRAM_PLUGINS, isSurfaceOwner, ownerEnabled, SURFACE_OWNERS, type PluginId, type SurfaceOwner } from "./plugin-manifest";
+import { SHA256_PREFIXED_PATTERN } from "../evidence/sha256-pattern";
 
 export const SKILL_SURFACE_CATALOG_VERSION = 4 as const;
 
@@ -221,7 +222,7 @@ function validatePackage(
   if (
     raw.integrity !== null &&
     raw.integrity !== undefined &&
-    (typeof raw.integrity !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.integrity))
+    (typeof raw.integrity !== "string" || !SHA256_PREFIXED_PATTERN.test(raw.integrity))
   ) {
     diagnostics.push(diagnostic(
       "FIELD_REQUIRED",
@@ -390,7 +391,7 @@ function validateRetiredPackages(
         const path = `${basePath}.cleanup[${cleanupIndex}]`;
         if (!isRecord(item) || typeof item.actionId !== "string" || !/^[a-z0-9][a-z0-9-]*$/.test(item.actionId)
           || actionIds.has(item.actionId) || !isStringArray(item.historicalFingerprints)
-          || item.historicalFingerprints.length === 0 || item.historicalFingerprints.some((hash) => !/^sha256:[0-9a-f]{64}$/.test(hash))) {
+          || item.historicalFingerprints.length === 0 || item.historicalFingerprints.some((hash) => !SHA256_PREFIXED_PATTERN.test(hash))) {
           diagnostics.push(diagnostic("FIELD_REQUIRED", path, `${name}: cleanup requires a unique action id and exact SHA-256 fingerprints`));
           continue;
         }

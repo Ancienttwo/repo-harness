@@ -1,4 +1,5 @@
 import { globMatch } from '../state/artifact-parsers';
+import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256-pattern';
 import { sha256Prefixed } from '../evidence/sha256';
 import { canonicalize } from '../evidence/canonical-json';
 import type { JsonValue } from '../evidence/types';
@@ -8,7 +9,7 @@ import type { TaskClaimReference } from './runner-port';
 
 export function validateTaskClaimReference(claim: TaskClaimReference): TaskClaimReference {
   if (!claim || typeof claim.reference !== 'string' || !claim.reference.trim() || /[\x00-\x1f\x7f]/.test(claim.reference)
-    || typeof claim.revision !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(claim.revision)
+    || typeof claim.revision !== 'string' || !SHA256_PREFIXED_PATTERN.test(claim.revision)
     || Object.keys(claim).length !== 2 || !Object.keys(claim).every(key => key === 'reference' || key === 'revision')) throw new Error('task_agent_claim_invalid');
   return { reference: claim.reference, revision: claim.revision };
 }
@@ -40,7 +41,6 @@ export type ReviewAuthorityContext = Frozen<ReviewAuthorityInput & {
   context_sha256: string;
 }>;
 
-const HASH = /^sha256:[0-9a-f]{64}$/;
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 function fail(message: string): never { throw new Error(`review_context_invalid: ${message}`); }
 function record(value: unknown, fields: readonly string[], label: string): Record<string, unknown> {
@@ -51,7 +51,7 @@ function record(value: unknown, fields: readonly string[], label: string): Recor
 function text(value: unknown, label: string): asserts value is string {
   if (typeof value !== 'string' || !value.trim() || value.includes('\0')) fail(label);
 }
-function hash(value: unknown, label: string): void { if (typeof value !== 'string' || !HASH.test(value)) fail(label); }
+function hash(value: unknown, label: string): void { if (typeof value !== 'string' || !SHA256_PREFIXED_PATTERN.test(value)) fail(label); }
 function digest(value: unknown): string {
   return sha256Prefixed(canonicalize(value as JsonValue));
 }

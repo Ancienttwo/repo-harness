@@ -4,6 +4,7 @@ import { constants, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, open
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { osAccountHome } from '../runtime/os-account-home';
 import { canonicalize } from '../../core/evidence/canonical-json';
+import { SHA256_PREFIXED_PATTERN } from '../../core/evidence/sha256-pattern';
 import { sha256Prefixed } from '../../core/evidence/sha256';
 import type { JsonValue } from '../../core/evidence/types';
 import { createReviewAdmission, validateReviewAdmission, reviewCampaignKey, bindReviewAdmission, type ReviewAdmission, type ReviewAdmissionInput, type ReviewAuthorityInput } from '../../core/review/authority-context';
@@ -21,7 +22,6 @@ interface ApprovalRecord {
   actor_id: string; activation_id: string; admission: ReviewAdmission;
   control_approval: ValidatedControlApproval;
 }
-const HASH = /^sha256:[0-9a-f]{64}$/;
 function fail(reason: string): never { throw new Error(`review_admission_${reason}`); }
 function bytes(value: unknown): Buffer { return Buffer.from(canonicalize(value as JsonValue) + '\n'); }
 function digest(value: Buffer): string { return sha256Prefixed(value); }
@@ -72,7 +72,7 @@ function active(path: string): ActiveGrant {
   const value = JSON.parse(readProtected(path).toString('utf8'));
   if (!value || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(['grant_sha256', 'protocol', 'revision'])
     || value.protocol !== 1 || !Number.isSafeInteger(value.revision) || value.revision < 1
-    || value.grant_sha256 !== null && (typeof value.grant_sha256 !== 'string' || !HASH.test(value.grant_sha256))) fail('invalid_active_grant');
+    || value.grant_sha256 !== null && (typeof value.grant_sha256 !== 'string' || !SHA256_PREFIXED_PATTERN.test(value.grant_sha256))) fail('invalid_active_grant');
   return value;
 }
 function publishActive(path: string, next: ActiveGrant): void {
@@ -118,7 +118,7 @@ export function revokeActiveReviewAdmission(input: StoreInput & CampaignIdentity
   expectedRevision: number; expectedGrantSha256: string;
 }): { revision: number; revoked_grant_sha256: string } {
   if (currentReadonlyObservation()) rejectObservation('Observation cannot revoke a review admission');
-  if (typeof input.expectedGrantSha256 !== 'string' || !HASH.test(input.expectedGrantSha256)) fail('revocation_request_invalid');
+  if (typeof input.expectedGrantSha256 !== 'string' || !SHA256_PREFIXED_PATTERN.test(input.expectedGrantSha256)) fail('revocation_request_invalid');
   const loc = location(input, input, false);
   return withExclusiveDirectoryLock(loc.directory, 'approval.lock', () => {
     const previous = active(loc.active);
@@ -136,7 +136,7 @@ export function readReviewAdmissionForObservation(input: StoreInput & CampaignId
   expectedGrantSha256: string; expectedPolicySha256: string; expectedActor: string;
 }) {
   const loc = location(input, input, false), before = active(loc.active);
-  if (!HASH.test(input.expectedGrantSha256) || before.grant_sha256 !== input.expectedGrantSha256) fail('revoked_or_replaced');
+  if (!SHA256_PREFIXED_PATTERN.test(input.expectedGrantSha256) || before.grant_sha256 !== input.expectedGrantSha256) fail('revoked_or_replaced');
   const content = readProtected(join(loc.directory, `${input.expectedGrantSha256.slice(7)}.json`));
   if (digest(content) !== input.expectedGrantSha256) fail('grant_digest');
   const value = JSON.parse(content.toString('utf8')) as ApprovalRecord;

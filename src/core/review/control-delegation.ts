@@ -1,6 +1,7 @@
 import { canonicalize } from '../evidence/canonical-json';
 import type { JsonValue } from '../evidence/types';
 import { freeze, validateReviewAdmission, type Frozen, type ReviewAdmission } from './authority-context';
+import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256-pattern';
 
 /** An already-authorized upstream request. These fields provide binding and
  * traceability, not authentication. The calling Bot owns human authentication,
@@ -73,7 +74,7 @@ function integer(value: unknown): asserts value is number {
   if (!Number.isSafeInteger(value) || (value as number) < 0) fail('integer');
 }
 function hash(value: JsonValue | undefined): asserts value is string {
-  if (typeof value !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value)) fail('digest');
+  if (typeof value !== 'string' || !SHA256_PREFIXED_PATTERN.test(value)) fail('digest');
 }
 function strings(value: JsonValue | undefined): asserts value is string[] {
   if (!Array.isArray(value) || !value.length) fail('list');

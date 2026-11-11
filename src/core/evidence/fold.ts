@@ -6,6 +6,7 @@
  */
 import { isRecord } from "./is-record";
 import type { EvidenceEventRecord, EvidenceLogRecord, GenesisRecord, SubjectIdentity, TrustClass } from "./types";
+import { SHA256_PREFIXED_PATTERN } from './sha256-pattern';
 
 export type ParsedLogLine =
   | { readonly ok: true; readonly record: EvidenceLogRecord }
@@ -41,7 +42,7 @@ function isValidSubjectIdentity(value: unknown): value is SubjectIdentity {
     if (!hashes) return false;
     const fields = [...common, ...hashes, ...(value.authority_kind === 'eval-catalog' ? ['eval_id'] : [])];
     if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(fields.sort())
-      || !hashes.every(key => typeof value[key] === 'string' && /^sha256:[0-9a-f]{64}$/.test(value[key] as string))
+      || !hashes.every(key => typeof value[key] === 'string' && SHA256_PREFIXED_PATTERN.test(value[key] as string))
       || value.authority_kind === 'eval-catalog' && !isNonEmptyString(value.eval_id)) return false;
   } else if (!isNonEmptyString(value.contract_hash)) return false;
   return isNonEmptyString(value.authority_commit)

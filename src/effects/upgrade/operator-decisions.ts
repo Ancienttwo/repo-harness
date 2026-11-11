@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 import { join, relative, sep } from 'path';
 import { isLegacyPathSafe, legacyPathSnapshot, type LeftoverItem, type LegacyPathSnapshot } from './legacy-inventory';
+import { SHA256_PREFIXED_PATTERN } from '../../core/evidence/sha256-pattern';
 
 /** Tracked operator decisions for project upgrade items that have no ownership proof. */
 export const UPGRADE_DECISIONS_PATH = '.ai/harness/upgrade-decisions.json';
@@ -18,7 +19,6 @@ export interface DecidedUpgradePlan {
   readonly operatorKept: LeftoverItem[];
 }
 
-const CONTENT_HASH = /^sha256:[0-9a-f]{64}$/;
 
 function decisionFileError(detail: string): Error {
   return new Error(`invalid upgrade decision file ${UPGRADE_DECISIONS_PATH}: ${detail}`);
@@ -54,7 +54,7 @@ export function parseUpgradeDecisions(text: string): UpgradeDecision[] {
     const { path, decision, contentHash } = entry;
     if (typeof path !== 'string' || !isRepoRelativeDecisionPath(path)) throw decisionFileError(`${at}.path must be a repo-relative POSIX path`);
     if (decision !== 'keep' && decision !== 'remove') throw decisionFileError(`${at}.decision must be "keep" or "remove"`);
-    if (typeof contentHash !== 'string' || !CONTENT_HASH.test(contentHash)) throw decisionFileError(`${at}.contentHash must be sha256:<64 hex>`);
+    if (typeof contentHash !== 'string' || !SHA256_PREFIXED_PATTERN.test(contentHash)) throw decisionFileError(`${at}.contentHash must be sha256:<64 hex>`);
     if (seen.has(path)) throw decisionFileError(`duplicate decision for ${path}`);
     seen.add(path);
     return { path, decision, contentHash };

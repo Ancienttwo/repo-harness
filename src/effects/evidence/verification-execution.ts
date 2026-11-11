@@ -6,6 +6,7 @@ import { tmpdir } from "os";
 import { delimiter, isAbsolute, join, relative, resolve } from "path";
 
 import { canonicalize } from "../../core/evidence/canonical-json";
+import { SHA256_PREFIXED_PATTERN } from "../../core/evidence/sha256-pattern";
 import { sha256Prefixed } from "../../core/evidence/sha256";
 import type { EvidenceEventRecord, GenesisRecord, JsonValue, AdmittedReviewSubjectIdentity, EvalCatalogSubjectIdentity } from "../../core/evidence/types";
 import { redactPayloadStrings, SECRET_DENYLIST_ENV_KEYS } from "../../core/evidence/redaction";
@@ -536,7 +537,7 @@ function payloadOf(repoRoot: string, event: EvidenceEventRecord): ExecutionPaylo
     : record.authority_kind === "eval-catalog" && typeof record.eval_id === "string" && record.eval_id.length > 0
       ? [record.catalog_sha256, record.eval_sha256] : [];
   if (record.protocol !== 2 || !authorityHashes.length
-    || ![...authorityHashes, record.plan_hash].every(value => typeof value === "string" && /^sha256:[0-9a-f]{64}$/.test(value))
+    || ![...authorityHashes, record.plan_hash].every(value => typeof value === "string" && SHA256_PREFIXED_PATTERN.test(value))
     || typeof record.check_id !== "string") return null;
   if (typeof record.cache_key !== "string" || typeof record.execution_id !== "string" || typeof record.run_file !== "string") return null;
   if (typeof record.run_record_hash !== "string" || typeof record.passed !== "boolean") return null;

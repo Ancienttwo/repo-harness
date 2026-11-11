@@ -2,6 +2,7 @@ import { byteCompare } from '../evidence/byte-compare';
 import { isRecord } from '../evidence/is-record';
 import { validateTaskMessageClaim, type TaskMessageClaim } from '../messages/task-message-claim';
 import { evaluateNoProgress } from '../state/no-progress';
+import { SHA256_PREFIXED_PATTERN } from '../evidence/sha256-pattern';
 import {
   publicationSha256,
   stablePublicationJson,
@@ -15,7 +16,6 @@ export const REACTION_ATTEMPT_RECEIPT_KIND = 'repo-harness-reaction-attempt-rece
 export const REPAIR_OFFER_KIND = 'repo-harness-repair-offer' as const;
 export const FEEDBACK_SUMMARY_MAX_BYTES = 16 * 1024;
 
-const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const GIT_OID_PATTERN = /^[0-9a-f]{40,64}$/u;
 const RFC3339_UTC_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u;
 const FEEDBACK_CHECK_CONCLUSIONS = new Set<FeedbackCheckConclusion>([
@@ -189,7 +189,7 @@ function requiredString(value: unknown, label: string, code: FeedbackProtocolErr
 
 function requiredDigest(value: unknown, label: string): string {
   const digest = requiredString(value, label);
-  if (!SHA256_PATTERN.test(digest)) fail('feedback_provider_shape_invalid', `${label} is invalid`);
+  if (!SHA256_PREFIXED_PATTERN.test(digest)) fail('feedback_provider_shape_invalid', `${label} is invalid`);
   return digest;
 }
 

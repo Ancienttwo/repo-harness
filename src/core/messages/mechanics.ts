@@ -3,7 +3,6 @@ import { TASK_DIGEST_PATTERN } from '../state/coordination-identity';
 import { TaskMessageError } from './task-message-error';
 
 export const MESSAGE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-export const MESSAGE_SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 export const MESSAGE_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u;
 
 export type MessageInvalid = (message: string) => never;
