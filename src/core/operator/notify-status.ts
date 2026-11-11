@@ -9,8 +9,6 @@ export type NotifyPresence = 'configured' | 'missing';
 
 /** Why the notify status is unknown. A probe that fails is never read as "not configured". */
 export const NOTIFY_SESSION_REASONS = ['notify_session_missing', 'notify_session_invalid'] as const;
-/** The relay install record is absent or unreadable. */
-export type NotifySessionReason = typeof NOTIFY_SESSION_REASONS[number];
 /** `relay_stopped`: hc answered, and no live terminal carries the relay labels. */
 export const NOTIFY_UNAVAILABLE_REASONS = [...NOTIFY_SESSION_REASONS, 'hc_unavailable', 'relay_stopped', 'notify_config_unavailable'] as const;
 export type NotifyUnavailableReason = typeof NOTIFY_UNAVAILABLE_REASONS[number];
