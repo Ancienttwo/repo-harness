@@ -13,7 +13,6 @@ import type { WorktreeProcess } from '../../src/effects/git/worktree-processes';
 import type { GithubCommandRunner } from '../../src/effects/github/issues';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { runSetupProcess } from '../../src/effects/setup/collector';
-import { createGithubDraftPrPublisher } from '../../src/effects/operator/doc-session-finalize-github';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { cleanupPlanSelectionDigest, createCleanupPlan } from '../../src/effects/operator/worktree-cleanup-plan';
 import {
@@ -21,7 +20,7 @@ import {
   worktreeCleanupInvestigationWriteRoute, type CleanupInvestigator,
 } from '../../src/effects/operator/worktree-cleanup-investigation';
 import { prepareReviewLauncher } from '../../src/effects/review/review-isolation';
-import { CLEANUP_ARCHIVE_BRANCH } from '../../src/effects/operator/worktree-cleanup-publish';
+import { CLEANUP_ARCHIVE_BRANCH, createGithubDraftPrPublisher } from '../../src/effects/operator/worktree-cleanup-publish';
 import {
   chooseCleanupSessionPlan, createCleanupSessionPlan, runAuthorizedCleanup, worktreeCleanupExecuteWriteRoute, worktreeCleanupPlanWriteRoute,
 } from '../../src/effects/operator/worktree-cleanup-route';

@@ -6,12 +6,10 @@ import { canonicalize } from '../../core/evidence/canonical-json';
 import type { JsonValue } from '../../core/evidence/types';
 import { containsSecret } from '../../core/security/secret-patterns';
 import { cleanupPlanDigestInput, decodeCleanupPlan, gitArchiveRefuses, type CleanupPlanItem } from '../../core/operator/worktree-cleanup-plan';
-import type { CleanupFileEvidence, CleanupLossEvidence } from '../../core/operator/worktree-cleanup-observation';
-import { isRepositoryRelativePath } from '../../core/operator/doc-session-events';
+import { isRepositoryRelativePath, type CleanupFileEvidence, type CleanupLossEvidence } from '../../core/operator/worktree-cleanup-observation';
 import { repoHarnessHome } from '../repo-harness-home';
-import { docSessionGitRunner } from './doc-session-changes';
 import { cleanupLossSha256 } from './worktree-cleanup-plan';
-import { observeCleanupLoss, type CleanupObservationTarget } from './worktree-cleanup-observation';
+import { cleanupGitRunner, observeCleanupLoss, type CleanupObservationTarget } from './worktree-cleanup-observation';
 import { cleanupDirectoryNames, createCleanupPrivateFile, ensureCleanupPrivateDirectory, openCleanupChild, openCleanupDirectory,
   publishCleanupPrivateFile, unlinkCleanupTemporary } from './cleanup-file-access';
 
@@ -176,7 +174,7 @@ export function stageCleanupArchive(sessionId: string, target: CleanupObservatio
       }
       // Preserve index-only versions separately, including unresolved index stages.
       for (const entry of loss.index.filter(entry => entry.path === path)) {
-        const bytes = docSessionGitRunner({ ...options.env, GIT_NO_REPLACE_OBJECTS: '1' }).bytes(target.worktree, ['cat-file', 'blob', entry.oid]);
+        const bytes = cleanupGitRunner({ ...options.env, GIT_NO_REPLACE_OBJECTS: '1' }).bytes(target.worktree, ['cat-file', 'blob', entry.oid]);
         const oid = createHash(entry.oid.length === 64 ? 'sha256' : 'sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
         if (oid !== entry.oid) fail('changed');
         save(storage, `.cleanup/index/${entry.stage}/${path}`, path, bytes, { kind: 'index', mode: entry.mode, stage: entry.stage, oid });
@@ -201,7 +199,7 @@ export function stageCleanupArchive(sessionId: string, target: CleanupObservatio
 function stageCommits(target: CleanupObservationTarget, loss: CleanupLossEvidence, options: CleanupArchiveOptions,
   save: (storage: 'git' | 'private', path: string, source: string, bytes: Buffer, original: Original) => void): void {
   if (loss.kind !== 'registered') fail('unsupported');
-  const runner = docSessionGitRunner({ ...options.env, GIT_NO_REPLACE_OBJECTS: '1' });
+  const runner = cleanupGitRunner({ ...options.env, GIT_NO_REPLACE_OBJECTS: '1' });
   const commits = loss.commits.map(commit => {
     checkDeadline(options.deadline);
     const raw = runner.bytes(target.worktree, ['cat-file', 'commit', commit]);

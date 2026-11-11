@@ -144,7 +144,7 @@ jobs:
       matrix:
         test:
           - tests/generic-review.test.ts
-          - tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts tests/docs-host-isolation.test.ts
+          - tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts
     steps:
       - uses: actions/checkout@v4
         with:

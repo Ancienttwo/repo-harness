@@ -1,9 +1,7 @@
 import { canonicalize } from '../evidence/canonical-json';
 import type { JsonValue } from '../evidence/types';
-import { DOC_SESSION_PATCH_MAX_BYTES } from './doc-session-changes';
-import { isRepositoryRelativePath } from './doc-session-events';
 import { containsSecret } from '../security/secret-patterns';
-import type { CleanupLossEvidence } from './worktree-cleanup-observation';
+import { CLEANUP_GIT_OUTPUT_MAX_BYTES, isRepositoryRelativePath, type CleanupLossEvidence } from './worktree-cleanup-observation';
 import { decodeWorktreeCleanupRequest, WORKTREE_CLEANUP_MAX_IDS, type WorktreeCleanupRequest } from './worktree-cleanup';
 import { decodeWorktrees, isPublicWorktreeDirectory, isPublicWorktreeText, type WorktreeView } from '../public-projections/worktrees';
 
@@ -90,9 +88,9 @@ const GIT_FILE_MAX = 16 * 1024 * 1024;
 export function gitArchiveRefuses(path: string, size: number | null): boolean {
   return PRIVATE_FILE.test(path) || (size !== null && size > GIT_FILE_MAX);
 }
-/** Staging reads each index version through the doc session Git runner, which refuses output above this limit in every storage. */
+/** Staging reads each index version through the cleanup Git runner, which refuses output above this limit in every storage. */
 export function archiveStagingRefuses(indexSize: number): boolean {
-  return indexSize > DOC_SESSION_PATCH_MAX_BYTES;
+  return indexSize > CLEANUP_GIT_OUTPUT_MAX_BYTES;
 }
 export const isArchivePr = (value: unknown): value is string => typeof value === 'string' && !containsSecret(value)
   && /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9][0-9]*$/u.test(value);

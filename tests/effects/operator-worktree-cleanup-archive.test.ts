@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { DOC_SESSION_PATCH_MAX_BYTES } from '../../src/core/operator/doc-session-changes';
+import { CLEANUP_GIT_OUTPUT_MAX_BYTES } from '../../src/core/operator/worktree-cleanup-observation';
 import { cleanupPlanDigestInput, type CleanupPlanItem } from '../../src/core/operator/worktree-cleanup-plan';
 import { createCleanupPlan } from '../../src/effects/operator/worktree-cleanup-plan';
 import { stageCleanupArchive } from '../../src/effects/operator/worktree-cleanup-archive';
@@ -118,9 +118,9 @@ test('the plan offers only the storage that staging takes: Git refuses private n
     stage('config/secrets.json', 'SYNTHETIC=fixture\n', null);
     writeFileSync(join(f.tree, 'docs/guide.md'), 'ordinary\n'); writeFileSync(join(f.tree, '.env'), 'SYNTHETIC=fixture\n');
     writeFileSync(join(f.tree, 'cache.bin'), Buffer.alloc(16 * 1024 * 1024 + 1, 'a'));
-    stage('docs/staged-limit.txt', Buffer.alloc(DOC_SESSION_PATCH_MAX_BYTES, 'line\n'), null);
-    stage('docs/staged-over.txt', Buffer.alloc(DOC_SESSION_PATCH_MAX_BYTES + 1, 'a'), null);
-    stage('docs/index-over.txt', Buffer.alloc(DOC_SESSION_PATCH_MAX_BYTES + 1, 'a'), 'small\n');
+    stage('docs/staged-limit.txt', Buffer.alloc(CLEANUP_GIT_OUTPUT_MAX_BYTES, 'line\n'), null);
+    stage('docs/staged-over.txt', Buffer.alloc(CLEANUP_GIT_OUTPUT_MAX_BYTES + 1, 'a'), null);
+    stage('docs/index-over.txt', Buffer.alloc(CLEANUP_GIT_OUTPUT_MAX_BYTES + 1, 'a'), 'small\n');
     const forge = (item: CleanupPlanItem, archive: CleanupPlanItem['advice']['archive']) => {
       const { plan_sha256: _plan, ...rest } = { ...item, advice: { ...item.advice, archive } };
       return { ...rest, plan_sha256: createHash('sha256').update(cleanupPlanDigestInput(sid, rest)).digest('hex') };
