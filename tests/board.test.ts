@@ -11,7 +11,7 @@ import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectPullRequestMergeReadiness } from '../src/effects/publication/merge-readiness';
-import { collectBoard, collectBoardThrough, readGhJson, readParent, readLocalRepositoryId, readLocalRepositoryIdAsync, seatTerminalsWithBranches, type BoardCollectInput } from '../src/effects/board/collect';
+import { collectBoard, collectBoardThrough, GH_MAX_BUFFER_BYTES, readGhJson, readParent, readLocalRepositoryId, readLocalRepositoryIdAsync, seatTerminalsWithBranches, type BoardCollectInput } from '../src/effects/board/collect';
 import { createKeyedSources, KEYED_SOURCE_MAX_AGE_MS } from '../src/effects/board/keyed-sources';
 import { runBoardMerge } from '../src/effects/board/merge';
 import { boardMergeDecisions } from '../src/core/board/merge';
@@ -797,6 +797,42 @@ test('board merge: an accepted, green, ready PR first in plan order is eligible,
   const dry = runBoardMerge({ ...replayInput(mergeReplay()), pr: 1491, dry_run: true, merge });
   const refused = runBoardMerge({ ...replayInput(mergeReplay()), pr: 1494, dry_run: false, merge });
   expect([dry.target, dry.exit_code, refused.target, refused.exit_code, calls.length]).toEqual([1491, 0, null, 4, 1]);
+});
+
+test('board read: the pull request read asks in groups, so a parent whose pull requests print more than one 1 MiB gh response reaches the board complete', () => {
+  // 32 more pull requests of #1475, each a copy of the open #1491 (33 kB): about 1.2 MB in one query.
+  const copies = Array.from({ length: 32 }, (_, at) => 1600 + at);
+  const input = replayInput({
+    parent: (data) => { issueNode(data, 1475).timelineItems.nodes.push(...copies.map(number => ({ source: { number, repository: { nameWithOwner: 'Ancienttwo/repo-harness' } } }))); },
+    pulls: (data) => { for (const number of copies) data.repository[`pr${number}`] = { ...data.repository.pr1491, number }; },
+  });
+  const board = input.gh_runner!;
+  const sizes: number[] = [];
+  // Each pull request read gets the aliases that its query asks for, as GitHub answers it.
+  const gh: BoardCollectInput['gh_runner'] = (args) => {
+    const query = args.find(arg => arg.startsWith('query='))!;
+    if (args[1] !== 'graphql' || !query.includes(': pullRequest(number:')) return board(args);
+    const recorded = JSON.parse(board(args).stdout).data.repository;
+    const stdout = JSON.stringify({ data: { repository: Object.fromEntries([...query.matchAll(/(pr\d+): pullRequest/gu)].map(([, alias]) => [alias, recorded[alias!]])) } });
+    sizes.push(stdout.length);
+    return { status: 0, stdout };
+  };
+  const read = collectBoard({ ...input, gh_runner: gh });
+  expect(sizes.reduce((sum, size) => sum + size, 0)).toBeGreaterThan(1024 * 1024);
+  expect(Math.max(...sizes)).toBeLessThan(1024 * 1024);
+  expect(read.pull_requests.map(pr => pr.number)).toEqual(expect.arrayContaining([1491, ...copies]));
+  // A real gh process that prints more than the limit is killed; the error names the limit and is no short availability.
+  const largeGh = join(input.repo_root, 'gh-large');
+  writeFileSync(largeGh, `#!/bin/sh\nhead -c ${GH_MAX_BUFFER_BYTES + 1} /dev/zero\n`, { mode: 0o755 });
+  try { readGhJson({ repo_root: input.repo_root, gh_bin: largeGh }, ['api', 'graphql']); throw new Error('expected failure'); } catch (error) {
+    expect(error).toBeInstanceOf(BoardCollectError);
+    expect((error as BoardCollectError).message).toBe(`gh api graphql printed more than the ${GH_MAX_BUFFER_BYTES}-byte maxBuffer limit`);
+    expect((error as BoardCollectError).endedWithoutExit).toBe(false);
+  }
+  // The daily run read over the limit fails the board read; it is no unavailable daily run.
+  const enobufs = { status: null, stdout: '', signal: 'SIGKILL' as const, error: Object.assign(new Error('spawnSync gh ENOBUFS'), { code: 'ENOBUFS' }) };
+  expect(() => collectBoard({ ...input, gh_runner: args => args.some(arg => arg.includes('actions/workflows/ci.yml/runs')) ? enobufs : gh(args) }))
+    .toThrow(`gh api --hostname printed more than the ${GH_MAX_BUFFER_BYTES}-byte maxBuffer limit`);
 });
 
 test('each attention finding names its priority, and a delivery sorts the entries by it', () => {

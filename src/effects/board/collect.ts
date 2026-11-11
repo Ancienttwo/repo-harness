@@ -17,6 +17,18 @@ import { collectPullRequestMergeReadiness } from '../publication/merge-readiness
 import { createKeyedSources, readinessKey, type GhRunner, type KeyedSources } from './keyed-sources';
 
 const GH_TIMEOUT_MS = 30_000;
+/**
+ * The stdout limit of one gh call. A read that reaches it fails with this
+ * number, because the child is killed and its cut output is no JSON. The
+ * process default of 1 MiB cut the pull request read of a parent with 92 PRs.
+ */
+export const GH_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
+/**
+ * The pull requests of one query of the pull request read. One PR printed
+ * about 13 kB at #2207 (1 229 986 bytes for 96 PRs), so a group prints about
+ * 260 kB, 1.6% of `GH_MAX_BUFFER_BYTES`.
+ */
+const PULL_REQUEST_GROUP = 20;
 const SEAT_GIT_TIMEOUT_MS = 10_000;
 
 const COMMENT_NODES = 'nodes { url createdAt authorAssociation body }';
@@ -61,7 +73,7 @@ const PULL_REQUEST_FIELDS = `number url state isDraft body baseRefName baseRefOi
   } } } }
   ${COMMENTS}`;
 
-/** The cross-referenced pull requests, each once, so a PR that names several sub-issues is read once. */
+/** One group of the cross-referenced pull requests, each once, so a PR that names several sub-issues is read once. */
 export function pullRequestsQuery(numbers: readonly number[]): string {
   return `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {\n${
     numbers.map(number => `  pr${number}: pullRequest(number: ${number}) { ${PULL_REQUEST_FIELDS} }`).join('\n')}\n} }`;
@@ -80,6 +92,9 @@ export class BoardCollectError extends Error {
     this.name = 'BoardCollectError';
   }
 }
+
+/** A gh stdout that reached `GH_MAX_BUFFER_BYTES`: the product cannot take the answer in full, so no read reports it as an unavailable provider. */
+class GhOutputLimitError extends BoardCollectError {}
 
 /** Whether one failed board read is short provider availability: a provider 5xx, or a gh call that ended with no exit status. */
 export function boardAvailabilityFailure(error: unknown): error is BoardCollectError {
@@ -109,10 +124,17 @@ export interface BoardCollectInput {
 
 export type GhInput = Pick<BoardCollectInput, 'repo_root' | 'gh_bin' | 'gh_runner'>;
 
+function bufferLimitError(args: readonly string[]): GhOutputLimitError {
+  return new GhOutputLimitError(`gh ${args.slice(0, 2).join(' ')} printed more than the ${GH_MAX_BUFFER_BYTES}-byte maxBuffer limit`);
+}
+
+/** A gh call killed at `GH_MAX_BUFFER_BYTES` is a `BoardCollectError` that names the limit: its signal is no short availability. */
 function runGh(input: GhInput, args: readonly string[]): GhCallResult {
-  return input.gh_runner?.(args) ?? spawnSync(input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
-    cwd: input.repo_root, env: { ...process.env, GH_HOST: 'github.com' }, encoding: 'utf-8', timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL',
+  const result = input.gh_runner?.(args) ?? spawnSync(input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
+    cwd: input.repo_root, env: { ...process.env, GH_HOST: 'github.com' }, encoding: 'utf-8', timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: GH_MAX_BUFFER_BYTES,
   });
+  if ((result.error as NodeJS.ErrnoException | undefined)?.code === 'ENOBUFS') throw bufferLimitError(args);
+  return result;
 }
 
 /** One gh call that prints JSON; a failed call or invalid JSON is a `BoardCollectError`. */
@@ -123,8 +145,9 @@ export function readGhJson(input: GhInput, args: readonly string[]): unknown {
 /** One gh call that prints text; the board review and the board dispatch post their comments with it. A failed call is a `BoardCollectError`. */
 export function runGhText(input: { readonly repo_root: string }, args: readonly string[], stdin?: string): string {
   const run = spawnSync(process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
-    cwd: input.repo_root, env: { ...process.env, GH_HOST: 'github.com' }, encoding: 'utf-8', input: stdin, timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL',
+    cwd: input.repo_root, env: { ...process.env, GH_HOST: 'github.com' }, encoding: 'utf-8', input: stdin, timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: GH_MAX_BUFFER_BYTES,
   });
+  if ((run.error as NodeJS.ErrnoException | undefined)?.code === 'ENOBUFS') throw bufferLimitError(args);
   if (run.error !== undefined || run.status !== 0) throw new BoardCollectError(`gh ${args.slice(0, 2).join(' ')} failed: ${(run.stderr || run.error?.message || '').trim().slice(0, 300)}`);
   return run.stdout.trim();
 }
@@ -164,7 +187,7 @@ function dailyRun(input: BoardCollectInput, repository: string, branch: string):
     body = readGhJson(input, ['api', '--hostname', 'github.com',
       `repos/${repository}/actions/workflows/ci.yml/runs?event=schedule&status=completed&per_page=1&branch=${encodeURIComponent(branch)}`]);
   } catch (error) {
-    if (error instanceof BoardCollectError) return { status: 'unavailable', reason: 'github_unavailable' };
+    if (error instanceof BoardCollectError && !(error instanceof GhOutputLimitError)) return { status: 'unavailable', reason: 'github_unavailable' };
     throw error;
   }
   const runs = (body as { workflow_runs?: unknown } | null)?.workflow_runs;
@@ -302,11 +325,12 @@ export async function readLocalRepositoryIdAsync(input: {
   const result = await new Promise<{ readonly status: number | null; readonly stdout: string; readonly stderr: string }>((resolve, reject) => {
     let output: { readonly error: ExecFileException | null; readonly stdout: string; readonly stderr: string };
     const child = execFile(input.gh_bin ?? input.env.REPO_HARNESS_GH_BIN ?? 'gh', [...REPOSITORY_ID_ARGS], {
-      cwd: input.repo_root, env: { ...env, GH_HOST: 'github.com' }, signal: input.signal, timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL', encoding: 'utf8',
+      cwd: input.repo_root, env: { ...env, GH_HOST: 'github.com' }, signal: input.signal, timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL', maxBuffer: GH_MAX_BUFFER_BYTES, encoding: 'utf8',
     }, (error, stdout, stderr) => { output = { error, stdout, stderr }; });
     // The abort callback can run before exit. Reap the child before this read settles.
     child.once('close', () => {
       if (input.signal.aborted) reject(new DOMException('repository read aborted', 'AbortError'));
+      else if (output.error?.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') reject(bufferLimitError(REPOSITORY_ID_ARGS));
       else if (output.error && typeof output.error.code !== 'number') reject(output.error);
       else resolve({ status: output.error?.code as number ?? 0, stdout: output.stdout, stderr: output.stderr });
     });
@@ -370,6 +394,20 @@ function boardReadinessTransport(input: GhInput, repository: string): GhRunner {
   };
 }
 
+/** The pull request read in groups of `PULL_REQUEST_GROUP`, one query each; the decoder gets the aliases of all groups as one answer. */
+function readPullRequests(input: GhInput, owner: string, name: string, numbers: readonly number[]): BoardPullRequestReadV1[] {
+  if (numbers.length === 0) return [];
+  const repository: Record<string, unknown> = {};
+  for (let at = 0; at < numbers.length; at += PULL_REQUEST_GROUP) {
+    const data = graphql(input, pullRequestsQuery(numbers.slice(at, at + PULL_REQUEST_GROUP)), { owner, name }) as { repository?: unknown } | null;
+    if (data === null || typeof data !== 'object' || data.repository === null || typeof data.repository !== 'object') {
+      throw new BoardSourceError('repository is not an object');
+    }
+    Object.assign(repository, data.repository);
+  }
+  return decodePullRequestsRead({ repository }, numbers);
+}
+
 /** One board read through a fresh keyed source store: the path of every act. */
 export function collectBoard(input: BoardCollectInput): BoardV1 {
   return collectBoardThrough(input, createKeyedSources());
@@ -381,7 +419,7 @@ export function collectBoardThrough(input: BoardCollectInput, sources: KeyedSour
   const repository = parent.repository.name_with_owner;
   const [owner, name] = repository.split('/') as [string, string];
   const candidates = [...new Set(parent.sub_issues.flatMap(issue => issue.pull_request_candidates))].sort((left, right) => left - right);
-  const reads: BoardPullRequestReadV1[] = candidates.length === 0 ? [] : decodePullRequestsRead(graphql(input, pullRequestsQuery(candidates), { owner, name }), candidates);
+  const reads = readPullRequests(input, owner, name, candidates);
   const linked = linkedPullRequests(parent, reads);
   const readinessTransport = boardReadinessTransport(input, repository);
   const readiness = linked.filter(read => read.state === 'open').map((read) => {
