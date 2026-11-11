@@ -160,12 +160,12 @@ function readStorage(key: string): string | null {
   try { return typeof window === 'undefined' ? null : localStorage.getItem(key); } catch { return null; }
 }
 
-// The current history entry's record names its repository; localStorage (the latest pick) seeds only an entry
-// without a valid record. Initial load and Back or Forward read the repository through this one path.
-function entryRepository(): string | null {
+// The current history entry's record gives its repository. An entry without a record takes the repository
+// that the app already shows; only a new app with neither falls back to the latest pick in localStorage.
+function recordedRepository(): string | null {
   if (typeof window === 'undefined') return null;
   const recorded: unknown = (window.history.state as { repositoryId?: unknown } | null)?.repositoryId;
-  return typeof recorded === 'string' ? recorded : readStorage(OPERATOR_REPOSITORY_STORAGE_KEY);
+  return typeof recorded === 'string' ? recorded : null;
 }
 
 function writeStorage(key: string, value: string | null): void {
@@ -338,7 +338,7 @@ export function OperatorApp({
   readDocsTree = fetchDocsTree,
   readDocsFile = fetchDocsFile,
 }: OperatorAppProps) {
-  const [repositoryId, setRepositoryId] = useState<string | null>(entryRepository);
+  const [repositoryId, setRepositoryId] = useState<string | null>(() => recordedRepository() ?? readStorage(OPERATOR_REPOSITORY_STORAGE_KEY));
   const [place, setPlace] = useState<WorkspaceLocation>(() => initialPlace ?? parseWorkspaceLocation(typeof window === 'undefined' ? '' : window.location.hash));
   const [refreshGeneration, setRefreshGeneration] = useState(0);
   const { locale, setLocale, t } = useLocale(initialLocale);
@@ -418,7 +418,7 @@ export function OperatorApp({
   useEffect(() => {
     const restore = () => {
       setPlace(parseWorkspaceLocation(window.location.hash));
-      setRepositoryId(entryRepository());
+      setRepositoryId(current => recordedRepository() ?? current);
     };
     window.addEventListener('popstate', restore);
     window.addEventListener('hashchange', restore);

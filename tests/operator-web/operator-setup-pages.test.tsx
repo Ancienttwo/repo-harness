@@ -176,7 +176,7 @@ describe('navigation', () => {
     }
   });
 
-  test('Back after a repository switch restores the module page together with its repository', async () => {
+  test('r1 Back after a repository switch restores the module page together with its repository', async () => {
     const [first, second] = REGISTRY.repositories;
     await mount('#architecture/capability.workflow-engine.pipeline', props(readySetup(NOW), { readArchitectureMap: () => new Promise(() => {}) }));
     const switchButton = () => document.querySelector<HTMLButtonElement>('[data-repository-switch]')!;
@@ -186,7 +186,7 @@ describe('navigation', () => {
     expect([switchButton().getAttribute('data-selected'), window.location.hash]).toEqual([first!.repository_id, '#architecture/capability.workflow-engine.pipeline']);
   });
 
-  test('a reload keeps the repository that its history entry records when another tab stored a different pick', async () => {
+  test('r2 a reload keeps the repository that its history entry records when another tab stored a different pick', async () => {
     const [first, second] = REGISTRY.repositories;
     const architecture = props(readySetup(NOW), { readArchitectureMap: () => new Promise(() => {}) });
     await mount('#architecture/capability.workflow-engine.pipeline', architecture);
@@ -195,6 +195,22 @@ describe('navigation', () => {
     await mount('#architecture/capability.workflow-engine.pipeline', architecture);
     expect([document.querySelector('[data-repository-switch]')?.getAttribute('data-selected'), window.location.hash, (window.history.state as { repositoryId?: string } | null)?.repositoryId, localStorage.getItem('repo-harness:operator-repository')])
       .toEqual([first!.repository_id, '#architecture/capability.workflow-engine.pipeline', first!.repository_id, second!.repository_id]);
+  });
+
+  test('r3 a typed hash after a switch and Back keeps the repository that the app shows', async () => {
+    const [first, second] = REGISTRY.repositories;
+    await mount('#architecture/capability.workflow-engine.pipeline', props(readySetup(NOW), { readArchitectureMap: () => new Promise(() => {}) }));
+    const switchButton = () => document.querySelector<HTMLButtonElement>('[data-repository-switch]')!;
+    await act(async () => switchButton().click());
+    await act(async () => document.querySelector<HTMLButtonElement>(`[data-switch-option="${second!.repository_id}"]`)!.click());
+    await act(async () => { window.history.back(); await new Promise(resolve => setTimeout(resolve, 0)); });
+    // A typed hash is a new entry without a record, then a hashchange event (happy-dom would copy the previous record).
+    await act(async () => {
+      window.history.pushState(null, '', '#architecture/capability.workflow-engine.state');
+      window.dispatchEvent(new window.Event('hashchange'));
+    });
+    expect([switchButton().getAttribute('data-selected'), window.location.hash, localStorage.getItem('repo-harness:operator-repository')])
+      .toEqual([first!.repository_id, '#architecture/capability.workflow-engine.state', second!.repository_id]);
   });
 
   test('1-SHELL-N1 every page in the shell routes by its hash with one repository switch; later pages have no entry or route', async () => {
