@@ -55,35 +55,43 @@ import {
   sourceHash,
 } from './collect-state-inputs';
 import { gitExecFileSync } from '../git/runner';
+import { POLICY_PATH, decodeWorkflowPolicy, type DecodedWorkflowPolicy, type WorkflowPolicyObject } from '../../core/workflow/policy-schema';
 
 const ACTIVE_WORKTREE_MARKER = '.ai/harness/active-worktree';
 const CAPABILITY_REGISTRY_PATH = '.ai/context/capabilities.json';
 const CAPABILITY_NODES_DIR = '.archcontext/model/nodes';
 const CAPABILITY_NODE_FILE = /\.ya?ml$/;
-const POLICY_PATH = '.ai/harness/policy.json';
 // profile_reasons names at most this many unowned paths; the count reason carries the total.
 const UNOWNED_PATH_REASON_LIMIT = 20;
 
-export type WorkflowPolicy = Readonly<Record<string, unknown>> | null;
+export type WorkflowPolicy = WorkflowPolicyObject | null;
 const POLICY_FIELD_ABSENT = Symbol('policy-field-absent');
 
 export interface EffectiveStatePublicationEffects {
   readonly version?: StateVersionWriteEffects;
 }
 
+/**
+ * The only reader of `.ai/harness/policy.json` from disk. It owns the file read
+ * and the decode of the root. It validates no key: each reader validates the
+ * keys it reads, with its own message. `readSource` lets a state pass observe
+ * one read of the file.
+ */
+export function readWorkflowPolicyDocument(
+  cwd: string,
+  readSource = (path: string) => readText(cwd, path),
+): DecodedWorkflowPolicy {
+  return decodeWorkflowPolicy(readSource(POLICY_PATH));
+}
+
+/** The state resolver's reader: it needs an object root and validates the fields it owns. */
 export function readWorkflowPolicy(cwd: string, readSource = (path: string) => readText(cwd, path)): WorkflowPolicy {
-  const text = readSource(POLICY_PATH);
-  if (text === null) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text) as unknown;
-  } catch {
-    throw new Error(`invalid workflow policy JSON: ${POLICY_PATH}`);
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+  const { present, root } = readWorkflowPolicyDocument(cwd, readSource);
+  if (!present) return null;
+  if (!root || typeof root !== 'object' || Array.isArray(root)) {
     throw new Error(`invalid workflow policy object: ${POLICY_PATH}`);
   }
-  const policy = parsed as Readonly<Record<string, unknown>>;
+  const policy = root as WorkflowPolicyObject;
   validateWorkflowPolicy(policy);
   return policy;
 }

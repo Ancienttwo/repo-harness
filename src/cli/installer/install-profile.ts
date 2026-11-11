@@ -53,6 +53,8 @@ import {
 import { hostSkillRoot, providerSkillLock, stagedSkillRoot, syncSkillRoots, type SkillHost } from '../../effects/host-skill-roots';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 import { hashManagedTree, OWNER_MARKER } from '../../effects/managed-tree';
+import { readWorkflowPolicyDocument } from '../../effects/state/resolve-effective-state';
+import { POLICY_PATH } from '../../core/workflow/policy-schema';
 import { piPackagePresent, planPiPackage, removePiPackage, type PiPackageStep } from './pi-package';
 import { piExecutable } from '../../effects/pi-executable';
 import { capabilitySourceModeFromPolicy } from '../../core/capabilities/resolver';
@@ -1344,22 +1346,16 @@ export function commandPluginRepairLines(selection: PluginSelection): string[] {
  */
 export function assertArchitecturePolicySelection(cwd: string, plugins: readonly PluginId[], env: NodeJS.ProcessEnv = process.env): void {
   if (plugins.includes('architecture')) return;
-  const policyPath = join(cwd, '.ai/harness/policy.json');
-  let raw: string;
-  try {
-    raw = readFileSync(policyPath, 'utf-8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
-    throw error;
-  }
-  const policy = JSON.parse(raw) as { tooling?: { codegraph?: { enabled?: unknown } } };
+  const { present, root } = readWorkflowPolicyDocument(cwd);
+  if (!present) return;
+  const policy = root as { tooling?: { codegraph?: { enabled?: unknown } } };
   const needs = [
     ...(capabilitySourceModeFromPolicy(policy) === 'archcontext' ? ['context.capability_source: archcontext'] : []),
     ...(policy.tooling?.codegraph?.enabled === true ? ['tooling.codegraph.enabled: true'] : []),
   ];
   if (needs.length === 0) return;
   throw new InstallStateError('install_plugin_unavailable', installProfileStatePath(env),
-    `${policyPath} sets ${needs.join(' and ')}, which needs the architecture plugin; run: ${pluginRepair('architecture', plugins)}`);
+    `${join(cwd, POLICY_PATH)} sets ${needs.join(' and ')}, which needs the architecture plugin; run: ${pluginRepair('architecture', plugins)}`);
 }
 
 /** `run` drives the Pi package and skill projections; `record` is the plugin set that the plan installs, keeps and removes. */

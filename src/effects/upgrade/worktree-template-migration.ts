@@ -5,9 +5,9 @@ import { join } from 'path';
 import { makeOperationId, type AdoptionPlan, type WriteFileOperation } from '../../core/adoption/operations';
 import { summarizeOperations } from '../../core/adoption/summary';
 import { DEFAULT_WORKTREE_TEMPLATE } from '../../core/worktree-location.mjs';
+import { POLICY_PATH, decodeWorkflowPolicy } from '../../core/workflow/policy-schema';
 import { applyAdoptionPlan } from '../fs-transaction';
 
-const POLICY_PATH = '.ai/harness/policy.json';
 const TEMPLATE_KEY = 'worktree_dir_template';
 /** Exact pre-#600 values. Any other template is a deliberate choice and is never rewritten. */
 const LEGACY_TEMPLATES: readonly string[] = ['../{{repo}}-wt-{{slug}}', '/tmp/{{repo}}-wt-{{slug}}'];
@@ -58,7 +58,9 @@ export function planWorktreeTemplate(repoRoot: string): WorktreeTemplatePlan {
     return report(undefined, `Policy is unreadable: ${error instanceof Error ? error.message : String(error)}`);
   }
   let policy: unknown;
-  try { policy = JSON.parse(text); }
+  // This planner writes the file: the byte-exact rewrite and its content hash need the raw bytes, so it keeps this
+  // one read and decodes through the loader's decoder (boundary answer A on #2315).
+  try { policy = decodeWorkflowPolicy(text).root; }
   catch (error) { return report(undefined, `Policy is not valid JSON: ${error instanceof Error ? error.message : String(error)}`); }
   const strategy = isRecord(policy) ? policy.worktree_strategy : undefined;
   const current = isRecord(strategy) ? strategy[TEMPLATE_KEY] : undefined;
@@ -71,9 +73,9 @@ export function planWorktreeTemplate(repoRoot: string): WorktreeTemplatePlan {
   const literal = new RegExp(`("${TEMPLATE_KEY}"\\s*:\\s*)${escapeRegExp(JSON.stringify(current))}`, 'g');
   if ((text.match(literal) ?? []).length !== 1) return report(current, `Cannot rewrite ${TEMPLATE_KEY} byte-exact.`);
   const content = text.replace(literal, (_match, key: string) => `${key}${JSON.stringify(replacement)}`);
-  const expected = JSON.parse(text) as Record<string, Record<string, unknown>>;
+  const expected = decodeWorkflowPolicy(text).root as Record<string, Record<string, unknown>>;
   expected.worktree_strategy![TEMPLATE_KEY] = replacement;
-  if (JSON.stringify(JSON.parse(content)) !== JSON.stringify(expected)) return report(current, `Cannot rewrite ${TEMPLATE_KEY} byte-exact.`);
+  if (JSON.stringify(decodeWorkflowPolicy(content).root) !== JSON.stringify(expected)) return report(current, `Cannot rewrite ${TEMPLATE_KEY} byte-exact.`);
   return {
     item: { path: POLICY_PATH, action: 'rewrite', current, replacement,
       reason: 'Legacy template; existing worktrees stay where they are.' },

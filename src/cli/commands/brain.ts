@@ -11,6 +11,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { configuredBrainRoot } from './brain-root';
 import { gitExecFileSync } from '../../effects/git/runner';
+import { readWorkflowPolicyDocument } from '../../effects/state/resolve-effective-state';
+import { POLICY_PATH } from '../../core/workflow/policy-schema';
 
 export type BrainLifecycle = 'always-sync' | 'archive-only' | 'never-sync';
 
@@ -89,7 +91,6 @@ export interface BrainSyncResult {
 
 const VALID_SCOPES = new Set(['reference-configs', 'architecture', 'project-docs', 'knowledge', 'workstreams', 'all']);
 const DEFAULT_MANIFEST = '.ai/harness/brain-manifest.json';
-const POLICY_FILE = '.ai/harness/policy.json';
 const VALID_ROLES = new Set(['externalized', 'partial', 'repo-authored']);
 const SYNC_COMMAND = 'repo-harness brain sync';
 
@@ -295,15 +296,13 @@ function countLines(content: string): number {
 }
 
 function readPolicyExternalKnowledge(repoRoot: string, issues: BrainIssue[]): Record<string, unknown> {
-  const policyPath = path.resolve(repoRoot, POLICY_FILE);
-  if (!fs.existsSync(policyPath)) return {};
   try {
-    const policy = JSON.parse(fs.readFileSync(policyPath, 'utf-8')) as {
+    const policy = readWorkflowPolicyDocument(repoRoot).root as {
       information_lifecycle?: { external_knowledge?: Record<string, unknown> };
-    };
+    } | null;
     return policy?.information_lifecycle?.external_knowledge ?? {};
   } catch {
-    issue(issues, 'error', `Cannot read harness policy: ${POLICY_FILE}`);
+    issue(issues, 'error', `Cannot read harness policy: ${POLICY_PATH}`);
     return {};
   }
 }
