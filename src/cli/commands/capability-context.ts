@@ -437,7 +437,6 @@ export function buildCapabilityContextCommand(): Command {
     .option('--capability <id>', 'Capability ID to sync')
     .option('--path <path>', 'Changed file path to resolve')
     .option('--apply', 'Write files')
-    .option('--dry-run', 'Preview without writing')
     .option('--auto-fill-positioning', 'Write a deterministic manifest fallback for missing entries')
     .option('--source-map-manifest <path>', 'Capability source-map manifest path', DEFAULT_MANIFEST_PATH)
     .option('--json', 'Output JSON')
