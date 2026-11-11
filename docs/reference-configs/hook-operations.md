@@ -391,8 +391,8 @@ Git-ignored` line and one human `systemMessage`. This line takes the place of
 the notice text, because no marker can deduplicate that text. Claude Stop and
 Codex UserPromptSubmit keep only the stderr diagnostic of a failed marker write.
 Without a marker, the line would repeat at each turn, and each Claude Stop line
-starts one more turn. Add `.ai/harness/state/` to `.gitignore`; the
-`repo-harness init` ignore block has it.
+starts one more turn. Run `repo-harness update`; it writes the runtime-state
+block to the user-level Git excludes file.
 
 | Point | Hosts | When |
 | --- | --- | --- |
