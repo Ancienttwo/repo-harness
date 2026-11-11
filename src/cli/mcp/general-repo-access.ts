@@ -321,13 +321,13 @@ function auditDetailsFromError(error: GeneralRepoAccessError, input: Record<stri
   };
 }
 
-function numberArg(value: unknown, fallback: number, min: number, max: number): number {
+export function numberArg(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(Math.max(Math.trunc(parsed), min), max);
 }
 
-function booleanArg(value: unknown, fallback = false): boolean {
+export function booleanArg(value: unknown, fallback = false): boolean {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase();
