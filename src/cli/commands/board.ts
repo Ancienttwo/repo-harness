@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import { AdvisorSeatError, advisorSeatSendFailure, readAdvisorSeat, sendToAdvisorSeat } from '../../core/board/advisor-seat';
 import { AttentionWatchError, attentionLogPath, runAttentionWindow, serviceTerminalRepository, startAttentionWatch } from '../../effects/board/attention-watch';
 import { evaluateBoardAttention, renderAttentionText } from '../../core/board/attention';
-import type { AttentionHostPortsV1 } from '../../core/board/attention-delivery';
+import type { AttentionHostPortsV1, AttentionSentV1 } from '../../core/board/attention-delivery';
 import type { BoardHostPortsV1 } from '../../core/board/board';
 import { BoardSourceError } from '../../core/board/source';
 import { BoardCollectError, collectBoard, collectBoardThrough, readRepositoryId } from '../../effects/board/collect';
@@ -294,7 +294,9 @@ async function watchAttention(options: AttentionOptions, host: BoardHostPortsV1,
       parent, deliver: options.deliver === true, review, log_path: attentionLogPath(repositoryId, parent),
       collect: () => collectBoardThrough({ repo_root: process.cwd(), parent, host }, sources), host: attentionHost,
     };
-    for (;;) await runAttentionWindow(input);
+    // The sent slots live in this process only: a new watcher sends each open finding once.
+    let sent: AttentionSentV1 = new Map();
+    for (;;) sent = await runAttentionWindow({ ...input, sent });
   } catch (error) {
     if (!(error instanceof BoardCollectError || error instanceof BoardSourceError || error instanceof AttentionWatchError)) throw error;
     process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, message: error.message })}\n`);
