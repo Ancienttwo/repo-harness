@@ -18,7 +18,7 @@ seat is a process (`SKILL.md`, Seats, sub-agents and claim roles).
 | Writer | Child issue, or one PR slot of it | Worker | Its branch, its PR body, status comments | PR merged, or released or handed-off status |
 | Head owner | One PR | The writer of that PR | Pushes to the PR branch. Only this role pushes | Merge, or a handoff that names the next head owner |
 | Acceptor | One review in one round of one PR (`acceptor.md` §2.2 sets the reviews of a round) | A read-only reviewer; the gatekeeper is the default (`acceptor.md`) | Its review threads and the acceptance record row, through the review-round runner | The acceptance record row for its review |
-| Integrator | Main branch publication | Orchestrator | Merge with `repo-harness publication merge` only, main sync of a PR (only with the head-owner role), the batch branch and batch PR (`orchestrator.md` §9) | Merge done, or handoff |
+| Integrator | Main branch publication | Orchestrator | Merge with `repo-harness publication merge` only, main sync of a PR (only with the head-owner role) (`orchestrator.md` §9) | Merge done, or handoff |
 
 Rules that keep the topology safe:
 
@@ -43,12 +43,12 @@ Rules that keep the topology safe:
   It does not also implement them.
 - **One merge path.** The integrator merges only with
   `repo-harness publication merge`. When `publication.acceptance_merge` is
-  `off` on the PR base, the executor does not merge. The integrator posts
+  `off` at the live tip of the base branch, the executor does not merge. The integrator posts
   that the PR is ready, and the owner merges.
-- **One integrator.** Only the integrator merges into main, builds a
-  batch or asks a head owner to sync. Main requires strict checks, so a
-  merge by a second session makes every queued PR stale. Each one then
-  needs a new sync and a new CI run.
+- **One integrator.** Only the integrator sends ready PRs to
+  `repo-harness publication merge` or asks a head owner to sync. The
+  executor enqueues each PR when the queue is on. The queue tests it on
+  the current main.
 - **Earliest claim wins.** For two claims on one role without an explicit
   handoff, the earliest comment wins. Break ties by comment ID. The later
   claimant posts a released status and stops.
@@ -126,7 +126,7 @@ Parent issue ── coordinator role
  │    ├─ PR-B1 ── writer B1 (slot claim by coordinator)
  │    └─ PR-B2 ── writer B2, base branch = PR-B1's branch
  └─ Child C (module Z) ── blocked by #A ── PR-C draft until PR-A merges
-Integrator (coordinator) merges in the plan block's merge order, one PR or one batch at a time.
+Integrator (coordinator) merges in the plan block's merge order, one PR at a time.
 ```
 
 **Parent table status.** The role/status column of the parent child table
@@ -176,25 +176,12 @@ after each claim or status change.
   that a consumer already uses, the producer posts a `boundary question` on
   its own issue. The coordinator decides and posts a `scope change` on
   every affected issue.
-- **Serial integration.** The default for one PR. The integrator merges in
-  the plan block's merge order. A parent without a plan (two children or
-  fewer) merges in blocked-by order, and the Order column of the parent
-  table is only a view. After each merge, the next PR syncs with
-  main, except when `publication.merge_queue` is `on`: the queue tests each PR
-  on the current main, so a BEHIND PR merges with no sync. A merge-only
-  sync keeps the acceptance of the newest proven reviewed head, unless that
-  head or the new head has a FAIL row; an older superseded FAIL row does
-  not count. Any
-  other new head needs sync check rows by the tier rule (`acceptor.md`
-  §2.2, Sync head). A changed subject needs a new round.
-- **Batch integration.** When two or more PRs are eligible at the same
-  time, the integrator may merge them through one batch PR with one CI run.
-  The integrator picks the members (at most 6) and their order. The batch
-  branch holds only `--no-ff` merges of the member heads: no conflict
-  resolution, no fix and no commit of its own. A member that conflicts or
-  owns a red check leaves the batch, syncs with main and joins a later
-  batch. Each member keeps its own acceptance record. The batch merges only
-  with `repo-harness publication merge`. Procedure: `orchestrator.md` §9.3.
+- **Queue integration.** Send each ready PR to
+  `repo-harness publication merge` in the plan block's merge order. A
+  parent without a plan (two children or fewer) uses blocked-by order.
+  The Order column of the parent table is only a view. With
+  `publication.merge_queue` `on`, the executor enqueues each PR. The queue
+  tests it on the current main, so a head behind main needs no sync.
 
 ## Comment protocol
 
@@ -215,7 +202,7 @@ lines, then at most a short free-text body. The exact shapes are in
 | `acceptance claim` | PR | Acceptor, or the coordinator for a gatekeeper round | Take one review in a round: role, round, subject SHA, tier (`acceptor.md`) |
 | `acceptance record` | PR | Acceptor or coordinator | One row per review: round, role, subject SHA, verdict; then the model relation and the findings. The same shape for every review (`templates.md`) |
 | `unblocked` | PR or issue | Coordinator | A dependency merged. Sync and continue |
-| `integration status` | PR | Head owner or integrator | Main sync result, delta, new head, CI; a merge result with the executor exit code; or a batch drop or batch closeout on a member PR |
+| `integration status` | PR | Head owner or integrator | Main sync result, delta, new head, CI; a merge result with the executor exit code |
 
 `plan`, `decision`, `scope change`, `unblocked` and `issue claim`
 are seat-only (see above). Every other kind may come from any claim holder

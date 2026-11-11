@@ -909,9 +909,9 @@ function* rollbackBoundary(identity: ProviderIdentity): Generator<string, Provid
     || object(detail.base, 'merged parent PR detail base').ref !== identity.base_ref) {
     throw new MergeReadinessError('provider_data_incomplete', 'merged parent PR detail does not match the rollback boundary');
   }
-  const parent = rollbackParent(identity.base_sha, commit.parents, detail.head);
+  const parent = rollbackParent(identity.base_sha, commit.parents);
   if (!parent) {
-    throw new MergeReadinessError('provider_data_incomplete', 'rollback parent is not a single commit or batch merge boundary');
+    throw new MergeReadinessError('provider_data_incomplete', 'rollback parent is not a single-parent commit boundary');
   }
   const parentAssociations = yield `${root}/commits/${parent.before_sha}/pulls?per_page=100`;
   if (!Array.isArray(parentAssociations) || parentAssociations.length >= 100) {

@@ -65,7 +65,7 @@ gets no acceptance pane and no acceptance record.
 - A Bot record does not grant merge permission. This covers `review admit`
   grants and `acceptance record` comments. The executor merges only when
   `publication.acceptance_merge` is `on` in `.ai/harness/policy.json` on the
-  PR base SHA. With `off`, it exits 3 and merges nothing.
+  live tip of the base branch. With `off`, it exits 3 and merges nothing.
 - The executor needs default-branch protection with required checks and
   enforce_admins. `publication.merge_queue` (default `off`) selects the
   path: `off` merges directly and refuses a base that requires a merge

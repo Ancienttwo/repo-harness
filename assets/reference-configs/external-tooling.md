@@ -1127,7 +1127,7 @@ is the acceptance. repo-harness keeps no separate accept step. The rolling PR
 body records `Base: main at <sha>`. The Bot merges the rolling PR only with the
 owner's GO for its reviewed head, green checks, a passing
 `"$NODE" "$ARCHCTX" projection verify-pr --base origin/main --json`, and
-`gh pr merge <rolling-pr> --squash --match-head-commit <reviewed-sha>`.
+`gh pr merge <rolling-pr> --match-head-commit <reviewed-sha>`.
 `humanEditedPaths` in the `verify-pr` result means changes to human-owned text,
 not hand edits inside generated regions.
 Service installation and activation are operator steps, not package-install effects.

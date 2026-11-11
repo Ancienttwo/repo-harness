@@ -478,8 +478,8 @@ repo-harness publication merge --repository <owner/name> --repository-id <id> --
 ```
 
 `--head` and `--base` are the SHAs you reviewed.
-`publication.acceptance_merge` in `.ai/harness/policy.json` on the PR base
-decides whether the executor merges. The default branch needs required
+`publication.acceptance_merge` in `.ai/harness/policy.json` at the live tip
+of the base branch decides whether the executor merges. The default branch needs required
 checks and enforce_admins. `publication.merge_queue` (default `off`)
 selects the path: `off` merges directly, `on` enqueues. When the switch and
 the base's merge queue disagree, the executor refuses with
@@ -487,7 +487,7 @@ the base's merge queue disagree, the executor refuses with
 Without a merge queue the checks must be strict.
 With a merge queue (a ruleset), the queue must squash with the `ALLGREEN`
 grouping strategy and the repository default squash message must be
-`PR_TITLE` and `PR_BODY`; `--batch` is refused. If it does not, the executor refuses with
+`PR_TITLE` and `PR_BODY`. If it does not, the executor refuses with
 `base_protection_insufficient`.
 
 With `publication.merge_queue` `on`, the executor enqueues the PR, writes `{"queued": ...}`
@@ -506,7 +506,7 @@ Act on the exit code. Post every result as `integration status` on the PR.
 |---|---|---|
 | 0 | Merged | Post the merge SHA, the parent SHA and the revert command. Post `unblocked` on each dependent PR |
 | 3 | Switch is off (`acceptance_merge_off`) | Post `To: owner`: the PR is ready, the owner merges. Do not merge another way |
-| 4 | Refused before any merge request | For `base_protection_insufficient`, `merge_queue_policy_mismatch`, `publication_policy_invalid` (base policy) and `provider_unavailable`, hand it to the owner. For any other blocker, hand the PR to its head owner with the `blockers` |
+| 4 | Refused before any merge request | For `base_protection_insufficient`, `merge_queue_policy_mismatch`, `publication_policy_invalid` (live-tip policy) and `provider_unavailable`, hand it to the owner. For any other blocker, hand the PR to its head owner with the `blockers` |
 | 5 | `merge_outcome_unknown` | Stop. Report to the owner. Never retry |
 | 6 | `provider_rejected` | Post the GitHub error as it is. Hand it to the owner |
 | 6 | `merge_queue_removed` | The queue removed the PR (a failed queue check or a conflict), or another entry replaced the executor's entry. Hand it to its head owner with the queue run |
@@ -518,14 +518,11 @@ Act on the exit code. Post every result as `integration status` on the PR.
   refuses with `closing_references_mismatch`, also for a closing keyword
   that targets a pull-request URL.
 
-### 9.1 Choose the mode
+### 9.1 Enqueue ready PRs
 
-Collect ready green PRs once per merge window. Use
-`repo-harness publication batch build` and then
-`repo-harness publication merge --batch` (§9.3), including when only one
-PR is eligible. Do not sync and re-review each PR for publication. Select
-members in the plan block's merge order. A batch has at most 6 members;
-when the window has more, build successive batches in that order.
+Send each ready green PR to `repo-harness publication merge` in the plan
+block's merge order. The executor enqueues it when `publication.merge_queue`
+is `on`. A head behind main needs no sync for the queue.
 
 A PR is eligible when all of these are true:
 
@@ -562,79 +559,7 @@ gh pr view <p> --json state,isDraft,headRefOid,statusCheckRollup,closingIssuesRe
 Use the plan block's merge order. A parent without a plan (two children
 or fewer) uses blocked-by order: a blocker lands before the issue it
 blocks. The Order column of the parent table is only a view. Apply this
-order to the batch members; do not sync and re-review members one by one.
-
-### 9.3 Batch integration
-
-The batch branch holds the member merge commits and nothing else. Never
-resolve a conflict, push a fix or add a commit of your own in it. Never
-merge it by any path other than `repo-harness publication merge`.
-
-1. **Build.** Record each member's eligible head SHA. Run the builder
-   once for the window, with one `--pr` per member in merge order:
-
-   ```bash
-   repo-harness publication batch build --repository-id <id> --parent <parent> --pr <a> --pr <b> --json
-   ```
-
-   The builder pins the member heads, merges them onto the current main,
-   pushes the batch branch and opens the batch PR. Read its result:
-   `merged`, `dropped`, `pr`, `head_sha` and `base_sha`. Confirm that each
-   merged member head matches its recorded eligible SHA before reusing
-   its review evidence.
-2. **Conflict.** The builder aborts a conflicting member merge, drops that
-   member and continues with the next. For each `merge_conflict` in
-   `dropped`, post the batch-drop `integration status` on its PR to its
-   head owner: sync with main, then join a later batch.
-3. **Local check.** In a worktree at the returned batch head, run the
-   repository's typecheck and the test files that two or more merged
-   members change. In repo-harness:
-
-   ```bash
-   for p in <member PRs>; do gh pr diff "$p" --name-only; done | grep '^tests/' | sort | uniq -d
-   bun run check:type
-   bun run test:files <shared test files> --timeout 60000 --max-concurrency 1
-   ```
-
-   CI on the batch head is the authority.
-4. **Check the batch PR.** Read the PR that the builder opened:
-
-   ```bash
-   gh pr view <batch> --json closingIssuesReferences
-   ```
-
-   The closing references must name each issue that a member closes, and
-   nothing else.
-5. **Review.** Every member merged without conflict, and the batch adds no
-   commit of its own. The batch reuses the member acceptance records and
-   needs no new review round. A Low member has no acceptance record to
-   reuse (`docs/reference-configs/agentic-development-flow.md`, Review by
-   risk).
-6. **Red CI.** Do not fix it in the batch branch. Classify the failure
-   first; a known flake gets one rerun (§8). Drop the member that changes
-   the failing test or the source it covers, and post the batch-drop
-   `integration status` on its PR. When you cannot attribute the failure,
-   split the members into two halves. Close the red batch PR with
-   `gh pr close <batch>`, then rebuild from the current main with the next
-   `<n>`: the remaining members, or each half in turn.
-7. **Main moved.** When main moves after the build, rebuild from the
-   current main with the next `<n>`. Do not merge main into the batch
-   branch.
-8. **Merge.** Call `repo-harness publication merge --batch` on the batch
-   PR with the batch head and the main SHA you built on. The executor
-   refuses a head ref outside `integration/<parent>-batch-<n>`
-   (`batch_ref_invalid`) and a batch with a commit of its own
-   (`batch_has_own_commit`), both with exit 4 and no merge request. It
-   merges with a merge commit whose parents are the main SHA and the batch
-   head, so each member's commits land on main. Act on the exit code as
-   the table above says.
-9. **Close out.** After exit 0, on each member PR post the batch-closeout
-   `integration status` with the batch merge SHA. Do not close the member
-   PRs: GitHub marks each one Merged. The member branch stays. Post
-   `unblocked` on each dependent PR.
-10. **Rollback.** `git revert -m 1 <batch merge commit>` reverts the whole
-    batch. To revert one member, revert its member merge commit on main:
-    `git revert -m 1 <member merge commit on main>`.
+order to the ready PRs sent to the executor.
 
 ### 9.4 Board merge
 
@@ -646,7 +571,7 @@ repo-harness board merge --parent <n> [--pr <p>] [--dry-run]
 ```
 
 The command reads the board once and merges at most one PR through
-`repo-harness publication merge`, squash only. Without `--pr` it takes the
+`repo-harness publication merge`, which enqueues it when the queue is on. Without `--pr` it takes the
 first eligible PR in plan merge order. A PR is eligible when all of these
 are true:
 

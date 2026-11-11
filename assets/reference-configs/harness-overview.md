@@ -73,7 +73,7 @@ same-family context. Each review records `model_relation` in its receipt.
   executor refuses an unresolved review thread that a person started. A
   thread that a review bot (a GitHub App account) started is advisory.
 - Merge: `repo-harness publication merge` runs only when
-  `publication.acceptance_merge` is `on` on the PR base. Otherwise the
+  `publication.acceptance_merge` is `on` at the live tip of the base branch. Otherwise the
   owner merges.
 - CI: run typecheck and the affected tests on the PR head. Run the full
   suite daily and before a release. A pending main-push run does not block

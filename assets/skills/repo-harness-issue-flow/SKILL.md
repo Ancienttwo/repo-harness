@@ -125,9 +125,7 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   "seen again" comment; the reporter appends evidence through `report-ci`
   only.
 - One child issue has one write scope. It has one PR, or PR slots that the
-  issue names in advance. The one exception is a batch integration PR
-  (`references/orchestrator.md` §9.3): it merges several accepted PRs and
-  adds no change of its own. Parallel workers never share a file.
+  issue names in advance. Parallel workers never share a file.
 - One head owner per PR. Any other agent asks on the board, or takes the
   head-owner role through a handoff comment before it pushes.
 - The worker follows the issue boundary. A needed change outside it is a
@@ -144,7 +142,7 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   (`references/board.md`): the orchestrator pushes for it.
 - Only the orchestrator merges, and only with
   `repo-harness publication merge`. The owner turns that on with
-  `publication.acceptance_merge` in the policy on the PR base. When it is
+  `publication.acceptance_merge` in the policy at the live tip of the base branch. When it is
   off, the executor does not merge and the owner merges. Exit codes:
   `references/orchestrator.md` §9.
 - Merge by rule, every tier. In an owner-approved batch, the orchestrator

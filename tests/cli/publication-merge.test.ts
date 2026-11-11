@@ -33,19 +33,6 @@ import {
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
 const OTHER_COMMIT = 'd'.repeat(40);
-const BATCH_REF = 'integration/1309-batch-2';
-const MEMBER_1 = 'e'.repeat(40);
-const MEMBER_1_MERGE = 'f'.repeat(40);
-const MEMBER_2 = '1'.repeat(40);
-/** Built as orchestrator §9.3 builds a batch: `git merge --no-ff` of each member onto the base. */
-const BATCH_COMMITS = [
-  { sha: MEMBER_1, parents: [BASE] },
-  { sha: MEMBER_1_MERGE, parents: [BASE, MEMBER_1] },
-  { sha: MEMBER_2, parents: [BASE] },
-  { sha: HEAD, parents: [MEMBER_1_MERGE, MEMBER_2] },
-];
-const batchScenario = (overrides: Partial<PublicationMergeScenario> = {}) =>
-  passingScenario({ headRef: BATCH_REF, compareCommits: BATCH_COMMITS, parents: [BASE, HEAD], ...overrides });
 const scratch = mkdtempSync(join(tmpdir(), 'repo-harness-publication-merge-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -56,9 +43,10 @@ interface MergeInProcessOptions {
   readonly readbackNow?: () => number;
   /** Internal seam: simulate a slow provider call before the fake answer. */
   readonly beforeCall?: (args: readonly string[]) => void;
+  /** Fail this provider read before the fake returns its response. */
+  readonly failedRead?: string;
   /** Internal seam: observe the timeout passed to each readback call. */
   readonly readbackTimeout?: (milliseconds: number) => void;
-  readonly batch?: boolean;
   /** The reviewed head and base; default HEAD and BASE. */
   readonly head?: string;
   readonly base?: string;
@@ -75,10 +63,11 @@ function mergeInProcessAt(root: string, scenario: PublicationMergeScenario, opti
   let queueReadbacks = 0;
   const result = executePublicationMerge({
     repo_root: root, repository: REPOSITORY, provider_repository_id: REPOSITORY_ID, pr_number: PR,
-    expected_head_sha: options.head ?? HEAD, expected_base_sha: options.base ?? BASE, batch: options.batch,
+    expected_head_sha: options.head ?? HEAD, expected_base_sha: options.base ?? BASE,
     gh_runner: (args) => {
       options.beforeCall?.(args);
       calls.push([...args]);
+      if (args[1] === options.failedRead) return { status: 1, stdout: '', stderr: 'connection reset' };
       const prReadback = args[0] === 'api' && args[1] === `repos/${REPOSITORY}/pulls/${PR}`;
       const response = fakeGhResponse(args, scenario, prReadback ? readbacks++ : isQueueReadback(args) ? queueReadbacks++ : 0);
       return { status: response.status as number, stdout: response.stdout, stderr: response.stderr };
@@ -149,6 +138,29 @@ describe('publication merge uses base protection contexts', () => {
 });
 
 describe('publication merge refusals send no mergePullRequest', () => {
+  test('the removed --batch option fails before any provider call', () => {
+    const dir = join(scratch, 'unknown-batch-option');
+    mkdirSync(dir);
+    const gh = installFakeGh(dir, passingScenario());
+    const result = spawnSync('bun', [CLI, 'publication', 'merge', '--repository', REPOSITORY, '--repository-id', REPOSITORY_ID,
+      '--pr', String(PR), '--head', HEAD, '--base', BASE, '--json', '--batch'], {
+      cwd: dir, encoding: 'utf-8', env: { ...process.env, REPO_HARNESS_GH_BIN: gh.bin }, timeout: 60_000,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("unknown option '--batch'");
+    expect(result.stdout).toBe('');
+    expect(gh.calls()).toEqual([]);
+  });
+
+  test('a failed live-tip compare exits 4 before any mutation', () => {
+    const compare = `repos/${REPOSITORY}/compare/${BASE}...${HEAD}`;
+    const { result, calls, mutations, enqueues } = mergeInProcess(passingScenario(QUEUE_ON), { failedRead: compare });
+    expect(result.document).toMatchObject({ ok: false, exit_code: 4, error: 'provider_unavailable' });
+    expect(calls.at(-1)).toContain('{status, behind_by}');
+    expect(mutations).toHaveLength(0);
+    expect(enqueues).toHaveLength(0);
+  });
+
   test.each([
     ['off', policy({ publication: { acceptance_merge: 'off' } })],
     ['missing publication', policy({ merge_gate: { enabled: true } })],
@@ -619,6 +631,13 @@ describe('publication merge through a required merge queue', () => {
     expect(enqueues).toHaveLength(1);
   });
 
+  test('an unreadable policy at the queue parent exits 5 with the revert command', () => {
+    const { result, enqueues } = run(queueScenario(), { failedRead: `repos/${REPOSITORY}/contents/.ai/harness/policy.json?ref=${repo.parent}` });
+    expect(result.document).toMatchObject({ ok: false, exit_code: 5, error: 'merge_outcome_unknown' });
+    expect(failureOf(result).message).toContain(`policy at its parent ${repo.parent} could not be read: gh api repos/${REPOSITORY}/contents/.ai/harness/policy.json?ref=${repo.parent}: connection reset; the owner decides on git revert ${repo.merge}`);
+    expect(enqueues).toHaveLength(1);
+  });
+
   test('a failed fetch from origin exits 5 and keeps git stderr out of the result', () => {
     const missing = join(scratch, 'no-such-remote.git');
     const { result } = run(queueScenario(), {}, missing);
@@ -657,11 +676,7 @@ describe('publication merge through a required merge queue', () => {
     expect(enqueues).toHaveLength(1);
   });
 
-  test('--batch is refused when the base requires a merge queue', () => {
-    const { result, enqueues } = mergeInProcess(passingScenario({ ...QUEUE_ON, rules: QUEUE_RULES, mergeQueueEnabled: true, headRef: BATCH_REF, compareCommits: BATCH_COMMITS }), { batch: true });
-    expect(failureOf(result)).toMatchObject({ exit_code: 4, error: 'base_protection_insufficient' });
-    expect(enqueues).toHaveLength(0);
-  });
+
 });
 
 /**
@@ -723,53 +738,5 @@ describe('publication merge checks the policy in the merge result of a head behi
     expect(result.document).toMatchObject({ ok: false, exit_code: 4, error: 'publication_policy_changed_in_pr' });
     expect(failureOf(result).message).toContain(message);
     expect(mutations).toHaveLength(0);
-  });
-});
-
-describe('publication merge --batch', () => {
-  test('the CLI merges a batch once with a merge commit and proves both parents', () => {
-    const run = mergeCli(batchScenario(), ['--batch']);
-    expect(run.status).toBe(0);
-    expect(run.document).toMatchObject({
-      merge_commit_sha: MERGE_COMMIT,
-      parent_sha: BASE,
-      parent_shas: [BASE, HEAD],
-      revert: `git revert -m 1 ${MERGE_COMMIT}`,
-    });
-    expect(run.mutations).toHaveLength(1);
-    expect(graphqlVariable(run.mutations[0]!, 'query')).toContain('mergeMethod:MERGE');
-    expect(graphqlVariable(run.mutations[0]!, 'commitHeadline')).toBe(`Ship the executor (#${PR})`);
-  }, 120_000);
-
-  test('the CLI proves a batch whose compare response carries more patch text than the default spawn buffer', () => {
-    const run = mergeCli(batchScenario({ comparePatchBytes: 2 * 1024 * 1024 }), ['--batch']);
-    expect(run.document).toMatchObject({ merge_commit_sha: MERGE_COMMIT, parent_shas: [BASE, HEAD] });
-    expect(run.mutations).toHaveLength(1);
-  }, 120_000);
-
-  test('the CLI refuses --batch on a head ref outside integration/ without a request', () => {
-    const run = mergeCli(batchScenario({ headRef: 'feat/executor' }), ['--batch']);
-    expect(run.status).toBe(4);
-    expect(run.document).toMatchObject({ ok: false, exit_code: 4, error: 'batch_ref_invalid' });
-    expect(run.mutations).toHaveLength(0);
-  }, 120_000);
-
-  test('a batch commit of its own on the first-parent chain is refused without a request', () => {
-    const own = OTHER_COMMIT;
-    const { result, mutations } = mergeInProcess(batchScenario({ compareCommits: [
-      { sha: own, parents: [BASE] },
-      { sha: MEMBER_1, parents: [BASE] },
-      { sha: HEAD, parents: [own, MEMBER_1] },
-    ] }), { batch: true });
-    expect(failureOf(result)).toMatchObject({ exit_code: 4, error: 'batch_has_own_commit' });
-    expect(failureOf(result).message).toContain(`commit ${own} on the batch first-parent chain is not a two-parent member merge`);
-    expect(mutations).toHaveLength(0);
-  });
-
-  test('a provider merge with one parent under --batch is a contradiction, not a merge', () => {
-    const { result, mutations } = mergeInProcess(batchScenario({ parents: [BASE] }), { batch: true, readbackWait: () => {} });
-    expect(failureOf(result)).toMatchObject({ exit_code: 5, error: 'merge_outcome_unknown' });
-    expect(failureOf(result).message).toContain(`expected exactly [${BASE}, ${HEAD}]`);
-    expect(mutations).toHaveLength(1);
   });
 });

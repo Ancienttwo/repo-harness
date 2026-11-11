@@ -56,7 +56,7 @@ Only merged, clean, unlocked worktrees qualify for automatic cleanup.
 Retain dirty, locked or unmerged work. Never use reset, clean or stash to hide it.
 
 An external PR or a `tasks/lessons.md` change needs the owner's GO. Its merge uses
-`gh pr merge <pr> --squash --match-head-commit <reviewed-sha>`.
+`gh pr merge <pr> --match-head-commit <reviewed-sha>`.
 Default publication opens a PR. Do not commit to or fast-forward main.
 Find an existing open PR for this branch before creation; reuse it.
 Do not publish when required checks or required review evidence are missing

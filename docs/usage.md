@@ -264,7 +264,7 @@ A dedicated linked checkout hosts one fleet `deep-reasoner` task-agent in the ad
 
 ## Bot merge
 
-A local Herdr Bot runs `repo-harness publication merge` in its shell. A cloud-only Bot runs the same command in a sandbox that has repo-harness, a working `gh auth` and a checkout. It merges only when `publication.acceptance_merge` is `on` in the policy on the PR base, and it needs strict required checks and enforce_admins on the default branch. A Bot record does not grant merge permission. See [the control Bot boundary](control-bot-boundary.md#bot-modes-and-merge).
+A local Herdr Bot runs `repo-harness publication merge` in its shell. A cloud-only Bot runs the same command in a sandbox that has repo-harness, a working `gh auth` and a checkout. It merges only when `publication.acceptance_merge` is `on` in the policy at the live tip of the base branch. It needs required checks and enforce_admins on the default branch: strict checks, or, with `publication.merge_queue` `on`, a squash merge queue with the `ALLGREEN` grouping strategy. A Bot record does not grant merge permission. See [the control Bot boundary](control-bot-boundary.md#bot-modes-and-merge).
 
 
 ## Hooks
