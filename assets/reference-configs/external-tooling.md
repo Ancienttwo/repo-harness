@@ -760,9 +760,7 @@ head SHA, full binary diff fingerprint, installed helper fingerprint, and PR
 number. The seal has no receipt field. It never owns provider credentials or
 starts a reviewer.
 
-The exact target base commit enables the local gate in
-`.ai/harness/policy.json#merge_gate`; the candidate cannot disable that base
-requirement. Runtime setup installs no merge-gate skill, agent, or provider
+Runtime setup installs no merge-gate skill, agent, or provider
 runtime. Caller `HOME`, helper-source, and runner environment overrides are ignored for
 the protected ship/gate helpers. The official runner pins Bash, Git, and Bun;
 where a fixed trusted host `gh` is present it pins that executable too, and it

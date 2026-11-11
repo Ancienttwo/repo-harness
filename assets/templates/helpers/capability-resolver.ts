@@ -1660,9 +1660,6 @@ export const WORKFLOW_POLICY_KEYS: PolicyKeyTree = {
   tooling: { codegraph: { enabled: true } },
   external_tooling: { agent_fleet: { managed_agents: true, install_mode: true } },
   security: { reviewed_findings: {} },
-  guards: {},
-  enforcement: {},
-  merge_gate: {},
   internal_pr_authors: {},
 };
 

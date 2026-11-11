@@ -56,6 +56,9 @@ describe("canonical adoption plan", () => {
   "operations": { "agent_writable_private_dirs": ["_ops/notes"], "dir": "deploy" },
   "external_tooling": { "herdr": { "url": "u" }, "agent_fleet": { "managed_agents": ["explorer", "orchestrator"] } },
   "sidecar_research": { "default": true },
+  "guards": { "edit_plan_gate": "off" },
+  "enforcement": { "worktree_guard": "advisory" },
+  "merge_gate": { "enabled": true },
   "agentic_development": { "routing": { "simple": "waza" } },
   "context": { "capability_source": "archcontext", "capability_match_rule": "old" },
   "worktree_strategy": { "base_branch": "trunk", "worktree_dir_template": "../{{repo}}-wt-{{slug}}" }
@@ -65,7 +68,7 @@ describe("canonical adoption plan", () => {
       const plan = planAdoption({ repoRoot: repo, mode: "standard", apply: true });
       expect(plan.warnings).toContainEqual({
         code: "unknown-policy-keys",
-        message: "Removed policy keys that no reader uses: agentic_development.routing.simple, context.capability_match_rule, external_tooling.herdr.url, operations.dir, sidecar_research.default, worktree_strategy.worktree_dir_template",
+        message: "Removed policy keys that no reader uses: agentic_development.routing.simple, context.capability_match_rule, enforcement.worktree_guard, external_tooling.herdr.url, guards.edit_plan_gate, merge_gate.enabled, operations.dir, sidecar_research.default, worktree_strategy.worktree_dir_template",
         risk: "medium",
       });
       expect(applyAdoptionPlan(plan).ok).toBe(true);

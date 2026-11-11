@@ -890,8 +890,13 @@ describe('policy schema: one key tree and one decoder', () => {
 
   test('an absent file has no keys, and a declared section keeps its own contract', () => {
     expect(unknownPolicyKeys(null)).toEqual([]);
-    // `external_sources` is owned by readExternalSourcesPolicy and `guards` by the console projection.
-    expect(unknownPolicyKeys({ external_sources: { version: 1, mode: 'off' }, guards: { anything: true } })).toEqual([]);
+    // `external_sources` is owned by readExternalSourcesPolicy.
+    expect(unknownPolicyKeys({ external_sources: { version: 1, mode: 'off' } })).toEqual([]);
+  });
+
+  test('guards, enforcement and merge_gate have no reader, so every key under them is unknown', () => {
+    expect(unknownPolicyKeys({ guards: { edit_plan_gate: 'off' }, enforcement: { worktree_guard: 'advisory' }, merge_gate: { enabled: true } }))
+      .toEqual(['enforcement.worktree_guard', 'guards.edit_plan_gate', 'merge_gate.enabled']);
   });
 
   test('the tree names the keys of the deferred readers and the language settings writer', () => {
