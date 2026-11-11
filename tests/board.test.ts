@@ -835,6 +835,33 @@ test('board read: the pull request read asks in groups, so a parent whose pull r
     .toThrow(`gh api --hostname printed more than the ${GH_MAX_BUFFER_BYTES}-byte maxBuffer limit`);
 });
 
+test('board read: an optional readiness read over the gh stdout limit fails the board read; another error of that read keeps its result', () => {
+  const input = replayInput({});
+  const board = input.gh_runner!;
+  const repository = 'Ancienttwo/repo-harness';
+  const readiness = recordedReadinessGh(() => false);
+  const failedJob = { id: 42, name: 'Required / CI', status: 'completed', conclusion: 'failure',
+    steps: [{ name: 'Run the shard tests', number: 1, status: 'completed', conclusion: 'failure' }],
+    check_run_url: `https://api.github.com/repos/${repository}/check-runs/77` };
+  // A failed required check reaches the optional annotations read; `annotations` answers that one read.
+  const readWith = (annotations: { status: number | null; stdout: string; stderr?: string; error?: Error }) => {
+    const runner: BoardCollectInput['gh_runner'] = (args) => {
+      const path = args[0] === 'api' ? args[1]! : '';
+      if (args[0] === 'pr' && args[1] === 'checks') return { status: 1, stdout: JSON.stringify([{ name: 'Required / CI', bucket: 'fail', link: `https://github.com/${repository}/actions/runs/41/job/42` }]) };
+      if (path === `repos/${repository}/actions/runs/41/attempts/1/jobs?per_page=100`) return { status: 0, stdout: JSON.stringify({ total_count: 1, jobs: [failedJob] }) };
+      if (path === `repos/${repository}/check-runs/77/annotations?per_page=100`) return annotations;
+      return args.at(-1) === 'github.com' || args.includes(`github.com/${repository}`) ? readiness(args) : board(args);
+    };
+    return collectBoard({ ...input, readiness: undefined, gh_runner: runner });
+  };
+  // An output that the product cannot take in full is not an absent annotation feed.
+  const enobufs = { status: null, stdout: '', error: Object.assign(new Error('spawnSync gh ENOBUFS'), { code: 'ENOBUFS' }) };
+  expect(() => readWith(enobufs)).toThrow(`printed more than the ${GH_MAX_BUFFER_BYTES}-byte maxBuffer limit`);
+  // Every other error of that optional read keeps its current result: the read continues without annotations.
+  expect(readWith({ status: 2, stdout: '', stderr: 'gh: Bad Gateway (HTTP 502)' }).pull_requests[0]!.merge_readiness)
+    .toMatchObject({ ready: false, blockers: [{ code: 'checks_failed' }] });
+});
+
 test('each attention finding names its priority, and a delivery sorts the entries by it', () => {
   // The merge fixture: #1491 is accepted, ready and unmerged (A1, P2), t1 is blocked for 11 min (A3, P0) and #1491 is eligible (A11, P2).
   const board = replay(mergeReplay());
