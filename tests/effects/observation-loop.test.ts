@@ -110,6 +110,41 @@ describe('observation loop', () => {
     } finally { await loop.close(); }
   });
 
+  test('the injected clock owns the gap timer, and a demand starts the next cycle at once unless the gap is long', async () => {
+    // The clock of this test owns the timers, so a demand inside the gap is visible without a real sleep.
+    const timers = new Map<number, () => void>();
+    let nextTimer = 0;
+    const clock = {
+      now: () => new Date('2026-11-10T00:00:00.000Z'),
+      setTimeout(run: () => void) { const key = ++nextTimer; timers.set(key, run); return key as unknown as ReturnType<typeof setTimeout>; },
+      clearTimeout(handle: ReturnType<typeof setTimeout>) { timers.delete(handle as unknown as number); },
+    };
+    let runs = 0, gapMs = 0;
+    const loop = startObservationLoop<number, Reason>({
+      cycle: async () => ({ state: 'observed', value: ++runs }),
+      keep: replaceObservation, failure: 'cycle_failed', interval_ms: () => gapMs,
+      // A gap that the last cycle lengthened on purpose, as a low upstream budget does, stays.
+      wakeable_gap: ms => ms <= 1000,
+      clock,
+    });
+    try {
+      await loop.settled();
+      expect([runs, timers.size]).toEqual([1, 1]);
+      loop.wake();
+      expect(timers.size).toBe(0);
+      await loop.settled();
+      expect(runs).toBe(2);
+      // A gap that a low budget lengthened stays: the next demand waits for the gap.
+      gapMs = 600_000;
+      loop.wake();
+      await loop.settled();
+      expect([runs, timers.size]).toEqual([3, 1]);
+      loop.wake();
+      expect([runs, timers.size]).toEqual([3, 1]);
+    } finally { await loop.close(); }
+    expect(timers.size).toBe(0);
+  });
+
   test('a repository read serves pending before the first cycle and repository_not_found only after a complete one', () => {
     expect(readRepository({ state: 'pending' }, 'repo-a', 'pending')).toEqual({ reason: 'pending' });
     const partial = { state: 'observed' as const, observed_at: '2026-11-10T00:00:00.000Z',
