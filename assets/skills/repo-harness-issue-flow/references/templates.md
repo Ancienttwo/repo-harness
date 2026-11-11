@@ -400,7 +400,7 @@ Review-bot reference: no findings at <sha>: no action
 repo-harness unblocked
 To: head owner #<p>
 Merged: #<dep> as <merge sha>; main is <sha>
-Next: merge main into your branch (no force push), run affected checks, post integration status
+Next: merge main into your branch (no force push; the `unblocked` case of `worker.md`, Main moved), run affected checks, post integration status
 ```
 
 ### merge hold (on the parent, an issue or a PR)
