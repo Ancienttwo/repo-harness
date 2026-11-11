@@ -16,7 +16,7 @@ import { asApiError } from './operator-api-error';
 import type { OperatorTranslate } from './i18n';
 import type { OperatorApiErrorV1 } from './operator-api-error';
 import { postOperatorWrite, type OperatorWriteAnswer, type OperatorWriteFailure } from './operator-write';
-import { useObservationRefresh } from './useObservationRefresh';
+import { useSnapshotView, type SnapshotView } from './useSnapshotView';
 
 /**
  * Browser side of `GET /api/v1/worktrees`. The server's background collector
@@ -31,29 +31,11 @@ export async function fetchWorktrees(signal: AbortSignal): Promise<WorktreesSnap
   return decodeWorktrees(await response.json());
 }
 
-/** A failed refresh keeps the last good snapshot and says so. */
-export type WorktreesView =
-  | { readonly kind: 'loading' }
-  | { readonly kind: 'unreachable' }
-  | { readonly kind: 'ready'; readonly snapshot: WorktreesSnapshot; readonly refreshFailed: boolean };
+export type WorktreesView = SnapshotView<WorktreesSnapshot>;
 
 /** `reload` reads the collector's cache again at once. */
 export function useWorktrees(read: WorktreesReader, initial: WorktreesSnapshot | undefined, generation: number, enabled: boolean): { readonly view: WorktreesView; readonly reload: () => void } {
-  const [view, setView] = useState<WorktreesView>(() => initial ? { kind: 'ready', snapshot: initial, refreshFailed: false } : { kind: 'loading' });
-  const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
-    try {
-      const snapshot = await read(signal);
-      if (signal.aborted) return false;
-      setView({ kind: 'ready', snapshot, refreshFailed: false });
-      return true;
-    } catch {
-      if (signal.aborted) return false;
-      setView(current => current.kind === 'ready' ? { ...current, refreshFailed: true } : { kind: 'unreachable' });
-      return false;
-    }
-  }, [read]);
-  const reload = useObservationRefresh(observe, JSON.stringify(['worktrees', generation]), { enabled, immediate: initial === undefined || generation > 0 });
-  return { view, reload };
+  return useSnapshotView('worktrees', read, initial, generation, enabled);
 }
 
 /** The collector's data, or null while it has none to show. */

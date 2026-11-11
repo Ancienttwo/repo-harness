@@ -1,4 +1,3 @@
-import { useCallback, useState } from 'react';
 import { decodeDevActivitySnapshot } from '../core/dev-activity/decode';
 import {
   DEV_ACTIVITY_TRUNCATED_REASON_PREFIX,
@@ -9,7 +8,7 @@ import {
   type DevActivitySourceHealth,
   type DevActivitySourceStatus,
 } from '../core/dev-activity/types';
-import { useObservationRefresh } from './useObservationRefresh';
+import { useSnapshotView, type SnapshotView } from './useSnapshotView';
 
 /**
  * Browser side of `GET /api/v1/dev-activity`. The server owns every column,
@@ -24,28 +23,10 @@ export async function fetchDevActivity(signal: AbortSignal): Promise<DevActivity
   return decodeDevActivitySnapshot(await response.json());
 }
 
-/** A failed refresh keeps the last good snapshot and says when it failed. */
-export type DevActivityView =
-  | { readonly kind: 'loading' }
-  | { readonly kind: 'unreachable' }
-  | { readonly kind: 'ready'; readonly snapshot: DevActivitySnapshotV2; readonly refreshFailed: boolean };
+export type DevActivityView = SnapshotView<DevActivitySnapshotV2>;
 
 export function useDevActivity(read: DevActivityReader, initial: DevActivitySnapshotV2 | undefined, generation: number): DevActivityView {
-  const [view, setView] = useState<DevActivityView>(() => initial ? { kind: 'ready', snapshot: initial, refreshFailed: false } : { kind: 'loading' });
-  const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
-    try {
-      const snapshot = await read(signal);
-      if (signal.aborted) return false;
-      setView({ kind: 'ready', snapshot, refreshFailed: false });
-      return true;
-    } catch {
-      if (signal.aborted) return false;
-      setView(current => current.kind === 'ready' ? { ...current, refreshFailed: true } : { kind: 'unreachable' });
-      return false;
-    }
-  }, [read]);
-  useObservationRefresh(observe, JSON.stringify(['dev-activity', generation]), { immediate: initial === undefined || generation > 0 });
-  return view;
+  return useSnapshotView('dev-activity', read, initial, generation).view;
 }
 
 export function snapshotOf(view: DevActivityView): DevActivitySnapshotV2 | null {
