@@ -160,8 +160,8 @@ function readStorage(key: string): string | null {
   try { return typeof window === 'undefined' ? null : localStorage.getItem(key); } catch { return null; }
 }
 
-// The current history entry's record gives its repository. An entry without a record takes the repository
-// that the app already shows; a new app with neither reads the URL repository, then the latest pick in localStorage.
+// The current history entry's record gives its repository. An entry without a record takes the repository that
+// its URL names; with neither, a restored entry keeps the repository that the app shows and a new app reads localStorage.
 function recordedRepository(): string | null {
   if (typeof window === 'undefined') return null;
   const recorded: unknown = (window.history.state as { repositoryId?: unknown } | null)?.repositoryId;
@@ -171,8 +171,10 @@ function recordedRepository(): string | null {
 // The page URL names the repository, so a context with no record (a new tab, a pasted or saved link) opens it.
 const REPOSITORY_QUERY_KEY = 'repository';
 
+// The URL repository of the current entry, read only when the entry has no record.
 function linkedRepository(): string | null {
-  return typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get(REPOSITORY_QUERY_KEY);
+  if (typeof window === 'undefined' || recordedRepository() !== null) return null;
+  return new URLSearchParams(window.location.search).get(REPOSITORY_QUERY_KEY);
 }
 
 function repositoryUrl(repositoryId: string): string {
@@ -351,8 +353,8 @@ export function OperatorApp({
   readDocsTree = fetchDocsTree,
   readDocsFile = fetchDocsFile,
 }: OperatorAppProps) {
-  // The URL repository of a context with no record. It is not recorded, written or replaced until the registry names it.
-  const [linkRepository, setLinkRepository] = useState(() => recordedRepository() === null ? linkedRepository() : null);
+  // The URL repository of the current entry when it has no record. It is not recorded, written or replaced until the registry names it.
+  const [linkRepository, setLinkRepository] = useState(linkedRepository);
   const [repositoryId, setRepositoryId] = useState<string | null>(() => recordedRepository() ?? linkRepository ?? readStorage(OPERATOR_REPOSITORY_STORAGE_KEY));
   const [place, setPlace] = useState<WorkspaceLocation>(() => initialPlace ?? parseWorkspaceLocation(typeof window === 'undefined' ? '' : window.location.hash));
   const [refreshGeneration, setRefreshGeneration] = useState(0);
@@ -437,8 +439,11 @@ export function OperatorApp({
   }, [repositoryId, place, linkUnverified]);
   useEffect(() => {
     const restore = () => {
+      const recorded = recordedRepository();
+      const linked = linkedRepository();
       setPlace(parseWorkspaceLocation(window.location.hash));
-      setRepositoryId(current => recordedRepository() ?? current);
+      setLinkRepository(linked);
+      setRepositoryId(current => recorded ?? linked ?? current);
     };
     window.addEventListener('popstate', restore);
     window.addEventListener('hashchange', restore);

@@ -294,4 +294,21 @@ describe('docs repository in a new context', () => {
     expect(document.querySelector('[data-repository-switch]')?.getAttribute('data-selected')).toBe('');
     expect([requests.filter(request => request.includes('/docs/')), window.history.state, window.location.hash]).toEqual([[], null, '#docs/docs/README.md']);
   });
+
+  test('unknown link, then a pick of a registered repository, then Back keeps the refusal of the link entry, and Forward returns to the pick', async () => {
+    const unknown = 'http://127.0.0.1:4318/?repository=repo-gone#docs/docs/README.md';
+    await openContext(unknown, REPOSITORY);
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-repository-switch]')!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>(`[data-switch-option="${OTHER}"]`)!.click());
+    await settle();
+    requests = [];
+    await act(async () => { window.history.back(); await new Promise(resolve => setTimeout(resolve, 0)); });
+    await settle();
+    expect([document.querySelector('[data-repository-link-unknown]')?.getAttribute('data-repository-link-unknown'), window.location.href, requests.filter(request => request.includes('/docs/file'))])
+      .toEqual(['repo-gone', unknown, []]);
+    await act(async () => { window.history.forward(); await new Promise(resolve => setTimeout(resolve, 0)); });
+    await settle();
+    expect([document.querySelector('[data-repository-switch]')?.getAttribute('data-selected'), window.location.href, document.querySelector('[data-repository-link-unknown]')])
+      .toEqual([OTHER, `http://127.0.0.1:4318/?repository=${OTHER}#docs`, null]);
+  });
 });
