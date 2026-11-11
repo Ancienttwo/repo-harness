@@ -201,26 +201,7 @@ function validateWorkflowPolicy(policy: WorkflowPolicy): void {
     '.planning.pending_orchestration_file',
     '.ai/harness/planning/pending.json',
   );
-  const registryPath = policyValue(policy, '.context.capability_registry_file');
-  if (registryPath !== POLICY_FIELD_ABSENT && registryPath !== CAPABILITY_REGISTRY_PATH) {
-    throw new Error(
-      `invalid workflow policy path .context.capability_registry_file: ${String(registryPath)}`,
-    );
-  }
   capabilitySourceMode(policy);
-  minimalChangeMode(policy);
-}
-
-const MINIMAL_CHANGE_MODES: readonly string[] = ['off', 'advice'];
-
-// No code reads the minimal_change policy. The mode check only rejects the
-// retired `enforce` value (and any other unknown value) so an operator
-// does not rely on a gate that no longer exists.
-function minimalChangeMode(policy: WorkflowPolicy): void {
-  const value = policyValue(policy, '.minimal_change.mode');
-  if (value === POLICY_FIELD_ABSENT) return;
-  if (typeof value === 'string' && MINIMAL_CHANGE_MODES.includes(value)) return;
-  throw new Error(`invalid workflow policy value .minimal_change.mode: ${String(value)}`);
 }
 
 /**
@@ -228,10 +209,6 @@ function minimalChangeMode(policy: WorkflowPolicy): void {
  * scripts/capability-resolver.ts. `registry` reads the JSON registry,
  * `archcontext` reads archcontext capability nodes; there is no dual-read and
  * no fallback in either direction, and an unknown value fails closed.
- *
- * `.context.capability_registry_file` only names where the JSON registry lives
- * and is therefore inert under `archcontext` -- the adoption seeders keep
- * writing it as a default for registry-mode repos.
  */
 export function capabilitySourceMode(policy: WorkflowPolicy): CapabilitySourceMode {
   const value = policyValue(policy, '.context.capability_source');
@@ -338,18 +315,13 @@ export interface CapabilityResolution {
   readonly blocker: CapabilityOwnershipBlocker | null;
 }
 
-// Policy declares capability registry authority. Adoption and init, plus the
-// explicit capability commands, write the registry and its policy reference.
-// A declared missing or invalid registry fails closed. Restore the declared
-// registry through those writers, or repair its JSON explicitly. Workflow
-// diagnostics do not repair registry contents.
+// An explicit `capability_source: "registry"` declares the registry: init
+// writes that key with the registry at the constant path. A declared missing
+// or invalid registry fails closed. Restore it through init or the capability
+// commands, or repair its JSON explicitly. Workflow diagnostics do not repair
+// registry contents. An absent selector means registry mode, undeclared.
 function policyDeclaresCapabilityRegistry(policy: WorkflowPolicy): boolean {
-  const declared = policyValue(policy, '.context.capability_registry_file');
-  if (declared === POLICY_FIELD_ABSENT) return false;
-  if (declared !== CAPABILITY_REGISTRY_PATH) {
-    throw new Error('invalid workflow policy path .context.capability_registry_file');
-  }
-  return true;
+  return policyValue(policy, '.context.capability_source') === 'registry';
 }
 
 export function loadRegistryAuthority(cwd: string, policy: WorkflowPolicy, readSource: (path: string) => string | null): CapabilityRegistryResolution {

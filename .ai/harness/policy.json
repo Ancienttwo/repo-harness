@@ -1,104 +1,23 @@
 {
-  "version": 1,
   "tasks": {
-    "lessons_file": "tasks/lessons.md",
     "research_dir": "docs/researches"
-  },
-  "prds": {
-    "dir": "docs/prds",
-    "template_file": "docs/prds/prd.template.md",
-    "statuses": [
-      "Draft",
-      "Approved",
-      "Superseded"
-    ],
-    "rule": "PRDs live in docs/prds as the product-intent layer. They decompose docs/spec.md intent into product direction, acceptance scenarios, module behavior, data model, performance targets, and developer handoff. The GitHub issue and PR own task identity, claim, status and dependencies."
   },
   "external_sources": {
     "version": 1,
     "mode": "off"
   },
-  "reference_material": {
-    "dir": "_ref",
-    "mode": "external-ignored",
-    "commit_policy": "never commit _ref contents",
-    "rule": "use _ref as an occasional ignored external reference checkout cache for upstream/source comparison only; refresh from external sources instead of editing as product code; when it influences a decision, cite the source repo plus commit/tag and path in docs/researches/"
-  },
-  "operations": {
-    "dir": "deploy",
-    "private_dir": "_ops",
-    "tracked": [
-      "deploy/README.md",
-      "deploy/scripts/",
-      "deploy/submissions/",
-      "deploy/runbooks/",
-      "deploy/release-checklists/",
-      "deploy/sql/",
-      "deploy/*.md",
-      "deploy/env/.env.example"
-    ],
-    "ignored": [
-      "_ops/"
-    ],
-    "rule": "commit deployment runbooks, submission materials, release checklists, helper scripts, ordered SQL files, and env examples under deploy/; when operations.deploy_sql is absent, keep deploy SQL directly under deploy/sql/ with ordered4 names (4-digit ascending prefixes); when operations.deploy_sql is present, its roots, naming modes, and invariant_file are the sole alternate SQL-layout authority; keep keys, tokens, real env values, provider state, artifacts, logs, and scratch files in ignored _ops/ only"
-  },
   "context": {
-    "profile": "stable-root-progressive-subdir",
     "map_file": ".ai/context/context-map.json",
-    "capability_registry_file": ".ai/context/capabilities.json",
-    "capability_resolver": "repo-harness run capability-resolver",
-    "capability_config": "repo-harness run capability-config",
-    "capability_match_rule": "registry: longest-prefix, same-length ambiguity fails; archcontext: archctx resolve owns the rule, ambiguity fails",
-    "capability_source": "archcontext",
-    "capability_source_rule": "single authority selected by capability_source; registry reads .ai/context/capabilities.json, archcontext reads .archcontext/model/nodes/*.yaml; no dual-read and no fallback",
-    "functional_block_selector": {
-      "script": "repo-harness run select-agent-context-blocks",
-      "config_file": ".ai/context/agent-context-blocks.txt",
-      "env": "REPO_HARNESS_CONTEXT_BLOCKS",
-      "rule": "compatibility selector; capability registry is the source of truth"
-    }
+    "capability_source": "archcontext"
   },
   "harness": {
-    "policy_file": ".ai/harness/policy.json",
-    "failure_log_file": ".ai/harness/failures/latest.jsonl",
-    "events_file": ".ai/harness/events.jsonl",
-    "runs_dir": ".ai/harness/runs",
-    "helper_runtime_dir": "package:scripts",
-    "helper_source": "package"
+    "runs_dir": ".ai/harness/runs"
   },
   "information_lifecycle": {
-    "evidence": {
-      "snapshots_dir": ".ai/harness/runs",
-      "cache_globs": [
-        ".ai/harness/checks/*.latest.json",
-        ".ai/harness/checks/*.latest.md"
-      ],
-      "purpose": "PR and CI hold verification and review; seat-local runs are runtime evidence."
-    },
-    "assets": {
-      "sources": [
-        ".ai/harness/policy.json",
-        "package:assets/workflow-contract.v1.json",
-        "package:scripts",
-        "docs/reference-configs/"
-      ],
-      "promotion_rule": "only promote patterns after verified reuse across tasks or fixtures"
-    },
-    "memory": {
-      "sources": [
-        "docs/researches/",
-        "tasks/lessons.md"
-      ],
-      "rule": "memory is advisory; current repo state and evidence override summaries"
-    },
     "external_knowledge": {
-      "mode": "manual-opt-in",
-      "default_brain_path": "brain/<project>/*",
       "project_path": "brain/repo-harness/*",
       "manifest_file": ".ai/harness/brain-manifest.json",
-      "sync_script": "repo-harness brain sync",
-      "rule": "external knowledge stores long-lived explanations, runbooks, and patterns only; repo-local contracts, hooks, scripts, checks, and evidence remain authoritative",
-      "sync_rule": "external sync and drift checks are operator-invoked only; hooks and workflow verification never read, write, or gate on external vault state"
+      "sync_script": "repo-harness brain sync"
     }
   },
   "guards": {
@@ -108,76 +27,16 @@
     ],
     "rule": "Ordinary editing has no plan/contract approval permit. Path and permission safety remain runtime invariants."
   },
-  "delegation": {
-    "mode": "explicit",
-    "brief_source": ".claude/templates/delegation-brief.template.md"
-  },
-  "sidecar_research": {
-    "default": true,
-    "output_dir": "docs/researches",
-    "preferred_runners": [
-      "subagent",
-      "codex exec --json",
-      "main-thread trace"
-    ],
-    "spawn_decision": "main agent decides from task breadth, context impact, raw-log volume, and callable runner availability; do not ask the user for spawn confirmation",
-    "fallback_runner": "main-thread trace",
-    "main_thread_policy": "if spawning is not worthwhile or no sidecar runner is callable, perform bounded research in the main thread; consume conclusions and evidence paths, not raw logs"
-  },
   "documentation": {
-    "profile": "minimal-agentic",
-    "language": "en",
-    "reference_source": "user-level-runtime-docs",
-    "reference_stub_marker": "<!-- repo-harness: reference-config-stub v1 -->",
-    "reference_resolver": "repo-harness docs path <doc-id>",
-    "required": [
-      "docs/spec.md",
-      "docs/architecture/overview.md"
-    ],
-    "on_demand": [
-      "docs/brief.md",
-      "docs/tech-stack.md",
-      "docs/decisions.md",
-      "docs/architecture.md",
-      "docs/packages.md"
-    ],
-    "reference_configs": [
-      "harness-overview.md",
-      "agentic-development-flow.md",
-      "external-tooling.md",
-      "sprint-contracts.md",
-      "handoff-protocol.md",
-      "document-generation.md",
-      "global-working-rules.md",
-      "heartbeat-triage.md",
-      "minimal-change-hooks.md"
-    ],
-    "rule": "create optional docs only when the agent has concrete repo evidence or the user asks"
-  },
-  "lsp_profiles": {
-    "default": "typescript-lsp",
-    "selection": "functional-block-first",
-    "rule": "use block-level LSP/tooling hints before broad repo assumptions"
+    "language": "en"
   },
   "worktree_strategy": {
-    "auto_on_conflict": true,
     "branch_prefix": "codex/",
     "base_branch": "main",
     "review_base": "origin/main",
     "worktree_dir_template": "{{system_tmp}}/{{repo}}-wt-{{slug}}",
-    "start_script": "repo-harness run contract-worktree start --issue <number>",
-    "cleanup_script": "repo-harness run contract-worktree cleanup --slug <slug>",
-    "conflict_signals": [
-      "dirty_worktree_overlaps_task_files",
-      "current_branch_not_suitable_for_task",
-      "existing_changes_unrelated_but_would_block_review",
-      "task_requires_clean_validation_surface"
-    ],
-    "validation_route": "typecheck-and-affected-tests",
     "merge_back": {
-      "target": "main",
-      "requires_clean_check": true,
-      "preserve_unrelated_changes": true
+      "target": "main"
     }
   },
   "merge_gate": {
@@ -188,85 +47,13 @@
     "acceptance_merge": "on",
     "merge_queue": "on"
   },
-  "upgrade": {
-    "strategy_version": 1,
-    "supported_legacy_versions": [
-      "pre-tasks-first",
-      "tasks-first-without-contract-manifest",
-      "current-v1"
-    ],
-    "action_classes": {
-      "preserve": "keep user-authored hooks, ignored reference material, private operations state, secrets, and local env files unchanged",
-      "archive": "move user-authored legacy workflow documents or checklists into archive/research surfaces before refresh",
-      "reconfigure": "merge managed config defaults without overwriting explicit repo overrides",
-      "remove": "delete only workflow-contract actions marked ownership=known_generated"
-    },
-    "cleanup": {
-      "source": "package:assets/workflow-contract.v1.json#migrations.upgrade.actions",
-      "remove_only_ownership": "known_generated",
-      "unknown_files": "preserve-or-archive",
-      "custom_hooks": "preserve",
-      "ignored_reference_material": "preserve",
-      "local_operations_state": "preserve",
-      "local_secrets": "preserve"
-    },
-    "reporting": {
-      "inspector_field": "upgrade_plan",
-      "dry_run_required": true
-    }
-  },
-  "profiles": {
-    "orchestration": "shared-long-running-harness",
-    "evaluation": "browser-qa",
-    "handoff": "artifact-aware",
-    "recovery": "hybrid",
-    "state": "file-backed"
-  },
   "tooling": {
     "codegraph": {
       "enabled": true
     }
   },
   "external_tooling": {
-    "routing": {
-      "simple": "waza"
-    },
-    "hosts": [
-      "claude-code",
-      "codex"
-    ],
-    "mode": "agent-readiness-required",
-    "detection": "init-migrate",
-    "readiness_gate": "repo-harness run check-agent-tooling --host codex --strict-readiness",
-    "waza": {
-      "source_repo": "tw93/Waza",
-      "source_url": "https://github.com/tw93/Waza.git",
-      "managed_skills": [
-        "think",
-        "hunt",
-        "check",
-        "health"
-      ],
-      "primary_host": "codex",
-      "codex_primary_path": "~/.codex/skills",
-      "staging_cache_path": "~/.agents/skills",
-      "sync_mode": "stage-upstream-then-copy-to-codex",
-      "host_drift_policy": "report-per-host-version-staging-and-upstream-drift"
-    },
-    "hai_stack": {
-      "source_repo": "hylarucoder/hai-stack",
-      "source_url": "https://github.com/hylarucoder/hai-stack.git",
-      "managed_skills": [
-        "geju"
-      ],
-      "primary_host": "codex",
-      "codex_primary_path": "~/.codex/skills",
-      "staging_cache_path": "~/.agents/skills",
-      "sync_mode": "stage-upstream-then-copy-to-codex",
-      "host_drift_policy": "report-per-host-version-staging-and-upstream-drift"
-    },
     "agent_fleet": {
-      "source": "package:agents/fleet",
       "managed_agents": [
         "explorer",
         "deep-reasoner",
@@ -276,93 +63,8 @@
         "root-cause-prover",
         "harness-evaluator"
       ],
-      "claude_target": "~/.claude/agents",
-      "codex_target": "~/.codex/agents",
-      "codex_generation": "derive-toml-from-md",
-      "install_mode": "auto-install-on-init",
-      "conflict_policy": "never-clobber-without-force",
-      "install_command": "repo-harness run install-agent-fleet",
-      "source_policy": "repo-owned-single-authority"
-    },
-    "codex_automation_profile": {
-      "required_skills": [
-        "health",
-        "check",
-        "mermaid"
-      ],
-      "optional_skills": [],
-      "mode": "codex-runtime-reference",
-      "source": "~/.codex/skills",
-      "routes": {
-        "workflow_health": "waza:health",
-        "review_gate": "waza:check",
-        "architecture_diagram": "mermaid"
-      },
-      "vendoring_policy": "do-not-vendor-skill-body"
-    },
-    "diagram_design": {
-      "skill_name": "mermaid",
-      "primary_host": "codex",
-      "codex_primary_path": "~/.codex/skills/mermaid",
-      "sync_mode": "external-installed-skill",
-      "vendoring_policy": "do-not-vendor"
-    },
-    "codegraph": {
-      "package": "@colbymchenry/codegraph",
-      "primary_host": "codex",
-      "install_mode": "self-host-dev-dependency-with-global-mcp-opt-in",
-      "codex_config_path": "~/.codex/config.toml",
-      "claude_config_path": "~/.claude.json",
-      "index_dir": ".codegraph",
-      "readiness": "required-for-codex-agent-code-navigation",
-      "hook_policy": "do-not-block-hooks",
-      "install_command": "bun install",
-      "project_init_command": "codegraph init -i .",
-      "sync_command": "codegraph sync .",
-      "vendoring_policy": "self-host-dev-dependency; downstream-generated-default-remains-do-not-add-package-dependency",
-      "mcp_install_command": "npm install -g @colbymchenry/codegraph && mkdir -p ~/.local/bin && ln -sfn \"$(npm config get prefix)/bin/codegraph\" ~/.local/bin/codegraph && PATH=\"$HOME/.local/bin:$PATH\" codegraph install --target codex --location global --yes"
-    },
-    "archctx": {
-      "cli_package": "archctx",
-      "contracts_package": "archctx-contracts",
-      "contracts_scope": "release-gated-packed-schema-authority",
-      "install_mode": "release-gated-runtime-dependency-when-projection-enabled",
-      "readiness": "advisory",
-      "hook_policy": "do-not-block-hooks",
-      "vendoring_policy": "do-not-vendor",
-      "model_dir": ".archcontext/model",
-      "nodes_dir": ".archcontext/model/nodes",
-      "capability_source_key": ".ai/harness/policy.json#context.capability_source"
+      "install_mode": "auto-install-on-init"
     }
-  },
-  "agentic_development": {
-    "routing": {
-      "product_discovery": "parent-agent:geju",
-      "complex_engineering_plan": "parent-agent:geju",
-      "design_plan": "parent-agent:geju",
-      "design_options_choice": "convention:design-options",
-      "small_or_medium_plan": "waza:think",
-      "bug_or_regression": "waza:hunt",
-      "post_implementation_review": "waza:check"
-    },
-    "due_diligence": {
-      "levels": [
-        "P1_GLOBAL_ARCHITECTURE",
-        "P2_DATA_FLOW_TRACE",
-        "P3_DESIGN_DECISION"
-      ],
-      "explicit_report_required_for": [
-        "complex_engineering_plan",
-        "hunt",
-        "risky_refactor",
-        "deployment",
-        "auth_payment_data",
-        "shared_contract"
-      ]
-    }
-  },
-  "minimal_change": {
-    "mode": "advice"
   },
   "enforcement": {
     "worktree_guard": "advisory",

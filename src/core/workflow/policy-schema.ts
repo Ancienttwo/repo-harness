@@ -4,7 +4,7 @@
  * each reader keeps its own error text for a malformed value.
  *
  * A key outside the tree is ignored, not rejected: adopted repositories still
- * hold retired keys until `init` removes them.
+ * hold retired keys until `init` removes them with `pruneUnknownPolicyKeys`.
  *
  * A leaf is `true`. An empty object `{}` is a declared section whose children
  * belong to one reader's own contract (for example `external_sources`, owned by
@@ -19,7 +19,7 @@ export const WORKFLOW_POLICY_KEYS: PolicyKeyTree = {
   tasks: { research_dir: true },
   external_sources: {},
   operations: { agent_writable_private_dirs: true, deploy_sql: {} },
-  context: { map_file: true, capability_source: true, capability_registry_file: true },
+  context: { map_file: true, capability_source: true },
   harness: { runs_dir: true },
   information_lifecycle: {
     retention: {},
@@ -43,8 +43,6 @@ export const WORKFLOW_POLICY_KEYS: PolicyKeyTree = {
   tooling: { codegraph: { enabled: true } },
   external_tooling: { agent_fleet: { managed_agents: true, install_mode: true } },
   security: { reviewed_findings: {} },
-  minimal_change: { mode: true },
-  upgrade: { strategy_version: true },
   guards: {},
   enforcement: {},
   merge_gate: {},
@@ -82,28 +80,41 @@ export function decodeWorkflowPolicy(text: string | null): DecodedWorkflowPolicy
 
 /** Dotted paths of the keys that no reader uses, sorted. */
 export function unknownPolicyKeys(policy: WorkflowPolicyObject | null): readonly string[] {
-  if (policy === null) return [];
-  const unknown: string[] = [];
-  collectUnknownKeys(policy, WORKFLOW_POLICY_KEYS, '', unknown);
-  return unknown.sort();
+  return policy === null ? [] : pruneUnknownPolicyKeys(policy).removed;
 }
 
-function collectUnknownKeys(
+/** The policy without the keys that no reader uses, and their dotted leaf paths, sorted. */
+export function pruneUnknownPolicyKeys(policy: WorkflowPolicyObject): {
+  readonly policy: Record<string, unknown>;
+  readonly removed: readonly string[];
+} {
+  const removed: string[] = [];
+  const kept = keepKnownKeys(policy, WORKFLOW_POLICY_KEYS, '', removed);
+  return { policy: kept, removed: removed.sort() };
+}
+
+function keepKnownKeys(
   value: WorkflowPolicyObject,
   tree: PolicyKeyTree,
   prefix: string,
   unknown: string[],
-): void {
+): Record<string, unknown> {
+  const kept: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value)) {
     const path = prefix === '' ? key : `${prefix}.${key}`;
     const node = Object.hasOwn(tree, key) ? tree[key]! : undefined;
     if (node === undefined) { collectLeafPaths(child, path, unknown); continue; }
     // A leaf needs no children; a declared section owns its own children.
-    if (node === true || Object.keys(node).length === 0) continue;
-    if (child !== null && typeof child === 'object' && !Array.isArray(child)) {
-      collectUnknownKeys(child as WorkflowPolicyObject, node, path, unknown);
+    if (node === true || Object.keys(node).length === 0 || child === null || typeof child !== 'object' || Array.isArray(child)) {
+      kept[key] = child;
+      continue;
     }
+    const inner = keepKnownKeys(child as WorkflowPolicyObject, node, path, unknown);
+    // A section that held only unknown keys leaves with them.
+    if (Object.keys(inner).length === 0 && Object.keys(child).length > 0) continue;
+    kept[key] = inner;
   }
+  return kept;
 }
 
 /** Under an unknown key every leaf is unknown. An array, a scalar or an empty object is a leaf. */

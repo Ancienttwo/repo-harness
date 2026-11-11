@@ -407,17 +407,6 @@
           "summary": "Install the repo-harness opt-in marker, harness policy, and context map."
         },
         {
-          "id": "policy-upgrade-strategy-refresh",
-          "signal": "policy-missing-upgrade-strategy",
-          "action": "reconfigure",
-          "risk": "low",
-          "ownership": "managed_config",
-          "paths": [
-            ".ai/harness/policy.json"
-          ],
-          "summary": "Merge the versioned upgrade strategy into the harness policy without overwriting explicit repo overrides."
-        },
-        {
           "id": "legacy-root-helper-runtime",
           "signal": "legacy-root-helper-runtime",
           "action": "remove",

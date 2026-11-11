@@ -521,7 +521,7 @@ describe('task worktree location', () => {
     try {
       copyHelpers(cwd); initGitRepo(cwd);
       mkdirSync(join(cwd, '.ai/harness'), { recursive: true });
-      writeFileSync(join(cwd, '.ai/harness/policy.json'), JSON.stringify(defaultPolicy('minimal-agentic', 'en')));
+      writeFileSync(join(cwd, '.ai/harness/policy.json'), JSON.stringify(defaultPolicy('en')));
       expect(JSON.parse(readFileSync(join(cwd, '.ai/harness/policy.json'), 'utf8')).worktree_strategy.worktree_dir_template).toBe(DEFAULT_WORKTREE_TEMPLATE);
       const helperTemplate = run(process.execPath, ['scripts/contract-worktree-runtime.ts', 'default-template'], cwd);
       expect(helperTemplate.status, helperTemplate.stderr).toBe(0); expect(helperTemplate.stdout.trim()).toBe(expectedTemplate);

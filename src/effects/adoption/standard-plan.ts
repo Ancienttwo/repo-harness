@@ -12,6 +12,7 @@ import { renderWorkflowContractMarker } from "../../core/adoption/workflow-contr
 import { minimumHarnessVersionOf } from "../../core/adoption/minimum-harness-version";
 import { planLegacyLeftovers, stripLegacyHookEntries } from "../upgrade/legacy-inventory";
 import { runGit } from "../git/run-git";
+import { pruneUnknownPolicyKeys } from "../../core/workflow/policy-schema";
 import { withoutRepositorySelectingGitEnv } from "../git/runner";
 
 const ASSET_ROOT = join(import.meta.dir, "..", "..", "..", "assets");
@@ -192,18 +193,12 @@ function capabilitySourceOf(policy: JsonObject): "registry" | "archcontext" {
   return value === "archcontext" ? "archcontext" : "registry";
 }
 
-function deepMergeDefaults(defaults: JsonObject, current: JsonObject | undefined, path: readonly string[] = []): JsonObject {
+function deepMergeDefaults(defaults: JsonObject, current: JsonObject | undefined): JsonObject {
   const result: JsonObject = { ...defaults };
   if (!current) return result;
   for (const [key, value] of Object.entries(current)) {
     const defaultValue = defaults[key];
-    if (isObject(defaultValue) && isObject(value)) {
-      result[key] = deepMergeDefaults(defaultValue, value, [...path, key]);
-    } else if (Array.isArray(defaultValue) && Array.isArray(value) && [...path, key].join(".") === "documentation.reference_configs") {
-      result[key] = [...value, ...defaultValue.filter((entry) => !value.includes(entry))];
-    } else {
-      result[key] = value;
-    }
+    result[key] = isObject(defaultValue) && isObject(value) ? deepMergeDefaults(defaultValue, value) : value;
   }
   return result;
 }
@@ -286,73 +281,19 @@ function branchKeysFor(opts: StandardPlanOptions, policyCurrent: JsonObject | un
   return { base_branch: branch, review_base: branch, merge_back: { target: branch } };
 }
 
-export function defaultPolicy(documentationProfile: string, documentationLanguage: string, branchKeys: JsonObject = {}): JsonObject {
+/**
+ * A new policy holds only the keys that need a repository value. A reader with
+ * a package default (`tasks.research_dir`, `context.map_file`, `harness.runs_dir`)
+ * gets no key.
+ */
+export function defaultPolicy(documentationLanguage: string, branchKeys: JsonObject = {}): JsonObject {
   return {
-    version: 1,
-    tasks: {
-      lessons_file: "tasks/lessons.md",
-      research_dir: "docs/researches",
-    },
-    context: {
-      map_file: ".ai/context/context-map.json",
-      capability_registry_file: ".ai/context/capabilities.json",
-      capability_match_rule: "longest-prefix; same-length ambiguity fails",
-      capability_source: "registry",
-      capability_source_rule: "single authority selected by capability_source; registry reads .ai/context/capabilities.json, archcontext reads .archcontext/model/nodes/*.yaml; no dual-read and no fallback",
-    },
+    context: { capability_source: "registry" },
     worktree_strategy: {
       worktree_dir_template: DEFAULT_WORKTREE_TEMPLATE,
       ...branchKeys,
     },
-    harness: {
-      policy_file: ".ai/harness/policy.json",
-      helper_runtime_dir: "package:scripts",
-      helper_source: "package",
-    },
-    operations: {
-      dir: "deploy",
-      private_dir: "_ops",
-      rule: "Track deployment material in deploy/ and keep private local operations state in ignored _ops/.",
-    },
-    documentation: {
-      profile: documentationProfile,
-      language: requireDocumentationLanguage(documentationLanguage),
-      reference_source: "user-level-runtime-docs",
-      reference_stub_marker: "<!-- repo-harness: reference-config-stub v1 -->",
-      reference_resolver: "repo-harness docs path <doc-id>",
-    },
-    external_tooling: {
-      routing: {
-        simple: "waza",
-      },
-    },
-    agentic_development: {
-      routing: {
-        product_discovery: "parent-agent:geju",
-        complex_engineering_plan: "parent-agent:geju",
-        design_plan: "parent-agent:geju",
-        design_options_choice: "convention:design-options",
-        small_or_medium_plan: "waza:think",
-        bug_or_regression: "waza:hunt",
-        post_implementation_review: "waza:check",
-      },
-      due_diligence: {
-        levels: ["P1_GLOBAL_ARCHITECTURE", "P2_DATA_FLOW_TRACE", "P3_DESIGN_DECISION"],
-        explicit_report_required_for: [
-          "complex_engineering_plan",
-          "hunt",
-          "risky_refactor",
-          "deployment",
-          "auth_payment_data",
-          "shared_contract",
-        ],
-      },
-    },
-    upgrade: {
-      strategy_version: 1,
-      remove_only_ownership: "known_generated",
-      unknown_files: "preserve-or-archive",
-    },
+    documentation: { language: requireDocumentationLanguage(documentationLanguage) },
     internal_pr_authors: [],
   };
 }
@@ -620,130 +561,18 @@ function editJsonObject(text: string, open: number, next: JsonObject, indent: st
   return `{${parts.join(",")}${trailing}}`;
 }
 
-// Generated repository architecture settings that no reader consumes after the
-// projection queue and request-card queue retirement. Execution settings now
-// live in the host configuration; architecture truth lives in .archcontext/.
-const RETIRED_ARCHITECTURE_POLICY_KEYS = [
-  'projection_provider', 'projection_apply', 'projection_failure_gate', 'projection_version', 'projection_timeout_ms',
-  'index_file', 'requests_dir', 'snapshots_dir', 'diagrams_dir', 'domains_dir', 'modules_dir',
-  'diagram_skill', 'diagram_skill_source', 'vendoring_policy', 'freshness_gate', 'gate_min_severity',
-  'pending_card_scope', 'pending_block_begin', 'pending_block_end', 'queue_script',
-  'contract_block_begin', 'contract_block_end',
-] as const;
-const GENERATED_ARCHITECTURE_RULES = new Set([
-  'hooks record architecture queue cards and sync controlled local context blocks; agents author semantic snapshots and diagrams',
-  'Architecture documents and the archctx model are on-demand references; update real responsibility changes explicitly. Hooks do not queue per-edit drift, sync workstreams or author agent-context blocks.',
-]);
-
-function retireArchitecturePolicy(policy: Record<string, unknown>): void {
-  if (isObject(policy.harness)) delete policy.harness.architecture_events_file;
-  if (!isObject(policy.architecture)) return;
-  const architecture = policy.architecture;
-  for (const key of RETIRED_ARCHITECTURE_POLICY_KEYS) delete architecture[key];
-  if (typeof architecture.rule === 'string' && GENERATED_ARCHITECTURE_RULES.has(architecture.rule)) delete architecture.rule;
-  if (Object.keys(architecture).length === 0) delete policy.architecture;
-}
-
-/** Policy keys that no reader consumes after the plan/task artifact and agent runtime retirements. */
-const RETIRED_ADOPTION_POLICY_KEYS: ReadonlyArray<{ readonly path: readonly [string] | readonly [string, string]; readonly label: string }> = [
-  { path: ["active_plan"], label: "active_plan" },
-  { path: ["plan_capture"], label: "plan_capture" },
-  { path: ["tasks", "current_status_file"], label: "tasks.current_status_file" },
-  { path: ["tasks", "workstreams_dir"], label: "tasks.workstreams_dir" },
-  { path: ["guards", "edit_plan_gate"], label: "guards.edit_plan_gate" },
-  { path: ["guards", "edit_plan_gate_modes"], label: "guards.edit_plan_gate_modes" },
-  { path: ["agent_runtime"], label: "agent_runtime" },
-  { path: ["circuit_breakers"], label: "circuit_breakers" },
-];
-
-function retireAdoptionPolicy(policy: Record<string, unknown>): string[] {
-  const removed: string[] = [];
-  // A retired plan-gate block carries its rule and its planning authority text.
-  // The gate key is the block marker, so a current guards.rule stays.
-  const hadPlanGate = isObject(policy.guards) && Object.hasOwn(policy.guards, "edit_plan_gate");
-  const hadPlanCapture = Object.hasOwn(policy, "plan_capture");
-  for (const { path, label } of RETIRED_ADOPTION_POLICY_KEYS) {
-    const parent = path.length === 2 ? policy[path[0]!] : policy;
-    const key = path[path.length - 1]!;
-    if (!isObject(parent) || !Object.hasOwn(parent, key)) continue;
-    delete parent[key];
-    removed.push(label);
-  }
-  if (hadPlanGate && isObject(policy.guards) && Object.hasOwn(policy.guards, "rule")) {
-    delete policy.guards.rule;
-    removed.push("guards.rule");
-  }
-  if (hadPlanCapture && isObject(policy.planning) && Object.hasOwn(policy.planning, "source_of_truth")) {
-    delete policy.planning.source_of_truth;
-    removed.push("planning.source_of_truth");
-  }
-  for (const key of ["tasks", "guards", "planning"] as const) {
-    if (isObject(policy[key]) && Object.keys(policy[key]).length === 0) delete policy[key];
-  }
-  return removed;
-}
-
 export function planStandardAdoption(opts: StandardPlanOptions): { operations: AdoptionOperation[]; warnings: AdoptionWarning[] } {
   const operations: AdoptionOperation[] = [];
   const documentationProfile = opts.env?.REPO_HARNESS_DOCUMENTATION_PROFILE ?? "minimal-agentic";
   const documentationLanguage = requireDocumentationLanguage(opts.env?.REPO_HARNESS_DOCUMENTATION_LANGUAGE ?? "en");
   const policyCurrent = jsonFile(opts.repoRoot, ".ai/harness/policy.json");
-  const policy = deepMergeDefaults(defaultPolicy(documentationProfile, documentationLanguage, branchKeysFor(opts, policyCurrent)), policyCurrent);
-  const mergedDocumentation = isObject(policy.documentation) ? policy.documentation : {};
-  requireDocumentationLanguage(mergedDocumentation.language);
-  delete policy.hook_source;
-  // Operator-invoked adoption retires the old execution authority. Never copy
-  // repository preferences into the host-wide configuration.
-  retireArchitecturePolicy(policy);
-  // Plan and task execution artifacts are retired; both adoption modes drop
-  // their policy keys and report each one so downstream users can audit it.
-  const retiredPolicyKeys = retireAdoptionPolicy(policy);
-  // Refactor execution is retired; recommendations read no repository refactor policy.
-  delete policy.refactor;
-  const externalTooling = isObject(policy.external_tooling) ? policy.external_tooling : {};
-  // The orchestrator left the fleet (#1510). Delete this step with install-state protocol 3 (#1287).
-  const agentFleet = isObject(externalTooling.agent_fleet) ? externalTooling.agent_fleet : null;
-  if (agentFleet && Array.isArray(agentFleet.managed_agents) && agentFleet.managed_agents.includes("orchestrator")) {
-    agentFleet.managed_agents = agentFleet.managed_agents.filter((role) => role !== "orchestrator");
-    retiredPolicyKeys.push("external_tooling.agent_fleet.managed_agents[orchestrator]");
-  }
-  // The hc floor ships in the package (#1686). Remove this step when no registered repository policy has the key.
-  if (Object.hasOwn(externalTooling, "herdr_core")) {
-    delete externalTooling.herdr_core;
-    retiredPolicyKeys.push("external_tooling.herdr_core");
-  }
-  const externalRouting = isObject(externalTooling.routing) ? externalTooling.routing : {};
-  const retiredComplexProvider = typeof externalRouting.complex === "string" ? externalRouting.complex : null;
-  delete externalRouting.complex;
-  if (externalRouting.knowledge === "gbrain") delete externalRouting.knowledge;
-  delete externalTooling.gbrain;
-  externalTooling.routing = externalRouting;
-  policy.external_tooling = externalTooling;
-
-  const agenticDevelopment = isObject(policy.agentic_development) ? policy.agentic_development : {};
-  const planningRouting = isObject(agenticDevelopment.routing) ? agenticDevelopment.routing : {};
-  const retiredReportLabels = new Map<string, string>();
-  if (retiredComplexProvider) {
-    const retiredPrefix = `${retiredComplexProvider}:`;
-    for (const key of ["product_discovery", "complex_engineering_plan", "design_plan"] as const) {
-      const route = planningRouting[key];
-      if (typeof route === "string" && route.startsWith(retiredPrefix)) {
-        retiredReportLabels.set(route.slice(retiredPrefix.length), key);
-        planningRouting[key] = "parent-agent:geju";
-      }
-    }
-  }
-  agenticDevelopment.routing = planningRouting;
-  const dueDiligence = isObject(agenticDevelopment.due_diligence) ? agenticDevelopment.due_diligence : {};
-  if (retiredReportLabels.size > 0 && Array.isArray(dueDiligence.explicit_report_required_for)) {
-    dueDiligence.explicit_report_required_for = [
-      ...new Set(dueDiligence.explicit_report_required_for.map((entry) => (
-        typeof entry === "string" ? (retiredReportLabels.get(entry) ?? entry) : entry
-      ))),
-    ];
-  }
-  agenticDevelopment.due_diligence = dueDiligence;
-  policy.agentic_development = agenticDevelopment;
+  const merged = deepMergeDefaults(defaultPolicy(documentationLanguage, branchKeysFor(opts, policyCurrent)), policyCurrent);
+  requireDocumentationLanguage(isObject(merged.documentation) ? merged.documentation.language : undefined);
+  // The schema lists every key that a reader uses. Any other key leaves, so a
+  // retired key needs no retirement rule; a schema key keeps its value.
+  const { policy, removed: unknownKeys } = pruneUnknownPolicyKeys(merged);
+  const policyRaw = fileContent(opts.repoRoot, ".ai/harness/policy.json");
+  const policyText = policyRaw === undefined ? jsonContent(policy) : renderJsonObjectUpdate(policyRaw, policy);
 
   for (const path of opts.mode === "minimal" ? MINIMAL_DIRS : STANDARD_DIRS) {
     operations.push(mkdirOperation(opts.repoRoot, path, "Ensure canonical repo-harness workflow directory exists"));
@@ -763,20 +592,19 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
     expectedContentHash: fileContent(opts.repoRoot, ".gitignore") === undefined ? undefined : contentHash(gitignore),
   });
 
-  const retiredPolicyWarnings: AdoptionWarning[] = retiredPolicyKeys.length > 0
-    ? [{ code: "retired-policy-keys", message: `Removed retired harness policy keys: ${retiredPolicyKeys.join(", ")}`, risk: "medium" }]
+  const unknownKeyWarnings: AdoptionWarning[] = unknownKeys.length > 0
+    ? [{ code: "unknown-policy-keys", message: `Removed policy keys that no reader uses: ${unknownKeys.join(", ")}`, risk: "medium" }]
     : [];
   if (opts.mode === "minimal") {
-    // A minimal scaffold creates no policy. When one exists, the same retired
-    // key cleanup runs and is reported, so retired flows cannot survive a
-    // downgrade to minimal mode.
+    // A minimal scaffold creates no policy. When one exists, the same key
+    // removal runs and is reported.
     if (policyCurrent !== undefined) {
-      operations.push(writeOperation(opts.repoRoot, ".ai/harness/policy.json", jsonContent(policy), "Remove retired harness policy keys", { risk: "medium" }));
+      operations.push(writeOperation(opts.repoRoot, ".ai/harness/policy.json", policyText, "Remove policy keys that no reader uses", { risk: "medium" }));
     }
-    return { operations, warnings: [...addLegacyCleanup(opts.repoRoot, operations), ...retiredPolicyWarnings] };
+    return { operations, warnings: [...addLegacyCleanup(opts.repoRoot, operations), ...unknownKeyWarnings] };
   }
 
-  operations.push(writeOperation(opts.repoRoot, ".ai/harness/policy.json", jsonContent(policy), "Merge canonical harness policy defaults without discarding explicit repo settings", { risk: "medium" }));
+  operations.push(writeOperation(opts.repoRoot, ".ai/harness/policy.json", policyText, "Merge harness policy defaults and remove policy keys that no reader uses", { risk: "medium" }));
   // Seeding an empty registry into an archcontext-authority repo would
   // reinstate the retired second authority, so the capability_source selector
   // gates the seed. Registry-mode repos (the scaffold default) are unchanged.
@@ -816,7 +644,7 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
 
   const warnings: AdoptionWarning[] = [
     ...cleanupWarnings,
-    ...retiredPolicyWarnings,
+    ...unknownKeyWarnings,
     ...(opts.mode === "self-host"
       ? [{ code: "self-host-review", message: "Self-host adoption requires an explicit hook/runtime review and is intentionally not applied by the public command.", risk: "high" } as const]
       : []),

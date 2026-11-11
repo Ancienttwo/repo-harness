@@ -417,7 +417,7 @@ describe('each policy reader validates only the keys it reads', () => {
   const env = { HOME: root } as NodeJS.ProcessEnv;
 
   test('a value that the state resolver rejects does not stop another reader', () => {
-    const repo = repoWith('other-key', { minimal_change: { mode: 'enforce' }, worktree_strategy: { base_branch: 123 } });
+    const repo = repoWith('other-key', { worktree_strategy: { base_branch: 123 } });
     expect(readRetentionConfig(repo).days).toBe(DEFAULT_RETENTION_DAYS);
     expect(capabilitySource(repo)).toBe('registry');
     expect(() => assertArchitecturePolicySelection(repo, ['product'], env)).not.toThrow();
@@ -436,29 +436,5 @@ describe('each policy reader validates only the keys it reads', () => {
     expect(capabilitySource(repo)).toBe('registry');
     expect(planWorktreeTemplate(repo)).toEqual({});
     expect(() => assertArchitecturePolicySelection(repo, ['product'], env)).not.toThrow();
-  });
-});
-
-describe('minimal_change.mode policy validation', () => {
-  const readPolicy = (policy: unknown) =>
-    readWorkflowPolicy('/repo', () => JSON.stringify(policy));
-
-  test('accepts off, advice, an absent mode and an absent block', () => {
-    expect(() => readPolicy({ minimal_change: { mode: 'off' } })).not.toThrow();
-    expect(() => readPolicy({ minimal_change: { mode: 'advice' } })).not.toThrow();
-    expect(() => readPolicy({ minimal_change: {} })).not.toThrow();
-    expect(() => readPolicy({})).not.toThrow();
-  });
-
-  test('rejects enforce and any other value', () => {
-    expect(() => readPolicy({ minimal_change: { mode: 'enforce' } })).toThrow(
-      'invalid workflow policy value .minimal_change.mode: enforce',
-    );
-    expect(() => readPolicy({ minimal_change: { mode: 'strict-ish' } })).toThrow(
-      'invalid workflow policy value .minimal_change.mode: strict-ish',
-    );
-    expect(() => readPolicy({ minimal_change: { mode: 1 } })).toThrow(
-      'invalid workflow policy value .minimal_change.mode: 1',
-    );
   });
 });

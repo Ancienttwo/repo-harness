@@ -492,9 +492,7 @@ describe("state inspection and legacy doc migration", () => {
       const result = inspectRepo(repo);
       expect(result.mode).toBe("audit");
       expect(result.legacy_contract_version).toBe("current-v1");
-      expect(result.drift_signals).toContain("policy-missing-upgrade-strategy");
       expect(result.drift_signals).toContain("stale-generated-claude-hook-shims");
-      expect(result.upgrade_plan.map((item) => item.id)).toContain("policy-upgrade-strategy-refresh");
       expect(result.upgrade_plan.map((item) => item.id)).toContain("legacy-claude-hook-shims");
       expect(result.upgrade_plan.map((item) => item.id)).toContain("custom-claude-hooks-preserve");
       expect(result.upgrade_plan.find((item) => item.id === "legacy-claude-hook-shims")?.ownership).toBe("known_generated");
