@@ -434,3 +434,11 @@ run_bun_test_file "$2"
     } finally { f.close(); }
   });
 });
+
+// TEMPORARY (#2586 probe, never merges): run the lock owner-identity file whole on Windows.
+test.skipIf(process.platform !== "win32")("TEMP #2586 lock owner-identity file on windows", () => {
+  const r = spawnSync(process.execPath, ["test", "tests/unit/exclusive-directory-lock-owner-identity.test.ts", "--timeout", "60000", "--max-concurrency", "1"], { cwd: ROOT, encoding: "utf8", env: { ...process.env, CI: "1" } });
+  console.log(`[#2586] bun=${Bun.version} status=${r.status} error=${r.error?.message ?? "none"}`);
+  console.log(`[#2586] ----- child output -----\n${r.stdout ?? ""}\n${r.stderr ?? ""}\n[#2586] ----- end -----`);
+  expect(r.status).toBe(0);
+}, 300_000);
