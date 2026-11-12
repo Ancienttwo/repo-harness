@@ -218,7 +218,7 @@ You are the head owner. Only you push to this branch.
   §2.2.
 - **Pre-check before review.** Before asking for round N >= 2, check the
   fix delta against the open findings for sibling cases, missing test
-  branches and CHANGELOG text against behavior. A Claude writer runs one
+  branches and changelog fragment text against behavior. A Claude writer runs one
   read-only sub-agent for this check. A Pi writer has no sub-agents and
   does a self-check. The pre-check writes no record and does not replace
   the review.
