@@ -104,16 +104,14 @@ export type SeatRouteV1 =
  */
 export function selectSeatRoute(task: RoutingClass, seats: SeatsConfigV1, quota: SeatAccountQuotas, allow: (seat: SeatConfigV1) => boolean = () => true): SeatRouteV1 {
   const reserved = claudeReserved(quota);
-  // While Claude is reserved, worker-light takes the place of each Claude-account seat of an important route (#1954, #2679).
+  // While Claude is reserved, an important route that holds a Claude-account seat goes to worker-light; another route is read as stored (#1954, #2679).
   const savingRoute = reserved && (task === 'important_deep' || task === 'important_fast')
     && seats.routing[task].some(id => seatAccount(seats[id]!) === 'claude');
   if (savingRoute) {
     if (seats['worker-light'] === null) return { id: null, line: `route ${task}: none (worker-light not configured)` };
     if (seats['worker-light'].runtime !== 'pi') return { id: null, line: `route ${task}: none (worker-light is not a Pi seat)` };
   }
-  const ids = savingRoute
-    ? [...new Set(seats.routing[task].map(id => seatAccount(seats[id]!) === 'claude' ? 'worker-light' as const : id))]
-    : seats.routing[task];
+  const ids = savingRoute ? ['worker-light'] as const : seats.routing[task];
   // The section decoder refuses routes that name an unconfigured seat.
   const candidates = ids.map(id => ({ id, seat: effectiveSeatConfig(id, seats, quota)! })).filter(({ seat }) => allow(seat));
   if (candidates.length === 0) return { id: null, line: `route ${task}: none (no seat in the route may take this task)` };

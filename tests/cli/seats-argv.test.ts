@@ -191,7 +191,7 @@ describe("repo-harness seats argv", () => {
     });
   });
 
-  test("saving routes and direct launches reject a non-Pi worker-light", () => {
+  test("saving routes reject a non-Pi worker-light; its launch is judged on its own account", () => {
     for (const configured of [DEFAULT_SEATS_CONFIG.worker, DEFAULT_SEATS_CONFIG['worker-important-fast']]) {
       const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-light': configured };
       withHome(seats, home => {
@@ -208,20 +208,14 @@ describe("repo-harness seats argv", () => {
             launch: [result.status, result.stdout, result.stderr ? JSON.parse(result.stderr).error : null],
           }).toEqual({
             routes: ['route important_deep: none (worker-light is not a Pi seat)', 'route important_fast: none (worker-light is not a Pi seat)'],
-            launch: [1, '', 'seat_quota_reserved'],
+            // Routing decides the seat; the launch never recomputes a route (#2679). A Codex worker-light launches on its
+            // own account; a Claude worker-light is a reserved, or at 95% exhausted, Claude seat.
+            launch: configured.runtime === 'codex' ? [0, expect.any(String), null]
+              : [1, '', used === 95 ? 'seat_quota_exhausted' : 'seat_quota_reserved'],
           });
         }
       });
     }
-    // A Codex worker-light that a route without a Claude-account seat selects launches (#2679).
-    const routing = { ...DEFAULT_SEATS_CONFIG.routing, important_deep: ['worker-light', 'worker-deep'], important_fast: ['worker'] };
-    withHome({ ...DEFAULT_SEATS_CONFIG, 'worker-light': DEFAULT_SEATS_CONFIG.worker, routing }, home => {
-      mkdirSync(join(home, '.repo-harness', 'quota'));
-      writeFileSync(join(home, '.repo-harness', 'quota', 'claude.json'), JSON.stringify({ observed_at: new Date().toISOString(), rate_limits: {
-        seven_day: { used_percentage: 95, resets_at: Math.floor(Date.now() / 1000) + 3600 },
-      } }));
-      expect(argv(home, 'worker-light', '--json').status).toBe(0);
-    });
   });
 
   test("every configured worker seat keeps its brief, labels and issue pane naming", () => {
