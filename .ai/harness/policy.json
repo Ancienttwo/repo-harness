@@ -33,8 +33,7 @@
     }
   },
   "publication": {
-    "acceptance_merge": "on",
-    "merge_queue": "on"
+    "acceptance_merge": "on"
   },
   "tooling": {
     "codegraph": {
