@@ -1,13 +1,13 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8aa721f699b423b6473cec03ca3b67093b4fef9a7d3636a8eeb0519552bbb1d1" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ad32d394ef0c8ae580d5ef787cdf562ec37dc8867ec21ed053affec7c0c9fdb9" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`docs/kanban-runtime-status.md`、`src/effects/operator/**`、`src/operator-web/**`、`packages/operator-web/**`、`src/effects/setup/**`、`src/effects/dev-activity/**`、`vite.operator.config.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Provides bounded read-only HTTP views of the registered repositories, provider issues and doc sessions.
+Provides bounded read-only HTTP views of the registered repositories and provider issues.
 
 ## 1. P1:能力架構地圖
 
@@ -83,7 +83,7 @@ flowchart LR
 - `depends-on` → `capability.public-surface.action-commands` — Read the skill catalog for the setup snapshot.
 - `depends-on` → `capability.organization.board` — Serve and show the board of one parent issue: decode the board and parent documents that the board observer worker reads, and evaluate the attention rules in the browser. Read the seat, quota and agent settings contracts, read quota through the core readers, and save seats through the core writer.
 - `depends-on` → `component.evals-checks.ci-report-core` — Read the test result types, the test projection parser and the run command for the tests board and its snapshot decoder.
-- `depends-on` → `capability.runtime-harness.evidence-ledger` — Plugin → core: canonicalize digests and use the JSON value types for doc session finalization, worktree cleanup and the operator write audit
+- `depends-on` → `capability.runtime-harness.evidence-ledger` — Plugin → core: canonicalize digests and use the JSON value types for worktree cleanup and the operator write audit
 - `depends-on` → `capability.workflow-engine.execution-primitives` — Read Git topology for task diffs and development activity. Read the task session records, the native session record and the process proof for task execution state. Use the hc client for hc server status, hc ls, hc events, the terminal labels, the herdr-app command and its error type. Read the notify install record, the notify config and the relay delivery record through the notify read contract, and use its relay channel names and record types in the notify status and the Bots page.
 - `depends-on` → `capability.organization.publication` — Use publication readiness types in the Operator fixture, and call the publication operations for every GitHub write of the Operator.
 - `depends-on` → `component.contract-assets.tool-catalog` — Read the tool catalog for the tools page and the workspace location.
@@ -141,10 +141,10 @@ flowchart LR
   - `calls` → `component.architecture.model-reader` — Read the committed architecture model through the shared ArchitectureModelReader
   - `reads` → `component.execution-primitives.repository-registry` — Resolve a registered repository root from the strict repo-harness registry snapshot
   - `calls` → `component.operator.view-projections` — Parse closed route requests and project or re-decode each observation before it leaves the server
-  - `reads` → `component.acceptance-review.primary` — Read the docs host platform and runtimes that a doc session may use.
+  - `reads` → `component.acceptance-review.primary` — Run the worktree cleanup investigation reviewer through the review isolation and runner port.
   - `calls` → `component.operator.board-observer` — Start one board observer per server, serve its seats, parents and board documents from memory with an ETag for each document version and close its streams and worker with the server.
-  - `calls` → `component.workflow-state.coordination-plane` — Create a doc session worktree under the worktree topology lock of its clone.
-  - `reads` → `component.execution-primitives.primary` — Read the managed worktree root and its naming rule for a doc session worktree.
+  - `calls` → `component.workflow-state.coordination-plane` — Remove green worktrees under the worktree topology lock of their clone.
+  - `reads` → `component.execution-primitives.primary` — Read the managed worktree root and its naming rule for the worktree cleanup.
   - `reads` → `external.herdr-core` — Run hc server status and read the task-session hc events snapshot for the hc runtime transport, and follow the task-session hc events stream for runtime capture.
   - `reads` → `component.task-fleet.task-inbox-effects` — Read the stored task inbox of one verified task for the Task drawer, read-only, in the supervised read process
 - `component.operator.primary-cli`:
@@ -152,7 +152,7 @@ flowchart LR
 - `component.operator.view-projections`:
   - `depends-on` → `component.architecture.module-view` — Decode the module index and module detail shapes that the module view contract declares
   - `reads` → `component.execution-primitives.notify-read-core` — Key the notify status and the Bot access notify channels by the relay channel names, and project the relay delivery record into the public delivery status.
-  - `reads` → `component.execution-primitives.secret-patterns` — Read the shared secret token rules that redact doc session events, and type the notify channel secret key names.
+  - `reads` → `component.execution-primitives.secret-patterns` — Read the shared secret token rules that refuse a secret in the agents section, Slack review text and cleanup plans, and type the notify channel secret key names.
   - `reads` → `component.task-fleet.task-inbox` — Project stored task message events and delivery receipts into the public task messages view
 - `component.operator.web-console`:
   - `calls` → `component.operator.activity-feeds` — Decode the development activity and setup snapshots with the decoders the server uses

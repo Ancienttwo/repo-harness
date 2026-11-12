@@ -1,6 +1,6 @@
 # runtime-harness/evidence-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b08b7c874cb81629e97ae9fff8b967746ec1b4816b2e69ad23d61f5c2aa949b7" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:4a490f39b01a3988ee8b813bd8a23245825a14e1999e6f78d1915a79ab6b1457" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.evidence-ledger`(kind `capability`)
 > **Matched Prefixes**:`src/core/evidence/**`、`src/effects/evidence/**`
@@ -65,7 +65,7 @@ flowchart LR
 - `calls` ← `component.evals-checks.primary` — Validate and execute verification plans through the evidence verification modules
 - `depends-on` ← `component.execution-primitives.task-message-claim` — Canonicalize task message claim digests with the shared canonical JSON
 - `calls` ← `component.hook-adapters.session-lifecycle` — Publish the evidence checkpoint and render handoff and resume from it
-- `depends-on` ← `capability.runtime-harness.operator` — Plugin → core: canonicalize digests and use the JSON value types for doc session finalization, worktree cleanup and the operator write audit
+- `depends-on` ← `capability.runtime-harness.operator` — Plugin → core: canonicalize digests and use the JSON value types for worktree cleanup and the operator write audit
 - `calls` ← `component.refactor-program.archctx-provider` — Canonicalize refactor provider records
 - `calls` ← `capability.runtime-harness.task-agent-host` — Hash request context and result bytes with the evidence canonical JSON
 - `calls` ← `capability.organization.task-fleet` — Reuse canonical JSON and durable atomic append for task message records

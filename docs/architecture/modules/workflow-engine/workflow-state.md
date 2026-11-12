@@ -1,6 +1,6 @@
 # workflow-engine/workflow-state 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7cde396818d1e50af4fa18add72640e9228feed16d17961795844e3f1d832f2f" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:58023ee68d99907241c2e763e7583e2470d756d2ad4a3122e9b46366b75abed1" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.workflow-state`(kind `capability`)
 > **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`
@@ -121,7 +121,7 @@ flowchart LR
 | `component.workflow-state.continuation-ledger` | Continuation Ledger | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 | `component.workflow-state.continuation-ledger-effects` | Continuation Ledger (effects) | `2–5` 個文件 / `100–200` 行 | 未宣告 |
 | `component.workflow-state.coordination-plane` | Task Session Admission and Historical Worktree Safety | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
-| `component.workflow-state.coordination-plane-core` | Task Session Admission and Historical Worktree Safety (core) | `5–10` 個文件 / `20–50` 行 | 未宣告 |
+| `component.workflow-state.coordination-plane-core` | Task Session Admission and Historical Worktree Safety (core) | `2–5` 個文件 / `20–50` 行 | 未宣告 |
 | `component.workflow-state.primary` | Effective State Resolver | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.workflow-state.primary-cli` | Effective State Resolver (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.workflow-state.primary-effects` | Effective State Resolver (effects) | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
