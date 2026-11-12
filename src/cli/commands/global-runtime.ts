@@ -9,7 +9,7 @@ import { architecturePort, isArchitectureUnavailable } from '../../core/architec
 import { globalConfigurationWriter, mutateGlobalConfiguration } from '../../effects/configuration/global-configuration';
 import { DEFAULT_SEATS_CONFIG, ROUTING_CLASSES, SeatsConfigMigrationRequiredError, decodeSeatsConfig } from '../../core/board/seats-settings';
 import { checkSeatRoutingModels, seatsRanges } from '../../effects/board/seats-configuration';
-import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { upsertManagedBlock } from "../../core/adoption/managed-block";
 import { assertConfigurationPath } from "../installer/configuration-ownership";
 import { runtimeStateIgnoreOperation, userExcludesFilePath } from "../../effects/adoption/gitignore-plan";
@@ -510,7 +510,29 @@ function reconcileManagedRuntime(
           if (!managed) return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_CONFLICT: ${link} is not the managed archctx link. Move or remove it, then rerun repo-harness update.` };
           if (linkTarget === target && recordValue(globalManifest.dependencies).archctx === version) return { step: 'verify managed runtime dependencies', status: 'ok', detail: initial.detail };
         }
+        // Probe #2669 (diagnostic only, never merges): the facts the readback sees.
+        const probe2669 = (label: string, extra: Record<string, unknown> = {}): void => {
+          const safe = <T,>(read: () => T): T | string => { try { return read(); } catch (error) { return `ERR ${error instanceof Error ? error.message : String(error)}`; } };
+          const found = safe(() => findInstalledPackageRoot(globalPackageRoot, 'archctx'));
+          const nested = join(globalPackageRoot, 'node_modules', 'archctx');
+          const hoisted = join(bunRoot, 'install', 'global', 'node_modules', 'archctx');
+          console.error(`[probe2669 ${label}] ${JSON.stringify({
+            ...extra,
+            pin: version,
+            findInstalledPackageRoot: found,
+            foundVersion: safe(() => typeof found === 'string' ? readPackageManifest(found).version : null),
+            foundBinRealpath: safe(() => typeof found === 'string' ? realpathSync(join(found, String(recordValue(readPackageManifest(found).bin).archctx))) : null),
+            nestedVersion: safe(() => existsSync(join(nested, 'package.json')) ? readPackageManifest(nested).version : 'absent'),
+            hoistedVersion: safe(() => existsSync(join(hoisted, 'package.json')) ? readPackageManifest(hoisted).version : 'absent'),
+            linkReadlink: safe(() => readlinkSync(link)),
+            linkRealpath: safe(() => realpathSync(link)),
+            globalDependencyArchctx: safe(() => recordValue(readPackageManifest(join(bunRoot, 'install', 'global')).dependencies).archctx),
+            repoHarnessVersion: safe(() => readPackageManifest(globalPackageRoot).version),
+          })}`);
+        };
+        probe2669('before-bun-add', { target });
         const install = runProcess(bunExecutable, ['add', '-g', `archctx@${version}`], cwd, env);
+        probe2669('after-bun-add', { installStatus: install.status, installStdout: (install.stdout ?? '').slice(-800), installStderr: (install.stderr ?? '').slice(-800) });
         if (install.status !== 'ok') return withStepName(install, 'verify managed runtime dependencies', `archctx@${version}`);
         try {
           const installedRoot = findInstalledPackageRoot(globalPackageRoot, 'archctx');
