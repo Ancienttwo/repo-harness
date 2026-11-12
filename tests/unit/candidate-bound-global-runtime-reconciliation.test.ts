@@ -103,7 +103,7 @@ function writeCandidateSwitchingBun(
     `printf '%s\\n' "$*" >> "${logPath}"`,
     'if [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi',
     `if [[ "\${1:-}" == "pm" && "\${2:-}" == "view" ]]; then printf '%s\\n' '${JSON.stringify(candidateVersion)}'; exit 0; fi`,
-    `if [[ "\${1:-}" == add && "\${2:-}" == -g && "\${3:-}" == archctx@* ]]; then mkdir -p "$BUN_INSTALL/bin"; ln -s "${candidateRoot}/node_modules/archctx/bin/archctx.mjs" "$BUN_INSTALL/bin/archctx"; exit 0; fi`,
+    `if [[ "\${1:-}" == add && "\${2:-}" == -g && "\${3:-}" == archctx@* ]]; then mkdir -p "$BUN_INSTALL/bin" "$BUN_INSTALL/install/global/node_modules"; ln -sfn "${candidateRoot}/node_modules/archctx" "$BUN_INSTALL/install/global/node_modules/archctx"; ln -s "$BUN_INSTALL/install/global/node_modules/archctx/bin/archctx.mjs" "$BUN_INSTALL/bin/archctx"; exit 0; fi`,
     `if [[ "$1" == "add" && "$2" == "-g" ]]; then ${replaceAsset}rm -rf "${globalPackagePath}"; ln -s "${candidateRoot}" "${globalPackagePath}"; exit 0; fi`,
     `if [[ "$1" == "${canonicalCandidateRoot}/src/cli/index.ts" || "$1" == "${globalPackagePath}/src/cli/index.ts" ]]; then exec "${process.execPath}" "$@"; fi`,
     'exit 0',

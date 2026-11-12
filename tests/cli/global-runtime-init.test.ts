@@ -1091,6 +1091,7 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
     const fakeBin = join(tmp, 'bin');
+    const bunLog = join(tmp, 'bun.log');
     try {
       for (const dir of [source, home, repo, fakeBin]) mkdirSync(dir, { recursive: true });
       setupFakeSource(source);
@@ -1110,16 +1111,17 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
       const link = join(home, '.bun', 'bin', 'archctx');
       mkdirSync(join(home, '.bun', 'bin'), { recursive: true });
       symlinkSync(join(topArchctx, 'bin', 'archctx.mjs'), link);
-      // `bun add -g archctx@<pin>` puts the pin at the top level and removes the nested copy.
+      // `bun add -g archctx@<pin>` puts the pin at the top level and keeps the nested copy, as Bun 1.4.3 does (#2669).
       writeExecutable(join(fakeBin, 'bun'), [
         '#!/bin/bash',
+        `printf '%s\\n' "$*" >> "${bunLog}"`,
         'if [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi',
-        `if [[ "\${3:-}" == archctx@* ]]; then rm -rf "${nestedArchctx}"; cp "${candidateManifestCopy}" "${join(topArchctx, 'package.json')}"; printf '{"dependencies":{"archctx":"%s"}}' "\${3#archctx@}" > "${join(globalRoot, 'package.json')}"; fi`,
+        `if [[ "\${3:-}" == archctx@* ]]; then cp "${candidateManifestCopy}" "${join(topArchctx, 'package.json')}"; printf '{"dependencies":{"archctx":"%s"}}' "\${3#archctx@}" > "${join(globalRoot, 'package.json')}"; fi`,
         'exit 0',
         '',
       ].join('\n'));
 
-      const result = runGlobalRuntimeSetup({
+      const update = () => runGlobalRuntimeSetup({
         sourceRoot: source,
         cwd: repo,
         plugins: ['architecture'],
@@ -1137,12 +1139,18 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
           REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
         },
       });
+      const result = update();
 
       expect(result.exitCode, JSON.stringify(result.steps.filter(step => step.status === 'failed'))).toBe(0);
       expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies'), JSON.stringify(result.steps.filter(step => step.status === 'failed'))).toMatchObject({ status: 'ok' });
       expect(JSON.parse(readFileSync(join(globalRoot, 'package.json'), 'utf8')).dependencies.archctx).toBe(ARCHCTX_PIN);
       expect(JSON.parse(readFileSync(join(topArchctx, 'package.json'), 'utf8')).version).toBe(ARCHCTX_PIN);
       expect(realpathSync(link)).toBe(realpathSync(join(topArchctx, 'bin', 'archctx.mjs')));
+      expect(existsSync(join(nestedArchctx, 'package.json'))).toBe(true);
+      // The next update finds the link at the pin and installs archctx no second time.
+      const again = update();
+      expect(again.steps.find((step) => step.step === 'verify managed runtime dependencies'), JSON.stringify(again.steps.filter(step => step.status === 'failed'))).toMatchObject({ status: 'ok' });
+      expect(readFileSync(bunLog, 'utf8').match(/add -g archctx@/g)).toHaveLength(1);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -2143,7 +2151,7 @@ exit 0
         previous: null,
       })}\n`);
       const candidateVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')).version;
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "pm" && "\${2:-}" == "view" ]]; then printf '%s\\n' '${JSON.stringify(candidateVersion)}'; exit 0; fi\nif [[ "\${1:-}" == */src/cli/index.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ "\${3:-}" == archctx@* ]]; then mkdir -p "$HOME/.bun/bin"; ln -sf "$HOME/.bun/install/global/node_modules/repo-harness/node_modules/archctx/bin/archctx.mjs" "$HOME/.bun/bin/archctx"; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "pm" && "\${2:-}" == "view" ]]; then printf '%s\\n' '${JSON.stringify(candidateVersion)}'; exit 0; fi\nif [[ "\${1:-}" == */src/cli/index.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ "\${3:-}" == archctx@* ]]; then mkdir -p "$HOME/.bun/bin"; ln -sf "$HOME/.bun/install/global/node_modules/archctx/bin/archctx.mjs" "$HOME/.bun/bin/archctx"; fi\nexit 0\n`);
 
       const runUpdate = () => spawnSync(
         process.execPath,
@@ -2306,7 +2314,7 @@ exit 0
       recordExplicitFullSelection(home);
       setupManagedRuntimeReadback(home, fakeBin);
       installCandidateRuntimeFixture(home, '9.9.9');
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == */src/cli/index.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ "\${3:-}" == archctx@* ]]; then mkdir -p "$HOME/.bun/bin"; ln -sf "$HOME/.bun/install/global/node_modules/repo-harness/node_modules/archctx/bin/archctx.mjs" "$HOME/.bun/bin/archctx"; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == */src/cli/index.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ "\${3:-}" == archctx@* ]]; then mkdir -p "$HOME/.bun/bin"; ln -sf "$HOME/.bun/install/global/node_modules/archctx/bin/archctx.mjs" "$HOME/.bun/bin/archctx"; fi\nexit 0\n`);
 
       const res = spawnSync(
         process.execPath,
