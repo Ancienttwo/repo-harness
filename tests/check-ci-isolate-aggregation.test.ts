@@ -209,6 +209,11 @@ describe("ci isolate-mode test loop", () => {
       for (const args of [["3/3", ...files], ["1/3"], ["1/3", "tests/a.test.ts", "tests/a.test.ts"], ["1/3", "../a.test.ts"]]) {
         expect(run("plan", ...args).status, args.join(" ")).not.toBe(0);
       }
+      // An empty chosen shard would pass check-ci.sh with no test run.
+      const empty = run("plan", "5/1000", ...files);
+      expect(empty.status).not.toBe(0);
+      expect(empty.stderr).toContain("Shard 5/1000 of 4 files is empty");
+      expect(run("plan", "2/3", "tests/a.test.ts", "tests/b.test.ts").status).not.toBe(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

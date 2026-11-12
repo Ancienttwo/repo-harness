@@ -110,8 +110,12 @@ if (import.meta.main) {
     // The manual probe writes the plan file that the selection job writes, from a given list, so `shard` reads it unchanged.
     const [value, ...files] = rest;
     if (!value || !files.length) throw Error(usage);
-    const { total } = parseShard(value);
-    writeFileSync('.ci-affected-tests.json', JSON.stringify(planShards(selectTestSuite('full', files), loadTestDurations(), total)));
+    const { index, total } = parseShard(value);
+    const plan = planShards(selectTestSuite('full', files), loadTestDurations(), total);
+    // check-ci.sh passes an empty shard as "No affected tests", so a probe of an empty shard would be green with no test run.
+    if (!plan[index]!.length) throw Error(`Shard ${value} of ${files.length} files is empty`);
+    writeFileSync('.ci-affected-tests.json', JSON.stringify(plan));
+    console.log(`shard ${value}: ${plan[index]!.length} of ${files.length} files: ${plan[index]!.join(' ')}`);
   } else if (command === 'durations' || command === 'reports') {
     const [directory, ...args] = rest;
     if (!directory || (command === 'durations' && args.length !== 1)) throw Error(usage);

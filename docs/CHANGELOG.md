@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- feat(ci): `.github/workflows/probe.yml` runs named test files on a chosen runner for a branch head, with no probe PR and no temporary commit: `gh workflow run probe.yml --ref <branch> -f runner=windows-latest -f files='<test paths>'`. Lane `home-isolation` runs each file as `Test HOME isolation` does; lane `affected-shard` (ubuntu-latest, `-f shard=<index>/<total>`) runs one shard through `scripts/check-ci.sh affected` with the split of the selection job, from the new `select-test-suite.ts plan <index>/<total> <files...>`, which fails on an empty shard and names the files of the chosen shard. Each lane fails when a named file is missing. A green `home-isolation` run proves that each named file ran (each leaves a JUnit report); a green `affected-shard` run proves only that the files of the chosen shard ran. It has `contents: read`, no secret and no environment, and it is not a required check; `ci.yml` and `Required / CI` are unchanged. (#2610)
+
 ### Fixed
 
 - On Windows, the host test queue ticket read no longer throws `EPERM` for a ticket that another queue member just unlinked. After the `EPERM`, one lstat of the ticket path decides: `ENOENT` skips the ticket. Any other result still throws, so a real access refusal stays an error. No retry and no wait. (#2609)
@@ -21,7 +25,6 @@ All notable changes to this skill are documented here.
 
 ### Added
 
-- feat(ci): `.github/workflows/probe.yml` runs named test files on a chosen runner for a branch head, with no probe PR and no temporary commit: `gh workflow run probe.yml --ref <branch> -f runner=windows-latest -f files='<test paths>'`. Lane `home-isolation` runs each file as `Test HOME isolation` does; lane `affected-shard` (ubuntu-latest, `-f shard=<index>/<total>`) runs one shard through `scripts/check-ci.sh affected` with the split of the selection job, from the new `select-test-suite.ts plan <index>/<total> <files...>`. The run fails when a named file is missing or leaves no JUnit report. It has `contents: read`, no secret and no environment, and it is not a required check; `ci.yml` and `Required / CI` are unchanged. (#2610)
 - feat(board): attention rule A20 (P2, orchestrator) names an open, ready, unheld PR whose required check is `pending` or `missing` more than 60 min after its head commit, with the contexts that are not `success`. A PR whose check read is `unavailable` lists A20 as not evaluated with the reason of the check. The rule adds no board field and no GitHub read. `orchestrator.md` §8.1 names the follow-up. (#2576)
 - feat(board): `board attention start` starts the watcher with the live orchestrator seat terminal of the repository as its hc parent and with `--outlive-parent`, so hc types an exit note into the orchestrator when the watcher ends. With no live orchestrator seat terminal, or with more than one, the watcher starts with no parent as before. `orchestrator.md` §8.1 names the start command and the restart after a note; `advisor.md` §2 names the `board-attention-watcher` doctor check. (#2567)
 - feat(seats): a Pi seat launch (`seats argv`, board dispatch, board review, relaunch) refuses when the shell that Pi will use runs a backtick span in a heredoc body, as /bin/bash 3.2 does (#2370). The shell is `shellPath` of `<cwd>/.pi/settings.json`, else of `~/.pi/agent/settings.json`, else `/bin/bash` on a non-Windows host; any other case is the same refusal. `shellPath` and `PI_CODING_AGENT_DIR` must be absolute paths; the check expands no `~`. Fix: set `shellPath` in `~/.pi/agent/settings.json` to a bash 4 or newer. A probe that cannot start or does not finish gives `pi_shell_probe_failed`.
