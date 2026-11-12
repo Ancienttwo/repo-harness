@@ -39,11 +39,19 @@ list. That word is the explicit authorization for that production deployment.
 The owner confirms the npm login in the browser, because each publish uses
 `npm publish --auth-type=web`. No npm token exists.
 
-Keep the printed list. `plan` refuses once a package is on npm or the tag
-exists, so a continued run uses the list that the first `plan` printed. The
-list serves a first run and a continued run. Read the state of each step
-before the step, and do only the steps that are not done. Stop at the first
-failure and report it. A host publish has no npm provenance statement.
+Keep the printed list and mark a step when its command exits 0. A marked step
+is done and never runs again. An unmarked step is unknown in a continued run.
+`plan` refuses once a package is on npm or the tag exists, so a continued run
+uses the list that the first `plan` printed. The list serves a first run and a
+continued run. Stop at the first failure and report it. A host publish has no
+npm provenance statement.
+
+Settle npm first. A continued run first runs
+`bash scripts/release-owner-steps.sh wait <package> <version>` for each package
+whose publish step has no mark, and only then reads the states of steps 1, 2
+and 3. In this settle, a wait that ends without the version means the package
+is not published: its publish step runs, and this is not the stop at the first
+failure.
 
 1. Worktree: `git fetch origin && git worktree add --detach /tmp/repo-harness-wt-release-<version> <sha> && cd /tmp/repo-harness-wt-release-<version> && bun install --frozen-lockfile && bun run check:release`.
    `bun run check:release` passes before the first publish. Done state: a
@@ -69,8 +77,9 @@ failure and report it. A host publish has no npm provenance statement.
 7. `bash scripts/release-owner-steps.sh check tagged <version>`
 
 `wait` polls `npm view <name>@<version> version` every 10 s for 15 minutes. A
-wait that ends without the version fails with the package name. Run the same
-step again later; do not publish again.
+wait that ends without the version fails with the package name. Inside steps 3
+and 4, the wait follows a publish that exited 0: run the same step again
+later; do not publish again. The settle above is the other case.
 
 `bash scripts/release-owner-steps.sh plan <version>` is a read-only preflight:
 it runs the guard checks for a version and prints the release commit, this

@@ -328,6 +328,8 @@ describe("Bootstrap Script Contracts", () => {
       expect(plan.stdout).toContain(`git worktree add --detach ${worktree} ${third}`);
       expect(plan.stdout).toContain(`guard ${planVersion} ${third} && npm publish`);
       expect(plan.stdout).toContain(`cd ${worktree} && bun install --frozen-lockfile && bun run check:release`);
+      expect(plan.stdout).toContain("mark a step when its command exits 0. A marked step is done and never runs again. An unmarked step is unknown in a continued run.");
+      expect(plan.stdout).toContain("Settle npm first: a continued run first runs bash scripts/release-owner-steps.sh wait <package> <version> for each package whose publish step has no mark, and only then reads the states of steps 1, 2 and 3.");
       expect(plan.stdout).toContain(`Done state: a package of ${planVersion} is on npm. Step 1 passed on ${third} before the first publish, so a continued run skips it and runs only: cd ${worktree}`);
       expect(plan.stdout).toContain(`wait repo-harness-operator-web ${planVersion} && bash scripts/release-owner-steps.sh guard`);
       expect(plan.stdout).toContain(`git tag -a v${planVersion} ${third}`);
