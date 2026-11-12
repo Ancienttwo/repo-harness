@@ -264,7 +264,7 @@ test('OpenAI prompt detection uses a token boundary without shrinking MCP redact
   expect(containsSecret('TOKEN=prefixsk-'+'A'.repeat(24))).toBe(true);
 });
 
-test('each formerly quadratic secret rule stays linear from a 32 KiB to a 96 KiB run and still matches on a 1 MiB run', () => {
+test('each formerly quadratic secret rule stays linear from a 64 KiB to a 256 KiB run and still matches on a 1 MiB run', () => {
   const makeRows = (size: number) => {
   const run = (unit: string) => unit.repeat(Math.ceil(size / unit.length));
   const keyBegin = '-----BEGIN PRIVATE KEY-----', keyEnd = '-----END PRIVATE KEY-----', key = keyBegin + '\nbody\n' + keyEnd;
@@ -316,18 +316,18 @@ test('each formerly quadratic secret rule stays linear from a 32 KiB to a 96 KiB
   const lowestRatio = (timeSmall: () => number, timeMedium: () => number) => {
     const start = performance.now();
     let fastestSmall = Infinity, fastestMedium = Infinity, ratio = Infinity;
-    for (let pairs = 1; pairs <= 3 || (ratio >= 6 && performance.now() - start < 1000); pairs++) {
+    for (let pairs = 1; pairs <= 3 || (ratio >= 8 && performance.now() - start < 1000); pairs++) {
       fastestSmall = Math.min(fastestSmall, timeSmall());
       fastestMedium = Math.min(fastestMedium, timeMedium());
       ratio = fastestMedium / Math.max(fastestSmall, 1);
     }
     return ratio;
   };
-  // A linear rule takes 3 times as long on 3 times the text; a quadratic rule takes 9 times. Load on the runner scales both sizes alike.
-  // The pair stays far below 512 KiB: past a size that depends on the row (384 to 1024 KiB) the regex engine changes mode and the time steps up about 8 times, with no change in order.
-  const small = makeRows(32 * 1024), medium = makeRows(96 * 1024);
+  // A linear rule takes 4 times as long on 4 times the text; a quadratic rule takes 16 times. Load on the runner scales both sizes alike.
+  // The pair stays far below 384 KiB: past a size that depends on the row (384 to 1024 KiB) the regex engine changes mode and the time steps up about 8 times, with no change in order.
+  const small = makeRows(64 * 1024), medium = makeRows(256 * 1024);
   makeRows(1024 * 1024).forEach((row, index) => {
-    expect(lowestRatio(() => timed(small[index]!), () => timed(medium[index]!))).toBeLessThan(6);
+    expect(lowestRatio(() => timed(small[index]!), () => timed(medium[index]!))).toBeLessThan(8);
     const result = exercise(row);
     expect(result.bare).toBe(false);
     expect(result.unchanged).toBe(true);
