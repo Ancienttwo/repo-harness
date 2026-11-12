@@ -5,6 +5,7 @@
  * Validates that version numbers are consistent across:
  * - package.json
  * - assets/skill-version.json
+ * - README.md, which carries the npm pin and the workflow stamp of a release
  *
  * Also checks if a generated project needs migration.
  */
@@ -20,14 +21,52 @@ const REPO_ROOT = __dirname.endsWith("/assets/templates/helpers")
   ? join(__dirname, "../../..")
   : join(__dirname, "..");
 
+/** The three versions of the README release line: the npm pin and both workflow stamp versions. */
+export interface ReadmeVersionPin {
+  npm: string;
+  skill: string;
+  template: string;
+}
+
 export interface ConsistencyResult {
   consistent: boolean;
   packageJsonVersion: string | null;
   skillVersionJsonVersion: string;
   templateVersionJsonVersion: string;
   skillVersionSource: string;
+  readmeVersionPin: ReadmeVersionPin | null;
   warnings: string[];
   errors: string[];
+}
+
+// The README release line is the only README edit of a release. The check matches
+// the complete line, so a version fragment in prose cannot pass:
+// - npm: `repo-harness@<v>` · workflow stamp `repo-harness@<v>+template@<v>`
+const README_PIN_PATTERN =
+  /^- npm: `repo-harness@(\d+\.\d+\.\d+)` · workflow stamp `repo-harness@(\d+\.\d+\.\d+)\+template@(\d+\.\d+\.\d+)`[ \t]*$/gm;
+
+interface ReadmeReleaseLines {
+  /** How many complete release lines the README holds. */
+  count: number;
+  /** The pin of the only complete release line, or null when the count is not one. */
+  pin: ReadmeVersionPin | null;
+}
+
+/**
+ * Count the complete release lines of a README. The check reads the line count, not
+ * its surroundings: a line inside an HTML comment or a code fence still counts.
+ */
+function readReadmeReleaseLines(readmePath: string): ReadmeReleaseLines {
+  if (!existsSync(readmePath)) return { count: 0, pin: null };
+  const lines = [...readFileSync(readmePath, "utf-8").matchAll(README_PIN_PATTERN)];
+  const only = lines.length === 1 ? lines[0] : undefined;
+  const npm = only?.[1];
+  const skill = only?.[2];
+  const template = only?.[3];
+  if (npm === undefined || skill === undefined || template === undefined) {
+    return { count: lines.length, pin: null };
+  }
+  return { count: 1, pin: { npm, skill, template } };
 }
 
 export interface MigrationCheckResult {
@@ -86,6 +125,36 @@ export function checkConsistency(repoRoot: string = REPO_ROOT): ConsistencyResul
     );
   }
 
+  // The README release line projects package.json. Only the repo-harness checkout
+  // carries it; a generated project keeps its own README.
+  const readmeReleaseLines = readReadmeReleaseLines(join(repoRoot, "README.md"));
+  const readmeVersionPin = readmeReleaseLines.pin;
+  if (usingLocalSkillManifest && pkg.name === "repo-harness" && packageJsonVersion !== null) {
+    if (readmeVersionPin === null) {
+      errors.push(
+        readmeReleaseLines.count > 1
+          ? `README.md must have exactly one release line (found ${readmeReleaseLines.count})`
+          : "README.md has no release line; it must read - npm: `repo-harness@<v>` · workflow stamp `repo-harness@<v>+template@<v>`"
+      );
+    } else {
+      if (readmeVersionPin.npm !== packageJsonVersion) {
+        errors.push(
+          `README.md npm pin (${readmeVersionPin.npm}) must match package.json.version (${packageJsonVersion})`
+        );
+      }
+      if (readmeVersionPin.skill !== packageJsonVersion) {
+        errors.push(
+          `README.md workflow stamp version (${readmeVersionPin.skill}) must match package.json.version (${packageJsonVersion})`
+        );
+      }
+      if (readmeVersionPin.template !== packageJsonVersion) {
+        errors.push(
+          `README.md workflow stamp template version (${readmeVersionPin.template}) must match package.json.version (${packageJsonVersion})`
+        );
+      }
+    }
+  }
+
   if (!usingLocalSkillManifest && packageJsonVersion !== null) {
     warnings.push(
       `package.json.version (${packageJsonVersion}) belongs to the target repo; workflow stamp uses upstream repo-harness skill-version.json`
@@ -98,6 +167,7 @@ export function checkConsistency(repoRoot: string = REPO_ROOT): ConsistencyResul
     skillVersionJsonVersion,
     templateVersionJsonVersion,
     skillVersionSource: svPath,
+    readmeVersionPin,
     warnings,
     errors,
   };
