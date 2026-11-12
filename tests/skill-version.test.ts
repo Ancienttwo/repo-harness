@@ -6,19 +6,20 @@ import { checkConsistency } from "../scripts/check-skill-version";
 
 const REPO_ROOT = join(import.meta.dir, "..");
 
-/** A repo-harness checkout whose README release line names `readmeVersion`. */
-function scratchRepo(readmeVersion: string): string {
+/** A repo-harness checkout whose README body holds `line` as its release line. */
+function scratchRepo(line: string): string {
   const pkg = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf-8"));
   const sv = JSON.parse(readFileSync(join(REPO_ROOT, "assets", "skill-version.json"), "utf-8"));
   const root = mkdtempSync(join(tmpdir(), "skill-version-readme-"));
   mkdirSync(join(root, "assets"));
   writeFileSync(join(root, "package.json"), JSON.stringify(pkg));
   writeFileSync(join(root, "assets", "skill-version.json"), JSON.stringify(sv));
-  writeFileSync(
-    join(root, "README.md"),
-    `# repo-harness\n\n- npm: \`repo-harness@${readmeVersion}\` · workflow stamp \`repo-harness@${readmeVersion}+template@${readmeVersion}\`\n`,
-  );
+  writeFileSync(join(root, "README.md"), `# repo-harness\n\n${line}\n`);
   return root;
+}
+/** The complete README release line of a version. */
+function releaseLine(version: string): string {
+  return `- npm: \`repo-harness@${version}\` · workflow stamp \`repo-harness@${version}+template@${version}\``;
 }
 
 describe("Skill Version Consistency", () => {
@@ -68,7 +69,7 @@ describe("Skill Version Consistency", () => {
   });
 
   test("checkConsistency reports a README release line that names another version", () => {
-    const root = scratchRepo("0.1.2");
+    const root = scratchRepo(releaseLine("0.1.2"));
     try {
       const result = checkConsistency(root);
       expect(result.consistent).toBe(false);
@@ -78,6 +79,26 @@ describe("Skill Version Consistency", () => {
       expect(result.errors.filter((error) => error.startsWith("README.md"))).toHaveLength(3);
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("checkConsistency needs the complete release line, not its versions alone", () => {
+    const version = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf-8")).version;
+    // Each line carries both release versions, but not in the release form.
+    const candidates = [
+      releaseLine(version).replace("- npm: ", ""),
+      `<!-- ${releaseLine(version)} -->`,
+    ];
+    for (const candidate of candidates) {
+      const root = scratchRepo(candidate);
+      try {
+        const result = checkConsistency(root);
+        expect(result.readmeVersionPin).toBeNull();
+        expect(result.consistent).toBe(false);
+        expect(result.errors.some((error) => error.startsWith("README.md has no release line"))).toBe(true);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
     }
   });
 });

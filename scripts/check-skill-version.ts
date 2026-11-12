@@ -39,10 +39,11 @@ export interface ConsistencyResult {
   errors: string[];
 }
 
-// The README release line is the only README edit of a release:
+// The README release line is the only README edit of a release. The check matches
+// the complete line, so a version fragment in prose or a comment cannot pass:
 // - npm: `repo-harness@<v>` · workflow stamp `repo-harness@<v>+template@<v>`
 const README_PIN_PATTERN =
-  /`repo-harness@(\d+\.\d+\.\d+)`[^\n]*?workflow stamp `repo-harness@(\d+\.\d+\.\d+)\+template@(\d+\.\d+\.\d+)`/;
+  /^- npm: `repo-harness@(\d+\.\d+\.\d+)` · workflow stamp `repo-harness@(\d+\.\d+\.\d+)\+template@(\d+\.\d+\.\d+)`[ \t]*$/m;
 
 function readReadmeVersionPin(readmePath: string): ReadmeVersionPin | null {
   if (!existsSync(readmePath)) return null;
