@@ -155,8 +155,11 @@ describe('host test queue', () => {
     const env = queueEnv();
     const directory = join(env.REPO_HARNESS_HOME!, 'host-test-queue', 'tickets');
     mkdirSync(directory, { recursive: true });
-    const ticket = join(directory, '0-other.json');
-    writeFileSync(ticket, '{}');
+    const ticket = join(directory, '1-000000000000000-other.json');
+    writeFileSync(ticket, JSON.stringify({
+      token: 'other', pid: process.pid, start_time: 'start', kind: 'affected', cwd: ROOT, command: ['other'],
+      enqueued_at: new Date(0).toISOString(), acquired_at: null, lock_token: null, pgid: null,
+    }));
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
     const fail = () => {
       if (race === 'unlinked') rmSync(ticket);
@@ -166,7 +169,7 @@ describe('host test queue', () => {
     Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
     try {
       if (race === 'refused') expect(() => readHostTestQueueState(env)).toThrow('EPERM');
-      else expect(readHostTestQueueState(env).waiting).toEqual([]);
+      else expect(readHostTestQueueState(env).waiting.map(entry => entry.token)).toEqual(race === 'cleared' ? ['other'] : []);
     } finally {
       Object.defineProperty(process, 'platform', platform);
       read.mockRestore();
