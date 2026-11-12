@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { analyzeAffectedTests, bundleInputPaths, discoverDailyInputs, discoverPlatformInputs, nativeTriggers, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
 import { auditDroppedTests } from '../scripts/ci-edge-audit';
 import { replayNeedsSource } from '../scripts/replay-ci-coverage';
-import { CHANGELOG_TITLE, checkReleasedSections, fragmentMessage, releasedSections, sectionDrift } from '../scripts/check-changelog-released-sections';
+import { changelogPreamble, checkReleasedSections, fragmentMessage, releasedSections, sectionDrift } from '../scripts/check-changelog-released-sections';
 import { assemble, FRAGMENT_PATH_FORM, fragmentPaths, parseFragment, renderSection } from '../scripts/changelog-fragments';
 import { ARCHITECTURE_JOB, ARCHITECTURE_SUMMARY_PATH } from '../scripts/report-ci';
 
@@ -1312,14 +1312,18 @@ describe('released CHANGELOG sections', () => {
   test('every committed fragment parses, and this test reads the fragment directory', () => {
     // The literal path is load-bearing: the CI selection reads this test as a named reader of the fragment
     // directory, and only then does a documents-only changelog diff select mode `affected`.
-    const paths = readdirSync(join(ROOT, 'docs/changelog.d')).map((name) => `docs/changelog.d/${name}`).sort();
-    expect(paths.length).toBeGreaterThan(0);
+    // No fragment is a valid state: git does not track an empty directory, so a release commit that deletes
+    // the last fragment leaves no directory at all. The read below is therefore conditional, and the
+    // assertion is that the two readers agree, not that files exist. The literal path stays: it is what
+    // makes this test a named reader of the fragment directory for the CI selection.
+    const present = existsSync(join(ROOT, 'docs/changelog.d'));
+    const paths = present ? readdirSync(join(ROOT, 'docs/changelog.d')).map((name) => `docs/changelog.d/${name}`).sort() : [];
     expect(fragmentPaths(ROOT)).toEqual(paths);
     for (const path of paths) expect([path, parseFragment(path, readFileSync(join(ROOT, path), 'utf8')).path]).toEqual([path, path]);
     // The released file holds no authoring heading: the fragments are its only authoring path.
     const changelog = readFileSync(join(ROOT, 'docs/CHANGELOG.md'), 'utf8');
     expect(changelog.includes('## [Unreleased]')).toBe(false);
-    expect(changelog.startsWith(CHANGELOG_TITLE)).toBe(true);
+    expect(changelog.startsWith('# Changelog')).toBe(true);
   });
 
   test('a section runs from its heading to the next version heading', () => {
@@ -1407,32 +1411,55 @@ describe('released CHANGELOG sections', () => {
   }
 
   // Contract item 3: the merge result must follow the fragment form, and the error names the path form.
-  test('a merge result with text above the first released section fails, and the error names the fragment path form', () => {
+  test('a merge result whose text above the first released section differs from the base fails, and the error names the fragment path form', () => {
     const { repo, git, write, commit } = cutoverRepository('rh-changelog-preamble-');
     try {
-      write('docs/CHANGELOG.md', CUT);
-      const base = commit('the cutover');
-      // The released sections are untouched in each case, so only the preamble rule can fail the merge.
-      const authored = [
-        ['an [Unreleased] heading', CUT.replace(CUT_PREAMBLE, `${CUT_PREAMBLE}## [Unreleased]\n\n### Added\n\n- Old practice. (#5)\n\n`)],
-        ['an entry with no heading', CUT.replace(CUT_PREAMBLE, `${CUT_PREAMBLE}- Directly authored entry. (#6)\n\n`)],
-        ['a heading with no entry', CUT.replace(CUT_PREAMBLE, `${CUT_PREAMBLE}### Added\n\n`)],
+      // Two base states, because the rule has one allowed difference and it comes from the base.
+      // Base A still holds `## [Unreleased]`: the cutover that removes the block is allowed.
+      const PREAMBLE = CUT.slice(0, CUT.indexOf('## [0.31.0]'));
+      const BASE_A = `${PREAMBLE}## [Unreleased]\n\n### Added\n\n- The base entry. (#7)\n\n${CUT.slice(PREAMBLE.length)}`;
+      // Base B is post-cutover and holds no `[Unreleased]` block: nothing above the first released
+      // section may change, so a restored heading fails.
+      const BASE_B = CUT;
+      // One root commit, then a fresh branch per case: each case starts from the base text it names.
+      write('docs/CHANGELOG.md', BASE_B);
+      const root = commit('the root commit');
+      // An unchanged file gives an empty diff, which is a real case here, so the commits allow it.
+      const commitCase = (message: string) => { git('add', '-A'); git('commit', '-qm', message, '--allow-empty'); return git('rev-parse', 'HEAD'); };
+      const faultsOf = (baseText: string, headText: string, name: string) => {
+        git('checkout', '-q', '-B', 'work', root);
+        write('docs/CHANGELOG.md', baseText);
+        const base = commitCase(`base for ${name}`);
+        write('docs/CHANGELOG.md', headText);
+        return checkReleasedSections(base, commitCase(name), repo);
+      };
+      // Each of these changes a byte above the first released section, and none is the allowed cutover.
+      const refused = [
+        ['an added prose line', BASE_B, `${PREAMBLE}An added sentence.\n\n${CUT.slice(PREAMBLE.length)}`],
+        ['a restored [Unreleased] heading', BASE_B, BASE_A],
+        ['an entry with no heading', BASE_B, `${PREAMBLE}- Directly authored entry. (#6)\n\n${CUT.slice(PREAMBLE.length)}`],
+        ['a star bullet', BASE_B, `${PREAMBLE}* A star bullet.\n\n${CUT.slice(PREAMBLE.length)}`],
+        ['an indented heading', BASE_B, `${PREAMBLE}  ### Added\n\n${CUT.slice(PREAMBLE.length)}`],
+        // A pre-cutover base still allows only the removal, not a different entry inside the block.
+        ['an edited [Unreleased] entry', BASE_A, BASE_A.replace('- The base entry. (#7)', '- A different entry. (#8)')],
       ] as const;
-      for (const [name, text] of authored) {
-        git('checkout', '-q', '-B', 'branch', base);
-        write('docs/CHANGELOG.md', text);
-        const report = checkReleasedSections(base, commit(name), repo);
+      for (const [name, baseText, headText] of refused) {
+        const report = faultsOf(baseText, headText, name);
+        // The released sections are untouched in every case, so only the preamble rule can fail the merge.
         expect([name, report.drift]).toEqual([name, []]);
         expect([name, report.fragmentFaults.length]).toEqual([name, 1]);
-        expect(report.fragmentFaults[0]).toContain('holds text above its first released section that is not its title and preamble');
+        expect(report.fragmentFaults[0]).toContain('changes the text above its first released section');
         expect(report.fragmentFaults[0]).toContain(FRAGMENT_PATH_FORM);
         // The lane prints one message that names the base, the head and every fault.
         expect(fragmentMessage(report)).toContain(FRAGMENT_PATH_FORM);
       }
-      // The preamble with a fragment, and no other text, passes.
-      git('checkout', '-q', '-B', 'fragment', base);
-      write('docs/changelog.d/32.fixed.md', '- A fixed entry. (#32)\n');
-      expect(checkReleasedSections(base, commit('the fragment'), repo).fragmentFaults).toEqual([]);
+      // The allowed forms pass: the cutover from a pre-cutover base, and an unchanged file.
+      expect(faultsOf(BASE_A, BASE_B, 'the cutover').fragmentFaults).toEqual([]);
+      expect(faultsOf(BASE_B, BASE_B, 'unchanged').fragmentFaults).toEqual([]);
+      expect(faultsOf(BASE_A, BASE_A, 'unchanged, pre-cutover').fragmentFaults).toEqual([]);
+      // The preamble reader is the rule's input: the cutover's preamble is the base's minus the block.
+      expect(changelogPreamble(BASE_B)).toBe(PREAMBLE);
+      expect(changelogPreamble(BASE_A)).toContain('## [Unreleased]');
     } finally { rmSync(repo, { recursive: true, force: true }); }
   });
 
@@ -1491,11 +1518,31 @@ describe('released CHANGELOG sections', () => {
     } finally { rmSync(repo, { recursive: true, force: true }); }
   });
 
-  test('assemble fails with no fragment, with a fragment that does not parse, and with a version that exists', () => {
+  // Git does not track an empty directory, so a release commit that deletes the last fragment leaves no
+  // `docs/changelog.d` at all. Both states must read as zero fragments, with no error and no section.
+  test('assemble with no docs/changelog.d and with an empty one gives no error and no section', () => {
+    const { repo, git, write, commit } = cutoverRepository('rh-changelog-assemble-empty-');
+    try {
+      write('docs/CHANGELOG.md', CUT);
+      const base = commit('a tree with no fragment directory');
+      expect(fragmentPaths(repo)).toEqual([]);
+      const absent = assemble({ version: '0.32.0', date: '2026-11-14', root: repo });
+      expect(absent).toEqual({ version: '0.32.0', section: '', removed: [] });
+      // The file is untouched: no section is written.
+      expect(readFileSync(join(repo, 'docs/CHANGELOG.md'), 'utf8')).toBe(CUT);
+      // An empty directory is the same state. It is not committed, because git cannot hold it.
+      mkdirSync(join(repo, 'docs/changelog.d'), { recursive: true });
+      expect(fragmentPaths(repo)).toEqual([]);
+      expect(assemble({ version: '0.32.0', date: '2026-11-14', root: repo })).toEqual({ version: '0.32.0', section: '', removed: [] });
+      // The check reads the same two states as zero fragments, not as a fault.
+      expect(checkReleasedSections(base, base, repo).fragmentFaults).toEqual([]);
+    } finally { rmSync(repo, { recursive: true, force: true }); }
+  });
+
+  test('assemble fails with a fragment that does not parse and with a version that exists', () => {
     const { repo, write } = cutoverRepository('rh-changelog-assemble-faults-');
     try {
       write('docs/CHANGELOG.md', CUT);
-      expect(() => assemble({ version: '0.32.0', date: '2026-11-14', root: repo })).toThrow('holds no fragment');
       write('docs/changelog.d/44.changed.md', 'no bullet line\n');
       expect(() => assemble({ version: '0.32.0', date: '2026-11-14', root: repo })).toThrow('holds a line that is not a "- " entry');
       write('docs/changelog.d/44.changed.md', '- An entry. (#44)\n');
