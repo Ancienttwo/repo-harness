@@ -465,6 +465,7 @@ test.skipIf(process.platform !== "win32")("TEMP #2588 owner read EPERM probe", a
     const row = [
       `step=${step}`,
       `first=${first.code}(errno=${first.errno},syscall=${first.syscall})`,
+      `lstatPathFirst=${tryCall(() => fs.lstatSync(path))}`,
       `again=${tryCall(again)}`,
       `lstatLock=${tryCall(() => fs.lstatSync(lockPath))}`,
       `statLock=${tryCall(() => fs.statSync(lockPath))}`,
