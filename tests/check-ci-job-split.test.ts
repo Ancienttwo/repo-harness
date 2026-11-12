@@ -731,10 +731,10 @@ describe('single affected verification and daily fallback', () => {
     }
     expect(selectPlatformCoverage(['src/core/terminal/herdr-core-pin.json'], inputs)).toEqual({ native_oar: true, home_isolation: false });
     // Other workflows and actions that the native job does not use leave the native lane off.
-    for (const path of ['.github/workflows/release.yml', '.github/actions/install/action.yml']) {
+    for (const path of ['.github/workflows/other.yml', '.github/actions/install/action.yml']) {
       expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: false, home_isolation: true });
     }
-    expect(nativeTriggers(['docs/guide.md', 'package.json', 'src/core/terminal/herdr-core-pin.json', 'src/deep.ts', '.github/workflows/release.yml'], inputs)).toEqual([
+    expect(nativeTriggers(['docs/guide.md', 'package.json', 'src/core/terminal/herdr-core-pin.json', 'src/deep.ts', '.github/workflows/other.yml'], inputs)).toEqual([
       { cause: 'shared', path: 'package.json' }, { cause: 'herdr-pin', path: 'src/core/terminal/herdr-core-pin.json' }, { cause: 'native-closure', path: 'src/deep.ts' },
     ]);
     // A src module imported only by a native test root, directly or transitively, triggers the native lane.

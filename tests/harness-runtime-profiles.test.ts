@@ -322,7 +322,7 @@ describe('workflow-surface path predicate (Phase C2 resolver layer)', () => {
     'deploy/sql/0001_demo.sql',
     'scripts/run-harness-profile-benchmark.ts',
     'tests/harness-runtime-profiles.test.ts',
-    '.github/workflows/release.yml',
+    '.github/workflows/other.yml',
     'package.json',
   ])('treats %s as implementation surface', (path) => {
     expect(isWorkflowSurfacePath(path)).toBe(false);
