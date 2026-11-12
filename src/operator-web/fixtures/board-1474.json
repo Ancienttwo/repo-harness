@@ -1,5 +1,5 @@
 {
-  "protocol": 9,
+  "protocol": 10,
   "kind": "repo-harness.board",
   "observed_at": "2026-11-02T23:29:42.936Z",
   "repository": "Ancienttwo/repo-harness",
@@ -345,6 +345,12 @@
         "evidence_url": "https://github.com/Ancienttwo/repo-harness/pull/1491#issuecomment-6588586440"
       },
       "review_fail": null,
+      "review_records": {
+        "status": "observed",
+        "claude": "2026-11-02T19:47:57Z",
+        "codex": "2026-11-02T19:20:22Z",
+        "pi": null
+      },
       "open_questions": {
         "status": "observed",
         "questions": []
@@ -456,6 +462,12 @@
         "status": "not_accepted"
       },
       "review_fail": null,
+      "review_records": {
+        "status": "observed",
+        "claude": "2026-11-02T21:11:11Z",
+        "codex": "2026-11-02T21:10:40Z",
+        "pi": null
+      },
       "open_questions": {
         "status": "observed",
         "questions": []
@@ -551,6 +563,12 @@
         "status": "not_accepted"
       },
       "review_fail": null,
+      "review_records": {
+        "status": "observed",
+        "claude": "2026-11-02T20:52:14Z",
+        "codex": "2026-11-02T20:56:58Z",
+        "pi": null
+      },
       "open_questions": {
         "status": "observed",
         "questions": []

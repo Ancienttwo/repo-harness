@@ -402,7 +402,9 @@ host's PR events or check when the worker reports.
   verdict and model relation.
   The review brief lets a reviewer with the `net` tool group publish only
   its own round with `repo-harness review publish`. It forbids every
-  other GitHub write.
+  other GitHub write. Attention rule A19 names a review seat that is done
+  or idle for more than 10 min while its PR has no record of its harness
+  after that time: read its pane and publish its row.
 - **Defensive code.** Reject compatibility branches, fallbacks and
   speculative guards that the issue did not ask for, even when the tests
   pass. Quote the boundary line. This is the most common reason to send a
