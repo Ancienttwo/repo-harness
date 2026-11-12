@@ -62,6 +62,12 @@ describe('JUnit report', () => {
     for (const hidden of ['secret-token', '/home/runner', 'AssertionError', 'actions/runs', '0123456789abcdef']) expect(text).not.toContain(hidden);
   });
 
+  // Bun writes the `file` attribute with the host separator, so a Windows runner reports backslashes.
+  test('a backslash file attribute of a Windows runner reads as the forward-slash repository path', () => {
+    const windows = REPORT.replaceAll('file="tests/cli/example.test.ts"', 'file="tests\\cli\\example.test.ts"');
+    expect(parseJUnitReport(windows).file).toBe('tests/cli/example.test.ts');
+  });
+
   test('a private path in a case name is masked', () => {
     const report = parseJUnitReport(REPORT.replace('top level case', 'reads /Users/someone/project/file'));
     expect(report.cases[0]!.name).toBe('reads [private path]');
