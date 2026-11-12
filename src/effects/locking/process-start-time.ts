@@ -1,5 +1,6 @@
 import { spawnSync } from 'child_process';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
+import { userInfo } from 'os';
 import { win32 } from 'path';
 
 const PROCESS_TABLE_TIMEOUT_MS = 10_000;
@@ -51,6 +52,40 @@ function darwinStartTime(pid: number): string | null {
   return `darwin:${text}`;
 }
 
+// Measurement for #2578 only: names, booleans and durations, never values.
+const PROFILE_KEYS = ['USERPROFILE', 'HOME', 'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP', 'TMPDIR'];
+const STANDARD_KEYS = ['SystemRoot', 'windir', 'ComSpec', 'PATHEXT', 'PSModulePath', 'ProgramData', 'ProgramFiles', 'ALLUSERSPROFILE', 'PUBLIC', 'USERNAME', 'USERDOMAIN', 'COMPUTERNAME', 'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE'];
+
+function windowsStartupEvidence(powershell: string): string {
+  const account = userInfo().homedir;
+  const under = (value: string) => value.toLowerCase().startsWith(account.toLowerCase());
+  const accountEnv: Record<string, string> = {
+    USERPROFILE: account,
+    APPDATA: win32.join(account, 'AppData', 'Roaming'),
+    LOCALAPPDATA: win32.join(account, 'AppData', 'Local'),
+    TEMP: win32.join(account, 'AppData', 'Local', 'Temp'),
+    TMP: win32.join(account, 'AppData', 'Local', 'Temp'),
+  };
+  const redirected = PROFILE_KEYS.filter((key) => {
+    const value = process.env[key];
+    return value !== undefined && win32.isAbsolute(value) && !under(value);
+  }).map((key) => `${key}${existsSync(process.env[key]!) ? '' : '(missing dir)'}`);
+  const absentProfile = PROFILE_KEYS.filter((key) => process.env[key] === undefined);
+  const absentStandard = STANDARD_KEYS.filter((key) => process.env[key] === undefined);
+  const noop = (env: NodeJS.ProcessEnv) => {
+    const start = Date.now();
+    const run = spawnSync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'exit 0'], {
+      env, timeout: 30_000, windowsHide: true,
+    });
+    return `${Date.now() - start} ms (${run.error ? run.error.message : `status ${run.status}`})`;
+  };
+  return `profile keys outside the account profile: [${redirected.join(', ')}]; `
+    + `absent profile keys: [${absentProfile.join(', ')}]; absent standard keys: [${absentStandard.join(', ')}]; `
+    + `env key count: ${Object.keys(process.env).length}; `
+    + `no-op powershell with this env: ${noop(process.env)}; `
+    + `no-op powershell with account profile keys: ${noop({ ...process.env, ...accountEnv })}`;
+}
+
 function windowsStartTime(pid: number): string | null {
   const systemRoot = process.env.SystemRoot;
   if (!systemRoot || !win32.isAbsolute(systemRoot)) throw unreadable(pid, 'SystemRoot is not an absolute path');
@@ -60,12 +95,13 @@ function windowsStartTime(pid: number): string | null {
   // GetProcessById throws ArgumentException when no process has the PID.
   const script = `try { $p = [System.Diagnostics.Process]::GetProcessById(${pid}) } catch [System.ArgumentException] { exit 3 }; `
     + '[Console]::Out.Write($p.StartTime.ToFileTimeUtc())';
+  const started = Date.now();
   const result = spawnSync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
     encoding: 'utf-8',
     timeout: PROCESS_TABLE_TIMEOUT_MS,
     windowsHide: true,
   });
-  if (result.error) throw result.error;
+  if (result.error) throw unreadable(pid, `${result.error.message} after ${Date.now() - started} ms; ${windowsStartupEvidence(powershell)}`);
   const text = result.stdout.trim();
   if (result.status === 3 && text === '') return null;
   if (result.status !== 0 || !/^\d+$/.test(text)) throw unreadable(pid, `PowerShell exited with status ${result.status}`);
