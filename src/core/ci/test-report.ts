@@ -116,7 +116,11 @@ export function parseJUnitReport(xml: string): TestFileResultV1 {
     const attrs = attributes(rest!);
     if (name === 'testsuite') {
       if (stack.filter(entry => entry.name === 'testsuite').length === 0) {
-        const named = attrs.get('file');
+        // Bun writes the path with the host separator, so a Windows runner reports `tests\unit\a.test.ts`.
+        // This parser is the only place that reads Bun's `file` attribute, so the path becomes the repository's
+        // forward-slash form here and every consumer (the shard plan, the duration cache, the operator snapshot)
+        // sees the same file name. TEST_FILE stays the forward-slash contract.
+        const named = attrs.get('file')?.replaceAll('\\', '/');
         if (file !== null || named === undefined || !TEST_FILE.test(named)) throw new Error('junit invalid: file');
         file = named;
         duration = milliseconds(attrs.get('time'));
