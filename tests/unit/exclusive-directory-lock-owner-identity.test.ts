@@ -209,8 +209,10 @@ test('reading the owner during real concurrent releases returns an owner or null
 
 // Windows gives EPERM, not ENOENT, on a directory that a concurrent release left
 // delete-pending (#2588). The injected readdir runs the release race, then fails.
-function readOwnerWithWindowsEperm(root: string, race: (lockPath: string) => void): ExclusiveDirectoryLockOwner | null {
+function readOwnerWithWindowsEperm(race: (lockPath: string) => void): ExclusiveDirectoryLockOwner | null {
+  const root = temporaryRoot();
   const lockPath = join(root, LOCK);
+  forgeOwner(root, { pid: process.pid });
   const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
   const readdir = spyOn(fs, 'readdirSync').mockImplementationOnce(() => {
     race(lockPath);
@@ -225,24 +227,18 @@ function readOwnerWithWindowsEperm(root: string, race: (lockPath: string) => voi
 
 describe('windows EPERM on the owner read during a release', () => {
   test('a removed lock directory is no observed owner', () => {
-    const root = temporaryRoot();
-    forgeOwner(root, { pid: process.pid });
-    expect(readOwnerWithWindowsEperm(root, lockPath => rmSync(lockPath, { recursive: true }))).toBeNull();
+    expect(readOwnerWithWindowsEperm(lockPath => rmSync(lockPath, { recursive: true }))).toBeNull();
   });
 
   test('a lock directory that the next acquirer created is no observed owner', () => {
-    const root = temporaryRoot();
-    forgeOwner(root, { pid: process.pid });
     // Keep the old directory alive so the new one cannot reuse its inode.
-    expect(readOwnerWithWindowsEperm(root, lockPath => {
+    expect(readOwnerWithWindowsEperm(lockPath => {
       renameSync(lockPath, `${lockPath}.released`);
       mkdirSync(lockPath);
     })).toBeNull();
   });
 
   test('the same lock directory keeps the EPERM as a real access refusal', () => {
-    const root = temporaryRoot();
-    forgeOwner(root, { pid: process.pid });
-    expect(() => readOwnerWithWindowsEperm(root, () => {})).toThrow('EPERM');
+    expect(() => readOwnerWithWindowsEperm(() => {})).toThrow('EPERM');
   });
 });
