@@ -249,7 +249,34 @@ _ci_build_hook_bundle_if_selected() {
   (cd "$(dirname "${BASH_SOURCE[0]}")/../.." && bun run build:hook-bundle) || return $?
 }
 
+# A positional argument with the test file name form must be a file or a directory.
+# Arguments that start with '-' are options; the value after a value-taking option
+# is not positional. The value-taking set is the options that callers pass with a
+# separate value: -t/--test-name-pattern, --timeout, --max-concurrency,
+# --preload/-r, --rerun-each, --coverage-reporter, --coverage-dir.
+_ci_require_test_paths() {
+  local argument skip_value=0
+  for argument in "$@"; do
+    if [[ "$skip_value" == 1 ]]; then
+      skip_value=0
+      continue
+    fi
+    case "$argument" in
+      -t | --test-name-pattern | --timeout | --max-concurrency | --preload | -r | --rerun-each | --coverage-reporter | --coverage-dir)
+        skip_value=1
+        continue
+        ;;
+      -*) continue ;;
+    esac
+    if [[ ! -e "$argument" && "$argument" =~ (^|/)[^/]*([.]test|[.]spec|_test|_spec)[.][cm]?[jt]sx?$ ]]; then
+      echo "[ci] test file does not exist: $argument" >&2
+      return 1
+    fi
+  done
+}
+
 run_bun_tests() {
+  _ci_require_test_paths "$@" || return $?
   _ci_prepare_junit_dir || return $?
   if [[ "${BUN_TEST_ISOLATE_FILES:-0}" != "1" ]]; then
     local argument
@@ -276,9 +303,6 @@ run_bun_tests() {
         while IFS= read -r argument; do
           [[ -n "$argument" ]] && selected[${#selected[@]}]="$argument"
         done <<< "$selection"
-      elif [[ "$argument" =~ (^|/)[^/]*([.]test|[.]spec|_test|_spec)[.][cm]?[jt]sx?$ ]]; then
-        echo "[ci] test file does not exist: $argument" >&2
-        return 1
       else
         options[${#options[@]}]="$argument"
       fi

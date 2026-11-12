@@ -133,13 +133,27 @@ describe("ci isolate-mode test loop", () => {
     }
   });
 
-  test('a test-form path that is not a file fails the run before any test starts; option values still pass', () => {
-    const run = (...args: string[]) => spawnSync('bash', ['-c', `source ${JSON.stringify(LIB_PATH)}; BUN_TEST_ISOLATE_FILES=0 run_bun_tests "$@"`, '--', ...args], { cwd: REPO_ROOT, encoding: 'utf8', env: gateEnv({}) });
-    const missing = run('tests/does-not-exist.test.ts', '--timeout', '60000');
-    expect(missing.status).not.toBe(0);
-    expect(missing.stderr).toContain('tests/does-not-exist.test.ts');
-    expect(missing.stdout).not.toContain('bun test');
-    expect(run('tests/check-ci-isolate-aggregation.test.ts', '--timeout', '60000', '-t', 'suite entrypoint rejects').status).toBe(0);
+  test('a test-form path that is not a file fails every branch before any test starts; option values are not paths', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ci-missing-path-'));
+    try {
+      const marker = join(dir, 'ran');
+      const existing = join(dir, 'marker.test.ts');
+      writeFileSync(existing, `import { test } from "bun:test";\nimport { writeFileSync } from "node:fs";\ntest("marks", () => writeFileSync(${JSON.stringify(marker)}, "x"));\n`);
+      const run = (...args: string[]) => {
+        rmSync(marker, { force: true });
+        const result = spawnSync('bash', ['-c', `source ${JSON.stringify(LIB_PATH)}; BUN_TEST_ISOLATE_FILES=0 run_bun_tests "$@"`, '--', ...args], { cwd: REPO_ROOT, encoding: 'utf8', env: gateEnv({}) });
+        return { status: result.status, stderr: result.stderr, ran: existsSync(marker) };
+      };
+      for (const extra of [[], ['--coverage']]) {
+        const missing = run(existing, join(dir, 'does-not-exist.test.ts'), '--timeout', '60000', ...extra);
+        expect(missing.status).not.toBe(0);
+        expect(missing.stderr).toContain('does-not-exist.test.ts');
+        expect(missing.ran).toBe(false);
+      }
+      expect(run(existing, '-t', 'example.test.ts').status).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test('core and integration retain the complete file inventory without overlap', () => {
