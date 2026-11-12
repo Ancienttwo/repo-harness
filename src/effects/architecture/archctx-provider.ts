@@ -138,6 +138,9 @@ export class ArchctxClient {
     const label = commandLabel(args);
     const result = runArchctxProcess(this.resolved, args, this.options, this.repoRoot, remainingTimeout(this.options, maximumMs, label));
     if (result.timedOut) {
+      if (args[0] === 'checkpoint') {
+        throw new ArchctxClientError({ code: 'RH_ARCHCTX_TIMEOUT', action: 'inspect-diagnostics', message: 'architecture checkpoint did not finish in the notice time budget' });
+      }
       throw new ArchctxClientError({ code: 'RH_ARCHCTX_TIMEOUT', action: 'check-and-retry-same-request', message: `${label} timed out; outcome unknown. Run repo-harness architecture-projection check --json, then retry with the same request id.` });
     }
     if (Buffer.byteLength(result.stdout, 'utf8') > ARCHCTX_MAX_OUTPUT_BYTES || Buffer.byteLength(result.stderr, 'utf8') > ARCHCTX_MAX_OUTPUT_BYTES) throw new Error(`${label} output exceeded maxBuffer`);
@@ -523,23 +526,7 @@ export function changedSinceReviewBase(repoRoot: string, reviewBase: string, opt
 }
 
 /** Changed owned paths only. */
-/**
- * One notice deadline covers the Git steps, the Node selection, the process and
- * the decode. Each exhaustion is the same fact, so it gets one text with no
- * command: the next hook measures again.
- */
-export function checkpointArchitectureDebt(repoRoot: string, ownership: CapabilityOwnership | null, options: ArchctxProviderOptions = {}): ReturnType<typeof measureCheckpoint> {
-  try { return measureCheckpoint(repoRoot, ownership, options); }
-  catch (error) {
-    const gitTimedOut = error instanceof Error && (error as NodeJS.ErrnoException).code === 'ETIMEDOUT';
-    if (gitTimedOut || (error instanceof ArchctxClientError && error.code === 'RH_ARCHCTX_TIMEOUT')) {
-      throw new ArchctxClientError({ code: 'RH_ARCHCTX_TIMEOUT', action: 'inspect-diagnostics', message: 'architecture checkpoint did not finish in the notice time budget' });
-    }
-    throw error;
-  }
-}
-
-function measureCheckpoint(repoRoot: string, ownership: CapabilityOwnership | null, options: ArchctxProviderOptions): {
+export function checkpointArchitectureDebt(repoRoot: string, ownership: CapabilityOwnership | null, options: ArchctxProviderOptions = {}): {
   readonly branch: string;
   readonly report: ArchitectureDebtReportV1;
 } | null {

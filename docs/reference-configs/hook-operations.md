@@ -377,9 +377,9 @@ runs), a missing global architecture configuration, and archctx setup errors
 such as `AC_MODEL_ADOPTION_REQUIRED` or `AC_CODE_FACTS_NOT_READY`. An
 explicit `projection_provider=disabled` gives no line. Another failure gives one
 `[Architecture] notice unavailable (<code>)` line and keeps the one-line stderr
-diagnostic at exit 0. A timeout on the notice path (the checkpoint deadline,
-with its Git steps, or the ownership resolve) gives no notice and one stderr
-diagnostic line that names no command; the next hook measures again. A failed unowned-path filter in a setup state keeps the
+diagnostic at exit 0. A timeout on the notice path (an archctx deadline or
+process, a Git call, or the ownership resolve) gives no notice and one fixed
+stderr line per hook run that names no command; the next hook measures again. A failed unowned-path filter in a setup state keeps the
 setup state, and only stderr gets the error. The Git-ignored marker `.ai/harness/state/agent-notice-status`
 dedupes these lines: once per cause, and once per branch and code for a failure.
 A working notice records an active key, so a returning cause prints again. A
