@@ -212,7 +212,8 @@ function requiredContexts(input: BoardCollectInput, repository: string, base: st
   try {
     body = readGhJson(input, ['api', '--hostname', 'github.com', `repos/${repository}/branches/${encodeURIComponent(base)}/protection`]);
   } catch (error) {
-    if (error instanceof BoardCollectError && !(error instanceof GhOutputLimitError)) return { status: 'unavailable', reason: error.message };
+    // Every failed protection read, an output-limit one included, is the board state `unavailable`; the message keeps the cause.
+    if (error instanceof BoardCollectError) return { status: 'unavailable', reason: error.message };
     throw error;
   }
   const contexts = (body as { required_status_checks?: { contexts?: unknown } | null } | null)?.required_status_checks?.contexts;

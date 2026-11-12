@@ -2418,6 +2418,8 @@ describe('board required check: the contexts come from the base protection (#226
     const check = (answer: GhAnswer) => replay(mergeReplay({}, { protection: protection(answer) })).pull_requests.find(pr => pr.number === 1491)!.required_check;
     expect(check({ status: 1, stdout: '{"message":"Branch not protected","status":"404"}', stderr: 'gh: Branch not protected (HTTP 404)' }))
       .toEqual({ status: 'unavailable', reason: 'gh api --hostname failed: gh: Branch not protected (HTTP 404)' });
+    const enobufs = { status: null, stdout: '', error: Object.assign(new Error('spawnSync gh ENOBUFS'), { code: 'ENOBUFS' }) } as unknown as GhAnswer;
+    expect(check(enobufs)).toEqual({ status: 'unavailable', reason: `gh api --hostname printed more than the ${GH_MAX_BUFFER_BYTES}-byte maxBuffer limit` });
     expect(check({ status: 0, stdout: JSON.stringify({ required_status_checks: { contexts: [] } }) }))
       .toEqual({ status: 'unavailable', reason: 'the protection of main requires no status check context list' });
     const decision = boardMergeDecisions(replay(mergeReplay({}, { protection: protection({ status: 0, stdout: '{}' }) }))).find(entry => entry.pr === 1491)!;
