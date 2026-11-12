@@ -12,14 +12,14 @@ on:
         options: [ubuntu-latest, macos-latest, windows-latest]
         default: ubuntu-latest
       lane:
-        description: home-isolation runs each file as Test HOME isolation does; affected-shard runs one shard as Affected tests does (ubuntu-latest only)
+        description: home-isolation runs each file as Test HOME isolation does; affected-shard runs one shard as Affected tests does (ubuntu-latest only); release-rehearsal upgrades the published parent to this head (ubuntu-latest and macos-latest, ignores files, shard and repeat)
         type: choice
-        options: [home-isolation, affected-shard]
+        options: [home-isolation, affected-shard, release-rehearsal]
         default: home-isolation
       files:
-        description: Test paths, separated by spaces
+        description: Test paths, separated by spaces (release-rehearsal ignores it)
         type: string
-        required: true
+        default: ''
       shard:
         description: affected-shard only, <index>/<total> of the plan made from the files
         type: string
@@ -52,6 +52,11 @@ jobs:
     steps:
       - name: Check the lane, shard and repeat inputs
         run: |
+          # release-rehearsal ignores files, shard and repeat.
+          if [[ "$PROBE_LANE" == release-rehearsal ]]; then
+            if [[ "$PROBE_RUNNER" == windows-latest ]]; then echo "::error::release-rehearsal runs only on ubuntu-latest and macos-latest"; exit 1; fi
+            exit 0
+          fi
           # The file steps read one line; a second line would drop files without an error.
           if [[ "$PROBE_FILES" == *$'\n'* ]]; then echo "::error::files must be one line"; exit 1; fi
           case "$PROBE_REPEAT" in
@@ -78,7 +83,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.3
+      # The runner is the isolation: the script installs into its HOME, which GitHub discards.
+      - name: Rehearse the upgrade of the published parent to this head
+        if: inputs.lane == 'release-rehearsal'
+        run: |
+          echo "[probe] head $(git rev-parse HEAD)"
+          bash scripts/check-release-upgrade-rehearsal.sh
       - name: Check the test files
+        if: inputs.lane != 'release-rehearsal'
         run: |
           echo "[probe] head $(git rev-parse HEAD)"
           read -ra files <<< "$PROBE_FILES"
@@ -133,7 +145,7 @@ jobs:
             bash scripts/check-ci.sh affected
           done
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.lane != 'release-rehearsal' }}
         with:
           name: probe-junit-${{ inputs.runner }}-${{ github.run_attempt }}
           path: .ai/harness/runs/junit
