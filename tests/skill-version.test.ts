@@ -82,6 +82,26 @@ describe("Skill Version Consistency", () => {
     }
   });
 
+  test("checkConsistency needs the complete release line, not its versions alone", () => {
+    const version = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf-8")).version;
+    // Each line carries both release versions, but not in the complete release form.
+    const candidates = [
+      releaseLine(version).replace("- npm: ", ""),
+      `<!-- ${releaseLine(version)} -->`,
+    ];
+    for (const candidate of candidates) {
+      const root = scratchRepo(candidate);
+      try {
+        const result = checkConsistency(root);
+        expect(result.readmeVersionPin).toBeNull();
+        expect(result.consistent).toBe(false);
+        expect(result.errors.some((error) => error.startsWith("README.md has no release line"))).toBe(true);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
   test("checkConsistency reports a README with two release lines", () => {
     const version = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf-8")).version;
     // The line that names the current version sits above a line that names another version.
