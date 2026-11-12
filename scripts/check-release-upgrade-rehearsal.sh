@@ -180,6 +180,21 @@ archctx_link_version() {
   ' "$HOME/.bun/bin/archctx"
 }
 
+# Probe #2669 (diagnostic only): the archctx facts that decide RH_ARCHCTX_BIN_READBACK.
+archctx_diagnostics() {
+  local label="$1" global="$HOME/.bun/install/global" manifest
+  json_field() { bun -e 'const p = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); console.log(String(process.argv[2].split(".").reduce((v, k) => v?.[k], p) ?? "(none)"))' "$1" "$2" 2>&1 || true; }
+  {
+    echo "[diag $label] readlink $HOME/.bun/bin/archctx: $(readlink "$HOME/.bun/bin/archctx" 2>&1 || true)"
+    echo "[diag $label] realpath $HOME/.bun/bin/archctx: $(realpath "$HOME/.bun/bin/archctx" 2>&1 || true)"
+    while IFS= read -r manifest; do
+      echo "[diag $label] archctx package: $manifest version $(json_field "$manifest" version) bin.archctx $(json_field "$manifest" bin.archctx)"
+    done < <(find "$global" -path '*node_modules/archctx/package.json' 2>/dev/null | sort)
+    echo "[diag $label] $global/package.json dependencies.archctx: $(json_field "$global/package.json" dependencies.archctx)"
+    echo "[diag $label] $global/node_modules/repo-harness version $(json_field "$global/node_modules/repo-harness/package.json" version), dependencies.archctx: $(json_field "$global/node_modules/repo-harness/package.json" dependencies.archctx)"
+  } >&2
+}
+
 echo "[rehearsal] 1/3 install parent repo-harness@$PARENT from npm"
 bun add -g "repo-harness@$PARENT" >"$WORK/parent-add.log" 2>&1 || { cat "$WORK/parent-add.log" >&2; fail "bun add of the parent failed"; }
 [[ -f "$HOME/.bun/install/global/node_modules/repo-harness/package.json" ]] || fail "bun add -g did not install into $HOME/.bun/install/global"
@@ -194,6 +209,7 @@ repo-harness update --version "$PARENT" --no-cli --no-codegraph --no-external-sk
   || { cat "$WORK/parent-update.log" >&2; fail "the parent update to its own version failed"; }
 BEFORE_LINK_VERSION="$(archctx_link_version 2>/dev/null || true)"
 echo "[rehearsal] archctx link before update: ${BEFORE_LINK_VERSION:-absent} (parent pin $PARENT_ARCHCTX_PIN)"
+archctx_diagnostics before
 [[ "$BEFORE_LINK_VERSION" == "$PARENT_ARCHCTX_PIN" ]] \
   || fail "before the update, $HOME/.bun/bin/archctx resolves to archctx '${BEFORE_LINK_VERSION:-missing}', not the parent pin $PARENT_ARCHCTX_PIN"
 
@@ -205,8 +221,10 @@ update_exit=$?
 set -e
 if [[ $update_exit -ne 0 ]]; then
   cat "$WORK/update.log" >&2
+  archctx_diagnostics after-failed-update
   fail "update exited $update_exit"
 fi
+archctx_diagnostics after-update
 
 echo "[rehearsal] 3/3 check the result"
 [[ "$(repo-harness --version)" == "$CANDIDATE" ]] || fail "repo-harness --version is not $CANDIDATE after update"
