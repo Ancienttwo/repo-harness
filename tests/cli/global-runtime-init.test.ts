@@ -70,7 +70,8 @@ test('update preflight stops on a refused mcp.local.json before the seats write 
   try {
     mkdirSync(join(home, '.repo-harness'), { recursive: true });
     mkdirSync(fakeBin, { recursive: true });
-    writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
+    const bunLog = join(tmp, 'bun.log');
+    writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n`);
     const config = join(home, '.repo-harness', 'config.json');
     writeFileSync(config, JSON.stringify({ seats: { ...DEFAULT_SEATS_CONFIG, 'worker-light': null, 'gatekeeper-fallback': undefined } }));
     const before = readFileSync(config, 'utf8');
@@ -82,9 +83,12 @@ test('update preflight stops on a refused mcp.local.json before the seats write 
     writeFileSync(mcp, '{"version":2,"permissions":{"allowedRoots":["/private/secret-root"]}}');
     const refused = run();
     expect(refused.exitCode).toBe(1);
-    expect(refused.steps.at(-1)).toMatchObject({ step: 'check MCP local config', status: 'failed', detail: expect.stringContaining('unsupported MCP local config version: 2') });
+    expect(refused.steps.at(-1)).toMatchObject({ step: 'check MCP local config', status: 'failed', detail: expect.stringContaining('unsupported version; set "version": 3.') });
     expect(refused.steps.some(step => step.step === 'migrate seats configuration')).toBe(false);
     expect(readFileSync(config, 'utf8')).toBe(before);
+    expect(existsSync(bunLog)).toBe(false);
+    writeFileSync(mcp, '{"version":["/private/secret-root"]}');
+    expect(run().stdout).not.toContain('secret-root');
     writeFileSync(mcp, '{"allowedRoots": ["/private/secret-root"] oops');
     const malformed = run();
     expect(malformed.exitCode).toBe(1);
@@ -2108,7 +2112,7 @@ exit 0
       const refused = runUpdate();
       expect(refused.status).toBe(1);
       const refusedSteps: { step: string; status: string; detail?: string }[] = JSON.parse(refused.stdout).steps;
-      expect(refusedSteps.at(-1)).toMatchObject({ step: 'check MCP local config', status: 'failed', detail: expect.stringContaining('unsupported MCP local config version: 2') });
+      expect(refusedSteps.at(-1)).toMatchObject({ step: 'check MCP local config', status: 'failed', detail: expect.stringContaining('unsupported version; set "version": 3.') });
       expect(refused.stdout).not.toContain('secret-root');
       expect(refusedSteps.some(step => step.step === 'migrate seats configuration')).toBe(false);
       expect(existsSync(join(home, '.repo-harness', 'config.json'))).toBe(true);

@@ -44,7 +44,7 @@ import {
   requiredExplicitExternalDependencyInstallGroups,
   type SkillSurfaceCatalog,
 } from "../../core/skill-surface/catalog";
-import { loadMcpLocalConfig, mcpLocalConfigPath } from "../mcp/auth";
+import { mcpLocalConfigPath, parseMcpLocalConfig } from "../mcp/auth";
 import { hostSkillRoot, stagedSkillRoot } from "../../effects/host-skill-roots";
 import {
   discoverWindowsProtectedHelperContract,
@@ -1812,23 +1812,29 @@ export function migrateSeatsConfiguration(env: NodeJS.ProcessEnv, runtimeLock?: 
 }
 
 /**
- * Read-only preflight. Only the loader's own refusal text passes through: the file
- * holds local paths, and a JSON.parse message can quote a fragment of it.
+ * Read-only preflight on one snapshot of the file. The file holds local paths and
+ * the loader's version refusal formats the stored value, so every refusal prints
+ * a fixed text; nothing from the file reaches the output.
  */
 function checkMcpLocalConfig(env: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const step = 'check MCP local config';
   const path = withProcessEnv(env, mcpLocalConfigPath);
   if (!existsSync(path)) return { step, status: 'skipped', detail: 'No MCP local config.' };
+  const refuse = (reason: string): GlobalRuntimeStep => ({ step, status: 'failed', detail: `invalid MCP local config at ${path}: ${reason}` });
+  let parsed: unknown;
   try {
-    JSON.parse(readFileSync(path, 'utf-8'));
+    parsed = JSON.parse(readFileSync(path, 'utf-8'));
   } catch {
-    return { step, status: 'failed', detail: `invalid MCP local config at ${path}: the file is not valid JSON.` };
+    return refuse('the file is not valid JSON.');
   }
   try {
-    withProcessEnv(env, loadMcpLocalConfig);
+    parseMcpLocalConfig(parsed);
     return { step, status: 'ok', detail: 'MCP local config is valid.' };
   } catch (error) {
-    return { step, status: 'failed', detail: error instanceof Error ? error.message : String(error) };
+    const message = error instanceof Error ? error.message : '';
+    return message.startsWith('unsupported MCP local config version')
+      ? refuse('unsupported version; set "version": 3.')
+      : refuse('the file is refused by the MCP local config loader; docs/CHANGELOG.md (#2443) names the required shape.');
   }
 }
 
@@ -1845,6 +1851,13 @@ export function runGlobalRuntimeSetup(
   const updateMode = opts.updateMode === true;
   const steps: GlobalRuntimeStep[] = [];
 
+  // Before any host write, Bun upgrade included: a refused file stops the update and changes nothing.
+  if (updateMode) {
+    const mcp = checkMcpLocalConfig(env);
+    steps.push(mcp);
+    if (mcp.status === 'failed') return finalizeRuntimeResult(steps);
+  }
+
   const bunRuntime = ensureSupportedBunRuntime(cwd, env, bunExecutable);
   steps.push(bunRuntime);
   if (bunRuntime.status === "failed") {
@@ -1856,13 +1869,6 @@ export function runGlobalRuntimeSetup(
   // hands update to this candidate without --report-language. The process
   // that reaches the host-write section below applies this plan.
   const globalRules = preflightGlobalContextRefresh(sourceRoot, homeDir(env), hostIds(target), opts.reportLanguage);
-
-  // Before any write, as for the seats section: a refused file stops the update and changes nothing.
-  if (updateMode) {
-    const mcp = checkMcpLocalConfig(env);
-    steps.push(mcp);
-    if (mcp.status === 'failed') return finalizeRuntimeResult(steps);
-  }
 
   if (updateMode) {
     const step = 'migrate seats configuration';
