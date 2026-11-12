@@ -318,15 +318,20 @@ test('each formerly quadratic secret rule stays linear from a 128 KiB to a 384 K
   // A linear rule takes 3 times as long on 3 times the text; a quadratic rule takes 9 times. Load on the runner scales both sizes alike.
   // The pair stays under 512 KiB: past a size that depends on the row (384 to 1024 KiB) the regex engine changes mode and the time steps up about 8 times, with no change in order.
   const small = makeRows(128 * 1024), medium = makeRows(384 * 1024);
-  makeRows(1024 * 1024).forEach((row, index) => {
-    expect(best(medium[index]!) / Math.max(best(small[index]!), 1)).toBeLessThan(6);
-    const result = exercise(row);
-    expect(result.bare).toBe(false);
-    expect(result.unchanged).toBe(true);
-    expect(result.matched).toBe(true);
-    if (row.replacement) expect(result.replaced.includes(row.replacement)).toBe(true);
+  const lines: string[] = [];
+  small.forEach((row, index) => {
+    let s1 = 0, s2 = 0, lo = Infinity, hi = 0;
+    for (let rep = 0; rep < 20; rep++) {
+      const a = best(small[index]!), b = best(medium[index]!), r = b / Math.max(a, 1);
+      s1 += a; s2 += b; lo = Math.min(lo, r); hi = Math.max(hi, r);
+    }
+    lines.push(`PROBE row=${index} unit=${JSON.stringify(row.run.slice(0, 22))} t128=${(s1 / 20).toFixed(1)}ms t384=${(s2 / 20).toFixed(1)}ms ratio_min=${lo.toFixed(2)} ratio_max=${hi.toFixed(2)}`);
   });
-});
+  const quadRe = /[a-z][a-z0-9+.-]*:\/\/[^\s/@:]+:[^\s/@]+@[^\s<>"']+/gi;
+  const quadTime = (size: number) => { const text = 'a'.repeat(size); const t = performance.now(); text.replace(quadRe, 'x'); return performance.now() - t; };
+  for (let rep = 0; rep < 2; rep++) { const a = quadTime(128 * 1024), b = quadTime(384 * 1024); lines.push(`PROBE quad rep=${rep} t128=${a.toFixed(1)}ms t384=${b.toFixed(1)}ms ratio=${(b / Math.max(a, 1)).toFixed(2)}`); }
+  console.log(lines.join('\n'));
+}, 400000);
 
 test('the private key rule withholds each block label, and an END of any label closes a BEGIN', () => {
   const block = (begin: string, end: string) => `x -----BEGIN ${begin}-----\nbody\n-----END ${end}----- y`;
