@@ -44,7 +44,7 @@ import {
   requiredExplicitExternalDependencyInstallGroups,
   type SkillSurfaceCatalog,
 } from "../../core/skill-surface/catalog";
-import { loadMcpLocalConfig } from "../mcp/auth";
+import { loadMcpLocalConfig, mcpLocalConfigPath } from "../mcp/auth";
 import { hostSkillRoot, stagedSkillRoot } from "../../effects/host-skill-roots";
 import {
   discoverWindowsProtectedHelperContract,
@@ -1811,14 +1811,22 @@ export function migrateSeatsConfiguration(env: NodeJS.ProcessEnv, runtimeLock?: 
   }, { runtimeLock }).value;
 }
 
-/** Read-only. A refused file reports the loader's text only: the file holds local paths. */
+/**
+ * Read-only preflight. Only the loader's own refusal text passes through: the file
+ * holds local paths, and a JSON.parse message can quote a fragment of it.
+ */
 function checkMcpLocalConfig(env: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const step = 'check MCP local config';
+  const path = withProcessEnv(env, mcpLocalConfigPath);
+  if (!existsSync(path)) return { step, status: 'skipped', detail: 'No MCP local config.' };
   try {
-    const config = withProcessEnv(env, loadMcpLocalConfig);
-    return config === null
-      ? { step, status: 'skipped', detail: 'No MCP local config.' }
-      : { step, status: 'ok', detail: 'MCP local config is valid.' };
+    JSON.parse(readFileSync(path, 'utf-8'));
+  } catch {
+    return { step, status: 'failed', detail: `invalid MCP local config at ${path}: the file is not valid JSON.` };
+  }
+  try {
+    withProcessEnv(env, loadMcpLocalConfig);
+    return { step, status: 'ok', detail: 'MCP local config is valid.' };
   } catch (error) {
     return { step, status: 'failed', detail: error instanceof Error ? error.message : String(error) };
   }
@@ -1849,6 +1857,13 @@ export function runGlobalRuntimeSetup(
   // that reaches the host-write section below applies this plan.
   const globalRules = preflightGlobalContextRefresh(sourceRoot, homeDir(env), hostIds(target), opts.reportLanguage);
 
+  // Before any write, as for the seats section: a refused file stops the update and changes nothing.
+  if (updateMode) {
+    const mcp = checkMcpLocalConfig(env);
+    steps.push(mcp);
+    if (mcp.status === 'failed') return finalizeRuntimeResult(steps);
+  }
+
   if (updateMode) {
     const step = 'migrate seats configuration';
     try {
@@ -1871,7 +1886,7 @@ export function runGlobalRuntimeSetup(
     // The parent has loaded predecessor contracts. The installed candidate owns
     // dependency and daemon verification as well as later host writes.
     if (updateMode && install.status === 'ok' && opts.installSpec && opts.candidateHandoff) {
-      steps.push(reconcileWithInstalledCandidate(opts, cwd, bunExecutable, env, target), checkMcpLocalConfig(env));
+      steps.push(reconcileWithInstalledCandidate(opts, cwd, bunExecutable, env, target));
       return finalizeRuntimeResult(steps);
     }
     if (updateMode && install.status === "ok" && opts.installSpec) {
@@ -2026,7 +2041,5 @@ export function runGlobalRuntimeSetup(
     steps.push({ ...pi, ...(pi.created ? { owned_surface: piPackageSurface(pi.source) } : {}) });
   }
   steps.push(writeRuntimeIgnoreRules(env));
-  // Only the parent runs the check: the candidate reconciliation fails on any failed step and would roll the update back.
-  if (updateMode && opts.candidateHandoff) steps.push(checkMcpLocalConfig(env));
   return finalizeRuntimeResult(steps);
 }

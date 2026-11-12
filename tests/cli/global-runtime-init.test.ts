@@ -63,6 +63,36 @@ test('update removes stored routing mode and hyper values once, keeps a null wor
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
+test('update preflight stops on a refused mcp.local.json before the seats write and quotes no file content', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-preflight-'));
+  const home = join(tmp, 'home');
+  const fakeBin = join(tmp, 'bin');
+  try {
+    mkdirSync(join(home, '.repo-harness'), { recursive: true });
+    mkdirSync(fakeBin, { recursive: true });
+    writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
+    const config = join(home, '.repo-harness', 'config.json');
+    writeFileSync(config, JSON.stringify({ seats: { ...DEFAULT_SEATS_CONFIG, 'worker-light': null, 'gatekeeper-fallback': undefined } }));
+    const before = readFileSync(config, 'utf8');
+    const run = () => runGlobalRuntimeSetup({
+      sourceRoot: ROOT, cwd: tmp, plugins: [], installCli: false, updateMode: true, syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
+      env: { ...sanitizedChildEnv(), HOME: home, REPO_HARNESS_HOME: join(home, '.repo-harness'), BUN_INSTALL: join(home, '.bun'), PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun') },
+    });
+    const mcp = join(home, '.repo-harness', 'mcp.local.json');
+    writeFileSync(mcp, '{"version":2,"permissions":{"allowedRoots":["/private/secret-root"]}}');
+    const refused = run();
+    expect(refused.exitCode).toBe(1);
+    expect(refused.steps.at(-1)).toMatchObject({ step: 'check MCP local config', status: 'failed', detail: expect.stringContaining('unsupported MCP local config version: 2') });
+    expect(refused.steps.some(step => step.step === 'migrate seats configuration')).toBe(false);
+    expect(readFileSync(config, 'utf8')).toBe(before);
+    writeFileSync(mcp, '{"allowedRoots": ["/private/secret-root"] oops');
+    const malformed = run();
+    expect(malformed.exitCode).toBe(1);
+    expect(malformed.stdout).toContain('the file is not valid JSON.');
+    expect(malformed.stdout).not.toContain('secret-root');
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+});
+
 // An explicit list never grows, so a host `pi` on the developer PATH cannot change the recorded selection.
 function recordExplicitFullSelection(home: string, plugins: readonly PluginId[] = FULL_PLUGINS): void {
   recordInstallOwnership([], { HOME: home });
@@ -2080,7 +2110,7 @@ exit 0
       const refusedSteps: { step: string; status: string; detail?: string }[] = JSON.parse(refused.stdout).steps;
       expect(refusedSteps.at(-1)).toMatchObject({ step: 'check MCP local config', status: 'failed', detail: expect.stringContaining('unsupported MCP local config version: 2') });
       expect(refused.stdout).not.toContain('secret-root');
-      expect(refusedSteps.find(step => step.step === 'reconcile installed candidate runtime')?.status).toBe('ok');
+      expect(refusedSteps.some(step => step.step === 'migrate seats configuration')).toBe(false);
       expect(existsSync(join(home, '.repo-harness', 'config.json'))).toBe(true);
       expect(existsSync(join(repo, '.ai'))).toBe(false);
       expect(existsSync(join(repo, 'tasks'))).toBe(false);
