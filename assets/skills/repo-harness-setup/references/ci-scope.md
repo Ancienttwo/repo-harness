@@ -69,8 +69,7 @@ other families.
    make this job the only required check.
 7. **Every event reports.** The workflow uses no trigger-level `paths` or
    `paths-ignore` filter, because the required gate then never reports. Each
-   accepted event has a mode. If the repo uses a merge queue, `merge_group`
-   gets a mode or fails closed.
+   accepted event has a mode.
 
 ## Protocol
 
