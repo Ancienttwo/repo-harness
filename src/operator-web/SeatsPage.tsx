@@ -310,6 +310,7 @@ function RoutingEditor({ form, settings, quota, locked, t }: {
   const onCredits = SEAT_IDS.filter(id => draft[id] !== null && seatOnCredits(id, draft[id]!, accounts));
   const thresholds = [
     { field: 'claude_saving_below_remaining', account: 'claude', quota: accounts.claude },
+    { field: 'claude_hyper_at_or_above_remaining', account: 'claude', quota: accounts.claude },
     { field: 'codex_hyper_at_or_above_remaining', account: 'chatgpt', quota: accounts.chatgpt },
   ] as const;
   return (

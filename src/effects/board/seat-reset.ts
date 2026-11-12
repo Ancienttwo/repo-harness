@@ -4,7 +4,7 @@ import { dirname } from 'path';
 import {
   RESET_SEATS, seatNoResetMessage, SEAT_RESET_COMMAND, SEAT_RESET_RETRIES, handoffIdentity, isSeatResetAction, missingHandoffSections, seatResetClaimPath,
   seatResetLogPath, seatResetRequestPath, isSeatSessionSource, seatResetDirectory, seatResumePrompt, seatRewriteMessage, seatSessionPath,
-  type SeatResetAction, type SeatResetIdentity, type SeatSessionSource,
+  type SeatLaunchModel, type SeatResetAction, type SeatResetIdentity, type SeatSessionSource,
 } from '../../core/board/seat-reset';
 import { HerdrCoreError, RH_LABEL, hcGet, hcKeys, hcList, hcSend, hcWait, type HcLabels, type HcWaitResult, type HerdrCoreOptions } from '../terminal/herdr-core';
 import { readNotifyConfig } from '../terminal/notify-read';
@@ -92,30 +92,36 @@ function requestOpen(identity: SeatResetIdentity, request: SeatRequest): boolean
 
 /**
  * The SessionStart hook records each new session segment of a reset seat (`source` startup, clear or compact): the
- * reset command sends the resume prompt only after this signal.
+ * reset command sends the resume prompt only after this signal. The launch model of the session lets a tier-2 reset
+ * see a mode change (#2633).
  */
-export function recordSeatSession(identity: SeatResetIdentity, session: { readonly sessionId: string | null; readonly transcriptPath: string; readonly source: SeatSessionSource }, now: Date): void {
+export function recordSeatSession(identity: SeatResetIdentity, session: SeatLaunchModel & { readonly sessionId: string | null; readonly transcriptPath: string; readonly source: SeatSessionSource }, now: Date): void {
   const path = seatSessionPath(identity);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writeFileSync(path, `${JSON.stringify({ session_id: session.sessionId, transcript_path: session.transcriptPath, source: session.source, started_at: now.toISOString() })}\n`);
+  writeFileSync(path, `${JSON.stringify({ session_id: session.sessionId, transcript_path: session.transcriptPath, source: session.source, started_at: now.toISOString(),
+    model: session.model, effort: session.effort })}\n`);
 }
 
-export interface SeatSessionRecord {
+export interface SeatSessionRecord extends SeatLaunchModel {
   readonly sessionId: string | null;
   readonly transcriptPath: string;
   readonly source: SeatSessionSource;
   readonly startedAt: string;
 }
 
-/** The seat session that the SessionStart hook recorded, or null when the record is missing or any field differs from what `recordSeatSession` writes. */
+/**
+ * The seat session that the SessionStart hook recorded, or null when the record is missing or any field differs from what
+ * `recordSeatSession` writes. A record without the launch model (the old hook) has a null model and effort.
+ */
 export function readSeatSession(identity: SeatResetIdentity): SeatSessionRecord | null {
   let value: unknown;
   try { value = JSON.parse(readFileSync(seatSessionPath(identity), 'utf8')); } catch { return null; }
   if (typeof value !== 'object' || value === null) return null;
-  const { session_id: sessionId, transcript_path: transcriptPath, source, started_at: startedAt } = value as Record<string, unknown>;
+  const { session_id: sessionId, transcript_path: transcriptPath, source, started_at: startedAt, model = null, effort = null } = value as Record<string, unknown>;
   const valid = (sessionId === null || typeof sessionId === 'string') && typeof transcriptPath === 'string' && transcriptPath !== ''
-    && isSeatSessionSource(source) && typeof startedAt === 'string' && isoInstant(startedAt);
-  return valid ? { sessionId, transcriptPath, source, startedAt } : null;
+    && isSeatSessionSource(source) && typeof startedAt === 'string' && isoInstant(startedAt)
+    && (model === null || typeof model === 'string') && (effort === null || typeof effort === 'string');
+  return valid ? { sessionId, transcriptPath, source, startedAt, model, effort } : null;
 }
 
 /** True for the exact `Date.toISOString()` form that `recordSeatSession` writes. */
@@ -312,9 +318,18 @@ export type SeatResetNotify = (env: NodeJS.ProcessEnv, event: {
   readonly repository: string | null; readonly kind: string; readonly data: Record<string, unknown>; readonly text: string;
 }) => Promise<'sent' | 'failed' | 'not_configured'>;
 
+/**
+ * The launch of `repo-harness seats argv <seat> --repository-id <id>` under the current quota: its argv and its effective
+ * model and effort. `modeKnown` is false when the seat account has no fresh weekly reading, so the mode is unknown.
+ */
+export interface SeatRelaunch extends SeatLaunchModel {
+  readonly argv: readonly string[];
+  readonly modeKnown: boolean;
+}
+
 export interface SeatResetOptions extends HerdrCoreOptions {
-  /** The argv of `repo-harness seats argv <seat> --repository-id <id>`, for the relaunch. */
-  readonly relaunchArgv: (identity: SeatResetIdentity) => Promise<readonly string[]>;
+  /** The seat launch for the relaunch and for the model check of a tier-2 reset. */
+  readonly relaunch: (identity: SeatResetIdentity) => Promise<SeatRelaunch>;
   /** Tests only: shorter waits. */
   readonly timeouts?: SeatResetTimeouts;
   /** Posts one notice. Only the peer-runtime plugin supplies it; without it every failure records `not_configured`. */
@@ -338,7 +353,9 @@ const NOTICE_SETTLE_MS = 5_000;
  * valid handoff gets the recorded action, `/compact` or `/clear`; the resume prompt goes out only after the
  * new-session signal. A missing signal after `/clear` types `/clear` again; a missing signal after `/compact` ends
  * the run, and auto-compaction stays as the net. A missing answer to the prompt sends it again. After 3 retries in
- * total the requester starts again from its seat argv in the same terminal. Each failure appends one entry to the
+ * total the requester starts again from its seat argv in the same terminal. A `reset` request whose effective launch
+ * model or effort differs from the session record starts the requester again from its seat argv instead of `/clear`
+ * (#2633); `compact` never restarts. Each failure appends one entry to the
  * reset log, then posts one notice that nothing waits for. A completed request is never reset again.
  */
 export async function runSeatReset(path: string, sha256: string, options: SeatResetOptions): Promise<SeatResetResult> {
@@ -563,9 +580,32 @@ class SeatResetRun {
     return await this.poll(() => (sentResumed(readAppended(session.transcript, offset), this.prompt, this.caller) ? true : null), this.timeouts.evidenceMs) !== null;
   }
 
-  private done(session: NewSession, detail: 'compacted' | 'cleared' | 'relaunched'): Omit<SeatResetResult, 'logErrors'> {
+  private done(session: NewSession, detail: 'compacted' | 'cleared' | 'relaunched' | 'restarted'): Omit<SeatResetResult, 'logErrors'> {
     this.record('reset', detail, { session_id: session.sessionId });
-    return { requester: this.requester, seat: this.identity.seat, relaunched: detail === 'relaunched' };
+    return { requester: this.requester, seat: this.identity.seat, relaunched: detail === 'relaunched' || detail === 'restarted' };
+  }
+
+  /**
+   * The launch of the requester when its effective model or effort differs from the session record, else null. A record
+   * without a model gives null. A launch that cannot be built, or a launch under an unknown quota mode (no fresh weekly
+   * reading: a missing reading is no authority to move a running seat), is logged and gives null: the reset types
+   * `/clear` as before #2633, and the seat keeps its model. A fresh `seats argv` launch still uses the unknown mode.
+   */
+  private async modelChange(): Promise<SeatRelaunch | null> {
+    const session = readSeatSession(this.identity);
+    if (session === null || session.model === null) return null;
+    let launch: SeatRelaunch;
+    try {
+      launch = await this.options.relaunch(this.identity);
+    } catch (error) {
+      this.record('model_check_failed', `relaunch_argv_failed: ${sentence(error)}`);
+      return null;
+    }
+    if (!launch.modeKnown) {
+      this.record('model_check_failed', 'quota_unknown: the seat account has no fresh weekly quota reading, so the seat keeps its model');
+      return null;
+    }
+    return launch.model === session.model && launch.effort === session.effort ? null : launch;
   }
 
   /**
@@ -575,6 +615,8 @@ class SeatResetRun {
    */
   private async resetAndResume(): Promise<Omit<SeatResetResult, 'logErrors'>> {
     const { action } = this.request!;
+    const changed = action === 'reset' ? await this.modelChange() : null;
+    if (changed !== null) return this.relaunch(changed);
     let since = Date.now();
     typeLine(this.requester, SEAT_RESET_COMMAND[action], this.options);
     let session: NewSession | null = null;
@@ -595,7 +637,8 @@ class SeatResetRun {
     }
   }
 
-  private async relaunch(): Promise<Omit<SeatResetResult, 'logErrors'>> {
+  /** `launch` is the launch of a model change; without it the relaunch builds the launch after the retries. */
+  private async relaunch(launch?: SeatRelaunch): Promise<Omit<SeatResetResult, 'logErrors'>> {
     // A relaunched process has no compaction summary, so it gets the prompt with the git and gh check.
     this.prompt = seatResumePrompt(this.identity, this.caller, 'reset');
     const stop = (detail: string, running = false): SeatResetError => {
@@ -609,7 +652,7 @@ class SeatResetRun {
     const script = `${seatResetDirectory(this.identity)}/relaunch.sh`;
     if (!TYPABLE.test(script) || script.includes(' ')) throw stop('relaunch_path_untypable', true);
     try {
-      writeFileSync(script, `${(await this.options.relaunchArgv(this.identity)).map(shellQuote).join(' ')}\n`, { mode: 0o700 });
+      writeFileSync(script, `${(launch ?? await this.options.relaunch(this.identity)).argv.map(shellQuote).join(' ')}\n`, { mode: 0o700 });
     } catch (error) {
       throw stop(`relaunch_argv_failed: ${sentence(error)}`, true);
     }
@@ -624,6 +667,6 @@ class SeatResetRun {
     const session = await this.waitForSession(startedAt, 'reset');
     if (session === null) throw stop('no_signal');
     if (!await this.promptAnswered(session)) throw stop('no_evidence');
-    return this.done(session, 'relaunched');
+    return this.done(session, launch === undefined ? 'relaunched' : 'restarted');
   }
 }

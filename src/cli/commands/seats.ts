@@ -15,8 +15,8 @@ import { HerdrCoreError, RH_LABEL, hcLabel, hcLabelPairs, type HcLabels } from '
 import { PiFleetRolesError, writePiFleetRoles } from '../../effects/board/pi-fleet-roles';
 import { PiShellError, assertPiShell } from '../../effects/board/pi-shell';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
-import { SeatResetError, readSeatSession, readTranscriptUsage, runSeatReset, writeSeatResetRequest, type SeatResetNotify, type TranscriptUsage } from '../../effects/board/seat-reset';
-import { seatResetAction, seatResetIdentity, seatResetSteps } from '../../core/board/seat-reset';
+import { SeatResetError, readSeatSession, readTranscriptUsage, runSeatReset, writeSeatResetRequest, type SeatRelaunch, type SeatResetNotify, type TranscriptUsage } from '../../effects/board/seat-reset';
+import { seatResetAction, seatResetIdentity, seatResetSteps, type SeatResetIdentity } from '../../core/board/seat-reset';
 
 const CLI_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
 
@@ -109,8 +109,13 @@ function plannedGatekeeper(route: SeatRouteV1): SeatConfigV1 {
   return route.seat;
 }
 
-/** The seat config that launches for `id` under the current quota, or the quota refusal. */
-async function quotaCheckedSeat(id: LaunchSeatId, seats: SeatsConfigV1, configured: SeatConfigV1, env: NodeJS.ProcessEnv): Promise<SeatConfigV1> {
+/**
+ * The seat config that launches for `id` under the current quota, or the quota refusal. `modeKnown` is false when the
+ * account of the launched seat has no fresh weekly reading (missing, unreadable or stale capture), so its mode is unknown.
+ */
+async function quotaCheckedSeat(id: LaunchSeatId, seats: SeatsConfigV1, configured: SeatConfigV1, env: NodeJS.ProcessEnv): Promise<{
+  readonly seat: SeatConfigV1; readonly modeKnown: boolean;
+}> {
   const readings: QuotaReading[] = [];
   const read = async (account: QuotaAccount | null) => {
     if (account === 'claude') readings.push(readClaudeQuota(env));
@@ -138,11 +143,28 @@ async function quotaCheckedSeat(id: LaunchSeatId, seats: SeatsConfigV1, configur
   if (account === 'claude' && id !== 'advisor' && id !== 'orchestrator' && claudeReserved(quota)) {
     throw new SeatsCommandError('seat_quota_reserved', 'Claude is reserved for the advisor and the orchestrator. Use the quota routes.');
   }
-  return gatekeeper?.id === 'gatekeeper-fallback' ? gatekeeper.seat : effectiveSeatConfig(id, seats, quota)!;
+  return { seat: gatekeeper?.id === 'gatekeeper-fallback' ? gatekeeper.seat : effectiveSeatConfig(id, seats, quota)!,
+    modeKnown: account === null || quota[account].mode !== 'unknown' };
 }
 
-export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd(), planned?: SeatRouteV1): Promise<SeatLaunchV1 & {
-  readonly labels: readonly string[]; readonly name: string | null; readonly tab: string | null;
+type SeatLaunchResult = SeatLaunchV1 & { readonly labels: readonly string[]; readonly name: string | null; readonly tab: string | null };
+
+export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd(), planned?: SeatRouteV1): Promise<SeatLaunchResult> {
+  return (await effectiveSeatLaunch(seat, labels, env, cwd, planned)).launch;
+}
+
+/**
+ * The launch of a reset seat for `seats reset` (#2633): its argv, its effective model and effort, and whether the quota
+ * mode that chose them is known.
+ */
+export async function seatResetLaunch(identity: SeatResetIdentity, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): Promise<SeatRelaunch> {
+  const { launch, effective, modeKnown } = await effectiveSeatLaunch(identity.seat, { repositoryId: identity.repository }, env, cwd);
+  return { argv: launch.argv, model: effective.model, effort: effective.effort, modeKnown };
+}
+
+/** The launch and the effective seat config that it starts; the seat reset compares the config with the session record (#2633). */
+async function effectiveSeatLaunch(seat: string, labels: SeatLabelInput, env: NodeJS.ProcessEnv, cwd: string, planned?: SeatRouteV1): Promise<{
+  readonly launch: SeatLaunchResult; readonly effective: SeatConfigV1; readonly modeKnown: boolean;
 }> {
   const id = seatId(seat);
   let config: Record<string, unknown>;
@@ -156,7 +178,8 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
   if (configured === null) throw new SeatsCommandError('seat_not_configured', `The ${id} seat is not configured. Configure it in the seats section before launch.`);
   // The board review passes the gatekeeper route that its plan checked: the launched seat is the planned one, with no second quota read.
   // The config is still read for the source of the brief and for the migration error.
-  const effective = id === 'gatekeeper' && planned !== undefined ? plannedGatekeeper(planned) : await quotaCheckedSeat(id, seats, configured, env);
+  const { seat: effective, modeKnown } = id === 'gatekeeper' && planned !== undefined ? { seat: plannedGatekeeper(planned), modeKnown: true }
+    : await quotaCheckedSeat(id, seats, configured, env);
   if (effective.runtime === 'pi') await assertPiShell(env, cwd);
   const labelSet = seatLabels(id, labels);
   // The pane name needs the registry prefix, so it comes only with the seat labels.
@@ -170,11 +193,11 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
     : [];
   const piRoleDirectory = effective.runtime === 'pi' && effective.fleet.length > 0 ? writePiFleetRoles(effective.fleet, env) : undefined;
   const launch = buildSeatLaunch(id, effective, config.seats === undefined ? 'defaults' : 'seats', agentTypes, name ?? undefined, labels.repositoryId, piRoleDirectory);
-  return {
+  return { effective, modeKnown, launch: {
     ...launch,
     argv: labelSet === undefined ? launch.argv : selfLabelingArgv(id, labels, launch.argv),
     labels: labelSet === undefined ? [] : hcLabelPairs(labelSet), name, tab,
-  };
+  } };
 }
 
 /**
@@ -295,7 +318,7 @@ export function buildSeatsCommand(loadNotify?: () => Promise<SeatResetNotify>): 
       try {
         const result = await runSeatReset(handoff, sha256, {
           ...(loadNotify === undefined ? {} : { notify: await loadNotify() }),
-          relaunchArgv: async identity => (await seatLaunch(identity.seat, { repositoryId: identity.repository })).argv,
+          relaunch: identity => seatResetLaunch(identity),
         });
         process.stdout.write(`${JSON.stringify({ ok: true, ...result })}\n`);
       } catch (error) {

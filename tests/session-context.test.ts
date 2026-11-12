@@ -121,14 +121,15 @@ describe("SessionStart host envelope", () => {
     const now = new Date("2026-11-08T09:00:00.000Z");
     const start = (source: string) => getHandlerForRoute(getRoute("SessionStart", "default")!).run({
       event: "SessionStart", repoRoot: f.root, payload: { source, transcript_path: "/x/new.jsonl" }, identity: hookIdentity({ sessionId: "s-1" }),
-      env: { ...process.env, HOME: f.home, REPO_HARNESS_SEAT: "advisor", REPO_HARNESS_SEAT_REPOSITORY: repository }, now,
+      env: { ...process.env, HOME: f.home, REPO_HARNESS_SEAT: "advisor", REPO_HARNESS_SEAT_REPOSITORY: repository, REPO_HARNESS_SEAT_MODEL: "fable", REPO_HARNESS_SEAT_EFFORT: "high" }, now,
       collector: createStateInputCollector({ repoRoot: f.root, resolveEffectiveState: () => ({ ok: true, state: resolveEffectiveState(f.root) }) }),
     });
     try {
       start("resume");
       expect(existsSync(signal)).toBe(false);
       start("clear");
-      expect(JSON.parse(readFileSync(signal, "utf8"))).toEqual({ session_id: "s-1", transcript_path: "/x/new.jsonl", source: "clear", started_at: now.toISOString() });
+      // The record holds the launch model of the seat env (#2633).
+      expect(JSON.parse(readFileSync(signal, "utf8"))).toEqual({ session_id: "s-1", transcript_path: "/x/new.jsonl", source: "clear", started_at: now.toISOString(), model: "fable", effort: "high" });
       start("compact");
       expect(JSON.parse(readFileSync(signal, "utf8")).source).toBe("compact");
       expect(start("startup").diagnostics ?? "").toBe("");

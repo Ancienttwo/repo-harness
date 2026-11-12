@@ -7,7 +7,7 @@ import type { SkillHost } from '../../effects/host-skill-roots';
 import type { ManagedInstallSurface } from '../installer/install-profile';
 import { architecturePort, isArchitectureUnavailable } from '../../core/architecture/contracts';
 import { globalConfigurationWriter, mutateGlobalConfiguration } from '../../effects/configuration/global-configuration';
-import { DEFAULT_SEATS_CONFIG, ROUTING_CLASSES, SeatsConfigMigrationRequiredError, decodeSeatsConfig } from '../../core/board/seats-settings';
+import { DEFAULT_SEATS_CONFIG, INTRODUCED_ROUTING_DEFAULTS, ROUTING_CLASSES, SeatsConfigMigrationRequiredError, decodeSeatsConfig } from '../../core/board/seats-settings';
 import { checkSeatRoutingModels, seatsRanges } from '../../effects/board/seats-configuration';
 import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { upsertManagedBlock } from "../../core/adoption/managed-block";
@@ -1816,7 +1816,7 @@ export function migrateSeatsConfiguration(env: NodeJS.ProcessEnv, runtimeLock?: 
         codex_hyper_at_or_above_remaining: DEFAULT_SEATS_CONFIG.routing.codex_hyper_at_or_above_remaining };
     }
     if (typeof routing === 'object' && routing !== null && !Array.isArray(routing)) {
-      routing = { codex_credit_mode: DEFAULT_SEATS_CONFIG.routing.codex_credit_mode, codex_credit_floor: DEFAULT_SEATS_CONFIG.routing.codex_credit_floor, ...routing };
+      routing = { ...INTRODUCED_ROUTING_DEFAULTS, ...routing };
     }
     const seats = decodeSeatsConfig({ ...introduced, 'worker-light': null, ...stored, ...(routing === undefined ? {} : { routing }) });
     checkSeatRoutingModels(seats.routing);

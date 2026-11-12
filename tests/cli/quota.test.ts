@@ -75,6 +75,20 @@ describe('seat quota routing', () => {
     expect(effectiveSeatConfig('worker-light', DEFAULT_SEATS_CONFIG, quota)).toEqual(DEFAULT_SEATS_CONFIG['worker-light']);
   });
 
+  test.each([
+    [50, 'hyper', 'claude mode: hyper (50% left >= 50%)', 'fable'],
+    [49, 'normal', 'claude mode: normal (49% left >= 20% and < 50%)', 'opus'],
+  ] as const)('Claude %s%% left derives %s; only hyper gives the advisor its config entry (#2633)', (left, mode, modeLine, advisor) => {
+    const quota = seatAccountQuotas([claude({ seven_day: week(100 - left, 84) })], DEFAULT_SEATS_CONFIG.routing);
+    expect(quota.claude.mode).toBe(mode);
+    expect(formatSeatModes(DEFAULT_SEATS_CONFIG, quota).split('\n')[0]).toBe(modeLine);
+    const lines = formatSeatRoutes(DEFAULT_SEATS_CONFIG, quota).split('\n');
+    expect(lines.at(-1)).toBe(`advisor: advisor (claude ${advisor} high)`);
+    // The orchestrator entry and the worker routes do not change with hyper.
+    expect(effectiveSeatConfig('orchestrator', DEFAULT_SEATS_CONFIG, quota)).toEqual(DEFAULT_SEATS_CONFIG.orchestrator);
+    expect(lines.find(line => line.startsWith('route important_deep:'))).toStartWith('route important_deep: worker-important (claude opus medium');
+  });
+
   test('unknown weekly quota has no derived mode; short-window exhaustion still stops Claude', () => {
     const quota = seatAccountQuotas([claude({ five_hour: week(97, 2) })], DEFAULT_SEATS_CONFIG.routing);
     expect(quota.claude).toMatchObject({ mode: 'unknown', state: 'exhausted', remaining: null });
@@ -86,12 +100,13 @@ describe('seat quota routing', () => {
 
   test('configured thresholds decide modes while other windows keep their exhaustion stop', () => {
     const seats = { ...DEFAULT_SEATS_CONFIG, routing: { ...DEFAULT_SEATS_CONFIG.routing,
-      claude_saving_below_remaining: 60, codex_hyper_at_or_above_remaining: 80 } };
+      claude_saving_below_remaining: 60, claude_hyper_at_or_above_remaining: 40, codex_hyper_at_or_above_remaining: 80 } };
     const accounts = [claude({ seven_day: week(50, 84), five_hour: week(95, 2) }),
       classifyQuotaReading(decodeCodexRateLimitsResult({ rateLimits: {
         primary: { usedPercent: 40, windowDurationMins: 10080, resetsAt: (NOW + 84 * HOUR) / 1000 },
       } }, new Date(NOW).toISOString()), NOW)];
     const quota = seatAccountQuotas(accounts, seats.routing);
+    // Saving wins below its own threshold, also at or above the Claude hyper threshold.
     expect(formatSeatModes(seats, quota)).toBe('claude mode: saving (50% left < 60%)\ncodex mode: normal (60% left < 80%)');
     expect(formatSeatRoutes(seats, quota)).toContain('route frontend: none (claude exhausted, reserved for advisor and orchestrator; frontend waits for claude)');
   });
@@ -370,7 +385,7 @@ describe('repo-harness quota', () => {
     const lines = text.stdout.trim().split('\n');
     expect(lines.slice(0, 2).map(line => line.split(' | ')[0])).toEqual(['claude: exhausted', 'chatgpt: normal']);
     expect(lines.slice(2, 4)).toEqual(['claude mode: saving (5% left < 20%)', 'codex mode: hyper (99% left >= 50%)']);
-    expect(lines.slice(4).map(line => line.split(':')[0])).toEqual(['route important_deep', 'route important_fast', 'route simple_deep', 'route simple_fast', 'route frontend', 'explorer', 'gatekeeper', 'reviewer']);
+    expect(lines.slice(4).map(line => line.split(':')[0])).toEqual(['route important_deep', 'route important_fast', 'route simple_deep', 'route simple_fast', 'route frontend', 'explorer', 'gatekeeper', 'reviewer', 'advisor']);
   });
 
   test('the stored review credit mode routes the gatekeeper on credits and keeps the account line exhausted', () => {
