@@ -85,11 +85,6 @@ function remoteUrls(root: string, env: NodeJS.ProcessEnv, gitBin: string | undef
   });
 }
 
-/** The URL without its `user:password@` part: a remote URL can hold a token, and the detail leaves the process. */
-function withoutCredentials(url: string): string {
-  return url.replace(/^([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^/]*@/u, '$1');
-}
-
 function readFailure(error: unknown): DocsPlainReason {
   if (error instanceof DocsReadError) {
     if (error.code === 'branch_missing') return 'branch_missing';
@@ -117,11 +112,12 @@ export function startDocsCollector(options: DocsCollectorOptions): DocsCollector
     // close() ran during the await: start no process and no scan. No later await comes before reader.start().
     if (signal.aborted || urls === null) return unavailable('docs_reader_unavailable');
     const github = source.github.toLowerCase();
-    const remotes = [...urls].filter(([, url]) => githubRemoteRepository(url) === github).map(([name]) => name);
+    // Only names and parsed repositories leave this function: a URL can hold a credential.
+    const parsed = [...urls].map(([name, url]) => ({ name, github: githubRemoteRepository(url) }));
+    const remotes = parsed.filter(remote => remote.github === github).map(remote => remote.name);
     if (remotes.length === 0) {
       retire(repo.id);
-      const detail = { github: source.github, remotes: [...urls].map(([name, url]) => ({ name, url: withoutCredentials(url) })) };
-      return { state: 'unavailable', reason: 'github_remote_missing', detail };
+      return { state: 'unavailable', reason: 'github_remote_missing', detail: { github: source.github, remotes: parsed } };
     }
     if (remotes.length > 1) return unavailable('github_remote_ambiguous');
     const ref = `refs/remotes/${remotes[0]}/${source.default_branch}`;

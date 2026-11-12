@@ -111,14 +111,15 @@ test('a branch GitHub did not name, a missing first Dev Activity cycle and a mis
   }
 });
 
-test('github_remote_missing names the GitHub repository it expected and each remote it read, without URL credentials', async () => {
-  const f = fixture({ origin: 'https://user:token@github.com/Ancienttwo/repo-harness.git', mirror: 'git@github.com:Owner/Repo.git' });
+test('github_remote_missing names the GitHub repository it expected and each remote with its parsed repository, never a URL', async () => {
+  const f = fixture({ origin: 'https://user:token@github.com/Ancienttwo/repo-harness.git', mirror: 'https://gitlab.example/owner/repo.git' });
   const docs = collect(f, activity(f.id, 'aimpact-inc/repo-harness', 'main'));
   await docs.settled();
   expect(docs.read(f.id)).toEqual({ state: 'unavailable', reason: 'github_remote_missing', detail: {
     github: 'aimpact-inc/repo-harness',
-    remotes: [{ name: 'origin', url: 'https://github.com/Ancienttwo/repo-harness.git' }, { name: 'mirror', url: 'git@github.com:Owner/Repo.git' }],
+    remotes: [{ name: 'origin', github: 'ancienttwo/repo-harness' }, { name: 'mirror', github: null }],
   } });
+  expect(JSON.stringify(docs.read(f.id))).not.toMatch(/token|@|:\/\//u);
 });
 
 test('two remotes of the same GitHub repository are ambiguous; an invalid registry is unavailable', async () => {

@@ -1672,7 +1672,7 @@ export async function startOperatorServer(
         if (cache.reason === 'github_remote_missing') {
           // The message names what the collector compared; `detail` carries the same data for the console.
           const { github, remotes } = cache.detail;
-          const read = remotes.length === 0 ? 'none' : remotes.map(remote => `${remote.name} ${remote.url}`).join(', ');
+          const read = remotes.length === 0 ? 'none' : remotes.map(remote => `${remote.name} (${remote.github ?? 'not a GitHub URL'})`).join(', ');
           const body = errorBody(cache.reason, `No git remote points to the GitHub repository ${github}. Remotes read: ${read}.`, refusal.next_action);
           sendRefusal(request, response, refusal.status, { error: { ...body.error, detail: cache.detail } }, headOnly);
           return;

@@ -139,7 +139,7 @@ function Refusal({ read, t }: { readonly read: Extract<DocsRead<unknown>, { read
             <span>{t('docs.remote.expected', { github: read.detail.github })}</span>
             {read.detail.remotes.length === 0
               ? <span>{t('docs.remote.none')}</span>
-              : read.detail.remotes.map(remote => <code key={remote.name} className="[overflow-wrap:anywhere]">{remote.name} {remote.url}</code>)}
+              : read.detail.remotes.map(remote => <code key={remote.name} className="[overflow-wrap:anywhere]">{remote.name} → {remote.github ?? t('docs.remote.not_github')}</code>)}
           </span>
         )}
         <code className="text-xs text-kumo-subtle">{reason}</code>

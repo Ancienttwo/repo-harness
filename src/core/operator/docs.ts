@@ -26,8 +26,8 @@ export type DocsUnavailableReason = typeof DOCS_UNAVAILABLE_REASONS[number];
 export interface DocsRemoteMismatchV1 {
   /** The GitHub repository Dev Activity named, `owner/name`. */
   readonly github: string;
-  /** Each local remote and its URL as git config holds it, with URL credentials removed. */
-  readonly remotes: readonly { readonly name: string; readonly url: string }[];
+  /** Each local remote by name, with the GitHub repository parsed from its URL; null when the URL is not a GitHub URL. No URL text: a URL can hold a credential. */
+  readonly remotes: readonly { readonly name: string; readonly github: string | null }[];
 }
 
 export interface DocsTreeV1 {
@@ -98,7 +98,7 @@ function decoder(label: string) {
 }
 
 const GITHUB_REPOSITORY = /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/u;
-const REMOTE_TEXT = /^[^\x00-\x1f\x7f]{1,4096}$/u;
+const REMOTE_NAME = /^[^\x00-\x1f\x7f]{1,4096}$/u;
 
 export function decodeDocsRemoteMismatch(value: unknown): DocsRemoteMismatchV1 {
   const d = decoder('docs remote mismatch');
@@ -106,9 +106,9 @@ export function decodeDocsRemoteMismatch(value: unknown): DocsRemoteMismatchV1 {
   d.match(v.github, GITHUB_REPOSITORY, 'github');
   if (!Array.isArray(v.remotes)) d.fail('remotes');
   for (const raw of v.remotes as unknown[]) {
-    const remote = d.obj(raw, ['name', 'url'], 'remote');
-    d.match(remote.name, REMOTE_TEXT, 'remote name');
-    d.match(remote.url, REMOTE_TEXT, 'remote url');
+    const remote = d.obj(raw, ['name', 'github'], 'remote');
+    d.match(remote.name, REMOTE_NAME, 'remote name');
+    if (remote.github !== null) d.match(remote.github, GITHUB_REPOSITORY, 'remote github');
   }
   return value as DocsRemoteMismatchV1;
 }
