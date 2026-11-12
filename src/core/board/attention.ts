@@ -514,6 +514,8 @@ function r6(context: Context): void {
   if (plan.status !== 'observed') return skip(context, 'R6', plan.status === 'absent' ? 'plan_absent' : 'plan_unavailable');
   if (context.board.execution.status === 'unavailable') return skip(context, 'R6', context.board.execution.reason);
   const terminals = workerTerminals(context, 'R6');
+  // A live terminal with an unknown seat may be a worker, so the free count is unknown (workerTerminals listed the reason).
+  if (context.board.execution.terminals.some(terminal => terminal.state === 'live' && terminal.seat_status === 'unavailable')) return;
   const open = new Map(items.filter(item => item.state === 'open').map(item => [item.number, item] as const));
   const queued = plan.block.merge_order.flatMap(number => (open.has(number) ? [open.get(number)!] : []));
   const truncated = queued.filter(item => item.claim.status === 'unknown');
@@ -540,7 +542,8 @@ function r7(context: Context): void {
     const last = Math.max(...itemsOf(board, pr).map(number => order.indexOf(number)));
     const earlier = order.slice(0, last).filter(number => onBoard.get(number)?.state !== 'closed');
     for (const number of earlier.filter(entry => !onBoard.has(entry))) skip(context, 'R7', 'item_off_board', `#${number}`);
-    const hold = earlier.find(number => holds.some(entry => entry.issue === number) || onBoard.get(number)?.merge_hold.status === 'held');
+    // An off-board entry has no observed state, so only an open board item is a held candidate.
+    const hold = earlier.find(number => onBoard.get(number)?.state === 'open' && (holds.some(entry => entry.issue === number) || onBoard.get(number)!.merge_hold.status === 'held'));
     if (hold !== undefined) {
       find(context, 'R7', { issues: [hold], pull_requests: [pr.number] }, `#${pr.number} is accepted and waits behind held #${hold} in merge_order; move #${hold} to the tail`);
     }

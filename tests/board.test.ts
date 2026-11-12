@@ -2359,6 +2359,10 @@ describe('rules R6 and R7', () => {
     expect(skipped({ ...queue([1477]), plan: { status: 'absent', truncated: false } }, 'R6')).toEqual([['plan_absent', null]]);
     const cut = { ...queue([1477]), items: recorded.items.map(item => (item.number === 1477 ? { ...item, claim: { status: 'unknown', reason: 'comments_truncated' } as const } : item)) };
     expect([r6(cut), skipped(cut, 'R6')]).toEqual([[], [['comments_truncated', '#1477']]]);
+    const down = { ...queue([1477]), execution: { status: 'unavailable', reason: 'no_seat_terminals' } } as const;
+    expect([r6(down), skipped(down, 'R6')]).toEqual([[], [['no_seat_terminals', null]]]);
+    const unknownSeat = { ...queue([1477]), plan: plan([1477], [], 3), execution: { status: 'observed', terminals: [{ ...worker('t1', 1475), seat_status: 'unavailable', reason: 'seat_label_missing' }] } } as unknown as BoardV1;
+    expect([r6(unknownSeat), skipped(unknownSeat, 'R6')]).toEqual([[], [['seat_label_missing', 't1']]]);
   });
 
   test('R7 fires on an accepted pull request behind a held entry, not behind an open entry that is not held', () => {
@@ -2370,5 +2374,8 @@ describe('rules R6 and R7', () => {
     expect(r7(board([]))).toEqual([]);
     const off = { ...board([]), items: recorded.items.filter(item => item.number !== 1477) };
     expect(skipped(off, 'R7')).toEqual([['item_off_board', '#1477']]);
+    expect(r7({ ...off, plan: plan([1477, 1479], [1477]) })).toEqual([]);
+    const itemHold = { ...board([]), items: recorded.items.map(item => (item.number === 1477 ? { ...item, merge_hold: { status: 'held', holds: [{ comment_url: 'https://github.com/hold', issues: null }] } as const } : item)) };
+    expect(r7(itemHold)).toEqual(['#1494 is accepted and waits behind held #1477 in merge_order; move #1477 to the tail']);
   });
 });
