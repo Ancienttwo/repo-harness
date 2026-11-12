@@ -2291,7 +2291,7 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   writeFileSync(join(edited, 'note.txt'), 'draft');
   const terminal = (address: string, cwd: string | null, labels: Record<string, string>, state: 'live' | 'finished' = 'live', seat: string | null = 'worker') => ({ address, name: null, agent: 'claude-code', state, status: 'done',
     status_kind: null, status_msg: null, status_ms: null, turn: 1, cwd, labels: { ...(seat === null ? {} : { seat }), ...labels } });
-  const terminals = [terminal('t1', clean, { issue: '11' }), terminal('t2', clean, { seat: 'gatekeeper', pr: '21' }), terminal('t3', main, { seat: 'orchestrator' }),
+  const terminals = [terminal('t1', clean, { issue: '11' }), terminal('t2', clean, { seat: 'gatekeeper', pr: '21' }), terminal('t3', join(root, 'gone-caller'), { seat: 'orchestrator' }, 'finished'),
     terminal('t4', kept, { issue: '12' }), terminal('t5', unpushed, { seat: 'reviewer', pr: '22' }), terminal('t6', kept, { issue: '12', pr: '99' }),
     terminal('t7', edited, { seat: 'gatekeeper', pr: '22' }), terminal('t8', main, { seat: 'reviewer', pr: '23' }), terminal('t9', main, { seat: 'reviewer', pr: '24' }),
     terminal('t10', elsewhere, { seat: 'reviewer', pr: '22' }), terminal('t11', main, { seat: 'reviewer', pr: '25' }),
@@ -2330,7 +2330,8 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
 
   const removed = await closeout(21);
   // #2675: the stale record t29 of another pull request is removed and reported apart from the panes; the failed removal of
-  // t31 is reported too and does not keep the worktree; t30 (cwd exists) and t32 (no seat label) stay out of both lists.
+  // t31 is reported too and does not keep the worktree; t30 (cwd exists), t32 (no seat label) and the caller t3, which the host
+  // reports finished with a missing cwd, stay out of both lists.
   expect([removed.panes, removed.stale_terminals, removed.worktree]).toEqual([
     [pane('t1', 'worker', null), pane('t2', 'gatekeeper', null), pane('t12', 'reviewer', null)],
     [pane('t29', 'reviewer', null), pane('t31', 'gatekeeper', 'hc_failed')], state(clean, 'removed', null)]);

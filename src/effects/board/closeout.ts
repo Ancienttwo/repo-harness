@@ -211,9 +211,10 @@ function closePanes(input: BoardCloseoutInput, pr: MergedPullRequest, proof: Clo
   const panes = read.terminals.flatMap((terminal): BoardCloseoutPaneV1[] => {
     const binding = paneBinding(terminal, pr, proof);
     // A finished seat terminal whose cwd directory is gone protects no work of any pull request, so this pass removes its
-    // record also when no merge binds it (#2675). A record without a seat label is a task session that the runtime cleanup owns.
+    // record also when no merge binds it (#2675). A record without a seat label is a task session that the runtime cleanup owns,
+    // and the caller's own terminal is never removed, as on the bound path.
     if (binding === 'none') {
-      if (terminal.labels.seat !== undefined && workGone(terminal)) stale_terminals.push(staleTerminal(terminal, input.host.closeTerminal(terminal.address)));
+      if (terminal.labels.seat !== undefined && terminal.address !== input.caller_terminal && workGone(terminal)) stale_terminals.push(staleTerminal(terminal, input.host.closeTerminal(terminal.address)));
       return [];
     }
     const pane = { address: terminal.address, seat: terminal.labels.seat ?? null };
