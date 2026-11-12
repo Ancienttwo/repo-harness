@@ -1005,7 +1005,7 @@ describe('board office (#1755)', () => {
     expect(recorded.advisor).toBeNull();
     // The door counts the A1 findings only: an accepted, ready pull request that waits for a merge.
     const attention = evaluateBoardAttention(BOARD);
-    const a1 = { rule: 'A1', priority: BOARD_RULE_PRIORITY.A1, route: 'orchestrator', issues: [], pull_requests: [1491], terminals: [], message: '' } as const;
+    const a1 = { rule: 'A1', priority: BOARD_RULE_PRIORITY.A1, route: 'orchestrator', issues: [], pull_requests: [1491], terminals: [], comments: [], message: '' } as const;
     expect(attention.findings.filter(finding => finding.rule !== 'A1').length).toBeGreaterThan(0);
     expect(officeRoom(seatsOf(BOARD), { board: BOARD, attention: { ...attention, findings: attention.findings.filter(finding => finding.rule !== 'A1') } }).merge_waits).toBe(0);
     expect(officeRoom(seatsOf(BOARD), { board: BOARD, attention: { ...attention, findings: [a1, a1] } }).merge_waits).toBe(2);
@@ -2190,7 +2190,7 @@ describe('board office (#1755)', () => {
   test('排雷 marks only the desks that an R2 or R3 finding names', () => {
     const attention = evaluateBoardAttention(BOARD);
     const board = boardWith({ terminals: [seat('t1', 'worker', 1476, 1499, 'working'), seat('t2', 'worker', 1475, 1491, 'working'), seat('t3', 'worker', 1477, null, 'working')] });
-    const finding = (rule: 'R2' | 'R3' | 'R1', pull_requests: readonly number[]) => ({ rule, priority: BOARD_RULE_PRIORITY[rule], route: 'advisor', issues: [], pull_requests, terminals: [], message: '' }) as const;
+    const finding = (rule: 'R2' | 'R3' | 'R1', pull_requests: readonly number[]) => ({ rule, priority: BOARD_RULE_PRIORITY[rule], route: 'advisor', issues: [], pull_requests, terminals: [], comments: [], message: '' }) as const;
     const marks = officeRoom(seatsOf(board), { board, attention: { ...attention, findings: [finding('R1', [1491]), finding('R2', [1499]), finding('R3', [1491])] } }).mines;
     expect([...marks]).toEqual([['t1', 'R2'], ['t2', 'R3']]);
   });

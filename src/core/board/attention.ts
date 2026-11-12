@@ -64,6 +64,8 @@ export interface BoardFindingV1 {
   readonly issues: readonly number[];
   readonly pull_requests: readonly number[];
   readonly terminals: readonly string[];
+  /** The comment URLs the finding is about: an A16 finding names its question, so each question is its own finding. */
+  readonly comments: readonly string[];
   readonly message: string;
 }
 
@@ -89,7 +91,7 @@ interface Context {
   readonly unevaluated: BoardUnevaluatedV1[];
 }
 
-function find(context: Context, rule: BoardRuleId, subject: { issues?: number[]; pull_requests?: number[]; terminals?: string[] }, message: string): void {
+function find(context: Context, rule: BoardRuleId, subject: { issues?: number[]; pull_requests?: number[]; terminals?: string[]; comments?: string[] }, message: string): void {
   context.findings.push(Object.freeze({
     rule,
     priority: BOARD_RULE_PRIORITY[rule],
@@ -97,6 +99,7 @@ function find(context: Context, rule: BoardRuleId, subject: { issues?: number[];
     issues: Object.freeze(subject.issues ?? []),
     pull_requests: Object.freeze(subject.pull_requests ?? []),
     terminals: Object.freeze(subject.terminals ?? []),
+    comments: Object.freeze(subject.comments ?? []),
     message,
   }));
 }
@@ -385,7 +388,7 @@ function a16(context: Context): void {
     for (const question of thread.questions.questions) {
       const waited = context.now - Date.parse(question.created_at);
       if (waited > A16_QUESTION_MS) {
-        find(context, 'A16', thread.subject, `#${thread.number} has a question to the coordinator with no answer for ${minutes(waited)} min (${question.url})`);
+        find(context, 'A16', { ...thread.subject, comments: [question.url] }, `#${thread.number} has a question to the coordinator with no answer for ${minutes(waited)} min (${question.url})`);
       }
     }
   }

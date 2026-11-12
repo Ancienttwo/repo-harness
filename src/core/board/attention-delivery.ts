@@ -35,9 +35,12 @@ type BoardFinding = BoardAttentionV1['findings'][number];
 /**
  * A finding is the same finding while its rule and its subjects stay. The
  * message is not in the key: it holds the minutes, which change each window.
+ * Comments join the key only when the finding names some, so the key of a
+ * finding with no comments, and the sent state that holds it, stay valid.
  */
 export function attentionFindingKey(finding: BoardFinding): string {
-  return JSON.stringify([finding.rule, finding.issues, finding.pull_requests, finding.terminals]);
+  const subjects = [finding.rule, finding.issues, finding.pull_requests, finding.terminals];
+  return JSON.stringify(finding.comments.length === 0 ? subjects : [...subjects, finding.comments]);
 }
 
 /**

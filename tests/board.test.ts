@@ -4,7 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { initGitRepo, run, tmpWorkspace } from './helpers/repo-fixture';
 import { A12_NO_PR_MS, A13_IDLE_MS, A14_RED_MS, A15_FAIL_MS, A16_QUESTION_MS, A17_BLOCKED_MS, BOARD_PRIORITY_ORDER, BOARD_RULE_PRIORITY, evaluateBoardAttention, renderAttentionText, type BoardPriority, type BoardRuleId } from '../src/core/board/attention';
-import { WINDOW_WITH_WORKERS_MS, WINDOW_WITHOUT_WORKERS_MS, planAttentionDeliveries, type AttentionSentV1 } from '../src/core/board/attention-delivery';
+import { WINDOW_WITH_WORKERS_MS, WINDOW_WITHOUT_WORKERS_MS, attentionFindingKey, planAttentionDeliveries, type AttentionSentV1 } from '../src/core/board/attention-delivery';
 import { attentionLogPath, attentionWatchDoctorCheck, runAttentionWindow, serviceTerminalRepository, startAttentionWatch } from '../src/effects/board/attention-watch';
 import { decodeBoard, type BoardHostPortsV1, type BoardItemV1, type BoardPullRequestV1, type BoardTerminalV1, type BoardV1 } from '../src/core/board/board';
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
@@ -1456,6 +1456,13 @@ test('rules A12 to A18 fire past their threshold with their message, not at it, 
     expect([id, messages(board(threshold + MIN))]).toEqual([id, [`${id} ${message}`]]);
     expect([id, messages(board(threshold))]).toEqual([id, []]);
   }
+  // Each question on one thread is its own finding key; a finding with no comments keeps the key of rule and subjects.
+  const second = 'https://github.com/Ancienttwo/repo-harness/issues/1477#issuecomment-2';
+  const asked = item({ open_questions: { status: 'observed', questions: [{ url, created_at: at(A16_QUESTION_MS + MIN) }, { url: second, created_at: at(A16_QUESTION_MS + MIN) }] } });
+  expect(evaluateBoardAttention(asked).findings.filter(finding => finding.rule === 'A16').map(attentionFindingKey))
+    .toEqual([JSON.stringify(['A16', [1477], [], [], [url]]), JSON.stringify(['A16', [1477], [], [], [second]])]);
+  const a17 = evaluateBoardAttention(cases[5]![1](A17_BLOCKED_MS + MIN)).findings.find(finding => finding.rule === 'A17')!;
+  expect(attentionFindingKey(a17)).toBe(JSON.stringify(['A17', [1477], [], []]));
   expect(messages(pr({ merge_readiness: readiness('not_mergeable') }))).toEqual(['A18 #1494 does not merge into feat/1475-hc-transport; the head owner merges main into the branch']);
   expect(messages(pr({ merge_readiness: readiness('checks_failed') }))).toEqual([]);
 
