@@ -170,7 +170,9 @@ describe('Stop seat reset (#1972)', () => {
     const next = join(cwd, 'next.jsonl');
     writeFileSync(next, `${assistant(8_000)}\n`);
     chmodSync(join(dir, 'request.json'), 0o400);
-    expect(stop(false, next)).toMatchObject({ exitCode: 0, systemMessage: expect.stringContaining(`seat reset skipped: EACCES: permission denied, open '${seatResetRequestPath(identity)}'`) });
+    // The read-only request file fails the write. Windows reports EPERM where POSIX reports EACCES.
+    const denied = process.platform === 'win32' ? 'EPERM: operation not permitted' : 'EACCES: permission denied';
+    expect(stop(false, next)).toMatchObject({ exitCode: 0, systemMessage: expect.stringContaining(`seat reset skipped: ${denied}, open '${seatResetRequestPath(identity)}'`) });
   });
 
   test('the tail reader finds the last assistant entry past a cut window line and without a final newline', () => {
