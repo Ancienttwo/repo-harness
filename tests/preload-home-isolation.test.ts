@@ -477,41 +477,59 @@ test.skipIf(process.platform !== "win32")("TEMP #2609 acquire probe", async () =
   }
 }, 600_000);
 
-test.skipIf(process.platform !== "win32")("TEMP #2609 ticket read probe", async () => {
-  const home = realpathSync(mkdtempSync(join(tmpdir(), "rh-2609b-")));
-  const dir = join(home, "host-test-queue", "tickets");
-  mkdirSync(dir, { recursive: true });
-  const code = `import { renameSync, unlinkSync, writeFileSync } from "node:fs";
+// Part a: the writer unlinks tickets. Part b: the writer renames over an EXISTING ticket.
+// The reader runs the fixed readHostTestQueueState, so a throw is an EPERM that is not a vanished ticket.
+const ticketProbe = {
+  a: `import { unlinkSync, writeFileSync } from "node:fs";
     import { join } from "node:path";
-    const dir = process.argv[1];
+    const dir = process.argv[1]; const rows = [];
     for (let i = 0; i < 20000; i++) {
       const path = join(dir, "t" + (i % 4) + ".json");
-      writeFileSync(path + ".tmp", "{}\\n"); renameSync(path + ".tmp", path);
-      try { unlinkSync(path); } catch {}
-    }`;
-  const { readHostTestQueueState } = await import("../src/effects/locking/host-test-queue.ts");
-  const fs = await import("node:fs");
-  const env = { ...process.env, REPO_HARNESS_HOME: home };
-  const child = Bun.spawn([process.execPath, "-e", code, dir], { stdout: "ignore", stderr: "pipe" });
-  const rows: string[] = [];
-  let reads = 0;
-  try {
-    while (child.exitCode === null) {
-      reads++;
-      try { readHostTestQueueState(env); } catch (e) {
-        const err = e as NodeJS.ErrnoException;
-        let ls: string;
-        try { ls = `ok(file=${fs.lstatSync(err.path ?? dir).isFile()})`; } catch (x) { ls = String((x as NodeJS.ErrnoException).code); }
-        rows.push([err.code, err.syscall, ls].join("|"));
-      }
-      if (reads % 64 === 0) await Bun.sleep(0);
+      try { writeFileSync(path, "{}\\n"); } catch (e) { rows.push("write|" + e.code + "|" + e.syscall); }
+      try { unlinkSync(path); } catch (e) { rows.push("unlink|" + e.code + "|" + e.syscall); }
     }
-    const exit = await child.exited;
-    console.log(`[#2609b] child exit=${exit} stderr=${(await new Response(child.stderr).text()).slice(0, 400)}`);
-    console.log(`[#2609b] reads=${reads} throws=${rows.length} signatures (code|syscall|lstat)=${probeSummary(rows)}`);
-  } finally {
-    child.kill();
-    await child.exited;
-    rmSync(home, { recursive: true, force: true });
-  }
-}, 600_000);
+    console.log(JSON.stringify(rows));`,
+  b: `import { renameSync, writeFileSync } from "node:fs";
+    import { join } from "node:path";
+    const dir = process.argv[1]; const rows = [];
+    for (let n = 0; n < 4; n++) writeFileSync(join(dir, "t" + n + ".json"), "{}\\n");
+    for (let i = 0; i < 20000; i++) {
+      const path = join(dir, "t" + (i % 4) + ".json");
+      try { writeFileSync(path + ".tmp", "{}\\n"); renameSync(path + ".tmp", path); } catch (e) { rows.push("rename|" + e.code + "|" + e.syscall); }
+    }
+    console.log(JSON.stringify(rows));`,
+};
+
+for (const part of ["a", "b"] as const) {
+  test.skipIf(process.platform !== "win32")(`TEMP #2609 ticket read probe part ${part}`, async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "rh-2609b-")));
+    const dir = join(home, "host-test-queue", "tickets");
+    mkdirSync(dir, { recursive: true });
+    const { readHostTestQueueState } = await import("../src/effects/locking/host-test-queue.ts");
+    const fs = await import("node:fs");
+    const env = { ...process.env, REPO_HARNESS_HOME: home };
+    const child = Bun.spawn([process.execPath, "-e", ticketProbe[part], dir], { stdout: "pipe", stderr: "pipe" });
+    const rows: string[] = [];
+    let reads = 0;
+    try {
+      while (child.exitCode === null) {
+        reads++;
+        try { readHostTestQueueState(env); } catch (e) {
+          const err = e as NodeJS.ErrnoException;
+          let ls: string;
+          try { ls = `ok(file=${fs.lstatSync(err.path ?? dir).isFile()})`; } catch (x) { ls = String((x as NodeJS.ErrnoException).code); }
+          rows.push(["reader", err.code, err.syscall, ls].join("|"));
+        }
+        if (reads % 64 === 0) await Bun.sleep(0);
+      }
+      const [out, err, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+      const writerRows = JSON.parse(out.trim().split(/\r?\n/).pop() || "[]") as string[];
+      console.log(`[#2609${part}] child exit=${exit} stderr=${err.slice(0, 300)}`);
+      console.log(`[#2609${part}] reads=${reads} reader throws=${rows.length} writer errors=${writerRows.length} signatures=${probeSummary([...rows, ...writerRows])}`);
+    } finally {
+      child.kill();
+      await child.exited;
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 600_000);
+}
