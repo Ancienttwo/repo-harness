@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { initGitRepo, run, tmpWorkspace } from './helpers/repo-fixture';
-import { A12_NO_PR_MS, A13_IDLE_MS, A14_RED_MS, A15_FAIL_MS, A16_QUESTION_MS, A17_BLOCKED_MS, BOARD_PRIORITY_ORDER, BOARD_RULE_PRIORITY, evaluateBoardAttention, renderAttentionText, type BoardPriority, type BoardRuleId } from '../src/core/board/attention';
+import { A12_NO_PR_MS, A13_IDLE_MS, A14_RED_MS, A15_FAIL_MS, A16_QUESTION_MS, A17_BLOCKED_MS, A20_STUCK_MS, BOARD_PRIORITY_ORDER, BOARD_RULE_PRIORITY, evaluateBoardAttention, renderAttentionText, type BoardPriority, type BoardRuleId } from '../src/core/board/attention';
 import { WINDOW_WITH_WORKERS_MS, WINDOW_WITHOUT_WORKERS_MS, attentionFindingKey, planAttentionDeliveries, type AttentionSentV1 } from '../src/core/board/attention-delivery';
 import { attentionLogPath, attentionWatchDoctorCheck, runAttentionWindow, serviceTerminalRepository, startAttentionWatch } from '../src/effects/board/attention-watch';
 import { decodeBoard, type BoardHostPortsV1, type BoardItemV1, type BoardPullRequestV1, type BoardTerminalV1, type BoardV1 } from '../src/core/board/board';
@@ -896,7 +896,7 @@ test('each attention finding names its priority, and a delivery sorts the entrie
   // The priority has one source, and the record names every rule of the protocol.
   expect(BOARD_RULE_PRIORITY).toEqual({
     A1: 'P2', A3: 'P0', A4: 'P1', A5: 'P1', A6: 'P1', A7: 'P2', A8: 'P3', A9: 'P3', A10: 'P2', A11: 'P2',
-    A12: 'P1', A13: 'P1', A14: 'P2', A15: 'P2', A16: 'P1', A17: 'P1', A18: 'P2', A19: 'P1',
+    A12: 'P1', A13: 'P1', A14: 'P2', A15: 'P2', A16: 'P1', A17: 'P1', A18: 'P2', A19: 'P1', A20: 'P2',
     R1: 'P2', R2: 'P2', R3: 'P1', R4: 'P2', R5: 'P1', R6: 'P1', R7: 'P2',
   });
   expect(attention.findings.map(finding => [finding.rule, finding.priority])).toContainEqual(['A3', 'P0']);
@@ -1556,6 +1556,34 @@ test('A19 fires for a done review seat whose pull request has no record of its h
   expect(a19(board(seat({ status_ms: null })))).toEqual([[], [['status_time_missing', 't9']]]);
   expect(a19(board(seat({ agent: null })))).toEqual([[], [['harness_unknown', 't9']]]);
   expect(a19(board(seat(), { status: 'unknown', reason: 'comments_truncated' }))).toEqual([[], [['comments_truncated', '#1494']]]);
+});
+
+test('A20 fires for a required check that is pending or missing past the threshold after the head commit', () => {
+  const recorded = replay();
+  const MIN = 60_000;
+  const at = (age: number) => new Date(Date.parse(recorded.observed_at) - age).toISOString();
+  const contexts = [{ name: 'Required / CI', status: 'pending' }, { name: 'lint', status: 'success' }, { name: 'build', status: 'missing' }] as const;
+  const board = (patch: Partial<BoardPullRequestV1>, held = false): BoardV1 => ({ ...recorded,
+    plan: held ? { status: 'observed', comment_url: 'https://github.com/plan', created_at: recorded.observed_at, revision: 1,
+      block: { protocol: 2, kind: 'repo-harness.plan', merge_order: [], holds: [{ issue: 1479, reason: 'held' }], seat_limits: { worker: 3 } } } : recorded.plan,
+    pull_requests: recorded.pull_requests.map(entry => (entry.number === 1494 ? { ...entry, is_draft: false, ...patch } : entry)) });
+  const a20 = (value: BoardV1) => {
+    const attention = evaluateBoardAttention(value);
+    return [attention.findings.filter(finding => finding.rule === 'A20').map(finding => [finding.message, finding.pull_requests, finding.priority, finding.route]),
+      attention.unevaluated.filter(entry => entry.rule === 'A20').map(entry => [entry.reason, entry.subject])];
+  };
+  for (const status of ['pending', 'missing'] as const) {
+    const check = { status, contexts } as const;
+    const fired = [[`#1494 required check is ${status} for 61 min after its head commit: Required / CI, build`, [1494], 'P2', 'orchestrator']];
+    expect(a20(board({ required_check: check, head_committed_at: at(A20_STUCK_MS + MIN) }))).toEqual([fired, []]);
+    expect(a20(board({ required_check: check, head_committed_at: at(A20_STUCK_MS) }))).toEqual([[], []]);
+    // A draft and a held pull request do not fire.
+    expect(a20(board({ required_check: check, head_committed_at: at(A20_STUCK_MS + MIN), is_draft: true }))).toEqual([[], []]);
+    expect(a20(board({ required_check: check, head_committed_at: at(A20_STUCK_MS + MIN) }, true))).toEqual([[], []]);
+  }
+  expect(a20(board({ required_check: { status: 'success', completed_at: at(MIN), contexts }, head_committed_at: at(A20_STUCK_MS + MIN) }))).toEqual([[], []]);
+  expect(a20(board({ required_check: { status: 'unavailable', reason: 'protection_unreadable' }, head_committed_at: at(A20_STUCK_MS + MIN) })))
+    .toEqual([[], [['protection_unreadable', '#1494']]]);
 });
 
 test('R2 does not count docs/CHANGELOG.md as a shared file', () => {

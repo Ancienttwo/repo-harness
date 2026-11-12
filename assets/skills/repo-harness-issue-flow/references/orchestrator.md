@@ -446,6 +446,9 @@ the board. It holds no state of its own, so it cannot drift from the board.
   request that the entry names, else the parent issue. The watcher sends
   a finding once, until its rule or its subjects change;
   `repo-harness board attention --parent <n>` gives all open findings.
+  Rule A20 names an open PR whose required check is `pending` or `missing`
+  more than 60 min after its head commit: read the run, and when it holds
+  no job, cancel it and start it again by JD.
   Start the watcher of a batch parent with
   `repo-harness board attention start --parent <n>`. When the watcher
   exits, hc types a note `t<id> exited (exit <n>)` into your terminal:
