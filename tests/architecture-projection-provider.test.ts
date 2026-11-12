@@ -22,7 +22,7 @@ import {
   type ProjectionRequestV1,
   type ProjectionResultV2,
 } from 'archctx-contracts';
-import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, decodeNativeContextExport, summarizeArchitectureRender, decodeArchitectureHandEdits, type NativeContextSource } from '../src/core/architecture/projection';
+import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, classifyArchitectureFreshness, decodeNativeContextExport, summarizeArchitectureRender, decodeArchitectureHandEdits, type NativeContextSource } from '../src/core/architecture/projection';
 import type { ArchctxProcessResult, ArchitectureProjectionPolicy, RunArchctxProcess } from '../src/core/architecture/contracts';
 import {
   archctxCapabilities,
@@ -1792,6 +1792,15 @@ describe('single-writer observations', () => {
     expect(summarizeArchitectureRender(result).renderEquivalent).toBeNull();
     delete result.changes;
     expect(() => summarizeArchitectureRender(result)).toThrow('omitted per-target changes');
+  });
+
+  test('the daily verdict ends the lag of a difference at 3 h and gives no grace to an incomplete check', () => {
+    const now = new Date('2026-11-12T12:00:00Z');
+    const since = (hours: number) => new Date(now.getTime() - hours * 3_600_000);
+    const differs = { renderEquivalent: false, humanActions: [] };
+    expect(classifyArchitectureFreshness(differs, since(2.99), now)).toBe('lag');
+    expect(classifyArchitectureFreshness(differs, since(3), now)).toBe('stale');
+    expect(classifyArchitectureFreshness({ renderEquivalent: null, humanActions: [] }, since(0), now)).toBe('incomplete');
   });
 
   test('hand-edit warnings consume only upstream manual-edit codes through the existing client', () => {

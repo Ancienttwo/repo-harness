@@ -594,7 +594,7 @@ test('report and watchdog uploads include the real hidden report directory', () 
 });
 
 const architectureEvidence = readFileSync(join(import.meta.dir, '..', ARCHITECTURE_EVIDENCE), 'utf8');
-const architectureSummary = { status: 'planned', renderEquivalent: false, differingPaths: ['docs/architecture/a.md'], humanActions: [] };
+const architectureSummary = { status: 'planned', renderEquivalent: false, differingPaths: ['docs/architecture/a.md'], humanActions: [], freshness: 'stale', unpublishedSince: '2026-11-12T01:01:09.000Z' };
 // The fixture job is the daily architecture job; every other provider answer is the shared fixture.
 const architectureAPI = (f: { api: GitHubAPI }): GitHubAPI => async (path, method, body) => path.includes('/attempts/1/jobs')
   ? { jobs: [{ id: 44, name: ARCHITECTURE_JOB, conclusion: 'failure', check_run_url: 'https://api.github.com/repos/test/repo/check-runs/55' }] }
@@ -607,10 +607,11 @@ test('a daily architecture failure opens a named repair issue with the summary, 
   expect(first.errors).toEqual([]);
   expect(first.repairs).toEqual([{ key: `ci-repair:job:${ARCHITECTURE_JOB}`, issue_url: 'https://github.com/test/repo/issues/1', delivery: 'created' }]);
   const issue = f.issues[0];
-  expect(issue.title).toBe(`[CI repair] architecture render planned @ ${f.after.slice(0, 12)}`);
+  expect(issue.title).toBe(`[CI repair] architecture stale (planned) @ ${f.after.slice(0, 12)}`);
   expect(issue.body).toStartWith(`<!-- ci-repair:job:${ARCHITECTURE_JOB} -->`);
   expect(issue.body).toContain(`\`\`\`json\n${JSON.stringify(architectureSummary, null, 2)}\n\`\`\``);
   expect(issue.body).toContain('Render differences: docs/architecture/a.md');
+  expect(issue.body).toContain('Freshness: stale; oldest unpublished main commit: 2026-11-12T01:01:09.000Z');
   expect(issue.body).toContain(architectureActionRow(parseArchitectureSummary(input.summaryText), architectureEvidence));
   expect(issue.body).toContain('| `renderEquivalent: false` |');
   expect(issue.body).not.toContain('run typecheck + affected tests');
@@ -623,14 +624,14 @@ test('a daily architecture failure without a summary says so and routes to the c
   const report = await reportCI('test/repo', 12, architectureAPI(f), { summaryText: null, evidence: architectureEvidence });
   expect(report.errors).toEqual([]);
   const issue = f.issues[0];
-  expect(issue.title).toBe(`[CI repair] architecture render without summary @ ${f.after.slice(0, 12)}`);
-  expect(issue.body).toContain('The job uploaded no architecture summary, so the check gave no JSON result.');
+  expect(issue.title).toBe(`[CI repair] architecture without summary @ ${f.after.slice(0, 12)}`);
+  expect(issue.body).toContain('The job uploaded no architecture summary: the check or the oldest unpublished commit read gave no result.');
   expect(issue.body).toContain('| Command error, `blocked` or a failure status |');
 }));
 
 test('an invalid architecture summary or a missing action row is reported, and the issue is still opened', () => fixture(async f => {
   f.setConclusion('failure');
-  const report = await reportCI('test/repo', 12, architectureAPI(f), { summaryText: '{"status":"planned","renderEquivalent":false,"differingPaths":[1],"humanActions":[]}', evidence: '' });
+  const report = await reportCI('test/repo', 12, architectureAPI(f), { summaryText: '{"status":"planned","renderEquivalent":false,"differingPaths":[1],"humanActions":[],"freshness":"stale","unpublishedSince":"2026-11-12T01:01:09.000Z"}', evidence: '' });
   expect(report.errors).toEqual([
     'Architecture summary invalid: Architecture summary differingPaths must be a string array',
     `Architecture action unavailable: No action row starts with Command error, \`blocked\` or a failure status in ${ARCHITECTURE_EVIDENCE}`,

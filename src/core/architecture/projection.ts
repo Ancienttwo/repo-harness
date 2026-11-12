@@ -50,6 +50,25 @@ export function summarizeArchitectureRender(result: ProjectionResultV2) {
   };
 }
 
+/** The rolling writer publishes after the product merge: 11 to 102 min for 8 projections in 2026-11 (#2590). */
+export const ARCHITECTURE_LAG_BOUND_MS = 3 * 60 * 60 * 1000;
+export const ARCHITECTURE_FRESHNESS = ['fresh', 'lag', 'stale', 'human-action', 'incomplete'] as const;
+export type ArchitectureFreshness = typeof ARCHITECTURE_FRESHNESS[number];
+
+/**
+ * The daily lane verdict. A difference is `lag` while the oldest unpublished main commit is younger than the bound,
+ * because the writer publishes it later. An incomplete check gets no grace.
+ */
+export function classifyArchitectureFreshness(
+  summary: Pick<ReturnType<typeof summarizeArchitectureRender>, 'renderEquivalent' | 'humanActions'>,
+  unpublishedSince: Date,
+  now: Date,
+): ArchitectureFreshness {
+  if (summary.renderEquivalent === true) return 'fresh';
+  if (summary.renderEquivalent === null) return summary.humanActions.length > 0 ? 'human-action' : 'incomplete';
+  return now.getTime() - unpublishedSince.getTime() < ARCHITECTURE_LAG_BOUND_MS ? 'lag' : 'stale';
+}
+
 /** docs drift has no published JSON schema. Validate the fields this reader consumes. */
 export function decodeArchitectureHandEdits(value: unknown): Array<{ path: string; reasonCode: string }> {
   const report = record(value, 'archctx docs drift');

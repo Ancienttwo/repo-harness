@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CI_DAILY_MISSING_KEY_PREFIX, CI_REPAIR_KEY_PREFIX, ciRepairIssueMarker, isCiRepairIssueBody, parseJUnitReport, type TestFileResultV1 } from '../src/core/ci/test-report';
 import { rollbackParent } from '../src/core/publication/merge-readiness';
+import { ARCHITECTURE_FRESHNESS, type ArchitectureFreshness } from '../src/core/architecture/projection';
 const validSha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
 
 /** CI completion effect: GitHub is the authority for runs, repair issues and rollback boundaries. */
@@ -195,7 +196,7 @@ const ARCHITECTURE_ROWS = {
   decision: 'Other `humanActions` reason codes, or `adoption-required`',
   error: 'Command error, `blocked` or a failure status',
 } as const;
-export interface ArchitectureSummary { status: string; renderEquivalent: boolean | null; differingPaths: string[]; humanActions: Record<string, unknown>[] }
+export interface ArchitectureSummary { status: string; renderEquivalent: boolean | null; differingPaths: string[]; humanActions: Record<string, unknown>[]; freshness: ArchitectureFreshness; unpublishedSince: string }
 /** summaryText is null when the daily job uploaded no summary. */
 export interface ArchitectureInput { summaryText: string | null; evidence: string }
 
@@ -208,12 +209,15 @@ export function parseArchitectureSummary(text: string): ArchitectureSummary {
   if (typeof summary.status !== 'string' || !summary.status) throw new Error('Architecture summary status must be a string');
   if (!Array.isArray(summary.humanActions)) throw new Error('Architecture summary humanActions must be an array');
   if (summary.renderEquivalent !== null && typeof summary.renderEquivalent !== 'boolean') throw new Error('Architecture summary renderEquivalent must be boolean or null');
+  if (!ARCHITECTURE_FRESHNESS.includes(summary.freshness as ArchitectureFreshness)) throw new Error(`Architecture summary freshness must be one of ${ARCHITECTURE_FRESHNESS.join(', ')}`);
+  if (typeof summary.unpublishedSince !== 'string' || !summary.unpublishedSince) throw new Error('Architecture summary unpublishedSince must be a string');
   return { status: summary.status, renderEquivalent: summary.renderEquivalent, differingPaths: strings(summary.differingPaths, 'differingPaths'),
-    humanActions: summary.humanActions.map(action => record(action, 'Architecture human action')) };
+    humanActions: summary.humanActions.map(action => record(action, 'Architecture human action')),
+    freshness: summary.freshness as ArchitectureFreshness, unpublishedSince: summary.unpublishedSince };
 }
 
 /** Returns the evidence table row for a summary. A missing summary means the check gave no result. */
-export function architectureActionRow(summary: ArchitectureSummary | null, evidence: string): string {
+export function architectureActionRow(summary: Pick<ArchitectureSummary, 'status' | 'renderEquivalent' | 'humanActions'> | null, evidence: string): string {
   const status = summary?.status;
   const kind: keyof typeof ARCHITECTURE_ROWS = !summary ? 'error'
     : summary.renderEquivalent === true ? 'equivalent'
@@ -268,21 +272,21 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
     const lines: string[] = [];
     let summary: ArchitectureSummary | null = null;
     if (!architecture || architecture.summaryText === null) {
-      lines.push('The job uploaded no architecture summary, so the check gave no JSON result. Read the job log.');
+      lines.push('The job uploaded no architecture summary: the check or the oldest unpublished commit read gave no result. Read the job log.');
     } else {
       try { summary = parseArchitectureSummary(architecture.summaryText); } catch (error) {
         lines.push(`The architecture summary is not valid: ${safeText(message(error))}`);
         report.errors.push(`Architecture summary invalid: ${message(error)}`);
       }
     }
-    if (summary) lines.push('Architecture summary:', '', '```json', JSON.stringify(summary, null, 2), '```', '', `Render differences: ${summary.differingPaths.join(', ') || 'none'}`);
+    if (summary) lines.push('Architecture summary:', '', '```json', JSON.stringify(summary, null, 2), '```', '', `Render differences: ${summary.differingPaths.join(', ') || 'none'}`, `Freshness: ${summary.freshness}; oldest unpublished main commit: ${summary.unpublishedSince}`);
     try {
       lines.push('', `Action from \`${ARCHITECTURE_EVIDENCE}\`:`, '', '| Result | Meaning | Bot decision |', '| --- | --- | --- |', architectureActionRow(summary, architecture?.evidence ?? ''));
     } catch (error) {
       lines.push(safeText(message(error)));
       report.errors.push(`Architecture action unavailable: ${message(error)}`);
     }
-    return { subject: `architecture render ${summary?.status ?? 'without summary'}`, body: lines.join('\n') };
+    return { subject: `architecture ${summary ? `${summary.freshness} (${summary.status})` : 'without summary'}`, body: lines.join('\n') };
   };
   if (run.conclusion !== 'success') {
     try {
