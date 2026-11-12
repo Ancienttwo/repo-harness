@@ -260,6 +260,8 @@ if [[ "$lane" == release ]]; then
   run_bun_test_file tests/harness-benchmark-matrix.test.ts
   echo "[ci] package/install smoke (one shared tarball)"
   bash scripts/check-tarball-install-smoke.sh
+  echo "[ci] upgrade rehearsal (published parent installs the unpublished candidate)"
+  bash scripts/check-release-upgrade-rehearsal.sh
   echo "[ci] OK"
   exit 0
 fi

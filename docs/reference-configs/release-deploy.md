@@ -115,6 +115,12 @@ staging drift, CodeGraph version drift, or non-authoritative
 skill eval evidence. Do not rely only on npm or GitHub release metadata for this
 local audit trail.
 
+The "Acceptance environment" section of the filing records the result of
+`scripts/check-release-upgrade-rehearsal.sh` (run by the `release` lane of
+`scripts/check-ci.sh`): the parent version from npm, the candidate version, and
+the two candidate tarballs that its registry log names. Do not record a
+hand-made rehearsal.
+
 The filing also records the consumer architecture smoke. A new consumer with a
 capability registry, no `.codegraph/`, no projection manifest and a branch
 that adds an unowned path must show one architecture line at SessionStart or
