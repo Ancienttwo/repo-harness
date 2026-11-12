@@ -14,8 +14,10 @@
 # published parent (the version npm serves as "latest") runs
 # `repo-harness update --version <candidate>`, installs both candidate
 # packages, the candidate reconciles the runtime, `repo-harness --version`
-# then gives the candidate, and the managed archctx link resolves to the
-# candidate's archctx pin.
+# then gives the candidate, and the managed archctx link moves from the
+# parent's archctx pin to the candidate's pin. The parent's own
+# `repo-harness update --version <parent> --no-cli` makes that managed link
+# first: `install` does not link archctx, only the update path does.
 #
 # How: it packs repo-harness and repo-harness-operator-web from a
 # `git archive` copy of HEAD, serves the candidate version of both from a
@@ -184,7 +186,16 @@ bun add -g "repo-harness@$PARENT" >"$WORK/parent-add.log" 2>&1 || { cat "$WORK/p
 [[ "$(command -v repo-harness)" == "$HOME/.bun/bin/repo-harness" ]] || fail "repo-harness resolves to '$(command -v repo-harness || true)', not $HOME/.bun/bin/repo-harness"
 [[ "$(repo-harness --version)" == "$PARENT" ]] || fail "installed parent is not $PARENT"
 repo-harness install --no-cli --no-external-skills --no-codegraph >"$WORK/install.log" 2>&1 || { cat "$WORK/install.log" >&2; fail "parent install failed"; }
-echo "[rehearsal] archctx link before update: $(archctx_link_version 2>/dev/null || echo absent)"
+# The parent's update to its own version, from npm, makes the managed archctx
+# link of the parent pin, as on a user machine that ran update once.
+PARENT_ARCHCTX_PIN="$(bun -e 'console.log((await Bun.file(process.argv[1]).json()).dependencies.archctx ?? "")' "$HOME/.bun/install/global/node_modules/repo-harness/package.json")"
+[[ -n "$PARENT_ARCHCTX_PIN" ]] || fail "the parent does not pin archctx"
+repo-harness update --version "$PARENT" --no-cli --no-codegraph --no-external-skills >"$WORK/parent-update.log" 2>&1 \
+  || { cat "$WORK/parent-update.log" >&2; fail "the parent update to its own version failed"; }
+BEFORE_LINK_VERSION="$(archctx_link_version 2>/dev/null || true)"
+echo "[rehearsal] archctx link before update: ${BEFORE_LINK_VERSION:-absent} (parent pin $PARENT_ARCHCTX_PIN)"
+[[ "$BEFORE_LINK_VERSION" == "$PARENT_ARCHCTX_PIN" ]] \
+  || fail "before the update, $HOME/.bun/bin/archctx resolves to archctx '${BEFORE_LINK_VERSION:-missing}', not the parent pin $PARENT_ARCHCTX_PIN"
 
 echo "[rehearsal] 2/3 parent update --version $CANDIDATE against $LOCAL_REGISTRY"
 set +e
@@ -203,6 +214,7 @@ WEB_VERSION="$(bun -e 'console.log((await Bun.file(process.argv[1]).json()).vers
 [[ "$WEB_VERSION" == "$CANDIDATE" ]] || fail "global repo-harness-operator-web is '${WEB_VERSION:-missing}', not $CANDIDATE"
 LINK_VERSION="$(archctx_link_version 2>/dev/null || true)"
 [[ "$LINK_VERSION" == "$ARCHCTX_PIN" ]] || fail "$HOME/.bun/bin/archctx resolves to archctx '${LINK_VERSION:-missing}', not the pin $ARCHCTX_PIN"
+echo "[rehearsal] archctx link: $BEFORE_LINK_VERSION -> $LINK_VERSION"
 for name in repo-harness repo-harness-operator-web; do
   count="$(grep -c "^TARBALL SERVED $name $CANDIDATE\$" "$WORK/registry.log" || true)"
   [[ "$count" == 1 ]] || fail "registry served the $name@$CANDIDATE tarball $count times, expected 1"
