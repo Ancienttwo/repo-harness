@@ -997,29 +997,6 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
       expect(update({ plugins: FULL_PLUGINS }).steps.find(step => step.step === 'verify managed runtime dependencies')?.detail).toContain('RH_ARCHCTX_BIN_READBACK');
       writeShellExecutableFixture(join(fakeBin, 'bun'), bunScript);
-
-      // The link of the previous pin is managed: the candidate's pin sits nested until `bun add -g` moves it to the top level.
-      const globalRoot = join(home, '.bun', 'install', 'global');
-      const topArchctx = join(globalRoot, 'node_modules', 'archctx');
-      const candidateArchctx = join(globalRoot, 'node_modules', 'repo-harness', 'node_modules', 'archctx');
-      const archctxManifest = JSON.parse(readFileSync(join(topArchctx, 'package.json'), 'utf8')) as Record<string, unknown>;
-      const harnessManifestPath = join(globalRoot, 'node_modules', 'repo-harness', 'package.json');
-      const harnessManifest = JSON.parse(readFileSync(harnessManifestPath, 'utf8')) as { dependencies: Record<string, string> };
-      mkdirSync(join(candidateArchctx, 'bin'), { recursive: true });
-      writeFileSync(join(candidateArchctx, 'package.json'), JSON.stringify(archctxManifest));
-      writeExecutable(join(candidateArchctx, 'bin', 'archctx.mjs'), '#!/usr/bin/env node\n');
-      writeFileSync(join(globalRoot, 'package.json'), JSON.stringify({ dependencies: { archctx: '0.0.1' } }));
-      writeFileSync(join(topArchctx, 'package.json'), JSON.stringify({ ...archctxManifest, version: '0.0.1' }));
-      mkdirSync(join(home, '.bun', 'bin'), { recursive: true });
-      symlinkSync(join(topArchctx, 'bin', 'archctx.mjs'), archctxLink);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; fi\nif [[ "\${3:-}" == archctx@* ]]; then rm -rf "${candidateArchctx}"; cp "${join(globalRoot, 'node_modules', 'archctx-next.json')}" "${join(topArchctx, 'package.json')}"; printf '%s' '{"dependencies":{"archctx":"${harnessManifest.dependencies.archctx}"}}' > "${join(globalRoot, 'package.json')}"; fi\nexit 0\n`);
-      writeFileSync(join(globalRoot, 'node_modules', 'archctx-next.json'), JSON.stringify(archctxManifest));
-      const nested = update({ plugins: FULL_PLUGINS });
-      expect(nested.steps.find(step => step.step === 'verify managed runtime dependencies'), JSON.stringify(nested.steps.filter(step => step.status === 'failed'))).toMatchObject({ status: 'ok' });
-      expect(JSON.parse(readFileSync(join(globalRoot, 'package.json'), 'utf8')).dependencies.archctx).toBe(ARCHCTX_PIN);
-      expect(realpathSync(archctxLink)).toBe(realpathSync(join(topArchctx, 'bin', 'archctx.mjs')));
-      expect(JSON.parse(readFileSync(join(topArchctx, 'package.json'), 'utf8')).version).toBe(ARCHCTX_PIN);
-      writeShellExecutableFixture(join(fakeBin, 'bun'), bunScript);
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza -g -a codex -s think hunt check health -y');
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add BfdCampos/dotfiles -g -a codex -s mermaid -y');
       expect(readFileSync(bunLog, 'utf-8')).toContain(`add -g @colbymchenry/codegraph@${CODEGRAPH_PIN}`);
@@ -1096,6 +1073,69 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
       expect(log.match(/add -g repo-harness@9\.9\.9/g)).toHaveLength(1);
       expect(log).not.toContain('remove -g repo-harness');
       expect(existsSync(join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness', 'package.json'))).toBe(true);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  test('update mode moves the managed archctx link of the previous pin to the candidate pin that Bun nested under the candidate', () => {
+    registerArchitecturePlugin();
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-managed-update-nested-'));
+    const source = join(tmp, 'source');
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    try {
+      for (const dir of [source, home, repo, fakeBin]) mkdirSync(dir, { recursive: true });
+      setupFakeSource(source);
+      setupManagedRuntimeReadback(home, fakeBin);
+      const globalRoot = join(home, '.bun', 'install', 'global');
+      const topArchctx = join(globalRoot, 'node_modules', 'archctx');
+      const nestedArchctx = join(globalRoot, 'node_modules', 'repo-harness', 'node_modules', 'archctx');
+      const candidateManifest = readFileSync(join(topArchctx, 'package.json'), 'utf8');
+      const candidateManifestCopy = join(tmp, 'archctx-candidate.json');
+      writeFileSync(candidateManifestCopy, candidateManifest);
+      // Parent state: the global manifest and the top-level package hold the previous pin, and the managed link points to it.
+      writeFileSync(join(globalRoot, 'package.json'), JSON.stringify({ dependencies: { archctx: '0.0.1' } }));
+      writeFileSync(join(topArchctx, 'package.json'), JSON.stringify({ ...JSON.parse(candidateManifest), version: '0.0.1' }));
+      mkdirSync(join(nestedArchctx, 'bin'), { recursive: true });
+      writeFileSync(join(nestedArchctx, 'package.json'), candidateManifest);
+      writeExecutable(join(nestedArchctx, 'bin', 'archctx.mjs'), '#!/usr/bin/env node\n');
+      const link = join(home, '.bun', 'bin', 'archctx');
+      mkdirSync(join(home, '.bun', 'bin'), { recursive: true });
+      symlinkSync(join(topArchctx, 'bin', 'archctx.mjs'), link);
+      // `bun add -g archctx@<pin>` puts the pin at the top level and removes the nested copy.
+      writeExecutable(join(fakeBin, 'bun'), [
+        '#!/bin/bash',
+        'if [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi',
+        `if [[ "\${3:-}" == archctx@* ]]; then rm -rf "${nestedArchctx}"; cp "${candidateManifestCopy}" "${join(topArchctx, 'package.json')}"; printf '{"dependencies":{"archctx":"%s"}}' "\${3#archctx@}" > "${join(globalRoot, 'package.json')}"; fi`,
+        'exit 0',
+        '',
+      ].join('\n'));
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        plugins: ['architecture'],
+        installSpec: 'repo-harness@9.9.9',
+        updateMode: true,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        codegraph: false,
+        env: {
+          ...sanitizedChildEnv(),
+          HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
+        },
+      });
+
+      expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies'), JSON.stringify(result.steps.filter(step => step.status === 'failed'))).toMatchObject({ status: 'ok' });
+      expect(JSON.parse(readFileSync(join(globalRoot, 'package.json'), 'utf8')).dependencies.archctx).toBe(ARCHCTX_PIN);
+      expect(JSON.parse(readFileSync(join(topArchctx, 'package.json'), 'utf8')).version).toBe(ARCHCTX_PIN);
+      expect(realpathSync(link)).toBe(realpathSync(join(topArchctx, 'bin', 'archctx.mjs')));
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
