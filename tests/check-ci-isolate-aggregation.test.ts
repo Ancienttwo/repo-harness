@@ -138,7 +138,7 @@ describe("ci isolate-mode test loop", () => {
     try {
       const marker = join(dir, 'ran');
       const existing = join(dir, 'marker.test.ts');
-      writeFileSync(existing, `import { test } from "bun:test";\nimport { writeFileSync } from "node:fs";\ntest("marks", () => writeFileSync(${JSON.stringify(marker)}, "x"));\n`);
+      writeFileSync(existing, `import { test } from "bun:test";\nimport { writeFileSync } from "node:fs";\ntest("example.test.ts", () => writeFileSync(${JSON.stringify(marker)}, "x"));\n`);
       const run = (...args: string[]) => {
         rmSync(marker, { force: true });
         const result = spawnSync('bash', ['-c', `source ${JSON.stringify(LIB_PATH)}; BUN_TEST_ISOLATE_FILES=0 run_bun_tests "$@"`, '--', ...args], { cwd: REPO_ROOT, encoding: 'utf8', env: gateEnv({}) });
@@ -150,7 +150,9 @@ describe("ci isolate-mode test loop", () => {
         expect(missing.stderr).toContain('does-not-exist.test.ts');
         expect(missing.ran).toBe(false);
       }
-      expect(run(existing, '-t', 'example.test.ts').status).toBe(0);
+      const valued = run(existing, '-t', 'example.test.ts');
+      expect(valued.status).toBe(0);
+      expect(valued.ran).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
