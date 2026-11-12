@@ -2,8 +2,8 @@ import { Command } from 'commander';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { CLAUDE_BUILTIN_AGENT_TYPES, SeatPaneNameError, buildSeatLaunch, seatPaneName, seatTabName, type SeatLaunchV1 } from '../../core/board/seat-launch';
-import { LAUNCH_SEAT_IDS, SeatsConfigMigrationRequiredError, decodeSeatsConfig, isWorkerSeat, type LaunchSeatId, type SeatConfigV1, type SeatsConfigV1 } from '../../core/board/seats-settings';
-import { claudeReserved, effectiveGatekeeper, effectiveSeatConfig, seatAccount, seatAccountQuotas, seatState, type SeatRouteV1 } from '../../core/board/seat-routing';
+import { LAUNCH_SEAT_IDS, ROUTING_CLASSES, SeatsConfigMigrationRequiredError, decodeSeatsConfig, isWorkerSeat, type LaunchSeatId, type SeatConfigV1, type SeatsConfigV1 } from '../../core/board/seats-settings';
+import { claudeReserved, effectiveGatekeeper, effectiveSeatConfig, seatAccount, seatAccountQuotas, seatState, selectSeatRoute, type SeatRouteV1 } from '../../core/board/seat-routing';
 import { classifyQuotaReading, type QuotaAccount, type QuotaReading } from '../../core/board/quota';
 import { readClaudeQuota, readCodexQuota } from '../../effects/board/quota';
 import { version as PACKAGE_VERSION } from '../../../package.json';
@@ -134,8 +134,10 @@ async function quotaCheckedSeat(id: LaunchSeatId, seats: SeatsConfigV1, configur
   const launchedId = gatekeeper?.id === 'gatekeeper-fallback' ? 'gatekeeper-fallback' : id;
   const launched = launchedId === 'gatekeeper-fallback' ? fallback! : configured;
   const account = seatAccount(launched);
-  if (id === 'worker-light' && configured.runtime !== 'pi' && claudeReserved(quota)) {
-    throw new SeatsCommandError('seat_quota_reserved', 'The worker-light seat must use Pi while Claude is reserved. Use the quota routes.');
+  // Routing is the one authority: a non-Pi worker-light launches while Claude is reserved only when a route selects it (#2679).
+  if (id === 'worker-light' && configured.runtime !== 'pi' && claudeReserved(quota)
+    && !ROUTING_CLASSES.some(task => selectSeatRoute(task, seats, quota).id === 'worker-light')) {
+    throw new SeatsCommandError('seat_quota_reserved', 'No quota route selects the non-Pi worker-light seat while Claude is reserved. Use the quota routes.');
   }
   if (account !== null && seatState(launchedId, launched, quota) === 'exhausted') {
     throw new SeatsCommandError('seat_quota_exhausted', `The ${account} account is exhausted. Wait for quota before launching ${id}.${gatekeeper === null ? '' : ` Route ${gatekeeper.line}`}`);
