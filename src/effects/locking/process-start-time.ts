@@ -1,7 +1,7 @@
+import { dlopen, type Pointer } from 'bun:ffi';
 import { spawnSync } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
-import { userInfo } from 'os';
-import { win32 } from 'path';
+import { readFileSync } from 'fs';
+import { processExists } from '../process-group-termination';
 
 const PROCESS_TABLE_TIMEOUT_MS = 10_000;
 
@@ -52,60 +52,60 @@ function darwinStartTime(pid: number): string | null {
   return `darwin:${text}`;
 }
 
-// Measurement for #2578 only: names, booleans and durations, never values.
-const PROFILE_KEYS = ['USERPROFILE', 'HOME', 'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP', 'TMPDIR'];
-const STANDARD_KEYS = ['SystemRoot', 'windir', 'ComSpec', 'PATHEXT', 'PSModulePath', 'ProgramData', 'ProgramFiles', 'ALLUSERSPROFILE', 'PUBLIC', 'USERNAME', 'USERDOMAIN', 'COMPUTERNAME', 'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE'];
+const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+const STILL_ACTIVE = 259;
 
-function windowsStartupEvidence(powershell: string): string {
-  const account = userInfo().homedir;
-  const under = (value: string) => value.toLowerCase().startsWith(account.toLowerCase());
-  const accountEnv: Record<string, string> = {
-    USERPROFILE: account,
-    APPDATA: win32.join(account, 'AppData', 'Roaming'),
-    LOCALAPPDATA: win32.join(account, 'AppData', 'Local'),
-    TEMP: win32.join(account, 'AppData', 'Local', 'Temp'),
-    TMP: win32.join(account, 'AppData', 'Local', 'Temp'),
+type Kernel32 = {
+  symbols: {
+    OpenProcess: (access: number, inheritHandle: number, pid: number) => Pointer | null;
+    GetExitCodeProcess: (process: Pointer, exitCode: Uint32Array) => number;
+    GetProcessTimes: (process: Pointer, creation: BigUint64Array, exit: BigUint64Array, kernel: BigUint64Array, user: BigUint64Array) => number;
+    CloseHandle: (handle: Pointer) => number;
   };
-  const redirected = PROFILE_KEYS.filter((key) => {
-    const value = process.env[key];
-    return value !== undefined && win32.isAbsolute(value) && !under(value);
-  }).map((key) => `${key}${existsSync(process.env[key]!) ? '' : '(missing dir)'}`);
-  const absentProfile = PROFILE_KEYS.filter((key) => process.env[key] === undefined);
-  const absentStandard = STANDARD_KEYS.filter((key) => process.env[key] === undefined);
-  const noop = (env: NodeJS.ProcessEnv) => {
-    const start = Date.now();
-    const run = spawnSync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'exit 0'], {
-      env, timeout: 30_000, windowsHide: true,
-    });
-    return `${Date.now() - start} ms (${run.error ? run.error.message : `status ${run.status}`})`;
-  };
-  return `profile keys outside the account profile: [${redirected.join(', ')}]; `
-    + `absent profile keys: [${absentProfile.join(', ')}]; absent standard keys: [${absentStandard.join(', ')}]; `
-    + `env key count: ${Object.keys(process.env).length}; `
-    + `no-op powershell with this env: ${noop(process.env)}; `
-    + `no-op powershell with account profile keys: ${noop({ ...process.env, ...accountEnv })}`;
+};
+
+let kernel32: Kernel32 | undefined;
+
+// Windows BOOL is a 4-byte int and HANDLE is pointer-sized. Each FILETIME out
+// buffer is one 8-byte slot. A wrong signature ends the process with no exception.
+function loadKernel32(pid: number): Kernel32 {
+  if (kernel32 === undefined) {
+    try {
+      kernel32 = dlopen('kernel32.dll', {
+        OpenProcess: { args: ['u32', 'i32', 'u32'], returns: 'ptr' },
+        GetExitCodeProcess: { args: ['ptr', 'ptr'], returns: 'i32' },
+        GetProcessTimes: { args: ['ptr', 'ptr', 'ptr', 'ptr', 'ptr'], returns: 'i32' },
+        CloseHandle: { args: ['ptr'], returns: 'i32' },
+      }) as unknown as Kernel32;
+    } catch (error) {
+      throw unreadable(pid, `cannot load kernel32.dll: ${(error as Error).message}`);
+    }
+  }
+  return kernel32;
 }
 
 function windowsStartTime(pid: number): string | null {
-  const systemRoot = process.env.SystemRoot;
-  if (!systemRoot || !win32.isAbsolute(systemRoot)) throw unreadable(pid, 'SystemRoot is not an absolute path');
-  const powershell = win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-  // The .NET call needs no cmdlet discovery. Get-Process auto-loads its module,
-  // which in an isolated profile can take longer than the timeout (#2479).
-  // GetProcessById throws ArgumentException when no process has the PID.
-  const script = `try { $p = [System.Diagnostics.Process]::GetProcessById(${pid}) } catch [System.ArgumentException] { exit 3 }; `
-    + '[Console]::Out.Write($p.StartTime.ToFileTimeUtc())';
-  const started = Date.now();
-  const result = spawnSync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
-    encoding: 'utf-8',
-    timeout: PROCESS_TABLE_TIMEOUT_MS,
-    windowsHide: true,
-  });
-  if (result.error) throw unreadable(pid, `${result.error.message} after ${Date.now() - started} ms; ${windowsStartupEvidence(powershell)}`);
-  const text = result.stdout.trim();
-  if (result.status === 3 && text === '') return null;
-  if (result.status !== 0 || !/^\d+$/.test(text)) throw unreadable(pid, `PowerShell exited with status ${result.status}`);
-  return `win32:${text}`;
+  const { symbols } = loadKernel32(pid);
+  // GetLastError is thread state that the runtime can change between two FFI
+  // calls, so the absence of the PID comes from the process probe instead.
+  const handle = symbols.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+  if (handle === null) {
+    if (!processExists(pid)) return null;
+    throw unreadable(pid, 'OpenProcess failed for a live process');
+  }
+  try {
+    // An exited process stays openable while another handle holds its object.
+    const exitCode = new Uint32Array(1);
+    if (symbols.GetExitCodeProcess(handle, exitCode) === 0) throw unreadable(pid, 'GetExitCodeProcess failed');
+    if (exitCode[0] !== STILL_ACTIVE) return null;
+    const creation = new BigUint64Array(1);
+    if (symbols.GetProcessTimes(handle, creation, new BigUint64Array(1), new BigUint64Array(1), new BigUint64Array(1)) === 0) {
+      throw unreadable(pid, 'GetProcessTimes failed');
+    }
+    return `win32:${creation[0]}`;
+  } finally {
+    symbols.CloseHandle(handle);
+  }
 }
 
 /**
@@ -122,8 +122,9 @@ function windowsStartTime(pid: number): string | null {
  * - darwin: `ps -o lstart`, from the kernel's p_starttime. The resolution is one
  *   second. Darwin gives PIDs in sequence, so a reuse in the same second needs
  *   the full PID range to wrap in that second.
- * - win32: Process.StartTime from System.Diagnostics.Process, as a UTC
- *   FileTime in 100 ns units.
+ * - win32: the creation time from kernel32 GetProcessTimes, as a UTC FILETIME
+ *   in 100 ns units. The value equals the earlier
+ *   Process.StartTime.ToFileTimeUtc() value, so recorded owners stay valid.
  *
  * Returns null when no process has this PID. Throws when the table cannot be read.
  */

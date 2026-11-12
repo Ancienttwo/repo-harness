@@ -171,6 +171,15 @@ describe('exclusive directory lock owner identity', () => {
     expect(exited.status).toBe(0);
     expect(readProcessStartTime(exited.pid)).toBeNull();
   });
+
+  test('a killed child that the parent still holds has no start time', async () => {
+    const child = spawn(process.execPath, ['-e', 'await Bun.stdin.text()'], { stdio: ['pipe', 'ignore', 'ignore'] });
+    const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));
+    expect(readProcessStartTime(child.pid!)).not.toBeNull();
+    child.kill('SIGKILL');
+    await exited;
+    expect(readProcessStartTime(child.pid!)).toBeNull();
+  });
 });
 
 
