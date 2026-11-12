@@ -197,6 +197,23 @@ describe("ci isolate-mode test loop", () => {
     expect(() => assertShardPlan(['tests/a.test.ts'], ['tests/a.test.ts'], 1)).toThrow('Invalid shard plan');
   });
 
+  test('the probe plan writes the selection plan file for a given list, and the shard command reads its array', () => {
+    const dir = mkdtempSync(join(tmpdir(), "rh-ci-plan-"));
+    try {
+      const files = ['tests/a.test.ts', 'tests/b.test.ts', 'tests/c.test.ts', 'tests/d.test.ts'];
+      const env = { ...process.env, TEST_DURATIONS_FILE: join(dir, "absent.json") };
+      const run = (...args: string[]) => spawnSync(process.execPath, [join(REPO_ROOT, "scripts/select-test-suite.ts"), ...args], { cwd: dir, encoding: "utf8", env });
+      expect(run("plan", "1/3", ...files).status).toBe(0);
+      expect(JSON.parse(readFileSync(join(dir, ".ci-affected-tests.json"), "utf8"))).toEqual(planShards(files, null, 3));
+      expect(run("shard", "1/3").stdout.trim().split("\n")).toEqual(planShards(files, null, 3)[1]!);
+      for (const args of [["3/3", ...files], ["1/3"], ["1/3", "tests/a.test.ts", "tests/a.test.ts"], ["1/3", "../a.test.ts"]]) {
+        expect(run("plan", ...args).status, args.join(" ")).not.toBe(0);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('the duration cache keeps passing files, and the report check names each file with no report', () => {
     const dir = mkdtempSync(join(tmpdir(), "rh-ci-durations-"));
     try {
