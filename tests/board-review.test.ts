@@ -62,6 +62,14 @@ test('an unobserved plan skips every pull request', () => {
   const unplanned = { ...board([pr(1), pr(2)]), plan: { status: 'absent', truncated: false } } as unknown as BoardV1;
   const comments = new Map([[1, page()], [2, page()]]);
   expect(label(planReview({ board: unplanned, comments, gatekeeper: GATEKEEPER }))).toEqual(['1:plan_unavailable', '2:plan_unavailable']);
+  expect(planReview({ board: unplanned, comments, gatekeeper: GATEKEEPER })[0]).toMatchObject({ reason: 'plan_unavailable', detail: 'the plan is absent' });
+});
+
+test('an unavailable plan names why the plan block does not decode', () => {
+  const reason = 'plan block invalid: unsupported protocol 1';
+  const undecoded = { ...board([pr(1)]), plan: { status: 'unavailable', comment_url: 'https://example.test/p1', reason } } as unknown as BoardV1;
+  expect(planReview({ board: undecoded, comments: new Map([[1, page()]]), gatekeeper: GATEKEEPER })[0])
+    .toMatchObject({ action: 'skip', reason: 'plan_unavailable', detail: `the plan is unavailable: ${reason}` });
 });
 
 test('a marker covers one seat: a started gatekeeper leaves the reviewer to start, and a marker without a seat covers none', () => {
