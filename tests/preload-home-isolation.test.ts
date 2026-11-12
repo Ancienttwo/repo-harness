@@ -433,19 +433,4 @@ run_bun_test_file "$2"
       expect(result.stdout.toString()).not.toContain("TEST_BODY_RAN");
     } finally { f.close(); }
   });
-
-  // TEMPORARY (#2578 draft run only): record compatibility and the kept win32 cases.
-  test.skipIf(process.platform !== "win32")("TEMP #2578 ffi start time equals the PowerShell value", async () => {
-    const { readProcessStartTime } = await import("../src/effects/locking/process-start-time");
-    const ffi = readProcessStartTime(process.pid);
-    const ps = spawnSync(join(process.env.SystemRoot!, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
-      ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "[Console]::Out.Write([System.Diagnostics.Process]::GetProcessById(" + process.pid + ").StartTime.ToFileTimeUtc())"],
-      { encoding: "utf8", timeout: 120_000 });
-    console.log("[#2578] pid " + process.pid + " ffi=" + ffi + " powershell=win32:" + ps.stdout.trim() + " status=" + ps.status);
-    expect(ffi).toBe("win32:" + ps.stdout.trim());
-    const unit = spawnSync(process.execPath, ["test", "tests/unit/exclusive-directory-lock-owner-identity.test.ts", "--timeout", "60000"],
-      { cwd: ROOT, env: process.env, encoding: "utf8", timeout: 300_000 });
-    console.log("[#2578] unit exit=" + unit.status + "\n" + unit.stdout + unit.stderr);
-    expect(unit.status).toBe(0);
-  }, 300_000);
 });
