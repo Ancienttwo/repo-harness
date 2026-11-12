@@ -74,7 +74,10 @@ function covering(hold: BoardMergeHoldV1, items: readonly number[]): BoardMergeH
 
 /** The plan's refusal of a pull request, shared by `board merge` and `board review`: the plan is not observed, or it holds an issue that the pull request links. */
 export function planRefusal(board: BoardV1, pr: BoardPullRequestV1): { readonly reason: 'plan_unavailable' | 'plan_hold'; readonly detail: string } | null {
-  if (board.plan.status !== 'observed') return { reason: 'plan_unavailable', detail: `the plan is ${board.plan.status}` };
+  // The absent plan has no reason to name. An unavailable plan keeps the decode error of its newest plan comment, so the reader
+  // learns why the block does not decode without a second read of that comment.
+  if (board.plan.status === 'unavailable') return { reason: 'plan_unavailable', detail: `the plan is unavailable: ${board.plan.reason}` };
+  if (board.plan.status === 'absent') return { reason: 'plan_unavailable', detail: 'the plan is absent' };
   const linked = new Set([...pr.closes, ...pr.refs]);
   const hold = board.plan.block.holds.find(entry => entry.issue !== board.parent.number && linked.has(entry.issue));
   return hold === undefined ? null : { reason: 'plan_hold', detail: `the plan holds #${hold.issue}: ${hold.reason}` };
