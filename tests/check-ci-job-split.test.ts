@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { analyzeAffectedTests, bundleInputPaths, discoverDailyInputs, discoverPlatformInputs, nativeTriggers, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
 import { auditDroppedTests } from '../scripts/ci-edge-audit';
 import { replayNeedsSource } from '../scripts/replay-ci-coverage';
-import { changelogPreamble, checkReleasedSections, fragmentMessage, releasedSections, sectionDrift } from '../scripts/check-changelog-released-sections';
+import { changelogPreamble, checkReleasedSections, fragmentMessage, releasedSections, sectionDrift, withoutUnreleasedSection } from '../scripts/check-changelog-released-sections';
 import { assemble, FRAGMENT_PATH_FORM, fragmentPaths, parseFragment, renderSection } from '../scripts/changelog-fragments';
 import { ARCHITECTURE_JOB, ARCHITECTURE_SUMMARY_PATH } from '../scripts/report-ci';
 
@@ -1440,8 +1440,13 @@ describe('released CHANGELOG sections', () => {
         ['an entry with no heading', BASE_B, `${PREAMBLE}- Directly authored entry. (#6)\n\n${CUT.slice(PREAMBLE.length)}`],
         ['a star bullet', BASE_B, `${PREAMBLE}* A star bullet.\n\n${CUT.slice(PREAMBLE.length)}`],
         ['an indented heading', BASE_B, `${PREAMBLE}  ### Added\n\n${CUT.slice(PREAMBLE.length)}`],
-        // A pre-cutover base still allows only the removal, not a different entry inside the block.
+        // A pre-cutover base allows only the removal. The block may not be kept, and not edited either:
+        // the merge result must hold no `## [Unreleased]` block at all.
+        ['a kept [Unreleased] block', BASE_A, BASE_A],
         ['an edited [Unreleased] entry', BASE_A, BASE_A.replace('- The base entry. (#7)', '- A different entry. (#8)')],
+        // The transform applies to the base side only, so no trailing newline is normalized away: a base
+        // preamble that ends with three newlines expects three, and a merge result with two fails.
+        ['a trailing blank line', `${PREAMBLE}\n${CUT.slice(PREAMBLE.length)}`, BASE_B],
       ] as const;
       for (const [name, baseText, headText] of refused) {
         const report = faultsOf(baseText, headText, name);
@@ -1453,13 +1458,17 @@ describe('released CHANGELOG sections', () => {
         // The lane prints one message that names the base, the head and every fault.
         expect(fragmentMessage(report)).toContain(FRAGMENT_PATH_FORM);
       }
-      // The allowed forms pass: the cutover from a pre-cutover base, and an unchanged file.
+      // The allowed forms pass: the cutover from a pre-cutover base, and an unchanged post-cutover file.
       expect(faultsOf(BASE_A, BASE_B, 'the cutover').fragmentFaults).toEqual([]);
       expect(faultsOf(BASE_B, BASE_B, 'unchanged').fragmentFaults).toEqual([]);
-      expect(faultsOf(BASE_A, BASE_A, 'unchanged, pre-cutover').fragmentFaults).toEqual([]);
       // The preamble reader is the rule's input: the cutover's preamble is the base's minus the block.
       expect(changelogPreamble(BASE_B)).toBe(PREAMBLE);
       expect(changelogPreamble(BASE_A)).toContain('## [Unreleased]');
+      // The transform is a cut at the heading and nothing else: a base without the block keeps every byte,
+      // trailing newlines included, so the rule never normalizes the merge result either.
+      expect(withoutUnreleasedSection(PREAMBLE)).toBe(PREAMBLE);
+      expect(withoutUnreleasedSection(`${PREAMBLE}\n`)).toBe(`${PREAMBLE}\n`);
+      expect(withoutUnreleasedSection(changelogPreamble(BASE_A))).toBe(PREAMBLE);
     } finally { rmSync(repo, { recursive: true, force: true }); }
   });
 
@@ -1521,7 +1530,7 @@ describe('released CHANGELOG sections', () => {
   // Git does not track an empty directory, so a release commit that deletes the last fragment leaves no
   // `docs/changelog.d` at all. Both states must read as zero fragments, with no error and no section.
   test('assemble with no docs/changelog.d and with an empty one gives no error and no section', () => {
-    const { repo, git, write, commit } = cutoverRepository('rh-changelog-assemble-empty-');
+    const { repo, write, commit } = cutoverRepository('rh-changelog-assemble-empty-');
     try {
       write('docs/CHANGELOG.md', CUT);
       const base = commit('a tree with no fragment directory');

@@ -30,22 +30,13 @@ export function changelogPreamble(text: string): string {
 }
 
 /**
- * The preamble with the retired `## [Unreleased]` block removed. A base that still holds the heading is
- * the one difference the byte rule allows: the cutover that retires it deletes the heading and its
- * entries, which move into fragments. Every other byte, prose included, is compared as it stands.
+ * The base preamble with its retired `## [Unreleased]` block removed: the bytes before that heading. A
+ * base without the heading gives back its own bytes, so no byte is normalized anywhere. The cutover that
+ * retires the block deletes it and leaves exactly these bytes, which move into fragments otherwise.
  */
 export function withoutUnreleasedSection(preamble: string): string {
-  const kept: string[] = [];
-  let inside = false;
-  for (const line of preamble.split('\n')) {
-    if (/^## \[/u.test(line)) inside = line.startsWith('## [Unreleased]');
-    if (!inside) kept.push(line);
-  }
-  // The cutover deletes the block and keeps the blank line that separates the preamble from the first
-  // released section. Those kept lines always end with that blank line, so normalizing the trailing
-  // newlines to one blank separator gives exactly the bytes the cutover produces. A base with no
-  // `[Unreleased]` block gives back its own bytes.
-  return kept.join('\n').replace(/\n+$/u, '\n\n');
+  const block = /^## \[Unreleased\][^\r\n]*(?:\r?\n|$)/mu.exec(preamble);
+  return block === null ? preamble : preamble.slice(0, block.index);
 }
 const TREE_OID = /^[0-9a-f]{40}$/;
 const MAX_BUFFER = 64 * 1024 * 1024;
@@ -135,20 +126,19 @@ function fileAt(repoRoot: string, revision: string, path: string): string | null
 /**
  * The fragment faults of the merge result. Two rules:
  *
- * 1. The text above the first released section must be byte-equal to the same text at the base, or to
- *    that text with the retired `## [Unreleased]` block removed. Both allowed forms come from the base,
- *    so every other byte, prose included, must match. This one rule replaces a list of rejected line
- *    prefixes: an added sentence, a `* ` bullet or an indented heading all change bytes.
+ * 1. The text above the first released section must be byte-equal to the base preamble with its retired
+ *    `## [Unreleased]` block removed. The transform is the only one, and it applies to the base side only,
+ *    so every byte of the merge result must match it: an added sentence, a `* ` bullet, an indented
+ *    heading, a kept `[Unreleased]` block or a trailing newline all fail.
  * 2. Each path under the fragment directory must parse.
  */
 function fragmentFaults(repoRoot: string, tree: string, changelog: string, baseText: string | null): string[] {
   const faults: string[] = [];
-  const merged = changelogPreamble(changelog);
-  const base = baseText === null ? '' : changelogPreamble(baseText);
-  // One rule, two allowed forms, both taken from the base: the text is unchanged, or it is the base with
-  // the retired `## [Unreleased]` block removed by the cutover. Any other text is an authoring act, so an
-  // added sentence, a `* ` bullet, an indented heading or a re-created `[Unreleased]` heading all fail.
-  if (merged !== base && merged !== withoutUnreleasedSection(base)) {
+  // One rule: the merge-result preamble must be byte-equal to the base preamble with its retired
+  // `## [Unreleased]` block removed. The transform applies to the base side only, so a merge result that
+  // keeps the block fails, and a base without the block expects its own bytes exactly.
+  const expected = baseText === null ? '' : withoutUnreleasedSection(changelogPreamble(baseText));
+  if (changelogPreamble(changelog) !== expected) {
     faults.push(`${CHANGELOG} changes the text above its first released section, and each PR writes its entry in ${FRAGMENT_PATH_FORM} instead; the release prep assembles the section`);
   }
   const listing = gitOrFail(repoRoot, ['ls-tree', '-r', '--name-only', tree, '--', FRAGMENT_DIR]).split('\n').filter(Boolean);
