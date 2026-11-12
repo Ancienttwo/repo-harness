@@ -9,7 +9,8 @@ summary: "GitHub workflows, CI coverage selection, the local CI gate and the CI 
 responsibilities:
   - "Select full or documentation coverage from the event, the checked-out subject and the complete Git diff."
   - "Plan the affected-test shards once in the selection job, weighted by the durations that the daily run on main caches."
-  - "Run the affected, governance and functional lanes and report CI results."
+  - "Run the affected, governance, functional and daily architecture lanes and report CI results."
+  - "Check that the archimap module document links match the measured modules[].docs paths."
 source:
   include:
     - scripts/ci-edge-audit.ts
@@ -22,4 +23,5 @@ source:
     - scripts/select-*.ts
     - scripts/replay-ci-coverage.ts
     - scripts/report-ci.ts
+    - scripts/check-archimap-links.ts
     - scripts/ci-documentation-consumers.ts

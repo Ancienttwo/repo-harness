@@ -208,7 +208,9 @@ const ARCHITECTURE_ROWS = {
   decision: 'Other `humanActions` reason codes, or `adoption-required`',
   error: 'Command error, `blocked` or a failure status',
 } as const;
-export interface ArchitectureSummary { status: string; renderEquivalent: boolean | null; differingPaths: string[]; humanActions: Record<string, unknown>[]; freshness: string; unpublishedSince: string }
+/** null when the archimap link check gave no result. */
+export interface ArchimapLinks { dead: string[]; missing: string[] }
+export interface ArchitectureSummary { status: string; renderEquivalent: boolean | null; differingPaths: string[]; humanActions: Record<string, unknown>[]; freshness: string; unpublishedSince: string; archimapLinks: ArchimapLinks | null }
 /** summaryText is null when the daily job uploaded no summary. */
 export interface ArchitectureInput { summaryText: string | null; evidence: string }
 
@@ -224,9 +226,16 @@ export function parseArchitectureSummary(text: string): ArchitectureSummary {
   // check-ci.sh writes freshness from classifyArchitectureFreshness; the reporter only names it.
   if (typeof summary.freshness !== 'string' || !summary.freshness) throw new Error('Architecture summary freshness must be a string');
   if (typeof summary.unpublishedSince !== 'string' || !summary.unpublishedSince) throw new Error('Architecture summary unpublishedSince must be a string');
+  const linkList = (field: 'dead' | 'missing') => strings(record(summary.archimapLinks, 'Architecture summary archimapLinks')[field], `archimapLinks.${field}`);
   return { status: summary.status, renderEquivalent: summary.renderEquivalent, differingPaths: strings(summary.differingPaths, 'differingPaths'),
     humanActions: summary.humanActions.map(action => record(action, 'Architecture human action')),
-    freshness: summary.freshness, unpublishedSince: summary.unpublishedSince };
+    freshness: summary.freshness, unpublishedSince: summary.unpublishedSince,
+    archimapLinks: summary.archimapLinks === null ? null : { dead: linkList('dead'), missing: linkList('missing') } };
+}
+
+/** A dead or missing link, or no link result, fails the daily architecture lane. */
+function linksBroken(summary: ArchitectureSummary): boolean {
+  return summary.archimapLinks === null || summary.archimapLinks.dead.length + summary.archimapLinks.missing.length > 0;
 }
 
 /** Returns the evidence table row for a summary. A missing summary means the check gave no result. */
@@ -292,14 +301,17 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
         report.errors.push(`Architecture summary invalid: ${message(error)}`);
       }
     }
-    if (summary) lines.push('Architecture summary:', '', '```json', JSON.stringify(summary, null, 2), '```', '', `Render differences: ${summary.differingPaths.join(', ') || 'none'}`, `Freshness: ${summary.freshness}; oldest unpublished main commit: ${summary.unpublishedSince}`);
+    if (summary) lines.push('Architecture summary:', '', '```json', JSON.stringify(summary, null, 2), '```', '', `Render differences: ${summary.differingPaths.join(', ') || 'none'}`, `Freshness: ${summary.freshness}; oldest unpublished main commit: ${summary.unpublishedSince}`,
+      summary.archimapLinks === null ? 'Archimap module links: the link check gave no result. Read the job log.'
+        : `Archimap module links: dead ${summary.archimapLinks.dead.join(', ') || 'none'}; missing ${summary.archimapLinks.missing.join(', ') || 'none'}`);
+    if (summary?.archimapLinks && linksBroken(summary)) lines.push('Archimap action: refresh `docs/architecture/archimap.html` with the `repo-harness-archimap` skill so that it links every `modules[].docs` path of measure.ts and no removed document.');
     try {
       lines.push('', `Action from \`${ARCHITECTURE_EVIDENCE}\`:`, '', '| Result | Meaning | Bot decision |', '| --- | --- | --- |', architectureActionRow(summary, architecture?.evidence ?? ''));
     } catch (error) {
       lines.push(safeText(message(error)));
       report.errors.push(`Architecture action unavailable: ${message(error)}`);
     }
-    return { subject: `architecture ${summary ? `${summary.freshness} (${summary.status})` : 'without summary'}`, body: lines.join('\n') };
+    return { subject: `architecture ${summary ? `${summary.freshness} (${summary.status})${linksBroken(summary) ? ', archimap links' : ''}` : 'without summary'}`, body: lines.join('\n') };
   };
   if (run.conclusion !== 'success') {
     try {
