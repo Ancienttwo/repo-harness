@@ -94,7 +94,7 @@ describe('AgentNotice', () => {
     expect(scope.content).toStartWith(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
   });
 
-  test('#2491: each exhaustion of the checkpoint deadline gives one diagnostic, no block and no command', () => {
+  test('#2491: each notice-path timeout gives one diagnostic, no block and no command; a resolve failure keeps its block', () => {
     const cases: Record<string, (root: string) => ArchctxProviderOptions> = {
       'archctx process': root => ({ env: noticeEnv(root), run: timedOut }),
       'git subprocess': root => {
@@ -128,6 +128,14 @@ describe('AgentNotice', () => {
       expect(result.diagnostics).not.toContain('architecture-debt');
       expect(result.diagnostics).not.toContain('3 s');
     }
+    const ownership = (root: string) => (options: ArchctxProviderOptions) => resolveCapabilityOwnership(root, undefined, options);
+    const resolveRoot = fixture();
+    const resolveTimeout = collectAgentNotice(resolveRoot, ownership(resolveRoot), { env: noticeEnv(resolveRoot), run: timedOut });
+    expect(resolveTimeout).toEqual({ diagnostics: 'repo-harness: architecture notice unavailable: ARCHCONTEXT_RESOLVE_TIMEOUT: archctx resolve timed out; the architecture notice is skipped for this turn\n' });
+    const failedRoot = fixture();
+    const resolveFailed = collectAgentNotice(failedRoot, ownership(failedRoot), { env: noticeEnv(failedRoot), run: killed });
+    expect(resolveFailed.content).toStartWith('[Architecture] notice unavailable (error): capability_ownership:unavailable ARCHCONTEXT_RESOLVE_FAILED: ');
+    expect(resolveFailed.systemMessage).toBe('Architecture: notice unavailable (error); run repo-harness architecture-debt --json.');
   });
 
   test('real citation debt is bounded, uses producer ids and dedupes across delivery points', () => {
@@ -505,17 +513,19 @@ describe('AgentNotice', () => {
     expect(quiet.systemMessage).toContain(ARCHIMAP_MESSAGE);
   });
 
-  test('archimap: an archctx ownership failure in archcontext mode keeps the map line beside the failure line', () => {
+  test('archimap: an archctx ownership timeout in archcontext mode keeps the map line and gives only a diagnostic for the timeout', () => {
     const root = fixture();
     adoptArchimap(root);
     fixtureWrite(root, '.archcontext/model/nodes/extra.yaml', '{}\n');
     const options = { env: noticeEnv(root), run: timedOut };
     const ownership = (scoped: ArchctxProviderOptions) => resolveCapabilityOwnership(root, undefined, scoped);
     const failed = collectAgentNotice(root, ownership, options);
-    // #1429: a resolve timeout asks for a retry, not an update.
-    expect(failed.content).toStartWith('[Architecture] notice unavailable (error): capability_ownership:unavailable ARCHCONTEXT_RESOLVE_TIMEOUT: archctx resolve timed out; the architecture notice is skipped for this turn; fix: repo-harness state resolve --json\n');
-    expect(failed.content).toEndWith([ARCHIMAP_HEADER, '- .archcontext/model/nodes/extra.yaml', ARCHIMAP_FOOTER].join('\n'));
-    expect(failed.systemMessage).toEndWith(`\n${ARCHIMAP_MESSAGE}`);
+    // #2491: a resolve timeout is a notice-path timeout, so it gives no block and its diagnostic names no command.
+    expect(failed.content).toBe([ARCHIMAP_HEADER, '- .archcontext/model/nodes/extra.yaml', ARCHIMAP_FOOTER].join('\n'));
+    expect(failed.systemMessage).toBe(ARCHIMAP_MESSAGE);
+    expect(failed.diagnostics).not.toContain('fix:');
+    // #1429: the ownership reader still asks for a retry, not an update.
+    expect(() => ownership(options)).toThrow('ARCHCONTEXT_RESOLVE_TIMEOUT: archctx resolve timed out; the architecture notice is skipped for this turn; fix: repo-harness state resolve --json');
     expect(failed.diagnostics!.trim().split('\n')).toHaveLength(1);
     expect(failed.diagnostics).toContain('ARCHCONTEXT_RESOLVE_TIMEOUT');
     expect(existsSync(join(root, ARCHIMAP_MARKER))).toBe(true);

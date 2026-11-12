@@ -508,11 +508,17 @@ export function resolveCapabilityOwnership(cwd: string, targetRef?: string, opti
   const owedSubject = owedOwnershipSubject(cwd, reviewSubject);
   if (owedSubject.status !== 'ok') throw new Error(`owed subject is unavailable: ${owedSubject.reason ?? 'unknown reason'}`);
   const resolution = capabilityIdsForPaths(cwd, owedSubject.paths.filter(isImplementationSurfacePath), policy, undefined, undefined, options);
-  if (resolution.blocker) {
-    throw new Error(`${resolution.blocker.key} ${resolution.blocker.code}: ${resolution.blocker.message}; fix: ${resolution.blocker.fix}`);
-  }
+  if (resolution.blocker) throw new CapabilityOwnershipError(resolution.blocker);
   if (resolution.registryStatus === 'absent') return null;
   return capabilityOwnershipFrom(resolution, false, reviewSubject.target_rev)!;
+}
+
+/** Ownership was not computed. The blocker keeps its code, so a reader classifies the cause by type, not by text. */
+export class CapabilityOwnershipError extends Error {
+  constructor(readonly blocker: CapabilityOwnershipBlocker) {
+    super(`${blocker.key} ${blocker.code}: ${blocker.message}; fix: ${blocker.fix}`);
+    this.name = 'CapabilityOwnershipError';
+  }
 }
 
 /**
@@ -560,9 +566,7 @@ export function capabilityOwnersForPaths(
   const ownership = architecturePort('ownership');
   const cache = isArchitectureUnavailable(ownership) ? undefined : ownership.resolveCache(cwd);
   const resolution = capabilityIdsForPaths(cwd, surfaces, readWorkflowPolicy(cwd), undefined, select, undefined, cache);
-  if (resolution.blocker) {
-    throw new Error(`${resolution.blocker.key} ${resolution.blocker.code}: ${resolution.blocker.message}; fix: ${resolution.blocker.fix}`);
-  }
+  if (resolution.blocker) throw new CapabilityOwnershipError(resolution.blocker);
   for (const match of resolution.matches) {
     owners.set(match.filePath, { id: match.capability.id, module_document: match.capability.architecture_module });
   }

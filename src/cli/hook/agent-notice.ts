@@ -8,7 +8,7 @@ import type { CapabilityOwnership } from '../../core/capabilities/registry';
 import { capabilitySource, changedSinceReviewBase, checkpointArchitectureDebt } from '../../effects/architecture/archctx-provider';
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { assertSafeRepoWritePath, writeHookStateFile } from '../../effects/hook-state-file';
-import { loadRegistryAuthority, readWorkflowPolicy, resolveReviewBase } from '../../effects/state/resolve-effective-state';
+import { CapabilityOwnershipError, loadRegistryAuthority, readWorkflowPolicy, resolveReviewBase } from '../../effects/state/resolve-effective-state';
 import { boundedHookDiagnostic } from './hook-protocol';
 import { gitExecFileSync } from '../../effects/git/runner';
 
@@ -43,7 +43,9 @@ type Status =
   | { readonly kind: 'active' }
   | { readonly kind: 'disabled' }
   | { readonly kind: 'inactive'; readonly cause: string }
-  | { readonly kind: 'failure'; readonly error: unknown; readonly timedOut?: true };
+  | { readonly kind: 'failure'; readonly error: unknown }
+  /** A notice-path timeout: load, not a state change. Only diagnostics get it, and the next hook measures again. */
+  | { readonly kind: 'timeout'; readonly text: string };
 
 interface Observation {
   readonly status: Status;
@@ -187,7 +189,20 @@ function failureBlock(error: unknown): NoticeBlock {
   };
 }
 
+/**
+ * The command-free text of a notice-path timeout: the checkpoint deadline
+ * (process, Git steps, Node selection, decode) or the ownership resolve. Null
+ * for every other error, which keeps its block.
+ */
+function noticeTimeout(error: unknown): string | null {
+  if (error instanceof ArchctxClientError && error.code === 'RH_ARCHCTX_TIMEOUT') return `${error.code}: ${singleLine(error.providerMessage)}`;
+  if (error instanceof CapabilityOwnershipError && error.blocker.code === 'ARCHCONTEXT_RESOLVE_TIMEOUT') return `${error.blocker.code}: ${error.blocker.message}`;
+  return null;
+}
+
 function statusOf(error: unknown): Status {
+  const timeout = noticeTimeout(error);
+  if (timeout !== null) return { kind: 'timeout', text: timeout };
   if (!(error instanceof ArchctxClientError) || !INACTIVE_CODES.has(error.code)) return { kind: 'failure', error };
   return { kind: 'inactive', cause: singleLine(error.action ? `${error.code}, action ${error.action}` : error.code) };
 }
@@ -260,12 +275,7 @@ function observeDebt(repoRoot: string, source: ReturnType<typeof capabilitySourc
     const ownerBlock = unownedBlock(paths);
     unowned = ownerBlock && { paths, block: ownerBlock };
     if (status.kind !== 'active') return { status, unowned, debt: null };
-    let measured: ReturnType<typeof checkpointArchitectureDebt>;
-    try { measured = checkpointArchitectureDebt(repoRoot, owned, options); }
-    catch (error) {
-      if (error instanceof ArchctxClientError && error.code === 'RH_ARCHCTX_TIMEOUT') return { status: { kind: 'failure', error, timedOut: true }, unowned, debt: null };
-      throw error;
-    }
+    const measured = checkpointArchitectureDebt(repoRoot, owned, options);
     const debtBlock = measured && renderAgentNotice(measured.report);
     const debt = measured && debtBlock ? { branch: measured.branch, ids: noticeItems(measured.report).map(item => item.id).sort(), block: debtBlock } : null;
     return { status, unowned, debt };
@@ -302,16 +312,14 @@ function claim(repoRoot: string, path: string, key: string, env: NodeJS.ProcessE
 /** One line per readiness change. A failure never touches the debt marker, so a later success still delivers the debt. */
 function statusNotice(repoRoot: string, env: NodeJS.ProcessEnv | undefined, status: Status): NoticeBlock | null {
   switch (status.kind) {
-    case 'disabled': return null;
+    // A Claude Stop block for a timeout would start one more turn with nothing to do.
+    case 'disabled': case 'timeout': return null;
     case 'active':
       // The active key ends the previous state, so a cause that returns prints again.
       if (existsSync(join(repoRoot, STATUS_MARKER))) claim(repoRoot, STATUS_MARKER, digest(['active']), env);
       return null;
     case 'inactive': return claim(repoRoot, STATUS_MARKER, digest(['inactive', status.cause]), env) ? inactiveBlock(status.cause) : null;
     case 'failure': {
-      // A checkpoint timeout is load, not a state change: a Claude Stop block would
-      // start one more turn with nothing to do. The next hook measures again.
-      if (status.timedOut) return null;
       const key = digest(['failure', currentBranch(repoRoot, env), failureCode(status.error)]);
       return claim(repoRoot, STATUS_MARKER, key, env) ? failureBlock(status.error) : null;
     }
@@ -321,9 +329,9 @@ function statusNotice(repoRoot: string, env: NodeJS.ProcessEnv | undefined, stat
 /** Ownership and citation debt share one marker. Their key changes when a debt item or an unowned path changes. */
 function debtNotice(repoRoot: string, env: NodeJS.ProcessEnv | undefined, observation: Observation): NoticeBlock[] {
   const { unowned, debt } = observation;
-  // A failed checkpoint has no measured set. Claiming the unowned paths alone would
+  // A failed or timed-out checkpoint has no measured set. Claiming the unowned paths alone would
   // make every recovery print them again.
-  if (observation.status.kind === 'failure' || (!unowned && !debt)) return [];
+  if (observation.status.kind === 'failure' || observation.status.kind === 'timeout' || (!unowned && !debt)) return [];
   const key = digest([debt?.branch ?? currentBranch(repoRoot, env), debt?.ids ?? [], unowned?.paths ?? []]);
   if (!claim(repoRoot, MARKER, key, env)) return [];
   return [unowned?.block, debt?.block].filter((block): block is NoticeBlock => block !== undefined);
@@ -347,7 +355,8 @@ export function collectAgentNotice(repoRoot: string, ownership: (options: Archct
   const observation = observe(repoRoot, ownership, options);
   if (!observation) return {};
   const blocks: NoticeBlock[] = [];
-  const problems: string[] = observation.status.kind === 'failure' ? [errorText(observation.status.error)] : [];
+  const { status } = observation;
+  const problems: string[] = status.kind === 'failure' ? [errorText(status.error)] : status.kind === 'timeout' ? [status.text] : [];
   if (observation.unmeasured !== undefined) problems.push(errorText(observation.unmeasured));
   try {
     const block = statusNotice(repoRoot, options.env, observation.status);
@@ -358,8 +367,9 @@ export function collectAgentNotice(repoRoot: string, ownership: (options: Archct
   // A failure that the status or unowned filter already reported (the shared
   // diff, or the same unavailable review subject) is not repeated.
   const { archimapError } = observation;
-  const reported = observation.status.kind === 'failure' ? observation.status.error : observation.unmeasured;
-  if (archimapError !== undefined && (reported === undefined || errorText(archimapError) !== errorText(reported))) problems.push(errorText(archimapError));
+  const reported = status.kind === 'failure' ? errorText(status.error) : status.kind === 'timeout' ? status.text
+    : observation.unmeasured === undefined ? undefined : errorText(observation.unmeasured);
+  if (archimapError !== undefined && errorText(archimapError) !== reported) problems.push(errorText(archimapError));
   try { blocks.push(...archimapNotice(repoRoot, options.env, observation)); }
   catch (error) { problems.push(errorText(error)); }
   if (point === 'session-start') {
