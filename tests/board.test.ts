@@ -277,7 +277,7 @@ function asSmallFix(pr: Json): void {
 }
 
 test('Low acceptance uses the effective tier of every linked issue: a Low closing issue with a High or unobserved ref is not accepted by tier', () => {
-  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null };
+  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null, startedAt: null, checkSuite: { workflowRun: null } };
   const via = (refs: string) => replay({
     parent: (data) => { issueNode(data, 1479).labels.nodes.push({ name: 'tier:low' }); issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
     pulls: (data) => {
@@ -1011,7 +1011,7 @@ test('board merge: no plan, a draft, plan holds, plan order for every linked ite
       const { pr1494 } = data.repository;
       pr1494.isDraft = false;
       asSmallFix(pr1494);
-      pr1494.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null });
+      pr1494.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null, startedAt: null, checkSuite: { workflowRun: null } });
     },
   };
   expect([
@@ -1212,7 +1212,7 @@ const ROUND_4_PASS_1499 = "repo-harness acceptance record\nAgent: Claude Code (c
 const ROUND_4_FAIL_1494 = "repo-harness acceptance record\nAgent: Claude Code (claude-opus-5-5) coordinator, session d2630775\n\n| Round | Seat | Subject | Verdict |\n|---|---|---|---|\n| 4 | acceptor (gatekeeper, fresh Claude context, read-only) | 5c5139981b0bc5a620e3b2cd0605d61e4c76991d | FAIL: 1 P2, 1 P3 |\n\nModel relation: same-family\nThe receipt tool takes rounds 1-3 only, so this comment holds round 4.\n\nDelta 5c5139981 and merge aa8b6c3cc (remerge-diff empty). The round 3 fix is correct: the doctor relay check passes `hcOptions()`, and the doctor test fails without it. check:type pass; check:state-boundaries pass (533 files); `tests/cli/doctor.test.ts` 48/48 in 3 runs (the worker's earlier 2 failures did not reproduce); the 13 other affected files pass with the PR body counts; CI green.\n\nFindings (sibling sweep of hc calls in the changed files):\n- rv1494-r4-status-forwards-notify-secrets, P2, `src/effects/operator/notify-status.ts:80`: `readNotifyChannelStatus` passes `{ ...process.env, ...input.env }` unscrubbed to `hcListAsync`. A probe with a fake hc showed `WEBHOOK_URL` and `TELEGRAM_BOT_TOKEN` in the child env. The PR Risk section says this read starts a stopped core, so that core keeps the values and later terminals inherit them. Fix: move the `NOTIFY_SECRET_KEYS` scrub into one exported helper beside `NOTIFY_SECRET_KEYS` in `notify-relay.ts`; use it in `hcOptions()` and for the hc env here; extend one case in `tests/effects/operator-notify-status.test.ts` with an env-dumping fake hc.\n- rv1494-r4-relay-events-env-unscrubbed, P3, `src/cli/commands/herdr.ts:197` and `notify-relay.ts:254`: the relay passes `process.env` to `hcEvents`. A hand run from a shell that exports the values can start a core that keeps them. Use the same helper.\n\nDecision: not accepted at 5c5139981. The writer fixes both items with the one helper. Round 5 needs the owner's approval: rounds 1-4 all failed, which reaches the fix-and-review cap.\n";
 
 test('acceptance: round-4 records with bare SHAs, an unparsed record, and a Low closing issue outside the board', () => {
-  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null };
+  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null, startedAt: null, checkSuite: { workflowRun: null } };
   const board = replay({
     parent: (data) => { for (const number of [1476, 1479]) issueNode(data, number).labels.nodes.push({ name: 'tier:low' }); },
     pulls: (data) => {
@@ -1280,7 +1280,7 @@ test('one hit for each rule that the recorded state does not trigger', () => {
       pr1499.baseRefName = 'main';
       pr1499.isDraft = false;
       pr1499.files = { totalCount: 1, nodes: [{ path: 'src/effects/terminal/task-session.ts', additions: 10, deletions: 2 }] };
-      pr1499.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null });
+      pr1499.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null, startedAt: null, checkSuite: { workflowRun: null } });
       // #1494 (tier:medium #1479) changes a hook: R5.
       data.repository.pr1494.files.nodes.push({ path: hook });
       data.repository.pr1494.files.totalCount += 1;
@@ -1436,7 +1436,7 @@ test('a rendered record with multiline finding values parses to its finding IDs'
 });
 
 test('a plan hold removes a PR from A1 and R4', () => {
-  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null };
+  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null, startedAt: null, checkSuite: { workflowRun: null } };
   const findings = (holds: number[]) => evaluateBoardAttention(replay({
     now: new Date('2026-11-03T02:00:00Z'),
     owners: (results) => { results.push(...['a', 'b'].map(path => ({ path, matched: false, ambiguous: false, owningCapabilityId: null }))); },
@@ -2401,21 +2401,32 @@ describe('board required check: the contexts come from the base protection (#226
     expect(mergeReason({ pulls: renamed }, { protection: build })).toBe('eligible');
   });
 
-  test('the check joins every required context: missing before pending before failure, and the merge detail names each context that is not success', () => {
+  test('the check joins every required context: each name keeps the reports that gh pr checks keeps, and the merge detail names each context that is not success', () => {
     const two = (base: string) => ({ status: 0, stdout: JSON.stringify({ required_status_checks: { contexts: base === 'main' ? ['Required / CI', 'Lint'] : ['Required / CI'] } }) });
-    const lint = (status: string, conclusion: string | null) => (data: Json) => {
-      data.repository.pr1491.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Lint', status, conclusion, completedAt: conclusion === null ? null : '2026-11-02T21:20:00Z', detailsUrl: null });
-    };
-    const decision = (pulls?: (data: Json) => void) => boardMergeDecisions(replay(mergeReplay({ pulls }, { protection: two }))).find(entry => entry.pr === 1491)!;
-    expect([decision(), decision(lint('IN_PROGRESS', null)), decision(lint('COMPLETED', 'FAILURE')), decision(lint('COMPLETED', 'SUCCESS'))].map(entry => (entry.eligible ? 'eligible' : entry.detail)))
-      .toEqual(['Lint is missing', 'Lint is pending', 'Lint is failure', 'eligible']);
-    // A required commit status context counts as base protection counts it: SUCCESS passes, PENDING waits, FAILURE fails.
-    const status = (state: string) => (data: Json) => {
-      data.repository.pr1491.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ context: 'Lint', state, targetUrl: null, createdAt: '2026-11-02T21:20:00Z' });
-    };
-    expect([decision(status('SUCCESS')), decision(status('PENDING')), decision(status('FAILURE'))].map(entry => (entry.eligible ? 'eligible' : entry.detail)))
-      .toEqual(['eligible', 'Lint is pending', 'Lint is failure']);
-    const failed = replay(mergeReplay({ pulls: lint('COMPLETED', 'FAILURE') }, { protection: two })).pull_requests.find(pr => pr.number === 1491)!.required_check;
+    // A check run of `Lint` started at minute `at`, completed one minute later; a commit status of `Lint` created at minute `at`.
+    const time = (minute: number) => `2026-11-02T21:${String(minute).padStart(2, '0')}:00Z`;
+    const run = (conclusion: string | null, at: number, workflow = 'CI', event = 'pull_request') => ({ name: 'Lint', status: conclusion === null ? 'IN_PROGRESS' : 'COMPLETED', conclusion,
+      startedAt: time(at), completedAt: conclusion === null ? null : time(at + 1), detailsUrl: null, checkSuite: { workflowRun: { event, workflow: { name: workflow } } } });
+    const status = (state: string, at: number) => ({ context: 'Lint', state, targetUrl: null, createdAt: time(at) });
+    const lint = (reports: readonly Json[]) => (data: Json) => { data.repository.pr1491.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push(...reports); };
+    const decision = (reports: readonly Json[]) => boardMergeDecisions(replay(mergeReplay({ pulls: lint(reports) }, { protection: two }))).find(entry => entry.pr === 1491)!;
+    const cases: readonly (readonly [readonly Json[], string])[] = [
+      [[], 'Lint is missing'],
+      [[run(null, 20)], 'Lint is pending'],
+      [[run('FAILURE', 20)], 'Lint is failure'],
+      [[run('SUCCESS', 20)], 'eligible'],
+      // The same workflow and event: the newer run replaces the older one.
+      [[run('FAILURE', 20), run('SUCCESS', 30)], 'eligible'],
+      // One name from two workflows: both stay.
+      [[run('SUCCESS', 30), run('FAILURE', 20, 'Nightly')], 'Lint is failure'],
+      [[run('SUCCESS', 30), run('FAILURE', 20, 'CI', 'push')], 'Lint is failure'],
+      // A check run and a commit status of one name both stay: a newer passing run does not hide an older failing status.
+      [[status('FAILURE', 20), run('SUCCESS', 30)], 'Lint is failure'],
+      [[status('PENDING', 20), run('SUCCESS', 30)], 'Lint is pending'],
+      [[status('FAILURE', 20), status('SUCCESS', 25), run('SUCCESS', 30)], 'eligible'],
+    ];
+    expect(cases.map(([reports]) => decision(reports)).map(entry => (entry.eligible ? 'eligible' : entry.detail))).toEqual(cases.map(([, expected]) => expected));
+    const failed = replay(mergeReplay({ pulls: lint([run('FAILURE', 19)]) }, { protection: two })).pull_requests.find(pr => pr.number === 1491)!.required_check;
     expect(failed).toMatchObject({ status: 'failure', completed_at: '2026-11-02T21:20:00Z', contexts: [{ name: 'Required / CI', status: 'success' }, { name: 'Lint', status: 'failure' }] });
   });
 

@@ -68,7 +68,8 @@ const PULL_REQUEST_FIELDS = `number url state isDraft body baseRefName baseRefOi
   files(first: ${BOARD_PAGE.files}) { totalCount nodes { path additions deletions } }
   commits(last: 1) { nodes { commit { oid committedDate statusCheckRollup {
     contexts(first: ${BOARD_PAGE.checks}) { pageInfo { hasNextPage } nodes {
-      ... on CheckRun { name status conclusion completedAt detailsUrl } ... on StatusContext { context state targetUrl createdAt }
+      ... on CheckRun { name status conclusion startedAt completedAt detailsUrl checkSuite { workflowRun { event workflow { name } } } }
+      ... on StatusContext { context state targetUrl createdAt }
     } }
   } } } }
   ${COMMENTS}`;

@@ -386,34 +386,47 @@ function claimStatus(issue: BoardSubIssueReadV1): BoardClaimStatusV1 {
 }
 
 /**
- * The newest head report of one required context: a check run of that name or a commit status of that context, as base protection
- * matches them. A check run that is not complete counts as the newest.
+ * The head reports of one required name that `gh pr checks` keeps (cli/cli `pkg/cmd/pr/checks/aggregate.go`, `eliminateDuplicates`):
+ * the newest commit status of the context by creation, and the newest check run of each workflow name and event by start. A check
+ * run and a commit status of one name both stay.
  */
-function contextRun(read: BoardPullRequestReadV1, name: string): BoardRollupContextV1 | null {
-  const runs = read.readiness_inputs.rollup.filter(context => context.name === name);
-  return runs.length === 0 ? null : runs.reduce((newest, check) => ((check.completed_at ?? '9') > (newest.completed_at ?? '9') ? check : newest));
+function contextReports(read: BoardPullRequestReadV1, name: string): BoardRollupContextV1[] {
+  const kept = new Map<string, BoardRollupContextV1>();
+  for (const report of read.readiness_inputs.rollup.filter(context => context.name === name)) {
+    const key = report.type === 'StatusContext' ? 'status' : JSON.stringify(['run', report.workflow?.name ?? '', report.workflow?.event ?? '']);
+    const current = kept.get(key);
+    if (current === undefined || reportTime(report) > reportTime(current)) kept.set(key, report);
+  }
+  return [...kept.values()];
 }
+
+/** A check run that has not started is the oldest of its group, as in `gh pr checks`. */
+const reportTime = (report: BoardRollupContextV1): string => (report.type === 'StatusContext' ? report.completed_at : report.started_at) ?? '';
 
 /** The commit status states as the `gh pr checks` bucket that publication readiness reads: pass, pending or fail. */
 const STATUS_STATES: ReadonlyMap<string, BoardRequiredContextV1['status']> = new Map([['SUCCESS', 'success'], ['PENDING', 'pending'], ['EXPECTED', 'pending'], ['FAILURE', 'failure'], ['ERROR', 'failure']]);
 
-function runStatus(run: BoardRollupContextV1 | null): BoardRequiredContextV1['status'] {
-  if (run === null) return 'missing';
+function reportStatus(report: BoardRollupContextV1): BoardRequiredContextV1['status'] {
   // GitHub defines no other state; one would fail closed.
-  if (run.type === 'StatusContext') return STATUS_STATES.get(run.status) ?? 'failure';
-  if (run.status !== 'COMPLETED' || run.completed_at === null) return 'pending';
-  return run.conclusion === 'SUCCESS' ? 'success' : 'failure';
+  if (report.type === 'StatusContext') return STATUS_STATES.get(report.status) ?? 'failure';
+  if (report.status !== 'COMPLETED' || report.completed_at === null) return 'pending';
+  return report.conclusion === 'SUCCESS' ? 'success' : 'failure';
+}
+
+/** The join of the reports of a name, and of the names of a required check: `missing` (or no status), then `pending`, then `failure`, else `success`. */
+function joinStatuses(statuses: readonly BoardRequiredContextV1['status'][]): BoardRequiredContextV1['status'] {
+  if (statuses.length === 0) return 'missing';
+  return (['missing', 'pending', 'failure'] as const).find(status => statuses.includes(status)) ?? 'success';
 }
 
 function requiredCheck(read: BoardPullRequestReadV1, required: BoardRequiredContextsV1): BoardRequiredCheckV1 {
   if (required.status === 'unavailable') return Object.freeze({ status: 'unavailable', reason: required.reason });
-  const runs = required.contexts.map(name => ({ name, run: contextRun(read, name) }));
-  const contexts = Object.freeze(runs.map(({ name, run }) => Object.freeze({ name, status: runStatus(run) })));
-  for (const status of ['missing', 'pending'] as const) {
-    if (contexts.some(context => context.status === status)) return Object.freeze({ status, contexts });
-  }
-  const status = contexts.some(context => context.status === 'failure') ? 'failure' : 'success';
-  const completedAt = runs.filter((_, at) => contexts[at]!.status === status).map(({ run }) => run!.completed_at!).reduce((newest, at) => (at > newest ? at : newest));
+  const named = required.contexts.map(name => ({ name, reports: contextReports(read, name) }));
+  const contexts = Object.freeze(named.map(({ name, reports }) => Object.freeze({ name, status: joinStatuses(reports.map(reportStatus)) })));
+  const status = joinStatuses(contexts.map(context => context.status));
+  if (status === 'missing' || status === 'pending') return Object.freeze({ status, contexts });
+  const completedAt = named.flatMap(({ reports }) => reports).filter(report => reportStatus(report) === status).map(report => report.completed_at!)
+    .reduce((newest, at) => (at > newest ? at : newest));
   return Object.freeze({ status, completed_at: completedAt, contexts });
 }
 

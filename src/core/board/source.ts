@@ -90,6 +90,10 @@ export interface BoardRollupContextV1 {
   readonly conclusion: string | null;
   readonly completed_at: string | null;
   readonly details_url: string | null;
+  /** The start of a check run; null for a check run that has not started and for a commit status. */
+  readonly started_at: string | null;
+  /** The workflow name and event of the Actions run of a check run; null for a check run of another app and for a commit status. */
+  readonly workflow: { readonly name: string; readonly event: string } | null;
 }
 
 /** The fields of the pull request read that merge readiness also reads; the keyed source store digests them. */
@@ -349,16 +353,25 @@ function rollupContexts(rollup: Json, label: string): BoardRollupContextV1[] {
         conclusion: nullableStr(context.conclusion, `${at}.conclusion`),
         completed_at: context.completedAt === null ? null : time(context.completedAt, `${at}.completedAt`),
         details_url: nullableStr(context.detailsUrl, `${at}.detailsUrl`),
+        started_at: context.startedAt === null ? null : time(context.startedAt, `${at}.startedAt`),
+        workflow: workflowOf(obj(context.checkSuite, `${at}.checkSuite`).workflowRun, `${at}.checkSuite.workflowRun`),
       } as const);
     }
     if (context.context !== undefined) {
       return Object.freeze({
         type: 'StatusContext', name: str(context.context, `${at}.context`), status: str(context.state, `${at}.state`), conclusion: null,
         completed_at: time(context.createdAt, `${at}.createdAt`), details_url: nullableStr(context.targetUrl, `${at}.targetUrl`),
+        started_at: null, workflow: null,
       } as const);
     }
     return fail(`${at} is neither a check run nor a commit status`);
   });
+}
+
+function workflowOf(value: unknown, label: string): BoardRollupContextV1['workflow'] {
+  if (value === null) return null;
+  const run = obj(value, label);
+  return Object.freeze({ name: str(obj(run.workflow, `${label}.workflow`).name, `${label}.workflow.name`), event: str(run.event, `${label}.event`) });
 }
 
 function complete(connection: unknown, label: string): unknown[] | null {
