@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "child_process";
 import { createHash } from "crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { delimiter, dirname, join } from "path";
 import { seatPaneName } from "../../src/core/board/seat-launch";
@@ -807,11 +807,12 @@ describe("repo-harness seats handoff (#2175)", () => {
 
       writeFileSync(transcript, `${JSON.stringify({ type: "assistant", message: { usage: { input_tokens: 10, cache_read_input_tokens: 200_000, cache_creation_input_tokens: 5 } } })}\n`, { flag: "a" });
       const identity = { seat: "orchestrator", repository } as const;
-      expect(handoff(seat)).toEqual({ status: 0, stdout: `${seatResetSteps(identity)}\n`, error: null });
+      expect(handoff(seat)).toEqual({ status: 0, stdout: `${seatResetSteps(identity, "compact")}\n`, error: null });
       // The Stop hook prints the same steps after its token line.
-      expect(seatResetReason(identity, 1).split("\n").slice(1).join("\n")).toBe(seatResetSteps(identity));
+      expect(seatResetReason(identity, 1, 1, "compact").split("\n").slice(1).join("\n")).toBe(seatResetSteps(identity, "compact"));
       const request = JSON.parse(readFileSync(join(dir, "request.json"), "utf8"));
-      expect([request.context_tokens, request.transcript_path, Number.isFinite(Date.parse(request.requested_at))]).toEqual([200_015, transcript, true]);
+      expect([request.context_tokens, request.transcript_path, Number.isFinite(Date.parse(request.requested_at)), request.action, request.transcript_bytes])
+        .toEqual([200_015, transcript, true, "compact", statSync(transcript).size]);
     } finally {
       rmSync(join("/tmp/repo-harness-seats", repository), { recursive: true, force: true });
       rmSync(home, { recursive: true, force: true });
@@ -822,17 +823,17 @@ describe("repo-harness seats handoff (#2175)", () => {
 describe("repo-harness seats reset (#1972)", () => {
   let runs = 0;
   const ended = { ended: true, reason: "status", turn: 3, status: "idle" };
-  const timeouts = { signalMs: 300, evidenceMs: 300, exitMs: 300, pollMs: 20 };
+  const timeouts = { signalMs: 300, compactSignalMs: 300, evidenceMs: 300, exitMs: 300, pollMs: 20 };
   /**
-   * A fake hc at the hc boundary: no real terminal is read or written. `/clear` writes the new-session signal when
-   * `signal` is on, a relaunch line always writes it, `/exit` ends claude when `exit` is on, and every resume prompt
+   * A fake hc at the hc boundary: no real terminal is read or written. `/clear` writes the new-session signal of a new
+   * transcript and `/compact` a compact record of the request transcript when `signal` is on, a relaunch line always writes it, `/exit` ends claude when `exit` is on, and every resume prompt
    * lands in the new transcript. The model answers earlier prompts with text only, and prompt number `evidenceFrom` and
    * later with the Bash tool call that sends RESUMED and its tool result, an error result before prompt `errorUntil`.
    * `answers[n]` replaces the command and the result (ok, error or none) of prompt n + 1.
    * `sendFail` refuses a send.
    */
   function withReset(fn: (f: { handoff: string; body: string; sha: (text: string) => string; state: (patch: Record<string, unknown>) => void;
-    reset: (input?: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void; notify?: SeatResetNotify }) => Promise<unknown>;
+    reset: (input?: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void; notify?: SeatResetNotify; action?: "compact" | "reset" }) => Promise<unknown>;
     home: string; sends: () => string[]; calls: () => string[]; log: () => { kind: string; detail: string; notice: string; requested_at: string }[] }) => Promise<void>, seat: "advisor" | "orchestrator" = "advisor") {
     return async () => {
       const home = mkdtempSync(join(tmpdir(), "seats-reset-"));
@@ -849,7 +850,7 @@ const [cmd, , ...rest] = process.argv.slice(2);
 const st = JSON.parse(fs.readFileSync("${home}/state.json", "utf8"));
 fs.appendFileSync("${home}/calls.log", [cmd, ...rest].join(" ") + "\\n");
 const out = value => process.stdout.write(JSON.stringify(value));
-const session = transcript => fs.writeFileSync("${dir}/session.json", JSON.stringify({ session_id: "s", transcript_path: transcript, source: "clear", started_at: new Date().toISOString() }));
+const session = (transcript, source = "clear") => fs.writeFileSync("${dir}/session.json", JSON.stringify({ session_id: "s", transcript_path: transcript, source, started_at: new Date().toISOString() }));
 if (cmd === "ls") out({ terminals: st.terminals });
 if (cmd === "get") out({ address: rest.at(-1), state: "live", labels: rest.at(-1) === "t2" ? st.callerLabels : { "repo-harness.seat": "${seat}", "repo-harness.repository": "${repository}" }, turn: 3, foreground: { pid: 1, name: st.foreground, argv: [], cwd: "/" } });
 // wait is one result, or a sequence: the last result answers every later call.
@@ -863,6 +864,7 @@ if (cmd === "wait") {
 if (cmd === "keys") {
   const line = rest.slice(2).filter(key => key !== "enter").map(key => (key === "space" ? " " : key)).join("");
   if (line === "/clear" && st.signal) session("${home}/cleared.jsonl");
+  if (line === "/compact" && st.signal) session("${home}/old.jsonl", "compact");
   if (line === "/exit" && st.exit) st.foreground = "zsh";
   if (line.startsWith("sh ")) session("${home}/relaunched.jsonl");
   out({ status: null, turn: 4 });
@@ -893,13 +895,13 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
         const body = HANDOFF_SECTIONS.map(section => `## ${section}\n\nstate\n`).join("\n");
         const sha = (text: string) => createHash("sha256").update(text).digest("hex");
         const requestedAt = new Date(Date.now() - 60_000).toISOString();
-        const reset = async (input: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void; notify?: SeatResetNotify } = {}) => {
+        const reset = async (input: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void; notify?: SeatResetNotify; action?: "compact" | "reset" } = {}) => {
           const text = input.text ?? body;
           writeFileSync(handoff, text);
           if (input.handoff === false) rmSync(handoff);
           if (input.stale === true) utimesSync(handoff, new Date(Date.now() - 120_000), new Date(Date.now() - 120_000));
           rmSync(join(dir, "request.json"), { force: true });
-          if (input.request !== false) writeFileSync(join(dir, "request.json"), JSON.stringify({ requested_at: requestedAt, context_tokens: 400000, transcript_path: join(home, "old.jsonl") }));
+          if (input.request !== false) writeFileSync(join(dir, "request.json"), JSON.stringify({ requested_at: requestedAt, context_tokens: 400000, transcript_path: join(home, "old.jsonl"), action: input.action ?? "reset", transcript_bytes: 1 }));
           const { HERDR_ENV: _nested, ...base } = process.env;
           input.before?.();
           try {
@@ -1026,6 +1028,27 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
     expect(await reset({ stale: true })).toEqual({ error: "already_claimed", outcome: "nothing_sent" });
     expect(calls()).toEqual(["wait --timeout 600 -- t5", "keys -- t5 / c l e a r enter", `send -- t5 ${prompt(handoff)}`]);
     expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([["reset", "cleared"], ["already_claimed", "The reset request of " + log()[0]!.requested_at + " is already claimed by an earlier run."]]);
+  }));
+
+  const compactPrompt = (handoff: string) => `You are advisor. Read ${handoff}, then run the Bash command \`hc send t2 RESUMED\` alone, then continue.`;
+
+  test("a compact request types /compact once and sends the compact prompt after the compact record of the same transcript (#2625)", withReset(async ({ handoff, reset, calls, log }) => {
+    expect(await reset({ action: "compact" })).toEqual({ requester: "t5", seat: "advisor", relaunched: false, logErrors: [] });
+    expect(calls()).toEqual(["wait --timeout 600 -- t5", "keys -- t5 / c o m p a c t enter", `send -- t5 ${compactPrompt(handoff)}`]);
+    expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([["reset", "compacted"]]);
+  }));
+
+  test("no compact record types no second /compact: one log entry and an uncertain result that names the prompt (#2625)", withReset(async ({ reset, state, sends, log }) => {
+    state({ signal: false });
+    expect(await reset({ action: "compact" })).toEqual({ error: "resume_not_sent", outcome: "uncertain" });
+    expect([sends(), log().map(({ kind, detail }) => [kind, detail])]).toEqual([["/compact"], [["resume", "no_signal"]]]);
+  }));
+
+  test("an unanswered compact prompt is sent 3 more times, then the relaunch sends the prompt with the state check (#2625)", withReset(async ({ handoff, reset, state, sends, log }) => {
+    state({ evidenceFrom: 5 });
+    expect(await reset({ action: "compact" })).toEqual({ requester: "t5", seat: "advisor", relaunched: true, logErrors: [] });
+    expect(sends()).toEqual(["/compact", ...Array(4).fill(compactPrompt(handoff)), "/exit", `sh ${join(dirname(handoff), "relaunch.sh")}`, prompt(handoff)]);
+    expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([...Array(4).fill(["resume", "no_evidence"]), ["reset", "relaunched"]]);
   }));
 
   test("a claim that cannot be created types nothing", withReset(async ({ handoff, reset, calls }) => {

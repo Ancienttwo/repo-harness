@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, mkdirSync } from 'fs';
+import { chmodSync, closeSync, existsSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync, writeSync, mkdirSync } from 'fs';
 import { spawnSync } from 'child_process';
 import { dirname, join } from 'path';
 import { tmpdir } from 'os';
@@ -120,7 +120,7 @@ describe('Stop seat reset (#1972)', () => {
     rmSync(join('/tmp/repo-harness-seats', repository), { recursive: true, force: true });
   });
 
-  test('a reset seat below the threshold stops; at the threshold it blocks once per transcript and records the request', () => {
+  test('a reset seat below the threshold stops; at the threshold it blocks once per session segment and records the request with its action', () => {
     const cwd = fixture();
     const transcript = join(cwd, 'transcript.jsonl');
     const stop = (active: boolean, path = transcript) => seatStop(cwd, path, active);
@@ -131,10 +131,26 @@ describe('Stop seat reset (#1972)', () => {
     expect([blocked.exitCode, blocked.stdout]).toEqual([2, '']);
     expect(blocked.stderr).toContain('the orchestrator seat context is 380000 tokens');
     expect(blocked.stderr).toContain(`Send \`RESET-REQUEST ${dir}/handoff.md <sha256>\` to the advisor seat`);
-    expect(JSON.parse(readFileSync(join(dir, 'request.json'), 'utf8'))).toEqual({ requested_at: now.toISOString(), context_tokens: 380_000, transcript_path: transcript });
+    const bytes = statSync(transcript).size;
+    expect(blocked.stderr).toContain(`The transcript is ${bytes} bytes, below 33554432, so the reset types /compact.`);
+    expect(JSON.parse(readFileSync(join(dir, 'request.json'), 'utf8'))).toEqual({ requested_at: now.toISOString(), context_tokens: 380_000, transcript_path: transcript, action: 'compact', transcript_bytes: bytes });
     expect(stop(true)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
-    // A later turn of the same transcript does not ask again, so the first handoff stays newer than the request.
+    // A later turn of the same segment does not ask again, so the first handoff stays newer than the request.
     expect(stop(false)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    // A compact record newer than the request starts a new segment of the same transcript, so the next crossing blocks.
+    const session = (startedAt: string) => writeFileSync(join(dir, 'session.json'), JSON.stringify({ session_id: 's', transcript_path: transcript, source: 'compact', started_at: startedAt }));
+    session(new Date(now.getTime() - 1).toISOString());
+    expect(stop(false)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    session(new Date(now.getTime() + 1).toISOString());
+    expect(stop(false).exitCode).toBe(2);
+    // At or above the bound the request records /clear; a sparse file keeps the 32 MiB transcript cheap.
+    const big = join(cwd, 'big.jsonl');
+    const fd = openSync(big, 'w');
+    writeSync(fd, `\n${assistant(8_000)}\n`, 32 * 1024 * 1024);
+    closeSync(fd);
+    const cleared = stop(false, big);
+    expect([cleared.exitCode, JSON.parse(readFileSync(join(dir, 'request.json'), 'utf8')).action]).toEqual([2, 'reset']);
+    expect(cleared.stderr).toContain(`bytes, at or above 33554432, so the reset types /clear.`);
     // A failed read or request write resets nothing, names the failure and keeps exit 0.
     const missing = join(cwd, 'missing.jsonl');
     expect(stop(false, missing)).toMatchObject({ exitCode: 0, systemMessage: expect.stringContaining(`seat reset skipped: ENOENT: no such file or directory, open '${missing}'`) });

@@ -31,7 +31,8 @@ function textResult(value: { readonly exitCode: number; readonly stdout: string;
 }
 
 /**
- * A new session of a Claude reset seat (#1972) records the new-session signal of its reset. A failed write gives one
+ * A new session segment of a Claude reset seat (startup, clear or compact; #1972, #2625) records the new-session
+ * signal of its reset and closes its open reset request. A failed write gives one
  * diagnostic and leaves the context unchanged. Sessions without the seat env write nothing.
  */
 function seatSessionDiagnostic(context: HookHandlerContext): string {

@@ -21,5 +21,6 @@ skill copies neither.
    - `seat_session_unknown` or `seat_context_unknown`: the SessionStart record or the
      transcript is not readable.
 3. Follow the printed steps exactly, in order, then end your turn. The peer seat checks
-   the handoff with `repo-harness seats reset`, clears this session and sends the
+   the handoff with `repo-harness seats reset`, types the action that the steps name
+   (`/compact` below a 32 MiB transcript, `/clear` at or above it) and sends the
    resume prompt.
