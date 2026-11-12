@@ -31,14 +31,15 @@ the change, so the check must come from outside its session.
    quota`. Resolve each seat's terminal by its seat label; an address
    changes at each restart. Memory and the last plan are leads, not facts.
 2. **Find, in this order.**
-   1. A free writer seat while the plan has no ready issue. Propose the
-      next issues in the same run (`orchestrator.md` §7, ready queue).
-   2. A writer with no PR two hours after its dispatch, and a finished seat
-      with a commit that is not pushed.
-   3. A red required check and its first failing assertion; a review `FAIL`
-      with no fix round; the same class of finding in two rounds of one PR.
-   4. A merge order with a held entry before ready work; an issue whose
-      blocker is gone; two issues with one design.
+   1. The findings of `repo-harness board attention` for each open batch
+      parent. Rule R6 is a free writer seat with a short ready queue:
+      propose the next issues in the same run (`orchestrator.md` §7, ready
+      queue). The orchestrator gets the A findings; send it a finding only
+      when it stays open for two reviews.
+   2. A finished seat with a commit that is not pushed.
+   3. The first failing assertion of a red required check; the same class
+      of finding in two rounds of one PR.
+   4. Two issues with one design.
    5. A quota change that changes a route line; a dead watcher.
    6. A replan trigger of `replan.md` §1. When one holds, send
       `[rh-notice] replan #<parent>`.

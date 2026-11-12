@@ -449,6 +449,8 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
     ['R3', 'tier_label_missing', '#1494 #1479'],
     ['R3', 'tier_label_missing', '#1499 #1476'],
     ['R4', 'plan_unavailable', null],
+    ['R6', 'plan_unavailable', null],
+    ['R7', 'plan_unavailable', null],
   ]);
 });
 
@@ -882,7 +884,7 @@ test('each attention finding names its priority, and a delivery sorts the entrie
   expect(BOARD_RULE_PRIORITY).toEqual({
     A1: 'P2', A3: 'P0', A4: 'P1', A5: 'P1', A6: 'P1', A7: 'P2', A8: 'P3', A9: 'P3', A10: 'P2', A11: 'P2',
     A12: 'P1', A13: 'P1', A14: 'P2', A15: 'P2', A16: 'P1', A17: 'P1', A18: 'P2',
-    R1: 'P2', R2: 'P2', R3: 'P1', R4: 'P2', R5: 'P1',
+    R1: 'P2', R2: 'P2', R3: 'P1', R4: 'P2', R5: 'P1', R6: 'P1', R7: 'P2',
   });
   expect(attention.findings.map(finding => [finding.rule, finding.priority])).toContainEqual(['A3', 'P0']);
   expect(attention.findings.map(finding => [finding.rule, finding.priority])).toContainEqual(['A11', 'P2']);
@@ -2335,4 +2337,38 @@ test('watch window --review: the message to a blocked orchestrator waits for it 
   expect(calls[0]![0]).toBe('wait');
   const sent = readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)).filter(record => record.kind === 'send' && record.rules.includes('review'));
   expect(sent.map(record => [record.terminal, record.outcome])).toEqual([['t3', 'sent']]);
+});
+
+describe('rules R6 and R7', () => {
+  const recorded = replay();
+  const at = recorded.observed_at;
+  const plan = (order: number[], holds: number[] = [], worker = 3) => ({ status: 'observed', comment_url: 'https://github.com/plan', created_at: at, revision: 1,
+    block: { protocol: 2, kind: 'repo-harness.plan', merge_order: order, holds: holds.map(issue => ({ issue, reason: 'held' })), seat_limits: { worker } } }) as const;
+  const worker = (address: string, issue: number) => ({ address, name: null, agent: null, state: 'live', status: 'working', status_kind: null, status_msg: null, status_ms: null, turn: 1,
+    branch: null, seat_status: 'observed', seat: 'worker', issue, pr: null }) as BoardTerminalV1;
+  const r6 = (board: BoardV1) => evaluateBoardAttention(board).findings.filter(finding => finding.rule === 'R6').map(finding => finding.message);
+  const skipped = (board: BoardV1, id: BoardRuleId) => evaluateBoardAttention(board).unevaluated.filter(entry => entry.rule === id).map(entry => [entry.reason, entry.subject]);
+  // #1475 and #1476 carry the two live workers; #1477 and #1478 have no claim and no blocker.
+  const queue = (order: number[]): BoardV1 => ({ ...recorded, plan: plan(order), execution: { status: 'observed', terminals: [worker('t1', 1475), worker('t2', 1476)] } });
+
+  test('R6 fires on a free seat with fewer than two ready issues, and reads only an observed plan and claims', () => {
+    expect(r6(queue([1475, 1477]))).toEqual(['1 worker seats are free and the plan has 1 ready issues; propose the next issues']);
+    expect(r6(queue([1477, 1478]))).toEqual([]);
+    expect(r6({ ...queue([1477]), items: recorded.items.map(item => ({ ...item, state: 'closed' as const })) })).toEqual([]);
+    expect(r6({ ...queue([1477]), plan: { status: 'absent', truncated: false } })).toEqual([]);
+    expect(skipped({ ...queue([1477]), plan: { status: 'absent', truncated: false } }, 'R6')).toEqual([['plan_absent', null]]);
+    const cut = { ...queue([1477]), items: recorded.items.map(item => (item.number === 1477 ? { ...item, claim: { status: 'unknown', reason: 'comments_truncated' } as const } : item)) };
+    expect([r6(cut), skipped(cut, 'R6')]).toEqual([[], [['comments_truncated', '#1477']]]);
+  });
+
+  test('R7 fires on an accepted pull request behind a held entry, not behind an open entry that is not held', () => {
+    const accepted = { status: 'accepted', via: 'record', accepted_at: at, evidence_url: 'https://github.com/acceptance' } as const;
+    const board = (holds: number[]): BoardV1 => ({ ...recorded, acceptance_merge: 'on', plan: plan([1477, 1479], holds),
+      pull_requests: recorded.pull_requests.map(pr => (pr.number === 1494 ? { ...pr, is_draft: false, acceptance: accepted } : pr)) });
+    const r7 = (value: BoardV1) => evaluateBoardAttention(value).findings.filter(finding => finding.rule === 'R7').map(finding => finding.message);
+    expect(r7(board([1477]))).toEqual(['#1494 is accepted and waits behind held #1477 in merge_order; move #1477 to the tail']);
+    expect(r7(board([]))).toEqual([]);
+    const off = { ...board([]), items: recorded.items.filter(item => item.number !== 1477) };
+    expect(skipped(off, 'R7')).toEqual([['item_off_board', '#1477']]);
+  });
 });

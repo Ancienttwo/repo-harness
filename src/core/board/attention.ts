@@ -36,10 +36,12 @@ export const A17_BLOCKED_MS = 15 * MINUTE;
 export const R1_UNPLANNED_ITEMS = 3;
 /** R4: an accepted pull request in the merge order waits this long unmerged. */
 export const R4_STALLED_MS = 4 * 60 * MINUTE;
+/** R6: a free worker seat and fewer ready issues than this. The weekly threshold review changes it. */
+export const R6_READY_MIN = 2;
 const WORKER_SEATS = new Set<string>(WORKER_SEAT_IDS);
 const RED_CONCLUSIONS = new Set(['failure', 'timed_out', 'startup_failure']);
 
-export type BoardRuleId = 'A1' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'A9' | 'A10' | 'A11' | 'A12' | 'A13' | 'A14' | 'A15' | 'A16' | 'A17' | 'A18' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5';
+export type BoardRuleId = 'A1' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'A9' | 'A10' | 'A11' | 'A12' | 'A13' | 'A14' | 'A15' | 'A16' | 'A17' | 'A18' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';
 export type BoardAttentionRoute = 'orchestrator' | 'advisor';
 /** P0: a seat cannot continue. P1: a worker or an issue waits for the coordinator, or a High change has a lower tier. P2: a pull request or the plan waits. P3: housekeeping. */
 export type BoardPriority = 'P0' | 'P1' | 'P2' | 'P3';
@@ -54,7 +56,7 @@ export const BOARD_PRIORITY_ORDER: readonly BoardPriority[] = Object.freeze(['P0
 export const BOARD_RULE_PRIORITY: Readonly<Record<BoardRuleId, BoardPriority>> = Object.freeze({
   A1: 'P2', A3: 'P0', A4: 'P1', A5: 'P1', A6: 'P1', A7: 'P2', A8: 'P3', A9: 'P3', A10: 'P2', A11: 'P2',
   A12: 'P1', A13: 'P1', A14: 'P2', A15: 'P2', A16: 'P1', A17: 'P1', A18: 'P2',
-  R1: 'P2', R2: 'P2', R3: 'P1', R4: 'P2', R5: 'P1',
+  R1: 'P2', R2: 'P2', R3: 'P1', R4: 'P2', R5: 'P1', R6: 'P1', R7: 'P2',
 });
 
 export interface BoardFindingV1 {
@@ -503,6 +505,48 @@ function r4(context: Context): void {
   }
 }
 
+/**
+ * R6: a worker seat is free and the plan has fewer ready issues than `R6_READY_MIN`. Quota and route labels are not read: an issue that
+ * no seat can take still counts as ready, and `board dispatch --dry-run` gives that reason.
+ */
+function r6(context: Context): void {
+  const { plan, items } = context.board;
+  if (plan.status !== 'observed') return skip(context, 'R6', plan.status === 'absent' ? 'plan_absent' : 'plan_unavailable');
+  if (context.board.execution.status === 'unavailable') return skip(context, 'R6', context.board.execution.reason);
+  const terminals = workerTerminals(context, 'R6');
+  const open = new Map(items.filter(item => item.state === 'open').map(item => [item.number, item] as const));
+  const queued = plan.block.merge_order.flatMap(number => (open.has(number) ? [open.get(number)!] : []));
+  const truncated = queued.filter(item => item.claim.status === 'unknown');
+  for (const item of truncated) skip(context, 'R6', 'comments_truncated', `#${item.number}`);
+  if (truncated.length > 0 || open.size === 0) return;
+  const holds = new Set(plan.block.holds.map(hold => hold.issue));
+  const seated = new Set(terminals.map(terminal => terminal.issue));
+  const ready = queued.filter(item => !holds.has(item.number) && item.blocked_by.every(blocker => blocker.state === 'closed')
+    && item.claim.status === 'none' && !seated.has(item.number));
+  const free = plan.block.seat_limits.worker - terminals.length;
+  if (free >= 1 && ready.length < R6_READY_MIN) {
+    find(context, 'R6', { issues: ready.map(item => item.number) }, `${free} worker seats are free and the plan has ${ready.length} ready issues; propose the next issues`);
+  }
+}
+
+/** R7: an accepted pull request waits behind an earlier open entry of the merge order that is held, which blocks each ready pull request behind it. */
+function r7(context: Context): void {
+  const { board } = context;
+  if (board.plan.status !== 'observed') return skip(context, 'R7', board.plan.status === 'absent' ? 'plan_absent' : 'plan_unavailable');
+  const { merge_order: order, holds } = board.plan.block;
+  const onBoard = new Map(board.items.map(item => [item.number, item] as const));
+  const refused = new Set(boardMergeDecisions(board).filter(decision => !decision.eligible && decision.reason === 'merge_order').map(decision => decision.pr));
+  for (const pr of openPullRequests(board).filter(entry => refused.has(entry.number) && entry.acceptance.status === 'accepted')) {
+    const last = Math.max(...itemsOf(board, pr).map(number => order.indexOf(number)));
+    const earlier = order.slice(0, last).filter(number => onBoard.get(number)?.state !== 'closed');
+    for (const number of earlier.filter(entry => !onBoard.has(entry))) skip(context, 'R7', 'item_off_board', `#${number}`);
+    const hold = earlier.find(number => holds.some(entry => entry.issue === number) || onBoard.get(number)?.merge_hold.status === 'held');
+    if (hold !== undefined) {
+      find(context, 'R7', { issues: [hold], pull_requests: [pr.number] }, `#${pr.number} is accepted and waits behind held #${hold} in merge_order; move #${hold} to the tail`);
+    }
+  }
+}
+
 /** One finding line of `repo-harness board attention`: the priority first, so no line is without one. */
 export function attentionFindingLine(finding: BoardFindingV1): string {
   return `${finding.priority} ${finding.rule} ${finding.route}: ${finding.message}`;
@@ -518,7 +562,7 @@ export function renderAttentionText(attention: BoardAttentionV1): string {
 
 export function evaluateBoardAttention(board: BoardV1): BoardAttentionV1 {
   const context: Context = { board, now: Date.parse(board.observed_at), findings: [], unevaluated: [] };
-  for (const rule of [a1, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, r1, r2, r3, r4, r5]) rule(context);
+  for (const rule of [a1, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, r1, r2, r3, r4, r5, r6, r7]) rule(context);
   return Object.freeze({
     protocol: BOARD_ATTENTION_PROTOCOL,
     kind: BOARD_ATTENTION_KIND,
