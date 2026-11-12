@@ -306,20 +306,26 @@ test('each formerly quadratic secret rule stays linear from a 128 KiB to a 384 K
     const text = row.run + row.sample, redact = row.redact ?? replaceSecrets;
     return { bare: containsSecret(row.run), unchanged: redact(row.run) === row.run, matched: containsSecret(text), replaced: redact(text) };
   };
-  const best = (row: ReturnType<typeof makeRows>[number]) => {
-    let fastest = Infinity;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const start = performance.now();
-      exercise(row);
-      fastest = Math.min(fastest, performance.now() - start);
-    }
-    return fastest;
+  const timed = (row: ReturnType<typeof makeRows>[number]) => {
+    const start = performance.now();
+    exercise(row);
+    return performance.now() - start;
   };
-  // A linear rule takes 3 times as long on 3 times the text; a quadratic rule takes 9 times. Load on the runner scales both sizes alike.
-  // The pair stays under 512 KiB: past a size that depends on the row (384 to 1024 KiB) the regex engine changes mode and the time steps up about 8 times, with no change in order.
+  // Load only adds time, so the fastest sample of each size is the closest to the true time. A sample pair repeats until the ratio is under the bound or one second passes;
+  // a slow quadratic pair uses up the second in its first sample.
+  const lowestRatio = (smallRow: ReturnType<typeof makeRows>[number], mediumRow: ReturnType<typeof makeRows>[number]) => {
+    const start = performance.now();
+    let fastestSmall = Infinity, fastestMedium = Infinity, ratio = Infinity;
+    while (ratio >= 6 && performance.now() - start < 1000) {
+      fastestSmall = Math.min(fastestSmall, timed(smallRow));
+      fastestMedium = Math.min(fastestMedium, timed(mediumRow));
+      ratio = fastestMedium / Math.max(fastestSmall, 1);
+    }
+    return ratio;
+  };
   const small = makeRows(128 * 1024), medium = makeRows(384 * 1024);
   makeRows(1024 * 1024).forEach((row, index) => {
-    expect(best(medium[index]!) / Math.max(best(small[index]!), 1)).toBeLessThan(6);
+    expect(lowestRatio(small[index]!, medium[index]!)).toBeLessThan(6);
     const result = exercise(row);
     expect(result.bare).toBe(false);
     expect(result.unchanged).toBe(true);
