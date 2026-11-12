@@ -8,11 +8,24 @@ const validSha = (value: unknown): value is string => typeof value === 'string' 
 
 /** CI completion effect: GitHub is the authority for runs, repair issues and rollback boundaries. */
 export class CIReportError extends Error {
-  /** A provider 5xx is a GitHub availability fault, not a defect that a repair issue can fix. */
+  /** The provider HTTP status; null when the provider gave no response inside the request deadline. */
+  readonly status: number | null;
+  /** A 5xx, and a request the provider did not answer, are availability faults, not a defect that a repair issue can fix. */
   readonly providerUnavailable: boolean;
-  constructor(readonly status: number, message: string) { super(message); this.providerUnavailable = status >= 500; }
+  constructor(status: number | null, message: string) { super(message); this.status = status; this.providerUnavailable = status === null || status >= 500; }
 }
 function providerOutage(error: unknown): error is CIReportError { return error instanceof CIReportError && error.providerUnavailable; }
+/** The provider request deadline in the api function. */
+const PROVIDER_REQUEST_TIMEOUT_MS = 30_000;
+/** A deadline cut off the request or its body. */
+function isProviderTimeout(error: unknown): boolean { return error instanceof Error && error.name === 'TimeoutError'; }
+/**
+ * A request the deadline cut off has no HTTP status, and it proves no defect.
+ * The api boundary throws this error, so every providerOutage caller applies one rule.
+ */
+function providerTimeoutError(request: string, error: unknown): CIReportError | null {
+  return isProviderTimeout(error) ? new CIReportError(null, `${request}: provider request timeout after ${PROVIDER_REQUEST_TIMEOUT_MS} ms`) : null;
+}
 export type GitHubAPI = (path: string, method?: 'GET' | 'POST' | 'PATCH', body?: unknown) => Promise<unknown>;
 export interface CIReport {
   run_id: number; run_attempt: number; sha: string; conclusion: string; run_url: string;
@@ -443,20 +456,28 @@ if (import.meta.main) {
   const repo = process.env.GITHUB_REPOSITORY!;
   const api: GitHubAPI = async (path, method = 'GET', body) => {
     if (!path.startsWith(`/repos/${repo}/`)) throw new Error('Cross-repository API operation refused');
-    const response = await fetch(`${process.env.GITHUB_API_URL ?? 'https://api.github.com'}${path}`, {
-      method, headers: { Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GH_TOKEN!}`, 'X-GitHub-Api-Version': '2022-11-28' },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000),
-    });
-    if (!response.ok) {
-      const payload: unknown = await response.json().catch(() => null);
-      let providerMessage = isRecord(payload) && typeof payload.message === 'string' ? payload.message : '';
-      const token = process.env.GH_TOKEN;
-      if (token) providerMessage = providerMessage.split(token).join('[REDACTED]');
-      providerMessage = safeText(providerMessage.replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/g, '[REDACTED]')
-        .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, 'Bearer [REDACTED]'));
-      throw new CIReportError(response.status, `GitHub ${method} ${path}: HTTP ${response.status}${providerMessage ? `: ${providerMessage}` : ''}`);
+    const request = `GitHub ${method} ${path}`;
+    try {
+      const response = await fetch(`${process.env.GITHUB_API_URL ?? 'https://api.github.com'}${path}`, {
+        method, headers: { Accept: 'application/vnd.github+json', 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.GH_TOKEN!}`, 'X-GitHub-Api-Version': '2022-11-28' },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(PROVIDER_REQUEST_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        // A body that does not finish before the deadline is the same outage; any other unreadable body stays empty.
+        const payload: unknown = await response.json().catch(error => { if (isProviderTimeout(error)) throw error; return null; });
+        let providerMessage = isRecord(payload) && typeof payload.message === 'string' ? payload.message : '';
+        const token = process.env.GH_TOKEN;
+        if (token) providerMessage = providerMessage.split(token).join('[REDACTED]');
+        providerMessage = safeText(providerMessage.replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/g, '[REDACTED]')
+          .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, 'Bearer [REDACTED]'));
+        throw new CIReportError(response.status, `${request}: HTTP ${response.status}${providerMessage ? `: ${providerMessage}` : ''}`);
+      }
+      // await keeps a deadline that ends the body inside this try; a returned promise would escape the classification.
+      return await response.json();
+    } catch (error) {
+      // The deadline cuts off the request or its body, and the provider gave no answer: an outage, not a defect.
+      throw providerTimeoutError(request, error) ?? error;
     }
-    return response.json();
   };
   mkdirSync('.ci-report', { recursive: true });
   try {
