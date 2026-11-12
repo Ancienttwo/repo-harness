@@ -85,6 +85,30 @@ run_architecture_check() {
   with_architecture_home bun src/cli/index.ts architecture-projection render-check --json > "$1"
 }
 
+# Prints the committer time of the oldest unpublished main commit: the first
+# first-parent commit after M, else M itself. M is the newest first-parent
+# commit that changes the projection manifest; only the rolling writer changes
+# it. A product commit can sit between the rendered base and M, so M itself
+# counts when nothing follows it. The squash body names the rendered base only
+# as text, so it is not read.
+architecture_unpublished_since() {
+  local shallow manifest_commit after
+  # A shallow clone ends at a boundary commit that git log reports as a manifest change.
+  shallow="$(git rev-parse --is-shallow-repository)" || return 1
+  if [[ "$shallow" != false ]]; then
+    echo "[ci] The checkout is shallow, so the newest projection manifest commit is unknown. Check out the full history." >&2
+    return 1
+  fi
+  manifest_commit="$(git log --first-parent -1 --format=%H -- docs/architecture/.projection-manifest.json)" || return 1
+  if [[ -z "$manifest_commit" ]]; then
+    echo "[ci] No first-parent commit changes docs/architecture/.projection-manifest.json." >&2
+    return 1
+  fi
+  after="$(git rev-list --first-parent --reverse "$manifest_commit..HEAD")" || return 1
+  after="${after%%$'\n'*}"
+  git show -s --format=%cI "${after:-$manifest_commit}" || return 1
+}
+
 # Prints a GitHub Actions warning annotation. The title must not contain ':' or ','.
 warn() {
   local message="$2"
@@ -257,14 +281,21 @@ if [[ "$lane" == all || "$lane" == governance ]]; then
   bun src/cli/index.ts init --repo . --dry-run >/dev/null
 fi
 
-# Daily lane: only render drift or an incomplete check fails. Source stamps do not.
-# The daily report routes the failure to the upstream rolling writer. ARCHITECTURE_SUMMARY names the file for that report.
+# Daily lane: a render difference that the writer has not published within the
+# lag bound fails, and so does an incomplete check. A younger difference only
+# warns. Source stamps do not count. The daily report routes the failure to the
+# upstream rolling writer. ARCHITECTURE_SUMMARY names the file for that report;
+# the job writes no summary when the check or its freshness input gave no result.
 if [[ "$lane" == all || "$lane" == architecture ]]; then
   echo "[ci] architecture projection"
   arch_json="$(mktemp /tmp/rh-arch-check-XXXXXX)"
-  arch_status=0
-  run_architecture_check "$arch_json" || arch_status=$?
-  if arch_summary="$(cat "$arch_json")" && [[ -n "$arch_summary" ]]; then
+  arch_freshness=""
+  arch_input_failed=false
+  run_architecture_check "$arch_json" || true
+  if [[ -s "$arch_json" ]] && { unpublished_since="$(architecture_unpublished_since)" || { arch_input_failed=true; false; }; } \
+    && arch_classified="$(bun -e 'const { classifyArchitectureFreshness } = await import("./src/core/architecture/projection.ts"); const summary = JSON.parse(await Bun.file(process.argv[1]).text()); const since = new Date(process.argv[2]); if (Number.isNaN(since.getTime())) throw new Error(`invalid commit time ${process.argv[2]}`); const freshness = classifyArchitectureFreshness(summary, since, new Date()); console.log(freshness); console.log(JSON.stringify({ ...summary, freshness, unpublishedSince: since.toISOString() }, null, 2));' "$arch_json" "$unpublished_since")"; then
+    arch_freshness="${arch_classified%%$'\n'*}"
+    arch_summary="${arch_classified#*$'\n'}"
     printf '%s\n' "$arch_summary"
     if [[ -n "${ARCHITECTURE_SUMMARY:-}" ]]; then
       mkdir -p "$(dirname "$ARCHITECTURE_SUMMARY")"
@@ -274,10 +305,13 @@ if [[ "$lane" == all || "$lane" == architecture ]]; then
     cat "$arch_json"
   fi
   rm -f "$arch_json"
-  if [[ "$arch_status" -ne 0 ]]; then
-    echo "[ci] Architecture render differs or is incomplete. Inspect archctx writer status and the reported debt or provider error." >&2
-    exit 1
-  fi
+  case "$arch_freshness" in
+    fresh) ;;
+    lag) warn "Architecture projection lag" "The render differs, and the oldest unpublished main commit ($unpublished_since) is younger than 3 h. The rolling writer publishes it." ;;
+    stale) echo "[ci] Architecture render differs, and the oldest unpublished main commit ($unpublished_since) is 3 h or older. Inspect archctx writer status and the rolling PR." >&2; exit 1 ;;
+    *) if [[ "$arch_input_failed" == true ]]; then echo "[ci] The oldest unpublished main commit could not be read from git. Read the git error above." >&2; exit 1; fi
+       echo "[ci] Architecture check is incomplete${arch_freshness:+ ($arch_freshness)}. Inspect the reported human action or provider error." >&2; exit 1 ;;
+  esac
 fi
 
 if [[ "$lane" == all || "$lane" == functional ]]; then
