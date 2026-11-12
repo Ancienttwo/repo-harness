@@ -1084,6 +1084,70 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
     }
   }, 15_000);
 
+  test('update mode moves the managed archctx link of the previous pin to the candidate pin that Bun nested under the candidate', () => {
+    registerArchitecturePlugin();
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-managed-update-nested-'));
+    const source = join(tmp, 'source');
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    try {
+      for (const dir of [source, home, repo, fakeBin]) mkdirSync(dir, { recursive: true });
+      setupFakeSource(source);
+      setupManagedRuntimeReadback(home, fakeBin);
+      const globalRoot = join(home, '.bun', 'install', 'global');
+      const topArchctx = join(globalRoot, 'node_modules', 'archctx');
+      const nestedArchctx = join(globalRoot, 'node_modules', 'repo-harness', 'node_modules', 'archctx');
+      const candidateManifest = readFileSync(join(topArchctx, 'package.json'), 'utf8');
+      const candidateManifestCopy = join(tmp, 'archctx-candidate.json');
+      writeFileSync(candidateManifestCopy, candidateManifest);
+      // Parent state: the global manifest and the top-level package hold the previous pin, and the managed link points to it.
+      writeFileSync(join(globalRoot, 'package.json'), JSON.stringify({ dependencies: { archctx: '0.12.0' } }));
+      writeFileSync(join(topArchctx, 'package.json'), JSON.stringify({ ...JSON.parse(candidateManifest), version: '0.12.0' }));
+      mkdirSync(join(nestedArchctx, 'bin'), { recursive: true });
+      writeFileSync(join(nestedArchctx, 'package.json'), candidateManifest);
+      writeExecutable(join(nestedArchctx, 'bin', 'archctx.mjs'), '#!/usr/bin/env node\n');
+      const link = join(home, '.bun', 'bin', 'archctx');
+      mkdirSync(join(home, '.bun', 'bin'), { recursive: true });
+      symlinkSync(join(topArchctx, 'bin', 'archctx.mjs'), link);
+      // `bun add -g archctx@<pin>` puts the pin at the top level and removes the nested copy.
+      writeExecutable(join(fakeBin, 'bun'), [
+        '#!/bin/bash',
+        'if [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi',
+        `if [[ "\${3:-}" == archctx@* ]]; then rm -rf "${nestedArchctx}"; cp "${candidateManifestCopy}" "${join(topArchctx, 'package.json')}"; printf '{"dependencies":{"archctx":"%s"}}' "\${3#archctx@}" > "${join(globalRoot, 'package.json')}"; fi`,
+        'exit 0',
+        '',
+      ].join('\n'));
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        plugins: ['architecture'],
+        installSpec: 'repo-harness@9.9.9',
+        updateMode: true,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        codegraph: false,
+        env: {
+          ...sanitizedChildEnv(),
+          HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
+        },
+      });
+
+      expect(result.exitCode, JSON.stringify(result.steps.filter(step => step.status === 'failed'))).toBe(0);
+      expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies'), JSON.stringify(result.steps.filter(step => step.status === 'failed'))).toMatchObject({ status: 'ok' });
+      expect(JSON.parse(readFileSync(join(globalRoot, 'package.json'), 'utf8')).dependencies.archctx).toBe(ARCHCTX_PIN);
+      expect(JSON.parse(readFileSync(join(topArchctx, 'package.json'), 'utf8')).version).toBe(ARCHCTX_PIN);
+      expect(realpathSync(link)).toBe(realpathSync(join(topArchctx, 'bin', 'archctx.mjs')));
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   test('fails closed before host projection when the pinned Obsidian Skill tree digest drifts', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-obsidian-skill-integrity-'));
     const home = join(tmp, 'home');

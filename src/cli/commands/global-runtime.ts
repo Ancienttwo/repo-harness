@@ -504,14 +504,19 @@ function reconcileManagedRuntime(
         if (existing) {
           let linkTarget: string | null = null;
           try { linkTarget = realpathSync(link); } catch { /* A dangling link is also a conflict. */ }
-          if (linkTarget !== target) return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_CONFLICT: ${link} is not the managed archctx link. Move or remove it, then rerun repo-harness update.` };
-          if (recordValue(globalManifest.dependencies).archctx === version) return { step: 'verify managed runtime dependencies', status: 'ok', detail: initial.detail };
+          // A link into the Bun global archctx package is managed, whatever its version; the install below moves it to the pin.
+          const managedRoot = join(bunRoot, 'install', 'global', 'node_modules', 'archctx');
+          const managed = linkTarget !== null && existsSync(managedRoot) && linkTarget.startsWith(realpathSync(managedRoot) + sep);
+          if (!managed) return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_CONFLICT: ${link} is not the managed archctx link. Move or remove it, then rerun repo-harness update.` };
+          if (linkTarget === target && recordValue(globalManifest.dependencies).archctx === version) return { step: 'verify managed runtime dependencies', status: 'ok', detail: initial.detail };
         }
         const install = runProcess(bunExecutable, ['add', '-g', `archctx@${version}`], cwd, env);
         if (install.status !== 'ok') return withStepName(install, 'verify managed runtime dependencies', `archctx@${version}`);
         try {
           const installedRoot = findInstalledPackageRoot(globalPackageRoot, 'archctx');
-          if (!installedRoot || readPackageManifest(installedRoot).version !== version || realpathSync(link) !== target) throw new Error('installed version or link target does not match');
+          if (!installedRoot || readPackageManifest(installedRoot).version !== version) throw new Error('installed version or link target does not match');
+          const installedBin = recordValue(readPackageManifest(installedRoot).bin).archctx;
+          if (typeof installedBin !== 'string' || realpathSync(link) !== realpathSync(join(installedRoot, installedBin))) throw new Error('installed version or link target does not match');
         } catch (error) {
           return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_READBACK: ${link}: ${error instanceof Error ? error.message : String(error)}` };
         }
