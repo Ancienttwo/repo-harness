@@ -158,9 +158,20 @@ if [[ "$lane" == affected ]]; then
   exit 0
 fi
 
-# PR architecture lane. Only the ADR-0002 rule 5 constraint can fail it. The
-# debt and hand-edit results that follow are warnings.
+# PR architecture lane. Only the ADR-0002 rule 5 constraint and the released
+# CHANGELOG sections can fail it. The debt and hand-edit results are warnings.
 if [[ "$lane" == architecture-advisory ]]; then
+  # A branch that started before a release commit puts its [Unreleased] entry
+  # inside the released section in the merge result. The merge is clean, so the
+  # lane compares the released sections with the merge result of the base.
+  echo "[ci] released CHANGELOG sections"
+  changelog_status=0
+  bun scripts/check-changelog-released-sections.ts --base "$base" || changelog_status=$?
+  if [[ "$changelog_status" -ne 0 ]]; then
+    echo "::error title=Released CHANGELOG sections::scripts/check-changelog-released-sections.ts failed for base $base. Read the [changelog] line in the job log."
+    exit 1
+  fi
+
   # archctx exits 0 for violated and undetermined, and the layer-direction
   # warnings keep the global status violated. So the gate reads only this
   # constraint's own result, never the exit code or the global status.
