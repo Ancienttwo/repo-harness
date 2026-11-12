@@ -667,7 +667,7 @@ describe('board page', () => {
     const refusal = (code: string, status: number) => () => Response.json({ error: { code, message: 'refused', next_action: 'retry' } }, { status });
     const answers: (() => Response)[] = [
       () => Response.json(BOARD),
-      () => Response.json({ ...BOARD, protocol: 9 }),
+      () => Response.json({ ...BOARD, protocol: 8 }),
       refusal('board_parent_invalid', 400),
       refusal('repository_not_found', 404),
       refusal('board_collect_failed', 503),
@@ -950,8 +950,8 @@ describe('board office (#1755)', () => {
   test('each desk state rule, in order, from the board fields; the stage and the queue read the live seats and the open pull requests', () => {
     const board = boardWith({
       prs: {
-        1499: { required_check: { status: 'failure', completed_at: '2026-11-02T21:00:00Z' } },
-        1494: { required_check: { status: 'pending' } },
+        1499: { required_check: { status: 'failure', completed_at: '2026-11-02T21:00:00Z', contexts: [] } },
+        1494: { required_check: { status: 'pending', contexts: [] } },
         1491: { acceptance: { status: 'not_accepted' } },
       },
       items: { 1478: { claim_status: observedClaim } },
@@ -1471,7 +1471,7 @@ describe('board office (#1755)', () => {
   test('the room draws its seats from the seats document while the board read is pending, and the board fills in the same room; the list layout waits and a failed read keeps the room', async () => {
     const board = boardWith({
       plan: PLAN,
-      prs: { 1499: { required_check: { status: 'failure', completed_at: '2026-11-02T21:00:00Z' } } },
+      prs: { 1499: { required_check: { status: 'failure', completed_at: '2026-11-02T21:00:00Z', contexts: [] } } },
       terminals: [seat('t1', 'worker', 1475, null, 'working'), seat('t2', 'worker', 1476, 1499, 'working'), seat('t3', 'orchestrator', null, null, 'idle')],
     });
     const pending: ((read: BoardRead) => void)[] = [];

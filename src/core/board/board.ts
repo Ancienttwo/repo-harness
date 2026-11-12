@@ -22,6 +22,7 @@ import {
   type BoardCommentV1,
   type BoardParentReadV1,
   type BoardPullRequestReadV1,
+  type BoardRollupContextV1,
   type AcceptanceDispositionV1,
   type AcceptanceRowV1,
   type BoardSubIssueReadV1,
@@ -39,7 +40,7 @@ import { pathHazardHits, pathHighHits } from './hazards';
  * It is a read model. GitHub and hc stay the authorities; the board keeps
  * their observation time and never writes back.
  */
-export const BOARD_PROTOCOL = 8 as const;
+export const BOARD_PROTOCOL = 9 as const;
 export const BOARD_KIND = 'repo-harness.board' as const;
 
 export type BoardTier = 'low' | 'medium' | 'high';
@@ -50,7 +51,6 @@ const CLAIM_STATUS_HEADER = 'repo-harness issue claim status';
 export const ACCEPTANCE_RECORD_HEADER = 'repo-harness acceptance record';
 export const ACCEPTANCE_DISPOSITION_HEADER = 'repo-harness acceptance disposition';
 const ACCEPTANCE_CLAIM_HEADER = 'repo-harness acceptance claim';
-const REQUIRED_CHECK = 'Required / CI';
 
 export type BoardPlanV1 =
   /** `revision`: the ordinal of this comment among the parent's plan comments (r1 is the first); null when the comment read is truncated. */
@@ -81,14 +81,31 @@ export interface BoardItemV1 {
   readonly merge_hold: BoardMergeHoldV1;
 }
 
+/** One required status context of the base protection and the state of its newest check run on the head. */
+export interface BoardRequiredContextV1 {
+  readonly name: string;
+  readonly status: 'success' | 'failure' | 'pending' | 'missing';
+}
+
+/**
+ * The join of every required context: `missing` when one has no run, else `pending` when one is not complete, else `failure` when one
+ * failed, else `success`. `completed_at` is the newest completion of the failed runs, or of all runs on success. `unavailable`: the
+ * protection read of the base gave no context list.
+ */
 export type BoardRequiredCheckV1 =
-  | { readonly status: 'success' | 'failure'; readonly completed_at: string }
-  | { readonly status: 'pending' | 'missing' };
+  | { readonly status: 'success' | 'failure'; readonly completed_at: string; readonly contexts: readonly BoardRequiredContextV1[] }
+  | { readonly status: 'pending' | 'missing'; readonly contexts: readonly BoardRequiredContextV1[] }
+  | { readonly status: 'unavailable'; readonly reason: string };
+
+/** The required status contexts of one base branch, from the `required_status_checks.contexts` of its protection read. */
+export type BoardRequiredContextsV1 =
+  | { readonly status: 'observed'; readonly contexts: readonly string[] }
+  | { readonly status: 'unavailable'; readonly reason: string };
 
 export type BoardAcceptanceV1 =
   /**
    * `record`: an acceptance record has a PASS row for the head and no record has a FAIL row for it; an open High or unknown-tier pull request
-   * also needs PASS rows of two distinct claims, one recorded `different-family`; an open Medium one needs one claimed PASS row recorded `different-family` (`acceptor.md` section 2.2). `tier_low`: every closed issue is `tier:low` and `Required / CI` passed. */
+   * also needs PASS rows of two distinct claims, one recorded `different-family`; an open Medium one needs one claimed PASS row recorded `different-family` (`acceptor.md` section 2.2). `tier_low`: every closed issue is `tier:low` and the required check passed. */
   | { readonly status: 'accepted'; readonly via: 'record' | 'tier_low'; readonly accepted_at: string; readonly evidence_url: string }
   | { readonly status: 'not_accepted' }
   | { readonly status: 'unknown'; readonly reason: 'acceptance_record_unparsed' | 'comments_truncated'; readonly evidence_url: string | null };
@@ -287,6 +304,8 @@ export interface BoardInputV1 {
   readonly acceptance_merge: BoardAcceptanceMergeV1;
   readonly pull_requests: readonly BoardPullRequestReadV1[];
   readonly readiness: readonly BoardReadinessV1[];
+  /** The required contexts of each base ref of the pull requests, by base ref. */
+  readonly required_contexts: ReadonlyMap<string, BoardRequiredContextsV1>;
   readonly path_owners: BoardPathOwnersV1;
   readonly execution: BoardExecutionV1;
   readonly daily_run: BoardDailyRunInputV1;
@@ -366,12 +385,49 @@ function claimStatus(issue: BoardSubIssueReadV1): BoardClaimStatusV1 {
   return issue.comments.truncated ? { status_kind: 'unknown' } : { status_kind: 'none' };
 }
 
-function requiredCheck(read: BoardPullRequestReadV1): BoardRequiredCheckV1 {
-  const runs = read.checks.filter(check => check.name === REQUIRED_CHECK);
-  if (runs.length === 0) return { status: 'missing' };
-  const run = runs.reduce((newest, check) => ((check.completed_at ?? '9') > (newest.completed_at ?? '9') ? check : newest));
-  if (run.status !== 'COMPLETED' || run.completed_at === null) return { status: 'pending' };
-  return { status: run.conclusion === 'SUCCESS' ? 'success' : 'failure', completed_at: run.completed_at };
+/**
+ * The head reports of one required name that `gh pr checks` keeps (cli/cli `pkg/cmd/pr/checks/aggregate.go`, `eliminateDuplicates`):
+ * the newest commit status of the context by creation, and the newest check run of each workflow name and event by start. A check
+ * run and a commit status of one name both stay.
+ */
+function contextReports(read: BoardPullRequestReadV1, name: string): BoardRollupContextV1[] {
+  const kept = new Map<string, BoardRollupContextV1>();
+  for (const report of read.readiness_inputs.rollup.filter(context => context.name === name)) {
+    const key = report.type === 'StatusContext' ? 'status' : JSON.stringify(['run', report.workflow?.name ?? '', report.workflow?.event ?? '']);
+    const current = kept.get(key);
+    if (current === undefined || reportTime(report) > reportTime(current)) kept.set(key, report);
+  }
+  return [...kept.values()];
+}
+
+/** A check run that has not started is the oldest of its group, as in `gh pr checks`. */
+const reportTime = (report: BoardRollupContextV1): string => (report.type === 'StatusContext' ? report.completed_at : report.started_at) ?? '';
+
+/** The commit status states as the `gh pr checks` bucket that publication readiness reads: pass, pending or fail. */
+const STATUS_STATES: ReadonlyMap<string, BoardRequiredContextV1['status']> = new Map([['SUCCESS', 'success'], ['PENDING', 'pending'], ['EXPECTED', 'pending'], ['FAILURE', 'failure'], ['ERROR', 'failure']]);
+
+function reportStatus(report: BoardRollupContextV1): BoardRequiredContextV1['status'] {
+  // GitHub defines no other state; one would fail closed.
+  if (report.type === 'StatusContext') return STATUS_STATES.get(report.status) ?? 'failure';
+  if (report.status !== 'COMPLETED' || report.completed_at === null) return 'pending';
+  return report.conclusion === 'SUCCESS' ? 'success' : 'failure';
+}
+
+/** The join of the reports of a name, and of the names of a required check: `missing` (or no status), then `pending`, then `failure`, else `success`. */
+function joinStatuses(statuses: readonly BoardRequiredContextV1['status'][]): BoardRequiredContextV1['status'] {
+  if (statuses.length === 0) return 'missing';
+  return (['missing', 'pending', 'failure'] as const).find(status => statuses.includes(status)) ?? 'success';
+}
+
+function requiredCheck(read: BoardPullRequestReadV1, required: BoardRequiredContextsV1): BoardRequiredCheckV1 {
+  if (required.status === 'unavailable') return Object.freeze({ status: 'unavailable', reason: required.reason });
+  const named = required.contexts.map(name => ({ name, reports: contextReports(read, name) }));
+  const contexts = Object.freeze(named.map(({ name, reports }) => Object.freeze({ name, status: joinStatuses(reports.map(reportStatus)) })));
+  const status = joinStatuses(contexts.map(context => context.status));
+  if (status === 'missing' || status === 'pending') return Object.freeze({ status, contexts });
+  const completedAt = named.flatMap(({ reports }) => reports).filter(report => reportStatus(report) === status).map(report => report.completed_at!)
+    .reduce((newest, at) => (at > newest ? at : newest));
+  return Object.freeze({ status, completed_at: completedAt, contexts });
 }
 
 /**
@@ -532,7 +588,9 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
   const tiers = new Map(input.parent.sub_issues.map(issue => [issue.number, tierOf(issue.labels)] as const));
   const pullRequests = linkedPullRequests(input.parent, input.pull_requests).map((read): BoardPullRequestV1 => {
     const { closes, refs } = bodyLinks(repository, read.body);
-    const check = requiredCheck(read);
+    const required = input.required_contexts.get(read.base_ref);
+    if (required === undefined) throw new Error(`board input has no required contexts for base ${read.base_ref} of PR #${read.number}`);
+    const check = requiredCheck(read, required);
     const tier = effectiveTier(read, closes, refs, input.parent, tiers);
     const claude = claudeReview(read, tier);
     const readiness = read.state === 'open' ? input.readiness.find(entry => entry.readiness.pr_number === read.number) : undefined;

@@ -2,7 +2,7 @@ import { execFile, spawnSync, type ExecFileException } from 'child_process';
 import { architecturePort, isArchitectureUnavailable, type ArchctxProviderOptions } from '../../core/architecture/contracts';
 import {
   linkedPullRequests, projectBoard, seatTerminal, type BoardAcceptanceMergeV1, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1,
-  type BoardPathOwnerV1, type BoardPathOwnersV1, type BoardSeatTerminalInputV1, type BoardSeatTerminalReadV1, type BoardToolingV1, type BoardV1,
+  type BoardPathOwnerV1, type BoardPathOwnersV1, type BoardRequiredContextsV1, type BoardSeatTerminalInputV1, type BoardSeatTerminalReadV1, type BoardToolingV1, type BoardV1,
 } from '../../core/board/board';
 import { ADVISOR_SEAT } from '../../core/board/advisor-seat';
 import {
@@ -68,7 +68,8 @@ const PULL_REQUEST_FIELDS = `number url state isDraft body baseRefName baseRefOi
   files(first: ${BOARD_PAGE.files}) { totalCount nodes { path additions deletions } }
   commits(last: 1) { nodes { commit { oid committedDate statusCheckRollup {
     contexts(first: ${BOARD_PAGE.checks}) { pageInfo { hasNextPage } nodes {
-      ... on CheckRun { name status conclusion completedAt detailsUrl } ... on StatusContext { context state targetUrl createdAt }
+      ... on CheckRun { name status conclusion startedAt completedAt detailsUrl checkSuite { workflowRun { event workflow { name } } } }
+      ... on StatusContext { context state targetUrl createdAt }
     } }
   } } } }
   ${COMMENTS}`;
@@ -200,6 +201,27 @@ function dailyRun(input: BoardCollectInput, repository: string, branch: string):
     return { status: 'unavailable', reason: 'daily_run_invalid' };
   }
   return { status: 'observed', run_url: run.html_url, conclusion: run.conclusion as string | null, created_at: run.created_at };
+}
+
+/**
+ * The required status contexts of one base branch: `required_status_checks.contexts` of its protection, the read that the publication
+ * readiness also makes. GitHub is the only authority for the names, so a failed read or a missing, empty or non-string list is
+ * `unavailable`, never a default name.
+ */
+function requiredContexts(input: BoardCollectInput, repository: string, base: string): BoardRequiredContextsV1 {
+  let body: unknown;
+  try {
+    body = readGhJson(input, ['api', '--hostname', 'github.com', `repos/${repository}/branches/${encodeURIComponent(base)}/protection`]);
+  } catch (error) {
+    // Every failed protection read, an output-limit one included, is the board state `unavailable`; the message keeps the cause.
+    if (error instanceof BoardCollectError) return { status: 'unavailable', reason: error.message };
+    throw error;
+  }
+  const contexts = (body as { required_status_checks?: { contexts?: unknown } | null } | null)?.required_status_checks?.contexts;
+  if (!Array.isArray(contexts) || contexts.length === 0 || !contexts.every(context => typeof context === 'string' && context !== '')) {
+    return { status: 'unavailable', reason: `the protection of ${base} requires no status check context list` };
+  }
+  return { status: 'observed', contexts: Object.freeze([...contexts as string[]]) };
 }
 
 /**
@@ -449,6 +471,7 @@ export function collectBoardThrough(input: BoardCollectInput, sources: KeyedSour
     acceptance_merge: acceptanceMerge(input, repository, parent.repository.default_branch),
     pull_requests: reads,
     readiness,
+    required_contexts: new Map([...new Set(linked.map(read => read.base_ref))].map(base => [base, requiredContexts(input, repository, base)] as const)),
     path_owners: pathOwners(input, linked),
     execution: execution(input, parent.repository.database_id, new Set(parent.sub_issues.map(issue => String(issue.number))),
       new Set(linked.map(read => String(read.number)))),

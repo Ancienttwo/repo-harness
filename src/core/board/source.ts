@@ -62,13 +62,6 @@ export interface BoardParentReadV1 {
   readonly repair_candidates: readonly { readonly number: number; readonly body: string }[];
 }
 
-export interface BoardCheckRunReadV1 {
-  readonly name: string;
-  readonly status: string;
-  readonly conclusion: string | null;
-  readonly completed_at: string | null;
-}
-
 export interface BoardPullRequestReadV1 {
   readonly number: number;
   readonly url: string;
@@ -85,12 +78,11 @@ export interface BoardPullRequestReadV1 {
   readonly files: readonly string[] | null;
   /** The added plus deleted lines of `files`, from the same read; null when `files` is null or a file has no count. */
   readonly changed_lines: number | null;
-  readonly checks: readonly BoardCheckRunReadV1[];
   readonly comments: BoardCommentPageV1;
   readonly readiness_inputs: BoardReadinessInputsV1;
 }
 
-/** One check run or commit status of the head commit, as the readiness key reads it. */
+/** One check run or commit status of the head commit, as the readiness key and the board required check read it; `status` of a commit status is its state. */
 export interface BoardRollupContextV1 {
   readonly type: 'CheckRun' | 'StatusContext';
   readonly name: string;
@@ -98,6 +90,10 @@ export interface BoardRollupContextV1 {
   readonly conclusion: string | null;
   readonly completed_at: string | null;
   readonly details_url: string | null;
+  /** The start of a check run; null for a check run that has not started and for a commit status. */
+  readonly started_at: string | null;
+  /** The workflow name and event of the Actions run of a check run; null for a check run of another app and for a commit status. */
+  readonly workflow: { readonly name: string; readonly event: string } | null;
 }
 
 /** The fields of the pull request read that merge readiness also reads; the keyed source store digests them. */
@@ -327,8 +323,6 @@ export function decodePullRequestsRead(data: unknown, numbers: readonly number[]
     const complete = files.totalCount === filePaths.length;
     const counted = complete && fileNodes.every(node => [node.additions, node.deletions].every(count => Number.isSafeInteger(count) && (count as number) >= 0));
     const rollup = commit.statusCheckRollup === null ? [] : rollupContexts(obj(commit.statusCheckRollup, `${label}.statusCheckRollup`), label);
-    // The board rules read check runs only.
-    const checks = rollup.filter(context => context.type === 'CheckRun').map(({ name, status, conclusion, completed_at }) => Object.freeze({ name, status, conclusion, completed_at }));
     return Object.freeze({
       number,
       url: str(node.url, `${label}.url`),
@@ -343,7 +337,6 @@ export function decodePullRequestsRead(data: unknown, numbers: readonly number[]
       merged_at: node.mergedAt === null ? null : time(node.mergedAt, `${label}.mergedAt`),
       files: complete ? Object.freeze(filePaths) : null,
       changed_lines: counted ? fileNodes.reduce((sum, node) => sum + (node.additions as number) + (node.deletions as number), 0) : null,
-      checks: Object.freeze(checks),
       comments: comments(node.comments, `${label}.comments`),
       readiness_inputs: readinessInputs(node, rollup, label),
     });
@@ -360,16 +353,25 @@ function rollupContexts(rollup: Json, label: string): BoardRollupContextV1[] {
         conclusion: nullableStr(context.conclusion, `${at}.conclusion`),
         completed_at: context.completedAt === null ? null : time(context.completedAt, `${at}.completedAt`),
         details_url: nullableStr(context.detailsUrl, `${at}.detailsUrl`),
+        started_at: context.startedAt === null ? null : time(context.startedAt, `${at}.startedAt`),
+        workflow: workflowOf(obj(context.checkSuite, `${at}.checkSuite`).workflowRun, `${at}.checkSuite.workflowRun`),
       } as const);
     }
     if (context.context !== undefined) {
       return Object.freeze({
         type: 'StatusContext', name: str(context.context, `${at}.context`), status: str(context.state, `${at}.state`), conclusion: null,
         completed_at: time(context.createdAt, `${at}.createdAt`), details_url: nullableStr(context.targetUrl, `${at}.targetUrl`),
+        started_at: null, workflow: null,
       } as const);
     }
     return fail(`${at} is neither a check run nor a commit status`);
   });
+}
+
+function workflowOf(value: unknown, label: string): BoardRollupContextV1['workflow'] {
+  if (value === null) return null;
+  const run = obj(value, label);
+  return Object.freeze({ name: str(obj(run.workflow, `${label}.workflow`).name, `${label}.workflow.name`), event: str(run.event, `${label}.event`) });
 }
 
 function complete(connection: unknown, label: string): unknown[] | null {

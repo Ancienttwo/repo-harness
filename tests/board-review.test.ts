@@ -14,7 +14,7 @@ const SHA = 'a'.repeat(40);
 const OLD = 'b'.repeat(40);
 const pr = (number: number, extra: Partial<BoardPullRequestV1> = {}): BoardPullRequestV1 => ({
   number, url: '', state: 'open', is_draft: false, base_ref: 'main', base_sha: SHA, head_ref: `feat/${number}`, head_sha: SHA, head_committed_at: '', merged_at: null,
-  closes: [number * 10], refs: [], files: [], required_check: { status: 'success', completed_at: '' }, acceptance: { status: 'not_accepted' }, merge_readiness: null, merge_readiness_observed_at: null,
+  closes: [number * 10], refs: [], files: [], required_check: { status: 'success', completed_at: '', contexts: [] }, acceptance: { status: 'not_accepted' }, merge_readiness: null, merge_readiness_observed_at: null,
   tier: 'high', claude_review: 'not_required', writer_family: null, merge_hold: { status: 'none' }, review_fail: null, open_questions: { status: 'observed', questions: [] }, ...extra,
 });
 const board = (prs: BoardPullRequestV1[], holds: { issue: number; reason: string }[] = []): BoardV1 =>
@@ -32,7 +32,7 @@ const label = (decisions: readonly ReviewDecisionV1[]) => decisions.map(decision
 
 test('a ready, green pull request starts; every other state is skipped with its reason', () => {
   expect(label(plan([
-    pr(1), pr(2, { is_draft: true }), pr(3, { required_check: { status: 'failure', completed_at: '' } }),
+    pr(1), pr(2, { is_draft: true }), pr(3, { required_check: { status: 'failure', completed_at: '', contexts: [] } }),
     pr(4, { acceptance: { status: 'accepted', via: 'record', accepted_at: '', evidence_url: '' } }), pr(5, { tier: 'low' }), pr(6, { state: 'closed' }),
     pr(7, { acceptance: { status: 'unknown', reason: 'comments_truncated', evidence_url: null } }),
   ]))).toEqual(['1:start', '2:draft', '3:ci_not_green', '4:accepted', '5:accepted', '6:not_open', '7:acceptance_unknown']);

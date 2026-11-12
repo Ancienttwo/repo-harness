@@ -1,5 +1,5 @@
 {
-  "protocol": 8,
+  "protocol": 9,
   "kind": "repo-harness.board",
   "observed_at": "2026-11-02T23:29:42.936Z",
   "repository": "Ancienttwo/repo-harness",
@@ -330,7 +330,13 @@
       ],
       "required_check": {
         "status": "success",
-        "completed_at": "2026-11-02T21:10:01Z"
+        "completed_at": "2026-11-02T21:10:01Z",
+        "contexts": [
+          {
+            "name": "Required / CI",
+            "status": "success"
+          }
+        ]
       },
       "acceptance": {
         "status": "accepted",
@@ -438,7 +444,13 @@
         "tests/unit/pane-status.test.ts"
       ],
       "required_check": {
-        "status": "missing"
+        "status": "missing",
+        "contexts": [
+          {
+            "name": "Required / CI",
+            "status": "missing"
+          }
+        ]
       },
       "acceptance": {
         "status": "not_accepted"
@@ -527,7 +539,13 @@
         "tests/herdr-task-lifecycle.test.ts"
       ],
       "required_check": {
-        "status": "missing"
+        "status": "missing",
+        "contexts": [
+          {
+            "name": "Required / CI",
+            "status": "missing"
+          }
+        ]
       },
       "acceptance": {
         "status": "not_accepted"

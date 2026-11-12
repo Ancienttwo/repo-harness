@@ -78,6 +78,8 @@ interface Replay {
   readonly host?: BoardHostPortsV1;
   /** The answer to the policy file read of the default branch; the default is a 404. */
   readonly policy?: GhAnswer;
+  /** The answer to the protection read of one base branch; the default requires the one context `Required / CI` on every base. */
+  readonly protection?: (base: string) => GhAnswer;
   /** The version that the fake hc reports; the recorded core reported 0.1.17. */
   readonly hcVersion?: string;
   readonly now?: Date;
@@ -141,6 +143,11 @@ function replayInput(options: Replay): BoardCollectInput {
       if (args[1] === 'graphql') return answer(pulls);
       if (args.some(arg => arg.includes('actions/workflows/ci.yml/runs'))) return answer(fixture('daily-run.json'));
       if (args.includes('repos/Ancienttwo/repo-harness/contents/.ai/harness/policy.json?ref=main')) return options.policy ?? POLICY_ABSENT;
+      const protection = args.find(arg => /^repos\/Ancienttwo\/repo-harness\/branches\/[^/]+\/protection$/u.test(arg));
+      if (protection !== undefined) {
+        const base = decodeURIComponent(protection.split('/')[4]!);
+        return options.protection?.(base) ?? answer({ required_status_checks: { contexts: ['Required / CI'] } });
+      }
       if (args.includes('repos/{owner}/{repo}')) return answer({ id: 1_000_001 });
       throw new Error(`unexpected gh call: ${args.join(' ')}`);
     },
@@ -270,7 +277,7 @@ function asSmallFix(pr: Json): void {
 }
 
 test('Low acceptance uses the effective tier of every linked issue: a Low closing issue with a High or unobserved ref is not accepted by tier', () => {
-  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null };
+  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null, startedAt: null, checkSuite: { workflowRun: null } };
   const via = (refs: string) => replay({
     parent: (data) => { issueNode(data, 1479).labels.nodes.push({ name: 'tier:low' }); issueNode(data, 1476).labels.nodes.push({ name: 'tier:high' }); },
     pulls: (data) => {
@@ -519,8 +526,8 @@ test('board read: the readiness reads of one board share one answer for the repo
   };
   const count = (calls: readonly string[], prefix: string) => calls.filter(call => call.startsWith(prefix)).length;
   const { board, calls, readiness } = run(() => false);
-  // One page of parent comments (no older page): 5 board reads and 22 readiness reads.
-  expect(calls).toHaveLength(27);
+  // One page of parent comments (no older page): 7 board reads (2 of them the protection of the two base refs) and 22 readiness reads.
+  expect(calls).toHaveLength(29);
   expect(count(calls, 'api repos/Ancienttwo/repo-harness/branches/main/protection ')).toBe(1);
   expect(count(calls, 'repo view github.com/Ancienttwo/repo-harness --json id,nameWithOwner')).toBe(1);
   expect(count(calls, 'api repos/Ancienttwo/repo-harness --hostname')).toBe(1);
@@ -630,7 +637,7 @@ test('the room counts follow the recorded PRs and the plan: queue and worker lim
   const block = { protocol: 2, kind: 'repo-harness.plan', merge_order: [], holds: [], seat_limits: { worker: 4 } } as const;
   const planned: BoardV1 = { ...board, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at, revision: 1,
     block },
-    pull_requests: board.pull_requests.map(pr => pr.number === 1494 ? { ...pr, required_check: { status: 'failure', completed_at: board.observed_at } }
+    pull_requests: board.pull_requests.map(pr => pr.number === 1494 ? { ...pr, required_check: { status: 'failure', completed_at: board.observed_at, contexts: [] } }
       : pr.number === 1499 ? { ...pr, state: 'closed' } : pr) };
   expect(counts(planned)).toEqual({ queue: 1, worker_limit: 4 });
   const accepted = planned.pull_requests.find(pr => pr.number === 1491)!;
@@ -641,7 +648,7 @@ test('the room counts follow the recorded PRs and the plan: queue and worker lim
   };
   expect(counts(reopened).queue).toBe(1);
   expect(counts({ ...reopened, pull_requests: reopened.pull_requests.map(pr => pr.number === 1500
-    ? { ...pr, required_check: { status: 'pending' } } : pr) }).queue).toBe(0);
+    ? { ...pr, required_check: { status: 'pending', contexts: [] } } : pr) }).queue).toBe(0);
   // Without an observed plan the issue-flow limit applies.
   for (const plan of [
     { status: 'absent', truncated: false },
@@ -661,20 +668,20 @@ test('each live seat outside the stage takes the desk state of the room rules', 
     return { seat: entry.seat, agent: entry.agent, issue: entry.issue, pr: entry.pr, state: deskState(entry, owned, seatPullRequest(value, entry, owned)) };
   });
   for (const [state, labels, status, source, claim_status] of [
-    ['blocked', { issue: null, pr: null }, 'blocked', check({ status: 'failure', ...completed }), none],
-    ['error', {}, 'error', check({ status: 'failure', ...completed }), none],
-    ['unknown', { issue: null, pr: null }, 'working', check({ status: 'failure', ...completed }), none],
-    ['unknown', { issue: null, pr: null }, 'done', check({ status: 'missing' }), known],
-    ['ci_failed', {}, 'working', check({ status: 'failure', ...completed }), none],
-    ['ci_pending', {}, 'working', check({ status: 'pending' }), none],
-    ['acceptance_queue', {}, 'working', check({ status: 'success', ...completed }), none],
-    ['no_claim_status', {}, 'working', check({ status: 'missing' }), none],
-    ['coding', {}, 'working', check({ status: 'missing' }), known],
-    ['done', {}, 'done', check({ status: 'missing' }), known],
-    ['no_claim_status', {}, 'done', check({ status: 'missing' }), none],
-    ['idle', {}, 'idle', check({ status: 'missing' }), known],
-    ['idle', {}, null, check({ status: 'missing' }), known],
-    ['idle', {}, 'thinking', check({ status: 'missing' }), known],
+    ['blocked', { issue: null, pr: null }, 'blocked', check({ status: 'failure', ...completed, contexts: [] }), none],
+    ['error', {}, 'error', check({ status: 'failure', ...completed, contexts: [] }), none],
+    ['unknown', { issue: null, pr: null }, 'working', check({ status: 'failure', ...completed, contexts: [] }), none],
+    ['unknown', { issue: null, pr: null }, 'done', check({ status: 'missing', contexts: [] }), known],
+    ['ci_failed', {}, 'working', check({ status: 'failure', ...completed, contexts: [] }), none],
+    ['ci_pending', {}, 'working', check({ status: 'pending', contexts: [] }), none],
+    ['acceptance_queue', {}, 'working', check({ status: 'success', ...completed, contexts: [] }), none],
+    ['no_claim_status', {}, 'working', check({ status: 'missing', contexts: [] }), none],
+    ['coding', {}, 'working', check({ status: 'missing', contexts: [] }), known],
+    ['done', {}, 'done', check({ status: 'missing', contexts: [] }), known],
+    ['no_claim_status', {}, 'done', check({ status: 'missing', contexts: [] }), none],
+    ['idle', {}, 'idle', check({ status: 'missing', contexts: [] }), known],
+    ['idle', {}, null, check({ status: 'missing', contexts: [] }), known],
+    ['idle', {}, 'thinking', check({ status: 'missing', contexts: [] }), known],
   ] as const) {
     const terminal = { ...seat, ...labels, status } as BoardTerminalV1;
     const one: BoardV1 = { ...board, pull_requests: [source], items: [{ ...item, claim_status }] };
@@ -716,7 +723,9 @@ test('decoders refuse an unknown protocol or kind', () => {
   expect(() => decodeBoard({ protocol: 6, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 6');
   // A protocol-7 board has no claim, open_questions or review_fail fields.
   expect(() => decodeBoard({ protocol: 7, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 7');
-  expect(() => decodeBoard({ protocol: 8, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
+  // A protocol-8 board has no required contexts and no `unavailable` required check.
+  expect(() => decodeBoard({ protocol: 8, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 8');
+  expect(() => decodeBoard({ protocol: 9, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
   const block = (value: Json) => `repo-harness plan\n\n\`\`\`json\n${JSON.stringify(value)}\n\`\`\`\n`;
   const valid = { protocol: 2, kind: 'repo-harness.plan', merge_order: [1475], holds: [], seat_limits: { worker: 3 } } as const;
   expect(decodePlanBlock(block(valid))).toEqual(valid);
@@ -1002,7 +1011,7 @@ test('board merge: no plan, a draft, plan holds, plan order for every linked ite
       const { pr1494 } = data.repository;
       pr1494.isDraft = false;
       asSmallFix(pr1494);
-      pr1494.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null });
+      pr1494.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null, startedAt: null, checkSuite: { workflowRun: null } });
     },
   };
   expect([
@@ -1203,7 +1212,7 @@ const ROUND_4_PASS_1499 = "repo-harness acceptance record\nAgent: Claude Code (c
 const ROUND_4_FAIL_1494 = "repo-harness acceptance record\nAgent: Claude Code (claude-opus-5-5) coordinator, session d2630775\n\n| Round | Seat | Subject | Verdict |\n|---|---|---|---|\n| 4 | acceptor (gatekeeper, fresh Claude context, read-only) | 5c5139981b0bc5a620e3b2cd0605d61e4c76991d | FAIL: 1 P2, 1 P3 |\n\nModel relation: same-family\nThe receipt tool takes rounds 1-3 only, so this comment holds round 4.\n\nDelta 5c5139981 and merge aa8b6c3cc (remerge-diff empty). The round 3 fix is correct: the doctor relay check passes `hcOptions()`, and the doctor test fails without it. check:type pass; check:state-boundaries pass (533 files); `tests/cli/doctor.test.ts` 48/48 in 3 runs (the worker's earlier 2 failures did not reproduce); the 13 other affected files pass with the PR body counts; CI green.\n\nFindings (sibling sweep of hc calls in the changed files):\n- rv1494-r4-status-forwards-notify-secrets, P2, `src/effects/operator/notify-status.ts:80`: `readNotifyChannelStatus` passes `{ ...process.env, ...input.env }` unscrubbed to `hcListAsync`. A probe with a fake hc showed `WEBHOOK_URL` and `TELEGRAM_BOT_TOKEN` in the child env. The PR Risk section says this read starts a stopped core, so that core keeps the values and later terminals inherit them. Fix: move the `NOTIFY_SECRET_KEYS` scrub into one exported helper beside `NOTIFY_SECRET_KEYS` in `notify-relay.ts`; use it in `hcOptions()` and for the hc env here; extend one case in `tests/effects/operator-notify-status.test.ts` with an env-dumping fake hc.\n- rv1494-r4-relay-events-env-unscrubbed, P3, `src/cli/commands/herdr.ts:197` and `notify-relay.ts:254`: the relay passes `process.env` to `hcEvents`. A hand run from a shell that exports the values can start a core that keeps them. Use the same helper.\n\nDecision: not accepted at 5c5139981. The writer fixes both items with the one helper. Round 5 needs the owner's approval: rounds 1-4 all failed, which reaches the fix-and-review cap.\n";
 
 test('acceptance: round-4 records with bare SHAs, an unparsed record, and a Low closing issue outside the board', () => {
-  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null };
+  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null, startedAt: null, checkSuite: { workflowRun: null } };
   const board = replay({
     parent: (data) => { for (const number of [1476, 1479]) issueNode(data, number).labels.nodes.push({ name: 'tier:low' }); },
     pulls: (data) => {
@@ -1271,7 +1280,7 @@ test('one hit for each rule that the recorded state does not trigger', () => {
       pr1499.baseRefName = 'main';
       pr1499.isDraft = false;
       pr1499.files = { totalCount: 1, nodes: [{ path: 'src/effects/terminal/task-session.ts', additions: 10, deletions: 2 }] };
-      pr1499.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null });
+      pr1499.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null, startedAt: null, checkSuite: { workflowRun: null } });
       // #1494 (tier:medium #1479) changes a hook: R5.
       data.repository.pr1494.files.nodes.push({ path: hook });
       data.repository.pr1494.files.totalCount += 1;
@@ -1427,7 +1436,7 @@ test('a rendered record with multiline finding values parses to its finding IDs'
 });
 
 test('a plan hold removes a PR from A1 and R4', () => {
-  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null };
+  const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z', detailsUrl: null, startedAt: null, checkSuite: { workflowRun: null } };
   const findings = (holds: number[]) => evaluateBoardAttention(replay({
     now: new Date('2026-11-03T02:00:00Z'),
     owners: (results) => { results.push(...['a', 'b'].map(path => ({ path, matched: false, ambiguous: false, owningCapabilityId: null }))); },
@@ -1476,7 +1485,7 @@ test('rules A12 to A18 fire past their threshold with their message, not at it, 
   const cases: readonly [string, (age: number) => BoardV1, number, string][] = [
     ['A12', age => item({ claim: { status: 'active', url, created_at: at(age), role: 'writer' } }), A12_NO_PR_MS, `#1477 has a writer claim for 121 min, no PR and no claim status (${url})`],
     ['A13', age => ({ ...base, execution: { status: 'observed', terminals: [terminal(now - age)] } }), A13_IDLE_MS, 'worker t1 is idle for 11 min and #1477 has no PR'],
-    ['A14', age => pr({ required_check: { status: 'failure', completed_at: at(age) } }), A14_RED_MS, `#1494 has a failed required check on ${sha} for 31 min`],
+    ['A14', age => pr({ required_check: { status: 'failure', completed_at: at(age), contexts: [] } }), A14_RED_MS, `#1494 has a failed required check on ${sha} for 31 min`],
     ['A15', age => pr({ review_fail: { url, recorded_at: at(age) } }), A15_FAIL_MS, `#1494 has a FAIL record on ${sha} for 61 min and no new head (${url})`],
     ['A16', age => item({ open_questions: { status: 'observed', questions: [{ url, created_at: at(age) }] } }), A16_QUESTION_MS, `#1477 has a question to the coordinator with no answer for 16 min (${url})`],
     ['A17', age => item({ claim_status: { status_kind: 'observed', url, created_at: at(age), status: 'blocked: waits for #1476', pr: null, head_sha: null } }), A17_BLOCKED_MS, `#1477 claim status is blocked for 16 min (${url})`],
@@ -1496,7 +1505,7 @@ test('rules A12 to A18 fire past their threshold with their message, not at it, 
   expect(messages(pr({ merge_readiness: readiness('checks_failed') }))).toEqual([]);
 
   // A held pull request gives no A14, A15 or A18; a held item gives no A17.
-  const red = pr({ required_check: { status: 'failure', completed_at: at(A14_RED_MS + MIN) }, review_fail: { url, recorded_at: at(A15_FAIL_MS + MIN) }, merge_readiness: readiness('not_mergeable') });
+  const red = pr({ required_check: { status: 'failure', completed_at: at(A14_RED_MS + MIN), contexts: [] }, review_fail: { url, recorded_at: at(A15_FAIL_MS + MIN) }, merge_readiness: readiness('not_mergeable') });
   expect(messages(red).map(line => line.slice(0, 3))).toEqual(['A14', 'A15', 'A18']);
   expect(messages(held(red))).toEqual([]);
   const blocked = (board: BoardV1) => item({ claim_status: { status_kind: 'observed', url, created_at: at(A17_BLOCKED_MS + MIN), status: 'blocked', pr: null, head_sha: null } }, board);
@@ -2384,5 +2393,60 @@ describe('rules R6 and R7', () => {
     expect(r7({ ...off, plan: plan([1477, 1479], [1477]) })).toEqual([]);
     const itemHold = { ...board([]), items: recorded.items.map(item => (item.number === 1477 ? { ...item, merge_hold: { status: 'held', holds: [{ comment_url: 'https://github.com/hold', issues: null }] } as const } : item)) };
     expect(r7(itemHold)).toEqual(['#1494 is accepted and waits behind held #1477 in merge_order; move #1477 to the tail']);
+  });
+});
+
+describe('board required check: the contexts come from the base protection (#2264)', () => {
+  const renamed = (data: Json) => {
+    for (const check of data.repository.pr1491.commits.nodes[0].commit.statusCheckRollup.contexts.nodes) if (check.name === 'Required / CI') check.name = 'Build';
+  };
+  const build = (base: string) => ({ status: 0, stdout: JSON.stringify({ required_status_checks: { contexts: base === 'main' ? ['Build'] : ['Required / CI'] } }) });
+
+  test('a base that requires one context with another name and a passed run gives success and no required_check merge reason', () => {
+    const board = replay(mergeReplay({ pulls: renamed }, { protection: build }));
+    expect(board.pull_requests.find(pr => pr.number === 1491)!.required_check).toMatchObject({ status: 'success' });
+    expect(mergeReason({ pulls: renamed }, { protection: build })).toBe('eligible');
+  });
+
+  test('the check joins every required context: each name keeps the reports that gh pr checks keeps, and the merge detail names each context that is not success', () => {
+    const two = (base: string) => ({ status: 0, stdout: JSON.stringify({ required_status_checks: { contexts: base === 'main' ? ['Required / CI', 'Lint'] : ['Required / CI'] } }) });
+    // A check run of `Lint` started at minute `at`, completed one minute later; a commit status of `Lint` created at minute `at`.
+    const time = (minute: number) => `2026-11-02T21:${String(minute).padStart(2, '0')}:00Z`;
+    const run = (conclusion: string | null, at: number, workflow = 'CI', event = 'pull_request') => ({ name: 'Lint', status: conclusion === null ? 'IN_PROGRESS' : 'COMPLETED', conclusion,
+      startedAt: time(at), completedAt: conclusion === null ? null : time(at + 1), detailsUrl: null, checkSuite: { workflowRun: { event, workflow: { name: workflow } } } });
+    const status = (state: string, at: number) => ({ context: 'Lint', state, targetUrl: null, createdAt: time(at) });
+    const lint = (reports: readonly Json[]) => (data: Json) => { data.repository.pr1491.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push(...reports); };
+    const decision = (reports: readonly Json[]) => boardMergeDecisions(replay(mergeReplay({ pulls: lint(reports) }, { protection: two }))).find(entry => entry.pr === 1491)!;
+    const cases: readonly (readonly [readonly Json[], string])[] = [
+      [[], 'Lint is missing'],
+      [[run(null, 20)], 'Lint is pending'],
+      [[run('FAILURE', 20)], 'Lint is failure'],
+      [[run('SUCCESS', 20)], 'eligible'],
+      // The same workflow and event: the newer run replaces the older one.
+      [[run('FAILURE', 20), run('SUCCESS', 30)], 'eligible'],
+      // One name from two workflows: both stay.
+      [[run('SUCCESS', 30), run('FAILURE', 20, 'Nightly')], 'Lint is failure'],
+      [[run('SUCCESS', 30), run('FAILURE', 20, 'CI', 'push')], 'Lint is failure'],
+      // A check run and a commit status of one name both stay: a newer passing run does not hide an older failing status.
+      [[status('FAILURE', 20), run('SUCCESS', 30)], 'Lint is failure'],
+      [[status('PENDING', 20), run('SUCCESS', 30)], 'Lint is pending'],
+      [[status('FAILURE', 20), status('SUCCESS', 25), run('SUCCESS', 30)], 'eligible'],
+    ];
+    expect(cases.map(([reports]) => decision(reports)).map(entry => (entry.eligible ? 'eligible' : entry.detail))).toEqual(cases.map(([, expected]) => expected));
+    const failed = replay(mergeReplay({ pulls: lint([run('FAILURE', 19)]) }, { protection: two })).pull_requests.find(pr => pr.number === 1491)!.required_check;
+    expect(failed).toMatchObject({ status: 'failure', completed_at: '2026-11-02T21:20:00Z', contexts: [{ name: 'Required / CI', status: 'success' }, { name: 'Lint', status: 'failure' }] });
+  });
+
+  test('a failed protection read or a base with no context list is unavailable, with no default name', () => {
+    const protection = (answer: GhAnswer) => () => answer;
+    const check = (answer: GhAnswer) => replay(mergeReplay({}, { protection: protection(answer) })).pull_requests.find(pr => pr.number === 1491)!.required_check;
+    expect(check({ status: 1, stdout: '{"message":"Branch not protected","status":"404"}', stderr: 'gh: Branch not protected (HTTP 404)' }))
+      .toEqual({ status: 'unavailable', reason: 'gh api --hostname failed: gh: Branch not protected (HTTP 404)' });
+    const enobufs = { status: null, stdout: '', error: Object.assign(new Error('spawnSync gh ENOBUFS'), { code: 'ENOBUFS' }) } as unknown as GhAnswer;
+    expect(check(enobufs)).toEqual({ status: 'unavailable', reason: `gh api --hostname printed more than the ${GH_MAX_BUFFER_BYTES}-byte maxBuffer limit` });
+    expect(check({ status: 0, stdout: JSON.stringify({ required_status_checks: { contexts: [] } }) }))
+      .toEqual({ status: 'unavailable', reason: 'the protection of main requires no status check context list' });
+    const decision = boardMergeDecisions(replay(mergeReplay({}, { protection: protection({ status: 0, stdout: '{}' }) }))).find(entry => entry.pr === 1491)!;
+    expect(decision).toMatchObject({ eligible: false, reason: 'required_check', detail: 'required contexts unavailable: the protection of main requires no status check context list' });
   });
 });

@@ -30,6 +30,10 @@ function item(number: number, title: string, pull_requests: readonly number[], c
   };
 }
 
+/** The one required context of the sample boards, as the base protection of this repository names it. */
+const CI = 'Required / CI';
+const CI_PASSED = { name: CI, status: 'success' } as const;
+
 function pullRequest(number: number, head_ref: string, required_check: BoardPullRequestV1['required_check'], acceptance: BoardPullRequestV1['acceptance'], at: string): BoardPullRequestV1 {
   return {
     number, url: url('pull', number), state: 'open', is_draft: false, base_ref: 'main', base_sha: 'a'.repeat(40), head_ref, head_sha: 'b'.repeat(40),
@@ -50,7 +54,7 @@ const accepted = (at: string): BoardPullRequestV1['acceptance'] => ({ status: 'a
 
 export function officeBoard(now: number): BoardV1 {
   const ago = (hours: number) => new Date(now - hours * HOUR).toISOString();
-  const done = { status: 'success', completed_at: ago(9) } as const;
+  const done = { status: 'success', completed_at: ago(9), contexts: [CI_PASSED] } as const;
   const terminals = officeWorkers(now);
   return decodeBoard({
     protocol: BOARD_PROTOCOL, kind: 'repo-harness.board', observed_at: ago(0), repository: REPOSITORY, default_branch: 'main', acceptance_merge: 'on',
@@ -73,10 +77,10 @@ export function officeBoard(now: number): BoardV1 {
       item(1304, '预览列出会删的 worktree', [], 'none', ago(30)),
     ],
     pull_requests: [
-      pullRequest(1324, 'feat/1300-history-mockup', { status: 'success', completed_at: ago(1) }, { status: 'not_accepted' }, ago(2)),
-      pullRequest(1321, 'feat/1321-worktree-labels', { status: 'success', completed_at: ago(9) }, { status: 'not_accepted' }, ago(10)),
-      pullRequest(1323, 'feat/1323-board-refresh', { status: 'pending' }, { status: 'not_accepted' }, ago(1)),
-      pullRequest(1295, 'fix/1295-hook-race', { status: 'failure', completed_at: ago(3) }, { status: 'not_accepted' }, ago(4)),
+      pullRequest(1324, 'feat/1300-history-mockup', { status: 'success', completed_at: ago(1), contexts: [CI_PASSED] }, { status: 'not_accepted' }, ago(2)),
+      pullRequest(1321, 'feat/1321-worktree-labels', { status: 'success', completed_at: ago(9), contexts: [CI_PASSED] }, { status: 'not_accepted' }, ago(10)),
+      pullRequest(1323, 'feat/1323-board-refresh', { status: 'pending', contexts: [{ name: CI, status: 'pending' }] }, { status: 'not_accepted' }, ago(1)),
+      pullRequest(1295, 'fix/1295-hook-race', { status: 'failure', completed_at: ago(3), contexts: [{ name: CI, status: 'failure' }] }, { status: 'not_accepted' }, ago(4)),
       pullRequest(1315, 'feat/1315-board-read', done, accepted(ago(11)), ago(12)),
       pullRequest(1320, 'feat/1320-task-drawer', done, accepted(ago(10)), ago(12)),
       pullRequest(1311, 'feat/1311-seat-labels', done, accepted(ago(2)), ago(10)),
@@ -135,14 +139,15 @@ const SAMPLE_ROOMS: Readonly<Record<string, SampleRoom>> = {
   },
 };
 
-const SAMPLE_CHECK: Readonly<Partial<Record<SampleDesk, BoardPullRequestV1['required_check']['status']>>> = { ci_failed: 'failure', ci_pending: 'pending', acceptance_queue: 'success' };
+type SampleCheck = 'success' | 'failure' | 'pending';
+const SAMPLE_CHECK: Readonly<Partial<Record<SampleDesk, SampleCheck>>> = { ci_failed: 'failure', ci_pending: 'pending', acceptance_queue: 'success' };
 
 /** The board of a sample room: one item per worker, a pull request where the desk needs one, and the accepted pull requests. */
 function sampleBoard(room: SampleRoom, repository: string, now: number): BoardV1 {
   const at = new Date(now - HOUR).toISOString();
   const link = (kind: string, number: number) => `https://github.com/${repository}/${kind}/${number}`;
-  const check = (status: BoardPullRequestV1['required_check']['status']): BoardPullRequestV1['required_check'] => (status === 'pending' ? { status } : { status, completed_at: at });
-  const pr = (number: number, status: BoardPullRequestV1['required_check']['status'], acceptance: BoardPullRequestV1['acceptance']): BoardPullRequestV1 =>
+  const check = (status: SampleCheck): BoardPullRequestV1['required_check'] => (status === 'pending' ? { status, contexts: [{ name: CI, status }] } : { status, completed_at: at, contexts: [{ name: CI, status }] });
+  const pr = (number: number, status: SampleCheck, acceptance: BoardPullRequestV1['acceptance']): BoardPullRequestV1 =>
     ({ ...pullRequest(number, `feat/${number}`, check(status), acceptance, at), url: link('pull', number), refs: [room.parent] });
   const issue = (number: number, pulls: readonly number[], claim: 'observed' | 'none'): BoardItemV1 => ({ ...item(number, `${room.name} #${number}`, pulls, claim, at), url: link('issues', number) });
   const desks = room.workers.map(([, , desk], index) => ({ number: 100 + index, desk, status: SAMPLE_CHECK[desk] }));
