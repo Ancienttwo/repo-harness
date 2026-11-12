@@ -2038,7 +2038,7 @@ exit 0
       const candidateVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')).version;
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "pm" && "\${2:-}" == "view" ]]; then printf '%s\\n' '${JSON.stringify(candidateVersion)}'; exit 0; fi\nif [[ "\${1:-}" == */src/cli/index.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ "\${3:-}" == archctx@* ]]; then mkdir -p "$HOME/.bun/bin"; ln -sf "$HOME/.bun/install/global/node_modules/repo-harness/node_modules/archctx/bin/archctx.mjs" "$HOME/.bun/bin/archctx"; fi\nexit 0\n`);
 
-      const res = spawnSync(
+      const runUpdate = () => spawnSync(
         process.execPath,
         [
           CLI,
@@ -2055,6 +2055,7 @@ exit 0
           env: {
             ...sanitizedChildEnv(),
             HOME: home,
+            REPO_HARNESS_HOME: join(home, '.repo-harness'),
             BUN_INSTALL: join(home, '.bun'),
             PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
             REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
@@ -2062,6 +2063,7 @@ exit 0
           },
         },
       );
+      const res = runUpdate();
 
       expect(res.status, `${res.stderr}\n${res.stdout}`).toBe(0);
       const result = JSON.parse(res.stdout);
@@ -2071,6 +2073,14 @@ exit 0
         status: 'ok',
         detail: expect.stringContaining('scope=partial'),
       });
+      expect(result.steps.find((step: { step: string }) => step.step === 'check MCP local config')).toMatchObject({ status: 'skipped' });
+      writeFileSync(join(home, '.repo-harness', 'mcp.local.json'), '{"version":2,"permissions":{"allowedRoots":["/private/secret-root"]}}');
+      const refused = runUpdate();
+      expect(refused.status).toBe(1);
+      const refusedSteps: { step: string; status: string; detail?: string }[] = JSON.parse(refused.stdout).steps;
+      expect(refusedSteps.at(-1)).toMatchObject({ step: 'check MCP local config', status: 'failed', detail: expect.stringContaining('unsupported MCP local config version: 2') });
+      expect(refused.stdout).not.toContain('secret-root');
+      expect(refusedSteps.find(step => step.step === 'reconcile installed candidate runtime')?.status).toBe('ok');
       expect(existsSync(join(home, '.repo-harness', 'config.json'))).toBe(true);
       expect(existsSync(join(repo, '.ai'))).toBe(false);
       expect(existsSync(join(repo, 'tasks'))).toBe(false);
