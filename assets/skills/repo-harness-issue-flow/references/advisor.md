@@ -40,7 +40,8 @@ the change, so the check must come from outside its session.
    3. The first failing assertion of a red required check; the same class
       of finding in two rounds of one PR.
    4. Two issues with one design.
-   5. A quota change that changes a route line; a dead watcher.
+   5. A quota change that changes a route line; a dead watcher
+      (`repo-harness doctor`, check `board-attention-watcher`).
    6. A replan trigger of `replan.md` §1. When one holds, send
       `[rh-notice] replan #<parent>`.
    7. Items for the owner: security and production only.

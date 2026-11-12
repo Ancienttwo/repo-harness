@@ -444,6 +444,11 @@ the board. It holds no state of its own, so it cannot drift from the board.
   request that the entry names, else the parent issue. The watcher sends
   a finding once, until its rule or its subjects change;
   `repo-harness board attention --parent <n>` gives all open findings.
+  Start the watcher of a batch parent with
+  `repo-harness board attention start --parent <n>`. When the watcher
+  exits, hc types a note `t<id> exited (exit <n>)` into your terminal:
+  read the last line of that terminal with `hc read`, then start the
+  watcher again.
 - **Priority.**
 
   | Priority | Notice |

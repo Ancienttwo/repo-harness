@@ -1771,9 +1771,16 @@ test('watch service: --watch refuses a terminal without the service labels; star
   };
   expect(start([])).toEqual([{ address: 't20', started: true }, [
     ['ls', '--json', '--label', 'repo-harness.service=attention', '--label', 'repo-harness.repository=1186405141', '--label', 'repo-harness.parent=1503', '--all'],
+    ['ls', '--json', '--label', 'repo-harness.repository=1186405141'],
     ['run', '--json', '--bg', '--label', 'repo-harness.service=attention', '--label', 'repo-harness.repository=1186405141', '--label', 'repo-harness.parent=1503',
       '--cwd', '/repo', '--no-parent', '--', 'bun', 'cli.ts', 'board', 'attention', '--parent', '1503', '--watch', '--deliver'],
   ]]);
+  // One live orchestrator seat terminal is the hc parent (#2567); the watcher outlives it.
+  const withOrchestrator = watchHc({ FAKE_LS: [{ address: 't3', state: 'live' }],
+    FAKE_TERMINALS: { t3: { labels: { 'repo-harness.seat': 'orchestrator', 'repo-harness.repository': '1186405141' } } } });
+  startAttentionWatch({ parent: 1503, repository_id: 1186405141, repo_root: '/repo', cli: ['bun', 'cli.ts'], host: withOrchestrator.host });
+  const runCall = withOrchestrator.calls().find(args => args[0] === 'run')!;
+  expect(runCall.slice(runCall.indexOf('--cwd'), runCall.indexOf('--'))).toEqual(['--cwd', '/repo', '--parent', 't3', '--outlive-parent']);
   const reviewHc = watchHc();
   startAttentionWatch({ parent: 1503, repository_id: 1186405141, repo_root: '/repo', cli: ['bun', 'cli.ts'], host: reviewHc.host, review_space: 'sp1' });
   expect(reviewHc.calls().at(-1)?.slice(-5)).toEqual(['--watch', '--deliver', '--review', '--space', 'sp1']);
