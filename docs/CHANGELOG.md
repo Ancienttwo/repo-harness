@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- ci: `run_bun_tests` (and `bun run test:files`) fails before any test starts when an argument has the test file name form and is not a file, and names the path. Before, such a path was dropped and the run was green with fewer files. The daily native path list no longer names three deleted files. (#2608)
+
 ## [0.31.0] - 2026-11-12
 
 ### Breaking
@@ -13,10 +17,6 @@ All notable changes to this skill are documented here.
 - Board protocol 8 replaces protocol 7, and the board decoder refuses a protocol-7 board. Each item has `claim` (the newest `issue claim` that no `done` or `released` status closes: `active` with its URL, time and `Role:`, `none`, or `unknown` when the comment read is cut) and `open_questions`; each pull request has `open_questions` and `review_fail` (the newest acceptance record with an unresolved FAIL row for the head). A reader of `board --json` must accept protocol 8. (#2489)
 - Board protocol 9 replaces protocol 8 (#2264). The board takes the required check of each pull request from `required_status_checks.contexts` of the base branch protection, read once for each base ref, not from the name `Required / CI`. `required_check` carries `contexts`, the status of each required context on the head. A name keeps the reports that `gh pr checks` keeps: the newest commit status of that context, and the newest check run of that name for each workflow and event; a commit status maps as the `gh pr checks` bucket (SUCCESS passes, PENDING and EXPECTED wait, FAILURE and ERROR fail). The reports of a name, and the names, join: `missing` when one has no run, then `pending`, then `failure`, else `success`. A failed protection read, or a base with no context list, gives the new status `unavailable` with a `reason`; no name is assumed. `board merge` and `board review` name each context that is not `success`. A merged pull request is judged on the current base protection. A reader of `board --json` must accept protocol 9.
 - Board protocol 10 replaces protocol 9 (#2568). Each pull request has `review_records`: the comment time of the newest acceptance record with a row of each harness (`claude`, `codex`, `pi`), any subject SHA, or null when no record has one; `unknown` with a `reason` when the comment read is cut or a record has no table row. The new attention rule A19 (P1, orchestrator) names a live `gatekeeper`, `gatekeeper-fallback` or `reviewer` seat that is done or idle for more than 10 min on an open board pull request with no record of its harness newer than the seat status time. A reader of `board --json` must accept protocol 10.
-
-### Fixed
-
-- ci: `run_bun_tests` (and `bun run test:files`) fails before any test starts when an argument has the test file name form and is not a file, and names the path. Before, such a path was dropped and the run was green with fewer files. The daily native path list no longer names three deleted files. (#2608)
 
 ### Added
 
