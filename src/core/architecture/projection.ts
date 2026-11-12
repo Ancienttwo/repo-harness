@@ -52,8 +52,7 @@ export function summarizeArchitectureRender(result: ProjectionResultV2) {
 
 /** The rolling writer publishes after the product merge: 11 to 102 min for 8 projections in 2026-11 (#2590). */
 export const ARCHITECTURE_LAG_BOUND_MS = 3 * 60 * 60 * 1000;
-export const ARCHITECTURE_FRESHNESS = ['fresh', 'lag', 'stale', 'human-action', 'incomplete'] as const;
-export type ArchitectureFreshness = typeof ARCHITECTURE_FRESHNESS[number];
+export type ArchitectureFreshness = 'fresh' | 'lag' | 'stale' | 'human-action' | 'incomplete';
 
 /**
  * The daily lane verdict. A difference is `lag` while the oldest unpublished main commit is younger than the bound,

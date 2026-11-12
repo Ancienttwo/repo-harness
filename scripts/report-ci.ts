@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CI_DAILY_MISSING_KEY_PREFIX, CI_REPAIR_KEY_PREFIX, ciRepairIssueMarker, isCiRepairIssueBody, parseJUnitReport, type TestFileResultV1 } from '../src/core/ci/test-report';
 import { rollbackParent } from '../src/core/publication/merge-readiness';
-import { ARCHITECTURE_FRESHNESS, type ArchitectureFreshness } from '../src/core/architecture/projection';
 const validSha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
 
 /** CI completion effect: GitHub is the authority for runs, repair issues and rollback boundaries. */
@@ -196,7 +195,7 @@ const ARCHITECTURE_ROWS = {
   decision: 'Other `humanActions` reason codes, or `adoption-required`',
   error: 'Command error, `blocked` or a failure status',
 } as const;
-export interface ArchitectureSummary { status: string; renderEquivalent: boolean | null; differingPaths: string[]; humanActions: Record<string, unknown>[]; freshness: ArchitectureFreshness; unpublishedSince: string }
+export interface ArchitectureSummary { status: string; renderEquivalent: boolean | null; differingPaths: string[]; humanActions: Record<string, unknown>[]; freshness: string; unpublishedSince: string }
 /** summaryText is null when the daily job uploaded no summary. */
 export interface ArchitectureInput { summaryText: string | null; evidence: string }
 
@@ -209,11 +208,12 @@ export function parseArchitectureSummary(text: string): ArchitectureSummary {
   if (typeof summary.status !== 'string' || !summary.status) throw new Error('Architecture summary status must be a string');
   if (!Array.isArray(summary.humanActions)) throw new Error('Architecture summary humanActions must be an array');
   if (summary.renderEquivalent !== null && typeof summary.renderEquivalent !== 'boolean') throw new Error('Architecture summary renderEquivalent must be boolean or null');
-  if (!ARCHITECTURE_FRESHNESS.includes(summary.freshness as ArchitectureFreshness)) throw new Error(`Architecture summary freshness must be one of ${ARCHITECTURE_FRESHNESS.join(', ')}`);
+  // check-ci.sh writes freshness from classifyArchitectureFreshness; the reporter only names it.
+  if (typeof summary.freshness !== 'string' || !summary.freshness) throw new Error('Architecture summary freshness must be a string');
   if (typeof summary.unpublishedSince !== 'string' || !summary.unpublishedSince) throw new Error('Architecture summary unpublishedSince must be a string');
   return { status: summary.status, renderEquivalent: summary.renderEquivalent, differingPaths: strings(summary.differingPaths, 'differingPaths'),
     humanActions: summary.humanActions.map(action => record(action, 'Architecture human action')),
-    freshness: summary.freshness as ArchitectureFreshness, unpublishedSince: summary.unpublishedSince };
+    freshness: summary.freshness, unpublishedSince: summary.unpublishedSince };
 }
 
 /** Returns the evidence table row for a summary. A missing summary means the check gave no result. */
