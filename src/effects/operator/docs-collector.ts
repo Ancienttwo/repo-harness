@@ -60,7 +60,8 @@ function gitEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 function remoteUrls(root: string, env: NodeJS.ProcessEnv, gitBin: string | undefined): Promise<Map<string, string> | null> {
   return new Promise(settle => {
     // stderr is discarded: it can hold absolute paths.
-    const child = spawnGit(['config', '--local', '--get-regexp', '^remote\\..*\\.url$'], {
+    // --null: each record is `key LF value NUL`, so a newline inside a URL value cannot forge a second key line.
+    const child = spawnGit(['config', '--local', '--null', '--get-regexp', '^remote\\..*\\.url$'], {
       cwd: root, env: gitEnv(env), gitBin, stdio: ['ignore', 'pipe', 'ignore'],
     });
     let stdout = '';
@@ -76,9 +77,10 @@ function remoteUrls(root: string, env: NodeJS.ProcessEnv, gitBin: string | undef
       // Exit 1 means no remote URL is configured.
       if (signal !== null || (code !== 0 && code !== 1) || stdout.length > REMOTE_STDOUT_LIMIT) { settle(null); return; }
       const urls = new Map<string, string>();
-      for (const line of stdout.split('\n')) {
-        const match = /^remote\.(.+)\.url (.+)$/u.exec(line);
-        if (match) urls.set(match[1]!, match[2]!);
+      for (const record of stdout.split('\0')) {
+        const split = record.indexOf('\n');
+        const match = split < 0 ? null : /^remote\.(.+)\.url$/u.exec(record.slice(0, split));
+        if (match) urls.set(match[1]!, record.slice(split + 1));
       }
       settle(urls);
     });
@@ -112,12 +114,13 @@ export function startDocsCollector(options: DocsCollectorOptions): DocsCollector
     // close() ran during the await: start no process and no scan. No later await comes before reader.start().
     if (signal.aborted || urls === null) return unavailable('docs_reader_unavailable');
     const github = source.github.toLowerCase();
-    // Only names and parsed repositories leave this function: a URL can hold a credential.
     const parsed = [...urls].map(([name, url]) => ({ name, github: githubRemoteRepository(url) }));
     const remotes = parsed.filter(remote => remote.github === github).map(remote => remote.name);
     if (remotes.length === 0) {
       retire(repo.id);
-      return { state: 'unavailable', reason: 'github_remote_missing', detail: { github: source.github, remotes: parsed } };
+      // Only parsed owner/name values leave this function: remote names and URLs are git config text, and a URL can hold a credential.
+      const remote_repositories = [...new Set(parsed.flatMap(remote => (remote.github === null ? [] : [remote.github])))];
+      return { state: 'unavailable', reason: 'github_remote_missing', detail: { github: source.github, remote_repositories } };
     }
     if (remotes.length > 1) return unavailable('github_remote_ambiguous');
     const ref = `refs/remotes/${remotes[0]}/${source.default_branch}`;
