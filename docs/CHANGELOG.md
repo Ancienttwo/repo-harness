@@ -6,6 +6,7 @@ All notable changes to this skill are documented here.
 
 ### Fixed
 
+- On Windows, the host test queue ticket read no longer throws `EPERM` for a ticket that another queue member just unlinked. After the `EPERM`, one lstat of the ticket path decides: `ENOENT` skips the ticket. Any other result still throws, so a real access refusal stays an error. No retry and no wait. (#2609)
 - ci: `run_bun_tests` (and `bun run test:files`) fails before any test starts when an argument has the test file name form and is not a file, and names the path. Before, such a path was dropped and the run was green with fewer files. The daily native path list no longer names three deleted files. (#2608)
 
 ## [0.31.0] - 2026-11-12

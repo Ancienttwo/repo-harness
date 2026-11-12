@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { join } from 'path';
 import { processGroupExists } from '../process-group-termination.ts';
@@ -152,6 +152,23 @@ function removeFile(path: string): void {
   }
 }
 
+/**
+ * True when a read error means another queue member removed the ticket. On
+ * Windows, a ticket that was just unlinked gives EPERM instead of ENOENT for a
+ * short time; one lstat of the path separates that race from a real refusal.
+ */
+function ticketVanished(path: string, error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code;
+  if (code === 'ENOENT') return true;
+  if (process.platform !== 'win32' || code !== 'EPERM') return false;
+  try {
+    lstatSync(path);
+    return false;
+  } catch (statError) {
+    return (statError as NodeJS.ErrnoException).code === 'ENOENT';
+  }
+}
+
 interface Ticket {
   readonly path: string;
   readonly entry: HostTestQueueEntry;
@@ -167,7 +184,7 @@ function readTickets(root: string): Ticket[] {
     try {
       text = readFileSync(path, 'utf-8');
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      if (ticketVanished(path, error)) continue;
       throw error;
     }
     const entry = parseEntry(text);

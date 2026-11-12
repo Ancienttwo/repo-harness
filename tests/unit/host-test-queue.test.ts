@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { spawn } from 'child_process';
+import * as fs from 'fs';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
@@ -142,5 +143,30 @@ describe('host test queue', () => {
     const handle = await enter(env, 'affected', 'after-empty');
     expect(readHostTestQueueState(env).holder?.entry?.command).toEqual(['after-empty']);
     handle.release();
+  });
+
+  // Windows gives EPERM, not ENOENT, on a ticket that another member just unlinked (#2609).
+  test.each([
+    ['a ticket that the other member unlinked is skipped', true],
+    ['a ticket that is still there keeps the EPERM as a real access refusal', false],
+  ])('windows EPERM on the ticket read: %s', (_name, unlinked) => {
+    const env = queueEnv();
+    const directory = join(env.REPO_HARNESS_HOME!, 'host-test-queue', 'tickets');
+    mkdirSync(directory, { recursive: true });
+    const ticket = join(directory, '0-other.json');
+    writeFileSync(ticket, '{}');
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    const read = spyOn(fs, 'readFileSync').mockImplementationOnce(() => {
+      if (unlinked) rmSync(ticket);
+      throw Object.assign(new Error(`EPERM: operation not permitted, open '${ticket}'`), { code: 'EPERM', syscall: 'open' });
+    });
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    try {
+      if (unlinked) expect(readHostTestQueueState(env).waiting).toEqual([]);
+      else expect(() => readHostTestQueueState(env)).toThrow('EPERM');
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+      read.mockRestore();
+    }
   });
 });
