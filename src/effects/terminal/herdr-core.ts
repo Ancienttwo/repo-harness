@@ -305,15 +305,19 @@ export function hcGet(terminalAddress: string, options: HerdrCoreOptions = {}): 
 
 /**
  * `hc run --bg`: start argv in a new terminal that carries `labels`. By default the caller's terminal is its
- * parent and the child ends with it; `noParent` starts it without a parent, so it outlives the caller.
+ * parent and the child ends with it; `noParent` starts it without a parent, so it outlives the caller. `parent` names
+ * another parent terminal; with `outliveParent` the child keeps running when that parent's program ends.
  */
 export function hcRun(input: {
   readonly argv: readonly [string, ...string[]]; readonly labels: HcLabels; readonly name?: string; readonly cwd?: string; readonly noParent?: boolean;
+  readonly parent?: string; readonly outliveParent?: boolean;
 }, options: HerdrCoreOptions = {}): HcTerminalSummary {
   const args = ['--bg', ...labelArgs(input.labels)];
   if (input.name !== undefined) args.push('--name', input.name);
   if (input.cwd !== undefined) args.push('--cwd', input.cwd);
   if (input.noParent) args.push('--no-parent');
+  if (input.parent !== undefined) args.push('--parent', input.parent);
+  if (input.outliveParent) args.push('--outlive-parent');
   return terminalSummary(hc('run', [...args, '--', ...input.argv], options));
 }
 
@@ -514,22 +518,26 @@ export function boardSeatTerminals(terminals: readonly (HcTerminal & { readonly 
   }));
 }
 
+/** The seat terminals of one repository (#1780); the board read, the closeout listing and the watcher start share it. */
+function readRepositorySeats(repositoryId: string, all: boolean, options: HerdrCoreOptions): ReturnType<BoardHostPortsV1['seatTerminals']> {
+  try {
+    // A watcher terminal (#1509) carries the repository and parent labels too, but it is a program, not a seat.
+    const terminals = boardSeatTerminals(hcList({ [RH_LABEL.repository]: repositoryId }, { ...options, all })
+      .map(({ address, agent }) => ({ ...hcGet(address, options), agent })));
+    return { status: 'observed', terminals };
+  } catch (error) {
+    if (error instanceof HerdrCoreError) return { status: 'unavailable', reason: `hc_${error.reason}` };
+    throw error;
+  }
+}
+
 /** The board host port (#1505): the seat terminals of one repository with their parent labels (#1780), the hc version, and the advisor seat send and read (#1756). */
 export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1 {
   const unavailable = (error: unknown) => {
     if (error instanceof HerdrCoreError) return { status: 'unavailable', reason: `hc_${error.reason}` } as const;
     throw error;
   };
-  const readSeatTerminals = (repositoryId: string, all: boolean): ReturnType<BoardHostPortsV1['seatTerminals']> => {
-    try {
-      // A watcher terminal (#1509) carries the repository and parent labels too, but it is a program, not a seat.
-      const terminals = boardSeatTerminals(hcList({ [RH_LABEL.repository]: repositoryId }, { ...options, all })
-        .map(({ address, agent }) => ({ ...hcGet(address, options), agent })));
-      return { status: 'observed', terminals };
-    } catch (error) {
-      return unavailable(error);
-    }
-  };
+  const readSeatTerminals = (repositoryId: string, all: boolean) => readRepositorySeats(repositoryId, all, options);
   return {
     seatTerminals: (repositoryId) => readSeatTerminals(repositoryId, false),
     closeoutTerminals: (repositoryId) => readSeatTerminals(repositoryId, true),
@@ -598,8 +606,15 @@ export function attentionHostPorts(options: HerdrCoreOptions = {}): AttentionHos
       } catch (error) { return failed(error); }
     },
     startWatcher: (scope, cwd, argv) => {
+      // The live orchestrator seat of the repository is the hc parent: hc types a note about the watcher into it when the watcher exits.
+      // Without exactly one live orchestrator terminal the watcher has no parent.
+      const seats = readRepositorySeats(String(scope.repository), false, options);
+      if (seats.status === 'unavailable') return { status: 'failed', reason: seats.reason, detail: 'hc did not list the seat terminals' };
+      const orchestrators = seats.terminals.filter(terminal => terminal.labels.seat === 'orchestrator' && terminal.state === 'live');
+      const parent = orchestrators.length === 1 ? orchestrators[0]!.address : undefined;
       try {
-        return { status: 'started', address: hcRun({ argv: [...argv], labels: scoped(scope), cwd, noParent: true }, options).address };
+        const run = parent === undefined ? { noParent: true } : { parent, outliveParent: true };
+        return { status: 'started', address: hcRun({ argv: [...argv], labels: scoped(scope), cwd, ...run }, options).address };
       } catch (error) { return failed(error); }
     },
     send: (terminal, text) => {
