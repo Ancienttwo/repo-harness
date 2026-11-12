@@ -265,6 +265,7 @@ function loadManifest(root: string): CapabilityDocs {
   if (targets === undefined || targets === null || record(targets) === null) {
     throw new UsageError(`${MANIFEST_PATH}: "targets" must be an object keyed by targetId`);
   }
+  const members = capabilityMembers(record(parsed)?.semanticBaseline);
   const byNode = new Map<string, string>();
   const capabilities = new Set<string>();
   for (const [targetId, row] of Object.entries(targets as Record<string, unknown>)) {
@@ -282,8 +283,7 @@ function loadManifest(root: string): CapabilityDocs {
       throw new UsageError(`${MANIFEST_PATH}: capability ${capabilityId} is documented by more than one target`);
     }
     capabilities.add(capabilityId);
-    const stamps = record(target.sourceStamps) ?? {};
-    for (const nodeId of [capabilityId, ...Object.keys(stamps)]) {
+    for (const nodeId of [capabilityId, ...(members.get(capabilityId) ?? [])]) {
       const existing = byNode.get(nodeId);
       if (existing !== undefined && existing !== docPath) {
         throw new UsageError(`${MANIFEST_PATH}: node ${nodeId} is documented by both ${existing} and ${docPath}`);
@@ -292,6 +292,22 @@ function loadManifest(root: string): CapabilityDocs {
     }
   }
   return { byNode, capabilities };
+}
+
+/** Capability id -> member node ids, from the manifest's semantic baseline. */
+function capabilityMembers(value: unknown): Map<string, string[]> {
+  const entries = record(value)?.capabilities;
+  if (!Array.isArray(entries)) throw new UsageError(`${MANIFEST_PATH}: "semanticBaseline.capabilities" must be an array`);
+  const members = new Map<string, string[]>();
+  for (const [index, entry] of entries.entries()) {
+    const capability = record(entry);
+    const ids = capability?.memberNodeIds;
+    if (typeof capability?.capabilityId !== "string" || !Array.isArray(ids) || ids.some((id) => typeof id !== "string")) {
+      throw new UsageError(`${MANIFEST_PATH}: semanticBaseline.capabilities[${index}] must name a capabilityId and its memberNodeIds`);
+    }
+    members.set(capability.capabilityId, ids as string[]);
+  }
+  return members;
 }
 
 function isFile(abs: string): boolean {

@@ -32,7 +32,7 @@ interface MeasureOutput {
 // writes both, because the map no longer falls back to package or directory layout.
 const MODEL_DIR = 'model/nodes';
 const MANIFEST = 'docs/architecture/.projection-manifest.json';
-interface ManifestEntry { capabilityId: string; path?: string; stamps?: string[] }
+interface ManifestEntry { capabilityId: string; path?: string; members?: string[] }
 type FixtureNode = [id: string, kind: string, fields?: Record<string, unknown>];
 /** A declared machine: the state-machine directory sits beside the node directory. */
 type FixtureMachine = [id: string, capabilityId: string];
@@ -52,12 +52,12 @@ function manifest(entries: ManifestEntry[]): string {
       ownership: 'mixed',
       format: 'markdown',
       outputDigest: `sha256:${'0'.repeat(64)}`,
-      sourceStamps: Object.fromEntries((entry.stamps ?? [entry.capabilityId]).map((id) => [id, `sha256:${'1'.repeat(64)}`])),
     };
     if (entry.path !== undefined) row.path = entry.path;
     targets[`projection_target.entity.${entry.capabilityId}`] = row;
   }
-  return `${JSON.stringify({ schemaVersion: 'archcontext.architecture-docs-projection-manifest/v3', targets }, null, 2)}\n`;
+  const capabilities = entries.map((entry) => ({ capabilityId: entry.capabilityId, memberNodeIds: [entry.capabilityId, ...(entry.members ?? [])] }));
+  return `${JSON.stringify({ schemaVersion: 'archcontext.architecture-docs-projection-manifest/v4', semanticBaseline: { capabilities }, targets }, null, 2)}\n`;
 }
 
 const roots: string[] = [];
@@ -237,10 +237,10 @@ describe('archimap measure requires the adopted model', () => {
       { id: 'beta', include: ['src/beta/**'], nodes: ['capability.beta'] },
     ], {
       nodes: [['capability.alpha', 'capability'], ['capability.beta', 'capability'], ['component.alpha.core', 'component']],
-      manifest: [{ capabilityId: 'capability.alpha', path: 'docs/architecture/modules/dom/alpha.md', stamps: ['component.alpha.core'] }],
+      manifest: [{ capabilityId: 'capability.alpha', path: 'docs/architecture/modules/dom/alpha.md', members: ['component.alpha.core'] }],
     });
     const result = measure(root);
-    // A component node resolves through the capability target that stamps it; a capability with
+    // A component node resolves through the capability whose memberNodeIds name it; a capability with
     // no target has no document, and the script does not build a path from its id.
     expect(result.modules.map((module) => module.docs)).toEqual([
       ['docs/architecture/modules/dom/alpha.md'],
