@@ -877,7 +877,12 @@ if (cmd === "send") {
   const text = rest[rest.length - 1];
   if (text.startsWith("You are")) {
     const transcript = JSON.parse(fs.readFileSync("${dir}/session.json", "utf8")).transcript_path;
-    fs.appendFileSync(transcript, JSON.stringify({ type: "user", message: { role: "user", content: \`<hc from="t2">\${text}</hc>\` } }) + "\\n");
+    const entry = st.queuedPrompt
+      ? { type: "attachment", attachment: { type: "queued_command", prompt: \`<hc from="t2">\${text}</hc>\` } }
+      : { type: "user", message: { role: "user", content: \`<hc from="t2">\${text}</hc>\` } };
+    fs.appendFileSync(transcript, JSON.stringify(entry) + "\\n");
+    // st.badLines appends lines that are not JSON objects, as a cut or damaged line is.
+    for (let bad = 0; bad < (st.badLines ?? 0); bad += 1) fs.appendFileSync(transcript, "null\\n");
     const step = st.answers[st.prompts] ?? { command: "hc send t2 RESUMED", result: st.prompts + 1 < st.errorUntil ? "error" : "ok" };
     const answer = (st.prompts += 1) >= st.evidenceFrom
       ? { type: "tool_use", id: "u1", name: "Bash", input: { command: step.command } } : { type: "text", text: "Reading the handoff." };
@@ -1105,6 +1110,19 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
     expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: true, logErrors: [] });
     expect(sends().filter(text => text === prompt(handoff))).toHaveLength(5);
     expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([...Array(4).fill(["resume", "no_evidence"]), ["reset", "relaunched"]]);
+  }));
+
+  test("a resume prompt that Claude Code delivered as a queued command counts as asked, so the prompt is sent once (#2637)", withReset(async ({ handoff, reset, state, sends, log }) => {
+    // The prompt arrived during a turn: the transcript holds a queued_command attachment and no user entry.
+    state({ queuedPrompt: true });
+    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: false, logErrors: [] });
+    expect([sends(), log().map(({ kind, detail }) => [kind, detail])]).toEqual([["/clear", prompt(handoff)], [["reset", "cleared"]]]);
+  }));
+
+  test("a transcript line that is not a JSON object is skipped, not thrown (#2637)", withReset(async ({ handoff, reset, state, sends, log }) => {
+    state({ badLines: 2 });
+    expect(await reset()).toEqual({ requester: "t5", seat: "advisor", relaunched: false, logErrors: [] });
+    expect([sends(), log().map(({ kind, detail }) => [kind, detail])]).toEqual([["/clear", prompt(handoff)], [["reset", "cleared"]]]);
   }));
 
   test("a prompt that the model answers without RESUMED is sent again and the failure is logged", withReset(async ({ handoff, reset, state, sends, log }) => {
