@@ -62,13 +62,6 @@ export interface BoardParentReadV1 {
   readonly repair_candidates: readonly { readonly number: number; readonly body: string }[];
 }
 
-export interface BoardCheckRunReadV1 {
-  readonly name: string;
-  readonly status: string;
-  readonly conclusion: string | null;
-  readonly completed_at: string | null;
-}
-
 export interface BoardPullRequestReadV1 {
   readonly number: number;
   readonly url: string;
@@ -85,12 +78,11 @@ export interface BoardPullRequestReadV1 {
   readonly files: readonly string[] | null;
   /** The added plus deleted lines of `files`, from the same read; null when `files` is null or a file has no count. */
   readonly changed_lines: number | null;
-  readonly checks: readonly BoardCheckRunReadV1[];
   readonly comments: BoardCommentPageV1;
   readonly readiness_inputs: BoardReadinessInputsV1;
 }
 
-/** One check run or commit status of the head commit, as the readiness key reads it. */
+/** One check run or commit status of the head commit, as the readiness key and the board required check read it; `status` of a commit status is its state. */
 export interface BoardRollupContextV1 {
   readonly type: 'CheckRun' | 'StatusContext';
   readonly name: string;
@@ -327,8 +319,6 @@ export function decodePullRequestsRead(data: unknown, numbers: readonly number[]
     const complete = files.totalCount === filePaths.length;
     const counted = complete && fileNodes.every(node => [node.additions, node.deletions].every(count => Number.isSafeInteger(count) && (count as number) >= 0));
     const rollup = commit.statusCheckRollup === null ? [] : rollupContexts(obj(commit.statusCheckRollup, `${label}.statusCheckRollup`), label);
-    // The board rules read check runs only.
-    const checks = rollup.filter(context => context.type === 'CheckRun').map(({ name, status, conclusion, completed_at }) => Object.freeze({ name, status, conclusion, completed_at }));
     return Object.freeze({
       number,
       url: str(node.url, `${label}.url`),
@@ -343,7 +333,6 @@ export function decodePullRequestsRead(data: unknown, numbers: readonly number[]
       merged_at: node.mergedAt === null ? null : time(node.mergedAt, `${label}.mergedAt`),
       files: complete ? Object.freeze(filePaths) : null,
       changed_lines: counted ? fileNodes.reduce((sum, node) => sum + (node.additions as number) + (node.deletions as number), 0) : null,
-      checks: Object.freeze(checks),
       comments: comments(node.comments, `${label}.comments`),
       readiness_inputs: readinessInputs(node, rollup, label),
     });

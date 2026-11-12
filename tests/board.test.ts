@@ -2409,6 +2409,12 @@ describe('board required check: the contexts come from the base protection (#226
     const decision = (pulls?: (data: Json) => void) => boardMergeDecisions(replay(mergeReplay({ pulls }, { protection: two }))).find(entry => entry.pr === 1491)!;
     expect([decision(), decision(lint('IN_PROGRESS', null)), decision(lint('COMPLETED', 'FAILURE')), decision(lint('COMPLETED', 'SUCCESS'))].map(entry => (entry.eligible ? 'eligible' : entry.detail)))
       .toEqual(['Lint is missing', 'Lint is pending', 'Lint is failure', 'eligible']);
+    // A required commit status context counts as base protection counts it: SUCCESS passes, PENDING waits, FAILURE fails.
+    const status = (state: string) => (data: Json) => {
+      data.repository.pr1491.commits.nodes[0].commit.statusCheckRollup.contexts.nodes.push({ context: 'Lint', state, targetUrl: null, createdAt: '2026-11-02T21:20:00Z' });
+    };
+    expect([decision(status('SUCCESS')), decision(status('PENDING')), decision(status('FAILURE'))].map(entry => (entry.eligible ? 'eligible' : entry.detail)))
+      .toEqual(['eligible', 'Lint is pending', 'Lint is failure']);
     const failed = replay(mergeReplay({ pulls: lint('COMPLETED', 'FAILURE') }, { protection: two })).pull_requests.find(pr => pr.number === 1491)!.required_check;
     expect(failed).toMatchObject({ status: 'failure', completed_at: '2026-11-02T21:20:00Z', contexts: [{ name: 'Required / CI', status: 'success' }, { name: 'Lint', status: 'failure' }] });
   });

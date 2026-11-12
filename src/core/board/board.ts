@@ -19,10 +19,10 @@ import {
   parseClaimStatus,
   parseRefs,
   protocolComments,
-  type BoardCheckRunReadV1,
   type BoardCommentV1,
   type BoardParentReadV1,
   type BoardPullRequestReadV1,
+  type BoardRollupContextV1,
   type AcceptanceDispositionV1,
   type AcceptanceRowV1,
   type BoardSubIssueReadV1,
@@ -385,14 +385,22 @@ function claimStatus(issue: BoardSubIssueReadV1): BoardClaimStatusV1 {
   return issue.comments.truncated ? { status_kind: 'unknown' } : { status_kind: 'none' };
 }
 
-/** The newest run of one context; a run that is not complete counts as the newest. */
-function contextRun(read: BoardPullRequestReadV1, name: string): BoardCheckRunReadV1 | null {
-  const runs = read.checks.filter(check => check.name === name);
+/**
+ * The newest head report of one required context: a check run of that name or a commit status of that context, as base protection
+ * matches them. A check run that is not complete counts as the newest.
+ */
+function contextRun(read: BoardPullRequestReadV1, name: string): BoardRollupContextV1 | null {
+  const runs = read.readiness_inputs.rollup.filter(context => context.name === name);
   return runs.length === 0 ? null : runs.reduce((newest, check) => ((check.completed_at ?? '9') > (newest.completed_at ?? '9') ? check : newest));
 }
 
-function runStatus(run: BoardCheckRunReadV1 | null): BoardRequiredContextV1['status'] {
+/** The commit status states as the `gh pr checks` bucket that publication readiness reads: pass, pending or fail. */
+const STATUS_STATES: ReadonlyMap<string, BoardRequiredContextV1['status']> = new Map([['SUCCESS', 'success'], ['PENDING', 'pending'], ['EXPECTED', 'pending'], ['FAILURE', 'failure'], ['ERROR', 'failure']]);
+
+function runStatus(run: BoardRollupContextV1 | null): BoardRequiredContextV1['status'] {
   if (run === null) return 'missing';
+  // GitHub defines no other state; one would fail closed.
+  if (run.type === 'StatusContext') return STATUS_STATES.get(run.status) ?? 'failure';
   if (run.status !== 'COMPLETED' || run.completed_at === null) return 'pending';
   return run.conclusion === 'SUCCESS' ? 'success' : 'failure';
 }
