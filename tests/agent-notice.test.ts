@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { ERROR_CATALOG } from 'archctx-contracts';
@@ -94,19 +94,40 @@ describe('AgentNotice', () => {
     expect(scope.content).toStartWith(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
   });
 
-  test('#2491: a checkpoint timeout gives one diagnostic, no block and no command', () => {
-    const root = fixture();
-    const result = collectAgentNotice(root, () => noticeOwnership(root), {
-      env: noticeEnv(root), run: () => ({ status: null, signal: 'SIGTERM', stdout: '', stderr: '', timedOut: true }),
-    });
-    expect(result.diagnostics).toContain('RH_ARCHCTX_TIMEOUT');
-    expect(result.diagnostics).toContain('architecture checkpoint did not finish in the notice time budget');
-    expect(result.diagnostics).not.toContain('request id');
-    expect(result.diagnostics).not.toContain('architecture-projection');
-    expect(result.diagnostics).not.toContain('architecture-debt');
-    expect(result.diagnostics).not.toContain('3 s');
-    expect(result.content).toBeUndefined();
-    expect(result.systemMessage).toBeUndefined();
+  test('#2491: each exhaustion of the checkpoint deadline gives one diagnostic, no block and no command', () => {
+    const cases: Record<string, (root: string) => ArchctxProviderOptions> = {
+      'archctx process': root => ({ env: noticeEnv(root), run: timedOut }),
+      'git subprocess': root => {
+        const slowGit = join(root, 'home/slow-git');
+        // Only the checkpoint merge-base hangs; the marker and branch reads still answer.
+        writeFileSync(slowGit, '#!/bin/sh\ncase "$*" in *merge-base*) exec sleep 10;; esac\nexec git "$@"\n', { mode: 0o755 });
+        return { env: { ...noticeEnv(root), REPO_HARNESS_GIT_BIN: slowGit }, deadlineMs: Date.now() + 300 };
+      },
+      'before the process': root => ({ env: noticeEnv(root), deadlineMs: Date.now() - 1, run: noCheckpoint }),
+      'after decode': root => {
+        let now = 0;
+        return {
+          env: noticeEnv(root), nowMs: () => now,
+          run: (_binary, args) => {
+            // The real report for the same paths, outside the notice budget; the clock then passes the deadline.
+            const data = new ArchctxClient(root, ARCHCTX_REQUIRED_VERSION, { env: noticeEnv(root) }).data(args, 60_000);
+            now = 5_000;
+            return { status: 0, signal: null, stdout: JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'checkpoint', data }), stderr: '' };
+          },
+        };
+      },
+    };
+    for (const [name, options] of Object.entries(cases)) {
+      const root = fixture();
+      const result = collectAgentNotice(root, () => noticeOwnership(root), options(root));
+      expect([name, result.content, result.systemMessage]).toEqual([name, undefined, undefined]);
+      expect(result.diagnostics!.trim().split('\n')).toHaveLength(1);
+      expect(result.diagnostics).toContain('RH_ARCHCTX_TIMEOUT: architecture checkpoint did not finish in the notice time budget');
+      expect(result.diagnostics).not.toContain('request id');
+      expect(result.diagnostics).not.toContain('architecture-projection');
+      expect(result.diagnostics).not.toContain('architecture-debt');
+      expect(result.diagnostics).not.toContain('3 s');
+    }
   });
 
   test('real citation debt is bounded, uses producer ids and dedupes across delivery points', () => {
