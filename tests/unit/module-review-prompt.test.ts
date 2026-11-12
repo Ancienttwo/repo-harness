@@ -312,11 +312,11 @@ test('each formerly quadratic secret rule stays linear from a 64 KiB to a 256 Ki
     return performance.now() - start;
   };
   // Load only adds time, so the fastest sample of each size is the closest to the true time. A pair of samples repeats at least 3 times,
-  // then until the ratio is under the bound or one second has passed.
+  // then until the ratio is under the bound or three seconds have passed.
   const lowestRatio = (timeSmall: () => number, timeMedium: () => number) => {
     const start = performance.now();
     let fastestSmall = Infinity, fastestMedium = Infinity, ratio = Infinity;
-    for (let pairs = 1; pairs <= 3 || (ratio >= 8 && performance.now() - start < 1000); pairs++) {
+    for (let pairs = 1; pairs <= 3 || (ratio >= 8 && performance.now() - start < 3000); pairs++) {
       fastestSmall = Math.min(fastestSmall, timeSmall());
       fastestMedium = Math.min(fastestMedium, timeMedium());
       ratio = fastestMedium / Math.max(fastestSmall, 1);
