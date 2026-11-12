@@ -19,15 +19,22 @@
 # skills, the `hc` binary on PATH, and the refusal cases of one release (for
 # example a stale mcp.local.json), which the release PR adds by hand.
 #
-# Needs network access to registry.npmjs.org. Fails when the candidate version
-# is already on npm: the rehearsal is only valid before the publish.
+# The candidate is the HEAD commit of the checkout, not its working tree: the
+# script extracts HEAD into scratch and packs from there, so the checkout is
+# never written. It needs network access to registry.npmjs.org, and it fails
+# when the candidate version is already on npm: the rehearsal is only valid
+# before the publish.
+#
+# Isolation rule: the script builds one environment in scratch before it runs
+# any npm, bun, git or candidate command, and runs every child process through
+# `iso`, which is `env -i` with an explicit allow list. Host overrides such as
+# CODEX_HOME, CLAUDE_CONFIG_DIR, PI_CODING_AGENT_DIR, CODEX_SKILLS_ROOT,
+# CLAUDE_SKILLS_ROOT, npm_config_* and BUN_INSTALL_CACHE_DIR never reach a
+# child, so no write leaves the scratch directory.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
-
-# Same native /tmp root as the other release scripts (Git Bash maps /tmp elsewhere).
-TMP_DIR="$(bun -e 'const fs = require("node:fs"); const path = require("node:path"); const root = path.resolve("/tmp"); fs.mkdirSync(root, { recursive: true }); console.log(fs.mkdtempSync(path.join(fs.realpathSync(root), "rh-upgrade-rehearsal.")).replaceAll("\\", "/"));')"
+TMP_DIR="$(mktemp -d /tmp/rh-upgrade-rehearsal.XXXXXX)"
 REGISTRY_PID=""
 cleanup() {
   local exit_code=$?
@@ -46,19 +53,62 @@ trap cleanup EXIT
 
 fail() { echo "[rehearsal] FAIL: $*" >&2; exit 1; }
 
-CANDIDATE="$(bun -e 'console.log((await Bun.file("package.json").json()).version)')"
-PARENT="$(npm view repo-harness version --registry https://registry.npmjs.org)"
+# HOME and the harness home sit side by side, as in the tarball smoke: the host
+# test runner rejects a registry below its caller HOME.
+SCRATCH="$TMP_DIR/env"
+mkdir -p "$SCRATCH/home" "$SCRATCH/bun/bin" "$SCRATCH/bun-cache" "$SCRATCH/npm-cache" \
+  "$SCRATCH/npm-prefix" "$SCRATCH/npm-logs" "$SCRATCH/tmp" "$SCRATCH/xdg-state"
+: >"$SCRATCH/npmrc-user"
+: >"$SCRATCH/npmrc-global"
+ISO_ENV=(
+  "PATH=$SCRATCH/bun/bin:$SCRATCH/npm-prefix/bin:$PATH"
+  "HOME=$SCRATCH/home"
+  "REPO_HARNESS_HOME=$SCRATCH/registry"
+  "BUN_INSTALL=$SCRATCH/bun"
+  "BUN_INSTALL_CACHE_DIR=$SCRATCH/bun-cache"
+  "BUN_RUNTIME_TRANSPILER_CACHE_PATH=$SCRATCH/bun-cache/transpiler"
+  "TMPDIR=$SCRATCH/tmp"
+  "XDG_CONFIG_HOME=$SCRATCH/home/.config"
+  "XDG_DATA_HOME=$SCRATCH/home/.local/share"
+  "XDG_CACHE_HOME=$SCRATCH/home/.cache"
+  "XDG_STATE_HOME=$SCRATCH/xdg-state"
+  "npm_config_cache=$SCRATCH/npm-cache"
+  "npm_config_prefix=$SCRATCH/npm-prefix"
+  "npm_config_userconfig=$SCRATCH/npmrc-user"
+  "npm_config_globalconfig=$SCRATCH/npmrc-global"
+  "npm_config_logs_dir=$SCRATCH/npm-logs"
+  "npm_config_update_notifier=false"
+  "GIT_CONFIG_NOSYSTEM=1"
+  "LANG=C.UTF-8"
+)
+iso() { env -i "${ISO_ENV[@]}" "$@"; }
+
+# Candidate source: the HEAD commit of the checkout, extracted into scratch.
+SRC="$TMP_DIR/src"
+mkdir -p "$SRC"
+iso git -C "$ROOT" archive HEAD | tar -x -C "$SRC"
+CANDIDATE="$(iso bun -e 'console.log((await Bun.file(process.argv[1]).json()).version)' "$SRC/package.json")"
+[[ -n "$CANDIDATE" ]] || fail "the candidate version is empty"
+
+NPM_REGISTRY=https://registry.npmjs.org
+PARENT="$(iso npm view repo-harness version --registry "$NPM_REGISTRY" 2>"$TMP_DIR/view-parent.err")" \
+  || { cat "$TMP_DIR/view-parent.err" >&2; fail "npm view of the parent version failed"; }
 [[ "$PARENT" != "$CANDIDATE" ]] || fail "repo-harness@$CANDIDATE is already the latest on npm; the rehearsal needs an unpublished candidate"
-if npm view "repo-harness@$CANDIDATE" version --registry https://registry.npmjs.org >/dev/null 2>&1; then
+# Only a confirmed not-found counts as unpublished; any other error fails.
+if iso npm view "repo-harness@$CANDIDATE" version --registry "$NPM_REGISTRY" >"$TMP_DIR/view-candidate.out" 2>&1; then
   fail "repo-harness@$CANDIDATE is already on npm"
 fi
+grep -q 'E404' "$TMP_DIR/view-candidate.out" \
+  || { cat "$TMP_DIR/view-candidate.out" >&2; fail "npm view of the candidate failed with an error other than E404"; }
 echo "[rehearsal] parent $PARENT -> candidate $CANDIDATE"
 
-# The pack scripts build dist/ for both packages.
+# The pack scripts build dist/ for both packages, in the scratch copy.
+(cd "$SRC" && iso bun install --frozen-lockfile >"$TMP_DIR/candidate-install.log" 2>&1) \
+  || { cat "$TMP_DIR/candidate-install.log" >&2; fail "bun install of the candidate source failed"; }
 PACK_DIR="$TMP_DIR/pack"
 mkdir -p "$PACK_DIR"
-npm pack --silent --pack-destination "$PACK_DIR" >/dev/null
-(cd "$ROOT/packages/operator-web" && npm pack --silent --pack-destination "$PACK_DIR" >/dev/null)
+(cd "$SRC" && iso npm pack --silent --pack-destination "$PACK_DIR" >/dev/null)
+(cd "$SRC/packages/operator-web" && iso npm pack --silent --pack-destination "$PACK_DIR" >/dev/null)
 CORE_TGZ="$PACK_DIR/repo-harness-$CANDIDATE.tgz"
 WEB_TGZ="$PACK_DIR/repo-harness-operator-web-$CANDIDATE.tgz"
 [[ -f "$CORE_TGZ" && -f "$WEB_TGZ" ]] || fail "pack did not produce both candidate tarballs"
@@ -111,9 +161,9 @@ await Bun.write(portFile, String(server.port));
 console.log("registry on", base);
 TS_EOF
 
-bun "$TMP_DIR/registry.ts" "$CANDIDATE" "$TMP_DIR/port" \
-  "repo-harness=$CORE_TGZ=$ROOT/package.json" \
-  "repo-harness-operator-web=$WEB_TGZ=$ROOT/packages/operator-web/package.json" \
+iso bun "$TMP_DIR/registry.ts" "$CANDIDATE" "$TMP_DIR/port" \
+  "repo-harness=$CORE_TGZ=$SRC/package.json" \
+  "repo-harness-operator-web=$WEB_TGZ=$SRC/packages/operator-web/package.json" \
   >"$TMP_DIR/registry.log" 2>&1 &
 REGISTRY_PID=$!
 for _ in $(seq 1 100); do
@@ -124,27 +174,14 @@ done
 [[ -s "$TMP_DIR/port" ]] || fail "the local registry did not start"
 LOCAL_REGISTRY="http://127.0.0.1:$(cat "$TMP_DIR/port")"
 
-# Scratch environment. HOME and the harness home sit side by side, as in the
-# tarball smoke: the host test runner rejects a registry below its caller HOME.
-SCRATCH="$TMP_DIR/env"
-mkdir -p "$SCRATCH/home" "$SCRATCH/bun" "$SCRATCH/npm-cache" "$SCRATCH/npm-prefix"
-export HOME="$SCRATCH/home"
-export REPO_HARNESS_HOME="$SCRATCH/registry"
-export BUN_INSTALL="$SCRATCH/bun"
-export npm_config_cache="$SCRATCH/npm-cache"
-export npm_config_prefix="$SCRATCH/npm-prefix"
-export XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share" XDG_CACHE_HOME="$HOME/.cache"
-export PATH="$BUN_INSTALL/bin:$PATH"
-unset NPM_CONFIG_REGISTRY BUN_CONFIG_REGISTRY
-
 echo "[rehearsal] 1/3 install parent repo-harness@$PARENT from npm"
-bun add -g "repo-harness@$PARENT" >"$TMP_DIR/parent-add.log" 2>&1 || { cat "$TMP_DIR/parent-add.log" >&2; fail "bun add of the parent failed"; }
-[[ "$(repo-harness --version)" == "$PARENT" ]] || fail "installed parent is not $PARENT"
-repo-harness install --no-cli --no-external-skills --no-codegraph >"$TMP_DIR/install.log" 2>&1 || { cat "$TMP_DIR/install.log" >&2; fail "parent install failed"; }
+iso bun add -g "repo-harness@$PARENT" >"$TMP_DIR/parent-add.log" 2>&1 || { cat "$TMP_DIR/parent-add.log" >&2; fail "bun add of the parent failed"; }
+[[ "$(iso repo-harness --version)" == "$PARENT" ]] || fail "installed parent is not $PARENT"
+iso repo-harness install --no-cli --no-external-skills --no-codegraph >"$TMP_DIR/install.log" 2>&1 || { cat "$TMP_DIR/install.log" >&2; fail "parent install failed"; }
 
 echo "[rehearsal] 2/3 parent update --version $CANDIDATE against $LOCAL_REGISTRY"
 set +e
-NPM_CONFIG_REGISTRY="$LOCAL_REGISTRY" BUN_CONFIG_REGISTRY="$LOCAL_REGISTRY" \
+iso env NPM_CONFIG_REGISTRY="$LOCAL_REGISTRY" BUN_CONFIG_REGISTRY="$LOCAL_REGISTRY" \
   repo-harness update --version "$CANDIDATE" --no-codegraph --no-external-skills >"$TMP_DIR/update.log" 2>&1
 update_exit=$?
 set -e
@@ -154,8 +191,8 @@ if [[ $update_exit -ne 0 ]]; then
 fi
 
 echo "[rehearsal] 3/3 check the result"
-[[ "$(repo-harness --version)" == "$CANDIDATE" ]] || fail "repo-harness --version is not $CANDIDATE after update"
-WEB_VERSION="$(bun -e 'console.log((await Bun.file(process.argv[1]).json()).version)' "$BUN_INSTALL/install/global/node_modules/repo-harness-operator-web/package.json" 2>/dev/null || true)"
+[[ "$(iso repo-harness --version)" == "$CANDIDATE" ]] || fail "repo-harness --version is not $CANDIDATE after update"
+WEB_VERSION="$(iso bun -e 'console.log((await Bun.file(process.argv[1]).json()).version)' "$SCRATCH/bun/install/global/node_modules/repo-harness-operator-web/package.json" 2>/dev/null || true)"
 [[ "$WEB_VERSION" == "$CANDIDATE" ]] || fail "global repo-harness-operator-web is '${WEB_VERSION:-missing}', not $CANDIDATE"
 for name in repo-harness repo-harness-operator-web; do
   count="$(grep -c "^TARBALL SERVED $name $CANDIDATE\$" "$TMP_DIR/registry.log" || true)"
