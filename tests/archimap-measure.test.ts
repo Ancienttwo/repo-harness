@@ -18,7 +18,11 @@ function moduleDefs() {
 }
 
 interface MeasureOutput {
-  modules: { id: string; files: number; loc: number; self: number; docs: string[]; behaviorSpecs: { id: string; path: string; node: string }[] }[];
+  modules: {
+    id: string; files: number; loc: number; self: number; docs: string[];
+    behaviorSpecs: { id: string; path: string; node: string }[];
+    stateMachines: { id: string; name: string; capabilityId: string; path: string; doc: string }[];
+  }[];
   model: { uncoveredNodes: string[]; unknownNodes: string[]; duplicateNodes: string[]; undocumentedNodes: string[] };
   edges: { from: string; to: string; value: number }[];
   unresolved: { count: number; examples: string[] };
@@ -30,7 +34,9 @@ const MODEL_DIR = 'model/nodes';
 const MANIFEST = 'docs/architecture/.projection-manifest.json';
 interface ManifestEntry { capabilityId: string; path?: string; stamps?: string[] }
 type FixtureNode = [id: string, kind: string, fields?: Record<string, unknown>];
-interface FixtureModel { nodes?: FixtureNode[]; manifest?: ManifestEntry[] }
+/** A declared machine: the state-machine directory sits beside the node directory. */
+type FixtureMachine = [id: string, capabilityId: string];
+interface FixtureModel { nodes?: FixtureNode[]; manifest?: ManifestEntry[]; machines?: FixtureMachine[] }
 const DEFAULT_NODES: FixtureNode[] = [['capability.example', 'capability']];
 const DEFAULT_MANIFEST: ManifestEntry[] = [{ capabilityId: 'capability.example', path: 'docs/architecture/modules/example/example.md' }];
 
@@ -64,6 +70,9 @@ function fixture(files: Record<string, string>, modules: unknown = moduleDefs(),
   for (const [path, content] of Object.entries(files)) fixtureWrite(root, path, content);
   fixtureWrite(root, 'modules.json', `${JSON.stringify({ modules })}\n`);
   for (const [id, kind, fields] of model.nodes ?? DEFAULT_NODES) fixtureWrite(root, `${MODEL_DIR}/${id}.yaml`, nodeYaml(id, kind, fields));
+  for (const [id, capabilityId] of model.machines ?? []) {
+    fixtureWrite(root, `model/state-machines/${id}.yaml`, `${JSON.stringify({ schemaVersion: 'archcontext.state-machine/v1', id, capabilityId, name: `Machine ${id}`, regions: [] })}\n`);
+  }
   fixtureWrite(root, MANIFEST, manifest(model.manifest ?? DEFAULT_MANIFEST));
   fixtureGit(root, ['add', '.']);
   fixtureGit(root, ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'Fixture']);
@@ -244,6 +253,8 @@ describe('archimap measure requires the adopted model', () => {
     expect(doc.startsWith('docs/architecture/')).toBe(true);
     expect(posix.join('docs/architecture', doc.slice('docs/architecture/'.length))).toBe(doc);
     expect(result.model.undocumentedNodes).toEqual(['capability.beta']);
+    // The fixture model has no state-machine directory: no module lists a machine.
+    expect(result.modules.map((module) => module.stateMachines)).toEqual([[], []]);
     expect(result.model.uncoveredNodes).toEqual(['capability.alpha']);
     expect(result.model.unknownNodes).toEqual([]);
     expect(result.model.duplicateNodes).toEqual([]);
@@ -380,5 +391,39 @@ describe('archimap measure reports board geometry', () => {
     const geometry = run([unplaced]);
     expect(geometry.unchecked).toEqual(['A']);
     expect(geometry.findings).toEqual([]);
+  });
+});
+
+describe('archimap measure reads declared state machines', () => {
+  const MACHINE = 'state-machine.alpha.claim';
+  const machineFixture = (capabilityId: string) => fixture({ 'src/alpha/core.ts': 'export const core = 1;\n' }, [
+    { id: 'alpha', include: ['src/alpha/**'], nodes: ['capability.alpha'] },
+    { id: 'beta', include: ['src/beta/**'], nodes: ['capability.beta'] },
+  ], {
+    nodes: [['capability.alpha', 'capability'], ['capability.beta', 'capability'], ['capability.gamma', 'capability']],
+    manifest: [{ capabilityId: 'capability.alpha', path: 'docs/architecture/modules/dom/alpha.md' }],
+    machines: [[MACHINE, capabilityId]],
+  });
+  const machineArgs = (root: string) => ['--modules', join(root, 'modules.json'), '--model', MODEL_DIR];
+
+  test('a machine lands on the module that covers its capability, with the document of the diagram', () => {
+    const result = measure(machineFixture('capability.alpha'));
+    expect(result.modules.map((module) => module.stateMachines)).toEqual([
+      [{
+        id: MACHINE, name: `Machine ${MACHINE}`, capabilityId: 'capability.alpha',
+        path: `model/state-machines/${MACHINE}.yaml`, doc: 'docs/architecture/modules/dom/alpha.md',
+      }],
+      [],
+    ]);
+  });
+
+  test.each([
+    ['no module covers its capability', 'capability.gamma', 'state_machine_uncovered:'],
+    ['its capability has no projected document', 'capability.beta', 'state_machine_undocumented:'],
+  ])('a machine where %s exits 2', (_name, capabilityId, code) => {
+    const root = machineFixture(capabilityId);
+    const failure = measureFailure(root, machineArgs(root));
+    expect(failure.status).toBe(2);
+    expect(failure.stderr).toContain(`${code}${MACHINE}`);
   });
 });
