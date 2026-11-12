@@ -997,6 +997,29 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
       expect(update({ plugins: FULL_PLUGINS }).steps.find(step => step.step === 'verify managed runtime dependencies')?.detail).toContain('RH_ARCHCTX_BIN_READBACK');
       writeShellExecutableFixture(join(fakeBin, 'bun'), bunScript);
+
+      // The link of the previous pin is managed: the candidate's pin sits nested until `bun add -g` moves it to the top level.
+      const globalRoot = join(home, '.bun', 'install', 'global');
+      const topArchctx = join(globalRoot, 'node_modules', 'archctx');
+      const candidateArchctx = join(globalRoot, 'node_modules', 'repo-harness', 'node_modules', 'archctx');
+      const archctxManifest = JSON.parse(readFileSync(join(topArchctx, 'package.json'), 'utf8')) as Record<string, unknown>;
+      const harnessManifestPath = join(globalRoot, 'node_modules', 'repo-harness', 'package.json');
+      const harnessManifest = JSON.parse(readFileSync(harnessManifestPath, 'utf8')) as { dependencies: Record<string, string> };
+      mkdirSync(join(candidateArchctx, 'bin'), { recursive: true });
+      writeFileSync(join(candidateArchctx, 'package.json'), JSON.stringify(archctxManifest));
+      writeExecutable(join(candidateArchctx, 'bin', 'archctx.mjs'), '#!/usr/bin/env node\n');
+      writeFileSync(join(globalRoot, 'package.json'), JSON.stringify({ dependencies: { archctx: '0.0.1' } }));
+      writeFileSync(join(topArchctx, 'package.json'), JSON.stringify({ ...archctxManifest, version: '0.0.1' }));
+      mkdirSync(join(home, '.bun', 'bin'), { recursive: true });
+      symlinkSync(join(topArchctx, 'bin', 'archctx.mjs'), archctxLink);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; fi\nif [[ "\${3:-}" == archctx@* ]]; then rm -rf "${candidateArchctx}"; cp "${join(globalRoot, 'node_modules', 'archctx-next.json')}" "${join(topArchctx, 'package.json')}"; printf '%s' '{"dependencies":{"archctx":"${harnessManifest.dependencies.archctx}"}}' > "${join(globalRoot, 'package.json')}"; fi\nexit 0\n`);
+      writeFileSync(join(globalRoot, 'node_modules', 'archctx-next.json'), JSON.stringify(archctxManifest));
+      const nested = update({ plugins: FULL_PLUGINS });
+      expect(nested.steps.find(step => step.step === 'verify managed runtime dependencies'), JSON.stringify(nested.steps.filter(step => step.status === 'failed'))).toMatchObject({ status: 'ok' });
+      expect(JSON.parse(readFileSync(join(globalRoot, 'package.json'), 'utf8')).dependencies.archctx).toBe(ARCHCTX_PIN);
+      expect(realpathSync(archctxLink)).toBe(realpathSync(join(topArchctx, 'bin', 'archctx.mjs')));
+      expect(JSON.parse(readFileSync(join(topArchctx, 'package.json'), 'utf8')).version).toBe(ARCHCTX_PIN);
+      writeShellExecutableFixture(join(fakeBin, 'bun'), bunScript);
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza -g -a codex -s think hunt check health -y');
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add BfdCampos/dotfiles -g -a codex -s mermaid -y');
       expect(readFileSync(bunLog, 'utf-8')).toContain(`add -g @colbymchenry/codegraph@${CODEGRAPH_PIN}`);
