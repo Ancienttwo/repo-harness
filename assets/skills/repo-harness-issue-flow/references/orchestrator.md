@@ -270,7 +270,7 @@ module is in the title so that a list view shows the write scopes.
 - Review rounds converge by the round rules in `acceptor.md` §2.2.
   Include this rule in the worker brief: before asking for round N >= 2,
   check the fix delta against the open findings for sibling cases, missing
-  test branches and CHANGELOG text against behavior. A Claude writer runs
+  test branches and changelog fragment text against behavior. A Claude writer runs
   one read-only sub-agent for this check. A Pi writer has no sub-agents and
   does a self-check. The pre-check writes no record and does not replace
   the review.

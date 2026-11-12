@@ -12,6 +12,11 @@ This repo keeps deployment contract surfaces under `deploy/` and private runtime
 state under ignored `_ops/`. Detailed release patterns, Cloudflare examples, and
 rollback playbooks belong in the external runbook.
 
+The release prep writes the changelog section with one command. Each PR writes
+its entry in `docs/changelog.d/<issue>.<category>.md`, and
+`bun scripts/changelog-fragments.ts assemble --version <x.y.z> --date <YYYY-MM-DD>`
+moves those entries into `## [x.y.z]` and deletes the fragment files.
+
 Tests whose cost is a real package install or a real external program are gated
 behind `REPO_HARNESS_TEST_EXPENSIVE`. The PR lanes do not run them. The daily
 `scripts/check-ci.sh functional` lane and the `release` lane export that
