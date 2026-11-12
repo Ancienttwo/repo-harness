@@ -461,11 +461,13 @@ test.skipIf(process.platform !== "win32")("TEMP #2588 owner read EPERM probe", a
   const samples: string[] = [];
   const histogram = new Map<string, number>();
   let reads = 0;
+  let dir1Ino: number | bigint | undefined;
   const diagnose = (step: string, path: string, again: () => unknown, first: NodeJS.ErrnoException) => {
     const row = [
       `step=${step}`,
       `first=${first.code}(errno=${first.errno},syscall=${first.syscall})`,
       `lstatPathFirst=${tryCall(() => fs.lstatSync(path))}`,
+      `dir1Ino=${dir1Ino}`,
       `again=${tryCall(again)}`,
       `lstatLock=${tryCall(() => fs.lstatSync(lockPath))}`,
       `statLock=${tryCall(() => fs.statSync(lockPath))}`,
@@ -491,7 +493,8 @@ test.skipIf(process.platform !== "win32")("TEMP #2588 owner read EPERM probe", a
     while (child.exitCode === null) {
       reads++;
       try {
-        step("lstat-dir-1", lockPath, () => fs.lstatSync(lockPath));
+        dir1Ino = undefined;
+        dir1Ino = step("lstat-dir-1", lockPath, () => fs.lstatSync(lockPath)).ino;
         const entries = step("readdir-1", lockPath, () => fs.readdirSync(lockPath));
         if (entries.length !== 1) continue;
         const ownerPath = join(lockPath, entries[0]!);
