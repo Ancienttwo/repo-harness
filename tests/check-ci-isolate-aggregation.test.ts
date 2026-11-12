@@ -133,6 +133,15 @@ describe("ci isolate-mode test loop", () => {
     }
   });
 
+  test('a test-form path that is not a file fails the run before any test starts; option values still pass', () => {
+    const run = (...args: string[]) => spawnSync('bash', ['-c', `source ${JSON.stringify(LIB_PATH)}; BUN_TEST_ISOLATE_FILES=0 run_bun_tests "$@"`, '--', ...args], { cwd: REPO_ROOT, encoding: 'utf8', env: gateEnv({}) });
+    const missing = run('tests/does-not-exist.test.ts', '--timeout', '60000');
+    expect(missing.status).not.toBe(0);
+    expect(missing.stderr).toContain('tests/does-not-exist.test.ts');
+    expect(missing.stdout).not.toContain('bun test');
+    expect(run('tests/check-ci-isolate-aggregation.test.ts', '--timeout', '60000', '-t', 'suite entrypoint rejects').status).toBe(0);
+  });
+
   test('core and integration retain the complete file inventory without overlap', () => {
     const files = discoverTestFiles(REPO_ROOT);
     const core = selectTestSuite('core', files);

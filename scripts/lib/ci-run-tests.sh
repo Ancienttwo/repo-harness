@@ -276,6 +276,9 @@ run_bun_tests() {
         while IFS= read -r argument; do
           [[ -n "$argument" ]] && selected[${#selected[@]}]="$argument"
         done <<< "$selection"
+      elif [[ "$argument" =~ (^|/)[^/]*([.]test|[.]spec|_test|_spec)[.][cm]?[jt]sx?$ ]]; then
+        echo "[ci] test file does not exist: $argument" >&2
+        return 1
       else
         options[${#options[@]}]="$argument"
       fi
