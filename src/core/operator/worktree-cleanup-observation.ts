@@ -1,9 +1,8 @@
 import { canonicalize } from '../evidence/canonical-json';
 import type { JsonValue } from '../evidence/types';
-import { SESSION_OBSERVATION_MAX_BYTES } from '../sessions/session-selector';
 
 /** The Git output cap of the cleanup Git runner; archive staging refuses an index version above it. */
-export const CLEANUP_GIT_OUTPUT_MAX_BYTES = SESSION_OBSERVATION_MAX_BYTES;
+export const CLEANUP_GIT_OUTPUT_MAX_BYTES = 512 * 1024;
 const PATH_MAX_BYTES = 512;
 const ENCODER = new TextEncoder();
 const utf8Bytes = (text: string): number => ENCODER.encode(text).length;

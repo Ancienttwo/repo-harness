@@ -13,4 +13,3 @@ source:
     - src/core/state/coordination-identity.ts
     - src/core/state/command-outcome.ts
     - src/core/worktree-*
-    - src/core/sessions/session-selector.ts
