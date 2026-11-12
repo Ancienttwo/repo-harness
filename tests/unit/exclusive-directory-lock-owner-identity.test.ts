@@ -1,12 +1,14 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { spawn, spawnSync } from 'child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import * as fs from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
   acquireExclusiveDirectoryLock,
   exclusiveDirectoryLockOwnerLiveness,
   ExclusiveLockContentionError,
+  type ExclusiveDirectoryLockOwner,
   readExclusiveDirectoryLockOwner,
 } from '../../src/effects/locking/exclusive-directory-lock';
 import { currentProcessStartTime, readProcessStartTime } from '../../src/effects/locking/process-start-time';
@@ -204,3 +206,39 @@ test('reading the owner during real concurrent releases returns an owner or null
     expect(() => readExclusiveDirectoryLockOwner(root, 'agent.lock')).toThrow('unsafe lock path');
   } finally { child.kill(); await child.exited; }
 }, 60_000);
+
+// Windows gives EPERM, not ENOENT, on a directory that a concurrent release left
+// delete-pending (#2588). The injected readdir runs the release race, then fails.
+function readOwnerWithWindowsEperm(race: (lockPath: string) => void): ExclusiveDirectoryLockOwner | null {
+  const root = temporaryRoot();
+  const lockPath = join(root, LOCK);
+  forgeOwner(root, { pid: process.pid });
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  const readdir = spyOn(fs, 'readdirSync').mockImplementationOnce(() => {
+    race(lockPath);
+    throw Object.assign(new Error(`EPERM: operation not permitted, scandir '${lockPath}'`), { code: 'EPERM', syscall: 'scandir' });
+  });
+  Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+  try { return readExclusiveDirectoryLockOwner(root, LOCK); } finally {
+    Object.defineProperty(process, 'platform', platform);
+    readdir.mockRestore();
+  }
+}
+
+describe('windows EPERM on the owner read during a release', () => {
+  test('a removed lock directory is no observed owner', () => {
+    expect(readOwnerWithWindowsEperm(lockPath => rmSync(lockPath, { recursive: true }))).toBeNull();
+  });
+
+  test('a lock directory that the next acquirer created is no observed owner', () => {
+    // Keep the old directory alive so the new one cannot reuse its inode.
+    expect(readOwnerWithWindowsEperm(lockPath => {
+      renameSync(lockPath, `${lockPath}.released`);
+      mkdirSync(lockPath);
+    })).toBeNull();
+  });
+
+  test('the same lock directory keeps the EPERM as a real access refusal', () => {
+    expect(() => readOwnerWithWindowsEperm(() => {})).toThrow('EPERM');
+  });
+});
