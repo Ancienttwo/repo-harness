@@ -45,10 +45,12 @@ list serves a first run and a continued run. Read the state of each step
 before the step, and do only the steps that are not done. Stop at the first
 failure and report it. A host publish has no npm provenance statement.
 
-1. Worktree: when `/tmp/repo-harness-wt-release-<version>` exists at `<sha>`,
-   skip the `git worktree add` and run the rest in it. Otherwise run
-   `git fetch origin && git worktree add --detach /tmp/repo-harness-wt-release-<version> <sha>`. Then, in the worktree,
-   run `bun install --frozen-lockfile && bun run check:release` before any publish.
+1. Worktree: `git fetch origin && git worktree add --detach /tmp/repo-harness-wt-release-<version> <sha> && cd /tmp/repo-harness-wt-release-<version> && bun install --frozen-lockfile && bun run check:release`.
+   `bun run check:release` passes before the first publish. Done state: a
+   package of this version is on npm. Step 1 passed on `<sha>` before the
+   first publish, so a continued run skips it and runs only
+   `cd /tmp/repo-harness-wt-release-<version>`. When step 1 is not done and
+   the worktree exists at `<sha>`, skip the `git worktree add`.
 2. Console package: when `npm view repo-harness-operator-web@<version> version`
    prints the version, skip this step. Otherwise run, from the worktree root:
    `bash scripts/release-owner-steps.sh guard <version> <sha> && (cd packages/operator-web && npm publish --auth-type=web)`

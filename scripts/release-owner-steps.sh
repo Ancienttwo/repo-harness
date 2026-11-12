@@ -189,7 +189,8 @@ Owner steps. Run them in order. At the first failure, stop and report it; do not
 Keep this list: plan refuses once a package is on npm or the tag exists, so a continued run uses this list, not a new plan.
 A step whose result shows it is done (npm shows the version, the tag is at ${sha}, the GitHub Release exists) is skipped. A wait that fails: run the same step again later.
 1. git fetch ${REMOTE} && git worktree add --detach ${worktree} ${sha} && cd ${worktree} && bun install --frozen-lockfile && bun run check:release
-   (skip the worktree add when ${worktree} exists at ${sha}; run the rest in it)
+   Done state: a package of ${version} is on npm. Step 1 passed on ${sha} before the first publish, so a continued run skips it and runs only: cd ${worktree}
+   Not done: bun run check:release passes before the first publish. When ${worktree} exists at ${sha}, skip the worktree add.
 2. bash scripts/release-owner-steps.sh guard ${version} ${sha} && (cd ${CONSOLE_DIR} && npm publish --auth-type=web)
 3. bash scripts/release-owner-steps.sh wait ${console_name} ${version} && bash scripts/release-owner-steps.sh guard ${version} ${sha} && npm publish --auth-type=web
 4. bash scripts/release-owner-steps.sh wait ${core_name} ${version} && bash scripts/release-owner-steps.sh check published ${version}
