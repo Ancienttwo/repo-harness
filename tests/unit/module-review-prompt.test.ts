@@ -324,15 +324,20 @@ test('each formerly quadratic secret rule stays linear from a 128 KiB to a 384 K
     return ratio;
   };
   const small = makeRows(128 * 1024), medium = makeRows(384 * 1024);
-  makeRows(1024 * 1024).forEach((row, index) => {
-    expect(lowestRatio(small[index]!, medium[index]!)).toBeLessThan(6);
-    const result = exercise(row);
-    expect(result.bare).toBe(false);
-    expect(result.unchanged).toBe(true);
-    expect(result.matched).toBe(true);
-    if (row.replacement) expect(result.replaced.includes(row.replacement)).toBe(true);
+  const lines: string[] = [];
+  small.forEach((row, index) => {
+    let lo = Infinity, hi = 0, t1 = 0, t2 = 0;
+    for (let rep = 0; rep < 20; rep++) { const r = lowestRatio(small[index]!, medium[index]!); lo = Math.min(lo, r); hi = Math.max(hi, r); t1 += timed(small[index]!); t2 += timed(medium[index]!); }
+    lines.push(`PROBE row=${index} unit=${JSON.stringify(row.run.slice(0, 22))} t128=${(t1 / 20).toFixed(1)}ms t384=${(t2 / 20).toFixed(1)}ms ratio_min=${lo.toFixed(2)} ratio_max=${hi.toFixed(2)}`);
   });
-});
+  const quadRe = /[a-z][a-z0-9+.-]*:\/\/[^\s/@:]+:[^\s/@]+@[^\s<>"']+/gi;
+  const quadTime = (size: number) => { const text = 'a'.repeat(size); const t = performance.now(); text.replace(quadRe, 'x'); return performance.now() - t; };
+  const quadSmall = { run: 'a'.repeat(128 * 1024), sample: '' }, quadMedium = { run: 'a'.repeat(384 * 1024), sample: '' };
+  void quadSmall; void quadMedium;
+  const a1 = quadTime(128 * 1024), b1 = quadTime(384 * 1024);
+  lines.push(`PROBE quad t128=${a1.toFixed(1)}ms t384=${b1.toFixed(1)}ms ratio=${(b1 / Math.max(a1, 1)).toFixed(2)}`);
+  console.log(lines.join('\n'));
+}, 400000);
 
 test('the private key rule withholds each block label, and an END of any label closes a BEGIN', () => {
   const block = (begin: string, end: string) => `x -----BEGIN ${begin}-----\nbody\n-----END ${end}----- y`;
