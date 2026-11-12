@@ -453,7 +453,7 @@ test.skipIf(process.platform !== "win32")("TEMP #2609 acquire probe", async () =
     for (let i = 0; i < 2000; i++) {
       try { acquireExclusiveDirectoryLock(root, "agent.lock").release(); ok++; }
       catch (e) {
-        if (e instanceof ExclusiveLockContentionError) { rows.push("contention:" + e.reason); continue; }
+        if (e instanceof ExclusiveLockContentionError) { rows.push("contention:" + e.kind); continue; }
         let ls; try { const s = lstatSync(lockPath); ls = "ok(dir=" + s.isDirectory() + ")"; } catch (x) { ls = x.code; }
         const frame = String(e.stack).split("\\n").find((l, n) => n > 0 && l.includes("exclusive-directory-lock")) ?? "";
         rows.push([e.code, e.syscall, ls, frame.trim().replace(/^.*\\(/, "").replace(/^.*[\\\\/]/, "")].join("|"));
