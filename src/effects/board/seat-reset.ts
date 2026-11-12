@@ -242,12 +242,14 @@ function transcriptLine(line: string): TranscriptLine | null {
 }
 
 /**
- * True when the line holds the resume prompt: a user entry, which hc may wrap, or the `queued_command` attachment that
- * Claude Code writes when the prompt arrives while the session is in a turn (#2637).
+ * True when the line holds the resume prompt: a user entry, which hc may wrap, or the `queued_command` attachment of an
+ * `attachment` entry, which Claude Code writes when the prompt arrives while the session is in a turn (#2637). The entry
+ * type must be `attachment`, so an assistant line that carries an `attachment` field of its own is no prompt.
  */
 function holdsPrompt(entry: TranscriptLine, parts: readonly Part[], prompt: string): boolean {
   const holds = (value: unknown) => typeof value === 'string' && value.includes(prompt);
-  const queued = entry.attachment !== null && entry.attachment.type === 'queued_command' && holds(entry.attachment.prompt);
+  const queued = entry.type === 'attachment' && entry.attachment !== null && entry.attachment.type === 'queued_command'
+    && holds(entry.attachment.prompt);
   return queued || (entry.type === 'user' && (holds(entry.content) || parts.some(part => holds(part?.text))));
 }
 
