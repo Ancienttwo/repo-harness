@@ -306,10 +306,12 @@ test('each formerly quadratic secret rule stays linear from a 64 KiB to a 256 Ki
     const text = row.run + row.sample, redact = row.redact ?? replaceSecrets;
     return { bare: containsSecret(row.run), unchanged: redact(row.run) === row.run, matched: containsSecret(text), replaced: redact(text) };
   };
+  // A sample repeats the calls until it is well above the timer resolution, and returns the time of one call.
   const timed = (row: ReturnType<typeof makeRows>[number]) => {
     const start = performance.now();
-    exercise(row);
-    return performance.now() - start;
+    let calls = 0;
+    do { exercise(row); calls++; } while (performance.now() - start < 5);
+    return (performance.now() - start) / calls;
   };
   // Load only adds time, so the fastest sample of each size is the closest to the true time. A pair of samples repeats at least 3 times,
   // then until the ratio is under the bound or three seconds have passed.
@@ -319,7 +321,7 @@ test('each formerly quadratic secret rule stays linear from a 64 KiB to a 256 Ki
     for (let pairs = 1; pairs <= 3 || (ratio >= 8 && performance.now() - start < 3000); pairs++) {
       fastestSmall = Math.min(fastestSmall, timeSmall());
       fastestMedium = Math.min(fastestMedium, timeMedium());
-      ratio = fastestMedium / Math.max(fastestSmall, 1);
+      ratio = fastestMedium / fastestSmall;
     }
     return ratio;
   };
