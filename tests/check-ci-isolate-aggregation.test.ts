@@ -133,6 +133,32 @@ describe("ci isolate-mode test loop", () => {
     }
   });
 
+  test('a test-form path that is not a file fails every branch before any test starts; option values are not paths', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ci-missing-path-'));
+    try {
+      const marker = join(dir, 'ran');
+      const existing = join(dir, 'marker.test.ts');
+      writeFileSync(existing, `import { test } from "bun:test";\nimport { writeFileSync } from "node:fs";\ntest("example.test.ts", () => writeFileSync(${JSON.stringify(marker)}, "x"));\n`);
+      const run = (...args: string[]) => {
+        rmSync(marker, { force: true });
+        const result = spawnSync('bash', ['-c', `source ${JSON.stringify(LIB_PATH)}; BUN_TEST_ISOLATE_FILES=0 run_bun_tests "$@"`, '--', ...args], { cwd: REPO_ROOT, encoding: 'utf8', env: gateEnv({}) });
+        return { status: result.status, stderr: result.stderr, ran: existsSync(marker) };
+      };
+      for (const extra of [[], ['--coverage']]) {
+        const missing = run(existing, join(dir, 'does-not-exist.test.ts'), '--timeout', '60000', ...extra);
+        expect(missing.status).not.toBe(0);
+        expect(missing.stderr).toContain('does-not-exist.test.ts');
+        expect(missing.ran).toBe(false);
+      }
+      const valued = run(existing, '-t', 'example.test.ts');
+      expect(valued.status).toBe(0);
+      expect(valued.ran).toBe(true);
+      expect(run(existing, `--test-name-pattern=${existing}`).stderr).not.toContain('does not exist');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('core and integration retain the complete file inventory without overlap', () => {
     const files = discoverTestFiles(REPO_ROOT);
     const core = selectTestSuite('core', files);

@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- ci: `run_bun_tests` (and `bun run test:files`) fails before any test starts when an argument has the test file name form and is not a file, and names the path. Before, such a path was dropped and the run was green with fewer files. The daily native path list no longer names three deleted files. (#2608)
+
 ## [0.31.0] - 2026-11-12
 
 ### Breaking
