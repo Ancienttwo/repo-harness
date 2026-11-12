@@ -92,6 +92,13 @@ describe('projectPullRequestMergeReadiness', () => {
     ]);
   });
 
+  test('a green PR whose mergeability GitHub still computes is blocked only by mergeability_pending', () => {
+    const verdict = projectPullRequestMergeReadiness({ ...readyInput(), provider: { ...readyInput().provider!, mergeable: 'UNKNOWN' } });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.attention_owner).toBe('external');
+    expect(verdict.blockers).toEqual([{ code: 'mergeability_pending', attention_owner: 'external' }]);
+  });
+
   test('fails closed for provider data churn and unavailable provider facts', () => {
     const changed = projectPullRequestMergeReadiness({
       ...readyInput(),

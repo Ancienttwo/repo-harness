@@ -194,7 +194,7 @@ describe('explicit PR readiness effects', () => {
       expect(verdict.blockers[0]?.code).toBe(response.status ? 'provider_unavailable' : 'provider_data_incomplete');
     }
   });
-  test('pending exit 8, mismatched CI base and unknown mergeability remain blocked and name the field', () => {
+  test('pending exit 8, mismatched CI base, pending and invalid mergeability remain blocked and name the field', () => {
     expect(collectPullRequestMergeReadiness({ ...input, gh_runner: fakeGh() }).blockers.map(b => b.code)).toContain('checks_pending');
     const passing = passingGh();
     const wrongBase = collectPullRequestMergeReadiness({ ...input, gh_runner: args => {
@@ -207,13 +207,15 @@ describe('explicit PR readiness effects', () => {
     expect(wrongBase.ready).toBe(false);
     expect(wrongBase.blockers).toEqual([{ code: 'provider_data_incomplete', attention_owner: 'external',
       detail: 'required check run does not bind this PR/head/base' }]);
-    const unknownMergeable = collectPullRequestMergeReadiness({ ...input, gh_runner: args => {
+    const withMergeable = (mergeable: string) => collectPullRequestMergeReadiness({ ...input, gh_runner: args => {
       const result = passing(args);
       if (args[0] !== 'pr' || args[1] !== 'view') return result;
-      return { ...result, stdout: JSON.stringify({ ...JSON.parse(result.stdout), mergeable: 'UNKNOWN' }) };
+      return { ...result, stdout: JSON.stringify({ ...JSON.parse(result.stdout), mergeable }) };
     } });
-    expect(unknownMergeable.blockers).toEqual([{ code: 'provider_data_incomplete', attention_owner: 'external',
-      detail: 'provider PR mergeable is unknown' }]);
+    // GitHub answers UNKNOWN while it recomputes after a base move (#2383).
+    expect(withMergeable('UNKNOWN').blockers).toEqual([{ code: 'mergeability_pending', attention_owner: 'external' }]);
+    expect(withMergeable('BOGUS').blockers).toEqual([{ code: 'provider_data_incomplete', attention_owner: 'external',
+      detail: 'provider PR mergeable is invalid' }]);
   });
 });
 

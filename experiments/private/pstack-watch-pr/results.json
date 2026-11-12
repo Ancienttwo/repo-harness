@@ -102,11 +102,11 @@
       "category": "unknown-observation",
       "harnessReady": false,
       "harnessBlockers": [
-        "provider_data_incomplete"
+        "mergeability_pending"
       ],
       "observerDecision": "ready",
       "falseReadyIfMisusedAsGate": true,
-      "collectorLogicalProviderReads": 2,
+      "collectorLogicalProviderReads": 12,
       "observerLogicalProviderReads": 4
     },
     {

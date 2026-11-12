@@ -34,6 +34,7 @@ export type MergeReadinessBlockerCode =
   | 'changes_requested'
   | 'unresolved_threads'
   | 'not_mergeable'
+  | 'mergeability_pending'
   | 'already_integrated'
   | 'required_check_coverage_missing'
   | 'required_check_coverage_policy_invalid'
@@ -218,6 +219,7 @@ const ATTENTION: Readonly<Record<MergeReadinessBlockerCode, MergeReadinessAttent
   changes_requested: 'agent',
   unresolved_threads: 'agent',
   not_mergeable: 'agent',
+  mergeability_pending: 'external',
   already_integrated: 'agent',
   required_check_coverage_missing: 'agent',
   required_check_coverage_policy_invalid: 'agent',
@@ -421,7 +423,9 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
     if (provider.checks.length === 0) push(blockers, 'provider_data_incomplete', 'provider reported no required checks');
     if (provider.checks.some(check => check.bucket === 'pending')) push(blockers, 'checks_pending');
     if (provider.checks.some(check => check.bucket !== 'pass' && check.bucket !== 'pending')) push(blockers, 'checks_failed');
-    if (provider.mergeable !== 'MERGEABLE') push(blockers, 'not_mergeable');
+    // GitHub answers UNKNOWN while it recomputes mergeability, for example after the base moves.
+    if (provider.mergeable === 'UNKNOWN') push(blockers, 'mergeability_pending');
+    else if (provider.mergeable !== 'MERGEABLE') push(blockers, 'not_mergeable');
     if (coverage?.status === 'invalid') {
       push(blockers, 'required_check_coverage_policy_invalid',
         `required-check coverage policy is invalid: ${coverage.message}; fix publication.required_check_coverage in .ai/harness/policy.json on the base branch`);
