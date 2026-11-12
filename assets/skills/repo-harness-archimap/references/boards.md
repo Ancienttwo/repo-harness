@@ -14,6 +14,7 @@ the top right that explains only the marks that the board uses.
 | 5 | Interfaces and mounts | What does each module expose, and what does the outside world see? | A public API, CLI, routes, events, storage layout or identity keys exist |
 | 6 | Remarks | What did the author observe that a reader must know? | Always (it can say "no remarks") |
 | 7 | Behavior (statechart) | Which states can one protocol reach, and which interleavings did its spec prove wrong? | A model node of a map module has `extensions.behaviorSpecs`: one board for each spec entry |
+| 8 | Module documents | Which capability documents does each module cover? | Always |
 
 ## 1. Layered overview
 
@@ -130,3 +131,14 @@ Pick the parts that the project has:
   example, "1 SingleOwner broken without the exclusive-create election
   (#1634, #1637)"). Take the rows from the spec PR's recorded checker
   output.
+
+## 8. Module documents
+
+- One panel for each map module, in overview order. The panel heading is
+  the module name and its `data-module` ID.
+- Under the heading, one `<a>` for each path of the module's `docs` from
+  `measure.ts`, in the order of that list. The `href` is the path made
+  relative to the map file's directory, as on the overview node. The link
+  text is the path below `modules/`.
+- A module with no `docs` shows "no capability document" and names its
+  `undocumentedNodes` remark ID.

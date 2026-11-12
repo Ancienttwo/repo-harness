@@ -118,6 +118,12 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 .remark p { margin: 0 0 8px; font-size: 13px; line-height: 20px; color: var(--ink-2); }
 .remark .ref { font: 12px var(--mono); color: var(--ink-3); }
 .tag { display: inline-block; font: 600 11px var(--sans); background: #FFF4D6; color: #5C3D0A; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }
+
+/* Module documents */
+.docs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.docs h3 { margin: 0 0 8px; font-size: 17px; line-height: 24px; }
+.docs h3 .id { font: 11px var(--mono); color: var(--ink-4); margin-left: 8px; }
+.docs ul { margin: 0; padding: 0; list-style: none; font: 12px/22px var(--mono); }
 </style>
 </head>
 <body>
@@ -264,6 +270,30 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 </div>
 </section>
 
+<!-- Board 8: module documents (sample). One link for every path of every module's docs
+     (measure.ts modules[].docs); href is relative to docs/architecture/archimap.html. -->
+<section>
+<h2 class="caption">8 · Module documents</h2>
+<div class="board" style="height:1000px">
+  <div class="kicker">PROJECT · DOCUMENTS · abc1234</div>
+  <div class="title">Module documents</div>
+  <div class="legend">One link for each capability document of a module</div>
+  <div class="docs" style="left:64px;top:184px;width:1552px">
+    <div class="panel" data-module="server"><h3>server<span class="id">server</span></h3><ul>
+      <li><a href="modules/service/server.md">service/server.md</a></li>
+    </ul></div>
+    <div class="panel" data-module="protocol"><h3>protocol<span class="id">protocol</span></h3><ul>
+      <li><a href="modules/contracts/protocol.md">contracts/protocol.md</a></li>
+      <li><a href="modules/contracts/schema.md">contracts/schema.md</a></li>
+      <li><a href="modules/contracts/wire.md">contracts/wire.md</a></li>
+    </ul></div>
+    <div class="panel" data-module="daemon"><h3>daemon<span class="id">daemon</span></h3><ul>
+      <li><a href="modules/device/daemon.md">device/daemon.md</a></li>
+    </ul></div>
+  </div>
+</div>
+</section>
+
 </main>
 <script type="application/json" id="archimap-meta">
 {
@@ -272,11 +302,15 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
   "base": "abc1234",
   "generated": "YYYY-MM-DD",
   "sources": [".archcontext/model", "measure.ts archimap-measure/v1"],
-  "boards": ["overview", "dependencies", "sequence", "remarks", "behavior"],
+  "boards": ["overview", "dependencies", "sequence", "remarks", "behavior", "documents"],
   "modules": [
-    { "id": "server", "label": "server", "include": ["src/server/**"], "exclude": [], "nodes": ["capability.example.server"] },
-    { "id": "protocol", "label": "protocol", "include": ["src/protocol/**"], "exclude": [], "nodes": ["capability.example.protocol"] },
-    { "id": "daemon", "label": "daemon", "include": ["src/daemon/**"], "exclude": [], "nodes": ["capability.example.daemon"] }
+    { "id": "server", "label": "server", "include": ["src/server/**"], "exclude": [], "nodes": ["capability.example.server"],
+      "docs": ["docs/architecture/modules/service/server.md"] },
+    { "id": "protocol", "label": "protocol", "include": ["src/protocol/**"], "exclude": [],
+      "nodes": ["capability.example.protocol", "capability.example.schema", "capability.example.wire"],
+      "docs": ["docs/architecture/modules/contracts/protocol.md", "docs/architecture/modules/contracts/schema.md", "docs/architecture/modules/contracts/wire.md"] },
+    { "id": "daemon", "label": "daemon", "include": ["src/daemon/**"], "exclude": [], "nodes": ["capability.example.daemon"],
+      "docs": ["docs/architecture/modules/device/daemon.md"] }
   ]
 }
 </script>

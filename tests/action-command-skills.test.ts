@@ -511,6 +511,23 @@ describe("repo-harness action command skills", () => {
     }
   });
 
+  test("archimap links every path of every module's docs", () => {
+    const skill = readSkillPackage("repo-harness-archimap").replace(/\s+/g, " ");
+    const boards = readReference("repo-harness-archimap", "boards.md");
+    const template = readFileSync(join(SKILLS_ROOT, "repo-harness-archimap", "assets", "template.html"), "utf-8");
+
+    expect(skill).toContain("Every path of every module's `docs` is an `<a>` on the module documents board");
+    expect(boards).toContain("| 8 | Module documents | Which capability documents does each module cover? | Always |");
+
+    // The overview node links only the first path; the documents board must link the rest.
+    const meta = /<script type="application\/json" id="archimap-meta">([\s\S]*?)<\/script>/.exec(template);
+    const modules = (JSON.parse(meta![1]!) as { modules: { docs: string[] }[] }).modules;
+    const docs = modules.flatMap((module) => module.docs);
+    expect(docs.length).toBeGreaterThan(modules.length);
+    const hrefs = new Set([...template.matchAll(/<a\b[^>]*\bhref="([^"#]+)"/g)].map((match) => match[1]!));
+    for (const doc of docs) expect(hrefs.has(posix.relative("docs/architecture", doc))).toBe(true);
+  });
+
   test("archimap measure refuses to run without --model", () => {
     const measure = join(SKILLS_ROOT, "repo-harness-archimap", "scripts", "measure.ts");
     let failure: { status?: number | null; stderr?: Buffer | string } | undefined;

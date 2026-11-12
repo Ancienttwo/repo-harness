@@ -130,6 +130,12 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 .remark p { margin: 0 0 8px; font-size: 13px; line-height: 20px; color: var(--ink-2); }
 .remark .ref { font: 12px var(--mono); color: var(--ink-3); }
 .tag { display: inline-block; font: 600 11px var(--sans); background: #FFF4D6; color: #5C3D0A; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }
+
+/* Module documents */
+.docs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.docs h3 { margin: 0 0 8px; font-size: 17px; line-height: 24px; }
+.docs h3 .id { font: 11px var(--mono); color: var(--ink-4); margin-left: 8px; }
+.docs ul { margin: 0; padding: 0; list-style: none; font: 12px/22px var(--mono); }
 </style>
 </head>
 <body>
@@ -139,7 +145,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 <section>
 <h2 class="caption">1 · Layered overview · <a href="history.md">Architecture history: milestones and their changes</a></h2>
 <div class="board" style="height:1640px">
-  <div class="kicker">repo-harness · ARCHITECTURE · eef4d81f</div>
+  <div class="kicker">repo-harness · ARCHITECTURE · d56141f0</div>
   <div class="title">Layered overview</div>
   <div class="legend">Thick line: value import, number = import count<br>Thin line: runtime call<br>Module size: non-test LOC · Dashed box: not provided by the project</div>
 
@@ -155,15 +161,15 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
   <div class="layer" style="left:88px;top:816px"><b>L2</b> Core<small>pure contracts</small></div>
   <div class="layer" style="left:88px;top:960px"><b>L1</b> Support<small>scripts · tests · model</small></div>
 
-  <a class="node k-app" data-module="root" href="modules/public-surface/root-router.md" style="left:296px;top:200px;width:760px;height:104px"><span><b>root</b> <span class="loc">23.9k</span></span><small>Root contract, workflow rules and PRDs</small><span class="id">root · 197 files</span></a>
-  <a class="node k-contract" data-module="assets" href="modules/public-surface/action-commands.md" style="left:296px;top:320px;width:760px;height:104px"><span><b>assets</b> <span class="loc">16.8k</span></span><small>Command facades and bundled skills</small><span class="id">assets · 122 files</span></a>
-  <a class="node k-compose" data-module="cli" href="modules/runtime-harness/hook-adapters.md" style="left:296px;top:440px;width:760px;height:104px"><span><b>cli</b> <span class="loc">26.4k</span></span><small>Command surface, host adapters, MCP</small><span class="id">cli · 129 files +3</span></a>
-  <a class="node k-remote" data-module="web" href="modules/runtime-harness/operator.md" style="left:296px;top:560px;width:760px;height:104px"><span><b>operator-web</b> <span class="loc">18.9k</span></span><small>Operator console · package repo-harness-operator-web</small><span class="id">web · 93 files</span></a>
-  <a class="node k-compose" data-module="effects" href="modules/organization/publication.md" style="left:296px;top:680px;width:760px;height:104px"><span><b>effects</b> <span class="loc">43.2k</span></span><small>Runtime, evidence, publication, operator</small><span class="id">effects · 209 files +9</span></a>
-  <a class="node k-kernel" data-module="core" href="modules/organization/board.md" style="left:296px;top:800px;width:760px;height:104px"><span><b>core</b> <span class="loc">21.6k</span></span><small>Pure state, workflow and capability core</small><span class="id">core · 145 files +2</span></a>
-  <a class="node k-contract" data-module="scripts" href="modules/workflow-engine/inspection-migration.md" style="left:296px;top:920px;width:760px;height:104px"><span><b>scripts</b> <span class="loc">21.6k</span></span><small>Contract, worktree and migration helpers</small><span class="id">scripts · 75 files</span></a>
+  <a class="node k-app" data-module="root" href="modules/public-surface/root-router.md" style="left:296px;top:200px;width:760px;height:104px"><span><b>root</b> <span class="loc">26.2k</span></span><small>Root contract, workflow rules and PRDs</small><span class="id">root · 206 files</span></a>
+  <a class="node k-contract" data-module="assets" href="modules/public-surface/action-commands.md" style="left:296px;top:320px;width:760px;height:104px"><span><b>assets</b> <span class="loc">18.3k</span></span><small>Command facades and bundled skills</small><span class="id">assets · 128 files</span></a>
+  <a class="node k-compose" data-module="cli" href="modules/runtime-harness/hook-adapters.md" style="left:296px;top:440px;width:760px;height:104px"><span><b>cli</b> <span class="loc">27.1k</span></span><small>Command surface, host adapters, MCP</small><span class="id">cli · 128 files +3</span></a>
+  <a class="node k-remote" data-module="web" href="modules/runtime-harness/operator.md" style="left:296px;top:560px;width:760px;height:104px"><span><b>operator-web</b> <span class="loc">20.0k</span></span><small>Operator console · package repo-harness-operator-web</small><span class="id">web · 99 files</span></a>
+  <a class="node k-compose" data-module="effects" href="modules/organization/publication.md" style="left:296px;top:680px;width:760px;height:104px"><span><b>effects</b> <span class="loc">43.8k</span></span><small>Runtime, evidence, publication, operator</small><span class="id">effects · 209 files +9</span></a>
+  <a class="node k-kernel" data-module="core" href="modules/organization/board.md" style="left:296px;top:800px;width:760px;height:104px"><span><b>core</b> <span class="loc">22.2k</span></span><small>Pure state, workflow and capability core</small><span class="id">core · 152 files +2</span></a>
+  <a class="node k-contract" data-module="scripts" href="modules/workflow-engine/inspection-migration.md" style="left:296px;top:920px;width:760px;height:104px"><span><b>scripts</b> <span class="loc">22.6k</span></span><small>Contract, worktree and migration helpers</small><span class="id">scripts · 80 files</span></a>
   <a class="node k-app" data-module="verification" href="modules/verification/evals-checks.md" style="left:296px;top:1040px;width:760px;height:104px"><span><b>verification</b> <span class="loc">10.1k</span></span><small>Tests, evals and CI selection</small><span class="id">verification · 29 files</span></a>
-  <a class="node k-contract" data-module="architecture" href="modules/workflow-engine/contract-assets.md" style="left:296px;top:1160px;width:760px;height:104px"><span><b>architecture-model</b> <span class="loc">21.0k</span></span><small>Model, generated docs and policy</small><span class="id">architecture · 653 files</span></a>
+  <a class="node k-contract" data-module="architecture" href="modules/workflow-engine/contract-assets.md" style="left:296px;top:1160px;width:760px;height:104px"><span><b>architecture-model</b> <span class="loc">22.2k</span></span><small>Model, generated docs and policy</small><span class="id">architecture · 659 files</span></a>
 
   <div class="zone" style="left:1224px;top:184px;width:392px;height:600px"></div>
   <div class="zone-label" style="left:1248px;top:200px"><b>Outside the repository</b></div>
@@ -201,23 +207,24 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
     <path class="e-call" d="M1056 972 H1104 V732 H1060" marker-end="url(#a-call)"/>
     <path class="e-call" d="M1056 852 H1080 V372 H1060" marker-end="url(#a-call)"/>
   </svg>
-  <div class="badge" style="left:1096px;top:468px">213</div>
-  <div class="badge" style="left:690px;top:778px">282</div>
-  <div class="badge" style="left:284px;top:660px">76</div>
-  <div class="badge" style="left:1136px;top:700px">54</div>
-  <div class="badge" style="left:1108px;top:900px">25</div>
-  <div class="badge" style="left:1084px;top:620px">3</div>
-  <div class="foot" style="left:64px;top:1328px;width:1552px">Size is non-test LOC at eef4d81f. Edges shown: six structural value imports. root→core, root→effects, cli→assets, effects→assets, web→root, scripts→cli and scripts→core are in board 2. Module path globs are the map footprint; capability ownership stays in the model. <span class="mono">web</span> adds <span class="mono">packages/operator-web/**</span>, as the operator nodes do since #1908.</div>
+  <div class="badge" style="left:1096px;top:468px">251</div>
+  <div class="badge" style="left:690px;top:778px">346</div>
+  <div class="badge" style="left:284px;top:660px">111</div>
+  <div class="badge" style="left:1136px;top:700px">55</div>
+  <div class="badge" style="left:1108px;top:900px">26</div>
+  <div class="badge" style="left:1084px;top:620px">4</div>
+  <div class="foot" style="left:64px;top:1328px;width:1552px">Size is non-test LOC at d56141f0. Edges shown: six structural value imports. root→core, root→effects, cli→assets, effects→assets, web→root, scripts→cli and scripts→core are in board 2. Module path globs are the map footprint; capability ownership stays in the model. <span class="mono">web</span> adds <span class="mono">packages/operator-web/**</span>, as the operator nodes do since #1908.</div>
 
-  <div class="panel" style="left:64px;top:1376px;width:1552px;height:216px">
-    <h3 style="margin:0 0 8px;font-size:17px">Ownership moves since 7716f464</h3>
+  <div class="panel" style="left:64px;top:1376px;width:1552px;height:240px">
+    <h3 style="margin:0 0 8px;font-size:17px">Ownership moves since eef4d81f</h3>
     <table class="tiers moves">
-      <tr><th>PR</th><th>files that moved or were gated</th><th>owner in the model</th></tr>
-      <tr><td>#1856 · #1864</td><td>mcp serve/doctor gated by mcp · operator, worktrees, catch-up bodies in src/cli/commands/*-actions.ts</td><td>cli-root · operator.primary-cli · operator.cli-layer</td></tr>
-      <tr><td>#1898</td><td>App hook config: src/effects/publication/app-hook-config.ts · checkAppHookConfig in core publication-writes.ts</td><td>publication · events-cli → publication</td></tr>
-      <tr><td>#1903</td><td>src/effects/terminal/runtime-closeout.ts · commands/herdr-skill*.ts · agents/fleet/** · scripts/install-agent-fleet.sh</td><td>runtime-closeout · global-runtime cli-layer · agent-fleet-*</td></tr>
-      <tr><td>#1904</td><td>herdr, events, review round/status/close/cancel gated by peer-runtime · src/cli/commands/{herdr,events}-actions.ts</td><td>cli-root · task-agent-host.primary-cli · events-cli</td></tr>
-      <tr><td>#1908</td><td>console package repo-harness-operator-web: packages/operator-web/{package.json,README.md} · build into dist/</td><td>operator · operator.web-console</td></tr>
+      <tr><th>PR</th><th>files that moved, came or went</th><th>owner in the model</th></tr>
+      <tr><td>#2163 · #2165 · #2201</td><td>src/effects/operator/board-observer.ts · board-observer-worker.ts</td><td>operator.board-observer (new)</td></tr>
+      <tr><td>#2216</td><td>src/effects/observation-loop.ts</td><td>execution-primitives.primary</td></tr>
+      <tr><td>#2191</td><td>specs/tla/BossCommandSend.* · specs/tla/check.sh · checks.tsv · .claude/skills/verify-boss-command/SKILL.md</td><td>operator.primary</td></tr>
+      <tr><td>#2454 · #2494 · #2556</td><td>removed: src/core/operator/doc-*.ts · src/cli/commands/doc-sessions*.ts · src/effects/review/docs-host-isolation.ts</td><td>nodes doc-sessions-cli and docs-host-isolation deleted</td></tr>
+      <tr><td>#2417 · #2466</td><td>src/core/shell-quote.ts · src/effects/path-containment.ts</td><td>execution-primitives</td></tr>
+      <tr><td>#2018 · #2083 · #2242 · #2638</td><td>scripts/host-test-queue.ts · check-changelog-released-sections.ts · assets/review-high-list.v1.json</td><td>evals-checks · evals-checks.ci-selection · board.assets-layer</td></tr>
     </table>
   </div>
 </div>
@@ -227,7 +234,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 <section>
 <h2 class="caption">2 · Dependency direction (measured)</h2>
 <div class="board" style="height:1000px">
-  <div class="kicker">repo-harness · DEPENDENCIES · eef4d81f</div>
+  <div class="kicker">repo-harness · DEPENDENCIES · d56141f0</div>
   <div class="title">Dependency direction (measured)</div>
   <div class="legend"><span class="swatch h1"></span>1–5<span class="swatch h2"></span>6–20<span class="swatch h3"></span>21–50<span class="swatch h4"></span>51+ value imports<br><span class="swatch forbid"></span>forbidden, satisfied</div>
   <div class="panel" style="left:64px;top:184px;width:1312px;height:780px">
@@ -235,15 +242,15 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
       <tr><th></th><th>root</th><th>assets</th><th>cli</th><th>core</th><th>effects</th><th>operator-web</th><th>scripts</th><th>verification</th><th>architecture-model</th></tr>
       <tr><th class="row">root</th><td>·</td><td>—</td><td>—</td><td class="h1">1</td><td class="h1">1</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
       <tr><th class="row">assets</th><td>—</td><td>·</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td>—</td></tr>
-      <tr><th class="row">cli</th><td>—</td><td class="h1">1</td><td>·</td><td class="h4">76</td><td class="h4">213</td><td>—</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td>—</td></tr>
-      <tr><th class="row">core</th><td>—</td><td class="h1">3</td><td class="forbid">forbidden · 0</td><td>·</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td>—</td></tr>
-      <tr><th class="row">effects</th><td>—</td><td class="h1">1</td><td class="forbid">forbidden · 0</td><td class="h4">282</td><td>·</td><td>—</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td>—</td></tr>
-      <tr><th class="row">operator-web</th><td class="h1">1</td><td>—</td><td class="forbid">forbidden · 0</td><td class="h4">54</td><td class="forbid">forbidden · 0</td><td>·</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td>—</td></tr>
-      <tr><th class="row">scripts</th><td>—</td><td>—</td><td class="h2">6</td><td class="h2">17</td><td class="h3">25</td><td>—</td><td>·</td><td class="forbid">forbidden · 0</td><td>—</td></tr>
+      <tr><th class="row">cli</th><td>—</td><td class="h1">1</td><td>·</td><td class="h4">111</td><td class="h4">251</td><td>—</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td>—</td></tr>
+      <tr><th class="row">core</th><td>—</td><td class="h1">4</td><td class="forbid">forbidden · 0</td><td>·</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td>—</td></tr>
+      <tr><th class="row">effects</th><td>—</td><td class="h1">1</td><td class="forbid">forbidden · 0</td><td class="h4">346</td><td>·</td><td>—</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td>—</td></tr>
+      <tr><th class="row">operator-web</th><td class="h1">1</td><td>—</td><td class="forbid">forbidden · 0</td><td class="h4">55</td><td class="forbid">forbidden · 0</td><td>·</td><td class="forbid">forbidden · 0</td><td class="forbid">forbidden · 0</td><td>—</td></tr>
+      <tr><th class="row">scripts</th><td>—</td><td>—</td><td class="h2">6</td><td class="h2">20</td><td class="h3">26</td><td>—</td><td>·</td><td class="forbid">forbidden · 0</td><td>—</td></tr>
       <tr><th class="row">verification</th><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>·</td><td>—</td></tr>
       <tr><th class="row">architecture-model</th><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>·</td></tr>
     </table>
-    <p class="foot">Rows import columns. Value imports only, tests excluded, tracked files only (measure.ts at eef4d81f). The diagonal is · and a missing edge is —. Forbidden cells follow the layer order in <span class="mono">.archcontext/manifest.yaml</span>. No file was unparsed.</p>
+    <p class="foot">Rows import columns. Value imports only, tests excluded, tracked files only (measure.ts at d56141f0). The diagonal is · and a missing edge is —. Forbidden cells follow the layer order in <span class="mono">.archcontext/manifest.yaml</span>. No file was unparsed and no import was unresolved. One tracked code file is in no map module: <span class="mono">specs/tla/check.sh</span> (81 LOC), which the model gives to <span class="mono">component.operator.primary</span>.</p>
   </div>
   <div class="panel" style="left:1392px;top:184px;width:224px;height:400px">
     <h3 style="margin:0 0 8px;font-size:17px">No cycles or reverse imports</h3>
@@ -263,7 +270,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 <section>
 <h2 class="caption">3 · Runtime topology</h2>
 <div class="board" style="height:1200px">
-  <div class="kicker">repo-harness · TOPOLOGY · eef4d81f</div>
+  <div class="kicker">repo-harness · TOPOLOGY · d56141f0</div>
   <div class="title">Runtime topology</div>
   <div class="legend">Solid: long-lived or per-event process · Dashed: detached child or sandbox<br>Channel labels name the transport. No launchd, systemd or container unit is installed.</div>
 
@@ -282,6 +289,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
   <div class="node k-remote" style="left:104px;top:512px;width:240px;height:80px"><span><b>Browser console</b></span><small>repo-harness-operator-web</small></div>
   <div class="node k-compose" style="left:400px;top:512px;width:220px;height:80px"><span><b>operator server</b></span><small>loopback HTTP</small></div>
   <div class="node k-external" style="left:104px;top:648px;width:240px;height:80px"><span><b>operator collector</b></span><small>detached child · probes</small></div>
+  <div class="node k-compose" style="left:400px;top:648px;width:220px;height:80px"><span><b>board facts worker</b></span><small>resident child · 90 s deadline</small></div>
   <div class="node k-compose" style="left:688px;top:240px;width:240px;height:80px"><span><b>process supervisor</b></span><small>bounded child group</small></div>
   <div class="node k-compose" style="left:688px;top:376px;width:240px;height:80px"><span><b>helper / checker</b></span><small>short bun or shell child</small></div>
   <div class="note" style="left:688px;top:512px;width:336px">Every child runs in a process group with one deadline. The supervisor publishes the group id before it starts the target.</div>
@@ -306,32 +314,36 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
       <marker id="t-remote" viewBox="0 0 4 4" refX="2" refY="2" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="#9A3412"/></marker>
     </defs>
     <path class="e-call" d="M344 280 H396" marker-end="url(#t-call)"/>
-    <path class="e-call" d="M344 300 H376 V360 H396" marker-end="url(#t-call)"/>
+    <path class="e-call" d="M344 300 H376 V388 H396" marker-end="url(#t-call)"/>
     <path class="e-call" d="M344 416 H396" marker-end="url(#t-call)"/>
     <path class="e-call" d="M344 552 H396" marker-end="url(#t-call)"/>
     <path class="e-call" d="M400 592 H344 V644" marker-end="url(#t-call)"/>
-    <path class="e-call" d="M344 472 H672 V280 H684" marker-end="url(#t-call)"/>
+    <path class="e-call" d="M320 456 V472 H672 V280 H684" marker-end="url(#t-call)"/>
+    <path class="e-call" d="M520 592 V644" marker-end="url(#t-call)"/>
+    <path class="e-call" d="M600 592 V616 H1124" marker-end="url(#t-call)"/>
     <path class="e-call" d="M808 320 V372" marker-end="url(#t-call)"/>
     <path class="e-call" d="M104 416 H80 V904 H100" marker-end="url(#t-call)"/>
     <path class="e-call" d="M344 456 H648 V904 H624" marker-end="url(#t-call)"/>
     <path class="e-call" d="M1260 320 V372" marker-end="url(#t-call)"/>
     <path class="e-call" d="M1160 300 H1144 V552 H1156" marker-end="url(#t-call)"/>
-    <path class="e-call" d="M1144 552 V840 H1156" marker-end="url(#t-call)"/>
+    <path class="e-call" d="M1160 312 H1136 V840 H1156" marker-end="url(#t-call)"/>
     <path class="e-call" d="M1484 320 V372" marker-end="url(#t-call)"/>
     <path class="e-call" d="M1484 456 V508" marker-end="url(#t-call)"/>
   </svg>
   <div class="elabel" style="left:352px;top:220px">stdin/stdout JSON</div>
-  <div class="elabel" style="left:352px;top:336px">stdio</div>
+  <div class="elabel" style="left:384px;top:336px">stdio</div>
   <div class="elabel" style="left:352px;top:396px">spawns</div>
   <div class="elabel" style="left:352px;top:492px">HTTP loopback</div>
   <div class="elabel" style="left:352px;top:608px">detached child</div>
+  <div class="elabel" style="left:528px;top:620px">resident</div>
+  <div class="elabel" style="left:688px;top:596px">hc events stream</div>
   <div class="elabel" style="left:540px;top:478px">bounded child</div>
   <div class="elabel" style="left:816px;top:340px">one deadline</div>
   <div class="elabel" style="left:1272px;top:340px">seat argv</div>
   <div class="elabel" style="left:1500px;top:340px">task · review</div>
   <div class="elabel" style="left:1496px;top:474px">sandbox</div>
   <div class="elabel" style="left:1152px;top:474px">hc run</div>
-  <div class="foot" style="left:64px;top:1144px;width:1552px">A process that owns no hc terminal and no port is a bounded child. Herdr.app places hc terminals in tabs and panes; repo-harness only prints its herdr-app commands. The operator collector and the hook are per-event or detached children; they do not survive a reboot as a service. The OAR host, notify relay and review commands load only for a recorded <span class="mono">peer-runtime</span> selection (#1904); core runtime closeout ends recorded task sessions (#1903).</div>
+  <div class="foot" style="left:64px;top:1144px;width:1552px">A process that owns no hc terminal and no port is a bounded child. Herdr.app places hc terminals in tabs and panes; repo-harness only prints its herdr-app commands. The operator collector and the hook are per-event or detached children; they do not survive a reboot as a service. The OAR host, notify relay and review commands load only for a recorded <span class="mono">peer-runtime</span> selection (#1904); core runtime closeout ends recorded task sessions (#1903). The board observer of the operator server holds one hc events stream for each registered repository and one resident board facts worker, which it kills and starts again at a deadline or crash (#2165, #2201, #2216).</div>
 </div>
 </section>
 
@@ -339,9 +351,9 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 <section>
 <h2 class="caption">4 · Key sequence</h2>
 <div class="board" style="height:1000px">
-  <div class="kicker">repo-harness · SEQUENCE · eef4d81f</div>
+  <div class="kicker">repo-harness · SEQUENCE · d56141f0</div>
   <div class="title">Resolve and publish Effective State</div>
-  <div class="legend">Purple: caller side · Grey: internal call · Grey dashed: return<br>Flow <span class="mono">flow.workflow-state.primary</span> · selectors proven at eef4d81f</div>
+  <div class="legend">Purple: caller side · Grey: internal call · Grey dashed: return<br>Flow <span class="mono">flow.workflow-state.primary</span> · selectors proven at d56141f0</div>
 
   <div class="lifehead" style="left:224px;top:184px">Hook / CLI caller</div>
   <div class="lifehead" style="left:704px;top:184px">workflow-state</div>
@@ -379,7 +391,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 <section>
 <h2 class="caption">5 · Interfaces and mounts</h2>
 <div class="board" style="height:1000px">
-  <div class="kicker">repo-harness · INTERFACES · eef4d81f</div>
+  <div class="kicker">repo-harness · INTERFACES · d56141f0</div>
   <div class="title">Interfaces and mounts</div>
   <div class="legend">One chip = one callable surface. The console mounts only loopback HTTP.</div>
 
@@ -419,45 +431,39 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 <section>
 <h2 class="caption">6 · Remarks</h2>
 <div class="board" style="height:1000px">
-  <div class="kicker">repo-harness · REMARKS · eef4d81f · observations only; not scheduled work</div>
-  <div class="title">Remarks · 6</div>
+  <div class="kicker">repo-harness · REMARKS · d56141f0 · observations only; not scheduled work</div>
+  <div class="title">Remarks · 5</div>
   <div class="legend"><span class="swatch" style="background:#B7791F"></span>Medium · structural burden<span class="swatch" style="background:#9AA0A8"></span>Low · naming and cleanup</div>
   <div class="remarks" style="left:64px;top:184px;width:1552px">
     <div class="remark medium">
       <div class="meta">R-A2 · medium · size</div>
       <h3>The architecture module is mostly rendered text</h3>
-      <p>653 tracked files and 21.0k LOC sit in the model and generated architecture docs. Generated regions are writer-owned, so a feature diff should review the model YAML, not the rendered pages.</p>
+      <p>659 tracked files and 22.2k LOC sit in the model and generated architecture docs. Generated regions are writer-owned, so a feature diff should review the model YAML, not the rendered pages.</p>
       <div class="ref">docs/architecture/modules/workflow-engine/contract-assets.md:2</div>
     </div>
     <div class="remark">
-      <div class="meta">R-A3 · low · citations</div>
-      <h3>One architecture anchor still cites retired code</h3>
-      <p>The anchor report at eef4d81f lists 0 findings in 624 citations. It ran without a code index, so 39 citations stay unchecked: 36 symbols and 3 ambiguous paths. <span class="mono">git grep</span> finds 35 of the 36 symbols; <span class="mono">knownGeneratedFile()</span> is gone. Direction: repair that citation in the owning capability.</p>
-      <div class="ref">docs/architecture/modules/public-surface/adoption.md:154</div>
+      <div class="meta">R-A10 · low · citations</div>
+      <h3>Three anchor citations name an ambiguous file</h3>
+      <p>The anchor report at d56141f0, with a ready code index, lists 0 findings in 1146 citations of 23 documents. Three citations stay unchecked as <span class="mono">path-ambiguous</span>: <span class="mono">archctx-provider.ts:103-110</span>, <span class="mono">doctor.ts:1-7</span> and <span class="mono">archctx-provider.ts:10</span>. Direction: cite them with a repository path in the owning capability.</p>
+      <div class="ref">docs/architecture/modules/runtime-harness/global-runtime-reconciliation.md:219</div>
     </div>
     <div class="remark medium">
       <div class="meta">R-A4 · medium · concentration</div>
       <h3>Effects owns the largest runtime surface</h3>
-      <p>effects holds 43.2k LOC and 10 capabilities (6 core, 4 plugin), and imports core 282 times. Keep new runtime code in effects components so the core stays pure.</p>
-      <div class="ref">src/effects/** · measure at eef4d81f</div>
+      <p>effects holds 43.8k LOC and 10 capabilities (6 core, 4 plugin), and imports core 346 times. Keep new runtime code in effects components so the core stays pure.</p>
+      <div class="ref">src/effects/** · measure at d56141f0</div>
     </div>
     <div class="remark medium">
       <div class="meta">R-A6 · medium · write surface</div>
       <h3>The console has ten write routes</h3>
-      <p>The operator server declares ten POST routes with <span class="mono">write: true</span>: four worktree cleanup routes, two advisor seat routes, report language, documentation language, agent settings and seat settings. The <span class="mono">component.operator.primary</span> summary still says three. Each write route must match the route inventory, or the server does not start. Keep new console reads on the GET reader and cached collectors.</p>
-      <div class="ref">src/effects/operator/server.ts:139</div>
+      <p>The operator server declares ten POST routes with <span class="mono">write: true</span>: four worktree cleanup routes, two advisor seat routes, report language, documentation language, agent settings and seat settings. Each write route must match the route inventory, or the server does not start. Keep new console reads on the GET reader and cached collectors.</p>
+      <div class="ref">src/effects/operator/server.ts:125</div>
     </div>
     <div class="remark">
       <div class="meta">R-A7 · low · tiers</div>
       <h3>Map modules mix harness tiers</h3>
       <p>The cli module holds 1 core and 3 plugin capabilities, and core holds the plugin task-fleet. A tier is a property of a model node, not of a map module; read the tier panel on board 1 before you split work by module.</p>
       <div class="ref">.archcontext/model/nodes/*.yaml · extensions.harnessTier</div>
-    </div>
-    <div class="remark">
-      <div class="meta">R-A9 · low · projection lag</div>
-      <h3>The operator document predates the console package</h3>
-      <p>#1908 added <span class="mono">packages/operator-web/**</span> to the operator nodes. The generated matched-prefix list of <span class="mono">operator.md</span> does not have it yet, because the rolling projection writer last ran at aa71b3b4. The board 1 link stays valid; the next writer run closes the gap.</p>
-      <div class="ref">docs/architecture/modules/runtime-harness/operator.md:5</div>
     </div>
   </div>
   <div class="foot" style="left:64px;top:944px;width:1552px">A remark that needs work becomes a GitHub issue through repo-harness-issue-flow. The map records the observation; it does not schedule the fix.</div>
@@ -468,7 +474,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 <section>
 <h2 class="caption">7 · Behavior (statechart) · ship-closeout-claim</h2>
 <div class="board" style="height:1640px">
-  <div class="kicker">repo-harness · BEHAVIOR · specs/tla/ShipCloseoutClaim.tla · eef4d81f</div>
+  <div class="kicker">repo-harness · BEHAVIOR · specs/tla/ShipCloseoutClaim.tla · d56141f0</div>
   <div class="title">Ship closeout claim</div>
   <div class="legend">Rounded box: spec state value · Grey frame: compound state<br>Dot: initial state · Line: transition, label = spec action<br>Dashed line: only with a fix off · Dashed frame: one region<br><span class="swatch" style="background:#B42318"></span>Red number: last state of a fix-off counterexample, rows below</div>
   <div class="state-compound" style="left:64px;top:184px;width:1552px;height:1280px"></div>
@@ -647,7 +653,141 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
   <div class="elabel" style="left:104px;top:1524px"><b>NoElectionInRetiredDir</b> broken without remove-by-rename (#1634, #1637) · <span class="mono">ShipCloseoutClaim.no-remove-by-rename.cfg</span> · 12 states · ends when a ship's Elect reaches <span class="mono">write</span> while the owner walks the claim</div>
   <div class="cx-marker" style="left:64px;top:1552px">3</div>
   <div class="elabel" style="left:104px;top:1556px"><b>RecoveryActsOnCheckedGeneration</b> broken without the recovery generation check (#1641, #1645) · <span class="mono">ShipCloseoutClaim.no-generation-check.cfg</span> · 19 states · ends when CheckClaimGeneration reaches <span class="mono">recover</span> on a changed claim</div>
-  <div class="foot" style="left:64px;top:1592px;width:1552px">Spec: <span class="mono">specs/tla/ShipCloseoutClaim.tla</span> at eef4d81f (no change since 7716f464), a model of <span class="mono">scripts/ship-worktrees.sh</span> (base 29b23f542); its action table maps each action to the bash lines. Dashed: <span class="mono">ElectByExclusiveCreate = FALSE</span> (ship MakeDir to write), <span class="mono">RemoveByRename = FALSE</span> (BeginRemove and FinishRemove inside <span class="mono">claimDir = "present"</span>). Rows: <span class="mono">bash scripts/contract-closeout-tla.sh</span> output in #1736.</div>
+  <div class="foot" style="left:64px;top:1592px;width:1552px">Spec: <span class="mono">specs/tla/ShipCloseoutClaim.tla</span> at d56141f0 (no change since 7716f464), a model of <span class="mono">scripts/ship-worktrees.sh</span> (base 29b23f542); its action table maps each action to the bash lines. Dashed: <span class="mono">ElectByExclusiveCreate = FALSE</span> (ship MakeDir to write), <span class="mono">RemoveByRename = FALSE</span> (BeginRemove and FinishRemove inside <span class="mono">claimDir = "present"</span>). Rows: <span class="mono">bash scripts/contract-closeout-tla.sh</span> output in #1736.</div>
+</div>
+</section>
+
+
+<section>
+<h2 class="caption">7 · Behavior (statechart) · boss-command-send</h2>
+<div class="board" style="height:1320px">
+  <div class="kicker">repo-harness · BEHAVIOR · specs/tla/BossCommandSend.tla · d56141f0</div>
+  <div class="title">Boss command send</div>
+  <div class="legend">Rounded box: spec state value · Grey frame: all regions at the same time<br>Dot: initial state · Line: transition, label = spec action<br>Dashed frame: one region · Amber note: more actions of a region<br><span class="swatch" style="background:#B42318"></span>Red number: last state of a fix-off counterexample, rows below</div>
+  <div class="state-compound" style="left:64px;top:184px;width:1552px;height:912px"></div>
+  <div class="phase-label" style="left:80px;top:192px">At the same time: each call, its send child and the shared state step in any order</div>
+  <div class="region" style="left:88px;top:224px;width:560px;height:848px"></div>
+  <div class="region" style="left:672px;top:224px;width:432px;height:848px"></div>
+  <div class="region" style="left:1128px;top:224px;width:464px;height:848px"></div>
+  <div class="phase-label" style="left:104px;top:232px">call · <span class="mono">phase[c]</span>, <span class="mono">Calls = {c1, c2, c3}</span></div>
+  <div class="phase-label" style="left:688px;top:232px">send child · <span class="mono">child[c]</span></div>
+  <div class="phase-label" style="left:1144px;top:232px">shared state</div>
+  <div class="initial" style="left:312px;top:264px"></div>
+  <div class="state" style="left:232px;top:296px;width:176px;height:40px">idle</div>
+  <div class="state" style="left:232px;top:416px;width:176px;height:40px">reading</div>
+  <div class="state" style="left:232px;top:536px;width:176px;height:40px">sending</div>
+  <div class="state" style="left:232px;top:656px;width:176px;height:40px">recording</div>
+  <div class="state" style="left:232px;top:776px;width:176px;height:40px">done</div>
+  <div class="state" style="left:464px;top:536px;width:144px;height:40px">lost</div>
+  <div class="note" style="left:104px;top:856px;width:528px">Admit also goes to <span class="mono">recording</span> (refused: the request_id has a result, or another counted request is inside the cooldown) and to <span class="mono">done</span> (the lock is held, or IdempotentAdmission finds the request_id). ReadBack also goes to <span class="mono">recording</span> (refused).</div>
+  <div class="note" style="left:104px;top:952px;width:528px">Crash: one time. Each call in <span class="mono">reading</span>, <span class="mono">sending</span> or <span class="mono">recording</span> goes to <span class="mono">lost</span>, and <span class="mono">lock</span> becomes <span class="mono">free</span>. Tick moves the clock <span class="mono">now</span> up to MaxTime.</div>
+  <div class="initial" style="left:880px;top:264px"></div>
+  <div class="state" style="left:816px;top:296px;width:144px;height:40px">none</div>
+  <div class="state" style="left:816px;top:416px;width:144px;height:40px">started</div>
+  <div class="state" style="left:696px;top:560px;width:112px;height:40px">sent</div>
+  <div class="state" style="left:832px;top:560px;width:112px;height:40px">failed</div>
+  <div class="state" style="left:968px;top:560px;width:112px;height:40px">killed</div>
+  <div class="cx-marker" style="left:700px;top:608px">1</div>
+  <div class="cx-marker" style="left:728px;top:608px">2</div>
+  <div class="cx-marker" style="left:756px;top:608px">3</div>
+  <div class="note" style="left:696px;top:664px;width:384px">ChildSends adds the call to <span class="mono">sent</span>. A child can outlive a crashed server and send later. A child that ends in <span class="mono">failed</span> ran no <span class="mono">hc send</span>.</div>
+  <div class="foot mono" style="left:1144px;top:264px">lock</div>
+  <div class="initial" style="left:1232px;top:264px"></div>
+  <div class="state" style="left:1176px;top:296px;width:128px;height:40px">free</div>
+  <div class="state" style="left:1176px;top:416px;width:128px;height:40px">c1 · c2 · c3</div>
+  <div class="foot mono" style="left:1144px;top:520px">log</div>
+  <div class="note" style="left:1144px;top:552px;width:432px">Append only. Admit appends an intent record. Record appends a result record, or appends nothing and answers <span class="mono">reconcile</span>. A crash keeps the log. The first record of a request_id counts.</div>
+  <div class="foot mono" style="left:1144px;top:672px">resp[c]</div>
+  <div class="note" style="left:1144px;top:704px;width:432px">Admit answers <span class="mono">busy</span>, or the first result of a known request_id (<span class="mono">reconcile</span> when it has only an intent). Record answers <span class="mono">out[c]</span>: <span class="mono">ok</span>, <span class="mono">reconcile</span> or <span class="mono">refused</span>.</div>
+  <svg class="edges" width="1680" height="1320">
+    <defs><marker id="bc-arrow" viewBox="0 0 4 4" refX="2" refY="2" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="#4A4F57"/></marker></defs>
+    <path class="e-transition" d="M320 280 V292" marker-end="url(#bc-arrow)"/>
+    <path class="e-transition" d="M320 336 V412" marker-end="url(#bc-arrow)"/>
+    <path class="e-transition" d="M320 456 V532" marker-end="url(#bc-arrow)"/>
+    <path class="e-transition" d="M320 576 V652" marker-end="url(#bc-arrow)"/>
+    <path class="e-transition" d="M320 696 V772" marker-end="url(#bc-arrow)"/>
+    <path class="e-transition" d="M408 556 H460" marker-end="url(#bc-arrow)"/>
+    <path class="e-transition" d="M888 280 V292" marker-end="url(#bc-arrow)"/>
+    <path class="e-transition" d="M888 336 V412" marker-end="url(#bc-arrow)"/>
+    <path class="e-transition" d="M840 456 V500 H752 V556" marker-end="url(#bc-arrow)"/>
+    <path class="e-transition" d="M888 456 V556" marker-end="url(#bc-arrow)"/>
+    <path class="e-transition" d="M936 456 V500 H1024 V556" marker-end="url(#bc-arrow)"/>
+    <path class="e-transition" d="M1240 280 V292" marker-end="url(#bc-arrow)"/>
+    <path class="e-transition" d="M1224 336 V412" marker-end="url(#bc-arrow)"/>
+    <path class="e-transition" d="M1272 416 V340" marker-end="url(#bc-arrow)"/>
+  </svg>
+  <div class="elabel" style="left:328px;top:368px">Admit</div>
+  <div class="elabel" style="left:328px;top:488px">ReadBack</div>
+  <div class="elabel" style="left:328px;top:608px">SendReturns · SendTimesOut</div>
+  <div class="elabel" style="left:328px;top:728px">Record</div>
+  <div class="elabel" style="left:416px;top:532px">Crash</div>
+  <div class="elabel" style="left:896px;top:368px">ReadBack</div>
+  <div class="elabel" style="left:752px;top:480px">ChildSends</div>
+  <div class="elabel" style="left:896px;top:520px">ChildFails</div>
+  <div class="elabel" style="left:944px;top:480px">SendTimesOut</div>
+  <div class="elabel" style="left:1232px;top:368px">Admit</div>
+  <div class="elabel" style="left:1280px;top:368px">Record · Crash</div>
+  <div class="cx-marker" style="left:64px;top:1120px">1</div>
+  <div class="elabel" style="left:104px;top:1124px"><b>CooldownHolds</b> broken when maySend does not count an intent with no result (#2180, #2191) · <span class="mono">BossCommandSend.unresolved-not-counted.cfg</span> · 8 states · ends when ChildSends puts a second request in <span class="mono">sent</span> inside the cooldown</div>
+  <div class="cx-marker" style="left:64px;top:1152px">2</div>
+  <div class="elabel" style="left:104px;top:1156px"><b>CooldownHolds</b> broken when maySend does not count <span class="mono">reconcile_required</span> (#2180, #2191) · <span class="mono">BossCommandSend.reconcile-not-counted.cfg</span> · 9 states · ends when ChildSends puts a second request in <span class="mono">sent</span> inside the cooldown</div>
+  <div class="cx-marker" style="left:64px;top:1184px">3</div>
+  <div class="elabel" style="left:104px;top:1188px"><b>OneSendPerRequest</b> broken without the request lookup of write-run.ts lines 152-153 (#2180, #2191) · <span class="mono">BossCommandSend.no-request-lookup.cfg</span> · 8 states · ends when ChildSends of the retry c2 reaches <span class="mono">sent</span></div>
+  <div class="foot" style="left:64px;top:1224px;width:1552px">Spec: <span class="mono">specs/tla/BossCommandSend.tla</span> at d56141f0 (no change since be6f14e5a), a model of the boss command send in <span class="mono">src/effects/operator/write-run.ts</span> and <span class="mono">advisor-seat-route.ts</span> (base b9dee51ee); its header maps each action to the code lines. No transition exists only with a fix off: <span class="mono">UnresolvedCounts = FALSE</span>, <span class="mono">ReconcileCounts = FALSE</span> and <span class="mono">IdempotentAdmission = FALSE</span> change only the Admit guard, so the board has no dashed line. Each marker sits on <span class="mono">sent</span>: only ChildSends changes <span class="mono">sent</span>, and both broken invariants read it. Rows: <span class="mono">bash specs/tla/check.sh BossCommandSend</span> output in #2191.</div>
+</div>
+</section>
+
+
+<section>
+<h2 class="caption">8 · Module documents</h2>
+<div class="board" style="height:1000px">
+  <div class="kicker">repo-harness · DOCUMENTS · d56141f0</div>
+  <div class="title">Module documents</div>
+  <div class="legend">One link for each capability document of a module</div>
+  <div class="docs" style="left:64px;top:184px;width:1552px">
+    <div class="panel" data-module="root"><h3>root<span class="id">root</span></h3><ul>
+      <li><a href="modules/public-surface/root-router.md">public-surface/root-router.md</a></li>
+    </ul></div>
+    <div class="panel" data-module="assets"><h3>assets<span class="id">assets</span></h3><ul>
+      <li><a href="modules/public-surface/action-commands.md">public-surface/action-commands.md</a></li>
+    </ul></div>
+    <div class="panel" data-module="cli"><h3>cli<span class="id">cli</span></h3><ul>
+      <li><a href="modules/runtime-harness/hook-adapters.md">runtime-harness/hook-adapters.md</a></li>
+      <li><a href="modules/runtime-harness/mcp-sidecar.md">runtime-harness/mcp-sidecar.md</a></li>
+      <li><a href="modules/runtime-mcp/general-repo-access.md">runtime-mcp/general-repo-access.md</a></li>
+      <li><a href="modules/verification/codegraph-readiness.md">verification/codegraph-readiness.md</a></li>
+    </ul></div>
+    <div class="panel" data-module="web"><h3>operator-web<span class="id">web</span></h3><ul>
+      <li><a href="modules/runtime-harness/operator.md">runtime-harness/operator.md</a></li>
+    </ul></div>
+    <div class="panel" data-module="effects"><h3>effects<span class="id">effects</span></h3><ul>
+      <li><a href="modules/organization/publication.md">organization/publication.md</a></li>
+      <li><a href="modules/public-surface/strategy-reflection.md">public-surface/strategy-reflection.md</a></li>
+      <li><a href="modules/runtime-harness/architecture.md">runtime-harness/architecture.md</a></li>
+      <li><a href="modules/runtime-harness/evidence-ledger.md">runtime-harness/evidence-ledger.md</a></li>
+      <li><a href="modules/runtime-harness/global-runtime-reconciliation.md">runtime-harness/global-runtime-reconciliation.md</a></li>
+      <li><a href="modules/runtime-harness/refactor-program.md">runtime-harness/refactor-program.md</a></li>
+      <li><a href="modules/runtime-harness/task-agent-host.md">runtime-harness/task-agent-host.md</a></li>
+      <li><a href="modules/verification/acceptance-review.md">verification/acceptance-review.md</a></li>
+      <li><a href="modules/workflow-engine/execution-primitives.md">workflow-engine/execution-primitives.md</a></li>
+      <li><a href="modules/workflow-engine/workflow-state.md">workflow-engine/workflow-state.md</a></li>
+    </ul></div>
+    <div class="panel" data-module="core"><h3>core<span class="id">core</span></h3><ul>
+      <li><a href="modules/organization/board.md">organization/board.md</a></li>
+      <li><a href="modules/organization/task-fleet.md">organization/task-fleet.md</a></li>
+      <li><a href="modules/public-surface/adoption.md">public-surface/adoption.md</a></li>
+    </ul></div>
+    <div class="panel" data-module="scripts"><h3>scripts<span class="id">scripts</span></h3><ul>
+      <li><a href="modules/workflow-engine/inspection-migration.md">workflow-engine/inspection-migration.md</a></li>
+    </ul></div>
+    <div class="panel" data-module="verification"><h3>verification<span class="id">verification</span></h3><ul>
+      <li><a href="modules/verification/evals-checks.md">verification/evals-checks.md</a></li>
+    </ul></div>
+    <div class="panel" data-module="architecture"><h3>architecture-model<span class="id">architecture</span></h3><ul>
+      <li><a href="modules/workflow-engine/contract-assets.md">workflow-engine/contract-assets.md</a></li>
+    </ul></div>
+  </div>
+  <div class="foot" style="left:64px;top:944px;width:1552px">Every path of <span class="mono">modules[].docs</span> from measure.ts at d56141f0, in its order: 23 documents for 23 capability nodes. The overview node links the first path of its module.</div>
 </div>
 </section>
 
@@ -656,8 +796,8 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 {
   "schema": "archimap/v1",
   "project": "repo-harness",
-  "base": "eef4d81f",
-  "generated": "2026-11-07",
+  "base": "d56141f0",
+  "generated": "2026-11-12",
   "sources": [
     ".archcontext/model",
     "measure.ts archimap-measure/v1"
@@ -669,7 +809,8 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
     "sequence",
     "interfaces",
     "remarks",
-    "behavior"
+    "behavior",
+    "documents"
   ],
   "modules": [
     {
