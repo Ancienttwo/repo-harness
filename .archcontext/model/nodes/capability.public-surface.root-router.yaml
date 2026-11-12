@@ -11,6 +11,7 @@ source:
   include:
     - "agents/openai.yaml"
     - "docs/CHANGELOG.md"
+    - "docs/changelog.d/**"
     - "docs/images/**"
     - "references/bot-control.md"
     - "references/handoff.md"

@@ -17,6 +17,7 @@ source:
     - .github/**
     - scripts/check-ci.sh
     - scripts/check-changelog-released-sections.ts
+    - scripts/changelog-fragments.ts
     - scripts/check-protected-paths.ts
     - scripts/select-*.ts
     - scripts/replay-ci-coverage.ts

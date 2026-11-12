@@ -1586,15 +1586,18 @@ test('A20 fires for a required check that is pending or missing past the thresho
     .toEqual([[], [['protection_unreadable', '#1494']]]);
 });
 
-test('R2 does not count docs/CHANGELOG.md as a shared file', () => {
+test('R2 counts every shared file, the changelog fragments included', () => {
   const r2 = (first: string[], second: string[]) => evaluateBoardAttention(replay({
     owners: (results) => { results.push(...[...first, ...second].map(path => ({ path, matched: false, ambiguous: false, owningCapabilityId: null }))); },
     pulls: (data) => {
       for (const [pr, paths] of [[data.repository.pr1494, first], [data.repository.pr1499, second]] as const) pr.files = { totalCount: paths.length, nodes: paths.map(path => ({ path })) };
     },
   })).findings.filter(finding => finding.rule === 'R2').map(finding => finding.message);
-  expect(r2(['docs/CHANGELOG.md'], ['docs/CHANGELOG.md'])).toEqual([]);
-  expect(r2(['docs/CHANGELOG.md', 'src/a.ts'], ['docs/CHANGELOG.md', 'src/a.ts'])).toEqual(['#1494 and #1499 both change src/a.ts with no dependency edge']);
+  // Each PR writes its own fragment path, so one shared fragment path means two PRs for one issue.
+  expect(r2(['docs/changelog.d/2660.changed.md'], ['docs/changelog.d/2660.changed.md']))
+    .toEqual(['#1494 and #1499 both change docs/changelog.d/2660.changed.md with no dependency edge']);
+  expect(r2(['docs/changelog.d/2660.changed.md', 'src/a.ts'], ['docs/changelog.d/2660.changed.md', 'src/a.ts']))
+    .toEqual(['#1494 and #1499 both change docs/changelog.d/2660.changed.md, src/a.ts with no dependency edge']);
 });
 
 // A fake hc for the watcher: every call is logged; `get` answers from FAKE_TERMINALS, `wait` from FAKE_WAITS by address.

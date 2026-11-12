@@ -7,13 +7,37 @@
  * `[Unreleased]` entry in context lines that git now places inside the released
  * section: that merge is clean, `Required / CI` is green, and main then claims a
  * release holds a change it does not hold. A new version section (release PR)
- * and an `[Unreleased]` entry pass. There is no bypass switch.
+ * passes. There is no bypass switch.
+ *
+ * The same merge result must follow the fragment form (#2660): no `## [Unreleased]`
+ * heading, and every path under `docs/changelog.d/` parses. Each PR writes its entry
+ * in `docs/changelog.d/<issue>.<category>.md`, so the changelog cannot make two PRs
+ * conflict, and the error text here is the instruction that reaches a writer who
+ * still adds an `[Unreleased]` entry.
  */
 import { spawnSync } from 'node:child_process';
+import { CHANGELOG, FRAGMENT_DIR, FRAGMENT_PATH_FORM, parseFragment, VERSION_HEADING } from './changelog-fragments';
 
-const CHANGELOG = 'docs/CHANGELOG.md';
 // A released section starts at its version heading and ends at the next version heading.
-const SECTION_HEADING = /^## \[(\d+\.\d+\.\d+)\][^\r\n]*/gm;
+const SECTION_HEADING = VERSION_HEADING;
+/**
+ * The text above the first released section. A file with no version heading is all preamble, which is
+ * how a file that holds only the title reads.
+ */
+export function changelogPreamble(text: string): string {
+  const first = [...text.matchAll(VERSION_HEADING)][0];
+  return text.slice(0, first?.index ?? text.length);
+}
+
+/**
+ * The base preamble with its retired `## [Unreleased]` block removed: the bytes before that heading. A
+ * base without the heading gives back its own bytes, so no byte is normalized anywhere. The cutover that
+ * retires the block deletes it and leaves exactly these bytes, which move into fragments otherwise.
+ */
+export function withoutUnreleasedSection(preamble: string): string {
+  const block = /^## \[Unreleased\][^\r\n]*(?:\r?\n|$)/mu.exec(preamble);
+  return block === null ? preamble : preamble.slice(0, block.index);
+}
 const TREE_OID = /^[0-9a-f]{40}$/;
 const MAX_BUFFER = 64 * 1024 * 1024;
 
@@ -29,6 +53,8 @@ export interface ReleasedSectionReport {
   readonly mergeTree: string;
   readonly sectionsAtBase: number;
   readonly drift: readonly SectionDrift[];
+  /** Text above the first released section other than the preamble, or a path under the fragment directory that does not parse. */
+  readonly fragmentFaults: readonly string[];
 }
 
 function git(repoRoot: string, args: readonly string[]) {
@@ -97,6 +123,35 @@ function fileAt(repoRoot: string, revision: string, path: string): string | null
   return gitOrFail(repoRoot, ['cat-file', '-p', `${revision}:${path}`]);
 }
 
+/**
+ * The fragment faults of the merge result. Two rules:
+ *
+ * 1. The text above the first released section must be byte-equal to the base preamble with its retired
+ *    `## [Unreleased]` block removed. The transform is the only one, and it applies to the base side only,
+ *    so every byte of the merge result must match it: an added sentence, a `* ` bullet, an indented
+ *    heading, a kept `[Unreleased]` block or a trailing newline all fail.
+ * 2. Each path under the fragment directory must parse.
+ */
+function fragmentFaults(repoRoot: string, tree: string, changelog: string, baseText: string | null): string[] {
+  const faults: string[] = [];
+  // One rule: the merge-result preamble must be byte-equal to the base preamble with its retired
+  // `## [Unreleased]` block removed. The transform applies to the base side only, so a merge result that
+  // keeps the block fails, and a base without the block expects its own bytes exactly.
+  const expected = baseText === null ? '' : withoutUnreleasedSection(changelogPreamble(baseText));
+  if (changelogPreamble(changelog) !== expected) {
+    faults.push(`${CHANGELOG} changes the text above its first released section, and each PR writes its entry in ${FRAGMENT_PATH_FORM} instead; the release prep assembles the section`);
+  }
+  const listing = gitOrFail(repoRoot, ['ls-tree', '-r', '--name-only', tree, '--', FRAGMENT_DIR]).split('\n').filter(Boolean);
+  for (const path of listing) {
+    try {
+      parseFragment(path, fileAt(repoRoot, tree, path) ?? '');
+    } catch (thrown) {
+      faults.push(thrown instanceof Error ? thrown.message : String(thrown));
+    }
+  }
+  return faults;
+}
+
 /** Compares every released section at the base with the merge result of the base and the head. */
 export function checkReleasedSections(base: string, head = 'HEAD', repoRoot = process.cwd()): ReleasedSectionReport {
   const baseSha = commitOf(repoRoot, base);
@@ -104,10 +159,12 @@ export function checkReleasedSections(base: string, head = 'HEAD', repoRoot = pr
   const headSha = commitOf(repoRoot, head);
   if (!headSha) throw new Error(`head ${JSON.stringify(head)} is not a commit in ${repoRoot}`);
   const { tree } = mergeResult(repoRoot, baseSha, headSha);
+  const mergedText = fileAt(repoRoot, tree, CHANGELOG) ?? '';
   const baseText = fileAt(repoRoot, baseSha, CHANGELOG);
-  if (baseText === null) return { baseSha, headSha, mergeTree: tree, sectionsAtBase: 0, drift: [] };
-  const drift = sectionDrift(baseText, fileAt(repoRoot, tree, CHANGELOG) ?? '');
-  return { baseSha, headSha, mergeTree: tree, sectionsAtBase: releasedSections(baseText).size, drift };
+  const faults = fragmentFaults(repoRoot, tree, mergedText, baseText);
+  if (baseText === null) return { baseSha, headSha, mergeTree: tree, sectionsAtBase: 0, drift: [], fragmentFaults: faults };
+  const drift = sectionDrift(baseText, mergedText);
+  return { baseSha, headSha, mergeTree: tree, sectionsAtBase: releasedSections(baseText).size, drift, fragmentFaults: faults };
 }
 
 /** The error text that names the fault and the fix. */
@@ -115,7 +172,12 @@ export function driftMessage(report: ReleasedSectionReport): string {
   const sections = report.drift.map(({ version, reason }) => `${version} (${reason})`).join(', ');
   return `the merge result of ${report.baseSha} and ${report.headSha} does not keep the bytes of the ${CHANGELOG} section(s) released at the base: ${sections}.`
     + ' A git merge placed an entry inside a released section, most often an [Unreleased] entry of a branch that started before a release commit.'
-    + ' Rebase the branch on the base and keep the entry under [Unreleased]. A correction of released notes goes through a release PR or an [Unreleased] entry that names the correction.';
+    + ` Rebase the branch on the base and move the entry into ${FRAGMENT_PATH_FORM}. A correction of released notes goes through a release PR or a fragment that names the correction.`;
+}
+
+/** The error text of each fragment fault, one message. */
+export function fragmentMessage(report: ReleasedSectionReport): string {
+  return `the merge result of ${report.baseSha} and ${report.headSha} does not follow the changelog fragment form: ${report.fragmentFaults.join('; ')}.`;
 }
 
 const USAGE = 'Usage: bun scripts/check-changelog-released-sections.ts --base <git-ref> [--head <git-ref>]';
@@ -138,11 +200,10 @@ if (import.meta.main) {
   }
   try {
     const report = checkReleasedSections(base, values.get('--head') ?? 'HEAD');
-    if (report.drift.length > 0) {
-      process.stderr.write(`[changelog] ${driftMessage(report)}\n`);
-      process.exit(1);
-    }
-    console.log(`[changelog] all ${report.sectionsAtBase} released sections of ${CHANGELOG} keep their bytes in the merge result ${report.mergeTree}.`);
+    if (report.drift.length > 0) process.stderr.write(`[changelog] ${driftMessage(report)}\n`);
+    if (report.fragmentFaults.length > 0) process.stderr.write(`[changelog] ${fragmentMessage(report)}\n`);
+    if (report.drift.length > 0 || report.fragmentFaults.length > 0) process.exit(1);
+    console.log(`[changelog] all ${report.sectionsAtBase} released sections of ${CHANGELOG} keep their bytes in the merge result ${report.mergeTree}, and its fragments follow ${FRAGMENT_PATH_FORM}.`);
   } catch (thrown) {
     process.stderr.write(`[changelog] ${thrown instanceof Error ? thrown.message : String(thrown)}\n`);
     process.exit(1);
