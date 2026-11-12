@@ -153,6 +153,7 @@ describe("ci isolate-mode test loop", () => {
       const valued = run(existing, '-t', 'example.test.ts');
       expect(valued.status).toBe(0);
       expect(valued.ran).toBe(true);
+      expect(run(existing, `--test-name-pattern=${existing}`).stderr).not.toContain('does not exist');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

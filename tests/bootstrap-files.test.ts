@@ -178,9 +178,10 @@ describe("Bootstrap Script Contracts", () => {
     expect(workflow).toContain("tests/cli/mcp-workspaces.test.ts");
     expect(workflow).toContain("tests/cli/mcp-reader-tools.test.ts");
     expect(workflow).toContain("tests/cli/mcp-policy.test.ts");
-    expect(workflow).toContain("tests/cli/mcp-http.test.ts");
-    expect(workflow).toContain("tests/cli/mcp-oauth.test.ts");
     expect(workflow).toContain("tests/cli/mcp-stdio.test.ts");
+    for (const deleted of ["tests/cli/mcp-http.test.ts", "tests/cli/mcp-oauth.test.ts", "tests/effects/operator-task-activity.test.ts"]) {
+      expect(workflow).not.toContain(deleted);
+    }
   });
 
   test("release gate should delegate owned checks to the ci gate", () => {
