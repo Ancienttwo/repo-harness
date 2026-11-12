@@ -131,8 +131,9 @@ const server = Bun.serve({
         return Response.json(packument);
       }
       if (url.pathname === `/${pkg.name}/-/${pkg.name}-${version}.tgz`) {
-        console.log("TARBALL SERVED", pkg.name, version);
-        return new Response(pkg.bytes);
+        // Probe negative 1: the candidate tarballs are not served.
+        console.log("TARBALL REFUSED", pkg.name, version);
+        return new Response("not served", { status: 404 });
       }
     }
     const upstream = await fetch(`${upstreamBase}${url.pathname}${url.search}`, {
