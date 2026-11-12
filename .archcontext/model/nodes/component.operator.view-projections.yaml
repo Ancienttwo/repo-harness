@@ -10,7 +10,7 @@ responsibilities:
   - "Project the repository list, planning, organization, decision and task reads into public snapshot shapes."
   - "Decode each public schema with exact field sets so the server and the web console share one contract."
   - "Parse closed request shapes for session and architecture routes before any process starts."
-  - "Own the list of runtimes with verified docs isolation: the agent settings, doc session creation and the docs host boundary read only this list."
+  - "Own the list of runtimes with verified docs isolation: the agent settings read only this list."
   - "Validate bounded organization V2 payloads with exact field sets, repository and admitted-session identities, component consistency, SHA syntax and overlay-to-attention digest linkage. Snapshot builders compute content hashes; the decoder does not recompute them."
 source:
   include:
