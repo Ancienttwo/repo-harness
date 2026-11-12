@@ -1,4 +1,5 @@
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, spyOn, test } from 'bun:test';
+import * as fs from 'fs';
 import {
   chmodSync,
   existsSync,
@@ -34,7 +35,7 @@ import { contentRevision } from '../../src/effects/state/collect-state-inputs';
 import { sha256Prefixed } from '../../src/core/evidence/sha256';
 import { DEFAULT_RETENTION_DAYS, readRetentionConfig } from '../../src/effects/artifact-retention';
 import { mergeBackTarget } from '../../src/effects/state/coordination-worktree-topology';
-import { publishFileByRename } from '../../src/effects/atomic-append';
+import { publishFileByRename, retryWindowsSharingRace } from '../../src/effects/atomic-append';
 import { capabilitySource } from '../../src/effects/architecture/archctx-provider';
 import { assertArchitecturePolicySelection } from '../../src/cli/installer/install-profile';
 
@@ -464,5 +465,53 @@ describe('publish by rename', () => {
       expect(() => publishFileByRename(target, Buffer.from('{}'), temporary)).toThrow();
       expect(existsSync(temporary)).toBe(false);
     } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+});
+
+// Windows gives EPERM while another process holds the file open or deletes it (#2615).
+describe('windows sharing race', () => {
+  function onPlatform<T>(value: NodeJS.Platform, run: () => T): T {
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { ...platform, value });
+    try { return run(); } finally { Object.defineProperty(process, 'platform', platform); }
+  }
+  const failure = (code: string) => Object.assign(new Error(`${code}: injected`), { code });
+
+  test.each([
+    ['a win32 EPERM that clears runs the operation again', 'win32', 1, 'EPERM', 2, true],
+    ['a win32 EPERM that lasts past the bound throws the first error', 'win32', Infinity, 'EPERM', 8, false],
+    ['an EPERM on another platform throws at once', 'darwin', 1, 'EPERM', 1, false],
+    ['another win32 code throws at once', 'win32', 1, 'EACCES', 1, false],
+  ] as const)('%s', (_name, platform, failures, code, attempts, resolves) => {
+    const errors: Error[] = [];
+    const operation = () => {
+      if (errors.length < failures) {
+        errors.push(failure(code));
+        throw errors.at(-1);
+      }
+      return 'done';
+    };
+    let thrown: unknown = null;
+    const result = onPlatform(platform, () => {
+      try { return retryWindowsSharingRace(operation); } catch (error) { thrown = error; return null; }
+    });
+    expect(errors.length + (resolves ? 1 : 0)).toBe(attempts);
+    if (resolves) expect(result).toBe('done');
+    else expect(thrown).toBe(errors[0]);
+  });
+
+  test('publish by rename replaces a target that a reader held open for one attempt', () => {
+    const root = mkdtempSync(join(tmpdir(), 'publish-by-rename-'));
+    const rename = spyOn(fs, 'renameSync').mockImplementationOnce(() => { throw failure('EPERM'); });
+    try {
+      const target = join(root, 'record.json');
+      writeFileSync(target, 'old');
+      onPlatform('win32', () => publishFileByRename(target, Buffer.from('new'), `${target}.tmp`));
+      expect(readFileSync(target, 'utf-8')).toBe('new');
+      expect(rename).toHaveBeenCalledTimes(2);
+    } finally {
+      rename.mockRestore();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

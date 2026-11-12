@@ -6,7 +6,7 @@ import {
   assertTaskInboxLayoutUnchanged,
   TaskInboxLayoutError,
 } from './task-inbox-layout';
-import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
+import { createFileExclusiveDurably, retryWindowsSharingRace, syncDirectoryDurably } from '../atomic-append';
 import {
   existsSync,
   linkSync,
@@ -525,7 +525,7 @@ function writeReceipt(repoRoot: string, taskId: string, receipt: TaskMessageDeli
     }
     inspectTaskInboxLayout(resolveGitCommonDirectory(repoRoot));
     try {
-      renameSync(temporary, target);
+      retryWindowsSharingRace(() => renameSync(temporary, target));
       syncDirectoryDurably(directory);
     } catch (error) {
       throw asInboxError(error, 'task_message_unreadable', `cannot persist task message delivery receipt: ${target}`);

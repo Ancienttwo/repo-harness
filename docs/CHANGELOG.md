@@ -10,7 +10,7 @@ All notable changes to this skill are documented here.
 
 ### Fixed
 
-- On Windows, the host test queue ticket read no longer throws `EPERM` for a ticket that another queue member just unlinked. After the `EPERM`, one lstat of the ticket path decides: `ENOENT` skips the ticket. Any other result still throws, so a real access refusal stays an error. No retry and no wait. (#2609)
+- On Windows, a file operation that races another process no longer fails at once with `EPERM`. A rename over a file that another process holds open, the host test queue ticket read of a ticket that another member just unlinked, and the lock owner read of a lock directory that a release just removed wait and run again: 8 attempts, at most 127 ms of wait. A refusal that lasts longer throws the first `EPERM`; other codes, and every error on other platforms, throw at once. The renames are those of the stores that another process reads: the stores of `publishFileByRename`, the host test queue tickets, the effective-state version, `~/.repo-harness/config.json`, `.ai/harness/policy.json` from the operator, the Claude quota capture, the repo registry, worktree records, the bot registry, task inbox and feedback delivery receipts, acceptance records, and the installer writes of host configuration and install state. The one-lstat rules of #2588 and #2609 are replaced by this rule. (#2615, #2609)
 - ci: `run_bun_tests` (and `bun run test:files`) fails before any test starts when an argument has the test file name form and is not a file, and names the path. Before, such a path was dropped and the run was green with fewer files. The daily native path list no longer names three deleted files. (#2608)
 
 ## [0.31.0] - 2026-11-12

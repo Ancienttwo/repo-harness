@@ -5,6 +5,7 @@
 // admission stay the only authority.
 
 import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'fs';
+import { retryWindowsSharingRace } from './atomic-append';
 import { join } from 'path';
 import { withExclusiveDirectoryLock } from './locking/exclusive-directory-lock';
 import { repoHarnessHome } from './repo-harness-home';
@@ -180,7 +181,7 @@ export function registerBot(input: RegisterBotInput, env: NodeJS.ProcessEnv = pr
     const path = join(botRegistryPath(env), `${bot.bot_id}.json`);
     const temporary = join(botRegistryPath(env), `.${bot.bot_id}.json.${process.pid}.${Date.now()}.tmp`);
     writeFileSync(temporary, `${JSON.stringify(bot, null, 2)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    renameSync(temporary, path);
+    retryWindowsSharingRace(() => renameSync(temporary, path));
     return bot;
   }, { waitTimeoutMs: 10_000, reclaimStaleEmptyDirectory: true });
 }

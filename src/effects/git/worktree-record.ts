@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { retryWindowsSharingRace } from '../atomic-append';
 import { sha256Hex } from '../../core/evidence/sha256';
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -48,7 +49,7 @@ function save(common: string, record: WorktreeRecord): void {
   }
   const temporary = file + '.' + randomUUID();
   writeFileSync(temporary, JSON.stringify(record) + '\n', { flag: 'wx', mode: 0o600 });
-  renameSync(temporary, file);
+  retryWindowsSharingRace(() => renameSync(temporary, file));
 }
 
 /** Creation metadata is immutable; runtime bindings keep their own operational authority. */

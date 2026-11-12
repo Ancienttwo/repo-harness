@@ -145,25 +145,31 @@ describe('host test queue', () => {
     handle.release();
   });
 
-  // Windows gives EPERM, not ENOENT, on a ticket that another member just unlinked (#2609).
+  // Windows gives EPERM, not ENOENT, on a ticket that another member just
+  // unlinked (#2609), until the delete ends (#2615).
   test.each([
-    ['a ticket that the other member unlinked is skipped', true],
-    ['a ticket that is still there keeps the EPERM as a real access refusal', false],
-  ])('windows EPERM on the ticket read: %s', (_name, unlinked) => {
+    ['a ticket that the other member unlinked is skipped', 'unlinked'],
+    ['a ticket that is still there after the EPERM clears is read', 'cleared'],
+    ['a ticket that keeps an EPERM past the bound is a real access refusal', 'refused'],
+  ] as const)('windows EPERM on the ticket read: %s', (_name, race) => {
     const env = queueEnv();
     const directory = join(env.REPO_HARNESS_HOME!, 'host-test-queue', 'tickets');
     mkdirSync(directory, { recursive: true });
-    const ticket = join(directory, '0-other.json');
-    writeFileSync(ticket, '{}');
+    const ticket = join(directory, '1-000000000000000-other.json');
+    writeFileSync(ticket, JSON.stringify({
+      token: 'other', pid: process.pid, start_time: 'start', kind: 'affected', cwd: ROOT, command: ['other'],
+      enqueued_at: new Date(0).toISOString(), acquired_at: null, lock_token: null, pgid: null,
+    }));
     const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
-    const read = spyOn(fs, 'readFileSync').mockImplementationOnce(() => {
-      if (unlinked) rmSync(ticket);
+    const fail = () => {
+      if (race === 'unlinked') rmSync(ticket);
       throw Object.assign(new Error(`EPERM: operation not permitted, open '${ticket}'`), { code: 'EPERM', syscall: 'open' });
-    });
+    };
+    const read = race === 'refused' ? spyOn(fs, 'readFileSync').mockImplementation(fail) : spyOn(fs, 'readFileSync').mockImplementationOnce(fail);
     Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
     try {
-      if (unlinked) expect(readHostTestQueueState(env).waiting).toEqual([]);
-      else expect(() => readHostTestQueueState(env)).toThrow('EPERM');
+      if (race === 'refused') expect(() => readHostTestQueueState(env)).toThrow('EPERM');
+      else expect(readHostTestQueueState(env).waiting.map(entry => entry.token)).toEqual(race === 'cleared' ? ['other'] : []);
     } finally {
       Object.defineProperty(process, 'platform', platform);
       read.mockRestore();

@@ -1,4 +1,5 @@
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs';
+import { retryWindowsSharingRace } from '../../effects/atomic-append';
 import { homedir } from 'os';
 import { dirname, join, relative, resolve, sep } from 'path';
 import { randomUUID } from 'crypto';
@@ -51,7 +52,7 @@ export function writePrivateConfiguration(path: string, content: string, root: s
   const temp = `${path}.${randomUUID()}.tmp`;
   try {
     writeFileSync(temp, content, { mode: 0o600, flag: 'wx' });
-    renameSync(temp, path);
+    retryWindowsSharingRace(() => renameSync(temp, path));
     chmodSync(path, 0o600);
   } finally { if (existsSync(temp)) unlinkSync(temp); }
 }

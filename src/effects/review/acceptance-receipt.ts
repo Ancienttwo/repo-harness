@@ -1,4 +1,5 @@
 import { osAccountHome } from '../runtime/os-account-home';
+import { retryWindowsSharingRace } from '../atomic-append';
 import { observeActiveReviewAdmission } from '../admission/issue-goal';
 import { bindReviewAdmission, reviewAdmissionAllowsPath } from '../../core/review/authority-context';
 import { readReviewAdmissionSource, type ReviewAdmissionSource } from '../admission/admission-source';
@@ -470,7 +471,7 @@ export function writeAcceptanceVerificationObservation(args: {
   const temporary = `${path}.${process.pid}.tmp`;
   writeFileSync(temporary, `${stableJson(observation)}\n`, { mode: 0o600 });
   chmodSync(temporary, 0o600);
-  renameSync(temporary, path);
+  retryWindowsSharingRace(() => renameSync(temporary, path));
   return observation;
 }
 
@@ -684,7 +685,7 @@ function writeReceipt(path: string, receipt: AcceptanceReceipt | AcceptanceRevie
   const temporary = `${path}.${process.pid}.tmp`;
   writeFileSync(temporary, serializedRecord(receipt), { mode: 0o600 });
   chmodSync(temporary, 0o600);
-  renameSync(temporary, path);
+  retryWindowsSharingRace(() => renameSync(temporary, path));
 }
 
 export function readUserWaiverGrantFile(path: string): UserWaiverGrant {
@@ -707,7 +708,7 @@ function writeUserWaiverGrant(path: string, grant: UserWaiverGrant): void {
   const temporary = `${path}.${process.pid}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(grant, null, 2)}\n`, { mode: 0o600 });
   chmodSync(temporary, 0o600);
-  renameSync(temporary, path);
+  retryWindowsSharingRace(() => renameSync(temporary, path));
 }
 
 

@@ -77,12 +77,37 @@ export function publishFileByRename(target: string, content: Buffer, temporary: 
     throw error;
   }
   try {
-    renameSync(temporary, target);
+    retryWindowsSharingRace(() => renameSync(temporary, target));
   } catch (error) {
     removeBestEffort(temporary);
     throw error;
   }
   syncDirectoryDurably(dirname(target));
+}
+
+const WINDOWS_SHARING_RACE_WAITS_MS = [1, 2, 4, 8, 16, 32, 64] as const;
+const SHARING_RACE_SLEEP_CELL = new Int32Array(new SharedArrayBuffer(4));
+
+/**
+ * Windows gives EPERM for a short time when another process holds the file
+ * open (a rename over it) or has just deleted it (an open or readdir of the
+ * delete-pending path) (#2615). The operation runs again after each wait, at
+ * most 127 ms in total. A refusal that lasts longer throws the first error.
+ * Other codes, and every error on other platforms, throw at once.
+ */
+export function retryWindowsSharingRace<T>(operation: () => T): T {
+  if (process.platform !== 'win32') return operation();
+  let first: unknown = null;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return operation();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
+      first ??= error;
+      if (attempt === WINDOWS_SHARING_RACE_WAITS_MS.length) throw first;
+      Atomics.wait(SHARING_RACE_SLEEP_CELL, 0, 0, WINDOWS_SHARING_RACE_WAITS_MS[attempt]);
+    }
+  }
 }
 
 /** A cleanup error on a failure path must not replace the original create or rename error. */
