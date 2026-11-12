@@ -327,6 +327,8 @@ describe("Bootstrap Script Contracts", () => {
       expect(plan.stdout).toContain(`Release GO: repo-harness ${planVersion} at ${third}`);
       expect(plan.stdout).toContain(`git worktree add --detach ${worktree} ${third}`);
       expect(plan.stdout).toContain(`guard ${planVersion} ${third} && npm publish`);
+      expect(plan.stdout).toContain(`cd ${worktree} && bun install --frozen-lockfile && bun run check:release`);
+      expect(plan.stdout).toContain(`wait repo-harness-operator-web ${planVersion} && bash scripts/release-owner-steps.sh guard`);
       expect(plan.stdout).toContain(`git tag -a v${planVersion} ${third}`);
       expect(plan.stdout).toContain(`Run step ${planVersion}.`);
       expect(plan.stdout).toContain("--repository-id 42");
@@ -393,6 +395,14 @@ describe("Bootstrap Script Contracts", () => {
       git("push", "-q", "-f", "origin", "main");
       git("fetch", "-q", "origin");
       expect(run("plan", "1.5.0").stderr).toContain("has no scripts/release-owner-steps.sh");
+      // A release section ends at the next heading: an [Unreleased] section before it and a longer version after it stay out.
+      writeFileSync(join(repo, "package.json"), `{\n  "name": "repo-harness",\n  "version": "1.7.0"\n}\n`);
+      writeFileSync(join(repo, "packages/operator-web/package.json"), `{\n  "name": "repo-harness-operator-web",\n  "version": "1.7.0"\n}\n`);
+      writeFileSync(join(repo, "docs/CHANGELOG.md"), "# Changelog\n\n## [Unreleased]\n\n- Not yet.\n\n## [1.7.0] - 2026-11-12\n\n- Seven.\n\n## [1.7.00]\n\n- Later patch.\n");
+      git("commit", "-qam", "release 1.7.0");
+      git("push", "-q", "origin", "main");
+      git("fetch", "-q", "origin");
+      expect(run("notes", "1.7.0").stdout).toBe("\n- Seven.\n");
       // The wait polls npm until it shows the version; one that never shows fails with the package name.
       const waitEnv = { RELEASE_WAIT_INTERVAL: "0", RELEASE_WAIT_POLLS: "5" };
       const shown = runIn(repo, ["wait", "repo-harness-operator-web", "9.9.9"], { ...waitEnv, NPM_VIEW: "third" });

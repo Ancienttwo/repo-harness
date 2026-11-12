@@ -39,11 +39,16 @@ list. That word is the explicit authorization for that production deployment.
 The owner confirms the npm login in the browser, because each publish uses
 `npm publish --auth-type=web`. No npm token exists.
 
-The list serves a first run and a continued run. Read the state of each step
+Keep the printed list. `plan` refuses once a package is on npm or the tag
+exists, so a continued run uses the list that the first `plan` printed. The
+list serves a first run and a continued run. Read the state of each step
 before the step, and do only the steps that are not done. Stop at the first
 failure and report it. A host publish has no npm provenance statement.
 
-1. Worktree: `git fetch origin && git worktree add --detach /tmp/repo-harness-wt-release-<version> <sha> && cd /tmp/repo-harness-wt-release-<version> && bun install --frozen-lockfile`
+1. Worktree: when `/tmp/repo-harness-wt-release-<version>` exists at `<sha>`,
+   skip the `git worktree add` and run the rest in it. Otherwise run
+   `git fetch origin && git worktree add --detach /tmp/repo-harness-wt-release-<version> <sha>`. Then, in the worktree,
+   run `bun install --frozen-lockfile && bun run check:release` before any publish.
 2. Console package: when `npm view repo-harness-operator-web@<version> version`
    prints the version, skip this step. Otherwise run, from the worktree root:
    `bash scripts/release-owner-steps.sh guard <version> <sha> && (cd packages/operator-web && npm publish --auth-type=web)`

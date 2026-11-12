@@ -130,7 +130,8 @@ checkout_is_release() {
 # without it fails with the package name; run the same step again later, never publish again.
 wait_for_npm() {
   local name="$1" version="$2" interval="${RELEASE_WAIT_INTERVAL:-10}" polls="${RELEASE_WAIT_POLLS:-90}" i
-  for ((i = 1; i <= polls; i++)); do
+  # Poll at 0 s and after each sleep: the last poll runs at polls * interval.
+  for ((i = 0; i <= polls; i++)); do
     if [[ "$(npm view "${name}@${version}" version --registry "$NPM_RELEASE_REGISTRY" 2>/dev/null || true)" == "$version" ]]; then
       echo "[release-owner] OK: npm shows ${name}@${version}."
       return 0
@@ -185,8 +186,10 @@ plan() {
 Release GO: ${core_name} ${version} at ${sha}
 
 Owner steps. Run them in order. At the first failure, stop and report it; do not publish again.
+Keep this list: plan refuses once a package is on npm or the tag exists, so a continued run uses this list, not a new plan.
 A step whose result shows it is done (npm shows the version, the tag is at ${sha}, the GitHub Release exists) is skipped. A wait that fails: run the same step again later.
-1. git fetch ${REMOTE} && git worktree add --detach ${worktree} ${sha} && cd ${worktree} && bun install --frozen-lockfile
+1. git fetch ${REMOTE} && git worktree add --detach ${worktree} ${sha} && cd ${worktree} && bun install --frozen-lockfile && bun run check:release
+   (skip the worktree add when ${worktree} exists at ${sha}; run the rest in it)
 2. bash scripts/release-owner-steps.sh guard ${version} ${sha} && (cd ${CONSOLE_DIR} && npm publish --auth-type=web)
 3. bash scripts/release-owner-steps.sh wait ${console_name} ${version} && bash scripts/release-owner-steps.sh guard ${version} ${sha} && npm publish --auth-type=web
 4. bash scripts/release-owner-steps.sh wait ${core_name} ${version} && bash scripts/release-owner-steps.sh check published ${version}
