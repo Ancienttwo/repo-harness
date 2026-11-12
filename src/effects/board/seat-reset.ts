@@ -217,23 +217,56 @@ function isResumedSend(command: string, peer: string): boolean {
   return words.length === 4 && words[0] === 'hc' && words[1] === 'send' && words[2] === peer && RESUMED_WORDS.includes(words[3]!);
 }
 
+type Part = { type?: unknown; name?: unknown; text?: unknown; id?: unknown; tool_use_id?: unknown; is_error?: unknown; input?: { command?: unknown } } | null;
+
+/** The fields that the resume evidence reads from one transcript line. */
+interface TranscriptLine {
+  readonly type: unknown;
+  /** `message.content`: the prompt text, or the parts, of the entry. */
+  readonly content: unknown;
+  /** `attachment` of the entry: a prompt that arrives during a turn comes as a queued command here. */
+  readonly attachment: { readonly type: unknown; readonly prompt: unknown } | null;
+}
+
 /**
- * Mechanical resume evidence in the text appended after the prompt send: the user entry that holds the resume
- * prompt (hc may wrap it), then an assistant Bash tool call whose command sends RESUMED to the peer with hc send,
- * then its tool result without an error. A refused, failed or missing result is no evidence.
+ * The evidence fields of one transcript line, or null for a line that is not a JSON object: a JSON null, an array, a
+ * scalar and a cut line are skipped, never a throw.
+ */
+function transcriptLine(line: string): TranscriptLine | null {
+  let entry: unknown;
+  try { entry = JSON.parse(line); } catch { return null; }
+  if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return null;
+  const { type, message, attachment } = entry as { type?: unknown; message?: { content?: unknown } | null; attachment?: unknown };
+  const queued = typeof attachment === 'object' && attachment !== null ? attachment as { type?: unknown; prompt?: unknown } : null;
+  return { type, content: message?.content, attachment: queued === null ? null : { type: queued.type, prompt: queued.prompt } };
+}
+
+/**
+ * True when the line holds the resume prompt: a user entry, which hc may wrap, or the `queued_command` attachment of an
+ * `attachment` entry, which Claude Code writes when the prompt arrives while the session is in a turn (#2637). The entry
+ * type must be `attachment`, so an assistant line that carries an `attachment` field of its own is no prompt.
+ */
+function holdsPrompt(entry: TranscriptLine, parts: readonly Part[], prompt: string): boolean {
+  const holds = (value: unknown) => typeof value === 'string' && value.includes(prompt);
+  const queued = entry.type === 'attachment' && entry.attachment !== null && entry.attachment.type === 'queued_command'
+    && holds(entry.attachment.prompt);
+  return queued || (entry.type === 'user' && (holds(entry.content) || parts.some(part => holds(part?.text))));
+}
+
+/**
+ * Mechanical resume evidence in the text appended after the prompt send: the entry that holds the resume prompt, then
+ * an assistant Bash tool call whose command sends RESUMED to the peer with hc send, then its tool result without an
+ * error. A refused, failed or missing result is no evidence.
  */
 function sentResumed(appended: string, prompt: string, peer: string): boolean {
-  type Part = { type?: unknown; name?: unknown; text?: unknown; id?: unknown; tool_use_id?: unknown; is_error?: unknown; input?: { command?: unknown } } | null;
-  const holds = (value: unknown) => typeof value === 'string' && value.includes(prompt);
   let asked = false;
   const sends = new Set<unknown>();
   for (const line of appended.split('\n')) {
-    let entry: { type?: unknown; message?: { content?: unknown } };
-    try { entry = JSON.parse(line); } catch { continue; }
-    const content = entry.message?.content;
-    const parts = Array.isArray(content) ? content as Part[] : [];
+    const entry = transcriptLine(line);
+    if (entry === null) continue;
+    const parts = Array.isArray(entry.content) ? entry.content as Part[] : [];
     if (entry.type === 'user' && parts.some(part => part?.type === 'tool_result' && sends.has(part.tool_use_id) && part.is_error !== true)) return true;
-    if (entry.type === 'user' && (holds(content) || parts.some(part => holds(part?.text)))) asked = true;
+    if (holdsPrompt(entry, parts, prompt)) asked = true;
     if (!asked || entry.type !== 'assistant') continue;
     for (const part of parts) {
       const command = part?.type === 'tool_use' && part.name === 'Bash' ? part.input?.command : undefined;
