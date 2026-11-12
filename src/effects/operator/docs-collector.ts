@@ -12,7 +12,7 @@
 
 import { realpathSync } from 'node:fs';
 
-import { decodeDocsTree, OPERATOR_DOCS_TREE_KIND, type DocsRemoteMismatchV1, type DocsTreeV1, type DocsUnavailableReason } from '../../core/operator/docs';
+import { decodeDocsRemoteMismatch, decodeDocsTree, OPERATOR_DOCS_TREE_KIND, type DocsRemoteMismatchV1, type DocsTreeV1, type DocsUnavailableReason } from '../../core/operator/docs';
 import { githubRemoteRepository } from '../../core/board/source';
 import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
 import { withoutRepositorySelectingGitEnv, spawnGit } from '../git/runner';
@@ -29,7 +29,8 @@ const REMOTE_STDOUT_LIMIT = 64 * 1024;
 export type DocsRepositoryCache =
   | { readonly state: 'ready'; readonly tree: DocsTreeV1; readonly reader: DocsReader }
   | { readonly state: 'unavailable'; readonly reason: DocsPlainReason }
-  | { readonly state: 'unavailable'; readonly reason: 'github_remote_missing'; readonly detail: DocsRemoteMismatchV1 };
+  /** No `detail` when the compared repositories fail the console decoder. */
+  | { readonly state: 'unavailable'; readonly reason: 'github_remote_missing'; readonly detail?: DocsRemoteMismatchV1 };
 
 /** Every reason that carries no detail. */
 type DocsPlainReason = Exclude<DocsUnavailableReason, 'github_remote_missing'>;
@@ -120,7 +121,9 @@ export function startDocsCollector(options: DocsCollectorOptions): DocsCollector
       retire(repo.id);
       // Only parsed owner/name values leave this function: remote names and URLs are git config text, and a URL can hold a credential.
       const remote_repositories = [...new Set(parsed.flatMap(remote => (remote.github === null ? [] : [remote.github])))];
-      return { state: 'unavailable', reason: 'github_remote_missing', detail: { github: source.github, remote_repositories } };
+      // The console decodes the detail with the same grammar; a detail it would reject leaves as the plain reason.
+      try { return { state: 'unavailable', reason: 'github_remote_missing', detail: decodeDocsRemoteMismatch({ github: source.github, remote_repositories }) }; }
+      catch { return { state: 'unavailable', reason: 'github_remote_missing' }; }
     }
     if (remotes.length > 1) return unavailable('github_remote_ambiguous');
     const ref = `refs/remotes/${remotes[0]}/${source.default_branch}`;

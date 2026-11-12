@@ -134,7 +134,7 @@ function Refusal({ read, t }: { readonly read: Extract<DocsRead<unknown>, { read
       <StatusDot tone={reason === 'docs_pending' || reason === 'docs_busy' ? 'warn' : 'danger'} className="mt-1.5" />
       <span className="flex min-w-0 flex-col gap-0.5">
         <span>{t(`docs.reason.${reason}`)}</span>
-        {read.reason === 'github_remote_missing' && (
+        {read.reason === 'github_remote_missing' && read.detail && (
           <span className="flex flex-col gap-0.5 text-xs text-kumo-subtle" data-docs-remote-detail={read.detail.github}>
             <span>{t('docs.remote.expected', { github: read.detail.github })}</span>
             {read.detail.remote_repositories.length === 0

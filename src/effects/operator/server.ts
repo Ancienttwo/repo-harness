@@ -1669,7 +1669,7 @@ export async function startOperatorServer(
       const cache = (options.read_docs ?? docs?.read ?? (() => ({ state: 'unavailable', reason: 'docs_pending' }) as const))(repositoryId);
       if (cache.state !== 'ready') {
         const refusal = DOCS_UNAVAILABLE[cache.reason];
-        if (cache.reason === 'github_remote_missing') {
+        if (cache.reason === 'github_remote_missing' && cache.detail) {
           // The message names what the collector compared; `detail` carries the same data for the console.
           const { github, remote_repositories: found } = cache.detail;
           const body = errorBody(cache.reason, `No git remote points to the GitHub repository ${github}. GitHub repositories of the remotes: ${found.length === 0 ? 'none' : found.join(', ')}.`, refusal.next_action);
