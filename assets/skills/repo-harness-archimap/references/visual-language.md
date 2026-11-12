@@ -19,6 +19,8 @@ a small diff, and two maps from the same skill look the same.
   x = 1616. A layer band is about 200 px tall, with nodes 88–104 px tall.
 - Sequence: lifeline headers 192 × 64 on a 240 px pitch, starting at
   x = 224.
+- Module documents: a `docs` grid of three columns at (64, 184), 1552 px
+  wide, with one `.panel` for each map module in overview order.
 
 ## Overview node links
 
@@ -34,7 +36,8 @@ only, and show a visible focus ring.
 
 A module that covers more than one capability document links to the first
 path and ends its mono id line with `+N`, the number of other documents.
-The meta block keeps the full list in `modules[].docs`. A node with no
+The meta block keeps the full list in `modules[].docs`, and the module
+documents board links every path of that list. A node with no
 document stays a `<div>` and carries no link: an `undocumentedNodes`
 capability gets a remark, and a node that the project does not provide is
 not a capability.

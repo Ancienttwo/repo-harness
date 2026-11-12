@@ -82,8 +82,8 @@ model's own docs. The archimap is the one hand-composed HTML view.
    example `codegraph_explore`) and record the method in the legend.
    Bun is required. Without Bun, report that the measurement could not
    run. Do not hand-count.
-4. **Choose the boards.** Read `references/boards.md`. The overview and
-   the remarks are always present. Include each other board when its
+4. **Choose the boards.** Read `references/boards.md`. The overview, the
+   remarks and the module documents are always present. Include each other board when its
    condition holds. Draw one behavior board for each entry of
    `modules[].behaviorSpecs` in the measurement.
 5. **Compose.** Copy `assets/template.html`, and follow
@@ -96,8 +96,10 @@ model's own docs. The archimap is the one hand-composed HTML view.
    `docs/architecture/modules/<domain>/<capability>.md`. Remove the
    `docs/architecture/` prefix there, so that
    `docs/architecture/archimap.html` links to
-   `modules/<domain>/<capability>.md`. Every number on the map comes from
-   the measurement or from the model.
+   `modules/<domain>/<capability>.md`. Every path of every module's `docs`
+   is an `<a>` on the module documents board, with the same relative
+   `href`: the overview node links only the first path. Every number on
+   the map comes from the measurement or from the model.
 6. **Write the meta block.** Update `schema`, `base` (the commit that you
    measured), `generated` (date), `sources`, `modules` and `boards`. Put
    the short base SHA into each board kicker.
@@ -108,7 +110,9 @@ model's own docs. The archimap is the one hand-composed HTML view.
    and transition label with the spec at its path: each one must be a spec
    state value or action name, and each red marker must have one legend
    row. Run `measure.ts --map` once more against the written map and confirm
-   that the coverage lists are empty. Fix each `geometry.findings` entry, or
+   that the coverage lists are empty. Confirm that each path in
+   `modules[].docs` is the target of one `href` on the module documents
+   board. Fix each `geometry.findings` entry, or
    name it in the report with the reason. A board in `geometry.unchecked` has
    no check except your look at it.
 8. **Ship with the change.** In a refresh triggered by a branch change,
