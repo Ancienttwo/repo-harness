@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 
 import { canonicalize } from '../../core/evidence/canonical-json';
 import type { JsonValue } from '../../core/evidence/types';
-import { decodeQuotaReport } from '../../core/board/quota';
+import { decodeQuotaReport, type QuotaReport } from '../../core/board/quota';
+import { creditsCover, seatAccountQuotas } from '../../core/board/seat-routing';
 import type { ProcessProof, ReviewerRunner, ReviewHostSpec, TaskRequest } from '../../core/review/runner-port';
 import {
   CLEANUP_INVESTIGATION_MANIFEST, cleanupInvestigationInstructions, cleanupInvestigationManifest, decodeCleanupInvestigationResult,
@@ -20,6 +21,7 @@ import { prepareCodexHome, prepareReviewLauncher, removeCopiedAuth, reviewIsolat
 import { runSetupProcess, type SetupProcessRunner } from '../setup/collector';
 import { readSessionArtifact, writeSessionArtifact, writeSessionBytes } from '../terminal/task-session-io';
 import { readQuotaReport } from '../board/quota';
+import { readSeatsConfiguration } from '../board/seats-configuration';
 import type { CleanupObservationTarget } from './worktree-cleanup-observation';
 import { createCleanupPlan } from './worktree-cleanup-plan';
 import {
@@ -81,12 +83,14 @@ export function readCleanupInvestigationStatus(env: NodeJS.ProcessEnv, sessionId
   return { ...job, plan: job.state === 'succeeded' ? loadCleanupSession(env, sessionId).plan : null };
 }
 
-/** M60, fail closed: only a chatgpt account that is neither exhausted nor unknown admits a codex turn. */
-async function assertCodexQuota(read: () => Promise<unknown>): Promise<void> {
-  let state: string;
-  try { state = decodeQuotaReport(await read()).accounts.find(account => account.account === 'chatgpt')?.state ?? 'unknown'; } catch { state = 'unknown'; }
-  if (state === 'exhausted') throw refusal('quota_exhausted');
+/** M60, fail closed: a chatgpt account that is unknown, or exhausted outside the `all` credit mode (#2630), refuses a codex turn. */
+async function assertCodexQuota(read: () => Promise<unknown>, env: NodeJS.ProcessEnv): Promise<void> {
+  let accounts: QuotaReport['accounts'];
+  try { accounts = decodeQuotaReport(await read()).accounts; } catch { throw refusal('quota_unknown'); }
+  const state = accounts.find(account => account.account === 'chatgpt')?.state ?? 'unknown';
   if (state === 'unknown') throw refusal('quota_unknown');
+  // The credit mode acts only on an exhausted account, so only then is the seats section read.
+  if (state === 'exhausted' && !creditsCover(null, seatAccountQuotas(accounts, readSeatsConfiguration(env).seats.routing))) throw refusal('quota_exhausted');
 }
 
 export interface CleanupInvestigationRouteOptions {
@@ -110,7 +114,7 @@ export async function startCleanupInvestigation(sessionId: string, options: Clea
   if (plan.items.length > WORKTREE_CLEANUP_INVESTIGATION_MAX_ITEMS) throw refusal('investigation_too_large');
   const previous = loadCleanupInvestigation(env, sessionId);
   if (previous !== null && current(previous, Date.now()).state === 'running') throw refusal('investigation_running');
-  await assertCodexQuota(options.read_quota ?? (() => readQuotaReport(env)));
+  await assertCodexQuota(options.read_quota ?? (() => readQuotaReport(env)), env);
   const now = Date.now();
   const job: CleanupInvestigationJob = { protocol: 1, kind: 'operator_worktree_cleanup_investigation', session_id: sessionId, job_id: randomBytes(16).toString('hex'),
     state: 'running', started_at: iso(now), deadline_at: iso(now + JOB_TIMEOUT_MS), failure: null };

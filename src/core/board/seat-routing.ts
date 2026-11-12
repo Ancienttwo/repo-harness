@@ -1,45 +1,58 @@
 import { weeklyRemainingPercent, type QuotaAccount, type QuotaAccountReport, type QuotaState } from './quota';
-import { PI_CODEX_MODEL_PREFIX, ROUTING_CLASSES, isPiCodexSeat, type RoutingClass, type SeatConfigV1, type SeatId, type SeatRoutingV1, type SeatsConfigV1 } from './seats-settings';
+import { PI_CODEX_MODEL_PREFIX, ROUTING_CLASSES, isPiCodexSeat, isReviewSeat, type CodexCreditMode, type RoutingClass, type SeatConfigV1, type SeatId, type SeatRoutingV1, type SeatsConfigV1 } from './seats-settings';
 
 export const CODEX_HYPER_MODEL = Object.freeze({ model: 'gpt-6-astra', effort: 'high' });
 interface AccountQuota { readonly state: QuotaState; readonly remaining: number | null }
 export interface SeatAccountQuotas {
   readonly claude: AccountQuota & { readonly mode: 'normal' | 'saving' | 'unknown' };
-  /** `on_credits` marks the owner-authorized credit grant; the state is then `tight` (#2251). */
-  readonly chatgpt: AccountQuota & { readonly mode: 'normal' | 'hyper' | 'unknown'; readonly on_credits?: boolean };
+  /** `credits`: the owner's credit mode where it acts now (#2630); `off` unless the account is exhausted and has credits at or above the floor. */
+  readonly chatgpt: AccountQuota & { readonly mode: 'normal' | 'hyper' | 'unknown'; readonly credits: CodexCreditMode };
 }
 
-/** The owner-authorized credit grant of one launch (#2251). Every other caller takes the default. */
-export interface SeatAccountOptions { readonly spendCredits?: boolean }
-
-/** The provider reports credits. The rate limit that makes the account `exhausted` is the state the credit grant exists for, so it does not block. */
-function codexCredits(account: QuotaAccountReport | undefined): boolean {
-  const codex = account?.codex;
-  return codex !== undefined
-    && (codex.credits?.has_credits === true || codex.credits?.unlimited === true);
+/**
+ * The credit mode acts only on an exhausted account that reports credits at or above the floor. The provider is the
+ * authority for the balance: `unlimited` is at or above any floor, so it passes. A balance that is missing or not a
+ * finite number fails closed at every floor, 0 included.
+ */
+function codexCreditMode(account: QuotaAccountReport | undefined, routing: SeatRoutingV1): CodexCreditMode {
+  const credits = account?.codex?.credits;
+  if (routing.codex_credit_mode === 'off' || account?.state !== 'exhausted' || credits === null || credits === undefined) return 'off';
+  if (credits.unlimited) return routing.codex_credit_mode;
+  if (!credits.has_credits || credits.balance === null || credits.balance.trim() === '') return 'off';
+  const balance = Number(credits.balance);
+  return Number.isFinite(balance) && balance >= routing.codex_credit_floor ? routing.codex_credit_mode : 'off';
 }
 
 /** Modes depend on weekly remaining quota, never on pace or elapsed week time. */
-export function seatAccountQuotas(accounts: readonly QuotaAccountReport[], routing: SeatRoutingV1, options: SeatAccountOptions = {}): SeatAccountQuotas {
+export function seatAccountQuotas(accounts: readonly QuotaAccountReport[], routing: SeatRoutingV1): SeatAccountQuotas {
   const quota = (id: QuotaAccount): AccountQuota => {
     const account = accounts.find(account => account.account === id);
     return { state: account?.state ?? 'unknown', remaining: weeklyRemainingPercent(account) };
   };
   const claude = quota('claude'), chatgpt = quota('chatgpt');
-  // An exhausted account that still has credits takes the display state `tight`, so routing and the launch check admit it.
-  const onCredits = options.spendCredits === true && chatgpt.state === 'exhausted'
-    && codexCredits(accounts.find(account => account.account === 'chatgpt'));
   return {
     claude: { ...claude, mode: claude.remaining === null ? 'unknown' : claude.remaining < routing.claude_saving_below_remaining ? 'saving' : 'normal' },
-    chatgpt: { ...chatgpt, ...(onCredits ? { state: 'tight' as const, on_credits: true } : {}),
+    chatgpt: { ...chatgpt, credits: codexCreditMode(accounts.find(account => account.account === 'chatgpt'), routing),
       mode: chatgpt.remaining === null ? 'unknown' : chatgpt.remaining >= routing.codex_hyper_at_or_above_remaining ? 'hyper' : 'normal' },
   };
 }
+
+/** `null` is a Codex turn that is no seat, such as the operator cleanup investigation: only `all` covers it. */
+export const creditsCover = (id: SeatId | null, quota: SeatAccountQuotas): boolean =>
+  quota.chatgpt.credits === 'all' || quota.chatgpt.credits === 'review' && id !== null && isReviewSeat(id);
 
 export const claudeReserved = (quota: SeatAccountQuotas): boolean => quota.claude.mode === 'saving' || quota.claude.state === 'exhausted';
 
 export function seatAccount(seat: SeatConfigV1): QuotaAccount | null {
   return seat.runtime === 'claude' ? 'claude' : seat.runtime === 'codex' || isPiCodexSeat(seat) ? 'chatgpt' : null;
+}
+
+export const seatOnCredits = (id: SeatId, seat: SeatConfigV1, quota: SeatAccountQuotas): boolean => seatAccount(seat) === 'chatgpt' && creditsCover(id, quota);
+
+/** The account state that routes and launches the seat: a seat on credits is `tight`, so it is available and its line warns. */
+export function seatState(id: SeatId, seat: SeatConfigV1, quota: SeatAccountQuotas): QuotaState | null {
+  const account = seatAccount(seat);
+  return account === null ? null : seatOnCredits(id, seat, quota) ? 'tight' : quota[account].state;
 }
 
 /** One model projection serves the launch argv and the human dispatch lines. */
@@ -59,9 +72,9 @@ const modelText = (seat: { readonly model: string | null; readonly effort: strin
   [seat.model ?? 'default', seat.effort].filter(value => value !== null).join(' ');
 const launchText = (seat: SeatConfigV1): string => `${seat.runtime} ${modelText(seat)}`;
 
-function accountText(seat: SeatConfigV1, quota: SeatAccountQuotas): string | null {
+function accountText(id: SeatId, seat: SeatConfigV1, quota: SeatAccountQuotas): string | null {
   const account = seatAccount(seat);
-  const credits = account === 'chatgpt' && quota.chatgpt.on_credits === true ? ', on credits' : '';
+  const credits = seatOnCredits(id, seat, quota) ? ', on credits' : '';
   return account === null ? null : `${account} ${quota[account].state}${credits}${account === 'claude' && claudeReserved(quota) ? ', reserved for advisor and orchestrator' : ''}`;
 }
 
@@ -93,30 +106,26 @@ export function selectSeatRoute(task: RoutingClass, seats: SeatsConfigV1, quota:
   // The section decoder refuses routes that name an unconfigured seat.
   const candidates = ids.map(id => ({ id, seat: effectiveSeatConfig(id, seats, quota)! })).filter(({ seat }) => allow(seat));
   if (candidates.length === 0) return { id: null, line: `route ${task}: none (no seat in the route may take this task)` };
-  const state = (seat: SeatConfigV1) => {
-    const account = seatAccount(seat);
-    return account === null ? null : quota[account].state;
-  };
-  const available = candidates.filter(({ seat }) => state(seat) !== 'exhausted' && !(seatAccount(seat) === 'claude' && reserved));
-  const selected = available.find(({ seat }) => state(seat) !== 'unknown')
-    ?? available.find(({ seat }) => state(seat) === 'unknown');
+  const available = candidates.filter(({ id, seat }) => seatState(id, seat, quota) !== 'exhausted' && !(seatAccount(seat) === 'claude' && reserved));
+  const selected = available.find(({ id, seat }) => seatState(id, seat, quota) !== 'unknown')
+    ?? available.find(({ id, seat }) => seatState(id, seat, quota) === 'unknown');
   if (selected === undefined) {
-    const reasons = [...new Set(candidates.map(({ seat }) => accountText(seat, quota)))].join('; ');
+    const reasons = [...new Set(candidates.map(({ id, seat }) => accountText(id, seat, quota)))].join('; ');
     return { id: null, line: `route ${task}: none (${reasons}${task === 'frontend' ? '; frontend waits for claude' : ''})` };
   }
-  const selectedState = state(selected.seat);
-  const warning = selectedState === 'unknown' || selectedState === 'tight' ? `; ${accountText(selected.seat, quota)}` : '';
-  const skipped = candidates.slice(0, candidates.indexOf(selected)).map(({ id, seat }) => `; skipped ${id}: ${accountText(seat, quota)}`).join('');
+  const selectedState = seatState(selected.id, selected.seat, quota);
+  const warning = selectedState === 'unknown' || selectedState === 'tight' ? `; ${accountText(selected.id, selected.seat, quota)}` : '';
+  const skipped = candidates.slice(0, candidates.indexOf(selected)).map(({ id, seat }) => `; skipped ${id}: ${accountText(id, seat, quota)}`).join('');
   return { id: selected.id, seat: selected.seat, line: `route ${task}: ${selected.id} (${launchText(selected.seat)}${warning})${skipped}` };
 }
 
-/** A review seat waits while its account is exhausted, or while Claude is reserved for a Claude seat. */
-function reviewSeatBlocked(seat: SeatConfigV1, quota: SeatAccountQuotas): boolean {
+/** A review seat waits while its account is exhausted and it is not on credits, or while Claude is reserved for a Claude seat. */
+function reviewSeatBlocked(id: SeatId, seat: SeatConfigV1, quota: SeatAccountQuotas): boolean {
   const account = seatAccount(seat);
-  return account !== null && (quota[account].state === 'exhausted' || account === 'claude' && claudeReserved(quota));
+  return account !== null && (seatState(id, seat, quota) === 'exhausted' || account === 'claude' && claudeReserved(quota));
 }
 
-const accountSuffix = (seat: SeatConfigV1, quota: SeatAccountQuotas): string => seatAccount(seat) === null ? '' : `; ${accountText(seat, quota)}`;
+const accountSuffix = (id: SeatId, seat: SeatConfigV1, quota: SeatAccountQuotas): string => seatAccount(seat) === null ? '' : `; ${accountText(id, seat, quota)}`;
 
 /**
  * The effective gatekeeper (#2253): the one source of the gatekeeper route line, of `seats argv gatekeeper` and of the review plan.
@@ -124,15 +133,17 @@ const accountSuffix = (seat: SeatConfigV1, quota: SeatAccountQuotas): string => 
  */
 export function effectiveGatekeeper(seats: SeatsConfigV1, quota: SeatAccountQuotas): SeatRouteV1 {
   const gatekeeper = effectiveSeatConfig('gatekeeper', seats, quota);
-  if (!reviewSeatBlocked(gatekeeper, quota)) {
-    return { id: 'gatekeeper', seat: gatekeeper, line: `gatekeeper: gatekeeper (${launchText(gatekeeper)}${accountSuffix(gatekeeper, quota)})` };
+  if (!reviewSeatBlocked('gatekeeper', gatekeeper, quota)) {
+    return { id: 'gatekeeper', seat: gatekeeper, line: `gatekeeper: gatekeeper (${launchText(gatekeeper)}${accountSuffix('gatekeeper', gatekeeper, quota)})` };
   }
-  const cause = accountText(gatekeeper, quota);
+  const cause = accountText('gatekeeper', gatekeeper, quota);
   const fallback = effectiveSeatConfig('gatekeeper-fallback', seats, quota);
   if (fallback === null || quota[seatAccount(gatekeeper)!].state !== 'exhausted') return { id: null, line: `gatekeeper: none (${cause})` };
-  if (reviewSeatBlocked(fallback, quota)) return { id: null, line: `gatekeeper: none (${cause}; gatekeeper-fallback: ${accountText(fallback, quota)})` };
+  if (reviewSeatBlocked('gatekeeper-fallback', fallback, quota)) {
+    return { id: null, line: `gatekeeper: none (${cause}; gatekeeper-fallback: ${accountText('gatekeeper-fallback', fallback, quota)})` };
+  }
   return { id: 'gatekeeper-fallback', seat: fallback,
-    line: `gatekeeper: gatekeeper-fallback (${launchText(fallback)}${accountSuffix(fallback, quota)}; gatekeeper: ${cause})` };
+    line: `gatekeeper: gatekeeper-fallback (${launchText(fallback)}${accountSuffix('gatekeeper-fallback', fallback, quota)}; gatekeeper: ${cause})` };
 }
 
 /** The saving threshold reserves Claude; pace-based tight is only a display state. */
@@ -144,6 +155,8 @@ export function formatSeatRoutes(seats: SeatsConfigV1, quota: SeatAccountQuotas)
     : 'explorer: default');
   lines.push(effectiveGatekeeper(seats, quota).line);
   const reviewer = effectiveSeatConfig('reviewer', seats, quota);
-  lines.push(reviewSeatBlocked(reviewer, quota) ? `reviewer: none (${accountText(reviewer, quota)})` : `reviewer: reviewer (${launchText(reviewer)}${accountSuffix(reviewer, quota)})`);
+  lines.push(reviewSeatBlocked('reviewer', reviewer, quota)
+    ? `reviewer: none (${accountText('reviewer', reviewer, quota)})`
+    : `reviewer: reviewer (${launchText(reviewer)}${accountSuffix('reviewer', reviewer, quota)})`);
   return lines.join('\n');
 }

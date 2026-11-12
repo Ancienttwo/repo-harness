@@ -1,6 +1,7 @@
 import {
   DEFAULT_SEATS_CONFIG,
   ROUTING_CLASSES,
+  ROUTING_KEYS,
   SEAT_IDS,
   seatTakesFleet,
   decodeSeatsSettings,
@@ -10,6 +11,7 @@ import {
   type OptionalSeatId,
   type SeatId,
   type SeatModelV1,
+  type SeatRoutingV1,
   type SeatRuntime,
   type SeatsConfigV1,
   type SeatsSettingsRequestV1,
@@ -46,9 +48,8 @@ const sameSeat = (left: SeatConfigV1 | null, right: SeatConfigV1 | null): boolea
   left === null || right === null ? left === right : left.runtime === right.runtime && left.model === right.model && left.effort === right.effort
   && left.tools.join() === right.tools.join() && left.fleet.join() === right.fleet.join();
 
-const ROUTING_FIELDS = [...ROUTING_CLASSES, 'claude_saving_below_remaining', 'codex_hyper_at_or_above_remaining', 'low_quota_explorer'] as const;
 const changedRouting = (base: SeatsConfigV1, draft: SeatsConfigV1): number =>
-  ROUTING_FIELDS.filter(field => JSON.stringify(base.routing[field]) !== JSON.stringify(draft.routing[field])).length;
+  ROUTING_KEYS.filter(field => JSON.stringify(base.routing[field]) !== JSON.stringify(draft.routing[field])).length;
 
 export const sameSeats = (left: SeatsConfigV1, right: SeatsConfigV1): boolean => SEAT_IDS.every(id => sameSeat(left[id], right[id])) && changedRouting(left, right) === 0;
 
@@ -126,7 +127,8 @@ export function setOptionalSeat(draft: SeatsConfigV1, id: OptionalSeatId, seat: 
 
 export const setRoute = (draft: SeatsConfigV1, task: RoutingClass, seats: readonly WorkerSeatId[]): SeatsConfigV1 =>
   ({ ...draft, routing: { ...draft.routing, [task]: seats } });
-export const setThreshold = (draft: SeatsConfigV1, field: 'claude_saving_below_remaining' | 'codex_hyper_at_or_above_remaining', value: number): SeatsConfigV1 =>
+type RoutingValueField = 'claude_saving_below_remaining' | 'codex_hyper_at_or_above_remaining' | 'codex_credit_mode' | 'codex_credit_floor';
+export const setRoutingValue = <Field extends RoutingValueField>(draft: SeatsConfigV1, field: Field, value: SeatRoutingV1[Field]): SeatsConfigV1 =>
   ({ ...draft, routing: { ...draft.routing, [field]: value } });
 export const setExplorer = (draft: SeatsConfigV1, change: Partial<SeatModelV1>): SeatsConfigV1 =>
   ({ ...draft, routing: { ...draft.routing, low_quota_explorer: { ...draft.routing.low_quota_explorer, ...change } } });

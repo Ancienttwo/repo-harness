@@ -17,7 +17,7 @@ export const LAUNCH_SEAT_IDS = SEAT_IDS.filter((id): id is LaunchSeatId => id !=
 /** The seats that may be null in the section. */
 export type OptionalSeatId = 'worker-light' | 'gatekeeper-fallback';
 const isOptionalSeat = (id: SeatId): id is OptionalSeatId => id === 'worker-light' || id === 'gatekeeper-fallback';
-const isReviewSeat = (id: SeatId): boolean => id === 'gatekeeper' || id === 'gatekeeper-fallback' || id === 'reviewer';
+export const isReviewSeat = (id: SeatId): boolean => id === 'gatekeeper' || id === 'gatekeeper-fallback' || id === 'reviewer';
 export const isWorkerSeat = (seat: SeatId): seat is WorkerSeatId => WORKER_SEAT_IDS.includes(seat as WorkerSeatId);
 
 /** The runtimes that run in a Herdr pane. */
@@ -54,11 +54,20 @@ export interface SeatModelV1 {
   readonly effort: string | null;
 }
 
+/** The owner's choice of the seats that run on credits while the ChatGPT account is exhausted (#2630): none, the review seats, or every ChatGPT seat. */
+export const CODEX_CREDIT_MODES = ['off', 'review', 'all'] as const;
+export type CodexCreditMode = typeof CODEX_CREDIT_MODES[number];
+
 export type SeatRoutingV1 = { readonly [task in RoutingClass]: readonly WorkerSeatId[] } & {
   readonly claude_saving_below_remaining: number;
   readonly codex_hyper_at_or_above_remaining: number;
+  readonly codex_credit_mode: CodexCreditMode;
+  /** Below this credit balance the credit mode acts as `off`. */
+  readonly codex_credit_floor: number;
   readonly low_quota_explorer: SeatModelV1;
 };
+export const ROUTING_KEYS = [...ROUTING_CLASSES, 'claude_saving_below_remaining', 'codex_hyper_at_or_above_remaining', 'codex_credit_mode', 'codex_credit_floor',
+  'low_quota_explorer'] as const satisfies readonly (keyof SeatRoutingV1)[];
 export type SeatsConfigV1 = { readonly [seat in Exclude<SeatId, OptionalSeatId>]: SeatConfigV1 } & {
   readonly [seat in OptionalSeatId]: SeatConfigV1 | null;
 } & {
@@ -90,6 +99,8 @@ export const DEFAULT_SEATS_CONFIG: SeatsConfigV1 = Object.freeze({
   routing: Object.freeze({
     claude_saving_below_remaining: 20,
     codex_hyper_at_or_above_remaining: 50,
+    codex_credit_mode: 'off',
+    codex_credit_floor: 0,
     important_deep: Object.freeze(['worker-important', 'worker-deep'] as const),
     important_fast: Object.freeze(['worker-important-fast', 'worker'] as const),
     simple_deep: Object.freeze(['worker-deep', 'worker-important'] as const),
@@ -223,7 +234,7 @@ function decodeModel(value: unknown, code: string): SeatModelV1 {
 }
 
 function decodeRouting(value: unknown, code: string): SeatRoutingV1 {
-  const record = object(value, [...ROUTING_CLASSES, 'claude_saving_below_remaining', 'codex_hyper_at_or_above_remaining', 'low_quota_explorer'], code);
+  const record = object(value, ROUTING_KEYS, code);
   const percent = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? value : invalid(code);
   const routes = Object.fromEntries(ROUTING_CLASSES.map(task => {
     const seats = record[task];
@@ -234,6 +245,9 @@ function decodeRouting(value: unknown, code: string): SeatRoutingV1 {
   })) as Pick<SeatRoutingV1, RoutingClass>;
   return { ...routes, claude_saving_below_remaining: percent(record.claude_saving_below_remaining),
     codex_hyper_at_or_above_remaining: percent(record.codex_hyper_at_or_above_remaining),
+    codex_credit_mode: CODEX_CREDIT_MODES.includes(record.codex_credit_mode as CodexCreditMode) ? record.codex_credit_mode as CodexCreditMode : invalid(code),
+    codex_credit_floor: typeof record.codex_credit_floor === 'number' && Number.isFinite(record.codex_credit_floor) && record.codex_credit_floor >= 0
+      ? record.codex_credit_floor : invalid(code),
     low_quota_explorer: decodeModel(record.low_quota_explorer, code) };
 }
 
@@ -259,8 +273,15 @@ export function decodeSeatsConfig(value: unknown): SeatsConfigV1 {
   if (value === undefined) return DEFAULT_SEATS_CONFIG;
   const code = 'seats_config_invalid';
   const record = object(value, SECTION_KEYS, code, ['orchestrator', 'advisor', 'worker']);
-  if (typeof record.routing === 'object' && record.routing !== null && ('mode' in record.routing || 'hyper' in record.routing)) {
-    throw new SeatsConfigMigrationRequiredError();
+  const routing = record.routing;
+  if (typeof routing === 'object' && routing !== null && !Array.isArray(routing)) {
+    if ('mode' in routing || 'hyper' in routing) throw new SeatsConfigMigrationRequiredError();
+    // A section without the credit keys (#2630) needs the update only when the values it has are valid.
+    if (!('codex_credit_mode' in routing) || !('codex_credit_floor' in routing)) {
+      const { codex_credit_mode, codex_credit_floor } = DEFAULT_SEATS_CONFIG.routing;
+      decodeSeatsRecord({ ...record, routing: { codex_credit_mode, codex_credit_floor, ...routing } }, code);
+      throw new SeatsConfigMigrationRequiredError();
+    }
   }
   return decodeSeatsRecord(record, code);
 }
