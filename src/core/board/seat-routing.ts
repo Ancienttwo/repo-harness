@@ -9,15 +9,18 @@ export interface SeatAccountQuotas {
   readonly chatgpt: AccountQuota & { readonly mode: 'normal' | 'hyper' | 'unknown'; readonly credits: CodexCreditMode };
 }
 
-/** The credit mode acts only on an exhausted account that reports credits; a balance that cannot be read is below a positive floor. */
+/**
+ * The credit mode acts only on an exhausted account that reports credits at or above the floor. The provider is the
+ * authority for the balance: `unlimited` is at or above any floor, so it passes. A balance that is missing or not a
+ * finite number fails closed at every floor, 0 included.
+ */
 function codexCreditMode(account: QuotaAccountReport | undefined, routing: SeatRoutingV1): CodexCreditMode {
   const credits = account?.codex?.credits;
   if (routing.codex_credit_mode === 'off' || account?.state !== 'exhausted' || credits === null || credits === undefined) return 'off';
   if (credits.unlimited) return routing.codex_credit_mode;
-  if (!credits.has_credits) return 'off';
-  const balance = credits.balance === null ? Number.NaN : Number(credits.balance);
-  const funded = Number.isFinite(balance) ? balance >= routing.codex_credit_floor : routing.codex_credit_floor === 0;
-  return funded ? routing.codex_credit_mode : 'off';
+  if (!credits.has_credits || credits.balance === null || credits.balance.trim() === '') return 'off';
+  const balance = Number(credits.balance);
+  return Number.isFinite(balance) && balance >= routing.codex_credit_floor ? routing.codex_credit_mode : 'off';
 }
 
 /** Modes depend on weekly remaining quota, never on pace or elapsed week time. */
@@ -44,12 +47,12 @@ export function seatAccount(seat: SeatConfigV1): QuotaAccount | null {
   return seat.runtime === 'claude' ? 'claude' : seat.runtime === 'codex' || isPiCodexSeat(seat) ? 'chatgpt' : null;
 }
 
-const onCredits = (id: SeatId, seat: SeatConfigV1, quota: SeatAccountQuotas): boolean => seatAccount(seat) === 'chatgpt' && creditsCover(id, quota);
+export const seatOnCredits = (id: SeatId, seat: SeatConfigV1, quota: SeatAccountQuotas): boolean => seatAccount(seat) === 'chatgpt' && creditsCover(id, quota);
 
 /** The account state that routes and launches the seat: a seat on credits is `tight`, so it is available and its line warns. */
 export function seatState(id: SeatId, seat: SeatConfigV1, quota: SeatAccountQuotas): QuotaState | null {
   const account = seatAccount(seat);
-  return account === null ? null : onCredits(id, seat, quota) ? 'tight' : quota[account].state;
+  return account === null ? null : seatOnCredits(id, seat, quota) ? 'tight' : quota[account].state;
 }
 
 /** One model projection serves the launch argv and the human dispatch lines. */
@@ -71,7 +74,7 @@ const launchText = (seat: SeatConfigV1): string => `${seat.runtime} ${modelText(
 
 function accountText(id: SeatId, seat: SeatConfigV1, quota: SeatAccountQuotas): string | null {
   const account = seatAccount(seat);
-  const credits = onCredits(id, seat, quota) ? ', on credits' : '';
+  const credits = seatOnCredits(id, seat, quota) ? ', on credits' : '';
   return account === null ? null : `${account} ${quota[account].state}${credits}${account === 'claude' && claudeReserved(quota) ? ', reserved for advisor and orchestrator' : ''}`;
 }
 

@@ -25,7 +25,7 @@ import {
 } from '../../src/operator-web/settings';
 import type { DocumentationLanguage, LanguageRead, ReportingHost, ReportingPreset } from '../../src/operator-web/language-settings';
 import { fetchQuota } from '../../src/operator-web/quota';
-import { busyQuota } from '../../src/operator-web/fixtures/quota';
+import { busyQuota, degradedQuota } from '../../src/operator-web/fixtures/quota';
 
 let root: Root | null = null;
 let window: Window;
@@ -319,6 +319,39 @@ describe('agents page seats section', () => {
     await click(document.querySelector<HTMLButtonElement>('[aria-label="Move worker-deep up"]')!);
     await click(seatsSave());
     expect(result()?.getAttribute('data-save-result')).toBe('seats_settings_request_invalid');
+  });
+
+  test('a change of one credit key alone enables Save and sends that key', async () => {
+    for (const [edit, expected] of [
+      [() => click(document.querySelector<HTMLButtonElement>('[aria-label="Codex on credits when exhausted"] button:nth-child(3)')!), { codex_credit_mode: 'all', codex_credit_floor: 0 }],
+      [() => setNumber('[data-credit-floor]', '2000'), { codex_credit_mode: 'off', codex_credit_floor: 2000 }],
+    ] as const) {
+      const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
+      await mount(seatsProps(posts));
+      expect(seatsSave().disabled).toBe(true);
+      await edit();
+      expect(seatsSave().disabled).toBe(false);
+      await click(seatsSave());
+      expect(posts.map(post => post.seats.routing)).toEqual([expect.objectContaining(expected)]);
+      await act(async () => root?.unmount());
+      document.body.replaceChildren();
+    }
+  });
+
+  test('the credit preview names the configured seats that run on credits', async () => {
+    // degraded quota, given credits: ChatGPT is exhausted with a balance of 5000.
+    const report = degradedQuota(NOW);
+    const funded = { ...report, accounts: report.accounts.map(account => account.codex === undefined ? account
+      : { ...account, codex: { ...account.codex, credits: { has_credits: true, unlimited: false, balance: '5000' } } }) };
+    await mount({ ...seatsProps([]), readQuota: async () => ({ state: 'ok', settings: funded }) });
+    const seats = () => document.querySelector('[data-credit-seats]')?.getAttribute('data-credit-seats') ?? null;
+    const mode = (index: number) => click(document.querySelector<HTMLButtonElement>(`[aria-label="Codex on credits when exhausted"] button:nth-child(${index})`)!);
+    expect(seats()).toBeNull();
+    await mode(2);
+    expect(seats()?.split(' ')).toContain('gatekeeper');
+    expect(seats()?.split(' ')).not.toContain('worker-deep');
+    await mode(3);
+    expect(seats()?.split(' ')).toEqual(expect.arrayContaining(['gatekeeper', 'worker-deep']));
   });
 
   test('a threshold change moves the shown account mode on the fixture quota report', async () => {

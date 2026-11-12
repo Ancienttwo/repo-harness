@@ -1,6 +1,7 @@
 import {
   DEFAULT_SEATS_CONFIG,
   ROUTING_CLASSES,
+  ROUTING_KEYS,
   SEAT_IDS,
   seatTakesFleet,
   decodeSeatsSettings,
@@ -47,9 +48,8 @@ const sameSeat = (left: SeatConfigV1 | null, right: SeatConfigV1 | null): boolea
   left === null || right === null ? left === right : left.runtime === right.runtime && left.model === right.model && left.effort === right.effort
   && left.tools.join() === right.tools.join() && left.fleet.join() === right.fleet.join();
 
-const ROUTING_FIELDS = [...ROUTING_CLASSES, 'claude_saving_below_remaining', 'codex_hyper_at_or_above_remaining', 'low_quota_explorer'] as const;
 const changedRouting = (base: SeatsConfigV1, draft: SeatsConfigV1): number =>
-  ROUTING_FIELDS.filter(field => JSON.stringify(base.routing[field]) !== JSON.stringify(draft.routing[field])).length;
+  ROUTING_KEYS.filter(field => JSON.stringify(base.routing[field]) !== JSON.stringify(draft.routing[field])).length;
 
 export const sameSeats = (left: SeatsConfigV1, right: SeatsConfigV1): boolean => SEAT_IDS.every(id => sameSeat(left[id], right[id])) && changedRouting(left, right) === 0;
 

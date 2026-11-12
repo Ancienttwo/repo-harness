@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { Banner, Button, Empty, Loader, Switch, cn } from '@cloudflare/kumo';
-import { seatAccountQuotas } from '../core/board/seat-routing';
+import { seatAccountQuotas, seatOnCredits } from '../core/board/seat-routing';
 import { buildSeatLaunch, type SeatLimitLevel } from '../core/board/seat-launch';
 import { CODEX_CREDIT_MODES, SEAT_IDS, SEAT_TOOLS, decodeSeatsSettingsRequest, seatTakesFleet, type OptionalSeatId, type RoutingClass, type SeatId, type SeatRuntime, type SeatsConfigV1, type SeatsSettingsV1 } from '../core/board/seats-settings';
 import type { SetupSnapshotV2 } from '../core/setup/types';
@@ -307,6 +307,7 @@ function RoutingEditor({ form, settings, quota, locked, t }: {
   const accounts = seatAccountQuotas(quota.view.kind === 'ready' ? quota.view.report.accounts : [], draft.routing);
   const claude = settings.ranges.runtimes.find(entry => entry.id === 'claude')!;
   const explorer = draft.routing.low_quota_explorer;
+  const onCredits = SEAT_IDS.filter(id => draft[id] !== null && seatOnCredits(id, draft[id]!, accounts));
   const thresholds = [
     { field: 'claude_saving_below_remaining', account: 'claude', quota: accounts.claude },
     { field: 'codex_hyper_at_or_above_remaining', account: 'chatgpt', quota: accounts.chatgpt },
@@ -345,7 +346,7 @@ function RoutingEditor({ form, settings, quota, locked, t }: {
         <Segmented label={t('seats.credits.mode')} disabled={locked} value={draft.routing.codex_credit_mode}
           options={CODEX_CREDIT_MODES.map(mode => ({ value: mode, label: t(`seats.credits.${mode}`) }))}
           onPick={mode => form.edit(current => setRoutingValue(current, 'codex_credit_mode', mode))} />
-        {accounts.chatgpt.credits !== 'off' && <span data-credits={accounts.chatgpt.credits} className="text-xs text-kumo-subtle">{t('seats.credits.acting')}</span>}
+        {onCredits.length > 0 && <span data-credit-seats={onCredits.join(' ')} className="text-xs text-kumo-subtle">{t('seats.credits.acting', { seats: onCredits.join(', ') })}</span>}
       </Field>
       <Field label={t('seats.credits.floor')}>
         <input type="number" min={0} step="any" value={draft.routing.codex_credit_floor} disabled={locked} aria-label={t('seats.credits.floor')} className={NUMBER_INPUT}

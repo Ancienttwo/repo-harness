@@ -143,6 +143,7 @@ describe('seat quota routing', () => {
     expect(routes(codex(funded, 'rate_limit_reached'), 'review')).toContain(gatekeeper);
     expect(routes(codex({ hasCredits: false, unlimited: false, balance: '0' }), 'all')).toContain('gatekeeper: none (chatgpt exhausted)');
     expect(routes(codex({ hasCredits: false, unlimited: true, balance: null }), 'all', 2000)).toContain(gatekeeper);
+    expect(routes(codex({ hasCredits: true, unlimited: false, balance: null }), 'all', 0)).toBe(routes(codex(funded), 'off'));
     expect(routes(codex(funded), 'all', 34410.83)).toContain(gatekeeper);
     expect(routes(codex(funded), 'all', 34411)).toBe(routes(codex(funded), 'off'));
     expect(routes(codex(funded, null, 40), 'all')).toBe(routes(codex(funded, null, 40), 'off'));
