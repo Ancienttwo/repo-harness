@@ -16,6 +16,7 @@ source:
     - scripts/ci-path-consumers.ts
     - .github/**
     - scripts/check-ci.sh
+    - scripts/check-changelog-released-sections.ts
     - scripts/check-protected-paths.ts
     - scripts/select-*.ts
     - scripts/replay-ci-coverage.ts
