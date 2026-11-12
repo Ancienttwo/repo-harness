@@ -17,14 +17,14 @@ export class CIReportError extends Error {
 function providerOutage(error: unknown): error is CIReportError { return error instanceof CIReportError && error.providerUnavailable; }
 /** The provider request deadline in the api function. */
 const PROVIDER_REQUEST_TIMEOUT_MS = 30_000;
+/** A deadline cut off the request or its body. */
+function isProviderTimeout(error: unknown): boolean { return error instanceof Error && error.name === 'TimeoutError'; }
 /**
  * A request the deadline cut off has no HTTP status, and it proves no defect.
  * The api boundary throws this error, so every providerOutage caller applies one rule.
  */
 function providerTimeoutError(request: string, error: unknown): CIReportError | null {
-  return error instanceof Error && error.name === 'TimeoutError'
-    ? new CIReportError(null, `${request}: provider request timeout after ${PROVIDER_REQUEST_TIMEOUT_MS} ms`)
-    : null;
+  return isProviderTimeout(error) ? new CIReportError(null, `${request}: provider request timeout after ${PROVIDER_REQUEST_TIMEOUT_MS} ms`) : null;
 }
 export type GitHubAPI = (path: string, method?: 'GET' | 'POST' | 'PATCH', body?: unknown) => Promise<unknown>;
 export interface CIReport {
@@ -463,7 +463,8 @@ if (import.meta.main) {
         ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(PROVIDER_REQUEST_TIMEOUT_MS),
       });
       if (!response.ok) {
-        const payload: unknown = await response.json().catch(() => null);
+        // A body that does not finish before the deadline is the same outage; any other unreadable body stays empty.
+        const payload: unknown = await response.json().catch(error => { if (isProviderTimeout(error)) throw error; return null; });
         let providerMessage = isRecord(payload) && typeof payload.message === 'string' ? payload.message : '';
         const token = process.env.GH_TOKEN;
         if (token) providerMessage = providerMessage.split(token).join('[REDACTED]');
@@ -471,7 +472,8 @@ if (import.meta.main) {
           .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, 'Bearer [REDACTED]'));
         throw new CIReportError(response.status, `${request}: HTTP ${response.status}${providerMessage ? `: ${providerMessage}` : ''}`);
       }
-      return response.json();
+      // await keeps a deadline that ends the body inside this try; a returned promise would escape the classification.
+      return await response.json();
     } catch (error) {
       // The deadline cuts off the request or its body, and the provider gave no answer: an outage, not a defect.
       throw providerTimeoutError(request, error) ?? error;
