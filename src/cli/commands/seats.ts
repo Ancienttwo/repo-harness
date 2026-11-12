@@ -124,7 +124,6 @@ async function quotaCheckedSeat(id: LaunchSeatId, seats: SeatsConfigV1, configur
   };
   const own = seatAccount(configured);
   let quota = await read(own);
-  if (id === 'worker-light' && own === 'chatgpt') quota = await read('claude');
   // The fallback account is read only when the gatekeeper account is exhausted, the one state in which the fallback can launch.
   const fallback = seats['gatekeeper-fallback'];
   if (id === 'gatekeeper' && fallback !== null && own !== null && quota[own].state === 'exhausted' && seatAccount(fallback) !== own) {
@@ -134,9 +133,6 @@ async function quotaCheckedSeat(id: LaunchSeatId, seats: SeatsConfigV1, configur
   const launchedId = gatekeeper?.id === 'gatekeeper-fallback' ? 'gatekeeper-fallback' : id;
   const launched = launchedId === 'gatekeeper-fallback' ? fallback! : configured;
   const account = seatAccount(launched);
-  if (id === 'worker-light' && configured.runtime !== 'pi' && claudeReserved(quota)) {
-    throw new SeatsCommandError('seat_quota_reserved', 'The worker-light seat must use Pi while Claude is reserved. Use the quota routes.');
-  }
   if (account !== null && seatState(launchedId, launched, quota) === 'exhausted') {
     throw new SeatsCommandError('seat_quota_exhausted', `The ${account} account is exhausted. Wait for quota before launching ${id}.${gatekeeper === null ? '' : ` Route ${gatekeeper.line}`}`);
   }

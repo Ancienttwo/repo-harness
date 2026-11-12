@@ -104,7 +104,9 @@ export type SeatRouteV1 =
  */
 export function selectSeatRoute(task: RoutingClass, seats: SeatsConfigV1, quota: SeatAccountQuotas, allow: (seat: SeatConfigV1) => boolean = () => true): SeatRouteV1 {
   const reserved = claudeReserved(quota);
-  const savingRoute = reserved && (task === 'important_deep' || task === 'important_fast');
+  // While Claude is reserved, an important route that holds a Claude-account seat goes to worker-light; another route is read as stored (#1954, #2679).
+  const savingRoute = reserved && (task === 'important_deep' || task === 'important_fast')
+    && seats.routing[task].some(id => seatAccount(seats[id]!) === 'claude');
   if (savingRoute) {
     if (seats['worker-light'] === null) return { id: null, line: `route ${task}: none (worker-light not configured)` };
     if (seats['worker-light'].runtime !== 'pi') return { id: null, line: `route ${task}: none (worker-light is not a Pi seat)` };

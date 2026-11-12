@@ -322,8 +322,10 @@ derived, never stored. Codex hyper seats use `gpt-6-astra` high. A Pi seat on `m
 takes the same hyper model as `magpie/codex/gpt-6-astra` with that effort.
 
 Claude in saving mode or exhausted is reserved for the advisor and
-orchestrator; both use `opus` high. Important non-frontend work then uses a
-configured Pi `worker-light`; a null or non-Pi seat gives a `none` route.
+orchestrator; both use `opus` high. An important non-frontend route that
+holds a Claude-account seat then uses a configured Pi `worker-light`; a null
+or non-Pi `worker-light` gives a `none` route. An important route without a
+Claude-account seat is read as stored.
 Frontend waits for Claude; it has no non-Claude fallback.
 An exhausted account takes no new dispatch, review seats included, except
 under the stored credit mode `routing.codex_credit_mode` (`off`, `review` or

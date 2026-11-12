@@ -191,7 +191,7 @@ describe("repo-harness seats argv", () => {
     });
   });
 
-  test("saving routes and direct launches reject a non-Pi worker-light", () => {
+  test("saving routes reject a non-Pi worker-light; its launch is judged on its own account", () => {
     for (const configured of [DEFAULT_SEATS_CONFIG.worker, DEFAULT_SEATS_CONFIG['worker-important-fast']]) {
       const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-light': configured };
       withHome(seats, home => {
@@ -208,7 +208,10 @@ describe("repo-harness seats argv", () => {
             launch: [result.status, result.stdout, result.stderr ? JSON.parse(result.stderr).error : null],
           }).toEqual({
             routes: ['route important_deep: none (worker-light is not a Pi seat)', 'route important_fast: none (worker-light is not a Pi seat)'],
-            launch: [1, '', 'seat_quota_reserved'],
+            // Routing decides the seat; the launch never recomputes a route (#2679). A Codex worker-light launches on its
+            // own account; a Claude worker-light is a reserved, or at 95% exhausted, Claude seat.
+            launch: configured.runtime === 'codex' ? [0, expect.any(String), null]
+              : [1, '', used === 95 ? 'seat_quota_exhausted' : 'seat_quota_reserved'],
           });
         }
       });
