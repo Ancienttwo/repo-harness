@@ -5,6 +5,7 @@ import { dirname, join } from 'path';
 import { tmpdir } from 'os';
 import { runStopHandler as runStopHandlerRuntime } from '../src/cli/hook/stop-handler';
 import { runMutationGuard } from '../src/cli/hook/mutation-guard';
+import { seatHandoffPath, seatResetDirectory, seatResetRequestPath } from '../src/core/board/seat-reset';
 import { agentNoticeFixture, noticeEnv, NOTICE_CAPABILITY } from './helpers/agent-notice';
 import { fixtureWrite, fixtureCommit } from './helpers/module-repository';
 import { hookIdentity } from './helpers/hook-identity';
@@ -106,7 +107,10 @@ describe('Stop writes no recovery views', () => {
 describe('Stop seat reset (#1972)', () => {
   // The request path is fixed under /tmp; a repository id per run keeps the runs apart.
   const repository = String(9_100_000_000 + process.pid);
-  const dir = join('/tmp/repo-harness-seats', repository, 'orchestrator');
+  // The product fixes the seat directory with its own string, so the expected message text and the filesystem path
+  // both come from it. A node:path join of the same parts gives the other separator form on Windows.
+  const identity = { seat: 'orchestrator', repository } as const;
+  const dir = seatResetDirectory(identity);
   const assistant = (input: number) => JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: input, cache_read_input_tokens: 370_000, cache_creation_input_tokens: 2_000 } } });
   const user = (size: number) => JSON.stringify({ type: 'user', message: { content: 'x'.repeat(size) } });
   const now = new Date('2026-11-08T08:00:00.000Z');
@@ -130,7 +134,7 @@ describe('Stop seat reset (#1972)', () => {
     const blocked = stop(false);
     expect([blocked.exitCode, blocked.stdout]).toEqual([2, '']);
     expect(blocked.stderr).toContain('the orchestrator seat context is 380000 tokens');
-    expect(blocked.stderr).toContain(`Send \`RESET-REQUEST ${dir}/handoff.md <sha256>\` to the advisor seat`);
+    expect(blocked.stderr).toContain(`Send \`RESET-REQUEST ${seatHandoffPath(identity)} <sha256>\` to the advisor seat`);
     expect(blocked.stderr).toContain('0. Finish the planning and the dispatch that you have in hand. Start nothing new. Then write the handoff.');
     const bytes = statSync(transcript).size;
     expect(blocked.stderr).toContain(`The transcript is ${bytes} bytes, below 33554432, so the reset types /compact.`);
@@ -166,7 +170,9 @@ describe('Stop seat reset (#1972)', () => {
     const next = join(cwd, 'next.jsonl');
     writeFileSync(next, `${assistant(8_000)}\n`);
     chmodSync(join(dir, 'request.json'), 0o400);
-    expect(stop(false, next)).toMatchObject({ exitCode: 0, systemMessage: expect.stringContaining(`seat reset skipped: EACCES: permission denied, open '${dir}/request.json'`) });
+    // The read-only request file fails the write. Windows reports EPERM where POSIX reports EACCES.
+    const denied = process.platform === 'win32' ? 'EPERM: operation not permitted' : 'EACCES: permission denied';
+    expect(stop(false, next)).toMatchObject({ exitCode: 0, systemMessage: expect.stringContaining(`seat reset skipped: ${denied}, open '${seatResetRequestPath(identity)}'`) });
   });
 
   test('the tail reader finds the last assistant entry past a cut window line and without a final newline', () => {
