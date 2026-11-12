@@ -1,8 +1,8 @@
-import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import {
   PROJECTION_HUMAN_ACTION_REASON_CODES,
   PROJECTION_REQUEST_SCHEMA_VERSION,
@@ -45,6 +45,7 @@ import { architectureProjectionExitCode, humanActionLine } from '../src/cli/comm
 import { applyArchitectureProjection } from '../src/effects/architecture/projection-apply';
 import { architectureWriterArgs, followArchitectureWriter, WRITER_RESTART_EXIT_CODE } from '../src/effects/architecture/projection-writer';
 import { recordPluginSelection } from './helpers/install-ownership';
+import { compileNativeTestExecutable } from './helpers/native-executable';
 
 const PACKAGE_ROOT = join(import.meta.dir, '..');
 const CLI_ENTRY = join(PACKAGE_ROOT, 'src', 'cli', 'index.ts');
@@ -117,6 +118,62 @@ function unexecutableNodeFile(): string {
   writeFileSync(file, '');
   chmodSync(file, 0o644);
   return file;
+}
+
+/**
+ * Windows cannot start a shebang script: CreateProcess runs a PE image only. The
+ * Windows stub is one compiled Bun program that reads its version from a
+ * sidecar file beside itself. It is hardlinked to the extensionless name the
+ * product enumerates and to that name with the `.EXE` suffix, which is what
+ * libuv starts for a name that has no extension. The returned path carries
+ * `.EXE` because both the PATH tier and the explicit pin keep the case of the
+ * name they received. POSIX keeps the shell stub. One stub form per platform.
+ */
+const NODE_STUB_SOURCE = [
+  "const { readFileSync } = require('node:fs');",
+  "const { basename, dirname, join } = require('node:path');",
+  "const name = basename(process.execPath).replace(/\\.exe$/i, '');",
+  "const spec = JSON.parse(readFileSync(join(dirname(process.execPath), `${name}.node-stub.json`), 'utf8'));",
+  'if (spec.delayMs) Bun.sleepSync(spec.delayMs);',
+  'console.log(`v${spec.version}`);',
+  '',
+].join('\n');
+
+const stubRoots: string[] = [];
+let compiledNodeStub: string | null = null;
+
+afterAll(() => { for (const root of stubRoots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+
+function windowsNodeStubBinary(): string {
+  if (compiledNodeStub !== null) return compiledNodeStub;
+  const root = mkdtempSync(join(tmpdir(), 'repo-harness-node-stub-'));
+  stubRoots.push(root);
+  const source = join(root, 'node-stub.ts');
+  writeFileSync(source, NODE_STUB_SOURCE);
+  compiledNodeStub = compileNativeTestExecutable(root, 'node-stub', source);
+  return compiledNodeStub;
+}
+
+/** Write a `node` double at `path` that prints `v<version>`; return the path that runs. */
+function writeNodeStub(path: string, spec: { version: string; delayMs?: number }): string {
+  if (process.platform !== 'win32') {
+    const wait = spec.delayMs === undefined ? '' : `/bin/sleep ${spec.delayMs / 1000}\n`;
+    writeFileSync(path, `#!/bin/sh\n${wait}echo v${spec.version}\n`);
+    chmodSync(path, 0o755);
+    return path;
+  }
+  writeFileSync(`${path}.node-stub.json`, JSON.stringify(spec));
+  const executable = `${path}.EXE`;
+  for (const target of [path, executable]) {
+    rmSync(target, { force: true });
+    linkSync(windowsNodeStubBinary(), target);
+  }
+  return executable;
+}
+
+/** Escape one literal value for a `new RegExp` source, so a Windows path stays literal. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
 
 function vendorArchctx(root: string, version: string): string {
@@ -846,9 +903,7 @@ describe('package-local ArchContext projection provider', () => {
       // A fixed fake Node runtime keeps the result independent of the Node on the test machine.
       const fakeBin = join(f.root, 'bin');
       mkdirSync(fakeBin, { recursive: true });
-      const node = join(fakeBin, 'node');
-      writeFileSync(node, '#!/bin/sh\necho v24.1.0\n');
-      chmodSync(node, 0o755);
+      writeNodeStub(join(fakeBin, 'node'), { version: '24.1.0' });
       return inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, {
         consumerRoot: f.consumerRoot, policy, env: { PATH: fakeBin }, trustedNodeCandidateSource: () => [], run: runner([], projectionEnvelope(expectedSnapshot)),
       });
@@ -1003,9 +1058,7 @@ describe('package-local ArchContext projection provider', () => {
 
   test('charges Node runtime selection to the caller deadline', () => {
     const f = fixture();
-    const slowNode = join(f.root, 'slow-node');
-    writeFileSync(slowNode, '#!/bin/sh\n/bin/sleep 2\necho v24.18.0\n');
-    chmodSync(slowNode, 0o755);
+    const slowNode = writeNodeStub(join(f.root, 'slow-node'), { version: '24.18.0', delayMs: 2_000 });
     const providerModule = join(import.meta.dir, '..', 'src', 'effects', 'architecture', 'archctx-provider.ts');
     const script = join(f.root, 'node-deadline.ts');
     writeFileSync(script, [
@@ -1320,9 +1373,7 @@ describe('package-local ArchContext projection provider', () => {
     // runtime keeps the result independent of the Node on the test machine.
     const fakeBin = join(f.root, 'bin');
     mkdirSync(fakeBin, { recursive: true });
-    const node = join(fakeBin, 'node');
-    writeFileSync(node, '#!/bin/sh\necho v24.1.0\n');
-    chmodSync(node, 0o755);
+    const node = writeNodeStub(join(fakeBin, 'node'), { version: '24.1.0' });
     const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, {
       consumerRoot: f.consumerRoot,
       policy,
@@ -1371,9 +1422,7 @@ describe('package-local ArchContext projection provider', () => {
     const f = fixture();
     const fakeBin = join(f.root, 'bin');
     mkdirSync(fakeBin, { recursive: true });
-    const node = join(fakeBin, 'node');
-    writeFileSync(node, '#!/bin/sh\necho v22.21.0\n');
-    chmodSync(node, 0o755);
+    writeNodeStub(join(fakeBin, 'node'), { version: '22.21.0' });
     const pathOnlyEnv: NodeJS.ProcessEnv = { ...process.env, PATH: fakeBin };
     // An exported runtime authority must not rescue this failure mode.
     delete pathOnlyEnv.REPO_HARNESS_NODE_BIN;
@@ -1394,9 +1443,7 @@ describe('package-local ArchContext projection provider', () => {
     writeFileSync(join(f.repoRoot, '.archcontext', 'product.yaml'), 'name: fixture\n');
     const fakeBin = join(f.root, 'bin');
     mkdirSync(fakeBin, { recursive: true });
-    const node = join(fakeBin, 'node');
-    writeFileSync(node, '#!/bin/sh\necho v22.21.0\n');
-    chmodSync(node, 0o755);
+    writeNodeStub(join(fakeBin, 'node'), { version: '22.21.0' });
     const pathOnlyEnv: NodeJS.ProcessEnv = { ...process.env, PATH: fakeBin };
     delete pathOnlyEnv.REPO_HARNESS_NODE_BIN;
     const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, {
@@ -1417,9 +1464,7 @@ describe('package-local ArchContext projection provider', () => {
     const nvmRoot = join(home, '.nvm', 'versions', 'node');
     for (const version of ['v20.11.0', 'v24.18.0']) {
       mkdirSync(join(nvmRoot, version, 'bin'), { recursive: true });
-      const binary = join(nvmRoot, version, 'bin', 'node');
-      writeFileSync(binary, `#!/bin/sh\necho ${version}\n`);
-      chmodSync(binary, 0o755);
+      writeNodeStub(join(nvmRoot, version, 'bin', 'node'), { version: version.replace(/^v/, '') });
     }
     const candidates = trustedNodeCandidates(home);
     expect(candidates.slice(0, 3)).toEqual(['/usr/bin/node', '/usr/local/bin/node', '/opt/homebrew/bin/node']);
@@ -1441,9 +1486,7 @@ describe('package-local ArchContext projection provider', () => {
     for (const name of ['node@24', 'node@20', 'node', 'node@24-old', 'nodejs@24']) {
       const kegRoot = join(prefix, 'Cellar', name, 'test-version');
       mkdirSync(join(kegRoot, 'bin'), { recursive: true });
-      const node = join(kegRoot, 'bin', 'node');
-      writeFileSync(node, `#!/bin/sh\necho v${name === 'node@20' ? '20.11.0' : '24.21.0'}\n`);
-      chmodSync(node, 0o755);
+      writeNodeStub(join(kegRoot, 'bin', 'node'), { version: name === 'node@20' ? '20.11.0' : '24.21.0' });
       symlinkSync(kegRoot, join(prefix, 'opt', name));
     }
     const candidates = trustedNodeCandidates(home, [prefix]);
@@ -1453,7 +1496,7 @@ describe('package-local ArchContext projection provider', () => {
       join(prefix, 'opt', 'node@20', 'bin', 'node'),
       join(prefix, 'opt', 'node@24', 'bin', 'node'),
     ]);
-    expect(candidates.filter((candidate) => candidate.startsWith(`${prefix}/`))).toEqual([
+    expect(candidates.filter((candidate) => candidate.startsWith(`${prefix}${sep}`))).toEqual([
       join(prefix, 'opt', 'node@20', 'bin', 'node'),
       join(prefix, 'opt', 'node@24', 'bin', 'node'),
     ]);
@@ -1464,21 +1507,19 @@ describe('package-local ArchContext projection provider', () => {
     const f = fixture();
     const fakeBin = join(f.root, 'bin');
     mkdirSync(fakeBin, { recursive: true });
-    writeFileSync(join(fakeBin, 'node'), '#!/bin/sh\necho v26.10.0\n');
-    chmodSync(join(fakeBin, 'node'), 0o755);
+    writeNodeStub(join(fakeBin, 'node'), { version: '26.10.0' });
     const prefix = join(f.root, 'homebrew');
     mkdirSync(join(prefix, 'opt'), { recursive: true });
     for (const major of [20, 24]) {
       const kegRoot = join(prefix, 'Cellar', `node@${major}`, `${major}.21.0`);
       mkdirSync(join(kegRoot, 'bin'), { recursive: true });
-      writeFileSync(join(kegRoot, 'bin', 'node'), `#!/bin/sh\necho v${major}.21.0\n`);
-      chmodSync(join(kegRoot, 'bin', 'node'), 0o755);
+      writeNodeStub(join(kegRoot, 'bin', 'node'), { version: `${major}.21.0` });
       symlinkSync(kegRoot, join(prefix, 'opt', `node@${major}`));
     }
     const home = join(f.root, 'home');
     const scrubbedEnv: NodeJS.ProcessEnv = { PATH: fakeBin, HOME: home };
     const scoped = () => trustedNodeCandidates(home, [prefix])
-      .filter((candidate) => candidate.startsWith(`${f.root}/`));
+      .filter((candidate) => candidate.startsWith(`${f.root}${sep}`));
     expect(resolveCompatibleNodeRuntime(scrubbedEnv, scoped))
       .toBe(realpathSync(join(prefix, 'opt', 'node@24', 'bin', 'node')));
   });
@@ -1487,20 +1528,16 @@ describe('package-local ArchContext projection provider', () => {
     const f = fixture();
     const fakeBin = join(f.root, 'bin');
     mkdirSync(fakeBin, { recursive: true });
-    const incompatiblePathNode = join(fakeBin, 'node');
-    writeFileSync(incompatiblePathNode, '#!/bin/sh\necho v22.21.0\n');
-    chmodSync(incompatiblePathNode, 0o755);
+    writeNodeStub(join(fakeBin, 'node'), { version: '22.21.0' });
     const home = join(f.root, 'home');
     const nvmRoot = join(home, '.nvm', 'versions', 'node');
     for (const version of ['v20.11.0', 'v22.22.0', 'v24.18.0']) {
       mkdirSync(join(nvmRoot, version, 'bin'), { recursive: true });
-      const binary = join(nvmRoot, version, 'bin', 'node');
-      writeFileSync(binary, `#!/bin/sh\necho ${version}\n`);
-      chmodSync(binary, 0o755);
+      writeNodeStub(join(nvmRoot, version, 'bin', 'node'), { version: version.slice(1) });
     }
     // The scrubbed bounded-verifier shape: REPO_HARNESS_NODE_BIN stripped whole.
     const scrubbedEnv: NodeJS.ProcessEnv = { PATH: fakeBin, HOME: home };
-    const scoped = () => trustedNodeCandidates(home).filter((candidate) => candidate.startsWith(`${home}/`));
+    const scoped = () => trustedNodeCandidates(home).filter((candidate) => candidate.startsWith(`${home}${sep}`));
     expect(resolveCompatibleNodeRuntime(scrubbedEnv, scoped))
       .toBe(realpathSync(join(nvmRoot, 'v22.22.0', 'bin', 'node')));
   });
@@ -1509,35 +1546,28 @@ describe('package-local ArchContext projection provider', () => {
     const f = fixture();
     const fakeBin = join(f.root, 'bin');
     mkdirSync(fakeBin, { recursive: true });
-    const incompatiblePathNode = join(fakeBin, 'node');
-    writeFileSync(incompatiblePathNode, '#!/bin/sh\necho v22.21.0\n');
-    chmodSync(incompatiblePathNode, 0o755);
+    writeNodeStub(join(fakeBin, 'node'), { version: '22.21.0' });
     const home = join(f.root, 'home');
     const nvmRoot = join(home, '.nvm', 'versions', 'node');
     mkdirSync(join(nvmRoot, 'v20.11.0', 'bin'), { recursive: true });
     const staleNode = join(nvmRoot, 'v20.11.0', 'bin', 'node');
-    writeFileSync(staleNode, '#!/bin/sh\necho v20.11.0\n');
-    chmodSync(staleNode, 0o755);
+    writeNodeStub(staleNode, { version: '20.11.0' });
     const scrubbedEnv: NodeJS.ProcessEnv = { PATH: fakeBin, HOME: home };
-    const scoped = () => trustedNodeCandidates(home).filter((candidate) => candidate.startsWith(`${home}/`));
+    const scoped = () => trustedNodeCandidates(home).filter((candidate) => candidate.startsWith(`${home}${sep}`));
     expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(/requires Node >=22.22 <26/);
     expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(/REPO_HARNESS_NODE_BIN \(unset\)/);
-    expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(new RegExp(`PATH \\(${fakeBin}\\)`));
-    expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(new RegExp(`trusted candidates \\(${join(home, '.local', 'bin', 'node')}, ${staleNode}\\)`));
+    expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(new RegExp(`PATH \\(${escapeRegExp(fakeBin)}\\)`));
+    expect(() => resolveCompatibleNodeRuntime(scrubbedEnv, scoped)).toThrow(new RegExp(`trusted candidates \\(${escapeRegExp(join(home, '.local', 'bin', 'node'))}, ${escapeRegExp(staleNode)}\\)`));
   });
 
   test('rejects Node 22.21 and uses the protected helper exact Node 22.22 authority without widening PATH', () => {
     const f = fixture();
     const fakeBin = join(f.root, 'protected-node');
     mkdirSync(fakeBin, { recursive: true });
-    const staleNode = join(fakeBin, 'node-22.21');
-    writeFileSync(staleNode, '#!/bin/sh\necho v22.21.0\n');
-    chmodSync(staleNode, 0o755);
+    const staleNode = writeNodeStub(join(fakeBin, 'node-22.21'), { version: '22.21.0' });
     expect(() => resolveCompatibleNodeRuntime({ PATH: '/usr/bin:/bin', REPO_HARNESS_NODE_BIN: staleNode }))
       .toThrow('must satisfy Node >=22.22 <26');
-    const node = join(fakeBin, 'node-22.22');
-    writeFileSync(node, '#!/bin/sh\necho v22.22.0\n');
-    chmodSync(node, 0o755);
+    const node = writeNodeStub(join(fakeBin, 'node-22.22'), { version: '22.22.0' });
     expect(resolveCompatibleNodeRuntime({ PATH: '/usr/bin:/bin', REPO_HARNESS_NODE_BIN: node })).toBe(realpathSync(node));
     expect(() => resolveCompatibleNodeRuntime({ PATH: '/usr/bin:/bin', REPO_HARNESS_NODE_BIN: 'node' })).toThrow('must be an absolute path');
   });
@@ -1857,9 +1887,7 @@ test('does not scan fallback Node locations after explicit or PATH selection', (
   const f = fixture();
   const bin = join(f.root, 'node-bin');
   mkdirSync(bin);
-  const node = join(bin, 'node');
-  writeFileSync(node, '#!/bin/sh\necho v24.18.0\n');
-  chmodSync(node, 0o755);
+  const node = writeNodeStub(join(bin, 'node'), { version: '24.18.0' });
   const inaccessibleFallback = () => { throw new Error('unreadable fallback directory'); };
   expect(resolveCompatibleNodeRuntime({ PATH: '', REPO_HARNESS_NODE_BIN: node }, inaccessibleFallback)).toBe(realpathSync(node));
   expect(resolveCompatibleNodeRuntime({ PATH: bin }, inaccessibleFallback)).toBe(realpathSync(node));
