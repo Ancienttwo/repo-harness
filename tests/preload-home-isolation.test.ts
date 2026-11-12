@@ -434,3 +434,84 @@ run_bun_test_file "$2"
     } finally { f.close(); }
   });
 });
+
+// TEMPORARY (#2609 draft run only): count raw Windows errors from the lock acquire and the queue ticket read.
+const probeSummary = (rows: string[]): string => {
+  const counts = new Map<string, number>();
+  for (const row of rows) counts.set(row, (counts.get(row) ?? 0) + 1);
+  return JSON.stringify([...counts]);
+};
+
+test.skipIf(process.platform !== "win32")("TEMP #2609 acquire probe", async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "rh-2609a-")));
+  const module = join(ROOT, "src/effects/locking/exclusive-directory-lock.ts");
+  const code = `import { lstatSync } from "node:fs";
+    import { join } from "node:path";
+    import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from ${JSON.stringify(module)};
+    const root = process.argv[1]; const lockPath = join(root, "agent.lock");
+    let ok = 0; const rows = [];
+    for (let i = 0; i < 2000; i++) {
+      try { acquireExclusiveDirectoryLock(root, "agent.lock").release(); ok++; }
+      catch (e) {
+        if (e instanceof ExclusiveLockContentionError) { rows.push("contention:" + e.reason); continue; }
+        let ls; try { const s = lstatSync(lockPath); ls = "ok(dir=" + s.isDirectory() + ")"; } catch (x) { ls = x.code; }
+        const frame = String(e.stack).split("\\n").find((l, n) => n > 0 && l.includes("exclusive-directory-lock")) ?? "";
+        rows.push([e.code, e.syscall, ls, frame.trim().replace(/^.*\\(/, "").replace(/^.*[\\\\/]/, "")].join("|"));
+      }
+    }
+    console.log(JSON.stringify({ ok, rows }));`;
+  try {
+    const children = [0, 1].map(() => Bun.spawn([process.execPath, "-e", code, root], { stdout: "pipe", stderr: "pipe" }));
+    const rows: string[] = [];
+    let okTotal = 0;
+    for (const child of children) {
+      const [out, err, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+      console.log(`[#2609a] child exit=${exit} stderr=${err.slice(0, 400)} stdout=${out.slice(0, 400)}`);
+      const parsed = JSON.parse(out.trim().split(/\r?\n/).pop() ?? "{}") as { ok?: number; rows?: string[] };
+      okTotal += parsed.ok ?? 0;
+      rows.push(...(parsed.rows ?? []));
+    }
+    console.log(`[#2609a] acquires ok=${okTotal} of 4000; non-ok signatures (code|syscall|lstat|frame)=${probeSummary(rows)}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 600_000);
+
+test.skipIf(process.platform !== "win32")("TEMP #2609 ticket read probe", async () => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "rh-2609b-")));
+  const dir = join(home, "host-test-queue", "tickets");
+  mkdirSync(dir, { recursive: true });
+  const code = `import { renameSync, unlinkSync, writeFileSync } from "node:fs";
+    import { join } from "node:path";
+    const dir = process.argv[1];
+    for (let i = 0; i < 20000; i++) {
+      const path = join(dir, "t" + (i % 4) + ".json");
+      writeFileSync(path + ".tmp", "{}\\n"); renameSync(path + ".tmp", path);
+      try { unlinkSync(path); } catch {}
+    }`;
+  const { readHostTestQueueState } = await import("../src/effects/locking/host-test-queue.ts");
+  const fs = await import("node:fs");
+  const env = { ...process.env, REPO_HARNESS_HOME: home };
+  const child = Bun.spawn([process.execPath, "-e", code, dir], { stdout: "ignore", stderr: "pipe" });
+  const rows: string[] = [];
+  let reads = 0;
+  try {
+    while (child.exitCode === null) {
+      reads++;
+      try { readHostTestQueueState(env); } catch (e) {
+        const err = e as NodeJS.ErrnoException;
+        let ls: string;
+        try { ls = `ok(file=${fs.lstatSync(err.path ?? dir).isFile()})`; } catch (x) { ls = String((x as NodeJS.ErrnoException).code); }
+        rows.push([err.code, err.syscall, ls].join("|"));
+      }
+      if (reads % 64 === 0) await Bun.sleep(0);
+    }
+    const exit = await child.exited;
+    console.log(`[#2609b] child exit=${exit} stderr=${(await new Response(child.stderr).text()).slice(0, 400)}`);
+    console.log(`[#2609b] reads=${reads} throws=${rows.length} signatures (code|syscall|lstat)=${probeSummary(rows)}`);
+  } finally {
+    child.kill();
+    await child.exited;
+    rmSync(home, { recursive: true, force: true });
+  }
+}, 600_000);
