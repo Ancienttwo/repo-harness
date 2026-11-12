@@ -1096,8 +1096,8 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
       const candidateManifestCopy = join(tmp, 'archctx-candidate.json');
       writeFileSync(candidateManifestCopy, candidateManifest);
       // Parent state: the global manifest and the top-level package hold the previous pin, and the managed link points to it.
-      writeFileSync(join(globalRoot, 'package.json'), JSON.stringify({ dependencies: { archctx: '0.0.1' } }));
-      writeFileSync(join(topArchctx, 'package.json'), JSON.stringify({ ...JSON.parse(candidateManifest), version: '0.0.1' }));
+      writeFileSync(join(globalRoot, 'package.json'), JSON.stringify({ dependencies: { archctx: '0.12.0' } }));
+      writeFileSync(join(topArchctx, 'package.json'), JSON.stringify({ ...JSON.parse(candidateManifest), version: '0.12.0' }));
       mkdirSync(join(nestedArchctx, 'bin'), { recursive: true });
       writeFileSync(join(nestedArchctx, 'package.json'), candidateManifest);
       writeExecutable(join(nestedArchctx, 'bin', 'archctx.mjs'), '#!/usr/bin/env node\n');
