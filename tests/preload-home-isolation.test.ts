@@ -235,6 +235,22 @@ describe("test HOME and TMPDIR isolation", () => {
     } finally { f.close(); }
   });
 
+  test("drops a sentinel PI_CODING_AGENT_DIR before test code starts", () => {
+    const f = fixture();
+    try {
+      const marker = join(f.temp, "pi-agent-dir.json");
+      const probe = join(f.temp, "pi-agent-dir.test.ts");
+      writeFileSync(probe, 'import {test} from "bun:test";test("dropped",async()=>{await Bun.write(' + JSON.stringify(marker) + ',JSON.stringify(process.env.PI_CODING_AGENT_DIR??null));});\n');
+      // A path under the fixture temp root passes the refusal check, so only the removal can keep it off.
+      const sentinel = join(f.temp, "sentinel-pi-agent-dir");
+      const result = spawnSync("bash", ["--noprofile", "--norc", "-c", 'source "$1"; run_bun_test_file "$2"', "test-home", join(ROOT, "scripts/lib/ci-run-tests.sh"), probe], {
+        cwd: ROOT, env: { ...f.env, PI_CODING_AGENT_DIR: sentinel }, encoding: "utf8",
+      });
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+      expect(readFileSync(marker, "utf8")).toBe("null");
+    } finally { f.close(); }
+  });
+
   test("preserves safe tool file paths and registry state without reading their contents", () => {
     const f = fixture();
     try {
