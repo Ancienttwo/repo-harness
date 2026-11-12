@@ -104,12 +104,21 @@ test('a branch GitHub did not name, a missing first Dev Activity cycle and a mis
     [activity(f.id, 'owner/repo', 'main', null), 'docs_pending'],
     [activity(f.id, 'owner/repo', 'trunk'), 'branch_missing'],
     [activity(f.id, 'owner/repo', 'main/../x'), 'ref_invalid'],
-    [activity(f.id, 'owner/other', 'main'), 'github_remote_missing'],
   ] as const) {
     const docs = collect(f, snapshot);
     await docs.settled();
     expect(docs.read(f.id)).toEqual({ state: 'unavailable', reason });
   }
+});
+
+test('github_remote_missing names the GitHub repository it expected and each remote it read, without URL credentials', async () => {
+  const f = fixture({ origin: 'https://user:token@github.com/Ancienttwo/repo-harness.git', mirror: 'git@github.com:Owner/Repo.git' });
+  const docs = collect(f, activity(f.id, 'aimpact-inc/repo-harness', 'main'));
+  await docs.settled();
+  expect(docs.read(f.id)).toEqual({ state: 'unavailable', reason: 'github_remote_missing', detail: {
+    github: 'aimpact-inc/repo-harness',
+    remotes: [{ name: 'origin', url: 'https://github.com/Ancienttwo/repo-harness.git' }, { name: 'mirror', url: 'git@github.com:Owner/Repo.git' }],
+  } });
 });
 
 test('two remotes of the same GitHub repository are ambiguous; an invalid registry is unavailable', async () => {

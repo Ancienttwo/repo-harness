@@ -12,7 +12,7 @@
 
 import { realpathSync } from 'node:fs';
 
-import { decodeDocsTree, OPERATOR_DOCS_TREE_KIND, type DocsTreeV1, type DocsUnavailableReason } from '../../core/operator/docs';
+import { decodeDocsTree, OPERATOR_DOCS_TREE_KIND, type DocsRemoteMismatchV1, type DocsTreeV1, type DocsUnavailableReason } from '../../core/operator/docs';
 import { githubRemoteRepository } from '../../core/board/source';
 import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
 import { withoutRepositorySelectingGitEnv, spawnGit } from '../git/runner';
@@ -28,7 +28,11 @@ const REMOTE_STDOUT_LIMIT = 64 * 1024;
 
 export type DocsRepositoryCache =
   | { readonly state: 'ready'; readonly tree: DocsTreeV1; readonly reader: DocsReader }
-  | { readonly state: 'unavailable'; readonly reason: DocsUnavailableReason };
+  | { readonly state: 'unavailable'; readonly reason: DocsPlainReason }
+  | { readonly state: 'unavailable'; readonly reason: 'github_remote_missing'; readonly detail: DocsRemoteMismatchV1 };
+
+/** Every reason that carries no detail. */
+type DocsPlainReason = Exclude<DocsUnavailableReason, 'github_remote_missing'>;
 
 export interface DocsCollectorOptions {
   readonly env?: NodeJS.ProcessEnv;
@@ -81,7 +85,12 @@ function remoteUrls(root: string, env: NodeJS.ProcessEnv, gitBin: string | undef
   });
 }
 
-function readFailure(error: unknown): DocsUnavailableReason {
+/** The URL without its `user:password@` part: a remote URL can hold a token, and the detail leaves the process. */
+function withoutCredentials(url: string): string {
+  return url.replace(/^([A-Za-z][A-Za-z0-9+.-]*:\/\/)[^/]*@/u, '$1');
+}
+
+function readFailure(error: unknown): DocsPlainReason {
   if (error instanceof DocsReadError) {
     if (error.code === 'branch_missing') return 'branch_missing';
     if (error.code === 'too_large') return 'docs_too_large';
@@ -98,7 +107,7 @@ export function startDocsCollector(options: DocsCollectorOptions): DocsCollector
   const retire = (id: string) => { readers.get(id)?.close(); readers.delete(id); };
 
   const collectRepository = async (repo: RepoHarnessRegisteredRepo, activity: DevActivitySnapshotV2, signal: AbortSignal): Promise<DocsRepositoryCache> => {
-    const unavailable = (reason: DocsUnavailableReason): DocsRepositoryCache => { retire(repo.id); return { state: 'unavailable', reason }; };
+    const unavailable = (reason: DocsPlainReason): DocsRepositoryCache => { retire(repo.id); return { state: 'unavailable', reason }; };
     // Dev Activity has not finished its first cycle: the branch is not known yet.
     if (activity.collected_at === null) return unavailable('docs_pending');
     const source = activity.repositories.find(entry => entry.repository_id === repo.id);
@@ -109,7 +118,11 @@ export function startDocsCollector(options: DocsCollectorOptions): DocsCollector
     if (signal.aborted || urls === null) return unavailable('docs_reader_unavailable');
     const github = source.github.toLowerCase();
     const remotes = [...urls].filter(([, url]) => githubRemoteRepository(url) === github).map(([name]) => name);
-    if (remotes.length === 0) return unavailable('github_remote_missing');
+    if (remotes.length === 0) {
+      retire(repo.id);
+      const detail = { github: source.github, remotes: [...urls].map(([name, url]) => ({ name, url: withoutCredentials(url) })) };
+      return { state: 'unavailable', reason: 'github_remote_missing', detail };
+    }
     if (remotes.length > 1) return unavailable('github_remote_ambiguous');
     const ref = `refs/remotes/${remotes[0]}/${source.default_branch}`;
     if (!validDocsRef(ref)) return unavailable('ref_invalid');
@@ -131,7 +144,7 @@ export function startDocsCollector(options: DocsCollectorOptions): DocsCollector
     }
   };
 
-  const loop = startObservationLoop<RepositoryObservation<DocsRepositoryCache>, DocsUnavailableReason>({
+  const loop = startObservationLoop<RepositoryObservation<DocsRepositoryCache>, DocsPlainReason>({
     cycle: async ({ signal }) => {
       let repos: readonly RepoHarnessRegisteredRepo[];
       try { repos = readRepoHarnessRegistryStrictSnapshot({ env }).repos; }
