@@ -13,7 +13,7 @@ import {
   type QuotaReport,
 } from '../../src/core/board/quota';
 import { effectiveSeatConfig, formatSeatModes, formatSeatRoutes, seatAccountQuotas } from '../../src/core/board/seat-routing';
-import { DEFAULT_SEATS_CONFIG, type SeatConfigV1 } from '../../src/core/board/seats-settings';
+import { DEFAULT_SEATS_CONFIG, type CodexCreditMode, type SeatConfigV1 } from '../../src/core/board/seats-settings';
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -124,22 +124,30 @@ describe('seat quota routing', () => {
     expect(line(pi, 40)).toBe(line(null, 40));
   });
 
-  test('the credit grant admits an exhausted ChatGPT account only with spendCredits and credits', () => {
-    const codex = (credits: { hasCredits: boolean; unlimited: boolean; balance: string | null } | null, reached: string | null = null) => classifyQuotaReading(decodeCodexRateLimitsResult({ rateLimits: {
-      primary: { usedPercent: 95, windowDurationMins: 10080, resetsAt: (NOW + 84 * HOUR) / 1000 }, credits, rateLimitReachedType: reached,
+  test('the credit mode admits the seats it names on an exhausted ChatGPT account with credits at or above the floor', () => {
+    const codex = (credits: { hasCredits: boolean; unlimited: boolean; balance: string | null } | null, reached: string | null = null, used = 95) => classifyQuotaReading(decodeCodexRateLimitsResult({ rateLimits: {
+      primary: { usedPercent: used, windowDurationMins: 10080, resetsAt: (NOW + 84 * HOUR) / 1000 }, credits, rateLimitReachedType: reached,
     } }, new Date(NOW).toISOString()), NOW);
     const funded = { hasCredits: true, unlimited: false, balance: '34410.83' };
-    const routes = (account: ReturnType<typeof codex>, spendCredits: boolean) =>
-      formatSeatRoutes(DEFAULT_SEATS_CONFIG, seatAccountQuotas([account], DEFAULT_SEATS_CONFIG.routing, { spendCredits }));
-    expect(routes(codex(funded), false)).toContain('route important_deep: worker-important (claude opus medium; claude unknown)');
-    for (const line of [
-      'route important_deep: worker-deep (codex gpt-6.1-sol high; chatgpt tight, on credits); skipped worker-important: claude unknown',
-      'gatekeeper: gatekeeper (codex gpt-6.1-terra high; chatgpt tight, on credits)',
-    ]) expect(routes(codex(funded), true), line).toContain(line);
-    expect(routes(codex(funded, 'rate_limit_reached'), true)).toContain('gatekeeper: gatekeeper (codex gpt-6.1-terra high; chatgpt tight, on credits)');
-    expect(routes(codex({ hasCredits: false, unlimited: false, balance: '0' }), true)).toContain('gatekeeper: none (chatgpt exhausted)');
-    expect(routes(codex({ hasCredits: false, unlimited: true, balance: null }), true)).toContain('gatekeeper: gatekeeper (codex gpt-6.1-terra high; chatgpt tight, on credits)');
-    expect(seatAccountQuotas([codex(funded, 'rate_limit_reached')], DEFAULT_SEATS_CONFIG.routing, { spendCredits: true }).chatgpt).toMatchObject({ state: 'tight', on_credits: true });
+    const routes = (account: ReturnType<typeof codex>, codex_credit_mode: CodexCreditMode, codex_credit_floor = 0) =>
+      formatSeatRoutes(DEFAULT_SEATS_CONFIG, seatAccountQuotas([account], { ...DEFAULT_SEATS_CONFIG.routing, codex_credit_mode, codex_credit_floor }));
+    const writer = 'route important_deep: worker-deep (codex gpt-6.1-sol high; chatgpt exhausted, on credits); skipped worker-important: claude unknown';
+    const gatekeeper = 'gatekeeper: gatekeeper (codex gpt-6.1-terra high; chatgpt exhausted, on credits)';
+    expect(routes(codex(funded), 'off')).toContain('route important_deep: worker-important (claude opus medium; claude unknown)');
+    expect(routes(codex(funded), 'off')).toContain('gatekeeper: none (chatgpt exhausted)');
+    const review = routes(codex(funded), 'review');
+    expect(review).toContain(gatekeeper);
+    expect(review).toContain('route important_deep: worker-important (claude opus medium; claude unknown)');
+    expect(review).toContain('route simple_fast: none (chatgpt exhausted)');
+    for (const line of [writer, gatekeeper]) expect(routes(codex(funded), 'all'), line).toContain(line);
+    expect(routes(codex(funded, 'rate_limit_reached'), 'review')).toContain(gatekeeper);
+    expect(routes(codex({ hasCredits: false, unlimited: false, balance: '0' }), 'all')).toContain('gatekeeper: none (chatgpt exhausted)');
+    expect(routes(codex({ hasCredits: false, unlimited: true, balance: null }), 'all', 2000)).toContain(gatekeeper);
+    expect(routes(codex(funded), 'all', 34410.83)).toContain(gatekeeper);
+    expect(routes(codex(funded), 'all', 34411)).toBe(routes(codex(funded), 'off'));
+    expect(routes(codex(funded, null, 40), 'all')).toBe(routes(codex(funded, null, 40), 'off'));
+    expect(seatAccountQuotas([codex(funded, 'rate_limit_reached')], { ...DEFAULT_SEATS_CONFIG.routing, codex_credit_mode: 'review' }).chatgpt)
+      .toMatchObject({ state: 'exhausted', credits: 'review' });
   });
 });
 
@@ -364,15 +372,17 @@ describe('repo-harness quota', () => {
     expect(lines.slice(4).map(line => line.split(':')[0])).toEqual(['route important_deep', 'route important_fast', 'route simple_deep', 'route simple_fast', 'route frontend', 'explorer', 'gatekeeper', 'reviewer']);
   });
 
-  test('--spend-credits admits an exhausted account that has credits and keeps the account line exhausted', () => {
+  test('the stored review credit mode routes the gatekeeper on credits and keeps the account line exhausted', () => {
     const f = fixture('exhausted');
-    const lines = (...args: string[]) => quota(args, f.env).stdout.trim().split('\n');
+    const lines = () => quota([], f.env).stdout.trim().split('\n');
     const selected = (text: string[]) => text.filter(line => line.startsWith('gatekeeper:') || line.startsWith('route important_deep:'));
     expect(selected(lines())).toEqual(['route important_deep: worker-important (claude opus medium; claude unknown)', 'gatekeeper: none (chatgpt exhausted)']);
-    const granted = lines('--spend-credits');
+    writeFileSync(join(f.home, '.repo-harness', 'config.json'), JSON.stringify({ seats: { ...DEFAULT_SEATS_CONFIG,
+      routing: { ...DEFAULT_SEATS_CONFIG.routing, codex_credit_mode: 'review', codex_credit_floor: 2000 } } }));
+    const granted = lines();
     expect(selected(granted)).toEqual([
-      'route important_deep: worker-deep (codex gpt-6.1-sol high; chatgpt tight, on credits); skipped worker-important: claude unknown',
-      'gatekeeper: gatekeeper (codex gpt-6.1-terra high; chatgpt tight, on credits)',
+      'route important_deep: worker-important (claude opus medium; claude unknown)',
+      'gatekeeper: gatekeeper (codex gpt-6.1-terra high; chatgpt exhausted, on credits)',
     ]);
     expect(granted.find(line => line.startsWith('chatgpt:'))).toStartWith('chatgpt: exhausted');
   });

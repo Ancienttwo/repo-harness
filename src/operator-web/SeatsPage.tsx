@@ -2,12 +2,12 @@ import { useState, type ReactNode } from 'react';
 import { Banner, Button, Empty, Loader, Switch, cn } from '@cloudflare/kumo';
 import { seatAccountQuotas } from '../core/board/seat-routing';
 import { buildSeatLaunch, type SeatLimitLevel } from '../core/board/seat-launch';
-import { SEAT_IDS, SEAT_TOOLS, decodeSeatsSettingsRequest, seatTakesFleet, type OptionalSeatId, type RoutingClass, type SeatId, type SeatRuntime, type SeatsConfigV1, type SeatsSettingsV1 } from '../core/board/seats-settings';
+import { CODEX_CREDIT_MODES, SEAT_IDS, SEAT_TOOLS, decodeSeatsSettingsRequest, seatTakesFleet, type OptionalSeatId, type RoutingClass, type SeatId, type SeatRuntime, type SeatsConfigV1, type SeatsSettingsV1 } from '../core/board/seats-settings';
 import type { SetupSnapshotV2 } from '../core/setup/types';
 import type { OperatorTranslate } from './i18n';
 import type { QuotaSection } from './quota';
 import {
-  GATEKEEPER_FALLBACK_STARTER, seatChanges, setExplorer, setOptionalSeat, setRoute, setSeatEffort, setSeatModel, setSeatRole, setSeatRuntime, setSeatTool, setThreshold, type SeatsSettingsForm,
+  GATEKEEPER_FALLBACK_STARTER, seatChanges, setExplorer, setOptionalSeat, setRoute, setSeatEffort, setSeatModel, setSeatRole, setSeatRuntime, setRoutingValue, setSeatTool, type SeatsSettingsForm,
 } from './seats';
 import { EnableSwitch, formLocked, runtimeRowOf, SaveResult } from './SettingsPage';
 import type { AgentsSettingsForm } from './settings';
@@ -332,7 +332,7 @@ function RoutingEditor({ form, settings, quota, locked, t }: {
             data-threshold={field}
             onChange={(event) => {
               const value = Number(event.target.value);
-              if (event.target.value !== '' && Number.isInteger(value) && value >= 0 && value <= 100) form.edit(next => setThreshold(next, field, value));
+              if (event.target.value !== '' && Number.isInteger(value) && value >= 0 && value <= 100) form.edit(next => setRoutingValue(next, field, value));
             }} />
           <span className="font-mono text-xs text-kumo-subtle">%</span>
           <span data-account-mode={account} data-mode={current.mode} className="text-xs text-kumo-subtle">
@@ -341,6 +341,20 @@ function RoutingEditor({ form, settings, quota, locked, t }: {
           </span>
         </Field>
       ))}
+      <Field label={t('seats.credits.mode')}>
+        <Segmented label={t('seats.credits.mode')} disabled={locked} value={draft.routing.codex_credit_mode}
+          options={CODEX_CREDIT_MODES.map(mode => ({ value: mode, label: t(`seats.credits.${mode}`) }))}
+          onPick={mode => form.edit(current => setRoutingValue(current, 'codex_credit_mode', mode))} />
+        {accounts.chatgpt.credits !== 'off' && <span data-credits={accounts.chatgpt.credits} className="text-xs text-kumo-subtle">{t('seats.credits.acting')}</span>}
+      </Field>
+      <Field label={t('seats.credits.floor')}>
+        <input type="number" min={0} step="any" value={draft.routing.codex_credit_floor} disabled={locked} aria-label={t('seats.credits.floor')} className={NUMBER_INPUT}
+          data-credit-floor
+          onChange={(event) => {
+            const value = Number(event.target.value);
+            if (event.target.value !== '' && Number.isFinite(value) && value >= 0) form.edit(next => setRoutingValue(next, 'codex_credit_floor', value));
+          }} />
+      </Field>
     </section>
   );
 }

@@ -216,8 +216,8 @@ describe('agents page seats section', () => {
   const pick = (seat: string) => buttonWithText(({ 'worker-light': 'Light worker', gatekeeper: 'Gatekeeper', 'gatekeeper-fallback': 'Gatekeeper fallback', reviewer: 'Reviewer' } as Record<string, string>)[seat] ?? seat);
   const routeSeats = (task: string) => all(`[data-route="${task}"] [data-route-seat]`).map(item => item.getAttribute('data-route-seat'));
   const mode = (account: string) => document.querySelector(`[data-account-mode="${account}"]`)!;
-  async function setThreshold(field: string, value: string) {
-    const input = document.querySelector<HTMLInputElement>(`[data-threshold="${field}"]`)!;
+  async function setNumber(selector: string, value: string) {
+    const input = document.querySelector<HTMLInputElement>(selector)!;
     // react-dom loads before this DOM exists, so it watches inputs through focus and keyup, not the input event.
     await act(async () => {
       input.focus();
@@ -277,7 +277,7 @@ describe('agents page seats section', () => {
     expect(posts[0]!.seats['gatekeeper-fallback']).toBeNull();
   });
 
-  test('the routing lists reorder, add and remove; frontend offers only the Claude worker seats; save sends the routes and thresholds', async () => {
+  test('the routing lists reorder, add and remove; frontend offers only the Claude worker seats; save sends the routes, thresholds and credit mode', async () => {
     const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
     await mount(seatsProps(posts));
     expect(routeSeats('important_deep')).toEqual(['worker-important', 'worker-deep']);
@@ -291,11 +291,13 @@ describe('agents page seats section', () => {
     await click(document.querySelector<HTMLButtonElement>('[data-route="frontend"] [aria-label="Remove worker-important"]')!);
     // worker-light is null in busy, so no list offers it.
     expect(all('[data-route="frontend"] ~ button').map(button => button.getAttribute('aria-label'))).toEqual(['Add worker-important']);
-    await setThreshold('codex_hyper_at_or_above_remaining', '70');
+    await setNumber('[data-threshold="codex_hyper_at_or_above_remaining"]', '70');
+    await click(document.querySelector<HTMLButtonElement>('[aria-label="Codex on credits when exhausted"] button:nth-child(2)')!);
+    await setNumber('[data-credit-floor]', '2000');
     await click(seatsSave());
     expect(posts[0]!.seats.routing).toMatchObject({
       important_deep: ['worker-deep', 'worker-important'], simple_fast: ['worker-deep'], frontend: ['worker-important-fast'],
-      claude_saving_below_remaining: 20, codex_hyper_at_or_above_remaining: 70,
+      claude_saving_below_remaining: 20, codex_hyper_at_or_above_remaining: 70, codex_credit_mode: 'review', codex_credit_floor: 2000,
     });
     // worker-light as the only seat of a route: setting it to not configured empties the route, and the decoder refusal keeps Save off.
     await click(pick('worker-light'));
@@ -324,8 +326,8 @@ describe('agents page seats section', () => {
     await mount({ ...seatsProps([]), readQuota: async () => ({ state: 'ok', settings: busyQuota(NOW) }) });
     expect([mode('claude').getAttribute('data-mode'), mode('chatgpt').getAttribute('data-mode')]).toEqual(['saving', 'hyper']);
     expect(mode('claude').textContent).toContain('12% left this week');
-    await setThreshold('claude_saving_below_remaining', '10');
-    await setThreshold('codex_hyper_at_or_above_remaining', '70');
+    await setNumber('[data-threshold="claude_saving_below_remaining"]', '10');
+    await setNumber('[data-threshold="codex_hyper_at_or_above_remaining"]', '70');
     expect([mode('claude').getAttribute('data-mode'), mode('chatgpt').getAttribute('data-mode')]).toEqual(['normal', 'normal']);
   });
 

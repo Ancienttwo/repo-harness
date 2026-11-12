@@ -309,18 +309,22 @@ Apply the explorer line through the Claude Agent tool's `model` parameter when y
 Claude saving mode applies when weekly remaining quota is below
 `routing.claude_saving_below_remaining` (default 20). Codex hyper mode applies
 when weekly remaining quota is at or above
-`routing.codex_hyper_at_or_above_remaining` (default 50). Modes are derived,
-never stored. Codex hyper seats use `gpt-6-astra` high. A Pi seat on `magpie/codex/`
+`routing.codex_hyper_at_or_above_remaining` (default 50). Quota modes are
+derived, never stored. Codex hyper seats use `gpt-6-astra` high. A Pi seat on `magpie/codex/`
 takes the same hyper model as `magpie/codex/gpt-6-astra` with that effort.
 
 Claude in saving mode or exhausted is reserved for the advisor and
 orchestrator; both use `opus` high. Important non-frontend work then uses a
 configured Pi `worker-light`; a null or non-Pi seat gives a `none` route.
 Frontend waits for Claude; it has no non-Claude fallback.
-An exhausted account takes no new dispatch, review seats included.
-Only while an owner authorization for credits is recorded on the batch
-parent, pass `--spend-credits` to both commands and name the flag in the
-dispatch note.
+An exhausted account takes no new dispatch, review seats included, except
+under the stored credit mode `routing.codex_credit_mode` (`off`, `review` or
+`all`; default `off`). While the ChatGPT account is exhausted and reports
+credits at or above `routing.codex_credit_floor`, `review` admits the
+gatekeeper, the gatekeeper fallback and a ChatGPT-bound reviewer, and `all`
+admits every ChatGPT-bound seat. Those route and seat lines say `on credits`;
+name it in the dispatch note. Only the owner sets `codex_credit_mode`; a seat
+does not write it, and a joint decision does not cover it.
 `tight` is a display state only; it does not reserve Claude or change routing.
 
 Claude seats use the Claude account, Codex seats and Pi seats on `magpie/codex/` use ChatGPT, and the DeepSeek Pi seat

@@ -32,12 +32,12 @@ const CLI = join(ROOT, 'src/cli/index.ts');
 const OBSIDIAN_PROVIDER = 'kepano/obsidian-skills#a1dc48e68138490d522c04cbf5822214c6eb1202';
 const FULL_PLUGINS = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const;
 
-test('update removes stored routing mode and hyper values once, keeps a null worker-light and fills a null gatekeeper-fallback', () => {
+test('update removes stored routing mode and hyper values once, keeps a null worker-light and fills a null gatekeeper-fallback and the credit mode keys', () => {
   const home = mkdtempSync(join(tmpdir(), 'quota-mode-migration-'));
   try {
     mkdirSync(join(home, '.repo-harness'));
     const path = join(home, '.repo-harness', 'config.json');
-    const { claude_saving_below_remaining: _claude, codex_hyper_at_or_above_remaining: _codex, ...routes } = DEFAULT_SEATS_CONFIG.routing;
+    const { claude_saving_below_remaining: _claude, codex_hyper_at_or_above_remaining: _codex, codex_credit_mode: _mode, codex_credit_floor: _floor, ...routes } = DEFAULT_SEATS_CONFIG.routing;
     const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-light': null, routing: { ...routes, mode: 'hyper', hyper: {
       claude: { model: 'opus', effort: 'high' }, advisor: { model: 'opus', effort: 'max' }, codex: { model: 'gpt-6-astra', effort: 'high' },
     } } };
@@ -61,6 +61,12 @@ test('update removes stored routing mode and hyper values once, keeps a null wor
     writeFileSync(path, JSON.stringify({ seats: withoutFallback }));
     expect(migrateSeatsConfiguration({ HOME: home })).toBe(true);
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ seats: DEFAULT_SEATS_CONFIG });
+    const stored = { ...DEFAULT_SEATS_CONFIG, routing: { ...routes, claude_saving_below_remaining: 30, codex_hyper_at_or_above_remaining: 70 } };
+    expect(() => decodeSeatsConfig(stored)).toThrow(expect.objectContaining({ code: 'seats_config_migration_required' }));
+    writeFileSync(path, JSON.stringify({ seats: stored }));
+    expect(migrateSeatsConfiguration({ HOME: home })).toBe(true);
+    expect(JSON.parse(readFileSync(path, 'utf8')).seats.routing)
+      .toEqual({ ...DEFAULT_SEATS_CONFIG.routing, claude_saving_below_remaining: 30, codex_hyper_at_or_above_remaining: 70 });
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 

@@ -6,6 +6,7 @@ import {
   CLEANUP_INVESTIGATION_MANIFEST, cleanupSelection, decodeAuthorizedCleanupRequest, WORKTREE_CLEANUP_INVESTIGATION_MAX_ITEMS,
   type CleanupAdvice, type CleanupArchivePlan, type CleanupPlan,
 } from '../../src/core/operator/worktree-cleanup-plan';
+import { DEFAULT_SEATS_CONFIG } from '../../src/core/board/seats-settings';
 import type { TaskRequest } from '../../src/core/review/runner-port';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { worktreeId } from '../../src/effects/git/worktree-record';
@@ -212,17 +213,26 @@ routeTest('the plan and execute routes run in the supervised child and write the
   } finally { await server.close(); }
 });
 
-const quota = (state: string) => async () => ({ protocol: 'repo-harness.quota.v1', read_at: '2026-11-04T00:00:00.000Z', accounts: [
-  { account: 'chatgpt', source: 'codex_app_server', observed_at: '2026-11-04T00:00:00.000Z', state, reason: state === 'unknown' ? 'no reading' : null, windows: [] }] });
+const quota = (state: string, credits = false) => async () => ({ protocol: 'repo-harness.quota.v1', read_at: '2026-11-04T00:00:00.000Z', accounts: [
+  { account: 'chatgpt', source: 'codex_app_server', observed_at: '2026-11-04T00:00:00.000Z', state, reason: state === 'unknown' ? 'no reading' : null, windows: [],
+    ...(credits ? { codex: { plan_type: 'pro', credits: { has_credits: true, unlimited: false, balance: '5000' }, rate_limit_reached_type: null, field_errors: [] } } : {}) }] });
 const refusalCode = async (action: () => unknown) => { try { await action(); } catch (error) { return (error as { code?: string }).code; } return 'accepted'; };
 
 // Sibling inputs of "no codex turn may start": each quota state that M60 refuses, a report that fails its decoder, a missing session and a plan above the cap.
 routeTest('the investigation start refuses an exhausted or unknown chatgpt quota and a plan above the item cap, and changes nothing', async f => {
   const first = createCleanupSessionPlan([f.id], f.options());
   const unread = async () => ({ protocol: 'repo-harness.quota.v1', accounts: 'not a list' });
-  for (const [name, read, code] of [['exhausted', quota('exhausted'), 'quota_exhausted'], ['unknown', quota('unknown'), 'quota_unknown'], ['unreadable report', unread, 'quota_unknown']] as const) {
-    expect([name, await refusalCode(() => startCleanupInvestigation(first.session_id, { env: f.env, read_quota: read }))]).toEqual([name, code]);
+  // The credit mode lives in the seats section of the HOME configuration.
+  const home = join(f.parent, 'seats-home'), env = { ...f.env, HOME: home };
+  const creditMode = (codex_credit_mode: string) => {
+    mkdirSync(join(home, '.repo-harness'), { recursive: true });
+    writeFileSync(join(home, '.repo-harness', 'config.json'), JSON.stringify({ seats: { ...DEFAULT_SEATS_CONFIG, routing: { ...DEFAULT_SEATS_CONFIG.routing, codex_credit_mode } } }));
+  };
+  for (const [name, read, code] of [['exhausted', quota('exhausted', true), 'quota_exhausted'], ['unknown', quota('unknown'), 'quota_unknown'], ['unreadable report', unread, 'quota_unknown']] as const) {
+    expect([name, await refusalCode(() => startCleanupInvestigation(first.session_id, { env, read_quota: read }))]).toEqual([name, code]);
   }
+  creditMode('review');
+  expect(await refusalCode(() => startCleanupInvestigation(first.session_id, { env, read_quota: quota('exhausted', true) }))).toBe('quota_exhausted');
   expect(await refusalCode(() => startCleanupInvestigation('c'.repeat(32), { env: f.env, read_quota: quota('normal') }))).toBe('session_not_found');
   // A session above the cap: the same real item under distinct ids, with no loss evidence.
   const row = first.items[0]!.worktree, keep: CleanupAdvice = { recommendation: 'keep', reason: 'fixture', evidence: ['fixture'], archive: none };
@@ -232,6 +242,8 @@ routeTest('the investigation start refuses an exhausted or unknown chatgpt quota
   expect(await refusalCode(() => startCleanupInvestigation(large.session_id, { env: f.env, read_quota: quota('normal') }))).toBe('investigation_too_large');
   for (const session of [first.session_id, large.session_id]) expect(loadCleanupInvestigation(f.env, session)).toBeNull();
   expect(loadCleanupSession(f.env, first.session_id).plan).toEqual(first);
+  creditMode('all');
+  expect(await refusalCode(() => startCleanupInvestigation(first.session_id, { env, read_quota: quota('exhausted', true), run_process: () => new Promise(() => {}) }))).toBe('accepted');
 });
 
 routeTest('the investigation routes start one job, refuse a second while it runs, and record a failure when the child stops before its own record', async f => {

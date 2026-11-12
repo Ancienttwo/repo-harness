@@ -3,7 +3,7 @@ import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { CLAUDE_BUILTIN_AGENT_TYPES, SeatPaneNameError, buildSeatLaunch, seatPaneName, seatTabName, type SeatLaunchV1 } from '../../core/board/seat-launch';
 import { LAUNCH_SEAT_IDS, SeatsConfigMigrationRequiredError, decodeSeatsConfig, isWorkerSeat, type LaunchSeatId, type SeatConfigV1, type SeatsConfigV1 } from '../../core/board/seats-settings';
-import { claudeReserved, effectiveGatekeeper, effectiveSeatConfig, seatAccount, seatAccountQuotas, type SeatAccountOptions, type SeatRouteV1 } from '../../core/board/seat-routing';
+import { claudeReserved, effectiveGatekeeper, effectiveSeatConfig, seatAccount, seatAccountQuotas, seatState, type SeatRouteV1 } from '../../core/board/seat-routing';
 import { classifyQuotaReading, type QuotaAccount, type QuotaReading } from '../../core/board/quota';
 import { readClaudeQuota, readCodexQuota } from '../../effects/board/quota';
 import { version as PACKAGE_VERSION } from '../../../package.json';
@@ -110,12 +110,12 @@ function plannedGatekeeper(route: SeatRouteV1): SeatConfigV1 {
 }
 
 /** The seat config that launches for `id` under the current quota, or the quota refusal. */
-async function quotaCheckedSeat(id: LaunchSeatId, seats: SeatsConfigV1, configured: SeatConfigV1, env: NodeJS.ProcessEnv, accountOptions: SeatAccountOptions): Promise<SeatConfigV1> {
+async function quotaCheckedSeat(id: LaunchSeatId, seats: SeatsConfigV1, configured: SeatConfigV1, env: NodeJS.ProcessEnv): Promise<SeatConfigV1> {
   const readings: QuotaReading[] = [];
   const read = async (account: QuotaAccount | null) => {
     if (account === 'claude') readings.push(readClaudeQuota(env));
     if (account === 'chatgpt') readings.push(await readCodexQuota(env, PACKAGE_VERSION));
-    return seatAccountQuotas(readings.map(reading => classifyQuotaReading(reading, Date.now())), seats.routing, accountOptions);
+    return seatAccountQuotas(readings.map(reading => classifyQuotaReading(reading, Date.now())), seats.routing);
   };
   const own = seatAccount(configured);
   let quota = await read(own);
@@ -126,12 +126,13 @@ async function quotaCheckedSeat(id: LaunchSeatId, seats: SeatsConfigV1, configur
     quota = await read(seatAccount(fallback));
   }
   const gatekeeper = id === 'gatekeeper' ? effectiveGatekeeper(seats, quota) : null;
-  const launched = gatekeeper?.id === 'gatekeeper-fallback' ? fallback! : configured;
+  const launchedId = gatekeeper?.id === 'gatekeeper-fallback' ? 'gatekeeper-fallback' : id;
+  const launched = launchedId === 'gatekeeper-fallback' ? fallback! : configured;
   const account = seatAccount(launched);
   if (id === 'worker-light' && configured.runtime !== 'pi' && claudeReserved(quota)) {
     throw new SeatsCommandError('seat_quota_reserved', 'The worker-light seat must use Pi while Claude is reserved. Use the quota routes.');
   }
-  if (account !== null && quota[account].state === 'exhausted') {
+  if (account !== null && seatState(launchedId, launched, quota) === 'exhausted') {
     throw new SeatsCommandError('seat_quota_exhausted', `The ${account} account is exhausted. Wait for quota before launching ${id}.${gatekeeper === null ? '' : ` Route ${gatekeeper.line}`}`);
   }
   if (account === 'claude' && id !== 'advisor' && id !== 'orchestrator' && claudeReserved(quota)) {
@@ -140,7 +141,7 @@ async function quotaCheckedSeat(id: LaunchSeatId, seats: SeatsConfigV1, configur
   return gatekeeper?.id === 'gatekeeper-fallback' ? gatekeeper.seat : effectiveSeatConfig(id, seats, quota)!;
 }
 
-export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd(), accountOptions: SeatAccountOptions = {}, planned?: SeatRouteV1): Promise<SeatLaunchV1 & {
+export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd(), planned?: SeatRouteV1): Promise<SeatLaunchV1 & {
   readonly labels: readonly string[]; readonly name: string | null; readonly tab: string | null;
 }> {
   const id = seatId(seat);
@@ -155,7 +156,7 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
   if (configured === null) throw new SeatsCommandError('seat_not_configured', `The ${id} seat is not configured. Configure it in the seats section before launch.`);
   // The board review passes the gatekeeper route that its plan checked: the launched seat is the planned one, with no second quota read.
   // The config is still read for the source of the brief and for the migration error.
-  const effective = id === 'gatekeeper' && planned !== undefined ? plannedGatekeeper(planned) : await quotaCheckedSeat(id, seats, configured, env, accountOptions);
+  const effective = id === 'gatekeeper' && planned !== undefined ? plannedGatekeeper(planned) : await quotaCheckedSeat(id, seats, configured, env);
   if (effective.runtime === 'pi') await assertPiShell(env, cwd);
   const labelSet = seatLabels(id, labels);
   // The pane name needs the registry prefix, so it comes only with the seat labels.
@@ -210,13 +211,12 @@ export function buildSeatsCommand(loadNotify?: () => Promise<SeatResetNotify>): 
     .option('--release <digits>', 'Release item of a worker pane name, for example 0252 for rh-w-rel0252')
     .option('--qualifier <word>', 'Slice word of a worker pane name when one issue has two live worker panes')
     .option('--json', 'Print the argv, the seat brief, the source, the limits, the labels, the pane name and the tab name as JSON')
-    .option('--spend-credits', 'Owner-authorized: launch on an exhausted ChatGPT account that still has credits')
-    .action(async (seat: string, options: SeatLabelInput & { json?: boolean; spendCredits?: boolean }) => {
+    .action(async (seat: string, options: SeatLabelInput & { json?: boolean }) => {
       let launch: Awaited<ReturnType<typeof seatLaunch>>;
       try {
         launch = await seatLaunch(seat, {
           repositoryId: options.repositoryId, issue: options.issue, pr: options.pr, parent: options.parent, release: options.release, qualifier: options.qualifier,
-        }, process.env, process.cwd(), { spendCredits: options.spendCredits === true });
+        }, process.env, process.cwd());
       } catch (error) {
         const code = error instanceof SeatsCommandError || error instanceof ClaudeAgentTypesError || error instanceof PiFleetRolesError || error instanceof PiShellError || error instanceof SeatPaneNameError
           || error instanceof RepoHarnessRegistryStrictError || error instanceof SeatsConfigMigrationRequiredError ? error.code : 'seat_launch_failed';

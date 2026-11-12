@@ -9,7 +9,7 @@ import type { BoardCommentV1, BoardParentReadV1, BoardSubIssueReadV1 } from '../
 
 const NORMAL: SeatAccountQuotas = {
   claude: { state: 'normal', remaining: 80, mode: 'normal' },
-  chatgpt: { state: 'normal', remaining: 30, mode: 'normal' },
+  chatgpt: { state: 'normal', remaining: 30, mode: 'normal', credits: 'off' },
 };
 const comment = (body: string, created_at = '2026-11-09T10:00:00Z'): BoardCommentV1 =>
   ({ url: `https://example.test/${created_at}`, created_at, author_association: 'OWNER', body });

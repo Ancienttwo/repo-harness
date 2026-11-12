@@ -7,6 +7,7 @@ import {
   DEFAULT_SEATS_CONFIG,
   FRONTEND_SEAT_IDS,
   ROUTING_CLASSES,
+  ROUTING_KEYS,
   WORKER_SEAT_IDS,
   SeatsConfigMigrationRequiredError,
   decodeSeatsConfig,
@@ -166,7 +167,7 @@ function changedKeys(current: SeatsConfigV1, next: SeatsConfigV1): string[] {
     return FIELDS.filter(field => JSON.stringify(before[field]) !== JSON.stringify(after[field]))
       .map(field => `seats.${id}.${field}`);
   }),
-  ...([...ROUTING_CLASSES, 'claude_saving_below_remaining', 'codex_hyper_at_or_above_remaining', 'low_quota_explorer'] as const)
+  ...ROUTING_KEYS
     .filter(field => JSON.stringify(current.routing[field]) !== JSON.stringify(next.routing[field]))
     .map(field => `seats.routing.${field}`)];
 }

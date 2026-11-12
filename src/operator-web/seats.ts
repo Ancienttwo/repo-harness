@@ -10,6 +10,7 @@ import {
   type OptionalSeatId,
   type SeatId,
   type SeatModelV1,
+  type SeatRoutingV1,
   type SeatRuntime,
   type SeatsConfigV1,
   type SeatsSettingsRequestV1,
@@ -126,7 +127,8 @@ export function setOptionalSeat(draft: SeatsConfigV1, id: OptionalSeatId, seat: 
 
 export const setRoute = (draft: SeatsConfigV1, task: RoutingClass, seats: readonly WorkerSeatId[]): SeatsConfigV1 =>
   ({ ...draft, routing: { ...draft.routing, [task]: seats } });
-export const setThreshold = (draft: SeatsConfigV1, field: 'claude_saving_below_remaining' | 'codex_hyper_at_or_above_remaining', value: number): SeatsConfigV1 =>
+type RoutingValueField = 'claude_saving_below_remaining' | 'codex_hyper_at_or_above_remaining' | 'codex_credit_mode' | 'codex_credit_floor';
+export const setRoutingValue = <Field extends RoutingValueField>(draft: SeatsConfigV1, field: Field, value: SeatRoutingV1[Field]): SeatsConfigV1 =>
   ({ ...draft, routing: { ...draft.routing, [field]: value } });
 export const setExplorer = (draft: SeatsConfigV1, change: Partial<SeatModelV1>): SeatsConfigV1 =>
   ({ ...draft, routing: { ...draft.routing, low_quota_explorer: { ...draft.routing.low_quota_explorer, ...change } } });

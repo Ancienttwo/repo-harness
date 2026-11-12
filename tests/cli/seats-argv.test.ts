@@ -371,17 +371,20 @@ describe("repo-harness seats argv", () => {
       writeFileSync(join(home, 'codex-credits'), 'false');
       const exhausted = argv(home, 'worker', '--json');
       expect([exhausted.status, JSON.parse(exhausted.stderr).error]).toEqual([1, 'seat_quota_exhausted']);
-      // #2251: the flag admits the seat only when the account still has credits. Without the flag nothing changes.
-      for (const credits of ['false', 'true']) {
-        writeFileSync(join(home, 'codex-credits'), credits);
-        const granted = argv(home, 'worker', '--json', '--spend-credits');
-        expect([credits, granted.status, granted.stderr ? JSON.parse(granted.stderr).error : null])
-          .toEqual([credits, credits === 'true' ? 0 : 1, credits === 'true' ? null : 'seat_quota_exhausted']);
-        expect(argv(home, 'worker', '--json').status).toBe(1);
-      }
-      expect(bare(JSON.parse(argv(home, 'worker', '--json', '--spend-credits').stdout).argv).slice(0, 3))
-        .toEqual(['codex', '-m', DEFAULT_SEATS_CONFIG.worker.model]);
+      expect(JSON.parse(argv(home, 'gatekeeper', '--pr', '2630', '--json').stderr).error).toBe('seat_quota_exhausted');
     });
+    // #2630: the stored credit mode admits the seats it names while the account is exhausted and has credits.
+    for (const mode of ['review', 'all'] as const) {
+      withHome({ ...DEFAULT_SEATS_CONFIG, routing: { ...DEFAULT_SEATS_CONFIG.routing, codex_credit_mode: mode, codex_credit_floor: 2000 } }, home => {
+        writeFileSync(join(home, 'codex-used'), '95');
+        writeFileSync(join(home, 'codex-credits'), 'true');
+        const worker = argv(home, 'worker', '--json');
+        expect([mode, worker.status, worker.stderr ? JSON.parse(worker.stderr).error : null]).toEqual([mode, mode === 'all' ? 0 : 1, mode === 'all' ? null : 'seat_quota_exhausted']);
+        expect(bare(JSON.parse(argv(home, 'gatekeeper', '--pr', '2630', '--json').stdout).argv).slice(0, 3)).toEqual(['codex', '-m', DEFAULT_SEATS_CONFIG.gatekeeper.model]);
+        writeFileSync(join(home, 'codex-credits'), 'false');
+        expect(JSON.parse(argv(home, 'gatekeeper', '--pr', '2630', '--json').stderr).error).toBe('seat_quota_exhausted');
+      });
+    }
   });
 
   test("without a seats section the advisor launch comes from the defaults and briefs the default fleet", () => {
