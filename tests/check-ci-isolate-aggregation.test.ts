@@ -194,6 +194,37 @@ describe("ci isolate-mode test loop", () => {
     }
   });
 
+  test('a BUN_TEST_FILES name that is not a file fails with that name before any test starts', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ci-missing-listed-'));
+    try {
+      const marker = join(dir, 'ran');
+      const existing = join(dir, 'listed.test.ts');
+      writeFileSync(existing, `import { test } from "bun:test";\nimport { writeFileSync } from "node:fs";\ntest("listed", () => writeFileSync(${JSON.stringify(marker)}, "x"));\n`);
+      const missing = join(dir, 'ghost-listed.test.ts');
+      // Isolated mode takes its file list from BUN_TEST_FILES, so the guard on the
+      // positional arguments cannot see this name. The list takes the same rule:
+      // the missing name fails the run with its own name, and the fixture next to
+      // it never runs.
+      const result = spawnSync('bash', ['-c', `source ${JSON.stringify(LIB_PATH)}; run_bun_tests`], {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+        env: gateEnv({
+          BUN_TEST_ISOLATE_FILES: '1',
+          BUN_TEST_FILES: `${existing} ${missing}`,
+          BUN_TEST_TIMEOUT_MS: '60000',
+          BUN_TEST_MAX_CONCURRENCY: '1',
+        }),
+      });
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain(`[ci] test file does not exist: ${missing}`);
+      expect(result.stdout).not.toContain('bun test v');
+      expect(result.stderr).not.toContain('Ran ');
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('core and integration retain the complete file inventory without overlap', () => {
     const files = discoverTestFiles(REPO_ROOT);
     const core = selectTestSuite('core', files);
