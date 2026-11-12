@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The release steps (#2006, #2194). The life cycle stops at the merged release PR. This script only reads git, npm
+# The release steps (#2006, #2641). The life cycle stops at the merged release PR. This script only reads git, npm
 # and GitHub: `plan` prints the command list bound to one release commit, `guard` runs before each publish from the
-# release worktree, `workflow-guard` runs in .github/workflows/release.yml before its lane and its publishes, and
-# `check` reads back each step.
+# release worktree, `wait` polls npm for a published version, and `check` reads back each step.
 
 CALLER_DIR="$(pwd -P)"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,7 +24,7 @@ export npm_config_userconfig="$NPM_SCRATCH/user-npmrc" npm_config_globalconfig="
 export npm_config_cache="$NPM_SCRATCH/cache" npm_config_logs_dir="$NPM_SCRATCH/logs"
 
 usage() {
-  echo "usage: $0 plan <version> | notes <version> | guard <version> <sha> | workflow-guard <sha> | check published <version> | check tagged <version>" >&2
+  echo "usage: $0 plan <version> | notes <version> | guard <version> <sha> | wait <package> <version> | check published <version> | check tagged <version>" >&2
   exit 2
 }
 
@@ -127,18 +126,19 @@ checkout_is_release() {
   done
 }
 
-# The release workflow names only a commit. The commit must be the release commit of its own package.json
-# version, that version must be unpublished and untagged, and the job checkout must be that commit. Prints the version.
-workflow_guard() {
-  local sha="$1" version release
-  [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || fail "$sha is not a full commit SHA."
-  version="$(git show "$sha:package.json" | json_field version)" || fail "git show $sha:package.json failed."
-  [[ -n "$version" ]] || fail "package.json at $sha has no version."
-  release="$(preflight "$version")"
-  [[ "$release" == "$sha" ]] || fail "$sha is not the release commit of ${version}; that is $release."
-  checkout_is_release "$version" "$sha"
-  echo "[release-owner] OK: workflow guard. $sha is the release commit of ${version}." >&2
-  echo "$version"
+# npm shows a package some minutes after its publish. Poll `npm view` until it shows the version. A wait that ends
+# without it fails with the package name; run the same step again later, never publish again.
+wait_for_npm() {
+  local name="$1" version="$2" interval="${RELEASE_WAIT_INTERVAL:-10}" polls="${RELEASE_WAIT_POLLS:-90}" i
+  # Poll at 0 s and after each sleep: the last poll runs at polls * interval.
+  for ((i = 0; i <= polls; i++)); do
+    if [[ "$(npm view "${name}@${version}" version --registry "$NPM_RELEASE_REGISTRY" 2>/dev/null || true)" == "$version" ]]; then
+      echo "[release-owner] OK: npm shows ${name}@${version}."
+      return 0
+    fi
+    ((i == polls)) || sleep "$interval"
+  done
+  fail "npm does not show ${name}@${version} after $((polls * interval)) s. Run this step again later; do not publish again."
 }
 
 remote_tag_refs() {
@@ -185,11 +185,16 @@ plan() {
   cat <<EOF
 Release GO: ${core_name} ${version} at ${sha}
 
-Owner steps. Run them in order. At the first failure, stop and report it; do not retry or publish again.
-1. git fetch ${REMOTE} && git worktree add --detach ${worktree} ${sha} && cd ${worktree} && bun install --frozen-lockfile
+Owner steps. Run them in order. At the first failure, stop and report it; do not publish again.
+Keep this list and mark a step when its command exits 0. A marked step is done and never runs again. An unmarked step is unknown in a continued run. plan refuses once a package is on npm or the tag exists, so a continued run uses this list, not a new plan.
+Settle npm first: a continued run first runs bash scripts/release-owner-steps.sh wait <package> <version> for each package whose publish step has no mark, and only then reads the states of steps 1, 2 and 3. In this settle, a wait that ends without the version means the package is not published: its publish step runs, and this is not the stop at the first failure.
+A step whose result shows it is done (npm shows the version, the tag is at ${sha}, the GitHub Release exists) is skipped. A wait inside steps 3 and 4 follows a publish that exited 0: when it fails, run the same step again later; do not publish again.
+1. git fetch ${REMOTE} && git worktree add --detach ${worktree} ${sha} && cd ${worktree} && bun install --frozen-lockfile && bun run check:release
+   Done state: a package of ${version} is on npm. Step 1 passed on ${sha} before the first publish, so a continued run skips it and runs only: cd ${worktree}
+   Not done: bun run check:release passes before the first publish. When ${worktree} exists at ${sha}, skip the worktree add.
 2. bash scripts/release-owner-steps.sh guard ${version} ${sha} && (cd ${CONSOLE_DIR} && npm publish --auth-type=web)
-3. bash scripts/release-owner-steps.sh guard ${version} ${sha} && npm publish --auth-type=web
-4. bash scripts/release-owner-steps.sh check published ${version}
+3. bash scripts/release-owner-steps.sh wait ${console_name} ${version} && bash scripts/release-owner-steps.sh guard ${version} ${sha} && npm publish --auth-type=web
+4. bash scripts/release-owner-steps.sh wait ${core_name} ${version} && bash scripts/release-owner-steps.sh check published ${version}
 5. git tag -a v${version} ${sha} -m "${core_name} ${version}" && git push ${REMOTE} v${version}
 6. bash scripts/release-owner-steps.sh notes ${version} > ${worktree}.notes.md && gh release create v${version} --repo ${slug} --verify-tag --title "${core_name} ${version}" --notes-file ${worktree}.notes.md
 7. bash scripts/release-owner-steps.sh check tagged ${version}
@@ -235,7 +240,7 @@ case "${1:-}" in
     release_notes "$2" "$sha"
     ;;
   guard) [[ $# -eq 3 ]] || usage; guard "$2" "$3" ;;
-  workflow-guard) [[ $# -eq 2 ]] || usage; workflow_guard "$2" ;;
+  wait) [[ $# -eq 3 ]] || usage; wait_for_npm "$2" "$3" ;;
   check)
     [[ $# -eq 3 ]] || usage
     case "$2" in

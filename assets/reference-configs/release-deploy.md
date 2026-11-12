@@ -31,85 +31,42 @@ tags, the Git version tag, and the core runtime receipt.
 
 ## Owner Release GO
 
-The life cycle stops at the merged release PR. One run of
-`.github/workflows/release.yml` publishes, tags and releases the merged
-release commit. The orchestrator seat starts it:
-`gh workflow run release.yml -f sha=<merged release commit>`. The run name is
-`Release <sha>`. The `publish` job waits in the `release` environment. The
-owner step is one action: approve that run. The approval is the explicit
-authorization for that production deployment.
+The life cycle stops at the merged release PR. One path releases it: the host
+command list of `bash scripts/release-owner-steps.sh plan <version>`. It runs
+from the release worktree `/tmp/repo-harness-wt-release-<version>`. On the
+owner's explicit word for one release, the orchestrator seat runs the whole
+list. That word is the explicit authorization for that production deployment.
+The owner confirms the npm login in the browser, because each publish uses
+`npm publish --auth-type=web`. No npm token exists.
 
-A job that holds `id-token: write` or `contents: write` runs only inline
-workflow steps and SHA-pinned actions. It checks out no code to run and runs
-no install, repository script or package script. The steps of a job share one
-runner and user, so a token set on one step is not safe from dependency code
-that an earlier step of the same job ran. The run has six jobs:
+Keep the printed list and mark a step when its command exits 0. A marked step
+is done and never runs again. An unmarked step is unknown in a continued run.
+`plan` refuses once a package is on npm or the tag exists, so a continued run
+uses the list that the first `plan` printed. The list serves a first run and a
+continued run. Stop at the first failure and report it. A host publish has no
+npm provenance statement.
 
-1. `validate` (`contents: read`, `main` only): git and jq commands written in
-   the workflow read the SHA as data. The job refuses a SHA that is not 40 hex
-   characters or not a first-parent commit of a fresh `main`, a commit where
-   either package version is not the target version or is already the target
-   version in its first parent, and a commit with no CHANGELOG section.
-2. `lane` (`contents: read`): checks out the SHA, runs `bun install`,
-   `bun run check:release` and
-   `bash scripts/release-owner-steps.sh workflow-guard <sha>` (a version that
-   is on npm, an existing tag or a changed checkout fails). `npm pack` packs
-   both packages; it runs the `prepack` builds. The job uploads both tarballs.
-3. `publish` (`release` environment, `contents: read` and `id-token: write`):
-   no checkout. It downloads the tarballs. Inline steps check that each
-   tarball holds the package name and version and that npm does not have the
-   version. One step then loops over `repo-harness-operator-web` and
-   `repo-harness`. For each package it runs the same
-   `npm publish <tarball> --provenance --ignore-scripts`, and then the same
-   wait: 30 polls of `npm view <name>@<version> version`, 10 s apart, so
-   5 minutes. npm must show the web package before the core publish starts,
-   and the core wait ends before the read-back. When npm does not show a
-   package after 5 minutes, the step fails and `published` does not run. No
-   package script runs.
-4. `published` (`contents: read`): checks out the SHA, runs `bun install` and
-   `check published <version>`.
-5. `tag` (`contents: write`): no checkout. Inline git fetches the SHA and awk
-   reads its CHANGELOG section. `gh api` creates the annotated tag
-   `v<version>` at the SHA, and `gh release create --verify-tag` creates the
-   GitHub Release with that section.
-6. `tagged` (`contents: read`): checks out the SHA and runs
-   `check tagged <version>` (the remote tag is at the release commit; the
-   GitHub Release is not a draft or a prerelease).
+Settle npm first. A continued run first runs
+`bash scripts/release-owner-steps.sh wait <package> <version>` for each package
+whose publish step has no mark, and only then reads the states of steps 1, 2
+and 3. In this settle, a wait that ends without the version means the package
+is not published: its publish step runs, and this is not the stop at the first
+failure.
 
-Each script step fetches `main` first, so a merge to `main` during the run
-does not stop it. A failed step stops the run. A rerun of a published version
-stops at the guard in `lane`; nothing is published again.
-
-npm provenance records the workflow run commit (`GITHUB_SHA`), which is the
-`main` head at dispatch, not the input SHA. Dispatch right after the release
-PR merges, so that the two commits are the same or close.
-
-### Owner setup (#2194)
-
-- npm Trusted Publishing for each of `repo-harness-operator-web` and
-  `repo-harness`: repository `aimpact-inc/repo-harness`, workflow
-  `release.yml` and environment `release`. npm does not check the branch, so
-  the environment field is what keeps a token from a job without the approved
-  environment from publishing.
-- The GitHub environment `release`: the owner as the required reviewer and a
-  deployment branch policy of `main` only.
-
-### Partial publish recovery
-
-When the run stops after a publish, a rerun refuses. A core npm lag over
-5 minutes fails the `publish` job, so a rerun stops at `already on npm`.
-The release uses this recovery. The owner completes the release by hand from
-the release commit. Read the state of each step before the step, and do only
-the steps that are not done. Stop at the first failure and report it.
-
-1. Worktree: `git fetch origin && git worktree add --detach /tmp/repo-harness-wt-release-<version> <sha> && cd /tmp/repo-harness-wt-release-<version> && bun install --frozen-lockfile`
+1. Worktree: `git fetch origin && git worktree add --detach /tmp/repo-harness-wt-release-<version> <sha> && cd /tmp/repo-harness-wt-release-<version> && bun install --frozen-lockfile && bun run check:release`.
+   `bun run check:release` passes before the first publish. Done state: a
+   package of this version is on npm. Step 1 passed on `<sha>` before the
+   first publish, so a continued run skips it and runs only
+   `cd /tmp/repo-harness-wt-release-<version>`. When step 1 is not done and
+   the worktree exists at `<sha>`, skip the `git worktree add`.
 2. Console package: when `npm view repo-harness-operator-web@<version> version`
    prints the version, skip this step. Otherwise run, from the worktree root:
    `bash scripts/release-owner-steps.sh guard <version> <sha> && (cd packages/operator-web && npm publish --auth-type=web)`
-3. Core package: when `npm view repo-harness@<version> version` prints the
-   version, skip this step. Otherwise run, from the worktree root:
-   `bash scripts/release-owner-steps.sh guard <version> <sha> && npm publish --auth-type=web`
-4. `bash scripts/release-owner-steps.sh check published <version>`
+3. Core package: the `prepublishOnly` gate of the core package needs npm to
+   show the web version. When `npm view repo-harness@<version> version`
+   prints the version, skip this step. Otherwise run, from the worktree root:
+   `bash scripts/release-owner-steps.sh wait repo-harness-operator-web <version> && bash scripts/release-owner-steps.sh guard <version> <sha> && npm publish --auth-type=web`
+4. `bash scripts/release-owner-steps.sh wait repo-harness <version> && bash scripts/release-owner-steps.sh check published <version>`
 5. Tag: run `git ls-remote --tags origin "refs/tags/v<version>" "refs/tags/v<version>^{}"`.
    No output: run `git tag -a v<version> <sha> -m "repo-harness <version>" && git push origin v<version>`.
    A `^{}` line that names `<sha>`: the tag is done; skip.
@@ -119,12 +76,17 @@ the steps that are not done. Stop at the first failure and report it.
    Found: skip; step 7 checks it.
 7. `bash scripts/release-owner-steps.sh check tagged <version>`
 
-`bash scripts/release-owner-steps.sh plan <version>` stays a read-only
-preflight: it runs the guard checks for a version and prints the release
-commit, a manual command list and the post-release steps. After the run
-passes, the orchestrator and the advisor decide together on those
-post-release steps: `repo-harness update` on the owner host, the Upgrade
-steps of the release notes, and the relaunch of both seats from
+`wait` polls `npm view <name>@<version> version` every 10 s for 15 minutes. A
+wait that ends without the version fails with the package name. Inside steps 3
+and 4, the wait follows a publish that exited 0: run the same step again
+later; do not publish again. The settle above is the other case.
+
+`bash scripts/release-owner-steps.sh plan <version>` is a read-only preflight:
+it runs the guard checks for a version and prints the release commit, this
+command list and the post-release steps. After step 7 passes, the orchestrator
+and the advisor decide together on those post-release steps:
+`repo-harness update` on the owner host, the Upgrade steps of the release
+notes, and the relaunch of both seats from
 `repo-harness seats argv <seat> --repository-id <id>`.
 
 ## Webapp Release Shape

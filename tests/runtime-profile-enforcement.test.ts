@@ -208,11 +208,11 @@ describe('risk-based runtime profile enforcement', () => {
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   }, 30_000);
 
-  test('Release workflow authoring is high risk and does not publish anything', () => {
+  test('Workflow authoring is high risk and does not publish anything', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-github-release-')));
     try {
       initRepo(cwd);
-      const result = preEdit(cwd, '.github/workflows/release.yml');
+      const result = preEdit(cwd, '.github/workflows/other.yml');
       expect(result.status).toBe(0);
       expect(`${result.stdout}${result.stderr}`).not.toContain('action\":\"block');
     } finally { rmSync(cwd, { recursive: true, force: true }); }

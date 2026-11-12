@@ -310,7 +310,7 @@ describe("Bootstrap Script Contracts", () => {
       mkdirSync(join(dir, "bin"));
       // The real npm config loader runs with the script's env; it needs no network.
       const realNpm = Bun.which("npm")!;
-      writeFileSync(join(dir, "bin/npm"), `#!/bin/bash\n[[ -f \"$npm_config_userconfig\" && ! -s \"$npm_config_userconfig\" && -f \"$npm_config_globalconfig\" && ! -s \"$npm_config_globalconfig\" && \"$npm_config_globalconfig\" != \"$npm_config_userconfig\" ]] && echo \"$npm_config_userconfig\" >> \"$HOME/npm-config\"\n${realNpm} config get registry >/dev/null && echo loaded >> \"$HOME/npm-loader\"\n[[ \"$NPM_VIEW\" == published ]] && exit 0\n[[ \"$NPM_VIEW\" == error ]] && { echo 'npm error code ETIMEDOUT' >&2; exit 1; }\necho 'npm error code E404 not in this registry' >&2\nexit 1\n`, { mode: 0o755 });
+      writeFileSync(join(dir, "bin/npm"), `#!/bin/bash\n[[ -f \"$npm_config_userconfig\" && ! -s \"$npm_config_userconfig\" && -f \"$npm_config_globalconfig\" && ! -s \"$npm_config_globalconfig\" && \"$npm_config_globalconfig\" != \"$npm_config_userconfig\" ]] && echo \"$npm_config_userconfig\" >> \"$HOME/npm-config\"\n${realNpm} config get registry >/dev/null && echo loaded >> \"$HOME/npm-loader\"\n[[ \"$NPM_VIEW\" == published ]] && exit 0\n[[ \"$NPM_VIEW\" == third ]] && { n=$(( $(cat \"$HOME/npm-polls\" 2>/dev/null || echo 0) + 1 )); echo $n > \"$HOME/npm-polls\"; (( n >= 3 )) && { echo \"$2\" | sed 's/.*@//'; exit 0; }; }\n[[ \"$NPM_VIEW\" == error ]] && { echo 'npm error code ETIMEDOUT' >&2; exit 1; }\necho 'npm error code E404 not in this registry' >&2\nexit 1\n`, { mode: 0o755 });
       const realGit = Bun.which("git")!;
       writeFileSync(join(dir, "bin/git"), `#!/bin/bash\n[[ -n "$FAIL_TAGS" && "$1 $2" == "ls-remote --tags" ]] && exit 128\n[[ -n "$FAIL_TAG_PARSE" && "$1 $4" == "rev-parse refs/tags/"* ]] && exit 128\nexec ${realGit} "$@"\n`, { mode: 0o755 });
       writeFileSync(join(dir, "bin/gh"), `#!/bin/bash\ncase "$1 $2" in\n  "repo view") echo owner/repo ;;\n  "api repos/owner/repo") echo 42 ;;\n  "release view") case "$RELEASE_STATE" in missing) exit 1 ;; draft) d=true p=false ;; prerelease) d=false p=true ;; *) d=false p=false ;; esac; echo "{\\"tagName\\":\\"$3\\",\\"isDraft\\":$d,\\"isPrerelease\\":$p}" ;;\n  *) exit 1 ;;\nesac\n`, { mode: 0o755 });
@@ -327,6 +327,11 @@ describe("Bootstrap Script Contracts", () => {
       expect(plan.stdout).toContain(`Release GO: repo-harness ${planVersion} at ${third}`);
       expect(plan.stdout).toContain(`git worktree add --detach ${worktree} ${third}`);
       expect(plan.stdout).toContain(`guard ${planVersion} ${third} && npm publish`);
+      expect(plan.stdout).toContain(`cd ${worktree} && bun install --frozen-lockfile && bun run check:release`);
+      expect(plan.stdout).toContain("mark a step when its command exits 0. A marked step is done and never runs again. An unmarked step is unknown in a continued run.");
+      expect(plan.stdout).toContain("Settle npm first: a continued run first runs bash scripts/release-owner-steps.sh wait <package> <version> for each package whose publish step has no mark, and only then reads the states of steps 1, 2 and 3.");
+      expect(plan.stdout).toContain(`Done state: a package of ${planVersion} is on npm. Step 1 passed on ${third} before the first publish, so a continued run skips it and runs only: cd ${worktree}`);
+      expect(plan.stdout).toContain(`wait repo-harness-operator-web ${planVersion} && bash scripts/release-owner-steps.sh guard`);
       expect(plan.stdout).toContain(`git tag -a v${planVersion} ${third}`);
       expect(plan.stdout).toContain(`Run step ${planVersion}.`);
       expect(plan.stdout).toContain("--repository-id 42");
@@ -342,11 +347,6 @@ describe("Bootstrap Script Contracts", () => {
         [{ NPM_VIEW: "error" }, `unable to prove repo-harness-operator-web@${planVersion} is unpublished`],
       ];
       for (const [env, message] of planRefusals) expect(runIn(repo, ["plan", planVersion], env).stderr).toContain(message);
-      // The release workflow names only a SHA: it gets the version back, and a copy of the release tree is refused.
-      expect(run("workflow-guard", third).stdout).toBe(`${planVersion}\n`);
-      const copy = git("commit-tree", `${third}^{tree}`, "-p", third, "-m", "not the release commit");
-      expect(run("workflow-guard", copy).stderr).toContain(`${copy} is not the release commit of ${planVersion}; that is ${third}`);
-      expect(runIn(repo, ["workflow-guard", third], { NPM_VIEW: "published" }).stderr).toContain(`repo-harness-operator-web@${planVersion} is already on npm`);
       git("tag", `v${planVersion}`, third);
       expect(run("plan", planVersion).stderr).toContain(`tag v${planVersion} already exists in this repository`);
       git("tag", "-d", `v${planVersion}`);
@@ -398,38 +398,26 @@ describe("Bootstrap Script Contracts", () => {
       git("push", "-q", "-f", "origin", "main");
       git("fetch", "-q", "origin");
       expect(run("plan", "1.5.0").stderr).toContain("has no scripts/release-owner-steps.sh");
+      // A release section ends at the next heading: an [Unreleased] section before it and a longer version after it stay out.
+      writeFileSync(join(repo, "package.json"), `{\n  "name": "repo-harness",\n  "version": "1.7.0"\n}\n`);
+      writeFileSync(join(repo, "packages/operator-web/package.json"), `{\n  "name": "repo-harness-operator-web",\n  "version": "1.7.0"\n}\n`);
+      writeFileSync(join(repo, "docs/CHANGELOG.md"), "# Changelog\n\n## [Unreleased]\n\n- Not yet.\n\n## [1.7.0] - 2026-11-12\n\n- Seven.\n\n## [1.7.00]\n\n- Later patch.\n");
+      git("commit", "-qam", "release 1.7.0");
+      git("push", "-q", "origin", "main");
+      git("fetch", "-q", "origin");
+      expect(run("notes", "1.7.0").stdout).toBe("\n- Seven.\n");
+      // The wait polls npm until it shows the version; one that never shows fails with the package name.
+      const waitEnv = { RELEASE_WAIT_INTERVAL: "0", RELEASE_WAIT_POLLS: "5" };
+      const shown = runIn(repo, ["wait", "repo-harness-operator-web", "9.9.9"], { ...waitEnv, NPM_VIEW: "third" });
+      expect(shown.status).toBe(0);
+      expect(readFileSync(join(dir, "npm-polls"), "utf8").trim()).toBe("3");
+      const never = runIn(repo, ["wait", "repo-harness", "9.9.9"], waitEnv);
+      expect(never.status).toBe(1);
+      expect(never.stderr).toContain("npm does not show repo-harness@9.9.9 after 0 s. Run this step again later; do not publish again.");
     } finally {
       rmSync(worktree, { recursive: true, force: true });
       rmSync(otherWorktree, { recursive: true, force: true });
       rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  test("the release workflow and the owner helper extract the CHANGELOG section with one awk program (#2204)", () => {
-    // The tag job holds contents: write and runs only inline steps, so its copy cannot call the script.
-    // This check binds the two copies: one program text, and one result on the same CHANGELOG.
-    const program = (file: string): string => {
-      const body = read(file).match(/awk -v heading="[^"]*" '([\s\S]*?)'/u)?.[1];
-      if (body === undefined) throw new Error(`${file} has no awk program on a "## [<version>]" heading.`);
-      return body.split("\n").map((line) => line.trim()).filter(Boolean).join("\n");
-    };
-    const workflow = program(".github/workflows/release.yml");
-    const ownerSteps = program("scripts/release-owner-steps.sh");
-    expect(workflow.split("\n")).toEqual(ownerSteps.split("\n"));
-    const awk = Bun.which("awk");
-    // A host without awk keeps the text check only; the release runs on a runner that has awk.
-    if (!awk) return;
-    const changelog = "# Changelog\n\n## [Unreleased]\n\n- Not yet released.\n\n## [1.2.3] - 2026-11-10\n\n### Changed\n\n- A change.\n\n## [1.2.30]\n\n- A later patch.\n";
-    // The expected notes also pin what the shared program selects: the [1.2.3] run stops at [1.2.30], and the [Unreleased] heading is a section too.
-    const fixtures: Array<[string, string]> = [
-      ["## [1.2.3]", "\n### Changed\n\n- A change.\n\n"],
-      ["## [1.2.30]", "\n- A later patch.\n"],
-      ["## [Unreleased]", "\n- Not yet released.\n\n"],
-      ["## [9.9.9]", ""],
-    ];
-    const extract = (body: string, heading: string) => spawnSync(awk, ["-v", `heading=${heading}`, body], { input: changelog, encoding: "utf8" }).stdout;
-    for (const [heading, notes] of fixtures) {
-      for (const body of [workflow, ownerSteps]) expect(extract(body, heading)).toBe(notes);
     }
   });
 
