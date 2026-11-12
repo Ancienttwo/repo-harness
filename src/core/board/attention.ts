@@ -20,6 +20,18 @@ const MINUTE = 60_000;
 export const A1_UNMERGED_MS = 15 * MINUTE;
 /** A3: a worker seat stays blocked or in error this long. */
 export const A3_STUCK_MS = 10 * MINUTE;
+/** A12: a writer claim has no pull request and no claim status for this long. */
+export const A12_NO_PR_MS = 120 * MINUTE;
+/** A13: a worker seat is done or idle this long while its item has no open or merged pull request. */
+export const A13_IDLE_MS = 10 * MINUTE;
+/** A14: the failed required check of an open pull request is this old. */
+export const A14_RED_MS = 30 * MINUTE;
+/** A15: an unresolved FAIL record of the head is this old. */
+export const A15_FAIL_MS = 60 * MINUTE;
+/** A16: a question to the coordinator has no answer for this long. */
+export const A16_QUESTION_MS = 15 * MINUTE;
+/** A17: a blocked claim status is this old. */
+export const A17_BLOCKED_MS = 15 * MINUTE;
 /** R1: this many open items are not in the latest plan. */
 export const R1_UNPLANNED_ITEMS = 3;
 /** R4: an accepted pull request in the merge order waits this long unmerged. */
@@ -27,7 +39,7 @@ export const R4_STALLED_MS = 4 * 60 * MINUTE;
 const WORKER_SEATS = new Set<string>(WORKER_SEAT_IDS);
 const RED_CONCLUSIONS = new Set(['failure', 'timed_out', 'startup_failure']);
 
-export type BoardRuleId = 'A1' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'A9' | 'A10' | 'A11' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5';
+export type BoardRuleId = 'A1' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'A9' | 'A10' | 'A11' | 'A12' | 'A13' | 'A14' | 'A15' | 'A16' | 'A17' | 'A18' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5';
 export type BoardAttentionRoute = 'orchestrator' | 'advisor';
 /** P0: a seat cannot continue. P1: a worker or an issue waits for the coordinator, or a High change has a lower tier. P2: a pull request or the plan waits. P3: housekeeping. */
 export type BoardPriority = 'P0' | 'P1' | 'P2' | 'P3';
@@ -41,6 +53,7 @@ export const BOARD_PRIORITY_ORDER: readonly BoardPriority[] = Object.freeze(['P0
  */
 export const BOARD_RULE_PRIORITY: Readonly<Record<BoardRuleId, BoardPriority>> = Object.freeze({
   A1: 'P2', A3: 'P0', A4: 'P1', A5: 'P1', A6: 'P1', A7: 'P2', A8: 'P3', A9: 'P3', A10: 'P2', A11: 'P2',
+  A12: 'P1', A13: 'P1', A14: 'P2', A15: 'P2', A16: 'P1', A17: 'P1', A18: 'P2',
   R1: 'P2', R2: 'P2', R3: 'P1', R4: 'P2', R5: 'P1',
 });
 
@@ -51,6 +64,8 @@ export interface BoardFindingV1 {
   readonly issues: readonly number[];
   readonly pull_requests: readonly number[];
   readonly terminals: readonly string[];
+  /** The comment URLs the finding is about: an A16 finding names its question, so each question is its own finding. */
+  readonly comments: readonly string[];
   readonly message: string;
 }
 
@@ -76,7 +91,7 @@ interface Context {
   readonly unevaluated: BoardUnevaluatedV1[];
 }
 
-function find(context: Context, rule: BoardRuleId, subject: { issues?: number[]; pull_requests?: number[]; terminals?: string[] }, message: string): void {
+function find(context: Context, rule: BoardRuleId, subject: { issues?: number[]; pull_requests?: number[]; terminals?: string[]; comments?: string[] }, message: string): void {
   context.findings.push(Object.freeze({
     rule,
     priority: BOARD_RULE_PRIORITY[rule],
@@ -84,6 +99,7 @@ function find(context: Context, rule: BoardRuleId, subject: { issues?: number[];
     issues: Object.freeze(subject.issues ?? []),
     pull_requests: Object.freeze(subject.pull_requests ?? []),
     terminals: Object.freeze(subject.terminals ?? []),
+    comments: Object.freeze(subject.comments ?? []),
     message,
   }));
 }
@@ -121,7 +137,7 @@ function held(board: BoardV1, pr: BoardPullRequestV1): boolean {
 
 /** Open, not held pull requests with a known acceptance. An unknown one is listed for each rule that needs it. */
 function accepted(context: Context, rule: BoardRuleId): (BoardPullRequestV1 & { readonly acceptance: { readonly status: 'accepted'; readonly accepted_at: string } })[] {
-  return openPullRequests(context.board).filter(pr => !held(context.board, pr)).flatMap((pr) => {
+  return unheld(context.board).flatMap((pr) => {
     if (pr.acceptance.status === 'unknown') {
       skip(context, rule, pr.acceptance.reason, `#${pr.number}`);
       return [];
@@ -282,6 +298,136 @@ function a11(context: Context): void {
   }
 }
 
+/** A12: a writer holds an open item with no pull request and no claim status after the claim. */
+function a12(context: Context): void {
+  for (const item of context.board.items.filter(entry => entry.state === 'open')) {
+    const { claim, claim_status: status } = item;
+    if (claim.status === 'unknown') {
+      skip(context, 'A12', 'comments_truncated', `#${item.number}`);
+      continue;
+    }
+    if (claim.status !== 'active' || claim.role !== 'writer' || item.pull_requests.length > 0) continue;
+    // The claim is in the read, so a later status is too: an unknown status holds none after the claim.
+    if (status.status_kind === 'observed' && status.created_at > claim.created_at) continue;
+    const waited = context.now - Date.parse(claim.created_at);
+    if (waited > A12_NO_PR_MS) {
+      find(context, 'A12', { issues: [item.number] }, `#${item.number} has a writer claim for ${minutes(waited)} min, no PR and no claim status (${claim.url})`);
+    }
+  }
+}
+
+/** A13: a worker seat is done or idle and its item has no open or merged pull request; A4 reads the seat once a pull request is open. */
+function a13(context: Context): void {
+  for (const terminal of workerTerminals(context, 'A13')) {
+    const word = hcStatusClass(terminal.status);
+    if (word !== 'done' && word !== 'idle') continue;
+    if (terminal.issue === null) {
+      skip(context, 'A13', 'issue_label_missing', terminal.address);
+      continue;
+    }
+    const item = context.board.items.find(entry => entry.number === terminal.issue);
+    if (item === undefined) {
+      skip(context, 'A13', 'issue_off_board', terminal.address);
+      continue;
+    }
+    if (context.board.pull_requests.some(pr => item.pull_requests.includes(pr.number) && pr.state !== 'closed')) continue;
+    if (terminal.status_ms === null) {
+      skip(context, 'A13', 'status_time_missing', terminal.address);
+    } else if (context.now - terminal.status_ms > A13_IDLE_MS) {
+      find(context, 'A13', { issues: [item.number], terminals: [terminal.address] },
+        `worker ${terminal.address} is ${terminal.status} for ${minutes(context.now - terminal.status_ms)} min and #${item.number} has no PR`);
+    }
+  }
+}
+
+/** Open pull requests that the plan does not hold. */
+function unheld(board: BoardV1): BoardPullRequestV1[] {
+  return openPullRequests(board).filter(pr => !held(board, pr));
+}
+
+/** A14: the required check of an open, ready-for-review pull request failed and stays red. */
+function a14(context: Context): void {
+  for (const pr of unheld(context.board).filter(entry => !entry.is_draft)) {
+    const check = pr.required_check;
+    if (check.status !== 'failure') continue;
+    const waited = context.now - Date.parse(check.completed_at);
+    if (waited > A14_RED_MS) {
+      find(context, 'A14', { issues: itemsOf(context.board, pr), pull_requests: [pr.number] },
+        `#${pr.number} has a failed required check on ${pr.head_sha.slice(0, 9)} for ${minutes(waited)} min`);
+    }
+  }
+}
+
+/** A15: an unresolved FAIL record of the head gets no new head. */
+function a15(context: Context): void {
+  for (const pr of unheld(context.board)) {
+    if (pr.acceptance.status === 'unknown') {
+      skip(context, 'A15', pr.acceptance.reason, `#${pr.number}`);
+      continue;
+    }
+    if (pr.review_fail === null) continue;
+    const waited = context.now - Date.parse(pr.review_fail.recorded_at);
+    if (waited > A15_FAIL_MS) {
+      find(context, 'A15', { issues: itemsOf(context.board, pr), pull_requests: [pr.number] },
+        `#${pr.number} has a FAIL record on ${pr.head_sha.slice(0, 9)} for ${minutes(waited)} min and no new head (${pr.review_fail.url})`);
+    }
+  }
+}
+
+/** A16: a boundary question to the coordinator on an open item or an open pull request has no answer. */
+function a16(context: Context): void {
+  const threads = [
+    ...context.board.items.filter(item => item.state === 'open').map(item => ({ number: item.number, questions: item.open_questions, subject: { issues: [item.number] } })),
+    ...unheld(context.board).map(pr => ({ number: pr.number, questions: pr.open_questions, subject: { issues: itemsOf(context.board, pr), pull_requests: [pr.number] } })),
+  ];
+  for (const thread of threads) {
+    if (thread.questions.status === 'unknown') {
+      skip(context, 'A16', 'comments_truncated', `#${thread.number}`);
+      continue;
+    }
+    for (const question of thread.questions.questions) {
+      const waited = context.now - Date.parse(question.created_at);
+      if (waited > A16_QUESTION_MS) {
+        find(context, 'A16', { ...thread.subject, comments: [question.url] }, `#${thread.number} has a question to the coordinator with no answer for ${minutes(waited)} min (${question.url})`);
+      }
+    }
+  }
+}
+
+/** A17: the claim status of an open item that the plan does not hold says blocked. An unobserved plan cannot rule out a hold. */
+function a17(context: Context): void {
+  const plan = context.board.plan;
+  for (const item of context.board.items.filter(entry => entry.state === 'open')) {
+    const status = item.claim_status;
+    if (status.status_kind === 'unknown') {
+      skip(context, 'A17', 'comments_truncated', `#${item.number}`);
+      continue;
+    }
+    if (status.status_kind !== 'observed' || !status.status.startsWith('blocked')) continue;
+    if (plan.status !== 'observed') {
+      skip(context, 'A17', plan.status === 'absent' ? 'plan_absent' : 'plan_unavailable', `#${item.number}`);
+      continue;
+    }
+    if (plan.block.holds.some(hold => hold.issue === item.number)) continue;
+    const waited = context.now - Date.parse(status.created_at);
+    if (waited > A17_BLOCKED_MS) {
+      find(context, 'A17', { issues: [item.number] }, `#${item.number} claim status is blocked for ${minutes(waited)} min (${status.url})`);
+    }
+  }
+}
+
+/** A18: an open, ready-for-review pull request does not merge into its base. */
+function a18(context: Context): void {
+  for (const pr of unheld(context.board).filter(entry => !entry.is_draft)) {
+    if (pr.merge_readiness === null) {
+      skip(context, 'A18', 'readiness_missing', `#${pr.number}`);
+    } else if (pr.merge_readiness.blockers.some(blocker => blocker.code === 'not_mergeable')) {
+      find(context, 'A18', { issues: itemsOf(context.board, pr), pull_requests: [pr.number] },
+        `#${pr.number} does not merge into ${pr.base_ref}; the head owner merges main into the branch`);
+    }
+  }
+}
+
 function r1(context: Context): void {
   const plan = context.board.plan;
   if (plan.status === 'unavailable') return skip(context, 'R1', 'plan_unavailable', plan.comment_url);
@@ -372,7 +518,7 @@ export function renderAttentionText(attention: BoardAttentionV1): string {
 
 export function evaluateBoardAttention(board: BoardV1): BoardAttentionV1 {
   const context: Context = { board, now: Date.parse(board.observed_at), findings: [], unevaluated: [] };
-  for (const rule of [a1, a3, a4, a5, a6, a7, a8, a9, a10, a11, r1, r2, r3, r4, r5]) rule(context);
+  for (const rule of [a1, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, r1, r2, r3, r4, r5]) rule(context);
   return Object.freeze({
     protocol: BOARD_ATTENTION_PROTOCOL,
     kind: BOARD_ATTENTION_KIND,

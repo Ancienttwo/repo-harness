@@ -135,7 +135,8 @@ const SEATS = decodeBoardSeats(boardSeats);
 /**
  * The board of #1474 with exact card counts: `queue` queued and `ci` failing
  * pull requests, a plan with `limit` workers, `accepted` accepted pull
- * requests, and a failed daily run (one A7 finding) for `needsYou`.
+ * requests, and a failed daily run (one A7 finding) for `needsYou`. The items
+ * keep no open question, so A16 adds no finding.
  */
 function countedBoard({ queue = 0, ci = 0, accepted = 0, limit = null, needsYou = false }: { readonly queue?: number; readonly ci?: number; readonly accepted?: number; readonly limit?: number | null; readonly needsYou?: boolean }): BoardV1 {
   const template = BOARD.pull_requests.find(pr => pr.number === 1494)!;
@@ -146,7 +147,7 @@ function countedBoard({ queue = 0, ci = 0, accepted = 0, limit = null, needsYou 
     daily_run: { ...BOARD.daily_run, conclusion: needsYou ? 'failure' : 'success' },
     plan: limit === null ? { status: 'absent', truncated: false } : { status: 'observed', comment_url: 'https://github.com/plan', created_at: BOARD.observed_at, revision: 1,
       block: { protocol: 2, kind: 'repo-harness.plan', merge_order: [], holds: [], seat_limits: { worker: limit } } },
-    items: BOARD.items.filter(item => members.includes(item.number)).map(item => ({ ...item, pull_requests: [item.number + 1000] })),
+    items: BOARD.items.filter(item => members.includes(item.number)).map(item => ({ ...item, open_questions: { status: 'observed', questions: [] }, pull_requests: [item.number + 1000] })),
     pull_requests: [
       ...members.map(number => ({ ...template, number: number + 1000, required_check: done, acceptance: { status: 'accepted', via: 'record', accepted_at: BOARD.observed_at, evidence_url: 'https://github.com/plan#accepted' } })),
       ...Array.from({ length: queue }, (_, index) => ({ ...template, number: 3000 + index, required_check: done })),
@@ -305,20 +306,21 @@ describe('board page', () => {
     await settle();
     // The core rules on the recorded board of #1474; the console runs them and never classifies again.
     expect(rows('[data-finding]').map(row => row.getAttribute('data-finding'))).toEqual(evaluateBoardAttention(BOARD).findings.map(finding => finding.rule));
-    expect(rows('[data-finding]').map(row => row.getAttribute('data-finding'))).toEqual(['A1', 'A3', 'A7', 'R2']);
+    expect(rows('[data-finding]').map(row => row.getAttribute('data-finding'))).toEqual(['A1', 'A3', 'A7', 'A16', 'A16', 'A16', 'R2']);
     const ready = rows('[data-finding="A1"]')[0]!;
     for (const part of ['herdr-core 迁移 1', '#1491 is accepted and ready', 'feat/1475-hc-transport', 'PR #1491', 'Ready to merge', 'w1475', 'CI passed']) expect(ready.textContent).toContain(part);
     expect(ready.querySelector('a[href="https://github.com/Ancienttwo/repo-harness/pull/1491"]')).not.toBeNull();
     expect(rows('[data-finding="A3"]')[0]!.textContent).toContain('Draft #1499');
-    // Rows show #1475 and #1476, so they are not in progress. R2 names pull requests only, so #1479 stays in progress.
-    expect(rows('[data-item]').map(row => row.getAttribute('data-item'))).toEqual(['1477', '1478', '1479', '1480']);
-    await act(async () => button('Show 3 more').click());
-    expect(rows('[data-item]').map(row => row.getAttribute('data-item'))).toEqual(['1477', '1478', '1479', '1480', '1481', '1482', '1483']);
-    expect(rows('[data-item="1479"]')[0]!.getAttribute('data-stage')).toBe('building');
+    // Rows show #1475, #1476 and #1479 (A16: its boundary questions have no `Re:` answer in its own thread), so they are not in progress.
+    expect(rows('[data-item]').map(row => row.getAttribute('data-item'))).toEqual(['1477', '1478', '1480', '1481']);
+    await act(async () => button('Show 2 more').click());
+    expect(rows('[data-item]').map(row => row.getAttribute('data-item'))).toEqual(['1477', '1478', '1480', '1481', '1482', '1483']);
+    expect(rows('[data-item="1477"]')[0]!.getAttribute('data-stage')).toBe('building');
     expect(rows('[data-board-tab]').map(tab => `${tab.getAttribute('data-board-tab')} ${tab.textContent}`))
-      .toEqual(['all All9', 'attention Waiting for you4', 'building Building8', 'verifying Verifying0', 'ready Ready to merge1']);
+      .toEqual(['all All9', 'attention Waiting for you7', 'building Building8', 'verifying Verifying0', 'ready Ready to merge1']);
     await act(async () => rows('[data-board-tab="ready"]')[0]!.click());
-    expect(rows('[data-finding]').map(row => row.getAttribute('data-finding'))).toEqual(['A1']);
+    // #1475 has the ready #1491 and an open question (A16).
+    expect(rows('[data-finding]').map(row => row.getAttribute('data-finding'))).toEqual(['A1', 'A16']);
     expect(rows('[data-item]')).toHaveLength(0);
     // The plan comment of #1474 has no plan block, so R1 and R4 cannot run; the board says so and shows the rest.
     expect(rows('[data-board-banner]').map(banner => banner.getAttribute('data-board-banner'))).toEqual(['plan', 'unevaluated']);
@@ -362,10 +364,10 @@ describe('board page', () => {
       for (const part of ['Claude quota', 'no capture', 'Unknown']) expect(row('claude').textContent).toContain(part);
       for (const part of ['ChatGPT quota', 'secondary', '97% used', 'Exhausted']) expect(row('chatgpt').textContent).toContain(part);
       expect(row('chatgpt').querySelector('[data-quota-window="primary"]')).toBeNull();
-      expect(rows('[data-board-tab="attention"]')[0]!.textContent).toBe('Waiting for you6');
-      expect(document.querySelector('#board-attention')!.textContent).toBe('Waiting for you6');
+      expect(rows('[data-board-tab="attention"]')[0]!.textContent).toBe('Waiting for you9');
+      expect(document.querySelector('#board-attention')!.textContent).toBe('Waiting for you9');
       // The core findings do not change: quota rows carry no rule and stay outside `data-finding`.
-      expect(rows('[data-finding]').map(finding => finding.getAttribute('data-finding'))).toEqual(['A1', 'A3', 'A7', 'R2']);
+      expect(rows('[data-finding]').map(finding => finding.getAttribute('data-finding'))).toEqual(['A1', 'A3', 'A7', 'A16', 'A16', 'A16', 'R2']);
       await act(async () => rows('[data-board-tab="ready"]')[0]!.click());
       expect(findings()).toEqual([]);
       await act(async () => rows('[data-board-tab="attention"]')[0]!.click());
@@ -665,7 +667,7 @@ describe('board page', () => {
     const refusal = (code: string, status: number) => () => Response.json({ error: { code, message: 'refused', next_action: 'retry' } }, { status });
     const answers: (() => Response)[] = [
       () => Response.json(BOARD),
-      () => Response.json({ ...BOARD, protocol: 8 }),
+      () => Response.json({ ...BOARD, protocol: 9 }),
       refusal('board_parent_invalid', 400),
       refusal('repository_not_found', 404),
       refusal('board_collect_failed', 503),
@@ -1003,7 +1005,7 @@ describe('board office (#1755)', () => {
     expect(recorded.advisor).toBeNull();
     // The door counts the A1 findings only: an accepted, ready pull request that waits for a merge.
     const attention = evaluateBoardAttention(BOARD);
-    const a1 = { rule: 'A1', priority: BOARD_RULE_PRIORITY.A1, route: 'orchestrator', issues: [], pull_requests: [1491], terminals: [], message: '' } as const;
+    const a1 = { rule: 'A1', priority: BOARD_RULE_PRIORITY.A1, route: 'orchestrator', issues: [], pull_requests: [1491], terminals: [], comments: [], message: '' } as const;
     expect(attention.findings.filter(finding => finding.rule !== 'A1').length).toBeGreaterThan(0);
     expect(officeRoom(seatsOf(BOARD), { board: BOARD, attention: { ...attention, findings: attention.findings.filter(finding => finding.rule !== 'A1') } }).merge_waits).toBe(0);
     expect(officeRoom(seatsOf(BOARD), { board: BOARD, attention: { ...attention, findings: [a1, a1] } }).merge_waits).toBe(2);
@@ -1252,8 +1254,9 @@ describe('board office (#1755)', () => {
     await mount(<OperatorApp {...fixtureProps(OFFICE_FIXTURE)} />);
     await settle();
     const chips = (name: string) => Array.from(rows('[data-office-card]').find(card => card.querySelector('strong')?.textContent === name)!.querySelectorAll<HTMLElement>('[data-office-chip]')).map(chip => [chip.textContent, chip.getAttribute('data-tone')]);
-    expect(chips('repo-harness')).toEqual([['6/6 full', 'warn'], ['queue 2', 'warn'], ['CI ✗ 1', 'danger'], ['no status 1', 'warn']]);
-    expect(chips('aiphabee')).toEqual([['3/4', 'subtle'], ['CI ✗ 1', 'danger']]);
+    // A14: a failed required check of 60 min or more (#1295, the aiphabee ci_failed desk) needs the orchestrator.
+    expect(chips('repo-harness')).toEqual([['needs you 1', 'accent'], ['6/6 full', 'warn'], ['queue 2', 'warn'], ['CI ✗ 1', 'danger'], ['no status 1', 'warn']]);
+    expect(chips('aiphabee')).toEqual([['needs you 1', 'accent'], ['3/4', 'subtle'], ['CI ✗ 1', 'danger']]);
     expect(chips('AstroZi')).toEqual([['3/3 full', 'warn'], ['queue 1', 'warn'], ['no status 1', 'warn']]);
     expect(chips('arch-context')).toEqual([['worker 1 · no plan', 'subtle']]);
   });
@@ -2187,7 +2190,7 @@ describe('board office (#1755)', () => {
   test('排雷 marks only the desks that an R2 or R3 finding names', () => {
     const attention = evaluateBoardAttention(BOARD);
     const board = boardWith({ terminals: [seat('t1', 'worker', 1476, 1499, 'working'), seat('t2', 'worker', 1475, 1491, 'working'), seat('t3', 'worker', 1477, null, 'working')] });
-    const finding = (rule: 'R2' | 'R3' | 'R1', pull_requests: readonly number[]) => ({ rule, priority: BOARD_RULE_PRIORITY[rule], route: 'advisor', issues: [], pull_requests, terminals: [], message: '' }) as const;
+    const finding = (rule: 'R2' | 'R3' | 'R1', pull_requests: readonly number[]) => ({ rule, priority: BOARD_RULE_PRIORITY[rule], route: 'advisor', issues: [], pull_requests, terminals: [], comments: [], message: '' }) as const;
     const marks = officeRoom(seatsOf(board), { board, attention: { ...attention, findings: [finding('R1', [1491]), finding('R2', [1499]), finding('R3', [1491])] } }).mines;
     expect([...marks]).toEqual([['t1', 'R2'], ['t2', 'R3']]);
   });

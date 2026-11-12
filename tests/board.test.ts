@@ -3,10 +3,10 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { initGitRepo, run, tmpWorkspace } from './helpers/repo-fixture';
-import { BOARD_PRIORITY_ORDER, BOARD_RULE_PRIORITY, evaluateBoardAttention, renderAttentionText, type BoardPriority, type BoardRuleId } from '../src/core/board/attention';
-import { WINDOW_WITH_WORKERS_MS, WINDOW_WITHOUT_WORKERS_MS, planAttentionDeliveries, type AttentionSentV1 } from '../src/core/board/attention-delivery';
+import { A12_NO_PR_MS, A13_IDLE_MS, A14_RED_MS, A15_FAIL_MS, A16_QUESTION_MS, A17_BLOCKED_MS, BOARD_PRIORITY_ORDER, BOARD_RULE_PRIORITY, evaluateBoardAttention, renderAttentionText, type BoardPriority, type BoardRuleId } from '../src/core/board/attention';
+import { WINDOW_WITH_WORKERS_MS, WINDOW_WITHOUT_WORKERS_MS, attentionFindingKey, planAttentionDeliveries, type AttentionSentV1 } from '../src/core/board/attention-delivery';
 import { attentionLogPath, attentionWatchDoctorCheck, runAttentionWindow, serviceTerminalRepository, startAttentionWatch } from '../src/effects/board/attention-watch';
-import { decodeBoard, type BoardHostPortsV1, type BoardTerminalV1, type BoardV1 } from '../src/core/board/board';
+import { decodeBoard, type BoardHostPortsV1, type BoardItemV1, type BoardPullRequestV1, type BoardTerminalV1, type BoardV1 } from '../src/core/board/board';
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
@@ -432,6 +432,10 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
     ['A3', 'orchestrator', [], ['t1']],
     ['A7', 'orchestrator', [], []],
     ['A10', 'orchestrator', [1491], []],
+    // #1475 and #1479 hold boundary questions whose `Re:` answer is in another thread or missing.
+    ['A16', 'orchestrator', [], []],
+    ['A16', 'orchestrator', [], []],
+    ['A16', 'orchestrator', [], []],
     ['R2', 'advisor', [1494, 1499], []],
   ]);
   // t4 has no seat label: the board does not guess its seat. The plan comment has no block, so R1 and R4 wait.
@@ -440,6 +444,7 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
   expect(attention.unevaluated.map(entry => [entry.rule, entry.reason, entry.subject])).toEqual([
     ['A3', 'seat_label_missing', 't4'],
     ['A4', 'seat_label_missing', 't4'],
+    ['A13', 'seat_label_missing', 't4'],
     ['R1', 'plan_unavailable', 'https://github.com/Ancienttwo/repo-harness/issues/1474#issuecomment-6588782468'],
     ['R3', 'tier_label_missing', '#1494 #1479'],
     ['R3', 'tier_label_missing', '#1499 #1476'],
@@ -707,7 +712,9 @@ test('decoders refuse an unknown protocol or kind', () => {
   expect(() => decodeBoard({ protocol: 3, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 3');
   // A protocol-6 board has a merge_queue field and `via: sync` acceptances.
   expect(() => decodeBoard({ protocol: 6, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 6');
-  expect(() => decodeBoard({ protocol: 7, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
+  // A protocol-7 board has no claim, open_questions or review_fail fields.
+  expect(() => decodeBoard({ protocol: 7, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 7');
+  expect(() => decodeBoard({ protocol: 8, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
   const block = (value: Json) => `repo-harness plan\n\n\`\`\`json\n${JSON.stringify(value)}\n\`\`\`\n`;
   const valid = { protocol: 2, kind: 'repo-harness.plan', merge_order: [1475], holds: [], seat_limits: { worker: 3 } } as const;
   expect(decodePlanBlock(block(valid))).toEqual(valid);
@@ -724,7 +731,11 @@ test('decoders refuse a missing or invalid plan revision, merge policy or seat b
   const board = (branch: unknown) => ({ ...recorded, execution: { status: 'observed', terminals: seat(branch) } });
   const parents = (branch: unknown) => ({ ...boardSeatsFixture, seats: seat(branch).map(row => ({ ...row, parent: '1474' })) });
   const { acceptance_merge: _dropped, ...noPolicy } = recorded;
-  for (const invalid of [plan(undefined), plan(0), plan(1.5), plan('1'), noPolicy, { ...recorded, acceptance_merge: 'maybe' }, board(undefined), board('')]) {
+  // Protocol 8: the claim, the open questions and the FAIL record of the head.
+  const item = (patch: Json) => ({ ...recorded, items: recorded.items.map((entry: Json, index: number) => index === 0 ? { ...entry, ...patch } : entry) });
+  const pull = (patch: Json) => ({ ...recorded, pull_requests: recorded.pull_requests.map((entry: Json, index: number) => index === 0 ? { ...entry, ...patch } : entry) });
+  for (const invalid of [plan(undefined), plan(0), plan(1.5), plan('1'), noPolicy, { ...recorded, acceptance_merge: 'maybe' }, board(undefined), board(''),
+    item({ claim: undefined }), item({ claim: { status: 'active', url: 'u' } }), item({ open_questions: { status: 'observed' } }), pull({ open_questions: undefined }), pull({ review_fail: { url: 'u' } })]) {
     expect(() => decodeBoard(invalid)).toThrow('invalid board');
   }
   for (const valid of [plan(null), plan(7), { ...recorded, acceptance_merge: 'unknown' }, board(null), board('main')]) expect(decodeBoard(valid)).toEqual(valid);
@@ -870,6 +881,7 @@ test('each attention finding names its priority, and a delivery sorts the entrie
   // The priority has one source, and the record names every rule of the protocol.
   expect(BOARD_RULE_PRIORITY).toEqual({
     A1: 'P2', A3: 'P0', A4: 'P1', A5: 'P1', A6: 'P1', A7: 'P2', A8: 'P3', A9: 'P3', A10: 'P2', A11: 'P2',
+    A12: 'P1', A13: 'P1', A14: 'P2', A15: 'P2', A16: 'P1', A17: 'P1', A18: 'P2',
     R1: 'P2', R2: 'P2', R3: 'P1', R4: 'P2', R5: 'P1',
   });
   expect(attention.findings.map(finding => [finding.rule, finding.priority])).toContainEqual(['A3', 'P0']);
@@ -1210,7 +1222,7 @@ test('acceptance: round-4 records with bare SHAs, an unparsed record, and a Low 
   expect(board.pull_requests.map(pr => [pr.number, pr.acceptance.status, 'via' in pr.acceptance ? pr.acceptance.via : 'reason' in pr.acceptance ? pr.acceptance.reason : null])).toEqual([
     [1491, 'unknown', 'acceptance_record_unparsed'], [1494, 'not_accepted', null], [1499, 'not_accepted', null],
   ]);
-  expect(evaluateBoardAttention(board).unevaluated.filter(entry => entry.subject === '#1491').map(entry => entry.rule)).toEqual(['A1']);
+  expect(evaluateBoardAttention(board).unevaluated.filter(entry => entry.subject === '#1491').map(entry => entry.rule)).toEqual(['A1', 'A15']);
 });
 
 // One round is one subject SHA: both reviews of a High round are rows of round 1 on one head (#1538).
@@ -1359,7 +1371,7 @@ test('acceptance disposition: a FAIL row is ignored only when every finding of i
   });
   const failAt = '2026-11-02T22:00:00Z';
   const failUrl = `${base}/pull/1499#issuecomment-${Date.parse(failAt)}`;
-  const status = (dispositions: string[], mangleSecond = false) => {
+  const projected = (dispositions: string[], mangleSecond = false) => {
     const read = replay({
       owners: (results) => { results.push({ path: boardWriter, matched: false, ambiguous: false, owningCapabilityId: null }); },
       parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: 'tier:medium' }); },
@@ -1379,8 +1391,9 @@ test('acceptance disposition: a FAIL row is ignored only when every finding of i
         dispositions.forEach((body, index) => pr1499.comments.nodes.push(comment(body, `2026-11-02T22:4${index}:00Z`)));
       },
     });
-    return read.pull_requests.find(entry => entry.number === 1499)!.acceptance.status;
+    return read;
   };
+  const status = (dispositions: string[], mangleSecond = false) => projected(dispositions, mangleSecond).pull_requests.find(entry => entry.number === 1499)!.acceptance.status;
   const disposition = (findings: string, record = failUrl, subject = replay().pull_requests.find(entry => entry.number === 1499)!.head_sha) =>
     `repo-harness acceptance disposition\nRecord: ${record}\nSubject: ${subject}\nFindings: ${findings}\nDecision: ${base}/issues/2202#issuecomment-1\n`;
   expect(status([])).toBe('not_accepted');
@@ -1391,6 +1404,11 @@ test('acceptance disposition: a FAIL row is ignored only when every finding of i
   expect(status([disposition('R1-1, R1-2')], true)).toBe('not_accepted');
   expect(status([disposition('R1-1, R1-2', `${base}/pull/1499#issuecomment-7`)])).toBe('not_accepted');
   expect(status([disposition('R1-1, R1-2', failUrl, 'd'.repeat(40))])).toBe('not_accepted');
+  // review_fail and A15 read the same test: the unresolved FAIL record of 22:00 is 89 min old, and a full disposition clears it.
+  const a15 = (board: BoardV1) => [board.pull_requests.find(entry => entry.number === 1499)!.review_fail?.recorded_at ?? null,
+    evaluateBoardAttention(board).findings.filter(finding => finding.rule === 'A15').map(finding => finding.message.replace(/\(.*\)$/u, ''))];
+  expect(a15(projected([disposition('R1-1')]))).toEqual([failAt, ['#1499 has a FAIL record on 23627c4f5 for 89 min and no new head ']]);
+  expect(a15(projected([disposition('R1-1, R1-2')]))).toEqual([null, []]);
 });
 
 test('a rendered record with multiline finding values parses to its finding IDs', () => {
@@ -1427,6 +1445,66 @@ test('a plan hold removes a PR from A1 and R4', () => {
   })).findings.filter(finding => ['A1', 'R4'].includes(finding.rule)).map(finding => [finding.rule, finding.pull_requests]);
   expect(findings([])).toEqual([['R4', [1494]], ['R4', [1499]]]);
   expect(findings([1475, 1479])).toEqual([['R4', [1499]]]);
+});
+
+test('rules A12 to A18 fire past their threshold with their message, not at it, and skip a held pull request or an unread input', () => {
+  const recorded = replay();
+  const now = Date.parse(recorded.observed_at);
+  const at = (ms: number) => new Date(now - ms).toISOString();
+  const MIN = 60_000;
+  const block = { protocol: 2, kind: 'repo-harness.plan', merge_order: [], holds: [], seat_limits: { worker: 3 } } as const;
+  const plan = { status: 'observed', comment_url: 'https://github.com/plan', created_at: recorded.observed_at, revision: 1, block } as const;
+  // The recorded questions of #1475 and #1479 are cleared, so each case starts from no A12 to A18 finding.
+  const base: BoardV1 = { ...recorded, plan, execution: { status: 'observed', terminals: [] },
+    items: recorded.items.map(entry => ({ ...entry, open_questions: { status: 'observed', questions: [] } })) };
+  const item = (patch: Partial<BoardItemV1>, board = base): BoardV1 => ({ ...board, items: board.items.map(entry => entry.number === 1477 ? { ...entry, ...patch } : entry) });
+  // #1494 closes #1479; the recorded draft is made ready for review, which A14 and A18 read.
+  const pr = (patch: Partial<BoardPullRequestV1>, board = base): BoardV1 => ({ ...board, pull_requests: board.pull_requests.map(entry => entry.number === 1494 ? { ...entry, is_draft: false, ...patch } : entry) });
+  const held = (board: BoardV1): BoardV1 => ({ ...board, plan: { ...plan, block: { ...block, holds: [{ issue: 1479, reason: 'held' }] } } });
+  const rule = /^A1[2-8]$/u;
+  const messages = (board: BoardV1) => evaluateBoardAttention(board).findings.filter(finding => rule.test(finding.rule)).map(finding => `${finding.rule} ${finding.message}`);
+  const skipped = (board: BoardV1) => evaluateBoardAttention(board).unevaluated.filter(entry => rule.test(entry.rule)).map(entry => [entry.rule, entry.reason, entry.subject]);
+  const sha = base.pull_requests.find(entry => entry.number === 1494)!.head_sha.slice(0, 9);
+  const url = 'https://github.com/Ancienttwo/repo-harness/issues/1477#issuecomment-1';
+  const terminal = (status_ms: number | null) => ({ address: 't1', name: null, agent: null, state: 'live', status: 'idle', status_kind: null, status_msg: null, status_ms, turn: 1, branch: null,
+    seat_status: 'observed', seat: 'worker', issue: 1477, pr: null }) as BoardTerminalV1;
+  const readiness = (code: string) => ({ ...base.pull_requests.find(entry => entry.number === 1494)!.merge_readiness!, ready: false, blockers: [{ code, attention_owner: 'agent' }] }) as PullRequestReadinessV2;
+  expect(messages(base)).toEqual([]);
+
+  const cases: readonly [string, (age: number) => BoardV1, number, string][] = [
+    ['A12', age => item({ claim: { status: 'active', url, created_at: at(age), role: 'writer' } }), A12_NO_PR_MS, `#1477 has a writer claim for 121 min, no PR and no claim status (${url})`],
+    ['A13', age => ({ ...base, execution: { status: 'observed', terminals: [terminal(now - age)] } }), A13_IDLE_MS, 'worker t1 is idle for 11 min and #1477 has no PR'],
+    ['A14', age => pr({ required_check: { status: 'failure', completed_at: at(age) } }), A14_RED_MS, `#1494 has a failed required check on ${sha} for 31 min`],
+    ['A15', age => pr({ review_fail: { url, recorded_at: at(age) } }), A15_FAIL_MS, `#1494 has a FAIL record on ${sha} for 61 min and no new head (${url})`],
+    ['A16', age => item({ open_questions: { status: 'observed', questions: [{ url, created_at: at(age) }] } }), A16_QUESTION_MS, `#1477 has a question to the coordinator with no answer for 16 min (${url})`],
+    ['A17', age => item({ claim_status: { status_kind: 'observed', url, created_at: at(age), status: 'blocked: waits for #1476', pr: null, head_sha: null } }), A17_BLOCKED_MS, `#1477 claim status is blocked for 16 min (${url})`],
+  ];
+  for (const [id, board, threshold, message] of cases) {
+    expect([id, messages(board(threshold + MIN))]).toEqual([id, [`${id} ${message}`]]);
+    expect([id, messages(board(threshold))]).toEqual([id, []]);
+  }
+  // Each question on one thread is its own finding key; a finding with no comments keeps the key of rule and subjects.
+  const second = 'https://github.com/Ancienttwo/repo-harness/issues/1477#issuecomment-2';
+  const asked = item({ open_questions: { status: 'observed', questions: [{ url, created_at: at(A16_QUESTION_MS + MIN) }, { url: second, created_at: at(A16_QUESTION_MS + MIN) }] } });
+  expect(evaluateBoardAttention(asked).findings.filter(finding => finding.rule === 'A16').map(attentionFindingKey))
+    .toEqual([JSON.stringify(['A16', [1477], [], [], [url]]), JSON.stringify(['A16', [1477], [], [], [second]])]);
+  const a17 = evaluateBoardAttention(cases[5]![1](A17_BLOCKED_MS + MIN)).findings.find(finding => finding.rule === 'A17')!;
+  expect(attentionFindingKey(a17)).toBe(JSON.stringify(['A17', [1477], [], []]));
+  expect(messages(pr({ merge_readiness: readiness('not_mergeable') }))).toEqual(['A18 #1494 does not merge into feat/1475-hc-transport; the head owner merges main into the branch']);
+  expect(messages(pr({ merge_readiness: readiness('checks_failed') }))).toEqual([]);
+
+  // A held pull request gives no A14, A15 or A18; a held item gives no A17.
+  const red = pr({ required_check: { status: 'failure', completed_at: at(A14_RED_MS + MIN) }, review_fail: { url, recorded_at: at(A15_FAIL_MS + MIN) }, merge_readiness: readiness('not_mergeable') });
+  expect(messages(red).map(line => line.slice(0, 3))).toEqual(['A14', 'A15', 'A18']);
+  expect(messages(held(red))).toEqual([]);
+  const blocked = (board: BoardV1) => item({ claim_status: { status_kind: 'observed', url, created_at: at(A17_BLOCKED_MS + MIN), status: 'blocked', pr: null, head_sha: null } }, board);
+  expect(messages(blocked({ ...base, plan: { ...plan, block: { ...block, holds: [{ issue: 1477, reason: 'held' }] } } }))).toEqual([]);
+  // An unread input is listed as unevaluated and never fires.
+  expect(skipped(blocked({ ...base, plan: { status: 'absent', truncated: false } }))).toEqual([['A17', 'plan_absent', '#1477']]);
+  const truncated = item({ claim: { status: 'unknown' }, open_questions: { status: 'unknown' } });
+  expect([messages(truncated), skipped(truncated)]).toEqual([[], [['A12', 'comments_truncated', '#1477'], ['A16', 'comments_truncated', '#1477']]]);
+  expect(skipped({ ...base, execution: { status: 'observed', terminals: [terminal(null)] } })).toEqual([['A13', 'status_time_missing', 't1']]);
+  expect(skipped(pr({ merge_readiness: null, merge_readiness_observed_at: null }))).toEqual([['A18', 'readiness_missing', '#1494']]);
 });
 
 test('R2 does not count docs/CHANGELOG.md as a shared file', () => {
@@ -1522,8 +1600,11 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
   await window();
   expect(slept).toEqual([WINDOW_WITH_WORKERS_MS]);
   // One line per seat terminal: all findings of its route in this window.
-  // Each entry carries the priority of its finding: A7 and A10 are P2, so they keep the rule order of `evaluateBoardAttention`.
-  const orchestrator = '[rh-attention] #1474 P2 A7: the daily full run is failure (https://github.com/Ancienttwo/repo-harness/actions/runs/41358255043) and no CI repair issue is open; P2 A10: #1491 is of unknown tier (counted as High) and has no Claude review of 20e2cbd21; start the Claude reviewer seat';
+  // Each entry carries the priority of its finding: the three A16 findings are P1, so they come first; A7 and A10 are P2, so they keep the rule order of `evaluateBoardAttention`.
+  const questions = 'P1 A16: #1475 has a question to the coordinator with no answer for 286 min (https://github.com/Ancienttwo/repo-harness/issues/1475#issuecomment-6585298933); '
+    + 'P1 A16: #1479 has a question to the coordinator with no answer for 282 min (https://github.com/Ancienttwo/repo-harness/issues/1479#issuecomment-6585387749); '
+    + 'P1 A16: #1479 has a question to the coordinator with no answer for 273 min (https://github.com/Ancienttwo/repo-harness/issues/1479#issuecomment-6585624819); ';
+  const orchestrator = `[rh-attention] #1474 ${questions}P2 A7: the daily full run is failure (https://github.com/Ancienttwo/repo-harness/actions/runs/41358255043) and no CI repair issue is open; P2 A10: #1491 is of unknown tier (counted as High) and has no Claude review of 20e2cbd21; start the Claude reviewer seat`;
   expect(hc.calls().filter(args => args[0] !== 'get')).toEqual([
     ['send', '--json', '--', 't3', orchestrator],
     ['send', '--json', '--', 't9', expect.stringMatching(/^\[rh-attention\] #1474 P2 R2: #1494 and #1499 both change .+ with no dependency edge$/u)],
@@ -1544,7 +1625,7 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
     ['t12', 'terminal_ended', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
     ['t8', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
   ]);
-  expect(records().filter(record => record.kind === 'finding').map(record => record.rule)).toEqual(['A7', 'A10', 'R2']);
+  expect(records().filter(record => record.kind === 'finding').map(record => record.rule)).toEqual(['A7', 'A10', 'A16', 'A16', 'A16', 'R2']);
 
   await runAttentionWindow({ parent: 1475, deliver: true, log_path: otherLogPath, collect: () => ({ ...watched, parent: { ...watched.parent, number: 1475 } }), host: hc.host,
     now: () => new Date(clock), sleep: async () => {} });
@@ -1588,12 +1669,13 @@ test('watch window sends a finding once to each seat terminal until its subject 
   let logIndex = 0;
 
   // Window 1: the send to t4 fails, so only t3 and t9 hold their findings.
-  expect(await window(watched)).toEqual([['t3', 'sent', ['A7', 'A10']], ['t4', 'send_failed', ['A7', 'A10']], ['t9', 'sent', ['R2']]]);
+  const orchestratorRules = ['A7', 'A10', 'A16', 'A16', 'A16'];
+  expect(await window(watched)).toEqual([['t3', 'sent', orchestratorRules], ['t4', 'send_failed', orchestratorRules], ['t9', 'sent', ['R2']]]);
   failT4 = false;
-  expect(await window(watched)).toEqual([['t4', 'sent', ['A7', 'A10']]]);
+  expect(await window(watched)).toEqual([['t4', 'sent', orchestratorRules]]);
   // Window 3: no new finding, so no send and no skip; the log still holds each finding of each window.
   expect(await window(watched)).toEqual([]);
-  expect(findings().map(record => record.rule)).toEqual(['A7', 'A10', 'R2', 'A7', 'A10', 'R2', 'A7', 'A10', 'R2']);
+  expect(findings().map(record => record.rule)).toEqual(Array(3).fill([...orchestratorRules, 'R2']).flat());
   expect(records().filter(record => record.kind === 'skip')).toEqual([]);
   // An open finding that the advisor holds uses no advisor wake and makes no cap skip.
   expect(planAttentionDeliveries(watched, evaluateBoardAttention(watched), 8, sent).skipped).toEqual([]);

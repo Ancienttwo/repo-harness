@@ -24,6 +24,7 @@ const HOUR = 3_600_000;
 function item(number: number, title: string, pull_requests: readonly number[], claim: 'observed' | 'none', at: string): BoardItemV1 {
   return {
     number, title, url: url('issues', number), state: 'open', labels: [], tier: null, milestone: null, blocked_by: [], pull_requests, merge_hold: { status: 'none' },
+    claim: { status: 'none' }, open_questions: { status: 'observed', questions: [] },
     claim_status: claim === 'none' ? { status_kind: 'none' }
       : { status_kind: 'observed', url: `${url('issues', number)}#issuecomment-1`, created_at: at, status: 'active', pr: null, head_sha: null },
   };
@@ -33,6 +34,7 @@ function pullRequest(number: number, head_ref: string, required_check: BoardPull
   return {
     number, url: url('pull', number), state: 'open', is_draft: false, base_ref: 'main', base_sha: 'a'.repeat(40), head_ref, head_sha: 'b'.repeat(40),
     head_committed_at: at, merged_at: null, closes: [], refs: [OFFICE_PARENT], files: [], required_check, acceptance, merge_readiness: null, merge_readiness_observed_at: null, tier: 'medium', claude_review: 'not_required', writer_family: null, merge_hold: { status: 'none' },
+    review_fail: null, open_questions: { status: 'observed', questions: [] },
   };
 }
 
