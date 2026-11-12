@@ -1132,6 +1132,7 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
         },
       });
 
+      expect(result.exitCode, JSON.stringify(result.steps.filter(step => step.status === 'failed'))).toBe(0);
       expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies'), JSON.stringify(result.steps.filter(step => step.status === 'failed'))).toMatchObject({ status: 'ok' });
       expect(JSON.parse(readFileSync(join(globalRoot, 'package.json'), 'utf8')).dependencies.archctx).toBe(ARCHCTX_PIN);
       expect(JSON.parse(readFileSync(join(topArchctx, 'package.json'), 'utf8')).version).toBe(ARCHCTX_PIN);
