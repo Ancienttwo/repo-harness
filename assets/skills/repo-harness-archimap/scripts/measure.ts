@@ -16,6 +16,10 @@
 // Model nodes may point to behavior specs through `extensions.behaviorSpecs` ([{ id, path }]). Each module
 // lists the specs of the nodes it covers (`modules[].behaviorSpecs`). Exit 2 with
 // `behavior_spec_invalid:<node id>`, `behavior_spec_missing:<path>` or `behavior_spec_uncovered:<node id>`.
+// Declared state machines live in the `state-machines` directory beside --model. Each module lists the
+// machines of the capabilities it covers (`modules[].stateMachines`: { id, name, capabilityId, path, doc }).
+// archctx checks a machine; this script reads only its identity. `doc` is null when the capability has
+// no projected document (it is then in `model.undocumentedNodes`). Exit 2 with `state_machine_uncovered:<machine id>`.
 // Output: JSON on stdout (`unparsed` lists files the transpiler rejected; their edges are missing). Exit 0 ok (coverage gaps are data), 2 usage/shape error, 1 unexpected failure.
 // Workspace specifiers (`@scope/pkg`, `@scope/pkg/sub`) resolve to a concrete tracked file, and the edge goes to the module owning that file. The bare name uses the package entry (exports/module/main/src/index); a subpath uses an exact or single-star `exports` key (deterministic conditions: import/default/bun/types), and a present `exports` field gates subpaths — undeclared, null, or indeterminable subpaths stay unresolved. A specifier that resolves to no tracked file is counted under `unresolved`; no ownership guess produces an edge.
 // Limits: tsconfig path aliases are not resolved; nested condition objects resolve only through their fixed condition order; only tracked files (git ls-files) are scanned.
@@ -162,21 +166,73 @@ function loadModel(dir: string, root: string): ModelNode[] {
 }
 
 // A map module covers a node when it lists the node or the nearest ancestor on the model `parent`
-// chain. A node with behavior specs and no covering module fails closed.
+// chain. A node with behavior specs or a declared machine and no covering module fails closed.
+function coveringModules(nodeId: string, modules: ModuleDef[], byId: Map<string, ModelNode>): number[] {
+  const seen = new Set<string>();
+  for (let id: string | undefined = nodeId; id !== undefined && !seen.has(id); id = byId.get(id)?.parent) {
+    seen.add(id);
+    const covering = modules.flatMap((m, i) => (m.nodes.includes(id as string) ? [i] : []));
+    if (covering.length > 0) return covering;
+  }
+  return [];
+}
+
 function behaviorSpecsByModule(modules: ModuleDef[], modelNodes: ModelNode[]): BehaviorSpec[][] {
   const byId = new Map(modelNodes.map((n) => [n.id, n]));
   const out = modules.map((): BehaviorSpec[] => []);
   for (const node of modelNodes) {
     if (node.behaviorSpecs.length === 0) continue;
-    const seen = new Set<string>();
-    let covering: number[] = [];
-    for (let id: string | undefined = node.id; id !== undefined && !seen.has(id); id = byId.get(id)?.parent) {
-      seen.add(id);
-      covering = modules.flatMap((m, i) => (m.nodes.includes(id as string) ? [i] : []));
-      if (covering.length > 0) break;
-    }
+    const covering = coveringModules(node.id, modules, byId);
     if (covering.length === 0) throw new UsageError(`behavior_spec_uncovered:${node.id}`);
     for (const i of covering) out[i]!.push(...node.behaviorSpecs);
+  }
+  return out;
+}
+
+interface StateMachine {
+  id: string;
+  name: string;
+  capabilityId: string;
+  /** The machine file, repository-relative. */
+  path: string;
+  /** The capability document that holds the archctx diagram of the machine; null when none is projected. */
+  doc: string | null;
+}
+
+// A model without a state-machine directory declares no machine.
+function loadStateMachines(dir: string, root: string): Omit<StateMachine, "doc">[] {
+  let names: string[];
+  try {
+    names = readdirSync(dir).filter((n) => n.endsWith(".yaml")).sort();
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return [];
+    throw new UsageError(`cannot read state-machine dir ${dir}: ${(error as Error).message}`);
+  }
+  return names.map((name) => {
+    const file = path.join(dir, name);
+    const doc = record(Bun.YAML.parse(readFileSync(file, "utf8")));
+    for (const key of ["id", "name", "capabilityId"]) {
+      if (typeof doc?.[key] !== "string") throw new UsageError(`${file}: missing string "${key}"`);
+    }
+    return {
+      id: doc!.id as string,
+      name: doc!.name as string,
+      capabilityId: doc!.capabilityId as string,
+      path: path.relative(root, file).split(path.sep).join("/"),
+    };
+  });
+}
+
+function stateMachinesByModule(
+  modules: ModuleDef[], modelNodes: ModelNode[], machines: Omit<StateMachine, "doc">[], docs: CapabilityDocs,
+): StateMachine[][] {
+  const byId = new Map(modelNodes.map((n) => [n.id, n]));
+  const out = modules.map((): StateMachine[] => []);
+  for (const machine of machines) {
+    const covering = coveringModules(machine.capabilityId, modules, byId);
+    if (covering.length === 0) throw new UsageError(`state_machine_uncovered:${machine.id}`);
+    const doc = docs.byNode.get(machine.capabilityId) ?? null;
+    for (const i of covering) out[i]!.push({ ...machine, doc });
   }
   return out;
 }
@@ -630,7 +686,11 @@ function main(): void {
   }
 
   const specs = behaviorSpecsByModule(modules, modelNodes);
-  const rows = modules.map((m, i) => ({ id: m.id, files: 0, loc: 0, self: 0, docs: docsOf(m), behaviorSpecs: specs[i]! }));
+  const machineDir = path.join(path.dirname(path.resolve(root, values.model)), "state-machines");
+  const machines = stateMachinesByModule(modules, modelNodes, loadStateMachines(machineDir, root), capabilityDocs);
+  const rows = modules.map((m, i) => ({
+    id: m.id, files: 0, loc: 0, self: 0, docs: docsOf(m), behaviorSpecs: specs[i]!, stateMachines: machines[i]!,
+  }));
   const edges = new Map<string, number>();
   const unresolved: string[] = [];
   const unparsed: string[] = [];

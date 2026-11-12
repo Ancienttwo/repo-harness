@@ -66,7 +66,11 @@ model's own docs. The archimap is the one hand-composed HTML view.
    2 on a malformed `extensions.behaviorSpecs` entry
    (`behavior_spec_invalid:<node id>`), a missing spec file
    (`behavior_spec_missing:<path>`) or a spec node that no map module
-   covers on its `parent` chain (`behavior_spec_uncovered:<node id>`). Each module in
+   covers on its `parent` chain (`behavior_spec_uncovered:<node id>`). It
+   reads the declared machines in `.archcontext/model/state-machines/`
+   into `modules[].stateMachines`, and exits 2 on a machine whose
+   capability no map module covers (`state_machine_uncovered:<machine id>`).
+   A machine whose capability has no projected document has `doc: null`. Each module in
    the output carries `docs`: the capability documents it covers, resolved
    from `modules[].nodes` through that manifest. Fix every `uncoveredNodes`,
    `unknownNodes`, `duplicateNodes` and `overlaps` entry in the grouping
@@ -85,7 +89,9 @@ model's own docs. The archimap is the one hand-composed HTML view.
 4. **Choose the boards.** Read `references/boards.md`. The overview, the
    remarks and the module documents are always present. Include each other board when its
    condition holds. Draw one behavior board for each entry of
-   `modules[].behaviorSpecs` in the measurement.
+   `modules[].behaviorSpecs` in the measurement, and one behavior board
+   for each module with `modules[].stateMachines`. That board links each
+   declared machine to its archctx diagram and draws none of its states.
 5. **Compose.** Copy `assets/template.html`, and follow
    `references/visual-language.md` for the grid, colors, node kinds and
    edges. Write the real content. Every overview node carries its map

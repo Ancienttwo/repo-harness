@@ -13,7 +13,7 @@ the top right that explains only the marks that the board uses.
 | 4 | Key sequence | How does the main request travel to its final state? | The model has flows, or the product has one main request path |
 | 5 | Interfaces and mounts | What does each module expose, and what does the outside world see? | A public API, CLI, routes, events, storage layout or identity keys exist |
 | 6 | Remarks | What did the author observe that a reader must know? | Always (it can say "no remarks") |
-| 7 | Behavior (statechart) | Which states can one protocol reach, and which interleavings did its spec prove wrong? | A model node of a map module has `extensions.behaviorSpecs`: one board for each spec entry |
+| 7 | Behavior (statechart) | Which states can one protocol reach, and which interleavings did its spec prove wrong? | A model node of a map module has `extensions.behaviorSpecs` (one statechart board for each spec entry), or a map module has `stateMachines` (one board of machine links for each such module) |
 | 8 | Module documents | Which capability documents does each module cover? | Always |
 
 ## 1. Layered overview
@@ -108,6 +108,17 @@ Pick the parts that the project has:
 
 ## 7. Behavior (statechart)
 
+- Read the declared machines from `modules[].stateMachines` in the
+  `measure.ts` output. Each entry is `{ id, name, capabilityId, path, doc }`.
+  A module with a declared machine gets one behavior board that has one
+  row for each machine: the machine `name`, its `id`, and an `<a>` to the
+  diagram that archctx projected into the capability document. The `href`
+  is `doc` made relative to the map file's directory, as on the overview
+  node, plus `#` and the GitHub heading anchor of the machine `name` (the
+  diagram heading in that document). A machine with `doc: null` gets its
+  row with no link: do not build a path. The board draws no state and no
+  transition of a declared machine: the archctx projection is its one
+  picture.
 - Read the spec entries from `modules[].behaviorSpecs` in the `measure.ts`
   output. Each entry is `{ id, path, node }`. Draw one board for each
   entry. The kicker names the spec path and the short base SHA
