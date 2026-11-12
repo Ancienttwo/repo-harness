@@ -3,10 +3,11 @@ import { spawnSync } from "child_process";
 import { createHash } from "crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { delimiter, dirname, join } from "path";
+import { basename, delimiter, dirname, join } from "path";
 import { seatPaneName } from "../../src/core/board/seat-launch";
 import { HANDOFF_SECTIONS, seatResetReason, seatResetSteps } from "../../src/core/board/seat-reset";
 import { SeatResetError, runSeatReset, type SeatRelaunch, type SeatResetNotify } from "../../src/effects/board/seat-reset";
+import { seatResetLaunch } from "../../src/cli/commands/seats";
 import { DEFAULT_SEATS_CONFIG, WORKER_SEAT_IDS } from "../../src/core/board/seats-settings";
 import { repoHarnessRepoIdFor } from "../../src/effects/repo-registry";
 import { classifyQuotaReading, decodeCodexRateLimitsResult } from "../../src/core/board/quota";
@@ -937,7 +938,7 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
           try {
             return await runSeatReset(input.path ?? handoff, input.sha256 ?? sha(text), {
               env: { ...base, HOME: home, REPO_HARNESS_HOME: join(home, ".repo-harness"), HC_TERMINAL_ID: input.caller ?? "t2", PATH: `${join(home, "bin")}:/bin:/usr/bin` },
-              timeouts, notify: input.notify, relaunch: input.relaunch ?? (async () => ({ argv: ["/bin/sh", "-c", "exec claude", "x y"], model: "fable", effort: "high" })),
+              timeouts, notify: input.notify, relaunch: input.relaunch ?? (async () => ({ argv: ["/bin/sh", "-c", "exec claude", "x y"], model: "fable", effort: "high", modeKnown: true })),
             });
           } catch (error) {
             return { error: (error as SeatResetError).code, outcome: (error as SeatResetError).outcome };
@@ -1176,7 +1177,7 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
       "relaunch_argv_failed: The stored seats section needs a one-shot migration. Run repo-harness update"]);
   }));
 
-  test("a reset request with another effective model starts the seat again from its argv; the same model, a failed check or compact types the command (#2633)", withReset(async ({ home, handoff, reset, sends, log }) => {
+  test("a reset request with another effective model starts the seat again from its argv; the same model, a failed launch, a stale quota reading or compact types the command (#2633)", withReset(async ({ home, handoff, reset, sends, log }) => {
     const dir = dirname(handoff);
     // A session record of the launch model, older than the request; the claim of the earlier run is removed so the request runs again.
     const recorded = (model: string) => () => {
@@ -1184,15 +1185,33 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
       writeFileSync(join(dir, "session.json"), JSON.stringify({ session_id: "s", transcript_path: join(home, "old.jsonl"), source: "startup",
         started_at: new Date(Date.now() - 120_000).toISOString(), model, effort: "high" }));
     };
-    const failed = async (): Promise<SeatRelaunch> => { throw new Error("quota read failed"); };
+    const failed = async (): Promise<SeatRelaunch> => { throw new Error("The seats section of the repo-harness configuration is not valid."); };
+    // The real launch of the default advisor: a registered checkout and a Claude capture older than 30 min (10% used,
+    // hyper if it were fresh). The stale reading gives the unknown mode, whose launch is opus high; it must not move a fable seat.
+    const repo = join(home, "repo");
+    mkdirSync(repo);
+    git(repo, "init", "-q");
+    git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "init");
+    const at = "2026-11-03T00:00:00.000Z";
+    mkdirSync(join(home, ".repo-harness", "quota"), { recursive: true });
+    writeFileSync(join(home, ".repo-harness", "registered-repos.json"), JSON.stringify({ version: 1, authorizationRevision: 0,
+      repos: [{ id: repoHarnessRepoIdFor(realpathSync(repo)), path: realpathSync(repo), accessMode: "read_only", source: "manual", registeredAt: at, lastSeenAt: at, panePrefix: "rh" }] }));
+    writeFileSync(join(home, ".repo-harness", "quota", "claude.json"), JSON.stringify({ observed_at: new Date(Date.now() - 31 * 60_000).toISOString(), rate_limits: {
+      seven_day: { used_percentage: 10, resets_at: Math.floor(Date.now() / 1000) + 3600 } } }));
+    const { CLAUDE_CONFIG_DIR: _claude, PI_CODING_AGENT_DIR: _pi, ...base } = process.env;
+    const stale = () => seatResetLaunch({ seat: "advisor", repository: basename(dirname(dir)) }, { ...base, ...registryEnv(home), PATH: "/bin:/usr/bin" }, repo);
     const cleared = { requester: "t5", seat: "advisor", relaunched: false, logErrors: [] };
     expect(await reset({ before: recorded("fable") })).toEqual(cleared);
     expect(await reset({ before: recorded("opus") })).toEqual({ ...cleared, relaunched: true });
     expect(await reset({ before: recorded("opus"), relaunch: failed })).toEqual(cleared);
+    expect(await reset({ before: recorded("fable"), relaunch: stale })).toEqual(cleared);
     expect(await reset({ before: recorded("opus"), action: "compact" })).toEqual(cleared);
-    expect(sends()).toEqual(["/clear", prompt(handoff), "/exit", `sh ${join(dir, "relaunch.sh")}`, prompt(handoff), "/clear", prompt(handoff), "/compact", compactPrompt(handoff)]);
+    expect(sends()).toEqual(["/clear", prompt(handoff), "/exit", `sh ${join(dir, "relaunch.sh")}`, prompt(handoff), "/clear", prompt(handoff),
+      "/clear", prompt(handoff), "/compact", compactPrompt(handoff)]);
     expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([["reset", "cleared"], ["reset", "restarted"],
-      ["model_check_failed", "relaunch_argv_failed: quota read failed"], ["reset", "cleared"], ["reset", "compacted"]]);
+      ["model_check_failed", "relaunch_argv_failed: The seats section of the repo-harness configuration is not valid"], ["reset", "cleared"],
+      ["model_check_failed", "quota_unknown: the seat account has no fresh weekly quota reading, so the seat keeps its model"], ["reset", "cleared"],
+      ["reset", "compacted"]]);
   }));
 
   test("a relaunch that cannot end claude logs the failure and reports an uncertain reset", withReset(async ({ reset, state, sends, log }) => {

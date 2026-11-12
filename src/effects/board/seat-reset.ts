@@ -318,9 +318,13 @@ export type SeatResetNotify = (env: NodeJS.ProcessEnv, event: {
   readonly repository: string | null; readonly kind: string; readonly data: Record<string, unknown>; readonly text: string;
 }) => Promise<'sent' | 'failed' | 'not_configured'>;
 
-/** The launch of `repo-harness seats argv <seat> --repository-id <id>` under the current quota: its argv and its effective model and effort. */
+/**
+ * The launch of `repo-harness seats argv <seat> --repository-id <id>` under the current quota: its argv and its effective
+ * model and effort. `modeKnown` is false when the seat account has no fresh weekly reading, so the mode is unknown.
+ */
 export interface SeatRelaunch extends SeatLaunchModel {
   readonly argv: readonly string[];
+  readonly modeKnown: boolean;
 }
 
 export interface SeatResetOptions extends HerdrCoreOptions {
@@ -583,8 +587,9 @@ class SeatResetRun {
 
   /**
    * The launch of the requester when its effective model or effort differs from the session record, else null. A record
-   * without a model gives null. A launch that cannot be built is logged and gives null: the reset types `/clear` as
-   * before #2633, and the seat keeps its model.
+   * without a model gives null. A launch that cannot be built, or a launch under an unknown quota mode (no fresh weekly
+   * reading: a missing reading is no authority to move a running seat), is logged and gives null: the reset types
+   * `/clear` as before #2633, and the seat keeps its model. A fresh `seats argv` launch still uses the unknown mode.
    */
   private async modelChange(): Promise<SeatRelaunch | null> {
     const session = readSeatSession(this.identity);
@@ -594,6 +599,10 @@ class SeatResetRun {
       launch = await this.options.relaunch(this.identity);
     } catch (error) {
       this.record('model_check_failed', `relaunch_argv_failed: ${sentence(error)}`);
+      return null;
+    }
+    if (!launch.modeKnown) {
+      this.record('model_check_failed', 'quota_unknown: the seat account has no fresh weekly quota reading, so the seat keeps its model');
       return null;
     }
     return launch.model === session.model && launch.effort === session.effort ? null : launch;
