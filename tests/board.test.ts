@@ -452,6 +452,7 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
     ['A3', 'seat_label_missing', 't4'],
     ['A4', 'seat_label_missing', 't4'],
     ['A13', 'seat_label_missing', 't4'],
+    ['A19', 'seat_label_missing', 't4'],
     ['R1', 'plan_unavailable', 'https://github.com/Ancienttwo/repo-harness/issues/1474#issuecomment-6588782468'],
     ['R3', 'tier_label_missing', '#1494 #1479'],
     ['R3', 'tier_label_missing', '#1499 #1476'],
@@ -1411,8 +1412,8 @@ test('acceptance disposition: a FAIL row is ignored only when every finding of i
   const disposition = (findings: string, record = failUrl, subject = replay().pull_requests.find(entry => entry.number === 1499)!.head_sha) =>
     `repo-harness acceptance disposition\nRecord: ${record}\nSubject: ${subject}\nFindings: ${findings}\nDecision: ${base}/issues/2202#issuecomment-1\n`;
   expect(status([])).toBe('not_accepted');
-  // The newest record of each harness, any subject: both records are codex rows.
-  expect(projected([]).pull_requests.find(entry => entry.number === 1499)!.review_records).toEqual({ status: 'observed', claude: null, codex: '2026-11-02T22:30:00Z', pi: null });
+  // The newest record of each harness, any subject: the two added records are codex rows, newer than the recorded codex one.
+  expect(projected([]).pull_requests.find(entry => entry.number === 1499)!.review_records).toEqual({ status: 'observed', claude: '2026-11-02T20:52:14Z', codex: '2026-11-02T22:30:00Z', pi: null });
   expect(status([disposition('R1-1')])).toBe('not_accepted');
   expect(status([disposition('R1-1'), disposition('R1-2')])).toBe('accepted');
   expect(status([disposition('R1-1, R1-2')])).toBe('accepted');

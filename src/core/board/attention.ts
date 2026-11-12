@@ -1,6 +1,6 @@
 import { planIssues } from './plan-block';
 import { boardMergeDecisions } from './merge';
-import type { BoardItemV1, BoardPullRequestV1, BoardTerminalV1, BoardV1 } from './board';
+import type { BoardItemV1, BoardPullRequestV1, BoardReviewHarness, BoardTerminalV1, BoardV1 } from './board';
 import { hcStatusClass, liveSeats, seatItem, seatPullRequest } from './desk';
 import { pathHazardHits, pathHighHits } from './hazards';
 import { compareHcVersions } from '../terminal/herdr-pin';
@@ -22,7 +22,7 @@ export const A1_UNMERGED_MS = 15 * MINUTE;
 export const A3_STUCK_MS = 10 * MINUTE;
 /** A12: a writer claim has no pull request and no claim status for this long. */
 export const A12_NO_PR_MS = 120 * MINUTE;
-/** A13: a worker seat is done or idle this long while its item has no open or merged pull request. */
+/** A13: a worker seat is done or idle this long while its item has no open or merged pull request. A19 reads a review seat with the same bound. */
 export const A13_IDLE_MS = 10 * MINUTE;
 /** A14: the failed required check of an open pull request is this old. */
 export const A14_RED_MS = 30 * MINUTE;
@@ -39,9 +39,13 @@ export const R4_STALLED_MS = 4 * 60 * MINUTE;
 /** R6: a free worker seat and fewer ready issues than this. The weekly threshold review changes it. */
 export const R6_READY_MIN = 2;
 const WORKER_SEATS = new Set<string>(WORKER_SEAT_IDS);
+/** The review seat ids of the seats config; the gatekeeper-fallback seat launches under the gatekeeper label (#2253). */
+const REVIEW_SEATS = new Set<string>(['gatekeeper', 'gatekeeper-fallback', 'reviewer']);
+/** The hc agent name of each review runtime. */
+const AGENT_HARNESS: ReadonlyMap<string, BoardReviewHarness> = new Map([['claude-code', 'claude'], ['codex', 'codex'], ['pi', 'pi']]);
 const RED_CONCLUSIONS = new Set(['failure', 'timed_out', 'startup_failure']);
 
-export type BoardRuleId = 'A1' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'A9' | 'A10' | 'A11' | 'A12' | 'A13' | 'A14' | 'A15' | 'A16' | 'A17' | 'A18' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';
+export type BoardRuleId = 'A1' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'A9' | 'A10' | 'A11' | 'A12' | 'A13' | 'A14' | 'A15' | 'A16' | 'A17' | 'A18' | 'A19' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';
 export type BoardAttentionRoute = 'orchestrator' | 'advisor';
 /** P0: a seat cannot continue. P1: a worker or an issue waits for the coordinator, or a High change has a lower tier. P2: a pull request or the plan waits. P3: housekeeping. */
 export type BoardPriority = 'P0' | 'P1' | 'P2' | 'P3';
@@ -55,7 +59,7 @@ export const BOARD_PRIORITY_ORDER: readonly BoardPriority[] = Object.freeze(['P0
  */
 export const BOARD_RULE_PRIORITY: Readonly<Record<BoardRuleId, BoardPriority>> = Object.freeze({
   A1: 'P2', A3: 'P0', A4: 'P1', A5: 'P1', A6: 'P1', A7: 'P2', A8: 'P3', A9: 'P3', A10: 'P2', A11: 'P2',
-  A12: 'P1', A13: 'P1', A14: 'P2', A15: 'P2', A16: 'P1', A17: 'P1', A18: 'P2',
+  A12: 'P1', A13: 'P1', A14: 'P2', A15: 'P2', A16: 'P1', A17: 'P1', A18: 'P2', A19: 'P1',
   R1: 'P2', R2: 'P2', R3: 'P1', R4: 'P2', R5: 'P1', R6: 'P1', R7: 'P2',
 });
 
@@ -161,6 +165,10 @@ function a1(context: Context): void {
 type SeatTerminal = BoardTerminalV1 & { readonly seat_status: 'observed' };
 
 function workerTerminals(context: Context, rule: BoardRuleId): SeatTerminal[] {
+  return seatTerminals(context, rule, WORKER_SEATS);
+}
+
+function seatTerminals(context: Context, rule: BoardRuleId, seats: ReadonlySet<string>): SeatTerminal[] {
   const execution = context.board.execution;
   if (execution.status === 'unavailable') {
     skip(context, rule, execution.reason);
@@ -171,7 +179,7 @@ function workerTerminals(context: Context, rule: BoardRuleId): SeatTerminal[] {
       skip(context, rule, terminal.reason, terminal.address);
       return [];
     }
-    return WORKER_SEATS.has(terminal.seat) && terminal.state === 'live' ? [terminal] : [];
+    return seats.has(terminal.seat) && terminal.state === 'live' ? [terminal] : [];
   });
 }
 
@@ -339,6 +347,45 @@ function a13(context: Context): void {
       find(context, 'A13', { issues: [item.number], terminals: [terminal.address] },
         `worker ${terminal.address} is ${terminal.status} for ${minutes(context.now - terminal.status_ms)} min and #${item.number} has no PR`);
     }
+  }
+}
+
+/**
+ * A19: a review seat is done or idle on an open pull request that has no record of the seat's harness after the seat's status time.
+ * A seat without the `net` tool cannot publish its row, and only the session that started it reads the pane (`acceptor.md`).
+ */
+function a19(context: Context): void {
+  for (const terminal of seatTerminals(context, 'A19', REVIEW_SEATS)) {
+    const word = hcStatusClass(terminal.status);
+    if (word !== 'done' && word !== 'idle') continue;
+    if (terminal.pr === null) {
+      skip(context, 'A19', 'pr_label_missing', terminal.address);
+      continue;
+    }
+    const pr = context.board.pull_requests.find(entry => entry.number === terminal.pr);
+    if (pr === undefined) {
+      skip(context, 'A19', 'pr_off_board', terminal.address);
+      continue;
+    }
+    if (pr.state !== 'open') continue;
+    if (terminal.status_ms === null) {
+      skip(context, 'A19', 'status_time_missing', terminal.address);
+      continue;
+    }
+    if (context.now - terminal.status_ms <= A13_IDLE_MS) continue;
+    const harness = terminal.agent === null ? undefined : AGENT_HARNESS.get(terminal.agent);
+    if (harness === undefined) {
+      skip(context, 'A19', 'harness_unknown', terminal.address);
+      continue;
+    }
+    if (pr.review_records.status === 'unknown') {
+      skip(context, 'A19', pr.review_records.reason, `#${pr.number}`);
+      continue;
+    }
+    const recorded = pr.review_records[harness];
+    if (recorded !== null && Date.parse(recorded) > terminal.status_ms) continue;
+    find(context, 'A19', { issues: itemsOf(context.board, pr), pull_requests: [pr.number], terminals: [terminal.address] },
+      `review seat ${terminal.address} is ${terminal.status} for ${minutes(context.now - terminal.status_ms)} min and #${pr.number} has no record from it; read the pane and publish`);
   }
 }
 
@@ -565,7 +612,7 @@ export function renderAttentionText(attention: BoardAttentionV1): string {
 
 export function evaluateBoardAttention(board: BoardV1): BoardAttentionV1 {
   const context: Context = { board, now: Date.parse(board.observed_at), findings: [], unevaluated: [] };
-  for (const rule of [a1, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, r1, r2, r3, r4, r5, r6, r7]) rule(context);
+  for (const rule of [a1, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, r1, r2, r3, r4, r5, r6, r7]) rule(context);
   return Object.freeze({
     protocol: BOARD_ATTENTION_PROTOCOL,
     kind: BOARD_ATTENTION_KIND,

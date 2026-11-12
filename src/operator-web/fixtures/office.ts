@@ -38,7 +38,7 @@ function pullRequest(number: number, head_ref: string, required_check: BoardPull
   return {
     number, url: url('pull', number), state: 'open', is_draft: false, base_ref: 'main', base_sha: 'a'.repeat(40), head_ref, head_sha: 'b'.repeat(40),
     head_committed_at: at, merged_at: null, closes: [], refs: [OFFICE_PARENT], files: [], required_check, acceptance, merge_readiness: null, merge_readiness_observed_at: null, tier: 'medium', claude_review: 'not_required', writer_family: null, merge_hold: { status: 'none' },
-    review_fail: null, open_questions: { status: 'observed', questions: [] },
+    review_fail: null, review_records: { status: 'observed', claude: null, codex: null, pi: null }, open_questions: { status: 'observed', questions: [] },
   };
 }
 
