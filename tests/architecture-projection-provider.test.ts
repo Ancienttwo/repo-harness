@@ -39,6 +39,7 @@ import {
 } from '../src/effects/architecture/archctx-provider';
 import { architectureModelReady, readArchitectureNativeContext, readArchitectureHandEdits } from '../src/effects/architecture/architecture-read';
 import { trustedNodeCandidates } from '../src/effects/runtime/node-candidates';
+import { selectCompatibleNode } from '../src/effects/runtime/node-runtime';
 import { buildArchitectureProjectionCommand } from '../src/cli/commands/architecture-projection';
 import { architectureProjectionExitCode, humanActionLine } from '../src/cli/commands/architecture-projection-actions';
 import { applyArchitectureProjection } from '../src/effects/architecture/projection-apply';
@@ -106,6 +107,16 @@ extensions:
   execFileSync('git', ['add', '.'], { cwd: repoRoot });
   execFileSync('git', ['commit', '-m', 'fixture'], { cwd: repoRoot, stdio: 'ignore' });
   return { root, consumerRoot, repoRoot, binary };
+}
+
+/** A regular file that reports a Node version but carries no execute bit, as `node.exe` appears to `statSync`. */
+function unexecutableNodeFile(): string {
+  const root = mkdtempSync(join(tmpdir(), 'repo-harness-node-runtime-mode-'));
+  roots.push(root);
+  const file = join(root, 'node.exe');
+  writeFileSync(file, '');
+  chmodSync(file, 0o644);
+  return file;
 }
 
 function vendorArchctx(root: string, version: string): string {
@@ -1529,6 +1540,24 @@ describe('package-local ArchContext projection provider', () => {
     chmodSync(node, 0o755);
     expect(resolveCompatibleNodeRuntime({ PATH: '/usr/bin:/bin', REPO_HARNESS_NODE_BIN: node })).toBe(realpathSync(node));
     expect(() => resolveCompatibleNodeRuntime({ PATH: '/usr/bin:/bin', REPO_HARNESS_NODE_BIN: 'node' })).toThrow('must be an absolute path');
+  });
+
+  // Windows sets no execute bit on a regular file, so a POSIX bit test refuses a real node.exe.
+  test('the explicit Node pin accepts a Windows runtime file without a POSIX execute bit', () => {
+    const pin = unexecutableNodeFile();
+    const input = { range: '>=22.22 <26', explicit: pin, candidates: [] as string[], versionOf: () => '24.1.0' };
+    expect(selectCompatibleNode({ ...input, platform: 'win32' }))
+      .toEqual({ status: 'selected', path: realpathSync(pin) });
+    expect(selectCompatibleNode({ ...input, platform: 'darwin' }))
+      .toEqual({ status: 'explicit-rejected', reason: 'not-executable' });
+  });
+
+  test('the trusted Node candidates accept a Windows runtime file without a POSIX execute bit', () => {
+    const candidate = unexecutableNodeFile();
+    const input = { range: '>=22.22 <26', candidates: [candidate], versionOf: () => '24.1.0' };
+    expect(selectCompatibleNode({ ...input, platform: 'win32' }))
+      .toEqual({ status: 'selected', path: realpathSync(candidate) });
+    expect(selectCompatibleNode({ ...input, platform: 'darwin' })).toEqual({ status: 'not-found' });
   });
 
   test('handshakes capabilities then maps a validated projection result', () => {

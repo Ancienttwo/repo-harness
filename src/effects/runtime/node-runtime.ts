@@ -1,4 +1,4 @@
-import { existsSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, realpathSync, statSync, type Stats } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 
 export type NodeSelection =
@@ -25,6 +25,16 @@ function satisfies(version: string | null, range: string): boolean {
 }
 
 /**
+ * One executable test for the explicit pin and the trusted candidates.
+ * Windows has no execute bit: libuv reports a regular file as `0666`, or `0444`
+ * when read-only (`src/win/fs.c`, `fs__stat_assign_statbuf`), so a real
+ * `node.exe` would fail a POSIX bit test.
+ */
+function isExecutableRuntime(stat: Stats, platform: NodeJS.Platform): boolean {
+  return stat.isFile() && (platform === 'win32' || (stat.mode & 0o111) !== 0);
+}
+
+/**
  * One Node selection order: explicit pin, then PATH, then trusted candidates.
  * Callers still start the version process, because the protected helper and
  * the architecture provider do not share a process environment.
@@ -36,7 +46,7 @@ export function selectCompatibleNode(input: NodeSelectionInput): NodeSelection {
     if (!isAbsolute(explicit)) return { status: 'explicit-rejected', reason: 'not-absolute' };
     const actual = realpathSync(explicit);
     const stat = statSync(actual);
-    if (!stat.isFile() || (stat.mode & 0o111) === 0) return { status: 'explicit-rejected', reason: 'not-executable' };
+    if (!isExecutableRuntime(stat, platform)) return { status: 'explicit-rejected', reason: 'not-executable' };
     if (!satisfies(input.versionOf(actual), input.range)) return { status: 'explicit-rejected', reason: 'version' };
     return { status: 'selected', path: actual };
   }
@@ -59,7 +69,7 @@ export function selectCompatibleNode(input: NodeSelectionInput): NodeSelection {
     if (!isAbsolute(candidate) || !existsSync(candidate)) continue;
     const actual = realpathSync(candidate);
     const stat = statSync(actual);
-    if (!stat.isFile() || (stat.mode & 0o111) === 0) continue;
+    if (!isExecutableRuntime(stat, platform)) continue;
     if (!satisfies(input.versionOf(actual), input.range)) continue;
     return { status: 'selected', path: actual };
   }
