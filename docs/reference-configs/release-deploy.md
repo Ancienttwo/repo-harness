@@ -115,10 +115,16 @@ staging drift, CodeGraph version drift, or non-authoritative
 skill eval evidence. Do not rely only on npm or GitHub release metadata for this
 local audit trail.
 
-The "Acceptance environment" section of the filing records the result of
-`scripts/check-release-upgrade-rehearsal.sh` (run by the `release` lane of
-`scripts/check-ci.sh`): the parent version from npm, the candidate version, and
-the two candidate tarballs that its registry log names. Do not record a
+The "Acceptance environment" section of the filing records the upgrade
+rehearsal run of the release prep branch:
+`gh workflow run probe.yml --ref <release prep branch> -f lane=release-rehearsal -f runner=ubuntu-latest`.
+Lane `release-rehearsal` runs `scripts/check-release-upgrade-rehearsal.sh` on a
+GitHub-hosted runner that GitHub discards after the job; no host runs the
+script. Run it before the first publish: the script fails when the candidate
+version is on npm. The section records the run URL, the line
+`[rehearsal] OK: <parent> -> <candidate>`, and the two served lines
+`TARBALL SERVED repo-harness <candidate>` and
+`TARBALL SERVED repo-harness-operator-web <candidate>`. It records no
 hand-made rehearsal.
 
 The filing also records the consumer architecture smoke. A new consumer with a
