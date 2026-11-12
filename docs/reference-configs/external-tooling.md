@@ -1175,7 +1175,7 @@ repo-harness commands by the notice rule above. It then runs
 archctx `docs drift` manual-edit reason codes and warns only for paths changed
 in the PR. It does not parse generated markers. All advisory outcomes exit 0.
 The daily job runs `architecture-projection render-check --json`. It uses
-archctx `changes[].outputChanged`; source stamps alone pass. Real render drift
+archctx `changes[].outputChanged`. Real render drift
 or an incomplete check fails. The repair issue contains differing paths and
 human actions, and routes repair to the writer or model owner. It does not ask
 a feature worker to apply and commit a manifest.
