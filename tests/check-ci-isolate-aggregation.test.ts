@@ -137,23 +137,58 @@ describe("ci isolate-mode test loop", () => {
     const dir = mkdtempSync(join(tmpdir(), 'ci-missing-path-'));
     try {
       const marker = join(dir, 'ran');
-      const existing = join(dir, 'marker.test.ts');
-      writeFileSync(existing, `import { test } from "bun:test";\nimport { writeFileSync } from "node:fs";\ntest("example.test.ts", () => writeFileSync(${JSON.stringify(marker)}, "x"));\n`);
-      const run = (...args: string[]) => {
-        rmSync(marker, { force: true });
-        const result = spawnSync('bash', ['-c', `source ${JSON.stringify(LIB_PATH)}; BUN_TEST_ISOLATE_FILES=0 run_bun_tests "$@"`, '--', ...args], { cwd: REPO_ROOT, encoding: 'utf8', env: gateEnv({}) });
-        return { status: result.status, stderr: result.stderr, ran: existsSync(marker) };
+      const fixture = (name: string, testName: string) => {
+        const path = join(dir, name);
+        writeFileSync(path, `import { test } from "bun:test";\nimport { writeFileSync } from "node:fs";\ntest(${JSON.stringify(testName)}, () => writeFileSync(${JSON.stringify(marker)}, "x"));\n`);
+        return path;
       };
-      for (const extra of [[], ['--coverage']]) {
-        const missing = run(existing, join(dir, 'does-not-exist.test.ts'), '--timeout', '60000', ...extra);
-        expect(missing.status).not.toBe(0);
-        expect(missing.stderr).toContain('does-not-exist.test.ts');
-        expect(missing.ran).toBe(false);
+      const existing = fixture('marker.test.ts', 'example.test.ts');
+      const run = (isolate: boolean, ...args: string[]) => {
+        rmSync(marker, { force: true });
+        const result = spawnSync('bash', ['-c', `source ${JSON.stringify(LIB_PATH)}; run_bun_tests "$@"`, '--', ...args], {
+          cwd: REPO_ROOT,
+          encoding: 'utf8',
+          env: gateEnv({
+            BUN_TEST_ISOLATE_FILES: isolate ? '1' : '0',
+            BUN_TEST_TIMEOUT_MS: '60000',
+            BUN_TEST_MAX_CONCURRENCY: '1',
+            // Isolated mode takes its file list from BUN_TEST_FILES, not from the
+            // positional arguments the guard checks. Naming the one file it may
+            // run keeps a guard defect on that file instead of the full suite.
+            ...(isolate ? { BUN_TEST_FILES: existing } : {}),
+          }),
+        });
+        return { status: result.status, stdout: result.stdout, stderr: result.stderr, ran: existsSync(marker) };
+      };
+      // The guard runs once at the top of run_bun_tests, before the isolated and
+      // the coverage branches, so each mode must report the path and leave the
+      // marker absent. Bun writes its version banner to stdout and its result
+      // block to stderr; neither line may appear, because no runner starts.
+      for (const isolate of [false, true]) {
+        for (const extra of [[], ['--coverage']]) {
+          const missingPath = join(dir, 'does-not-exist.test.ts');
+          const missing = run(isolate, existing, missingPath, '--timeout', '60000', ...extra);
+          const label = `isolated=${isolate} ${extra.join(' ')}`;
+          expect(missing.status, label).not.toBe(0);
+          expect(missing.stderr, label).toContain(`[ci] test file does not exist: ${missingPath}`);
+          expect(missing.stdout, label).not.toContain('bun test v');
+          expect(missing.stderr, label).not.toContain('Ran ');
+          expect(missing.ran, label).toBe(false);
+        }
       }
-      const valued = run(existing, '-t', 'example.test.ts');
+      // A value-taking option keeps its own value, even when that value has the
+      // test file name form and no such file exists.
+      const valued = run(false, existing, '-t', 'example.test.ts');
       expect(valued.status).toBe(0);
       expect(valued.ran).toBe(true);
-      expect(run(existing, `--test-name-pattern=${existing}`).stderr).not.toContain('does not exist');
+      // An equals-form option value is not a positional path either. The value
+      // names a file that does not exist, and the fixture test of that name runs,
+      // so the pattern reaches Bun instead of failing the guard.
+      const missingValue = join(dir, 'ghost-does-not-exist.test.ts');
+      const equals = run(false, fixture('equals.test.ts', missingValue), `--test-name-pattern=${missingValue}`);
+      expect(equals.stderr).not.toContain('test file does not exist');
+      expect(equals.status).toBe(0);
+      expect(equals.ran).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
