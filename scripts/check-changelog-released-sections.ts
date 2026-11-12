@@ -70,18 +70,25 @@ export function sectionDrift(baseText: string, mergedText: string): SectionDrift
   return drift;
 }
 
-/** `git merge-tree --write-tree --name-only`: tree OID, conflicted paths, a blank line, then messages. */
-function mergeResult(repoRoot: string, baseSha: string, headSha: string): { tree: string; conflicts: string[] } {
+/**
+ * The tree of `git merge-tree --write-tree --name-only`: tree OID, conflicted paths, a blank line, then messages.
+ * A conflicted merge fails closed: no section of a partial tree is evidence, and a conflict anywhere can move the
+ * CHANGELOG hunk, so the check never compares against a conflict result.
+ */
+function mergeResult(repoRoot: string, baseSha: string, headSha: string): { tree: string } {
   const result = git(repoRoot, ['merge-tree', '--write-tree', '--name-only', baseSha, headSha]);
   if (result.error) throw new Error(`git merge-tree failed: ${result.error.message}`);
   if (result.status !== 0 && result.status !== 1) throw new Error(`git merge-tree ${baseSha} ${headSha} failed: ${result.stderr?.trim() || `exit ${result.status}`}`);
   const lines = (result.stdout ?? '').replace(/\n$/u, '').split('\n');
   const tree = lines[0] ?? '';
   if (!TREE_OID.test(tree)) throw new Error(`git merge-tree ${baseSha} ${headSha} printed no tree OID`);
-  if (result.status === 0) return { tree, conflicts: [] };
+  if (result.status === 0) return { tree };
   const separator = lines.indexOf('', 1);
-  if (separator < 0) throw new Error(`git merge-tree ${baseSha} ${headSha} reported conflicts without a message separator`);
-  return { tree, conflicts: lines.slice(1, separator) };
+  if (separator < 0) throw new Error(`git merge-tree ${baseSha} ${headSha} reported a conflict without a message separator, so its conflicted paths are unknown`);
+  const conflicts = lines.slice(1, separator);
+  // Exit 1 with no named path is still a conflict result: the paths are unknown, not empty.
+  if (conflicts.length === 0) throw new Error(`git merge-tree ${baseSha} ${headSha} reported a conflict and named no path`);
+  throw new Error(`the merge result of ${baseSha} and ${headSha} conflicts in ${conflicts.join(', ')}; resolve the branch and push it again`);
 }
 
 /** The committed bytes of one path, or null when that revision does not hold it. */
@@ -96,10 +103,7 @@ export function checkReleasedSections(base: string, head = 'HEAD', repoRoot = pr
   if (!baseSha) throw new Error(`base ${JSON.stringify(base)} is not a commit in ${repoRoot}; fetch it before this check`);
   const headSha = commitOf(repoRoot, head);
   if (!headSha) throw new Error(`head ${JSON.stringify(head)} is not a commit in ${repoRoot}`);
-  const { tree, conflicts } = mergeResult(repoRoot, baseSha, headSha);
-  if (conflicts.includes(CHANGELOG)) {
-    throw new Error(`the merge result of ${baseSha} and ${headSha} conflicts in ${CHANGELOG}; resolve the branch and push it again`);
-  }
+  const { tree } = mergeResult(repoRoot, baseSha, headSha);
   const baseText = fileAt(repoRoot, baseSha, CHANGELOG);
   if (baseText === null) return { baseSha, headSha, mergeTree: tree, sectionsAtBase: 0, drift: [] };
   const drift = sectionDrift(baseText, fileAt(repoRoot, tree, CHANGELOG) ?? '');

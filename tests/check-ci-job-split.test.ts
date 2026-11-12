@@ -1364,4 +1364,49 @@ describe('released CHANGELOG sections', () => {
       expect(() => checkReleasedSections('missing', rebased, repo)).toThrow('is not a commit');
     } finally { rmSync(repo, { recursive: true, force: true }); }
   });
+
+  // A conflicted merge gives no tree whose released sections are evidence. Before this case, a conflict in a path
+  // other than docs/CHANGELOG.md left the released sections equal and the check reported success.
+  test('a conflict in any path fails closed and names the conflicted paths', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'rh-changelog-conflict-'));
+    const git = (...args: string[]) => {
+      const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+      if (result.status !== 0) throw Error(result.stderr);
+      return result.stdout.trim();
+    };
+    const write = (path: string, content: string) => { mkdirSync(resolve(repo, path, '..'), { recursive: true }); writeFileSync(join(repo, path), content); };
+    const commit = (message: string) => { git('add', '.'); git('commit', '-qm', message); return git('rev-parse', 'HEAD'); };
+    try {
+      git('init', '-q', '-b', 'main'); git('config', 'user.name', 'CI fixture'); git('config', 'user.email', 'ci@example.invalid'); git('config', 'commit.gpgsign', 'false');
+      write('docs/CHANGELOG.md', CHANGELOG);
+      write('src/a.ts', 'export const value = 1;\n');
+      write('src/b.ts', 'export const other = 1;\n');
+      commit('base');
+      // The branch and main change the same line of src/a.ts, so the merge conflicts outside the CHANGELOG.
+      git('checkout', '-q', '-b', 'branch');
+      write('src/a.ts', 'export const value = 2;\n');
+      const head = commit('the branch');
+      git('checkout', '-q', 'main');
+      write('src/a.ts', 'export const value = 3;\n');
+      const base = commit('main moves');
+      // The released sections are untouched by both sides, so only the conflict can stop this check.
+      expect(() => checkReleasedSections(base, head, repo)).toThrow(/conflicts in src\/a\.ts/);
+      // A conflict inside the CHANGELOG is reported the same way, with the path named.
+      git('checkout', '-q', '-b', 'changelog', base);
+      write('docs/CHANGELOG.md', CHANGELOG.replace('- Older entry. (#2)', '- Older entry. (#2) [branch]'));
+      const changelogHead = commit('the branch edits a released line');
+      git('checkout', '-q', 'main');
+      write('docs/CHANGELOG.md', CHANGELOG.replace('- Older entry. (#2)', '- Older entry. (#2) [main]'));
+      const changelogBase = commit('main edits the same line');
+      expect(() => checkReleasedSections(changelogBase, changelogHead, repo)).toThrow(/conflicts in docs\/CHANGELOG\.md/);
+      // Two paths that conflict are both named, so the reader gets the whole conflict set.
+      git('checkout', '-q', 'branch');
+      write('src/b.ts', 'export const other = 2;\n');
+      const twoPathHead = commit('the branch edits both');
+      git('checkout', '-q', 'main');
+      write('src/b.ts', 'export const other = 3;\n');
+      const twoPathBase = commit('main edits both');
+      expect(() => checkReleasedSections(twoPathBase, twoPathHead, repo)).toThrow(/conflicts in src\/a\.ts, src\/b\.ts/);
+    } finally { rmSync(repo, { recursive: true, force: true }); }
+  });
 });
