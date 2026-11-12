@@ -18,7 +18,7 @@ function registryFixture() { const root = registryNoticeFixture(); roots.push(ro
 function projectedFixture() { const root = registryProjectedFixture(); roots.push(root); return root; }
 const noCheckpoint = () => { throw new Error('checkpoint must not run'); };
 const timedOut = () => ({ status: null, signal: 'SIGTERM' as const, stdout: '', stderr: '', timedOut: true });
-const NOTICE_TIMEOUT = 'architecture notice: not finished in its time budget; the next hook measures again';
+const NOTICE_TIMEOUT = 'repo-harness: architecture notice: not finished in its time budget; the next hook measures again';
 const killed = () => ({ status: null, signal: 'SIGKILL' as const, stdout: '', stderr: '' });
 const STATUS = 'repo-harness architecture-projection status --json';
 const NO_MODEL = 'no ArchContext model (.archcontext/manifest.yaml is missing)';
@@ -96,7 +96,7 @@ describe('AgentNotice', () => {
     expect(scope.content).toStartWith(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
   });
 
-  test('#2491: each notice-path timeout gives one fixed diagnostic and no block; a resolve failure keeps its block', () => {
+  test('#2491: a deadline or Git timeout in the checkpoint or the archimap read gives one fixed diagnostic and no block', () => {
     type Case = (root: string) => { readonly options: ArchctxProviderOptions; readonly ownership?: (options: ArchctxProviderOptions) => CapabilityOwnership | null };
     // Only `git merge-base` hangs and gets killed by its timeout; the fixed clock keeps the deadline from running out first.
     const slowMergeBase = (root: string): ArchctxProviderOptions => {
@@ -105,7 +105,6 @@ describe('AgentNotice', () => {
       return { env: { ...noticeEnv(root), REPO_HARNESS_GIT_BIN: slowGit }, nowMs: () => 0 };
     };
     const cases: Record<string, Case> = {
-      'archctx process': root => ({ options: { env: noticeEnv(root), run: timedOut } }),
       'checkpoint git': root => ({ options: slowMergeBase(root) }),
       'archimap git': root => {
         adoptArchimap(root);
@@ -131,7 +130,6 @@ describe('AgentNotice', () => {
           },
         };
       },
-      'ownership resolve': root => ({ options: { env: noticeEnv(root), run: timedOut }, ownership: options => resolveCapabilityOwnership(root, undefined, options) }),
     };
     const mergeBaseCalls = { 'checkpoint git': 1, 'archimap git': 1, 'archimap and checkpoint git': 2 } as Record<string, number>;
     for (const [name, setup] of Object.entries(cases)) {
@@ -142,12 +140,47 @@ describe('AgentNotice', () => {
       const log = join(root, 'home/merge-base.log');
       expect([name, existsSync(log) ? readFileSync(log, 'utf8').length : 0]).toEqual([name, mergeBaseCalls[name] ?? 0]);
     }
+  });
+
+  test('#2491: a timeout at each Git call under the host hook timeout, in archctx or in the resolve gives one fixed diagnostic; a resolve failure keeps its block', () => {
+    const ownership = (root: string) => (options: ArchctxProviderOptions) => resolveCapabilityOwnership(root, undefined, options);
+    // The ownership reads take the Git binary from the process environment, so the fake must be set there too.
+    // It logs each call and hangs at call `hang`; the fixed clock keeps the notice deadline from running out first.
+    const fakeGit = (root: string, hang: number) => {
+      const path = join(root, 'home/counting-git');
+      const home = join(root, 'home');
+      writeFileSync(path, `#!/bin/sh\nn=$(( $(cat "${home}/git.count" 2>/dev/null || echo 0) + 1 ))\necho $n > "${home}/git.count"\necho "$*" >> "${home}/git.log"\n[ $n -eq ${hang} ] && { echo $n > "${home}/git.hung"; exec sleep 40; }\nexec git "$@"\n`, { mode: 0o755 });
+      return path;
+    };
+    const run = (root: string, hang: number) => {
+      const git = fakeGit(root, hang);
+      const previous = process.env.REPO_HARNESS_GIT_BIN;
+      process.env.REPO_HARNESS_GIT_BIN = git;
+      try { return collectAgentNotice(root, ownership(root), { env: { ...noticeEnv(root), REPO_HARNESS_GIT_BIN: git }, nowMs: () => 0 }); }
+      finally { if (previous === undefined) delete process.env.REPO_HARNESS_GIT_BIN; else process.env.REPO_HARNESS_GIT_BIN = previous; }
+    };
+    const baseline = fixture();
+    expect(run(baseline, 0).content).toContain('[ArchitectureDebt]');
+    const calls = readFileSync(join(baseline, 'home/git.log'), 'utf8').trim().split('\n');
+    // The review subject reads (`--literal-pathspecs`) use the 120 s Git default; the 30 s host hook timeout kills the hook first.
+    const rows = calls.flatMap((args, index) => args.includes('--literal-pathspecs') ? [] : [index + 1]);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const hang of rows) {
+      const root = fixture();
+      const result = run(root, hang);
+      expect([hang, calls[hang - 1], readFileSync(join(root, 'home/git.hung'), 'utf8').trim(), result])
+        .toEqual([hang, calls[hang - 1], String(hang), { diagnostics: `${NOTICE_TIMEOUT}\n` }]);
+    }
+    const archctxRoot = fixture();
+    expect(collectAgentNotice(archctxRoot, () => noticeOwnership(archctxRoot), { env: noticeEnv(archctxRoot), run: timedOut })).toEqual({ diagnostics: `${NOTICE_TIMEOUT}\n` });
+    const resolveRoot = fixture();
+    expect(collectAgentNotice(resolveRoot, ownership(resolveRoot), { env: noticeEnv(resolveRoot), run: timedOut })).toEqual({ diagnostics: `${NOTICE_TIMEOUT}\n` });
     const failedRoot = fixture();
-    const resolveFailed = collectAgentNotice(failedRoot, options => resolveCapabilityOwnership(failedRoot, undefined, options), { env: noticeEnv(failedRoot), run: killed });
+    const resolveFailed = collectAgentNotice(failedRoot, ownership(failedRoot), { env: noticeEnv(failedRoot), run: killed });
     expect(resolveFailed.content).toStartWith('[Architecture] notice unavailable (error): capability_ownership:unavailable ARCHCONTEXT_RESOLVE_FAILED: ');
     expect(resolveFailed.systemMessage).toBe('Architecture: notice unavailable (error); run repo-harness architecture-debt --json.');
     expect(resolveFailed.diagnostics).toStartWith('repo-harness: architecture notice unavailable: capability_ownership:unavailable ARCHCONTEXT_RESOLVE_FAILED: ');
-  });
+  }, 240_000);
 
   test('real citation debt is bounded, uses producer ids and dedupes across delivery points', () => {
     const root = fixture();

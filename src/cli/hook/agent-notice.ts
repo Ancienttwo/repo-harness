@@ -18,7 +18,7 @@ const STATUS_MARKER = `${STATE_DIR}agent-notice-status`;
 const ARCHIMAP_MARKER = `${STATE_DIR}agent-notice-archimap`;
 const ARCHIMAP_FILE = 'docs/architecture/archimap.html';
 const STATUS_COMMAND = 'repo-harness architecture-projection status --json';
-const NOTICE_TIMEOUT_LINE = 'architecture notice: not finished in its time budget; the next hook measures again';
+const NOTICE_TIMEOUT_LINE = 'repo-harness: architecture notice: not finished in its time budget; the next hook measures again';
 const MAX_BYTES = 800;
 const MAX_MESSAGE_BYTES = 200;
 // The codes that archctx 0.9.1 checkpoint and package resolution throw for a setup step
