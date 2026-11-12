@@ -86,7 +86,11 @@ export interface GlobalRuntimeOptions {
   reportLanguage?: ReportLanguageFlag;
   /** Internal-only capability proving that the caller owns the outer transaction. */
   candidateHandoff?: CandidateHandoffContext;
+  mcpLocalConfigCheck?: McpLocalConfigCheck;
 }
+
+/** The mcp plugin's read-only check of its local config; its code is loaded only by the CLI root. A refusal detail holds no file content. */
+export type McpLocalConfigCheck = (env: NodeJS.ProcessEnv) => { readonly status: 'ok' | 'skipped' | 'failed'; readonly detail: string };
 
 export interface GlobalRuntimeStep {
   owned_surface?: ManagedInstallSurface;
@@ -1822,6 +1826,15 @@ export function runGlobalRuntimeSetup(
   const piSelected = plugins.includes('pi');
   const updateMode = opts.updateMode === true;
   const steps: GlobalRuntimeStep[] = [];
+
+  // Before any host write, Bun upgrade included: a refused file stops the update and changes nothing.
+  if (updateMode) {
+    const step = 'check MCP local config';
+    const mcp = !plugins.includes('mcp') ? { status: 'skipped' as const, detail: 'mcp plugin not selected' }
+      : opts.mcpLocalConfigCheck?.(env) ?? { status: 'skipped' as const, detail: 'no MCP local config check was given' };
+    steps.push({ step, ...mcp });
+    if (mcp.status === 'failed') return finalizeRuntimeResult(steps);
+  }
 
   const bunRuntime = ensureSupportedBunRuntime(cwd, env, bunExecutable);
   steps.push(bunRuntime);

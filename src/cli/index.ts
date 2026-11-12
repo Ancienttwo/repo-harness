@@ -73,6 +73,7 @@ import {
   updateRegisteredUpgradeSummary,
   type GlobalRuntimeOptions,
   type GlobalRuntimeResult,
+  type McpLocalConfigCheck,
 } from './commands/global-runtime';
 import { REPORT_LANGUAGE_FLAG_VALUES, parseReportLanguageFlag, type ReportLanguageFlag } from './installer/global-context';
 import {
@@ -160,6 +161,9 @@ function selectedMcpLogs(): readonly string[] {
   const { MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH } = require('./mcp/log-paths') as typeof import('./mcp/log-paths');
   return [MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH, MCP_AUDIT_LOG_RELATIVE_PATH];
 }
+
+/** Update's MCP preflight: loaded here and only when core calls it, which it does for a selected mcp plugin. */
+const mcpLocalConfigCheck: McpLocalConfigCheck = env => (require('./mcp/local-config-check') as typeof import('./mcp/local-config-check')).checkMcpLocalConfigFile(env);
 
 /**
  * The plugin checks, setup steps and storage roots that core commands take as
@@ -452,6 +456,7 @@ export function runCandidateRuntimeReconciliation(
     brainRoot: request.brain_root,
     reportLanguage: request.report_language,
     updateMode: true,
+    mcpLocalConfigCheck,
   });
   if (runtime.exitCode !== 0) {
     throw new Error(`candidate reconciliation failed: ${runtime.lines.join('; ')}`);
@@ -570,7 +575,7 @@ export function runTransactionalRuntimeRefresh(
       : { selection: recordedSelection.state.selection, plugins: recordedSelection.resolved.record };
     let result: GlobalRuntimeResult;
     try {
-      result = setup({ ...options, plugins, runtimeLock: lock, candidateHandoff: candidateHandoffContext(transaction, lock) });
+      result = setup({ ...options, plugins, runtimeLock: lock, candidateHandoff: candidateHandoffContext(transaction, lock), mcpLocalConfigCheck });
     } catch (error) {
       rollbackRuntimeTransaction(transaction, transactionEnv, recorded, error);
       throw error;

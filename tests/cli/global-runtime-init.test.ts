@@ -5,6 +5,7 @@ import { dirname, join } from 'path';
 import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { createHash } from 'crypto';
+import { checkMcpLocalConfigFile } from '../../src/cli/mcp/local-config-check';
 import { migrateSeatsConfiguration, ownFreshWazaSharedRules, runGlobalRuntimeSetup, verifyInstalledManagedRuntime } from '../../src/cli/commands/global-runtime';
 import { DEFAULT_SEATS_CONFIG, decodeSeatsConfig } from '../../src/core/board/seats-settings';
 import { registerArchitecturePlugin, resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
@@ -61,6 +62,42 @@ test('update removes stored routing mode and hyper values once, keeps a null wor
     expect(migrateSeatsConfiguration({ HOME: home })).toBe(true);
     expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ seats: DEFAULT_SEATS_CONFIG });
   } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test('update preflight stops on a refused mcp.local.json before the seats write and quotes no file content', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-preflight-'));
+  const home = join(tmp, 'home');
+  const fakeBin = join(tmp, 'bin');
+  try {
+    mkdirSync(join(home, '.repo-harness'), { recursive: true });
+    mkdirSync(fakeBin, { recursive: true });
+    const bunLog = join(tmp, 'bun.log');
+    writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n`);
+    const config = join(home, '.repo-harness', 'config.json');
+    writeFileSync(config, JSON.stringify({ seats: { ...DEFAULT_SEATS_CONFIG, 'worker-light': null, 'gatekeeper-fallback': undefined } }));
+    const before = readFileSync(config, 'utf8');
+    const run = () => runGlobalRuntimeSetup({
+      sourceRoot: ROOT, cwd: tmp, plugins: ['mcp'], mcpLocalConfigCheck: checkMcpLocalConfigFile, installCli: false, updateMode: true, syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
+      env: { ...sanitizedChildEnv(), HOME: home, REPO_HARNESS_HOME: join(home, '.repo-harness'), BUN_INSTALL: join(home, '.bun'), PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun') },
+    });
+    const mcp = join(home, '.repo-harness', 'mcp.local.json');
+    writeFileSync(mcp, '{"version":2,"permissions":{"allowedRoots":["/private/secret-root"]}}');
+    const refused = run();
+    expect(refused.exitCode).toBe(1);
+    expect(refused.steps.at(-1)).toMatchObject({ step: 'check MCP local config', status: 'failed', detail: expect.stringContaining('unsupported version; set "version": 3.') });
+    expect(refused.steps.some(step => step.step === 'migrate seats configuration')).toBe(false);
+    expect(readFileSync(config, 'utf8')).toBe(before);
+    expect(existsSync(bunLog)).toBe(false);
+    writeFileSync(mcp, '{"version":3,"permissions":{"allowedRoots":"/private/secret-root"}}');
+    expect(run().stdout).toContain('permissions.allowedRoots must be an array');
+    writeFileSync(mcp, '{"version":["/private/secret-root"]}');
+    expect(run().stdout).not.toContain('secret-root');
+    writeFileSync(mcp, '{"allowedRoots": ["/private/secret-root"] oops');
+    const malformed = run();
+    expect(malformed.exitCode).toBe(1);
+    expect(malformed.stdout).toContain('the file is not valid JSON.');
+    expect(malformed.stdout).not.toContain('secret-root');
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
 });
 
 // An explicit list never grows, so a host `pi` on the developer PATH cannot change the recorded selection.
@@ -2038,7 +2075,7 @@ exit 0
       const candidateVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')).version;
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "pm" && "\${2:-}" == "view" ]]; then printf '%s\\n' '${JSON.stringify(candidateVersion)}'; exit 0; fi\nif [[ "\${1:-}" == */src/cli/index.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ "\${3:-}" == archctx@* ]]; then mkdir -p "$HOME/.bun/bin"; ln -sf "$HOME/.bun/install/global/node_modules/repo-harness/node_modules/archctx/bin/archctx.mjs" "$HOME/.bun/bin/archctx"; fi\nexit 0\n`);
 
-      const res = spawnSync(
+      const runUpdate = () => spawnSync(
         process.execPath,
         [
           CLI,
@@ -2055,6 +2092,7 @@ exit 0
           env: {
             ...sanitizedChildEnv(),
             HOME: home,
+            REPO_HARNESS_HOME: join(home, '.repo-harness'),
             BUN_INSTALL: join(home, '.bun'),
             PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
             REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
@@ -2062,6 +2100,7 @@ exit 0
           },
         },
       );
+      const res = runUpdate();
 
       expect(res.status, `${res.stderr}\n${res.stdout}`).toBe(0);
       const result = JSON.parse(res.stdout);
@@ -2071,6 +2110,14 @@ exit 0
         status: 'ok',
         detail: expect.stringContaining('scope=partial'),
       });
+      expect(result.steps.find((step: { step: string }) => step.step === 'check MCP local config')).toMatchObject({ status: 'skipped' });
+      writeFileSync(join(home, '.repo-harness', 'mcp.local.json'), '{"version":2,"permissions":{"allowedRoots":["/private/secret-root"]}}');
+      const refused = runUpdate();
+      expect(refused.status).toBe(1);
+      const refusedSteps: { step: string; status: string; detail?: string }[] = JSON.parse(refused.stdout).steps;
+      expect(refusedSteps.at(-1)).toMatchObject({ step: 'check MCP local config', status: 'failed', detail: expect.stringContaining('unsupported version; set "version": 3.') });
+      expect(refused.stdout).not.toContain('secret-root');
+      expect(refusedSteps.some(step => step.step === 'migrate seats configuration')).toBe(false);
       expect(existsSync(join(home, '.repo-harness', 'config.json'))).toBe(true);
       expect(existsSync(join(repo, '.ai'))).toBe(false);
       expect(existsSync(join(repo, 'tasks'))).toBe(false);
