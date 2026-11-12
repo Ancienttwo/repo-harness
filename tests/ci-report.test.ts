@@ -690,10 +690,14 @@ test('a dead or missing archimap module link names the links and the refresh act
 
 test('the archimap link check reads module document links of the map against modules[].docs', () => {
   const html = '<a href="history.md"></a><a href="https://example.invalid/modules/x.md"></a><a href="#modules"></a>'
-    + '<a href="modules/a/kept.md"></a><a class="node" href="modules/a/kept.md"></a><a href="modules/a/gone.md#top"></a>';
-  const present = new Set(['docs/architecture/modules/a/kept.md', 'docs/architecture/modules/b/new.md']);
-  expect(archimapLinkDrift(html, ['docs/architecture/modules/a/kept.md', 'docs/architecture/modules/b/new.md'], path => present.has(path)))
-    .toEqual({ dead: ['docs/architecture/modules/a/gone.md'], missing: ['docs/architecture/modules/b/new.md'] });
+    + '<a href="modules/a/kept.md"></a><a class="node" href="modules/a/kept.md"></a><a href="modules/a/gone.md#top"></a>'
+    // Single quotes, spaces around = and upper case are the same link to the parser.
+    + "<a href='modules/c/quoted.md'></a><a href='modules/c/gone-quoted.md'></a><a href = \"modules/d/spaced.md\"></a><A HREF = 'modules/d/gone-spaced.md'></A>";
+  const docs = ['docs/architecture/modules/a/kept.md', 'docs/architecture/modules/b/new.md', 'docs/architecture/modules/c/quoted.md', 'docs/architecture/modules/d/spaced.md'];
+  const present = new Set(docs);
+  expect(archimapLinkDrift(html, docs, path => present.has(path))).toEqual({
+    dead: ['docs/architecture/modules/a/gone.md', 'docs/architecture/modules/c/gone-quoted.md', 'docs/architecture/modules/d/gone-spaced.md'],
+    missing: ['docs/architecture/modules/b/new.md'] });
 });
 
 test('a daily architecture failure without a summary says so and routes to the command-error row', () => fixture(async f => {

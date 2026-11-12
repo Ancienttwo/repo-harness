@@ -22,11 +22,13 @@ export interface ArchimapLinkDrift { dead: string[]; missing: string[] }
 /** Paths are repository-relative. `exists` answers for a repository-relative path. */
 export function archimapLinkDrift(html: string, docs: string[], exists: (path: string) => boolean): ArchimapLinkDrift {
   const links = new Set<string>();
-  for (const [, href] of html.matchAll(/\bhref="([^"]*)"/g)) {
-    if (/^[a-z][a-z0-9+.-]*:|^[#/]/i.test(href!)) continue;
-    const path = posix.normalize(posix.join(posix.dirname(MAP), href!.split(/[?#]/)[0]!));
+  // Bun's HTML parser reads every attribute spelling: quotes, spaces around =, case.
+  new HTMLRewriter().on('a[href]', { element(anchor) {
+    const href = anchor.getAttribute('href')!.trim();
+    if (/^[a-z][a-z0-9+.-]*:|^[#/]/i.test(href)) return;
+    const path = posix.normalize(posix.join(posix.dirname(MAP), href.split(/[?#]/)[0]!));
     if (path.startsWith(MODULE_DOCS)) links.add(path);
-  }
+  } }).transform(html);
   return {
     dead: [...links].filter(path => !exists(path)).sort(),
     missing: [...new Set(docs)].filter(path => !links.has(path)).sort(),
