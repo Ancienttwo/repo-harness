@@ -243,7 +243,7 @@ const DOCS_REASONS: Readonly<Record<Exclude<DocsReason, 'unreachable'>, true>> =
 
 export type DocsRead<T> = { readonly state: 'ok'; readonly value: T }
   | { readonly state: 'unavailable'; readonly reason: Exclude<DocsReason, 'github_remote_missing'> }
-  | { readonly state: 'unavailable'; readonly reason: 'github_remote_missing'; readonly detail: DocsRemoteMismatchV1 };
+  | { readonly state: 'unavailable'; readonly reason: 'github_remote_missing'; readonly detail?: DocsRemoteMismatchV1 };
 export type DocsTreeReader = (repositoryId: string, signal: AbortSignal) => Promise<DocsRead<DocsTreeV1>>;
 export type DocsFileReader = (repositoryId: string, path: string, signal: AbortSignal) => Promise<DocsRead<DocsFileV1>>;
 
@@ -261,7 +261,9 @@ function docsRead<T>({ ok, body }: JsonAnswer, decode: (value: unknown) => T): D
   if (!ok) {
     const error = asApiError(body);
     if (error.code === 'github_remote_missing') {
-      try { return { state: 'unavailable', reason: error.code, detail: decodeDocsRemoteMismatch((error as { readonly detail?: unknown }).detail) }; }
+      const detail = (error as { readonly detail?: unknown }).detail;
+      if (detail === undefined) return { state: 'unavailable', reason: error.code };
+      try { return { state: 'unavailable', reason: error.code, detail: decodeDocsRemoteMismatch(detail) }; }
       catch { return { state: 'unavailable', reason: 'docs_invalid' }; }
     }
     return { state: 'unavailable', reason: Object.hasOwn(DOCS_REASONS, error.code) ? error.code as Exclude<DocsReason, 'github_remote_missing'> : 'unreachable' };

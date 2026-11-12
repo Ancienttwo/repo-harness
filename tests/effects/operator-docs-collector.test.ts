@@ -129,6 +129,18 @@ test('github_remote_missing names only the expected and the parsed GitHub reposi
     for (const text of [JSON.stringify(docs.read(f.id)), body]) expect(text).not.toMatch(/token|@|:\/\/|origin|mirror|forged/iu);
     expect(await docsAnswer(response, decodeDocsTree)).toEqual({ state: 'unavailable', reason: 'github_remote_missing', detail });
   } finally { await server.close(); }
+
+  // `/iu` lets U+017F match [A-Za-z]: the parser gives `aſ/r`, which the console grammar rejects, so the detail stays home.
+  const longS = fixture({ origin: 'https://github.com/aſ/r.git' });
+  const plain = collect(longS, activity(longS.id, 'owner/repo', 'main'));
+  await plain.settled();
+  expect(plain.read(longS.id)).toEqual({ state: 'unavailable', reason: 'github_remote_missing' });
+  const plainServer = await startOperatorServer({ port: 0, read_docs: plain.read });
+  try {
+    const response = await fetch(`${plainServer.url}/api/v1/repositories/${longS.id}/docs/tree`);
+    expect(response.status).toBe(503);
+    expect(await docsAnswer(response, decodeDocsTree)).toEqual({ state: 'unavailable', reason: 'github_remote_missing' });
+  } finally { await plainServer.close(); }
 });
 
 test('two remotes of the same GitHub repository are ambiguous; an invalid registry is unavailable', async () => {
