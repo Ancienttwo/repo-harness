@@ -92,15 +92,21 @@ run_architecture_check() {
 # counts when nothing follows it. The squash body names the rendered base only
 # as text, so it is not read.
 architecture_unpublished_since() {
-  local manifest_commit after
-  manifest_commit="$(git log --first-parent -1 --format=%H -- docs/architecture/.projection-manifest.json)"
+  local shallow manifest_commit after
+  # A shallow clone ends at a boundary commit that git log reports as a manifest change.
+  shallow="$(git rev-parse --is-shallow-repository)" || return 1
+  if [[ "$shallow" != false ]]; then
+    echo "[ci] The checkout is shallow, so the newest projection manifest commit is unknown. Check out the full history." >&2
+    return 1
+  fi
+  manifest_commit="$(git log --first-parent -1 --format=%H -- docs/architecture/.projection-manifest.json)" || return 1
   if [[ -z "$manifest_commit" ]]; then
     echo "[ci] No first-parent commit changes docs/architecture/.projection-manifest.json." >&2
     return 1
   fi
-  after="$(git rev-list --first-parent --reverse "$manifest_commit..HEAD")"
+  after="$(git rev-list --first-parent --reverse "$manifest_commit..HEAD")" || return 1
   after="${after%%$'\n'*}"
-  git show -s --format=%cI "${after:-$manifest_commit}"
+  git show -s --format=%cI "${after:-$manifest_commit}" || return 1
 }
 
 # Prints a GitHub Actions warning annotation. The title must not contain ':' or ','.
@@ -284,8 +290,9 @@ if [[ "$lane" == all || "$lane" == architecture ]]; then
   echo "[ci] architecture projection"
   arch_json="$(mktemp /tmp/rh-arch-check-XXXXXX)"
   arch_freshness=""
+  arch_input_failed=false
   run_architecture_check "$arch_json" || true
-  if [[ -s "$arch_json" ]] && unpublished_since="$(architecture_unpublished_since)" \
+  if [[ -s "$arch_json" ]] && { unpublished_since="$(architecture_unpublished_since)" || { arch_input_failed=true; false; }; } \
     && arch_classified="$(bun -e 'const { classifyArchitectureFreshness } = await import("./src/core/architecture/projection.ts"); const summary = JSON.parse(await Bun.file(process.argv[1]).text()); const since = new Date(process.argv[2]); if (Number.isNaN(since.getTime())) throw new Error(`invalid commit time ${process.argv[2]}`); const freshness = classifyArchitectureFreshness(summary, since, new Date()); console.log(freshness); console.log(JSON.stringify({ ...summary, freshness, unpublishedSince: since.toISOString() }, null, 2));' "$arch_json" "$unpublished_since")"; then
     arch_freshness="${arch_classified%%$'\n'*}"
     arch_summary="${arch_classified#*$'\n'}"
@@ -302,7 +309,8 @@ if [[ "$lane" == all || "$lane" == architecture ]]; then
     fresh) ;;
     lag) warn "Architecture projection lag" "The render differs, and the oldest unpublished main commit ($unpublished_since) is younger than 3 h. The rolling writer publishes it." ;;
     stale) echo "[ci] Architecture render differs, and the oldest unpublished main commit ($unpublished_since) is 3 h or older. Inspect archctx writer status and the rolling PR." >&2; exit 1 ;;
-    *) echo "[ci] Architecture check is incomplete${arch_freshness:+ ($arch_freshness)}. Inspect the reported human action or provider error." >&2; exit 1 ;;
+    *) if [[ "$arch_input_failed" == true ]]; then echo "[ci] The oldest unpublished main commit could not be read from git. Read the git error above." >&2; exit 1; fi
+       echo "[ci] Architecture check is incomplete${arch_freshness:+ ($arch_freshness)}. Inspect the reported human action or provider error." >&2; exit 1 ;;
   esac
 fi
 

@@ -1054,7 +1054,7 @@ describe('architecture lanes', () => {
     constraintIds: [LAYER_DIRECTION, PLUGIN_INTERNALS], importEdgeCount: 5521, unresolvedImports: [], violations: [constraintViolation(LAYER_DIRECTION)], ...fields } });
 
   // Real check-ci.sh with stub CLI results. `bun -e` and the shell logic stay real.
-  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; constraints?: string; summary?: boolean; history?: Array<{ manifest: boolean; hoursAgo: number }> }) {
+  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; constraints?: string; summary?: boolean; history?: Array<{ manifest: boolean; hoursAgo: number }>; shallow?: boolean; gitFails?: string }) {
     const root = mkdtempSync(join(tmpdir(), 'rh-ci-architecture-'));
     const bin = join(root, 'bin');
     try {
@@ -1079,7 +1079,14 @@ describe('architecture lanes', () => {
           git(['add', path]);
           expect(git(['commit', '-q', '-m', String(index)], new Date(Date.now() - hoursAgo * 3_600_000).toISOString()).status).toBe(0);
         });
+        // A shallow file marks the clone boundary, as a checkout without fetch-depth 0 leaves it.
+        if (fixture.shallow) writeFileSync(join(root, 'repo/.git/shallow'), `${git(['rev-parse', 'HEAD']).stdout.trim()}\n`);
       }
+      if (fixture.gitFails) writeFileSync(join(bin, 'git'), [
+        '#!/bin/bash',
+        `if [[ "$1" == ${fixture.gitFails} ]]; then echo "fatal: injected $1 failure" >&2; exit 128; fi`,
+        `exec ${JSON.stringify(Bun.which('git'))} "$@"`,
+      ].join('\n'), { mode: 0o755 });
       writeFileSync(join(bin, 'bun'), [
         '#!/bin/bash',
         'if [[ "$1" == install ]]; then exit 0; fi',
@@ -1239,10 +1246,17 @@ describe('architecture lanes', () => {
     expect(result.stdout).not.toContain('[ci] typecheck');
   });
 
-  test('daily fails closed with no summary when no commit changes the projection manifest', () => {
-    const result = runLane(['architecture'], { check: JSON.stringify(differs), checkExit: 1, summary: true, history: [{ manifest: false, hoursAgo: 1 }] });
+  test.each([
+    ['no commit changes the projection manifest', { history: [{ manifest: false, hoursAgo: 1 }] }, 'No first-parent commit changes docs/architecture/.projection-manifest.json.'],
+    // The young boundary commit of a shallow clone would read as M and give a false lag.
+    ['the checkout is shallow', { history: afterM(4), shallow: true }, 'The checkout is shallow'],
+    // Without the status check, the failed read would fall back to the time of M and pass as lag.
+    ['the commits after M cannot be read', { history: [{ manifest: true, hoursAgo: 1 }, { manifest: false, hoursAgo: 0.5 }], gitFails: 'rev-list' }, 'fatal: injected rev-list failure'],
+  ])('daily fails closed with no summary when %s', (_name, fixture, message) => {
+    const result = runLane(['architecture'], { check: JSON.stringify(differs), checkExit: 1, summary: true, ...fixture });
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('No first-parent commit changes docs/architecture/.projection-manifest.json.');
+    expect(result.stderr).toContain(message);
+    expect(result.stderr).toContain('The oldest unpublished main commit could not be read from git.');
     expect(result.summary).toBeNull();
   });
 
