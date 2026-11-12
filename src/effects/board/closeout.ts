@@ -29,6 +29,12 @@ export interface BoardCloseoutV1 {
   readonly pr: number;
   readonly merge_commit: string;
   readonly panes: readonly BoardCloseoutPaneV1[];
+  /**
+   * The finished seat terminals of other pull requests whose cwd directory is gone (#2675): `closed` when the pass removed
+   * the record, `kept` with the host reason when the removal failed, which does not keep the worktree. A live record, a
+   * finished record whose cwd exists and a record without a seat label stay out of this list.
+   */
+  readonly stale_terminals: readonly BoardCloseoutPaneV1[];
   /** `partial`: one of the checkout and the local branch is gone; the two flags say which. `unknown`: a flag is null because its readback failed. */
   readonly worktree: {
     readonly path: string; readonly outcome: 'removed' | 'kept' | 'partial' | 'unknown'; readonly reason: string | null;
@@ -192,12 +198,24 @@ function paneBinding(terminal: BoardSeatTerminalReadV1, pr: MergedPullRequest, p
   return labels.pr === undefined ? 'bound' : 'conflict';
 }
 
-function closePanes(input: BoardCloseoutInput, pr: MergedPullRequest, proof: CloseoutProof): BoardCloseoutPaneV1[] {
+/** The result entry of a stale record: `closed` when the pass removed it, `kept` with the host reason when hc rm failed. */
+function staleTerminal(terminal: BoardSeatTerminalReadV1, removed: ReturnType<BoardHostPortsV1['closeTerminal']>): BoardCloseoutPaneV1 {
+  const base = { address: terminal.address, seat: terminal.labels.seat ?? null };
+  return removed.status === 'closed' ? { ...base, outcome: 'closed', reason: null } : { ...base, outcome: 'kept', reason: removed.reason };
+}
+
+function closePanes(input: BoardCloseoutInput, pr: MergedPullRequest, proof: CloseoutProof): Pick<BoardCloseoutV1, 'panes' | 'stale_terminals'> {
   const read = input.host.closeoutTerminals(String(readRepositoryId(input)));
   if (read.status === 'unavailable') throw new BoardCollectError(`the seat terminals are unavailable: ${read.reason}`);
-  return read.terminals.flatMap((terminal): BoardCloseoutPaneV1[] => {
+  const stale_terminals: BoardCloseoutPaneV1[] = [];
+  const panes = read.terminals.flatMap((terminal): BoardCloseoutPaneV1[] => {
     const binding = paneBinding(terminal, pr, proof);
-    if (binding === 'none') return [];
+    // A finished seat terminal whose cwd directory is gone protects no work of any pull request, so this pass removes its
+    // record also when no merge binds it (#2675). A record without a seat label is a task session that the runtime cleanup owns.
+    if (binding === 'none') {
+      if (terminal.labels.seat !== undefined && workGone(terminal)) stale_terminals.push(staleTerminal(terminal, input.host.closeTerminal(terminal.address)));
+      return [];
+    }
     const pane = { address: terminal.address, seat: terminal.labels.seat ?? null };
     const keep = binding === 'conflict' ? `conflicting_binding pr ${terminal.labels.pr}`
       : terminal.address === input.caller_terminal ? 'caller_terminal'
@@ -207,6 +225,7 @@ function closePanes(input: BoardCloseoutInput, pr: MergedPullRequest, proof: Clo
     const closed = input.host.closeTerminal(terminal.address);
     return [closed.status === 'closed' ? { ...pane, outcome: 'closed', reason: null } : { ...pane, outcome: 'kept', reason: closed.reason }];
   });
+  return { panes, stale_terminals };
 }
 
 /** Waits up to 5 s for the programs of the closed panes to leave the checkout. */
@@ -267,8 +286,8 @@ function observed(proof: CloseoutProof, pr: MergedPullRequest, reason: string | 
 export async function runBoardCloseout(input: BoardCloseoutInput): Promise<BoardCloseoutV1> {
   const pr = readMergedPullRequest(input);
   const proof = proveCloseout(input, pr);
-  const panes = closePanes(input, pr, proof);
-  return { kind: BOARD_CLOSEOUT_KIND, pr: pr.number, merge_commit: pr.merge_commit, panes, ...await removeWorktree(input, pr, proof, panes) };
+  const { panes, stale_terminals } = closePanes(input, pr, proof);
+  return { kind: BOARD_CLOSEOUT_KIND, pr: pr.number, merge_commit: pr.merge_commit, panes, stale_terminals, ...await removeWorktree(input, pr, proof, panes) };
 }
 
 /** The paths that process `pid` holds open; null when the platform probe cannot prove them. */
