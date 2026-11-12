@@ -434,3 +434,68 @@ run_bun_test_file "$2"
     } finally { f.close(); }
   });
 });
+
+// TEMPORARY (#2615 draft probe only): the #2609 loops a and b with the shared rule, and the three rule test files, on Windows.
+const probe2615 = {
+  a: `import { unlinkSync, writeFileSync } from "node:fs";
+    import { join } from "node:path";
+    const dir = process.argv[1]; const rows = [];
+    for (let i = 0; i < 20000; i++) {
+      const path = join(dir, "t" + (i % 4) + ".json");
+      try { writeFileSync(path, "{}\\n"); } catch (e) { rows.push("write|" + e.code + "|" + e.syscall); }
+      try { unlinkSync(path); } catch (e) { rows.push("unlink|" + e.code + "|" + e.syscall); }
+    }
+    console.log(JSON.stringify(rows));`,
+  b: `import { renameSync, writeFileSync } from "node:fs";
+    import { join } from "node:path";
+    import { retryWindowsSharingRace } from ${JSON.stringify(join(ROOT, "src/effects/atomic-append.ts"))};
+    const dir = process.argv[1]; const rows = [];
+    for (let n = 0; n < 4; n++) writeFileSync(join(dir, "t" + n + ".json"), "{}\\n");
+    for (let i = 0; i < 20000; i++) {
+      const path = join(dir, "t" + (i % 4) + ".json");
+      try { writeFileSync(path + ".tmp", "{}\\n"); retryWindowsSharingRace(() => renameSync(path + ".tmp", path)); } catch (e) { rows.push("rename|" + e.code + "|" + e.syscall); }
+    }
+    console.log(JSON.stringify(rows));`,
+};
+
+for (const part of ["a", "b"] as const) {
+  test.skipIf(process.platform !== "win32")(`TEMP #2615 loop ${part}`, async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "rh-2615-")));
+    const dir = join(home, "host-test-queue", "tickets");
+    mkdirSync(dir, { recursive: true });
+    const { readHostTestQueueState } = await import("../src/effects/locking/host-test-queue.ts");
+    const env = { ...process.env, REPO_HARNESS_HOME: home };
+    const child = Bun.spawn([process.execPath, "-e", probe2615[part], dir], { stdout: "pipe", stderr: "pipe" });
+    const readerRows: string[] = [];
+    let reads = 0;
+    try {
+      while (child.exitCode === null) {
+        reads++;
+        try { readHostTestQueueState(env); } catch (e) {
+          const err = e as NodeJS.ErrnoException;
+          readerRows.push(["reader", err.code, err.syscall].join("|"));
+        }
+        if (reads % 64 === 0) await Bun.sleep(0);
+      }
+      const [out, err, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+      const writerRows = JSON.parse(out.trim().split(/\r?\n/).pop() || "[]") as string[];
+      console.log(`[#2615${part}] child exit=${exit} stderr=${err.slice(0, 300)}`);
+      console.log(`[#2615${part}] reads=${reads} reader throws=${readerRows.length} writer errors=${writerRows.length} rows=${JSON.stringify([...readerRows, ...writerRows].slice(0, 20))}`);
+      expect(exit).toBe(0);
+      expect(readerRows).toEqual([]);
+      expect(writerRows).toEqual([]);
+    } finally {
+      child.kill();
+      await child.exited;
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 600_000);
+}
+
+test.skipIf(process.platform !== "win32")("TEMP #2615 rule test files", async () => {
+  const files = ["tests/state/state-effects.test.ts", "tests/unit/host-test-queue.test.ts", "tests/unit/exclusive-directory-lock-owner-identity.test.ts"];
+  const child = Bun.spawn([process.execPath, "test", ...files, "--timeout", "60000", "--max-concurrency", "1"], { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
+  const [out, err, exit] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  console.log(`[#2615 files] exit=${exit}\n${(out + err).split(/\r?\n/).filter(l => /pass|fail|error|Ran /i.test(l)).slice(-60).join("\n")}`);
+  expect(exit).toBe(0);
+}, 600_000);
