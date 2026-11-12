@@ -32,7 +32,7 @@ export interface ChangelogFragment {
   readonly path: string;
   readonly issue: number;
   readonly category: ChangelogCategory;
-  /** The bullet block, byte for byte, without its trailing newlines. */
+  /** The entry lines, byte for byte, without the trailing newlines. */
   readonly block: string;
 }
 
@@ -40,12 +40,23 @@ function fragmentPathFault(path: string): Error {
   return new Error(`${path} is not a changelog fragment: the path form is ${FRAGMENT_PATH_FORM}, with <issue> the issue number of the PR and <category> one of ${CATEGORIES.join(', ')}`);
 }
 
-/** Parses one fragment. The bullet bytes are kept as they are: the assembler rewrites nothing. */
+/**
+ * Parses one fragment: one or more `- ` entry lines and nothing else. Contract item 2 says that a
+ * fragment holds "one or more `- ` bullet lines": the path `<issue>.<category>.md` is unique for one
+ * issue and category, so two entries of one category are two bullets of one fragment. The entry
+ * bytes are kept as they are, because the assembler rewrites nothing. A heading or any other text
+ * would put text in the released section that no entry accounts for, so it fails closed and the
+ * message names the file.
+ */
 export function parseFragment(path: string, text: string): ChangelogFragment {
   const match = /^docs\/changelog\.d\/(\d+)\.([a-z]+)\.md$/u.exec(path);
   if (!match || !(CATEGORIES as readonly string[]).includes(match[2]!)) throw fragmentPathFault(path);
   const block = text.replace(/\n+$/u, '');
-  if (!block.startsWith('- ')) throw new Error(`${path} has no "- " bullet line: write each entry as one "- " line (the path form is ${FRAGMENT_PATH_FORM})`);
+  if (!block) throw new Error(`${path} is empty: write one or more "- " entry lines (the path form is ${FRAGMENT_PATH_FORM})`);
+  const other = block.split('\n').find((line) => !line.startsWith('- '));
+  if (other !== undefined) {
+    throw new Error(`${path} holds a line that is not a "- " entry: ${JSON.stringify(other)}; a fragment holds only "- " entry lines, so no heading and no other text (the path form is ${FRAGMENT_PATH_FORM})`);
+  }
   return { path, issue: Number(match[1]!), category: match[2] as ChangelogCategory, block };
 }
 
@@ -57,7 +68,7 @@ export function fragmentPaths(root: string): string[] {
 
 /**
  * The released section of one version: its categories in the constant order, and issue order inside a category.
- * A section writes its bullets on consecutive lines, as every section of `docs/CHANGELOG.md` already does.
+ * A section writes its entries on consecutive lines, as every section of `docs/CHANGELOG.md` already does.
  */
 export function renderSection(version: string, date: string, fragments: readonly ChangelogFragment[]): string {
   const blocks = CATEGORIES.flatMap((category) => {

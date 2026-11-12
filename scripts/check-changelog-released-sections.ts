@@ -16,11 +16,12 @@
  * still adds an `[Unreleased]` entry.
  */
 import { spawnSync } from 'node:child_process';
-import { CHANGELOG, FRAGMENT_DIR, FRAGMENT_PATH_FORM, parseFragment } from './changelog-fragments';
+import { CHANGELOG, FRAGMENT_DIR, FRAGMENT_PATH_FORM, parseFragment, VERSION_HEADING } from './changelog-fragments';
 
 // A released section starts at its version heading and ends at the next version heading.
-const SECTION_HEADING = /^## \[(\d+\.\d+\.\d+)\][^\r\n]*/gm;
-const UNRELEASED_HEADING = /^## \[Unreleased\]/m;
+const SECTION_HEADING = VERSION_HEADING;
+/** The title line of `docs/CHANGELOG.md`; the prose under it is free text. */
+export const CHANGELOG_TITLE = '# Changelog';
 const TREE_OID = /^[0-9a-f]{40}$/;
 const MAX_BUFFER = 64 * 1024 * 1024;
 
@@ -36,7 +37,7 @@ export interface ReleasedSectionReport {
   readonly mergeTree: string;
   readonly sectionsAtBase: number;
   readonly drift: readonly SectionDrift[];
-  /** The merge result keeps an `## [Unreleased]` heading, or a path under the fragment directory does not parse. */
+  /** Text above the first released section other than the preamble, or a path under the fragment directory that does not parse. */
   readonly fragmentFaults: readonly string[];
 }
 
@@ -107,14 +108,21 @@ function fileAt(repoRoot: string, revision: string, path: string): string | null
 }
 
 /**
- * The fragment faults of the merge result: an `## [Unreleased]` heading, and each path under the
- * fragment directory that does not parse. A path outside that form is the old practice, so the
- * parser's error names the path form and this text repeats it.
+ * The fragment faults of the merge result: text above the first released section that is not the
+ * preamble, and each path under the fragment directory that does not parse. Released sections start
+ * at their version headings, so an entry written above the newest one would otherwise pass; the
+ * preamble rule keeps the fragments the only authoring path. A path outside the fragment form is the
+ * old practice, so the parser's error names the path form.
  */
 function fragmentFaults(repoRoot: string, tree: string, changelog: string): string[] {
   const faults: string[] = [];
-  if (UNRELEASED_HEADING.test(changelog)) {
-    faults.push(`${CHANGELOG} keeps an "## [Unreleased]" heading; each PR writes its entry in ${FRAGMENT_PATH_FORM} and the release prep assembles the section`);
+  const firstHeading = [...changelog.matchAll(VERSION_HEADING)][0];
+  const preamble = changelog.slice(0, firstHeading?.index ?? changelog.length);
+  // Above the first released section only the title and prose may stand: an entry line or a section
+  // heading there would author released text outside a fragment, which is the practice this form retires.
+  const authored = preamble.split('\n').find((line) => line.startsWith('## ') || line.startsWith('### ') || line.startsWith('- '));
+  if (!preamble.startsWith(CHANGELOG_TITLE) || authored !== undefined) {
+    faults.push(`${CHANGELOG} holds text above its first released section that is not its title and preamble: ${JSON.stringify(authored ?? 'the file does not start with the title')}; each PR writes its entry in ${FRAGMENT_PATH_FORM} and the release prep assembles the section`);
   }
   const listing = gitOrFail(repoRoot, ['ls-tree', '-r', '--name-only', tree, '--', FRAGMENT_DIR]).split('\n').filter(Boolean);
   for (const path of listing) {
