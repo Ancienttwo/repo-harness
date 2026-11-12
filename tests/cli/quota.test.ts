@@ -63,6 +63,14 @@ describe('seat quota routing', () => {
     expect(lines).toContain('route frontend: none (claude tight, reserved for advisor and orchestrator; frontend waits for claude)');
   });
 
+  test('saving keeps a Pi worker-important in place and replaces only Claude seats (#2679)', () => {
+    const pi: SeatConfigV1 = { ...DEFAULT_SEATS_CONFIG['worker-light']!, model: 'magpie/anthropic/claude-opus-5-5', effort: 'high' };
+    const seats = { ...DEFAULT_SEATS_CONFIG, 'worker-important': pi, 'worker-light': null };
+    const lines = formatSeatRoutes(seats, seatAccountQuotas([claude({ seven_day: week(95, 84) })], seats.routing)).split('\n');
+    expect(lines).toContain('route important_deep: worker-important (pi magpie/anthropic/claude-opus-5-5 high)');
+    expect(lines).toContain('route important_fast: none (worker-light not configured)');
+  });
+
   test.each([50, 51])('Codex %s%% used selects hyper only at or above remaining threshold', used => {
     const account = classifyQuotaReading(decodeCodexRateLimitsResult({ rateLimits: {
       primary: { usedPercent: used, windowDurationMins: 10080, resetsAt: (NOW + 84 * HOUR) / 1000 },
