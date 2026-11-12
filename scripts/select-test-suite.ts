@@ -88,18 +88,34 @@ export function missingTestReports(files: readonly string[], reports: readonly T
   return files.filter(file => !reported.has(file));
 }
 
-const usage = 'Usage: select-test-suite.ts [core|integration|full] [files...] | shard [<index>/<total>] | durations <junit-dir> <output> | reports <junit-dir> [files...]';
+const usage = 'Usage: select-test-suite.ts [core|integration|full] [files...] | shard [<index>/<total>] | plan <index>/<total> <files...> | durations <junit-dir> <output> | reports <junit-dir> [files...]';
+
+/** Parses a CI_SHARD value `<index>/<total>` with index < total. */
+function parseShard(value: string): { index: number; total: number } {
+  const match = /^(0|[1-9]\d*)\/([1-9]\d*)$/.exec(value);
+  if (!match || Number(match[1]) >= Number(match[2])) throw Error('Invalid CI_SHARD');
+  return { index: Number(match[1]), total: Number(match[2]) };
+}
 
 if (import.meta.main) {
   const [command = 'full', ...rest] = process.argv.slice(2);
   if (command === 'shard') {
     // The selection job owns the split. A shard runs its array in plan order; with no shard the run is the concatenation.
     if (rest.length > 1) throw Error(usage);
-    const match = rest[0] === undefined ? null : /^(0|[1-9]\d*)\/([1-9]\d*)$/.exec(rest[0]);
-    if (rest[0] !== undefined && (!match || Number(match[1]) >= Number(match[2]))) throw Error('Invalid CI_SHARD');
+    const shard = rest[0] === undefined ? null : parseShard(rest[0]);
     const plan: unknown = JSON.parse(readFileSync('.ci-affected-tests.json', 'utf8'));
-    assertShardPlan(plan, null, match ? Number(match[2]) : (plan as unknown[]).length);
-    for (const file of match ? plan[Number(match[1])]! : plan.flat()) console.log(file);
+    assertShardPlan(plan, null, shard ? shard.total : (plan as unknown[]).length);
+    for (const file of shard ? plan[shard.index]! : plan.flat()) console.log(file);
+  } else if (command === 'plan') {
+    // The manual probe writes the plan file that the selection job writes, from a given list, so `shard` reads it unchanged.
+    const [value, ...files] = rest;
+    if (!value || !files.length) throw Error(usage);
+    const { index, total } = parseShard(value);
+    const plan = planShards(selectTestSuite('full', files), loadTestDurations(), total);
+    // check-ci.sh passes an empty shard as "No affected tests", so a probe of an empty shard would be green with no test run.
+    if (!plan[index]!.length) throw Error(`Shard ${value} of ${files.length} files is empty`);
+    writeFileSync('.ci-affected-tests.json', JSON.stringify(plan));
+    console.log(`shard ${value}: ${plan[index]!.length} of ${files.length} files: ${plan[index]!.join(' ')}`);
   } else if (command === 'durations' || command === 'reports') {
     const [directory, ...args] = rest;
     if (!directory || (command === 'durations' && args.length !== 1)) throw Error(usage);

@@ -73,6 +73,25 @@ describe("herdr runtime pin has one source of truth", () => {
     expect(step).not.toMatch(/[0-9a-f]{64}/);
   });
 
+  test("the probe workflow keeps the setup pins of the CI jobs that it predicts", () => {
+    type Step = { uses?: string; run?: string; with?: Record<string, unknown> };
+    const steps = (path: string, job: string) => (Bun.YAML.parse(readFileSync(join(ROOT, path), 'utf8')) as {
+      jobs: Record<string, { steps: Step[] }>;
+    }).jobs[job]!.steps;
+    const pins = (list: Step[]) => ({
+      node: list.find(step => step.uses === 'actions/setup-node@v4')?.with?.['node-version'],
+      bun: list.find(step => step.uses === 'oven-sh/setup-bun@v2')?.with?.['bun-version'],
+      apt: list.filter(step => step.run?.includes('apt-get install')).map(step => step.run),
+      herdr: list.filter(step => step.uses === './.github/actions/install-pinned-herdr-core').length,
+    });
+    const probe = pins(steps('.github/workflows/probe.yml', 'probe'));
+    expect(probe.node).toBeDefined();
+    const ci = '.github/workflows/ci.yml';
+    expect(probe).toEqual(pins(steps(ci, 'verify')));
+    const home = pins(steps(ci, 'home-isolation'));
+    expect([probe.node, probe.bun]).toEqual([home.node, home.bun]);
+  });
+
   test.each([
     ["the pinned digest", true],
     ["a wrong digest", false],

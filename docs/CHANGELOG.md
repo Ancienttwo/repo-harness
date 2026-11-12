@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- feat(ci): `.github/workflows/probe.yml` runs named test files on a chosen runner for a branch head, with no probe PR and no temporary commit: `gh workflow run probe.yml --ref <branch> -f runner=windows-latest -f files='<test paths>'`. Lane `home-isolation` runs each file as `Test HOME isolation` does; lane `affected-shard` (ubuntu-latest, `-f shard=<index>/<total>`) runs one shard through `scripts/check-ci.sh affected` with the split of the selection job, from the new `select-test-suite.ts plan <index>/<total> <files...>`, which fails on an empty shard and names the files of the chosen shard. Each lane fails when a named file is missing. A green `home-isolation` run proves that each named file ran (each leaves a JUnit report); a green `affected-shard` run proves only that the files of the chosen shard ran. It has `contents: read`, no secret and no environment, and it is not a required check; `ci.yml` and `Required / CI` are unchanged. (#2610)
+
 ### Fixed
 
 - On Windows, the host test queue ticket read no longer throws `EPERM` for a ticket that another queue member just unlinked. After the `EPERM`, one lstat of the ticket path decides: `ENOENT` skips the ticket. Any other result still throws, so a real access refusal stays an error. No retry and no wait. (#2609)
