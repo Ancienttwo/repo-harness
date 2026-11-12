@@ -395,6 +395,31 @@ test.each([
   expect(report.errors).toEqual([expect.stringMatching(new RegExp(`^Merge reporting unavailable \\(attention_owner: external\\): GitHub GET .*: HTTP ${scenario.status}$`))]);
 }));
 
+test('a provider request timeout on a rollback boundary read makes merge reporting unavailable and opens no repair issue', () => fixture(async f => {
+  const eventPath = join(f.root, 'event.json');
+  writeFileSync(eventPath, JSON.stringify({ workflow_run: { id: 12 } }));
+  // The merge read never answers, so only the request deadline of the api boundary ends it.
+  const server = Bun.serve({ hostname: '127.0.0.1', port: 0, idleTimeout: 120, async fetch(request) {
+    const url = new URL(request.url);
+    const path = url.pathname + url.search;
+    if (request.method === 'GET' && path === `/repos/test/repo/git/commits/${f.after}`) return new Promise<Response>(() => {});
+    try {
+      const result = await f.api(path, request.method as 'GET' | 'POST', request.method === 'POST' ? await request.json() : undefined);
+      return Response.json(result);
+    } catch (error) { return Response.json({ message: String(error) }, { status: 500 }); }
+  } });
+  try {
+    const child = Bun.spawn([process.execPath, join(import.meta.dir, '../scripts/report-ci.ts')], {
+      cwd: f.root, env: { ...process.env, HOME: f.root, GH_TOKEN: 'fixture-token', GITHUB_REPOSITORY: 'test/repo', GITHUB_API_URL: server.url.origin,
+        GITHUB_EVENT_PATH: eventPath, GITHUB_STEP_SUMMARY: join(f.root, 'summary.md') }, stdout: 'ignore', stderr: 'ignore',
+    });
+    expect(await child.exited).toBe(1);
+    const report = JSON.parse(readFileSync(join(f.root, '.ci-report/report.json'), 'utf8'));
+    expect(report.errors).toEqual([`Merge reporting unavailable (attention_owner: external): GitHub GET /repos/test/repo/git/commits/${f.after}: provider request timeout after 30000 ms`]);
+    expect(report.merges).toEqual([]); expect(report.repairs).toEqual([]); expect(f.issues).toEqual([]);
+  } finally { server.stop(true); }
+}));
+
 test.each([
   { name: 'unresolved repair list 503', conclusion: 'success', read: (path: string) => path.includes('/issues?state=open'), error: 'Unresolved repair readback unavailable', repairs: [] },
   { name: 'failed run jobs 503 keeps the run repair', conclusion: 'failure', read: (path: string) => path.includes('/jobs?'), error: 'Failure observation incomplete', repairs: ['ci-repair:12:1:run-12'] },
@@ -536,7 +561,7 @@ test.each([
       const result = await f.api(path, request.method as 'GET' | 'POST', request.method === 'POST' ? await request.json() : undefined);
       return Response.json(result);
     } catch (error) {
-      if (error instanceof CIReportError) return Response.json({ message: error.message }, { status: error.status });
+      if (error instanceof CIReportError && error.status !== null) return Response.json({ message: error.message }, { status: error.status });
       return Response.json({ message: String(error) }, { status: 500 });
     }
   } });
