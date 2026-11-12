@@ -15,8 +15,8 @@ import { HerdrCoreError, RH_LABEL, hcLabel, hcLabelPairs, type HcLabels } from '
 import { PiFleetRolesError, writePiFleetRoles } from '../../effects/board/pi-fleet-roles';
 import { PiShellError, assertPiShell } from '../../effects/board/pi-shell';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
-import { SeatResetError, readSeatSessionTranscript, readTranscriptContextTokens, runSeatReset, writeSeatResetRequest, type SeatResetNotify } from '../../effects/board/seat-reset';
-import { seatResetIdentity, seatResetSteps } from '../../core/board/seat-reset';
+import { SeatResetError, readSeatSession, readTranscriptUsage, runSeatReset, writeSeatResetRequest, type SeatResetNotify, type TranscriptUsage } from '../../effects/board/seat-reset';
+import { seatResetAction, seatResetIdentity, seatResetSteps } from '../../core/board/seat-reset';
 
 const CLI_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
 
@@ -185,15 +185,17 @@ export function seatHandoff(env: NodeJS.ProcessEnv = process.env, now = new Date
   if (identity === null) {
     throw new SeatsCommandError('seat_identity_missing', 'REPO_HARNESS_SEAT and REPO_HARNESS_SEAT_REPOSITORY name no orchestrator or advisor seat: start the seat with repo-harness seats argv <seat> --repository-id <id>.');
   }
-  const transcript = readSeatSessionTranscript(identity);
-  if (transcript === null) throw new SeatsCommandError('seat_session_unknown', `The SessionStart record of the ${identity.seat} seat is missing or not valid, so the session transcript is unknown.`);
-  let context: number | null;
-  try { context = readTranscriptContextTokens(transcript); } catch (error) {
+  const transcript = readSeatSession(identity)?.transcriptPath;
+  if (transcript === undefined) throw new SeatsCommandError('seat_session_unknown', `The SessionStart record of the ${identity.seat} seat is missing or not valid, so the session transcript is unknown.`);
+  let usage: TranscriptUsage;
+  try { usage = readTranscriptUsage(transcript); } catch (error) {
     throw new SeatsCommandError('seat_context_unknown', `The transcript ${transcript} cannot be read: ${(error as Error).message}`);
   }
-  if (context === null) throw new SeatsCommandError('seat_context_unknown', `The transcript ${transcript} has no assistant entry with a context size.`);
-  writeSeatResetRequest(identity, now, context, transcript);
-  return seatResetSteps(identity);
+  const { contextTokens, bytes } = usage;
+  if (contextTokens === null) throw new SeatsCommandError('seat_context_unknown', `The transcript ${transcript} has no assistant entry with a context size.`);
+  const action = seatResetAction(bytes);
+  writeSeatResetRequest(identity, now, { contextTokens, transcriptPath: transcript, transcriptBytes: bytes, action });
+  return seatResetSteps(identity, action);
 }
 
 /** `loadNotify` comes from the composition root, only when peer-runtime is selected. */

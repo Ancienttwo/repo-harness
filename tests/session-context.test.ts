@@ -113,7 +113,7 @@ describe("SessionStart host envelope", () => {
     } finally { f.cleanup(); }
   });
 
-  test("a cleared or new Claude reset seat session writes the new-session signal; another source writes nothing (#1972)", () => {
+  test("a cleared, compacted or new Claude reset seat session writes the new-session signal; another source writes nothing (#1972, #2625)", () => {
     const f = fixture("session-seat-signal");
     // The signal path is fixed under /tmp; a repository id per run keeps the runs apart.
     const repository = String(9_200_000_000 + process.pid);
@@ -125,10 +125,12 @@ describe("SessionStart host envelope", () => {
       collector: createStateInputCollector({ repoRoot: f.root, resolveEffectiveState: () => ({ ok: true, state: resolveEffectiveState(f.root) }) }),
     });
     try {
-      start("compact");
+      start("resume");
       expect(existsSync(signal)).toBe(false);
       start("clear");
       expect(JSON.parse(readFileSync(signal, "utf8"))).toEqual({ session_id: "s-1", transcript_path: "/x/new.jsonl", source: "clear", started_at: now.toISOString() });
+      start("compact");
+      expect(JSON.parse(readFileSync(signal, "utf8")).source).toBe("compact");
       expect(start("startup").diagnostics ?? "").toBe("");
       expect(JSON.parse(readFileSync(signal, "utf8")).source).toBe("startup");
       // A seat directory that is a regular file: one diagnostic line, and the context does not change.

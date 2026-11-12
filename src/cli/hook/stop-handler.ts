@@ -5,8 +5,8 @@ import { publishCheckpointFromLedger } from '../../effects/evidence/checkpoint-s
 import type { StateInputCollector } from '../../effects/loop/state-input-collector';
 import { resolveCapabilityOwnership } from '../../effects/state/resolve-effective-state';
 import { payloadString, payloadValue, type HookIdentity, type HookPayload } from './hook-input';
-import { SEAT_RESET_CONTEXT_TOKENS, seatResetIdentity, seatResetReason } from '../../core/board/seat-reset';
-import { readTranscriptContextTokens, seatResetRequested, writeSeatResetRequest } from '../../effects/board/seat-reset';
+import { SEAT_RESET_CONTEXT_TOKENS, seatResetAction, seatResetIdentity, seatResetReason } from '../../core/board/seat-reset';
+import { readTranscriptUsage, seatResetRequested, writeSeatResetRequest } from '../../effects/board/seat-reset';
 
 export type StopCollector = Pick<StateInputCollector, 'getRepoRoot'>;
 
@@ -56,9 +56,10 @@ interface StopNotice {
 }
 
 /**
- * An orchestrator or advisor seat at or above the reset threshold blocks the stop once per transcript (exit 2 gives
- * the reason to the model), so the seat writes its handoff and asks its peer for the reset. Only the env of
- * `repo-harness seats argv` names the seat. Any failure of this step resets nothing, names the failure and keeps
+ * An orchestrator or advisor seat at or above the reset threshold blocks the stop once per session segment (exit 2
+ * gives the reason to the model), so the seat writes its handoff and asks its peer for the reset. The hook is the one
+ * authority for the action: the transcript size picks `/compact` or `/clear` and the request records it. Only the env
+ * of `repo-harness seats argv` names the seat. Any failure of this step resets nothing, names the failure and keeps
  * the notices.
  */
 function seatReset(payload: HookPayload, env: NodeJS.ProcessEnv, now: Date): { readonly block: StopHandlerResult } | { readonly notices: readonly StopNotice[] } {
@@ -66,10 +67,11 @@ function seatReset(payload: HookPayload, env: NodeJS.ProcessEnv, now: Date): { r
     const identity = seatResetIdentity(env);
     const transcript = payloadString(payload, 'transcript_path');
     if (identity === null || transcript === '' || seatResetRequested(identity, transcript)) return { notices: [] };
-    const context = readTranscriptContextTokens(transcript);
-    if (context === null || context < SEAT_RESET_CONTEXT_TOKENS) return { notices: [] };
-    writeSeatResetRequest(identity, now, context, transcript);
-    return { block: { exitCode: 2, stdout: '', stderr: `${seatResetReason(identity, context)}\n` } };
+    const { contextTokens, bytes } = readTranscriptUsage(transcript);
+    if (contextTokens === null || contextTokens < SEAT_RESET_CONTEXT_TOKENS) return { notices: [] };
+    const action = seatResetAction(bytes);
+    writeSeatResetRequest(identity, now, { contextTokens, transcriptPath: transcript, transcriptBytes: bytes, action });
+    return { block: { exitCode: 2, stdout: '', stderr: `${seatResetReason(identity, contextTokens, bytes, action)}\n` } };
   } catch (error) {
     return { notices: [{ systemMessage: `repo-harness: seat reset skipped: ${(error as Error).message}` }] };
   }
