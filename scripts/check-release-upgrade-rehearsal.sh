@@ -30,7 +30,12 @@
 # `iso`, which is `env -i` with an explicit allow list. Host overrides such as
 # CODEX_HOME, CLAUDE_CONFIG_DIR, PI_CODING_AGENT_DIR, CODEX_SKILLS_ROOT,
 # CLAUDE_SKILLS_ROOT, npm_config_* and BUN_INSTALL_CACHE_DIR never reach a
-# child, so no write leaves the scratch directory.
+# child, so no write leaves the scratch directory. PATH inside it is one scratch
+# bin directory that holds symlinks to the tools below, each resolved once
+# before isolation; the caller's PATH is never appended. No `hc` goes in that
+# directory, so the candidate cannot find or update a host `hc`, and its
+# coverage is out of scope. The build of the candidate source and the parent
+# install each use their own empty Bun package cache.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -56,17 +61,30 @@ fail() { echo "[rehearsal] FAIL: $*" >&2; exit 1; }
 # HOME and the harness home sit side by side, as in the tarball smoke: the host
 # test runner rejects a registry below its caller HOME.
 SCRATCH="$TMP_DIR/env"
-mkdir -p "$SCRATCH/home" "$SCRATCH/bun/bin" "$SCRATCH/bun-cache" "$SCRATCH/npm-cache" \
+mkdir -p "$SCRATCH/home" "$SCRATCH/bun/bin" "$SCRATCH/bun-cache" "$SCRATCH/bun-cache-build" \
+  "$SCRATCH/bun-transpiler" "$SCRATCH/bun-transpiler-build" "$SCRATCH/npm-cache" \
   "$SCRATCH/npm-prefix" "$SCRATCH/npm-logs" "$SCRATCH/tmp" "$SCRATCH/xdg-state"
+# The scratch bin directory: the only PATH entry of the controlled environment.
+# Required tools fail the run when missing; the other system tools are linked
+# when present (the pack scripts and the candidate runtime call them).
+for tool in bun node npm git tar sh bash env; do
+  tool_path="$(command -v "$tool")" || fail "required tool $tool is not on PATH"
+  ln -s "$tool_path" "$SCRATCH/bun/bin/$tool"
+done
+for tool in cat cp mv rm mkdir ls uname sed awk sort tr dirname basename chmod ln touch sleep \
+  find xargs date head tail grep tee wc readlink realpath id whoami diff cut printf test; do
+  tool_path="$(command -v "$tool" 2>/dev/null)" || continue
+  [[ "$tool_path" == /* ]] && ln -sf "$tool_path" "$SCRATCH/bun/bin/$tool"
+done
 : >"$SCRATCH/npmrc-user"
 : >"$SCRATCH/npmrc-global"
 ISO_ENV=(
-  "PATH=$SCRATCH/bun/bin:$SCRATCH/npm-prefix/bin:$PATH"
+  "PATH=$SCRATCH/bun/bin"
   "HOME=$SCRATCH/home"
   "REPO_HARNESS_HOME=$SCRATCH/registry"
   "BUN_INSTALL=$SCRATCH/bun"
   "BUN_INSTALL_CACHE_DIR=$SCRATCH/bun-cache"
-  "BUN_RUNTIME_TRANSPILER_CACHE_PATH=$SCRATCH/bun-cache/transpiler"
+  "BUN_RUNTIME_TRANSPILER_CACHE_PATH=$SCRATCH/bun-transpiler"
   "TMPDIR=$SCRATCH/tmp"
   "XDG_CONFIG_HOME=$SCRATCH/home/.config"
   "XDG_DATA_HOME=$SCRATCH/home/.local/share"
@@ -82,11 +100,16 @@ ISO_ENV=(
   "LANG=C.UTF-8"
 )
 iso() { env -i "${ISO_ENV[@]}" "$@"; }
+# The candidate source build keeps its own Bun caches, apart from the runtime ones.
+iso_build() {
+  iso env "BUN_INSTALL_CACHE_DIR=$SCRATCH/bun-cache-build" \
+    "BUN_RUNTIME_TRANSPILER_CACHE_PATH=$SCRATCH/bun-transpiler-build" "$@"
+}
 
 # Candidate source: the HEAD commit of the checkout, extracted into scratch.
 SRC="$TMP_DIR/src"
 mkdir -p "$SRC"
-iso git -C "$ROOT" archive HEAD | tar -x -C "$SRC"
+iso git -C "$ROOT" archive HEAD | iso tar -x -C "$SRC"
 CANDIDATE="$(iso bun -e 'console.log((await Bun.file(process.argv[1]).json()).version)' "$SRC/package.json")"
 [[ -n "$CANDIDATE" ]] || fail "the candidate version is empty"
 
@@ -103,12 +126,12 @@ grep -q 'E404' "$TMP_DIR/view-candidate.out" \
 echo "[rehearsal] parent $PARENT -> candidate $CANDIDATE"
 
 # The pack scripts build dist/ for both packages, in the scratch copy.
-(cd "$SRC" && iso bun install --frozen-lockfile >"$TMP_DIR/candidate-install.log" 2>&1) \
+(cd "$SRC" && iso_build bun install --frozen-lockfile >"$TMP_DIR/candidate-install.log" 2>&1) \
   || { cat "$TMP_DIR/candidate-install.log" >&2; fail "bun install of the candidate source failed"; }
 PACK_DIR="$TMP_DIR/pack"
 mkdir -p "$PACK_DIR"
-(cd "$SRC" && iso npm pack --silent --pack-destination "$PACK_DIR" >/dev/null)
-(cd "$SRC/packages/operator-web" && iso npm pack --silent --pack-destination "$PACK_DIR" >/dev/null)
+(cd "$SRC" && iso_build npm pack --silent --pack-destination "$PACK_DIR" >/dev/null)
+(cd "$SRC/packages/operator-web" && iso_build npm pack --silent --pack-destination "$PACK_DIR" >/dev/null)
 CORE_TGZ="$PACK_DIR/repo-harness-$CANDIDATE.tgz"
 WEB_TGZ="$PACK_DIR/repo-harness-operator-web-$CANDIDATE.tgz"
 [[ -f "$CORE_TGZ" && -f "$WEB_TGZ" ]] || fail "pack did not produce both candidate tarballs"
@@ -174,6 +197,8 @@ done
 [[ -s "$TMP_DIR/port" ]] || fail "the local registry did not start"
 LOCAL_REGISTRY="http://127.0.0.1:$(cat "$TMP_DIR/port")"
 
+# The upgrade must start from an empty Bun package cache.
+[[ -z "$(ls -A "$SCRATCH/bun-cache")" ]] || fail "the Bun cache of the parent install is not empty"
 echo "[rehearsal] 1/3 install parent repo-harness@$PARENT from npm"
 iso bun add -g "repo-harness@$PARENT" >"$TMP_DIR/parent-add.log" 2>&1 || { cat "$TMP_DIR/parent-add.log" >&2; fail "bun add of the parent failed"; }
 [[ "$(iso repo-harness --version)" == "$PARENT" ]] || fail "installed parent is not $PARENT"
