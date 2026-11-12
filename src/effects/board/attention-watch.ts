@@ -120,8 +120,9 @@ async function reviewWindow(review: (observe: ReviewObserver) => Promise<unknown
  * Returns the `sent` slots for the next window: of each slot, the keys of this
  * window's findings that it held before or that a `sent` delivery carried. A
  * failed, skipped or ended send adds no key, so the next window sends that
- * finding again; a finding that is gone leaves every slot. A window that could
- * not read the board returns the slots it got.
+ * finding again; a finding that is gone leaves every slot, and a slot that
+ * keeps no key leaves the map. A window that could not read the board returns
+ * the slots it got.
  */
 export async function runAttentionWindow(input: AttentionWindowInput): Promise<AttentionSentV1> {
   const now = input.now ?? (() => new Date());
@@ -141,7 +142,12 @@ export async function runAttentionWindow(input: AttentionWindowInput): Promise<A
   }
   const attention = evaluateBoardAttention(board);
   const open = new Set(attention.findings.map(attentionFindingKey));
-  const next = new Map([...prior].map(([slot, keys]) => [slot, new Set([...keys].filter(key => open.has(key)))]));
+  // A slot that keeps no open key leaves the map: a watcher that runs for days keeps no empty slot for each terminal.
+  const next = new Map<string, Set<string>>();
+  for (const [slot, keys] of prior) {
+    const held = [...keys].filter(key => open.has(key));
+    if (held.length > 0) next.set(slot, new Set(held));
+  }
   for (const finding of attention.findings) log({ kind: 'finding', rule: finding.rule, route: finding.route, message: finding.message });
   const reviewLines = input.review === undefined ? [] : await reviewWindow(input.review, log);
   const plan = planAttentionDeliveries(board, attention, advisorWakes(input.log_path, started), prior);
@@ -158,13 +164,15 @@ export async function runAttentionWindow(input: AttentionWindowInput): Promise<A
     const sent = input.host.send(delivery.terminal, delivery.text);
     if (sent.status === 'sent') {
       record(delivery, 'sent');
+      // The review delivery carries no key: it holds no finding, so it sets no slot.
       const slot = attentionSentSlot(delivery.route, delivery.terminal);
-      next.set(slot, new Set([...next.get(slot) ?? [], ...delivery.keys]));
+      if (delivery.keys.length > 0) next.set(slot, new Set([...next.get(slot) ?? [], ...delivery.keys]));
     } else record(delivery, 'send_failed', sent.detail);
   };
   // The review message takes the delivery path of a finding: a blocked orchestrator gets `hc wait`, a working one the window end.
   // A review start or refusal is housekeeping: the entry carries P3, the priority of the A8 and A9 rules.
-  const reviewText = `[rh-attention] #${input.parent} P3 review: ${reviewLines.join('; ')}`;
+  // The message is one entry whatever the number of starts: its lines join with ` · `, not the `; ` of a finding entry.
+  const reviewText = `[rh-attention] #${input.parent} P3 review: ${reviewLines.join(' · ')}`;
   const deliveries = [...plan.deliveries, ...(reviewLines.length === 0 ? [] : liveSeatTerminals(board, 'orchestrator').map((terminal): AttentionDeliveryV1 =>
     ({ route: 'orchestrator', terminal: terminal.address, timing: deliveryTiming(terminal.status), rules: ['review'], keys: [], text: reviewText })))];
   for (const delivery of deliveries.filter(entry => entry.timing === 'now')) send(delivery);

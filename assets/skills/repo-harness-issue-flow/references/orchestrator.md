@@ -438,8 +438,11 @@ the board. It holds no state of its own, so it cannot drift from the board.
   or PR has an open item, update that item and keep the higher priority.
   An `[rh-attention]` notice comes from the attention watcher, not from
   the owner. It holds one entry for each finding, in the form
-  `<priority> <rule>: <message>`. Queue one item for each entry, also
-  when two entries name the same issue or PR. The
+  `<priority> <rule>: <message>`. A review line
+  `[rh-attention] #<parent> P3 review: <line>` is one entry, whatever
+  the number of review starts: its lines join with ` · `, not with the
+  `; ` of the findings, so queue it as one item. Queue one item for each
+  entry, also when two entries name the same issue or PR. The
   priority of the item is the one in its entry: the entry is the
   authority, so read no row of the table below for a finding. The subject
   is `[P<n>] #<number> <rule>`. `<number>` is the first issue or pull
