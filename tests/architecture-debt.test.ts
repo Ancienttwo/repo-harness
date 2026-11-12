@@ -358,7 +358,7 @@ describe('checkpointArchitectureDebt', () => {
     expect(() => checkpointArchitectureDebt(f.repoRoot, owned, { ...options, run: () => ok(envelope(['src/a.ts'])) })).toThrow('different path subject');
     expect(() => checkpointArchitectureDebt(f.repoRoot, owned, { ...options, run: () => ok({ ...envelope(['src/b.ts']), data: {} }) })).toThrow();
     let now = 0;
-    expect(() => checkpointArchitectureDebt(f.repoRoot, owned, { ...options, nowMs: () => now, run: () => { now = 3_001; return ok(envelope(['src/b.ts'])); } })).toThrow('timeout');
-    expect(() => checkpointArchitectureDebt(f.repoRoot, owned, { ...options, deadlineMs: 0 })).toThrow('timeout');
+    expect(() => checkpointArchitectureDebt(f.repoRoot, owned, { ...options, nowMs: () => now, run: () => { now = 3_001; return ok(envelope(['src/b.ts'])); } })).toThrow('RH_ARCHCTX_TIMEOUT');
+    expect(() => checkpointArchitectureDebt(f.repoRoot, owned, { ...options, deadlineMs: 0 })).toThrow('RH_ARCHCTX_TIMEOUT');
   });
 });
