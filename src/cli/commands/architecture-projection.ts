@@ -16,14 +16,14 @@ export function buildArchitectureProjectionCommand(): Command {
   command.command('status').requiredOption('--json', 'Output readiness JSON').action(async () => (await actions()).status());
   for (const name of ['check', 'plan', 'apply'] as const) {
     command.command(name)
-      .requiredOption('--json', 'Output ProjectionResultV2 JSON')
+      .requiredOption('--json', 'Output ProjectionResultV3 JSON')
       .option('--changed-path <path...>', 'Changed repository-relative paths')
       .option('--request-id <id>', 'Stable request id')
       .option('--expected-worktree-digest <digest>', 'Refuse a worktree that differs from the reviewed plan')
       .action(async (options: ProjectionCommandOptions) => (await actions()).execute(name, options));
   }
   command.command('adopt')
-    .requiredOption('--json', 'Output ProjectionResultV2 JSON')
+    .requiredOption('--json', 'Output ProjectionResultV3 JSON')
     .requiredOption('--adoption-plan-id <id>', 'Approved ArchContext adoption plan id')
     .option('--expected-worktree-digest <digest>', 'Refuse a worktree that differs from the reviewed plan')
     .option('--changed-path <path...>', 'Changed repository-relative paths')
@@ -31,7 +31,7 @@ export function buildArchitectureProjectionCommand(): Command {
     .action(async (options: ProjectionCommandOptions) => (await actions()).execute('adopt', options));
   // A signal, not a gate: findings keep exit 0. Only a failed run exits 1.
   command.command('anchors').requiredOption('--json', 'Output the read-only archctx docs anchors report').action(async () => (await actions()).anchors());
-  command.command('render-check').requiredOption('--json', 'Compare generated output using archctx target decisions; ignore source stamps').action(async () => (await actions()).renderCheck());
+  command.command('render-check').requiredOption('--json', 'Compare generated output using archctx target decisions').action(async () => (await actions()).renderCheck());
   command.command('hand-edits').requiredOption('--json', 'Report archctx generated-region hand edits')
     .option('--base <ref>', 'Limit warnings to paths changed in this PR')
     .action(async (options: { base?: string }) => (await actions()).handEdits(options));

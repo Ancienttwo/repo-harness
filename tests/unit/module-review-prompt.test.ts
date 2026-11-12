@@ -367,15 +367,20 @@ describe('issue 677 architecture readers', () => {
   test('generated_summary comes from a projection check for HEAD and stays unknown without one', () => {
     const root = repo(), reader = new ArchitectureModelReader(root);
     expect(reader.list().modules[0].state.generated_summary).toBe('unknown');
-    const stale = decodeProjectionCheckFreshness(projectionCheckResult(reader.commit, [MODULE_ID]));
+    const stale = decodeProjectionCheckFreshness(projectionCheckResult(reader.commit, [MODULE_DOC]));
     const fresh = decodeProjectionCheckFreshness(projectionCheckResult(reader.commit, []));
+    // A stale target on another path, such as a shared agent-context file, leaves the module fresh.
+    expect(reader.list({ freshness: decodeProjectionCheckFreshness(projectionCheckResult(reader.commit, ['AGENTS.md'])) }).modules[0].state.generated_summary).toBe('fresh');
+    // A manifest-only difference still compared every target output, so the module is fresh.
+    const manifestOnly = decodeProjectionCheckFreshness(projectionCheckResult(reader.commit, [], ['projection-manifest-changed']));
+    expect(reader.detail(MODULE_ID, { freshness: manifestOnly }).state.generated_summary).toBe('fresh');
     expect(reader.list({ freshness: stale }).modules[0].state.generated_summary).toBe('stale');
     expect(reader.detail(MODULE_ID, { freshness: fresh }).state.generated_summary).toBe('fresh');
     expect(reader.reviewPrompt(MODULE_ID, { freshness: stale }).prompt).toContain('"generated_summary":"stale"');
     expect(reader.reviewPrompt(MODULE_ID).prompt).toContain('"generated_summary":"unknown"');
-    // A check that failed for a reason that is not per node proves no node fresh.
+    // A check that failed for a reason that is not per target proves no module fresh.
     const incomplete = decodeProjectionCheckFreshness(projectionCheckResult(reader.commit, [], ['projection-manifest-missing']));
-    expect(generatedSummaryState(incomplete, MODULE_ID)).toBe('unknown');
+    expect(generatedSummaryState(incomplete, MODULE_DOC)).toBe('unknown');
     // A result without freshness keeps a valid receipt digest, so only the missing field fails.
     const { freshness: _freshness, receiptDigest: _digest, ...withoutFreshness } = projectionCheckResult(reader.commit, []);
     expect(() => decodeProjectionCheckFreshness({ ...withoutFreshness, receiptDigest: projectionResultReceiptDigest(withoutFreshness) })).toThrow('no freshness');

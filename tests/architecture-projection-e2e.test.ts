@@ -6,7 +6,7 @@ import {
   ARCHITECTURE_DOCS_PROJECTION_MANIFEST_SCHEMA_VERSION,
   ARCHITECTURE_DOCS_RENDERER_VERSION,
   architectureDocsProjectionManifestIssues,
-  type ArchitectureDocsProjectionManifestV3,
+  type ArchitectureDocsProjectionManifestV4,
 } from "archctx-contracts";
 import { devDependencies } from "../package.json";
 import { architectureModulePathFor } from '../src/core/capabilities/registry';
@@ -74,10 +74,10 @@ describe("AXR7 repo-harness architecture consumer", () => {
     }
   });
 
-  test("binds the projection to exact renderer, layout, CodeGraph, and source digests", () => {
+  test("binds the projection to exact renderer, layout, CodeGraph, and output digests", () => {
     const manifestPath = join(ROOT, "docs", "architecture", ".projection-manifest.json");
     expect(existsSync(manifestPath)).toBe(true);
-    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as ArchitectureDocsProjectionManifestV3;
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as ArchitectureDocsProjectionManifestV4;
     expect(architectureDocsProjectionManifestIssues(manifest)).toEqual([]);
     expect(manifest.schemaVersion).toBe(ARCHITECTURE_DOCS_PROJECTION_MANIFEST_SCHEMA_VERSION);
     expect(manifest.profile).toBe("repo-harness/v1");
@@ -86,33 +86,9 @@ describe("AXR7 repo-harness architecture consumer", () => {
     // The manifest keeps only the reproducible CodeGraph identity, not the local index state.
     expect(manifest.generatedFrom).toEqual({ codeGraphPackage: "@colbymchenry/codegraph", codeGraphVersion: devDependencies["@colbymchenry/codegraph"] });
     expect(manifest.semanticBaseline.modelDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
-    const stamps = Object.values(manifest.targets).flatMap((target) => Object.values(target.sourceStamps ?? {}));
-    expect(stamps.length).toBeGreaterThan(0);
-    for (const stamp of stamps) expect(stamp).toMatch(/^sha256:[a-f0-9]{64}$/);
-  });
-
-  test("accepts paired runtime topology source stamps from the installed contracts", () => {
-    const manifest = topologyManifest();
-    expect(architectureDocsProjectionManifestIssues(manifest)).toEqual([]);
-  });
-
-  test("rejects unequal topology source stamps", () => {
-    const manifest = topologyManifest();
-    manifest.targets["runtime-summary"]!.sourceStamps!["process.example.worker"] = `sha256:${"b".repeat(64)}`;
-    expect(architectureDocsProjectionManifestIssues(manifest).some(issue => issue.includes("must equal the sourceStamps"))).toBe(true);
-  });
-
-  test("rejects topology source stamps duplicated on an entity summary", () => {
-    const manifest = topologyManifest();
-    const entity = Object.values(manifest.targets).find(row => row.type === "entity-summary")!;
-    entity.sourceStamps = { ...entity.sourceStamps, "process.example.worker": `sha256:${"a".repeat(64)}` };
-    expect(architectureDocsProjectionManifestIssues(manifest).some(issue => issue.includes("is already stamped on"))).toBe(true);
-  });
-
-  test("rejects capability scale on runtime topology targets", () => {
-    const manifest = topologyManifest();
-    manifest.targets["runtime-summary"]!.scale = { fileCountBucket: { lower: 1, upper: 2 }, lineCountBucket: { lower: 10, upper: 20 } };
-    expect(architectureDocsProjectionManifestIssues(manifest).some(issue => issue.includes("scale is only allowed on entity-summary"))).toBe(true);
+    const targets = Object.values(manifest.targets);
+    expect(targets.length).toBeGreaterThan(0);
+    for (const target of targets) expect(target.outputDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
   test("authors no repository architecture policy or host projection preferences", () => {
@@ -123,22 +99,3 @@ describe("AXR7 repo-harness architecture consumer", () => {
     expect(policy.architecture).toBeUndefined();
   });
 });
-
-function topologyManifest(): ArchitectureDocsProjectionManifestV3 {
-  const manifest = JSON.parse(readFileSync(join(ROOT, "docs", "architecture", ".projection-manifest.json"), "utf8")) as ArchitectureDocsProjectionManifestV3;
-  // The fixture must own the whole topology pair so repository targets cannot add conflicting source stamps.
-  for (const [id, target] of Object.entries(manifest.targets)) {
-    if (target.type === "diagram-runtime-topology" || target.type === "runtime-topology-summary") delete manifest.targets[id];
-  }
-  for (const [id, type, path, format] of [
-    ["runtime-diagram", "diagram-runtime-topology", "docs/architecture/runtime.mmd", "mermaid"],
-    ["runtime-summary", "runtime-topology-summary", "docs/architecture/runtime.md", "markdown"],
-  ] as const) {
-    manifest.targets[id] = {
-      type, scope: { kind: "repository" }, path, format, ownership: "generated",
-      outputDigest: `sha256:${"c".repeat(64)}`,
-      sourceStamps: { "process.example.worker": `sha256:${"a".repeat(64)}` },
-    };
-  }
-  return manifest;
-}

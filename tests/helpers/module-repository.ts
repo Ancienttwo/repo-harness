@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { projectionResultReceiptDigest, type ProjectionFreshnessReasonCode, type ProjectionResultV2 } from 'archctx-contracts';
+import { projectionResultReceiptDigest, type ProjectionFreshnessReasonCode, type ProjectionResultV3 } from 'archctx-contracts';
 
 export const MODULE_ID = 'capability.test.module';
 export const MODULE_DOC = 'docs/architecture/modules/test/module.md';
@@ -67,20 +67,20 @@ export function writeStateMachine(root: string, confirmedDigest?: string): void 
   }));
 }
 
-/** A schema-valid `architecture-projection check` result for one commit. */
-export function projectionCheckResult(commit: string, staleNodeIds: string[],
-  reasonCodes: ProjectionFreshnessReasonCode[] = staleNodeIds.length ? ['projection-source-changed-since-stamp'] : []): ProjectionResultV2 {
+/** A schema-valid `architecture-projection check` result for one commit; each stale path is one stale target. */
+export function projectionCheckResult(commit: string, stalePaths: string[],
+  reasonCodes: ProjectionFreshnessReasonCode[] = stalePaths.length ? ['projection-output-changed'] : []): ProjectionResultV3 {
   const digest = (value: string) => `sha256:${value.repeat(64)}` as const;
-  const snapshot: ProjectionResultV2['inputSnapshot'] = {
+  const snapshot: ProjectionResultV3['inputSnapshot'] = {
     repositoryId: 'repo.0123456789abcdef', workspaceId: 'workspace.0123456789abcdef', headSha: commit, worktreeDigest: digest('1'),
     baseHeadSha: commit, sourceTreeDigest: digest('2'), modelDigest: digest('3'), codeGraphDigest: digest('4'), indexedWorktreeDigest: digest('1'),
     projectionInputDigest: digest('5'), rendererVersion: 'archcontext.docs-renderer/v6', layoutVersion: 'archcontext.docs-layout/v1',
     generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph', codeGraphVersion: '1.6.2', codeGraphStatus: 'ready' },
   };
-  const body: Omit<ProjectionResultV2, 'receiptDigest'> = {
-    schemaVersion: 'archcontext.projection-result/v2', requestId: 'repo-harness.check', status: 'noop',
+  const body: Omit<ProjectionResultV3, 'receiptDigest'> = {
+    schemaVersion: 'archcontext.projection-result/v3', requestId: 'repo-harness.check', status: 'noop',
     inputSnapshot: snapshot, outputSnapshot: snapshot, affectedNodeIds: [], files: [], humanActions: [], refreshSignals: [],
-    freshness: { ok: reasonCodes.length === 0, reasonCodes, staleNodes: staleNodeIds.map(nodeId => ({ nodeId, stampedDigest: digest('6'), currentDigest: digest('7') })) },
+    freshness: { ok: reasonCodes.length === 0, reasonCodes, staleTargets: [...stalePaths].sort().map(path => ({ targetId: `projection_target.entity.${path}`, path, committedOutputDigest: digest('6'), renderedOutputDigest: digest('7') })) },
   };
   return { ...body, receiptDigest: projectionResultReceiptDigest(body) };
 }

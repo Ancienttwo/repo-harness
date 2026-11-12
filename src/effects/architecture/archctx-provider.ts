@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { userInfo } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, failureIssues, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
+import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, failureIssues, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV2, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV3 } from 'archctx-contracts';
 import { isRecord } from '../../core/evidence/is-record';
 import { readWorkflowPolicyDocument } from '../state/resolve-effective-state';
 import { POLICY_ABSENT, isPolicyObject, policyValue } from '../../core/workflow/policy-schema';
@@ -457,12 +457,12 @@ function architectureAdoptionStep(): string {
   return 'The repository has no complete ArchContext model. Follow "Adopt ArchContext in a repository" in references/worker.md of the repo-harness-architecture skill (assets/skill-commands/repo-harness-architecture/references/worker.md in the repo-harness package).';
 }
 
-export function runArchitectureProjection(request: ProjectionRequestV1, repoRoot: string, options: ArchctxProviderOptions = {}): ProjectionResultV2 {
+export function runArchitectureProjection(request: ProjectionRequestV1, repoRoot: string, options: ArchctxProviderOptions = {}): ProjectionResultV3 {
   return assertProjectionResult(runProjectionCommand('run', request, repoRoot, options), request.requestId);
 }
 
 /** Read an existing committed apply; this operation never invokes projection run/apply. */
-export function readArchitectureProjectionApply(request: ProjectionRequestV1, repoRoot: string, options: ArchctxProviderOptions = {}): ProjectionApplyReadbackResultV1 {
+export function readArchitectureProjectionApply(request: ProjectionRequestV1, repoRoot: string, options: ArchctxProviderOptions = {}): ProjectionApplyReadbackResultV2 {
   return assertProjectionApplyReadbackResult(runProjectionCommand('readback', request, repoRoot, options), request);
 }
 
