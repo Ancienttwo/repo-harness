@@ -264,8 +264,9 @@ test('OpenAI prompt detection uses a token boundary without shrinking MCP redact
   expect(containsSecret('TOKEN=prefixsk-'+'A'.repeat(24))).toBe(true);
 });
 
-test('each formerly quadratic secret rule stays linear on a 1 MiB run and still matches', () => {
-  const run = (unit: string) => unit.repeat(Math.ceil(1024 * 1024 / unit.length));
+test('each formerly quadratic secret rule stays linear from a 64 KiB to a 256 KiB run and still matches on a 1 MiB run', () => {
+  const makeRows = (size: number) => {
+  const run = (unit: string) => unit.repeat(Math.ceil(size / unit.length));
   const keyBegin = '-----BEGIN PRIVATE KEY-----', keyEnd = '-----END PRIVATE KEY-----', key = keyBegin + '\nbody\n' + keyEnd;
   const mcp = (text: string) => redactMcpText(text).text;
   const rows: ReadonlyArray<{ run: string; sample: string; replacement?: string; redact?: (text: string) => string }> = [
@@ -296,19 +297,45 @@ test('each formerly quadratic secret rule stays linear on a 1 MiB run and still 
     { run: run('http://' + 'a'.repeat(93)), sample: '?token=fake', replacement: '[ENDPOINT REDACTED]' },
     { run: run('eyJ' + 'a'.repeat(97)), sample: '.' + 'b'.repeat(12) + '.' + 'c'.repeat(12), replacement: '[JWT REDACTED]' },
     { run: run('TOKEN'), sample: '=fake' },
-    { run: 'TOKEN=null' + ' '.repeat(1024 * 1024), sample: 'x' },
+    { run: 'TOKEN=null' + ' '.repeat(size), sample: 'x' },
     { run: run('TOKEN'), sample: '=fake', replacement: '=[REDACTED]', redact: mcp },
   ];
-  for (const row of rows) {
+  return rows;
+  };
+  const exercise = (row: ReturnType<typeof makeRows>[number]) => {
     const text = row.run + row.sample, redact = row.redact ?? replaceSecrets;
+    return { bare: containsSecret(row.run), unchanged: redact(row.run) === row.run, matched: containsSecret(text), replaced: redact(text) };
+  };
+  // A sample repeats the calls until it is well above the timer resolution, and returns the time of one call.
+  const timed = (row: ReturnType<typeof makeRows>[number]) => {
     const start = performance.now();
-    expect(containsSecret(row.run)).toBe(false);
-    expect(redact(row.run) === row.run).toBe(true);
-    expect(containsSecret(text)).toBe(true);
-    const replaced = redact(text);
-    expect(performance.now() - start).toBeLessThan(2000);
-    if (row.replacement) expect(replaced.includes(row.replacement)).toBe(true);
-  }
+    let calls = 0;
+    do { exercise(row); calls++; } while (performance.now() - start < 5);
+    return (performance.now() - start) / calls;
+  };
+  // Load only adds time, so the fastest sample of each size is the closest to the true time. A pair of samples repeats at least 3 times,
+  // then until the ratio is under the bound or three seconds have passed.
+  const lowestRatio = (timeSmall: () => number, timeMedium: () => number) => {
+    const start = performance.now();
+    let fastestSmall = Infinity, fastestMedium = Infinity, ratio = Infinity;
+    for (let pairs = 1; pairs <= 3 || (ratio >= 8 && performance.now() - start < 3000); pairs++) {
+      fastestSmall = Math.min(fastestSmall, timeSmall());
+      fastestMedium = Math.min(fastestMedium, timeMedium());
+      ratio = fastestMedium / fastestSmall;
+    }
+    return ratio;
+  };
+  // A linear rule takes 4 times as long on 4 times the text; a quadratic rule takes 16 times. Load on the runner scales both sizes alike.
+  // The pair stays far below 384 KiB: past a size that depends on the row (384 to 1024 KiB) the regex engine changes mode and the time steps up about 8 times, with no change in order.
+  const small = makeRows(64 * 1024), medium = makeRows(256 * 1024);
+  makeRows(1024 * 1024).forEach((row, index) => {
+    expect(lowestRatio(() => timed(small[index]!), () => timed(medium[index]!))).toBeLessThan(8);
+    const result = exercise(row);
+    expect(result.bare).toBe(false);
+    expect(result.unchanged).toBe(true);
+    expect(result.matched).toBe(true);
+    if (row.replacement) expect(result.replaced.includes(row.replacement)).toBe(true);
+  });
 });
 
 test('the private key rule withholds each block label, and an END of any label closes a BEGIN', () => {
