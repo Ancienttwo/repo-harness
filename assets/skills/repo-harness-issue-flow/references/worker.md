@@ -141,7 +141,8 @@ passing check (`acceptor.md` §2.1).
   worker in a linked contract worktree does not push: the coordinator
   pushes for it (`board.md`, One pusher per PR).
 - Post `issue claim status` with `Status: ready for review; claim remains
-  active`, the PR URL, the head SHA and the CI state.
+  active`, the PR URL, the head SHA and the CI state, in the shape of
+  `templates.md` § issue claim status: no fence, and the header line first.
 
 ### 6.1 Architecture slice in the PR
 
@@ -261,7 +262,8 @@ The coordinator merges. You do not merge unless the issue's claim names
 you as integrator under the owner's authorization. After merge:
 
 1. Post `issue claim status` with `Status: done` (or `released`), the PR
-   and the merge SHA.
+   and the merge SHA, in the `templates.md` § issue claim status shape: the
+   posted comment has no fence, and its first line is the header.
 2. Remove your worktree: `git worktree remove /tmp/<repo>-wt-<issue>-<slug>`.
    Then `git worktree prune`.
 3. If you lose access before you finish (quota, crash, session end), the
