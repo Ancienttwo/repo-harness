@@ -199,7 +199,7 @@ sequenceDiagram
 ### 3.5 已知张力
 
 - 本 PR 后包里没有写 `mcp.local.json` 的命令。reader 与 executor capability 只能由手写配置或 `serve` 的命令行参数打开。
-- `McpLocalConfig.version` 仍接受 `1 | 2 | 3`（`auth.ts:6`）。
+- `McpLocalConfig.version` 只接受 `3`（`auth.ts:6`、`auth.ts:65`）；其他值抛出 `unsupported MCP local config version`。
 - `capabilities.reader` 是标注为 deprecated 的键（`auth.ts:12-13`）。只有 `workspaceReader` 未定义时它才参与判断。
 
 ### 3.6 开放问题
