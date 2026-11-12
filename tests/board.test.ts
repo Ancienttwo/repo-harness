@@ -1765,6 +1765,11 @@ test('watch window sends a finding once to each seat terminal until its subject 
   // A7 is gone in window 4 and back in window 5: it is new again.
   expect(await window({ ...watched, daily_run: { ...watched.daily_run, conclusion: 'success' } } as BoardV1)).toEqual([]);
   expect(await window(watched)).toEqual([['t3', 'sent', ['A7']], ['t4', 'sent', ['A7']]]);
+  // A slot that keeps no open key leaves the map: t1 holds one key of an earlier window, and no finding is open for it now.
+  sent = new Map([...sent, ['orchestrator t1', new Set([JSON.stringify(['A99', [], [], []])])]]);
+  expect(await window(watched)).toEqual([]);
+  expect(sent.has('orchestrator t1')).toBe(false);
+  expect([...sent.values()].every(keys => keys.size > 0)).toBe(true);
 });
 
 test('watch window skips a provider 5xx and resumes at the next window', async () => {
@@ -2400,11 +2405,15 @@ test('watch window --review: each start or refusal is a log line and an orchestr
   const records = readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
   expect(records.filter(record => record.kind === 'review').map(record => [record.pr, record.seat, record.outcome])).toEqual([[7, 'reviewer', 'started'], [8, null, 'refused'], [null, null, 'refused'], [null, null, 'refused'], [9, 'gatekeeper', 'started'], [null, null, 'refused']]);
   expect(hc.calls().filter(args => args[0] === 'send' && args.at(-1)?.includes(' review: ')).map(args => args.at(-1))).toEqual([
-    '[rh-attention] #1474 P3 review: PR #7 started on reviewer: https://example.test/m; PR #8 refused: no worktree',
+    '[rh-attention] #1474 P3 review: PR #7 started on reviewer: https://example.test/m · PR #8 refused: no worktree',
     '[rh-attention] #1474 P3 review: refused: another board review run holds the lock',
     '[rh-attention] #1474 P3 review: refused: seat_not_configured: the reviewer seat has no runtime',
-    '[rh-attention] #1474 P3 review: PR #9 started on gatekeeper: https://example.test/g; refused: launch_unknown for the reviewer of PR #9',
+    '[rh-attention] #1474 P3 review: PR #9 started on gatekeeper: https://example.test/g · refused: launch_unknown for the reviewer of PR #9',
   ]);
+  // A review message with two lines is one entry: its lines join with ` · `, so no `; ` starts a second entry of the findings form.
+  const twoLines = hc.calls().find(args => args[0] === 'send' && args.at(-1)?.includes('P3 review: PR #7'))!.at(-1)!;
+  expect(twoLines.slice('[rh-attention] #1474 P3 review: '.length).split(' · ')).toHaveLength(2);
+  expect(twoLines).not.toContain('; ');
 });
 
 test('watch window --review: the message to a blocked orchestrator waits for it and is sent once after it stops being blocked', async () => {
