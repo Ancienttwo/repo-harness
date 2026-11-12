@@ -247,8 +247,13 @@ bun add -g repo-harness@0.31.0 --no-cache && repo-harness update --version 0.31.
 
 ## Acceptance environment
 
-The release PR records the prep head, the projection check, `bun run
-check:release` and the upgrade rehearsal from the 0.30.0 CLI in a scratch HOME.
+The release PR records the prep head, the projection check and `bun run
+check:release`. It also records the upgrade rehearsal in a scratch HOME:
+a 0.30.0 baseline install from npm, a separate install of the 0.31.0
+candidate tarballs, and `repo-harness update --no-cli` run by the
+candidate. The 0.30.0 parent to 0.31.0 candidate handoff did not run: the
+0.30.0 install spec is `repo-harness@<version|channel|latest>` and takes no
+tarball.
 
 ## Publication
 
