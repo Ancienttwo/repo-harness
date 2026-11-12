@@ -88,7 +88,8 @@ run_architecture_check() {
 # Prints the committer time of the oldest unpublished main commit: the first
 # first-parent commit after M, else M itself. M is the newest first-parent
 # commit that changes the projection manifest; only the rolling writer changes
-# it. A product commit can sit between the rendered base and M, so M itself
+# it, and with manifest v4 only when a rendered output or the semantic baseline
+# changes. A product commit can sit between the rendered base and M, so M itself
 # counts when nothing follows it. The squash body names the rendered base only
 # as text, so it is not read.
 architecture_unpublished_since() {
@@ -294,7 +295,7 @@ fi
 
 # Daily lane: a render difference that the writer has not published within the
 # lag bound fails, and so does an incomplete check. A younger difference only
-# warns. Source stamps do not count. The daily report routes the failure to the
+# warns. The daily report routes the failure to the
 # upstream rolling writer. ARCHITECTURE_SUMMARY names the file for that report;
 # the job writes no summary when the check or its freshness input gave no result.
 # A dead or missing archimap module document link also fails; the summary keeps
