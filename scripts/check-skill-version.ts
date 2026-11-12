@@ -40,19 +40,33 @@ export interface ConsistencyResult {
 }
 
 // The README release line is the only README edit of a release. The check matches
-// the complete line, so a version fragment in prose or a comment cannot pass:
+// the complete line, so a version fragment in prose cannot pass:
 // - npm: `repo-harness@<v>` · workflow stamp `repo-harness@<v>+template@<v>`
 const README_PIN_PATTERN =
-  /^- npm: `repo-harness@(\d+\.\d+\.\d+)` · workflow stamp `repo-harness@(\d+\.\d+\.\d+)\+template@(\d+\.\d+\.\d+)`[ \t]*$/m;
+  /^- npm: `repo-harness@(\d+\.\d+\.\d+)` · workflow stamp `repo-harness@(\d+\.\d+\.\d+)\+template@(\d+\.\d+\.\d+)`[ \t]*$/gm;
 
-function readReadmeVersionPin(readmePath: string): ReadmeVersionPin | null {
-  if (!existsSync(readmePath)) return null;
-  const match = readFileSync(readmePath, "utf-8").match(README_PIN_PATTERN);
-  const npm = match?.[1];
-  const skill = match?.[2];
-  const template = match?.[3];
-  if (npm === undefined || skill === undefined || template === undefined) return null;
-  return { npm, skill, template };
+interface ReadmeReleaseLines {
+  /** How many complete release lines the README holds. */
+  count: number;
+  /** The pin of the only complete release line, or null when the count is not one. */
+  pin: ReadmeVersionPin | null;
+}
+
+/**
+ * Count the complete release lines of a README. The check reads the line count, not
+ * its surroundings: a line inside an HTML comment or a code fence still counts.
+ */
+function readReadmeReleaseLines(readmePath: string): ReadmeReleaseLines {
+  if (!existsSync(readmePath)) return { count: 0, pin: null };
+  const lines = [...readFileSync(readmePath, "utf-8").matchAll(README_PIN_PATTERN)];
+  const only = lines.length === 1 ? lines[0] : undefined;
+  const npm = only?.[1];
+  const skill = only?.[2];
+  const template = only?.[3];
+  if (npm === undefined || skill === undefined || template === undefined) {
+    return { count: lines.length, pin: null };
+  }
+  return { count: 1, pin: { npm, skill, template } };
 }
 
 export interface MigrationCheckResult {
@@ -113,11 +127,14 @@ export function checkConsistency(repoRoot: string = REPO_ROOT): ConsistencyResul
 
   // The README release line projects package.json. Only the repo-harness checkout
   // carries it; a generated project keeps its own README.
-  const readmeVersionPin = readReadmeVersionPin(join(repoRoot, "README.md"));
+  const readmeReleaseLines = readReadmeReleaseLines(join(repoRoot, "README.md"));
+  const readmeVersionPin = readmeReleaseLines.pin;
   if (usingLocalSkillManifest && pkg.name === "repo-harness" && packageJsonVersion !== null) {
     if (readmeVersionPin === null) {
       errors.push(
-        "README.md has no release line; it must read - npm: `repo-harness@<v>` · workflow stamp `repo-harness@<v>+template@<v>`"
+        readmeReleaseLines.count > 1
+          ? `README.md must have exactly one release line (found ${readmeReleaseLines.count})`
+          : "README.md has no release line; it must read - npm: `repo-harness@<v>` · workflow stamp `repo-harness@<v>+template@<v>`"
       );
     } else {
       if (readmeVersionPin.npm !== packageJsonVersion) {
