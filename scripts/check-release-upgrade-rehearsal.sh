@@ -40,8 +40,12 @@ for path in "$HOME/.repo-harness" "$HOME/.bun/install/global/node_modules/repo-h
   [[ ! -e "$path" && ! -L "$path" ]] || fail "this machine is not fresh: $path exists"
 done
 # The checks below read the Bun global directory under ~/.bun; Bun must install there.
-BUN_GLOBAL_BIN="$(bun pm bin -g)"
-[[ "$BUN_GLOBAL_BIN" == "$HOME/.bun/bin" ]] || fail "the Bun global bin is $BUN_GLOBAL_BIN, not $HOME/.bun/bin"
+# On a fresh runner that directory does not exist yet, so the precondition reads
+# the variables that move it, and the parent install below proves where Bun wrote.
+[[ -z "${BUN_INSTALL:-}" || "$BUN_INSTALL" == "$HOME/.bun" ]] || fail "BUN_INSTALL is $BUN_INSTALL, not $HOME/.bun"
+for var in BUN_INSTALL_GLOBAL_DIR BUN_INSTALL_BIN; do
+  [[ -z "${!var:-}" ]] || fail "$var is set to ${!var}; the rehearsal reads the Bun global directory under $HOME/.bun"
+done
 [[ -d "${RUNNER_TEMP:-}" ]] || fail "RUNNER_TEMP is not a directory; the rehearsal runs only on a GitHub-hosted runner"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -176,6 +180,8 @@ archctx_link_version() {
 
 echo "[rehearsal] 1/3 install parent repo-harness@$PARENT from npm"
 bun add -g "repo-harness@$PARENT" >"$WORK/parent-add.log" 2>&1 || { cat "$WORK/parent-add.log" >&2; fail "bun add of the parent failed"; }
+[[ -f "$HOME/.bun/install/global/node_modules/repo-harness/package.json" ]] || fail "bun add -g did not install into $HOME/.bun/install/global"
+[[ "$(command -v repo-harness)" == "$HOME/.bun/bin/repo-harness" ]] || fail "repo-harness resolves to '$(command -v repo-harness || true)', not $HOME/.bun/bin/repo-harness"
 [[ "$(repo-harness --version)" == "$PARENT" ]] || fail "installed parent is not $PARENT"
 repo-harness install --no-cli --no-external-skills --no-codegraph >"$WORK/install.log" 2>&1 || { cat "$WORK/install.log" >&2; fail "parent install failed"; }
 echo "[rehearsal] archctx link before update: $(archctx_link_version 2>/dev/null || echo absent)"
