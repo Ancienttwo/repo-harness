@@ -18,8 +18,6 @@ export function validSha(value: unknown): value is string {
 export function diffBase(eventName: string, event: unknown): unknown {
   const payload = event as any;
   if (eventName === 'pull_request') return payload?.pull_request?.base?.sha;
-  // The queue branch holds this PR on top of the entries ahead of it; base_sha is that parent.
-  if (eventName === 'merge_group') return payload?.merge_group?.base_sha;
   return payload?.before;
 }
 function validPath(path: string): boolean {
@@ -30,7 +28,7 @@ export function selectCoverage(input: CoverageInput): CoverageSelection {
   const { eventName, event, headSha, actualHead, diffRaw } = input;
   if (!validSha(headSha) || headSha !== actualHead) return result('invalid', 'checkout-mismatch');
   if (eventName === 'schedule' || eventName === 'workflow_dispatch') return result('daily', 'fixed-main-snapshot');
-  if (!['pull_request', 'merge_group', 'push', 'local'].includes(eventName)) return result('invalid', 'unknown-event');
+  if (!['pull_request', 'push', 'local'].includes(eventName)) return result('invalid', 'unknown-event');
   if (!validSha(diffBase(eventName, event))) return result('invalid', 'invalid-diff-endpoint');
   if (eventName === 'local' && diffRaw === '') return result('affected', 'complete-diff');
   if (diffRaw === null || !diffRaw || !diffRaw.endsWith('\0')) return result('invalid', 'diff-unavailable-or-empty');
