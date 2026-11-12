@@ -20,8 +20,33 @@ import { CHANGELOG, FRAGMENT_DIR, FRAGMENT_PATH_FORM, parseFragment, VERSION_HEA
 
 // A released section starts at its version heading and ends at the next version heading.
 const SECTION_HEADING = VERSION_HEADING;
-/** The title line of `docs/CHANGELOG.md`; the prose under it is free text. */
-export const CHANGELOG_TITLE = '# Changelog';
+/**
+ * The text above the first released section. A file with no version heading is all preamble, which is
+ * how a file that holds only the title reads.
+ */
+export function changelogPreamble(text: string): string {
+  const first = [...text.matchAll(VERSION_HEADING)][0];
+  return text.slice(0, first?.index ?? text.length);
+}
+
+/**
+ * The preamble with the retired `## [Unreleased]` block removed. A base that still holds the heading is
+ * the one difference the byte rule allows: the cutover that retires it deletes the heading and its
+ * entries, which move into fragments. Every other byte, prose included, is compared as it stands.
+ */
+export function withoutUnreleasedSection(preamble: string): string {
+  const kept: string[] = [];
+  let inside = false;
+  for (const line of preamble.split('\n')) {
+    if (/^## \[/u.test(line)) inside = line.startsWith('## [Unreleased]');
+    if (!inside) kept.push(line);
+  }
+  // The cutover deletes the block and keeps the blank line that separates the preamble from the first
+  // released section. Those kept lines always end with that blank line, so normalizing the trailing
+  // newlines to one blank separator gives exactly the bytes the cutover produces. A base with no
+  // `[Unreleased]` block gives back its own bytes.
+  return kept.join('\n').replace(/\n+$/u, '\n\n');
+}
 const TREE_OID = /^[0-9a-f]{40}$/;
 const MAX_BUFFER = 64 * 1024 * 1024;
 
@@ -108,21 +133,23 @@ function fileAt(repoRoot: string, revision: string, path: string): string | null
 }
 
 /**
- * The fragment faults of the merge result: text above the first released section that is not the
- * preamble, and each path under the fragment directory that does not parse. Released sections start
- * at their version headings, so an entry written above the newest one would otherwise pass; the
- * preamble rule keeps the fragments the only authoring path. A path outside the fragment form is the
- * old practice, so the parser's error names the path form.
+ * The fragment faults of the merge result. Two rules:
+ *
+ * 1. The text above the first released section must be byte-equal to the same text at the base, or to
+ *    that text with the retired `## [Unreleased]` block removed. Both allowed forms come from the base,
+ *    so every other byte, prose included, must match. This one rule replaces a list of rejected line
+ *    prefixes: an added sentence, a `* ` bullet or an indented heading all change bytes.
+ * 2. Each path under the fragment directory must parse.
  */
-function fragmentFaults(repoRoot: string, tree: string, changelog: string): string[] {
+function fragmentFaults(repoRoot: string, tree: string, changelog: string, baseText: string | null): string[] {
   const faults: string[] = [];
-  const firstHeading = [...changelog.matchAll(VERSION_HEADING)][0];
-  const preamble = changelog.slice(0, firstHeading?.index ?? changelog.length);
-  // Above the first released section only the title and prose may stand: an entry line or a section
-  // heading there would author released text outside a fragment, which is the practice this form retires.
-  const authored = preamble.split('\n').find((line) => line.startsWith('## ') || line.startsWith('### ') || line.startsWith('- '));
-  if (!preamble.startsWith(CHANGELOG_TITLE) || authored !== undefined) {
-    faults.push(`${CHANGELOG} holds text above its first released section that is not its title and preamble: ${JSON.stringify(authored ?? 'the file does not start with the title')}; each PR writes its entry in ${FRAGMENT_PATH_FORM} and the release prep assembles the section`);
+  const merged = changelogPreamble(changelog);
+  const base = baseText === null ? '' : changelogPreamble(baseText);
+  // One rule, two allowed forms, both taken from the base: the text is unchanged, or it is the base with
+  // the retired `## [Unreleased]` block removed by the cutover. Any other text is an authoring act, so an
+  // added sentence, a `* ` bullet, an indented heading or a re-created `[Unreleased]` heading all fail.
+  if (merged !== base && merged !== withoutUnreleasedSection(base)) {
+    faults.push(`${CHANGELOG} changes the text above its first released section, and each PR writes its entry in ${FRAGMENT_PATH_FORM} instead; the release prep assembles the section`);
   }
   const listing = gitOrFail(repoRoot, ['ls-tree', '-r', '--name-only', tree, '--', FRAGMENT_DIR]).split('\n').filter(Boolean);
   for (const path of listing) {
@@ -143,8 +170,8 @@ export function checkReleasedSections(base: string, head = 'HEAD', repoRoot = pr
   if (!headSha) throw new Error(`head ${JSON.stringify(head)} is not a commit in ${repoRoot}`);
   const { tree } = mergeResult(repoRoot, baseSha, headSha);
   const mergedText = fileAt(repoRoot, tree, CHANGELOG) ?? '';
-  const faults = fragmentFaults(repoRoot, tree, mergedText);
   const baseText = fileAt(repoRoot, baseSha, CHANGELOG);
+  const faults = fragmentFaults(repoRoot, tree, mergedText, baseText);
   if (baseText === null) return { baseSha, headSha, mergeTree: tree, sectionsAtBase: 0, drift: [], fragmentFaults: faults };
   const drift = sectionDrift(baseText, mergedText);
   return { baseSha, headSha, mergeTree: tree, sectionsAtBase: releasedSections(baseText).size, drift, fragmentFaults: faults };

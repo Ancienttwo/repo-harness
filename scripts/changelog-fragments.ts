@@ -86,8 +86,12 @@ export interface AssembleResult {
 
 /**
  * Writes `## [<version>] - <date>` above the newest released section from the fragments, then deletes
- * them. It fails with no fragment, with a fragment that does not parse, and with a section that already
- * exists. It reads no clock: the date is an input.
+ * them. It fails with a fragment that does not parse and with a section that already exists. It reads no
+ * clock: the date is an input.
+ *
+ * No fragment is a valid state and gives no error and no section. Git does not track an empty directory,
+ * so a release commit that deletes the last fragment leaves no `docs/changelog.d` at all, and a release
+ * with no PR entry (0.30.0 was one) has nothing to assemble.
  */
 export function assemble(input: { readonly version: string; readonly date: string; readonly root?: string }): AssembleResult {
   const { version, date } = input;
@@ -99,7 +103,7 @@ export function assemble(input: { readonly version: string; readonly date: strin
   const headings = [...text.matchAll(VERSION_HEADING)];
   if (headings.some((heading) => heading[1] === version)) throw new Error(`${CHANGELOG} already has a section for ${version}`);
   const paths = fragmentPaths(root);
-  if (paths.length === 0) throw new Error(`${FRAGMENT_DIR} holds no fragment for ${version}: each PR writes its entry in ${FRAGMENT_PATH_FORM}`);
+  if (paths.length === 0) return { version, section: '', removed: [] };
   const fragments = paths.map((path) => parseFragment(path, readFileSync(join(root, path), 'utf8')));
   const section = renderSection(version, date, fragments);
   const at = headings[0]?.index;
@@ -129,7 +133,8 @@ if (import.meta.main) {
   const date = values.get('--date') ?? refuse(fault ?? USAGE);
   try {
     const result = assemble({ version, date });
-    console.log(`[changelog] wrote ## [${result.version}] from ${result.removed.length} fragment(s) and deleted them: ${result.removed.join(', ')}`);
+    if (result.removed.length === 0) console.log(`[changelog] no fragment in ${FRAGMENT_DIR}, so ${result.version} needs no section; nothing was written`);
+    else console.log(`[changelog] wrote ## [${result.version}] from ${result.removed.length} fragment(s) and deleted them: ${result.removed.join(', ')}`);
   } catch (thrown) {
     process.stderr.write(`[changelog] ${thrown instanceof Error ? thrown.message : String(thrown)}\n`);
     process.exit(1);
