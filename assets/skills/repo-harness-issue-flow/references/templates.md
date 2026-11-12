@@ -189,7 +189,10 @@ ignores it. `repo-harness publication merge` refuses the mismatch
 ## Comments
 
 Every protocol comment starts with its header line. Fields come next, then
-at most a short body.
+at most a short body. The fence around a template in this file marks the
+template only. Do not wrap the posted comment in a fence: its first line is
+the header. A fence that the template itself requires in the body, such as
+the plan block's JSON, stays.
 
 ### issue claim
 
