@@ -17,6 +17,7 @@ function registryFixture() { const root = registryNoticeFixture(); roots.push(ro
 function projectedFixture() { const root = registryProjectedFixture(); roots.push(root); return root; }
 const noCheckpoint = () => { throw new Error('checkpoint must not run'); };
 const timedOut = () => ({ status: null, signal: 'SIGTERM' as const, stdout: '', stderr: '', timedOut: true });
+const killed = () => ({ status: null, signal: 'SIGKILL' as const, stdout: '', stderr: '' });
 const STATUS = 'repo-harness architecture-projection status --json';
 const NO_MODEL = 'no ArchContext model (.archcontext/manifest.yaml is missing)';
 const UNIGNORED = '[Architecture] notice unavailable: .ai/harness/state/ is not Git-ignored. Fix: run repo-harness update to write the runtime-state block to the user-level Git excludes file.';
@@ -93,15 +94,19 @@ describe('AgentNotice', () => {
     expect(scope.content).toStartWith(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
   });
 
-  test('review round 1: checkpoint timeout points to debt inspection without a request id', () => {
+  test('#2491: a checkpoint timeout gives one diagnostic, no block and no command', () => {
     const root = fixture();
     const result = collectAgentNotice(root, () => noticeOwnership(root), {
       env: noticeEnv(root), run: () => ({ status: null, signal: 'SIGTERM', stdout: '', stderr: '', timedOut: true }),
     });
-    expect(result.diagnostics).toContain('architecture notice timed out after 3 s; run repo-harness architecture-debt --json');
+    expect(result.diagnostics).toContain('RH_ARCHCTX_TIMEOUT');
+    expect(result.diagnostics).toContain('architecture checkpoint did not finish in the notice time budget');
     expect(result.diagnostics).not.toContain('request id');
     expect(result.diagnostics).not.toContain('architecture-projection');
-    expect(result.content).toBe('[Architecture] notice unavailable (RH_ARCHCTX_TIMEOUT): architecture notice timed out after 3 s; run repo-harness architecture-debt --json');
+    expect(result.diagnostics).not.toContain('architecture-debt');
+    expect(result.diagnostics).not.toContain('3 s');
+    expect(result.content).toBeUndefined();
+    expect(result.systemMessage).toBeUndefined();
   });
 
   test('real citation debt is bounded, uses producer ids and dedupes across delivery points', () => {
@@ -163,8 +168,8 @@ describe('AgentNotice', () => {
     const root = fixture();
     const ownership = noticeOwnership(root);
     const failed = collectAgentNotice(root, () => ownership, { env: noticeEnv(root), run: () => ({ status: null, signal: 'SIGTERM', stdout: '', stderr: '', timedOut: true }) });
-    expect(failed.content).toStartWith('[Architecture] notice unavailable (RH_ARCHCTX_TIMEOUT): ');
-    expect(failed.systemMessage).toBe('Architecture: notice unavailable (RH_ARCHCTX_TIMEOUT); run repo-harness architecture-debt --json.');
+    expect(failed.content).toBeUndefined();
+    expect(failed.systemMessage).toBeUndefined();
     expect(failed.diagnostics!.trim().split('\n')).toHaveLength(1);
     expect(failed.diagnostics).toContain('RH_ARCHCTX_TIMEOUT');
     expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(false);
@@ -300,20 +305,20 @@ describe('AgentNotice', () => {
     const root = fixture();
     const ownership = noticeOwnership(root);
     const env = noticeEnv(root);
-    const failed = collectAgentNotice(root, () => ownership, { env, run: timedOut });
-    expect(failed.content).toBe('[Architecture] notice unavailable (RH_ARCHCTX_TIMEOUT): architecture notice timed out after 3 s; run repo-harness architecture-debt --json');
-    expect(failed.systemMessage).toBe('Architecture: notice unavailable (RH_ARCHCTX_TIMEOUT); run repo-harness architecture-debt --json.');
+    const failed = collectAgentNotice(root, () => ownership, { env, run: killed });
+    expect(failed.content).toBe('[Architecture] notice unavailable (error): archctx checkpoint process failed: signal SIGKILL');
+    expect(failed.systemMessage).toBe('Architecture: notice unavailable (error); run repo-harness architecture-debt --json.');
     expect(failed.diagnostics!.trim().split('\n')).toHaveLength(1);
     expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(false);
-    const repeated = collectAgentNotice(root, () => ownership, { env, run: timedOut });
+    const repeated = collectAgentNotice(root, () => ownership, { env, run: killed });
     expect(repeated.content).toBeUndefined();
     expect(repeated.systemMessage).toBeUndefined();
-    expect(repeated.diagnostics).toContain('RH_ARCHCTX_TIMEOUT');
+    expect(repeated.diagnostics).toContain('checkpoint process failed: signal SIGKILL');
     const recovered = collectAgentNotice(root, () => ownership, { env });
     expect(recovered.content).toStartWith(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
     expect(recovered.content).not.toContain('[Architecture]');
     // Recovery ends the failure state, so the same failure prints again.
-    expect(collectAgentNotice(root, () => ownership, { env, run: timedOut }).content).toContain('notice unavailable (RH_ARCHCTX_TIMEOUT)');
+    expect(collectAgentNotice(root, () => ownership, { env, run: killed }).content).toContain('notice unavailable (error)');
   });
 
   test('#850: a CodeGraph index that is not ready is a setup state', () => {
@@ -336,7 +341,8 @@ describe('AgentNotice', () => {
     const ownership = { ...noticeOwnership(root), unowned_paths: ['packages/new-core/index.ts'] };
     const env = noticeEnv(root);
     const failed = collectAgentNotice(root, () => ownership, { env, run: timedOut });
-    expect(failed.content).toBe('[Architecture] notice unavailable (RH_ARCHCTX_TIMEOUT): architecture notice timed out after 3 s; run repo-harness architecture-debt --json');
+    expect(failed.content).toBeUndefined();
+    expect(failed.diagnostics).toContain('RH_ARCHCTX_TIMEOUT');
     expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(false);
     const recovered = collectAgentNotice(root, () => ownership, { env });
     expect(recovered.content).toStartWith('[ArchitectureDebt] 1 unowned changed path\n');

@@ -7,6 +7,7 @@ All notable changes to this skill are documented here.
 ### Fixed
 
 - ci: `run_bun_tests` (and `bun run test:files`) fails before any test starts when an argument has the test file name form and is not a file, and names the path. Before, such a path was dropped and the run was green with fewer files. The daily native path list no longer names three deleted files. (#2608)
+- hook: a timeout of the architecture notice checkpoint gives no notice block. It goes to the hook diagnostics, and the next hook measures again. Before, a Claude Stop got a feedback line, so the seat took one more turn and ran `repo-harness architecture-debt --json`, which fails in a worktree with no CodeGraph index. The timeout text now states only that the checkpoint did not finish in the notice time budget; it names no command and no fixed duration. A measured debt, an inactive state and each other failure keep their block. (#2491)
 
 ## [0.31.0] - 2026-11-12
 

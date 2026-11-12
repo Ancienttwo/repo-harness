@@ -43,7 +43,7 @@ type Status =
   | { readonly kind: 'active' }
   | { readonly kind: 'disabled' }
   | { readonly kind: 'inactive'; readonly cause: string }
-  | { readonly kind: 'failure'; readonly error: unknown };
+  | { readonly kind: 'failure'; readonly error: unknown; readonly timedOut?: true };
 
 interface Observation {
   readonly status: Status;
@@ -260,7 +260,12 @@ function observeDebt(repoRoot: string, source: ReturnType<typeof capabilitySourc
     const ownerBlock = unownedBlock(paths);
     unowned = ownerBlock && { paths, block: ownerBlock };
     if (status.kind !== 'active') return { status, unowned, debt: null };
-    const measured = checkpointArchitectureDebt(repoRoot, owned, options);
+    let measured: ReturnType<typeof checkpointArchitectureDebt>;
+    try { measured = checkpointArchitectureDebt(repoRoot, owned, options); }
+    catch (error) {
+      if (error instanceof ArchctxClientError && error.code === 'RH_ARCHCTX_TIMEOUT') return { status: { kind: 'failure', error, timedOut: true }, unowned, debt: null };
+      throw error;
+    }
     const debtBlock = measured && renderAgentNotice(measured.report);
     const debt = measured && debtBlock ? { branch: measured.branch, ids: noticeItems(measured.report).map(item => item.id).sort(), block: debtBlock } : null;
     return { status, unowned, debt };
@@ -304,6 +309,9 @@ function statusNotice(repoRoot: string, env: NodeJS.ProcessEnv | undefined, stat
       return null;
     case 'inactive': return claim(repoRoot, STATUS_MARKER, digest(['inactive', status.cause]), env) ? inactiveBlock(status.cause) : null;
     case 'failure': {
+      // A checkpoint timeout is load, not a state change: a Claude Stop block would
+      // start one more turn with nothing to do. The next hook measures again.
+      if (status.timedOut) return null;
       const key = digest(['failure', currentBranch(repoRoot, env), failureCode(status.error)]);
       return claim(repoRoot, STATUS_MARKER, key, env) ? failureBlock(status.error) : null;
     }
