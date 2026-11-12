@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { isCiRepairIssueBody } from '../src/core/ci/test-report';
+import { archimapLinkDrift } from '../scripts/check-archimap-links';
 import { ARCHITECTURE_EVIDENCE, ARCHITECTURE_JOB, CIReportError, architectureActionRow, junitFiles, parseArchitectureSummary, reportCI, renderReport, watchDailyCI, type GitHubAPI } from '../scripts/report-ci';
 
 function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; before: string; after: string; prCommits: number; root: string; issues: any[]; comments: { issue: number; body: string }[]; calls: { path: string; method: string }[]; setConclusion: (value: string) => void; setRun: (id: number, attempt: number) => void; denyIssues: () => void }) => Promise<void>, candidateCommits = 1) {
@@ -648,7 +649,7 @@ test('report and watchdog uploads include the real hidden report directory', () 
 });
 
 const architectureEvidence = readFileSync(join(import.meta.dir, '..', ARCHITECTURE_EVIDENCE), 'utf8');
-const architectureSummary = { status: 'planned', renderEquivalent: false, differingPaths: ['docs/architecture/a.md'], humanActions: [], freshness: 'stale', unpublishedSince: '2026-11-12T01:01:09.000Z' };
+const architectureSummary = { status: 'planned', renderEquivalent: false, differingPaths: ['docs/architecture/a.md'], humanActions: [], freshness: 'stale', unpublishedSince: '2026-11-12T01:01:09.000Z', archimapLinks: { dead: [], missing: [] } };
 // The fixture job is the daily architecture job; every other provider answer is the shared fixture.
 const architectureAPI = (f: { api: GitHubAPI }): GitHubAPI => async (path, method, body) => path.includes('/attempts/1/jobs')
   ? { jobs: [{ id: 44, name: ARCHITECTURE_JOB, conclusion: 'failure', check_run_url: 'https://api.github.com/repos/test/repo/check-runs/55' }] }
@@ -666,12 +667,34 @@ test('a daily architecture failure opens a named repair issue with the summary, 
   expect(issue.body).toContain(`\`\`\`json\n${JSON.stringify(architectureSummary, null, 2)}\n\`\`\``);
   expect(issue.body).toContain('Render differences: docs/architecture/a.md');
   expect(issue.body).toContain('Freshness: stale; oldest unpublished main commit: 2026-11-12T01:01:09.000Z');
+  expect(issue.body).toContain('Archimap module links: dead none; missing none');
+  expect(issue.body).not.toContain('Archimap action');
   expect(issue.body).toContain(architectureActionRow(parseArchitectureSummary(input.summaryText), architectureEvidence));
   expect(issue.body).toContain('| `renderEquivalent: false` |');
   expect(issue.body).not.toContain('run typecheck + affected tests');
   expect((await reportCI('test/repo', 12, architectureAPI(f), input)).repairs[0]?.delivery).toBe('reused');
   expect(f.issues).toHaveLength(1);
 }));
+
+test('a dead or missing archimap module link names the links and the refresh action in the repair issue', () => fixture(async f => {
+  f.setConclusion('failure');
+  const summary = { ...architectureSummary, renderEquivalent: true, differingPaths: [], freshness: 'fresh',
+    archimapLinks: { dead: ['docs/architecture/modules/a/gone.md'], missing: ['docs/architecture/modules/b/new.md'] } };
+  const report = await reportCI('test/repo', 12, architectureAPI(f), { summaryText: JSON.stringify(summary), evidence: architectureEvidence });
+  expect(report.errors).toEqual([]);
+  const issue = f.issues[0];
+  expect(issue.title).toBe(`[CI repair] architecture fresh (planned), archimap links @ ${f.after.slice(0, 12)}`);
+  expect(issue.body).toContain('Archimap module links: dead docs/architecture/modules/a/gone.md; missing docs/architecture/modules/b/new.md');
+  expect(issue.body).toContain('Archimap action: refresh `docs/architecture/archimap.html`');
+}));
+
+test('the archimap link check reads module document links of the map against modules[].docs', () => {
+  const html = '<a href="history.md"></a><a href="https://example.invalid/modules/x.md"></a><a href="#modules"></a>'
+    + '<a href="modules/a/kept.md"></a><a class="node" href="modules/a/kept.md"></a><a href="modules/a/gone.md#top"></a>';
+  const present = new Set(['docs/architecture/modules/a/kept.md', 'docs/architecture/modules/b/new.md']);
+  expect(archimapLinkDrift(html, ['docs/architecture/modules/a/kept.md', 'docs/architecture/modules/b/new.md'], path => present.has(path)))
+    .toEqual({ dead: ['docs/architecture/modules/a/gone.md'], missing: ['docs/architecture/modules/b/new.md'] });
+});
 
 test('a daily architecture failure without a summary says so and routes to the command-error row', () => fixture(async f => {
   f.setConclusion('failure');

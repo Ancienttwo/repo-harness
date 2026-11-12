@@ -297,14 +297,20 @@ fi
 # warns. Source stamps do not count. The daily report routes the failure to the
 # upstream rolling writer. ARCHITECTURE_SUMMARY names the file for that report;
 # the job writes no summary when the check or its freshness input gave no result.
+# A dead or missing archimap module document link also fails; the summary keeps
+# its lists in archimapLinks (null when the link check gave no result).
 if [[ "$lane" == all || "$lane" == architecture ]]; then
+  echo "[ci] archimap module links"
+  links_status=0
+  links_json="$(bun scripts/check-archimap-links.ts)" || links_status=$?
+  echo "${links_json:-null}"
   echo "[ci] architecture projection"
   arch_json="$(mktemp /tmp/rh-arch-check-XXXXXX)"
   arch_freshness=""
   arch_input_failed=false
   run_architecture_check "$arch_json" || true
   if [[ -s "$arch_json" ]] && { unpublished_since="$(architecture_unpublished_since)" || { arch_input_failed=true; false; }; } \
-    && arch_classified="$(bun -e 'const { classifyArchitectureFreshness } = await import("./src/core/architecture/projection.ts"); const summary = JSON.parse(await Bun.file(process.argv[1]).text()); const since = new Date(process.argv[2]); if (Number.isNaN(since.getTime())) throw new Error(`invalid commit time ${process.argv[2]}`); const freshness = classifyArchitectureFreshness(summary, since, new Date()); console.log(freshness); console.log(JSON.stringify({ ...summary, freshness, unpublishedSince: since.toISOString() }, null, 2));' "$arch_json" "$unpublished_since")"; then
+    && arch_classified="$(bun -e 'const { classifyArchitectureFreshness } = await import("./src/core/architecture/projection.ts"); const summary = JSON.parse(await Bun.file(process.argv[1]).text()); const since = new Date(process.argv[2]); if (Number.isNaN(since.getTime())) throw new Error(`invalid commit time ${process.argv[2]}`); const freshness = classifyArchitectureFreshness(summary, since, new Date()); console.log(freshness); console.log(JSON.stringify({ ...summary, freshness, unpublishedSince: since.toISOString(), archimapLinks: JSON.parse(process.argv[3] || "null") }, null, 2));' "$arch_json" "$unpublished_since" "$links_json")"; then
     arch_freshness="${arch_classified%%$'\n'*}"
     arch_summary="${arch_classified#*$'\n'}"
     printf '%s\n' "$arch_summary"
@@ -323,6 +329,7 @@ if [[ "$lane" == all || "$lane" == architecture ]]; then
     *) if [[ "$arch_input_failed" == true ]]; then echo "[ci] The oldest unpublished main commit could not be read from git. Read the git error above." >&2; exit 1; fi
        echo "[ci] Architecture check is incomplete${arch_freshness:+ ($arch_freshness)}. Inspect the reported human action or provider error." >&2; exit 1 ;;
   esac
+  if [[ "$links_status" -ne 0 ]]; then echo "[ci] The archimap module document links do not match modules[].docs. Read the [archimap] lines above." >&2; exit 1; fi
 fi
 
 if [[ "$lane" == all || "$lane" == functional ]]; then

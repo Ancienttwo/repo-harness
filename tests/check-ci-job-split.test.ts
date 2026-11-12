@@ -1056,7 +1056,7 @@ describe('architecture lanes', () => {
     constraintIds: [LAYER_DIRECTION, PLUGIN_INTERNALS], importEdgeCount: 5521, unresolvedImports: [], violations: [constraintViolation(LAYER_DIRECTION)], ...fields } });
 
   // Real check-ci.sh with stub CLI results. `bun -e` and the shell logic stay real.
-  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; constraints?: string; summary?: boolean; history?: Array<{ manifest: boolean; hoursAgo: number }>; shallow?: boolean; gitFails?: string; changelog?: string; changelogExit?: number }) {
+  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; constraints?: string; summary?: boolean; history?: Array<{ manifest: boolean; hoursAgo: number }>; shallow?: boolean; gitFails?: string; changelog?: string; changelogExit?: number; links?: { dead: string[]; missing: string[] } }) {
     const root = mkdtempSync(join(tmpdir(), 'rh-ci-architecture-'));
     const bin = join(root, 'bin');
     try {
@@ -1108,6 +1108,9 @@ describe('architecture lanes', () => {
         `if (${JSON.stringify(fixture.changelog ?? '')}) console.log(${JSON.stringify(fixture.changelog ?? '')});`,
         `if (${fixture.changelogExit ?? 0} !== 0) { console.error('[changelog] the merge result does not keep the bytes of the 0.31.0 section.'); process.exit(${fixture.changelogExit ?? 0}); }`,
       ].join('\n'));
+      // The archimap link check prints its lists and exits 1 when one is not empty.
+      const links = fixture.links ?? { dead: [], missing: [] };
+      writeFileSync(join(root, 'repo/scripts/check-archimap-links.ts'), `console.log(${JSON.stringify(JSON.stringify(links))}); process.exit(${links.dead.length + links.missing.length > 0 ? 1 : 0});`);
       const summaryPath = join(root, 'out/architecture/summary.json');
       const result = spawnSync('/bin/bash', ['scripts/check-ci.sh', ...args], {
         cwd: join(root, 'repo'), encoding: 'utf8',
@@ -1263,10 +1266,18 @@ describe('architecture lanes', () => {
     expect(result.status, result.stderr).toBe(exit);
     expect(result.checked).toBe(true);
     expect(result.debtArgs).toBeNull();
-    expect(result.summary).toMatchObject({ ...summary, freshness });
+    expect(result.summary).toMatchObject({ ...summary, freshness, archimapLinks: { dead: [], missing: [] } });
     expect(Math.round((Date.now() - Date.parse(result.summary.unpublishedSince)) / 3_600_000)).toBe(sinceHours);
     expect(warnings(result.stdout).length).toBe(freshness === 'lag' ? 1 : 0);
     expect(result.stdout).not.toContain('[ci] typecheck');
+  });
+
+  test('daily fails on a dead or missing archimap module link and saves the lists in the summary', () => {
+    const links = { dead: ['docs/architecture/modules/a/gone.md'], missing: ['docs/architecture/modules/b/new.md'] };
+    const result = runLane(['architecture'], { check: JSON.stringify(equivalent), checkExit: 0, summary: true, history: afterM(30), links });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('The archimap module document links do not match modules[].docs.');
+    expect(result.summary).toMatchObject({ ...equivalent, freshness: 'fresh', archimapLinks: links });
   });
 
   test.each([
