@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { ERROR_CATALOG } from 'archctx-contracts';
@@ -7,6 +7,7 @@ import { collectAgentNotice, renderAgentNotice } from '../src/cli/hook/agent-not
 import { ArchctxClient, checkpointArchitectureDebt } from '../src/effects/architecture/archctx-provider';
 import { ARCHCTX_REQUIRED_VERSION } from '../src/core/architecture/projection';
 import type { ArchctxProviderOptions } from '../src/core/architecture/contracts';
+import type { CapabilityOwnership } from '../src/core/capabilities/registry';
 import { resolveCapabilityOwnership } from '../src/effects/state/resolve-effective-state';
 import { agentNoticeFixture, noticeOwnership, noticeEnv, registryNoticeFixture, registryProjectedFixture, unignoreNoticeState, writeNoticeRegistry, NOTICE_CAPABILITY } from './helpers/agent-notice';
 import { fixtureCommit, fixtureGit, fixtureWrite, writeStateMachine, STATE_MACHINE_ID } from './helpers/module-repository';
@@ -17,6 +18,8 @@ function registryFixture() { const root = registryNoticeFixture(); roots.push(ro
 function projectedFixture() { const root = registryProjectedFixture(); roots.push(root); return root; }
 const noCheckpoint = () => { throw new Error('checkpoint must not run'); };
 const timedOut = () => ({ status: null, signal: 'SIGTERM' as const, stdout: '', stderr: '', timedOut: true });
+const NOTICE_TIMEOUT = 'repo-harness: architecture notice: not finished in its time budget; the next hook measures again';
+const killed = () => ({ status: null, signal: 'SIGKILL' as const, stdout: '', stderr: '' });
 const STATUS = 'repo-harness architecture-projection status --json';
 const NO_MODEL = 'no ArchContext model (.archcontext/manifest.yaml is missing)';
 const UNIGNORED = '[Architecture] notice unavailable: .ai/harness/state/ is not Git-ignored. Fix: run repo-harness update to write the runtime-state block to the user-level Git excludes file.';
@@ -93,16 +96,91 @@ describe('AgentNotice', () => {
     expect(scope.content).toStartWith(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
   });
 
-  test('review round 1: checkpoint timeout points to debt inspection without a request id', () => {
-    const root = fixture();
-    const result = collectAgentNotice(root, () => noticeOwnership(root), {
-      env: noticeEnv(root), run: () => ({ status: null, signal: 'SIGTERM', stdout: '', stderr: '', timedOut: true }),
-    });
-    expect(result.diagnostics).toContain('architecture notice timed out after 3 s; run repo-harness architecture-debt --json');
-    expect(result.diagnostics).not.toContain('request id');
-    expect(result.diagnostics).not.toContain('architecture-projection');
-    expect(result.content).toBe('[Architecture] notice unavailable (RH_ARCHCTX_TIMEOUT): architecture notice timed out after 3 s; run repo-harness architecture-debt --json');
+  test('#2491: a deadline or Git timeout in the checkpoint or the archimap read gives one fixed diagnostic and no block', () => {
+    type Case = (root: string) => { readonly options: ArchctxProviderOptions; readonly ownership?: (options: ArchctxProviderOptions) => CapabilityOwnership | null };
+    // Only `git merge-base` hangs and gets killed by its timeout; the fixed clock keeps the deadline from running out first.
+    const slowMergeBase = (root: string): ArchctxProviderOptions => {
+      const slowGit = join(root, 'home/slow-git');
+      writeFileSync(slowGit, `#!/bin/sh\ncase "$*" in *merge-base*) echo >> "${join(root, 'home/merge-base.log')}"; exec sleep 10;; esac\nexec git "$@"\n`, { mode: 0o755 });
+      return { env: { ...noticeEnv(root), REPO_HARNESS_GIT_BIN: slowGit }, nowMs: () => 0 };
+    };
+    const cases: Record<string, Case> = {
+      'checkpoint git': root => ({ options: slowMergeBase(root) }),
+      'archimap git': root => {
+        adoptArchimap(root);
+        // No owned path, so the checkpoint returns before Git; only the archimap read times out.
+        return { options: slowMergeBase(root), ownership: () => ({ ...noticeOwnership(root), capabilities: [] }) };
+      },
+      'archimap and checkpoint git': root => {
+        adoptArchimap(root);
+        return { options: slowMergeBase(root) };
+      },
+      'before the process': root => ({ options: { env: noticeEnv(root), deadlineMs: Date.now() - 1, run: noCheckpoint } }),
+      'after decode': root => {
+        let now = 0;
+        return {
+          options: {
+            env: noticeEnv(root), nowMs: () => now,
+            run: (_binary, args) => {
+              // The real report for the same paths, outside the notice budget; the clock then passes the deadline.
+              const data = new ArchctxClient(root, ARCHCTX_REQUIRED_VERSION, { env: noticeEnv(root) }).data(args, 60_000);
+              now = 5_000;
+              return { status: 0, signal: null, stdout: JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'checkpoint', data }), stderr: '' };
+            },
+          },
+        };
+      },
+    };
+    const mergeBaseCalls = { 'checkpoint git': 1, 'archimap git': 1, 'archimap and checkpoint git': 2 } as Record<string, number>;
+    for (const [name, setup] of Object.entries(cases)) {
+      const root = fixture();
+      const { options, ownership } = setup(root);
+      const result = collectAgentNotice(root, ownership ?? (() => noticeOwnership(root)), options);
+      expect([name, result]).toEqual([name, { diagnostics: `${NOTICE_TIMEOUT}\n` }]);
+      const log = join(root, 'home/merge-base.log');
+      expect([name, existsSync(log) ? readFileSync(log, 'utf8').length : 0]).toEqual([name, mergeBaseCalls[name] ?? 0]);
+    }
   });
+
+  test('#2491: a timeout at each Git call under the host hook timeout, in archctx or in the resolve gives one fixed diagnostic; a resolve failure keeps its block', () => {
+    const ownership = (root: string) => (options: ArchctxProviderOptions) => resolveCapabilityOwnership(root, undefined, options);
+    // The ownership reads take the Git binary from the process environment, so the fake must be set there too.
+    // It logs each call and hangs at call `hang`; the fixed clock keeps the notice deadline from running out first.
+    const fakeGit = (root: string, hang: number) => {
+      const path = join(root, 'home/counting-git');
+      const home = join(root, 'home');
+      writeFileSync(path, `#!/bin/sh\nn=$(( $(cat "${home}/git.count" 2>/dev/null || echo 0) + 1 ))\necho $n > "${home}/git.count"\necho "$*" >> "${home}/git.log"\n[ $n -eq ${hang} ] && { echo $n > "${home}/git.hung"; exec sleep 40; }\nexec git "$@"\n`, { mode: 0o755 });
+      return path;
+    };
+    const run = (root: string, hang: number) => {
+      const git = fakeGit(root, hang);
+      const previous = process.env.REPO_HARNESS_GIT_BIN;
+      process.env.REPO_HARNESS_GIT_BIN = git;
+      try { return collectAgentNotice(root, ownership(root), { env: { ...noticeEnv(root), REPO_HARNESS_GIT_BIN: git }, nowMs: () => 0 }); }
+      finally { if (previous === undefined) delete process.env.REPO_HARNESS_GIT_BIN; else process.env.REPO_HARNESS_GIT_BIN = previous; }
+    };
+    const baseline = fixture();
+    expect(run(baseline, 0).content).toContain('[ArchitectureDebt]');
+    const calls = readFileSync(join(baseline, 'home/git.log'), 'utf8').trim().split('\n');
+    // The review subject reads (`--literal-pathspecs`) use the 120 s Git default; the 30 s host hook timeout kills the hook first.
+    const rows = calls.flatMap((args, index) => args.includes('--literal-pathspecs') ? [] : [index + 1]);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const hang of rows) {
+      const root = fixture();
+      const result = run(root, hang);
+      expect([hang, calls[hang - 1], readFileSync(join(root, 'home/git.hung'), 'utf8').trim(), result])
+        .toEqual([hang, calls[hang - 1], String(hang), { diagnostics: `${NOTICE_TIMEOUT}\n` }]);
+    }
+    const archctxRoot = fixture();
+    expect(collectAgentNotice(archctxRoot, () => noticeOwnership(archctxRoot), { env: noticeEnv(archctxRoot), run: timedOut })).toEqual({ diagnostics: `${NOTICE_TIMEOUT}\n` });
+    const resolveRoot = fixture();
+    expect(collectAgentNotice(resolveRoot, ownership(resolveRoot), { env: noticeEnv(resolveRoot), run: timedOut })).toEqual({ diagnostics: `${NOTICE_TIMEOUT}\n` });
+    const failedRoot = fixture();
+    const resolveFailed = collectAgentNotice(failedRoot, ownership(failedRoot), { env: noticeEnv(failedRoot), run: killed });
+    expect(resolveFailed.content).toStartWith('[Architecture] notice unavailable (error): capability_ownership:unavailable ARCHCONTEXT_RESOLVE_FAILED: ');
+    expect(resolveFailed.systemMessage).toBe('Architecture: notice unavailable (error); run repo-harness architecture-debt --json.');
+    expect(resolveFailed.diagnostics).toStartWith('repo-harness: architecture notice unavailable: capability_ownership:unavailable ARCHCONTEXT_RESOLVE_FAILED: ');
+  }, 240_000);
 
   test('real citation debt is bounded, uses producer ids and dedupes across delivery points', () => {
     const root = fixture();
@@ -163,10 +241,9 @@ describe('AgentNotice', () => {
     const root = fixture();
     const ownership = noticeOwnership(root);
     const failed = collectAgentNotice(root, () => ownership, { env: noticeEnv(root), run: () => ({ status: null, signal: 'SIGTERM', stdout: '', stderr: '', timedOut: true }) });
-    expect(failed.content).toStartWith('[Architecture] notice unavailable (RH_ARCHCTX_TIMEOUT): ');
-    expect(failed.systemMessage).toBe('Architecture: notice unavailable (RH_ARCHCTX_TIMEOUT); run repo-harness architecture-debt --json.');
-    expect(failed.diagnostics!.trim().split('\n')).toHaveLength(1);
-    expect(failed.diagnostics).toContain('RH_ARCHCTX_TIMEOUT');
+    expect(failed.content).toBeUndefined();
+    expect(failed.systemMessage).toBeUndefined();
+    expect(failed.diagnostics).toBe(`${NOTICE_TIMEOUT}\n`);
     expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(false);
     mkdirSync(join(root, '.ai/harness/state'), { recursive: true });
     symlinkSync(join(root, 'home'), join(root, '.ai/harness/state/agent-notice'));
@@ -300,20 +377,20 @@ describe('AgentNotice', () => {
     const root = fixture();
     const ownership = noticeOwnership(root);
     const env = noticeEnv(root);
-    const failed = collectAgentNotice(root, () => ownership, { env, run: timedOut });
-    expect(failed.content).toBe('[Architecture] notice unavailable (RH_ARCHCTX_TIMEOUT): architecture notice timed out after 3 s; run repo-harness architecture-debt --json');
-    expect(failed.systemMessage).toBe('Architecture: notice unavailable (RH_ARCHCTX_TIMEOUT); run repo-harness architecture-debt --json.');
+    const failed = collectAgentNotice(root, () => ownership, { env, run: killed });
+    expect(failed.content).toBe('[Architecture] notice unavailable (error): archctx checkpoint process failed: signal SIGKILL');
+    expect(failed.systemMessage).toBe('Architecture: notice unavailable (error); run repo-harness architecture-debt --json.');
     expect(failed.diagnostics!.trim().split('\n')).toHaveLength(1);
     expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(false);
-    const repeated = collectAgentNotice(root, () => ownership, { env, run: timedOut });
+    const repeated = collectAgentNotice(root, () => ownership, { env, run: killed });
     expect(repeated.content).toBeUndefined();
     expect(repeated.systemMessage).toBeUndefined();
-    expect(repeated.diagnostics).toContain('RH_ARCHCTX_TIMEOUT');
+    expect(repeated.diagnostics).toContain('checkpoint process failed: signal SIGKILL');
     const recovered = collectAgentNotice(root, () => ownership, { env });
     expect(recovered.content).toStartWith(`[ArchitectureDebt] 1 new in ${NOTICE_CAPABILITY}\n`);
     expect(recovered.content).not.toContain('[Architecture]');
     // Recovery ends the failure state, so the same failure prints again.
-    expect(collectAgentNotice(root, () => ownership, { env, run: timedOut }).content).toContain('notice unavailable (RH_ARCHCTX_TIMEOUT)');
+    expect(collectAgentNotice(root, () => ownership, { env, run: killed }).content).toContain('notice unavailable (error)');
   });
 
   test('#850: a CodeGraph index that is not ready is a setup state', () => {
@@ -336,7 +413,8 @@ describe('AgentNotice', () => {
     const ownership = { ...noticeOwnership(root), unowned_paths: ['packages/new-core/index.ts'] };
     const env = noticeEnv(root);
     const failed = collectAgentNotice(root, () => ownership, { env, run: timedOut });
-    expect(failed.content).toBe('[Architecture] notice unavailable (RH_ARCHCTX_TIMEOUT): architecture notice timed out after 3 s; run repo-harness architecture-debt --json');
+    expect(failed.content).toBeUndefined();
+    expect(failed.diagnostics).toBe(`${NOTICE_TIMEOUT}\n`);
     expect(existsSync(join(root, '.ai/harness/state/agent-notice'))).toBe(false);
     const recovered = collectAgentNotice(root, () => ownership, { env });
     expect(recovered.content).toStartWith('[ArchitectureDebt] 1 unowned changed path\n');
@@ -478,24 +556,24 @@ describe('AgentNotice', () => {
     expect(quiet.systemMessage).toContain(ARCHIMAP_MESSAGE);
   });
 
-  test('archimap: an archctx ownership failure in archcontext mode keeps the map line beside the failure line', () => {
+  test('archimap: an archctx ownership timeout in archcontext mode keeps the map line and gives only a diagnostic for the timeout', () => {
     const root = fixture();
     adoptArchimap(root);
     fixtureWrite(root, '.archcontext/model/nodes/extra.yaml', '{}\n');
     const options = { env: noticeEnv(root), run: timedOut };
     const ownership = (scoped: ArchctxProviderOptions) => resolveCapabilityOwnership(root, undefined, scoped);
     const failed = collectAgentNotice(root, ownership, options);
-    // #1429: a resolve timeout asks for a retry, not an update.
-    expect(failed.content).toStartWith('[Architecture] notice unavailable (error): capability_ownership:unavailable ARCHCONTEXT_RESOLVE_TIMEOUT: archctx resolve timed out; the architecture notice is skipped for this turn; fix: repo-harness state resolve --json\n');
-    expect(failed.content).toEndWith([ARCHIMAP_HEADER, '- .archcontext/model/nodes/extra.yaml', ARCHIMAP_FOOTER].join('\n'));
-    expect(failed.systemMessage).toEndWith(`\n${ARCHIMAP_MESSAGE}`);
-    expect(failed.diagnostics!.trim().split('\n')).toHaveLength(1);
-    expect(failed.diagnostics).toContain('ARCHCONTEXT_RESOLVE_TIMEOUT');
+    // #2491: a resolve timeout is a notice-path timeout, so it gives no block and its diagnostic names no command.
+    expect(failed.content).toBe([ARCHIMAP_HEADER, '- .archcontext/model/nodes/extra.yaml', ARCHIMAP_FOOTER].join('\n'));
+    expect(failed.systemMessage).toBe(ARCHIMAP_MESSAGE);
+    expect(failed.diagnostics).toBe(`${NOTICE_TIMEOUT}\n`);
+    // #1429: the ownership reader still asks for a retry, not an update.
+    expect(() => ownership(options)).toThrow('ARCHCONTEXT_RESOLVE_TIMEOUT: archctx resolve timed out; the architecture notice is skipped for this turn; fix: repo-harness state resolve --json');
     expect(existsSync(join(root, ARCHIMAP_MARKER))).toBe(true);
     // The map line has its own marker, so the repeated failure prints neither line again.
     const repeated = collectAgentNotice(root, ownership, options);
     expect(repeated.content).toBeUndefined();
-    expect(repeated.diagnostics).toContain('ARCHCONTEXT_RESOLVE_TIMEOUT');
+    expect(repeated.diagnostics).toBe(`${NOTICE_TIMEOUT}\n`);
   });
 
   test('#1429: only a package-local archctx mismatch tells the ownership reader to update', () => {

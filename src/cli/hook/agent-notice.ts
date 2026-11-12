@@ -8,7 +8,7 @@ import type { CapabilityOwnership } from '../../core/capabilities/registry';
 import { capabilitySource, changedSinceReviewBase, checkpointArchitectureDebt } from '../../effects/architecture/archctx-provider';
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { assertSafeRepoWritePath, writeHookStateFile } from '../../effects/hook-state-file';
-import { loadRegistryAuthority, readWorkflowPolicy, resolveReviewBase } from '../../effects/state/resolve-effective-state';
+import { CapabilityOwnershipError, loadRegistryAuthority, readWorkflowPolicy, resolveReviewBase } from '../../effects/state/resolve-effective-state';
 import { boundedHookDiagnostic } from './hook-protocol';
 import { gitExecFileSync } from '../../effects/git/runner';
 
@@ -18,6 +18,7 @@ const STATUS_MARKER = `${STATE_DIR}agent-notice-status`;
 const ARCHIMAP_MARKER = `${STATE_DIR}agent-notice-archimap`;
 const ARCHIMAP_FILE = 'docs/architecture/archimap.html';
 const STATUS_COMMAND = 'repo-harness architecture-projection status --json';
+const NOTICE_TIMEOUT_LINE = 'repo-harness: architecture notice: not finished in its time budget; the next hook measures again';
 const MAX_BYTES = 800;
 const MAX_MESSAGE_BYTES = 200;
 // The codes that archctx 0.9.1 checkpoint and package resolution throw for a setup step
@@ -43,7 +44,9 @@ type Status =
   | { readonly kind: 'active' }
   | { readonly kind: 'disabled' }
   | { readonly kind: 'inactive'; readonly cause: string }
-  | { readonly kind: 'failure'; readonly error: unknown };
+  | { readonly kind: 'failure'; readonly error: unknown }
+  /** A notice-path timeout: load, not a state change. Only diagnostics get it, and the next hook measures again. */
+  | { readonly kind: 'timeout'; readonly error: unknown };
 
 interface Observation {
   readonly status: Status;
@@ -187,7 +190,19 @@ function failureBlock(error: unknown): NoticeBlock {
   };
 }
 
+/**
+ * The one timeout classifier of the notice path: an archctx deadline or process
+ * timeout, the ownership resolve timeout, or a Git call killed by its timeout.
+ * Every other error keeps its block and its text.
+ */
+function noticeTimeout(error: unknown): boolean {
+  return (error instanceof ArchctxClientError && error.code === 'RH_ARCHCTX_TIMEOUT')
+    || (error instanceof CapabilityOwnershipError && error.blocker.code === 'ARCHCONTEXT_RESOLVE_TIMEOUT')
+    || (error instanceof Error && (error as NodeJS.ErrnoException).code === 'ETIMEDOUT');
+}
+
 function statusOf(error: unknown): Status {
+  if (noticeTimeout(error)) return { kind: 'timeout', error };
   if (!(error instanceof ArchctxClientError) || !INACTIVE_CODES.has(error.code)) return { kind: 'failure', error };
   return { kind: 'inactive', cause: singleLine(error.action ? `${error.code}, action ${error.action}` : error.code) };
 }
@@ -297,7 +312,8 @@ function claim(repoRoot: string, path: string, key: string, env: NodeJS.ProcessE
 /** One line per readiness change. A failure never touches the debt marker, so a later success still delivers the debt. */
 function statusNotice(repoRoot: string, env: NodeJS.ProcessEnv | undefined, status: Status): NoticeBlock | null {
   switch (status.kind) {
-    case 'disabled': return null;
+    // A Claude Stop block for a timeout would start one more turn with nothing to do.
+    case 'disabled': case 'timeout': return null;
     case 'active':
       // The active key ends the previous state, so a cause that returns prints again.
       if (existsSync(join(repoRoot, STATUS_MARKER))) claim(repoRoot, STATUS_MARKER, digest(['active']), env);
@@ -313,9 +329,9 @@ function statusNotice(repoRoot: string, env: NodeJS.ProcessEnv | undefined, stat
 /** Ownership and citation debt share one marker. Their key changes when a debt item or an unowned path changes. */
 function debtNotice(repoRoot: string, env: NodeJS.ProcessEnv | undefined, observation: Observation): NoticeBlock[] {
   const { unowned, debt } = observation;
-  // A failed checkpoint has no measured set. Claiming the unowned paths alone would
+  // A failed or timed-out checkpoint has no measured set. Claiming the unowned paths alone would
   // make every recovery print them again.
-  if (observation.status.kind === 'failure' || (!unowned && !debt)) return [];
+  if (observation.status.kind === 'failure' || observation.status.kind === 'timeout' || (!unowned && !debt)) return [];
   const key = digest([debt?.branch ?? currentBranch(repoRoot, env), debt?.ids ?? [], unowned?.paths ?? []]);
   if (!claim(repoRoot, MARKER, key, env)) return [];
   return [unowned?.block, debt?.block].filter((block): block is NoticeBlock => block !== undefined);
@@ -329,6 +345,28 @@ function archimapNotice(repoRoot: string, env: NodeJS.ProcessEnv | undefined, ob
 }
 
 /**
+ * Every notice-path error goes through here. A timeout gives one fixed line per
+ * hook run, whichever reads timed out: it names no command and carries no raw
+ * error text. Each other failure keeps its text on one line.
+ */
+function noticeProblems() {
+  const texts: string[] = [];
+  let timedOut = false;
+  return {
+    add(error: unknown): void {
+      if (noticeTimeout(error)) { timedOut = true; return; }
+      texts.push(errorText(error));
+    },
+    lines(): string {
+      return [
+        ...(texts.length > 0 ? [boundedHookDiagnostic(`repo-harness: architecture notice unavailable: ${texts.join('; ')}`)] : []),
+        ...(timedOut ? [NOTICE_TIMEOUT_LINE] : []),
+      ].map(line => `${line}\n`).join('');
+    },
+  };
+}
+
+/**
  * Shared by all host delivery points. The status and debt markers fail independently.
  * Without an ignored marker path nothing is deduplicated, so only SessionStart,
  * which runs once per session, names the cause. It checks both markers even when
@@ -339,28 +377,31 @@ export function collectAgentNotice(repoRoot: string, ownership: (options: Archct
   const observation = observe(repoRoot, ownership, options);
   if (!observation) return {};
   const blocks: NoticeBlock[] = [];
-  const problems: string[] = observation.status.kind === 'failure' ? [errorText(observation.status.error)] : [];
-  if (observation.unmeasured !== undefined) problems.push(errorText(observation.unmeasured));
+  const problems = noticeProblems();
+  const { status } = observation;
+  if (status.kind === 'failure' || status.kind === 'timeout') problems.add(status.error);
+  if (observation.unmeasured !== undefined) problems.add(observation.unmeasured);
   try {
-    const block = statusNotice(repoRoot, options.env, observation.status);
+    const block = statusNotice(repoRoot, options.env, status);
     if (block) blocks.push(block);
-  } catch (error) { problems.push(errorText(error)); }
+  } catch (error) { problems.add(error); }
   try { blocks.push(...debtNotice(repoRoot, options.env, observation)); }
-  catch (error) { problems.push(errorText(error)); }
+  catch (error) { problems.add(error); }
   // A failure that the status or unowned filter already reported (the shared
   // diff, or the same unavailable review subject) is not repeated.
   const { archimapError } = observation;
-  const reported = observation.status.kind === 'failure' ? observation.status.error : observation.unmeasured;
-  if (archimapError !== undefined && (reported === undefined || errorText(archimapError) !== errorText(reported))) problems.push(errorText(archimapError));
+  const reported = status.kind === 'failure' ? status.error : observation.unmeasured;
+  if (archimapError !== undefined && (reported === undefined || errorText(archimapError) !== errorText(reported))) problems.add(archimapError);
   try { blocks.push(...archimapNotice(repoRoot, options.env, observation)); }
-  catch (error) { problems.push(errorText(error)); }
+  catch (error) { problems.add(error); }
   if (point === 'session-start') {
     try { if (![STATUS_MARKER, MARKER, ARCHIMAP_MARKER].every(path => ignored(repoRoot, path, options.env))) blocks.push(unignoredBlock()); }
-    catch (error) { problems.push(errorText(error)); }
+    catch (error) { problems.add(error); }
   }
+  const diagnostics = problems.lines();
   return {
     ...(blocks.length > 0 ? { content: blocks.map(block => block.content).join('\n'), systemMessage: blocks.map(block => block.systemMessage).join('\n') } : {}),
-    ...(problems.length > 0 ? { diagnostics: `${boundedHookDiagnostic(`repo-harness: architecture notice unavailable: ${problems.join('; ')}`)}\n` } : {}),
+    ...(diagnostics === '' ? {} : { diagnostics }),
   };
 }
 
