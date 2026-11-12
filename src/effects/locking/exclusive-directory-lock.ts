@@ -319,12 +319,13 @@ export function readExclusiveDirectoryLockOwner(
 ): ExclusiveDirectoryLockOwner | null {
   const location = prepareLockLocation(canonicalRoot, relativeLockPath);
   assertLockAncestors(location);
+  let directoryIdentity: FileIdentity | null = null;
   try {
     const directory = lstatSync(location.lockPath);
     if (!directory.isDirectory()) {
       throw new Error(`unsafe lock path is not a real directory: ${location.lockPath}`);
     }
-    const directoryIdentity = fileIdentity(directory);
+    directoryIdentity = fileIdentity(directory);
     const entries = readdirSync(location.lockPath);
     if (entries.length !== 1) return null;
     const entry = entries[0]!;
@@ -358,7 +359,26 @@ export function readExclusiveDirectoryLockOwner(
     // Release can remove the directory or owner between any two observations.
     // This is no observed owner, not evidence that another owner is dead.
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    if (process.platform === 'win32' && (error as NodeJS.ErrnoException).code === 'EPERM'
+      && windowsReleaseRemovedDirectory(location.lockPath, directoryIdentity)) return null;
     throw error;
+  }
+}
+
+/**
+ * Windows reports EPERM, not ENOENT, for a directory in the delete-pending
+ * state that a concurrent release leaves (#2588). One lstat after the EPERM
+ * separates that race from a real access refusal: the released directory is
+ * gone, or the next acquirer has created a different one. A refused directory
+ * keeps its identity, so it still throws.
+ */
+function windowsReleaseRemovedDirectory(lockPath: string, observed: FileIdentity | null): boolean {
+  if (observed === null) return false;
+  try {
+    const current = lstatSync(lockPath);
+    return current.isDirectory() && !sameFileIdentity(fileIdentity(current), observed);
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT';
   }
 }
 
