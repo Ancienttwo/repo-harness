@@ -149,6 +149,9 @@ describe('Stop seat reset (#1972)', () => {
     writeFileSync(join(dir, 'request.json'), JSON.stringify({ requested_at: now.toISOString(), context_tokens: 380_000, transcript_path: transcript }));
     expect(stop(false).exitCode).toBe(2);
     expect(JSON.parse(readFileSync(join(dir, 'request.json'), 'utf8')).action).toBe('compact');
+    // A JSON value that is not an object is not a request either: the hook blocks and writes a fresh one, no skip notice.
+    writeFileSync(join(dir, 'request.json'), 'null');
+    expect([stop(false).exitCode, JSON.parse(readFileSync(join(dir, 'request.json'), 'utf8')).action]).toEqual([2, 'compact']);
     // At or above the bound the request records /clear; a sparse file keeps the 32 MiB transcript cheap.
     const big = join(cwd, 'big.jsonl');
     const fd = openSync(big, 'w');

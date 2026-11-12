@@ -1053,11 +1053,14 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
     expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([["no_reset", "request_closed"]]);
   }));
 
-  test("a request without an action types nothing and releases the requester with NO-RESET after the peer checks (#2625)", withReset(async ({ reset, calls, log }) => {
+  test("a request without an action types nothing and releases the requester with NO-RESET after the peer checks (#2625)", withReset(async ({ handoff, reset, calls, log }) => {
     expect(await reset({ action: null, caller: "t5" })).toEqual({ error: "caller_unknown", outcome: "nothing_sent" });
     expect(await reset({ action: null })).toEqual({ error: "request_invalid", outcome: "no_reset" });
     expect(calls()).toEqual([expect.stringMatching(/^send -- t5 NO-RESET: \/tmp\/repo-harness-seats\/.*\/request\.json has no valid time or action/u)]);
     expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([["caller_unknown", expect.any(String)], ["no_reset", "request_invalid"]]);
+    // A request.json that holds JSON null takes the same path: no hc_failed, the requester gets NO-RESET.
+    expect(await reset({ before: () => writeFileSync(join(dirname(handoff), "request.json"), "null") })).toEqual({ error: "request_invalid", outcome: "no_reset" });
+    expect(log().at(-1)).toMatchObject({ kind: "no_reset", detail: "request_invalid" });
   }));
 
   test("an unanswered compact prompt is sent 3 more times, then the relaunch sends the prompt with the state check (#2625)", withReset(async ({ handoff, reset, state, sends, log }) => {

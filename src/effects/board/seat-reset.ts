@@ -146,14 +146,18 @@ interface SeatRequest {
 }
 
 /**
- * The one request validator of the Stop hook and `seats reset`. A request without a valid time or a recorded action
- * is not valid: nothing chooses the action again.
+ * The one boundary validator of request.json for the Stop hook and `seats reset`. It returns a typed request only for
+ * an object with a valid time and a recorded action; for any other content it returns null and never throws, so both
+ * readers take their invalid-request path. Nothing chooses the action again.
  */
 function readRequest(identity: SeatResetIdentity): SeatRequest | null {
-  let value: { requested_at?: unknown; transcript_path?: unknown; action?: unknown } = {};
-  try { value = JSON.parse(readFileSync(seatResetRequestPath(identity), 'utf8')); } catch { /* checked below */ }
-  if (typeof value.requested_at !== 'string' || !Number.isFinite(Date.parse(value.requested_at)) || !isSeatResetAction(value.action)) return null;
-  return { requestedAt: value.requested_at, transcriptPath: typeof value.transcript_path === 'string' ? value.transcript_path : null, action: value.action };
+  let value: unknown;
+  try { value = JSON.parse(readFileSync(seatResetRequestPath(identity), 'utf8')); } catch { return null; }
+  // Any JSON value that is not a plain object (null, an array, a number, a string, a boolean) is not a request.
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const { requested_at: requestedAt, transcript_path: transcriptPath, action } = value as Record<string, unknown>;
+  if (typeof requestedAt !== 'string' || !Number.isFinite(Date.parse(requestedAt)) || !isSeatResetAction(action)) return null;
+  return { requestedAt, transcriptPath: typeof transcriptPath === 'string' ? transcriptPath : null, action };
 }
 
 /** The first failed check of the handoff of a `RESET-REQUEST`, or null when it passes. */
