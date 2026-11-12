@@ -1,6 +1,6 @@
 # verification/acceptance-review 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:aa551f788b82c814456934e21643854955d50041b850caa1c2714a33dc436952" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8c04adfcae2ce322f8b98dceeec627e7ee2aee1f6f59a61da72f5d792b047a98" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.acceptance-review`(kind `capability`)
 > **Matched Prefixes**:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`、`src/effects/admission/admission-store.ts`、`src/effects/admission/admission-source.ts`、`src/effects/admission/issue-goal.ts`、`src/effects/admission/control-admission.ts`、`src/effects/github/issues.ts`、`src/effects/github/policy.ts`
@@ -63,7 +63,7 @@ flowchart LR
 
 - 規模量級:`20–50` 個文件 / `5000–10000` 行
 - 匹配前綴:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`、`src/effects/admission/admission-store.ts`、`src/effects/admission/admission-source.ts`、`src/effects/admission/issue-goal.ts`、`src/effects/admission/control-admission.ts`、`src/effects/github/issues.ts`、`src/effects/github/policy.ts`
-- 排除前綴:`src/core/review/module-review-prompt.ts`、`src/effects/review/docs-host-isolation.ts`
+- 排除前綴:`src/core/review/module-review-prompt.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界

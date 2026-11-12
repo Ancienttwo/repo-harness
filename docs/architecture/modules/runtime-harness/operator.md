@@ -1,6 +1,6 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:9d4563f3acb102e422e880f39d706d83c10eed299296b2e27870c228facaec09" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8aa721f699b423b6473cec03ca3b67093b4fef9a7d3636a8eeb0519552bbb1d1" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`docs/kanban-runtime-status.md`、`src/effects/operator/**`、`src/operator-web/**`、`packages/operator-web/**`、`src/effects/setup/**`、`src/effects/dev-activity/**`、`vite.operator.config.ts`
@@ -27,8 +27,6 @@ flowchart LR
   p1_component_operator_cli_layer_6969b5f0["Operator Board (cli)"]:::component
   p1_component_operator_console_collectors_1f8d9a20["Console Collectors"]:::component
   p1_component_operator_core_layer_995d28e9["Operator Board (core)"]:::component
-  p1_component_operator_doc_sessions_cli_9153de51["Doc Sessions Command (cli)"]:::component
-  p1_component_operator_docs_host_isolation_b887c810["Docs Host Isolation"]:::component
   p1_component_operator_primary_d8da79ba["Operator HTTP Reader"]:::component
   p1_component_operator_primary_cli_7531f69e["Operator HTTP Reader (cli)"]:::component
   p1_component_operator_view_projections_ca31e3bc["Operator View Projections"]:::component
@@ -52,8 +50,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:ebaabc092bec0a84c69dda49c6df6862eadf53e3d735c78f408f9b5417d30a74`).
-- Semantic nodes: `18`; declared relations: `13`.
+- Proof: `proven` (`sha256:46299c8cb07c606650bf00677a2e39134d2e46faba48e72d05b27a8752d95a0d`).
+- Semantic nodes: `16`; declared relations: `13`.
 
 ### 1.2 模組職責表
 
@@ -136,10 +134,6 @@ flowchart LR
   - `depends-on` → `capability.workflow-engine.workflow-state` — Reuse inspectWorktree and the sweep merge predicates for the read-only worktree inventory.
 - `component.operator.core-layer`:
   - 無。
-- `component.operator.doc-sessions-cli`:
-  - 無。
-- `component.operator.docs-host-isolation`:
-  - 無。
 - `component.operator.primary`:
   - `calls` → `component.operator.activity-feeds` — Start the bounded background collectors once and serve only their cached, re-decoded snapshots
   - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Plugin → core: read the architecture history, the hand edits and the history timeout through the architecture read module
@@ -178,17 +172,15 @@ flowchart LR
 | `component.operator.board-observer` | Board Observer | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.operator.cli-layer` | Operator Board (cli) | `1–2` 個文件 / `20–50` 行 | 未宣告 |
 | `component.operator.console-collectors` | Console Collectors | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
-| `component.operator.core-layer` | Operator Board (core) | `2–5` 個文件 / `100–200` 行 | 未宣告 |
-| `component.operator.doc-sessions-cli` | Doc Sessions Command (cli) | `1–2` 個文件 / `50–100` 行 | 未宣告 |
-| `component.operator.docs-host-isolation` | Docs Host Isolation | `1–2` 個文件 / `20–50` 行 | 未宣告 |
-| `component.operator.primary` | Operator HTTP Reader | `50–100` 個文件 / `5000–10000` 行 | `entrypoint.operator.http-server` |
+| `component.operator.core-layer` | Operator Board (core) | `1–2` 個文件 / `50–100` 行 | 未宣告 |
+| `component.operator.primary` | Operator HTTP Reader | `20–50` 個文件 / `5000–10000` 行 | `entrypoint.operator.http-server` |
 | `component.operator.primary-cli` | Operator HTTP Reader (cli) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
-| `component.operator.view-projections` | Operator View Projections | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.operator.view-projections` | Operator View Projections | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.operator.web-console` | Operator Web Console | `100–200` 個文件 / `20k–50k` 行 | `entrypoint.operator.web-dev-activity` |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:ebaabc092bec0a84c69dda49c6df6862eadf53e3d735c78f408f9b5417d30a74`); selectors `7/7`.
+> **Proof**: `proven` (`sha256:46299c8cb07c606650bf00677a2e39134d2e46faba48e72d05b27a8752d95a0d`); selectors `7/7`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
