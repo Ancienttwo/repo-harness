@@ -141,8 +141,15 @@ async function quotaCheckedSeat(id: LaunchSeatId, seats: SeatsConfigV1, configur
   return gatekeeper?.id === 'gatekeeper-fallback' ? gatekeeper.seat : effectiveSeatConfig(id, seats, quota)!;
 }
 
-export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd(), planned?: SeatRouteV1): Promise<SeatLaunchV1 & {
-  readonly labels: readonly string[]; readonly name: string | null; readonly tab: string | null;
+type SeatLaunchResult = SeatLaunchV1 & { readonly labels: readonly string[]; readonly name: string | null; readonly tab: string | null };
+
+export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd(), planned?: SeatRouteV1): Promise<SeatLaunchResult> {
+  return (await effectiveSeatLaunch(seat, labels, env, cwd, planned)).launch;
+}
+
+/** The launch and the effective seat config that it starts; the seat reset compares the config with the session record (#2633). */
+async function effectiveSeatLaunch(seat: string, labels: SeatLabelInput, env: NodeJS.ProcessEnv, cwd: string, planned?: SeatRouteV1): Promise<{
+  readonly launch: SeatLaunchResult; readonly effective: SeatConfigV1;
 }> {
   const id = seatId(seat);
   let config: Record<string, unknown>;
@@ -170,11 +177,11 @@ export async function seatLaunch(seat: string, labels: SeatLabelInput = {}, env:
     : [];
   const piRoleDirectory = effective.runtime === 'pi' && effective.fleet.length > 0 ? writePiFleetRoles(effective.fleet, env) : undefined;
   const launch = buildSeatLaunch(id, effective, config.seats === undefined ? 'defaults' : 'seats', agentTypes, name ?? undefined, labels.repositoryId, piRoleDirectory);
-  return {
+  return { effective, launch: {
     ...launch,
     argv: labelSet === undefined ? launch.argv : selfLabelingArgv(id, labels, launch.argv),
     labels: labelSet === undefined ? [] : hcLabelPairs(labelSet), name, tab,
-  };
+  } };
 }
 
 /**
@@ -295,7 +302,10 @@ export function buildSeatsCommand(loadNotify?: () => Promise<SeatResetNotify>): 
       try {
         const result = await runSeatReset(handoff, sha256, {
           ...(loadNotify === undefined ? {} : { notify: await loadNotify() }),
-          relaunchArgv: async identity => (await seatLaunch(identity.seat, { repositoryId: identity.repository })).argv,
+          relaunch: async (identity) => {
+            const { launch, effective } = await effectiveSeatLaunch(identity.seat, { repositoryId: identity.repository }, process.env, process.cwd());
+            return { argv: launch.argv, model: effective.model, effort: effective.effort };
+          },
         });
         process.stdout.write(`${JSON.stringify({ ok: true, ...result })}\n`);
       } catch (error) {

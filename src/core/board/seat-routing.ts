@@ -2,9 +2,11 @@ import { weeklyRemainingPercent, type QuotaAccount, type QuotaAccountReport, typ
 import { PI_CODEX_MODEL_PREFIX, ROUTING_CLASSES, isPiCodexSeat, isReviewSeat, type CodexCreditMode, type RoutingClass, type SeatConfigV1, type SeatId, type SeatRoutingV1, type SeatsConfigV1 } from './seats-settings';
 
 export const CODEX_HYPER_MODEL = Object.freeze({ model: 'gpt-6-astra', effort: 'high' });
+/** The Claude control-seat model outside its config entry: the orchestrator while Claude is reserved, the advisor outside Claude hyper. */
+export const CLAUDE_CONTROL_MODEL = Object.freeze({ model: 'opus', effort: 'high' });
 interface AccountQuota { readonly state: QuotaState; readonly remaining: number | null }
 export interface SeatAccountQuotas {
-  readonly claude: AccountQuota & { readonly mode: 'normal' | 'saving' | 'unknown' };
+  readonly claude: AccountQuota & { readonly mode: 'hyper' | 'normal' | 'saving' | 'unknown' };
   /** `credits`: the owner's credit mode where it acts now (#2630); `off` unless the account is exhausted and has credits at or above the floor. */
   readonly chatgpt: AccountQuota & { readonly mode: 'normal' | 'hyper' | 'unknown'; readonly credits: CodexCreditMode };
 }
@@ -23,7 +25,7 @@ function codexCreditMode(account: QuotaAccountReport | undefined, routing: SeatR
   return Number.isFinite(balance) && balance >= routing.codex_credit_floor ? routing.codex_credit_mode : 'off';
 }
 
-/** Modes depend on weekly remaining quota, never on pace or elapsed week time. */
+/** Modes depend on weekly remaining quota, never on pace or elapsed week time. Claude saving wins over hyper below its own threshold. */
 export function seatAccountQuotas(accounts: readonly QuotaAccountReport[], routing: SeatRoutingV1): SeatAccountQuotas {
   const quota = (id: QuotaAccount): AccountQuota => {
     const account = accounts.find(account => account.account === id);
@@ -31,7 +33,8 @@ export function seatAccountQuotas(accounts: readonly QuotaAccountReport[], routi
   };
   const claude = quota('claude'), chatgpt = quota('chatgpt');
   return {
-    claude: { ...claude, mode: claude.remaining === null ? 'unknown' : claude.remaining < routing.claude_saving_below_remaining ? 'saving' : 'normal' },
+    claude: { ...claude, mode: claude.remaining === null ? 'unknown' : claude.remaining < routing.claude_saving_below_remaining ? 'saving'
+      : claude.remaining >= routing.claude_hyper_at_or_above_remaining ? 'hyper' : 'normal' },
     chatgpt: { ...chatgpt, credits: codexCreditMode(accounts.find(account => account.account === 'chatgpt'), routing),
       mode: chatgpt.remaining === null ? 'unknown' : chatgpt.remaining >= routing.codex_hyper_at_or_above_remaining ? 'hyper' : 'normal' },
   };
@@ -55,16 +58,18 @@ export function seatState(id: SeatId, seat: SeatConfigV1, quota: SeatAccountQuot
   return account === null ? null : seatOnCredits(id, seat, quota) ? 'tight' : quota[account].state;
 }
 
-/** One model projection serves the launch argv and the human dispatch lines. */
+/**
+ * One model projection serves the launch argv and the human dispatch lines. Claude hyper routes workers as normal; it
+ * only lets the advisor take its config entry (#2633).
+ */
 export function effectiveSeatConfig<Id extends SeatId>(id: Id, seats: SeatsConfigV1, quota: SeatAccountQuotas): SeatsConfigV1[Id];
 export function effectiveSeatConfig(id: SeatId, seats: SeatsConfigV1, quota: SeatAccountQuotas): SeatConfigV1 | null {
   const seat = seats[id];
   if (seat === null) return seat;
   if (seat.runtime === 'codex' && quota.chatgpt.mode === 'hyper') return { ...seat, ...CODEX_HYPER_MODEL };
   if (isPiCodexSeat(seat) && quota.chatgpt.mode === 'hyper') return { ...seat, model: `${PI_CODEX_MODEL_PREFIX}${CODEX_HYPER_MODEL.model}`, effort: CODEX_HYPER_MODEL.effort };
-  if (seat.runtime === 'claude' && (id === 'advisor' || id === 'orchestrator') && claudeReserved(quota)) {
-    return { ...seat, model: 'opus', effort: 'high' };
-  }
+  const control = id === 'orchestrator' ? claudeReserved(quota) : id === 'advisor' && (claudeReserved(quota) || quota.claude.mode !== 'hyper');
+  if (seat.runtime === 'claude' && control) return { ...seat, ...CLAUDE_CONTROL_MODEL };
   return seat;
 }
 
@@ -79,12 +84,14 @@ function accountText(id: SeatId, seat: SeatConfigV1, quota: SeatAccountQuotas): 
 }
 
 export function formatSeatModes(seats: SeatsConfigV1, quota: SeatAccountQuotas): string {
-  const line = (id: QuotaAccount, label: string, threshold: number, comparison: string): string => {
+  const { claude_saving_below_remaining: saving, claude_hyper_at_or_above_remaining: hyper, codex_hyper_at_or_above_remaining: codexHyper } = seats.routing;
+  const line = (id: QuotaAccount, label: string, bounds: string): string => {
     const account = quota[id];
-    return `${label} mode: ${account.mode} (${account.remaining === null ? 'weekly quota unavailable' : `${account.remaining}% left ${comparison} ${threshold}%`})`;
+    return `${label} mode: ${account.mode} (${account.remaining === null ? 'weekly quota unavailable' : `${account.remaining}% left ${bounds}`})`;
   };
-  return [line('claude', 'claude', seats.routing.claude_saving_below_remaining, quota.claude.mode === 'saving' ? '<' : '>='),
-    line('chatgpt', 'codex', seats.routing.codex_hyper_at_or_above_remaining, quota.chatgpt.mode === 'hyper' ? '>=' : '<')].join('\n');
+  const claude = { saving: `< ${saving}%`, hyper: `>= ${hyper}%`, normal: `>= ${saving}% and < ${hyper}%`, unknown: '' }[quota.claude.mode];
+  return [line('claude', 'claude', claude),
+    line('chatgpt', 'codex', quota.chatgpt.mode === 'hyper' ? `>= ${codexHyper}%` : `< ${codexHyper}%`)].join('\n');
 }
 
 export type SeatRouteV1 =
@@ -158,5 +165,6 @@ export function formatSeatRoutes(seats: SeatsConfigV1, quota: SeatAccountQuotas)
   lines.push(reviewSeatBlocked('reviewer', reviewer, quota)
     ? `reviewer: none (${accountText('reviewer', reviewer, quota)})`
     : `reviewer: reviewer (${launchText(reviewer)}${accountSuffix('reviewer', reviewer, quota)})`);
+  lines.push(`advisor: advisor (${launchText(effectiveSeatConfig('advisor', seats, quota))})`);
   return lines.join('\n');
 }

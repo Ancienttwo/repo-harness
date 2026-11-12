@@ -307,7 +307,15 @@ launches it. Never start a seat with an argv that
 Apply the explorer line through the Claude Agent tool's `model` parameter when you call the explorer.
 
 Claude saving mode applies when weekly remaining quota is below
-`routing.claude_saving_below_remaining` (default 20). Codex hyper mode applies
+`routing.claude_saving_below_remaining` (default 20). Claude hyper mode applies
+when weekly remaining quota is at or above
+`routing.claude_hyper_at_or_above_remaining` (default 50); saving wins below its
+own threshold. Only in Claude hyper does the advisor take its config entry; in
+every other Claude mode it uses `opus` high. Claude hyper changes no worker
+route and not the orchestrator entry. The `advisor:` line of
+`repo-harness quota` names the advisor model. A seat that runs takes a new
+model only at a tier-2 reset (`/clear`), where `seats reset` starts it again
+from its argv; see Seat reset in herdr-notify. Codex hyper mode applies
 when weekly remaining quota is at or above
 `routing.codex_hyper_at_or_above_remaining` (default 50). Quota modes are
 derived, never stored. Codex hyper seats use `gpt-6-astra` high. A Pi seat on `magpie/codex/`

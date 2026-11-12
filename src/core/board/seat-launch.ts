@@ -3,7 +3,7 @@
 // never claims a limit that the host cannot apply.
 import { PANE_PREFIX } from '../terminal/pane-prefix';
 import { isWorkerSeat, seatTakesFleet, type LaunchSeatId, type SeatConfigV1, type SeatTool } from './seats-settings';
-import { SEAT_ENV, SEAT_REPOSITORY_ENV, isResetSeat } from './seat-reset';
+import { SEAT_EFFORT_ENV, SEAT_ENV, SEAT_MODEL_ENV, SEAT_REPOSITORY_ENV, isResetSeat } from './seat-reset';
 
 /** `seats`: the stored section. `defaults`: no section, so `DEFAULT_SEATS_CONFIG`. */
 export type SeatLaunchSource = 'seats' | 'defaults';
@@ -176,10 +176,10 @@ function brief(seat: LaunchSeatId, config: SeatConfigV1, fleet: readonly string[
 
 /**
  * Every launch starts with `env`: it unsets the seat identity that a seat parent passes down, so that only a reset
- * seat launch names a seat to the hooks (#1972), and the Pi role directory, so that only a Pi seat with a fleet names one (#1977). `assignments` follow the unset options.
+ * seat launch names a seat and its launch model to the hooks (#1972, #2633), and the Pi role directory, so that only a Pi seat with a fleet names one (#1977). `assignments` follow the unset options.
  */
 function seatEnv(assignments: readonly string[]): string[] {
-  return ['env', '-u', SEAT_ENV, '-u', SEAT_REPOSITORY_ENV, '-u', PI_EXTRA_AGENT_DIRS_ENV, ...assignments];
+  return ['env', '-u', SEAT_ENV, '-u', SEAT_REPOSITORY_ENV, '-u', SEAT_MODEL_ENV, '-u', SEAT_EFFORT_ENV, '-u', PI_EXTRA_AGENT_DIRS_ENV, ...assignments];
 }
 
 function claudeLaunch(seat: LaunchSeatId, config: SeatConfigV1, agentTypes: readonly string[], name: string | undefined, repositoryId: string | undefined): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
@@ -200,10 +200,12 @@ function claudeLaunch(seat: LaunchSeatId, config: SeatConfigV1, agentTypes: read
     { subject: 'fleet', level: config.fleet.length === 0 ? 'enforced' : 'named_types_only' },
   ];
   const text = brief(seat, config, config.fleet, limits);
-  // The Stop hook resets only a session whose env names its seat and repository (#1972).
+  // The Stop hook resets only a session whose env names its seat and repository (#1972). The launch model lets a
+  // tier-2 reset see a mode change (#2633).
   const env = [
     ...(seat === 'orchestrator' && on('tasks') ? [`CLAUDE_CODE_TASK_LIST_ID=${ORCHESTRATOR_TASK_LIST_ID}`] : []),
-    ...(isResetSeat(seat) && repositoryId !== undefined ? [`${SEAT_ENV}=${seat}`, `${SEAT_REPOSITORY_ENV}=${repositoryId}`] : []),
+    ...(isResetSeat(seat) && repositoryId !== undefined ? [`${SEAT_ENV}=${seat}`, `${SEAT_REPOSITORY_ENV}=${repositoryId}`,
+      ...(config.model === null ? [] : [`${SEAT_MODEL_ENV}=${config.model}`]), ...(config.effort === null ? [] : [`${SEAT_EFFORT_ENV}=${config.effort}`])] : []),
   ];
   return {
     argv: [

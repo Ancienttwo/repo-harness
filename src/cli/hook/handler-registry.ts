@@ -10,7 +10,7 @@ import type { SessionContextSection } from './session-context-budget';
 import { collectArchitectureNotice } from './hook-protocol';
 import { resolveCapabilityOwnership } from '../../effects/state/resolve-effective-state';
 import { payloadString } from './hook-input';
-import { isSeatSessionSource, seatResetIdentity } from '../../core/board/seat-reset';
+import { isSeatSessionSource, seatLaunchModel, seatResetIdentity } from '../../core/board/seat-reset';
 import { recordSeatSession } from '../../effects/board/seat-reset';
 
 /**
@@ -41,7 +41,7 @@ function seatSessionDiagnostic(context: HookHandlerContext): string {
   const transcriptPath = payloadString(context.payload, 'transcript_path');
   if (identity === null || !isSeatSessionSource(source) || transcriptPath === '') return '';
   try {
-    recordSeatSession(identity, { sessionId: context.identity.sessionId, transcriptPath, source }, context.now);
+    recordSeatSession(identity, { sessionId: context.identity.sessionId, transcriptPath, source, ...seatLaunchModel(context.env) }, context.now);
     return '';
   } catch (error) {
     return `repo-harness: seat session not recorded: ${(error as Error).message}\n`;

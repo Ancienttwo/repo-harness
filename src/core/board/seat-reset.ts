@@ -8,6 +8,19 @@ export type ResetSeat = typeof RESET_SEATS[number];
 /** The env of a reset seat, set only by `repo-harness seats argv` with `--repository-id`. */
 export const SEAT_ENV = 'REPO_HARNESS_SEAT';
 export const SEAT_REPOSITORY_ENV = 'REPO_HARNESS_SEAT_REPOSITORY';
+/** The effective model and effort of the reset seat launch (#2633); the SessionStart hook records them in `session.json`. */
+export const SEAT_MODEL_ENV = 'REPO_HARNESS_SEAT_MODEL';
+export const SEAT_EFFORT_ENV = 'REPO_HARNESS_SEAT_EFFORT';
+
+export interface SeatLaunchModel {
+  readonly model: string | null;
+  readonly effort: string | null;
+}
+
+/** The launch model of the session from its env; an unset or empty value is null. */
+export function seatLaunchModel(env: NodeJS.ProcessEnv): SeatLaunchModel {
+  return { model: env[SEAT_MODEL_ENV] || null, effort: env[SEAT_EFFORT_ENV] || null };
+}
 
 export const SEAT_RESET_CONTEXT_TOKENS = 380_000;
 

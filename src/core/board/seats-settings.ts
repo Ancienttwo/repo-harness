@@ -60,14 +60,16 @@ export type CodexCreditMode = typeof CODEX_CREDIT_MODES[number];
 
 export type SeatRoutingV1 = { readonly [task in RoutingClass]: readonly WorkerSeatId[] } & {
   readonly claude_saving_below_remaining: number;
+  /** Claude hyper mode (#2633): weekly remaining at or above this percent. Saving wins below its own threshold. */
+  readonly claude_hyper_at_or_above_remaining: number;
   readonly codex_hyper_at_or_above_remaining: number;
   readonly codex_credit_mode: CodexCreditMode;
   /** Below this credit balance the credit mode acts as `off`. */
   readonly codex_credit_floor: number;
   readonly low_quota_explorer: SeatModelV1;
 };
-export const ROUTING_KEYS = [...ROUTING_CLASSES, 'claude_saving_below_remaining', 'codex_hyper_at_or_above_remaining', 'codex_credit_mode', 'codex_credit_floor',
-  'low_quota_explorer'] as const satisfies readonly (keyof SeatRoutingV1)[];
+export const ROUTING_KEYS = [...ROUTING_CLASSES, 'claude_saving_below_remaining', 'claude_hyper_at_or_above_remaining', 'codex_hyper_at_or_above_remaining',
+  'codex_credit_mode', 'codex_credit_floor', 'low_quota_explorer'] as const satisfies readonly (keyof SeatRoutingV1)[];
 export type SeatsConfigV1 = { readonly [seat in Exclude<SeatId, OptionalSeatId>]: SeatConfigV1 } & {
   readonly [seat in OptionalSeatId]: SeatConfigV1 | null;
 } & {
@@ -98,6 +100,7 @@ export const DEFAULT_SEATS_CONFIG: SeatsConfigV1 = Object.freeze({
   reviewer: Object.freeze({ runtime: 'claude', model: 'opus', effort: 'high', tools: REVIEW_TOOLS, fleet: Object.freeze([]) }),
   routing: Object.freeze({
     claude_saving_below_remaining: 20,
+    claude_hyper_at_or_above_remaining: 50,
     codex_hyper_at_or_above_remaining: 50,
     codex_credit_mode: 'off',
     codex_credit_floor: 0,
@@ -111,6 +114,13 @@ export const DEFAULT_SEATS_CONFIG: SeatsConfigV1 = Object.freeze({
 });
 
 export const SEATS_CONFIG_UPDATE_ACTION = 'repo-harness update';
+
+/** The routing keys that came after the first stored sections (#2630, #2633): `repo-harness update` adds each with its default. */
+export const INTRODUCED_ROUTING_DEFAULTS = Object.freeze({
+  codex_credit_mode: DEFAULT_SEATS_CONFIG.routing.codex_credit_mode,
+  codex_credit_floor: DEFAULT_SEATS_CONFIG.routing.codex_credit_floor,
+  claude_hyper_at_or_above_remaining: DEFAULT_SEATS_CONFIG.routing.claude_hyper_at_or_above_remaining,
+}) satisfies Partial<SeatRoutingV1>;
 
 export class SeatsConfigMigrationRequiredError extends Error {
   readonly code = 'seats_config_migration_required';
@@ -244,6 +254,7 @@ function decodeRouting(value: unknown, code: string): SeatRoutingV1 {
     return [task, seats as readonly WorkerSeatId[]];
   })) as Pick<SeatRoutingV1, RoutingClass>;
   return { ...routes, claude_saving_below_remaining: percent(record.claude_saving_below_remaining),
+    claude_hyper_at_or_above_remaining: percent(record.claude_hyper_at_or_above_remaining),
     codex_hyper_at_or_above_remaining: percent(record.codex_hyper_at_or_above_remaining),
     codex_credit_mode: CODEX_CREDIT_MODES.includes(record.codex_credit_mode as CodexCreditMode) ? record.codex_credit_mode as CodexCreditMode : invalid(code),
     codex_credit_floor: typeof record.codex_credit_floor === 'number' && Number.isFinite(record.codex_credit_floor) && record.codex_credit_floor >= 0
@@ -276,10 +287,9 @@ export function decodeSeatsConfig(value: unknown): SeatsConfigV1 {
   const routing = record.routing;
   if (typeof routing === 'object' && routing !== null && !Array.isArray(routing)) {
     if ('mode' in routing || 'hyper' in routing) throw new SeatsConfigMigrationRequiredError();
-    // A section without the credit keys (#2630) needs the update only when the values it has are valid.
-    if (!('codex_credit_mode' in routing) || !('codex_credit_floor' in routing)) {
-      const { codex_credit_mode, codex_credit_floor } = DEFAULT_SEATS_CONFIG.routing;
-      decodeSeatsRecord({ ...record, routing: { codex_credit_mode, codex_credit_floor, ...routing } }, code);
+    // A section without an introduced routing key needs the update only when the values it has are valid.
+    if (Object.keys(INTRODUCED_ROUTING_DEFAULTS).some(key => !(key in routing))) {
+      decodeSeatsRecord({ ...record, routing: { ...INTRODUCED_ROUTING_DEFAULTS, ...routing } }, code);
       throw new SeatsConfigMigrationRequiredError();
     }
   }

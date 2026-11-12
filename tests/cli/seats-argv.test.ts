@@ -6,7 +6,7 @@ import { tmpdir } from "os";
 import { delimiter, dirname, join } from "path";
 import { seatPaneName } from "../../src/core/board/seat-launch";
 import { HANDOFF_SECTIONS, seatResetReason, seatResetSteps } from "../../src/core/board/seat-reset";
-import { SeatResetError, runSeatReset, type SeatResetNotify } from "../../src/effects/board/seat-reset";
+import { SeatResetError, runSeatReset, type SeatRelaunch, type SeatResetNotify } from "../../src/effects/board/seat-reset";
 import { DEFAULT_SEATS_CONFIG, WORKER_SEAT_IDS } from "../../src/core/board/seats-settings";
 import { repoHarnessRepoIdFor } from "../../src/effects/repo-registry";
 import { classifyQuotaReading, decodeCodexRateLimitsResult } from "../../src/core/board/quota";
@@ -121,7 +121,7 @@ const denied = (args: string[]) => values(args, "--disallowedTools");
 /** With --repository-id the argv is `/bin/sh -c <script> <bun> <cli>` and then the agent argv. */
 const agent = (launch: { argv: string[] }) => launch.argv.slice(5);
 /** Every seat argv first unsets the seat identity that it inherits and the Pi role directory (#1975, #1977); `bare` checks that prefix and drops it. */
-const UNSET_SEAT = ["env", "-u", "REPO_HARNESS_SEAT", "-u", "REPO_HARNESS_SEAT_REPOSITORY", "-u", "PI_SUBAGENT_EXTRA_AGENT_DIRS"];
+const UNSET_SEAT = ["env", "-u", "REPO_HARNESS_SEAT", "-u", "REPO_HARNESS_SEAT_REPOSITORY", "-u", "REPO_HARNESS_SEAT_MODEL", "-u", "REPO_HARNESS_SEAT_EFFORT", "-u", "PI_SUBAGENT_EXTRA_AGENT_DIRS"];
 function bare(args: string[]): unknown[] {
   expect(args.slice(0, UNSET_SEAT.length)).toEqual(UNSET_SEAT);
   return args.slice(UNSET_SEAT.length);
@@ -349,13 +349,18 @@ describe("repo-harness seats argv", () => {
       writeFileSync(join(home, 'codex-used'), '51');
       expect(bare(launch(home, "worker").argv).slice(0, 3)).toEqual(["codex", "-m", DEFAULT_SEATS_CONFIG.worker.model]);
       expect(bare(launch(home, "worker-important-fast").argv).slice(0, 5)).toEqual(["claude", "--model", "sonnet", "--effort", "medium"]);
-      expect(bare(launch(home, "advisor").argv).slice(0, 5)).toEqual(["claude", "--model", "fable", "--effort", "high"]);
       expect(bare(launch(home, "worker-light").argv).slice(0, 5)).toEqual(["pi", "--provider", "magpie", "--model", "cursor/deepseek-v41-flash-1017"]);
       mkdirSync(join(home, ".repo-harness", "quota"));
+      const claudeUsed = (used: number) => writeFileSync(join(home, ".repo-harness", "quota", "claude.json"), JSON.stringify({ observed_at: new Date().toISOString(), rate_limits: {
+        seven_day: { used_percentage: used, resets_at: Math.floor(Date.now() / 1000) + 3600 },
+      } }));
+      // #2633: the advisor takes its config entry only in Claude hyper (50% or more left); normal gives opus high.
+      for (const [used, model] of [[50, "fable"], [51, "opus"]] as const) {
+        claudeUsed(used);
+        expect(bare(launch(home, "advisor").argv).slice(0, 5)).toEqual(["claude", "--model", model, "--effort", "high"]);
+      }
       for (const used of [81, 95]) {
-        writeFileSync(join(home, ".repo-harness", "quota", "claude.json"), JSON.stringify({ observed_at: new Date().toISOString(), rate_limits: {
-          seven_day: { used_percentage: used, resets_at: Math.floor(Date.now() / 1000) + 3600 },
-        } }));
+        claudeUsed(used);
         for (const id of ['advisor', 'orchestrator', 'worker-important-fast']) {
           const result = argv(home, id, '--json');
           if (used === 95 || id === 'worker-important-fast') {
@@ -392,7 +397,8 @@ describe("repo-harness seats argv", () => {
       const advisor = launch(home, "advisor");
       expect(advisor.source).toBe("defaults");
       expect(advisor.brief).toContain("Collect evidence through your sub-agents: `deep-reasoner`, `explorer`.");
-      expect(bare(advisor.argv).slice(0, 5)).toEqual(["claude", "--model", "fable", "--effort", "high"]);
+      // No Claude quota reading gives the unknown mode, which is not hyper, so the advisor takes opus high (#2633).
+      expect(bare(advisor.argv).slice(0, 5)).toEqual(["claude", "--model", "opus", "--effort", "high"]);
       expect(advisor.argv.at(-1)).toBe(advisor.brief);
       // The allow list holds only the tools of the enabled groups; every other built-in tool, such as Workflow, is off.
       expect(tools(advisor.argv)).toEqual(["ToolSearch", "ListMcpResourcesTool", "ReadMcpResourceTool", "WebFetch", "WebSearch", "Read", "Glob", "Grep",
@@ -716,12 +722,14 @@ describe("repo-harness seats argv", () => {
         const named = (cwd: string, ...args: string[]) => JSON.parse(run(registryEnv(home), [...args, "--repository-id", "1186405141", "--json"], cwd).stdout);
         const orchestrator = named(repo, "orchestrator");
         expect([orchestrator.name, orchestrator.tab]).toEqual(["rh-orch", "orch"]);
-        // A Claude seat carries the same name as its session name; the reset seats name their seat and repository in the env (#1972).
-        expect(agent(orchestrator).slice(0, 13)).toEqual(["env", "-u", "REPO_HARNESS_SEAT", "-u", "REPO_HARNESS_SEAT_REPOSITORY", "-u", "PI_SUBAGENT_EXTRA_AGENT_DIRS", "CLAUDE_CODE_TASK_LIST_ID=repo-harness-orchestrator",
-          "REPO_HARNESS_SEAT=orchestrator", "REPO_HARNESS_SEAT_REPOSITORY=1186405141", "claude", "-n", "rh-orch"]);
+        // A Claude seat carries the same name as its session name; the reset seats name their seat and repository (#1972)
+        // and their effective model and effort (#2633) in the env: the advisor has no quota reading, so it gets opus high.
+        expect(agent(orchestrator).slice(0, 19)).toEqual([...UNSET_SEAT, "CLAUDE_CODE_TASK_LIST_ID=repo-harness-orchestrator",
+          "REPO_HARNESS_SEAT=orchestrator", "REPO_HARNESS_SEAT_REPOSITORY=1186405141", "REPO_HARNESS_SEAT_MODEL=opus", "REPO_HARNESS_SEAT_EFFORT=high", "claude", "-n", "rh-orch"]);
         const advisor = named(repo, "advisor", "--parent", "1000");
         expect([advisor.name, advisor.tab]).toEqual(["rh-adv", "orch"]);
-        expect(agent(advisor).slice(0, 12)).toEqual(["env", "-u", "REPO_HARNESS_SEAT", "-u", "REPO_HARNESS_SEAT_REPOSITORY", "-u", "PI_SUBAGENT_EXTRA_AGENT_DIRS", "REPO_HARNESS_SEAT=advisor", "REPO_HARNESS_SEAT_REPOSITORY=1186405141", "claude", "-n", "rh-adv"]);
+        expect(agent(advisor).slice(0, 18)).toEqual([...UNSET_SEAT, "REPO_HARNESS_SEAT=advisor", "REPO_HARNESS_SEAT_REPOSITORY=1186405141",
+          "REPO_HARNESS_SEAT_MODEL=opus", "REPO_HARNESS_SEAT_EFFORT=high", "claude", "-n", "rh-adv"]);
         // A linked worktree resolves to its primary checkout; the default worker runs Codex, which has no session name flag.
         const worker = named(worktree, "worker", "--parent", "1000", "--issue", "1508", "--pr", "1521", "--qualifier", "device");
         expect([worker.name, worker.tab]).toEqual(["rh-w-1508-device", "#1000"]);
@@ -836,7 +844,7 @@ describe("repo-harness seats reset (#1972)", () => {
    * `sendFail` refuses a send.
    */
   function withReset(fn: (f: { handoff: string; body: string; sha: (text: string) => string; state: (patch: Record<string, unknown>) => void;
-    reset: (input?: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void; notify?: SeatResetNotify; action?: "compact" | "reset" | null }) => Promise<unknown>;
+    reset: (input?: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunch?: () => Promise<SeatRelaunch>; before?: () => void; notify?: SeatResetNotify; action?: "compact" | "reset" | null }) => Promise<unknown>;
     home: string; sends: () => string[]; calls: () => string[]; log: () => { kind: string; detail: string; notice: string; requested_at: string }[] }) => Promise<void>, seat: "advisor" | "orchestrator" = "advisor") {
     return async () => {
       const home = mkdtempSync(join(tmpdir(), "seats-reset-"));
@@ -915,7 +923,7 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
         const body = HANDOFF_SECTIONS.map(section => `## ${section}\n\nstate\n`).join("\n");
         const sha = (text: string) => createHash("sha256").update(text).digest("hex");
         const requestedAt = new Date(Date.now() - 60_000).toISOString();
-        const reset = async (input: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void; notify?: SeatResetNotify; action?: "compact" | "reset" | null } = {}) => {
+        const reset = async (input: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunch?: () => Promise<SeatRelaunch>; before?: () => void; notify?: SeatResetNotify; action?: "compact" | "reset" | null } = {}) => {
           const text = input.text ?? body;
           writeFileSync(handoff, text);
           if (input.handoff === false) rmSync(handoff);
@@ -929,7 +937,7 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
           try {
             return await runSeatReset(input.path ?? handoff, input.sha256 ?? sha(text), {
               env: { ...base, HOME: home, REPO_HARNESS_HOME: join(home, ".repo-harness"), HC_TERMINAL_ID: input.caller ?? "t2", PATH: `${join(home, "bin")}:/bin:/usr/bin` },
-              timeouts, notify: input.notify, relaunchArgv: input.relaunchArgv ?? (async () => ["/bin/sh", "-c", "exec claude", "x y"]),
+              timeouts, notify: input.notify, relaunch: input.relaunch ?? (async () => ({ argv: ["/bin/sh", "-c", "exec claude", "x y"], model: "fable", effort: "high" })),
             });
           } catch (error) {
             return { error: (error as SeatResetError).code, outcome: (error as SeatResetError).outcome };
@@ -1162,10 +1170,29 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
 
   test("a relaunch argv that cannot be built types no /exit and leaves the session running", withReset(async ({ reset, state, sends, log }) => {
     state({ signal: false });
-    const relaunchArgv = async (): Promise<string[]> => { throw new Error("The stored seats section needs a one-shot migration. Run repo-harness update."); };
-    expect(await reset({ relaunchArgv })).toEqual({ error: "resume_not_sent", outcome: "uncertain" });
+    const relaunch = async (): Promise<SeatRelaunch> => { throw new Error("The stored seats section needs a one-shot migration. Run repo-harness update."); };
+    expect(await reset({ relaunch })).toEqual({ error: "resume_not_sent", outcome: "uncertain" });
     expect([sends(), log().at(-1)?.kind, log().at(-1)?.detail]).toEqual([Array(4).fill("/clear"), "relaunch_failed",
       "relaunch_argv_failed: The stored seats section needs a one-shot migration. Run repo-harness update"]);
+  }));
+
+  test("a reset request with another effective model starts the seat again from its argv; the same model, a failed check or compact types the command (#2633)", withReset(async ({ home, handoff, reset, sends, log }) => {
+    const dir = dirname(handoff);
+    // A session record of the launch model, older than the request; the claim of the earlier run is removed so the request runs again.
+    const recorded = (model: string) => () => {
+      for (const name of readdirSync(dir).filter(entry => entry.startsWith("claim-"))) rmSync(join(dir, name));
+      writeFileSync(join(dir, "session.json"), JSON.stringify({ session_id: "s", transcript_path: join(home, "old.jsonl"), source: "startup",
+        started_at: new Date(Date.now() - 120_000).toISOString(), model, effort: "high" }));
+    };
+    const failed = async (): Promise<SeatRelaunch> => { throw new Error("quota read failed"); };
+    const cleared = { requester: "t5", seat: "advisor", relaunched: false, logErrors: [] };
+    expect(await reset({ before: recorded("fable") })).toEqual(cleared);
+    expect(await reset({ before: recorded("opus") })).toEqual({ ...cleared, relaunched: true });
+    expect(await reset({ before: recorded("opus"), relaunch: failed })).toEqual(cleared);
+    expect(await reset({ before: recorded("opus"), action: "compact" })).toEqual(cleared);
+    expect(sends()).toEqual(["/clear", prompt(handoff), "/exit", `sh ${join(dir, "relaunch.sh")}`, prompt(handoff), "/clear", prompt(handoff), "/compact", compactPrompt(handoff)]);
+    expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([["reset", "cleared"], ["reset", "restarted"],
+      ["model_check_failed", "relaunch_argv_failed: quota read failed"], ["reset", "cleared"], ["reset", "compacted"]]);
   }));
 
   test("a relaunch that cannot end claude logs the failure and reports an uncertain reset", withReset(async ({ reset, state, sends, log }) => {
