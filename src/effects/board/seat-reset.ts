@@ -2,7 +2,7 @@ import { sha256Hex } from '../../core/evidence/sha256';
 import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
 import {
-  RESET_SEATS, SEAT_NO_RESET_MESSAGE, SEAT_RESET_COMMAND, SEAT_RESET_RETRIES, handoffIdentity, isSeatResetAction, missingHandoffSections, seatResetClaimPath,
+  RESET_SEATS, seatNoResetMessage, SEAT_RESET_COMMAND, SEAT_RESET_RETRIES, handoffIdentity, isSeatResetAction, missingHandoffSections, seatResetClaimPath,
   seatResetLogPath, seatResetRequestPath, isSeatSessionSource, seatResetDirectory, seatResumePrompt, seatRewriteMessage, seatSessionPath,
   type SeatResetAction, type SeatResetIdentity, type SeatSessionSource,
 } from '../../core/board/seat-reset';
@@ -75,20 +75,19 @@ export function writeSeatResetRequest(identity: SeatResetIdentity, now: Date, re
 }
 
 /**
- * True while the request for this transcript is open: no session record is newer than it. The block is once per
- * session segment; `/compact` keeps the transcript path, so its SessionStart record ends the segment. An absent or
- * unreadable request is false.
+ * True while a valid request for this transcript is open. The block is once per session segment; `/compact` keeps
+ * the transcript path, so its SessionStart record ends the segment. An absent request, or one that `readRequest`
+ * refuses (an old request without an action), is not open, so the next crossing writes a fresh request.
  */
 export function seatResetRequested(identity: SeatResetIdentity, transcriptPath: string): boolean {
-  let request: { transcript_path?: unknown; requested_at?: unknown };
-  try {
-    request = JSON.parse(readFileSync(seatResetRequestPath(identity), 'utf8')) as typeof request;
-  } catch {
-    return false;
-  }
-  if (request.transcript_path !== transcriptPath) return false;
+  const request = readRequest(identity);
+  return request !== null && request.transcriptPath === transcriptPath && requestOpen(identity, request);
+}
+
+/** A request is open while no SessionStart record is newer than it: a newer record means a new session segment. */
+function requestOpen(identity: SeatResetIdentity, request: SeatRequest): boolean {
   const session = readSeatSession(identity);
-  return session === null || !(Date.parse(session.startedAt) > Date.parse(String(request.requested_at)));
+  return session === null || Date.parse(session.startedAt) <= Date.parse(request.requestedAt);
 }
 
 /**
@@ -130,7 +129,7 @@ export type SeatResetOutcome = 'nothing_sent' | 'rewrite_requested' | 'no_reset'
 
 export type SeatResetCode = 'handoff_path_invalid' | 'handoff_missing' | 'request_missing' | 'handoff_stale' | 'handoff_sha256_mismatch'
   | 'handoff_sections_missing' | 'already_claimed' | 'claim_failed' | 'caller_unknown' | 'requester_not_found' | 'requester_busy' | 'message_not_sent'
-  | 'hc_failed' | 'resume_not_sent';
+  | 'hc_failed' | 'resume_not_sent' | 'request_invalid' | 'request_closed';
 
 export class SeatResetError extends Error {
   constructor(readonly code: SeatResetCode, readonly outcome: SeatResetOutcome, message: string, readonly logErrors: readonly string[] = []) {
@@ -146,7 +145,10 @@ interface SeatRequest {
   readonly action: SeatResetAction;
 }
 
-/** A request without a valid time or a recorded action is not valid: the reset never chooses the action itself. */
+/**
+ * The one request validator of the Stop hook and `seats reset`. A request without a valid time or a recorded action
+ * is not valid: nothing chooses the action again.
+ */
 function readRequest(identity: SeatResetIdentity): SeatRequest | null {
   let value: { requested_at?: unknown; transcript_path?: unknown; action?: unknown } = {};
   try { value = JSON.parse(readFileSync(seatResetRequestPath(identity), 'utf8')); } catch { /* checked below */ }
@@ -380,20 +382,33 @@ class SeatResetRun {
   async reset(sha256: string): Promise<Omit<SeatResetResult, 'logErrors'>> {
     mkdirSync(seatResetDirectory(this.identity), { recursive: true, mode: 0o700 });
     try {
+      const requestPath = seatResetRequestPath(this.identity);
       this.request = readRequest(this.identity);
+      if (this.request === null && !existsSync(requestPath)) {
+        throw this.refuse('request_missing', 'nothing_sent', `${requestPath} is missing: the Stop hook did not ask for this reset.`);
+      }
       if (this.request === null) {
-        throw this.refuse('request_missing', 'nothing_sent', `${seatResetRequestPath(this.identity)} is missing or not valid: the Stop hook did not ask for this reset.`);
+        // An old request without an action, or a damaged one: no action is invented. The Stop hook does not count it
+        // as open, so the next crossing writes a fresh request.
+        this.findRequester();
+        throw this.release('request_invalid', `${requestPath} has no valid time or action, so nothing was typed`);
       }
       // A claimed request gets no message at all, not even REWRITE or NO-RESET.
       const claim = seatResetClaimPath(this.identity, this.request.requestedAt);
       if (existsSync(claim)) throw this.alreadyClaimed();
       this.findRequester();
+      this.prompt = seatResumePrompt(this.identity, this.caller, this.request.action);
       this.checkHandoff(sha256);
       this.wait();
       this.claim(claim);
+      // An auto-compaction or another reset after the request started a new segment: a second action would compact
+      // or clear the new summary.
+      if (!requestOpen(this.identity, this.request)) {
+        throw this.release('request_closed', `a session segment started after the reset request of ${this.request.requestedAt}, so nothing was typed`);
+      }
     } catch (error) {
       if (error instanceof SeatResetError) throw error;
-      throw this.refuse('hc_failed', 'nothing_sent', `hc failed before /clear: ${sentence(error)}.`);
+      throw this.refuse('hc_failed', 'nothing_sent', `hc failed before the first typed command: ${sentence(error)}.`);
     }
     // From the first typed command on, the requester may already be reset, so a failure gives the prompt to send by hand.
     try {
@@ -441,7 +456,22 @@ class SeatResetRun {
       }
     }
     this.caller = caller;
-    this.prompt = seatResumePrompt(this.identity, caller, this.request!.action);
+  }
+
+  /** Sends one message to the requester and records it once; a refused send records only the failure. */
+  private tell(kind: string, message: string, detail: string, problem: string): void {
+    try {
+      hcSend(this.requester, message, this.options);
+    } catch (error) {
+      throw this.refuse('message_not_sent', 'uncertain', `The ${kind} message to ${this.requester} failed: ${sentence(error)}. ${problem}`);
+    }
+    this.record(kind, detail);
+  }
+
+  /** Releases the requester with NO-RESET: it continues, and no slash command is typed. */
+  private release(code: 'request_invalid' | 'request_closed', reason: string): SeatResetError {
+    this.tell('no_reset', seatNoResetMessage(reason), code, `${reason}.`);
+    return new SeatResetError(code, 'no_reset', `${reason}. No reset: the requester continues.`);
   }
 
   /** A failed check asks for a rewrite, at most 3 times per request; then the requester continues without a reset. */
@@ -451,13 +481,8 @@ class SeatResetRun {
     const rewrites = this.count('rewrite');
     const [kind, message, outcome, result] = rewrites < SEAT_RESET_RETRIES
       ? ['rewrite', seatRewriteMessage(this.identity, problem.message, rewrites + 1), 'rewrite_requested' as const, `Rewrite ${rewrites + 1}/${SEAT_RESET_RETRIES} asked.`]
-      : ['no_reset', SEAT_NO_RESET_MESSAGE, 'no_reset' as const, 'The rewrites are used up: no reset; the requester continues.'];
-    try {
-      hcSend(this.requester, message, this.options);
-    } catch (error) {
-      throw this.refuse('message_not_sent', 'uncertain', `The ${kind} message to ${this.requester} failed: ${sentence(error)}. ${problem.message}`);
-    }
-    this.record(kind, problem.code);
+      : ['no_reset', seatNoResetMessage('the handoff failed every rewrite'), 'no_reset' as const, 'The rewrites are used up: no reset; the requester continues.'];
+    this.tell(kind, message, problem.code, problem.message);
     throw new SeatResetError(problem.code, outcome, `${problem.message} ${result}`);
   }
 

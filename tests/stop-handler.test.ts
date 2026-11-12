@@ -131,6 +131,7 @@ describe('Stop seat reset (#1972)', () => {
     expect([blocked.exitCode, blocked.stdout]).toEqual([2, '']);
     expect(blocked.stderr).toContain('the orchestrator seat context is 380000 tokens');
     expect(blocked.stderr).toContain(`Send \`RESET-REQUEST ${dir}/handoff.md <sha256>\` to the advisor seat`);
+    expect(blocked.stderr).toContain('0. Finish the planning and the dispatch that you have in hand. Start nothing new. Then write the handoff.');
     const bytes = statSync(transcript).size;
     expect(blocked.stderr).toContain(`The transcript is ${bytes} bytes, below 33554432, so the reset types /compact.`);
     expect(JSON.parse(readFileSync(join(dir, 'request.json'), 'utf8'))).toEqual({ requested_at: now.toISOString(), context_tokens: 380_000, transcript_path: transcript, action: 'compact', transcript_bytes: bytes });
@@ -143,6 +144,11 @@ describe('Stop seat reset (#1972)', () => {
     expect(stop(false)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
     session(new Date(now.getTime() + 1).toISOString());
     expect(stop(false).exitCode).toBe(2);
+    // A request of the old code (no action) for the same transcript fails the one request validator, so it is not open.
+    rmSync(join(dir, 'session.json'));
+    writeFileSync(join(dir, 'request.json'), JSON.stringify({ requested_at: now.toISOString(), context_tokens: 380_000, transcript_path: transcript }));
+    expect(stop(false).exitCode).toBe(2);
+    expect(JSON.parse(readFileSync(join(dir, 'request.json'), 'utf8')).action).toBe('compact');
     // At or above the bound the request records /clear; a sparse file keeps the 32 MiB transcript cheap.
     const big = join(cwd, 'big.jsonl');
     const fd = openSync(big, 'w');

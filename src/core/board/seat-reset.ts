@@ -106,10 +106,15 @@ export function missingHandoffSections(text: string): string[] {
 
 const PEER: Readonly<Record<ResetSeat, ResetSeat>> = { orchestrator: 'advisor', advisor: 'orchestrator' };
 
-/** The handoff steps: the model writes the handoff, then asks its peer seat for the reset. The Stop hook and `seats handoff` print them. */
+/**
+ * The handoff steps: the model finishes the work in hand, writes the handoff, then asks its peer seat for the reset.
+ * The Stop hook and `seats handoff` print them. Step 0 is the joint decision of #2625 (owner word 2026-11-12): no hard
+ * stop, but no new work after the threshold.
+ */
 export function seatResetSteps(identity: SeatResetIdentity, action: SeatResetAction): string {
   const path = seatHandoffPath(identity);
   return [
+    '0. Finish the planning and the dispatch that you have in hand. Start nothing new. Then write the handoff.',
     `1. Write the handoff to ${path} with exactly these sections:`,
     '',
     seatHandoffTemplate(),
@@ -141,5 +146,7 @@ export function seatRewriteMessage(identity: SeatResetIdentity, problem: string,
   return `REWRITE ${attempt}/${SEAT_RESET_RETRIES}: ${problem} Write ${seatHandoffPath(identity)} again and send RESET-REQUEST again.`;
 }
 
-/** The message to the requester when its handoff failed every rewrite: no reset, auto-compaction handles the context. */
-export const SEAT_NO_RESET_MESSAGE = 'NO-RESET: the handoff failed every rewrite. Continue your work; Claude Code auto-compaction handles the context.';
+/** The message that releases the requester with no reset: it continues, and auto-compaction handles the context. */
+export function seatNoResetMessage(reason: string): string {
+  return `NO-RESET: ${reason}. Continue your work; Claude Code auto-compaction handles the context.`;
+}

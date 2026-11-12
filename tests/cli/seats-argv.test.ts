@@ -833,7 +833,7 @@ describe("repo-harness seats reset (#1972)", () => {
    * `sendFail` refuses a send.
    */
   function withReset(fn: (f: { handoff: string; body: string; sha: (text: string) => string; state: (patch: Record<string, unknown>) => void;
-    reset: (input?: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void; notify?: SeatResetNotify; action?: "compact" | "reset" }) => Promise<unknown>;
+    reset: (input?: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void; notify?: SeatResetNotify; action?: "compact" | "reset" | null }) => Promise<unknown>;
     home: string; sends: () => string[]; calls: () => string[]; log: () => { kind: string; detail: string; notice: string; requested_at: string }[] }) => Promise<void>, seat: "advisor" | "orchestrator" = "advisor") {
     return async () => {
       const home = mkdtempSync(join(tmpdir(), "seats-reset-"));
@@ -895,13 +895,15 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
         const body = HANDOFF_SECTIONS.map(section => `## ${section}\n\nstate\n`).join("\n");
         const sha = (text: string) => createHash("sha256").update(text).digest("hex");
         const requestedAt = new Date(Date.now() - 60_000).toISOString();
-        const reset = async (input: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void; notify?: SeatResetNotify; action?: "compact" | "reset" } = {}) => {
+        const reset = async (input: { path?: string; text?: string; sha256?: string; caller?: string; request?: boolean; stale?: boolean; handoff?: boolean; relaunchArgv?: () => Promise<string[]>; before?: () => void; notify?: SeatResetNotify; action?: "compact" | "reset" | null } = {}) => {
           const text = input.text ?? body;
           writeFileSync(handoff, text);
           if (input.handoff === false) rmSync(handoff);
           if (input.stale === true) utimesSync(handoff, new Date(Date.now() - 120_000), new Date(Date.now() - 120_000));
           rmSync(join(dir, "request.json"), { force: true });
-          if (input.request !== false) writeFileSync(join(dir, "request.json"), JSON.stringify({ requested_at: requestedAt, context_tokens: 400000, transcript_path: join(home, "old.jsonl"), action: input.action ?? "reset", transcript_bytes: 1 }));
+          if (input.request !== false) writeFileSync(join(dir, "request.json"), JSON.stringify({ requested_at: requestedAt, context_tokens: 400000, transcript_path: join(home, "old.jsonl"), transcript_bytes: 1,
+            // null writes the request of the old code, which has no action.
+            ...(input.action === null ? {} : { action: input.action ?? "reset" }) }));
           const { HERDR_ENV: _nested, ...base } = process.env;
           input.before?.();
           try {
@@ -1042,6 +1044,20 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
     state({ signal: false });
     expect(await reset({ action: "compact" })).toEqual({ error: "resume_not_sent", outcome: "uncertain" });
     expect([sends(), log().map(({ kind, detail }) => [kind, detail])]).toEqual([["/compact"], [["resume", "no_signal"]]]);
+  }));
+
+  test("a session segment newer than the request types no command and releases the requester with NO-RESET (#2625)", withReset(async ({ home, handoff, reset, calls, log }) => {
+    const segment = () => writeFileSync(join(dirname(handoff), "session.json"), JSON.stringify({ session_id: "s", transcript_path: join(home, "old.jsonl"), source: "compact", started_at: new Date().toISOString() }));
+    expect(await reset({ action: "compact", before: segment })).toEqual({ error: "request_closed", outcome: "no_reset" });
+    expect(calls()).toEqual(["wait --timeout 600 -- t5", expect.stringMatching(/^send -- t5 NO-RESET: a session segment started after the reset request/u)]);
+    expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([["no_reset", "request_closed"]]);
+  }));
+
+  test("a request without an action types nothing and releases the requester with NO-RESET after the peer checks (#2625)", withReset(async ({ reset, calls, log }) => {
+    expect(await reset({ action: null, caller: "t5" })).toEqual({ error: "caller_unknown", outcome: "nothing_sent" });
+    expect(await reset({ action: null })).toEqual({ error: "request_invalid", outcome: "no_reset" });
+    expect(calls()).toEqual([expect.stringMatching(/^send -- t5 NO-RESET: \/tmp\/repo-harness-seats\/.*\/request\.json has no valid time or action/u)]);
+    expect(log().map(({ kind, detail }) => [kind, detail])).toEqual([["caller_unknown", expect.any(String)], ["no_reset", "request_invalid"]]);
   }));
 
   test("an unanswered compact prompt is sent 3 more times, then the relaunch sends the prompt with the state check (#2625)", withReset(async ({ handoff, reset, state, sends, log }) => {
