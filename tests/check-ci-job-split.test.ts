@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { analyzeAffectedTests, bundleInputPaths, discoverDailyInputs, discoverPlatformInputs, nativeTriggers, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
 import { auditDroppedTests } from '../scripts/ci-edge-audit';
 import { replayNeedsSource } from '../scripts/replay-ci-coverage';
+import { checkReleasedSections, releasedSections, sectionDrift } from '../scripts/check-changelog-released-sections';
 import { ARCHITECTURE_JOB, ARCHITECTURE_SUMMARY_PATH } from '../scripts/report-ci';
 
 const ROOT = resolve(import.meta.dir, '..');
@@ -1054,7 +1055,7 @@ describe('architecture lanes', () => {
     constraintIds: [LAYER_DIRECTION, PLUGIN_INTERNALS], importEdgeCount: 5521, unresolvedImports: [], violations: [constraintViolation(LAYER_DIRECTION)], ...fields } });
 
   // Real check-ci.sh with stub CLI results. `bun -e` and the shell logic stay real.
-  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; constraints?: string; summary?: boolean; history?: Array<{ manifest: boolean; hoursAgo: number }>; shallow?: boolean; gitFails?: string }) {
+  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; constraints?: string; summary?: boolean; history?: Array<{ manifest: boolean; hoursAgo: number }>; shallow?: boolean; gitFails?: string; changelog?: string; changelogExit?: number }) {
     const root = mkdtempSync(join(tmpdir(), 'rh-ci-architecture-'));
     const bin = join(root, 'bin');
     try {
@@ -1100,6 +1101,12 @@ describe('architecture lanes', () => {
         `if [[ "$4" == archctx ]]; then cat ${JSON.stringify(join(root, 'constraints.json'))}; exit 0; fi`,
         `exit ${fixture.codegraphExit ?? 0}`,
       ].join('\n'), { mode: 0o755 });
+      // The released-CHANGELOG check reads git; this stub records its arguments and reports fixture.results.
+      writeFileSync(join(root, 'repo/scripts/check-changelog-released-sections.ts'), [
+        `await Bun.write(${JSON.stringify(join(root, 'changelog-args'))}, process.argv.slice(2).join(' '));`,
+        `if (${JSON.stringify(fixture.changelog ?? '')}) console.log(${JSON.stringify(fixture.changelog ?? '')});`,
+        `if (${fixture.changelogExit ?? 0} !== 0) { console.error('[changelog] the merge result does not keep the bytes of the 0.31.0 section.'); process.exit(${fixture.changelogExit ?? 0}); }`,
+      ].join('\n'));
       const summaryPath = join(root, 'out/architecture/summary.json');
       const result = spawnSync('/bin/bash', ['scripts/check-ci.sh', ...args], {
         cwd: join(root, 'repo'), encoding: 'utf8',
@@ -1109,6 +1116,7 @@ describe('architecture lanes', () => {
         status: result.status, stdout: result.stdout, stderr: result.stderr,
         checked: existsSync(join(root, 'checked')),
         debtArgs: existsSync(join(root, 'debt-args')) ? readFileSync(join(root, 'debt-args'), 'utf8').trim() : null,
+        changelogArgs: existsSync(join(root, 'changelog-args')) ? readFileSync(join(root, 'changelog-args'), 'utf8').trim() : null,
         summary: existsSync(summaryPath) ? JSON.parse(readFileSync(summaryPath, 'utf8')) : null,
       };
     } finally {
@@ -1119,6 +1127,20 @@ describe('architecture lanes', () => {
   }
   const warnings = (stdout: string) => stdout.split('\n').filter(line => line.startsWith('::warning '));
   const errors = (stdout: string) => stdout.split('\n').filter(line => line.startsWith('::error '));
+
+  test('the PR lane runs the released-CHANGELOG check with the PR base and fails on a changed released section', () => {
+    const passed = runLane(['architecture-advisory', '--base', 'abc123'], { debt: debt([]), check: noop, checkExit: 0 });
+    expect(passed.status, passed.stderr).toBe(0);
+    expect(passed.changelogArgs).toBe('--base abc123');
+    expect(passed.stdout).toContain('[ci] released CHANGELOG sections');
+
+    // A changed released section stops the lane before the archctx gate.
+    const failed = runLane(['architecture-advisory', '--base', 'abc123'], { debt: debt([]), check: noop, checkExit: 0, changelogExit: 1 });
+    expect(failed.status, failed.stderr).toBe(1);
+    expect(failed.stderr).toContain('[changelog] the merge result does not keep the bytes of the 0.31.0 section.');
+    expect(errors(failed.stdout)).toEqual(['::error title=Released CHANGELOG sections::scripts/check-changelog-released-sections.ts failed for base abc123. Read the [changelog] line in the job log.']);
+    expect(failed.checked).toBe(false);
+  });
 
   test('new PR debt warns once per item with its subjects and action, then hand-edited generated output warns, and the lane exits 0', () => {
     const result = runLane(['architecture-advisory', '--base', 'abc123'], { debt: debt([debtItem(1), debtItem(2, [])]), check: planned, checkExit: 0 });
@@ -1268,5 +1290,78 @@ describe('historical replay source loading', () => {
     expect(replayNeedsSource('scripts/check-ci.sh')).toBe(true);
     expect(replayNeedsSource('src/x.ts')).toBe(true);
     expect(replayNeedsSource('docs/guide.md')).toBe(false);
+  });
+});
+
+describe('released CHANGELOG sections', () => {
+  const CHANGELOG = `# Changelog\n\n## [Unreleased]\n\n### Added\n\n- New entry. (#3)\n\n## [0.31.0] - 2026-11-12\n\n### Added\n\n- Released entry. (#1)\n\n## [0.30.0] - 2026-11-10\n\n### Fixed\n\n- Older entry. (#2)\n`;
+  // The merge result that git makes when the base renames [Unreleased] to 0.31.0 and the head adds its entry
+  // below the old heading: the entry lands inside the released section and the merge is still clean.
+  const PLACED_INSIDE = CHANGELOG.replace('- Released entry. (#1)\n', '- Released entry. (#1)\n- New entry. (#3)\n');
+  const RELEASE = CHANGELOG.replace('## [Unreleased]\n', '## [Unreleased]\n\n## [0.32.0] - 2026-11-14\n\n### Added\n\n- The release entry. (#4)\n');
+
+  test('a section runs from its heading to the next version heading', () => {
+    const sections = releasedSections(CHANGELOG);
+    expect([...sections.keys()]).toEqual(['0.31.0', '0.30.0']);
+    expect(sections.get('0.31.0')).toBe('## [0.31.0] - 2026-11-12\n\n### Added\n\n- Released entry. (#1)\n\n');
+    expect(sections.get('0.30.0')!.endsWith('- Older entry. (#2)\n')).toBe(true);
+    // [Unreleased] is not a released section, so its entries are free to change.
+    expect(sections.has('Unreleased')).toBe(false);
+  });
+
+  test('an entry that a merge placed inside a released section is drift', () => {
+    expect(sectionDrift(CHANGELOG, PLACED_INSIDE)).toEqual([{ version: '0.31.0', reason: 'changed' }]);
+  });
+
+  test('an [Unreleased] entry and a new version section are not drift', () => {
+    const entryOnly = CHANGELOG.replace('- New entry. (#3)', '- New entry. (#3) and a second sentence.');
+    expect(sectionDrift(CHANGELOG, entryOnly)).toEqual([]);
+    expect(sectionDrift(CHANGELOG, RELEASE)).toEqual([]);
+  });
+
+  test('a removed released section is drift, and a duplicate version heading fails closed', () => {
+    const removed = CHANGELOG.replace(/## \[0\.30\.0\][\s\S]*$/, '');
+    expect(sectionDrift(CHANGELOG, removed)).toEqual([{ version: '0.30.0', reason: 'removed' }]);
+    expect(() => releasedSections(`${CHANGELOG}\n## [0.31.0] - 2026-11-13\n`)).toThrow('two sections for version 0.31.0');
+  });
+
+  // The real fault from #2622: the released section at the base of the merge result, not of the branch.
+  test('the check compares with the PR base of the merge result, not with the merge base of the branch', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'rh-changelog-sections-'));
+    const git = (...args: string[]) => {
+      const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+      if (result.status !== 0) throw Error(result.stderr);
+      return result.stdout.trim();
+    };
+    const commit = (path: string, content: string, message: string) => {
+      mkdirSync(resolve(repo, path, '..'), { recursive: true });
+      writeFileSync(join(repo, path), content);
+      git('add', '.');
+      git('commit', '-qm', message);
+      return git('rev-parse', 'HEAD');
+    };
+    try {
+      git('init', '-q', '-b', 'main'); git('config', 'user.name', 'CI fixture'); git('config', 'user.email', 'ci@example.invalid'); git('config', 'commit.gpgsign', 'false');
+      const before = commit('docs/CHANGELOG.md', CHANGELOG, 'before release');
+      // The branch starts before the release commit and adds its entry below [Unreleased].
+      git('checkout', '-q', '-b', 'entry');
+      const head = commit('docs/CHANGELOG.md', CHANGELOG.replace('- New entry. (#3)', '- New entry. (#3) [the PR entry]'), 'the PR entry');
+      // main publishes a release: the new 0.32.0 section takes the entries that were under [Unreleased].
+      git('checkout', '-q', 'main');
+      const base = commit('docs/CHANGELOG.md', RELEASE, 'release 0.32.0');
+      // git places the branch hunk by its context lines, so the entry lands inside the released 0.32.0 section.
+      const report = checkReleasedSections(base, head, repo);
+      expect(report.sectionsAtBase).toBe(3);
+      expect(report.drift).toEqual([{ version: '0.32.0', reason: 'changed' }]);
+      // The same head against the pre-release base keeps the entry under [Unreleased], so there is no drift:
+      // the release commit, not the branch, moved the entry into a released section.
+      expect(checkReleasedSections(before, head, repo).drift).toEqual([]);
+      // A branch that starts at the release commit and adds its entry under [Unreleased] passes.
+      git('checkout', '-q', '-b', 'rebased', base);
+      const rebased = commit('docs/CHANGELOG.md', RELEASE.replace('## [Unreleased]\n', '## [Unreleased]\n\n### Added\n\n- Rebased entry. (#5)\n'), 'the rebased entry');
+      expect(checkReleasedSections(base, rebased, repo).drift).toEqual([]);
+      // A base that git cannot resolve fails with the reason, not with a silent pass.
+      expect(() => checkReleasedSections('missing', rebased, repo)).toThrow('is not a commit');
+    } finally { rmSync(repo, { recursive: true, force: true }); }
   });
 });
