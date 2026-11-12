@@ -208,16 +208,18 @@ test('reading the owner during real concurrent releases returns an owner or null
 }, 60_000);
 
 // Windows gives EPERM, not ENOENT, on a directory that a concurrent release left
-// delete-pending (#2588). The injected readdir runs the release race, then fails.
-function readOwnerWithWindowsEperm(race: (lockPath: string) => void): ExclusiveDirectoryLockOwner | null {
+// delete-pending (#2588), until the delete ends (#2615). The injected readdir
+// runs the release race, then fails once, or on every attempt for a refusal.
+function readOwnerWithWindowsEperm(race: (lockPath: string) => void, refused = false): ExclusiveDirectoryLockOwner | null {
   const root = temporaryRoot();
   const lockPath = join(root, LOCK);
   forgeOwner(root, { pid: process.pid });
   const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
-  const readdir = spyOn(fs, 'readdirSync').mockImplementationOnce(() => {
+  const fail = () => {
     race(lockPath);
     throw Object.assign(new Error(`EPERM: operation not permitted, scandir '${lockPath}'`), { code: 'EPERM', syscall: 'scandir' });
-  });
+  };
+  const readdir = refused ? spyOn(fs, 'readdirSync').mockImplementation(fail) : spyOn(fs, 'readdirSync').mockImplementationOnce(fail);
   Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
   try { return readExclusiveDirectoryLockOwner(root, LOCK); } finally {
     Object.defineProperty(process, 'platform', platform);
@@ -238,7 +240,11 @@ describe('windows EPERM on the owner read during a release', () => {
     })).toBeNull();
   });
 
-  test('the same lock directory keeps the EPERM as a real access refusal', () => {
-    expect(() => readOwnerWithWindowsEperm(() => {})).toThrow('EPERM');
+  test('the same lock directory whose EPERM clears reads its owner', () => {
+    expect(readOwnerWithWindowsEperm(() => {})?.pid).toBe(process.pid);
+  });
+
+  test('the same lock directory keeps an EPERM past the bound as a real access refusal', () => {
+    expect(() => readOwnerWithWindowsEperm(() => {}, true)).toThrow('EPERM');
   });
 });

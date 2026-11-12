@@ -12,6 +12,7 @@
  */
 
 import * as fs from 'fs';
+import { retryWindowsSharingRace } from '../../effects/atomic-append';
 import * as path from 'path';
 
 export function atomicWriteFileSync(filePath: string, content: string, options: { readonly mode?: number } = {}): void {
@@ -24,7 +25,7 @@ export function atomicWriteFileSync(filePath: string, content: string, options: 
   try {
     fs.writeFileSync(tmp, content, { encoding: 'utf-8', mode: mode === undefined ? undefined : 0o600 });
     if (mode !== undefined) fs.chmodSync(tmp, mode & 0o777);
-    fs.renameSync(tmp, filePath);
+    retryWindowsSharingRace(() => fs.renameSync(tmp, filePath));
   } finally {
     fs.rmSync(tmp, { force: true });
   }

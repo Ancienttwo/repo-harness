@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { retryWindowsSharingRace } from '../atomic-append';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -60,7 +61,7 @@ function writeClaudeQuotaCapture(rateLimits: unknown, now: Date, env: NodeJS.Pro
   const temp = `${path}.${randomUUID()}.tmp`;
   try {
     writeFileSync(temp, `${JSON.stringify(accepted)}\n`, { mode: 0o600, flag: 'wx' });
-    renameSync(temp, path);
+    retryWindowsSharingRace(() => renameSync(temp, path));
   } finally {
     rmSync(temp, { force: true });
   }

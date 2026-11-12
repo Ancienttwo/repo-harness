@@ -3,7 +3,7 @@ import { closeSync, constants, fsyncSync, lstatSync, mkdirSync, openSync, readFi
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { syncDirectoryDurably } from '../atomic-append';
+import { retryWindowsSharingRace, syncDirectoryDurably } from '../atomic-append';
 import { ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
 import { assertRuntimeTransactionContext, globalRuntimeScope, withRuntimeTransactionContext, type RuntimeTransactionContext } from '../locking/runtime-transaction-lock';
 import type { GlobalConfigurationWrite } from '../../core/architecture/contracts';
@@ -58,7 +58,7 @@ function replaceGlobalConfiguration(path: string, bytes: Buffer | null, assertOw
     } finally { closeSync(fd); }
     assertOwned();
     assertWritableConfiguration(path);
-    renameSync(temporary, path);
+    retryWindowsSharingRace(() => renameSync(temporary, path));
     syncDirectoryDurably(directory);
   } finally { rmSync(temporary, { force: true }); }
 }

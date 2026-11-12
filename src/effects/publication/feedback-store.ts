@@ -8,7 +8,7 @@ import { createHash, randomUUID } from 'crypto';
 import { closeSync, constants, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync } from 'fs';
 import { join } from 'path';
 
-import { createFileExclusiveDurably } from '../atomic-append';
+import { createFileExclusiveDurably, retryWindowsSharingRace } from '../atomic-append';
 import { canonicalFeedbackDeliveryReceiptBytes, canonicalFeedbackEventBytes, transitionFeedbackDeliveryReceipt, validateFeedbackDeliveryReceipt, validateFeedbackEvent, validateReactionAttemptReceipt, type FeedbackDeliveryReceiptV1, type FeedbackEventV1, type ReactionAttemptReceiptV1 } from '../../core/publication/feedback';
 import { byteCompare } from '../../core/evidence/byte-compare';
 import { resolveGitCommonDirectory } from '../git/common-directory';
@@ -293,7 +293,7 @@ export function writeFeedbackDeliveryReceipt(
   const temporary = join(parent, `.${hash(path)}.${process.pid}.${randomUUID()}.tmp`);
   createFileExclusiveDurably(temporary, bytes, 0o600, (error) => incomplete(`cannot write feedback delivery receipt: ${path}`, error));
   try {
-    renameSync(temporary, path);
+    retryWindowsSharingRace(() => renameSync(temporary, path));
     fsyncDirectory(parent);
   } catch (error) {
     throw incomplete(`cannot publish feedback delivery receipt: ${path}`, error);

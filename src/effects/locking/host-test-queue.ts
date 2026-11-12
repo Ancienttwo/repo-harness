@@ -1,6 +1,7 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { join } from 'path';
+import { retryWindowsSharingRace } from '../atomic-append.ts';
 import { processGroupExists } from '../process-group-termination.ts';
 import { repoHarnessHome } from '../repo-harness-home.ts';
 import {
@@ -140,7 +141,7 @@ function writeTicket(root: string, entry: HostTestQueueEntry): string {
   const path = join(root, TICKETS_PATH, ticketName(entry));
   const staged = `${path}.tmp`;
   writeFileSync(staged, `${JSON.stringify(toRecord(entry))}\n`, { mode: 0o600 });
-  renameSync(staged, path);
+  retryWindowsSharingRace(() => renameSync(staged, path));
   return path;
 }
 
@@ -149,23 +150,6 @@ function removeFile(path: string): void {
     unlinkSync(path);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-  }
-}
-
-/**
- * True when a read error means another queue member removed the ticket. On
- * Windows, a ticket that was just unlinked gives EPERM instead of ENOENT for a
- * short time; one lstat of the path separates that race from a real refusal.
- */
-function ticketVanished(path: string, error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException).code;
-  if (code === 'ENOENT') return true;
-  if (process.platform !== 'win32' || code !== 'EPERM') return false;
-  try {
-    lstatSync(path);
-    return false;
-  } catch (statError) {
-    return (statError as NodeJS.ErrnoException).code === 'ENOENT';
   }
 }
 
@@ -182,9 +166,10 @@ function readTickets(root: string): Ticket[] {
     const path = join(dir, name);
     let text: string;
     try {
-      text = readFileSync(path, 'utf-8');
+      // Windows gives EPERM for a ticket that another member just unlinked.
+      text = retryWindowsSharingRace(() => readFileSync(path, 'utf-8'));
     } catch (error) {
-      if (ticketVanished(path, error)) continue;
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
       throw error;
     }
     const entry = parseEntry(text);

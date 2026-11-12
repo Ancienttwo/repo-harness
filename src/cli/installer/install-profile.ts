@@ -1,4 +1,5 @@
 import { globalConfigurationPath, mutateGlobalConfiguration, restoreGlobalConfiguration } from '../../effects/configuration/global-configuration';
+import { retryWindowsSharingRace } from '../../effects/atomic-append';
 import wazaRules from "../../core/skill-surface/waza-shared-rules.json";
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches } from './skill-projection';
 import { configurationReceiptPath } from './configuration-ownership';
@@ -261,7 +262,7 @@ function removeCodegraphProjection(path: string): void {
   }
   const temp = `${path}.tmp-${process.pid}-${Date.now()}`;
   writeFileSync(temp, next, { mode: 0o600 });
-  renameSync(temp, path);
+  retryWindowsSharingRace(() => renameSync(temp, path));
 }
 
 function adapterHasRequiredProjection(path: string, host: HookHost, env: NodeJS.ProcessEnv): boolean {
@@ -1008,7 +1009,7 @@ function removeOwnedSkillLockEntries(env: NodeJS.ProcessEnv, skillNames: Readonl
   for (const name of skillNames) delete parsed.skills[name];
   const temp = `${lockPath}.tmp-${process.pid}-${Date.now()}`;
   writeFileSync(temp, `${JSON.stringify(parsed, null, 2)}\n`, { mode: 0o600 });
-  renameSync(temp, lockPath);
+  retryWindowsSharingRace(() => renameSync(temp, lockPath));
 }
 
 /** Remove the owned surfaces of each plugin that the target selection drops. A changed surface stops the switch. */
@@ -1393,7 +1394,7 @@ function writeState(state: InstallState, env: NodeJS.ProcessEnv): void {
   mkdirSync(dirname(target), { recursive: true });
   const temp = `${target}.tmp-${process.pid}-${Date.now()}`;
   writeFileSync(temp, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
-  renameSync(temp, target);
+  retryWindowsSharingRace(() => renameSync(temp, target));
 }
 
 /** Core and enabled plugins record the running CLI version. */

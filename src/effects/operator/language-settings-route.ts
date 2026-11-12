@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { retryWindowsSharingRace } from '../atomic-append';
 import { closeSync, constants, fchmodSync, fstatSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { JsonValue } from '../../core/evidence/types';
@@ -125,7 +126,7 @@ export function documentationLanguageWriteRoute(env?: NodeJS.ProcessEnv, adapter
                 writeFileSync(fd, next, 'utf8');
                 fchmodSync(fd, mode);
               } finally { closeSync(fd); }
-              renameSync(temporary, path);
+              retryWindowsSharingRace(() => renameSync(temporary, path));
             } catch (error) {
               rmSync(temporary, { force: true });
               throw error;

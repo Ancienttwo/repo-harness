@@ -1,4 +1,5 @@
 import { observationReadFileSync as readFileSync } from '../readonly-observation';
+import { retryWindowsSharingRace } from '../atomic-append';
 import { lstatSync, renameSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { resolveGitCommonDirectory } from '../git/common-directory';
@@ -36,7 +37,7 @@ const DEFAULT_VERSION_WRITE_EFFECTS: StateVersionWriteEffects = {
     writeFileSync(path, content, { mode: 0o600 });
   },
   publish(tempPath, ownerPath) {
-    renameSync(tempPath, ownerPath);
+    retryWindowsSharingRace(() => renameSync(tempPath, ownerPath));
   },
   removeTemp(tempPath) {
     unlinkSync(tempPath);

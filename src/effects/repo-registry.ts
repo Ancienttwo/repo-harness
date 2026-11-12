@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { retryWindowsSharingRace } from "./atomic-append";
 import { SHA256_PREFIXED_PATTERN } from "../core/evidence/sha256-pattern";
 import { sha256Prefixed } from "../core/evidence/sha256";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "fs";
@@ -300,7 +301,7 @@ function writeRegistryFile(path: string, repos: readonly RepoHarnessRegisteredRe
     encoding: "utf-8",
     mode: 0o600,
   });
-  renameSync(temporary, path);
+  retryWindowsSharingRace(() => renameSync(temporary, path));
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
