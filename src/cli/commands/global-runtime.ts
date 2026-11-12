@@ -44,7 +44,6 @@ import {
   requiredExplicitExternalDependencyInstallGroups,
   type SkillSurfaceCatalog,
 } from "../../core/skill-surface/catalog";
-import { mcpLocalConfigPath, parseMcpLocalConfig } from "../mcp/auth";
 import { hostSkillRoot, stagedSkillRoot } from "../../effects/host-skill-roots";
 import {
   discoverWindowsProtectedHelperContract,
@@ -87,7 +86,11 @@ export interface GlobalRuntimeOptions {
   reportLanguage?: ReportLanguageFlag;
   /** Internal-only capability proving that the caller owns the outer transaction. */
   candidateHandoff?: CandidateHandoffContext;
+  mcpLocalConfigCheck?: McpLocalConfigCheck;
 }
+
+/** The mcp plugin's read-only check of its local config; its code is loaded only by the CLI root. A refusal detail holds no file content. */
+export type McpLocalConfigCheck = (env: NodeJS.ProcessEnv) => { readonly status: 'ok' | 'skipped' | 'failed'; readonly detail: string };
 
 export interface GlobalRuntimeStep {
   owned_surface?: ManagedInstallSurface;
@@ -1811,33 +1814,6 @@ export function migrateSeatsConfiguration(env: NodeJS.ProcessEnv, runtimeLock?: 
   }, { runtimeLock }).value;
 }
 
-/**
- * Read-only preflight on one snapshot of the file. The file holds local paths and
- * the loader's version refusal formats the stored value, so every refusal prints
- * a fixed text; nothing from the file reaches the output.
- */
-function checkMcpLocalConfig(env: NodeJS.ProcessEnv): GlobalRuntimeStep {
-  const step = 'check MCP local config';
-  const path = withProcessEnv(env, mcpLocalConfigPath);
-  if (!existsSync(path)) return { step, status: 'skipped', detail: 'No MCP local config.' };
-  const refuse = (reason: string): GlobalRuntimeStep => ({ step, status: 'failed', detail: `invalid MCP local config at ${path}: ${reason}` });
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(path, 'utf-8'));
-  } catch {
-    return refuse('the file is not valid JSON.');
-  }
-  try {
-    parseMcpLocalConfig(parsed);
-    return { step, status: 'ok', detail: 'MCP local config is valid.' };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : '';
-    return message.startsWith('unsupported MCP local config version')
-      ? refuse('unsupported version; set "version": 3.')
-      : refuse('the file is refused by the MCP local config loader; docs/CHANGELOG.md (#2443) names the required shape.');
-  }
-}
-
 export function runGlobalRuntimeSetup(
   opts: GlobalRuntimeOptions = {},
 ): GlobalRuntimeResult {
@@ -1853,8 +1829,10 @@ export function runGlobalRuntimeSetup(
 
   // Before any host write, Bun upgrade included: a refused file stops the update and changes nothing.
   if (updateMode) {
-    const mcp = checkMcpLocalConfig(env);
-    steps.push(mcp);
+    const step = 'check MCP local config';
+    const mcp = !plugins.includes('mcp') ? { status: 'skipped' as const, detail: 'mcp plugin not selected' }
+      : opts.mcpLocalConfigCheck?.(env) ?? { status: 'skipped' as const, detail: 'no MCP local config check was given' };
+    steps.push({ step, ...mcp });
     if (mcp.status === 'failed') return finalizeRuntimeResult(steps);
   }
 

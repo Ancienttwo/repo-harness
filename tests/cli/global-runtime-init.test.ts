@@ -5,6 +5,7 @@ import { dirname, join } from 'path';
 import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { createHash } from 'crypto';
+import { checkMcpLocalConfigFile } from '../../src/cli/mcp/local-config-check';
 import { migrateSeatsConfiguration, ownFreshWazaSharedRules, runGlobalRuntimeSetup, verifyInstalledManagedRuntime } from '../../src/cli/commands/global-runtime';
 import { DEFAULT_SEATS_CONFIG, decodeSeatsConfig } from '../../src/core/board/seats-settings';
 import { registerArchitecturePlugin, resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
@@ -76,7 +77,7 @@ test('update preflight stops on a refused mcp.local.json before the seats write 
     writeFileSync(config, JSON.stringify({ seats: { ...DEFAULT_SEATS_CONFIG, 'worker-light': null, 'gatekeeper-fallback': undefined } }));
     const before = readFileSync(config, 'utf8');
     const run = () => runGlobalRuntimeSetup({
-      sourceRoot: ROOT, cwd: tmp, plugins: [], installCli: false, updateMode: true, syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
+      sourceRoot: ROOT, cwd: tmp, plugins: ['mcp'], mcpLocalConfigCheck: checkMcpLocalConfigFile, installCli: false, updateMode: true, syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
       env: { ...sanitizedChildEnv(), HOME: home, REPO_HARNESS_HOME: join(home, '.repo-harness'), BUN_INSTALL: join(home, '.bun'), PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun') },
     });
     const mcp = join(home, '.repo-harness', 'mcp.local.json');
@@ -87,6 +88,8 @@ test('update preflight stops on a refused mcp.local.json before the seats write 
     expect(refused.steps.some(step => step.step === 'migrate seats configuration')).toBe(false);
     expect(readFileSync(config, 'utf8')).toBe(before);
     expect(existsSync(bunLog)).toBe(false);
+    writeFileSync(mcp, '{"version":3,"permissions":{"allowedRoots":"/private/secret-root"}}');
+    expect(run().stdout).toContain('permissions.allowedRoots must be an array');
     writeFileSync(mcp, '{"version":["/private/secret-root"]}');
     expect(run().stdout).not.toContain('secret-root');
     writeFileSync(mcp, '{"allowedRoots": ["/private/secret-root"] oops');
