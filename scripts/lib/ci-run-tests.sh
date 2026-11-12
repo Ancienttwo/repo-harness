@@ -354,6 +354,10 @@ run_bun_tests() {
     for file in $BUN_TEST_FILES; do
       files[${#files[@]}]="$file"
     done
+    # The list is a second form of the same input, so it takes the same rule as
+    # the positional paths: a name with the test file name form must exist, and a
+    # missing name fails the run before any test starts.
+    _ci_require_test_paths ${files[@]+"${files[@]}"} || return $?
   fi
 
   if [[ "${#files[@]}" -eq 0 || "${BUN_TEST_SCHEDULE_FILES:-0}" == 1 ]]; then
