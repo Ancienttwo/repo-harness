@@ -1,5 +1,5 @@
 import { ACCEPTANCE_RECORD_HEADER, type BoardV1 } from './board';
-import { planRefusal } from './merge';
+import { planRefusal, requiredCheckDetail } from './merge';
 import type { SeatRouteV1 } from './seat-routing';
 import { modelFamily } from '../review/model-family';
 import { claimStatusTarget, newestProtocolComment, parseAcceptanceRecord, parseClaimStatus, protocolComments, type BoardCommentPageV1, type BoardCommentV1 } from './source';
@@ -86,7 +86,7 @@ export function planReview(input: ReviewInputV1): readonly ReviewDecisionV1[] {
     if (pr.is_draft) return skip('draft', 'the pull request is a draft');
     const refused = planRefusal(board, pr);
     if (refused !== null) return skip(refused.reason, refused.detail);
-    if (pr.required_check.status !== 'success') return skip('ci_not_green', `Required / CI is ${pr.required_check.status}`);
+    if (pr.required_check.status !== 'success') return skip('ci_not_green', requiredCheckDetail(pr.required_check));
     if (pr.acceptance.status === 'accepted') return skip('accepted', `an acceptance covers ${pr.head_sha}`);
     if (pr.acceptance.status === 'unknown') return skip('acceptance_unknown', pr.acceptance.reason);
     // An unknown tier is High: a pull request that no tier label covers still gets a review.

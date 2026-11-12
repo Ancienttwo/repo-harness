@@ -2,7 +2,7 @@ import { execFile, spawnSync, type ExecFileException } from 'child_process';
 import { architecturePort, isArchitectureUnavailable, type ArchctxProviderOptions } from '../../core/architecture/contracts';
 import {
   linkedPullRequests, projectBoard, seatTerminal, type BoardAcceptanceMergeV1, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1,
-  type BoardPathOwnerV1, type BoardPathOwnersV1, type BoardSeatTerminalInputV1, type BoardSeatTerminalReadV1, type BoardToolingV1, type BoardV1,
+  type BoardPathOwnerV1, type BoardPathOwnersV1, type BoardRequiredContextsV1, type BoardSeatTerminalInputV1, type BoardSeatTerminalReadV1, type BoardToolingV1, type BoardV1,
 } from '../../core/board/board';
 import { ADVISOR_SEAT } from '../../core/board/advisor-seat';
 import {
@@ -200,6 +200,26 @@ function dailyRun(input: BoardCollectInput, repository: string, branch: string):
     return { status: 'unavailable', reason: 'daily_run_invalid' };
   }
   return { status: 'observed', run_url: run.html_url, conclusion: run.conclusion as string | null, created_at: run.created_at };
+}
+
+/**
+ * The required status contexts of one base branch: `required_status_checks.contexts` of its protection, the read that the publication
+ * readiness also makes. GitHub is the only authority for the names, so a failed read or a missing, empty or non-string list is
+ * `unavailable`, never a default name.
+ */
+function requiredContexts(input: BoardCollectInput, repository: string, base: string): BoardRequiredContextsV1 {
+  let body: unknown;
+  try {
+    body = readGhJson(input, ['api', '--hostname', 'github.com', `repos/${repository}/branches/${encodeURIComponent(base)}/protection`]);
+  } catch (error) {
+    if (error instanceof BoardCollectError && !(error instanceof GhOutputLimitError)) return { status: 'unavailable', reason: error.message };
+    throw error;
+  }
+  const contexts = (body as { required_status_checks?: { contexts?: unknown } | null } | null)?.required_status_checks?.contexts;
+  if (!Array.isArray(contexts) || contexts.length === 0 || !contexts.every(context => typeof context === 'string' && context !== '')) {
+    return { status: 'unavailable', reason: `the protection of ${base} requires no status check context list` };
+  }
+  return { status: 'observed', contexts: Object.freeze([...contexts as string[]]) };
 }
 
 /**
@@ -449,6 +469,7 @@ export function collectBoardThrough(input: BoardCollectInput, sources: KeyedSour
     acceptance_merge: acceptanceMerge(input, repository, parent.repository.default_branch),
     pull_requests: reads,
     readiness,
+    required_contexts: new Map([...new Set(linked.map(read => read.base_ref))].map(base => [base, requiredContexts(input, repository, base)] as const)),
     path_owners: pathOwners(input, linked),
     execution: execution(input, parent.repository.database_id, new Set(parent.sub_issues.map(issue => String(issue.number))),
       new Set(linked.map(read => String(read.number)))),

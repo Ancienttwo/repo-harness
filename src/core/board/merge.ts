@@ -1,4 +1,4 @@
-import type { BoardPullRequestV1, BoardV1 } from './board';
+import type { BoardPullRequestV1, BoardRequiredCheckV1, BoardV1 } from './board';
 import { protocolComments, type BoardCommentPageV1 } from './source';
 
 /**
@@ -9,6 +9,12 @@ import { protocolComments, type BoardCommentPageV1 } from './source';
  */
 export const MERGE_HOLD_HEADER = 'repo-harness merge hold';
 export const MERGE_HOLD_RELEASED_HEADER = 'repo-harness merge hold released';
+
+/** The refusal detail of a required check that is not `success`: the reason of an unavailable read, or each context that is not `success`. */
+export function requiredCheckDetail(check: BoardRequiredCheckV1): string {
+  if (check.status === 'unavailable') return `required contexts unavailable: ${check.reason}`;
+  return check.contexts.filter(context => context.status !== 'success').map(context => `${context.name} is ${context.status}`).join(', ');
+}
 
 export interface BoardMergeHoldRecordV1 {
   readonly comment_url: string;
@@ -112,7 +118,7 @@ function refusal(board: BoardV1, pr: BoardPullRequestV1): { readonly reason: Boa
   if (pr.acceptance.status !== 'accepted' || pr.acceptance.via === 'tier_low') {
     return { reason: 'not_accepted', detail: `#${pr.number} has no PASS acceptance record for ${pr.head_sha.slice(0, 9)} (${pr.acceptance.status === 'accepted' ? pr.acceptance.via : pr.acceptance.status})` };
   }
-  if (pr.required_check.status !== 'success') return { reason: 'required_check', detail: `Required / CI is ${pr.required_check.status}` };
+  if (pr.required_check.status !== 'success') return { reason: 'required_check', detail: requiredCheckDetail(pr.required_check) };
   if (pr.merge_readiness?.ready !== true) {
     return { reason: 'not_ready', detail: `readiness blockers: ${pr.merge_readiness?.blockers.map(blocker => blocker.code).join(', ') || 'none observed'}` };
   }

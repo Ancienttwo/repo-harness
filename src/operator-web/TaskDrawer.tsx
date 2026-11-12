@@ -57,7 +57,7 @@ function ChecksAndReview({ pr, t }: { readonly pr: BoardPullRequestV1; readonly 
     <ul className="overflow-hidden rounded-lg border border-kumo-line">
       <Row>
         <StatusDot tone={check.status === 'success' ? 'ok' : check.status === 'failure' ? 'danger' : 'unknown'} />
-        <span className="min-w-0 flex-1 font-mono text-xs text-kumo-strong">Required / CI</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-kumo-strong" data-required-contexts>{check.status === 'unavailable' ? check.reason : check.contexts.map(context => context.name).join(', ')}</span>
         <span className="text-xs text-kumo-subtle" data-required-check={check.status}>{t(`board.check.${check.status}` as OperatorMessageKey)}</span>
       </Row>
       <Row>
