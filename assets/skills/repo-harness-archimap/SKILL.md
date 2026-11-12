@@ -69,8 +69,8 @@ model's own docs. The archimap is the one hand-composed HTML view.
    covers on its `parent` chain (`behavior_spec_uncovered:<node id>`). It
    reads the declared machines in `.archcontext/model/state-machines/`
    into `modules[].stateMachines`, and exits 2 on a machine whose
-   capability no map module covers (`state_machine_uncovered:<machine id>`)
-   or has no projected document (`state_machine_undocumented:<machine id>`). Each module in
+   capability no map module covers (`state_machine_uncovered:<machine id>`).
+   A machine whose capability has no projected document has `doc: null`. Each module in
    the output carries `docs`: the capability documents it covers, resolved
    from `modules[].nodes` through that manifest. Fix every `uncoveredNodes`,
    `unknownNodes`, `duplicateNodes` and `overlaps` entry in the grouping

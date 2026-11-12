@@ -115,7 +115,8 @@ Pick the parts that the project has:
   diagram that archctx projected into the capability document. The `href`
   is `doc` made relative to the map file's directory, as on the overview
   node, plus `#` and the GitHub heading anchor of the machine `name` (the
-  diagram heading in that document). The board draws no state and no
+  diagram heading in that document). A machine with `doc: null` gets its
+  row with no link: do not build a path. The board draws no state and no
   transition of a declared machine: the archctx projection is its one
   picture.
 - Read the spec entries from `modules[].behaviorSpecs` in the `measure.ts`

@@ -18,8 +18,8 @@
 // `behavior_spec_invalid:<node id>`, `behavior_spec_missing:<path>` or `behavior_spec_uncovered:<node id>`.
 // Declared state machines live in the `state-machines` directory beside --model. Each module lists the
 // machines of the capabilities it covers (`modules[].stateMachines`: { id, name, capabilityId, path, doc }).
-// archctx checks a machine; this script reads only its identity. Exit 2 with
-// `state_machine_uncovered:<machine id>` or `state_machine_undocumented:<machine id>`.
+// archctx checks a machine; this script reads only its identity. `doc` is null when the capability has
+// no projected document (it is then in `model.undocumentedNodes`). Exit 2 with `state_machine_uncovered:<machine id>`.
 // Output: JSON on stdout (`unparsed` lists files the transpiler rejected; their edges are missing). Exit 0 ok (coverage gaps are data), 2 usage/shape error, 1 unexpected failure.
 // Workspace specifiers (`@scope/pkg`, `@scope/pkg/sub`) resolve to a concrete tracked file, and the edge goes to the module owning that file. The bare name uses the package entry (exports/module/main/src/index); a subpath uses an exact or single-star `exports` key (deterministic conditions: import/default/bun/types), and a present `exports` field gates subpaths — undeclared, null, or indeterminable subpaths stay unresolved. A specifier that resolves to no tracked file is counted under `unresolved`; no ownership guess produces an edge.
 // Limits: tsconfig path aliases are not resolved; nested condition objects resolve only through their fixed condition order; only tracked files (git ls-files) are scanned.
@@ -195,8 +195,8 @@ interface StateMachine {
   capabilityId: string;
   /** The machine file, repository-relative. */
   path: string;
-  /** The capability document that holds the archctx diagram of the machine. */
-  doc: string;
+  /** The capability document that holds the archctx diagram of the machine; null when none is projected. */
+  doc: string | null;
 }
 
 // A model without a state-machine directory declares no machine.
@@ -231,8 +231,7 @@ function stateMachinesByModule(
   for (const machine of machines) {
     const covering = coveringModules(machine.capabilityId, modules, byId);
     if (covering.length === 0) throw new UsageError(`state_machine_uncovered:${machine.id}`);
-    const doc = docs.byNode.get(machine.capabilityId);
-    if (doc === undefined) throw new UsageError(`state_machine_undocumented:${machine.id}`);
+    const doc = docs.byNode.get(machine.capabilityId) ?? null;
     for (const i of covering) out[i]!.push({ ...machine, doc });
   }
   return out;

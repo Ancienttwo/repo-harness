@@ -21,7 +21,7 @@ interface MeasureOutput {
   modules: {
     id: string; files: number; loc: number; self: number; docs: string[];
     behaviorSpecs: { id: string; path: string; node: string }[];
-    stateMachines: { id: string; name: string; capabilityId: string; path: string; doc: string }[];
+    stateMachines: { id: string; name: string; capabilityId: string; path: string; doc: string | null }[];
   }[];
   model: { uncoveredNodes: string[]; unknownNodes: string[]; duplicateNodes: string[]; undocumentedNodes: string[] };
   edges: { from: string; to: string; value: number }[];
@@ -417,13 +417,19 @@ describe('archimap measure reads declared state machines', () => {
     ]);
   });
 
-  test.each([
-    ['no module covers its capability', 'capability.gamma', 'state_machine_uncovered:'],
-    ['its capability has no projected document', 'capability.beta', 'state_machine_undocumented:'],
-  ])('a machine where %s exits 2', (_name, capabilityId, code) => {
-    const root = machineFixture(capabilityId);
+  test('a machine whose capability has no projected document is listed with doc null', () => {
+    const result = measure(machineFixture('capability.beta'));
+    expect(result.modules[1]!.stateMachines).toEqual([{
+      id: MACHINE, name: `Machine ${MACHINE}`, capabilityId: 'capability.beta',
+      path: `model/state-machines/${MACHINE}.yaml`, doc: null,
+    }]);
+    expect(result.model.undocumentedNodes).toEqual(['capability.beta', 'capability.gamma']);
+  });
+
+  test('a machine whose capability no module covers exits 2 with state_machine_uncovered', () => {
+    const root = machineFixture('capability.gamma');
     const failure = measureFailure(root, machineArgs(root));
     expect(failure.status).toBe(2);
-    expect(failure.stderr).toContain(`${code}${MACHINE}`);
+    expect(failure.stderr).toContain(`state_machine_uncovered:${MACHINE}`);
   });
 });
