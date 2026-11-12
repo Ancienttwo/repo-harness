@@ -26,6 +26,8 @@ export const A12_NO_PR_MS = 120 * MINUTE;
 export const A13_IDLE_MS = 10 * MINUTE;
 /** A14: the failed required check of an open pull request is this old. */
 export const A14_RED_MS = 30 * MINUTE;
+/** A20: the required check of an open pull request is pending or missing this long after its head commit. A run of this repository ends in 10 to 20 min. */
+export const A20_STUCK_MS = 60 * MINUTE;
 /** A15: an unresolved FAIL record of the head is this old. */
 export const A15_FAIL_MS = 60 * MINUTE;
 /** A16: a question to the coordinator has no answer for this long. */
@@ -45,7 +47,7 @@ const REVIEW_SEATS = new Set<string>(['gatekeeper', 'gatekeeper-fallback', 'revi
 const AGENT_HARNESS: ReadonlyMap<string, BoardReviewHarness> = new Map([['claude-code', 'claude'], ['codex', 'codex'], ['pi', 'pi']]);
 const RED_CONCLUSIONS = new Set(['failure', 'timed_out', 'startup_failure']);
 
-export type BoardRuleId = 'A1' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'A9' | 'A10' | 'A11' | 'A12' | 'A13' | 'A14' | 'A15' | 'A16' | 'A17' | 'A18' | 'A19' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';
+export type BoardRuleId = 'A1' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'A9' | 'A10' | 'A11' | 'A12' | 'A13' | 'A14' | 'A15' | 'A16' | 'A17' | 'A18' | 'A19' | 'A20' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';
 export type BoardAttentionRoute = 'orchestrator' | 'advisor';
 /** P0: a seat cannot continue. P1: a worker or an issue waits for the coordinator, or a High change has a lower tier. P2: a pull request or the plan waits. P3: housekeeping. */
 export type BoardPriority = 'P0' | 'P1' | 'P2' | 'P3';
@@ -59,7 +61,7 @@ export const BOARD_PRIORITY_ORDER: readonly BoardPriority[] = Object.freeze(['P0
  */
 export const BOARD_RULE_PRIORITY: Readonly<Record<BoardRuleId, BoardPriority>> = Object.freeze({
   A1: 'P2', A3: 'P0', A4: 'P1', A5: 'P1', A6: 'P1', A7: 'P2', A8: 'P3', A9: 'P3', A10: 'P2', A11: 'P2',
-  A12: 'P1', A13: 'P1', A14: 'P2', A15: 'P2', A16: 'P1', A17: 'P1', A18: 'P2', A19: 'P1',
+  A12: 'P1', A13: 'P1', A14: 'P2', A15: 'P2', A16: 'P1', A17: 'P1', A18: 'P2', A19: 'P1', A20: 'P2',
   R1: 'P2', R2: 'P2', R3: 'P1', R4: 'P2', R5: 'P1', R6: 'P1', R7: 'P2',
 });
 
@@ -407,6 +409,24 @@ function a14(context: Context): void {
   }
 }
 
+/** A20: the required check of an open, ready-for-review pull request stays pending or missing; the bound is the head commit time. */
+function a20(context: Context): void {
+  for (const pr of unheld(context.board).filter(entry => !entry.is_draft)) {
+    const check = pr.required_check;
+    if (check.status === 'unavailable') {
+      skip(context, 'A20', check.reason, `#${pr.number}`);
+      continue;
+    }
+    if (check.status !== 'pending' && check.status !== 'missing') continue;
+    const waited = context.now - Date.parse(pr.head_committed_at);
+    if (waited > A20_STUCK_MS) {
+      const open = check.contexts.filter(entry => entry.status !== 'success').map(entry => entry.name).join(', ');
+      find(context, 'A20', { issues: itemsOf(context.board, pr), pull_requests: [pr.number] },
+        `#${pr.number} required check is ${check.status} for ${minutes(waited)} min after its head commit: ${open}`);
+    }
+  }
+}
+
 /** A15: an unresolved FAIL record of the head gets no new head. */
 function a15(context: Context): void {
   for (const pr of unheld(context.board)) {
@@ -612,7 +632,7 @@ export function renderAttentionText(attention: BoardAttentionV1): string {
 
 export function evaluateBoardAttention(board: BoardV1): BoardAttentionV1 {
   const context: Context = { board, now: Date.parse(board.observed_at), findings: [], unevaluated: [] };
-  for (const rule of [a1, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, r1, r2, r3, r4, r5, r6, r7]) rule(context);
+  for (const rule of [a1, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, r1, r2, r3, r4, r5, r6, r7]) rule(context);
   return Object.freeze({
     protocol: BOARD_ATTENTION_PROTOCOL,
     kind: BOARD_ATTENTION_KIND,
