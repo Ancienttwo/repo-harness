@@ -427,7 +427,8 @@ jobs:
           tests/cli/mcp-stdio.test.ts tests/effects/windows-job-controller.test.ts \
           tests/effects/operator-task-context.test.ts tests/effects/operator-task-activity.test.ts \
           tests/cli/windows-protected-helper-runtime-smoke.test.ts tests/evidence-checkpoint.test.ts \
-          tests/unit/windows-protected-helper-platform-contract.test.ts
+          tests/unit/windows-protected-helper-platform-contract.test.ts \
+          tests/unit/exclusive-directory-lock-owner-identity.test.ts
       # Admitted task sessions start only in a Herdr pane, which is POSIX-only.
       - name: Run the POSIX task-session path tests
         if: matrix.os != 'windows-latest'
