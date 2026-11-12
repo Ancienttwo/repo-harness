@@ -12,7 +12,7 @@
 
 import { realpathSync } from 'node:fs';
 
-import { decodeDocsTree, OPERATOR_DOCS_TREE_KIND, type DocsTreeV1, type DocsUnavailableReason } from '../../core/operator/docs';
+import { decodeDocsTree, OPERATOR_DOCS_TREE_KIND, type DocsRemoteMismatchV1, type DocsTreeV1, type DocsUnavailableReason } from '../../core/operator/docs';
 import { githubRemoteRepository } from '../../core/board/source';
 import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
 import { withoutRepositorySelectingGitEnv, spawnGit } from '../git/runner';
@@ -28,7 +28,11 @@ const REMOTE_STDOUT_LIMIT = 64 * 1024;
 
 export type DocsRepositoryCache =
   | { readonly state: 'ready'; readonly tree: DocsTreeV1; readonly reader: DocsReader }
-  | { readonly state: 'unavailable'; readonly reason: DocsUnavailableReason };
+  | { readonly state: 'unavailable'; readonly reason: DocsPlainReason }
+  | { readonly state: 'unavailable'; readonly reason: 'github_remote_missing'; readonly detail: DocsRemoteMismatchV1 };
+
+/** Every reason that carries no detail. */
+type DocsPlainReason = Exclude<DocsUnavailableReason, 'github_remote_missing'>;
 
 export interface DocsCollectorOptions {
   readonly env?: NodeJS.ProcessEnv;
@@ -56,7 +60,8 @@ function gitEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 function remoteUrls(root: string, env: NodeJS.ProcessEnv, gitBin: string | undefined): Promise<Map<string, string> | null> {
   return new Promise(settle => {
     // stderr is discarded: it can hold absolute paths.
-    const child = spawnGit(['config', '--local', '--get-regexp', '^remote\\..*\\.url$'], {
+    // --null: each record is `key LF value NUL`, so a newline inside a URL value cannot forge a second key line.
+    const child = spawnGit(['config', '--local', '--null', '--get-regexp', '^remote\\..*\\.url$'], {
       cwd: root, env: gitEnv(env), gitBin, stdio: ['ignore', 'pipe', 'ignore'],
     });
     let stdout = '';
@@ -72,16 +77,17 @@ function remoteUrls(root: string, env: NodeJS.ProcessEnv, gitBin: string | undef
       // Exit 1 means no remote URL is configured.
       if (signal !== null || (code !== 0 && code !== 1) || stdout.length > REMOTE_STDOUT_LIMIT) { settle(null); return; }
       const urls = new Map<string, string>();
-      for (const line of stdout.split('\n')) {
-        const match = /^remote\.(.+)\.url (.+)$/u.exec(line);
-        if (match) urls.set(match[1]!, match[2]!);
+      for (const record of stdout.split('\0')) {
+        const split = record.indexOf('\n');
+        const match = split < 0 ? null : /^remote\.(.+)\.url$/u.exec(record.slice(0, split));
+        if (match) urls.set(match[1]!, record.slice(split + 1));
       }
       settle(urls);
     });
   });
 }
 
-function readFailure(error: unknown): DocsUnavailableReason {
+function readFailure(error: unknown): DocsPlainReason {
   if (error instanceof DocsReadError) {
     if (error.code === 'branch_missing') return 'branch_missing';
     if (error.code === 'too_large') return 'docs_too_large';
@@ -98,7 +104,7 @@ export function startDocsCollector(options: DocsCollectorOptions): DocsCollector
   const retire = (id: string) => { readers.get(id)?.close(); readers.delete(id); };
 
   const collectRepository = async (repo: RepoHarnessRegisteredRepo, activity: DevActivitySnapshotV2, signal: AbortSignal): Promise<DocsRepositoryCache> => {
-    const unavailable = (reason: DocsUnavailableReason): DocsRepositoryCache => { retire(repo.id); return { state: 'unavailable', reason }; };
+    const unavailable = (reason: DocsPlainReason): DocsRepositoryCache => { retire(repo.id); return { state: 'unavailable', reason }; };
     // Dev Activity has not finished its first cycle: the branch is not known yet.
     if (activity.collected_at === null) return unavailable('docs_pending');
     const source = activity.repositories.find(entry => entry.repository_id === repo.id);
@@ -108,8 +114,14 @@ export function startDocsCollector(options: DocsCollectorOptions): DocsCollector
     // close() ran during the await: start no process and no scan. No later await comes before reader.start().
     if (signal.aborted || urls === null) return unavailable('docs_reader_unavailable');
     const github = source.github.toLowerCase();
-    const remotes = [...urls].filter(([, url]) => githubRemoteRepository(url) === github).map(([name]) => name);
-    if (remotes.length === 0) return unavailable('github_remote_missing');
+    const parsed = [...urls].map(([name, url]) => ({ name, github: githubRemoteRepository(url) }));
+    const remotes = parsed.filter(remote => remote.github === github).map(remote => remote.name);
+    if (remotes.length === 0) {
+      retire(repo.id);
+      // Only parsed owner/name values leave this function: remote names and URLs are git config text, and a URL can hold a credential.
+      const remote_repositories = [...new Set(parsed.flatMap(remote => (remote.github === null ? [] : [remote.github])))];
+      return { state: 'unavailable', reason: 'github_remote_missing', detail: { github: source.github, remote_repositories } };
+    }
     if (remotes.length > 1) return unavailable('github_remote_ambiguous');
     const ref = `refs/remotes/${remotes[0]}/${source.default_branch}`;
     if (!validDocsRef(ref)) return unavailable('ref_invalid');
@@ -131,7 +143,7 @@ export function startDocsCollector(options: DocsCollectorOptions): DocsCollector
     }
   };
 
-  const loop = startObservationLoop<RepositoryObservation<DocsRepositoryCache>, DocsUnavailableReason>({
+  const loop = startObservationLoop<RepositoryObservation<DocsRepositoryCache>, DocsPlainReason>({
     cycle: async ({ signal }) => {
       let repos: readonly RepoHarnessRegisteredRepo[];
       try { repos = readRepoHarnessRegistryStrictSnapshot({ env }).repos; }

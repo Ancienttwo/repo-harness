@@ -29,7 +29,7 @@ import { decodeTaskExecutionView, type ExecutionStateUnavailableReason, type Tas
 import { decodeTaskMessagesView, TASK_MESSAGES_FAILURES, type TaskMessagesRefusal } from '../../core/operator/task-messages';
 import { decodeTestsSnapshot, type TestsUnavailableReason } from '../../core/operator/tests';
 import { DocsReadError } from './docs-reader';
-import { decodeDocsFile, decodeDocsTree, OPERATOR_DOCS_FILE_KIND, type DocsUnavailableReason } from '../../core/operator/docs';
+import { decodeDocsFile, decodeDocsTree, OPERATOR_DOCS_FILE_KIND, type DocsRemoteMismatchV1, type DocsUnavailableReason } from '../../core/operator/docs';
 import { decodeRuntimeOverlay, unavailableRuntimeOverlay, type RuntimeOverlay } from '../../core/operator/runtime-status';
 import { ARCHITECTURE_FAILURES, parseArchitectureRequest, decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt, OPERATOR_ARCHITECTURE_HISTORY_ROUTE, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
 import { ARCHITECTURE_HISTORY_TIMEOUT_MS, decodeArchitectureHistoryPage } from '../architecture/architecture-read';
@@ -277,6 +277,8 @@ export interface OperatorErrorResponseV1 {
     readonly code: string;
     readonly message: string;
     readonly next_action: string;
+    /** Only `github_remote_missing` of the docs routes sends it. */
+    readonly detail?: DocsRemoteMismatchV1;
   };
 }
 
@@ -1667,6 +1669,13 @@ export async function startOperatorServer(
       const cache = (options.read_docs ?? docs?.read ?? (() => ({ state: 'unavailable', reason: 'docs_pending' }) as const))(repositoryId);
       if (cache.state !== 'ready') {
         const refusal = DOCS_UNAVAILABLE[cache.reason];
+        if (cache.reason === 'github_remote_missing') {
+          // The message names what the collector compared; `detail` carries the same data for the console.
+          const { github, remote_repositories: found } = cache.detail;
+          const body = errorBody(cache.reason, `No git remote points to the GitHub repository ${github}. GitHub repositories of the remotes: ${found.length === 0 ? 'none' : found.join(', ')}.`, refusal.next_action);
+          sendRefusal(request, response, refusal.status, { error: { ...body.error, detail: cache.detail } }, headOnly);
+          return;
+        }
         sendRefusal(request, response, refusal.status, errorBody(cache.reason, refusal.message, refusal.next_action), headOnly);
         return;
       }

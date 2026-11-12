@@ -5,7 +5,7 @@ import type { DocsFileV1, DocsTreeV1 } from '../core/operator/docs';
 import { DocsMarkdown, type MermaidRenderer } from './DocsMarkdown';
 import type { OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
-import { useDocsFile, useDocsTree, type DocsFileReader, type DocsReason, type DocsTreeReader } from './repository-reads';
+import { useDocsFile, useDocsTree, type DocsFileReader, type DocsRead, type DocsTreeReader } from './repository-reads';
 import type { ThemeMode } from './theme';
 import { PageLink, StatusDot } from './ui';
 import type { WorkspaceLocation } from './workspace-location';
@@ -126,13 +126,22 @@ function DocsTree({ tree, selected, now, onOpen, t }: {
   );
 }
 
-/** A refusal shows the route's reason and nothing of the file (1-DOCS-F1). */
-function Refusal({ reason, t }: { readonly reason: DocsReason; readonly t: OperatorTranslate }) {
+/** A refusal shows the route's reason and nothing of the file (1-DOCS-F1). A missing GitHub remote also shows what was compared. */
+function Refusal({ read, t }: { readonly read: Extract<DocsRead<unknown>, { readonly state: 'unavailable' }>; readonly t: OperatorTranslate }) {
+  const { reason } = read;
   return (
     <p className="flex items-start gap-2 rounded-xl border border-kumo-line bg-kumo-base p-4 text-sm text-kumo-default" role="alert" data-docs-refusal={reason}>
       <StatusDot tone={reason === 'docs_pending' || reason === 'docs_busy' ? 'warn' : 'danger'} className="mt-1.5" />
       <span className="flex min-w-0 flex-col gap-0.5">
         <span>{t(`docs.reason.${reason}`)}</span>
+        {read.reason === 'github_remote_missing' && (
+          <span className="flex flex-col gap-0.5 text-xs text-kumo-subtle" data-docs-remote-detail={read.detail.github}>
+            <span>{t('docs.remote.expected', { github: read.detail.github })}</span>
+            {read.detail.remote_repositories.length === 0
+              ? <span>{t('docs.remote.none')}</span>
+              : read.detail.remote_repositories.map(repository => <code key={repository} className="[overflow-wrap:anywhere]">{repository}</code>)}
+          </span>
+        )}
         <code className="text-xs text-kumo-subtle">{reason}</code>
       </span>
     </p>
@@ -191,7 +200,7 @@ function Reader({ repositoryId, path, commit, readFile, generation, mode, onOpen
     return (
       <>
         <h2 className="font-mono text-sm font-semibold text-kumo-strong [overflow-wrap:anywhere]">{path}</h2>
-        <Refusal reason={read.reason} t={t} />
+        <Refusal read={read} t={t} />
       </>
     );
   }
@@ -212,7 +221,7 @@ export function DocsPage({ repositoryId, path, readTree, readFile, generation, m
       </header>
       {repositoryId === null ? <p role="status" className="text-sm text-kumo-subtle">{t('repository.select')}</p>
         : tree === null ? <p role="status" className="flex items-center gap-1.5 text-sm text-kumo-subtle" data-docs-loading><Loader size={12} />{t('docs.loading')}</p>
-        : tree.state === 'unavailable' ? <Refusal reason={tree.reason} t={t} />
+        : tree.state === 'unavailable' ? <Refusal read={tree} t={t} />
         : (
           <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(13rem,17rem)_minmax(0,1fr)] lg:items-start">
             <DocsTree tree={tree.value} selected={path} now={now} onOpen={onOpen} t={t} />

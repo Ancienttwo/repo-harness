@@ -10,6 +10,8 @@ import { decodeDocsTree } from '../../src/core/operator/docs';
 import { githubRemoteRepository } from '../../src/core/board/source';
 import { startDocsCollector, type DocsCollectorHandle } from '../../src/effects/operator/docs-collector';
 import { DocsReadError } from '../../src/effects/operator/docs-reader';
+import { startOperatorServer } from '../../src/effects/operator/server';
+import { docsAnswer } from '../../src/operator-web/repository-reads';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 
 const cleanup: string[] = [];
@@ -92,7 +94,7 @@ test('the listing comes from the remote-tracking ref of the GitHub default branc
   expect(JSON.stringify(cache.tree)).not.toContain(f.root);
   // Read-only argv: the remote lookup and one resident cat-file; no fetch, no ref or index write.
   const argv = readFileSync(f.log, 'utf8').trim().split('\n');
-  expect(argv).toEqual(['config --local --get-regexp ^remote\\..*\\.url$', '--no-optional-locks cat-file --batch-command']);
+  expect(argv).toEqual(['config --local --null --get-regexp ^remote\\..*\\.url$', '--no-optional-locks cat-file --batch-command']);
   expect(docs.read('repo_unknown')).toEqual({ state: 'unavailable', reason: 'repository_not_found' });
 });
 
@@ -104,12 +106,29 @@ test('a branch GitHub did not name, a missing first Dev Activity cycle and a mis
     [activity(f.id, 'owner/repo', 'main', null), 'docs_pending'],
     [activity(f.id, 'owner/repo', 'trunk'), 'branch_missing'],
     [activity(f.id, 'owner/repo', 'main/../x'), 'ref_invalid'],
-    [activity(f.id, 'owner/other', 'main'), 'github_remote_missing'],
   ] as const) {
     const docs = collect(f, snapshot);
     await docs.settled();
     expect(docs.read(f.id)).toEqual({ state: 'unavailable', reason });
   }
+});
+
+test('github_remote_missing names only the expected and the parsed GitHub repositories: no URL and no forged remote name reaches the cache or the response', async () => {
+  // Read line by line, the mirror URL's newlines forge a remote named `https://user:token@host` and a GitHub remote `forged`; --null keeps both inside the value.
+  const mirror = 'https://gitlab.example/owner/repo.git\nremote.https://user:token@host.url x\nremote.forged.url https://github.com/Other/Forged.git';
+  const f = fixture({ origin: 'https://user:token@github.com/Ancienttwo/repo-harness.git', mirror });
+  const docs = collect(f, activity(f.id, 'aimpact-inc/repo-harness', 'main'));
+  await docs.settled();
+  const detail = { github: 'aimpact-inc/repo-harness', remote_repositories: ['ancienttwo/repo-harness'] };
+  expect(docs.read(f.id)).toEqual({ state: 'unavailable', reason: 'github_remote_missing', detail });
+  const server = await startOperatorServer({ port: 0, read_docs: docs.read });
+  try {
+    const response = await fetch(`${server.url}/api/v1/repositories/${f.id}/docs/tree`);
+    expect(response.status).toBe(503);
+    const body = await response.clone().text();
+    for (const text of [JSON.stringify(docs.read(f.id)), body]) expect(text).not.toMatch(/token|@|:\/\/|origin|mirror|forged/iu);
+    expect(await docsAnswer(response, decodeDocsTree)).toEqual({ state: 'unavailable', reason: 'github_remote_missing', detail });
+  } finally { await server.close(); }
 });
 
 test('two remotes of the same GitHub repository are ambiguous; an invalid registry is unavailable', async () => {
@@ -153,7 +172,7 @@ test('a close during the remote lookup starts no cat-file process and no scan', 
   const docs = startDocsCollector({ env: f.env, read_dev_activity: () => activity(f.id, 'owner/repo', 'main'), git_bin: slow, interval_ms: 60_000 });
   // The lookup is spawned before startDocsCollector returns, and close() waits for the cycle to end.
   await docs.close();
-  expect(readFileSync(f.log, 'utf8').trim().split('\n')).toEqual(['config --local --get-regexp ^remote\\..*\\.url$']);
+  expect(readFileSync(f.log, 'utf8').trim().split('\n')).toEqual(['config --local --null --get-regexp ^remote\\..*\\.url$']);
   expect(existsSync(f.pids)).toBe(false);
 });
 

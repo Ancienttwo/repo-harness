@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import type { DevActivityItem } from '../core/dev-activity/types';
-import { decodeDocsFile, decodeDocsTree, type DocsFileV1, type DocsTreeV1, type DocsUnavailableReason } from '../core/operator/docs';
+import { decodeDocsFile, decodeDocsRemoteMismatch, decodeDocsTree, type DocsFileV1, type DocsRemoteMismatchV1, type DocsTreeV1, type DocsUnavailableReason } from '../core/operator/docs';
 import {
   decodeTaskExecutionView,
   type ExecutionStateUnavailableReason,
@@ -241,7 +241,9 @@ const DOCS_REASONS: Readonly<Record<Exclude<DocsReason, 'unreachable'>, true>> =
   docs_busy: true, docs_timeout: true, invalid_request: true, docs_invalid: true,
 };
 
-export type DocsRead<T> = { readonly state: 'ok'; readonly value: T } | { readonly state: 'unavailable'; readonly reason: DocsReason };
+export type DocsRead<T> = { readonly state: 'ok'; readonly value: T }
+  | { readonly state: 'unavailable'; readonly reason: Exclude<DocsReason, 'github_remote_missing'> }
+  | { readonly state: 'unavailable'; readonly reason: 'github_remote_missing'; readonly detail: DocsRemoteMismatchV1 };
 export type DocsTreeReader = (repositoryId: string, signal: AbortSignal) => Promise<DocsRead<DocsTreeV1>>;
 export type DocsFileReader = (repositoryId: string, path: string, signal: AbortSignal) => Promise<DocsRead<DocsFileV1>>;
 
@@ -257,8 +259,12 @@ export async function docsAnswer<T>(response: Response, decode: (value: unknown)
 
 function docsRead<T>({ ok, body }: JsonAnswer, decode: (value: unknown) => T): DocsRead<T> {
   if (!ok) {
-    const { code } = asApiError(body);
-    return { state: 'unavailable', reason: Object.hasOwn(DOCS_REASONS, code) ? code as DocsReason : 'unreachable' };
+    const error = asApiError(body);
+    if (error.code === 'github_remote_missing') {
+      try { return { state: 'unavailable', reason: error.code, detail: decodeDocsRemoteMismatch((error as { readonly detail?: unknown }).detail) }; }
+      catch { return { state: 'unavailable', reason: 'docs_invalid' }; }
+    }
+    return { state: 'unavailable', reason: Object.hasOwn(DOCS_REASONS, error.code) ? error.code as Exclude<DocsReason, 'github_remote_missing'> : 'unreachable' };
   }
   try { return { state: 'ok', value: decode(body) }; } catch { return { state: 'unavailable', reason: 'docs_invalid' }; }
 }
@@ -274,7 +280,8 @@ export function fetchDocsFile(repositoryId: string, path: string, signal: AbortS
 /** The same answer twice keeps the first object, so a periodic re-read does not re-render the page. */
 function sameDocsRead<T>(left: DocsRead<T>, right: DocsRead<T>, key: (value: T) => string): boolean {
   if (left.state !== right.state) return false;
-  return left.state === 'ok' ? key(left.value) === key((right as typeof left).value) : left.reason === (right as typeof left).reason;
+  if (left.state === 'ok') return key(left.value) === key((right as typeof left).value);
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function useDocsRead<T>(name: string, read: (signal: AbortSignal) => Promise<DocsRead<T>>, subject: string | null, refresh: string, key: (value: T) => string): DocsRead<T> | null {
