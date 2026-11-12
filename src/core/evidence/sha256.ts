@@ -1,3 +1,4 @@
+// probe #2591 comment line to widen affected selection
 /**
  * The one sha256 digest of plain content. A caller that serializes JSON first
  * keeps its own serializer and passes the resulting bytes.

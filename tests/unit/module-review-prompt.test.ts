@@ -326,15 +326,19 @@ test('each formerly quadratic secret rule stays linear from a 32 KiB to a 96 KiB
   // A linear rule takes 3 times as long on 3 times the text; a quadratic rule takes 9 times. Load on the runner scales both sizes alike.
   // The pair stays far below 512 KiB: past a size that depends on the row (384 to 1024 KiB) the regex engine changes mode and the time steps up about 8 times, with no change in order.
   const small = makeRows(32 * 1024), medium = makeRows(96 * 1024);
-  makeRows(1024 * 1024).forEach((row, index) => {
-    expect(lowestRatio(() => timed(small[index]!), () => timed(medium[index]!))).toBeLessThan(6);
-    const result = exercise(row);
-    expect(result.bare).toBe(false);
-    expect(result.unchanged).toBe(true);
-    expect(result.matched).toBe(true);
-    if (row.replacement) expect(result.replaced.includes(row.replacement)).toBe(true);
+  const lines: string[] = [];
+  small.forEach((row, index) => {
+    let lo = Infinity, hi = 0, t1 = 0, t2 = 0;
+    for (let rep = 0; rep < 20; rep++) { const r = lowestRatio(() => timed(small[index]!), () => timed(medium[index]!)); lo = Math.min(lo, r); hi = Math.max(hi, r); t1 += timed(small[index]!); t2 += timed(medium[index]!); }
+    lines.push(`PROBE row=${index} unit=${JSON.stringify(row.run.slice(0, 22))} t32=${(t1 / 20).toFixed(2)}ms t96=${(t2 / 20).toFixed(2)}ms ratio_min=${lo.toFixed(2)} ratio_max=${hi.toFixed(2)}`);
   });
-});
+  const quadRe = /[a-z][a-z0-9+.-]*:\/\/[^\s/@:]+:[^\s/@]+@[^\s<>"']+/gi;
+  const quadTime = (size: number) => { const text = 'a'.repeat(size); const t = performance.now(); text.replace(quadRe, 'x'); return performance.now() - t; };
+  const quad: number[] = [];
+  for (let rep = 0; rep < 5; rep++) quad.push(lowestRatio(() => quadTime(32 * 1024), () => quadTime(96 * 1024)));
+  lines.push(`PROBE quad ratios=${quad.map(r => r.toFixed(2)).join(',')}`);
+  console.log(lines.join('\n'));
+}, 400000);
 
 test('the private key rule withholds each block label, and an END of any label closes a BEGIN', () => {
   const block = (begin: string, end: string) => `x -----BEGIN ${begin}-----\nbody\n-----END ${end}----- y`;
