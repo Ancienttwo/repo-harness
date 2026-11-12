@@ -33,7 +33,8 @@ Read the cheap signal first:
    or runtime config files. Plans, task files and CI files need no owner. Have a
    `repo-harness-architecture` worker claim an unowned source file in the same branch.
 2. Documents. Run the `check` below. It can take a minute on a large model.
-   `freshness.staleNodes` names the capabilities whose generated sections are stale.
+   `freshness.staleTargets` names the targets whose render differs from the committed
+   manifest. A module is stale when one of them is its module document.
    Save the check output to a file. Give the file to `repo-harness module list`
    or `module review-prompt` with `--projection-check <file>`. Then
    `generated_summary` is `fresh` or `stale`. Without the file it is `unknown`.
@@ -60,7 +61,7 @@ The prompt then has a STALE CITATIONS section.
 ## Architecture documents
 
 Run `repo-harness architecture-projection render-check --json`. It reads the
-per-target output decisions from the managed provider. Source-stamp changes do not fail it.
+per-target output decisions from the managed provider.
 `renderEquivalent: null` means the check could not cover all targets; it is not
 a clean result. The command exits 1 for false or null. It needs CodeGraph facts.
 Use `repo-harness architecture-projection status --json` for provider readiness.
@@ -69,7 +70,7 @@ writer publishes generated files. Do not run apply to refresh a feature PR.
 
 | Result | Meaning | Bot decision |
 | --- | --- | --- |
-| `renderEquivalent: true` | Generated output matches; source stamps may differ. | Schedule nothing. |
+| `renderEquivalent: true` | Generated output matches. | Schedule nothing. |
 | `renderEquivalent: false` | archctx reports changed output in `differingPaths`. | Inspect `repo-harness architecture-projection publish status` with the writer's own `ARCHCONTEXT_STATE_DIR` (another state dir reports an empty state) and the open rolling PR. An open rolling PR waits for the owner's GO. Without one, repair the writer or the reported model debt. The writer publishes generated output. |
 | `human-action-required` with `unresolved-major-change` | ArchContext observed a major change that no rolling PR merge accepted yet. The writer accepts proven changes, so the writer did not run, its rolling PR is open, or the proof is unprovable. | Inspect `repo-harness architecture-projection publish status` with the writer's own `ARCHCONTEXT_STATE_DIR` and the open rolling PR. An open rolling PR waits for the owner's GO; its merge is the acceptance. A writer result with `unprovable-required-flow` or `projectionStatus: "applied-partial"` needs the missing proof in a model PR; start from `repo-harness architecture-debt --json`. A feature worker does not commit generated docs. |
 | Other `humanActions` reason codes, or `adoption-required` | Ownership, conflict or proof needs a decision; coverage is incomplete. | Assign the bounded model or adoption repair. Preserve the writer as owner of subsequent generated updates. |
