@@ -105,6 +105,16 @@ function commonDirectory(cwd: string): string | null {
   try { return realpathSync(read.out); } catch { return null; }
 }
 
+/**
+ * True when `terminal` is finished and its cwd directory is gone. Such a pane has no checkout and no work to protect, so
+ * no `paneKeepReason` rule applies to it (#2658). A live pane, and a finished pane whose cwd still exists, keep their rules.
+ */
+function workGone(terminal: BoardSeatTerminalReadV1): boolean {
+  if (terminal.state !== 'finished' || terminal.cwd === null) return false;
+  try { lstatSync(terminal.cwd); return false; }
+  catch (error) { const code = (error as NodeJS.ErrnoException).code; return code === 'ENOENT' || code === 'ENOTDIR'; }
+}
+
 /** The reason to keep the pane of `cwd`, or null when its checkout is clean and fully on `origin/<branch>`. */
 function paneKeepReason(cwd: string | null, common: string): string | null {
   if (cwd === null) return 'cwd_unknown';
@@ -190,7 +200,9 @@ function closePanes(input: BoardCloseoutInput, pr: MergedPullRequest, proof: Clo
     if (binding === 'none') return [];
     const pane = { address: terminal.address, seat: terminal.labels.seat ?? null };
     const keep = binding === 'conflict' ? `conflicting_binding pr ${terminal.labels.pr}`
-      : terminal.address === input.caller_terminal ? 'caller_terminal' : paneKeepReason(terminal.cwd, proof.common);
+      : terminal.address === input.caller_terminal ? 'caller_terminal'
+      // A finished pane whose cwd directory is gone protects no work, so the host removes its record (#2658).
+      : workGone(terminal) ? null : paneKeepReason(terminal.cwd, proof.common);
     if (keep !== null) return [{ ...pane, outcome: 'kept', reason: keep }];
     const closed = input.host.closeTerminal(terminal.address);
     return [closed.status === 'closed' ? { ...pane, outcome: 'closed', reason: null } : { ...pane, outcome: 'kept', reason: closed.reason }];

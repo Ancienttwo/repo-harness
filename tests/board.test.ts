@@ -2266,6 +2266,8 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   // #30 closes issue 20 and names issue 21: a head-worktree seat of issue 77 binds nothing, one of issue 21 closes, and one of issue 21 under another PR's label is a conflict that keeps the worktree.
   const refsconf = worktree('refsconf', 30, 20);
   pullRequests['30']!.body = 'Closes #20\nRefs #21';
+  // #31 is the writer worktree of a finished row terminal whose review worktree is already removed (#2658).
+  const withdrawn = worktree('withdrawn', 31, 31);
   // #21 also closes issue 12 of another repository, which binds no local seat.
   pullRequests['21']!.closingIssuesReferences.push({ number: 12, repository: { id: 'R_other' } });
   // A clean checkout of another project under a stale pr label.
@@ -2299,6 +2301,8 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
     terminal('t18', main, { seat: 'reviewer', pr: '27' }), terminal('t19', main, { seat: 'reviewer', pr: '28' }),
     terminal('t20', refsonly, { issue: '19' }),
     terminal('t21', refsconf, { issue: '77' }), terminal('t23', refsconf, { issue: '21' }),
+    // A finished seat whose cwd directory is gone; #2658 removes its record and does not keep the PR worktree.
+    terminal('t28', join(root, 'withdrawn-review'), { seat: 'reviewer', pr: '31' }, 'finished'),
     // Not bound: another issue and no issue label in the Refs-only worktree, an unresolved cwd and another repository with the referenced issue label, all without a pr label.
     terminal('t24', refsonly, { issue: '77' }), terminal('t27', refsonly, {}), terminal('t25', null, { seat: 'reviewer', issue: '19' }), terminal('t26', elsewhere, { seat: 'reviewer', issue: '19' }), terminal('t22', refsconf, { seat: 'reviewer', issue: '21', pr: '99' })];
   // hc rm of t17 fails until the retry.
@@ -2362,7 +2366,10 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   expect([refs.panes, refs.worktree]).toEqual([[pane('t20', 'worker', null)], state(refsonly, 'removed', null)]);
   const conflict = await closeout(30);
   expect([conflict.panes, conflict.worktree]).toEqual([[pane('t23', 'worker', null), pane('t22', 'reviewer', 'conflicting_binding pr 99')], state(refsconf, 'kept', 'a pane of the pull request is kept')]);
-  expect(closed).toEqual(['t1', 't2', 't12', 't4', 't9', 't11', 't17', 't18', 't19', 't20', 't23']);
+  // A finished pane whose cwd directory is gone protects no work: closeout removes its record and the worktree goes (#2658).
+  const lost = await closeout(31);
+  expect([lost.panes, lost.worktree]).toEqual([[pane('t28', 'reviewer', null)], state(withdrawn, 'removed', null)]);
+  expect(closed).toEqual(['t1', 't2', 't12', 't4', 't9', 't11', 't17', 't18', 't19', 't20', 't23', 't28']);
 });
 
 test('closeout stops a CodeGraph MCP server bound to exactly the worktree and no other process', async () => {
