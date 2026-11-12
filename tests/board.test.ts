@@ -2266,8 +2266,9 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   // #30 closes issue 20 and names issue 21: a head-worktree seat of issue 77 binds nothing, one of issue 21 closes, and one of issue 21 under another PR's label is a conflict that keeps the worktree.
   const refsconf = worktree('refsconf', 30, 20);
   pullRequests['30']!.body = 'Closes #20\nRefs #21';
-  // #31 is the writer worktree of a finished row terminal whose review worktree is already removed (#2658).
-  const withdrawn = worktree('withdrawn', 31, 31);
+  // #31 is the writer worktree of a finished row terminal whose review worktree goes before its own closeout (#2658).
+  const withdrawn = worktree('withdrawn', 31, 31), withdrawnReview = join(root, 'withdrawn-review');
+  mkdirSync(withdrawnReview);
   // #21 also closes issue 12 of another repository, which binds no local seat.
   pullRequests['21']!.closingIssuesReferences.push({ number: 12, repository: { id: 'R_other' } });
   // A clean checkout of another project under a stale pr label.
@@ -2288,9 +2289,9 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   const unpushed = checkout('unpushed'), edited = checkout('edited');
   git(unpushed, 'commit', '-q', '--allow-empty', '-m', 'local only');
   writeFileSync(join(edited, 'note.txt'), 'draft');
-  const terminal = (address: string, cwd: string | null, labels: Record<string, string>, state: 'live' | 'finished' = 'live') => ({ address, name: null, agent: 'claude-code', state, status: 'done',
-    status_kind: null, status_msg: null, status_ms: null, turn: 1, cwd, labels: { seat: 'worker', ...labels } });
-  const terminals = [terminal('t1', clean, { issue: '11' }), terminal('t2', clean, { seat: 'gatekeeper', pr: '21' }), terminal('t3', main, { seat: 'orchestrator' }),
+  const terminal = (address: string, cwd: string | null, labels: Record<string, string>, state: 'live' | 'finished' = 'live', seat: string | null = 'worker') => ({ address, name: null, agent: 'claude-code', state, status: 'done',
+    status_kind: null, status_msg: null, status_ms: null, turn: 1, cwd, labels: { ...(seat === null ? {} : { seat }), ...labels } });
+  const terminals = [terminal('t1', clean, { issue: '11' }), terminal('t2', clean, { seat: 'gatekeeper', pr: '21' }), terminal('t3', join(root, 'gone-caller'), { seat: 'orchestrator' }, 'finished'),
     terminal('t4', kept, { issue: '12' }), terminal('t5', unpushed, { seat: 'reviewer', pr: '22' }), terminal('t6', kept, { issue: '12', pr: '99' }),
     terminal('t7', edited, { seat: 'gatekeeper', pr: '22' }), terminal('t8', main, { seat: 'reviewer', pr: '23' }), terminal('t9', main, { seat: 'reviewer', pr: '24' }),
     terminal('t10', elsewhere, { seat: 'reviewer', pr: '22' }), terminal('t11', main, { seat: 'reviewer', pr: '25' }),
@@ -2303,10 +2304,14 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
     terminal('t21', refsconf, { issue: '77' }), terminal('t23', refsconf, { issue: '21' }),
     // A finished seat whose cwd directory is gone; #2658 removes its record and does not keep the PR worktree.
     terminal('t28', join(root, 'withdrawn-review'), { seat: 'reviewer', pr: '31' }, 'finished'),
+    // Finished seats of pull requests that no closeout binds: #2675 removes t29 and reports the failed hc rm of t31, keeps
+    // t30 whose cwd exists, and leaves t32 without a seat label to the runtime cleanup of the task session.
+    terminal('t29', join(root, 'gone-review'), { seat: 'reviewer', pr: '40' }, 'finished'), terminal('t30', elsewhere, { seat: 'reviewer', pr: '41' }, 'finished'),
+    terminal('t31', join(root, 'gone-other-review'), { seat: 'gatekeeper', pr: '42' }, 'finished'), terminal('t32', join(root, 'gone-task'), {}, 'finished', null),
     // Not bound: another issue and no issue label in the Refs-only worktree, an unresolved cwd and another repository with the referenced issue label, all without a pr label.
     terminal('t24', refsonly, { issue: '77' }), terminal('t27', refsonly, {}), terminal('t25', null, { seat: 'reviewer', issue: '19' }), terminal('t26', elsewhere, { seat: 'reviewer', issue: '19' }), terminal('t22', refsconf, { seat: 'reviewer', issue: '21', pr: '99' })];
-  // hc rm of t17 fails until the retry.
-  const rmFails = new Set(['t17']);
+  // hc rm of t17 fails until the retry; the stale record t31 of another pull request never removes.
+  const rmFails = new Set(['t17', 't31']);
   const closed: string[] = [];
   // Closeout stops a server and finds a process that still holds the checkout (#2029): a surviving child, or a signal that failed.
   const holders = [child, sigfail], stops: Record<string, { stopped: number[]; failures: string[] }> = {
@@ -2314,7 +2319,7 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   const closeout = (pr: number) => runBoardCloseout({
     repo_root: main, pr, caller_terminal: 't3', processes: () => holders.map(cwd => ({ pid: 4242, cwd })), stopCodegraphServers: (path) => stops[path] ?? { stopped: [], failures: [] },
     stopDaemons: (path) => { if (path === partial) throw new Error('daemon stop failed'); return []; },
-    host: { closeoutTerminals: () => ({ status: 'observed', terminals }), closeTerminal: (address) => {
+    host: { closeoutTerminals: () => ({ status: 'observed', terminals: terminals.filter(row => !closed.includes(row.address)) }), closeTerminal: (address) => {
       if (rmFails.has(address)) return { status: 'unavailable', reason: 'hc_failed' };
       closed.push(address); return { status: 'closed' };
     } },
@@ -2324,7 +2329,12 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   const state = (path: string, outcome: 'removed' | 'kept', reason: string | null) => ({ path, outcome, reason, checkout_present: outcome !== 'removed', branch_present: outcome !== 'removed' });
 
   const removed = await closeout(21);
-  expect([removed.panes, removed.worktree]).toEqual([[pane('t1', 'worker', null), pane('t2', 'gatekeeper', null), pane('t12', 'reviewer', null)], state(clean, 'removed', null)]);
+  // #2675: the stale record t29 of another pull request is removed and reported apart from the panes; the failed removal of
+  // t31 is reported too and does not keep the worktree; t30 (cwd exists), t32 (no seat label) and the caller t3, which the host
+  // reports finished with a missing cwd, stay out of both lists.
+  expect([removed.panes, removed.stale_terminals, removed.worktree]).toEqual([
+    [pane('t1', 'worker', null), pane('t2', 'gatekeeper', null), pane('t12', 'reviewer', null)],
+    [pane('t29', 'reviewer', null), pane('t31', 'gatekeeper', 'hc_failed')], state(clean, 'removed', null)]);
   expect([existsSync(clean), run('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/feat/clean'], main).status, git(origin, 'branch', '--list', 'feat/clean')])
     .toEqual([false, 1, 'feat/clean']);
 
@@ -2351,7 +2361,7 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   // A failed hc rm keeps the finished pane and the worktree with the reason; the retry removes both.
   const rmFailed = await closeout(26);
   expect([rmFailed.panes, rmFailed.worktree]).toEqual([[pane('t17', 'reviewer', 'hc_failed')], state(rmfail, 'kept', 'a pane of the pull request is kept')]);
-  rmFails.clear();
+  rmFails.delete('t17');
   const retried = await closeout(26);
   expect([retried.panes, retried.worktree]).toEqual([[pane('t17', 'reviewer', null)], state(rmfail, 'removed', null)]);
   // A server that stops while its child keeps the checkout: closeout re-reads the inventory and keeps the worktree.
@@ -2367,9 +2377,10 @@ test('board closeout: proofs come first; a bound, clean, pushed seat closes and 
   const conflict = await closeout(30);
   expect([conflict.panes, conflict.worktree]).toEqual([[pane('t23', 'worker', null), pane('t22', 'reviewer', 'conflicting_binding pr 99')], state(refsconf, 'kept', 'a pane of the pull request is kept')]);
   // A finished pane whose cwd directory is gone protects no work: closeout removes its record and the worktree goes (#2658).
+  rmSync(withdrawnReview, { recursive: true, force: true });
   const lost = await closeout(31);
   expect([lost.panes, lost.worktree]).toEqual([[pane('t28', 'reviewer', null)], state(withdrawn, 'removed', null)]);
-  expect(closed).toEqual(['t1', 't2', 't12', 't4', 't9', 't11', 't17', 't18', 't19', 't20', 't23', 't28']);
+  expect(closed).toEqual(['t1', 't2', 't12', 't29', 't4', 't9', 't11', 't17', 't18', 't19', 't20', 't23', 't28']);
 });
 
 test('closeout stops a CodeGraph MCP server bound to exactly the worktree and no other process', async () => {
