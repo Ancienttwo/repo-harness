@@ -434,3 +434,105 @@ run_bun_test_file "$2"
     } finally { f.close(); }
   });
 });
+
+// TEMPORARY (#2588 draft run only): measure the Windows EPERM in the lock owner read.
+test.skipIf(process.platform !== "win32")("TEMP #2588 owner read EPERM probe", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const tryCall = (f: () => unknown): string => {
+    try {
+      const v = f();
+      if (v && typeof v === "object" && "isDirectory" in (v as object)) {
+        const s = v as import("node:fs").Stats;
+        return `ok(dir=${s.isDirectory()},file=${s.isFile()},ino=${s.ino},nlink=${s.nlink},mode=${s.mode.toString(8)})`;
+      }
+      return `ok(${JSON.stringify(v)})`;
+    } catch (e) {
+      const err = e as NodeJS.ErrnoException;
+      return `${err.code}(errno=${err.errno},syscall=${err.syscall})`;
+    }
+  };
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "rh-2588-")));
+  const lockPath = join(root, "agent.lock");
+  const module = join(ROOT, "src/effects/locking/exclusive-directory-lock.ts");
+  const code = `import { acquireExclusiveDirectoryLock } from ${JSON.stringify(module)};
+    for (let i = 0; i < 2000; i++) { const lock = acquireExclusiveDirectoryLock(process.argv[1], 'agent.lock'); lock.release(); }`;
+  const child = Bun.spawn([process.execPath, "-e", code, root], { stdout: "ignore", stderr: "pipe" });
+  const samples: string[] = [];
+  const histogram = new Map<string, number>();
+  let reads = 0;
+  const diagnose = (step: string, path: string, again: () => unknown, first: NodeJS.ErrnoException) => {
+    const row = [
+      `step=${step}`,
+      `first=${first.code}(errno=${first.errno},syscall=${first.syscall})`,
+      `again=${tryCall(again)}`,
+      `lstatLock=${tryCall(() => fs.lstatSync(lockPath))}`,
+      `statLock=${tryCall(() => fs.statSync(lockPath))}`,
+      `existsLock=${tryCall(() => fs.existsSync(lockPath))}`,
+      `parentHas=${tryCall(() => fs.readdirSync(root).includes("agent.lock"))}`,
+      `parentTyped=${tryCall(() => fs.readdirSync(root, { withFileTypes: true }).filter(d => d.name === "agent.lock").map(d => d.isDirectory()))}`,
+      `readdirLock3=${tryCall(() => fs.readdirSync(lockPath))}`,
+      `path=${path === lockPath ? "lock" : "owner"}`,
+    ].join(" ");
+    const key = row.replace(/ino=\d+/g, "ino=*").replace(/\[".*?"\]/g, "[..]").replace(/"[^"]*\.json"/g, "<owner>");
+    histogram.set(key, (histogram.get(key) ?? 0) + 1);
+    if (samples.length < 25) samples.push(row);
+  };
+  const step = <T,>(name: string, path: string, f: () => T): T => {
+    try { return f(); } catch (e) {
+      const err = e as NodeJS.ErrnoException;
+      if (err.code === "EPERM" || err.code === "EACCES") diagnose(name, path, f, err);
+      throw err;
+    }
+  };
+  const otherCodes = new Map<string, number>();
+  try {
+    while (child.exitCode === null) {
+      reads++;
+      try {
+        step("lstat-dir-1", lockPath, () => fs.lstatSync(lockPath));
+        const entries = step("readdir-1", lockPath, () => fs.readdirSync(lockPath));
+        if (entries.length !== 1) continue;
+        const ownerPath = join(lockPath, entries[0]!);
+        step("lstat-owner-1", ownerPath, () => fs.lstatSync(ownerPath));
+        step("readfile-owner", ownerPath, () => fs.readFileSync(ownerPath, "utf-8"));
+        step("lstat-dir-2", lockPath, () => fs.lstatSync(lockPath));
+        step("lstat-owner-2", ownerPath, () => fs.lstatSync(ownerPath));
+        step("readdir-2", lockPath, () => fs.readdirSync(lockPath));
+      } catch (e) {
+        const c = (e as NodeJS.ErrnoException).code ?? String(e);
+        otherCodes.set(c, (otherCodes.get(c) ?? 0) + 1);
+      }
+      if (reads % 64 === 0) await Bun.sleep(0);
+    }
+    const exit = await child.exited;
+    console.log(`[#2588] bun=${Bun.version} os=${os.release()} child exit=${exit} stderr=${(await new Response(child.stderr).text()).slice(0, 500)}`);
+    console.log(`[#2588] reads=${reads} error codes=${JSON.stringify([...otherCodes])}`);
+    for (const [key, count] of histogram) console.log(`[#2588] signature x${count}: ${key}`);
+    for (const row of samples) console.log(`[#2588] sample: ${row}`);
+
+    // Control: a real access refusal on a live directory and file.
+    const icacls = (...args: string[]) => {
+      const r = spawnSync("icacls", args, { encoding: "utf8" });
+      return `status=${r.status} error=${r.error?.message ?? "none"} ${`${r.stdout ?? ""}${r.stderr ?? ""}`.trim().split(/\r?\n/).pop()}`;
+    };
+    for (const deny of ["(RD)", "(RD,RA)", "F"]) {
+      const dir = join(root, `denied-${deny.replace(/\W/g, "")}`);
+      fs.mkdirSync(dir);
+      fs.writeFileSync(join(dir, "owner.json"), "{}");
+      console.log(`[#2588] control dir deny=${deny} icacls=${icacls(dir, "/deny", `*S-1-1-0:${deny}`)}`);
+      console.log(`[#2588] control dir deny=${deny} readdir=${tryCall(() => fs.readdirSync(dir))} again=${tryCall(() => fs.readdirSync(dir))} lstat=${tryCall(() => fs.lstatSync(dir))} stat=${tryCall(() => fs.statSync(dir))} exists=${tryCall(() => fs.existsSync(dir))} parentHas=${tryCall(() => fs.readdirSync(root).includes(basename(dir)))} lstatChild=${tryCall(() => fs.lstatSync(join(dir, "owner.json")))}`);
+      console.log(`[#2588] control dir deny=${deny} restore=${icacls(dir, "/remove:d", "*S-1-1-0")}`);
+    }
+    const file = join(root, "denied-file.json");
+    fs.writeFileSync(file, "{}");
+    console.log(`[#2588] control file deny=(R) icacls=${icacls(file, "/deny", "*S-1-1-0:(R)")}`);
+    console.log(`[#2588] control file readFile=${tryCall(() => fs.readFileSync(file, "utf-8"))} lstat=${tryCall(() => fs.lstatSync(file))} parentHas=${tryCall(() => fs.readdirSync(root).includes("denied-file.json"))}`);
+    console.log(`[#2588] control file restore=${icacls(file, "/remove:d", "*S-1-1-0")}`);
+    expect(exit).toBe(0);
+  } finally {
+    child.kill();
+    await child.exited;
+    rmSync(root, { recursive: true, force: true });
+  }
+}, 300_000);
