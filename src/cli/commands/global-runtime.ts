@@ -936,49 +936,62 @@ export function updateRegisteredUpgradeSummary(cwd: string, installedCli: boolea
     payload = null;
   }
   const record = payload !== null && typeof payload === 'object' && !Array.isArray(payload)
-    ? payload as { repos?: unknown; error?: unknown } : null;
+    ? payload as { repos?: unknown; error?: unknown; revision?: unknown } : null;
   const reportedError = typeof record?.error === 'string' ? record.error.trim() : '';
   if (!record || !Array.isArray(record.repos) || reportedError !== '') {
     return unavailable(redactProcessOutput(reportedError || run.stderr) || 'upgrade --registered --json returned no repo list');
   }
-  const repos = record.repos.map((repo) => (repo !== null && typeof repo === 'object' ? repo : {}) as { status?: unknown; pending?: unknown });
-  const pending = repos.filter((repo) => repo.status === 'ready' && repo.pending === true).length;
+  const repos = record.repos.map((repo) => (repo !== null && typeof repo === 'object' ? repo : {}) as { path?: unknown; status?: unknown; pending?: unknown });
+  const pending = repos.filter((repo) => repo.status === 'ready' && repo.pending === true);
   const skipped = repos.filter((repo) => repo.status === 'skipped').length;
   const failed = repos.filter((repo) => repo.status === 'failed').length;
-  return `Registered repos: ${pending} of ${repos.length} have pending project upgrade work`
-    + `${skipped > 0 ? `; ${skipped} skipped` : ''}${failed > 0 ? `; ${failed} failed` : ''}. ${hint}`;
+  // Update writes no project file. The registered apply, bound to this preview revision, rewrites the managed references.
+  const apply = pending.length > 0 && typeof record.revision === 'string'
+    ? `. Apply: ${CLI_NAME} upgrade --registered --apply --expected-revision ${record.revision}` : '';
+  const names = pending.map((repo) => String(repo.path));
+  return `Registered repos: ${pending.length} of ${repos.length} have pending project upgrade work`
+    + `${names.length > 0 ? ` (${names.join(', ')})` : ''}`
+    + `${skipped > 0 ? `; ${skipped} skipped` : ''}${failed > 0 ? `; ${failed} failed` : ''}. ${hint}${apply}`;
 }
 
 export const RETIRED_CLI_LINK_STEP = `retire the ${RETIRED_CLI_NAME} command link`;
 export const RETIRED_CLI_REFERENCES_STEP = `find ${RETIRED_CLI_NAME} command calls in user files`;
 
 /**
- * Bun keeps the bin link of a name that the new package version no longer declares, and that link
- * runs the new package. Update removes the link once when it resolves to this package's CLI entry.
- * Another file at that path is not the package's, so the step names it and changes nothing.
+ * Bun keeps the bin launcher of a name that the new package version no longer declares, and that
+ * launcher runs the new package. Update removes it once when it proves that it is this package's
+ * launcher of the CLI entry: on POSIX a symlink that resolves to the entry; on Windows the .bunx
+ * record that names the entry, with its .exe beside it. Anything else at those paths is not proved
+ * to be the package's, so the step names it and changes nothing.
  */
 function retireCliLink(env: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const step = RETIRED_CLI_LINK_STEP;
   const bin = join(env.BUN_INSTALL ?? join(homeDir(env), '.bun'), 'bin');
-  // Bun on Windows writes a .exe launcher and a .bunx record instead of a symlink.
-  const leftovers = [`${RETIRED_CLI_NAME}.exe`, `${RETIRED_CLI_NAME}.bunx`].map(name => join(bin, name)).filter(path => existsSync(path));
   const link = join(bin, RETIRED_CLI_NAME);
-  const notOwned = (paths: readonly string[]): GlobalRuntimeStep => ({
-    step, status: 'ok', detail: `${paths.join(', ')} is not a link that this package manages; remove it by hand. The command is ${CLI_NAME}.`,
-  });
-  const existing = lstatSync(link, { throwIfNoEntry: false });
-  if (!existing) return leftovers.length > 0 ? notOwned(leftovers) : { step, status: 'skipped', detail: 'No retired command link.' };
+  const exe = join(bin, `${RETIRED_CLI_NAME}.exe`);
+  const record = join(bin, `${RETIRED_CLI_NAME}.bunx`);
+  const present = [link, exe, record].filter(path => lstatSync(path, { throwIfNoEntry: false }) !== undefined);
+  if (present.length === 0) return { step, status: 'skipped', detail: 'No retired command launcher.' };
   const packageRoot = bunGlobalPackageRoot(env);
   const entry = packageRoot === null ? null : join(packageRoot, 'src', 'cli', 'index.ts');
-  let target: string | null = null;
-  try { target = realpathSync(link); } catch { /* A dangling link is not the package's link. */ }
-  if (!existing.isSymbolicLink() || target === null || entry === null || !existsSync(entry) || target !== realpathSync(entry)) {
-    return notOwned([link, ...leftovers]);
+  const entryReal = entry !== null && existsSync(entry) ? realpathSync(entry) : null;
+  const owned = new Set<string>();
+  const linkStat = lstatSync(link, { throwIfNoEntry: false });
+  if (linkStat?.isSymbolicLink() && entryReal !== null) {
+    try { if (realpathSync(link) === entryReal) owned.add(link); } catch { /* A dangling link is not the package's link. */ }
   }
-  unlinkSync(link);
-  return leftovers.length > 0
-    ? { step, status: 'ok', detail: `Removed ${link}. ${notOwned(leftovers).detail}` }
-    : { step, status: 'ok', detail: `Removed ${link}; the command is ${CLI_NAME}.` };
+  // The .bunx record holds the bin target relative to the bin directory, in UTF-16LE.
+  const recordStat = lstatSync(record, { throwIfNoEntry: false });
+  const exeStat = lstatSync(exe, { throwIfNoEntry: false });
+  if (recordStat?.isFile() && exeStat?.isFile()) {
+    const named = readFileSync(record).toString('utf16le').replaceAll('/', '\\');
+    if (named.includes(`node_modules\\${RETIRED_CLI_NAME}\\src\\cli\\index.ts`)) { owned.add(exe); owned.add(record); }
+  }
+  for (const path of owned) unlinkSync(path);
+  const kept = present.filter(path => !owned.has(path));
+  const removed = [...owned].length > 0 ? `Removed ${[...owned].join(', ')}. ` : '';
+  const notice = kept.length > 0 ? `${kept.join(', ')} is not proved to be this package's launcher; remove it by hand. ` : '';
+  return { step, status: 'ok', detail: `${removed}${notice}The command is ${CLI_NAME}.` };
 }
 
 /** Update rewrites only the files that it manages; a user-owned call of the retired command gets a notice. */
@@ -1929,8 +1942,6 @@ export function runGlobalRuntimeSetup(
     }
   }
 
-  if (updateMode) steps.push(retireCliLink(env));
-
   const protectedHelperPlatform = configureProtectedHelperPlatform(cwd, bunExecutable, env, process.platform, opts.runtimeLock);
   steps.push(protectedHelperPlatform);
   if (protectedHelperPlatform.status === 'failed') return finalizeRuntimeResult(steps);
@@ -1986,8 +1997,9 @@ export function runGlobalRuntimeSetup(
   if (updateMode && agentFleetVerified({ steps })) steps.push(recordAgentFleetOwnership(env));
 
   steps.push({ step: GLOBAL_RULES_REFRESH_STEP, ...applyGlobalContextRefresh(globalRules, homeDir(env)) });
-  if (updateMode) steps.push(findRetiredCliCalls(env, target));
   if (steps.at(-1)?.status === "failed") return finalizeRuntimeResult(steps);
+  // After the refresh, so the managed block is current and every remaining call is in user text.
+  if (updateMode) steps.push(findRetiredCliCalls(env, target));
 
   const refreshExternalSkills = opts.externalSkills === true;
   if (refreshExternalSkills) {
@@ -2098,5 +2110,7 @@ export function runGlobalRuntimeSetup(
     steps.push({ ...pi, ...(pi.created ? { owned_surface: piPackageSurface(pi.source) } : {}) });
   }
   steps.push(writeRuntimeIgnoreRules(env));
+  // Last, and only after every other step passed: a failed update keeps the previous command.
+  if (updateMode && steps.every(step => step.status !== 'failed')) steps.push(retireCliLink(env));
   return finalizeRuntimeResult(steps);
 }

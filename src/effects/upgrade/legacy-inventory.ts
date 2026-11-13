@@ -8,6 +8,7 @@ import { isRepoHarnessLegacyTypedHookCommand, retiredHookCommands, stripRepoHarn
 import { isRepoHarnessSourceCheckout } from '../source-checkout';
 import { loadWorkflowContractAsset } from '../../core/adoption/workflow-contract-asset';
 import { CLI_NAME, RETIRED_CLI_INVOCATION, RETIRED_CLI_NAME } from '../../core/skill-surface/cli-name';
+import { MANAGED_PACKAGE_SCRIPTS } from '../../core/adoption/package-scripts';
 import { parseSkillSurfaceCatalog, type SkillSurfacePackage } from '../../core/skill-surface/catalog';
 
 export interface LeftoverItem {
@@ -511,7 +512,8 @@ function scanPackageScripts(root: string, add: AddItem): void {
   const resolves = (runner: string, target: string): boolean => Object.hasOwn(scripts, target)
     || (runner === 'bun' && (stat(join(root, target)) !== null || stat(join(root, 'node_modules/.bin', target)) !== null));
   const findings = Object.entries(scripts).flatMap(([key, command]) => {
-    if (typeof command !== 'string') return [];
+    // init writes the managed keys on every run, so their values are not the user's.
+    if (typeof command !== 'string' || Object.hasOwn(MANAGED_PACKAGE_SCRIPTS, key)) return [];
     const retired = [...command.matchAll(/(?<![\w./@-])(?:rh|repo-harness) run ([^\s;&|'"`)]+)/g)].some((match) => !runnable.has(match[1]!));
     const retiredCli = RETIRED_CLI_INVOCATION.test(command) ? [` (the ${RETIRED_CLI_NAME} command is now ${CLI_NAME})`] : [];
     const missing = [...command.matchAll(/\b(bun|npm) run(?=\s)/g)].flatMap((match) => {
@@ -522,7 +524,25 @@ function scanPackageScripts(root: string, add: AddItem): void {
   });
   if (findings.length === 0) return;
   add({ location: 'project', surface: 'file', path, retiredBy: 'retired-script-reference', ownership: 'unowned', proof: null, action: 'report',
-    reason: `Package scripts call a helper that this package does not ship, a script that package.json does not define, or the retired ${RETIRED_CLI_NAME} command; ${CLI_NAME} init rewrites the scripts that it manages; review the others without automatic edits: ${findings.join('; ')}` });
+    reason: `Package scripts call a helper that this package does not ship, a script that package.json does not define, or the retired ${RETIRED_CLI_NAME} command; review them without automatic edits: ${findings.join('; ')}` });
+}
+
+/**
+ * Files that init writes once and the user owns afterward, and the policy that the user edits.
+ * A call of the retired command in them gets a report; init and upgrade rewrite only managed bytes.
+ * An unchanged released root context is a refresh item instead, which replaces this report.
+ */
+const USER_OWNED_PROJECT_TEXT = ['CLAUDE.md', 'AGENTS.md', 'tasks/lessons.md', '.ai/harness/policy.json'] as const;
+
+function scanRetiredCliCalls(root: string, add: AddItem): void {
+  for (const name of USER_OWNED_PROJECT_TEXT) {
+    const path = join(root, name);
+    if (!isLegacyPathSafe(root, path, false) || !stat(path)?.isFile()) continue;
+    const lines = readFileSync(path, 'utf8').split('\n').flatMap((line, index) => RETIRED_CLI_INVOCATION.test(line) ? [index + 1] : []);
+    if (lines.length === 0) continue;
+    add({ location: 'project', surface: 'file', path, retiredBy: 'retired-cli-command', ownership: 'unowned', proof: null, action: 'report',
+      reason: `Line ${lines.join(', ')} calls the retired ${RETIRED_CLI_NAME} command; change each call to ${CLI_NAME} <command>. Upgrade does not edit this file.` });
+  }
 }
 
 /** codex-handoff-resume is the only retired generator that a release shipped with this marker (resume.md). */
@@ -692,6 +712,7 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
     };
     walk(join(root, '.ai'));
     scanPackageScripts(root, add);
+    scanRetiredCliCalls(root, add);
     // init keeps the ignore rule while these files exist; the rule leaves the block only after they are gone.
     for (const rule of RETIRED_RUNTIME_IGNORE_RULES) {
       for (const file of retiredRuntimeRuleFiles(root, rule)) {

@@ -328,7 +328,7 @@ describe('install selection', () => {
   }));
 
   test('protocol 1 and 2 refuse a state and a candidate request before any write, and name the bridges', () => {
-    const protocol2Bridge = 'bun add -g repo-harness@0.25.4 --no-cache && rh update --version 0.25.4';
+    const protocol2Bridge = 'bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version 0.25.4';
     const rows = [
       // The protocol 1 bridge continues through the protocol 2 bridge.
       { protocol: 1, profile: 'standard', components: P2_MINIMAL, bridge: ['bun add -g repo-harness@0.25.3 --no-cache', `then the protocol 2 bridge: ${protocol2Bridge}`] },
@@ -356,8 +356,10 @@ describe('install selection', () => {
     });
 
     const request = Buffer.from(JSON.stringify({ protocol: 1, profile: 'full' }), 'utf-8').toString('base64url');
-    expect(() => parseCandidateRequest(request, '0.26.0')).toThrow(CandidateRequestProtocolRetiredError);
-    expect(() => parseCandidateRequest(request, '0.26.0')).toThrow('bun add -g repo-harness@0.26.0 --no-cache && rh update');
+    // The candidate names its own release, whose command is rh.
+    const current = versions([]).core.version;
+    expect(() => parseCandidateRequest(request, current)).toThrow(CandidateRequestProtocolRetiredError);
+    expect(() => parseCandidateRequest(request, current)).toThrow(`bun add -g repo-harness@${current} --no-cache && rh update`);
   }, 60_000);
 
   test('fresh install dry-run selects all and skips the host plugins this host cannot run', () => withHome((env) => {

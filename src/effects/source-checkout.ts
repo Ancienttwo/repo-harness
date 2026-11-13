@@ -36,7 +36,8 @@ export function isRepoHarnessSourceCheckout(repoRoot: string): boolean {
   if (!bins || typeof bins !== "object" || Array.isArray(bins)) return false;
   const binMap = bins as Record<string, unknown>;
   if (packageManifest.name !== "repo-harness") return false;
-  if (binMap.rh !== "src/cli/index.ts") return false;
+  // The CLI entry, not its command name, identifies the source: a checkout before the rh rename is the same source.
+  if (!Object.values(binMap).includes("src/cli/index.ts")) return false;
   if (binMap["repo-harness-hook"] !== "dist/hook-entry.js") return false;
 
   return SOURCE_AUTHORITY_FILES.every((path) => regularFile(root, path));

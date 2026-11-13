@@ -768,7 +768,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       const runtime = JSON.parse(result.stdout) as { lines: string[] };
       expect(runtime.lines.filter((line) => /^\d+ leftovers \(\d+ removable\)\. Run: rh upgrade$/.test(line))).toHaveLength(1);
       // The registered-repo line follows the leftover summary.
-      expect(runtime.lines.at(-1)).toMatch(/^Registered repos: \d+ of \d+ have pending project upgrade work\..* Preview: rh upgrade --registered$/);
+      expect(runtime.lines.at(-1)).toMatch(/^Registered repos: \d+ of \d+ have pending project upgrade work.* Preview: rh upgrade --registered(\. Apply: rh upgrade --registered --apply --expected-revision sha256:[0-9a-f]{64})?$/);
       expect(readFileSync(bunLog, 'utf-8')).toContain(`${candidateRoot}/src/cli/index.ts upgrade --summary-line`);
     } finally {
       rmSync(root, { recursive: true, force: true });

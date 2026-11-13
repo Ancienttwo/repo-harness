@@ -138,10 +138,10 @@ describe("Bootstrap Script Contracts", () => {
     const program = buildProgram();
     expect(program.name()).toBe("rh");
     expect(program.commands.map((command) => command.name()).filter((name) => !name.startsWith("__")).sort()).toEqual([...CLI_TOP_LEVEL_COMMANDS].sort());
-    for (const line of ["run `repo-harness board seats --json`", "repo-harness review round --issue-id 1", "\"check\": \"repo-harness brain check\""]) {
+    for (const line of ["run `repo-harness board seats --json`", "repo-harness review round --issue-id 1", "\"check\": \"repo-harness brain check\"", "run repo-harness update", "Bash(repo-harness board:*)"]) {
       expect(RETIRED_CLI_INVOCATION.test(line)).toBe(true);
     }
-    for (const line of ["npx -y repo-harness install", "bunx repo-harness run new-plan", "exec repo-harness-hook Stop", "~/.repo-harness/config.json", "repo-harness review start status", "the repo-harness skill", "rh board seats"]) {
+    for (const line of ["npx -y repo-harness install", "bunx repo-harness run new-plan", "exec repo-harness-hook Stop", "~/.repo-harness/config.json", "repo-harness review start status", "the repo-harness skill", "the repo-harness operator console", "[repo-harness mcp] Repo", "rh board seats"]) {
       expect(RETIRED_CLI_INVOCATION.test(line)).toBe(false);
     }
   });

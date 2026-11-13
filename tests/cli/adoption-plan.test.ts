@@ -173,6 +173,13 @@ describe("canonical adoption plan", () => {
     try {
       writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "repo-harness" }));
       expect(isRepoHarnessSourceCheckout(repo)).toBe(false);
+      // A checkout before the rh rename declares the same CLI entry under the repo-harness bin.
+      for (const path of ["assets/workflow-contract.v1.json", "scripts/check-ci.sh", "src/cli/index.ts", "src/cli/hook-entry.ts", "src/effects/adoption/standard-plan.ts"]) {
+        mkdirSync(dirname(join(repo, path)), { recursive: true });
+        writeFileSync(join(repo, path), "");
+      }
+      writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "repo-harness", bin: { "repo-harness": "src/cli/index.ts", "repo-harness-hook": "dist/hook-entry.js" } }));
+      expect(isRepoHarnessSourceCheckout(repo)).toBe(true);
     } finally {
       cleanup(repo);
     }

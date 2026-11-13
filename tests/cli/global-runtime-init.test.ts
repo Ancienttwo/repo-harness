@@ -994,13 +994,28 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
 
       expect(result.exitCode).toBe(0);
       expect(lstatSync(retiredLink, { throwIfNoEntry: false })).toBeUndefined();
-      expect(result.steps.find((step) => step.step === 'retire the repo-harness command link')?.detail).toBe(`Removed ${retiredLink}; the command is rh.`);
+      expect(result.steps.find((step) => step.step === 'retire the repo-harness command link')?.detail).toBe(`Removed ${retiredLink}. The command is rh.`);
       expect(result.steps.find((step) => step.step === 'find repo-harness command calls in user files')?.detail).toContain(`${join(home, '.codex', 'AGENTS.md')}:1`);
       expect(readFileSync(join(home, '.codex', 'AGENTS.md'), 'utf8')).toContain('Run `repo-harness board seats` first.');
       writeFileSync(retiredLink, 'owner file');
-      expect(update({ plugins: FULL_PLUGINS }).steps.find((step) => step.step === 'retire the repo-harness command link')?.detail).toContain('is not a link that this package manages');
+      const retireDetail = () => update({ plugins: FULL_PLUGINS }).steps.find((step) => step.step === 'retire the repo-harness command link')?.detail;
+      expect(retireDetail()).toBe(`${retiredLink} is not proved to be this package's launcher; remove it by hand. The command is rh.`);
       expect(readFileSync(retiredLink, 'utf8')).toBe('owner file');
       rmSync(retiredLink);
+      // Bun on Windows: a .exe launcher and a UTF-16LE .bunx record that names the bin target.
+      const exe = `${retiredLink}.exe`;
+      const record = `${retiredLink}.bunx`;
+      const bunx = (target: string) => writeFileSync(record, Buffer.from(`..\\install\\global\\node_modules\\${target}\\src\\cli\\index.ts"`, 'utf16le'));
+      writeFileSync(exe, 'launcher');
+      bunx('repo-harness');
+      expect(retireDetail()).toBe(`Removed ${exe}, ${record}. The command is rh.`);
+      expect([existsSync(exe), existsSync(record)]).toEqual([false, false]);
+      writeFileSync(exe, 'launcher');
+      bunx('other-package');
+      expect(retireDetail()).toBe(`${exe}, ${record} is not proved to be this package's launcher; remove it by hand. The command is rh.`);
+      rmSync(record);
+      expect(retireDetail()).toBe(`${exe} is not proved to be this package's launcher; remove it by hand. The command is rh.`);
+      rmSync(exe);
       expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')).toMatchObject({ status: 'ok' });
       expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')?.detail).toContain(`archctx@${ARCHCTX_PIN}`);
       const archctxLink = join(home, '.bun', 'bin', 'archctx');
@@ -3428,7 +3443,7 @@ describe('Global Working Rules refresh during install and update', () => {
     expect(readFileSync(path, 'utf-8')).toBe(`${mixedLegacy}\n## Added later\n`);
   }));
 
-  test.skipIf(process.getuid?.() === 0)('a failed backup copy leaves the rules file unwritten', () => withRulesRuntime(({ home, path }) => {
+  test.skipIf(process.getuid?.() === 0)('a failed backup copy leaves the rules file unwritten and stops update', () => withRulesRuntime(({ home, path, run }) => {
     writeFileSync(path, mixedLegacy);
     mkdirSync(backupDir(home), { recursive: true });
     chmodSync(backupDir(home), 0o500);
@@ -3436,6 +3451,10 @@ describe('Global Working Rules refresh during install and update', () => {
       const applied = applyGlobalContextRefresh(preflightGlobalContextRefresh(ROOT, home, ['codex'], 'en'), home);
       expect(applied.status).toBe('failed');
       expect(applied.detail).toStartWith(`failed:${path} (EACCES`);
+      // In update mode the failed refresh is the last step: no later host write and no user-file notice run.
+      const update = run('en');
+      expect(update.exitCode).toBe(1);
+      expect(update.steps.at(-1)).toMatchObject({ step: 'refresh global working rules', status: 'failed' });
     } finally {
       chmodSync(backupDir(home), 0o700);
     }

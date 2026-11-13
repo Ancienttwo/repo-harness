@@ -97,7 +97,7 @@ function parseSelection(raw: unknown, ids: readonly PluginId[], path: string, la
 }
 
 /** 0.25.4 is the last release that reads protocol 2: its `update` migrates the state to protocol 3 (#1607). */
-const PROTOCOL_2_BRIDGE = 'bun add -g repo-harness@0.25.4 --no-cache && rh update --version 0.25.4';
+const PROTOCOL_2_BRIDGE = 'bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version 0.25.4';
 const CURRENT_PACKAGE_UPDATE = `bun add -g repo-harness@${PACKAGE_VERSION} --no-cache && rh update`;
 
 function parseSnapshot(raw: unknown, path: string, label: string): RecordedInstallSnapshot {
@@ -105,7 +105,7 @@ function parseSnapshot(raw: unknown, path: string, label: string): RecordedInsta
   if (raw.protocol === 1) {
     throw new InstallStateError('install_state_protocol_retired', path,
       `install state ${path} is protocol 1, which this package no longer reads. Migrate it with the 0.25.x bridge first: `
-      + 'bun add -g repo-harness@0.25.3 --no-cache, then run its protocol 1 migration (rh install --help in 0.25.3 names it); '
+      + 'bun add -g repo-harness@0.25.3 --no-cache, then run its protocol 1 migration (repo-harness install --help in 0.25.3 names it); '
       + `then the protocol 2 bridge: ${PROTOCOL_2_BRIDGE}; then: ${CURRENT_PACKAGE_UPDATE}`);
   }
   if (raw.protocol === 2) {

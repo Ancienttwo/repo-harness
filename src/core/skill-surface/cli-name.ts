@@ -13,13 +13,14 @@ export const CLI_TOP_LEVEL_COMMANDS: readonly string[] = [
 ];
 
 /**
- * One call of the retired command: `repo-harness <top-level command>`. The package specifier
- * (`npx repo-harness`, `bunx repo-harness@latest`), the hook command `repo-harness-hook`, paths
- * such as `~/.repo-harness`, and the persisted protocol headers `repo-harness review
- * start|request|result|rejected|reply` do not match.
+ * One call of the retired command: `repo-harness <top-level command>` in a command position, which is
+ * the line start (after a list marker or `$ `), a backtick, quote or `(`, a shell operator, or `run`.
+ * Prose that names the package (`the repo-harness operator console`), the package specifier
+ * (`npx repo-harness`), the hook command `repo-harness-hook`, paths such as `~/.repo-harness`, and
+ * the persisted protocol headers `repo-harness review start|request|result|rejected|reply` do not match.
  */
 export const RETIRED_CLI_INVOCATION = new RegExp(
-  String.raw`(?<![\w./@\[-])(?<!(?:npx|bunx|bun x|-y|--yes) )repo-harness[ \t]+`
+  String.raw`(?<=(?:^[ \t]*(?:[-*>][ \t]+)?(?:\$[ \t]+)?|[\x60'"(][ \t]*|(?:&&|\|\||[;|]|\$\()[ \t]*|\b[Rr]un:?[ \t]+))repo-harness[ \t]+`
   + String.raw`(?!review[ \t]+(?:start|request|result|rejected|reply)\b)(?:${CLI_TOP_LEVEL_COMMANDS.join('|')})(?![\w-])`,
   'u',
 );

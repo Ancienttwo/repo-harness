@@ -13,6 +13,7 @@ import { planLegacyLeftovers, stripLegacyHookEntries } from "../upgrade/legacy-i
 import { runGit } from "../git/run-git";
 import { pruneUnknownPolicyKeys } from "../../core/workflow/policy-schema";
 import { withoutRepositorySelectingGitEnv } from "../git/runner";
+import { MANAGED_PACKAGE_SCRIPTS } from "../../core/adoption/package-scripts";
 
 const ASSET_ROOT = join(import.meta.dir, "..", "..", "..", "assets");
 const TEMPLATE_ROOT = join(ASSET_ROOT, "templates");
@@ -418,12 +419,7 @@ function addPackageOperation(repoRoot: string, operations: AdoptionOperation[]):
   const current = jsonFile(repoRoot, "package.json");
   if (!current) return;
   const scripts = isObject(current.scripts) ? { ...current.scripts } : {};
-  Object.assign(scripts, {
-    "check:brain": "rh brain check",
-    "check:context-files": "rh run check-context-files",
-    "check:deploy-sql": "rh run check-deploy-sql-order",
-    "sync:brain": "rh brain sync",
-  });
+  Object.assign(scripts, MANAGED_PACKAGE_SCRIPTS);
   if (scripts["check:brain-manifest"] === "repo-harness run check-brain-manifest") {
     delete scripts["check:brain-manifest"];
   }

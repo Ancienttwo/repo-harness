@@ -303,8 +303,8 @@ or protocol 2 state with `install_state_protocol_retired`, and `install` and
 
 | State | Bridge |
 |---|---|
-| Protocol 2 (0.11.1 to 0.25.3) | 0.25.4, whose `update` migrates protocol 2 to 3 once: `bun add -g repo-harness@0.25.4 --no-cache && rh update --version 0.25.4` |
-| Protocol 1 | 0.25.3 first: `bun add -g repo-harness@0.25.3 --no-cache`, then its protocol 1 migration (`rh install --help` in 0.25.3 names it), then the protocol 2 bridge |
+| Protocol 2 (0.11.1 to 0.25.3) | 0.25.4, whose `update` migrates protocol 2 to 3 once: `bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version 0.25.4` |
+| Protocol 1 | 0.25.3 first: `bun add -g repo-harness@0.25.3 --no-cache`, then its protocol 1 migration (`repo-harness install --help` in 0.25.3 names it), then the protocol 2 bridge |
 
 After the bridge, install the current package:
 `bun add -g repo-harness@<version> --no-cache && rh update`.

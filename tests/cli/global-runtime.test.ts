@@ -292,7 +292,7 @@ describe('update leftover summary', () => {
     ];
     withFakeUpgrade(`${JSON.stringify({ revision: `sha256:${'0'.repeat(64)}`, apply: false, exitCode: 1, repos })}\n`, '', () => {
       expect(updateRegisteredUpgradeSummary(tmpdir(), false)).toBe(
-        'Registered repos: 1 of 4 have pending project upgrade work; 1 skipped; 1 failed. Preview: rh upgrade --registered',
+        `Registered repos: 1 of 4 have pending project upgrade work (/fixture/a); 1 skipped; 1 failed. Preview: rh upgrade --registered. Apply: rh upgrade --registered --apply --expected-revision sha256:${'0'.repeat(64)}`,
       );
     });
   });
@@ -329,9 +329,9 @@ describe('update registered repo summary', () => {
         if (f.env[key] === undefined) delete process.env[key];
         else process.env[key] = f.env[key];
       }
-      expect(updateRegisteredUpgradeSummary(root, false)).toBe(
-        'Registered repos: 1 of 3 have pending project upgrade work; 1 skipped. Preview: rh upgrade --registered',
-      );
+      expect(updateRegisteredUpgradeSummary(root, false)).toMatch(new RegExp(
+        `^Registered repos: 1 of 3 have pending project upgrade work \\(${stale}\\); 1 skipped\\. Preview: rh upgrade --registered\\. Apply: rh upgrade --registered --apply --expected-revision sha256:[0-9a-f]{64}$`,
+      ));
       expect(readFileSync(f.registry, 'utf8')).toBe(registryBefore);
       expect([current, stale].map((repo) => [worktreeSnapshot(repo), git(f, repo, 'status', '--porcelain'), git(f, repo, 'rev-parse', 'HEAD')])).toEqual(before);
     } finally {
@@ -353,9 +353,11 @@ describe('runtime ignore rules step', () => {
     const update = () => runGlobalRuntimeSetup({ cwd: root, env, plugins: [], updateMode: true, installCli: false, syncSkill: false,
       hostAdapters: false, externalSkills: false, codegraph: false });
     const begin = '# BEGIN: repo-harness runtime-state\n';
+    // The retired-launcher step runs after it in update mode.
+    const ignoreStep = (result: ReturnType<typeof update>) => result.steps.find(step => step.step === 'write runtime ignore rules');
     try {
       mkdirSync(home, { recursive: true });
-      expect(update().steps.at(-1)).toMatchObject({ step: 'write runtime ignore rules', status: 'ok' });
+      expect(ignoreStep(update())).toMatchObject({ step: 'write runtime ignore rules', status: 'ok' });
       const defaultFile = join(xdg, 'git', 'ignore');
       expect(readFileSync(defaultFile, 'utf8')).toStartWith(begin);
       const repo = join(root, 'repo');
@@ -371,14 +373,14 @@ describe('runtime ignore rules step', () => {
       writeFileSync(custom, `${before}${begin}stale-rule/\n# END: repo-harness runtime-state\n${after}`);
       Bun.spawnSync(['git', 'config', '--global', 'core.excludesFile', custom], { env });
       rmSync(defaultFile);
-      expect(update().steps.at(-1)).toMatchObject({ status: 'ok', detail: `${custom}: written` });
+      expect(ignoreStep(update())).toMatchObject({ status: 'ok', detail: `${custom}: written` });
       expect(existsSync(defaultFile)).toBe(false);
       const written = readFileSync(custom, 'utf8');
       expect(written).toStartWith(`${before}${begin}`);
       expect(written).toEndWith(`# END: repo-harness runtime-state\n${after}`);
       expect(written).not.toContain('stale-rule/');
       const currentRun = update();
-      expect(currentRun.steps.at(-1)).toMatchObject({ status: 'ok', detail: `${custom}: current` });
+      expect(ignoreStep(currentRun)).toMatchObject({ status: 'ok', detail: `${custom}: current` });
       expect(readFileSync(custom, 'utf8')).toBe(written);
 
       const removal = runUserUninstall({ target: 'both', env });
@@ -393,14 +395,15 @@ describe('runtime ignore rules step', () => {
       expect(refusedRun.steps.at(-1)).toEqual({ step: 'write runtime ignore rules', status: 'failed',
         detail: `${defaultFile}: refusing symlink configuration path: ${defaultFile}; set core.excludesFile to the real file, then run rh update again` });
       expect(readFileSync(custom, 'utf8')).toBe(linked);
-      expect(refusedRun.steps.slice(0, -1)).toEqual(currentRun.steps.slice(0, -1));
+      // The passing run ends with the ignore step and the retired-launcher step; the refused run stops at the ignore step.
+      expect(refusedRun.steps.slice(0, -1)).toEqual(currentRun.steps.slice(0, -2));
       for (const dryRun of [true, false]) {
         const refused = runUserUninstall({ target: 'both', env, dryRun });
         expect(refused.items).toContainEqual({ path: defaultFile, action: 'unresolved', reason: expect.stringContaining('refusing symlink') });
         expect(readFileSync(custom, 'utf8')).toBe(linked);
       }
       Bun.spawnSync(['git', 'config', '--global', 'core.excludesFile', custom], { env });
-      expect(update().steps.at(-1)).toMatchObject({ status: 'ok', detail: `${custom}: written` });
+      expect(ignoreStep(update())).toMatchObject({ status: 'ok', detail: `${custom}: written` });
       expect(readFileSync(custom, 'utf8')).toStartWith(`${linked}\n${begin}`);
     } finally {
       rmSync(root, { recursive: true, force: true });

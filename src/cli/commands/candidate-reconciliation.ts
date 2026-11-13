@@ -1,3 +1,4 @@
+import { CLI_NAME } from '../../core/skill-surface/cli-name';
 import { createHash, randomUUID } from 'crypto';
 import { sha256Prefixed } from '../../core/evidence/sha256';
 import { isPathInside } from '../../effects/path-containment';
@@ -467,7 +468,7 @@ export class CandidateRequestProtocolRetiredError extends Error {
   readonly code = 'candidate_request_protocol_retired';
   constructor(protocol: number, candidateVersion: string) {
     super(`repo-harness ${candidateVersion} does not accept a reconciliation request of protocol ${protocol} from an older repo-harness. `
-      + `Install the new CLI directly, then update: bun add -g repo-harness@${candidateVersion} --no-cache && rh update`);
+      + `Install the new CLI directly, then update: bun add -g repo-harness@${candidateVersion} --no-cache && ${CLI_NAME} update`);
     this.name = 'CandidateRequestProtocolRetiredError';
   }
 }

@@ -466,7 +466,7 @@ describe('init-hook command', () => {
       {
         code: 'install_state_protocol_retired',
         error: 'install state is protocol 2, which this package no longer reads. Migrate it with the 0.25.4 bridge first: '
-          + 'bun add -g repo-harness@0.25.4 --no-cache && rh update --version 0.25.4',
+          + 'bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version 0.25.4',
       },
     ] as const;
     for (const row of rows) withTempHome((home, repo) => {

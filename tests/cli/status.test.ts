@@ -431,7 +431,7 @@ describe('status command (Phase 1C)', () => {
         recorded: 'invalid',
         code: 'install_state_protocol_retired',
       });
-      expect(formatStatus(retired, false)).toContain('bun add -g repo-harness@0.25.4 --no-cache && rh update --version 0.25.4');
+      expect(formatStatus(retired, false)).toContain('bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version 0.25.4');
     });
   });
 
