@@ -909,13 +909,17 @@ describe('package-local ArchContext projection provider', () => {
       });
     };
 
-    test('a renderer floor newer than the installed archctx is not ready and keeps apply disabled', () => {
+    test.each([
+      ['a v4 renderer floor newer than the installed archctx', 'archcontext.docs-renderer/v7', 'v4', 'minimumRendererVersion is unsupported by this engine'],
+      ['a v3 renderer floor newer than the installed archctx', 'archcontext.docs-renderer/v7', 'v3', 'minimumRendererVersion is unsupported by this engine'],
+      ['a v5 manifest', 'archcontext.docs-renderer/v6', 'v5', 'schema is unsupported by this engine'],
+    ])('%s is incompatible, not upgrade-required, and keeps apply disabled', (_name, floor, schema, issue) => {
       const f = fixture();
-      withManifest(f, manifest('archcontext.docs-renderer/v7'));
+      withManifest(f, manifest(floor, schema));
       const result = readiness(f);
       expect(result.projectionProvider.state).toBe('mismatch');
       expect(result.projectionProvider.reasonCode).toBe('projection-manifest-incompatible');
-      expect(result.projectionProvider.reason).toContain('minimumRendererVersion is unsupported by this engine');
+      expect(result.projectionProvider.reason).toContain(issue);
       expect(result.apply.enabled).toBe(false);
     });
 

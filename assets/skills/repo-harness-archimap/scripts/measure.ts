@@ -264,7 +264,8 @@ function loadManifest(root: string): CapabilityDocs {
   }
   const schemaVersion = record(parsed)?.schemaVersion;
   if (schemaVersion !== MANIFEST_SCHEMA_VERSION) {
-    throw new UsageError(`${MANIFEST_PATH}: schemaVersion ${JSON.stringify(schemaVersion)} is not ${MANIFEST_SCHEMA_VERSION}; re-baseline the architecture projection before you measure`);
+    // This script cannot evaluate the archctx floors, so the message names both archctx remedies.
+    throw new UsageError(`${MANIFEST_PATH}: schemaVersion ${JSON.stringify(schemaVersion)} is not ${MANIFEST_SCHEMA_VERSION}; re-baseline a superseded manifest with archctx docs apply --approved, or update repo-harness for a newer manifest or when archctx reports projection-manifest-incompatible`);
   }
   const targets = record(parsed)?.targets;
   if (targets === undefined || targets === null || record(targets) === null) {

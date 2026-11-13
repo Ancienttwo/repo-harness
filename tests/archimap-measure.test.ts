@@ -219,13 +219,18 @@ describe('archimap measure requires the adopted model', () => {
     expect(failure.stderr).toContain(MANIFEST);
   });
 
-  test('a v3 projection manifest exits 2 even when it lists capability members', () => {
+  test.each([
+    ['a v3 manifest that lists capability members', 'v3', null],
+    ['a v3 manifest with an unmet renderer floor', 'v3', 'archcontext.docs-renderer/v7'],
+    ['a v5 manifest', 'v5', null],
+  ])('%s exits 2 and names both remedies', (_name, schema, floor) => {
     const root = fixture({ 'apps/app/main.ts': 'export const app = 1;\n' });
-    const v4 = readFileSync(join(root, MANIFEST), 'utf8');
-    writeFileSync(join(root, MANIFEST), v4.replace('projection-manifest/v4', 'projection-manifest/v3'));
+    const v4 = JSON.parse(readFileSync(join(root, MANIFEST), 'utf8'));
+    writeFileSync(join(root, MANIFEST), JSON.stringify({ ...v4, schemaVersion: `archcontext.architecture-docs-projection-manifest/${schema}`, ...(floor === null ? {} : { minimumRendererVersion: floor }) }));
     const failure = measureFailure(root, ['--modules', join(root, 'modules.json'), '--model', MODEL_DIR]);
     expect(failure.status).toBe(2);
-    expect(failure.stderr).toContain('"archcontext.architecture-docs-projection-manifest/v3" is not archcontext.architecture-docs-projection-manifest/v4');
+    expect(failure.stderr).toContain(`"archcontext.architecture-docs-projection-manifest/${schema}" is not archcontext.architecture-docs-projection-manifest/v4`);
+    expect(failure.stderr).toContain('update repo-harness for a newer manifest or when archctx reports projection-manifest-incompatible');
   });
 
   test('a capability target without a document path exits 2 instead of guessing one', () => {

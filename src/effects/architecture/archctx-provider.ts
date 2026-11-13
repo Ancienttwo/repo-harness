@@ -313,10 +313,11 @@ const PROJECTION_MANIFEST_INCOMPATIBLE = 'projection-manifest-incompatible';
 const COMMITTED_PROJECTION_MANIFEST = 'docs/architecture/.projection-manifest.json';
 
 /**
- * archctx owns the manifest compatibility rule. The committed manifest must have the
- * current schema and pass that rule for the installed engine, or readiness fails closed
- * and apply stays off. The rule alone accepts a superseded schema whose floors the engine
- * meets, but every archctx command that reads such a manifest refuses it.
+ * archctx owns the manifest compatibility rule. The committed manifest must pass that rule
+ * for the installed engine and then have the current schema, or readiness fails closed and
+ * apply stays off. The rule runs first, as in archctx: a newer schema or an unmet floor needs
+ * a newer repo-harness, and only a compatible superseded schema can be re-baselined. The rule
+ * alone accepts that superseded schema, but every archctx command that reads it refuses it.
  */
 function assertCommittedProjectionManifestCompatible(repoRoot: string, capabilities: ArchctxCapabilitiesV1): void {
   const path = join(repoRoot, COMMITTED_PROJECTION_MANIFEST);
@@ -327,15 +328,15 @@ function assertCommittedProjectionManifestCompatible(repoRoot: string, capabilit
     throw new ArchctxClientError({ code: 'RH_ARCHCTX_PROJECTION_MANIFEST_INVALID', action: 'inspect-projection-manifest', message: `${COMMITTED_PROJECTION_MANIFEST} is not valid JSON: ${error instanceof Error ? error.message : String(error)}` });
   }
   if (!isRecord(manifest)) throw new ArchctxClientError({ code: 'RH_ARCHCTX_PROJECTION_MANIFEST_INVALID', action: 'inspect-projection-manifest', message: `${COMMITTED_PROJECTION_MANIFEST} is not a JSON object` });
-  if (manifest.schemaVersion !== ARCHITECTURE_DOCS_PROJECTION_MANIFEST_SCHEMA_VERSION) {
-    throw new ArchctxClientError({ code: 'AC_PRECONDITION_FAILED', action: 'upgrade-projection-manifest', reasonCode: PROJECTION_MANIFEST_UPGRADE_REQUIRED, message: `${COMMITTED_PROJECTION_MANIFEST} schema ${JSON.stringify(manifest.schemaVersion)} is not ${ARCHITECTURE_DOCS_PROJECTION_MANIFEST_SCHEMA_VERSION}; run ${ARCHITECTURE_DOCS_PROJECTION_MANIFEST_UPGRADE_COMMAND}` });
-  }
   const issues = architectureDocsProjectionCompatibilityIssues(manifest, {
     rendererVersion: capabilities.renderers.architectureDocs,
     protocolVersion: capabilities.protocols.projectionRequest,
   });
   if (issues.length > 0) {
     throw new ArchctxClientError({ code: 'AC_PRECONDITION_FAILED', action: 'update-repo-harness', reasonCode: PROJECTION_MANIFEST_INCOMPATIBLE, details: { issues }, message: `${COMMITTED_PROJECTION_MANIFEST} is incompatible with the installed archctx: ${issues.join('; ')}` });
+  }
+  if (manifest.schemaVersion !== ARCHITECTURE_DOCS_PROJECTION_MANIFEST_SCHEMA_VERSION) {
+    throw new ArchctxClientError({ code: 'AC_PRECONDITION_FAILED', action: 'upgrade-projection-manifest', reasonCode: PROJECTION_MANIFEST_UPGRADE_REQUIRED, message: `${COMMITTED_PROJECTION_MANIFEST} schema ${JSON.stringify(manifest.schemaVersion)} is not ${ARCHITECTURE_DOCS_PROJECTION_MANIFEST_SCHEMA_VERSION}; run ${ARCHITECTURE_DOCS_PROJECTION_MANIFEST_UPGRADE_COMMAND}` });
   }
 }
 
