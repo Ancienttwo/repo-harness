@@ -217,6 +217,14 @@ test('no daily run, a GitHub failure, an unnamed branch and a broken report are 
   expect(noBranch.cache).toEqual({ state: 'unavailable', reason: 'default_branch_unknown' });
   expect(noBranch.gh.calls).toEqual([]);
   expect((await run(() => {}, () => activity(f.id, null, 'main'))).cache).toEqual({ state: 'unavailable', reason: 'default_branch_unknown' });
+  const badOwner = await run(() => {}, () => activity(f.id, 'bad_owner/repo', 'main'));
+  expect(badOwner.cache).toEqual({ state: 'unavailable', reason: 'default_branch_unknown' });
+  expect(badOwner.gh.calls).toEqual([]);
+  for (const slug of ['-owner/repo', `${'a'.repeat(39)}/${'r'.repeat(100)}`]) {
+    const accepted = await run(() => {}, () => activity(f.id, slug, 'main'));
+    expect(accepted.cache.state).toBe('ready');
+    expect(accepted.gh.calls.length).toBeGreaterThan(0);
+  }
 
   const repairsDown = await run(gh => { gh.state.fail = /--paginate/u; });
   expect(repairsDown.cache.state === 'ready' && repairsDown.cache.snapshot.repairs).toEqual({ state: 'unavailable', reason: 'repairs_unavailable' });

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { registerBot } from '../../src/effects/bot-registry';
 import { readSlackReviewThreads, SLACK_REPLY_LIMIT, startSlackReviewCollector } from '../../src/effects/operator/slack-review-collector';
 import { startOperatorServer } from '../../src/effects/operator/server';
-import type { SlackReviewThreadV1 } from '../../src/core/operator/slack-review';
+import { decodeSlackReviews, parseReviewRequest, type SlackReviewThreadV1 } from '../../src/core/operator/slack-review';
 
 const TOKEN = 'xoxb-1111-2222-fixturetokenvalue';
 const CHANNEL = 'C0C6C6FHHHT';
@@ -214,6 +214,25 @@ describe('Dot review collector', () => {
     expect(calls.filter(call => call.method === 'conversations.replies').map(call => [call.params.ts, call.params.cursor ?? 'first'])).toEqual([
       ['1793615100.000001', 'first'], ['1793615100.000001', 'p2'], ['1793615100.000002', 'first'], ['1793615100.000002', 'p2'],
     ]);
+  });
+
+  test('request parsing and snapshot decoding share the owner/name slug boundary', () => {
+    const long = `${'a'.repeat(39)}/${'r'.repeat(100)}`;
+    const accepted = ['-owner/repo', 'Owner-1/re.po_x', long];
+    const rejected = ['bad_owner/repo', 'owner/re$po', `${'a'.repeat(40)}/repo`, `owner/${'r'.repeat(101)}`];
+    const parsed = (repo: string) => parseReviewRequest(request([`pr: https://github.com/${repo}/pull/7`, `head: ${HEAD}`]), DOT_USER)?.repo;
+    const snapshot = (repo: string) => ({
+      protocol: 1, kind: 'operator_bot_reviews', reason: null, stale: false, truncated: false, collected_at: '2026-11-03T00:00:00.000Z',
+      threads: [{ thread_ts: '1793615100.000001', requested_at: '2026-11-03T00:00:00.000Z', repo, pr: 7, head: HEAD, state: 'waiting', finding_count: null, replied_at: null, text: { state: 'none' } }],
+    });
+    for (const repo of accepted) {
+      expect(parsed(repo)).toBe(repo);
+      expect(decodeSlackReviews(snapshot(repo)).threads[0]?.repo).toBe(repo);
+    }
+    for (const repo of rejected) {
+      expect(parsed(repo)).toBeNull();
+      expect(() => decodeSlackReviews(snapshot(repo))).toThrow('bot_reviews_invalid: repo');
+    }
   });
 
   test('close aborts the request in flight and starts no further Slack request', async () => {

@@ -4,6 +4,8 @@
 // The strict decoders serve the server before it sends and the browser before
 // it renders.
 
+import { GITHUB_REPOSITORY } from '../board/github-repository';
+
 export const OPERATOR_DOCS_TREE_KIND = 'operator_docs_tree' as const;
 export const OPERATOR_DOCS_FILE_KIND = 'operator_docs_file' as const;
 
@@ -99,8 +101,6 @@ function decoder(label: string) {
     },
   };
 }
-
-const GITHUB_REPOSITORY = /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/u;
 
 export function decodeDocsRemoteMismatch(value: unknown): DocsRemoteMismatchV1 {
   const d = decoder('docs remote mismatch');

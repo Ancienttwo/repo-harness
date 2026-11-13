@@ -4,6 +4,7 @@
 // channel ID, local path or request text. Reply text that matches a secret rule
 // is withheld, never echoed.
 
+import { GITHUB_REPOSITORY } from '../board/github-repository';
 import { decodeReaders } from '../evidence/decode-readers';
 import { containsSecret } from '../security/secret-patterns';
 import { isPublicDevActivityText, publicDevActivityText } from '../public-projections/public-text';
@@ -85,8 +86,6 @@ const SLACK_TS = /^\d{1,12}\.\d{6}$/u;
 const SLACK_USER_ID = /^[UW][A-Z0-9]{2,31}$/u;
 const SHA = /^[0-9a-f]{40}$/u;
 const REQUEST_LINE = /^<@([UW][A-Z0-9]{2,31})(?:\|[^>]*)?> repo-harness review request$/u;
-/** GitHub `owner/repo`. */
-const GITHUB_REPO = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/u;
 const PR_URL = /^https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/([1-9]\d{0,9})$/u;
 const SLACK_LINK = /^<([^|>]+)(?:\|[^>]*)?>$/u;
 const ACK_LINE = /^ack ([0-9a-f]{40})$/u;
@@ -131,7 +130,7 @@ export function parseReviewRequest(text: string, dotUserId: string): ParsedReque
   // Slack clients send a URL as link markup: `<https://…|label>`.
   const url = prValue === null ? null : SLACK_LINK.exec(prValue)?.[1] ?? prValue;
   const pr = url === null ? null : PR_URL.exec(url);
-  const repo = pr !== null && GITHUB_REPO.test(pr[1]!) && !containsSecret(pr[1]!) ? pr[1]! : null;
+  const repo = pr !== null && GITHUB_REPOSITORY.test(pr[1]!) && !containsSecret(pr[1]!) ? pr[1]! : null;
   const head = single('head');
   return {
     repo,
@@ -243,7 +242,7 @@ export function decodeSlackReviews(value: unknown): SlackReviewsSnapshotV1 {
     const t = obj(item, ['thread_ts', 'requested_at', 'repo', 'pr', 'head', 'state', 'finding_count', 'replied_at', 'text'], 'thread');
     if (typeof t.thread_ts !== 'string' || !SLACK_TS.test(t.thread_ts)) fail('thread_ts');
     const state = oneOf(t.state, SLACK_REVIEW_STATES, 'state');
-    const repo = t.repo === null ? null : typeof t.repo === 'string' && GITHUB_REPO.test(t.repo) && !containsSecret(t.repo) ? t.repo : fail('repo');
+    const repo = t.repo === null ? null : typeof t.repo === 'string' && GITHUB_REPOSITORY.test(t.repo) && !containsSecret(t.repo) ? t.repo : fail('repo');
     const pr = t.pr === null ? null : Number.isSafeInteger(t.pr) && (t.pr as number) > 0 ? t.pr as number : fail('pr');
     const head = t.head === null ? null : typeof t.head === 'string' && SHA.test(t.head) ? t.head : fail('head');
     if ((repo === null) !== (pr === null)) fail('repo and pr');

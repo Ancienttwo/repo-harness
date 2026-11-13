@@ -5,7 +5,6 @@ import {
   CLI_SEED,
   decodeCliInventory,
   decodeCliSeed,
-  githubRepo,
   projectCliInventory,
   unavailableCliInventory,
   type CliInventoryInput,
@@ -24,12 +23,12 @@ function input(overrides: Partial<CliInventoryInput> = {}): CliInventoryInput {
     seed: CLI_SEED,
     packages: [
       { source: 'brew', dependency: false, name: 'gh', version: '2.60.0', roots: ['/opt/homebrew/Cellar/gh'], files: [], deprecated: false,
-        urls: ['https://cli.github.com/', 'https://github.com/cli/cli/archive/refs/tags/v2.60.0.tar.gz'] },
+        urls: ['https://cli.github.com/', 'https://github.com/cli/cli'] },
       { source: 'brew', dependency: false, name: 'stripe/stripe-cli/stripe', version: '1.21.0', roots: ['/opt/homebrew/Cellar/stripe'], files: [], deprecated: false, urls: [] },
       { source: 'npm', dependency: false, name: '@openai/codex', version: '0.150.0', roots: [`${HOME}/.nvm/lib/node_modules/@openai/codex`], files: [], deprecated: false,
-        urls: ['git+https://github.com/openai/codex.git'] },
+        urls: ['https://github.com/openai/codex.git'] },
       { source: 'npm', dependency: false, name: 'neonctl', version: '2.1.0', roots: [`${HOME}/.nvm/lib/node_modules/neonctl`], files: [], deprecated: false,
-        urls: ['git+https://github.com/neondatabase/neonctl.git'] },
+        urls: ['https://github.com/neondatabase/neonctl.git'] },
       { source: 'npm', dependency: false, name: 'opencode-ai', version: '1.0.0', roots: [`${HOME}/.nvm/lib/node_modules/opencode-ai`], files: [], deprecated: false,
         urls: ['https://github.com/sst/opencode'] },
       { source: 'go', dependency: false, name: 'github.com/charmbracelet/crush', version: 'v0.9.0', roots: [], files: [`${HOME}/go/bin/crush`], deprecated: false,
@@ -89,6 +88,10 @@ describe('cli seed', () => {
     expect(() => decodeCliSeed(copy(tool => { tool.packages = [{ registry: 'npm', name: 'a b' }]; }))).toThrow('package name');
     expect(() => decodeCliSeed(copy(tool => { tool.install_roots = ['/opt/x']; }))).toThrow('install_root');
     expect(() => decodeCliSeed(copy(tool => { tool.extra = true; }))).toThrow('tool fields');
+    for (const repo of ['bad_owner/repo', `${'a'.repeat(40)}/repo`, 'owner/re po', 'owner/repo/extra']) {
+      expect(() => decodeCliSeed(copy(tool => { tool.repo = repo; }))).toThrow('repo');
+    }
+    expect(decodeCliSeed(copy(tool => { tool.repo = `${'a'.repeat(39)}/${'r'.repeat(100)}`; })).tools[0]?.repo).toBe(`${'a'.repeat(39)}/${'r'.repeat(100)}`);
   });
 });
 
@@ -168,14 +171,34 @@ describe('cli inventory projection', () => {
       repo: null, candidates: ['rorkai/App-Store-Connect-CLI', 'tddworks/asc-cli'], monorepo: false, stars: null, archived: null, moved: false,
     });
   });
+});
 
-  test('reads GitHub repositories from npm, Homebrew and shorthand metadata', () => {
-    expect(githubRepo('git+https://github.com/openai/codex.git')).toBe('openai/codex');
-    expect(githubRepo('git@github.com:cli/cli.git')).toBe('cli/cli');
-    expect(githubRepo('github:vercel/vercel')).toBe('vercel/vercel');
-    expect(githubRepo('https://github.com/cli/cli/archive/refs/tags/v1.tar.gz')).toBe('cli/cli');
-    expect(githubRepo('https://cli.github.com/')).toBeNull();
-    expect(githubRepo('https://gitlab.com/a/b')).toBeNull();
+describe('cli inventory metadata remotes', () => {
+  // No seed tool names this package, so the metadata URL alone decides the repository.
+  const repoOf = (urls: string[]) => projectCliInventory(input({
+    packages: [{ source: 'go', dependency: false, name: 'example.com/unseeded', version: 'v1.0.0', roots: [], files: [`${HOME}/go/bin/unseeded`], deprecated: false, urls }],
+    path_executables: [exe(`${HOME}/go/bin/unseeded`)],
+    github: new Map(),
+  })).entries[0]?.github?.repo ?? null;
+
+  test('an authority remote names the repository, lowercased', () => {
+    for (const url of ['https://github.com/Owner/Repo.git', 'https://token@github.com/owner/repo', 'git@github.com:owner/repo.git', 'ssh://git@github.com:22/owner/repo/']) {
+      expect(repoOf([url])).toBe('owner/repo');
+    }
+  });
+
+  test('slug boundaries: the longest and a leading-hyphen slug are named, one past either limit is not', () => {
+    const long = `${'a'.repeat(39)}/${'r'.repeat(100)}`;
+    expect(repoOf([`https://github.com/-owner/repo`])).toBe('-owner/repo');
+    expect(repoOf([`https://github.com/${long}`])).toBe(long);
+    expect(repoOf([`https://github.com/${'a'.repeat(40)}/repo`])).toBeNull();
+    expect(repoOf([`https://github.com/owner/${'r'.repeat(101)}`])).toBeNull();
+  });
+
+  test('forms the remote grammar refuses name no repository', () => {
+    for (const url of ['github:owner/repo', 'git+https://github.com/owner/repo.git', 'https://github.com/owner/repo/archive/refs/tags/v1.tar.gz', 'https://cli.github.com/', 'https://gitlab.com/owner/repo', 'https://github.com/bad_owner/repo']) {
+      expect(repoOf([url])).toBeNull();
+    }
   });
 });
 
@@ -193,6 +216,15 @@ describe('cli inventory decoder', () => {
     rejects(s => { s.entries[0].github = { repo: null, candidates: [], monorepo: false, stars: 1, archived: null, moved: false }; });
     rejects((_, entry) => { entry('manual:asc').github.stars = 10; });
     rejects(s => { s.entries[0].commands = []; });
+    for (const slug of ['bad_owner/repo', `${'a'.repeat(40)}/repo`, 'owner/re po', `owner/${'r'.repeat(101)}`]) {
+      rejects((_, entry) => { entry('manual:asc').github.candidates[0] = slug; });
+      rejects(s => { s.entries[0].github.repo = slug; });
+    }
+    for (const slug of ['-owner/repo', `${'a'.repeat(39)}/${'r'.repeat(100)}`]) {
+      const snapshot = structuredClone(projectCliInventory(input())) as any;
+      snapshot.entries.find((item: any) => item.id === 'manual:asc').github.candidates[0] = slug;
+      expect(decodeCliInventory(snapshot).entries.find(item => item.id === 'manual:asc')?.github?.candidates[0]).toBe(slug);
+    }
     rejects(s => { s.entries[0].args = 'pr view'; });
     rejects(s => { s.entries.push({ ...s.entries[0] }); });
     rejects(s => { Object.assign(s, unavailableCliInventory(), { entries: s.entries }); });
