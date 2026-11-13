@@ -1,5 +1,5 @@
 # public-surface/root-router 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:1701de6e006626edfd9c3e15d1f73cae265248c0e875ddd469ae6509cfb2f298" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-root-router" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8539bfbc9197ee3c546b05f3681f46d49151f22148c707f5e7ec5e4ce821bb0e" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.root-router`(kind `capability`)
 > **Matched Prefixes**:`agents/openai.yaml`、`docs/CHANGELOG.md`、`docs/changelog.d/**`、`docs/images/**`、`references/bot-control.md`、`references/handoff.md`、`references/workflow-packaging-rubric.md`、`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`、`docs/prds/**`、`README.es.md`、`README.fr.md`、`README.ja.md`、`README.zh-CN.md`、`src/cli/commands/docs.ts`
@@ -38,7 +38,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`50–100` 個文件 / `20k–50k` 行
+- 規模量級:`20–50` 個文件 / `20k–50k` 行
 - 匹配前綴:`agents/openai.yaml`、`docs/CHANGELOG.md`、`docs/changelog.d/**`、`docs/images/**`、`references/bot-control.md`、`references/handoff.md`、`references/workflow-packaging-rubric.md`、`SKILL.md`、`references/pm-boundary.md`、`README.md`、`AGENTS.md`、`CLAUDE.md`、`docs/spec.md`、`docs/prds/**`、`README.es.md`、`README.fr.md`、`README.ja.md`、`README.zh-CN.md`、`src/cli/commands/docs.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
