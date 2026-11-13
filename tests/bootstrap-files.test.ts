@@ -4,7 +4,9 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { spawnSync } from "child_process";
 import { buildProgram } from "../src/cli/index";
-import { CLI_REVIEW_SUBCOMMANDS, CLI_TOP_LEVEL_COMMANDS, RETIRED_CLI_INVOCATION } from "../src/core/skill-surface/cli-name";
+import { namesRetiredCli, RETIRED_CLI_PROTOCOL_HEADERS } from "../src/core/skill-surface/cli-name";
+import { REVIEW_START_HEADER, REVIEW_START_STATUS_HEADER } from "../src/core/board/review";
+import { RETIRED_CLI_LINES } from "./helpers/install-ownership";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -134,17 +136,12 @@ describe("Bootstrap Script Contracts", () => {
     expect(agents).toContain("~/.codex/skills");
   });
 
-  test("the top-level command list and the retired-command pattern follow the rh program", () => {
-    const program = buildProgram();
-    expect(program.name()).toBe("rh");
-    expect(program.commands.map((command) => command.name()).filter((name) => !name.startsWith("__")).sort()).toEqual([...CLI_TOP_LEVEL_COMMANDS].sort());
-    expect(program.commands.find((command) => command.name() === "review")!.commands.map((command) => command.name()).sort()).toEqual([...CLI_REVIEW_SUBCOMMANDS].sort());
-    for (const line of ["run `repo-harness board seats --json`", "repo-harness review round --issue-id 1", "\"check\": \"repo-harness brain check\"", "run repo-harness update", "Bash(repo-harness board:*)", "exec repo-harness board seats", "env FOO=1 repo-harness board seats", "sudo repo-harness update", "repo-harness review --help", "sudo -u user repo-harness update", "time -p repo-harness update", "FOO=1 repo-harness board seats", "repo-harness --version", "repo-harness --help"]) {
-      expect(RETIRED_CLI_INVOCATION.test(line)).toBe(true);
-    }
-    for (const line of ["npx -y repo-harness install", "bunx repo-harness run new-plan", "exec repo-harness-hook Stop", "~/.repo-harness/config.json", "repo-harness review start status", "the repo-harness skill", "the repo-harness operator console", "[repo-harness mcp] Repo", "rh board seats", "repo-harness review reply --help", "npx repo-harness --version"]) {
-      expect(RETIRED_CLI_INVOCATION.test(line)).toBe(false);
-    }
+  test("the retired-command detector matches each call and prose, and skips the closed exclusion list", async () => {
+    expect(buildProgram().name()).toBe("rh");
+    const { PROTOCOL_HEADERS } = await import(join(ROOT, "assets/herdr/github-events/filter.mjs"));
+    expect(RETIRED_CLI_PROTOCOL_HEADERS).toEqual(expect.arrayContaining([...PROTOCOL_HEADERS, REVIEW_START_HEADER, REVIEW_START_STATUS_HEADER]));
+    for (const line of [...RETIRED_CLI_LINES.calls, RETIRED_CLI_LINES.prose]) expect([line, namesRetiredCli(line)]).toEqual([line, true]);
+    for (const line of RETIRED_CLI_LINES.excluded) expect([line, namesRetiredCli(line)]).toEqual([line, false]);
   });
 
   test("repo package should expose workflow verification scripts", () => {

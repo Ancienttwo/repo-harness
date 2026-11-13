@@ -59,8 +59,8 @@ describe("install script contracts", () => {
     expect(readme).not.toContain("npm install -g repo-harness");
     expect(zhReadme).toContain("curl -fsSL https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.sh | sh");
     expect(zhReadme).toContain("irm https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.ps1 | iex");
-    expect(zhReadme).toContain("bunx repo-harness@latest install");
-    expect(zhReadme).toContain("npx -y repo-harness@latest install");
+    expect(zhReadme).toContain("bunx -p repo-harness@latest rh install");
+    expect(zhReadme).toContain("npx -y -p repo-harness@latest rh install");
     expect(pkg.files).toContain("install.sh");
     expect(pkg.files).toContain("install.ps1");
   });

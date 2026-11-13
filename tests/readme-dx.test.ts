@@ -52,7 +52,7 @@ describe("README DX contract", () => {
       expect(localized).toContain(
         "curl -fsSL https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.sh | sh",
       );
-      expect(localized).toContain("bunx repo-harness@latest install");
+      expect(localized).toContain("bunx -p repo-harness@latest rh install");
       expect(localized).toContain("rh init --dry-run");
       expect(localized).toContain("](README.md)");
       // The landing page carries no release version, so a release edits README.md only.

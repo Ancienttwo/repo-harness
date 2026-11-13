@@ -42,10 +42,10 @@ Bun installs fail closed with the matching upgrade command (`brew upgrade bun`)
 instead of overwriting manager-owned files.
 
 ```bash
-bunx repo-harness@latest install     # Bun one-shot bootstrap
-bun add -g repo-harness              # or install the persistent CLI first
+bunx -p repo-harness@latest rh install     # Bun one-shot bootstrap
+bun add -g repo-harness                    # or install the persistent CLI first
 rh install
-npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
+npx -y -p repo-harness@latest rh install   # npx fallback; the CLI still runs on Bun
 ```
 
 Install `hc` through Herdr.app or a herdr-core release. Verify that `hc --version`

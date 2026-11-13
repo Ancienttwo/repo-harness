@@ -7,7 +7,7 @@ import { hashManagedTree, installedCopyTreeOptions, OWNER_MARKER } from '../mana
 import { isRepoHarnessLegacyTypedHookCommand, retiredHookCommands, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { isRepoHarnessSourceCheckout } from '../source-checkout';
 import { loadWorkflowContractAsset } from '../../core/adoption/workflow-contract-asset';
-import { CLI_NAME, RETIRED_CLI_INVOCATION, RETIRED_CLI_NAME } from '../../core/skill-surface/cli-name';
+import { CLI_NAME, namesRetiredCli, RETIRED_CLI_NAME } from '../../core/skill-surface/cli-name';
 import { MANAGED_PACKAGE_SCRIPTS } from '../../core/adoption/package-scripts';
 import { parseSkillSurfaceCatalog, type SkillSurfacePackage } from '../../core/skill-surface/catalog';
 
@@ -28,6 +28,8 @@ export interface LeftoverItem {
   readonly hookEvent?: string;
   readonly hookCommand?: string;
   readonly reason?: string;
+  /** A notice only: the preview exit code and the pending state leave it out. */
+  readonly advisory?: true;
   /** Set only by upgrade operator decisions; the inventory itself never writes it. */
   readonly operatorDecision?: { readonly decision: 'keep' | 'remove'; readonly status: 'applied' | 'stale' | 'rejected' };
 }
@@ -515,7 +517,7 @@ function scanPackageScripts(root: string, add: AddItem): void {
     // init writes the managed keys on every run, so their values are not the user's.
     if (typeof command !== 'string' || Object.hasOwn(MANAGED_PACKAGE_SCRIPTS, key)) return [];
     const retired = [...command.matchAll(/(?<![\w./@-])(?:rh|repo-harness) run ([^\s;&|'"`)]+)/g)].some((match) => !runnable.has(match[1]!));
-    const retiredCli = RETIRED_CLI_INVOCATION.test(command) ? [` (the ${RETIRED_CLI_NAME} command is now ${CLI_NAME})`] : [];
+    const retiredCli = namesRetiredCli(command) ? [` (the ${RETIRED_CLI_NAME} command is now ${CLI_NAME})`] : [];
     const missing = [...command.matchAll(/\b(bun|npm) run(?=\s)/g)].flatMap((match) => {
       const target = rootRunTarget(command.slice(match.index + match[0].length));
       return target === null || resolves(match[1]!, target) ? [] : [` (missing script "${target}")`];
@@ -529,7 +531,9 @@ function scanPackageScripts(root: string, add: AddItem): void {
 
 /**
  * Files that init writes once and the user owns afterward, and the policy that the user edits.
- * A call of the retired command in them gets a report; init and upgrade rewrite only managed bytes.
+ * A line that names the retired command gets an advisory report: the package keeps the name, so
+ * prose mentions stay. A package script line is a command, so that report stays pending.
+ * Init and upgrade rewrite only managed bytes.
  * An unchanged released root context is a refresh item instead, which replaces this report.
  */
 const USER_OWNED_PROJECT_TEXT = ['CLAUDE.md', 'AGENTS.md', 'tasks/lessons.md', '.ai/harness/policy.json'] as const;
@@ -538,10 +542,10 @@ function scanRetiredCliCalls(root: string, add: AddItem): void {
   for (const name of USER_OWNED_PROJECT_TEXT) {
     const path = join(root, name);
     if (!isLegacyPathSafe(root, path, false) || !stat(path)?.isFile()) continue;
-    const lines = readFileSync(path, 'utf8').split('\n').flatMap((line, index) => RETIRED_CLI_INVOCATION.test(line) ? [index + 1] : []);
+    const lines = readFileSync(path, 'utf8').split('\n').flatMap((line, index) => namesRetiredCli(line) ? [index + 1] : []);
     if (lines.length === 0) continue;
-    add({ location: 'project', surface: 'file', path, retiredBy: 'retired-cli-command', ownership: 'unowned', proof: null, action: 'report',
-      reason: `Line ${lines.join(', ')} calls the retired ${RETIRED_CLI_NAME} command; change each call to ${CLI_NAME} <command>. Upgrade does not edit this file.` });
+    add({ location: 'project', surface: 'file', path, retiredBy: 'retired-cli-command', ownership: 'unowned', proof: null, action: 'report', advisory: true,
+      reason: `Line ${lines.join(', ')} names ${RETIRED_CLI_NAME}; change each line that calls it to ${CLI_NAME}. Upgrade does not edit this file.` });
   }
 }
 

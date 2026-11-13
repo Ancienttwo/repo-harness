@@ -12,7 +12,7 @@ import { registerArchitecturePlugin, resolveOptionalRuntimeDeps, runCli, runTran
 import { copyPackageRuntimeFixture, writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
 import { dependencies, devDependencies } from '../../package.json';
-import { installStateFixturePath, recordInstallOwnership, recordPluginSelection, seedGlobalPackageFixture } from '../helpers/install-ownership';
+import { installStateFixturePath, recordInstallOwnership, recordPluginSelection, RETIRED_CLI_LINES, seedGlobalPackageFixture } from '../helpers/install-ownership';
 import { writeFakeHc } from '../helpers/fake-hc';
 import wazaRules from '../../src/core/skill-surface/waza-shared-rules.json';
 import { applyInstallSelection, beginInstallHostTransaction, installProfileHostMutationPaths, managedInstallSurfaceIsCurrent, readInstallState, recordRefreshedInstallOwnership, loadSkillSurfaceCatalog, rollbackInstallHostTransaction, versions } from '../../src/cli/installer/install-profile';
@@ -989,29 +989,19 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
       mkdirSync(dirname(retiredLink), { recursive: true });
       symlinkSync(cliEntry, retiredLink);
       mkdirSync(join(home, '.codex'), { recursive: true });
-      // Host-file notice path: every command position matches; prose and a protocol header do not.
+      // Host-file notice path: each call and the prose line give a notice; the exclusions and the managed rules block that update writes do not.
       const agents = join(home, '.codex', 'AGENTS.md');
-      const userText = [
-        'Run `repo-harness board seats` first.',
-        'exec repo-harness board seats',
-        'env FOO=1 repo-harness update',
-        'sudo repo-harness update',
-        'sudo -u user repo-harness update',
-        'time -p repo-harness update',
-        'FOO=1 repo-harness board seats',
-        'repo-harness --version',
-        'The repo-harness operator console shows it.',
-        'repo-harness review reply',
-      ].join('\n');
-      writeFileSync(agents, `${userText}\n`);
+      const userText = [...RETIRED_CLI_LINES.calls, RETIRED_CLI_LINES.prose, ...RETIRED_CLI_LINES.excluded].join('\n');
+      const managedBlock = renderGlobalRulesBlock(ROOT, { preset: 'en', instruction: 'Use English to report to user.' });
+      writeFileSync(agents, `${userText}\n${managedBlock}`);
       const result = update({ plugins: FULL_PLUGINS });
 
       expect(result.exitCode).toBe(0);
       expect(lstatSync(retiredLink, { throwIfNoEntry: false })).toBeUndefined();
       expect(result.steps.find((step) => step.step === 'retire the repo-harness command link')?.detail).toBe(`Removed ${retiredLink}. The command is rh.`);
-      const notice = result.steps.find((step) => step.step === 'find repo-harness command calls in user files')?.detail ?? '';
-      expect(notice).toContain(`8 line(s) in files that you own call repo-harness <command>`);
-      expect(notice).toContain([1, 2, 3, 4, 5, 6, 7, 8].map(line => `${agents}:${line}`).join(', '));
+      const named = RETIRED_CLI_LINES.calls.length + 1;
+      expect(result.steps.find((step) => step.step === 'find repo-harness command calls in user files')?.detail).toBe(
+        `${named} line(s) in files that you own name repo-harness; update does not change them. Change each line that calls it to rh: ${Array.from({ length: named }, (_, index) => `${agents}:${index + 1}`).join(', ')}.`);
       expect(readFileSync(agents, 'utf8')).toStartWith(userText);
       // A file at the link path without the exact proof stays, with its removal command.
       writeFileSync(retiredLink, 'owner file');

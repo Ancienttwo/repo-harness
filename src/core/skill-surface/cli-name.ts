@@ -4,35 +4,35 @@ export const CLI_NAME = 'rh';
 /** The command name before 0.33.0. `rh update` removes its managed link once; no alias stays. */
 export const RETIRED_CLI_NAME = 'repo-harness';
 
-/** The top-level commands of the CLI program; a test keeps this list equal to the program. */
-export const CLI_TOP_LEVEL_COMMANDS: readonly string[] = [
-  'install', 'init', 'update', 'uninstall', 'status', 'doctor', 'init-hook', 'review', 'module', 'setup', 'upgrade',
-  'migrate', 'security', 'tools', 'herdr', 'events', 'brain', 'capability-context', 'docs', 'mcp', 'run', 'state',
-  'publication', 'board', 'fleet', 'bots', 'operator', 'worktrees', 'catch-up', 'quota', 'refactor',
-  'architecture-projection', 'architecture-debt', 'strategy', 'retention', 'seats',
+/**
+ * The persisted protocol lines that start with the package name, each a whole line: the comment headers of
+ * `assets/skills/repo-harness-issue-flow/references/templates.md`, the review start markers and the
+ * Slack review lines. A test keeps this list equal to the header constants.
+ */
+export const RETIRED_CLI_PROTOCOL_HEADERS: readonly string[] = [
+  'repo-harness issue claim status', 'repo-harness issue claim', 'repo-harness boundary question', 'repo-harness scope change',
+  'repo-harness decision', 'repo-harness plan', 'repo-harness handoff', 'repo-harness acceptance claim',
+  'repo-harness acceptance record', 'repo-harness acceptance disposition', 'repo-harness acceptance review',
+  'repo-harness review reply', 'repo-harness review start status', 'repo-harness review start', 'repo-harness review request',
+  'repo-harness review result', 'repo-harness review rejected', 'repo-harness unblocked', 'repo-harness integration status',
+  'repo-harness merge hold released', 'repo-harness merge hold',
 ];
 
-/** The subcommands of `review`; a test keeps this list equal to the program. */
-export const CLI_REVIEW_SUBCOMMANDS: readonly string[] = ['admit', 'revoke', 'publish', 'round', 'status', 'close', 'cancel'];
+const URL_TEXT = /\b[a-z][a-z\d+.-]*:\/\/\S*/giu;
+/** `repo-harness` as one shell word; after npx or bunx, `-p`/`--package` takes it as a package specifier. */
+const WORD = /(?<![\w./@~=$-])(?<!\b(?:npx|bunx)[ \t](?:.*[ \t])?(?:-p|--package)[ \t]+)repo-harness(?![\w./@-])/u;
+/** npx and bunx run `repo-harness@<spec>` through its bin unless `-p` or `--package` names the bin. */
+const PACKAGE_RUN = /(?<![\w./-])(?:npx|bunx)(?:[ \t]+-(?!p(?![\w-])|-package(?![\w-]))\S+)*[ \t]+repo-harness@/u;
 
 /**
- * One call of the retired command: `repo-harness <top-level command>` or `repo-harness <flag>` in a
- * command position: the line start (after a list marker or `$ `), a backtick, quote or `(`, a shell
- * operator, `run`, or a command prefix (`exec`, `command`, `nohup`, `xargs`, `sudo` and `time` with
- * their options, `env` with `NAME=value` words). `NAME=value` assignments may stand before the command.
- * `review` matches only with a real review subcommand or a flag, so the persisted protocol headers
- * (`repo-harness review start`, `... review reply`) do not match. Prose that names the package
- * (`the repo-harness operator console`), the package specifier (`npx repo-harness`), the hook command
- * `repo-harness-hook` and paths such as `~/.repo-harness` do not match either.
+ * A line names the retired command when `repo-harness` stands as one shell word, or when npx or bunx
+ * runs `repo-harness@<spec>` without `-p`. Over-report gives a harmless notice; under-report misses a
+ * call that fails after the rename. The closed exclusion list: a line equal to a persisted protocol header,
+ * package specifiers and paths (`repo-harness@` outside npx and bunx, the npx or bunx `-p` argument,
+ * `repo-harness-hook`, `.repo-harness`, `~/.repo-harness`, `REPO_HARNESS_*`) and URLs.
  */
-const POSITION = String.raw`(?:^[ \t]*(?:[-*>][ \t]+)?(?:\$[ \t]+)?|[\x60'"(][ \t]*|(?:&&|\|\||[;|]|\$\()[ \t]*|\b[Rr]un:?[ \t]+`
-  + String.raw`|\b(?:exec|command|nohup|xargs)[ \t]+|\bsudo(?:[ \t]+(?:-[A-Za-z]+(?:[ \t]+[^\s-]\S*)?|--[\w-]+(?:=\S*)?))*[ \t]+`
-  + String.raw`|\btime(?:[ \t]+-\S+)*[ \t]+|\benv(?:[ \t]+[A-Za-z_]\w*=\S*)*[ \t]+)`;
-const ASSIGNMENTS = String.raw`(?:[A-Za-z_]\w*=\S*[ \t]+)*`;
-const FLAG = String.raw`-{1,2}[A-Za-z][\w-]*`;
-
-export const RETIRED_CLI_INVOCATION = new RegExp(
-  String.raw`(?<=${POSITION}${ASSIGNMENTS})repo-harness[ \t]+`
-  + String.raw`(?:review[ \t]+(?:(?:${CLI_REVIEW_SUBCOMMANDS.join('|')})(?![\w-])|-)|(?!review(?![\w-]))(?:${CLI_TOP_LEVEL_COMMANDS.join('|')})(?![\w-])|${FLAG})`,
-  'u',
-);
+export function namesRetiredCli(line: string): boolean {
+  if (RETIRED_CLI_PROTOCOL_HEADERS.includes(line.trim())) return false;
+  const text = line.replace(URL_TEXT, ' ');
+  return WORD.test(text) || PACKAGE_RUN.test(text);
+}

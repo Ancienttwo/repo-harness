@@ -18,8 +18,8 @@ import { homedir, tmpdir, userInfo } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { syncWazaSharedRules, wazaStagingRulesAbsent } from "../installer/waza-rules";
-import { applyGlobalContextRefresh, globalContextPath, preflightGlobalContextRefresh, type ReportLanguageFlag } from "../installer/global-context";
-import { CLI_NAME, RETIRED_CLI_INVOCATION, RETIRED_CLI_NAME } from "../../core/skill-surface/cli-name";
+import { applyGlobalContextRefresh, GLOBAL_RULES_BEGIN, GLOBAL_RULES_END, globalContextPath, preflightGlobalContextRefresh, type ReportLanguageFlag } from "../installer/global-context";
+import { CLI_NAME, namesRetiredCli, RETIRED_CLI_NAME } from "../../core/skill-surface/cli-name";
 import { shellQuote } from "../../core/shell-quote";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
 import { syncCrossReviewSkills } from "./init";
@@ -1012,13 +1012,19 @@ function findRetiredCliCalls(env: NodeJS.ProcessEnv, target: InstallTargetSpec):
       unread.push(`${path} (${(error as NodeJS.ErrnoException).code ?? 'unreadable'})`);
       return [];
     }
-    return text.split('\n').flatMap((line, index) => RETIRED_CLI_INVOCATION.test(line) ? [`${path}:${index + 1}`] : []);
+    // Update writes the managed rules block itself, so the scan skips the span between its markers.
+    let managed = false;
+    return text.split('\n').flatMap((line, index) => {
+      const skip = managed || line.includes(GLOBAL_RULES_BEGIN);
+      managed = skip && !line.includes(GLOBAL_RULES_END);
+      return !skip && namesRetiredCli(line) ? [`${path}:${index + 1}`] : [];
+    });
   });
   const notRead = unread.length > 0 ? ` Not read: ${unread.join(', ')}.` : '';
-  if (calls.length === 0) return { step, status: 'skipped', detail: `No user file calls the retired command.${notRead}` };
+  if (calls.length === 0) return { step, status: 'skipped', detail: `No user file names ${RETIRED_CLI_NAME}.${notRead}` };
   return {
     step, status: 'ok',
-    detail: `${calls.length} line(s) in files that you own call ${RETIRED_CLI_NAME} <command>; update does not change them. Change each to ${CLI_NAME} <command>: ${calls.join(', ')}.${notRead}`,
+    detail: `${calls.length} line(s) in files that you own name ${RETIRED_CLI_NAME}; update does not change them. Change each line that calls it to ${CLI_NAME}: ${calls.join(', ')}.${notRead}`,
   };
 }
 

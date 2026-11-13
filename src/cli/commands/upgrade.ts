@@ -453,7 +453,7 @@ export function runUpgrade(opts: UpgradeOptions = {}, dependencies: UpgradeDepen
     // Read once: every later plan in this run uses the same decisions. An invalid file fails the run.
     const decisions = scope === 'global' ? [] : readUpgradeDecisions(cwd);
     const { items, operatorKept } = planUpgrade(options, decisions);
-    const emptyResult: UpgradeResult = { items, apply, exitCode: apply ? 0 : items.length > 0 ? 1 : 0,
+    const emptyResult: UpgradeResult = { items, apply, exitCode: apply ? 0 : items.some((item) => item.advisory !== true || item.action !== 'report') ? 1 : 0,
       removedPaths: [], refreshedPaths: [], keptPaths: [...new Set(items.filter((item) => !removable(item)).map((item) => item.path))], operatorKept };
     const callerCwd = resolve(opts.callerCwd ?? process.cwd());
     // A failed leftover apply leaves the legacy worktrees in place and reports them.

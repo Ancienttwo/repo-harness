@@ -6,7 +6,7 @@ This file is kept only to document the retired compatibility boundary.
 part of first-run setup. The active setup path is:
 
 ```bash
-npx -y repo-harness install
+npx -y -p repo-harness@latest rh install
 ```
 
 That command bootstraps the global CLI, user-level hook adapters, repo-harness
@@ -16,7 +16,7 @@ configuration, and CodeGraph CLI/MCP readiness.
 Existing repositories should use:
 
 ```bash
-npx -y repo-harness init
+npx -y -p repo-harness@latest rh init
 ```
 
 Use `rh install` for global setup. The legacy plugin setup script is removed.

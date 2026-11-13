@@ -56,7 +56,7 @@ curl -fsSL https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/insta
 irm https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.ps1 | iex
 ```
 
-Already have Bun? Use `bunx repo-harness@latest install` instead.
+Already have Bun? Use `bunx -p repo-harness@latest rh install` instead.
 
 ```bash
 # 2. From the root of the repository you want to adopt: preview, then apply
