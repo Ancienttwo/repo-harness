@@ -467,7 +467,7 @@ export class CandidateRequestProtocolRetiredError extends Error {
   readonly code = 'candidate_request_protocol_retired';
   constructor(protocol: number, candidateVersion: string) {
     super(`repo-harness ${candidateVersion} does not accept a reconciliation request of protocol ${protocol} from an older repo-harness. `
-      + `Install the new CLI directly, then update: bun add -g repo-harness@${candidateVersion} --no-cache && repo-harness update`);
+      + `Install the new CLI directly, then update: bun add -g repo-harness@${candidateVersion} --no-cache && rh update`);
     this.name = 'CandidateRequestProtocolRetiredError';
   }
 }

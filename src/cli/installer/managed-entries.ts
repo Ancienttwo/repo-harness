@@ -82,7 +82,7 @@ function resolvedHookPath(path: string, label: string, mode: number): string {
     accessSync(resolved, mode);
     return shellQuote(resolved);
   } catch (error) {
-    throw new Error(`Cannot resolve managed hook ${label} at ${path}: ${(error as Error).message}. Run bun add -g repo-harness, then repo-harness install --location global.`);
+    throw new Error(`Cannot resolve managed hook ${label} at ${path}: ${(error as Error).message}. Run bun add -g repo-harness, then rh install --location global.`);
   }
 }
 

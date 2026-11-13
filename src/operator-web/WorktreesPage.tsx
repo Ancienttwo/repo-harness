@@ -232,10 +232,10 @@ export function WorktreesPage({ view, cleanup, plan, now, t }: {
   if (reviewing && plan) return <CleanupPlanReview ports={plan} ids={reviewing} now={now} t={t} onBack={() => { setReviewing(null); setPlanChecked(new Set()); cleanup.reselect(); }} />;
   const header = <header className="border-b border-kumo-hairline pb-4"><h1 className="text-xl font-semibold text-kumo-strong">{t('worktrees.title')}</h1></header>;
   if (view.kind === 'loading') return <div data-worktrees-page="pending">{header}<BoardState loading title={t('freshness.worktrees.loading')} description={t('worktrees.pending.body')} /></div>;
-  if (view.kind === 'unreachable') return <div data-worktrees-page="unreachable">{header}<BoardState title={t('board.unreachable.title')} description={t('board.unreachable.body')} command="repo-harness operator serve" /></div>;
+  if (view.kind === 'unreachable') return <div data-worktrees-page="unreachable">{header}<BoardState title={t('board.unreachable.title')} description={t('board.unreachable.body')} command="rh operator serve" /></div>;
   const snapshot = worktreesOf(view);
   if (snapshot === null) return <div data-worktrees-page="pending">{header}<BoardState title={t('worktrees.pending.title')} description={t('worktrees.pending.body')} /></div>;
-  if (snapshot.repositories.length === 0 && snapshot.unassigned.length === 0) return <div data-worktrees-page="empty">{header}<BoardState title={t('board.noRepositories.title')} description={t('board.noRepositories.body')} command="repo-harness init --dry-run" /></div>;
+  if (snapshot.repositories.length === 0 && snapshot.unassigned.length === 0) return <div data-worktrees-page="empty">{header}<BoardState title={t('board.noRepositories.title')} description={t('board.noRepositories.body')} command="rh init --dry-run" /></div>;
   const reclaimable = reclaimableSpace(snapshot);
   // The plan route observes registered non-green worktrees; a primary checkout or an orphan is never planned.
   const planIds = plan ? snapshot.repositories.flatMap(repository => repository.worktrees)

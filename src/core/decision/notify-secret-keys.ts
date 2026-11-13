@@ -1,4 +1,4 @@
-/** The notify channel credentials. `repo-harness herdr notify install` writes them to notify.env; no hc child inherits them. */
+/** The notify channel credentials. `rh herdr notify install` writes them to notify.env; no hc child inherits them. */
 export const NOTIFY_CHANNEL_SECRET_KEYS = [
   'WEBHOOK_URL', 'WEBHOOK_KEY', 'SLACK_WEBHOOK_URL', 'DISCORD_WEBHOOK_URL', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID',
 ] as const;

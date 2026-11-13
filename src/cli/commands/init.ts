@@ -3,7 +3,7 @@ import { architecturePort, isArchitectureUnavailable } from '../../core/architec
 /**
  * Existing-repo harness adoption implementation.
  *
- * This backs the public `repo-harness init` command and
+ * This backs the public `rh init` command and
  * `repo-harness-setup`'s init mode: default the target repo to cwd, apply the
  * repo-local workflow migration, register the repo, then verify the installed
  * harness. Under HOME, init writes only the registry entry. Install-managed
@@ -50,7 +50,7 @@ type BundledHostSkill = { skill: string; host: SkillHost; step: string };
 
 /**
  * Reads and parses sourceRoot's skill-surface manifest. Parameterized by
- * sourceRoot (not a fixed path) because this command backs `repo-harness
+ * sourceRoot (not a fixed path) because this command backs `rh
  * init`, which can target a package tree other than the currently-running
  * code (npx cache extraction, a different installed copy); tests routinely
  * override sourceRoot to a synthetic fixture tree for hermetic runs. Does
@@ -72,7 +72,7 @@ function loadSkillSurfaceCatalog(sourceRoot: string): SkillSurfaceCatalog {
 /**
  * The provider-skill bundle: repo-harness-cross-review and the herdr portal
  * (host-aware provider mode selection lives inside each package). Without
- * `plugins` it is the unconditional bundle of the `repo-harness init` flow,
+ * `plugins` it is the unconditional bundle of the `rh init` flow,
  * which has no install-state concept; with `plugins` it is the part that the
  * selection's owners project.
  */
@@ -166,7 +166,7 @@ function requiredHerdrSkillReadiness(target: InstallTargetSpec, env?: NodeJS.Pro
   return {
     step,
     status: "skipped",
-    detail: `missing for ${missing.join(",")}; run: repo-harness update --target ${target}`,
+    detail: `missing for ${missing.join(",")}; run: rh update --target ${target}`,
   };
 }
 
@@ -256,7 +256,7 @@ function syncBundledItemsAtHome(
     if (stat) {
       const owned = installed?.ownership_manifest.find(surface => surface.path === dest);
       if (!correctGlobalLink && !identicalCopy && (!owned || !managedInstallSurfaceIsCurrent(owned))) {
-        steps.push({ step, status: 'failed', detail: `refusing to overwrite unowned or modified skill at ${dest}; preserve or move this path, then run: repo-harness install --target ${host}` });
+        steps.push({ step, status: 'failed', detail: `refusing to overwrite unowned or modified skill at ${dest}; preserve or move this path, then run: rh install --target ${host}` });
         continue;
       }
     }
@@ -298,7 +298,7 @@ function architectureReadinessStep(repoRoot: string, selected: boolean, env: Nod
     return {
       step: READINESS_STEP,
       status: !initialized ? 'skipped' : provider.state === 'ready' || provider.state === 'disabled' ? 'ok' : 'failed',
-      detail: !initialized ? 'global architecture is not initialized; run repo-harness update once for this account' : provider.state === 'ready' && !readiness.apply.enabled
+      detail: !initialized ? 'global architecture is not initialized; run rh update once for this account' : provider.state === 'ready' && !readiness.apply.enabled
         ? readiness.next
           ? `global provider ready; ${readiness.next}`
           : 'global provider ready; global architecture.projection_apply=disabled'
@@ -382,7 +382,7 @@ export function runInit(
   if (apply && verify) {
     const verifyEnv = { ...(commandEnv ?? process.env), REPO_HARNESS_SOURCE_ROOT: sourceRoot };
     const verifyStep = runProcess("bun", [join(REPO_ROOT, "src/cli/index.ts"), "run", "check-context-files"], repoRoot, verifyEnv);
-    steps.push(withStepName(verifyStep, "verify repo harness", "repo-harness run check-context-files"));
+    steps.push(withStepName(verifyStep, "verify repo harness", "rh run check-context-files"));
   } else {
     steps.push({ step: "verify repo harness", status: "skipped" });
   }

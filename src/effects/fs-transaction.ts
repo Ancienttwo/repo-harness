@@ -545,7 +545,7 @@ function buildTransactionManifest(plan: AdoptionPlan, manifestPath: string, resu
       };
     }),
     rollback: {
-      command: `repo-harness init rollback --transaction ${manifestPath}`,
+      command: `rh init rollback --transaction ${manifestPath}`,
     },
   };
 }

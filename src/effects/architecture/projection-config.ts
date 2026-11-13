@@ -19,7 +19,7 @@ export function readGlobalArchitectureConfiguration(env: NodeJS.ProcessEnv = pro
     if (settings === null || typeof settings !== 'object' || Array.isArray(settings)) throw new Error(`Global architecture configuration must be an object: ${path}`);
     const fields = settings as Record<string, unknown>;
     if (migrateRetiredGlobalArchitectureSettings(fields)) {
-      throw new Error(`Retired global architecture setting from the automatic projection queue; run \`repo-harness update\` to migrate: ${path}`);
+      throw new Error(`Retired global architecture setting from the automatic projection queue; run \`rh update\` to migrate: ${path}`);
     }
     for (const key of Object.keys(fields)) if (!SETTINGS.has(key)) throw new Error(`Unknown global architecture setting ${key}: ${path}`);
     if (fields.projection_timeout_ms !== undefined && (!Number.isInteger(fields.projection_timeout_ms) || (fields.projection_timeout_ms as number) < 1000 || (fields.projection_timeout_ms as number) > 600000)) throw new Error(`Invalid global projection_timeout_ms: ${path}`);

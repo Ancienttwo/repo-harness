@@ -124,11 +124,11 @@ function ParentList({ repositories, repository, onRepository, parents, seats, on
         : parents.kind === 'loading' ? <BoardState loading title={t('board.parents.loading.title')} description={t('board.parents.loading.body')} />
         : parents.kind === 'failed' ? (
           <div data-board-parents-reason={parents.reason}>
-            <BoardState title={t('board.parents.failed.title')} description={t(`board.reason.${parents.reason}` as OperatorMessageKey)} command="repo-harness board parents --json" />
+            <BoardState title={t('board.parents.failed.title')} description={t(`board.reason.${parents.reason}` as OperatorMessageKey)} command="rh board parents --json" />
           </div>
         )
         : seats?.kind === 'loading' ? <BoardState loading title={t('board.loading.title')} description={t('board.office.card.loading')} />
-        : seats?.kind === 'failed' ? <BoardState title={t('board.parents.failed.title')} description={t(`board.reason.${seats.reason}` as OperatorMessageKey)} command="repo-harness board seats --json" />
+        : seats?.kind === 'failed' ? <BoardState title={t('board.parents.failed.title')} description={t(`board.reason.${seats.reason}` as OperatorMessageKey)} command="rh board seats --json" />
         : parents.list.parents.length === 0 ? <BoardState title={t('board.parents.empty.title')} description={t('board.parents.empty.body')} />
         : shown.length === 0 ? <BoardState title={t('board.parents.noMatch.title')} description={t('board.parents.noMatch.body', { query: query.trim() })} />
         : <ParentRows repository={repository!} parents={shown} layout="list" onOpen={onOpen} now={now} t={t} />}
@@ -451,7 +451,7 @@ function OfficeRoomView({ repositoryId, list, seats, parents, view, failure, rea
 function BoardFailure({ reason, parent, t }: { readonly reason: BoardReason; readonly parent: number; readonly t: OperatorTranslate }) {
   return (
     <div data-board-reason={reason}>
-      <BoardState title={t('board.failed.title', { number: parent })} description={t(`board.reason.${reason}` as OperatorMessageKey)} command={`repo-harness board --parent ${parent} --json`} />
+      <BoardState title={t('board.failed.title', { number: parent })} description={t(`board.reason.${reason}` as OperatorMessageKey)} command={`rh board --parent ${parent} --json`} />
     </div>
   );
 }

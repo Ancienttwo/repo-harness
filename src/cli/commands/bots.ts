@@ -37,7 +37,7 @@ export function buildBotsCommand(): Command {
       } catch (error) {
         const code = error instanceof BotRegistryError ? error.code : 'bot_register_failed';
         const message = error instanceof Error ? error.message : String(error);
-        console.error(options.json ? JSON.stringify({ ok: false, error: code, message }) : `repo-harness bots: ${code}: ${message}`);
+        console.error(options.json ? JSON.stringify({ ok: false, error: code, message }) : `rh bots: ${code}: ${message}`);
         process.exitCode = 2;
       }
     });

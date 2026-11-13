@@ -143,7 +143,7 @@ export function createOperatorLanguageSettings(
       catch (error) {
         if (!(error instanceof ExclusiveLockContentionError)) throw error;
         throw new OperatorWriteRefusal(409, 'runtime_busy', 'An install or update holds the runtime transaction lock.',
-          'Wait for repo-harness update or install to finish, then save again.');
+          'Wait for rh update or install to finish, then save again.');
       }
       try { return setReportingLanguage(home, sourceRoot, hosts, preset); }
       finally { lock.release(); }

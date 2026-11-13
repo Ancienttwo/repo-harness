@@ -235,7 +235,7 @@ function writeProjectManifest(cwd: string, backup: ProjectBackup): void {
     repoRoot: cwd,
     mode: 'standard',
     operations: backup.operations,
-    rollback: { command: `repo-harness init rollback --transaction ${backup.manifestPath}` },
+    rollback: { command: `rh init rollback --transaction ${backup.manifestPath}` },
   };
   atomicWriteFileSync(backup.manifestPath, formatJson(manifest), { mode: 0o600 });
 }
@@ -489,17 +489,17 @@ export function formatUpgradeResult(result: UpgradeResult, asJson = false): stri
   }
   if (result.legacyWorktrees) lines.push(...formatLegacyWorktreeOutcome(result.legacyWorktrees));
   if (result.backupPath) lines.push(`Backup: ${result.backupPath}`);
-  if (result.projectBackupPath) lines.push(`Project rollback: repo-harness init rollback --transaction ${result.projectBackupPath}`);
+  if (result.projectBackupPath) lines.push(`Project rollback: rh init rollback --transaction ${result.projectBackupPath}`);
   if (result.error) lines.push(`Failed: ${result.error}`);
   return `${lines.join('\n')}\n`;
 }
 
 export function leftoverCheckWarning(reason: string): string {
-  return `Leftover check failed: ${reason}. Run: repo-harness upgrade`;
+  return `Leftover check failed: ${reason}. Run: rh upgrade`;
 }
 
 /**
- * The one line that `repo-harness update` prints after an install. The package
+ * The one line that `rh update` prints after an install. The package
  * that ran the check writes it, so an updater from an older release never
  * parses this release's result shape. Paths stay out of the line; only counts
  * and the redacted error appear.
@@ -512,7 +512,7 @@ export function formatUpgradeSummaryLine(result: UpgradeResult): string {
   const total = candidates.filter((candidate) => candidate.verdict === 'remove').length + deferred;
   if (total > 0) {
     const proof = deferred > 0 ? ` (${deferred} need${deferred === 1 ? 's' : ''} provider proof)` : '';
-    parts.push(`${total} legacy sibling worktree${total === 1 ? '' : 's'} can be removed${proof}; run repo-harness upgrade --scope project --apply`);
+    parts.push(`${total} legacy sibling worktree${total === 1 ? '' : 's'} can be removed${proof}; run rh upgrade --scope project --apply`);
   }
   return parts.join('; ');
 }
@@ -596,7 +596,7 @@ function buildUpgradeDecideCommand(): Command {
       // The parent upgrade command owns --json, and commander gives it options after the subcommand too.
       const json = command.optsWithGlobals<{ json?: boolean }>().json === true;
       if (opts.keep === opts.remove) {
-        process.stderr.write('repo-harness upgrade decide: choose exactly one of --keep or --remove\n');
+        process.stderr.write('rh upgrade decide: choose exactly one of --keep or --remove\n');
         process.exitCode = 2;
         return;
       }
@@ -613,7 +613,7 @@ function runRegisteredUpgradeCommand(opts: UpgradeCommandOptions, command: Comma
   const conflict = command.getOptionValueSource('scope') === 'cli' ? '--scope'
     : opts.includeStateArtifacts === true ? '--include-state-artifacts' : undefined;
   if (conflict) {
-    process.stderr.write(`repo-harness upgrade --registered: ${conflict} is not supported; each registered repo runs at project scope\n`);
+    process.stderr.write(`rh upgrade --registered: ${conflict} is not supported; each registered repo runs at project scope\n`);
     process.exitCode = 2;
     return;
   }
@@ -632,14 +632,14 @@ export function buildUpgradeCommand(): Command {
     .option('--registered', 'Preview init refresh and project upgrade for every registered repo; never commits')
     .option('--expected-revision <digest>', 'With --registered --apply: exact plan revision from the preview')
     .option('--json', 'Print JSON')
-    .option('--summary-line', 'Print the one-line check summary that repo-harness update shows')
+    .option('--summary-line', 'Print the one-line check summary that rh update shows')
     .action((opts: UpgradeCommandOptions, command: Command) => {
       if (opts.registered === true) {
         runRegisteredUpgradeCommand(opts, command);
         return;
       }
       if (opts.expectedRevision !== undefined) {
-        process.stderr.write('repo-harness upgrade: --expected-revision needs --registered\n');
+        process.stderr.write('rh upgrade: --expected-revision needs --registered\n');
         process.exitCode = 2;
         return;
       }

@@ -13,7 +13,7 @@ import type { OperatorLocale, OperatorTranslate } from './i18n';
 import { CommandLine, ExternalLink, SectionTitle, StatusDot } from './ui';
 
 /** The read-only detector report. The page shows the command; it never runs it. */
-const TOOLING_REPORT_COMMAND = 'repo-harness run check-agent-tooling';
+const TOOLING_REPORT_COMMAND = 'rh run check-agent-tooling';
 
 interface PageProps {
   /** `#tools/<id>`: the catalog entry open in the drawer. */

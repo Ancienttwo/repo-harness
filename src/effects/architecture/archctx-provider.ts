@@ -141,7 +141,7 @@ export class ArchctxClient {
       if (args[0] === 'checkpoint') {
         throw new ArchctxClientError({ code: 'RH_ARCHCTX_TIMEOUT', action: 'inspect-diagnostics', message: 'architecture checkpoint did not finish in the notice time budget' });
       }
-      throw new ArchctxClientError({ code: 'RH_ARCHCTX_TIMEOUT', action: 'check-and-retry-same-request', message: `${label} timed out; outcome unknown. Run repo-harness architecture-projection check --json, then retry with the same request id.` });
+      throw new ArchctxClientError({ code: 'RH_ARCHCTX_TIMEOUT', action: 'check-and-retry-same-request', message: `${label} timed out; outcome unknown. Run rh architecture-projection check --json, then retry with the same request id.` });
     }
     if (Buffer.byteLength(result.stdout, 'utf8') > ARCHCTX_MAX_OUTPUT_BYTES || Buffer.byteLength(result.stderr, 'utf8') > ARCHCTX_MAX_OUTPUT_BYTES) throw new Error(`${label} output exceeded maxBuffer`);
     // Process errors can contain argv, including request-json. Do not print them.
@@ -201,7 +201,7 @@ type DoctorCodeFacts = {
 };
 
 function codeFactsFixCommand(state: DoctorCodeFacts['state']): string {
-  if (state === 'unavailable') return 'repo-harness update';
+  if (state === 'unavailable') return 'rh update';
   return state === 'index-missing' ? `codegraph ${CODEGRAPH_INIT_ARGS.join(' ')}` : 'codegraph index .';
 }
 
@@ -361,10 +361,10 @@ export function inspectArchitectureProjectionReadiness(
     source = capabilitySource(repoRoot);
     if (policy.provider === 'disabled') return {
       ...base(),
-      projectionProvider: { provider: 'disabled', state: 'disabled', binaryPath: null, nodePath: null, command: null, version: null, reason: readGlobalArchitectureConfiguration(options.env).initialized ? 'global architecture.projection_provider=disabled' : 'global architecture configuration is missing; run repo-harness update once' },
+      projectionProvider: { provider: 'disabled', state: 'disabled', binaryPath: null, nodePath: null, command: null, version: null, reason: readGlobalArchitectureConfiguration(options.env).initialized ? 'global architecture.projection_provider=disabled' : 'global architecture configuration is missing; run rh update once' },
       next: source === 'archcontext' && readModelReady(repoRoot, options) ? null : architectureAdoptionStep(),
     };
-    if (source === 'unadopted') throw new ArchctxClientError({ code: 'RH_ARCHCTX_POLICY_MISSING', action: 'adopt-repository', message: 'repository policy is missing; run repo-harness init' });
+    if (source === 'unadopted') throw new ArchctxClientError({ code: 'RH_ARCHCTX_POLICY_MISSING', action: 'adopt-repository', message: 'repository policy is missing; run rh init' });
     const nodePath = resolveCompatibleNodeRuntime(options.env ?? process.env, options.trustedNodeCandidateSource);
     const handshake = archctxCapabilities(repoRoot, options);
     assertCommittedProjectionManifestCompatible(repoRoot, handshake.capabilities);

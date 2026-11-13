@@ -49,7 +49,7 @@ export type GlobalContextState =
   | 'managed-stale'
   | 'managed-current';
 
-export const GLOBAL_RULES_FLAG_HINT = 'run `repo-harness update --report-language follow|zh-CN|en`';
+export const GLOBAL_RULES_FLAG_HINT = 'run `rh update --report-language follow|zh-CN|en`';
 export const GLOBAL_RULES_UNBALANCED = 'unbalanced repo-harness markers; repair the markers manually, then re-run';
 
 /**

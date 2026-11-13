@@ -12,11 +12,11 @@
 #
 # What it proves that scripts/check-tarball-install-smoke.sh does not: the
 # published parent (the version npm serves as "latest") runs
-# `repo-harness update --version <candidate>`, installs both candidate
-# packages, the candidate reconciles the runtime, `repo-harness --version`
-# then gives the candidate, and the managed archctx link moves from the
-# parent's archctx pin to the candidate's pin. The parent's own
-# `repo-harness update --version <parent> --no-cli` makes that managed link
+# `update --version <candidate>` with its own command name, installs both
+# candidate packages, the candidate reconciles the runtime, `rh --version`
+# then gives the candidate, no command link of another name stays, and the
+# managed archctx link moves from the parent's archctx pin to the candidate's
+# pin. The parent's own `update --version <parent> --no-cli` makes that managed link
 # first: `install` does not link archctx, only the update path does.
 #
 # How: it packs repo-harness and repo-harness-operator-web from a
@@ -183,14 +183,17 @@ archctx_link_version() {
 echo "[rehearsal] 1/3 install parent repo-harness@$PARENT from npm"
 bun add -g "repo-harness@$PARENT" >"$WORK/parent-add.log" 2>&1 || { cat "$WORK/parent-add.log" >&2; fail "bun add of the parent failed"; }
 [[ -f "$HOME/.bun/install/global/node_modules/repo-harness/package.json" ]] || fail "bun add -g did not install into $HOME/.bun/install/global"
-[[ "$(command -v repo-harness)" == "$HOME/.bun/bin/repo-harness" ]] || fail "repo-harness resolves to '$(command -v repo-harness || true)', not $HOME/.bun/bin/repo-harness"
-[[ "$(repo-harness --version)" == "$PARENT" ]] || fail "installed parent is not $PARENT"
-repo-harness install --no-cli --no-external-skills --no-codegraph >"$WORK/install.log" 2>&1 || { cat "$WORK/install.log" >&2; fail "parent install failed"; }
+# The parent's command is the CLI bin of its package.json (`repo-harness` before 0.33.0, then `rh`).
+PARENT_CLI="$(bun -e 'console.log(Object.keys((await Bun.file(process.argv[1]).json()).bin).filter(name => name !== "repo-harness-hook").join(" "))' "$HOME/.bun/install/global/node_modules/repo-harness/package.json")"
+[[ "$PARENT_CLI" =~ ^[a-z-]+$ ]] || fail "the parent package declares no single CLI bin: '$PARENT_CLI'"
+[[ "$(command -v "$PARENT_CLI")" == "$HOME/.bun/bin/$PARENT_CLI" ]] || fail "$PARENT_CLI resolves to '$(command -v "$PARENT_CLI" || true)', not $HOME/.bun/bin/$PARENT_CLI"
+[[ "$("$PARENT_CLI" --version)" == "$PARENT" ]] || fail "installed parent is not $PARENT"
+"$PARENT_CLI" install --no-cli --no-external-skills --no-codegraph >"$WORK/install.log" 2>&1 || { cat "$WORK/install.log" >&2; fail "parent install failed"; }
 # The parent's update to its own version, from npm, makes the managed archctx
 # link of the parent pin, as on a user machine that ran update once.
 PARENT_ARCHCTX_PIN="$(bun -e 'console.log((await Bun.file(process.argv[1]).json()).dependencies.archctx ?? "")' "$HOME/.bun/install/global/node_modules/repo-harness/package.json")"
 [[ -n "$PARENT_ARCHCTX_PIN" ]] || fail "the parent does not pin archctx"
-repo-harness update --version "$PARENT" --no-cli --no-codegraph --no-external-skills >"$WORK/parent-update.log" 2>&1 \
+"$PARENT_CLI" update --version "$PARENT" --no-cli --no-codegraph --no-external-skills >"$WORK/parent-update.log" 2>&1 \
   || { cat "$WORK/parent-update.log" >&2; fail "the parent update to its own version failed"; }
 BEFORE_LINK_VERSION="$(archctx_link_version 2>/dev/null || true)"
 echo "[rehearsal] archctx link before update: ${BEFORE_LINK_VERSION:-absent} (parent pin $PARENT_ARCHCTX_PIN)"
@@ -200,7 +203,7 @@ echo "[rehearsal] archctx link before update: ${BEFORE_LINK_VERSION:-absent} (pa
 echo "[rehearsal] 2/3 parent update --version $CANDIDATE against $LOCAL_REGISTRY"
 set +e
 env NPM_CONFIG_REGISTRY="$LOCAL_REGISTRY" BUN_CONFIG_REGISTRY="$LOCAL_REGISTRY" \
-  repo-harness update --version "$CANDIDATE" --no-codegraph --no-external-skills >"$WORK/update.log" 2>&1
+  "$PARENT_CLI" update --version "$CANDIDATE" --no-codegraph --no-external-skills >"$WORK/update.log" 2>&1
 update_exit=$?
 set -e
 if [[ $update_exit -ne 0 ]]; then
@@ -209,7 +212,9 @@ if [[ $update_exit -ne 0 ]]; then
 fi
 
 echo "[rehearsal] 3/3 check the result"
-[[ "$(repo-harness --version)" == "$CANDIDATE" ]] || fail "repo-harness --version is not $CANDIDATE after update"
+[[ "$(command -v rh)" == "$HOME/.bun/bin/rh" ]] || fail "rh resolves to '$(command -v rh || true)', not $HOME/.bun/bin/rh"
+[[ "$(rh --version)" == "$CANDIDATE" ]] || fail "rh --version is not $CANDIDATE after update"
+[[ ! -e "$HOME/.bun/bin/repo-harness" && ! -L "$HOME/.bun/bin/repo-harness" ]] || fail "the retired repo-harness command link stays after update"
 WEB_VERSION="$(bun -e 'console.log((await Bun.file(process.argv[1]).json()).version)' "$HOME/.bun/install/global/node_modules/repo-harness-operator-web/package.json" 2>/dev/null || true)"
 [[ "$WEB_VERSION" == "$CANDIDATE" ]] || fail "global repo-harness-operator-web is '${WEB_VERSION:-missing}', not $CANDIDATE"
 LINK_VERSION="$(archctx_link_version 2>/dev/null || true)"

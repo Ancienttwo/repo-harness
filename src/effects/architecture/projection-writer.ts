@@ -21,7 +21,7 @@ const UPDATE_SCHEMA_VERSION = 'repo-harness.projection-writer-update/v1';
  */
 export function architectureWriterArgs(mode: string, stateDir: string | undefined): string[] {
   if (!stateDir || !isAbsolute(stateDir)) throw new Error('ARCHCONTEXT_STATE_DIR must be an explicit absolute path for the shared writer state');
-  if (!['status', 'once', 'follow'].includes(mode)) throw new Error('Usage: repo-harness architecture-projection publish <status|once|follow>');
+  if (!['status', 'once', 'follow'].includes(mode)) throw new Error('Usage: rh architecture-projection publish <status|once|follow>');
   const target = ['--remote', 'origin', '--base', 'main'];
   return mode === 'status'
     ? ['projection', 'publish-status', ...target, '--json']

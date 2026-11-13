@@ -27,7 +27,7 @@ export const en = {
   'tools.reason.noDetector': 'repo-harness has no detector for this tool.',
   'tools.reason.resource': 'repo-harness does not install or detect resources.',
   'tools.link.upstream': 'Open the upstream README',
-  'tools.link.docs': 'repo-harness docs',
+  'tools.link.docs': 'rh docs',
 } as const;
 
 export const zh: Readonly<Record<keyof typeof en, string>> = {

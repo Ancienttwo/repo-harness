@@ -44,8 +44,8 @@ export interface OfficeSetupRow {
 
 const HC_STATUS_COMMAND = 'hc server status';
 const GH_STATUS_COMMAND = 'gh auth status';
-const REGISTER_COMMAND = 'repo-harness init';
-const OPERATOR_COMMAND = 'repo-harness operator serve';
+const REGISTER_COMMAND = 'rh init';
+const OPERATOR_COMMAND = 'rh operator serve';
 const ADD_REMOTE_COMMAND = 'git remote add origin <url>';
 /** `--repository-id` takes this GitHub numeric id, and the registry id of the console matches no seat label. */
 const GITHUB_ID_COMMAND = 'gh api repos/{owner}/{repo} --jq .id';
@@ -173,7 +173,7 @@ function roomPlan({ view, card }: Extract<OfficeSetupScope, { readonly kind: 'ov
 function planRow(scope: OfficeSetupScope, t: OperatorTranslate): OfficeSetupRow {
   const number = scope.kind === 'room' && scope.parent !== null ? String(scope.parent) : '<n>';
   const write = `gh issue comment ${number} --body-file <plan-file>`;
-  const read = `repo-harness board --parent ${number}`;
+  const read = `rh board --parent ${number}`;
   const row = (state: OfficeSetupState, detail: string, command: string): OfficeSetupRow => ({ id: 'plan', state, detail, commands: [command] });
   if (scope.kind === 'overview') {
     if (scope.rooms.length === 0) return row('unknown', t('board.office.setup.plan.noRepository'), read);

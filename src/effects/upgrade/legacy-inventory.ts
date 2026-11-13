@@ -7,6 +7,7 @@ import { hashManagedTree, installedCopyTreeOptions, OWNER_MARKER } from '../mana
 import { isRepoHarnessLegacyTypedHookCommand, retiredHookCommands, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { isRepoHarnessSourceCheckout } from '../source-checkout';
 import { loadWorkflowContractAsset } from '../../core/adoption/workflow-contract-asset';
+import { CLI_NAME, RETIRED_CLI_INVOCATION, RETIRED_CLI_NAME } from '../../core/skill-surface/cli-name';
 import { parseSkillSurfaceCatalog, type SkillSurfacePackage } from '../../core/skill-surface/catalog';
 
 export interface LeftoverItem {
@@ -492,10 +493,10 @@ function rootRunTarget(args: string): string | null {
 }
 
 /**
- * `repo-harness run` resolves only the helpers in the shipped registry, and
- * init deletes generated script keys that other scripts may still run. Both
- * fail at run time. User scripts stay as they are; the report lists each key
- * and command.
+ * `rh run` resolves only the helpers in the shipped registry, init deletes
+ * generated script keys that other scripts may still run, and the
+ * `repo-harness` command is retired. Each fails at run time. User scripts stay
+ * as they are; the report lists each key and command.
  */
 function scanPackageScripts(root: string, add: AddItem): void {
   const path = join(root, 'package.json');
@@ -511,16 +512,17 @@ function scanPackageScripts(root: string, add: AddItem): void {
     || (runner === 'bun' && (stat(join(root, target)) !== null || stat(join(root, 'node_modules/.bin', target)) !== null));
   const findings = Object.entries(scripts).flatMap(([key, command]) => {
     if (typeof command !== 'string') return [];
-    const retired = [...command.matchAll(/\brepo-harness run ([^\s;&|'"`)]+)/g)].some((match) => !runnable.has(match[1]!));
+    const retired = [...command.matchAll(/(?<![\w./@-])(?:rh|repo-harness) run ([^\s;&|'"`)]+)/g)].some((match) => !runnable.has(match[1]!));
+    const retiredCli = RETIRED_CLI_INVOCATION.test(command) ? [` (the ${RETIRED_CLI_NAME} command is now ${CLI_NAME})`] : [];
     const missing = [...command.matchAll(/\b(bun|npm) run(?=\s)/g)].flatMap((match) => {
       const target = rootRunTarget(command.slice(match.index + match[0].length));
       return target === null || resolves(match[1]!, target) ? [] : [` (missing script "${target}")`];
     });
-    return retired || missing.length > 0 ? [`${key}: ${command}${missing.join('')}`] : [];
+    return retired || missing.length > 0 || retiredCli.length > 0 ? [`${key}: ${command}${[...retiredCli, ...missing].join('')}`] : [];
   });
   if (findings.length === 0) return;
   add({ location: 'project', surface: 'file', path, retiredBy: 'retired-script-reference', ownership: 'unowned', proof: null, action: 'report',
-    reason: `Package scripts call a helper that this package does not ship or a script that package.json does not define; review them without automatic edits: ${findings.join('; ')}` });
+    reason: `Package scripts call a helper that this package does not ship, a script that package.json does not define, or the retired ${RETIRED_CLI_NAME} command; ${CLI_NAME} init rewrites the scripts that it manages; review the others without automatic edits: ${findings.join('; ')}` });
 }
 
 /** codex-handoff-resume is the only retired generator that a release shipped with this marker (resume.md). */
@@ -665,7 +667,7 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
     if (libraryEntry) {
       add({ location: 'project', surface: libraryEntry.isSymbolicLink() ? 'symlink' : libraryEntry.isDirectory() ? 'directory' : 'file',
         path: library, retiredBy: 'legacy-workflow-state-library', ownership: 'unowned', proof: null, action: 'report',
-        reason: 'Legacy workflow-state library. The package no longer ships an operator library. Change callers to repo-harness run <helper>. Test callers, review local edits, and back up the copy before manual removal. Upgrade preserves it.' });
+        reason: 'Legacy workflow-state library. The package no longer ships an operator library. Change callers to rh run <helper>. Test callers, review local edits, and back up the copy before manual removal. Upgrade preserves it.' });
     }
     const scanDocument = (path: string): void => {
       if (!isLegacyPathSafe(root, path, false) || !stat(path)?.isFile()) return;
@@ -722,5 +724,5 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
 
 export function formatLegacyLeftoverSummary(plan: { readonly items: readonly LeftoverItem[] } | readonly LeftoverItem[]): string {
   const items = Array.isArray(plan) ? plan as readonly LeftoverItem[] : (plan as { readonly items: readonly LeftoverItem[] }).items;
-  return `${items.length} leftovers (${items.filter((item) => item.action !== 'report').length} removable). Run: repo-harness upgrade`;
+  return `${items.length} leftovers (${items.filter((item) => item.action !== 'report').length} removable). Run: rh upgrade`;
 }

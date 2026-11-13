@@ -665,7 +665,7 @@ function configureCodegraphRuntime(opts: CodegraphConfigureOptions): CodegraphCo
         action: actionName,
         status: "failed",
         command,
-        stderr: "CodeGraph CLI is missing; run repo-harness tools ensure codegraph first.",
+        stderr: "CodeGraph CLI is missing; run rh tools ensure codegraph first.",
       });
       if (target === "claude") {
         configureClaudeAllowedTools(actions, opts.env);
@@ -755,7 +755,7 @@ function codegraphRemediation(result: CodegraphCheckResult): string | null {
     return String(raw.install_command ?? 'bun install');
   }
   if (raw.mcp_hosts?.codex?.status !== 'configured' || raw.mcp_hosts?.claude?.status !== 'configured') {
-    return String(raw.mcp_install_command ?? 'repo-harness tools configure codegraph --target both --location global');
+    return String(raw.mcp_install_command ?? 'rh tools configure codegraph --target both --location global');
   }
   if (raw.project_index?.status === 'not-initialized') {
     return String(raw.init_command ?? 'bash scripts/ensure-codegraph.sh --init');
@@ -819,7 +819,7 @@ function checkCodegraphMcpHost(probe: CodegraphProbe, host: 'codex' | 'claude'):
     id,
     describe,
     status: 'warn',
-    detail: `${entry?.reason ?? 'missing'}; remediation=repo-harness tools configure codegraph --target ${host} --location global`,
+    detail: `${entry?.reason ?? 'missing'}; remediation=rh tools configure codegraph --target ${host} --location global`,
   };
 }
 
@@ -905,7 +905,7 @@ function codegraphIndexSteps({ repoRoot, sync, env, target }: Parameters<Codegra
         step: "codegraph mcp",
         status: "skipped",
         detail:
-          "not registered; run: repo-harness tools configure codegraph --target both --location global",
+          "not registered; run: rh tools configure codegraph --target both --location global",
       });
     }
   } catch (error) {

@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { buildStrategyCommand } from './commands/strategy';
 import { buildModuleCommand } from './commands/module';
+import { CLI_NAME } from '../core/skill-surface/cli-name';
 import { globalRuntimeScope, parentRuntimeTransactionContext, withRuntimeTransactionLock } from '../effects/locking/runtime-transaction-lock';
 import { captureConfigurationRestores, hostConfigurationRoot } from './installer/configuration-ownership';
 /**
@@ -62,6 +63,8 @@ import { TASK_INBOX_V2_RELATIVE_PATH } from '../core/fleet/task-inbox-layout';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
   GLOBAL_RULES_REFRESH_STEP,
+  RETIRED_CLI_LINK_STEP,
+  RETIRED_CLI_REFERENCES_STEP,
   HERDR_CORE_STEP,
   MIN_BUN_VERSION,
   agentFleetVerified,
@@ -470,9 +473,11 @@ export function runCandidateRuntimeReconciliation(
     // did not sync must stay visible with their next action.
     const globalRules = runtime.steps.find(step => step.step === GLOBAL_RULES_REFRESH_STEP);
     if (globalRules) console.error(`[runtime] ${globalRules.status}: ${globalRules.step} - ${globalRules.detail}`);
-    // The hc step result carries its PATH hint when the install dir is not on PATH.
-    const herdrCore = runtime.steps.find(step => step.step === HERDR_CORE_STEP);
-    if (herdrCore) console.error(`[runtime] ${herdrCore.status}: ${herdrCore.step} - ${herdrCore.detail}`);
+    // The hc step result carries its PATH hint when the install dir is not on PATH; the retired-command steps carry their notices.
+    for (const name of [HERDR_CORE_STEP, RETIRED_CLI_LINK_STEP, RETIRED_CLI_REFERENCES_STEP]) {
+      const shown = runtime.steps.find(step => step.step === name);
+      if (shown) console.error(`[runtime] ${shown.status}: ${shown.step} - ${shown.detail}`);
+    }
 
     const adapterDigests = request.host_adapters
       ? assertInstalledAdapterProjection(request.target, env)
@@ -714,7 +719,7 @@ async function runGlobalRuntimeBootstrap(
 export function buildProgram(): Command {
   const program = new Command();
   program
-    .name('repo-harness')
+    .name(CLI_NAME)
     .description('Make Claude/Codex work resumable, reviewable, and repo-local')
     .addHelpText('after', '\nGlobal shortcuts:\n  -V, --version  output the version number')
     .exitOverride();
@@ -735,7 +740,7 @@ export function buildProgram(): Command {
     .option('--no-external-skills', 'Skip mutable third-party Waza and Mermaid skill bootstrap')
     .option('--with-obsidian-skills', 'Explicitly install the pinned obsidian-markdown and obsidian-cli companion Skills')
     .option('--no-codegraph', 'Skip CodeGraph CLI/MCP configuration')
-    .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
+    .option('--brain-root <path>', 'Brain vault root to persist for rh brain commands')
     .option('--report-language <language>', `Reporting language for Global Working Rules that record none: ${REPORT_LANGUAGE_FLAG_VALUES.join('|')}`)
     .option('--json', 'Output JSON instead of human-readable text')
     .action(async (rawOpts: GlobalRuntimeCommandOptions & { location?: string; state?: boolean; rollback?: boolean }, cmd: Command) => {
@@ -817,7 +822,7 @@ export function buildProgram(): Command {
     }) => {
       if (action) {
         if (action !== 'rollback') {
-          console.error(`repo-harness init: unknown action "${action}"`);
+          console.error(`rh init: unknown action "${action}"`);
           process.exit(2);
         }
         if (rawOpts.transaction) {
@@ -834,7 +839,7 @@ export function buildProgram(): Command {
           }
           process.exit(rollback.ok ? 0 : 1);
         }
-        console.error('repo-harness init rollback: --transaction is required');
+        console.error('rh init rollback: --transaction is required');
         process.exit(2);
       }
       const target = assertTarget(rawOpts.target, 'init');
@@ -913,11 +918,11 @@ export function buildProgram(): Command {
     }) => {
       const target = assertTarget(rawOpts.target, 'update');
       if (rawOpts.channel !== undefined && !['latest', 'next'].includes(rawOpts.channel)) {
-        console.error('repo-harness update: invalid --channel (expected: latest, next)');
+        console.error('rh update: invalid --channel (expected: latest, next)');
         process.exit(2);
       }
       if (rawOpts.reportLanguage !== undefined && !REPORT_LANGUAGE_FLAG_VALUES.includes(rawOpts.reportLanguage as ReportLanguageFlag)) {
-        console.error(`repo-harness update: invalid --report-language (expected: ${REPORT_LANGUAGE_FLAG_VALUES.join(', ')})`);
+        console.error(`rh update: invalid --report-language (expected: ${REPORT_LANGUAGE_FLAG_VALUES.join(', ')})`);
         process.exit(2);
       }
       if (rawOpts.check === true || rawOpts.runtimeRefresh === false) {

@@ -44,7 +44,7 @@ import { readText, repoPath } from './collect-state-inputs';
 
 export const ATTEMPT_LEDGER_PATH = '.ai/harness/runs/continuation/attempts.jsonl';
 const ATTEMPT_LEDGER_LOCK_PATH = '.ai/harness/runs/continuation/attempts.lock';
-const ATTEMPT_LEDGER_REPAIR_COMMAND = 'repo-harness state attempt-repair --json';
+const ATTEMPT_LEDGER_REPAIR_COMMAND = 'rh state attempt-repair --json';
 
 const NEWLINE = 0x0a;
 

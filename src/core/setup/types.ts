@@ -1,6 +1,6 @@
 // Public contract for GET /api/v1/setup. See
 // plans/plan-20261010-0320-operator-console-kumo.md §8 for the authority table.
-// Every value is a projection of one `repo-harness setup check` run (the
+// Every value is a projection of one `rh setup check` run (the
 // `runInitHook` builder), the route registry, the skill catalog, or the
 // packaged agent fleet. Values that have no authority are null; consumers must
 // not infer them. Free text is redacted with `publicAgentConfigText`.
@@ -114,7 +114,7 @@ export interface SetupHostSkillRoot {
   other_skills: string[] | null;
 }
 
-/** The install ledger's plugin selection, which `repo-harness update` installs again. */
+/** The install ledger's plugin selection, which `rh update` installs again. */
 export type SetupInstallSelection = 'all' | string[];
 
 /** `HookEvent` vocabulary, in route registry order. */
@@ -199,7 +199,7 @@ export interface SetupSnapshotV2 {
   skills: SetupSkill[];
   /** Always claude, codex, pi in that order when data is present. */
   skill_roots: SetupHostSkillRoot[];
-  /** Null when the install ledger is missing or invalid; then `repo-harness update` cannot run. */
+  /** Null when the install ledger is missing or invalid; then `rh update` cannot run. */
   install_selection: SetupInstallSelection | null;
   hooks: SetupHookEvent[];
   /** Null when there is no data, the collector found no repository root, or a hook log read failed. */

@@ -272,7 +272,7 @@ function formatInit(init: RegisteredInitPreview | RegisteredInitApply): string[]
       ...init.operations.map((operation) => `    ${operation.kind}${operation.path === undefined ? '' : ` ${operation.path}`}`)];
   }
   const lines = [`  init: ${init.ok ? 'ok' : 'failed'}; ${init.planned} planned, ${init.applied} applied, ${init.failed} failed`];
-  if (init.transaction) lines.push(`    rollback: repo-harness init rollback --transaction ${init.transaction}`);
+  if (init.transaction) lines.push(`    rollback: rh init rollback --transaction ${init.transaction}`);
   if (init.rollbackOk !== undefined) lines.push(`    automatic rollback: ${init.rollbackOk ? 'complete' : 'incomplete'}`);
   for (const error of init.errors ?? []) lines.push(`    error: ${error}`);
   return lines;
@@ -303,7 +303,7 @@ export function formatRegisteredUpgradeResult(result: RegisteredUpgradeResult, a
   if (result.repos.length === 0 && !result.error) lines.push('No registered repos.');
   if (result.error) lines.push(`Failed: ${result.error}`);
   else if (!result.apply && result.revision) {
-    lines.push(`Apply: repo-harness upgrade --registered --apply --expected-revision ${result.revision}`);
+    lines.push(`Apply: rh upgrade --registered --apply --expected-revision ${result.revision}`);
   }
   if (result.apply && !result.error) lines.push('Nothing was committed. Review and commit each repo.');
   return `${lines.join('\n')}\n`;

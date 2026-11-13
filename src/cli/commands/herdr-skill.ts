@@ -129,7 +129,7 @@ export function configureRequiredHerdrSkill(
           throw new Error(`refusing to replace unowned or changed Herdr skill: ${destination}; `
             + `to keep it and install a fresh owned copy, move it out of ${root} `
             + `(for example: mv "${destination}" "${join(dirname(root), "herdr-skill.moved")}"), `
-            + "then run `repo-harness update` again");
+            + "then run `rh update` again");
         }
         // A copy equal to the render is the managed projection. Rewrite its stale
         // marker now; otherwise the next render change refuses to replace it.

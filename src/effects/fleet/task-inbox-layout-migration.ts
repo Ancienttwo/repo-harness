@@ -152,7 +152,7 @@ function refuseRetiredReplyRecords(sourceRoot: string, source: Entry[]): void {
   }).map(entry => entry.path);
   if (retired.length) refuse(`Task Inbox at ${sourceRoot} holds records of the retired reply protocol `
     + `(added in v0.19.4, removed in #820 / v0.23.1): ${retired.join(', ')}. Remove or archive the reply-effects `
-    + 'directories, then run `repo-harness fleet inbox migrate-layout` again.');
+    + 'directories, then run `rh fleet inbox migrate-layout` again.');
 }
 function buildManifest(common: string, sourceRoot: string, fresh = false): Manifest {
   const stat = inboxPathStat(common)!;

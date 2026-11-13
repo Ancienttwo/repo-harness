@@ -1,4 +1,4 @@
-// One setup snapshot from the `repo-harness setup check` builder. This module
+// One setup snapshot from the `rh setup check` builder. This module
 // runs in the collector's child process (setup-check-child.ts), never in the
 // `operator serve` event loop: the builder is synchronous and spawns its own
 // probes. It reads only the builder result, the skill catalog that the skill
@@ -108,7 +108,7 @@ function hookUsageAt(cwd: string, nowMs: number): SetupHookUsage | null {
   }
 }
 
-/** Run the setup check builder exactly as `repo-harness setup check --target both` does (no --check-updates). */
+/** Run the setup check builder exactly as `rh setup check --target both` does (no --check-updates). */
 export function collectSetupSnapshotNow(ports: DoctorPorts, options: { readonly cwd?: string; readonly env?: NodeJS.ProcessEnv; readonly now?: () => number } = {}): SetupSnapshotV2 {
   const env = options.env ?? process.env;
   const build = buildSetupCheck(ports, { cwd: options.cwd, target: 'both', checkUpdates: false });

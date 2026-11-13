@@ -81,7 +81,7 @@ export const ADVISOR_BOSS_COMMAND_TABLE: Readonly<Record<AdvisorBossCommand, { r
   },
   valve: {
     cooldown_seconds: 60 * 60,
-    text: '【收放】按配额报告（`repo-harness quota`）和 parent #{parent} 的队列长度，提议新的执行席上限（例如 6 → 5）和理由。只回复方案，等我批准。',
+    text: '【收放】按配额报告（`rh quota`）和 parent #{parent} 的队列长度，提议新的执行席上限（例如 6 → 5）和理由。只回复方案，等我批准。',
   },
 });
 

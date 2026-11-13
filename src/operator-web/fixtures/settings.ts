@@ -196,7 +196,7 @@ function languageStores(fixture: 'busy' | 'empty' | 'degraded') {
     return Promise.resolve({ state: 'ok', value: { changed_hosts: ['claude', 'codex'] } });
   };
   const languages = new Map<string, DocumentationLanguage>();
-  const missing: OperatorApiErrorV1 = { code: 'policy_missing', message: 'The repository policy file is missing.', next_action: 'repo-harness init' };
+  const missing: OperatorApiErrorV1 = { code: 'policy_missing', message: 'The repository policy file is missing.', next_action: 'rh init' };
   const readDocumentation: DocumentationLanguageReader = repositoryId => () => Promise.resolve<LanguageRead<DocumentationLanguage | null>>(
     fixture === 'empty' ? { state: 'refused', error: missing } : { state: 'ok', value: languages.get(repositoryId) ?? 'en' });
   const writeDocumentation: DocumentationLanguageWriter = repositoryId => (language) => {

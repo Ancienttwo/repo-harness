@@ -59,7 +59,7 @@ interface StopNotice {
  * An orchestrator or advisor seat at or above the reset threshold blocks the stop once per session segment (exit 2
  * gives the reason to the model), so the seat writes its handoff and asks its peer for the reset. The hook is the one
  * authority for the action: the transcript size picks `/compact` or `/clear` and the request records it. Only the env
- * of `repo-harness seats argv` names the seat. Any failure of this step resets nothing, names the failure and keeps
+ * of `rh seats argv` names the seat. Any failure of this step resets nothing, names the failure and keeps
  * the notices.
  */
 function seatReset(payload: HookPayload, env: NodeJS.ProcessEnv, now: Date): { readonly block: StopHandlerResult } | { readonly notices: readonly StopNotice[] } {

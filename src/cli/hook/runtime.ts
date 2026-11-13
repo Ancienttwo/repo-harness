@@ -94,7 +94,7 @@ type EffectiveStateResolver = (repoRoot: string, nowMs: number) => EffectiveStat
  * resolution, one timestamp, at most three attempts for transient instability,
  * and a hashed failure that each handler renders in its own advisory. A hook
  * writes no state. It reports the last published `state_version`; only
- * `repo-harness state resolve` publishes one.
+ * `rh state resolve` publishes one.
  */
 export function resolveHookEffectiveState(
   repoRoot: string,
@@ -158,7 +158,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   const repoRoot = resolveHookRepoRoot(cwd, env);
   if (!repoRoot) return early(0, 'not-in-git-repo', null);
   if (!isOptIn(repoRoot)) return early(0, 'non-opt-in', repoRoot);
-  const repair = `Run repo-harness install --target ${host} --location global.`;
+  const repair = `Run rh install --target ${host} --location global.`;
   if (!route) {
     return early(2, 'unknown-route', repoRoot, `${HOOK_COMMAND_NAME}: unknown route ${opts.event}.${opts.routeId}. ${repair}\n`);
   }

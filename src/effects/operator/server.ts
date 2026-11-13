@@ -69,10 +69,10 @@ export const OPERATOR_SERVICE_NAME = 'repo-harness-operator' as const;
 const OPERATOR_WORKER_CLEANUP_GRACE_MS = 500;
 const OPERATOR_JOB_CONTROLLER_ACK_TIMEOUT_MS = 5_000;
 
-const OPERATOR_DIAGNOSTIC_ACTION = 'Retry. If the error stays, restart `repo-harness operator serve`.';
-const OPERATOR_REGISTRY_ACTION = 'Run `repo-harness fleet prune` to show the registry error.';
-const OPERATOR_ASSET_ACTION = 'Run `repo-harness update`, restart the server and reload the page.';
-const OPERATOR_ADOPT_ACTION = 'Adopt the repository with `repo-harness init`, then refresh the board.';
+const OPERATOR_DIAGNOSTIC_ACTION = 'Retry. If the error stays, restart `rh operator serve`.';
+const OPERATOR_REGISTRY_ACTION = 'Run `rh fleet prune` to show the registry error.';
+const OPERATOR_ASSET_ACTION = 'Run `rh update`, restart the server and reload the page.';
+const OPERATOR_ADOPT_ACTION = 'Adopt the repository with `rh init`, then refresh the board.';
 
 /**
  * The dispatcher's own matchers, exported so the inventory below and the test
@@ -439,23 +439,23 @@ const ARCHITECTURE_MAP_UNAVAILABLE: Readonly<Record<ArchitectureMapUnavailableV1
   repository_not_found: { status: 404, message: 'No registered repository has this id.', next_action: OPERATOR_ADOPT_ACTION },
   model_unavailable: {
     status: 503, message: 'The committed architecture model could not be read, and archctx gave no error code.',
-    next_action: 'Check that the registered path is a git checkout with a commit. `repo-harness fleet prune` lists registrations whose path is gone.',
+    next_action: 'Check that the registered path is a git checkout with a commit. `rh fleet prune` lists registrations whose path is gone.',
   },
   archctx_error: {
     status: 503, message: 'archctx refused to read the committed architecture model.',
     next_action: 'Run `archctx export native --ref HEAD --json` in the repository. The archctx error gives its action and details.',
   },
   architecture_map_invalid: { status: 503, message: 'The architecture map failed validation.', next_action: OPERATOR_DIAGNOSTIC_ACTION },
-  architecture_map_failed: { status: 503, message: 'The map process read the committed model, then failed.', next_action: `${ARCHITECTURE_MAP_RETRY} If the error stays, restart \`repo-harness operator serve\`.` },
+  architecture_map_failed: { status: 503, message: 'The map process read the committed model, then failed.', next_action: `${ARCHITECTURE_MAP_RETRY} If the error stays, restart \`rh operator serve\`.` },
   architecture_map_timeout: { status: 503, message: 'The map process passed its time limit.', next_action: `${ARCHITECTURE_MAP_RETRY} If the error stays, check that git and archctx answer in the repository.` },
-  architecture_map_process_failed: { status: 503, message: 'The map process did not start or gave no result.', next_action: `${ARCHITECTURE_MAP_RETRY} If the error stays, restart \`repo-harness operator serve\`.` },
+  architecture_map_process_failed: { status: 503, message: 'The map process did not start or gave no result.', next_action: `${ARCHITECTURE_MAP_RETRY} If the error stays, restart \`rh operator serve\`.` },
 };
 
 const EXECUTION_UNAVAILABLE: Readonly<Record<ExecutionStateUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
   execution_state_pending: { status: 503, message: 'The task execution state is not collected yet.', next_action: 'Retry in a few seconds.' },
   registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: OPERATOR_REGISTRY_ACTION },
   repository_not_found: { status: 404, message: 'No registered repository has this id.', next_action: OPERATOR_ADOPT_ACTION },
-  execution_state_unavailable: { status: 503, message: 'The task session records of this repository could not be read.', next_action: 'Wait for the next collection. If the error stays, restart `repo-harness operator serve`.' },
+  execution_state_unavailable: { status: 503, message: 'The task session records of this repository could not be read.', next_action: 'Wait for the next collection. If the error stays, restart `rh operator serve`.' },
 };
 
 const TASK_MESSAGES_REFUSALS: Readonly<Record<TaskMessagesRefusal, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
@@ -466,9 +466,9 @@ const TASK_MESSAGES_REFUSALS: Readonly<Record<TaskMessagesRefusal, { readonly st
 const BOARD_UNAVAILABLE: Readonly<Record<BoardReadFailure, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
   registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: OPERATOR_REGISTRY_ACTION },
   repository_not_found: { status: 404, message: 'No registered repository has this id.', next_action: OPERATOR_ADOPT_ACTION },
-  board_collect_failed: { status: 503, message: 'The board read failed: GitHub, the local repository or the parent issue could not be read.', next_action: 'Run `repo-harness board --parent <n> --json` in the repository for the error.' },
-  board_source_invalid: { status: 503, message: 'GitHub returned a board source that failed validation.', next_action: 'Run `repo-harness board --parent <n> --json` in the repository for the error.' },
-  board_unavailable: { status: 503, message: 'The board worker did not return a board.', next_action: 'Run `repo-harness board --parent <n> --json` in the repository for the error.' },
+  board_collect_failed: { status: 503, message: 'The board read failed: GitHub, the local repository or the parent issue could not be read.', next_action: 'Run `rh board --parent <n> --json` in the repository for the error.' },
+  board_source_invalid: { status: 503, message: 'GitHub returned a board source that failed validation.', next_action: 'Run `rh board --parent <n> --json` in the repository for the error.' },
+  board_unavailable: { status: 503, message: 'The board worker did not return a board.', next_action: 'Run `rh board --parent <n> --json` in the repository for the error.' },
   board_timeout: { status: 504, message: 'The board read did not finish in time.', next_action: 'Refresh the board and retry.' },
   board_parent_invalid: { status: 400, message: 'The board needs exactly one parent issue number.', next_action: 'Request the board with ?parent=<issue number>.' },
   board_invalid: { status: 503, message: 'The board failed validation.', next_action: 'Update repo-harness so that the operator and the board command use the same board protocol.' },
@@ -478,10 +478,10 @@ const BOARD_UNAVAILABLE: Readonly<Record<BoardReadFailure, { readonly status: nu
 const BOARD_PARENTS_UNAVAILABLE: Readonly<Record<BoardParentsReadFailure, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
   registry_unavailable: BOARD_UNAVAILABLE.registry_unavailable,
   repository_not_found: BOARD_UNAVAILABLE.repository_not_found,
-  parents_github_failed: { status: 503, message: 'GitHub could not list the open issues of this repository.', next_action: 'Run `repo-harness board parents --json` in the repository for the error.' },
-  parents_source_invalid: { status: 503, message: 'GitHub returned an open issue list that failed validation.', next_action: 'Run `repo-harness board parents --json` in the repository for the error.' },
-  parents_hc_failed: { status: 503, message: 'hc could not list the seat terminals of this repository.', next_action: 'Run `repo-harness board parents --json` in the repository for the error.' },
-  parents_unavailable: { status: 503, message: 'The board worker did not return a parent list.', next_action: 'Run `repo-harness board parents --json` in the repository for the error.' },
+  parents_github_failed: { status: 503, message: 'GitHub could not list the open issues of this repository.', next_action: 'Run `rh board parents --json` in the repository for the error.' },
+  parents_source_invalid: { status: 503, message: 'GitHub returned an open issue list that failed validation.', next_action: 'Run `rh board parents --json` in the repository for the error.' },
+  parents_hc_failed: { status: 503, message: 'hc could not list the seat terminals of this repository.', next_action: 'Run `rh board parents --json` in the repository for the error.' },
+  parents_unavailable: { status: 503, message: 'The board worker did not return a parent list.', next_action: 'Run `rh board parents --json` in the repository for the error.' },
   parents_timeout: { status: 504, message: 'The parent list read did not finish in time.', next_action: 'Refresh and retry.' },
   parents_invalid: { status: 503, message: 'The parent list failed validation.', next_action: 'Update repo-harness so that the operator and the board command use the same parent list protocol.' },
   parents_pending: { status: 503, message: 'The parent list of this repository has no read yet.', next_action: 'Retry in a few seconds.' },
@@ -1420,7 +1420,7 @@ export async function startOperatorServer(
         return;
       }
       if (cache.state === 'failed') {
-        sendRefusal(request, response, 503, errorBody('bot_access_unavailable', 'Bot access is unavailable.', 'Restart `repo-harness operator serve`.'), headOnly);
+        sendRefusal(request, response, 503, errorBody('bot_access_unavailable', 'Bot access is unavailable.', 'Restart `rh operator serve`.'), headOnly);
         return;
       }
       let snapshot;

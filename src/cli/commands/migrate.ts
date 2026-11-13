@@ -1,5 +1,5 @@
 /**
- * `repo-harness migrate` — remove repo-harness-owned project-level hook
+ * `rh migrate` — remove repo-harness-owned project-level hook
  * adapters after the user-level typed adapter cutover (dry-run default;
  * --apply commits).
  *
@@ -130,12 +130,12 @@ export function runMigrate(opts: MigrateOptions = {}): MigratePlan {
   const apply = opts.apply === true;
   const repoRoot = resolveRepoRoot(cwd);
   if (repoRoot === null) {
-    throw new Error(`repo-harness migrate: cwd is not in a git repository: ${cwd}`);
+    throw new Error(`rh migrate: cwd is not in a git repository: ${cwd}`);
   }
   const candidates = CANDIDATES.map((rel) => path.join(repoRoot, rel));
   for (const filePath of candidates) {
     if (isUserLevelAdapter(filePath, home)) {
-      throw new Error(`repo-harness migrate: refusing user-level adapter: ${filePath}`);
+      throw new Error(`rh migrate: refusing user-level adapter: ${filePath}`);
     }
   }
   const files: MigratePlanFile[] = [];

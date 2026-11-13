@@ -82,7 +82,7 @@ export function buildDocsCommand(): Command {
     .action((docId: string) => {
       const entry = resolveRuntimeDoc(docId);
       if (!entry) {
-        console.error(`repo-harness docs path: unknown doc "${docId}"`);
+        console.error(`rh docs path: unknown doc "${docId}"`);
         process.exit(2);
       }
       console.log(entry.path);
@@ -96,7 +96,7 @@ export function buildDocsCommand(): Command {
     .action((docId: string) => {
       const entry = resolveRuntimeDoc(docId);
       if (!entry) {
-        console.error(`repo-harness docs show: unknown doc "${docId}"`);
+        console.error(`rh docs show: unknown doc "${docId}"`);
         process.exit(2);
       }
       console.log(readFileSync(entry.path, 'utf-8').trimEnd());

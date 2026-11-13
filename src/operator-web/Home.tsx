@@ -294,10 +294,10 @@ export function Home({ view, worktrees, readCiRepairs, readExecution, generation
   const [continueExpanded, setContinueExpanded] = useState(false);
 
   if (view.kind === 'loading') return <BoardState loading title={t('board.loading.title')} description={t('board.loading.body')} />;
-  if (view.kind === 'unreachable') return <BoardState title={t('board.unreachable.title')} description={t('board.unreachable.body')} command="repo-harness operator serve" />;
+  if (view.kind === 'unreachable') return <BoardState title={t('board.unreachable.title')} description={t('board.unreachable.body')} command="rh operator serve" />;
   const ready = view.snapshot;
-  if (ready.status === 'unavailable') return <BoardState title={t('board.unavailable.title')} description={t('board.unavailable.body')} command="repo-harness operator serve" />;
-  if (ready.repositories.length === 0) return <BoardState title={t('board.noRepositories.title')} description={t('board.noRepositories.body')} command="repo-harness init --dry-run" />;
+  if (ready.status === 'unavailable') return <BoardState title={t('board.unavailable.title')} description={t('board.unavailable.body')} command="rh operator serve" />;
+  if (ready.repositories.length === 0) return <BoardState title={t('board.noRepositories.title')} description={t('board.noRepositories.body')} command="rh init --dry-run" />;
 
   const waiting = ready.attention;
   const subjects = new Set(waiting.map(row => row.subject_id));

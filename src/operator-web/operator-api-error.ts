@@ -9,7 +9,7 @@ export interface OperatorApiErrorV1 {
 const DEFAULT_API_ERROR: OperatorApiErrorV1 = Object.freeze({
   code: 'operator_api_unavailable',
   message: 'The operator API gave no typed answer.',
-  next_action: 'Check that `repo-harness operator serve` runs, then retry.',
+  next_action: 'Check that `rh operator serve` runs, then retry.',
 });
 
 function isTypedApiError(value: unknown): value is OperatorApiErrorV1 {

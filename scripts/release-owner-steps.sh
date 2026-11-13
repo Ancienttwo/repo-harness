@@ -204,8 +204,8 @@ Post-release steps, a joint decision of the orchestrator and the advisor after s
 9. The upgrade steps of the release notes:
 ${upgrade:-   (the [${version}] section has no Upgrade part)}
 10. Each of the orchestrator and advisor seats writes its handoff. Close its old pane, then start it again:
-   herdr-app do tab.new --name "\$(repo-harness seats argv orchestrator --repository-id ${repository_id} --json | jq -r .tab)" --space <space> --folder <checkout> --argv "\$(repo-harness seats argv orchestrator --repository-id ${repository_id})"
-   herdr-app do pane.split --direction right --pane <orchestrator pane> --argv "\$(repo-harness seats argv advisor --repository-id ${repository_id})"
+   herdr-app do tab.new --name "\$(rh seats argv orchestrator --repository-id ${repository_id} --json | jq -r .tab)" --space <space> --folder <checkout> --argv "\$(rh seats argv orchestrator --repository-id ${repository_id})"
+   herdr-app do pane.split --direction right --pane <orchestrator pane> --argv "\$(rh seats argv advisor --repository-id ${repository_id})"
 EOF
 }
 

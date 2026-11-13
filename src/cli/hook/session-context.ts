@@ -8,7 +8,7 @@ import type { SessionContextSection } from './session-context-budget';
 import type { EffectiveStateResolution } from '../../effects/loop/state-input-collector';
 import type { EffectiveState } from '../../core/state/types';
 
-const STATE_SOURCE = 'repo-harness state resolve --json';
+const STATE_SOURCE = 'rh state resolve --json';
 
 export function projectEffectiveStateSessionSection(state: EffectiveState): SessionContextSection {
   const compact = {

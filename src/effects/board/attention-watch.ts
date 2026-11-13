@@ -26,7 +26,7 @@ export class AttentionWatchError extends Error {
   }
 }
 
-export const attentionStartCommand = (parent: number): string => `repo-harness board attention start --parent ${parent}`;
+export const attentionStartCommand = (parent: number): string => `rh board attention start --parent ${parent}`;
 
 export function attentionLogPath(repositoryId: number, parent: number, env: NodeJS.ProcessEnv = process.env): string {
   return join(repoHarnessHome(env), 'board', `attention-${repositoryId}-${parent}.jsonl`);

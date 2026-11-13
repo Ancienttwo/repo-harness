@@ -121,7 +121,7 @@ export function projectBots(directory: BotDirectory & { readonly state: 'ok' }):
   })).sort((a, b) => a.bot_id.localeCompare(b.bot_id));
 }
 
-/** `repo-harness mcp doctor --json` output. Paths, endpoints and root lists are dropped; roots are counted. */
+/** `rh mcp doctor --json` output. Paths, endpoints and root lists are dropped; roots are counted. */
 export function projectMcpDoctor(value: unknown): McpDoctorProjection {
   const report = object(value);
   const mcp = object(report?.mcp);

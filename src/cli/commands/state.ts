@@ -227,7 +227,7 @@ export function buildStateCommand(): Command {
     .command('attempt')
     .description('Append one continuation attempt receipt to the ignored runtime ledger')
     .requiredOption('--json', 'Output the appended receipt as JSON')
-    .requiredOption('--unit-ref <ref>', 'Unit reference printed by `repo-harness state next --json`')
+    .requiredOption('--unit-ref <ref>', 'Unit reference printed by `rh state next --json`')
     .requiredOption('--outcome <outcome>', `One of: ${ATTEMPT_OUTCOME_VALUES.join(', ')}`)
     .option(
       '--before-progress-token <token>',

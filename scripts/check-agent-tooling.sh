@@ -146,11 +146,11 @@ const { min_version: HERDR_CORE_MIN_VERSION } = require(path.join(PACKAGE_ROOT, 
 const SKILL_SURFACE_MANIFEST_PATH = path.join(PACKAGE_ROOT, "assets", "skill-commands", "manifest.json");
 const AGENT_FLEET_SOURCE_LABEL = "package:agents/fleet";
 const AGENT_FLEET_DEFAULT_MANAGED = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
-const AGENT_FLEET_INSTALL_COMMAND = "repo-harness run install-agent-fleet";
+const AGENT_FLEET_INSTALL_COMMAND = "rh run install-agent-fleet";
 const AGENT_FLEET_USER_MANAGED_RECEIPT_PATH = path.join(HOME, ".repo-harness", "agent-fleet-user-managed.json");
 const CODEGRAPH_PACKAGE = "@colbymchenry/codegraph";
-const CODEGRAPH_GLOBAL_INSTALL_COMMAND = `bun add -g ${CODEGRAPH_PACKAGE} && repo-harness tools configure codegraph --target codex --location global`;
-const CODEGRAPH_MCP_CONFIGURE_COMMAND = "repo-harness tools configure codegraph --target <codex|claude|both> --location global";
+const CODEGRAPH_GLOBAL_INSTALL_COMMAND = `bun add -g ${CODEGRAPH_PACKAGE} && rh tools configure codegraph --target codex --location global`;
+const CODEGRAPH_MCP_CONFIGURE_COMMAND = "rh tools configure codegraph --target <codex|claude|both> --location global";
 const CODEGRAPH_LOCAL_INSTALL_COMMAND = "bun install";
 const CODEGRAPH_ENSURE_COMMAND = [
   "scripts/ensure-codegraph.sh",
@@ -163,7 +163,7 @@ const ARCHCTX_CONTRACTS_PACKAGE = "archctx-contracts";
 const ARCHCTX_MODEL_DIR = ".archcontext/model";
 const ARCHCTX_NODES_DIR = ".archcontext/model/nodes";
 const ARCHCTX_CAPABILITY_SOURCE_KEY = ".ai/harness/policy.json#context.capability_source";
-const ARCHCTX_STATUS_COMMAND = "repo-harness architecture-projection status --json";
+const ARCHCTX_STATUS_COMMAND = "rh architecture-projection status --json";
 const WAZA_STAGING_ROOT = path.join(HOME, ".agents");
 const WAZA_STAGING_DIR = path.join(WAZA_STAGING_ROOT, "skills");
 const WAZA_STAGING_RULES_DIR = path.join(WAZA_STAGING_ROOT, "rules");
@@ -755,8 +755,8 @@ function detectWaza() {
   const status = summarizeWazaStatus(hostStatuses);
   // codex is the universal Skills CLI agent; it writes the staging copy for every host mode.
   const installCommand = "bunx skills add tw93/Waza -g -a codex -s think hunt check health -y";
-  // `repo-harness install` re-projects the host skill links and shared rules from staging.
-  const syncCommand = `repo-harness install --target ${hostMode}`;
+  // `rh install` re-projects the host skill links and shared rules from staging.
+  const syncCommand = `rh install --target ${hostMode}`;
   const verifyCommand = SELECTED_HOSTS.map((host) => buildWazaHostVerifyCommand(host)).join(" && ");
 
   return {
@@ -825,7 +825,7 @@ function herdrCoreCapability() {
   capability.min_version = HERDR_CORE_MIN_VERSION;
   capability.min_version_source = HERDR_CORE_PIN_SOURCE;
   // The repair command only: `install` and `update` install a missing hc from the pin.
-  if (!capability.path) capability.command = "repo-harness update";
+  if (!capability.path) capability.command = "rh update";
   else {
     try {
       capability.version = execFileSync(capability.path, ["--version"], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -976,7 +976,7 @@ function detectRequiredHerdrSkill(herdrCoreRuntime) {
     source: "hc --skill",
     required_by: "assets/skill-commands/manifest.json#repo-harness.requires",
     hosts,
-    install_command: `repo-harness update --target ${hostMode}`,
+    install_command: `rh update --target ${hostMode}`,
   };
 }
 
@@ -1025,7 +1025,7 @@ function detectObsidianRuntimeSkills() {
       mode: "catalog-dependency-closure",
       readiness: "managed",
       vendoring_policy: "do-not-vendor-skill-body",
-      install_command: "repo-harness install --with-obsidian-skills",
+      install_command: "rh install --with-obsidian-skills",
       hosts: {},
     };
   }
@@ -1066,7 +1066,7 @@ function detectObsidianRuntimeSkills() {
     readiness: managed ? "managed" : "advisory",
     managed_receipt: managed,
     ...(ledger.ok ? {} : { install_state_error: ledger.reason }),
-    install_command: `repo-harness install --target ${target} --with-obsidian-skills`,
+    install_command: `rh install --target ${target} --with-obsidian-skills`,
     vendoring_policy: "do-not-vendor-skill-body",
     hosts,
 };
@@ -1915,7 +1915,7 @@ function bunExecutable() {
  * Node engine contract, bin.archctx and the binary. This probe runs that
  * function under Bun from the repo-harness package root and reports its
  * answer. The runnable command, with the resolved Node path, comes from
- * `repo-harness architecture-projection status --json`. The selection is the
+ * `rh architecture-projection status --json`. The selection is the
  * one that the shell gate read above: without `selected` the probe loads no
  * provider, `selected` is false, and the CodeGraph and archctx detectors
  * resolve and run no binary.
@@ -1981,7 +1981,7 @@ function detectArchctx(managed) {
   const unrelated = !!pathBin && realBin !== resolveRealPath(managed.bin_path || "");
   const warnings = [];
   if (managed.status !== "present") {
-    warnings.push(`Managed archctx is not usable: ${managed.reason}. Run repo-harness update.`);
+    warnings.push(`Managed archctx is not usable: ${managed.reason}. Run rh update.`);
   }
   let fixCommand = null;
   let fixNote = null;

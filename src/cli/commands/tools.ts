@@ -1,5 +1,5 @@
 /**
- * `repo-harness tools` — explicit tool lifecycle commands.
+ * `rh tools` — explicit tool lifecycle commands.
  *
  * Host adapter installation remains under `install --target`; tool readiness
  * mutation lives here so detector, installer, and MCP lifecycles stay separate.

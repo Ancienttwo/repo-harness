@@ -9,7 +9,7 @@ import { architecturePort, isArchitectureUnavailable } from '../../core/architec
 import { globalConfigurationWriter, mutateGlobalConfiguration } from '../../effects/configuration/global-configuration';
 import { DEFAULT_SEATS_CONFIG, INTRODUCED_ROUTING_DEFAULTS, ROUTING_CLASSES, SeatsConfigMigrationRequiredError, decodeSeatsConfig } from '../../core/board/seats-settings';
 import { checkSeatRoutingModels, seatsRanges } from '../../effects/board/seats-configuration';
-import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "fs";
 import { upsertManagedBlock } from "../../core/adoption/managed-block";
 import { assertConfigurationPath } from "../installer/configuration-ownership";
 import { runtimeStateIgnoreOperation, userExcludesFilePath } from "../../effects/adoption/gitignore-plan";
@@ -18,7 +18,8 @@ import { homedir, tmpdir, userInfo } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { syncWazaSharedRules, wazaStagingRulesAbsent } from "../installer/waza-rules";
-import { applyGlobalContextRefresh, preflightGlobalContextRefresh, type ReportLanguageFlag } from "../installer/global-context";
+import { applyGlobalContextRefresh, globalContextPath, preflightGlobalContextRefresh, type ReportLanguageFlag } from "../installer/global-context";
+import { CLI_NAME, RETIRED_CLI_INVOCATION, RETIRED_CLI_NAME } from "../../core/skill-surface/cli-name";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
 import { syncCrossReviewSkills } from "./init";
 import { runInstall, type InstallTargetSpec } from "./install";
@@ -510,7 +511,7 @@ function reconcileManagedRuntime(
           try { linkTarget = realpathSync(link); } catch { /* A dangling link is also a conflict. */ }
           // A link into the Bun global archctx package is managed, whatever its version; the install below moves it to the pin.
           const managed = linkTarget !== null && existsSync(managedRoot) && linkTarget.startsWith(realpathSync(managedRoot) + sep);
-          if (!managed) return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_CONFLICT: ${link} is not the managed archctx link. Move or remove it, then rerun repo-harness update.` };
+          if (!managed) return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_CONFLICT: ${link} is not the managed archctx link. Move or remove it, then rerun rh update.` };
           const current = managedPackage();
           if (linkTarget === current.target && current.version === version && recordValue(globalManifest.dependencies).archctx === version) return { step: 'verify managed runtime dependencies', status: 'ok', detail: initial.detail };
         }
@@ -536,7 +537,7 @@ function reconcileManagedRuntime(
     step: "verify managed runtime dependencies",
     status: "failed",
     detail: `managed runtime mismatch: ${initial.detail}`,
-    stderr: `Automatic remove/reinstall is disabled because a failed reinstall could remove the working CLI. Run \`${bunExecutable} remove -g repo-harness\`, then \`${bunExecutable} add -g ${installSpec}\`, and rerun repo-harness update.`,
+    stderr: `Automatic remove/reinstall is disabled because a failed reinstall could remove the working CLI. Run \`${bunExecutable} remove -g repo-harness\`, then \`${bunExecutable} add -g ${installSpec}\`, and rerun rh update.`,
   };
 }
 
@@ -590,7 +591,7 @@ function updateAvailableHint(version: string | null, env?: NodeJS.ProcessEnv): s
   if (!latest.version) return "";
   const comparison = compareVersions(version, latest.version);
   if (comparison === null || comparison >= 0) return "";
-  return `; latest=${latest.version} available — run: repo-harness update`;
+  return `; latest=${latest.version} available — run: rh update`;
 }
 
 function isCheckoutSource(sourceRoot: string): boolean {
@@ -924,7 +925,7 @@ const REGISTERED_PREVIEW_TIMEOUT_MS = 30_000;
  * When the count cannot be computed, the line says so instead of a number.
  */
 export function updateRegisteredUpgradeSummary(cwd: string, installedCli: boolean): string {
-  const hint = 'Preview: repo-harness upgrade --registered';
+  const hint = 'Preview: rh upgrade --registered';
   const unavailable = (reason: string) => `Registered repo upgrade check could not be computed: ${reason}. ${hint}`;
   const run = runInstalledUpgrade(['--registered', '--json'], cwd, installedCli, REGISTERED_PREVIEW_TIMEOUT_MS);
   if ('failure' in run) return unavailable(run.failure);
@@ -948,6 +949,65 @@ export function updateRegisteredUpgradeSummary(cwd: string, installedCli: boolea
     + `${skipped > 0 ? `; ${skipped} skipped` : ''}${failed > 0 ? `; ${failed} failed` : ''}. ${hint}`;
 }
 
+export const RETIRED_CLI_LINK_STEP = `retire the ${RETIRED_CLI_NAME} command link`;
+export const RETIRED_CLI_REFERENCES_STEP = `find ${RETIRED_CLI_NAME} command calls in user files`;
+
+/**
+ * Bun keeps the bin link of a name that the new package version no longer declares, and that link
+ * runs the new package. Update removes the link once when it resolves to this package's CLI entry.
+ * Another file at that path is not the package's, so the step names it and changes nothing.
+ */
+function retireCliLink(env: NodeJS.ProcessEnv): GlobalRuntimeStep {
+  const step = RETIRED_CLI_LINK_STEP;
+  const bin = join(env.BUN_INSTALL ?? join(homeDir(env), '.bun'), 'bin');
+  // Bun on Windows writes a .exe launcher and a .bunx record instead of a symlink.
+  const leftovers = [`${RETIRED_CLI_NAME}.exe`, `${RETIRED_CLI_NAME}.bunx`].map(name => join(bin, name)).filter(path => existsSync(path));
+  const link = join(bin, RETIRED_CLI_NAME);
+  const notOwned = (paths: readonly string[]): GlobalRuntimeStep => ({
+    step, status: 'ok', detail: `${paths.join(', ')} is not a link that this package manages; remove it by hand. The command is ${CLI_NAME}.`,
+  });
+  const existing = lstatSync(link, { throwIfNoEntry: false });
+  if (!existing) return leftovers.length > 0 ? notOwned(leftovers) : { step, status: 'skipped', detail: 'No retired command link.' };
+  const packageRoot = bunGlobalPackageRoot(env);
+  const entry = packageRoot === null ? null : join(packageRoot, 'src', 'cli', 'index.ts');
+  let target: string | null = null;
+  try { target = realpathSync(link); } catch { /* A dangling link is not the package's link. */ }
+  if (!existing.isSymbolicLink() || target === null || entry === null || !existsSync(entry) || target !== realpathSync(entry)) {
+    return notOwned([link, ...leftovers]);
+  }
+  unlinkSync(link);
+  return leftovers.length > 0
+    ? { step, status: 'ok', detail: `Removed ${link}. ${notOwned(leftovers).detail}` }
+    : { step, status: 'ok', detail: `Removed ${link}; the command is ${CLI_NAME}.` };
+}
+
+/** Update rewrites only the files that it manages; a user-owned call of the retired command gets a notice. */
+function findRetiredCliCalls(env: NodeJS.ProcessEnv, target: InstallTargetSpec): GlobalRuntimeStep {
+  const step = RETIRED_CLI_REFERENCES_STEP;
+  const home = homeDir(env);
+  const hosts = hostIds(target);
+  const files = [
+    ...hosts.map(host => globalContextPath(home, host)),
+    ...(hosts.includes('claude') ? [join(home, '.claude', 'settings.json')] : []),
+  ];
+  const unread: string[] = [];
+  const calls = files.flatMap((path) => {
+    if (!existsSync(path)) return [];
+    let text: string;
+    try { text = readFileSync(path, 'utf8'); } catch (error) {
+      unread.push(`${path} (${(error as NodeJS.ErrnoException).code ?? 'unreadable'})`);
+      return [];
+    }
+    return text.split('\n').flatMap((line, index) => RETIRED_CLI_INVOCATION.test(line) ? [`${path}:${index + 1}`] : []);
+  });
+  const notRead = unread.length > 0 ? ` Not read: ${unread.join(', ')}.` : '';
+  if (calls.length === 0) return { step, status: 'skipped', detail: `No user file calls the retired command.${notRead}` };
+  return {
+    step, status: 'ok',
+    detail: `${calls.length} line(s) in files that you own call ${RETIRED_CLI_NAME} <command>; update does not change them. Change each to ${CLI_NAME} <command>: ${calls.join(', ')}.${notRead}`,
+  };
+}
+
 const AGENT_FLEET_STEP = 'install agent fleet';
 export const GLOBAL_RULES_REFRESH_STEP = 'refresh global working rules';
 
@@ -963,7 +1023,7 @@ function writeRuntimeIgnoreRules(env: NodeJS.ProcessEnv): GlobalRuntimeStep {
     assertConfigurationPath(target.path, dirname(target.path));
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    return { step, status: 'failed', detail: `${target.path}: ${reason}; set core.excludesFile to the real file, then run repo-harness update again` };
+    return { step, status: 'failed', detail: `${target.path}: ${reason}; set core.excludesFile to the real file, then run rh update again` };
   }
   try {
     const existing = existsSync(target.path) ? readFileSync(target.path, 'utf-8') : '';
@@ -1303,7 +1363,7 @@ function preflightStagedSkillProjection(
       const destination = join(root.path, skill);
       if (!pathEntryExists(destination)) continue;
       if (skillLinkMatches(destination, source)) continue;
-      return { step, status: 'failed', detail: `refusing to refresh unowned host skill ${destination}; preserve or move this path, then run: repo-harness install --target ${target}` };
+      return { step, status: 'failed', detail: `refusing to refresh unowned host skill ${destination}; preserve or move this path, then run: rh install --target ${target}` };
     }
   }
   return null;
@@ -1725,14 +1785,14 @@ export function ensureHerdrCore(input: HerdrCoreInstallInput): HerdrCoreInstallR
   const assetName = HC_ASSET_NAMES[input.platform];
   const asset = assetName === undefined ? undefined : input.assets[assetName];
   if (assetName === undefined || asset === undefined) {
-    return fail(`no herdr-core release asset for ${input.platform}; install hc >=${minVersion} manually (Herdr.app or a herdr-core release), then run repo-harness ${input.command}`);
+    return fail(`no herdr-core release asset for ${input.platform}; install hc >=${minVersion} manually (Herdr.app or a herdr-core release), then run rh ${input.command}`);
   }
   const layout = hcInstallLayout(assetName, env);
   if ("failure" in layout) return fail(layout.failure);
   for (const name of [...layout.members, layout.link]) {
     const path = join(layout.dir, name);
     // An earlier run may have installed it into a dir that is still off PATH.
-    if (pathEntryExists(path)) return fail(`hc is not on PATH, and ${path} exists; refusing to overwrite it; add ${layout.dir} to PATH, then rerun repo-harness ${input.command}`);
+    if (pathEntryExists(path)) return fail(`hc is not on PATH, and ${path} exists; refusing to overwrite it; add ${layout.dir} to PATH, then rerun rh ${input.command}`);
   }
   const scratch = mkdtempSync(join(tmpdir(), "repo-harness-hc-"));
   try {
@@ -1869,6 +1929,8 @@ export function runGlobalRuntimeSetup(
     }
   }
 
+  if (updateMode) steps.push(retireCliLink(env));
+
   const protectedHelperPlatform = configureProtectedHelperPlatform(cwd, bunExecutable, env, process.platform, opts.runtimeLock);
   steps.push(protectedHelperPlatform);
   if (protectedHelperPlatform.status === 'failed') return finalizeRuntimeResult(steps);
@@ -1924,6 +1986,7 @@ export function runGlobalRuntimeSetup(
   if (updateMode && agentFleetVerified({ steps })) steps.push(recordAgentFleetOwnership(env));
 
   steps.push({ step: GLOBAL_RULES_REFRESH_STEP, ...applyGlobalContextRefresh(globalRules, homeDir(env)) });
+  if (updateMode) steps.push(findRetiredCliCalls(env, target));
   if (steps.at(-1)?.status === "failed") return finalizeRuntimeResult(steps);
 
   const refreshExternalSkills = opts.externalSkills === true;

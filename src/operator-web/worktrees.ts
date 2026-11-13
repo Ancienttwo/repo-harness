@@ -98,7 +98,7 @@ export async function selectionDigest(rows: readonly WorktreeView[]): Promise<st
 
 /** The terminal equivalent of cleaning one green row; tests pin it to the CLI's `cleanCommand`. */
 export function cleanupCommand(id: string, digest: string): string {
-  return `repo-harness worktrees clean --ids ${id} --expected-digest ${digest}`;
+  return `rh worktrees clean --ids ${id} --expected-digest ${digest}`;
 }
 
 /** The one-row digest of each row, recomputed when a row's decision fields change. */

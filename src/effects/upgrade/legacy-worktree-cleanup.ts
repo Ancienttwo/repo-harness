@@ -138,7 +138,7 @@ function plan(cwd: string, callerCwd: string, env: NodeJS.ProcessEnv, apply: boo
       // The integration branch is never a task branch, even when it holds direct commits.
       if (protectsIntegrationBranch(main, target.targetRef, branch, limits)) return keep('integration branch');
       const rebuild = `git worktree add -b ${shellQuote(branch)} ${shellQuote(path)} ${head}`;
-      // Preview runs on every `repo-harness update`, so it uses only the local proof.
+      // Preview runs on every `rh update`, so it uses only the local proof.
       if (!apply) {
         const mode = localMergeMode(main, head, target.target, limits);
         if (mode === 'unmerged') return { candidate: { path, branch, head, verdict: 'deferred', reason: LEGACY_WORKTREE_PROVIDER_DEFERRED, rebuild } };

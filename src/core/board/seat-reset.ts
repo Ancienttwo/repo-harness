@@ -1,11 +1,11 @@
 // The handoff reset of the orchestrator and advisor seats (#1972, #2625). Each Opus auto-compaction on Max started at
 // 461k-467k context tokens, and a resumed seat uses about 94k. A reset at 380k leaves room for the handoff turn.
 
-/** The seats that reset through a handoff. The `repo-harness seats argv` env names one of them. */
+/** The seats that reset through a handoff. The `rh seats argv` env names one of them. */
 export const RESET_SEATS = ['orchestrator', 'advisor'] as const;
 export type ResetSeat = typeof RESET_SEATS[number];
 
-/** The env of a reset seat, set only by `repo-harness seats argv` with `--repository-id`. */
+/** The env of a reset seat, set only by `rh seats argv` with `--repository-id`. */
 export const SEAT_ENV = 'REPO_HARNESS_SEAT';
 export const SEAT_REPOSITORY_ENV = 'REPO_HARNESS_SEAT_REPOSITORY';
 /** The effective model and effort of the reset seat launch (#2633); the SessionStart hook records them in `session.json`. */
@@ -101,7 +101,7 @@ const RESUME_CHECKLIST = [
   'Open PRs with CI: `gh pr list --state open` and `gh pr checks <n>`.',
   'Parent-issue progress: `gh issue view <parent>`.',
   'Seats: `hc ls --label repo-harness.repository=<repository-id>`, read the `repo-harness.seat` labels.',
-  'Quota: `repo-harness quota`.',
+  'Quota: `rh quota`.',
 ];
 
 /** The fixed handoff template. Every section heading must stay; the resume checklist is fixed. */

@@ -647,7 +647,7 @@ export function facadesForSelection(catalog: SkillSurfaceCatalog, plugins: reado
 /**
  * Provider-skill host placement. Pass `plugins` for the placements that a
  * selection projects; omit it for the unconditional bundle (init.ts's
- * `repo-harness init` flow, which has no install-state concept). A selection
+ * `rh init` flow, which has no install-state concept). A selection
  * places nothing in a host-program root (`pi`) unless it selects that
  * host's plugin: the ledger records each path there under that plugin.
  */

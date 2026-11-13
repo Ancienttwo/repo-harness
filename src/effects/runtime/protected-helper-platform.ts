@@ -289,7 +289,7 @@ function readWindowsContract(
   nativeTempDirectory?: string,
 ): WindowsProtectedHelperContract {
   if (!access.exists(configPath)) {
-    throw new Error(`Windows protected-helper platform contract is missing: ${configPath}; run repo-harness install or repo-harness update`);
+    throw new Error(`Windows protected-helper platform contract is missing: ${configPath}; run rh install or rh update`);
   }
   const configDirectory = win32.dirname(configPath);
   const parent = access.lstat(configDirectory);
@@ -308,7 +308,7 @@ function readWindowsContract(
   }
   if (!isRecord(parsed)) throw new Error('Windows protected-helper config root must be an object');
   if (!(WINDOWS_PROTECTED_HELPER_CONFIG_KEY in parsed)) {
-    throw new Error(`Windows protected-helper platform contract is missing from ${configPath}; run repo-harness install or repo-harness update`);
+    throw new Error(`Windows protected-helper platform contract is missing from ${configPath}; run rh install or rh update`);
   }
   return validateWindowsProtectedHelperContract(
     parsed[WINDOWS_PROTECTED_HELPER_CONFIG_KEY],

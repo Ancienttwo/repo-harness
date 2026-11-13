@@ -7,7 +7,7 @@ import type {
 } from './types';
 
 /** Existing command the envelope points at; never re-implemented here. */
-const CONTINUE_COMMAND = 'repo-harness state resolve --json';
+const CONTINUE_COMMAND = 'rh state resolve --json';
 
 /** Stable execution-unit identity: the next action, not projection text. */
 function continueUnitRef(nextAction: string): string {

@@ -62,6 +62,7 @@ import { piExecutable } from '../../effects/pi-executable';
 import skillSurfaceManifest from '../../../assets/skill-commands/manifest.json';
 import { version as PACKAGE_VERSION } from '../../../package.json';
 import { pluginRepair } from './architecture-selection';
+import { RETIRED_CLI_NAME } from '../../core/skill-surface/cli-name';
 import {
   enabledPlugins,
   INSTALL_STATE_PROTOCOL,
@@ -418,6 +419,8 @@ export function ownerForInstallPath(path: string, env: NodeJS.ProcessEnv = proce
   if (wazaRules.files.includes(name) && /\/(?:\.agents|\.codex|\.claude)\/rules\/[^/]+$/.test(normalized)) return 'core';
   if (normalized.endsWith('/bin/codegraph')) return 'architecture';
   if (normalized.endsWith('/bin/archctx')) return 'architecture';
+  if (normalized.endsWith('/bin/rh')) return 'core';
+  // The retired 0.32 CLI link; `rh update` removes it inside the host transaction.
   if (normalized.endsWith('/bin/repo-harness')) return 'core';
   return null;
 }
@@ -733,7 +736,8 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
   const bunRoot = env.BUN_INSTALL ?? join(home, '.bun');
   const { repoHarnessSkills: skills, externalSkills } = catalogMutationPathSkillNames(loadSkillSurfaceCatalog());
   const paths = [
-    join(bunRoot, 'bin', 'repo-harness'),
+    join(bunRoot, 'bin', 'rh'),
+    join(bunRoot, 'bin', RETIRED_CLI_NAME),
     join(bunRoot, 'bin', 'archctx'),
     join(bunRoot, 'bin', 'codegraph'),
     join(bunRoot, 'install', 'global', 'package.json'),
@@ -1108,7 +1112,7 @@ export function requireInstallState(env: NodeJS.ProcessEnv = process.env): Insta
   const state = readInstallState(env);
   if (state === null) {
     const path = installProfileStatePath(env);
-    throw new InstallStateError('install_state_missing', path, `no install state at ${path}; run: repo-harness install`);
+    throw new InstallStateError('install_state_missing', path, `no install state at ${path}; run: rh install`);
   }
   return state;
 }
@@ -1174,7 +1178,7 @@ function probeCore(env: NodeJS.ProcessEnv, catalog: SkillSurfaceCatalog, hosts: 
   const fleet = completeAgentFleetEvidence(home);
   const coreFacades = ownedProbeSkills(catalog, 'core').filter(pkg => pkg.kind === 'facade');
   return probe({
-    'cli': executableEvidence('repo-harness', env),
+    'cli': executableEvidence('rh', env),
     'effective-state': canonicalEvidence(home, hosts, ['src/cli/commands/state.ts'], env),
     // The mutation guard is an in-process handler bundled in the canonical copy.
     'guards': allOrNone(home, hosts, ['src/cli/hook/mutation-guard.ts', 'scripts/contract-worktree.sh'], env),
@@ -1244,7 +1248,7 @@ function hostPluginAbsence(_id: (typeof HOST_PROGRAM_PLUGINS)[number], env: Node
 type InstallTarget = 'claude' | 'codex' | 'both';
 
 const TARGET_HOSTS: Readonly<Record<InstallTarget, readonly SkillHost[]>> = { claude: ['claude'], codex: ['codex'], both: ['claude', 'codex', 'pi'] };
-const TARGET_BOTH_COMMAND = 'repo-harness install --target both';
+const TARGET_BOTH_COMMAND = 'rh install --target both';
 
 /**
  * Why this target cannot run a plugin now, and the command that adds it, or

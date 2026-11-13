@@ -53,7 +53,7 @@ function runSessionContext(context: HookHandlerContext): HookHandlerResult {
   const resolution = context.collector.getEffectiveState();
   const sections: SessionContextSection[] = [...buildSessionStartSections(resolution), EDIT_GUARD_SCOPE_SECTION];
   const notice = resolution.ok ? collectArchitectureNotice(context.repoRoot, () => resolution.state.capability_ownership, { env: context.env }, 'session-start') : {};
-  if (notice.content) sections.push({ id: 'architecture-debt', priority: 2, mandatory: true, content: notice.content, source: 'repo-harness architecture-debt --json', systemMessage: notice.systemMessage });
+  if (notice.content) sections.push({ id: 'architecture-debt', priority: 2, mandatory: true, content: notice.content, source: 'rh architecture-debt --json', systemMessage: notice.systemMessage });
   const systemMessage = sections.map((section) => section.systemMessage).filter(Boolean).join('\n');
   const diagnostics = `${notice.diagnostics ?? ''}${seatDiagnostic}`;
   return { exitCode: 0, sessionContexts: sections, ...(systemMessage ? { systemMessage } : {}), ...(diagnostics ? { diagnostics } : {}), ...(resolution.ok ? {} : { reason: 'context-unavailable' }) };

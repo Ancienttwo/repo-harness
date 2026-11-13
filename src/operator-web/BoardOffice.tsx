@@ -393,7 +393,7 @@ function leadPanel(seat: 'orchestrator' | 'advisor', lead: OfficeLead, room: Off
 
 function panelView(key: string, room: OfficeRoom, parent: number | null, defaultBranch: string | null, planText: string, frame: number, t: OperatorTranslate): PanelView {
   const none = t('board.office.panel.none');
-  const board = `repo-harness board --parent ${parent ?? '<n>'}`;
+  const board = `rh board --parent ${parent ?? '<n>'}`;
   const queueIndex = room.queue.findIndex(entry => key === `queue:${entry.pr}`);
   if (queueIndex >= 0) {
     const entry = room.queue[queueIndex]!;

@@ -464,7 +464,7 @@ function selectionText(selection: SetupInstallSelection, t: OperatorTranslate): 
   return selection.length === 0 ? t('setup.skills.selectionCore') : selection.join(', ');
 }
 
-/** The only action: `repo-harness update` repairs repo-harness skills. It needs the install ledger. */
+/** The only action: `rh update` repairs repo-harness skills. It needs the install ledger. */
 function SkillRepair({ selection, t }: { readonly selection: SetupInstallSelection | null; readonly t: OperatorTranslate }) {
   if (selection === null) return <p className="text-sm text-kumo-subtle" data-skill-repair="no-ledger">{t('setup.skills.noLedger')}</p>;
   return (

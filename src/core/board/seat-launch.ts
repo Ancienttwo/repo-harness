@@ -90,7 +90,7 @@ const GROUP_TEXT: Readonly<Record<SeatGroup, string>> = {
 };
 
 /** The one GitHub write of a review seat with `net` (#1996). Its keep-yourself paragraph repeats it so that the two texts agree. */
-const REVIEW_PUBLISH_TEXT = 'Do not write to GitHub, with one exception: publish your own round with `repo-harness review publish --pr <number> --receipt <path>`. Run no other GitHub write.';
+const REVIEW_PUBLISH_TEXT = 'Do not write to GitHub, with one exception: publish your own round with `rh review publish --pr <number> --receipt <path>`. Run no other GitHub write.';
 
 /** `schedule` is Claude-only (Cron tools): Codex and Pi launches report no limit for it. */
 const OFF_GROUPS = (config: SeatConfigV1): SeatGroup[] =>
@@ -119,8 +119,8 @@ function roleParagraphs(seat: LaunchSeatId, config: SeatConfigV1, fleet: readonl
       : `You may call these read-only sub-agents: ${roleList(fleet, name)}. Call no other agent type. Writers and the Codex review run only in Herdr seats: dispatch them to seats through Herdr.`;
     return [
       `You are the orchestrator seat. You hold the coordinator and integrator seats of repo-harness-issue-flow. You dispatch, accept and merge. You do not edit product code, tests or configuration. ${review} You push only the branch of a Codex worker seat handoff: commit its worktree diff with its message and explicit paths only, push the branch, open the PR, and push each fix round. On the owner's explicit word for one release you run the command list of \`bash scripts/release-owner-steps.sh plan <version>\` from the release worktree; the owner confirms the npm login. Without that word you do not tag or publish. You do not delete, or change credentials or permissions yourself.`,
-      `${dispatch} When \`publication.acceptance_merge\` is \`on\`, merge only with \`repo-harness publication merge\`. When it is \`off\`, hand each ready PR to the owner.`,
-      'Before each dispatch wave, run `repo-harness quota`. Launch each task on the seat its route line names with `repo-harness seats argv <seat>`; state the boundary in the task.',
+      `${dispatch} When \`publication.acceptance_merge\` is \`on\`, merge only with \`rh publication merge\`. When it is \`off\`, hand each ready PR to the owner.`,
+      'Before each dispatch wave, run `rh quota`. Launch each task on the seat its route line names with `rh seats argv <seat>`; state the boundary in the task.',
       ...queue,
     ];
   }

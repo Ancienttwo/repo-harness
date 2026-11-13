@@ -319,7 +319,7 @@ export type SeatResetNotify = (env: NodeJS.ProcessEnv, event: {
 }) => Promise<'sent' | 'failed' | 'not_configured'>;
 
 /**
- * The launch of `repo-harness seats argv <seat> --repository-id <id>` under the current quota: its argv and its effective
+ * The launch of `rh seats argv <seat> --repository-id <id>` under the current quota: its argv and its effective
  * model and effort. `modeKnown` is false when the seat account has no fresh weekly reading, so the mode is unknown.
  */
 export interface SeatRelaunch extends SeatLaunchModel {
@@ -643,7 +643,7 @@ class SeatResetRun {
     this.prompt = seatResumePrompt(this.identity, this.caller, 'reset');
     const stop = (detail: string, running = false): SeatResetError => {
       const next = running ? `No key was typed; its session still runs. Send it: ${this.prompt}`
-        : `Start it from \`repo-harness seats argv ${this.identity.seat} --repository-id ${this.identity.repository}\` and send: ${this.prompt}`;
+        : `Start it from \`rh seats argv ${this.identity.seat} --repository-id ${this.identity.repository}\` and send: ${this.prompt}`;
       this.record('relaunch_failed', detail);
       return new SeatResetError('resume_not_sent', 'uncertain', `The relaunch of ${this.requester} failed (${detail}). ${next}`);
     };

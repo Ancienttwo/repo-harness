@@ -24,16 +24,16 @@ const LEVEL_TONE: Readonly<Record<SeatLimitLevel, string>> = {
 // the tab (#1544), so no command types a name.
 type FormSeatId = 'orchestrator' | 'advisor' | 'worker';
 export const ARGV: Readonly<Record<FormSeatId, string>> = {
-  orchestrator: 'repo-harness seats argv orchestrator --repository-id <repository-id>',
-  advisor: 'repo-harness seats argv advisor --repository-id <repository-id>',
-  worker: 'repo-harness seats argv worker --repository-id <repository-id> --parent <n> --issue <n>',
+  orchestrator: 'rh seats argv orchestrator --repository-id <repository-id>',
+  advisor: 'rh seats argv advisor --repository-id <repository-id>',
+  worker: 'rh seats argv worker --repository-id <repository-id> --parent <n> --issue <n>',
 };
 function launchOf(seat: SeatId): string {
   if (seat === 'orchestrator') return `herdr-app do tab.new --name "$(${ARGV.orchestrator} --json | jq -r .tab)" --space <id> --folder <repo> --argv "$(${ARGV.orchestrator})"`;
   if (seat === 'advisor') return `herdr-app do pane.split --direction right --pane <orchestrator-pane> --argv "$(${ARGV.advisor})"`;
   // The fallback launches as the effective gatekeeper, so its card shows the gatekeeper command.
   const argv = seat === 'gatekeeper' || seat === 'gatekeeper-fallback' || seat === 'reviewer'
-    ? `repo-harness seats argv ${seat === 'reviewer' ? seat : 'gatekeeper'} --repository-id <repository-id> --pr <n>`
+    ? `rh seats argv ${seat === 'reviewer' ? seat : 'gatekeeper'} --repository-id <repository-id> --pr <n>`
     : ARGV.worker.replace('argv worker', `argv ${seat}`);
   return `herdr-app do tab.new --name "$(${argv} --json | jq -r .tab)" --space <id> --folder <worktree> --argv "$(${argv})" --task <packet>`;
 }

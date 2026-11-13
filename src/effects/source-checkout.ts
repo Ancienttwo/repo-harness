@@ -36,7 +36,7 @@ export function isRepoHarnessSourceCheckout(repoRoot: string): boolean {
   if (!bins || typeof bins !== "object" || Array.isArray(bins)) return false;
   const binMap = bins as Record<string, unknown>;
   if (packageManifest.name !== "repo-harness") return false;
-  if (binMap["repo-harness"] !== "src/cli/index.ts") return false;
+  if (binMap.rh !== "src/cli/index.ts") return false;
   if (binMap["repo-harness-hook"] !== "dist/hook-entry.js") return false;
 
   return SOURCE_AUTHORITY_FILES.every((path) => regularFile(root, path));

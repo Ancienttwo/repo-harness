@@ -2,9 +2,9 @@
 // notify read contract decodes it once for the relay and the operator.
 
 /** Writes the config and starts the relay; the operator shows it when no install record exists. */
-export const NOTIFY_INSTALL_COMMAND = 'repo-harness herdr notify install';
+export const NOTIFY_INSTALL_COMMAND = 'rh herdr notify install';
 /** The one manual command that starts the relay terminal again; the relay never restarts itself. */
-export const NOTIFY_START_COMMAND = 'repo-harness herdr notify start';
+export const NOTIFY_START_COMMAND = 'rh herdr notify start';
 
 /** The channels the relay sends to. The record keys each channel's newest attempt by these names. */
 export const NOTIFY_CHANNELS = ['webhook', 'slack', 'discord', 'telegram'] as const;

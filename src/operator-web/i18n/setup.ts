@@ -9,7 +9,7 @@ export const en = {
   'setup.hooks.noDenials': 'No recent denials were reported.',
 
   'setup.pending.title': 'Reading configuration (about 20 s)',
-  'setup.pending.body': 'The server runs repo-harness setup check in the background. This page fills in when it finishes.',
+  'setup.pending.body': 'The server runs rh setup check in the background. This page fills in when it finishes.',
   'setup.failed.title': 'Configuration could not be read',
   'setup.failed.body': 'Reason: {reason}. Run the same check yourself:',
   'setup.reason.unreachable': 'the operator service did not answer',
@@ -134,7 +134,7 @@ export const zh: Readonly<Record<keyof typeof en, string>> = {
   'setup.hooks.noDenials': '未报告最近的拒绝记录。',
 
   'setup.pending.title': '正在读取配置（约 20 秒）',
-  'setup.pending.body': '服务端在后台运行 repo-harness setup check。运行结束后，这个页面会自己填上。',
+  'setup.pending.body': '服务端在后台运行 rh setup check。运行结束后，这个页面会自己填上。',
   'setup.failed.title': '读不到配置',
   'setup.failed.body': '原因：{reason}。可以自己运行同一个检查：',
   'setup.reason.unreachable': 'operator 服务没有响应',

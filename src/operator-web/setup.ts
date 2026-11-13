@@ -10,14 +10,14 @@ import type {
 import { useSnapshotView, type SnapshotView } from './useSnapshotView';
 
 /**
- * Browser side of `GET /api/v1/setup`. The server runs `repo-harness setup
+ * Browser side of `GET /api/v1/setup`. The server runs `rh setup
  * check` in the background and caches its result; this module only reads and
  * orders what that result already decided. It never runs a command.
  */
 export type SetupReader = (signal: AbortSignal) => Promise<SetupSnapshotV2>;
 
 /** The one command that produces everything these pages show. */
-export const SETUP_CHECK_COMMAND = 'repo-harness setup check';
+export const SETUP_CHECK_COMMAND = 'rh setup check';
 
 export async function fetchSetup(signal: AbortSignal): Promise<SetupSnapshotV2> {
   const response = await fetch('/api/v1/setup', { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
@@ -85,7 +85,7 @@ export function skillCell(skill: SetupSkill, host: SetupHost): SkillCell {
 }
 
 /** The command that installs the recorded selection again; it repairs every repo-harness skill row. */
-export const SKILL_UPDATE_COMMAND = 'repo-harness update';
+export const SKILL_UPDATE_COMMAND = 'rh update';
 
 /** The setup check whose command repairs this host's installation. */
 export function hostCommand(checks: readonly SetupCheck[], host: SetupHost): SetupCheck | null {

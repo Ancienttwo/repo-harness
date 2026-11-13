@@ -82,7 +82,7 @@ function historyPath(repositoryId: string): string {
 
 /** The exact command the Bot runs for the shard on screen. */
 export function reviewPromptCommand(prompt: Pick<ModuleReviewPromptV1, 'capability_id' | 'shard' | 'mode' | 'base' | 'head'>): string {
-  const command = `repo-harness module review-prompt ${prompt.capability_id} --shard ${prompt.shard.index}`;
+  const command = `rh module review-prompt ${prompt.capability_id} --shard ${prompt.shard.index}`;
   return prompt.mode === 'diff' ? `${command} --base ${prompt.base} --head ${prompt.head}` : command;
 }
 
