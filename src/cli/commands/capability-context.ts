@@ -5,9 +5,10 @@ import {
   CapabilitySourceError,
   capabilitySourceMode,
   findMatch,
+  readProjectedModulePages,
   readRegistry as readCapabilityRegistry,
 } from '../../effects/architecture/capability-resolver';
-import { normalizeCapabilityPath } from '../../core/capabilities/registry';
+import { normalizeCapabilityPath, projectedModulePage } from '../../core/capabilities/registry';
 import type { Capability, CapabilityRegistry, ContractFiles } from '../../core/capabilities/registry';
 import type { ArchcontextCapabilityOwners } from '../../core/capabilities/registry';
 import { architecturePort, isArchitectureUnavailable, type ArchitectureOwnershipPort } from '../../core/architecture/contracts';
@@ -225,12 +226,12 @@ export function runCapabilityContextStatus(repoInput = '.', manifestPath = DEFAU
   };
 }
 
-function defaultManifestEntry(capability: Capability, authorityPath: string): ManifestCapability {
+function defaultManifestEntry(capability: Capability, modulePage: string | null, authorityPath: string): ManifestCapability {
   return {
     positioning: `Owns the ${capability.id} capability boundary declared in ${authorityPath}.`,
     source_map: [
       { label: 'Primary prefix', path: capability.prefixes[0] || '.', role: 'entrypoint' },
-      { label: 'Architecture module', path: capability.architecture_module, role: 'design-source' },
+      ...(modulePage === null ? [] : [{ label: 'Architecture module', path: modulePage, role: 'design-source' }]),
     ],
     refresh_hints: capability.verification_hints?.length
       ? capability.verification_hints
@@ -240,13 +241,14 @@ function defaultManifestEntry(capability: Capability, authorityPath: string): Ma
 
 function manifestEntryFor(
   capability: Capability,
+  modulePage: string | null,
   manifest: SourceMapManifest,
   autoFill: boolean,
   authorityPath: string,
 ): { entry: ManifestCapability; changed: boolean } {
   const existing = manifest.capabilities[capability.id];
   if (existing) return { entry: existing, changed: false };
-  const generated = defaultManifestEntry(capability, authorityPath);
+  const generated = defaultManifestEntry(capability, modulePage, authorityPath);
   if (autoFill) {
     manifest.capabilities[capability.id] = generated;
     return { entry: generated, changed: true };
@@ -254,7 +256,7 @@ function manifestEntryFor(
   return { entry: generated, changed: false };
 }
 
-function renderCapabilityBlock(capability: Capability, entry: ManifestCapability, positioning: string | undefined): string {
+function renderCapabilityBlock(capability: Capability, modulePage: string | null, entry: ManifestCapability, positioning: string | undefined): string {
   const sourceMap = (entry.source_map || [])
     .map((item) => `- ${item.label}: \`${item.path}\` (${item.role})`)
     .join('\n') || '- (none recorded)';
@@ -270,7 +272,7 @@ function renderCapabilityBlock(capability: Capability, entry: ManifestCapability
     `- Domain: \`${capability.domain}\``,
     `- Name: \`${capability.name}\``,
     `- Primary prefix: \`${capability.prefixes[0] || '.'}\``,
-    `- Architecture module: \`${capability.architecture_module}\``,
+    ...(modulePage === null ? [] : [`- Architecture module: \`${modulePage}\``]),
     '',
     '## Positioning',
     '',
@@ -312,6 +314,8 @@ export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
   const { registry, owners, summaries } = readCapabilityContext(repo);
   const manifest = readManifest(repo, manifestPath);
   const capabilities = selectCapabilities(registry, repo, opts, owners);
+  // The JSON registry is written back below, so the projection manifest only supplies the shown page.
+  const pages = archcontext ? null : readProjectedModulePages(repo);
   // Under archcontext the target is the declared extensions.contractFiles, never an
   // anchor, so an anchorless capability still has a target. readCapabilityContext already
   // refused a node that declares no contract files, before any write.
@@ -339,9 +343,10 @@ export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
     const registryNormalized =
       capability.contract_files?.agents === target.agents &&
       capability.contract_files?.claude === target.claude;
-    const { entry, changed } = manifestEntryFor(capability, manifest, opts.autoFillPositioning === true, authorityPath);
+    const modulePage = pages ? projectedModulePage(capability, pages) : capability.architecture_module;
+    const { entry, changed } = manifestEntryFor(capability, modulePage, manifest, opts.autoFillPositioning === true, authorityPath);
     if (changed) changedManifestIds.add(capability.id);
-    const block = renderCapabilityBlock(capability, entry, summaries.get(capability.id));
+    const block = renderCapabilityBlock(capability, modulePage, entry, summaries.get(capability.id));
     const basePath = fs.existsSync(path.join(repo, target.agents))
       ? path.join(repo, target.agents)
       : fs.existsSync(path.join(repo, target.claude))

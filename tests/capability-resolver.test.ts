@@ -255,6 +255,44 @@ describe("capability resolver", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test("a projection manifest owns the module pages and the orphan check (#2707)", () => {
+    const cwd = tmpWorkspace("capability-projection-manifest");
+    try {
+      mkdirSync(join(cwd, "apps/web"), { recursive: true });
+      mkdirSync(join(cwd, "apps/api"), { recursive: true });
+      // The registry names pages that do not exist; the manifest projects one other page.
+      writeRegistry(cwd, [
+        webCapability,
+        { ...webCapability, id: "apps-api", name: "api", prefixes: ["apps/api"], architecture_module: "docs/architecture/modules/apps-api/api.md" },
+      ]);
+      const projected = "docs/architecture/modules/web/context.md";
+      mkdirSync(join(cwd, "docs/architecture/modules/web"), { recursive: true });
+      writeFileSync(join(cwd, projected), "# Web\n");
+      const manifest = (targets: unknown) => writeFileSync(join(cwd, "docs/architecture/.projection-manifest.json"), JSON.stringify({ targets }));
+      manifest({
+        "projection_target.entity.capability-apps-web-web": {
+          type: "entity-summary", scope: { kind: "entity", id: "capability.apps-web.web", entityKind: "capability" }, path: projected,
+        },
+      });
+
+      expect(runResolver(cwd, ["validate", "--format", "text"]).stdout).toContain("[CapabilityResolver] OK");
+      const web = JSON.parse(runResolver(cwd, ["match", "--path", "apps/web/page.tsx", "--format", "json"]).stdout);
+      const api = JSON.parse(runResolver(cwd, ["match", "--path", "apps/api/route.ts", "--format", "json"]).stdout);
+      expect([web.architecture_module, api.architecture_module]).toEqual([projected, null]);
+
+      writeFileSync(join(cwd, "docs/architecture/modules/web/extra.md"), "# Extra\n");
+      expect(runResolver(cwd, ["validate", "--format", "text"]).stdout)
+        .toContain("orphan architecture module: docs/architecture/modules/web/extra.md");
+
+      manifest(undefined);
+      const invalid = runResolver(cwd, ["validate", "--format", "text"]);
+      expect(invalid.status).toBe(1);
+      expect(invalid.stdout).toContain("docs/architecture/.projection-manifest.json has no targets object");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
 
 describe("capability-resolver helper integration", () => {

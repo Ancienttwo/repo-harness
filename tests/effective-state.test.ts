@@ -338,6 +338,15 @@ describe('effective state resolver', () => {
         // The count signal and the ownership field come from the same answer.
         expect(state.profile_signals?.capabilityCount).toBe(state.capability_ownership?.capability_ids.length);
 
+        // #2707: a projection manifest owns the page, and its change moves the authority revision.
+        const page = 'docs/architecture/modules/fixture/projected.md';
+        write(cwd, 'docs/architecture/.projection-manifest.json', JSON.stringify({ targets: { t: {
+          type: 'entity-summary', path: page, scope: { kind: 'entity', id: 'capability.fixture.feature-cap', entityKind: 'capability' },
+        } } }));
+        const projected = resolveFixtureState(cwd, Date.now(), options);
+        expect(projected.capability_ownership?.capabilities[0]?.module_document).toBe(page);
+        expect(projected.authority_revision).not.toBe(state.authority_revision);
+
         write(cwd, '.ai/context/capabilities.json', '{not json');
         expect(resolveFixtureState(cwd, Date.now(), options).capability_ownership).toBeNull();
       });

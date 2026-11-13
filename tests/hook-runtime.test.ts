@@ -247,7 +247,7 @@ describe('host envelopes on the real hook entry (#678)', () => {
     mkdirSync(join(root, 'docs/architecture'), { recursive: true });
     writeFileSync(join(root, 'src/owned/a.ts'), 'export const a = 1;\n');
     writeFileSync(join(root, 'src/owned/a.test.ts'), 'export {};\n');
-    writeFileSync(join(root, 'docs/architecture/.projection-manifest.json'), '{"profile":"repo-harness/v1"}\n');
+    writeFileSync(join(root, 'docs/architecture/.projection-manifest.json'), '{"profile":"repo-harness/v1","targets":{}}\n');
     fixtureWrite(root, 'docs/architecture/modules/core/owned.md', '## 3. Decisions\nRead `src/owned/a.ts:999`.\n');
     fixtureWrite(root, '.archcontext/manifest.yaml', 'schemaVersion: archcontext.manifest/v1\nmodel:\n  layout: split\n  root: .archcontext/model\n');
     fixtureWrite(root, '.archcontext/product.yaml', 'schemaVersion: archcontext.product/v1\nid: product.test\nname: Test\n');
@@ -504,7 +504,7 @@ process.exit(child.status ?? 1);
   test('manifest refresh alone does not resolve citation debt', () => {
     const root = owedFixture();
     try {
-      writeFileSync(join(root, 'docs/architecture/.projection-manifest.json'), '{"profile":"repo-harness/v1","refreshed":true}\n');
+      writeFileSync(join(root, 'docs/architecture/.projection-manifest.json'), '{"profile":"repo-harness/v1","refreshed":true,"targets":{}}\n');
       execFileSync('git', ['commit', '-q', '-am', 'refresh the projection'], { cwd: root });
       for (const hostName of ['claude', 'codex'] as const) {
         const session = host(root, hostName, 'SessionStart', 'default', { session_id: `clear-${hostName}` });

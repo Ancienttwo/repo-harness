@@ -308,7 +308,7 @@ describe('optional strategy and progressive memory', () => {
         architecture_module: 'docs/architecture/modules/core/owned.md',
         lsp_profile: 'typescript-lsp', verification_hints: [],
       }] }));
-      write(root, 'docs/architecture/.projection-manifest.json', '{}\n');
+      write(root, 'docs/architecture/.projection-manifest.json', '{"targets":{}}\n');
       write(root, 'src/owned/a.ts', 'export const a = 1;\n');
       git(root, 'add', '.'); git(root, 'commit', '-m', 'Projection checkpoint');
       if (branch === 'feature') git(root, 'checkout', '-b', branch);

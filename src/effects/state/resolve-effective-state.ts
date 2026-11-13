@@ -8,7 +8,9 @@ import {
   CAPABILITY_SOURCE_MODES,
   isCapabilityPathOutsideRepo,
   normalizeCapabilityPath,
+  PROJECTION_MANIFEST_PATH,
   parseCapabilityRegistry,
+  withProjectedModulePages,
   resolveCapabilityPaths,
   type CapabilityIdentity,
   type CapabilityPathMatch,
@@ -228,11 +230,16 @@ function archcontextNodePaths(cwd: string): string[] {
 
 /**
  * Content hash of the selected capability authority. Registry mode keeps the
- * single-file hash byte-for-byte; archcontext mode folds the sorted node files
- * into one revision so any node edit still moves authority_revision.
+ * single-file hash byte-for-byte without a projection manifest; a manifest
+ * owns the module pages, so it joins the revision. Archcontext mode folds the
+ * sorted node files into one revision so any node edit still moves authority_revision.
  */
 function capabilityAuthorityHash(cwd: string, mode: CapabilitySourceMode, hashSource = (path: string) => sourceHash(cwd, path)): string {
-  if (mode === 'registry') return hashSource(CAPABILITY_REGISTRY_PATH);
+  if (mode === 'registry') {
+    const registry = hashSource(CAPABILITY_REGISTRY_PATH);
+    if (!fileExists(cwd, PROJECTION_MANIFEST_PATH)) return registry;
+    return contentRevision({ [CAPABILITY_REGISTRY_PATH]: registry, [PROJECTION_MANIFEST_PATH]: hashSource(PROJECTION_MANIFEST_PATH) });
+  }
   const paths = archcontextNodePaths(cwd);
   if (paths.length === 0) return sha256Prefixed(`missing:${CAPABILITY_NODES_DIR}`);
   return contentRevision(Object.fromEntries(paths.map((path) => [path, hashSource(path)])));
@@ -240,7 +247,7 @@ function capabilityAuthorityHash(cwd: string, mode: CapabilitySourceMode, hashSo
 
 /** State-input source paths for the selected capability authority. */
 function capabilityAuthoritySourcePaths(cwd: string, mode: CapabilitySourceMode): string[] {
-  if (mode === 'registry') return [CAPABILITY_REGISTRY_PATH];
+  if (mode === 'registry') return fileExists(cwd, PROJECTION_MANIFEST_PATH) ? [CAPABILITY_REGISTRY_PATH, PROJECTION_MANIFEST_PATH] : [CAPABILITY_REGISTRY_PATH];
   const paths = archcontextNodePaths(cwd);
   return paths.length > 0 ? paths : [CAPABILITY_NODES_DIR];
 }
@@ -314,12 +321,14 @@ function policyDeclaresCapabilityRegistry(policy: WorkflowPolicy): boolean {
   return resolverValue(policy, 'context.capability_source') === 'registry';
 }
 
+/** A valid registry takes its module pages from the projection manifest when one exists. */
 export function loadRegistryAuthority(cwd: string, policy: WorkflowPolicy, readSource: (path: string) => string | null): CapabilityRegistryResolution {
   const text = readSource(CAPABILITY_REGISTRY_PATH);
-  return parseCapabilityRegistry(text && text.length > 0 ? text : null, {
+  const resolution = parseCapabilityRegistry(text && text.length > 0 ? text : null, {
     declared: policyDeclaresCapabilityRegistry(policy),
     repoRoot: cwd,
   });
+  return resolution.status === 'valid' ? withProjectedModulePages(resolution, readSource(PROJECTION_MANIFEST_PATH)) : resolution;
 }
 
 // One resolve runs several unlocked passes. The archctx answer depends only on
@@ -435,8 +444,6 @@ function capabilityIdsForPaths(
   return capabilityIdsForPathGroups(cwd, [paths], policy, readSource, select, options, cache)[0]!;
 }
 
-const PROJECTION_MANIFEST_PATH = 'docs/architecture/.projection-manifest.json';
-
 function git(repoRoot: string, args: readonly string[]): string {
   return gitExecFileSync(['-C', repoRoot, '-c', 'core.quotepath=false', ...args], {
     encoding: 'utf-8',
@@ -478,7 +485,7 @@ function capabilityOwnershipFrom(
   reviewBase: string | null,
 ): CapabilityOwnership | null {
   if (!resolution || declared || resolution.registryStatus !== 'valid') return null;
-  const byId = new Map<string, { module_document: string; paths: string[] }>();
+  const byId = new Map<string, { module_document: string | null; paths: string[] }>();
   for (const match of resolution.matches) {
     const entry = byId.get(match.capability.id) ?? { module_document: match.capability.architecture_module, paths: [] };
     entry.paths.push(match.filePath);
@@ -540,7 +547,7 @@ function availableReviewSubject(cwd: string, targetRef: string): ReviewSubject {
 
 export interface CapabilityPathOwner {
   readonly id: string;
-  readonly module_document: string;
+  readonly module_document: string | null;
 }
 
 /**

@@ -201,7 +201,7 @@ describe('AgentNotice', () => {
     const key = createHash('sha256').update(JSON.stringify(['feature', measured.report.items.map(item => item.id).sort(), []])).digest('hex');
     expect(readFileSync(join(root, '.ai/harness/state/agent-notice'), 'utf8').trim()).toBe(key);
     expect(collectAgentNotice(root, () => ownership, options)).toEqual({});
-    fixtureWrite(root, 'docs/architecture/.projection-manifest.json', '{"profile":"repo-harness/v1"}\n');
+    fixtureWrite(root, 'docs/architecture/.projection-manifest.json', '{"profile":"repo-harness/v1","targets":{}}\n');
     expect(collectAgentNotice(root, () => ownership, options)).toEqual({});
     fixtureWrite(root, 'docs/architecture/modules/test/module.md', '## 3. Decisions\nRead `src/module/read.ts:998`.\n');
     expect(collectAgentNotice(root, () => ownership, options).content).toContain('[ArchitectureDebt]');
