@@ -63,9 +63,11 @@ _ci_run_bun_tests_in_temporary_home() {
           let stat;
           try { stat = fs.lstatSync(path); } catch (error) { if (error.code === "ENOENT") continue; throw error; }
           // Fallback: fixture-created roots are not all known to this runner.
-          if (stat.uid === process.getuid?.() && (stat.birthtimeMs || stat.ctimeMs) >= started) {
+          // Windows has no uid: stat.uid is 0 and process.getuid is undefined, so the age test alone decides there.
+          if ((process.platform === "win32" || stat.uid === process.getuid()) &&(stat.birthtimeMs || stat.ctimeMs) >= started) {
             // Under the pool, a concurrent file may own this path and remove it later. The pool rechecks after every file ends.
-            if (suspectDir) { fs.appendFileSync(pathApi.join(suspectDir, name.replace(/[\\/]/g, "__") + ".suspects"), path + "\t" + name + "\n"); continue; }
+            // The report is named by pid: an absolute test path holds ":" on Windows, which opens an alternate data stream, not a file.
+            if (suspectDir) { fs.appendFileSync(pathApi.join(suspectDir, process.pid + ".suspects"), path + "\t" + name + "\n"); continue; }
             console.error("[ci] surviving new worktree path outside disposable roots (current uid; created during test): " + path);
             fileStatus = 1;
           }
