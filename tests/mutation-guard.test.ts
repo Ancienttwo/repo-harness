@@ -183,7 +183,7 @@ describe('Bash write tripwire host route', () => {
         const result = invokeBash(command);
         expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 2 });
         expect(result.stderr).toContain('[WorktreeCreateGuard]');
-        expect(result.stderr).toContain('repo-harness run contract-worktree start --issue <number>');
+        expect(result.stderr).toContain('rh run contract-worktree start --issue <number>');
       }
       for (const command of [
         `git worktree add ${managed}/repo-wt-x`, `git worktree add -b task/x ${managed}/repo-wt-x main`,

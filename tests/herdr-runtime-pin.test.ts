@@ -253,7 +253,7 @@ test("required Herdr skill comes from the binary, updates owned copies, and pres
     expect(refusal.detail).toBe(`refusing to replace unowned or changed Herdr skill: ${join(home, ".claude", "skills", "herdr")}; `
       + `to keep it and install a fresh owned copy, move it out of ${join(home, ".claude", "skills")} `
       + `(for example: mv "${join(home, ".claude", "skills", "herdr")}" "${join(home, ".claude", "herdr-skill.moved")}"), `
-      + "then run `repo-harness update` again");
+      + "then run `rh update` again");
     expect(readFileSync(claudeSkill, "utf8")).toBe("# user change\n");
     expect(readFileSync(join(home, ".codex", "skills", "herdr", "SKILL.md"), "utf8")).toBe(renderHerdrSkill(afterCleanupFailure));
     expect(existsSync(join(home, ".codex", "skills", "herdr", ".repo-harness-owner.json"))).toBe(true);
@@ -421,16 +421,16 @@ const HC_STEP_ROWS: readonly HcStepRow[] = [
   { label: "missing: a failed download installs nothing", before: null, platform: "darwin-arm64", served: "absent", status: "failed", requests: 1, installed: false, hcCalls: [], detail: "download of" },
   { label: "missing: an hc of another version installs nothing", before: null, platform: "darwin-arm64", served: "wrong-version", status: "failed", requests: 1, installed: false, hcCalls: [], detail: "the downloaded hc reports 0.0.1" },
   { label: "missing: an existing herdr-core file is not overwritten", before: null, platform: "darwin-arm64", served: "pinned", existing: "herdr-core", status: "failed", requests: 0, installed: false, hcCalls: [],
-    detail: dir => `refusing to overwrite it; add ${dir} to PATH, then rerun repo-harness update` },
+    detail: dir => `refusing to overwrite it; add ${dir} to PATH, then rerun rh update` },
   { label: "missing: a dangling hc link is not overwritten", before: null, platform: "darwin-arm64", served: "pinned", existing: "hc", status: "failed", requests: 0, installed: false, hcCalls: [],
-    detail: dir => `refusing to overwrite it; add ${dir} to PATH, then rerun repo-harness update` },
+    detail: dir => `refusing to overwrite it; add ${dir} to PATH, then rerun rh update` },
   { label: "missing on Windows: installs herdr-core.exe, conpty and the hc.exe hard link, and adds the dir to the user PATH", before: null, platform: "win32-x64", served: "pinned", status: "ok", requests: 1, installed: true, hcCalls: [],
     userPathCalls: 1, detail: "to the user PATH: new terminals have hc; this run uses it for its later steps" },
   { label: "missing on Windows: a failed user PATH write fails the step", before: null, platform: "win32-x64", served: "pinned", userPathFails: true, status: "failed", requests: 1, installed: true, hcCalls: [],
     userPathCalls: 1, detail: "to the user PATH failed: registry access denied" },
   { label: "missing on Windows: a zip without conpty installs nothing", before: null, platform: "win32-x64", served: "no-conpty", status: "failed", requests: 1, installed: false, hcCalls: [], userPathCalls: 0, detail: "holds no complete hc (missing conpty, conpty/conpty.dll)" },
   { label: "missing: no pin target for the platform", before: null, platform: "win32-arm64", served: "pinned", status: "failed", requests: 0, installed: false, hcCalls: [],
-    detail: `no herdr-core release asset for win32-arm64; install hc >=${HC_MIN_VERSION} manually (Herdr.app or a herdr-core release), then run repo-harness update` },
+    detail: `no herdr-core release asset for win32-arm64; install hc >=${HC_MIN_VERSION} manually (Herdr.app or a herdr-core release), then run rh update` },
   { label: "below the floor: hc update --version", before: "0.1.15", platform: "darwin-arm64", served: "pinned", status: "ok", requests: 0, installed: false,
     hcCalls: ["--version", `update --version ${HC_MIN_VERSION}`, "--version"], detail: `hc client 0.1.15 was below the repo-harness floor ${HC_MIN_VERSION}; hc update --version ${HC_MIN_VERSION} updated it to ${HC_MIN_VERSION}` },
   { label: "below the floor: a failed hc update stops", before: "0.1.15", platform: "darwin-arm64", served: "pinned", updateFails: true, status: "failed", requests: 0, installed: false,

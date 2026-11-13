@@ -262,7 +262,7 @@ test('retired reply records refuse migration, list their paths, and change nothi
     expect(() => migrateTaskInboxLayout({ repo_root: f.root, mode, confirm_quiescent: true,
       expected_source_sha256: f.plan.manifest.source_sha256 })).toThrow(new RegExp(
       `retired reply protocol .*v0\\.19\\.4.*#820 / v0\\.23\\.1.*${TASK}/reply-effects/${ID}/claim/intent\\.json.*`
-      + 'Remove or archive the reply-effects directories, then run `repo-harness fleet inbox migrate-layout` again'));
+      + 'Remove or archive the reply-effects directories, then run `rh fleet inbox migrate-layout` again'));
   }
   expect(tree(f.common)).toEqual(before);
   expect(existsSync(f.paths.journal)).toBeFalse();

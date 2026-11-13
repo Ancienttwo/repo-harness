@@ -146,7 +146,7 @@ describe('init-hook command', () => {
       writeFileSync(target, original);
       const report = runInitHook(CLI_PORTS.doctor, { cwd: repo, env: { ...process.env, HOME: home },
         statusReport: baseStatusReport(), doctorReport: baseDoctorReport(), toolingReport: baseToolingReport() });
-      expect(formatInitHook(report)).toContain('1 leftovers (1 removable). Run: repo-harness upgrade');
+      expect(formatInitHook(report)).toContain('1 leftovers (1 removable). Run: rh upgrade');
       expect(formatInitHook(report)).not.toContain(target);
       expect(readFileSync(target, 'utf8')).toBe(original);
     });
@@ -262,7 +262,7 @@ describe('init-hook command', () => {
 
       const globalRules = report.checks.find((entry) => entry.id === 'global-rules.codex');
       expect(globalRules?.status).toBe('warn');
-      expect(globalRules?.detail).toContain('repo-harness update --report-language <follow|zh-CN|en>');
+      expect(globalRules?.detail).toContain('rh update --report-language <follow|zh-CN|en>');
       expect(report.agent_actions.find((entry) => entry.id === 'global-rules.insert')).toBeUndefined();
       expect(readFileSync(filePath, 'utf-8')).toContain('Existing user rule.');
     });
@@ -387,7 +387,7 @@ describe('init-hook command', () => {
       const adapter = report.checks.find((entry) => entry.id === 'status.adapter.codex');
       const action = report.agent_actions.find((entry) => entry.id === 'adapter.codex.install');
       expect(adapter?.status).toBe('needs_agent');
-      expect(action?.command).toBe('repo-harness install --target codex --location global');
+      expect(action?.command).toBe('rh install --target codex --location global');
     });
   });
 
@@ -456,7 +456,7 @@ describe('init-hook command', () => {
       }).checks.find(entry => entry.id === 'status.adapter.codex');
       expect(unavailable?.status).toBe('needs_agent');
       expect(unavailable?.detail).toContain(error);
-      expect(action?.command).toBe('repo-harness install --target codex --location global');
+      expect(action?.command).toBe('rh install --target codex --location global');
     });
   });
 
@@ -466,7 +466,7 @@ describe('init-hook command', () => {
       {
         code: 'install_state_protocol_retired',
         error: 'install state is protocol 2, which this package no longer reads. Migrate it with the 0.25.4 bridge first: '
-          + 'bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version 0.25.4',
+          + 'bun add -g repo-harness@0.25.4 --no-cache && rh update --version 0.25.4',
       },
     ] as const;
     for (const row of rows) withTempHome((home, repo) => {
@@ -517,15 +517,15 @@ describe('init-hook command', () => {
             id: 'cli-update',
             describe: 'repo-harness latest version advisory',
             status: 'warn',
-            detail: 'current=0.4.2; latest=99.0.0; agent_action=repo-harness update --target codex',
+            detail: 'current=0.4.2; latest=99.0.0; agent_action=rh update --target codex',
           },
         ]),
         toolingReport: baseToolingReport(),
       });
 
       const action = report.agent_actions.find((entry) => entry.id === 'cli.update');
-      expect(action?.command).toBe('repo-harness update --target codex');
-      expect(action?.verification).toBe('repo-harness setup check --target codex --check-updates --json');
+      expect(action?.command).toBe('rh update --target codex');
+      expect(action?.verification).toBe('rh setup check --target codex --check-updates --json');
     });
   });
 
@@ -638,8 +638,8 @@ describe('init-hook command', () => {
       const action = report.agent_actions.find((entry) => entry.id === 'repo.init-refresh');
       expect(check?.status).toBe('needs_agent');
       expect(check?.detail).toContain('planned=');
-      expect(action?.command).toBe(`repo-harness init --repo ${shellQuoted(repo)}`);
-      expect(action?.verification).toBe('repo-harness setup check --target codex --check-updates --json');
+      expect(action?.command).toBe(`rh init --repo ${shellQuoted(repo)}`);
+      expect(action?.verification).toBe('rh setup check --target codex --check-updates --json');
       expect(existsSync(join(repo, 'docs', 'spec.md'))).toBe(false);
     });
   });
@@ -890,7 +890,7 @@ describe('init-hook command', () => {
       encoding: 'utf-8',
     });
     expect(res.status).toBe(0);
-    expect(res.stdout).toContain('Usage: repo-harness init-hook');
+    expect(res.stdout).toContain('Usage: rh init-hook');
     expect(res.stdout).toContain('--target <target>');
     expect(res.stdout).toContain('--check-updates');
   }, 30_000);
@@ -901,7 +901,7 @@ describe('init-hook command', () => {
       encoding: 'utf-8',
     });
     expect(res.status).toBe(0);
-    expect(res.stdout).toContain('Usage: repo-harness setup check');
+    expect(res.stdout).toContain('Usage: rh setup check');
     expect(res.stdout).toContain('--target <target>');
     expect(res.stdout).toContain('--check-updates');
   }, 30_000);
@@ -919,17 +919,17 @@ describe('setup check builder', () => {
           { id: 'codegraph-index', describe: 'CodeGraph project index', status: 'warn', detail: 'index=stale; remediation=bash scripts/ensure-codegraph.sh --sync' },
         ]),
         toolingReport: baseToolingReport({
-          agent_fleet: { name: 'agent_fleet', status: 'missing', reason: 'none', install_command: 'repo-harness run install-agent-fleet' },
+          agent_fleet: { name: 'agent_fleet', status: 'missing', reason: 'none', install_command: 'rh run install-agent-fleet' },
         }),
       };
       const build = buildSetupCheck(CLI_PORTS.doctor, options);
       expect(JSON.stringify(build.report)).toBe(JSON.stringify(runInitHook(CLI_PORTS.doctor, options)));
       const commandFor = (checkId: string) => build.check_actions.get(checkId)?.command;
       expect(build.check_actions.get('status.adapter.codex')?.id).toBe('adapter.codex.install');
-      expect(commandFor('status.adapter.codex')).toBe('repo-harness install --target codex --location global');
+      expect(commandFor('status.adapter.codex')).toBe('rh install --target codex --location global');
       expect(build.check_actions.has('status.adapter.claude')).toBe(false);
       expect(commandFor('doctor.codegraph-index')).toBe('bash scripts/ensure-codegraph.sh --sync');
-      expect(commandFor('tooling.agent_fleet')).toBe('repo-harness run install-agent-fleet');
+      expect(commandFor('tooling.agent_fleet')).toBe('rh run install-agent-fleet');
       expect(build.check_actions.get('global-rules.codex')?.id).toBe('global-rules.insert');
       expect(build.check_actions.get('global-rules.claude')?.id).toBe('global-rules.insert');
       for (const [checkId, action] of build.check_actions) {

@@ -180,7 +180,7 @@ describe("install-agent-fleet", () => {
         expect(installedCodex).not.toMatch(/\b(?:fable|opus|sonnet|haiku)\b/i);
       }
 
-      // The orchestrator is a seat (`repo-harness seats argv orchestrator`), not a fleet role.
+      // The orchestrator is a seat (`rh seats argv orchestrator`), not a fleet role.
       expect(res.stdout).not.toContain("orchestrator");
       expect(existsSync(join(home, ".claude/agents/orchestrator.md"))).toBe(false);
       expect(existsSync(join(home, ".codex/agents/orchestrator.toml"))).toBe(false);
@@ -562,7 +562,7 @@ describe("install-agent-fleet", () => {
       // fast-worker.md deliberately absent from partialSourceDir, matching the
       // "missing packaged source" fixture shape above.
 
-      // Simulates the real leak: repo-harness run verify-sprint exports its own
+      // Simulates the real leak: rh run verify-sprint exports its own
       // resolved helper path (a different, real, unrelated packaged helper) into
       // the environment; a nested bun test child then inherits it verbatim. The
       // installer must reject this decoy (its basename does not match the

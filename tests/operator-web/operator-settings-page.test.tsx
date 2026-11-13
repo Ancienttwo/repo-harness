@@ -154,7 +154,7 @@ describe('agents page seats section', () => {
     expect(allow('Edit files').disabled).toBe(false);
     // The levels are those of buildSeatLaunch (#1531): Claude advisor with shell on, tasks, schedule, edit and gh off.
     expect(levels()).toEqual(['common_commands', 'enforced', 'instructions_only', 'common_commands', 'named_types_only']);
-    expect(document.querySelector('[data-seat-launch]')?.textContent).toContain('--argv "$(repo-harness seats argv advisor --repository-id <repository-id>)"');
+    expect(document.querySelector('[data-seat-launch]')?.textContent).toContain('--argv "$(rh seats argv advisor --repository-id <repository-id>)"');
     // The page shows no running pane count: the operator cannot read hc (#1413).
     expect(document.querySelector('[data-seats-page]')?.textContent).not.toMatch(/running \d|\d+ running/u);
     await click(allow('gatekeeper'));
@@ -653,7 +653,7 @@ describe('language controls', () => {
     await mount({
       ...props(server(settings(), [])),
       readDocumentationLanguage: id => async (): Promise<LanguageRead<DocumentationLanguage | null>> => (id === REGISTRY.repositories[1]!.repository_id
-        ? { state: 'refused', error: { code: 'policy_missing', message: 'Server text.', next_action: 'repo-harness init' } } : { state: 'ok', value: stored }),
+        ? { state: 'refused', error: { code: 'policy_missing', message: 'Server text.', next_action: 'rh init' } } : { state: 'ok', value: stored }),
       writeDocumentationLanguage: id => async (language, request_id) => {
         writes.push({ id, language, request_id });
         stored = language;
@@ -667,7 +667,7 @@ describe('language controls', () => {
     expect(writes).toEqual([{ id: first, language: 'zh-CN', request_id: expect.stringMatching(UUID) }]);
     expect(pressed(control(first))).toEqual(['zh-CN']);
     const missing = document.querySelector(control(REGISTRY.repositories[1]!.repository_id))!;
-    expect(missing.querySelector('[data-save-result="policy_missing"] [data-command] code')?.textContent).toBe('repo-harness init');
+    expect(missing.querySelector('[data-save-result="policy_missing"] [data-command] code')?.textContent).toBe('rh init');
     expect(all('[data-language-option]', missing).every(button => (button as HTMLButtonElement).disabled)).toBe(true);
   });
 });

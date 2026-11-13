@@ -981,9 +981,26 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: '0',
         },
       });
+      // The 0.32 bin link that Bun keeps after the rename, and a user file that still calls the old command.
+      const retiredLink = join(home, '.bun', 'bin', 'repo-harness');
+      const cliEntry = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness', 'src', 'cli', 'index.ts');
+      mkdirSync(dirname(cliEntry), { recursive: true });
+      if (!existsSync(cliEntry)) writeFileSync(cliEntry, '#!/usr/bin/env bun\n');
+      mkdirSync(dirname(retiredLink), { recursive: true });
+      symlinkSync(cliEntry, retiredLink);
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), 'Run `repo-harness board seats` first.\n');
       const result = update({ plugins: FULL_PLUGINS });
 
       expect(result.exitCode).toBe(0);
+      expect(lstatSync(retiredLink, { throwIfNoEntry: false })).toBeUndefined();
+      expect(result.steps.find((step) => step.step === 'retire the repo-harness command link')?.detail).toBe(`Removed ${retiredLink}; the command is rh.`);
+      expect(result.steps.find((step) => step.step === 'find repo-harness command calls in user files')?.detail).toContain(`${join(home, '.codex', 'AGENTS.md')}:1`);
+      expect(readFileSync(join(home, '.codex', 'AGENTS.md'), 'utf8')).toContain('Run `repo-harness board seats` first.');
+      writeFileSync(retiredLink, 'owner file');
+      expect(update({ plugins: FULL_PLUGINS }).steps.find((step) => step.step === 'retire the repo-harness command link')?.detail).toContain('is not a link that this package manages');
+      expect(readFileSync(retiredLink, 'utf8')).toBe('owner file');
+      rmSync(retiredLink);
       expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')).toMatchObject({ status: 'ok' });
       expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')?.detail).toContain(`archctx@${ARCHCTX_PIN}`);
       const archctxLink = join(home, '.bun', 'bin', 'archctx');
@@ -2022,7 +2039,7 @@ exit 0
       expect(result.exitCode).toBe(0);
       expect(installStep?.status).toBe('skipped');
       expect(installStep?.detail).toBe(
-        'already installed from Bun global package source; version=9.9.9; latest=99.0.0 available — run: repo-harness update',
+        'already installed from Bun global package source; version=9.9.9; latest=99.0.0 available — run: rh update',
       );
       expect(readFileSync(bunLog, 'utf-8')).toBe('--version\n');
     } finally {
@@ -2096,7 +2113,7 @@ exit 0
       encoding: 'utf-8',
     });
     expect(res.status).toBe(0);
-    expect(res.stdout).toContain('Usage: repo-harness install');
+    expect(res.stdout).toContain('Usage: rh install');
     expect(res.stdout).toContain('--target <target>');
     expect(res.stdout).toContain('--no-cli');
     expect(res.stdout).not.toContain('--with-reverse-skill');
@@ -2454,7 +2471,7 @@ exit 0
       encoding: 'utf-8',
     });
     expect(res.status).toBe(0);
-    expect(res.stdout).toContain('Usage: repo-harness update');
+    expect(res.stdout).toContain('Usage: rh update');
     expect(res.stdout).toContain('--version <version>');
     expect(res.stdout).toContain('--channel <channel>');
     expect(res.stdout).toContain('--check');
@@ -2493,7 +2510,7 @@ exit 0
       }
       setupConsoleFixture(home, source);
       const seedGlobalPackage = `import { seedGlobalPackageFixture } from ${JSON.stringify(new URL('../helpers/install-ownership.ts', import.meta.url).href)}; seedGlobalPackageFixture(process.env, { mutable: true });`;
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "-" || "\${1:-}" == "-e" || "\${1:-}" == *.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/repo-harness"; chmod +x "$HOME/.bun/bin/repo-harness"; "${process.execPath}" -e '${seedGlobalPackage.replaceAll("'", "'\\''")}' || exit $?; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "-" || "\${1:-}" == "-e" || "\${1:-}" == *.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/rh"; chmod +x "$HOME/.bun/bin/rh"; "${process.execPath}" -e '${seedGlobalPackage.replaceAll("'", "'\\''")}' || exit $?; fi\nexit 0\n`);
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
 printf '%s\\n' "$*" >> "${bunxLog}"
@@ -2907,7 +2924,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
       symlinkSync(ROOT, join(home, '.codex', 'skills', 'repo-harness'), 'dir');
       writeFileSync(join(home, '.codex', 'hooks.json'), JSON.stringify({ hooks: buildManagedHooks('codex', env) }));
       mkdirSync(join(home, '.bun', 'bin'), { recursive: true });
-      symlinkSync(CLI, join(home, '.bun', 'bin', 'repo-harness'));
+      symlinkSync(CLI, join(home, '.bun', 'bin', 'rh'));
       // Core owns its facades and the agent fleet, so a core-only state needs them present.
       for (const pkg of loadSkillSurfaceCatalog().packages.filter(entry => entry.kind === 'facade' && entry.owner === 'core' && !entry.explicitOnly)) {
         mkdirSync(join(home, '.codex', 'skills', pkg.name), { recursive: true });
@@ -3179,7 +3196,7 @@ describe('Codex Waza projection', () => {
         if (mode === 'unknown-directory') {
           expect(result.exitCode).toBe(1);
           expect(waza?.detail).toContain('refusing to refresh unowned host skill');
-          expect(waza?.detail).toContain('then run: repo-harness install --target codex');
+          expect(waza?.detail).toContain('then run: rh install --target codex');
           expect(lstatSync(think).isDirectory()).toBe(true);
           expect(readFileSync(join(think, 'SKILL.md'), 'utf8')).toBe('user instructions\n');
         } else {
@@ -3333,8 +3350,8 @@ describe('Global Working Rules refresh during install and update', () => {
     expect(result.exitCode).toBe(0);
     const step = rulesStep(result);
     expect(step?.status).toBe('skipped');
-    expect(step?.detail).toContain(`skipped-legacy:${path} (legacy repo-harness rules without markers; run \`repo-harness update --report-language follow|zh-CN|en\``);
-    expect(step?.detail).toContain(`skipped-unrecorded:${claudePath} (managed block has no recorded reporting language; run \`repo-harness update --report-language follow|zh-CN|en\`)`);
+    expect(step?.detail).toContain(`skipped-legacy:${path} (legacy repo-harness rules without markers; run \`rh update --report-language follow|zh-CN|en\``);
+    expect(step?.detail).toContain(`skipped-unrecorded:${claudePath} (managed block has no recorded reporting language; run \`rh update --report-language follow|zh-CN|en\`)`);
     expect(readFileSync(path, 'utf-8')).toBe(mixedLegacy);
     expect(readFileSync(claudePath, 'utf-8')).toBe(unrecorded);
   }), 30_000);
@@ -3498,7 +3515,7 @@ describe('Global Working Rules refresh during install and update', () => {
     const skipped = run();
     expect(skipped.exitCode).toBe(0);
     expect(rulesStep(skipped)?.status).toBe('skipped');
-    expect(rulesStep(skipped)?.detail).toContain('not opted in; run `repo-harness update --report-language follow|zh-CN|en` to install the rules');
+    expect(rulesStep(skipped)?.detail).toContain('not opted in; run `rh update --report-language follow|zh-CN|en` to install the rules');
     expect(existsSync(path)).toBe(false);
 
     const created = run('follow');

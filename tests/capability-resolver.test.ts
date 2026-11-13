@@ -200,7 +200,7 @@ describe("capability resolver", () => {
       expect(res.status).toBe(1);
       expect(res.stdout).toBe("");
       expect(res.stderr).toContain("missing capability registry: .ai/context/capabilities.json");
-      expect(res.stderr).toContain("repo-harness run capability-config add --prefix <existing-path>");
+      expect(res.stderr).toContain("rh run capability-config add --prefix <existing-path>");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

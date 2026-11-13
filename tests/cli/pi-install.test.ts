@@ -90,8 +90,8 @@ default: process.exit(99);
   symlinkSync(process.execPath, join(bin, 'bun'));
   symlinkSync(join(host, 'pi'), join(bin, 'pi'));
   writeFakeHc(bin);
-  write(join(home, '.bun/bin/repo-harness'), '#!/bin/sh\nexit 0\n');
-  chmodSync(join(home, '.bun/bin/repo-harness'), 0o755);
+  write(join(home, '.bun/bin/rh'), '#!/bin/sh\nexit 0\n');
+  chmodSync(join(home, '.bun/bin/rh'), 0o755);
   const argv = () => existsSync(join(root, 'argv.jsonl')) ? readFileSync(join(root, 'argv.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line) as string[]) : [];
   const cli = (...args: string[]) => spawnSync(process.execPath, [CLI, ...args], { cwd: root, env, encoding: 'utf8', timeout: 60_000 });
   return { root, home, env, source, host, write, argv, cli };
@@ -260,7 +260,7 @@ describe('Pi package and skill installation', () => {
     const codex = join(f.home, '.codex/hooks.json');
     f.write(claude, '{"theme":"original claude"}\n');
     f.write(codex, '{"theme":"original codex"}\n');
-    rmSync(join(f.home, '.bun/bin/repo-harness'));
+    rmSync(join(f.home, '.bun/bin/rh'));
     const isolatedPath = f.env.PATH.split(delimiter).filter(directory => !existsSync(join(directory, 'repo-harness'))).join(delimiter);
     const result = spawnSync(process.execPath, [CLI, 'install', '--plugins', 'pi', '--no-cli', '--no-external-skills', '--no-codegraph', '--json'],
       { cwd: f.root, env: { ...f.env, PATH: isolatedPath, PI_FIXTURE_FAIL_REMOVE: '1' }, encoding: 'utf8', timeout: 60_000 });

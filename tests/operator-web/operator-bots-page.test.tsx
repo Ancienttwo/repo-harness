@@ -147,7 +147,7 @@ describe('Bots page', () => {
     const mcp = section('mcp');
     expect(mcp.querySelector('[data-mcp-status]')?.getAttribute('data-mcp-status')).toBe('ready_user');
     expect(commands(mcp)).toEqual([
-      'repo-harness mcp access set --repo <repo-path> --mode read_only|read_write',
+      'rh mcp access set --repo <repo-path> --mode read_only|read_write',
     ]);
     const repositories = all('[data-registry-repo]', mcp);
     expect(repositories.map(row => row.getAttribute('data-access-mode'))).toEqual(['read_write', 'read_only', 'read_only']);
@@ -217,8 +217,8 @@ describe('Bots page', () => {
         expect(shown).not.toMatch(/passphrase|口令|token\s*[=:]|bearer\s+\S{8}/iu);
         expect(all('button', page()).every(button => button.classList.contains('copy-value__button'))).toBe(true);
         expect(page().querySelector('input, select, textarea, form, [contenteditable]')).toBeNull();
-        // The hc repair commands of a core below the pin are the only commands outside repo-harness.
-        expect(commands(page()).every(command => (command?.startsWith('repo-harness ') || HC_REPAIR.includes(command ?? '')) && !/--(?:webhook-url|webhook-key|slack-webhook-url|discord-webhook-url|telegram-bot-token)\b/u.test(command ?? ''))).toBe(true);
+        // The hc repair commands of a core below the pin are the only commands outside rh.
+        expect(commands(page()).every(command => (command?.startsWith('rh ') || HC_REPAIR.includes(command ?? '')) && !/--(?:webhook-url|webhook-key|slack-webhook-url|discord-webhook-url|telegram-bot-token)\b/u.test(command ?? ''))).toBe(true);
       }
     }
   });
@@ -250,21 +250,21 @@ describe('Bots page', () => {
     const mcp = section('mcp');
     expect(mcp.querySelector('[data-mcp-status]')?.textContent).toBe('mcp doctor timed out.');
     expect(commands(mcp)).toEqual([
-      'repo-harness mcp doctor',
-      'repo-harness mcp access set --repo <repo-path> --mode read_only|read_write',
+      'rh mcp doctor',
+      'rh mcp access set --repo <repo-path> --mode read_only|read_write',
     ]);
     expect(all('[data-last-call]', mcp).map(call => call.getAttribute('data-last-call'))).toEqual(['audit_unreadable', 'failed']);
     expect(all('[data-last-call="failed"] [data-bot]', mcp).map(name => name.textContent)).toEqual(['Bot unknown']);
     const notify = section('notify');
     expect(notify.querySelector('[data-notify]')?.getAttribute('data-notify')).toBe('relay_stopped');
     expect(notify.querySelector('[data-notify]')?.textContent).toBe('Notifications are paused. Start the relay again in a terminal:');
-    expect(commands(notify)).toEqual(['repo-harness herdr notify start']);
+    expect(commands(notify)).toEqual(['rh herdr notify start']);
     expect(all('[data-notify-channel]', notify)).toEqual([]);
 
     // Without an install record the relay is not installed, so the command is install.
     const fresh = busyBotAccess(NOW);
     await remount('#bots', props(serve(ok({ ...fresh, notify: { state: 'unavailable', reason: 'notify_session_missing' } }))));
-    expect(commands(section('notify'))).toEqual(['repo-harness herdr notify install']);
+    expect(commands(section('notify'))).toEqual(['rh herdr notify install']);
   });
 
   test('the first collection is a wait, a refused read names its reason, and a failed refresh keeps the last snapshot', async () => {
@@ -274,7 +274,7 @@ describe('Bots page', () => {
 
     await remount('#bots', props(serve({ state: 'unavailable', reason: 'bot_access_unavailable' })));
     expect(page().getAttribute('data-bots-page')).toBe('failed');
-    expect(page().textContent).toContain('Restart repo-harness operator serve.');
+    expect(page().textContent).toContain('Restart rh operator serve.');
     expect(freshness()?.getAttribute('data-freshness')).toBe('failed');
 
     const answers: BotAccessRead[] = [ok(busyBotAccess(NOW)), { state: 'unavailable', reason: 'unreachable' }];

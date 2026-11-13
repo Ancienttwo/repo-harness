@@ -791,7 +791,7 @@ describe('legacy workflow-state upgrade report', () => {
       expect(check.exitCode).toBe(1);
       expect(check.items).toHaveLength(1);
       expect(check.items[0]).toEqual(expect.objectContaining({ path, action: 'report', ownership: 'unowned', proof: null }));
-      expect(check.items[0]?.reason).toContain('repo-harness run <helper>');
+      expect(check.items[0]?.reason).toContain('rh run <helper>');
       expect(check.items[0]?.reason).not.toContain('hook-lib');
       expect(check.items[0]?.reason).toContain('back up');
       expect(check.items[0]?.reason).toContain('review local edits');
@@ -816,7 +816,7 @@ describe('legacy workflow-state upgrade report', () => {
     });
     const text = invoke([]); const json = invoke(['--json']);
     expect(text.status, text.stderr).toBe(1); expect(json.status, json.stderr).toBe(1);
-    expect(text.stdout).toContain(path); expect(text.stdout).toContain('repo-harness run <helper>');
+    expect(text.stdout).toContain(path); expect(text.stdout).toContain('rh run <helper>');
     const { items } = JSON.parse(json.stdout);
     expect(items).toHaveLength(1);
     expect(items[0]).toEqual(expect.objectContaining({ path, action: 'report' }));
@@ -827,17 +827,19 @@ describe('legacy workflow-state upgrade report', () => {
   test('package scripts that call a helper outside the shipped registry are report-only', () => sandbox((opts) => {
     const path = join(opts.cwd, 'package.json');
     const bytes = `${JSON.stringify({ name: 'fixture', scripts: {
-      'workflow:check': 'repo-harness run check-task-workflow --strict',
-      'check:task-sync': 'repo-harness run check-task-sync',
+      'workflow:check': 'rh run check-task-workflow --strict',
+      'check:task-sync': 'rh run check-task-sync',
       'plan:new': 'bunx repo-harness run new-plan',
-      'check:context-files': 'repo-harness run check-context-files',
-      'spec:new': 'repo-harness run new-spec.sh',
+      'check:context-files': 'rh run check-context-files',
+      'spec:new': 'rh run new-spec.sh',
+      'check:brain': 'repo-harness brain check',
       test: 'bun test',
     } }, null, '\t')}\n`;
     put(path, bytes);
     const check = runUpgrade({ ...opts, scope: 'project' });
     expect(check.items).toEqual([expect.objectContaining({ path, surface: 'file', retiredBy: 'retired-script-reference', action: 'report', ownership: 'unowned' })]);
-    expect(check.items[0]?.reason).toContain('workflow:check: repo-harness run check-task-workflow --strict; check:task-sync: repo-harness run check-task-sync; plan:new: bunx repo-harness run new-plan');
+    expect(check.items[0]?.reason).toContain('workflow:check: rh run check-task-workflow --strict; check:task-sync: rh run check-task-sync; plan:new: bunx repo-harness run new-plan');
+    expect(check.items[0]?.reason).toContain('check:brain: repo-harness brain check (the repo-harness command is now rh)');
     for (const live of ['check:context-files', 'spec:new', 'test:']) expect(check.items[0]?.reason).not.toContain(live);
     expect(runUpgradeDecide({ ...opts, decision: 'remove', paths: ['package.json'] }).rejected.map((rejection) => rejection.path)).toEqual(['package.json']);
     expect(runUpgrade({ ...opts, scope: 'project', apply: true }).keptPaths).toContain(path);

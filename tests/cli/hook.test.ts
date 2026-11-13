@@ -138,7 +138,7 @@ describe('typed hook runtime', () => {
       const spawned = spawnSync(process.execPath, [HOOK_ENTRY, 'SessionStart', '--route', 'default'], { cwd: root, env: env(root), input: '', encoding: 'utf8' });
       expect(spawned.status).toBe(1);
       expect(spawned.stderr).toContain('This repository needs repo-harness >= 999.0.0;');
-      expect(spawned.stderr).toContain('Run `repo-harness update`');
+      expect(spawned.stderr).toContain('Run `rh update`');
       expect(`${spawned.stdout}${spawned.stderr}`).not.toContain('capability_registry:invalid');
     } finally { clean(root); }
   }, 30_000);
@@ -237,7 +237,7 @@ describe('typed hook runtime', () => {
       expect(result.stdout).toBe('');
       expect(result.stderr.trim().split('\n')).toHaveLength(1);
       expect(result.stderr).toContain('unsupported-host-route');
-      expect(result.stderr).toContain('repo-harness install --target codex --location global');
+      expect(result.stderr).toContain('rh install --target codex --location global');
       expect(existsSync(join(root, '.ai/harness/delegation'))).toBe(false);
     } finally { clean(root); }
   }, 30_000);
@@ -288,7 +288,7 @@ describe('typed hook runtime', () => {
           });
           expect(result.status).toBe(2);
           expect(result.stderr).toContain('unknown route');
-          expect(result.stderr).toContain(`repo-harness install --target ${host} --location global`);
+          expect(result.stderr).toContain(`rh install --target ${host} --location global`);
         }
       }
       expect(existsSync(join(root, '.ai/harness/runs/hook-events.jsonl'))).toBe(false);

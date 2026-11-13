@@ -305,7 +305,7 @@ describe("architecture debt section", () => {
         const envelope = JSON.parse(result.stdout);
         expect(envelope.hookSpecificOutput.additionalContext).toContain('[ArchitectureDebt]');
         expect(envelope.hookSpecificOutput.additionalContext).toContain(NOTICE_CAPABILITY);
-        expect(envelope.systemMessage).toBe(host === 'claude' ? `Architecture: 1 debt item in ${NOTICE_CAPABILITY}; run repo-harness architecture-debt --json.` : undefined);
+        expect(envelope.systemMessage).toBe(host === 'claude' ? `Architecture: 1 debt item in ${NOTICE_CAPABILITY}; run rh architecture-debt --json.` : undefined);
         expect(sessionStartContext(f, host)).not.toContain('[ArchitectureDebt]');
         f.write('docs/architecture/.projection-manifest.json', '{"profile":"repo-harness/v1","refreshed":true}\n');
         expect(sessionStartContext(f, host)).not.toContain('[ArchitectureDebt]');

@@ -812,7 +812,7 @@ function mergeReason(edit: Parameters<typeof mergeReplay>[0] = {}, options: Repl
 test('board merge: an accepted, green, ready PR first in plan order is eligible, A11 wakes the orchestrator, and the merge pins its head and base', () => {
   const board = replay(mergeReplay());
   expect(evaluateBoardAttention(board).findings.filter(finding => finding.rule === 'A11').map(finding => [finding.pull_requests, finding.message]))
-    .toEqual([[[1491], 'eligible: run repo-harness board merge --parent 1474 --pr 1491']]);
+    .toEqual([[[1491], 'eligible: run rh board merge --parent 1474 --pr 1491']]);
   const pr = board.pull_requests.find(entry => entry.number === 1491)!;
   const calls: Json[] = [];
   const merge = (input: Json) => { calls.push(input); return { exit_code: 0, document: { ok: true } } as never; };
@@ -908,7 +908,7 @@ test('each attention finding names its priority, and a delivery sorts the entrie
   // `evaluateBoardAttention` lists A1 before A3: the delivery puts P0 first.
   expect(entries[0]).toBe('P0 A3: worker t1 is blocked for 11 min');
   expect(entries.some(entry => entry.startsWith('P2 A1: #1491 is accepted and ready, unmerged for'))).toBe(true);
-  expect(entries.some(entry => entry.startsWith('P2 A11: eligible: run repo-harness board merge --parent 1474 --pr 1491'))).toBe(true);
+  expect(entries.some(entry => entry.startsWith('P2 A11: eligible: run rh board merge --parent 1474 --pr 1491'))).toBe(true);
   const ranks = entries.map(entry => BOARD_PRIORITY_ORDER.indexOf(entry.slice(0, 2) as BoardPriority));
   expect(ranks).toEqual([...ranks].sort((left, right) => left - right));
 
@@ -1928,7 +1928,7 @@ test('watch service: --watch refuses a terminal without the service labels; star
     FAKE_LS: Object.entries(watchers).map(([address, terminal]) => ({ address, state: terminal.state })), FAKE_TERMINALS: watchers,
   }).host, () => 1186405141);
   expect(doctor({ t5: { labels, state: 'live' } })).toMatchObject({ status: 'ok', detail: 'The attention watcher of repository 1186405141 #1503 is live.' });
-  const stopped = { status: 'warn', detail: 'The attention watcher of repository 1186405141 #1503 is not live (attention_stopped). Run in the checkout of repository 1186405141: repo-harness board attention start --parent 1503' };
+  const stopped = { status: 'warn', detail: 'The attention watcher of repository 1186405141 #1503 is not live (attention_stopped). Run in the checkout of repository 1186405141: rh board attention start --parent 1503' };
   expect(doctor({ t5: { labels, state: 'finished' } })).toMatchObject(stopped);
   expect(doctor({ t5: { labels, state: 'finished' }, t6: { labels: other, state: 'live' } })).toMatchObject(stopped);
   expect(doctor({ t6: { labels: other, state: 'live' } })).toMatchObject({ status: 'na', detail: 'No attention watcher was started for repository 1186405141.' });

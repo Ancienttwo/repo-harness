@@ -100,7 +100,7 @@ export function recordInstallOwnership(paths: string[], env: NodeJS.ProcessEnv):
 }
 
 /**
- * Record an install selection without managed surfaces, as `repo-harness install --plugins <plugins>` leaves it.
+ * Record an install selection without managed surfaces, as `rh install --plugins <plugins>` leaves it.
  * `selection: 'all'` with a subset is an `all` state recorded before the other plugin ids existed.
  */
 export function recordPluginSelection(env: NodeJS.ProcessEnv, plugins: readonly PluginId[] = ['architecture'], selection: PluginSelection = [...plugins]): void {

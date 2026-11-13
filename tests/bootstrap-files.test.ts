@@ -3,6 +3,8 @@ import { readFileSync, existsSync, lstatSync, mkdtempSync, mkdirSync, copyFileSy
 import { join } from "path";
 import { tmpdir } from "os";
 import { spawnSync } from "child_process";
+import { buildProgram } from "../src/cli/index";
+import { CLI_TOP_LEVEL_COMMANDS, RETIRED_CLI_INVOCATION } from "../src/core/skill-surface/cli-name";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -132,13 +134,25 @@ describe("Bootstrap Script Contracts", () => {
     expect(agents).toContain("~/.codex/skills");
   });
 
+  test("the top-level command list and the retired-command pattern follow the rh program", () => {
+    const program = buildProgram();
+    expect(program.name()).toBe("rh");
+    expect(program.commands.map((command) => command.name()).filter((name) => !name.startsWith("__")).sort()).toEqual([...CLI_TOP_LEVEL_COMMANDS].sort());
+    for (const line of ["run `repo-harness board seats --json`", "repo-harness review round --issue-id 1", "\"check\": \"repo-harness brain check\""]) {
+      expect(RETIRED_CLI_INVOCATION.test(line)).toBe(true);
+    }
+    for (const line of ["npx -y repo-harness install", "bunx repo-harness run new-plan", "exec repo-harness-hook Stop", "~/.repo-harness/config.json", "repo-harness review start status", "the repo-harness skill", "rh board seats"]) {
+      expect(RETIRED_CLI_INVOCATION.test(line)).toBe(false);
+    }
+  });
+
   test("repo package should expose workflow verification scripts", () => {
     const pkg = JSON.parse(read("package.json"));
     const cliEntry = read("src/cli/index.ts");
     expect(pkg.name).toBe("repo-harness");
     expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
     expect(pkg.private).toBeUndefined();
-    expect(pkg.bin["repo-harness"]).toBe("src/cli/index.ts");
+    expect(pkg.bin.rh).toBe("src/cli/index.ts");
     expect(pkg.bin["repo-harness-hook"]).toBe("dist/hook-entry.js");
     expect(pkg.files).toContain("assets/");
     expect(pkg.files).not.toContain("docs/reference-configs/");
@@ -146,13 +160,13 @@ describe("Bootstrap Script Contracts", () => {
     expect(cliEntry).toContain("buildDocsCommand");
     expect(cliEntry).not.toMatch(/\\.version\\(['\"][0-9]+\\.[0-9]+\\.[0-9]+['\"]\\)/);
     expect(pkg.scripts["check:ci"]).toBe("bash scripts/check-ci.sh");
-    expect(pkg.scripts["check:brain"]).toBe("repo-harness brain check");
+    expect(pkg.scripts["check:brain"]).toBe("rh brain check");
     expect(pkg.scripts["check:task-sync"]).toBeUndefined();
-    expect(pkg.scripts["check:deploy-sql"]).toBe("repo-harness run check-deploy-sql-order");
+    expect(pkg.scripts["check:deploy-sql"]).toBe("rh run check-deploy-sql-order");
     expect(pkg.scripts["check:architecture-sync"]).toBeUndefined();
     expect(pkg.scripts["check:task-workflow"]).toBeUndefined();
-    expect(pkg.scripts["check:context-files"]).toBe("repo-harness run check-context-files");
-    expect(pkg.scripts["sync:brain"]).toBe("repo-harness brain sync");
+    expect(pkg.scripts["check:context-files"]).toBe("rh run check-context-files");
+    expect(pkg.scripts["sync:brain"]).toBe("rh brain sync");
   });
 
   test("ci gate verifies the candidate without creating routine handoff artifacts", () => {
@@ -439,8 +453,8 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.helpers.scripts).toContain("summarize-failures.sh");
     expect(sharedLib).toContain("check:context-files");
     expect(sharedLib).toContain("check:deploy-sql");
-    expect(sharedLib).toContain('"check:brain": "repo-harness brain check"');
-    expect(sharedLib).toContain('"sync:brain": "repo-harness brain sync"');
+    expect(sharedLib).toContain('"check:brain": "rh brain check"');
+    expect(sharedLib).toContain('"sync:brain": "rh brain sync"');
     expect(sharedLib).toContain("pi_print_external_tooling_report");
     expect(contract.helpers.scripts).toContain("check-deploy-sql-order.sh");
     expect(content).toContain("mkdir -p .ai/context");
@@ -463,7 +477,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.documentation.referenceConfigs.source).toBe("user-level-runtime-docs");
     expect(contract.documentation.referenceConfigs.repoStubDirectory).toBe("docs/reference-configs");
     expect(contract.documentation.referenceConfigs.packageDirectory).toBe("assets/reference-configs");
-    expect(contract.documentation.referenceConfigs.resolverCommand).toBe("repo-harness docs path <doc-id>");
+    expect(contract.documentation.referenceConfigs.resolverCommand).toBe("rh docs path <doc-id>");
     expect(contract.documentation.referenceConfigs.stubMarker).toBe("<!-- repo-harness: reference-config-stub v1 -->");
     expect(contract.helpers.scripts).not.toContain("prepare-codex-handoff.sh");
     expect(contract.helpers.scripts).not.toContain("codex-handoff-resume.sh");
@@ -685,7 +699,7 @@ describe("Bootstrap Script Contracts", () => {
     const generic = read("assets/skills/repo-harness-cross-review/references/generic-review.md");
     expect(skill).toContain("references/generic-review.md");
     expect(skill).toContain("deep-reasoner");
-    expect(generic).toContain("repo-harness review round");
+    expect(generic).toContain("rh review round");
     expect(generic).toContain("generic-review");
   });
 

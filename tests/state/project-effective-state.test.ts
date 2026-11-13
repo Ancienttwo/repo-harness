@@ -92,7 +92,7 @@ describe('pure Effective State projection', () => {
     expect(state.phase).toBe('blocked');
     // The capability blocker keeps its cause and fix in next_action (#676 finding 1).
     expect(state.next_action).toBe(
-      'resolve blockers: capability_registry:invalid INVALID_JSON: invalid JSON: Unexpected token; fix: repo-harness run capability-resolver validate',
+      'resolve blockers: capability_registry:invalid INVALID_JSON: invalid JSON: Unexpected token; fix: rh run capability-resolver validate',
     );
     expect(state.blockers).toEqual([
       'conflict:worktree_owner',
@@ -111,7 +111,7 @@ describe('pure Effective State projection', () => {
     expect(state.blockers).not.toContain('capability_registry:invalid');
     expect(state.phase).toBe('blocked');
     expect(state.next_action).toBe(
-      'resolve blockers: capability_ownership:unavailable ARCHCONTEXT_RESOLVE_FAILED: package-local archctx@0.7.2 is missing from the consumer dependency tree; fix: repo-harness update',
+      'resolve blockers: capability_ownership:unavailable ARCHCONTEXT_RESOLVE_FAILED: package-local archctx@0.7.2 is missing from the consumer dependency tree; fix: rh update',
     );
   });
 
@@ -123,7 +123,7 @@ describe('pure Effective State projection', () => {
     const state = projectEffectiveState(input({ capabilityBlocker: rejected }));
     expect(state.blockers).toEqual(['capability_registry:invalid']);
     expect(state.next_action).toStartWith('resolve blockers: capability_registry:invalid ARCHCONTEXT_MODEL_REJECTED: archctx resolve rejected the model: AC_X: boom; fix: ');
-    expect(state.next_action).not.toContain('repo-harness update');
+    expect(state.next_action).not.toContain('rh update');
   });
 
   test('ordinary blockers keep the plain next action', () => {

@@ -41,7 +41,7 @@ describe("run command", () => {
 
       expect(res.status).toBe(2);
       expect(res.stderr).toContain('helper "run-bounded-verifier-command" is retired');
-      expect(res.stderr).toContain("repo-harness run verification-plan execute");
+      expect(res.stderr).toContain("rh run verification-plan execute");
       expect(existsSync(marker)).toBe(false);
       expect(existsSync(result)).toBe(false);
       expect(resolveHelper("run-bounded-verifier-command")).toBeNull();
@@ -64,7 +64,7 @@ describe("run command", () => {
         env: packageRuntimeEnv(),
       });
       expect(res.status).toBe(2);
-      expect(res.stderr).toContain('repo-harness run: unknown helper "new-plan"');
+      expect(res.stderr).toContain('rh run: unknown helper "new-plan"');
       expect(res.stderr).toContain("known helpers:");
       expect(resolveHelper("new-plan")).toBeNull();
       expect(resolveHelper("verify-contract")).toBeNull();
@@ -334,7 +334,7 @@ describe("run command", () => {
         env: packageRuntimeEnv(),
       });
       expect(res.status).toBe(2);
-      expect(res.stderr).toContain('repo-harness run: unknown helper "prepare-handoff"');
+      expect(res.stderr).toContain('rh run: unknown helper "prepare-handoff"');
       expect(existsSync(join(tmp, ".ai/harness/handoff"))).toBe(false);
       for (const id of ["prepare-handoff", "prepare-codex-handoff", "codex-handoff-resume", "recovery-view-cli"]) {
         expect(resolveHelper(id)).toBeNull();

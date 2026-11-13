@@ -63,7 +63,7 @@ describe('continuation envelope routes', () => {
       setup: (cwd: string) => branchWithIssue(cwd),
       expected: {
         route: 'continue',
-        command: 'repo-harness state resolve --json',
+        command: 'rh state resolve --json',
         reason: `next_action:${ISSUE_NEXT_ACTION}`,
       },
     },

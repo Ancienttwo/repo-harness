@@ -261,7 +261,7 @@ describe('status command (Phase 1C)', () => {
             nodePath: null,
             command: null,
             version: null,
-            reason: 'global architecture configuration is missing; run repo-harness update once',
+            reason: 'global architecture configuration is missing; run rh update once',
           },
           codeFacts: { requirement: 'required', state: 'not-evaluated' },
           daemonRuntime: { state: 'not-evaluated' },
@@ -431,7 +431,7 @@ describe('status command (Phase 1C)', () => {
         recorded: 'invalid',
         code: 'install_state_protocol_retired',
       });
-      expect(formatStatus(retired, false)).toContain('bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version 0.25.4');
+      expect(formatStatus(retired, false)).toContain('bun add -g repo-harness@0.25.4 --no-cache && rh update --version 0.25.4');
     });
   });
 

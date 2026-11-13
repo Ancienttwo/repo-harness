@@ -128,7 +128,7 @@ function bare(args: string[]): unknown[] {
   return args.slice(UNSET_SEAT.length);
 }
 
-describe("repo-harness seats argv", () => {
+describe("rh seats argv", () => {
   test("a Pi seat launch refuses a shell that fails the heredoc probe, passes a good one and reports a shell that cannot start", () => {
     const seats = { ...DEFAULT_SEATS_CONFIG, "worker-light": { runtime: "pi", model: null, effort: null, tools: DEFAULT_SEATS_CONFIG.worker.tools, fleet: [] } };
     withHome(seats, home => {
@@ -179,7 +179,7 @@ describe("repo-harness seats argv", () => {
     withHome(seats, home => {
       const result = argv(home, "worker", "--json");
       expect([result.status, result.stdout]).toEqual([1, ""]);
-      expect(JSON.parse(result.stderr)).toMatchObject({ error: "seats_config_migration_required", next_action: "repo-harness update" });
+      expect(JSON.parse(result.stderr)).toMatchObject({ error: "seats_config_migration_required", next_action: "rh update" });
     });
   });
 
@@ -244,7 +244,7 @@ describe("repo-harness seats argv", () => {
         expect(result.status, result.stderr).toBe(0);
         const value = JSON.parse(result.stdout);
         expect([value.name, value.tab]).toEqual([`rh-${role}-1925`, "review"]);
-        expect(value.brief).toContain("Do not edit files, commit or push. Do not write to GitHub, with one exception: publish your own round with `repo-harness review publish --pr <number> --receipt <path>`. Run no other GitHub write. Report the verdict first");
+        expect(value.brief).toContain("Do not edit files, commit or push. Do not write to GitHub, with one exception: publish your own round with `rh review publish --pr <number> --receipt <path>`. Run no other GitHub write. Report the verdict first");
         expect(value.brief).not.toContain("Do not write to GitHub.");
         expect(value.brief).not.toContain("You are a worker seat");
         if (seat === "gatekeeper") {
@@ -784,7 +784,7 @@ describe("repo-harness seats argv", () => {
   });
 });
 
-describe("repo-harness seats handoff (#2175)", () => {
+describe("rh seats handoff (#2175)", () => {
   test("it fails closed without a seat identity, a session record or a context, else records the request and prints the hook steps", () => {
     const home = mkdtempSync(join(tmpdir(), "seats-handoff-"));
     // The seat directory is fixed under /tmp; a repository id per run keeps the runs apart.
@@ -835,7 +835,7 @@ describe("repo-harness seats handoff (#2175)", () => {
   });
 });
 
-describe("repo-harness seats reset (#1972)", () => {
+describe("rh seats reset (#1972)", () => {
   let runs = 0;
   const ended = { ended: true, reason: "status", turn: 3, status: "idle" };
   const timeouts = { signalMs: 300, compactSignalMs: 300, evidenceMs: 300, exitMs: 300, pollMs: 20 };
@@ -1174,10 +1174,10 @@ fs.writeFileSync("${home}/state.json", JSON.stringify(st));
 
   test("a relaunch argv that cannot be built types no /exit and leaves the session running", withReset(async ({ reset, state, sends, log }) => {
     state({ signal: false });
-    const relaunch = async (): Promise<SeatRelaunch> => { throw new Error("The stored seats section needs a one-shot migration. Run repo-harness update."); };
+    const relaunch = async (): Promise<SeatRelaunch> => { throw new Error("The stored seats section needs a one-shot migration. Run rh update."); };
     expect(await reset({ relaunch })).toEqual({ error: "resume_not_sent", outcome: "uncertain" });
     expect([sends(), log().at(-1)?.kind, log().at(-1)?.detail]).toEqual([Array(4).fill("/clear"), "relaunch_failed",
-      "relaunch_argv_failed: The stored seats section needs a one-shot migration. Run repo-harness update"]);
+      "relaunch_argv_failed: The stored seats section needs a one-shot migration. Run rh update"]);
   }));
 
   test("a reset request with another effective model starts the seat again from its argv; the same model, a failed launch, a stale quota reading or compact types the command (#2633)", withReset(async ({ home, handoff, reset, sends, log }) => {

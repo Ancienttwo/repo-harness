@@ -428,7 +428,7 @@ describe('circuit breaker scope', () => {
   }, 30_000);
 });
 
-const REPAIR_COMMAND = 'repo-harness state attempt-repair --json';
+const REPAIR_COMMAND = 'rh state attempt-repair --json';
 const QUARANTINE = /^\.ai\/harness\/runs\/continuation\/attempts\.torn-\d+$/;
 
 interface RepairDocument {

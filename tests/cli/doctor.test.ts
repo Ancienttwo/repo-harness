@@ -31,7 +31,7 @@ const DOCTOR_CHECK_TIMEOUT_MS = 15000;
 const FULL_PLUGINS: readonly PluginId[] = ['architecture', 'cross-review', 'mcp', 'operator', 'peer-runtime', 'platform', 'product', 'strategy-memory'];
 // No ledger: the doctor judges the install default `all`, so the repair is a bare install.
 const DEFAULT_FIX = installSelectionCommand('all');
-const DEFAULT_FIX_LINE = /run: repo-harness install(?:;|$)/m;
+const DEFAULT_FIX_LINE = /run: rh install(?:;|$)/m;
 
 function withEnv(values: Record<string, string | undefined>, fn: () => void): void {
   const previous = new Map<string, string | undefined>();
@@ -175,7 +175,7 @@ describe('doctor command (Phase 1C)', () => {
       const relay = (mode: string) => { let result; withEnv({ ...exported, PATH: `${bin}:${process.env.PATH}`, REPO_HARNESS_HOME: rhHome, FIXTURE_HC: mode }, () => { result = notifyRelayDoctorCheck(); }); return result; };
       expect(relay('live')).toMatchObject({ status: 'ok', detail: 'Relay terminal rh-notify-relay is live.' });
       expect(relay('stopped')).toMatchObject({ status: 'warn',
-        detail: 'Relay terminal rh-notify-relay is not live (relay_stopped). Notifications are paused. Run: repo-harness herdr notify start' });
+        detail: 'Relay terminal rh-notify-relay is not live (relay_stopped). Notifications are paused. Run: rh herdr notify start' });
       expect(relay('fail')).toMatchObject({ status: 'warn', detail: 'hc did not answer, so the relay state is unknown (hc_unavailable).' });
       expect(fs.readFileSync(path.join(home, 'hc-env'), 'utf8')).toBe('');
       expect(ids).toContain('cli-on-path');
@@ -194,13 +194,13 @@ describe('doctor command (Phase 1C)', () => {
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
-  test('cli-on-path resolves repo-harness from PATH without requiring Unix which', () => {
+  test('cli-on-path resolves rh from PATH without requiring Unix which and warns on the retired command', () => {
     withTempHome('repo-harness-doctor', () => {
       const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-doctor-path-')));
       try {
         const fakeBin = path.join(tmp, 'bin');
         fs.mkdirSync(fakeBin, { recursive: true });
-        const fakeCli = path.join(fakeBin, 'repo-harness');
+        const fakeCli = path.join(fakeBin, 'rh');
         writeExecutable(fakeCli, '#!/bin/bash\nexit 0\n');
         const fakeHook = path.join(fakeBin, 'repo-harness-hook');
         writeExecutable(fakeHook, '#!/bin/bash\nexit 0\n');
@@ -210,6 +210,12 @@ describe('doctor command (Phase 1C)', () => {
           const pathCheck = r.checks.find((c) => c.id === 'cli-on-path')!;
           expect(pathCheck.status).toBe('ok');
           expect(pathCheck.detail).toBe(`${fakeCli}; repo-harness-hook: ${fakeHook}`);
+        });
+        writeExecutable(path.join(fakeBin, 'repo-harness'), '#!/bin/bash\nexit 0\n');
+        withEnv({ PATH: fakeBin }, () => {
+          const pathCheck = runDoctor(CLI_PORTS.doctor, tmp).checks.find((c) => c.id === 'cli-on-path')!;
+          expect(pathCheck.status).toBe('warn');
+          expect(pathCheck.detail).toBe(`The retired command repo-harness is still on PATH at ${path.join(fakeBin, 'repo-harness')}; run rh update, or remove it if update reports it as not managed.`);
         });
       } finally {
         fs.rmSync(tmp, { recursive: true, force: true });
@@ -221,7 +227,7 @@ describe('doctor command (Phase 1C)', () => {
     withTempHome('repo-harness-doctor', home => {
       const bin = path.join(home, 'bin');
       fs.mkdirSync(bin);
-      writeExecutable(path.join(bin, 'repo-harness'), '#!/bin/sh\nexit 0\n');
+      writeExecutable(path.join(bin, 'rh'), '#!/bin/sh\nexit 0\n');
       const hooks = buildManagedHooks('codex');
       hooks.Stop[0].hooks[0].timeout = 150;
       hooks.UserPromptSubmit.push({ hooks: [{ type: 'command', timeout: 30,
@@ -238,8 +244,8 @@ describe('doctor command (Phase 1C)', () => {
         expect(adapter.status).toBe('warn');
         expect(adapter.detail).toContain('UserPromptSubmit.default unexpected');
         expect(adapter.detail).toContain('Stop.default timeout expected=30 actual=150');
-        expect(adapter.detail).toContain('repo-harness install --target codex --location global');
-        expect(adapter.detail).toContain('repo-harness run <helper>');
+        expect(adapter.detail).toContain('rh install --target codex --location global');
+        expect(adapter.detail).toContain('rh run <helper>');
         withEnv({ BUN_INSTALL: path.join(home, 'missing-bun') }, () => {
           const unavailable = runDoctor(CLI_PORTS.doctor, home, 'codex');
           for (const id of ['codex-adapter', 'security-config']) {
@@ -331,7 +337,7 @@ describe('doctor command (Phase 1C)', () => {
       expect(invalid.status).toBe('fail');
       expect(invalid.detail).toContain('archcontext authority does not load: AC_SCHEMA_INVALID');
       expect(invalid.detail).toContain('capability.a.b $.status required');
-      expect(invalid.detail).toContain('Next: run repo-harness run capability-resolver validate');
+      expect(invalid.detail).toContain('Next: run rh run capability-resolver validate');
 
       // A declared newer minimum names the upgrade, not the parse error.
       fs.writeFileSync(path.join(repoRoot, '.ai/harness/workflow-contract.json'), `${JSON.stringify({ minimum_harness_version: '999.0.0' })}\n`);
@@ -380,7 +386,7 @@ describe('doctor command (Phase 1C)', () => {
         const r = runDoctor(CLI_PORTS.doctor);
         const update = r.checks.find((c) => c.id === 'cli-update')!;
         expect(update.status).toBe('na');
-        expect(update.detail).toContain('Agent can run REPO_HARNESS_CHECK_UPDATES=1 repo-harness doctor --json');
+        expect(update.detail).toContain('Agent can run REPO_HARNESS_CHECK_UPDATES=1 rh doctor --json');
       });
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
@@ -393,7 +399,7 @@ describe('doctor command (Phase 1C)', () => {
         expect(update.status).toBe('warn');
         expect(update.detail).toContain('current=');
         expect(update.detail).toContain('latest=99.0.0');
-        expect(update.detail).toContain('agent_action=repo-harness update --target both');
+        expect(update.detail).toContain('agent_action=rh update --target both');
       });
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
@@ -413,7 +419,7 @@ describe('doctor command (Phase 1C)', () => {
           const r = runDoctor(CLI_PORTS.doctor, process.cwd(), target);
           const update = r.checks.find((c) => c.id === 'cli-update')!;
           expect(update.status).toBe('warn');
-          expect(update.detail).toContain(`agent_action=repo-harness update --target ${target}`);
+          expect(update.detail).toContain(`agent_action=rh update --target ${target}`);
         }
       });
     });
@@ -622,7 +628,7 @@ describe('doctor command (Phase 1C)', () => {
       expect(codexMcp.status).toBe('ok');
       expect(claudeMcp.status).toBe('warn');
       expect(claudeMcp.detail).toContain('alwaysLoad is not true');
-      expect(claudeMcp.detail).toContain('repo-harness tools configure codegraph --target claude --location global');
+      expect(claudeMcp.detail).toContain('rh tools configure codegraph --target claude --location global');
       expect(index.status).toBe('ok');
 
       const log = fs.readFileSync(logFile, 'utf-8');
@@ -642,7 +648,7 @@ describe('doctor command (Phase 1C)', () => {
         .filter((entry: { id: string }) => ['codegraph', 'codegraph-readiness', 'codex-codegraph-mcp', 'claude-codegraph-mcp', 'codegraph-index'].includes(entry.id))
         .map(({ id, status, detail }: { id: string; status: string; detail: string }) => ({ id, status, detail }));
       expect(unselected).toEqual([{ id: 'codegraph', status: 'na',
-        detail: 'the architecture plugin is not selected; run: repo-harness install --plugins architecture,product' }]);
+        detail: 'the architecture plugin is not selected; run: rh install --plugins architecture,product' }]);
       expect(fs.existsSync(logFile)).toBe(false);
     } finally {
       fs.rmSync(envRoot.root, { recursive: true, force: true });
@@ -704,7 +710,7 @@ describe('doctor skill projection', () => {
         const preserve = state === 'missing' || state === 'source missing' ? '' : `preserve or move ${projection.destination}, then `;
         problems.push(`expected ${projection.source}; ${preserve}run: ${fix}`);
       }
-      if (ledgerDrift) problems.push(`ledger drift; inspect: repo-harness install --state; then run: ${fix}`);
+      if (ledgerDrift) problems.push(`ledger drift; inspect: rh install --state; then run: ${fix}`);
       return `${projection.destination}: ${shown}${problems.length > 0 ? '; ' + problems.join('; ') : ''}`;
     };
     const crossReview = 'repo-harness-cross-review';
@@ -766,7 +772,7 @@ describe('doctor skill projection', () => {
         if (ledger) {
           expect(detailLines[projections.length]).toContain('"surface_drift":["' + driftedDestination + '"]');
         } else {
-          expect(detailLines[projections.length]).toBe('install ledger: missing; run: repo-harness install');
+          expect(detailLines[projections.length]).toBe('install ledger: missing; run: rh install');
         }
         expect(result.status).toBe('warn');
         expect(JSON.stringify(rows)).not.toContain(home);
@@ -828,7 +834,7 @@ describe('doctor skill projection', () => {
     const result = checkSkillProjection('both', f.env);
     expect(result.status).toBe('warn');
     expect(result.detail).toContain('installedCopyExcludes');
-    expect(result.detail).toContain('run: repo-harness upgrade');
+    expect(result.detail).toContain('run: rh upgrade');
     expect(fs.readFileSync(contractPath, 'utf8')).toBe(before);
   }));
 
@@ -842,7 +848,7 @@ describe('doctor skill projection', () => {
     const result = checkSkillProjection('both', f.env);
     expect(result.status).toBe('warn');
     expect(result.detail).toContain('installedCopyIncludes');
-    expect(result.detail).toContain('run: repo-harness update; then run: repo-harness upgrade');
+    expect(result.detail).toContain('run: rh update; then run: rh upgrade');
     expect(fs.readFileSync(contractPath, 'utf8')).toBe(before);
   }));
 
@@ -877,7 +883,7 @@ describe('doctor skill projection', () => {
     const result = checkSkillProjection('codex', f.env);
     expect(result.status).toBe('fail');
     expect(result.detail).toContain('invalid installed copy exclusions');
-    expect(result.detail).toContain('repo-harness install --state');
+    expect(result.detail).toContain('rh install --state');
   }));
 
   test('reports ledger type drift and installStateStatus drift without changing the ledger', () => withTempHome('repo-harness-doctor', home => {
@@ -894,7 +900,7 @@ describe('doctor skill projection', () => {
     expect(result.status).toBe('warn');
     expect(result.detail).toContain(`${f.destination}: ok link -> ${f.source}; ledger drift`);
     expect(result.detail).toContain('"surface_drift":["' + f.destination + '"]');
-    expect(result.detail).toContain('repo-harness install --state');
+    expect(result.detail).toContain('rh install --state');
     expect(fs.readFileSync(ledger, 'utf8')).toBe(before);
     // Keep the on-disk type as symlink, but change its recorded target.
     const changed = JSON.parse(before);
@@ -936,10 +942,10 @@ describe('doctor skill projection', () => {
 test('each skill-projection repair command keeps the recorded selection and passes the install selection gate', () => {
   const rows: readonly { readonly selection: 'all' | readonly PluginId[]; readonly plugins: readonly PluginId[]; readonly pi?: true; readonly repair: string }[] = [
     // `all` on a host without pi runs peer-runtime, which has no Codex host: a `--target codex` repair would fail the gate.
-    { selection: 'all', plugins: FULL_PLUGINS, repair: 'repo-harness install' },
-    { selection: ['cross-review', 'product'], plugins: ['cross-review', 'product'], repair: 'repo-harness install --plugins cross-review,product' },
-    { selection: [], plugins: [], repair: 'repo-harness install --no-plugins' },
-    { selection: ['pi', 'product'], plugins: ['pi', 'product'], pi: true, repair: 'repo-harness install --plugins pi,product' },
+    { selection: 'all', plugins: FULL_PLUGINS, repair: 'rh install' },
+    { selection: ['cross-review', 'product'], plugins: ['cross-review', 'product'], repair: 'rh install --plugins cross-review,product' },
+    { selection: [], plugins: [], repair: 'rh install --no-plugins' },
+    { selection: ['pi', 'product'], plugins: ['pi', 'product'], pi: true, repair: 'rh install --plugins pi,product' },
   ];
   for (const row of rows) withTempHome('repo-harness-doctor', home => {
     const tools = path.join(home, 'tool-bin');
@@ -959,7 +965,7 @@ test('each skill-projection repair command keeps the recorded selection and pass
         content_hash: null, managed_marker: null, symlink_target: path.join(home, '.bun/install/global/node_modules/repo-harness') }] }));
     const label = JSON.stringify(row.selection);
     const result = checkSkillProjection('codex', env);
-    const repairs = [...new Set([...result.detail.matchAll(/run: (repo-harness install[^;\n]*)/g)].map(match => match[1]!.trim()))];
+    const repairs = [...new Set([...result.detail.matchAll(/run: (rh install[^;\n]*)/g)].map(match => match[1]!.trim()))];
     expect(repairs, label).toEqual([row.repair]);
     // The repair runs the install action's selection resolution and its availability gate.
     const dryRun = spawnSync(process.execPath, [path.join(import.meta.dir, '..', '..', 'src/cli/index.ts'), ...row.repair.split(' ').slice(1), '--dry-run', '--json'], { cwd: home, env, encoding: 'utf-8' });
@@ -978,7 +984,7 @@ describe('legacy workflow-state diagnostic', () => {
       withEnv({ PATH: '/usr/bin:/bin', REPO_HARNESS_CHECK_UPDATES: '0' }, () => {
         const check = runDoctor(CLI_PORTS.doctor, path.dirname(legacy)).checks.find((check) => check.id === 'legacy-workflow-state');
         expect(check?.status).toBe('warn');
-        expect(check?.detail).toContain('repo-harness run <helper>');
+        expect(check?.detail).toContain('rh run <helper>');
         expect(check?.detail).not.toContain('hook-lib');
         expect(check?.detail).toContain('back up');
         expect(check?.detail).toContain('edited copies');

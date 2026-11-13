@@ -17,8 +17,8 @@ function expectReferenceConfigStub(cwd: string, docId: string): void {
   const content = readFileSync(join(cwd, "docs/reference-configs", `${docId}.md`), "utf-8");
   expect(content).toContain(REFERENCE_STUB_MARKER);
   expect(content).toContain(`> **Doc ID**: ${docId}`);
-  expect(content).toContain(`repo-harness docs path ${docId}`);
-  expect(content).toContain(`repo-harness docs show ${docId}`);
+  expect(content).toContain(`rh docs path ${docId}`);
+  expect(content).toContain(`rh docs show ${docId}`);
 }
 
 describe("create-project-dirs runtime smoke", () => {
@@ -86,7 +86,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "tasks/workstreams"))).toBe(false);
       expect(existsSync(join(cwd, "tasks/current.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/prds/prd.template.md"))).toBe(true);
-      // repo-harness init (standard-plan.ts) is the only writer of root CLAUDE.md and AGENTS.md.
+      // rh init (standard-plan.ts) is the only writer of root CLAUDE.md and AGENTS.md.
       expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
       expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
       const gitignore = readFileSync(join(cwd, ".gitignore"), "utf-8");
@@ -229,7 +229,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(Object.hasOwn(workflowContract.helpers, "compatibilityDirectory")).toBe(false);
       expect(workflowContract.documentation.referenceConfigs.source).toBe("user-level-runtime-docs");
       expect(workflowContract.documentation.referenceConfigs.repoStubDirectory).toBe("docs/reference-configs");
-      expect(workflowContract.documentation.referenceConfigs.resolverCommand).toBe("repo-harness docs path <doc-id>");
+      expect(workflowContract.documentation.referenceConfigs.resolverCommand).toBe("rh docs path <doc-id>");
       expect(workflowContract.documentation.referenceConfigs.stubMarker).toBe(REFERENCE_STUB_MARKER);
       expect(workflowContract.helpers.scripts).toContain("check-agent-tooling.sh");
       expect(workflowContract.helpers.scripts).not.toContain("check-brain-manifest.sh");
@@ -299,7 +299,7 @@ describe("create-project-dirs runtime smoke", () => {
       const contextMap = JSON.parse(readFileSync(join(cwd, ".ai/context/context-map.json"), "utf-8"));
       expect(contextMap.root_context_files).not.toContain("docs/researches/");
       expect(contextMap.root_context_files).toContain(".ai/context/capabilities.json");
-      expect(contextMap.functional_block_selector.script).toBe("repo-harness run select-agent-context-blocks");
+      expect(contextMap.functional_block_selector.script).toBe("rh run select-agent-context-blocks");
       expect(contextMap.lsp_profiles.default).toBe("typescript-lsp");
       expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).not.toContain("apps/*/AGENTS.md");
       expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).not.toContain("tasks/workstreams/**/*.md");
@@ -318,13 +318,13 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(ROOT, ".ai/context/capabilities.json"))).toBe(false);
 
       const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf-8"));
-      expect(pkg.scripts["check:context-files"]).toBe("repo-harness run check-context-files");
-      expect(pkg.scripts["check:deploy-sql"]).toBe("repo-harness run check-deploy-sql-order");
+      expect(pkg.scripts["check:context-files"]).toBe("rh run check-context-files");
+      expect(pkg.scripts["check:deploy-sql"]).toBe("rh run check-deploy-sql-order");
       expect(pkg.scripts["check:architecture-sync"]).toBeUndefined();
       expect(pkg.scripts["check:task-sync"]).toBeUndefined();
       expect(pkg.scripts["check:task-workflow"]).toBeUndefined();
-      expect(pkg.scripts["check:brain"]).toBe("repo-harness brain check");
-      expect(pkg.scripts["sync:brain"]).toBe("repo-harness brain sync");
+      expect(pkg.scripts["check:brain"]).toBe("rh brain check");
+      expect(pkg.scripts["sync:brain"]).toBe("rh brain sync");
       expect(pkg.scripts["check:brain-manifest"]).toBeUndefined();
       expect(pkg.scripts["sync:brain-docs"]).toBeUndefined();
       expect(existsSync(join(cwd, "scripts/contract-worktree.sh"))).toBe(false);
@@ -372,7 +372,7 @@ describe("create-project-dirs runtime smoke", () => {
       const contextMap = JSON.parse(readFileSync(join(cwd, ".ai/context/context-map.json"), "utf-8"));
       const capabilities = JSON.parse(readFileSync(join(cwd, ".ai/context/capabilities.json"), "utf-8"));
       expect(capabilities.capabilities.map((entry: { id: string }) => entry.id)).toContain("apps-web");
-      expect(contextMap.functional_block_selector.script).toBe("repo-harness run select-agent-context-blocks");
+      expect(contextMap.functional_block_selector.script).toBe("rh run select-agent-context-blocks");
       const webClaudeEntry = contextMap.discoverable_contexts.find((entry: { path: string }) => entry.path === "apps/web/CLAUDE.md");
       expect(webClaudeEntry.lsp_profile).toBe("typescript-lsp");
       expect(webClaudeEntry.doc_scope).toBe("capability-contract");
@@ -637,7 +637,7 @@ describe("create-project-dirs runtime smoke", () => {
     }
   });
 
-  test("a scaffold has no policy until repo-harness init writes every branch key from git", () => {
+  test("a scaffold has no policy until rh init writes every branch key from git", () => {
     const cwd = mkdtempSync(join(tmpdir(), "scaffold-then-init-"));
     try {
       expect(spawnSync("git", ["init", "-q", "-b", "master"], { cwd }).status).toBe(0);
@@ -680,7 +680,7 @@ describe("create-project-dirs runtime smoke", () => {
       );
 
       expect(res.status).toBe(0);
-      expect(res.stdout).toContain("repo-harness run install-agent-fleet");
+      expect(res.stdout).toContain("rh run install-agent-fleet");
       expect(existsSync(join(home, ".claude", "agents"))).toBe(false);
       expect(existsSync(join(home, ".codex", "agents"))).toBe(false);
     } finally {

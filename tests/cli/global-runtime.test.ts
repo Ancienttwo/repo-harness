@@ -203,19 +203,19 @@ describe('update leftover summary', () => {
 
   test('an updater forwards the summary line of a newer package whose upgrade --json shape changed', () => {
     withFakeBun(() => [
-      'if [[ " $* " == *" --summary-line "* ]]; then echo \'3 leftovers (1 removable). Run: repo-harness upgrade\'; exit 1; fi',
+      'if [[ " $* " == *" --summary-line "* ]]; then echo \'3 leftovers (1 removable). Run: rh upgrade\'; exit 1; fi',
       'echo \'{"leftovers":{"count":3}}\'',
       'exit 1',
       '',
     ].join('\n'), () => {
-      expect(updateLeftoverSummary(tmpdir(), false)).toBe('3 leftovers (1 removable). Run: repo-harness upgrade');
+      expect(updateLeftoverSummary(tmpdir(), false)).toBe('3 leftovers (1 removable). Run: rh upgrade');
     });
   });
 
   test('an updater reports a package that prints no summary line as a failed check', () => {
     withFakeUpgrade('', 'error: unknown option --summary-line token=hunter2', () => {
       expect(updateLeftoverSummary(tmpdir(), false))
-        .toBe('Leftover check failed: error: unknown option --summary-line token=[redacted]. Run: repo-harness upgrade');
+        .toBe('Leftover check failed: error: unknown option --summary-line token=[redacted]. Run: rh upgrade');
     });
   });
 
@@ -229,7 +229,7 @@ describe('update leftover summary', () => {
       process.env.HOME = join(root, 'home');
       process.env.REPO_HARNESS_HOME = join(root, 'home', '.repo-harness');
       delete process.env.REPO_HARNESS_BUN_EXECUTABLE;
-      expect(updateLeftoverSummary(join(root, 'cwd'), false)).toBe('0 leftovers (0 removable). Run: repo-harness upgrade');
+      expect(updateLeftoverSummary(join(root, 'cwd'), false)).toBe('0 leftovers (0 removable). Run: rh upgrade');
     } finally {
       for (const key of keys) {
         if (previous[key] === undefined) delete process.env[key];
@@ -254,12 +254,12 @@ describe('update leftover summary', () => {
       action: index === 0 ? 'remove' : 'report',
       reason: 'Fixture leftover for the update summary line.',
     }));
-    expect(formatUpgradeSummaryLine(checkResult({ items }))).toBe('400 leftovers (1 removable). Run: repo-harness upgrade');
+    expect(formatUpgradeSummaryLine(checkResult({ items }))).toBe('400 leftovers (1 removable). Run: rh upgrade');
   });
 
   test('summary line reports a failed check as a warning with redacted error text', () => {
     expect(formatUpgradeSummaryLine(checkResult({ error: 'catalog failed token=hunter2' })))
-      .toBe('Leftover check failed: catalog failed token=[redacted]. Run: repo-harness upgrade');
+      .toBe('Leftover check failed: catalog failed token=[redacted]. Run: rh upgrade');
   });
 
   test('summary line reports a removable legacy sibling worktree as pending, not failed', () => {
@@ -268,7 +268,7 @@ describe('update leftover summary', () => {
       { path: '/fixture/repo-squash', branch: 'feat/squash', head: 'b'.repeat(40), verdict: 'keep', reason: 'merge proof needs the provider; checked only with --apply', rebuild: null },
     ];
     expect(formatUpgradeSummaryLine(checkResult({ legacyWorktrees: { candidates } }))).toBe(
-      '0 leftovers (0 removable). Run: repo-harness upgrade; 1 legacy sibling worktree can be removed; run repo-harness upgrade --scope project --apply',
+      '0 leftovers (0 removable). Run: rh upgrade; 1 legacy sibling worktree can be removed; run rh upgrade --scope project --apply',
     );
   });
 
@@ -276,10 +276,10 @@ describe('update leftover summary', () => {
     const candidate = (name: string, verdict: LegacyWorktreeCandidate['verdict']): LegacyWorktreeCandidate => ({ path: `/fixture/${name}`, branch: `feat/${name}`, head: 'c'.repeat(40), verdict, reason: 'fixture', rebuild: null });
     const hint = (candidates: LegacyWorktreeCandidate[]) => formatUpgradeSummaryLine(checkResult({ legacyWorktrees: { candidates } }));
     expect(hint([candidate('old', 'remove'), candidate('squash', 'deferred'), candidate('dirty', 'keep')])).toBe(
-      '0 leftovers (0 removable). Run: repo-harness upgrade; 2 legacy sibling worktrees can be removed (1 needs provider proof); run repo-harness upgrade --scope project --apply',
+      '0 leftovers (0 removable). Run: rh upgrade; 2 legacy sibling worktrees can be removed (1 needs provider proof); run rh upgrade --scope project --apply',
     );
     expect(hint([candidate('a', 'deferred'), candidate('b', 'deferred')])).toBe(
-      '0 leftovers (0 removable). Run: repo-harness upgrade; 2 legacy sibling worktrees can be removed (2 need provider proof); run repo-harness upgrade --scope project --apply',
+      '0 leftovers (0 removable). Run: rh upgrade; 2 legacy sibling worktrees can be removed (2 need provider proof); run rh upgrade --scope project --apply',
     );
   });
 
@@ -292,7 +292,7 @@ describe('update leftover summary', () => {
     ];
     withFakeUpgrade(`${JSON.stringify({ revision: `sha256:${'0'.repeat(64)}`, apply: false, exitCode: 1, repos })}\n`, '', () => {
       expect(updateRegisteredUpgradeSummary(tmpdir(), false)).toBe(
-        'Registered repos: 1 of 4 have pending project upgrade work; 1 skipped; 1 failed. Preview: repo-harness upgrade --registered',
+        'Registered repos: 1 of 4 have pending project upgrade work; 1 skipped; 1 failed. Preview: rh upgrade --registered',
       );
     });
   });
@@ -300,12 +300,12 @@ describe('update leftover summary', () => {
   test('registered summary says when the count cannot be computed instead of printing a number', () => {
     withFakeUpgrade('{"revision":null,"apply":false,"exitCode":2,"repos":[],"error":"registry authority is not valid JSON"}\n', '', () => {
       expect(updateRegisteredUpgradeSummary(tmpdir(), false)).toBe(
-        'Registered repo upgrade check could not be computed: registry authority is not valid JSON. Preview: repo-harness upgrade --registered',
+        'Registered repo upgrade check could not be computed: registry authority is not valid JSON. Preview: rh upgrade --registered',
       );
     });
     withFakeUpgrade('not json\n', '', () => {
       expect(updateRegisteredUpgradeSummary(tmpdir(), false)).toBe(
-        'Registered repo upgrade check could not be computed: upgrade --registered --json returned no repo list. Preview: repo-harness upgrade --registered',
+        'Registered repo upgrade check could not be computed: upgrade --registered --json returned no repo list. Preview: rh upgrade --registered',
       );
     });
   });
@@ -330,7 +330,7 @@ describe('update registered repo summary', () => {
         else process.env[key] = f.env[key];
       }
       expect(updateRegisteredUpgradeSummary(root, false)).toBe(
-        'Registered repos: 1 of 3 have pending project upgrade work; 1 skipped. Preview: repo-harness upgrade --registered',
+        'Registered repos: 1 of 3 have pending project upgrade work; 1 skipped. Preview: rh upgrade --registered',
       );
       expect(readFileSync(f.registry, 'utf8')).toBe(registryBefore);
       expect([current, stale].map((repo) => [worktreeSnapshot(repo), git(f, repo, 'status', '--porcelain'), git(f, repo, 'rev-parse', 'HEAD')])).toEqual(before);
@@ -391,7 +391,7 @@ describe('runtime ignore rules step', () => {
       const linked = readFileSync(custom, 'utf8');
       const refusedRun = update();
       expect(refusedRun.steps.at(-1)).toEqual({ step: 'write runtime ignore rules', status: 'failed',
-        detail: `${defaultFile}: refusing symlink configuration path: ${defaultFile}; set core.excludesFile to the real file, then run repo-harness update again` });
+        detail: `${defaultFile}: refusing symlink configuration path: ${defaultFile}; set core.excludesFile to the real file, then run rh update again` });
       expect(readFileSync(custom, 'utf8')).toBe(linked);
       expect(refusedRun.steps.slice(0, -1)).toEqual(currentRun.steps.slice(0, -1));
       for (const dryRun of [true, false]) {

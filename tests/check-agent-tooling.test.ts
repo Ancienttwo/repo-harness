@@ -536,7 +536,7 @@ describe("check-agent-tooling", () => {
       expect(report.tools.obsidian_runtime_skills.mode).toBe("catalog-dependency-closure");
       expect(report.tools.obsidian_runtime_skills.readiness).toBe("advisory");
       expect(report.tools.obsidian_runtime_skills.install_command)
-        .toBe("repo-harness install --target both --with-obsidian-skills");
+        .toBe("rh install --target both --with-obsidian-skills");
       expect(readFileSync(SCRIPT, "utf-8")).not.toContain("OBSIDIAN_RUNTIME_SKILLS");
       expect(report.tools).not.toHaveProperty("gbrain");
       expect(report.tools.codegraph.status).toBe("partial");
@@ -561,7 +561,7 @@ describe("check-agent-tooling", () => {
       expect(textRes.stdout.toLowerCase()).not.toContain("gstack");
       expect(textRes.stdout).toContain("Waza [present]");
       expect(textRes.stdout).not.toContain("Official Codex plugin");
-      expect(textRes.stdout).toContain("repo-harness install --target both --with-obsidian-skills");
+      expect(textRes.stdout).toContain("rh install --target both --with-obsidian-skills");
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }
@@ -846,8 +846,8 @@ describe("check-agent-tooling", () => {
       expect(log).not.toContain("codegraph install");
       expect(report.tools.waza.stage_command).toContain("skills add tw93/Waza");
       expect(report.tools.waza.stage_command).not.toContain("skills update");
-      expect(report.tools.waza.sync_command).toBe("repo-harness install --target both");
-      expect(report.tools.waza.upgrade_command).toBe(`${report.tools.waza.stage_command} && repo-harness install --target both`);
+      expect(report.tools.waza.sync_command).toBe("rh install --target both");
+      expect(report.tools.waza.upgrade_command).toBe(`${report.tools.waza.stage_command} && rh install --target both`);
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }
@@ -1179,7 +1179,7 @@ describe("check-agent-tooling", () => {
       expect(report.tools.agent_fleet.hosts.codex.installed_agents).toEqual(MANAGED_AGENTS);
       expect(report.tools.agent_fleet.hosts.codex.missing_agents).toEqual([]);
       expect(report.tools.agent_fleet.source).toBe("package:agents/fleet");
-      expect(report.tools.agent_fleet.install_command).toBe("repo-harness run install-agent-fleet");
+      expect(report.tools.agent_fleet.install_command).toBe("rh run install-agent-fleet");
       expect(report.tools.agent_fleet.native_role_routing.status).toBe("unverified");
       expect(res.stderr).toContain("Codex native role routing is unverified");
     } finally {
@@ -1748,8 +1748,8 @@ describe("check-agent-tooling", () => {
 
   test("resolves and runs no archctx or CodeGraph binary unless the recorded selection includes the architecture plugin", () => {
     const cases: Array<{ name: string; plugins: readonly PluginId[] | null; unreadable?: true; caller?: true; providerLoadFails?: true; status: string; reason: string }> = [
-      { name: "no-state", plugins: null, status: "not-selected", reason: "the architecture plugin is not selected; run: repo-harness install" },
-      { name: "other-plugin", plugins: ["product"], status: "not-selected", reason: "the architecture plugin is not selected; run: repo-harness install" },
+      { name: "no-state", plugins: null, status: "not-selected", reason: "the architecture plugin is not selected; run: rh install" },
+      { name: "other-plugin", plugins: ["product"], status: "not-selected", reason: "the architecture plugin is not selected; run: rh install" },
       { name: "unreadable", plugins: null, unreadable: true, status: "selection-unreadable", reason: "the install selection cannot be read" },
       { name: "selected", plugins: ["architecture"], status: "present", reason: "" },
       // An install applies the selection before it records it; its plugin code passes the flag.
@@ -1866,7 +1866,7 @@ describe("check-agent-tooling", () => {
         version: packaged.version,
         required_version: JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")).dependencies.archctx,
         node_range: packaged.engines.node,
-        command_source: "repo-harness architecture-projection status --json",
+        command_source: "rh architecture-projection status --json",
       });
       expect(archctx.path_copy).toMatchObject({ bin_path: join(envRoot.fakeBin, "archctx"), real_path: join(packageRoot, 'bin', 'archctx'), version: "0.5.13", relation: "unrelated" });
       expect(archctx.warnings).toHaveLength(1);
@@ -1916,7 +1916,7 @@ describe("check-agent-tooling", () => {
       const archctx = JSON.parse(res.stdout).tools.archctx;
       const missing = join(realpathSync(packageRoot), "node_modules", "archctx", "bin", "archctx.mjs");
       expect(archctx.managed).toMatchObject({ status: "invalid", version: null, bin_path: null, reason: `package-local archctx@${packaged.version} binary is missing: ${missing}` });
-      expect(archctx.warnings).toContain(`Managed archctx is not usable: ${archctx.managed.reason}. Run repo-harness update.`);
+      expect(archctx.warnings).toContain(`Managed archctx is not usable: ${archctx.managed.reason}. Run rh update.`);
       // Capability status and PATH ownership are reported independently.
       expect(archctx.status).toBe("present");
       expect(archctx.path_copy).toMatchObject({ relation: "unrelated", fix_command: null });
@@ -1965,7 +1965,7 @@ test.each([
   ["present", `hc ${HC_MIN_VERSION}`, null, undefined],
   ["unavailable", "hc 0.1.15", null, `hc update --version ${HC_MIN_VERSION}`],
   ["unavailable", "not a version", null, undefined],
-  ["missing", null, null, "repo-harness update"],
+  ["missing", null, null, "rh update"],
   // The retired repository key is never read: the package pin decides.
   ["present", `hc ${HC_MIN_VERSION}`, "99.0.0", undefined],
   ["unavailable", "hc 0.1.15", "0.1.0", `hc update --version ${HC_MIN_VERSION}`],
@@ -1997,7 +1997,7 @@ test.each([
     } else {
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain(`hc client is ${status}; ${command ?? `install hc >=${HC_MIN_VERSION}`} and verify hc --version`);
-      expect(result.stderr).toContain("Herdr skill readiness is unavailable; install hc first, then run repo-harness update --target claude");
+      expect(result.stderr).toContain("Herdr skill readiness is unavailable; install hc first, then run rh update --target claude");
     }
   } finally { rmSync(fixture.root, { recursive: true, force: true }); }
 }, 20_000);

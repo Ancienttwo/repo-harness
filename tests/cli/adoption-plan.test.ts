@@ -136,7 +136,8 @@ describe("canonical adoption plan", () => {
         "docs/prds/prd.template.md": readFileSync(join(ROOT, "assets/templates/prd.template.md"), "utf8"),
         ".claude/templates/research.template.md": readFileSync(join(ROOT, "assets/templates/research.template.md"), "utf8"),
         ".claude/templates/spec.template.md": readFileSync(join(ROOT, "assets/templates/spec.template.md"), "utf8"),
-        ".claude/templates/design-brief.template.md": readFileSync(join(ROOT, "assets/templates/design-brief.template.md"), "utf8"),
+        // The released bytes: before 0.33.0 the template named the `repo-harness` command.
+        ".claude/templates/design-brief.template.md": readFileSync(join(ROOT, "assets/templates/design-brief.template.md"), "utf8").replace("`rh docs show", "`repo-harness docs show"),
         ".ai/hooks/README.md": "# Workflow Helpers\n\nHost events use the user-level `repo-harness-hook` typed runtime. Operator helpers run from the installed package: use `repo-harness run <helper>`. Init preserves legacy files under `.ai/hooks/lib/`. Run `repo-harness doctor` for migration guidance.\n",
       };
       for (const [path, content] of Object.entries(sources)) {
@@ -204,7 +205,7 @@ describe("canonical adoption plan", () => {
         expect(context).toContain("docs/architecture/archimap.html");
         expect(context).toContain("Keep four hard boundaries");
         expect(context).toContain("Review by risk");
-        expect(context).toContain("repo-harness run contract-worktree start --issue <number>");
+        expect(context).toContain("rh run contract-worktree start --issue <number>");
         expect(context).not.toContain("--plan <plan-file>");
         expect(context).not.toContain("Write a plan before");
       }
@@ -293,20 +294,20 @@ describe("canonical adoption plan", () => {
       const mixed = packageOperation();
       expect(mixed.content).toBe([
         "{", '\t"name": "fixture",', '    "scripts": {', '\t\t"test": "bun test",',
-        '\t\t"check:context-files": "repo-harness run check-context-files",',
-        '\t\t"check:brain": "repo-harness brain check",',
-        '\t\t"check:deploy-sql": "repo-harness run check-deploy-sql-order",',
-        '\t\t"sync:brain": "repo-harness brain sync"', "\t},", '    "private": true', "}", "",
+        '\t\t"check:context-files": "rh run check-context-files",',
+        '\t\t"check:brain": "rh brain check",',
+        '\t\t"check:deploy-sql": "rh run check-deploy-sql-order",',
+        '\t\t"sync:brain": "rh brain sync"', "\t},", '    "private": true', "}", "",
       ].join("\n"));
       writeFileSync(join(repo, "package.json"), mixed.content);
       expect(packageOperation().status).toBe("skipped");
 
       writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "fixture" }));
       expect(packageOperation().content).toBe(JSON.stringify({ name: "fixture", private: true, scripts: {
-        "check:brain": "repo-harness brain check",
-        "check:context-files": "repo-harness run check-context-files",
-        "check:deploy-sql": "repo-harness run check-deploy-sql-order",
-        "sync:brain": "repo-harness brain sync",
+        "check:brain": "rh brain check",
+        "check:context-files": "rh run check-context-files",
+        "check:deploy-sql": "rh run check-deploy-sql-order",
+        "sync:brain": "rh brain sync",
       } }));
     } finally {
       cleanup(repo);
@@ -340,8 +341,8 @@ describe("canonical adoption plan", () => {
       const generatedScripts = JSON.parse(readFileSync(join(generated, "package.json"), "utf-8")).scripts;
       expect(generatedScripts["check:brain-manifest"]).toBeUndefined();
       expect(generatedScripts["sync:brain-docs"]).toBeUndefined();
-      expect(generatedScripts["check:brain"]).toBe("repo-harness brain check");
-      expect(generatedScripts["sync:brain"]).toBe("repo-harness brain sync");
+      expect(generatedScripts["check:brain"]).toBe("rh brain check");
+      expect(generatedScripts["sync:brain"]).toBe("rh brain sync");
 
       writeFileSync(join(customized, "package.json"), JSON.stringify({ name: "fixture", scripts: {
         "check:brain-manifest": "repo-harness run check-brain-manifest",
@@ -351,8 +352,8 @@ describe("canonical adoption plan", () => {
       const customizedScripts = JSON.parse(readFileSync(join(customized, "package.json"), "utf-8")).scripts;
       expect(customizedScripts["check:brain-manifest"]).toBeUndefined();
       expect(customizedScripts["sync:brain-docs"]).toBe("bun run custom-sync-brain.ts");
-      expect(customizedScripts["check:brain"]).toBe("repo-harness brain check");
-      expect(customizedScripts["sync:brain"]).toBe("repo-harness brain sync");
+      expect(customizedScripts["check:brain"]).toBe("rh brain check");
+      expect(customizedScripts["sync:brain"]).toBe("rh brain sync");
     } finally {
       cleanup(generated);
       cleanup(customized);
@@ -1235,12 +1236,12 @@ describe("init command cutover", () => {
         env: { ...process.env, HOME: home, REPO_HARNESS_HOME: join(home, ".repo-harness") },
       });
       expect(apply.status).toBe(0);
-      // Init leaves account configuration to `repo-harness update` and names it.
+      // Init leaves account configuration to `rh update` and names it.
       expect(existsSync(join(home, ".repo-harness", "config.json"))).toBe(false);
       expect(JSON.parse(apply.stdout).steps).toContainEqual(expect.objectContaining({
         step: "required Herdr skill",
         status: "skipped",
-        detail: expect.stringContaining("run: repo-harness update"),
+        detail: expect.stringContaining("run: rh update"),
       }));
       expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(true);
       const retired = spawnSync("bun", [CLI, "init", "--experimental-ts-apply"], { cwd: ROOT, encoding: "utf-8" });

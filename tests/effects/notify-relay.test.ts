@@ -168,7 +168,7 @@ describe('notify relay', () => {
       writeFileSync(notifyConfigPath(f.env), FULL_CONFIG.replace('https://bot.example', 'http://bot.example'), { mode: 0o600 });
       await f.feed(turn('t7', 'blocked'));
       expect(f.calls).toHaveLength(0);
-      expect(f.log.at(-1)).toBe('The notify config is invalid: WEBHOOK_URL must be an HTTPS URL without user information. Run: repo-harness herdr notify install');
+      expect(f.log.at(-1)).toBe('The notify config is invalid: WEBHOOK_URL must be an HTTPS URL without user information. Run: rh herdr notify install');
       writeFileSync(notifyConfigPath(f.env), FULL_CONFIG, { mode: 0o600 });
       await f.feed(turn('t7', 'blocked'));
       const everything = JSON.stringify(f.calls.map(call => call.body)) + f.log.join('\n') + readFileSync(notifyDeliveriesPath(f.env), 'utf8');
@@ -325,7 +325,7 @@ describe('herdr notify install and uninstall', () => {
     try {
       const missing = f.cli(['start']);
       expect(missing.status).toBe(1);
-      expect(missing.stderr).toBe('Herdr notify: No notify config. Run: repo-harness herdr notify install\n');
+      expect(missing.stderr).toBe('Herdr notify: No notify config. Run: rh herdr notify install\n');
       expect(f.calls()).toEqual([]);
       expect(f.cli(['install', ...botFlags]).status).toBe(0);
       rmSync(notifyInstallRecordPath(f.env));

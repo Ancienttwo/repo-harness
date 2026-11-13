@@ -264,7 +264,7 @@ test('packet survives launch failure; same input retries and changed subject fai
   const beforeChangedRetry = [...f.calls];
   writeFileSync(join(f.root, 'feature.txt'), 'candidate\n\n');
   f.refresh();
-  await expect(runReviewRound(f.options, f.effects)).rejects.toThrow('review_packet_changed_before_send; packet for round 1 is preserved. Inspect with repo-harness review status');
+  await expect(runReviewRound(f.options, f.effects)).rejects.toThrow('review_packet_changed_before_send; packet for round 1 is preserved. Inspect with rh review status');
   expect(f.calls).toEqual(beforeChangedRetry);
   expect(readFileSync(f.packetPath(), 'utf8')).toBe(packet);
   expect(existsSync(join(f.dir, 'request-1.json'))).toBe(false);

@@ -142,10 +142,10 @@ describe('operator serve command and HTTP boundary', () => {
       recordPluginSelection(recordedAll, ['product'], 'all');
 
       const blocked: [string, NodeJS.ProcessEnv, string | RegExp][] = [
-        ['core only', selected([]), 'repo-harness install --plugins operator'],
-        ['other plugin', selected(['product']), 'repo-harness install --plugins operator,product'],
-        ['recorded all without the plugin', recordedAll, 'repo-harness update'],
-        ['no install state', noState, 'repo-harness install'],
+        ['core only', selected([]), 'rh install --plugins operator'],
+        ['other plugin', selected(['product']), 'rh install --plugins operator,product'],
+        ['recorded all without the plugin', recordedAll, 'rh update'],
+        ['no install state', noState, 'rh install'],
         ['unreadable install state', unreadable, /is not valid JSON/],
       ];
       const commands: [string, string[]][] = [
@@ -162,7 +162,7 @@ describe('operator serve command and HTTP boundary', () => {
           expect(result.status, label).toBe(1);
           expect(result.stdout, label).toBe('');
           expect(result.lines.length, label).toBe(1);
-          if (typeof expected === 'string') expect(result.lines[0], label).toBe(`install_plugin_unavailable: repo-harness ${command} needs the operator plugin: the operator plugin is not selected; run: ${expected}`);
+          if (typeof expected === 'string') expect(result.lines[0], label).toBe(`install_plugin_unavailable: rh ${command} needs the operator plugin: the operator plugin is not selected; run: ${expected}`);
           else expect(result.lines[0], label).toMatch(expected);
           expect(result.loaded, label).toBe(0);
         }
@@ -235,7 +235,7 @@ describe('operator serve command and HTTP boundary', () => {
           expect(page.status).toBe(503);
           const body = await page.json();
           expect(body.error.code).toBe(code);
-          expect(body.error.next_action).toContain('repo-harness update');
+          expect(body.error.next_action).toContain('rh update');
           const health = await fetch(`${server.url}/healthz`);
           expect(health.status).toBe(200);
           expect(await health.json()).toEqual({ ok: true, service: 'repo-harness-operator', protocol: 3, version: PACKAGE_VERSION });
@@ -591,7 +591,7 @@ describe('operator serve command and HTTP boundary', () => {
         await Bun.sleep(25);
         notify = await (await fetch(`${collecting.url}/api/v1/notify/status`)).json() as { error: { code: string; message: string; next_action: string } };
       }
-      expect(notify.error).toEqual({ code: 'notify_session_missing', message: expect.any(String), next_action: 'Run `repo-harness herdr notify install`.' });
+      expect(notify.error).toEqual({ code: 'notify_session_missing', message: expect.any(String), next_action: 'Run `rh herdr notify install`.' });
     } finally { await collecting.close(); rmSync(home, { recursive: true, force: true }); }
   });
 

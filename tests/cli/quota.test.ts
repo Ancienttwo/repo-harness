@@ -368,7 +368,7 @@ function quota(args: string[], env: Record<string, string>) {
   return spawnSync(process.execPath, [CLI, 'quota', ...args], { cwd: ROOT, env, encoding: 'utf8', timeout: 40_000 });
 }
 
-describe('repo-harness quota', () => {
+describe('rh quota', () => {
   test('reads the capture file and one app-server rateLimits read, grouped by account', () => {
     const f = fixture('ok');
     const resetsAt = Math.floor(Date.now() / 1000) + 2 * 3600;

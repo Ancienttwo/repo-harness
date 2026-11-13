@@ -1155,8 +1155,8 @@ describe('architecture lanes', () => {
     expect(result.checked).toBe(true);
     expect(result.stdout).toContain('[ci] Architecture debt: head coverage complete. Introduced 2. Resolved 1.');
     expect(warnings(result.stdout)).toEqual([
-      '::warning title=Architecture debt introduced::flow-proof-failed (no-direct-call) in capability.module-1. Action: repo-harness architecture-debt --json',
-      '::warning title=Architecture debt introduced::flow-proof-failed (no-direct-call) in src/module-2.ts. Action: repo-harness architecture-debt --json',
+      '::warning title=Architecture debt introduced::flow-proof-failed (no-direct-call) in capability.module-1. Action: rh architecture-debt --json',
+      '::warning title=Architecture debt introduced::flow-proof-failed (no-direct-call) in src/module-2.ts. Action: rh architecture-debt --json',
       '::warning title=Architecture generated output hand edited::docs/architecture/a.md: projection-generated-region-manually-edited. Keep model and human prose changes in this PR; the archctx rolling writer owns generated output.',
     ]);
   });
@@ -1166,7 +1166,7 @@ describe('architecture lanes', () => {
     const result = runLane(['architecture-advisory', '--base', 'abc123'], { debt: debt([staleAnchor]), check: noop, checkExit: 0 });
     expect(result.status, result.stderr).toBe(0);
     expect(warnings(result.stdout)).toEqual([
-      '::warning title=Architecture debt introduced::stale-anchor (missing-path) in capability.module-1. Action: repo-harness architecture-projection anchors --json',
+      '::warning title=Architecture debt introduced::stale-anchor (missing-path) in capability.module-1. Action: rh architecture-projection anchors --json',
     ]);
   });
 
@@ -1185,7 +1185,7 @@ describe('architecture lanes', () => {
     const debtWarnings = warnings(result.stdout).filter(line => line.startsWith('::warning title=Architecture debt introduced::'));
     expect(debtWarnings).toHaveLength(21);
     expect(debtWarnings[19]).toContain('capability.module-19.');
-    expect(debtWarnings[20]).toBe('::warning title=Architecture debt introduced::3 more new debt items have no annotation. Run repo-harness architecture-debt --json --base abc123 to list them.');
+    expect(debtWarnings[20]).toBe('::warning title=Architecture debt introduced::3 more new debt items have no annotation. Run rh architecture-debt --json --base abc123 to list them.');
   });
 
   test('a coverage gap prints its reason codes and never claims that the PR has no debt', () => {
@@ -1204,7 +1204,7 @@ describe('architecture lanes', () => {
     const failed = runLane(['architecture-advisory', '--base', 'missing'], { debtExit: 1 });
     expect(failed.status, failed.stderr).toBe(0);
     expect(failed.checked).toBe(true);
-    expect(warnings(failed.stdout)[0]).toStartWith('::warning title=Architecture debt check failed::repo-harness architecture-debt --json --base missing failed: ');
+    expect(warnings(failed.stdout)[0]).toStartWith('::warning title=Architecture debt check failed::rh architecture-debt --json --base missing failed: ');
     expect(warnings(failed.stdout)[0]).toContain('missing does not resolve to a commit');
     expect(warnings(failed.stdout)[1]).toStartWith('::warning title=Architecture check failed::');
 

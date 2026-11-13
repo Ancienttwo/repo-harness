@@ -292,10 +292,10 @@ describe('Agents page', () => {
   ] as const)('Pi reports its package entry state (%s) and repair command', async (status, sentence) => {
     const snapshot = readySetup(NOW);
     snapshot.hosts[2] = { host: 'pi', reported: true, detected: true, cli_version: '1.4.0', adapter: null, adapter_check: null, package_check: status };
-    if (status !== 'ok') snapshot.checks.push({ id: 'doctor.pi-package', status, title: 'Pi package entry', detail: 'Package entry needs repair', command: 'repo-harness install --target both' });
+    if (status !== 'ok') snapshot.checks.push({ id: 'doctor.pi-package', status, title: 'Pi package entry', detail: 'Package entry needs repair', command: 'rh install --target both' });
     await mount('#agents', props(snapshot));
     expect(text('[data-host-row="pi"] [data-host-sentence]')).toBe(sentence);
-    if (status !== 'ok') expect(text('[data-host-row="pi"] [data-command]')).toContain('repo-harness install --target both');
+    if (status !== 'ok') expect(text('[data-host-row="pi"] [data-command]')).toContain('rh install --target both');
     expect(text('[data-host-row="claude"] [data-host-sentence]')).toBe('Connected · 5/5 managed hooks');
   });
 
@@ -306,7 +306,7 @@ describe('Agents page', () => {
     expect(document.querySelector('[data-setup-attention]')!.getAttribute('data-setup-attention')).toBe('2');
     const checks = all('[data-check]');
     expect(checks.map(row => row.getAttribute('data-check'))).toEqual(['doctor.security-config', 'runtime.skills_cli']);
-    expect(checks[0]!.querySelector('[data-command]')?.textContent).toContain('repo-harness security scan --json');
+    expect(checks[0]!.querySelector('[data-command]')?.textContent).toContain('rh security scan --json');
     expect(all('[data-host-row]').map(row => row.getAttribute('data-host-row'))).toEqual(['claude', 'codex', 'pi']);
     expect(text('[data-host-row="claude"] [data-host-sentence]')).toBe('Connected · 5/5 managed hooks');
     expect(text('[data-host-row="codex"]')).toContain('v0.162.0');
@@ -327,7 +327,7 @@ describe('Agents page', () => {
     expect(more.textContent).toBe('Show fewer');
     expect(text('[data-host-row="codex"] [data-host-sentence]')).toBe('Connected · 4/5 managed hooks · 3 projection mismatches');
     expect(text('[data-host-row="codex"] [data-host-mismatch-summary]')).toContain('SubagentStart · context · missing');
-    expect(text('[data-host-row="codex"] [data-command]')).toContain('repo-harness install --host codex');
+    expect(text('[data-host-row="codex"] [data-command]')).toContain('rh install --host codex');
     expect(text('[data-host-row="claude"] [data-host-sentence]')).toBe('Connected · 5/5 managed hooks · projection not compared');
     expect(text('[data-fleet-role="gatekeeper"] [data-host-cell="codex"]')).toContain('missing');
     // A check without a command says so instead of inventing one.
@@ -451,7 +451,7 @@ describe('Skills page', () => {
     expect(text('[data-skills-abnormal]')).toBe('4 need attention');
     // The only action repairs repo-harness skills with the recorded selection.
     expect(text('[data-skill-repair="update"]')).toContain('recorded plugin selection: architecture, product');
-    expect(text('[data-skill-repair="update"] [data-command] code')).toBe('repo-harness update');
+    expect(text('[data-skill-repair="update"] [data-command] code')).toBe('rh update');
     expect(text('[data-skill="repo-harness-ship"]')).toContain('Validates finished worktrees');
     // The skill projection check that setup check flagged sits above the table with its command.
     expect(text('[data-setup-page="skills"] [data-check="doctor.skill-projection"] [data-command]')).toContain('repo-harness skills sync');
@@ -473,7 +473,7 @@ describe('Skills page', () => {
     const state = (skill: string) => document.querySelector(`[data-skill="${skill}"] [data-host-cell="pi"] [data-skill-state]`)!.getAttribute('data-skill-state');
     expect([state('repo-harness'), state('think'), state('hunt')]).toEqual(['not_installed', 'not_supported', 'not_judged']);
     expect(document.querySelector('[data-skill-repair="update"]')).toBeNull();
-    expect(text('[data-skill-repair="no-ledger"]')).toContain('repo-harness update cannot run');
+    expect(text('[data-skill-repair="no-ledger"]')).toContain('rh update cannot run');
   });
 
   test('other skills in each host root are listed read only by name and path', async () => {
@@ -576,7 +576,7 @@ describe('first read and failures', () => {
     expect(page().getAttribute('data-setup-reason')).toBe('setup_check_failed');
     expect(page().textContent).toContain('Configuration could not be read');
     expect(page().textContent).toContain('setup check failed');
-    expect(page().textContent).toContain('repo-harness setup check');
+    expect(page().textContent).toContain('rh setup check');
   });
 
   test('an unreachable service is a failure with the same command; a later refresh failure keeps data', async () => {
@@ -584,7 +584,7 @@ describe('first read and failures', () => {
     expect(page().getAttribute('data-setup-state')).toBe('failed');
     expect(page().getAttribute('data-setup-reason')).toBe('unreachable');
     expect(page().textContent).toContain('the operator service did not answer');
-    expect(page().textContent).toContain('repo-harness setup check');
+    expect(page().textContent).toContain('rh setup check');
     await act(async () => root?.unmount());
     root = null; document.body.innerHTML = '';
 
@@ -638,7 +638,7 @@ describe('Tools page', () => {
     expect(text('[data-tool="hai-stack"]')).toContain('Unknown');
     expect(text('[data-tool="shaders"]')).toContain('MIT');
     // The only command on the page is the read-only detector report.
-    expect(all('[data-command] code').map(code => code.textContent)).toEqual(['repo-harness run check-agent-tooling']);
+    expect(all('[data-command] code').map(code => code.textContent)).toEqual(['rh run check-agent-tooling']);
   });
 
   test('a row opens its drawer with links and no install command; Escape closes and returns focus', async () => {

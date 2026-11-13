@@ -231,7 +231,7 @@ describe('completeArchitectureDebt', () => {
       let caught: unknown;
       try { completeArchitectureDebt(f.repoRoot, f.headSha, { consumerRoot: f.consumerRoot, policy, run }); } catch (error) { caught = error; }
       expect(caught).toMatchObject({ code: 'RH_ARCHCTX_CODE_FACTS_NOT_READY', details: { state: envelope.data.codeFacts.state } });
-      expect((caught as Error).message).toContain(envelope.data.codeFacts.state === 'index-missing' ? 'codegraph init -y .' : 'repo-harness update');
+      expect((caught as Error).message).toContain(envelope.data.codeFacts.state === 'index-missing' ? 'codegraph init -y .' : 'rh update');
       expect((caught as Error).message).toContain(envelope.data.codeFacts.state === 'unavailable' ? 'codegraph-unavailable' : 'index-missing');
       if (envelope.data.codeFacts.state === 'unavailable') {
         expect((caught as ArchctxClientError).action).toBe('update-repo-harness');

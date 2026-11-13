@@ -184,7 +184,7 @@ describe('language settings routes', () => {
       const response = await send(h, reportPath, { preset: 'zh-CN' });
       const { error } = await response.json();
       expect([response.status, error.code, error.next_action]).toEqual([
-        409, 'runtime_busy', 'Wait for repo-harness update or install to finish, then save again.',
+        409, 'runtime_busy', 'Wait for rh update or install to finish, then save again.',
       ]);
       expect(paths.map(path => readFileSync(path, 'utf8'))).toEqual(before);
       lock.assertOwned();
@@ -208,7 +208,7 @@ describe('language settings routes', () => {
     expect([unknown.status, (await unknown.json()).error.code]).toEqual([404, 'repository_not_found']);
     const repo = repository(h);
     const missing = await send(h, repo.path, { language: 'en' });
-    expect([missing.status, (await missing.json()).error.next_action]).toEqual([409, 'repo-harness init']);
+    expect([missing.status, (await missing.json()).error.next_action]).toEqual([409, 'rh init']);
     expect(existsSync(repo.policy)).toBe(false);
     writeFileSync(repo.policy, '{broken');
     const invalid = await send(h, repo.path, { language: 'en' });
@@ -551,8 +551,8 @@ describe('seat settings contract without transport', () => {
   test('old stored sections require update and GET exposes all seats and routing ranges', () => {
     const original = { orchestrator: DEFAULT_SEATS_CONFIG.orchestrator, advisor: DEFAULT_SEATS_CONFIG.advisor,
       worker: { ...DEFAULT_SEATS_CONFIG.worker, model: 'gpt-6.1-sol' } };
-    expect(() => decodeSeatsConfig(original)).toThrow(expect.objectContaining({ code: 'seats_config_migration_required', next_action: 'repo-harness update' }));
-    expect(SEATS_CONFIGURATION_FAILURES.seats_config_migration_required.next_action).toBe('repo-harness update');
+    expect(() => decodeSeatsConfig(original)).toThrow(expect.objectContaining({ code: 'seats_config_migration_required', next_action: 'rh update' }));
+    expect(SEATS_CONFIGURATION_FAILURES.seats_config_migration_required.next_action).toBe('rh update');
     expect(() => decodeSeatsConfig({ ...original, extra: {} })).toThrow('seats_config_invalid');
     expect(() => decodeSeatsConfig({ advisor: original.advisor, worker: original.worker })).toThrow('seats_config_invalid');
     const home = mkdtempSync(join(tmpdir(), 'seats-contract-'));

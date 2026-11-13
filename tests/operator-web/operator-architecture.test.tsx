@@ -276,7 +276,7 @@ describe('architecture module page', () => {
     expect(document.querySelector('.review-prompt__digest')?.textContent).toBe(prompt.digest);
     expect(document.querySelector('.review-prompt')?.textContent).toContain(`Total ${prompt.budget.used_bytes} bytes · 2048 bytes per shard`);
     const command = document.querySelector('[data-bot-command]')?.textContent;
-    expect(command).toBe(`repo-harness module review-prompt ${CENTER} --shard 1`);
+    expect(command).toBe(`rh module review-prompt ${CENTER} --shard 1`);
     const copy = document.querySelector<HTMLButtonElement>('.review-prompt__command button')!;
     await act(async () => copy.click());
     expect(copied).toEqual([command!]);
@@ -287,13 +287,13 @@ describe('architecture module page', () => {
     await act(async () => { select.value = '2'; select.dispatchEvent(new window.Event('change', { bubbles: true }) as unknown as Event); });
     await settle();
     expect(calls.at(-1)?.path).toBe(`/api/v1/repositories/${REPO}/architecture/modules/${CENTER}/review-prompt?shard=2`);
-    expect(document.querySelector('[data-bot-command]')?.textContent).toBe(`repo-harness module review-prompt ${CENTER} --shard 2`);
+    expect(document.querySelector('[data-bot-command]')?.textContent).toBe(`rh module review-prompt ${CENTER} --shard 2`);
     expect(document.querySelector('.review-prompt__text pre')?.textContent).toBe(promptFor(detailFor(), 2).prompt);
   });
 
   test('a diff prompt names both revisions in the Bot command', () => {
     expect(reviewPromptCommand({ capability_id: CENTER, shard: { index: 2, count: 3, bytes: 1 }, mode: 'diff', base: 'a'.repeat(40), head: 'b'.repeat(40) }))
-      .toBe(`repo-harness module review-prompt ${CENTER} --shard 2 --base ${'a'.repeat(40)} --head ${'b'.repeat(40)}`);
+      .toBe(`rh module review-prompt ${CENTER} --shard 2 --base ${'a'.repeat(40)} --head ${'b'.repeat(40)}`);
   });
 
   test('section 3 pending is stated, not left blank', async () => {
@@ -553,16 +553,16 @@ describe('architecture map', () => {
     // Each reason names its state and its next step; archctx's codes stay visible; a pending map is a status, not an alert.
     for (const [read, role, message, next] of [
       [{ state: 'unavailable', reason: 'architecture_map_pending' }, 'status', 'The server has not collected the architecture map yet.', 'The page reads the map again on its own.'],
-      [{ state: 'unavailable', reason: 'registry_unavailable' }, 'alert', 'The repository registry is unreadable.', 'Run `repo-harness fleet prune` to show the registry error.'],
-      [{ state: 'unavailable', reason: 'repository_not_found' }, 'alert', 'No registered repository has this id.', 'Adopt the repository with `repo-harness init`, then refresh the board.'],
-      [{ state: 'unavailable', reason: 'model_unavailable' }, 'alert', 'The committed architecture model could not be read, and archctx gave no error code.', 'Check that the registered path is a git checkout with a commit. `repo-harness fleet prune` lists registrations whose path is gone.'],
+      [{ state: 'unavailable', reason: 'registry_unavailable' }, 'alert', 'The repository registry is unreadable.', 'Run `rh fleet prune` to show the registry error.'],
+      [{ state: 'unavailable', reason: 'repository_not_found' }, 'alert', 'No registered repository has this id.', 'Adopt the repository with `rh init`, then refresh the board.'],
+      [{ state: 'unavailable', reason: 'model_unavailable' }, 'alert', 'The committed architecture model could not be read, and archctx gave no error code.', 'Check that the registered path is a git checkout with a commit. `rh fleet prune` lists registrations whose path is gone.'],
       [{ state: 'unavailable', reason: 'archctx_error', code: 'AC_MODEL_ADOPTION_REQUIRED', reason_code: 'native-context-model-missing' }, 'alert',
         'archctx refused to read the committed architecture model: AC_MODEL_ADOPTION_REQUIRED native-context-model-missing.', 'Run `archctx export native --ref HEAD --json` in the repository. The archctx error gives its action and details.'],
-      [{ state: 'unavailable', reason: 'architecture_map_invalid' }, 'alert', 'The architecture map failed validation.', 'Retry. If the error stays, restart `repo-harness operator serve`.'],
-      [{ state: 'unavailable', reason: 'architecture_map_failed' }, 'alert', 'The map process read the committed model, then failed.', 'Wait for the next collection in 5 minutes. If the error stays, restart `repo-harness operator serve`.'],
+      [{ state: 'unavailable', reason: 'architecture_map_invalid' }, 'alert', 'The architecture map failed validation.', 'Retry. If the error stays, restart `rh operator serve`.'],
+      [{ state: 'unavailable', reason: 'architecture_map_failed' }, 'alert', 'The map process read the committed model, then failed.', 'Wait for the next collection in 5 minutes. If the error stays, restart `rh operator serve`.'],
       [{ state: 'unavailable', reason: 'architecture_map_timeout' }, 'alert', 'The map process passed its time limit.', 'Wait for the next collection in 5 minutes. If the error stays, check that git and archctx answer in the repository.'],
-      [{ state: 'unavailable', reason: 'architecture_map_process_failed' }, 'alert', 'The map process did not start or gave no result.', 'Wait for the next collection in 5 minutes. If the error stays, restart `repo-harness operator serve`.'],
-      [{ state: 'unavailable', reason: 'unreachable' }, 'alert', 'The operator API gave no typed answer.', 'Check that `repo-harness operator serve` runs, then retry.'],
+      [{ state: 'unavailable', reason: 'architecture_map_process_failed' }, 'alert', 'The map process did not start or gave no result.', 'Wait for the next collection in 5 minutes. If the error stays, restart `rh operator serve`.'],
+      [{ state: 'unavailable', reason: 'unreachable' }, 'alert', 'The operator API gave no typed answer.', 'Check that `rh operator serve` runs, then retry.'],
     ] as const) {
       await act(async () => root?.render(workspace({ repositoryId: `repo-${read.reason}`, readMap: reader(read) })));
       await settle();

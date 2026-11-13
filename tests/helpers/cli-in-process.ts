@@ -116,7 +116,7 @@ export async function runCliInProcess(
         await new Promise<void>((resolve, reject) => {
           settle = resolve;
           timer = setTimeout(
-            () => reject(new Error(`in-process CLI did not finish: repo-harness ${args.join(' ')}`)),
+            () => reject(new Error(`in-process CLI did not finish: rh ${args.join(' ')}`)),
             SETTLE_TIMEOUT_MS,
           );
         });

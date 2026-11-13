@@ -800,7 +800,7 @@ describe('effective state resolver', () => {
             reason: 'capability:registry:invalid',
             code: 'INVALID_JSON',
             message: 'invalid JSON',
-            fix: 'repo-harness run capability-resolver validate',
+            fix: 'rh run capability-resolver validate',
           });
         });
       }, 60_000);
@@ -815,7 +815,7 @@ describe('effective state resolver', () => {
             reason: 'capability:registry:invalid',
             code: 'ARCHCONTEXT_MODEL_REJECTED',
             message: 'archctx resolve rejected the model',
-            fix: 'edit .archcontext/model/nodes, then run repo-harness run capability-resolver match --path <path>',
+            fix: 'edit .archcontext/model/nodes, then run rh run capability-resolver match --path <path>',
           });
         });
       }, 60_000);
@@ -832,7 +832,7 @@ describe('effective state resolver', () => {
               reason: 'capability:ownership:unavailable',
               code: 'ARCHCONTEXT_RESOLVE_FAILED',
               message: 'REPO_HARNESS_NODE_BIN',
-              fix: 'repo-harness doctor --json',
+              fix: 'rh doctor --json',
             });
           } finally {
             if (previous === undefined) delete process.env.REPO_HARNESS_NODE_BIN;
@@ -852,7 +852,7 @@ describe('effective state resolver', () => {
             reason: 'capability:registry:invalid',
             code: 'AMBIGUOUS_MATCH',
             message: 'capability.shared.left, capability.shared.right',
-            fix: 'repo-harness run capability-resolver match --path src/feature.ts',
+            fix: 'rh run capability-resolver match --path src/feature.ts',
           });
         });
       }, 90_000);

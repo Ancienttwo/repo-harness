@@ -279,7 +279,7 @@ describe('host envelopes on the real hook entry (#678)', () => {
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
   }
 
-  const HUMAN_DEBT = 'Architecture: 1 debt item in capability.core.owned; run repo-harness architecture-debt --json.';
+  const HUMAN_DEBT = 'Architecture: 1 debt item in capability.core.owned; run rh architecture-debt --json.';
 
   function context(stdout: string, event: string, systemMessage?: string): string {
     expect(stdout.endsWith('\n')).toBe(true);
@@ -518,7 +518,7 @@ process.exit(child.status ?? 1);
 
   test('a registry consumer without code facts or a projection manifest gets one architecture line (#850)', () => {
     const root = registryNoticeFixture();
-    const INACTIVE = '[Architecture] inactive: no ArchContext model (.archcontext/manifest.yaml is missing). Run: repo-harness architecture-projection status --json';
+    const INACTIVE = '[Architecture] inactive: no ArchContext model (.archcontext/manifest.yaml is missing). Run: rh architecture-projection status --json';
     const architectureLines = /\[Architecture\] inactive|\[ArchitectureDebt\]|Architecture: inactive/;
     try {
       // Codex Stop is silent and does not consume the dedupe markers.
@@ -563,7 +563,7 @@ process.exit(child.status ?? 1);
       const session = host(root, 'claude', 'SessionStart', 'default', { session_id: 'clean-branch-session' });
       expect(session.status, session.stderr).toBe(0);
       const systemMessage = (JSON.parse(session.stdout) as { systemMessage?: string }).systemMessage;
-      expect(systemMessage).toBe('Architecture: inactive (no ArchContext model (.archcontext/manifest.yaml is missing)); run repo-harness architecture-projection status --json.');
+      expect(systemMessage).toBe('Architecture: inactive (no ArchContext model (.archcontext/manifest.yaml is missing)); run rh architecture-projection status --json.');
       const sessionContext = context(session.stdout, 'SessionStart', systemMessage);
       expect(sessionContext).toContain('[Architecture] inactive: no ArchContext model (.archcontext/manifest.yaml is missing).');
       expect(sessionContext).not.toContain('[ArchitectureDebt]');
@@ -573,8 +573,8 @@ process.exit(child.status ?? 1);
 
   test('a consumer whose state directory is not Git-ignored sees one SessionStart line and no turn text (#852)', () => {
     const root = registryNoticeFixture();
-    const UNIGNORED = '[Architecture] notice unavailable: .ai/harness/state/ is not Git-ignored. Fix: run repo-harness update to write the runtime-state block to the user-level Git excludes file.';
-    const HUMAN_UNIGNORED = 'Architecture: notice unavailable (.ai/harness/state/ is not Git-ignored); run repo-harness update.';
+    const UNIGNORED = '[Architecture] notice unavailable: .ai/harness/state/ is not Git-ignored. Fix: run rh update to write the runtime-state block to the user-level Git excludes file.';
+    const HUMAN_UNIGNORED = 'Architecture: notice unavailable (.ai/harness/state/ is not Git-ignored); run rh update.';
     try {
       unignoreNoticeState(root);
       for (const sessionId of ['unignored-one', 'unignored-two']) {
