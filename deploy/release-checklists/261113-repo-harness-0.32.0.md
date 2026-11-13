@@ -2,9 +2,9 @@
 
 ## Scope and authority
 
-- Base: `844d59141` on `main` (#2693, the projection refresh on top of
-  `c9f593502`). Previous release: `v0.31.0`. Range: `v0.31.0..844d59141`
-  (42 first-parent commits). A PR merged after the base goes to the next
+- Base: `b3a155cff` on `main` (#2698, the #2697 changelog fix on top of
+  `844d59141`). Previous release: `v0.31.0`. Range: `v0.31.0..b3a155cff`
+  (43 first-parent commits). A PR merged after the base goes to the next
   release.
 - Release date and record prefix: UTC 2026-11-13.
 - The core package, Operator web package, skill and template stamps, and README
@@ -14,7 +14,8 @@
 - Parent #2624, issue #2695. Owner word "A"
   ([6847162597](https://github.com/aimpact-inc/repo-harness/issues/2624#issuecomment-6847162597))
   authorizes the release.
-- Daily evidence: CI run 43336357336 (schedule) on `844d59141`, green.
+- CI evidence: daily CI run 43336357336 (schedule) on `844d59141`, green;
+  CI run 43393389822 (push) on `b3a155cff`, green.
 - Publish status: not published. The life cycle stops at the merged release
   PR. `npm publish`, the tag and the GitHub Release stay with the owner and
   the host command list of `bash scripts/release-owner-steps.sh plan 0.32.0`
@@ -72,11 +73,13 @@ names one first-parent commit of the range, oldest first.
 | [#2690](https://github.com/aimpact-inc/repo-harness/pull/2690) | `01c93da6c` | chore(projection): refresh generated architecture outputs for main@48cae2d58a39 |
 | [#2692](https://github.com/aimpact-inc/repo-harness/pull/2692) | `c9f593502` | fix(operator): the docs remote-missing detail passes the console decoder before the collector caches it (#2691) |
 | [#2693](https://github.com/aimpact-inc/repo-harness/pull/2693) | `844d59141` | chore(projection): refresh generated architecture outputs for main@c9f593502d94 |
+| [#2698](https://github.com/aimpact-inc/repo-harness/pull/2698) | `b3a155cff` | fix(changelog): keep docs/changelog.d through a release and read only Unreleased heading lines (#2697) |
 
 ## Order of the owner steps
 
 1. The release PR merges by rule 2 (acceptance PASS for the head, cross-model
-   review PASS, `Required / CI` green).
+   review PASS, `Required / CI` green, and a response to each review-bot
+   comment).
 2. On `main` after the merge, run `git fetch origin && bash
    scripts/release-owner-steps.sh plan 0.32.0`. It binds the command list to
    the first-parent commit that sets `package.json` to 0.32.0 and refuses when
@@ -114,12 +117,15 @@ bun add -g repo-harness@0.32.0 --no-cache && repo-harness update --version 0.32.
 ## Acceptance environment
 
 The release PR records the prep head and `bun run check:release`. The upgrade
-rehearsal lane of #2626 ran on the prep head `b2850fe46`: Probe run
+rehearsal lane of #2626 ran on the prep head `b2850fe46`, before the rebase
+onto `b3a155cff`: Probe run
 [43390461859](https://github.com/aimpact-inc/repo-harness/actions/runs/43390461859)
 (ubuntu-latest, `release-rehearsal`), success. It installed the parent
 `repo-harness@0.31.0` from npm, ran the parent's `update --version 0.32.0`
 against the local candidate registry, and ended with `[rehearsal] OK: 0.31.0
--> 0.32.0` and `archctx link: 0.13.0 -> 0.13.0`. No macos-latest run.
+-> 0.32.0` and `archctx link: 0.13.0 -> 0.13.0`. The log has `TARBALL SERVED
+repo-harness 0.32.0` and `TARBALL SERVED repo-harness-operator-web 0.32.0`.
+No macos-latest run. A rerun on the rebased head: pending.
 
 ## Publication
 
