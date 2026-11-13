@@ -1088,7 +1088,7 @@ one that changes an input of a differing target. archctx at HEAD is the input
 authority. Every target reads the archctx version in `package.json` and the
 model (`.archcontext/`). The type of the committed manifest row sets the class.
 An entity summary or agent context also reads the declared source footprint of
-its scope capability, docs and Markdown included, as `archctx resolve` reports
+its scope capability, docs and Markdown included, as the archctx resolver reports
 it. Every other target (runtime topology, history) renders the whole model, so
 it also reads every declared source footprint. An added or removed target reads
 only the model and the archctx version. A scope capability that is not in the
