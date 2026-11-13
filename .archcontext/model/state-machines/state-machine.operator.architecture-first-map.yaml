@@ -50,37 +50,37 @@ regions:
 events:
   - id: "pull-requests-ready"
     label: "the pull request list is ready"
-    source: { kind: "code", path: "src/effects/operator/architecture-map-collector.ts", symbol: "startArchitectureMapCollector", confirmedDigest: "sha256:542a43f4c290158d8a2def6e1a1f3903d34e32f478830770d889a64e71dfcc97" }
+    source: { kind: "code", path: "src/effects/operator/architecture-map-collector.ts", symbol: "startArchitectureMapCollector", confirmedDigest: "sha256:197a45d2ff0125a6cb3cb662589a22c972cf73fee57a960ce51f15bbcbad65f6" }
     steps:
       - when: { cycle: ["waiting"] }
         then: { cycle: "this" }
   - id: "map-built"
     label: "the map of this repository is built"
-    source: { kind: "code", path: "src/effects/operator/architecture-map-collector.ts", symbol: "startArchitectureMapCollector", confirmedDigest: "sha256:542a43f4c290158d8a2def6e1a1f3903d34e32f478830770d889a64e71dfcc97" }
+    source: { kind: "code", path: "src/effects/operator/architecture-map-collector.ts", symbol: "startArchitectureMapCollector", confirmedDigest: "sha256:197a45d2ff0125a6cb3cb662589a22c972cf73fee57a960ce51f15bbcbad65f6" }
     steps:
       - when: { cycle: ["this"], result: ["none", "ready", "unavailable"], served: ["pending", "ready", "unavailable"] }
         then: { cycle: "others", result: "ready", served: "ready" }
   - id: "map-fails"
     label: "the map of this repository fails"
-    source: { kind: "code", path: "src/effects/operator/architecture-map-collector.ts", symbol: "startArchitectureMapCollector", confirmedDigest: "sha256:542a43f4c290158d8a2def6e1a1f3903d34e32f478830770d889a64e71dfcc97" }
+    source: { kind: "code", path: "src/effects/operator/architecture-map-collector.ts", symbol: "startArchitectureMapCollector", confirmedDigest: "sha256:197a45d2ff0125a6cb3cb662589a22c972cf73fee57a960ce51f15bbcbad65f6" }
     steps:
       - when: { cycle: ["this"], result: ["none", "ready", "unavailable"], served: ["pending", "ready", "unavailable"] }
         then: { cycle: "others", result: "unavailable", served: "unavailable" }
   - id: "cycle-ends"
     label: "the last repository of the cycle ends"
-    source: { kind: "code", path: "src/effects/operator/architecture-map-collector.ts", symbol: "startArchitectureMapCollector", confirmedDigest: "sha256:542a43f4c290158d8a2def6e1a1f3903d34e32f478830770d889a64e71dfcc97" }
+    source: { kind: "code", path: "src/effects/operator/architecture-map-collector.ts", symbol: "startArchitectureMapCollector", confirmedDigest: "sha256:197a45d2ff0125a6cb3cb662589a22c972cf73fee57a960ce51f15bbcbad65f6" }
     steps:
       - when: { cycle: ["others"] }
         then: { cycle: "idle" }
   - id: "next-cycle"
     label: "5 minutes pass"
-    source: { kind: "code", path: "src/effects/observation-loop.ts", symbol: "startObservationLoop", confirmedDigest: "sha256:759fdd963e8635f5cd1593854820cb6e1bd69fd6b21e949abeb9502ebeca8c29" }
+    source: { kind: "code", path: "src/effects/observation-loop.ts", symbol: "startObservationLoop", confirmedDigest: "sha256:08dad78837500910e7b32e5fbe6efa035f92c4e7a667e6fc92952a9b05719de2" }
     steps:
       - when: { cycle: ["idle"], result: ["none", "ready", "unavailable"] }
         then: { cycle: "this", result: "none" }
   - id: "page-reads"
     label: "the page reads and gets a typed answer"
-    source: { kind: "code", path: "src/operator-web/ArchitectureMap.tsx", symbol: "useArchitectureMap", confirmedDigest: "sha256:eaf9fafaeb774b4fc288031a1a4633780deb17b6f413c2d428e068170076f69f" }
+    source: { kind: "code", path: "src/operator-web/ArchitectureMap.tsx", symbol: "useArchitectureMap", confirmedDigest: "sha256:0eae348cd44a7fb739efa9d36ad890d510af3136317aee1c4ff3adb548cfb543" }
     steps:
       - when: { served: ["pending"], answer: ["none", "pending", "ready", "unavailable", "no-answer"], kept: ["no"], wait: ["s30", "s60", "s120"] }
         then: { answer: "pending", wait: "s30" }
@@ -92,7 +92,7 @@ events:
         then: { answer: "unavailable", wait: "s30" }
   - id: "page-read-unreachable"
     label: "the page read gets no answer"
-    source: { kind: "code", path: "src/operator-web/ArchitectureMap.tsx", symbol: "useArchitectureMap", confirmedDigest: "sha256:eaf9fafaeb774b4fc288031a1a4633780deb17b6f413c2d428e068170076f69f" }
+    source: { kind: "code", path: "src/operator-web/ArchitectureMap.tsx", symbol: "useArchitectureMap", confirmedDigest: "sha256:0eae348cd44a7fb739efa9d36ad890d510af3136317aee1c4ff3adb548cfb543" }
     steps:
       - when: { answer: ["none", "pending", "ready", "unavailable", "no-answer"], wait: ["s30"] }
         then: { answer: "no-answer", wait: "s60" }

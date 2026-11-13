@@ -47,7 +47,7 @@ regions:
   - id: "screen"
     label: "The screen of the room"
     initial: "loading"
-    source: { kind: "code", path: "src/operator-web/BoardPage.tsx", symbol: "OfficeRepository", confirmedDigest: "sha256:dd31ae55e7416ad8952f2bd196489bad33c42e54f93f2ac66400641ad54ed5fd" }
+    source: { kind: "code", path: "src/operator-web/BoardPage.tsx", symbol: "OfficeRepository", confirmedDigest: "sha256:dd400f522c7e5918b89d30de102e279ffdafbc63b5db39479a16a11f9775a39c" }
     states:
       - { id: "loading", label: "Loading" }
       - { id: "checklist", label: "Setup checklist" }
@@ -55,7 +55,7 @@ regions:
 events:
   - id: "parents-read-ends"
     label: "the parents read ends"
-    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardParents", confirmedDigest: "sha256:ca486dcc7846b0c1004d90eeb4b2a96014e860134fc90a9e114b91aca7b2046e" }
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardParents", confirmedDigest: "sha256:fb64b57b491e2756c604e846b127b0a77ed0648f192131bb5c39524667a6f13c" }
     steps:
       - when: { parents: ["loading", "failed"], parents-read: ["reading"], seats: ["loading"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "room"] }
         then: { parents: "ready", parents-read: "waiting", screen: "loading" }
@@ -81,7 +81,7 @@ events:
         then: { parents: "ready", parents-read: "waiting", screen: "checklist" }
   - id: "parents-read-fails"
     label: "the parents read fails"
-    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardParents", confirmedDigest: "sha256:ca486dcc7846b0c1004d90eeb4b2a96014e860134fc90a9e114b91aca7b2046e" }
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardParents", confirmedDigest: "sha256:fb64b57b491e2756c604e846b127b0a77ed0648f192131bb5c39524667a6f13c" }
     steps:
       - when: { parents: ["loading", "ready"], parents-read: ["reading"], seats: ["loading"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "room"] }
         then: { parents: "failed", parents-read: "waiting", screen: "loading" }
@@ -103,13 +103,13 @@ events:
         then: { parents-read: "waiting", screen: "checklist" }
   - id: "parents-timer"
     label: "the next parents read starts"
-    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardParents", confirmedDigest: "sha256:ca486dcc7846b0c1004d90eeb4b2a96014e860134fc90a9e114b91aca7b2046e" }
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardParents", confirmedDigest: "sha256:fb64b57b491e2756c604e846b127b0a77ed0648f192131bb5c39524667a6f13c" }
     steps:
       - when: { parents-read: ["waiting"] }
         then: { parents-read: "reading" }
   - id: "seats-read-ends"
     label: "the seats read ends"
-    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardSeats", confirmedDigest: "sha256:a6736b17cb8fe431695c4b9f7868bc40571612ebbbbb541b375704936f25ca55" }
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardSeats", confirmedDigest: "sha256:39bfc284acac54d0357b0985590d3d5b97968e633fb80abc782b20692862db25" }
     steps:
       - when: { parents: ["loading", "failed"], seats: ["loading", "failed"], seats-read: ["reading"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "room"] }
         then: { seats: "ready", seats-read: "waiting", screen: "room" }
@@ -133,13 +133,13 @@ events:
         then: { seats: "ready", seats-read: "waiting", screen: "room" }
   - id: "seats-read-pending"
     label: "the seats read gets pending before the first observation"
-    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardSeats", confirmedDigest: "sha256:a6736b17cb8fe431695c4b9f7868bc40571612ebbbbb541b375704936f25ca55" }
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardSeats", confirmedDigest: "sha256:39bfc284acac54d0357b0985590d3d5b97968e633fb80abc782b20692862db25" }
     steps:
       - when: { seats: ["loading"], seats-read: ["reading"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "room"] }
         then: { seats-read: "waiting", screen: "loading" }
   - id: "seats-read-fails"
     label: "the seats read fails"
-    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardSeats", confirmedDigest: "sha256:a6736b17cb8fe431695c4b9f7868bc40571612ebbbbb541b375704936f25ca55" }
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardSeats", confirmedDigest: "sha256:39bfc284acac54d0357b0985590d3d5b97968e633fb80abc782b20692862db25" }
     steps:
       - when: { parents: ["loading"], seats: ["loading", "ready"], seats-read: ["reading"], stored: ["none"], b-read: ["paused"], screen: ["loading", "checklist", "room"] }
         then: { seats: "failed", seats-read: "waiting", screen: "checklist" }
@@ -157,13 +157,13 @@ events:
         then: { seats: "failed", seats-read: "waiting", screen: "checklist" }
   - id: "seats-timer"
     label: "the next seats read starts"
-    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardSeats", confirmedDigest: "sha256:a6736b17cb8fe431695c4b9f7868bc40571612ebbbbb541b375704936f25ca55" }
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoardSeats", confirmedDigest: "sha256:39bfc284acac54d0357b0985590d3d5b97968e633fb80abc782b20692862db25" }
     steps:
       - when: { seats-read: ["waiting"] }
         then: { seats-read: "reading" }
   - id: "board-read-ends"
     label: "the board read ends"
-    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoard", confirmedDigest: "sha256:453e688b0661212c92a1fedadd0895634fa2f3f1a531d7d3b79ce902c7d0f1ac" }
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoard", confirmedDigest: "sha256:d2b254cef6478c5707f3afc0d4d37a36e91aeb9729d49d78dfa786776d64fa23" }
     steps:
       - when: { parents: ["ready"], seats: ["ready"], stored: ["none", "stale", "failed"], b-read: ["reading"], screen: ["loading", "checklist", "room"] }
         then: { stored: "ready", b-read: "waiting", screen: "room" }
@@ -171,7 +171,7 @@ events:
         then: { b-read: "waiting", screen: "room" }
   - id: "board-read-fails-kept"
     label: "the board read fails [busy, timeout or no answer]"
-    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoard", confirmedDigest: "sha256:453e688b0661212c92a1fedadd0895634fa2f3f1a531d7d3b79ce902c7d0f1ac" }
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoard", confirmedDigest: "sha256:d2b254cef6478c5707f3afc0d4d37a36e91aeb9729d49d78dfa786776d64fa23" }
     steps:
       - when: { parents: ["ready"], seats: ["ready"], stored: ["none"], b-read: ["reading"], screen: ["loading", "checklist", "room"] }
         then: { stored: "failed", b-read: "waiting", screen: "room" }
@@ -183,7 +183,7 @@ events:
         then: { b-read: "waiting", screen: "room" }
   - id: "board-read-fails-dropped"
     label: "the board read fails [invalid answer]"
-    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoard", confirmedDigest: "sha256:453e688b0661212c92a1fedadd0895634fa2f3f1a531d7d3b79ce902c7d0f1ac" }
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoard", confirmedDigest: "sha256:d2b254cef6478c5707f3afc0d4d37a36e91aeb9729d49d78dfa786776d64fa23" }
     steps:
       - when: { parents: ["ready"], seats: ["ready"], stored: ["none", "ready", "stale"], b-read: ["reading"], screen: ["loading", "checklist", "room"] }
         then: { stored: "failed", b-read: "waiting", screen: "room" }
@@ -191,7 +191,7 @@ events:
         then: { b-read: "waiting", screen: "room" }
   - id: "board-timer"
     label: "the next board read starts"
-    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoard", confirmedDigest: "sha256:453e688b0661212c92a1fedadd0895634fa2f3f1a531d7d3b79ce902c7d0f1ac" }
+    source: { kind: "code", path: "src/operator-web/board-view.ts", symbol: "useBoard", confirmedDigest: "sha256:d2b254cef6478c5707f3afc0d4d37a36e91aeb9729d49d78dfa786776d64fa23" }
     steps:
       - when: { b-read: ["waiting"] }
         then: { b-read: "reading" }
