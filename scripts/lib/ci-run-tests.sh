@@ -27,7 +27,7 @@ _ci_run_bun_tests_in_temporary_home() {
       // One report per Bun process, named by its test file so a rerun replaces the report. Options go first so the file stays last.
       const name = (batch >= 0 ? testFiles[index] : testFiles.length === 1 ? testFiles[0] : undefined) ?? "run-" + index;
       const runArgs = junitDir
-        ? ["--reporter=junit", "--reporter-outfile=" + require("node:path").join(junitDir, name.replace(/[\\/]/g, "__") + ".xml"), ...baseArgs]
+        ? ["--reporter=junit", "--reporter-outfile=" + require("node:path").join(junitDir, name.replace(/[\\/:]/g, "__") + ".xml"), ...baseArgs]
         : baseArgs;
       // The parent runs this check after Bun exits. Bun exit hooks are not reliable.
       const roots = [...new Set((process.platform === "win32" ? [require("node:os").tmpdir(), "/tmp", "/private/tmp"] : ["/tmp", "/private/tmp"]).filter(p => fs.existsSync(p)).map(p => fs.realpathSync(p)))];
