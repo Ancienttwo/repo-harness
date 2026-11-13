@@ -28,7 +28,6 @@ const SCHEMA = 'repo-harness.released-managed-values.v1';
 const FIRST_RELEASE = 'v0.1.2';
 const MAX_BUFFER = 256 * 1024 * 1024;
 
-export const MANAGED_PACKAGE_SCRIPT_KEYS = ['check:brain', 'check:context-files', 'check:deploy-sql', 'sync:brain'] as const;
 /** A valid custom reporting instruction that no released template contains. */
 export const CUSTOM_INSTRUCTION_SENTINEL = '{{custom-reporting-instruction}}';
 const FOLLOW_INSTRUCTION = "Use the user's language for reports; keep technical terms in English.";
@@ -42,7 +41,7 @@ const LANGUAGE_LINE = /^- Use the user's language for reports; keep technical te
 export interface ReleasedManagedValues {
   readonly schema: typeof SCHEMA;
   readonly releases: readonly string[];
-  /** Exact values per managed key in package.json `scripts`. */
+  /** Exact values per package.json `scripts` key that the init of any release writes or deletes. */
   readonly packageScripts: Readonly<Record<string, readonly string[]>>;
   /** Whole-file fingerprints of `docs/reference-configs/<doc id>.md`: stubs and the pre-stub full copies. */
   readonly referenceConfigs: Readonly<Record<string, readonly string[]>>;
@@ -172,17 +171,58 @@ function requirePinned(tag: string, what: string, source: string, pins: Readonly
 // Package scripts
 // ---------------------------------------------------------------------------
 
-const PACKAGE_SCRIPT_RENDERERS = ['scripts/lib/project-init-lib.sh', 'src/core/adoption/standard-plan.ts', 'src/effects/adoption/standard-plan.ts'];
+/** The init code that writes package.json `scripts`: a bash function, or a TS function. */
+const PACKAGE_SCRIPT_RENDERERS = [
+  { path: 'scripts/lib/project-init-lib.sh', region: (source: string) => bashFunctionSource(source, 'pi_ensure_task_sync') },
+  { path: 'src/core/adoption/standard-plan.ts', region: (source: string) => functionSource(source, 'addPackageOperation') },
+  { path: 'src/effects/adoption/standard-plan.ts', region: (source: string) => functionSource(source, 'addPackageOperation') },
+] as const;
+/** `"scripts": {` in the bash heredoc and `Object.assign(scripts, {` in TS: one `"key": "value"` per line. */
+const SCRIPT_OBJECT = /(?:^ {2}"scripts": \{|^ {2}Object\.assign\(scripts, \{)\n([\s\S]*?)\n {2}\}/gm;
+const SCRIPT_OBJECT_ENTRY = /^ {4}"([^"]+)": "([^"]*)",?$/;
+/** `pkg.scripts["key"] = "value";` writes; `if (scripts["key"] === "value") {` guards a delete. */
+const SCRIPT_LINE = /^\s*(?:pkg\.scripts\["([^"]+)"\] = "([^"]*)";|if \((?:pkg\.)?scripts\["([^"]+)"\] === "([^"]*)"\) \{|delete (?:pkg\.)?scripts\["([^"]+)"\];)$/;
 
+/** A bash function from `name() {` to the next top-level function; its heredocs hold lines that are exactly `}`. */
+function bashFunctionSource(source: string, name: string): string | null {
+  const start = source.search(new RegExp(`^${name}\\(\\) \\{$`, 'm'));
+  if (start < 0) return null;
+  const body = source.indexOf('\n', start) + 1;
+  const next = source.slice(body).search(/^[A-Za-z_][A-Za-z0-9_]*\(\) \{$/m);
+  return next < 0 ? source.slice(start) : source.slice(start, body + next);
+}
+
+/**
+ * Every key that the tag's init writes or deletes, with each value it writes or deletes. The keys
+ * come from the tag, so a retired key keeps its released values. A line that names `scripts[` in a
+ * shape this parser does not know fails closed.
+ */
 function packageScriptValues(tree: TagTree, into: Map<string, Set<string>>): void {
-  for (const path of PACKAGE_SCRIPT_RENDERERS) {
-    if (!tree.has(path)) continue;
-    const source = tree.read(path);
-    for (const key of MANAGED_PACKAGE_SCRIPT_KEYS) {
-      // `"key": "value"` in an object literal or heredoc, `["key"] = "value"` in an assignment.
-      const pattern = new RegExp(`"${key}"(?:\\s*:|\\]\\s*=)\\s*"([^"]*)"`, 'g');
-      for (const match of source.matchAll(pattern)) into.get(key)!.add(match[1]!);
+  for (const renderer of PACKAGE_SCRIPT_RENDERERS) {
+    if (!tree.has(renderer.path)) continue;
+    const region = requireValue(renderer.region(tree.read(renderer.path)), tree.tag, `package script writer in ${renderer.path}`);
+    let found = 0;
+    for (const object of region.matchAll(SCRIPT_OBJECT)) {
+      for (const line of object[1]!.split('\n')) {
+        const entry = requireValue(line.match(SCRIPT_OBJECT_ENTRY), tree.tag, `package script entry shape in ${renderer.path}: ${line.trim()}`);
+        addTo(into, entry[1]!, entry[2]!);
+        found += 1;
+      }
     }
+    const deleted = new Set<string>();
+    const guarded = new Set<string>();
+    for (const line of region.split('\n').filter((text) => text.includes('scripts['))) {
+      const match = requireValue(line.match(SCRIPT_LINE), tree.tag, `package script line shape in ${renderer.path}: ${line.trim()}`);
+      if (match[1] !== undefined) addTo(into, match[1], match[2]!);
+      if (match[3] !== undefined) {
+        addTo(into, match[3], match[4]!);
+        guarded.add(match[3]);
+      }
+      if (match[5] !== undefined) deleted.add(match[5]);
+      found += 1;
+    }
+    for (const key of deleted) if (!guarded.has(key)) throw new Error(`${tree.tag}: ${renderer.path} deletes package script ${key} without a value guard`);
+    if (found === 0) throw new Error(`${tree.tag}: no package scripts found in ${renderer.path}; extend ${RELEASED_MANAGED_VALUES_PATH} extraction`);
   }
 }
 
@@ -475,7 +515,7 @@ async function inPool<T, R>(items: readonly T[], limit: number, run: (item: T) =
 export async function buildReleasedManagedValues(repoRoot: string): Promise<ReleasedManagedValues> {
   const releases = releaseTags(repoRoot);
   const scratch = mkdtempSync(join(tmpdir(), 'released-managed-values-'));
-  const packageScripts = new Map(MANAGED_PACKAGE_SCRIPT_KEYS.map((key) => [key, new Set<string>()] as [string, Set<string>]));
+  const packageScripts = new Map<string, Set<string>>();
   const referenceConfigs = new Map<string, Set<string>>();
   const gitignoreBlocks = new Set<string>();
   const retiredBases = new Set<string>();

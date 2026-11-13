@@ -16,6 +16,7 @@ describe("released managed values", () => {
     const built = await buildReleasedManagedValues(REPO_ROOT);
     expect(built.releases[0]).toBe("v0.1.2");
     expect(built.packageScripts["check:context-files"]).toContain("bash .ai/harness/scripts/check-context-files.sh");
+    expect(built.packageScripts["check:brain-manifest"]).toContain("repo-harness run check-brain-manifest");
     expect(renderReleasedManagedValues(built)).toBe(readFileSync(join(REPO_ROOT, RELEASED_MANAGED_VALUES_PATH), "utf8"));
   }, 180_000);
 
@@ -37,6 +38,9 @@ describe("released managed values", () => {
       writeFileSync(join(repoRoot, "scripts/lib/project-init-lib.sh"), [
         "pi_factor_factory_gitignore_entries() { printf '%s\\n' .claude/.factor-cache/; }",
         "pi_default_runtime_block() { printf '%s\\n%s\\n%s\\n' '# BEGIN: x' \"$1\" '# END: x'; }",
+        "pi_ensure_task_sync() {",
+        'pkg.scripts["check:brain"] = "repo-harness brain check";',
+        "}",
         "",
       ].join("\n"));
       writeFileSync(join(repoRoot, "src/cli/commands/init.ts"), [

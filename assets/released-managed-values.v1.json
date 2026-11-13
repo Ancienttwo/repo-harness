@@ -98,8 +98,18 @@
     "v0.32.0"
   ],
   "packageScripts": {
+    "check:architecture-sync": [
+      "bash .ai/harness/scripts/check-architecture-sync.sh",
+      "bash scripts/check-architecture-sync.sh",
+      "repo-harness run check-architecture-sync"
+    ],
     "check:brain": [
       "repo-harness brain check"
+    ],
+    "check:brain-manifest": [
+      "bash .ai/harness/scripts/check-brain-manifest.sh",
+      "bash scripts/check-brain-manifest.sh",
+      "repo-harness run check-brain-manifest"
     ],
     "check:context-files": [
       "bash .ai/harness/scripts/check-context-files.sh",
@@ -111,8 +121,23 @@
       "bash scripts/check-deploy-sql-order.sh",
       "repo-harness run check-deploy-sql-order"
     ],
+    "check:task-sync": [
+      "bash .ai/harness/scripts/check-task-sync.sh",
+      "bash scripts/check-task-sync.sh",
+      "repo-harness run check-task-sync"
+    ],
+    "check:task-workflow": [
+      "bash .ai/harness/scripts/check-task-workflow.sh --strict",
+      "bash scripts/check-task-workflow.sh --strict",
+      "repo-harness run check-task-workflow --strict"
+    ],
     "sync:brain": [
       "repo-harness brain sync"
+    ],
+    "sync:brain-docs": [
+      "bash .ai/harness/scripts/sync-brain-docs.sh --all",
+      "bash scripts/sync-brain-docs.sh --all",
+      "repo-harness run sync-brain-docs --all"
     ]
   },
   "referenceConfigs": {
