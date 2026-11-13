@@ -450,7 +450,7 @@ describe('upgrade with real release bytes', () => {
     const previousTemplate = rootTemplate.replace(
       "- Write output text in a plain technical style: short sentences, one idea per sentence, active voice. For `en`, follow ASD-STE100 Simplified Technical English. For `zh-CN`, write plain Chinese (简明中文) with the same rules and keep technical terms in English. For `follow-user`, use the user's language with the same rules.",
       '- Write output text in ASD-STE100 Simplified Technical English: short sentences, one idea per sentence, active voice.',
-    );
+    ).replace('`rh run contract-worktree start', '`repo-harness run contract-worktree start');
     const cleanRoot = join(opts.cwd, 'CLAUDE.md');
     const editedRoot = join(opts.cwd, 'AGENTS.md');
     put(cleanRoot, previousTemplate);
