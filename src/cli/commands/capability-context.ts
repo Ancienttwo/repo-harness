@@ -256,6 +256,20 @@ function manifestEntryFor(
   return { entry: generated, changed: false };
 }
 
+// Under a projection manifest the manifest owns every shown page: a source-map entry that names a
+// registry module page shows the projected page instead, or is dropped when the manifest projects none.
+function projectSourceMap(entry: ManifestCapability, registryPages: ReadonlySet<string>, modulePage: string | null): ManifestCapability {
+  if (!entry.source_map) return entry;
+  let placed = false;
+  const sourceMap = entry.source_map.flatMap((item) => {
+    if (!registryPages.has(item.path)) return [item];
+    if (placed || modulePage === null) return [];
+    placed = true;
+    return [{ ...item, path: modulePage }];
+  });
+  return { ...entry, source_map: sourceMap };
+}
+
 function renderCapabilityBlock(capability: Capability, modulePage: string | null, entry: ManifestCapability, positioning: string | undefined): string {
   const sourceMap = (entry.source_map || [])
     .map((item) => `- ${item.label}: \`${item.path}\` (${item.role})`)
@@ -316,6 +330,7 @@ export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
   const capabilities = selectCapabilities(registry, repo, opts, owners);
   // The JSON registry is written back below, so the projection manifest only supplies the shown page.
   const pages = archcontext ? null : readProjectedModulePages(repo);
+  const registryPages = new Set(registry.capabilities.flatMap((capability) => capability.architecture_module ?? []));
   // Under archcontext the target is the declared extensions.contractFiles, never an
   // anchor, so an anchorless capability still has a target. readCapabilityContext already
   // refused a node that declares no contract files, before any write.
@@ -346,7 +361,8 @@ export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
     const modulePage = pages ? projectedModulePage(capability, pages) : capability.architecture_module;
     const { entry, changed } = manifestEntryFor(capability, modulePage, manifest, opts.autoFillPositioning === true, authorityPath);
     if (changed) changedManifestIds.add(capability.id);
-    const block = renderCapabilityBlock(capability, modulePage, entry, summaries.get(capability.id));
+    const shown = pages ? projectSourceMap(entry, registryPages, modulePage) : entry;
+    const block = renderCapabilityBlock(capability, modulePage, shown, summaries.get(capability.id));
     const basePath = fs.existsSync(path.join(repo, target.agents))
       ? path.join(repo, target.agents)
       : fs.existsSync(path.join(repo, target.claude))

@@ -175,6 +175,28 @@ describe('capability-context command', () => {
       expect(manifest.capabilities['verification-codegraph-readiness'].positioning).toContain(
         'verification-codegraph-readiness',
       );
+
+      // The auto-filled entry names the registry page; a projection manifest re-renders it or drops it.
+      const registryPage = scriptCapability.architecture_module!;
+      const projected = 'docs/architecture/modules/verification/readiness.md';
+      const syncUnderProjection = (targets: unknown) => {
+        fs.mkdirSync(path.join(cwd, 'docs/architecture'), { recursive: true });
+        fs.writeFileSync(path.join(cwd, 'docs/architecture/.projection-manifest.json'), JSON.stringify({ targets }));
+        runCapabilityContextSync({ repo: cwd, capabilityId: 'verification-codegraph-readiness', apply: true });
+        return fs.readFileSync(path.join(cwd, 'scripts/AGENTS.md'), 'utf-8');
+      };
+      const moved = syncUnderProjection({
+        'projection_target.entity.capability-verification-codegraph-readiness': {
+          type: 'entity-summary',
+          scope: { kind: 'entity', id: 'capability.verification.codegraph-readiness', entityKind: 'capability' },
+          path: projected,
+        },
+      });
+      expect(moved).toContain(`- Architecture module: \`${projected}\` (design-source)`);
+      expect(moved).not.toContain(registryPage);
+      const none = syncUnderProjection({});
+      expect(none).not.toContain('Architecture module');
+      expect(none).toContain('- Primary prefix: `scripts/ensure-codegraph.sh` (entrypoint)');
     } finally {
       fs.rmSync(cwd, { recursive: true, force: true });
     }
