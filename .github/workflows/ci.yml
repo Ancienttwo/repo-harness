@@ -126,6 +126,32 @@ jobs:
           run_bun_test_file tests/preload-home-isolation.test.ts
           run_bun_test_file tests/unit/trusted-gh-executable.test.ts
 
+  # Windows evidence for the architecture projection provider (#2711). This job is
+  # not in the needs of `required`, so Required / CI does not change.
+  projection-provider-windows:
+    name: Projection provider (windows-latest)
+    needs: selection
+    if: github.event_name != 'push' && needs.selection.outputs.mode != 'documentation'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.selection.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - run: bun install --frozen-lockfile
+      - name: Run the projection provider test
+        shell: bash
+        run: |
+          source scripts/lib/ci-run-tests.sh
+          run_bun_test_file tests/architecture-projection-provider.test.ts
+
   native-oar:
     name: Native OAR acceptance (macOS)
     needs: selection
