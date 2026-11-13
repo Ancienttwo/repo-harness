@@ -4,6 +4,7 @@ import {
   NATIVE_CONTEXT_SCHEMA_VERSION,
   nativeContextSchemaResolver,
   type ArchContextError,
+  type ArchitectureDocsProjectionManifestTargetV4,
   type NativeContextExportV1,
   architectureDebtReportIssues,
   docsAnchorsReportIssues,
@@ -43,15 +44,76 @@ export const ARCHCTX_REQUIRED_VERSION = dependencies.archctx;
  */
 export function summarizeArchitectureRender(result: ProjectionResultV3) {
   if (!result.changes) throw new Error('archctx check omitted per-target changes');
-  const differingPaths = [...new Set(result.changes.filter(change => change.outputChanged).map(change => change.path))];
+  const differing = result.changes.filter(change => change.outputChanged);
+  const differingPaths = [...new Set(differing.map(change => change.path))];
   const complete = (result.status === 'noop' || result.status === 'planned')
     && result.coverage === undefined && result.humanActions.length === 0;
   return {
     status: result.status,
     renderEquivalent: complete ? differingPaths.length === 0 : null,
     differingPaths,
+    // archctx adds or removes a target only when the model layout or the renderer changes.
+    differingTargets: differing.map(change => ({
+      targetId: change.targetId,
+      layoutChanged: change.reasonCodes.some(code => code === 'target-added' || code === 'target-removed'),
+    })),
     humanActions: result.humanActions,
   };
+}
+
+export interface DifferingRenderTarget { readonly targetId: string; readonly layoutChanged: boolean }
+
+/** One first-parent commit after the newest manifest commit: its changed paths, and whether it changes the archctx renderer version. */
+export interface RenderInputCommit { readonly sha: string; readonly paths: readonly string[]; readonly rendererChanged: boolean }
+
+export interface RenderInputAuthority {
+  /** Rows of the committed projection manifest, the rows archctx compares each target against. */
+  readonly committedRows: Readonly<Record<string, Pick<ArchitectureDocsProjectionManifestTargetV4, 'type' | 'scope'>>>;
+  /** The capability node ids of the architecture model at HEAD. */
+  readonly capabilityNodeIds: ReadonlySet<string>;
+  /**
+   * `archctx resolve` at HEAD: undefined when no declared source footprint includes the path, the owning
+   * capability node id, or null when archctx names no single owning capability.
+   */
+  readonly ownerOf: (path: string) => string | null | undefined;
+}
+
+/**
+ * The commit that starts the daily lag clock: the first commit after M (the newest manifest commit) that
+ * changes an input of a differing target, else M itself, because then the outputs already differ from M.
+ * Manifest v4 changes only with a render, so M and the first commit after it can be days older than the
+ * render change. archctx classes a target by the type of its manifest row (`projectionTargetChanges`):
+ * an entity summary or agent context documents the capability of its row scope and renders from that
+ * capability's declared source footprint; every other target renders the whole model, so from every declared
+ * footprint. Every target also renders from the model (`.archcontext/`) and the renderer version; an added or
+ * removed target from those alone. A null owner counts for every capability target. `commits` are oldest first.
+ */
+export function firstRenderChangeCommit(
+  manifestCommit: string,
+  commits: readonly RenderInputCommit[],
+  targets: readonly DifferingRenderTarget[],
+  authority: RenderInputAuthority,
+): string {
+  if (targets.length === 0) return manifestCommit;
+  let wholeModel = false;
+  const capabilities = new Set<string>();
+  for (const { targetId, layoutChanged } of targets) {
+    if (layoutChanged) continue;
+    if (!Object.hasOwn(authority.committedRows, targetId)) throw new Error(`differing target ${targetId} has no committed manifest row`);
+    const { type, scope } = authority.committedRows[targetId]!;
+    if (type !== 'entity-summary' && type !== 'agent-context') { wholeModel = true; continue; }
+    if (scope.entityKind !== 'capability' || scope.id === undefined || !authority.capabilityNodeIds.has(scope.id)) {
+      throw new Error(`differing target ${targetId} documents ${scope.id ?? 'no entity'}, which is no capability of the architecture model`);
+    }
+    capabilities.add(scope.id);
+  }
+  const changesInput = (path: string) => {
+    if (path.startsWith('.archcontext/')) return true;
+    const owner = authority.ownerOf(path);
+    if (owner === undefined) return false;
+    return wholeModel || (capabilities.size > 0 && (owner === null || capabilities.has(owner)));
+  };
+  return commits.find(commit => commit.rendererChanged || commit.paths.some(changesInput))?.sha ?? manifestCommit;
 }
 
 /** The rolling writer publishes after the product merge: 11 to 102 min for 8 projections in 2026-11 (#2590). */

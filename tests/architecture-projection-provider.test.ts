@@ -22,7 +22,7 @@ import {
   type ProjectionRequestV1,
   type ProjectionResultV3,
 } from 'archctx-contracts';
-import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, classifyArchitectureFreshness, decodeNativeContextExport, summarizeArchitectureRender, decodeArchitectureHandEdits, type NativeContextSource } from '../src/core/architecture/projection';
+import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, classifyArchitectureFreshness, decodeNativeContextExport, firstRenderChangeCommit, summarizeArchitectureRender, decodeArchitectureHandEdits, type NativeContextSource } from '../src/core/architecture/projection';
 import type { ArchctxProcessResult, ArchitectureProjectionPolicy, RunArchctxProcess } from '../src/core/architecture/contracts';
 import {
   archctxCapabilities,
@@ -1856,8 +1856,13 @@ describe('single-writer observations', () => {
       plannedAction: 'none' as const, classification: 'unchanged' as const, reasonCodes: [] });
     result.changes = [change('projection_target.agent-context.agents.a', 'AGENTS.md'), change('projection_target.agent-context.agents.b', 'AGENTS.md'), change('target.a', 'docs/architecture/a.md')];
     expect(summarizeArchitectureRender(result)).toMatchObject({ renderEquivalent: true, differingPaths: [] });
+    expect(summarizeArchitectureRender(result).differingTargets).toEqual([]);
     for (const entry of result.changes) entry.outputChanged = true;
-    expect(summarizeArchitectureRender(result)).toMatchObject({ renderEquivalent: false, differingPaths: ['AGENTS.md', 'docs/architecture/a.md'] });
+    // Affected capability ids never decide the target class; a layout change does.
+    result.changes[2]!.affectedCapabilityIds = ['capability.a'];
+    result.changes[2]!.reasonCodes = ['target-added'];
+    expect(summarizeArchitectureRender(result)).toMatchObject({ renderEquivalent: false, differingPaths: ['AGENTS.md', 'docs/architecture/a.md'], differingTargets: [
+      { targetId: 'projection_target.agent-context.agents.a', layoutChanged: false }, { targetId: 'projection_target.agent-context.agents.b', layoutChanged: false }, { targetId: 'target.a', layoutChanged: true }] });
     result.status = 'planned-partial';
     expect(summarizeArchitectureRender(result).renderEquivalent).toBeNull();
     result.status = 'human-action-required';
@@ -1873,6 +1878,41 @@ describe('single-writer observations', () => {
     expect(classifyArchitectureFreshness(differs, since(2.99), now)).toBe('lag');
     expect(classifyArchitectureFreshness(differs, since(3), now)).toBe('stale');
     expect(classifyArchitectureFreshness({ renderEquivalent: null, humanActions: [] }, since(0), now)).toBe('incomplete');
+  });
+
+  // Rounds 1 and 2 of PR #2714: the target class comes from the committed manifest row, and the inputs from archctx resolve.
+  const MODEL = '.archcontext/model/nodes/n.yaml';
+  const row = (type: string, id?: string) => ({ type: type as 'entity-summary', scope: id === undefined ? { kind: 'diagram' as const } : { kind: 'entity' as const, id, entityKind: 'capability' } });
+  const authority = {
+    committedRows: { summary: row('entity-summary', 'capability.d.x'), agents: row('agent-context', 'capability.d.x'), topology: row('diagram-runtime-topology'),
+      history: row('architecture-history'), unknown: row('entity-summary', 'capability.missing.example') },
+    capabilityNodeIds: new Set(['capability.d.x', 'capability.d.y']),
+    ownerOf: (path: string) => ({ 'src/y.ts': 'capability.d.y', 'docs/x.md': 'capability.d.x', 'shared.ts': null } as Record<string, string | null>)[path],
+  };
+  const target = (targetId: string, layoutChanged = false) => ({ targetId, layoutChanged });
+  const commit = (sha: string, path: string, rendererChanged = false) => ({ sha, paths: [path], rendererChanged });
+  const unrelated = commit('u', 'product.txt');
+  test.each([
+    ['no differing target', [], [commit('x', 'docs/x.md')], 'm'],
+    ['capability target: owned Markdown path after an unrelated commit (r2 F2)', [target('summary')], [unrelated, commit('y', 'src/y.ts'), commit('x', 'docs/x.md')], 'x'],
+    ['agent-context target: path archctx names no single owner of', [target('agents')], [unrelated, commit('s', 'shared.ts')], 's'],
+    ['capability target: no input after M', [target('summary')], [unrelated, commit('y', 'src/y.ts')], 'm'],
+    ['whole-model target: young model commit after an old unrelated commit (r1 F1)', [target('topology')], [unrelated, commit('n', MODEL)], 'n'],
+    ['whole-model target: another capability path, archctx named affected ids (r2 F1)', [target('history')], [unrelated, commit('y', 'src/y.ts')], 'y'],
+    ['whole-model target: no input after M (r1 F1)', [target('topology')], [unrelated], 'm'],
+    ['added or removed target: model and renderer only', [target('gone', true)], [commit('y', 'src/y.ts'), commit('r', 'package.json', true)], 'r'],
+  ] as const)('the lag clock starts at the first input change of a differing target, else at M: %s', (_name, targets, commits, start) => {
+    expect(firstRenderChangeCommit('m', commits, targets, authority)).toBe(start);
+  });
+
+  // The daily entry calls the rule with no commit when M is HEAD (r3 F1).
+  test.each([
+    ['a well-formed capability absent from the model (r2 F3)', 'unknown', [unrelated], 'capability.missing.example, which is no capability'],
+    ['a target with no committed manifest row', 'orphan', [unrelated], 'has no committed manifest row'],
+    ['a capability absent from the model, M is HEAD (r3 F1)', 'unknown', [], 'capability.missing.example, which is no capability'],
+    ['a target with no committed manifest row, M is HEAD (r3 F1)', 'orphan', [], 'has no committed manifest row'],
+  ] as const)('the lag clock fails closed on %s', (_name, targetId, commits, message) => {
+    expect(() => firstRenderChangeCommit('m', commits, [target(targetId)], authority)).toThrow(message);
   });
 
   test('hand-edit warnings consume only upstream manual-edit codes through the existing client', () => {

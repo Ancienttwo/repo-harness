@@ -2,14 +2,15 @@
 // read runs the package-local archctx through the closure client; no write
 // command passes through this module.
 
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { NATIVE_CONTEXT_PROFILE, decodeArchitectureHistory, type ArchContextError, type ArchitectureHistory, type NativeContextExportV1 } from 'archctx-contracts';
+import { NATIVE_CONTEXT_PROFILE, architectureDocsProjectionManifestIssues, decodeArchitectureHistory, type ArchContextError, type ArchitectureDocsProjectionManifestV4, type ArchitectureHistory, type NativeContextExportV1 } from 'archctx-contracts';
 import { isRecord } from '../../core/evidence/is-record';
 import { capabilityRegistryFromNativeContext, type ArchcontextPathOwner } from '../../core/capabilities/registry';
-import { ARCHCTX_REQUIRED_VERSION, ARCHCONTEXT_MANIFEST, ArchctxClientError, decodeArchitectureHandEdits, decodeNativeContextExport, type NativeContextSource } from '../../core/architecture/projection';
+import { ARCHCTX_REQUIRED_VERSION, ARCHCONTEXT_MANIFEST, ArchctxClientError, decodeArchitectureHandEdits, decodeNativeContextExport, firstRenderChangeCommit, type DifferingRenderTarget, type NativeContextSource } from '../../core/architecture/projection';
 import type { ArchctxProviderOptions } from '../../core/architecture/contracts';
+import { gitExecFileSync } from '../git/runner';
 import { ArchctxClient } from './archctx-provider';
 import { loadArchitectureProjectionPolicy } from './projection-config';
 
@@ -150,6 +151,43 @@ export function resolveArchitecturePaths(
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+const COMMITTED_PROJECTION_MANIFEST = 'docs/architecture/.projection-manifest.json';
+
+/**
+ * The commit that starts the daily lag clock (`firstRenderChangeCommit`) for the differing targets of
+ * `render-check`. The input authority is archctx at HEAD: the committed manifest rows, the model's
+ * capability nodes and `archctx resolve` for the changed paths. Any read or contract failure throws.
+ */
+export function readRenderClockStart(repoRoot: string, targets: readonly DifferingRenderTarget[], manifestCommit: string, shas: readonly string[]): string {
+  if (targets.length === 0) return manifestCommit;
+  const git = (args: string[]) => gitExecFileSync(['-C', repoRoot, ...args], { encoding: 'utf8' });
+  const archctxAt = (rev: string) => JSON.parse(git(['show', `${rev}:package.json`])).dependencies?.archctx;
+  const commits = shas.map(sha => {
+    const paths = git(['diff', '--name-only', '--no-renames', '-z', `${sha}^`, sha, '--']).split('\0').filter(Boolean);
+    return { sha, paths, rendererChanged: paths.includes('package.json') && archctxAt(`${sha}^`) !== archctxAt(sha) };
+  });
+  const manifest: unknown = JSON.parse(readFileSync(join(repoRoot, COMMITTED_PROJECTION_MANIFEST), 'utf8'));
+  const issues = architectureDocsProjectionManifestIssues(manifest);
+  if (issues.length > 0) throw new Error(`${COMMITTED_PROJECTION_MANIFEST} is invalid: ${issues.join('; ')}`);
+  const capabilityNodeIds = new Set(readArchitectureNativeContext(repoRoot, { kind: 'worktree' }).model.nodes
+    .filter(node => node.kind === 'capability').map(node => node.id as string));
+  const paths = [...new Set(commits.flatMap(commit => commit.paths))].filter(path => !path.startsWith('.archcontext/'));
+  const owners = new Map<string, ArchitecturePathOwner>();
+  if (paths.length > 0) {
+    const read = resolveArchitecturePaths(repoRoot, paths, {}, ARCHITECTURE_VIEW_TIMEOUT_MS);
+    if (!read.ok) throw new Error(`archctx resolve rejected the model: ${read.error.code}: ${read.error.message}`);
+    read.owners.forEach((owner, index) => owners.set(paths[index]!, owner));
+  }
+  return firstRenderChangeCommit(manifestCommit, commits, targets, {
+    committedRows: (manifest as ArchitectureDocsProjectionManifestV4).targets,
+    capabilityNodeIds,
+    ownerOf: path => {
+      const owner = owners.get(path);
+      return owner && (owner.matched || owner.ambiguous) ? owner.owningCapabilityId : undefined;
+    },
+  });
 }
 
 /** The read commands of the operator architecture views. No write command is in this union. */

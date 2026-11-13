@@ -1056,7 +1056,7 @@ describe('architecture lanes', () => {
     constraintIds: [LAYER_DIRECTION, PLUGIN_INTERNALS], importEdgeCount: 5521, unresolvedImports: [], violations: [constraintViolation(LAYER_DIRECTION)], ...fields } });
 
   // Real check-ci.sh with stub CLI results. `bun -e` and the shell logic stay real.
-  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; constraints?: string; summary?: boolean; history?: Array<{ manifest: boolean; hoursAgo: number }>; shallow?: boolean; gitFails?: string; changelog?: string; changelogExit?: number; links?: { dead: string[]; missing: string[] } }) {
+  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; constraints?: string; summary?: boolean; history?: Array<{ manifest: boolean; hoursAgo: number }>; clockStart?: number; shallow?: boolean; gitFails?: string; changelog?: string; changelogExit?: number; links?: { dead: string[]; missing: string[] } }) {
     const root = mkdtempSync(join(tmpdir(), 'rh-ci-architecture-'));
     const bin = join(root, 'bin');
     try {
@@ -1093,6 +1093,8 @@ describe('architecture lanes', () => {
         '#!/bin/bash',
         'if [[ "$1" == install ]]; then exit 0; fi',
         `if [[ "$1" == src/cli/index.ts && "$2" == architecture-debt ]]; then echo "$*" > ${JSON.stringify(join(root, 'debt-args'))}; cat ${JSON.stringify(join(root, 'debt.json'))}; if [[ ${fixture.debtExit ?? 0} -ne 0 ]]; then echo "$5 does not resolve to a commit" >&2; fi; exit ${fixture.debtExit ?? 0}; fi`,
+        // The fixture has no architecture model; the clock rule is covered by the provider test.
+        ...(fixture.clockStart === undefined ? [] : [`if [[ "$1" == -e && "$2" == *readRenderClockStart* ]]; then git rev-list --first-parent --reverse HEAD | sed -n ${fixture.clockStart + 1}p; exit 0; fi`]),
         `if [[ "$1" == src/cli/index.ts && "$2" == architecture-projection ]]; then touch ${JSON.stringify(join(root, 'checked'))}; cat ${JSON.stringify(join(root, 'check.json'))}; exit ${fixture.checkExit ?? 1}; fi`,
         `exec ${JSON.stringify(process.execPath)} "$@"`,
       ].join('\n'), { mode: 0o755 });
@@ -1248,21 +1250,22 @@ describe('architecture lanes', () => {
     expect(errors(result.stdout)).toEqual(['::error title=Plugin internals constraint::archctx constraints check --json gave no valid report. Read the job log.']);
   });
 
-  const equivalent = { status: 'planned', renderEquivalent: true, differingPaths: [], humanActions: [] };
-  const differs = { status: 'planned', renderEquivalent: false, differingPaths: ['docs/architecture/a.md'], humanActions: [] };
-  const humanAction = { status: 'human-action-required', renderEquivalent: null, differingPaths: [], humanActions: [{ reasonCode: 'unprovable-required-flow' }] };
-  // M is the newest commit that changes the manifest. The oldest commit after M, else M, dates the unpublished difference.
+  const equivalent = { status: 'planned', renderEquivalent: true, differingPaths: [], differingTargets: [], humanActions: [] };
+  const differs = { status: 'planned', renderEquivalent: false, differingPaths: ['docs/architecture/a.md'], differingTargets: [{ targetId: 'projection_target.a', layoutChanged: false }], humanActions: [] };
+  const humanAction = { status: 'human-action-required', renderEquivalent: null, differingPaths: [], differingTargets: [], humanActions: [{ reasonCode: 'unprovable-required-flow' }] };
+  // M is the newest commit that changes the manifest. The first commit after M that changes a render input, else M, dates the unpublished difference.
   const afterM = (hoursAgo: number) => [{ manifest: true, hoursAgo: 30 }, { manifest: false, hoursAgo }, { manifest: false, hoursAgo: 0.1 }];
   const onlyM = (hoursAgo: number) => [{ manifest: false, hoursAgo: 30 }, { manifest: true, hoursAgo }];
   test.each([
-    ['no difference', equivalent, afterM(30), 30, 'fresh', 0],
-    ['difference, commit after M younger than 3 h', differs, afterM(1), 1, 'lag', 0],
-    ['difference, commit after M older than 3 h', differs, afterM(4), 4, 'stale', 1],
-    ['difference, no commit after M, M younger than 3 h', differs, onlyM(1), 1, 'lag', 0],
-    ['difference, no commit after M, M older than 3 h', differs, onlyM(4), 4, 'stale', 1],
-    ['human action', humanAction, afterM(1), 1, 'human-action', 1],
-  ] as const)('daily classifies %s from the git history and saves the writer repair summary', (_name, summary, history, sinceHours, freshness, exit) => {
-    const result = runLane(['architecture'], { check: JSON.stringify(summary), checkExit: summary.renderEquivalent === true ? 0 : 1, summary: true, history: [...history] });
+    ['no difference', equivalent, afterM(30), undefined, 30, 'fresh', 0],
+    ['difference, input commit after M younger than 3 h', differs, afterM(1), 1, 1, 'lag', 0],
+    ['difference, input commit after M older than 3 h', differs, afterM(4), 1, 4, 'stale', 1],
+    ['difference, no commit after M changes an input', differs, afterM(1), 0, 30, 'stale', 1],
+    ['difference, no commit after M, M younger than 3 h', differs, onlyM(1), 1, 1, 'lag', 0],
+    ['difference, no commit after M, M older than 3 h', differs, onlyM(4), 1, 4, 'stale', 1],
+    ['human action', humanAction, afterM(1), undefined, 30, 'human-action', 1],
+  ] as const)('daily classifies %s from the git history and saves the writer repair summary', (_name, summary, history, clockStart, sinceHours, freshness, exit) => {
+    const result = runLane(['architecture'], { check: JSON.stringify(summary), checkExit: summary.renderEquivalent === true ? 0 : 1, summary: true, history: [...history], clockStart });
     expect(result.status, result.stderr).toBe(exit);
     expect(result.checked).toBe(true);
     expect(result.debtArgs).toBeNull();
@@ -1286,11 +1289,13 @@ describe('architecture lanes', () => {
     ['the checkout is shallow', { history: afterM(4), shallow: true }, 'The checkout is shallow'],
     // Without the status check, the failed read would fall back to the time of M and pass as lag.
     ['the commits after M cannot be read', { history: [{ manifest: true, hoursAgo: 1 }, { manifest: false, hoursAgo: 0.5 }], gitFails: 'rev-list' }, 'fatal: injected rev-list failure'],
+    // With M at HEAD the real rule still validates the differing targets; the fixture manifest is no v4 manifest.
+    ['M is HEAD and the rule rejects the committed manifest', { history: onlyM(1) }, 'docs/architecture/.projection-manifest.json is invalid'],
   ])('daily fails closed with no summary when %s', (_name, fixture, message) => {
     const result = runLane(['architecture'], { check: JSON.stringify(differs), checkExit: 1, summary: true, ...fixture });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(message);
-    expect(result.stderr).toContain('The oldest unpublished main commit could not be read from git.');
+    expect(result.stderr).toContain('The oldest unpublished main commit could not be read.');
     expect(result.summary).toBeNull();
   });
 
