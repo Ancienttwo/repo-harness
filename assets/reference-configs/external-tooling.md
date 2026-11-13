@@ -1083,10 +1083,13 @@ compare renders. The Daily architecture freshness lane runs render equivalence
 on main. When the published output differs from what current main renders, the
 lane warns while the oldest unpublished main commit is younger than 3 h, and
 fails after that. Of the first-parent commits after the newest commit that
-changes the projection manifest, the oldest unpublished commit is the first one
-that changes the architecture model or a path that a differing capability owns.
-Without one, or when a differing target names no capability, it is the first
-commit after the manifest commit, else the manifest commit itself.
+changes the projection manifest (M), the oldest unpublished commit is the first
+one that changes an input of a differing target. Every target reads the archctx
+version in `package.json`. A target with affected capabilities also reads the
+model (`.archcontext/`) and the paths those capabilities own. A target with no
+affected capability (runtime topology, history) renders the whole model, so it
+reads the model and every capability-owned path. Without such a commit, the
+oldest unpublished commit is M.
 A version mismatch that renders the same output is harmless. The next main move
 renders again with the new writer. The upstream fix is
 Ancienttwo/arch-context#504 (`--base-sha`). A projection that stays stale for
