@@ -21,6 +21,9 @@ _ci_run_bun_tests_in_temporary_home() {
     for (const [index, baseArgs] of runs.entries()) {
       const { env, home, temp } = createTemporaryTestEnvironment(process.env);
       env.BUN_TEST_JUNIT_DIR = require("node:path").join(temp, "junit");
+      // The pool owns attribution; the test process must not inherit its directory.
+      const suspectDir = process.env.CI_WORKTREE_SUSPECT_DIR;
+      delete env.CI_WORKTREE_SUSPECT_DIR;
       // One report per Bun process, named by its test file so a rerun replaces the report. Options go first so the file stays last.
       const name = (batch >= 0 ? testFiles[index] : testFiles.length === 1 ? testFiles[0] : undefined) ?? "run-" + index;
       const runArgs = junitDir
@@ -61,6 +64,8 @@ _ci_run_bun_tests_in_temporary_home() {
           try { stat = fs.lstatSync(path); } catch (error) { if (error.code === "ENOENT") continue; throw error; }
           // Fallback: fixture-created roots are not all known to this runner.
           if (stat.uid === process.getuid?.() && (stat.birthtimeMs || stat.ctimeMs) >= started) {
+            // Under the pool, a concurrent file may own this path and remove it later. The pool rechecks after every file ends.
+            if (suspectDir) { fs.appendFileSync(pathApi.join(suspectDir, name.replace(/[\\/]/g, "__") + ".suspects"), path + "\t" + name + "\n"); continue; }
             console.error("[ci] surviving new worktree path outside disposable roots (current uid; created during test): " + path);
             fileStatus = 1;
           }
@@ -141,6 +146,7 @@ _ci_run_bun_test_pool() {
     return 1
   fi
 
+  mkdir -p "$tmpdir/suspects"
   local -a slot_pid slot_file slot_log slot_status
   local slot
   for ((slot = 0; slot < jobs; slot++)); do
@@ -168,7 +174,7 @@ _ci_run_bun_test_pool() {
       # abort the worker before that record exists.
       (
         status=0
-        run_bun_test_file "$file" >"$log" 2>&1 || status=$?
+        CI_WORKTREE_SUSPECT_DIR="$tmpdir/suspects" run_bun_test_file "$file" >"$log" 2>&1 || status=$?
         printf '%s\n' "$status" >"$status_file.partial"
         mv "$status_file.partial" "$status_file"
       ) &
@@ -231,6 +237,15 @@ _ci_run_bun_test_pool() {
       sleep 0.05
     fi
   done
+
+  # A worktree that one file created and removed is gone now. One that is still
+  # here leaked, so every file that saw it appear fails.
+  local suspect_path suspect_file
+  while IFS=$'\t' read -r suspect_path suspect_file; do
+    [[ -e "$suspect_path" || -L "$suspect_path" ]] || continue
+    echo "[ci] surviving new worktree path outside disposable roots (current uid; created during test): $suspect_path ($suspect_file)" >&2
+    case "$unsorted" in *"  $suspect_file (exit "*) ;; *) unsorted+="  $suspect_file (exit 1)"$'\n' ;; esac
+  done < <(cat "$tmpdir"/suspects/*.suspects 2>/dev/null)
 
   # Completion order is a race, so the summary is sorted by file path to keep
   # the gate's failure block reproducible across runs.
