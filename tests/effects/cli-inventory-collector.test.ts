@@ -130,14 +130,20 @@ describe('cli inventory collector', () => {
     expect((await collectCliInventory({ env, probe: silent, now: () => NOW })).status).toBe('ready');
   });
 
-  test('a gh full_name that is not owner/repo is not used', async () => {
+  test('a gh full_name is used only when it is a valid owner/repo slug', async () => {
     const { env, probe: base } = machine();
-    const probe: CliProbe = async (argv) => (argv[0] === 'gh'
-      ? '{"archived":false,"full_name":"../../etc passwd","stars":1}\n'
-      : base(argv));
-    const snapshot = await collectCliInventory({ env, probe, now: () => NOW });
-    expect(() => decodeCliInventory(snapshot)).not.toThrow();
-    expect(snapshot.entries.find(entry => entry.id === 'brew:gh')?.github).toMatchObject({ repo: 'cli/cli', stars: null, moved: false });
+    const fullName = async (name: string) => {
+      const probe: CliProbe = async (argv) => (argv[0] === 'gh' ? `{"archived":false,"full_name":${JSON.stringify(name)},"stars":1}\n` : base(argv));
+      const snapshot = await collectCliInventory({ env, probe, now: () => NOW });
+      expect(() => decodeCliInventory(snapshot)).not.toThrow();
+      return snapshot.entries.find(entry => entry.id === 'brew:gh')?.github;
+    };
+    for (const name of ['../../etc passwd', 'bad_owner/repo', `${'a'.repeat(40)}/repo`, `owner/${'r'.repeat(101)}`]) {
+      expect(await fullName(name)).toMatchObject({ repo: 'cli/cli', stars: null, moved: false });
+    }
+    for (const name of ['-owner/repo', `${'a'.repeat(39)}/${'r'.repeat(100)}`]) {
+      expect(await fullName(name)).toMatchObject({ stars: 1, moved: true });
+    }
   });
 
   test('network lookups are cached for 24 hours', async () => {

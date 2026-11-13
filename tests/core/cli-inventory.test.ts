@@ -208,7 +208,15 @@ describe('cli inventory decoder', () => {
     rejects(s => { s.entries[0].github = { repo: null, candidates: [], monorepo: false, stars: 1, archived: null, moved: false }; });
     rejects((_, entry) => { entry('manual:asc').github.stars = 10; });
     rejects(s => { s.entries[0].commands = []; });
-    rejects((_, entry) => { entry('manual:asc').github.candidates[0] = 'bad_owner/repo'; });
+    for (const slug of ['bad_owner/repo', `${'a'.repeat(40)}/repo`, 'owner/re po', `owner/${'r'.repeat(101)}`]) {
+      rejects((_, entry) => { entry('manual:asc').github.candidates[0] = slug; });
+      rejects(s => { s.entries[0].github.repo = slug; });
+    }
+    for (const slug of ['-owner/repo', `${'a'.repeat(39)}/${'r'.repeat(100)}`]) {
+      const snapshot = structuredClone(projectCliInventory(input())) as any;
+      snapshot.entries.find((item: any) => item.id === 'manual:asc').github.candidates[0] = slug;
+      expect(decodeCliInventory(snapshot).entries.find(item => item.id === 'manual:asc')?.github?.candidates[0]).toBe(slug);
+    }
     rejects(s => { s.entries[0].args = 'pr view'; });
     rejects(s => { s.entries.push({ ...s.entries[0] }); });
     rejects(s => { Object.assign(s, unavailableCliInventory(), { entries: s.entries }); });
