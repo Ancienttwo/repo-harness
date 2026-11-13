@@ -294,16 +294,17 @@ export class ArchitectureModelReader {
     });
     return moduleDetail(this.commit, node, this.nodes.map(file => file.value), this.relations.map(file => file.value),
       flows, section3, linked,
-      { model_valid: 'valid', generated_summary: generatedSummaryState(this.freshness(options), id) });
+      { model_valid: 'valid', generated_summary: generatedSummaryState(this.freshness(options), this.docPath(id)) });
   }
   list(options: ModuleReadOptions = {}): ModuleIndexV1 {
     const freshness = this.freshness(options);
     return { schema_version: 'repo-harness.architecture-modules.v1', commit: this.commit,
       modules: this.nodes.filter(file => file.value.kind === 'capability').map(({ value }) => {
-        const section3 = this.section(this.docPath(value.id), 'section3');
+        const docPath = this.docPath(value.id);
+        const section3 = this.section(docPath, 'section3');
         return { id: value.id, domain: value.id.split('.')[1], name: value.name, status: value.status,
           components: this.nodes.filter(file => file.value.parent === value.id).length,
-          state: { model_valid: 'valid' as const, generated_summary: generatedSummaryState(freshness, value.id), section3: section3 ? 'present' as const : 'pending' as const } };
+          state: { model_valid: 'valid' as const, generated_summary: generatedSummaryState(freshness, docPath), section3: section3 ? 'present' as const : 'pending' as const } };
       }) };
   }
 

@@ -63,10 +63,10 @@ export interface ModuleIndexV1 {
   modules: { id: string; domain: string; name: string; status: string; components: number; state: ModuleState }[];
 }
 
-/** Without a check result the state stays unknown. A listed node is stale. */
-export function generatedSummaryState(freshness: GeneratedSummaryFreshness | null, id: string): ModuleState['generated_summary'] {
+/** Without a check result the state stays unknown. A module whose document path has a stale target is stale. */
+export function generatedSummaryState(freshness: GeneratedSummaryFreshness | null, docPath: string): ModuleState['generated_summary'] {
   if (freshness === null) return 'unknown';
-  if (freshness.staleNodeIds.has(id)) return 'stale';
+  if (freshness.stalePaths.has(docPath)) return 'stale';
   return freshness.complete ? 'fresh' : 'unknown';
 }
 

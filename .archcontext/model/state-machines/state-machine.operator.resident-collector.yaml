@@ -84,7 +84,7 @@ regions:
 events:
   - id: "boot"
     label: "the first Dev Activity cycle settles"
-    source: { kind: "code", path: "src/effects/observation-loop.ts", symbol: "startObservationLoop", confirmedDigest: "sha256:759fdd963e8635f5cd1593854820cb6e1bd69fd6b21e949abeb9502ebeca8c29" }
+    source: { kind: "code", path: "src/effects/observation-loop.ts", symbol: "startObservationLoop", confirmedDigest: "sha256:08dad78837500910e7b32e5fbe6efa035f92c4e7a667e6fc92952a9b05719de2" }
     steps:
       - when: { boot: ["pending"], closed: ["closed"] }
         then: { boot: "done" }
@@ -94,7 +94,7 @@ events:
         then: { boot: "done", inflight: "yes", running: "r1", child-since-close: "started" }
   - id: "timer-fires"
     label: "the gap ends"
-    source: { kind: "code", path: "src/effects/observation-loop.ts", symbol: "startObservationLoop.cycle", confirmedDigest: "sha256:b69db92f5bbd27c9fba67d19ba7aef2dbb328bed4fdda13bd6c873c1e5f8da04" }
+    source: { kind: "code", path: "src/effects/observation-loop.ts", symbol: "startObservationLoop.cycle", confirmedDigest: "sha256:58dfa5dc44e8ce1cae6604c25cdafd62a4155832276c0a1c331842fd3afd9482" }
     steps:
       - when: { timer: ["armed"], inflight: ["no", "yes"], published: ["pending", "map"], pub-r1: ["none", "ready", "unavailable"], pub-r2: ["none", "ready", "unavailable"], publish-since-close: ["none", "changed"] }
         then: { timer: "off", inflight: "yes", published: "registry-failed", pub-r1: "none", pub-r2: "none", publish-since-close: "changed" }
@@ -104,7 +104,7 @@ events:
         then: { timer: "off", inflight: "yes", running: "r1", child-since-close: "started" }
   - id: "child-returns"
     label: "the child of a repository returns"
-    source: { kind: "code", path: "src/effects/operator/architecture-map-collector.ts", symbol: "startArchitectureMapCollector", confirmedDigest: "sha256:542a43f4c290158d8a2def6e1a1f3903d34e32f478830770d889a64e71dfcc97" }
+    source: { kind: "code", path: "src/effects/operator/architecture-map-collector.ts", symbol: "startArchitectureMapCollector", confirmedDigest: "sha256:197a45d2ff0125a6cb3cb662589a22c972cf73fee57a960ce51f15bbcbad65f6" }
     steps:
       - when: { closed: ["closed"], running: ["r1", "r2"] }
         then: { running: "none" }
@@ -130,7 +130,7 @@ events:
         then: { running: "none", result-r2: "unavailable", published: "map", pub-r2: "unavailable" }
   - id: "cycle-settles"
     label: "the cycle settles"
-    source: { kind: "code", path: "src/effects/observation-loop.ts", symbol: "startObservationLoop.cycle", confirmedDigest: "sha256:b69db92f5bbd27c9fba67d19ba7aef2dbb328bed4fdda13bd6c873c1e5f8da04" }
+    source: { kind: "code", path: "src/effects/observation-loop.ts", symbol: "startObservationLoop.cycle", confirmedDigest: "sha256:58dfa5dc44e8ce1cae6604c25cdafd62a4155832276c0a1c331842fd3afd9482" }
     steps:
       - when: { closed: ["open"], timer: ["off", "armed"], inflight: ["yes"], running: ["none"], result-r1: ["none", "ready", "unavailable"], result-r2: ["none", "ready", "unavailable"] }
         then: { timer: "armed", inflight: "no", result-r1: "none", result-r2: "none" }
@@ -138,7 +138,7 @@ events:
         then: { inflight: "no", result-r1: "none", result-r2: "none" }
   - id: "close"
     label: "operator serve closes the collector"
-    source: { kind: "code", path: "src/effects/observation-loop.ts", symbol: "startObservationLoop", confirmedDigest: "sha256:759fdd963e8635f5cd1593854820cb6e1bd69fd6b21e949abeb9502ebeca8c29" }
+    source: { kind: "code", path: "src/effects/observation-loop.ts", symbol: "startObservationLoop", confirmedDigest: "sha256:08dad78837500910e7b32e5fbe6efa035f92c4e7a667e6fc92952a9b05719de2" }
     steps:
       - when: { closed: ["open"], timer: ["off", "armed"], child-since-close: ["none", "started"], publish-since-close: ["none", "changed"] }
         then: { closed: "closed", timer: "off", child-since-close: "none", publish-since-close: "none" }

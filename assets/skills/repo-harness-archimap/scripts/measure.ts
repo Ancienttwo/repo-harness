@@ -50,6 +50,7 @@ const LIST_LIMIT = 20;
 const EXAMPLE_LIMIT = 10;
 // The projection manifest is the only authority for a capability's document path.
 const MANIFEST_PATH = "docs/architecture/.projection-manifest.json";
+const MANIFEST_SCHEMA_VERSION = "archcontext.architecture-docs-projection-manifest/v4";
 
 function git(root: string, ...args: string[]): string {
   return execFileSync("git", ["-C", root, ...args], { encoding: "utf8", maxBuffer: 1 << 28 });
@@ -261,10 +262,16 @@ function loadManifest(root: string): CapabilityDocs {
   } catch (error) {
     throw new UsageError(`${MANIFEST_PATH} does not parse: ${(error as Error).message}`);
   }
+  const schemaVersion = record(parsed)?.schemaVersion;
+  if (schemaVersion !== MANIFEST_SCHEMA_VERSION) {
+    // This script cannot evaluate the archctx floors, so the message names both archctx remedies.
+    throw new UsageError(`${MANIFEST_PATH}: schemaVersion ${JSON.stringify(schemaVersion)} is not ${MANIFEST_SCHEMA_VERSION}; re-baseline a superseded manifest with archctx docs apply --approved, or update repo-harness for a newer manifest or when archctx reports projection-manifest-incompatible`);
+  }
   const targets = record(parsed)?.targets;
   if (targets === undefined || targets === null || record(targets) === null) {
     throw new UsageError(`${MANIFEST_PATH}: "targets" must be an object keyed by targetId`);
   }
+  const members = capabilityMembers(record(parsed)?.semanticBaseline);
   const byNode = new Map<string, string>();
   const capabilities = new Set<string>();
   for (const [targetId, row] of Object.entries(targets as Record<string, unknown>)) {
@@ -282,8 +289,7 @@ function loadManifest(root: string): CapabilityDocs {
       throw new UsageError(`${MANIFEST_PATH}: capability ${capabilityId} is documented by more than one target`);
     }
     capabilities.add(capabilityId);
-    const stamps = record(target.sourceStamps) ?? {};
-    for (const nodeId of [capabilityId, ...Object.keys(stamps)]) {
+    for (const nodeId of [capabilityId, ...(members.get(capabilityId) ?? [])]) {
       const existing = byNode.get(nodeId);
       if (existing !== undefined && existing !== docPath) {
         throw new UsageError(`${MANIFEST_PATH}: node ${nodeId} is documented by both ${existing} and ${docPath}`);
@@ -292,6 +298,22 @@ function loadManifest(root: string): CapabilityDocs {
     }
   }
   return { byNode, capabilities };
+}
+
+/** Capability id -> member node ids, from the manifest's semantic baseline. */
+function capabilityMembers(value: unknown): Map<string, string[]> {
+  const entries = record(value)?.capabilities;
+  if (!Array.isArray(entries)) throw new UsageError(`${MANIFEST_PATH}: "semanticBaseline.capabilities" must be an array`);
+  const members = new Map<string, string[]>();
+  for (const [index, entry] of entries.entries()) {
+    const capability = record(entry);
+    const ids = capability?.memberNodeIds;
+    if (typeof capability?.capabilityId !== "string" || !Array.isArray(ids) || ids.some((id) => typeof id !== "string")) {
+      throw new UsageError(`${MANIFEST_PATH}: semanticBaseline.capabilities[${index}] must name a capabilityId and its memberNodeIds`);
+    }
+    members.set(capability.capabilityId, ids as string[]);
+  }
+  return members;
 }
 
 function isFile(abs: string): boolean {

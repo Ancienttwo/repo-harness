@@ -1,4 +1,4 @@
-import type { ProjectionResultV2, ProjectionRequestV1 } from 'archctx-contracts';
+import type { ProjectionResultV3, ProjectionRequestV1 } from 'archctx-contracts';
 import {
   architectureProjectionRequest,
   readArchitectureProjectionApply,
@@ -10,7 +10,7 @@ import type { ArchctxProviderOptions } from '../../core/architecture/contracts';
 
 export interface ArchitectureProjectionApplyOptions extends ArchctxProviderOptions, ArchitectureProjectionRequestOptions {
   readonly mode?: 'apply' | 'adopt';
-  readonly runProjection?: (request: ProjectionRequestV1, repoRoot: string) => ProjectionResultV2;
+  readonly runProjection?: (request: ProjectionRequestV1, repoRoot: string) => ProjectionResultV3;
   readonly runReadback?: typeof readArchitectureProjectionApply;
 }
 
@@ -19,7 +19,7 @@ export interface ArchitectureProjectionApplyOptions extends ArchctxProviderOptio
  * proves the committed outputs before a replay and restores reverted outputs,
  * so this caller does not read the outputs again.
  */
-export function applyArchitectureProjection(repoRoot: string, options: ArchitectureProjectionApplyOptions = {}): ProjectionResultV2 {
+export function applyArchitectureProjection(repoRoot: string, options: ArchitectureProjectionApplyOptions = {}): ProjectionResultV3 {
   const request = architectureProjectionRequest(options.mode ?? 'apply', repoRoot, options);
   try {
     return (options.runProjection ?? ((input, root) => runArchitectureProjection(input, root, options)))(request, repoRoot);

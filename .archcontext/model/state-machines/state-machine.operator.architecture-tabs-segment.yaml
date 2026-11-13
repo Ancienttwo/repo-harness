@@ -34,7 +34,7 @@ regions:
 events:
   - id: "open-other-map"
     label: "you open the module map, Layers or Sequence"
-    source: { kind: "code", path: "src/operator-web/ArchitectureWorkspace.tsx", symbol: "ArchitectureWorkspace", confirmedDigest: "sha256:6654562e0f8ac4e9062ca7347d7b9c34051f06ecfe2fb3ccce07491753ca97ee" }
+    source: { kind: "code", path: "src/operator-web/ArchitectureWorkspace.tsx", symbol: "ArchitectureWorkspace", confirmedDigest: "sha256:4274db8f8c9d2d6a824f50a390aad5d21712cb9f4d9a3aba738e457f822cedbf" }
     steps:
       - when: { tab: ["topology"], segment: ["process"], chosen: ["no"] }
         then: { tab: "other-map", segment: "namespace" }
@@ -44,7 +44,7 @@ events:
         then: { tab: "other-map" }
   - id: "open-topology"
     label: "you open Topology"
-    source: { kind: "code", path: "src/operator-web/ArchitectureWorkspace.tsx", symbol: "ArchitectureWorkspace", confirmedDigest: "sha256:6654562e0f8ac4e9062ca7347d7b9c34051f06ecfe2fb3ccce07491753ca97ee" }
+    source: { kind: "code", path: "src/operator-web/ArchitectureWorkspace.tsx", symbol: "ArchitectureWorkspace", confirmedDigest: "sha256:4274db8f8c9d2d6a824f50a390aad5d21712cb9f4d9a3aba738e457f822cedbf" }
     steps:
       - when: { tab: ["other-map", "modules", "history"], segment: ["namespace"], chosen: ["no"] }
         then: { tab: "topology", segment: "process" }
@@ -52,7 +52,7 @@ events:
         then: { tab: "topology" }
   - id: "open-modules"
     label: "you open Modules"
-    source: { kind: "code", path: "src/operator-web/ArchitectureWorkspace.tsx", symbol: "ArchitectureWorkspace", confirmedDigest: "sha256:6654562e0f8ac4e9062ca7347d7b9c34051f06ecfe2fb3ccce07491753ca97ee" }
+    source: { kind: "code", path: "src/operator-web/ArchitectureWorkspace.tsx", symbol: "ArchitectureWorkspace", confirmedDigest: "sha256:4274db8f8c9d2d6a824f50a390aad5d21712cb9f4d9a3aba738e457f822cedbf" }
     steps:
       - when: { tab: ["other-map", "history"], segment: ["namespace"], chosen: ["no"] }
         then: { tab: "modules" }
@@ -64,7 +64,7 @@ events:
         then: { tab: "modules", segment: "namespace" }
   - id: "open-history"
     label: "you open History"
-    source: { kind: "code", path: "src/operator-web/ArchitectureWorkspace.tsx", symbol: "ArchitectureWorkspace", confirmedDigest: "sha256:6654562e0f8ac4e9062ca7347d7b9c34051f06ecfe2fb3ccce07491753ca97ee" }
+    source: { kind: "code", path: "src/operator-web/ArchitectureWorkspace.tsx", symbol: "ArchitectureWorkspace", confirmedDigest: "sha256:4274db8f8c9d2d6a824f50a390aad5d21712cb9f4d9a3aba738e457f822cedbf" }
     steps:
       - when: { tab: ["other-map", "modules"], segment: ["namespace"], chosen: ["no"] }
         then: { tab: "history" }
@@ -76,7 +76,7 @@ events:
         then: { tab: "history", segment: "namespace" }
   - id: "choose-segment"
     label: "you choose a segment"
-    source: { kind: "code", path: "src/operator-web/ArchitectureMap.tsx", symbol: "ArchitectureMap", confirmedDigest: "sha256:21763261be8984d1acdc5480539801f0a42d58acceb2197ba81cdeda854c3241" }
+    source: { kind: "code", path: "src/operator-web/ArchitectureMap.tsx", symbol: "ArchitectureMap", confirmedDigest: "sha256:e4cdd42a9f420eccfafc9ead48a9610f60ade26a1eee2b8d21544f3cbad0e16c" }
     steps:
       - when: { tab: ["topology"], segment: ["namespace", "process", "mount"], chosen: ["no", "yes"], selected: ["none", "namespace", "process"] }
         then: { segment: "namespace", chosen: "yes", selected: "none" }
@@ -86,7 +86,7 @@ events:
         then: { segment: "mount", chosen: "yes", selected: "none" }
   - id: "select-box"
     label: "you select a box"
-    source: { kind: "code", path: "src/operator-web/ArchitectureMap.tsx", symbol: "ArchitectureMap", confirmedDigest: "sha256:21763261be8984d1acdc5480539801f0a42d58acceb2197ba81cdeda854c3241" }
+    source: { kind: "code", path: "src/operator-web/ArchitectureMap.tsx", symbol: "ArchitectureMap", confirmedDigest: "sha256:e4cdd42a9f420eccfafc9ead48a9610f60ade26a1eee2b8d21544f3cbad0e16c" }
     steps:
       - when: { tab: ["topology"], segment: ["namespace"], selected: ["none", "namespace", "process"] }
         then: { selected: "namespace" }
@@ -94,7 +94,7 @@ events:
         then: { selected: "process" }
   - id: "new-commit"
     label: "the collector reads a new commit"
-    source: { kind: "code", path: "src/operator-web/ArchitectureWorkspace.tsx", symbol: "ArchitectureWorkspace", confirmedDigest: "sha256:6654562e0f8ac4e9062ca7347d7b9c34051f06ecfe2fb3ccce07491753ca97ee" }
+    source: { kind: "code", path: "src/operator-web/ArchitectureWorkspace.tsx", symbol: "ArchitectureWorkspace", confirmedDigest: "sha256:4274db8f8c9d2d6a824f50a390aad5d21712cb9f4d9a3aba738e457f822cedbf" }
     steps:
       - when: { tab: ["other-map", "topology"], selected: ["namespace", "process"] }
         then: { selected: "none" }

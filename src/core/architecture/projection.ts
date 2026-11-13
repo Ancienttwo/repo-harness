@@ -15,9 +15,10 @@ import {
   type DependencyConstraintEvaluationV1,
   type DocsAnchorsReportV1,
   type Json,
-  type ProjectionApplyReadbackResultV1,
+  type ProjectionApplyReadbackResultV2,
+  type ProjectionFreshnessReasonCode,
   type ProjectionRequestV1,
-  type ProjectionResultV2,
+  type ProjectionResultV3,
   type RefImpactV1,
 } from 'archctx-contracts';
 import projectionResultSchema from 'archctx-contracts/schemas/runtime/projection-result.schema.json';
@@ -36,10 +37,13 @@ import type { ArchitectureProjectionPolicy } from './contracts';
 
 export const ARCHCTX_REQUIRED_VERSION = dependencies.archctx;
 
-/** A delivery view of archctx's per-target output decisions. Stamps are not render drift. */
-export function summarizeArchitectureRender(result: ProjectionResultV2) {
+/**
+ * A delivery view of archctx's per-target output decisions. `changes[]` has one entry per targetId;
+ * agent-context targets share a contract file path, so a path is listed once.
+ */
+export function summarizeArchitectureRender(result: ProjectionResultV3) {
   if (!result.changes) throw new Error('archctx check omitted per-target changes');
-  const differingPaths = result.changes.filter(change => change.outputChanged).map(change => change.path);
+  const differingPaths = [...new Set(result.changes.filter(change => change.outputChanged).map(change => change.path))];
   const complete = (result.status === 'noop' || result.status === 'planned')
     && result.coverage === undefined && result.humanActions.length === 0;
   return {
@@ -158,8 +162,8 @@ export function assertArchctxVersion(value: unknown, requiredVersion: string = A
 }
 
 /** ArchContext owns the result contract; repo-harness applies its published schema and invariants. */
-export function assertProjectionResult(value: unknown, expectedRequestId: string): ProjectionResultV2 {
-  const result = decode(projectionResultSchema, value, 'projection result') as unknown as ProjectionResultV2;
+export function assertProjectionResult(value: unknown, expectedRequestId: string): ProjectionResultV3 {
+  const result = decode(projectionResultSchema, value, 'projection result') as unknown as ProjectionResultV3;
   const issues = projectionResultInvariantIssues(result);
   if (result.requestId !== expectedRequestId) issues.push('requestId mismatch');
   if (issues.length > 0) throw new Error(`projection result invalid: ${issues.join('; ')}`);
@@ -167,10 +171,10 @@ export function assertProjectionResult(value: unknown, expectedRequestId: string
 }
 
 /** A readback proves an earlier committed apply of this exact request; an absence proof means none exists. */
-export function assertProjectionApplyReadbackResult(value: unknown, request: ProjectionRequestV1): ProjectionApplyReadbackResultV1 {
+export function assertProjectionApplyReadbackResult(value: unknown, request: ProjectionRequestV1): ProjectionApplyReadbackResultV2 {
   const readback = decode(projectionReadbackSchema, value, 'projection readback');
   if (readback.schemaVersion === 'archcontext.projection-apply-absence/v1') throw new Error(`no committed projection apply exists for ${request.requestId}`);
-  const result = readback as unknown as ProjectionApplyReadbackResultV1;
+  const result = readback as unknown as ProjectionApplyReadbackResultV2;
   const issues = projectionApplyReadbackResultInvariantIssues(result, request);
   if (issues.length > 0) throw new Error(`projection readback invalid: ${issues.join('; ')}`);
   return result;
@@ -178,27 +182,31 @@ export function assertProjectionApplyReadbackResult(value: unknown, request: Pro
 
 /**
  * Generated-summary freshness from one `architecture-projection check` result.
- * `complete` is false when the check failed for a reason that is not per node.
+ * `stalePaths` holds the paths of targets whose render differs from the committed manifest row.
+ * `complete` is false when the check failed for a reason that is not per target.
  */
 export interface GeneratedSummaryFreshness {
   readonly commit: string;
-  readonly staleNodeIds: ReadonlySet<string>;
+  readonly stalePaths: ReadonlySet<string>;
   readonly complete: boolean;
 }
+
+/** Both codes still compare every target, so the per-target answer is complete. */
+const PER_TARGET_FRESHNESS_REASONS: ReadonlySet<ProjectionFreshnessReasonCode> = new Set(['projection-output-changed', 'projection-manifest-changed']);
 
 /**
  * Reads generated-summary freshness from a saved `architecture-projection check`
  * result. Only a check result carries `freshness`; any other result is refused.
  */
 export function decodeProjectionCheckFreshness(value: unknown): GeneratedSummaryFreshness {
-  const result = decode(projectionResultSchema, value, 'projection check result') as unknown as ProjectionResultV2;
+  const result = decode(projectionResultSchema, value, 'projection check result') as unknown as ProjectionResultV3;
   const issues = projectionResultInvariantIssues(result);
   if (issues.length > 0) throw new Error(`projection check result invalid: ${issues.join('; ')}`);
   if (!result.freshness) throw new Error('projection result has no freshness; save the output of architecture-projection check');
   return {
     commit: result.inputSnapshot.baseHeadSha,
-    staleNodeIds: new Set(result.freshness.staleNodes.map((node) => node.nodeId)),
-    complete: result.freshness.reasonCodes.every((code) => code === 'projection-source-changed-since-stamp'),
+    stalePaths: new Set(result.freshness.staleTargets.map((target) => target.path)),
+    complete: result.freshness.reasonCodes.every((code) => PER_TARGET_FRESHNESS_REASONS.has(code)),
   };
 }
 

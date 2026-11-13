@@ -1,6 +1,6 @@
 # Runtime Topology
 
-The architecture model declares this topology. No code facts verify it: archctx never reads the configuration it describes. A change to a file a node lists in `source.include` marks this page and its diagram stale.
+The architecture model declares this topology. No code facts verify it: archctx never reads the configuration it describes. Each node lists its `source.include` patterns for a reader to check; no command reports a change to those files.
 
 - Diagram: [Mermaid](diagrams/runtime-topology.mmd)
 

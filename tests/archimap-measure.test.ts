@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, unlinkSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
 import { fixtureGit, fixtureWrite } from './helpers/module-repository';
 
@@ -32,7 +32,7 @@ interface MeasureOutput {
 // writes both, because the map no longer falls back to package or directory layout.
 const MODEL_DIR = 'model/nodes';
 const MANIFEST = 'docs/architecture/.projection-manifest.json';
-interface ManifestEntry { capabilityId: string; path?: string; stamps?: string[] }
+interface ManifestEntry { capabilityId: string; path?: string; members?: string[] }
 type FixtureNode = [id: string, kind: string, fields?: Record<string, unknown>];
 /** A declared machine: the state-machine directory sits beside the node directory. */
 type FixtureMachine = [id: string, capabilityId: string];
@@ -52,12 +52,12 @@ function manifest(entries: ManifestEntry[]): string {
       ownership: 'mixed',
       format: 'markdown',
       outputDigest: `sha256:${'0'.repeat(64)}`,
-      sourceStamps: Object.fromEntries((entry.stamps ?? [entry.capabilityId]).map((id) => [id, `sha256:${'1'.repeat(64)}`])),
     };
     if (entry.path !== undefined) row.path = entry.path;
     targets[`projection_target.entity.${entry.capabilityId}`] = row;
   }
-  return `${JSON.stringify({ schemaVersion: 'archcontext.architecture-docs-projection-manifest/v3', targets }, null, 2)}\n`;
+  const capabilities = entries.map((entry) => ({ capabilityId: entry.capabilityId, memberNodeIds: [entry.capabilityId, ...(entry.members ?? [])] }));
+  return `${JSON.stringify({ schemaVersion: 'archcontext.architecture-docs-projection-manifest/v4', semanticBaseline: { capabilities }, targets }, null, 2)}\n`;
 }
 
 const roots: string[] = [];
@@ -219,6 +219,20 @@ describe('archimap measure requires the adopted model', () => {
     expect(failure.stderr).toContain(MANIFEST);
   });
 
+  test.each([
+    ['a v3 manifest that lists capability members', 'v3', null],
+    ['a v3 manifest with an unmet renderer floor', 'v3', 'archcontext.docs-renderer/v7'],
+    ['a v5 manifest', 'v5', null],
+  ])('%s exits 2 and names both remedies', (_name, schema, floor) => {
+    const root = fixture({ 'apps/app/main.ts': 'export const app = 1;\n' });
+    const v4 = JSON.parse(readFileSync(join(root, MANIFEST), 'utf8'));
+    writeFileSync(join(root, MANIFEST), JSON.stringify({ ...v4, schemaVersion: `archcontext.architecture-docs-projection-manifest/${schema}`, ...(floor === null ? {} : { minimumRendererVersion: floor }) }));
+    const failure = measureFailure(root, ['--modules', join(root, 'modules.json'), '--model', MODEL_DIR]);
+    expect(failure.status).toBe(2);
+    expect(failure.stderr).toContain(`"archcontext.architecture-docs-projection-manifest/${schema}" is not archcontext.architecture-docs-projection-manifest/v4`);
+    expect(failure.stderr).toContain('update repo-harness for a newer manifest or when archctx reports projection-manifest-incompatible');
+  });
+
   test('a capability target without a document path exits 2 instead of guessing one', () => {
     const root = fixture({ 'apps/app/main.ts': 'export const app = 1;\n' }, moduleDefs(), {
       manifest: [{ capabilityId: 'capability.example' }],
@@ -237,10 +251,10 @@ describe('archimap measure requires the adopted model', () => {
       { id: 'beta', include: ['src/beta/**'], nodes: ['capability.beta'] },
     ], {
       nodes: [['capability.alpha', 'capability'], ['capability.beta', 'capability'], ['component.alpha.core', 'component']],
-      manifest: [{ capabilityId: 'capability.alpha', path: 'docs/architecture/modules/dom/alpha.md', stamps: ['component.alpha.core'] }],
+      manifest: [{ capabilityId: 'capability.alpha', path: 'docs/architecture/modules/dom/alpha.md', members: ['component.alpha.core'] }],
     });
     const result = measure(root);
-    // A component node resolves through the capability target that stamps it; a capability with
+    // A component node resolves through the capability whose memberNodeIds name it; a capability with
     // no target has no document, and the script does not build a path from its id.
     expect(result.modules.map((module) => module.docs)).toEqual([
       ['docs/architecture/modules/dom/alpha.md'],

@@ -15,12 +15,12 @@ import {
   projectionApplyLookupKey,
   projectionResultInvariantIssues,
   projectionResultReceiptDigest,
-  type ArchitectureRefreshSignalV1,
+  type ArchitectureRefreshSignalV2,
   type Json,
   type NativeContextExportV1,
   type ProjectionExpectedSnapshotV1,
   type ProjectionRequestV1,
-  type ProjectionResultV2,
+  type ProjectionResultV3,
 } from 'archctx-contracts';
 import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, classifyArchitectureFreshness, decodeNativeContextExport, summarizeArchitectureRender, decodeArchitectureHandEdits, type NativeContextSource } from '../src/core/architecture/projection';
 import type { ArchctxProcessResult, ArchitectureProjectionPolicy, RunArchctxProcess } from '../src/core/architecture/contracts';
@@ -192,10 +192,10 @@ function capabilities(version = ARCHCTX_REQUIRED_VERSION) {
     package: { name: 'archctx', version },
     protocols: {
       projectionRequest: 'archcontext.projection-request/v1',
-      projectionResult: 'archcontext.projection-result/v2',
-      architectureRefreshSignal: 'archcontext.architecture-refresh-signal/v1',
+      projectionResult: 'archcontext.projection-result/v3',
+      architectureRefreshSignal: 'archcontext.architecture-refresh-signal/v2',
     },
-    renderers: { architectureDocs: 'archcontext.docs-renderer/v6', agentContext: 'archcontext.agent-context-renderer/v1' },
+    renderers: { architectureDocs: 'archcontext.docs-renderer/v6', agentContext: 'archcontext.agent-context-renderer/v2' },
     features: ['architecture-docs-renderer-v2', 'architecture-refresh-signal-v1', 'projection-apply-receipt-v1', 'projection-prior-committed-applies-v1', 'projection-protocol-v2', 'projection-apply-readback-v1', 'projection-snapshot-v1'],
   };
 }
@@ -242,7 +242,7 @@ function projectionEnvelope(expected: ProjectionRequestV1['expected']) {
     generatedFrom: { codeGraphPackage: '@colbymchenry/codegraph' as const, codeGraphVersion: '1.6.2' as const, codeGraphStatus: 'ready' as const },
   };
   const withoutReceipt = {
-    schemaVersion: 'archcontext.projection-result/v2' as const,
+    schemaVersion: 'archcontext.projection-result/v3' as const,
     requestId: 'request.axr5',
     status: 'planned' as const,
     inputSnapshot: { ...snapshot },
@@ -276,18 +276,18 @@ function applyEnvelope(
     semanticCommit: { changeSetId: 'changeset.docs-projection-test', idempotencyKey: 'idem_changeset.docs-projection-test' },
     ownedFilesDigest: digest('c'), refreshSignalsDigest: digest('d'),
   };
-  const signal: ArchitectureRefreshSignalV1 = {
-    schemaVersion: 'archcontext.architecture-refresh-signal/v1', signalId: digest('e'), idempotencyKey: digest('f'), mode: 'refresh-required',
+  const signal: ArchitectureRefreshSignalV2 = {
+    schemaVersion: 'archcontext.architecture-refresh-signal/v2', signalId: digest('e'), idempotencyKey: digest('f'), mode: 'refresh-required',
     repository: { repositoryId: originalExpected.repositoryId },
     worktree: { workspaceId: originalExpected.workspaceId, headSha: originalExpected.headSha, worktreeDigest: originalExpected.worktreeDigest },
     cause: 'accepted-semantic-delta', acceptedChange,
     reasonCodes: [...acceptedChange.reasonCodes], affectedNodeIds: [...acceptedChange.affectedNodeIds], refreshTargets: ['architecture-readiness'],
-    baseDigests: { modelDigest: digest('0'), sourceTreeDigest: digest('1'), flowProofDigest: digest('2'), projectionDigest: digest('3') },
-    resultingDigests: { modelDigest: digest('4'), sourceTreeDigest: digest('5'), flowProofDigest: digest('6'), projectionDigest: digest('7') },
+    baseDigests: { modelDigest: digest('0'), flowProofDigest: digest('2'), projectionDigest: digest('3') },
+    resultingDigests: { modelDigest: digest('4'), flowProofDigest: digest('6'), projectionDigest: digest('7') },
     projectionReceiptDigest: digest('0'),
   };
   const withoutReceipt = {
-    schemaVersion: 'archcontext.projection-result/v2' as const,
+    schemaVersion: 'archcontext.projection-result/v3' as const,
     requestId,
     status,
     inputSnapshot: snapshot,
@@ -334,13 +334,12 @@ function committedApplyReadback(request: ProjectionRequestV1, result: ReturnType
   const signal = result.refreshSignals[0]!;
   const resultingDigests = {
     modelDigest: signal.resultingDigests.modelDigest!,
-    sourceTreeDigest: signal.resultingDigests.sourceTreeDigest!,
     flowProofDigest: signal.resultingDigests.flowProofDigest!,
     projectionDigest: signal.resultingDigests.projectionDigest!,
   };
   const ownedOutputDigest = digest('c');
   const recovery = {
-    schemaVersion: 'archcontext.projection-apply-recovery-binding/v1' as const,
+    schemaVersion: 'archcontext.projection-apply-recovery-binding/v2' as const,
     targets: request.targets,
     changedPaths: request.changedPaths,
     originalExpectedSnapshot: request.expected,
@@ -352,7 +351,7 @@ function committedApplyReadback(request: ProjectionRequestV1, result: ReturnType
     receiptDigest: result.receiptDigest,
   };
   const body = {
-    schemaVersion: 'archcontext.projection-apply-readback-result/v1' as const,
+    schemaVersion: 'archcontext.projection-apply-readback-result/v2' as const,
     requestId: request.requestId,
     requestDigest: digestProjectionJson(request),
     receipt: { schemaVersion: 'archcontext.projection-apply-receipt/v1' as const, identity: result.applyReceipt, result, recovery },
@@ -731,8 +730,9 @@ describe('package-local ArchContext projection provider', () => {
 
   test('declined-unprovable-proof reaches the CLI with the debt report next step', () => {
     const f = fixture();
-    // Recorded from a real archctx 0.8.0 single-request apply (acceptObservedMajorChange) in a disposable repository.
-    const declined = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/architecture-projection/declined-unprovable-proof-0.8.0.json'), 'utf8')) as ProjectionResultV2;
+    // Recorded from a real archctx 0.8.0 single-request apply (acceptObservedMajorChange) in a disposable repository,
+    // then moved to the projection-result/v3 shape of archctx 0.14.0: refresh signals carry no source tree digest.
+    const declined = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/architecture-projection/declined-unprovable-proof-0.8.0.json'), 'utf8')) as ProjectionResultV3;
     expect(projectionResultInvariantIssues(declined)).toEqual([]);
     const result = projectionCli(f, { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'projection.run', data: declined }, declined.requestId);
     expect(result.status).toBe(1);
@@ -744,10 +744,10 @@ describe('package-local ArchContext projection provider', () => {
 
   test('unresolved-major-change points to the rolling PR and never to apply', () => {
     const f = fixture();
-    const { majorChangeAcceptance: _accepted, receiptDigest: _digest, ...recorded } = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/architecture-projection/declined-unprovable-proof-0.8.0.json'), 'utf8')) as ProjectionResultV2;
+    const { majorChangeAcceptance: _accepted, receiptDigest: _digest, ...recorded } = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/architecture-projection/declined-unprovable-proof-0.8.0.json'), 'utf8')) as ProjectionResultV3;
     const payload = { ...recorded, humanActions: recorded.humanActions.map(action => ({ ...action, reasonCode: 'unresolved-major-change' as const })) };
     const receiptDigest = projectionResultReceiptDigest(payload);
-    const major: ProjectionResultV2 = { ...payload, receiptDigest, refreshSignals: payload.refreshSignals.map(signal => ({ ...signal, projectionReceiptDigest: receiptDigest })) };
+    const major: ProjectionResultV3 = { ...payload, receiptDigest, refreshSignals: payload.refreshSignals.map(signal => ({ ...signal, projectionReceiptDigest: receiptDigest })) };
     expect(projectionResultInvariantIssues(major)).toEqual([]);
     const result = projectionCli(f, { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'projection.run', data: major }, major.requestId);
     expect(result.status).toBe(1);
@@ -893,8 +893,8 @@ describe('package-local ArchContext projection provider', () => {
       mkdirSync(join(f.repoRoot, 'docs', 'architecture'), { recursive: true });
       writeFileSync(join(f.repoRoot, 'docs', 'architecture', '.projection-manifest.json'), contents);
     };
-    const manifest = (floor: string) => JSON.stringify({
-      schemaVersion: 'archcontext.architecture-docs-projection-manifest/v3',
+    const manifest = (floor: string, schema = 'v4') => JSON.stringify({
+      schemaVersion: `archcontext.architecture-docs-projection-manifest/${schema}`,
       rendererVersion: 'archcontext.docs-renderer/v6',
       minimumRendererVersion: floor,
       profile: 'repo-harness/v1',
@@ -909,13 +909,17 @@ describe('package-local ArchContext projection provider', () => {
       });
     };
 
-    test('a renderer floor newer than the installed archctx is not ready and keeps apply disabled', () => {
+    test.each([
+      ['a v4 renderer floor newer than the installed archctx', 'archcontext.docs-renderer/v7', 'v4', 'minimumRendererVersion is unsupported by this engine'],
+      ['a v3 renderer floor newer than the installed archctx', 'archcontext.docs-renderer/v7', 'v3', 'minimumRendererVersion is unsupported by this engine'],
+      ['a v5 manifest', 'archcontext.docs-renderer/v6', 'v5', 'schema is unsupported by this engine'],
+    ])('%s is incompatible, not upgrade-required, and keeps apply disabled', (_name, floor, schema, issue) => {
       const f = fixture();
-      withManifest(f, manifest('archcontext.docs-renderer/v7'));
+      withManifest(f, manifest(floor, schema));
       const result = readiness(f);
       expect(result.projectionProvider.state).toBe('mismatch');
       expect(result.projectionProvider.reasonCode).toBe('projection-manifest-incompatible');
-      expect(result.projectionProvider.reason).toContain('minimumRendererVersion is unsupported by this engine');
+      expect(result.projectionProvider.reason).toContain(issue);
       expect(result.apply.enabled).toBe(false);
     });
 
@@ -923,6 +927,15 @@ describe('package-local ArchContext projection provider', () => {
       const f = fixture();
       withManifest(f, manifest('archcontext.docs-renderer/v6'));
       expect(readiness(f).projectionProvider.state).toBe('ready');
+    });
+
+    test('a v3 manifest whose floor the installed archctx meets is not ready and keeps apply disabled', () => {
+      const f = fixture();
+      withManifest(f, manifest('archcontext.docs-renderer/v6', 'v3'));
+      const result = readiness(f);
+      expect(result.projectionProvider.state).toBe('mismatch');
+      expect(result.projectionProvider.reasonCode).toBe('projection-manifest-upgrade-required');
+      expect(result.apply.enabled).toBe(false);
     });
 
     test('a malformed committed manifest fails closed', () => {
@@ -1835,16 +1848,16 @@ describe('ArchContext maintenance reminders', () => {
 
 
 describe('single-writer observations', () => {
-  test('render equivalence ignores source stamps but rejects output drift and incomplete coverage', () => {
-    const result: ProjectionResultV2 = projectionEnvelope(request().expected).data;
+  test('render equivalence rejects output drift and incomplete coverage, and names a shared path once', () => {
+    const result: ProjectionResultV3 = projectionEnvelope(request().expected).data;
     result.status = 'planned';
     result.humanActions = [];
-    result.changes = [{ targetId: 'target.a', path: 'docs/architecture/a.md', affectedCapabilityIds: [],
-      stampChanged: true, outputChanged: false, semanticChanged: false, proofChanged: false,
-      plannedAction: 'none', classification: 'stamp-only', reasonCodes: ['source-stamp-changed'] }];
+    const change = (targetId: string, path: string) => ({ targetId, path, affectedCapabilityIds: [], outputChanged: false, semanticChanged: false, proofChanged: false,
+      plannedAction: 'none' as const, classification: 'unchanged' as const, reasonCodes: [] });
+    result.changes = [change('projection_target.agent-context.agents.a', 'AGENTS.md'), change('projection_target.agent-context.agents.b', 'AGENTS.md'), change('target.a', 'docs/architecture/a.md')];
     expect(summarizeArchitectureRender(result)).toMatchObject({ renderEquivalent: true, differingPaths: [] });
-    result.changes[0]!.outputChanged = true;
-    expect(summarizeArchitectureRender(result)).toMatchObject({ renderEquivalent: false, differingPaths: ['docs/architecture/a.md'] });
+    for (const entry of result.changes) entry.outputChanged = true;
+    expect(summarizeArchitectureRender(result)).toMatchObject({ renderEquivalent: false, differingPaths: ['AGENTS.md', 'docs/architecture/a.md'] });
     result.status = 'planned-partial';
     expect(summarizeArchitectureRender(result).renderEquivalent).toBeNull();
     result.status = 'human-action-required';

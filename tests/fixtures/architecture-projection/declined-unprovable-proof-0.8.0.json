@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "archcontext.projection-result/v2",
+  "schemaVersion": "archcontext.projection-result/v3",
   "requestId": "repo-harness.apply.cc555d60b657235af626e4f395c985c422b8016eb1e0ed01930687dea849cfec",
   "status": "human-action-required",
   "inputSnapshot": {
@@ -104,7 +104,7 @@
   ],
   "refreshSignals": [
     {
-      "schemaVersion": "archcontext.architecture-refresh-signal/v1",
+      "schemaVersion": "archcontext.architecture-refresh-signal/v2",
       "mode": "human-action-required",
       "repository": {
         "repositoryId": "repo.87ae7f67917aa198"
@@ -144,21 +144,19 @@
       ],
       "baseDigests": {
         "modelDigest": "sha256:d09cb6adbdc3fa1192ba219d2a46dacf53d402056a3397cb7af7cfff63e7e178",
-        "sourceTreeDigest": "sha256:fe23d04357fd24b1a02c5bb7536c20eba2ee39cc69e25d0acb5992ce38f80a99",
         "flowProofDigest": "sha256:215e2518223ba2ff4eb70aa60a7271e98d25a15c9a94031a8bfa49ceedae8e0e",
         "projectionDigest": "sha256:67a8c2d5c43eba107a1cc49cc14a6ee771a7ca8e0c4564fd1902137fc12c02b0"
       },
       "resultingDigests": {
         "modelDigest": "sha256:d09cb6adbdc3fa1192ba219d2a46dacf53d402056a3397cb7af7cfff63e7e178",
-        "sourceTreeDigest": "sha256:fe23d04357fd24b1a02c5bb7536c20eba2ee39cc69e25d0acb5992ce38f80a99",
         "flowProofDigest": "sha256:215e2518223ba2ff4eb70aa60a7271e98d25a15c9a94031a8bfa49ceedae8e0e",
         "projectionDigest": "sha256:67a8c2d5c43eba107a1cc49cc14a6ee771a7ca8e0c4564fd1902137fc12c02b0"
       },
       "signalId": "sha256:943b4073f5f892c672886888c8c47149ed0e612eddec023f5b26b69fd14da501",
       "idempotencyKey": "sha256:943b4073f5f892c672886888c8c47149ed0e612eddec023f5b26b69fd14da501",
-      "projectionReceiptDigest": "sha256:e66401b99f3ce5876146fee9d5ef42561e58da2282313a1354580912299fc815"
+      "projectionReceiptDigest": "sha256:16a42cd7797d727489ff375631eec5c70a07567e212339e0aa7386294a15b868"
     }
   ],
   "majorChangeAcceptance": "declined-unprovable-proof",
-  "receiptDigest": "sha256:e66401b99f3ce5876146fee9d5ef42561e58da2282313a1354580912299fc815"
+  "receiptDigest": "sha256:16a42cd7797d727489ff375631eec5c70a07567e212339e0aa7386294a15b868"
 }

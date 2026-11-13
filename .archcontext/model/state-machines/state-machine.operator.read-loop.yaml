@@ -63,7 +63,7 @@ regions:
 events:
   - id: "mount"
     label: "the page opens"
-    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "useObservationRefresh", confirmedDigest: "sha256:78c8d14f80921216161a92615aabce5d14b90ffca1cfffdbe1037f0d91fa0efa" }
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "useObservationRefresh", confirmedDigest: "sha256:ee80609770fe3f7dec2f1c2acfcc5d063f69b39cad273b7a957c29271f74a150" }
     steps:
       - when: { effect: ["starting"], active: ["no", "yes"], live: ["none", "one"] }
         then: { effect: "running", active: "yes", live: "one" }
@@ -75,7 +75,7 @@ events:
         then: { effect: "running", visible: "hidden" }
   - id: "read-answers"
     label: "the read gets an answer or a typed refusal"
-    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "request", confirmedDigest: "sha256:35190e2db0fe9bf26acd7ceb37c8bba59405579cebd6616f366b567584144144" }
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "request", confirmedDigest: "sha256:4287e0abbc0d757ca968ebc13410b99e0eb2283c4bd9c136f37d2e531990b0c6" }
     steps:
       - when: { visible: ["shown"], active: ["no", "yes"], live: ["one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["yes"], failures: ["zero", "one", "two"] }
         then: { active: "yes", live: "one", timer: "off", interval: "s30", queued: "no", failures: "zero" }
@@ -83,7 +83,7 @@ events:
         then: { active: "no", live: "none", timer: "on", interval: "s30", failures: "zero" }
   - id: "read-unreachable"
     label: "the read gets no answer"
-    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "request", confirmedDigest: "sha256:35190e2db0fe9bf26acd7ceb37c8bba59405579cebd6616f366b567584144144" }
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "request", confirmedDigest: "sha256:4287e0abbc0d757ca968ebc13410b99e0eb2283c4bd9c136f37d2e531990b0c6" }
     steps:
       - when: { visible: ["shown"], active: ["no", "yes"], live: ["one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["yes"], failures: ["zero"] }
         then: { active: "yes", live: "one", timer: "off", interval: "s30", queued: "no", failures: "one" }
@@ -99,7 +99,7 @@ events:
         then: { active: "no", live: "none", timer: "on", interval: "s120", failures: "two" }
   - id: "aborted-read-ends"
     label: "the aborted read ends"
-    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "request", confirmedDigest: "sha256:35190e2db0fe9bf26acd7ceb37c8bba59405579cebd6616f366b567584144144" }
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "request", confirmedDigest: "sha256:4287e0abbc0d757ca968ebc13410b99e0eb2283c4bd9c136f37d2e531990b0c6" }
     steps:
       - when: { effect: ["disposed"], active: ["no", "yes"], dead: ["one"] }
         then: { active: "no", dead: "none" }
@@ -109,13 +109,13 @@ events:
         then: { active: "no", dead: "none" }
   - id: "wait-ends"
     label: "the wait ends"
-    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "request", confirmedDigest: "sha256:35190e2db0fe9bf26acd7ceb37c8bba59405579cebd6616f366b567584144144" }
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "request", confirmedDigest: "sha256:4287e0abbc0d757ca968ebc13410b99e0eb2283c4bd9c136f37d2e531990b0c6" }
     steps:
       - when: { effect: ["running"], visible: ["shown"], active: ["no"], live: ["none", "one"], timer: ["on"], interval: ["s30", "s60", "s120"], queued: ["no", "yes"] }
         then: { active: "yes", live: "one", timer: "off", interval: "s30", queued: "no" }
   - id: "refresh"
     label: "you refresh"
-    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "useObservationRefresh", confirmedDigest: "sha256:78c8d14f80921216161a92615aabce5d14b90ffca1cfffdbe1037f0d91fa0efa" }
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "useObservationRefresh", confirmedDigest: "sha256:ee80609770fe3f7dec2f1c2acfcc5d063f69b39cad273b7a957c29271f74a150" }
     steps:
       - when: { effect: ["running"], visible: ["hidden"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["no", "yes"] }
         then: { timer: "off", interval: "s30", queued: "yes" }
@@ -125,7 +125,7 @@ events:
         then: { active: "yes", live: "one", timer: "off", interval: "s30", queued: "no" }
   - id: "hide"
     label: "you hide the tab"
-    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "visibilityChanged", confirmedDigest: "sha256:ec9a4cc43beb72afc65187f3b27c2b6383a3d3855ea60d5884575b607a3410f8" }
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "visibilityChanged", confirmedDigest: "sha256:0bccc04029737d9c695c4cb7c3c96b2404072a2b58ddbba57d70cca065a75ec4" }
     steps:
       - when: { effect: ["running"], visible: ["shown"], live: ["one"], dead: ["none", "one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["no", "yes"] }
         then: { visible: "hidden", live: "none", dead: "one", timer: "off", interval: "s30", queued: "no" }
@@ -133,7 +133,7 @@ events:
         then: { visible: "hidden", timer: "off", interval: "s30", queued: "no" }
   - id: "show"
     label: "you show the tab"
-    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "visibilityChanged", confirmedDigest: "sha256:ec9a4cc43beb72afc65187f3b27c2b6383a3d3855ea60d5884575b607a3410f8" }
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "visibilityChanged", confirmedDigest: "sha256:0bccc04029737d9c695c4cb7c3c96b2404072a2b58ddbba57d70cca065a75ec4" }
     steps:
       - when: { effect: ["running"], visible: ["hidden"], active: ["yes"], timer: ["off", "on"], interval: ["s30", "s60", "s120"], queued: ["no", "yes"] }
         then: { visible: "shown", timer: "off", interval: "s30", queued: "yes" }
@@ -141,7 +141,7 @@ events:
         then: { visible: "shown", active: "yes", live: "one", timer: "off", interval: "s30", queued: "no" }
   - id: "unmount"
     label: "you leave the page"
-    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "useObservationRefresh", confirmedDigest: "sha256:78c8d14f80921216161a92615aabce5d14b90ffca1cfffdbe1037f0d91fa0efa" }
+    source: { kind: "code", path: "src/operator-web/useObservationRefresh.ts", symbol: "useObservationRefresh", confirmedDigest: "sha256:ee80609770fe3f7dec2f1c2acfcc5d063f69b39cad273b7a957c29271f74a150" }
     steps:
       - when: { effect: ["running"], live: ["one"], dead: ["none", "one"], timer: ["off", "on"], interval: ["s30", "s60", "s120"] }
         then: { effect: "disposed", live: "none", dead: "one", timer: "off", interval: "s30" }
