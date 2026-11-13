@@ -107,11 +107,9 @@ architecture_unpublished_since() {
     return 1
   fi
   after="$(git rev-list --first-parent --reverse "$manifest_commit..HEAD")" || return 1
-  start="$manifest_commit"
-  if [[ -n "$after" ]]; then
-    # shellcheck disable=SC2086 # one argument per commit
-    start="$(with_architecture_selection bun -e 'const { readRenderClockStart } = await import("./src/effects/architecture/architecture-read.ts"); const [summaryPath, manifestCommit, ...shas] = process.argv.slice(1); const targets = JSON.parse(await Bun.file(summaryPath).text()).differingTargets; if (!Array.isArray(targets) || !targets.every(target => typeof target?.targetId === "string" && typeof target.layoutChanged === "boolean")) throw new Error("render-check summary differingTargets must be an array of { targetId, layoutChanged }"); console.log(readRenderClockStart(process.cwd(), targets, manifestCommit, shas));' "$1" "$manifest_commit" $after)" || return 1
-  fi
+  # The rule validates the differing targets also when no commit follows M.
+  # shellcheck disable=SC2086 # one argument per commit
+  start="$(with_architecture_selection bun -e 'const { readRenderClockStart } = await import("./src/effects/architecture/architecture-read.ts"); const [summaryPath, manifestCommit, ...shas] = process.argv.slice(1); const targets = JSON.parse(await Bun.file(summaryPath).text()).differingTargets; if (!Array.isArray(targets) || !targets.every(target => typeof target?.targetId === "string" && typeof target.layoutChanged === "boolean")) throw new Error("render-check summary differingTargets must be an array of { targetId, layoutChanged }"); console.log(readRenderClockStart(process.cwd(), targets, manifestCommit, shas));' "$1" "$manifest_commit" $after)" || return 1
   git show -s --format=%cI "$start" || return 1
 }
 

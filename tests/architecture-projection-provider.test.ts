@@ -1905,11 +1905,14 @@ describe('single-writer observations', () => {
     expect(firstRenderChangeCommit('m', commits, targets, authority)).toBe(start);
   });
 
+  // The daily entry calls the rule with no commit when M is HEAD (r3 F1).
   test.each([
-    ['a well-formed capability absent from the model (r2 F3)', 'unknown', 'capability.missing.example, which is no capability'],
-    ['a target with no committed manifest row', 'orphan', 'has no committed manifest row'],
-  ])('the lag clock fails closed on %s', (_name, targetId, message) => {
-    expect(() => firstRenderChangeCommit('m', [unrelated], [target(targetId)], authority)).toThrow(message);
+    ['a well-formed capability absent from the model (r2 F3)', 'unknown', [unrelated], 'capability.missing.example, which is no capability'],
+    ['a target with no committed manifest row', 'orphan', [unrelated], 'has no committed manifest row'],
+    ['a capability absent from the model, M is HEAD (r3 F1)', 'unknown', [], 'capability.missing.example, which is no capability'],
+    ['a target with no committed manifest row, M is HEAD (r3 F1)', 'orphan', [], 'has no committed manifest row'],
+  ] as const)('the lag clock fails closed on %s', (_name, targetId, commits, message) => {
+    expect(() => firstRenderChangeCommit('m', commits, [target(targetId)], authority)).toThrow(message);
   });
 
   test('hand-edit warnings consume only upstream manual-edit codes through the existing client', () => {

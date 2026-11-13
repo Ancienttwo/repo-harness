@@ -1261,8 +1261,8 @@ describe('architecture lanes', () => {
     ['difference, input commit after M younger than 3 h', differs, afterM(1), 1, 1, 'lag', 0],
     ['difference, input commit after M older than 3 h', differs, afterM(4), 1, 4, 'stale', 1],
     ['difference, no commit after M changes an input', differs, afterM(1), 0, 30, 'stale', 1],
-    ['difference, no commit after M, M younger than 3 h', differs, onlyM(1), undefined, 1, 'lag', 0],
-    ['difference, no commit after M, M older than 3 h', differs, onlyM(4), undefined, 4, 'stale', 1],
+    ['difference, no commit after M, M younger than 3 h', differs, onlyM(1), 1, 1, 'lag', 0],
+    ['difference, no commit after M, M older than 3 h', differs, onlyM(4), 1, 4, 'stale', 1],
     ['human action', humanAction, afterM(1), undefined, 30, 'human-action', 1],
   ] as const)('daily classifies %s from the git history and saves the writer repair summary', (_name, summary, history, clockStart, sinceHours, freshness, exit) => {
     const result = runLane(['architecture'], { check: JSON.stringify(summary), checkExit: summary.renderEquivalent === true ? 0 : 1, summary: true, history: [...history], clockStart });
@@ -1289,6 +1289,8 @@ describe('architecture lanes', () => {
     ['the checkout is shallow', { history: afterM(4), shallow: true }, 'The checkout is shallow'],
     // Without the status check, the failed read would fall back to the time of M and pass as lag.
     ['the commits after M cannot be read', { history: [{ manifest: true, hoursAgo: 1 }, { manifest: false, hoursAgo: 0.5 }], gitFails: 'rev-list' }, 'fatal: injected rev-list failure'],
+    // With M at HEAD the real rule still validates the differing targets; the fixture manifest is no v4 manifest.
+    ['M is HEAD and the rule rejects the committed manifest', { history: onlyM(1) }, 'docs/architecture/.projection-manifest.json is invalid'],
   ])('daily fails closed with no summary when %s', (_name, fixture, message) => {
     const result = runLane(['architecture'], { check: JSON.stringify(differs), checkExit: 1, summary: true, ...fixture });
     expect(result.status).toBe(1);
