@@ -52,7 +52,7 @@ export function summarizeArchitectureRender(result: ProjectionResultV3) {
     status: result.status,
     renderEquivalent: complete ? differingPaths.length === 0 : null,
     differingPaths,
-    // Null when a differing target names no capability, so no capability bounds the commits that changed it.
+    // Null when a differing target names no capability: it renders the whole model, so every model and source input bounds it.
     differingCapabilityIds: differing.some(change => change.affectedCapabilityIds.length === 0)
       ? null
       : [...new Set(differing.flatMap(change => change.affectedCapabilityIds))].sort(),
@@ -60,26 +60,37 @@ export function summarizeArchitectureRender(result: ProjectionResultV3) {
   };
 }
 
+/** One first-parent commit after the newest manifest commit: its changed paths, and whether it changes the archctx renderer version. */
+export interface RenderInputCommit { sha: string; paths: readonly string[]; rendererChanged: boolean }
+
 /**
- * The commit that starts the daily lag clock, from the first-parent commits after the newest
- * manifest commit, oldest first. Manifest v4 changes only with a render, so the first of those
- * commits can be days older than the render change. The clock starts at the first commit that
- * changes the architecture model or a path a differing capability owns. Without such a commit,
- * or when a differing target names no capability, it starts at the first commit.
+ * The commit that starts the daily lag clock: the first commit after M (the newest manifest commit) that
+ * changes an input of a differing target, else M itself, because then the outputs already differ from M.
+ * Manifest v4 changes only with a render, so M and the first commit after it can be days older than the
+ * render change. The inputs are the ones archctx renders from: the renderer version for every target; for a
+ * target with affected capabilities, the model (`.archcontext/`) and the paths those capabilities own; for a
+ * target with none (topology, history and other whole-model outputs, `differingCapabilityIds === null`), the
+ * model and every capability source footprint, which is every owned path. `commits` are oldest first.
  * `differingCapabilityIds` are archctx node ids; `ownerOf` returns capability registry ids.
  */
 export function firstRenderChangeCommit(
-  commits: ReadonlyArray<{ sha: string; paths: readonly string[] }>,
+  manifestCommit: string,
+  commits: readonly RenderInputCommit[],
   differingCapabilityIds: readonly string[] | null,
   ownerOf: (path: string) => string | undefined,
 ): string {
-  if (commits.length === 0) throw new Error('no commit follows the newest manifest commit');
-  const identities = (differingCapabilityIds ?? []).map(capabilityIdentityFromNodeId);
-  const bounded = differingCapabilityIds !== null && identities.every(identity => identity !== null);
-  const differing = new Set(identities.map(identity => identity?.id));
-  const changesRender = (path: string) => path.startsWith('.archcontext/') || differing.has(ownerOf(path));
-  const match = bounded ? commits.find(commit => commit.paths.some(changesRender)) : undefined;
-  return (match ?? commits[0]!).sha;
+  if (differingCapabilityIds?.length === 0) return manifestCommit;
+  const owners = differingCapabilityIds === null ? null : new Set(differingCapabilityIds.map(nodeId => {
+    const identity = capabilityIdentityFromNodeId(nodeId);
+    if (!identity) throw new Error(`differing capability ${nodeId} has no registry identity`);
+    return identity.id;
+  }));
+  const changesInput = (path: string) => {
+    if (path.startsWith('.archcontext/')) return true;
+    const owner = ownerOf(path);
+    return owner !== undefined && (owners === null || owners.has(owner));
+  };
+  return commits.find(commit => commit.rendererChanged || commit.paths.some(changesInput))?.sha ?? manifestCommit;
 }
 
 /** The rolling writer publishes after the product merge: 11 to 102 min for 8 projections in 2026-11 (#2590). */

@@ -1880,14 +1880,20 @@ describe('single-writer observations', () => {
     expect(classifyArchitectureFreshness({ renderEquivalent: null, humanActions: [] }, since(0), now)).toBe('incomplete');
   });
 
-  test('the lag clock starts at the first commit that changes the model or a path a differing capability owns', () => {
-    const commits = [{ sha: 'a', paths: ['src/other.ts'] }, { sha: 'b', paths: ['src/x.ts'] }, { sha: 'c', paths: ['.archcontext/model/nodes/n.yaml'] }];
+  test('the lag clock starts at the first commit that changes an input of a differing target, else at M', () => {
+    const commit = (sha: string, paths: string[], rendererChanged = false) => ({ sha, paths, rendererChanged });
+    const commits = [commit('a', ['docs/guide.md']), commit('b', ['src/other.ts']), commit('c', ['src/x.ts']), commit('d', ['.archcontext/model/nodes/n.yaml'])];
     // ownerOf returns registry ids; the render names archctx node ids.
     const ownerOf = (path: string) => ({ 'src/other.ts': 'd-other', 'src/x.ts': 'd-x' } as Record<string, string>)[path];
-    expect(firstRenderChangeCommit(commits, ['capability.d.x'], ownerOf)).toBe('b');
-    expect(firstRenderChangeCommit(commits, ['capability.d.y'], ownerOf)).toBe('c');
-    expect(firstRenderChangeCommit(commits.slice(0, 2), ['capability.d.y'], ownerOf)).toBe('a');
-    expect(firstRenderChangeCommit(commits, null, ownerOf)).toBe('a');
+    expect(firstRenderChangeCommit('m', commits, ['capability.d.x'], ownerOf)).toBe('c');
+    expect(firstRenderChangeCommit('m', commits, ['capability.d.y'], ownerOf)).toBe('d');
+    expect(firstRenderChangeCommit('m', commits.slice(0, 3), ['capability.d.y'], ownerOf)).toBe('m');
+    // A whole-model target renders from every capability footprint; an unowned path is no input.
+    expect(firstRenderChangeCommit('m', commits, null, ownerOf)).toBe('b');
+    expect(firstRenderChangeCommit('m', commits.slice(0, 1), null, ownerOf)).toBe('m');
+    expect(firstRenderChangeCommit('m', [commits[0]!, commit('r', ['package.json'], true), ...commits.slice(1)], ['capability.d.y'], ownerOf)).toBe('r');
+    expect(firstRenderChangeCommit('m', commits, [], ownerOf)).toBe('m');
+    expect(() => firstRenderChangeCommit('m', commits, ['not-a-node'], ownerOf)).toThrow('has no registry identity');
   });
 
   test('hand-edit warnings consume only upstream manual-edit codes through the existing client', () => {

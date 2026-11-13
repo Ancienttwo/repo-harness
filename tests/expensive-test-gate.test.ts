@@ -25,12 +25,12 @@ function runLane(lane: string) {
   try {
     // The bun stub reports the variable the lane actually handed to `bun test`,
     // so the assertion reads the real exported environment, not the script text.
-    // The daily architecture step needs an equivalent render summary; its freshness classification runs on the real bun.
+    // The daily architecture step needs an equivalent render summary; its lag-clock commit and freshness classification run on the real bun.
     writeFileSync(join(bin, 'bun'), [
       '#!/bin/bash',
       `if [[ "$1" == test ]]; then echo "TEST_LANE_GATE=\${${exportedGateVariable()}:-unset}"; fi`,
-      `if [[ "$3" == render-check ]]; then echo '${JSON.stringify({ status: 'noop', renderEquivalent: true, differingPaths: [], humanActions: [] })}'; fi`,
-      `if [[ "$1" == -e && "$2" == *classifyArchitectureFreshness* ]]; then exec ${JSON.stringify(process.execPath)} "$@"; fi`,
+      `if [[ "$3" == render-check ]]; then echo '${JSON.stringify({ status: 'noop', renderEquivalent: true, differingPaths: [], differingCapabilityIds: [], humanActions: [] })}'; fi`,
+      `if [[ "$1" == -e && ( "$2" == *firstRenderChangeCommit* || "$2" == *classifyArchitectureFreshness* ) ]]; then exec ${JSON.stringify(process.execPath)} "$@"; fi`,
       'exit 0',
     ].join('\n'), { mode: 0o755 });
     writeFileSync(join(bin, 'npm'), '#!/bin/bash\nexit 0\n', { mode: 0o755 });

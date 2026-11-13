@@ -1056,7 +1056,7 @@ describe('architecture lanes', () => {
     constraintIds: [LAYER_DIRECTION, PLUGIN_INTERNALS], importEdgeCount: 5521, unresolvedImports: [], violations: [constraintViolation(LAYER_DIRECTION)], ...fields } });
 
   // Real check-ci.sh with stub CLI results. `bun -e` and the shell logic stay real.
-  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; constraints?: string; summary?: boolean; history?: Array<{ manifest: boolean; hoursAgo: number; path?: string }>; shallow?: boolean; gitFails?: string; changelog?: string; changelogExit?: number; links?: { dead: string[]; missing: string[] } }) {
+  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; constraints?: string; summary?: boolean; history?: Array<{ manifest: boolean; hoursAgo: number; path?: string | undefined }>; shallow?: boolean; gitFails?: string; changelog?: string; changelogExit?: number; links?: { dead: string[]; missing: string[] } }) {
     const root = mkdtempSync(join(tmpdir(), 'rh-ci-architecture-'));
     const bin = join(root, 'bin');
     try {
@@ -1253,19 +1253,22 @@ describe('architecture lanes', () => {
   const differs = { status: 'planned', renderEquivalent: false, differingPaths: ['docs/architecture/a.md'], differingCapabilityIds: null, humanActions: [] };
   const differsInCapability = { ...differs, differingCapabilityIds: ['capability.d.a'] };
   const humanAction = { status: 'human-action-required', renderEquivalent: null, differingPaths: [], differingCapabilityIds: [], humanActions: [{ reasonCode: 'unprovable-required-flow' }] };
-  // M is the newest commit that changes the manifest. The oldest commit after M, else M, dates the unpublished difference.
-  const afterM = (hoursAgo: number) => [{ manifest: true, hoursAgo: 30 }, { manifest: false, hoursAgo }, { manifest: false, hoursAgo: 0.1 }];
+  // M is the newest commit that changes the manifest. The first commit after M that changes a render input, else M, dates the unpublished difference.
+  const MODEL = '.archcontext/model/nodes/a.json';
+  const afterM = (hoursAgo: number, path?: string) => [{ manifest: true, hoursAgo: 30 }, { manifest: false, hoursAgo, path }, { manifest: false, hoursAgo: 0.1 }];
   const onlyM = (hoursAgo: number) => [{ manifest: false, hoursAgo: 30 }, { manifest: true, hoursAgo }];
   test.each([
     ['no difference', equivalent, afterM(30), 30, 'fresh', 0],
-    ['difference, commit after M younger than 3 h', differs, afterM(1), 1, 'lag', 0],
-    ['difference, commit after M older than 3 h', differs, afterM(4), 4, 'stale', 1],
+    ['difference, input commit after M younger than 3 h', differs, afterM(1, MODEL), 1, 'lag', 0],
+    ['difference, input commit after M older than 3 h', differs, afterM(4, MODEL), 4, 'stale', 1],
     ['difference, no commit after M, M younger than 3 h', differs, onlyM(1), 1, 'lag', 0],
     ['difference, no commit after M, M older than 3 h', differs, onlyM(4), 4, 'stale', 1],
-    // Under manifest v4, M can be days old; an older product commit outside the differing capability does not start the clock.
-    ['difference, model commit after an unrelated commit', differsInCapability, [...afterM(20).slice(0, 2), { manifest: false, hoursAgo: 1, path: '.archcontext/model/nodes/a.json' }], 1, 'lag', 0],
-    ['difference, no commit changes a differing capability', differsInCapability, afterM(20), 20, 'stale', 1],
-    ['human action', humanAction, afterM(1), 1, 'human-action', 1],
+    // Under manifest v4, M can be days old; an older commit that changes no render input does not start the clock.
+    ['whole-model difference, model commit after an unrelated commit', differs, [...afterM(20).slice(0, 2), { manifest: false, hoursAgo: 1, path: MODEL }], 1, 'lag', 0],
+    ['whole-model difference, no commit after M changes an input', differs, afterM(20), 30, 'stale', 1],
+    ['capability difference, model commit after an unrelated commit', differsInCapability, [...afterM(20).slice(0, 2), { manifest: false, hoursAgo: 1, path: MODEL }], 1, 'lag', 0],
+    ['capability difference, no commit after M changes an input', differsInCapability, afterM(20), 30, 'stale', 1],
+    ['human action', humanAction, afterM(1), 30, 'human-action', 1],
   ] as const)('daily classifies %s from the git history and saves the writer repair summary', (_name, summary, history, sinceHours, freshness, exit) => {
     const result = runLane(['architecture'], { check: JSON.stringify(summary), checkExit: summary.renderEquivalent === true ? 0 : 1, summary: true, history: [...history] });
     expect(result.status, result.stderr).toBe(exit);
