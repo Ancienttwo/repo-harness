@@ -3,20 +3,20 @@
   "status": "verified",
   "source": {
     "repository": "Ancienttwo/arch-context",
-    "revision": "58906fdac775db55dd18b7953a210607a341e280",
+    "revision": "f381b510a7accf6c1f4f74c02cea2be89c1e5bfb",
     "archiveMode": "git-archive",
     "dirtySourceUsed": false
   },
   "packages": {
     "contracts": {
       "name": "archctx-contracts",
-      "version": "0.13.0",
-      "file": "archctx-contracts-0.13.0.tgz"
+      "version": "0.14.0",
+      "file": "archctx-contracts-0.14.0.tgz"
     },
     "archctx": {
       "name": "archctx",
-      "version": "0.13.0",
-      "file": "archctx-0.13.0.tgz"
+      "version": "0.14.0",
+      "file": "archctx-0.14.0.tgz"
     }
   },
   "consumer": {
@@ -31,16 +31,16 @@
       "schemaVersion": "archcontext.capabilities/v1",
       "package": {
         "name": "archctx",
-        "version": "0.13.0"
+        "version": "0.14.0"
       },
       "protocols": {
         "projectionRequest": "archcontext.projection-request/v1",
-        "projectionResult": "archcontext.projection-result/v2",
-        "architectureRefreshSignal": "archcontext.architecture-refresh-signal/v1"
+        "projectionResult": "archcontext.projection-result/v3",
+        "architectureRefreshSignal": "archcontext.architecture-refresh-signal/v2"
       },
       "renderers": {
         "architectureDocs": "archcontext.docs-renderer/v6",
-        "agentContext": "archcontext.agent-context-renderer/v1"
+        "agentContext": "archcontext.agent-context-renderer/v2"
       },
       "features": [
         "architecture-change-capabilities-v1",
@@ -63,10 +63,10 @@
         "projection-apply-replay-v1",
         "projection-architecture-debt-v1",
         "projection-capability-isolation-v1",
-        "projection-change-classification-v1",
-        "projection-check-freshness-v1",
-        "projection-freshness-v1",
-        "projection-manifest-contract-v3",
+        "projection-change-classification-v2",
+        "projection-check-freshness-v2",
+        "projection-freshness-v2",
+        "projection-manifest-contract-v4",
         "projection-observed-major-change-acceptance-v1",
         "projection-orphan-review-v1",
         "projection-preview-v1",
