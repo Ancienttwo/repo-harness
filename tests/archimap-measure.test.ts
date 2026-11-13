@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, unlinkSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, posix } from 'node:path';
 import { fixtureGit, fixtureWrite } from './helpers/module-repository';
 
@@ -217,6 +217,15 @@ describe('archimap measure requires the adopted model', () => {
     const failure = measureFailure(root, ['--modules', join(root, 'modules.json'), '--model', MODEL_DIR]);
     expect(failure.status).toBe(2);
     expect(failure.stderr).toContain(MANIFEST);
+  });
+
+  test('a v3 projection manifest exits 2 even when it lists capability members', () => {
+    const root = fixture({ 'apps/app/main.ts': 'export const app = 1;\n' });
+    const v4 = readFileSync(join(root, MANIFEST), 'utf8');
+    writeFileSync(join(root, MANIFEST), v4.replace('projection-manifest/v4', 'projection-manifest/v3'));
+    const failure = measureFailure(root, ['--modules', join(root, 'modules.json'), '--model', MODEL_DIR]);
+    expect(failure.status).toBe(2);
+    expect(failure.stderr).toContain('"archcontext.architecture-docs-projection-manifest/v3" is not archcontext.architecture-docs-projection-manifest/v4');
   });
 
   test('a capability target without a document path exits 2 instead of guessing one', () => {

@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { userInfo } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, failureIssues, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV2, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV3 } from 'archctx-contracts';
+import { ARCHCONTEXT_NODE_RANGE, ARCHITECTURE_DOCS_PROJECTION_MANIFEST_SCHEMA_VERSION, ARCHITECTURE_DOCS_PROJECTION_MANIFEST_UPGRADE_COMMAND, ERROR_CATALOG, PROJECTION_MANIFEST_UPGRADE_REQUIRED, failureIssues, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV2, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV3 } from 'archctx-contracts';
 import { isRecord } from '../../core/evidence/is-record';
 import { readWorkflowPolicyDocument } from '../state/resolve-effective-state';
 import { POLICY_ABSENT, isPolicyObject, policyValue } from '../../core/workflow/policy-schema';
@@ -313,8 +313,10 @@ const PROJECTION_MANIFEST_INCOMPATIBLE = 'projection-manifest-incompatible';
 const COMMITTED_PROJECTION_MANIFEST = 'docs/architecture/.projection-manifest.json';
 
 /**
- * archctx owns the manifest compatibility rule. The committed manifest must pass
- * it for the installed engine, or readiness fails closed and apply stays off.
+ * archctx owns the manifest compatibility rule. The committed manifest must have the
+ * current schema and pass that rule for the installed engine, or readiness fails closed
+ * and apply stays off. The rule alone accepts a superseded schema whose floors the engine
+ * meets, but every archctx command that reads such a manifest refuses it.
  */
 function assertCommittedProjectionManifestCompatible(repoRoot: string, capabilities: ArchctxCapabilitiesV1): void {
   const path = join(repoRoot, COMMITTED_PROJECTION_MANIFEST);
@@ -325,6 +327,9 @@ function assertCommittedProjectionManifestCompatible(repoRoot: string, capabilit
     throw new ArchctxClientError({ code: 'RH_ARCHCTX_PROJECTION_MANIFEST_INVALID', action: 'inspect-projection-manifest', message: `${COMMITTED_PROJECTION_MANIFEST} is not valid JSON: ${error instanceof Error ? error.message : String(error)}` });
   }
   if (!isRecord(manifest)) throw new ArchctxClientError({ code: 'RH_ARCHCTX_PROJECTION_MANIFEST_INVALID', action: 'inspect-projection-manifest', message: `${COMMITTED_PROJECTION_MANIFEST} is not a JSON object` });
+  if (manifest.schemaVersion !== ARCHITECTURE_DOCS_PROJECTION_MANIFEST_SCHEMA_VERSION) {
+    throw new ArchctxClientError({ code: 'AC_PRECONDITION_FAILED', action: 'upgrade-projection-manifest', reasonCode: PROJECTION_MANIFEST_UPGRADE_REQUIRED, message: `${COMMITTED_PROJECTION_MANIFEST} schema ${JSON.stringify(manifest.schemaVersion)} is not ${ARCHITECTURE_DOCS_PROJECTION_MANIFEST_SCHEMA_VERSION}; run ${ARCHITECTURE_DOCS_PROJECTION_MANIFEST_UPGRADE_COMMAND}` });
+  }
   const issues = architectureDocsProjectionCompatibilityIssues(manifest, {
     rendererVersion: capabilities.renderers.architectureDocs,
     protocolVersion: capabilities.protocols.projectionRequest,
@@ -377,7 +382,7 @@ export function inspectArchitectureProjectionReadiness(
     const reason = error instanceof Error ? error.message : String(error);
     const state: ArchitectureProjectionReadinessV1['projectionProvider']['state'] = error instanceof ArchctxClientError
       ? ['RH_ARCHCTX_PACKAGE_MISSING', 'RH_ARCHCTX_POLICY_MISSING'].includes(error.code) ? 'missing'
-        : ['RH_ARCHCTX_PACKAGE_MISMATCH', 'AC_RUNTIME_VERSION_UNSUPPORTED'].includes(error.code) || error.reasonCode === PROJECTION_MANIFEST_INCOMPATIBLE ? 'mismatch' : 'error'
+        : ['RH_ARCHCTX_PACKAGE_MISMATCH', 'AC_RUNTIME_VERSION_UNSUPPORTED'].includes(error.code) || [PROJECTION_MANIFEST_INCOMPATIBLE, PROJECTION_MANIFEST_UPGRADE_REQUIRED].includes(error.reasonCode ?? '') ? 'mismatch' : 'error'
       : 'error';
     return {
       ...base(),

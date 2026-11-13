@@ -50,6 +50,7 @@ const LIST_LIMIT = 20;
 const EXAMPLE_LIMIT = 10;
 // The projection manifest is the only authority for a capability's document path.
 const MANIFEST_PATH = "docs/architecture/.projection-manifest.json";
+const MANIFEST_SCHEMA_VERSION = "archcontext.architecture-docs-projection-manifest/v4";
 
 function git(root: string, ...args: string[]): string {
   return execFileSync("git", ["-C", root, ...args], { encoding: "utf8", maxBuffer: 1 << 28 });
@@ -260,6 +261,10 @@ function loadManifest(root: string): CapabilityDocs {
     parsed = JSON.parse(raw);
   } catch (error) {
     throw new UsageError(`${MANIFEST_PATH} does not parse: ${(error as Error).message}`);
+  }
+  const schemaVersion = record(parsed)?.schemaVersion;
+  if (schemaVersion !== MANIFEST_SCHEMA_VERSION) {
+    throw new UsageError(`${MANIFEST_PATH}: schemaVersion ${JSON.stringify(schemaVersion)} is not ${MANIFEST_SCHEMA_VERSION}; re-baseline the architecture projection before you measure`);
   }
   const targets = record(parsed)?.targets;
   if (targets === undefined || targets === null || record(targets) === null) {

@@ -49,7 +49,7 @@ of the rolling PR accepts the proven major changes in it.
 ## Drift signals
 
 - Generated sections: `repo-harness architecture-projection check --json`.
-  `changes[].outputChanged` reports render changes. Source stamps alone need no Agent action. When generated output differs, inspect `repo-harness architecture-projection publish status` and the open rolling PR.
+  `changes[].outputChanged` reports render changes. When generated output differs, inspect `repo-harness architecture-projection publish status` and the open rolling PR.
 - Human-written sections: `repo-harness architecture-projection anchors --json`.
   It runs `docs anchors` and writes no file. It lists cited paths that are
   missing, line numbers out of range, symbols that are missing and lines that

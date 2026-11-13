@@ -147,7 +147,7 @@ test('one CommitSnapshot lists its tree once and batches the document index besi
 test('a saved projection check sets generated_summary and a saved anchors report adds stale citations', () => {
   const root = repo(), commit = JSON.parse(run(root, ['review-prompt', MODULE_ID, '--json']).stdout).commit;
   const check = join(root, '.git/check.json'), anchors = join(root, '.git/anchors.json');
-  writeFileSync(check, JSON.stringify(projectionCheckResult(commit, [MODULE_ID])));
+  writeFileSync(check, JSON.stringify(projectionCheckResult(commit, [MODULE_DOC])));
   const list = run(root, ['list', '--json', '--projection-check', check]);
   expect(list.status).toBe(0); expect(JSON.parse(list.stdout).modules[0].state.generated_summary).toBe('stale');
   writeFileSync(anchors, JSON.stringify({ schemaVersion: 'archcontext.docs-anchors/v1', profile: 'repo-harness/v1', codeGraph: { availability: 'ready' },

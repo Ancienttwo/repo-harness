@@ -325,7 +325,7 @@ function setupManagedRuntimeReadback(home: string, fakeBin: string, harnessVersi
         projectionResult: 'archcontext.projection-result/v3',
         architectureRefreshSignal: 'archcontext.architecture-refresh-signal/v2',
       },
-      renderers: { architectureDocs: ARCHITECTURE_DOCS_RENDERER_VERSION, agentContext: 'archcontext.agent-context-renderer/v1' },
+      renderers: { architectureDocs: ARCHITECTURE_DOCS_RENDERER_VERSION, agentContext: 'archcontext.agent-context-renderer/v2' },
       features: ['architecture-docs-renderer-v2', 'architecture-refresh-signal-v1', 'projection-apply-receipt-v1', 'projection-prior-committed-applies-v1', 'projection-protocol-v2'],
     })}'; exit 0; fi`,
     `exec "${systemNode}" "$@"`,
