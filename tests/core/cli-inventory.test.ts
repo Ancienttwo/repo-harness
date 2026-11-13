@@ -187,6 +187,14 @@ describe('cli inventory metadata remotes', () => {
     }
   });
 
+  test('slug boundaries: the longest and a leading-hyphen slug are named, one past either limit is not', () => {
+    const long = `${'a'.repeat(39)}/${'r'.repeat(100)}`;
+    expect(repoOf([`https://github.com/-owner/repo`])).toBe('-owner/repo');
+    expect(repoOf([`https://github.com/${long}`])).toBe(long);
+    expect(repoOf([`https://github.com/${'a'.repeat(40)}/repo`])).toBeNull();
+    expect(repoOf([`https://github.com/owner/${'r'.repeat(101)}`])).toBeNull();
+  });
+
   test('forms the remote grammar refuses name no repository', () => {
     for (const url of ['github:owner/repo', 'git+https://github.com/owner/repo.git', 'https://github.com/owner/repo/archive/refs/tags/v1.tar.gz', 'https://cli.github.com/', 'https://gitlab.com/owner/repo', 'https://github.com/bad_owner/repo']) {
       expect(repoOf([url])).toBeNull();
