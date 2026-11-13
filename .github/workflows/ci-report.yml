@@ -35,7 +35,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.3
+          bun-version: 1.4.4
       # Present only when the daily architecture job ran. No match downloads nothing.
       - name: Download the daily architecture summary
         uses: actions/download-artifact@v4
@@ -74,7 +74,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.3
+          bun-version: 1.4.4
       - name: Detect daily full validation that never started or exceeded its deadline
         env:
           GH_TOKEN: ${{ github.token }}
