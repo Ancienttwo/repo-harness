@@ -16,7 +16,7 @@
  * still adds an `[Unreleased]` entry.
  */
 import { spawnSync } from 'node:child_process';
-import { CHANGELOG, FRAGMENT_DIR, FRAGMENT_PATH_FORM, parseFragment, VERSION_HEADING } from './changelog-fragments';
+import { CHANGELOG, FRAGMENT_DIR, FRAGMENT_PATH_FORM, isFragmentPath, parseFragment, VERSION_HEADING } from './changelog-fragments';
 
 // A released section starts at its version heading and ends at the next version heading.
 const SECTION_HEADING = VERSION_HEADING;
@@ -30,12 +30,20 @@ export function changelogPreamble(text: string): string {
 }
 
 /**
+ * The first `## [Unreleased]` heading line of a text, or null. The heading starts its line, so prose
+ * that quotes the heading inside an entry does not match.
+ */
+export function unreleasedHeading(text: string): RegExpExecArray | null {
+  return /^## \[Unreleased\][^\r\n]*(?:\r?\n|$)/mu.exec(text);
+}
+
+/**
  * The base preamble with its retired `## [Unreleased]` block removed: the bytes before that heading. A
  * base without the heading gives back its own bytes, so no byte is normalized anywhere. The cutover that
  * retires the block deletes it and leaves exactly these bytes, which move into fragments otherwise.
  */
 export function withoutUnreleasedSection(preamble: string): string {
-  const block = /^## \[Unreleased\][^\r\n]*(?:\r?\n|$)/mu.exec(preamble);
+  const block = unreleasedHeading(preamble);
   return block === null ? preamble : preamble.slice(0, block.index);
 }
 const TREE_OID = /^[0-9a-f]{40}$/;
@@ -130,7 +138,7 @@ function fileAt(repoRoot: string, revision: string, path: string): string | null
  *    `## [Unreleased]` block removed. The transform is the only one, and it applies to the base side only,
  *    so every byte of the merge result must match it: an added sentence, a `* ` bullet, an indented
  *    heading, a kept `[Unreleased]` block or a trailing newline all fail.
- * 2. Each path under the fragment directory must parse.
+ * 2. Each path under the fragment directory except the kept file must parse.
  */
 function fragmentFaults(repoRoot: string, tree: string, changelog: string, baseText: string | null): string[] {
   const faults: string[] = [];
@@ -141,7 +149,7 @@ function fragmentFaults(repoRoot: string, tree: string, changelog: string, baseT
   if (changelogPreamble(changelog) !== expected) {
     faults.push(`${CHANGELOG} changes the text above its first released section, and each PR writes its entry in ${FRAGMENT_PATH_FORM} instead; the release prep assembles the section`);
   }
-  const listing = gitOrFail(repoRoot, ['ls-tree', '-r', '--name-only', tree, '--', FRAGMENT_DIR]).split('\n').filter(Boolean);
+  const listing = gitOrFail(repoRoot, ['ls-tree', '-r', '--name-only', tree, '--', FRAGMENT_DIR]).split('\n').filter(Boolean).filter(isFragmentPath);
   for (const path of listing) {
     try {
       parseFragment(path, fileAt(repoRoot, tree, path) ?? '');
