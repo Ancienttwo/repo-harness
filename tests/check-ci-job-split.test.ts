@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { analyzeAffectedTests, bundleInputPaths, discoverDailyInputs, discoverPlatformInputs, nativeTriggers, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
 import { auditDroppedTests } from '../scripts/ci-edge-audit';
@@ -1056,12 +1056,12 @@ describe('architecture lanes', () => {
     constraintIds: [LAYER_DIRECTION, PLUGIN_INTERNALS], importEdgeCount: 5521, unresolvedImports: [], violations: [constraintViolation(LAYER_DIRECTION)], ...fields } });
 
   // Real check-ci.sh with stub CLI results. `bun -e` and the shell logic stay real.
-  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; constraints?: string; summary?: boolean; history?: Array<{ manifest: boolean; hoursAgo: number }>; shallow?: boolean; gitFails?: string; changelog?: string; changelogExit?: number; links?: { dead: string[]; missing: string[] } }) {
+  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; constraints?: string; summary?: boolean; history?: Array<{ manifest: boolean; hoursAgo: number; path?: string }>; shallow?: boolean; gitFails?: string; changelog?: string; changelogExit?: number; links?: { dead: string[]; missing: string[] } }) {
     const root = mkdtempSync(join(tmpdir(), 'rh-ci-architecture-'));
     const bin = join(root, 'bin');
     try {
       mkdirSync(join(root, 'repo/scripts/lib'), { recursive: true }); mkdirSync(bin);
-      for (const path of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh', 'scripts/lib/architecture-plugin.sh', 'scripts/host-test-queue.ts']) writeFileSync(join(root, 'repo', path), readFileSync(join(ROOT, path)));
+      for (const path of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh', 'scripts/lib/architecture-plugin.sh', 'scripts/host-test-queue.ts', 'scripts/architecture-render-clock.ts']) writeFileSync(join(root, 'repo', path), readFileSync(join(ROOT, path)));
       // The advisory imports the action map from the real source tree.
       symlinkSync(join(ROOT, 'src'), join(root, 'repo/src'));
       // The lane records its architecture selection with the package version.
@@ -1075,8 +1075,9 @@ describe('architecture lanes', () => {
           env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
         git(['init', '-q']);
         mkdirSync(join(root, 'repo/docs/architecture'), { recursive: true });
-        fixture.history.forEach(({ manifest, hoursAgo }, index) => {
-          const path = manifest ? 'docs/architecture/.projection-manifest.json' : 'product.txt';
+        fixture.history.forEach(({ manifest, hoursAgo, path: changed }, index) => {
+          const path = changed ?? (manifest ? 'docs/architecture/.projection-manifest.json' : 'product.txt');
+          mkdirSync(dirname(join(root, 'repo', path)), { recursive: true });
           writeFileSync(join(root, 'repo', path), String(index));
           git(['add', path]);
           expect(git(['commit', '-q', '-m', String(index)], new Date(Date.now() - hoursAgo * 3_600_000).toISOString()).status).toBe(0);
@@ -1249,7 +1250,8 @@ describe('architecture lanes', () => {
   });
 
   const equivalent = { status: 'planned', renderEquivalent: true, differingPaths: [], humanActions: [] };
-  const differs = { status: 'planned', renderEquivalent: false, differingPaths: ['docs/architecture/a.md'], humanActions: [] };
+  const differs = { status: 'planned', renderEquivalent: false, differingPaths: ['docs/architecture/a.md'], differingCapabilityIds: null, humanActions: [] };
+  const differsInCapability = { ...differs, differingCapabilityIds: ['capability.a'] };
   const humanAction = { status: 'human-action-required', renderEquivalent: null, differingPaths: [], humanActions: [{ reasonCode: 'unprovable-required-flow' }] };
   // M is the newest commit that changes the manifest. The oldest commit after M, else M, dates the unpublished difference.
   const afterM = (hoursAgo: number) => [{ manifest: true, hoursAgo: 30 }, { manifest: false, hoursAgo }, { manifest: false, hoursAgo: 0.1 }];
@@ -1260,6 +1262,9 @@ describe('architecture lanes', () => {
     ['difference, commit after M older than 3 h', differs, afterM(4), 4, 'stale', 1],
     ['difference, no commit after M, M younger than 3 h', differs, onlyM(1), 1, 'lag', 0],
     ['difference, no commit after M, M older than 3 h', differs, onlyM(4), 4, 'stale', 1],
+    // Under manifest v4, M can be days old; an older product commit outside the differing capability does not start the clock.
+    ['difference, model commit after an unrelated commit', differsInCapability, [...afterM(20).slice(0, 2), { manifest: false, hoursAgo: 1, path: '.archcontext/model/nodes/a.json' }], 1, 'lag', 0],
+    ['difference, no commit changes a differing capability', differsInCapability, afterM(20), 20, 'stale', 1],
     ['human action', humanAction, afterM(1), 1, 'human-action', 1],
   ] as const)('daily classifies %s from the git history and saves the writer repair summary', (_name, summary, history, sinceHours, freshness, exit) => {
     const result = runLane(['architecture'], { check: JSON.stringify(summary), checkExit: summary.renderEquivalent === true ? 0 : 1, summary: true, history: [...history] });
@@ -1290,7 +1295,7 @@ describe('architecture lanes', () => {
     const result = runLane(['architecture'], { check: JSON.stringify(differs), checkExit: 1, summary: true, ...fixture });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(message);
-    expect(result.stderr).toContain('The oldest unpublished main commit could not be read from git.');
+    expect(result.stderr).toContain('The oldest unpublished main commit could not be read.');
     expect(result.summary).toBeNull();
   });
 

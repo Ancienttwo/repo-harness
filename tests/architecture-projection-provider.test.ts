@@ -22,7 +22,7 @@ import {
   type ProjectionRequestV1,
   type ProjectionResultV3,
 } from 'archctx-contracts';
-import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, classifyArchitectureFreshness, decodeNativeContextExport, summarizeArchitectureRender, decodeArchitectureHandEdits, type NativeContextSource } from '../src/core/architecture/projection';
+import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, classifyArchitectureFreshness, decodeNativeContextExport, firstRenderChangeCommit, summarizeArchitectureRender, decodeArchitectureHandEdits, type NativeContextSource } from '../src/core/architecture/projection';
 import type { ArchctxProcessResult, ArchitectureProjectionPolicy, RunArchctxProcess } from '../src/core/architecture/contracts';
 import {
   archctxCapabilities,
@@ -1856,8 +1856,13 @@ describe('single-writer observations', () => {
       plannedAction: 'none' as const, classification: 'unchanged' as const, reasonCodes: [] });
     result.changes = [change('projection_target.agent-context.agents.a', 'AGENTS.md'), change('projection_target.agent-context.agents.b', 'AGENTS.md'), change('target.a', 'docs/architecture/a.md')];
     expect(summarizeArchitectureRender(result)).toMatchObject({ renderEquivalent: true, differingPaths: [] });
+    expect(summarizeArchitectureRender(result).differingCapabilityIds).toEqual([]);
     for (const entry of result.changes) entry.outputChanged = true;
-    expect(summarizeArchitectureRender(result)).toMatchObject({ renderEquivalent: false, differingPaths: ['AGENTS.md', 'docs/architecture/a.md'] });
+    result.changes[0]!.affectedCapabilityIds = ['capability.b'];
+    result.changes[2]!.affectedCapabilityIds = ['capability.a', 'capability.b'];
+    expect(summarizeArchitectureRender(result)).toMatchObject({ renderEquivalent: false, differingPaths: ['AGENTS.md', 'docs/architecture/a.md'], differingCapabilityIds: null });
+    result.changes[1]!.affectedCapabilityIds = ['capability.c'];
+    expect(summarizeArchitectureRender(result).differingCapabilityIds).toEqual(['capability.a', 'capability.b', 'capability.c']);
     result.status = 'planned-partial';
     expect(summarizeArchitectureRender(result).renderEquivalent).toBeNull();
     result.status = 'human-action-required';
@@ -1873,6 +1878,15 @@ describe('single-writer observations', () => {
     expect(classifyArchitectureFreshness(differs, since(2.99), now)).toBe('lag');
     expect(classifyArchitectureFreshness(differs, since(3), now)).toBe('stale');
     expect(classifyArchitectureFreshness({ renderEquivalent: null, humanActions: [] }, since(0), now)).toBe('incomplete');
+  });
+
+  test('the lag clock starts at the first commit that changes the model or a path a differing capability owns', () => {
+    const commits = [{ sha: 'a', paths: ['src/other.ts'] }, { sha: 'b', paths: ['src/x.ts'] }, { sha: 'c', paths: ['.archcontext/model/nodes/n.yaml'] }];
+    const ownerOf = (path: string) => ({ 'src/other.ts': 'capability.other', 'src/x.ts': 'capability.x' } as Record<string, string>)[path];
+    expect(firstRenderChangeCommit(commits, ['capability.x'], ownerOf)).toBe('b');
+    expect(firstRenderChangeCommit(commits, ['capability.y'], ownerOf)).toBe('c');
+    expect(firstRenderChangeCommit(commits.slice(0, 2), ['capability.y'], ownerOf)).toBe('a');
+    expect(firstRenderChangeCommit(commits, null, ownerOf)).toBe('a');
   });
 
   test('hand-edit warnings consume only upstream manual-edit codes through the existing client', () => {

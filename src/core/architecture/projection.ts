@@ -43,15 +43,39 @@ export const ARCHCTX_REQUIRED_VERSION = dependencies.archctx;
  */
 export function summarizeArchitectureRender(result: ProjectionResultV3) {
   if (!result.changes) throw new Error('archctx check omitted per-target changes');
-  const differingPaths = [...new Set(result.changes.filter(change => change.outputChanged).map(change => change.path))];
+  const differing = result.changes.filter(change => change.outputChanged);
+  const differingPaths = [...new Set(differing.map(change => change.path))];
   const complete = (result.status === 'noop' || result.status === 'planned')
     && result.coverage === undefined && result.humanActions.length === 0;
   return {
     status: result.status,
     renderEquivalent: complete ? differingPaths.length === 0 : null,
     differingPaths,
+    // Null when a differing target names no capability, so no capability bounds the commits that changed it.
+    differingCapabilityIds: differing.some(change => change.affectedCapabilityIds.length === 0)
+      ? null
+      : [...new Set(differing.flatMap(change => change.affectedCapabilityIds))].sort(),
     humanActions: result.humanActions,
   };
+}
+
+/**
+ * The commit that starts the daily lag clock, from the first-parent commits after the newest
+ * manifest commit, oldest first. Manifest v4 changes only with a render, so the first of those
+ * commits can be days older than the render change. The clock starts at the first commit that
+ * changes the architecture model or a path a differing capability owns. Without such a commit,
+ * or when a differing target names no capability, it starts at the first commit.
+ */
+export function firstRenderChangeCommit(
+  commits: ReadonlyArray<{ sha: string; paths: readonly string[] }>,
+  differingCapabilityIds: readonly string[] | null,
+  ownerOf: (path: string) => string | undefined,
+): string {
+  if (commits.length === 0) throw new Error('no commit follows the newest manifest commit');
+  const differing = new Set(differingCapabilityIds ?? []);
+  const changesRender = (path: string) => path.startsWith('.archcontext/') || differing.has(ownerOf(path) ?? '');
+  const match = differingCapabilityIds === null ? undefined : commits.find(commit => commit.paths.some(changesRender));
+  return (match ?? commits[0]!).sha;
 }
 
 /** The rolling writer publishes after the product merge: 11 to 102 min for 8 projections in 2026-11 (#2590). */

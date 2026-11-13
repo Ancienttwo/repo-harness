@@ -85,15 +85,16 @@ run_architecture_check() {
   with_architecture_home bun src/cli/index.ts architecture-projection render-check --json > "$1"
 }
 
-# Prints the committer time of the oldest unpublished main commit: the first
-# first-parent commit after M, else M itself. M is the newest first-parent
-# commit that changes the projection manifest; only the rolling writer changes
-# it, and with manifest v4 only when a rendered output or the semantic baseline
-# changes. A product commit can sit between the rendered base and M, so M itself
-# counts when nothing follows it. The squash body names the rendered base only
-# as text, so it is not read.
+# Prints the committer time of the oldest unpublished main commit for the
+# render-check summary $1. M is the newest first-parent commit that changes the
+# projection manifest; only the rolling writer changes it, and with manifest v4
+# only when a rendered output or the semantic baseline changes. Of the
+# first-parent commits after M, architecture-render-clock.ts picks the render
+# change; else M itself counts, because a product commit can sit between the
+# rendered base and M. The squash body names the rendered base only as text, so
+# it is not read.
 architecture_unpublished_since() {
-  local shallow manifest_commit after
+  local shallow manifest_commit after start
   # A shallow clone ends at a boundary commit that git log reports as a manifest change.
   shallow="$(git rev-parse --is-shallow-repository)" || return 1
   if [[ "$shallow" != false ]]; then
@@ -106,8 +107,12 @@ architecture_unpublished_since() {
     return 1
   fi
   after="$(git rev-list --first-parent --reverse "$manifest_commit..HEAD")" || return 1
-  after="${after%%$'\n'*}"
-  git show -s --format=%cI "${after:-$manifest_commit}" || return 1
+  start="$manifest_commit"
+  if [[ -n "$after" ]]; then
+    # shellcheck disable=SC2086 # one argument per commit
+    start="$(with_architecture_selection bun scripts/architecture-render-clock.ts "$1" $after)" || return 1
+  fi
+  git show -s --format=%cI "$start" || return 1
 }
 
 # Prints a GitHub Actions warning annotation. The title must not contain ':' or ','.
@@ -310,7 +315,7 @@ if [[ "$lane" == all || "$lane" == architecture ]]; then
   arch_freshness=""
   arch_input_failed=false
   run_architecture_check "$arch_json" || true
-  if [[ -s "$arch_json" ]] && { unpublished_since="$(architecture_unpublished_since)" || { arch_input_failed=true; false; }; } \
+  if [[ -s "$arch_json" ]] && { unpublished_since="$(architecture_unpublished_since "$arch_json")" || { arch_input_failed=true; false; }; } \
     && arch_classified="$(bun -e 'const { classifyArchitectureFreshness } = await import("./src/core/architecture/projection.ts"); const summary = JSON.parse(await Bun.file(process.argv[1]).text()); const since = new Date(process.argv[2]); if (Number.isNaN(since.getTime())) throw new Error(`invalid commit time ${process.argv[2]}`); const freshness = classifyArchitectureFreshness(summary, since, new Date()); console.log(freshness); console.log(JSON.stringify({ ...summary, freshness, unpublishedSince: since.toISOString(), archimapLinks: JSON.parse(process.argv[3] || "null") }, null, 2));' "$arch_json" "$unpublished_since" "$links_json")"; then
     arch_freshness="${arch_classified%%$'\n'*}"
     arch_summary="${arch_classified#*$'\n'}"
@@ -327,7 +332,7 @@ if [[ "$lane" == all || "$lane" == architecture ]]; then
     fresh) ;;
     lag) warn "Architecture projection lag" "The render differs, and the oldest unpublished main commit ($unpublished_since) is younger than 3 h. The rolling writer publishes it." ;;
     stale) echo "[ci] Architecture render differs, and the oldest unpublished main commit ($unpublished_since) is 3 h or older. Inspect archctx writer status and the rolling PR." >&2; exit 1 ;;
-    *) if [[ "$arch_input_failed" == true ]]; then echo "[ci] The oldest unpublished main commit could not be read from git. Read the git error above." >&2; exit 1; fi
+    *) if [[ "$arch_input_failed" == true ]]; then echo "[ci] The oldest unpublished main commit could not be read. Read the git or ownership error above." >&2; exit 1; fi
        echo "[ci] Architecture check is incomplete${arch_freshness:+ ($arch_freshness)}. Inspect the reported human action or provider error." >&2; exit 1 ;;
   esac
   if [[ "$links_status" -ne 0 ]]; then echo "[ci] The archimap module document links do not match modules[].docs. Read the [archimap] lines above." >&2; exit 1; fi

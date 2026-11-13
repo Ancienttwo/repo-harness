@@ -1082,8 +1082,11 @@ can render one newer commit with the older writer. The rolling PR's CI does not
 compare renders. The Daily architecture freshness lane runs render equivalence
 on main. When the published output differs from what current main renders, the
 lane warns while the oldest unpublished main commit is younger than 3 h, and
-fails after that. The oldest unpublished commit is the first first-parent commit
-after the newest commit that changes the projection manifest, else that commit.
+fails after that. Of the first-parent commits after the newest commit that
+changes the projection manifest, the oldest unpublished commit is the first one
+that changes the architecture model or a path that a differing capability owns.
+Without one, or when a differing target names no capability, it is the first
+commit after the manifest commit, else the manifest commit itself.
 A version mismatch that renders the same output is harmless. The next main move
 renders again with the new writer. The upstream fix is
 Ancienttwo/arch-context#504 (`--base-sha`). A projection that stays stale for
