@@ -211,10 +211,10 @@ test('closing ends every resident process', async () => {
 });
 
 test('GitHub remote URLs name owner/repo in every form, and nothing else does', () => {
-  for (const url of ['https://github.com/Owner/Repo.git', 'https://token@github.com/owner/repo', 'git@github.com:owner/repo.git', 'ssh://git@github.com/owner/repo.git', 'ssh://git@github.com:22/owner/repo/']) {
+  for (const url of ['https://github.com/Owner/Repo.git', 'https://token@github.com/owner/repo', 'git@github.com:owner/repo.git', 'ssh://git@github.com/owner/repo.git', 'ssh://git@github.com:22/owner/repo/', 'https://GitHub.com/owner/repo']) {
     expect(githubRemoteRepository(url)).toBe('owner/repo');
   }
-  for (const url of ['https://gitlab.com/owner/repo.git', 'https://github.com.evil.example/owner/repo', 'git@github.com:owner/repo/extra.git', '/srv/git/repo.git']) {
+  for (const url of ['https://gitlab.com/owner/repo.git', 'https://github.com.evil.example/owner/repo', 'git@github.com:owner/repo/extra.git', '/srv/git/repo.git', 'github:owner/repo', 'git+https://github.com/owner/repo.git', 'https://github.com/owner/repo/archive/refs/tags/v1.tar.gz', 'owner/repo']) {
     expect(githubRemoteRepository(url)).toBeNull();
   }
 });

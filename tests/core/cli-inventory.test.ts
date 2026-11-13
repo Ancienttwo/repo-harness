@@ -5,7 +5,6 @@ import {
   CLI_SEED,
   decodeCliInventory,
   decodeCliSeed,
-  githubRepo,
   projectCliInventory,
   unavailableCliInventory,
   type CliInventoryInput,
@@ -24,12 +23,12 @@ function input(overrides: Partial<CliInventoryInput> = {}): CliInventoryInput {
     seed: CLI_SEED,
     packages: [
       { source: 'brew', dependency: false, name: 'gh', version: '2.60.0', roots: ['/opt/homebrew/Cellar/gh'], files: [], deprecated: false,
-        urls: ['https://cli.github.com/', 'https://github.com/cli/cli/archive/refs/tags/v2.60.0.tar.gz'] },
+        urls: ['https://cli.github.com/', 'https://github.com/cli/cli'] },
       { source: 'brew', dependency: false, name: 'stripe/stripe-cli/stripe', version: '1.21.0', roots: ['/opt/homebrew/Cellar/stripe'], files: [], deprecated: false, urls: [] },
       { source: 'npm', dependency: false, name: '@openai/codex', version: '0.150.0', roots: [`${HOME}/.nvm/lib/node_modules/@openai/codex`], files: [], deprecated: false,
-        urls: ['git+https://github.com/openai/codex.git'] },
+        urls: ['https://github.com/openai/codex.git'] },
       { source: 'npm', dependency: false, name: 'neonctl', version: '2.1.0', roots: [`${HOME}/.nvm/lib/node_modules/neonctl`], files: [], deprecated: false,
-        urls: ['git+https://github.com/neondatabase/neonctl.git'] },
+        urls: ['https://github.com/neondatabase/neonctl.git'] },
       { source: 'npm', dependency: false, name: 'opencode-ai', version: '1.0.0', roots: [`${HOME}/.nvm/lib/node_modules/opencode-ai`], files: [], deprecated: false,
         urls: ['https://github.com/sst/opencode'] },
       { source: 'go', dependency: false, name: 'github.com/charmbracelet/crush', version: 'v0.9.0', roots: [], files: [`${HOME}/go/bin/crush`], deprecated: false,
@@ -168,15 +167,6 @@ describe('cli inventory projection', () => {
       repo: null, candidates: ['rorkai/App-Store-Connect-CLI', 'tddworks/asc-cli'], monorepo: false, stars: null, archived: null, moved: false,
     });
   });
-
-  test('reads GitHub repositories from npm, Homebrew and shorthand metadata', () => {
-    expect(githubRepo('git+https://github.com/openai/codex.git')).toBe('openai/codex');
-    expect(githubRepo('git@github.com:cli/cli.git')).toBe('cli/cli');
-    expect(githubRepo('github:vercel/vercel')).toBe('vercel/vercel');
-    expect(githubRepo('https://github.com/cli/cli/archive/refs/tags/v1.tar.gz')).toBe('cli/cli');
-    expect(githubRepo('https://cli.github.com/')).toBeNull();
-    expect(githubRepo('https://gitlab.com/a/b')).toBeNull();
-  });
 });
 
 describe('cli inventory decoder', () => {
@@ -193,6 +183,7 @@ describe('cli inventory decoder', () => {
     rejects(s => { s.entries[0].github = { repo: null, candidates: [], monorepo: false, stars: 1, archived: null, moved: false }; });
     rejects((_, entry) => { entry('manual:asc').github.stars = 10; });
     rejects(s => { s.entries[0].commands = []; });
+    rejects((_, entry) => { entry('manual:asc').github.candidates[0] = 'bad_owner/repo'; });
     rejects(s => { s.entries[0].args = 'pr view'; });
     rejects(s => { s.entries.push({ ...s.entries[0] }); });
     rejects(s => { Object.assign(s, unavailableCliInventory(), { entries: s.entries }); });
