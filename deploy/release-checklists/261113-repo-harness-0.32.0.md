@@ -91,9 +91,14 @@ names one first-parent commit of the range, oldest first.
    lines of the 0.32.0 section and the restart of the orchestrator and advisor
    seats.
 
-A partial publish follows the continuation rules at the top of the `plan`
-list: settle npm with `wait` first, skip a step whose result shows it done,
-and never publish again.
+A continued run follows the rules at the top of the `plan` list
+(`scripts/release-owner-steps.sh:188-191`). It first settles npm: it runs
+`release-owner-steps.sh wait <package> 0.32.0` for each package whose publish
+step has no mark. A package whose version is absent after this settle runs
+its publish step. A marked step, or a step whose result shows it done (npm
+shows the version, the tag is at the release commit, the GitHub Release
+exists), is skipped. After a publish that exited 0, a failed wait runs the
+same step again later and never publishes again.
 
 ## Upgrade steps for users
 
@@ -109,9 +114,12 @@ bun add -g repo-harness@0.32.0 --no-cache && repo-harness update --version 0.32.
 ## Acceptance environment
 
 The release PR records the prep head and `bun run check:release`. The upgrade
-rehearsal lane of #2626 (`gh workflow run probe.yml --ref
-chore/2695-release-0-32-0 -f lane=release-rehearsal -f runner=ubuntu-latest`)
-was not run by the prep; the release PR names that gap.
+rehearsal lane of #2626 ran on the prep head `b2850fe46`: Probe run
+[43390461859](https://github.com/aimpact-inc/repo-harness/actions/runs/43390461859)
+(ubuntu-latest, `release-rehearsal`), success. It installed the parent
+`repo-harness@0.31.0` from npm, ran the parent's `update --version 0.32.0`
+against the local candidate registry, and ended with `[rehearsal] OK: 0.31.0
+-> 0.32.0` and `archctx link: 0.13.0 -> 0.13.0`. No macos-latest run.
 
 ## Publication
 
