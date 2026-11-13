@@ -105,8 +105,8 @@
   "dependencies": {
     "@botiverse/oar": "0.95.0",
     "@modelcontextprotocol/sdk": "^1.32.2",
-    "archctx": "0.13.0",
-    "archctx-contracts": "0.13.0",
+    "archctx": "0.14.1",
+    "archctx-contracts": "0.14.1",
     "commander": "^15.1.0",
     "mdast-util-from-markdown": "2.1.0"
   }
