@@ -176,29 +176,67 @@ describe('capability-context command', () => {
         'verification-codegraph-readiness',
       );
 
-      // The auto-filled entry names the registry page; a projection manifest re-renders it or drops it.
-      const registryPage = scriptCapability.architecture_module!;
-      const projected = 'docs/architecture/modules/verification/readiness.md';
-      const syncUnderProjection = (targets: unknown) => {
-        fs.mkdirSync(path.join(cwd, 'docs/architecture'), { recursive: true });
-        fs.writeFileSync(path.join(cwd, 'docs/architecture/.projection-manifest.json'), JSON.stringify({ targets }));
-        runCapabilityContextSync({ repo: cwd, capabilityId: 'verification-codegraph-readiness', apply: true });
-        return fs.readFileSync(path.join(cwd, 'scripts/AGENTS.md'), 'utf-8');
-      };
-      const moved = syncUnderProjection({
-        'projection_target.entity.capability-verification-codegraph-readiness': {
-          type: 'entity-summary',
-          scope: { kind: 'entity', id: 'capability.verification.codegraph-readiness', entityKind: 'capability' },
-          path: projected,
-        },
-      });
-      expect(moved).toContain(`- Architecture module: \`${projected}\` (design-source)`);
-      expect(moved).not.toContain(registryPage);
-      const none = syncUnderProjection({});
-      expect(none).not.toContain('Architecture module');
-      expect(none).toContain('- Primary prefix: `scripts/ensure-codegraph.sh` (entrypoint)');
     } finally {
       fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('under a projection manifest the shown module page comes from the manifest at read time (#2707)', () => {
+    const id = 'verification-codegraph-readiness';
+    const registryPage = scriptCapability.architecture_module!;
+    const prefixItem = { label: 'Primary prefix', path: 'scripts/ensure-codegraph.sh', role: 'entrypoint' };
+    const crossReference = { label: 'Related module', path: webCapability.architecture_module!, role: 'reference' };
+    const storedEntry = {
+      positioning: 'Owns codegraph readiness.',
+      source_map: [prefixItem, { label: 'Architecture module', path: registryPage, role: 'design-source' }, crossReference],
+    };
+    const readiness = 'docs/architecture/modules/verification/readiness.md';
+    const moved = 'docs/architecture/modules/verification/moved.md';
+    const cases: { name: string; stored: typeof storedEntry | null; pages: (string | null)[] }[] = [
+      { name: 'moved page', stored: storedEntry, pages: [readiness, moved] },
+      { name: 'dropped page', stored: storedEntry, pages: [readiness, null] },
+      { name: 'auto-fill under a manifest', stored: null, pages: [readiness, moved, null] },
+    ];
+    for (const { name, stored, pages } of cases) {
+      const cwd = tmpWorkspace('capability-context-projection');
+      try {
+        fs.mkdirSync(path.join(cwd, 'scripts'), { recursive: true });
+        fs.mkdirSync(path.join(cwd, 'docs/architecture'), { recursive: true });
+        fs.writeFileSync(path.join(cwd, 'scripts/ensure-codegraph.sh'), '#!/bin/bash\n');
+        writeRegistry(cwd, [rootCapability, webCapability, scriptCapability]);
+        const sourceMapPath = path.join(cwd, '.ai/context/capability-source-map.json');
+        if (stored) fs.writeFileSync(sourceMapPath, JSON.stringify({ version: 1, capabilities: { [id]: stored } }));
+        const stalePages = [registryPage];
+        for (const page of pages) {
+          const targets = page === null ? {} : {
+            'projection_target.entity.capability-verification-codegraph-readiness': {
+              type: 'entity-summary',
+              scope: { kind: 'entity', id: 'capability.verification.codegraph-readiness', entityKind: 'capability' },
+              path: page,
+            },
+          };
+          fs.writeFileSync(path.join(cwd, 'docs/architecture/.projection-manifest.json'), JSON.stringify({ targets }));
+          runCapabilityContextSync({ repo: cwd, capabilityId: id, apply: true, autoFillPositioning: stored === null });
+          const agents = fs.readFileSync(path.join(cwd, 'scripts/AGENTS.md'), 'utf-8');
+          const pageLines = agents.split('\n').filter((line) => line.includes('Architecture module'));
+          expect([name, pageLines]).toEqual([name, page === null ? [] : [
+            `- Architecture module: \`${page}\``,
+            `- Architecture module: \`${page}\` (design-source)`,
+          ]]);
+          for (const stale of stalePages) expect([name, agents.includes(stale)]).toEqual([name, false]);
+          if (stored) expect(agents).toContain(`- Related module: \`${crossReference.path}\` (reference)`);
+          if (page !== null) stalePages.push(page);
+        }
+        // Stored page fields stay as written; no page path is written under a manifest.
+        const sourceMap = JSON.parse(fs.readFileSync(sourceMapPath, 'utf-8')).capabilities[id];
+        expect([name, sourceMap.source_map]).toEqual([name, stored ? stored.source_map : [prefixItem]]);
+        const registry = JSON.parse(fs.readFileSync(path.join(cwd, '.ai/context/capabilities.json'), 'utf-8'));
+        expect(registry.capabilities.find((entry: Capability) => entry.id === id).architecture_module).toBe(registryPage);
+        fs.writeFileSync(path.join(cwd, 'docs/architecture/.projection-manifest.json'), '{}');
+        expect(() => runCapabilityContextSync({ repo: cwd, capabilityId: id, apply: true })).toThrow('has no targets object');
+      } finally {
+        fs.rmSync(cwd, { recursive: true, force: true });
+      }
     }
   });
 

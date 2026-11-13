@@ -987,7 +987,9 @@ capability's `architecture_module` and `module_document` are the
 `entity-summary` page that the manifest projects for `capability.<domain>.<name>`,
 or `null`, and the registry value is not read. `capability-resolver validate`
 then reports a page under `docs/architecture/modules/` as an orphan only when
-the manifest does not project it. A read-only observation does not
+the manifest does not project it. `capability-context sync` shows the
+same page and writes no page path to the registry or the source-map file;
+stored page fields stay in those files and are not read. A read-only observation does not
 start archctx. It reports `capability_ownership:unavailable`. The standalone helper copy
 in `assets/templates/helpers/` has no package-local archctx. Under `archcontext`
 it refuses every command with `capability_source "archcontext" needs the
