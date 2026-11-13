@@ -13,6 +13,7 @@
 import { lstat, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { GITHUB_REPOSITORY } from '../../core/board/github-repository';
 import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
 import {
   decodeTestsSnapshot,
@@ -45,7 +46,6 @@ const PROJECTION_MAX_BYTES = 32 * 1024 * 1024;
 const REPORT_MAX_FILES = 5_000;
 /** Extracted bytes of one artifact, from lstat sizes, checked before any file is read. */
 const EXTRACTED_MAX_BYTES = 256 * 1024 * 1024;
-const GITHUB_REPO = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/u;
 const BRANCH = /^[A-Za-z0-9._/-]{1,255}$/u;
 
 export type TestsRepositoryCache =
@@ -232,7 +232,7 @@ export function startTestsCollector(options: TestsCollectorOptions): TestsCollec
     if (activity.collected_at === null) return { state: 'unavailable', reason: 'tests_pending' };
     const source = activity.repositories.find(entry => entry.repository_id === repo.id);
     // Only GitHub names the default branch; Dev Activity's local fallback is not used.
-    if (!source?.github || !source.default_branch || !GITHUB_REPO.test(source.github) || !BRANCH.test(source.default_branch)) {
+    if (!source?.github || !source.default_branch || !GITHUB_REPOSITORY.test(source.github) || !BRANCH.test(source.default_branch)) {
       return { state: 'unavailable', reason: 'default_branch_unknown' };
     }
     const github = source.github;

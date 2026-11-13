@@ -5,6 +5,7 @@
 // command string from a fixed template. A local path leaves this module only as
 // `~/...` or as `[private path]`.
 
+import { GITHUB_REPOSITORY } from '../board/github-repository';
 import { decodeReaders } from '../evidence/decode-readers';
 import { publicAgentConfigText } from '../operator/agent-config';
 import seedJson from './cli-seed.v1.json';
@@ -39,8 +40,6 @@ export type CliInventoryReason = typeof CLI_INVENTORY_REASONS[number];
 const PACKAGE_NAME = /^[@A-Za-z0-9][A-Za-z0-9._@/+-]{0,213}$/u;
 const COMMAND_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/u;
 const VERSION = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/u;
-/** GitHub `owner/repo`. */
-export const GITHUB_REPO = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/u;
 
 // ---------------------------------------------------------------------------
 // Seed directory
@@ -93,7 +92,7 @@ export function decodeCliSeed(value: unknown): CliSeedCatalog {
     return {
       id,
       commands,
-      repo: match(t.repo, GITHUB_REPO, `${id} repo`),
+      repo: match(t.repo, GITHUB_REPOSITORY, `${id} repo`),
       monorepo: t.monorepo as boolean,
       packages: list(t.packages, (p) => {
         const pkg = obj(p, ['registry', 'name'], `${id} package`);
@@ -240,7 +239,7 @@ export function githubRepo(url: string): string | null {
   const match = /^(?:git\+)?(?:https?:\/\/|git:\/\/|ssh:\/\/git@|git@)?(?:www\.)?github\.com[/:]([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?(?:[/#?].*)?$/u.exec(url.trim())
     ?? /^github:([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?$/u.exec(url.trim());
   const repo = match === null ? null : `${match[1]}/${match[2]}`;
-  return repo !== null && GITHUB_REPO.test(repo) ? repo : null;
+  return repo !== null && GITHUB_REPOSITORY.test(repo) ? repo : null;
 }
 
 function uninstallCommand(record: CliPackageRecord): string | null {
@@ -426,8 +425,8 @@ export function decodeCliInventory(value: unknown): CliInventorySnapshotV1 {
     bool(e.deprecated, 'deprecated');
     nullable(e.github, x => {
       const g = obj(x, ['repo', 'candidates', 'monorepo', 'stars', 'archived', 'moved'], 'github');
-      const repo = nullable(g.repo, y => match(y, GITHUB_REPO, 'repo'));
-      const candidates = array(g.candidates, 'candidates').map(y => match(y, GITHUB_REPO, 'candidate'));
+      const repo = nullable(g.repo, y => match(y, GITHUB_REPOSITORY, 'repo'));
+      const candidates = array(g.candidates, 'candidates').map(y => match(y, GITHUB_REPOSITORY, 'candidate'));
       if ((repo === null) === (candidates.length === 0)) fail('github repo');
       bool(g.monorepo, 'monorepo');
       bool(g.moved, 'moved');
