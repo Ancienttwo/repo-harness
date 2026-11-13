@@ -9,7 +9,7 @@ import {
   normalizeCapabilityPath,
   parseCapabilityRegistry,
   parseProjectedModulePages,
-  projectModulePages,
+  withProjectedModulePages,
   type ArchcontextCapabilityOwners,
   type ArchcontextCapabilityResolution,
   type Capability,
@@ -204,14 +204,8 @@ function loadEffectiveRegistry(repo: string, mode: CapabilitySourceMode): {
   readonly projectedPages: ReadonlySet<string> | null;
 } {
   const resolution = loadRegistry(repo, mode);
-  const manifest = mode === "registry" && resolution.status === "valid" ? readProjectionManifest(repo) : null;
-  if (resolution.status !== "valid" || manifest === null) return { resolution, projectedPages: null };
-  const pages = parseProjectedModulePages(manifest);
-  if ("code" in pages) return { resolution: { status: "invalid", registry: null, diagnostics: [pages] }, projectedPages: null };
-  return {
-    resolution: { status: "valid", registry: projectModulePages(resolution.registry, pages), diagnostics: [] },
-    projectedPages: pages.paths,
-  };
+  if ("owners" in resolution || resolution.status !== "valid") return { resolution, projectedPages: null };
+  return withProjectedModulePages(resolution, readProjectionManifest(repo));
 }
 
 function malformedRegistryError(
@@ -402,7 +396,7 @@ export async function runCapabilityResolverCli(argv: string[]): Promise<void> {
   }
 
   if (args.command === "export") {
-    const exportErrors = validateRegistryEffects(registry, repo);
+    const exportErrors = validateRegistryEffects(registry, repo, registry.capabilities, projectedPages);
     if (exportErrors.length > 0) {
       throw new Error(`capability registry is invalid:\n${exportErrors.join("\n")}`);
     }

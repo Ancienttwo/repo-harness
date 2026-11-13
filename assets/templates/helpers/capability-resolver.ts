@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// @generated-from src/core/capabilities/registry.ts sha256:6d8324065acf9af96ecca72d146758594c50d02ed2b59aeaaaa7810e5bec4a9a
+// @generated-from src/core/capabilities/registry.ts sha256:9fcf24d1a85bb94b138612001eb51e433c0955544c65da3fc5e46fa2fd88d6dc
 // Standalone typed Bun projection. Regenerate from the capability resolver library; do not edit by hand.
 export const CAPABILITY_REGISTRY_VERSION = 1 as const;
 
@@ -481,15 +481,24 @@ export function projectModulePages(registry: CapabilityRegistry, pages: Projecte
   });
 }
 
+export interface ProjectedRegistryResolution {
+  readonly resolution: CapabilityRegistryResolution;
+  /** Every path that the manifest projects; null without a manifest. */
+  readonly projectedPages: ReadonlySet<string> | null;
+}
+
 /** Applies the manifest source to a valid registry. Without a manifest the registry is unchanged. */
 export function withProjectedModulePages(
   resolution: CapabilityRegistryResolution,
   manifestSource: string | null,
-): CapabilityRegistryResolution {
-  if (resolution.status !== "valid" || manifestSource === null) return resolution;
+): ProjectedRegistryResolution {
+  if (resolution.status !== "valid" || manifestSource === null) return { resolution, projectedPages: null };
   const pages = parseProjectedModulePages(manifestSource);
-  if ("code" in pages) return { status: "invalid", registry: null, diagnostics: [pages] };
-  return { status: "valid", registry: projectModulePages(resolution.registry, pages), diagnostics: [] };
+  if ("code" in pages) return { resolution: { status: "invalid", registry: null, diagnostics: [pages] }, projectedPages: null };
+  return {
+    resolution: { status: "valid", registry: projectModulePages(resolution.registry, pages), diagnostics: [] },
+    projectedPages: pages.paths,
+  };
 }
 
 export function matchCapabilityPath(
@@ -2063,14 +2072,8 @@ function loadEffectiveRegistry(repo: string, mode: CapabilitySourceMode): {
   readonly projectedPages: ReadonlySet<string> | null;
 } {
   const resolution = loadRegistry(repo, mode);
-  const manifest = mode === "registry" && resolution.status === "valid" ? readProjectionManifest(repo) : null;
-  if (resolution.status !== "valid" || manifest === null) return { resolution, projectedPages: null };
-  const pages = parseProjectedModulePages(manifest);
-  if ("code" in pages) return { resolution: { status: "invalid", registry: null, diagnostics: [pages] }, projectedPages: null };
-  return {
-    resolution: { status: "valid", registry: projectModulePages(resolution.registry, pages), diagnostics: [] },
-    projectedPages: pages.paths,
-  };
+  if ("owners" in resolution || resolution.status !== "valid") return { resolution, projectedPages: null };
+  return withProjectedModulePages(resolution, readProjectionManifest(repo));
 }
 
 function malformedRegistryError(
@@ -2261,7 +2264,7 @@ export async function runCapabilityResolverCli(argv: string[]): Promise<void> {
   }
 
   if (args.command === "export") {
-    const exportErrors = validateRegistryEffects(registry, repo);
+    const exportErrors = validateRegistryEffects(registry, repo, registry.capabilities, projectedPages);
     if (exportErrors.length > 0) {
       throw new Error(`capability registry is invalid:\n${exportErrors.join("\n")}`);
     }

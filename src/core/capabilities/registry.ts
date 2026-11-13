@@ -478,15 +478,24 @@ export function projectModulePages(registry: CapabilityRegistry, pages: Projecte
   });
 }
 
+export interface ProjectedRegistryResolution {
+  readonly resolution: CapabilityRegistryResolution;
+  /** Every path that the manifest projects; null without a manifest. */
+  readonly projectedPages: ReadonlySet<string> | null;
+}
+
 /** Applies the manifest source to a valid registry. Without a manifest the registry is unchanged. */
 export function withProjectedModulePages(
   resolution: CapabilityRegistryResolution,
   manifestSource: string | null,
-): CapabilityRegistryResolution {
-  if (resolution.status !== "valid" || manifestSource === null) return resolution;
+): ProjectedRegistryResolution {
+  if (resolution.status !== "valid" || manifestSource === null) return { resolution, projectedPages: null };
   const pages = parseProjectedModulePages(manifestSource);
-  if ("code" in pages) return { status: "invalid", registry: null, diagnostics: [pages] };
-  return { status: "valid", registry: projectModulePages(resolution.registry, pages), diagnostics: [] };
+  if ("code" in pages) return { resolution: { status: "invalid", registry: null, diagnostics: [pages] }, projectedPages: null };
+  return {
+    resolution: { status: "valid", registry: projectModulePages(resolution.registry, pages), diagnostics: [] },
+    projectedPages: pages.paths,
+  };
 }
 
 export function matchCapabilityPath(

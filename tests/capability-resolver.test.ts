@@ -270,13 +270,16 @@ describe("capability resolver", () => {
       mkdirSync(join(cwd, "docs/architecture/modules/web"), { recursive: true });
       writeFileSync(join(cwd, projected), "# Web\n");
       const manifest = (targets: unknown) => writeFileSync(join(cwd, "docs/architecture/.projection-manifest.json"), JSON.stringify({ targets }));
-      manifest({
+      const webTarget = {
         "projection_target.entity.capability-apps-web-web": {
           type: "entity-summary", scope: { kind: "entity", id: "capability.apps-web.web", entityKind: "capability" }, path: projected,
         },
-      });
+      };
+      manifest(webTarget);
+      const exportNodes = () => runResolver(cwd, ["export", "--format", "archcontext-nodes-v2"]);
 
       expect(runResolver(cwd, ["validate", "--format", "text"]).stdout).toContain("[CapabilityResolver] OK");
+      expect(exportNodes().status).toBe(0);
       const web = JSON.parse(runResolver(cwd, ["match", "--path", "apps/web/page.tsx", "--format", "json"]).stdout);
       const api = JSON.parse(runResolver(cwd, ["match", "--path", "apps/api/route.ts", "--format", "json"]).stdout);
       expect([web.architecture_module, api.architecture_module]).toEqual([projected, null]);
@@ -284,6 +287,9 @@ describe("capability resolver", () => {
       writeFileSync(join(cwd, "docs/architecture/modules/web/extra.md"), "# Extra\n");
       expect(runResolver(cwd, ["validate", "--format", "text"]).stdout)
         .toContain("orphan architecture module: docs/architecture/modules/web/extra.md");
+      // A manifest page with no capability is projected, not an orphan.
+      manifest({ ...webTarget, "projection_target.overview": { type: "overview", path: "docs/architecture/modules/web/extra.md" } });
+      expect(exportNodes().status).toBe(0);
 
       manifest(undefined);
       const invalid = runResolver(cwd, ["validate", "--format", "text"]);

@@ -328,7 +328,7 @@ export function loadRegistryAuthority(cwd: string, policy: WorkflowPolicy, readS
     declared: policyDeclaresCapabilityRegistry(policy),
     repoRoot: cwd,
   });
-  return resolution.status === 'valid' ? withProjectedModulePages(resolution, readSource(PROJECTION_MANIFEST_PATH)) : resolution;
+  return resolution.status === 'valid' ? withProjectedModulePages(resolution, readSource(PROJECTION_MANIFEST_PATH)).resolution : resolution;
 }
 
 // One resolve runs several unlocked passes. The archctx answer depends only on
