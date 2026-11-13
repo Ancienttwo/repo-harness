@@ -340,6 +340,21 @@ describe("test HOME and TMPDIR isolation", () => {
     } finally { f.close(); }
   });
 
+  test("writes the JUnit report for an absolute test path under its sanitized name", () => {
+    const f = fixture();
+    try {
+      const junit = join(f.temp, "junit-out");
+      mkdirSync(junit);
+      const probe = join(f.temp, "report.test.ts");
+      writeFileSync(probe, 'import {test} from "bun:test"; test("report",()=>{});\n');
+      const result = spawnSync("bash", ["-c", 'source "$1"; run_bun_test_file "$2"', "test-home", join(ROOT, "scripts/lib/ci-run-tests.sh"), probe], {
+        cwd: ROOT, env: { ...f.env, BUN_TEST_JUNIT_DIR: junit }, encoding: "utf8",
+      });
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+      expect(existsSync(join(junit, probe.replace(/[\\/:]/g, "__") + ".xml"))).toBe(true);
+    } finally { f.close(); }
+  });
+
   test("refuses a registry home under the caller's real HOME before any test runs", () => {
     const f = fixture();
     try {
