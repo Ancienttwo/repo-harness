@@ -82,7 +82,7 @@ jobs:
           node-version: '24'
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.3
+          bun-version: 1.4.4
       # The runner is the isolation: the script installs into its HOME, which GitHub discards.
       - name: Rehearse the upgrade of the published parent to this head
         if: inputs.lane == 'release-rehearsal'
