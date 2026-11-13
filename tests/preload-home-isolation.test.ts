@@ -235,6 +235,34 @@ describe("test HOME and TMPDIR isolation", () => {
     } finally { f.close(); }
   });
 
+  // Two pooled files overlap: "owner" creates a -wt- path, "bystander" ends while it exists.
+  function runWorktreeOverlap(remove: boolean) {
+    const f = fixture();
+    const tree = join(TMP_ROOT, `rh-guard-${process.pid}-${remove ? "gone" : "leak"}-wt-overlap`);
+    try {
+      const seen = join(f.temp, "seen");
+      const wait = (path: string) => `while(!require("node:fs").existsSync(${JSON.stringify(path)}))await Bun.sleep(20);`;
+      const head = 'import {test} from "bun:test";test("t",async()=>{';
+      writeFileSync(join(f.temp, "owner.test.ts"), head + `require("node:fs").mkdirSync(${JSON.stringify(tree)});${wait(seen)}`
+        + (remove ? `require("node:fs").rmSync(${JSON.stringify(tree)},{recursive:true});` : "") + "});\n");
+      writeFileSync(join(f.temp, "bystander.test.ts"), head + `${wait(tree)}require("node:fs").writeFileSync(${JSON.stringify(seen)},"1");});\n`);
+      const result = spawnSync("bash", ["--noprofile", "--norc", "-c",
+        'source "$1"; failed_list=""; _ci_run_bun_test_pool 2 "$2" "$3"; printf "FAILED:%s" "$failed_list"',
+        "pool", join(ROOT, "scripts/lib/ci-run-tests.sh"), join(f.temp, "owner.test.ts"), join(f.temp, "bystander.test.ts")], {
+        cwd: ROOT, env: f.env, encoding: "utf8",
+      });
+      return result.stdout.split("FAILED:")[1] ?? result.stdout + result.stderr;
+    } finally { rmSync(tree, { recursive: true, force: true }); f.close(); }
+  }
+
+  test("blames no pooled file for a worktree that a concurrent file created and removed", () => {
+    expect(runWorktreeOverlap(true)).toBe("");
+  });
+
+  test("still fails the pooled file that leaked a worktree", () => {
+    expect(runWorktreeOverlap(false)).toContain("owner.test.ts (exit 1)");
+  });
+
   test("drops a sentinel PI_CODING_AGENT_DIR before test code starts", () => {
     const f = fixture();
     try {
