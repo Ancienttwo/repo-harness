@@ -769,7 +769,7 @@
     "projection_target.entity.capability-public-surface-strategy-reflection":
       {"type":"entity-summary","scope":{"kind":"entity","id":"capability.public-surface.strategy-reflection","entityKind":"capability"},"path":"docs/architecture/modules/public-surface/strategy-reflection.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:6ea08390fc26d1cd55c14f1411959fa715904a5a4e3962e4ea58b44552e28eb3"},
     "projection_target.entity.capability-runtime-harness-architecture":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.architecture","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/architecture.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:8715251e80bd7a11daf421467bddfc416d07b8de4370d58fe1713b15160f7716"},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.architecture","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/architecture.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:7481e9410dcb10894cc0de3329787c0ea8883653ce35676cf6e25f5198e965be"},
     "projection_target.entity.capability-runtime-harness-evidence-ledger":
       {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.evidence-ledger","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/evidence-ledger.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:4a490f39b01a3988ee8b813bd8a23245825a14e1999e6f78d1915a79ab6b1457"},
     "projection_target.entity.capability-runtime-harness-global-runtime-reconciliation":
