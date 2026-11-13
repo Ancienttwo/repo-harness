@@ -996,6 +996,10 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
         'exec repo-harness board seats',
         'env FOO=1 repo-harness update',
         'sudo repo-harness update',
+        'sudo -u user repo-harness update',
+        'time -p repo-harness update',
+        'FOO=1 repo-harness board seats',
+        'repo-harness --version',
         'The repo-harness operator console shows it.',
         'repo-harness review reply',
       ].join('\n');
@@ -1006,8 +1010,8 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
       expect(lstatSync(retiredLink, { throwIfNoEntry: false })).toBeUndefined();
       expect(result.steps.find((step) => step.step === 'retire the repo-harness command link')?.detail).toBe(`Removed ${retiredLink}. The command is rh.`);
       const notice = result.steps.find((step) => step.step === 'find repo-harness command calls in user files')?.detail ?? '';
-      expect(notice).toContain(`4 line(s) in files that you own call repo-harness <command>`);
-      expect(notice).toContain([1, 2, 3, 4].map(line => `${agents}:${line}`).join(', '));
+      expect(notice).toContain(`8 line(s) in files that you own call repo-harness <command>`);
+      expect(notice).toContain([1, 2, 3, 4, 5, 6, 7, 8].map(line => `${agents}:${line}`).join(', '));
       expect(readFileSync(agents, 'utf8')).toStartWith(userText);
       // A file at the link path without the exact proof stays, with its removal command.
       writeFileSync(retiredLink, 'owner file');
