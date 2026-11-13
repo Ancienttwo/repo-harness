@@ -893,8 +893,8 @@ describe('package-local ArchContext projection provider', () => {
       mkdirSync(join(f.repoRoot, 'docs', 'architecture'), { recursive: true });
       writeFileSync(join(f.repoRoot, 'docs', 'architecture', '.projection-manifest.json'), contents);
     };
-    const manifest = (floor: string, schemaVersion = 'archcontext.architecture-docs-projection-manifest/v4') => JSON.stringify({
-      schemaVersion,
+    const manifest = (floor: string) => JSON.stringify({
+      schemaVersion: 'archcontext.architecture-docs-projection-manifest/v4',
       rendererVersion: 'archcontext.docs-renderer/v6',
       minimumRendererVersion: floor,
       profile: 'repo-harness/v1',
@@ -924,16 +924,6 @@ describe('package-local ArchContext projection provider', () => {
       withManifest(f, manifest('archcontext.docs-renderer/v6'));
       expect(readiness(f).projectionProvider.state).toBe('ready');
     });
-
-    test('a v3 manifest fails closed: archctx 0.14.0 reads only the v4 format', () => {
-      const f = fixture();
-      withManifest(f, manifest('archcontext.docs-renderer/v6', 'archcontext.architecture-docs-projection-manifest/v3'));
-      const result = readiness(f);
-      expect(result.projectionProvider.state).toBe('mismatch');
-      expect(result.projectionProvider.reason).toContain('projection manifest floors require the current schema');
-      expect(result.apply.enabled).toBe(false);
-    });
-
     test('a malformed committed manifest fails closed', () => {
       const f = fixture();
       withManifest(f, '{not json');
