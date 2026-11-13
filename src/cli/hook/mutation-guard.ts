@@ -244,7 +244,7 @@ function capabilityOwnerLines(repoRoot: string, paths: readonly string[]): strin
   let lines = '';
   for (const filePath of repoPaths) {
     const owner = owners.get(filePath);
-    if (owner) lines += `[CapabilityOwner] ${filePath} belongs to ${owner.id} (${owner.module_document}).\n`;
+    if (owner) lines += `[CapabilityOwner] ${filePath} belongs to ${owner.id}${owner.module_document === null ? '' : ` (${owner.module_document})`}.\n`;
   }
   return lines;
 }

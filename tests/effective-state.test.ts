@@ -357,7 +357,7 @@ describe('effective state resolver', () => {
         write(cwd, '.ai/context/capabilities.json', JSON.stringify({
           version: 1, capabilities: [capability('past', ['src/past']), capability('current', ['src/current'])],
         }));
-        write(cwd, 'docs/architecture/.projection-manifest.json', '{}\n');
+        write(cwd, 'docs/architecture/.projection-manifest.json', '{"targets":{}}\n');
         write(cwd, 'src/past/a.ts', 'export const a = 1;\n');
         write(cwd, 'src/current/b.ts', 'export const b = 1;\n');
         commitFixture(cwd, 'projected');
