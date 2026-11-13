@@ -1020,7 +1020,7 @@ function checkCoreTierImports(
     violations.push(violation(
       'HARNESS_TIER_AUTHORITY_UNAVAILABLE',
       '.archcontext/model/nodes',
-      `core/plugin tiers need the ArchContext model: ${error instanceof Error ? error.message : String(error)}`,
+      `core/plugin tiers need the ArchContext model: ${error instanceof Error ? error.message : String(error)}${existsSync(join(repoRoot, 'node_modules')) ? '' : '; node_modules is missing, run `bun install` first'}`,
     ));
     return;
   }
