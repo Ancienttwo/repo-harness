@@ -6,8 +6,8 @@ import { spawnSync } from 'node:child_process';
 import { analyzeAffectedTests, bundleInputPaths, discoverDailyInputs, discoverPlatformInputs, nativeTriggers, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
 import { auditDroppedTests } from '../scripts/ci-edge-audit';
 import { replayNeedsSource } from '../scripts/replay-ci-coverage';
-import { changelogPreamble, checkReleasedSections, fragmentMessage, releasedSections, sectionDrift, withoutUnreleasedSection } from '../scripts/check-changelog-released-sections';
-import { assemble, FRAGMENT_PATH_FORM, fragmentPaths, parseFragment, renderSection } from '../scripts/changelog-fragments';
+import { changelogPreamble, checkReleasedSections, fragmentMessage, releasedSections, sectionDrift, unreleasedHeading, withoutUnreleasedSection } from '../scripts/check-changelog-released-sections';
+import { assemble, FRAGMENT_PATH_FORM, fragmentPaths, isFragmentPath, KEPT_FILE, parseFragment, renderSection } from '../scripts/changelog-fragments';
 import { ARCHITECTURE_JOB, ARCHITECTURE_SUMMARY_PATH } from '../scripts/report-ci';
 
 const ROOT = resolve(import.meta.dir, '..');
@@ -1323,17 +1323,17 @@ describe('released CHANGELOG sections', () => {
   test('every committed fragment parses, and this test reads the fragment directory', () => {
     // The literal path is load-bearing: the CI selection reads this test as a named reader of the fragment
     // directory, and only then does a documents-only changelog diff select mode `affected`.
-    // No fragment is a valid state: git does not track an empty directory, so a release commit that deletes
-    // the last fragment leaves no directory at all. The read below is therefore conditional, and the
-    // assertion is that the two readers agree, not that files exist. The literal path stays: it is what
-    // makes this test a named reader of the fragment directory for the CI selection.
-    const present = existsSync(join(ROOT, 'docs/changelog.d'));
-    const paths = present ? readdirSync(join(ROOT, 'docs/changelog.d')).map((name) => `docs/changelog.d/${name}`).sort() : [];
+    // No fragment is a valid state, but no directory is not: the architecture model owns `docs/changelog.d/**`,
+    // so the kept file holds the directory after a release commit deletes the last fragment. The directory
+    // listing and `fragmentPaths` agree when the same rule excludes the kept file.
+    expect(existsSync(join(ROOT, KEPT_FILE))).toBe(true);
+    const paths = readdirSync(join(ROOT, 'docs/changelog.d')).map((name) => `docs/changelog.d/${name}`).filter(isFragmentPath).sort();
     expect(fragmentPaths(ROOT)).toEqual(paths);
     for (const path of paths) expect([path, parseFragment(path, readFileSync(join(ROOT, path), 'utf8')).path]).toEqual([path, path]);
-    // The released file holds no authoring heading: the fragments are its only authoring path.
+    // The released file holds no authoring heading: the fragments are its only authoring path. Released
+    // entries quote the heading in prose, so the check reads heading lines only, with the reader of the check.
     const changelog = readFileSync(join(ROOT, 'docs/CHANGELOG.md'), 'utf8');
-    expect(changelog.includes('## [Unreleased]')).toBe(false);
+    expect(unreleasedHeading(changelog)).toBeNull();
     expect(changelog.startsWith('# Changelog')).toBe(true);
   });
 
@@ -1491,6 +1491,8 @@ describe('released CHANGELOG sections', () => {
       git('checkout', '-q', '-b', 'fragments');
       // Contract item 2: a fragment holds "one or more - bullet lines", so two entries of one category are legal.
       write('docs/changelog.d/31.added.md', '- An added entry. (#31)\n- A second entry of the same category. (#31)\n');
+      // The kept file is not a fragment, so the check does not parse it.
+      write(KEPT_FILE, 'Not a fragment.\n');
       expect(checkReleasedSections(base, commit('a valid fragment'), repo).fragmentFaults).toEqual([]);
       // Every fault is named with its own path, and the check reads each path under the directory.
       const faults = [
@@ -1500,7 +1502,7 @@ describe('released CHANGELOG sections', () => {
         // A heading would put a section in the released section that no entry accounts for.
         ['docs/changelog.d/34.fixed.md', '- An entry. (#34)\n\n### Upgrade\n\n- Another. (#34)\n', 'holds a line that is not a "- " entry'],
         ['docs/changelog.d/35.fixed.md', '', 'is empty'],
-        ['docs/changelog.d/README.md', '- An entry.\n', `the path form is ${FRAGMENT_PATH_FORM}`],
+        ['docs/changelog.d/notes.md', '- An entry.\n', `the path form is ${FRAGMENT_PATH_FORM}`],
       ] as const;
       for (const [path, content, fault] of faults) {
         write(path, content);
@@ -1525,6 +1527,7 @@ describe('released CHANGELOG sections', () => {
       write('docs/changelog.d/41.fixed.md', '- The first fix. (#41)\n');
       write('docs/changelog.d/43.breaking.md', '- The breaking change. (#43)\n');
       write('docs/changelog.d/43.added.md', '- The added change. (#43)\n');
+      write(KEPT_FILE, 'Not a fragment.\n');
       expect(fragmentPaths(repo)).toEqual(['docs/changelog.d/41.fixed.md', 'docs/changelog.d/42.fixed.md', 'docs/changelog.d/43.added.md', 'docs/changelog.d/43.breaking.md']);
       const result = assemble({ version: '0.32.0', date: '2026-11-14', root: repo });
       expect(result.removed).toEqual(['docs/changelog.d/41.fixed.md', 'docs/changelog.d/42.fixed.md', 'docs/changelog.d/43.added.md', 'docs/changelog.d/43.breaking.md']);
@@ -1535,11 +1538,13 @@ describe('released CHANGELOG sections', () => {
       expect(after).toBe(`# Changelog\n\n${result.section}${CUT.slice('# Changelog\n\n'.length)}`);
       expect(releasedSections(after).get('0.31.0')).toBe(releasedSections(CUT).get('0.31.0'));
       expect(fragmentPaths(repo)).toEqual([]);
+      // The kept file stays, so the release commit keeps the directory.
+      expect(readFileSync(join(repo, KEPT_FILE), 'utf8')).toBe('Not a fragment.\n');
     } finally { rmSync(repo, { recursive: true, force: true }); }
   });
 
-  // Git does not track an empty directory, so a release commit that deletes the last fragment leaves no
-  // `docs/changelog.d` at all. Both states must read as zero fragments, with no error and no section.
+  // A tree from before the fragment form has no `docs/changelog.d`, and git does not track an empty one.
+  // Both states must read as zero fragments, with no error and no section.
   test('assemble with no docs/changelog.d and with an empty one gives no error and no section', () => {
     const { repo, write, commit } = cutoverRepository('rh-changelog-assemble-empty-');
     try {

@@ -7,6 +7,10 @@
  * `assemble` writes the released section at the release prep and deletes the fragments, and
  * `check-changelog-released-sections.ts` fails a merge result that keeps an `## [Unreleased]`
  * heading or holds a path under the fragment directory that does not parse.
+ *
+ * The directory keeps one file that is not a fragment, `KEPT_FILE`. Git does not track an empty
+ * directory, and the architecture model owns `docs/changelog.d/**`: without the kept file, the release
+ * commit that deletes the last fragment removes the directory, and the capability export fails. (#2697)
  */
 import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -15,6 +19,13 @@ export const CHANGELOG = 'docs/CHANGELOG.md';
 export const FRAGMENT_DIR = 'docs/changelog.d';
 /** The path form that every error names, so a writer who follows the old practice gets the instruction. */
 export const FRAGMENT_PATH_FORM = 'docs/changelog.d/<issue>.<category>.md';
+/** The one file in the fragment directory that is not a fragment. `assemble` never deletes it. */
+export const KEPT_FILE = `${FRAGMENT_DIR}/README.md`;
+
+/** The one rule that decides which path under the fragment directory is a fragment. */
+export function isFragmentPath(path: string): boolean {
+  return path !== KEPT_FILE;
+}
 /** The sub-headings of a released section, in the order that `assemble` writes them. */
 export const CATEGORIES = ['breaking', 'added', 'changed', 'fixed', 'removed', 'documentation', 'tests', 'upgrade', 'rollback'] as const;
 export type ChangelogCategory = (typeof CATEGORIES)[number];
@@ -60,10 +71,10 @@ export function parseFragment(path: string, text: string): ChangelogFragment {
   return { path, issue: Number(match[1]!), category: match[2] as ChangelogCategory, block };
 }
 
-/** The fragment paths that a root holds, sorted. A missing directory holds none. */
+/** The fragment paths that a root holds, sorted, without the kept file. A missing directory holds none. */
 export function fragmentPaths(root: string): string[] {
   const dir = join(root, FRAGMENT_DIR);
-  return existsSync(dir) ? readdirSync(dir).sort().map((name) => `${FRAGMENT_DIR}/${name}`) : [];
+  return existsSync(dir) ? readdirSync(dir).sort().map((name) => `${FRAGMENT_DIR}/${name}`).filter(isFragmentPath) : [];
 }
 
 /**
@@ -89,9 +100,8 @@ export interface AssembleResult {
  * them. It fails with a fragment that does not parse and with a section that already exists. It reads no
  * clock: the date is an input.
  *
- * No fragment is a valid state and gives no error and no section. Git does not track an empty directory,
- * so a release commit that deletes the last fragment leaves no `docs/changelog.d` at all, and a release
- * with no PR entry (0.30.0 was one) has nothing to assemble.
+ * No fragment is a valid state and gives no error and no section: a release with no PR entry (0.30.0 was
+ * one) has nothing to assemble. The kept file is not a fragment, so the directory stays after a release.
  */
 export function assemble(input: { readonly version: string; readonly date: string; readonly root?: string }): AssembleResult {
   const { version, date } = input;
