@@ -1249,10 +1249,10 @@ describe('architecture lanes', () => {
     expect(errors(result.stdout)).toEqual(['::error title=Plugin internals constraint::archctx constraints check --json gave no valid report. Read the job log.']);
   });
 
-  const equivalent = { status: 'planned', renderEquivalent: true, differingPaths: [], humanActions: [] };
+  const equivalent = { status: 'planned', renderEquivalent: true, differingPaths: [], differingCapabilityIds: [], humanActions: [] };
   const differs = { status: 'planned', renderEquivalent: false, differingPaths: ['docs/architecture/a.md'], differingCapabilityIds: null, humanActions: [] };
   const differsInCapability = { ...differs, differingCapabilityIds: ['capability.d.a'] };
-  const humanAction = { status: 'human-action-required', renderEquivalent: null, differingPaths: [], humanActions: [{ reasonCode: 'unprovable-required-flow' }] };
+  const humanAction = { status: 'human-action-required', renderEquivalent: null, differingPaths: [], differingCapabilityIds: [], humanActions: [{ reasonCode: 'unprovable-required-flow' }] };
   // M is the newest commit that changes the manifest. The oldest commit after M, else M, dates the unpublished difference.
   const afterM = (hoursAgo: number) => [{ manifest: true, hoursAgo: 30 }, { manifest: false, hoursAgo }, { manifest: false, hoursAgo: 0.1 }];
   const onlyM = (hoursAgo: number) => [{ manifest: false, hoursAgo: 30 }, { manifest: true, hoursAgo }];
