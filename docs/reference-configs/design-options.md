@@ -173,7 +173,7 @@ not limited to the two named above.
 
 The chosen direction feeds the design-brief template (the repository's own
 `.claude/templates/design-brief.template.md` when present, otherwise
-`repo-harness docs path design-brief.template`) /
+`rh docs path design-brief.template`) /
 frontend `task_profile` gate as its decided direction — this convention does
 not duplicate that checklist.
 

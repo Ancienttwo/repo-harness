@@ -25,7 +25,7 @@ reference.
 
 ## Boundaries
 
-- Does not run `repo-harness init`.
+- Does not run `rh init`.
 - Does not install or refresh the full harness.
 - Does not create an application stack.
 - Creates local `AGENTS.md` and `CLAUDE.md` contract files only for requested capabilities.

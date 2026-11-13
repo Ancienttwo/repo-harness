@@ -42,8 +42,8 @@ npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
 En la raíz del repositorio de destino, primero previsualiza y después aplica:
 
 ```bash
-repo-harness init --dry-run
-repo-harness init
+rh init --dry-run
+rh init
 ```
 
 `--dry-run` solo informa de los archivos que se crearían o refrescarían. No escribe ningún archivo.

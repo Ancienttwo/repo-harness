@@ -19,7 +19,7 @@ Existing repositories should use:
 npx -y repo-harness init
 ```
 
-Use `repo-harness install` for global setup. The legacy plugin setup script is removed.
+Use `rh install` for global setup. The legacy plugin setup script is removed.
 Global setup does not install retired Claude marketplace plugin bundles.
 
 Project creation moved to the branch command `repo-harness-scaffold`; it is not

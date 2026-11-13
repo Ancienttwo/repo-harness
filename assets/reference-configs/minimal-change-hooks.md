@@ -12,7 +12,7 @@ that used it (#692, #695):
 ## Policy Status
 
 No code reads or validates `minimal_change`. The key is outside the policy
-schema, so `repo-harness init` removes it and names it in the
+schema, so `rh init` removes it and names it in the
 `unknown-policy-keys` warning. Stop never blocks on a minimal-change finding.
 
 `.ai/harness/checks/minimal-change.latest.json` and
@@ -20,7 +20,7 @@ schema, so `repo-harness init` removes it and names it in the
 reader. An operator can delete them.
 
 A `minimal-change` entry in `.ai/harness/state/circuit-breaker.json` fails
-closed. Run `repo-harness run evidence-gc --repo <path>` once to remove it.
+closed. Run `rh run evidence-gc --repo <path>` once to remove it.
 
 ## What Remains
 
@@ -31,7 +31,7 @@ verification plan, tests and review decide whether a change grew too large. Chan
 
 Hook output and `.ai/harness/events.jsonl` remain advisory and fail-open: a
 hook crash must not create or remove merge authority. Before semantic review or acceptance, run
-`repo-harness run change-assessment prepare` from the execution
+`rh run change-assessment prepare` from the execution
 repository with the active admission selectors: `--repository-id`, `--issue-id`,
 `--campaign-id`, `--grant-sha256`, `--policy-sha256` and `--actor`. The trusted
 control Bot supplies the approval; selector values alone do not grant permission. Change Assessment v1 then recomputes the normalized final subject from the sole policy-owned base

@@ -8,7 +8,7 @@ reconciliation. The Worker never writes to GitHub.
 
 ## When to run
 
-Run `repo-harness events install` once when the orchestrator starts to use
+Run `rh events install` once when the orchestrator starts to use
 pushed events. Run it again to change the Bot webhook, the orchestrator login
 or the App, or after an upgrade of repo-harness changes the Worker. Each run
 replaces the whole config and makes a new webhook secret.
@@ -38,7 +38,7 @@ The owner prepares these items. The command does not create them.
 ## Run
 
 ```sh
-repo-harness events install --app-id <id> --private-key <path> --orchestrator-login <login>
+rh events install --app-id <id> --private-key <path> --orchestrator-login <login>
 ```
 
 The command asks for the missing values (input is hidden). It lists three
@@ -109,7 +109,7 @@ after 5 s counts as failed. Both can repeat an event.
 A queued event that fails all retries is lost without a GitHub record. This
 includes every `pr.pushed`, which GitHub shows as 202. The board read at
 orchestrator start finds what was lost. Rules A12 to A18 of
-`repo-harness board attention` read a stalled writer, an idle worker with no
+`rh board attention` read a stalled writer, an idle worker with no
 PR, a red required check, a FAIL record with no fix, an open question to the
 coordinator, a blocked claim and a PR that does not merge. For these states,
 the attention watcher reports the state within one window.

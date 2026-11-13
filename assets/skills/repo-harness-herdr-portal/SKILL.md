@@ -23,7 +23,7 @@ an @mention of `portal-<slug>`.
 - Spawn or reuse, gates, record and error codes: `references/spawn.md`.
 - Find the worker, send work, repair a missing row: `references/messaging.md`.
 - Not for review or acceptance: use `repo-harness-cross-review` or
-  `repo-harness review round --launch app-terminal`.
+  `rh review round --launch app-terminal`.
 - Already in an hc terminal (`HC_TERMINAL_ID` set): use `hc` and `herdr-app`
   directly ([Herdr Dispatch](https://github.com/aimpact-inc/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch)).
 - Not for Codex or any second-model terminal in v2.
@@ -38,7 +38,7 @@ Run the gates in this order. Stop with the failure code. Do not repair a gate.
 | CLI | `claude --version` ≥ 2.1.224 | `claude_cli_too_old` |
 | Caller | `HC_TERMINAL_ID` is not set | `portal_inside_hc` |
 | Herdr.app | `herdr-app status` reports a running window | `herdr_app_down` |
-| hc version | `runtime.herdr_core.status` of `repo-harness setup check --json` is `present` (`hc --version` ≥ `min_version` of the installed package's `src/core/terminal/herdr-core-pin.json`) | `hc_too_old` |
+| hc version | `runtime.herdr_core.status` of `rh setup check --json` is `present` (`hc --version` ≥ `min_version` of the installed package's `src/core/terminal/herdr-core-pin.json`) | `hc_too_old` |
 | hc core | `hc server status --json` exits 0 and prints a `version` | `hc_unreachable` |
 | cwd | `realpath` under `/private/tmp/`, and it is the worktree top level | `cwd_outside_tmp`, `cwd_not_worktree` |
 

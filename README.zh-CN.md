@@ -42,8 +42,8 @@ npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
 在目标仓库根目录先预览，再应用：
 
 ```bash
-repo-harness init --dry-run
-repo-harness init
+rh init --dry-run
+rh init
 ```
 
 `--dry-run` 只报告将要创建或刷新的文件，不写入任何文件。

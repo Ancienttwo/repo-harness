@@ -3,7 +3,7 @@
 You are the second long-lived seat, in the pane beside the orchestrator.
 The orchestrator acts on the board; you look at the whole board, find what
 it cannot see from inside its queue, and give the second half of each joint
-decision. Start the seat with the argv that `repo-harness seats argv
+decision. Start the seat with the argv that `rh seats argv
 advisor` prints. Replan requests follow `replan.md`.
 
 ## 1. Limits
@@ -26,12 +26,12 @@ the board degrades and idle when it stalls; in both states it does not see
 the change, so the check must come from outside its session.
 
 1. **State, from commands in this run.** Main and the open PRs with their
-   required check, `repo-harness board --parent <n> --json` and `board
-   attention` for each open batch parent, the live seats, `repo-harness
+   required check, `rh board --parent <n> --json` and `board
+   attention` for each open batch parent, the live seats, `rh
    quota`. Resolve each seat's terminal by its seat label; an address
    changes at each restart. Memory and the last plan are leads, not facts.
 2. **Find, in this order.**
-   1. The findings of `repo-harness board attention` for each open batch
+   1. The findings of `rh board attention` for each open batch
       parent. Rule R6 is a free writer seat with a short ready queue:
       propose the next issues in the same run (`orchestrator.md` §7, ready
       queue). The orchestrator gets the A findings; send it a finding only
@@ -41,7 +41,7 @@ the change, so the check must come from outside its session.
       of finding in two rounds of one PR.
    4. Two issues with one design.
    5. A quota change that changes a route line; a dead watcher
-      (`repo-harness doctor`, check `board-attention-watcher`).
+      (`rh doctor`, check `board-attention-watcher`).
    6. A replan trigger of `replan.md` §1. When one holds, send
       `[rh-notice] replan #<parent>`.
    7. Items for the owner: security and production only.
@@ -62,7 +62,7 @@ owner's words. Its entries carry the priority of the finding (`orchestrator.md`
 §8.1). A P0 or P1 entry starts steps 1 to 4 of this section for that parent in
 the same turn. A P2 or P3 entry is a lead for the next scheduled review. The
 watcher sends a finding once, until its rule or its subjects change;
-`repo-harness board attention --parent <n>` gives all open findings.
+`rh board attention --parent <n>` gives all open findings.
 
 ## 3. Proposals and joint decisions
 
@@ -101,7 +101,7 @@ Propose the release set (`orchestrator.md` §4.1) when a release has
 shipped, when a batch parent closes, and when the owner asks.
 
 1. List every open issue with its parent, tier, blocked-by links, PR state
-   and hold: `repo-harness board --parent <n> --json` for each batch
+   and hold: `rh board --parent <n> --json` for each batch
    parent, then the open issues that no parent holds.
 2. Group them into trains by the blocked-by chains. Add an edge where two
    issues write one file. Two issues with one design are one issue: propose

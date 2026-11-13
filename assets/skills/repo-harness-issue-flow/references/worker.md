@@ -157,7 +157,7 @@ ArchContext projection of the capability document.
 2. Run the preview on a path of the capability footprint:
 
    ```bash
-   repo-harness architecture-projection plan --json --changed-path <path in the capability footprint>
+   rh architecture-projection plan --json --changed-path <path in the capability footprint>
    ```
 
    The request renders every capability document, so `--changed-path` does
@@ -204,7 +204,7 @@ You are the head owner. Only you push to this branch.
   fix round without a relay from the coordinator: fix, run the affected
   checks, push, answer the threads. The fix-loop rule of `SKILL.md` and
   `acceptor.md` §2.2 sets the rounds. The coordinator starts each review
-  with `repo-harness board review`; you do not start one.
+  with `rh board review`; you do not start one.
 - **Review threads.** Fix each P0, P1 and P2 in this branch. Reply in the
   thread with the fix SHA. Do not resolve another reviewer's thread. For a
   P3 or a finding that you dispute, reply with your reason and leave the

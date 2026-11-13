@@ -8,19 +8,19 @@ Worker reference. Use only within the assigned architecture scope.
    Projection diagnostics need CodeGraph code facts. In a new worktree run `codegraph init -y .`; when `.codegraph/` exists, run `codegraph sync .`.
 2. Inspect the committed architecture entry for the projection profile (`docs/architecture/index.md`, or the capability pages under `docs/architecture/modules/` for `repo-harness/v1`) and `.archcontext/model/nodes/`. For a coverage or registration scope, follow the coverage procedure below.
 3. When the scope maps to repo code or config, resolve the capability with:
-   - `repo-harness run capability-resolver match --repo <repo> --path <path> --format json`
+   - `rh run capability-resolver match --repo <repo> --path <path> --format json`
 4. Update the model and human-owned prose for the changed responsibility. Generated regions, diagrams and the projection manifest belong to the archctx rolling writer (see "Rolling writer"). Do not apply or commit generated output in a feature PR.
 5. archctx-generated Markdown Mermaid is the model's generated diagram. This skill does not hand-write diagrams or standalone HTML; use the external `mermaid` skill only to review layout and renderability of the Markdown source. The human-facing HTML map `docs/architecture/archimap.html` belongs to the `repo-harness-archimap` skill, which refreshes it after a model change.
 6. Verify with:
-   - `repo-harness architecture-debt --json --base <review-base>` (handle debt in scope)
-   - `repo-harness architecture-projection anchors --json` (read-only; see "Drift signals")
-   - `repo-harness run capability-resolver validate --repo <repo> --format text`
+   - `rh architecture-debt --json --base <review-base>` (handle debt in scope)
+   - `rh architecture-projection anchors --json` (read-only; see "Drift signals")
+   - `rh run capability-resolver validate --repo <repo> --format text`
    - `bun run check:helpers` when a helper source or its standalone projection changed
    - The module reader and the review diff read the committed HEAD model, but archctx `resolve` reads the worktree model. Commit the model before a review diff.
 
 ## Managed archctx command
 
-Run `repo-harness architecture-projection status --json`. Require
+Run `rh architecture-projection status --json`. Require
 `projectionProvider.state` to be `ready`. Set `NODE` to
 `projectionProvider.command[0]` and `ARCHCTX` to `projectionProvider.command[1]`.
 Run every archctx command as `"$NODE" "$ARCHCTX" <command>` in the target repo.
@@ -35,10 +35,10 @@ manifest after a model PR merges. Publication is an operator step. A worker does
 not run it unless its task authorizes the push. An operator with Git and gh
 authentication for the target repo sets `ARCHCONTEXT_STATE_DIR` to one stable
 absolute path. The operator then runs
-`repo-harness architecture-projection publish once` in the target repo, or runs
+`rh architecture-projection publish once` in the target repo, or runs
 `publish follow` from a repo-harness Git source checkout under a process
 supervisor; `follow` keeps that checkout at `origin/main` and does not publish
-while it cannot update. `repo-harness architecture-projection publish status` with the same
+while it cannot update. `rh architecture-projection publish status` with the same
 `ARCHCONTEXT_STATE_DIR` reports the last run; another state dir reports an empty
 state. The writer pushes only the `archctx/projection` branch and opens or
 updates one rolling PR. Before that PR merges, check out its head in a clean
@@ -48,9 +48,9 @@ of the rolling PR accepts the proven major changes in it.
 
 ## Drift signals
 
-- Generated sections: `repo-harness architecture-projection check --json`.
-  `changes[].outputChanged` reports render changes. When generated output differs, inspect `repo-harness architecture-projection publish status` and the open rolling PR.
-- Human-written sections: `repo-harness architecture-projection anchors --json`.
+- Generated sections: `rh architecture-projection check --json`.
+  `changes[].outputChanged` reports render changes. When generated output differs, inspect `rh architecture-projection publish status` and the open rolling PR.
+- Human-written sections: `rh architecture-projection anchors --json`.
   It runs `docs anchors` and writes no file. It lists cited paths that are
   missing, line numbers out of range, symbols that are missing and lines that
   moved. Fix the citations in your scope. Report the others.
@@ -69,8 +69,8 @@ write nodes.
 
 1. Read the existing semantic architecture docs and trace the relevant entrypoints,
    dependencies, ownership and verification in source. Use CodeGraph when indexed.
-   Compare `repo-harness run capability-resolver list --format json` and
-   `repo-harness run capability-resolver match --path <source-path> --format json`.
+   Compare `rh run capability-resolver list --format json` and
+   `rh run capability-resolver match --path <source-path> --format json`.
    Package layout is inventory evidence; it does not establish semantic boundaries.
 2. Give a concrete recommendation: retain an intentional umbrella, create a justified
    capability, or restore a missing projection. Include source evidence, responsibility,
@@ -88,7 +88,7 @@ write nodes.
 5. Run `"$NODE" "$ARCHCTX" validate --format json` and
    `"$NODE" "$ARCHCTX" flows check --no-sync --json`. Verify source matching with
    capability-resolver. Commit the model and human prose. After merge, an
-   operator runs `repo-harness architecture-projection publish once` or a
+   operator runs `rh architecture-projection publish once` or a
    supervised `follow`, as "Rolling writer" describes, to publish the generated
    module documents. Missing docs for an unchanged node need writer repair, not
    a duplicate node.
@@ -133,9 +133,9 @@ write nodes.
 - A flow step is proven only with a relation for the exact step, a source symbol that is
   unique in its file, and a direct CodeGraph `calls` edge from source to sink.
 - A relation to another capability can change its generated page. Leave that
-  output to the rolling writer (`repo-harness architecture-projection publish`
+  output to the rolling writer (`rh architecture-projection publish`
   after merge). Workers commit only their model and human prose.
-- `repo-harness module list`, `module review-prompt` and Engineer contract
+- `rh module list`, `module review-prompt` and Engineer contract
   revisions read the committed HEAD snapshot. Commit the model before you verify
   them. An uncommitted model change shows in `worktree_dirty_paths`. An
   uncommitted new capability returns `capability_uncommitted`.
@@ -145,7 +145,7 @@ write nodes.
 Initial adoption is an explicit ownership migration. Its first approved generated
 baseline is separate from steady-state feature work. Subsequent generated updates
 belong to the rolling writer: after each merge, an operator runs
-`repo-harness architecture-projection publish once` or a supervised `follow`.
+`rh architecture-projection publish once` or a supervised `follow`.
 
 Do not pass `--request-id` to the projection commands in this authorized adoption
 flow. repo-harness derives the default request identity from the request body.
@@ -158,7 +158,7 @@ Then the repository has no complete ArchContext model, and `apply.enabled` is
    describes.
 2. While `.ai/harness/policy.json#context.capability_source` is `registry`, export
    the registry:
-   `repo-harness run capability-resolver export --format archcontext-nodes-v2`.
+   `rh run capability-resolver export --format archcontext-nodes-v2`.
    The output is a JSON array of complete `archcontext.node/v2` capability nodes.
    An empty registry gives an empty array. Then author the first nodes as
    "Coverage and Agent-owned registration" describes.
@@ -193,19 +193,19 @@ Then the repository has no complete ArchContext model, and `apply.enabled` is
    `.archcontext/model/nodes`. Update the root `CLAUDE.md` and `AGENTS.md` lines
    that name the registry file. Keep one authority. Do not keep the registry as
    a second source.
-7. Run `repo-harness run capability-resolver validate --repo . --format text`.
-   Run `repo-harness capability-context status`. It lists each capability id and
+7. Run `rh run capability-resolver validate --repo . --format text`.
+   Run `rh capability-context status`. It lists each capability id and
    its declared contract files. For each capability whose contract files do not
-   exist, run `repo-harness capability-context sync --capability <id> --apply`
+   exist, run `rh capability-context sync --capability <id> --apply`
    with the id from that list. Commit.
-8. Run `repo-harness architecture-projection apply --json`. A repository with an
+8. Run `rh architecture-projection apply --json`. A repository with an
    existing `docs/architecture/index.md` returns `adoption-required`. Then read the
    `adoptionPlanId` from the preview
    `"$NODE" "$ARCHCTX" docs adopt --profile repo-harness/v1`. The preview writes
    no file. Run
-   `repo-harness architecture-projection adopt --json --adoption-plan-id <adoptionPlanId>`.
+   `rh architecture-projection adopt --json --adoption-plan-id <adoptionPlanId>`.
 9. Commit the projected `docs/architecture/` files. Run
-   `repo-harness architecture-projection check --json` and expect `noop`.
+   `rh architecture-projection check --json` and expect `noop`.
 
 ## Failure Modes
 
@@ -215,7 +215,7 @@ Then the repository has no complete ArchContext model, and `apply.enabled` is
 
 ## Boundaries
 
-- Does not run `repo-harness init`.
+- Does not run `rh init`.
 - Does not install or refresh the full harness.
 - Does not let hooks rewrite architecture prose or record architecture drift; architecture updates are explicit.
 - Does not vendor `mermaid`; it remains an external authoring/review skill and never owns a product artifact.

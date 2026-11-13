@@ -51,12 +51,12 @@ revocation must be enforced before new requests and propagated through
 ## Bot modes and merge
 
 A Bot works in one of two modes. Both modes merge through the same executor,
-`repo-harness publication merge`.
+`rh publication merge`.
 
 | Mode | Dispatch | Acceptance | Merge |
 |---|---|---|---|
-| Local Herdr | A Herdr pane | The worker produces check results locally. Acceptance panes (gatekeeper, cross-review) review those results | `repo-harness publication merge` in the Bot's shell |
-| Cloud only | GitHub issues and comments | CI, and the `acceptance record` on the PR | The cloud sandbox has repo-harness installed, a working `gh auth` (the token needs Administration read permission) and a checkout of the repository. It runs `repo-harness publication merge` |
+| Local Herdr | A Herdr pane | The worker produces check results locally. Acceptance panes (gatekeeper, cross-review) review those results | `rh publication merge` in the Bot's shell |
+| Cloud only | GitHub issues and comments | CI, and the `acceptance record` on the PR | The cloud sandbox has repo-harness installed, a working `gh auth` (the token needs Administration read permission) and a checkout of the repository. It runs `rh publication merge` |
 
 A PR that meets the Low accept-seat skip in
 [Review by risk](reference-configs/agentic-development-flow.md#review-by-risk)

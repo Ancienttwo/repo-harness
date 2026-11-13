@@ -23,16 +23,16 @@ falsifier; once that output is frozen into a task contract's `## Why` and
 `## Falsifier` sections, the contract is authoritative and `geju` is not
 consulted again for that task.
 
-`repo-harness install` is allowed to bootstrap the workflow-owned global runtime
+`rh install` is allowed to bootstrap the workflow-owned global runtime
 in one pass: the `repo-harness` CLI, repo-harness runtime aliases, user-level
 Codex/Claude hook adapters, Waza (`think`, `hunt`, `check`, `health`), brain
 root persistence, Mermaid, and CodeGraph CLI/MCP configuration.
-`repo-harness init` remains a compatibility alias for existing automation. The
+`rh init` remains a compatibility alias for existing automation. The
 bootstrap path must not silently install unrelated toolchains or Claude
 marketplace plugins. User-managed plugins remain outside repo-harness installation.
 
-`repo-harness uninstall --dry-run` previews user-level cleanup without writing
-configuration, locks or receipts. `repo-harness uninstall` applies it; `--json`
+`rh uninstall --dry-run` previews user-level cleanup without writing
+configuration, locks or receipts. `rh uninstall` applies it; `--json`
 returns `status`, `exitCode`, `dryRun` and per-path actions. `--target codex|claude`
 limits host cleanup; shared brain/profile surfaces are retired on `--target both`
 (the default). Install and uninstall accept only `--location global`.
@@ -58,8 +58,8 @@ third-party installation is not claimed as repo-harness-owned.
 Standalone CodeGraph configuration and global install/update share one host lock.
 Before external mutation, a private pending receipt records only selected configuration
 fragments. Interrupted setup blocks ordinary mutation and cleanup; use
-`repo-harness uninstall --recover-interrupted --dry-run` to preview restoration,
-then `repo-harness uninstall --recover-interrupted` to apply it. This explicit
+`rh uninstall --recover-interrupted --dry-run` to preview restoration,
+then `rh uninstall --recover-interrupted` to apply it. This explicit
 recovery restores the recorded fragments even if they were edited after interruption;
 sibling fields remain. The target must include every affected host.
 
@@ -68,7 +68,7 @@ archives and runtime history remain. Repository unadoption and package removal a
 separate operations; this command does not enumerate other repositories or remove
 third-party packages. Remove the CLI package only after configuration cleanup.
 
-`repo-harness update` is a reconciliation command, not a best-effort package
+`rh update` is a reconciliation command, not a best-effort package
 install. It verifies the installed package's exact `archctx` and
 `archctx-contracts` dependencies, package-local CodeGraph, compatible ArchContext
 Node runtime, and capability handshake. A stale Bun global dependency tree is
@@ -77,10 +77,10 @@ a working CLI before a replacement is known-good. The global CodeGraph CLI/MCP
 is refreshed at the exact shipped compatibility version. Mutable third-party
 Waza and Mermaid providers remain behind explicit `--with-external-skills`;
 `--no-codegraph` disables the CodeGraph refresh.
-Repo-local workflow refresh stays on `repo-harness init`; `setup check
+Repo-local workflow refresh stays on `rh init`; `setup check
 --check-updates` remains the read-only advisory surface.
 
-`repo-harness upgrade` checks retired files in the current Git repository and
+`rh upgrade` checks retired files in the current Git repository and
 home. It writes nothing by default. `--json` lists each item with ownership and
 proof. `--scope project|global|all` limits the check. Check exits 1 when it finds
 leftovers. `setup check`, `update --check`, and a successful `update` print one
@@ -100,7 +100,7 @@ The third-party `codex@openai-codex` Claude plugin and user rule lines in
 `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` are always report-only.
 
 Project items without ownership proof stay report-only. An operator records a
-decision with `repo-harness upgrade decide --keep|--remove <paths...>`. The
+decision with `rh upgrade decide --keep|--remove <paths...>`. The
 command accepts only current project report items. It writes the tracked file
 `.ai/harness/upgrade-decisions.json` (`version: 1`; `path`, `decision`,
 `contentHash` per entry) and deletes nothing. A decision applies only while the
@@ -115,7 +115,7 @@ fails the project upgrade.
 removal. It keeps current global typed adapters, sibling user hooks, changed
 files, and files without proof. Apply exits 1 on failure and restores its target
 snapshots. Backup manifests list original paths. Project transactions use
-`repo-harness init rollback`; global backups require manual target replacement from each snapshot.
+`rh init rollback`; global backups require manual target replacement from each snapshot.
 Do not overlay directory contents. Restore symlinks verbatim.
 
 Global upgrade backups stay in `~/.repo-harness/transactions/install-*`.
@@ -123,7 +123,7 @@ The upgrade transaction uses `beginInstallHostTransaction(..., { retainBackup: t
 It keeps these backups after success or rollback. The tool never deletes these
 retained backups. The user must remove old backups when they are no longer needed.
 
-`repo-harness upgrade --registered` runs the project refresh for every repo in
+`rh upgrade --registered` runs the project refresh for every repo in
 the registry. It reads one registry snapshot and never scans directories. The
 default is a preview. It prints the registry revision and, for each repo, the
 `init` refresh operations, the project upgrade items and the operator-kept
@@ -135,7 +135,7 @@ worktree sweep has no preview; it runs only on apply. Apply with the revision
 from the preview:
 
 ```sh
-repo-harness upgrade --registered --apply --expected-revision sha256:REPLACE_WITH_PREVIEW_DIGEST
+rh upgrade --registered --apply --expected-revision sha256:REPLACE_WITH_PREVIEW_DIGEST
 ```
 
 A changed registry refuses the whole apply with exit 2. Apply checks each repo
@@ -186,7 +186,7 @@ dialect. This repo does not vendor either skill body.
 
 ## Detect Safely
 
-Use `repo-harness run check-agent-tooling` for a read-only tooling report.
+Use `rh run check-agent-tooling` for a read-only tooling report.
 Init and migration reports run the detector without update checks by default;
 set `REPO_HARNESS_CHECK_TOOLING_UPDATES=1` when that advisory pass should
 also compare upstream versions.
@@ -225,7 +225,7 @@ Every host uses one command. The `codex` agent writes the staging copy in
 bunx skills add tw93/Waza -g -a codex -s think hunt check health -y
 ```
 
-Then `repo-harness install` links the host skill roots to the staging copy.
+Then `rh install` links the host skill roots to the staging copy.
 
 Verify that the Codex skills and shared rules match the staging copy:
 
@@ -277,14 +277,14 @@ command directly unless local policy explicitly opts into vendoring.
 
 ### Runtime Ownership Boundary
 
-`repo-harness setup check --target <host> --check-updates --json` reports the
+`rh setup check --target <host> --check-updates --json` reports the
 execution base as separate `runtime.*` checks and reports repo-local adoption
 refresh as `repo.init-refresh` when the current repo has opted in. Keep the
 boundary explicit:
 
 | Capability | Owner | Required for |
 |---|---|---|
-| `herdr_core` (`hc`) | user tool; `repo-harness install` and `update` install a missing hc from the pin | required, at least the version pinned in the package file `src/core/terminal/herdr-core-pin.json`; persistent agent terminals, task sessions, review hosting and the notify relay |
+| `herdr_core` (`hc`) | user tool; `rh install` and `update` install a missing hc from the pin | required, at least the version pinned in the package file `src/core/terminal/herdr-core-pin.json`; persistent agent terminals, task sessions, review hosting and the notify relay |
 | `bun` | repo-harness | repo-harness-owned global installs, local dependency install, tests, and runtime execution |
 | `bash` | repo-harness | helper scripts, migration, setup checks, and contract verification wrappers; Git-for-Windows Bash is the Windows platform contract |
 | `npm` | npm registry | registry readbacks, publish gates, and opt-in update checks; not repo-harness-owned global install repair |
@@ -296,7 +296,7 @@ The package file `src/core/terminal/herdr-core-pin.json` is the single herdr pin
 The release owns it, because the floor protects the package's hc client code: a
 global install, a local install and a source checkout each read the pin of their
 own code. The file owns the `min_version` floor and the checksum-verified
-`release_assets` entry of each platform. CI and `repo-harness install` and
+`release_assets` entry of each platform. CI and `rh install` and
 `update` install from these entries. When the selected plugins need hc (the
 owner of the `herdr` package in `assets/skill-commands/manifest.json` is
 enabled; today that is core), `install` and `update` do one of these:
@@ -322,7 +322,7 @@ step edits no shell profile: it prints a hint when `~/.local/bin` is not on
 PATH, and `setup check` reports hc missing until the user adds it. On every
 platform, when the directory is not on the PATH of the run, the run puts it
 first on the PATH of its later steps, so the Herdr skill step reads the new hc.
-`repo-harness uninstall` keeps hc and its PATH entry.
+`rh uninstall` keeps hc and its PATH entry.
 
 The step never overwrites an existing install file. A sha256 mismatch, a failed
 download, an archive without a complete hc (on Windows, `conpty\conpty.dll`), a
@@ -331,18 +331,18 @@ that Herdr.app or a package manager manages) stops the command and installs
 nothing. A platform with no pin target (for example Windows arm64) stops with
 the platform name and the manual install: Herdr.app or a herdr-core release.
 The install ledger has no hc entry: after install, hc is a user tool, and
-`repo-harness uninstall` keeps it. The download is outside the install
+`rh uninstall` keeps it. The download is outside the install
 transaction, so a later failed step does not remove a new hc.
 `check-agent-tooling.sh --strict-readiness` reads the same file and fails if hc is
 missing, unusable, or older than the pin. A repository policy has no hc pin:
 `init` and adoption delete the retired policy key and report it. `setup check`
-projects `runtime.herdr_core` with the repair command: `repo-harness update`
+projects `runtime.herdr_core` with the repair command: `rh update`
 for a missing hc, `hc update --version <min_version>` below the floor. The
 console shows that state and command, with no install action. Repo-harness does
 not edit user Herdr config. Herdr.app is not a readiness
 requirement: it has no Intel macOS build.
 The root `repo-harness` skill requires the `herdr` skill on Codex and Claude.
-`repo-harness install` and `repo-harness update` put the caller-context policy in
+`rh install` and `rh update` put the caller-context policy in
 `assets/reference-configs/herdr-skill-context.md` before the hc manual from
 `hc --skill`. The shared renderer keeps the manual verbatim and rejects output
 that is not the hc manual. Both hosts receive the same generated skill. When Codex is selected, an existing
@@ -373,7 +373,7 @@ CLI dependencies until a separate plan replaces that integration. Missing
 optional capabilities should degrade the named feature, not blur command
 ownership.
 
-On Windows, `repo-harness install` and `repo-harness update` are the only
+On Windows, `rh install` and `rh update` are the only
 protected-helper tool discovery ceremonies. They resolve `git.exe` and
 `taskkill.exe` from that invocation's `PATH`, require the latter to match
 `SystemRoot\\System32\\taskkill.exe`, require Git, Bash, and `usr/bin` to
@@ -423,12 +423,12 @@ is one terminal command, or explicit authorization for their agent to run the
 same command:
 
 ```bash
-bun add -g @colbymchenry/codegraph && repo-harness tools configure codegraph --target codex --location global
+bun add -g @colbymchenry/codegraph && rh tools configure codegraph --target codex --location global
 ```
 
 This delegates host-specific MCP config to CodeGraph's target adapters for
 Codex and Claude, so do not run CodeGraph setup automatically from
-`repo-harness init`, `migrate`, or `upgrade`. Restart Codex after the installer
+`rh init`, `migrate`, or `upgrade`. Restart Codex after the installer
 finishes so the MCP server is discovered; Claude Code should pick up its config
 according to its own settings reload behavior. If a launch environment still
 cannot find `codegraph`, an authorized agent should diagnose `PATH` and the
@@ -618,7 +618,7 @@ boundary for untrusted repositories.
 
 ```bash
 bunx skills update
-repo-harness install
+rh install
 for d in think hunt check health; do
   diff -qr ~/.agents/skills/$d ~/.codex/skills/$d
 done
@@ -657,7 +657,7 @@ network fetch. The managed list is `explorer`, `deep-reasoner`, `fast-worker`,
 - Codex: `~/.codex/agents/<agent>.toml` — generated deterministically from the
   same packaged `.md`; there is no second authored copy for Codex.
 - The fleet holds sub-agent roles only. The orchestrator seat is not a fleet
-  role: `repo-harness seats argv orchestrator` prints its launch argv from the
+  role: `rh seats argv orchestrator` prints its launch argv from the
   `seats` section of `~/.repo-harness/config.json`.
 
 ### `.md` -> `.toml` mapping
@@ -847,9 +847,9 @@ to native-role-routing `invalid` and receives no implementation boundary.
   `scripts/init-project.sh` installs the fleet automatically on apply.
 - Generated downstream repos default to `"install_mode": "advisory"` — the
   scaffold helper only prints a one-line reminder naming
-  `repo-harness run install-agent-fleet`; nothing is written automatically.
-- `repo-harness init` never installs the fleet. The full-profile
-  `repo-harness install` and `repo-harness update` install it inside the host
+  `rh run install-agent-fleet`; nothing is written automatically.
+- `rh init` never installs the fleet. The full-profile
+  `rh install` and `rh update` install it inside the host
   transaction.
 
 `migrate --dry-run` never installs the fleet regardless of `install_mode`;
@@ -858,7 +858,7 @@ dry-run makes no writes to the global agent-fleet directories at all.
 ### Install / update
 
 ```bash
-repo-harness run install-agent-fleet
+rh run install-agent-fleet
 ```
 
 The installer resolves `agents/fleet` from its authoritative helper source path,
@@ -874,7 +874,7 @@ The CLI entry rejects older or unparseable Bun runtimes before command dispatch.
 The top-level Unix and Windows bootstrap installers upgrade an older detected
 Bun before installing repo-harness, rather than relying on package-engine
 metadata that older Bun releases do not enforce.
-The shared global runtime setup used by mutating `repo-harness install` and
+The shared global runtime setup used by mutating `rh install` and
 `update` binds every Bun subprocess to the exact executable it probes. It
 runs and verifies `bun upgrade` only for Bun self-installer-owned binaries;
 older Homebrew, Scoop, npm, or other package-manager-owned binaries fail closed
@@ -893,7 +893,7 @@ An operator who intentionally owns a customized, complete fleet can acknowledge
 the current bytes once:
 
 ```bash
-repo-harness run install-agent-fleet --accept-user-managed
+rh run install-agent-fleet --accept-user-managed
 ```
 
 The acknowledgement validates all twelve target files before writing
@@ -913,7 +913,7 @@ reports packaged files as `up-to-date`.
 
 ### Readiness
 
-`repo-harness run check-agent-tooling --host both --strict-readiness` reports
+`rh run check-agent-tooling --host both --strict-readiness` reports
 `agent_fleet` alongside `codegraph`. With `--check-updates`, it compares each
 installed Claude-side `.md` against the packaged source hash without network
 access. When a file differs from that source, it consults the
@@ -962,7 +962,7 @@ Exactly one source is read. There is no dual-read, no merge, and no fallback in
 either direction: under `archcontext` a missing model directory fails instead of
 falling back to the JSON registry, and under `registry` a present model
 directory is never consulted. Under `archcontext` the JSON registry is not
-writable, so `repo-harness run capability-config add` refuses and points at the
+writable, so `rh run capability-config add` refuses and points at the
 node files.
 
 Capability metadata comes from one `export native --worktree` call to the
@@ -985,15 +985,15 @@ is `null` when ownership was not computed. A read-only observation does not
 start archctx. It reports `capability_ownership:unavailable`. The standalone helper copy
 in `assets/templates/helpers/` has no package-local archctx. Under `archcontext`
 it refuses every command with `capability_source "archcontext" needs the
-packaged resolver; run repo-harness run capability-resolver`. From archctx
+packaged resolver; run rh run capability-resolver`. From archctx
 0.8.1, `resolve` rejects a node that parses but breaks the node schema with
 `AC_SCHEMA_INVALID`, as the export readers do. The pre-edit hook and
 `state resolve` then report the `capability_registry:invalid` blocker. A model
 ChangeSet can repair that node.
 
 Architecture projection execution is user-level configuration in
-`~/.repo-harness/config.json#architecture`. `repo-harness install` and
-`repo-harness update` initialize it once with `projection_provider: "archctx"`,
+`~/.repo-harness/config.json#architecture`. `rh install` and
+`rh update` initialize it once with `projection_provider: "archctx"`,
 `projection_apply: "manual"`, and `projection_timeout_ms: 120000`. Repeated
 setup preserves an explicit global choice, including disabled. Setup migrates a
 section from the retired automatic queue once: `automatic` becomes `manual` and
@@ -1002,7 +1002,7 @@ and name the migration command. Malformed or partial settings fail closed withou
 rewriting the file; unrelated user settings are preserved. The exact provider
 version is owned by the packaged release contract, not a configurable repo pin.
 
-`repo-harness init` remains a repository-only transaction. Standard/self-host adoption
+`rh init` remains a repository-only transaction. Standard/self-host adoption
 removes retired `architecture.projection_*` execution keys from repo policy and
 reports global provider readiness, without writing user configuration or
 inventing the project's model. Minimal adoption does not author a policy.
@@ -1011,9 +1011,9 @@ identity, model files, documentation ownership and project freshness gates
 remain repository-local. Missing model/adoption evidence still blocks apply;
 the global apply mode does not authorize ownership adoption or semantic acceptance.
 
-Use `repo-harness architecture-projection policy --json` to inspect the global
+Use `rh architecture-projection policy --json` to inspect the global
 source path, initialization state and effective execution settings without a
-provider process. `repo-harness architecture-projection status --json` adds the
+provider process. `rh architecture-projection status --json` adds the
 exact package capability handshake and project apply readiness.
 `projectionProvider.command` is the managed invocation `[nodePath, binaryPath]`.
 Guidance runs archctx only as `"$NODE" "$ARCHCTX" <command>`, with `NODE` and
@@ -1043,7 +1043,7 @@ the projection manifest. The archctx rolling writer publishes those outputs.
 
 ### Rolling writer
 
-Run `repo-harness architecture-projection publish <status|once|follow>` in the
+Run `rh architecture-projection publish <status|once|follow>` in the
 target repository. From a source checkout of repo-harness, run
 `bun <checkout>/src/cli/index.ts architecture-projection publish <mode>`, also
 in the target repository. Run `bun install --frozen-lockfile` in the checkout
@@ -1101,7 +1101,7 @@ Ancienttwo/arch-context#504 (`--base-sha`). A projection that stays stale for
 repair issue. A
 local commit or a dirty file that blocks the fast-forward needs an operator
 repair. The installed package is not used for `follow`: releases lag main, and
-a long-running process does not reload a `repo-harness update`. The operator supplies
+a long-running process does not reload a `rh update`. The operator supplies
 existing Git and gh authentication. The resulting PR runs normal CI. The merge
 rule for that PR is below.
 
@@ -1110,7 +1110,7 @@ repository's writer invocations. Keep the writer checkout and the state dir in
 one stable path that survives a reboot. Do not use a directory that the OS can
 clear, such as `/tmp/`. Do not run a second service with a different state
 root. Inspect
-`repo-harness architecture-projection publish status` with that same state dir;
+`rh architecture-projection publish status` with that same state dir;
 another state dir reports an empty state. For initial setup, run `once`. If
 the archctx result reports missing code facts, read `data.worktreePath` from
 `status`, run `codegraph init -y <worktreePath>`, then run `once` again. Initialize only that
@@ -1134,7 +1134,7 @@ can still publish the unaffected targets, the run result is `published` with
 `projectionStatus: "applied-partial"`; the blocked targets keep their committed
 bytes. Treat both results as incomplete. Nothing unproven is published, and the
 model still needs the missing proof. Add it in a model PR; start from
-`repo-harness architecture-debt --json`. The owner's GO to merge the rolling PR
+`rh architecture-debt --json`. The owner's GO to merge the rolling PR
 is the acceptance. repo-harness keeps no separate accept step. The rolling PR
 body records `Base: main at <sha>`. The Bot merges the rolling PR only with the
 owner's GO for its reviewed head, green checks, a passing
@@ -1160,9 +1160,9 @@ One module selects, formats and dedupes the notice. It emits at most three
 items and 800 UTF-8 bytes, with capability, model field and command on each
 item. The command is a repo-harness command, because a global install has
 no archctx on PATH. A citation item names
-`repo-harness architecture-projection anchors --json`. Another archctx action
-names `repo-harness architecture-debt --json`.
-Overflow points to `repo-harness architecture-debt --json`. The marker
+`rh architecture-projection anchors --json`. Another archctx action
+names `rh architecture-debt --json`.
+Overflow points to `rh architecture-debt --json`. The marker
 `.ai/harness/state/agent-notice` is Git-ignored. It stores SHA-256 of JSON
 `[branch, sorted item ids, sorted unowned paths]`. Registry repositories also
 get the unowned paths that differ from the review-base merge-base. When Git
@@ -1320,7 +1320,7 @@ existing diagnostic codes. Shared anchors are not duplicates.
 
 ### Node/v2 export round-trip
 
-`repo-harness run capability-resolver export --format archcontext-nodes-v2`
+`rh run capability-resolver export --format archcontext-nodes-v2`
 emits complete `archcontext.node/v2` capability nodes. Existing directory
 prefixes become explicit `<dir>/**` selectors, while file prefixes remain exact.
 The exported `extensions.contractFiles`, `lspProfile`, and `verification` fields
@@ -1368,9 +1368,9 @@ state. Operators can run these commands when they intentionally want to inspect
 or export registered entries:
 
 ```bash
-repo-harness brain status
-repo-harness brain check
-repo-harness brain sync
+rh brain status
+rh brain check
+rh brain sync
 ```
 
 ## Refactor recommendations
@@ -1384,8 +1384,8 @@ instead. The command never creates an index, a model, a plan or a code edit.
 Read evidence and record a decision with:
 
 ```bash
-repo-harness refactor recommendations [--json] [--import-node-limit <n>] [--timeout-ms <ms>]
-repo-harness refactor decide <recommendation-id> accept|defer|reject --reason "<text>" [--import-node-limit <n>] [--timeout-ms <ms>]
+rh refactor recommendations [--json] [--import-node-limit <n>] [--timeout-ms <ms>]
+rh refactor decide <recommendation-id> accept|defer|reject --reason "<text>" [--import-node-limit <n>] [--timeout-ms <ms>]
 ```
 
 `recommendations` shows each open suggestion with its explanation, the metrics

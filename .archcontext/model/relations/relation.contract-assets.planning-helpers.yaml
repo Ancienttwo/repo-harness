@@ -3,4 +3,4 @@ id: relation.contract-assets.planning-helpers
 kind: calls
 source: capability.workflow-engine.contract-assets
 target: component.contract-assets.planning-helpers
-intent: "Run a contract-listed helper through repo-harness run"
+intent: "Run a contract-listed helper through rh run"

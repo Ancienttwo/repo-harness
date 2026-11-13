@@ -1,13 +1,13 @@
 ---
 name: repo-harness-orchestrator
-description: Start the orchestrator seat of the current repository in a new Herdr tab of the project space, from repo-harness seats argv. Refuses when the repository already has a live orchestrator seat.
+description: Start the orchestrator seat of the current repository in a new Herdr tab of the project space, from rh seats argv. Refuses when the repository already has a live orchestrator seat.
 when_to_use: "repo-harness-orchestrator"
 disable-model-invocation: true
 ---
 
 # repo-harness-orchestrator
 
-Bot entrypoint. Explicit invoke only. It starts one process. `repo-harness seats argv`
+Bot entrypoint. Explicit invoke only. It starts one process. `rh seats argv`
 holds the model, the effort, the tool limits, the env, the labels and the brief; this
 skill copies none of them. The role rules stay in `repo-harness-issue-flow`.
 
@@ -48,7 +48,7 @@ live=$(printf '%s' "$seats" | jq -ec '.terminals | arrays | [.[] | .address | se
 [ "$live" = '[]' ] || stop "refused: repository $id already has a live orchestrator seat at $(printf '%s' "$live" | jq -r 'join(", ")')"
 
 # 4. Launch: seats argv first, checked, then Herdr with the checked values.
-launch=$(repo-harness seats argv orchestrator --repository-id "$id" --json) || stop 'repo-harness seats argv orchestrator failed'
+launch=$(rh seats argv orchestrator --repository-id "$id" --json) || stop 'rh seats argv orchestrator failed'
 argv=$(printf '%s' "$launch" | jq -ec '.argv | select(type == "array" and length > 0 and all(.[]; type == "string"))') || stop 'seats argv gave no argv'
 tab=$(printf '%s' "$launch" | jq -er '.tab | strings | select(. != "")') || stop 'seats argv gave no tab name'
 herdr-app do tab.new --space "$space" --name "$tab" --folder "$folder" --argv "$argv" || stop 'herdr-app tab.new failed'

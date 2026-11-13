@@ -114,8 +114,8 @@ Formal production coding stays with Worker-Herdr (Herdr), not cloud.
 
 | Mode | Dispatch | Acceptance | Merge |
 | --- | --- | --- | --- |
-| Local Herdr | A Herdr pane | The worker produces check results locally; acceptance panes review them | `repo-harness publication merge` in the Bot's shell |
-| Cloud only | GitHub issues and comments | CI and the `acceptance record` on the PR | Cloud sandbox with repo-harness, working `gh auth` (token with Administration read permission) and a checkout runs `repo-harness publication merge` |
+| Local Herdr | A Herdr pane | The worker produces check results locally; acceptance panes review them | `rh publication merge` in the Bot's shell |
+| Cloud only | GitHub issues and comments | CI and the `acceptance record` on the PR | Cloud sandbox with repo-harness, working `gh auth` (token with Administration read permission) and a checkout runs `rh publication merge` |
 
 A Bot record does not grant merge permission. The executor merges only when
 `publication.acceptance_merge` is `on` on the PR base, and it needs required

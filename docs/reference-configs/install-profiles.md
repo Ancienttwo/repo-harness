@@ -1,6 +1,6 @@
 # Install State and Plugin Selection
 
-`repo-harness install` is the host-runtime authority. It installs core and a
+`rh install` is the host-runtime authority. It installs core and a
 selection of plugins, and records both in `~/.repo-harness/install-state.json`
 (install state protocol 3). Core is always installed. A plugin is installed
 only when the selection includes it.
@@ -51,21 +51,21 @@ settings.
 
 | Command | Recorded `selection` | Installed plugins |
 |---|---|---|
-| `repo-harness install` | `"all"` | Every plugin that the host can run. |
-| `repo-harness install --plugins <ids>` | the sorted list, for example `["platform","product"]` | Exactly the listed ids. |
-| `repo-harness install --no-plugins` | `[]` | None (core only). |
+| `rh install` | `"all"` | Every plugin that the host can run. |
+| `rh install --plugins <ids>` | the sorted list, for example `["platform","product"]` | Exactly the listed ids. |
+| `rh install --no-plugins` | `[]` | None (core only). |
 
 With no flag, `install` skips each unavailable plugin and prints one line for
 it. A missing host program gives:
 
 ```text
-[plugins] skipped pi: pi is not on PATH; to add it later, install the host program, then run: repo-harness update
+[plugins] skipped pi: pi is not on PATH; to add it later, install the host program, then run: rh update
 ```
 
 A target without the host gives:
 
 ```text
-[plugins] skipped pi: --target codex does not include the Pi host; to add it later, run: repo-harness install --target both
+[plugins] skipped pi: --target codex does not include the Pi host; to add it later, run: rh install --target both
 ```
 
 `--plugins <ids>` takes a comma-separated list of known ids. An unknown id
@@ -81,13 +81,13 @@ write. User content is kept.
 Inspect and restore:
 
 ```bash
-repo-harness install --dry-run --json   # the plan: requested and current plugins, install, keep, remove, skipped, selection
-repo-harness install --state --json     # the recorded state with its probes and drift status
-repo-harness install --rollback         # restore the previous state and its selection
+rh install --dry-run --json   # the plan: requested and current plugins, install, keep, remove, skipped, selection
+rh install --state --json     # the recorded state with its probes and drift status
+rh install --rollback         # restore the previous state and its selection
 ```
 
 The dry-run text starts with `[plugins] selection=<all|ids|(core only)>`.
-`repo-harness status` prints the same value in its `Install state:` section as
+`rh status` prints the same value in its `Install state:` section as
 `selection: ...`, beside `core:` and `plugins:`.
 
 `--rollback` restores the previous plugin set and its `selection`, and records
@@ -100,7 +100,7 @@ which names each missing owner.
 
 ## Update
 
-`repo-harness update` takes no selection. It reads the recorded selection.
+`rh update` takes no selection. It reads the recorded selection.
 
 - `"all"`: update installs every plugin that this version ships and that
   the host can run. A plugin that is new in this version is added. A host
@@ -112,7 +112,7 @@ which names each missing owner.
   them:
 
   ```text
-  [plugins] not selected mcp, operator, peer-runtime: an explicit list does not grow; to add them, run: repo-harness install --plugins mcp,operator,peer-runtime,product
+  [plugins] not selected mcp, operator, peer-runtime: an explicit list does not grow; to add them, run: rh install --plugins mcp,operator,peer-runtime,product
   ```
 
 - Under `"all"`, a recorded plugin that becomes unavailable (its host program
@@ -120,7 +120,7 @@ which names each missing owner.
   does not run its setup and prints:
 
   ```text
-  [plugins] kept pi: pi is not on PATH; update keeps the recorded plugin; to remove it, run: repo-harness install --plugins <the other plugins>
+  [plugins] kept pi: pi is not on PATH; update keeps the recorded plugin; to remove it, run: rh install --plugins <the other plugins>
   ```
 
   Only an explicit selection or `uninstall` removes a plugin.
@@ -129,7 +129,7 @@ which names each missing owner.
   plugin that a full update would add:
 
   ```text
-  [plugins] not added <id> in a partial refresh; run: repo-harness update
+  [plugins] not added <id> in a partial refresh; run: rh update
   ```
 
 When the set to record changes, update commits a new state, with the old
@@ -139,7 +139,7 @@ state bytes and `previous` stay, so `--rollback` still restores the last real
 change.
 
 With no install state, update fails before any write with
-`install_state_missing`. Run `repo-harness install` first. Adapter-only
+`install_state_missing`. Run `rh install` first. Adapter-only
 `install --location` validates any recorded state before it writes. It does
 not change the selection.
 
@@ -167,7 +167,7 @@ Bun's manifest cache. Package channels resolve to an exact version first.
 The candidate request is protocol 2 and has no `profile` field. A candidate
 refuses a protocol 1 request from an older parent before any write with
 `candidate_request_protocol_retired`, and prints the bootstrap
-`bun add -g repo-harness@<version> --no-cache && repo-harness update`. An old
+`bun add -g repo-harness@<version> --no-cache && rh update`. An old
 parent re-reads the install state after the candidate returns and cannot read
 protocol 3, so the cutover cannot run under it.
 
@@ -177,7 +177,7 @@ installed CLI:
 
 ```bash
 bun add -g repo-harness@latest --no-cache
-repo-harness update
+rh update
 ```
 
 ## Explicit-Only Skills
@@ -188,8 +188,8 @@ ordinary install does not download them. With `strategy-memory` selected,
 install or verify the bundle with:
 
 ```bash
-repo-harness install --with-obsidian-skills
-repo-harness update --with-obsidian-skills
+rh install --with-obsidian-skills
+rh update --with-obsidian-skills
 ```
 
 The catalog pins both subtrees from
@@ -212,17 +212,17 @@ the sections that repo-harness shipped. All other sections are user rules and
 stay unchanged. A file without a recorded language needs the language once:
 
 ```bash
-repo-harness update --report-language zh-CN   # or follow, en
+rh update --report-language zh-CN   # or follow, en
 ```
 
 Without it, the run continues. The file is not written, and the rules step
 reports it as `skipped` with this command. An older CLI that updates to this
 version has no flag, so the first update reports the file; the next
-`repo-harness update --report-language <follow|zh-CN|en>` refreshes it. A file
+`rh update --report-language <follow|zh-CN|en>` refreshes it. A file
 with unbalanced markers, a symlink, or a file that is not a regular file is
 also skipped with the next action. A file without rules is written only when
 the flag is given. The files are part of the install transaction backup.
-`repo-harness update --check` reports `ok` only when the block matches the
+`rh update --check` reports `ok` only when the block matches the
 current template.
 
 ## State File
@@ -287,13 +287,13 @@ global package.
 
 | Code | Cause | Next step |
 |---|---|---|
-| `install_state_missing` | `update` found no install state. | `repo-harness install` |
+| `install_state_missing` | `update` found no install state. | `rh install` |
 | `install_state_protocol_retired` | The state is protocol 1 or 2. | The bridge releases (see below). |
-| `install_state_invalid` | Malformed state, unknown plugin id, wrong version, or invalid `selection`. | `repo-harness install --state` |
-| `install_state_invalid_ownership` | A ledger entry has an unknown path, a malformed shape, or an owner that is not enabled. | `repo-harness install --state` |
+| `install_state_invalid` | Malformed state, unknown plugin id, wrong version, or invalid `selection`. | `rh install --state` |
+| `install_state_invalid_ownership` | A ledger entry has an unknown path, a malformed shape, or an owner that is not enabled. | `rh install --state` |
 | `install_plugin_unknown` | `--plugins` names an unknown id. | Use an id from the table above. |
 | `install_plugin_unavailable` | An explicit plugin is unavailable (no host program, or no host for its skills in the target), or a CodeGraph policy without `architecture`. | Install the host program, choose a target with its host, or drop the plugin. |
-| `candidate_request_protocol_retired` | An older parent sent a protocol 1 candidate request. | `bun add -g repo-harness@<version> --no-cache && repo-harness update` |
+| `candidate_request_protocol_retired` | An older parent sent a protocol 1 candidate request. | `bun add -g repo-harness@<version> --no-cache && rh update` |
 
 ## Retired Protocols
 
@@ -303,50 +303,50 @@ or protocol 2 state with `install_state_protocol_retired`, and `install` and
 
 | State | Bridge |
 |---|---|
-| Protocol 2 (0.11.1 to 0.25.3) | 0.25.4, whose `update` migrates protocol 2 to 3 once: `bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version 0.25.4` |
-| Protocol 1 | 0.25.3 first: `bun add -g repo-harness@0.25.3 --no-cache`, then its protocol 1 migration (`repo-harness install --help` in 0.25.3 names it), then the protocol 2 bridge |
+| Protocol 2 (0.11.1 to 0.25.3) | 0.25.4, whose `update` migrates protocol 2 to 3 once: `bun add -g repo-harness@0.25.4 --no-cache && rh update --version 0.25.4` |
+| Protocol 1 | 0.25.3 first: `bun add -g repo-harness@0.25.3 --no-cache`, then its protocol 1 migration (`rh install --help` in 0.25.3 names it), then the protocol 2 bridge |
 
 After the bridge, install the current package:
-`bun add -g repo-harness@<version> --no-cache && repo-harness update`.
+`bun add -g repo-harness@<version> --no-cache && rh update`.
 `docs/CHANGELOG.md` (`[0.25.4]`, Upgrade) gives the protocol 2 to 3 mapping.
 
 A source `git revert` does not restore a user's ledger.
 
 ## Install Surfaces and Refresh Commands
 
-`repo-harness install` is the first-run global bootstrap. It installs the
+`rh install` is the first-run global bootstrap. It installs the
 current npm package as the global CLI, refreshes repo-harness Skill aliases,
 installs the user-level hook adapters, and records the plugin selection. It
 never applies repo-local workflow files to the current directory; that stays
-on `repo-harness init`.
+on `rh init`.
 
 ```bash
 # Refresh the user-level CLI and runtime pieces after a package update.
-repo-harness update
+rh update
 
 # Read-only repair guidance, no writes.
-repo-harness update --check
+rh update --check
 
 # Preview and remove owned user configuration; preserve user edits and history.
-repo-harness uninstall --dry-run
-repo-harness uninstall
+rh uninstall --dry-run
+rh uninstall
 
 # Install only the host hook adapters (adapter-only surface).
-repo-harness install --target both --location global
+rh install --target both --location global
 
 # Refresh repo-local workflow files in an adopted repository.
-repo-harness init --repo /path/to/repo
+rh init --repo /path/to/repo
 ```
 
 ## Read-Only Bootstrap Audit
 
-`repo-harness setup check --json` is the Agent-owned, read-only bootstrap audit;
+`rh setup check --json` is the Agent-owned, read-only bootstrap audit;
 add `--check-updates` for version and adopted-repo refresh advisories. It is not
 a runtime hook: it does not write user-level files, install updates, run `init`,
 or register adapters. It emits `agent_actions` entries carrying the reason, risk,
 target files, an optional command, and the verification surface, so the Agent
 executes each one deliberately. An unreadable state, a retired protocol
-included, gives the action `install-state.repair` with the typed error. `repo-harness init-hook` remains a
+included, gives the action `install-state.repair` with the typed error. `rh init-hook` remains a
 compatibility alias for the adapter-only install path.
 
 ## Codex Delegation Authority

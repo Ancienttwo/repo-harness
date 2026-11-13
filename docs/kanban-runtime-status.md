@@ -2,7 +2,7 @@
 
 The operator console reads a separate runtime overlay. Observations never admit work, release leases, accept results or change evidence. The overlay uses `repo-harness.runtime-overlay.v7`. The configured service has no task identity source, so its `badges` array is empty. Its `native_sources` array contains independent native session or terminal observations. Native observations have no task binding.
 
-Without configuration, `/api/v1/runtime/status` reports unavailable. Native mode needs no Herdr process, socket or fork. The operator owner supplies an absolute config path with `repo-harness operator serve --runtime-status-config /authorized/runtime-config.json`.
+Without configuration, `/api/v1/runtime/status` reports unavailable. Native mode needs no Herdr process, socket or fork. The operator owner supplies an absolute config path with `rh operator serve --runtime-status-config /authorized/runtime-config.json`.
 
 The unreleased config v1 is replaced by the closed `repo-harness.runtime-config.v2` union. Old config files fail closed. A service uses either native capture files or the optional herdr-core adapter. It cannot mix their clocks. Native mode accepts one through eight explicit sources. Source IDs and paths must be unique. The reader does not scan HOME, logs or sockets.
 
@@ -23,12 +23,12 @@ The unreleased config v1 is replaced by the closed `repo-harness.runtime-config.
 Start a new run through explicit capture. The output path must be new. Its parent directory must be owned and private. Capture does not take over an existing desktop session. These commands show the shape. They do not start a model turn.
 
 ```sh
-repo-harness operator capture --provider codex --source-id local-codex --snapshot /authorized/private/codex-capture.json -- codex app-server
-repo-harness operator capture --provider pi --source-id local-pi --snapshot /authorized/private/pi-capture.json -- pi
-repo-harness operator serve --runtime-status-config /authorized/runtime-config.json
+rh operator capture --provider codex --source-id local-codex --snapshot /authorized/private/codex-capture.json -- codex app-server
+rh operator capture --provider pi --source-id local-pi --snapshot /authorized/private/pi-capture.json -- pi
+rh operator serve --runtime-status-config /authorized/runtime-config.json
 ```
 
-`operator capture` and `operator serve` need the `operator` plugin. Add it to an explicit list with `repo-harness install --plugins <your plugins>,operator`. Without the plugin, each command exits 1 and prints this repair.
+`operator capture` and `operator serve` need the `operator` plugin. Add it to an explicit list with `rh install --plugins <your plugins>,operator`. Without the plugin, each command exits 1 and prints this repair.
 
 Codex capture passes stdin and stdout through. It does not originate RPC, answer approvals, start a turn or resume a session. Claude and Pi capture use an owned PTY through a bundled helper that uses the Python standard library and requires Python 3.9 or later. The Python capability check runs before snapshot creation or provider startup. A missing capability fails with a fixed error. Capture does not install Python. Codex capture does not require Python. Capture reads structured OSC 7501 status. It consumes and answers only the fixed capability query. Other bytes continue to the terminal. The isolated Claude 2.1.295 probe reached its initial sign-in screen. It emitted clear on shutdown, but no usable lifecycle status was observed. Claude lifecycle support is not accepted from this probe; an empty observation list stays unknown.
 

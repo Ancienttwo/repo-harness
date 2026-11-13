@@ -9,7 +9,7 @@ Run the normal readiness checks from the repo root:
 
 ```bash
 bash scripts/ensure-codegraph.sh --sync
-repo-harness setup check --target codex --check-updates --json
+rh setup check --target codex --check-updates --json
 ```
 
 Expected results:

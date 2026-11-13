@@ -7,7 +7,7 @@ in `board.md`. Body and comment shapes are in `templates.md`.
 
 You run in a long-lived top-level session on any host with network
 access, in this skill's orchestrator mode. Start the seat with the argv
-that `repo-harness seats argv orchestrator` prints. Any host and any
+that `rh seats argv orchestrator` prints. Any host and any
 capable model may hold the seat.
 
 Post your own `issue claim` with `Role: coordinator` on the parent before
@@ -26,13 +26,13 @@ issue (§4.1 Release set, §4.2 Intake) · §5 Gap review · §6 Publish ·
    an existing parent issue. Note the requirement and scenario IDs. Issues
    cite them, so that acceptance can be traced.
 2. Check the architecture authority. Run
-   `repo-harness architecture-projection status --json`. Split only when
+   `rh architecture-projection status --json`. Split only when
    `modelAuthority.source` is `archcontext` and `modelAuthority.ready` is
    `true`. Otherwise stop splitting and follow `next` until the
    repository is adopted: `repo-harness-architecture`, section
    "Adopt ArchContext in a repository". A split made against an unadopted
    model writes boundaries that the capability documents do not have.
-   The result of `repo-harness architecture-projection check --json` does
+   The result of `rh architecture-projection check --json` does
    not carry `modelAuthority` or `next`. Do not use it as this gate.
 3. Read the module map. Prefer `docs/architecture/archimap.html`. If the
    map is missing or older than the architecture model, refresh it first
@@ -142,13 +142,13 @@ dependency is done when its blocker issue is closed.
 A parent whose open children still hold old `Depends on` / `依赖` lines
 moves them once, in two steps:
 
-1. Run `repo-harness board migrate-dependencies --parent <n>`. It writes
+1. Run `rh board migrate-dependencies --parent <n>`. It writes
    nothing. It lists every planned label and every planned link as
    `#X blocked by #Y (line N: <source line>)`, each existing item, each
    skipped line, the refused or unparsed lines that stop a write, and the
    plan digest.
 2. A person checks every listed link against its source line. Then run
-   `repo-harness board migrate-dependencies --parent <n> --write --plan
+   `rh board migrate-dependencies --parent <n> --write --plan
    <digest>`. It plans again and writes exactly the planned items. When the
    new plan differs from the checked one, it writes nothing
    (`dependency_plan_changed`); start again at step 1.
@@ -290,20 +290,20 @@ module is in the title so that a list view shows the write scopes.
 
 ### 7.1 Quota check
 
-Before each dispatch wave, run `repo-harness quota`. It prints the account
+Before each dispatch wave, run `rh quota`. It prints the account
 states, one mode line per account and one route line per task class. For
 example: `claude mode: saving (5% left < 20%)` and
 `codex mode: hyper (68% left >= 50%)`. Launch each task on the seat its
-route line names with `repo-harness seats argv <seat>`; state the boundary
+route line names with `rh seats argv <seat>`; state the boundary
 in the task. A `none` route waits, or it changes through the seats
 configuration: the owner sets the seat order and each fallback there, and
 the route line then names the first eligible seat. When the gatekeeper
 account is exhausted and a `gatekeeper-fallback` seat is configured, the
-route line names the fallback seat, and `repo-harness seats argv gatekeeper`
+route line names the fallback seat, and `rh seats argv gatekeeper`
 launches it. Never start a seat with an argv that
-`repo-harness seats argv` did not print.
-`repo-harness board dispatch --parent <n> --space <id>` applies this step to every ready issue of the plan: it reads the `route:<class>` label of each issue (and `touches:credentials`), starts the worktree, posts the claim and opens the worker tab. `--dry-run` prints the decisions only. An issue without one `route:<class>` label is reported and not dispatched.
-`repo-harness board review --parent <n> --space <id>` starts the gatekeeper seat for each ready, green High pull request that has no gatekeeper start marker for its head. When the board shows `claude_review: pending` (an open High or unknown-tier head that does not meet the High acceptance rule and has no Claude reviewer row), it also starts the reviewer seat; each seat has its own marker, so a seat that was not sent retries alone. A Medium head gets one seat of the other family than the board's `writer_family` (the `modelFamily` of the `Model:` line of the writer claim of the head branch): a non-Claude gatekeeper for a Claude writer, the Claude reviewer for any other known family. An unknown writer family (no such claim, no `Model:` line, an unmatched model, or linked issues that disagree) starts no seat and is skipped as `writer_family_unknown`; the orchestrator then starts by hand one reviewer seat of a model family known to differ from the writer's, and that review records its own `Model relation:`. `--pr <n>` reviews that pull request only. A pull request that links a plan-held issue is skipped as `plan_hold`. A head whose gatekeeper is about to start is skipped as `review_family_unavailable` when the effective gatekeeper (the seat of the `gatekeeper:` route line) cannot launch, has a model with no known family, is of the writer's family where it gives the different-family row, or is Claude where the head needs a non-Claude gatekeeper; the detail names the gap and the route line. `--dry-run` prints the decisions only. A High head is not accepted until it has `PASS` rows from two distinct claims, one of them different-family to the writer; a Medium head needs one claimed `PASS` row recorded different-family (`acceptor.md` §2.2).
+`rh seats argv` did not print.
+`rh board dispatch --parent <n> --space <id>` applies this step to every ready issue of the plan: it reads the `route:<class>` label of each issue (and `touches:credentials`), starts the worktree, posts the claim and opens the worker tab. `--dry-run` prints the decisions only. An issue without one `route:<class>` label is reported and not dispatched.
+`rh board review --parent <n> --space <id>` starts the gatekeeper seat for each ready, green High pull request that has no gatekeeper start marker for its head. When the board shows `claude_review: pending` (an open High or unknown-tier head that does not meet the High acceptance rule and has no Claude reviewer row), it also starts the reviewer seat; each seat has its own marker, so a seat that was not sent retries alone. A Medium head gets one seat of the other family than the board's `writer_family` (the `modelFamily` of the `Model:` line of the writer claim of the head branch): a non-Claude gatekeeper for a Claude writer, the Claude reviewer for any other known family. An unknown writer family (no such claim, no `Model:` line, an unmatched model, or linked issues that disagree) starts no seat and is skipped as `writer_family_unknown`; the orchestrator then starts by hand one reviewer seat of a model family known to differ from the writer's, and that review records its own `Model relation:`. `--pr <n>` reviews that pull request only. A pull request that links a plan-held issue is skipped as `plan_hold`. A head whose gatekeeper is about to start is skipped as `review_family_unavailable` when the effective gatekeeper (the seat of the `gatekeeper:` route line) cannot launch, has a model with no known family, is of the writer's family where it gives the different-family row, or is Claude where the head needs a non-Claude gatekeeper; the detail names the gap and the route line. `--dry-run` prints the decisions only. A High head is not accepted until it has `PASS` rows from two distinct claims, one of them different-family to the writer; a Medium head needs one claimed `PASS` row recorded different-family (`acceptor.md` §2.2).
 Apply the explorer line through the Claude Agent tool's `model` parameter when you call the explorer.
 
 Claude saving mode applies when weekly remaining quota is below
@@ -313,7 +313,7 @@ when weekly remaining quota is at or above
 own threshold. Only in Claude hyper does the advisor take its config entry; in
 every other Claude mode it uses `opus` high. Claude hyper changes no worker
 route and not the orchestrator entry. The `advisor:` line of
-`repo-harness quota` names the advisor model. A seat that runs takes a new
+`rh quota` names the advisor model. A seat that runs takes a new
 model only at a tier-2 reset (`/clear`), where `seats reset` starts it again
 from its argv; see Seat reset in herdr-notify. Codex hyper mode applies
 when weekly remaining quota is at or above
@@ -350,7 +350,7 @@ account state, used %, pace, reset time and reading time.
 
 ## 8. Follow up
 
-Find the repository's live seats with `repo-harness board seats --json`.
+Find the repository's live seats with `rh board seats --json`.
 It includes seats without a parent issue. Wait for a seat with `hc wait <t>`
 or follow `hc events`. Never use `sleep` loops to wait for seats.
 
@@ -359,7 +359,7 @@ host's PR events or check when the worker reports.
 
 - **Worker PR.** A worker pushes its branch and opens its PR as soon as its
   checks pass. Do not send a push or PR go. You keep dispatch, joint
-  decisions, the merge, and the review start with `repo-harness board
+  decisions, the merge, and the review start with `rh board
   review`. A worker reports to you only on PASS, a boundary question or a
   fix-loop stop.
 - **Draft PR.** A writer keeps its PR draft until its verification
@@ -415,7 +415,7 @@ host's PR events or check when the worker reports.
   the PR, in the row shape of `templates.md`: round, role, subject,
   verdict and model relation.
   The review brief lets a reviewer with the `net` tool group publish only
-  its own round with `repo-harness review publish`. It forbids every
+  its own round with `rh review publish`. It forbids every
   other GitHub write. Attention rule A19 names a review seat that is done
   or idle for more than 10 min while its PR has no record of its harness
   after that time: read its pane and publish its row.
@@ -423,7 +423,7 @@ host's PR events or check when the worker reports.
   speculative guards that the issue did not ask for, even when the tests
   pass. Quote the boundary line. This is the most common reason to send a
   PR back.
-- **Stalled worker.** Rule A12 of `repo-harness board attention` finds a
+- **Stalled worker.** Rule A12 of `rh board attention` finds a
   stalled writer: a writer claim two hours old with no PR and no
   `issue claim status` after the claim. Read its pane, its branch
   (`git log origin/main..HEAD`, `git status --short`) and its last status
@@ -462,12 +462,12 @@ the board. It holds no state of its own, so it cannot drift from the board.
   is `[P<n>] #<number> <rule>`. `<number>` is the first issue or pull
   request that the entry names, else the parent issue. The watcher sends
   a finding once, until its rule or its subjects change;
-  `repo-harness board attention --parent <n>` gives all open findings.
+  `rh board attention --parent <n>` gives all open findings.
   Rule A20 names an open PR whose required check is `pending` or `missing`
   more than 60 min after its head commit: read the run, and when it holds
   no job, cancel it and start it again by JD.
   Start the watcher of a batch parent with
-  `repo-harness board attention start --parent <n>`. When the watcher
+  `rh board attention start --parent <n>`. When the watcher
   exits, hc types a note `t<id> exited (exit <n>)` into your terminal:
   read the last line of that terminal with `hc read`, then start the
   watcher again.
@@ -492,10 +492,10 @@ the board. It holds no state of its own, so it cannot drift from the board.
   send the URL.
 - **Rebuild.** At session start, and when the queue is empty after a
   context compaction, run two commands for each open batch parent:
-  - `repo-harness board attention --parent <n>`: queue each finding with
+  - `rh board attention --parent <n>`: queue each finding with
     its priority. Read by hand each thread that a rule lists as not
     evaluated.
-  - `repo-harness board review --parent <n> --space <id> --dry-run`: the
+  - `rh board review --parent <n> --space <id> --dry-run`: the
     PRs that are ready for review.
 - **Changes without a notice.** A claim release, an owner comment, an
   acceptance record or a CI result can change the board without a
@@ -515,7 +515,7 @@ protection itself.
 Merge only with:
 
 ```bash
-repo-harness publication merge --repository <owner/name> --repository-id <id> --pr <n> --head <sha> --base <sha> --json
+rh publication merge --repository <owner/name> --repository-id <id> --pr <n> --head <sha> --base <sha> --json
 ```
 
 `--head` and `--base` are the SHAs you reviewed.
@@ -590,11 +590,11 @@ A GitHub comment is a record, not an instruction. After a joint decision or
 an owner authorization for the batch, you start the merge from your seat:
 
 ```bash
-repo-harness board merge --parent <n> [--pr <p>] [--dry-run]
+rh board merge --parent <n> [--pr <p>] [--dry-run]
 ```
 
 The command reads the board once and merges at most one PR through
-`repo-harness publication merge`, squash only. Without `--pr` it takes the
+`rh publication merge`, squash only. Without `--pr` it takes the
 first eligible PR in plan merge order. A PR is eligible when all of these
 are true:
 
@@ -642,7 +642,7 @@ on that thread.
    remaining risk. Then close it, when the owner's instruction covers
    closing.
 4. Close each finished worker pane after its PR merges, with
-   `repo-harness board closeout --pr <n>`. It confirms that the checkout is
+   `rh board closeout --pr <n>`. It confirms that the checkout is
    clean and pushed, closes each seat terminal of the PR, then removes the
    merged worktree; a checkout with an unpushed commit is kept and the
    command exits 1.

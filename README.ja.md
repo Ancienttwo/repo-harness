@@ -42,8 +42,8 @@ npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
 対象リポジトリのルートで、まずプレビューし、次に適用します。
 
 ```bash
-repo-harness init --dry-run
-repo-harness init
+rh init --dry-run
+rh init
 ```
 
 `--dry-run` は作成または更新するファイルを報告するだけで、ファイルを書き込みません。

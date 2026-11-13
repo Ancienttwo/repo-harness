@@ -9,7 +9,7 @@ open PRs, or install a persistent scheduler.
 Run from the repository root:
 
 ```bash
-repo-harness run heartbeat-triage run --source scheduled
+rh run heartbeat-triage run --source scheduled
 ```
 
 The command appends a run section to `.ai/harness/triage/inbox.md` and writes a
@@ -21,7 +21,7 @@ source, the snapshot path and the adoption review date.
 Example cron entry for a local checkout:
 
 ```cron
-17 8 * * * cd /path/to/repo && repo-harness run heartbeat-triage run --source scheduled >/tmp/repo-harness-heartbeat.log 2>&1
+17 8 * * * cd /path/to/repo && rh run heartbeat-triage run --source scheduled >/tmp/repo-harness-heartbeat.log 2>&1
 ```
 
 ## loop
@@ -31,7 +31,7 @@ process manager:
 
 ```bash
 while true; do
-  cd /path/to/repo && repo-harness run heartbeat-triage run --source scheduled
+  cd /path/to/repo && rh run heartbeat-triage run --source scheduled
   sleep 86400
 done
 ```

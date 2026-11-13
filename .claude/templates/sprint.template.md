@@ -71,7 +71,7 @@ task.
 
 ## Execution Log
 
-Keep this section last; `repo-harness run sprint-backlog complete-task` appends rows here.
+Keep this section last; `rh run sprint-backlog complete-task` appends rows here.
 
 | When | Task | Plan | Result |
 |------|------|------|--------|

@@ -14,7 +14,7 @@ Load only the reference for the assigned mode.
 ## Shared Preflight
 
 1. Confirm the target repo path (`pwd`, or an explicit `--repo` argument).
-2. Inspect the proposed changes with `repo-harness init --repo <repo> --dry-run` (not `ci-scope`).
+2. Inspect the proposed changes with `rh init --repo <repo> --dry-run` (not `ci-scope`).
 
 ## Mode Selection
 
@@ -28,7 +28,7 @@ Load only the reference for the assigned mode.
 
 ## Boundaries
 
-- Never write user-level (`HOME`) state from a repo-scoped mode; user-level setup is the separate `repo-harness update` command.
+- Never write user-level (`HOME`) state from a repo-scoped mode; user-level setup is the separate `rh update` command.
 - Preserve user-authored repo files unless the workflow contract owns the generated surface; remove only `ownership=known_generated` files.
 - Does not create an application stack from any mode except `scaffold`.
 - Does not expose internal helper scripts (`create-project-dirs`, direct shell init adapters, `hooks-init`, `docs-init`) as public commands.

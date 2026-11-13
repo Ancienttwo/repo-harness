@@ -18,8 +18,8 @@ Create these only when the agent has concrete repo evidence or the user asks:
 - `docs/decisions.md`: accepted architecture decisions with trade-offs.
 - Mermaid fenced blocks in `docs/architecture/modules/**.md`: semantic diagram source for agents and review diffs.
 - `docs/packages.md`: package inventory for real multi-package repos.
-- `docs/prds/*.prd.md`: upper-layer PRDs generated through `repo-harness-product`'s PRD mode from the repository's own `docs/prds/prd.template.md` when present, otherwise from `repo-harness docs path prd.template`.
-- `docs/prds/DESIGN-*.md`: optional design briefs generated from the repository's own `.claude/templates/design-brief.template.md` when present, otherwise from `repo-harness docs path design-brief.template`, when the task requests design work.
+- `docs/prds/*.prd.md`: upper-layer PRDs generated through `repo-harness-product`'s PRD mode from the repository's own `docs/prds/prd.template.md` when present, otherwise from `rh docs path prd.template`.
+- `docs/prds/DESIGN-*.md`: optional design briefs generated from the repository's own `.claude/templates/design-brief.template.md` when present, otherwise from `rh docs path design-brief.template`, when the task requests design work.
 
 ## Rules
 

@@ -18,7 +18,7 @@
     "external_knowledge": {
       "project_path": "brain/repo-harness/*",
       "manifest_file": ".ai/harness/brain-manifest.json",
-      "sync_script": "repo-harness brain sync"
+      "sync_script": "rh brain sync"
     }
   },
   "documentation": {

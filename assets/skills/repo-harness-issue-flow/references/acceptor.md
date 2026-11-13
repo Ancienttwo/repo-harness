@@ -197,7 +197,7 @@ defect in code that the PR does not change is a note, not a finding.
 ## 4. Publish
 
 The session that runs the round writes one publish receipt and runs
-`repo-harness review publish --pr <n> --receipt <path> [--json]`.
+`rh review publish --pr <n> --receipt <path> [--json]`.
 The command reads the PR head, refuses a stale subject, then
 posts in this order:
 

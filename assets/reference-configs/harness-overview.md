@@ -21,7 +21,7 @@ task state.
   integrates the results.
 - A worker claims one issue and delivers one PR.
 - An acceptor takes one review in one round of the PR.
-- An integrator merges. Only `repo-harness publication merge` runs this
+- An integrator merges. Only `rh publication merge` runs this
   step.
 
 The `repo-harness-issue-flow` skill owns the lifecycle, the seats, the
@@ -50,7 +50,7 @@ advice, not a gate. Any host can fill a seat.
 | Acceptor | Fresh context, read-only; for High, two reviews of each head, at least one from a model family different from the writer's | Review threads and the acceptance record |
 | Gap reviewer | Different family from the orchestrator | Comments on drafts; no scope decision |
 
-`repo-harness seats argv <seat>` prints the launch argv of the
+`rh seats argv <seat>` prints the launch argv of the
 orchestrator, advisor and worker seats. `agents/fleet/` holds the sub-agent
 roles that a seat may call; the installer projects each role to Claude and
 Codex. The High tier needs two reviews of each head, at least one from a
@@ -60,19 +60,19 @@ same-family context. Each review records `model_relation` in its receipt.
 ## Tools
 
 - Worktree: create a task worktree at `{{system_tmp}}/{{repo}}-wt-{{slug}}`
-  with `repo-harness run contract-worktree start --issue <number>`. Commit
+  with `rh run contract-worktree start --issue <number>`. Commit
   or push before a reboot or temp cleanup. Closeout removes only merged,
   clean and unowned worktrees.
 - Dispatch: run peers in herdr-core (`hc`) terminals that Herdr.app shows
   as panes. Receipt-bearing acceptance
-  uses `repo-harness review round`; its OAR host runs the reviewer. See
+  uses `rh review round`; its OAR host runs the reviewer. See
   [Herdr dispatch and notify](herdr-notify.md).
 - Review: an acceptor returns one `AcceptanceReviewResult`. The session
   that runs the round publishes it with
-  `repo-harness review publish --pr <n> --receipt <path>`. The merge
+  `rh review publish --pr <n> --receipt <path>`. The merge
   executor refuses an unresolved review thread that a person started. A
   thread that a review bot (a GitHub App account) started is advisory.
-- Merge: `repo-harness publication merge` runs only when
+- Merge: `rh publication merge` runs only when
   `publication.acceptance_merge` is `on` on the PR base. Otherwise the
   owner merges.
 - CI: run typecheck and the affected tests on the PR head. Run the full
@@ -96,7 +96,7 @@ same-family context. Each review records `model_relation` in its receipt.
 
 ## Adoption and configuration
 
-`repo-harness init` writes the workflow marker, the policy file and the
+`rh init` writes the workflow marker, the policy file and the
 root context files. `assets/workflow-contract.v1.json` is the contract.
 `.ai/harness/workflow-contract.json` is the opt-in marker.
 
@@ -109,9 +109,9 @@ root context files. `assets/workflow-contract.v1.json` is the contract.
   with evidence or a user request; see [Document generation](document-generation.md).
 - Capability context: the architecture model or the capability registry
   declares each capability. Keep paired contract files aligned with
-  `repo-harness capability-context status|sync`.
+  `rh capability-context status|sync`.
 - Evidence and retention: the PR and CI hold current proof.
-  `repo-harness retention` archives ignored local evidence after a window.
+  `rh retention` archives ignored local evidence after a window.
   `docs/researches/` and `tasks/lessons.md` are advisory memory.
 - Hooks: [Hook operations](hook-operations.md). User-level rules:
   [Global working rules](global-working-rules.md).

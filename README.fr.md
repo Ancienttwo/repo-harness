@@ -42,8 +42,8 @@ npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
 À la racine du dépôt cible, prévisualisez d'abord, puis appliquez :
 
 ```bash
-repo-harness init --dry-run
-repo-harness init
+rh init --dry-run
+rh init
 ```
 
 `--dry-run` liste seulement les fichiers à créer ou à rafraîchir. Il n'écrit aucun fichier.

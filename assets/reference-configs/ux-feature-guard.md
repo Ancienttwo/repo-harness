@@ -12,7 +12,7 @@ component. None of them may be invented during implementation.
 ## Route
 
 1. If 2-3 genuine visual or UX directions exist and the choice is taste,
-   brand, or product fit, run `repo-harness docs show design-options` first.
+   brand, or product fit, run `rh docs show design-options` first.
    The user's choice is the authority. Do not let this guard or BDD re-decide it.
 2. Trace one current behavior end to end. Read the real UI entrypoint, state or
    request path, domain authority, existing components, and visible failure.
@@ -45,7 +45,7 @@ Do not pick the convenient wording or make the contract/test silently win.
 
 The design-brief template owns the exact Guard Card field schema: the
 repository's own `.claude/templates/design-brief.template.md` when present,
-otherwise `repo-harness docs path design-brief.template`. This runtime
+otherwise `rh docs path design-brief.template`. This runtime
 doc owns the interpretation rules and hard stops. Fill every template field; do
 not restate the schema in a PRD, contract, sidecar, or local checklist, and do
 not create a parallel guard artifact.

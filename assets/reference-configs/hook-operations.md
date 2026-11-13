@@ -90,19 +90,19 @@ a host file descriptor.
 
 No shell operator library exists. Product changes to handler behavior belong
 in `src/cli/hook/` and its tests. Run packaged helpers with
-`repo-harness run <helper>`. `summarize-failures` reads the same
+`rh run <helper>`. `summarize-failures` reads the same
 `FAILURE_LOG_FILE` that the edit guard writes.
 
 Init and upgrade preserve an old `.ai/hooks/lib/workflow-state.sh`, including
 edits. Doctor reports it as legacy. Change its callers to
-`repo-harness run <helper>`. Test the callers. Back up the old file before
+`rh run <helper>`. Test the callers. Back up the old file before
 manual removal. Review local changes first.
 
 No hook answers `/delegate` or `/parallel`. `.ai/harness/delegation/` holds
 only the native-role evidence.
 
 `SessionStart` resolves Effective State once, read-only. It writes no state,
-and its `state_version` is the last version that `repo-harness state resolve`
+and its `state_version` is the last version that `rh state resolve`
 published. The `[HarnessState]` section, or
 `[HarnessStateUnavailable]` when the resolution fails, comes first and always.
 The `architecture-debt` section follows at priority 2 and is mandatory when
@@ -116,8 +116,8 @@ sections stay. An optional section that does not fit becomes
 `[ContextRef:<id>] <source>`.
 
 `SessionStart` runs no security scan, no tooling update check and no worktree
-sweep. It writes no run identity. Run `repo-harness security scan --json` or
-`repo-harness setup check --check-updates --json` when a task needs them.
+sweep. It writes no run identity. Run `rh security scan --json` or
+`rh setup check --check-updates --json` when a task needs them.
 `contract-worktree start` runs the managed worktree sweep.
 
 The hook identity is the payload `session_id`, `run_id` and `turn_id`. A missing
@@ -129,15 +129,15 @@ spawn an LLM or a long-running worker.
 
 ## Host and Adoption Operations
 
-`repo-harness init` writes the workflow contract. It does not install user-level adapters;
-`repo-harness install` and `repo-harness update` own them.
+`rh init` writes the workflow contract. It does not install user-level adapters;
+`rh install` and `rh update` own them.
 It does not copy the operator library into consumer repositories.
 It removes retired generated hook entry scripts by exact manifest ownership and
 does not create a repo-local dispatcher. Project-level `.claude/settings.json`
 and `.codex/hooks.json` are user-owned legacy inputs and should be reviewed
 manually during migration rather than treated as runtime authority.
 
-If an adapter is missing, inspect `repo-harness install --state`, refresh the
+If an adapter is missing, inspect `rh install --state`, refresh the
 recorded host profile, and trust the Codex settings entry. Do not edit generated
 adapter commands by hand. The route registry and the adapter manifest must agree
 on the route tuple; a mismatch is a fail-closed installation error.
@@ -150,10 +150,10 @@ hook event and has no route, so it runs in any directory. It copies the
 documented stdin `rate_limits` object, unchanged, to
 `~/.repo-harness/quota/claude.json` (mode 0600) with a new `observed_at`, and
 prints one line such as `5h 12% · 7d 30%`. Stdin without `rate_limits` writes
-nothing and prints an empty line. `repo-harness quota` reads this file and
+nothing and prints an empty line. `rh quota` reads this file and
 marks a capture older than 30 minutes `unknown`.
 
-`repo-harness install --target claude` sets this entry only when
+`rh install --target claude` sets this entry only when
 `~/.claude/settings.json` has no `statusLine`:
 
 ```json
@@ -165,7 +165,7 @@ Install resolves the Bun runtime from `process.execPath` and the bundle from
 The bundle comes from the global install, including when install runs through
 `bunx` or a task worktree. A missing global bundle stops installation before
 host configuration writes. Repair it with `bun add -g repo-harness`, then rerun
-`repo-harness install --location global`.
+`rh install --location global`.
 
 The managed tag is the ownership proof, as for the managed hook commands.
 Install refreshes the entry only while its command has the tag, and uninstall
@@ -277,7 +277,7 @@ Bash, a script or the person. The report cannot tell which one. It does not bloc
 
 ### Git boundary
 
-`repo-harness run check-protected-paths` checks staged changes. It rejects root
+`rh run check-protected-paths` checks staged changes. It rejects root
 `_ops` and `_ref` entries and their descendants, including deletions and rename
 sources. Other directories with those names are outside this boundary. Paths
 come from NUL-delimited Git output, scoped to the protected roots, with rename
@@ -307,7 +307,7 @@ The circuit breaker keeps one kind: `semantic-review`. A state
 file from an older runtime fails closed when it has protocol 1 or a retired
 kind (`guard`, `review`, `subagent`, `cross-model-consult`, `minimal-change`
 or `repair`). The error names the one-shot cleanup. Run
-`repo-harness run evidence-gc --repo <path>`, or
+`rh run evidence-gc --repo <path>`, or
 `bun scripts/evidence-gc.ts --repo <path>` in this source checkout.
 
 ## Architecture Drift and Parity
@@ -317,7 +317,7 @@ and they run no projection or LLM work. Architecture updates are explicit:
 
 - Agents read architecture documents on demand, fix debt, and update the model and human prose. The archctx rolling writer publishes generated regions and the manifest.
 
-`repo-harness state resolve --json` reports `capability_ownership`. It is a
+`rh state resolve --json` reports `capability_ownership`. It is a
 projection of the ownership answer that state resolution already computed:
 `review_base`, `capability_ids`, each capability's `module_document` and owned
 `paths`, and `unowned_paths`. It is `null` when ownership was not computed: no
@@ -353,7 +353,7 @@ Known limits:
 The text starts with `[ArchitectureDebt] N new in <capability>`. Each item names
 the capability, model field and command. At most three items fit within 800
 UTF-8 bytes. An overflow line gives the remaining count and
-`repo-harness architecture-debt --json`. A line that cannot fit stays in that
+`rh architecture-debt --json`. A line that cannot fit stays in that
 count; commands are never cut. No debt means no model text.
 
 The marker `.ai/harness/state/agent-notice` must be Git-ignored. Its key is
@@ -393,7 +393,7 @@ Git-ignored` line and one human `systemMessage`. This line takes the place of
 the notice text, because no marker can deduplicate that text. Claude Stop and
 Codex UserPromptSubmit keep only the stderr diagnostic of a failed marker write.
 Without a marker, the line would repeat at each turn, and each Claude Stop line
-starts one more turn. Run `repo-harness update`; it writes the runtime-state
+starts one more turn. Run `rh update`; it writes the runtime-state
 block to the user-level Git excludes file.
 
 | Point | Hosts | When |
@@ -413,7 +413,7 @@ permits `hookSpecificOutput.additionalContext` at UserPromptSubmit.
 CI and operators use the full debt comparison:
 
 ```bash
-repo-harness architecture-debt --json --base origin/main
+rh architecture-debt --json --base origin/main
 ```
 
 The command measures the debt at HEAD and at the base, and reports the items
@@ -423,10 +423,10 @@ with the reason on stderr. A failure of archctx does the same.
 
 Agents author semantic snapshots and diagrams. Hooks do not spawn LLM agents or
 long-running commands. Deterministic execution belongs in explicit CLI commands
-such as `repo-harness review round`.
+such as `rh review round`.
 
 Validate the typed route registry with `bun test` and
-`repo-harness init --repo . --dry-run`.
+`rh init --repo . --dry-run`.
 
 ## Evidence Retention
 
@@ -461,11 +461,11 @@ long-running repository that reaches multiple gigabytes. The next successful Sto
 after the upgrade prunes the entire backlog on its own, so no action is normally
 required.
 
-Run `repo-harness run evidence-gc` when that Stop will not come:
+Run `rh run evidence-gc` when that Stop will not come:
 
 ```bash
-repo-harness run evidence-gc --repo . --dry-run   # report reclaimable bytes
-repo-harness run evidence-gc --repo .             # apply the same policies now
+rh run evidence-gc --repo . --dry-run   # report reclaimable bytes
+rh run evidence-gc --repo .             # apply the same policies now
 ```
 
 It applies the checkpoint policy above and never defines its own. Use it for a
@@ -488,4 +488,4 @@ bash scripts/check-ci.sh governance
 ```
 
 That lane also runs the state boundary check, the helper projection check and
-`repo-harness init --repo . --dry-run` (`scripts/check-ci.sh#governance`).
+`rh init --repo . --dry-run` (`scripts/check-ci.sh#governance`).

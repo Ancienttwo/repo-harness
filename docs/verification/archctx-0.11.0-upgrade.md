@@ -90,7 +90,7 @@ profile assets are byte-identical, the docs renderer stays at v6, and the
 bundle diff has no change in `docs plan`, `docs apply` or `docs drift`. The
 manifest schema is unchanged.
 
-The rolling writer output changes. `repo-harness architecture-projection
+The rolling writer output changes. `rh architecture-projection
 publish` runs `archctx projection publish`, so the first writer publish under
 0.11.0 adds `docs/architecture/history.md` to the rolling PR. The writer owns
 that file like the manifest. It is outside the projection manifest. Repository
