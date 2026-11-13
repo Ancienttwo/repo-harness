@@ -89,8 +89,8 @@ run_architecture_check() {
 # render-check summary $1. M is the newest first-parent commit that changes the
 # projection manifest; only the rolling writer changes it, and with manifest v4
 # only when a rendered output or the semantic baseline changes. Of the
-# first-parent commits after M, architecture-render-clock.ts picks the render
-# change; else M itself counts, because a product commit can sit between the
+# first-parent commits after M, firstRenderChangeCommit picks the render change;
+# else M itself counts, because a product commit can sit between the
 # rendered base and M. The squash body names the rendered base only as text, so
 # it is not read.
 architecture_unpublished_since() {
@@ -110,7 +110,7 @@ architecture_unpublished_since() {
   start="$manifest_commit"
   if [[ -n "$after" ]]; then
     # shellcheck disable=SC2086 # one argument per commit
-    start="$(with_architecture_selection bun scripts/architecture-render-clock.ts "$1" $after)" || return 1
+    start="$(with_architecture_selection bun -e 'const { readRecordedSelection, registerSelectedArchitecturePorts } = await import("./src/cli/installer/architecture-selection.ts"); await registerSelectedArchitecturePorts(readRecordedSelection(), async () => (await import("./src/effects/architecture/providers.ts")).ARCHITECTURE_PROVIDERS); const { firstRenderChangeCommit } = await import("./src/core/architecture/projection.ts"); const { capabilityOwnersForPaths } = await import("./src/effects/state/resolve-effective-state.ts"); const { gitExecFileSync } = await import("./src/effects/git/runner.ts"); const [summaryPath, ...shas] = process.argv.slice(1); const ids = JSON.parse(await Bun.file(summaryPath).text()).differingCapabilityIds; if (ids !== null && !(Array.isArray(ids) && ids.every(id => typeof id === "string"))) throw new Error("render-check summary differingCapabilityIds must be a string array or null"); const commits = shas.map(sha => ({ sha, paths: gitExecFileSync(["diff", "--name-only", "--no-renames", "-z", `${sha}^`, sha, "--"], { encoding: "utf8" }).split("\0").filter(Boolean) })); const owners = ids === null || ids.length === 0 ? new Map() : capabilityOwnersForPaths(process.cwd(), [...new Set(commits.flatMap(commit => commit.paths))]); console.log(firstRenderChangeCommit(commits, ids, path => owners.get(path)?.id));' "$1" $after)" || return 1
   fi
   git show -s --format=%cI "$start" || return 1
 }

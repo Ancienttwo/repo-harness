@@ -34,6 +34,7 @@ import relationSchema from 'archctx-contracts/schemas/repo/architecture-relation
 import flowSchema from 'archctx-contracts/schemas/repo/architecture-flow.schema.json';
 import { dependencies } from '../../../package.json';
 import type { ArchitectureProjectionPolicy } from './contracts';
+import { capabilityIdentityFromNodeId } from '../capabilities/registry';
 
 export const ARCHCTX_REQUIRED_VERSION = dependencies.archctx;
 
@@ -65,6 +66,7 @@ export function summarizeArchitectureRender(result: ProjectionResultV3) {
  * commits can be days older than the render change. The clock starts at the first commit that
  * changes the architecture model or a path a differing capability owns. Without such a commit,
  * or when a differing target names no capability, it starts at the first commit.
+ * `differingCapabilityIds` are archctx node ids; `ownerOf` returns capability registry ids.
  */
 export function firstRenderChangeCommit(
   commits: ReadonlyArray<{ sha: string; paths: readonly string[] }>,
@@ -72,9 +74,11 @@ export function firstRenderChangeCommit(
   ownerOf: (path: string) => string | undefined,
 ): string {
   if (commits.length === 0) throw new Error('no commit follows the newest manifest commit');
-  const differing = new Set(differingCapabilityIds ?? []);
-  const changesRender = (path: string) => path.startsWith('.archcontext/') || differing.has(ownerOf(path) ?? '');
-  const match = differingCapabilityIds === null ? undefined : commits.find(commit => commit.paths.some(changesRender));
+  const identities = (differingCapabilityIds ?? []).map(capabilityIdentityFromNodeId);
+  const bounded = differingCapabilityIds !== null && identities.every(identity => identity !== null);
+  const differing = new Set(identities.map(identity => identity?.id));
+  const changesRender = (path: string) => path.startsWith('.archcontext/') || differing.has(ownerOf(path));
+  const match = bounded ? commits.find(commit => commit.paths.some(changesRender)) : undefined;
   return (match ?? commits[0]!).sha;
 }
 

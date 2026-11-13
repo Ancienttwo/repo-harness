@@ -1061,7 +1061,7 @@ describe('architecture lanes', () => {
     const bin = join(root, 'bin');
     try {
       mkdirSync(join(root, 'repo/scripts/lib'), { recursive: true }); mkdirSync(bin);
-      for (const path of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh', 'scripts/lib/architecture-plugin.sh', 'scripts/host-test-queue.ts', 'scripts/architecture-render-clock.ts']) writeFileSync(join(root, 'repo', path), readFileSync(join(ROOT, path)));
+      for (const path of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh', 'scripts/lib/architecture-plugin.sh', 'scripts/host-test-queue.ts']) writeFileSync(join(root, 'repo', path), readFileSync(join(ROOT, path)));
       // The advisory imports the action map from the real source tree.
       symlinkSync(join(ROOT, 'src'), join(root, 'repo/src'));
       // The lane records its architecture selection with the package version.
@@ -1251,7 +1251,7 @@ describe('architecture lanes', () => {
 
   const equivalent = { status: 'planned', renderEquivalent: true, differingPaths: [], humanActions: [] };
   const differs = { status: 'planned', renderEquivalent: false, differingPaths: ['docs/architecture/a.md'], differingCapabilityIds: null, humanActions: [] };
-  const differsInCapability = { ...differs, differingCapabilityIds: ['capability.a'] };
+  const differsInCapability = { ...differs, differingCapabilityIds: ['capability.d.a'] };
   const humanAction = { status: 'human-action-required', renderEquivalent: null, differingPaths: [], humanActions: [{ reasonCode: 'unprovable-required-flow' }] };
   // M is the newest commit that changes the manifest. The oldest commit after M, else M, dates the unpublished difference.
   const afterM = (hoursAgo: number) => [{ manifest: true, hoursAgo: 30 }, { manifest: false, hoursAgo }, { manifest: false, hoursAgo: 0.1 }];

@@ -1882,10 +1882,11 @@ describe('single-writer observations', () => {
 
   test('the lag clock starts at the first commit that changes the model or a path a differing capability owns', () => {
     const commits = [{ sha: 'a', paths: ['src/other.ts'] }, { sha: 'b', paths: ['src/x.ts'] }, { sha: 'c', paths: ['.archcontext/model/nodes/n.yaml'] }];
-    const ownerOf = (path: string) => ({ 'src/other.ts': 'capability.other', 'src/x.ts': 'capability.x' } as Record<string, string>)[path];
-    expect(firstRenderChangeCommit(commits, ['capability.x'], ownerOf)).toBe('b');
-    expect(firstRenderChangeCommit(commits, ['capability.y'], ownerOf)).toBe('c');
-    expect(firstRenderChangeCommit(commits.slice(0, 2), ['capability.y'], ownerOf)).toBe('a');
+    // ownerOf returns registry ids; the render names archctx node ids.
+    const ownerOf = (path: string) => ({ 'src/other.ts': 'd-other', 'src/x.ts': 'd-x' } as Record<string, string>)[path];
+    expect(firstRenderChangeCommit(commits, ['capability.d.x'], ownerOf)).toBe('b');
+    expect(firstRenderChangeCommit(commits, ['capability.d.y'], ownerOf)).toBe('c');
+    expect(firstRenderChangeCommit(commits.slice(0, 2), ['capability.d.y'], ownerOf)).toBe('a');
     expect(firstRenderChangeCommit(commits, null, ownerOf)).toBe('a');
   });
 
