@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
-import { decodeDocsTree } from '../../src/core/operator/docs';
+import { decodeDocsRemoteMismatch, decodeDocsTree } from '../../src/core/operator/docs';
 import { githubRemoteRepository } from '../../src/core/board/source';
 import { startDocsCollector, type DocsCollectorHandle } from '../../src/effects/operator/docs-collector';
 import { DocsReadError } from '../../src/effects/operator/docs-reader';
@@ -208,6 +208,14 @@ test('closing ends every resident process', async () => {
   if (cache.state !== 'ready') throw new Error('not ready');
   await docs.close();
   expect(cache.reader.running).toBe(false);
+});
+
+test('the docs mismatch decoder accepts the GitHub slug grammar and refuses everything else', () => {
+  const detail = (github: string) => ({ github, remote_repositories: [github] });
+  expect(decodeDocsRemoteMismatch(detail(`${'a'.repeat(39)}/${'r'.repeat(100)}`)).github).toHaveLength(140);
+  for (const slug of ['bad_owner/repo', `${'a'.repeat(40)}/repo`, 'owner/re po', 'owner/repo/extra']) {
+    expect(() => decodeDocsRemoteMismatch(detail(slug))).toThrow();
+  }
 });
 
 test('GitHub remote URLs name owner/repo in every form, and nothing else does', () => {

@@ -5,7 +5,8 @@
 // command string from a fixed template. A local path leaves this module only as
 // `~/...` or as `[private path]`.
 
-import { GITHUB_REPOSITORY, githubRemoteRepository } from '../board/github-repository';
+import { GITHUB_REPOSITORY } from '../board/github-repository';
+import { githubRemoteRepository } from '../board/source';
 import { decodeReaders } from '../evidence/decode-readers';
 import { publicAgentConfigText } from '../operator/agent-config';
 import seedJson from './cli-seed.v1.json';

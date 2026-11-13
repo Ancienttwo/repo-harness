@@ -88,6 +88,10 @@ describe('cli seed', () => {
     expect(() => decodeCliSeed(copy(tool => { tool.packages = [{ registry: 'npm', name: 'a b' }]; }))).toThrow('package name');
     expect(() => decodeCliSeed(copy(tool => { tool.install_roots = ['/opt/x']; }))).toThrow('install_root');
     expect(() => decodeCliSeed(copy(tool => { tool.extra = true; }))).toThrow('tool fields');
+    for (const repo of ['bad_owner/repo', `${'a'.repeat(40)}/repo`, 'owner/re po', 'owner/repo/extra']) {
+      expect(() => decodeCliSeed(copy(tool => { tool.repo = repo; }))).toThrow('repo');
+    }
+    expect(decodeCliSeed(copy(tool => { tool.repo = `${'a'.repeat(39)}/${'r'.repeat(100)}`; })).tools[0]?.repo).toBe(`${'a'.repeat(39)}/${'r'.repeat(100)}`);
   });
 });
 
@@ -166,6 +170,27 @@ describe('cli inventory projection', () => {
     expect(entries.get('manual:asc')?.github).toEqual({
       repo: null, candidates: ['rorkai/App-Store-Connect-CLI', 'tddworks/asc-cli'], monorepo: false, stars: null, archived: null, moved: false,
     });
+  });
+});
+
+describe('cli inventory metadata remotes', () => {
+  // No seed tool names this package, so the metadata URL alone decides the repository.
+  const repoOf = (urls: string[]) => projectCliInventory(input({
+    packages: [{ source: 'go', dependency: false, name: 'example.com/unseeded', version: 'v1.0.0', roots: [], files: [`${HOME}/go/bin/unseeded`], deprecated: false, urls }],
+    path_executables: [exe(`${HOME}/go/bin/unseeded`)],
+    github: new Map(),
+  })).entries[0]?.github?.repo ?? null;
+
+  test('an authority remote names the repository, lowercased', () => {
+    for (const url of ['https://github.com/Owner/Repo.git', 'https://token@github.com/owner/repo', 'git@github.com:owner/repo.git', 'ssh://git@github.com:22/owner/repo/']) {
+      expect(repoOf([url])).toBe('owner/repo');
+    }
+  });
+
+  test('forms the remote grammar refuses name no repository', () => {
+    for (const url of ['github:owner/repo', 'git+https://github.com/owner/repo.git', 'https://github.com/owner/repo/archive/refs/tags/v1.tar.gz', 'https://cli.github.com/', 'https://gitlab.com/owner/repo', 'https://github.com/bad_owner/repo']) {
+      expect(repoOf([url])).toBeNull();
+    }
   });
 });
 

@@ -11,7 +11,7 @@
 import type { Nodes } from 'mdast';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { isRecord } from '../evidence/is-record';
-export { githubRemoteRepository } from './github-repository';
+import { GITHUB_NAME_PATTERN, GITHUB_OWNER_PATTERN } from './github-repository';
 
 export class BoardSourceError extends Error {
   constructor(message: string) {
@@ -650,4 +650,15 @@ export function parseRefs(body: string): number[] {
   }
   visit(fromMarkdown(body));
   return [...refs].sort((left, right) => left - right);
+}
+
+const GITHUB_REMOTE = new RegExp(
+  `^(?:https://(?:[^@/]+@)?github\\.com/|git@github\\.com:|ssh://git@github\\.com(?::22)?/)(${GITHUB_OWNER_PATTERN})/(${GITHUB_NAME_PATTERN}?)(?:\\.git)?/?$`,
+  'iu',
+);
+
+/** `owner/name` of a GitHub remote URL (https, scp-like ssh or ssh://), lowercased; null for any other URL. */
+export function githubRemoteRepository(url: string): string | null {
+  const match = GITHUB_REMOTE.exec(url.trim());
+  return match ? `${match[1]}/${match[2]}`.toLowerCase() : null;
 }
