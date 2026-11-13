@@ -989,33 +989,41 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
       mkdirSync(dirname(retiredLink), { recursive: true });
       symlinkSync(cliEntry, retiredLink);
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), 'Run `repo-harness board seats` first.\n');
+      // Host-file notice path: every command position matches; prose and a protocol header do not.
+      const agents = join(home, '.codex', 'AGENTS.md');
+      const userText = [
+        'Run `repo-harness board seats` first.',
+        'exec repo-harness board seats',
+        'env FOO=1 repo-harness update',
+        'sudo repo-harness update',
+        'The repo-harness operator console shows it.',
+        'repo-harness review reply',
+      ].join('\n');
+      writeFileSync(agents, `${userText}\n`);
       const result = update({ plugins: FULL_PLUGINS });
 
       expect(result.exitCode).toBe(0);
       expect(lstatSync(retiredLink, { throwIfNoEntry: false })).toBeUndefined();
       expect(result.steps.find((step) => step.step === 'retire the repo-harness command link')?.detail).toBe(`Removed ${retiredLink}. The command is rh.`);
-      expect(result.steps.find((step) => step.step === 'find repo-harness command calls in user files')?.detail).toContain(`${join(home, '.codex', 'AGENTS.md')}:1`);
-      expect(readFileSync(join(home, '.codex', 'AGENTS.md'), 'utf8')).toContain('Run `repo-harness board seats` first.');
+      const notice = result.steps.find((step) => step.step === 'find repo-harness command calls in user files')?.detail ?? '';
+      expect(notice).toContain(`4 line(s) in files that you own call repo-harness <command>`);
+      expect(notice).toContain([1, 2, 3, 4].map(line => `${agents}:${line}`).join(', '));
+      expect(readFileSync(agents, 'utf8')).toStartWith(userText);
+      // A file at the link path without the exact proof stays, with its removal command.
       writeFileSync(retiredLink, 'owner file');
       const retireDetail = () => update({ plugins: FULL_PLUGINS }).steps.find((step) => step.step === 'retire the repo-harness command link')?.detail;
-      expect(retireDetail()).toBe(`${retiredLink} is not proved to be this package's launcher; remove it by hand. The command is rh.`);
+      expect(retireDetail()).toBe(`${retiredLink} is not proved to be this package's launcher; it stays. Remove it by hand when you do not need it: rm '${retiredLink}'. The command is rh.`);
       expect(readFileSync(retiredLink, 'utf8')).toBe('owner file');
       rmSync(retiredLink);
-      // Bun on Windows: a .exe launcher and a UTF-16LE .bunx record that names the bin target.
+      // Windows launchers are never removed: they get a notice with the PowerShell removal command.
       const exe = `${retiredLink}.exe`;
       const record = `${retiredLink}.bunx`;
-      const bunx = (target: string) => writeFileSync(record, Buffer.from(`..\\install\\global\\node_modules\\${target}\\src\\cli\\index.ts"`, 'utf16le'));
       writeFileSync(exe, 'launcher');
-      bunx('repo-harness');
-      expect(retireDetail()).toBe(`Removed ${exe}, ${record}. The command is rh.`);
-      expect([existsSync(exe), existsSync(record)]).toEqual([false, false]);
-      writeFileSync(exe, 'launcher');
-      bunx('other-package');
-      expect(retireDetail()).toBe(`${exe}, ${record} is not proved to be this package's launcher; remove it by hand. The command is rh.`);
-      rmSync(record);
-      expect(retireDetail()).toBe(`${exe} is not proved to be this package's launcher; remove it by hand. The command is rh.`);
+      writeFileSync(record, Buffer.from('..\\install\\global\\node_modules\\repo-harness\\src\\cli\\index.ts', 'utf16le'));
+      expect(retireDetail()).toBe(`${exe}, ${record} stays: update does not remove Windows launchers. Remove them in PowerShell: Remove-Item -LiteralPath '${exe}', '${record}'. The command is rh.`);
+      expect([existsSync(exe), existsSync(record)]).toEqual([true, true]);
       rmSync(exe);
+      rmSync(record);
       expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')).toMatchObject({ status: 'ok' });
       expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')?.detail).toContain(`archctx@${ARCHCTX_PIN}`);
       const archctxLink = join(home, '.bun', 'bin', 'archctx');

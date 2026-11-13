@@ -420,8 +420,8 @@ export function ownerForInstallPath(path: string, env: NodeJS.ProcessEnv = proce
   if (normalized.endsWith('/bin/codegraph')) return 'architecture';
   if (normalized.endsWith('/bin/archctx')) return 'architecture';
   if (normalized.endsWith('/bin/rh')) return 'core';
-  // The retired 0.32 CLI launchers; `rh update` removes them inside the host transaction.
-  if (/\/bin\/repo-harness(?:\.exe|\.bunx)?$/.test(normalized)) return 'core';
+  // The retired 0.32 CLI link; `rh update` removes it inside the host transaction.
+  if (normalized.endsWith('/bin/repo-harness')) return 'core';
   return null;
 }
 
@@ -738,8 +738,6 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
   const paths = [
     join(bunRoot, 'bin', 'rh'),
     join(bunRoot, 'bin', RETIRED_CLI_NAME),
-    join(bunRoot, 'bin', `${RETIRED_CLI_NAME}.exe`),
-    join(bunRoot, 'bin', `${RETIRED_CLI_NAME}.bunx`),
     join(bunRoot, 'bin', 'archctx'),
     join(bunRoot, 'bin', 'codegraph'),
     join(bunRoot, 'install', 'global', 'package.json'),

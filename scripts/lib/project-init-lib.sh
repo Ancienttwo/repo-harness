@@ -1379,19 +1379,24 @@ const file = process.argv[1];
 const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
 pkg.private ??= true;
 pkg.scripts ??= {};
-pkg.scripts["check:brain"] = "rh brain check";
+// A managed key changes only when it is missing or holds a released managed value (current or 0.32).
+const setManaged = (key, value) => {
+  const current = pkg.scripts[key];
+  if (current === undefined || current === value || current === value.replace(/^rh /, "repo-harness ")) pkg.scripts[key] = value;
+};
+setManaged("check:brain", "rh brain check");
 if (pkg.scripts["check:brain-manifest"] === "repo-harness run check-brain-manifest") {
   delete pkg.scripts["check:brain-manifest"];
 }
-pkg.scripts["check:context-files"] = "rh run check-context-files";
-pkg.scripts["check:deploy-sql"] = "rh run check-deploy-sql-order";
+setManaged("check:context-files", "rh run check-context-files");
+setManaged("check:deploy-sql", "rh run check-deploy-sql-order");
 if (pkg.scripts["check:task-workflow"] === "repo-harness run check-task-workflow --strict") {
   delete pkg.scripts["check:task-workflow"];
 }
 if (pkg.scripts["check:architecture-sync"] === "repo-harness run check-architecture-sync") {
   delete pkg.scripts["check:architecture-sync"];
 }
-pkg.scripts["sync:brain"] = "rh brain sync";
+setManaged("sync:brain", "rh brain sync");
 if (pkg.scripts["sync:brain-docs"] === "repo-harness run sync-brain-docs --all") {
   delete pkg.scripts["sync:brain-docs"];
 }

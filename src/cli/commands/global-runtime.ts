@@ -20,6 +20,7 @@ import { fileURLToPath } from "url";
 import { syncWazaSharedRules, wazaStagingRulesAbsent } from "../installer/waza-rules";
 import { applyGlobalContextRefresh, globalContextPath, preflightGlobalContextRefresh, type ReportLanguageFlag } from "../installer/global-context";
 import { CLI_NAME, RETIRED_CLI_INVOCATION, RETIRED_CLI_NAME } from "../../core/skill-surface/cli-name";
+import { shellQuote } from "../../core/shell-quote";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
 import { syncCrossReviewSkills } from "./init";
 import { runInstall, type InstallTargetSpec } from "./install";
@@ -959,39 +960,39 @@ export const RETIRED_CLI_REFERENCES_STEP = `find ${RETIRED_CLI_NAME} command cal
 
 /**
  * Bun keeps the bin launcher of a name that the new package version no longer declares, and that
- * launcher runs the new package. Update removes it once when it proves that it is this package's
- * launcher of the CLI entry: on POSIX a symlink that resolves to the entry; on Windows the .bunx
- * record that names the entry, with its .exe beside it. Anything else at those paths is not proved
- * to be the package's, so the step names it and changes nothing.
+ * launcher runs the new package. Update removes only what an exact proof shows as the package's:
+ * a symlink whose realpath equals the installed CLI entry. Every other file at the launcher paths,
+ * the Windows .exe/.bunx pair included, gets a notice with its removal command and no change.
  */
 function retireCliLink(env: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const step = RETIRED_CLI_LINK_STEP;
   const bin = join(env.BUN_INSTALL ?? join(homeDir(env), '.bun'), 'bin');
   const link = join(bin, RETIRED_CLI_NAME);
-  const exe = join(bin, `${RETIRED_CLI_NAME}.exe`);
-  const record = join(bin, `${RETIRED_CLI_NAME}.bunx`);
-  const present = [link, exe, record].filter(path => lstatSync(path, { throwIfNoEntry: false }) !== undefined);
-  if (present.length === 0) return { step, status: 'skipped', detail: 'No retired command launcher.' };
-  const packageRoot = bunGlobalPackageRoot(env);
-  const entry = packageRoot === null ? null : join(packageRoot, 'src', 'cli', 'index.ts');
-  const entryReal = entry !== null && existsSync(entry) ? realpathSync(entry) : null;
-  const owned = new Set<string>();
+  const windows = [`${RETIRED_CLI_NAME}.exe`, `${RETIRED_CLI_NAME}.bunx`].map(name => join(bin, name))
+    .filter(path => lstatSync(path, { throwIfNoEntry: false }) !== undefined);
   const linkStat = lstatSync(link, { throwIfNoEntry: false });
-  if (linkStat?.isSymbolicLink() && entryReal !== null) {
-    try { if (realpathSync(link) === entryReal) owned.add(link); } catch { /* A dangling link is not the package's link. */ }
+  if (!linkStat && windows.length === 0) return { step, status: 'skipped', detail: 'No retired command launcher.' };
+  const details: string[] = [];
+  if (linkStat) {
+    const packageRoot = bunGlobalPackageRoot(env);
+    const entry = packageRoot === null ? null : join(packageRoot, 'src', 'cli', 'index.ts');
+    let proved = false;
+    try { proved = linkStat.isSymbolicLink() && entry !== null && realpathSync(link) === realpathSync(entry); } catch { /* A dangling link or a missing entry is no proof. */ }
+    if (!proved) details.push(`${link} is not proved to be this package's launcher; it stays. Remove it by hand when you do not need it: rm ${shellQuote(link)}.`);
+    else {
+      try {
+        unlinkSync(link);
+        details.push(`Removed ${link}.`);
+      } catch (error) {
+        details.push(`${link} could not be removed (${(error as NodeJS.ErrnoException).code ?? 'error'}); it stays. Remove it by hand: rm ${shellQuote(link)}.`);
+      }
+    }
   }
-  // The .bunx record holds the bin target relative to the bin directory, in UTF-16LE.
-  const recordStat = lstatSync(record, { throwIfNoEntry: false });
-  const exeStat = lstatSync(exe, { throwIfNoEntry: false });
-  if (recordStat?.isFile() && exeStat?.isFile()) {
-    const named = readFileSync(record).toString('utf16le').replaceAll('/', '\\');
-    if (named.includes(`node_modules\\${RETIRED_CLI_NAME}\\src\\cli\\index.ts`)) { owned.add(exe); owned.add(record); }
+  // Bun on Windows writes a .exe launcher and a .bunx record. No exact proof exists for them, so they stay.
+  if (windows.length > 0) {
+    details.push(`${windows.join(', ')} stays: update does not remove Windows launchers. Remove them in PowerShell: Remove-Item -LiteralPath ${windows.map(path => `'${path.replaceAll("'", "''")}'`).join(', ')}.`);
   }
-  for (const path of owned) unlinkSync(path);
-  const kept = present.filter(path => !owned.has(path));
-  const removed = [...owned].length > 0 ? `Removed ${[...owned].join(', ')}. ` : '';
-  const notice = kept.length > 0 ? `${kept.join(', ')} is not proved to be this package's launcher; remove it by hand. ` : '';
-  return { step, status: 'ok', detail: `${removed}${notice}The command is ${CLI_NAME}.` };
+  return { step, status: 'ok', detail: `${details.join(' ')} The command is ${CLI_NAME}.` };
 }
 
 /** Update rewrites only the files that it manages; a user-owned call of the retired command gets a notice. */

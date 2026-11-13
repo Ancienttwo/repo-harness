@@ -833,6 +833,10 @@ describe('legacy workflow-state upgrade report', () => {
       'check:context-files': 'rh run check-context-files',
       'spec:new': 'rh run new-spec.sh',
       'brain:old': 'repo-harness brain check',
+      'board:env': 'env FOO=1 repo-harness board seats',
+      'check:deploy-sql': 'sudo repo-harness run check-deploy-sql-order --verbose',
+      'check:brain': 'repo-harness brain check',
+      'sync:brain': 'rh brain sync',
       test: 'bun test',
     } }, null, '\t')}\n`;
     put(path, bytes);
@@ -840,6 +844,10 @@ describe('legacy workflow-state upgrade report', () => {
     expect(check.items).toEqual([expect.objectContaining({ path, surface: 'file', retiredBy: 'retired-script-reference', action: 'report', ownership: 'unowned' })]);
     expect(check.items[0]?.reason).toContain('workflow:check: rh run check-task-workflow --strict; check:task-sync: rh run check-task-sync; plan:new: bunx repo-harness run new-plan');
     expect(check.items[0]?.reason).toContain('brain:old: repo-harness brain check (the repo-harness command is now rh)');
+    expect(check.items[0]?.reason).toContain('board:env: env FOO=1 repo-harness board seats (the repo-harness command is now rh)');
+    // A customized managed key is the user's and gets a report; a released managed value (0.32 or current) does not.
+    expect(check.items[0]?.reason).toContain('check:deploy-sql: sudo repo-harness run check-deploy-sql-order --verbose (the repo-harness command is now rh)');
+    for (const released of ['check:brain:', 'sync:brain:']) expect(check.items[0]?.reason).not.toContain(released);
     for (const live of ['check:context-files', 'spec:new', 'test:']) expect(check.items[0]?.reason).not.toContain(live);
     expect(runUpgradeDecide({ ...opts, decision: 'remove', paths: ['package.json'] }).rejected.map((rejection) => rejection.path)).toEqual(['package.json']);
     expect(runUpgrade({ ...opts, scope: 'project', apply: true }).keptPaths).toContain(path);
@@ -850,13 +858,13 @@ describe('legacy workflow-state upgrade report', () => {
     const policy = join(opts.cwd, '.ai/harness/policy.json');
     const root = join(opts.cwd, 'CLAUDE.md');
     put(policy, `${JSON.stringify({ information_lifecycle: { external_knowledge: { sync_script: 'repo-harness brain sync' } } }, null, 2)}\n`);
-    put(root, '# Repo\n\nRun `repo-harness board seats` first. The repo-harness operator console shows it.\n');
+    put(root, '# Repo\n\nRun `repo-harness board seats` first. The repo-harness operator console shows it.\nexec repo-harness update\n');
     put(join(opts.cwd, 'package.json'), `${JSON.stringify({ name: 'fixture', scripts: { 'check:brain': 'repo-harness brain check' } })}\n`);
     const before = tree(opts.cwd);
     const check = runUpgrade({ ...opts, scope: 'project' });
     expect(check.items.filter((item) => item.retiredBy === 'retired-cli-command').map((item) => [item.path, item.action, item.reason])).toEqual([
       [policy, 'report', 'Line 4 calls the retired repo-harness command; change each call to rh <command>. Upgrade does not edit this file.'],
-      [root, 'report', 'Line 3 calls the retired repo-harness command; change each call to rh <command>. Upgrade does not edit this file.'],
+      [root, 'report', 'Line 3, 4 calls the retired repo-harness command; change each call to rh <command>. Upgrade does not edit this file.'],
     ].sort((left, right) => left[0]!.localeCompare(right[0]!)));
     expect(check.items.some((item) => item.path === join(opts.cwd, 'package.json'))).toBe(false);
     runUpgrade({ ...opts, scope: 'project', apply: true });

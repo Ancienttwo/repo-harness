@@ -4,7 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { spawnSync } from "child_process";
 import { buildProgram } from "../src/cli/index";
-import { CLI_TOP_LEVEL_COMMANDS, RETIRED_CLI_INVOCATION } from "../src/core/skill-surface/cli-name";
+import { CLI_REVIEW_SUBCOMMANDS, CLI_TOP_LEVEL_COMMANDS, RETIRED_CLI_INVOCATION } from "../src/core/skill-surface/cli-name";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -138,10 +138,11 @@ describe("Bootstrap Script Contracts", () => {
     const program = buildProgram();
     expect(program.name()).toBe("rh");
     expect(program.commands.map((command) => command.name()).filter((name) => !name.startsWith("__")).sort()).toEqual([...CLI_TOP_LEVEL_COMMANDS].sort());
-    for (const line of ["run `repo-harness board seats --json`", "repo-harness review round --issue-id 1", "\"check\": \"repo-harness brain check\"", "run repo-harness update", "Bash(repo-harness board:*)"]) {
+    expect(program.commands.find((command) => command.name() === "review")!.commands.map((command) => command.name()).sort()).toEqual([...CLI_REVIEW_SUBCOMMANDS].sort());
+    for (const line of ["run `repo-harness board seats --json`", "repo-harness review round --issue-id 1", "\"check\": \"repo-harness brain check\"", "run repo-harness update", "Bash(repo-harness board:*)", "exec repo-harness board seats", "env FOO=1 repo-harness board seats", "sudo repo-harness update", "repo-harness review --help"]) {
       expect(RETIRED_CLI_INVOCATION.test(line)).toBe(true);
     }
-    for (const line of ["npx -y repo-harness install", "bunx repo-harness run new-plan", "exec repo-harness-hook Stop", "~/.repo-harness/config.json", "repo-harness review start status", "the repo-harness skill", "the repo-harness operator console", "[repo-harness mcp] Repo", "rh board seats"]) {
+    for (const line of ["npx -y repo-harness install", "bunx repo-harness run new-plan", "exec repo-harness-hook Stop", "~/.repo-harness/config.json", "repo-harness review start status", "the repo-harness skill", "the repo-harness operator console", "[repo-harness mcp] Repo", "rh board seats", "repo-harness review reply --help"]) {
       expect(RETIRED_CLI_INVOCATION.test(line)).toBe(false);
     }
   });

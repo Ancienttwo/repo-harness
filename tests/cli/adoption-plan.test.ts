@@ -296,13 +296,15 @@ describe("canonical adoption plan", () => {
       writeFileSync(join(repo, "package.json"), [
         "{", '\t"name": "fixture",', '    "scripts": {', '\t\t"test": "bun test",',
         '        "check:task-workflow": "repo-harness run check-task-workflow --strict",',
+        '\t\t"check:brain": "repo-harness brain check",',
         '\t\t"check:context-files": "old"', "\t}", "}", "",
       ].join("\n"));
       const mixed = packageOperation();
+      // Behavior change (#2700): a managed key changes only from a released managed value (0.32 or current); "old" is the user's.
       expect(mixed.content).toBe([
         "{", '\t"name": "fixture",', '    "scripts": {', '\t\t"test": "bun test",',
-        '\t\t"check:context-files": "rh run check-context-files",',
         '\t\t"check:brain": "rh brain check",',
+        '\t\t"check:context-files": "old",',
         '\t\t"check:deploy-sql": "rh run check-deploy-sql-order",',
         '\t\t"sync:brain": "rh brain sync"', "\t},", '    "private": true', "}", "",
       ].join("\n"));
