@@ -834,6 +834,8 @@ describe('legacy workflow-state upgrade report', () => {
       'spec:new': 'rh run new-spec.sh',
       'brain:old': 'repo-harness brain check',
       'board:env': 'env FOO=1 repo-harness board seats',
+      'board:inline': 'FOO=1 repo-harness board seats',
+      'cli:version': 'time -p repo-harness --version',
       'check:deploy-sql': 'sudo repo-harness run check-deploy-sql-order --verbose',
       'check:brain': 'repo-harness brain check',
       'sync:brain': 'rh brain sync',
@@ -845,9 +847,10 @@ describe('legacy workflow-state upgrade report', () => {
     expect(check.items[0]?.reason).toContain('workflow:check: rh run check-task-workflow --strict; check:task-sync: rh run check-task-sync; plan:new: bunx repo-harness run new-plan');
     expect(check.items[0]?.reason).toContain('brain:old: repo-harness brain check (the repo-harness command is now rh)');
     expect(check.items[0]?.reason).toContain('board:env: env FOO=1 repo-harness board seats (the repo-harness command is now rh)');
-    // A customized managed key is the user's and gets a report; a released managed value (0.32 or current) does not.
-    expect(check.items[0]?.reason).toContain('check:deploy-sql: sudo repo-harness run check-deploy-sql-order --verbose (the repo-harness command is now rh)');
-    for (const released of ['check:brain:', 'sync:brain:']) expect(check.items[0]?.reason).not.toContain(released);
+    expect(check.items[0]?.reason).toContain('board:inline: FOO=1 repo-harness board seats (the repo-harness command is now rh)');
+    expect(check.items[0]?.reason).toContain('cli:version: time -p repo-harness --version (the repo-harness command is now rh)');
+    // init writes the managed keys on every run, so the inventory does not report them.
+    for (const managed of ['check:deploy-sql:', 'check:brain:', 'sync:brain:']) expect(check.items[0]?.reason).not.toContain(managed);
     for (const live of ['check:context-files', 'spec:new', 'test:']) expect(check.items[0]?.reason).not.toContain(live);
     expect(runUpgradeDecide({ ...opts, decision: 'remove', paths: ['package.json'] }).rejected.map((rejection) => rejection.path)).toEqual(['package.json']);
     expect(runUpgrade({ ...opts, scope: 'project', apply: true }).keptPaths).toContain(path);

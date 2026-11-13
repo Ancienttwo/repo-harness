@@ -13,7 +13,7 @@ import { planLegacyLeftovers, stripLegacyHookEntries } from "../upgrade/legacy-i
 import { runGit } from "../git/run-git";
 import { pruneUnknownPolicyKeys } from "../../core/workflow/policy-schema";
 import { withoutRepositorySelectingGitEnv } from "../git/runner";
-import { MANAGED_PACKAGE_SCRIPTS, managedScriptWritable } from "../../core/adoption/package-scripts";
+import { MANAGED_PACKAGE_SCRIPTS } from "../../core/adoption/package-scripts";
 
 const ASSET_ROOT = join(import.meta.dir, "..", "..", "..", "assets");
 const TEMPLATE_ROOT = join(ASSET_ROOT, "templates");
@@ -419,10 +419,7 @@ function addPackageOperation(repoRoot: string, operations: AdoptionOperation[]):
   const current = jsonFile(repoRoot, "package.json");
   if (!current) return;
   const scripts = isObject(current.scripts) ? { ...current.scripts } : {};
-  // A customized value is the user's; the upgrade inventory reports it when it calls the retired command.
-  for (const [key, value] of Object.entries(MANAGED_PACKAGE_SCRIPTS)) {
-    if (managedScriptWritable(key, scripts[key])) scripts[key] = value;
-  }
+  Object.assign(scripts, MANAGED_PACKAGE_SCRIPTS);
   if (scripts["check:brain-manifest"] === "repo-harness run check-brain-manifest") {
     delete scripts["check:brain-manifest"];
   }

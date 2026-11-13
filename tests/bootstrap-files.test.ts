@@ -139,10 +139,10 @@ describe("Bootstrap Script Contracts", () => {
     expect(program.name()).toBe("rh");
     expect(program.commands.map((command) => command.name()).filter((name) => !name.startsWith("__")).sort()).toEqual([...CLI_TOP_LEVEL_COMMANDS].sort());
     expect(program.commands.find((command) => command.name() === "review")!.commands.map((command) => command.name()).sort()).toEqual([...CLI_REVIEW_SUBCOMMANDS].sort());
-    for (const line of ["run `repo-harness board seats --json`", "repo-harness review round --issue-id 1", "\"check\": \"repo-harness brain check\"", "run repo-harness update", "Bash(repo-harness board:*)", "exec repo-harness board seats", "env FOO=1 repo-harness board seats", "sudo repo-harness update", "repo-harness review --help"]) {
+    for (const line of ["run `repo-harness board seats --json`", "repo-harness review round --issue-id 1", "\"check\": \"repo-harness brain check\"", "run repo-harness update", "Bash(repo-harness board:*)", "exec repo-harness board seats", "env FOO=1 repo-harness board seats", "sudo repo-harness update", "repo-harness review --help", "sudo -u user repo-harness update", "time -p repo-harness update", "FOO=1 repo-harness board seats", "repo-harness --version", "repo-harness --help"]) {
       expect(RETIRED_CLI_INVOCATION.test(line)).toBe(true);
     }
-    for (const line of ["npx -y repo-harness install", "bunx repo-harness run new-plan", "exec repo-harness-hook Stop", "~/.repo-harness/config.json", "repo-harness review start status", "the repo-harness skill", "the repo-harness operator console", "[repo-harness mcp] Repo", "rh board seats", "repo-harness review reply --help"]) {
+    for (const line of ["npx -y repo-harness install", "bunx repo-harness run new-plan", "exec repo-harness-hook Stop", "~/.repo-harness/config.json", "repo-harness review start status", "the repo-harness skill", "the repo-harness operator console", "[repo-harness mcp] Repo", "rh board seats", "repo-harness review reply --help", "npx repo-harness --version"]) {
       expect(RETIRED_CLI_INVOCATION.test(line)).toBe(false);
     }
   });
