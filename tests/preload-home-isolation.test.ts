@@ -255,12 +255,11 @@ describe("test HOME and TMPDIR isolation", () => {
     } finally { rmSync(tree, { recursive: true, force: true }); f.close(); }
   }
 
-  // The guard blames a path only when stat.uid matches process.getuid(), which Windows lacks.
-  test.skipIf(process.platform === "win32")("blames no pooled file for a worktree that a concurrent file created and removed", () => {
+  test("blames no pooled file for a worktree that a concurrent file created and removed", () => {
     expect(runWorktreeOverlap(true)).toBe("");
   });
 
-  test.skipIf(process.platform === "win32")("still fails the pooled file that leaked a worktree", () => {
+  test("still fails the pooled file that leaked a worktree", () => {
     expect(runWorktreeOverlap(false)).toContain("owner.test.ts (exit 1)");
   });
 
