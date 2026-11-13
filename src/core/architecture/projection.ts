@@ -4,6 +4,7 @@ import {
   NATIVE_CONTEXT_SCHEMA_VERSION,
   nativeContextSchemaResolver,
   type ArchContextError,
+  type ArchitectureDocsProjectionManifestTargetV4,
   type NativeContextExportV1,
   architectureDebtReportIssues,
   docsAnchorsReportIssues,
@@ -34,7 +35,6 @@ import relationSchema from 'archctx-contracts/schemas/repo/architecture-relation
 import flowSchema from 'archctx-contracts/schemas/repo/architecture-flow.schema.json';
 import { dependencies } from '../../../package.json';
 import type { ArchitectureProjectionPolicy } from './contracts';
-import { capabilityIdentityFromNodeId } from '../capabilities/registry';
 
 export const ARCHCTX_REQUIRED_VERSION = dependencies.archctx;
 
@@ -52,43 +52,66 @@ export function summarizeArchitectureRender(result: ProjectionResultV3) {
     status: result.status,
     renderEquivalent: complete ? differingPaths.length === 0 : null,
     differingPaths,
-    // Null when a differing target names no capability: it renders the whole model, so every model and source input bounds it.
-    differingCapabilityIds: differing.some(change => change.affectedCapabilityIds.length === 0)
-      ? null
-      : [...new Set(differing.flatMap(change => change.affectedCapabilityIds))].sort(),
+    // archctx adds or removes a target only when the model layout or the renderer changes.
+    differingTargets: differing.map(change => ({
+      targetId: change.targetId,
+      layoutChanged: change.reasonCodes.some(code => code === 'target-added' || code === 'target-removed'),
+    })),
     humanActions: result.humanActions,
   };
 }
 
+export interface DifferingRenderTarget { readonly targetId: string; readonly layoutChanged: boolean }
+
 /** One first-parent commit after the newest manifest commit: its changed paths, and whether it changes the archctx renderer version. */
-export interface RenderInputCommit { sha: string; paths: readonly string[]; rendererChanged: boolean }
+export interface RenderInputCommit { readonly sha: string; readonly paths: readonly string[]; readonly rendererChanged: boolean }
+
+export interface RenderInputAuthority {
+  /** Rows of the committed projection manifest, the rows archctx compares each target against. */
+  readonly committedRows: Readonly<Record<string, Pick<ArchitectureDocsProjectionManifestTargetV4, 'type' | 'scope'>>>;
+  /** The capability node ids of the architecture model at HEAD. */
+  readonly capabilityNodeIds: ReadonlySet<string>;
+  /**
+   * `archctx resolve` at HEAD: undefined when no declared source footprint includes the path, the owning
+   * capability node id, or null when archctx names no single owning capability.
+   */
+  readonly ownerOf: (path: string) => string | null | undefined;
+}
 
 /**
  * The commit that starts the daily lag clock: the first commit after M (the newest manifest commit) that
  * changes an input of a differing target, else M itself, because then the outputs already differ from M.
  * Manifest v4 changes only with a render, so M and the first commit after it can be days older than the
- * render change. The inputs are the ones archctx renders from: the renderer version for every target; for a
- * target with affected capabilities, the model (`.archcontext/`) and the paths those capabilities own; for a
- * target with none (topology, history and other whole-model outputs, `differingCapabilityIds === null`), the
- * model and every capability source footprint, which is every owned path. `commits` are oldest first.
- * `differingCapabilityIds` are archctx node ids; `ownerOf` returns capability registry ids.
+ * render change. archctx classes a target by the type of its manifest row (`projectionTargetChanges`):
+ * an entity summary or agent context documents the capability of its row scope and renders from that
+ * capability's declared source footprint; every other target renders the whole model, so from every declared
+ * footprint. Every target also renders from the model (`.archcontext/`) and the renderer version; an added or
+ * removed target from those alone. A null owner counts for every capability target. `commits` are oldest first.
  */
 export function firstRenderChangeCommit(
   manifestCommit: string,
   commits: readonly RenderInputCommit[],
-  differingCapabilityIds: readonly string[] | null,
-  ownerOf: (path: string) => string | undefined,
+  targets: readonly DifferingRenderTarget[],
+  authority: RenderInputAuthority,
 ): string {
-  if (differingCapabilityIds?.length === 0) return manifestCommit;
-  const owners = differingCapabilityIds === null ? null : new Set(differingCapabilityIds.map(nodeId => {
-    const identity = capabilityIdentityFromNodeId(nodeId);
-    if (!identity) throw new Error(`differing capability ${nodeId} has no registry identity`);
-    return identity.id;
-  }));
+  if (targets.length === 0) return manifestCommit;
+  let wholeModel = false;
+  const capabilities = new Set<string>();
+  for (const { targetId, layoutChanged } of targets) {
+    if (layoutChanged) continue;
+    if (!Object.hasOwn(authority.committedRows, targetId)) throw new Error(`differing target ${targetId} has no committed manifest row`);
+    const { type, scope } = authority.committedRows[targetId]!;
+    if (type !== 'entity-summary' && type !== 'agent-context') { wholeModel = true; continue; }
+    if (scope.entityKind !== 'capability' || scope.id === undefined || !authority.capabilityNodeIds.has(scope.id)) {
+      throw new Error(`differing target ${targetId} documents ${scope.id ?? 'no entity'}, which is no capability of the architecture model`);
+    }
+    capabilities.add(scope.id);
+  }
   const changesInput = (path: string) => {
     if (path.startsWith('.archcontext/')) return true;
-    const owner = ownerOf(path);
-    return owner !== undefined && (owners === null || owners.has(owner));
+    const owner = authority.ownerOf(path);
+    if (owner === undefined) return false;
+    return wholeModel || (capabilities.size > 0 && (owner === null || capabilities.has(owner)));
   };
   return commits.find(commit => commit.rendererChanged || commit.paths.some(changesInput))?.sha ?? manifestCommit;
 }

@@ -89,7 +89,7 @@ run_architecture_check() {
 # render-check summary $1. M is the newest first-parent commit that changes the
 # projection manifest; only the rolling writer changes it, and with manifest v4
 # only when a rendered output or the semantic baseline changes. Of the
-# first-parent commits after M, firstRenderChangeCommit picks the first that
+# first-parent commits after M, readRenderClockStart picks the first that
 # changes an input of a differing target; else M itself counts, because a
 # product commit can sit between the rendered base and M. The squash body names
 # the rendered base only as text, so it is not read.
@@ -110,7 +110,7 @@ architecture_unpublished_since() {
   start="$manifest_commit"
   if [[ -n "$after" ]]; then
     # shellcheck disable=SC2086 # one argument per commit
-    start="$(with_architecture_selection bun -e 'const { firstRenderChangeCommit } = await import("./src/core/architecture/projection.ts"); const [summaryPath, manifestCommit, ...shas] = process.argv.slice(1); const ids = JSON.parse(await Bun.file(summaryPath).text()).differingCapabilityIds; if (ids !== null && !(Array.isArray(ids) && ids.every(id => typeof id === "string"))) throw new Error("render-check summary differingCapabilityIds must be a string array or null"); if (ids?.length === 0) { console.log(manifestCommit); process.exit(0); } const { readRecordedSelection, registerSelectedArchitecturePorts } = await import("./src/cli/installer/architecture-selection.ts"); await registerSelectedArchitecturePorts(readRecordedSelection(), async () => (await import("./src/effects/architecture/providers.ts")).ARCHITECTURE_PROVIDERS); const { capabilityOwnersForPaths } = await import("./src/effects/state/resolve-effective-state.ts"); const { gitExecFileSync } = await import("./src/effects/git/runner.ts"); const archctxAt = rev => JSON.parse(gitExecFileSync(["show", `${rev}:package.json`], { encoding: "utf8" })).dependencies?.archctx; const commits = shas.map(sha => { const paths = gitExecFileSync(["diff", "--name-only", "--no-renames", "-z", `${sha}^`, sha, "--"], { encoding: "utf8" }).split("\0").filter(Boolean); return { sha, paths, rendererChanged: paths.includes("package.json") && archctxAt(`${sha}^`) !== archctxAt(sha) }; }); const owners = capabilityOwnersForPaths(process.cwd(), [...new Set(commits.flatMap(commit => commit.paths))]); console.log(firstRenderChangeCommit(manifestCommit, commits, ids, path => owners.get(path)?.id));' "$1" "$manifest_commit" $after)" || return 1
+    start="$(with_architecture_selection bun -e 'const { readRenderClockStart } = await import("./src/effects/architecture/architecture-read.ts"); const [summaryPath, manifestCommit, ...shas] = process.argv.slice(1); const targets = JSON.parse(await Bun.file(summaryPath).text()).differingTargets; if (!Array.isArray(targets) || !targets.every(target => typeof target?.targetId === "string" && typeof target.layoutChanged === "boolean")) throw new Error("render-check summary differingTargets must be an array of { targetId, layoutChanged }"); console.log(readRenderClockStart(process.cwd(), targets, manifestCommit, shas));' "$1" "$manifest_commit" $after)" || return 1
   fi
   git show -s --format=%cI "$start" || return 1
 }

@@ -1856,13 +1856,13 @@ describe('single-writer observations', () => {
       plannedAction: 'none' as const, classification: 'unchanged' as const, reasonCodes: [] });
     result.changes = [change('projection_target.agent-context.agents.a', 'AGENTS.md'), change('projection_target.agent-context.agents.b', 'AGENTS.md'), change('target.a', 'docs/architecture/a.md')];
     expect(summarizeArchitectureRender(result)).toMatchObject({ renderEquivalent: true, differingPaths: [] });
-    expect(summarizeArchitectureRender(result).differingCapabilityIds).toEqual([]);
+    expect(summarizeArchitectureRender(result).differingTargets).toEqual([]);
     for (const entry of result.changes) entry.outputChanged = true;
-    result.changes[0]!.affectedCapabilityIds = ['capability.b'];
-    result.changes[2]!.affectedCapabilityIds = ['capability.a', 'capability.b'];
-    expect(summarizeArchitectureRender(result)).toMatchObject({ renderEquivalent: false, differingPaths: ['AGENTS.md', 'docs/architecture/a.md'], differingCapabilityIds: null });
-    result.changes[1]!.affectedCapabilityIds = ['capability.c'];
-    expect(summarizeArchitectureRender(result).differingCapabilityIds).toEqual(['capability.a', 'capability.b', 'capability.c']);
+    // Affected capability ids never decide the target class; a layout change does.
+    result.changes[2]!.affectedCapabilityIds = ['capability.a'];
+    result.changes[2]!.reasonCodes = ['target-added'];
+    expect(summarizeArchitectureRender(result)).toMatchObject({ renderEquivalent: false, differingPaths: ['AGENTS.md', 'docs/architecture/a.md'], differingTargets: [
+      { targetId: 'projection_target.agent-context.agents.a', layoutChanged: false }, { targetId: 'projection_target.agent-context.agents.b', layoutChanged: false }, { targetId: 'target.a', layoutChanged: true }] });
     result.status = 'planned-partial';
     expect(summarizeArchitectureRender(result).renderEquivalent).toBeNull();
     result.status = 'human-action-required';
@@ -1880,20 +1880,36 @@ describe('single-writer observations', () => {
     expect(classifyArchitectureFreshness({ renderEquivalent: null, humanActions: [] }, since(0), now)).toBe('incomplete');
   });
 
-  test('the lag clock starts at the first commit that changes an input of a differing target, else at M', () => {
-    const commit = (sha: string, paths: string[], rendererChanged = false) => ({ sha, paths, rendererChanged });
-    const commits = [commit('a', ['docs/guide.md']), commit('b', ['src/other.ts']), commit('c', ['src/x.ts']), commit('d', ['.archcontext/model/nodes/n.yaml'])];
-    // ownerOf returns registry ids; the render names archctx node ids.
-    const ownerOf = (path: string) => ({ 'src/other.ts': 'd-other', 'src/x.ts': 'd-x' } as Record<string, string>)[path];
-    expect(firstRenderChangeCommit('m', commits, ['capability.d.x'], ownerOf)).toBe('c');
-    expect(firstRenderChangeCommit('m', commits, ['capability.d.y'], ownerOf)).toBe('d');
-    expect(firstRenderChangeCommit('m', commits.slice(0, 3), ['capability.d.y'], ownerOf)).toBe('m');
-    // A whole-model target renders from every capability footprint; an unowned path is no input.
-    expect(firstRenderChangeCommit('m', commits, null, ownerOf)).toBe('b');
-    expect(firstRenderChangeCommit('m', commits.slice(0, 1), null, ownerOf)).toBe('m');
-    expect(firstRenderChangeCommit('m', [commits[0]!, commit('r', ['package.json'], true), ...commits.slice(1)], ['capability.d.y'], ownerOf)).toBe('r');
-    expect(firstRenderChangeCommit('m', commits, [], ownerOf)).toBe('m');
-    expect(() => firstRenderChangeCommit('m', commits, ['not-a-node'], ownerOf)).toThrow('has no registry identity');
+  // Rounds 1 and 2 of PR #2714: the target class comes from the committed manifest row, and the inputs from archctx resolve.
+  const MODEL = '.archcontext/model/nodes/n.yaml';
+  const row = (type: string, id?: string) => ({ type: type as 'entity-summary', scope: id === undefined ? { kind: 'diagram' as const } : { kind: 'entity' as const, id, entityKind: 'capability' } });
+  const authority = {
+    committedRows: { summary: row('entity-summary', 'capability.d.x'), agents: row('agent-context', 'capability.d.x'), topology: row('diagram-runtime-topology'),
+      history: row('architecture-history'), unknown: row('entity-summary', 'capability.missing.example') },
+    capabilityNodeIds: new Set(['capability.d.x', 'capability.d.y']),
+    ownerOf: (path: string) => ({ 'src/y.ts': 'capability.d.y', 'docs/x.md': 'capability.d.x', 'shared.ts': null } as Record<string, string | null>)[path],
+  };
+  const target = (targetId: string, layoutChanged = false) => ({ targetId, layoutChanged });
+  const commit = (sha: string, path: string, rendererChanged = false) => ({ sha, paths: [path], rendererChanged });
+  const unrelated = commit('u', 'product.txt');
+  test.each([
+    ['no differing target', [], [commit('x', 'docs/x.md')], 'm'],
+    ['capability target: owned Markdown path after an unrelated commit (r2 F2)', [target('summary')], [unrelated, commit('y', 'src/y.ts'), commit('x', 'docs/x.md')], 'x'],
+    ['agent-context target: path archctx names no single owner of', [target('agents')], [unrelated, commit('s', 'shared.ts')], 's'],
+    ['capability target: no input after M', [target('summary')], [unrelated, commit('y', 'src/y.ts')], 'm'],
+    ['whole-model target: young model commit after an old unrelated commit (r1 F1)', [target('topology')], [unrelated, commit('n', MODEL)], 'n'],
+    ['whole-model target: another capability path, archctx named affected ids (r2 F1)', [target('history')], [unrelated, commit('y', 'src/y.ts')], 'y'],
+    ['whole-model target: no input after M (r1 F1)', [target('topology')], [unrelated], 'm'],
+    ['added or removed target: model and renderer only', [target('gone', true)], [commit('y', 'src/y.ts'), commit('r', 'package.json', true)], 'r'],
+  ] as const)('the lag clock starts at the first input change of a differing target, else at M: %s', (_name, targets, commits, start) => {
+    expect(firstRenderChangeCommit('m', commits, targets, authority)).toBe(start);
+  });
+
+  test.each([
+    ['a well-formed capability absent from the model (r2 F3)', 'unknown', 'capability.missing.example, which is no capability'],
+    ['a target with no committed manifest row', 'orphan', 'has no committed manifest row'],
+  ])('the lag clock fails closed on %s', (_name, targetId, message) => {
+    expect(() => firstRenderChangeCommit('m', [unrelated], [target(targetId)], authority)).toThrow(message);
   });
 
   test('hand-edit warnings consume only upstream manual-edit codes through the existing client', () => {

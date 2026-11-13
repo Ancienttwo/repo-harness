@@ -29,8 +29,8 @@ function runLane(lane: string) {
     writeFileSync(join(bin, 'bun'), [
       '#!/bin/bash',
       `if [[ "$1" == test ]]; then echo "TEST_LANE_GATE=\${${exportedGateVariable()}:-unset}"; fi`,
-      `if [[ "$3" == render-check ]]; then echo '${JSON.stringify({ status: 'noop', renderEquivalent: true, differingPaths: [], differingCapabilityIds: [], humanActions: [] })}'; fi`,
-      `if [[ "$1" == -e && ( "$2" == *firstRenderChangeCommit* || "$2" == *classifyArchitectureFreshness* ) ]]; then exec ${JSON.stringify(process.execPath)} "$@"; fi`,
+      `if [[ "$3" == render-check ]]; then echo '${JSON.stringify({ status: 'noop', renderEquivalent: true, differingPaths: [], differingTargets: [], humanActions: [] })}'; fi`,
+      `if [[ "$1" == -e && ( "$2" == *readRenderClockStart* || "$2" == *classifyArchitectureFreshness* ) ]]; then exec ${JSON.stringify(process.execPath)} "$@"; fi`,
       'exit 0',
     ].join('\n'), { mode: 0o755 });
     writeFileSync(join(bin, 'npm'), '#!/bin/bash\nexit 0\n', { mode: 0o755 });

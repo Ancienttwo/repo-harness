@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { analyzeAffectedTests, bundleInputPaths, discoverDailyInputs, discoverPlatformInputs, nativeTriggers, platformImportClosure, selectAffectedTests, selectCoverage, selectPlatformCoverage } from '../scripts/select-ci-coverage';
 import { auditDroppedTests } from '../scripts/ci-edge-audit';
@@ -1056,7 +1056,7 @@ describe('architecture lanes', () => {
     constraintIds: [LAYER_DIRECTION, PLUGIN_INTERNALS], importEdgeCount: 5521, unresolvedImports: [], violations: [constraintViolation(LAYER_DIRECTION)], ...fields } });
 
   // Real check-ci.sh with stub CLI results. `bun -e` and the shell logic stay real.
-  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; constraints?: string; summary?: boolean; history?: Array<{ manifest: boolean; hoursAgo: number; path?: string | undefined }>; shallow?: boolean; gitFails?: string; changelog?: string; changelogExit?: number; links?: { dead: string[]; missing: string[] } }) {
+  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; constraints?: string; summary?: boolean; history?: Array<{ manifest: boolean; hoursAgo: number }>; clockStart?: number; shallow?: boolean; gitFails?: string; changelog?: string; changelogExit?: number; links?: { dead: string[]; missing: string[] } }) {
     const root = mkdtempSync(join(tmpdir(), 'rh-ci-architecture-'));
     const bin = join(root, 'bin');
     try {
@@ -1075,9 +1075,8 @@ describe('architecture lanes', () => {
           env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
         git(['init', '-q']);
         mkdirSync(join(root, 'repo/docs/architecture'), { recursive: true });
-        fixture.history.forEach(({ manifest, hoursAgo, path: changed }, index) => {
-          const path = changed ?? (manifest ? 'docs/architecture/.projection-manifest.json' : 'product.txt');
-          mkdirSync(dirname(join(root, 'repo', path)), { recursive: true });
+        fixture.history.forEach(({ manifest, hoursAgo }, index) => {
+          const path = manifest ? 'docs/architecture/.projection-manifest.json' : 'product.txt';
           writeFileSync(join(root, 'repo', path), String(index));
           git(['add', path]);
           expect(git(['commit', '-q', '-m', String(index)], new Date(Date.now() - hoursAgo * 3_600_000).toISOString()).status).toBe(0);
@@ -1094,6 +1093,8 @@ describe('architecture lanes', () => {
         '#!/bin/bash',
         'if [[ "$1" == install ]]; then exit 0; fi',
         `if [[ "$1" == src/cli/index.ts && "$2" == architecture-debt ]]; then echo "$*" > ${JSON.stringify(join(root, 'debt-args'))}; cat ${JSON.stringify(join(root, 'debt.json'))}; if [[ ${fixture.debtExit ?? 0} -ne 0 ]]; then echo "$5 does not resolve to a commit" >&2; fi; exit ${fixture.debtExit ?? 0}; fi`,
+        // The fixture has no architecture model; the clock rule is covered by the provider test.
+        ...(fixture.clockStart === undefined ? [] : [`if [[ "$1" == -e && "$2" == *readRenderClockStart* ]]; then git rev-list --first-parent --reverse HEAD | sed -n ${fixture.clockStart + 1}p; exit 0; fi`]),
         `if [[ "$1" == src/cli/index.ts && "$2" == architecture-projection ]]; then touch ${JSON.stringify(join(root, 'checked'))}; cat ${JSON.stringify(join(root, 'check.json'))}; exit ${fixture.checkExit ?? 1}; fi`,
         `exec ${JSON.stringify(process.execPath)} "$@"`,
       ].join('\n'), { mode: 0o755 });
@@ -1249,28 +1250,22 @@ describe('architecture lanes', () => {
     expect(errors(result.stdout)).toEqual(['::error title=Plugin internals constraint::archctx constraints check --json gave no valid report. Read the job log.']);
   });
 
-  const equivalent = { status: 'planned', renderEquivalent: true, differingPaths: [], differingCapabilityIds: [], humanActions: [] };
-  const differs = { status: 'planned', renderEquivalent: false, differingPaths: ['docs/architecture/a.md'], differingCapabilityIds: null, humanActions: [] };
-  const differsInCapability = { ...differs, differingCapabilityIds: ['capability.d.a'] };
-  const humanAction = { status: 'human-action-required', renderEquivalent: null, differingPaths: [], differingCapabilityIds: [], humanActions: [{ reasonCode: 'unprovable-required-flow' }] };
+  const equivalent = { status: 'planned', renderEquivalent: true, differingPaths: [], differingTargets: [], humanActions: [] };
+  const differs = { status: 'planned', renderEquivalent: false, differingPaths: ['docs/architecture/a.md'], differingTargets: [{ targetId: 'projection_target.a', layoutChanged: false }], humanActions: [] };
+  const humanAction = { status: 'human-action-required', renderEquivalent: null, differingPaths: [], differingTargets: [], humanActions: [{ reasonCode: 'unprovable-required-flow' }] };
   // M is the newest commit that changes the manifest. The first commit after M that changes a render input, else M, dates the unpublished difference.
-  const MODEL = '.archcontext/model/nodes/a.json';
-  const afterM = (hoursAgo: number, path?: string) => [{ manifest: true, hoursAgo: 30 }, { manifest: false, hoursAgo, path }, { manifest: false, hoursAgo: 0.1 }];
+  const afterM = (hoursAgo: number) => [{ manifest: true, hoursAgo: 30 }, { manifest: false, hoursAgo }, { manifest: false, hoursAgo: 0.1 }];
   const onlyM = (hoursAgo: number) => [{ manifest: false, hoursAgo: 30 }, { manifest: true, hoursAgo }];
   test.each([
-    ['no difference', equivalent, afterM(30), 30, 'fresh', 0],
-    ['difference, input commit after M younger than 3 h', differs, afterM(1, MODEL), 1, 'lag', 0],
-    ['difference, input commit after M older than 3 h', differs, afterM(4, MODEL), 4, 'stale', 1],
-    ['difference, no commit after M, M younger than 3 h', differs, onlyM(1), 1, 'lag', 0],
-    ['difference, no commit after M, M older than 3 h', differs, onlyM(4), 4, 'stale', 1],
-    // Under manifest v4, M can be days old; an older commit that changes no render input does not start the clock.
-    ['whole-model difference, model commit after an unrelated commit', differs, [...afterM(20).slice(0, 2), { manifest: false, hoursAgo: 1, path: MODEL }], 1, 'lag', 0],
-    ['whole-model difference, no commit after M changes an input', differs, afterM(20), 30, 'stale', 1],
-    ['capability difference, model commit after an unrelated commit', differsInCapability, [...afterM(20).slice(0, 2), { manifest: false, hoursAgo: 1, path: MODEL }], 1, 'lag', 0],
-    ['capability difference, no commit after M changes an input', differsInCapability, afterM(20), 30, 'stale', 1],
-    ['human action', humanAction, afterM(1), 30, 'human-action', 1],
-  ] as const)('daily classifies %s from the git history and saves the writer repair summary', (_name, summary, history, sinceHours, freshness, exit) => {
-    const result = runLane(['architecture'], { check: JSON.stringify(summary), checkExit: summary.renderEquivalent === true ? 0 : 1, summary: true, history: [...history] });
+    ['no difference', equivalent, afterM(30), undefined, 30, 'fresh', 0],
+    ['difference, input commit after M younger than 3 h', differs, afterM(1), 1, 1, 'lag', 0],
+    ['difference, input commit after M older than 3 h', differs, afterM(4), 1, 4, 'stale', 1],
+    ['difference, no commit after M changes an input', differs, afterM(1), 0, 30, 'stale', 1],
+    ['difference, no commit after M, M younger than 3 h', differs, onlyM(1), undefined, 1, 'lag', 0],
+    ['difference, no commit after M, M older than 3 h', differs, onlyM(4), undefined, 4, 'stale', 1],
+    ['human action', humanAction, afterM(1), undefined, 30, 'human-action', 1],
+  ] as const)('daily classifies %s from the git history and saves the writer repair summary', (_name, summary, history, clockStart, sinceHours, freshness, exit) => {
+    const result = runLane(['architecture'], { check: JSON.stringify(summary), checkExit: summary.renderEquivalent === true ? 0 : 1, summary: true, history: [...history], clockStart });
     expect(result.status, result.stderr).toBe(exit);
     expect(result.checked).toBe(true);
     expect(result.debtArgs).toBeNull();

@@ -1084,12 +1084,16 @@ on main. When the published output differs from what current main renders, the
 lane warns while the oldest unpublished main commit is younger than 3 h, and
 fails after that. Of the first-parent commits after the newest commit that
 changes the projection manifest (M), the oldest unpublished commit is the first
-one that changes an input of a differing target. Every target reads the archctx
-version in `package.json`. A target with affected capabilities also reads the
-model (`.archcontext/`) and the paths those capabilities own. A target with no
-affected capability (runtime topology, history) renders the whole model, so it
-reads the model and every capability-owned path. Without such a commit, the
-oldest unpublished commit is M.
+one that changes an input of a differing target. archctx at HEAD is the input
+authority. Every target reads the archctx version in `package.json` and the
+model (`.archcontext/`). The type of the committed manifest row sets the class.
+An entity summary or agent context also reads the declared source footprint of
+its scope capability, docs and Markdown included, as `archctx resolve` reports
+it. Every other target (runtime topology, history) renders the whole model, so
+it also reads every declared source footprint. An added or removed target reads
+only the model and the archctx version. A scope capability that is not in the
+model, or a target with no committed row, fails the lane. Without such a commit,
+the oldest unpublished commit is M.
 A version mismatch that renders the same output is harmless. The next main move
 renders again with the new writer. The upstream fix is
 Ancienttwo/arch-context#504 (`--base-sha`). A projection that stays stale for
