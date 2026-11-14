@@ -10,7 +10,7 @@ import { HC_LOCAL_ADDRESS, isRemoteHcAddress } from '../../core/terminal/hc-addr
  * herdr-core transport: typed `hc` CLI calls with `--json`, its event stream, and `herdr-app do` for pane
  * placement. Every call is scoped to repo-harness terminals: lists and streams need a repo-harness label
  * filter, and calls on one terminal need its `t<n>` address and a repo-harness label on it.
- * hc (floor 0.1.20) reports no API generation in its CLI output; the shape validation below is the only guard.
+ * hc (floor 0.1.21) reports no API generation in its CLI output; the shape validation below is the only guard.
  */
 export const HERDR_CORE_TIMEOUT_MS = 10_000;
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
