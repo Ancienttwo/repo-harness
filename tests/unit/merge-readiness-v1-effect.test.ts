@@ -756,7 +756,6 @@ const OTHER_FAILURES = {
   'skipped-static-matrix-need': { summary: 'skipped', job: 'Lint (ubuntu-latest)',
     workflow: workflowDefinition('', '[selection, verify, lint]', ['  lint:', '    name: Lint', ...LINT_MATRIX]) },
   'skipped-transitive-need': { summary: 'skipped', job: 'Setup', workflow: workflowDefinition('setup', undefined, SETUP_JOB) },
-  // #2759: a required job with no needs and a failed job that no workflow job produces.
   'no-needs-unmapped-failure': { summary: 'success', job: 'Unmapped job', workflow: workflowDefinition('', '[]') },
   'no-needs-skipped-unmapped-failure': { summary: 'skipped', job: 'Unmapped job', workflow: workflowDefinition('', '[]') },
 } satisfies Record<string, OtherFailure>;
