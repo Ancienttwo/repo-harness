@@ -679,7 +679,7 @@ export function installBenchmarkRuntimeArtifact(artifact: BenchmarkRuntimeArtifa
     }
     symlinkSync(targetPath, link);
   }
-  const installedCli = join(binDir, 'repo-harness');
+  const installedCli = join(binDir, Object.entries(bin).find(([, target]) => target === 'src/cli/index.ts')![0]);
   assertPathOutsideRoot(installedCli, ROOT, 'installed benchmark CLI');
   if (!existsSync(installedCli)) throw new Error(`installed benchmark CLI missing: ${installedCli}`);
   assertPathOutsideRoot(realpathSync(installedCli), ROOT, 'installed benchmark CLI target');
