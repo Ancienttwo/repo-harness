@@ -221,7 +221,8 @@ for (const row of [...ordinary, ...catchRows, ...accepted.keys()]) rows.add(row)
 
 // A4: a head-only denial must come from a protected name (text, glob or directory) or from rule 8. This predicate reads the row text
 // only, independently of the gate code.
-const A4 = (row: string, cwd: string) => /(^|[^\w.-])_(ops|ref)(?![\w.-])/i.test(row.replace(/['"\\]/g, '')) || /[*?[{]/.test(row)
+// A protected name stands alone or as the value of a glued short option (`sort -o_ops/x`), as the gate trigger reads it.
+const A4 = (row: string, cwd: string) => /(^|[^\w.-]|(?:^|\s)-[a-z]+)_(ops|ref)(?![\w.-])/i.test(row.replace(/['"\\]/g, '')) || /[*?[{]/.test(row)
   || cwd.split('/').some(part => /^_(ops|ref)$/i.test(part))
   || /\bgit\b[^;&|\n]*\bclean\b[^;&|\n]*-\w*[xX]/.test(row) || /\bfind\b/.test(row) || /\brm\b[^;&|\n]*(-\w*[rR]|--recursive)/.test(row);
 
