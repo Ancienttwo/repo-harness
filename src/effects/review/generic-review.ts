@@ -9,17 +9,19 @@ import { shellQuote } from '../../core/shell-quote';
 import { REVIEW_MAX_ROUNDS, REVIEW_TIMEOUT_MS, validateReviewOutput, type ReviewOutput } from '../../core/review/generic-review';
 import { composeReviewPacket } from '../../core/review/review-packet';
 import type { ReviewHostSpec, HostRoundObservation } from '../../core/review/runner-port';
+import { REVIEW_HOST_LAUNCH_FILE, type ReviewHostLaunch } from '../../core/review/runner-port';
 import type { ReviewerRunner, TaskClaimReference, TaskCleanupResult, TaskRequest } from '../../core/review/runner-port';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError, withCallerLock } from '../locking/exclusive-directory-lock';
 import { taskRepository } from '../git/task-repository';
 import { ensureSessionDirectory, nextSessionRound, readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
-import { reviewIsolationPolicy, prepareReviewLauncher, prepareCodexHome, removeCopiedAuth, preparePiAgentDirectory, removePiCredentialReferences } from './review-isolation';
+import { reviewIsolationPolicy, prepareReviewLauncher, prepareCodexHome, removeCopiedAuth, preparePiAgentDirectory, removePiCredentialReferences, assertPiCredentialWindow, type PiCredential } from './review-isolation';
 import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint, GENERIC_REVIEW_ROLE,
   projectAcceptance, recordAcceptance, verifyAcceptance, type AcceptancePullRequestSelection,
   type AcceptanceReceipt } from './acceptance-receipt';
 import { gitExecFileSync } from '../git/runner';
 import { isReviewRuntimeId, type ReviewRuntimeId } from '../../core/review/review-runtimes';
 import { piExecutable } from '../pi-executable';
+import { PI_UPGRADE_HINT } from '../../pi/compat';
 import { piReviewLaunchBlocker, resolvePiModel } from '../pi-host-probe';
 
 type Harness = ReviewRuntimeId;
@@ -165,11 +167,12 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
         console.error(`Review fallback: ${reason}; actual harness=${actual}.`);
       }
       // Both launch modes run the PATH Pi, and OAR's explicit-command floor is lower than
-      // MIN_PI_VERSION. No Pi status integration is checked: the reviewer Pi uses an isolated
-      // PI_CODING_AGENT_DIR, and the terminal status comes from the OAR host's own OSC 7501 report.
+      // MIN_PI_VERSION. This gate runs before the resolver child and any session start. No Pi status
+      // integration is checked: the reviewer Pi uses an isolated PI_CODING_AGENT_DIR, and the
+      // terminal status comes from the OAR host's own OSC 7501 report.
       if (actual === 'pi') {
         const blocker = client.piReviewLaunchBlocker(client.piExecutable()!);
-        if (blocker) throw new Error(`review_pi_launch_not_ready: ${blocker}`);
+        if (blocker) throw new Error(`review_pi_launch_not_ready: ${blocker}${blocker === 'PI_HOST_UNSUPPORTED_VERSION' ? `; ${PI_UPGRADE_HINT}` : ''}`);
       }
       options.admitSession();
       session = { protocol: 1, owner_root: root, campaign_sha256: campaign, task_claim: taskClaim, goal_sha256: identity.goal_sha256, task: key, reviewer_repo: reviewerRepo,
@@ -208,7 +211,7 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
     let runtimeHome: string | undefined;
     let piLoopbackPorts: readonly number[] = [];
     let piModel: string | undefined;
-    let assertPiCredentialWindow: (() => void) | undefined;
+    let piCredential: PiCredential | undefined;
     if (session.actual_harness === 'codex') {
       authOutput = outbox;
       const marker = join(dir, 'auth-copy.json');
@@ -220,8 +223,7 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
       piOutput = outbox;
       const prepared = preparePiAgentDirectory(outbox, client.endpointHome(options.endpoint) ?? process.env.HOME ?? userInfo().homedir, deadline,
         (agentDirectory, reference) => client.resolvePiModel(client.piExecutable()!, agentDirectory, reference));
-      runtimeHome = prepared.directory; piLoopbackPorts = prepared.loopbackPorts; piModel = prepared.model;
-      assertPiCredentialWindow = prepared.assertCredentialWindow;
+      runtimeHome = prepared.directory; piLoopbackPorts = prepared.loopbackPorts; piModel = prepared.model; piCredential = prepared.credential;
     }
     // Isolation admission precedes any SDK/native Session creation.
     const repository = taskRepository(root);
@@ -251,8 +253,12 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
       writeSessionArtifact(specPath, spec);
     }
     const command = client.hostCommand(specPath, false);
-    // pi reads the credential when its session starts; the host launch follows this check directly.
-    assertPiCredentialWindow?.();
+    // pi reads the credential when its session starts. The host repeats this check against the
+    // launch file just before that start, so a late operator launch cannot pass the deadline.
+    if (piCredential) assertPiCredentialWindow(piCredential, deadline);
+    // Replaced on each attempt: a launch_required round keeps its number. The reviewer cannot write the control directory.
+    const launch: ReviewHostLaunch = { deadline, pi: piCredential ? { model: piModel!, ...piCredential } : null };
+    writeSessionArtifact(join(dir, REVIEW_HOST_LAUNCH_FILE), launch, false);
     let binding: Session;
     if (session.endpoint === null) {
       const bound = await client.bindTerminal(reviewerRepo, { task: session.task, role: GENERIC_REVIEW_ROLE, harness_kind: session.actual_harness,

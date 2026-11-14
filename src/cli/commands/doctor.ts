@@ -13,7 +13,7 @@ import { installSelectionCommand, type PluginId, type PluginSelection } from '..
 import { hashManagedTree, installedCopyTreeOptions } from '../../effects/managed-tree';
 import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
 import type { SkillProjectionState } from '../../core/skill-surface/projection-state';
-import { MIN_PI_VERSION, piVersionSupported, type PiCapability, type PiHostUnavailableCode } from '../../pi/compat';
+import { MIN_PI_VERSION, PI_UPGRADE_HINT, piVersionSupported, type PiCapability, type PiHostUnavailableCode } from '../../pi/compat';
 import { piPackagePresent } from '../installer/pi-package';
 import { piExecutable, piExecutableIssue } from '../../effects/pi-executable';
 import { probeInstalledPi } from '../../effects/pi-host-probe';
@@ -156,7 +156,7 @@ export function checkPiHost(env: NodeJS.ProcessEnv = process.env): DoctorCheckRe
   try {
     const { version, ...capability } = probeInstalledPi(executable, env);
     checks.push({ id: 'pi-cli-version', describe: 'Pi CLI version', status: piVersionSupported(version) ? 'ok' : 'fail',
-      detail: piVersionSupported(version) ? `${version} >= ${MIN_PI_VERSION}` : `PI_HOST_UNSUPPORTED_VERSION: ${version}; minimum ${MIN_PI_VERSION}`,
+      detail: piVersionSupported(version) ? `${version} >= ${MIN_PI_VERSION}` : `PI_HOST_UNSUPPORTED_VERSION: ${version}; minimum ${MIN_PI_VERSION}; ${PI_UPGRADE_HINT}`,
       ...(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version) ? { version } : {}) });
     checks.push({ id: 'pi-capability', describe: 'Pi path resolver capability', status: capability.state === 'ready' ? 'ok' : 'fail',
       detail: capability.state === 'ready' ? capability.state : `${capability.state}: ${capability.code}`, capability });

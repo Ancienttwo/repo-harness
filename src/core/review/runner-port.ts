@@ -85,6 +85,17 @@ export interface ReviewHostSpec {
   /** The review timeout of every round on this host. Each round ends at its own absolute deadline, from `deadline-<round>.json` in the control directory. */
   timeoutMs: number;
 }
+/**
+ * The owner writes this file to the control directory before each launch or bind, after its
+ * credential check. The host refuses a native session that starts at or after `deadline`, and
+ * a pi host repeats the credential-window check for `pi` there.
+ */
+export const REVIEW_HOST_LAUNCH_FILE = 'launch-deadline.json';
+export interface ReviewHostLaunch {
+  deadline: number;
+  /** The canonical `provider/model` of the admission, the native auth.json and the provider of its entry. */
+  pi: { model: string; auth: string; provider: string } | null;
+}
 /** The host writes one observation for each ended turn. */
 export interface HostRoundObservation {
   request_id: string;

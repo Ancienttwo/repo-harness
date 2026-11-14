@@ -4,13 +4,13 @@ import { MIN_PI_VERSION, piVersionSupported, probePiCapability } from '../src/pi
 
 describe('Pi host capability', () => {
   test.each([
-    ['1.3.9', false], ['1.4.0', false], ['1.5.0', true], ['1.5.0-rc.1', false], ['2.0.0', true], ['garbage', false],
+    ['1.3.9', false], ['1.4.0', false], ['1.5.0', false], ['1.5.1', false], ['1.5.2', true], ['1.5.2-rc.1', false], ['2.0.0', true], ['garbage', false],
   ] as const)('version %s follows the minimum policy', (version, supported) => {
     expect(piVersionSupported(version)).toBe(supported);
   });
 
   test('the SDK provides its own path resolver', async () => {
-    expect(MIN_PI_VERSION).toBe('1.5.0');
+    expect(MIN_PI_VERSION).toBe('1.5.2');
     const capability = await probePiCapability(VERSION, getPackageDir());
     expect(capability.state).toBe('ready');
     if (capability.state !== 'ready') throw new Error(capability.code);

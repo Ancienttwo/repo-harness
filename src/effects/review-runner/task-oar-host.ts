@@ -2,6 +2,7 @@ import { consumePrePromptInbox, recordPrePromptInboxAccepted } from './task-pre-
 import { isReviewRuntimeId } from '../../core/review/review-runtimes';
 import { sha256Prefixed } from '../../core/evidence/sha256';
 import { claudeRuntime, codexRuntime, createPiRuntime, createRuntimeRegistry, type Runtime, type Session, type SessionOptions } from '@botiverse/oar';
+import type { PromptRunOptions } from '@botiverse/oar/observe';
 import { scriptedRuntime } from '@botiverse/oar/testing';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -9,9 +10,9 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { processIdentity, readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
-import type { HostRoundObservation, ProcessProof, ReviewHostSpec, ReviewIsolationAdmission, TaskRequest } from '../../core/review/runner-port';
+import { REVIEW_HOST_LAUNCH_FILE, type HostRoundObservation, type ProcessProof, type ReviewHostLaunch, type ReviewHostSpec, type ReviewIsolationAdmission, type TaskRequest } from '../../core/review/runner-port';
 import { dirname } from 'node:path';
-import { reviewHostTemporaryDirectory, reviewIsolationPolicy, prepareReviewLauncher, assertReviewIsolation } from '../review/review-isolation';
+import { reviewHostTemporaryDirectory, reviewIsolationPolicy, prepareReviewLauncher, assertReviewIsolation, assertPiCredentialWindow } from '../review/review-isolation';
 import { promptWithOarObservation, oarActualModel, oarObservationFile, type OarObservationSink } from '../terminal/task-runtime-observation';
 
 /** OAR owns RPC arguments and its explicit extension. Disable all ambient Pi resources. */
@@ -42,13 +43,14 @@ export class OarReviewHost {
     this.unsubscribe = session.events(print, { cursor: { sessionId: session.id, afterSeq: -1 } });
   }
   /** `kind` is the runtime kind; it selects the shared actual-model rule. */
-  async prompt(kind: string, input: string, request: Pick<TaskRequest, 'request_id' | 'round'> & { host: ProcessProof }, save: OarObservationSink, timeoutMs = 30_000) {
+  async prompt(kind: string, input: string, request: Pick<TaskRequest, 'request_id' | 'round'> & { host: ProcessProof }, save: OarObservationSink,
+    limit: Pick<PromptRunOptions, 'timeoutMs' | 'signal'> = { timeoutMs: 30_000 }) {
     if (this.disposed) throw new Error('OAR_REVIEW_HOST_DISPOSED');
     if (this.round >= 3) throw new Error('OAR_REVIEW_ROUND_BUDGET_EXHAUSTED');
     this.round++;
     // Reviewer authors the Result file. This returned text is observation,
     // never a TaskResult, Receipt, or an application-extracted JSON payload.
-    return promptWithOarObservation(this.session, kind, request, request.host, input, { timeoutMs }, save);
+    return promptWithOarObservation(this.session, kind, request, request.host, input, limit, save);
   }
   async dispose(): Promise<void> {
     if (this.disposed) return;
@@ -89,16 +91,22 @@ export async function runHostFileRequest(host: OarReviewHost, spec: ReviewHostSp
   if (round.request_id !== request.request_id || !Number.isSafeInteger(round.deadline)) throw new Error('OAR_HOST_DEADLINE_INVALID');
   const consumed_at = Date.now();
   if (round.deadline <= consumed_at) throw new Error('OAR_HOST_DEADLINE_PASSED');
-  const inbox = consumePrePromptInbox({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId, host: spec.kind, now: consumed_at });
-  writeSessionArtifact(join(spec.controlDirectory, `ack-${request.round}.json`), { request_id: request.request_id });
-  // Fleet's RECOMMENDATION-first message is retained. Only the reviewer tool
-  // writes result_ref; the host never interprets/publishes root-turn text.
-  const run = await host.prompt(spec.kind, `TASK REQUEST: ${JSON.stringify(request)}\n\n${content}\n\n${inbox}`, { ...request, host: started.provider },
-    snapshot => {
-      writeSessionArtifact(join(spec.requestDirectory, oarObservationFile(request.round)), snapshot, false);
-      recordPrePromptInboxAccepted({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId,
-        host: spec.kind, consumed_at, observation: snapshot });
-    }, round.deadline - Date.now());
+  // Armed before dispatch: OAR starts its own timeoutMs only after the prompt ack, so a slow ack would extend the turn past the deadline.
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort(), round.deadline - consumed_at);
+  let run;
+  try {
+    const inbox = consumePrePromptInbox({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId, host: spec.kind, now: consumed_at });
+    writeSessionArtifact(join(spec.controlDirectory, `ack-${request.round}.json`), { request_id: request.request_id });
+    // Fleet's RECOMMENDATION-first message is retained. Only the reviewer tool
+    // writes result_ref; the host never interprets/publishes root-turn text.
+    run = await host.prompt(spec.kind, `TASK REQUEST: ${JSON.stringify(request)}\n\n${content}\n\n${inbox}`, { ...request, host: started.provider },
+      snapshot => {
+        writeSessionArtifact(join(spec.requestDirectory, oarObservationFile(request.round)), snapshot, false);
+        recordPrePromptInboxAccepted({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId,
+          host: spec.kind, consumed_at, observation: snapshot });
+      }, { signal: deadline.signal });
+  } finally { clearTimeout(timer); }
   if (run.kind !== 'rejected' && run.kind !== 'handled' && run.outcome.kind === 'failed' && run.outcome.failure === 'auth') throw new Error('OAR_REVIEW_AUTH_STOP');
   // Rejected and handled inputs have no turn outcome.
   const observation = { request_id: request.request_id, kind: run.kind,
@@ -140,6 +148,19 @@ export async function serveHostFileRequests(host: OarReviewHost, spec: ReviewHos
   } finally { clearInterval(watch); }
 }
 
+/**
+ * The owner admitted this launch until its round deadline. A native session that starts later
+ * can find the pi token inside pi's refresh margin, so the host checks just before the start.
+ */
+export function assertHostLaunchAdmitted(spec: ReviewHostSpec): void {
+  const launch = readSessionArtifact<ReviewHostLaunch>(join(spec.controlDirectory, REVIEW_HOST_LAUNCH_FILE));
+  if (!Number.isSafeInteger(launch.deadline) || (spec.kind === 'pi' ? launch.pi?.model !== spec.options.model : launch.pi !== null)) {
+    throw new Error('OAR_HOST_LAUNCH_DEADLINE_INVALID');
+  }
+  if (Date.now() >= launch.deadline) throw new Error('OAR_HOST_LAUNCH_DEADLINE_PASSED: the round deadline passed before this launch; repeat the round, then run its launch command');
+  if (launch.pi) assertPiCredentialWindow(launch.pi, launch.deadline);
+}
+
 export async function openReviewHost(spec: ReviewHostSpec, print: (event: unknown) => void): Promise<OarReviewHost> {
   assertOarHostNode();
   if (spec.controlDirectory !== spec.isolation.paths.journal || spec.output !== spec.isolation.paths.output
@@ -160,6 +181,8 @@ export async function openReviewHost(spec: ReviewHostSpec, print: (event: unknow
   if (spec.options.cwd !== spec.output) throw new Error('OAR_REVIEW_OUTPUT_CWD_REQUIRED');
   process.env.TMPDIR = reviewHostTemporaryDirectory(spec.output);
   delete process.env.OAR_CODEX_SANDBOX; // Never inherit: stock OAR default under the admitted child profile.
+  // Last check before the native session: a refusal here leaves no session-opening record behind.
+  assertHostLaunchAdmitted(spec);
   // From here a native reviewer child can exist until disposal. Cleanup of an
   // unbound host that exits without disposed.json must stay pending.
   writeSessionArtifact(join(spec.controlDirectory, 'session-opening.json'), { pid: process.pid });
@@ -187,7 +210,8 @@ async function main(): Promise<void> {
     if (process.platform !== 'darwin' || spec.options.cwd !== spec.output) throw new Error('OAR_REVIEW_ISOLATION_UNSUPPORTED');
     // An operator terminal can repeat the launch command. Only the first host
     // claims the control directory; a later one exits before any Session or
-    // ready/disposed artifact.
+    // ready/disposed artifact. A launch refused here holds no claim, so the repeated round can launch again.
+    assertHostLaunchAdmitted(spec);
     writeSessionArtifact(join(spec.controlDirectory, 'host-claim.json'), { pid: process.pid, identity: processIdentity(process.pid) });
     // OAR launches the reviewer through the proved child Seatbelt executable.
     delete process.env.OAR_CODEX_SANDBOX;

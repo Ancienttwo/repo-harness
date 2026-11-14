@@ -8,13 +8,11 @@ import { shellQuote } from '../../core/shell-quote';
 import type { ReviewIsolationAdmission, ReviewIsolationPaths } from '../../core/review/runner-port';
 
 
-/**
- * `model` is the canonical `provider/model` from pi's resolver; the review passes it to pi as `--model`.
- * `assertCredentialWindow` repeats the admission check against the same round deadline.
- */
+/** The native auth.json and the canonical provider whose entry pi reads at its session start. */
+export interface PiCredential { readonly auth: string; readonly provider: string }
+/** `model` is the canonical `provider/model` from pi's resolver; the review passes it to pi as `--model`. */
 export interface PiAgentDirectory {
-  readonly directory: string; readonly loopbackPorts: readonly number[]; readonly model: string;
-  readonly assertCredentialWindow: () => void;
+  readonly directory: string; readonly loopbackPorts: readonly number[]; readonly model: string; readonly credential: PiCredential;
 }
 
 /** pi-ai refreshes an OAuth token that has less than 5 minutes left (auth/resolve.js DEFAULT_OAUTH_MINIMUM_VALIDITY_MS). */
@@ -83,24 +81,36 @@ export function preparePiAgentDirectory(output: string, sourceHome: string, dead
   if (typeof provider !== 'string' || provider === '' || typeof model !== 'string' || model === '') {
     throw new Error(`review_pi_model_unnamed: set defaultProvider and defaultModel in ${settingsPath}`);
   }
-  const resolved = resolveModel(directory, `${provider}/${model}`);
+  let resolved: PiModelIdentity;
+  try { resolved = resolveModel(directory, `${provider}/${model}`); } catch (error) {
+    const message = (error as Error).message;
+    if (!message.startsWith('review_pi_model_unresolved')) throw error;
+    // The resolver child has no remote catalog: a model that only the remote catalog lists stays unresolved.
+    throw new Error(`${message}; set defaultProvider and defaultModel in ${settingsPath} to a model that \`pi --list-models\` lists from the built-in catalog or models.json, then repeat the round`);
+  }
   if (resolved.provider !== provider || resolved.model !== model) {
     throw new Error(`review_pi_model_not_canonical: pi resolves ${provider}/${model} to ${resolved.provider}/${resolved.model}; set defaultProvider and defaultModel in ${settingsPath} to that form`);
   }
-  const auth = join(source, 'auth.json'), link = join(directory, 'auth.json');
-  const renew = `run pi outside the review and enter /login ${provider}`;
-  // The deadline does not move, so a startup delay past it would leave the token inside pi's refresh margin.
-  const assertCredentialWindow = () => {
-    if (Date.now() >= deadline) throw new Error('review_round_deadline_passed: the round deadline passed before the pi session start; repeat the round');
-    if (!existsSync(auth)) throw new Error(`review_pi_auth_missing: ${auth} does not exist; ${renew}`);
-    const bytes = readNativeConfigBytes(auth);
-    try { assertAccessWindow([piAuthExpiry(bytes, provider, renew)], deadline + PI_OAUTH_REFRESH_MARGIN_MS, `${renew} to renew the ${provider} token`); }
-    finally { bytes.fill(0); }
-  };
-  assertCredentialWindow();
-  if (!existsSync(link)) symlinkSync(auth, link);
-  if (!lstatSync(link).isSymbolicLink() || readlinkSync(link) !== auth) throw new Error('review_pi_auth_changed');
-  return { directory, loopbackPorts, model: `${provider}/${model}`, assertCredentialWindow };
+  const credential: PiCredential = { auth: join(source, 'auth.json'), provider }, link = join(directory, 'auth.json');
+  assertPiCredentialWindow(credential, deadline);
+  if (!existsSync(link)) symlinkSync(credential.auth, link);
+  if (!lstatSync(link).isSymbolicLink() || readlinkSync(link) !== credential.auth) throw new Error('review_pi_auth_changed');
+  return { directory, loopbackPorts, model: `${provider}/${model}`, credential };
+}
+
+/**
+ * The one pi credential-window check: at admission, before the host launch, and in the host
+ * just before the pi session starts. The deadline does not move, so a start at or after it
+ * could find the token inside pi's refresh margin, and the sandbox denies the refresh write.
+ */
+export function assertPiCredentialWindow(credential: PiCredential, deadline: number): void {
+  const { auth, provider } = credential;
+  const renew = `run pi outside the review and enter /login ${provider}, then repeat the round, or cancel the review and start a new one`;
+  if (Date.now() >= deadline) throw new Error('review_round_deadline_passed: the round deadline passed before the pi session start; repeat the round');
+  if (!existsSync(auth)) throw new Error(`review_pi_auth_missing: ${auth} does not exist; ${renew}`);
+  const bytes = readNativeConfigBytes(auth);
+  try { assertAccessWindow([piAuthExpiry(bytes, credential, renew)], deadline + PI_OAUTH_REFRESH_MARGIN_MS, `${renew} to renew the ${provider} token`); }
+  finally { bytes.fill(0); }
 }
 
 function preparePiSettings(directory: string, source: string): Readonly<Record<string, unknown>> {
@@ -182,16 +192,17 @@ function codexAuthExpiry(bytes: Buffer): CredentialExpiry[] {
  * provider to pi, so only its entry counts, and the entry must exist. Another
  * shape fails closed.
  */
-function piAuthExpiry(bytes: Buffer, provider: string, renew: string): CredentialExpiry {
+function piAuthExpiry(bytes: Buffer, { auth, provider }: PiCredential, renew: string): CredentialExpiry {
+  const unknownShape = `review_pi_auth_shape_unknown: ${auth} is not a pi auth map with an api_key or oauth entry for ${JSON.stringify(provider)}; ${renew}`;
   let entries: unknown;
-  try { entries = JSON.parse(bytes.toString('utf8')); } catch { throw new Error('review_pi_auth_shape_unknown'); }
-  if (!entries || typeof entries !== 'object' || Array.isArray(entries)) throw new Error('review_pi_auth_shape_unknown');
+  try { entries = JSON.parse(bytes.toString('utf8')); } catch { throw new Error(unknownShape); }
+  if (!entries || typeof entries !== 'object' || Array.isArray(entries)) throw new Error(unknownShape);
   const map = entries as Record<string, unknown>;
-  if (!Object.hasOwn(map, provider)) throw new Error(`review_pi_auth_missing: auth.json has no ${provider} entry; ${renew}`);
+  if (!Object.hasOwn(map, provider)) throw new Error(`review_pi_auth_missing: ${auth} has no ${provider} entry; ${renew}`);
   const entry = map[provider] as { type?: unknown; expires?: unknown } | null;
   if (entry?.type === 'api_key') return 'none';
   if (entry?.type === 'oauth' && typeof entry.expires === 'number' && Number.isFinite(entry.expires)) return entry.expires;
-  throw new Error(`review_pi_auth_shape_unknown: provider ${JSON.stringify(provider)}`);
+  throw new Error(unknownShape);
 }
 /** One bounded read of a native credential or configuration file (auth.json, models.json, settings.json); never follows a link. */
 function readNativeConfigBytes(path: string): Buffer {

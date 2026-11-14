@@ -44,7 +44,7 @@ export function oarActualModel(kind: string, session: Pick<Session, 'model'>): s
   const model = session.model().value;
   // Pi reports pi-agent-core's placeholder (provider "unknown") when it resolved
   // no model, for example when it cannot read its credentials. It names no model.
-  if (kind === 'pi' && model?.startsWith('unknown/')) throw new Error(`pi_actual_model_unresolved: pi reported its placeholder ${model}, not a configured model`);
+  if (kind === 'pi' && model?.startsWith('unknown/')) throw new Error(`pi_actual_model_unresolved: pi reported its placeholder ${model}, not a configured model; the native pi agent directory (the operator's PI_CODING_AGENT_DIR, default ~/.pi/agent) needs an auth.json entry for the provider that its settings.json names; run pi outside the review and enter /login <provider>, then cancel the review or task session and start it again`);
   return model;
 }
 

@@ -1,14 +1,17 @@
 /**
- * Pi host version policy (#1099). The Pi extension, setup check and docs read
- * this one constant. There is no upper bound: a newer Pi is accepted when the
- * runtime capability probe passes.
+ * Pi host version policy (#1099). The Pi extension, setup check, review launch
+ * gate and docs read this one constant. There is no upper bound: a newer Pi is
+ * accepted when the runtime capability probe passes.
  *
- * 1.5.0 is the floor because OAR 0.95.0 requires
- * `@earendil-works/pi-coding-agent ^1.5.0`, and Pi 1.5.0 has every event the
- * extension maps (`tool_call` with `parentToolCallId`, `before_agent_start`
- * messages, `agent_settled.aborted`).
+ * 1.5.2 is the floor, the same as this package's peer range
+ * `@earendil-works/pi-coding-agent ^1.5.2`: the review sandbox opens only the
+ * auth.json lock directory that pi 1.5.2 creates, and the review resolver and
+ * refresh margin are proven only on 1.5.2 (#2732).
  */
-export const MIN_PI_VERSION = '1.5.0' as const;
+export const MIN_PI_VERSION = '1.5.2' as const;
+
+/** The recovery for a PATH pi below the floor. */
+export const PI_UPGRADE_HINT = `upgrade the PATH pi (@earendil-works/pi-coding-agent) to ${MIN_PI_VERSION} or later with the package manager that installed it`;
 
 /** Fixed codes for a Pi session that cannot run the repo-harness host. */
 export type PiHostUnavailableCode =

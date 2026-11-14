@@ -254,7 +254,7 @@ export async function collectTaskResult(repoRoot: string, task: string, role: st
   });
 }
 export async function sendTaskRequest(repoRoot: string, task: string, role: string, contextRef: string, contextPolicy: 'repeatable' | 'changed_only', applicationDelivery: (request: TaskRequest) => Promise<void>,
-  /** Internal fixture barrier. It is never accepted from CLI or PM input. */
+  /** The internal publication hook between request-<round>.json and started-<round>.json; review writes deadline-<round>.json here. Never accepted from CLI or PM input. */
   publicationBoundary?: (request: TaskRequest) => Promise<void>, guard?: () => void, taskAuthority?: TaskSessionAuthority,
   preparePrePrompt?: (request: TaskRequest) => TaskPrePromptInbox): Promise<TaskRequest> {
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const { dir, binding } = readTaskAgent(root, task, role);

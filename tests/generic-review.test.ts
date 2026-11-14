@@ -290,7 +290,7 @@ darwinTest('app-terminal round returns the exact host command, sends nothing and
   await expect(runReviewRound({ ...f.options, launch: 'app-terminal' }, f.effects)).rejects.toThrow('review_launch_addressing_invalid');
   const { endpoint: _endpoint, parentPane: _parentPane, ...base } = f.options;
   await expect(runReviewRound(base, f.effects)).rejects.toThrow('review_launch_addressing_invalid');
-  const options = { ...base, launch: 'app-terminal' as const };
+  const options = { ...base, launch: 'app-terminal' as const, timeoutMs: 3000 };
   const first = await runReviewRound(options, f.effects);
   if (first.status !== 'launch_required') throw new Error('fixture_launch_required_expected');
   expect(first.argv.slice(1)).toEqual(['--disable-sigusr1', realpathSync(join(import.meta.dir, '../dist/oar-review-host.js')), join(f.dir, 'host.json')]);
@@ -305,6 +305,14 @@ darwinTest('app-terminal round returns the exact host command, sends nothing and
   expect(readFileSync(f.packetPath(), 'utf8')).toContain('CURRENT SOURCE:');
   // Repeating the round before any host claims the directory returns the same command and admits no new session.
   expect(await runReviewRound(options, f.effects)).toEqual(first);
+  // A launch after the admitted deadline opens no Session and holds no claim; the repeated round admits a new deadline.
+  const admitted = readSessionArtifact<{ deadline: number }>(join(f.dir, 'launch-deadline.json')).deadline;
+  await Bun.sleep(admitted - Date.now() + 50);
+  const late = spawnSync(first.argv[0]!, first.argv.slice(1), { cwd: first.cwd, encoding: 'utf8', timeout: 30_000 });
+  expect(late.stderr).toContain('OAR_HOST_LAUNCH_DEADLINE_PASSED');
+  expect(existsSync(join(f.dir, 'host-claim.json'))).toBe(false);
+  expect(await runReviewRound(options, f.effects)).toEqual(first);
+  expect(readSessionArtifact<{ deadline: number }>(join(f.dir, 'launch-deadline.json')).deadline).toBeGreaterThan(admitted);
   expect(f.calls.filter(call => call === 'admit')).toHaveLength(1);
   expect(f.calls).not.toContain('start');
   expect(f.calls).not.toContain('send');
@@ -404,7 +412,8 @@ test('OAR SessionOptions reuse fleet and authorize only file communication, with
 
 test('Pi isolation fixture links native configuration without storing credential copies', async () => {
   const { mkdirSync, chmodSync, symlinkSync, readlinkSync, readdirSync, unlinkSync } = await import('node:fs');
-  const { preparePiAgentDirectory } = await import('../src/effects/review/review-isolation');
+  const { preparePiAgentDirectory, assertPiCredentialWindow } = await import('../src/effects/review/review-isolation');
+  const { assertHostLaunchAdmitted } = await import('../src/effects/review-runner/task-oar-host');
   const root = tmpWorkspace('pi-home'); roots.push(root);
   const source = join(root, 'home'), output = join(root, 'output'), agent = join(source, '.pi/agent');
   mkdirSync(agent, { recursive: true }); mkdirSync(output);
@@ -462,17 +471,30 @@ test('Pi isolation fixture links native configuration without storing credential
   expect(prepareWith({ fixture: oauth(deadline + 301_000) }, named, deadline)).not.toThrow();
   // The run names one provider, so only its entry counts, and the entry must exist.
   expect(prepareWith({ fixture: apiKey, unused: oauth(soon) })).not.toThrow();
-  expect(prepareWith({ other: oauth(inOneHour()) })).toThrow('review_pi_auth_missing: auth.json has no fixture entry');
+  expect(prepareWith({ other: oauth(inOneHour()) })).toThrow(/review_pi_auth_missing: .*auth\.json has no fixture entry/);
   // pi's resolver (built-in catalog, offline) maps a differently cased provider to its canonical id; the settings must name that id.
   expect(prepareWith({ 'openai-codex': oauth(soon) }, { defaultProvider: 'OPENAI-CODEX', defaultModel: 'gpt-5.4' }))
     .toThrow('review_pi_model_not_canonical: pi resolves OPENAI-CODEX/gpt-5.4 to openai-codex/gpt-5.4');
   expect(prepareWith({ 'openai-codex': apiKey }, { defaultProvider: 'openai-codex', defaultModel: 'gpt-5.4' })().model).toBe('openai-codex/gpt-5.4');
   expect(prepareWith({ fixture: apiKey, other: oauth(soon) }, {})).toThrow('review_pi_model_unnamed');
   expect(prepareWith({ fixture: apiKey, other: oauth(soon) }, { defaultProvider: 'fixture' })).toThrow('review_pi_model_unnamed');
-  // The recheck before the session start keeps the admission deadline: a startup delay that reaches it is refused.
-  const late = prepareWith({ fixture: oauth(inOneHour()) }, named, Date.now() + 1500)();
+  // The host repeats the admission check from the owner's launch file just before the pi session start.
+  const control = join(root, `control-${randomUUID()}`); mkdirSync(control);
+  const lateDeadline = Date.now() + 1500, late = prepareWith({ fixture: oauth(inOneHour()) }, named, lateDeadline)();
+  const hostSpec = { kind: 'pi', controlDirectory: control, options: { model: late.model } } as ReviewHostSpec;
+  const launchAt = (deadline: number) => writeSessionArtifact(join(control, 'launch-deadline.json'), { deadline, pi: { model: late.model, ...late.credential } }, false);
+  launchAt(lateDeadline);
+  expect(() => assertHostLaunchAdmitted(hostSpec)).not.toThrow();
+  writeSessionArtifact(join(control, 'launch-deadline.json'), { deadline: lateDeadline, pi: { model: 'fixture/other', ...late.credential } }, false);
+  expect(() => assertHostLaunchAdmitted(hostSpec)).toThrow('OAR_HOST_LAUNCH_DEADLINE_INVALID');
+  // A token that pi would refresh before the deadline refuses the start.
+  launchAt(Date.now() + 3_600_000);
+  expect(() => assertHostLaunchAdmitted(hostSpec)).toThrow(/review_access_expires_within_run.*\/login fixture/);
+  // A start delayed to the deadline is refused.
+  launchAt(lateDeadline);
   await Bun.sleep(1600);
-  expect(late.assertCredentialWindow).toThrow('review_round_deadline_passed');
+  expect(() => assertHostLaunchAdmitted(hostSpec)).toThrow('OAR_HOST_LAUNCH_DEADLINE_PASSED');
+  expect(() => assertPiCredentialWindow(late.credential, lateDeadline)).toThrow('review_round_deadline_passed');
   expect(prepareWith({ fixture: { type: 'session_token' } })).toThrow('review_pi_auth_shape_unknown');
 });
 
@@ -546,7 +568,8 @@ darwinTest('Pi isolation fixture: OAR flags, native extension, actual model and 
   writeFileSync(join(agent, 'models.json'), '{"providers":{}}');
   writeFileSync(join(agent, 'settings.json'), '{"defaultProvider":"openai","defaultModel":"gpt-4o"}');
   mkdirSync(join(agent, 'extensions')); writeFileSync(join(agent, 'extensions', 'unexpected.ts'), 'throw new Error("ambient fixture extension loaded");');
-  const { directory } = preparePiAgentDirectory(output, home, inOneHour(), piReferenceResolver);
+  const { directory, credential: piCredential } = preparePiAgentDirectory(output, home, inOneHour(), piReferenceResolver);
+  writeSessionArtifact(join(owner, 'launch-deadline.json'), { deadline: inOneHour(), pi: { model: 'openai/gpt-4o', ...piCredential } }, false);
   expect(lstatSync(join(directory, 'models.json')).isSymbolicLink()).toBe(true);
   const targets = [join(source, 'protected.txt'), credential, join(agent, 'protected.txt'), join(directory, 'auth.json'), join(directory, 'models.json'), join(agent, 'models.json'), join(directory, 'settings.json'), join(agent, 'settings.json')];
   for (const target of [targets[0]!, targets[2]!]) writeFileSync(target, 'KEEP');
@@ -577,7 +600,7 @@ const output=${JSON.stringify(output)},agentDir=${JSON.stringify(directory)};
 const captured=readFileSync(${JSON.stringify(capture)},'utf8').trim().split('\\n').map(JSON.parse).find(r=>r.argv.includes('--session-dir'));
 const native=SessionManager.create(output,captured.argv[captured.argv.indexOf('--session-dir')+1]);
 native.appendMessage({role:'user',content:'[fixture transcript; no provider run]',timestamp:Date.now()});
-const spec={mode:'review',kind:'pi',installation:{kind:'available',via:'bundled'},launcher:${JSON.stringify(launcher)},vendorExecutable:${JSON.stringify(fixture)},options:{cwd:output,resume:native.getSessionId(),env:{PI_CODING_AGENT_DIR:agentDir,OAR_PI_AGENT_DIR:agentDir}},requestDirectory:${JSON.stringify(owner)},output,controlDirectory:${JSON.stringify(owner)},timeoutMs:5000,isolation:${JSON.stringify({ paths, policyFile: profile })}};
+const spec={mode:'review',kind:'pi',installation:{kind:'available',via:'bundled'},launcher:${JSON.stringify(launcher)},vendorExecutable:${JSON.stringify(fixture)},options:{cwd:output,resume:native.getSessionId(),model:'openai/gpt-4o',env:{PI_CODING_AGENT_DIR:agentDir,OAR_PI_AGENT_DIR:agentDir}},requestDirectory:${JSON.stringify(owner)},output,controlDirectory:${JSON.stringify(owner)},timeoutMs:5000,isolation:${JSON.stringify({ paths, policyFile: profile })}};
 for(let i=0;i<2;i++){const resumed=i===0?await openReviewHost(spec,()=>{}):new OarReviewHost(await runtime.session(spec.installation,spec.options),()=>{});try{assert.equal(resumed.sessionId,native.getSessionId());assert.equal(resumed.model('pi'),'openai/gpt-4o');}finally{await resumed.dispose();}}
 console.log(JSON.stringify({session_id:id,model:'openai/gpt-4o',extension_ready:true,resumed:true}));
 `);
@@ -1228,6 +1251,35 @@ console.log(JSON.stringify({calls,passed:true,model:null}));}finally{await close
   expect(result.calls).toBe(1); expect(result.passed).toBe(true);
 });
 
+test('OAR host: the round deadline bounds a turn whose prompt acknowledgement is slow', async () => {
+  const { OarReviewHost, runHostFileRequest } = await import('../src/effects/review-runner/task-oar-host');
+  const { scriptedRuntime } = await import('@botiverse/oar/testing');
+  const dir = tmpWorkspace('oar-slow-ack'); roots.push(dir);
+  // The turn never ends by itself; only an abort settles it.
+  const session = await scriptedRuntime({ id: 'codex', model: 'fixture-oar', turn: async ({ signal }) => { await new Promise(resolve => signal.addEventListener('abort', resolve)); } })
+    .session({ kind: 'available', via: 'bundled' }, { cwd: dir });
+  const slowAck = new Proxy(session, { get(target, key) {
+    const value = Reflect.get(target, key, target);
+    if (key === 'prompt') return async (...args: Parameters<typeof session.prompt>) => { await Bun.sleep(1000); return session.prompt(...args); };
+    return typeof value === 'function' ? value.bind(target) : value;
+  } });
+  const host = new OarReviewHost(slowAck, () => {});
+  try {
+    const content = '[fixture slow acknowledgement]';
+    const request: TaskRequest = { protocol: 2, task: 'fixture', role: 'deep-reasoner', round: 1, request_id: randomUUID(), context_ref: join(dir, 'context-1.txt'), source_ref: 'fixture',
+      result_ref: join(dir, 'result-1.json'), context_sha256: 'sha256:' + createHash('sha256').update(content).digest('hex'),
+      result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename' } } as TaskRequest;
+    writeFileSync(request.context_ref, content);
+    writeFileSync(join(dir, 'started-1.json'), JSON.stringify({ request_id: request.request_id, provider: { pid: process.pid, identity: 'fixture-host' } }));
+    const begun = Date.now();
+    writeSessionArtifact(join(dir, 'deadline-1.json'), { request_id: request.request_id, deadline: begun + 500 });
+    const observed = await runHostFileRequest(host, { kind: 'codex', requestDirectory: dir, output: dir, controlDirectory: dir, timeoutMs: 500 } as unknown as ReviewHostSpec, request);
+    // The deadline fired during the 1000 ms acknowledgement, so the turn is aborted on the acknowledgement, not 500 ms after it.
+    expect(observed.kind).toBe('interrupted');
+    expect(Date.now() - begun).toBeLessThan(1400);
+  } finally { await host.dispose(); }
+});
+
 darwinTest('OAR host: a request without started-N.json is partial; no read, no ack until it is published', async () => {
   const result = await runOarNodeFixture('oar-partial-request', String.raw`
 const spec={mode:'review',kind:'codex',installation:{kind:'available',via:'bundled'},options:{cwd:output},requestDirectory:output,output,controlDirectory:output,timeoutMs:5000,isolation};let calls=0;
@@ -1367,6 +1419,7 @@ readline.createInterface({input:process.stdin}).on('line',async line=>{
   const launcher = prepareReviewLauncher(owner, policyFile, fixture);
   const entry = pathToFileURL(realpathSync(join(import.meta.dir, '../dist/oar-review-host.js'))).href;
   const driver = join(root, 'trusted-host.mjs');
+  writeSessionArtifact(join(owner, 'launch-deadline.json'), { deadline: Date.now() + 60_000, pi: null }, false);
   writeFileSync(driver, `import assert from 'node:assert/strict';
 import {createServer} from 'node:net';import {join} from 'node:path';import {writeFileSync,readFileSync} from 'node:fs';import {createHash} from 'node:crypto';
 import {openReviewHost,runHostFileRequest,reviewRuntime} from ${JSON.stringify(entry)};
